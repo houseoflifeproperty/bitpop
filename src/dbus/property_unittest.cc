@@ -10,15 +10,16 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "dbus/bus.h"
 #include "dbus/object_path.h"
 #include "dbus/object_proxy.h"
-#include "dbus/property.h"
 #include "dbus/test_service.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+namespace dbus {
 
 // The property test exerises the asynchronous APIs in PropertySet and
 // Property<>.
@@ -27,21 +28,23 @@ class PropertyTest : public testing::Test {
   PropertyTest() {
   }
 
-  struct Properties : public dbus::PropertySet {
-    dbus::Property<std::string> name;
-    dbus::Property<int16> version;
-    dbus::Property<std::vector<std::string> > methods;
-    dbus::Property<std::vector<dbus::ObjectPath> > objects;
+  struct Properties : public PropertySet {
+    Property<std::string> name;
+    Property<int16> version;
+    Property<std::vector<std::string> > methods;
+    Property<std::vector<ObjectPath> > objects;
+    Property<std::vector<uint8> > bytes;
 
-    Properties(dbus::ObjectProxy* object_proxy,
+    Properties(ObjectProxy* object_proxy,
                PropertyChangedCallback property_changed_callback)
-        : dbus::PropertySet(object_proxy,
-                            "org.chromium.TestService",
-                            property_changed_callback) {
+        : PropertySet(object_proxy,
+                      "org.chromium.TestInterface",
+                      property_changed_callback) {
       RegisterProperty("Name", &name);
       RegisterProperty("Version", &version);
       RegisterProperty("Methods", &methods);
       RegisterProperty("Objects", &objects);
+      RegisterProperty("Bytes", &bytes);
     }
   };
 
@@ -52,27 +55,26 @@ class PropertyTest : public testing::Test {
     // Start the D-Bus thread.
     dbus_thread_.reset(new base::Thread("D-Bus Thread"));
     base::Thread::Options thread_options;
-    thread_options.message_loop_type = MessageLoop::TYPE_IO;
+    thread_options.message_loop_type = base::MessageLoop::TYPE_IO;
     ASSERT_TRUE(dbus_thread_->StartWithOptions(thread_options));
 
     // Start the test service, using the D-Bus thread.
-    dbus::TestService::Options options;
-    options.dbus_thread_message_loop_proxy = dbus_thread_->message_loop_proxy();
-    test_service_.reset(new dbus::TestService(options));
+    TestService::Options options;
+    options.dbus_task_runner = dbus_thread_->message_loop_proxy();
+    test_service_.reset(new TestService(options));
     ASSERT_TRUE(test_service_->StartService());
     ASSERT_TRUE(test_service_->WaitUntilServiceIsStarted());
     ASSERT_TRUE(test_service_->HasDBusThread());
 
     // Create the client, using the D-Bus thread.
-    dbus::Bus::Options bus_options;
-    bus_options.bus_type = dbus::Bus::SESSION;
-    bus_options.connection_type = dbus::Bus::PRIVATE;
-    bus_options.dbus_thread_message_loop_proxy =
-        dbus_thread_->message_loop_proxy();
-    bus_ = new dbus::Bus(bus_options);
+    Bus::Options bus_options;
+    bus_options.bus_type = Bus::SESSION;
+    bus_options.connection_type = Bus::PRIVATE;
+    bus_options.dbus_task_runner = dbus_thread_->message_loop_proxy();
+    bus_ = new Bus(bus_options);
     object_proxy_ = bus_->GetObjectProxy(
         "org.chromium.TestService",
-        dbus::ObjectPath("/org/chromium/TestObject"));
+        ObjectPath("/org/chromium/TestObject"));
     ASSERT_TRUE(bus_->HasDBusThread());
 
     // Create the properties structure
@@ -122,7 +124,7 @@ class PropertyTest : public testing::Test {
   }
 
   // Name, Version, Methods, Objects
-  static const int kExpectedSignalUpdates = 4;
+  static const int kExpectedSignalUpdates = 5;
 
   // Waits for initial values to be set.
   void WaitForGetAll() {
@@ -138,12 +140,12 @@ class PropertyTest : public testing::Test {
     }
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_ptr<base::Thread> dbus_thread_;
-  scoped_refptr<dbus::Bus> bus_;
-  dbus::ObjectProxy* object_proxy_;
+  scoped_refptr<Bus> bus_;
+  ObjectProxy* object_proxy_;
   scoped_ptr<Properties> properties_;
-  scoped_ptr<dbus::TestService> test_service_;
+  scoped_ptr<TestService> test_service_;
   // Properties updated.
   std::vector<std::string> updated_properties_;
   // Last callback received.
@@ -163,9 +165,16 @@ TEST_F(PropertyTest, InitialValues) {
   EXPECT_EQ("AsyncEcho", methods[2]);
   EXPECT_EQ("BrokenMethod", methods[3]);
 
-  std::vector<dbus::ObjectPath> objects = properties_->objects.value();
+  std::vector<ObjectPath> objects = properties_->objects.value();
   ASSERT_EQ(1U, objects.size());
-  EXPECT_EQ(dbus::ObjectPath("/TestObjectPath"), objects[0]);
+  EXPECT_EQ(ObjectPath("/TestObjectPath"), objects[0]);
+
+  std::vector<uint8> bytes = properties_->bytes.value();
+  ASSERT_EQ(4U, bytes.size());
+  EXPECT_EQ('T', bytes[0]);
+  EXPECT_EQ('e', bytes[1]);
+  EXPECT_EQ('s', bytes[2]);
+  EXPECT_EQ('t', bytes[3]);
 }
 
 TEST_F(PropertyTest, UpdatedValues) {
@@ -212,9 +221,24 @@ TEST_F(PropertyTest, UpdatedValues) {
   WaitForCallback("Objects");
   WaitForUpdates(1);
 
-  std::vector<dbus::ObjectPath> objects = properties_->objects.value();
+  std::vector<ObjectPath> objects = properties_->objects.value();
   ASSERT_EQ(1U, objects.size());
-  EXPECT_EQ(dbus::ObjectPath("/TestObjectPath"), objects[0]);
+  EXPECT_EQ(ObjectPath("/TestObjectPath"), objects[0]);
+
+  // Update the value of the "Bytes" property, this value should not change
+  // and should not grow to contain duplicate entries.
+  properties_->bytes.Get(base::Bind(&PropertyTest::PropertyCallback,
+                                    base::Unretained(this),
+                                   "Bytes"));
+  WaitForCallback("Bytes");
+  WaitForUpdates(1);
+
+  std::vector<uint8> bytes = properties_->bytes.value();
+  ASSERT_EQ(4U, bytes.size());
+  EXPECT_EQ('T', bytes[0]);
+  EXPECT_EQ('e', bytes[1]);
+  EXPECT_EQ('s', bytes[2]);
+  EXPECT_EQ('t', bytes[3]);
 }
 
 TEST_F(PropertyTest, Get) {
@@ -247,3 +271,5 @@ TEST_F(PropertyTest, Set) {
 
   EXPECT_EQ("NewService", properties_->name.value());
 }
+
+}  // namespace dbus

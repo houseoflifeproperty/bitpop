@@ -534,19 +534,20 @@ static bool HandleRpc(NaClCommandLoop* ncl, const vector<string>& args) {
   const string signature = BuildSignature(args[1], inv, outv);
 
   NaClSrpcArg* empty[] = {NULL};
-  printf("rpc call intiated %s\n", signature.c_str());
+  printf("rpc call initiated %s\n", signature.c_str());
   ncl->DumpArgsAndResults(inv, empty);
   fflush(stdout);
   fflush(stderr);
 
-  if (!ncl->InvokeNexeRpc(signature, inv, outv)) {
-    return false;
-  }
+  const bool rpc_result = ncl->InvokeNexeRpc(signature, inv, outv);
 
   printf("rpc call complete %s\n", signature.c_str());
   if (show_results) {
     ncl->DumpArgsAndResults(empty, outv);
   }
+
+  if (!rpc_result)
+    return false;
 
   // save output into variables
   for (size_t i = 0; outv[i] != 0; ++i) {

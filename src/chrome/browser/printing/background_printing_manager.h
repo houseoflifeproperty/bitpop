@@ -20,54 +20,42 @@ class WebContents;
 
 namespace printing {
 
-// Manages hidden tabs that prints documents in the background.
-// The hidden tabs are no longer part of any Browser / TabStripModel.
-// They get deleted when the tab finishes printing.
+// Manages hidden WebContents that prints documents in the background.
+// The hidden WebContents are no longer part of any Browser / TabStripModel.
+// The WebContents started life as a ConstrainedWebDialog.
+// They get deleted when the printing finishes.
 class BackgroundPrintingManager : public base::NonThreadSafe,
                                   public content::NotificationObserver {
  public:
-  typedef std::set<content::WebContents*> WebContentsSet;
+  class Observer;
+  typedef std::map<content::WebContents*, Observer*> WebContentsObserverMap;
 
   BackgroundPrintingManager();
   virtual ~BackgroundPrintingManager();
 
-  // Takes ownership of |preview_tab| and deletes it when |preview_tab| finishes
-  // printing. This removes the WebContents from its TabStrip and hides it from
-  // the user.
-  void OwnPrintPreviewTab(content::WebContents* preview_tab);
+  // Takes ownership of |preview_dialog| and deletes it when |preview_dialog|
+  // finishes printing. This removes |preview_dialog| from its ConstrainedDialog
+  // and hides it from the user.
+  void OwnPrintPreviewDialog(content::WebContents* preview_dialog);
 
-  // Let others iterate over the list of background printing tabs.
-  WebContentsSet::const_iterator begin();
-  WebContentsSet::const_iterator end();
+  // Returns true if |printing_contents_map_| contains |preview_dialog|.
+  bool HasPrintPreviewDialog(content::WebContents* preview_dialog);
 
-  // Returns true if |printing_tabs_| contains |preview_tab|.
-  bool HasPrintPreviewTab(content::WebContents* preview_tab);
+  // Let others see the list of background printing contents.
+  std::set<content::WebContents*> CurrentContentSet();
 
+ private:
   // content::NotificationObserver overrides:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
- private:
-  // Notifications handlers.
-  void OnRendererProcessClosed(content::RenderProcessHost* rph);
-  void OnPrintJobReleased(content::WebContents* preview_tab);
-  void OnWebContentsDestroyed(content::WebContents* preview_tab);
+  // Schedule deletion of |preview_contents|.
+  void DeletePreviewContents(content::WebContents* preview_contents);
 
-  // Add |tab| to the pending deletion set and schedule deletion.
-  void DeletePreviewTab(content::WebContents* tab);
-
-  // Check if any of the WebContentses in |set| share a RenderProcessHost
-  // with |tab|, excluding |tab|.
-  bool HasSharedRenderProcessHost(const WebContentsSet& set,
-                                  content::WebContents* tab);
-
-  // The set of print preview tabs managed by BackgroundPrintingManager.
-  WebContentsSet printing_tabs_;
-
-  // The set of print preview tabs managed by BackgroundPrintingManager that
-  // are pending deletion.
-  WebContentsSet printing_tabs_pending_deletion_;
+  // A map from print preview WebContentses (managed by
+  // BackgroundPrintingManager) to the Observers that observe them.
+  WebContentsObserverMap printing_contents_map_;
 
   content::NotificationRegistrar registrar_;
 

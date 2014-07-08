@@ -6,13 +6,19 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
 #endif  // OS_WIN
+
+#if defined(OS_ANDROID)
+#include "chrome/browser/android/chromium_application.h"
+#endif  // OS_ANDROID
 
 // static
 bool IncognitoModePrefs::IntToAvailability(int in_value,
@@ -33,15 +39,11 @@ IncognitoModePrefs::Availability IncognitoModePrefs::GetAvailability(
   Availability result = IncognitoModePrefs::ENABLED;
   bool valid = IntToAvailability(pref_value, &result);
   DCHECK(valid);
-#if defined(OS_WIN)
-  // Disable incognito mode windows if parental controls are on. This is only
-  // for Windows Vista and above.
-  if (base::win::IsParentalControlActivityLoggingOn()) {
+  if (ArePlatformParentalControlsEnabled()) {
     if (result == IncognitoModePrefs::FORCED)
       LOG(ERROR) << "Ignoring FORCED incognito. Parental control logging on";
     return IncognitoModePrefs::DISABLED;
   }
-#endif  // OS_WIN
   return result;
 }
 
@@ -52,11 +54,12 @@ void IncognitoModePrefs::SetAvailability(PrefService* prefs,
 }
 
 // static
-void IncognitoModePrefs::RegisterUserPrefs(PrefService* pref_service) {
-  DCHECK(pref_service);
-  pref_service->RegisterIntegerPref(prefs::kIncognitoModeAvailability,
-                                    IncognitoModePrefs::ENABLED,
-                                    PrefService::UNSYNCABLE_PREF);
+void IncognitoModePrefs::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterIntegerPref(
+      prefs::kIncognitoModeAvailability,
+      IncognitoModePrefs::ENABLED,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
@@ -67,4 +70,35 @@ bool IncognitoModePrefs::ShouldLaunchIncognito(
   return incognito_avail != IncognitoModePrefs::DISABLED &&
          (command_line.HasSwitch(switches::kIncognito) ||
           incognito_avail == IncognitoModePrefs::FORCED);
+}
+
+// static
+bool IncognitoModePrefs::CanOpenBrowser(Profile* profile) {
+  switch (GetAvailability(profile->GetPrefs())) {
+    case IncognitoModePrefs::ENABLED:
+      return true;
+
+    case IncognitoModePrefs::DISABLED:
+      return !profile->IsOffTheRecord();
+
+    case IncognitoModePrefs::FORCED:
+      return profile->IsOffTheRecord();
+
+    default:
+      NOTREACHED();
+      return false;
+  }
+}
+
+// static
+bool IncognitoModePrefs::ArePlatformParentalControlsEnabled() {
+#if defined(OS_WIN)
+  // Disable incognito mode windows if parental controls are on. This is only
+  // for Windows Vista and above.
+  return base::win::IsParentalControlActivityLoggingOn();
+#elif defined(OS_ANDROID)
+  return chrome::android::ChromiumApplication::AreParentalControlsEnabled();
+#else
+  return false;
+#endif
 }

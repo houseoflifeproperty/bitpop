@@ -5,48 +5,75 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_WEBSTORE_INSTALLER_H_
 #define CHROME_BROWSER_EXTENSIONS_WEBSTORE_INSTALLER_H_
 
+#include <list>
 #include <string>
-#include <vector>
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/supports_user_data.h"
+#include "base/timer/timer.h"
 #include "base/values.h"
+#include "base/version.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/download_interrupt_reasons.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/net_errors.h"
+#include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/manifest_handlers/shared_module_info.h"
+#include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
-class FilePath;
 class Profile;
 
+namespace base {
+class FilePath;
+}
+
 namespace content {
-class NavigationController;
+class WebContents;
 }
 
 namespace extensions {
 
+class CrxInstaller;
+class Extension;
+class Manifest;
+
 // Downloads and installs extensions from the web store.
-class WebstoreInstaller :public content::NotificationObserver,
-                         public content::DownloadItem::Observer,
-                         public base::RefCountedThreadSafe<
+class WebstoreInstaller : public content::NotificationObserver,
+                          public content::DownloadItem::Observer,
+                          public content::WebContentsObserver,
+                          public base::RefCountedThreadSafe<
   WebstoreInstaller, content::BrowserThread::DeleteOnUIThread> {
  public:
-  enum Flag {
-    FLAG_NONE = 0,
-
+  enum InstallSource {
     // Inline installs trigger slightly different behavior (install source
     // is different, download referrers are the item's page in the gallery).
-    FLAG_INLINE_INSTALL = 1 << 0
+    INSTALL_SOURCE_INLINE,
+    INSTALL_SOURCE_APP_LAUNCHER,
+    INSTALL_SOURCE_OTHER
   };
 
   enum FailureReason {
     FAILURE_REASON_CANCELLED,
+    FAILURE_REASON_DEPENDENCY_NOT_FOUND,
+    FAILURE_REASON_DEPENDENCY_NOT_SHARED_MODULE,
     FAILURE_REASON_OTHER
+  };
+
+  enum ManifestCheckLevel {
+    // Do not check for any manifest equality.
+    MANIFEST_CHECK_LEVEL_NONE,
+
+    // Only check that the expected and actual permissions have the same
+    // effective permissions.
+    MANIFEST_CHECK_LEVEL_LOOSE,
+
+    // All data in the expected and actual manifests must match.
+    MANIFEST_CHECK_LEVEL_STRICT,
   };
 
   class Delegate {
@@ -70,10 +97,20 @@ class WebstoreInstaller :public content::NotificationObserver,
   // be checked further for additional details.
   struct Approval : public base::SupportsUserData::Data {
     static scoped_ptr<Approval> CreateWithInstallPrompt(Profile* profile);
+
+    // Creates an Approval for installing a shared module.
+    static scoped_ptr<Approval> CreateForSharedModule(Profile* profile);
+
+    // Creates an Approval that will skip putting up an install confirmation
+    // prompt if the actual manifest from the extension to be installed matches
+    // |parsed_manifest|. The |strict_manifest_check| controls whether we want
+    // to require an exact manifest match, or are willing to tolerate a looser
+    // check just that the effective permissions are the same.
     static scoped_ptr<Approval> CreateWithNoInstallPrompt(
         Profile* profile,
         const std::string& extension_id,
-        scoped_ptr<base::DictionaryValue> parsed_manifest);
+        scoped_ptr<base::DictionaryValue> parsed_manifest,
+        bool strict_manifest_check);
 
     virtual ~Approval();
 
@@ -84,7 +121,7 @@ class WebstoreInstaller :public content::NotificationObserver,
     Profile* profile;
 
     // The expected manifest, before localization.
-    scoped_ptr<base::DictionaryValue> parsed_manifest;
+    scoped_ptr<Manifest> manifest;
 
     // Whether to use a bubble notification when an app is installed, instead of
     // the default behavior of transitioning to the new tab page.
@@ -99,11 +136,31 @@ class WebstoreInstaller :public content::NotificationObserver,
     // so there's no need to show it again.
     bool skip_install_dialog;
 
-    // Whether we should record an oauth2 grant for the extensions.
-    bool record_oauth2_grant;
+    // Whether we should enable the launcher before installing the app.
+    bool enable_launcher;
+
+    // Manifest check level for checking actual manifest against expected
+    // manifest.
+    ManifestCheckLevel manifest_check_level;
 
     // Used to show the install dialog.
     ExtensionInstallPrompt::ShowDialogCallback show_dialog_callback;
+
+    // The icon to use to display the extension while it is installing.
+    gfx::ImageSkia installing_icon;
+
+    // A dummy extension created from |manifest|;
+    scoped_refptr<Extension> dummy_extension;
+
+    // Required minimum version.
+    scoped_ptr<Version> minimum_version;
+
+    // Ephemeral apps (experimental) are not permanently installed in Chrome.
+    bool is_ephemeral;
+
+    // The authuser index required to download the item being installed. May be
+    // the empty string, in which case no authuser parameter is used.
+    std::string authuser;
 
    private:
     Approval();
@@ -123,10 +180,10 @@ class WebstoreInstaller :public content::NotificationObserver,
   // Note: the delegate should stay alive until being called back.
   WebstoreInstaller(Profile* profile,
                     Delegate* delegate,
-                    content::NavigationController* controller,
+                    content::WebContents* web_contents,
                     const std::string& id,
                     scoped_ptr<Approval> approval,
-                    int flags);
+                    InstallSource source);
 
   // Starts downloading and installing the extension.
   void Start();
@@ -142,23 +199,42 @@ class WebstoreInstaller :public content::NotificationObserver,
 
   // Instead of using the default download directory, use |directory| instead.
   // This does *not* transfer ownership of |directory|.
-  static void SetDownloadDirectoryForTests(FilePath* directory);
+  static void SetDownloadDirectoryForTests(base::FilePath* directory);
 
  private:
+  FRIEND_TEST_ALL_PREFIXES(WebstoreInstallerTest, PlatformParams);
   friend struct content::BrowserThread::DeleteOnThread<
    content::BrowserThread::UI>;
   friend class base::DeleteHelper<WebstoreInstaller>;
   virtual ~WebstoreInstaller();
 
+  // Helper to get install URL.
+  static GURL GetWebstoreInstallURL(const std::string& extension_id,
+                                    InstallSource source);
+
   // DownloadManager::DownloadUrl callback.
-  void OnDownloadStarted(content::DownloadItem* item, net::Error error);
+  void OnDownloadStarted(content::DownloadItem* item,
+                         content::DownloadInterruptReason interrupt_reason);
 
   // DownloadItem::Observer implementation:
   virtual void OnDownloadUpdated(content::DownloadItem* download) OVERRIDE;
   virtual void OnDownloadDestroyed(content::DownloadItem* download) OVERRIDE;
 
+  // Downloads next pending module in |pending_modules_|.
+  void DownloadNextPendingModule();
+
+  // Downloads and installs a single Crx with the given |extension_id|.
+  // This function is used for both the extension Crx and dependences.
+  void DownloadCrx(const std::string& extension_id, InstallSource source);
+
   // Starts downloading the extension to |file_path|.
-  void StartDownload(const FilePath& file_path);
+  void StartDownload(const base::FilePath& file_path);
+
+  // Updates the InstallTracker with the latest download progress.
+  void UpdateDownloadProgress();
+
+  // Creates and starts CrxInstaller for the downloaded extension package.
+  void StartCrxInstaller(const content::DownloadItem& item);
 
   // Reports an install |error| to the delegate for the given extension if this
   // managed its installation. This also removes the associated PendingInstall.
@@ -169,16 +245,31 @@ class WebstoreInstaller :public content::NotificationObserver,
   // PendingInstall.
   void ReportSuccess();
 
+  // Records stats regarding an interrupted webstore download item.
+  void RecordInterrupt(const content::DownloadItem* download) const;
+
   content::NotificationRegistrar registrar_;
   Profile* profile_;
   Delegate* delegate_;
-  content::NavigationController* controller_;
   std::string id_;
+  InstallSource install_source_;
   // The DownloadItem is owned by the DownloadManager and is valid from when
   // OnDownloadStarted is called (with no error) until OnDownloadDestroyed().
   content::DownloadItem* download_item_;
+  // Used to periodically update the extension's download status. This will
+  // trigger at least every second, though sometimes more frequently (depending
+  // on number of modules, etc).
+  base::OneShotTimer<WebstoreInstaller> download_progress_timer_;
   scoped_ptr<Approval> approval_;
   GURL download_url_;
+  scoped_refptr<CrxInstaller> crx_installer_;
+
+  // Pending modules.
+  std::list<SharedModuleInfo::ImportInfo> pending_modules_;
+  // Total extension modules we need download and install (the main module and
+  // depedences).
+  int total_modules_;
+  bool download_started_;
 };
 
 }  // namespace extensions

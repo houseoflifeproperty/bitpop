@@ -5,16 +5,20 @@
 #ifndef CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 #define CONTENT_PUBLIC_BROWSER_UTILITY_PROCESS_HOST_H_
 
-#include "base/process_util.h"
+#include "base/environment.h"
+#include "base/process/launch.h"
+#include "base/threading/thread.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_thread.h"
 #include "ipc/ipc_sender.h"
 
+namespace base {
 class FilePath;
+class SequencedTaskRunner;
+}
 
 namespace content {
-
 class UtilityProcessHostClient;
+struct ChildProcessData;
 
 // This class acts as the browser-side host to a utility child process.  A
 // utility process is a short-lived process that is created to run a specific
@@ -46,17 +50,24 @@ class UtilityProcessHost : public IPC::Sender,
 
   // Allows a directory to be opened through the sandbox, in case it's needed by
   // the operation.
-  virtual void SetExposedDir(const FilePath& dir) = 0;
+  virtual void SetExposedDir(const base::FilePath& dir) = 0;
+
+  // Perform presandbox initialization for mDNS.
+  virtual void EnableMDns() = 0;
 
   // Make the process run without a sandbox.
   virtual void DisableSandbox() = 0;
 
-  // If the sandbox is being used and we are on Linux, launch the process from
-  // the zygote. Can only be used for tasks that do not require FS access.
-  virtual void EnableZygote() = 0;
+#if defined(OS_WIN)
+  // Make the process run elevated.
+  virtual void ElevatePrivileges() = 0;
+#endif
+
+  // Returns information about the utility child process.
+  virtual const ChildProcessData& GetData() = 0;
 
 #if defined(OS_POSIX)
-  virtual void SetEnv(const base::EnvironmentVector& env) = 0;
+  virtual void SetEnv(const base::EnvironmentMap& env) = 0;
 #endif
 };
 

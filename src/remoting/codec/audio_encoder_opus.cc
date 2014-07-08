@@ -6,10 +6,10 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/base/multi_channel_resampler.h"
-#include "third_party/opus/opus.h"
+#include "third_party/opus/src/include/opus.h"
 
 namespace remoting {
 
@@ -17,12 +17,6 @@ namespace {
 
 // Output 160 kb/s bitrate.
 const int kOutputBitrateBps = 160 * 1024;
-
-// Encoded buffer size.
-const int kFrameDefaultBufferSize = 4096;
-
-// Maximum buffer size we'll allocate when encoding before giving up.
-const int kMaxBufferSize = 65536;
 
 // Opus doesn't support 44100 sampling rate so we always resample to 48kHz.
 const AudioPacket::SamplingRate kOpusSamplingRate =
@@ -77,9 +71,12 @@ void AudioEncoderOpus::InitEncoder() {
   if (sampling_rate_ != kOpusSamplingRate) {
     resample_buffer_.reset(
         new char[kFrameSamples * kBytesPerSample * channels_]);
+    // TODO(sergeyu): Figure out the right buffer size to use per packet instead
+    // of using media::SincResampler::kDefaultRequestSize.
     resampler_.reset(new media::MultiChannelResampler(
         channels_,
         static_cast<double>(sampling_rate_) / kOpusSamplingRate,
+        media::SincResampler::kDefaultRequestSize,
         base::Bind(&AudioEncoderOpus::FetchBytesToResample,
                    base::Unretained(this))));
     resampler_bus_ = media::AudioBus::Create(channels_, kFrameSamples);
@@ -88,7 +85,7 @@ void AudioEncoderOpus::InitEncoder() {
   // Drop leftover data because it's for different sampling rate.
   leftover_samples_ = 0;
   leftover_buffer_size_ =
-      frame_size_ + media::SincResampler::kMaximumLookAheadSize;
+      frame_size_ + media::SincResampler::kDefaultRequestSize;
   leftover_buffer_.reset(
       new int16[leftover_buffer_size_ * channels_]);
 }
@@ -159,7 +156,7 @@ scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
   encoded_packet->set_channels(channels_);
 
   int prefetch_samples =
-      resampler_.get() ? media::SincResampler::kMaximumLookAheadSize : 0;
+      resampler_.get() ? media::SincResampler::kDefaultRequestSize : 0;
   int samples_wanted = frame_size_ + prefetch_samples;
 
   while (leftover_samples_ + samples_in_packet >= samples_wanted) {
@@ -181,7 +178,7 @@ scoped_ptr<AudioPacket> AudioEncoderOpus::Encode(
       resampling_data_ = reinterpret_cast<const char*>(pcm_buffer);
       resampling_data_pos_ = 0;
       resampling_data_size_ = samples_wanted * channels_ * kBytesPerSample;
-      resampler_->Resample(resampler_bus_.get(), kFrameSamples);
+      resampler_->Resample(kFrameSamples, resampler_bus_.get());
       resampling_data_ = NULL;
       samples_consumed = resampling_data_pos_ / channels_ / kBytesPerSample;
 

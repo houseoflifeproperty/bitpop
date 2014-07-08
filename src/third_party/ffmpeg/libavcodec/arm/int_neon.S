@@ -1,6 +1,6 @@
 /*
  * ARM NEON optimised integer operations
- * Copyright (c) 2009 Kostya Shishkov
+ * Copyright (c) 2009 Konstantin Shishkov
  *
  * This file is part of FFmpeg.
  *
@@ -21,7 +21,6 @@
 
 #include "libavutil/arm/asm.S"
 
-        preserve8
         .fpu neon
 
 function ff_scalarproduct_int16_neon, export=1

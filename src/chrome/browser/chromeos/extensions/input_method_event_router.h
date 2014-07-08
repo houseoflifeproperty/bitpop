@@ -9,7 +9,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
+#include "chromeos/ime/input_method_manager.h"
+
+namespace content {
+class BrowserContext;
+}
 
 namespace chromeos {
 
@@ -17,17 +21,17 @@ namespace chromeos {
 class ExtensionInputMethodEventRouter
     : public input_method::InputMethodManager::Observer {
  public:
-  ExtensionInputMethodEventRouter();
+  explicit ExtensionInputMethodEventRouter(content::BrowserContext* context);
   virtual ~ExtensionInputMethodEventRouter();
 
   // Implements input_method::InputMethodManager::Observer:
   virtual void InputMethodChanged(
       input_method::InputMethodManager* manager,
       bool show_message) OVERRIDE;
-  virtual void InputMethodPropertyChanged(
-      input_method::InputMethodManager* manager) OVERRIDE {}
 
  private:
+  content::BrowserContext* context_;
+
   DISALLOW_COPY_AND_ASSIGN(ExtensionInputMethodEventRouter);
 };
 

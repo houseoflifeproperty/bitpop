@@ -39,17 +39,25 @@ def getAllRevisions(build):
     pass
 
 
-def getLatestRevision(build):
+def getLatestRevision(build, git_repo=None):
   """Helper method to extract the latest revision associated to a build.
 
   Args:
     build: The build we want to extract the latest revision of.
+    git_repo: The GitHelper object associated with build's respository.
+        If passed, the VCS is assumed to be Git.
 
   Returns:
     The latest revision of that build, or None, if none.
   """
   revisions = getAllRevisions(build)
-  if revisions:
+  if not revisions:
+    return None
+
+  if git_repo:
+    with_numbers = zip(revisions, git_repo.number(*revisions))
+    return max(with_numbers, lambda t: t[1])[0][0]
+  else:
     return max(revisions)
 
 
@@ -75,6 +83,14 @@ def SplitPath(projects, path):
     return (branch, '/'.join(pieces))
   # not in projects, ignore
   return None
+
+
+def GetStepsByName(build_status, step_names):
+  steps = []
+  for step in build_status.getSteps():
+    if step.getName() in step_names:
+      steps.append(step)
+  return steps
 
 
 # Extracted from
@@ -137,12 +153,14 @@ def EmailableBuildTable(build_status, waterfall_url, styles=None):
                       if step.isStarted() and step.getText()])
   table_content = ''.join(build_boxes)
   return (('<table style="border-spacing: 1px 1px; font-weight: bold; '
-           'padding: 3px 0px 3px 0px; text-align: center;">\n') +
+           'padding: 3px 0px 3px 0px; text-align: center; font-size: 10px; '
+           'font-family: Verdana, Cursor; ">\n') +
           table_content +
           '</table>\n')
 
 
-def EmailableBuildTable_bb8(build_status, waterfall_url, styles=None):
+def EmailableBuildTable_bb8(build_status, waterfall_url, styles=None,
+                            step_names=None):
   """Uses new web reporting API in buildbot8."""
 
   styles = styles or DEFAULT_STYLES
@@ -190,11 +208,17 @@ def EmailableBuildTable_bb8(build_status, waterfall_url, styles=None):
     return fmt % (style, '<br/>'.join(text))
 
   build_boxes = [GenBuildBox(build_status)]
-  build_boxes.extend([GenStepBox(step) for step in build_status.getSteps()
-                      if step.isStarted() and step.getText()])
+  if step_names:
+    steps = GetStepsByName(build_status, step_names)
+  else:
+    steps = [step for step in build_status.getSteps()
+             if step.isStarted() and step.getText()]
+  build_boxes.extend(
+      [GenStepBox(step) for step in steps if not step.isHidden()])
   table_content = ''.join(build_boxes)
   return (('<table style="border-spacing: 1px 1px; font-weight: bold; '
-           'padding: 3px 0px 3px 0px; text-align: center;">\n') +
+           'padding: 3px 0px 3px 0px; text-align: center; font-size: 10px; '
+           'font-family: Verdana, Cursor; ">\n') +
           table_content +
           '</table>\n')
 
@@ -213,6 +237,14 @@ class FakeBuild(object):
 
   def getProperties(self):
     return self
+
+  def asDict(self):
+    # The dictionary returned from a Properties object is in the form:
+    #   {'name': (value, 'source')}
+    ret = {}
+    for k, v in self.properties.iteritems():
+      ret[k] = (v, 'FakeBuild')
+    return ret
 
   def render(self, words):
     # pylint: disable=R0201

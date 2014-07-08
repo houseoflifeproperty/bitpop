@@ -4,7 +4,7 @@
 
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/process_util.h"
+#include "base/process/process_iterator.h"
 #include "base/test/test_suite.h"
 #include "base/win/windows_version.h"
 #include "chrome/common/chrome_switches.h"
@@ -19,22 +19,22 @@ void BackUpProfile(bool chrome_frame) {
            "Please close Chrome and run the tests again.\n");
     exit(1);
   }
-  FilePath path;
+  base::FilePath path;
   installer_test::GetChromeInstallDirectory(false /* system_level */, &path);
   path = path.Append(mini_installer_constants::kChromeAppDir).DirName();
-  FilePath backup_path = path;
+  base::FilePath backup_path = path;
   // Will hold User Data path that needs to be backed-up.
   path = path.Append(mini_installer_constants::kChromeUserDataDir);
   // Will hold new backup path to save the profile.
   backup_path = backup_path.Append(
       mini_installer_constants::kChromeUserDataBackupDir);
   // Will check if User Data profile is available.
-  if (file_util::PathExists(path)) {
+  if (base::PathExists(path)) {
     // Will check if User Data is already backed up.
     // If yes, will delete and create new one.
-    if (file_util::PathExists(backup_path))
-      file_util::Delete(backup_path, true);
-    file_util::CopyDirectory(path, backup_path, true);
+    if (base::PathExists(backup_path))
+      base::DeleteFile(backup_path, true);
+    base::CopyDirectory(path, backup_path, true);
   } else {
     printf("Chrome is not installed. Will not take any backup\n");
   }

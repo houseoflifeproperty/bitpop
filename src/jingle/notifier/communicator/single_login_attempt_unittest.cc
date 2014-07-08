@@ -8,11 +8,11 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/notifier/base/const_communicator.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "jingle/notifier/communicator/login_settings.h"
-#include "net/base/mock_host_resolver.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/url_request/url_request_test_util.h"
 #include "talk/xmllite/xmlelement.h"
 #include "talk/xmpp/constants.h"
@@ -35,7 +35,7 @@ class FakeDelegate : public SingleLoginAttempt::Delegate {
  public:
   FakeDelegate() : state_(IDLE) {}
 
-  void OnConnect(
+  virtual void OnConnect(
       base::WeakPtr<buzz::XmppTaskParentInterface> base_task) OVERRIDE {
     state_ = CONNECTED;
     base_task_ = base_task;
@@ -95,22 +95,27 @@ class SingleLoginAttemptTest : public ::testing::Test {
                   net::HostPortPair("example.com", 100), SUPPORTS_SSLTCP)),
           false /* try_ssltcp_first */,
           "auth_mechanism"),
-        attempt_(login_settings_, &fake_delegate_) {}
+        attempt_(new SingleLoginAttempt(login_settings_, &fake_delegate_)) {}
 
   virtual void TearDown() OVERRIDE {
     message_loop_.RunUntilIdle();
   }
 
   void FireRedirect(buzz::XmlElement* redirect_error) {
-    attempt_.OnError(buzz::XmppEngine::ERROR_STREAM, 0, redirect_error);
+    attempt_->OnError(buzz::XmppEngine::ERROR_STREAM, 0, redirect_error);
+  }
+
+  virtual ~SingleLoginAttemptTest() {
+    attempt_.reset();
+    message_loop_.RunUntilIdle();
   }
 
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   const LoginSettings login_settings_;
 
  protected:
-  SingleLoginAttempt attempt_;
+  scoped_ptr<SingleLoginAttempt> attempt_;
   FakeDelegate fake_delegate_;
   FakeBaseTask fake_base_task_;
 };
@@ -118,7 +123,7 @@ class SingleLoginAttemptTest : public ::testing::Test {
 // Fire OnConnect and make sure the base task gets passed to the
 // delegate properly.
 TEST_F(SingleLoginAttemptTest, Basic) {
-  attempt_.OnConnect(fake_base_task_.AsWeakPtr());
+  attempt_->OnConnect(fake_base_task_.AsWeakPtr());
   EXPECT_EQ(CONNECTED, fake_delegate_.state());
   EXPECT_EQ(fake_base_task_.AsWeakPtr().get(),
             fake_delegate_.base_task().get());
@@ -129,7 +134,7 @@ TEST_F(SingleLoginAttemptTest, Basic) {
 TEST_F(SingleLoginAttemptTest, Error) {
   for (int i = 0; i < 2; ++i) {
     EXPECT_EQ(IDLE, fake_delegate_.state());
-    attempt_.OnError(buzz::XmppEngine::ERROR_NONE, 0, NULL);
+    attempt_->OnError(buzz::XmppEngine::ERROR_NONE, 0, NULL);
   }
   EXPECT_EQ(SETTINGS_EXHAUSTED, fake_delegate_.state());
 }
@@ -137,8 +142,8 @@ TEST_F(SingleLoginAttemptTest, Error) {
 // Fire OnErrors but replace the last one with OnConnect, and make
 // sure the delegate still gets the OnConnect message.
 TEST_F(SingleLoginAttemptTest, ErrorThenSuccess) {
-  attempt_.OnError(buzz::XmppEngine::ERROR_NONE, 0, NULL);
-  attempt_.OnConnect(fake_base_task_.AsWeakPtr());
+  attempt_->OnError(buzz::XmppEngine::ERROR_NONE, 0, NULL);
+  attempt_->OnConnect(fake_base_task_.AsWeakPtr());
   EXPECT_EQ(CONNECTED, fake_delegate_.state());
   EXPECT_EQ(fake_base_task_.AsWeakPtr().get(),
             fake_delegate_.base_task().get());
@@ -219,7 +224,7 @@ TEST_F(SingleLoginAttemptTest, RedirectInvalidPort) {
 // Fire an empty redirect and make sure the delegate does not get a
 // redirect.
 TEST_F(SingleLoginAttemptTest, RedirectEmpty) {
-  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(""));
+  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(std::string()));
   FireRedirect(redirect_error.get());
   EXPECT_EQ(IDLE, fake_delegate_.state());
 }
@@ -227,7 +232,7 @@ TEST_F(SingleLoginAttemptTest, RedirectEmpty) {
 // Fire a redirect with a missing text element and make sure the
 // delegate does not get a redirect.
 TEST_F(SingleLoginAttemptTest, RedirectMissingText) {
-  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(""));
+  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(std::string()));
   redirect_error->RemoveChildAfter(redirect_error->FirstChild());
   FireRedirect(redirect_error.get());
   EXPECT_EQ(IDLE, fake_delegate_.state());
@@ -236,7 +241,7 @@ TEST_F(SingleLoginAttemptTest, RedirectMissingText) {
 // Fire a redirect with a missing see-other-host element and make sure
 // the delegate does not get a redirect.
 TEST_F(SingleLoginAttemptTest, RedirectMissingSeeOtherHost) {
-  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(""));
+  scoped_ptr<buzz::XmlElement> redirect_error(MakeRedirectError(std::string()));
   redirect_error->RemoveChildAfter(NULL);
   FireRedirect(redirect_error.get());
   EXPECT_EQ(IDLE, fake_delegate_.state());
@@ -245,7 +250,7 @@ TEST_F(SingleLoginAttemptTest, RedirectMissingSeeOtherHost) {
 // Fire 'Unauthorized' errors and make sure the delegate gets the
 // OnCredentialsRejected() event.
 TEST_F(SingleLoginAttemptTest, CredentialsRejected) {
-  attempt_.OnError(buzz::XmppEngine::ERROR_UNAUTHORIZED, 0, NULL);
+  attempt_->OnError(buzz::XmppEngine::ERROR_UNAUTHORIZED, 0, NULL);
   EXPECT_EQ(CREDENTIALS_REJECTED, fake_delegate_.state());
 }
 

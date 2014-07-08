@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "ui/gl/gl_egl_api_implementation.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gfx {
 
 RealEGLApi* g_real_egl;
 
-void InitializeGLBindingsEGL() {
-  g_driver_egl.InitializeBindings();
+void InitializeStaticGLBindingsEGL() {
+  g_driver_egl.InitializeStaticBindings();
   if (!g_real_egl) {
     g_real_egl = new RealEGLApi();
   }
@@ -17,8 +18,8 @@ void InitializeGLBindingsEGL() {
   g_current_egl_context = g_real_egl;
 }
 
-void InitializeGLExtensionBindingsEGL(GLContext* context) {
-  g_driver_egl.InitializeExtensionBindings(context);
+void InitializeDynamicGLBindingsEGL(GLContext* context) {
+  g_driver_egl.InitializeDynamicBindings(context);
 }
 
 void InitializeDebugGLBindingsEGL() {
@@ -59,6 +60,24 @@ RealEGLApi::~RealEGLApi() {
 
 void RealEGLApi::Initialize(DriverEGL* driver) {
   InitializeBase(driver);
+}
+
+TraceEGLApi::~TraceEGLApi() {
+}
+
+bool GetGLWindowSystemBindingInfoEGL(GLWindowSystemBindingInfo* info) {
+  EGLDisplay display = eglGetCurrentDisplay();
+  const char* vendor = eglQueryString(display, EGL_VENDOR);
+  const char* version = eglQueryString(display, EGL_VERSION);
+  const char* extensions = eglQueryString(display, EGL_EXTENSIONS);
+  *info = GLWindowSystemBindingInfo();
+  if (vendor)
+    info->vendor = vendor;
+  if (version)
+    info->version = version;
+  if (extensions)
+    info->extensions = extensions;
+  return true;
 }
 
 }  // namespace gfx

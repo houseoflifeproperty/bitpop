@@ -6,54 +6,58 @@
 
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/time/time.h"
 #include "media/audio/sample_rates.h"
 #include "media/base/limits.h"
+#include "media/base/sample_format.h"
 
 namespace media {
 
 AudioDecoderConfig::AudioDecoderConfig()
     : codec_(kUnknownAudioCodec),
-      bits_per_channel_(0),
+      sample_format_(kUnknownSampleFormat),
+      bytes_per_channel_(0),
       channel_layout_(CHANNEL_LAYOUT_UNSUPPORTED),
       samples_per_second_(0),
       bytes_per_frame_(0),
-      extra_data_size_(0),
-      is_encrypted_(false) {
+      is_encrypted_(false),
+      codec_delay_(0) {
 }
 
 AudioDecoderConfig::AudioDecoderConfig(AudioCodec codec,
-                                       int bits_per_channel,
+                                       SampleFormat sample_format,
                                        ChannelLayout channel_layout,
                                        int samples_per_second,
                                        const uint8* extra_data,
                                        size_t extra_data_size,
                                        bool is_encrypted) {
-  Initialize(codec, bits_per_channel, channel_layout, samples_per_second,
-             extra_data, extra_data_size, is_encrypted, true);
+  Initialize(codec, sample_format, channel_layout, samples_per_second,
+             extra_data, extra_data_size, is_encrypted, true,
+             base::TimeDelta(), 0);
 }
 
 void AudioDecoderConfig::Initialize(AudioCodec codec,
-                                    int bits_per_channel,
+                                    SampleFormat sample_format,
                                     ChannelLayout channel_layout,
                                     int samples_per_second,
                                     const uint8* extra_data,
                                     size_t extra_data_size,
                                     bool is_encrypted,
-                                    bool record_stats) {
+                                    bool record_stats,
+                                    base::TimeDelta seek_preroll,
+                                    int codec_delay) {
   CHECK((extra_data_size != 0) == (extra_data != NULL));
 
   if (record_stats) {
     UMA_HISTOGRAM_ENUMERATION("Media.AudioCodec", codec, kAudioCodecMax + 1);
-    // Fake enum histogram to get exact integral buckets.  Expect to never see
-    // any values over 32 and even that is huge.
-    UMA_HISTOGRAM_ENUMERATION("Media.AudioBitsPerChannel", bits_per_channel,
-                              40);
+    UMA_HISTOGRAM_ENUMERATION("Media.AudioSampleFormat", sample_format,
+                              kSampleFormatMax + 1);
     UMA_HISTOGRAM_ENUMERATION("Media.AudioChannelLayout", channel_layout,
-                              CHANNEL_LAYOUT_MAX);
-    AudioSampleRate asr = media::AsAudioSampleRate(samples_per_second);
-    if (asr != kUnexpectedAudioSampleRate) {
+                              CHANNEL_LAYOUT_MAX + 1);
+    AudioSampleRate asr;
+    if (ToAudioSampleRate(samples_per_second, &asr)) {
       UMA_HISTOGRAM_ENUMERATION("Media.AudioSamplesPerSecond", asr,
-                                kUnexpectedAudioSampleRate);
+                                kAudioSampleRateMax + 1);
     } else {
       UMA_HISTOGRAM_COUNTS(
           "Media.AudioSamplesPerSecondUnexpected", samples_per_second);
@@ -61,87 +65,60 @@ void AudioDecoderConfig::Initialize(AudioCodec codec,
   }
 
   codec_ = codec;
-  bits_per_channel_ = bits_per_channel;
   channel_layout_ = channel_layout;
   samples_per_second_ = samples_per_second;
-  extra_data_size_ = extra_data_size;
-
-  if (extra_data_size_ > 0) {
-    extra_data_.reset(new uint8[extra_data_size_]);
-    memcpy(extra_data_.get(), extra_data, extra_data_size_);
-  } else {
-    extra_data_.reset();
-  }
-
+  sample_format_ = sample_format;
+  bytes_per_channel_ = SampleFormatToBytesPerChannel(sample_format);
+  extra_data_.assign(extra_data, extra_data + extra_data_size);
   is_encrypted_ = is_encrypted;
+  seek_preroll_ = seek_preroll;
+  codec_delay_ = codec_delay;
 
   int channels = ChannelLayoutToChannelCount(channel_layout_);
-  bytes_per_frame_ = channels * bits_per_channel_ / 8;
+  bytes_per_frame_ = channels * bytes_per_channel_;
 }
 
 AudioDecoderConfig::~AudioDecoderConfig() {}
 
 bool AudioDecoderConfig::IsValidConfig() const {
   return codec_ != kUnknownAudioCodec &&
-      channel_layout_ != CHANNEL_LAYOUT_UNSUPPORTED &&
-      bits_per_channel_ > 0 &&
-      bits_per_channel_ <= limits::kMaxBitsPerSample &&
-      samples_per_second_ > 0 &&
-      samples_per_second_ <= limits::kMaxSampleRate;
+         channel_layout_ != CHANNEL_LAYOUT_UNSUPPORTED &&
+         bytes_per_channel_ > 0 &&
+         bytes_per_channel_ <= limits::kMaxBytesPerSample &&
+         samples_per_second_ > 0 &&
+         samples_per_second_ <= limits::kMaxSampleRate &&
+         sample_format_ != kUnknownSampleFormat &&
+         seek_preroll_ >= base::TimeDelta() &&
+         codec_delay_ >= 0;
 }
 
 bool AudioDecoderConfig::Matches(const AudioDecoderConfig& config) const {
   return ((codec() == config.codec()) &&
-          (bits_per_channel() == config.bits_per_channel()) &&
+          (bytes_per_channel() == config.bytes_per_channel()) &&
           (channel_layout() == config.channel_layout()) &&
           (samples_per_second() == config.samples_per_second()) &&
           (extra_data_size() == config.extra_data_size()) &&
           (!extra_data() || !memcmp(extra_data(), config.extra_data(),
                                     extra_data_size())) &&
-          (is_encrypted() == config.is_encrypted()));
+          (is_encrypted() == config.is_encrypted()) &&
+          (sample_format() == config.sample_format()) &&
+          (seek_preroll() == config.seek_preroll()) &&
+          (codec_delay() == config.codec_delay()));
 }
 
-void AudioDecoderConfig::CopyFrom(const AudioDecoderConfig& audio_config) {
-  Initialize(audio_config.codec(),
-             audio_config.bits_per_channel(),
-             audio_config.channel_layout(),
-             audio_config.samples_per_second(),
-             audio_config.extra_data(),
-             audio_config.extra_data_size(),
-             audio_config.is_encrypted(),
-             false);
-}
-
-AudioCodec AudioDecoderConfig::codec() const {
-  return codec_;
-}
-
-int AudioDecoderConfig::bits_per_channel() const {
-  return bits_per_channel_;
-}
-
-ChannelLayout AudioDecoderConfig::channel_layout() const {
-  return channel_layout_;
-}
-
-int AudioDecoderConfig::samples_per_second() const {
-  return samples_per_second_;
-}
-
-int AudioDecoderConfig::bytes_per_frame() const {
-  return bytes_per_frame_;
-}
-
-uint8* AudioDecoderConfig::extra_data() const {
-  return extra_data_.get();
-}
-
-size_t AudioDecoderConfig::extra_data_size() const {
-  return extra_data_size_;
-}
-
-bool AudioDecoderConfig::is_encrypted() const {
-  return is_encrypted_;
+std::string AudioDecoderConfig::AsHumanReadableString() const {
+  std::ostringstream s;
+  s << "codec: " << codec()
+    << " bytes_per_channel: " << bytes_per_channel()
+    << " channel_layout: " << channel_layout()
+    << " samples_per_second: " << samples_per_second()
+    << " sample_format: " << sample_format()
+    << " bytes_per_frame: " << bytes_per_frame()
+    << " seek_preroll: " << seek_preroll().InMilliseconds() << "ms"
+    << " codec_delay: " << codec_delay()
+    << " has extra data? " << (extra_data() ? "true" : "false")
+    << " encrypted? " << (is_encrypted() ? "true" : "false");
+  return s.str();
 }
 
 }  // namespace media

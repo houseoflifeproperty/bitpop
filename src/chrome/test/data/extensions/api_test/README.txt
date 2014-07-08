@@ -15,7 +15,7 @@ bookmark_extension_apitest.cc for an example.
 
 (2) Create an extension of in this directory of the same name as the extension
 that your test referred to ("extension_name" above).  This test should load
-either a background page which immediately starts its test.
+a background page which immediately starts its test.
 
 (3) In your extension page, call chrome.test.runTests with an array of
 functions which represent your subtests.  Each of these functions will most
@@ -61,7 +61,7 @@ chrome.test.runTests([
 
 Note that chrome.test.callbackFail takes an argument which is the error message
 that it expects to get when the callback fails
-(chrome.extension.lastError.message).
+(chrome.runtime.lastError.message).
 
 Here's what the output of this test might look like:
 [==========] Running 1 test from 1 test case.

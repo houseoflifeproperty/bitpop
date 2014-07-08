@@ -19,30 +19,32 @@
 #include <Cocoa/Cocoa.h>
 
 #include "base/logging.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/extensions/extension_view_host.h"
+#include "chrome/browser/extensions/extension_view_host_factory.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/web_contents.h"
+#include "extensions/common/extension.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/runtime_data.h"
 
 using content::WebContents;
 using extensions::Extension;
 using extensions::ExtensionSystem;
-using extensions::ExtensionSystemFactory;
 using extensions::UnloadedExtensionInfo;
 
 namespace {
@@ -96,13 +98,13 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
   explicit SidebarExtensionNotificationBridge(FacebookSidebarController* controller)
     : controller_(controller) {}
 
-  void Observe(int type,
+  virtual void Observe(int type,
                const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
+               const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
       case chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING: {
         if (content::Details<extensions::ExtensionHost>(
-                [controller_ extension_host]) == details) {
+                [controller_ extension_view_host]) == details) {
           // ---
         }
         break;
@@ -113,26 +115,8 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
         break;
       }
 
-      case chrome::NOTIFICATION_EXTENSION_LOADED: {
-        Extension* extension = content::Details<Extension>(details).ptr();
-        if (extension->id() == chrome::kFacebookChatExtensionId) {
-          [controller_ initializeExtensionHostWithExtensionLoaded:YES];
-        }
-        break;
-      }
-
-      case chrome::NOTIFICATION_EXTENSION_UNLOADED: {
-        UnloadedExtensionInfo* info =
-            content::Details<UnloadedExtensionInfo>(details).ptr();
-        if (info->extension->id() == chrome::kFacebookChatExtensionId) {
-          [controller_ removeAllChildViews];
-          [controller_ invalidateExtensionHost];
-        }
-        break;
-      }
-
       case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
-        if (content::Details<extensions::ExtensionHost>([controller_ extension_host]) == details) {
+        if (content::Details<extensions::ExtensionHost>([controller_ extension_view_host]) == details) {
           [controller_ removeAllChildViews];
         }
 
@@ -149,6 +133,39 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
  private:
   FacebookSidebarController* controller_;
 
+};
+
+class SidebarLoadedObserver : public extensions::ExtensionRegistryObserver {
+ public:
+  SidebarLoadedObserver(FacebookSidebarController* owner)
+    : owner_(owner), processExtensionLoaded_(false) {}
+
+  virtual void OnExtensionLoaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension) OVERRIDE {
+    if (processExtensionLoaded_) {
+      if (extension->id() == chrome::kFacebookChatExtensionId) {
+        [owner_ initializeExtensionHostWithExtensionLoaded:YES];
+      }
+    }
+  }
+  
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason) OVERRIDE {
+    if (extension->id() == chrome::kFacebookChatExtensionId) {
+      [owner_ removeAllChildViews];
+      [owner_ invalidateExtensionHost];
+    }
+  }
+
+  void set_process_extension_loaded(bool process_extension_loaded) {
+    processExtensionLoaded_ = process_extension_loaded;
+  }
+
+ private:
+  FacebookSidebarController* owner_;
+  bool processExtensionLoaded_;
 };
 
 @implementation FacebookSidebarController
@@ -177,13 +194,15 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
         object:[self view]
     ];
 
+    sidebar_loaded_observer_.reset(new SidebarLoadedObserver(self));
+
     [self initializeExtensionHostWithExtensionLoaded:NO];
   }
   return self;
 }
 
 - (void)loadView {
-  scoped_nsobject<NSView> view([[BackgroundSidebarView alloc] initWithFrame:NSZeroRect]);
+  base::scoped_nsobject<NSView> view([[BackgroundSidebarView alloc] initWithFrame:NSZeroRect]);
   [view setAutoresizingMask:NSViewMinXMargin | NSViewHeightSizable];
   [view setAutoresizesSubviews:NO];
   [view setPostsFrameChangedNotifications:YES];
@@ -196,8 +215,8 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
   [super dealloc];
 }
 
-- (extensions::ExtensionHost*)extension_host {
-  return extension_host_.get();
+- (extensions::ExtensionViewHost*)extension_view_host {
+  return extension_view_host_.get();
 }
 
 - (CGFloat)maxWidth {
@@ -215,35 +234,32 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
     return;
   }
 
-  if (!service->IsBackgroundPageReady(sidebar_extension)) {
+  if (!ExtensionSystem::Get(profile)->runtime_data()->IsBackgroundPageReady(
+      sidebar_extension)) {
     registrar_.RemoveAll();
     registrar_.Add(notification_bridge_.get(),
                    chrome::NOTIFICATION_EXTENSION_BACKGROUND_PAGE_READY,
                    content::Source<Extension>(sidebar_extension));
+    extensions::ExtensionRegistry::Get(profile)->AddObserver(
+        sidebar_loaded_observer_.get());
     if (!loaded)
-      registrar_.Add(notification_bridge_.get(),
-                     chrome::NOTIFICATION_EXTENSION_LOADED,
-                     content::Source<Profile>(profile));
-    registrar_.Add(notification_bridge_.get(),
-                   chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                   content::Source<Profile>(profile));
+      sidebar_loaded_observer_->set_process_extension_loaded(true);
     return;
   }
 
   std::string url = std::string("chrome-extension://") +
       std::string(chrome::kFacebookChatExtensionId) +
       std::string("/roster.html");
-  ExtensionProcessManager* manager =
-      ExtensionSystem::Get(profile)->process_manager();
   
-  extension_host_.reset(manager->CreateViewHost(GURL(url), browser_,
-                                            chrome::VIEW_TYPE_PANEL));
-  if (extension_host_.get()) {
-    gfx::NativeView native_view = extension_host_->view()->native_view();
+  extension_view_host_.reset(
+    extensions::ExtensionViewHostFactory::CreatePopupHost(
+      GURL(url), browser_));
+  if (extension_view_host_.get()) {
+    gfx::NativeView native_view = extension_view_host_->view()->native_view();
     NSRect container_bounds = [[self view] bounds];
     [native_view setFrame:container_bounds];
     [[self view] addSubview:native_view];
-    extension_host_->view()->set_container(extension_container_.get());
+    extension_view_host_->view()->set_container(extension_container_.get());
 
     [native_view setNeedsDisplay:YES];
 
@@ -251,12 +267,12 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
     registrar_.Add(notification_bridge_.get(),
                    chrome::NOTIFICATION_EXTENSION_HOST_DID_STOP_LOADING,
                    content::Source<extensions::ExtensionHost>(
-                      extension_host_.get()));
+                      extension_view_host_.get()));
 
     // Listen for the containing view calling window.close();
     registrar_.Add(notification_bridge_.get(),
                    chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
-                   content::Source<Profile>(extension_host_->profile()));
+                   content::Source<content::BrowserContext>(extension_view_host_->browser_context()));
   }
 }
 
@@ -272,19 +288,19 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
   sidebarVisible_ = visible;
   [[self view] setHidden:!visible];
 
-  if (!extension_host_.get())
+  if (!extension_view_host_.get())
     return;
 
-  gfx::NativeView native_view = extension_host_->view()->native_view();
+  gfx::NativeView native_view = extension_view_host_->view()->native_view();
   [native_view setNeedsDisplay:YES];
   [[self view] setNeedsDisplay:YES];
 }
 
 - (void)sizeChanged {
-  if (!extension_host_.get())
+  if (!extension_view_host_.get())
     return;
 
-  gfx::NativeView native_view = extension_host_->view()->native_view();
+  gfx::NativeView native_view = extension_view_host_->view()->native_view();
   NSRect container_bounds = [[self view] bounds];
   [native_view setFrame:container_bounds];
 
@@ -297,7 +313,7 @@ class SidebarExtensionNotificationBridge : public content::NotificationObserver 
 }
 
 - (void)invalidateExtensionHost {
-  extension_host_.reset();
+  extension_view_host_.reset();
 }
 
 @end

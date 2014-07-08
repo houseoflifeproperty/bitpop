@@ -7,12 +7,13 @@
 #include <set>
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "remoting/base/constants.h"
-#include "remoting/host/host_key_pair.h"
-#include "remoting/host/test_key_pair.h"
+#include "remoting/base/rsa_key_pair.h"
+#include "remoting/base/test_rsa_key_pair.h"
 #include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/jingle_glue/mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -34,9 +35,23 @@ using testing::SaveArg;
 namespace remoting {
 
 namespace {
+
+const char kTestBotJid[] = "remotingunittest@bot.talk.google.com";
 const char kHostId[] = "0";
 const char kTestJid[] = "user@gmail.com/chromoting123";
 const char kStanzaId[] = "123";
+
+class MockListener : public HeartbeatSender::Listener {
+ public:
+  // Overridden from HeartbeatSender::Listener
+  virtual void OnUnknownHostIdError() OVERRIDE {
+    NOTREACHED();
+  }
+
+  // Overridden from HeartbeatSender::Listener
+  MOCK_METHOD0(OnHeartbeatSuccessful, void());
+};
+
 }  // namespace
 
 ACTION_P(AddListener, list) {
@@ -48,16 +63,11 @@ ACTION_P(RemoveListener, list) {
 }
 
 class HeartbeatSenderTest
-    : public testing::Test,
-      public HeartbeatSender::Listener {
+    : public testing::Test {
  protected:
-  // Overridden from HeartbeatSender::Listener
-  virtual void OnUnknownHostIdError() OVERRIDE {
-    NOTREACHED();
-  }
-
   virtual void SetUp() OVERRIDE {
-    ASSERT_TRUE(key_pair_.LoadFromString(kTestHostKeyPair));
+    key_pair_ = RsaKeyPair::FromString(kTestRsaKeyPair);
+    ASSERT_TRUE(key_pair_.get());
 
     EXPECT_CALL(signal_strategy_, GetState())
         .WillOnce(Return(SignalStrategy::DISCONNECTED));
@@ -68,8 +78,8 @@ class HeartbeatSenderTest
     EXPECT_CALL(signal_strategy_, GetLocalJid())
         .WillRepeatedly(Return(kTestJid));
 
-    heartbeat_sender_.reset(
-        new HeartbeatSender(this, kHostId, &signal_strategy_, &key_pair_));
+    heartbeat_sender_.reset(new HeartbeatSender(
+        &mock_listener_, kHostId, &signal_strategy_, key_pair_, kTestBotJid));
   }
 
   virtual void TearDown() OVERRIDE {
@@ -80,10 +90,11 @@ class HeartbeatSenderTest
   void ValidateHeartbeatStanza(XmlElement* stanza,
                                const char* expectedSequenceId);
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockSignalStrategy signal_strategy_;
+  MockListener mock_listener_;
   std::set<SignalStrategy::Listener*> signal_strategy_listeners_;
-  HostKeyPair key_pair_;
+  scoped_refptr<RsaKeyPair> key_pair_;
   scoped_ptr<HeartbeatSender> heartbeat_sender_;
 };
 
@@ -98,14 +109,14 @@ TEST_F(HeartbeatSenderTest, DoSendStanza) {
       .WillOnce(DoAll(SaveArg<0>(&sent_iq), Return(true)));
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::CONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<XmlElement> stanza(sent_iq);
   ASSERT_TRUE(stanza != NULL);
   ValidateHeartbeatStanza(stanza.get(), "0");
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::DISCONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Call Start() followed by Stop(), twice, and make sure two valid heartbeats
@@ -120,14 +131,14 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaTwice) {
       .WillOnce(DoAll(SaveArg<0>(&sent_iq), Return(true)));
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::CONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<XmlElement> stanza(sent_iq);
   ASSERT_TRUE(stanza != NULL);
   ValidateHeartbeatStanza(stanza.get(), "0");
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::DISCONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_CALL(signal_strategy_, GetLocalJid())
       .WillRepeatedly(Return(kTestJid));
@@ -137,13 +148,13 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaTwice) {
       .WillOnce(DoAll(SaveArg<0>(&sent_iq), Return(true)));
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::CONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<XmlElement> stanza2(sent_iq);
   ValidateHeartbeatStanza(stanza2.get(), "1");
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::DISCONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Call Start() followed by Stop(), make sure a valid Iq stanza is sent,
@@ -159,7 +170,7 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaWithExpectedSequenceId) {
       .WillOnce(DoAll(SaveArg<0>(&sent_iq), Return(true)));
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::CONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<XmlElement> stanza(sent_iq);
   ASSERT_TRUE(stanza != NULL);
@@ -172,11 +183,12 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaWithExpectedSequenceId) {
       .WillOnce(Return(kStanzaId + 1));
   EXPECT_CALL(signal_strategy_, SendStanzaPtr(NotNull()))
       .WillOnce(DoAll(SaveArg<0>(&sent_iq2), Return(true)));
+  EXPECT_CALL(mock_listener_, OnHeartbeatSuccessful());
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  XmlElement* result = new XmlElement(
-      QName(kChromotingXmlNamespace, "heartbeat-result"));
+  response->AddAttr(QName(std::string(), "type"), "result");
+  XmlElement* result =
+      new XmlElement(QName(kChromotingXmlNamespace, "heartbeat-result"));
   response->AddElement(result);
   XmlElement* expected_sequence_id = new XmlElement(
       QName(kChromotingXmlNamespace, "expected-sequence-id"));
@@ -184,7 +196,7 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaWithExpectedSequenceId) {
   const int kExpectedSequenceId = 456;
   expected_sequence_id->AddText(base::IntToString(kExpectedSequenceId));
   heartbeat_sender_->ProcessResponse(NULL, response.get());
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   scoped_ptr<XmlElement> stanza2(sent_iq2);
   ASSERT_TRUE(stanza2 != NULL);
@@ -192,13 +204,15 @@ TEST_F(HeartbeatSenderTest, DoSendStanzaWithExpectedSequenceId) {
                           base::IntToString(kExpectedSequenceId).c_str());
 
   heartbeat_sender_->OnSignalStrategyStateChange(SignalStrategy::DISCONNECTED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 // Verify that ProcessResponse parses set-interval result.
 TEST_F(HeartbeatSenderTest, ProcessResponseSetInterval) {
+  EXPECT_CALL(mock_listener_, OnHeartbeatSuccessful());
+
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
+  response->AddAttr(QName(std::string(), "type"), "result");
 
   XmlElement* result = new XmlElement(
       QName(kChromotingXmlNamespace, "heartbeat-result"));
@@ -219,9 +233,9 @@ TEST_F(HeartbeatSenderTest, ProcessResponseSetInterval) {
 // Validate a heartbeat stanza.
 void HeartbeatSenderTest::ValidateHeartbeatStanza(
     XmlElement* stanza, const char* expectedSequenceId) {
-  EXPECT_EQ(stanza->Attr(buzz::QName("", "to")),
-            std::string(kChromotingBotJid));
-  EXPECT_EQ(stanza->Attr(buzz::QName("", "type")), "set");
+  EXPECT_EQ(stanza->Attr(buzz::QName(std::string(), "to")),
+            std::string(kTestBotJid));
+  EXPECT_EQ(stanza->Attr(buzz::QName(std::string(), "type")), "set");
   XmlElement* heartbeat_stanza =
       stanza->FirstNamed(QName(kChromotingXmlNamespace, "heartbeat"));
   ASSERT_TRUE(heartbeat_stanza != NULL);
@@ -235,10 +249,10 @@ void HeartbeatSenderTest::ValidateHeartbeatStanza(
   ASSERT_TRUE(signature != NULL);
   EXPECT_TRUE(heartbeat_stanza->NextNamed(signature_tag) == NULL);
 
-  HostKeyPair key_pair;
-  key_pair.LoadFromString(kTestHostKeyPair);
+  scoped_refptr<RsaKeyPair> key_pair = RsaKeyPair::FromString(kTestRsaKeyPair);
+  ASSERT_TRUE(key_pair.get());
   std::string expected_signature =
-      key_pair.GetSignature(std::string(kTestJid) + ' ' + expectedSequenceId);
+      key_pair->SignMessage(std::string(kTestJid) + ' ' + expectedSequenceId);
   EXPECT_EQ(expected_signature, signature->BodyText());
 }
 

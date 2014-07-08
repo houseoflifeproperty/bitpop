@@ -8,9 +8,9 @@
 #include <string>
 #include <vector>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -26,6 +26,9 @@ struct DialDevice;
 class DialDeviceData {
  public:
   DialDeviceData();
+  DialDeviceData(const std::string& device_id,
+                 const GURL& device_description_url,
+                 const base::Time& response_time);
   ~DialDeviceData();
 
   bool operator==(const DialDeviceData& other_data) const {

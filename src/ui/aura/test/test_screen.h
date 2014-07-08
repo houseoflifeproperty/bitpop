@@ -12,22 +12,32 @@
 
 namespace gfx {
 class Rect;
+class Transform;
 }
 
 namespace aura {
-class RootWindow;
 class Window;
+class WindowTreeHost;
 
 // A minimal, testing Aura implementation of gfx::Screen.
 class TestScreen : public gfx::Screen,
                    public WindowObserver {
  public:
-  TestScreen();
+  static TestScreen* Create();
+  // Creates a TestScreen that uses fullscreen for the display.
+  static TestScreen* CreateFullscreen();
   virtual ~TestScreen();
 
-  RootWindow* CreateRootWindowForPrimaryDisplay();
+  WindowTreeHost* CreateHostForPrimaryDisplay();
+
+  void SetDeviceScaleFactor(float device_scale_fator);
+  void SetDisplayRotation(gfx::Display::Rotation rotation);
+  void SetUIScale(float ui_scale);
 
  protected:
+  gfx::Transform GetRotationTransform() const;
+  gfx::Transform GetUIScaleTransform() const;
+
   // WindowObserver overrides:
   virtual void OnWindowBoundsChanged(Window* window,
                                      const gfx::Rect& old_bounds,
@@ -37,8 +47,11 @@ class TestScreen : public gfx::Screen,
   // gfx::Screen overrides:
   virtual bool IsDIPEnabled() OVERRIDE;
   virtual gfx::Point GetCursorScreenPoint() OVERRIDE;
-  virtual gfx::NativeWindow GetWindowAtCursorScreenPoint() OVERRIDE;
-  virtual int GetNumDisplays() OVERRIDE;
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE;
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE;
+  virtual int GetNumDisplays() const OVERRIDE;
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE;
   virtual gfx::Display GetDisplayNearestWindow(
       gfx::NativeView view) const OVERRIDE;
   virtual gfx::Display GetDisplayNearestPoint(
@@ -50,9 +63,13 @@ class TestScreen : public gfx::Screen,
   virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE;
 
  private:
-  aura::RootWindow* root_window_;
+  explicit TestScreen(const gfx::Rect& screen_bounds);
+
+  aura::WindowTreeHost* host_;
 
   gfx::Display display_;
+
+  float ui_scale_;
 
   DISALLOW_COPY_AND_ASSIGN(TestScreen);
 };

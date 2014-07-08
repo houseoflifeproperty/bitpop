@@ -6,8 +6,12 @@
 
 #include "base/command_line.h"
 #include "base/metrics/histogram.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
+#include "content/browser/accessibility/accessibility_mode_helper.h"
+#include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/render_widget_host_iterator.h"
 #include "content/public/common/content_switches.h"
 #include "ui/gfx/sys_color_change_listener.h"
 
@@ -34,6 +38,48 @@ BrowserAccessibilityStateImpl* BrowserAccessibilityStateImpl::GetInstance() {
 BrowserAccessibilityStateImpl::BrowserAccessibilityStateImpl()
     : BrowserAccessibilityState(),
       accessibility_mode_(AccessibilityModeOff) {
+  ResetAccessibilityModeValue();
+#if defined(OS_WIN)
+  // On Windows, UpdateHistograms calls some system functions with unknown
+  // runtime, so call it on the file thread to ensure there's no jank.
+  // Everything in that method must be safe to call on another thread.
+  BrowserThread::ID update_histogram_thread = BrowserThread::FILE;
+#else
+  // On all other platforms, UpdateHistograms should be called on the main
+  // thread.
+  BrowserThread::ID update_histogram_thread = BrowserThread::UI;
+#endif
+
+  // We need to AddRef() the leaky singleton so that Bind doesn't
+  // delete it prematurely.
+  AddRef();
+  BrowserThread::PostDelayedTask(
+      update_histogram_thread, FROM_HERE,
+      base::Bind(&BrowserAccessibilityStateImpl::UpdateHistograms, this),
+      base::TimeDelta::FromSeconds(kAccessibilityHistogramDelaySecs));
+}
+
+BrowserAccessibilityStateImpl::~BrowserAccessibilityStateImpl() {
+}
+
+void BrowserAccessibilityStateImpl::OnScreenReaderDetected() {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableRendererAccessibility)) {
+    return;
+  }
+  EnableAccessibility();
+}
+
+void BrowserAccessibilityStateImpl::EnableAccessibility() {
+  AddAccessibilityMode(AccessibilityModeComplete);
+}
+
+void BrowserAccessibilityStateImpl::DisableAccessibility() {
+  ResetAccessibilityMode();
+}
+
+void BrowserAccessibilityStateImpl::ResetAccessibilityModeValue() {
+  accessibility_mode_ = AccessibilityModeOff;
 #if defined(OS_WIN)
   // On Windows 8, always enable accessibility for editable text controls
   // so we can show the virtual keyboard when one is enabled.
@@ -48,45 +94,30 @@ BrowserAccessibilityStateImpl::BrowserAccessibilityStateImpl()
           switches::kForceRendererAccessibility)) {
     accessibility_mode_ = AccessibilityModeComplete;
   }
-
-#if defined(OS_WIN)
-  // On Windows, UpdateHistogram calls some system functions with unknown
-  // runtime, so call it on the file thread to ensure there's no jank.
-  // Everything in that method must be safe to call on another thread.
-  BrowserThread::ID update_histogram_thread = BrowserThread::FILE;
-#else
-  // On all other platforms, UpdateHistogram should be called on the main
-  // thread.
-  BrowserThread::ID update_histogram_thread = BrowserThread::UI;
-#endif
-
-  // We need to AddRef() the leaky singleton so that Bind doesn't
-  // delete it prematurely.
-  AddRef();
-  BrowserThread::PostDelayedTask(
-      update_histogram_thread, FROM_HERE,
-      base::Bind(&BrowserAccessibilityStateImpl::UpdateHistogram, this),
-      base::TimeDelta::FromSeconds(kAccessibilityHistogramDelaySecs));
 }
 
-BrowserAccessibilityStateImpl::~BrowserAccessibilityStateImpl() {
-}
+void BrowserAccessibilityStateImpl::ResetAccessibilityMode() {
+  ResetAccessibilityModeValue();
 
-void BrowserAccessibilityStateImpl::OnScreenReaderDetected() {
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kDisableRendererAccessibility)) {
-    return;
+  // Iterate over all RenderWidgetHosts, even swapped out ones in case
+  // they become active again.
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts());
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
+    // Ignore processes that don't have a connection, such as crashed tabs.
+    if (!widget->GetProcess()->HasConnection())
+      continue;
+    if (!widget->IsRenderView())
+      continue;
+
+    RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(widget);
+    rwhi->ResetAccessibilityMode();
   }
-  SetAccessibilityMode(AccessibilityModeComplete);
-}
-
-void BrowserAccessibilityStateImpl::OnAccessibilityEnabledManually() {
-  // We may want to do something different with this later.
-  SetAccessibilityMode(AccessibilityModeComplete);
 }
 
 bool BrowserAccessibilityStateImpl::IsAccessibleBrowser() {
-  return (accessibility_mode_ == AccessibilityModeComplete);
+  return ((accessibility_mode_ & AccessibilityModeComplete) ==
+          AccessibilityModeComplete);
 }
 
 void BrowserAccessibilityStateImpl::AddHistogramCallback(
@@ -94,7 +125,11 @@ void BrowserAccessibilityStateImpl::AddHistogramCallback(
   histogram_callbacks_.push_back(callback);
 }
 
-void BrowserAccessibilityStateImpl::UpdateHistogram() {
+void BrowserAccessibilityStateImpl::UpdateHistogramsForTesting() {
+  UpdateHistograms();
+}
+
+void BrowserAccessibilityStateImpl::UpdateHistograms() {
   UpdatePlatformSpecificHistograms();
 
   for (size_t i = 0; i < histogram_callbacks_.size(); ++i)
@@ -113,13 +148,53 @@ void BrowserAccessibilityStateImpl::UpdatePlatformSpecificHistograms() {
 }
 #endif
 
-AccessibilityMode BrowserAccessibilityStateImpl::GetAccessibilityMode() {
-  return accessibility_mode_;
+void BrowserAccessibilityStateImpl::AddAccessibilityMode(
+    AccessibilityMode mode) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kDisableRendererAccessibility)) {
+    return;
+  }
+
+  accessibility_mode_ =
+      content::AddAccessibilityModeTo(accessibility_mode_, mode);
+
+  AddOrRemoveFromRenderWidgets(mode, true);
 }
 
-void BrowserAccessibilityStateImpl::SetAccessibilityMode(
+void BrowserAccessibilityStateImpl::RemoveAccessibilityMode(
     AccessibilityMode mode) {
-  accessibility_mode_ = mode;
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kForceRendererAccessibility) &&
+      mode == AccessibilityModeComplete) {
+    return;
+  }
+
+  accessibility_mode_ =
+      content::RemoveAccessibilityModeFrom(accessibility_mode_, mode);
+
+  AddOrRemoveFromRenderWidgets(mode, false);
+}
+
+void BrowserAccessibilityStateImpl::AddOrRemoveFromRenderWidgets(
+    AccessibilityMode mode,
+    bool add) {
+  // Iterate over all RenderWidgetHosts, even swapped out ones in case
+  // they become active again.
+  scoped_ptr<RenderWidgetHostIterator> widgets(
+      RenderWidgetHostImpl::GetAllRenderWidgetHosts());
+  while (RenderWidgetHost* widget = widgets->GetNextHost()) {
+    // Ignore processes that don't have a connection, such as crashed tabs.
+    if (!widget->GetProcess()->HasConnection())
+      continue;
+    if (!widget->IsRenderView())
+      continue;
+
+    RenderWidgetHostImpl* rwhi = RenderWidgetHostImpl::From(widget);
+    if (add)
+      rwhi->AddAccessibilityMode(mode);
+    else
+      rwhi->RemoveAccessibilityMode(mode);
+  }
 }
 
 }  // namespace content

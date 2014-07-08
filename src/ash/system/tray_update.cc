@@ -5,16 +5,17 @@
 #include "ash/system/tray_update.h"
 
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/system/status_area_widget.h"
+#include "ash/system/tray/fixed_sized_image_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
-#include "ash/system/tray/tray_views.h"
-#include "ash/wm/shelf_layout_manager.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/aura/window.h"
@@ -59,7 +60,7 @@ int DecideResource(ash::UpdateObserver::UpdateSeverity severity, bool dark) {
   return 0;
 }
 
-class UpdateView : public ash::internal::ActionableView {
+class UpdateView : public ash::ActionableView {
  public:
   explicit UpdateView(ash::UpdateObserver::UpdateSeverity severity) {
     SetLayoutManager(new
@@ -69,7 +70,7 @@ class UpdateView : public ash::internal::ActionableView {
 
     ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
     views::ImageView* image =
-        new ash::internal::FixedSizedImageView(0, ash::kTrayPopupItemHeight);
+        new ash::FixedSizedImageView(0, ash::kTrayPopupItemHeight);
     image->SetImage(bundle.GetImageNamed(DecideResource(severity, true)).
         ToImageSkia());
 
@@ -84,7 +85,8 @@ class UpdateView : public ash::internal::ActionableView {
  private:
   // Overridden from ActionableView.
   virtual bool PerformAction(const ui::Event& event) OVERRIDE {
-    ash::Shell::GetInstance()->system_tray_delegate()->RequestRestart();
+    ash::Shell::GetInstance()->
+        system_tray_delegate()->RequestRestartForUpdate();
     return true;
   }
 
@@ -94,8 +96,6 @@ class UpdateView : public ash::internal::ActionableView {
 }
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 
 class UpdateNagger : public ui::LayerAnimationObserver {
@@ -108,8 +108,8 @@ class UpdateNagger : public ui::LayerAnimationObserver {
   }
 
   virtual ~UpdateNagger() {
-    internal::StatusAreaWidget* status_area =
-        Shell::GetPrimaryRootWindowController()->status_area_widget();
+    StatusAreaWidget* status_area =
+        Shell::GetPrimaryRootWindowController()->shelf()->status_area_widget();
     if (status_area) {
       status_area->system_tray()->GetWidget()->GetNativeView()->layer()->
           GetAnimator()->RemoveObserver(this);
@@ -179,7 +179,7 @@ views::View* TrayUpdate::CreateDetailedView(user::LoginStatus status) {
 }
 
 void TrayUpdate::DestroyDetailedView() {
-  if (nagger_.get()) {
+  if (nagger_) {
     // The nagger was being displayed. Now that the detailed view is being
     // closed, that means either the user clicks on it to restart, or the user
     // didn't click on it to restart. In either case, start the timer to show
@@ -199,5 +199,4 @@ void TrayUpdate::OnUpdateRecommended(UpdateObserver::UpdateSeverity severity) {
   }
 }
 
-}  // namespace internal
 }  // namespace ash

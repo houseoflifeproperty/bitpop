@@ -20,8 +20,6 @@ from grit import lazy_re
 from grit import tclib
 from grit import util
 
-BINARY, UTF8, UTF16 = range(3)
-
 # Finds whitespace at the start and end of a string which can be multiline.
 _WHITESPACE = lazy_re.compile('(?P<start>\s*)(?P<body>.+?)(?P<end>\s*)\Z',
                               re.DOTALL | re.MULTILINE)
@@ -50,13 +48,20 @@ class MessageNode(base.ContentNode):
     # that shortcut keys (e.g. &J) within each shortcut group are unique.
     self.shortcut_groups_ = []
 
+    # Formatter-specific data used to control the output of individual strings.
+    # formatter_data is a space separated list of C preprocessor-style
+    # definitions. Names without values are given the empty string value.
+    # Example: "foo=5 bar baz=100"
+    self.formatter_data = {}
+
   def _IsValidChild(self, child):
     return isinstance(child, (PhNode))
 
   def _IsValidAttribute(self, name, value):
     if name not in ['name', 'offset', 'translateable', 'desc', 'meaning',
                     'internal_comment', 'shortcut_groups', 'custom_type',
-                    'validation_expr', 'use_name_for_id', 'sub_variable']:
+                    'validation_expr', 'use_name_for_id', 'sub_variable',
+                    'formatter_data']:
       return False
     if (name in ('translateable', 'sub_variable') and
         value not in ['true', 'false']):
@@ -70,6 +75,7 @@ class MessageNode(base.ContentNode):
     return {
       'custom_type' : '',
       'desc' : '',
+      'formatter_data' : '',
       'internal_comment' : '',
       'meaning' : '',
       'shortcut_groups' : '',
@@ -78,6 +84,15 @@ class MessageNode(base.ContentNode):
       'use_name_for_id' : 'false',
       'validation_expr' : '',
     }
+
+  def HandleAttribute(self, attrib, value):
+    base.ContentNode.HandleAttribute(self, attrib, value)
+    if attrib == 'formatter_data':
+      # Parse value, a space-separated list of defines, into a dict.
+      # Example: "foo=5 bar" -> {'foo':'5', 'bar':''}
+      for item in value.split():
+        name, sep, val = item.partition('=')
+        self.formatter_data[name] = val
 
   def GetTextualIds(self):
     '''
@@ -199,23 +214,15 @@ class MessageNode(base.ContentNode):
 
   def GetDataPackPair(self, lang, encoding):
     '''Returns a (id, string) pair that represents the string id and the string
-    in utf8.  This is used to generate the data pack data file.
+    in the specified encoding, where |encoding| is one of the encoding values
+    accepted by util.Encode.  This is used to generate the data pack data file.
     '''
     from grit.format import rc_header
     id_map = rc_header.GetIds(self.GetRoot())
     id = id_map[self.GetTextualIds()[0]]
 
     message = self.ws_at_start + self.Translate(lang) + self.ws_at_end
-
-    # |message| is a python unicode string, so convert to a byte stream that
-    # has the correct encoding requested for the datapacks. We skip the first
-    # 2 bytes of text resources because it is the BOM.
-    if encoding == UTF8:
-      return id, message.encode('utf8')
-    if encoding == UTF16:
-      return id, message.encode('utf16')[2:]
-    # Default is BINARY
-    return id, message
+    return id, util.Encode(message, encoding)
 
   @staticmethod
   def Construct(parent, message, name, desc='', meaning='', translateable=True):

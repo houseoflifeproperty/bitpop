@@ -7,8 +7,8 @@
 #include <vector>
 
 #include "base/json/json_reader.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/public/common/speech_recognition_error.h"
@@ -16,6 +16,7 @@
 #include "google_apis/google_api_keys.h"
 #include "net/base/escape.h"
 #include "net/base/load_flags.h"
+#include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -46,20 +47,20 @@ bool ParseServerResponse(const std::string& response_body,
 
   // Parse the response, ignoring comments.
   std::string error_msg;
-  scoped_ptr<Value> response_value(base::JSONReader::ReadAndReturnError(
+  scoped_ptr<base::Value> response_value(base::JSONReader::ReadAndReturnError(
       response_body, base::JSON_PARSE_RFC, NULL, &error_msg));
   if (response_value == NULL) {
     LOG(WARNING) << "ParseServerResponse: JSONReader failed : " << error_msg;
     return false;
   }
 
-  if (!response_value->IsType(Value::TYPE_DICTIONARY)) {
+  if (!response_value->IsType(base::Value::TYPE_DICTIONARY)) {
     VLOG(1) << "ParseServerResponse: Unexpected response type "
             << response_value->GetType();
     return false;
   }
-  const DictionaryValue* response_object =
-      static_cast<const DictionaryValue*>(response_value.get());
+  const base::DictionaryValue* response_object =
+      static_cast<const base::DictionaryValue*>(response_value.get());
 
   // Get the status.
   int status;
@@ -87,41 +88,41 @@ bool ParseServerResponse(const std::string& response_body,
   }
 
   // Get the hypotheses.
-  const Value* hypotheses_value = NULL;
+  const base::Value* hypotheses_value = NULL;
   if (!response_object->Get(kHypothesesString, &hypotheses_value)) {
     VLOG(1) << "ParseServerResponse: Missing hypotheses attribute.";
     return false;
   }
 
   DCHECK(hypotheses_value);
-  if (!hypotheses_value->IsType(Value::TYPE_LIST)) {
+  if (!hypotheses_value->IsType(base::Value::TYPE_LIST)) {
     VLOG(1) << "ParseServerResponse: Unexpected hypotheses type "
             << hypotheses_value->GetType();
     return false;
   }
 
-  const ListValue* hypotheses_list =
-      static_cast<const ListValue*>(hypotheses_value);
+  const base::ListValue* hypotheses_list =
+      static_cast<const base::ListValue*>(hypotheses_value);
 
   // For now we support only single shot recognition, so we are giving only a
   // final result, consisting of one fragment (with one or more hypotheses).
   size_t index = 0;
   for (; index < hypotheses_list->GetSize(); ++index) {
-    const Value* hypothesis = NULL;
+    const base::Value* hypothesis = NULL;
     if (!hypotheses_list->Get(index, &hypothesis)) {
       LOG(WARNING) << "ParseServerResponse: Unable to read hypothesis value.";
       break;
     }
     DCHECK(hypothesis);
-    if (!hypothesis->IsType(Value::TYPE_DICTIONARY)) {
+    if (!hypothesis->IsType(base::Value::TYPE_DICTIONARY)) {
       LOG(WARNING) << "ParseServerResponse: Unexpected value type "
                    << hypothesis->GetType();
       break;
     }
 
-    const DictionaryValue* hypothesis_value =
-        static_cast<const DictionaryValue*>(hypothesis);
-    string16 utterance;
+    const base::DictionaryValue* hypothesis_value =
+        static_cast<const base::DictionaryValue*>(hypothesis);
+    base::string16 utterance;
 
     if (!hypothesis_value->GetString(kUtteranceString, &utterance)) {
       LOG(WARNING) << "ParseServerResponse: Missing utterance value.";
@@ -164,7 +165,7 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
   DCHECK(!url_fetcher_.get());
   std::string lang_param = config_.language;
 
-  if (lang_param.empty() && url_context_) {
+  if (lang_param.empty() && url_context_.get()) {
     // If no language is provided then we use the first from the accepted
     // language list. If this list is empty then it defaults to "en-US".
     // Example of the contents of this list: "es,en-GB;q=0.8", ""
@@ -174,9 +175,12 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
     // TODO(pauljensen): GoogleOneShotRemoteEngine should be constructed with
     // a reference to the HttpUserAgentSettings rather than accessing the
     // accept language through the URLRequestContext.
-    std::string accepted_language_list = request_context->GetAcceptLanguage();
-    size_t separator = accepted_language_list.find_first_of(",;");
-    lang_param = accepted_language_list.substr(0, separator);
+    if (request_context->http_user_agent_settings()) {
+      std::string accepted_language_list =
+          request_context->http_user_agent_settings()->GetAcceptLanguage();
+      size_t separator = accepted_language_list.find_first_of(",;");
+      lang_param = accepted_language_list.substr(0, separator);
+    }
   }
 
   if (lang_param.empty())
@@ -211,7 +215,7 @@ void GoogleOneShotRemoteEngine::StartRecognition() {
                                              net::URLFetcher::POST,
                                              this));
   url_fetcher_->SetChunkedUpload(encoder_->mime_type());
-  url_fetcher_->SetRequestContext(url_context_);
+  url_fetcher_->SetRequestContext(url_context_.get());
   url_fetcher_->SetReferrer(config_.origin_url);
 
   // The speech recognition API does not require user identification as part
@@ -249,7 +253,7 @@ void GoogleOneShotRemoteEngine::AudioChunksEnded() {
       new AudioChunk(reinterpret_cast<uint8*>(&samples[0]),
                      samples.size() * sizeof(int16),
                      encoder_->bits_per_sample() / 8));
-  encoder_->Encode(*dummy_chunk);
+  encoder_->Encode(*dummy_chunk.get());
   encoder_->Flush();
   scoped_refptr<AudioChunk> encoded_dummy_data(
       encoder_->GetEncodedDataAndClear());

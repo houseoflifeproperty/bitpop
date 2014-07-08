@@ -15,7 +15,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "net/base/net_export.h"
 #include "net/dns/dns_config_service.h"
 
@@ -34,24 +34,11 @@ namespace net {
 
 namespace internal {
 
-// Registry key paths.
-const wchar_t* const kTcpipPath =
-    L"SYSTEM\\CurrentControlSet\\Services\\Tcpip\\Parameters";
-const wchar_t* const kTcpip6Path =
-    L"SYSTEM\\CurrentControlSet\\Services\\Tcpip6\\Parameters";
-const wchar_t* const kDnscachePath =
-    L"SYSTEM\\CurrentControlSet\\Services\\Dnscache\\Parameters";
-const wchar_t* const kPolicyPath =
-    L"SOFTWARE\\Policies\\Microsoft\\Windows NT\\DNSClient";
-
-// Returns the path to the HOSTS file.
-FilePath GetHostsPath();
-
 // Parses |value| as search list (comma-delimited list of domain names) from
 // a registry key and stores it in |out|. Returns true on success. Empty
 // entries (e.g., "chromium.org,,org") terminate the list. Non-ascii hostnames
 // are converted to punycode.
-bool NET_EXPORT_PRIVATE ParseSearchList(const string16& value,
+bool NET_EXPORT_PRIVATE ParseSearchList(const base::string16& value,
                                         std::vector<std::string>* out);
 
 // All relevant settings read from registry and IP Helper. This isolates our
@@ -61,7 +48,7 @@ struct NET_EXPORT_PRIVATE DnsSystemSettings {
   // The |set| flag distinguishes between empty and unset values.
   struct RegString {
     bool set;
-    string16 value;
+    base::string16 value;
   };
 
   struct RegDword {
@@ -78,7 +65,7 @@ struct NET_EXPORT_PRIVATE DnsSystemSettings {
 
   // Filled in by GetAdapterAddresses. Note that the alternative
   // GetNetworkParams does not include IPv6 addresses.
-  scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> addresses;
+  scoped_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> addresses;
 
   // SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\SearchList
   RegString policy_search_list;
@@ -98,6 +85,10 @@ struct NET_EXPORT_PRIVATE DnsSystemSettings {
 
   // SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\AppendToMultiLabelName
   RegDword append_to_multi_label_name;
+
+  // True when the Name Resolution Policy Table (NRPT) has at least one rule:
+  // SOFTWARE\Policies\Microsoft\Windows NT\DNSClient\DnsPolicyConfig\Rule*
+  bool have_name_resolution_policy;
 };
 
 enum ConfigParseWinResult {
@@ -113,6 +104,7 @@ enum ConfigParseWinResult {
   CONFIG_PARSE_WIN_READ_PRIMARY_SUFFIX,
   CONFIG_PARSE_WIN_BAD_ADDRESS,
   CONFIG_PARSE_WIN_NO_NAMESERVERS,
+  CONFIG_PARSE_WIN_UNHANDLED_OPTIONS,
   CONFIG_PARSE_WIN_MAX  // Bounding values for enumeration.
 };
 

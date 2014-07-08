@@ -6,21 +6,20 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/extensions/requirements_checker.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_file_util.h"
-#include "chrome/test/base/test_launcher_utils.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/gpu_data_manager.h"
-#include "content/public/common/gpu_info.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/file_util.h"
+#include "gpu/config/gpu_info.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gl/gl_switches.h"
@@ -29,26 +28,15 @@ namespace extensions {
 
 class RequirementsCheckerBrowserTest : public ExtensionBrowserTest {
  public:
-  void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    // In linux, we need to launch GPU process to decide if WebGL is allowed.
-    // Run it on top of osmesa to avoid bot driver issues.
-#if defined(OS_LINUX)
-    CHECK(test_launcher_utils::OverrideGLImplementation(
-        command_line, gfx::kGLImplementationOSMesaName)) <<
-        "kUseGL must not be set multiple times!";
-#endif
-  }
-
   scoped_refptr<const Extension> LoadExtensionFromDirName(
       const std::string& extension_dir_name) {
-    FilePath extension_path;
+    base::FilePath extension_path;
     std::string load_error;
     PathService::Get(chrome::DIR_TEST_DATA, &extension_path);
     extension_path = extension_path.AppendASCII("requirements_checker")
                                    .AppendASCII(extension_dir_name);
-    scoped_refptr<const Extension> extension =
-        extension_file_util::LoadExtension(extension_path, Extension::LOAD,
-                                           0, &load_error);
+    scoped_refptr<const Extension> extension = file_util::LoadExtension(
+        extension_path, Manifest::UNPACKED, 0, &load_error);
     CHECK(load_error.length() == 0u);
     return extension;
   }
@@ -70,11 +58,11 @@ class RequirementsCheckerBrowserTest : public ExtensionBrowserTest {
       "  \"entries\": [\n"
       "    {\n"
       "      \"id\": 1,\n"
-      "      \"blacklist\": [\"" + JoinString(features, "\", \"") + "\"]\n"
+      "      \"features\": [\"" + JoinString(features, "\", \"") + "\"]\n"
       "    }\n"
       "  ]\n"
       "}";
-    content::GPUInfo gpu_info;
+    gpu::GPUInfo gpu_info;
     content::GpuDataManager::GetInstance()->InitializeForTesting(
         json_blacklist, gpu_info);
   }
@@ -100,7 +88,7 @@ IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, CheckNpapiExtension) {
   ASSERT_TRUE(extension.get());
 
   std::vector<std::string> expected_errors;
-  // npapi plugins are dissalowd on CROMEOS.
+  // NPAPI plugins are disallowed on ChromeOS.
 #if defined(OS_CHROMEOS)
   expected_errors.push_back(l10n_util::GetStringUTF8(
       IDS_EXTENSION_NPAPI_NOT_SUPPORTED));
@@ -112,21 +100,17 @@ IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, CheckNpapiExtension) {
   content::BrowserThread::GetBlockingPool()->FlushForTesting();
 }
 
-IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, DisallowCSS3D) {
+IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest,
+                       CheckWindowShapeExtension) {
   scoped_refptr<const Extension> extension(
-      LoadExtensionFromDirName("require_3d"));
+      LoadExtensionFromDirName("require_window_shape"));
   ASSERT_TRUE(extension.get());
 
-
-  // Blacklist css3d
-  std::vector<std::string> blacklisted_features;
-  blacklisted_features.push_back("accelerated_compositing");
-  BlackListGPUFeatures(blacklisted_features);
-  content::BrowserThread::GetBlockingPool()->FlushForTesting();
-
   std::vector<std::string> expected_errors;
+#if !defined(USE_AURA)
   expected_errors.push_back(l10n_util::GetStringUTF8(
-      IDS_EXTENSION_CSS3D_NOT_SUPPORTED));
+      IDS_EXTENSION_WINDOW_SHAPE_NOT_SUPPORTED));
+#endif  // !defined(USE_AURA)
 
   checker_.Check(extension, base::Bind(
       &RequirementsCheckerBrowserTest::ValidateRequirementErrors,
@@ -155,23 +139,17 @@ IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, DisallowWebGL) {
   content::BrowserThread::GetBlockingPool()->FlushForTesting();
 }
 
-IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, DisallowGPUFeatures) {
+IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, Check3DExtension) {
   scoped_refptr<const Extension> extension(
       LoadExtensionFromDirName("require_3d"));
   ASSERT_TRUE(extension.get());
 
-  // Backlist both webgl and css3d
-  std::vector<std::string> blacklisted_features;
-  blacklisted_features.push_back("webgl");
-  blacklisted_features.push_back("accelerated_compositing");
-  BlackListGPUFeatures(blacklisted_features);
-  content::BrowserThread::GetBlockingPool()->FlushForTesting();
-
   std::vector<std::string> expected_errors;
-  expected_errors.push_back(l10n_util::GetStringUTF8(
-      IDS_EXTENSION_WEBGL_NOT_SUPPORTED));
-  expected_errors.push_back(l10n_util::GetStringUTF8(
-      IDS_EXTENSION_CSS3D_NOT_SUPPORTED));
+
+  if (!content::GpuDataManager::GetInstance()->GpuAccessAllowed(NULL)) {
+    expected_errors.push_back(l10n_util::GetStringUTF8(
+        IDS_EXTENSION_WEBGL_NOT_SUPPORTED));
+  }
 
   checker_.Check(extension, base::Bind(
       &RequirementsCheckerBrowserTest::ValidateRequirementErrors,
@@ -179,15 +157,4 @@ IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, DisallowGPUFeatures) {
   content::BrowserThread::GetBlockingPool()->FlushForTesting();
 }
 
-IN_PROC_BROWSER_TEST_F(RequirementsCheckerBrowserTest, Check3DExtension) {
-  scoped_refptr<const Extension> extension(
-      LoadExtensionFromDirName("require_3d"));
-  ASSERT_TRUE(extension.get());
-
-  checker_.Check(extension, base::Bind(
-      &RequirementsCheckerBrowserTest::ValidateRequirementErrors,
-      base::Unretained(this), std::vector<std::string>()));
-  content::BrowserThread::GetBlockingPool()->FlushForTesting();
-}
-
-}  // extensions
+}  // namespace extensions

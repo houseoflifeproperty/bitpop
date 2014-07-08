@@ -10,9 +10,10 @@
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_backend.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "content/public/browser/browser_thread.h"
 #include "net/base/net_util.h"
 #include "sync/api/sync_error.h"
 #include "sync/internal_api/public/read_node.h"
@@ -64,8 +65,8 @@ TypedUrlModelAssociator::TypedUrlModelAssociator(
     DataTypeErrorHandler* error_handler)
     : sync_service_(sync_service),
       history_backend_(history_backend),
-      expected_loop_(MessageLoop::current()),
-      pending_abort_(false),
+      expected_loop_(base::MessageLoop::current()),
+      abort_requested_(false),
       error_handler_(error_handler),
       num_db_accesses_(0),
       num_db_errors_(0) {
@@ -173,43 +174,50 @@ int TypedUrlModelAssociator::GetErrorPercentage() const {
 
 syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
   DVLOG(1) << "Associating TypedUrl Models";
-  syncer::SyncError error;
-  DCHECK(expected_loop_ == MessageLoop::current());
-  if (IsAbortPending())
-    return syncer::SyncError();
+  DCHECK(expected_loop_ == base::MessageLoop::current());
+
   history::URLRows typed_urls;
   ++num_db_accesses_;
-  if (!history_backend_->GetAllTypedURLs(&typed_urls)) {
-    ++num_db_errors_;
-    return error_handler_->CreateAndUploadError(
-        FROM_HERE,
-        "Could not get the typed_url entries.",
-        model_type());
-  }
-
-  // Get all the visits.
-  std::map<history::URLID, history::VisitVector> visit_vectors;
-  for (history::URLRows::iterator ix = typed_urls.begin();
-       ix != typed_urls.end();) {
-    if (IsAbortPending())
-      return syncer::SyncError();
-    DCHECK_EQ(0U, visit_vectors.count(ix->id()));
-    if (!FixupURLAndGetVisits(&(*ix), &(visit_vectors[ix->id()])) ||
-        ShouldIgnoreUrl(ix->url()) ||
-        ShouldIgnoreVisits(visit_vectors[ix->id()])) {
-      // Ignore this URL if we couldn't load the visits or if there's some
-      // other problem with it (it was empty, or imported and never visited).
-      ix = typed_urls.erase(ix);
-    } else {
-      ++ix;
-    }
-  }
+  bool query_succeeded =
+      history_backend_ && history_backend_->GetAllTypedURLs(&typed_urls);
 
   history::URLRows new_urls;
   TypedUrlVisitVector new_visits;
   TypedUrlUpdateVector updated_urls;
-
   {
+    base::AutoLock au(abort_lock_);
+    if (abort_requested_) {
+      return syncer::SyncError(FROM_HERE,
+                               syncer::SyncError::DATATYPE_ERROR,
+                               "Association was aborted.",
+                               model_type());
+    }
+
+    // Must lock and check first to make sure |error_handler_| is valid.
+    if (!query_succeeded) {
+      ++num_db_errors_;
+      return error_handler_->CreateAndUploadError(
+          FROM_HERE,
+          "Could not get the typed_url entries.",
+          model_type());
+    }
+
+    // Get all the visits.
+    std::map<history::URLID, history::VisitVector> visit_vectors;
+    for (history::URLRows::iterator ix = typed_urls.begin();
+         ix != typed_urls.end();) {
+      DCHECK_EQ(0U, visit_vectors.count(ix->id()));
+      if (!FixupURLAndGetVisits(&(*ix), &(visit_vectors[ix->id()])) ||
+          ShouldIgnoreUrl(ix->url()) ||
+          ShouldIgnoreVisits(visit_vectors[ix->id()])) {
+        // Ignore this URL if we couldn't load the visits or if there's some
+        // other problem with it (it was empty, or imported and never visited).
+        ix = typed_urls.erase(ix);
+      } else {
+        ++ix;
+      }
+    }
+
     syncer::WriteTransaction trans(FROM_HERE, sync_service_->GetUserShare());
     syncer::ReadNode typed_url_root(&trans);
     if (typed_url_root.InitByTagLookup(kTypedUrlTag) !=
@@ -224,8 +232,6 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
     std::set<std::string> current_urls;
     for (history::URLRows::iterator ix = typed_urls.begin();
          ix != typed_urls.end(); ++ix) {
-      if (IsAbortPending())
-        return syncer::SyncError();
       std::string tag = ix->url().spec();
       // Empty URLs should be filtered out by ShouldIgnoreUrl() previously.
       DCHECK(!tag.empty());
@@ -299,7 +305,7 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
               model_type());
         }
 
-        node.SetTitle(UTF8ToWide(tag));
+        node.SetTitle(tag);
         WriteToSyncNode(*ix, visits, &node);
       }
 
@@ -311,8 +317,6 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
     std::vector<int64> obsolete_nodes;
     int64 sync_child_id = typed_url_root.GetFirstChildId();
     while (sync_child_id != syncer::kInvalidId) {
-      if (IsAbortPending())
-        return syncer::SyncError();
       syncer::ReadNode sync_child_node(&trans);
       if (sync_child_node.InitByIdLookup(sync_child_id) !=
               syncer::BaseNode::INIT_OK) {
@@ -372,8 +376,6 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
       for (std::vector<int64>::const_iterator it = obsolete_nodes.begin();
            it != obsolete_nodes.end();
            ++it) {
-          if (IsAbortPending())
-            return syncer::SyncError();
         syncer::WriteNode sync_node(&trans);
         if (sync_node.InitByIdLookup(*it) != syncer::BaseNode::INIT_OK) {
           return error_handler_->CreateAndUploadError(
@@ -381,7 +383,7 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
               "Failed to fetch obsolete node.",
               model_type());
         }
-        sync_node.Remove();
+        sync_node.Tombstone();
       }
     }
   }
@@ -392,7 +394,7 @@ syncer::SyncError TypedUrlModelAssociator::DoAssociateModels() {
   // to worry about the sync model getting out of sync, because changes are
   // propagated to the ChangeProcessor on this thread.
   WriteToHistoryBackend(&new_urls, &updated_urls, &new_visits, NULL);
-  return error;
+  return syncer::SyncError();
 }
 
 void TypedUrlModelAssociator::UpdateFromSyncDB(
@@ -452,7 +454,7 @@ sync_pb::TypedUrlSpecifics TypedUrlModelAssociator::FilterExpiredVisits(
 
 bool TypedUrlModelAssociator::DeleteAllNodes(
     syncer::WriteTransaction* trans) {
-  DCHECK(expected_loop_ == MessageLoop::current());
+  DCHECK(expected_loop_ == base::MessageLoop::current());
 
   // Just walk through all our child nodes and delete them.
   syncer::ReadNode typed_url_root(trans);
@@ -470,7 +472,7 @@ bool TypedUrlModelAssociator::DeleteAllNodes(
       return false;
     }
     sync_child_id = sync_child_node.GetSuccessorId();
-    sync_child_node.Remove();
+    sync_child_node.Tombstone();
   }
   return true;
 }
@@ -480,13 +482,8 @@ syncer::SyncError TypedUrlModelAssociator::DisassociateModels() {
 }
 
 void TypedUrlModelAssociator::AbortAssociation() {
-  base::AutoLock lock(pending_abort_lock_);
-  pending_abort_ = true;
-}
-
-bool TypedUrlModelAssociator::IsAbortPending() {
-  base::AutoLock lock(pending_abort_lock_);
-  return pending_abort_;
+  base::AutoLock lock(abort_lock_);
+  abort_requested_ = true;
 }
 
 bool TypedUrlModelAssociator::SyncModelHasUserCreatedNodes(bool* has_nodes) {
@@ -577,7 +574,7 @@ TypedUrlModelAssociator::MergeResult TypedUrlModelAssociator::MergeUrls(
     return DIFF_UPDATE_NODE;
 
   // Convert these values only once.
-  string16 node_title(UTF8ToUTF16(node.title()));
+  base::string16 node_title(base::UTF8ToUTF16(node.title()));
   base::Time node_last_visit = base::Time::FromInternalValue(
       node.visits(node.visits_size() - 1));
 
@@ -694,7 +691,7 @@ void TypedUrlModelAssociator::WriteToTypedUrlSpecifics(
             visits.back().visit_time.ToInternalValue());
 
   typed_url->set_url(url.url().spec());
-  typed_url->set_title(UTF16ToUTF8(url.title()));
+  typed_url->set_title(base::UTF16ToUTF8(url.title()));
   typed_url->set_hidden(url.hidden());
 
   DCHECK(CheckVisitOrdering(visits));
@@ -825,7 +822,7 @@ void TypedUrlModelAssociator::UpdateURLRowFromTypedUrlSpecifics(
     const sync_pb::TypedUrlSpecifics& typed_url, history::URLRow* new_url) {
   DCHECK_GT(typed_url.visits_size(), 0);
   CHECK_EQ(typed_url.visit_transitions_size(), typed_url.visits_size());
-  new_url->set_title(UTF8ToUTF16(typed_url.title()));
+  new_url->set_title(base::UTF8ToUTF16(typed_url.title()));
   new_url->set_hidden(typed_url.hidden());
   // Only provide the initial value for the last_visit field - after that, let
   // the history code update the last_visit field on its own.

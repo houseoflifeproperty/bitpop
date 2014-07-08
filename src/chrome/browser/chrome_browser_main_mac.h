@@ -6,11 +6,6 @@
 #define CHROME_BROWSER_CHROME_BROWSER_MAIN_MAC_H_
 
 #include "chrome/browser/chrome_browser_main_posix.h"
-#include "base/memory/ref_counted.h"
-
-namespace chrome {
-class RemovableDeviceNotificationsMac;
-}
 
 class ChromeBrowserMainPartsMac : public ChromeBrowserMainPartsPosix {
  public:
@@ -22,15 +17,13 @@ class ChromeBrowserMainPartsMac : public ChromeBrowserMainPartsPosix {
   virtual void PreEarlyInitialization() OVERRIDE;
   virtual void PreMainMessageLoopStart() OVERRIDE;
   virtual void PreProfileInit() OVERRIDE;
+  virtual void PostProfileInit() OVERRIDE;
 
   // Perform platform-specific work that needs to be done after the main event
   // loop has ended. The embedder must be sure to call this.
   static void DidEndMainMessageLoop();
 
  private:
-  scoped_refptr<chrome::RemovableDeviceNotificationsMac>
-      removable_device_notifications_mac_;
-
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsMac);
 };
 

@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/extensions/external_loader.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -22,7 +22,7 @@ class DictionaryValue;
 namespace extensions {
 
 // A specialization of the ExternalProvider that uses
-// prefs::kExtensionInstallForceList to look up which external extensions are
+// pref_names::kInstallForceList to look up which external extensions are
 // registered.
 class ExternalPolicyLoader
     : public ExternalLoader,

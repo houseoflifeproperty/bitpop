@@ -23,10 +23,11 @@
 #include "net/proxy/proxy_server.h"
 
 class GURL;
-class MessageLoop;
 
 namespace base {
+class MessageLoop;
 class SingleThreadTaskRunner;
+class TimeDelta;
 }  // namespace base
 
 namespace net {
@@ -43,6 +44,7 @@ class ProxyScriptFetcher;
 // HTTP(S) URL.  It uses the given ProxyResolver to handle the actual proxy
 // resolution.  See ProxyResolverV8 for example.
 class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
+                                public NetworkChangeNotifier::DNSObserver,
                                 public ProxyConfigService::Observer,
                                 NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
@@ -130,8 +132,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // This method is called after a failure to connect or resolve a host name.
   // It gives the proxy service an opportunity to reconsider the proxy to use.
   // The |results| parameter contains the results returned by an earlier call
-  // to ResolveProxy.  The semantics of this call are otherwise similar to
-  // ResolveProxy.
+  // to ResolveProxy.  The |net_error| parameter contains the network error
+  // code associated with the failure. See "net/base/net_error_list.h" for a
+  // list of possible values. The semantics of this call are otherwise
+  // similar to ResolveProxy.
   //
   // NULL can be passed for |pac_request| if the caller will not need to
   // cancel the request.
@@ -140,16 +144,23 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   //
   // Profiling information for the request is saved to |net_log| if non-NULL.
   int ReconsiderProxyAfterError(const GURL& url,
+                                int net_error,
                                 ProxyInfo* results,
                                 const CompletionCallback& callback,
                                 PacRequest** pac_request,
                                 const BoundNetLog& net_log);
 
   // Explicitly trigger proxy fallback for the given |results| by updating our
-  // list of bad proxies to include the first entry of |results|. Returns true
-  // if there will be at least one proxy remaining in the list after fallback
-  // and false otherwise.
-  bool MarkProxyAsBad(const ProxyInfo& results, const BoundNetLog& net_log);
+  // list of bad proxies to include the first entry of |results|, and,
+  // optionally, another bad proxy. Will retry after |retry_delay| if positive,
+  // and will use the default proxy retry duration otherwise. Proxies marked as
+  // bad will not be retried until |retry_delay| has passed. Returns true if
+  // there will be at least one proxy remaining in the list after fallback and
+  // false otherwise.
+  bool MarkProxiesAsBadUntil(const ProxyInfo& results,
+                             base::TimeDelta retry_delay,
+                             const ProxyServer& another_bad_proxy,
+                             const BoundNetLog& net_log);
 
   // Called to report that the last proxy connection succeeded.  If |proxy_info|
   // has a non empty proxy_retry_info map, the proxies that have been tried (and
@@ -176,10 +187,6 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // ResolveProxy calls. ProxyService takes ownership of
   // |new_proxy_config_service|.
   void ResetConfigService(ProxyConfigService* new_proxy_config_service);
-
-  // Tells the resolver to purge any memory it does not need.
-  void PurgeMemory();
-
 
   // Returns the last configuration fetched from ProxyConfigService.
   const ProxyConfig& fetched_config() {
@@ -240,7 +247,7 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // system proxy settings.
   static ProxyConfigService* CreateSystemProxyConfigService(
       base::SingleThreadTaskRunner* io_thread_task_runner,
-      MessageLoop* file_loop);
+      base::MessageLoop* file_loop);
 
   // This method should only be used by unit tests.
   void set_stall_proxy_auto_config_delay(base::TimeDelta delay) {
@@ -255,6 +262,54 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // This method should only be used by unit tests. Creates an instance
   // of the default internal PacPollPolicy used by ProxyService.
   static scoped_ptr<PacPollPolicy> CreateDefaultPacPollPolicy();
+
+  void set_quick_check_enabled(bool value) {
+    quick_check_enabled_ = value;
+  }
+
+  bool quick_check_enabled() const { return quick_check_enabled_; }
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  // Values of the UMA DataReductionProxy.BypassInfo{Primary|Fallback}
+  // histograms. This enum must remain synchronized with the enum of the same
+  // name in metrics/histograms/histograms.xml.
+  enum DataReductionProxyBypassEventType {
+    // Bypass the proxy for less than 30 minutes.
+    SHORT_BYPASS = 0,
+
+    // Bypass the proxy for 30 minutes or more.
+    LONG_BYPASS,
+
+    // Bypass the proxy because of an internal server error.
+    INTERNAL_SERVER_ERROR_BYPASS,
+
+    // Bypass the proxy because of any other error.
+    ERROR_BYPASS,
+
+    // Bypass the proxy because responses appear not to be coming via it.
+    MISSING_VIA_HEADER,
+
+    // Bypass the proxy because the proxy, not the origin, sent a 4xx response.
+    PROXY_4XX_BYPASS,
+
+    // This must always be last.
+    BYPASS_EVENT_TYPE_MAX
+  };
+
+  // Records a |DataReductionProxyBypassEventType| for either the data reduction
+  // proxy (|is_primary| is true) or the data reduction proxy fallback.
+  void RecordDataReductionProxyBypassInfo(
+      bool is_primary,
+      const ProxyServer& proxy_server,
+      DataReductionProxyBypassEventType bypass_type) const;
+
+  // Records a net error code that resulted in bypassing the data reduction
+  // proxy (|is_primary| is true) or the data reduction proxy fallback.
+  void RecordDataReductionProxyBypassOnNetworkError(
+      bool is_primary,
+      const ProxyServer& proxy_server,
+      int net_error);
+#endif
 
  private:
   FRIEND_TEST_ALL_PREFIXES(ProxyServiceTest, UpdateConfigAfterFailedAutodetect);
@@ -298,7 +353,7 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   int TryToCompleteSynchronously(const GURL& url, ProxyInfo* result);
 
   // Cancels all of the requests sent to the ProxyResolver. These will be
-  // restarted when calling ResumeAllPendingRequests().
+  // restarted when calling SetReady().
   void SuspendAllPendingRequests();
 
   // Advances the current state to |STATE_READY|, and resumes any pending
@@ -330,6 +385,10 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // NetworkChangeNotifier::IPAddressObserver
   // When this is called, we re-fetch PAC scripts and re-run WPAD.
   virtual void OnIPAddressChanged() OVERRIDE;
+
+  // NetworkChangeNotifier::DNSObserver
+  // We respond as above.
+  virtual void OnDNSChanged() OVERRIDE;
 
   // ProxyConfigService::Observer
   virtual void OnProxyConfigChanged(
@@ -395,6 +454,9 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
   // The amount of time to stall requests following IP address changes.
   base::TimeDelta stall_proxy_auto_config_delay_;
 
+  // Whether child ProxyScriptDeciders should use QuickCheck
+  bool quick_check_enabled_;
+
   DISALLOW_COPY_AND_ASSIGN(ProxyService);
 };
 
@@ -402,13 +464,14 @@ class NET_EXPORT ProxyService : public NetworkChangeNotifier::IPAddressObserver,
 class NET_EXPORT SyncProxyServiceHelper
     : public base::RefCountedThreadSafe<SyncProxyServiceHelper> {
  public:
-  SyncProxyServiceHelper(MessageLoop* io_message_loop,
+  SyncProxyServiceHelper(base::MessageLoop* io_message_loop,
                          ProxyService* proxy_service);
 
   int ResolveProxy(const GURL& url,
                    ProxyInfo* proxy_info,
                    const BoundNetLog& net_log);
   int ReconsiderProxyAfterError(const GURL& url,
+                                int net_error,
                                 ProxyInfo* proxy_info,
                                 const BoundNetLog& net_log);
 
@@ -418,11 +481,13 @@ class NET_EXPORT SyncProxyServiceHelper
   virtual ~SyncProxyServiceHelper();
 
   void StartAsyncResolve(const GURL& url, const BoundNetLog& net_log);
-  void StartAsyncReconsider(const GURL& url, const BoundNetLog& net_log);
+  void StartAsyncReconsider(const GURL& url,
+                            int net_error,
+                            const BoundNetLog& net_log);
 
   void OnCompletion(int result);
 
-  MessageLoop* io_message_loop_;
+  base::MessageLoop* io_message_loop_;
   ProxyService* proxy_service_;
 
   base::WaitableEvent event_;

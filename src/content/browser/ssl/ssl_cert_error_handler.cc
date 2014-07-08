@@ -6,8 +6,8 @@
 
 #include "content/browser/ssl/ssl_manager.h"
 #include "content/browser/ssl/ssl_policy.h"
-#include "net/base/cert_status_flags.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_status_flags.h"
+#include "net/cert/x509_certificate.h"
 
 namespace content {
 
@@ -17,11 +17,11 @@ SSLCertErrorHandler::SSLCertErrorHandler(
     ResourceType::Type resource_type,
     const GURL& url,
     int render_process_id,
-    int render_view_id,
+    int render_frame_id,
     const net::SSLInfo& ssl_info,
     bool fatal)
     : SSLErrorHandler(delegate, id, resource_type, url, render_process_id,
-          render_view_id),
+                      render_frame_id),
       ssl_info_(ssl_info),
       cert_error_(net::MapCertStatusToNetError(ssl_info.cert_status)),
       fatal_(fatal) {

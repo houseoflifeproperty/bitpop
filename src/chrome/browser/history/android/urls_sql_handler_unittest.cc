@@ -6,11 +6,10 @@
 
 #include "chrome/browser/history/android/urls_sql_handler.h"
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/android/visit_sql_handler.h"
 #include "chrome/browser/history/history_database.h"
 #include "chrome/common/chrome_constants.h"
@@ -27,16 +26,15 @@ class UrlsSQLHandlerTest : public testing::Test {
       : urls_sql_handler_(&history_db_),
         visit_sql_handler_(&history_db_) {
   }
-  ~UrlsSQLHandlerTest() {
-  }
+  virtual ~UrlsSQLHandlerTest() {}
 
  protected:
   virtual void SetUp() {
     // Get a temporary directory for the test DB files.
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    FilePath history_db_name = temp_dir_.path().AppendASCII(
+    base::FilePath history_db_name = temp_dir_.path().AppendASCII(
         chrome::kHistoryFilename);
-    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name, NULL));
+    ASSERT_EQ(sql::INIT_OK, history_db_.Init(history_db_name));
   }
 
   virtual void TearDown() {
@@ -112,7 +110,7 @@ TEST_F(UrlsSQLHandlerTest, InsertURLWithCreatedTime) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://google.com");
   row.set_url(GURL("http://google.com"));
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
   row.set_created(Time::Now());
 
   ASSERT_TRUE(urls_sql_handler_.Insert(&row));
@@ -152,7 +150,7 @@ TEST_F(UrlsSQLHandlerTest, Insert) {
   row.set_url(GURL("http://google.com"));
   row.set_visit_count(10);
   row.set_last_visit_time(Time::Now());
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
 
   ASSERT_TRUE(urls_sql_handler_.Insert(&row));
   URLRow url_row;
@@ -169,7 +167,7 @@ TEST_F(UrlsSQLHandlerTest, Update) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://google.com");
   row.set_url(GURL("http://google.com"));
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
   row.set_visit_count(10);
   row.set_last_visit_time(Time::Now() - TimeDelta::FromDays(10));
 
@@ -184,7 +182,7 @@ TEST_F(UrlsSQLHandlerTest, Update) {
   HistoryAndBookmarkRow update_row;
   update_row.set_last_visit_time(Time::Now());
   update_row.set_visit_count(1);
-  update_row.set_title(UTF8ToUTF16("Google Inc"));
+  update_row.set_title(base::UTF8ToUTF16("Google Inc"));
   TableIDRow id;
   id.url_id = url_row.id();
   TableIDRows ids;
@@ -202,7 +200,7 @@ TEST_F(UrlsSQLHandlerTest, UpdateLastBothTime) {
   HistoryAndBookmarkRow row;
   row.set_raw_url("http://google.com");
   row.set_url(GURL("http://google.com"));
-  row.set_title(UTF8ToUTF16("Google"));
+  row.set_title(base::UTF8ToUTF16("Google"));
   row.set_visit_count(10);
   row.set_last_visit_time(Time::Now() - TimeDelta::FromDays(10));
 

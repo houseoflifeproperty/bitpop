@@ -5,43 +5,55 @@
 #include "chrome/browser/ui/website_settings/website_settings_infobar_delegate.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "components/infobars/core/infobar.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 
-WebsiteSettingsInfobarDelegate::WebsiteSettingsInfobarDelegate(
-    InfoBarTabHelper* infobar_helper)
-    : ConfirmInfoBarDelegate(infobar_helper) {
+
+// static
+void WebsiteSettingsInfoBarDelegate::Create(InfoBarService* infobar_service) {
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new WebsiteSettingsInfoBarDelegate())));
 }
 
-gfx::Image* WebsiteSettingsInfobarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_ALT_NAV_URL);
+WebsiteSettingsInfoBarDelegate::WebsiteSettingsInfoBarDelegate()
+    : ConfirmInfoBarDelegate() {
 }
 
-InfoBarDelegate::Type WebsiteSettingsInfobarDelegate::GetInfoBarType() const {
+WebsiteSettingsInfoBarDelegate::~WebsiteSettingsInfoBarDelegate() {
+}
+
+int WebsiteSettingsInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_ALT_NAV_URL;
+}
+
+infobars::InfoBarDelegate::Type WebsiteSettingsInfoBarDelegate::GetInfoBarType()
+    const {
   return PAGE_ACTION_TYPE;
 }
 
-string16 WebsiteSettingsInfobarDelegate::GetMessageText() const {
+base::string16 WebsiteSettingsInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_INFOBAR_TEXT);
 }
 
-int WebsiteSettingsInfobarDelegate::GetButtons() const {
+int WebsiteSettingsInfoBarDelegate::GetButtons() const {
   return BUTTON_OK;
 }
 
-string16 WebsiteSettingsInfobarDelegate::GetButtonLabel(
+base::string16 WebsiteSettingsInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_INFOBAR_BUTTON);
 }
 
-bool WebsiteSettingsInfobarDelegate::Accept() {
-  owner()->GetWebContents()->GetController().Reload(true);
+bool WebsiteSettingsInfoBarDelegate::Accept() {
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  web_contents->GetController().Reload(true);
   return true;
 }

@@ -11,7 +11,7 @@
   'targets': [
     {
       'target_name': 'system_wrappers',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         'spreadsortlib',
         '../interface',
@@ -24,49 +24,52 @@
       'sources': [
         '../interface/aligned_malloc.h',
         '../interface/atomic32.h',
+        '../interface/clock.h',
         '../interface/compile_assert.h',
         '../interface/condition_variable_wrapper.h',
         '../interface/cpu_info.h',
-        '../interface/cpu_wrapper.h',
         '../interface/cpu_features_wrapper.h',
         '../interface/critical_section_wrapper.h',
         '../interface/data_log.h',
         '../interface/data_log_c.h',
         '../interface/data_log_impl.h',
+        '../interface/event_tracer.h',
         '../interface/event_wrapper.h',
         '../interface/file_wrapper.h',
         '../interface/fix_interlocked_exchange_pointer_win.h',
-        '../interface/list_wrapper.h',
+        '../interface/logcat_trace_context.h',
         '../interface/logging.h',
-        '../interface/map_wrapper.h',
         '../interface/ref_count.h',
+        '../interface/rtp_to_ntp.h',
         '../interface/rw_lock_wrapper.h',
         '../interface/scoped_ptr.h',
         '../interface/scoped_refptr.h',
+        '../interface/scoped_vector.h',
         '../interface/sleep.h',
         '../interface/sort.h',
         '../interface/static_instance.h',
+        '../interface/stl_util.h',
+        '../interface/stringize_macros.h',
+        '../interface/thread_annotations.h',
         '../interface/thread_wrapper.h',
         '../interface/tick_util.h',
+        '../interface/timestamp_extrapolator.h',
         '../interface/trace.h',
+        '../interface/trace_event.h',
+        '../interface/utf_util_win.h',
         'aligned_malloc.cc',
         'atomic32_mac.cc',
         'atomic32_posix.cc',
         'atomic32_win.cc',
+        'clock.cc',
         'condition_variable.cc',
         'condition_variable_posix.cc',
         'condition_variable_posix.h',
-        'condition_variable_win.cc',
-        'condition_variable_win.h',
-        'cpu.cc',
-        'cpu_no_op.cc',
+        'condition_variable_event_win.cc',
+        'condition_variable_event_win.h',
+        'condition_variable_native_win.cc',
+        'condition_variable_native_win.h',
         'cpu_info.cc',
-        'cpu_linux.cc',
-        'cpu_linux.h',
-        'cpu_mac.cc',
-        'cpu_mac.h',
-        'cpu_win.cc',
-        'cpu_win.h',
         'cpu_features.cc',
         'critical_section.cc',
         'critical_section_posix.cc',
@@ -79,14 +82,14 @@
         'event.cc',
         'event_posix.cc',
         'event_posix.h',
+        'event_tracer.cc',
         'event_win.cc',
         'event_win.h',
         'file_impl.cc',
         'file_impl.h',
-        'list_no_stl.cc',
+        'logcat_trace_context.cc',
         'logging.cc',
-        'logging_no_op.cc',
-        'map.cc',
+        'rtp_to_ntp.cc',
         'rw_lock.cc',
         'rw_lock_generic.cc',
         'rw_lock_generic.h',
@@ -103,9 +106,9 @@
         'thread_posix.h',
         'thread_win.cc',
         'thread_win.h',
+        'timestamp_extrapolator.cc',
         'trace_impl.cc',
         'trace_impl.h',
-        'trace_impl_no_op.cc',
         'trace_posix.cc',
         'trace_posix.h',
         'trace_win.cc',
@@ -117,26 +120,34 @@
         }, {
           'sources!': [ 'data_log.cc', ],
         },],
-        ['enable_tracing==1', {
-          'sources!': [
-            'logging_no_op.cc',
-            'trace_impl_no_op.cc',
-          ],
-        }, {
-          'sources!': [
-            'logging.cc',
-            'trace_impl.cc',
-            'trace_impl.h',
-            'trace_posix.cc',
-            'trace_posix.h',
-            'trace_win.cc',
-            'trace_win.h',
-          ],
-        }],
         ['OS=="android"', {
+          'defines': [
+            'WEBRTC_THREAD_RR',
+            # TODO(leozwang): Investigate CLOCK_REALTIME and CLOCK_MONOTONIC
+            # support on Android. Keep WEBRTC_CLOCK_TYPE_REALTIME for now,
+            # remove it after I verify that CLOCK_MONOTONIC is fully functional
+            # with condition and event functions in system_wrappers.
+            'WEBRTC_CLOCK_TYPE_REALTIME',
+           ],
           'dependencies': [ 'cpu_features_android', ],
+          'link_settings': {
+            'libraries': [
+              '-llog',
+            ],
+          },
+        }, {  # OS!="android"
+          'sources!': [
+            '../interface/logcat_trace_context.h',
+            'logcat_trace_context.cc',
+          ],
         }],
         ['OS=="linux"', {
+          'defines': [
+            'WEBRTC_THREAD_RR',
+            # TODO(andrew): can we select this automatically?
+            # Define this if the Linux system does not support CLOCK_MONOTONIC.
+            #'WEBRTC_CLOCK_TYPE_REALTIME',
+          ],
           'link_settings': {
             'libraries': [ '-lrt', ],
           },
@@ -149,22 +160,16 @@
             'atomic32_posix.cc',
           ],
         }],
+        ['OS=="ios" or OS=="mac"', {
+          'defines': [
+            'WEBRTC_THREAD_RR',
+            'WEBRTC_CLOCK_TYPE_REALTIME',
+          ],
+        }],
         ['OS=="win"', {
           'link_settings': {
             'libraries': [ '-lwinmm.lib', ],
           },
-        }],
-        ['build_with_chromium==1', {
-          'sources!': [
-            'cpu.cc',
-            'cpu_linux.h',
-            'cpu_mac.h',
-            'cpu_win.h',
-          ],
-        }, {
-          'sources!': [
-            'cpu_no_op.cc',
-          ],
         }],
       ], # conditions
       'target_conditions': [
@@ -175,12 +180,16 @@
           # by file name rules).
           'sources/': [
             ['include', '^atomic32_mac\\.'],
-            ['include', '^cpu_mac\\.'],
           ],
           'sources!': [
             'atomic32_posix.cc',
           ],
         }],
+      ],
+      # Disable warnings to enable Win64 build, issue 1323.
+      'msvs_disabled_warnings': [
+        4267,  # size_t to int truncation.
+        4334,  # Ignore warning on shift operator promotion.
       ],
     },
   ], # targets
@@ -188,80 +197,25 @@
     ['OS=="android"', {
       'targets': [
         {
-          'variables': {
-            # Treat this as third-party code.
-            'chromium_code': 0,
-          },
           'target_name': 'cpu_features_android',
-          'type': '<(library)',
+          'type': 'static_library',
           'sources': [
-            # TODO(leozwang): Ideally we want to audomatically exclude .c files
-            # as with .cc files, gyp currently only excludes .cc files.
             'cpu_features_android.c',
           ],
           'conditions': [
-            ['build_with_chromium==1', {
-              'dependencies': [
-                '<(android_ndk_root)/android_tools_ndk.gyp:cpu_features',
+            ['android_webview_build == 1', {
+              'libraries': [
+                'cpufeatures.a'
               ],
             }, {
-              'sources': [
-                'android/cpu-features.c',
-                'android/cpu-features.h',
+              'dependencies': [
+                '<(android_ndk_root)/android_tools_ndk.gyp:cpu_features',
               ],
             }],
           ],
         },
       ],
     }],
-    ['include_tests==1', {
-      'targets': [
-        {
-          'target_name': 'system_wrappers_unittests',
-          'type': 'executable',
-          'dependencies': [
-            'system_wrappers',
-            '<(DEPTH)/testing/gtest.gyp:gtest',
-            '<(webrtc_root)/test/test.gyp:test_support_main',
-          ],
-          'sources': [
-            'aligned_malloc_unittest.cc',
-            'condition_variable_unittest.cc',
-            'cpu_wrapper_unittest.cc',
-            'cpu_measurement_harness.h',
-            'cpu_measurement_harness.cc',
-            'critical_section_unittest.cc',
-            'list_unittest.cc',
-            'logging_unittest.cc',
-            'map_unittest.cc',
-            'data_log_unittest.cc',
-            'data_log_unittest_disabled.cc',
-            'data_log_helpers_unittest.cc',
-            'data_log_c_helpers_unittest.c',
-            'data_log_c_helpers_unittest.h',
-            'thread_unittest.cc',
-            'thread_posix_unittest.cc',
-            'trace_unittest.cc',
-            'unittest_utilities_unittest.cc',
-          ],
-          'conditions': [
-            ['enable_data_logging==1', {
-              'sources!': [ 'data_log_unittest_disabled.cc', ],
-            }, {
-              'sources!': [ 'data_log_unittest.cc', ],
-            }],
-            ['os_posix==0', {
-              'sources!': [ 'thread_posix_unittest.cc', ],
-            }],
-          ],
-        },
-      ], # targets
-    }], # include_tests
   ], # conditions
 }
 
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

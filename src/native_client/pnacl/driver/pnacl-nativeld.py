@@ -13,11 +13,15 @@
 # --pnacl-sb will cause the sandboxed LD to be used.
 # The bulk of this file is logic to invoke the sandboxed translator.
 
-from driver_tools import *
+import subprocess
+
+from driver_tools import CheckTranslatorPrerequisites, GetArch, ParseArgs, \
+    Run, UnrecognizedOption
 from driver_env import env
 from driver_log import Log
+import ldtools
+import pathtools
 
-import subprocess
 
 EXTRA_ENV = {
   'INPUTS'   : '',
@@ -25,70 +29,44 @@ EXTRA_ENV = {
 
   # the INPUTS file coming from the llc translation step
   'LLC_TRANSLATED_FILE' : '',
-
-  # Capture some metadata passed from pnacl-translate over to here.
-  'SONAME' : '',
-
-  'STDLIB': '1',
-  'SHARED': '0',
-  'STATIC': '0',
-  'RELOCATABLE': '0',
-
-  # These are used only for the static cases
-  # For the shared/dynamic case it does not really make sense
-  # to change them as there are assumptions made all over the
-  # place about them.
-  'BASE_TEXT': '0x20000',
-  'BASE_RODATA': '0x10020000',
+  'SPLIT_MODULE' : '0',
+  'USE_STDLIB': '1',
 
   # Determine if we should build nexes compatible with the IRT.
   'USE_IRT' : '1',
 
-  # We consider 4 different gold modes.
-  # NOTE: "shared" implies PIC
-  #       "dynamic" should probbably imply nonPIC to avoid
-  #                 tls related instruction rewrites by the linker
-  # NOTE: gold does not use a linker script so you have to disable
-  #       them besides setting 'USE_GOLD' to '0'.
-  # NOTE: -Tdata is used to influence the placement of the ro segment
-  #       gold has been adjusted accordingly
-  'LD_FLAGS_static': '--rosegment --native-client ' +
-                     '--keep-headers-out-of-load-segment ' +
-                     '${USE_IRT ? -Tdata=${BASE_RODATA}} -Ttext=${BASE_TEXT}',
-
-  'LD_FLAGS_shared': '--rosegment --bsssegment --native-client ' +
-                     '--keep-headers-out-of-load-segment ' +
-                     '-Tdata=0x10000000',
-
-  'LD_FLAGS_dynamic': '--rosegment  --bsssegment --native-client ' +
-                      '--keep-headers-out-of-load-segment ' +
-                      '-Tdata=0x11000000 -Ttext=0x1000000',
-
+  # Upstream gold has the segment gap built in, but the gap can be modified
+  # when not using the IRT. The gap does need to be at least one bundle so the
+  # halt sled can be added for the TCB in case the segment ends up being a
+  # multiple of 64k.
   # --eh-frame-hdr asks the linker to generate an .eh_frame_hdr section,
   # which is a presorted list of registered frames. This section is
   # used by libgcc_eh/libgcc_s to avoid doing the sort during runtime.
   # http://www.airs.com/blog/archives/462
   #
-  'LD_FLAGS'    : '${LD_FLAGS_%EMITMODE%} ' +
-                  '-nostdlib ' +
-                  # Only relvevant for ARM where it suppresses a warning.
+  # BE CAREFUL: anything added to LD_FLAGS should be synchronized with
+  # flags used by the in-browser translator.
+  # See: binutils/gold/nacl_file.cc
+  'LD_FLAGS'    : '-nostdlib ' +
+                  # Only relevant for ARM where it suppresses a warning.
                   # Ignored for other archs.
                   '--no-fix-cortex-a8 ' +
                   '-m ${LD_EMUL} ' +
                   '--eh-frame-hdr ' +
-                  '${#SONAME ? -soname=${SONAME}} ' +
-                  '${STATIC ? -static} ${SHARED ? -shared} ${RELOCATABLE ? -r}',
+                  '${NONSFI_NACL ? -pie : -static} ' +
+                  # "_begin" allows a PIE to find its load address in
+                  # order to apply dynamic relocations.
+                  '${NONSFI_NACL ? -defsym=_begin=0} ' +
+                  # Give an error if any TEXTRELs occur.
+                  '-z text ' +
+                  '--build-id ' +
+                  # Give non-IRT builds 12MB of text before starting rodata
+                  # instead of the larger default gap. The gap cannot be
+                  # too small (e.g., 0) because sel_ldr requires space for
+                  # adding a halt sled.
+                  '${!USE_IRT ? --rosegment-gap=0xc00000}',
 
-  # This may contain the metadata file, which is passed to LD with --metadata.
-  # It must be passed at the end of the link line.
-  'METADATA_FILE': '',
-  'NEEDED_LIBRARIES': '',
-
-  'EMITMODE'         : '${RELOCATABLE ? relocatable : ' +
-                       '${STATIC ? static : ' +
-                       '${SHARED ? shared : dynamic}}}',
-
-  'LD_EMUL'        : '${LD_EMUL_%ARCH%}',
+  'LD_EMUL'        : '${LD_EMUL_%BASE_ARCH%}',
   'LD_EMUL_ARM'    : 'armelf_nacl',
   'LD_EMUL_X8632'  : 'elf_nacl',
   'LD_EMUL_X8664'  : 'elf64_nacl',
@@ -96,17 +74,18 @@ EXTRA_ENV = {
 
   'SEARCH_DIRS'        : '${SEARCH_DIRS_USER} ${SEARCH_DIRS_BUILTIN}',
   'SEARCH_DIRS_USER'   : '',
-  'SEARCH_DIRS_BUILTIN': '${STDLIB ? ${LIBS_ARCH}/}',
+  'SEARCH_DIRS_BUILTIN': '${USE_STDLIB ? ${LIBS_ARCH}/}',
 
   'LIBS_ARCH'        : '${LIBS_%ARCH%}',
   'LIBS_ARM'         : '${BASE_LIB_NATIVE}arm',
+  'LIBS_ARM_NONSFI'  : '${BASE_LIB_NATIVE}arm-nonsfi',
   'LIBS_X8632'       : '${BASE_LIB_NATIVE}x86-32',
+  'LIBS_X8632_NONSFI': '${BASE_LIB_NATIVE}x86-32-nonsfi',
   'LIBS_X8664'       : '${BASE_LIB_NATIVE}x86-64',
   'LIBS_MIPS32'      : '${BASE_LIB_NATIVE}mips32',
 
   # Note: this is only used in the unsandboxed case
-  'RUN_LD' : '${LD} ${LD_FLAGS} ${inputs} -o ${output}' +
-             '${#METADATA_FILE ? --metadata ${METADATA_FILE}}',
+  'RUN_LD' : '${LD} ${LD_FLAGS} ${inputs} -o ${output}'
 }
 
 def PassThrough(*args):
@@ -116,33 +95,27 @@ LDPatterns = [
   ( '-o(.+)',          "env.set('OUTPUT', pathtools.normalize($0))"),
   ( ('-o', '(.+)'),    "env.set('OUTPUT', pathtools.normalize($0))"),
 
-  ( ('(--add-extra-dt-needed=.*)'), "env.append('NEEDED_LIBRARIES', $0)"),
-  ( ('--metadata', '(.+)'),         "env.set('METADATA_FILE', $0)"),
   ( '--noirt',                      "env.set('USE_IRT', '0')"),
 
-  ( '-shared',         "env.set('SHARED', '1')"),
   ( '-static',         "env.set('STATIC', '1')"),
-  ( '-nostdlib',       "env.set('STDLIB', '0')"),
-  ( '-r',              "env.set('RELOCATABLE', '1')"),
-  ( '-relocatable',    "env.set('RELOCATABLE', '1')"),
+  ( '-nostdlib',       "env.set('USE_STDLIB', '0')"),
 
   ( '-L(.+)',
     "env.append('SEARCH_DIRS_USER', pathtools.normalize($0))"),
   ( ('-L', '(.*)'),
     "env.append('SEARCH_DIRS_USER', pathtools.normalize($0))"),
-  # Note: we conflate '-Ttext' and '--section-start .text=' here
-  # This is not quite right but it is the intention of the tests
-  # using the flags which want to control the placement of the
-  # "rx" and "r" segments
-  ( ('-Ttext','(.*)'),                  "env.set('BASE_TEXT', $0)"),
-  ( ('-Ttext=(.*)'),                    "env.set('BASE_TEXT', $0)"),
-  ( ('--section-start','.text=(.*)'),   "env.set('BASE_TEXT', $0)"),
-  ( ('--section-start','.rodata=(.*)'), "env.set('BASE_RODATA', $0)"),
 
+  # Note: we do not yet support all the combinations of flags which affect
+  # layout of the various sections and segments because the corner cases in gold
+  # may not all be worked out yet. They can be added (and tested!) as needed.
+  ( ('(-Ttext=.*)'),              PassThrough),
+  ( ('(-Trodata=.*)'),            PassThrough),
+  ( ('(-Ttext-segment=.*)'),      PassThrough),
+  ( ('(-Trodata-segment=.*)'),    PassThrough),
+  ( ('(--section-start)', '(.+)'),PassThrough),
+  ( ('(--section-start=.*)'),     PassThrough),
   ( ('(-e)','(.*)'),              PassThrough),
   ( '(--entry=.*)',               PassThrough),
-  ( '-?-soname=(.*)',             "env.set('SONAME', $0)"),
-  ( ('(-?-soname)', '(.*)'),      "env.set('SONAME', $1)"),
   ( '(-M)',                       PassThrough),
   ( '(-t)',                       PassThrough),
   ( ('-y','(.*)'),                PassThrough),
@@ -153,13 +126,17 @@ LDPatterns = [
   ( '(--gc-sections)',            PassThrough),
   ( '(--unresolved-symbols=.*)',  PassThrough),
   ( '(--dynamic-linker=.*)',      PassThrough),
+  ( '(-g)',                       PassThrough),
+  ( '(--build-id)',               PassThrough),
 
-  ( '-melf_nacl',          "env.set('ARCH', 'X8632')"),
-  ( ('-m','elf_nacl'),     "env.set('ARCH', 'X8632')"),
-  ( '-melf64_nacl',        "env.set('ARCH', 'X8664')"),
-  ( ('-m','elf64_nacl'),   "env.set('ARCH', 'X8664')"),
-  ( '-marmelf_nacl',       "env.set('ARCH', 'ARM')"),
-  ( ('-m','armelf_nacl'),  "env.set('ARCH', 'ARM')"),
+  ( '-melf_nacl',            "env.set('ARCH', 'X8632')"),
+  ( ('-m','elf_nacl'),       "env.set('ARCH', 'X8632')"),
+  ( '-melf64_nacl',          "env.set('ARCH', 'X8664')"),
+  ( ('-m','elf64_nacl'),     "env.set('ARCH', 'X8664')"),
+  ( '-marmelf_nacl',         "env.set('ARCH', 'ARM')"),
+  ( ('-m','armelf_nacl'),    "env.set('ARCH', 'ARM')"),
+  ( '-mmipselelf_nacl',      "env.set('ARCH', 'MIPS32')"),
+  ( ('-m','mipselelf_nacl'), "env.set('ARCH', 'MIPS32')"),
 
   # Inputs and options that need to be kept in order
   ( '(--no-as-needed)',    "env.append('INPUTS', $0)"),
@@ -171,9 +148,11 @@ LDPatterns = [
   # This is the file passed from llc during translation (used to be via shmem)
   ( ('--llc-translated-file=(.*)'), "env.append('INPUTS', $0)\n"
                                     "env.set('LLC_TRANSLATED_FILE', $0)"),
+  ( '-split-module=([0-9]+)', "env.set('SPLIT_MODULE', $0)"),
   ( '(--(no-)?whole-archive)', "env.append('INPUTS', $0)"),
 
   ( '(-l.*)',              "env.append('INPUTS', $0)"),
+  ( '(--undefined=.*)',    "env.append('INPUTS', $0)"),
 
   ( '(-.*)',               UnrecognizedOption),
   ( '(.*)',                "env.append('INPUTS', pathtools.normalize($0))"),
@@ -204,9 +183,6 @@ def main(argv):
   env.set('inputs', *inputs)
   env.set('output', output)
 
-  if GetArch(required=True) == 'X8664':
-    env.append('LD_FLAGS', '--metadata-is64')
-
   if env.getbool('SANDBOXED'):
     RunLDSandboxed()
   else:
@@ -219,6 +195,8 @@ def IsFlag(arg):
   return arg.startswith('-')
 
 def RunLDSandboxed():
+  if not env.getbool('USE_STDLIB'):
+    Log.Fatal('-nostdlib is not supported by the sandboxed translator')
   CheckTranslatorPrerequisites()
   # The "main" input file is the application's combined object file.
   all_inputs = env.get('inputs')
@@ -229,11 +207,22 @@ def RunLDSandboxed():
 
   outfile = env.getone('output')
 
+  modules = int(env.getone('SPLIT_MODULE'))
+  if modules > 1:
+    first_mainfile = all_inputs.index(main_input)
+    first_extra = all_inputs.index(main_input) + modules
+    # Just the split module files
+    llc_outputs = all_inputs[first_mainfile:first_extra]
+    # everything else
+    all_inputs = all_inputs[:first_mainfile] + all_inputs[first_extra:]
+  else:
+    llc_outputs = [main_input]
+
   files = LinkerFiles(all_inputs)
   ld_flags = env.get('LD_FLAGS')
 
   script = MakeSelUniversalScriptForLD(ld_flags,
-                                       main_input,
+                                       llc_outputs,
                                        files,
                                        outfile)
 
@@ -248,71 +237,37 @@ def RunLDSandboxed():
 
 
 def MakeSelUniversalScriptForLD(ld_flags,
-                                main_input,
+                                llc_outputs,
                                 files,
                                 outfile):
   """ Return sel_universal script text for invoking LD.nexe with the
-      given ld_flags, main_input (which is treated specially), and
-      other input files. The output will be written to outfile.  """
+  given ld_flags, llc_outputs (which are treated specially), and
+  other input files (for native libraries). The output will be written
+  to outfile.  """
   script = []
 
   # Open the output file.
   script.append('readwrite_file nexefile %s' % outfile)
 
-  # Need to include the linker script file as a linker resource for glibc.
   files_to_map = list(files)
-
-  use_default = env.getbool('USE_DEFAULT_CMD_LINE')
-  # Create a mapping for each input file and add it to the command line.
+  # Create a reverse-service mapping for each input file and add it to
+  # the sel universal script.
   for f in files_to_map:
     basename = pathtools.basename(f)
     # If we are using the dummy shim, map it with the filename of the real
-    # shim, so the baked-in commandline will work
-    if basename == 'libpnacl_irt_shim_dummy.a' and use_default:
-       basename = 'libpnacl_irt_shim.a'
+    # shim, so the baked-in commandline will work.
+    if basename == 'libpnacl_irt_shim_dummy.a':
+      basename = 'libpnacl_irt_shim.a'
     script.append('reverse_service_add_manifest_mapping files/%s %s' %
                   (basename, f))
 
-  if use_default:
-    # We don't have the bitcode file here anymore, so we assume that
-    # pnacl-translate passed along the relevant information via commandline.
-    soname = env.getone('SONAME')
-    needed = env.get('NEEDED_LIBRARIES')
-    emit_mode = env.getone('EMITMODE')
-    if emit_mode == 'shared':
-      is_shared_library = 1
-    else:
-      is_shared_library = 0
-
-    script.append('readonly_file objfile %s' % main_input)
-    script.append(('rpc RunWithDefaultCommandLine ' +
-                   'h(objfile) h(nexefile) i(%d) s("%s") s("%s") *'
-                   % (is_shared_library, soname, needed)))
-  else:
-    # Join all the arguments.
-    # Based on the format of RUN_LD, the order of arguments is:
-    # ld_flags, then input files (which are more sensitive to order).
-
-    # For the sandboxed build, we don't want "real" filesystem paths,
-    # because we use the reverse-service to do a lookup -- make sure
-    # everything is a basename first.
-    ld_flags = [ pathtools.basename(flag) for flag in ld_flags ]
-    kTerminator = '\0'
-    command_line = kTerminator.join(['ld'] + ld_flags) + kTerminator
-    for f in files:
-      basename = pathtools.basename(f)
-      command_line = command_line + basename + kTerminator
-
-    # Add the metadata file
-    metadata_file = env.getone('METADATA_FILE')
-    if metadata_file:
-      command_line = command_line + '--metadata' + kTerminator
-      command_line = command_line + metadata_file + kTerminator
-
-    command_line_escaped = command_line.replace(kTerminator, '\\x00')
-    # Assume that the commandline captures all necessary metadata for now.
-    script.append('rpc Run h(nexefile) C(%d,%s) *' %
-                  (len(command_line), command_line_escaped))
+  modules = len(llc_outputs)
+  script.extend(['readonly_file objfile%d %s' % (i, f)
+                 for i, f in zip(range(modules), llc_outputs)])
+  script.append('rpc RunWithSplit i(%d) ' % modules +
+                ' '.join(['h(objfile%s)' % m for m in range(modules)] +
+                         ['h(invalid)' for x in range(modules, 16)]) +
+                ' h(nexefile) *')
   script.append('echo "ld complete"')
   script.append('')
   return '\n'.join(script)

@@ -38,14 +38,19 @@ class TabModalConfirmDialogMac : public TabModalConfirmDialog,
   virtual void AcceptTabModalDialog() OVERRIDE;
   virtual void CancelTabModalDialog() OVERRIDE;
 
+  // TabModalConfirmDialogCloseDelegate:
+  virtual void CloseDialog() OVERRIDE;
+
   // ConstrainedWindowMacDelegate:
   virtual void OnConstrainedWindowClosed(
       ConstrainedWindowMac* window) OVERRIDE;
 
+  bool closing_;
+
   scoped_ptr<ConstrainedWindowMac> window_;
   scoped_ptr<TabModalConfirmDialogDelegate> delegate_;
-  scoped_nsobject<ConstrainedWindowAlert> alert_;
-  scoped_nsobject<TabModalConfirmDialogMacBridge> bridge_;
+  base::scoped_nsobject<ConstrainedWindowAlert> alert_;
+  base::scoped_nsobject<TabModalConfirmDialogMacBridge> bridge_;
 
   DISALLOW_COPY_AND_ASSIGN(TabModalConfirmDialogMac);
 };

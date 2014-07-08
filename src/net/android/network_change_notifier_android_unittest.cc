@@ -8,7 +8,7 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/android/network_change_notifier_android.h"
 #include "net/android/network_change_notifier_delegate_android.h"
 #include "net/base/network_change_notifier.h"
@@ -93,13 +93,13 @@ class BaseNetworkChangeNotifierAndroidTest : public testing::Test {
   void SetOnline() {
     delegate_.SetOnline();
     // Note that this is needed because ObserverListThreadSafe uses PostTask().
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   void SetOffline() {
     delegate_.SetOffline();
     // See comment above.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   NetworkChangeNotifierDelegateAndroid delegate_;

@@ -5,19 +5,26 @@
 #include <string>
 
 #include "base/command_line.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
+#include "chrome/common/extensions/manifest_handlers/app_launch_info.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/web_contents.h"
+#include "content/public/test/browser_test_utils.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/permissions/permission_set.h"
 
 namespace extensions {
 
@@ -31,28 +38,29 @@ class ExtensionFromWebAppTest
   const Extension* installed_extension_;
 
  private:
-  // InProcessBrowserTest
-  virtual void SetUpCommandLine(CommandLine* command_line) {
-    command_line->AppendSwitch(switches::kEnableCrxlessWebApps);
-  }
-
   // content::NotificationObserver
   virtual void Observe(int type,
                        const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
+                       const content::NotificationDetails& details) OVERRIDE {
     if (type == chrome::NOTIFICATION_EXTENSION_INSTALLED) {
       const Extension* extension =
-          content::Details<const Extension>(details).ptr();
+          content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension->id() == expected_extension_id_) {
         installed_extension_ = extension;
-        MessageLoopForUI::current()->Quit();
+        base::MessageLoopForUI::current()->Quit();
       }
     }
   }
 };
 
-IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, Basic) {
-  ASSERT_TRUE(test_server()->Start());
+// TODO(samarth): delete along with rest of the NTP4 code.
+IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, DISABLED_Basic) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+    return;
+#endif
+
   browser()->profile()->GetExtensionService()->set_show_extensions_prompts(
       false);
 
@@ -60,11 +68,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, Basic) {
   registrar.Add(this, chrome::NOTIFICATION_EXTENSION_INSTALLED,
                 content::NotificationService::AllSources());
 
-  expected_extension_id_ = "fnpgoaochgbdfjndakichfafiocjjpmm";
+  expected_extension_id_ = "ffnmbohohhobhkjpfbefbjifapgcmpaa";
   ui_test_utils::NavigateToURL(
       browser(),
-      test_server()->GetURL(
-          "files/extensions/convert_web_app/application.html"));
+      GURL("chrome://newtab"));
+  EXPECT_TRUE(content::ExecuteScript(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "chrome.send('generateAppForLink', "
+      "['http://www.example.com', 'Test application', 0])"));
 
   if (!installed_extension_)
     content::RunMessageLoop();
@@ -72,23 +83,13 @@ IN_PROC_BROWSER_TEST_F(ExtensionFromWebAppTest, Basic) {
   EXPECT_TRUE(installed_extension_);
   EXPECT_TRUE(installed_extension_->is_hosted_app());
   EXPECT_EQ("Test application", installed_extension_->name());
-  EXPECT_EQ("the description is", installed_extension_->description());
-  EXPECT_EQ(extension_misc::LAUNCH_PANEL,
-            installed_extension_->launch_container());
-
-  ASSERT_EQ(2u, installed_extension_->GetActivePermissions()->apis().size());
-  EXPECT_TRUE(installed_extension_->HasAPIPermission(
-      APIPermission::kGeolocation));
-  EXPECT_TRUE(installed_extension_->HasAPIPermission(
-      APIPermission::kNotification));
-
-  ASSERT_EQ(3u, installed_extension_->icons().map().size());
-  EXPECT_EQ("icons/16.png", installed_extension_->icons().Get(
-      16, ExtensionIconSet::MATCH_EXACTLY));
-  EXPECT_EQ("icons/48.png", installed_extension_->icons().Get(
-      48, ExtensionIconSet::MATCH_EXACTLY));
-  EXPECT_EQ("icons/128.png", installed_extension_->icons().Get(
-      128, ExtensionIconSet::MATCH_EXACTLY));
+  EXPECT_EQ("", installed_extension_->description());
+  EXPECT_EQ(GURL("http://www.example.com/"),
+            AppLaunchInfo::GetLaunchWebURL(installed_extension_));
+  EXPECT_EQ(LAUNCH_CONTAINER_TAB,
+            AppLaunchInfo::GetLaunchContainer(installed_extension_));
+  EXPECT_EQ(0u, installed_extension_->GetActivePermissions()->apis().size());
+  EXPECT_EQ(0u, IconsInfo::GetIcons(installed_extension_).map().size());
 }
 
 }  // namespace extensions

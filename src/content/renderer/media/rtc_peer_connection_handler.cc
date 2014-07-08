@@ -6,80 +6,110 @@
 
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "base/command_line.h"
+#include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/metrics/histogram.h"
+#include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/common/content_switches.h"
 #include "content/renderer/media/media_stream_dependency_factory.h"
+#include "content/renderer/media/media_stream_track.h"
+#include "content/renderer/media/peer_connection_tracker.h"
+#include "content/renderer/media/remote_media_stream_impl.h"
 #include "content/renderer/media/rtc_data_channel_handler.h"
+#include "content/renderer/media/rtc_dtmf_sender_handler.h"
 #include "content/renderer/media/rtc_media_constraints.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaConstraints.h"
-// TODO(hta): Move the following include to WebRTCStatsRequest.h file.
-#include "third_party/WebKit/Source/Platform/chromium/public/WebMediaStreamComponent.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCConfiguration.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCICECandidate.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCPeerConnectionHandlerClient.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCSessionDescription.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCSessionDescriptionRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCStatsRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebRTCVoidRequest.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "content/renderer/media/webrtc/webrtc_media_stream_adapter.h"
+#include "content/renderer/media/webrtc_audio_capturer.h"
+#include "content/renderer/media/webrtc_audio_device_impl.h"
+#include "content/renderer/media/webrtc_uma_histograms.h"
+#include "content/renderer/render_thread_impl.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebRTCConfiguration.h"
+#include "third_party/WebKit/public/platform/WebRTCDataChannelInit.h"
+#include "third_party/WebKit/public/platform/WebRTCICECandidate.h"
+#include "third_party/WebKit/public/platform/WebRTCSessionDescription.h"
+#include "third_party/WebKit/public/platform/WebRTCSessionDescriptionRequest.h"
+#include "third_party/WebKit/public/platform/WebRTCVoidRequest.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
 
 namespace content {
 
-// Converter functions from  libjingle types to WebKit types.
+// Converter functions from libjingle types to WebKit types.
+blink::WebRTCPeerConnectionHandlerClient::ICEGatheringState
+GetWebKitIceGatheringState(
+    webrtc::PeerConnectionInterface::IceGatheringState state) {
+  using blink::WebRTCPeerConnectionHandlerClient;
+  switch (state) {
+    case webrtc::PeerConnectionInterface::kIceGatheringNew:
+      return WebRTCPeerConnectionHandlerClient::ICEGatheringStateNew;
+    case webrtc::PeerConnectionInterface::kIceGatheringGathering:
+      return WebRTCPeerConnectionHandlerClient::ICEGatheringStateGathering;
+    case webrtc::PeerConnectionInterface::kIceGatheringComplete:
+      return WebRTCPeerConnectionHandlerClient::ICEGatheringStateComplete;
+    default:
+      NOTREACHED();
+      return WebRTCPeerConnectionHandlerClient::ICEGatheringStateNew;
+  }
+}
 
-static WebKit::WebRTCPeerConnectionHandlerClient::ICEState
-GetWebKitIceState(webrtc::PeerConnectionInterface::IceState ice_state) {
+static blink::WebRTCPeerConnectionHandlerClient::ICEConnectionState
+GetWebKitIceConnectionState(
+    webrtc::PeerConnectionInterface::IceConnectionState ice_state) {
+  using blink::WebRTCPeerConnectionHandlerClient;
   switch (ice_state) {
-    case webrtc::PeerConnectionInterface::kIceNew:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateNew;
-    case webrtc::PeerConnectionInterface::kIceGathering:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateGathering;
-    case webrtc::PeerConnectionInterface::kIceWaiting:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateWaiting;
-    case webrtc::PeerConnectionInterface::kIceChecking:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateChecking;
-    case webrtc::PeerConnectionInterface::kIceConnected:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateConnected;
-    case webrtc::PeerConnectionInterface::kIceCompleted:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateCompleted;
-    case webrtc::PeerConnectionInterface::kIceFailed:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateFailed;
-    case webrtc::PeerConnectionInterface::kIceClosed:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateClosed;
+    case webrtc::PeerConnectionInterface::kIceConnectionNew:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateStarting;
+    case webrtc::PeerConnectionInterface::kIceConnectionChecking:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateChecking;
+    case webrtc::PeerConnectionInterface::kIceConnectionConnected:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateConnected;
+    case webrtc::PeerConnectionInterface::kIceConnectionCompleted:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateCompleted;
+    case webrtc::PeerConnectionInterface::kIceConnectionFailed:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateFailed;
+    case webrtc::PeerConnectionInterface::kIceConnectionDisconnected:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateDisconnected;
+    case webrtc::PeerConnectionInterface::kIceConnectionClosed:
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateClosed;
     default:
       NOTREACHED();
-      return WebKit::WebRTCPeerConnectionHandlerClient::ICEStateClosed;
+      return WebRTCPeerConnectionHandlerClient::ICEConnectionStateClosed;
   }
 }
 
-static WebKit::WebRTCPeerConnectionHandlerClient::ReadyState
-GetWebKitReadyState(webrtc::PeerConnectionInterface::ReadyState ready_state) {
-  switch (ready_state) {
-    case webrtc::PeerConnectionInterface::kNew:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateNew;
-    case webrtc::PeerConnectionInterface::kOpening:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateOpening;
-    case webrtc::PeerConnectionInterface::kActive:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateActive;
-    case webrtc::PeerConnectionInterface::kClosing:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateClosing;
+static blink::WebRTCPeerConnectionHandlerClient::SignalingState
+GetWebKitSignalingState(webrtc::PeerConnectionInterface::SignalingState state) {
+  using blink::WebRTCPeerConnectionHandlerClient;
+  switch (state) {
+    case webrtc::PeerConnectionInterface::kStable:
+      return WebRTCPeerConnectionHandlerClient::SignalingStateStable;
+    case webrtc::PeerConnectionInterface::kHaveLocalOffer:
+      return WebRTCPeerConnectionHandlerClient::SignalingStateHaveLocalOffer;
+    case webrtc::PeerConnectionInterface::kHaveLocalPrAnswer:
+      return WebRTCPeerConnectionHandlerClient::SignalingStateHaveLocalPrAnswer;
+    case webrtc::PeerConnectionInterface::kHaveRemoteOffer:
+      return WebRTCPeerConnectionHandlerClient::SignalingStateHaveRemoteOffer;
+    case webrtc::PeerConnectionInterface::kHaveRemotePrAnswer:
+      return
+          WebRTCPeerConnectionHandlerClient::SignalingStateHaveRemotePrAnswer;
     case webrtc::PeerConnectionInterface::kClosed:
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateClosed;
+      return WebRTCPeerConnectionHandlerClient::SignalingStateClosed;
     default:
       NOTREACHED();
-      return WebKit::WebRTCPeerConnectionHandlerClient::ReadyStateClosed;
+      return WebRTCPeerConnectionHandlerClient::SignalingStateClosed;
   }
 }
 
-static WebKit::WebRTCSessionDescription
+static blink::WebRTCSessionDescription
 CreateWebKitSessionDescription(
     const webrtc::SessionDescriptionInterface* native_desc) {
-  WebKit::WebRTCSessionDescription description;
+  blink::WebRTCSessionDescription description;
   if (!native_desc) {
     LOG(ERROR) << "Native session description is null.";
     return description;
@@ -91,125 +121,157 @@ CreateWebKitSessionDescription(
     return description;
   }
 
-  description.initialize(UTF8ToUTF16(native_desc->type()), UTF8ToUTF16(sdp));
+  description.initialize(base::UTF8ToUTF16(native_desc->type()),
+                         base::UTF8ToUTF16(sdp));
   return description;
 }
 
 // Converter functions from WebKit types to libjingle types.
 
 static void GetNativeIceServers(
-    const WebKit::WebRTCConfiguration& server_configuration,
-    webrtc::JsepInterface::IceServers* servers) {
+    const blink::WebRTCConfiguration& server_configuration,
+    webrtc::PeerConnectionInterface::IceServers* servers) {
   if (server_configuration.isNull() || !servers)
     return;
   for (size_t i = 0; i < server_configuration.numberOfServers(); ++i) {
-    webrtc::JsepInterface::IceServer server;
-    const WebKit::WebRTCICEServer& webkit_server =
+    webrtc::PeerConnectionInterface::IceServer server;
+    const blink::WebRTCICEServer& webkit_server =
         server_configuration.server(i);
-    server.password = UTF16ToUTF8(webkit_server.credential());
+    server.username = base::UTF16ToUTF8(webkit_server.username());
+    server.password = base::UTF16ToUTF8(webkit_server.credential());
     server.uri = webkit_server.uri().spec();
     servers->push_back(server);
   }
 }
 
+class SessionDescriptionRequestTracker {
+ public:
+  SessionDescriptionRequestTracker(RTCPeerConnectionHandler* handler,
+                                   PeerConnectionTracker::Action action)
+      : handler_(handler), action_(action) {}
+
+  void TrackOnSuccess(const webrtc::SessionDescriptionInterface* desc) {
+    std::string value;
+    if (desc) {
+      desc->ToString(&value);
+      value = "type: " + desc->type() + ", sdp: " + value;
+    }
+    if (handler_->peer_connection_tracker())
+      handler_->peer_connection_tracker()->TrackSessionDescriptionCallback(
+          handler_, action_, "OnSuccess", value);
+  }
+
+  void TrackOnFailure(const std::string& error) {
+    if (handler_->peer_connection_tracker())
+      handler_->peer_connection_tracker()->TrackSessionDescriptionCallback(
+          handler_, action_, "OnFailure", error);
+  }
+
+ private:
+  RTCPeerConnectionHandler* handler_;
+  PeerConnectionTracker::Action action_;
+};
+
 // Class mapping responses from calls to libjingle CreateOffer/Answer and
-// the WebKit::WebRTCSessionDescriptionRequest.
+// the blink::WebRTCSessionDescriptionRequest.
 class CreateSessionDescriptionRequest
     : public webrtc::CreateSessionDescriptionObserver {
  public:
   explicit CreateSessionDescriptionRequest(
-      const WebKit::WebRTCSessionDescriptionRequest& request)
-      : webkit_request_(request) {}
+      const blink::WebRTCSessionDescriptionRequest& request,
+      RTCPeerConnectionHandler* handler,
+      PeerConnectionTracker::Action action)
+      : webkit_request_(request), tracker_(handler, action) {}
 
   virtual void OnSuccess(webrtc::SessionDescriptionInterface* desc) OVERRIDE {
+    tracker_.TrackOnSuccess(desc);
     webkit_request_.requestSucceeded(CreateWebKitSessionDescription(desc));
   }
   virtual void OnFailure(const std::string& error) OVERRIDE {
-    webkit_request_.requestFailed(UTF8ToUTF16(error));
+    tracker_.TrackOnFailure(error);
+    webkit_request_.requestFailed(base::UTF8ToUTF16(error));
   }
 
  protected:
   virtual ~CreateSessionDescriptionRequest() {}
 
  private:
-  WebKit::WebRTCSessionDescriptionRequest webkit_request_;
+  blink::WebRTCSessionDescriptionRequest webkit_request_;
+  SessionDescriptionRequestTracker tracker_;
 };
 
 // Class mapping responses from calls to libjingle
-// SetLocalDescription/SetRemoteDescription and a WebKit::WebRTCVoidRequest.
+// SetLocalDescription/SetRemoteDescription and a blink::WebRTCVoidRequest.
 class SetSessionDescriptionRequest
     : public webrtc::SetSessionDescriptionObserver {
  public:
   explicit SetSessionDescriptionRequest(
-      const WebKit::WebRTCVoidRequest& request)
-      : webkit_request_(request) {}
+      const blink::WebRTCVoidRequest& request,
+      RTCPeerConnectionHandler* handler,
+      PeerConnectionTracker::Action action)
+      : webkit_request_(request), tracker_(handler, action) {}
 
   virtual void OnSuccess() OVERRIDE {
+    tracker_.TrackOnSuccess(NULL);
     webkit_request_.requestSucceeded();
   }
   virtual void OnFailure(const std::string& error) OVERRIDE {
-    webkit_request_.requestFailed(UTF8ToUTF16(error));
+    tracker_.TrackOnFailure(error);
+    webkit_request_.requestFailed(base::UTF8ToUTF16(error));
   }
 
  protected:
   virtual ~SetSessionDescriptionRequest() {}
 
  private:
-  WebKit::WebRTCVoidRequest webkit_request_;
+  blink::WebRTCVoidRequest webkit_request_;
+  SessionDescriptionRequestTracker tracker_;
 };
 
 // Class mapping responses from calls to libjingle
-// GetStats into a WebKit::WebRTCStatsCallback.
+// GetStats into a blink::WebRTCStatsCallback.
 class StatsResponse : public webrtc::StatsObserver {
  public:
   explicit StatsResponse(const scoped_refptr<LocalRTCStatsRequest>& request)
-      : request_(request),
-        response_(request_->createResponse()) {}
+      : request_(request.get()), response_(request_->createResponse().get()) {}
 
-  virtual void OnComplete(const std::vector<webrtc::StatsReport>& reports) {
+  virtual void OnComplete(
+      const std::vector<webrtc::StatsReport>& reports) OVERRIDE {
+    TRACE_EVENT0("webrtc", "StatsResponse::OnComplete")
     for (std::vector<webrtc::StatsReport>::const_iterator it = reports.begin();
          it != reports.end(); ++it) {
-      int idx = response_->addReport();
-      if (it->local.values.size() > 0) {
-        AddElement(idx, true, it->id, it->type, it->local);
-      }
-      if (it->remote.values.size() > 0) {
-        AddElement(idx, false, it->id, it->type, it->remote);
+      if (it->values.size() > 0) {
+        AddReport(*it);
       }
     }
     request_->requestSucceeded(response_);
   }
 
  private:
-  void AddElement(int idx,
-                  bool is_local,
-                  const std::string& id,
-                  const std::string& type,
-                  const webrtc::StatsElement& element) {
-    response_->addElement(idx, is_local, element.timestamp);
-    // TODO(hta): Make a better disposition of id and type.
-    AddStatistic(idx, is_local, "id", id);
-    AddStatistic(idx, is_local, "type", type);
-    for (webrtc::StatsElement::Values::const_iterator value_it =
-             element.values.begin();
-         value_it != element.values.end(); ++value_it) {
-      AddStatistic(idx, is_local, value_it->name, value_it->value);
+  void AddReport(const webrtc::StatsReport& report) {
+    int idx = response_->addReport(blink::WebString::fromUTF8(report.id),
+                                   blink::WebString::fromUTF8(report.type),
+                                   report.timestamp);
+    for (webrtc::StatsReport::Values::const_iterator value_it =
+         report.values.begin();
+         value_it != report.values.end(); ++value_it) {
+      AddStatistic(idx, value_it->name, value_it->value);
     }
   }
 
-  void AddStatistic(int idx, bool is_local, const std::string& name,
+  void AddStatistic(int idx, const std::string& name,
                     const std::string& value) {
-    response_->addStatistic(idx, is_local,
-                            WebKit::WebString::fromUTF8(name),
-                            WebKit::WebString::fromUTF8(value));
+    response_->addStatistic(idx,
+                            blink::WebString::fromUTF8(name),
+                            blink::WebString::fromUTF8(value));
   }
 
   talk_base::scoped_refptr<LocalRTCStatsRequest> request_;
   talk_base::scoped_refptr<LocalRTCStatsResponse> response_;
 };
 
-// Implementation of LocalRTCStatsRequest
-LocalRTCStatsRequest::LocalRTCStatsRequest(WebKit::WebRTCStatsRequest impl)
+// Implementation of LocalRTCStatsRequest.
+LocalRTCStatsRequest::LocalRTCStatsRequest(blink::WebRTCStatsRequest impl)
     : impl_(impl),
       response_(NULL) {
 }
@@ -221,11 +283,7 @@ bool LocalRTCStatsRequest::hasSelector() const {
   return impl_.hasSelector();
 }
 
-WebKit::WebMediaStreamDescriptor LocalRTCStatsRequest::stream() const {
-  return impl_.stream();
-}
-
-WebKit::WebMediaStreamComponent LocalRTCStatsRequest::component() const {
+blink::WebMediaStreamTrack LocalRTCStatsRequest::component() const {
   return impl_.component();
 }
 
@@ -241,169 +299,224 @@ void LocalRTCStatsRequest::requestSucceeded(
   impl_.requestSucceeded(response->webKitStatsResponse());
 }
 
-// Implementation of LocalRTCStatsResponse
-WebKit::WebRTCStatsResponse LocalRTCStatsResponse::webKitStatsResponse() const {
+// Implementation of LocalRTCStatsResponse.
+blink::WebRTCStatsResponse LocalRTCStatsResponse::webKitStatsResponse() const {
   return impl_;
 }
 
-size_t LocalRTCStatsResponse::addReport() {
-  return impl_.addReport();
-}
-
-void LocalRTCStatsResponse::addElement(size_t report,
-                                       bool is_local,
-                                       double timestamp) {
-  impl_.addElement(report, is_local, timestamp);
+size_t LocalRTCStatsResponse::addReport(blink::WebString type,
+                                        blink::WebString id,
+                                        double timestamp) {
+  return impl_.addReport(type, id, timestamp);
 }
 
 void LocalRTCStatsResponse::addStatistic(size_t report,
-                                         bool is_local,
-                                         WebKit::WebString name,
-                                         WebKit::WebString value) {
-  impl_.addStatistic(report, is_local, name, value);
+                                         blink::WebString name,
+                                         blink::WebString value) {
+  impl_.addStatistic(report, name, value);
 }
 
 RTCPeerConnectionHandler::RTCPeerConnectionHandler(
-    WebKit::WebRTCPeerConnectionHandlerClient* client,
+    blink::WebRTCPeerConnectionHandlerClient* client,
     MediaStreamDependencyFactory* dependency_factory)
-    : PeerConnectionHandlerBase(dependency_factory),
-      client_(client),
-      frame_(NULL) {
+    : client_(client),
+      dependency_factory_(dependency_factory),
+      frame_(NULL),
+      peer_connection_tracker_(NULL),
+      num_data_channels_created_(0) {
 }
 
 RTCPeerConnectionHandler::~RTCPeerConnectionHandler() {
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->UnregisterPeerConnection(this);
+  STLDeleteValues(&remote_streams_);
+
+  UMA_HISTOGRAM_COUNTS_10000(
+      "WebRTC.NumDataChannelsPerPeerConnection", num_data_channels_created_);
 }
 
-void RTCPeerConnectionHandler::associateWithFrame(WebKit::WebFrame* frame) {
+void RTCPeerConnectionHandler::associateWithFrame(blink::WebFrame* frame) {
   DCHECK(frame);
   frame_ = frame;
 }
 
 bool RTCPeerConnectionHandler::initialize(
-    const WebKit::WebRTCConfiguration& server_configuration,
-    const WebKit::WebMediaConstraints& options) {
+    const blink::WebRTCConfiguration& server_configuration,
+    const blink::WebMediaConstraints& options) {
   DCHECK(frame_);
-  webrtc::JsepInterface::IceServers servers;
+
+  peer_connection_tracker_ =
+      RenderThreadImpl::current()->peer_connection_tracker();
+
+  webrtc::PeerConnectionInterface::IceServers servers;
   GetNativeIceServers(server_configuration, &servers);
 
   RTCMediaConstraints constraints(options);
+
   native_peer_connection_ =
       dependency_factory_->CreatePeerConnection(
           servers, &constraints, frame_, this);
-  if (!native_peer_connection_) {
+  if (!native_peer_connection_.get()) {
     LOG(ERROR) << "Failed to initialize native PeerConnection.";
     return false;
   }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->RegisterPeerConnection(
+        this, servers, constraints, frame_);
+
   return true;
 }
 
 bool RTCPeerConnectionHandler::InitializeForTest(
-    const WebKit::WebRTCConfiguration& server_configuration,
-    const WebKit::WebMediaConstraints& options) {
-  webrtc::JsepInterface::IceServers servers;
+    const blink::WebRTCConfiguration& server_configuration,
+    const blink::WebMediaConstraints& options,
+    PeerConnectionTracker* peer_connection_tracker) {
+  webrtc::PeerConnectionInterface::IceServers servers;
   GetNativeIceServers(server_configuration, &servers);
 
   RTCMediaConstraints constraints(options);
   native_peer_connection_ =
       dependency_factory_->CreatePeerConnection(
           servers, &constraints, NULL, this);
-  if (!native_peer_connection_) {
+  if (!native_peer_connection_.get()) {
     LOG(ERROR) << "Failed to initialize native PeerConnection.";
     return false;
   }
+  peer_connection_tracker_ = peer_connection_tracker;
   return true;
 }
 
 void RTCPeerConnectionHandler::createOffer(
-    const WebKit::WebRTCSessionDescriptionRequest& request,
-    const WebKit::WebMediaConstraints& options) {
+    const blink::WebRTCSessionDescriptionRequest& request,
+    const blink::WebMediaConstraints& options) {
   scoped_refptr<CreateSessionDescriptionRequest> description_request(
       new talk_base::RefCountedObject<CreateSessionDescriptionRequest>(
-          request));
+          request, this, PeerConnectionTracker::ACTION_CREATE_OFFER));
   RTCMediaConstraints constraints(options);
-  native_peer_connection_->CreateOffer(description_request, &constraints);
+  native_peer_connection_->CreateOffer(description_request.get(), &constraints);
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackCreateOffer(this, constraints);
 }
 
 void RTCPeerConnectionHandler::createAnswer(
-    const WebKit::WebRTCSessionDescriptionRequest& request,
-    const WebKit::WebMediaConstraints& options) {
+    const blink::WebRTCSessionDescriptionRequest& request,
+    const blink::WebMediaConstraints& options) {
   scoped_refptr<CreateSessionDescriptionRequest> description_request(
       new talk_base::RefCountedObject<CreateSessionDescriptionRequest>(
-          request));
+          request, this, PeerConnectionTracker::ACTION_CREATE_ANSWER));
   RTCMediaConstraints constraints(options);
-  native_peer_connection_->CreateAnswer(description_request, &constraints);
+  native_peer_connection_->CreateAnswer(description_request.get(),
+                                        &constraints);
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackCreateAnswer(this, constraints);
 }
 
 void RTCPeerConnectionHandler::setLocalDescription(
-    const WebKit::WebRTCVoidRequest& request,
-    const WebKit::WebRTCSessionDescription& description) {
+    const blink::WebRTCVoidRequest& request,
+    const blink::WebRTCSessionDescription& description) {
+  webrtc::SdpParseError error;
   webrtc::SessionDescriptionInterface* native_desc =
-      CreateNativeSessionDescription(description);
+      CreateNativeSessionDescription(description, &error);
   if (!native_desc) {
-    const char kReason[] = "Failed to parse SessionDescription.";
-    LOG(ERROR) << kReason;
-    WebKit::WebString reason(kReason);
-    request.requestFailed(reason);
+    std::string reason_str = "Failed to parse SessionDescription. ";
+    reason_str.append(error.line);
+    reason_str.append(" ");
+    reason_str.append(error.description);
+    LOG(ERROR) << reason_str;
+    request.requestFailed(blink::WebString::fromUTF8(reason_str));
     return;
   }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackSetSessionDescription(
+        this, description, PeerConnectionTracker::SOURCE_LOCAL);
+
   scoped_refptr<SetSessionDescriptionRequest> set_request(
-      new talk_base::RefCountedObject<SetSessionDescriptionRequest>(request));
-  native_peer_connection_->SetLocalDescription(set_request, native_desc);
+      new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
+          request, this, PeerConnectionTracker::ACTION_SET_LOCAL_DESCRIPTION));
+  native_peer_connection_->SetLocalDescription(set_request.get(), native_desc);
 }
 
 void RTCPeerConnectionHandler::setRemoteDescription(
-    const WebKit::WebRTCVoidRequest& request,
-    const WebKit::WebRTCSessionDescription& description) {
+    const blink::WebRTCVoidRequest& request,
+    const blink::WebRTCSessionDescription& description) {
+  webrtc::SdpParseError error;
   webrtc::SessionDescriptionInterface* native_desc =
-      CreateNativeSessionDescription(description);
+      CreateNativeSessionDescription(description, &error);
   if (!native_desc) {
-    const char kReason[] = "Failed to parse SessionDescription.";
-    LOG(ERROR) << kReason;
-    WebKit::WebString reason(kReason);
-    request.requestFailed(reason);
+    std::string reason_str = "Failed to parse SessionDescription. ";
+    reason_str.append(error.line);
+    reason_str.append(" ");
+    reason_str.append(error.description);
+    LOG(ERROR) << reason_str;
+    request.requestFailed(blink::WebString::fromUTF8(reason_str));
     return;
   }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackSetSessionDescription(
+        this, description, PeerConnectionTracker::SOURCE_REMOTE);
+
   scoped_refptr<SetSessionDescriptionRequest> set_request(
-      new talk_base::RefCountedObject<SetSessionDescriptionRequest>(request));
-  native_peer_connection_->SetRemoteDescription(set_request, native_desc);
+      new talk_base::RefCountedObject<SetSessionDescriptionRequest>(
+          request, this, PeerConnectionTracker::ACTION_SET_REMOTE_DESCRIPTION));
+  native_peer_connection_->SetRemoteDescription(set_request.get(), native_desc);
 }
 
-WebKit::WebRTCSessionDescription
+blink::WebRTCSessionDescription
 RTCPeerConnectionHandler::localDescription() {
   const webrtc::SessionDescriptionInterface* native_desc =
       native_peer_connection_->local_description();
-  WebKit::WebRTCSessionDescription description =
+  blink::WebRTCSessionDescription description =
       CreateWebKitSessionDescription(native_desc);
   return description;
 }
 
-WebKit::WebRTCSessionDescription
+blink::WebRTCSessionDescription
 RTCPeerConnectionHandler::remoteDescription() {
   const webrtc::SessionDescriptionInterface* native_desc =
       native_peer_connection_->remote_description();
-  WebKit::WebRTCSessionDescription description =
+  blink::WebRTCSessionDescription description =
       CreateWebKitSessionDescription(native_desc);
   return description;
 }
 
 bool RTCPeerConnectionHandler::updateICE(
-    const WebKit::WebRTCConfiguration& server_configuration,
-    const WebKit::WebMediaConstraints& options) {
-  webrtc::JsepInterface::IceServers servers;
+    const blink::WebRTCConfiguration& server_configuration,
+    const blink::WebMediaConstraints& options) {
+  webrtc::PeerConnectionInterface::IceServers servers;
   GetNativeIceServers(server_configuration, &servers);
   RTCMediaConstraints constraints(options);
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackUpdateIce(this, servers, constraints);
+
   return native_peer_connection_->UpdateIce(servers,
                                             &constraints);
 }
 
 bool RTCPeerConnectionHandler::addICECandidate(
-    const WebKit::WebRTCICECandidate& candidate) {
+  const blink::WebRTCVoidRequest& request,
+  const blink::WebRTCICECandidate& candidate) {
+  // Libjingle currently does not accept callbacks for addICECandidate.
+  // For that reason we are going to call callbacks from here.
+  bool result = addICECandidate(candidate);
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&RTCPeerConnectionHandler::OnaddICECandidateResult,
+                 base::Unretained(this), request, result));
+  // On failure callback will be triggered.
+  return true;
+}
+
+bool RTCPeerConnectionHandler::addICECandidate(
+    const blink::WebRTCICECandidate& candidate) {
   scoped_ptr<webrtc::IceCandidateInterface> native_candidate(
       dependency_factory_->CreateIceCandidate(
-          UTF16ToUTF8(candidate.sdpMid()),
+          base::UTF16ToUTF8(candidate.sdpMid()),
           candidate.sdpMLineIndex(),
-          UTF16ToUTF8(candidate.candidate())));
-  if (!native_candidate.get()) {
+          base::UTF16ToUTF8(candidate.candidate())));
+  if (!native_candidate) {
     LOG(ERROR) << "Could not create native ICE candidate.";
     return false;
   }
@@ -411,50 +524,113 @@ bool RTCPeerConnectionHandler::addICECandidate(
   bool return_value =
       native_peer_connection_->AddIceCandidate(native_candidate.get());
   LOG_IF(ERROR, !return_value) << "Error processing ICE candidate.";
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackAddIceCandidate(
+        this, candidate, PeerConnectionTracker::SOURCE_REMOTE);
+
   return return_value;
 }
 
+void RTCPeerConnectionHandler::OnaddICECandidateResult(
+    const blink::WebRTCVoidRequest& webkit_request, bool result) {
+  if (!result) {
+    // We don't have the actual error code from the libjingle, so for now
+    // using a generic error string.
+    return webkit_request.requestFailed(
+        base::UTF8ToUTF16("Error processing ICE candidate"));
+  }
+
+  return webkit_request.requestSucceeded();
+}
+
 bool RTCPeerConnectionHandler::addStream(
-    const WebKit::WebMediaStreamDescriptor& stream,
-    const WebKit::WebMediaConstraints& options) {
+    const blink::WebMediaStream& stream,
+    const blink::WebMediaConstraints& options) {
+
+  for (ScopedVector<WebRtcMediaStreamAdapter>::iterator adapter_it =
+      local_streams_.begin(); adapter_it != local_streams_.end();
+      ++adapter_it) {
+    if ((*adapter_it)->IsEqual(stream)) {
+      DVLOG(1) << "RTCPeerConnectionHandler::addStream called with the same "
+               << "stream twice. id=" << stream.id().utf8();
+      return false;
+    }
+  }
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackAddStream(
+        this, stream, PeerConnectionTracker::SOURCE_LOCAL);
+
+  PerSessionWebRTCAPIMetrics::GetInstance()->IncrementStreamCounter();
+
+  WebRtcMediaStreamAdapter* adapter =
+      new WebRtcMediaStreamAdapter(stream, dependency_factory_);
+  local_streams_.push_back(adapter);
+
+  webrtc::MediaStreamInterface* webrtc_stream = adapter->webrtc_media_stream();
+  track_metrics_.AddStream(MediaStreamTrackMetrics::SENT_STREAM,
+                           webrtc_stream);
+
   RTCMediaConstraints constraints(options);
-  return AddStream(stream, &constraints);
+  return native_peer_connection_->AddStream(webrtc_stream, &constraints);
 }
 
 void RTCPeerConnectionHandler::removeStream(
-    const WebKit::WebMediaStreamDescriptor& stream) {
-  RemoveStream(stream);
+    const blink::WebMediaStream& stream) {
+  // Find the webrtc stream.
+  scoped_refptr<webrtc::MediaStreamInterface> webrtc_stream;
+  for (ScopedVector<WebRtcMediaStreamAdapter>::iterator adapter_it =
+           local_streams_.begin(); adapter_it != local_streams_.end();
+       ++adapter_it) {
+    if ((*adapter_it)->IsEqual(stream)) {
+      webrtc_stream = (*adapter_it)->webrtc_media_stream();
+      local_streams_.erase(adapter_it);
+      break;
+    }
+  }
+  DCHECK(webrtc_stream);
+  native_peer_connection_->RemoveStream(webrtc_stream);
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackRemoveStream(
+        this, stream, PeerConnectionTracker::SOURCE_LOCAL);
+  PerSessionWebRTCAPIMetrics::GetInstance()->DecrementStreamCounter();
+  track_metrics_.RemoveStream(MediaStreamTrackMetrics::SENT_STREAM,
+                              webrtc_stream);
 }
 
 void RTCPeerConnectionHandler::getStats(
-    const WebKit::WebRTCStatsRequest& request) {
+    const blink::WebRTCStatsRequest& request) {
   scoped_refptr<LocalRTCStatsRequest> inner_request(
       new talk_base::RefCountedObject<LocalRTCStatsRequest>(request));
-  getStats(inner_request);
+  getStats(inner_request.get());
 }
 
 void RTCPeerConnectionHandler::getStats(LocalRTCStatsRequest* request) {
   talk_base::scoped_refptr<webrtc::StatsObserver> observer(
       new talk_base::RefCountedObject<StatsResponse>(request));
   webrtc::MediaStreamTrackInterface* track = NULL;
-  if (!native_peer_connection_) {
-    DVLOG(1) << "GetStats cannot verify selector on closed connection";
-    // TODO(hta): Consider how to get an error back.
-    std::vector<webrtc::StatsReport> no_reports;
-    observer->OnComplete(no_reports);
-    return;
-  }
-
   if (request->hasSelector()) {
-    // Verify that stream is a member of local_streams
-    if (native_peer_connection_->local_streams()
-            ->find(UTF16ToUTF8(request->stream().label()))) {
-      track = GetLocalNativeMediaStreamTrack(request->stream(),
-                                             request->component());
+    blink::WebMediaStreamSource::Type type =
+        request->component().source().type();
+    std::string track_id = request->component().id().utf8();
+    if (type == blink::WebMediaStreamSource::TypeAudio) {
+      track =
+          native_peer_connection_->local_streams()->FindAudioTrack(track_id);
+      if (!track) {
+        track =
+            native_peer_connection_->remote_streams()->FindAudioTrack(track_id);
+      }
     } else {
-      DVLOG(1) << "GetStats: Stream label not present in PC";
+      DCHECK_EQ(blink::WebMediaStreamSource::TypeVideo, type);
+      track =
+          native_peer_connection_->local_streams()->FindVideoTrack(track_id);
+      if (!track) {
+        track =
+            native_peer_connection_->remote_streams()->FindVideoTrack(track_id);
+      }
     }
-
     if (!track) {
       DVLOG(1) << "GetStats: Track not found.";
       // TODO(hta): Consider how to get an error back.
@@ -463,33 +639,86 @@ void RTCPeerConnectionHandler::getStats(LocalRTCStatsRequest* request) {
       return;
     }
   }
-  native_peer_connection_->GetStats(observer, track);
+  GetStats(observer,
+           track,
+           webrtc::PeerConnectionInterface::kStatsOutputLevelStandard);
 }
 
-WebKit::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(
-    const WebKit::WebString& label, bool reliable) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDataChannels)) {
-    return NULL;
+void RTCPeerConnectionHandler::GetStats(
+    webrtc::StatsObserver* observer,
+    webrtc::MediaStreamTrackInterface* track,
+    webrtc::PeerConnectionInterface::StatsOutputLevel level) {
+  TRACE_EVENT0("webrtc", "RTCPeerConnectionHandler::GetStats");
+  if (!native_peer_connection_->GetStats(observer, track, level)) {
+    DVLOG(1) << "GetStats failed.";
+    // TODO(hta): Consider how to get an error back.
+    std::vector<webrtc::StatsReport> no_reports;
+    observer->OnComplete(no_reports);
+    return;
   }
+}
 
-  DVLOG(1) << "createDataChannel label " << UTF16ToUTF8(label);
+blink::WebRTCDataChannelHandler* RTCPeerConnectionHandler::createDataChannel(
+    const blink::WebString& label, const blink::WebRTCDataChannelInit& init) {
+  DVLOG(1) << "createDataChannel label " << base::UTF16ToUTF8(label);
 
   webrtc::DataChannelInit config;
-  config.reliable = reliable;
+  // TODO(jiayl): remove the deprecated reliable field once Libjingle is updated
+  // to handle that.
+  config.reliable = false;
+  config.id = init.id;
+  config.ordered = init.ordered;
+  config.negotiated = init.negotiated;
+  config.maxRetransmits = init.maxRetransmits;
+  config.maxRetransmitTime = init.maxRetransmitTime;
+  config.protocol = base::UTF16ToUTF8(init.protocol);
 
   talk_base::scoped_refptr<webrtc::DataChannelInterface> webrtc_channel(
-      native_peer_connection_->CreateDataChannel(UTF16ToUTF8(label), &config));
+      native_peer_connection_->CreateDataChannel(base::UTF16ToUTF8(label),
+                                                 &config));
   if (!webrtc_channel) {
     DLOG(ERROR) << "Could not create native data channel.";
     return NULL;
   }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackCreateDataChannel(
+        this, webrtc_channel.get(), PeerConnectionTracker::SOURCE_LOCAL);
+
+  ++num_data_channels_created_;
+
   return new RtcDataChannelHandler(webrtc_channel);
+}
+
+blink::WebRTCDTMFSenderHandler* RTCPeerConnectionHandler::createDTMFSender(
+    const blink::WebMediaStreamTrack& track) {
+  DVLOG(1) << "createDTMFSender.";
+
+  MediaStreamTrack* native_track = MediaStreamTrack::GetTrack(track);
+  if (!native_track ||
+      track.source().type() != blink::WebMediaStreamSource::TypeAudio) {
+    DLOG(ERROR) << "Could not create DTMF sender from a non-audio track.";
+    return NULL;
+  }
+
+  webrtc::AudioTrackInterface* audio_track = native_track->GetAudioAdapter();
+  talk_base::scoped_refptr<webrtc::DtmfSenderInterface> sender(
+      native_peer_connection_->CreateDtmfSender(audio_track));
+  if (!sender) {
+    DLOG(ERROR) << "Could not create native DTMF sender.";
+    return NULL;
+  }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackCreateDTMFSender(this, track);
+
+  return new RtcDtmfSenderHandler(sender);
 }
 
 void RTCPeerConnectionHandler::stop() {
   DVLOG(1) << "RTCPeerConnectionHandler::stop";
-  native_peer_connection_ = NULL;
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackStop(this);
+  native_peer_connection_->Close();
 }
 
 void RTCPeerConnectionHandler::OnError() {
@@ -497,50 +726,90 @@ void RTCPeerConnectionHandler::OnError() {
   NOTIMPLEMENTED();
 }
 
-void RTCPeerConnectionHandler::OnStateChange(StateType state_changed) {
-  switch (state_changed) {
-    case kReadyState: {
-      WebKit::WebRTCPeerConnectionHandlerClient::ReadyState ready_state =
-          GetWebKitReadyState(native_peer_connection_->ready_state());
-      client_->didChangeReadyState(ready_state);
-      break;
-    }
-    case kIceState: {
-      WebKit::WebRTCPeerConnectionHandlerClient::ICEState ice_state =
-          GetWebKitIceState(native_peer_connection_->ice_state());
-      client_->didChangeICEState(ice_state);
-      break;
-    }
-    default:
-      NOTREACHED();
-      break;
+void RTCPeerConnectionHandler::OnSignalingChange(
+    webrtc::PeerConnectionInterface::SignalingState new_state) {
+  blink::WebRTCPeerConnectionHandlerClient::SignalingState state =
+      GetWebKitSignalingState(new_state);
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackSignalingStateChange(this, state);
+  client_->didChangeSignalingState(state);
+}
+
+// Called any time the IceConnectionState changes
+void RTCPeerConnectionHandler::OnIceConnectionChange(
+    webrtc::PeerConnectionInterface::IceConnectionState new_state) {
+  track_metrics_.IceConnectionChange(new_state);
+  blink::WebRTCPeerConnectionHandlerClient::ICEConnectionState state =
+      GetWebKitIceConnectionState(new_state);
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackIceConnectionStateChange(this, state);
+  client_->didChangeICEConnectionState(state);
+}
+
+// Called any time the IceGatheringState changes
+void RTCPeerConnectionHandler::OnIceGatheringChange(
+    webrtc::PeerConnectionInterface::IceGatheringState new_state) {
+  if (new_state == webrtc::PeerConnectionInterface::kIceGatheringComplete) {
+    // If ICE gathering is completed, generate a NULL ICE candidate,
+    // to signal end of candidates.
+    blink::WebRTCICECandidate null_candidate;
+    client_->didGenerateICECandidate(null_candidate);
   }
+
+  blink::WebRTCPeerConnectionHandlerClient::ICEGatheringState state =
+      GetWebKitIceGatheringState(new_state);
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackIceGatheringStateChange(this, state);
+  client_->didChangeICEGatheringState(state);
 }
 
 void RTCPeerConnectionHandler::OnAddStream(
-    webrtc::MediaStreamInterface* stream) {
-  DCHECK(stream);
-  DCHECK(remote_streams_.find(stream) == remote_streams_.end());
-  WebKit::WebMediaStreamDescriptor descriptor =
-      CreateWebKitStreamDescriptor(stream);
+    webrtc::MediaStreamInterface* stream_interface) {
+  DCHECK(stream_interface);
+  DCHECK(remote_streams_.find(stream_interface) == remote_streams_.end());
+
+  RemoteMediaStreamImpl* remote_stream =
+      new RemoteMediaStreamImpl(stream_interface);
   remote_streams_.insert(
-      std::pair<webrtc::MediaStreamInterface*,
-                WebKit::WebMediaStreamDescriptor>(stream, descriptor));
-  client_->didAddRemoteStream(descriptor);
+      std::pair<webrtc::MediaStreamInterface*, RemoteMediaStreamImpl*> (
+          stream_interface, remote_stream));
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackAddStream(
+        this, remote_stream->webkit_stream(),
+        PeerConnectionTracker::SOURCE_REMOTE);
+
+  PerSessionWebRTCAPIMetrics::GetInstance()->IncrementStreamCounter();
+
+  track_metrics_.AddStream(MediaStreamTrackMetrics::RECEIVED_STREAM,
+                           stream_interface);
+
+  client_->didAddRemoteStream(remote_stream->webkit_stream());
 }
 
 void RTCPeerConnectionHandler::OnRemoveStream(
-    webrtc::MediaStreamInterface* stream) {
-  DCHECK(stream);
-  RemoteStreamMap::iterator it = remote_streams_.find(stream);
+    webrtc::MediaStreamInterface* stream_interface) {
+  DCHECK(stream_interface);
+  RemoteStreamMap::iterator it = remote_streams_.find(stream_interface);
   if (it == remote_streams_.end()) {
     NOTREACHED() << "Stream not found";
     return;
   }
-  WebKit::WebMediaStreamDescriptor descriptor = it->second;
-  DCHECK(!descriptor.isNull());
+
+  track_metrics_.RemoveStream(MediaStreamTrackMetrics::RECEIVED_STREAM,
+                              stream_interface);
+  PerSessionWebRTCAPIMetrics::GetInstance()->DecrementStreamCounter();
+
+  scoped_ptr<RemoteMediaStreamImpl> remote_stream(it->second);
+  const blink::WebMediaStream& webkit_stream = remote_stream->webkit_stream();
+  DCHECK(!webkit_stream.isNull());
   remote_streams_.erase(it);
-  client_->didRemoveRemoteStream(descriptor);
+
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackRemoveStream(
+        this, webkit_stream, PeerConnectionTracker::SOURCE_REMOTE);
+
+  client_->didRemoveRemoteStream(webkit_stream);
 }
 
 void RTCPeerConnectionHandler::OnIceCandidate(
@@ -551,25 +820,22 @@ void RTCPeerConnectionHandler::OnIceCandidate(
     NOTREACHED() << "OnIceCandidate: Could not get SDP string.";
     return;
   }
-  WebKit::WebRTCICECandidate web_candidate;
-  web_candidate.initialize(UTF8ToUTF16(sdp),
-                           UTF8ToUTF16(candidate->sdp_mid()),
+  blink::WebRTCICECandidate web_candidate;
+  web_candidate.initialize(base::UTF8ToUTF16(sdp),
+                           base::UTF8ToUTF16(candidate->sdp_mid()),
                            candidate->sdp_mline_index());
-  client_->didGenerateICECandidate(web_candidate);
-}
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackAddIceCandidate(
+        this, web_candidate, PeerConnectionTracker::SOURCE_LOCAL);
 
-void RTCPeerConnectionHandler::OnIceComplete() {
-  // Generates a NULL ice candidate object.
-  WebKit::WebRTCICECandidate web_candidate;
   client_->didGenerateICECandidate(web_candidate);
 }
 
 void RTCPeerConnectionHandler::OnDataChannel(
     webrtc::DataChannelInterface* data_channel) {
-  if (!CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableDataChannels)) {
-    return;
-  }
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackCreateDataChannel(
+        this, data_channel, PeerConnectionTracker::SOURCE_REMOTE);
 
   DVLOG(1) << "RTCPeerConnectionHandler::OnDataChannel "
            << data_channel->label();
@@ -577,16 +843,23 @@ void RTCPeerConnectionHandler::OnDataChannel(
 }
 
 void RTCPeerConnectionHandler::OnRenegotiationNeeded() {
+  if (peer_connection_tracker_)
+    peer_connection_tracker_->TrackOnRenegotiationNeeded(this);
   client_->negotiationNeeded();
+}
+
+PeerConnectionTracker* RTCPeerConnectionHandler::peer_connection_tracker() {
+  return peer_connection_tracker_;
 }
 
 webrtc::SessionDescriptionInterface*
 RTCPeerConnectionHandler::CreateNativeSessionDescription(
-    const WebKit::WebRTCSessionDescription& description) {
-  std::string sdp = UTF16ToUTF8(description.sdp());
-  std::string type = UTF16ToUTF8(description.type());
+    const blink::WebRTCSessionDescription& description,
+    webrtc::SdpParseError* error) {
+  std::string sdp = base::UTF16ToUTF8(description.sdp());
+  std::string type = base::UTF16ToUTF8(description.type());
   webrtc::SessionDescriptionInterface* native_desc =
-      dependency_factory_->CreateSessionDescription(type, sdp);
+      dependency_factory_->CreateSessionDescription(type, sdp, error);
 
   LOG_IF(ERROR, !native_desc) << "Failed to create native session description."
                               << " Type: " << type << " SDP: " << sdp;

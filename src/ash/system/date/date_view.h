@@ -5,10 +5,12 @@
 #ifndef ASH_SYSTEM_DATE_DATE_VIEW_H_
 #define ASH_SYSTEM_DATE_DATE_VIEW_H_
 
+#include "ash/ash_export.h"
 #include "ash/system/date/tray_date.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/actionable_view.h"
 #include "base/i18n/time_formatting.h"
-#include "base/timer.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/timer/timer.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -16,12 +18,11 @@ class Label;
 }
 
 namespace ash {
-namespace internal {
 namespace tray {
 
 // Abstract base class containing common updating and layout code for the
-// DateView popup and the TimeView tray icon.
-class BaseDateTimeView : public ActionableView {
+// DateView popup and the TimeView tray icon. Exported for tests.
+class ASH_EXPORT BaseDateTimeView : public ActionableView {
  public:
   virtual ~BaseDateTimeView();
 
@@ -49,15 +50,20 @@ class BaseDateTimeView : public ActionableView {
 };
 
 // Popup view used to display the date and day of week.
-class DateView : public BaseDateTimeView {
+class ASH_EXPORT DateView : public BaseDateTimeView {
  public:
   DateView();
   virtual ~DateView();
 
-  // Sets whether the view is actionable. An actionable date view gives visual
+  // Sets the action the view should take. An actionable date view gives visual
   // feedback on hover, can be focused by keyboard, and clicking/pressing space
-  // or enter on the view shows date-related settings.
-  void SetActionable(bool actionable);
+  // or enter on the view executes the action.
+  void SetAction(TrayDate::DateAction action);
+
+  // Updates the format of the displayed time.
+  void UpdateTimeFormat();
+
+  base::HourClockType GetHourTypeForTesting() const;
 
  private:
   // Overridden from BaseDateTimeView.
@@ -72,22 +78,20 @@ class DateView : public BaseDateTimeView {
 
   views::Label* date_label_;
 
-  bool actionable_;
+  // Time format (12/24hr) used for accessibility string.
+  base::HourClockType hour_type_;
+
+  TrayDate::DateAction action_;
 
   DISALLOW_COPY_AND_ASSIGN(DateView);
 };
 
 // Tray view used to display the current time.
-class TimeView : public BaseDateTimeView {
+// Exported for tests.
+class ASH_EXPORT TimeView : public BaseDateTimeView {
  public:
-  TimeView(TrayDate::ClockLayout clock_layout);
+  explicit TimeView(TrayDate::ClockLayout clock_layout);
   virtual ~TimeView();
-
-  views::Label* label() const { return label_.get(); }
-  views::Label* label_hour_left() const { return label_hour_left_.get(); }
-  views::Label* label_hour_right() const { return label_hour_right_.get(); }
-  views::Label* label_minute_left() const { return label_minute_left_.get(); }
-  views::Label* label_minute_right() const { return label_minute_right_.get(); }
 
   // Updates the format of the displayed time.
   void UpdateTimeFormat();
@@ -95,7 +99,11 @@ class TimeView : public BaseDateTimeView {
   // Updates clock layout.
   void UpdateClockLayout(TrayDate::ClockLayout clock_layout);
 
+  base::HourClockType GetHourTypeForTesting() const;
+
  private:
+  friend class TimeViewTest;
+
   // Overridden from BaseDateTimeView.
   virtual void UpdateTextInternal(const base::Time& now) OVERRIDE;
 
@@ -105,15 +113,16 @@ class TimeView : public BaseDateTimeView {
   // Overridden from views::View.
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
 
-  void SetBorder(TrayDate::ClockLayout clock_layout);
+  void SetBorderFromLayout(TrayDate::ClockLayout clock_layout);
   void SetupLabels();
   void SetupLabel(views::Label* label);
 
-  scoped_ptr<views::Label> label_;
-  scoped_ptr<views::Label> label_hour_left_;
-  scoped_ptr<views::Label> label_hour_right_;
-  scoped_ptr<views::Label> label_minute_left_;
-  scoped_ptr<views::Label> label_minute_right_;
+  // Label text used for the normal horizontal shelf.
+  scoped_ptr<views::Label> horizontal_label_;
+
+  // The time label is split into two lines for the vertical shelf.
+  scoped_ptr<views::Label> vertical_label_hours_;
+  scoped_ptr<views::Label> vertical_label_minutes_;
 
   base::HourClockType hour_type_;
 
@@ -121,7 +130,6 @@ class TimeView : public BaseDateTimeView {
 };
 
 }  // namespace tray
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_DATE_DATE_VIEW_H_

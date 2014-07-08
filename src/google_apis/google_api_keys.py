@@ -5,11 +5,9 @@
 
 """Python API for retrieving API keys.
 
-Note that this cannot have the exact same semantics (at the moment) as
-the C++ API in google_api_keys.h, since it does not have access to gyp
-variables or preprocessor defines.
-
-TODO(joi): Give this have the same semantics as the C++ API.
+Note that this does not have the exact same semantics as the C++ API
+in google_api_keys.h, since it does not have access to gyp variables
+or preprocessor defines.
 """
 
 import os
@@ -90,3 +88,8 @@ if __name__ == "__main__":
   print 'GOOGLE_CLIENT_SECRET_CLOUD_PRINT=%s' % GetClientSecret('CLOUD_PRINT')
   print 'GOOGLE_CLIENT_ID_REMOTING=%s' % GetClientID('REMOTING')
   print 'GOOGLE_CLIENT_SECRET_REMOTING=%s' % GetClientSecret('REMOTING')
+  print 'GOOGLE_CLIENT_ID_REMOTING_HOST=%s' % GetClientID('REMOTING_HOST')
+  print 'GOOGLE_CLIENT_SECRET_REMOTING_HOST=%s' % GetClientSecret(
+      'REMOTING_HOST')
+  print 'GOOGLE_CLIENT_ID_REMOTING_IDENTITY_API=%s' %GetClientID(
+      'REMOTING_IDENTITY_API')

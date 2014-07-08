@@ -24,27 +24,7 @@ namespace android_webview {
 
 namespace {
 
-const void* kURLRequestUserDataKey = &kURLRequestUserDataKey;
-
-class URLRequestUserData : public base::SupportsUserData::Data {
- public:
-    URLRequestUserData(
-        scoped_ptr<InterceptedRequestData> intercepted_request_data)
-        : intercepted_request_data_(intercepted_request_data.Pass()) {
-    }
-
-    static URLRequestUserData* Get(net::URLRequest* request) {
-      return reinterpret_cast<URLRequestUserData*>(
-          request->GetUserData(kURLRequestUserDataKey));
-    }
-
-    const InterceptedRequestData* intercepted_request_data() const {
-      return intercepted_request_data_.get();
-    }
-
- private:
-  scoped_ptr<InterceptedRequestData> intercepted_request_data_;
-};
+const void* kRequestAlreadyQueriedDataKey = &kRequestAlreadyQueriedDataKey;
 
 } // namespace
 
@@ -59,13 +39,13 @@ AwRequestInterceptor::QueryForInterceptedRequestData(
     const GURL& location,
     net::URLRequest* request) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  int render_process_id, render_view_id;
-  if (!ResourceRequestInfo::GetRenderViewForRequest(
-      request, &render_process_id, &render_view_id))
+  int render_process_id, render_frame_id;
+  if (!ResourceRequestInfo::GetRenderFrameForRequest(
+      request, &render_process_id, &render_frame_id))
     return scoped_ptr<InterceptedRequestData>();
 
   scoped_ptr<AwContentsIoThreadClient> io_thread_client =
-    AwContentsIoThreadClient::FromID(render_process_id, render_view_id);
+      AwContentsIoThreadClient::FromID(render_process_id, render_frame_id);
 
   if (!io_thread_client.get())
     return scoped_ptr<InterceptedRequestData>();
@@ -73,8 +53,7 @@ AwRequestInterceptor::QueryForInterceptedRequestData(
   return io_thread_client->ShouldInterceptRequest(location, request).Pass();
 }
 
-net::URLRequestJob* AwRequestInterceptor::MaybeInterceptInternal(
-    const GURL& location,
+net::URLRequestJob* AwRequestInterceptor::MaybeCreateJob(
     net::URLRequest* request,
     net::NetworkDelegate* network_delegate) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -83,45 +62,23 @@ net::URLRequestJob* AwRequestInterceptor::MaybeInterceptInternal(
   // request.
   // This is done not only for efficiency reasons, but also for correctness
   // as it is possible for the Interceptor chain to be invoked more than once
-  // (in which case we don't want to query the embedder multiple times).
-  URLRequestUserData* user_data = URLRequestUserData::Get(request);
+  // in which case we don't want to query the embedder multiple times.
+  // Note: The Interceptor chain is not invoked more than once if we create a
+  // URLRequestJob in this method, so this is only caching negative hits.
+  if (request->GetUserData(kRequestAlreadyQueriedDataKey))
+    return NULL;
+  request->SetUserData(kRequestAlreadyQueriedDataKey,
+                       new base::SupportsUserData::Data());
 
-  if (!user_data) {
-    // To ensure we only query the embedder once, we rely on the fact that the
-    // user_data object will be created and attached to the URLRequest after a
-    // call to QueryForInterceptedRequestData is made (regardless of whether
-    // the result of that call is a valid InterceptedRequestData* pointer or
-    // NULL.
-    user_data = new URLRequestUserData(
-        QueryForInterceptedRequestData(location, request));
-    request->SetUserData(kURLRequestUserDataKey, user_data);
-  }
-
-  const InterceptedRequestData* intercepted_request_data =
-      user_data->intercepted_request_data();
+  scoped_ptr<InterceptedRequestData> intercepted_request_data =
+      QueryForInterceptedRequestData(request->url(), request);
 
   if (!intercepted_request_data)
     return NULL;
-  return intercepted_request_data->CreateJobFor(request, network_delegate);
-}
 
-net::URLRequestJob* AwRequestInterceptor::MaybeIntercept(
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  return MaybeInterceptInternal(request->url(), request, network_delegate);
-}
-
-net::URLRequestJob* AwRequestInterceptor::MaybeInterceptRedirect(
-    const GURL& location,
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  return MaybeInterceptInternal(location, request, network_delegate);
-}
-
-net::URLRequestJob* AwRequestInterceptor::MaybeInterceptResponse(
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate) const {
-  return NULL;
+  // The newly created job will own the InterceptedRequestData.
+  return InterceptedRequestData::CreateJobFor(
+      intercepted_request_data.Pass(), request, network_delegate);
 }
 
 } // namespace android_webview

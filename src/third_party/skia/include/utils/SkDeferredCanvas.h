@@ -11,7 +11,9 @@
 #include "SkCanvas.h"
 #include "SkPixelRef.h"
 
-class DeferredDevice;
+class SkDeferredDevice;
+class SkImage;
+class SkSurface;
 
 /** \class SkDeferredCanvas
     Subclass of SkCanvas that encapsulates an SkPicture or SkGPipe for deferred
@@ -23,27 +25,27 @@ class DeferredDevice;
 */
 class SK_API SkDeferredCanvas : public SkCanvas {
 public:
-    class NotificationClient;
+    class SK_API NotificationClient;
 
-    SkDeferredCanvas();
+    /** Construct a canvas with the specified surface to draw into.
+        This factory must be used for newImageSnapshot to work.
+        @param surface Specifies a surface for the canvas to draw into.
+     */
+    static SkDeferredCanvas* Create(SkSurface* surface);
 
-    /** Construct a canvas with the specified device to draw into.
-        Equivalent to calling default constructor, then setDevice.
-        @param device Specifies a device for the canvas to draw into.
-    */
-    explicit SkDeferredCanvas(SkDevice* device);
+//    static SkDeferredCanvas* Create(SkBaseDevice* device);
 
     virtual ~SkDeferredCanvas();
 
     /**
-     *  Specify a device to be used by this canvas. Calling setDevice will
-     *  release the previously set device, if any. Takes a reference on the
-     *  device.
+     *  Specify the surface to be used by this canvas. Calling setSurface will
+     *  release the previously set surface or device. Takes a reference on the
+     *  surface.
      *
-     *  @param device The device that the canvas will raw into
-     *  @return The device argument, for convenience.
+     *  @param surface The surface that the canvas will raw into
+     *  @return The surface argument, for convenience.
      */
-    virtual SkDevice* setDevice(SkDevice* device);
+    SkSurface* setSurface(SkSurface* surface);
 
     /**
      *  Specify a NotificationClient to be used by this canvas. Calling
@@ -93,6 +95,15 @@ public:
     bool hasPendingCommands() const;
 
     /**
+     *  Flushes pending draw commands, if any, and returns an image of the
+     *  current state of the surface pixels up to this point. Subsequent
+     *  changes to the surface (by drawing into its canvas) will not be
+     *  reflected in this image.  Will return NULL if the deferred canvas
+     *  was not constructed from an SkSurface.
+     */
+    SkImage* newImageSnapshot();
+
+    /**
      *  Specify the maximum number of bytes to be allocated for the purpose
      *  of recording draw commands to this canvas.  The default limit, is
      *  64MB.
@@ -127,25 +138,7 @@ public:
     void silentFlush();
 
     // Overrides of the SkCanvas interface
-    virtual int save(SaveFlags flags) SK_OVERRIDE;
-    virtual int saveLayer(const SkRect* bounds, const SkPaint* paint,
-                          SaveFlags flags) SK_OVERRIDE;
-    virtual void restore() SK_OVERRIDE;
     virtual bool isDrawingToLayer() const SK_OVERRIDE;
-    virtual bool translate(SkScalar dx, SkScalar dy) SK_OVERRIDE;
-    virtual bool scale(SkScalar sx, SkScalar sy) SK_OVERRIDE;
-    virtual bool rotate(SkScalar degrees) SK_OVERRIDE;
-    virtual bool skew(SkScalar sx, SkScalar sy) SK_OVERRIDE;
-    virtual bool concat(const SkMatrix& matrix) SK_OVERRIDE;
-    virtual void setMatrix(const SkMatrix& matrix) SK_OVERRIDE;
-    virtual bool clipRect(const SkRect& rect, SkRegion::Op op,
-                          bool doAntiAlias) SK_OVERRIDE;
-    virtual bool clipRRect(const SkRRect& rect, SkRegion::Op op,
-                           bool doAntiAlias) SK_OVERRIDE;
-    virtual bool clipPath(const SkPath& path, SkRegion::Op op,
-                          bool doAntiAlias) SK_OVERRIDE;
-    virtual bool clipRegion(const SkRegion& deviceRgn,
-                            SkRegion::Op op) SK_OVERRIDE;
     virtual void clear(SkColor) SK_OVERRIDE;
     virtual void drawPaint(const SkPaint& paint) SK_OVERRIDE;
     virtual void drawPoints(PointMode mode, size_t count, const SkPoint pts[],
@@ -159,8 +152,8 @@ public:
                             SkScalar top, const SkPaint* paint)
                             SK_OVERRIDE;
     virtual void drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
-                                const SkRect& dst, const SkPaint* paint)
-                                SK_OVERRIDE;
+                                      const SkRect& dst, const SkPaint* paint,
+                                      DrawBitmapRectFlags flags) SK_OVERRIDE;
 
     virtual void drawBitmapMatrix(const SkBitmap& bitmap, const SkMatrix& m,
                                   const SkPaint* paint) SK_OVERRIDE;
@@ -169,17 +162,6 @@ public:
                                 SK_OVERRIDE;
     virtual void drawSprite(const SkBitmap& bitmap, int left, int top,
                             const SkPaint* paint) SK_OVERRIDE;
-    virtual void drawText(const void* text, size_t byteLength, SkScalar x,
-                          SkScalar y, const SkPaint& paint) SK_OVERRIDE;
-    virtual void drawPosText(const void* text, size_t byteLength,
-                             const SkPoint pos[], const SkPaint& paint)
-                             SK_OVERRIDE;
-    virtual void drawPosTextH(const void* text, size_t byteLength,
-                              const SkScalar xpos[], SkScalar constY,
-                              const SkPaint& paint) SK_OVERRIDE;
-    virtual void drawTextOnPath(const void* text, size_t byteLength,
-                                const SkPath& path, const SkMatrix* matrix,
-                                const SkPaint& paint) SK_OVERRIDE;
     virtual void drawPicture(SkPicture& picture) SK_OVERRIDE;
     virtual void drawVertices(VertexMode vmode, int vertexCount,
                               const SkPoint vertices[], const SkPoint texs[],
@@ -189,9 +171,34 @@ public:
     virtual SkBounder* setBounder(SkBounder* bounder) SK_OVERRIDE;
     virtual SkDrawFilter* setDrawFilter(SkDrawFilter* filter) SK_OVERRIDE;
 
+protected:
+    virtual void willSave(SaveFlags) SK_OVERRIDE;
+    virtual SaveLayerStrategy willSaveLayer(const SkRect*, const SkPaint*, SaveFlags) SK_OVERRIDE;
+    virtual void willRestore() SK_OVERRIDE;
+
+    virtual void didConcat(const SkMatrix&) SK_OVERRIDE;
+    virtual void didSetMatrix(const SkMatrix&) SK_OVERRIDE;
+
+    virtual void onDrawDRRect(const SkRRect&, const SkRRect&, const SkPaint&) SK_OVERRIDE;
+    virtual void onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
+                            const SkPaint&) SK_OVERRIDE;
+    virtual void onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
+                               const SkPaint&) SK_OVERRIDE;
+    virtual void onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
+                                SkScalar constY, const SkPaint&) SK_OVERRIDE;
+    virtual void onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
+                                  const SkMatrix* matrix, const SkPaint&) SK_OVERRIDE;
+
+    virtual void onClipRect(const SkRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
+    virtual void onClipRRect(const SkRRect&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
+    virtual void onClipPath(const SkPath&, SkRegion::Op, ClipEdgeStyle) SK_OVERRIDE;
+    virtual void onClipRegion(const SkRegion&, SkRegion::Op) SK_OVERRIDE;
+
 public:
     class NotificationClient {
     public:
+        virtual ~NotificationClient() {}
+
         /**
          *  Called before executing one or several draw commands, which means
          *  once per flush when deferred rendering is enabled.
@@ -218,16 +225,15 @@ public:
          *  or completely overwritten by the command currently being recorded.
          */
         virtual void skippedPendingDrawCommands() {}
-
-    private:
-        typedef SkRefCnt INHERITED;
     };
 
 protected:
     virtual SkCanvas* canvasForDrawIter();
-    DeferredDevice* getDeferredDevice() const;
+    SkDeferredDevice* getDeferredDevice() const;
 
 private:
+    SkDeferredCanvas(SkDeferredDevice*);
+
     void recordedDrawCommand();
     SkCanvas* drawingCanvas() const;
     SkCanvas* immediateCanvas() const;

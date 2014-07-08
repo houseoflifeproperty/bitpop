@@ -9,29 +9,28 @@
 # updates the copy in the toolchain/ tree.
 #
 
-import hashlib
 import platform
 import os
 import re
 import shlex
 import signal
 import subprocess
-import struct
 import sys
 import tempfile
 
-import artools
-import ldtools
+import elftools
+# filetype needs to be imported here because pnacl-driver injects calls to
+# filetype.ForceFileType into argument parse actions.
+# TODO(dschuff): That's ugly. Find a better way.
+import filetype
 import pathtools
 
 from driver_env import env
 # TODO: import driver_log and change these references from 'foo' to
 # 'driver_log.foo', or split driver_log further
-from driver_log import Log, DriverOpen, DriverClose, StringifyCommand, TempFiles, DriverExit
+from driver_log import Log, DriverOpen, DriverClose, StringifyCommand, DriverExit, FixArch
+from driver_temps import TempFiles
 from shelltools import shell
-
-LLVM_BITCODE_MAGIC = 'BC\xc0\xde'
-LLVM_WRAPPER_MAGIC = '\xde\xc0\x17\x0b'
 
 def ParseError(s, leftpos, rightpos, msg):
   Log.Error("Parse Error: %s", msg)
@@ -65,6 +64,49 @@ def FilterOutArchArgs(args):
     args = args[:i] + args[i+2:]
   return args
 
+# Parse and validate the target triple and return the architecture.
+# We don't attempt to recognize all possible targets here, just the ones we
+# support.
+def ParseTriple(triple):
+  tokens = triple.split('-')
+  arch = tokens[0]
+  if arch != 'le32':
+    arch = FixArch(arch)
+  os = tokens[1]
+  # The machine/vendor field could be present or not.
+  if os != 'nacl' and len(tokens) >= 3:
+    os = tokens[2]
+  # Just check that the os is nacl.
+  if os == 'nacl':
+    return arch
+
+  Log.Fatal('machine/os ' + '-'.join(tokens[1:]) + ' not supported.')
+
+
+def GetOSName():
+  if sys.platform == 'darwin':
+    os_name = 'mac'
+  elif sys.platform.startswith('linux'):
+    os_name = 'linux'
+  elif sys.platform in ('cygwin', 'win32'):
+    os_name = 'win'
+  else:
+    Log.Fatal('Machine: %s not supported.' % sys.platform)
+
+  return os_name
+
+def GetArchNameShort():
+  machine = platform.machine().lower()
+  if machine.startswith('arm'):
+    return 'arm'
+  elif machine.startswith('mips'):
+    return 'mips'
+  elif (machine.startswith('x86')
+        or machine in ('amd32', 'i386', 'i686', 'ia32', '32', 'amd64', '64')):
+    return 'x86'
+
+  Log.Fatal('Architecture: %s not supported.' % machine)
+  return 'unknown'
 
 def RunDriver(invocation, args, suppress_inherited_arch_args=False):
   """
@@ -157,31 +199,54 @@ def FindBaseNaCl():
 @env.register
 @memoize
 def FindBaseToolchain():
-  """ Find toolchain/ directory """
-  dir = FindBaseDir(lambda cur: pathtools.basename(cur) == 'toolchain')
-  if dir is None:
+  """ Find toolchain/OS_ARCH directory """
+  base_dir = FindBaseDir(lambda cur: pathtools.basename(cur) == 'toolchain')
+  if base_dir is None:
     Log.Fatal("Unable to find 'toolchain' directory")
-  return shell.escape(dir)
+  toolchain_dir = os.path.join(
+      base_dir,
+      '%s_%s' % (GetOSName(), GetArchNameShort())
+  )
+  return shell.escape(toolchain_dir)
 
 @env.register
 @memoize
 def FindBasePNaCl():
   """ Find the base directory of the PNaCl toolchain """
-  # The bin/ directory is one of:
-  # <base>/bin if <base> is /path/to/pnacl_translator
-  # <base>/newlib/bin or <base>/glibc/bin otherwise
+  # The <base> directory is one level up from the <base>/bin:
   bindir = env.getone('DRIVER_BIN')
-
-  # If this is a translator dir, use pnacl_translator
-  translator_dir = FindBaseDir(
-      lambda cur: pathtools.basename(cur) == 'pnacl_translator')
-  if translator_dir is not None:
-    return shell.escape(translator_dir)
-  # Else use ../..
-  basedir = pathtools.dirname(pathtools.dirname(bindir))
+  basedir = pathtools.dirname(bindir)
   return shell.escape(basedir)
 
+def AddHostBinarySearchPath(prefix):
+  """ Add a path to the list searched for host binaries. """
+  prefix = pathtools.normalize(prefix)
+  if pathtools.isdir(prefix) and not prefix.endswith('/'):
+    prefix += '/'
+
+  env.append('BPREFIXES', prefix)
+
+@env.register
+def FindBaseHost(tool):
+  """ Find the base directory for host binaries (i.e. llvm/binutils) """
+  if env.has('BPREFIXES'):
+    for prefix in env.get('BPREFIXES'):
+      if os.path.exists(pathtools.join(prefix, 'bin',
+                                       tool + env.getone('EXEC_EXT'))):
+        return prefix
+
+  base_pnacl = FindBasePNaCl()
+  base_host = pathtools.join(base_pnacl, 'host_' + env.getone('HOST_ARCH'))
+  if not pathtools.exists(pathtools.join(base_host, 'bin',
+                          tool + env.getone('EXEC_EXT'))):
+    Log.Fatal('Could not find PNaCl host directory for ' + tool)
+  return base_host
+
 def ReadConfig():
+  # Mock out ReadConfig if running unittests.  Settings are applied directly
+  # by DriverTestEnv rather than reading this configuration file.
+  if env.has('PNACL_RUNNING_UNITTESTS'):
+    return
   driver_bin = env.getone('DRIVER_BIN')
   driver_conf = pathtools.join(driver_bin, 'driver.conf')
   fp = DriverOpen(driver_conf, 'r')
@@ -200,10 +265,6 @@ def ReadConfig():
     env.setraw(keyname, value)
   DriverClose(fp)
 
-  if env.getone('LIBMODE') not in ('newlib', 'glibc'):
-    Log.Fatal('Invalid LIBMODE in %s', pathtools.touser(driver_conf))
-
-
 @env.register
 def AddPrefix(prefix, varname):
   values = env.get(varname)
@@ -216,18 +277,19 @@ def AddPrefix(prefix, varname):
 ######################################################################
 
 DriverArgPatterns = [
-  ( '--pnacl-driver-verbose',             "env.set('LOG_VERBOSE', '1')"),
+  ( '--pnacl-driver-verbose',          "env.set('LOG_VERBOSE', '1')"),
   ( ('-arch', '(.+)'),                 "SetArch($0)"),
   ( '--pnacl-sb',                      "env.set('SANDBOXED', '1')"),
   ( '--pnacl-use-emulator',            "env.set('USE_EMULATOR', '1')"),
   ( '--dry-run',                       "env.set('DRY_RUN', '1')"),
   ( '--pnacl-arm-bias',                "env.set('BIAS', 'ARM')"),
+  ( '--pnacl-mips-bias',               "env.set('BIAS', 'MIPS32')"),
   ( '--pnacl-i686-bias',               "env.set('BIAS', 'X8632')"),
   ( '--pnacl-x86_64-bias',             "env.set('BIAS', 'X8664')"),
   ( '--pnacl-bias=(.+)',               "env.set('BIAS', FixArch($0))"),
-  ( '--pnacl-default-command-line',    "env.set('USE_DEFAULT_CMD_LINE', '1')"),
   ( '-save-temps',                     "env.set('SAVE_TEMPS', '1')"),
   ( '-no-save-temps',                  "env.set('SAVE_TEMPS', '0')"),
+  ( ('-B', '(.*)'),  AddHostBinarySearchPath),
  ]
 
 DriverArgPatternsNotInherited = [
@@ -352,333 +414,6 @@ def UnrecognizedOption(*args):
   Log.Fatal("Unrecognized option: " + ' '.join(args) + "\n" +
             "Use '--help' for more information.")
 
-######################################################################
-# File Type Tools
-######################################################################
-
-def SimpleCache(f):
-  """ Cache results of a one-argument function using a dictionary """
-  cache = dict()
-  def wrapper(arg):
-    if arg in cache:
-      return cache[arg]
-    else:
-      result = f(arg)
-      cache[arg] = result
-      return result
-  wrapper.__name__ = f.__name__
-  wrapper.__cache = cache
-  return wrapper
-
-@SimpleCache
-def IsNative(filename):
-  return (IsNativeObject(filename) or
-          IsNativeDSO(filename) or
-          IsNativeArchive(filename))
-
-@SimpleCache
-def IsNativeObject(filename):
-  return FileType(filename) == 'o'
-
-@SimpleCache
-def IsNativeDSO(filename):
-  return FileType(filename) == 'so'
-
-@SimpleCache
-def IsBitcodeDSO(filename):
-  return FileType(filename) == 'pso'
-
-@SimpleCache
-def IsBitcodeObject(filename):
-  return FileType(filename) == 'po'
-
-def IsBitcodeWrapperHeader(data):
-  return data[:4] == LLVM_WRAPPER_MAGIC
-
-@SimpleCache
-def IsWrappedBitcode(filename):
-  fp = DriverOpen(filename, 'rb')
-  header = fp.read(4)
-  iswbc = IsBitcodeWrapperHeader(header)
-  DriverClose(fp)
-  return iswbc
-
-@SimpleCache
-def IsBitcode(filename):
-  fp = DriverOpen(filename, 'rb')
-  header = fp.read(4)
-  DriverClose(fp)
-  # Raw bitcode
-  if header == LLVM_BITCODE_MAGIC:
-    return True
-  # Wrapped bitcode
-  return IsBitcodeWrapperHeader(header)
-
-@SimpleCache
-def IsArchive(filename):
-  return artools.IsArchive(filename)
-
-@SimpleCache
-def IsBitcodeArchive(filename):
-  filetype = FileType(filename)
-  return filetype == 'archive-bc'
-
-@SimpleCache
-def IsNativeArchive(filename):
-  return IsArchive(filename) and not IsBitcodeArchive(filename)
-
-class ELFHeader(object):
-  ELF_MAGIC = '\x7fELF'
-  ELF_TYPES = { 1: 'REL',  # .o
-                2: 'EXEC', # .exe
-                3: 'DYN' } # .so
-  ELF_MACHINES = {  3: '386',
-                    8: 'MIPS',
-                   40: 'ARM',
-                   62: 'X86_64' }
-  ELF_OSABI = { 0: 'UNIX',
-                3: 'LINUX',
-                123: 'NACL' }
-  ELF_ABI_VER = { 0: 'NONE',
-                  7: 'NACL' }
-
-  def __init__(self, e_type, e_machine, e_osabi, e_abiver):
-    self.type = self.ELF_TYPES[e_type]
-    self.machine = self.ELF_MACHINES[e_machine]
-    self.osabi = self.ELF_OSABI[e_osabi]
-    self.abiver = self.ELF_ABI_VER[e_abiver]
-    self.arch = FixArch(self.machine)  # For convenience
-
-# If the file is not ELF, returns None.
-# Otherwise, returns an ELFHeader object.
-@SimpleCache
-def GetELFHeader(filename):
-  fp = DriverOpen(filename, 'rb')
-  header = fp.read(16 + 2 + 2)
-  DriverClose(fp)
-  return DecodeELFHeader(header, filename)
-
-def DecodeELFHeader(header, filename):
-  # Pull e_ident, e_type, e_machine
-  if header[0:4] != ELFHeader.ELF_MAGIC:
-    return None
-
-  e_osabi = DecodeLE(header[7])
-  e_abiver = DecodeLE(header[8])
-  e_type = DecodeLE(header[16:18])
-  e_machine = DecodeLE(header[18:20])
-
-  if e_osabi not in ELFHeader.ELF_OSABI:
-    Log.Fatal('%s: ELF file has unknown OS ABI (%d)', filename, e_osabi)
-  if e_abiver not in ELFHeader.ELF_ABI_VER:
-    Log.Fatal('%s: ELF file has unknown ABI version (%d)', filename, e_abiver)
-  if e_type not in ELFHeader.ELF_TYPES:
-    Log.Fatal('%s: ELF file has unknown type (%d)', filename, e_type)
-  if e_machine not in ELFHeader.ELF_MACHINES:
-    Log.Fatal('%s: ELF file has unknown machine type (%d)', filename, e_machine)
-
-  eh = ELFHeader(e_type, e_machine, e_osabi, e_abiver)
-  return eh
-
-def IsELF(filename):
-  return GetELFHeader(filename) is not None
-
-# Decode Little Endian bytes into an unsigned value
-def DecodeLE(bytes):
-  value = 0
-  for b in reversed(bytes):
-    value *= 2
-    value += ord(b)
-  return value
-
-# Sandboxed LLC returns the metadata after translation. Use FORCED_METADATA
-# if available instead of llvm-dis to avoid building llvm-dis on arm, and
-# to make sure this interface gets tested
-FORCED_METADATA = {}
-@SimpleCache
-def GetBitcodeMetadata(filename):
-  assert(IsBitcode(filename))
-  global FORCED_METADATA
-  if filename in FORCED_METADATA:
-    return FORCED_METADATA[filename]
-
-  llvm_dis = env.getone('LLVM_DIS')
-  args = [ llvm_dis, '-dump-metadata', filename ]
-  _, stdout_contents, _  = Run(args, redirect_stdout=subprocess.PIPE)
-
-  metadata = { 'OutputFormat': '',
-               'SOName'      : '',
-               'NeedsLibrary': [] }
-  for line in stdout_contents.split('\n'):
-    if not line.strip():
-      continue
-    k, v = line.split(':')
-    k = k.strip()
-    v = v.strip()
-    if k.startswith('NeededRecord_'):
-      metadata[k] = ''
-    assert(k in metadata)
-    if isinstance(metadata[k], list):
-      metadata[k].append(v)
-    else:
-      metadata[k] = v
-
-  return metadata
-
-def SetBitcodeMetadata(filename, is_shared, soname, needed_libs):
-  metadata = {}
-  metadata['OutputFormat'] = 'shared' if is_shared else 'executable'
-  metadata['NeedsLibrary'] = list(needed_libs)
-  metadata['SOName'] = soname
-  global FORCED_METADATA
-  FORCED_METADATA[filename] = metadata
-
-# If FORCED_FILE_TYPE is set, FileType() will return FORCED_FILE_TYPE for all
-# future input files. This is useful for the "as" incarnation, which
-# needs to accept files of any extension and treat them as ".s" (or ".ll")
-# files. Also useful for gcc's "-x", which causes all files to be treated
-# in a certain way.
-FORCED_FILE_TYPE = None
-def SetForcedFileType(t):
-  global FORCED_FILE_TYPE
-  FORCED_FILE_TYPE = t
-
-def GetForcedFileType():
-  return FORCED_FILE_TYPE
-
-def ForceFileType(filename, newtype = None):
-  if newtype is None:
-    if FORCED_FILE_TYPE is None:
-      return
-    newtype = FORCED_FILE_TYPE
-  FileType.__cache[filename] = newtype
-
-# File Extension -> Type string
-# TODO(pdox): Add types for sources which should not be preprocessed.
-ExtensionMap = {
-  'c'   : 'c',
-  'i'   : 'c',    # C, but should not be preprocessed.
-
-  'cc'  : 'c++',
-  'cp'  : 'c++',
-  'cxx' : 'c++',
-  'cpp' : 'c++',
-  'CPP' : 'c++',
-  'c++' : 'c++',
-  'C'   : 'c++',
-  'ii'  : 'c++',  # C++, but should not be preprocessed.
-
-  'm'   : 'objc',  # .m = "Objective-C source file"
-
-  'll'  : 'll',
-  'bc'  : 'po',
-  'po'  : 'po',   # .po = "Portable object file"
-  'pexe': 'pexe', # .pexe = "Portable executable"
-  'pso' : 'pso',  # .pso = "Portable Shared Object"
-  'asm' : 'S',
-  'S'   : 'S',
-  'sx'  : 'S',
-  's'   : 's',
-  'o'   : 'o',
-  'os'  : 'o',
-  'so'  : 'so',
-  'nexe': 'nexe',
-}
-
-def IsSourceType(filetype):
-  return filetype in ('c','c++','objc')
-
-# The SimpleCache decorator is required for correctness, due to the
-# ForceFileType mechanism.
-@SimpleCache
-def FileType(filename):
-  # Auto-detect bitcode files, since we can't rely on extensions
-  ext = filename.split('.')[-1]
-
-  # TODO(pdox): We open and read the the first few bytes of each file
-  #             up to 4 times, when we only need to do it once. The
-  #             OS cache prevents us from hitting the disk, but this
-  #             is still slower than it needs to be.
-  if IsArchive(filename):
-    return artools.GetArchiveType(filename)
-
-  if IsELF(filename):
-    return GetELFType(filename)
-
-  if IsBitcode(filename):
-    return GetBitcodeType(filename)
-
-  if (ext in ('o','so','a','po','pso','pa','x') and
-      ldtools.IsLinkerScript(filename)):
-    return 'ldscript'
-
-  # Use the file extension if it is recognized
-  if ext in ExtensionMap:
-    return ExtensionMap[ext]
-
-  Log.Fatal('%s: Unrecognized file type', filename)
-
-
-@SimpleCache
-def GetELFType(filename):
-  """ ELF type as determined by ELF metadata """
-  assert(IsELF(filename))
-  elfheader = GetELFHeader(filename)
-  elf_type_map = {
-    'EXEC': 'nexe',
-    'REL' : 'o',
-    'DYN' : 'so'
-  }
-  return elf_type_map[elfheader.type]
-
-@SimpleCache
-def GetBitcodeType(filename):
-  """ Bitcode type as determined by bitcode metadata """
-  assert(IsBitcode(filename))
-  metadata = GetBitcodeMetadata(filename)
-  format_map = {
-    'object': 'po',
-    'shared': 'pso',
-    'executable': 'pexe'
-  }
-  return format_map[metadata['OutputFormat']]
-
-def GetBasicHeaderData(data):
-  """ Extract bitcode offset and size from LLVM bitcode wrapper header.
-      Format is 4-bytes each of [ magic, version, bc offset, bc size, ...
-      (documented at http://llvm.org/docs/BitCodeFormat.html)
-  """
-  if not IsBitcodeWrapperHeader(data):
-    raise ValueError('Data is not a bitcode wrapper')
-  magic, llvm_bcversion, offset, size = struct.unpack('<IIII', data)
-  if llvm_bcversion != 0:
-    raise ValueError('Data is not a valid bitcode wrapper')
-  return offset, size
-
-def WrapBitcode(output):
-  """ Hash the bitcode and insert a wrapper header with the sha value.
-      If the bitcode is already wrapped, the old hash is overwritten.
-  """
-  fd = DriverOpen(output, 'rb')
-  maybe_header = fd.read(16)
-  if IsBitcodeWrapperHeader(maybe_header):
-    offset, bytes_left = GetBasicHeaderData(maybe_header)
-    fd.seek(offset)
-  else:
-    offset = 0
-    fd.seek(0, os.SEEK_END)
-    bytes_left = fd.tell()
-    fd.seek(0)
-  # get the hash
-  sha = hashlib.sha256()
-  while bytes_left:
-    block = fd.read(min(bytes_left, 4096))
-    sha.update(block)
-    bytes_left -= len(block)
-  DriverClose(fd)
-  # run bc-wrap
-  Run(' '.join(['${LLVM_BCWRAP}', '-hash', sha.hexdigest(), '"%s"' % output]))
-
 
 ######################################################################
 #
@@ -687,14 +422,15 @@ def WrapBitcode(output):
 ######################################################################
 
 def DefaultOutputName(filename, outtype):
-  if outtype in ('pp','dis'): return '-' # stdout
+  # For pre-processor mode, just print to stdout.
+  if outtype in ('pp'): return '-'
 
   base = pathtools.basename(filename)
   base = RemoveExtension(base)
   if outtype in ('po'): return base + '.o'
 
-  assert(outtype in ExtensionMap.values())
-  assert(not IsSourceType(outtype))
+  assert(outtype in filetype.ExtensionMap.values())
+  assert(not filetype.IsSourceType(outtype))
 
   return base + '.' + outtype
 
@@ -721,17 +457,14 @@ def PathSplit(f):
 # add parent directories. Rinse, repeat.
 class TempNameGen(object):
   def __init__(self, inputs, output):
+    self.TempBase = tempfile.mkdtemp()
     inputs = [ pathtools.abspath(i) for i in inputs ]
-    output = pathtools.abspath(output)
+    output = pathtools.basename(output)
 
-    self.TempBase = output + '---linked'
+    TempFiles.add(self.TempBase)
 
-    # TODO(pdox): Figure out if there's a less confusing way
-    #             to simplify the intermediate filename in this case.
-    #if len(inputs) == 1:
-    #  # There's only one input file, don't bother adding the source name.
-    #  TempMap[inputs[0]] = output + '---'
-    #  return
+    self.Output = output + '---linked'
+
 
     # Build the initial mapping
     self.TempMap = dict()
@@ -741,12 +474,15 @@ class TempNameGen(object):
       path = PathSplit(f)
       self.TempMap[f] = [1, path]
 
+    def MangledName(path):
+      return output + '---' + '_'.join(path[-n:]) + '---'
+
     while True:
       # Find conflicts
       ConflictMap = dict()
       Conflicts = set()
       for (f, [n, path]) in self.TempMap.iteritems():
-        candidate = output + '---' + '_'.join(path[-n:]) + '---'
+        candidate = pathtools.abspath(MangledName(path))
         if candidate in ConflictMap:
           Conflicts.add(ConflictMap[candidate])
           Conflicts.add(f)
@@ -763,31 +499,27 @@ class TempNameGen(object):
           Log.Fatal('Unable to resolve naming conflicts')
         self.TempMap[f][0] = n+1
 
-    # Clean up the map
+    # Clean up the map and put the paths in tempdir
     NewMap = dict()
     for (f, [n, path]) in self.TempMap.iteritems():
-      candidate = output + '---' + '_'.join(path[-n:]) + '---'
-      NewMap[f] = candidate
+      NewMap[f] = os.path.join(self.TempBase, MangledName(path))
     self.TempMap = NewMap
     return
 
   def TempNameForOutput(self, imtype):
-    temp = self.TempBase + '.' + imtype
-    if not env.getbool('SAVE_TEMPS'):
-      TempFiles.add(temp)
+    temp = os.path.join(self.TempBase, self.Output + '.' + imtype)
+    TempFiles.add(temp)
     return temp
 
   def TempNameForInput(self, input, imtype):
     fullpath = pathtools.abspath(input)
-    # If input is already a temporary name, just change the extension
+    # If input is already a temporary name, just add an extension
     if fullpath.startswith(self.TempBase):
-      temp = self.TempBase + '.' + imtype
+      temp = fullpath + '.' + imtype
     else:
       # Source file
       temp = self.TempMap[fullpath] + '.' + imtype
-
-    if not env.getbool('SAVE_TEMPS'):
-      TempFiles.add(temp)
+    TempFiles.add(temp)
     return temp
 
 # (Invoked from loader.py)
@@ -909,68 +641,29 @@ def Run(args,
 
   if errexit and p.returncode != 0:
     if redirect_stdout == subprocess.PIPE:
-        Log.Error('--------------stdout: begin')
-        Log.Error(result_stdout)
-        Log.Error('--------------stdout: end')
+      Log.Error('--------------stdout: begin')
+      Log.Error(result_stdout)
+      Log.Error('--------------stdout: end')
 
     if redirect_stderr == subprocess.PIPE:
-        Log.Error('--------------stderr: begin')
-        Log.Error(result_stderr)
-        Log.Error('--------------stderr: end')
+      Log.Error('--------------stderr: begin')
+      Log.Error(result_stderr)
+      Log.Error('--------------stderr: end')
     DriverExit(p.returncode)
 
   return p.returncode, result_stdout, result_stderr
 
-
-def FixArch(arch):
-  arch = arch.lower()
-  archfix = { 'x86-32': 'X8632',
-              'x86_32': 'X8632',
-              'x8632' : 'X8632',
-              'i686'  : 'X8632',
-              'ia32'  : 'X8632',
-              '386'   : 'X8632',
-              '686'   : 'X8632',
-
-              'amd64' : 'X8664',
-              'x86_64': 'X8664',
-              'x86-64': 'X8664',
-              'x8664' : 'X8664',
-
-              'arm'   : 'ARM',
-              'armv7' : 'ARM',
-              'arm-thumb2' : 'ARM',
-
-              'mips32': 'MIPS32',
-              'mips'  : 'MIPS32',
-              }
-  if arch not in archfix:
-    Log.Fatal('Unrecognized arch "%s"!', arch)
-  return archfix[arch]
 
 def IsWindowsPython():
   return 'windows' in platform.system().lower()
 
 def SetupCygwinLibs():
   bindir = env.getone('DRIVER_BIN')
-  os.environ['PATH'] += os.pathsep + pathtools.tosys(bindir)
+  # Prepend the directory containing cygwin1.dll etc. to the PATH to ensure we
+  # get the right one.
+  os.environ['PATH'] = os.pathsep.join(
+      [pathtools.tosys(bindir)] + os.environ['PATH'].split(os.pathsep))
 
-# Map from GCC's -x file types and this driver's file types.
-FILE_TYPE_MAP = {
-    'c'                 : 'c',
-    'c++'               : 'c++',
-    'assembler'         : 's',
-    'assembler-with-cpp': 'S',
-}
-FILE_TYPE_MAP_REVERSE = dict([reversed(_tmp) for _tmp in FILE_TYPE_MAP.items()])
-
-def FileTypeToGCCType(filetype):
-  return FILE_TYPE_MAP_REVERSE[filetype]
-
-def GCCTypeToFileType(gcctype):
-  if gcctype not in FILE_TYPE_MAP:
-    Log.Fatal('language "%s" not recognized' % gcctype)
-  return FILE_TYPE_MAP[gcctype]
 
 def HelpNotAvailable():
   return 'Help text not available'
@@ -1015,7 +708,16 @@ def DriverMain(module, argv):
 
 
 def SetArch(arch):
-  env.set('ARCH', FixArch(arch))
+  arch = FixArch(arch)
+  env.set('ARCH', arch)
+
+  nonsfi_nacl = False
+  if arch.endswith('_NONSFI'):
+    arch = arch[:-len('_NONSFI')]
+    nonsfi_nacl = True
+  env.set('BASE_ARCH', arch)
+  env.setbool('NONSFI_NACL', nonsfi_nacl)
+
 
 def GetArch(required = False):
   arch = env.getone('ARCH')
@@ -1037,14 +739,14 @@ def GetArch(required = False):
 # must_match is False. If must_match is True, then a fatal error is generated
 # instead.
 def ArchMerge(filename, must_match):
-  filetype = FileType(filename)
-  if filetype in ('o','so'):
-    elfheader = GetELFHeader(filename)
+  file_type = filetype.FileType(filename)
+  if file_type in ('o','so'):
+    elfheader = elftools.GetELFHeader(filename)
     if not elfheader:
       Log.Fatal("%s: Cannot read ELF header", filename)
     new_arch = elfheader.arch
-  elif IsNativeArchive(filename):
-    new_arch = filetype[len('archive-'):]
+  elif filetype.IsNativeArchive(filename):
+    new_arch = file_type[len('archive-'):]
   else:
     Log.Fatal('%s: Unexpected file type in ArchMerge', filename)
 
@@ -1068,7 +770,13 @@ def ArchMerge(filename, must_match):
 def CheckTranslatorPrerequisites():
   """ Assert that the scons artifacts for running the sandboxed translator
       exist: sel_universal, and sel_ldr. """
-  for var in ['SEL_UNIVERSAL', 'SEL_LDR', 'BOOTSTRAP_LDR']:
+  if env.getbool('DRY_RUN'):
+    return
+  reqs = ['SEL_UNIVERSAL', 'SEL_LDR']
+  # Linux also requires the nacl bootstrap helper.
+  if GetBuildOS() == 'linux':
+    reqs.append('BOOTSTRAP_LDR')
+  for var in reqs:
     needed_file = env.getone(var)
     if not pathtools.exists(needed_file):
       Log.Fatal('Could not find %s [%s]', var, needed_file)

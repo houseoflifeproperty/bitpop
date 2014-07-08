@@ -2,26 +2,26 @@
  * libjingle
  * Copyright 2004--2005, Google Inc.
  *
- * Redistribution and use in source and binary forms, with or without 
+ * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- *  1. Redistributions of source code must retain the above copyright notice, 
+ *  1. Redistributions of source code must retain the above copyright notice,
  *     this list of conditions and the following disclaimer.
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products 
+ *  3. The name of the author may not be used to endorse or promote products
  *     derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
  * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR 
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
@@ -50,15 +50,25 @@ class TransportChannelImpl : public TransportChannel {
   virtual Transport* GetTransport() = 0;
 
   // For ICE channels.
-  virtual void SetRole(TransportRole role) {}
-  virtual void SetTiebreaker(uint64 tiebreaker) {}
+  virtual IceRole GetIceRole() const = 0;
+  virtual void SetIceRole(IceRole role) = 0;
+  virtual void SetIceTiebreaker(uint64 tiebreaker) = 0;
+  virtual size_t GetConnectionCount() const = 0;
   // To toggle G-ICE/ICE.
-  virtual void SetIceProtocolType(IceProtocolType type) {}
-  // SetIceUfrag and SetIcePwd only need to be implemented by the ICE
+  virtual bool GetIceProtocolType(IceProtocolType* type) const = 0;
+  virtual void SetIceProtocolType(IceProtocolType type) = 0;
+  // SetIceCredentials only need to be implemented by the ICE
   // transport channels. Non-ICE transport channels can just ignore.
   // The ufrag and pwd should be set before the Connect() is called.
-  virtual void SetIceUfrag(const std::string& ice_ufrag) {}
-  virtual void SetIcePwd(const std::string& ice_pwd) {}
+  virtual void SetIceCredentials(const std::string& ice_ufrag,
+                                 const std::string& ice_pwd)  = 0;
+  // SetRemoteIceCredentials only need to be implemented by the ICE
+  // transport channels. Non-ICE transport channels can just ignore.
+  virtual void SetRemoteIceCredentials(const std::string& ice_ufrag,
+                                       const std::string& ice_pwd) = 0;
+
+  // SetRemoteIceMode must be implemented only by the ICE transport channels.
+  virtual void SetRemoteIceMode(IceMode mode) = 0;
 
   // Begins the process of attempting to make a connection to the other client.
   virtual void Connect() = 0;
@@ -85,17 +95,18 @@ class TransportChannelImpl : public TransportChannel {
   virtual void OnCandidate(const Candidate& candidate) = 0;
 
   // DTLS methods
-  // Set DTLS local identity.
-  virtual bool SetLocalIdentity(talk_base::SSLIdentity* identity) {
-    return false;
-  }
+  // Set DTLS local identity.  The identity object is not copied, but the caller
+  // retains ownership and must delete it after this TransportChannelImpl is
+  // destroyed.
+  // TODO(bemasc): Fix the ownership semantics of this method.
+  virtual bool SetLocalIdentity(talk_base::SSLIdentity* identity) = 0;
 
   // Set DTLS Remote fingerprint. Must be after local identity set.
   virtual bool SetRemoteFingerprint(const std::string& digest_alg,
     const uint8* digest,
-    size_t digest_len) {
-    return false;
-  }
+    size_t digest_len) = 0;
+
+  virtual bool SetSslRole(talk_base::SSLRole role) = 0;
 
   // TransportChannel is forwarding this signal from PortAllocatorSession.
   sigslot::signal1<TransportChannelImpl*> SignalCandidatesAllocationDone;
@@ -103,6 +114,10 @@ class TransportChannelImpl : public TransportChannel {
   // Invoked when there is conflict in the ICE role between local and remote
   // agents.
   sigslot::signal1<TransportChannelImpl*> SignalRoleConflict;
+
+  // Emitted whenever the number of connections available to the transport
+  // channel decreases.
+  sigslot::signal1<TransportChannelImpl*> SignalConnectionRemoved;
 
  private:
   DISALLOW_EVIL_CONSTRUCTORS(TransportChannelImpl);

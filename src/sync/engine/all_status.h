@@ -13,7 +13,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/synchronization/lock.h"
-#include "sync/engine/sync_engine_event.h"
+#include "sync/engine/sync_engine_event_listener.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/engine/sync_status.h"
@@ -23,6 +23,7 @@ namespace syncer {
 
 class ScopedStatusLock;
 struct ServerConnectionEvent;
+struct SyncCycleEvent;
 
 // This class collects data and uses it to update its internal state.  It can
 // return a snapshot of this state as a SyncerStatus object.
@@ -39,7 +40,13 @@ class AllStatus : public SyncEngineEventListener {
   AllStatus();
   virtual ~AllStatus();
 
-  virtual void OnSyncEngineEvent(const SyncEngineEvent& event) OVERRIDE;
+  // SyncEngineEventListener implementation.
+  virtual void OnSyncCycleEvent(const SyncCycleEvent& event) OVERRIDE;
+  virtual void OnActionableError(const SyncProtocolError& error) OVERRIDE;
+  virtual void OnRetryTimeChanged(base::Time retry_time) OVERRIDE;
+  virtual void OnThrottledTypesChanged(ModelTypeSet throttled_types) OVERRIDE;
+  virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE;
+  virtual void OnProtocolEvent(const ProtocolEvent& event) OVERRIDE;
 
   SyncStatus status() const;
 
@@ -49,8 +56,6 @@ class AllStatus : public SyncEngineEventListener {
 
   void IncrementNotificationsReceived();
 
-  void SetThrottledTypes(ModelTypeSet types);
-
   void SetEncryptedTypes(ModelTypeSet types);
   void SetCryptographerReady(bool ready);
   void SetCryptoHasPendingKeys(bool has_pending_keys);
@@ -58,14 +63,15 @@ class AllStatus : public SyncEngineEventListener {
   void SetHasKeystoreKey(bool has_keystore_key);
   void SetKeystoreMigrationTime(const base::Time& migration_time);
 
-  void SetUniqueId(const std::string& guid);
+  void SetSyncId(const std::string& sync_id);
+  void SetInvalidatorClientId(const std::string& invalidator_client_id);
 
   void IncrementNudgeCounter(NudgeSource source);
 
  protected:
   // Examines syncer to calculate syncing and the unsynced count,
   // and returns a Status with new values.
-  SyncStatus CalcSyncing(const SyncEngineEvent& event) const;
+  SyncStatus CalcSyncing(const SyncCycleEvent& event) const;
   SyncStatus CreateBlankStatus() const;
 
   SyncStatus status_;

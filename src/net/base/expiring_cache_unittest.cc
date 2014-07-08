@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 

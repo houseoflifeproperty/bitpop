@@ -4,52 +4,54 @@
 
 #include "chrome/browser/notifications/notification_object_proxy.h"
 
-#include "base/stringprintf.h"
-#include "content/public/browser/render_view_host.h"
+#include "base/guid.h"
+#include "base/strings/stringprintf.h"
+#include "content/public/browser/desktop_notification_delegate.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/browser/web_contents.h"
 
-using content::RenderViewHost;
-
-NotificationObjectProxy::NotificationObjectProxy(int process_id, int route_id,
-    int notification_id, bool worker)
-    : process_id_(process_id),
-      route_id_(route_id),
-      notification_id_(notification_id),
-      worker_(worker) {
-  if (worker_) {
-    // TODO(johnnyg): http://crbug.com/23065  Worker support coming soon.
-    NOTREACHED();
-  }
+NotificationObjectProxy::NotificationObjectProxy(
+    content::RenderFrameHost* render_frame_host,
+    content::DesktopNotificationDelegate* delegate)
+    : render_process_id_(render_frame_host->GetProcess()->GetID()),
+      render_frame_id_(render_frame_host->GetRoutingID()),
+      delegate_(delegate),
+      displayed_(false),
+      id_(base::GenerateGUID()) {
 }
 
 void NotificationObjectProxy::Display() {
-  RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
-  if (host)
-    host->DesktopNotificationPostDisplay(notification_id_);
+  // This method is called each time the notification is shown to the user
+  // but we only want to fire the event the first time.
+  if (displayed_)
+    return;
+  displayed_ = true;
+
+  delegate_->NotificationDisplayed();
 }
 
 void NotificationObjectProxy::Error() {
-  RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
-  if (host)
-    host->DesktopNotificationPostError(notification_id_, string16());
+  delegate_->NotificationError();
 }
 
 void NotificationObjectProxy::Close(bool by_user) {
-  RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
-  if (host)
-    host->DesktopNotificationPostClose(notification_id_, by_user);
+  delegate_->NotificationClosed(by_user);
 }
 
 void NotificationObjectProxy::Click() {
-  RenderViewHost* host = RenderViewHost::FromID(process_id_, route_id_);
-  if (host)
-    host->DesktopNotificationPostClick(notification_id_);
+  delegate_->NotificationClick();
 }
 
 std::string NotificationObjectProxy::id() const {
-  return StringPrintf("%d:%d:%d:%d", process_id_, route_id_,
-                      notification_id_, worker_);
+  return id_;
 }
 
-RenderViewHost* NotificationObjectProxy::GetRenderViewHost() const {
-  return RenderViewHost::FromID(process_id_, route_id_);
+int NotificationObjectProxy::process_id() const {
+  return render_process_id_;
+}
+
+content::WebContents* NotificationObjectProxy::GetWebContents() const {
+  return content::WebContents::FromRenderFrameHost(
+      content::RenderFrameHost::FromID(render_process_id_, render_frame_id_));
 }

@@ -5,16 +5,16 @@
 #include "chrome/browser/ui/webui/options/chromeos/user_image_source.h"
 
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop.h"
-#include "base/string_split.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_split.h"
 #include "chrome/browser/chromeos/login/default_user_images.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/url_parse.h"
 #include "grit/theme_resources.h"
+#include "net/base/escape.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/codec/png_codec.h"
+#include "url/url_parse.h"
 
 namespace {
 
@@ -24,17 +24,18 @@ namespace {
 const char kKeyAnimated[] = "animated";
 
 // Parses the user image URL, which looks like
-// "chrome://userimage/user@host?key1=value1&...&key_n=value_n@<scale>x",
-// to user email, optional parameters and scale factor.
+// "chrome://userimage/user@host?key1=value1&...&key_n=value_n",
+// to user email and optional parameters.
 void ParseRequest(const GURL& url,
                   std::string* email,
-                  bool* is_image_animated,
-                  ui::ScaleFactor* scale_factor) {
+                  bool* is_image_animated) {
   DCHECK(url.is_valid());
-  web_ui_util::ParsePathAndScale(url, email, scale_factor);
+  *email = net::UnescapeURLComponent(url.path().substr(1),
+                                    (net::UnescapeRule::URL_SPECIAL_CHARS |
+                                     net::UnescapeRule::SPACES));
   std::string url_spec = url.possibly_invalid_spec();
-  url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-  url_parse::Component key, value;
+  url::Component query = url.parsed_for_possibly_invalid_spec().query;
+  url::Component key, value;
   *is_image_animated = false;
   while (ExtractQueryKeyValue(url_spec.c_str(), &query, &key, &value)) {
     if (url_spec.substr(key.begin, key.len) == kKeyAnimated) {
@@ -76,22 +77,25 @@ base::RefCountedMemory* UserImageSource::GetUserImage(
       LoadDataResourceBytesForScale(IDR_LOGIN_DEFAULT_USER, scale_factor);
 }
 
-UserImageSource::UserImageSource()
-    : DataSource(chrome::kChromeUIUserImageHost, MessageLoop::current()) {
+UserImageSource::UserImageSource() {
 }
 
 UserImageSource::~UserImageSource() {}
 
-void UserImageSource::StartDataRequest(const std::string& path,
-                                       bool is_incognito,
-                                       int request_id) {
+std::string UserImageSource::GetSource() const {
+  return chrome::kChromeUIUserImageHost;
+}
+
+void UserImageSource::StartDataRequest(
+    const std::string& path,
+    int render_process_id,
+    int render_frame_id,
+    const content::URLDataSource::GotDataCallback& callback) {
   std::string email;
   bool is_image_animated = false;
-  ui::ScaleFactor scale_factor;
   GURL url(chrome::kChromeUIUserImageURL + path);
-  ParseRequest(url, &email, &is_image_animated, &scale_factor);
-  SendResponse(request_id,
-               GetUserImage(email, is_image_animated, scale_factor));
+  ParseRequest(url, &email, &is_image_animated);
+  callback.Run(GetUserImage(email, is_image_animated, ui::SCALE_FACTOR_100P));
 }
 
 std::string UserImageSource::GetMimeType(const std::string& path) const {
@@ -99,10 +103,9 @@ std::string UserImageSource::GetMimeType(const std::string& path) const {
   // drag the image they get no extension.
   std::string email;
   bool is_image_animated = false;
-  ui::ScaleFactor scale_factor;
 
   GURL url(chrome::kChromeUIUserImageURL + path);
-  ParseRequest(url, &email, &is_image_animated, &scale_factor);
+  ParseRequest(url, &email, &is_image_animated);
 
   if (is_image_animated) {
     const chromeos::User* user = chromeos::UserManager::Get()->FindUser(email);

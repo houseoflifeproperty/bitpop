@@ -15,49 +15,8 @@ parsed table representations.
 # classes needed to parse valid ARM instructions. For testing, this is
 # a problem. We can't (easily) tell if the intended instruction rules
 # of ARM are being met, since there is not a one-to-one mapping from
-# class decoders to rules.
-#
-# For example, consider the following two rows (from armv7.table):
-#
-# | 0011x      -        = Binary4RegisterShiftedOp => Defs12To15RdRnRsRmNotPc
-#                         Rsb_Rule_144_A1_P288
-#                         cccc0000011snnnnddddssss0tt1mmmm
-#                         RegsNotPc
-# | 0100x      -        = Binary4RegisterShiftedOp => Defs12To15RdRnRsRmNotPc
-#                         Add_Rule_7_A1_P26
-#                         cccc0000100snnnnddddssss0tt1mmmm
-#                         RegsNotPc
-#
-# Both rows state to return a Binary4RegisterShiftedOp class decoder.
-# The sequence of four symbols correspond to (in order presented):
-#
-#    baseline - The name of the class decoder that should be used for testing.
-#    actual - The name of the class decoder to use in sel_ldr
-#    rule - A unique name identifying the rule from the manual that
-#       defines what the selected class decoder is to decode.
-#    pattern - The sequence of bits defines by the rule (above)
-#    constraints - Any additional constraints assumed by the rule.
-#
-# All but the baseline is optional. The remaining fields provide
-# additional documentation and information for testing (which is used
-# by this file). If the actual is not specified (prefixed by '=>')
-# then it is assumed to have the same value as the baseline.
-#
-# If these two rows had a mergable bit pattern (which they do not),
-# these rows would still not mergable since the actions are
-# different. However, for sel_ldr, they both state to use a
-# Binary4RegisterShiftedOp. The remaining identifiers are added data
-# for testing only.
-#
-# We fix this by defining a notion of "action_filter" where one can
-# choose to keep only those fields that are applicable. For sel_ldr,
-# it's only 'actual'. For testing, it will include other fields,
-# depending on the context.
-#
-# Note: The current ARM instruction table has both new and old
-# actions. Old actions only define the 'InstClass' entry. If the
-# remaining fields are omitted, the corresponding testing for those
-# entries are omitted.
+# class decoders to rules. Hence, we do not (in general) merge decoder
+# classes when generating test files.
 #
 # Note: See dgen_decoder_output.py for more details on how we build a
 # decoder for sel_ldr.
@@ -162,15 +121,12 @@ parsed table representations.
 import dgen_core
 import dgen_opt
 import dgen_output
+import dgen_decoder
+import dgen_actuals
+import dgen_baselines
 
 """The current command line arguments to use"""
 _cl_args = {}
-
-NEWLINE_STR="""
-"""
-
-COMMENTED_NEWLINE_STR="""
-//"""
 
 # The following defines naming conventions used for identifiers.
 # Note: DECODER will be replaced by 'actual' and 'baseline', defining
@@ -179,8 +135,8 @@ COMMENTED_NEWLINE_STR="""
 CLASS = '%(DECODER)s_%(rule)s'
 NAMED_CLASS = 'Named%(DECODER)s_%(rule)s'
 INSTANCE = '%(DECODER_class)s_instance_'
-BASE_TESTER='%(decoder_base)sTester%(base_test_case)s'
-BASE_BASE_TESTER='%(decoder_base)sTester%(qualifier)s'
+BASE_TESTER='%(baseline)sTester%(base_test_case)s'
+BASE_BASE_TESTER='Arm32DecoderTester'
 DECODER_TESTER='%(baseline)sTester_%(test_case)s'
 
 def _safety_to_check(safety):
@@ -204,15 +160,7 @@ def _install_action(decoder, action, values):
   # spot, it is much easier to change definitions.
   values['baseline'] = action.baseline()
   values['actual'] = action.actual()
-  values['decoder_base'] = decoder.base_class(values['baseline'])
   values['rule'] = action.rule()
-  values['qualifier'] = ''.join([s for s in action.safety()
-                                 if isinstance(s, str)])
-  if action.constraints():
-    values['qualifier'] += (action.constraints().other
-                            if action.constraints().other else '')
-  else:
-    values['qualifier'] =''
   values['pattern'] = action.pattern()
   # Add dummies for row cases, in case not set up. See
   # function _install_row_cases) for more details on these fields.
@@ -282,6 +230,86 @@ def _generate_baseline_and_actual(code, symbol, decoder,
         out.write(actual_code % values)
         generated_symbols.add(sym_name)
 
+# Defines the header for decoder_bases.h
+NAMED_BASES_H_HEADER="""%(FILE_HEADER)s
+%(NOT_TCB_MESSAGE)s
+
+#ifndef %(IFDEF_NAME)s
+#define %(IFDEF_NAME)s
+
+#include "native_client/src/trusted/validator_arm/named_class_decoder.h"
+#include "%(FILENAME_BASE)s_baselines.h"
+
+namespace nacl_arm_test {
+"""
+
+GENERATED_BASELINE_HEADER="""
+/*
+ * Define named class decoders for each automatically generated baseline
+ * decoder.
+ */
+"""
+
+NAMED_GEN_BASE_DECLARE="""class Named%(gen_base)s
+    : public NamedClassDecoder {
+ public:
+  Named%(gen_base)s()
+    : NamedClassDecoder(decoder_, "%(gen_base)s")
+  {}
+
+ private:
+  nacl_arm_dec::%(gen_base)s decoder_;
+  NACL_DISALLOW_COPY_AND_ASSIGN(Named%(gen_base)s);
+};
+
+"""
+
+NAMED_BASES_H_FOOTER="""
+} // namespace nacl_arm_test
+#endif  // %(IFDEF_NAME)s
+"""
+
+NAMED_BASES_H_SUFFIX = '_named_bases.h'
+
+def generate_named_bases_h(decoder, decoder_name, filename, out, cl_args):
+  """Defines named classes needed for testing generated baselines.
+
+  Args:
+    tables: list of Table objects to process.
+    decoder_name: The name of the decoder state to build.
+    filename: The (localized) name for the .h file.
+    out: a COutput object to write to.
+    cl_args: A dictionary of additional command line arguments.
+  """
+  global _cl_args
+  assert filename.endswith(NAMED_BASES_H_SUFFIX)
+  _cl_args = cl_args
+
+  values = {
+      'FILE_HEADER': dgen_output.HEADER_BOILERPLATE,
+      'NOT_TCB_MESSAGE' : dgen_output.NOT_TCB_BOILERPLATE,
+      'IFDEF_NAME' : dgen_output.ifdef_name(filename),
+      'FILENAME_BASE': filename[:-len(NAMED_BASES_H_SUFFIX)],
+      'decoder_name': decoder_name,
+      }
+  out.write(NAMED_BASES_H_HEADER % values)
+  _generate_generated_baseline(decoder, out)
+  out.write(NAMED_BASES_H_FOOTER % values)
+
+def _generate_generated_baseline(decoder, out):
+  """ Generates code to define the given symbol. Does so for
+      the generated baseline decoders, filtering using actions.
+  """
+  generated_symbols = set()
+  values = {}
+  out.write(GENERATED_BASELINE_HEADER % values)
+  for d in decoder.action_filter(['generated_baseline']).decoders():
+    gen_base = d.find('generated_baseline')
+    if gen_base and gen_base not in generated_symbols:
+      values['gen_base'] = gen_base
+      out.write(NAMED_GEN_BASE_DECLARE % values)
+      generated_symbols.add(gen_base)
+
 # Defines the header for decoder_named_classes.h
 NAMED_CLASSES_H_HEADER="""%(FILE_HEADER)s
 %(NOT_TCB_MESSAGE)s
@@ -289,9 +317,10 @@ NAMED_CLASSES_H_HEADER="""%(FILE_HEADER)s
 #ifndef %(IFDEF_NAME)s
 #define %(IFDEF_NAME)s
 
-#include "native_client/src/trusted/validator_arm/actual_classes.h"
-#include "native_client/src/trusted/validator_arm/baseline_classes.h"
 #include "native_client/src/trusted/validator_arm/named_class_decoder.h"
+#include "%(FILENAME_BASE)s_actuals.h"
+
+#include "%(FILENAME_BASE)s_named_bases.h"
 """
 
 RULE_CLASSES_HEADER="""
@@ -344,19 +373,6 @@ NAMED_CLASS_DECLARE="""class %(named_DECODER_class)s
 NAMED_CLASS_DECLARE_SYM="%(named_DECODER_class)s"
 
 NAMED_CLASSES_H_FOOTER="""
-// Defines the default parse action if the table doesn't define
-// an action.
-class NotImplementedNamed : public NamedClassDecoder {
- public:
-  NotImplementedNamed()
-    : NamedClassDecoder(decoder_, "not implemented")
-  {}
-
- private:
-  nacl_arm_dec::NotImplemented decoder_;
-  NACL_DISALLOW_COPY_AND_ASSIGN(NotImplementedNamed);
-};
-
 } // namespace nacl_arm_test
 #endif  // %(IFDEF_NAME)s
 """
@@ -372,13 +388,14 @@ def generate_named_classes_h(decoder, decoder_name, filename, out, cl_args):
     cl_args: A dictionary of additional command line arguments.
   """
   global _cl_args
-  if not decoder.primary: raise Exception('No tables provided.')
+  assert filename.endswith('_named_classes.h')
   _cl_args = cl_args
 
   values = {
       'FILE_HEADER': dgen_output.HEADER_BOILERPLATE,
       'NOT_TCB_MESSAGE' : dgen_output.NOT_TCB_BOILERPLATE,
       'IFDEF_NAME' : dgen_output.ifdef_name(filename),
+      'FILENAME_BASE': filename[:-len('_named_classes.h')],
       'decoder_name': decoder_name,
       }
   out.write(NAMED_CLASSES_H_HEADER % values)
@@ -397,7 +414,7 @@ NAMED_DECODER_H_HEADER="""%(FILE_HEADER)s
 #define %(IFDEF_NAME)s
 
 #include "native_client/src/trusted/validator_arm/decode.h"
-#include "%(FILENAME_BASE)s_classes.h"
+#include "%(FILENAME_BASE)s_named_classes.h"
 #include "native_client/src/trusted/validator_arm/named_class_decoder.h"
 
 namespace nacl_arm_test {
@@ -445,9 +462,6 @@ DECODER_STATE_DECODER="""
       const nacl_arm_dec::Instruction inst) const;"""
 
 NAMED_DECODER_H_FOOTER="""
-  // Defines default action if parse tables don't define what action
-  // to take.
-  const NotImplementedNamed not_implemented_;
 };
 
 } // namespace nacl_arm_test
@@ -465,15 +479,14 @@ def generate_named_decoder_h(decoder, decoder_name, filename, out, cl_args):
         cl_args: A dictionary of additional command line arguments.
     """
     global _cl_args
-    if not decoder.primary: raise Exception('No tables provided.')
-    assert filename.endswith('_decoder.h')
+    assert filename.endswith('_named_decoder.h')
     _cl_args = cl_args
 
     values = {
         'FILE_HEADER': dgen_output.HEADER_BOILERPLATE,
         'NOT_TCB_MESSAGE' : dgen_output.NOT_TCB_BOILERPLATE,
         'IFDEF_NAME' : dgen_output.ifdef_name(filename),
-        'FILENAME_BASE': filename[:-len('_decoder.h')],
+        'FILENAME_BASE': filename[:-len('_named_decoder.h')],
         'decoder_name': decoder_name,
         }
     out.write(NAMED_DECODER_H_HEADER % values)
@@ -532,7 +545,7 @@ METHOD_DISPATCH_CLOSE="""  }
 
 PARSE_TABLE_METHOD_FOOTER="""
   // Catch any attempt to fall through...
-  return not_implemented_;
+  return %(not_implemented)s;
 }
 
 """
@@ -562,7 +575,6 @@ def generate_named_cc(decoder, decoder_name, filename, out, cl_args):
         cl_args: A dictionary of additional command line arguments.
     """
     global _cl_args
-    if not decoder.primary: raise Exception('No tables provided.')
     assert filename.endswith('.cc')
     _cl_args = cl_args
 
@@ -637,6 +649,8 @@ def _generate_decoder_method_bodies(decoder, values, out):
       values['action'] = action
       out.write(PARSE_TABLE_METHOD_ROW % values)
       out.write(METHOD_DISPATCH_CLOSE)
+    _install_action(decoder, decoder.get_value('NotImplemented'), values)
+    values['not_implemented'] = '%(baseline_instance)s' % values
     out.write(PARSE_TABLE_METHOD_FOOTER % values)
 
 # Define the source for DECODER_tests.cc
@@ -645,9 +659,8 @@ TEST_CC_HEADER="""%(FILE_HEADER)s
 
 #include "gtest/gtest.h"
 #include "native_client/src/trusted/validator_arm/actual_vs_baseline.h"
-#include "native_client/src/trusted/validator_arm/actual_classes.h"
-#include "native_client/src/trusted/validator_arm/baseline_classes.h"
-#include "native_client/src/trusted/validator_arm/inst_classes_testers.h"
+#include "native_client/src/trusted/validator_arm/arm_helpers.h"
+#include "native_client/src/trusted/validator_arm/gen/arm32_decode_named_bases.h"
 
 using nacl_arm_dec::Instruction;
 using nacl_arm_dec::ClassDecoder;
@@ -665,11 +678,7 @@ namespace nacl_arm_test {
 """
 
 CONSTRAINT_TESTER_CLASS_HEADER="""
-// Neutral case:
 // %(row_comment)s
-//
-// Representaive case:
-// %(row_rep_comment)s
 class %(base_tester)s
     : public %(base_base_tester)s {
  public:
@@ -680,10 +689,6 @@ CONSTRAINT_TESTER_RESTRICTIONS_HEADER="""
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);"""
-
-CONSTRAINT_TESTER_SANITY_HEADER="""
-  virtual bool ApplySanityChecks(nacl_arm_dec::Instruction inst,
-                                 const NamedClassDecoder& decoder);"""
 
 CONSTRAINT_TESTER_CLASS_CLOSE="""
 };
@@ -699,40 +704,20 @@ ROW_CONSTRAINTS_HEADER="""
 
   // Check that row patterns apply to pattern being checked.'"""
 
-PATTERN_CONSTRAINT_RESTRICTIONS_HEADER="""
-
-  // Check pattern restrictions of row."""
-
 CONSTRAINT_CHECK="""
-  if (%s) return false;"""
+  // %(comment)s
+  if (%(code)s) return false;"""
+
+CONSTRAINT_TESTER_COND_TEST="""
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;"""
 
 CONSTRAINT_TESTER_CLASS_FOOTER="""
 
   // Check other preconditions defined for the base decoder.
   return %(base_base_tester)s::
       PassesParsePreconditions(inst, decoder);
-}
-"""
-
-SAFETY_TESTER_HEADER="""
-bool %(base_tester)s
-::ApplySanityChecks(nacl_arm_dec::Instruction inst,
-                    const NamedClassDecoder& decoder) {
-  NC_PRECOND(%(base_base_tester)s::ApplySanityChecks(inst, decoder));"""
-
-SAFETY_TESTER_CHECK="""
-
-  // safety: %s
-  EXPECT_TRUE(%s);"""
-
-DEFS_SAFETY_CHECK="""
-
-  // defs: %s;
-  EXPECT_TRUE(decoder.defs(inst).IsSame(%s));"""
-
-SAFETY_TESTER_FOOTER="""
-
-  return true;
 }
 """
 
@@ -744,11 +729,7 @@ TESTER_CLASS_HEADER="""
 """
 
 TESTER_CLASS="""
-// Neutral case:
 // %(row_comment)s
-//
-// Representative case:
-// %(row_rep_comment)s
 class %(decoder_tester)s
     : public %(base_tester)s {
  public:
@@ -771,30 +752,13 @@ class %(decoder_name)sTests : public ::testing::Test {
 """
 
 TEST_FUNCTION_ACTUAL_VS_BASELINE="""
-// Neutral case:
 // %(row_comment)s
-//
-// Representative case:
-// %(row_rep_comment)s
 TEST_F(%(decoder_name)sTests,
        %(decoder_tester)s_Test%(test_pattern)s) {
   %(decoder_tester)s baseline_tester;
   %(named_actual_class)s actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("%(pattern)s");
-}
-"""
-
-TEST_FUNCTION_BASELINE="""
-// Neutral case:
-// %(row_comment)s
-//
-// Representaive case:
-// %(row_rep_comment)s
-TEST_F(%(decoder_name)sTests,
-       %(decoder_tester)s_Test%(test_pattern)s) {
-  %(decoder_tester)s tester;
-  tester.Test("%(pattern)s");
 }
 """
 
@@ -811,7 +775,6 @@ def generate_tests_cc(decoder, decoder_name, out, cl_args, tables):
   """Generates pattern tests for the rows in the given list of tables
      in the given decoder."""
   global _cl_args
-  if not decoder.primary: raise Exception('No tables provided.')
   _cl_args = cl_args
 
   decoder = _decoder_restricted_to_tables(decoder, tables)
@@ -828,30 +791,23 @@ def generate_tests_cc(decoder, decoder_name, out, cl_args, tables):
   _generate_test_patterns(decoder, values, out)
   out.write(TEST_CC_FOOTER % values)
 
-def _filter_test_action(action, with_patterns, with_rules):
-  """Filters the actions to pull out relavant entries, based on whether we
-     want to include patterns and rules.
-     """
-  action_fields = ['baseline', 'constraints', 'safety', 'defs']
-  if with_patterns:
-    action_fields += ['actual', 'pattern' ]
-  if with_rules:
-    action_fields += ['rule']
+def _filter_test_action(action):
+  """Filters the actions to pull out relavant entries."""
+
+  action_fields = ['actual', 'baseline', 'generated_baseline',
+                   'pattern', 'rule', 'constraints'] + dgen_decoder.METHODS
   return action.action_filter(action_fields)
 
-def _filter_test_row(row, with_patterns=False, with_rules=True):
-  """Filters a row t pulll out actions with relavant entries, based on
-     whether we want to include patterns and rules.
-     """
-  return row.copy_with_action(
-      _filter_test_action(row.action, with_patterns, with_rules))
+def _filter_test_row(row):
+  """Filters a row t to pull out actions with relavant entries."""
+  return row.copy_with_action(_filter_test_action(row.action))
 
 def _install_row_cases(row, values):
   """Installs row case names, based on values entries."""
   # First define base testers that add row constraints and safety checks.
   constraint_rows_map = values.get('constraint_rows')
   if constraint_rows_map:
-    base_row = _filter_test_row(row, with_rules=False)
+    base_row = _filter_test_row(row)
     values['base_test_case'] = (
         'Case%s' % constraint_rows_map[dgen_core.neutral_repr(base_row)])
   else:
@@ -869,29 +825,21 @@ def _install_row_cases(row, values):
   # Encorporate patterns with each row.
   pattern_rows_map = values.get('test_rows')
   if pattern_rows_map:
-    pattern_row = _filter_test_row(row, with_patterns=True)
+    pattern_row = _filter_test_row(row)
     values['test_pattern'] = (
         'Case%s' % pattern_rows_map[dgen_core.neutral_repr(pattern_row)])
   else:
     values['test_pattern'] = ''
 
-def _install_test_row(row, decoder, values,
-                      with_patterns=False, with_rules=True):
-  """Installs data associated with the given row into the values map.
-
-     Installs the baseline class, rule name, and constraints associated
-     with the row. If with_patterns is specified, then pattern information and
-     actual class information is also inserted.
-     """
-  action = _filter_test_action(row.action, with_patterns, with_rules)
-  values['row_comment'] = (dgen_core.neutral_repr(row.copy_with_action(action)).
-                           replace(NEWLINE_STR, COMMENTED_NEWLINE_STR))
-  values['row_rep_comment'] = repr(
-      row.copy_with_action(action)).replace(NEWLINE_STR, COMMENTED_NEWLINE_STR)
+def _install_test_row(row, decoder, values):
+  """Installs data associated with the given row into the values map."""
+  action = _filter_test_action(row.action)
+  values['row_comment'] = dgen_output.commented_string(
+      repr(row.copy_with_action(action)))
   _install_action(decoder, action, values)
   return action
 
-def _rows_to_test(decoder, values, with_patterns=False, with_rules=True):
+def _rows_to_test(decoder, values):
   """Returns the rows of the decoder that define enough information
      that testing can be done.
      """
@@ -901,8 +849,7 @@ def _rows_to_test(decoder, values, with_patterns=False, with_rules=True):
     for row in table.rows():
       if (isinstance(row.action, dgen_core.DecoderAction) and
           row.action.pattern()):
-        new_row = row.copy_with_action(
-            _install_test_row(row, decoder, values, with_patterns, with_rules))
+        new_row = row.copy_with_action(_install_test_row(row, decoder, values))
         constraint_tester = dgen_core.neutral_repr(new_row)
         if constraint_tester not in generated_names:
           generated_names.add(constraint_tester)
@@ -913,45 +860,49 @@ def _row_filter_interesting_patterns(row):
   """Builds a copy of the row, removing uninteresting column patterns."""
   return row.copy_with_patterns(_interesting_patterns(row.patterns))
 
+def _row_action_has_parse_restrictions(row, action):
+  """Returns true if parse restrictions should be added to the
+     tester for row with the given action.
+     """
+  return (row.patterns or
+          _action_pattern_defines_condition(action))
+
+def _action_pattern_defines_condition(action):
+  """Returns true if the corresponding decoder action defines a
+     pattern that is conditional on bits 28-31."""
+  pattern = action.pattern()
+  return (pattern and
+          len(pattern) == 32 and
+          pattern[0:3].count('0') == 0 and
+          pattern[0:3].count('1') == 0)
 
 def _generate_constraint_testers(decoder, values, out):
   """Generates the testers needed to implement the constraints
      associated with each row having a pattern.
      """
-  rows = _rows_to_test(decoder, values, with_rules=False)
+  rows = _rows_to_test(decoder, values)
   values['constraint_rows'] = _index_neutral_map(rows)
   for r in rows:
     _install_row_cases(r, values)
     row = _row_filter_interesting_patterns(r)
     action = _install_test_row(row, decoder, values)
-    safety_to_check = _safety_to_check(action.safety())
-    defs_to_check = action.defs()
     out.write(CONSTRAINT_TESTER_CLASS_HEADER % values)
-    if row.patterns or action.constraints().restrictions:
+    if _row_action_has_parse_restrictions(row, action):
       out.write(CONSTRAINT_TESTER_RESTRICTIONS_HEADER % values);
-    if safety_to_check or defs_to_check:
-      out.write(CONSTRAINT_TESTER_SANITY_HEADER % values)
     out.write(CONSTRAINT_TESTER_CLASS_CLOSE % values)
-    if row.patterns or action.constraints().restrictions:
+    if _row_action_has_parse_restrictions(row, action):
       out.write(CONSTRAINT_TESTER_PARSE_HEADER % values)
       if row.patterns:
         out.write(ROW_CONSTRAINTS_HEADER % values);
         for p in row.patterns:
-          out.write(CONSTRAINT_CHECK % p.negate().to_commented_bool())
-      if action.constraints().restrictions:
-        out.write(PATTERN_CONSTRAINT_RESTRICTIONS_HEADER)
-        for c in action.constraints().restrictions:
-          out.write(CONSTRAINT_CHECK %
-                    c.negate().to_commented_bool())
+          not_p = p.negate()
+          values['comment'] = dgen_output.commented_string(repr(not_p), '  ')
+          values['code'] = not_p.to_bool()
+          out.write(CONSTRAINT_CHECK % values)
+      if _action_pattern_defines_condition(action):
+        # Special case where 'cccc' part of pattern can't be 1111.
+        out.write(CONSTRAINT_TESTER_COND_TEST % values)
       out.write(CONSTRAINT_TESTER_CLASS_FOOTER % values)
-    if safety_to_check or defs_to_check:
-      out.write(SAFETY_TESTER_HEADER % values)
-      for check in safety_to_check:
-        out.write(SAFETY_TESTER_CHECK % (check, check.to_bool()))
-      if defs_to_check:
-        out.write(DEFS_SAFETY_CHECK % (defs_to_check,
-                                       defs_to_check.to_register_list()))
-      out.write(SAFETY_TESTER_FOOTER % values)
 
 def _generate_rule_testers(decoder, values, out):
   """Generates the testers that tests the rule associated with
@@ -975,23 +926,19 @@ def _decoder_restricted_to_tables(decoder, tables):
   new_decoder = dgen_core.Decoder()
   for tbl in [tbl for tbl in decoder.tables() if tbl.name in tables]:
     new_decoder.add(tbl)
-  new_decoder.set_class_defs(decoder.get_class_defs())
   return new_decoder
 
 def _generate_test_patterns(decoder, values, out):
   """Generates a test function for each row having a pattern associated
      with the table row.
      """
-  rows = _rows_to_test(decoder, values, with_patterns=True)
+  rows = _rows_to_test(decoder, values)
   values['test_rows'] = _index_neutral_map(rows)
   for r in rows:
     _install_row_cases(r, values)
     row = _row_filter_interesting_patterns(r)
-    action = _install_test_row(row, decoder, values, with_patterns=True)
-    if action.actual() == action.baseline():
-      out.write(TEST_FUNCTION_BASELINE % values)
-    else:
-      out.write(TEST_FUNCTION_ACTUAL_VS_BASELINE % values)
+    action = _install_test_row(row, decoder, values)
+    out.write(TEST_FUNCTION_ACTUAL_VS_BASELINE % values)
 
 def _index_neutral_map(values):
   """Returns a dictionary from each neutral_repr(value) in list

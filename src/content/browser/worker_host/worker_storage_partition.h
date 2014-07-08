@@ -6,6 +6,11 @@
 #define CONTENT_BROWSER_WORKER_HOST_WORKER_STORAGE_PARTITION_H_
 
 #include "base/memory/ref_counted.h"
+#include "content/common/content_export.h"
+
+namespace quota {
+class QuotaManager;
+}
 
 namespace fileapi {
 class FileSystemContext;
@@ -22,6 +27,7 @@ class DatabaseTracker;
 namespace content {
 class ChromeAppCacheService;
 class IndexedDBContextImpl;
+class ServiceWorkerContextWrapper;
 
 // Contains the data from StoragePartition for use by Worker APIs.
 //
@@ -35,15 +41,17 @@ class IndexedDBContextImpl;
 // This class is effectively a struct, but we make it a class because we want to
 // define copy constructors, assignment operators, and an Equals() function for
 // it which makes it look awkward as a struct.
-class WorkerStoragePartition {
+class CONTENT_EXPORT WorkerStoragePartition {
  public:
   WorkerStoragePartition(
       net::URLRequestContextGetter* url_request_context,
       net::URLRequestContextGetter* media_url_request_context,
       ChromeAppCacheService* appcache_service,
+      quota::QuotaManager* quota_manager,
       fileapi::FileSystemContext* filesystem_context,
       webkit_database::DatabaseTracker* database_tracker,
-      IndexedDBContextImpl* indexed_db_context);
+      IndexedDBContextImpl* indexed_db_context,
+      ServiceWorkerContextWrapper* service_worker_context);
   ~WorkerStoragePartition();
 
   // Declaring so these don't get inlined which has the unfortunate effect of
@@ -66,6 +74,10 @@ class WorkerStoragePartition {
     return appcache_service_.get();
   }
 
+  quota::QuotaManager* quota_manager() const {
+    return quota_manager_.get();
+  }
+
   fileapi::FileSystemContext* filesystem_context() const {
     return filesystem_context_.get();
   }
@@ -78,15 +90,43 @@ class WorkerStoragePartition {
     return indexed_db_context_.get();
   }
 
+  ServiceWorkerContextWrapper* service_worker_context() const {
+    return service_worker_context_.get();
+  }
+
  private:
   void Copy(const WorkerStoragePartition& other);
 
   scoped_refptr<net::URLRequestContextGetter> url_request_context_;
   scoped_refptr<net::URLRequestContextGetter> media_url_request_context_;
   scoped_refptr<ChromeAppCacheService> appcache_service_;
+  scoped_refptr<quota::QuotaManager> quota_manager_;
   scoped_refptr<fileapi::FileSystemContext> filesystem_context_;
   scoped_refptr<webkit_database::DatabaseTracker> database_tracker_;
   scoped_refptr<IndexedDBContextImpl> indexed_db_context_;
+  scoped_refptr<ServiceWorkerContextWrapper> service_worker_context_;
+};
+
+// WorkerStoragePartitionId can be used to identify each
+// WorkerStoragePartitions. We can hold WorkerStoragePartitionId without
+// extending the lifetime of all objects in the WorkerStoragePartition.
+// That means that holding a WorkerStoragePartitionId doesn't mean the
+// corresponding partition and its members are kept alive.
+class CONTENT_EXPORT WorkerStoragePartitionId {
+ public:
+  explicit WorkerStoragePartitionId(const WorkerStoragePartition& partition);
+  ~WorkerStoragePartitionId();
+  bool Equals(const WorkerStoragePartitionId& other) const;
+
+ private:
+  net::URLRequestContextGetter* url_request_context_;
+  net::URLRequestContextGetter* media_url_request_context_;
+  ChromeAppCacheService* appcache_service_;
+  quota::QuotaManager* quota_manager_;
+  fileapi::FileSystemContext* filesystem_context_;
+  webkit_database::DatabaseTracker* database_tracker_;
+  IndexedDBContextImpl* indexed_db_context_;
+  ServiceWorkerContextWrapper* service_worker_context_;
 };
 
 }  // namespace content

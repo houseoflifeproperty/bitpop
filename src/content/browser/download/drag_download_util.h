@@ -6,15 +6,16 @@
 #define CONTENT_BROWSER_DOWNLOAD_DRAG_DOWNLOAD_UTIL_H_
 
 #include "base/basictypes.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/browser/download/drag_download_file.h"
 #include "ui/base/dragdrop/download_file_interface.h"
 
-class FilePath;
 class GURL;
-namespace net {
-class FileStream;
+
+namespace base {
+class FilePath;
 }
 
 namespace content {
@@ -28,17 +29,15 @@ namespace content {
 // appropriately.
 // For example, we can have
 //   text/plain:example.txt:http://example.com/example.txt
-bool ParseDownloadMetadata(const string16& metadata,
-                           string16* mime_type,
-                           FilePath* file_name,
+bool ParseDownloadMetadata(const base::string16& metadata,
+                           base::string16* mime_type,
+                           base::FilePath* file_name,
                            GURL* url);
 
 // Create a new file at the specified path. If the file already exists, try to
 // insert the sequential unifier to produce a new file, like foo-01.txt.
-// Return a FileStream if successful.
-// |net_log| is a NetLog for the stream.
-CONTENT_EXPORT net::FileStream* CreateFileStreamForDrop(
-    FilePath* file_path, net::NetLog* net_log);
+// Return a File if successful.
+CONTENT_EXPORT base::File CreateFileForDrop(base::FilePath* file_path);
 
 // Implementation of DownloadFileObserver to finalize the download process.
 class PromiseFileFinalizer : public ui::DownloadFileObserver {
@@ -46,7 +45,7 @@ class PromiseFileFinalizer : public ui::DownloadFileObserver {
   explicit PromiseFileFinalizer(DragDownloadFile* drag_file_downloader);
 
   // DownloadFileObserver methods.
-  virtual void OnDownloadCompleted(const FilePath& file_path) OVERRIDE;
+  virtual void OnDownloadCompleted(const base::FilePath& file_path) OVERRIDE;
   virtual void OnDownloadAborted() OVERRIDE;
 
  protected:

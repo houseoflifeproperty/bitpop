@@ -13,12 +13,10 @@
 namespace ppapi {
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(PP_Instance instance)
-    : Resource(OBJECT_IS_IMPL, instance) {
-}
+    : Resource(OBJECT_IS_IMPL, instance) {}
 
 PPB_Graphics3D_Shared::PPB_Graphics3D_Shared(const HostResource& host_resource)
-    : Resource(OBJECT_IS_PROXY, host_resource) {
-}
+    : Resource(OBJECT_IS_PROXY, host_resource) {}
 
 PPB_Graphics3D_Shared::~PPB_Graphics3D_Shared() {
   // Make sure that GLES2 implementation has already been destroyed.
@@ -50,24 +48,29 @@ int32_t PPB_Graphics3D_Shared::ResizeBuffers(int32_t width, int32_t height) {
   if ((width < 0) || (height < 0))
     return PP_ERROR_BADARGUMENT;
 
-  ScopedNoLocking already_locked(this);
-  gles2_impl()->ResizeCHROMIUM(width, height);
+  gles2_impl()->ResizeCHROMIUM(width, height, 1.f);
   // TODO(alokp): Check if resize succeeded and return appropriate error code.
   return PP_OK;
 }
 
 int32_t PPB_Graphics3D_Shared::SwapBuffers(
     scoped_refptr<TrackedCallback> callback) {
-  ScopedNoLocking already_locked(this);
   if (HasPendingSwap()) {
-    Log(PP_LOGLEVEL_ERROR, "PPB_Graphics3D.SwapBuffers: Plugin attempted swap "
-                           "with previous swap still pending.");
+    Log(PP_LOGLEVEL_ERROR,
+        "PPB_Graphics3D.SwapBuffers: Plugin attempted swap "
+        "with previous swap still pending.");
     // Already a pending SwapBuffers that hasn't returned yet.
     return PP_ERROR_INPROGRESS;
   }
 
   swap_callback_ = callback;
   return DoSwapBuffers();
+}
+
+int32_t PPB_Graphics3D_Shared::GetAttribMaxValue(int32_t attribute,
+                                                 int32_t* value) {
+  // TODO(alokp): Implement me.
+  return PP_ERROR_FAILED;
 }
 
 void* PPB_Graphics3D_Shared::MapTexSubImage2DCHROMIUM(GLenum target,
@@ -79,13 +82,11 @@ void* PPB_Graphics3D_Shared::MapTexSubImage2DCHROMIUM(GLenum target,
                                                       GLenum format,
                                                       GLenum type,
                                                       GLenum access) {
-  ScopedNoLocking already_locked(this);
   return gles2_impl_->MapTexSubImage2DCHROMIUM(
       target, level, xoffset, yoffset, width, height, format, type, access);
 }
 
 void PPB_Graphics3D_Shared::UnmapTexSubImage2DCHROMIUM(const void* mem) {
-  ScopedNoLocking already_locked(this);
   gles2_impl_->UnmapTexSubImage2DCHROMIUM(mem);
 }
 
@@ -102,7 +103,6 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
     int32 command_buffer_size,
     int32 transfer_buffer_size,
     gpu::gles2::GLES2Implementation* share_gles2) {
-  ScopedNoLocking already_locked(this);
   gpu::CommandBuffer* command_buffer = GetCommandBuffer();
   DCHECK(command_buffer);
 
@@ -117,18 +117,23 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
   const int32 kMaxTransferBufferSize = 16 * 1024 * 1024;
   transfer_buffer_.reset(new gpu::TransferBuffer(gles2_helper_.get()));
 
+  const bool bind_creates_resources = true;
+  const bool lose_context_when_out_of_memory = false;
+
   // Create the object exposing the OpenGL API.
   gles2_impl_.reset(new gpu::gles2::GLES2Implementation(
       gles2_helper_.get(),
       share_gles2 ? share_gles2->share_group() : NULL,
       transfer_buffer_.get(),
-      false,
-      true));
+      bind_creates_resources,
+      lose_context_when_out_of_memory,
+      GetGpuControl()));
 
   if (!gles2_impl_->Initialize(
-      transfer_buffer_size,
-      kMinTransferBufferSize,
-      std::max(kMaxTransferBufferSize, transfer_buffer_size))) {
+           transfer_buffer_size,
+           kMinTransferBufferSize,
+           std::max(kMaxTransferBufferSize, transfer_buffer_size),
+           gpu::gles2::GLES2Implementation::kNoLimit)) {
     return false;
   }
 
@@ -138,19 +143,9 @@ bool PPB_Graphics3D_Shared::CreateGLES2Impl(
 }
 
 void PPB_Graphics3D_Shared::DestroyGLES2Impl() {
-  ScopedNoLocking already_locked(this);
   gles2_impl_.reset();
   transfer_buffer_.reset();
   gles2_helper_.reset();
 }
 
-void PPB_Graphics3D_Shared::PushAlreadyLocked() {
-  // Do nothing. This should be overridden in the plugin side.
-}
-
-void PPB_Graphics3D_Shared::PopAlreadyLocked() {
-  // Do nothing. This should be overridden in the plugin side.
-}
-
 }  // namespace ppapi
-

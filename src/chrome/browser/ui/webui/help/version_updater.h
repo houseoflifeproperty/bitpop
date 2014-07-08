@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 // Interface implemented to expose per-platform updating functionality.
 class VersionUpdater {
@@ -20,6 +20,8 @@ class VersionUpdater {
     NEARLY_UPDATED,
     UPDATED,
     FAILED,
+    FAILED_OFFLINE,
+    FAILED_CONNECTION_TYPE_DISALLOWED,
     DISABLED,
   };
 
@@ -39,9 +41,9 @@ class VersionUpdater {
 #endif
 
   // Used to update the client of status changes. int parameter is the progress
-  // and should only be non-zero for the UPDATING state.  string16 parameter is
-  // a message explaining a failure.
-  typedef base::Callback<void(Status, int, const string16&)>
+  // and should only be non-zero for the UPDATING state.
+  // base::string16 parameter is a message explaining a failure.
+  typedef base::Callback<void(Status, int, const base::string16&)>
       StatusCallback;
 
 #if defined(OS_MACOSX)
@@ -73,8 +75,10 @@ class VersionUpdater {
   virtual void RelaunchBrowser() const = 0;
 
 #if defined(OS_CHROMEOS)
-  virtual void SetReleaseChannel(const std::string& channel) = 0;
-  virtual void GetReleaseChannel(const ChannelCallback& callback) = 0;
+  virtual void SetChannel(const std::string& channel,
+                          bool is_powerwash_allowed) = 0;
+  virtual void GetChannel(bool get_current_channel,
+                          const ChannelCallback& callback) = 0;
 #endif
 };
 

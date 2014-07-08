@@ -11,7 +11,7 @@
 #import <Foundation/NSAutoreleasePool.h>
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "ui/compositor/compositor.h"
 #include "ui/gfx/rect.h"
@@ -39,7 +39,7 @@
 
 - (void)drawRect:(NSRect)rect {
   DCHECK(compositor_) << "Drawing with no compositor set.";
-  compositor_->Draw(false);
+  compositor_->Draw();
 }
 @end
 
@@ -79,7 +79,6 @@ class AppKitHost : public FoundationHost {
 // TestCompositorHostMac provides a window surface and a coordinated compositor
 // for use in the compositor unit tests.
 class TestCompositorHostMac : public TestCompositorHost,
-                              public CompositorDelegate,
                               public AppKitHost {
  public:
   TestCompositorHostMac(const gfx::Rect& bounds);
@@ -89,9 +88,6 @@ class TestCompositorHostMac : public TestCompositorHost,
   // TestCompositorHost:
   virtual void Show() OVERRIDE;
   virtual ui::Compositor* GetCompositor() OVERRIDE;
-
-  // CompositorDelegate:
-  virtual void ScheduleDraw() OVERRIDE;
 
   gfx::Rect bounds_;
   scoped_ptr<ui::Compositor> compositor_;
@@ -126,8 +122,10 @@ void TestCompositorHostMac::Show() {
                           styleMask:NSBorderlessWindowMask
                             backing:NSBackingStoreBuffered
                               defer:NO];
-  scoped_nsobject<AcceleratedTestView> view([[AcceleratedTestView alloc] init]);
-  compositor_.reset(new ui::Compositor(this, view, bounds_.size()));
+  base::scoped_nsobject<AcceleratedTestView> view(
+      [[AcceleratedTestView alloc] init]);
+  compositor_.reset(new ui::Compositor(view));
+  compositor_->SetScaleAndSize(1.0f, bounds_.size());
   [view setCompositor:compositor_.get()];
   [window_ setContentView:view];
   [window_ orderFront:nil];
@@ -135,14 +133,6 @@ void TestCompositorHostMac::Show() {
 
 ui::Compositor* TestCompositorHostMac::GetCompositor() {
   return compositor_.get();
-}
-
-void TestCompositorHostMac::ScheduleDraw() {
-  if (!compositor_.get())
-    return;
-
-  // Force display now.
-  [window_ display];
 }
 
 // static

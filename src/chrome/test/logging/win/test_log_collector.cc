@@ -11,13 +11,13 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/test/base/test_switches.h"
 #include "chrome/test/logging/win/file_logger.h"
 #include "chrome/test/logging/win/log_file_printer.h"
@@ -143,7 +143,7 @@ class TestLogCollector {
   scoped_ptr<FileLogger> file_logger_;
 
   // The current log file.  Valid only during a test.
-  FilePath log_file_;
+  base::FilePath log_file_;
 
   // True if --also-emit-success-logs was specified on the command line.
   bool also_emit_success_logs_;
@@ -262,7 +262,7 @@ void TestLogCollector::ProcessSessionForTest(
       std::cerr.flush();
     }
 
-    if (!file_util::Delete(log_file_, false))
+    if (!base::DeleteFile(log_file_, false))
       LOG(ERROR) << "Failed to delete log file " << log_file_.value();
   }
 

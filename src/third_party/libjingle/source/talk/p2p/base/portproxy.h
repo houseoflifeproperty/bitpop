@@ -52,11 +52,11 @@ class PortProxy : public PortInterface, public sigslot::has_slots<> {
   virtual IceProtocolType IceProtocol() const;
 
   // Methods to set/get ICE role and tiebreaker values.
-  virtual void SetRole(TransportRole role);
-  virtual TransportRole Role() const;
+  virtual void SetIceRole(IceRole role);
+  virtual IceRole GetIceRole() const;
 
-  virtual void SetTiebreaker(uint64 tiebreaker);
-  virtual uint64 Tiebreaker() const;
+  virtual void SetIceTiebreaker(uint64 tiebreaker);
+  virtual uint64 IceTiebreaker() const;
 
   virtual bool SharedSocket() const;
 
@@ -68,8 +68,11 @@ class PortProxy : public PortInterface, public sigslot::has_slots<> {
       const talk_base::SocketAddress& remote_addr);
 
   virtual int SendTo(const void* data, size_t size,
-                     const talk_base::SocketAddress& addr, bool payload);
+                     const talk_base::SocketAddress& addr,
+                     const talk_base::PacketOptions& options,
+                     bool payload);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
+  virtual int GetOption(talk_base::Socket::Option opt, int* value);
   virtual int GetError();
 
   virtual const std::vector<Candidate>& Candidates() const;
@@ -90,7 +93,9 @@ class PortProxy : public PortInterface, public sigslot::has_slots<> {
                         IceMessage *stun_msg,
                         const std::string &remote_username,
                         bool port_muxed);
+  void OnRoleConflict(PortInterface* port);
   void OnPortDestroyed(PortInterface* port);
+
   PortInterface* impl_;
 };
 

@@ -38,9 +38,15 @@ bool ChannelReader::AsyncReadComplete(int bytes_read) {
   return DispatchInputData(input_buf_, bytes_read);
 }
 
+bool ChannelReader::IsInternalMessage(const Message& m) const {
+  return m.routing_id() == MSG_ROUTING_NONE &&
+      m.type() >= Channel::CLOSE_FD_MESSAGE_TYPE &&
+      m.type() <= Channel::HELLO_MESSAGE_TYPE;
+}
+
 bool ChannelReader::IsHelloMessage(const Message& m) const {
   return m.routing_id() == MSG_ROUTING_NONE &&
-         m.type() == Channel::HELLO_MESSAGE_TYPE;
+      m.type() == Channel::HELLO_MESSAGE_TYPE;
 }
 
 bool ChannelReader::DispatchInputData(const char* input_data,
@@ -77,15 +83,16 @@ bool ChannelReader::DispatchInputData(const char* input_data,
       Logging* logger = Logging::GetInstance();
       std::string name;
       logger->GetMessageText(m.type(), &name, &m, NULL);
-      TRACE_EVENT1("ipc", "ChannelReader::DispatchInputData", "name", name);
+      TRACE_EVENT1("ipc,toplevel", "ChannelReader::DispatchInputData",
+                   "name", name);
 #else
-      TRACE_EVENT2("ipc", "ChannelReader::DispatchInputData",
+      TRACE_EVENT2("ipc,toplevel", "ChannelReader::DispatchInputData",
                    "class", IPC_MESSAGE_ID_CLASS(m.type()),
                    "line", IPC_MESSAGE_ID_LINE(m.type()));
 #endif
       m.TraceMessageEnd();
-      if (IsHelloMessage(m))
-        HandleHelloMessage(m);
+      if (IsInternalMessage(m))
+        HandleInternalMessage(m);
       else
         listener_->OnMessageReceived(m);
       p = message_tail;

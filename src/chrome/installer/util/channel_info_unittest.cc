@@ -118,6 +118,38 @@ TEST(ChannelInfoTest, MultiInstall) {
   EXPECT_EQ(L"2.0-beta", ci.value());
 }
 
+TEST(ChannelInfoTest, Migration) {
+  ChannelInfo ci;
+
+  ci.set_value(L"");
+  EXPECT_TRUE(ci.SetMigratingSuffix(true));
+  EXPECT_TRUE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"-migrating", ci.value());
+  EXPECT_FALSE(ci.SetMigratingSuffix(true));
+  EXPECT_TRUE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"-migrating", ci.value());
+  EXPECT_TRUE(ci.SetMigratingSuffix(false));
+  EXPECT_FALSE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"", ci.value());
+  EXPECT_FALSE(ci.SetMigratingSuffix(false));
+  EXPECT_FALSE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"", ci.value());
+
+  ci.set_value(L"2.0-beta");
+  EXPECT_TRUE(ci.SetMigratingSuffix(true));
+  EXPECT_TRUE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"2.0-beta-migrating", ci.value());
+  EXPECT_FALSE(ci.SetMigratingSuffix(true));
+  EXPECT_TRUE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"2.0-beta-migrating", ci.value());
+  EXPECT_TRUE(ci.SetMigratingSuffix(false));
+  EXPECT_FALSE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"2.0-beta", ci.value());
+  EXPECT_FALSE(ci.SetMigratingSuffix(false));
+  EXPECT_FALSE(ci.HasMigratingSuffix());
+  EXPECT_EQ(L"2.0-beta", ci.value());
+}
+
 TEST(ChannelInfoTest, Combinations) {
   ChannelInfo ci;
 
@@ -203,4 +235,16 @@ TEST(ChannelInfoTest, SetStage) {
   ci.set_value(L"2.0-beta-stage:-multi");
   EXPECT_TRUE(ci.SetStage(NULL));
   EXPECT_EQ(L"2.0-beta-multi", ci.value());
+}
+
+TEST(ChannelInfoTest, RemoveAllModifiersAndSuffixes) {
+  ChannelInfo ci;
+
+  ci.set_value(L"");
+  EXPECT_FALSE(ci.RemoveAllModifiersAndSuffixes());
+  EXPECT_EQ(L"", ci.value());
+
+  ci.set_value(L"2.0-dev-multi-chrome-chromeframe-migrating");
+  EXPECT_TRUE(ci.RemoveAllModifiersAndSuffixes());
+  EXPECT_EQ(L"2.0-dev", ci.value());
 }

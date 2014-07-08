@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,71 +6,254 @@
 
 #include <string>
 
-#include "base/file_path.h"
-#include "base/string_util.h"
+#include "base/files/file_path.h"
+#include "base/lazy_instance.h"
+#include "base/strings/string_util.h"
+#include "chrome/common/extensions/api/serial.h"
+#include "extensions/browser/api/api_resource_manager.h"
 
 namespace extensions {
 
-const char kSerialConnectionNotFoundError[] = "Serial connection not found";
+namespace {
+
+const int kDefaultBufferSize = 4096;
+}
+
+static base::LazyInstance<
+    BrowserContextKeyedAPIFactory<ApiResourceManager<SerialConnection> > >
+    g_factory = LAZY_INSTANCE_INITIALIZER;
+
+// static
+template <>
+BrowserContextKeyedAPIFactory<ApiResourceManager<SerialConnection> >*
+ApiResourceManager<SerialConnection>::GetFactoryInstance() {
+  return g_factory.Pointer();
+}
 
 SerialConnection::SerialConnection(const std::string& port,
-                                   int bitrate,
                                    const std::string& owner_extension_id)
-    : ApiResource(owner_extension_id, NULL),
+    : ApiResource(owner_extension_id),
       port_(port),
-      bitrate_(bitrate),
-      file_(base::kInvalidPlatformFileValue) {
-  CHECK(bitrate >= 0);
+      persistent_(false),
+      buffer_size_(kDefaultBufferSize),
+      receive_timeout_(0),
+      send_timeout_(0),
+      paused_(false),
+      io_handler_(SerialIoHandler::Create()) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 }
 
 SerialConnection::~SerialConnection() {
+  DCHECK(open_complete_.is_null());
+  io_handler_->CancelRead(api::serial::RECEIVE_ERROR_DISCONNECTED);
+  io_handler_->CancelWrite(api::serial::SEND_ERROR_DISCONNECTED);
   Close();
 }
 
-bool SerialConnection::Open() {
-  bool created = false;
+bool SerialConnection::IsPersistent() const { return persistent(); }
 
-  // It's the responsibility of the API wrapper around SerialConnection to
-  // validate the supplied path against the set of valid port names, and
-  // it is a reasonable assumption that serial port names are ASCII.
-  CHECK(IsStringASCII(port_));
-  FilePath file_path(FilePath::FromUTF8Unsafe(port_));
+void SerialConnection::set_buffer_size(int buffer_size) {
+  buffer_size_ = buffer_size;
+}
 
-  file_ = base::CreatePlatformFile(file_path,
-    base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
-    base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_READ |
-    base::PLATFORM_FILE_EXCLUSIVE_WRITE |
-    base::PLATFORM_FILE_TERMINAL_DEVICE, &created, NULL);
-  if (file_ == base::kInvalidPlatformFileValue) {
-    return false;
+void SerialConnection::set_receive_timeout(int receive_timeout) {
+  receive_timeout_ = receive_timeout;
+}
+
+void SerialConnection::set_send_timeout(int send_timeout) {
+  send_timeout_ = send_timeout;
+}
+
+void SerialConnection::set_paused(bool paused) {
+  paused_ = paused;
+  if (paused) {
+    io_handler_->CancelRead(api::serial::RECEIVE_ERROR_NONE);
   }
-  return PostOpen();
+}
+
+void SerialConnection::Open(const OpenCompleteCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(open_complete_.is_null());
+  open_complete_ = callback;
+  BrowserThread::PostTask(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&SerialConnection::StartOpen, base::Unretained(this)));
 }
 
 void SerialConnection::Close() {
-  if (file_ != base::kInvalidPlatformFileValue) {
-    base::ClosePlatformFile(file_);
-    file_ = base::kInvalidPlatformFileValue;
+  DCHECK(open_complete_.is_null());
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (file_.IsValid()) {
+    BrowserThread::PostTask(
+        BrowserThread::FILE,
+        FROM_HERE,
+        base::Bind(&SerialConnection::DoClose, Passed(file_.Pass())));
   }
 }
 
-int SerialConnection::Read(scoped_refptr<net::IOBufferWithSize> io_buffer) {
-  DCHECK(io_buffer->data());
-  return base::ReadPlatformFileAtCurrentPos(file_,
-                                            io_buffer->data(),
-                                            io_buffer->size());
+bool SerialConnection::Receive(const ReceiveCompleteCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!receive_complete_.is_null())
+    return false;
+  receive_complete_ = callback;
+  io_handler_->Read(buffer_size_);
+  receive_timeout_task_.reset();
+  if (receive_timeout_ > 0) {
+    receive_timeout_task_.reset(new TimeoutTask(
+        base::Bind(&SerialConnection::OnReceiveTimeout, AsWeakPtr()),
+        base::TimeDelta::FromMilliseconds(receive_timeout_)));
+  }
+  return true;
 }
 
-int SerialConnection::Write(scoped_refptr<net::IOBuffer> io_buffer,
-                            int byte_count) {
-  DCHECK(io_buffer->data());
-  DCHECK(byte_count >= 0);
-  return base::WritePlatformFileAtCurrentPos(file_,
-                                             io_buffer->data(), byte_count);
+bool SerialConnection::Send(const std::string& data,
+                            const SendCompleteCallback& callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (!send_complete_.is_null())
+    return false;
+  send_complete_ = callback;
+  io_handler_->Write(data);
+  send_timeout_task_.reset();
+  if (send_timeout_ > 0) {
+    send_timeout_task_.reset(new TimeoutTask(
+        base::Bind(&SerialConnection::OnSendTimeout, AsWeakPtr()),
+        base::TimeDelta::FromMilliseconds(send_timeout_)));
+  }
+  return true;
 }
 
-void SerialConnection::Flush() {
-  base::FlushPlatformFile(file_);
+bool SerialConnection::Configure(
+    const api::serial::ConnectionOptions& options) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  if (options.persistent.get())
+    set_persistent(*options.persistent);
+  if (options.name.get())
+    set_name(*options.name);
+  if (options.buffer_size.get())
+    set_buffer_size(*options.buffer_size);
+  if (options.receive_timeout.get())
+    set_receive_timeout(*options.receive_timeout);
+  if (options.send_timeout.get())
+    set_send_timeout(*options.send_timeout);
+  bool success = ConfigurePort(options);
+  io_handler_->CancelRead(api::serial::RECEIVE_ERROR_NONE);
+  return success;
 }
+
+void SerialConnection::SetIoHandlerForTest(
+    scoped_refptr<SerialIoHandler> handler) {
+  io_handler_ = handler;
+}
+
+bool SerialConnection::GetInfo(api::serial::ConnectionInfo* info) const {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  info->paused = paused_;
+  info->persistent = persistent_;
+  info->name = name_;
+  info->buffer_size = buffer_size_;
+  info->receive_timeout = receive_timeout_;
+  info->send_timeout = send_timeout_;
+  return GetPortInfo(info);
+}
+
+void SerialConnection::StartOpen() {
+  DCHECK(!open_complete_.is_null());
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  DCHECK(!file_.IsValid());
+  // It's the responsibility of the API wrapper around SerialConnection to
+  // validate the supplied path against the set of valid port names, and
+  // it is a reasonable assumption that serial port names are ASCII.
+  DCHECK(base::IsStringASCII(port_));
+  base::FilePath path(
+      base::FilePath::FromUTF8Unsafe(MaybeFixUpPortName(port_)));
+  int flags = base::File::FLAG_OPEN | base::File::FLAG_READ |
+              base::File::FLAG_EXCLUSIVE_READ | base::File::FLAG_WRITE |
+              base::File::FLAG_EXCLUSIVE_WRITE | base::File::FLAG_ASYNC |
+              base::File::FLAG_TERMINAL_DEVICE;
+  base::File file(path, flags);
+  BrowserThread::PostTask(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&SerialConnection::FinishOpen, base::Unretained(this),
+                 Passed(file.Pass())));
+}
+
+void SerialConnection::FinishOpen(base::File file) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(!open_complete_.is_null());
+  DCHECK(!file_.IsValid());
+  OpenCompleteCallback callback = open_complete_;
+  open_complete_.Reset();
+
+  if (!file.IsValid()) {
+    callback.Run(false);
+    return;
+  }
+
+  // TODO(rvargas): crbug.com/351073. This is wrong. io_handler_ keeps a copy of
+  // the handler that is not in sync with this one.
+  file_ = file.Pass();
+  io_handler_->Initialize(
+      file_.GetPlatformFile(),
+      base::Bind(&SerialConnection::OnAsyncReadComplete, AsWeakPtr()),
+      base::Bind(&SerialConnection::OnAsyncWriteComplete, AsWeakPtr()));
+
+  bool success = PostOpen();
+  if (!success) {
+    Close();
+  }
+
+  callback.Run(success);
+}
+
+// static
+void SerialConnection::DoClose(base::File port) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  // port closed by destructor.
+}
+
+void SerialConnection::OnReceiveTimeout() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  io_handler_->CancelRead(api::serial::RECEIVE_ERROR_TIMEOUT);
+}
+
+void SerialConnection::OnSendTimeout() {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  io_handler_->CancelWrite(api::serial::SEND_ERROR_TIMEOUT);
+}
+
+void SerialConnection::OnAsyncReadComplete(const std::string& data,
+                                           api::serial::ReceiveError error) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(!receive_complete_.is_null());
+  ReceiveCompleteCallback callback = receive_complete_;
+  receive_complete_.Reset();
+  receive_timeout_task_.reset();
+  callback.Run(data, error);
+}
+
+void SerialConnection::OnAsyncWriteComplete(int bytes_sent,
+                                            api::serial::SendError error) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
+  DCHECK(!send_complete_.is_null());
+  SendCompleteCallback callback = send_complete_;
+  send_complete_.Reset();
+  send_timeout_task_.reset();
+  callback.Run(bytes_sent, error);
+}
+
+SerialConnection::TimeoutTask::TimeoutTask(const base::Closure& closure,
+                                           const base::TimeDelta& delay)
+    : weak_factory_(this), closure_(closure), delay_(delay) {
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&TimeoutTask::Run, weak_factory_.GetWeakPtr()),
+      delay_);
+}
+
+SerialConnection::TimeoutTask::~TimeoutTask() {}
+
+void SerialConnection::TimeoutTask::Run() const { closure_.Run(); }
 
 }  // namespace extensions

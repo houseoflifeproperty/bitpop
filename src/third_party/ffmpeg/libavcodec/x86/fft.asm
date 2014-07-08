@@ -28,7 +28,6 @@
 ; in blocks as conventient to the vector size.
 ; i.e. {4x real, 4x imaginary, 4x real, ...} (or 2x respectively)
 
-%include "libavutil/x86/x86inc.asm"
 %include "libavutil/x86/x86util.asm"
 
 %if ARCH_X86_64
@@ -37,7 +36,7 @@
 %define pointer resd
 %endif
 
-SECTION_RODATA
+SECTION_RODATA 32
 
 struc FFTContext
     .nbits:    resd 1
@@ -58,7 +57,6 @@ endstruc
 %define M_COS_PI_1_8 0.923879532511287
 %define M_COS_PI_3_8 0.38268343236509
 
-align 32
 ps_cos16_1: dd 1.0, M_COS_PI_1_8, M_SQRT1_2, M_COS_PI_3_8, 1.0, M_COS_PI_1_8, M_SQRT1_2, M_COS_PI_3_8
 ps_cos16_2: dd 0, M_COS_PI_3_8, M_SQRT1_2, M_COS_PI_1_8, 0, -M_COS_PI_3_8, -M_SQRT1_2, -M_COS_PI_1_8
 
@@ -106,7 +104,8 @@ SECTION_TEXT
     pfadd    %5, %4 ; {t6,t5}
     pxor     %3, [ps_m1p1] ; {t8,t7}
     mova     %6, %1
-    PSWAPD   %3, %3
+    movd [r0+12], %3
+    punpckhdq %3, [r0+8]
     pfadd    %1, %5 ; {r0,i0}
     pfsub    %6, %5 ; {r2,i2}
     mova     %4, %2
@@ -500,19 +499,6 @@ fft8 %+ SUFFIX:
 %endmacro
 
 %if ARCH_X86_32
-%macro PSWAPD 2
-%if cpuflag(3dnowext)
-    pswapd %1, %2
-%elifidn %1, %2
-    movd [r0+12], %1
-    punpckhdq %1, [r0+8]
-%else
-    movq  %1, %2
-    psrlq %1, 32
-    punpckldq %1, %2
-%endif
-%endmacro
-
 INIT_MMX 3dnowext
 FFT48_3DNOW
 
@@ -685,13 +671,13 @@ cglobal imdct_calc, 3,5,3
     push    r1
     push    r0
 %else
-    sub     rsp, 8
+    sub     rsp, 8+32*WIN64 ; allocate win64 shadow space
 %endif
     call    r4
 %if ARCH_X86_32
     add     esp, 12
 %else
-    add     rsp, 8
+    add     rsp, 8+32*WIN64
 %endif
     POP     r1
     POP     r3

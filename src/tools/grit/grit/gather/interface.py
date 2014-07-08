@@ -152,6 +152,10 @@ class GathererBase(object):
     '''
     pass
 
+  def SetFilenameExpansionFunction(self, fn):
+    '''Sets a function for rewriting filenames before gathering.'''
+    pass
+
   # TODO(benrg): Move this elsewhere, since it isn't part of the interface.
   def _LoadInputFile(self):
     '''A convenience function for subclasses that loads the contents of the

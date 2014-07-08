@@ -11,6 +11,7 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/shared_memory.h"
 #include "ppapi/c/pp_stdint.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
@@ -58,7 +59,20 @@ class PPAPI_PROXY_EXPORT PluginVarTracker : public VarTracker {
                          const PP_Var& host_object);
 
   // VarTracker public overrides.
-  void DidDeleteInstance(PP_Instance instance) OVERRIDE;
+  virtual PP_Var MakeResourcePPVarFromMessage(
+      PP_Instance instance,
+      const IPC::Message& creation_message,
+      int pending_renderer_id,
+      int pending_browser_id) OVERRIDE;
+  virtual ResourceVar* MakeResourceVar(PP_Resource pp_resource) OVERRIDE;
+  virtual void DidDeleteInstance(PP_Instance instance) OVERRIDE;
+  virtual int TrackSharedMemoryHandle(PP_Instance instance,
+                                      base::SharedMemoryHandle file,
+                                      uint32 size_in_bytes) OVERRIDE;
+  virtual bool StopTrackingSharedMemoryHandle(int id,
+                                              PP_Instance instance,
+                                              base::SharedMemoryHandle* handle,
+                                              uint32* size_in_bytes) OVERRIDE;
 
   // Notification that a plugin-implemented object (PPP_Class) was created by
   // the plugin or deallocated by WebKit over IPC.
@@ -79,6 +93,8 @@ class PPAPI_PROXY_EXPORT PluginVarTracker : public VarTracker {
   bool ValidatePluginObjectCall(const PPP_Class_Deprecated* ppp_class,
                                 void* user_data);
 
+  void DidDeleteDispatcher(PluginDispatcher* dispatcher);
+
  private:
   // VarTracker protected overrides.
   virtual int32 AddVarInternal(Var* var, AddVarRefMode mode) OVERRIDE;
@@ -86,6 +102,9 @@ class PPAPI_PROXY_EXPORT PluginVarTracker : public VarTracker {
   virtual void ObjectGettingZeroRef(VarMap::iterator iter) OVERRIDE;
   virtual bool DeleteObjectInfoIfNecessary(VarMap::iterator iter) OVERRIDE;
   virtual ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes) OVERRIDE;
+  virtual ArrayBufferVar* CreateShmArrayBuffer(
+      uint32 size_in_bytes,
+      base::SharedMemoryHandle handle) OVERRIDE;
 
  private:
   friend struct DefaultSingletonTraits<PluginVarTracker>;

@@ -37,15 +37,12 @@ import sys
 
 from checkers.common import categories as CommonCategories
 from checkers.common import CarriageReturnChecker
-from checkers.changelog import ChangeLogChecker
 from checkers.cpp import CppChecker
-from checkers.cmake import CMakeChecker
 from checkers.jsonchecker import JSONChecker
 from checkers.png import PNGChecker
 from checkers.python import PythonChecker
 from checkers.test_expectations import TestExpectationsChecker
 from checkers.text import TextChecker
-from checkers.watchlist import WatchListChecker
 from checkers.xcodeproj import XcodeProjectFileChecker
 from checkers.xml import XMLChecker
 from error_handlers import DefaultStyleErrorHandler
@@ -128,115 +125,8 @@ _PATH_RULES_SPECIFIER = [
     # API and therefore do not follow the same header including
     # discipline as WebCore.
 
-    ([# TestNetscapePlugIn has no config.h and uses funny names like
-      # NPP_SetWindow.
-      "Tools/DumpRenderTree/TestNetscapePlugIn/",
-      # The API test harnesses have no config.h and use funny macros like
-      # TEST_CLASS_NAME.
-      "Tools/WebKitAPITest/",
-      "Tools/TestWebKitAPI/",
-      "Source/WebKit/qt/tests/qdeclarativewebview"],
-     ["-build/include",
-      "-readability/naming"]),
     ([# There is no clean way to avoid "yy_*" names used by flex.
-      "Source/WebCore/css/CSSParser.cpp",
-      # Qt code uses '_' in some places (such as private slots
-      # and on test xxx_data methos on tests)
-      "Source/JavaScriptCore/qt/",
-      "Source/WebKit/qt/tests/",
-      "Source/WebKit/qt/declarative/",
-      "Source/WebKit/qt/examples/"],
-     ["-readability/naming"]),
-
-    ([# The Qt APIs use Qt declaration style, it puts the * to
-      # the variable name, not to the class.
-      "Source/WebKit/qt/Api/",
-      "Source/WebKit/qt/WidgetApi/"],
-     ["-readability/naming",
-      "-whitespace/declaration"]),
-
-     ([# Qt's MiniBrowser has no config.h
-       "Tools/MiniBrowser/qt",
-       "Tools/MiniBrowser/qt/raw"],
-      ["-build/include"]),
-
-    ([# The Qt APIs use Qt/QML naming style, which includes
-      # naming parameters in h files.
-      "Source/WebKit2/UIProcess/API/qt"],
-     ["-readability/parameter_name"]),
-
-    ([# The GTK+ APIs use GTK+ naming style, which includes
-      # lower-cased, underscore-separated values, whitespace before
-      # parens for function calls, and always having variable names.
-      # Also, GTK+ allows the use of NULL.
-      "Source/WebCore/bindings/scripts/test/GObject",
-      "Source/WebKit/gtk/webkit/",
-      "Tools/DumpRenderTree/gtk/"],
-     ["-readability/naming",
-      "-readability/parameter_name",
-      "-readability/null",
-      "-readability/enum_casing",
-      "-whitespace/parens"]),
-
-    ([# The GTK+ API use upper case, underscore separated, words in
-      # certain types of enums (e.g. signals, properties).
-      "Source/WebKit2/UIProcess/API/gtk"],
-     ["-readability/enum_casing"]),
-
-    ([# Header files in ForwardingHeaders have no header guards or
-      # exceptional header guards (e.g., WebCore_FWD_Debugger_h).
-      "/ForwardingHeaders/"],
-     ["-build/header_guard"]),
-    ([# assembler has lots of opcodes that use underscores, so
-      # we don't check for underscores in that directory.
-      "Source/JavaScriptCore/assembler/",
-      "Source/JavaScriptCore/jit/JIT"],
-     ["-readability/naming/underscores"]),
-    ([# JITStubs has an usual syntax which causes false alarms for a few checks.
-      "JavaScriptCore/jit/JITStubs.cpp"],
-     ["-readability/parameter_name",
-      "-whitespace/parens"]),
-
-    ([# The EFL APIs use EFL naming style, which includes
-      # both lower-cased and camel-cased, underscore-sparated
-      # values.
-      "Source/WebKit/efl/ewk/",
-      "Source/WebKit2/UIProcess/API/efl/"],
-     ["-readability/naming",
-      "-readability/parameter_name"]),
-    ([# EWebLauncher and MiniBrowser are EFL simple application.
-      # They need to use efl coding style and they don't have config.h.
-      "Tools/EWebLauncher/",
-      "Tools/MiniBrowser/efl/"],
-     ["-readability/naming",
-      "-readability/parameter_name",
-      "-whitespace/declaration",
-      "-build/include_order"]),
-
-    # WebKit2 rules:
-    # WebKit2 and certain directories have idiosyncracies.
-    ([# NPAPI has function names with underscores.
-      "Source/WebKit2/WebProcess/Plugins/Netscape"],
-     ["-readability/naming"]),
-    ([# The WebKit2 C API has names with underscores and whitespace-aligned
-      # struct members. Also, we allow unnecessary parameter names in
-      # WebKit2 APIs because we're matching CF's header style.
-      "Source/WebKit2/UIProcess/API/C/",
-      "Source/WebKit2/Shared/API/c/",
-      "Source/WebKit2/WebProcess/InjectedBundle/API/c/"],
-     ["-readability/naming",
-      "-readability/parameter_name",
-      "-whitespace/declaration"]),
-    ([# These files define GObjects, which implies some definitions of
-      # variables and functions containing underscores.
-      "Source/WebCore/platform/graphics/clutter/GraphicsLayerActor.cpp",
-      "Source/WebCore/platform/graphics/clutter/GraphicsLayerActor.h",
-      "Source/WebCore/platform/graphics/gstreamer/VideoSinkGStreamer1.cpp",
-      "Source/WebCore/platform/graphics/gstreamer/VideoSinkGStreamer.cpp",
-      "Source/WebCore/platform/graphics/gstreamer/WebKitWebSourceGStreamer.cpp",
-      "Source/WebCore/platform/audio/gstreamer/WebKitWebAudioSourceGStreamer.cpp",
-      "Source/WebCore/platform/network/soup/ProxyResolverSoup.cpp",
-      "Source/WebCore/platform/network/soup/ProxyResolverSoup.h"],
+      "Source/core/css/CSSParser-in.cpp"],
      ["-readability/naming"]),
 
     # For third-party Python code, keep only the following checks--
@@ -251,21 +141,18 @@ _PATH_RULES_SPECIFIER = [
       "+pep8/W291",  # Trailing white space
       "+whitespace/carriage_return"]),
 
-    ([# glu's libtess is third-party code, and doesn't follow WebKit style.
-      "Source/ThirdParty/glu"],
-     ["-readability",
-      "-whitespace",
-      "-build/header_guard",
-      "-build/include_order"]),
+    ([# Jinja templates: files have .cpp or .h extensions, but contain
+      # template code, which can't be handled, so disable tests.
+      "Source/bindings/templates",
+      "Source/build/scripts/templates"],
+     ["-"]),
 
-    ([# There is no way to avoid the symbols __jit_debug_register_code
-      # and __jit_debug_descriptor when integrating with gdb.
-      "Source/JavaScriptCore/jit/GDBInterface.cpp"],
-     ["-readability/naming"]),
-
-    ([# On some systems the trailing CR is causing parser failure.
-      "Source/JavaScriptCore/parser/Keywords.table"],
-     ["+whitespace/carriage_return"]),
+    ([# IDL compiler reference output
+      # Conforming to style significantly increases the complexity of the code
+      # generator and decreases *its* readability, which is of more concern
+      # than style of the machine-generated code itself.
+      "Source/bindings/tests/results"],
+     ["-"]),
 ]
 
 
@@ -280,12 +167,9 @@ _JSON_FILE_EXTENSION = 'json'
 _PYTHON_FILE_EXTENSION = 'py'
 
 _TEXT_FILE_EXTENSIONS = [
-    'ac',
     'cc',
     'cgi',
     'css',
-    'exp',
-    'flex',
     'gyp',
     'gypi',
     'html',
@@ -296,13 +180,9 @@ _TEXT_FILE_EXTENSIONS = [
     'php',
     'pl',
     'pm',
-    'pri',
-    'pro',
     'rb',
     'sh',
-    'table',
     'txt',
-    'wm',
     'xhtml',
     'y',
     ]
@@ -316,8 +196,6 @@ _XML_FILE_EXTENSIONS = [
 
 _PNG_FILE_EXTENSION = 'png'
 
-_CMAKE_FILE_EXTENSION = 'cmake'
-
 # Files to skip that are less obvious.
 #
 # Some files should be skipped when checking style. For example,
@@ -329,7 +207,9 @@ _SKIPPED_FILES_WITH_WARNING = [
     # except those ending in ...Private.h are GTK+ API headers,
     # which differ greatly from WebKit coding style.
     re.compile(r'Source/WebKit2/UIProcess/API/gtk/WebKit(?!.*Private\.h).*\.h$'),
-    'Source/WebKit2/UIProcess/API/gtk/webkit2.h']
+    re.compile(r'Source/WebKit2/WebProcess/InjectedBundle/API/gtk/WebKit(?!.*Private\.h).*\.h$'),
+    'Source/WebKit2/UIProcess/API/gtk/webkit2.h',
+    'Source/WebKit2/WebProcess/InjectedBundle/API/gtk/webkit-web-extension.h']
 
 # Files to skip that are more common or obvious.
 #
@@ -337,6 +217,7 @@ _SKIPPED_FILES_WITH_WARNING = [
 # with FileType.NONE are automatically skipped without warning.
 _SKIPPED_FILES_WITHOUT_WARNING = [
     "LayoutTests" + os.path.sep,
+    "Source/ThirdParty/leveldb" + os.path.sep,
     # Prevents this being recognized as a text file.
     "Source/WebCore/GNUmakefile.features.am.in",
     ]
@@ -361,7 +242,6 @@ def _all_categories():
     categories = CommonCategories.union(CppChecker.categories)
     categories = categories.union(JSONChecker.categories)
     categories = categories.union(TestExpectationsChecker.categories)
-    categories = categories.union(ChangeLogChecker.categories)
     categories = categories.union(PNGChecker.categories)
 
     # FIXME: Consider adding all of the pep8 categories.  Since they
@@ -501,16 +381,15 @@ class FileType:
 
     NONE = 0  # FileType.NONE evaluates to False.
     # Alphabetize remaining types
-    CHANGELOG = 1
+    # CHANGELOG = 1
     CPP = 2
     JSON = 3
     PNG = 4
     PYTHON = 5
     TEXT = 6
-    WATCHLIST = 7
+    # WATCHLIST = 7
     XML = 8
     XCODEPROJ = 9
-    CMAKE = 10
 
 
 class CheckerDispatcher(object):
@@ -544,16 +423,12 @@ class CheckerDispatcher(object):
         if not self._file_type(file_path):  # FileType.NONE.
             return True
         # Since "LayoutTests" is in _SKIPPED_FILES_WITHOUT_WARNING, make
-        # an exception to prevent files like "LayoutTests/ChangeLog" and
-        # "LayoutTests/ChangeLog-2009-06-16" from being skipped.
-        # Files like 'TestExpectations' are also should not be skipped.
+        # an exception to prevent files like 'TestExpectations' from being skipped.
         #
         # FIXME: Figure out a good way to avoid having to add special logic
         #        for this special case.
         basename = os.path.basename(file_path)
-        if basename.startswith('ChangeLog'):
-            return False
-        elif basename == 'TestExpectations':
+        if basename == 'TestExpectations':
             return False
         for skipped_file in _SKIPPED_FILES_WITHOUT_WARNING:
             if self._should_skip_file_path(file_path, skipped_file):
@@ -581,16 +456,10 @@ class CheckerDispatcher(object):
             return FileType.PYTHON
         elif file_extension in _XML_FILE_EXTENSIONS:
             return FileType.XML
-        elif os.path.basename(file_path).startswith('ChangeLog'):
-            return FileType.CHANGELOG
-        elif os.path.basename(file_path) == 'watchlist':
-            return FileType.WATCHLIST
         elif file_extension == _XCODEPROJ_FILE_EXTENSION:
             return FileType.XCODEPROJ
         elif file_extension == _PNG_FILE_EXTENSION:
             return FileType.PNG
-        elif ((file_extension == _CMAKE_FILE_EXTENSION) or os.path.basename(file_path) == 'CMakeLists.txt'):
-            return FileType.CMAKE
         elif ((not file_extension and os.path.join("Tools", "Scripts") in file_path) or
               file_extension in _TEXT_FILE_EXTENSIONS or os.path.basename(file_path) == 'TestExpectations'):
             return FileType.TEXT
@@ -602,11 +471,6 @@ class CheckerDispatcher(object):
         """Instantiate and return a style checker based on file type."""
         if file_type == FileType.NONE:
             checker = None
-        elif file_type == FileType.CHANGELOG:
-            should_line_be_checked = None
-            if handle_style_error:
-                should_line_be_checked = handle_style_error.should_line_be_checked
-            checker = ChangeLogChecker(file_path, handle_style_error, should_line_be_checked)
         elif file_type == FileType.CPP:
             file_extension = self._file_extension(file_path)
             checker = CppChecker(file_path, file_extension,
@@ -621,16 +485,12 @@ class CheckerDispatcher(object):
             checker = XcodeProjectFileChecker(file_path, handle_style_error)
         elif file_type == FileType.PNG:
             checker = PNGChecker(file_path, handle_style_error)
-        elif file_type == FileType.CMAKE:
-            checker = CMakeChecker(file_path, handle_style_error)
         elif file_type == FileType.TEXT:
             basename = os.path.basename(file_path)
             if basename == 'TestExpectations':
                 checker = TestExpectationsChecker(file_path, handle_style_error)
             else:
                 checker = TextChecker(file_path, handle_style_error)
-        elif file_type == FileType.WATCHLIST:
-            checker = WatchListChecker(file_path, handle_style_error)
         else:
             raise ValueError('Invalid file type "%(file_type)s": the only valid file types '
                              "are %(NONE)s, %(CPP)s, and %(TEXT)s."

@@ -4,6 +4,7 @@
 
 #include "chrome/browser/prerender/prerender_origin.h"
 
+#include "base/basictypes.h"
 #include "base/metrics/histogram.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 
@@ -21,6 +22,10 @@ const char* kOriginNames[] = {
   "None",
   "Link Rel Prerender (same domain)",
   "Link Rel Prerender (cross domain)",
+  "Local Predictor",
+  "External Request",
+  "Instant",
+  "Link Rel Next",
   "Max",
 };
 COMPILE_ASSERT(arraysize(kOriginNames) == ORIGIN_MAX + 1,

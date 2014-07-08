@@ -8,22 +8,16 @@
 #include "chrome/browser/ui/views/open_pdf_in_reader_bubble_view.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/views/widget/widget.h"
 
-OpenPDFInReaderView::OpenPDFInReaderView(LocationBarView* location_bar_view)
-    : location_bar_view_(location_bar_view),
-      bubble_(NULL),
-      model_(NULL) {
-  set_accessibility_focusable(true);
-  SetImage(
-      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-          IDR_OMNIBOX_PDF_ICON));
-  SetTooltipText(
-      l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_OPEN_IN_READER_LINK));
-  TouchableLocationBarView::Init(this);
+OpenPDFInReaderView::OpenPDFInReaderView() : bubble_(NULL), model_(NULL) {
+  SetAccessibilityFocusable(true);
+  SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      IDR_OMNIBOX_PDF_ICON));
+  SetTooltipText(l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_OPEN_IN_READER_LINK));
 }
 
 OpenPDFInReaderView::~OpenPDFInReaderView() {
@@ -41,10 +35,6 @@ void OpenPDFInReaderView::Update(content::WebContents* web_contents) {
   SetVisible(!!model_);
 }
 
-int OpenPDFInReaderView::GetBuiltInHorizontalPadding() const {
-  return GetBuiltInHorizontalPaddingImpl();
-}
-
 void OpenPDFInReaderView::ShowBubble() {
   if (bubble_)
     return;
@@ -53,12 +43,12 @@ void OpenPDFInReaderView::ShowBubble() {
   bubble_ = new OpenPDFInReaderBubbleView(this, model_);
   views::BubbleDelegateView::CreateBubble(bubble_);
   bubble_->GetWidget()->AddObserver(this);
-  bubble_->Show();
+  bubble_->GetWidget()->Show();
 }
 
-void OpenPDFInReaderView::GetAccessibleState(ui::AccessibleViewState* state) {
+void OpenPDFInReaderView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_OPEN_PDF_IN_READER);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
 }
 
 bool OpenPDFInReaderView::OnMousePressed(const ui::MouseEvent& event) {
@@ -81,7 +71,7 @@ bool OpenPDFInReaderView::OnKeyPressed(const ui::KeyEvent& event) {
   return true;
 }
 
-void OpenPDFInReaderView::OnWidgetClosing(views::Widget* widget) {
+void OpenPDFInReaderView::OnWidgetDestroying(views::Widget* widget) {
   if (!bubble_)
     return;
 

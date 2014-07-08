@@ -2,23 +2,35 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef NET_BASE_REQUEST_PRIORITY_H__
-#define NET_BASE_REQUEST_PRIORITY_H__
+#ifndef NET_BASE_REQUEST_PRIORITY_H_
+#define NET_BASE_REQUEST_PRIORITY_H_
+
+#include "net/base/net_export.h"
 
 namespace net {
 
 // Prioritization used in various parts of the networking code such
 // as connection prioritization and resource loading prioritization.
 enum RequestPriority {
-  MINIMUM_PRIORITY = 0,
   IDLE = 0,
+  MINIMUM_PRIORITY = IDLE,
   LOWEST,
+  DEFAULT_PRIORITY = LOWEST,
   LOW,
   MEDIUM,
   HIGHEST,
-  NUM_PRIORITIES,
+  MAXIMUM_PRIORITY = HIGHEST,
 };
+
+// For simplicity, one can assume that one can index into array of
+// NUM_PRIORITIES elements with a RequestPriority (i.e.,
+// MINIMUM_PRIORITY == 0).
+enum RequestPrioritySize {
+  NUM_PRIORITIES = MAXIMUM_PRIORITY + 1,
+};
+
+NET_EXPORT const char* RequestPriorityToString(RequestPriority priority);
 
 }  // namespace net
 
-#endif  // NET_BASE_REQUEST_PRIORITY_H__
+#endif  // NET_BASE_REQUEST_PRIORITY_H_

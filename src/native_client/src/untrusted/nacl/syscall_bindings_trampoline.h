@@ -22,7 +22,8 @@ extern "C" {
 #include "native_client/src/trusted/service_runtime/nacl_config.h"
 
 struct NaClExceptionContext;
-struct NaClImcMsgHdr;
+struct NaClAbiNaClImcMsgHdr;
+struct NaClMemMappingInfo;
 struct stat;
 struct timespec;
 struct timeval;
@@ -75,15 +76,23 @@ typedef int (*TYPE_nacl_lseek) (int desc,
 
 typedef int (*TYPE_nacl_stat) (const char *file, struct stat *st);
 
+typedef int (*TYPE_nacl_pread) (int fd, void *buf, size_t count, off_t *offset);
+
+typedef int (*TYPE_nacl_pwrite) (int fd,
+                                 const void *buf, size_t count,
+                                 off_t *offset);
+
+typedef int (*TYPE_nacl_isatty) (int fd);
+
 /* ============================================================ */
 /* imc */
 /* ============================================================ */
 
 typedef int (*TYPE_nacl_imc_recvmsg) (int desc,
-                                      struct NaClImcMsgHdr *nmhp,
+                                      struct NaClAbiNaClImcMsgHdr *nmhp,
                                       int flags);
 typedef int (*TYPE_nacl_imc_sendmsg) (int desc,
-                                      struct NaClImcMsgHdr const *nmhp,
+                                      struct NaClAbiNaClImcMsgHdr const *nmhp,
                                       int flags);
 typedef int (*TYPE_nacl_imc_accept) (int d);
 
@@ -109,6 +118,9 @@ typedef void *(*TYPE_nacl_mmap) (void *start,
 typedef int (*TYPE_nacl_munmap) (void *start, size_t length);
 
 typedef int (*TYPE_nacl_mprotect) (void *start, size_t length, int prot);
+
+typedef int (*TYPE_nacl_list_mappings) (struct NaClMemMappingInfo *region,
+                                        size_t count);
 
 /* ============================================================ */
 /* threads */
@@ -162,7 +174,7 @@ typedef int (*TYPE_nacl_sched_yield) (void);
 
 typedef int (*TYPE_nacl_sysconf) (int name, int *res);
 
-typedef void *(*TYPE_nacl_sysbrk) (void *p);
+typedef void *(*TYPE_nacl_brk) (void *p);
 
 typedef pid_t (*TYPE_nacl_getpid) (void);
 
@@ -176,6 +188,34 @@ typedef int (*TYPE_nacl_clock_getres) (clockid_t clk_id,
 
 typedef int (*TYPE_nacl_clock_gettime) (clockid_t clk_id,
                                         struct timespec *tp);
+
+typedef int (*TYPE_nacl_mkdir) (const char *path, int mode);
+
+typedef int (*TYPE_nacl_rmdir) (const char *path);
+
+typedef int (*TYPE_nacl_chdir) (const char *path);
+
+typedef int (*TYPE_nacl_getcwd) (char *path, int len);
+
+typedef int (*TYPE_nacl_unlink) (const char *path);
+
+typedef int (*TYPE_nacl_truncate) (const char *file, off_t *length);
+
+typedef int (*TYPE_nacl_lstat) (const char *file, struct stat *st);
+
+typedef int (*TYPE_nacl_link) (const char *oldpath, const char *newpath);
+
+typedef int (*TYPE_nacl_rename) (const char *oldpath, const char *newpath);
+
+typedef int (*TYPE_nacl_symlink) (const char *oldpath, const char *newpath);
+
+typedef int (*TYPE_nacl_chmod) (const char *path, mode_t mode);
+
+typedef int (*TYPE_nacl_access) (const char *path, int amode);
+
+typedef int (*TYPE_nacl_readlink) (const char *path, char *buf, size_t bufsize);
+
+typedef int (*TYPE_nacl_utimes) (const char *path, const struct timeval *times);
 
 #ifdef __GNUC__
 typedef void (*TYPE_nacl_exit) (int status) __attribute__((noreturn));
@@ -205,13 +245,18 @@ typedef int (*TYPE_nacl_exception_handler) (
     void (*handler)(struct NaClExceptionContext *context),
     void (**old_handler)(struct NaClExceptionContext *context));
 
-typedef int (*TYPE_nacl_exception_stack) (void* stack, size_t size);
+typedef int (*TYPE_nacl_exception_stack) (void *stack, size_t size);
 
 typedef int (*TYPE_nacl_exception_clear_flag) (void);
 
 typedef int (*TYPE_nacl_test_infoleak) (void);
 
 typedef int (*TYPE_nacl_test_crash) (int crash_type);
+
+typedef int (*TYPE_nacl_futex_wait_abs) (volatile int *addr, int value,
+                                         const struct timespec *abstime);
+
+typedef int (*TYPE_nacl_futex_wake) (volatile int *addr, int nwake);
 
 #if defined(__cplusplus)
 }

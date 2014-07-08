@@ -4,9 +4,9 @@
 
 #include <vector>
 
-#include "base/message_loop.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor_table.h"
 #include "chrome/browser/predictors/predictor_database.h"
 #include "chrome/browser/predictors/predictor_database_factory.h"
@@ -54,7 +54,7 @@ class AutocompleteActionPredictorTableTest : public testing::Test {
  private:
   TestingProfile profile_;
   scoped_ptr<PredictorDatabase> db_;
-  MessageLoop loop_;
+  base::MessageLoop loop_;
   content::TestBrowserThread db_thread_;
 };
 
@@ -71,8 +71,7 @@ class AutocompleteActionPredictorTableReopenTest
 };
 
 AutocompleteActionPredictorTableTest::AutocompleteActionPredictorTableTest()
-    : loop_(MessageLoop::TYPE_DEFAULT),
-      db_thread_(BrowserThread::DB, &loop_) {
+    : db_thread_(BrowserThread::DB, &loop_) {
 }
 
 AutocompleteActionPredictorTableTest::~AutocompleteActionPredictorTableTest() {
@@ -84,20 +83,21 @@ void AutocompleteActionPredictorTableTest::SetUp() {
 
   test_db_.push_back(AutocompleteActionPredictorTable::Row(
       "BD85DBA2-8C29-49F9-84AE-48E1E90880DF",
-      ASCIIToUTF16("goog"), GURL("http://www.google.com/"),
+      base::ASCIIToUTF16("goog"), GURL("http://www.google.com/"),
       1, 0));
   test_db_.push_back(AutocompleteActionPredictorTable::Row(
       "BD85DBA2-8C29-49F9-84AE-48E1E90880E0",
-      ASCIIToUTF16("slash"), GURL("http://slashdot.org/"),
+      base::ASCIIToUTF16("slash"), GURL("http://slashdot.org/"),
       3, 2));
   test_db_.push_back(AutocompleteActionPredictorTable::Row(
       "BD85DBA2-8C29-49F9-84AE-48E1E90880E1",
-      ASCIIToUTF16("news"), GURL("http://slashdot.org/"),
+      base::ASCIIToUTF16("news"), GURL("http://slashdot.org/"),
       0, 1));
 }
 
 void AutocompleteActionPredictorTableTest::TearDown() {
   db_.reset(NULL);
+  loop_.RunUntilIdle();
   test_db_.clear();
 }
 

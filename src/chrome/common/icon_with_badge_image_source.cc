@@ -5,6 +5,7 @@
 #include "chrome/common/icon_with_badge_image_source.h"
 
 #include "chrome/common/badge_util.h"
+//#include "ui/base/layout.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 
@@ -15,7 +16,7 @@ IconWithBadgeImageSource::IconWithBadgeImageSource(
     const std::string& text,
     const SkColor& text_color,
     const SkColor& background_color,
-    extensions::Extension::ActionInfo::Type action_type)
+    extensions::ActionInfo::Type action_type)
         : gfx::CanvasImageSource(icon_size, false),
           icon_(icon),
           spacing_(spacing),

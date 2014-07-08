@@ -2,42 +2,48 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
 #include "chrome/browser/ui/omnibox/omnibox_edit_model.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 #include "chrome/browser/ui/toolbar/test_toolbar_model.h"
-#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/gfx/font.h"
-#include "ui/gfx/image/image.h"
 
+using base::ASCIIToUTF16;
+using base::UTF8ToUTF16;
 using content::WebContents;
 
 namespace {
 
 class TestingOmniboxView : public OmniboxView {
  public:
-  explicit TestingOmniboxView(ToolbarModel* model)
-      : OmniboxView(NULL, NULL, model, NULL) {}
+  explicit TestingOmniboxView(OmniboxEditController* controller)
+      : OmniboxView(NULL, controller, NULL) {}
 
+  // OmniboxView:
   virtual void SaveStateToTab(WebContents* tab) OVERRIDE {}
-  virtual void Update(const WebContents* tab_for_state_restoring) OVERRIDE {}
+  virtual void OnTabChanged(const WebContents* web_contents) OVERRIDE {}
+  virtual void Update() OVERRIDE {}
   virtual void OpenMatch(const AutocompleteMatch& match,
                          WindowOpenDisposition disposition,
                          const GURL& alternate_nav_url,
+                         const base::string16& pasted_text,
                          size_t selected_line) OVERRIDE {}
-  virtual string16 GetText() const OVERRIDE { return string16(); }
-  virtual void SetUserText(const string16& text,
-                           const string16& display_text,
-                           bool update_popup) OVERRIDE {}
-  virtual void SetWindowTextAndCaretPos(const string16& text,
+  virtual base::string16 GetText() const OVERRIDE { return text_; }
+  virtual void SetUserText(const base::string16& text,
+                           const base::string16& display_text,
+                           bool update_popup) OVERRIDE {
+    text_ = display_text;
+  }
+  virtual void SetWindowTextAndCaretPos(const base::string16& text,
                                         size_t caret_pos,
                                         bool update_popup,
-                                        bool notify_text_changed) OVERRIDE {}
+                                        bool notify_text_changed) OVERRIDE {
+    text_ = text;
+  }
   virtual void SetForcedQuery() OVERRIDE {}
   virtual bool IsSelectAll() const OVERRIDE { return false; }
   virtual bool DeleteAtEndPressed() OVERRIDE { return false; }
@@ -48,11 +54,20 @@ class TestingOmniboxView : public OmniboxView {
   virtual void SetFocus() OVERRIDE {}
   virtual void ApplyCaretVisibility() OVERRIDE {}
   virtual void OnTemporaryTextMaybeChanged(
-      const string16& display_text,
-      bool save_original_selection) OVERRIDE {}
+      const base::string16& display_text,
+      bool save_original_selection,
+      bool notify_text_changed) OVERRIDE {
+    text_ = display_text;
+  }
   virtual bool OnInlineAutocompleteTextMaybeChanged(
-      const string16& display_text, size_t user_text_length) OVERRIDE {
-    return false;
+      const base::string16& display_text, size_t user_text_length) OVERRIDE {
+    const bool text_changed = text_ != display_text;
+    text_ = display_text;
+    inline_autocomplete_text_ = display_text.substr(user_text_length);
+    return text_changed;
+  }
+  virtual void OnInlineAutocompleteTextCleared() OVERRIDE {
+    inline_autocomplete_text_.clear();
   }
   virtual void OnRevertTemporaryText() OVERRIDE {}
   virtual void OnBeforePossibleChange() OVERRIDE {}
@@ -61,50 +76,52 @@ class TestingOmniboxView : public OmniboxView {
   virtual gfx::NativeView GetRelativeWindowForPopup() const OVERRIDE {
     return NULL;
   }
-  virtual void SetInstantSuggestion(const string16& input) OVERRIDE {}
-  virtual string16 GetInstantSuggestion() const OVERRIDE { return string16(); }
-  virtual int TextWidth() const OVERRIDE { return 0; }
+  virtual void SetGrayTextAutocompletion(
+      const base::string16& input) OVERRIDE {}
+  virtual base::string16 GetGrayTextAutocompletion() const OVERRIDE {
+    return base::string16();
+  }
+  virtual int GetTextWidth() const OVERRIDE { return 0; }
+  virtual int GetWidth() const OVERRIDE { return 0; }
   virtual bool IsImeComposing() const OVERRIDE { return false; }
-
-#if defined(TOOLKIT_VIEWS)
-  virtual int GetMaxEditWidth(int entry_width) const OVERRIDE {
-    return entry_width;
-  }
-  virtual views::View* AddToView(views::View* parent) OVERRIDE { return NULL; }
-  virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE {
-    return 0;
-  }
-  virtual gfx::Font GetFont() { return gfx::Font(); }
-  virtual int WidthOfTextAfterCursor() { return 0; }
-#endif
-
   virtual int GetOmniboxTextLength() const OVERRIDE { return 0; }
   virtual void EmphasizeURLComponents() OVERRIDE { }
 
+  const base::string16& inline_autocomplete_text() const {
+    return inline_autocomplete_text_;
+  }
+
  private:
+  base::string16 text_;
+  base::string16 inline_autocomplete_text_;
+
   DISALLOW_COPY_AND_ASSIGN(TestingOmniboxView);
 };
 
 class TestingOmniboxEditController : public OmniboxEditController {
  public:
-  TestingOmniboxEditController() {}
-  virtual void OnAutocompleteAccept(const GURL& url,
-                                    WindowOpenDisposition disposition,
-                                    content::PageTransition transition,
-                                    const GURL& alternate_nav_url) OVERRIDE {}
+  explicit TestingOmniboxEditController(ToolbarModel* toolbar_model)
+      : OmniboxEditController(NULL),
+        toolbar_model_(toolbar_model) {
+  }
+
+ protected:
+  // OmniboxEditController:
+  virtual void Update(const content::WebContents* contents) OVERRIDE {}
   virtual void OnChanged() OVERRIDE {}
-  virtual void OnSelectionBoundsChanged() OVERRIDE {}
-  virtual void OnInputInProgress(bool in_progress) OVERRIDE {}
-  virtual void OnKillFocus() OVERRIDE {}
   virtual void OnSetFocus() OVERRIDE {}
-  virtual gfx::Image GetFavicon() const OVERRIDE { return gfx::Image(); }
-  virtual string16 GetTitle() const OVERRIDE { return string16(); }
+  virtual void ShowURL() OVERRIDE {}
+  virtual void HideURL() OVERRIDE {}
   virtual InstantController* GetInstant() OVERRIDE { return NULL; }
-  virtual WebContents* GetWebContents() const OVERRIDE {
-    return NULL;
+  virtual WebContents* GetWebContents() OVERRIDE { return NULL; }
+  virtual ToolbarModel* GetToolbarModel() OVERRIDE { return toolbar_model_; }
+  virtual const ToolbarModel* GetToolbarModel() const OVERRIDE {
+    return toolbar_model_;
   }
 
  private:
+  ToolbarModel* toolbar_model_;
+
   DISALLOW_COPY_AND_ASSIGN(TestingOmniboxEditController);
 };
 
@@ -112,10 +129,10 @@ class TestingOmniboxEditController : public OmniboxEditController {
 
 class AutocompleteEditTest : public ::testing::Test {
  public:
-   TestToolbarModel* toolbar_model() { return &toolbar_model_; }
+  TestToolbarModel* toolbar_model() { return &toolbar_model_; }
 
-  private:
-   TestToolbarModel toolbar_model_;
+ private:
+  TestToolbarModel toolbar_model_;
 };
 
 // Tests various permutations of AutocompleteModel::AdjustTextForCopy.
@@ -172,25 +189,26 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
     { "www.google.com/webhp?", 0, true, "hello world", "hello world", false,
       "", true },
   };
-  TestingOmniboxView view(toolbar_model());
-  TestingOmniboxEditController controller;
+  TestingOmniboxEditController controller(toolbar_model());
+  TestingOmniboxView view(&controller);
   TestingProfile profile;
   // NOTE: The TemplateURLService must be created before the
   // AutocompleteClassifier so that the SearchProvider gets a non-NULL
   // TemplateURLService at construction time.
-  TemplateURLServiceFactory::GetInstance()->SetTestingFactoryAndUse(
+  TemplateURLServiceFactory::GetInstance()->SetTestingFactory(
       &profile, &TemplateURLServiceFactory::BuildInstanceFor);
-  AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
+  AutocompleteClassifierFactory::GetInstance()->SetTestingFactory(
       &profile, &AutocompleteClassifierFactory::BuildInstanceFor);
   OmniboxEditModel model(&view, &controller, &profile);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(input); ++i) {
-    model.UpdatePermanentText(ASCIIToUTF16(input[i].perm_text));
+    toolbar_model()->set_text(ASCIIToUTF16(input[i].perm_text));
+    model.UpdatePermanentText();
 
-    toolbar_model()->set_replace_search_url_with_search_terms(
+    toolbar_model()->set_perform_search_term_replacement(
         input[i].extracted_search_terms);
 
-    string16 result = ASCIIToUTF16(input[i].input);
+    base::string16 result = ASCIIToUTF16(input[i].input);
     GURL url;
     bool write_url;
     model.AdjustTextForCopy(input[i].sel_start, input[i].is_all_selected,
@@ -200,4 +218,45 @@ TEST_F(AutocompleteEditTest, AdjustTextForCopy) {
     if (write_url)
       EXPECT_EQ(input[i].expected_url, url.spec()) << " @" << i;
   }
+}
+
+TEST_F(AutocompleteEditTest, InlineAutocompleteText) {
+  TestingOmniboxEditController controller(toolbar_model());
+  TestingOmniboxView view(&controller);
+  TestingProfile profile;
+  // NOTE: The TemplateURLService must be created before the
+  // AutocompleteClassifier so that the SearchProvider gets a non-NULL
+  // TemplateURLService at construction time.
+  TemplateURLServiceFactory::GetInstance()->SetTestingFactory(
+      &profile, &TemplateURLServiceFactory::BuildInstanceFor);
+  AutocompleteClassifierFactory::GetInstance()->SetTestingFactory(
+      &profile, &AutocompleteClassifierFactory::BuildInstanceFor);
+  OmniboxEditModel model(&view, &controller, &profile);
+
+  // Test if the model updates the inline autocomplete text in the view.
+  EXPECT_EQ(base::string16(), view.inline_autocomplete_text());
+  model.SetUserText(UTF8ToUTF16("he"));
+  model.OnPopupDataChanged(UTF8ToUTF16("llo"), NULL, base::string16(), false);
+  EXPECT_EQ(UTF8ToUTF16("hello"), view.GetText());
+  EXPECT_EQ(UTF8ToUTF16("llo"), view.inline_autocomplete_text());
+
+  model.OnAfterPossibleChange(UTF8ToUTF16("he"), UTF8ToUTF16("hel"), 3, 3,
+                              false, true, false, true);
+  EXPECT_EQ(base::string16(), view.inline_autocomplete_text());
+  model.OnPopupDataChanged(UTF8ToUTF16("lo"), NULL, base::string16(), false);
+  EXPECT_EQ(UTF8ToUTF16("hello"), view.GetText());
+  EXPECT_EQ(UTF8ToUTF16("lo"), view.inline_autocomplete_text());
+
+  model.Revert();
+  EXPECT_EQ(base::string16(), view.GetText());
+  EXPECT_EQ(base::string16(), view.inline_autocomplete_text());
+
+  model.SetUserText(UTF8ToUTF16("he"));
+  model.OnPopupDataChanged(UTF8ToUTF16("llo"), NULL, base::string16(), false);
+  EXPECT_EQ(UTF8ToUTF16("hello"), view.GetText());
+  EXPECT_EQ(UTF8ToUTF16("llo"), view.inline_autocomplete_text());
+
+  model.AcceptTemporaryTextAsUserText();
+  EXPECT_EQ(UTF8ToUTF16("hello"), view.GetText());
+  EXPECT_EQ(base::string16(), view.inline_autocomplete_text());
 }

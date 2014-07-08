@@ -5,24 +5,25 @@
 #ifndef MEDIA_AUDIO_MAC_AUDIO_INPUT_MAC_H_
 #define MEDIA_AUDIO_MAC_AUDIO_INPUT_MAC_H_
 
-#include <AudioToolbox/AudioQueue.h>
 #include <AudioToolbox/AudioFormat.h>
+#include <AudioToolbox/AudioQueue.h>
 
+#include "base/cancelable_callback.h"
 #include "base/compiler_specific.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_parameters.h"
 
 namespace media {
 
-class AudioManagerBase;
+class AudioManagerMac;
 
 // Implementation of AudioInputStream for Mac OS X using the audio queue service
 // present in OS 10.5 and later. Design reflects PCMQueueOutAudioOutputStream.
 class PCMQueueInAudioInputStream : public AudioInputStream {
  public:
   // Parameters as per AudioManager::MakeAudioInputStream.
-  PCMQueueInAudioInputStream(AudioManagerBase* manager,
+  PCMQueueInAudioInputStream(AudioManagerMac* manager,
                              const AudioParameters& params);
   virtual ~PCMQueueInAudioInputStream();
 
@@ -66,7 +67,7 @@ class PCMQueueInAudioInputStream : public AudioInputStream {
   static const int kNumberBuffers = 3;
 
   // Manager that owns this stream, used for closing down.
-  AudioManagerBase* manager_;
+  AudioManagerMac* manager_;
   // We use the callback mostly to periodically supply the recorded audio data.
   AudioInputCallback* callback_;
   // Structure that holds the stream format details such as bitrate.
@@ -78,7 +79,9 @@ class PCMQueueInAudioInputStream : public AudioInputStream {
   // True iff Start() has been called successfully.
   bool started_;
   // Used to determine if we need to slow down |callback_| calls.
-  base::Time last_fill_;
+  base::TimeTicks last_fill_;
+  // Used to defer Start() to workaround http://crbug.com/160920.
+  base::CancelableClosure deferred_start_cb_;
 
   DISALLOW_COPY_AND_ASSIGN(PCMQueueInAudioInputStream);
 };

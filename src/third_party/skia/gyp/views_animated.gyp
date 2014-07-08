@@ -5,17 +5,15 @@
     {
       'target_name': 'views_animated',
       'type': 'static_library',
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+        'animator.gyp:*',
+        'views.gyp:*',
+        'xml.gyp:*',
+      ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
-        '../include/views',
-        '../include/xml',
-        '../include/utils',
-        '../include/images',
-        '../include/animator',
-        '../include/effects',
-        '../include/views/unix',
         '../include/views/animated',
+        '../include/views/unix',
       ],
       'sources': [
         '../include/views/animated/SkBorderView.h',
@@ -64,9 +62,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

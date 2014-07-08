@@ -7,6 +7,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/task_runner.h"
 #include "dbus/message.h"
 #include "dbus/mock_bus.h"
 #include "dbus/mock_object_proxy.h"
@@ -20,9 +21,27 @@ using ::testing::Return;
 
 namespace chromeos {
 
+namespace {
+
+class FakeTaskRunner : public base::TaskRunner {
+ public:
+  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
+                               const base::Closure& task,
+                               base::TimeDelta delay) OVERRIDE {
+    task.Run();
+    return true;
+  }
+  virtual bool RunsTasksOnCurrentThread() const OVERRIDE { return true; }
+
+ protected:
+  virtual ~FakeTaskRunner() {}
+};
+
+}  // namespace
+
 class BlockingMethodCallerTest : public testing::Test {
  public:
-  BlockingMethodCallerTest() {
+  BlockingMethodCallerTest() : task_runner_(new FakeTaskRunner) {
   }
 
   virtual void SetUp() {
@@ -39,25 +58,24 @@ class BlockingMethodCallerTest : public testing::Test {
 
     // Set an expectation so mock_proxy's CallMethodAndBlock() will use
     // CreateMockProxyResponse() to return responses.
-    EXPECT_CALL(*mock_proxy_, CallMethodAndBlock(_, _))
-        .WillRepeatedly(Invoke(
-            this, &BlockingMethodCallerTest::CreateMockProxyResponse));
+    EXPECT_CALL(*mock_proxy_.get(), MockCallMethodAndBlock(_, _))
+        .WillRepeatedly(
+             Invoke(this, &BlockingMethodCallerTest::CreateMockProxyResponse));
 
     // Set an expectation so mock_bus's GetObjectProxy() for the given
     // service name and the object path will return mock_proxy_.
-    EXPECT_CALL(*mock_bus_, GetObjectProxy(
-        "org.chromium.TestService",
-        dbus::ObjectPath("/org/chromium/TestObject")))
+    EXPECT_CALL(*mock_bus_.get(),
+                GetObjectProxy("org.chromium.TestService",
+                               dbus::ObjectPath("/org/chromium/TestObject")))
         .WillOnce(Return(mock_proxy_.get()));
 
-    // Set an expectation so mock_bus's PostTaskToDBusThread() will run the
-    // given task.
-    EXPECT_CALL(*mock_bus_, PostTaskToDBusThread(_, _))
-        .WillRepeatedly(Invoke(
-            this, &BlockingMethodCallerTest::RunTask));
+    // Set an expectation so mock_bus's GetDBusTaskRunner will return the fake
+    // task runner.
+    EXPECT_CALL(*mock_bus_.get(), GetDBusTaskRunner())
+        .WillRepeatedly(Return(task_runner_));
 
     // ShutdownAndBlock() will be called in TearDown().
-    EXPECT_CALL(*mock_bus_, ShutdownAndBlock()).WillOnce(Return());
+    EXPECT_CALL(*mock_bus_.get(), ShutdownAndBlock()).WillOnce(Return());
   }
 
   virtual void TearDown() {
@@ -65,6 +83,7 @@ class BlockingMethodCallerTest : public testing::Test {
   }
 
  protected:
+  scoped_refptr<FakeTaskRunner> task_runner_;
   scoped_refptr<dbus::MockBus> mock_bus_;
   scoped_refptr<dbus::MockObjectProxy> mock_proxy_;
 
@@ -78,21 +97,15 @@ class BlockingMethodCallerTest : public testing::Test {
       dbus::MessageReader reader(method_call);
       std::string text_message;
       if (reader.PopString(&text_message)) {
-        dbus::Response* response = dbus::Response::CreateEmpty();
-        dbus::MessageWriter writer(response);
+        scoped_ptr<dbus::Response> response = dbus::Response::CreateEmpty();
+        dbus::MessageWriter writer(response.get());
         writer.AppendString(text_message);
-        return response;
+        return response.release();
       }
     }
 
     LOG(ERROR) << "Unexpected method call: " << method_call->ToString();
     return NULL;
-  }
-
-  // Runs the given task.
-  void RunTask(const tracked_objects::Location& from_here,
-               const base::Closure& task) {
-    task.Run();
   }
 };
 

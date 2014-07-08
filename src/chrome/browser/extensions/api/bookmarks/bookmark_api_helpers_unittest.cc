@@ -5,11 +5,12 @@
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_helpers.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/extensions/api/bookmarks/bookmark_api_constants.h"
 #include "chrome/common/extensions/api/bookmarks.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/test_bookmark_client.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace extensions {
@@ -22,19 +23,22 @@ namespace bookmark_api_helpers {
 class ExtensionBookmarksTest : public testing::Test {
  public:
   virtual void SetUp() OVERRIDE {
-    model_.reset(new BookmarkModel(NULL));
-    model_->AddURL(model_->other_node(), 0, ASCIIToUTF16("Digg"),
+    model_ = client_.CreateModel(false);
+    model_->AddURL(model_->other_node(), 0, base::ASCIIToUTF16("Digg"),
                      GURL("http://www.reddit.com"));
-    model_->AddURL(model_->other_node(), 0, ASCIIToUTF16("News"),
+    model_->AddURL(model_->other_node(), 0, base::ASCIIToUTF16("News"),
                      GURL("http://www.foxnews.com"));
     folder_ = model_->AddFolder(
-        model_->other_node(), 0, ASCIIToUTF16("outer folder"));
-    model_->AddFolder(folder_, 0, ASCIIToUTF16("inner folder 1"));
-    model_->AddFolder(folder_, 0, ASCIIToUTF16("inner folder 2"));
-    model_->AddURL(folder_, 0, ASCIIToUTF16("Digg"), GURL("http://reddit.com"));
-    model_->AddURL(folder_, 0, ASCIIToUTF16("CNet"), GURL("http://cnet.com"));
+        model_->other_node(), 0, base::ASCIIToUTF16("outer folder"));
+    model_->AddFolder(folder_, 0, base::ASCIIToUTF16("inner folder 1"));
+    model_->AddFolder(folder_, 0, base::ASCIIToUTF16("inner folder 2"));
+    model_->AddURL(
+        folder_, 0, base::ASCIIToUTF16("Digg"), GURL("http://reddit.com"));
+    model_->AddURL(
+        folder_, 0, base::ASCIIToUTF16("CNet"), GURL("http://cnet.com"));
   }
 
+  test::TestBookmarkClient client_;
   scoped_ptr<BookmarkModel> model_;
   const BookmarkNode* folder_;
 };

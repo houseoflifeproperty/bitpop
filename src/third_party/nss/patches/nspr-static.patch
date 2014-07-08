@@ -1,11 +1,11 @@
 Index: mozilla/nsprpub/pr/include/prtypes.h
 ===================================================================
 RCS file: /cvsroot/mozilla/nsprpub/pr/include/prtypes.h,v
-retrieving revision 3.45
-diff -p -u -8 -r3.45 prtypes.h
---- mozilla/nsprpub/pr/include/prtypes.h	26 Jul 2011 15:33:57 -0000	3.45
-+++ mozilla/nsprpub/pr/include/prtypes.h	30 Jul 2011 00:07:15 -0000
-@@ -75,17 +75,33 @@
+retrieving revision 3.52
+diff -p -u -8 -r3.52 prtypes.h
+--- mozilla/nsprpub/pr/include/prtypes.h	7 Dec 2012 21:13:41 -0000	3.52
++++ mozilla/nsprpub/pr/include/prtypes.h	29 Jan 2013 01:15:02 -0000
+@@ -43,17 +43,33 @@
  ** Example:
  **   in dowhim.h
  **     PR_EXTERN( void ) DoWhatIMean( void );
@@ -43,18 +43,15 @@ diff -p -u -8 -r3.45 prtypes.h
 Index: mozilla/nsprpub/pr/src/md/windows/w95dllmain.c
 ===================================================================
 RCS file: /cvsroot/mozilla/nsprpub/pr/src/md/windows/w95dllmain.c,v
-retrieving revision 3.8
-diff -p -u -8 -r3.8 w95dllmain.c
---- mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	25 Apr 2004 15:01:00 -0000	3.8
-+++ mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	30 Jul 2011 00:07:15 -0000
-@@ -30,16 +30,18 @@
-  * use your version of this file under the terms of the MPL, indicate your
-  * decision by deleting the provisions above and replace them with the notice
-  * and other provisions required by the GPL or the LGPL. If you do not delete
-  * the provisions above, a recipient may use your version of this file under
-  * the terms of any one of the MPL, the GPL or the LGPL.
-  *
-  * ***** END LICENSE BLOCK ***** */
+retrieving revision 3.9
+diff -p -u -8 -r3.9 w95dllmain.c
+--- mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	6 Mar 2012 13:14:17 -0000	3.9
++++ mozilla/nsprpub/pr/src/md/windows/w95dllmain.c	29 Jan 2013 01:15:02 -0000
+@@ -1,13 +1,15 @@
+ /* -*- Mode: C++; tab-width: 4; indent-tabs-mode: nil; c-basic-offset: 2 -*- */
+ /* This Source Code Form is subject to the terms of the Mozilla Public
+  * License, v. 2.0. If a copy of the MPL was not distributed with this
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
  
 +#ifndef NSPR_STATIC  /* See the end of w95thred.c. */
 +
@@ -66,7 +63,7 @@ diff -p -u -8 -r3.8 w95dllmain.c
   */
  
  #include <windows.h>
-@@ -64,8 +66,10 @@ PRThread *me;
+@@ -32,8 +34,10 @@ PRThread *me;
                      _PRI_DetachThread();
              }
              break;
@@ -80,11 +77,11 @@ diff -p -u -8 -r3.8 w95dllmain.c
 Index: mozilla/nsprpub/pr/src/md/windows/w95thred.c
 ===================================================================
 RCS file: /cvsroot/mozilla/nsprpub/pr/src/md/windows/w95thred.c,v
-retrieving revision 3.19
-diff -p -u -8 -r3.19 w95thred.c
---- mozilla/nsprpub/pr/src/md/windows/w95thred.c	11 Jun 2010 01:34:54 -0000	3.19
-+++ mozilla/nsprpub/pr/src/md/windows/w95thred.c	30 Jul 2011 00:07:15 -0000
-@@ -309,8 +309,125 @@ PRThread *thread;
+retrieving revision 3.22
+diff -p -u -8 -r3.22 w95thred.c
+--- mozilla/nsprpub/pr/src/md/windows/w95thred.c	13 Jun 2012 02:17:05 -0000	3.22
++++ mozilla/nsprpub/pr/src/md/windows/w95thred.c	29 Jan 2013 01:15:02 -0000
+@@ -313,8 +313,125 @@ PRThread *thread;
  
     	if (NULL == thread) {
  		thread = _PRI_AttachThread(

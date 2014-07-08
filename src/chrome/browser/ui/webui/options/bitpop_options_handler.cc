@@ -25,27 +25,25 @@
 #include "base/command_line.h"
 #include "base/memory/singleton.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/value_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/platform_util.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
 #include "chrome/browser/ui/webui/favicon_source.h"
 #include "chrome/browser/ui/webui/options/bitpop_proxy_domain_settings_handler.h"
 #include "chrome/browser/ui/webui/options/bitpop_uncensor_filter_handler.h"
-#include "chrome/browser/ui/webui/web_ui_util.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
@@ -54,16 +52,13 @@
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if !defined(OS_CHROMEOS)
-#include "chrome/browser/printing/cloud_print/cloud_print_setup_handler.h"
 #include "chrome/browser/ui/webui/options/advanced_options_utils.h"
 #endif
 
@@ -100,7 +95,7 @@ BitpopOptionsHandler::BitpopOptionsHandler() {
 BitpopOptionsHandler::~BitpopOptionsHandler() {
 }
 
-void BitpopOptionsHandler::GetLocalizedValues(DictionaryValue* values) {
+void BitpopOptionsHandler::GetLocalizedValues(base::DictionaryValue* values) {
   DCHECK(values);
 
   static OptionsStringResource resources[] = {
@@ -158,28 +153,7 @@ void BitpopOptionsHandler::InitializeHandler() {
 
 void BitpopOptionsHandler::InitializePage() {
     page_initialized_ = true;
-  // OnTemplateURLServiceChanged();
-  // ObserveThemeChanged();
-  // OnStateChanged();
-  // UpdateDefaultBrowserState();
-
-  // SetupMetricsReportingCheckbox();
-  // SetupMetricsReportingSettingVisibility();
-  // SetupPasswordGenerationSettingVisibility();
-  // SetupFontSizeSelector();
-  // SetupPageZoomSelector();
-  // SetupAutoOpenFileTypes();
-  // SetupProxySettingsSection();
-  // SetupSSLConfigSettings();
 }
-
-/*
-void BitpopOptionsHandler::Observe(
-    int type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-}
-*/
 
 void BitpopOptionsHandler::OpenFacebookNotificationsOptions(const base::ListValue* param) {
   // Open a new tab in the current window for the notifications page.

@@ -7,7 +7,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/observer_list.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/worker_pool.h"
@@ -105,10 +105,9 @@ class PollingProxyConfigService::Core
     func(&config);
 
     base::AutoLock l(lock_);
-    if (origin_loop_proxy_) {
+    if (origin_loop_proxy_.get()) {
       origin_loop_proxy_->PostTask(
-          FROM_HERE,
-          base::Bind(&Core::GetConfigCompleted, this, config));
+          FROM_HERE, base::Bind(&Core::GetConfigCompleted, this, config));
     }
   }
 
@@ -117,7 +116,7 @@ class PollingProxyConfigService::Core
     DCHECK(poll_task_outstanding_);
     poll_task_outstanding_ = false;
 
-    if (!origin_loop_proxy_)
+    if (!origin_loop_proxy_.get())
       return;  // Was orphaned (parent has already been destroyed).
 
     DCHECK(origin_loop_proxy_->BelongsToCurrentThread());

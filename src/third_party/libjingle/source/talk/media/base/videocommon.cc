@@ -25,6 +25,7 @@
 
 #include "talk/media/base/videocommon.h"
 
+#include <limits.h>  // For INT_MAX
 #include <math.h>
 #include <sstream>
 
@@ -45,11 +46,13 @@ static const FourCCAliasEntry kFourCCAliases[] = {
   {FOURCC_YUVS, FOURCC_YUY2},
   {FOURCC_HDYC, FOURCC_UYVY},
   {FOURCC_2VUY, FOURCC_UYVY},
-  {FOURCC_BA81, FOURCC_BGGR},
   {FOURCC_JPEG, FOURCC_MJPG},  // Note: JPEG has DHT while MJPG does not.
   {FOURCC_DMB1, FOURCC_MJPG},
+  {FOURCC_BA81, FOURCC_BGGR},
   {FOURCC_RGB3, FOURCC_RAW},
   {FOURCC_BGR3, FOURCC_24BG},
+  {FOURCC_CM32, FOURCC_BGRA},
+  {FOURCC_CM24, FOURCC_RAW},
 };
 
 uint32 CanonicalFourCC(uint32 fourcc) {
@@ -62,61 +65,112 @@ uint32 CanonicalFourCC(uint32 fourcc) {
   return fourcc;
 }
 
-// TODO(fbarchard): Remove kMaxPixels when encoder has no limit.
-// TODO(fbarchard): Consider clamping dimensions to max independently,
-//     adjusting pixel width and pixel height.
-// Limit as of 7/16/12 is 21000 macroblocks (16 x 16 each). b/6726828
-// Compute a size to scale frames to that is below maximum compression
-// and rendering size.
-void ComputeScale(int frame_width, int frame_height,
-                  int* scaled_width, int* scaled_height) {
+static float kScaleFactors[] = {
+  1.f / 1.f,  // Full size.
+  1.f / 2.f,  // 1/2 scale.
+  1.f / 4.f,  // 1/4 scale.
+  1.f / 8.f,  // 1/8 scale.
+  1.f / 16.f  // 1/16 scale.
+};
+
+static const int kNumScaleFactors = ARRAY_SIZE(kScaleFactors);
+
+// Finds the scale factor that, when applied to width and height, produces
+// fewer than num_pixels.
+static float FindLowerScale(int width, int height, int target_num_pixels) {
+  if (!target_num_pixels) {
+    return 0.f;
+  }
+  int best_distance = INT_MAX;
+  int best_index = kNumScaleFactors - 1;  // Default to max scale.
+  for (int i = 0; i < kNumScaleFactors; ++i) {
+    int test_num_pixels = static_cast<int>(width * kScaleFactors[i] *
+                                           height * kScaleFactors[i]);
+    int diff = target_num_pixels - test_num_pixels;
+    if (diff >= 0 && diff < best_distance) {
+      best_distance = diff;
+      best_index = i;
+      if (best_distance == 0) {  // Found exact match.
+        break;
+      }
+    }
+  }
+  return kScaleFactors[best_index];
+}
+
+// Computes a scale less to fit in max_pixels while maintaining aspect ratio.
+void ComputeScaleMaxPixels(int frame_width, int frame_height, int max_pixels,
+    int* scaled_width, int* scaled_height) {
   ASSERT(scaled_width != NULL);
   ASSERT(scaled_height != NULL);
-  // VP8 is the most limited in the max height and width supported. While lmi is
-  // the most limited in the number of pixels that can be encoded.
+  ASSERT(max_pixels > 0);
   // For VP8 the values for max width and height can be found here
   // webrtc/src/video_engine/vie_defines.h (kViEMaxCodecWidth and
   // kViEMaxCodecHeight)
-  const int kMaxWidth = 4048;
-  const int kMaxHeight = 3040;
-  const int kMaxPixels = 2880 * 1800;
+  const int kMaxWidth = 4096;
+  const int kMaxHeight = 3072;
   int new_frame_width = frame_width;
   int new_frame_height = frame_height;
 
   // Limit width.
   if (new_frame_width > kMaxWidth) {
-    new_frame_height = new_frame_height * kMaxWidth / new_frame_width & ~1;
+    new_frame_height = new_frame_height * kMaxWidth / new_frame_width;
     new_frame_width = kMaxWidth;
   }
   // Limit height.
   if (new_frame_height > kMaxHeight) {
-    new_frame_width = new_frame_width * kMaxHeight / new_frame_height & ~3;
+    new_frame_width = new_frame_width * kMaxHeight / new_frame_height;
     new_frame_height = kMaxHeight;
   }
   // Limit number of pixels.
-  if (new_frame_width * new_frame_height > kMaxPixels) {
+  if (new_frame_width * new_frame_height > max_pixels) {
     // Compute new width such that width * height is less than maximum but
     // maintains original captured frame aspect ratio.
-    // Round down width to multiple of 4 so odd width won't round up beyond
-    // maximum, and so chroma channel is even width to simplify spatial
-    // resampling.
     new_frame_width = static_cast<int>(sqrtf(static_cast<float>(
-        kMaxPixels) * new_frame_width / new_frame_height)) & ~3;
-    new_frame_height = kMaxPixels / new_frame_width & ~1;
+        max_pixels) * new_frame_width / new_frame_height));
+    new_frame_height = max_pixels / new_frame_width;
   }
-  *scaled_width = new_frame_width;
-  *scaled_height = new_frame_height;
+  // Snap to a scale factor that is less than or equal to target pixels.
+  float scale = FindLowerScale(frame_width, frame_height,
+                               new_frame_width * new_frame_height);
+  *scaled_width = static_cast<int>(frame_width * scale + .5f);
+  *scaled_height = static_cast<int>(frame_height * scale + .5f);
 }
 
-void ComputeCrop(int cropped_format_width,
-                 int cropped_format_height,
+// Compute a size to scale frames to that is below maximum compression
+// and rendering size with the same aspect ratio.
+void ComputeScale(int frame_width, int frame_height, int fps,
+                  int* scaled_width, int* scaled_height) {
+  // Maximum pixels limit is set to Retina MacBookPro 15" resolution of
+  // 2880 x 1800 as of 4/18/2013.
+  // For high fps, maximum pixels limit is set based on common 24" monitor
+  // resolution of 2048 x 1280 as of 6/13/2013. The Retina resolution is
+  // therefore reduced to 1440 x 900.
+  int max_pixels = (fps > 5) ? 2048 * 1280 : 2880 * 1800;
+  ComputeScaleMaxPixels(
+      frame_width, frame_height, max_pixels, scaled_width, scaled_height);
+}
+
+// Compute size to crop video frame to.
+// If cropped_format_* is 0, return the frame_* size as is.
+void ComputeCrop(int cropped_format_width, int cropped_format_height,
                  int frame_width, int frame_height,
                  int pixel_width, int pixel_height,
                  int rotation,
                  int* cropped_width, int* cropped_height) {
+  // Transform screen crop to camera space if rotated.
+  if (rotation == 90 || rotation == 270) {
+    std::swap(cropped_format_width, cropped_format_height);
+  }
+  ASSERT(cropped_format_width >= 0);
+  ASSERT(cropped_format_height >= 0);
+  ASSERT(frame_width > 0);
+  ASSERT(frame_height > 0);
+  ASSERT(pixel_width >= 0);
+  ASSERT(pixel_height >= 0);
+  ASSERT(rotation == 0 || rotation == 90 || rotation == 180 || rotation == 270);
   ASSERT(cropped_width != NULL);
   ASSERT(cropped_height != NULL);
-  ASSERT(rotation == 0 || rotation == 90 || rotation == 180 || rotation == 270);
   if (!pixel_width) {
     pixel_width = 1;
   }
@@ -131,39 +185,34 @@ void ComputeCrop(int cropped_format_width,
       static_cast<float>(frame_height * pixel_height);
   float crop_aspect = static_cast<float>(cropped_format_width) /
       static_cast<float>(cropped_format_height);
-  int new_frame_width = frame_width;
-  int new_frame_height = frame_height;
-  if (rotation == 90 || rotation == 270) {
-    frame_aspect = 1.0f / frame_aspect;
-    new_frame_width = frame_height;
-    new_frame_height = frame_width;
-  }
-
   // kAspectThresh is the maximum aspect ratio difference that we'll accept
-  // for cropping.  The value 1.33 is based on 4:3 being cropped to 16:9.
+  // for cropping.  The value 1.34 allows cropping from 4:3 to 16:9.
   // Set to zero to disable cropping entirely.
   // TODO(fbarchard): crop to multiple of 16 width for better performance.
-  const float kAspectThresh = 16.f / 9.f / (4.f / 3.f) + 0.01f;  // 1.33
+  const float kAspectThresh = 1.34f;
   // Wide aspect - crop horizontally
   if (frame_aspect > crop_aspect &&
       frame_aspect < crop_aspect * kAspectThresh) {
     // Round width down to multiple of 4 to avoid odd chroma width.
     // Width a multiple of 4 allows a half size image to have chroma channel
-    // that avoids rounding errors.  lmi and webrtc have odd width limitations.
-    new_frame_width = static_cast<int>((crop_aspect * frame_height *
+    // that avoids rounding errors.
+    frame_width = static_cast<int>((crop_aspect * frame_height *
         pixel_height) / pixel_width + 0.5f) & ~3;
-  } else if (crop_aspect > frame_aspect &&
-             crop_aspect < frame_aspect * kAspectThresh) {
-    new_frame_height = static_cast<int>((frame_width * pixel_width) /
+  } else if (frame_aspect < crop_aspect &&
+             frame_aspect > crop_aspect / kAspectThresh) {
+    frame_height = static_cast<int>((frame_width * pixel_width) /
         (crop_aspect * pixel_height) + 0.5f) & ~1;
   }
+  *cropped_width = frame_width;
+  *cropped_height = frame_height;
+}
 
-  *cropped_width = new_frame_width;
-  *cropped_height = new_frame_height;
-  if (rotation == 90 || rotation == 270) {
-    *cropped_width = new_frame_height;
-    *cropped_height = new_frame_width;
-  }
+// Compute the frame size that makes pixels square pixel aspect ratio.
+void ComputeScaleToSquarePixels(int in_width, int in_height,
+                                int pixel_width, int pixel_height,
+                                int* scaled_width, int* scaled_height) {
+  *scaled_width = in_width;  // Keep width the same.
+  *scaled_height = in_height * pixel_height / pixel_width;
 }
 
 // The C++ standard requires a namespace-scope definition of static const
@@ -187,7 +236,8 @@ std::string VideoFormat::ToString() const {
   }
 
   std::ostringstream ss;
-  ss << fourcc_name << width << "x" << height << "x" << IntervalToFps(interval);
+  ss << fourcc_name << width << "x" << height << "x"
+     << IntervalToFpsFloat(interval);
   return ss.str();
 }
 

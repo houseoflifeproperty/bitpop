@@ -7,14 +7,16 @@
 
 #include <set>
 
-#include "base/message_loop.h"
 #include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/test/base/testing_profile_manager.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-class FilePath;
 class ProfileInfoCache;
+
+namespace base {
+class FilePath;
+}
 
 // Class used to test that ProfileInfoCache does not try to access any
 // unexpected profile names.
@@ -25,20 +27,20 @@ class ProfileNameVerifierObserver : public ProfileInfoCacheObserver {
   virtual ~ProfileNameVerifierObserver();
 
   // ProfileInfoCacheObserver overrides:
-  virtual void OnProfileAdded(const FilePath& profile_path) OVERRIDE;
+  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
   virtual void OnProfileWillBeRemoved(
-      const FilePath& profile_path) OVERRIDE;
+      const base::FilePath& profile_path) OVERRIDE;
   virtual void OnProfileWasRemoved(
-      const FilePath& profile_path,
-      const string16& profile_name) OVERRIDE;
+      const base::FilePath& profile_path,
+      const base::string16& profile_name) OVERRIDE;
   virtual void OnProfileNameChanged(
-      const FilePath& profile_path,
-      const string16& old_profile_name) OVERRIDE;
-  virtual void OnProfileAvatarChanged(const FilePath& profile_path) OVERRIDE;
+      const base::FilePath& profile_path,
+      const base::string16& old_profile_name) OVERRIDE;
+  virtual void OnProfileAvatarChanged(const base::FilePath& profile_path) OVERRIDE;
 
  private:
   ProfileInfoCache* GetCache();
-  std::set<string16> profile_names_;
+  std::set<base::string16> profile_names_;
   TestingProfileManager* testing_profile_manager_;
   DISALLOW_COPY_AND_ASSIGN(ProfileNameVerifierObserver);
 };
@@ -52,16 +54,14 @@ class ProfileInfoCacheTest : public testing::Test {
   virtual void TearDown() OVERRIDE;
 
   ProfileInfoCache* GetCache();
-  FilePath GetProfilePath(const std::string& base_name);
+  base::FilePath GetProfilePath(const std::string& base_name);
   void ResetCache();
 
  protected:
   TestingProfileManager testing_profile_manager_;
 
  private:
-  MessageLoopForUI ui_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   ProfileNameVerifierObserver name_observer_;
 };
 

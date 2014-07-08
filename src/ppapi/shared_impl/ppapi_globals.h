@@ -17,8 +17,8 @@
 #include "ppapi/shared_impl/ppapi_shared_export.h"
 
 namespace base {
-class Lock;
 class MessageLoopProxy;
+class TaskRunner;
 }
 
 namespace ppapi {
@@ -43,19 +43,13 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   // purposes. This avoids setting the global static ppapi_globals_. For unit
   // tests that use this feature, the "test" PpapiGlobals should be constructed
   // using this method. See SetPpapiGlobalsOnThreadForTest for more information.
-  struct ForTest {};
-  explicit PpapiGlobals(ForTest);
+  struct PerThreadForTest {};
+  explicit PpapiGlobals(PerThreadForTest);
 
   virtual ~PpapiGlobals();
 
   // Getter for the global singleton.
-  inline static PpapiGlobals* Get() {
-    if (ppapi_globals_)
-      return ppapi_globals_;
-    // In unit tests, the following might be valid (see
-    // SetPpapiGlobalsOnThreadForTest). Normally, this will just return NULL.
-    return GetThreadLocalPointer();
-  }
+  static PpapiGlobals* Get();
 
   // This allows us to set a given PpapiGlobals object as the PpapiGlobals for
   // a given thread. After setting the PpapiGlobals for a thread, Get() will
@@ -64,7 +58,7 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   // the same process, e.g. for having 1 thread emulate the "host" and 1 thread
   // emulate the "plugin".
   //
-  // PpapiGlobals object must have been constructed using the "ForTest"
+  // PpapiGlobals object must have been constructed using the "PerThreadForTest"
   // parameter.
   static void SetPpapiGlobalsOnThreadForTest(PpapiGlobals* ptr);
 
@@ -73,8 +67,6 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   virtual VarTracker* GetVarTracker() = 0;
   virtual CallbackTracker* GetCallbackTrackerForInstance(
       PP_Instance instance) = 0;
-
-  virtual base::Lock* GetProxyLock() = 0;
 
   // Logs the given string to the JS console. If "source" is empty, the name of
   // the current module will be used, if it can be determined.
@@ -110,10 +102,20 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   // constructor, so PpapiGlobals must be created on the main thread.
   base::MessageLoopProxy* GetMainThreadMessageLoop();
 
+  // In tests, the PpapiGlobals object persists across tests but the MLP pointer
+  // it hangs on will go stale and the next PPAPI test will crash because of
+  // thread checks. This resets the pointer to be the current MLP object.
+  void ResetMainThreadMessageLoopForTesting();
+
   // Return the MessageLoopShared of the current thread, if any. This will
   // always return NULL on the host side, where PPB_MessageLoop is not
   // supported.
   virtual MessageLoopShared* GetCurrentMessageLoop() = 0;
+
+  // Returns a task runner for file operations that may block.
+  // TODO(bbudge) Move this to PluginGlobals when we no longer support
+  // in-process plugins.
+  virtual base::TaskRunner* GetFileTaskRunner() = 0;
 
   // Returns the command line for the process.
   virtual std::string GetCmdLine() = 0;
@@ -126,13 +128,17 @@ class PPAPI_SHARED_EXPORT PpapiGlobals {
   virtual bool IsHostGlobals() const;
   virtual bool IsPluginGlobals() const;
 
+  // Records that the plugin is active. The plugin reports that it is active to
+  // containers that monitor and shutdown idle content such as background apps.
+  // This method only has an effect on the plugin process, calls from the
+  // renderer process will have no effect.
+  virtual void MarkPluginIsActive();
+
  private:
   // Return the thread-local pointer which is used only for unit testing. It
   // should always be NULL when running in production. It allows separate
   // threads to have distinct "globals".
   static PpapiGlobals* GetThreadLocalPointer();
-
-  static PpapiGlobals* ppapi_globals_;
 
   scoped_refptr<base::MessageLoopProxy> main_loop_proxy_;
 

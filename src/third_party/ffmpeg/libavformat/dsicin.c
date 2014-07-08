@@ -24,6 +24,7 @@
  * Delphine Software International CIN file demuxer
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
@@ -132,6 +133,7 @@ static int cin_read_header(AVFormatContext *s)
     st->codec->codec_id = AV_CODEC_ID_DSICINAUDIO;
     st->codec->codec_tag = 0;  /* no tag */
     st->codec->channels = 1;
+    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->sample_rate = 22050;
     st->codec->bits_per_coded_sample = 8;
     st->codec->bit_rate = st->codec->sample_rate * st->codec->bits_per_coded_sample * st->codec->channels;
@@ -152,6 +154,8 @@ static int cin_read_frame_header(CinDemuxContext *cin, AVIOContext *pb) {
         return AVERROR(EIO);
 
     if (avio_rl32(pb) != 0xAA55AA55)
+        return AVERROR_INVALIDDATA;
+    if (hdr->video_frame_size < 0 || hdr->audio_frame_size < 0)
         return AVERROR_INVALIDDATA;
 
     return 0;

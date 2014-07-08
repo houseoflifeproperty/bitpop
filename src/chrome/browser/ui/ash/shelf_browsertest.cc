@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
 #include "ash/shell.h"
-#include "ash/wm/shelf_layout_manager.h"
 #include "ash/wm/workspace_controller.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/status_bubble.h"
@@ -16,9 +16,9 @@ typedef InProcessBrowserTest ShelfBrowserTest;
 
 // Confirm that a status bubble doesn't cause the shelf to darken.
 IN_PROC_BROWSER_TEST_F(ShelfBrowserTest, StatusBubble) {
-  ash::internal::ShelfLayoutManager* shelf =
-      ash::internal::RootWindowController::ForLauncher(
-          browser()->window()->GetNativeWindow())->shelf();
+  ash::ShelfLayoutManager* shelf =
+      ash::RootWindowController::ForShelf(
+          browser()->window()->GetNativeWindow())->GetShelfLayoutManager();
   EXPECT_TRUE(shelf->IsVisible());
 
   // Ensure that the browser abuts the shelf.
@@ -33,7 +33,7 @@ IN_PROC_BROWSER_TEST_F(ShelfBrowserTest, StatusBubble) {
 
   // Show status, which will overlap the shelf by a pixel.
   browser()->window()->GetStatusBubble()->SetStatus(
-      UTF8ToUTF16("Dummy Status Text"));
+      base::UTF8ToUTF16("Dummy Status Text"));
   shelf->UpdateVisibilityState();
 
   // Ensure that status doesn't cause overlap.

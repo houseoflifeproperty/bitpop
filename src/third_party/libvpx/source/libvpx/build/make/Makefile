@@ -22,6 +22,7 @@ clean:: .DEFAULT
 install:: .DEFAULT
 test:: .DEFAULT
 testdata:: .DEFAULT
+utiltest: .DEFAULT
 
 
 # Note: md5sum is not installed on OS X, but openssl is. Openssl may not be
@@ -52,8 +53,6 @@ dist:
                 | sed -e 's/MD5(\(.*\))= \([0-9a-f]\{32\}\)/\2  \1/' \
                 > md5sums.txt;\
         fi
-
-
 endif
 
 ifneq ($(target),)
@@ -74,7 +73,7 @@ HOSTCC?=gcc
 TGT_ISA:=$(word 1, $(subst -, ,$(TOOLCHAIN)))
 TGT_OS:=$(word 2, $(subst -, ,$(TOOLCHAIN)))
 TGT_CC:=$(word 3, $(subst -, ,$(TOOLCHAIN)))
-quiet:=$(if $(verbose),,yes)
+quiet:=$(if $(or $(verbose), $(V)),, yes)
 qexec=$(if $(quiet),@)
 
 # Cancel built-in implicit rules
@@ -94,6 +93,16 @@ clean::
 	rm -f $(OBJS-yes) $(OBJS-yes:.o=.d) $(OBJS-yes:.asm.s.o=.asm.s)
 	rm -f $(CLEAN-OBJS)
 
+.PHONY: clean
+distclean: clean
+	if [ -z "$(target)" ]; then \
+      rm -f Makefile; \
+      rm -f config.log config.mk; \
+      rm -f vpx_config.[hc] vpx_config.asm; \
+    else \
+      rm -f $(target)-$(TOOLCHAIN).mk; \
+    fi
+
 .PHONY: dist
 dist:
 .PHONY: install
@@ -102,6 +111,24 @@ install::
 test::
 .PHONY: testdata
 testdata::
+.PHONY: utiltest
+utiltest:
+
+# Add compiler flags for intrinsic files
+$(BUILD_PFX)%_mmx.c.d: CFLAGS += -mmmx
+$(BUILD_PFX)%_mmx.c.o: CFLAGS += -mmmx
+$(BUILD_PFX)%_sse2.c.d: CFLAGS += -msse2
+$(BUILD_PFX)%_sse2.c.o: CFLAGS += -msse2
+$(BUILD_PFX)%_sse3.c.d: CFLAGS += -msse3
+$(BUILD_PFX)%_sse3.c.o: CFLAGS += -msse3
+$(BUILD_PFX)%_ssse3.c.d: CFLAGS += -mssse3
+$(BUILD_PFX)%_ssse3.c.o: CFLAGS += -mssse3
+$(BUILD_PFX)%_sse4.c.d: CFLAGS += -msse4.1
+$(BUILD_PFX)%_sse4.c.o: CFLAGS += -msse4.1
+$(BUILD_PFX)%_avx.c.d: CFLAGS += -mavx
+$(BUILD_PFX)%_avx.c.o: CFLAGS += -mavx
+$(BUILD_PFX)%_avx2.c.d: CFLAGS += -mavx2
+$(BUILD_PFX)%_avx2.c.o: CFLAGS += -mavx2
 
 $(BUILD_PFX)%.c.d: %.c
 	$(if $(quiet),@echo "    [DEP] $@")
@@ -118,6 +145,15 @@ $(BUILD_PFX)%.cc.d: %.cc
 	$(qexec)$(CXX) $(INTERNAL_CFLAGS) $(CXXFLAGS) -M $< | $(fmt_deps) > $@
 
 $(BUILD_PFX)%.cc.o: %.cc
+	$(if $(quiet),@echo "    [CXX] $@")
+	$(qexec)$(CXX) $(INTERNAL_CFLAGS) $(CXXFLAGS) -c -o $@ $<
+
+$(BUILD_PFX)%.cpp.d: %.cpp
+	$(if $(quiet),@echo "    [DEP] $@")
+	$(qexec)mkdir -p $(dir $@)
+	$(qexec)$(CXX) $(INTERNAL_CFLAGS) $(CXXFLAGS) -M $< | $(fmt_deps) > $@
+
+$(BUILD_PFX)%.cpp.o: %.cpp
 	$(if $(quiet),@echo "    [CXX] $@")
 	$(qexec)$(CXX) $(INTERNAL_CFLAGS) $(CXXFLAGS) -c -o $@ $<
 
@@ -192,7 +228,7 @@ cond_enabled=$(if $(filter yes,$($(1))), $(call enabled,$(2)))
 
 find_file1=$(word 1,$(wildcard $(subst //,/,$(addsuffix /$(1),$(2)))))
 find_file=$(foreach f,$(1),$(call find_file1,$(strip $(f)),$(strip $(2))) )
-obj_pats=.c=.c.o $(AS_SFX)=$(AS_SFX).o .cc=.cc.o
+obj_pats=.c=.c.o $(AS_SFX)=$(AS_SFX).o .cc=.cc.o .cpp=.cpp.o
 objs=$(addprefix $(BUILD_PFX),$(foreach p,$(obj_pats),$(filter %.o,$(1:$(p))) ))
 
 install_map_templates=$(eval $(call install_map_template,$(1),$(2)))
@@ -291,7 +327,7 @@ endef
 ifneq ($(target),)
 include $(SRC_PATH_BARE)/$(target:-$(TOOLCHAIN)=).mk
 endif
-ifeq ($(filter clean,$(MAKECMDGOALS)),)
+ifeq ($(filter %clean,$(MAKECMDGOALS)),)
   # Older versions of make don't like -include directives with no arguments
   ifneq ($(filter %.d,$(OBJS-yes:.o=.d)),)
     -include $(filter %.d,$(OBJS-yes:.o=.d))
@@ -374,12 +410,17 @@ ifneq ($(call enabled,DIST-SRCS),)
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_def.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_proj.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_sln.sh
-    DIST-SRCS-$(CONFIG_MSVS)  += build/x86-msvs/yasm.rules
+    DIST-SRCS-$(CONFIG_MSVS)  += build/make/gen_msvs_vcxproj.sh
+    DIST-SRCS-$(CONFIG_MSVS)  += build/make/msvs_common.sh
     DIST-SRCS-$(CONFIG_MSVS)  += build/x86-msvs/obj_int_extract.bat
+    DIST-SRCS-$(CONFIG_MSVS)  += build/arm-msvs/obj_int_extract.bat
     DIST-SRCS-$(CONFIG_RVCT) += build/make/armlink_adapter.sh
-    # Include obj_int_extract if we use offsets from asm_*_offsets
+    # Include obj_int_extract if we use offsets from *_asm_*_offsets
     DIST-SRCS-$(ARCH_ARM)$(ARCH_X86)$(ARCH_X86_64)    += build/make/obj_int_extract.c
     DIST-SRCS-$(ARCH_ARM)    += build/make/ads2gas.pl
+    DIST-SRCS-$(ARCH_ARM)    += build/make/ads2gas_apple.pl
+    DIST-SRCS-$(ARCH_ARM)    += build/make/ads2armasm_ms.pl
+    DIST-SRCS-$(ARCH_ARM)    += build/make/thumb.pm
     DIST-SRCS-yes            += $(target:-$(TOOLCHAIN)=).mk
 endif
 INSTALL-SRCS := $(call cond_enabled,CONFIG_INSTALL_SRCS,INSTALL-SRCS)

@@ -445,7 +445,7 @@ bool GetDefaultFirefoxProfile(Pathname* profile_path) {
   // Note: we are looking for the first entry with "Default=1", or the last
   // entry in the file
   path.SetFilename("profiles.ini");
-  FileStream* fs = Filesystem::OpenFile(path, "r");
+  scoped_ptr<FileStream> fs(Filesystem::OpenFile(path, "r"));
   if (!fs) {
     return false;
   }
@@ -510,7 +510,7 @@ bool GetDefaultFirefoxProfile(Pathname* profile_path) {
 bool ReadFirefoxPrefs(const Pathname& filename,
                       const char * prefix,
                       StringMap* settings) {
-  FileStream* fs = Filesystem::OpenFile(filename, "r");
+  scoped_ptr<FileStream> fs(Filesystem::OpenFile(filename, "r"));
   if (!fs) {
     LOG(LS_ERROR) << "Failed to open file: " << filename.pathname();
     return false;
@@ -1219,42 +1219,42 @@ bool GetSystemDefaultProxySettings(const char* agent, const char* url,
 }
 
 bool GetProxySettingsForUrl(const char* agent, const char* url,
-                            ProxyInfo& proxy, bool long_operation) {
+                            ProxyInfo* proxy, bool long_operation) {
   UserAgent a = GetAgent(agent);
   bool result;
   switch (a) {
     case UA_FIREFOX: {
-      result = GetFirefoxProxySettings(url, &proxy);
+      result = GetFirefoxProxySettings(url, proxy);
       break;
     }
 #ifdef WIN32
     case UA_INTERNETEXPLORER:
-      result = GetIeProxySettings(agent, url, &proxy);
+      result = GetIeProxySettings(agent, url, proxy);
       break;
     case UA_UNKNOWN:
       // Agent not defined, check default browser.
       if (IsDefaultBrowserFirefox()) {
-        result = GetFirefoxProxySettings(url, &proxy);
+        result = GetFirefoxProxySettings(url, proxy);
       } else {
-        result = GetIeProxySettings(agent, url, &proxy);
+        result = GetIeProxySettings(agent, url, proxy);
       }
       break;
 #endif  // WIN32
     default:
-      result = GetSystemDefaultProxySettings(agent, url, &proxy);
+      result = GetSystemDefaultProxySettings(agent, url, proxy);
       break;
   }
 
   // TODO: Consider using the 'long_operation' parameter to
   // decide whether to do the auto detection.
-  if (result && (proxy.autodetect ||
-                 !proxy.autoconfig_url.empty())) {
+  if (result && (proxy->autodetect ||
+                 !proxy->autoconfig_url.empty())) {
     // Use WinHTTP to auto detect proxy for us.
-    result = AutoDetectProxySettings(agent, url, &proxy);
+    result = AutoDetectProxySettings(agent, url, proxy);
     if (!result) {
       // Either auto detection is not supported or we simply didn't
       // find any proxy, reset type.
-      proxy.type = talk_base::PROXY_NONE;
+      proxy->type = talk_base::PROXY_NONE;
     }
   }
   return result;

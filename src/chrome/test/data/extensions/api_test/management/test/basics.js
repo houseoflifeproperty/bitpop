@@ -45,12 +45,14 @@ function checkHostPermission(item, perm) {
 var tests = [
   function simple() {
     chrome.management.getAll(callback(function(items) {
-      chrome.test.assertEq(10, items.length);
+      chrome.test.assertEq(11, items.length);
 
       checkItemInList(items, "Extension Management API Test", true,
                       "extension");
       checkItemInList(items, "description", true, "extension",
           { "description": "a short description" });
+      checkItemInList(items, "short_name", true, "extension",
+          { "shortName": "a short name" });
       checkItemInList(items, "enabled_app", true, "hosted_app",
           { "appLaunchUrl": "http://www.google.com/",
             "offlineEnabled": true,
@@ -105,15 +107,14 @@ var tests = [
 
     chrome.management.getPermissionWarningsByManifest(
         manifest_str, callback(function(warnings) {
-      chrome.test.assertEq(5, warnings.length);
+      // Warning for "tabs" is suppressed by "history" permission.
+      chrome.test.assertEq(4, warnings.length);
       chrome.test.assertEq(
         "Access your data on *.flickr.com and api.flickr.com", warnings[0]);
       chrome.test.assertEq("Read and modify your bookmarks", warnings[1]);
       chrome.test.assertEq("Detect your physical location", warnings[2]);
       chrome.test.assertEq("Read and modify your browsing history",
                            warnings[3]);
-      chrome.test.assertEq("Access your tabs and browsing activity",
-                           warnings[4]);
     }));
 
     chrome.management.getAll(callback(function(items) {
@@ -124,6 +125,17 @@ var tests = [
         chrome.test.assertEq("Manage your apps, extensions, and themes",
                              warnings[0]);
       }));
+    }));
+  },
+
+  function permissionWarningsLocationApi() {
+    var manifest_str = "{ \"name\": \"Location!\", \"version\": \"1.0\", " +
+                       "\"permissions\": [\"location\"] }";
+
+    chrome.management.getPermissionWarningsByManifest(
+        manifest_str, callback(function(warnings) {
+      chrome.test.assertEq(1, warnings.length);
+      chrome.test.assertEq("Detect your physical location", warnings[0]);
     }));
   },
 

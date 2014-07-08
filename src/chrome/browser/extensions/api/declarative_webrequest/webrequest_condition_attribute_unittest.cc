@@ -5,15 +5,15 @@
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition_attribute.h"
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
-#include "base/memory/scoped_vector.h"
-#include "base/message_loop.h"
+#include "base/files/file_path.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
+#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_condition.h"
 #include "chrome/browser/extensions/api/declarative_webrequest/webrequest_constants.h"
-#include "chrome/browser/extensions/api/declarative_webrequest/webrequest_rule.h"
 #include "content/public/browser/resource_request_info.h"
+#include "net/base/request_priority.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
 #include "net/url_request/url_request_test_util.h"
-#include "net/test/test_server.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::DictionaryValue;
@@ -22,23 +22,28 @@ using base::ListValue;
 using base::StringValue;
 using base::Value;
 
-namespace {
-const char kUnknownConditionName[] = "unknownType";
-}  // namespace
-
 namespace extensions {
 
 namespace keys = declarative_webrequest_constants;
 
+namespace {
+const char kUnknownConditionName[] = "unknownType";
+
+base::FilePath TestDataPath(base::StringPiece relative_to_src) {
+  base::FilePath src_dir;
+  CHECK(PathService::Get(base::DIR_SOURCE_ROOT, &src_dir));
+  return src_dir.AppendASCII(relative_to_src);
+}
+
 TEST(WebRequestConditionAttributeTest, CreateConditionAttribute) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   std::string error;
-  scoped_ptr<WebRequestConditionAttribute> result;
-  StringValue string_value("main_frame");
-  ListValue resource_types;
-  resource_types.Append(Value::CreateStringValue("main_frame"));
+  scoped_refptr<const WebRequestConditionAttribute> result;
+  base::StringValue string_value("main_frame");
+  base::ListValue resource_types;
+  resource_types.Append(new base::StringValue("main_frame"));
 
   // Test wrong condition name passed.
   error.clear();
@@ -68,154 +73,166 @@ TEST(WebRequestConditionAttributeTest, CreateConditionAttribute) {
   ASSERT_TRUE(result.get());
   EXPECT_EQ(WebRequestConditionAttribute::CONDITION_RESOURCE_TYPE,
             result->GetType());
+  EXPECT_EQ(std::string(keys::kResourceTypeKey), result->GetName());
 }
 
 TEST(WebRequestConditionAttributeTest, ResourceType) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   std::string error;
-  ListValue resource_types;
-  resource_types.Append(Value::CreateStringValue("main_frame"));
+  base::ListValue resource_types;
+  // The 'sub_frame' value is chosen arbitrarily, so as the corresponding
+  // ResourceType::Type is not 0, the default value.
+  resource_types.Append(new base::StringValue("sub_frame"));
 
-  scoped_ptr<WebRequestConditionAttribute> attribute =
+  scoped_refptr<const WebRequestConditionAttribute> attribute =
       WebRequestConditionAttribute::Create(
           keys::kResourceTypeKey, &resource_types, &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute.get());
+  EXPECT_EQ(std::string(keys::kResourceTypeKey), attribute->GetName());
 
   net::TestURLRequestContext context;
   net::TestURLRequest url_request_ok(
-      GURL("http://www.example.com"), NULL, &context);
-  content::ResourceRequestInfo::AllocateForTesting(&url_request_ok,
-      ResourceType::MAIN_FRAME, NULL, -1, -1);
-  EXPECT_TRUE(attribute->IsFulfilled(
-      WebRequestRule::RequestData(&url_request_ok, ON_BEFORE_REQUEST)));
+      GURL("http://www.example.com"), net::DEFAULT_PRIORITY, NULL, &context);
+  content::ResourceRequestInfo::AllocateForTesting(
+      &url_request_ok, ResourceType::SUB_FRAME, NULL, -1, -1, -1, false);
+  EXPECT_TRUE(attribute->IsFulfilled(WebRequestData(&url_request_ok,
+                                                    ON_BEFORE_REQUEST)));
 
   net::TestURLRequest url_request_fail(
-      GURL("http://www.example.com"), NULL, &context);
-  content::ResourceRequestInfo::AllocateForTesting(&url_request_ok,
-      ResourceType::SUB_FRAME, NULL, -1, -1);
-  EXPECT_FALSE(attribute->IsFulfilled(
-      WebRequestRule::RequestData(&url_request_fail, ON_BEFORE_REQUEST)));
+      GURL("http://www.example.com"), net::DEFAULT_PRIORITY, NULL, &context);
+  content::ResourceRequestInfo::AllocateForTesting(
+      &url_request_fail, ResourceType::MAIN_FRAME, NULL, -1, -1, -1, false);
+  EXPECT_FALSE(attribute->IsFulfilled(WebRequestData(&url_request_fail,
+                                                     ON_BEFORE_REQUEST)));
 }
 
 TEST(WebRequestConditionAttributeTest, ContentType) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   std::string error;
-  scoped_ptr<WebRequestConditionAttribute> result;
+  scoped_refptr<const WebRequestConditionAttribute> result;
 
-  net::TestServer test_server(
-      net::TestServer::TYPE_HTTP,
-      net::TestServer::kLocalhost,
-      FilePath(FILE_PATH_LITERAL(
-          "chrome/test/data/extensions/api_test/webrequest/declarative")));
-  ASSERT_TRUE(test_server.Start());
+  net::test_server::EmbeddedTestServer test_server;
+  test_server.ServeFilesFromDirectory(TestDataPath(
+      "chrome/test/data/extensions/api_test/webrequest/declarative"));
+  ASSERT_TRUE(test_server.InitializeAndWaitUntilReady());
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  net::TestURLRequest url_request(test_server.GetURL("files/headers.html"),
-                                                     &delegate, &context);
+  net::TestURLRequest url_request(test_server.GetURL("/headers.html"),
+                                  net::DEFAULT_PRIORITY,
+                                  &delegate,
+                                  &context);
   url_request.Start();
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
-  ListValue content_types;
-  content_types.Append(Value::CreateStringValue("text/plain"));
-  scoped_ptr<WebRequestConditionAttribute> attribute_include =
+  base::ListValue content_types;
+  content_types.Append(new base::StringValue("text/plain"));
+  scoped_refptr<const WebRequestConditionAttribute> attribute_include =
       WebRequestConditionAttribute::Create(
           keys::kContentTypeKey, &content_types, &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute_include.get());
   EXPECT_FALSE(attribute_include->IsFulfilled(
-      WebRequestRule::RequestData(&url_request, ON_BEFORE_REQUEST,
-                                  url_request.response_headers())));
+      WebRequestData(&url_request, ON_BEFORE_REQUEST,
+                     url_request.response_headers())));
   EXPECT_TRUE(attribute_include->IsFulfilled(
-      WebRequestRule::RequestData(&url_request, ON_HEADERS_RECEIVED,
-                                  url_request.response_headers())));
+      WebRequestData(&url_request, ON_HEADERS_RECEIVED,
+                     url_request.response_headers())));
+  EXPECT_EQ(std::string(keys::kContentTypeKey), attribute_include->GetName());
 
-  scoped_ptr<WebRequestConditionAttribute> attribute_exclude =
+  scoped_refptr<const WebRequestConditionAttribute> attribute_exclude =
       WebRequestConditionAttribute::Create(
           keys::kExcludeContentTypeKey, &content_types, &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute_exclude.get());
   EXPECT_FALSE(attribute_exclude->IsFulfilled(
-      WebRequestRule::RequestData(&url_request, ON_HEADERS_RECEIVED,
-                                  url_request.response_headers())));
+      WebRequestData(&url_request, ON_HEADERS_RECEIVED,
+                     url_request.response_headers())));
 
   content_types.Clear();
-  content_types.Append(Value::CreateStringValue("something/invalid"));
-  scoped_ptr<WebRequestConditionAttribute> attribute_unincluded =
+  content_types.Append(new base::StringValue("something/invalid"));
+  scoped_refptr<const WebRequestConditionAttribute> attribute_unincluded =
       WebRequestConditionAttribute::Create(
           keys::kContentTypeKey, &content_types, &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute_unincluded.get());
   EXPECT_FALSE(attribute_unincluded->IsFulfilled(
-      WebRequestRule::RequestData(&url_request, ON_HEADERS_RECEIVED,
-                                  url_request.response_headers())));
+      WebRequestData(&url_request, ON_HEADERS_RECEIVED,
+                     url_request.response_headers())));
 
-  scoped_ptr<WebRequestConditionAttribute> attribute_unexcluded =
+  scoped_refptr<const WebRequestConditionAttribute> attribute_unexcluded =
       WebRequestConditionAttribute::Create(
           keys::kExcludeContentTypeKey, &content_types, &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute_unexcluded.get());
   EXPECT_TRUE(attribute_unexcluded->IsFulfilled(
-      WebRequestRule::RequestData(&url_request, ON_HEADERS_RECEIVED,
-                                  url_request.response_headers())));
+      WebRequestData(&url_request, ON_HEADERS_RECEIVED,
+                     url_request.response_headers())));
+  EXPECT_EQ(std::string(keys::kExcludeContentTypeKey),
+            attribute_unexcluded->GetName());
 }
 
 // Testing WebRequestConditionAttributeThirdParty.
 TEST(WebRequestConditionAttributeTest, ThirdParty) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   std::string error;
   const FundamentalValue value_true(true);
   // This attribute matches only third party requests.
-  scoped_ptr<WebRequestConditionAttribute> third_party_attribute =
+  scoped_refptr<const WebRequestConditionAttribute> third_party_attribute =
       WebRequestConditionAttribute::Create(keys::kThirdPartyKey,
                                            &value_true,
                                            &error);
   ASSERT_EQ("", error);
   ASSERT_TRUE(third_party_attribute.get());
+  EXPECT_EQ(std::string(keys::kThirdPartyKey),
+            third_party_attribute->GetName());
   const FundamentalValue value_false(false);
   // This attribute matches only first party requests.
-  scoped_ptr<WebRequestConditionAttribute> first_party_attribute =
+  scoped_refptr<const WebRequestConditionAttribute> first_party_attribute =
       WebRequestConditionAttribute::Create(keys::kThirdPartyKey,
                                            &value_false,
                                            &error);
   ASSERT_EQ("", error);
   ASSERT_TRUE(first_party_attribute.get());
+  EXPECT_EQ(std::string(keys::kThirdPartyKey),
+            first_party_attribute->GetName());
 
   const GURL url_empty;
   const GURL url_a("http://a.com");
   const GURL url_b("http://b.com");
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  net::TestURLRequest url_request(url_a, &delegate, &context);
+  net::TestURLRequest url_request(
+      url_a, net::DEFAULT_PRIORITY, &delegate, &context);
 
   for (unsigned int i = 1; i <= kLastActiveStage; i <<= 1) {
     if (!(kActiveStages & i))
       continue;
     const RequestStage stage = static_cast<RequestStage>(i);
     url_request.set_first_party_for_cookies(url_empty);
-    EXPECT_FALSE(third_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
-    EXPECT_TRUE(first_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
+    EXPECT_FALSE(third_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                   stage)));
+    EXPECT_TRUE(first_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                  stage)));
 
     url_request.set_first_party_for_cookies(url_b);
-    EXPECT_TRUE(third_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
-    EXPECT_FALSE(first_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
+    EXPECT_TRUE(third_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                  stage)));
+    EXPECT_FALSE(first_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                   stage)));
 
     url_request.set_first_party_for_cookies(url_a);
-    EXPECT_FALSE(third_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
-    EXPECT_TRUE(first_party_attribute->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, stage)));
+    EXPECT_FALSE(third_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                   stage)));
+    EXPECT_TRUE(first_party_attribute->IsFulfilled(WebRequestData(&url_request,
+                                                                  stage)));
   }
 }
 
@@ -225,7 +242,7 @@ TEST(WebRequestConditionAttributeTest, ThirdParty) {
 // applicable in all stages.
 TEST(WebRequestConditionAttributeTest, Stages) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   typedef std::pair<RequestStage, const char*> StageNamePair;
   static const StageNamePair active_stages[] = {
@@ -244,57 +261,60 @@ TEST(WebRequestConditionAttributeTest, Stages) {
   std::string error;
 
   // Create an attribute with an empty set of applicable stages.
-  ListValue empty_list;
-  scoped_ptr<WebRequestConditionAttribute> empty_attribute =
+  base::ListValue empty_list;
+  scoped_refptr<const WebRequestConditionAttribute> empty_attribute =
       WebRequestConditionAttribute::Create(keys::kStagesKey,
                                            &empty_list,
                                            &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(empty_attribute.get());
+  EXPECT_EQ(std::string(keys::kStagesKey), empty_attribute->GetName());
 
   // Create an attribute with all possible applicable stages.
-  ListValue all_stages;
+  base::ListValue all_stages;
   for (size_t i = 0; i < arraysize(active_stages); ++i)
     all_stages.AppendString(active_stages[i].second);
-  scoped_ptr<WebRequestConditionAttribute> attribute_with_all =
+  scoped_refptr<const WebRequestConditionAttribute> attribute_with_all =
       WebRequestConditionAttribute::Create(keys::kStagesKey,
                                            &all_stages,
                                            &error);
   EXPECT_EQ("", error);
   ASSERT_TRUE(attribute_with_all.get());
+  EXPECT_EQ(std::string(keys::kStagesKey), attribute_with_all->GetName());
 
   // Create one attribute for each single stage, to be applicable in that stage.
-  ScopedVector<WebRequestConditionAttribute> one_stage_attributes;
+  std::vector<scoped_refptr<const WebRequestConditionAttribute> >
+      one_stage_attributes;
 
   for (size_t i = 0; i < arraysize(active_stages); ++i) {
-    ListValue single_stage_list;
+    base::ListValue single_stage_list;
     single_stage_list.AppendString(active_stages[i].second);
     one_stage_attributes.push_back(
         WebRequestConditionAttribute::Create(keys::kStagesKey,
                                              &single_stage_list,
-                                             &error).release());
+                                             &error));
     EXPECT_EQ("", error);
-    ASSERT_TRUE(one_stage_attributes.back() != NULL);
+    ASSERT_TRUE(one_stage_attributes.back().get() != NULL);
   }
 
   const GURL url_empty;
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  net::TestURLRequest url_request(url_empty, &delegate, &context);
+  net::TestURLRequest url_request(
+      url_empty, net::DEFAULT_PRIORITY, &delegate, &context);
 
   for (size_t i = 0; i < arraysize(active_stages); ++i) {
-    EXPECT_FALSE(empty_attribute->IsFulfilled(WebRequestRule::RequestData(
-       &url_request, active_stages[i].first)));
+    EXPECT_FALSE(empty_attribute->IsFulfilled(
+        WebRequestData(&url_request, active_stages[i].first)));
 
     for (size_t j = 0; j < one_stage_attributes.size(); ++j) {
-      EXPECT_EQ(
-          i == j,
-          one_stage_attributes[j]->IsFulfilled(WebRequestRule::RequestData(
-              &url_request, active_stages[i].first)));
+      EXPECT_EQ(i == j,
+                one_stage_attributes[j]->IsFulfilled(
+                    WebRequestData(&url_request, active_stages[i].first)));
     }
 
-    EXPECT_TRUE(attribute_with_all->IsFulfilled(WebRequestRule::RequestData(
-        &url_request, active_stages[i].first)));
+    EXPECT_TRUE(attribute_with_all->IsFulfilled(
+        WebRequestData(&url_request, active_stages[i].first)));
   }
 }
 
@@ -325,36 +345,38 @@ void GetArrayAsVector(const std::string array[],
 
 // Builds a DictionaryValue from an array of the form {name1, value1, name2,
 // value2, ...}. Values for the same key are grouped in a ListValue.
-scoped_ptr<DictionaryValue> GetDictionaryFromArray(
+scoped_ptr<base::DictionaryValue> GetDictionaryFromArray(
     const std::vector<const std::string*>& array) {
   const size_t length = array.size();
   CHECK(length % 2 == 0);
 
-  scoped_ptr<DictionaryValue> dictionary(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> dictionary(new base::DictionaryValue);
   for (size_t i = 0; i < length; i += 2) {
     const std::string* name = array[i];
     const std::string* value = array[i+1];
     if (dictionary->HasKey(*name)) {
-      Value* entry = NULL;
-      ListValue* list = NULL;
+      base::Value* entry = NULL;
+      scoped_ptr<base::Value> entry_owned;
+      base::ListValue* list = NULL;
       if (!dictionary->GetWithoutPathExpansion(*name, &entry))
-        return scoped_ptr<DictionaryValue>(NULL);
+        return scoped_ptr<base::DictionaryValue>();
       switch (entry->GetType()) {
-        case Value::TYPE_STRING:  // Replace the present string with a list.
-          list = new ListValue;
+        case base::Value::TYPE_STRING:
+          // Replace the present string with a list.
+          list = new base::ListValue;
           // Ignoring return value, we already verified the entry is there.
-          dictionary->RemoveWithoutPathExpansion(*name, &entry);
-          list->Append(entry);
-          list->Append(Value::CreateStringValue(*value));
+          dictionary->RemoveWithoutPathExpansion(*name, &entry_owned);
+          list->Append(entry_owned.release());
+          list->Append(new base::StringValue(*value));
           dictionary->SetWithoutPathExpansion(*name, list);
           break;
-        case Value::TYPE_LIST:  // Just append to the list.
+        case base::Value::TYPE_LIST:  // Just append to the list.
           CHECK(entry->GetAsList(&list));
-          list->Append(Value::CreateStringValue(*value));
+          list->Append(new base::StringValue(*value));
           break;
         default:
           NOTREACHED();  // We never put other Values here.
-          return scoped_ptr<DictionaryValue>(NULL);
+          return scoped_ptr<base::DictionaryValue>();
       }
     } else {
       dictionary->SetString(*name, *value);
@@ -373,20 +395,21 @@ void MatchAndCheck(const std::vector< std::vector<const std::string*> >& tests,
                    RequestStage stage,
                    net::URLRequest* url_request,
                    bool* result) {
-  ListValue contains_headers;
+  base::ListValue contains_headers;
   for (size_t i = 0; i < tests.size(); ++i) {
-    scoped_ptr<DictionaryValue> temp(GetDictionaryFromArray(tests[i]));
+    scoped_ptr<base::DictionaryValue> temp(GetDictionaryFromArray(tests[i]));
     ASSERT_TRUE(temp.get());
     contains_headers.Append(temp.release());
   }
 
   std::string error;
-  scoped_ptr<WebRequestConditionAttribute> attribute =
+  scoped_refptr<const WebRequestConditionAttribute> attribute =
       WebRequestConditionAttribute::Create(key, &contains_headers, &error);
   ASSERT_EQ("", error);
   ASSERT_TRUE(attribute.get());
+  EXPECT_EQ(key, attribute->GetName());
 
-  *result = attribute->IsFulfilled(WebRequestRule::RequestData(
+  *result = attribute->IsFulfilled(WebRequestData(
       url_request, stage, url_request->response_headers()));
 }
 
@@ -398,16 +421,18 @@ void MatchAndCheck(const std::vector< std::vector<const std::string*> >& tests,
 // by both types of condition attributes, so it is enough to test it once.
 TEST(WebRequestConditionAttributeTest, RequestHeaders) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
   net::TestURLRequest url_request(GURL("http://example.com"),  // Dummy URL.
-                                  &delegate, &context);
+                                  net::DEFAULT_PRIORITY,
+                                  &delegate,
+                                  &context);
   url_request.SetExtraRequestHeaderByName(
       "Custom-header", "custom/value", true /* overwrite */);
   url_request.Start();
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   std::vector<std::vector<const std::string*> > tests;
   bool result = false;
@@ -476,21 +501,21 @@ TEST(WebRequestConditionAttributeTest, RequestHeaders) {
 // 3. Negating the match in case of 'doesNotContainHeaders'.
 TEST(WebRequestConditionAttributeTest, ResponseHeaders) {
   // Necessary for TestURLRequest.
-  MessageLoop message_loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO message_loop;
 
-  net::TestServer test_server(
-      net::TestServer::TYPE_HTTP,
-      net::TestServer::kLocalhost,
-      FilePath(FILE_PATH_LITERAL(
-          "chrome/test/data/extensions/api_test/webrequest/declarative")));
-  ASSERT_TRUE(test_server.Start());
+  net::test_server::EmbeddedTestServer test_server;
+  test_server.ServeFilesFromDirectory(TestDataPath(
+      "chrome/test/data/extensions/api_test/webrequest/declarative"));
+  ASSERT_TRUE(test_server.InitializeAndWaitUntilReady());
 
   net::TestURLRequestContext context;
   net::TestDelegate delegate;
-  net::TestURLRequest url_request(test_server.GetURL("files/headers.html"),
-                                  &delegate, &context);
+  net::TestURLRequest url_request(test_server.GetURL("/headers.html"),
+                                  net::DEFAULT_PRIORITY,
+                                  &delegate,
+                                  &context);
   url_request.Start();
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // In all the tests below we assume that the server includes the headers
   // Custom-Header: custom/value
@@ -656,4 +681,5 @@ TEST(WebRequestConditionAttributeTest, ResponseHeaders) {
   EXPECT_FALSE(result);
 }
 
+}  // namespace
 }  // namespace extensions

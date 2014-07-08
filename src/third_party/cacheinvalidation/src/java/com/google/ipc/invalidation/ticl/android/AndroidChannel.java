@@ -16,6 +16,7 @@
 
 package com.google.ipc.invalidation.ticl.android;
 
+import com.google.android.gcm.GCMRegistrar;
 import com.google.common.base.Preconditions;
 import com.google.ipc.invalidation.common.CommonProtos2;
 import com.google.ipc.invalidation.external.client.SystemResources;
@@ -27,7 +28,7 @@ import com.google.ipc.invalidation.util.ExponentialBackoffDelayGenerator;
 import com.google.protobuf.InvalidProtocolBufferException;
 import com.google.protos.ipc.invalidation.AndroidChannel.AddressedAndroidMessage;
 import com.google.protos.ipc.invalidation.AndroidChannel.MajorVersion;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
 import com.google.protos.ipc.invalidation.ClientProtocol.Version;
 
 import android.accounts.AccountManager;
@@ -53,12 +54,12 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 
 /**
- * Provides a bidirectional channel for Android devices using C2DM (data center to device) and the
+ * Provides a bidirectional channel for Android devices using GCM (data center to device) and the
  * Android HTTP frontend (device to data center). The android channel computes a network endpoint id
- * based upon the C2DM registration ID for the containing application ID and the client key of the
- * client using the channel. If an attempt is made to send messages on the channel before a C2DM
- * registration ID has been assigned (via {@link #setRegistrationId}, it will temporarily buffer the
- * outbound messages and send them when the registration ID is eventually assigned.
+ * based upon the GCM registration ID for the containing application ID and the client key of the
+ * client using the channel. If an attempt is made to send messages on the channel before a GCM
+ * registration ID has been assigned, it will temporarily buffer the outbound messages and send them
+ * when the registration ID is eventually assigned.
  *
  */
 class AndroidChannel extends AndroidChannelBase implements TestableNetworkChannel {
@@ -67,7 +68,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
 
   /**
    * The maximum number of outbound messages that will be buffered while waiting for async delivery
-   * of the C2DM registration ID and authentication token.   The general flow for a new client is
+   * of the GCM registration ID and authentication token.   The general flow for a new client is
    * that an 'initialize' message is sent (and resent on a timed interval) until a session token is
    * sent back and this just prevents accumulation a large number of initialize messages (and
    * consuming memory) in a long delay or failure scenario.
@@ -87,16 +88,23 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
 
   /** Number of C2DM messages for unknown clients. */
   
-  static final AtomicInteger numC2dmInvalidClients = new AtomicInteger();
+  static final AtomicInteger numGcmInvalidClients = new AtomicInteger();
 
   /** Invalidation client proxy using the channel. */
   private final AndroidClientProxy proxy;
 
+  /** Android context used to retrieve registration IDs. */
+  private final Context context;
+
   /** System resources for this channel */
   private SystemResources resources;
 
-  /** The registration id associated with the channel */
-  private String registrationId;
+  /**
+   * When set, this registration ID is used rather than checking
+   * {@link GCMRegistrar#getRegistrationId}. It should not be read directly: call
+   * {@link #getRegistrationId} instead.
+   */
+  private String registrationIdForTest;
 
   /** The authentication token that can be used in channel requests to the server */
   private String authToken;
@@ -136,18 +144,27 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
    *
    * @param proxy the client proxy associated with the channel
    * @param httpClient the HTTP client to use to communicate with the Android invalidation frontend
-   * @param c2dmRegistrationId the c2dm registration ID for the service
+   * @param context Android context
    */
-  AndroidChannel(AndroidClientProxy proxy, HttpClient httpClient, String c2dmRegistrationId) {
+  AndroidChannel(AndroidClientProxy proxy, HttpClient httpClient, Context context) {
     super(httpClient, proxy.getAuthType(), proxy.getService().getChannelUrl());
     this.proxy = Preconditions.checkNotNull(proxy);
-
-    // Store the current registration ID into the channel instance (may be null)
-    registrationId = c2dmRegistrationId;
+    this.context = Preconditions.checkNotNull(context);
   }
 
-  /** Returns the C2DM registration ID associated with the channel */
-   String getRegistrationId() {
+  /**
+   * Returns the GCM registration ID associated with the channel. Checks the {@link GCMRegistrar}
+   * unless {@link #setRegistrationIdForTest} has been called.
+   */
+  String getRegistrationId() {
+    String registrationId = (registrationIdForTest != null) ? registrationIdForTest :
+        GCMRegistrar.getRegistrationId(context);
+
+    // Callers check for null registration ID rather than "null or empty", so replace empty strings
+    // with null here.
+    if ("".equals(registrationId)) {
+      registrationId = null;
+    }
     return registrationId;
   }
 
@@ -217,6 +234,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
    * Android token acquisition is asynchronous since it may require HTTP interactions with the
    * ClientLogin servers to obtain the token.
    */
+  @SuppressWarnings("deprecation")
   
   synchronized void requestAuthToken(final CompletionCallback callback) {
     // If there is currently no token and no pending request, initiate one.
@@ -264,18 +282,21 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
    * Updates the registration ID for this channel, flushing any pending outbound messages that
    * were waiting for an id.
    */
-  synchronized void setRegistrationId(String updatedRegistrationId) {
+  synchronized void setRegistrationIdForTest(String updatedRegistrationId) {
     // Synchronized to avoid concurrent access to pendingMessages
-    if (registrationId != updatedRegistrationId) {
-      logger.fine("Setting registration ID for %s", proxy.getClientKey());
-      registrationId = updatedRegistrationId;
-      if (pendingMessages != null) {
-        checkReady();
-      } else {
-        // TODO: Trigger heartbeat or other action to notify server of new
-        // endpoint id.
-      }
+    if (registrationIdForTest != updatedRegistrationId) {
+      logger.fine("Setting registration ID for test for client key %s", proxy.getClientKey());
+      registrationIdForTest = updatedRegistrationId;
+      informRegistrationIdChanged();
     }
+  }
+
+  /**
+   * Call to inform the Android channel that the registration ID has changed. May kick loose some
+   * pending outbound messages.
+   */
+  synchronized void informRegistrationIdChanged() {
+    checkReady();
   }
 
   /**
@@ -302,6 +323,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
     // If there is no registration id, we cannot compute a network endpoint id. If there is no
     // auth token, then we cannot authenticate the send request.  Defer sending messages until both
     // are received.
+    String registrationId = getRegistrationId();
     if ((registrationId == null) || (authToken == null)) {
       if (pendingMessages == null) {
         pendingMessages = new ArrayList<byte[]>();
@@ -336,6 +358,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
    * any pending messages are flushed.
    */
   private synchronized void checkReady() {
+    String registrationId = getRegistrationId();
     if ((registrationId != null) && (authToken != null)) {
 
       logger.fine("Enabling network endpoint: %s", getWebEncodedEndpointId());
@@ -377,7 +400,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
     } else {
       logger.severe("Not delivering message due to key mismatch: %s vs %s",
           addrMessage.getClientKey(), clientKey);
-      numC2dmInvalidClients.incrementAndGet();
+      numGcmInvalidClients.incrementAndGet();
     }
   }
 
@@ -419,6 +442,7 @@ class AndroidChannel extends AndroidChannelBase implements TestableNetworkChanne
   }
 
   private NetworkEndpointId getNetworkId() {
+    String registrationId = getRegistrationId();
     return CommonProtos2.newAndroidEndpointId(registrationId, proxy.getClientKey(),
         proxy.getService().getPackageName(), CHANNEL_VERSION);
   }

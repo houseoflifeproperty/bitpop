@@ -4,16 +4,18 @@
 
 #include "ash/system/tray_accessibility.h"
 
+#include "ash/accessibility_delegate.h"
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
+#include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "ash/system/tray/tray_constants.h"
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_item_more.h"
-#include "ash/system/tray/tray_notification_view.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/tray_popup_label_button.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -25,27 +27,37 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
-const int kPaddingAroundBottomRow = 5;
 
 enum AccessibilityState {
-  A11Y_NONE             = 0,
-  A11Y_SPOKEN_FEEDBACK  = 1 << 0,
-  A11Y_HIGH_CONTRAST    = 1 << 1,
+  A11Y_NONE = 0,
+  A11Y_SPOKEN_FEEDBACK = 1 << 0,
+  A11Y_HIGH_CONTRAST = 1 << 1,
   A11Y_SCREEN_MAGNIFIER = 1 << 2,
+  A11Y_LARGE_CURSOR = 1 << 3,
+  A11Y_AUTOCLICK = 1 << 4,
+  A11Y_VIRTUAL_KEYBOARD = 1 << 5,
+  A11Y_BRAILLE_DISPLAY_CONNECTED = 1 << 6,
 };
 
 uint32 GetAccessibilityState() {
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   uint32 state = A11Y_NONE;
-  if (shell_delegate->IsSpokenFeedbackEnabled())
+  if (delegate->IsSpokenFeedbackEnabled())
     state |= A11Y_SPOKEN_FEEDBACK;
-  if (shell_delegate->IsHighContrastEnabled())
+  if (delegate->IsHighContrastEnabled())
     state |= A11Y_HIGH_CONTRAST;
-  if (shell_delegate->GetMagnifierType() != ash::MAGNIFIER_OFF)
+  if (delegate->IsMagnifierEnabled())
     state |= A11Y_SCREEN_MAGNIFIER;
+  if (delegate->IsLargeCursorEnabled())
+    state |= A11Y_LARGE_CURSOR;
+  if (delegate->IsAutoclickEnabled())
+    state |= A11Y_AUTOCLICK;
+  if (delegate->IsVirtualKeyboardEnabled())
+    state |= A11Y_VIRTUAL_KEYBOARD;
+  if (delegate->IsBrailleDisplayConnected())
+    state |= A11Y_BRAILLE_DISPLAY_CONNECTED;
   return state;
 }
 
@@ -64,10 +76,11 @@ class DefaultAccessibilityView : public TrayItemMore {
     ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
     SetImage(bundle.GetImageNamed(IDR_AURA_UBER_TRAY_ACCESSIBILITY_DARK).
                     ToImageSkia());
-    string16 label = bundle.GetLocalizedString(
+    base::string16 label = bundle.GetLocalizedString(
         IDS_ASH_STATUS_TRAY_ACCESSIBILITY);
     SetLabel(label);
     SetAccessibleName(label);
+    set_id(test::kAccessibilityTrayItemViewId);
   }
 
   virtual ~DefaultAccessibilityView() {
@@ -77,28 +90,38 @@ class DefaultAccessibilityView : public TrayItemMore {
   DISALLOW_COPY_AND_ASSIGN(DefaultAccessibilityView);
 };
 
-class AccessibilityPopupView : public TrayNotificationView {
- public:
-  AccessibilityPopupView(SystemTrayItem* owner)
-      : TrayNotificationView(owner, IDR_AURA_UBER_TRAY_ACCESSIBILITY_DARK) {
-    InitView(GetLabel());
-  }
+////////////////////////////////////////////////////////////////////////////////
+// ash::tray::AccessibilityPopupView
 
- private:
-  views::Label* GetLabel() {
-    views::Label* label = new views::Label(
-        l10n_util::GetStringUTF16(
-            IDS_ASH_STATUS_TRAY_SPOKEN_FEEDBACK_ENABLED_BUBBLE));
-    label->SetMultiLine(true);
-    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    return label;
-  }
+AccessibilityPopupView::AccessibilityPopupView(SystemTrayItem* owner,
+                                               uint32 enabled_state_bits)
+    : TrayNotificationView(owner, IDR_AURA_UBER_TRAY_ACCESSIBILITY_DARK),
+      label_(CreateLabel(enabled_state_bits)) {
+  InitView(label_);
+}
 
-  DISALLOW_COPY_AND_ASSIGN(AccessibilityPopupView);
-};
+views::Label* AccessibilityPopupView::CreateLabel(uint32 enabled_state_bits) {
+  DCHECK((enabled_state_bits &
+          (A11Y_SPOKEN_FEEDBACK | A11Y_BRAILLE_DISPLAY_CONNECTED)) != 0);
+  base::string16 text;
+  if (enabled_state_bits & A11Y_BRAILLE_DISPLAY_CONNECTED) {
+    text.append(l10n_util::GetStringUTF16(
+        IDS_ASH_STATUS_TRAY_BRAILLE_DISPLAY_CONNECTED_BUBBLE));
+  }
+  if (enabled_state_bits & A11Y_SPOKEN_FEEDBACK) {
+    if (!text.empty())
+      text.append(base::ASCIIToUTF16(" "));
+    text.append(l10n_util::GetStringUTF16(
+        IDS_ASH_STATUS_TRAY_SPOKEN_FEEDBACK_ENABLED_BUBBLE));
+  }
+  views::Label* label = new views::Label(text);
+  label->SetMultiLine(true);
+  label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
+  return label;
+}
 
 ////////////////////////////////////////////////////////////////////////////////
-// ash::internal::tray::AccessibilityDetailedView
+// ash::tray::AccessibilityDetailedView
 
 AccessibilityDetailedView::AccessibilityDetailedView(
     SystemTrayItem* owner, user::LoginStatus login) :
@@ -106,10 +129,17 @@ AccessibilityDetailedView::AccessibilityDetailedView(
         spoken_feedback_view_(NULL),
         high_contrast_view_(NULL),
         screen_magnifier_view_(NULL),
+        large_cursor_view_(NULL),
         help_view_(NULL),
+        settings_view_(NULL),
+        autoclick_view_(NULL),
+        virtual_keyboard_view_(NULL),
         spoken_feedback_enabled_(false),
         high_contrast_enabled_(false),
         screen_magnifier_enabled_(false),
+        large_cursor_enabled_(false),
+        autoclick_enabled_(false),
+        virtual_keyboard_enabled_(false),
         login_(login) {
 
   Reset();
@@ -125,26 +155,54 @@ void AccessibilityDetailedView::AppendAccessibilityList() {
   CreateScrollableList();
   ui::ResourceBundle& bundle = ui::ResourceBundle::GetSharedInstance();
 
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
-  spoken_feedback_enabled_ = shell_delegate->IsSpokenFeedbackEnabled();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
+  spoken_feedback_enabled_ = delegate->IsSpokenFeedbackEnabled();
   spoken_feedback_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SPOKEN_FEEDBACK),
       spoken_feedback_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
       spoken_feedback_enabled_);
-  high_contrast_enabled_ = shell_delegate->IsHighContrastEnabled();
+
+  // Large Cursor item is shown only in Login screen.
+  if (login_ == user::LOGGED_IN_NONE) {
+    large_cursor_enabled_ = delegate->IsLargeCursorEnabled();
+    large_cursor_view_ = AddScrollListItem(
+        bundle.GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_LARGE_CURSOR),
+        large_cursor_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
+        large_cursor_enabled_);
+  }
+
+  high_contrast_enabled_ = delegate->IsHighContrastEnabled();
   high_contrast_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_HIGH_CONTRAST_MODE),
       high_contrast_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
       high_contrast_enabled_);
-  screen_magnifier_enabled_ =
-      shell_delegate->GetMagnifierType() == ash::MAGNIFIER_FULL;
+  screen_magnifier_enabled_ = delegate->IsMagnifierEnabled();
   screen_magnifier_view_ = AddScrollListItem(
       bundle.GetLocalizedString(
           IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SCREEN_MAGNIFIER),
       screen_magnifier_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
       screen_magnifier_enabled_);
+
+  // Don't show autoclick option at login screen.
+  if (login_ != user::LOGGED_IN_NONE) {
+    autoclick_enabled_ = delegate->IsAutoclickEnabled();
+    autoclick_view_ = AddScrollListItem(
+        bundle.GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_ACCESSIBILITY_AUTOCLICK),
+        autoclick_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
+        autoclick_enabled_);
+  }
+
+  virtual_keyboard_enabled_ = delegate->IsVirtualKeyboardEnabled();
+  virtual_keyboard_view_ =  AddScrollListItem(
+      bundle.GetLocalizedString(
+          IDS_ASH_STATUS_TRAY_ACCESSIBILITY_VIRTUAL_KEYBOARD),
+      virtual_keyboard_enabled_ ? gfx::Font::BOLD : gfx::Font::NORMAL,
+      virtual_keyboard_enabled_);
 }
 
 void AccessibilityDetailedView::AppendHelpEntries() {
@@ -172,14 +230,18 @@ void AccessibilityDetailedView::AppendHelpEntries() {
   bottom_row->AddChildView(help);
   help_view_ = help;
 
-  // TODO(yoshiki): Add "Customize accessibility" button when the customize is
-  // available. crbug.com/158281
+  TrayPopupLabelButton* settings = new TrayPopupLabelButton(
+      this,
+      bundle.GetLocalizedString(
+          IDS_ASH_STATUS_TRAY_ACCESSIBILITY_SETTINGS));
+  bottom_row->AddChildView(settings);
+  settings_view_ = settings;
 
   AddChildView(bottom_row);
 }
 
 HoverHighlightView* AccessibilityDetailedView::AddScrollListItem(
-    const string16& text,
+    const base::string16& text,
     gfx::Font::FontStyle style,
     bool checked) {
   HoverHighlightView* container = new HoverHighlightView(this);
@@ -188,19 +250,47 @@ HoverHighlightView* AccessibilityDetailedView::AddScrollListItem(
   return container;
 }
 
-void AccessibilityDetailedView::ClickedOn(views::View* sender) {
-  ShellDelegate* shell_delegate = Shell::GetInstance()->delegate();
+void AccessibilityDetailedView::OnViewClicked(views::View* sender) {
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   if (sender == footer()->content()) {
-    owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+    TransitionToDefaultView();
   } else if (sender == spoken_feedback_view_) {
-    shell_delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsSpokenFeedbackEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_SPOKEN_FEEDBACK :
+            ash::UMA_STATUS_AREA_ENABLE_SPOKEN_FEEDBACK);
+    delegate->ToggleSpokenFeedback(ash::A11Y_NOTIFICATION_NONE);
   } else if (sender == high_contrast_view_) {
-    shell_delegate->ToggleHighContrast();
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsHighContrastEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_HIGH_CONTRAST :
+            ash::UMA_STATUS_AREA_ENABLE_HIGH_CONTRAST);
+    delegate->ToggleHighContrast();
   } else if (sender == screen_magnifier_view_) {
-    bool screen_magnifier_enabled =
-        shell_delegate->GetMagnifierType() == ash::MAGNIFIER_FULL;
-    shell_delegate->SetMagnifier(
-        screen_magnifier_enabled ? ash::MAGNIFIER_OFF : ash::MAGNIFIER_FULL);
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsMagnifierEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_MAGNIFIER :
+            ash::UMA_STATUS_AREA_ENABLE_MAGNIFIER);
+    delegate->SetMagnifierEnabled(!delegate->IsMagnifierEnabled());
+  } else if (large_cursor_view_ && sender == large_cursor_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsLargeCursorEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_LARGE_CURSOR :
+            ash::UMA_STATUS_AREA_ENABLE_LARGE_CURSOR);
+    delegate->SetLargeCursorEnabled(!delegate->IsLargeCursorEnabled());
+  } else if (autoclick_view_ && sender == autoclick_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsAutoclickEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_AUTO_CLICK :
+            ash::UMA_STATUS_AREA_ENABLE_AUTO_CLICK);
+    delegate->SetAutoclickEnabled(!delegate->IsAutoclickEnabled());
+  } else if (virtual_keyboard_view_ && sender == virtual_keyboard_view_) {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        delegate->IsVirtualKeyboardEnabled() ?
+            ash::UMA_STATUS_AREA_DISABLE_VIRTUAL_KEYBOARD :
+            ash::UMA_STATUS_AREA_ENABLE_VIRTUAL_KEYBOARD);
+    delegate->SetVirtualKeyboardEnabled(!delegate->IsVirtualKeyboardEnabled());
   }
 }
 
@@ -210,22 +300,25 @@ void AccessibilityDetailedView::ButtonPressed(views::Button* sender,
       Shell::GetInstance()->system_tray_delegate();
   if (sender == help_view_)
     tray_delegate->ShowAccessibilityHelp();
+  else if (sender == settings_view_)
+    tray_delegate->ShowAccessibilitySettings();
 }
 
 }  // namespace tray
 
 ////////////////////////////////////////////////////////////////////////////////
-// ash::internal::TrayAccessibility
+// ash::TrayAccessibility
 
 TrayAccessibility::TrayAccessibility(SystemTray* system_tray)
     : TrayImageItem(system_tray, IDR_AURA_UBER_TRAY_ACCESSIBILITY),
       default_(NULL),
       detailed_popup_(NULL),
       detailed_menu_(NULL),
-      request_popup_view_(false),
+      request_popup_view_state_(A11Y_NONE),
       tray_icon_visible_(false),
       login_(GetCurrentLoginStatus()),
-      previous_accessibility_state_(GetAccessibilityState()) {
+      previous_accessibility_state_(GetAccessibilityState()),
+      show_a11y_menu_on_lock_screen_(true) {
   DCHECK(Shell::GetInstance()->delegate());
   DCHECK(system_tray);
   Shell::GetInstance()->system_tray_notifier()->AddAccessibilityObserver(this);
@@ -255,17 +348,17 @@ bool TrayAccessibility::GetInitialVisibility() {
 views::View* TrayAccessibility::CreateDefaultView(user::LoginStatus status) {
   CHECK(default_ == NULL);
 
-  login_ = status;
-
   // Shows accessibility menu if:
   // - on login screen (not logged in);
   // - "Enable accessibility menu" on chrome://settings is checked;
   // - or any of accessibility features is enabled
   // Otherwise, not shows it.
-  ShellDelegate* delegate = Shell::GetInstance()->delegate();
+  AccessibilityDelegate* delegate =
+      Shell::GetInstance()->accessibility_delegate();
   if (login_ != user::LOGGED_IN_NONE &&
-      !delegate->ShouldAlwaysShowAccessibilityMenu() &&
-      GetAccessibilityState() == A11Y_NONE)
+      !delegate->ShouldShowAccessibilityMenu() &&
+      // On login screen, keeps the initial visibility of the menu.
+      (status != user::LOGGED_IN_LOCKED || !show_a11y_menu_on_lock_screen_))
     return NULL;
 
   CHECK(default_ == NULL);
@@ -278,13 +371,14 @@ views::View* TrayAccessibility::CreateDetailedView(user::LoginStatus status) {
   CHECK(detailed_popup_ == NULL);
   CHECK(detailed_menu_ == NULL);
 
-  login_ = status;
-
-  if (request_popup_view_) {
-    detailed_popup_ = new tray::AccessibilityPopupView(this);
-    request_popup_view_ = false;
+  if (request_popup_view_state_) {
+    detailed_popup_ =
+        new tray::AccessibilityPopupView(this, request_popup_view_state_);
+    request_popup_view_state_ = A11Y_NONE;
     return detailed_popup_;
   } else {
+    Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+        ash::UMA_STATUS_AREA_DETAILED_ACCESSABILITY);
     detailed_menu_ = CreateDetailedMenu();
     return detailed_menu_;
   }
@@ -300,6 +394,10 @@ void TrayAccessibility::DestroyDetailedView() {
 }
 
 void TrayAccessibility::UpdateAfterLoginStatusChange(user::LoginStatus status) {
+  // Stores the a11y feature status on just entering the lock screen.
+  if (login_ != user::LOGGED_IN_LOCKED && status == user::LOGGED_IN_LOCKED)
+    show_a11y_menu_on_lock_screen_ = (GetAccessibilityState() != A11Y_NONE);
+
   login_ = status;
   SetTrayIconVisible(GetInitialVisibility());
 }
@@ -309,11 +407,21 @@ void TrayAccessibility::OnAccessibilityModeChanged(
   SetTrayIconVisible(GetInitialVisibility());
 
   uint32 accessibility_state = GetAccessibilityState();
-  if ((notify == ash::A11Y_NOTIFICATION_SHOW)&&
-      !(previous_accessibility_state_ & A11Y_SPOKEN_FEEDBACK) &&
-      (accessibility_state & A11Y_SPOKEN_FEEDBACK)) {
+  // We'll get an extra notification if a braille display is connected when
+  // spoken feedback wasn't already enabled.  This is because the braille
+  // connection state is already updated when spoken feedback is enabled so
+  // that the notifications can be consolidated into one.  Therefore, we
+  // return early if there's no change in the state that we keep track of.
+  if (accessibility_state == previous_accessibility_state_)
+    return;
+  // Contains bits for spoken feedback and braille display connected currently
+  // being enabled.
+  uint32 being_enabled =
+      (accessibility_state & ~previous_accessibility_state_) &
+      (A11Y_SPOKEN_FEEDBACK | A11Y_BRAILLE_DISPLAY_CONNECTED);
+  if ((notify == ash::A11Y_NOTIFICATION_SHOW) && being_enabled != A11Y_NONE) {
     // Shows popup if |notify| is true and the spoken feedback is being enabled.
-    request_popup_view_ = true;
+    request_popup_view_state_ = being_enabled;
     PopupDetailedView(kTrayPopupAutoCloseDelayForTextInSeconds, false);
   } else {
     if (detailed_popup_)
@@ -325,5 +433,4 @@ void TrayAccessibility::OnAccessibilityModeChanged(
   previous_accessibility_state_ = accessibility_state;
 }
 
-}  // namespace internal
 }  // namespace ash

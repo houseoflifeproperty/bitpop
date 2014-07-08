@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/google_one_shot_remote_engine.h"
 #include "content/public/common/speech_recognition_error.h"
@@ -43,7 +43,7 @@ class GoogleOneShotRemoteEngineTest : public SpeechRecognitionEngineDelegate,
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   net::TestURLFetcherFactory url_fetcher_factory_;
   SpeechRecognitionErrorCode error_;
   SpeechRecognitionResults results_;
@@ -59,7 +59,7 @@ void GoogleOneShotRemoteEngineTest::CreateAndTestRequest(
                      2 /* bytes per sample */));
   client.set_delegate(this);
   client.StartRecognition();
-  client.TakeAudioChunk(*dummy_audio_chunk);
+  client.TakeAudioChunk(*dummy_audio_chunk.get());
   client.AudioChunksEnded();
   net::TestURLFetcher* fetcher = url_fetcher_factory_.GetFetcherByID(0);
   ASSERT_TRUE(fetcher);
@@ -83,7 +83,7 @@ TEST_F(GoogleOneShotRemoteEngineTest, BasicTest) {
       "[{\"utterance\":\"123456\",\"confidence\":0.9}]}");
   EXPECT_EQ(error_, SPEECH_RECOGNITION_ERROR_NONE);
   EXPECT_EQ(1U, result().hypotheses.size());
-  EXPECT_EQ(ASCIIToUTF16("123456"), result().hypotheses[0].utterance);
+  EXPECT_EQ(base::ASCIIToUTF16("123456"), result().hypotheses[0].utterance);
   EXPECT_EQ(0.9, result().hypotheses[0].confidence);
 
   // Normal success case with multiple results.
@@ -93,9 +93,9 @@ TEST_F(GoogleOneShotRemoteEngineTest, BasicTest) {
       "{\"utterance\":\"123456\",\"confidence\":0.5}]}");
   EXPECT_EQ(error_, SPEECH_RECOGNITION_ERROR_NONE);
   EXPECT_EQ(2u, result().hypotheses.size());
-  EXPECT_EQ(ASCIIToUTF16("hello"), result().hypotheses[0].utterance);
+  EXPECT_EQ(base::ASCIIToUTF16("hello"), result().hypotheses[0].utterance);
   EXPECT_EQ(0.9, result().hypotheses[0].confidence);
-  EXPECT_EQ(ASCIIToUTF16("123456"), result().hypotheses[1].utterance);
+  EXPECT_EQ(base::ASCIIToUTF16("123456"), result().hypotheses[1].utterance);
   EXPECT_EQ(0.5, result().hypotheses[1].confidence);
 
   // Zero results.
@@ -104,7 +104,7 @@ TEST_F(GoogleOneShotRemoteEngineTest, BasicTest) {
   EXPECT_EQ(0U, result().hypotheses.size());
 
   // Http failure case.
-  CreateAndTestRequest(false, "");
+  CreateAndTestRequest(false, std::string());
   EXPECT_EQ(error_, SPEECH_RECOGNITION_ERROR_NETWORK);
   EXPECT_EQ(0U, result().hypotheses.size());
 

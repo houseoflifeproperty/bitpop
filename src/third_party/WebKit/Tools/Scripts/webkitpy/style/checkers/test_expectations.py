@@ -47,18 +47,6 @@ class TestExpectationsChecker(object):
 
     categories = set(['test/expectations'])
 
-    def _determine_port_from_expectations_path(self, host, expectations_path):
-        # Pass a configuration to avoid calling default_configuration() when initializing the port (takes 0.5 seconds on a Mac Pro!).
-        options_wk1 = optparse.Values({'configuration': 'Release', 'webkit_test_runner': False})
-        options_wk2 = optparse.Values({'configuration': 'Release', 'webkit_test_runner': True})
-        for port_name in host.port_factory.all_port_names():
-            ports = [host.port_factory.get(port_name, options=options_wk1), host.port_factory.get(port_name, options=options_wk2)]
-            for port in ports:
-                for test_expectation_file in port.expectations_files():
-                    if test_expectation_file.replace(port.path_from_webkit_base() + host.filesystem.sep, '') == expectations_path:
-                        return port
-        return None
-
     def __init__(self, file_path, handle_style_error, host=None):
         self._file_path = file_path
         self._handle_style_error = handle_style_error
@@ -68,7 +56,7 @@ class TestExpectationsChecker(object):
         host = host or Host()
         host.initialize_scm()
 
-        self._port_obj = self._determine_port_from_expectations_path(host, file_path)
+        self._port_obj = host.port_factory.get()
 
         # Suppress error messages of test_expectations module since they will be reported later.
         log = logging.getLogger("webkitpy.layout_tests.layout_package.test_expectations")
@@ -78,13 +66,13 @@ class TestExpectationsChecker(object):
         pass
 
     def check_test_expectations(self, expectations_str, tests=None):
-        parser = TestExpectationParser(self._port_obj, tests, allow_rebaseline_modifier=False)
+        parser = TestExpectationParser(self._port_obj, tests, is_lint_mode=True)
         expectations = parser.parse('expectations', expectations_str)
 
         level = 5
         for expectation_line in expectations:
             for warning in expectation_line.warnings:
-                self._handle_style_error(expectation_line.line_number, 'test/expectations', level, warning)
+                self._handle_style_error(expectation_line.line_numbers, 'test/expectations', level, warning)
 
     def check_tabs(self, lines):
         self._tab_checker.check(lines)

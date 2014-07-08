@@ -9,22 +9,25 @@
 #include "base/threading/thread_checker.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/audio_renderer_sink.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebAudioDevice.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/public/platform/WebAudioDevice.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+
+namespace media {
+class AudioOutputDevice;
+}
 
 namespace content {
 
-class RendererAudioOutputDevice;
-
 class RendererWebAudioDeviceImpl
-    : public WebKit::WebAudioDevice,
+    : public blink::WebAudioDevice,
       public media::AudioRendererSink::RenderCallback {
  public:
   RendererWebAudioDeviceImpl(const media::AudioParameters& params,
-                             WebKit::WebAudioDevice::RenderCallback* callback);
+                             blink::WebAudioDevice::RenderCallback* callback,
+                             int session_id);
   virtual ~RendererWebAudioDeviceImpl();
 
-  // WebKit::WebAudioDevice implementation.
+  // blink::WebAudioDevice implementation.
   virtual void start();
   virtual void stop();
   virtual double sampleRate();
@@ -43,14 +46,17 @@ class RendererWebAudioDeviceImpl
   const media::AudioParameters params_;
 
   // Weak reference to the callback into WebKit code.
-  WebKit::WebAudioDevice::RenderCallback* const client_callback_;
+  blink::WebAudioDevice::RenderCallback* const client_callback_;
 
   // To avoid the need for locking, ensure the control methods of the
-  // WebKit::WebAudioDevice implementation are called on the same thread.
+  // blink::WebAudioDevice implementation are called on the same thread.
   base::ThreadChecker thread_checker_;
 
   // When non-NULL, we are started.  When NULL, we are stopped.
-  scoped_refptr<RendererAudioOutputDevice> output_device_;
+  scoped_refptr<media::AudioOutputDevice> output_device_;
+
+  // ID to allow browser to select the correct input device for unified IO.
+  int session_id_;
 
   DISALLOW_COPY_AND_ASSIGN(RendererWebAudioDeviceImpl);
 };

@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 #include <string>
+#include <vector>
 
 #include "base/bind.h"
 #include "base/callback_helpers.h"
-#include "base/message_loop.h"
 #include "base/memory/singleton.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/gmock_callback_support.h"
 #include "media/base/limits.h"
@@ -28,7 +29,6 @@ using ::testing::AtLeast;
 using ::testing::InSequence;
 using ::testing::IsNull;
 using ::testing::Return;
-using ::testing::ReturnRef;
 using ::testing::SaveArg;
 using ::testing::StrictMock;
 
@@ -38,25 +38,18 @@ static const VideoFrame::Format kVideoFormat = VideoFrame::YV12;
 static const gfx::Size kCodedSize(320, 240);
 static const gfx::Rect kVisibleRect(320, 240);
 static const gfx::Size kNaturalSize(320, 240);
-static const VideoFrame::Format kInitVideoFormat = VideoFrame::RGB32;
-static const gfx::Size kInitCodedSize(100, 100);
-static const gfx::Rect kInitVisibleRect(100, 100);
-static const gfx::Size kInitNaturalSize(100, 100);
 
 ACTION_P(ReturnBuffer, buffer) {
-  arg0.Run(buffer ? DemuxerStream::kOk : DemuxerStream::kAborted, buffer);
+  arg0.Run(buffer.get() ? DemuxerStream::kOk : DemuxerStream::kAborted, buffer);
 }
 
 class FFmpegVideoDecoderTest : public testing::Test {
  public:
   FFmpegVideoDecoderTest()
-      : decoder_(NULL),
-        demuxer_(new StrictMock<MockDemuxerStream>()),
-        read_cb_(base::Bind(&FFmpegVideoDecoderTest::FrameReady,
-                            base::Unretained(this))) {
+      : decoder_(new FFmpegVideoDecoder(message_loop_.message_loop_proxy())),
+        decode_cb_(base::Bind(&FFmpegVideoDecoderTest::FrameReady,
+                              base::Unretained(this))) {
     FFmpegGlue::InitializeFFmpeg();
-
-    decoder_ = new FFmpegVideoDecoder(message_loop_.message_loop_proxy());
 
     // Initialize various test buffers.
     frame_buffer_.reset(new uint8[kCodedSize.GetArea()]);
@@ -70,33 +63,21 @@ class FFmpegVideoDecoderTest : public testing::Test {
   }
 
   void Initialize() {
-    config_.Initialize(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kVideoFormat,
-                       kCodedSize, kVisibleRect, kNaturalSize,
-                       NULL, 0, false, true);
-    InitializeWithConfig(config_);
-  }
-
-  void InitializeWithEncryptedConfig() {
-    config_.Initialize(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kVideoFormat,
-                       kCodedSize, kVisibleRect, kNaturalSize,
-                       NULL, 0, true, true);
-    InitializeWithConfig(config_);
+    InitializeWithConfig(TestVideoConfig::Normal());
   }
 
   void InitializeWithConfigAndStatus(const VideoDecoderConfig& config,
                                      PipelineStatus status) {
-    EXPECT_CALL(*demuxer_, video_decoder_config())
-        .WillRepeatedly(ReturnRef(config));
-
-    decoder_->Initialize(demuxer_, NewExpectedStatusCB(status),
-                         base::Bind(&MockStatisticsCB::OnStatistics,
-                                    base::Unretained(&statistics_cb_)));
-
+    decoder_->Initialize(config, false, NewExpectedStatusCB(status));
     message_loop_.RunUntilIdle();
   }
 
   void InitializeWithConfig(const VideoDecoderConfig& config) {
     InitializeWithConfigAndStatus(config, PIPELINE_OK);
+  }
+
+  void Reinitialize() {
+    InitializeWithConfig(TestVideoConfig::Large());
   }
 
   void Reset() {
@@ -105,7 +86,7 @@ class FFmpegVideoDecoderTest : public testing::Test {
   }
 
   void Stop() {
-    decoder_->Stop(NewExpectedClosure());
+    decoder_->Stop();
     message_loop_.RunUntilIdle();
   }
 
@@ -117,19 +98,65 @@ class FFmpegVideoDecoderTest : public testing::Test {
     DecodeSingleFrame(i_frame_buffer_, &status, &video_frame);
 
     EXPECT_EQ(VideoDecoder::kOk, status);
-    ASSERT_TRUE(video_frame);
-    EXPECT_FALSE(video_frame->IsEndOfStream());
+    ASSERT_TRUE(video_frame.get());
+    EXPECT_FALSE(video_frame->end_of_stream());
   }
 
   // Sets up expectations and actions to put FFmpegVideoDecoder in an end
   // of stream state.
   void EnterEndOfStreamState() {
-    scoped_refptr<VideoFrame> video_frame;
     VideoDecoder::Status status;
-    Read(&status, &video_frame);
+    scoped_refptr<VideoFrame> video_frame;
+    DecodeSingleFrame(end_of_stream_buffer_, &status, &video_frame);
     EXPECT_EQ(VideoDecoder::kOk, status);
-    ASSERT_TRUE(video_frame);
-    EXPECT_TRUE(video_frame->IsEndOfStream());
+    ASSERT_TRUE(video_frame.get());
+    EXPECT_TRUE(video_frame->end_of_stream());
+  }
+
+  typedef std::vector<scoped_refptr<DecoderBuffer> > InputBuffers;
+  typedef std::vector<scoped_refptr<VideoFrame> > OutputFrames;
+
+  // Decodes all buffers in |input_buffers| and push all successfully decoded
+  // output frames (excluding EOS frames) into |output_frames|.
+  // Returns the last decode status returned by the decoder.
+  VideoDecoder::Status DecodeMultipleFrames(const InputBuffers& input_buffers,
+                                            OutputFrames* output_frames) {
+    InputBuffers::const_iterator input_iter = input_buffers.begin();
+
+    for (;;) {
+      // Prepare input buffer.
+      scoped_refptr<DecoderBuffer> buffer;
+      if (input_iter != input_buffers.end()) {
+        buffer = *input_iter;
+        ++input_iter;
+      } else {
+        buffer = end_of_stream_buffer_;
+      }
+
+      VideoDecoder::Status status;
+      scoped_refptr<VideoFrame> frame;
+      Decode(buffer, &status, &frame);
+
+      switch (status) {
+        case VideoDecoder::kOk:
+          DCHECK(frame);
+          if (!frame->end_of_stream()) {
+            output_frames->push_back(frame);
+            continue;
+          } else {  // EOS
+            return status;
+          }
+        case VideoDecoder::kNotEnoughData:
+          DCHECK(!frame);
+          continue;
+        case VideoDecoder::kAborted:
+          NOTREACHED();
+        case VideoDecoder::kDecodeError:
+        case VideoDecoder::kDecryptError:
+          DCHECK(!frame);
+          return status;
+      }
+    }
   }
 
   // Decodes the single compressed frame in |buffer| and writes the
@@ -139,13 +166,20 @@ class FFmpegVideoDecoderTest : public testing::Test {
   void DecodeSingleFrame(const scoped_refptr<DecoderBuffer>& buffer,
                          VideoDecoder::Status* status,
                          scoped_refptr<VideoFrame>* video_frame) {
-    EXPECT_CALL(*demuxer_, Read(_))
-        .WillOnce(ReturnBuffer(buffer))
-        .WillRepeatedly(ReturnBuffer(end_of_stream_buffer_));
+    InputBuffers input_buffers;
+    input_buffers.push_back(buffer);
 
-    EXPECT_CALL(statistics_cb_, OnStatistics(_));
+    OutputFrames output_frames;
+    *status = DecodeMultipleFrames(input_buffers, &output_frames);
 
-    Read(status, video_frame);
+    if (*status != VideoDecoder::kOk)
+      return;
+
+    ASSERT_LE(output_frames.size(), 1U);
+    if (output_frames.size() == 1U)
+      *video_frame = output_frames[0];
+    else
+      *video_frame = VideoFrame::CreateEOSFrame();
   }
 
   // Decodes |i_frame_buffer_| and then decodes the data contained in
@@ -155,44 +189,37 @@ class FFmpegVideoDecoderTest : public testing::Test {
                                 int expected_width,
                                 int expected_height) {
     Initialize();
-
-    VideoDecoder::Status status_a;
-    VideoDecoder::Status status_b;
-    scoped_refptr<VideoFrame> video_frame_a;
-    scoped_refptr<VideoFrame> video_frame_b;
-
     scoped_refptr<DecoderBuffer> buffer = ReadTestDataFile(test_file_name);
 
-    EXPECT_CALL(*demuxer_, Read(_))
-        .WillOnce(ReturnBuffer(i_frame_buffer_))
-        .WillOnce(ReturnBuffer(buffer))
-        .WillRepeatedly(ReturnBuffer(end_of_stream_buffer_));
+    InputBuffers input_buffers;
+    input_buffers.push_back(i_frame_buffer_);
+    input_buffers.push_back(buffer);
 
-    EXPECT_CALL(statistics_cb_, OnStatistics(_))
-        .Times(2);
+    OutputFrames output_frames;
+    VideoDecoder::Status status =
+        DecodeMultipleFrames(input_buffers, &output_frames);
 
-    Read(&status_a, &video_frame_a);
-    Read(&status_b, &video_frame_b);
+    EXPECT_EQ(VideoDecoder::kOk, status);
+    ASSERT_EQ(2U, output_frames.size());
 
     gfx::Size original_size = kVisibleRect.size();
-    EXPECT_EQ(VideoDecoder::kOk, status_a);
-    EXPECT_EQ(VideoDecoder::kOk, status_b);
-    ASSERT_TRUE(video_frame_a);
-    ASSERT_TRUE(video_frame_b);
     EXPECT_EQ(original_size.width(),
-        video_frame_a->visible_rect().size().width());
+              output_frames[0]->visible_rect().size().width());
     EXPECT_EQ(original_size.height(),
-        video_frame_a->visible_rect().size().height());
-    EXPECT_EQ(expected_width, video_frame_b->visible_rect().size().width());
-    EXPECT_EQ(expected_height, video_frame_b->visible_rect().size().height());
+              output_frames[0]->visible_rect().size().height());
+    EXPECT_EQ(expected_width,
+              output_frames[1]->visible_rect().size().width());
+    EXPECT_EQ(expected_height,
+              output_frames[1]->visible_rect().size().height());
   }
 
-  void Read(VideoDecoder::Status* status,
-            scoped_refptr<VideoFrame>* video_frame) {
+  void Decode(const scoped_refptr<DecoderBuffer>& buffer,
+              VideoDecoder::Status* status,
+              scoped_refptr<VideoFrame>* video_frame) {
     EXPECT_CALL(*this, FrameReady(_, _))
         .WillOnce(DoAll(SaveArg<0>(status), SaveArg<1>(video_frame)));
 
-    decoder_->Read(read_cb_);
+    decoder_->Decode(buffer, decode_cb_);
 
     message_loop_.RunUntilIdle();
   }
@@ -200,16 +227,13 @@ class FFmpegVideoDecoderTest : public testing::Test {
   MOCK_METHOD2(FrameReady, void(VideoDecoder::Status,
                                 const scoped_refptr<VideoFrame>&));
 
-  MessageLoop message_loop_;
-  scoped_refptr<FFmpegVideoDecoder> decoder_;
-  scoped_refptr<StrictMock<MockDemuxerStream> > demuxer_;
-  MockStatisticsCB statistics_cb_;
-  VideoDecoderConfig config_;
+  base::MessageLoop message_loop_;
+  scoped_ptr<FFmpegVideoDecoder> decoder_;
 
-  VideoDecoder::ReadCB read_cb_;
+  VideoDecoder::DecodeCB decode_cb_;
 
   // Various buffers for testing.
-  scoped_array<uint8_t> frame_buffer_;
+  scoped_ptr<uint8_t[]> frame_buffer_;
   scoped_refptr<DecoderBuffer> end_of_stream_buffer_;
   scoped_refptr<DecoderBuffer> i_frame_buffer_;
   scoped_refptr<DecoderBuffer> corrupt_i_frame_buffer_;
@@ -224,17 +248,14 @@ TEST_F(FFmpegVideoDecoderTest, Initialize_Normal) {
 
 TEST_F(FFmpegVideoDecoderTest, Initialize_UnsupportedDecoder) {
   // Test avcodec_find_decoder() returning NULL.
-  VideoDecoderConfig config(kUnknownVideoCodec, VIDEO_CODEC_PROFILE_UNKNOWN,
-                            kVideoFormat,
-                            kCodedSize, kVisibleRect, kNaturalSize,
-                            NULL, 0, false);
-  InitializeWithConfigAndStatus(config, DECODER_ERROR_NOT_SUPPORTED);
+  InitializeWithConfigAndStatus(TestVideoConfig::Invalid(),
+                                DECODER_ERROR_NOT_SUPPORTED);
 }
 
 TEST_F(FFmpegVideoDecoderTest, Initialize_UnsupportedPixelFormat) {
-  // Ensure decoder handles unsupport pixel formats without crashing.
+  // Ensure decoder handles unsupported pixel formats without crashing.
   VideoDecoderConfig config(kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN,
-                            VideoFrame::INVALID,
+                            VideoFrame::UNKNOWN,
                             kCodedSize, kVisibleRect, kNaturalSize,
                             NULL, 0, false);
   InitializeWithConfigAndStatus(config, DECODER_ERROR_NOT_SUPPORTED);
@@ -306,6 +327,30 @@ TEST_F(FFmpegVideoDecoderTest, Initialize_AspectRatioDenominatorTooLarge) {
   InitializeWithConfigAndStatus(config, DECODER_ERROR_NOT_SUPPORTED);
 }
 
+TEST_F(FFmpegVideoDecoderTest, Reinitialize_Normal) {
+  Initialize();
+  Reinitialize();
+}
+
+TEST_F(FFmpegVideoDecoderTest, Reinitialize_Failure) {
+  Initialize();
+  InitializeWithConfigAndStatus(TestVideoConfig::Invalid(),
+                                DECODER_ERROR_NOT_SUPPORTED);
+}
+
+TEST_F(FFmpegVideoDecoderTest, Reinitialize_AfterDecodeFrame) {
+  Initialize();
+  EnterDecodingState();
+  Reinitialize();
+}
+
+TEST_F(FFmpegVideoDecoderTest, Reinitialize_AfterReset) {
+  Initialize();
+  EnterDecodingState();
+  Reset();
+  Reinitialize();
+}
+
 TEST_F(FFmpegVideoDecoderTest, DecodeFrame_Normal) {
   Initialize();
 
@@ -315,8 +360,8 @@ TEST_F(FFmpegVideoDecoderTest, DecodeFrame_Normal) {
   DecodeSingleFrame(i_frame_buffer_, &status, &video_frame);
 
   EXPECT_EQ(VideoDecoder::kOk, status);
-  ASSERT_TRUE(video_frame);
-  EXPECT_FALSE(video_frame->IsEndOfStream());
+  ASSERT_TRUE(video_frame.get());
+  EXPECT_FALSE(video_frame->end_of_stream());
 }
 
 // Verify current behavior for 0 byte frames. FFmpeg simply ignores
@@ -326,58 +371,43 @@ TEST_F(FFmpegVideoDecoderTest, DecodeFrame_0ByteFrame) {
 
   scoped_refptr<DecoderBuffer> zero_byte_buffer = new DecoderBuffer(0);
 
-  VideoDecoder::Status status_a;
-  VideoDecoder::Status status_b;
-  VideoDecoder::Status status_c;
-  scoped_refptr<VideoFrame> video_frame_a;
-  scoped_refptr<VideoFrame> video_frame_b;
-  scoped_refptr<VideoFrame> video_frame_c;
+  InputBuffers input_buffers;
+  input_buffers.push_back(i_frame_buffer_);
+  input_buffers.push_back(zero_byte_buffer);
+  input_buffers.push_back(i_frame_buffer_);
 
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(ReturnBuffer(i_frame_buffer_))
-      .WillOnce(ReturnBuffer(zero_byte_buffer))
-      .WillOnce(ReturnBuffer(i_frame_buffer_))
-      .WillRepeatedly(ReturnBuffer(end_of_stream_buffer_));
+  OutputFrames output_frames;
+  VideoDecoder::Status status =
+      DecodeMultipleFrames(input_buffers, &output_frames);
 
-  EXPECT_CALL(statistics_cb_, OnStatistics(_))
-      .Times(2);
+  EXPECT_EQ(VideoDecoder::kOk, status);
+  ASSERT_EQ(2U, output_frames.size());
 
-  Read(&status_a, &video_frame_a);
-  Read(&status_b, &video_frame_b);
-  Read(&status_c, &video_frame_c);
-
-  EXPECT_EQ(VideoDecoder::kOk, status_a);
-  EXPECT_EQ(VideoDecoder::kOk, status_b);
-  EXPECT_EQ(VideoDecoder::kOk, status_c);
-
-  ASSERT_TRUE(video_frame_a);
-  ASSERT_TRUE(video_frame_b);
-  ASSERT_TRUE(video_frame_c);
-
-  EXPECT_FALSE(video_frame_a->IsEndOfStream());
-  EXPECT_FALSE(video_frame_b->IsEndOfStream());
-  EXPECT_TRUE(video_frame_c->IsEndOfStream());
+  EXPECT_FALSE(output_frames[0]->end_of_stream());
+  EXPECT_FALSE(output_frames[1]->end_of_stream());
 }
 
 TEST_F(FFmpegVideoDecoderTest, DecodeFrame_DecodeError) {
   Initialize();
 
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(ReturnBuffer(corrupt_i_frame_buffer_))
-      .WillRepeatedly(ReturnBuffer(i_frame_buffer_));
+  VideoDecoder::Status status;
+  scoped_refptr<VideoFrame> frame;
 
   // The error is only raised on the second decode attempt, so we expect at
-  // least one successful decode but we don't expect FrameReady() to be
-  // executed as an error is raised instead.
-  EXPECT_CALL(statistics_cb_, OnStatistics(_));
+  // least one successful decode but we don't expect valid frame to be decoded.
+  // During the second decode attempt an error is raised.
+  Decode(corrupt_i_frame_buffer_, &status, &frame);
+  DCHECK(!frame);
+  DCHECK_EQ(VideoDecoder::kNotEnoughData, status);
+  Decode(i_frame_buffer_, &status, &frame);
+  DCHECK(!frame);
+  DCHECK_EQ(VideoDecoder::kDecodeError, status);
 
-  // Our read should still get satisfied with end of stream frame during an
-  // error.
-  VideoDecoder::Status status;
-  scoped_refptr<VideoFrame> video_frame;
-  Read(&status, &video_frame);
-  EXPECT_EQ(VideoDecoder::kDecodeError, status);
-  EXPECT_FALSE(video_frame);
+  // After a decode error occurred, all following decodes will return
+  // kDecodeError.
+  Decode(i_frame_buffer_, &status, &frame);
+  DCHECK(!frame);
+  DCHECK_EQ(VideoDecoder::kDecodeError, status);
 }
 
 // Multi-threaded decoders have different behavior than single-threaded
@@ -393,8 +423,8 @@ TEST_F(FFmpegVideoDecoderTest, DecodeFrame_DecodeErrorAtEndOfStream) {
   DecodeSingleFrame(corrupt_i_frame_buffer_, &status, &video_frame);
 
   EXPECT_EQ(VideoDecoder::kOk, status);
-  ASSERT_TRUE(video_frame);
-  EXPECT_TRUE(video_frame->IsEndOfStream());
+  ASSERT_TRUE(video_frame.get());
+  EXPECT_TRUE(video_frame->end_of_stream());
 }
 
 // Decode |i_frame_buffer_| and then a frame with a larger width and verify
@@ -442,25 +472,6 @@ TEST_F(FFmpegVideoDecoderTest, Reset_EndOfStream) {
   Reset();
 }
 
-// Test resetting when there is a pending read on the demuxer.
-TEST_F(FFmpegVideoDecoderTest, Reset_DuringPendingRead) {
-  Initialize();
-
-  // Request a read on the decoder and ensure the demuxer has been called.
-  DemuxerStream::ReadCB read_cb;
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(SaveArg<0>(&read_cb));
-  decoder_->Read(read_cb_);
-  ASSERT_FALSE(read_cb.is_null());
-
-  // Reset the decoder.
-  Reset();
-
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
-
-  read_cb.Run(DemuxerStream::kOk, i_frame_buffer_);
-}
-
 // Test stopping when decoder has initialized but not decoded.
 TEST_F(FFmpegVideoDecoderTest, Stop_Initialized) {
   Initialize();
@@ -480,192 +491,6 @@ TEST_F(FFmpegVideoDecoderTest, Stop_EndOfStream) {
   EnterDecodingState();
   EnterEndOfStreamState();
   Stop();
-}
-
-// Test stopping when there is a pending read on the demuxer.
-TEST_F(FFmpegVideoDecoderTest, Stop_DuringPendingRead) {
-  Initialize();
-
-  // Request a read on the decoder and ensure the demuxer has been called.
-  DemuxerStream::ReadCB read_cb;
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(SaveArg<0>(&read_cb));
-  decoder_->Read(read_cb_);
-  ASSERT_FALSE(read_cb.is_null());
-
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
-
-  Stop();
-
-  read_cb.Run(DemuxerStream::kOk, i_frame_buffer_);
-}
-
-// Test aborted read on the demuxer stream.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_Aborted) {
-  Initialize();
-
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(ReturnBuffer(scoped_refptr<DecoderBuffer>()));
-
-  VideoDecoder::Status status;
-  scoped_refptr<VideoFrame> video_frame;
-
-  Read(&status, &video_frame);
-
-  EXPECT_EQ(VideoDecoder::kOk, status);
-  EXPECT_FALSE(video_frame);
-}
-
-// Test aborted read on the demuxer stream during pending reset.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_AbortedDuringReset) {
-  Initialize();
-
-  // Request a read on the decoder and ensure the demuxer has been called.
-  DemuxerStream::ReadCB read_cb;
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(SaveArg<0>(&read_cb));
-  decoder_->Read(read_cb_);
-  ASSERT_FALSE(read_cb.is_null());
-
-  // Reset while there is still an outstanding read on the demuxer.
-  Reset();
-
-  // Signal an aborted demuxer read: a NULL video frame should be returned.
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
-  read_cb.Run(DemuxerStream::kAborted, NULL);
-  message_loop_.RunUntilIdle();
-}
-
-// Test config change on the demuxer stream.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_ConfigChange) {
-  // TODO(xhwang): Ideally we should use a codec other than VP8 in the init
-  // config. Theora is the only codec that's supported on all platforms but it
-  // needs extra data to be initialized properly.
-  VideoDecoderConfig init_config(
-      kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kInitVideoFormat,
-      kInitCodedSize, kInitVisibleRect, kInitNaturalSize, NULL, 0, false);
-  InitializeWithConfig(init_config);
-
-  VideoDecoderConfig new_config(
-      kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kVideoFormat,
-      kCodedSize, kVisibleRect, kNaturalSize, NULL, 0, false);
-  EXPECT_CALL(*demuxer_, video_decoder_config())
-      .WillRepeatedly(ReturnRef(new_config));
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(RunCallback<0>(DemuxerStream::kConfigChanged,
-                               scoped_refptr<DecoderBuffer>()))
-      .WillOnce(RunCallback<0>(DemuxerStream::kOk, i_frame_buffer_))
-      .WillRepeatedly(RunCallback<0>(DemuxerStream::kOk,
-                                     end_of_stream_buffer_));
-  EXPECT_CALL(statistics_cb_, OnStatistics(_));
-
-  VideoDecoder::Status status;
-  scoped_refptr<VideoFrame> video_frame;
-
-  Read(&status, &video_frame);
-
-  EXPECT_EQ(VideoDecoder::kOk, status);
-  ASSERT_TRUE(video_frame);
-  EXPECT_FALSE(video_frame->IsEndOfStream());
-}
-
-// Test config change failure.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_ConfigChangeFailed) {
-  Initialize();
-
-  VideoDecoderConfig invalid_config(
-      kUnknownVideoCodec, VIDEO_CODEC_PROFILE_UNKNOWN, VideoFrame::INVALID,
-      kCodedSize, kVisibleRect, kNaturalSize, NULL, 0, false);
-  EXPECT_CALL(*demuxer_, video_decoder_config())
-      .WillRepeatedly(ReturnRef(invalid_config));
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(RunCallback<0>(DemuxerStream::kConfigChanged,
-                               scoped_refptr<DecoderBuffer>()));
-
-  VideoDecoder::Status status;
-  scoped_refptr<VideoFrame> video_frame;
-
-  Read(&status, &video_frame);
-
-  EXPECT_EQ(VideoDecoder::kDecodeError, status);
-  ASSERT_FALSE(video_frame);
-}
-
-// Test config change on the demuxer stream during pending reset.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_ConfigChangeDuringReset) {
-  // TODO(xhwang): Ideally we should use a codec other than VP8 in the init
-  // config. Theora is the only codec that's supported on all platforms but it
-  // needs extra data to be initialized properly.
-  VideoDecoderConfig init_config(
-      kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kInitVideoFormat,
-      kInitCodedSize, kInitVisibleRect, kInitNaturalSize, NULL, 0, false);
-  InitializeWithConfig(init_config);
-
-  // Request a read on the decoder and ensure the demuxer has been called.
-  DemuxerStream::ReadCB read_cb;
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(SaveArg<0>(&read_cb));
-  decoder_->Read(read_cb_);
-  ASSERT_FALSE(read_cb.is_null());
-
-  // Reset while there is still an outstanding read on the demuxer.
-  Reset();
-
-  VideoDecoderConfig new_config(
-      kCodecVP8, VIDEO_CODEC_PROFILE_UNKNOWN, kVideoFormat,
-      kCodedSize, kVisibleRect, kNaturalSize, NULL, 0, false);
-  EXPECT_CALL(*demuxer_, video_decoder_config())
-      .Times(AtLeast(1))
-      .WillRepeatedly(ReturnRef(new_config));
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kOk, IsNull()));
-
-  // Signal a config change.
-  base::ResetAndReturn(&read_cb).Run(DemuxerStream::kConfigChanged, NULL);
-  message_loop_.RunUntilIdle();
-
-  // Now the decoder should be in a clean initialized state (initialized with
-  // |new_config|) and be ready to decode |i_frame_buffer_|.
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(RunCallback<0>(DemuxerStream::kOk, i_frame_buffer_))
-      .WillRepeatedly(RunCallback<0>(DemuxerStream::kOk,
-                                     end_of_stream_buffer_));
-  EXPECT_CALL(statistics_cb_, OnStatistics(_));
-
-  VideoDecoder::Status status;
-  scoped_refptr<VideoFrame> video_frame;
-
-  Read(&status, &video_frame);
-
-  EXPECT_EQ(VideoDecoder::kOk, status);
-  ASSERT_TRUE(video_frame);
-  EXPECT_FALSE(video_frame->IsEndOfStream());
-}
-
-// Test failed config change during pending reset.
-TEST_F(FFmpegVideoDecoderTest, DemuxerRead_ConfigChangeFailedDuringReset) {
-  Initialize();
-
-  // Request a read on the decoder and ensure the demuxer has been called.
-  DemuxerStream::ReadCB read_cb;
-  EXPECT_CALL(*demuxer_, Read(_))
-      .WillOnce(SaveArg<0>(&read_cb));
-  decoder_->Read(read_cb_);
-  ASSERT_FALSE(read_cb.is_null());
-
-  // Reset while there is still an outstanding read on the demuxer.
-  Reset();
-
-  VideoDecoderConfig invalid_config(
-      kUnknownVideoCodec, VIDEO_CODEC_PROFILE_UNKNOWN, VideoFrame::INVALID,
-      kCodedSize, kVisibleRect, kNaturalSize, NULL, 0, false);
-  EXPECT_CALL(*demuxer_, video_decoder_config())
-      .Times(AtLeast(1))
-      .WillRepeatedly(ReturnRef(invalid_config));
-  EXPECT_CALL(*this, FrameReady(VideoDecoder::kDecodeError, IsNull()));
-
-  // Signal a config change.
-  base::ResetAndReturn(&read_cb).Run(DemuxerStream::kConfigChanged, NULL);
-  message_loop_.RunUntilIdle();
 }
 
 }  // namespace media

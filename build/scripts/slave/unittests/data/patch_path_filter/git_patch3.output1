@@ -1,0 +1,23 @@
+Index: webrtc/LICENSE
+diff --git webrtc/LICENSE webrtc/LICENSE
+old mode 100644
+new mode 100755
+Index: webrtc/test/common_unittest.cc
+diff --git webrtc/test/common_unittest.cc webrtc/test/common_unittest.cc
+index 082c18c..3047f07 100644
+--- webrtc/test/common_unittest.cc
++++ webrtc/test/common_unittest.cc
+@@ -8,12 +8,12 @@
+  *  be found in the AUTHORS file in the root of the source tree.
+  */
+ #include "webrtc/common.h"
+-
+ #include "testing/gtest/include/gtest/gtest.h"
+ 
+ namespace webrtc {
+ namespace {
+ 
++// Dummy comment
+ struct MyExperiment {
+   static const int kDefaultFactor;
+   static const int kDefaultOffset;

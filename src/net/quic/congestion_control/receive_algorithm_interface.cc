@@ -11,13 +11,13 @@ namespace net {
 
 // Factory for receive side congestion control algorithm.
 ReceiveAlgorithmInterface* ReceiveAlgorithmInterface::Create(
-    const QuicClock* clock,
     CongestionFeedbackType type) {
   switch (type) {
     case kTCP:
       return new TcpReceiver();
     case kInterArrival:
-      break;  // TODO(pwestin) Implement.
+      LOG(DFATAL) << "InterArrivalSendAlgorithm no longer supported.";
+      return NULL;
     case kFixRate:
       return new FixRateReceiver();
   }

@@ -8,8 +8,8 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
-#include "base/string_piece.h"
+#include "base/files/file_path.h"
+#include "base/strings/string_piece.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "v8/include/v8.h"
 
@@ -27,7 +27,7 @@ class V8UnitTest : public testing::Test {
  protected:
   // Add a custom helper JS library for your test. If |library_path| is
   // relative, it'll be read as relative to the test data dir.
-  void AddLibrary(const FilePath& library_path);
+  void AddLibrary(const base::FilePath& library_path);
 
   // Runs |test_fixture|.|test_name| using the framework in test_api.js.
   bool RunJavascriptTestF(const std::string& test_fixture,
@@ -55,33 +55,57 @@ class V8UnitTest : public testing::Test {
   // to log, warn, and info of the console object. Scripts running in the
   // context can call this with |args| to print out logging information to the
   // console.
-  static v8::Handle<v8::Value> Log(const v8::Arguments& args);
+  static void Log(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // This method is bound to console.error in the context. Any calls to this
   // will log |args| to the console and also signal an error condition causing
   // |RunJavascriptF| to fail.
-  static v8::Handle<v8::Value> Error(const v8::Arguments& args);
+  static void Error(const v8::FunctionCallbackInfo<v8::Value>& args);
 
   // This method is bound to a method "chrome.send" in the context. When
   // test_api calls testDone with |args| to report its results, this will
   // capture and hold the results for analysis by |RunJavascriptF|.
-  static v8::Handle<v8::Value> ChromeSend(const v8::Arguments& args);
+  static void ChromeSend(const v8::FunctionCallbackInfo<v8::Value>& args);
 
  private:
+  // A helper class to ensure that the lifetimes of the Isolate and the
+  // HandleScope are correctly nested.
+  class IsolateScope {
+   public:
+    IsolateScope() : isolate_(v8::Isolate::New()) { isolate_->Enter(); }
+
+    ~IsolateScope() {
+      isolate_->Exit();
+      isolate_->Dispose();
+    }
+
+    v8::Isolate* isolate() const { return isolate_; }
+
+   private:
+    v8::Isolate* isolate_;
+
+    DISALLOW_COPY_AND_ASSIGN(IsolateScope);
+  };
+
+  // A handy shortcut.
+  v8::Isolate* isolate() const { return isolate_scope_.isolate(); }
+
   // Executes all added javascript libraries. Returns true if no errors.
   bool ExecuteJavascriptLibraries();
 
   // Initializes paths and libraries.
   void InitPathsAndLibraries();
 
+  IsolateScope isolate_scope_;
+
   // Handle scope that is used throughout the life of this class.
   v8::HandleScope handle_scope_;
 
   // Context for the JavaScript in the test.
-  v8::Handle<v8::Context> context_;
+  v8::Persistent<v8::Context> context_;
 
   // User added libraries.
-  std::vector<FilePath> user_libraries_;
+  std::vector<base::FilePath> user_libraries_;
 };
 
 #endif  // CHROME_TEST_BASE_V8_UNIT_TEST_H_

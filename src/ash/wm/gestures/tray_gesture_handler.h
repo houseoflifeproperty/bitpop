@@ -14,7 +14,6 @@ class GestureEvent;
 }
 
 namespace ash {
-namespace internal {
 
 // Handles gesture events on the shelf to show the system tray bubble.
 class TrayGestureHandler : public views::WidgetObserver {
@@ -31,7 +30,7 @@ class TrayGestureHandler : public views::WidgetObserver {
   void CompleteGestureDrag(const ui::GestureEvent& event);
 
  private:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // The widget for the tray-bubble.
   views::Widget* widget_;
@@ -42,7 +41,6 @@ class TrayGestureHandler : public views::WidgetObserver {
   DISALLOW_COPY_AND_ASSIGN(TrayGestureHandler);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_GESTURES_TRAY_GESTURE_HANDLER_H_

@@ -9,7 +9,8 @@
 #include "base/logging.h"
 #include "base/memory/scoped_vector.h"
 #include "base/memory/singleton.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/dpi.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace {
 const char kHWNDSubclassKey[] = "__UI_BASE_WIN_HWND_SUBCLASS_PROC__";
@@ -29,7 +30,20 @@ LRESULT CALLBACK WndProc(HWND hwnd,
 }
 
 WNDPROC GetCurrentWndProc(HWND target) {
-  return reinterpret_cast<WNDPROC>(GetWindowLong(target, GWL_WNDPROC));
+  return reinterpret_cast<WNDPROC>(GetWindowLongPtr(target, GWLP_WNDPROC));
+}
+
+// Not defined before Win7
+BOOL GetTouchInputInfoWrapper(HTOUCHINPUT handle, UINT count,
+                              PTOUCHINPUT pointer, int size) {
+  typedef BOOL(WINAPI *GetTouchInputInfoPtr)(HTOUCHINPUT, UINT,
+                                             PTOUCHINPUT, int);
+  GetTouchInputInfoPtr get_touch_input_info_func =
+      reinterpret_cast<GetTouchInputInfoPtr>(
+          GetProcAddress(GetModuleHandleA("user32.dll"), "GetTouchInputInfo"));
+  if (get_touch_input_info_func)
+    return get_touch_input_info_func(handle, count, pointer, size);
+  return FALSE;
 }
 
 }  // namespace
@@ -108,8 +122,8 @@ void HWNDSubclass::RemoveFilter(HWNDMessageFilter* filter) {
 HWNDSubclass::HWNDSubclass(HWND target)
     : target_(target),
       original_wnd_proc_(GetCurrentWndProc(target)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(prop_(target, kHWNDSubclassKey, this)) {
-  ui::SetWindowProc(target_, &WndProc);
+      prop_(target, kHWNDSubclassKey, this) {
+  gfx::SetWindowProc(target_, &WndProc);
 }
 
 HWNDSubclass::~HWNDSubclass() {
@@ -119,6 +133,27 @@ LRESULT HWNDSubclass::OnWndProc(HWND hwnd,
                                 UINT message,
                                 WPARAM w_param,
                                 LPARAM l_param) {
+
+  // Touch messages are always passed in screen coordinates. If the OS is
+  // scaled, but the app is not DPI aware, then then WM_TOUCH might be
+  // intended for a different window.
+  if (message == WM_TOUCH) {
+    TOUCHINPUT point;
+
+    if (GetTouchInputInfoWrapper(reinterpret_cast<HTOUCHINPUT>(l_param), 1,
+                                 &point, sizeof(TOUCHINPUT))) {
+      POINT touch_location = {
+          TOUCH_COORD_TO_PIXEL(point.x) /
+          gfx::win::GetUndocumentedDPITouchScale(),
+          TOUCH_COORD_TO_PIXEL(point.y) /
+          gfx::win::GetUndocumentedDPITouchScale()};
+      HWND actual_target = WindowFromPoint(touch_location);
+      if (actual_target != hwnd) {
+        return SendMessage(actual_target, message, w_param, l_param);
+      }
+    }
+  }
+
   for (std::vector<HWNDMessageFilter*>::iterator it = filters_.begin();
       it != filters_.end(); ++it) {
     LRESULT l_result = 0;

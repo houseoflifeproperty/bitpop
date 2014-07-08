@@ -9,8 +9,9 @@ import sys
 import tarfile
 
 import buildbot_common
+from build_paths import SCRIPT_DIR
 
-SDK_BUILD_DIR = buildbot_common.SCRIPT_DIR
+SDK_BUILD_DIR = SCRIPT_DIR
 MONO_BUILD_DIR = os.path.join(SDK_BUILD_DIR, 'mono_build')
 MONO_DIR = os.path.join(MONO_BUILD_DIR, 'nacl-mono')
 
@@ -57,8 +58,7 @@ def main(args):
     sdk_url = 'gs://nativeclient-mirror/nacl/nacl_sdk/'\
               'trunk.%s/naclsdk_linux.tar.bz2' % sdk_revision
 
-  sdk_url = sdk_url.replace('https://commondatastorage.googleapis.com/',
-                            'gs://')
+  sdk_url = sdk_url.replace('https://storage.googleapis.com/', 'gs://')
 
   sdk_file = sdk_url.split('/')[-1]
 
@@ -79,10 +79,26 @@ def main(args):
   buildbot_common.BuildStep(build_prefix + 'Checkout Mono')
   # TODO(elijahtaylor): Get git URL from master/trigger to make this
   # more flexible for building from upstream and release branches.
-  git_url = 'git://github.com/elijahtaylor/mono.git'
-  git_rev = 'HEAD'
+  if options.arch == 'arm':
+    git_url = 'git://github.com/igotti-google/mono.git'
+    git_rev = 'arm_nacl'
+  else:
+    git_url = 'git://github.com/elijahtaylor/mono.git'
+    git_rev = 'HEAD'
   if buildbot_revision:
-    git_rev = buildbot_revision.split(':')[1]
+    # Unfortunately, we use different git branches/revisions
+    # for ARM and x86 now, so ignore buildbot_revision variable for ARM.
+    # Need to rethink this approach, if we'll plan to support
+    # more flexible repo selection mechanism.
+    if options.arch != 'arm':
+      git_rev = buildbot_revision.split(':')[1]
+  # ARM and x86 is built out of different git trees, so distinguish
+  # them by appending the arch. It also makes 32 and 64 bit x86 separated,
+  # which is good.
+  # TODO(olonho): maybe we need to avoid modifications of global.
+  global MONO_DIR
+  tag = options.arch
+  MONO_DIR = "%s-%s" % (MONO_DIR, tag)
   if not os.path.exists(MONO_DIR):
     buildbot_common.MakeDir(MONO_DIR)
     buildbot_common.Run(['git', 'clone', git_url, MONO_DIR])
@@ -93,7 +109,7 @@ def main(args):
 
   arch_to_bitsize = {'x86-32': '32',
                      'x86-64': '64',
-                     'arm':    'pnacl'}
+                     'arm':    'arm'}
   arch_to_output_folder = {'x86-32': 'runtime-x86-32-build',
                            'x86-64': 'runtime-x86-64-build',
                            'arm':    'runtime-arm-build'}
@@ -114,9 +130,11 @@ def main(args):
                       options.install_dir],
                       cwd=SDK_BUILD_DIR)
 
-  buildbot_common.BuildStep(build_prefix + 'Test Mono')
-  buildbot_common.Run(['make', 'check', '-j8'],
-      cwd=os.path.join(SDK_BUILD_DIR, arch_to_output_folder[options.arch]))
+  # TODO(elijahtaylor,olonho): Re-enable tests on arm when they compile/run.
+  if options.arch != 'arm':
+    buildbot_common.BuildStep(build_prefix + 'Test Mono')
+    buildbot_common.Run(['make', 'check', '-j8'],
+        cwd=os.path.join(SDK_BUILD_DIR, arch_to_output_folder[options.arch]))
 
   return 0
 

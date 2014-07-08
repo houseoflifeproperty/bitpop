@@ -5,7 +5,7 @@
 #ifndef ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_
 #define ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_
 
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/actionable_view.h"
 #include "ui/views/view.h"
 
 namespace views {
@@ -15,10 +15,7 @@ class View;
 }
 
 namespace ash {
-
 class SystemTrayItem;
-
-namespace internal {
 
 // A view with a chevron ('>') on the right edge. Clicking on the view brings up
 // the detailed view of the tray-item that owns it.
@@ -29,9 +26,9 @@ class TrayItemMore : public ActionableView {
 
   SystemTrayItem* owner() const { return owner_; }
 
-  void SetLabel(const string16& label);
+  void SetLabel(const base::string16& label);
   void SetImage(const gfx::ImageSkia* image_skia);
-  void SetAccessibleName(const string16& name);
+  void SetAccessibleName(const base::string16& name);
 
  protected:
   // Replaces the default icon (on the left of the label), and allows a custom
@@ -45,7 +42,7 @@ class TrayItemMore : public ActionableView {
 
   // Overridden from views::View.
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   SystemTrayItem* owner_;
   // True if |more_| should be shown.
@@ -53,12 +50,11 @@ class TrayItemMore : public ActionableView {
   views::ImageView* icon_;
   views::Label* label_;
   views::ImageView* more_;
-  string16 accessible_name_;
+  base::string16 accessible_name_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayItemMore);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_ITEM_MORE_H_

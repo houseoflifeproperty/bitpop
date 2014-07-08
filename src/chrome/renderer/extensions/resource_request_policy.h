@@ -7,14 +7,15 @@
 
 #include "content/public/common/page_transition_types.h"
 
-class ExtensionSet;
 class GURL;
 
-namespace WebKit {
+namespace blink {
 class WebFrame;
 }
 
 namespace extensions {
+
+class ExtensionSet;
 
 // Encapsulates the policy for when chrome-extension:// and
 // chrome-extension-resource:// URLs can be requested.
@@ -25,13 +26,13 @@ class ResourceRequestPolicy {
   // this request was generated. Web triggered transitions are more restrictive
   // than those triggered through UI.
   static bool CanRequestResource(const GURL& resource_url,
-                                 WebKit::WebFrame* frame,
+                                 blink::WebFrame* frame,
                                  content::PageTransition transition_type,
                                  const ExtensionSet* loaded_extensions);
   // Returns true if the chrome-extension-resource:// |resource_url| can be
   // requested from |frame_url|.
   static bool CanRequestExtensionResourceScheme(const GURL& resource_url,
-                                                WebKit::WebFrame* frame);
+                                                blink::WebFrame* frame);
 
  private:
   ResourceRequestPolicy();

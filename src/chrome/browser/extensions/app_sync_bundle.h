@@ -13,10 +13,10 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/app_sync_data.h"
+#include "chrome/browser/extensions/sync_bundle.h"
 #include "sync/api/syncable_service.h"
 
-class ExtensionService;
-class ExtensionSet;
+class ExtensionSyncService;
 
 namespace syncer {
 class SyncChangeProcessor;
@@ -26,11 +26,12 @@ class SyncErrorFactory;
 namespace extensions {
 
 class Extension;
+class ExtensionSet;
 
 // Bundle of app specific sync stuff.
-class AppSyncBundle {
+class AppSyncBundle : public SyncBundle {
  public:
-  explicit AppSyncBundle(ExtensionService* extension_service);
+  explicit AppSyncBundle(ExtensionSyncService* extension_sync_service);
   virtual ~AppSyncBundle();
 
   // Setup this bundle to be sync application data.
@@ -46,17 +47,14 @@ class AppSyncBundle {
   syncer::SyncChange CreateSyncChangeToDelete(const Extension* extension) const;
 
   // Process the sync deletion of the given application.
-  void ProcessDeletion(
-      std::string extension_id, const syncer::SyncChange& sync_change);
+  void ProcessDeletion(const std::string& extension_id,
+                       const syncer::SyncChange& sync_change);
 
   // Create a sync change based on |sync_data|.
   syncer::SyncChange CreateSyncChange(const syncer::SyncData& sync_data);
 
   // Get all the sync data contained in this bundle.
   syncer::SyncDataList GetAllSyncData() const;
-
-  // Sync a newly-installed application or change an existing one.
-  void SyncChangeIfNeeded(const Extension& extension);
 
   // Process the given sync change and apply it.
   void ProcessSyncChange(AppSyncData app_sync_data);
@@ -72,9 +70,6 @@ class AppSyncBundle {
   void AddPendingApp(const std::string& id,
                      const AppSyncData& app_sync_data);
 
-  // Returns true if |extension| should be handled by this sync bundle.
-  bool HandlesApp(const Extension& extension) const;
-
   // Returns a vector of all the pending sync data.
   std::vector<AppSyncData> GetPendingData() const;
 
@@ -82,6 +77,13 @@ class AppSyncBundle {
   void GetAppSyncDataListHelper(
       const ExtensionSet& extensions,
       std::vector<extensions::AppSyncData>* sync_data_list) const;
+
+  // Overrides for SyncBundle.
+  // Returns true if SetupSync has been called, false otherwise.
+  virtual bool IsSyncing() const OVERRIDE;
+
+  // Sync a newly-installed application or change an existing one.
+  virtual void SyncChangeIfNeeded(const Extension& extension) OVERRIDE;
 
  private:
   // Add a synced app.
@@ -93,7 +95,7 @@ class AppSyncBundle {
   // Change an app from being pending to synced.
   void MarkPendingAppSynced(const std::string& id);
 
-  ExtensionService* extension_service_; // Own us.
+  ExtensionSyncService* extension_sync_service_; // Own us.
   scoped_ptr<syncer::SyncChangeProcessor> sync_processor_;
   scoped_ptr<syncer::SyncErrorFactory> sync_error_factory_;
 

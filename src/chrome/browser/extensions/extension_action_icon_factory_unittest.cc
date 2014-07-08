@@ -7,23 +7,29 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/json/json_file_value_serializer.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/skia_util.h"
-#include "webkit/glue/image_decoder.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 using content::BrowserThread;
 
@@ -32,7 +38,7 @@ namespace {
 
 bool ImageRepsAreEqual(const gfx::ImageSkiaRep& image_rep1,
                        const gfx::ImageSkiaRep& image_rep2) {
-  return image_rep1.scale_factor() == image_rep2.scale_factor() &&
+  return image_rep1.scale() == image_rep2.scale() &&
          gfx::BitmapsAreEqual(image_rep1.sk_bitmap(), image_rep2.sk_bitmap());
 }
 
@@ -44,35 +50,33 @@ gfx::Image EnsureImageSize(const gfx::Image& original, int size) {
   SkBitmap resized = skia::ImageOperations::Resize(
       *original.ToSkBitmap(), skia::ImageOperations::RESIZE_LANCZOS3,
       size, size);
-  return gfx::Image(resized);
+  return gfx::Image::CreateFrom1xBitmap(resized);
 }
 
-gfx::ImageSkiaRep CreateBlankRep(int size_dip, ui::ScaleFactor scale_factor) {
-    SkBitmap bitmap;
-    const float scale = ui::GetScaleFactorScale(scale_factor);
-    bitmap.setConfig(SkBitmap::kARGB_8888_Config,
-                     static_cast<int>(size_dip * scale),
-                     static_cast<int>(size_dip * scale));
-    bitmap.allocPixels();
-    bitmap.eraseColor(SkColorSetARGB(0, 0, 0, 0));
-    return gfx::ImageSkiaRep(bitmap, scale_factor);
+gfx::ImageSkiaRep CreateBlankRep(int size_dip, float scale) {
+  SkBitmap bitmap;
+  bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                   static_cast<int>(size_dip * scale),
+                   static_cast<int>(size_dip * scale));
+  bitmap.allocPixels();
+  bitmap.eraseColor(SkColorSetARGB(0, 0, 0, 0));
+  return gfx::ImageSkiaRep(bitmap, scale);
 }
 
 gfx::Image LoadIcon(const std::string& filename) {
-  FilePath path;
+  base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.AppendASCII("extensions/api_test").AppendASCII(filename);
 
   std::string file_contents;
-  file_util::ReadFileToString(path, &file_contents);
+  base::ReadFileToString(path, &file_contents);
   const unsigned char* data =
       reinterpret_cast<const unsigned char*>(file_contents.data());
 
   SkBitmap bitmap;
-  webkit_glue::ImageDecoder decoder;
-  bitmap = decoder.Decode(data, file_contents.length());
+  gfx::PNGCodec::Decode(data, file_contents.length(), &bitmap);
 
-  return gfx::Image(bitmap);
+  return gfx::Image::CreateFrom1xBitmap(bitmap);
 }
 
 class ExtensionActionIconFactoryTest
@@ -90,14 +94,14 @@ class ExtensionActionIconFactoryTest
 
   void WaitForIconUpdate() {
     quit_in_icon_updated_ = true;
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
     quit_in_icon_updated_ = false;
   }
 
   scoped_refptr<Extension> CreateExtension(const char* name,
-                                           Extension::Location location) {
+                                           Manifest::Location location) {
     // Create and load an extension.
-    FilePath test_file;
+    base::FilePath test_file;
     if (!PathService::Get(chrome::DIR_TEST_DATA, &test_file)) {
       EXPECT_FALSE(true);
       return NULL;
@@ -106,23 +110,23 @@ class ExtensionActionIconFactoryTest
     int error_code = 0;
     std::string error;
     JSONFileValueSerializer serializer(test_file.AppendASCII("manifest.json"));
-    scoped_ptr<DictionaryValue> valid_value(
-        static_cast<DictionaryValue*>(serializer.Deserialize(&error_code,
-                                                             &error)));
+    scoped_ptr<base::DictionaryValue> valid_value(
+        static_cast<base::DictionaryValue*>(serializer.Deserialize(&error_code,
+                                                                   &error)));
     EXPECT_EQ(0, error_code) << error;
     if (error_code != 0)
       return NULL;
 
     EXPECT_TRUE(valid_value.get());
-    if (!valid_value.get())
+    if (!valid_value)
       return NULL;
 
     scoped_refptr<Extension> extension =
         Extension::Create(test_file, location, *valid_value,
                           Extension::NO_FLAGS, &error);
-    EXPECT_TRUE(extension) << error;
-    if (extension)
-      extension_service_->AddExtension(extension);
+    EXPECT_TRUE(extension.get()) << error;
+    if (extension.get())
+      extension_service_->AddExtension(extension.get());
     return extension;
   }
 
@@ -134,7 +138,7 @@ class ExtensionActionIconFactoryTest
     CommandLine command_line(CommandLine::NO_PROGRAM);
     extension_service_ = static_cast<extensions::TestExtensionSystem*>(
         extensions::ExtensionSystem::Get(profile_.get()))->
-        CreateExtensionService(&command_line, FilePath(), false);
+        CreateExtensionService(&command_line, base::FilePath(), false);
   }
 
   virtual void TearDown() OVERRIDE {
@@ -145,7 +149,7 @@ class ExtensionActionIconFactoryTest
   // ExtensionActionIconFactory::Observer overrides:
   virtual void OnIconUpdated() OVERRIDE {
     if (quit_in_icon_updated_)
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
   }
 
   gfx::ImageSkia GetFavicon() {
@@ -161,12 +165,18 @@ class ExtensionActionIconFactoryTest
 
  private:
   bool quit_in_icon_updated_;
-  MessageLoop ui_loop_;
+  base::MessageLoop ui_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   content::TestBrowserThread io_thread_;
   scoped_ptr<TestingProfile> profile_;
   ExtensionService* extension_service_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionActionIconFactoryTest);
 };
@@ -177,22 +187,23 @@ TEST_F(ExtensionActionIconFactoryTest, NoIcons) {
   // Load an extension that has browser action without default icon set in the
   // manifest and does not call |SetIcon| by default.
   scoped_refptr<Extension> extension(CreateExtension(
-      "browser_action/no_icon", Extension::INVALID));
+      "browser_action/no_icon", Manifest::INVALID_LOCATION));
   ASSERT_TRUE(extension.get() != NULL);
-  ExtensionAction* browser_action = GetBrowserAction(*extension);
+  ExtensionAction* browser_action = GetBrowserAction(*extension.get());
   ASSERT_TRUE(browser_action);
   ASSERT_FALSE(browser_action->default_icon());
   ASSERT_TRUE(browser_action->GetExplicitlySetIcon(0 /*tab id*/).isNull());
 
   gfx::ImageSkia favicon = GetFavicon();
 
-  ExtensionActionIconFactory icon_factory(extension, browser_action, this);
+  ExtensionActionIconFactory icon_factory(
+      profile(), extension.get(), browser_action, this);
 
   gfx::Image icon = icon_factory.GetIcon(0);
 
   EXPECT_TRUE(ImageRepsAreEqual(
-      favicon.GetRepresentation(ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      favicon.GetRepresentation(1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 }
 
 // If the icon has been set using |SetIcon|, the factory should return that
@@ -202,9 +213,9 @@ TEST_F(ExtensionActionIconFactoryTest, AfterSetIcon) {
   // manifest and does not call |SetIcon| by default (but has an browser action
   // icon resource).
   scoped_refptr<Extension> extension(CreateExtension(
-      "browser_action/no_icon", Extension::INVALID));
+      "browser_action/no_icon", Manifest::INVALID_LOCATION));
   ASSERT_TRUE(extension.get() != NULL);
-  ExtensionAction* browser_action = GetBrowserAction(*extension);
+  ExtensionAction* browser_action = GetBrowserAction(*extension.get());
   ASSERT_TRUE(browser_action);
   ASSERT_FALSE(browser_action->default_icon());
   ASSERT_TRUE(browser_action->GetExplicitlySetIcon(0 /*tab id*/).isNull());
@@ -216,20 +227,21 @@ TEST_F(ExtensionActionIconFactoryTest, AfterSetIcon) {
 
   ASSERT_FALSE(browser_action->GetExplicitlySetIcon(0 /*tab id*/).isNull());
 
-  ExtensionActionIconFactory icon_factory(extension, browser_action, this);
+  ExtensionActionIconFactory icon_factory(
+      profile(), extension.get(), browser_action, this);
 
   gfx::Image icon = icon_factory.GetIcon(0);
 
   EXPECT_TRUE(ImageRepsAreEqual(
-      set_icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      set_icon.ToImageSkia()->GetRepresentation(1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 
   // It should still return favicon for another tabs.
   icon = icon_factory.GetIcon(1);
 
   EXPECT_TRUE(ImageRepsAreEqual(
-      GetFavicon().GetRepresentation(ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      GetFavicon().GetRepresentation(1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 }
 
 // If there is a default icon, and the icon has not been set using |SetIcon|,
@@ -239,9 +251,9 @@ TEST_F(ExtensionActionIconFactoryTest, DefaultIcon) {
   // manifest and does not call |SetIcon| by default (but has an browser action
   // icon resource).
   scoped_refptr<Extension> extension(CreateExtension(
-      "browser_action/no_icon", Extension::INVALID));
+      "browser_action/no_icon", Manifest::INVALID_LOCATION));
   ASSERT_TRUE(extension.get() != NULL);
-  ExtensionAction* browser_action = GetBrowserAction(*extension);
+  ExtensionAction* browser_action = GetBrowserAction(*extension.get());
   ASSERT_TRUE(browser_action);
   ASSERT_FALSE(browser_action->default_icon());
   ASSERT_TRUE(browser_action->GetExplicitlySetIcon(0 /*tab id*/).isNull());
@@ -256,15 +268,16 @@ TEST_F(ExtensionActionIconFactoryTest, DefaultIcon) {
   browser_action->set_default_icon(default_icon_set.Pass());
   ASSERT_TRUE(browser_action->default_icon());
 
-  ExtensionActionIconFactory icon_factory(extension, browser_action, this);
+  ExtensionActionIconFactory icon_factory(
+      profile(), extension.get(), browser_action, this);
 
   gfx::Image icon = icon_factory.GetIcon(0);
 
   // The icon should be loaded asynchronously. Initially a transparent icon
   // should be returned.
   EXPECT_TRUE(ImageRepsAreEqual(
-      CreateBlankRep(19, ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      CreateBlankRep(19, 1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 
   WaitForIconUpdate();
 
@@ -272,15 +285,15 @@ TEST_F(ExtensionActionIconFactoryTest, DefaultIcon) {
 
   // The default icon representation should be loaded at this point.
   EXPECT_TRUE(ImageRepsAreEqual(
-      default_icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      default_icon.ToImageSkia()->GetRepresentation(1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 
   // The same icon should be returned for the other tabs.
   icon = icon_factory.GetIcon(1);
 
   EXPECT_TRUE(ImageRepsAreEqual(
-      default_icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P),
-      icon.ToImageSkia()->GetRepresentation(ui::SCALE_FACTOR_100P)));
+      default_icon.ToImageSkia()->GetRepresentation(1.0f),
+      icon.ToImageSkia()->GetRepresentation(1.0f)));
 
 }
 

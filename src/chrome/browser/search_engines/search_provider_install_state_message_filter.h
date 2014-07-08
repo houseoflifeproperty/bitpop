@@ -17,7 +17,7 @@ class Profile;
 class SearchProviderInstallStateMessageFilter
     : public content::BrowserMessageFilter {
  public:
-  // Unlike the other methods, the constructor is called on the UI thread.
+  // Unlike the other methods, the constructor must be called on the UI thread.
   SearchProviderInstallStateMessageFilter(int render_process_id,
                                           Profile* profile);
 
@@ -34,17 +34,14 @@ class SearchProviderInstallStateMessageFilter
       const GURL& requested_host);
 
   // Starts handling the message requesting the search provider install state.
-  void OnMsgGetSearchProviderInstallState(const GURL& page_location,
-                                          const GURL& requested_host,
-                                          IPC::Message* reply_msg);
+  void OnGetSearchProviderInstallState(const GURL& page_location,
+                                       const GURL& requested_host,
+                                       IPC::Message* reply_msg);
 
   // Sends the reply message about the search provider install state.
   void ReplyWithProviderInstallState(const GURL& page_location,
                                      const GURL& requested_host,
                                      IPC::Message* reply_msg);
-
-  // Used to schedule invocations of ReplyWithProviderInstallState.
-  base::WeakPtrFactory<SearchProviderInstallStateMessageFilter> weak_factory_;
 
   // Used to do a load and get information about install states.
   SearchProviderInstallData provider_data_;
@@ -52,6 +49,9 @@ class SearchProviderInstallStateMessageFilter
   // Copied from the profile since the profile can't be accessed on the I/O
   // thread.
   const bool is_off_the_record_;
+
+  // Used to schedule invocations of ReplyWithProviderInstallState.
+  base::WeakPtrFactory<SearchProviderInstallStateMessageFilter> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SearchProviderInstallStateMessageFilter);
 };

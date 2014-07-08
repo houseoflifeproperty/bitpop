@@ -73,15 +73,15 @@ class BASE_EXPORT OSStatusLogMessage : public logging::LogMessage {
                 DLOG_IS_ON(severity) && (condition))
 
 #define OSSTATUS_DVLOG(verbose_level, status) \
-    LAZY_STREAM(OSSTATUS_VPLOG_STREAM(verbose_level, status), \
+    LAZY_STREAM(OSSTATUS_VLOG_STREAM(verbose_level, status), \
                 DVLOG_IS_ON(verbose_level))
 #define OSSTATUS_DVLOG_IF(verbose_level, condition, status) \
-    LAZY_STREAM(OSSTATUS_VPLOG_STREAM(verbose_level, status) \
+    LAZY_STREAM(OSSTATUS_VLOG_STREAM(verbose_level, status) \
                 DVLOG_IS_ON(verbose_level) && (condition))
 
 #define OSSTATUS_DCHECK(condition, status) \
     LAZY_STREAM(OSSTATUS_LOG_STREAM(FATAL, status), \
-                DCHECK_IS_ON() && !(condition)) \
+                DCHECK_IS_ON && !(condition)) \
     << "Check failed: " # condition << ". "
 
 #endif  // BASE_MAC_MAC_LOGGING_H_

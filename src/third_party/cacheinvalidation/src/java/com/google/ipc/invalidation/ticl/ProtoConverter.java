@@ -90,7 +90,8 @@ public class ProtoConverter {
 
     // No bridge arrival time in invalidation.
     return Invalidation.newInstance(objectId, invalidation.getVersion(),
-        invalidation.hasPayload() ? invalidation.getPayload().toByteArray() : null);
+        invalidation.hasPayload() ? invalidation.getPayload().toByteArray() : null,
+            invalidation.getIsTrickleRestart());
   }
 
   /**
@@ -106,9 +107,8 @@ public class ProtoConverter {
     // invalidations. Therefore the correct semanantics are provided by setting isTrickleRestart to
     // true.
     return CommonProtos2.newInvalidationP(objectId, invalidation.getVersion(),
-        TrickleState.RESTART,
-        invalidation.getPayload() == null ? null : ByteString.copyFrom(invalidation.getPayload()),
-        null);
+        TrickleState.fromBoolean(invalidation.getIsTrickleRestartForInternalUse()),
+        invalidation.getPayload() == null ? null : ByteString.copyFrom(invalidation.getPayload()));
   }
 
   private ProtoConverter() { // To prevent instantiation.

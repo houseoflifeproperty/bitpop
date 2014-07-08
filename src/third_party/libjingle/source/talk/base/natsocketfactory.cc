@@ -47,12 +47,12 @@ size_t PackAddressForNAT(char* buf, size_t buf_size,
   if (family == AF_INET) {
     ASSERT(buf_size >= kNATEncodedIPv4AddressSize);
     in_addr v4addr = ip.ipv4_address();
-    std::memcpy(&buf[4], &v4addr, kNATEncodedIPv4AddressSize - 4);
+    memcpy(&buf[4], &v4addr, kNATEncodedIPv4AddressSize - 4);
     return kNATEncodedIPv4AddressSize;
   } else if (family == AF_INET6) {
     ASSERT(buf_size >= kNATEncodedIPv6AddressSize);
     in6_addr v6addr = ip.ipv6_address();
-    std::memcpy(&buf[4], &v6addr, kNATEncodedIPv6AddressSize - 4);
+    memcpy(&buf[4], &v6addr, kNATEncodedIPv6AddressSize - 4);
     return kNATEncodedIPv6AddressSize;
   }
   return 0U;
@@ -85,7 +85,7 @@ size_t UnpackAddressFromNAT(const char* buf, size_t buf_size,
 class NATSocket : public AsyncSocket, public sigslot::has_slots<> {
  public:
   explicit NATSocket(NATInternalSocketFactory* sf, int family, int type)
-      : sf_(sf), family_(family), type_(type), async_(true), connected_(false),
+      : sf_(sf), family_(family), type_(type), connected_(false),
         socket_(NULL), buf_(NULL), size_(0) {
   }
 
@@ -154,12 +154,12 @@ class NATSocket : public AsyncSocket, public sigslot::has_slots<> {
       return socket_->SendTo(data, size, addr);
     }
     // This array will be too large for IPv4 packets, but only by 12 bytes.
-    scoped_array<char> buf(new char[size + kNATEncodedIPv6AddressSize]);
+    scoped_ptr<char[]> buf(new char[size + kNATEncodedIPv6AddressSize]);
     size_t addrlength = PackAddressForNAT(buf.get(),
                                           size + kNATEncodedIPv6AddressSize,
                                           addr);
     size_t encoded_size = size + addrlength;
-    std::memcpy(buf.get() + addrlength, data, size);
+    memcpy(buf.get() + addrlength, data, size);
     int result = socket_->SendTo(buf.get(), encoded_size, server_addr_);
     if (result >= 0) {
       ASSERT(result == static_cast<int>(encoded_size));
@@ -196,7 +196,7 @@ class NATSocket : public AsyncSocket, public sigslot::has_slots<> {
       SocketAddress real_remote_addr;
       size_t addrlength =
           UnpackAddressFromNAT(buf_, result, &real_remote_addr);
-      std::memcpy(data, buf_ + addrlength, result - addrlength);
+      memcpy(data, buf_ + addrlength, result - addrlength);
 
       // Make sure this packet should be delivered before returning it.
       if (!connected_ || (real_remote_addr == remote_addr_)) {
@@ -312,7 +312,6 @@ class NATSocket : public AsyncSocket, public sigslot::has_slots<> {
   NATInternalSocketFactory* sf_;
   int family_;
   int type_;
-  bool async_;
   bool connected_;
   SocketAddress remote_addr_;
   SocketAddress server_addr_;  // address of the NAT server

@@ -8,24 +8,25 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include <cstdio>
-#include <cstdlib>
+#include <stdio.h>
+#include <stdlib.h>
 
-#include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "modules/video_processing/main/interface/video_processing.h"
-#include "modules/video_processing/main/test/unit_test/unit_test.h"
-#include "system_wrappers/interface/tick_util.h"
-#include "testsupport/fileutils.h"
+#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/modules/video_processing/main/interface/video_processing.h"
+#include "webrtc/modules/video_processing/main/test/unit_test/video_processing_unittest.h"
+#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/test/testsupport/fileutils.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
 
 namespace webrtc {
 
-TEST_F(VideoProcessingModuleTest, Denoising)
+TEST_F(VideoProcessingModuleTest, DISABLED_ON_ANDROID(Denoising))
 {
     enum { NumRuns = 10 };
-    WebRtc_UWord32 frameNum = 0;
+    uint32_t frameNum = 0;
 
-    WebRtc_Word64 minRuntime = 0;
-    WebRtc_Word64 avgRuntime = 0;
+    int64_t min_runtime = 0;
+    int64_t avg_runtime = 0;
 
     const std::string denoise_filename =
         webrtc::test::OutputPath() + "denoise_testfile.yuv";
@@ -40,53 +41,50 @@ TEST_F(VideoProcessingModuleTest, Denoising)
         "Could not open noisy file: " << noise_filename << "\n";
 
     printf("\nRun time [us / frame]:\n");
-    for (WebRtc_UWord32 runIdx = 0; runIdx < NumRuns; runIdx++)
+    for (uint32_t run_idx = 0; run_idx < NumRuns; run_idx++)
     {
         TickTime t0;
         TickTime t1;
-        TickInterval accTicks;
-        WebRtc_Word32 modifiedPixels = 0;
+        TickInterval acc_ticks;
+        int32_t modifiedPixels = 0;
 
         frameNum = 0;
-        scoped_array<uint8_t> video_buffer(new uint8_t[_frame_length]);
-        while (fread(video_buffer.get(), 1, _frame_length, _sourceFile) ==
-            _frame_length)
+        scoped_ptr<uint8_t[]> video_buffer(new uint8_t[frame_length_]);
+        while (fread(video_buffer.get(), 1, frame_length_, source_file_) ==
+            frame_length_)
         {
-          _videoFrame.CreateFrame(_size_y, video_buffer.get(),
-                                  _size_uv, video_buffer.get() + _size_y,
-                                  _size_uv,
-                                  video_buffer.get() + _size_y + _size_uv,
-                                  _width, _height,
-                                  _width, _half_width, _half_width);
+            EXPECT_EQ(0, ConvertToI420(kI420, video_buffer.get(), 0, 0,
+                                       width_, height_,
+                                       0, kRotateNone, &video_frame_));
             frameNum++;
-            WebRtc_UWord8* sourceBuffer = _videoFrame.buffer(kYPlane);
+            uint8_t* sourceBuffer = video_frame_.buffer(kYPlane);
 
             // Add noise to a part in video stream
             // Random noise
             // TODO: investigate the effectiveness of this test.
 
-            for (int ir = 0; ir < _height; ir++)
+            for (int ir = 0; ir < height_; ir++)
             {
-                WebRtc_UWord32 ik = ir * _width;
-                for (int ic = 0; ic < _width; ic++)
+                uint32_t ik = ir * width_;
+                for (int ic = 0; ic < width_; ic++)
                 {
-                    WebRtc_UWord8 r = rand() % 16;
+                    uint8_t r = rand() % 16;
                     r -= 8;
-                    if (ir < _height / 4)
+                    if (ir < height_ / 4)
                         r = 0;
-                    if (ir >= 3 * _height / 4)
+                    if (ir >= 3 * height_ / 4)
                         r = 0;
-                    if (ic < _width / 4)
+                    if (ic < width_ / 4)
                         r = 0;
-                    if (ic >= 3 * _width / 4)
+                    if (ic >= 3 * width_ / 4)
                         r = 0;
 
-                    /*WebRtc_UWord8 pixelValue = 0;
-                    if (ir >= _height / 2)
+                    /*uint8_t pixelValue = 0;
+                    if (ir >= height_ / 2)
                     { // Region 3 or 4
                         pixelValue = 170;
                     }
-                    if (ic >= _width / 2)
+                    if (ic >= width_ / 2)
                     { // Region 2 or 4
                         pixelValue += 85;
                     }
@@ -97,42 +95,42 @@ TEST_F(VideoProcessingModuleTest, Denoising)
                 }
             }
 
-            if (runIdx == 0)
+            if (run_idx == 0)
             {
-              if (PrintI420VideoFrame(_videoFrame, noiseFile) < 0) {
+              if (PrintI420VideoFrame(video_frame_, noiseFile) < 0) {
                 return;
               }
             }
 
             t0 = TickTime::Now();
-            ASSERT_GE(modifiedPixels = _vpm->Denoising(&_videoFrame), 0);
+            ASSERT_GE(modifiedPixels = vpm_->Denoising(&video_frame_), 0);
             t1 = TickTime::Now();
-            accTicks += (t1 - t0);
+            acc_ticks += (t1 - t0);
 
-            if (runIdx == 0)
+            if (run_idx == 0)
             {
-              if (PrintI420VideoFrame(_videoFrame, noiseFile) < 0) {
+              if (PrintI420VideoFrame(video_frame_, noiseFile) < 0) {
                 return;
               }
             }
         }
-        ASSERT_NE(0, feof(_sourceFile)) << "Error reading source file";
+        ASSERT_NE(0, feof(source_file_)) << "Error reading source file";
 
-        printf("%u\n", static_cast<int>(accTicks.Microseconds() / frameNum));
-        if (accTicks.Microseconds() < minRuntime || runIdx == 0)
+        printf("%u\n", static_cast<int>(acc_ticks.Microseconds() / frameNum));
+        if (acc_ticks.Microseconds() < min_runtime || run_idx == 0)
         {
-            minRuntime = accTicks.Microseconds();
+            min_runtime = acc_ticks.Microseconds();
         }
-        avgRuntime += accTicks.Microseconds();
+        avg_runtime += acc_ticks.Microseconds();
 
-        rewind(_sourceFile);
+        rewind(source_file_);
     }
     ASSERT_EQ(0, fclose(denoiseFile));
     ASSERT_EQ(0, fclose(noiseFile));
     printf("\nAverage run time = %d us / frame\n",
-        static_cast<int>(avgRuntime / frameNum / NumRuns));
+        static_cast<int>(avg_runtime / frameNum / NumRuns));
     printf("Min run time = %d us / frame\n\n",
-        static_cast<int>(minRuntime / frameNum));
+        static_cast<int>(min_runtime / frameNum));
 }
 
 }  // namespace webrtc

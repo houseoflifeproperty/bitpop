@@ -5,45 +5,24 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/guid.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "base/test/test_reg_util_win.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "base/win/registry.h"
 #include "chrome/installer/gcapi/gcapi.h"
 #include "chrome/installer/gcapi/gcapi_omaha_experiment.h"
 #include "chrome/installer/gcapi/gcapi_reactivation.h"
+#include "chrome/installer/gcapi/gcapi_test_registry_overrider.h"
 #include "chrome/installer/util/google_update_constants.h"
+#include "chrome/installer/util/google_update_experiment_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using base::Time;
 using base::TimeDelta;
 using base::win::RegKey;
 
-namespace {
-
-const wchar_t kExperimentLabels[] = L"experiment_labels";
-
-const wchar_t* kExperimentAppGuids[] = {
-    L"{4DC8B4CA-1BDA-483e-B5FA-D3C12E15B62D}",
-    L"{8A69D345-D564-463C-AFF1-A69D9E530F96}",
-};
-
-}
-
 class GCAPIReactivationTest : public ::testing::Test {
  protected:
-  void SetUp() {
-    // Override keys - this is undone during destruction.
-    std::wstring hkcu_override = base::StringPrintf(
-        L"hkcu_override\\%ls", ASCIIToWide(base::GenerateGUID()));
-    override_manager_.OverrideRegistry(HKEY_CURRENT_USER, hkcu_override);
-    std::wstring hklm_override = base::StringPrintf(
-        L"hklm_override\\%ls", ASCIIToWide(base::GenerateGUID()));
-    override_manager_.OverrideRegistry(HKEY_LOCAL_MACHINE, hklm_override);
-  }
+  GCAPIReactivationTest() {}
 
   bool SetChromeInstallMarker(HKEY hive) {
     // Create the client state keys in the right places.
@@ -62,7 +41,8 @@ class GCAPIReactivationTest : public ::testing::Test {
     return SetLastRunTimeString(hive, base::Int64ToString16(last_run_time));
   }
 
-  bool SetLastRunTimeString(HKEY hive, const string16& last_run_time_string) {
+  bool SetLastRunTimeString(HKEY hive,
+                            const base::string16& last_run_time_string) {
     const wchar_t* base_path =
         (hive == HKEY_LOCAL_MACHINE) ?
             google_update::kRegPathClientStateMedium :
@@ -79,21 +59,15 @@ class GCAPIReactivationTest : public ::testing::Test {
   }
 
   bool HasExperimentLabels(HKEY hive) {
-    int label_count = 0;
-    for (int i = 0; i < arraysize(kExperimentAppGuids); ++i) {
-      string16 client_state_path(google_update::kRegPathClientState);
-      client_state_path += L"\\";
-      client_state_path += kExperimentAppGuids[i];
+    base::string16 client_state_path(google_update::kRegPathClientState);
+    client_state_path.push_back(L'\\');
+    client_state_path.append(google_update::kChromeUpgradeCode);
 
-      RegKey client_state_key(hive,
-                              client_state_path.c_str(),
-                              KEY_QUERY_VALUE);
-      if (client_state_key.Valid() &&
-          client_state_key.HasValue(kExperimentLabels)) {
-        label_count++;
-      }
-    }
-    return label_count == arraysize(kExperimentAppGuids);
+    RegKey client_state_key(hive,
+                            client_state_path.c_str(),
+                            KEY_QUERY_VALUE);
+    return client_state_key.Valid() &&
+        client_state_key.HasValue(google_update::kExperimentLabels);
   }
 
   std::wstring GetReactivationString(HKEY hive) {
@@ -117,8 +91,7 @@ class GCAPIReactivationTest : public ::testing::Test {
     return L"ERROR";
   }
 
- private:
-  registry_util::RegistryOverrideManager override_manager_;
+  const GCAPITestRegistryOverrider gcapi_test_registry_overrider_;
 };
 
 TEST_F(GCAPIReactivationTest, CheckSetReactivationBrandCode) {
@@ -126,7 +99,6 @@ TEST_F(GCAPIReactivationTest, CheckSetReactivationBrandCode) {
   EXPECT_EQ(L"GAGA", GetReactivationString(HKEY_CURRENT_USER));
 
   EXPECT_TRUE(HasBeenReactivated());
-
 }
 
 TEST_F(GCAPIReactivationTest, CanOfferReactivation_Basic) {

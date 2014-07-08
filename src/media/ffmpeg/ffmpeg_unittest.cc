@@ -12,13 +12,14 @@
 #include <queue>
 
 #include "base/base_paths.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "base/files/memory_mapped_file.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/perftimer.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/test/perf_test_suite.h"
+#include "base/test/perf_time_logger.h"
 #include "media/base/media.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
@@ -83,8 +84,6 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
       : av_format_context_(NULL),
         audio_stream_index_(-1),
         video_stream_index_(-1),
-        audio_buffer_(NULL),
-        video_buffer_(NULL),
         decoded_audio_time_(AV_NOPTS_VALUE),
         decoded_audio_duration_(AV_NOPTS_VALUE),
         decoded_video_time_(AV_NOPTS_VALUE),
@@ -92,8 +91,8 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
         duration_(AV_NOPTS_VALUE) {
     InitializeFFmpeg();
 
-    audio_buffer_.reset(avcodec_alloc_frame());
-    video_buffer_.reset(avcodec_alloc_frame());
+    audio_buffer_.reset(av_frame_alloc());
+    video_buffer_.reset(av_frame_alloc());
   }
 
   virtual ~FFmpegTest() {
@@ -106,14 +105,14 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
   }
 
   void OpenFile(const std::string& name) {
-    FilePath path;
+    base::FilePath path;
     PathService::Get(base::DIR_SOURCE_ROOT, &path);
     path = path.AppendASCII("media")
         .AppendASCII("test")
         .AppendASCII("data")
         .AppendASCII("content")
         .AppendASCII(name.c_str());
-    EXPECT_TRUE(file_util::PathExists(path));
+    EXPECT_TRUE(base::PathExists(path));
 
     CHECK(file_data_.Initialize(path));
     protocol_.reset(new InMemoryUrlProtocol(
@@ -369,7 +368,7 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
       return;
     }
 
-    FilePath path;
+    base::FilePath path;
     PathService::Get(base::DIR_MODULE, &path);
     EXPECT_TRUE(InitializeMediaLibrary(path))
         << "Could not initialize media library.";
@@ -383,8 +382,8 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
   AVPacketQueue audio_packets_;
   AVPacketQueue video_packets_;
 
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> audio_buffer_;
-  scoped_ptr_malloc<AVFrame, media::ScopedPtrAVFree> video_buffer_;
+  scoped_ptr<AVFrame, media::ScopedPtrAVFreeFrame> audio_buffer_;
+  scoped_ptr<AVFrame, media::ScopedPtrAVFreeFrame> video_buffer_;
 
   int64 decoded_audio_time_;
   int64 decoded_audio_duration_;
@@ -392,7 +391,7 @@ class FFmpegTest : public testing::TestWithParam<const char*> {
   int64 decoded_video_duration_;
   int64 duration_;
 
-  file_util::MemoryMappedFile file_data_;
+  base::MemoryMappedFile file_data_;
   scoped_ptr<InMemoryUrlProtocol> protocol_;
   scoped_ptr<FFmpegGlue> glue_;
 
@@ -425,27 +424,27 @@ FFMPEG_TEST_CASE(counting, ogv);
 
 TEST_P(FFmpegTest, Perf) {
   {
-    PerfTimeLogger timer("Opening file");
+    base::PerfTimeLogger timer("Opening file");
     OpenFile(GetParam());
   }
   {
-    PerfTimeLogger timer("Opening codecs");
+    base::PerfTimeLogger timer("Opening codecs");
     OpenCodecs();
   }
   {
-    PerfTimeLogger timer("Reading file");
+    base::PerfTimeLogger timer("Reading file");
     ReadRemainingFile();
   }
   if (has_audio()) {
-    PerfTimeLogger timer("Decoding audio");
+    base::PerfTimeLogger timer("Decoding audio");
     DecodeRemainingAudio();
   }
   if (has_video()) {
-    PerfTimeLogger timer("Decoding video");
+    base::PerfTimeLogger timer("Decoding video");
     DecodeRemainingVideo();
   }
   {
-    PerfTimeLogger timer("Seeking to zero");
+    base::PerfTimeLogger timer("Seeking to zero");
     SeekTo(0);
   }
 }

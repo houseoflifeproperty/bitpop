@@ -5,7 +5,7 @@
 #include "chrome/common/multi_process_lock.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 
 class MultiProcessLockWin : public MultiProcessLock {
@@ -30,7 +30,7 @@ class MultiProcessLockWin : public MultiProcessLock {
       return false;
     }
 
-    string16 wname = UTF8ToUTF16(name_);
+    base::string16 wname = base::UTF8ToUTF16(name_);
     event_.Set(CreateEvent(NULL, FALSE, FALSE, wname.c_str()));
     if (event_.Get() && GetLastError() != ERROR_ALREADY_EXISTS) {
       return true;

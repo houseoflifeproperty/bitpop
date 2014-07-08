@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-
 #include <windows.h>
 #include <shlobj.h>
 
 #include "base/base_paths.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/windows_version.h"
 
 // http://blogs.msdn.com/oldnewthing/archive/2004/10/25/247180.aspx
 extern "C" IMAGE_DOS_HEADER __ImageBase;
+
+using base::FilePath;
 
 namespace {
 
@@ -51,7 +51,6 @@ bool GetQuickLaunchPath(bool default_user, FilePath* result) {
 namespace base {
 
 bool PathProviderWin(int key, FilePath* result) {
-
   // We need to go compute the value. It would be nice to support paths with
   // names longer than MAX_PATH, but the system functions don't seem to be
   // designed for it either, with the exception of GetTempPath (but other
@@ -128,12 +127,6 @@ bool PathProviderWin(int key, FilePath* result) {
         return false;
       cur = FilePath(system_buffer);
       break;
-    case base::DIR_PROFILE:
-      if (FAILED(SHGetFolderPath(NULL, CSIDL_PROFILE, NULL, SHGFP_TYPE_CURRENT,
-                                 system_buffer)))
-        return false;
-      cur = FilePath(system_buffer);
-      break;
     case base::DIR_LOCAL_APP_DATA_LOW:
       if (win::GetVersion() < win::VERSION_VISTA)
         return false;
@@ -197,6 +190,13 @@ bool PathProviderWin(int key, FilePath* result) {
         return false;
       cur = cur.AppendASCII("User Pinned");
       cur = cur.AppendASCII("TaskBar");
+      break;
+    case base::DIR_WINDOWS_FONTS:
+      if (FAILED(SHGetFolderPath(
+              NULL, CSIDL_FONTS, NULL, SHGFP_TYPE_CURRENT, system_buffer))) {
+        return false;
+      }
+      cur = FilePath(system_buffer);
       break;
     default:
       return false;

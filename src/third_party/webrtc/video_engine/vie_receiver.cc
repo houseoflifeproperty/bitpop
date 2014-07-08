@@ -8,38 +8,56 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "video_engine/vie_receiver.h"
+#include "webrtc/video_engine/vie_receiver.h"
 
-#include "modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
-#include "modules/rtp_rtcp/interface/rtp_rtcp.h"
-#include "modules/utility/interface/rtp_dump.h"
-#include "modules/video_coding/main/interface/video_coding.h"
-#include "system_wrappers/interface/critical_section_wrapper.h"
-#include "system_wrappers/interface/tick_util.h"
-#include "system_wrappers/interface/trace.h"
+#include <vector>
+
+#include "webrtc/modules/remote_bitrate_estimator/include/remote_bitrate_estimator.h"
+#include "webrtc/modules/rtp_rtcp/interface/fec_receiver.h"
+#include "webrtc/modules/rtp_rtcp/interface/receive_statistics.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_header_parser.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_payload_registry.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_receiver.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp.h"
+#include "webrtc/modules/utility/interface/rtp_dump.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/interface/timestamp_extrapolator.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 namespace webrtc {
 
 ViEReceiver::ViEReceiver(const int32_t channel_id,
                          VideoCodingModule* module_vcm,
-                         RemoteBitrateEstimator* remote_bitrate_estimator)
+                         RemoteBitrateEstimator* remote_bitrate_estimator,
+                         RtpFeedback* rtp_feedback)
     : receive_cs_(CriticalSectionWrapper::CreateCriticalSection()),
       channel_id_(channel_id),
+      rtp_header_parser_(RtpHeaderParser::Create()),
+      rtp_payload_registry_(new RTPPayloadRegistry(
+          RTPPayloadStrategy::CreateStrategy(false))),
+      rtp_receiver_(RtpReceiver::CreateVideoReceiver(
+          channel_id, Clock::GetRealTimeClock(), this, rtp_feedback,
+          rtp_payload_registry_.get())),
+      rtp_receive_statistics_(ReceiveStatistics::Create(
+          Clock::GetRealTimeClock())),
+      fec_receiver_(FecReceiver::Create(this)),
       rtp_rtcp_(NULL),
       vcm_(module_vcm),
       remote_bitrate_estimator_(remote_bitrate_estimator),
-      external_decryption_(NULL),
-      decryption_buffer_(NULL),
+      clock_(Clock::GetRealTimeClock()),
+      ts_extrapolator_(
+          new TimestampExtrapolator(clock_->TimeInMilliseconds())),
       rtp_dump_(NULL),
-      receiving_(false) {
+      receiving_(false),
+      restored_packet_in_use_(false),
+      receiving_ast_enabled_(false) {
   assert(remote_bitrate_estimator);
 }
 
 ViEReceiver::~ViEReceiver() {
-  if (decryption_buffer_) {
-    delete[] decryption_buffer_;
-    decryption_buffer_ = NULL;
-  }
   if (rtp_dump_) {
     rtp_dump_->Stop();
     RtpDump::DestroyRtpDump(rtp_dump_);
@@ -47,30 +65,61 @@ ViEReceiver::~ViEReceiver() {
   }
 }
 
-int ViEReceiver::RegisterExternalDecryption(Encryption* decryption) {
-  CriticalSectionScoped cs(receive_cs_.get());
-  if (external_decryption_) {
-    return -1;
+bool ViEReceiver::SetReceiveCodec(const VideoCodec& video_codec) {
+  int8_t old_pltype = -1;
+  if (rtp_payload_registry_->ReceivePayloadType(video_codec.plName,
+                                                kVideoPayloadTypeFrequency,
+                                                0,
+                                                video_codec.maxBitrate,
+                                                &old_pltype) != -1) {
+    rtp_payload_registry_->DeRegisterReceivePayload(old_pltype);
   }
-  decryption_buffer_ = new WebRtc_UWord8[kViEMaxMtu];
-  if (decryption_buffer_ == NULL) {
-    return -1;
-  }
-  external_decryption_ = decryption;
-  return 0;
+
+  return RegisterPayload(video_codec);
 }
 
-int ViEReceiver::DeregisterExternalDecryption() {
-  CriticalSectionScoped cs(receive_cs_.get());
-  if (external_decryption_ == NULL) {
-    return -1;
+bool ViEReceiver::RegisterPayload(const VideoCodec& video_codec) {
+  return rtp_receiver_->RegisterReceivePayload(video_codec.plName,
+                                               video_codec.plType,
+                                               kVideoPayloadTypeFrequency,
+                                               0,
+                                               video_codec.maxBitrate) == 0;
+}
+
+void ViEReceiver::SetNackStatus(bool enable,
+                                int max_nack_reordering_threshold) {
+  if (!enable) {
+    // Reset the threshold back to the lower default threshold when NACK is
+    // disabled since we no longer will be receiving retransmissions.
+    max_nack_reordering_threshold = kDefaultMaxReorderingThreshold;
   }
-  external_decryption_ = NULL;
-  return 0;
+  rtp_receive_statistics_->SetMaxReorderingThreshold(
+      max_nack_reordering_threshold);
+  rtp_receiver_->SetNACKStatus(enable ? kNackRtcp : kNackOff);
+}
+
+void ViEReceiver::SetRtxStatus(bool enable, uint32_t ssrc) {
+  rtp_payload_registry_->SetRtxStatus(enable, ssrc);
+}
+
+void ViEReceiver::SetRtxPayloadType(uint32_t payload_type) {
+  rtp_payload_registry_->SetRtxPayloadType(payload_type);
+}
+
+uint32_t ViEReceiver::GetRemoteSsrc() const {
+  return rtp_receiver_->SSRC();
+}
+
+int ViEReceiver::GetCsrcs(uint32_t* csrcs) const {
+  return rtp_receiver_->CSRCs(csrcs);
 }
 
 void ViEReceiver::SetRtpRtcpModule(RtpRtcp* module) {
   rtp_rtcp_ = module;
+}
+
+RtpReceiver* ViEReceiver::GetRtpReceiver() const {
+  return rtp_receiver_.get();
 }
 
 void ViEReceiver::RegisterSimulcastRtpRtcpModules(
@@ -85,160 +134,291 @@ void ViEReceiver::RegisterSimulcastRtpRtcpModules(
   }
 }
 
-void ViEReceiver::IncomingRTPPacket(const WebRtc_Word8* rtp_packet,
-                                    const WebRtc_Word32 rtp_packet_length,
-                                    const char* from_ip,
-                                    const WebRtc_UWord16 from_port) {
-  InsertRTPPacket(rtp_packet, rtp_packet_length);
+bool ViEReceiver::SetReceiveTimestampOffsetStatus(bool enable, int id) {
+  if (enable) {
+    return rtp_header_parser_->RegisterRtpHeaderExtension(
+        kRtpExtensionTransmissionTimeOffset, id);
+  } else {
+    return rtp_header_parser_->DeregisterRtpHeaderExtension(
+        kRtpExtensionTransmissionTimeOffset);
+  }
 }
 
-void ViEReceiver::IncomingRTCPPacket(const WebRtc_Word8* rtcp_packet,
-                                     const WebRtc_Word32 rtcp_packet_length,
-                                     const char* from_ip,
-                                     const WebRtc_UWord16 from_port) {
-  InsertRTCPPacket(rtcp_packet, rtcp_packet_length);
+bool ViEReceiver::SetReceiveAbsoluteSendTimeStatus(bool enable, int id) {
+  if (enable) {
+    if (rtp_header_parser_->RegisterRtpHeaderExtension(
+        kRtpExtensionAbsoluteSendTime, id)) {
+      receiving_ast_enabled_ = true;
+      return true;
+    } else {
+      return false;
+    }
+  } else {
+    receiving_ast_enabled_ = false;
+    return rtp_header_parser_->DeregisterRtpHeaderExtension(
+        kRtpExtensionAbsoluteSendTime);
+  }
 }
 
 int ViEReceiver::ReceivedRTPPacket(const void* rtp_packet,
-                                   int rtp_packet_length) {
-  if (!receiving_) {
-    return -1;
-  }
-  return InsertRTPPacket((const WebRtc_Word8*) rtp_packet, rtp_packet_length);
+                                   int rtp_packet_length,
+                                   const PacketTime& packet_time) {
+  return InsertRTPPacket(static_cast<const uint8_t*>(rtp_packet),
+                         rtp_packet_length, packet_time);
 }
 
 int ViEReceiver::ReceivedRTCPPacket(const void* rtcp_packet,
                                     int rtcp_packet_length) {
-  if (!receiving_) {
-    return -1;
-  }
-  return InsertRTCPPacket((const WebRtc_Word8*) rtcp_packet,
+  return InsertRTCPPacket(static_cast<const uint8_t*>(rtcp_packet),
                           rtcp_packet_length);
 }
 
-WebRtc_Word32 ViEReceiver::OnReceivedPayloadData(
-    const WebRtc_UWord8* payload_data, const WebRtc_UWord16 payload_size,
+int32_t ViEReceiver::OnReceivedPayloadData(
+    const uint8_t* payload_data, const uint16_t payload_size,
     const WebRtcRTPHeader* rtp_header) {
-  if (rtp_header == NULL) {
-    return 0;
-  }
-
-  // TODO(holmer): Make sure packets reconstructed using FEC are not passed to
-  // the bandwidth estimator.
-  const int packet_size = payload_size + rtp_header->header.paddingLength;
-  uint32_t compensated_timestamp = rtp_header->header.timestamp +
-      rtp_header->extension.transmissionTimeOffset;
-  remote_bitrate_estimator_->IncomingPacket(
-      rtp_header->header.ssrc, packet_size,
-      TickTime::MillisecondTimestamp(), compensated_timestamp);
-  if (vcm_->IncomingPacket(payload_data, payload_size, *rtp_header) != 0) {
+  WebRtcRTPHeader rtp_header_with_ntp = *rtp_header;
+  CalculateCaptureNtpTime(&rtp_header_with_ntp);
+  if (vcm_->IncomingPacket(payload_data,
+                           payload_size,
+                           rtp_header_with_ntp) != 0) {
     // Check this...
     return -1;
   }
   return 0;
 }
 
-void ViEReceiver::OnSendReportReceived(const WebRtc_Word32 id,
-                                       const WebRtc_UWord32 senderSSRC,
-                                       uint32_t ntp_secs,
-                                       uint32_t ntp_frac,
-                                       uint32_t timestamp) {
-  remote_bitrate_estimator_->IncomingRtcp(senderSSRC, ntp_secs, ntp_frac,
-                                          timestamp);
+void ViEReceiver::CalculateCaptureNtpTime(WebRtcRTPHeader* rtp_header) {
+  if (rtcp_list_.size() < 2) {
+    // We need two RTCP SR reports to calculate NTP.
+    return;
+  }
+
+  int64_t sender_capture_ntp_ms = 0;
+  if (!RtpToNtpMs(rtp_header->header.timestamp,
+                  rtcp_list_,
+                  &sender_capture_ntp_ms)) {
+    return;
+  }
+  uint32_t timestamp = sender_capture_ntp_ms * 90;
+  int64_t receiver_capture_ms =
+      ts_extrapolator_->ExtrapolateLocalTime(timestamp);
+  int64_t ntp_offset =
+      clock_->CurrentNtpInMilliseconds() - clock_->TimeInMilliseconds();
+  rtp_header->ntp_time_ms = receiver_capture_ms + ntp_offset;
 }
 
-int ViEReceiver::InsertRTPPacket(const WebRtc_Word8* rtp_packet,
-                                 int rtp_packet_length) {
-  // TODO(mflodman) Change decrypt to get rid of this cast.
-  WebRtc_Word8* tmp_ptr = const_cast<WebRtc_Word8*>(rtp_packet);
-  unsigned char* received_packet = reinterpret_cast<unsigned char*>(tmp_ptr);
-  int received_packet_length = rtp_packet_length;
+bool ViEReceiver::OnRecoveredPacket(const uint8_t* rtp_packet,
+                                    int rtp_packet_length) {
+  RTPHeader header;
+  if (!rtp_header_parser_->Parse(rtp_packet, rtp_packet_length, &header)) {
+    WEBRTC_TRACE(kTraceDebug, webrtc::kTraceVideo, channel_id_,
+                 "IncomingPacket invalid RTP header");
+    return false;
+  }
+  header.payload_type_frequency = kVideoPayloadTypeFrequency;
+  return ReceivePacket(rtp_packet, rtp_packet_length, header, false);
+}
 
+void ViEReceiver::ReceivedBWEPacket(
+    int64_t arrival_time_ms, int payload_size, const RTPHeader& header) {
+  // Only forward if the incoming packet *and* the channel are both configured
+  // to receive absolute sender time. RTP time stamps may have different rates
+  // for audio and video and shouldn't be mixed.
+  if (header.extension.hasAbsoluteSendTime && receiving_ast_enabled_) {
+    remote_bitrate_estimator_->IncomingPacket(arrival_time_ms, payload_size,
+                                              header);
+  }
+}
+
+int ViEReceiver::InsertRTPPacket(const uint8_t* rtp_packet,
+                                 int rtp_packet_length,
+                                 const PacketTime& packet_time) {
   {
     CriticalSectionScoped cs(receive_cs_.get());
-
-    if (external_decryption_) {
-      int decrypted_length = kViEMaxMtu;
-      external_decryption_->decrypt(channel_id_, received_packet,
-                                    decryption_buffer_, received_packet_length,
-                                    &decrypted_length);
-      if (decrypted_length <= 0) {
-        WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, channel_id_,
-                     "RTP decryption failed");
-        return -1;
-      } else if (decrypted_length > kViEMaxMtu) {
-        WEBRTC_TRACE(webrtc::kTraceCritical, webrtc::kTraceVideo, channel_id_,
-                     "InsertRTPPacket: %d bytes is allocated as RTP decrytption"
-                     " output, external decryption used %d bytes. => memory is "
-                     " now corrupted", kViEMaxMtu, decrypted_length);
-        return -1;
-      }
-      received_packet = decryption_buffer_;
-      received_packet_length = decrypted_length;
+    if (!receiving_) {
+      return -1;
     }
-
     if (rtp_dump_) {
-      rtp_dump_->DumpPacket(received_packet,
-                           static_cast<WebRtc_UWord16>(received_packet_length));
+      rtp_dump_->DumpPacket(rtp_packet,
+                            static_cast<uint16_t>(rtp_packet_length));
     }
   }
-  assert(rtp_rtcp_);  // Should be set by owner at construction time.
-  return rtp_rtcp_->IncomingPacket(received_packet, received_packet_length);
+
+  RTPHeader header;
+  if (!rtp_header_parser_->Parse(rtp_packet, rtp_packet_length,
+                                 &header)) {
+    WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideo, channel_id_,
+                 "Incoming packet: Invalid RTP header");
+    return -1;
+  }
+  int payload_length = rtp_packet_length - header.headerLength;
+  int64_t arrival_time_ms;
+  if (packet_time.timestamp != -1)
+    arrival_time_ms = (packet_time.timestamp + 500) / 1000;
+  else
+    arrival_time_ms = TickTime::MillisecondTimestamp();
+
+  remote_bitrate_estimator_->IncomingPacket(arrival_time_ms,
+                                            payload_length, header);
+  header.payload_type_frequency = kVideoPayloadTypeFrequency;
+
+  bool in_order = IsPacketInOrder(header);
+  rtp_receive_statistics_->IncomingPacket(
+      header, rtp_packet_length, IsPacketRetransmitted(header, in_order));
+  rtp_payload_registry_->SetIncomingPayloadType(header);
+  return ReceivePacket(rtp_packet, rtp_packet_length, header, in_order)
+      ? 0
+      : -1;
 }
 
-int ViEReceiver::InsertRTCPPacket(const WebRtc_Word8* rtcp_packet,
+bool ViEReceiver::ReceivePacket(const uint8_t* packet,
+                                int packet_length,
+                                const RTPHeader& header,
+                                bool in_order) {
+  if (rtp_payload_registry_->IsEncapsulated(header)) {
+    return ParseAndHandleEncapsulatingHeader(packet, packet_length, header);
+  }
+  const uint8_t* payload = packet + header.headerLength;
+  int payload_length = packet_length - header.headerLength;
+  assert(payload_length >= 0);
+  PayloadUnion payload_specific;
+  if (!rtp_payload_registry_->GetPayloadSpecifics(header.payloadType,
+                                                  &payload_specific)) {
+    return false;
+  }
+  return rtp_receiver_->IncomingRtpPacket(header, payload, payload_length,
+                                          payload_specific, in_order);
+}
+
+bool ViEReceiver::ParseAndHandleEncapsulatingHeader(const uint8_t* packet,
+                                                    int packet_length,
+                                                    const RTPHeader& header) {
+  if (rtp_payload_registry_->IsRed(header)) {
+    int8_t ulpfec_pt = rtp_payload_registry_->ulpfec_payload_type();
+    if (packet[header.headerLength] == ulpfec_pt)
+      rtp_receive_statistics_->FecPacketReceived(header.ssrc);
+    if (fec_receiver_->AddReceivedRedPacket(
+            header, packet, packet_length, ulpfec_pt) != 0) {
+      WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideo, channel_id_,
+                   "Incoming RED packet error");
+      return false;
+    }
+    return fec_receiver_->ProcessReceivedFec() == 0;
+  } else if (rtp_payload_registry_->IsRtx(header)) {
+    if (header.headerLength + header.paddingLength == packet_length) {
+      // This is an empty packet and should be silently dropped before trying to
+      // parse the RTX header.
+      return true;
+    }
+    // Remove the RTX header and parse the original RTP header.
+    if (packet_length < header.headerLength)
+      return false;
+    if (packet_length > static_cast<int>(sizeof(restored_packet_)))
+      return false;
+    CriticalSectionScoped cs(receive_cs_.get());
+    if (restored_packet_in_use_) {
+      WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideo, channel_id_,
+                   "Multiple RTX headers detected, dropping packet");
+      return false;
+    }
+    uint8_t* restored_packet_ptr = restored_packet_;
+    if (!rtp_payload_registry_->RestoreOriginalPacket(
+        &restored_packet_ptr, packet, &packet_length, rtp_receiver_->SSRC(),
+        header)) {
+      WEBRTC_TRACE(webrtc::kTraceDebug, webrtc::kTraceVideo, channel_id_,
+                   "Incoming RTX packet: invalid RTP header");
+      return false;
+    }
+    restored_packet_in_use_ = true;
+    bool ret = OnRecoveredPacket(restored_packet_ptr, packet_length);
+    restored_packet_in_use_ = false;
+    return ret;
+  }
+  return false;
+}
+
+int ViEReceiver::InsertRTCPPacket(const uint8_t* rtcp_packet,
                                   int rtcp_packet_length) {
-  // TODO(mflodman) Change decrypt to get rid of this cast.
-  WebRtc_Word8* tmp_ptr = const_cast<WebRtc_Word8*>(rtcp_packet);
-  unsigned char* received_packet = reinterpret_cast<unsigned char*>(tmp_ptr);
-  int received_packet_length = rtcp_packet_length;
   {
     CriticalSectionScoped cs(receive_cs_.get());
-
-    if (external_decryption_) {
-      int decrypted_length = kViEMaxMtu;
-      external_decryption_->decrypt_rtcp(channel_id_, received_packet,
-                                         decryption_buffer_,
-                                         received_packet_length,
-                                         &decrypted_length);
-      if (decrypted_length <= 0) {
-        WEBRTC_TRACE(webrtc::kTraceError, webrtc::kTraceVideo, channel_id_,
-                     "RTP decryption failed");
-        return -1;
-      } else if (decrypted_length > kViEMaxMtu) {
-        WEBRTC_TRACE(webrtc::kTraceCritical, webrtc::kTraceVideo, channel_id_,
-                     "InsertRTCPPacket: %d bytes is allocated as RTP "
-                     " decrytption output, external decryption used %d bytes. "
-                     " => memory is now corrupted",
-                     kViEMaxMtu, decrypted_length);
-        return -1;
-      }
-      received_packet = decryption_buffer_;
-      received_packet_length = decrypted_length;
+    if (!receiving_) {
+      return -1;
     }
 
     if (rtp_dump_) {
       rtp_dump_->DumpPacket(
-          received_packet, static_cast<WebRtc_UWord16>(received_packet_length));
+          rtcp_packet, static_cast<uint16_t>(rtcp_packet_length));
     }
-  }
-  {
-    CriticalSectionScoped cs(receive_cs_.get());
+
     std::list<RtpRtcp*>::iterator it = rtp_rtcp_simulcast_.begin();
     while (it != rtp_rtcp_simulcast_.end()) {
       RtpRtcp* rtp_rtcp = *it++;
-      rtp_rtcp->IncomingPacket(received_packet, received_packet_length);
+      rtp_rtcp->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);
     }
   }
   assert(rtp_rtcp_);  // Should be set by owner at construction time.
-  return rtp_rtcp_->IncomingPacket(received_packet, received_packet_length);
+  int ret = rtp_rtcp_->IncomingRtcpPacket(rtcp_packet, rtcp_packet_length);
+  if (ret != 0) {
+    return ret;
+  }
+
+  if (!GetRtcpTimestamp()) {
+    LOG(LS_WARNING) << "Failed to retrieve timestamp information from RTCP SR.";
+  }
+
+  return 0;
+}
+
+bool ViEReceiver::GetRtcpTimestamp() {
+  uint16_t rtt = 0;
+  rtp_rtcp_->RTT(rtp_receiver_->SSRC(), &rtt, NULL, NULL, NULL);
+  if (rtt == 0) {
+    // Waiting for valid rtt.
+    return true;
+  }
+
+  // Update RTCP list
+  uint32_t ntp_secs = 0;
+  uint32_t ntp_frac = 0;
+  uint32_t rtp_timestamp = 0;
+  if (0 != rtp_rtcp_->RemoteNTP(&ntp_secs,
+                                &ntp_frac,
+                                NULL,
+                                NULL,
+                                &rtp_timestamp)) {
+    return false;
+  }
+
+  bool new_rtcp_sr = false;
+  if (!UpdateRtcpList(ntp_secs,
+                      ntp_frac,
+                      rtp_timestamp,
+                      &rtcp_list_,
+                      &new_rtcp_sr)) {
+    return false;
+  }
+
+  if (!new_rtcp_sr) {
+    // No new RTCP SR since last time this function was called.
+    return true;
+  }
+
+  // Update extrapolator with the new arrival time.
+  // The extrapolator assumes the TimeInMilliseconds time.
+  int64_t receiver_arrival_time = clock_->TimeInMilliseconds();
+  int64_t sender_send_time_ms = Clock::NtpToMs(ntp_secs, ntp_frac);
+  int64_t sender_arrival_time_90k = (sender_send_time_ms + rtt / 2) * 90;
+  ts_extrapolator_->Update(receiver_arrival_time, sender_arrival_time_90k);
+  return true;
 }
 
 void ViEReceiver::StartReceive() {
+  CriticalSectionScoped cs(receive_cs_.get());
   receiving_ = true;
 }
 
 void ViEReceiver::StopReceive() {
+  CriticalSectionScoped cs(receive_cs_.get());
   receiving_ = false;
 }
 
@@ -284,4 +464,36 @@ int ViEReceiver::StopRTPDump() {
   return 0;
 }
 
+void ViEReceiver::GetReceiveBandwidthEstimatorStats(
+    ReceiveBandwidthEstimatorStats* output) const {
+  remote_bitrate_estimator_->GetStats(output);
+}
+
+ReceiveStatistics* ViEReceiver::GetReceiveStatistics() const {
+  return rtp_receive_statistics_.get();
+}
+
+bool ViEReceiver::IsPacketInOrder(const RTPHeader& header) const {
+  StreamStatistician* statistician =
+      rtp_receive_statistics_->GetStatistician(header.ssrc);
+  if (!statistician)
+    return false;
+  return statistician->IsPacketInOrder(header.sequenceNumber);
+}
+
+bool ViEReceiver::IsPacketRetransmitted(const RTPHeader& header,
+                                        bool in_order) const {
+  // Retransmissions are handled separately if RTX is enabled.
+  if (rtp_payload_registry_->RtxEnabled())
+    return false;
+  StreamStatistician* statistician =
+      rtp_receive_statistics_->GetStatistician(header.ssrc);
+  if (!statistician)
+    return false;
+  // Check if this is a retransmission.
+  uint16_t min_rtt = 0;
+  rtp_rtcp_->RTT(rtp_receiver_->SSRC(), NULL, NULL, &min_rtt, NULL);
+  return !in_order &&
+      statistician->IsRetransmitOfOldPacket(header, min_rtt);
+}
 }  // namespace webrtc

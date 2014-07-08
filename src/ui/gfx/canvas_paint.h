@@ -5,7 +5,7 @@
 #ifndef UI_GFX_CANVAS_PAINT_H_
 #define UI_GFX_CANVAS_PAINT_H_
 
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
@@ -17,7 +17,7 @@ class CanvasPaint {
  public:
   // Creates a canvas that paints to |view| when it is destroyed. The canvas is
   // sized to the client area of |view|.
-  UI_EXPORT static CanvasPaint* CreateCanvasPaint(gfx::NativeView view);
+  GFX_EXPORT static CanvasPaint* CreateCanvasPaint(gfx::NativeView view);
 
   virtual ~CanvasPaint() {}
 

@@ -30,8 +30,8 @@ class AwNetworkDelegate : public net::NetworkDelegate {
       net::URLRequest* request,
       const net::CompletionCallback& callback,
       const net::HttpResponseHeaders* original_response_headers,
-      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
-      OVERRIDE;
+      scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
   virtual void OnBeforeRedirect(net::URLRequest* request,
                                 const GURL& new_location) OVERRIDE;
   virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
@@ -40,7 +40,7 @@ class AwNetworkDelegate : public net::NetworkDelegate {
   virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
   virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE;
+                                const base::string16& error) OVERRIDE;
   virtual net::NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       net::URLRequest* request,
       const net::AuthChallengeInfo& auth_info,
@@ -52,14 +52,12 @@ class AwNetworkDelegate : public net::NetworkDelegate {
                               const std::string& cookie_line,
                               net::CookieOptions* options) OVERRIDE;
   virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE;
+                               const base::FilePath& path) const OVERRIDE;
   virtual bool OnCanThrottleRequest(
       const net::URLRequest& request) const OVERRIDE;
   virtual int OnBeforeSocketStreamConnect(
       net::SocketStream* stream,
       const net::CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                        RequestWaitState state) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AwNetworkDelegate);
 };

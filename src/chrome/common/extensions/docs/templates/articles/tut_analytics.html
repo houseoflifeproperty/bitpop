@@ -1,14 +1,18 @@
 <h1>Tutorial: Google Analytics</h1>
 
 
-<p>This tutorial demonstrates using Google Analytics to track the usage of your
-extension.</p>
+<p>
+  This tutorial demonstrates using Google Analytics to track the usage of your
+  extension. If you are developing a platform app, see <a
+  href="/apps/analytics.html">Analytics for Apps</a> since apps have different
+  restrictions from extensions.
+</p>
 
 <h2 id="toc-requirements">Requirements</h2>
 <p>
   This tutorial expects that you have some familiarity writing extensions for
   Google Chrome.  If you need information on how to write an extension, please
-  read the <a href="gettingstarted.html">Getting Started tutorial</a>.
+  read the <a href="getstarted.html">Getting Started tutorial</a>.
 </p>
 
 <p>
@@ -46,7 +50,7 @@ extension.</p>
   tracking API</a> (the modified line is bolded):
 </p>
 
-<pre>
+<pre data-filename="asyncTracking.js">
 (function() {
   var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
   <strong>ga.src = 'https://ssl.google-analytics.com/ga.js';</strong>
@@ -60,11 +64,13 @@ extension.</p>
   <a href="manifest.html"><code>manifest.json</code></a> might look like:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   ...,
   "content_security_policy": "script-src 'self' https://ssl.google-analytics.com; object-src 'self'",
   ...
-}</pre>
+}
+</pre>
 
 <p>
   Here is a popup page (<code>popup.html</code>) which loads the asynchronous
@@ -72,21 +78,7 @@ extension.</p>
   tracks a single page view:
 </p>
 
-<pre>popup.js:
-=========
-
-var _gaq = _gaq || [];
-_gaq.push(['_setAccount', 'UA-XXXXXXXX-X']);
-_gaq.push(['_trackPageview']);
-
-(function() {
-  var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
-  ga.src = 'https://ssl.google-analytics.com/ga.js';
-  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
-})();
-
-popup.html:
-===========
+<pre data-filename="popup.html">
 &lt;!DOCTYPE html>
 &lt;html>
  &lt;head>
@@ -97,6 +89,18 @@ popup.html:
    ...
  &lt;/body>
 &lt;/html>
+</pre>
+
+<pre data-filename="popup.js">
+var _gaq = _gaq || [];
+_gaq.push(['_setAccount', 'UA-XXXXXXXX-X']);
+_gaq.push(['_trackPageview']);
+
+(function() {
+  var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+  ga.src = 'https://ssl.google-analytics.com/ga.js';
+  var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+})();
 </pre>
 
 <p>

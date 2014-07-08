@@ -4,9 +4,16 @@
 
 #include "chromeos/dbus/mock_shill_manager_client.h"
 
+#include "dbus/object_path.h"
+
+using ::testing::_;
+using ::testing::AnyNumber;
+
 namespace chromeos {
 
-MockShillManagerClient::MockShillManagerClient() {}
+MockShillManagerClient::MockShillManagerClient() {
+  EXPECT_CALL(*this, Init(_)).Times(AnyNumber());
+}
 
 MockShillManagerClient::~MockShillManagerClient() {}
 

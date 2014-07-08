@@ -8,10 +8,9 @@
 #include "GrEffect.h"
 #include "GrBackendEffectFactory.h"
 #include "GrContext.h"
+#include "GrCoordTransform.h"
 #include "GrMemoryPool.h"
 #include "SkTLS.h"
-
-SK_DEFINE_INST_COUNT(GrEffect)
 
 #if SK_ALLOW_STATIC_GLOBAL_INITIALIZERS
 SkTArray<GrEffectTestFactory*, true>* GrEffectTestFactory::GetFactories() {
@@ -32,8 +31,8 @@ const SkMatrix& TestMatrix(SkRandom* random) {
         gMatrices[3].postTranslate(SkIntToScalar(66), SkIntToScalar(-33));
         gMatrices[3].postScale(SkIntToScalar(2), SK_ScalarHalf);
         gMatrices[4].setRotate(SkIntToScalar(215));
-        gMatrices[4].set(SkMatrix::kMPersp0, SkFloatToScalar(0.00013f));
-        gMatrices[4].set(SkMatrix::kMPersp1, SkFloatToScalar(-0.000039f));
+        gMatrices[4].set(SkMatrix::kMPersp0, 0.00013f);
+        gMatrices[4].set(SkMatrix::kMPersp1, -0.000039f);
         gOnce = true;
     }
     return gMatrices[random->nextULessThan(static_cast<uint32_t>(SK_ARRAY_COUNT(gMatrices)))];
@@ -58,45 +57,58 @@ private:
 
 int32_t GrBackendEffectFactory::fCurrEffectClassID = GrBackendEffectFactory::kIllegalEffectClassID;
 
-GrEffect::GrEffect(int numTextures)
-    : fNumTextures(numTextures) {
+///////////////////////////////////////////////////////////////////////////////
+
+GrEffectRef::~GrEffectRef() {
+    SkASSERT(this->unique());
+    fEffect->EffectRefDestroyed();
+    fEffect->unref();
 }
+
+void* GrEffectRef::operator new(size_t size) {
+    return GrEffect_Globals::GetTLS()->allocate(size);
+}
+
+void GrEffectRef::operator delete(void* target) {
+    GrEffect_Globals::GetTLS()->release(target);
+}
+
+///////////////////////////////////////////////////////////////////////////////
 
 GrEffect::~GrEffect() {
-
-}
-
-bool GrEffect::isOpaque(bool inputTextureIsOpaque) const {
-    return false;
+    SkASSERT(NULL == fEffectRef);
 }
 
 const char* GrEffect::name() const {
     return this->getFactory().name();
 }
 
-
-bool GrEffect::isEqual(const GrEffect& s) const {
-    if (this->numTextures() != s.numTextures()) {
-        return false;
-    }
-    for (int i = 0; i < this->numTextures(); ++i) {
-        if (this->textureAccess(i) != s.textureAccess(i)) {
-            return false;
-        }
-    }
-    return true;
+void GrEffect::addCoordTransform(const GrCoordTransform* transform) {
+    fCoordTransforms.push_back(transform);
+    SkDEBUGCODE(transform->setInEffect();)
 }
 
-const GrTextureAccess& GrEffect::textureAccess(int index) const {
-    GrCrash("We shouldn't be calling this function on the base class.");
-    static GrTextureAccess kDummy;
-    return kDummy;
+void GrEffect::addTextureAccess(const GrTextureAccess* access) {
+    fTextureAccesses.push_back(access);
 }
 
-void * GrEffect::operator new(size_t size) {
+void* GrEffect::operator new(size_t size) {
     return GrEffect_Globals::GetTLS()->allocate(size);
 }
 
 void GrEffect::operator delete(void* target) {
     GrEffect_Globals::GetTLS()->release(target);
 }
+
+#ifdef SK_DEBUG
+void GrEffect::assertEquality(const GrEffect& other) const {
+    SkASSERT(this->numTransforms() == other.numTransforms());
+    for (int i = 0; i < this->numTransforms(); ++i) {
+        SkASSERT(this->coordTransform(i) == other.coordTransform(i));
+    }
+    SkASSERT(this->numTextures() == other.numTextures());
+    for (int i = 0; i < this->numTextures(); ++i) {
+        SkASSERT(this->textureAccess(i) == other.textureAccess(i));
+    }
+}
+#endif

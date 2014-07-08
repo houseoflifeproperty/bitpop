@@ -16,13 +16,13 @@ setup_gitsvn
 (
   set -e
   cd git-svn
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
   # Create a branch and give it an issue.
   git checkout -q -b abandoned
   echo "some work done on a branch" >> test
   git add test; git commit -q -m "branch work"
-  export EDITOR=$(which true)
+  export GIT_EDITOR=$(which true)
   test_expect_success "upload succeeds" \
     "$GIT_CL upload -m test master  | grep -q 'Issue created'"
 
@@ -33,7 +33,7 @@ setup_gitsvn
   # Verify that "status" doesn't know about it anymore.
   # The "exit" trickiness is inverting the exit status of grep.
   test_expect_success "git-cl status dropped abandoned branch" \
-    "$GIT_CL status | grep -q abandoned && exit 1 || exit 0"
+    "$GIT_CL_STATUS | grep -q abandoned && exit 1 || exit 0"
 )
 
 SUCCESS=$?

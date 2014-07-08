@@ -6,18 +6,20 @@
 
 #include <string>
 
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/login/login_status_consumer.h"
 #include "chrome/browser/chromeos/login/mock_authenticator.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
 #include "chrome/browser/chromeos/login/webui_screen_locker.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/test/test_utils.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -27,46 +29,47 @@ using content::WebContents;
 
 namespace {
 
+// This class is used to observe state of the global ScreenLocker instance,
+// which can go away as a result of a successful authentication. As such,
+// it needs to directly reference the global ScreenLocker.
 class LoginAttemptObserver : public chromeos::LoginStatusConsumer {
  public:
-  explicit LoginAttemptObserver(chromeos::ScreenLocker* locker);
+  LoginAttemptObserver();
   virtual ~LoginAttemptObserver();
 
   void WaitForAttempt();
 
   // Overridden from LoginStatusConsumer:
-  virtual void OnLoginFailure(const chromeos::LoginFailure& error) {
+  virtual void OnLoginFailure(const chromeos::LoginFailure& error) OVERRIDE {
     LoginAttempted();
   }
 
   virtual void OnLoginSuccess(
-      const std::string& username,
-      const std::string& password,
-      bool pending_requests,
-      bool using_oauth) {
+      const chromeos::UserContext& credentials) OVERRIDE {
     LoginAttempted();
   }
 
  private:
   void LoginAttempted();
 
-  chromeos::ScreenLocker* locker_;
   bool login_attempted_;
   bool waiting_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginAttemptObserver);
 };
 
-LoginAttemptObserver::LoginAttemptObserver(chromeos::ScreenLocker* locker)
+LoginAttemptObserver::LoginAttemptObserver()
     : chromeos::LoginStatusConsumer(),
-      locker_(locker),
       login_attempted_(false),
       waiting_(false) {
-  locker_->SetLoginStatusConsumer(this);
+  chromeos::ScreenLocker::default_screen_locker()->SetLoginStatusConsumer(this);
 }
 
 LoginAttemptObserver::~LoginAttemptObserver() {
-  locker_->SetLoginStatusConsumer(NULL);
+  chromeos::ScreenLocker* global_locker =
+      chromeos::ScreenLocker::default_screen_locker();
+  if (global_locker)
+    global_locker->SetLoginStatusConsumer(NULL);
 }
 
 void LoginAttemptObserver::WaitForAttempt() {
@@ -81,10 +84,10 @@ void LoginAttemptObserver::WaitForAttempt() {
 void LoginAttemptObserver::LoginAttempted() {
   login_attempted_ = true;
   if (waiting_)
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
 }
 
-}
+}  // anyonymous namespace
 
 namespace chromeos {
 
@@ -105,7 +108,7 @@ class WebUIScreenLockerTester : public ScreenLockerTester {
 
   WebUIScreenLockerTester() {}
 
-  base::Value* ExecuteJavascriptAndGetValue(const std::string& js_text);
+  content::RenderViewHost* RenderViewHost() const;
 
   // Returns the ScreenLockerWebUI object.
   WebUIScreenLocker* webui_screen_locker() const;
@@ -117,17 +120,18 @@ class WebUIScreenLockerTester : public ScreenLockerTester {
 };
 
 void WebUIScreenLockerTester::SetPassword(const std::string& password) {
-  delete ExecuteJavascriptAndGetValue(StringPrintf(
-      "$('pod-row').pods[0].passwordElement.value = '%s';",
-      password.c_str()));
+  webui()->GetWebContents()->GetMainFrame()->ExecuteJavaScript(
+      base::ASCIIToUTF16(base::StringPrintf(
+          "$('pod-row').pods[0].passwordElement.value = '%s';",
+          password.c_str())));
 }
 
 std::string WebUIScreenLockerTester::GetPassword() {
   std::string result;
-  base::Value* v = ExecuteJavascriptAndGetValue(
+  scoped_ptr<base::Value> v = content::ExecuteScriptAndGetValue(
+      RenderViewHost()->GetMainFrame(),
       "$('pod-row').pods[0].passwordElement.value;");
   CHECK(v->GetAsString(&result));
-  delete v;
   return result;
 }
 
@@ -139,18 +143,19 @@ void WebUIScreenLockerTester::EnterPassword(const std::string& password) {
   ASSERT_EQ(password, GetPassword());
 
   // Verify that "signin" button is hidden.
-  base::Value* v = ExecuteJavascriptAndGetValue(
+  scoped_ptr<base::Value> v = content::ExecuteScriptAndGetValue(
+      RenderViewHost()->GetMainFrame(),
       "$('pod-row').pods[0].signinButtonElement.hidden;");
   ASSERT_TRUE(v->GetAsBoolean(&result));
   ASSERT_TRUE(result);
 
   // Attempt to sign in.
-  LoginAttemptObserver login(ScreenLocker::screen_locker_);
-  v = ExecuteJavascriptAndGetValue(
+  LoginAttemptObserver login;
+  v = content::ExecuteScriptAndGetValue(
+      RenderViewHost()->GetMainFrame(),
       "$('pod-row').pods[0].activate();");
   ASSERT_TRUE(v->GetAsBoolean(&result));
   ASSERT_TRUE(result);
-  delete v;
 
   // Wait for login attempt.
   login.WaitForAttempt();
@@ -167,11 +172,8 @@ views::Widget* WebUIScreenLockerTester::GetChildWidget() const {
   return webui_screen_locker()->lock_window_;
 }
 
-base::Value* WebUIScreenLockerTester::ExecuteJavascriptAndGetValue(
-    const std::string& js_text) {
-  content::RenderViewHost* rvh = webui()->GetWebContents()->GetRenderViewHost();
-  return rvh->ExecuteJavascriptAndGetValue(string16(),
-                                           ASCIIToUTF16(js_text));
+content::RenderViewHost* WebUIScreenLockerTester::RenderViewHost() const {
+  return webui()->GetWebContents()->GetRenderViewHost();
 }
 
 WebUIScreenLocker* WebUIScreenLockerTester::webui_screen_locker() const {

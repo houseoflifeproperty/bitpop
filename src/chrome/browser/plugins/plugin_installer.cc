@@ -6,67 +6,22 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_util.h"
-#include "base/process.h"
-#include "chrome/browser/download/download_service.h"
-#include "chrome/browser/download/download_service_factory.h"
-#include "chrome/browser/download/download_util.h"
+#include "base/process/process.h"
+#include "base/strings/stringprintf.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/plugins/plugin_installer_observer.h"
-#include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_context.h"
-#include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
-#include "content/public/browser/download_save_info.h"
-#include "content/public/browser/render_process_host.h"
-#include "content/public/browser/render_view_host.h"
-#include "content/public/browser/resource_context.h"
-#include "content/public/browser/resource_dispatcher_host.h"
+#include "content/public/browser/download_url_parameters.h"
 #include "content/public/browser/web_contents.h"
-#include "net/url_request/url_request.h"
-#include "net/url_request/url_request_context.h"
 
-using content::BrowserContext;
-using content::BrowserThread;
 using content::DownloadItem;
-using content::DownloadManager;
-using content::ResourceDispatcherHost;
-
-namespace {
-
-void BeginDownload(
-    const GURL& url,
-    content::ResourceContext* resource_context,
-    int render_process_host_id,
-    int render_view_host_routing_id,
-    const ResourceDispatcherHost::DownloadStartedCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  ResourceDispatcherHost* rdh = ResourceDispatcherHost::Get();
-  scoped_ptr<net::URLRequest> request(
-      resource_context->GetRequestContext()->CreateRequest(url, NULL));
-  net::Error error = rdh->BeginDownload(
-      request.Pass(),
-      false,  // is_content_initiated
-      resource_context,
-      render_process_host_id,
-      render_view_host_routing_id,
-      true,  // prefer_cache
-      scoped_ptr<content::DownloadSaveInfo>(new content::DownloadSaveInfo()),
-      callback);
-
-  if (error != net::OK) {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE,
-        base::Bind(callback, static_cast<DownloadItem*>(NULL), error));
-  }
-}
-
-}  // namespace
 
 PluginInstaller::PluginInstaller()
-    : state_(INSTALLER_STATE_IDLE) {
+    : state_(INSTALLER_STATE_IDLE),
+      strong_observer_count_(0) {
 }
 
 PluginInstaller::~PluginInstaller() {
@@ -90,7 +45,7 @@ void PluginInstaller::OnDownloadUpdated(DownloadItem* download) {
     }
     case DownloadItem::INTERRUPTED: {
       content::DownloadInterruptReason reason = download->GetLastReason();
-      DownloadError(content::InterruptReasonDebugString(reason));
+      DownloadError(content::DownloadInterruptReasonToString(reason));
       break;
     }
     case DownloadItem::MAX_DOWNLOAD_STATE: {
@@ -108,12 +63,14 @@ void PluginInstaller::OnDownloadDestroyed(DownloadItem* download) {
 }
 
 void PluginInstaller::AddObserver(PluginInstallerObserver* observer) {
+  strong_observer_count_++;
   observers_.AddObserver(observer);
 }
 
 void PluginInstaller::RemoveObserver(PluginInstallerObserver* observer) {
+  strong_observer_count_--;
   observers_.RemoveObserver(observer);
-  if (observers_.size() == weak_observers_.size()) {
+  if (strong_observer_count_ == 0) {
     FOR_EACH_OBSERVER(WeakPluginInstallerObserver, weak_observers_,
                       OnlyWeakObserversLeft());
   }
@@ -130,39 +87,40 @@ void PluginInstaller::RemoveWeakObserver(
 
 void PluginInstaller::StartInstalling(const GURL& plugin_url,
                                       content::WebContents* web_contents) {
+  content::DownloadManager* download_manager =
+      content::BrowserContext::GetDownloadManager(
+          web_contents->GetBrowserContext());
+  StartInstallingWithDownloadManager(
+      plugin_url, web_contents, download_manager);
+}
+
+void PluginInstaller::StartInstallingWithDownloadManager(
+    const GURL& plugin_url,
+    content::WebContents* web_contents,
+    content::DownloadManager* download_manager) {
   DCHECK_EQ(INSTALLER_STATE_IDLE, state_);
   state_ = INSTALLER_STATE_DOWNLOADING;
   FOR_EACH_OBSERVER(PluginInstallerObserver, observers_, DownloadStarted());
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  DownloadManager* download_manager =
-      BrowserContext::GetDownloadManager(profile);
-  download_util::RecordDownloadSource(
-      download_util::INITIATED_BY_PLUGIN_INSTALLER);
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&BeginDownload,
-                 plugin_url,
-                 profile->GetResourceContext(),
-                 web_contents->GetRenderProcessHost()->GetID(),
-                 web_contents->GetRenderViewHost()->GetRoutingID(),
-                 base::Bind(&PluginInstaller::DownloadStarted,
-                            base::Unretained(this),
-                            make_scoped_refptr(download_manager))));
+  scoped_ptr<content::DownloadUrlParameters> download_parameters(
+      content::DownloadUrlParameters::FromWebContents(web_contents,
+                                                      plugin_url));
+  download_parameters->set_callback(
+      base::Bind(&PluginInstaller::DownloadStarted, base::Unretained(this)));
+  RecordDownloadSource(DOWNLOAD_INITIATED_BY_PLUGIN_INSTALLER);
+  download_manager->DownloadUrl(download_parameters.Pass());
 }
 
 void PluginInstaller::DownloadStarted(
-    scoped_refptr<content::DownloadManager> dlm,
     content::DownloadItem* item,
-    net::Error error) {
-  if (!item) {
-    DCHECK_NE(net::OK, error);
-    std::string msg =
-        base::StringPrintf("Error %d: %s", error, net::ErrorToString(error));
+    content::DownloadInterruptReason interrupt_reason) {
+  if (interrupt_reason != content::DOWNLOAD_INTERRUPT_REASON_NONE) {
+    std::string msg = base::StringPrintf(
+        "Error %d: %s",
+        interrupt_reason,
+        content::DownloadInterruptReasonToString(interrupt_reason).c_str());
     DownloadError(msg);
     return;
   }
-  DCHECK_EQ(net::OK, error);
   item->SetOpenWhenComplete(true);
   item->AddObserver(this);
 }
@@ -173,7 +131,7 @@ void PluginInstaller::OpenDownloadURL(const GURL& plugin_url,
   web_contents->OpenURL(content::OpenURLParams(
       plugin_url,
       content::Referrer(web_contents->GetURL(),
-                        WebKit::WebReferrerPolicyDefault),
+                        blink::WebReferrerPolicyDefault),
       NEW_FOREGROUND_TAB, content::PAGE_TRANSITION_TYPED, false));
   FOR_EACH_OBSERVER(PluginInstallerObserver, observers_, DownloadFinished());
 }

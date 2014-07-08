@@ -7,6 +7,9 @@
 /*
  * NaCl Server Runtime user thread state.
  */
+
+#include <string.h>
+
 #include "native_client/src/shared/platform/aligned_malloc.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
@@ -19,12 +22,13 @@
 #include "native_client/src/trusted/service_runtime/nacl_switch_to_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_stack_safety.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
+#include "native_client/src/trusted/service_runtime/osx/mach_thread_map.h"
 
 
-void WINAPI NaClThreadLauncher(void *state) {
+void WINAPI NaClAppThreadLauncher(void *state) {
   struct NaClAppThread *natp = (struct NaClAppThread *) state;
   uint32_t thread_idx;
-  NaClLog(4, "NaClThreadLauncher: entered\n");
+  NaClLog(4, "NaClAppThreadLauncher: entered\n");
 
   NaClSignalStackRegister(natp->signal_stack);
 
@@ -36,11 +40,12 @@ void WINAPI NaClThreadLauncher(void *state) {
   thread_idx = NaClGetThreadIdx(natp);
   CHECK(0 < thread_idx);
   CHECK(thread_idx < NACL_THREAD_MAX);
-  NaClTlsSetIdx(thread_idx);
-  nacl_thread[thread_idx] = natp;
+  NaClTlsSetCurrentThread(natp);
   nacl_user[thread_idx] = &natp->user;
 #if NACL_WINDOWS
   nacl_thread_ids[thread_idx] = GetCurrentThreadId();
+#elif NACL_OSX
+  NaClSetCurrentMachThreadForThreadIndex(thread_idx);
 #endif
 
   /*
@@ -89,6 +94,17 @@ void NaClAppThreadTeardown(struct NaClAppThread *natp) {
   NaClLog(3, "NaClAppThreadTeardown(0x%08"NACL_PRIxPTR")\n",
           (uintptr_t) natp);
   nap = natp->nap;
+  if (NULL != nap->debug_stub_callbacks) {
+    NaClLog(3, " notifying the debug stub of the thread exit\n");
+    /*
+     * This must happen before deallocating the ID natp->thread_num.
+     * We have the invariant that debug stub lock should be acquired before
+     * nap->threads_mu lock. Hence we must not hold threads_mu lock while
+     * calling debug stub hooks.
+     */
+    nap->debug_stub_callbacks->thread_exit_hook(natp);
+  }
+
   NaClLog(3, " getting thread table lock\n");
   NaClXMutexLock(&nap->threads_mu);
   NaClLog(3, " getting thread lock\n");
@@ -107,15 +123,18 @@ void NaClAppThreadTeardown(struct NaClAppThread *natp) {
    * particular, thread_idx 0 is never used.
    */
   nacl_user[thread_idx] = NULL;
-  nacl_thread[thread_idx] = NULL;
 #if NACL_WINDOWS
   nacl_thread_ids[thread_idx] = 0;
+#elif NACL_OSX
+  NaClClearMachThreadForThreadIndex(thread_idx);
 #endif
-  if (NULL != nap->debug_stub_callbacks) {
-    NaClLog(3, " notifying the debug stub of the thread exit\n");
-    /* This must happen before deallocating the ID natp->thread_num. */
-    nap->debug_stub_callbacks->thread_exit_hook(natp);
-  }
+  /*
+   * Unset the TLS variable so that if a crash occurs during thread
+   * teardown, the signal handler does not dereference a dangling
+   * NaClAppThread pointer.
+   */
+  NaClTlsSetCurrentThread(NULL);
+
   NaClLog(3, " removing thread from thread table\n");
   /* Deallocate the ID natp->thread_num. */
   NaClRemoveThreadMu(nap, natp->thread_num);
@@ -141,8 +160,6 @@ struct NaClAppThread *NaClAppThreadMake(struct NaClApp *nap,
                                         uint32_t       user_tls1,
                                         uint32_t       user_tls2) {
   struct NaClAppThread *natp;
-  int rv;
-  uint32_t tls_idx;
 
   natp = NaClAlignedMalloc(sizeof *natp, __alignof(struct NaClAppThread));
   if (natp == NULL) {
@@ -158,22 +175,12 @@ struct NaClAppThread *NaClAppThreadMake(struct NaClApp *nap,
    */
   natp->nap = nap;
   natp->thread_num = -1;  /* illegal index */
+  natp->host_thread_is_defined = 0;
+  memset(&natp->host_thread, 0, sizeof(natp->host_thread));
 
-  /*
-   * Even though we don't know what segment base/range should gs/r9/nacl_tls_idx
-   * select, we still need one, since it identifies the thread when we context
-   * switch back.  This use of a dummy tls is only needed for the main thread,
-   * which is expected to invoke the tls_init syscall from its crt code (before
-   * main or much of libc can run).  Other threads are spawned with the thread
-   * pointer address as a parameter.
-   */
-  tls_idx = NaClTlsAllocate(natp);
-  if (NACL_TLS_INDEX_INVALID == tls_idx) {
-    NaClLog(LOG_ERROR, "No tls for thread, num_thread %d\n", nap->num_threads);
+  if (!NaClAppThreadInitArchSpecific(natp, usr_entry, usr_stack_ptr)) {
     goto cleanup_free;
   }
-
-  NaClThreadContextCtor(&natp->user, nap, usr_entry, usr_stack_ptr, tls_idx);
 
   NaClTlsSetTlsValue1(natp, user_tls1);
   NaClTlsSetTlsValue2(natp, user_tls2);
@@ -199,14 +206,12 @@ struct NaClAppThread *NaClAppThreadMake(struct NaClApp *nap,
 
   natp->dynamic_delete_generation = 0;
 
-  rv = NaClThreadCtor(&natp->thread,
-                      NaClThreadLauncher,
-                      (void *) natp,
-                      NACL_KERN_STACK_SIZE);
-  if (rv != 0) {
-    return natp; /* Success */
+  if (!NaClCondVarCtor(&natp->futex_condvar)) {
+    goto cleanup_suspend_mu;
   }
+  return natp;
 
+ cleanup_suspend_mu:
   NaClMutexDtor(&natp->suspend_mu);
  cleanup_mu:
   NaClMutexDtor(&natp->mu);
@@ -220,16 +225,49 @@ struct NaClAppThread *NaClAppThreadMake(struct NaClApp *nap,
 }
 
 
+int NaClAppThreadSpawn(struct NaClApp *nap,
+                       uintptr_t      usr_entry,
+                       uintptr_t      usr_stack_ptr,
+                       uint32_t       user_tls1,
+                       uint32_t       user_tls2) {
+  struct NaClAppThread *natp = NaClAppThreadMake(nap, usr_entry, usr_stack_ptr,
+                                                 user_tls1, user_tls2);
+  if (natp == NULL) {
+    return 0;
+  }
+  /*
+   * We set host_thread_is_defined assuming, for now, that
+   * NaClThreadCtor() will succeed.
+   */
+  natp->host_thread_is_defined = 1;
+  if (!NaClThreadCtor(&natp->host_thread, NaClAppThreadLauncher, (void *) natp,
+                      NACL_KERN_STACK_SIZE)) {
+    /*
+     * No other thread saw the NaClAppThread, so it is OK that
+     * host_thread was not initialized despite host_thread_is_defined
+     * being set.
+     */
+    natp->host_thread_is_defined = 0;
+    NaClAppThreadDelete(natp);
+    return 0;
+  }
+  return 1;
+}
+
+
 void NaClAppThreadDelete(struct NaClAppThread *natp) {
   /*
    * the thread must not be still running, else this crashes the system
    */
 
+  if (natp->host_thread_is_defined) {
+    NaClThreadDtor(&natp->host_thread);
+  }
   free(natp->suspended_registers);
   NaClMutexDtor(&natp->suspend_mu);
-  NaClThreadDtor(&natp->thread);
   NaClSignalStackFree(natp->signal_stack);
   natp->signal_stack = NULL;
+  NaClCondVarDtor(&natp->futex_condvar);
   NaClTlsFree(natp);
   NaClMutexDtor(&natp->mu);
   NaClAlignedFree(natp);

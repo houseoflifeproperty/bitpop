@@ -7,7 +7,6 @@
 
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 
-
 // Private methods for the |BrowserWindowController|. This category should
 // contain the private methods used by different parts of the BWC; private
 // methods used only by single parts should be declared in their own file.
@@ -65,12 +64,9 @@
 // call it with the appropriate |maxY| which depends on whether or not the
 // bookmark bar is shown as the NTP bubble or not (use
 // |-placeBookmarkBarBelowInfoBar|).
-- (CGFloat)layoutTopBookmarkBarAtMinX:(CGFloat)minX
-                                 maxY:(CGFloat)maxY
-                                width:(CGFloat)width;
-
-// Lays out the bookmark at the bottom of the content area.
-- (void)layoutBottomBookmarkBarInContentFrame:(NSRect)contentFrame;
+- (CGFloat)layoutBookmarkBarAtMinX:(CGFloat)minX
+                              maxY:(CGFloat)maxY
+                             width:(CGFloat)width;
 
 // returns new maxX
 - (CGFloat)layoutFriendsSidebarAtMaxX:(CGFloat)maxX
@@ -109,19 +105,13 @@
 // keep the total height of the two views constant.
 - (void)adjustToolbarAndBookmarkBarForCompression:(CGFloat)compression;
 
-// Whether to show the presentation mode toggle button in the UI.  Returns YES
-// if in fullscreen mode on Lion or later.  This method is safe to call on all
-// OS versions.
-- (BOOL)shouldShowPresentationModeToggle;
-
-// Moves views between windows in preparation for fullscreen mode on Snow
-// Leopard.  (Lion and later reuses the original window for
-// fullscreen mode, so there is no need to move views around.)  This method does
-// not position views; callers must also call |-layoutSubviews|.  This method
-// must not be called on Lion or later.
-- (void)moveViewsForFullscreenForSnowLeopard:(BOOL)fullscreen
-                               regularWindow:(NSWindow*)regularWindow
-                            fullscreenWindow:(NSWindow*)fullscreenWindow;
+// Moves views between windows in preparation for fullscreen mode when not using
+// Cocoa's System Fullscreen API.  (System Fullscreen reuses the original window
+// for fullscreen mode, so there is no need to move views around.)  This method
+// does not position views; callers must also call |-layoutSubviews:|.
+- (void)moveViewsForImmersiveFullscreen:(BOOL)fullscreen
+                          regularWindow:(NSWindow*)regularWindow
+                       fullscreenWindow:(NSWindow*)fullscreenWindow;
 
 // Sets presentation mode, creating the PresentationModeController if needed and
 // forcing a relayout.  If |forceDropdown| is YES, this method will always
@@ -131,15 +121,14 @@
 - (void)setPresentationModeInternal:(BOOL)presentationMode
                       forceDropdown:(BOOL)forceDropdown;
 
-// Called on Snow Leopard or earlier to enter or exit fullscreen.  These methods
-// are internal implementations of |-setFullscreen:|.  These methods must not be
-// called on Lion or later.
-- (void)enterFullscreenForSnowLeopard;
-- (void)exitFullscreenForSnowLeopard;
+// Enter or exit fullscreen without using Cocoa's System Fullscreen API.  These
+// methods are internal implementations of |-setFullscreen:|.
+- (void)enterImmersiveFullscreen;
+- (void)exitImmersiveFullscreen;
 
 // Register or deregister for content view resize notifications.  These
-// notifications are used while transitioning to fullscreen mode in Lion or
-// later.  This method is safe to call on all OS versions.
+// notifications are used while transitioning into fullscreen mode using Cocoa's
+// System Fullscreen API.
 - (void)registerForContentViewResizeNotifications;
 - (void)deregisterForContentViewResizeNotifications;
 
@@ -152,6 +141,17 @@
 // timers/animation.
 - (void)enableBarVisibilityUpdates;
 - (void)disableBarVisibilityUpdates;
+
+// The opacity for the toolbar divider; 0 means that it shouldn't be shown.
+- (CGFloat)toolbarDividerOpacity;
+
+// Ensures the z-order of subviews is correct.
+- (void)updateSubviewZOrder:(BOOL)inPresentationMode;
+
+- (void)updateAllowOverlappingViews:(BOOL)inPresentationMode;
+
+// Update visibility of the infobar tip, depending on the state of the window.
+- (void)updateInfoBarTipVisibility;
 
 @end  // @interface BrowserWindowController(Private)
 

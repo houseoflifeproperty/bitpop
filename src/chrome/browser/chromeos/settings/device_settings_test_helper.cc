@@ -4,11 +4,15 @@
 
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
 #include "base/threading/sequenced_worker_pool.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
+#include "chromeos/dbus/dbus_thread_manager.h"
+#include "chromeos/dbus/fake_dbus_thread_manager.h"
+#include "chromeos/network/network_handler.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -22,10 +26,10 @@ void DeviceSettingsTestHelper::FlushLoops() {
   // between the message loop and the blocking pool. 2 iterations are currently
   // sufficient (key loading, signing).
   for (int i = 0; i < 2; ++i) {
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     content::BrowserThread::GetBlockingPool()->FlushForTesting();
   }
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 }
 
 void DeviceSettingsTestHelper::FlushStore() {
@@ -60,6 +64,7 @@ void DeviceSettingsTestHelper::FlushRetrieve() {
   for (device_local_account_state = device_local_account_policy_.begin();
        device_local_account_state != device_local_account_policy_.end();
        ++device_local_account_state) {
+    std::vector<RetrievePolicyCallback> callbacks;
     callbacks.swap(device_local_account_state->second.retrieve_callbacks_);
     for (std::vector<RetrievePolicyCallback>::iterator cb(callbacks.begin());
          cb != callbacks.end(); ++cb) {
@@ -93,6 +98,11 @@ bool DeviceSettingsTestHelper::HasPendingOperations() const {
   return false;
 }
 
+void DeviceSettingsTestHelper::Init(dbus::Bus* bus) {}
+
+void DeviceSettingsTestHelper::SetStubDelegate(
+    SessionManagerClient::StubDelegate* delegate) {}
+
 void DeviceSettingsTestHelper::AddObserver(Observer* observer) {}
 
 void DeviceSettingsTestHelper::RemoveObserver(Observer* observer) {}
@@ -101,14 +111,10 @@ bool DeviceSettingsTestHelper::HasObserver(Observer* observer) {
   return false;
 }
 
-void DeviceSettingsTestHelper::EmitLoginPromptReady() {}
-
 void DeviceSettingsTestHelper::EmitLoginPromptVisible() {}
 
 void DeviceSettingsTestHelper::RestartJob(int pid,
                                           const std::string& command_line) {}
-
-void DeviceSettingsTestHelper::RestartEntd() {}
 
 void DeviceSettingsTestHelper::StartSession(const std::string& user_email) {}
 
@@ -120,21 +126,24 @@ void DeviceSettingsTestHelper::RequestLockScreen() {}
 
 void DeviceSettingsTestHelper::NotifyLockScreenShown() {}
 
-void DeviceSettingsTestHelper::RequestUnlockScreen() {}
-
 void DeviceSettingsTestHelper::NotifyLockScreenDismissed() {}
 
-bool DeviceSettingsTestHelper::GetIsScreenLocked() {
-  return false;
-}
+void DeviceSettingsTestHelper::RetrieveActiveSessions(
+      const ActiveSessionsCallback& callback) {}
 
 void DeviceSettingsTestHelper::RetrieveDevicePolicy(
     const RetrievePolicyCallback& callback) {
   device_policy_.retrieve_callbacks_.push_back(callback);
 }
 
-void DeviceSettingsTestHelper::RetrieveUserPolicy(
+void DeviceSettingsTestHelper::RetrievePolicyForUser(
+    const std::string& username,
     const RetrievePolicyCallback& callback) {
+}
+
+std::string DeviceSettingsTestHelper::BlockingRetrievePolicyForUser(
+    const std::string& username) {
+  return "";
 }
 
 void DeviceSettingsTestHelper::RetrieveDeviceLocalAccountPolicy(
@@ -151,7 +160,8 @@ void DeviceSettingsTestHelper::StoreDevicePolicy(
   device_policy_.store_callbacks_.push_back(callback);
 }
 
-void DeviceSettingsTestHelper::StoreUserPolicy(
+void DeviceSettingsTestHelper::StorePolicyForUser(
+    const std::string& username,
     const std::string& policy_blob,
     const StorePolicyCallback& callback) {
 }
@@ -164,43 +174,64 @@ void DeviceSettingsTestHelper::StoreDeviceLocalAccountPolicy(
   device_local_account_policy_[account_id].store_callbacks_.push_back(callback);
 }
 
+void DeviceSettingsTestHelper::SetFlagsForUser(
+    const std::string& account_id,
+    const std::vector<std::string>& flags) {}
+
+void DeviceSettingsTestHelper::GetServerBackedStateKeys(
+    const StateKeysCallback& callback) {}
+
 DeviceSettingsTestHelper::PolicyState::PolicyState()
     : store_result_(true) {}
 
 DeviceSettingsTestHelper::PolicyState::~PolicyState() {}
 
 ScopedDeviceSettingsTestHelper::ScopedDeviceSettingsTestHelper() {
-  DeviceSettingsService::Get()->Initialize(this, new MockOwnerKeyUtil());
+  DeviceSettingsService::Initialize();
+  DeviceSettingsService::Get()->SetSessionManager(this, new MockOwnerKeyUtil());
   DeviceSettingsService::Get()->Load();
   Flush();
 }
 
 ScopedDeviceSettingsTestHelper::~ScopedDeviceSettingsTestHelper() {
   Flush();
-  DeviceSettingsService::Get()->Shutdown();
+  DeviceSettingsService::Get()->UnsetSessionManager();
+  DeviceSettingsService::Shutdown();
 }
 
 DeviceSettingsTestBase::DeviceSettingsTestBase()
-    : loop_(MessageLoop::TYPE_UI),
-      ui_thread_(content::BrowserThread::UI, &loop_),
+    : ui_thread_(content::BrowserThread::UI, &loop_),
       file_thread_(content::BrowserThread::FILE, &loop_),
-      owner_key_util_(new MockOwnerKeyUtil()) {}
+      owner_key_util_(new MockOwnerKeyUtil()),
+      fake_dbus_thread_manager_(new FakeDBusThreadManager()) {
+  fake_dbus_thread_manager_->SetFakeClients();
+}
 
-DeviceSettingsTestBase::~DeviceSettingsTestBase() {}
+DeviceSettingsTestBase::~DeviceSettingsTestBase() {
+  base::RunLoop().RunUntilIdle();
+}
 
 void DeviceSettingsTestBase::SetUp() {
+  // Initialize DBusThreadManager with a stub implementation.
+  chromeos::DBusThreadManager::InitializeForTesting(fake_dbus_thread_manager_);
+
+  NetworkHandler::Initialize();
+  loop_.RunUntilIdle();
+
   device_policy_.payload().mutable_metrics_enabled()->set_metrics_enabled(
       false);
-  owner_key_util_->SetPublicKeyFromPrivateKey(device_policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*device_policy_.GetSigningKey());
   device_policy_.Build();
   device_settings_test_helper_.set_policy_blob(device_policy_.GetBlob());
-  device_settings_service_.Initialize(&device_settings_test_helper_,
-                                      owner_key_util_);
+  device_settings_service_.SetSessionManager(&device_settings_test_helper_,
+                                             owner_key_util_);
 }
 
 void DeviceSettingsTestBase::TearDown() {
   FlushDeviceSettings();
-  device_settings_service_.Shutdown();
+  device_settings_service_.UnsetSessionManager();
+  NetworkHandler::Shutdown();
+  DBusThreadManager::Shutdown();
 }
 
 void DeviceSettingsTestBase::FlushDeviceSettings() {

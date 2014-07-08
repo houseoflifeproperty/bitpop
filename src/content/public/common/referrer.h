@@ -6,8 +6,8 @@
 #define CONTENT_PUBLIC_COMMON_REFERRER_H_
 
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -15,14 +15,14 @@ namespace content {
 // applied to this URL. When passing around referrers that will eventually end
 // up being used for URL requests, always use this struct.
 struct CONTENT_EXPORT Referrer {
-  Referrer(const GURL& url, WebKit::WebReferrerPolicy policy) : url(url),
+  Referrer(const GURL& url, blink::WebReferrerPolicy policy) : url(url),
                                                                 policy(policy) {
   }
-  Referrer() : policy(WebKit::WebReferrerPolicyDefault) {
+  Referrer() : policy(blink::WebReferrerPolicyDefault) {
   }
 
   GURL url;
-  WebKit::WebReferrerPolicy policy;
+  blink::WebReferrerPolicy policy;
 };
 
 }  // namespace content

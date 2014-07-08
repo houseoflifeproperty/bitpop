@@ -6,7 +6,7 @@
 #include <sys/file.h>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/chromeos/external_metrics.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -73,7 +73,7 @@ TEST(ExternalMetricsTest, ParseExternalMetricsFile) {
   scoped_refptr<chromeos::ExternalMetrics>
       external_metrics(new chromeos::ExternalMetrics());
   external_metrics->test_recorder_ = &ReceiveMessage;
-  external_metrics->test_path_ = FilePath(path);
+  external_metrics->test_path_ = base::FilePath(path);
   EXPECT_TRUE(unlink(path) == 0 || errno == ENOENT);
 
   // Sends a few valid messages.  Once in a while, collects them and checks the

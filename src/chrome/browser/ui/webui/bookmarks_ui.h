@@ -7,7 +7,8 @@
 
 #include <string>
 
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "base/compiler_specific.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "ui/base/layout.h"
 
@@ -16,15 +17,17 @@ class RefCountedMemory;
 }
 
 // This class provides the source for chrome://bookmarks/
-class BookmarksUIHTMLSource : public ChromeURLDataManager::DataSource {
+class BookmarksUIHTMLSource : public content::URLDataSource {
  public:
   BookmarksUIHTMLSource();
 
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id) OVERRIDE;
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() const OVERRIDE;
+  virtual void StartDataRequest(
+      const std::string& path,
+      int render_process_id,
+      int render_frame_id,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
   virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
 
  private:

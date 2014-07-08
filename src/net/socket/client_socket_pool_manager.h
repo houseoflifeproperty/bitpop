@@ -100,6 +100,33 @@ int InitSocketHandleForHttpRequest(
     bool want_spdy_over_npn,
     const SSLConfig& ssl_config_for_origin,
     const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
+    const BoundNetLog& net_log,
+    ClientSocketHandle* socket_handle,
+    const OnHostResolutionCallback& resolution_callback,
+    const CompletionCallback& callback);
+
+// A helper method that uses the passed in proxy information to initialize a
+// ClientSocketHandle with the relevant socket pool. Use this method for
+// HTTP/HTTPS requests for WebSocket handshake.
+// |ssl_config_for_origin| is only used if the request
+// uses SSL and |ssl_config_for_proxy| is used if the proxy server is HTTPS.
+// |resolution_callback| will be invoked after the the hostname is
+// resolved.  If |resolution_callback| does not return OK, then the
+// connection will be aborted with that value.
+// This function uses WEBSOCKET_SOCKET_POOL socket pools.
+int InitSocketHandleForWebSocketRequest(
+    const GURL& request_url,
+    const HttpRequestHeaders& request_extra_headers,
+    int request_load_flags,
+    RequestPriority request_priority,
+    HttpNetworkSession* session,
+    const ProxyInfo& proxy_info,
+    bool force_spdy_over_ssl,
+    bool want_spdy_over_npn,
+    const SSLConfig& ssl_config_for_origin,
+    const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
     const BoundNetLog& net_log,
     ClientSocketHandle* socket_handle,
     const OnHostResolutionCallback& resolution_callback,
@@ -115,6 +142,22 @@ NET_EXPORT int InitSocketHandleForRawConnect(
     const ProxyInfo& proxy_info,
     const SSLConfig& ssl_config_for_origin,
     const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
+    const BoundNetLog& net_log,
+    ClientSocketHandle* socket_handle,
+    const CompletionCallback& callback);
+
+// A helper method that uses the passed in proxy information to initialize a
+// ClientSocketHandle with the relevant socket pool. Use this method for
+// a raw socket connection with TLS negotiation to a host-port pair (that needs
+// to tunnel through the proxies).
+NET_EXPORT int InitSocketHandleForTlsConnect(
+    const HostPortPair& host_port_pair,
+    HttpNetworkSession* session,
+    const ProxyInfo& proxy_info,
+    const SSLConfig& ssl_config_for_origin,
+    const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
     const BoundNetLog& net_log,
     ClientSocketHandle* socket_handle,
     const CompletionCallback& callback);
@@ -132,6 +175,7 @@ int PreconnectSocketsForHttpRequest(
     bool want_spdy_over_npn,
     const SSLConfig& ssl_config_for_origin,
     const SSLConfig& ssl_config_for_proxy,
+    PrivacyMode privacy_mode,
     const BoundNetLog& net_log,
     int num_preconnect_streams);
 

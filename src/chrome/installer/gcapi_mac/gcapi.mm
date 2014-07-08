@@ -34,9 +34,6 @@ NSString* const kUserMasterPrefsPath =
     @"~~/Library/Application Support/Google/Chrome/"
      "Google Chrome Master Preferences";
 
-NSString* const kChannelKey = @"KSChannelID";
-NSString* const kVersionKey = @"KSVersion";
-
 // Condensed from chromium's base/mac/mac_util.mm.
 bool IsOSXVersionSupported() {
   // On 10.6, Gestalt() was observed to be able to spawn threads (see
@@ -60,8 +57,8 @@ bool IsOSXVersionSupported() {
   // 10.2.
   int mac_os_x_minor_version = darwin_major_version - 4;
 
-  // Chrome is known to work on 10.6 - 10.8.
-  return mac_os_x_minor_version >= 6 && mac_os_x_minor_version <= 8;
+  // Chrome is known to work on 10.6 - 10.9.
+  return mac_os_x_minor_version >= 6 && mac_os_x_minor_version <= 9;
 }
 
 // Returns the pid/gid of the logged-in user, even if getuid() claims that the
@@ -372,13 +369,42 @@ int InstallGoogleChrome(const char* source_path,
     }
 
     @try {
+      NSTask* task = [[[NSTask alloc] init] autorelease];
+
       // install.sh tries to make the installed app admin-writable, but
       // only when it's not run as root.
-      NSString* run_as = [NSString stringWithUTF8String:user->pw_name];
-      NSTask* task = [[[NSTask alloc] init] autorelease];
-      [task setLaunchPath:@"/usr/bin/sudo"];
-      [task setArguments:
-          @[@"-u", run_as, install_script, app_path, kChromeInstallPath]];
+      if (geteuid() == 0) {
+        // Use |su $(whoami)| instead of sudo -u. If the current user is in more
+        // than 16 groups, |sudo -u $(whoami)| will drop all but the first 16
+        // groups, which can lead to problems (e.g. if "admin" is one of the
+        // dropped groups).
+        // Since geteuid() is 0, su won't prompt for a password.
+        NSString* run_as = [NSString stringWithUTF8String:user->pw_name];
+        [task setLaunchPath:@"/usr/bin/su"];
+
+        NSString* single_quote_escape = @"'\"'\"'";
+        NSString* install_script_quoted = [install_script
+            stringByReplacingOccurrencesOfString:@"'"
+                                      withString:single_quote_escape];
+        NSString* app_path_quoted =
+            [app_path stringByReplacingOccurrencesOfString:@"'"
+                                                withString:single_quote_escape];
+        NSString* install_path_quoted = [kChromeInstallPath
+            stringByReplacingOccurrencesOfString:@"'"
+                                      withString:single_quote_escape];
+
+        NSString* install_script_execution =
+            [NSString stringWithFormat:@"exec '%@' '%@' '%@'",
+                                       install_script_quoted,
+                                       app_path_quoted,
+                                       install_path_quoted];
+        [task setArguments:
+            @[run_as, @"-c", install_script_execution]];
+      } else {
+        [task setLaunchPath:install_script];
+        [task setArguments:@[app_path, kChromeInstallPath]];
+      }
+
       [task launch];
       [task waitUntilExit];
       if ([task terminationStatus] != 0) {

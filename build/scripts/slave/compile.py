@@ -12,16 +12,18 @@
 """
 
 import datetime
+import errno
+import multiprocessing
 import optparse
 import os
 import re
 import shlex
-import shutil
+import socket
 import sys
 import time
 
 from common import chromium_utils
-from slave import slave_utils
+from slave import build_directory
 
 
 # Path of the scripts/slave/ checkout on the slave, found by looking at the
@@ -33,21 +35,37 @@ BUILD_DIR = os.path.dirname(os.path.dirname(SLAVE_SCRIPTS_DIR))
 
 
 class EchoDict(dict):
-  """Dict that remembers all assigned values."""
+  """Dict that remembers all modified values."""
+
   def __init__(self, *args, **kwargs):
-    self.overrides = {}
+    self.overrides = set()
+    self.adds = set()
     super(EchoDict, self).__init__(*args, **kwargs)
+
   def __setitem__(self, key, val):
-    self.overrides[key] = True
+    if not key in self and not key in self.overrides:
+      self.adds.add(key)
+    self.overrides.add(key)
     super(EchoDict, self).__setitem__(key, val)
+
+  def __delitem__(self, key):
+    self.overrides.add(key)
+    if key in self.adds:
+      self.adds.remove(key)
+      self.overrides.remove(key)
+    super(EchoDict, self).__delitem__(key)
+
   def print_overrides(self, fh=None):
     if not self.overrides:
       return
     if not fh:
       fh = sys.stdout
-    fh.write('Environment variables set in compile.py:\n')
-    for k in sorted(self.overrides.keys()):
-      fh.write('  %s=%s\n' % (k, self[k]))
+    fh.write('Environment variables modified in compile.py:\n')
+    for k in sorted(list(self.overrides)):
+      if k in self:
+        fh.write('  %s=%s\n' % (k, self[k]))
+      else:
+        fh.write('  %s (removed)\n' % k)
     fh.write('\n')
 
 
@@ -82,6 +100,16 @@ def goma_setup(options, env):
     options.goma_dir = None
     return False
 
+  # HACK(shinyak, goma): Enable GLOBAL_FILEID_CACHE_PATTERNS only in
+  # Chromium Win Ninja Goma and Chromium Win Ninja Goma (shared) builders,
+  # so that we can check whether this feature is not harmful and how much
+  # this feature can improve compile performance.
+  # If this experiment succeeds, I'll enable this in all Win/Mac platforms.
+  hostname = socket.gethostname().split('.')[0].lower()
+  if hostname.lower() in ['build28-m1', 'build58-m1']:
+    patterns = r'win_toolchain\vs2013_files,third_party,src\chrome,src\content'
+    env['GOMA_GLOBAL_FILEID_CACHE_PATTERNS'] = patterns
+
   # goma is requested.
   goma_key = os.path.join(options.goma_dir, 'goma.key')
   if os.path.exists(goma_key):
@@ -112,6 +140,7 @@ def goma_setup(options, env):
   # options.goma_dir will be used to check if goma is ready
   # when options.compiler=jsonclang.
   options.goma_dir = None
+  env['GOMA_DISABLED'] = '1'
   return False
 
 
@@ -124,6 +153,9 @@ def goma_teardown(options, env):
     else:
       goma_ctl_cmd = [sys.executable,
                       os.path.join(options.goma_dir, 'goma_ctl.py')]
+    # Show goma stats so that we can investigate goma when
+    # something weird happens.
+    chromium_utils.RunCommand(goma_ctl_cmd + ['stat'], env=env)
     # Always stop the proxy for now to allow in-place update.
     chromium_utils.RunCommand(goma_ctl_cmd + ['stop'], env=env)
 
@@ -168,17 +200,17 @@ def common_xcode_settings(command, options, env, compiler=None):
     print 'Forcing LDPLUSPLUS = %s' % ldplusplus
     env['LDPLUSPLUS'] = ldplusplus
 
-  if options.disable_aslr:
-    # Disallow dyld to randomize the load addresses of executables.
-    # If any of them is compiled with ASan it will hang otherwise.
-    env['DYLD_NO_PIE'] = '1'
-
 
 def ninja_clobber(build_output_dir):
   """Removes everything but ninja files from a build directory."""
   for root, _, files in os.walk(build_output_dir, topdown=False):
     for f in files:
-      if (f.endswith('.ninja') or
+      # For .manifest in particular, gyp windows ninja generates manifest
+      # files at generation time but clobber nukes at the beginning of
+      # compile, so make sure not to delete those generated files, otherwise
+      # compile will fail.
+      if (f.endswith('.ninja') or f.endswith('.manifest') or
+          f.startswith('msvc') or  # VS runtime DLLs.
           f in ('gyp-mac-tool', 'gyp-win-tool',
                 'environment.x86', 'environment.x64')):
         continue
@@ -406,6 +438,15 @@ class XcodebuildFilter(chromium_utils.RunCommandFilter):
     return self.AssembleOutput()
 
 
+def maybe_set_official_build_envvars(options, env):
+  if options.mode == 'google_chrome' or options.mode == 'official':
+    env['CHROMIUM_BUILD'] = '_google_chrome'
+
+  if options.mode == 'official':
+    # Official builds are always Google Chrome.
+    env['CHROME_BUILD_TYPE'] = '_official'
+
+
 def main_xcode(options, args):
   """Interprets options, clobbers object files, and calls xcodebuild.
   """
@@ -415,6 +456,9 @@ def main_xcode(options, args):
   if not goma_ready:
     assert options.compiler not in ('goma', 'goma-clang')
     assert options.goma_dir is None
+
+  # Print some basic information about xcodebuild to ease debugging.
+  chromium_utils.RunCommand(['xcodebuild', '-sdk', '-version'], env=env)
 
   # If the project isn't in args, add all.xcodeproj to simplify configuration.
   command = ['xcodebuild', '-configuration', options.target]
@@ -427,7 +471,7 @@ def main_xcode(options, args):
     # updated to only pass platform-appropriate --solution values.
     if (not options.solution or
         os.path.splitext(options.solution)[1] != '.xcodeproj'):
-      options.solution = 'all.xcodeproj'
+      options.solution = '../build/all.xcodeproj'
     command.extend(['-project', options.solution])
 
   if options.xcode_target:
@@ -447,6 +491,7 @@ def main_xcode(options, args):
     ninja_clobber(clobber_dir)
 
   common_xcode_settings(command, options, env, options.compiler)
+  maybe_set_official_build_envvars(options, env)
 
   # Add on any remaining args
   command.extend(args)
@@ -462,6 +507,7 @@ def main_xcode(options, args):
   if os.path.exists(no_filter_path):
     print 'NOTE: "%s" exists, output is unfiltered' % no_filter_path
   elif not xcode_info.startswith('Xcode 3.2.'):
+    # Note: The filter sometimes hides real errors on 4.x+, see crbug.com/260989
     print 'NOTE: Not using Xcode 3.2, output is unfiltered'
   else:
     full_log_path = os.path.join(os.getcwd(), 'full_xcodebuild_log.txt')
@@ -470,6 +516,12 @@ def main_xcode(options, args):
     full_log.write('Build started ' + now.isoformat() + '\n\n\n')
     print 'NOTE: xcodebuild output filtered, full log at: "%s"' % full_log_path
     xcodebuild_filter = XcodebuildFilter(full_log)
+
+  try:
+    os.makedirs(options.build_dir)
+  except OSError, e:
+    if e.errno != errno.EEXIST:
+      raise
 
   os.chdir(options.build_dir)
 
@@ -483,37 +535,14 @@ def main_xcode(options, args):
   return result
 
 
-DISTRIBUTION_FILE = '/etc/lsb-release'
-def get_ubuntu_codename():
-  if not os.path.exists(DISTRIBUTION_FILE):
-    return None
-  dist_file = open(DISTRIBUTION_FILE, 'r')
-  dist_text = dist_file.read().strip()
-  dist_file.close()
-  codename = None
-  for line in dist_text.splitlines():
-    match_data = re.match(r'^DISTRIB_CODENAME=(\w+)$', line)
-    if match_data:
-      codename = match_data.group(1)
-  return codename
-
-
 def common_make_settings(
     command, options, env, crosstool=None, compiler=None):
   """
-  Sets desirable environment variables and command-line options
-  that are common to the Make and SCons builds. Used on Linux
-  and for the mac make build.
+  Sets desirable environment variables and command-line options that are used
+  in the Make build.
   """
-  assert compiler in (None, 'clang', 'goma', 'goma-clang', 'tsan_gcc',
-                      'jsonclang')
-  if options.mode == 'google_chrome' or options.mode == 'official':
-    env['CHROMIUM_BUILD'] = '_google_chrome'
-
-  if options.mode == 'official':
-    # Official builds are always Google Chrome.
-    env['OFFICIAL_BUILD'] = '1'
-    env['CHROME_BUILD_TYPE'] = '_official'
+  assert compiler in (None, 'clang', 'goma', 'goma-clang', 'jsonclang')
+  maybe_set_official_build_envvars(options, env)
 
   # Don't stop at the first error.
   command.append('-k')
@@ -543,10 +572,15 @@ def common_make_settings(
       command.append('-r')
       return
 
-  if chromium_utils.IsMac() and options.disable_aslr:
-    # Disallow dyld to randomize the load addresses of executables.
-    # If any of them is compiled with ASan it will hang otherwise.
-    env['DYLD_NO_PIE'] = '1'
+  if options.llvm_tsan:
+    supp_path = os.path.join(options.src_dir,
+      'tools', 'valgrind', 'tsan_v2', 'suppressions.txt')
+    # Do not report thread leaks when running executables compiled with TSan.
+    # Use the suppressions file to avoid reporting known errors during
+    # compilation.
+    # http://dev.chromium.org/developers/testing/threadsanitizer-tsan-v2
+    # contains other options that might be worth adding.
+    env['TSAN_OPTIONS'] = 'report_thread_leaks=0 suppressions=%s' % supp_path
 
   if compiler in ('goma', 'goma-clang', 'jsonclang'):
     print 'using', compiler
@@ -578,18 +612,7 @@ def common_make_settings(
     command.append('CC.host=' + env['CC'])
     command.append('CXX.host=' + env['CXX'])
 
-    if chromium_utils.IsMac():
-      # The default process limit on 10.6 is 266 (`sysctl kern.maxprocperuid`),
-      # and about 100 processes are used by the system. The webkit bindings
-      # generation scripts open a preprocessor child process, so building at
-      # -j100 runs into the process limit. For now, just build with -j50.
-      goma_jobs = 50
-      if options.clobber:
-        # Disable compiles on local machine.  When the goma server-side object
-        # file cache is warm, this can speed up clobber builds by up to 30%.
-        env['GOMA_USE_LOCAL'] = '0'
-    else:
-      goma_jobs = 100
+    goma_jobs = 50
     if jobs < goma_jobs:
       jobs = goma_jobs
     command.append('-j%d' % jobs)
@@ -602,43 +625,6 @@ def common_make_settings(
     env['CXX'] = os.path.join(clang_dir, 'clang++')
     command.append('CC.host=' + env['CC'])
     command.append('CXX.host=' + env['CXX'])
-    command.append('-r')
-
-  if compiler == 'tsan_gcc':
-    # See
-    # http://dev.chromium.org/developers/how-tos/using-valgrind/threadsanitizer/gcc-tsan
-    # for build instructions.
-    tsan_base = os.path.join(options.src_dir, 'third_party', 'compiler-tsan')
-
-    tsan_gcc_bin = os.path.abspath(os.path.join(
-        tsan_base, 'gcc-tsan', 'scripts'))
-    gcctsan_gcc_dir = os.path.abspath(os.path.join(
-        tsan_base, 'gcc-current'))
-
-    if not os.path.isdir(gcctsan_gcc_dir):
-      # Extract gcc from the tarball.
-      extract_gcc_sh = os.path.abspath(os.path.join(
-          tsan_base, 'extract_gcc.sh'))
-      assert(os.path.exists(extract_gcc_sh))
-      chromium_utils.RunCommand([extract_gcc_sh])
-      assert(os.path.isdir(gcctsan_gcc_dir))
-
-    env['CC'] = os.path.join(tsan_gcc_bin, 'gcc')
-    env['CXX'] = os.path.join(tsan_gcc_bin, 'g++')
-    env['LD'] = os.path.join(tsan_gcc_bin, 'ld')
-    # GCCTSAN_GCC_DIR and GCCTSAN_GCC_VER point to the symlinks to the current
-    # versions of the compiler and the instrumentation plugin created by
-    # extract_gcc.sh
-    env['GCCTSAN_GCC_DIR'] = gcctsan_gcc_dir
-    env['GCCTSAN_GCC_VER'] = 'current'
-    env['GCCTSAN_IGNORE'] = os.path.join(
-        options.src_dir, 'tools', 'valgrind', 'tsan', 'ignores.txt')
-    env['GCCTSAN_ARGS'] = (
-        '-DADDRESS_SANITIZER -DWTF_USE_DYNAMIC_ANNOTATIONS=1 '
-        '-DWTF_USE_DYNAMIC_ANNOTATIONS_NOIMPL=1' )
-    command.append('CC=' + env['CC'])
-    command.append('CXX=' + env['CXX'])
-    command.append('LD=' + env['LD'])
     command.append('-r')
 
   command.append('-j%d' % jobs)
@@ -654,42 +640,13 @@ def main_make(options, args):
     assert options.compiler not in ('goma', 'goma-clang')
     assert options.goma_dir is None
 
-  options.build_dir = os.path.abspath(options.build_dir)
-  # TODO(mmoss) Temporary hack to ignore the Windows --solution flag that is
-  # passed to all builders. This can be taken out once the master scripts are
-  # updated to only pass platform-appropriate --solution values.
-  if options.solution and os.path.splitext(options.solution)[1] != '.Makefile':
-    options.solution = None
-
   command = ['make']
-  if options.solution:
-    command.extend(['-f', options.solution])
+  # Try to build from <build_dir>/Makefile, or if that doesn't exist,
+  # from the top-level Makefile.
+  if os.path.isfile(os.path.join(options.build_dir, 'Makefile')):
     working_dir = options.build_dir
   else:
-    # If no solution file (i.e. sub-project *.Makefile) is specified, try to
-    # build from <build_dir>/Makefile, or if that doesn't exist, from
-    # the top-level Makefile.
-    if os.path.isfile(os.path.join(options.build_dir, 'Makefile')):
-      working_dir = options.build_dir
-    else:
-      working_dir = options.src_dir
-
-  # Lots of test-execution scripts hard-code 'sconsbuild' as the output
-  # directory.  Accomodate them.
-  # TODO:  remove when build_dir is properly parameterized in tests.
-  sconsbuild = os.path.join(working_dir, 'sconsbuild')
-  if os.path.islink(sconsbuild):
-    if os.readlink(sconsbuild) != 'out':
-      os.remove(sconsbuild)
-  elif os.path.exists(sconsbuild):
-    dead = sconsbuild + '.dead'
-    if os.path.isdir(dead):
-      shutil.rmtree(dead)
-    elif os.path.isfile(dead):
-      os.remove(dead)
-    os.rename(sconsbuild, sconsbuild+'.dead')
-  if not os.path.lexists(sconsbuild):
-    os.symlink('out', sconsbuild)
+    working_dir = options.src_dir
 
   os.chdir(working_dir)
   common_make_settings(command, options, env, options.crosstool,
@@ -724,174 +681,246 @@ def main_make(options, args):
 
   return result
 
+def main_make_android(options, args):
+  """Interprets options, clobbers object files, and calls make.
+  """
+
+  env = EchoDict(os.environ)
+  goma_ready = goma_setup(options, env)
+  if not goma_ready:
+    assert options.compiler not in ('goma', 'goma-clang')
+    assert options.goma_dir is None
+
+  if goma_ready:
+    command = [os.path.join(options.goma_dir, 'goma-android-make')]
+  else:
+    command = ['make']
+
+  working_dir = options.src_dir
+
+  os.chdir(working_dir)
+
+  # V=1 prints the actual executed command
+  if options.verbose:
+    command.extend(['V=1'])
+  command.extend(options.build_args + args)
+
+  # Run the build.
+  env.print_overrides()
+  result = 0
+
+  def clobber():
+    print('Removing %s' % options.target_output_dir)
+    chromium_utils.RemoveDirectory(options.target_output_dir)
+
+  # The Android.mk build system handles deps differently than the 'regular'
+  # Chromium makefiles which can lead to targets not being rebuilt properly.
+  # Fixing this is actually quite hard so we make this bot always clobber.
+  clobber()
+
+  result = chromium_utils.RunCommand(command, env=env)
+
+  goma_teardown(options, env)
+
+  return result
 
 def main_ninja(options, args):
   """Interprets options, clobbers object files, and calls ninja."""
 
   # Prepare environment.
   env = EchoDict(os.environ)
+  env.setdefault('NINJA_STATUS', '[%s/%t | %e] ')
   orig_compiler = options.compiler
   goma_ready = goma_setup(options, env)
-  if not goma_ready:
-    assert options.compiler not in ('goma', 'goma-clang')
-    assert options.goma_dir is None
+  try:
+    if not goma_ready:
+      assert options.compiler not in ('goma', 'goma-clang')
+      assert options.goma_dir is None
 
-  # ninja is different from all the other build systems in that it requires
-  # most configuration to be done at gyp time. This is why this function does
-  # less than the other comparable functions in this file.
-  print 'chdir to %s' % options.src_dir
-  os.chdir(options.src_dir)
+    # ninja is different from all the other build systems in that it requires
+    # most configuration to be done at gyp time. This is why this function does
+    # less than the other comparable functions in this file.
+    print 'chdir to %s' % options.src_dir
+    os.chdir(options.src_dir)
 
-  command = ['ninja', '-C', options.target_output_dir]
+    command = ['ninja', '-C', options.target_output_dir]
 
-  if options.clobber:
-    print('Removing %s' % options.target_output_dir)
-    # Deleting output_dir would also delete all the .ninja files necessary to
-    # build. Clobbering should run before runhooks (which creates .ninja files).
-    # For now, only delete all non-.ninja files. TODO(thakis): Make "clobber" a
-    # step that runs before "runhooks". Once the master has been restarted,
-    # remove all clobber handling from compile.py.
-    ninja_clobber(options.target_output_dir)
+    if options.clobber:
+      print('Removing %s' % options.target_output_dir)
+      # Deleting output_dir would also delete all the .ninja files necessary to
+      # build. Clobbering should run before runhooks (which creates .ninja
+      # files). For now, only delete all non-.ninja files.
+      # TODO(thakis): Make "clobber" a step that runs before "runhooks".
+      # Once the master has been restarted, remove all clobber handling
+      # from compile.py.
+      ninja_clobber(options.target_output_dir)
 
-  if options.verbose:
-    command.append('-v')
-  command.extend(options.build_args)
-  command.extend(args)
+    if options.verbose:
+      command.append('-v')
+    command.extend(options.build_args)
+    command.extend(args)
 
-  if chromium_utils.IsMac() and options.disable_aslr:
-    # Disallow dyld to randomize the load addresses of executables.
-    # If any of them is compiled with ASan it will hang otherwise.
-    env['DYLD_NO_PIE'] = '1'
+    maybe_set_official_build_envvars(options, env)
 
-  if options.compiler in ('goma', 'goma-clang'):
-    assert options.goma_dir
-    if chromium_utils.IsWindows():
-      # rewrite cc, cxx line in output_dir\build.ninja.
-      # in winja, ninja -t msvc is used to run $cc/$cxx to collect
-      # depepndency with "cl /showIncludes" and generates dependency info.
-      # ninja -t msvc uses environment in output_dir\environment.*,
-      # which is generated at gyp time (Note: gyp detect MSVC's path and set it
-      # to PATH.  This PATH doesn't include goma_dir.), and ignores PATH
-      # to run $cc/$cxx at run time.
-      # So modifying PATH in compile.py doesn't afffect to run $cc/$cxx
-      # under ninja -t msvc. (PATH is just ignored. Note PATH set/used
-      # in compile.py doesn't include MSVC's path).
-      # Hence, we'll got
-      # "CreateProcess failed: The system cannot find the file specified."
-      #
-      # So, rewrite cc, cxx line to "$goma_dir/gomacc cl".
-      #
-      # Note that, on other platform, ninja doesn't use ninja -t msvc
-      # (it just simply run $cc/$cxx), so modifying PATH can work to run
-      # gomacc without this hack.
-      manifest = os.path.join(options.target_output_dir, 'build.ninja')
-      orig_manifest = manifest + '.orig'
-      if os.path.exists(orig_manifest):
-        os.remove(orig_manifest)
-      os.rename(manifest, orig_manifest)
-      cc_line_pattern = re.compile(r'(cc|cxx|cc_host|cxx_host) = (.*)')
-      goma_repl = '\\1 = %s \\2' % (
-          os.path.join(options.goma_dir, 'gomacc.exe').replace('\\', '\\\\'))
-      with open(orig_manifest) as orig_build:
-        with open(manifest, 'w') as new_build:
-          for line in orig_build:
-            new_build.write(cc_line_pattern.sub(goma_repl, line))
+    if options.llvm_tsan:
+      # Do not report thread leaks when running executables compiled with TSan.
+      # http://dev.chromium.org/developers/testing/threadsanitizer-tsan-v2
+      # contains other options that might be worth adding.
+      env['TSAN_OPTIONS'] = 'report_thread_leaks=0'
 
-    # CC and CXX are set at gyp time for ninja. PATH still needs to be adjusted.
-    print 'using', options.compiler
-    if options.compiler == 'goma':
-      env['PATH'] = os.pathsep.join([options.goma_dir, env['PATH']])
-    elif options.compiler == 'goma-clang':
+    if options.compiler:
+      print 'using', options.compiler
+
+    if options.compiler in ('goma', 'goma-clang', 'jsonclang'):
+      assert options.goma_dir
+      if chromium_utils.IsWindows():
+        # rewrite cc, cxx line in output_dir\build.ninja.
+        # in winja, ninja -t msvc is used to run $cc/$cxx to collect
+        # dependency with "cl /showIncludes" and generates dependency info.
+        # ninja -t msvc uses environment in output_dir\environment.*,
+        # which is generated at gyp time (Note: gyp detect MSVC's path and set
+        # it to PATH.  This PATH doesn't include goma_dir.), and ignores PATH
+        # to run $cc/$cxx at run time.
+        # So modifying PATH in compile.py doesn't afffect to run $cc/$cxx
+        # under ninja -t msvc. (PATH is just ignored. Note PATH set/used
+        # in compile.py doesn't include MSVC's path).
+        # Hence, we'll got
+        # "CreateProcess failed: The system cannot find the file specified."
+        #
+        # So, rewrite cc, cxx line to "$goma_dir/gomacc cl".
+        #
+        # Note that, on other platform, ninja doesn't use ninja -t msvc
+        # (it just simply run $cc/$cxx), so modifying PATH can work to run
+        # gomacc without this hack.
+        #
+        # Another option is to use CC_wrapper, CXX_wrapper environement
+        # variables at gyp time (and this is typical usage for chromium
+        # developers), but it would make it harder to fallback no-goma when
+        # goma is not available.
+        # TODO: Set CC / CXX at gyp time instead. This is a horrible hack.
+        manifest = os.path.join(options.target_output_dir, 'build.ninja')
+        orig_manifest = manifest + '.orig'
+        if os.path.exists(orig_manifest):
+          os.remove(orig_manifest)
+        os.rename(manifest, orig_manifest)
+        cc_line_pattern = re.compile(
+            r'(cc|cxx|cc_host|cxx_host|cl_x86|cl_x64) = (.*)')
+        gomacc = os.path.join(options.goma_dir, 'gomacc.exe')
+        modified_lines = []
+        with open(orig_manifest) as orig_build:
+          with open(manifest, 'w') as new_build:
+            for line in orig_build:
+              m = cc_line_pattern.match(line)
+              if m:
+                cc_type = m.group(1)
+                cc_cmd = m.group(2).strip()
+                # use gomacc if cc_cmd is simple command (e.g. cl.exe), or
+                # quoted full path (e.g. "c:\Program Files\...").
+                if not ' ' in cc_cmd or re.match('^"[^"]+"$', cc_cmd):
+                  orig_line = line
+                  line = '%s = %s %s\n' % (cc_type, gomacc, cc_cmd)
+                  modified_lines.append((orig_line, line))
+              new_build.write(line)
+        if modified_lines:
+          print 'build.ninja modified in compile.py for goma:\n'
+          for (orig_line, line) in modified_lines:
+            sys.stdout.write('    ' + orig_line)
+            sys.stdout.write(' -> ' + line)
+
+      # CC and CXX are set at gyp time for ninja. PATH still needs to be
+      # adjusted.
+      if options.compiler == 'goma':
+        env['PATH'] = os.pathsep.join([options.goma_dir, env['PATH']])
+      elif options.compiler == 'goma-clang':
+        clang_dir = os.path.abspath(os.path.join(
+            'third_party', 'llvm-build', 'Release+Asserts', 'bin'))
+        env['PATH'] = os.pathsep.join(
+            [options.goma_dir, clang_dir, env['PATH']])
+      elif options.compiler ==  'jsonclang':
+        jsonclang_dir = os.path.join(SLAVE_SCRIPTS_DIR, 'chromium')
+        clang_dir = os.path.join(options.src_dir,
+            'third_party', 'llvm-build', 'Release+Asserts', 'bin')
+        if options.goma_dir:
+          env['PATH'] = os.pathsep.join(
+              [jsonclang_dir, options.goma_dir, clang_dir, env['PATH']])
+        else:
+          env['PATH'] = os.pathsep.join([jsonclang_dir, clang_dir, env['PATH']])
+
+      def determine_goma_jobs():
+        # We would like to speed up build on Windows a bit, since it is slowest.
+        number_of_processors = 0
+        try:
+          number_of_processors = multiprocessing.cpu_count()
+        except NotImplementedError:
+          print 'cpu_count() is not implemented, using default value'
+
+        # When goma is used, 10 * number_of_processors is almost suitable
+        # for -j value. Actually -j value was originally 100 for Linux and
+        # Windows. But when goma was overloaded, it was reduced to 50.
+        # Actually, goma server could not cope with burst request correctly
+        # that time. Currently the situation got better a bit. The goma server
+        # is now able to treat such requests well to a certain extent.
+        # However, for safety, let's limit incrementing -j value only for
+        # Windows now, since it's slowest.
+        # Note that currently most try-bot build slaves have 8 processors.
+        if chromium_utils.IsMac():
+          # On mac, due to the process number limit, we're using 50.
+          return 50
+        elif chromium_utils.IsWindows() and number_of_processors > 0:
+          return min(10 * number_of_processors, 200)
+        else:
+          return 50
+
+      goma_jobs = determine_goma_jobs()
+      command.append('-j%d' % goma_jobs)
+
+      if chromium_utils.IsMac():
+        # Work around for crbug.com/347918
+        env['GOMA_HERMETIC'] = 'fallback'
+        if options.clobber:
+          # Enabling this while attempting to solve crbug.com/257467
+          env['GOMA_USE_LOCAL'] = '1'
+
+    if orig_compiler == 'goma-clang' and options.compiler == 'clang':
+      # goma setup failed, fallback to local clang.
+      # Note that ninja.build was generated for goma, so need to set PATH
+      # to clang dir.
+      # If orig_compiler is not goma, gyp set this path in ninja.build.
+      print 'using', options.compiler
       clang_dir = os.path.abspath(os.path.join(
           'third_party', 'llvm-build', 'Release+Asserts', 'bin'))
-      env['PATH'] = os.pathsep.join([options.goma_dir, clang_dir, env['PATH']])
+      env['PATH'] = os.pathsep.join([clang_dir, env['PATH']])
 
-    if chromium_utils.IsMac():
-      goma_jobs = 50
-    else:
-      goma_jobs = 100
-    command.append('-j%d' % goma_jobs)
-
-    if chromium_utils.IsMac() and options.clobber:
-      env['GOMA_USE_LOCAL'] = '0'
-
-  if orig_compiler == 'goma-clang' and options.compiler == 'clang':
-    # goma setup failed, fallback to local clang.
-    # Note that ninja.build was generated for goma, so need to set PATH
-    # to clang dir.
-    # If orig_compiler is not goma, gyp set this path in ninja.build.
-    print 'using', options.compiler
-    clang_dir = os.path.abspath(os.path.join(
-        'third_party', 'llvm-build', 'Release+Asserts', 'bin'))
-    env['PATH'] = os.pathsep.join([clang_dir, env['PATH']])
-
-  # Run the build.
-  env.print_overrides()
-  # TODO(maruel): Remove the shell argument as soon as ninja.exe is in PATH.
-  # At the moment of writing, ninja.bat in depot_tools wraps
-  # third_party\ninja.exe, which requires shell=True so it is found correctly.
-  result = chromium_utils.RunCommand(
-      command, env=env, shell=sys.platform=='win32')
-
-  goma_teardown(options, env)
-  return result
-
-
-def main_scons(options, args):
-  """Interprets options, clobbers object files, and calls scons.
-  """
-  options.build_dir = os.path.abspath(options.build_dir)
-  if options.clobber:
-    print('Removing %s' % options.target_output_dir)
-    chromium_utils.RemoveDirectory(options.target_output_dir)
-
-  os.chdir(options.build_dir)
-
-  if sys.platform == 'win32':
-    command = ['hammer.bat']
-  else:
-    command = ['hammer']
-
-  env = EchoDict(os.environ)
-  if sys.platform == 'linux2':
-    common_make_settings(command, options, env)
-  else:
-    command.extend(['-k'])
-
-  command.extend([
-      # Force scons to always check for dependency changes.
-      '--implicit-deps-changed',
-      '--mode=' + options.target,
-  ])
-
-  # Here's what you can uncomment if you need to see more info
-  # about what the build is doing on a slave:
-  #
-  #   VERBOSE=1 (a setting in our local SCons config) replaces
-  #   the "Compiling ..." and "Linking ..." lines with the
-  #   actual executed command line(s)
-  #
-  #   --debug=explain (a SCons option) will tell you why SCons
-  #   is deciding to rebuild thing (the target doesn't exist,
-  #   which .h file(s) changed, etc.)
-  #
-  #command.extend(['--debug=explain', 'VERBOSE=1'])
-  command.extend(options.build_args + args)
-  env.print_overrides()
-  return chromium_utils.RunCommand(command, env=env)
+    # Run the build.
+    env.print_overrides()
+    # TODO(maruel): Remove the shell argument as soon as ninja.exe is in PATH.
+    # At the moment of writing, ninja.bat in depot_tools wraps
+    # third_party\ninja.exe, which requires shell=True so it is found correctly.
+    return chromium_utils.RunCommand(
+        command, env=env, shell=sys.platform=='win32')
+  finally:
+    goma_teardown(options, env)
 
 
 def main_win(options, args):
   """Interprets options, clobbers object files, and calls the build tool.
   """
+  if not options.solution:
+    options.solution = 'all.sln'
+  solution = os.path.join(options.build_dir, options.solution)
+
   # Prefer the version specified in the .sln. When devenv.com is used at the
   # command line to start a build, it doesn't accept sln file from a different
   # version.
   if not options.msvs_version:
-    sln = open(os.path.join(options.build_dir, options.solution), 'rU')
+    sln = open(os.path.join(solution), 'rU')
     header = sln.readline().strip()
     sln.close()
-    if header.endswith('11.00'):
+    if header.endswith('13.00'):
+      options.msvs_version = '12'
+    elif header.endswith('12.00'):
+      options.msvs_version = '11'
+    elif header.endswith('11.00'):
       options.msvs_version = '10'
     elif header.endswith('10.00'):
       options.msvs_version = '9'
@@ -931,8 +960,6 @@ def main_win(options, args):
     if options.project:
       tool_options.extend(['/Project', options.project])
 
-  options.build_dir = os.path.abspath(options.build_dir)
-
   def clobber():
     print('Removing %s' % options.target_output_dir)
     chromium_utils.RemoveDirectory(options.target_output_dir)
@@ -954,19 +981,9 @@ def main_win(options, args):
   # no goma support yet for this build tool.
   assert options.compiler != 'goma'
 
-  if options.mode == 'google_chrome' or options.mode == 'official':
-    env['CHROMIUM_BUILD'] = '_google_chrome'
-
-  if options.mode == 'official':
-    # Official builds are always Google Chrome.
-    env['OFFICIAL_BUILD'] = '1'
-    env['CHROME_BUILD_TYPE'] = '_official'
-
-  if not options.solution:
-    options.solution = 'all.sln'
+  maybe_set_official_build_envvars(options, env)
 
   result = -1
-  solution = os.path.join(options.build_dir, options.solution)
   command = [tool, solution] + tool_options + args
   errors = []
   # Examples:
@@ -1085,14 +1102,12 @@ def get_target_build_dir(build_tool, src_dir, target, is_iphone=False):
   if build_tool == 'xcode':
     ret = os.path.join(src_dir, 'xcodebuild',
         target + ('-iphoneos' if is_iphone else ''))
-  elif build_tool == 'make':
+  elif build_tool in ['make', 'ninja']:
     ret = os.path.join(src_dir, 'out', target)
-  elif build_tool == 'ninja':
-    ret = os.path.join(src_dir, 'out', target)
-  elif build_tool in ['msvs', 'vs', 'ib']:
+  elif build_tool == 'make-android':
+    ret = os.path.join(src_dir, 'out')
+  elif build_tool in ['vs', 'ib']:
     ret = os.path.join(src_dir, 'build', target)
-  elif build_tool == 'scons':
-    ret = os.path.join(src_dir, 'sconsbuild', target)
   else:
     raise NotImplementedError()
   return os.path.abspath(ret)
@@ -1100,69 +1115,111 @@ def get_target_build_dir(build_tool, src_dir, target, is_iphone=False):
 
 def real_main():
   option_parser = optparse.OptionParser()
-  option_parser.add_option('', '--clobber', action='store_true', default=False,
+  option_parser.add_option('--clobber', action='store_true', default=False,
                            help='delete the output directory before compiling')
-  option_parser.add_option('', '--clobber-post-fail', action='store_true',
+  option_parser.add_option('--clobber-post-fail', action='store_true',
                            default=False,
                            help='delete the output directory after compiling '
                                 'only if it failed. Do not affect ninja.')
-  option_parser.add_option('', '--keep-version-file', action='store_true',
+  option_parser.add_option('--keep-version-file', action='store_true',
                            default=False,
                            help='do not delete the chrome_dll_version.rc file '
                                 'before compiling (ignored if --clobber is '
                                 'used')
-  option_parser.add_option('', '--target', default='Release',
+  option_parser.add_option('--target', default='Release',
                            help='build target (Debug or Release)')
-  option_parser.add_option('', '--arch', default=None,
+  option_parser.add_option('--arch', default=None,
                            help='target architecture (ia32, x64, ...')
-  option_parser.add_option('', '--solution', default=None,
+  option_parser.add_option('--solution', default=None,
                            help='name of solution/sub-project to build')
-  option_parser.add_option('', '--project', default=None,
+  option_parser.add_option('--project', default=None,
                            help='name of project to build')
-  option_parser.add_option('', '--build-dir', default='build',
-                           help='path to directory containing solution and in '
-                                'which the build output will be placed')
-  option_parser.add_option('', '--mode', default='dev',
+  option_parser.add_option('--build-dir', help='ignored')
+  option_parser.add_option('--src-dir', default=None,
+                           help='path to the root of the source tree')
+  option_parser.add_option('--mode', default='dev',
                            help='build mode (dev or official) controlling '
                                 'environment variables set during build')
-  option_parser.add_option('', '--build-tool', default=None,
-                           help='specify build tool (ib, vs, scons, xcode)')
-  option_parser.add_option('', '--build-args', action='append', default=[],
+  option_parser.add_option('--build-tool', default=None,
+                           help='specify build tool (ib, vs, xcode)')
+  option_parser.add_option('--build-args', action='append', default=[],
                            help='arguments to pass to the build tool')
-  option_parser.add_option('', '--compiler', default=None,
+  option_parser.add_option('--compiler', default=None,
                            help='specify alternative compiler (e.g. clang)')
   if chromium_utils.IsWindows():
     # Windows only.
-    option_parser.add_option('', '--no-ib', action='store_true', default=False,
+    option_parser.add_option('--no-ib', action='store_true', default=False,
                              help='use Visual Studio instead of IncrediBuild')
-    option_parser.add_option('', '--msvs_version',
+    option_parser.add_option('--msvs_version',
                              help='VisualStudio version to use')
   # For linux to arm cross compile.
-  option_parser.add_option('', '--crosstool', default=None,
+  option_parser.add_option('--crosstool', default=None,
                            help='optional path to crosstool toolset')
+  option_parser.add_option('--llvm-tsan', action='store_true',
+                           default=False,
+                           help='build with LLVM\'s ThreadSanitizer')
   if chromium_utils.IsMac():
     # Mac only.
-    option_parser.add_option('', '--xcode-target', default=None,
+    option_parser.add_option('--xcode-target', default=None,
                              help='Target from the xcodeproj file')
-    option_parser.add_option('', '--disable-aslr', action='store_true',
-                             default=False, help='disable ASLR on OS X 10.6')
-  option_parser.add_option('', '--goma-dir',
+  option_parser.add_option('--goma-dir',
                            default=os.path.join(BUILD_DIR, 'goma'),
                            help='specify goma directory')
   option_parser.add_option('--verbose', action='store_true')
 
   options, args = option_parser.parse_args()
 
+  if not options.src_dir:
+    options.src_dir = 'src'
+  options.src_dir = os.path.abspath(options.src_dir)
+
+  options.build_dir = os.path.abspath(build_directory.GetBuildOutputDirectory(
+        os.path.basename(options.src_dir)))
+
   if options.build_tool is None:
     if chromium_utils.IsWindows():
-      main = main_win
-      options.build_tool = 'msvs'
+      # We're in the process of moving to ninja by default on Windows, see
+      # http://crbug.com/303291.
+      if build_directory.AreNinjaFilesNewerThanMSVSFiles(
+          src_dir=options.src_dir):
+        main = main_ninja
+        options.build_tool = 'ninja'
+        if options.project:
+          args += [options.project]
+      else:
+        main = main_win
+        options.build_tool = 'vs'
     elif chromium_utils.IsMac():
-      main = main_xcode
-      options.build_tool = 'xcode'
+      # We're in the process of moving to ninja by default on Mac, see
+      # http://crbug.com/294387
+      # Builders for different branches will use either xcode or ninja depending
+      # on the release channel for a while. Until all release channels are on
+      # ninja, use build file mtime to figure out which build system to use.
+      # TODO(thakis): Just use main_ninja once the transition is complete.
+      if build_directory.AreNinjaFilesNewerThanXcodeFiles(
+          src_dir=options.src_dir):
+        main = main_ninja
+        options.build_tool = 'ninja'
+
+        # There is no standard way to pass a build target (such as 'base') to
+        # compile.py. --target specifies Debug or Release. --project could do
+        # that, but it's only supported by the msvs build tool at the moment.
+        # Because of that, most build masters pass additional options to the
+        # build tool to specify the build target. For xcode, these are in the
+        # form of '-project blah.xcodeproj -target buildtarget'. Translate these
+        # into ninja options, if needed.
+        xcode_option_parse = optparse.OptionParser()
+        xcode_option_parse.add_option('--project')
+        xcode_option_parse.add_option('--target', action='append', default=[])
+        xcode_options, xcode_args = xcode_option_parse.parse_args(
+            [re.sub('^-', '--', a) for a in args])  # optparse wants --options.
+        args = xcode_options.target + xcode_args
+      else:
+        main = main_xcode
+        options.build_tool = 'xcode'
     elif chromium_utils.IsLinux():
-      main = main_make
-      options.build_tool = 'make'
+      main = main_ninja
+      options.build_tool = 'ninja'
     else:
       print('Please specify --build-tool.')
       return 1
@@ -1171,8 +1228,8 @@ def real_main():
         'ib' : main_win,
         'vs' : main_win,
         'make' : main_make,
+        'make-android' : main_make_android,
         'ninja' : main_ninja,
-        'scons' : main_scons,
         'xcode' : main_xcode,
     }
     main = build_tool_map.get(options.build_tool)
@@ -1180,9 +1237,6 @@ def real_main():
       sys.stderr.write('Unknown build tool %s.\n' % repr(options.build_tool))
       return 2
 
-  options.build_dir = os.path.abspath(options.build_dir)
-  options.src_dir = os.path.join(slave_utils.SlaveBaseDir(
-      os.path.abspath(options.build_dir)), 'build', 'src')
   options.target_output_dir = get_target_build_dir(options.build_tool,
       options.src_dir, options.target, 'iphoneos' in args)
   options.clobber = (options.clobber or

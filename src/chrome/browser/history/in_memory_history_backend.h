@@ -2,13 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Contains the history backend wrapper around the in-memory URL database. This
-// object maintains an in-memory cache of the subset of history required to do
-// in-line autocomplete.
+// The InMemoryHistoryBackend is a wrapper around the in-memory URL database.
+// It maintains an in-memory cache of a subset of history that is required for
+// low-latency operations, such as in-line autocomplete.
 //
-// It is created on the history thread and passed to the main thread where
-// operations can be completed synchronously. It listens for notifications
-// from the "regular" history backend and keeps itself in sync.
+// The in-memory cache provides the following guarantees:
+//  (1.) It will always contain URLRows that either have a |typed_count| > 0; or
+//       that have a corresponding search term, in which case information about
+//       the search term is also stored.
+//  (2.) It will be an actual subset, i.e., it will contain verbatim data, and
+//       will never contain more data that can be found in the main database.
+//
+// The InMemoryHistoryBackend is created on the history thread and passed to the
+// main thread where operations can be completed synchronously. It listens for
+// notifications from the "regular" history backend and keeps itself in sync.
 
 #ifndef CHROME_BROWSER_HISTORY_IN_MEMORY_HISTORY_BACKEND_H_
 #define CHROME_BROWSER_HISTORY_IN_MEMORY_HISTORY_BACKEND_H_
@@ -21,16 +28,19 @@
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class FilePath;
-class GURL;
 class Profile;
+
+namespace base {
+class FilePath;
+}
 
 namespace history {
 
 class InMemoryDatabase;
-class InMemoryURLIndex;
-struct KeywordSearchTermDetails;
+struct KeywordSearchUpdatedDetails;
+struct KeywordSearchDeletedDetails;
 class URLDatabase;
+class URLRow;
 struct URLsDeletedDetails;
 struct URLsModifiedDetails;
 
@@ -42,7 +52,7 @@ class InMemoryHistoryBackend : public content::NotificationObserver {
   // Initializes the backend from the history database pointed to by the
   // full path in |history_filename|. |db| is used for setting up the
   // InMemoryDatabase.
-  bool Init(const FilePath& history_filename, URLDatabase* db);
+  bool Init(const base::FilePath& history_filename, URLDatabase* db);
 
   // Does initialization work when this object is attached to the history
   // system on the main thread. The argument is the profile with which the
@@ -64,17 +74,17 @@ class InMemoryHistoryBackend : public content::NotificationObserver {
  private:
   FRIEND_TEST_ALL_PREFIXES(HistoryBackendTest, DeleteAll);
 
-  // Handler for NOTIFY_HISTORY_TYPED_URLS_MODIFIED.
-  void OnTypedURLsModified(const URLsModifiedDetails& details);
+  // Handler for HISTORY_URL_VISITED and HISTORY_URLS_MODIFIED.
+  void OnURLVisitedOrModified(const URLRow& url_row);
 
-  // Handler for NOTIFY_HISTORY_URLS_DELETED.
+  // Handler for HISTORY_URLS_DELETED.
   void OnURLsDeleted(const URLsDeletedDetails& details);
 
   // Handler for HISTORY_KEYWORD_SEARCH_TERM_UPDATED.
-  void OnKeywordSearchTermUpdated(const KeywordSearchTermDetails& details);
+  void OnKeywordSearchTermUpdated(const KeywordSearchUpdatedDetails& details);
 
-  // Returns true if there is a keyword associated with the specified url.
-  bool HasKeyword(const GURL& url);
+  // Handler for HISTORY_KEYWORD_SEARCH_TERM_DELETED.
+  void OnKeywordSearchTermDeleted(const KeywordSearchDeletedDetails& details);
 
   content::NotificationRegistrar registrar_;
 

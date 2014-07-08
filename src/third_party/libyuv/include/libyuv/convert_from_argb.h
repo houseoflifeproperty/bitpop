@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -99,12 +99,26 @@ int ARGBToI420(const uint8* src_argb, int src_stride_argb,
                uint8* dst_v, int dst_stride_v,
                int width, int height);
 
+// Convert ARGB to J420. (JPeg full range I420).
+LIBYUV_API
+int ARGBToJ420(const uint8* src_argb, int src_stride_argb,
+               uint8* dst_yj, int dst_stride_yj,
+               uint8* dst_u, int dst_stride_u,
+               uint8* dst_v, int dst_stride_v,
+               int width, int height);
+
 // Convert ARGB To I411.
 LIBYUV_API
 int ARGBToI411(const uint8* src_argb, int src_stride_argb,
                uint8* dst_y, int dst_stride_y,
                uint8* dst_u, int dst_stride_u,
                uint8* dst_v, int dst_stride_v,
+               int width, int height);
+
+// Convert ARGB to J400. (JPeg full range).
+LIBYUV_API
+int ARGBToJ400(const uint8* src_argb, int src_stride_argb,
+               uint8* dst_yj, int dst_stride_yj,
                int width, int height);
 
 // Convert ARGB to I400.

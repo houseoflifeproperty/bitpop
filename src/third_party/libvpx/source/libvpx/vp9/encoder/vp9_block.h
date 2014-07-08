@@ -8,112 +8,112 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #ifndef VP9_ENCODER_VP9_BLOCK_H_
 #define VP9_ENCODER_VP9_BLOCK_H_
 
-#include "vp9/common/vp9_onyx.h"
 #include "vp9/common/vp9_entropymv.h"
 #include "vp9/common/vp9_entropy.h"
 #include "vpx_ports/mem.h"
 #include "vp9/common/vp9_onyxc_int.h"
 
-// motion search site
-typedef struct {
-  MV mv;
-  int offset;
-} search_site;
-
-typedef struct block {
-  // 16 Y blocks, 4 U blocks, 4 V blocks each with 16 entries
-  short *src_diff;
-  short *coeff;
-
-  // 16 Y blocks, 4 U blocks, 4 V blocks each with 16 entries
-  short *quant;
-  short *quant_fast;      // fast quant deprecated for now
-  unsigned char *quant_shift;
-  short *zbin;
-  short *zbin_8x8;
-  short *zbin_16x16;
-  short *zrun_zbin_boost;
-  short *zrun_zbin_boost_8x8;
-  short *zrun_zbin_boost_16x16;
-  short *round;
-
-  // Zbin Over Quant value
-  short zbin_extra;
-
-  unsigned char **base_src;
-  unsigned char **base_second_src;
-  int src;
-  int src_stride;
-
-  int eob_max_offset;
-  int eob_max_offset_8x8;
-  int eob_max_offset_16x16;
-} BLOCK;
-
-typedef struct {
-  int count;
-  struct {
-    B_PREDICTION_MODE mode;
-    int_mv mv;
-    int_mv second_mv;
-  } bmi[16];
-} PARTITION_INFO;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 // Structure to hold snapshot of coding context during the mode picking process
-// TODO Do we need all of these?
 typedef struct {
   MODE_INFO mic;
-  PARTITION_INFO partition_info;
-  int_mv best_ref_mv;
-  int_mv second_best_ref_mv;
-  int_mv ref_mvs[MAX_REF_FRAMES][MAX_MV_REFS];
+  uint8_t *zcoeff_blk;
+  int16_t *coeff[MAX_MB_PLANE][3];
+  int16_t *qcoeff[MAX_MB_PLANE][3];
+  int16_t *dqcoeff[MAX_MB_PLANE][3];
+  uint16_t *eobs[MAX_MB_PLANE][3];
+
+  // dual buffer pointers, 0: in use, 1: best in store
+  int16_t *coeff_pbuf[MAX_MB_PLANE][3];
+  int16_t *qcoeff_pbuf[MAX_MB_PLANE][3];
+  int16_t *dqcoeff_pbuf[MAX_MB_PLANE][3];
+  uint16_t *eobs_pbuf[MAX_MB_PLANE][3];
+
+  int is_coded;
+  int num_4x4_blk;
+  int skip;
+  int_mv best_ref_mv[2];
+  int_mv ref_mvs[MAX_REF_FRAMES][MAX_MV_REF_CANDIDATES];
   int rate;
   int distortion;
-  int64_t intra_error;
   int best_mode_index;
   int rddiv;
   int rdmult;
   int hybrid_pred_diff;
   int comp_pred_diff;
   int single_pred_diff;
-  int64_t txfm_rd_diff[NB_TXFM_MODES];
+  int64_t tx_rd_diff[TX_MODES];
+  int64_t best_filter_diff[SWITCHABLE_FILTER_CONTEXTS];
+
+  // motion vector cache for adaptive motion search control in partition
+  // search loop
+  int_mv pred_mv[MAX_REF_FRAMES];
+  INTERP_FILTER pred_interp_filter;
 } PICK_MODE_CONTEXT;
 
-typedef struct macroblock {
-  DECLARE_ALIGNED(16, short, src_diff[400]);  // 16x16 Y 8x8 U 8x8 V 4x4 2nd Y
-  DECLARE_ALIGNED(16, short, coeff[400]);     // 16x16 Y 8x8 U 8x8 V 4x4 2nd Y
-#if !CONFIG_SUPERBLOCKS
-  DECLARE_ALIGNED(16, unsigned char, thismb[256]);    // 16x16 Y
+struct macroblock_plane {
+  DECLARE_ALIGNED(16, int16_t, src_diff[64 * 64]);
+  int16_t *qcoeff;
+  int16_t *coeff;
+  uint16_t *eobs;
+  struct buf_2d src;
 
-  unsigned char *thismb_ptr;
-#endif
-  // 16 Y blocks, 4 U blocks, 4 V blocks,
-  // 1 DC 2nd order block each with 16 entries
-  BLOCK block[25];
+  // Quantizer setings
+  int16_t *quant;
+  int16_t *quant_shift;
+  int16_t *zbin;
+  int16_t *round;
 
-  YV12_BUFFER_CONFIG src;
+  // Zbin Over Quant value
+  int16_t zbin_extra;
+};
+typedef struct PC_TREE {
+  int index;
+  PARTITION_TYPE partitioning;
+  BLOCK_SIZE block_size;
+  PICK_MODE_CONTEXT none;
+  PICK_MODE_CONTEXT horizontal[2];
+  PICK_MODE_CONTEXT vertical[2];
+  union {
+    struct PC_TREE *split[4];
+    PICK_MODE_CONTEXT *leaf_split[4];
+  };
+} PC_TREE;
+
+/* The [2] dimension is for whether we skip the EOB node (i.e. if previous
+ * coefficient in this block was zero) or not. */
+typedef unsigned int vp9_coeff_cost[PLANE_TYPES][REF_TYPES][COEF_BANDS][2]
+                                   [COEFF_CONTEXTS][ENTROPY_TOKENS];
+
+typedef struct macroblock MACROBLOCK;
+struct macroblock {
+  struct macroblock_plane plane[MAX_MB_PLANE];
 
   MACROBLOCKD e_mbd;
-  PARTITION_INFO *partition_info; /* work pointer */
-  PARTITION_INFO *pi;   /* Corresponds to upper left visible macroblock */
-  PARTITION_INFO *pip;  /* Base of allocated array */
-
-  search_site *ss;
-  int ss_count;
-  int searches_per_step;
+  int skip_block;
+  int select_txfm_size;
+  int skip_recode;
+  int skip_optimize;
+  int q_index;
 
   int errorperbit;
   int sadperbit16;
   int sadperbit4;
   int rddiv;
   int rdmult;
-  unsigned int *mb_activity_ptr;
-  int *mb_norm_activity_ptr;
-  signed int act_zbin_adj;
+  unsigned int mb_energy;
+
+  int mv_best_ref_index[MAX_REF_FRAMES];
+  unsigned int max_mv_context[MAX_REF_FRAMES];
+  unsigned int source_variance;
+  unsigned int pred_sse[MAX_REF_FRAMES];
+  int pred_mv_sad[MAX_REF_FRAMES];
 
   int nmvjointcost[MV_JOINTS];
   int nmvcosts[2][MV_VALS];
@@ -129,14 +129,6 @@ typedef struct macroblock {
   int *nmvsadcost_hp[2];
   int **mvsadcost;
 
-  int mbmode_cost[2][MB_MODE_COUNT];
-  int intra_uv_mode_cost[2][MB_MODE_COUNT];
-  int bmode_costs[VP9_KF_BINTRAMODES][VP9_KF_BINTRAMODES][VP9_KF_BINTRAMODES];
-  int i8x8_mode_costs[MB_MODE_COUNT];
-  int inter_bmode_costs[B_MODE_COUNT];
-  int switchable_interp_costs[VP9_SWITCHABLE_FILTERS + 1]
-                             [VP9_SWITCHABLE_FILTERS];
-
   // These define limits to motion vector components to prevent them
   // from extending outside the UMV borders
   int mv_col_min;
@@ -144,43 +136,38 @@ typedef struct macroblock {
   int mv_row_min;
   int mv_row_max;
 
+  uint8_t zcoeff_blk[TX_SIZES][256];
   int skip;
 
   int encode_breakout;
 
-  // char * gf_active_ptr;
-  signed char *gf_active_ptr;
+  int in_active_map;
 
-  unsigned char *active_ptr;
+  // note that token_costs is the cost when eob node is skipped
+  vp9_coeff_cost token_costs[TX_SIZES];
 
-  unsigned int token_costs[TX_SIZE_MAX][BLOCK_TYPES][COEF_BANDS]
-    [PREV_COEF_CONTEXTS][MAX_ENTROPY_TOKENS];
-  unsigned int hybrid_token_costs[TX_SIZE_MAX][BLOCK_TYPES][COEF_BANDS]
-    [PREV_COEF_CONTEXTS][MAX_ENTROPY_TOKENS];
+  int in_static_area;
 
   int optimize;
 
-  // Structure to hold context for each of the 4 MBs within a SB:
-  // when encoded as 4 independent MBs:
-  PICK_MODE_CONTEXT mb_context[4];
-#if CONFIG_SUPERBLOCKS
-  // when 4 MBs share coding parameters:
-  PICK_MODE_CONTEXT sb_context[4];
+  // indicate if it is in the rd search loop or encoding process
+  int use_lp32x32fdct;
+  int skip_encode;
+
+  // Used to store sub partition's choices.
+  int_mv pred_mv[MAX_REF_FRAMES];
+
+  PICK_MODE_CONTEXT *leaf_tree;
+  PC_TREE *pc_tree;
+  PC_TREE *pc_root;
+  int partition_cost[PARTITION_CONTEXTS][PARTITION_TYPES];
+
+  void (*fwd_txm4x4)(const int16_t *input, int16_t *output, int stride);
+};
+
+
+#ifdef __cplusplus
+}  // extern "C"
 #endif
 
-  void (*vp9_short_fdct4x4)(short *input, short *output, int pitch);
-  void (*vp9_short_fdct8x4)(short *input, short *output, int pitch);
-  void (*short_walsh4x4)(short *input, short *output, int pitch);
-  void (*quantize_b_4x4)(BLOCK *b, BLOCKD *d);
-  void (*quantize_b_4x4_pair)(BLOCK *b1, BLOCK *b2, BLOCKD *d0, BLOCKD *d1);
-  void (*vp9_short_fdct8x8)(short *input, short *output, int pitch);
-  void (*vp9_short_fdct16x16)(short *input, short *output, int pitch);
-  void (*short_fhaar2x2)(short *input, short *output, int pitch);
-  void (*quantize_b_16x16)(BLOCK *b, BLOCKD *d);
-  void (*quantize_b_8x8)(BLOCK *b, BLOCKD *d);
-  void (*quantize_b_2x2)(BLOCK *b, BLOCKD *d);
-
-} MACROBLOCK;
-
-
-#endif
+#endif  // VP9_ENCODER_VP9_BLOCK_H_

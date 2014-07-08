@@ -13,16 +13,16 @@ GrGLStencilBuffer::~GrGLStencilBuffer() {
     this->release();
 }
 
-size_t GrGLStencilBuffer::sizeInBytes() const {
+size_t GrGLStencilBuffer::gpuMemorySize() const {
     uint64_t size = this->width();
     size *= this->height();
     size *= fFormat.fTotalBits;
-    size *= GrMax(1,this->numSamples());
+    size *= SkTMax(1,this->numSamples());
     return static_cast<size_t>(size / 8);
 }
 
 void GrGLStencilBuffer::onRelease() {
-    if (0 != fRenderbufferID) {
+    if (0 != fRenderbufferID && !this->isWrapped()) {
         GrGpuGL* gpuGL = (GrGpuGL*) this->getGpu();
         const GrGLInterface* gl = gpuGL->glInterface();
         GR_GL_CALL(gl, DeleteRenderbuffers(1, &fRenderbufferID));
@@ -37,5 +37,3 @@ void GrGLStencilBuffer::onAbandon() {
 
     INHERITED::onAbandon();
 }
-
-

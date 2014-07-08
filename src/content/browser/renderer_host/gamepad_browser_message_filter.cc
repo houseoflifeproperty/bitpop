@@ -10,13 +10,14 @@
 namespace content {
 
 GamepadBrowserMessageFilter::GamepadBrowserMessageFilter()
-    : is_started_(false) {
+    : BrowserMessageFilter(GamepadMsgStart),
+      is_started_(false) {
 }
 
 GamepadBrowserMessageFilter::~GamepadBrowserMessageFilter() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   if (is_started_)
-    GamepadService::GetInstance()->RemoveConsumer();
+    GamepadService::GetInstance()->RemoveConsumer(this);
 }
 
 bool GamepadBrowserMessageFilter::OnMessageReceived(
@@ -33,28 +34,31 @@ bool GamepadBrowserMessageFilter::OnMessageReceived(
   return handled;
 }
 
+void GamepadBrowserMessageFilter::OnGamepadConnected(
+    unsigned index,
+    const blink::WebGamepad& gamepad) {
+  Send(new GamepadMsg_GamepadConnected(index, gamepad));
+}
+
+void GamepadBrowserMessageFilter::OnGamepadDisconnected(
+    unsigned index,
+    const blink::WebGamepad& gamepad) {
+  Send(new GamepadMsg_GamepadDisconnected(index, gamepad));
+}
+
 void GamepadBrowserMessageFilter::OnGamepadStartPolling(
     base::SharedMemoryHandle* renderer_handle) {
   GamepadService* service = GamepadService::GetInstance();
-  if (!is_started_) {
-    is_started_ = true;
-    service->AddConsumer();
-    *renderer_handle = service->GetSharedMemoryHandleForProcess(peer_handle());
-  } else {
-    // Currently we only expect the renderer to tell us once to start.
-    NOTREACHED();
-  }
+  CHECK(!is_started_);
+  is_started_ = true;
+  service->ConsumerBecameActive(this);
+  *renderer_handle = service->GetSharedMemoryHandleForProcess(PeerHandle());
 }
 
 void GamepadBrowserMessageFilter::OnGamepadStopPolling() {
-  // TODO(scottmg): Probably get rid of this message. We can't trust it will
-  // arrive anyway if the renderer crashes, etc.
-  if (is_started_) {
-    is_started_ = false;
-    GamepadService::GetInstance()->RemoveConsumer();
-  } else {
-    NOTREACHED();
-  }
+  CHECK(is_started_);
+  is_started_ = false;
+  GamepadService::GetInstance()->ConsumerBecameInactive(this);
 }
 
 }  // namespace content

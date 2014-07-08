@@ -1,0 +1,29 @@
+{
+  'build_step_props': {
+    'parent_buildername': 'ParentBuilder',
+    'parent_buildnumber': 1337,
+    'requester': 'dudeawesome@chromium.org',
+  },
+  'build_step': {
+    'getSourceStamp().revision': 1337,
+    'getSourceStamp().timestamp': 'XXXXXX',
+    'getReason()': '11879010-3014: Rebase',
+    'getNumber()': 100,
+    'getResults()': results.SUCCESS,
+    'getSlavename()': 'SuperSlave1',
+  },
+  'builder': {
+    'getName()': 'TestBuilder',
+  },
+  'steps': [
+    step('Update', ['Some Text']),
+    step('Compile', ['Some Text'], results.WARNINGS),
+    step('Test', ['Some Text']),
+    step('Archive', ['Some Text']),
+  ],
+  'master': {
+    'getTitle()': 'Title',
+    'getURLForThing()': 'http://thing',
+    'getBuildbotURL()': 'http://buildbot_url',
+  }
+}

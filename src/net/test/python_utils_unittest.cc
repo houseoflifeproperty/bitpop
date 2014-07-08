@@ -6,25 +6,25 @@
 
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
+#include "base/process/launch.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "net/test/python_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 TEST(PythonUtils, Append) {
-  const FilePath::CharType kAppendDir1[] =
+  const base::FilePath::CharType kAppendDir1[] =
       FILE_PATH_LITERAL("test/path_append1");
-  const FilePath::CharType kAppendDir2[] =
+  const base::FilePath::CharType kAppendDir2[] =
       FILE_PATH_LITERAL("test/path_append2");
 
   scoped_ptr<base::Environment> env(base::Environment::Create());
 
   std::string python_path;
-  FilePath append_path1(kAppendDir1);
-  FilePath append_path2(kAppendDir2);
+  base::FilePath append_path1(kAppendDir1);
+  base::FilePath append_path2(kAppendDir2);
 
   // Get a clean start
   env->UnSetVar(kPythonPathEnv);
@@ -52,10 +52,10 @@ TEST(PythonUtils, PythonRunTime) {
   // we want.
   cmd_line.AppendArg("-c");
   std::string input("PythonUtilsTest");
-  std::string python_cmd = StringPrintf("print '%s';", input.c_str());
+  std::string python_cmd = base::StringPrintf("print '%s';", input.c_str());
   cmd_line.AppendArg(python_cmd);
   std::string output;
   EXPECT_TRUE(base::GetAppOutput(cmd_line, &output));
-  TrimWhitespace(output, TRIM_TRAILING, &output);
+  base::TrimWhitespace(output, base::TRIM_TRAILING, &output);
   EXPECT_EQ(input, output);
 }

@@ -11,13 +11,13 @@
 
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "base/time.h"
-#include "content/public/browser/dom_storage_context.h"
+#include "base/time/time.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/browser/dom_storage_context.h"
+#include "url/gurl.h"
 
 class Profile;
 
@@ -62,7 +62,7 @@ class BrowsingDataLocalStorageHelper
 
  private:
   void GetUsageInfoCallback(
-      const std::vector<dom_storage::LocalStorageUsageInfo>& infos);
+      const std::vector<content::LocalStorageUsageInfo>& infos);
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataLocalStorageHelper);
 };
@@ -100,12 +100,10 @@ class CannedBrowsingDataLocalStorageHelper
   virtual void StartFetching(
       const base::Callback<void(const std::list<LocalStorageInfo>&)>& callback)
           OVERRIDE;
+  virtual void DeleteOrigin(const GURL& origin) OVERRIDE;
 
  private:
   virtual ~CannedBrowsingDataLocalStorageHelper();
-
-  // Convert the pending local storage info to local storage info objects.
-  void ConvertPendingInfo();
 
   std::set<GURL> pending_local_storage_info_;
 

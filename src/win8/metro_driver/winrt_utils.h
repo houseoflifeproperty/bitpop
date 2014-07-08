@@ -10,13 +10,13 @@
 #include <roapi.h>
 #include <windows.applicationmodel.core.h>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 void CheckHR(HRESULT hr, const char* str = nullptr);
 
-HSTRING MakeHString(const string16& str);
+HSTRING MakeHString(const base::string16& str);
 
-string16 MakeStdWString(HSTRING hstring);
+base::string16 MakeStdWString(HSTRING hstring);
 
 namespace winrt_utils {
 
@@ -53,11 +53,7 @@ HRESULT CompareProperties(
 // shortcut's command line. This is intended for scenarios where those shortcut
 // parameters are ordinarily ignored (i.e. metro apps on win8). Returns an
 // empty string on failure.
-string16 ReadArgumentsFromPinnedTaskbarShortcut();
-
-// Looks for a Window with the right class name that belongs to |thread_id|
-// thread. It loops forever looking for it, waiting |wait_ms| between loops.
-HWND FindCoreWindow(DWORD thread_id, int wait_ms);
+base::string16 ReadArgumentsFromPinnedTaskbarShortcut();
 
 }  // namespace winrt_utils
 

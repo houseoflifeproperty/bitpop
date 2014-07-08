@@ -25,8 +25,10 @@ var CaptureView = (function() {
 
     $(CaptureView.LIMIT_CHECKBOX_ID).onclick = this.onChangeLimit_.bind(this);
 
-    $(CaptureView.TIP_ANCHOR_ID).onclick =
-        this.toggleCommandLineTip_.bind(this, CaptureView.TIP_DIV_ID);
+    $(CaptureView.STOP_BUTTON_ID).onclick =
+        this.onStopButtonClicked_.bind(this);
+    $(CaptureView.RESET_BUTTON_ID).onclick =
+        this.onResetButtonClicked_.bind(this);
 
     if (byteLoggingCheckbox.checked) {
       // The code to display a warning on ExportView relies on bytelogging
@@ -35,34 +37,36 @@ var CaptureView = (function() {
       throw 'Not expecting byte logging to be enabled!';
     }
 
+    new MouseOverHelp(CaptureView.LIMIT_HELP_ID,
+                      CaptureView.LIMIT_HELP_HOVER_ID);
+
+    new MouseOverHelp(CaptureView.BYTE_LOGGING_HELP_ID,
+                      CaptureView.BYTE_LOGGING_HELP_HOVER_ID);
+
     this.onChangeLimit_();
   }
 
-  // ID for special HTML element in category_tabs.html
-  CaptureView.TAB_HANDLE_ID = 'tab-handle-capture';
+  CaptureView.TAB_ID = 'tab-handle-capture';
+  CaptureView.TAB_NAME = 'Capture';
+  CaptureView.TAB_HASH = '#capture';
 
   // IDs for special HTML elements in capture_view.html
   CaptureView.MAIN_BOX_ID = 'capture-view-tab-content';
   CaptureView.BYTE_LOGGING_CHECKBOX_ID = 'capture-view-byte-logging-checkbox';
   CaptureView.LIMIT_CHECKBOX_ID = 'capture-view-limit-checkbox';
-  CaptureView.TIP_ANCHOR_ID = 'capture-view-tip-anchor';
-  CaptureView.TIP_DIV_ID = 'capture-view-tip-div';
+  CaptureView.LIMIT_HELP_ID = 'capture-view-limit-help';
+  CaptureView.LIMIT_HELP_HOVER_ID = 'capture-view-limit-help-hover';
+  CaptureView.BYTE_LOGGING_HELP_ID = 'capture-view-byte-logging-help';
+  CaptureView.BYTE_LOGGING_HELP_HOVER_ID =
+      'capture-view-byte-logging-help-hover';
+  CaptureView.STOP_BUTTON_ID = 'capture-view-stop-button';
+  CaptureView.RESET_BUTTON_ID = 'capture-view-reset-button';
 
   cr.addSingletonGetter(CaptureView);
 
   CaptureView.prototype = {
     // Inherit the superclass's methods.
     __proto__: superClass.prototype,
-
-    /**
-     * Toggles the visilibity on the command-line tip.
-     */
-    toggleCommandLineTip_: function(divId) {
-      var n = $(divId);
-      var isVisible = n.style.display != 'none';
-      setNodeDisplay(n, !isVisible);
-      return false;  // Prevent default handling of the click.
-    },
 
     /**
      * Called when a log file is loaded, after clearing the old log entries and
@@ -121,6 +125,14 @@ var CaptureView = (function() {
       }
 
       EventsTracker.getInstance().setLimits(softLimit, hardLimit);
+    },
+
+    onStopButtonClicked_: function() {
+      MainView.getInstance().switchToViewOnlyMode();
+    },
+
+    onResetButtonClicked_: function() {
+      EventsTracker.getInstance().deleteAllLogEntries();
     },
   };
 

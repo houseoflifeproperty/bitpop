@@ -4,8 +4,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
-#include "base/message_loop.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/message_loop/message_loop.h"
 #import "chrome/browser/ui/cocoa/about_ipc_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "content/public/test/test_browser_thread.h"
@@ -20,9 +20,9 @@ class AboutIPCControllerTest : public CocoaTest {
  public:
   virtual void SetUp() {
     CocoaTest::SetUp();
-    ui_message_loop_.reset(new MessageLoopForUI());
-    ui_thread_.reset(new content::TestBrowserThread(content::BrowserThread::UI,
-                                                    MessageLoop::current()));
+    ui_message_loop_.reset(new base::MessageLoopForUI());
+    ui_thread_.reset(new content::TestBrowserThread(
+        content::BrowserThread::UI, base::MessageLoop::current()));
   }
 
   virtual void TearDown() {
@@ -31,7 +31,7 @@ class AboutIPCControllerTest : public CocoaTest {
   }
 
  private:
-  scoped_ptr<MessageLoopForUI> ui_message_loop_;
+  scoped_ptr<base::MessageLoopForUI> ui_message_loop_;
   scoped_ptr<content::TestBrowserThread> ui_thread_;
 };
 
@@ -46,15 +46,15 @@ TEST_F(AboutIPCControllerTest, TestFilter) {
                           "NPObjectHell" };
   for (size_t i = 0; i < arraysize(names); i++) {
     data.message_name = names[i];
-    scoped_nsobject<CocoaLogData> cdata([[CocoaLogData alloc]
-                                          initWithLogData:data]);
+    base::scoped_nsobject<CocoaLogData> cdata(
+        [[CocoaLogData alloc] initWithLogData:data]);
     EXPECT_FALSE([controller filterOut:cdata.get()]);
   }
 
   // Flip a checkbox, see it filtered, flip back, all is fine.
   data.message_name = "ViewMsgFoo";
-  scoped_nsobject<CocoaLogData> cdata([[CocoaLogData alloc]
-                                        initWithLogData:data]);
+  base::scoped_nsobject<CocoaLogData> cdata(
+      [[CocoaLogData alloc] initWithLogData:data]);
   [controller setDisplayViewMessages:NO];
   EXPECT_TRUE([controller filterOut:cdata.get()]);
   [controller setDisplayViewMessages:YES];

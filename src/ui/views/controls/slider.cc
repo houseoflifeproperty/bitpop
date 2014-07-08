@@ -5,17 +5,17 @@
 #include "ui/views/controls/slider.h"
 
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/animation/slide_animation.h"
-#include "ui/base/events/event.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -61,7 +61,7 @@ Slider::Slider(SliderListener* listener, Orientation orientation)
       bar_active_images_(kBarImagesActive),
       bar_disabled_images_(kBarImagesDisabled) {
   EnableCanvasFlippingForRTLUI(true);
-  set_focusable(true);
+  SetFocusable(true);
   UpdateState(true);
 }
 
@@ -91,11 +91,11 @@ void Slider::SetValueInternal(float value, SliderChangeReason reason) {
   if (listener_)
     listener_->SliderValueChanged(this, value_, old_value, reason);
 
-  if (old_value_valid && MessageLoop::current()) {
+  if (old_value_valid && base::MessageLoop::current()) {
     // Do not animate when setting the value of the slider for the first time.
     // There is no message-loop when running tests. So we cannot animate then.
     animating_value_ = old_value;
-    move_animation_.reset(new ui::SlideAnimation(this));
+    move_animation_.reset(new gfx::SlideAnimation(this));
     move_animation_->SetSlideDuration(kSlideValueChangeDurationMS);
     move_animation_->Show();
     AnimationProgressed(move_animation_.get());
@@ -103,8 +103,8 @@ void Slider::SetValueInternal(float value, SliderChangeReason reason) {
     SchedulePaint();
   }
   if (accessibility_events_enabled_ && GetWidget()) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_VALUE_CHANGED, true);
+    NotifyAccessibilityEvent(
+        ui::AX_EVENT_VALUE_CHANGED, true);
   }
 }
 
@@ -167,8 +167,21 @@ void Slider::UpdateState(bool control_on) {
   SchedulePaint();
 }
 
-void Slider::SetAccessibleName(const string16& name) {
+void Slider::SetAccessibleName(const base::string16& name) {
   accessible_name_ = name;
+}
+
+void Slider::OnPaintFocus(gfx::Canvas* canvas) {
+  if (!HasFocus())
+    return;
+
+  if (!focus_border_color_) {
+    canvas->DrawFocusRect(GetLocalBounds());
+  } else if (HasFocus()) {
+    canvas->DrawSolidFocusRect(
+        gfx::Rect(1, 1, width() - 3, height() - 3),
+        focus_border_color_);
+  }
 }
 
 gfx::Size Slider::GetPreferredSize() {
@@ -248,6 +261,7 @@ void Slider::OnPaint(gfx::Canvas* canvas) {
     canvas->DrawImageInt(*thumb_, thumb_x, button_cy);
   }
   View::OnPaint(canvas);
+  OnPaintFocus(canvas);
 }
 
 bool Slider::OnMousePressed(const ui::MouseEvent& event) {
@@ -291,6 +305,16 @@ bool Slider::OnKeyPressed(const ui::KeyEvent& event) {
   return false;
 }
 
+void Slider::OnFocus() {
+  View::OnFocus();
+  SchedulePaint();
+}
+
+void Slider::OnBlur() {
+  View::OnBlur();
+  SchedulePaint();
+}
+
 void Slider::OnGestureEvent(ui::GestureEvent* event) {
   if (event->type() == ui::ET_GESTURE_SCROLL_BEGIN ||
       event->type() == ui::ET_GESTURE_TAP_DOWN) {
@@ -304,25 +328,16 @@ void Slider::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
-void Slider::AnimationProgressed(const ui::Animation* animation) {
+void Slider::AnimationProgressed(const gfx::Animation* animation) {
   animating_value_ = animation->CurrentValueBetween(animating_value_, value_);
   SchedulePaint();
 }
 
-void Slider::GetAccessibleState(ui::AccessibleViewState* state) {
-  state->role = ui::AccessibilityTypes::ROLE_SLIDER;
+void Slider::GetAccessibleState(ui::AXViewState* state) {
+  state->role = ui::AX_ROLE_SLIDER;
   state->name = accessible_name_;
-  state->value = UTF8ToUTF16(
+  state->value = base::UTF8ToUTF16(
       base::StringPrintf("%d%%", (int)(value_ * 100 + 0.5)));
-}
-
-void Slider::OnPaintFocusBorder(gfx::Canvas* canvas) {
-  if (!focus_border_color_) {
-    View::OnPaintFocusBorder(canvas);
-  } else if (HasFocus() && (focusable() || IsAccessibilityFocusable())) {
-    canvas->DrawRect(gfx::Rect(1, 1, width() - 3, height() - 3),
-                     focus_border_color_);
-  }
 }
 
 }  // namespace views

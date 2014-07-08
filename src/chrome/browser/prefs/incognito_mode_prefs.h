@@ -7,8 +7,16 @@
 
 #include "base/basictypes.h"
 
-class CommandLine;
 class PrefService;
+class Profile;
+
+namespace base {
+class CommandLine;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // Specifies Incognito mode availability preferences.
 class IncognitoModePrefs {
@@ -30,7 +38,7 @@ class IncognitoModePrefs {
   };
 
   // Register incognito related preferences.
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Returns kIncognitoModeAvailability preference value stored
   // in the given pref service.
@@ -47,10 +55,19 @@ class IncognitoModePrefs {
   static bool IntToAvailability(int in_value, Availability* out_value);
 
   // Returns true if the browser should start in incognito mode.
-  static bool ShouldLaunchIncognito(const CommandLine& command_line,
+  static bool ShouldLaunchIncognito(const base::CommandLine& command_line,
                                     const PrefService* prefs);
 
+  // Returns true if |profile| can open a new Browser. This checks the incognito
+  // availability policies and verifies if the |profile| type is allowed to
+  // open new windows.
+  static bool CanOpenBrowser(Profile* profile);
+
  private:
+  // Returns whether parental controls have been enabled on the platform, which
+  // if enabled will overrule the Availability as configured in prefs.
+  static bool ArePlatformParentalControlsEnabled();
+
   DISALLOW_IMPLICIT_CONSTRUCTORS(IncognitoModePrefs);
 };
 

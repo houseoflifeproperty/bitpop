@@ -1,0 +1,307 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/webrtc/trunk'}, {'custom_vars': {'root_dir': 'src'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'webrtc-limited', 'url': 'svn://svn-mirror.golo.chromium.org/chrome-internal/trunk/webrtc-limited'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "src@12345",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"webrtc-limited/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 24644@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@170242@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "component=static_library gomadir='[BUILD]/goma' target_arch=x64 use_goma=1"
+    },
+    "name": "gclient runhooks",
+    "seed_steps": [
+      "gclient runhooks",
+      "compile",
+      "audioproc_perf",
+      "isac_fixed_perf",
+      "webcam_check",
+      "libjingle_peerconnection_java_unittest",
+      "webcam_check (2)",
+      "vie_auto_test",
+      "voe_auto_test",
+      "webcam_check (3)",
+      "video_capture_tests",
+      "webrtc_perf_tests"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]/src",
+      "--build-tool",
+      "ninja",
+      "--compiler",
+      "goma",
+      "--goma-dir",
+      "[BUILD]/goma",
+      "--",
+      "All"
+    ],
+    "name": "compile"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=audioproc",
+      "--test-type=audioproc",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "audioproc",
+      "-aecm",
+      "-ns",
+      "-agc",
+      "--fixed_digital",
+      "--perf",
+      "-pb",
+      "[SLAVE_BUILD]/src/resources/audioproc.aecdump"
+    ],
+    "name": "audioproc_perf"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=iSACFixtest",
+      "--test-type=iSACFixtest",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "iSACFixtest",
+      "32000",
+      "[SLAVE_BUILD]/src/resources/speech_and_misc_wb.pcm",
+      "isac_speech_and_misc_wb.pcm"
+    ],
+    "name": "isac_fixed_perf"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/webrtc/ensure_webcam_is_running.py"
+    ],
+    "name": "webcam_check"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=libjingle_peerconnection_java_unittest",
+      "--test-type=libjingle_peerconnection_java_unittest",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "libjingle_peerconnection_java_unittest"
+    ],
+    "env": {
+      "LD_PRELOAD": "/usr/lib/x86_64-linux-gnu/libpulse.so.0"
+    },
+    "name": "libjingle_peerconnection_java_unittest"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/webrtc/ensure_webcam_is_running.py"
+    ],
+    "name": "webcam_check (2)"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=vie_auto_test",
+      "--test-type=vie_auto_test",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "vie_auto_test",
+      "--automated",
+      "--capture_test_ensure_resolution_alignment_in_capture_device=false"
+    ],
+    "name": "vie_auto_test"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=voe_auto_test",
+      "--test-type=voe_auto_test",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "voe_auto_test",
+      "--automated"
+    ],
+    "name": "voe_auto_test"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/webrtc/ensure_webcam_is_running.py"
+    ],
+    "name": "webcam_check (3)"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=video_capture_tests",
+      "--test-type=video_capture_tests",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "video_capture_tests"
+    ],
+    "name": "video_capture_tests"
+  },
+  {
+    "allow_subannotations": true,
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/runtest.py",
+      "--target",
+      "Release",
+      "--xvfb",
+      "--factory-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--build-properties",
+      "{\"buildername\": \"Linux64 Release [large tests]\", \"mastername\": \"client.webrtc\", \"perf_config\": {\"a_default_rev\": \"r_webrtc_rev\"}, \"perf_id\": \"linux64_release__large_tests_\", \"recipe\": \"webrtc/standalone\", \"revision\": \"12345\", \"show_perf_results\": true, \"slavename\": \"slavename\"}",
+      "--annotate=graphing",
+      "--results-url=https://chromeperf.appspot.com",
+      "--perf-dashboard-id=webrtc_perf_tests",
+      "--test-type=webrtc_perf_tests",
+      "--builder-name=Linux64 Release [large tests]",
+      "--slave-name=slavename",
+      "--revision=12345",
+      "webrtc_perf_tests"
+    ],
+    "name": "webrtc_perf_tests"
+  }
+]

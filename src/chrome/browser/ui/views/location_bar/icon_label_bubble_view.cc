@@ -4,57 +4,75 @@
 
 #include "chrome/browser/ui/views/location_bar/icon_label_bubble_view.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/color_utils.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
+#include "ui/views/painter.h"
 
-namespace {
-
-// Amount of padding at the edges of the bubble.
-//
-// This can't be statically initialized because
-// LocationBarView::GetEdgeItemPadding() depends on whether we are
-// using desktop or touch layout, and this in turn depends on the
-// command line.
-int GetBubbleOuterPadding() {
-  return LocationBarView::GetEdgeItemPadding() -
-      LocationBarView::kBubbleHorizontalPadding;
-}
-
-// Amount of padding after the label.
-const int kLabelPadding = 5;
-
-}  // namespace
 
 IconLabelBubbleView::IconLabelBubbleView(const int background_images[],
+                                         const int hover_background_images[],
                                          int contained_image,
-                                         SkColor color)
-    : background_painter_(background_images),
-      is_extension_icon_(false) {
-  image_ = new views::ImageView();
+                                         const gfx::FontList& font_list,
+                                         SkColor text_color,
+                                         SkColor parent_background_color,
+                                         bool elide_in_middle)
+    : background_painter_(
+          views::Painter::CreateImageGridPainter(background_images)),
+      image_(new views::ImageView()),
+      label_(new views::Label(base::string16(), font_list)),
+      is_extension_icon_(false),
+      in_hover_(false) {
   image_->SetImage(
       ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
           contained_image));
+
+  // Disable separate hit testing for |image_|.  This prevents views treating
+  // |image_| as a separate mouse hover region from |this|.
+  image_->set_interactive(false);
   AddChildView(image_);
 
-  label_ = new views::Label();
-  label_->SetAutoColorReadabilityEnabled(false);
-  label_->SetEnabledColor(color);
+  if (hover_background_images) {
+    hover_background_painter_.reset(
+        views::Painter::CreateImageGridPainter(hover_background_images));
+  }
+
+  label_->SetEnabledColor(text_color);
+  // Calculate the actual background color for the label.  The background images
+  // are painted atop |parent_background_color|.  We grab the color of the
+  // middle pixel of the middle image of the background, which we treat as the
+  // representative color of the entire background (reasonable, given the
+  // current appearance of these images).  Then we alpha-blend it over the
+  // parent background color to determine the actual color the label text will
+  // sit atop.
+  const SkBitmap& bitmap(
+      ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+          background_images[4])->GetRepresentation(1.0f).sk_bitmap());
+  SkAutoLockPixels pixel_lock(bitmap);
+  SkColor background_image_color =
+      bitmap.getColor(bitmap.width() / 2, bitmap.height() / 2);
+  // Tricky bit: We alpha blend an opaque version of |background_image_color|
+  // against |parent_background_color| using the original image grid color's
+  // alpha. This is because AlphaBlend(a, b, 255) always returns |a| unchanged
+  // even if |a| is a color with non-255 alpha.
+  label_->SetBackgroundColor(
+      color_utils::AlphaBlend(SkColorSetA(background_image_color, 255),
+                              parent_background_color,
+                              SkColorGetA(background_image_color)));
+  if (elide_in_middle)
+    label_->SetElideBehavior(views::Label::ELIDE_IN_MIDDLE);
   AddChildView(label_);
 }
 
 IconLabelBubbleView::~IconLabelBubbleView() {
 }
 
-void IconLabelBubbleView::SetFont(const gfx::Font& font) {
-  label_->SetFont(font);
-}
-
-void IconLabelBubbleView::SetLabel(const string16& label) {
+void IconLabelBubbleView::SetLabel(const base::string16& label) {
   label_->SetText(label);
 }
 
@@ -62,45 +80,52 @@ void IconLabelBubbleView::SetImage(const gfx::ImageSkia& image_skia) {
   image_->SetImage(image_skia);
 }
 
-void IconLabelBubbleView::SetLabelBackgroundColor(SkColor color) {
-  label_->SetBackgroundColor(color);
-}
-
-void IconLabelBubbleView::OnPaint(gfx::Canvas* canvas) {
-  background_painter_.Paint(canvas, size());
-}
-
 gfx::Size IconLabelBubbleView::GetPreferredSize() {
-  gfx::Size size(GetNonLabelSize());
-  size.Enlarge(label_->GetPreferredSize().width(), 0);
-  return size;
+  // Height will be ignored by the LocationBarView.
+  return GetSizeForLabelWidth(label_->GetPreferredSize().width());
 }
 
 void IconLabelBubbleView::Layout() {
-  image_->SetBounds(GetBubbleOuterPadding() +
-      (is_extension_icon_ ? LocationBarView::kIconInternalPadding : 0), 0,
-      image_->GetPreferredSize().width(), height());
-  const int label_height = label_->GetPreferredSize().height();
-  label_->SetBounds(GetPreLabelWidth(), (height() - label_height) / 2,
-                    width() - GetNonLabelWidth(), label_height);
+  image_->SetBounds(GetBubbleOuterPadding(!is_extension_icon_), 0,
+                    image_->GetPreferredSize().width(), height());
+  const int pre_label_width = GetPreLabelWidth();
+  label_->SetBounds(pre_label_width, 0,
+                    width() - pre_label_width - GetBubbleOuterPadding(false),
+                    height());
 }
 
-void IconLabelBubbleView::SetElideInMiddle(bool elide_in_middle) {
-  label_->SetElideBehavior(
-      elide_in_middle ? views::Label::ELIDE_IN_MIDDLE : views::Label::NO_ELIDE);
+gfx::Size IconLabelBubbleView::GetSizeForLabelWidth(int width) const {
+  gfx::Size size(GetPreLabelWidth() + width + GetBubbleOuterPadding(false), 0);
+  size.SetToMax(background_painter_->GetMinimumSize());
+  return size;
 }
 
-gfx::Size IconLabelBubbleView::GetNonLabelSize() const {
-  return gfx::Size(GetNonLabelWidth(), background_painter_.height());
+void IconLabelBubbleView::OnMouseEntered(const ui::MouseEvent& event) {
+  in_hover_ = true;
+  if (hover_background_painter_.get())
+    SchedulePaint();
+}
+
+void IconLabelBubbleView::OnMouseExited(const ui::MouseEvent& event) {
+  in_hover_ = false;
+  if (hover_background_painter_.get())
+    SchedulePaint();
+}
+
+// static
+int IconLabelBubbleView::GetBubbleOuterPadding(bool by_icon) {
+  return LocationBarView::kItemPadding - LocationBarView::kBubblePadding +
+      (by_icon ? 0 : LocationBarView::kIconInternalPadding);
+}
+
+void IconLabelBubbleView::OnPaint(gfx::Canvas* canvas) {
+  views::Painter* painter = (in_hover_ && hover_background_painter_) ?
+      hover_background_painter_.get() : background_painter_.get();
+  painter->Paint(canvas, size());
 }
 
 int IconLabelBubbleView::GetPreLabelWidth() const {
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  return GetBubbleOuterPadding() +
-      rb.GetImageSkiaNamed(IDR_OMNIBOX_SEARCH)->width() +
-      LocationBarView::GetItemPadding();
-}
-
-int IconLabelBubbleView::GetNonLabelWidth() const {
-  return GetPreLabelWidth() + GetBubbleOuterPadding();
+  const int image_width = image_->GetPreferredSize().width();
+  return GetBubbleOuterPadding(true) +
+      (image_width ? (image_width + LocationBarView::kItemPadding) : 0);
 }

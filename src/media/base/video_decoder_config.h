@@ -6,9 +6,9 @@
 #define MEDIA_BASE_VIDEO_DECODER_CONFIG_H_
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
-#include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 #include "media/base/video_frame.h"
 #include "ui/gfx/rect.h"
@@ -27,12 +27,13 @@ enum VideoCodec {
   kCodecMPEG4,
   kCodecTheora,
   kCodecVP8,
+  kCodecVP9,
   // DO NOT ADD RANDOM VIDEO CODECS!
   //
   // The only acceptable time to add a new codec is if there is production code
   // that uses said codec in the same CL.
 
-  kVideoCodecMax = kCodecVP8  // Must equal the last "real" codec above.
+  kVideoCodecMax = kCodecVP9  // Must equal the last "real" codec above.
 };
 
 // Video stream profile.  This *must* match PP_VideoDecoder_Profile.
@@ -42,6 +43,7 @@ enum VideoCodecProfile {
   // for example), and keep the values for a particular format grouped
   // together for clarity.
   VIDEO_CODEC_PROFILE_UNKNOWN = -1,
+  VIDEO_CODEC_PROFILE_MIN = VIDEO_CODEC_PROFILE_UNKNOWN,
   H264PROFILE_MIN = 0,
   H264PROFILE_BASELINE = H264PROFILE_MIN,
   H264PROFILE_MAIN = 1,
@@ -58,7 +60,10 @@ enum VideoCodecProfile {
   VP8PROFILE_MIN = 11,
   VP8PROFILE_MAIN = VP8PROFILE_MIN,
   VP8PROFILE_MAX = VP8PROFILE_MAIN,
-  VIDEO_CODEC_PROFILE_MAX = VP8PROFILE_MAX,
+  VP9PROFILE_MIN = 12,
+  VP9PROFILE_MAIN = VP9PROFILE_MIN,
+  VP9PROFILE_MAX = VP9PROFILE_MAIN,
+  VIDEO_CODEC_PROFILE_MAX = VP9PROFILE_MAX,
 };
 
 class MEDIA_EXPORT VideoDecoderConfig {
@@ -91,9 +96,6 @@ class MEDIA_EXPORT VideoDecoderConfig {
                   bool is_encrypted,
                   bool record_stats);
 
-  // Deep copies |video_config|.
-  void CopyFrom(const VideoDecoderConfig& video_config);
-
   // Returns true if this object has appropriate configuration values, false
   // otherwise.
   bool IsValidConfig() const;
@@ -125,7 +127,7 @@ class MEDIA_EXPORT VideoDecoderConfig {
 
   // Optional byte data required to initialize video decoders, such as H.264
   // AAVC data.
-  uint8* extra_data() const;
+  const uint8* extra_data() const;
   size_t extra_data_size() const;
 
   // Whether the video stream is potentially encrypted.
@@ -143,12 +145,13 @@ class MEDIA_EXPORT VideoDecoderConfig {
   gfx::Rect visible_rect_;
   gfx::Size natural_size_;
 
-  scoped_array<uint8> extra_data_;
-  size_t extra_data_size_;
+  std::vector<uint8> extra_data_;
 
   bool is_encrypted_;
 
-  DISALLOW_COPY_AND_ASSIGN(VideoDecoderConfig);
+  // Not using DISALLOW_COPY_AND_ASSIGN here intentionally to allow the compiler
+  // generated copy constructor and assignment operator. Since the extra data is
+  // typically small, the performance impact is minimal.
 };
 
 }  // namespace media

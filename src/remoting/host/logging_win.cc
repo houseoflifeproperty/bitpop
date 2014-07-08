@@ -6,10 +6,8 @@
 
 #include <guiddef.h>
 
-#include "base/file_path.h"
 #include "base/logging.h"
 #include "base/logging_win.h"
-#include "remoting/host/branding.h"
 
 // {2db51ca1-4fd8-4b88-b5a2-fb8606b66b02}
 const GUID kRemotingHostLogProvider =
@@ -19,25 +17,10 @@ const GUID kRemotingHostLogProvider =
 namespace remoting {
 
 void InitHostLogging() {
-#if defined(NDEBUG)
-  // Write logs to the system debug log in release build.
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
-#else  // !defined(NDEBUG)
-  // Write logs to a file in debug build.
-  FilePath debug_log = remoting::GetConfigDir().
-      Append(FILE_PATH_LITERAL("debug.log"));
-  logging::InitLogging(
-      debug_log.value().c_str(),
-      logging::LOG_ONLY_TO_FILE,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
-#endif  // !defined(NDEBUG)
+  // Write logs to the system debug log.
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
   // Enable trace control and transport through event tracing for Windows.
   logging::LogEventProvider::Initialize(kRemotingHostLogProvider);

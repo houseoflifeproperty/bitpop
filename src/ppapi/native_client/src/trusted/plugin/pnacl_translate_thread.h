@@ -13,10 +13,13 @@
 #include "native_client/src/include/nacl_string.h"
 #include "native_client/src/shared/platform/nacl_threads.h"
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
-#include "native_client/src/trusted/plugin/plugin_error.h"
-#include "native_client/src/trusted/plugin/service_runtime.h"
 
 #include "ppapi/cpp/completion_callback.h"
+
+#include "ppapi/native_client/src/trusted/plugin/plugin_error.h"
+#include "ppapi/native_client/src/trusted/plugin/service_runtime.h"
+
+struct PP_PNaClOptions;
 
 namespace nacl {
 class DescWrapper;
@@ -25,9 +28,9 @@ class DescWrapper;
 
 namespace plugin {
 
-class Manifest;
 class NaClSubprocess;
 class Plugin;
+class PnaclCoordinator;
 class PnaclResources;
 class TempFile;
 
@@ -39,12 +42,15 @@ class PnaclTranslateThread {
   // Start the translation process. It will continue to run and consume data
   // as it is passed in with PutBytes.
   void RunTranslate(const pp::CompletionCallback& finish_callback,
-                    const Manifest* manifest,
-                    const Manifest* ld_manifest,
-                    TempFile* obj_file,
+                    int32_t manifest_id,
+                    const std::vector<TempFile*>* obj_files,
                     TempFile* nexe_file,
+                    nacl::DescWrapper* invalid_desc_wrapper,
                     ErrorInfo* error_info,
                     PnaclResources* resources,
+                    PP_PNaClOptions* pnacl_options,
+                    const nacl::string &architecture_attributes,
+                    PnaclCoordinator* coordinator,
                     Plugin* plugin);
 
   // Kill the llc and/or ld subprocesses. This happens by closing the command
@@ -58,10 +64,12 @@ class PnaclTranslateThread {
   // Send bitcode bytes to the translator. Called from the main thread.
   void PutBytes(std::vector<char>* data, int count);
 
+  int64_t GetCompileTime() const { return compile_time_; }
+
  private:
   // Starts an individual llc or ld subprocess used for translation.
   NaClSubprocess* StartSubprocess(const nacl::string& url,
-                                  const Manifest* manifest,
+                                  int32_t manifest_id,
                                   ErrorInfo* error_info);
   // Helper thread entry point for translation. Takes a pointer to
   // PnaclTranslateThread and calls DoTranslate().
@@ -69,11 +77,11 @@ class PnaclTranslateThread {
   // Runs the streaming translation. Called from the helper thread.
   void DoTranslate() ;
   // Signal that Pnacl translation failed, from the translation thread only.
-  void TranslateFailed(const nacl::string& error_string);
-  // Run the LD subprocess, returning true on success
-  bool RunLdSubprocess(int is_shared_library,
-                       const nacl::string& soname,
-                       const nacl::string& lib_dependencies);
+  void TranslateFailed(PP_NaClError err_code,
+                       const nacl::string& error_string);
+  // Run the LD subprocess, returning true on success.
+  // On failure, it returns false and runs the callback.
+  bool RunLdSubprocess();
 
 
   // Callback to run when tasks are completed or an error has occurred.
@@ -103,13 +111,18 @@ class PnaclTranslateThread {
   // Associated with buffer_cond_
   bool done_;
 
+  int64_t compile_time_;
+
   // Data about the translation files, owned by the coordinator
-  const Manifest* manifest_;
-  const Manifest* ld_manifest_;
-  TempFile* obj_file_;
+  int32_t manifest_id_;
+  const std::vector<TempFile*>* obj_files_;
   TempFile* nexe_file_;
+  nacl::DescWrapper* invalid_desc_wrapper_;
   ErrorInfo* coordinator_error_info_;
   PnaclResources* resources_;
+  PP_PNaClOptions* pnacl_options_;
+  nacl::string architecture_attributes_;
+  PnaclCoordinator* coordinator_;
   Plugin* plugin_;
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(PnaclTranslateThread);

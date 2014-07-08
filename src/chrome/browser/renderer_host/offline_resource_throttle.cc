@@ -10,20 +10,21 @@
 #include "base/logging.h"
 #include "base/memory/singleton.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/chromeos/offline/offline_load_page.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/resource_controller.h"
+#include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
-#include "webkit/appcache/appcache_service.h"
+#include "webkit/browser/appcache/appcache_service.h"
 
 using content::BrowserThread;
 using content::RenderViewHost;
@@ -58,13 +59,9 @@ void ShowOfflinePage(
 }  // namespace
 
 OfflineResourceThrottle::OfflineResourceThrottle(
-    int render_process_id,
-    int render_view_id,
     net::URLRequest* request,
     appcache::AppCacheService* appcache_service)
-    : render_process_id_(render_process_id),
-      render_view_id_(render_view_id),
-      request_(request),
+    : request_(request),
       appcache_service_(appcache_service) {
   DCHECK(appcache_service);
 }
@@ -106,6 +103,10 @@ void OfflineResourceThrottle::WillStartRequest(bool* defer) {
   *defer = true;
 }
 
+const char* OfflineResourceThrottle::GetNameForLogging() const {
+  return "OfflineResourceThrottle";
+}
+
 void OfflineResourceThrottle::OnBlockingPageComplete(bool proceed) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
@@ -117,10 +118,9 @@ void OfflineResourceThrottle::OnBlockingPageComplete(bool proceed) {
 }
 
 bool OfflineResourceThrottle::IsRemote(const GURL& url) const {
-  return !net::IsLocalhost(url.host()) &&
-    (url.SchemeIs(chrome::kFtpScheme) ||
-     url.SchemeIs(chrome::kHttpScheme) ||
-     url.SchemeIs(chrome::kHttpsScheme));
+  return !net::IsLocalhost(url.host()) && (url.SchemeIs(content::kFtpScheme) ||
+                                           url.SchemeIs(url::kHttpScheme) ||
+                                           url.SchemeIs(url::kHttpsScheme));
 }
 
 bool OfflineResourceThrottle::ShouldShowOfflinePage(const GURL& url) const {
@@ -135,13 +135,15 @@ void OfflineResourceThrottle::OnCanHandleOfflineComplete(int rv) {
   if (rv == net::OK) {
     controller()->Resume();
   } else {
+    const content::ResourceRequestInfo* info =
+        content::ResourceRequestInfo::ForRequest(request_);
     BrowserThread::PostTask(
         BrowserThread::UI,
         FROM_HERE,
         base::Bind(
             &ShowOfflinePage,
-            render_process_id_,
-            render_view_id_,
+            info->GetChildID(),
+            info->GetRouteID(),
             request_->url(),
             base::Bind(
                 &OfflineResourceThrottle::OnBlockingPageComplete,

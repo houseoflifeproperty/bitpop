@@ -9,6 +9,7 @@ See gclient_smoketest.py for integration tests.
 """
 
 import Queue
+import copy
 import logging
 import os
 import sys
@@ -43,6 +44,13 @@ class SCMMock(object):
   def FullUrlForRelativeUrl(self, url):
     return self.url + url
 
+  # pylint: disable=R0201
+  def DoesRemoteURLMatch(self, _):
+    return True
+
+  def GetActualRemoteURL(self, _):
+    return self.url
+
 
 class GclientTest(trial_dir.TestCase):
   def setUp(self):
@@ -64,7 +72,7 @@ class GclientTest(trial_dir.TestCase):
     os.chdir(self.previous_dir)
     super(GclientTest, self).tearDown()
 
-  def _createscm(self, parsed_url, root_dir, name):
+  def _createscm(self, parsed_url, root_dir, name, out_fh=None, out_cb=None):
     self.assertTrue(parsed_url.startswith('svn://example.com/'), parsed_url)
     self.assertTrue(root_dir.startswith(self.root_dir), root_dir)
     return SCMMock(self, parsed_url)
@@ -86,7 +94,7 @@ class GclientTest(trial_dir.TestCase):
     Args:
       |jobs| is the number of parallel jobs simulated.
     """
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, args = parser.parse_args(['--jobs', jobs])
     write(
         '.gclient',
@@ -208,35 +216,35 @@ class GclientTest(trial_dir.TestCase):
     # Invalid urls causes pain when specifying requirements. Make sure it's
     # auto-fixed.
     d = gclient.Dependency(
-        None, 'name', 'proto://host/path/@revision', None, None, None,
+        None, 'name', 'proto://host/path/@revision', None, None, None, None,
         None, '', True)
     self.assertEquals('proto://host/path@revision', d.url)
 
   def testStr(self):
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args([])
     obj = gclient.GClient('foo', options)
     obj.add_dependencies_and_close(
         [
           gclient.Dependency(
-            obj, 'foo', 'url', None, None, None, None, 'DEPS', True),
+            obj, 'foo', 'url', None, None, None, None, None, 'DEPS', True),
           gclient.Dependency(
-            obj, 'bar', 'url', None, None, None, None, 'DEPS', True),
+            obj, 'bar', 'url', None, None, None, None, None, 'DEPS', True),
         ],
         [])
     obj.dependencies[0].add_dependencies_and_close(
         [
           gclient.Dependency(
             obj.dependencies[0], 'foo/dir1', 'url', None, None, None, None,
-            'DEPS', True),
+            None, 'DEPS', True),
           gclient.Dependency(
             obj.dependencies[0], 'foo/dir2',
             gclient.GClientKeywords.FromImpl('bar'), None, None, None, None,
-            'DEPS', True),
+            None, 'DEPS', True),
           gclient.Dependency(
             obj.dependencies[0], 'foo/dir3',
             gclient.GClientKeywords.FileImpl('url'), None, None, None, None,
-            'DEPS', True),
+            None, 'DEPS', True),
         ],
         [])
     # Make sure __str__() works fine.
@@ -249,7 +257,7 @@ class GclientTest(trial_dir.TestCase):
     topdir = self.root_dir
     gclient_fn = os.path.join(topdir, '.gclient')
     fh = open(gclient_fn, 'w')
-    print >> fh, 'solutions = [{"name":"top","url":"svn://svn.top.com/top"}]'
+    print >> fh, 'solutions = [{"name":"top","url":"svn://example.com/top"}]'
     fh.close()
     subdir_fn = os.path.join(topdir, 'top')
     os.mkdir(subdir_fn)
@@ -265,7 +273,7 @@ class GclientTest(trial_dir.TestCase):
 
     os.chdir(topdir)
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args([])
     options.force = True
     client = gclient.GClient.LoadCurrentConfig(options)
@@ -274,6 +282,56 @@ class GclientTest(trial_dir.TestCase):
       work_queue.enqueue(s)
     work_queue.flush({}, None, [], options=options)
     self.assertEqual(client.GetHooks(options), [x['action'] for x in hooks])
+
+  def testCustomHooks(self):
+    topdir = self.root_dir
+    gclient_fn = os.path.join(topdir, '.gclient')
+    fh = open(gclient_fn, 'w')
+    extra_hooks = [{'name': 'append', 'pattern':'.', 'action':['supercmd']}]
+    print >> fh, ('solutions = [{"name":"top","url":"svn://example.com/top",'
+        '"custom_hooks": %s},' ) % repr(extra_hooks + [{'name': 'skip'}])
+    print >> fh, '{"name":"bottom","url":"svn://example.com/bottom"}]'
+    fh.close()
+    subdir_fn = os.path.join(topdir, 'top')
+    os.mkdir(subdir_fn)
+    deps_fn = os.path.join(subdir_fn, 'DEPS')
+    fh = open(deps_fn, 'w')
+    hooks = [{'pattern':'.', 'action':['cmd1', 'arg1', 'arg2']}]
+    hooks.append({'pattern':'.', 'action':['cmd2', 'arg1', 'arg2']})
+    skip_hooks = [
+        {'name': 'skip', 'pattern':'.', 'action':['cmd3', 'arg1', 'arg2']}]
+    skip_hooks.append(
+        {'name': 'skip', 'pattern':'.', 'action':['cmd4', 'arg1', 'arg2']})
+    print >> fh, 'hooks = %s' % repr(hooks + skip_hooks)
+    fh.close()
+
+    # Make sure the custom hooks for that project don't affect the next one.
+    subdir_fn = os.path.join(topdir, 'bottom')
+    os.mkdir(subdir_fn)
+    deps_fn = os.path.join(subdir_fn, 'DEPS')
+    fh = open(deps_fn, 'w')
+    sub_hooks = [{'pattern':'.', 'action':['response1', 'yes1', 'yes2']}]
+    sub_hooks.append(
+        {'name': 'skip', 'pattern':'.', 'action':['response2', 'yes', 'sir']})
+    print >> fh, 'hooks = %s' % repr(sub_hooks)
+    fh.close()
+
+    fh = open(os.path.join(subdir_fn, 'fake.txt'), 'w')
+    print >> fh, 'bogus content'
+    fh.close()
+
+    os.chdir(topdir)
+
+    parser = gclient.OptionParser()
+    options, _ = parser.parse_args([])
+    options.force = True
+    client = gclient.GClient.LoadCurrentConfig(options)
+    work_queue = gclient_utils.ExecutionQueue(options.jobs, None, False)
+    for s in client.dependencies:
+      work_queue.enqueue(s)
+    work_queue.flush({}, None, [], options=options)
+    self.assertEqual(client.GetHooks(options),
+                     [x['action'] for x in hooks + extra_hooks + sub_hooks])
 
   def testTargetOS(self):
     """Verifies that specifying a target_os pulls in all relevant dependencies.
@@ -300,7 +358,7 @@ class GclientTest(trial_dir.TestCase):
         '  "baz": { "foo/dir3": "/dir3", },\n'
         '}')
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args(['--jobs', '1'])
     options.deps_os = "unix"
 
@@ -335,7 +393,7 @@ class GclientTest(trial_dir.TestCase):
         '  "baz": { "foo/dir3": "/dir3", },\n'
         '}')
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args(['--jobs', '1'])
     options.deps_os = "unix"
 
@@ -363,7 +421,7 @@ class GclientTest(trial_dir.TestCase):
         '  "unix": { "foo/dir2": "/dir2", },\n'
         '}')
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args(['--jobs', '1'])
     options.deps_os = "unix"
 
@@ -408,7 +466,7 @@ class GclientTest(trial_dir.TestCase):
         '  "jaz": { "bar/jaz": "/jaz", },\n'
         '}')
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args(['--jobs', '1'])
     options.deps_os = 'unix'
 
@@ -425,8 +483,94 @@ class GclientTest(trial_dir.TestCase):
           ],
         sorted(self._get_processed()))
 
+  def testUpdateWithOsDeps(self):
+    """Verifies that complicated deps_os constructs result in the
+    correct data also with multple operating systems. Also see
+    testDepsOsOverrideDepsInDepsFile."""
+
+    test_data = [
+      # Tuples of deps, deps_os, os_list and expected_deps.
+      (
+        # OS doesn't need module.
+        {'foo': 'default_foo'},
+        {'os1': { 'foo': None } },
+        ['os1'],
+        {'foo': None}
+        ),
+      (
+        # OS wants a different version of module.
+        {'foo': 'default_foo'},
+        {'os1': { 'foo': 'os1_foo'} },
+        ['os1'],
+        {'foo': 'os1_foo'}
+        ),
+      (
+        # OS with no overrides at all.
+        {'foo': 'default_foo'},
+        {'os1': { 'foo': None } },
+        ['os2'],
+        {'foo': 'default_foo'}
+        ),
+      (
+        # One OS doesn't need module, one OS wants the default.
+        {'foo': 'default_foo'},
+        {'os1': { 'foo': None },
+         'os2': {}},
+        ['os1', 'os2'],
+        {'foo': 'default_foo'}
+        ),
+      (
+        # One OS doesn't need module, another OS wants a special version.
+        {'foo': 'default_foo'},
+        {'os1': { 'foo': None },
+         'os2': { 'foo': 'os2_foo'}},
+        ['os1', 'os2'],
+        {'foo': 'os2_foo'}
+        ),
+      (
+        # One OS wants to add a module.
+        {'foo': 'default_foo'},
+        {'os1': { 'bar': 'os1_bar' }},
+        ['os1'],
+        {'foo': 'default_foo',
+         'bar': 'os1_bar'}
+        ),
+      (
+        # One OS wants to add a module. One doesn't care.
+        {'foo': 'default_foo'},
+        {'os1': { 'bar': 'os1_bar' }},
+        ['os1', 'os2'],
+        {'foo': 'default_foo',
+         'bar': 'os1_bar'}
+        ),
+      (
+        # Two OSes want to add a module with the same definition.
+        {'foo': 'default_foo'},
+        {'os1': { 'bar': 'os12_bar' },
+         'os2': { 'bar': 'os12_bar' }},
+        ['os1', 'os2'],
+        {'foo': 'default_foo',
+         'bar': 'os12_bar'}
+        ),
+      ]
+    for deps, deps_os, target_os_list, expected_deps in test_data:
+      orig_deps = copy.deepcopy(deps)
+      result = gclient.Dependency.MergeWithOsDeps(deps, deps_os, target_os_list)
+      self.assertEqual(result, expected_deps)
+      self.assertEqual(deps, orig_deps)
+
+
+  def testLateOverride(self):
+    """Verifies expected behavior of LateOverride."""
+    url = "git@github.com:dart-lang/spark.git"
+    d = gclient.Dependency(None, 'name', 'url',
+                           None, None, None, None, None, '', True)
+    late_url = d.LateOverride(url)
+    self.assertEquals(url, late_url)
+
   def testDepsOsOverrideDepsInDepsFile(self):
-    """Verifies that a 'deps_os' path can override a 'deps' path.
+    """Verifies that a 'deps_os' path can override a 'deps' path. Also
+    see testUpdateWithOsDeps above.
     """
 
     write(
@@ -445,11 +589,12 @@ class GclientTest(trial_dir.TestCase):
         'deps_os = {\n'
         '  "unix": { "foo/unix": "/unix",'
         '            "foo/src": "/src_unix"},\n'
-        '  "baz": { "foo/baz": "/baz", },\n'
+        '  "baz": { "foo/baz": "/baz",\n'
+        '           "foo/src": None},\n'
         '  "jaz": { "foo/jaz": "/jaz", },\n'
         '}')
 
-    parser = gclient.Parser()
+    parser = gclient.OptionParser()
     options, _ = parser.parse_args(['--jobs', '1'])
     options.deps_os = 'unix'
 
@@ -502,7 +647,7 @@ class GclientTest(trial_dir.TestCase):
         '  "fuzz": "/fuzz",\n'
         '}')
 
-    options, _ = gclient.Parser().parse_args([])
+    options, _ = gclient.OptionParser().parse_args([])
     obj = gclient.GClient.LoadCurrentConfig(options)
     obj.RunOnDeps('None', [])
     self.assertEquals(

@@ -35,9 +35,11 @@ namespace talk_base {
 //         Callers can retrieve received packets from any thread by calling
 //         NextPacket.
 
-TestClient::TestClient(AsyncPacketSocket* socket) : socket_(socket) {
+TestClient::TestClient(AsyncPacketSocket* socket)
+    : socket_(socket), ready_to_send_(false) {
   packets_ = new std::vector<Packet*>();
   socket_->SignalReadPacket.connect(this, &TestClient::OnPacket);
+  socket_->SignalReadyToSend.connect(this, &TestClient::OnReadyToSend);
 }
 
 TestClient::~TestClient() {
@@ -56,12 +58,14 @@ bool TestClient::CheckConnState(AsyncPacketSocket::State state) {
 }
 
 int TestClient::Send(const char* buf, size_t size) {
-  return socket_->Send(buf, size);
+  talk_base::PacketOptions options;
+  return socket_->Send(buf, size, options);
 }
 
 int TestClient::SendTo(const char* buf, size_t size,
                        const SocketAddress& dest) {
-  return socket_->SendTo(buf, size, dest);
+  talk_base::PacketOptions options;
+  return socket_->SendTo(buf, size, dest, options);
 }
 
 TestClient::Packet* TestClient::NextPacket() {
@@ -77,13 +81,20 @@ TestClient::Packet* TestClient::NextPacket() {
   // the wrong thread to non-thread-safe objects.
 
   uint32 end = TimeAfter(kTimeout);
-  while (packets_->size() == 0 && TimeUntil(end) > 0)
+  while (TimeUntil(end) > 0) {
+    {
+      CritScope cs(&crit_);
+      if (packets_->size() != 0) {
+        break;
+      }
+    }
     Thread::Current()->ProcessMessages(1);
+  }
 
   // Return the first packet placed in the queue.
   Packet* packet = NULL;
+  CritScope cs(&crit_);
   if (packets_->size() > 0) {
-    CritScope cs(&crit_);
     packet = packets_->front();
     packets_->erase(packets_->begin());
   }
@@ -96,7 +107,7 @@ bool TestClient::CheckNextPacket(const char* buf, size_t size,
   bool res = false;
   Packet* packet = NextPacket();
   if (packet) {
-    res = (packet->size == size && std::memcmp(packet->buf, buf, size) == 0);
+    res = (packet->size == size && memcmp(packet->buf, buf, size) == 0);
     if (addr)
       *addr = packet->addr;
     delete packet;
@@ -112,10 +123,27 @@ bool TestClient::CheckNoPacket() {
   return res;
 }
 
+int TestClient::GetError() {
+  return socket_->GetError();
+}
+
+int TestClient::SetOption(Socket::Option opt, int value) {
+  return socket_->SetOption(opt, value);
+}
+
+bool TestClient::ready_to_send() const {
+  return ready_to_send_;
+}
+
 void TestClient::OnPacket(AsyncPacketSocket* socket, const char* buf,
-                          size_t size, const SocketAddress& remote_addr) {
+                          size_t size, const SocketAddress& remote_addr,
+                          const PacketTime& packet_time) {
   CritScope cs(&crit_);
   packets_->push_back(new Packet(remote_addr, buf, size));
+}
+
+void TestClient::OnReadyToSend(AsyncPacketSocket* socket) {
+  ready_to_send_ = true;
 }
 
 TestClient::Packet::Packet(const SocketAddress& a, const char* b, size_t s)

@@ -6,10 +6,12 @@
 
 #import <objc/runtime.h>
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "ui/base/ui_base_switches.h"
 
 @interface NSWindow (UndocumentedAPI)
 // Normally, punching a hole in a window by painting a subview with a
@@ -28,14 +30,13 @@
 @interface OpaqueView : NSView
 @end
 
-@implementation OpaqueView
-- (void)drawRect:(NSRect)r {
-  [[NSColor blackColor] set];
-  NSRectFill(r);
-}
-@end
-
 namespace {
+
+bool CoreAnimationIsEnabled() {
+  static bool is_enabled = !CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableCoreAnimation);
+  return is_enabled;
+}
 
 NSComparisonResult OpaqueViewsOnTop(id view1, id view2, void* context) {
   BOOL view_1_is_opaque_view = [view1 isKindOfClass:[OpaqueView class]];
@@ -49,39 +50,45 @@ NSComparisonResult OpaqueViewsOnTop(id view1, id view2, void* context) {
   return NSOrderedSame;
 }
 
-void RootDidAddSubview(id self, SEL _cmd, NSView* subview) {
-  if (![[self window] isKindOfClass:[UnderlayOpenGLHostingWindow class]])
-    return;
-
-  // Make sure the opaques are on top.
-  [self sortSubviewsUsingFunction:OpaqueViewsOnTop context:NULL];
-}
-
 }  // namespace
 
-@implementation UnderlayOpenGLHostingWindow
+@implementation OpaqueView
 
-+ (void)load {
-  base::mac::ScopedNSAutoreleasePool pool;
+- (void)drawRect:(NSRect)r {
+  [[NSColor blackColor] set];
+  NSRectFill(r);
+}
 
-  // On 10.8+ the background for textured windows are no longer drawn by
-  // NSGrayFrame, and NSThemeFrame is used instead <http://crbug.com/114745>.
-  Class borderViewClass = NSClassFromString(
-      base::mac::IsOSMountainLionOrLater() ? @"NSThemeFrame" : @"NSGrayFrame");
-  DCHECK(borderViewClass);
-  if (!borderViewClass) return;
+- (void)resetCursorRects {
+  // When a view is moved relative to its peers, its cursor rects are reset.
+  // (This is an undocumented side-effect.) At that time, verify that any
+  // OpaqueViews are z-ordered in the front, and enforce it if need be.
 
-  // Install callback for added views.
-  Method m = class_getInstanceMethod([NSView class], @selector(didAddSubview:));
-  DCHECK(m);
-  if (m) {
-    BOOL didAdd = class_addMethod(borderViewClass,
-                                  @selector(didAddSubview:),
-                                  reinterpret_cast<IMP>(&RootDidAddSubview),
-                                  method_getTypeEncoding(m));
-    DCHECK(didAdd);
+  NSView* rootView = [self superview];
+  DCHECK_EQ((NSView*)nil, [rootView superview]);
+  NSArray* subviews = [rootView subviews];
+
+  // If a window has any opaques, it will have exactly two.
+  DCHECK_EQ(2U, [[subviews indexesOfObjectsPassingTest:
+      ^(id el, NSUInteger i, BOOL *stop) {
+        return [el isKindOfClass:[OpaqueView class]];
+      }] count]);
+
+  NSUInteger count = [subviews count];
+  if (count < 2)
+    return;
+
+  if (![[subviews objectAtIndex:count - 1] isKindOfClass:[OpaqueView class]] ||
+      ![[subviews objectAtIndex:count - 2] isKindOfClass:[OpaqueView class]]) {
+    // Do not sort the subviews array here and call -[NSView setSubviews:] as
+    // that causes a crash on 10.6.
+    [rootView sortSubviewsUsingFunction:OpaqueViewsOnTop context:NULL];
   }
 }
+
+@end
+
+@implementation UnderlayOpenGLHostingWindow
 
 - (id)initWithContentRect:(NSRect)contentRect
                 styleMask:(NSUInteger)windowStyle
@@ -104,6 +111,14 @@ void RootDidAddSubview(id self, SEL _cmd, NSView* subview) {
                                styleMask:windowStyle
                                  backing:bufferingType
                                    defer:deferCreation])) {
+    if (CoreAnimationIsEnabled()) {
+      // If CoreAnimation is used, then the hole punching technique won't be
+      // used. Bail now and don't play any special games with the shadow.
+      // TODO(avi): Rip all this shadow code out once CoreAnimation can't be
+      // turned off. http://crbug.com/336554
+      return self;
+    }
+
     // OpenGL-accelerated content works by punching holes in windows. Therefore
     // all windows hosting OpenGL content must not be opaque.
     [self setOpaque:NO];
@@ -122,17 +137,21 @@ void RootDidAddSubview(id self, SEL _cmd, NSView* subview) {
       const CGFloat kTopEdgeInset = 16;
       const CGFloat kAlphaValueJustOpaqueEnough = 0.005;
 
-      scoped_nsobject<NSView> leftOpaque([[OpaqueView alloc] initWithFrame:
-          NSMakeRect(NSMinX(rootBounds), NSMinY(rootBounds),
-                     1, NSHeight(rootBounds) - kTopEdgeInset)]);
+      base::scoped_nsobject<NSView> leftOpaque([[OpaqueView alloc]
+          initWithFrame:NSMakeRect(NSMinX(rootBounds),
+                                   NSMinY(rootBounds),
+                                   1,
+                                   NSHeight(rootBounds) - kTopEdgeInset)]);
       [leftOpaque setAutoresizingMask:NSViewMaxXMargin |
                                       NSViewHeightSizable];
       [leftOpaque setAlphaValue:kAlphaValueJustOpaqueEnough];
       [rootView addSubview:leftOpaque];
 
-      scoped_nsobject<NSView> rightOpaque([[OpaqueView alloc] initWithFrame:
-          NSMakeRect(NSMaxX(rootBounds) - 1, NSMinY(rootBounds),
-                     1, NSHeight(rootBounds) - kTopEdgeInset)]);
+      base::scoped_nsobject<NSView> rightOpaque([[OpaqueView alloc]
+          initWithFrame:NSMakeRect(NSMaxX(rootBounds) - 1,
+                                   NSMinY(rootBounds),
+                                   1,
+                                   NSHeight(rootBounds) - kTopEdgeInset)]);
       [rightOpaque setAutoresizingMask:NSViewMinXMargin |
                                        NSViewHeightSizable];
       [rightOpaque setAlphaValue:kAlphaValueJustOpaqueEnough];

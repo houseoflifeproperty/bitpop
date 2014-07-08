@@ -10,24 +10,16 @@
 #include <string>
 #include <vector>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "chrome/browser/chromeos/input_method/input_method_descriptor.h"
+#include "base/strings/string16.h"
+#include "base/threading/thread_checker.h"
+#include "chromeos/ime/input_method_descriptor.h"
 
 namespace chromeos {
 namespace input_method {
 
 class InputMethodDelegate;
-
-// The list of language that do not have associated input methods in IBus.
-// For these languages, we associate input methods here.
-struct ExtraLanguage {
-  const char* language_code;
-  const char* input_method_id;
-};
-extern const ExtraLanguage kExtraLanguages[];
-extern const size_t kExtraLanguagesLength;
 
 enum InputMethodType {
   kKeyboardLayoutsOnly,
@@ -48,19 +40,10 @@ class InputMethodUtil {
   // into Chrome's string ID, then pulls internationalized resource string from
   // the resource bundle and returns it. These functions are not thread-safe.
   // Non-UI threads are not allowed to call them.
-  string16 TranslateString(const std::string& english_string) const;
-
-  // Gets the keyboard layout name from the given input method ID.
-  // If the ID is invalid, an empty string will be returned.
-  // This function only supports xkb layouts.
-  //
-  // Examples:
-  //
-  // "xkb:us::eng"       => "us"
-  // "xkb:us:dvorak:eng" => "us(dvorak)"
-  // "xkb:gb::eng"       => "gb"
-  // "pinyin"            => "us" (because Pinyin uses US keyboard layout)
-  std::string GetKeyboardLayoutName(const std::string& input_method_id) const;
+  // The english_string to should be a xkb id with "xkb:...:...:..." format.
+  // TODO(shuchen): this method should be removed when finish the wrapping of
+  // xkb to extension.
+  base::string16 TranslateString(const std::string& english_string) const;
 
   // Converts an input method ID to a language code of the IME. Returns "Eng"
   // when |input_method_id| is unknown.
@@ -74,11 +57,11 @@ class InputMethodUtil {
   std::string GetInputMethodDisplayNameFromId(
       const std::string& input_method_id) const;
 
-  string16 GetInputMethodShortName(
+  base::string16 GetInputMethodShortName(
       const InputMethodDescriptor& input_method) const;
-  string16 GetInputMethodMediumName(
+  base::string16 GetInputMethodMediumName(
       const InputMethodDescriptor& input_method) const;
-  string16 GetInputMethodLongName(
+  base::string16 GetInputMethodLongName(
       const InputMethodDescriptor& input_method) const;
 
   // Converts an input method ID to an input method descriptor. Returns NULL
@@ -87,15 +70,6 @@ class InputMethodUtil {
   //                        keyboard_layout: "us", language_code: "zh" }
   const InputMethodDescriptor* GetInputMethodDescriptorFromId(
       const std::string& input_method_id) const;
-
-  // Converts an XKB layout ID to an input method descriptor. Returns NULL when
-  // |xkb_id| is unknown.
-  // Example: "us(dvorak)" => {
-  //              id: "xkb:us:dvorak:eng", display_name: "US Dvorak",
-  //              keyboard_layout: "us(dvorak)", language_code: "eng"
-  //          }
-  const InputMethodDescriptor* GetInputMethodDescriptorFromXkbId(
-      const std::string& xkb_id) const;
 
   // Gets input method IDs that belong to |language_code|.
   // If |type| is |kKeyboardLayoutsOnly|, the function does not return input
@@ -123,13 +97,39 @@ class InputMethodUtil {
       const std::vector<std::string>& input_method_ids,
       std::vector<std::string>* out_language_codes) const;
 
-  // Returns the input method ID of the hardware keyboard. e.g. "xkb:us::eng"
-  // for the US Qwerty keyboard.
-  std::string GetHardwareInputMethodId() const;
+  // Gets first input method associated with the language.
+  // Returns empty string on error.
+  std::string GetLanguageDefaultInputMethodId(const std::string& language_code);
 
-  // This function should be called when Chrome's application locale is
-  // changed, so that the internal maps of this library is reloaded.
-  void OnLocaleChanged();
+  // Migrates the legacy xkb id to extension based xkb id.
+  // Returns true if the given input method id list is modified,
+  // returns false otherwise.
+  // TODO(shuchen): Remove this function after few milestones are passed.
+  // See: http://crbug.com/345604
+  bool MigrateXkbInputMethods(
+      std::vector<std::string>* input_method_ids);
+
+  // Updates the internal cache of hardware layouts.
+  void UpdateHardwareLayoutCache();
+
+  // Set hardware keyboard layout for testing purpose. This is for simulating
+  // "keyboard_layout" entry in VPD values.
+  void SetHardwareKeyboardLayoutForTesting(const std::string& layout);
+
+  // Fills the input method IDs of the hardware keyboard. e.g. "xkb:us::eng"
+  // for US Qwerty keyboard or "xkb:ru::rus" for Russian keyboard.
+  const std::vector<std::string>& GetHardwareInputMethodIds();
+
+  // Returns the login-allowed input method ID of the hardware keyboard, e.g.
+  // "xkb:us::eng" but not include non-login keyboard like "xkb:ru::rus". Please
+  // note that this is not a subset of returned value of
+  // GetHardwareInputMethodIds. If GetHardwareInputMethodIds returns only
+  // non-login keyboard, this function will returns "xkb:us::eng" as the
+  // fallback keyboard.
+  const std::vector<std::string>& GetHardwareLoginInputMethodIds();
+
+  // Returns true if given input method can be used to input login data.
+  bool IsLoginKeyboard(const std::string& input_method_id) const;
 
   // Returns true if the given input method id is supported.
   bool IsValidInputMethodId(const std::string& input_method_id) const;
@@ -137,30 +137,18 @@ class InputMethodUtil {
   // Returns true if the given input method id is for a keyboard layout.
   static bool IsKeyboardLayout(const std::string& input_method_id);
 
-  // Returns true if the given input method id is for an extension input method.
-  static bool IsExtensionInputMethod(const std::string& input_method_id);
+  // Sets the list of component extension IMEs.
+  void SetComponentExtensions(const InputMethodDescriptors& imes);
 
-  // Converts a language code to a language display name, using the
-  // current application locale. MaybeRewriteLanguageName() is called
-  // internally.
-  // Examples: "fi"    => "Finnish"
-  //           "en-US" => "English (United States)"
-  string16 GetLanguageDisplayNameFromCode(
-      const std::string& language_code);
+  // Initializes the extension based xkb IMEs for testing.
+  void InitXkbInputMethodsForTesting();
 
-  // Converts a language code to a language native display name.
-  // MaybeRewriteLanguageName() is called internally.
-  // Examples: "fi"    => "suomi" (rather than Finnish)
-  //           "en-US" => "English (United States)"
-  static string16 GetLanguageNativeDisplayNameFromCode(
-      const std::string& language_code);
+  // Returns the fallback input method descriptor (the very basic US
+  // keyboard). This function is mostly used for testing, but may be used
+  // as the fallback, when there is no other choice.
+  static InputMethodDescriptor GetFallbackInputMethodDescriptor();
 
  protected:
-  // This method is ONLY for unit testing. Returns true if the given string is
-  // supported (i.e. the string is associated with a resource ID). protected:
-  // for testability.
-  bool StringIsSupported(const std::string& english_string) const;
-
   // protected: for unit testing as well.
   bool GetInputMethodIdsFromLanguageCodeInternal(
       const std::multimap<std::string, std::string>& language_code_to_ids,
@@ -171,37 +159,48 @@ class InputMethodUtil {
   // protected: for unit testing as well.
   void ReloadInternalMaps();
 
-  // Sorts the given language codes by their corresponding language names, using
-  // the unicode string comparator. Uses unstable sorting. protected: for unit
-  // testing as well.
-  void SortLanguageCodesByNames(
-      std::vector<std::string>* language_codes);
-
   // All input methods that are supported, including ones not active.
   // protected: for testing.
   scoped_ptr<InputMethodDescriptors> supported_input_methods_;
 
+  // Gets the keyboard layout name from the given input method ID.
+  // If the ID is invalid, an empty string will be returned.
+  // This function only supports xkb layouts.
+  //
+  // Examples:
+  //
+  // "xkb:us::eng"       => "us"
+  // "xkb:us:dvorak:eng" => "us(dvorak)"
+  // "xkb:gb::eng"       => "gb"
+  // "pinyin"            => "us" (because Pinyin uses US keyboard layout)
+  std::string GetKeyboardLayoutName(const std::string& input_method_id) const;
+
  private:
   bool TranslateStringInternal(const std::string& english_string,
-                               string16 *out_string) const;
+                               base::string16 *out_string) const;
 
   // Map from language code to associated input method IDs, etc.
   typedef std::multimap<std::string, std::string> LanguageCodeToIdsMap;
   // Map from input method ID to associated input method descriptor.
   typedef std::map<
     std::string, InputMethodDescriptor> InputMethodIdToDescriptorMap;
-  // Map from XKB layout ID to associated input method descriptor.
-  typedef std::map<std::string, InputMethodDescriptor> XkbIdToDescriptorMap;
+  // Map from component extention IME id to associated input method descriptor.
+  typedef std::map<std::string, InputMethodDescriptor> ComponentExtIMEMap;
 
   LanguageCodeToIdsMap language_code_to_ids_;
   std::map<std::string, std::string> id_to_language_code_;
   InputMethodIdToDescriptorMap id_to_descriptor_;
-  XkbIdToDescriptorMap xkb_id_to_descriptor_;
+  std::map<std::string, std::string> xkb_layout_to_indicator_;
 
   typedef base::hash_map<std::string, int> HashType;
   HashType english_to_resource_id_;
 
   InputMethodDelegate* delegate_;
+
+  base::ThreadChecker thread_checker_;
+  std::vector<std::string> hardware_layouts_;
+  std::vector<std::string> hardware_login_layouts_;
+  std::vector<std::string> cached_hardware_layouts_;
 
   DISALLOW_COPY_AND_ASSIGN(InputMethodUtil);
 };

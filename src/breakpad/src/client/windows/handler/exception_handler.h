@@ -61,9 +61,9 @@
 #include <DbgHelp.h>
 #include <rpc.h>
 
-#pragma warning( push )
+#pragma warning(push)
 // Disable exception handler warnings.
-#pragma warning( disable : 4530 )
+#pragma warning(disable:4530)
 
 #include <list>
 #include <string>
@@ -71,8 +71,8 @@
 
 #include "client/windows/common/ipc_protocol.h"
 #include "client/windows/crash_generation/crash_generation_client.h"
+#include "common/scoped_ptr.h"
 #include "google_breakpad/common/minidump_format.h"
-#include "processor/scoped_ptr.h"
 
 namespace google_breakpad {
 
@@ -195,6 +195,25 @@ class ExceptionHandler {
                    HANDLE pipe_handle,
                    const CustomClientInfo* custom_info);
 
+  // ExceptionHandler that ENSURES out-of-process dump generation.  Expects a
+  // crash generation client that is already registered with a crash generation
+  // server.  Takes ownership of the passed-in crash_generation_client.
+  //
+  // Usage example:
+  //   crash_generation_client = new CrashGenerationClient(..);
+  //   if (crash_generation_client->Register()) {
+  //     // Registration with the crash generation server succeeded.
+  //     // Out-of-process dump generation is guaranteed.
+  //     g_handler = new ExceptionHandler(.., crash_generation_client, ..);
+  //     return true;
+  //   }
+  ExceptionHandler(const wstring& dump_path,
+                   FilterCallback filter,
+                   MinidumpCallback callback,
+                   void* callback_context,
+                   int handler_types,
+                   CrashGenerationClient* crash_generation_client);
+
   ~ExceptionHandler();
 
   // Get and set the minidump path.
@@ -264,6 +283,7 @@ class ExceptionHandler {
                   MINIDUMP_TYPE dump_type,
                   const wchar_t* pipe_name,
                   HANDLE pipe_handle,
+                  CrashGenerationClient* crash_generation_client,
                   const CustomClientInfo* custom_info);
 
   // Function pointer type for MiniDumpWriteDump, which is looked up
@@ -475,7 +495,7 @@ class ExceptionHandler {
   static CRITICAL_SECTION handler_stack_critical_section_;
 
   // The number of instances of this class.
-  volatile static LONG instance_count_;
+  static volatile LONG instance_count_;
 
   // disallow copy ctor and operator=
   explicit ExceptionHandler(const ExceptionHandler &);
@@ -484,6 +504,6 @@ class ExceptionHandler {
 
 }  // namespace google_breakpad
 
-#pragma warning( pop )
+#pragma warning(pop)
 
 #endif  // CLIENT_WINDOWS_HANDLER_EXCEPTION_HANDLER_H__

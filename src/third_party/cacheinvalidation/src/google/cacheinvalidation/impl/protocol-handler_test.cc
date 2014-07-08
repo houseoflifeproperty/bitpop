@@ -50,15 +50,14 @@ using ::testing::SetArgPointee;
 using ::testing::StrictMock;
 using ::testing::proto::WhenDeserializedAs;
 
-// Defined an argument matcher called EqualsHeader, which checks whether a
-// ServerMessageHeader is equal to the given |header|.
-MATCHER_P(EqualsHeader, header, "") {
-  const ServerMessageHeader& expected(header);
+/* Returns whether two headers are equal. */
+bool HeaderEqual(const ServerMessageHeader& expected,
+    const ServerMessageHeader& actual) {
   // If the token is different or if one of the registration summaries is NULL
   // and the other is non-NULL, return false.
   if (((expected.registration_summary() != NULL) !=
-       (arg.registration_summary() != NULL)) ||
-      (expected.token_ != arg.token_)) {
+       (actual.registration_summary() != NULL)) ||
+      (expected.token() != actual.token())) {
     return false;
   }
 
@@ -66,38 +65,17 @@ MATCHER_P(EqualsHeader, header, "") {
   // null or non-null.
   return (expected.registration_summary() == NULL) ||
       ((expected.registration_summary()->num_registrations() ==
-        arg.registration_summary()->num_registrations()) &&
+        actual.registration_summary()->num_registrations()) &&
        (expected.registration_summary()->registration_digest() ==
-        arg.registration_summary()->registration_digest()));
+        actual.registration_summary()->registration_digest()));
 }
 
 // A mock of the ProtocolListener interface.
 class MockProtocolListener : public ProtocolListener {
  public:
-  MOCK_METHOD1(HandleIncomingHeader, void(const ServerMessageHeader&));
+  MOCK_METHOD0(HandleMessageSent, void());
 
-  MOCK_METHOD2(HandleTokenChanged,
-               void(const ServerMessageHeader&, const string&));
-
-  MOCK_METHOD2(
-      HandleInvalidations,
-      void(const ServerMessageHeader&, const RepeatedPtrField<InvalidationP>&));
-
-  MOCK_METHOD2(
-      HandleRegistrationStatus,
-      void(const ServerMessageHeader&,
-           const RepeatedPtrField<RegistrationStatus>&));
-
-  MOCK_METHOD1(HandleRegistrationSyncRequest, void(const ServerMessageHeader&));
-
-  MOCK_METHOD2(HandleInfoMessage,
-               void(const ServerMessageHeader&,
-                    const RepeatedField<InfoRequestMessage_InfoType>&));
-
-  MOCK_METHOD3(
-      HandleErrorMessage,
-      void(const ServerMessageHeader&, ErrorMessage::Code,
-           const string&));
+  MOCK_METHOD1(HandleNetworkStatusChange, void(bool));  // NOLINT
 
   MOCK_METHOD1(GetRegistrationSummary, void(RegistrationSummary*));  // NOLINT
 
@@ -125,7 +103,10 @@ class ProtocolHandlerTest : public UnitTestBase {
     protocol_handler.reset(
         new ProtocolHandler(
             config, resources.get(), smearer.get(), statistics.get(),
-            "unit-test", &listener, validator.get()));
+            ClientType_Type_TEST, "unit-test", &listener, validator.get()));
+    batching_task.reset(
+        new BatchingTask(protocol_handler.get(), smearer.get(),
+            TimeDelta::FromMilliseconds(config.batching_delay_ms())));
   }
 
   // Configuration for the protocol handler (uses defaults).
@@ -155,6 +136,28 @@ class ProtocolHandlerTest : public UnitTestBase {
 
   // A random number generator.
   scoped_ptr<Random> random;
+
+  // Batching task for the protocol handler.
+  scoped_ptr<BatchingTask> batching_task;
+
+  void AddExpectationForHandleMessageSent() {
+    EXPECT_CALL(listener, HandleMessageSent());
+  }
+
+  /*
+   * Processes a |message| using the protocol handler, initializing
+   * |parsed_message| with the result.
+   *
+   * Returns whether the message could be parsed.
+   */
+  bool ProcessMessage(ServerToClientMessage message,
+      ParsedMessage* parsed_message) {
+    string serialized;
+    message.SerializeToString(&serialized);
+    bool accepted = protocol_handler->HandleIncomingMessage(
+        serialized, parsed_message);
+    return accepted;
+  }
 
  private:
   void InitListenerExpectations() {
@@ -189,8 +192,9 @@ TEST_F(ProtocolHandlerTest, SendInitializeOnly) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendInitializeMessage,
-          app_client_id, nonce, "Startup"));
+          app_client_id, nonce, batching_task.get(), "Startup"));
 
+  AddExpectationForHandleMessageSent();
   ClientToServerMessage expected_message;
 
   // Build the header.
@@ -257,12 +261,12 @@ TEST_F(ProtocolHandlerTest, ReceiveTokenControlOnly) {
   string new_token = "new token";
   message.mutable_token_control_message()->set_new_token(new_token);
 
-  ServerMessageHeader expected_header(nonce, header->registration_summary());
-  EXPECT_CALL(
-      listener,
-      HandleTokenChanged(EqualsHeader(ByRef(expected_header)), Eq(new_token)));
-
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ServerMessageHeader expected_header;
+  expected_header.InitFrom(&nonce, &header->registration_summary());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
+  ASSERT_TRUE(HeaderEqual(expected_header, parsed_message.header));
+  ASSERT_TRUE(parsed_message.token_control_message != NULL);
 }
 
 // Test that the protocol handler correctly buffers multiple message types.
@@ -283,7 +287,7 @@ TEST_F(ProtocolHandlerTest, SendMultipleMessageTypes) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendInfoMessage,
-          perf_counters, &client_config, true));
+          perf_counters, &client_config, true, batching_task.get()));
 
   // Synthesize a few test object ids.
   vector<ObjectIdP> oids;
@@ -298,7 +302,7 @@ TEST_F(ProtocolHandlerTest, SendMultipleMessageTypes) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendRegistrations,
-          oid_vec, RegistrationP_OpType_REGISTER));
+          oid_vec, RegistrationP_OpType_REGISTER, batching_task.get()));
 
   // Then unregister for the second and third.  This overrides the registration
   // on oids[1].
@@ -309,7 +313,7 @@ TEST_F(ProtocolHandlerTest, SendMultipleMessageTypes) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendRegistrations,
-          oid_vec, RegistrationP_OpType_UNREGISTER));
+          oid_vec, RegistrationP_OpType_UNREGISTER, batching_task.get()));
 
   // Send a couple of invalidations.
   vector<InvalidationP> invalidations;
@@ -320,7 +324,7 @@ TEST_F(ProtocolHandlerTest, SendMultipleMessageTypes) {
         Scheduler::NoDelay(),
         NewPermanentCallback(
             protocol_handler.get(), &ProtocolHandler::SendInvalidationAck,
-            invalidations[i]));
+            invalidations[i], batching_task.get()));
   }
 
   // Send a simple registration subtree.
@@ -330,7 +334,9 @@ TEST_F(ProtocolHandlerTest, SendMultipleMessageTypes) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendRegistrationSyncSubtree,
-          subtree));
+          subtree, batching_task.get()));
+
+  AddExpectationForHandleMessageSent();
 
   token = "test token";
 
@@ -458,47 +464,16 @@ TEST_F(ProtocolHandlerTest, IncomingCompositeMessage) {
       InfoRequestMessage_InfoType_GET_PERFORMANCE_COUNTERS);
 
   // The header we expect the listener to be called with.
-  ServerMessageHeader expected_header(token, summary);
+  ServerMessageHeader expected_header;
+  expected_header.InitFrom(&token, &summary);
 
-  // Listener should get each of the following calls:
-
-  // Incoming header.
-  EXPECT_CALL(
-      listener,
-      HandleIncomingHeader(EqualsHeader(ByRef(expected_header))));
-
-  // Invalidations.
-  EXPECT_CALL(
-      listener,
-      HandleInvalidations(
-          EqualsHeader(ByRef(expected_header)),
-          ElementsAre(EqualsProto(invalidations[0]),
-                      EqualsProto(invalidations[1]),
-                      EqualsProto(invalidations[2]))));
-
-  // Registration statuses.
-  EXPECT_CALL(
-      listener,
-      HandleRegistrationStatus(
-          EqualsHeader(ByRef(expected_header)),
-          ElementsAre(EqualsProto(registration_statuses[0]),
-                      EqualsProto(registration_statuses[1]),
-                      EqualsProto(registration_statuses[2]))));
-
-  // Registration sync request.
-  EXPECT_CALL(
-      listener,
-      HandleRegistrationSyncRequest(EqualsHeader(ByRef(expected_header))));
-
-  // Info request message.
-  EXPECT_CALL(
-      listener,
-      HandleInfoMessage(
-          EqualsHeader(ByRef(expected_header)),
-          ElementsAre(
-              Eq(InfoRequestMessage_InfoType_GET_PERFORMANCE_COUNTERS))));
-
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
+  ASSERT_TRUE(HeaderEqual(expected_header, parsed_message.header));
+  ASSERT_TRUE(parsed_message.invalidation_message != NULL);
+  ASSERT_TRUE(parsed_message.registration_status_message != NULL);
+  ASSERT_TRUE(parsed_message.registration_sync_request_message != NULL);
+  ASSERT_TRUE(parsed_message.info_request_message != NULL);
 }
 
 // Test that the protocol handler drops an invalid message.
@@ -513,8 +488,8 @@ TEST_F(ProtocolHandlerTest, InvalidInboundMessage) {
   // Add an info request message to check that it doesn't get processed.
   message.mutable_info_request_message()->add_info_type(
       InfoRequestMessage_InfoType_GET_PERFORMANCE_COUNTERS);
-
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
   ASSERT_EQ(1, statistics->GetClientErrorCounterForTest(
       Statistics::ClientErrorType_INCOMING_MESSAGE_FAILURE));
 }
@@ -533,7 +508,8 @@ TEST_F(ProtocolHandlerTest, MajorVersionMismatch) {
   message.mutable_info_request_message()->add_info_type(
       InfoRequestMessage_InfoType_GET_PERFORMANCE_COUNTERS);
 
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
   ASSERT_EQ(1, statistics->GetClientErrorCounterForTest(
       Statistics::ClientErrorType_PROTOCOL_VERSION_FAILURE));
 }
@@ -548,12 +524,12 @@ TEST_F(ProtocolHandlerTest, MinorVersionMismatch) {
   InitServerHeader(token, header);
   header->mutable_protocol_version()->mutable_version()->set_minor_version(4);
 
-  ServerMessageHeader expected_header(token, summary);
-  EXPECT_CALL(
-      listener,
-      HandleIncomingHeader(EqualsHeader(ByRef(expected_header))));
+  ServerMessageHeader expected_header;
+  expected_header.InitFrom(&token, &summary);
 
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
+  ASSERT_TRUE(HeaderEqual(expected_header, parsed_message.header));
   ASSERT_EQ(0, statistics->GetClientErrorCounterForTest(
       Statistics::ClientErrorType_PROTOCOL_VERSION_FAILURE));
 }
@@ -571,7 +547,8 @@ TEST_F(ProtocolHandlerTest, ConfigMessage) {
   message.mutable_config_change_message()->set_next_message_delay_ms(
       next_message_delay_ms);
 
-  ProcessIncomingMessage(message, TimeDelta());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
 
   // Check that the protocol handler recorded receiving the config change
   // message, and that it has updated the next time it will send a message.
@@ -588,7 +565,7 @@ TEST_F(ProtocolHandlerTest, ConfigMessage) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(), &ProtocolHandler::SendInfoMessage,
-          empty_vector, NULL, false));
+          empty_vector, NULL, false, batching_task.get()));
 
   // Keep simulating passage of time until just before the quiet period ends.
   // Nothing should be sent.  (The mock network will catch any attempts to send
@@ -609,25 +586,19 @@ TEST_F(ProtocolHandlerTest, ErrorMessage) {
   ErrorMessage::Code error_code = ErrorMessage_Code_AUTH_FAILURE;
   string description = "invalid auth token";
   InitErrorMessage(error_code, description, message.mutable_error_message());
-  ServerMessageHeader expected_header(token, summary);
-
-  // The listener should still get a call to handle the incoming header.
-  EXPECT_CALL(
-      listener,
-      HandleIncomingHeader(EqualsHeader(ByRef(expected_header))));
-
-  // It should also get a call to handle an error message.
-  EXPECT_CALL(
-      listener,
-      HandleErrorMessage(EqualsHeader(ByRef(expected_header)), Eq(error_code),
-                         Eq(description)));
+  ServerMessageHeader expected_header;
+  expected_header.InitFrom(&token, &summary);
 
   // Deliver the message.
-  ProcessIncomingMessage(message, TimeDelta());
+  ParsedMessage parsed_message;
+  ProcessMessage(message, &parsed_message);
+  ASSERT_TRUE(HeaderEqual(expected_header, parsed_message.header));
+  ASSERT_TRUE(parsed_message.error_message != NULL);
 }
 
-// Tests that the protocol handler rejects a message from the server if the
-// token doesn't match the client's.
+// Tests that the protocol handler accepts a message from the server if the
+// token doesn't match the client's (the caller is responsible for checking
+// the token).
 TEST_F(ProtocolHandlerTest, TokenMismatch) {
   // Create the server message with one token.
   token = "test token";
@@ -638,11 +609,11 @@ TEST_F(ProtocolHandlerTest, TokenMismatch) {
   token = "token-that-should-mismatch";
 
   // Deliver the message.
-  ProcessIncomingMessage(message, EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  bool accepted = ProcessMessage(message, &parsed_message);
+  ASSERT_TRUE(accepted);
 
-  // No listener calls should be made, and the handler should have recorded the
-  // token mismatch.
-  ASSERT_EQ(1, statistics->GetClientErrorCounterForTest(
+  ASSERT_EQ(0, statistics->GetClientErrorCounterForTest(
       Statistics::ClientErrorType_TOKEN_MISMATCH));
 }
 
@@ -656,7 +627,8 @@ TEST_F(ProtocolHandlerTest, TokenMissing) {
       Scheduler::NoDelay(),
       NewPermanentCallback(
           protocol_handler.get(),
-          &ProtocolHandler::SendInfoMessage, empty_vector, NULL, true));
+          &ProtocolHandler::SendInfoMessage, empty_vector, NULL, true,
+          batching_task.get()));
 
   internal_scheduler->PassTime(GetMaxBatchingDelay(config));
 
@@ -680,7 +652,8 @@ TEST_F(ProtocolHandlerTest, InvalidOutboundMessage) {
       NewPermanentCallback(
           protocol_handler.get(),
           &ProtocolHandler::SendInvalidationAck,
-          invalidations[0]));
+          invalidations[0],
+          batching_task.get()));
 
   internal_scheduler->PassTime(GetMaxBatchingDelay(config));
 
@@ -692,8 +665,10 @@ TEST_F(ProtocolHandlerTest, InvalidOutboundMessage) {
 TEST_F(ProtocolHandlerTest, UnparseableInboundMessage) {
   // Make an unparseable message.
   string serialized = "this can't be a valid protocol buffer!";
-  message_callback->Run(serialized);
-  internal_scheduler->PassTime(EndOfTestWaitTime());
+  ParsedMessage parsed_message;
+  bool accepted = protocol_handler->HandleIncomingMessage(serialized,
+                                                          &parsed_message);
+  ASSERT_FALSE(accepted);
 }
 
 }  // namespace invalidation

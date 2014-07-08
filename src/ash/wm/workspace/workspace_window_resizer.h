@@ -12,14 +12,18 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/aura/window_tracker.h"
 
 namespace ash {
-namespace internal {
-
+class DockedWindowLayoutManager;
 class PhantomWindowController;
-class SnapSizer;
+class TwoStepEdgeCycler;
 class WindowSize;
+
+namespace wm {
+class WindowState;
+}
 
 // WindowResizer implementation for workspaces. This enforces that windows are
 // not allowed to vertically move or resize outside of the work area. As windows
@@ -41,46 +45,35 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // this close to an edge of the screen it snaps to the edge.
   static const int kScreenEdgeInset;
 
+  // Distance in pixels that the cursor must move past an edge for a window
+  // to move or resize beyond that edge.
+  static const int kStickyDistancePixels;
+
   virtual ~WorkspaceWindowResizer();
 
   static WorkspaceWindowResizer* Create(
-      aura::Window* window,
-      const gfx::Point& location_in_parent,
-      int window_component,
+      wm::WindowState* window_state,
       const std::vector<aura::Window*>& attached_windows);
 
-  // Overridden from WindowResizer:
+  // WindowResizer:
   virtual void Drag(const gfx::Point& location_in_parent,
                     int event_flags) OVERRIDE;
-  virtual void CompleteDrag(int event_flags) OVERRIDE;
+  virtual void CompleteDrag() OVERRIDE;
   virtual void RevertDrag() OVERRIDE;
-  virtual aura::Window* GetTarget() OVERRIDE;
-
-  const gfx::Point& GetInitialLocationInParentForTest() const {
-    return details_.initial_location_in_parent;
-  }
 
  private:
-  WorkspaceWindowResizer(const Details& details,
+  WorkspaceWindowResizer(wm::WindowState* window_state,
                          const std::vector<aura::Window*>& attached_windows);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceWindowResizerTest, CancelSnapPhantom);
-  FRIEND_TEST_ALL_PREFIXES(WorkspaceWindowResizerTest, PhantomSnapMaxSize);
+  friend class WorkspaceWindowResizerTest;
 
-  // Type of snapping.
+  // The edge to which the window should be snapped at the end of the drag.
   enum SnapType {
-    // Snap to the left/right edge of the screen.
-    SNAP_LEFT_EDGE,
-    SNAP_RIGHT_EDGE,
-
-    // No snap position.
+    SNAP_LEFT,
+    SNAP_RIGHT,
     SNAP_NONE
   };
-
-  // Returns the final bounds to place the window at. This differs from
-  // the current when snapping.
-  gfx::Rect GetFinalBounds(const gfx::Rect& bounds) const;
 
   // Lays out the attached windows. |bounds| is the bounds of the main window.
   void LayoutAttachedWindows(gfx::Rect* bounds);
@@ -134,16 +127,15 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // snapping.
   void AdjustBoundsForMainWindow(int snap_size, gfx::Rect* bounds);
 
-  // Snaps the window bounds to the work area edges if necessary.
-  void SnapToWorkAreaEdges(
-      const gfx::Rect& work_area,
-      int snap_size,
-      gfx::Rect* bounds) const;
+  // Stick the window bounds to the work area during a move.
+  bool StickToWorkAreaOnMove(const gfx::Rect& work_area,
+                             int sticky_size,
+                             gfx::Rect* bounds) const;
 
-  // Snaps the window bounds to the work area during a resize.
-  void SnapResizeToWorkAreaBounds(const gfx::Rect& work_area,
-                                  int snap_size,
-                                  gfx::Rect* bounds) const;
+  // Stick the window bounds to the work area during a resize.
+  void StickToWorkAreaOnResize(const gfx::Rect& work_area,
+                               int sticky_size,
+                               gfx::Rect* bounds) const;
 
   // Returns a coordinate along the primary axis. Used to share code for
   // left/right multi window resize and top/bottom resize.
@@ -158,18 +150,30 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // top of the z-order, and the rest directly underneath it.
   void RestackWindows();
 
-  // Returns the SnapType for the specified point. SNAP_NONE is used if no
-  // snapping should be used.
+  // Returns the edge to which the window should be snapped to if the user does
+  // no more dragging. SNAP_NONE is returned if the window should not be
+  // snapped.
   SnapType GetSnapType(const gfx::Point& location) const;
 
-  aura::Window* window() const { return details_.window; }
+  // Returns true if |bounds_in_parent| are valid bounds for snapped state type
+  // |snapped_type|.
+  bool AreBoundsValidSnappedBounds(wm::WindowStateType snapped_type,
+                                   const gfx::Rect& bounds_in_parent) const;
 
-  const Details details_;
+  // Docks or undocks the dragged window.
+  void SetDraggedWindowDocked(bool should_dock);
+
+  wm::WindowState* window_state() { return window_state_; }
 
   const std::vector<aura::Window*> attached_windows_;
 
+  bool did_lock_cursor_;
+
   // Set to true once Drag() is invoked and the bounds of the window change.
   bool did_move_or_resize_;
+
+  // True if the window initially had |bounds_changed_by_user_| set in state.
+  bool initial_bounds_changed_by_user_;
 
   // The initial size of each of the windows in |attached_windows_| along the
   // primary axis.
@@ -185,10 +189,11 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // is a grid and the caption is being dragged.
   scoped_ptr<PhantomWindowController> snap_phantom_window_controller_;
 
-  // Used to determine the target position of a snap.
-  scoped_ptr<SnapSizer> snap_sizer_;
+  // Used to determine whether the window should be snapped or docked when
+  // the user drags a window to the edge of the screen.
+  scoped_ptr<TwoStepEdgeCycler> edge_cycler_;
 
-  // Last SnapType.
+  // The edge to which the window should be snapped to at the end of the drag.
   SnapType snap_type_;
 
   // Number of mouse moves since the last bounds change. Only used for phantom
@@ -209,10 +214,19 @@ class ASH_EXPORT WorkspaceWindowResizer : public WindowResizer {
   // should attach.
   MatchedEdge magnetism_edge_;
 
+  // Dock container window layout manager.
+  DockedWindowLayoutManager* dock_layout_;
+
+  // Used to determine if this has been deleted during a drag such as when a tab
+  // gets dragged into another browser window.
+  base::WeakPtrFactory<WorkspaceWindowResizer> weak_ptr_factory_;
+
+  // Current instance for use by the WorkspaceWindowResizerTest.
+  static WorkspaceWindowResizer* instance_;
+
   DISALLOW_COPY_AND_ASSIGN(WorkspaceWindowResizer);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_WORKSPACE_WINDOW_RESIZER_H_

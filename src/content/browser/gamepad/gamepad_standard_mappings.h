@@ -5,17 +5,14 @@
 #ifndef CONTENT_BROWSER_GAMEPAD_GAMEPAD_STANDARD_MAPPINGS_H_
 #define CONTENT_BROWSER_GAMEPAD_GAMEPAD_STANDARD_MAPPINGS_H_
 
-#include "base/string_piece.h"
-
-namespace WebKit {
-class WebGamepad;
-}
+#include "base/strings/string_piece.h"
+#include "content/common/gamepad_hardware_buffer.h"
 
 namespace content {
 
 typedef void (*GamepadStandardMappingFunction)(
-    const WebKit::WebGamepad& original,
-    WebKit::WebGamepad* mapped);
+    const blink::WebGamepad& original,
+    blink::WebGamepad* mapped);
 
 GamepadStandardMappingFunction GetGamepadStandardMappingFunction(
     const base::StringPiece& vendor_id,
@@ -55,6 +52,17 @@ enum CanonicalAxisIndex {
   kAxisRightStickY,
   kNumAxes
 };
+
+// Matches XInput's trigger deadzone
+const float kDefaultButtonPressedThreshold = 30.f/255.f;
+
+// Common mapping functions
+blink::WebGamepadButton AxisToButton(float input);
+blink::WebGamepadButton AxisNegativeAsButton(float input);
+blink::WebGamepadButton AxisPositiveAsButton(float input);
+blink::WebGamepadButton ButtonFromButtonAndAxis(
+    blink::WebGamepadButton button, float axis);
+void DpadFromAxis(blink::WebGamepad* mapped, float dir);
 
 }  // namespace content
 

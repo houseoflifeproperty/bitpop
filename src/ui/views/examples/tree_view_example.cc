@@ -4,11 +4,14 @@
 
 #include "ui/views/examples/tree_view_example.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/tree/tree_view.h"
 #include "ui/views/layout/grid_layout.h"
+
+using base::ASCIIToUTF16;
 
 namespace views {
 namespace examples {
@@ -41,15 +44,14 @@ void TreeViewExample::CreateExampleView(View* container) {
   tree_view_ = new TreeView();
   tree_view_->set_context_menu_controller(this);
   tree_view_->SetRootShown(false);
-  tree_view_->set_lines_at_root(true);
   tree_view_->SetModel(&model_);
   tree_view_->SetController(this);
-  add_ = new TextButton(this, ASCIIToUTF16("Add"));
-  add_->set_focusable(true);
-  remove_ = new TextButton(this, ASCIIToUTF16("Remove"));
-  remove_->set_focusable(true);
-  change_title_ = new TextButton(this, ASCIIToUTF16("Change Title"));
-  change_title_->set_focusable(true);
+  add_ = new LabelButton(this, ASCIIToUTF16("Add"));
+  add_->SetFocusable(true);
+  remove_ = new LabelButton(this, ASCIIToUTF16("Remove"));
+  remove_->SetFocusable(true);
+  change_title_ = new LabelButton(this, ASCIIToUTF16("Change Title"));
+  change_title_->SetFocusable(true);
 
   GridLayout* layout = new GridLayout(container);
   container->SetLayoutManager(layout);
@@ -123,17 +125,21 @@ bool TreeViewExample::CanEdit(TreeView* tree_view,
 }
 
 void TreeViewExample::ShowContextMenuForView(View* source,
-                                             const gfx::Point& point) {
+                                             const gfx::Point& point,
+                                             ui::MenuSourceType source_type) {
   ui::SimpleMenuModel context_menu_model(this);
   context_menu_model.AddItem(ID_EDIT, ASCIIToUTF16("Edit"));
   context_menu_model.AddItem(ID_REMOVE, ASCIIToUTF16("Remove"));
   context_menu_model.AddItem(ID_ADD, ASCIIToUTF16("Add"));
-  MenuModelAdapter menu_adapter(&context_menu_model);
-  context_menu_runner_.reset(new MenuRunner(menu_adapter.CreateMenu()));
-  if (context_menu_runner_->RunMenuAt(source->GetWidget(), NULL,
-      gfx::Rect(point, gfx::Size()), MenuItemView::TOPLEFT, 0) ==
-      MenuRunner::MENU_DELETED)
+  context_menu_runner_.reset(new MenuRunner(&context_menu_model));
+  if (context_menu_runner_->RunMenuAt(source->GetWidget(),
+                                      NULL,
+                                      gfx::Rect(point, gfx::Size()),
+                                      MENU_ANCHOR_TOPLEFT,
+                                      source_type,
+                                      0) == MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 bool TreeViewExample::IsCommandIdChecked(int command_id) const {
@@ -150,7 +156,7 @@ bool TreeViewExample::GetAcceleratorForCommandId(
   return false;
 }
 
-void TreeViewExample::ExecuteCommand(int command_id) {
+void TreeViewExample::ExecuteCommand(int command_id, int event_flags) {
   NodeType* selected_node =
       static_cast<NodeType*>(tree_view_->GetSelectedNode());
   switch (command_id) {

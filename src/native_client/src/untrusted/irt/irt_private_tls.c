@@ -31,15 +31,16 @@ int nacl_tls_init(void *thread_ptr) {
 }
 
 void *nacl_tls_get(void) {
-  /* @IGNORE_LINES_FOR_CODE_HYGIENE[1] */
 #if defined(__i386__)
   /*
    * Calling second_tls_get() works on x86-32, but reading %gs:4 is a
    * lot faster.
    */
   void *result;
-  /* @IGNORE_LINES_FOR_CODE_HYGIENE[1] */
-  __asm__("mov %%gs:4, %0" : "=r"(result));
+  /*
+   * tls_edit is now responsible for changing the gs offset to 4
+   */
+  __asm__("mov %%gs:0, %0" : "=r"(result));
   return result;
 #else
   return NACL_SYSCALL(second_tls_get)();

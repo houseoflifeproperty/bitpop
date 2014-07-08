@@ -10,10 +10,10 @@
   'targets': [
     {
       'target_name': 'audio_device',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
-        '<(webrtc_root)/common_audio/common_audio.gyp:resampler',
-        '<(webrtc_root)/common_audio/common_audio.gyp:signal_processing',
+        'webrtc_utility',
+        '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
       'include_dirs': [
@@ -41,7 +41,9 @@
         'audio_device_impl.cc',
         'audio_device_impl.h',
         'audio_device_config.h',
+        'dummy/audio_device_dummy.cc',
         'dummy/audio_device_dummy.h',
+        'dummy/audio_device_utility_dummy.cc',
         'dummy/audio_device_utility_dummy.h',
       ],
       'conditions': [
@@ -108,8 +110,27 @@
             'win/audio_device_utility_win.h',
             'win/audio_mixer_manager_win.cc',
             'win/audio_mixer_manager_win.h',
+            'android/audio_device_template.h',
             'android/audio_device_utility_android.cc',
             'android/audio_device_utility_android.h',
+            'android/audio_manager_jni.cc',
+            'android/audio_manager_jni.h',
+            'android/audio_record_jni.cc',
+            'android/audio_record_jni.h',
+            'android/audio_track_jni.cc',
+            'android/audio_track_jni.h',
+            'android/fine_audio_buffer.cc',
+            'android/fine_audio_buffer.h',
+            'android/low_latency_event_posix.cc',
+            'android/low_latency_event.h',
+            'android/opensles_common.cc',
+            'android/opensles_common.h',
+            'android/opensles_input.cc',
+            'android/opensles_input.h',
+            'android/opensles_output.cc',
+            'android/opensles_output.h',
+            'android/single_rw_fifo.cc',
+            'android/single_rw_fifo.h',
           ],
           'conditions': [
             ['OS=="android"', {
@@ -119,19 +140,6 @@
                   '-lOpenSLES',
                 ],
               },
-              'conditions': [
-                ['enable_android_opensl==1', {
-                  'sources': [
-                    'android/audio_device_opensles_android.cc',
-                    'android/audio_device_opensles_android.h',
-                  ],
-                }, {
-                  'sources': [
-                    'android/audio_device_jni_android.cc',
-                    'android/audio_device_jni_android.h',
-                  ],
-                }],
-              ],
             }],
             ['OS=="linux"', {
               'defines': [
@@ -139,7 +147,7 @@
               ],
               'link_settings': {
                 'libraries': [
-                  '-ldl',
+                  '-ldl','-lX11',
                 ],
               },
               'conditions': [
@@ -186,7 +194,7 @@
     ['include_tests==1', {
       'targets': [
         {
-          'target_name': 'audio_device_test_api',
+          'target_name': 'audio_device_tests',
          'type': 'executable',
          'dependencies': [
             'audio_device',
@@ -206,7 +214,7 @@
           'dependencies': [
             'audio_device',
             'webrtc_utility',
-            '<(webrtc_root)/common_audio/common_audio.gyp:resampler',
+            '<(webrtc_root)/common_audio/common_audio.gyp:common_audio',
             '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
             '<(webrtc_root)/test/test.gyp:test_support',
             '<(DEPTH)/testing/gtest.gyp:gtest',
@@ -218,8 +226,50 @@
             'test/func_test_manager.h',
           ],
         },
+      ], # targets
+      'conditions': [
+        ['test_isolation_mode != "noop"', {
+          'targets': [
+            {
+              'target_name': 'audio_device_tests_run',
+              'type': 'none',
+              'dependencies': [
+                'audio_device_tests',
+              ],
+              'includes': [
+                '../../build/isolate.gypi',
+                'audio_device_tests.isolate',
+              ],
+              'sources': [
+                'audio_device_tests.isolate',
+              ],
+            },
+          ],
+        }],
+        ['OS=="android" and enable_android_opensl==1', {
+          'targets': [
+            {
+              'target_name': 'audio_device_unittest',
+              'type': 'executable',
+              'dependencies': [
+                'audio_device',
+                'webrtc_utility',
+                '<(DEPTH)/testing/gmock.gyp:gmock',
+                '<(DEPTH)/testing/gtest.gyp:gtest',
+                '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+                '<(webrtc_root)/test/test.gyp:test_support_main',
+              ],
+              'sources': [
+                'android/fine_audio_buffer_unittest.cc',
+                'android/low_latency_event_unittest.cc',
+                'android/single_rw_fifo_unittest.cc',
+                'mock/mock_audio_device_buffer.h',
+              ],
+            },
+          ],
+        }],
       ],
-    }],
+    }], # include_tests
   ],
 }
 

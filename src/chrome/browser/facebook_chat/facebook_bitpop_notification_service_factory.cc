@@ -17,7 +17,8 @@
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification_service_factory.h"
 
 #include "chrome/browser/facebook_chat/facebook_bitpop_notification.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 #if defined(OS_WIN)
 #include "chrome/browser/ui/views/facebook_chat/facebook_bitpop_notification_win.h"
@@ -28,7 +29,7 @@
 // static
 FacebookBitpopNotification* FacebookBitpopNotificationServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<FacebookBitpopNotification*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -37,18 +38,19 @@ FacebookBitpopNotificationServiceFactory* FacebookBitpopNotificationServiceFacto
 }
 
 FacebookBitpopNotificationServiceFactory::FacebookBitpopNotificationServiceFactory()
-    : ProfileKeyedServiceFactory("facebook_bitpop_notification", ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory("facebook_bitpop_notification",
+    									BrowserContextDependencyManager::GetInstance()) {
 }
 
 FacebookBitpopNotificationServiceFactory::~FacebookBitpopNotificationServiceFactory() {
 }
 
-ProfileKeyedService* FacebookBitpopNotificationServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* FacebookBitpopNotificationServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
 #if defined(OS_WIN)
-  return new FacebookBitpopNotificationWin(profile);
+  return new FacebookBitpopNotificationWin(static_cast<Profile*>(profile));
 #elif defined (OS_MACOSX)
-  return new FacebookBitpopNotificationMac(profile);
+  return new FacebookBitpopNotificationMac(static_cast<Profile*>(profile));
 #else
   return NULL;
 #endif

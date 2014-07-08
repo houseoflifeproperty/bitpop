@@ -35,9 +35,9 @@
 #include "talk/base/windowpicker.h"
 #include "talk/base/windowpickerfactory.h"
 #include "talk/media/base/mediacommon.h"
+#include "talk/media/devices/deviceinfo.h"
 #include "talk/media/devices/filevideocapturer.h"
-
-#if !(defined(IOS) || defined(ANDROID))
+#include "talk/media/devices/yuvframescapturer.h"
 
 #if defined(HAVE_WEBRTC_VIDEO)
 #include "talk/media/webrtc/webrtcvideocapturer.h"
@@ -49,15 +49,43 @@
 #endif
 
 
-#endif
+namespace {
+
+bool StringMatchWithWildcard(
+    const std::pair<const std::basic_string<char>, cricket::VideoFormat> key,
+    const std::string& val) {
+  return talk_base::string_match(val.c_str(), key.first.c_str());
+}
+
+}  // namespace
 
 namespace cricket {
 
 // Initialize to empty string.
 const char DeviceManagerInterface::kDefaultDeviceName[] = "";
 
+class DefaultVideoCapturerFactory : public VideoCapturerFactory {
+ public:
+  DefaultVideoCapturerFactory() {}
+  virtual ~DefaultVideoCapturerFactory() {}
+
+  VideoCapturer* Create(const Device& device) {
+#if defined(VIDEO_CAPTURER_NAME)
+    VIDEO_CAPTURER_NAME* return_value = new VIDEO_CAPTURER_NAME;
+    if (!return_value->Init(device)) {
+      delete return_value;
+      return NULL;
+    }
+    return return_value;
+#else
+    return NULL;
+#endif
+  }
+};
+
 DeviceManager::DeviceManager()
     : initialized_(false),
+      device_video_capturer_factory_(new DefaultVideoCapturerFactory),
       window_picker_(talk_base::WindowPickerFactory::CreateWindowPicker()) {
 }
 
@@ -117,9 +145,9 @@ bool DeviceManager::GetAudioOutputDevice(const std::string& name, Device* out) {
 
 bool DeviceManager::GetVideoCaptureDevices(std::vector<Device>* devices) {
   devices->clear();
-#if defined(IOS) || defined(ANDROID)
-  // On Android, we treat the camera(s) as a single device. Even if there are
-  // multiple cameras, that's abstracted away at a higher level.
+#if defined(ANDROID) || defined(IOS)
+  // On Android and iOS, we treat the camera(s) as a single device. Even if
+  // there are multiple cameras, that's abstracted away at a higher level.
   Device dev("camera", "1");    // name and ID
   devices->push_back(dev);
   return true;
@@ -132,7 +160,6 @@ bool DeviceManager::GetVideoCaptureDevice(const std::string& name,
                                           Device* out) {
   // If the name is empty, return the default device.
   if (name.empty() || name == kDefaultDeviceName) {
-    LOG(LS_INFO) << "Creating default VideoCapturer";
     return GetDefaultVideoCaptureDevice(out);
   }
 
@@ -144,28 +171,69 @@ bool DeviceManager::GetVideoCaptureDevice(const std::string& name,
   for (std::vector<Device>::const_iterator it = devices.begin();
       it != devices.end(); ++it) {
     if (name == it->name) {
-      LOG(LS_INFO) << "Creating VideoCapturer for " << name;
       *out = *it;
       return true;
     }
   }
 
-  // If |name| is a valid name for a file, return a file video capturer device.
-  if (talk_base::Filesystem::IsFile(name)) {
-    LOG(LS_INFO) << "Creating FileVideoCapturer";
-    *out = FileVideoCapturer::CreateFileVideoCapturerDevice(name);
+  // If |name| is a valid name for a file or yuvframedevice,
+  // return a fake video capturer device.
+  if (GetFakeVideoCaptureDevice(name, out)) {
     return true;
   }
 
   return false;
 }
 
+bool DeviceManager::GetFakeVideoCaptureDevice(const std::string& name,
+                                              Device* out) const {
+  if (talk_base::Filesystem::IsFile(name)) {
+    *out = FileVideoCapturer::CreateFileVideoCapturerDevice(name);
+    return true;
+  }
+
+  if (name == YuvFramesCapturer::kYuvFrameDeviceName) {
+    *out = YuvFramesCapturer::CreateYuvFramesCapturerDevice();
+    return true;
+  }
+
+  return false;
+}
+
+void DeviceManager::SetVideoCaptureDeviceMaxFormat(
+    const std::string& usb_id,
+    const VideoFormat& max_format) {
+  max_formats_[usb_id] = max_format;
+}
+
+void DeviceManager::ClearVideoCaptureDeviceMaxFormat(
+    const std::string& usb_id) {
+  max_formats_.erase(usb_id);
+}
+
 VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
-#if defined(IOS) || defined(ANDROID)
-  LOG_F(LS_ERROR) << " should never be called!";
-  return NULL;
-#else
-  // TODO(hellner): throw out the creation of a file video capturer once the
+  VideoCapturer* capturer = ConstructFakeVideoCapturer(device);
+  if (capturer) {
+    return capturer;
+  }
+
+  capturer = device_video_capturer_factory_->Create(device);
+  if (!capturer) {
+    return NULL;
+  }
+  LOG(LS_INFO) << "Created VideoCapturer for " << device.name;
+  VideoFormat video_format;
+  bool has_max = GetMaxFormat(device, &video_format);
+  capturer->set_enable_camera_list(has_max);
+  if (has_max) {
+    capturer->ConstrainSupportedFormats(video_format);
+  }
+  return capturer;
+}
+
+VideoCapturer* DeviceManager::ConstructFakeVideoCapturer(
+    const Device& device) const {
+  // TODO(hellner): Throw out the creation of a file video capturer once the
   // refactoring is completed.
   if (FileVideoCapturer::IsFileVideoCapturerDevice(device)) {
     FileVideoCapturer* capturer = new FileVideoCapturer;
@@ -173,20 +241,17 @@ VideoCapturer* DeviceManager::CreateVideoCapturer(const Device& device) const {
       delete capturer;
       return NULL;
     }
+    LOG(LS_INFO) << "Created file video capturer " << device.name;
     capturer->set_repeat(talk_base::kForever);
     return capturer;
   }
-#if defined(VIDEO_CAPTURER_NAME)
-  VIDEO_CAPTURER_NAME* capturer = new VIDEO_CAPTURER_NAME;
-  if (!capturer->Init(device)) {
-    delete capturer;
-    return NULL;
+
+  if (YuvFramesCapturer::IsYuvFramesCapturerDevice(device)) {
+    YuvFramesCapturer* capturer = new YuvFramesCapturer();
+    capturer->Init();
+    return capturer;
   }
-  return capturer;
-#else
   return NULL;
-#endif
-#endif
 }
 
 bool DeviceManager::GetWindows(
@@ -235,18 +300,14 @@ VideoCapturer* DeviceManager::CreateDesktopCapturer(
 bool DeviceManager::GetAudioDevices(bool input,
                                     std::vector<Device>* devs) {
   devs->clear();
-#if defined(IOS) || defined(ANDROID)
-  // Under Android, we don't access the device file directly.
-  // Arbitrary use 0 for the mic and 1 for the output.
-  // These ids are used in MediaEngine::SetSoundDevices(in, out);
-  // The strings are for human consumption.
-  if (input) {
-      devs->push_back(Device("audiorecord", 0));
-  } else {
-      devs->push_back(Device("audiotrack", 1));
-  }
+#if defined(ANDROID)
+  // Under Android, 0 is always required for the playout device and 0 is the
+  // default for the recording device.
+  devs->push_back(Device("default-device", 0));
   return true;
 #else
+  // Other platforms either have their own derived class implementation
+  // (desktop) or don't use device manager for audio devices (iOS).
   return false;
 #endif
 }
@@ -284,6 +345,28 @@ bool DeviceManager::GetDefaultVideoCaptureDevice(Device* device) {
     *device = devices[0];
   }
   return ret;
+}
+
+bool DeviceManager::IsInWhitelist(const std::string& key,
+                                  VideoFormat* video_format) const {
+  std::map<std::string, VideoFormat>::const_iterator found =
+      std::search_n(max_formats_.begin(), max_formats_.end(), 1, key,
+                    StringMatchWithWildcard);
+  if (found == max_formats_.end()) {
+    return false;
+  }
+  *video_format = found->second;
+  return true;
+}
+
+bool DeviceManager::GetMaxFormat(const Device& device,
+                                 VideoFormat* video_format) const {
+  // Match USB ID if available. Failing that, match device name.
+  std::string usb_id;
+  if (GetUsbId(device, &usb_id) && IsInWhitelist(usb_id, video_format)) {
+      return true;
+  }
+  return IsInWhitelist(device.name, video_format);
 }
 
 bool DeviceManager::ShouldDeviceBeIgnored(const std::string& device_name,

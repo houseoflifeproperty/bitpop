@@ -7,10 +7,9 @@
 #include "base/compiler_specific.h"
 #include "base/debug/alias.h"
 #include "base/debug/stack_trace.h"
-#include "base/string_util.h"
-#include "net/base/host_resolver.h"
+#include "base/strings/string_util.h"
 #include "net/cookies/cookie_store.h"
-#include "net/ftp/ftp_transaction_factory.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_transaction_factory.h"
 #include "net/url_request/http_user_agent_settings.h"
 #include "net/url_request/url_request.h"
@@ -26,14 +25,10 @@ URLRequestContext::URLRequestContext()
       http_auth_handler_factory_(NULL),
       proxy_service_(NULL),
       network_delegate_(NULL),
-      http_server_properties_(NULL),
       http_user_agent_settings_(NULL),
       transport_security_state_(NULL),
-#if !defined(DISABLE_FTP_SUPPORT)
-      ftp_auth_cache_(new FtpAuthCache),
-#endif
+      cert_transparency_verifier_(NULL),
       http_transaction_factory_(NULL),
-      ftp_transaction_factory_(NULL),
       job_factory_(NULL),
       throttler_manager_(NULL),
       url_requests_(new std::set<const URLRequest*>) {
@@ -52,14 +47,13 @@ void URLRequestContext::CopyFrom(const URLRequestContext* other) {
   set_fraudulent_certificate_reporter(other->fraudulent_certificate_reporter_);
   set_http_auth_handler_factory(other->http_auth_handler_factory_);
   set_proxy_service(other->proxy_service_);
-  set_ssl_config_service(other->ssl_config_service_);
+  set_ssl_config_service(other->ssl_config_service_.get());
   set_network_delegate(other->network_delegate_);
   set_http_server_properties(other->http_server_properties_);
-  set_cookie_store(other->cookie_store_);
+  set_cookie_store(other->cookie_store_.get());
   set_transport_security_state(other->transport_security_state_);
-  // FTPAuthCache is unique per context.
+  set_cert_transparency_verifier(other->cert_transparency_verifier_);
   set_http_transaction_factory(other->http_transaction_factory_);
-  set_ftp_transaction_factory(other->ftp_transaction_factory_);
   set_job_factory(other->job_factory_);
   set_throttler_manager(other->throttler_manager_);
   set_http_user_agent_settings(other->http_user_agent_settings_);
@@ -76,28 +70,17 @@ const HttpNetworkSession::Params* URLRequestContext::GetNetworkSessionParams(
   return &network_session->params();
 }
 
-URLRequest* URLRequestContext::CreateRequest(
-    const GURL& url, URLRequest::Delegate* delegate) const {
-  return new URLRequest(url, delegate, this, network_delegate_);
+scoped_ptr<URLRequest> URLRequestContext::CreateRequest(
+    const GURL& url,
+    RequestPriority priority,
+    URLRequest::Delegate* delegate,
+    CookieStore* cookie_store) const {
+  return scoped_ptr<URLRequest>(
+      new URLRequest(url, priority, delegate, this, cookie_store));
 }
 
 void URLRequestContext::set_cookie_store(CookieStore* cookie_store) {
   cookie_store_ = cookie_store;
-}
-
-std::string URLRequestContext::GetAcceptCharset() const {
-  return http_user_agent_settings_ ?
-      http_user_agent_settings_->GetAcceptCharset() : EmptyString();
-}
-
-std::string URLRequestContext::GetAcceptLanguage() const {
-  return http_user_agent_settings_ ?
-      http_user_agent_settings_->GetAcceptLanguage() : EmptyString();
-}
-
-std::string URLRequestContext::GetUserAgent(const GURL& url) const {
-  return http_user_agent_settings_ ?
-      http_user_agent_settings_->GetUserAgent(url) : EmptyString();
 }
 
 void URLRequestContext::AssertNoURLRequests() const {

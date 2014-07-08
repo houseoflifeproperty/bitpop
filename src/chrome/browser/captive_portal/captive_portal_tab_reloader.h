@@ -9,8 +9,8 @@
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/captive_portal/captive_portal_service.h"
 
 class Profile;
@@ -22,8 +22,6 @@ class WebContents;
 namespace net {
 class SSLInfo;
 }
-
-namespace captive_portal {
 
 // Keeps track of whether a tab has encountered a navigation error caused by a
 // captive portal.  Also triggers captive portal checks when a page load may
@@ -106,7 +104,9 @@ class CaptivePortalTabReloader {
   virtual void OnRedirect(bool is_ssl);
 
   // Called whenever a captive portal test completes.
-  virtual void OnCaptivePortalResults(Result previous_result, Result result);
+  virtual void OnCaptivePortalResults(
+      captive_portal::CaptivePortalResult previous_result,
+      captive_portal::CaptivePortalResult result);
 
   // Called on certificate errors, which often indicate a captive portal.
   void OnSSLCertError(const net::SSLInfo& ssl_info);
@@ -182,7 +182,5 @@ class CaptivePortalTabReloader {
 
   DISALLOW_COPY_AND_ASSIGN(CaptivePortalTabReloader);
 };
-
-}  // namespace captive_portal
 
 #endif  // CHROME_BROWSER_CAPTIVE_PORTAL_CAPTIVE_PORTAL_TAB_RELOADER_H_

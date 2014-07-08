@@ -4,8 +4,10 @@
 
 #include <string>
 
+#include "base/guid.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/memory/scoped_vector.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "chrome/browser/sync/glue/device_info.h"
 #include "chrome/browser/sync/glue/synced_device_tracker.h"
@@ -18,12 +20,26 @@
 
 namespace browser_sync {
 
+namespace {
+
+void ConvertDeviceInfoSpecifics(
+    const DeviceInfo& device_info,
+    sync_pb::DeviceInfoSpecifics* specifics) {
+  specifics->set_cache_guid(device_info.guid());
+  specifics->set_client_name(device_info.client_name());
+  specifics->set_chrome_version(device_info.chrome_version());
+  specifics->set_sync_user_agent(device_info.sync_user_agent());
+  specifics->set_device_type(device_info.device_type());
+}
+
+}  // namespace
+
 class SyncedDeviceTrackerTest : public ::testing::Test {
  protected:
   SyncedDeviceTrackerTest() : transaction_count_baseline_(0) { }
-  ~SyncedDeviceTrackerTest() { }
+  virtual ~SyncedDeviceTrackerTest() { }
 
-  void SetUp() {
+  virtual void SetUp() {
     test_user_share_.SetUp();
     syncer::TestUserShare::CreateRoot(syncer::DEVICE_INFO, user_share());
 
@@ -35,10 +51,10 @@ class SyncedDeviceTrackerTest : public ::testing::Test {
     // NULL here.  Constructing a TestingProfile can take over a 100ms, so this
     // optimization can be the difference between 'tests run with a noticeable
     // delay' and 'tests run instantaneously'.
-    synced_device_tracker_->Start(NULL, user_share());
+    synced_device_tracker_->Start(user_share());
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     synced_device_tracker_.reset();
     test_user_share_.TearDown();
   }
@@ -50,6 +66,12 @@ class SyncedDeviceTrackerTest : public ::testing::Test {
   // Expose the private method to our tests.
   void WriteLocalDeviceInfo(const DeviceInfo& info) {
     synced_device_tracker_->WriteLocalDeviceInfo(info);
+  }
+
+  void WriteDeviceInfo(const DeviceInfo& device_info) {
+    sync_pb::DeviceInfoSpecifics specifics;
+    ConvertDeviceInfoSpecifics(device_info, &specifics);
+    synced_device_tracker_->WriteDeviceInfo(specifics, device_info.guid());
   }
 
   void ResetObservedChangesCounter() {
@@ -70,7 +92,7 @@ class SyncedDeviceTrackerTest : public ::testing::Test {
     return test_user_share_.transaction_observer()->transactions_observed();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   syncer::TestUserShare test_user_share_;
   int transaction_count_baseline_;
 };
@@ -83,8 +105,13 @@ TEST_F(SyncedDeviceTrackerTest, CreateNewDeviceInfo) {
 
   ResetObservedChangesCounter();
 
+  // Include the non-ASCII character "’" (typographic apostrophe) in the client
+  // name to ensure that SyncedDeviceTracker can properly handle non-ASCII
+  // characters, which client names can include on some platforms (e.g., Mac
+  // and iOS).
   DeviceInfo write_device_info(
-      "Name", "Chromium 3000", "ChromeSyncAgent 3000",
+      user_share()->directory->cache_guid(),
+      "John’s Device", "Chromium 3000", "ChromeSyncAgent 3000",
       sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
   WriteLocalDeviceInfo(write_device_info);
 
@@ -100,7 +127,8 @@ TEST_F(SyncedDeviceTrackerTest, CreateNewDeviceInfo) {
 TEST_F(SyncedDeviceTrackerTest, DontModifyExistingDeviceInfo) {
   // For writing.
   DeviceInfo device_info(
-      "Name", "XYZ v1", "XYZ SyncAgent v1",
+      user_share()->directory->cache_guid(),
+      "John’s Device", "XYZ v1", "XYZ SyncAgent v1",
       sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
   WriteLocalDeviceInfo(device_info);
 
@@ -128,7 +156,8 @@ TEST_F(SyncedDeviceTrackerTest, DontModifyExistingDeviceInfo) {
 TEST_F(SyncedDeviceTrackerTest, UpdateExistingDeviceInfo) {
   // Write v1 device info.
   DeviceInfo device_info_v1(
-      "Name", "XYZ v1", "XYZ SyncAgent v1",
+      user_share()->directory->cache_guid(),
+      "John’s Device", "XYZ v1", "XYZ SyncAgent v1",
       sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
   WriteLocalDeviceInfo(device_info_v1);
 
@@ -136,7 +165,8 @@ TEST_F(SyncedDeviceTrackerTest, UpdateExistingDeviceInfo) {
 
   // Write upgraded device info.
   DeviceInfo device_info_v2(
-      "Name", "XYZ v2", "XYZ SyncAgent v2",
+      user_share()->directory->cache_guid(),
+      "John’s Device", "XYZ v2", "XYZ SyncAgent v2",
       sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
   WriteLocalDeviceInfo(device_info_v2);
 
@@ -149,6 +179,33 @@ TEST_F(SyncedDeviceTrackerTest, UpdateExistingDeviceInfo) {
 
   // The update write should have sent a nudge.
   EXPECT_EQ(1, GetObservedChangesCounter());
+}
+
+// Test retrieving DeviceInfos for all the syncing devices.
+TEST_F(SyncedDeviceTrackerTest, GetAllDeviceInfo) {
+  DeviceInfo device_info1(
+      base::GenerateGUID(),
+      "abc Device", "XYZ v1", "XYZ SyncAgent v1",
+      sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
+
+  std::string guid1 = base::GenerateGUID();
+
+  DeviceInfo device_info2(
+      base::GenerateGUID(),
+      "def Device", "XYZ v2", "XYZ SyncAgent v2",
+      sync_pb::SyncEnums_DeviceType_TYPE_LINUX);
+
+  std::string guid2 = base::GenerateGUID();
+
+  WriteDeviceInfo(device_info1);
+  WriteDeviceInfo(device_info2);
+
+  ScopedVector<DeviceInfo> device_info;
+  synced_device_tracker_->GetAllSyncedDeviceInfo(&device_info);
+
+  EXPECT_EQ(device_info.size(), 2U);
+  EXPECT_TRUE(device_info[0]->Equals(device_info1));
+  EXPECT_TRUE(device_info[1]->Equals(device_info2));
 }
 
 }  // namespace

@@ -12,7 +12,6 @@
 #include <string>
 #include <vector>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_bool.h"
 #include "ppapi/c/pp_completion_callback.h"
 #include "ppapi/c/pp_errors.h"
@@ -23,6 +22,7 @@
 #include "ppapi/c/ppb_var.h"
 #include "ppapi/c/ppb_var_array_buffer.h"
 #include "ppapi/c/ppb_websocket.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/cpp/instance.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/var_array_buffer.h"
@@ -31,7 +31,7 @@
 #include "ppapi/tests/testing_instance.h"
 #include "ppapi/utility/websocket/websocket_api.h"
 
-// net::TestServer serves WebSocket service for testing.
+// net::SpawnedTestServer serves WebSocket service for testing.
 // Following URLs are handled by pywebsocket handlers in
 // net/data/websocket/*_wsh.py.
 const char kEchoServerURL[] = "echo-with-no-extension";
@@ -47,7 +47,6 @@ const char* const kInvalidURLs[] = {
 };
 
 // Internal packet sizes.
-const uint64_t kCloseFrameSize = 6;
 const uint64_t kMessageFrameOverhead = 6;
 
 namespace {
@@ -214,6 +213,7 @@ void TestWebSocket::RunTests(const std::string& filter) {
   RUN_TEST_WITH_REFERENCE_CHECK(ValidClose, filter);
   RUN_TEST_WITH_REFERENCE_CHECK(GetProtocol, filter);
   RUN_TEST_WITH_REFERENCE_CHECK(TextSendReceive, filter);
+  RUN_TEST_BACKGROUND(TestWebSocket, TextSendReceiveTwice, filter);
   RUN_TEST_WITH_REFERENCE_CHECK(BinarySendReceive, filter);
   RUN_TEST_WITH_REFERENCE_CHECK(StressedSendReceive, filter);
   RUN_TEST_WITH_REFERENCE_CHECK(BufferedAmount, filter);
@@ -240,8 +240,13 @@ void TestWebSocket::RunTests(const std::string& filter) {
 }
 
 std::string TestWebSocket::GetFullURL(const char* url) {
-  std::string rv = "ws://localhost";
-  // Some WebSocket tests don't start the server so there'll be no port.
+  std::string rv = "ws://";
+  // Some WebSocket tests don't start the server so there'll be no host and
+  // port.
+  if (instance_->websocket_host().empty())
+    rv += "127.0.0.1";
+  else
+    rv += instance_->websocket_host();
   if (instance_->websocket_port() != -1) {
     char buffer[10];
     sprintf(buffer, ":%d", instance_->websocket_port());
@@ -316,6 +321,13 @@ PP_Resource TestWebSocket::Connect(const std::string& url,
   return ws;
 }
 
+void TestWebSocket::Send(int32_t /* result */, PP_Resource ws,
+                         const std::string& message) {
+  PP_Var message_var = CreateVarString(message);
+  websocket_interface_->SendMessage(ws, message_var);
+  ReleaseVar(message_var);
+}
+
 std::string TestWebSocket::TestIsWebSocket() {
   // Test that a NULL resource isn't a websocket.
   pp::Resource null_resource;
@@ -345,18 +357,18 @@ std::string TestWebSocket::TestUninitializedPropertiesAccess() {
   ASSERT_EQ(0U, close_code);
 
   PP_Var close_reason = websocket_interface_->GetCloseReason(ws);
-  ASSERT_TRUE(AreEqualWithString(close_reason, ""));
+  ASSERT_TRUE(AreEqualWithString(close_reason, std::string()));
   ReleaseVar(close_reason);
 
   PP_Bool close_was_clean = websocket_interface_->GetCloseWasClean(ws);
   ASSERT_EQ(PP_FALSE, close_was_clean);
 
   PP_Var extensions = websocket_interface_->GetExtensions(ws);
-  ASSERT_TRUE(AreEqualWithString(extensions, ""));
+  ASSERT_TRUE(AreEqualWithString(extensions, std::string()));
   ReleaseVar(extensions);
 
   PP_Var protocol = websocket_interface_->GetProtocol(ws);
-  ASSERT_TRUE(AreEqualWithString(protocol, ""));
+  ASSERT_TRUE(AreEqualWithString(protocol, std::string()));
   ReleaseVar(protocol);
 
   PP_WebSocketReadyState ready_state =
@@ -364,7 +376,7 @@ std::string TestWebSocket::TestUninitializedPropertiesAccess() {
   ASSERT_EQ(PP_WEBSOCKETREADYSTATE_INVALID, ready_state);
 
   PP_Var url = websocket_interface_->GetURL(ws);
-  ASSERT_TRUE(AreEqualWithString(url, ""));
+  ASSERT_TRUE(AreEqualWithString(url, std::string()));
   ReleaseVar(url);
 
   core_interface_->ReleaseResource(ws);
@@ -393,7 +405,7 @@ std::string TestWebSocket::TestInvalidConnect() {
 
   for (int i = 0; kInvalidURLs[i]; ++i) {
     int32_t result;
-    ws = Connect(kInvalidURLs[i], &result, "");
+    ws = Connect(kInvalidURLs[i], &result, std::string());
     ASSERT_TRUE(ws);
     ASSERT_EQ(PP_ERROR_BADARGUMENT, result);
 
@@ -443,7 +455,7 @@ std::string TestWebSocket::TestProtocols() {
 std::string TestWebSocket::TestGetURL() {
   for (int i = 0; kInvalidURLs[i]; ++i) {
     int32_t result;
-    PP_Resource ws = Connect(kInvalidURLs[i], &result, "");
+    PP_Resource ws = Connect(kInvalidURLs[i], &result, std::string());
     ASSERT_TRUE(ws);
     PP_Var url = websocket_interface_->GetURL(ws);
     ASSERT_TRUE(AreEqualWithString(url, kInvalidURLs[i]));
@@ -458,12 +470,13 @@ std::string TestWebSocket::TestGetURL() {
 
 std::string TestWebSocket::TestValidConnect() {
   int32_t result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   PP_Var extensions = websocket_interface_->GetExtensions(ws);
-  ASSERT_TRUE(AreEqualWithString(extensions, ""));
+  ASSERT_TRUE(AreEqualWithString(extensions, std::string()));
   core_interface_->ReleaseResource(ws);
+  ReleaseVar(extensions);
 
   PASS();
 }
@@ -483,7 +496,7 @@ std::string TestWebSocket::TestInvalidClose() {
 
   // Close with bad arguments.
   int32_t result;
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   callback.WaitForResult(websocket_interface_->Close(
@@ -492,7 +505,7 @@ std::string TestWebSocket::TestInvalidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close with PP_VARTYPE_NULL.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   callback.WaitForResult(websocket_interface_->Close(
@@ -502,7 +515,7 @@ std::string TestWebSocket::TestInvalidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close with PP_VARTYPE_NULL and ongoing receive message.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   PP_Var receive_message_var;
@@ -526,7 +539,7 @@ std::string TestWebSocket::TestInvalidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close twice.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   result = websocket_interface_->Close(
@@ -563,7 +576,7 @@ std::string TestWebSocket::TestValidClose() {
 
   // Close.
   int32_t result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   callback.WaitForResult(websocket_interface_->Close(
@@ -574,7 +587,7 @@ std::string TestWebSocket::TestValidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close without code and reason.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   callback.WaitForResult(websocket_interface_->Close(
@@ -584,7 +597,7 @@ std::string TestWebSocket::TestValidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close with PP_VARTYPE_UNDEFINED.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   callback.WaitForResult(websocket_interface_->Close(
@@ -614,7 +627,7 @@ std::string TestWebSocket::TestValidClose() {
   // Close in closing.
   // The first close will be done successfully, then the second one failed with
   // with PP_ERROR_INPROGRESS immediately.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   result = websocket_interface_->Close(
@@ -630,7 +643,7 @@ std::string TestWebSocket::TestValidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close with ongoing receive message.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   PP_Var receive_message_var;
@@ -649,7 +662,7 @@ std::string TestWebSocket::TestValidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Close with PP_VARTYPE_UNDEFINED and ongoing receive message.
-  ws = Connect(GetFullURL(kEchoServerURL), &result, "");
+  ws = Connect(GetFullURL(kEchoServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   result = websocket_interface_->ReceiveMessage(
@@ -667,7 +680,8 @@ std::string TestWebSocket::TestValidClose() {
   core_interface_->ReleaseResource(ws);
 
   // Server initiated closing handshake.
-  ws = Connect(GetFullURL(kCloseWithCodeAndReasonServerURL), &result, "");
+  ws = Connect(
+      GetFullURL(kCloseWithCodeAndReasonServerURL), &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   // Text messsage "1000 bye" requests the server to initiate closing handshake
@@ -714,7 +728,8 @@ std::string TestWebSocket::TestGetProtocol() {
 std::string TestWebSocket::TestTextSendReceive() {
   // Connect to test echo server.
   int32_t connect_result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &connect_result, "");
+  PP_Resource ws =
+      Connect(GetFullURL(kEchoServerURL), &connect_result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, connect_result);
 
@@ -738,10 +753,60 @@ std::string TestWebSocket::TestTextSendReceive() {
   PASS();
 }
 
+// Run as a BACKGROUND test.
+std::string TestWebSocket::TestTextSendReceiveTwice() {
+  // Connect to test echo server.
+  int32_t connect_result;
+  PP_Resource ws =
+      Connect(GetFullURL(kEchoServerURL), &connect_result, std::string());
+  ASSERT_TRUE(ws);
+  ASSERT_EQ(PP_OK, connect_result);
+  pp::MessageLoop message_loop = pp::MessageLoop::GetCurrent();
+  pp::CompletionCallbackFactory<TestWebSocket> factory(this);
+
+  message_loop.PostWork(factory.NewCallback(&TestWebSocket::Send,
+                                            ws, std::string("hello")));
+  // When the server receives 'Goodbye', it closes the session.
+  message_loop.PostWork(factory.NewCallback(&TestWebSocket::Send,
+                                            ws, std::string("Goodbye")));
+  message_loop.PostQuit(false);
+  message_loop.Run();
+
+  TestCompletionCallback callback(instance_->pp_instance(), callback_type());
+  PP_Var received_message;
+  int32_t result = websocket_interface_->ReceiveMessage(
+      ws, &received_message, callback.GetCallback().pp_completion_callback());
+  ASSERT_EQ(PP_OK, result);
+  // Since we don't run the message loop, the callback will stay
+  // "pending and scheduled to run" state.
+
+  // Waiting for the connection close which will be done by the server.
+  while (true) {
+    PP_WebSocketReadyState ready_state =
+        websocket_interface_->GetReadyState(ws);
+    if (ready_state != PP_WEBSOCKETREADYSTATE_CONNECTING &&
+        ready_state != PP_WEBSOCKETREADYSTATE_OPEN) {
+      break;
+    }
+    PlatformSleep(100);  // 100ms
+  }
+
+  // Cleanup the message loop
+  message_loop.PostQuit(false);
+  message_loop.Run();
+
+  ASSERT_EQ(PP_OK, callback.result());
+  ASSERT_TRUE(AreEqualWithString(received_message, "hello"));
+  ReleaseVar(received_message);
+  core_interface_->ReleaseResource(ws);
+  PASS();
+}
+
 std::string TestWebSocket::TestBinarySendReceive() {
   // Connect to test echo server.
   int32_t connect_result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &connect_result, "");
+  PP_Resource ws =
+      Connect(GetFullURL(kEchoServerURL), &connect_result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, connect_result);
 
@@ -770,7 +835,8 @@ std::string TestWebSocket::TestBinarySendReceive() {
 std::string TestWebSocket::TestStressedSendReceive() {
   // Connect to test echo server.
   int32_t connect_result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &connect_result, "");
+  PP_Resource ws =
+      Connect(GetFullURL(kEchoServerURL), &connect_result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, connect_result);
 
@@ -830,7 +896,8 @@ std::string TestWebSocket::TestStressedSendReceive() {
 std::string TestWebSocket::TestBufferedAmount() {
   // Connect to test echo server.
   int32_t connect_result;
-  PP_Resource ws = Connect(GetFullURL(kEchoServerURL), &connect_result, "");
+  PP_Resource ws =
+      Connect(GetFullURL(kEchoServerURL), &connect_result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, connect_result);
 
@@ -870,7 +937,7 @@ std::string TestWebSocket::TestBufferedAmount() {
 
   // After connection closure, all sending requests fail and just increase
   // the bufferedAmount property.
-  PP_Var empty_string = CreateVarString("");
+  PP_Var empty_string = CreateVarString(std::string());
   result = websocket_interface_->SendMessage(ws, empty_string);
   ASSERT_EQ(PP_ERROR_FAILED, result);
   buffered_amount = websocket_interface_->GetBufferedAmount(ws);
@@ -913,7 +980,7 @@ std::string TestWebSocket::TestAbortCallsWithCallback() {
   ASSERT_EQ(PP_ERROR_ABORTED, connect_callback.result());
 
   // Test the behavior for Close().
-  ws = Connect(url, &result, "");
+  ws = Connect(url, &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   PP_Var reason_var = CreateVarString("abort");
@@ -930,7 +997,7 @@ std::string TestWebSocket::TestAbortCallsWithCallback() {
 
   // Test the behavior for ReceiveMessage().
   // Make sure the simplest case to wait for data which never arrives, here.
-  ws = Connect(url, &result, "");
+  ws = Connect(url, &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   PP_Var receive_var;
@@ -946,7 +1013,7 @@ std::string TestWebSocket::TestAbortCallsWithCallback() {
 
   // Release the resource in the aborting receive completion callback which is
   // introduced by calling Close().
-  ws = Connect(url, &result, "");
+  ws = Connect(url, &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   result = websocket_interface_->ReceiveMessage(
@@ -980,7 +1047,7 @@ std::string TestWebSocket::TestAbortSendMessageCall() {
 
   int32_t result;
   std::string url = GetFullURL(kEchoServerURL);
-  PP_Resource ws = Connect(url, &result, "");
+  PP_Resource ws = Connect(url, &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   result = websocket_interface_->SendMessage(ws, large_var);
@@ -995,7 +1062,7 @@ std::string TestWebSocket::TestAbortCloseCall() {
   // Release the resource in the close completion callback.
   int32_t result;
   std::string url = GetFullURL(kEchoServerURL);
-  PP_Resource ws = Connect(url, &result, "");
+  PP_Resource ws = Connect(url, &result, std::string());
   ASSERT_TRUE(ws);
   ASSERT_EQ(PP_OK, result);
   TestCompletionCallback close_callback(
@@ -1028,7 +1095,7 @@ std::string TestWebSocket::TestAbortReceiveMessageCall() {
   // released while the next message is going to be received.
   const int trial_count = 8;
   for (int trial = 1; trial <= trial_count; trial++) {
-    ws = Connect(url, &result, "");
+    ws = Connect(url, &result, std::string());
     ASSERT_TRUE(ws);
     ASSERT_EQ(PP_OK, result);
     for (int i = 0; i <= trial_count; ++i) {
@@ -1054,7 +1121,7 @@ std::string TestWebSocket::TestAbortReceiveMessageCall() {
   }
   // Same test, but the last receiving message is large message over 64KiB.
   for (int trial = 1; trial <= trial_count; trial++) {
-    ws = Connect(url, &result, "");
+    ws = Connect(url, &result, std::string());
     ASSERT_TRUE(ws);
     ASSERT_EQ(PP_OK, result);
     for (int i = 0; i <= trial_count; ++i) {
@@ -1096,18 +1163,19 @@ std::string TestWebSocket::TestCcInterfaces() {
   // Check uninitialized properties access.
   ASSERT_EQ(0, ws.GetBufferedAmount());
   ASSERT_EQ(0, ws.GetCloseCode());
-  ASSERT_TRUE(AreEqualWithString(ws.GetCloseReason().pp_var(), ""));
-  ASSERT_EQ(false, ws.GetCloseWasClean());
-  ASSERT_TRUE(AreEqualWithString(ws.GetExtensions().pp_var(), ""));
-  ASSERT_TRUE(AreEqualWithString(ws.GetProtocol().pp_var(), ""));
+  ASSERT_TRUE(AreEqualWithString(ws.GetCloseReason().pp_var(), std::string()));
+  ASSERT_FALSE(ws.GetCloseWasClean());
+  ASSERT_TRUE(AreEqualWithString(ws.GetExtensions().pp_var(), std::string()));
+  ASSERT_TRUE(AreEqualWithString(ws.GetProtocol().pp_var(), std::string()));
   ASSERT_EQ(PP_WEBSOCKETREADYSTATE_INVALID, ws.GetReadyState());
-  ASSERT_TRUE(AreEqualWithString(ws.GetURL().pp_var(), ""));
+  ASSERT_TRUE(AreEqualWithString(ws.GetURL().pp_var(), std::string()));
 
   // Check communication interfaces (connect, send, receive, and close).
   TestCompletionCallback connect_callback(
       instance_->pp_instance(), callback_type());
   connect_callback.WaitForResult(ws.Connect(
-      pp::Var(GetFullURL(kCloseServerURL)), NULL, 0U, connect_callback));
+      pp::Var(GetFullURL(kCloseServerURL)), NULL, 0U,
+              connect_callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(connect_callback);
   ASSERT_EQ(PP_OK, connect_callback.result());
 
@@ -1126,7 +1194,8 @@ std::string TestWebSocket::TestCcInterfaces() {
   TestCompletionCallback text_receive_callback(
       instance_->pp_instance(), callback_type());
   text_receive_callback.WaitForResult(
-      ws.ReceiveMessage(&text_receive_var, text_receive_callback));
+      ws.ReceiveMessage(&text_receive_var,
+                        text_receive_callback.GetCallback()));
   ASSERT_EQ(PP_OK, text_receive_callback.result());
   ASSERT_TRUE(
       AreEqualWithString(text_receive_var.pp_var(), text_message.c_str()));
@@ -1135,7 +1204,8 @@ std::string TestWebSocket::TestCcInterfaces() {
   TestCompletionCallback binary_receive_callback(
       instance_->pp_instance(), callback_type());
   binary_receive_callback.WaitForResult(
-      ws.ReceiveMessage(&binary_receive_var, binary_receive_callback));
+      ws.ReceiveMessage(&binary_receive_var,
+                        binary_receive_callback.GetCallback()));
   ASSERT_EQ(PP_OK, binary_receive_callback.result());
   ASSERT_TRUE(AreEqualWithBinary(binary_receive_var.pp_var(), binary));
 
@@ -1143,7 +1213,8 @@ std::string TestWebSocket::TestCcInterfaces() {
       instance_->pp_instance(), callback_type());
   std::string reason("bye");
   close_callback.WaitForResult(ws.Close(
-      PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE, pp::Var(reason), close_callback));
+      PP_WEBSOCKETSTATUSCODE_NORMAL_CLOSURE, pp::Var(reason),
+      close_callback.GetCallback()));
   CHECK_CALLBACK_BEHAVIOR(close_callback);
   ASSERT_EQ(PP_OK, close_callback.result());
 
@@ -1153,7 +1224,7 @@ std::string TestWebSocket::TestCcInterfaces() {
   ASSERT_TRUE(
       AreEqualWithString(ws.GetCloseReason().pp_var(), reason.c_str()));
   ASSERT_EQ(true, ws.GetCloseWasClean());
-  ASSERT_TRUE(AreEqualWithString(ws.GetProtocol().pp_var(), ""));
+  ASSERT_TRUE(AreEqualWithString(ws.GetProtocol().pp_var(), std::string()));
   ASSERT_EQ(PP_WEBSOCKETREADYSTATE_CLOSED, ws.GetReadyState());
   ASSERT_TRUE(AreEqualWithString(
       ws.GetURL().pp_var(), GetFullURL(kCloseServerURL).c_str()));
@@ -1258,7 +1329,8 @@ std::string TestWebSocket::TestUtilityValidConnect() {
   const std::vector<WebSocketEvent>& events = websocket.GetSeenEvents();
   ASSERT_EQ(1U, events.size());
   ASSERT_EQ(WebSocketEvent::EVENT_OPEN, events[0].event_type);
-  ASSERT_TRUE(AreEqualWithString(websocket.GetExtensions().pp_var(), ""));
+  ASSERT_TRUE(
+      AreEqualWithString(websocket.GetExtensions().pp_var(), std::string()));
 
   PASS();
 }
@@ -1350,7 +1422,7 @@ std::string TestWebSocket::TestUtilityValidClose() {
     ASSERT_EQ(PP_ERROR_INPROGRESS, result);
     websocket.WaitForClosed();
     const std::vector<WebSocketEvent>& events = websocket.GetSeenEvents();
-    ASSERT_TRUE(events.size() == 2 || events.size() == 3)
+    ASSERT_TRUE(events.size() == 2 || events.size() == 3);
     int index = 0;
     if (events.size() == 3)
       ASSERT_EQ(WebSocketEvent::EVENT_OPEN, events[index++].event_type);
@@ -1486,7 +1558,7 @@ std::string TestWebSocket::TestUtilityBufferedAmount() {
 
   // After connection closure, all sending requests fail and just increase
   // the bufferedAmount property.
-  result = websocket.Send(pp::Var(std::string("")));
+  result = websocket.Send(pp::Var(std::string()));
   ASSERT_EQ(PP_ERROR_FAILED, result);
   buffered_amount = websocket.GetBufferedAmount();
   ASSERT_EQ(base_buffered_amount + kMessageFrameOverhead, buffered_amount);

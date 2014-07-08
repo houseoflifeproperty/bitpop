@@ -14,14 +14,14 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "base/basictypes.h"
+#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class FacebookChatManager;
 class Profile;
 
-class FacebookChatManagerServiceFactory : public ProfileKeyedServiceFactory {
+class FacebookChatManagerServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static FacebookChatManager* GetForProfile(Profile* profile);
 
@@ -34,8 +34,8 @@ class FacebookChatManagerServiceFactory : public ProfileKeyedServiceFactory {
   virtual ~FacebookChatManagerServiceFactory();
 
   // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-    Profile* profile) const OVERRIDE;
+  virtual KeyedService* BuildServiceInstanceFor(
+    content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(FacebookChatManagerServiceFactory);
 };

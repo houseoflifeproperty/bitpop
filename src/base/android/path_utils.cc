@@ -7,7 +7,7 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 
 #include "jni/PathUtils_jni.h"
 
@@ -18,6 +18,15 @@ bool GetDataDirectory(FilePath* result) {
   JNIEnv* env = AttachCurrentThread();
   ScopedJavaLocalRef<jstring> path =
       Java_PathUtils_getDataDirectory(env, GetApplicationContext());
+  FilePath data_path(ConvertJavaStringToUTF8(path));
+  *result = data_path;
+  return true;
+}
+
+bool GetDatabaseDirectory(FilePath* result) {
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jstring> path =
+      Java_PathUtils_getDatabaseDirectory(env, GetApplicationContext());
   FilePath data_path(ConvertJavaStringToUTF8(path));
   *result = data_path;
   return true;

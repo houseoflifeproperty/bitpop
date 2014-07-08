@@ -6,7 +6,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/address_list.h"
 #include "net/base/completion_callback.h"
 #include "net/base/io_buffer.h"
@@ -111,7 +111,7 @@ class PseudoTcpAdapter::Core : public cricket::IPseudoTcpNotify,
 
 
 PseudoTcpAdapter::Core::Core(net::Socket* socket)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(pseudo_tcp_(this, 0)),
+    : pseudo_tcp_(this, 0),
       socket_(socket),
       write_waits_for_send_(false),
       waiting_write_position_(false),
@@ -360,16 +360,17 @@ cricket::IPseudoTcpNotify::WriteResult PseudoTcpAdapter::Core::TcpWritePacket(
   // send exactly as many bytes as we requested, or fail.
   int result;
   if (socket_.get()) {
-    result = socket_->Write(write_buffer, len,
-                            base::Bind(&PseudoTcpAdapter::Core::OnWritten,
-                                       base::Unretained(this)));
+    result = socket_->Write(
+        write_buffer.get(),
+        len,
+        base::Bind(&PseudoTcpAdapter::Core::OnWritten, base::Unretained(this)));
   } else {
     result = net::ERR_CONNECTION_CLOSED;
   }
   if (result == net::ERR_IO_PENDING) {
     socket_write_pending_ = true;
     return IPseudoTcpNotify::WR_SUCCESS;
-  } if (result == net::ERR_MSG_TOO_BIG) {
+  } else if (result == net::ERR_MSG_TOO_BIG) {
     return IPseudoTcpNotify::WR_TOO_LARGE;
   } else if (result < 0) {
     return IPseudoTcpNotify::WR_FAIL;
@@ -379,14 +380,15 @@ cricket::IPseudoTcpNotify::WriteResult PseudoTcpAdapter::Core::TcpWritePacket(
 }
 
 void PseudoTcpAdapter::Core::DoReadFromSocket() {
-  if (!socket_read_buffer_)
+  if (!socket_read_buffer_.get())
     socket_read_buffer_ = new net::IOBuffer(kReadBufferSize);
 
   int result = 1;
   while (socket_.get() && result > 0) {
-    result = socket_->Read(socket_read_buffer_, kReadBufferSize,
-                           base::Bind(&PseudoTcpAdapter::Core::OnRead,
-                                      base::Unretained(this)));
+    result = socket_->Read(
+        socket_read_buffer_.get(),
+        kReadBufferSize,
+        base::Bind(&PseudoTcpAdapter::Core::OnRead, base::Unretained(this)));
     if (result != net::ERR_IO_PENDING)
       HandleReadResults(result);
   }
@@ -482,18 +484,18 @@ int PseudoTcpAdapter::Write(net::IOBuffer* buffer, int buffer_size,
   return core_->Write(buffer, buffer_size, callback);
 }
 
-bool PseudoTcpAdapter::SetReceiveBufferSize(int32 size) {
+int PseudoTcpAdapter::SetReceiveBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
 
   core_->SetReceiveBufferSize(size);
-  return false;
+  return net::OK;
 }
 
-bool PseudoTcpAdapter::SetSendBufferSize(int32 size) {
+int PseudoTcpAdapter::SetSendBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
 
   core_->SetSendBufferSize(size);
-  return false;
+  return net::OK;
 }
 
 int PseudoTcpAdapter::Connect(const net::CompletionCallback& callback) {
@@ -561,16 +563,6 @@ bool PseudoTcpAdapter::WasEverUsed() const {
 bool PseudoTcpAdapter::UsingTCPFastOpen() const {
   DCHECK(CalledOnValidThread());
   return false;
-}
-
-int64 PseudoTcpAdapter::NumBytesRead() const {
-  DCHECK(CalledOnValidThread());
-  return -1;
-}
-
-base::TimeDelta PseudoTcpAdapter::GetConnectTimeMicros() const {
-  DCHECK(CalledOnValidThread());
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool PseudoTcpAdapter::WasNpnNegotiated() const {

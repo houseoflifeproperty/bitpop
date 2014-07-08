@@ -10,15 +10,18 @@
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/ssl_cert_request_info.h"
+#include "net/ssl/ssl_cert_request_info.h"
 
 namespace net {
+class ClientCertStore;
 class HttpNetworkSession;
 class URLRequest;
 class X509Certificate;
 }  // namespace net
 
 namespace content {
+
+class ResourceContext;
 
 // This class handles the approval and selection of a certificate for SSL client
 // authentication by the user.
@@ -28,7 +31,8 @@ class CONTENT_EXPORT SSLClientAuthHandler
     : public base::RefCountedThreadSafe<
           SSLClientAuthHandler, BrowserThread::DeleteOnIOThread> {
  public:
-  SSLClientAuthHandler(net::URLRequest* request,
+  SSLClientAuthHandler(scoped_ptr<net::ClientCertStore> client_cert_store,
+                       net::URLRequest* request,
                        net::SSLCertRequestInfo* cert_request_info);
 
   // Selects a certificate and resumes the URL request with that certificate.
@@ -53,13 +57,16 @@ class CONTENT_EXPORT SSLClientAuthHandler
   friend class BrowserThread;
   friend class base::DeleteHelper<SSLClientAuthHandler>;
 
+  // Called when ClientCertStore is done retrieving the cert list.
+  void DidGetClientCerts();
+
   // Notifies that the user has selected a cert.
   // Called on the IO thread.
   void DoCertificateSelected(net::X509Certificate* cert);
 
   // Selects a client certificate on the UI thread.
   void DoSelectCertificate(int render_process_host_id,
-                           int render_view_host_id);
+                           int render_frame_host_id);
 
   // The net::URLRequest that triggered this client auth.
   net::URLRequest* request_;
@@ -69,6 +76,8 @@ class CONTENT_EXPORT SSLClientAuthHandler
 
   // The certs to choose from.
   scoped_refptr<net::SSLCertRequestInfo> cert_request_info_;
+
+  scoped_ptr<net::ClientCertStore> client_cert_store_;
 
   DISALLOW_COPY_AND_ASSIGN(SSLClientAuthHandler);
 };

@@ -10,24 +10,22 @@
 
 #include <sddl.h>
 
-#include "base/base_switches.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/process_util.h"
 #include "base/rand_util.h"
 #include "base/single_thread_task_runner.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_channel_proxy.h"
 #include "ipc/ipc_message.h"
 #include "remoting/base/typed_buffer.h"
-#include "remoting/host/host_exit_codes.h"
 #include "remoting/host/ipc_constants.h"
+#include "remoting/host/ipc_util.h"
 #include "remoting/host/win/launch_process_with_token.h"
 #include "remoting/host/win/security_descriptor.h"
 #include "remoting/host/win/window_station_and_desktop.h"
@@ -39,11 +37,6 @@ namespace remoting {
 
 namespace {
 
-// The command line parameters that should be copied from the service's command
-// line to the host process.
-const char* kCopiedSwitchNames[] = {
-    "host-config", switches::kV, switches::kVModule };
-
 // The security descriptors below are used to lock down access to the worker
 // process launched by UnprivilegedProcessDelegate. UnprivilegedProcessDelegate
 // assumes that it runs under SYSTEM. The worker process is launched under
@@ -51,12 +44,6 @@ const char* kCopiedSwitchNames[] = {
 // supported by the OS, the worker process is started at low integrity level.
 // UnprivilegedProcessDelegate replaces the first printf parameter in
 // the strings below by the logon SID assigned to the worker process.
-
-// Security descriptor used to protect the named pipe in between
-// CreateNamedPipe() and CreateFile() calls before it is passed to the network
-// process. It gives full access to LocalSystem and denies access by anyone
-// else.
-const char kDaemonIpcSd[] = "O:SYG:SYD:(A;;GA;;;SY)";
 
 // Security descriptor of the desktop the worker process attaches to. It gives
 // SYSTEM and the logon SID full access to the desktop.
@@ -87,11 +74,12 @@ const char kWorkerThreadSd[] = "O:SYG:SYD:(A;;GA;;;SY)(A;;0x120801;;;BA)";
 // process.
 bool CreateRestrictedToken(ScopedHandle* token_out) {
   // Create a token representing LocalService account.
-  ScopedHandle token;
+  HANDLE temp_handle;
   if (!LogonUser(L"LocalService", L"NT AUTHORITY", NULL, LOGON32_LOGON_SERVICE,
-                 LOGON32_PROVIDER_DEFAULT, token.Receive())) {
+                 LOGON32_PROVIDER_DEFAULT, &temp_handle)) {
     return false;
   }
+  ScopedHandle token(temp_handle);
 
   sandbox::RestrictedToken restricted_token;
   if (restricted_token.Init(token) != ERROR_SUCCESS)
@@ -110,8 +98,12 @@ bool CreateRestrictedToken(ScopedHandle* token_out) {
   }
 
   // Return the resulting token.
-  return restricted_token.GetRestrictedTokenHandle(token_out->Receive()) ==
-      ERROR_SUCCESS;
+  if (restricted_token.GetRestrictedTokenHandle(&temp_handle) ==
+      ERROR_SUCCESS) {
+    token_out->Set(temp_handle);
+    return true;
+  }
+  return false;
 }
 
 // Creates a window station with a given name and the default desktop giving
@@ -174,7 +166,7 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
 
   WindowStationAndDesktop handles;
   handles.SetWindowStation(CreateWindowStation(
-      UTF8ToUTF16(window_station_name).c_str(), window_station_flags,
+      base::UTF8ToUTF16(window_station_name).c_str(), window_station_flags,
       desired_access, &security_attributes));
   if (!handles.window_station()) {
     LOG_GETLASTERROR(ERROR) << "CreateWindowStation() failed";
@@ -220,75 +212,35 @@ bool CreateWindowStationAndDesktop(ScopedSid logon_sid,
 }  // namespace
 
 UnprivilegedProcessDelegate::UnprivilegedProcessDelegate(
-    scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-    const FilePath& binary_path)
-    : main_task_runner_(main_task_runner),
-      io_task_runner_(io_task_runner),
-      binary_path_(binary_path) {
+    scoped_ptr<CommandLine> target_command)
+    : io_task_runner_(io_task_runner),
+      event_handler_(NULL),
+      target_command_(target_command.Pass()) {
 }
 
 UnprivilegedProcessDelegate::~UnprivilegedProcessDelegate() {
-  KillProcess(CONTROL_C_EXIT);
+  DCHECK(CalledOnValidThread());
+  DCHECK(!channel_);
+  DCHECK(!worker_process_.IsValid());
 }
 
-bool UnprivilegedProcessDelegate::Send(IPC::Message* message) {
-  DCHECK(main_task_runner_->BelongsToCurrentThread());
+void UnprivilegedProcessDelegate::LaunchProcess(
+    WorkerProcessLauncher* event_handler) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!event_handler_);
 
-  return channel_->Send(message);
-}
-
-DWORD UnprivilegedProcessDelegate::GetProcessId() const {
-  if (worker_process_.IsValid()) {
-    return ::GetProcessId(worker_process_);
-  } else {
-    return 0;
-  }
-}
-
-bool UnprivilegedProcessDelegate::IsPermanentError(int failure_count) const {
-  // Get exit code of the worker process if it is available.
-  DWORD exit_code = CONTROL_C_EXIT;
-  if (worker_process_.IsValid()) {
-    if (!::GetExitCodeProcess(worker_process_, &exit_code)) {
-      LOG_GETLASTERROR(INFO)
-          << "Failed to query the exit code of the worker process";
-      exit_code = CONTROL_C_EXIT;
-    }
-  }
-
-  // Stop trying to restart the worker process if it exited due to
-  // misconfiguration.
-  return (kMinPermanentErrorExitCode <= exit_code &&
-      exit_code <= kMaxPermanentErrorExitCode);
-}
-
-void UnprivilegedProcessDelegate::KillProcess(DWORD exit_code) {
-  DCHECK(main_task_runner_->BelongsToCurrentThread());
-
-  channel_.reset();
-
-  if (worker_process_.IsValid()) {
-    TerminateProcess(worker_process_, exit_code);
-  }
-}
-
-bool UnprivilegedProcessDelegate::LaunchProcess(
-    IPC::Listener* delegate,
-    ScopedHandle* process_exit_event_out) {
-  DCHECK(main_task_runner_->BelongsToCurrentThread());
+  event_handler_ = event_handler;
 
   scoped_ptr<IPC::ChannelProxy> server;
-
-  // Generate a unique name for the channel.
-  std::string channel_name = IPC::Channel::GenerateUniqueRandomChannelID();
 
   // Create a restricted token that will be used to run the worker process.
   ScopedHandle token;
   if (!CreateRestrictedToken(&token)) {
     LOG_GETLASTERROR(ERROR)
         << "Failed to create a restricted LocalService token";
-    return false;
+    ReportFatalError();
+    return;
   }
 
   // Determine our logon SID, so we can grant it access to our window station
@@ -296,7 +248,8 @@ bool UnprivilegedProcessDelegate::LaunchProcess(
   ScopedSid logon_sid = GetLogonSid(token);
   if (!logon_sid) {
     LOG_GETLASTERROR(ERROR) << "Failed to retrieve the logon SID";
-    return false;
+    ReportFatalError();
+    return;
   }
 
   // Create the process and thread security descriptors.
@@ -304,7 +257,8 @@ bool UnprivilegedProcessDelegate::LaunchProcess(
   ScopedSd thread_sd = ConvertSddlToSd(kWorkerThreadSd);
   if (!process_sd || !thread_sd) {
     LOG_GETLASTERROR(ERROR) << "Failed to create a security descriptor";
-    return false;
+    ReportFatalError();
+    return;
   }
 
   SECURITY_ATTRIBUTES process_attributes;
@@ -317,44 +271,42 @@ bool UnprivilegedProcessDelegate::LaunchProcess(
   thread_attributes.lpSecurityDescriptor = thread_sd.get();
   thread_attributes.bInheritHandle = FALSE;
 
+  ScopedHandle worker_process;
   {
     // Take a lock why any inheritable handles are open to make sure that only
     // one process inherits them.
     base::AutoLock lock(g_inherit_handles_lock.Get());
 
     // Create a connected IPC channel.
-    ScopedHandle client;
-    if (!CreateConnectedIpcChannel(channel_name, kDaemonIpcSd, io_task_runner_,
-                                   delegate, &client, &server)) {
-      return false;
+    HANDLE temp_handle;
+    if (!CreateConnectedIpcChannel(io_task_runner_, this, &temp_handle,
+                                   &server)) {
+      ReportFatalError();
+      return;
     }
+    ScopedHandle client(temp_handle);
 
     // Convert the handle value into a decimal integer. Handle values are 32bit
     // even on 64bit platforms.
     std::string pipe_handle = base::StringPrintf(
         "%d", reinterpret_cast<ULONG_PTR>(client.Get()));
 
-    // Create the command line passing the name of the IPC channel to use and
-    // copying known switches from the caller's command line.
-    CommandLine command_line(binary_path_);
+    // Pass the IPC channel via the command line.
+    CommandLine command_line(target_command_->argv());
     command_line.AppendSwitchASCII(kDaemonPipeSwitchName, pipe_handle);
-    command_line.CopySwitchesFrom(*CommandLine::ForCurrentProcess(),
-                                  kCopiedSwitchNames,
-                                  arraysize(kCopiedSwitchNames));
-
 
     // Create our own window station and desktop accessible by |logon_sid|.
     WindowStationAndDesktop handles;
     if (!CreateWindowStationAndDesktop(logon_sid.Pass(), &handles)) {
       LOG_GETLASTERROR(ERROR)
           << "Failed to create a window station and desktop";
-      return false;
+      ReportFatalError();
+      return;
     }
 
     // Try to launch the worker process. The launched process inherits
     // the window station, desktop and pipe handles, created above.
     ScopedHandle worker_thread;
-    worker_process_.Close();
     if (!LaunchProcessWithToken(command_line.GetProgram(),
                                 command_line.GetCommandLineString(),
                                 token,
@@ -363,30 +315,109 @@ bool UnprivilegedProcessDelegate::LaunchProcess(
                                 true,
                                 0,
                                 NULL,
-                                &worker_process_,
+                                &worker_process,
                                 &worker_thread)) {
-      return false;
+      ReportFatalError();
+      return;
     }
   }
 
-  // Return a handle that the caller can wait on to get notified when
-  // the process terminates.
-  ScopedHandle process_exit_event;
+  channel_ = server.Pass();
+  ReportProcessLaunched(worker_process.Pass());
+}
+
+void UnprivilegedProcessDelegate::Send(IPC::Message* message) {
+  DCHECK(CalledOnValidThread());
+
+  if (channel_) {
+    channel_->Send(message);
+  } else {
+    delete message;
+  }
+}
+
+void UnprivilegedProcessDelegate::CloseChannel() {
+  DCHECK(CalledOnValidThread());
+
+  channel_.reset();
+}
+
+void UnprivilegedProcessDelegate::KillProcess() {
+  DCHECK(CalledOnValidThread());
+
+  channel_.reset();
+  event_handler_ = NULL;
+
+  if (worker_process_.IsValid()) {
+    TerminateProcess(worker_process_, CONTROL_C_EXIT);
+    worker_process_.Close();
+  }
+}
+
+bool UnprivilegedProcessDelegate::OnMessageReceived(
+    const IPC::Message& message) {
+  DCHECK(CalledOnValidThread());
+
+  return event_handler_->OnMessageReceived(message);
+}
+
+void UnprivilegedProcessDelegate::OnChannelConnected(int32 peer_pid) {
+  DCHECK(CalledOnValidThread());
+
+  DWORD pid = GetProcessId(worker_process_);
+  if (pid != static_cast<DWORD>(peer_pid)) {
+    LOG(ERROR) << "The actual client PID " << pid
+               << " does not match the one reported by the client: "
+               << peer_pid;
+    ReportFatalError();
+    return;
+  }
+
+  event_handler_->OnChannelConnected(peer_pid);
+}
+
+void UnprivilegedProcessDelegate::OnChannelError() {
+  DCHECK(CalledOnValidThread());
+
+  event_handler_->OnChannelError();
+}
+
+void UnprivilegedProcessDelegate::ReportFatalError() {
+  DCHECK(CalledOnValidThread());
+
+  channel_.reset();
+
+  WorkerProcessLauncher* event_handler = event_handler_;
+  event_handler_ = NULL;
+  event_handler->OnFatalError();
+}
+
+void UnprivilegedProcessDelegate::ReportProcessLaunched(
+    base::win::ScopedHandle worker_process) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(!worker_process_.IsValid());
+
+  worker_process_ = worker_process.Pass();
+
+  // Report a handle that can be used to wait for the worker process completion,
+  // query information about the process and duplicate handles.
+  DWORD desired_access =
+      SYNCHRONIZE | PROCESS_DUP_HANDLE | PROCESS_QUERY_INFORMATION;
+  HANDLE temp_handle;
   if (!DuplicateHandle(GetCurrentProcess(),
                        worker_process_,
                        GetCurrentProcess(),
-                       process_exit_event.Receive(),
-                       SYNCHRONIZE,
+                       &temp_handle,
+                       desired_access,
                        FALSE,
                        0)) {
     LOG_GETLASTERROR(ERROR) << "Failed to duplicate a handle";
-    KillProcess(CONTROL_C_EXIT);
-    return false;
+    ReportFatalError();
+    return;
   }
+  ScopedHandle limited_handle(temp_handle);
 
-  channel_ = server.Pass();
-  *process_exit_event_out = process_exit_event.Pass();
-  return true;
+  event_handler_->OnProcessLaunched(limited_handle.Pass());
 }
 
 } // namespace remoting

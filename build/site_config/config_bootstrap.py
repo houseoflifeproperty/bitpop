@@ -9,6 +9,8 @@ without loading any buildbot or twisted code.
 
 import os
 
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # Override config_default with a config_private file.
 try:
   import config_private # pylint: disable=F0401
@@ -26,7 +28,6 @@ class Master(config_private.Master):
 
   trunk_url_src = trunk_url + '/src'
   trunk_url_tools = trunk_url + '/tools'
-  trunk_url_o3d = trunk_url + '/o3d'
   nacl_url = config_private.Master.nacl_trunk_url + '/src/native_client'
   nacl_sdk_root_url = 'https://nativeclient-sdk.googlecode.com/svn'
   nacl_ports_trunk_url = 'https://naclports.googlecode.com/svn/trunk'
@@ -45,16 +46,18 @@ class Master(config_private.Master):
   es5conform_root_url =  "https://es5conform.svn.codeplex.com/svn/"
   es5conform_revision = 62998
 
-  dart_url = 'http://dart.googlecode.com/svn'
+  dart_url = config_private.Master.googlecode_url % 'dart'
   dart_bleeding = dart_url + '/branches/bleeding_edge'
   dart_trunk = dart_url + '/trunk'
+
+  oilpan_url = (config_private.Master.webkit_root_url + '/branches/oilpan')
 
   skia_url = 'http://skia.googlecode.com/svn/'
 
   syzygy_url = 'http://sawbuck.googlecode.com/svn/'
-  syzygy_internal_url = config_private.Master.syzygy_internal_url
 
-  webrtc_url = 'http://webrtc.googlecode.com/svn/'
+  webrtc_url = config_private.Master.googlecode_url % 'webrtc'
+  libyuv_url = 'http://libyuv.googlecode.com/svn'
 
   # Default target platform if none was given to the factory.
   default_platform = 'win32'
@@ -98,7 +101,6 @@ class Master(config_private.Master):
     if not getattr(Master, 'bot_password', None):
       # If the bot_password has been requested, the file is required to exist
       # if not overriden in config_private.
-      bot_password_path = os.path.join(os.path.dirname(__file__),
-                                       '.bot_password')
+      bot_password_path = os.path.join(BASE_DIR, '.bot_password')
       Master.bot_password = open(bot_password_path).read().strip('\n\r')
     return Master.bot_password

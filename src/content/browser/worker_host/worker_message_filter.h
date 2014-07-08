@@ -13,18 +13,15 @@ class ResourceDispatcherHost;
 struct ViewHostMsg_CreateWorker_Params;
 
 namespace content {
+class MessagePortMessageFilter;
 class ResourceContext;
 
 class WorkerMessageFilter : public BrowserMessageFilter {
  public:
-  typedef base::Callback<int(void)> NextRoutingIDCallback;
-
-  // |next_routing_id| is owned by this object.  It can be used up until
-  // OnChannelClosing.
   WorkerMessageFilter(int render_process_id,
                       ResourceContext* resource_context,
                       const WorkerStoragePartition& partition,
-                      const NextRoutingIDCallback& callback);
+                      MessagePortMessageFilter* message_port_filter);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
@@ -34,28 +31,24 @@ class WorkerMessageFilter : public BrowserMessageFilter {
   int GetNextRoutingID();
   int render_process_id() const { return render_process_id_; }
 
+  MessagePortMessageFilter* message_port_message_filter() const {
+    return message_port_message_filter_;
+  }
+
  private:
   virtual ~WorkerMessageFilter();
 
   // Message handlers.
   void OnCreateWorker(const ViewHostMsg_CreateWorker_Params& params,
                       int* route_id);
-  void OnLookupSharedWorker(const ViewHostMsg_CreateWorker_Params& params,
-                           bool* exists,
-                           int* route_id,
-                           bool* url_error);
   void OnForwardToWorker(const IPC::Message& message);
   void OnDocumentDetached(unsigned long long document_id);
-  void OnCreateMessagePort(int* route_id, int* message_port_id);
 
   int render_process_id_;
   ResourceContext* const resource_context_;
   WorkerStoragePartition partition_;
 
-  // This is guaranteed to be valid until OnChannelClosing is closed, and it's
-  // not used after.
-  NextRoutingIDCallback next_routing_id_;
-
+  MessagePortMessageFilter* message_port_message_filter_;
   DISALLOW_IMPLICIT_CONSTRUCTORS(WorkerMessageFilter);
 };
 

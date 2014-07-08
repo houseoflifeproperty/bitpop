@@ -6,8 +6,8 @@
 
 #include "base/base64.h"
 #include "base/logging.h"
-#include "crypto/rsa_private_key.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/ssl_hmac_channel_authenticator.h"
 #include "third_party/libjingle/source/talk/xmllite/xmlelement.h"
 
@@ -45,13 +45,13 @@ scoped_ptr<Authenticator> V2Authenticator::CreateForClient(
 // static
 scoped_ptr<Authenticator> V2Authenticator::CreateForHost(
     const std::string& local_cert,
-    const crypto::RSAPrivateKey& local_private_key,
+    scoped_refptr<RsaKeyPair> key_pair,
     const std::string& shared_secret,
     Authenticator::State initial_state) {
   scoped_ptr<V2Authenticator> result(new V2Authenticator(
       P224EncryptedKeyExchange::kPeerTypeServer, shared_secret, initial_state));
   result->local_cert_ = local_cert;
-  result->local_private_key_.reset(local_private_key.Copy());
+  result->local_key_pair_ = key_pair;
   return scoped_ptr<Authenticator>(result.Pass());
 }
 
@@ -62,6 +62,7 @@ V2Authenticator::V2Authenticator(
     : certificate_sent_(false),
       key_exchange_impl_(type, shared_secret),
       state_(initial_state),
+      started_(false),
       rejection_reason_(INVALID_CREDENTIALS) {
   pending_messages_.push(key_exchange_impl_.GetMessage());
 }
@@ -75,12 +76,22 @@ Authenticator::State V2Authenticator::state() const {
   return state_;
 }
 
+bool V2Authenticator::started() const {
+  return started_;
+}
+
 Authenticator::RejectionReason V2Authenticator::rejection_reason() const {
   DCHECK_EQ(state(), REJECTED);
   return rejection_reason_;
 }
 
-void V2Authenticator::ProcessMessage(const buzz::XmlElement* message) {
+void V2Authenticator::ProcessMessage(const buzz::XmlElement* message,
+                                     const base::Closure& resume_callback) {
+  ProcessMessageInternal(message);
+  resume_callback.Run();
+}
+
+void V2Authenticator::ProcessMessageInternal(const buzz::XmlElement* message) {
   DCHECK_EQ(state(), WAITING_MESSAGE);
 
   // Parse the certificate.
@@ -121,6 +132,7 @@ void V2Authenticator::ProcessMessage(const buzz::XmlElement* message) {
 
     P224EncryptedKeyExchange::Result result =
         key_exchange_impl_.ProcessMessage(spake_message);
+    started_ = true;
     switch (result) {
       case P224EncryptedKeyExchange::kResultPending:
         pending_messages_.push(key_exchange_impl_.GetMessage());
@@ -137,7 +149,6 @@ void V2Authenticator::ProcessMessage(const buzz::XmlElement* message) {
         return;
     }
   }
-
   state_ = MESSAGE_READY;
 }
 
@@ -150,10 +161,7 @@ scoped_ptr<buzz::XmlElement> V2Authenticator::GetNextMessage() {
   while (!pending_messages_.empty()) {
     const std::string& spake_message = pending_messages_.front();
     std::string base64_message;
-    if (!base::Base64Encode(spake_message, &base64_message)) {
-      LOG(DFATAL) << "Cannot perform base64 encode on certificate";
-      continue;
-    }
+    base::Base64Encode(spake_message, &base64_message);
 
     buzz::XmlElement* eke_tag = new buzz::XmlElement(kEkeTag);
     eke_tag->SetBodyText(base64_message);
@@ -165,9 +173,7 @@ scoped_ptr<buzz::XmlElement> V2Authenticator::GetNextMessage() {
   if (!local_cert_.empty() && !certificate_sent_) {
     buzz::XmlElement* certificate_tag = new buzz::XmlElement(kCertificateTag);
     std::string base64_cert;
-    if (!base::Base64Encode(local_cert_, &base64_cert)) {
-      LOG(DFATAL) << "Cannot perform base64 encode on certificate";
-    }
+    base::Base64Encode(local_cert_, &base64_cert);
     certificate_tag->SetBodyText(base64_cert);
     message->AddElement(certificate_tag);
     certificate_sent_ = true;
@@ -187,7 +193,7 @@ V2Authenticator::CreateChannelAuthenticator() const {
   if (is_host_side()) {
     return scoped_ptr<ChannelAuthenticator>(
         SslHmacChannelAuthenticator::CreateForHost(
-            local_cert_, local_private_key_.get(), auth_key_).Pass());
+            local_cert_, local_key_pair_, auth_key_).Pass());
   } else {
     return scoped_ptr<ChannelAuthenticator>(
         SslHmacChannelAuthenticator::CreateForClient(
@@ -196,7 +202,7 @@ V2Authenticator::CreateChannelAuthenticator() const {
 }
 
 bool V2Authenticator::is_host_side() const {
-  return local_private_key_.get() != NULL;
+  return local_key_pair_.get() != NULL;
 }
 
 }  // namespace protocol

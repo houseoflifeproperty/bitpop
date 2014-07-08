@@ -5,16 +5,16 @@
 #ifndef UI_BASE_COCOA_FIND_PASTEBOARD_H_
 #define UI_BASE_COCOA_FIND_PASTEBOARD_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 #ifdef __OBJC__
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "ui/base/ui_export.h"
+#include "base/mac/scoped_nsobject.h"
+#include "ui/base/ui_base_export.h"
 
-UI_EXPORT extern NSString* kFindPasteboardChangedNotification;
+UI_BASE_EXPORT extern NSString* kFindPasteboardChangedNotification;
 
 // Manages the find pasteboard. Use this to copy text to the find pasteboard,
 // to get the text currently on the find pasteboard, and to receive
@@ -25,9 +25,10 @@ UI_EXPORT extern NSString* kFindPasteboardChangedNotification;
 // This is not thread-safe and must be used on the main thread.
 //
 // This is supposed to be a singleton.
+UI_BASE_EXPORT
 @interface FindPasteboard : NSObject {
  @private
-  scoped_nsobject<NSString> findText_;
+  base::scoped_nsobject<NSString> findText_;
 }
 
 // Returns the singleton instance of this class.
@@ -53,6 +54,6 @@ UI_EXPORT extern NSString* kFindPasteboardChangedNotification;
 #endif  // __OBJC__
 
 // Also provide a c++ interface
-UI_EXPORT string16 GetFindPboardText();
+UI_BASE_EXPORT base::string16 GetFindPboardText();
 
 #endif  // UI_BASE_COCOA_FIND_PASTEBOARD_H_

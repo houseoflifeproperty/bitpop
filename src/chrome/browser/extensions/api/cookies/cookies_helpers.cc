@@ -11,8 +11,8 @@
 #include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/cookies/cookies_api_constants.h"
 #include "chrome/browser/extensions/extension_tab_util.h"
@@ -20,12 +20,13 @@
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/extensions/api/cookies.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_contents.h"
-#include "googleurl/src/gurl.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_util.h"
+#include "url/gurl.h"
 
 using extensions::api::cookies::Cookie;
 using extensions::api::cookies::CookieStore;
@@ -68,14 +69,15 @@ scoped_ptr<Cookie> CreateCookie(
 
   // A cookie is a raw byte sequence. By explicitly parsing it as UTF-8, we
   // apply error correction, so the string can be safely passed to the renderer.
-  cookie->name = UTF16ToUTF8(UTF8ToUTF16(canonical_cookie.Name()));
-  cookie->value = UTF16ToUTF8(UTF8ToUTF16(canonical_cookie.Value()));
+  cookie->name = base::UTF16ToUTF8(base::UTF8ToUTF16(canonical_cookie.Name()));
+  cookie->value =
+      base::UTF16ToUTF8(base::UTF8ToUTF16(canonical_cookie.Value()));
   cookie->domain = canonical_cookie.Domain();
   cookie->host_only = net::cookie_util::DomainIsHostOnly(
       canonical_cookie.Domain());
   // A non-UTF8 path is invalid, so we just replace it with an empty string.
-  cookie->path = IsStringUTF8(canonical_cookie.Path()) ?
-      canonical_cookie.Path() : "";
+  cookie->path = base::IsStringUTF8(canonical_cookie.Path()) ?
+      canonical_cookie.Path() : std::string();
   cookie->secure = canonical_cookie.IsSecure();
   cookie->http_only = canonical_cookie.IsHttpOnly();
   cookie->session = !canonical_cookie.IsPersistent();
@@ -89,10 +91,10 @@ scoped_ptr<Cookie> CreateCookie(
 }
 
 scoped_ptr<CookieStore> CreateCookieStore(Profile* profile,
-                                          ListValue* tab_ids) {
+                                          base::ListValue* tab_ids) {
   DCHECK(profile);
   DCHECK(tab_ids);
-  DictionaryValue dict;
+  base::DictionaryValue dict;
   dict.SetString(keys::kIdKey, GetStoreIdFromProfile(profile));
   dict.Set(keys::kTabIdsKey, tab_ids);
 
@@ -118,7 +120,7 @@ void GetCookieListFromStore(
 GURL GetURLFromCanonicalCookie(const net::CanonicalCookie& cookie) {
   const std::string& domain_key = cookie.Domain();
   const std::string scheme =
-      cookie.IsSecure() ? chrome::kHttpsScheme : chrome::kHttpScheme;
+      cookie.IsSecure() ? url::kHttpsScheme : url::kHttpScheme;
   const std::string host =
       domain_key.find('.') != 0 ? domain_key : domain_key.substr(1);
   return GURL(scheme + content::kStandardSchemeSeparator + host + "/");
@@ -134,7 +136,7 @@ void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
     // Ignore any cookie whose domain doesn't match the extension's
     // host permissions.
     GURL cookie_domain_url = GetURLFromCanonicalCookie(*it);
-    if (!extension->HasHostPermission(cookie_domain_url))
+    if (!PermissionsData::HasHostPermission(extension, cookie_domain_url))
       continue;
     // Filter the cookie using the match filter.
     cookies_helpers::MatchFilter filter(details);
@@ -145,12 +147,12 @@ void AppendMatchingCookiesToVector(const net::CookieList& all_cookies,
   }
 }
 
-void AppendToTabIdList(Browser* browser, ListValue* tab_ids) {
+void AppendToTabIdList(Browser* browser, base::ListValue* tab_ids) {
   DCHECK(browser);
   DCHECK(tab_ids);
   TabStripModel* tab_strip = browser->tab_strip_model();
   for (int i = 0; i < tab_strip->count(); ++i) {
-    tab_ids->Append(Value::CreateIntegerValue(
+    tab_ids->Append(new base::FundamentalValue(
         ExtensionTabUtil::GetTabId(tab_strip->GetWebContentsAt(i))));
   }
 }
@@ -205,4 +207,4 @@ bool MatchFilter::MatchesDomain(const std::string& domain) {
 }
 
 }  // namespace cookies_helpers
-}  // namespace extension
+}  // namespace extensions

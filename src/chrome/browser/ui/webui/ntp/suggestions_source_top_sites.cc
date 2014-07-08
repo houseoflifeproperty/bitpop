@@ -8,12 +8,12 @@
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
-#include "base/string_number_conversions.h"
+#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/top_sites.h"
 #include "chrome/browser/history/visit_filter.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_combiner.h"
 #include "chrome/common/chrome_switches.h"
@@ -48,11 +48,11 @@ int SuggestionsSourceTopSites::GetItemCount() {
   return items_.size();
 }
 
-DictionaryValue* SuggestionsSourceTopSites::PopItem() {
+base::DictionaryValue* SuggestionsSourceTopSites::PopItem() {
   if (items_.empty())
     return NULL;
 
-  DictionaryValue* item = items_.front();
+  base::DictionaryValue* item = items_.front();
   items_.pop_front();
   return item;
 }
@@ -91,7 +91,7 @@ void SuggestionsSourceTopSites::OnSuggestionsUrlsAvailable(
     if (suggested_url.url.is_empty())
       continue;
 
-    DictionaryValue* page_value = new DictionaryValue();
+    base::DictionaryValue* page_value = new base::DictionaryValue();
     NewTabUI::SetUrlTitleAndDirection(page_value,
                                       suggested_url.title,
                                       suggested_url.url);

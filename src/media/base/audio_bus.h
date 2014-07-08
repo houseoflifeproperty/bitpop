@@ -47,7 +47,6 @@ class MEDIA_EXPORT AudioBus {
   static scoped_ptr<AudioBus> WrapMemory(int channels, int frames, void* data);
   static scoped_ptr<AudioBus> WrapMemory(const AudioParameters& params,
                                          void* data);
-  // Returns the required memory size to use the WrapMemory() method.
   static int CalculateMemorySize(const AudioParameters& params);
 
   // Calculates the required size for an AudioBus given the number of channels
@@ -76,6 +75,15 @@ class MEDIA_EXPORT AudioBus {
   // AudioBus object must have the same frames() and channels().
   void CopyTo(AudioBus* dest) const;
 
+  // Helper method to copy frames from one AudioBus to another. Both AudioBus
+  // objects must have the same number of channels(). |source_start_frame| is
+  // the starting offset. |dest_start_frame| is the starting offset in |dest|.
+  // |frame_count| is the number of frames to copy.
+  void CopyPartialFramesTo(int source_start_frame,
+                           int frame_count,
+                           int dest_start_frame,
+                           AudioBus* dest) const;
+
   // Returns a raw pointer to the requested channel.  Pointer is guaranteed to
   // have a 16-byte alignment.  Warning: Do not rely on having sane (i.e. not
   // inf, nan, or between [-1.0, 1.0]) values in the channel data.
@@ -83,7 +91,7 @@ class MEDIA_EXPORT AudioBus {
   const float* channel(int channel) const { return channel_data_[channel]; }
   void SetChannelData(int channel, float* data);
 
-  int channels() const { return channel_data_.size(); }
+  int channels() const { return static_cast<int>(channel_data_.size()); }
   int frames() const { return frames_; }
   void set_frames(int frames);
 
@@ -92,8 +100,16 @@ class MEDIA_EXPORT AudioBus {
   void ZeroFrames(int frames);
   void ZeroFramesPartial(int start_frame, int frames);
 
+  // Scale internal channel values by |volume| >= 0.  If an invalid value
+  // is provided, no adjustment is done.
+  void Scale(float volume);
+
+  // Swaps channels identified by |a| and |b|.  The caller needs to make sure
+  // the channels are valid.
+  void SwapChannels(int a, int b);
+
  private:
-  friend class scoped_ptr<AudioBus>;
+  friend struct base::DefaultDeleter<AudioBus>;
   ~AudioBus();
 
   AudioBus(int channels, int frames);
@@ -106,7 +122,7 @@ class MEDIA_EXPORT AudioBus {
   void BuildChannelData(int channels, int aligned_frame, float* data);
 
   // Contiguous block of channel memory.
-  scoped_ptr_malloc<float, base::ScopedPtrAlignedFree> data_;
+  scoped_ptr<float, base::AlignedFreeDeleter> data_;
 
   std::vector<float*> channel_data_;
   int frames_;

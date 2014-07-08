@@ -7,26 +7,35 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#import "ui/base/cocoa/tracking_area.h"
+#include "ui/base/ui_base_export.h"
 #include "ui/gfx/rect.h"
 
 // A view that provides common functionality that many views will need:
 // - Automatic registration for mouse-moved events.
 // - Funneling of mouse and key events to two methods
 // - Coordinate conversion utilities
-
+UI_BASE_EXPORT
 @interface BaseView : NSView {
+ @public
+  enum EventHandled {
+    kEventNotHandled,
+    kEventHandled
+  };
+
  @private
-  NSTrackingArea *trackingArea_;
+  ui::ScopedCrTrackingArea trackingArea_;
   BOOL dragging_;
-  scoped_nsobject<NSEvent> pendingExitEvent_;
+  base::scoped_nsobject<NSEvent> pendingExitEvent_;
 }
 
-- (id)initWithFrame:(NSRect)frame;
-
-// Override these methods in a subclass.
+// Override these methods (mouseEvent, keyEvent) in a subclass.
 - (void)mouseEvent:(NSEvent *)theEvent;
-- (void)keyEvent:(NSEvent *)theEvent;
+
+// keyEvent should return kEventHandled if it handled the event, or
+// kEventNotHandled if it should be forwarded to BaseView's super class.
+- (EventHandled)keyEvent:(NSEvent *)theEvent;
 
 // Useful rect conversions (doing coordinate flipping)
 - (gfx::Rect)flipNSRectToRect:(NSRect)rect;
@@ -38,7 +47,7 @@
 // The name is |kViewDidBecomeFirstResponder|, the object is the view, and the
 // NSSelectionDirection is wrapped in an NSNumber under the key
 // |kSelectionDirection|.
-UI_EXPORT extern NSString* kViewDidBecomeFirstResponder;
-UI_EXPORT extern NSString* kSelectionDirection;
+UI_BASE_EXPORT extern NSString* kViewDidBecomeFirstResponder;
+UI_BASE_EXPORT extern NSString* kSelectionDirection;
 
 #endif  // UI_BASE_COCOA_BASE_VIEW_H_

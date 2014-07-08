@@ -4,12 +4,9 @@
 
 #include "ppapi/proxy/ppp_input_event_proxy.h"
 
-#include <algorithm>
-
 #include "ppapi/c/ppp_input_event.h"
 #include "ppapi/proxy/host_dispatcher.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
-#include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/shared_impl/ppb_input_event_shared.h"
 #include "ppapi/thunk/enter.h"
@@ -57,10 +54,6 @@ static const PPP_InputEvent input_event_interface = {
 static const PPP_InputEvent input_event_interface = {};
 #endif  // !defined(OS_NACL)
 
-InterfaceProxy* CreateInputEventProxy(Dispatcher* dispatcher) {
-  return new PPP_InputEvent_Proxy(dispatcher);
-}
-
 }  // namespace
 
 PPP_InputEvent_Proxy::PPP_InputEvent_Proxy(Dispatcher* dispatcher)
@@ -76,15 +69,8 @@ PPP_InputEvent_Proxy::~PPP_InputEvent_Proxy() {
 }
 
 // static
-const InterfaceProxy::Info* PPP_InputEvent_Proxy::GetInfo() {
-  static const Info info = {
-    &input_event_interface,
-    PPP_INPUT_EVENT_INTERFACE,
-    API_ID_PPP_INPUT_EVENT,
-    false,
-    &CreateInputEventProxy,
-  };
-  return &info;
+const PPP_InputEvent* PPP_InputEvent_Proxy::GetProxyInterface() {
+  return &input_event_interface;
 }
 
 bool PPP_InputEvent_Proxy::OnMessageReceived(const IPC::Message& msg) {
@@ -109,7 +95,6 @@ void PPP_InputEvent_Proxy::OnMsgHandleInputEvent(PP_Instance instance,
   CallWhileUnlocked(ppp_input_event_impl_->HandleInputEvent,
                     instance,
                     resource->pp_resource());
-  HandleInputEventAck(instance, data.event_time_stamp);
 }
 
 void PPP_InputEvent_Proxy::OnMsgHandleFilteredInputEvent(
@@ -121,19 +106,6 @@ void PPP_InputEvent_Proxy::OnMsgHandleFilteredInputEvent(
   *result = CallWhileUnlocked(ppp_input_event_impl_->HandleInputEvent,
                               instance,
                               resource->pp_resource());
-  HandleInputEventAck(instance, data.event_time_stamp);
-}
-
-void PPP_InputEvent_Proxy::HandleInputEventAck(
-    PP_Instance instance, PP_TimeTicks timestamp) {
-  PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance);
-  if (dispatcher) {
-    // Note that we're sending the message to the host PPB_InstanceProxy.
-    dispatcher->Send(new PpapiMsg_PPPInputEvent_HandleInputEvent_ACK(
-        API_ID_PPB_INSTANCE, instance, timestamp));
-  } else {
-    NOTREACHED();
-  }
 }
 
 }  // namespace proxy

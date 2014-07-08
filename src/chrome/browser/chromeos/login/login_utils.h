@@ -9,37 +9,39 @@
 
 #include "base/memory/ref_counted.h"
 
-class CommandLine;
 class GURL;
-class Profile;
+class PrefRegistrySimple;
 class PrefService;
+class Profile;
 
-namespace {
-class BrowserGuestSessionNavigatorTest;
-}  // namespace
+namespace base {
+class CommandLine;
+}
 
 namespace chromeos {
 
 class Authenticator;
 class LoginDisplayHost;
 class LoginStatusConsumer;
+struct UserContext;
 
 class LoginUtils {
  public:
   class Delegate {
    public:
-   // Called after profile is loaded and prepared for the session.
+    // Called after profile is loaded and prepared for the session.
     virtual void OnProfilePrepared(Profile* profile) = 0;
 
 #if defined(ENABLE_RLZ)
     // Called after post-profile RLZ initialization.
     virtual void OnRlzInitialized(Profile* profile) {}
 #endif
-
-    // Called immediately after profile is created, should be used as a test
-    // se
-    virtual void OnProfileCreated(Profile* profile) {}
+   protected:
+    virtual ~Delegate() {}
   };
+
+  // Registers log-in related preferences.
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   // Get LoginUtils singleton object. If it was not set before, new default
   // instance will be created.
@@ -49,8 +51,9 @@ class LoginUtils {
   static void Set(LoginUtils* ptr);
 
   // Checks if the given username is whitelisted and allowed to sign-in to
-  // this device.
-  static bool IsWhitelisted(const std::string& username);
+  // this device. |wildcard_match| may be NULL. If it's present, it'll be set to
+  // true if the whitelist check was satisfied via a wildcard.
+  static bool IsWhitelisted(const std::string& username, bool* wildcard_match);
 
   virtual ~LoginUtils() {}
 
@@ -61,16 +64,17 @@ class LoginUtils {
                                LoginDisplayHost* login_host) = 0;
 
   // Loads and prepares profile for the session. Fires |delegate| in the end.
-  // If |pending_requests| is true, there's a pending online auth request.
   // If |display_email| is not empty, user's displayed email will be set to
   // this value, shown in UI.
+  // |user_context.username_hash| defines when user homedir is mounted.
   // Also see DelegateDeleted method.
+  // If |has_active_session| is true than this is a case of restoring user
+  // session after browser crash so no need to start new session.
   virtual void PrepareProfile(
-      const std::string& username,
+      const UserContext& user_context,
       const std::string& display_email,
-      const std::string& password,
-      bool using_oauth,
       bool has_cookies,
+      bool has_active_session,
       Delegate* delegate) = 0;
 
   // Invalidates |delegate|, which was passed to PrepareProfile method call.
@@ -97,30 +101,11 @@ class LoginUtils {
   virtual scoped_refptr<Authenticator> CreateAuthenticator(
       LoginStatusConsumer* consumer) = 0;
 
-  // Prewarms the authentication network connection.
-  virtual void PrewarmAuthentication() = 0;
-
   // Restores authentication session after crash.
   virtual void RestoreAuthenticationSession(Profile* profile) = 0;
 
-  // Stops background fetchers.
-  virtual void StopBackgroundFetchers() = 0;
-
   // Initialize RLZ.
   virtual void InitRlzDelayed(Profile* user_profile) = 0;
-
-  // Completed profile creation process.
-  virtual void CompleteProfileCreate(Profile* user_profile) {}
-
- protected:
-  friend class ::BrowserGuestSessionNavigatorTest;
-
-  // Returns command line string to be used for the OTR process. Also modifies
-  // given command line.
-  virtual std::string GetOffTheRecordCommandLine(
-      const GURL& start_url,
-      const CommandLine& base_command_line,
-      CommandLine* command_line) = 0;
 };
 
 }  // namespace chromeos

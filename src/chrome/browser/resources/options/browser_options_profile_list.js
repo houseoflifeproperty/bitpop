@@ -9,7 +9,7 @@ cr.define('options.browser_options', function() {
 
   /**
    * Creates a new profile list item.
-   * @param {Object} profileInfo The profile this item respresents.
+   * @param {Object} profileInfo The profile this item represents.
    * @constructor
    * @extends {cr.ui.DeletableItem}
    */
@@ -39,21 +39,32 @@ cr.define('options.browser_options', function() {
       return this.profileInfo_.filePath;
     },
 
+    /**
+     * @type {boolean} whether this profile is managed.
+     */
+    get isManaged() {
+      return this.profileInfo_.isManaged;
+    },
+
     /** @override */
     decorate: function() {
       DeletableItem.prototype.decorate.call(this);
 
       var profileInfo = this.profileInfo_;
 
+      var containerEl = this.ownerDocument.createElement('div');
+      containerEl.className = 'profile-container';
+
       var iconEl = this.ownerDocument.createElement('img');
       iconEl.className = 'profile-img';
-      iconEl.src = profileInfo.iconURL;
-      this.contentElement.appendChild(iconEl);
+      iconEl.style.content = getProfileAvatarIcon(profileInfo.iconURL);
+      containerEl.appendChild(iconEl);
 
       var nameEl = this.ownerDocument.createElement('div');
+      nameEl.className = 'profile-name';
       if (profileInfo.isCurrentProfile)
         nameEl.classList.add('profile-item-current');
-      this.contentElement.appendChild(nameEl);
+      containerEl.appendChild(nameEl);
 
       var displayName = profileInfo.name;
       if (profileInfo.isCurrentProfile) {
@@ -61,6 +72,16 @@ cr.define('options.browser_options', function() {
                                               profileInfo.name);
       }
       nameEl.textContent = displayName;
+
+      if (profileInfo.isManaged) {
+        var supervisedEl = this.ownerDocument.createElement('div');
+        supervisedEl.className = 'profile-supervised';
+        supervisedEl.textContent =
+          '(' + loadTimeData.getStringF('managedUserLabel') + ')';
+        containerEl.appendChild(supervisedEl);
+      }
+
+      this.contentElement.appendChild(containerEl);
 
       // Ensure that the button cannot be tabbed to for accessibility reasons.
       this.closeButtonElement.tabIndex = -1;
@@ -81,11 +102,14 @@ cr.define('options.browser_options', function() {
     /** @override */
     createItem: function(pageInfo) {
       var item = new ProfileListItem(pageInfo);
+      item.deletable = this.canDeleteItems_;
       return item;
     },
 
     /** @override */
     deleteItemAtIndex: function(index) {
+      if (loadTimeData.getBoolean('profileIsManaged'))
+        return;
       ManageProfileOverlay.showDeleteDialog(this.dataModel.item(index));
     },
 
@@ -96,10 +120,22 @@ cr.define('options.browser_options', function() {
       if (profileInfo.isCurrentProfile)
         ManageProfileOverlay.showManageDialog(profileInfo);
     },
+
+    /**
+     * Sets whether items in this list are deletable.
+     */
+    set canDeleteItems(value) {
+      this.canDeleteItems_ = value;
+    },
+
+    /**
+     * If false, items in this list will not be deletable.
+     * @private
+     */
+    canDeleteItems_: true,
   };
 
   return {
     ProfileList: ProfileList
   };
 });
-

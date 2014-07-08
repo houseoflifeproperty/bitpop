@@ -27,9 +27,9 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import json
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
-from webkitpy.common.net import resultsjsonparser_unittest
+from webkitpy.common.net import layouttestresults_unittest
 from webkitpy.common.host_mock import MockHost
 from webkitpy.layout_tests.layout_package.json_results_generator import strip_json_wrapper
 from webkitpy.layout_tests.port.base import Port
@@ -205,13 +205,13 @@ class RebaselineTestTest(unittest.TestCase):
             ])
 
     def test_gather_baselines(self):
-        example_json = resultsjsonparser_unittest.ResultsJSONParserTest._example_full_results_json
+        example_json = layouttestresults_unittest.LayoutTestResultsTest.example_full_results_json
         results_json = json.loads(strip_json_wrapper(example_json))
         server = RebaselineServer()
         server._test_config = get_test_config()
         server._gather_baselines(results_json)
         self.assertEqual(results_json['tests']['svg/dynamic-updates/SVGFEDropShadowElement-dom-stdDeviation-attr.html']['state'], 'needs_rebaseline')
-        self.assertFalse('prototype-chocolate.html' in results_json['tests'])
+        self.assertNotIn('prototype-chocolate.html', results_json['tests'])
 
     def _assertRebaseline(self, test_files, results_files, test_name, baseline_target, baseline_move_to, expected_success, expected_log):
         log = []
@@ -234,7 +234,7 @@ class GetActualResultFilesTest(unittest.TestCase):
             'fast/text2-actual.txt',
             'fast/text-notactual.txt',
         ))
-        self.assertEqual(
+        self.assertItemsEqual(
             ('text-actual.txt',),
             rebaselineserver._get_actual_result_files(
                 'fast/text.html', test_config))
@@ -290,10 +290,11 @@ class GetBaselinesTest(unittest.TestCase):
 
 
 def get_test_config(test_files=[], result_files=[]):
-    # We could grab this from port.layout_tests_dir(), but instantiating a fully mocked port is a pain.
-    layout_tests_directory = "/mock-checkout/LayoutTests"
-    results_directory = '/WebKitBuild/Debug/layout-test-results'
     host = MockHost()
+    port = host.port_factory.get()
+    layout_tests_directory = port.layout_tests_dir()
+    results_directory = port.results_directory()
+
     for file in test_files:
         host.filesystem.write_binary_file(host.filesystem.join(layout_tests_directory, file), '')
     for file in result_files:
@@ -301,6 +302,7 @@ def get_test_config(test_files=[], result_files=[]):
 
     class TestMacPort(Port):
         port_name = "mac"
+        FALLBACK_PATHS = {'': ['mac']}
 
     return TestConfig(
         TestMacPort(host, 'mac'),

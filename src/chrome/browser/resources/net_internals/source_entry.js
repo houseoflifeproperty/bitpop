@@ -37,7 +37,7 @@ var SourceEntry = (function() {
         this.isInactive_ = true;
       }
 
-      // If we have a net error code, update |this.isError_| if apporpriate.
+      // If we have a net error code, update |this.isError_| if appropriate.
       if (logEntry.params) {
         var netErrorCode = logEntry.params.net_error;
         // Skip both cases where netErrorCode is undefined, and cases where it
@@ -95,6 +95,10 @@ var SourceEntry = (function() {
         case EventSourceType.MEMORY_CACHE_ENTRY:
           this.description_ = e.params.key;
           break;
+        case EventSourceType.QUIC_SESSION:
+          if (e.params.host != undefined)
+            this.description_ = e.params.host;
+          break;
         case EventSourceType.SPDY_SESSION:
           if (e.params.host)
             this.description_ = e.params.host + ' (' + e.params.proxy + ')';
@@ -104,6 +108,7 @@ var SourceEntry = (function() {
             this.description_ = e.params.host_and_port;
           break;
         case EventSourceType.SOCKET:
+        case EventSourceType.PROXY_CLIENT_SOCKET:
           // Use description of parent source, if any.
           if (e.params.source_dependency != undefined) {
             var parentId = e.params.source_dependency.id;
@@ -202,20 +207,26 @@ var SourceEntry = (function() {
           return e;
       }
       if (this.entries_.length >= 2) {
-        if (this.entries_[0].type == EventType.SOCKET_POOL_CONNECT_JOB ||
-            this.entries_[1].type == EventType.UDP_CONNECT) {
+        // Needed for compatability with log dumps prior to M26.
+        // TODO(mmenke):  Remove this.
+        if (this.entries_[0].type == EventType.SOCKET_POOL_CONNECT_JOB &&
+            this.entries_[0].params == undefined) {
           return this.entries_[1];
         }
+        if (this.entries_[1].type == EventType.UDP_CONNECT)
+          return this.entries_[1];
         if (this.entries_[0].type == EventType.REQUEST_ALIVE &&
             this.entries_[0].params == undefined) {
-          var start_index = 1;
-          // Skip over URL_REQUEST_BLOCKED_ON_DELEGATE events for URL_REQUESTs.
-          while (start_index + 1 < this.entries_.length &&
-                 this.entries_[start_index].type ==
-                     EventType.URL_REQUEST_BLOCKED_ON_DELEGATE) {
-            ++start_index;
+          var startIndex = 1;
+          // Skip over delegate events for URL_REQUESTs.
+          for (; startIndex + 1 < this.entries_.length; ++startIndex) {
+            var type = this.entries_[startIndex].type;
+            if (type != EventType.URL_REQUEST_DELEGATE &&
+                type != EventType.DELEGATE_INFO) {
+              break;
+            }
           }
-          return this.entries_[start_index];
+          return this.entries_[startIndex];
         }
         if (this.entries_[1].type == EventType.IPV6_PROBE_RUNNING)
           return this.entries_[1];
@@ -283,15 +294,20 @@ var SourceEntry = (function() {
     },
 
     /**
-     * Returns time of last event if inactive.  Returns current time otherwise.
+     * Returns time ticks of first event.
      */
-    getEndTime: function() {
-      if (!this.isInactive_) {
-        return timeutil.getCurrentTime();
-      } else {
-        var endTicks = this.entries_[this.entries_.length - 1].time;
-        return timeutil.convertTimeTicksToTime(endTicks);
-      }
+    getStartTicks: function() {
+      return this.entries_[0].time;
+    },
+
+    /**
+     * Returns time of last event if inactive.  Returns current time otherwise.
+     * Returned time is a "time ticks" value.
+     */
+    getEndTicks: function() {
+      if (!this.isInactive_)
+        return timeutil.getCurrentTimeTicks();
+      return this.entries_[this.entries_.length - 1].time;
     },
 
     /**
@@ -300,9 +316,8 @@ var SourceEntry = (function() {
      * last event.
      */
     getDuration: function() {
-      var startTicks = this.entries_[0].time;
-      var startTime = timeutil.convertTimeTicksToTime(startTicks);
-      var endTime = this.getEndTime();
+      var startTime = this.getStartTicks();
+      var endTime = this.getEndTicks();
       return endTime - startTime;
     },
 
@@ -311,11 +326,23 @@ var SourceEntry = (function() {
      * of |parent|.
      */
     printAsText: function(parent) {
-      // The date will be undefined if not viewing a loaded log file.
-      printLogEntriesAsText(this.entries_, parent,
-                            SourceTracker.getInstance().getPrivacyStripping(),
-                            Constants.clientInfo.numericDate);
-    }
+      var tablePrinter = this.createTablePrinter();
+
+      // Format the table for fixed-width text.
+      tablePrinter.toText(0, parent);
+    },
+
+    /**
+     * Creates a table printer for the SourceEntry.
+     */
+    createTablePrinter: function() {
+      return createLogEntryTablePrinter(
+          this.entries_,
+          SourceTracker.getInstance().getPrivacyStripping(),
+          SourceTracker.getInstance().getUseRelativeTimes() ?
+              timeutil.getBaseTime() : 0,
+          Constants.clientInfo.numericDate);
+    },
   };
 
   return SourceEntry;

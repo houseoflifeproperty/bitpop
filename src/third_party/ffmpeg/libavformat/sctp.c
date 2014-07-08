@@ -2,20 +2,20 @@
  * SCTP protocol
  * Copyright (c) 2012 Luca Barbato
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -56,10 +56,10 @@
 
 /*
  * The sctp_recvmsg and sctp_sendmsg functions are part of the user
- * library that offers support
- * for the SCTP kernel Implementation. The main purpose of this
- * code is to provide the SCTP Socket API mappings for user
- * application to interface with the SCTP in kernel.
+ * library that offers support for the SCTP kernel Implementation.
+ * To avoid build-time clashes the functions sport an ff_-prefix here.
+ * The main purpose of this code is to provide the SCTP Socket API
+ * mappings for user applications to interface with SCTP in the kernel.
  *
  * This implementation is based on the Socket API Extensions for SCTP
  * defined in <draft-ietf-tsvwg-sctpsocket-10.txt>
@@ -121,7 +121,7 @@ static int ff_sctp_send(int s, const void *msg, size_t len,
     outmsg.msg_name       = NULL;
     outmsg.msg_namelen    = 0;
     outmsg.msg_iov        = &iov;
-    iov.iov_base          = msg;
+    iov.iov_base          = (void*)msg;
     iov.iov_len           = len;
     outmsg.msg_iovlen     = 1;
     outmsg.msg_controllen = 0;
@@ -198,7 +198,7 @@ static int sctp_open(URLContext *h, const char *uri, int flags)
 
     cur_ai = ai;
 
-    fd = socket(cur_ai->ai_family, SOCK_STREAM, IPPROTO_SCTP);
+    fd = ff_socket(cur_ai->ai_family, SOCK_STREAM, IPPROTO_SCTP);
     if (fd < 0)
         goto fail;
 
@@ -296,8 +296,10 @@ static int sctp_write(URLContext *h, const uint8_t *buf, int size)
         /*StreamId is introduced as a 2byte code into the stream*/
         struct sctp_sndrcvinfo info = { 0 };
         info.sinfo_stream           = AV_RB16(buf);
-        if (info.sinfo_stream > s->max_streams)
-            abort();
+        if (info.sinfo_stream > s->max_streams) {
+            av_log(h, AV_LOG_ERROR, "bad input data\n");
+            return AVERROR(EINVAL);
+        }
         ret = ff_sctp_send(s->fd, buf + 2, size - 2, &info, MSG_EOR);
     } else
         ret = send(s->fd, buf, size, 0);

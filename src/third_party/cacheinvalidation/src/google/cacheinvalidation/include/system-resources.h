@@ -39,7 +39,7 @@ class Status;
 class SystemResources;  // Declared below.
 
 typedef pair<Status, string> StatusStringPair;
-typedef INVALIDATION_CALLBACK1_TYPE(const string&) MessageCallback;
+typedef INVALIDATION_CALLBACK1_TYPE(string) MessageCallback;
 typedef INVALIDATION_CALLBACK1_TYPE(bool) NetworkStatusCallback;
 typedef INVALIDATION_CALLBACK1_TYPE(StatusStringPair) ReadKeyCallback;
 typedef INVALIDATION_CALLBACK1_TYPE(Status) WriteKeyCallback;

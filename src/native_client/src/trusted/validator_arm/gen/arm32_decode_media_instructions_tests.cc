@@ -1,5 +1,5 @@
 /*
- * Copyright 2012 The Native Client Authors.  All rights reserved.
+ * Copyright 2013 The Native Client Authors.  All rights reserved.
  * Use of this source code is governed by a BSD-style license that can
  * be found in the LICENSE file.
  */
@@ -13,9 +13,8 @@
 
 #include "gtest/gtest.h"
 #include "native_client/src/trusted/validator_arm/actual_vs_baseline.h"
-#include "native_client/src/trusted/validator_arm/actual_classes.h"
-#include "native_client/src/trusted/validator_arm/baseline_classes.h"
-#include "native_client/src/trusted/validator_arm/inst_classes_testers.h"
+#include "native_client/src/trusted/validator_arm/arm_helpers.h"
+#include "native_client/src/trusted/validator_arm/gen/arm32_decode_named_bases.h"
 
 using nacl_arm_dec::Instruction;
 using nacl_arm_dec::ClassDecoder;
@@ -31,250 +30,337 @@ namespace nacl_arm_test {
 //  due to row checks, or restrictions specified by the row restrictions.
 
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=~1111
-//    = {baseline: 'Binary4RegisterDualOp',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=~1111
-//    = {baseline: Binary4RegisterDualOp,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Binary4RegisterDualOpTesterCase0
-    : public Binary4RegisterDualOpTesterRegsNotPc {
+//    = {Pc: 15,
+//       Ra: Ra(15:12),
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMLAD_cccc01110000ddddaaaammmm00m1nnnn_case_1,
+//       baseline: USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0)],
+//       pattern: cccc01111000ddddaaaammmm0001nnnn,
+//       rule: USADA8,
+//       safety: [Ra  ==
+//               Pc => DECODER_ERROR,
+//         Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm, Ra}}
+class USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0TesterCase0
+    : public Arm32DecoderTester {
  public:
-  Binary4RegisterDualOpTesterCase0(const NamedClassDecoder& decoder)
-    : Binary4RegisterDualOpTesterRegsNotPc(decoder) {}
+  USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0TesterCase0(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Binary4RegisterDualOpTesterCase0
+bool USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0TesterCase0
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01F00000) != 0x01800000 /* op1(24:20)=~11000 */) return false;
-  if ((inst.Bits() & 0x000000E0) != 0x00000000 /* op2(7:5)=~000 */) return false;
-  if ((inst.Bits() & 0x0000F000) == 0x0000F000 /* Rd(15:12)=1111 */) return false;
+  // op1(24:20)=~11000
+  if ((inst.Bits() & 0x01F00000)  !=
+          0x01800000) return false;
+  // op2(7:5)=~000
+  if ((inst.Bits() & 0x000000E0)  !=
+          0x00000000) return false;
+  // Rd(15:12)=1111
+  if ((inst.Bits() & 0x0000F000)  ==
+          0x0000F000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Binary4RegisterDualOpTesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=1111
-//    = {baseline: 'Binary3RegisterOpAltA',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=1111
-//    = {baseline: Binary3RegisterOpAltA,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Binary3RegisterOpAltATesterCase1
-    : public Binary3RegisterOpAltATesterRegsNotPc {
+//    = {Pc: 15,
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMULBB_SMULBT_SMULTB_SMULTT_cccc00010110dddd0000mmmm1xx0nnnn_case_1,
+//       baseline: USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Rm(11:8), Rn(3:0)],
+//       pattern: cccc01111000dddd1111mmmm0001nnnn,
+//       rule: USAD8,
+//       safety: [Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm}}
+class USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0TesterCase1
+    : public Arm32DecoderTester {
  public:
-  Binary3RegisterOpAltATesterCase1(const NamedClassDecoder& decoder)
-    : Binary3RegisterOpAltATesterRegsNotPc(decoder) {}
+  USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0TesterCase1(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Binary3RegisterOpAltATesterCase1
+bool USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0TesterCase1
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01F00000) != 0x01800000 /* op1(24:20)=~11000 */) return false;
-  if ((inst.Bits() & 0x000000E0) != 0x00000000 /* op2(7:5)=~000 */) return false;
-  if ((inst.Bits() & 0x0000F000) != 0x0000F000 /* Rd(15:12)=~1111 */) return false;
+  // op1(24:20)=~11000
+  if ((inst.Bits() & 0x01F00000)  !=
+          0x01800000) return false;
+  // op2(7:5)=~000
+  if ((inst.Bits() & 0x000000E0)  !=
+          0x00000000) return false;
+  // Rd(15:12)=~1111
+  if ((inst.Bits() & 0x0000F000)  !=
+          0x0000F000) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Binary3RegisterOpAltATesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=11111 & inst(7:5)=111
-//    = {baseline: 'PermanentlyUndefined',
-//       constraints: }
-//
-// Representaive case:
 // op1(24:20)=11111 & op2(7:5)=111
-//    = {baseline: PermanentlyUndefined,
-//       constraints: }
-class PermanentlyUndefinedTesterCase2
-    : public PermanentlyUndefinedTester {
+//    = {actual: Actual_UDF_cccc01111111iiiiiiiiiiii1111iiii_case_1,
+//       baseline: UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0,
+//       defs: {},
+//       inst: inst,
+//       pattern: cccc01111111iiiiiiiiiiii1111iiii,
+//       rule: UDF,
+//       safety: [not IsUDFNaClSafe(inst) => FORBIDDEN_OPERANDS],
+//       uses: {}}
+class UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0TesterCase2
+    : public Arm32DecoderTester {
  public:
-  PermanentlyUndefinedTesterCase2(const NamedClassDecoder& decoder)
-    : PermanentlyUndefinedTester(decoder) {}
+  UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0TesterCase2(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool PermanentlyUndefinedTesterCase2
+bool UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0TesterCase2
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01F00000) != 0x01F00000 /* op1(24:20)=~11111 */) return false;
-  if ((inst.Bits() & 0x000000E0) != 0x000000E0 /* op2(7:5)=~111 */) return false;
+  // op1(24:20)=~11111
+  if ((inst.Bits() & 0x01F00000)  !=
+          0x01F00000) return false;
+  // op2(7:5)=~111
+  if ((inst.Bits() & 0x000000E0)  !=
+          0x000000E0) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return PermanentlyUndefinedTester::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=1101x & inst(7:5)=x10
-//    = {baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=1101x & op2(7:5)=x10
-//    = {baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase3
-    : public Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       pattern: cccc0111101wwwwwddddlllll101nnnn,
+//       rule: SBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
+class SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0TesterCase3
+    : public Arm32DecoderTester {
  public:
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase3(const NamedClassDecoder& decoder)
-    : Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc(decoder) {}
+  SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0TesterCase3(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase3
+bool SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0TesterCase3
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01E00000) != 0x01A00000 /* op1(24:20)=~1101x */) return false;
-  if ((inst.Bits() & 0x00000060) != 0x00000040 /* op2(7:5)=~x10 */) return false;
+  // op1(24:20)=~1101x
+  if ((inst.Bits() & 0x01E00000)  !=
+          0x01A00000) return false;
+  // op2(7:5)=~x10
+  if ((inst.Bits() & 0x00000060)  !=
+          0x00000040) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=~1111
-//    = {baseline: 'Binary2RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=~1111
-//    = {baseline: Binary2RegisterBitRangeMsbGeLsb,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeMsbGeLsbTesterCase4
-    : public Binary2RegisterBitRangeMsbGeLsbTesterRegsNotPc {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_BFI_cccc0111110mmmmmddddlllll001nnnn_case_1,
+//       baseline: BFI_cccc0111110mmmmmddddlllll001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
+//       pattern: cccc0111110mmmmmddddlllll001nnnn,
+//       rule: BFI,
+//       safety: [Rn  ==
+//               Pc => DECODER_ERROR,
+//         Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rn, Rd}}
+class BFI_cccc0111110mmmmmddddlllll001nnnn_case_0TesterCase4
+    : public Arm32DecoderTester {
  public:
-  Binary2RegisterBitRangeMsbGeLsbTesterCase4(const NamedClassDecoder& decoder)
-    : Binary2RegisterBitRangeMsbGeLsbTesterRegsNotPc(decoder) {}
+  BFI_cccc0111110mmmmmddddlllll001nnnn_case_0TesterCase4(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Binary2RegisterBitRangeMsbGeLsbTesterCase4
+bool BFI_cccc0111110mmmmmddddlllll001nnnn_case_0TesterCase4
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01E00000) != 0x01C00000 /* op1(24:20)=~1110x */) return false;
-  if ((inst.Bits() & 0x00000060) != 0x00000000 /* op2(7:5)=~x00 */) return false;
-  if ((inst.Bits() & 0x0000000F) == 0x0000000F /* Rn(3:0)=1111 */) return false;
+  // op1(24:20)=~1110x
+  if ((inst.Bits() & 0x01E00000)  !=
+          0x01C00000) return false;
+  // op2(7:5)=~x00
+  if ((inst.Bits() & 0x00000060)  !=
+          0x00000000) return false;
+  // Rn(3:0)=1111
+  if ((inst.Bits() & 0x0000000F)  ==
+          0x0000000F) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Binary2RegisterBitRangeMsbGeLsbTesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=1111
-//    = {baseline: 'Unary1RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=1111
-//    = {baseline: Unary1RegisterBitRangeMsbGeLsb,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Unary1RegisterBitRangeMsbGeLsbTesterCase5
-    : public Unary1RegisterBitRangeMsbGeLsbTesterRegsNotPc {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       actual: Actual_BFC_cccc0111110mmmmmddddlllll0011111_case_1,
+//       baseline: BFC_cccc0111110mmmmmddddlllll0011111_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
+//       pattern: cccc0111110mmmmmddddlllll0011111,
+//       rule: BFC,
+//       safety: [Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rd}}
+class BFC_cccc0111110mmmmmddddlllll0011111_case_0TesterCase5
+    : public Arm32DecoderTester {
  public:
-  Unary1RegisterBitRangeMsbGeLsbTesterCase5(const NamedClassDecoder& decoder)
-    : Unary1RegisterBitRangeMsbGeLsbTesterRegsNotPc(decoder) {}
+  BFC_cccc0111110mmmmmddddlllll0011111_case_0TesterCase5(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Unary1RegisterBitRangeMsbGeLsbTesterCase5
+bool BFC_cccc0111110mmmmmddddlllll0011111_case_0TesterCase5
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01E00000) != 0x01C00000 /* op1(24:20)=~1110x */) return false;
-  if ((inst.Bits() & 0x00000060) != 0x00000000 /* op2(7:5)=~x00 */) return false;
-  if ((inst.Bits() & 0x0000000F) != 0x0000000F /* Rn(3:0)=~1111 */) return false;
+  // op1(24:20)=~1110x
+  if ((inst.Bits() & 0x01E00000)  !=
+          0x01C00000) return false;
+  // op2(7:5)=~x00
+  if ((inst.Bits() & 0x00000060)  !=
+          0x00000000) return false;
+  // Rn(3:0)=~1111
+  if ((inst.Bits() & 0x0000000F)  !=
+          0x0000000F) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Unary1RegisterBitRangeMsbGeLsbTesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
-// Neutral case:
-// inst(24:20)=1111x & inst(7:5)=x10
-//    = {baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=1111x & op2(7:5)=x10
-//    = {baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6
-    : public Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       pattern: cccc0111111mmmmmddddlllll101nnnn,
+//       rule: UBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
+class UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0TesterCase6
+    : public Arm32DecoderTester {
  public:
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6(const NamedClassDecoder& decoder)
-    : Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc(decoder) {}
+  UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0TesterCase6(const NamedClassDecoder& decoder)
+    : Arm32DecoderTester(decoder) {}
   virtual bool PassesParsePreconditions(
       nacl_arm_dec::Instruction inst,
       const NamedClassDecoder& decoder);
 };
 
-bool Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6
+bool UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0TesterCase6
 ::PassesParsePreconditions(
      nacl_arm_dec::Instruction inst,
      const NamedClassDecoder& decoder) {
 
   // Check that row patterns apply to pattern being checked.'
-  if ((inst.Bits() & 0x01E00000) != 0x01E00000 /* op1(24:20)=~1111x */) return false;
-  if ((inst.Bits() & 0x00000060) != 0x00000040 /* op2(7:5)=~x10 */) return false;
+  // op1(24:20)=~1111x
+  if ((inst.Bits() & 0x01E00000)  !=
+          0x01E00000) return false;
+  // op2(7:5)=~x10
+  if ((inst.Bits() & 0x00000060)  !=
+          0x00000040) return false;
+
+  // if cond(31:28)=1111, don't test instruction.
+  if ((inst.Bits() & 0xF0000000) == 0xF0000000) return false;
 
   // Check other preconditions defined for the base decoder.
-  return Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterRegsNotPc::
+  return Arm32DecoderTester::
       PassesParsePreconditions(inst, decoder);
 }
 
@@ -283,155 +369,171 @@ bool Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6
 // a default constructor that automatically initializes the expected decoder
 // to the corresponding instance in the generated DecoderState.
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=~1111
-//    = {baseline: 'Binary4RegisterDualOp',
-//       constraints: ,
-//       rule: 'Usada8_Rule_254_A1_P502',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=~1111
-//    = {baseline: Binary4RegisterDualOp,
-//       constraints: ,
-//       rule: Usada8_Rule_254_A1_P502,
-//       safety: ['RegsNotPc']}
-class Binary4RegisterDualOpTester_Case0
-    : public Binary4RegisterDualOpTesterCase0 {
+//    = {Pc: 15,
+//       Ra: Ra(15:12),
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMLAD_cccc01110000ddddaaaammmm00m1nnnn_case_1,
+//       baseline: USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0)],
+//       pattern: cccc01111000ddddaaaammmm0001nnnn,
+//       rule: USADA8,
+//       safety: [Ra  ==
+//               Pc => DECODER_ERROR,
+//         Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm, Ra}}
+class USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0Tester_Case0
+    : public USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0TesterCase0 {
  public:
-  Binary4RegisterDualOpTester_Case0()
-    : Binary4RegisterDualOpTesterCase0(
-      state_.Binary4RegisterDualOp_Usada8_Rule_254_A1_P502_instance_)
+  USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0Tester_Case0()
+    : USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0TesterCase0(
+      state_.USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0_USADA8_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=1111
-//    = {baseline: 'Binary3RegisterOpAltA',
-//       constraints: ,
-//       rule: 'Usad8_Rule_253_A1_P500',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=1111
-//    = {baseline: Binary3RegisterOpAltA,
-//       constraints: ,
-//       rule: Usad8_Rule_253_A1_P500,
-//       safety: ['RegsNotPc']}
-class Binary3RegisterOpAltATester_Case1
-    : public Binary3RegisterOpAltATesterCase1 {
+//    = {Pc: 15,
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMULBB_SMULBT_SMULTB_SMULTT_cccc00010110dddd0000mmmm1xx0nnnn_case_1,
+//       baseline: USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Rm(11:8), Rn(3:0)],
+//       pattern: cccc01111000dddd1111mmmm0001nnnn,
+//       rule: USAD8,
+//       safety: [Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm}}
+class USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0Tester_Case1
+    : public USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0TesterCase1 {
  public:
-  Binary3RegisterOpAltATester_Case1()
-    : Binary3RegisterOpAltATesterCase1(
-      state_.Binary3RegisterOpAltA_Usad8_Rule_253_A1_P500_instance_)
+  USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0Tester_Case1()
+    : USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0TesterCase1(
+      state_.USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0_USAD8_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=11111 & inst(7:5)=111
-//    = {baseline: 'PermanentlyUndefined',
-//       constraints: ,
-//       rule: 'Udf_Rule_A1'}
-//
-// Representative case:
 // op1(24:20)=11111 & op2(7:5)=111
-//    = {baseline: PermanentlyUndefined,
-//       constraints: ,
-//       rule: Udf_Rule_A1}
-class PermanentlyUndefinedTester_Case2
-    : public PermanentlyUndefinedTesterCase2 {
+//    = {actual: Actual_UDF_cccc01111111iiiiiiiiiiii1111iiii_case_1,
+//       baseline: UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0,
+//       defs: {},
+//       inst: inst,
+//       pattern: cccc01111111iiiiiiiiiiii1111iiii,
+//       rule: UDF,
+//       safety: [not IsUDFNaClSafe(inst) => FORBIDDEN_OPERANDS],
+//       uses: {}}
+class UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0Tester_Case2
+    : public UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0TesterCase2 {
  public:
-  PermanentlyUndefinedTester_Case2()
-    : PermanentlyUndefinedTesterCase2(
-      state_.PermanentlyUndefined_Udf_Rule_A1_instance_)
+  UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0Tester_Case2()
+    : UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0TesterCase2(
+      state_.UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0_UDF_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=1101x & inst(7:5)=x10
-//    = {baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       rule: 'Sbfx_Rule_154_A1_P308',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1101x & op2(7:5)=x10
-//    = {baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
-//       rule: Sbfx_Rule_154_A1_P308,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case3
-    : public Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase3 {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       pattern: cccc0111101wwwwwddddlllll101nnnn,
+//       rule: SBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
+class SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0Tester_Case3
+    : public SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0TesterCase3 {
  public:
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case3()
-    : Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase3(
-      state_.Binary2RegisterBitRangeNotRnIsPcBitfieldExtract_Sbfx_Rule_154_A1_P308_instance_)
+  SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0Tester_Case3()
+    : SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0TesterCase3(
+      state_.SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0_SBFX_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=~1111
-//    = {baseline: 'Binary2RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       rule: 'Bfi_Rule_18_A1_P48',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=~1111
-//    = {baseline: Binary2RegisterBitRangeMsbGeLsb,
-//       constraints: ,
-//       rule: Bfi_Rule_18_A1_P48,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeMsbGeLsbTester_Case4
-    : public Binary2RegisterBitRangeMsbGeLsbTesterCase4 {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_BFI_cccc0111110mmmmmddddlllll001nnnn_case_1,
+//       baseline: BFI_cccc0111110mmmmmddddlllll001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
+//       pattern: cccc0111110mmmmmddddlllll001nnnn,
+//       rule: BFI,
+//       safety: [Rn  ==
+//               Pc => DECODER_ERROR,
+//         Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rn, Rd}}
+class BFI_cccc0111110mmmmmddddlllll001nnnn_case_0Tester_Case4
+    : public BFI_cccc0111110mmmmmddddlllll001nnnn_case_0TesterCase4 {
  public:
-  Binary2RegisterBitRangeMsbGeLsbTester_Case4()
-    : Binary2RegisterBitRangeMsbGeLsbTesterCase4(
-      state_.Binary2RegisterBitRangeMsbGeLsb_Bfi_Rule_18_A1_P48_instance_)
+  BFI_cccc0111110mmmmmddddlllll001nnnn_case_0Tester_Case4()
+    : BFI_cccc0111110mmmmmddddlllll001nnnn_case_0TesterCase4(
+      state_.BFI_cccc0111110mmmmmddddlllll001nnnn_case_0_BFI_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=1111
-//    = {baseline: 'Unary1RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       rule: 'Bfc_17_A1_P46',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=1111
-//    = {baseline: Unary1RegisterBitRangeMsbGeLsb,
-//       constraints: ,
-//       rule: Bfc_17_A1_P46,
-//       safety: ['RegsNotPc']}
-class Unary1RegisterBitRangeMsbGeLsbTester_Case5
-    : public Unary1RegisterBitRangeMsbGeLsbTesterCase5 {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       actual: Actual_BFC_cccc0111110mmmmmddddlllll0011111_case_1,
+//       baseline: BFC_cccc0111110mmmmmddddlllll0011111_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
+//       pattern: cccc0111110mmmmmddddlllll0011111,
+//       rule: BFC,
+//       safety: [Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rd}}
+class BFC_cccc0111110mmmmmddddlllll0011111_case_0Tester_Case5
+    : public BFC_cccc0111110mmmmmddddlllll0011111_case_0TesterCase5 {
  public:
-  Unary1RegisterBitRangeMsbGeLsbTester_Case5()
-    : Unary1RegisterBitRangeMsbGeLsbTesterCase5(
-      state_.Unary1RegisterBitRangeMsbGeLsb_Bfc_17_A1_P46_instance_)
+  BFC_cccc0111110mmmmmddddlllll0011111_case_0Tester_Case5()
+    : BFC_cccc0111110mmmmmddddlllll0011111_case_0TesterCase5(
+      state_.BFC_cccc0111110mmmmmddddlllll0011111_case_0_BFC_instance_)
   {}
 };
 
-// Neutral case:
-// inst(24:20)=1111x & inst(7:5)=x10
-//    = {baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       rule: 'Ubfx_Rule_236_A1_P466',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1111x & op2(7:5)=x10
-//    = {baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
-//       rule: Ubfx_Rule_236_A1_P466,
-//       safety: ['RegsNotPc']}
-class Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case6
-    : public Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6 {
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       pattern: cccc0111111mmmmmddddlllll101nnnn,
+//       rule: UBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
+class UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0Tester_Case6
+    : public UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0TesterCase6 {
  public:
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case6()
-    : Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTesterCase6(
-      state_.Binary2RegisterBitRangeNotRnIsPcBitfieldExtract_Ubfx_Rule_236_A1_P466_instance_)
+  UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0Tester_Case6()
+    : UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0TesterCase6(
+      state_.UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0_UBFX_instance_)
   {}
 };
 
@@ -444,171 +546,163 @@ class Arm32DecoderStateTests : public ::testing::Test {
 // The following functions test each pattern specified in parse
 // decoder tables.
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=~1111
-//    = {actual: 'Defs16To19CondsDontCareRdRaRmRnNotPc',
-//       baseline: 'Binary4RegisterDualOp',
-//       constraints: ,
-//       pattern: 'cccc01111000ddddaaaammmm0001nnnn',
-//       rule: 'Usada8_Rule_254_A1_P502',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=~1111
-//    = {actual: Defs16To19CondsDontCareRdRaRmRnNotPc,
-//       baseline: Binary4RegisterDualOp,
-//       constraints: ,
+//    = {Pc: 15,
+//       Ra: Ra(15:12),
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMLAD_cccc01110000ddddaaaammmm00m1nnnn_case_1,
+//       baseline: USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Ra(15:12), Rm(11:8), Rn(3:0)],
 //       pattern: cccc01111000ddddaaaammmm0001nnnn,
-//       rule: Usada8_Rule_254_A1_P502,
-//       safety: ['RegsNotPc']}
+//       rule: USADA8,
+//       safety: [Ra  ==
+//               Pc => DECODER_ERROR,
+//         Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm, Ra}}
 TEST_F(Arm32DecoderStateTests,
-       Binary4RegisterDualOpTester_Case0_TestCase0) {
-  Binary4RegisterDualOpTester_Case0 baseline_tester;
-  NamedDefs16To19CondsDontCareRdRaRmRnNotPc_Usada8_Rule_254_A1_P502 actual;
+       USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0Tester_Case0_TestCase0) {
+  USADA8_cccc01111000ddddaaaammmm0001nnnn_case_0Tester_Case0 baseline_tester;
+  NamedActual_SMLAD_cccc01110000ddddaaaammmm00m1nnnn_case_1_USADA8 actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc01111000ddddaaaammmm0001nnnn");
 }
 
-// Neutral case:
-// inst(24:20)=11000 & inst(7:5)=000 & inst(15:12)=1111
-//    = {actual: 'Defs16To19CondsDontCareRdRmRnNotPc',
-//       baseline: 'Binary3RegisterOpAltA',
-//       constraints: ,
-//       pattern: 'cccc01111000dddd1111mmmm0001nnnn',
-//       rule: 'Usad8_Rule_253_A1_P500',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=11000 & op2(7:5)=000 & Rd(15:12)=1111
-//    = {actual: Defs16To19CondsDontCareRdRmRnNotPc,
-//       baseline: Binary3RegisterOpAltA,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rd: Rd(19:16),
+//       Rm: Rm(11:8),
+//       Rn: Rn(3:0),
+//       actual: Actual_SMULBB_SMULBT_SMULTB_SMULTT_cccc00010110dddd0000mmmm1xx0nnnn_case_1,
+//       baseline: USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [Rd(19:16), Rm(11:8), Rn(3:0)],
 //       pattern: cccc01111000dddd1111mmmm0001nnnn,
-//       rule: Usad8_Rule_253_A1_P500,
-//       safety: ['RegsNotPc']}
+//       rule: USAD8,
+//       safety: [Pc in {Rd, Rn, Rm} => UNPREDICTABLE],
+//       uses: {Rn, Rm}}
 TEST_F(Arm32DecoderStateTests,
-       Binary3RegisterOpAltATester_Case1_TestCase1) {
-  Binary3RegisterOpAltATester_Case1 baseline_tester;
-  NamedDefs16To19CondsDontCareRdRmRnNotPc_Usad8_Rule_253_A1_P500 actual;
+       USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0Tester_Case1_TestCase1) {
+  USAD8_cccc01111000dddd1111mmmm0001nnnn_case_0Tester_Case1 baseline_tester;
+  NamedActual_SMULBB_SMULBT_SMULTB_SMULTT_cccc00010110dddd0000mmmm1xx0nnnn_case_1_USAD8 actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc01111000dddd1111mmmm0001nnnn");
 }
 
-// Neutral case:
-// inst(24:20)=11111 & inst(7:5)=111
-//    = {actual: 'PermanentlyUndefined',
-//       baseline: 'PermanentlyUndefined',
-//       constraints: ,
-//       pattern: 'cccc01111111iiiiiiiiiiii1111iiii',
-//       rule: 'Udf_Rule_A1'}
-//
-// Representaive case:
 // op1(24:20)=11111 & op2(7:5)=111
-//    = {actual: PermanentlyUndefined,
-//       baseline: PermanentlyUndefined,
-//       constraints: ,
+//    = {actual: Actual_UDF_cccc01111111iiiiiiiiiiii1111iiii_case_1,
+//       baseline: UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0,
+//       defs: {},
+//       inst: inst,
 //       pattern: cccc01111111iiiiiiiiiiii1111iiii,
-//       rule: Udf_Rule_A1}
+//       rule: UDF,
+//       safety: [not IsUDFNaClSafe(inst) => FORBIDDEN_OPERANDS],
+//       uses: {}}
 TEST_F(Arm32DecoderStateTests,
-       PermanentlyUndefinedTester_Case2_TestCase2) {
-  PermanentlyUndefinedTester_Case2 tester;
-  tester.Test("cccc01111111iiiiiiiiiiii1111iiii");
+       UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0Tester_Case2_TestCase2) {
+  UDF_cccc01111111iiiiiiiiiiii1111iiii_case_0Tester_Case2 baseline_tester;
+  NamedActual_UDF_cccc01111111iiiiiiiiiiii1111iiii_case_1_UDF actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc01111111iiiiiiiiiiii1111iiii");
 }
 
-// Neutral case:
-// inst(24:20)=1101x & inst(7:5)=x10
-//    = {actual: 'Defs12To15CondsDontCareRdRnNotPcBitfieldExtract',
-//       baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       pattern: 'cccc0111101wwwwwddddlllll101nnnn',
-//       rule: 'Sbfx_Rule_154_A1_P308',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1101x & op2(7:5)=x10
-//    = {actual: Defs12To15CondsDontCareRdRnNotPcBitfieldExtract,
-//       baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
 //       pattern: cccc0111101wwwwwddddlllll101nnnn,
-//       rule: Sbfx_Rule_154_A1_P308,
-//       safety: ['RegsNotPc']}
+//       rule: SBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
 TEST_F(Arm32DecoderStateTests,
-       Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case3_TestCase3) {
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case3 baseline_tester;
-  NamedDefs12To15CondsDontCareRdRnNotPcBitfieldExtract_Sbfx_Rule_154_A1_P308 actual;
+       SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0Tester_Case3_TestCase3) {
+  SBFX_cccc0111101wwwwwddddlllll101nnnn_case_0Tester_Case3 baseline_tester;
+  NamedActual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1_SBFX actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc0111101wwwwwddddlllll101nnnn");
 }
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=~1111
-//    = {actual: 'Defs12To15CondsDontCareMsbGeLsb',
-//       baseline: 'Binary2RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       pattern: 'cccc0111110mmmmmddddlllll001nnnn',
-//       rule: 'Bfi_Rule_18_A1_P48',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=~1111
-//    = {actual: Defs12To15CondsDontCareMsbGeLsb,
-//       baseline: Binary2RegisterBitRangeMsbGeLsb,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_BFI_cccc0111110mmmmmddddlllll001nnnn_case_1,
+//       baseline: BFI_cccc0111110mmmmmddddlllll001nnnn_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
 //       pattern: cccc0111110mmmmmddddlllll001nnnn,
-//       rule: Bfi_Rule_18_A1_P48,
-//       safety: ['RegsNotPc']}
+//       rule: BFI,
+//       safety: [Rn  ==
+//               Pc => DECODER_ERROR,
+//         Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rn, Rd}}
 TEST_F(Arm32DecoderStateTests,
-       Binary2RegisterBitRangeMsbGeLsbTester_Case4_TestCase4) {
-  Binary2RegisterBitRangeMsbGeLsbTester_Case4 baseline_tester;
-  NamedDefs12To15CondsDontCareMsbGeLsb_Bfi_Rule_18_A1_P48 actual;
+       BFI_cccc0111110mmmmmddddlllll001nnnn_case_0Tester_Case4_TestCase4) {
+  BFI_cccc0111110mmmmmddddlllll001nnnn_case_0Tester_Case4 baseline_tester;
+  NamedActual_BFI_cccc0111110mmmmmddddlllll001nnnn_case_1_BFI actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc0111110mmmmmddddlllll001nnnn");
 }
 
-// Neutral case:
-// inst(24:20)=1110x & inst(7:5)=x00 & inst(3:0)=1111
-//    = {actual: 'Unary1RegisterBitRangeMsbGeLsb',
-//       baseline: 'Unary1RegisterBitRangeMsbGeLsb',
-//       constraints: ,
-//       pattern: 'cccc0111110mmmmmddddlllll0011111',
-//       rule: 'Bfc_17_A1_P46',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representaive case:
 // op1(24:20)=1110x & op2(7:5)=x00 & Rn(3:0)=1111
-//    = {actual: Unary1RegisterBitRangeMsbGeLsb,
-//       baseline: Unary1RegisterBitRangeMsbGeLsb,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       actual: Actual_BFC_cccc0111110mmmmmddddlllll0011111_case_1,
+//       baseline: BFC_cccc0111110mmmmmddddlllll0011111_case_0,
+//       defs: {Rd},
+//       fields: [msb(20:16), Rd(15:12), lsb(11:7)],
+//       lsb: lsb(11:7),
+//       msb: msb(20:16),
 //       pattern: cccc0111110mmmmmddddlllll0011111,
-//       rule: Bfc_17_A1_P46,
-//       safety: ['RegsNotPc']}
+//       rule: BFC,
+//       safety: [Rd  ==
+//               Pc => UNPREDICTABLE,
+//         msb  <
+//               lsb => UNPREDICTABLE],
+//       uses: {Rd}}
 TEST_F(Arm32DecoderStateTests,
-       Unary1RegisterBitRangeMsbGeLsbTester_Case5_TestCase5) {
-  Unary1RegisterBitRangeMsbGeLsbTester_Case5 tester;
-  tester.Test("cccc0111110mmmmmddddlllll0011111");
+       BFC_cccc0111110mmmmmddddlllll0011111_case_0Tester_Case5_TestCase5) {
+  BFC_cccc0111110mmmmmddddlllll0011111_case_0Tester_Case5 baseline_tester;
+  NamedActual_BFC_cccc0111110mmmmmddddlllll0011111_case_1_BFC actual;
+  ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
+  a_vs_b_tester.Test("cccc0111110mmmmmddddlllll0011111");
 }
 
-// Neutral case:
-// inst(24:20)=1111x & inst(7:5)=x10
-//    = {actual: 'Defs12To15CondsDontCareRdRnNotPcBitfieldExtract',
-//       baseline: 'Binary2RegisterBitRangeNotRnIsPcBitfieldExtract',
-//       constraints: ,
-//       pattern: 'cccc0111111mmmmmddddlllll101nnnn',
-//       rule: 'Ubfx_Rule_236_A1_P466',
-//       safety: ["'RegsNotPc'"]}
-//
-// Representative case:
 // op1(24:20)=1111x & op2(7:5)=x10
-//    = {actual: Defs12To15CondsDontCareRdRnNotPcBitfieldExtract,
-//       baseline: Binary2RegisterBitRangeNotRnIsPcBitfieldExtract,
-//       constraints: ,
+//    = {Pc: 15,
+//       Rd: Rd(15:12),
+//       Rn: Rn(3:0),
+//       actual: Actual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1,
+//       baseline: UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0,
+//       defs: {Rd},
+//       fields: [widthm1(20:16), Rd(15:12), lsb(11:7), Rn(3:0)],
+//       lsb: lsb(11:7),
 //       pattern: cccc0111111mmmmmddddlllll101nnnn,
-//       rule: Ubfx_Rule_236_A1_P466,
-//       safety: ['RegsNotPc']}
+//       rule: UBFX,
+//       safety: [Pc in {Rd, Rn} => UNPREDICTABLE,
+//         lsb + widthm1  >
+//               31 => UNPREDICTABLE],
+//       uses: {Rn},
+//       widthm1: widthm1(20:16)}
 TEST_F(Arm32DecoderStateTests,
-       Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case6_TestCase6) {
-  Binary2RegisterBitRangeNotRnIsPcBitfieldExtractTester_Case6 baseline_tester;
-  NamedDefs12To15CondsDontCareRdRnNotPcBitfieldExtract_Ubfx_Rule_236_A1_P466 actual;
+       UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0Tester_Case6_TestCase6) {
+  UBFX_cccc0111111mmmmmddddlllll101nnnn_case_0Tester_Case6 baseline_tester;
+  NamedActual_SBFX_cccc0111101wwwwwddddlllll101nnnn_case_1_UBFX actual;
   ActualVsBaselineTester a_vs_b_tester(actual, baseline_tester);
   a_vs_b_tester.Test("cccc0111111mmmmmddddlllll101nnnn");
 }

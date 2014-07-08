@@ -4,11 +4,16 @@
 
 #include "ui/base/cursor/cursor_loader_win.h"
 
+#include "base/lazy_instance.h"
+#include "base/strings/string16.h"
+#include "grit/ui_unscaled_resources.h"
+#include "ui/base/cursor/cursor.h"
+
 namespace ui {
 
-#if defined(USE_AURA)
-
 namespace {
+
+base::LazyInstance<base::string16> g_cursor_resource_module_name;
 
 const wchar_t* GetCursorId(gfx::NativeCursor native_cursor) {
   switch (native_cursor.native_type()) {
@@ -59,29 +64,47 @@ const wchar_t* GetCursorId(gfx::NativeCursor native_cursor) {
     case kCursorNotAllowed:
       return IDC_NO;
     case kCursorColumnResize:
+      return MAKEINTRESOURCE(IDC_COLRESIZE);
     case kCursorRowResize:
+      return MAKEINTRESOURCE(IDC_ROWRESIZE);
     case kCursorMiddlePanning:
+      return MAKEINTRESOURCE(IDC_PAN_MIDDLE);
     case kCursorEastPanning:
+      return MAKEINTRESOURCE(IDC_PAN_EAST);
     case kCursorNorthPanning:
+      return MAKEINTRESOURCE(IDC_PAN_NORTH);
     case kCursorNorthEastPanning:
+      return MAKEINTRESOURCE(IDC_PAN_NORTH_EAST);
     case kCursorNorthWestPanning:
+      return MAKEINTRESOURCE(IDC_PAN_NORTH_WEST);
     case kCursorSouthPanning:
+      return MAKEINTRESOURCE(IDC_PAN_SOUTH);
     case kCursorSouthEastPanning:
+      return MAKEINTRESOURCE(IDC_PAN_SOUTH_EAST);
     case kCursorSouthWestPanning:
+      return MAKEINTRESOURCE(IDC_PAN_SOUTH_WEST);
     case kCursorWestPanning:
+      return MAKEINTRESOURCE(IDC_PAN_WEST);
     case kCursorVerticalText:
+      return MAKEINTRESOURCE(IDC_VERTICALTEXT);
     case kCursorCell:
-    case kCursorContextMenu:
-    case kCursorAlias:
-    case kCursorCopy:
-    case kCursorNone:
+      return MAKEINTRESOURCE(IDC_CELL);
     case kCursorZoomIn:
+      return MAKEINTRESOURCE(IDC_ZOOMIN);
     case kCursorZoomOut:
+      return MAKEINTRESOURCE(IDC_ZOOMOUT);
     case kCursorGrab:
+      return MAKEINTRESOURCE(IDC_HAND_GRAB);
     case kCursorGrabbing:
+      return MAKEINTRESOURCE(IDC_HAND_GRABBING);
+    case kCursorCopy:
+      return MAKEINTRESOURCE(IDC_COPYCUR);
+    case kCursorAlias:
+      return MAKEINTRESOURCE(IDC_ALIAS);
+    case kCursorNone:
+      return MAKEINTRESOURCE(IDC_CURSOR_NONE);
+    case kCursorContextMenu:
     case kCursorCustom:
-      // TODO(jamescook): Should we use WebKit glue resources for these?
-      // Or migrate those resources to someplace ui/aura can share?
       NOTIMPLEMENTED();
       return IDC_ARROW;
     default:
@@ -91,8 +114,6 @@ const wchar_t* GetCursorId(gfx::NativeCursor native_cursor) {
 }
 
 }  // namespace
-
-#endif
 
 CursorLoader* CursorLoader::Create() {
   return new CursorLoaderWin;
@@ -122,15 +143,26 @@ void CursorLoaderWin::UnloadAll() {
 }
 
 void CursorLoaderWin::SetPlatformCursor(gfx::NativeCursor* cursor) {
-#if defined(USE_AURA)
   if (cursor->native_type() != kCursorCustom) {
-    const wchar_t* cursor_id = GetCursorId(*cursor);
-
-    // TODO(jamescook): Support for non-system cursors will require finding
-    // the appropriate module to pass to LoadCursor().
-    cursor->SetPlatformCursor(LoadCursor(NULL, cursor_id));
+    if (cursor->platform()) {
+      cursor->SetPlatformCursor(cursor->platform());
+    } else {
+      const wchar_t* cursor_id = GetCursorId(*cursor);
+      PlatformCursor platform_cursor = LoadCursor(NULL, cursor_id);
+      if (!platform_cursor && !g_cursor_resource_module_name.Get().empty()) {
+        platform_cursor = LoadCursor(
+            GetModuleHandle(g_cursor_resource_module_name.Get().c_str()),
+                            cursor_id);
+      }
+      cursor->SetPlatformCursor(platform_cursor);
+    }
   }
-#endif
+}
+
+// static
+void CursorLoaderWin::SetCursorResourceModule(
+    const base::string16& module_name) {
+  g_cursor_resource_module_name.Get() = module_name;
 }
 
 }  // namespace ui

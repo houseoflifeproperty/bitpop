@@ -8,10 +8,9 @@
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_handler.h"
 
 namespace ash {
-namespace internal {
 
 class SystemModalContainerEventFilterDelegate;
 
@@ -31,7 +30,6 @@ class ASH_EXPORT SystemModalContainerEventFilter : public ui::EventHandler {
   DISALLOW_COPY_AND_ASSIGN(SystemModalContainerEventFilter);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_SYSTEM_MODAL_CONTAINER_EVENT_FILTER_H_

@@ -7,11 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/guid.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_reg_util_win.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/win/registry.h"
 #include "chrome/installer/gcapi/gcapi.h"
 #include "chrome/installer/util/google_update_constants.h"
@@ -27,7 +27,7 @@ class GCAPILastRunTest : public ::testing::Test {
   void SetUp() {
     // Override keys - this is undone during destruction.
     std::wstring hkcu_override = base::StringPrintf(
-        L"hkcu_override\\%ls", ASCIIToWide(base::GenerateGUID()));
+        L"hkcu_override\\%ls", base::ASCIIToWide(base::GenerateGUID()));
     override_manager_.OverrideRegistry(HKEY_CURRENT_USER, hkcu_override);
 
     // Create the client state key in the right places.
@@ -55,7 +55,7 @@ class GCAPILastRunTest : public ::testing::Test {
     return SetLastRunTimeString(base::Int64ToString16(last_run_time));
   }
 
-  bool SetLastRunTimeString(const string16& last_run_time_string) {
+  bool SetLastRunTimeString(const base::string16& last_run_time_string) {
     const wchar_t* base_path = google_update::kRegPathClientState;
     std::wstring path(base_path);
     path += L"\\";

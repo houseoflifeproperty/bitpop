@@ -5,24 +5,22 @@
 #include "content/public/browser/browser_context.h"
 
 #if !defined(OS_IOS)
-#include "content/browser/appcache/chrome_appcache_service.h"
-#include "content/browser/dom_storage/dom_storage_context_impl.h"
 #include "content/browser/download/download_manager_impl.h"
-#include "content/browser/in_process_webkit/indexed_db_context_impl.h"
+#include "content/browser/indexed_db/indexed_db_context_impl.h"
 #include "content/browser/loader/resource_dispatcher_host_impl.h"
-#include "content/public/browser/site_instance.h"
-#include "content/browser/storage_partition_impl.h"
 #include "content/browser/storage_partition_impl_map.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
-#include "net/base/server_bound_cert_service.h"
-#include "net/base/server_bound_cert_store.h"
+#include "content/public/browser/site_instance.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/cookies/cookie_store.h"
+#include "net/ssl/server_bound_cert_service.h"
+#include "net/ssl/server_bound_cert_store.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/database/database_tracker.h"
+#include "webkit/browser/database/database_tracker.h"
+#include "webkit/browser/fileapi/external_mount_points.h"
 #endif // !OS_IOS
 
 using base::UserDataAdapter;
@@ -34,8 +32,12 @@ namespace content {
 namespace {
 
 // Key names on BrowserContext.
-const char* kDownloadManagerKeyName = "download_manager";
-const char* kStorageParitionMapKeyName = "content_storage_partition_map";
+const char kDownloadManagerKeyName[] = "download_manager";
+const char kStorageParitionMapKeyName[] = "content_storage_partition_map";
+
+#if defined(OS_CHROMEOS)
+const char kMountPointsKey[] = "mount_points";
+#endif  // defined(OS_CHROMEOS)
 
 StoragePartitionImplMap* GetStoragePartitionMap(
     BrowserContext* browser_context) {
@@ -63,12 +65,6 @@ StoragePartition* GetStoragePartitionFromConfig(
   return partition_map->Get(partition_domain, partition_name, in_memory);
 }
 
-// Run |callback| on each DOMStorageContextImpl in |browser_context|.
-void PurgeDOMStorageContextInPartition(StoragePartition* storage_partition) {
-  static_cast<StoragePartitionImpl*>(storage_partition)->
-      GetDOMStorageContext()->PurgeMemory();
-}
-
 void SaveSessionStateOnIOThread(
     const scoped_refptr<net::URLRequestContextGetter>& context_getter,
     appcache::AppCacheService* appcache_service) {
@@ -80,13 +76,9 @@ void SaveSessionStateOnIOThread(
   appcache_service->set_force_keep_session_state();
 }
 
-void SaveSessionStateOnWebkitThread(
+void SaveSessionStateOnIndexedDBThread(
     scoped_refptr<IndexedDBContextImpl> indexed_db_context) {
   indexed_db_context->SetForceKeepSessionState();
-}
-
-void PurgeMemoryOnIOThread(appcache::AppCacheService* appcache_service) {
-  appcache_service->PurgeMemory();
 }
 
 }  // namespace
@@ -103,7 +95,7 @@ void BrowserContext::AsyncObliterateStoragePartition(
 // static
 void BrowserContext::GarbageCollectStoragePartitions(
       BrowserContext* browser_context,
-      scoped_ptr<base::hash_set<FilePath> > active_paths,
+      scoped_ptr<base::hash_set<base::FilePath> > active_paths,
       const base::Closure& done) {
   GetStoragePartitionMap(browser_context)->GarbageCollect(
       active_paths.Pass(), done);
@@ -115,19 +107,42 @@ DownloadManager* BrowserContext::GetDownloadManager(
   if (!context->GetUserData(kDownloadManagerKeyName)) {
     ResourceDispatcherHostImpl* rdh = ResourceDispatcherHostImpl::Get();
     DCHECK(rdh);
-    scoped_refptr<DownloadManager> download_manager =
+    DownloadManager* download_manager =
         new DownloadManagerImpl(
-            GetContentClient()->browser()->GetNetLog());
+            GetContentClient()->browser()->GetNetLog(), context);
 
     context->SetUserData(
         kDownloadManagerKeyName,
-        new UserDataAdapter<DownloadManager>(download_manager));
+        download_manager);
     download_manager->SetDelegate(context->GetDownloadManagerDelegate());
-    download_manager->Init(context);
   }
 
-  return UserDataAdapter<DownloadManager>::Get(
-      context, kDownloadManagerKeyName);
+  return static_cast<DownloadManager*>(
+      context->GetUserData(kDownloadManagerKeyName));
+}
+
+// static
+fileapi::ExternalMountPoints* BrowserContext::GetMountPoints(
+    BrowserContext* context) {
+  // Ensure that these methods are called on the UI thread, except for
+  // unittests where a UI thread might not have been created.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI) ||
+         !BrowserThread::IsMessageLoopValid(BrowserThread::UI));
+
+#if defined(OS_CHROMEOS)
+  if (!context->GetUserData(kMountPointsKey)) {
+    scoped_refptr<fileapi::ExternalMountPoints> mount_points =
+        fileapi::ExternalMountPoints::CreateRefCounted();
+    context->SetUserData(
+        kMountPointsKey,
+        new UserDataAdapter<fileapi::ExternalMountPoints>(mount_points.get()));
+  }
+
+  return UserDataAdapter<fileapi::ExternalMountPoints>::Get(
+      context, kMountPointsKey);
+#else
+  return NULL;
+#endif
 }
 
 StoragePartition* BrowserContext::GetStoragePartition(
@@ -208,34 +223,23 @@ void BrowserContext::SaveSessionState(BrowserContext* browser_context) {
             storage_partition->GetAppCacheService()));
   }
 
-  DOMStorageContextImpl* dom_storage_context_impl =
-      static_cast<DOMStorageContextImpl*>(
+  DOMStorageContextWrapper* dom_storage_context_proxy =
+      static_cast<DOMStorageContextWrapper*>(
           storage_partition->GetDOMStorageContext());
-  dom_storage_context_impl->SetForceKeepSessionState();
+  dom_storage_context_proxy->SetForceKeepSessionState();
 
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::WEBKIT_DEPRECATED)) {
-    IndexedDBContextImpl* indexed_db = static_cast<IndexedDBContextImpl*>(
+  IndexedDBContextImpl* indexed_db_context_impl =
+      static_cast<IndexedDBContextImpl*>(
         storage_partition->GetIndexedDBContext());
-    BrowserThread::PostTask(
-        BrowserThread::WEBKIT_DEPRECATED, FROM_HERE,
-        base::Bind(&SaveSessionStateOnWebkitThread,
-                   make_scoped_refptr(indexed_db)));
+  // No task runner in unit tests.
+  if (indexed_db_context_impl->TaskRunner()) {
+    indexed_db_context_impl->TaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&SaveSessionStateOnIndexedDBThread,
+                   make_scoped_refptr(indexed_db_context_impl)));
   }
 }
 
-void BrowserContext::PurgeMemory(BrowserContext* browser_context) {
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
-    BrowserThread::PostTask(
-        BrowserThread::IO, FROM_HERE,
-        base::Bind(
-            &PurgeMemoryOnIOThread,
-            BrowserContext::GetDefaultStoragePartition(browser_context)->
-                GetAppCacheService()));
-  }
-
-  ForEachStoragePartition(browser_context,
-                          base::Bind(&PurgeDOMStorageContextInPartition));
-}
 #endif  // !OS_IOS
 
 BrowserContext::~BrowserContext() {

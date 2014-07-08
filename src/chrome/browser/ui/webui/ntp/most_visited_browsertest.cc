@@ -2,26 +2,28 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "chrome/browser/ui/webui/web_ui_browsertest.h"
+#include "base/files/file_path.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/test/base/web_ui_browsertest.h"
+#include "url/gurl.h"
 
 class MostVisitedWebUITest : public WebUIBrowserTest {
  public:
   virtual ~MostVisitedWebUITest() {}
 
-  virtual void SetUpInProcessBrowserTestFixture() {
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
     WebUIBrowserTest::SetUpInProcessBrowserTestFixture();
-    AddLibrary(FilePath(FILE_PATH_LITERAL("most_visited_page_test.js")));
+    AddLibrary(base::FilePath(FILE_PATH_LITERAL("most_visited_page_test.js")));
   }
 
-  virtual void SetUpOnMainThread() {
+  virtual void SetUpOnMainThread() OVERRIDE {
+    WebUIBrowserTest::SetUpOnMainThread();
     ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUINewTabURL));
   }
 };
 
-WEB_UI_UNITTEST_F(MostVisitedWebUITest, refreshDataBasic);
-WEB_UI_UNITTEST_F(MostVisitedWebUITest, refreshDataOrdering);
-WEB_UI_UNITTEST_F(MostVisitedWebUITest, refreshDataPinning);
+// TODO(samarth): delete along with the rest of the NTP4 code.
+WEB_UI_UNITTEST_F(MostVisitedWebUITest, DISABLED_refreshDataBasic);
+WEB_UI_UNITTEST_F(MostVisitedWebUITest, DISABLED_refreshDataOrdering);
+WEB_UI_UNITTEST_F(MostVisitedWebUITest, DISABLED_refreshDataPinning);

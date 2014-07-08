@@ -6,15 +6,11 @@
 #define CONTENT_BROWSER_GAMEPAD_GAMEPAD_TEST_HELPERS_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "content/browser/gamepad/gamepad_data_fetcher.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
-
-namespace base {
-class SystemMonitor;
-}
+#include "third_party/WebKit/public/platform/WebGamepads.h"
 
 namespace content {
 
@@ -25,12 +21,12 @@ class MockGamepadDataFetcher : public GamepadDataFetcher {
  public:
   // Initializes the fetcher with the given gamepad data, which will be
   // returned when the provider queries us.
-  explicit MockGamepadDataFetcher(const WebKit::WebGamepads& test_data);
+  explicit MockGamepadDataFetcher(const blink::WebGamepads& test_data);
 
   virtual ~MockGamepadDataFetcher();
 
   // GamepadDataFetcher.
-  virtual void GetGamepadData(WebKit::WebGamepads* pads,
+  virtual void GetGamepadData(blink::WebGamepads* pads,
                               bool devices_changed_hint) OVERRIDE;
 
   // Blocks the current thread until the GamepadProvider reads from this
@@ -38,11 +34,11 @@ class MockGamepadDataFetcher : public GamepadDataFetcher {
   void WaitForDataRead();
 
   // Updates the test data.
-  void SetTestData(const WebKit::WebGamepads& new_data);
+  void SetTestData(const blink::WebGamepads& new_data);
 
  private:
   base::Lock lock_;
-  WebKit::WebGamepads test_data_;
+  blink::WebGamepads test_data_;
   base::WaitableEvent read_data_;
 
   DISALLOW_COPY_AND_ASSIGN(MockGamepadDataFetcher);
@@ -54,13 +50,11 @@ class GamepadTestHelper {
   GamepadTestHelper();
   virtual ~GamepadTestHelper();
 
-  MessageLoop& message_loop() { return message_loop_; }
+  base::MessageLoop& message_loop() { return message_loop_; }
 
  private:
   // This must be constructed before the system monitor.
-  MessageLoop message_loop_;
-
-  scoped_ptr<base::SystemMonitor> system_monitor_;
+  base::MessageLoop message_loop_;
 
   DISALLOW_COPY_AND_ASSIGN(GamepadTestHelper);
 };
@@ -69,7 +63,7 @@ class GamepadTestHelper {
 // global singleton for the gamepad service.
 class GamepadServiceTestConstructor : public GamepadTestHelper {
  public:
-  GamepadServiceTestConstructor(const WebKit::WebGamepads& test_data);
+  explicit GamepadServiceTestConstructor(const blink::WebGamepads& test_data);
   virtual ~GamepadServiceTestConstructor();
 
   GamepadService* gamepad_service() { return gamepad_service_; }

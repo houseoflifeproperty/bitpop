@@ -9,26 +9,26 @@
 #define CHROME_BROWSER_UI_FIND_BAR_FIND_BAR_STATE_H_
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "base/strings/string16.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Profile;
 
-class FindBarState : public ProfileKeyedService {
+class FindBarState : public KeyedService {
  public:
   FindBarState() {}
   virtual ~FindBarState() {}
 
-  string16 last_prepopulate_text() const {
+  base::string16 last_prepopulate_text() const {
     return last_prepopulate_text_;
   }
 
-  void set_last_prepopulate_text(const string16& text) {
+  void set_last_prepopulate_text(const base::string16& text) {
     last_prepopulate_text_ = text;
   }
 
  private:
-  string16 last_prepopulate_text_;
+  base::string16 last_prepopulate_text_;
 
   DISALLOW_COPY_AND_ASSIGN(FindBarState);
 };

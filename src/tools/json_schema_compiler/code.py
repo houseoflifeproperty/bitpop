@@ -14,15 +14,17 @@ class Code(object):
     self._indent_size = indent_size
     self._comment_length = comment_length
 
-  def Append(self, line='', substitute=True):
+  def Append(self, line='', substitute=True, indent_level=None):
     """Appends a line of code at the current indent level or just a newline if
     line is not specified. Trailing whitespace is stripped.
 
     substitute: indicated whether this line should be affected by
     code.Substitute().
     """
-    self._code.append(Line(((' ' * self._indent_level) + line).rstrip(),
-        substitute=substitute))
+    if indent_level is None:
+      indent_level = self._indent_level
+    self._code.append(Line(((' ' * indent_level) + line).rstrip(),
+                      substitute=substitute))
     return self
 
   def IsEmpty(self):
@@ -47,23 +49,31 @@ class Code(object):
         if line.substitute:
           line.value %= ()
       except TypeError:
-        raise TypeError('Unsubstituted value when concatting\n' + line)
+        raise TypeError('Unsubstituted value when concatting\n' + line.value)
       except ValueError:
-        raise ValueError('Stray % character when concatting\n' + line)
+        raise ValueError('Stray % character when concatting\n' + line.value)
       self.Append(line.value, line.substitute)
 
     return self
 
-  def Sblock(self, line=''):
+  def Cblock(self, code):
+    """Concatenates another Code object |code| onto this one followed by a
+    blank line, if |code| is non-empty."""
+    if not code.IsEmpty():
+      self.Concat(code).Append()
+    return self
+
+  def Sblock(self, line=None):
     """Starts a code block.
 
     Appends a line of code and then increases the indent level.
     """
-    self.Append(line)
+    if line is not None:
+      self.Append(line)
     self._indent_level += self._indent_size
     return self
 
-  def Eblock(self, line=''):
+  def Eblock(self, line=None):
     """Ends a code block by decreasing and then appending a line (or a blank
     line if not given).
     """
@@ -71,7 +81,8 @@ class Code(object):
     #if not isinstance(line, basestring):
     #  raise TypeError
     self._indent_level -= self._indent_size
-    self.Append(line)
+    if line is not None:
+      self.Append(line)
     return self
 
   def Comment(self, comment, comment_prefix='// '):
@@ -121,6 +132,7 @@ class Code(object):
     """Renders Code as a string.
     """
     return '\n'.join([l.value for l in self._code])
+
 
 class Line(object):
   """A line of code.

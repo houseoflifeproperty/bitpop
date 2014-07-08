@@ -4,64 +4,37 @@
 
 #include "content/public/test/test_browser_context.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
+#include "base/test/null_task_runner.h"
 #include "content/public/test/mock_resource_context.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/quota/special_storage_policy.h"
+#include "webkit/browser/quota/special_storage_policy.h"
 
 namespace {
 
-// A silly class to satisfy net::URLRequestsContextGetter requirement
-// for a task runner. Threading requirements don't matter for this
-// test scaffolding.
-class AnyThreadNonTaskRunner : public base::SingleThreadTaskRunner {
- public:
-  virtual bool RunsTasksOnCurrentThread() const OVERRIDE {
-    return true;
-  }
-
-  virtual bool PostDelayedTask(const tracked_objects::Location& from_here,
-                               const base::Closure& task,
-                               base::TimeDelta delay) OVERRIDE {
-    NOTREACHED();
-    return false;
-  }
-
-  virtual bool PostNonNestableDelayedTask(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay) OVERRIDE {
-    NOTREACHED();
-    return false;
-  }
-
- private:
-  virtual ~AnyThreadNonTaskRunner() {}
-};
-
 class TestContextURLRequestContextGetter : public net::URLRequestContextGetter {
  public:
-  explicit TestContextURLRequestContextGetter(net::URLRequestContext* context)
-      : context_(context),
-        any_thread_non_task_runner_(new AnyThreadNonTaskRunner) {
+  TestContextURLRequestContextGetter()
+      : null_task_runner_(new base::NullTaskRunner) {
   }
 
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
-    return context_;
+    return &context_;
   }
 
   virtual scoped_refptr<base::SingleThreadTaskRunner>
       GetNetworkTaskRunner() const OVERRIDE {
-    return any_thread_non_task_runner_;
+    return null_task_runner_;
   }
 
  private:
   virtual ~TestContextURLRequestContextGetter() {}
 
-  net::URLRequestContext* context_;
-  scoped_refptr<base::SingleThreadTaskRunner> any_thread_non_task_runner_;
+  net::TestURLRequestContext context_;
+  scoped_refptr<base::SingleThreadTaskRunner> null_task_runner_;
 };
 
 }  // namespace
@@ -75,7 +48,7 @@ TestBrowserContext::TestBrowserContext() {
 TestBrowserContext::~TestBrowserContext() {
 }
 
-FilePath TestBrowserContext::TakePath() {
+base::FilePath TestBrowserContext::TakePath() {
   return browser_context_dir_.Take();
 }
 
@@ -84,7 +57,7 @@ void TestBrowserContext::SetSpecialStoragePolicy(
   special_storage_policy_ = policy;
 }
 
-FilePath TestBrowserContext::GetPath() {
+base::FilePath TestBrowserContext::GetPath() const {
   return browser_context_dir_.path();
 }
 
@@ -98,22 +71,13 @@ DownloadManagerDelegate* TestBrowserContext::GetDownloadManagerDelegate() {
 
 net::URLRequestContextGetter* TestBrowserContext::GetRequestContext() {
   if (!request_context_.get()) {
-    request_context_ = new TestContextURLRequestContextGetter(
-        GetResourceContext()->GetRequestContext());
+    request_context_ = new TestContextURLRequestContextGetter();
   }
   return request_context_.get();
 }
 
 net::URLRequestContextGetter*
 TestBrowserContext::GetRequestContextForRenderProcess(int renderer_child_id) {
-  return NULL;
-}
-
-
-net::URLRequestContextGetter*
-TestBrowserContext::GetRequestContextForStoragePartition(
-    const FilePath& partition_path,
-    bool in_memory) {
   return NULL;
 }
 
@@ -129,14 +93,48 @@ TestBrowserContext::GetMediaRequestContextForRenderProcess(
 
 net::URLRequestContextGetter*
 TestBrowserContext::GetMediaRequestContextForStoragePartition(
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory) {
   return NULL;
 }
 
+void TestBrowserContext::RequestMidiSysExPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const MidiSysExPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestBrowserContext::CancelMidiSysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
+}
+
+void TestBrowserContext::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestBrowserContext::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
+}
+
 ResourceContext* TestBrowserContext::GetResourceContext() {
-  if (!resource_context_.get())
-    resource_context_.reset(new MockResourceContext());
+  if (!resource_context_)
+    resource_context_.reset(new MockResourceContext(
+        GetRequestContext()->GetURLRequestContext()));
   return resource_context_.get();
 }
 
@@ -145,8 +143,8 @@ GeolocationPermissionContext*
   return NULL;
 }
 
-SpeechRecognitionPreferences*
-    TestBrowserContext::GetSpeechRecognitionPreferences() {
+BrowserPluginGuestManagerDelegate*
+    TestBrowserContext::GetGuestManagerDelegate() {
   return NULL;
 }
 

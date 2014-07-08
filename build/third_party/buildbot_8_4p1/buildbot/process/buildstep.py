@@ -635,8 +635,8 @@ class BuildStep:
     doStepIf = True
     hideStepIf = False
     # like doStepIf, but evaluated at runtime if executing under runbuild.py
-    # we also overload 'False' to signify this isn't a buildrunner step
-    brDoStepIf = False
+    # We use None to signify that a step is not a buildrunner step.
+    brDoStepIf = None
 
     def __init__(self, **kwargs):
         self.factory = (self.__class__, dict(kwargs))

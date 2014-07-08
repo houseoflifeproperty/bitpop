@@ -7,7 +7,7 @@
 #include <algorithm>
 
 #include "ui/app_list/pagination_model_observer.h"
-#include "ui/base/animation/slide_animation.h"
+#include "ui/gfx/animation/slide_animation.h"
 
 namespace app_list {
 
@@ -17,7 +17,8 @@ PaginationModel::PaginationModel()
       transition_(-1, 0),
       pending_selected_page_(-1),
       transition_duration_ms_(0),
-      overscroll_transition_duration_ms_(0) {
+      overscroll_transition_duration_ms_(0),
+      last_overscroll_target_page_(0) {
 }
 
 PaginationModel::~PaginationModel() {
@@ -31,7 +32,7 @@ void PaginationModel::SetTotalPages(int total_pages) {
   if (selected_page_ < 0)
     SelectPage(0, false /* animate */);
   if (selected_page_ >= total_pages_)
-    SelectPage(total_pages_ - 1, false /* animate */);
+    SelectPage(std::max(total_pages_ - 1, 0), false /* animate */);
   FOR_EACH_OBSERVER(PaginationModelObserver, observers_, TotalPagesChanged());
 }
 
@@ -40,9 +41,25 @@ void PaginationModel::SelectPage(int page, bool animate) {
     // -1 and |total_pages_| are valid target page for animation.
     DCHECK(page >= -1 && page <= total_pages_);
 
-    if (!transition_animation_.get()) {
+    if (!transition_animation_) {
       if (page == selected_page_)
         return;
+
+      // Suppress over scroll animation if the same one happens too fast.
+      if (!is_valid_page(page)) {
+        const base::TimeTicks now = base::TimeTicks::Now();
+
+        if (page == last_overscroll_target_page_) {
+          const int kMinOverScrollTimeGapInMs = 500;
+          const base::TimeDelta time_elapsed =
+               now - last_overscroll_animation_start_time_;
+          if (time_elapsed.InMilliseconds() < kMinOverScrollTimeGapInMs)
+            return;
+        }
+
+        last_overscroll_target_page_ = page;
+        last_overscroll_animation_start_time_ = now;
+      }
 
       // Creates an animation if there is not one.
       StartTransitionAnimation(Transition(page, 0));
@@ -65,7 +82,7 @@ void PaginationModel::SelectPage(int page, bool animate) {
       }
     }
   } else {
-    DCHECK(page >= 0 && page < total_pages_);
+    DCHECK(total_pages_ == 0 || (page >= 0 && page < total_pages_));
 
     if (page == selected_page_)
       return;
@@ -149,7 +166,7 @@ void PaginationModel::EndScroll(bool cancel) {
 
 bool PaginationModel::IsRevertingCurrentTransition() const {
   // Use !IsShowing() so that we return true at the end of hide animation.
-  return transition_animation_.get() && !transition_animation_->IsShowing();
+  return transition_animation_ && !transition_animation_->IsShowing();
 }
 
 void PaginationModel::AddObserver(PaginationModelObserver* observer) {
@@ -167,6 +184,10 @@ void PaginationModel::NotifySelectedPageChanged(int old_selected,
                     SelectedPageChanged(old_selected, new_selected));
 }
 
+void PaginationModel::NotifyTransitionStarted() {
+  FOR_EACH_OBSERVER(PaginationModelObserver, observers_, TransitionStarted());
+}
+
 void PaginationModel::NotifyTransitionChanged() {
   FOR_EACH_OBSERVER(PaginationModelObserver, observers_, TransitionChanged());
 }
@@ -175,7 +196,7 @@ int PaginationModel::CalculateTargetPage(int delta) const {
   DCHECK_GT(total_pages_, 0);
 
   int current_page = selected_page_;
-  if (transition_animation_.get() && transition_animation_->IsShowing()) {
+  if (transition_animation_ && transition_animation_->IsShowing()) {
     current_page = pending_selected_page_ >= 0 ?
         pending_selected_page_ : transition_.target_page;
   }
@@ -197,10 +218,11 @@ int PaginationModel::CalculateTargetPage(int delta) const {
 void PaginationModel::StartTransitionAnimation(const Transition& transition) {
   DCHECK(selected_page_ != transition.target_page);
 
+  NotifyTransitionStarted();
   SetTransition(transition);
 
-  transition_animation_.reset(new ui::SlideAnimation(this));
-  transition_animation_->SetTweenType(ui::Tween::LINEAR);
+  transition_animation_.reset(new gfx::SlideAnimation(this));
+  transition_animation_->SetTweenType(gfx::Tween::LINEAR);
   transition_animation_->Reset(transition_.progress);
 
   const int duration = is_valid_page(transition_.target_page) ?
@@ -218,12 +240,12 @@ void PaginationModel::ResetTransitionAnimation() {
   pending_selected_page_ = -1;
 }
 
-void PaginationModel::AnimationProgressed(const ui::Animation* animation) {
+void PaginationModel::AnimationProgressed(const gfx::Animation* animation) {
   transition_.progress = transition_animation_->GetCurrentValue();
   NotifyTransitionChanged();
 }
 
-void PaginationModel::AnimationEnded(const ui::Animation* animation) {
+void PaginationModel::AnimationEnded(const gfx::Animation* animation) {
   // Save |pending_selected_page_| because SelectPage resets it.
   int next_target = pending_selected_page_;
 

@@ -13,6 +13,7 @@ table representations.
 
 import dgen_opt
 import dgen_output
+import dgen_actuals
 
 # This file generates the class decoder Decoder as defined by the
 # decoder tables.  The code is specifically written to minimize the
@@ -50,8 +51,7 @@ H_HEADER="""%(FILE_HEADER)s
 #define %(IFDEF_NAME)s
 
 #include "native_client/src/trusted/validator_arm/decode.h"
-#include "native_client/src/trusted/validator_arm/actual_classes.h"
-#include "native_client/src/trusted/validator_arm/baseline_classes.h"
+#include "%(FILENAME_BASE)s_actuals.h"
 
 namespace nacl_arm_dec {
 """
@@ -64,6 +64,13 @@ class %(decoder_name)s : DecoderState {
 
    // Parses the given instruction, returning the decoder to use.
    virtual const ClassDecoder& decode(const Instruction) const;
+
+   // Returns the class decoder to use to process the fictitious instruction
+   // that is inserted before the first instruction in the code block by
+   // the validator.
+   const ClassDecoder &fictitious_decoder() const {
+     return %(fictitious_decoder)s_instance_;
+   }
 
  private:
 """
@@ -95,7 +102,6 @@ DECODER_DECLARE_FIELD="""
   const %(decoder)s %(decoder)s_instance_;"""
 
 DECODER_DECLARE_FOOTER="""
-  const NotImplemented not_implemented_;
 };
 """
 
@@ -108,15 +114,17 @@ def generate_h(decoder, decoder_name, filename, out, cl_args):
     """Entry point to the decoder for .h file.
 
     Args:
-        decoder: The decoder defined by the list of Table objects to process.
+        decoder: The decoder defined by the list of Table objects to
+                 process.
         decoder_name: The name of the decoder state to build.
         filename: The (localized) name for the .h file.
-        named_decoders: If true, generate a decoder state with named instances.
+        named_decoders: If true, generate a decoder state with named
+                 instances.
         out: a COutput object to write to.
         cl_args: A dictionary of additional command line arguments.
     """
     global _cl_args
-    if not decoder.primary: raise Exception('No tables provided.')
+    assert filename.endswith('.h')
     _cl_args = cl_args
 
     # Before starting, remove all testing information from the parsed tables.
@@ -125,9 +133,12 @@ def generate_h(decoder, decoder_name, filename, out, cl_args):
     values = {
         'FILE_HEADER': dgen_output.HEADER_BOILERPLATE,
         'IFDEF_NAME': dgen_output.ifdef_name(filename),
+        'FILENAME_BASE': filename[:-len('.h')],
         'decoder_name': decoder_name,
         }
     out.write(H_HEADER % values)
+    values['fictitious_decoder'] = (
+        decoder.get_value('FictitiousFirst').actual())
     out.write(DECODER_DECLARE_HEADER % values)
     out.write(DECODER_DECLARE_METHOD_COMMENTS)
     for table in decoder.tables():
@@ -156,7 +167,6 @@ CONSTRUCTOR_FIELD_INIT="""
   , %(decoder)s_instance_()"""
 
 CONSTRUCTOR_FOOTER="""
-  , not_implemented_()
 {}
 """
 
@@ -194,7 +204,7 @@ METHOD_DISPATCH_CLOSE="""
 
 METHOD_FOOTER="""
   // Catch any attempt to fall though ...
-  return not_implemented_;
+  return %(not_implemented)s_instance_;
 }
 """
 
@@ -217,19 +227,21 @@ def generate_cc(decoder, decoder_name, filename, out, cl_args):
     """Implementation of the decoder in .cc file
 
     Args:
-        decoder: The decoder defined by the list of Table objects to process.
+        decoder: The decoder defined by the list of Table objects to
+                 process.
         decoder_name: The name of the decoder state to build.
         filename: The (localized) name for the .h file.
-        named_decoders: If true, generate a decoder state with named instances.
+        named_decoders: If true, generate a decoder state with named
+        instances.
         out: a COutput object to write to.
         cl_args: A dictionary of additional command line arguments.
     """
     global _cl_args
-    if not decoder.primary: raise Exception('No tables provided.')
     assert filename.endswith('.cc')
     _cl_args = cl_args
 
-    # Before starting, remove all testing information from the parsed tables.
+    # Before starting, remove all testing information from the parsed
+    # tables.
     decoder = decoder.action_filter(['actual'])
     values = {
         'FILE_HEADER': dgen_output.HEADER_BOILERPLATE,
@@ -310,4 +322,5 @@ def _generate_methods(decoder, values, out):
       else:
         raise Exception('Bad table action: %s' % repr(row.action))
       out.write(METHOD_DISPATCH_CLOSE % values)
+    values['not_implemented'] = decoder.get_value('NotImplemented').actual()
     out.write(METHOD_FOOTER % values)

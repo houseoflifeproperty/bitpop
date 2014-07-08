@@ -4,14 +4,18 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/utf_string_conversions.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_name_folder_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
+
+using base::ASCIIToUTF16;
 
 class BookmarkNameFolderControllerTest : public CocoaProfileTest {
 };
@@ -23,12 +27,11 @@ TEST_F(BookmarkNameFolderControllerTest, AddNew) {
   const BookmarkNode* parent = model->bookmark_bar_node();
   EXPECT_EQ(0, parent->child_count());
 
-  scoped_nsobject<BookmarkNameFolderController>
-    controller([[BookmarkNameFolderController alloc]
-                 initWithParentWindow:test_window()
-                              profile:profile()
-                               parent:parent
-                             newIndex:0]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                          parent:parent
+                                                        newIndex:0]);
   [controller window];  // force nib load
 
   // Do nothing.
@@ -59,12 +62,11 @@ TEST_F(BookmarkNameFolderControllerTest, AddNewWithSibling) {
                 GURL("http://www.google.com"));
   EXPECT_EQ(2, parent->child_count());
 
-  scoped_nsobject<BookmarkNameFolderController>
-    controller([[BookmarkNameFolderController alloc]
-                 initWithParentWindow:test_window()
-                              profile:profile()
-                               parent:parent
-                             newIndex:1]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                          parent:parent
+                                                        newIndex:1]);
   [controller window];  // force nib load
 
   // Add a new folder.
@@ -83,12 +85,11 @@ TEST_F(BookmarkNameFolderControllerTest, AddNewDefaultName) {
   const BookmarkNode* parent = model->bookmark_bar_node();
   EXPECT_EQ(0, parent->child_count());
 
-  scoped_nsobject<BookmarkNameFolderController>
-    controller([[BookmarkNameFolderController alloc]
-                 initWithParentWindow:test_window()
-                              profile:profile()
-                               parent:parent
-                             newIndex:0]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                          parent:parent
+                                                        newIndex:0]);
 
   [controller window];  // force nib load
 
@@ -104,12 +105,11 @@ TEST_F(BookmarkNameFolderControllerTest, AddNewBlankName) {
   const BookmarkNode* parent = model->bookmark_bar_node();
   EXPECT_EQ(0, parent->child_count());
 
-  scoped_nsobject<BookmarkNameFolderController>
-  controller([[BookmarkNameFolderController alloc]
-              initWithParentWindow:test_window()
-                           profile:profile()
-                            parent:parent
-                          newIndex:0]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                          parent:parent
+                                                        newIndex:0]);
   [controller window];  // force nib load
 
   // Change the name to blank, click OK.
@@ -128,11 +128,10 @@ TEST_F(BookmarkNameFolderControllerTest, Rename) {
 
   // Rename the folder by creating a controller that originates from
   // the node.
-  scoped_nsobject<BookmarkNameFolderController>
-    controller([[BookmarkNameFolderController alloc]
-                 initWithParentWindow:test_window()
-                              profile:profile()
-                                 node:folder]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                            node:folder]);
   [controller window];  // force nib load
 
   EXPECT_NSEQ(@"folder", [controller folderName]);
@@ -148,12 +147,11 @@ TEST_F(BookmarkNameFolderControllerTest, EditAndConfirmOKButton) {
   const BookmarkNode* parent = model->bookmark_bar_node();
   EXPECT_EQ(0, parent->child_count());
 
-  scoped_nsobject<BookmarkNameFolderController>
-    controller([[BookmarkNameFolderController alloc]
-                 initWithParentWindow:test_window()
-                              profile:profile()
-                               parent:parent
-                             newIndex:0]);
+  base::scoped_nsobject<BookmarkNameFolderController> controller(
+      [[BookmarkNameFolderController alloc] initWithParentWindow:test_window()
+                                                         profile:profile()
+                                                          parent:parent
+                                                        newIndex:0]);
   [controller window];  // force nib load
 
   // We start enabled since the default "New Folder" is added for us.

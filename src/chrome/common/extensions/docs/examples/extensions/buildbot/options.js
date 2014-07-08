@@ -2,21 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-var checkbox;
+(function() {
 
-function save() {
-  chrome.storage.sync.set({prefs: {use_notifications: checkbox.checked}});
-}
+window.buildbot = window.buildbot || {};
+
+var prefs = new buildbot.PrefStore;
 
 // Initialize the checkbox checked state from the saved preference.
 function main() {
-  checkbox = document.getElementById('notifications');
-  chrome.storage.sync.get(
-      {prefs: {use_notifications: false}},
-      function (storage) {
-        checkbox.checked = storage.prefs.use_notifications;
-        checkbox.addEventListener('click', save);
-      });
+  var checkbox = document.getElementById('notifications');
+  prefs.getUseNotifications(function(useNotifications) {
+    checkbox.checked = useNotifications;
+    checkbox.addEventListener(
+      'click',
+      function() {prefs.setUseNotifications(checkbox.checked);});
+  });
+
+  var textbox = document.getElementById('try-job-username');
+  prefs.getTryJobUsername(function(tryJobUsername) {
+    textbox.value = tryJobUsername;
+    textbox.addEventListener(
+        'change',
+        function() {prefs.setTryJobUsername(textbox.value);});
+  });
 }
 
 main();
+
+})();

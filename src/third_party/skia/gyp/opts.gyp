@@ -1,3 +1,4 @@
+# Gyp file for opts projects
 {
   'targets': [
     # Due to an unfortunate intersection of lameness between gcc and gyp,
@@ -23,33 +24,42 @@
       'product_name': 'skia_opts',
       'type': 'static_library',
       'standalone_static_library': 1,
+      'dependencies': [
+        'core.gyp:*',
+        'effects.gyp:*'
+      ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
         '../src/core',
         '../src/opts',
       ],
       'conditions': [
         [ 'skia_arch_type == "x86" and skia_os != "ios"', {
           'conditions': [
-            [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl"]', {
+            [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos", "android"]', {
               'cflags': [
                 '-msse2',
               ],
             }],
           ],
-          'sources': [
-            '../src/opts/opts_check_SSE2.cpp',
-            '../src/opts/SkBitmapProcState_opts_SSE2.cpp',
-            '../src/opts/SkBlitRow_opts_SSE2.cpp',
-            '../src/opts/SkBlitRect_opts_SSE2.cpp',
-            '../src/opts/SkUtils_opts_SSE2.cpp',
+          'include_dirs': [
+            '../include/utils',
           ],
           'dependencies': [
             'opts_ssse3',
           ],
+          'sources': [
+            '../src/opts/opts_check_x86.cpp',
+            '../src/opts/SkBitmapProcState_opts_SSE2.cpp',
+            '../src/opts/SkBitmapFilter_opts_SSE2.cpp',
+            '../src/opts/SkBlitRow_opts_SSE2.cpp',
+            '../src/opts/SkBlitRect_opts_SSE2.cpp',
+            '../src/opts/SkBlurImage_opts_SSE2.cpp',
+            '../src/opts/SkMorphology_opts_SSE2.cpp',
+            '../src/opts/SkUtils_opts_SSE2.cpp',
+            '../src/opts/SkXfermode_opts_SSE2.cpp',
+          ],
         }],
-        [ 'skia_arch_type == "arm" and armv7 == 1', {
+        [ 'skia_arch_type == "arm" and arm_version >= 7', {
           # The assembly uses the frame pointer register (r7 in Thumb/r11 in
           # ARM), the compiler doesn't like that.
           'cflags!': [
@@ -65,11 +75,15 @@
             'arm_neon_optional%': '<(arm_neon_optional>',
           },
           'sources': [
-            '../src/opts/opts_check_arm.cpp',
             '../src/opts/memset.arm.S',
             '../src/opts/SkBitmapProcState_opts_arm.cpp',
+            '../src/opts/SkBlitMask_opts_arm.cpp',
             '../src/opts/SkBlitRow_opts_arm.cpp',
             '../src/opts/SkBlitRow_opts_arm.h',
+            '../src/opts/SkBlurImage_opts_arm.cpp',
+            '../src/opts/SkMorphology_opts_arm.cpp',
+            '../src/opts/SkUtils_opts_arm.cpp',
+            '../src/opts/SkXfermode_opts_arm.cpp',
           ],
           'conditions': [
             [ 'arm_neon == 1 or arm_neon_optional == 1', {
@@ -87,11 +101,42 @@
             }],
           ],
         }],
-        [ '(skia_arch_type == "arm" and armv7 == 0) or (skia_os == "ios")', {
+        [ '(skia_arch_type == "mips") or (skia_arch_type == "arm" and arm_version < 7) \
+            or (skia_os == "ios") \
+            or (skia_os == "android" and skia_arch_type not in ["x86", "arm", "mips", "arm64"])', {
           'sources': [
             '../src/opts/SkBitmapProcState_opts_none.cpp',
+            '../src/opts/SkBlitMask_opts_none.cpp',
             '../src/opts/SkBlitRow_opts_none.cpp',
+            '../src/opts/SkBlurImage_opts_none.cpp',
+            '../src/opts/SkMorphology_opts_none.cpp',
             '../src/opts/SkUtils_opts_none.cpp',
+            '../src/opts/SkXfermode_opts_none.cpp',
+          ],
+        }],
+        [ 'skia_android_framework', {
+          'cflags!': [
+            '-msse2',
+            '-mfpu=neon',
+            '-fomit-frame-pointer',
+            '-mno-apcs-frame',
+          ]
+        }],
+        [ 'skia_arch_type == "arm64"', {
+          'sources': [
+            '../src/opts/SkBitmapProcState_arm_neon.cpp',
+            '../src/opts/SkBitmapProcState_matrixProcs_neon.cpp',
+            '../src/opts/SkBitmapProcState_opts_arm.cpp',
+            '../src/opts/SkBlitMask_opts_arm.cpp',
+            '../src/opts/SkBlitMask_opts_arm_neon.cpp',
+            '../src/opts/SkBlitRow_opts_none.cpp',
+            '../src/opts/SkBlurImage_opts_arm.cpp',
+            '../src/opts/SkBlurImage_opts_neon.cpp',
+            '../src/opts/SkMorphology_opts_arm.cpp',
+            '../src/opts/SkMorphology_opts_neon.cpp',
+            '../src/opts/SkUtils_opts_none.cpp',
+            '../src/opts/SkXfermode_opts_arm.cpp',
+            '../src/opts/SkXfermode_opts_arm_neon.cpp',
           ],
         }],
       ],
@@ -105,25 +150,21 @@
       'product_name': 'skia_opts_ssse3',
       'type': 'static_library',
       'standalone_static_library': 1,
+      'dependencies': [
+        'core.gyp:*',
+        'effects.gyp:*'
+      ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
         '../src/core',
       ],
       'conditions': [
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl"]', {
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "nacl", "chromeos", "android"] \
+           and not skia_android_framework', {
           'cflags': [
             '-mssse3',
           ],
         }],
-        # TODO(epoger): the following will enable SSSE3 on Macs, but it will
-        # break once we set OTHER_CFLAGS anywhere else (the first setting will
-        # be replaced, not added to)
-        [ 'skia_os in ["mac"]', {
-          'xcode_settings': {
-            'OTHER_CFLAGS': ['-mssse3',],
-          },
-        }],
+        # (Mac has -mssse3 globally.)
         [ 'skia_arch_type == "x86"', {
           'sources': [
             '../src/opts/SkBitmapProcState_opts_SSSE3.cpp',
@@ -140,9 +181,11 @@
       'product_name': 'skia_opts_neon',
       'type': 'static_library',
       'standalone_static_library': 1,
+      'dependencies': [
+        'core.gyp:*',
+        'effects.gyp:*'
+      ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
         '../src/core',
         '../src/opts',
       ],
@@ -152,25 +195,30 @@
         '-mfpu=vfpv3',
         '-mfpu=vfpv3-d16',
       ],
-      'cflags': [
-        '-mfpu=neon',
-        '-fomit-frame-pointer',
+      'conditions': [
+        [ 'not skia_android_framework', {
+          'cflags': [
+            '-mfpu=neon',
+            '-fomit-frame-pointer',
+          ],
+        }],
+      ],
+      'ldflags': [
+        '-march=armv7-a',
+        '-Wl,--fix-cortex-a8',
       ],
       'sources': [
         '../src/opts/memset16_neon.S',
         '../src/opts/memset32_neon.S',
         '../src/opts/SkBitmapProcState_arm_neon.cpp',
         '../src/opts/SkBitmapProcState_matrixProcs_neon.cpp',
-        '../src/opts/SkBitmapProcState_matrix_clamp_neon.h',
-        '../src/opts/SkBitmapProcState_matrix_repeat_neon.h',
+        '../src/opts/SkBitmapProcState_matrix_neon.h',
+        '../src/opts/SkBlitMask_opts_arm_neon.cpp',
         '../src/opts/SkBlitRow_opts_arm_neon.cpp',
+        '../src/opts/SkBlurImage_opts_neon.cpp',
+        '../src/opts/SkMorphology_opts_neon.cpp',
+        '../src/opts/SkXfermode_opts_arm_neon.cpp',
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

@@ -8,17 +8,21 @@
 #include "base/base_paths.h"
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/debug/trace_event.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/native_library.h"
 #include "base/path_service.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/threading/thread_restrictions.h"
+#include "base/win/windows_version.h"
 #include "ui/gl/gl_bindings.h"
+#include "ui/gl/gl_context_stub_with_extensions.h"
 #include "ui/gl/gl_egl_api_implementation.h"
 #include "ui/gl/gl_gl_api_implementation.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_osmesa_api_implementation.h"
+#include "ui/gl/gl_surface_wgl.h"
 #include "ui/gl/gl_wgl_api_implementation.h"
 
 #if defined(ENABLE_SWIFTSHADER)
@@ -29,10 +33,10 @@ namespace gfx {
 
 namespace {
 
-// This is the D3DX_SDK_VERSION for the last 'separate' DirectX SDK which
-// is from June 2010. Since June 2012 Microsoft includes DirectX in the regular
-// Windows SDK and the D3DX library has been deprecated.
-const int kPinnedD3DXVersion = 43;
+// Version 43 is the latest version of D3DCompiler_nn.dll that works prior to
+// Windows Vista.
+const wchar_t kPreVistaD3DCompiler[] = L"D3DCompiler_43.dll";
+const wchar_t kPostVistaD3DCompiler[] = L"D3DCompiler_46.dll";
 
 void GL_BINDING_CALL MarshalClearDepthToClearDepthf(GLclampd depth) {
   glClearDepthf(static_cast<GLclampf>(depth));
@@ -43,9 +47,10 @@ void GL_BINDING_CALL MarshalDepthRangeToDepthRangef(GLclampd z_near,
   glDepthRangef(static_cast<GLclampf>(z_near), static_cast<GLclampf>(z_far));
 }
 
-bool LoadD3DXLibrary(const FilePath& module_path,
-                     const FilePath::StringType& name) {
-  base::NativeLibrary library = base::LoadNativeLibrary(FilePath(name), NULL);
+bool LoadD3DXLibrary(const base::FilePath& module_path,
+                     const base::FilePath::StringType& name) {
+  base::NativeLibrary library =
+      base::LoadNativeLibrary(base::FilePath(name), NULL);
   if (!library) {
     library = base::LoadNativeLibrary(module_path.Append(name), NULL);
     if (!library) {
@@ -56,6 +61,45 @@ bool LoadD3DXLibrary(const FilePath& module_path,
   return true;
 }
 
+const unsigned char* AngleGetTraceCategoryEnabledFlag(const char* name) {
+  return TRACE_EVENT_API_GET_CATEGORY_GROUP_ENABLED(name);
+}
+
+void AngleAddTraceEvent(char phase,
+                        const unsigned char* category_group_enabled,
+                        const char* name,
+                        unsigned long long id,
+                        int num_args,
+                        const char** arg_names,
+                        const unsigned char* arg_types,
+                        const unsigned long long* arg_values,
+                        unsigned char flags) {
+  TRACE_EVENT_API_ADD_TRACE_EVENT(phase,
+                                  category_group_enabled,
+                                  name,
+                                  id,
+                                  num_args,
+                                  arg_names,
+                                  arg_types,
+                                  arg_values,
+                                  NULL,
+                                  flags);
+}
+
+typedef const unsigned char* (*GetCategoryEnabledFlagFunc)(const char* name);
+typedef void (*AddTraceEventFunc)(char phase,
+                                  const unsigned char* categoryGroupEnabled,
+                                  const char* name,
+                                  unsigned long long id,
+                                  int numArgs,
+                                  const char** argNames,
+                                  const unsigned char* argTypes,
+                                  const unsigned long long* argValues,
+                                  unsigned char flags);
+typedef void (__stdcall *SetTraceFunctionPointersFunc)(
+    GetCategoryEnabledFlagFunc get_category_enabled_flag,
+    AddTraceEventFunc add_trace_event_func);
+
 }  // namespace
 
 void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
@@ -64,12 +108,11 @@ void GetAllowedGLImplementations(std::vector<GLImplementation>* impls) {
   impls->push_back(kGLImplementationOSMesaGL);
 }
 
-bool InitializeGLBindings(GLImplementation implementation) {
+bool InitializeStaticGLBindings(GLImplementation implementation) {
   // Prevent reinitialization with a different implementation. Once the gpu
   // unit tests have initialized with kGLImplementationMock, we don't want to
   // later switch to another GL implementation.
-  if (GetGLImplementation() != kGLImplementationNone)
-    return true;
+  DCHECK_EQ(kGLImplementationNone, GetGLImplementation());
 
   // Allow the main thread or another to initialize these bindings
   // after instituting restrictions on I/O. Going forward they will
@@ -79,7 +122,7 @@ bool InitializeGLBindings(GLImplementation implementation) {
 
   switch (implementation) {
     case kGLImplementationOSMesaGL: {
-      FilePath module_path;
+      base::FilePath module_path;
       if (!PathService::Get(base::DIR_MODULE, &module_path)) {
         LOG(ERROR) << "PathService::Get failed.";
         return false;
@@ -106,25 +149,25 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(library);
       SetGLImplementation(kGLImplementationOSMesaGL);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsOSMESA();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsOSMESA();
       break;
     }
     case kGLImplementationEGLGLES2: {
-      FilePath module_path;
+      base::FilePath module_path;
       if (!PathService::Get(base::DIR_MODULE, &module_path))
         return false;
 
-      // Attempt to load D3DX and its dependencies using the default search path
+      // Attempt to load the D3DX shader compiler using the default search path
       // and if that fails, using an absolute path. This is to ensure these DLLs
       // are loaded before ANGLE is loaded in case they are not in the default
-      // search path.
-      LoadD3DXLibrary(module_path, base::StringPrintf(L"d3dcompiler_%d.dll",
-                                                      kPinnedD3DXVersion));
-      LoadD3DXLibrary(module_path, base::StringPrintf(L"d3dx9_%d.dll",
-                                                      kPinnedD3DXVersion));
+      // search path. Prefer the post vista version.
+      if (base::win::GetVersion() < base::win::VERSION_VISTA ||
+          !LoadD3DXLibrary(module_path, kPostVistaD3DCompiler)) {
+        LoadD3DXLibrary(module_path, kPreVistaD3DCompiler);
+      }
 
-      FilePath gles_path;
+      base::FilePath gles_path;
       const CommandLine* command_line = CommandLine::ForCurrentProcess();
       bool using_swift_shader =
           command_line->GetSwitchValueASCII(switches::kUseGL) == "swiftshader";
@@ -165,6 +208,17 @@ bool InitializeGLBindings(GLImplementation implementation) {
       }
 #endif
 
+      if (!using_swift_shader) {
+        SetTraceFunctionPointersFunc set_trace_function_pointers =
+            reinterpret_cast<SetTraceFunctionPointersFunc>(
+                base::GetFunctionPointerFromNativeLibrary(
+                    gles_library, "SetTraceFunctionPointers"));
+        if (set_trace_function_pointers) {
+          set_trace_function_pointers(&AngleGetTraceCategoryEnabledFlag,
+                                      &AngleAddTraceEvent);
+        }
+      }
+
       GLGetProcAddressProc get_proc_address =
           reinterpret_cast<GLGetProcAddressProc>(
               base::GetFunctionPointerFromNativeLibrary(
@@ -181,8 +235,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(gles_library);
       SetGLImplementation(kGLImplementationEGLGLES2);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsEGL();
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsEGL();
 
       // These two functions take single precision float rather than double
       // precision float parameters in GLES.
@@ -191,10 +245,8 @@ bool InitializeGLBindings(GLImplementation implementation) {
       break;
     }
     case kGLImplementationDesktopGL: {
-      // When using Windows OpenGL, first try wglGetProcAddress and then
-      // Windows GetProcAddress.
       base::NativeLibrary library = base::LoadNativeLibrary(
-          FilePath(L"opengl32.dll"), NULL);
+          base::FilePath(L"opengl32.dll"), NULL);
       if (!library) {
         DVLOG(1) << "opengl32.dll not found";
         return false;
@@ -214,14 +266,52 @@ bool InitializeGLBindings(GLImplementation implementation) {
       AddGLNativeLibrary(library);
       SetGLImplementation(kGLImplementationDesktopGL);
 
-      InitializeGLBindingsGL();
-      InitializeGLBindingsWGL();
+      // Initialize GL surface and get some functions needed for the context
+      // creation below.
+      if (!GLSurfaceWGL::InitializeOneOff()) {
+        LOG(ERROR) << "GLSurfaceWGL::InitializeOneOff failed.";
+        return false;
+      }
+      wglCreateContextProc wglCreateContextFn =
+          reinterpret_cast<wglCreateContextProc>(
+              GetGLProcAddress("wglCreateContext"));
+      wglDeleteContextProc wglDeleteContextFn =
+          reinterpret_cast<wglDeleteContextProc>(
+              GetGLProcAddress("wglDeleteContext"));
+      wglMakeCurrentProc wglMakeCurrentFn =
+          reinterpret_cast<wglMakeCurrentProc>(
+              GetGLProcAddress("wglMakeCurrent"));
+
+      // Create a temporary GL context to bind to entry points. This is needed
+      // because wglGetProcAddress is specified to return NULL for all queries
+      // if a context is not current in MSDN documentation, and the static
+      // bindings may contain functions that need to be queried with
+      // wglGetProcAddress. OpenGL wiki further warns that other error values
+      // than NULL could also be returned from wglGetProcAddress on some
+      // implementations, so we need to clear the WGL bindings and reinitialize
+      // them after the context creation.
+      HGLRC gl_context = wglCreateContextFn(GLSurfaceWGL::GetDisplayDC());
+      if (!gl_context) {
+        LOG(ERROR) << "Failed to create temporary context.";
+        return false;
+      }
+      if (!wglMakeCurrentFn(GLSurfaceWGL::GetDisplayDC(), gl_context)) {
+        LOG(ERROR) << "Failed to make temporary GL context current.";
+        wglDeleteContextFn(gl_context);
+        return false;
+      }
+
+      InitializeStaticGLBindingsGL();
+      InitializeStaticGLBindingsWGL();
+
+      wglMakeCurrent(NULL, NULL);
+      wglDeleteContext(gl_context);
+
       break;
     }
     case kGLImplementationMockGL: {
-      SetGLGetProcAddressProc(GetMockGLProcAddress);
       SetGLImplementation(kGLImplementationMockGL);
-      InitializeGLBindingsGL();
+      InitializeStaticGLBindingsGL();
       break;
     }
     default:
@@ -231,23 +321,29 @@ bool InitializeGLBindings(GLImplementation implementation) {
   return true;
 }
 
-bool InitializeGLExtensionBindings(GLImplementation implementation,
+bool InitializeDynamicGLBindings(GLImplementation implementation,
     GLContext* context) {
   switch (implementation) {
     case kGLImplementationOSMesaGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsOSMESA(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsOSMESA(context);
       break;
     case kGLImplementationEGLGLES2:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsEGL(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsEGL(context);
       break;
     case kGLImplementationDesktopGL:
-      InitializeGLExtensionBindingsGL(context);
-      InitializeGLExtensionBindingsWGL(context);
+      InitializeDynamicGLBindingsGL(context);
+      InitializeDynamicGLBindingsWGL(context);
       break;
     case kGLImplementationMockGL:
-      InitializeGLExtensionBindingsGL(context);
+      if (!context) {
+        scoped_refptr<GLContextStubWithExtensions> mock_context(
+            new GLContextStubWithExtensions());
+        mock_context->SetGLVersionString("3.0");
+        InitializeDynamicGLBindingsGL(mock_context.get());
+      } else
+        InitializeDynamicGLBindingsGL(context);
       break;
     default:
       return false;
@@ -270,6 +366,17 @@ void ClearGLBindings() {
   ClearGLBindingsWGL();
   SetGLImplementation(kGLImplementationNone);
   UnloadGLNativeLibraries();
+}
+
+bool GetGLWindowSystemBindingInfo(GLWindowSystemBindingInfo* info) {
+  switch (GetGLImplementation()) {
+    case kGLImplementationDesktopGL:
+      return GetGLWindowSystemBindingInfoWGL(info);
+    case kGLImplementationEGLGLES2:
+      return GetGLWindowSystemBindingInfoEGL(info);
+    default:
+      return false;
+  }
 }
 
 }  // namespace gfx

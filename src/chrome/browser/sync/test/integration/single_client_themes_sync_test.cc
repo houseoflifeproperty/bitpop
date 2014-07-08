@@ -3,10 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
-#include "chrome/browser/sync/test/integration/themes_helper.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
+#include "chrome/browser/sync/test/integration/themes_helper.h"
 
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 using themes_helper::GetCustomTheme;
 using themes_helper::GetThemeID;
 using themes_helper::UseCustomTheme;
@@ -40,8 +42,7 @@ IN_PROC_BROWSER_TEST_F(SingleClientThemesSyncTest, CustomTheme) {
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for custom themes change."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(GetProfile(0)));
   ASSERT_EQ(GetCustomTheme(0), GetThemeID(verifier()));
@@ -60,16 +61,14 @@ IN_PROC_BROWSER_TEST_F(SingleClientThemesSyncTest, NativeTheme) {
   ASSERT_FALSE(UsingNativeTheme(GetProfile(0)));
   ASSERT_FALSE(UsingNativeTheme(verifier()));
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for custom themes change."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   UseNativeTheme(GetProfile(0));
   UseNativeTheme(verifier());
   ASSERT_TRUE(UsingNativeTheme(GetProfile(0)));
   ASSERT_TRUE(UsingNativeTheme(verifier()));
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for native themes change."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   ASSERT_TRUE(UsingNativeTheme(GetProfile(0)));
   ASSERT_TRUE(UsingNativeTheme(verifier()));
@@ -83,16 +82,14 @@ IN_PROC_BROWSER_TEST_F(SingleClientThemesSyncTest, DefaultTheme) {
   ASSERT_FALSE(UsingDefaultTheme(GetProfile(0)));
   ASSERT_FALSE(UsingDefaultTheme(verifier()));
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for custom themes change."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   UseDefaultTheme(GetProfile(0));
   UseDefaultTheme(verifier());
   ASSERT_TRUE(UsingDefaultTheme(GetProfile(0)));
   ASSERT_TRUE(UsingDefaultTheme(verifier()));
 
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion(
-      "Waiting for native themes change."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
 
   ASSERT_TRUE(UsingDefaultTheme(GetProfile(0)));
   ASSERT_TRUE(UsingDefaultTheme(verifier()));

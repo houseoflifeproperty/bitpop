@@ -5,15 +5,17 @@
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
 
 #include "base/compiler_specific.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/history/history.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/test/integration/multi_client_status_change_checker.h"
 #include "chrome/browser/sync/test/integration/sync_datatype_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
@@ -21,7 +23,7 @@ using sync_datatype_helper::test;
 
 namespace {
 
-class FlushHistoryDBQueueTask : public HistoryDBTask {
+class FlushHistoryDBQueueTask : public history::HistoryDBTask {
  public:
   explicit FlushHistoryDBQueueTask(base::WaitableEvent* event)
       : wait_event_(event) {}
@@ -39,7 +41,7 @@ class FlushHistoryDBQueueTask : public HistoryDBTask {
   base::WaitableEvent* wait_event_;
 };
 
-class GetTypedUrlsTask : public HistoryDBTask {
+class GetTypedUrlsTask : public history::HistoryDBTask {
  public:
   GetTypedUrlsTask(history::URLRows* rows, base::WaitableEvent* event)
       : rows_(rows), wait_event_(event) {}
@@ -61,7 +63,7 @@ class GetTypedUrlsTask : public HistoryDBTask {
   base::WaitableEvent* wait_event_;
 };
 
-class GetUrlTask : public HistoryDBTask {
+class GetUrlTask : public history::HistoryDBTask {
  public:
   GetUrlTask(const GURL& url,
              history::URLRow* row,
@@ -88,7 +90,7 @@ class GetUrlTask : public HistoryDBTask {
   bool* found_;
 };
 
-class GetVisitsTask : public HistoryDBTask {
+class GetVisitsTask : public history::HistoryDBTask {
  public:
   GetVisitsTask(history::URLID id,
                 history::VisitVector* visits,
@@ -113,7 +115,7 @@ class GetVisitsTask : public HistoryDBTask {
   base::WaitableEvent* wait_event_;
 };
 
-class RemoveVisitsTask : public HistoryDBTask {
+class RemoveVisitsTask : public history::HistoryDBTask {
  public:
   RemoveVisitsTask(const history::VisitVector& visits,
                    base::WaitableEvent* event)
@@ -164,7 +166,7 @@ void AddToHistory(HistoryService* service,
                    transition,
                    source,
                    false);
-  service->SetPageTitle(url, ASCIIToUTF16(url.spec() + " - title"));
+  service->SetPageTitle(url, base::ASCIIToUTF16(url.spec() + " - title"));
 }
 
 history::URLRows GetTypedUrlsFromHistoryService(HistoryService* service) {
@@ -307,22 +309,26 @@ void DeleteUrlsFromHistory(int index, const std::vector<GURL>& urls) {
   WaitForHistoryDBThread(index);
 }
 
-void AssertURLRowVectorsAreEqual(const history::URLRows& left,
-                                 const history::URLRows& right) {
-  ASSERT_EQ(left.size(), right.size());
+bool CheckURLRowVectorsAreEqual(const history::URLRows& left,
+                                const history::URLRows& right) {
+  if (left.size() != right.size())
+    return false;
   for (size_t i = 0; i < left.size(); ++i) {
     // URLs could be out-of-order, so look for a matching URL in the second
     // array.
     bool found = false;
     for (size_t j = 0; j < right.size(); ++j) {
       if (left[i].url() == right[j].url()) {
-        AssertURLRowsAreEqual(left[i], right[j]);
-        found = true;
-        break;
+        if (CheckURLRowsAreEqual(left[i], right[j])) {
+          found = true;
+          break;
+        }
       }
     }
-    ASSERT_TRUE(found);
+    if (!found)
+      return false;
   }
+  return true;
 }
 
 bool AreVisitsEqual(const history::VisitVector& visit1,
@@ -348,17 +354,17 @@ bool AreVisitsUnique(const history::VisitVector& visits) {
   return true;
 }
 
-void AssertURLRowsAreEqual(
+bool CheckURLRowsAreEqual(
     const history::URLRow& left, const history::URLRow& right) {
-  ASSERT_EQ(left.url(), right.url());
-  ASSERT_EQ(left.title(), right.title());
-  ASSERT_EQ(left.visit_count(), right.visit_count());
-  ASSERT_EQ(left.typed_count(), right.typed_count());
-  ASSERT_EQ(left.last_visit(), right.last_visit());
-  ASSERT_EQ(left.hidden(), right.hidden());
+  return (left.url() == right.url()) &&
+      (left.title() == right.title()) &&
+      (left.visit_count() == right.visit_count()) &&
+      (left.typed_count() == right.typed_count()) &&
+      (left.last_visit() == right.last_visit()) &&
+      (left.hidden() == right.hidden());
 }
 
-void AssertAllProfilesHaveSameURLsAsVerifier() {
+bool CheckAllProfilesHaveSameURLsAsVerifier() {
   HistoryService* verifier_service =
       HistoryServiceFactory::GetForProfile(test()->verifier(),
                                            Profile::IMPLICIT_ACCESS);
@@ -366,8 +372,45 @@ void AssertAllProfilesHaveSameURLsAsVerifier() {
       GetTypedUrlsFromHistoryService(verifier_service);
   for (int i = 0; i < test()->num_clients(); ++i) {
     history::URLRows urls = GetTypedUrlsFromClient(i);
-    AssertURLRowVectorsAreEqual(verifier_urls, urls);
+    if (!CheckURLRowVectorsAreEqual(verifier_urls, urls))
+      return false;
   }
+  return true;
+}
+
+namespace {
+
+// Helper class used in the implementation of
+// AwaitCheckAllProfilesHaveSameURLsAsVerifier.
+class ProfilesHaveSameURLsChecker : public MultiClientStatusChangeChecker {
+ public:
+  ProfilesHaveSameURLsChecker();
+  virtual ~ProfilesHaveSameURLsChecker();
+
+  virtual bool IsExitConditionSatisfied() OVERRIDE;
+  virtual std::string GetDebugMessage() const OVERRIDE;
+};
+
+ProfilesHaveSameURLsChecker::ProfilesHaveSameURLsChecker()
+    : MultiClientStatusChangeChecker(
+        sync_datatype_helper::test()->GetSyncServices()) {}
+
+ProfilesHaveSameURLsChecker::~ProfilesHaveSameURLsChecker() {}
+
+bool ProfilesHaveSameURLsChecker::IsExitConditionSatisfied() {
+  return CheckAllProfilesHaveSameURLsAsVerifier();
+}
+
+std::string ProfilesHaveSameURLsChecker::GetDebugMessage() const {
+  return "Waiting for matching typed urls profiles";
+}
+
+}  //  namespace
+
+bool AwaitCheckAllProfilesHaveSameURLsAsVerifier() {
+  ProfilesHaveSameURLsChecker checker;
+  checker.Wait();
+  return !checker.TimedOut();
 }
 
 }  // namespace typed_urls_helper

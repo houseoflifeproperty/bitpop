@@ -20,7 +20,6 @@ LOCAL_SRC_FILES := \
     audio_frame_operations.cc \
     channel.cc \
     channel_manager.cc \
-    channel_manager_base.cc \
     dtmf_inband.cc \
     dtmf_inband_queue.cc \
     level_indicator.cc \
@@ -36,7 +35,6 @@ LOCAL_SRC_FILES := \
     voe_call_report_impl.cc \
     voe_codec_impl.cc \
     voe_dtmf_impl.cc \
-    voe_encryption_impl.cc \
     voe_external_media_impl.cc \
     voe_file_impl.cc \
     voe_hardware_impl.cc \
@@ -67,12 +65,12 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../../../modules/rtp_rtcp/interface \
     $(LOCAL_PATH)/../../../modules/udp_transport/interface \
     $(LOCAL_PATH)/../../../modules/utility/interface \
-    $(LOCAL_PATH)/../../../system_wrappers/interface 
+    $(LOCAL_PATH)/../../../system_wrappers/interface
 
 LOCAL_SHARED_LIBRARIES := \
     libcutils \
     libdl \
-    libstlport 
+    libstlport
 
 ifeq ($(TARGET_OS)-$(TARGET_SIMULATOR),linux-true)
 LOCAL_LDLIBS += -ldl -lpthread

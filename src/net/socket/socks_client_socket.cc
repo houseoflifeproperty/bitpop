@@ -6,6 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/bind.h"
+#include "base/callback_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/sys_byteorder.h"
 #include "net/base/io_buffer.h"
@@ -55,32 +56,21 @@ struct SOCKS4ServerResponse {
 COMPILE_ASSERT(sizeof(SOCKS4ServerResponse) == kReadHeaderSize,
                socks4_server_response_struct_wrong_size);
 
-SOCKSClientSocket::SOCKSClientSocket(ClientSocketHandle* transport_socket,
-                                     const HostResolver::RequestInfo& req_info,
-                                     HostResolver* host_resolver)
-    : transport_(transport_socket),
+SOCKSClientSocket::SOCKSClientSocket(
+    scoped_ptr<ClientSocketHandle> transport_socket,
+    const HostResolver::RequestInfo& req_info,
+    RequestPriority priority,
+    HostResolver* host_resolver)
+    : transport_(transport_socket.Pass()),
       next_state_(STATE_NONE),
       completed_handshake_(false),
       bytes_sent_(0),
       bytes_received_(0),
+      was_ever_used_(false),
       host_resolver_(host_resolver),
       host_request_info_(req_info),
-      net_log_(transport_socket->socket()->NetLog()) {
-}
-
-SOCKSClientSocket::SOCKSClientSocket(StreamSocket* transport_socket,
-                                     const HostResolver::RequestInfo& req_info,
-                                     HostResolver* host_resolver)
-    : transport_(new ClientSocketHandle()),
-      next_state_(STATE_NONE),
-      completed_handshake_(false),
-      bytes_sent_(0),
-      bytes_received_(0),
-      host_resolver_(host_resolver),
-      host_request_info_(req_info),
-      net_log_(transport_socket->NetLog()) {
-  transport_->set_socket(transport_socket);
-}
+      priority_(priority),
+      net_log_(transport_->socket()->NetLog()) {}
 
 SOCKSClientSocket::~SOCKSClientSocket() {
   Disconnect();
@@ -149,11 +139,7 @@ void SOCKSClientSocket::SetOmniboxSpeculation() {
 }
 
 bool SOCKSClientSocket::WasEverUsed() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->WasEverUsed();
-  }
-  NOTREACHED();
-  return false;
+  return was_ever_used_;
 }
 
 bool SOCKSClientSocket::UsingTCPFastOpen() const {
@@ -162,22 +148,6 @@ bool SOCKSClientSocket::UsingTCPFastOpen() const {
   }
   NOTREACHED();
   return false;
-}
-
-int64 SOCKSClientSocket::NumBytesRead() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->NumBytesRead();
-  }
-  NOTREACHED();
-  return -1;
-}
-
-base::TimeDelta SOCKSClientSocket::GetConnectTimeMicros() const {
-  if (transport_.get() && transport_->socket()) {
-    return transport_->socket()->GetConnectTimeMicros();
-  }
-  NOTREACHED();
-  return base::TimeDelta::FromMicroseconds(-1);
 }
 
 bool SOCKSClientSocket::WasNpnNegotiated() const {
@@ -212,8 +182,15 @@ int SOCKSClientSocket::Read(IOBuffer* buf, int buf_len,
   DCHECK(completed_handshake_);
   DCHECK_EQ(STATE_NONE, next_state_);
   DCHECK(user_callback_.is_null());
+  DCHECK(!callback.is_null());
 
-  return transport_->socket()->Read(buf, buf_len, callback);
+  int rv = transport_->socket()->Read(
+      buf, buf_len,
+      base::Bind(&SOCKSClientSocket::OnReadWriteComplete,
+                 base::Unretained(this), callback));
+  if (rv > 0)
+    was_ever_used_ = true;
+  return rv;
 }
 
 // Write is called by the transport layer. This can only be done if the
@@ -223,15 +200,22 @@ int SOCKSClientSocket::Write(IOBuffer* buf, int buf_len,
   DCHECK(completed_handshake_);
   DCHECK_EQ(STATE_NONE, next_state_);
   DCHECK(user_callback_.is_null());
+  DCHECK(!callback.is_null());
 
-  return transport_->socket()->Write(buf, buf_len, callback);
+  int rv = transport_->socket()->Write(
+      buf, buf_len,
+      base::Bind(&SOCKSClientSocket::OnReadWriteComplete,
+                 base::Unretained(this), callback));
+  if (rv > 0)
+    was_ever_used_ = true;
+  return rv;
 }
 
-bool SOCKSClientSocket::SetReceiveBufferSize(int32 size) {
+int SOCKSClientSocket::SetReceiveBufferSize(int32 size) {
   return transport_->socket()->SetReceiveBufferSize(size);
 }
 
-bool SOCKSClientSocket::SetSendBufferSize(int32 size) {
+int SOCKSClientSocket::SetSendBufferSize(int32 size) {
   return transport_->socket()->SetSendBufferSize(size);
 }
 
@@ -241,10 +225,8 @@ void SOCKSClientSocket::DoCallback(int result) {
 
   // Since Run() may result in Read being called,
   // clear user_callback_ up front.
-  CompletionCallback c = user_callback_;
-  user_callback_.Reset();
   DVLOG(1) << "Finished setting up SOCKS handshake";
-  c.Run(result);
+  base::ResetAndReturn(&user_callback_).Run(result);
 }
 
 void SOCKSClientSocket::OnIOComplete(int result) {
@@ -254,6 +236,16 @@ void SOCKSClientSocket::OnIOComplete(int result) {
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_SOCKS_CONNECT, rv);
     DoCallback(rv);
   }
+}
+
+void SOCKSClientSocket::OnReadWriteComplete(const CompletionCallback& callback,
+                                            int result) {
+  DCHECK_NE(ERR_IO_PENDING, result);
+  DCHECK(!callback.is_null());
+
+  if (result > 0)
+    was_ever_used_ = true;
+  callback.Run(result);
 }
 
 int SOCKSClientSocket::DoLoop(int last_io_result) {
@@ -299,7 +291,9 @@ int SOCKSClientSocket::DoResolveHost() {
   // addresses for the target host.
   host_request_info_.set_address_family(ADDRESS_FAMILY_IPV4);
   return host_resolver_.Resolve(
-      host_request_info_, &addresses_,
+      host_request_info_,
+      priority_,
+      &addresses_,
       base::Bind(&SOCKSClientSocket::OnIOComplete, base::Unretained(this)),
       net_log_);
 }
@@ -359,7 +353,8 @@ int SOCKSClientSocket::DoHandshakeWrite() {
   memcpy(handshake_buf_->data(), &buffer_[bytes_sent_],
          handshake_buf_len);
   return transport_->socket()->Write(
-      handshake_buf_, handshake_buf_len,
+      handshake_buf_.get(),
+      handshake_buf_len,
       base::Bind(&SOCKSClientSocket::OnIOComplete, base::Unretained(this)));
 }
 
@@ -392,9 +387,10 @@ int SOCKSClientSocket::DoHandshakeRead() {
 
   int handshake_buf_len = kReadHeaderSize - bytes_received_;
   handshake_buf_ = new IOBuffer(handshake_buf_len);
-  return transport_->socket()->Read(handshake_buf_, handshake_buf_len,
-                                    base::Bind(&SOCKSClientSocket::OnIOComplete,
-                                               base::Unretained(this)));
+  return transport_->socket()->Read(
+      handshake_buf_.get(),
+      handshake_buf_len,
+      base::Bind(&SOCKSClientSocket::OnIOComplete, base::Unretained(this)));
 }
 
 int SOCKSClientSocket::DoHandshakeReadComplete(int result) {

@@ -147,6 +147,8 @@ const SuddenMotionSensor::SensorDescriptor
   // - MacBookAir4,2 (13" MacBook Air, mid 2011)
   // - MacBookAir5,1 (11" MacBook Air, mid 2012)
   // - MacBookAir5,2 (13" MacBook Air, mid 2012)
+  // - MacBookAir6,1 (11" MacBook Air, mid 2013)
+  // - MacBookAir6,2 (13" MacBook Air, mid 2013)
   // have no accelerometer sensors.
 
   // Tested by crc on a 15" MacBook Pro.
@@ -172,23 +174,23 @@ const SuddenMotionSensor::SensorDescriptor
   // Tested by Eric Shapiro (via avi) on a 17" MacBook Pro.
   { "MacBookPro4,1", NULL, { { 0, true  }, { 2, true  }, { 4, false } } },
 
+  // MacBookPro5,1 handled by the generic case below.
   // Tested by leandrogracia on a 15" MacBook Pro.
-  { "MacBookPro5,1", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
+  // MacBookPro5,2 handled by the generic case below.
   // Tested by S.Selz. (via avi) on a 17" MacBook Pro.
-  { "MacBookPro5,2", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
   // Tested by dmaclach on a 15" MacBook Pro.
   { "MacBookPro5,3", NULL, { { 2, false }, { 0, false }, { 4, true  } } },
 
+  // MacBookPro5,4 handled by the generic case below.
   // Tested by leandrogracia on a 15" MacBook Pro.
-  { "MacBookPro5,4", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
   // Tested by leandrogracia on a 13" MacBook Pro.
   { "MacBookPro5,5", NULL, { { 0, true  }, { 2, true  }, { 4, false } } },
 
+  // MacBookPro6,1 handled by the generic case below.
   // Tested by khom, leadpipe on a 17" MacBook Pro.
-  { "MacBookPro6,1", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
   // Tested by leandrogracia on a 15" MacBook Pro.
   { "MacBookPro6,2", NULL, { { 0, true  }, { 2, false }, { 4, true  } } },
@@ -196,28 +198,38 @@ const SuddenMotionSensor::SensorDescriptor
   // Tested by leandrogracia on a 13" MacBook Pro.
   { "MacBookPro7,1", NULL, { { 0, true  }, { 2, true  }, { 4, false } } },
 
+  // MacBookPro8,1 handled by the generic case below.
   // Tested by avi on a 13" MacBook Pro.
-  { "MacBookPro8,1", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
+  // MacBookPro8,2 handled by the generic case below.
   // Tested by avi on a 15" MacBook Pro.
-  { "MacBookPro8,2", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
+  // MacBookPro8,3 handled by the generic case below.
   // Tested by avi on a 17" MacBook Pro.
-  { "MacBookPro8,3", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
+  // MacBookPro9,1 handled by the generic case below.
   // Tested by avi on a 15" MacBook Pro.
-  { "MacBookPro9,1", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
+  // MacBookPro9,2 handled by the generic case below.
   // Tested by avi on a 13" MacBook Pro.
-  { "MacBookPro9,2", NULL, { { 0, false }, { 2, false }, { 4, false } } },
 
   // Note:
-  // - MacBookPro10,1 (15" MacBook Pro with Retina display, mid 2012)
+  // - MacBookPro10,1 (15" MacBook Pro with Retina display)
   // has no accelerometer sensors.
 
+  // MacBookPro10,2 handled by the generic case below.
+  // Tested by avi on a 13" MacBook Pro with Retina display.
+
+  // Note:
+  // - MacBookPro11,1 (13" MacBook Pro with Retina display)
+  // - MacBookPro11,2 (15" MacBook Pro with Retina display)
+  // - MacBookPro11,3 (15" MacBook Pro with Retina display)
+  // have no accelerometer sensors.
+
   // Generic MacBook accelerometer sensor data, to be used for future models
-  // until they can be tested and their data entered. Note that this generic
-  // configuration may well have problems with inverted axes.
+  // as well as models for which it is verified to be correct. Note that this
+  // configuration may have problems with inverted axes when used generically
+  // for untested models.
   { "",              NULL, { { 0, false }, { 2, false }, { 4, false } } }
 };
 
@@ -306,7 +318,7 @@ bool SuddenMotionSensor::Init() {
   const SensorDescriptor* sensor_candidate = NULL;
 
   // Look for the current model in the supported sensor list.
-  base::mac::ScopedCFTypeRef<CFDataRef> board_id_data;
+  base::ScopedCFTypeRef<CFDataRef> board_id_data;
   const int kNumSensors = arraysize(kSupportedSensors);
 
   for (int i = 0; i < kNumSensors; ++i) {

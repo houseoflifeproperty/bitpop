@@ -4,23 +4,23 @@
 
 #import <AppKit/AppKit.h>
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #import "chrome/browser/app_controller_mac.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/prefs/incognito_mode_prefs.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_bridge.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 
 BookmarkMenuBridge::BookmarkMenuBridge(Profile* profile, NSMenu* menu)
     : menuIsValid_(false),
@@ -42,7 +42,8 @@ NSMenu* BookmarkMenuBridge::BookmarkMenu() {
   return [controller_ menu];
 }
 
-void BookmarkMenuBridge::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarkMenuBridge::BookmarkModelLoaded(BookmarkModel* model,
+                                             bool ids_reassigned) {
   InvalidateMenu();
 }
 
@@ -61,7 +62,7 @@ void BookmarkMenuBridge::UpdateMenuInternal(NSMenu* bookmark_menu,
     return;
 
   BookmarkModel* model = GetBookmarkModel();
-  if (!model || !model->IsLoaded())
+  if (!model || !model->loaded())
     return;
 
   if (!folder_image_) {
@@ -127,10 +128,18 @@ void BookmarkMenuBridge::BookmarkNodeAdded(BookmarkModel* model,
   InvalidateMenu();
 }
 
-void BookmarkMenuBridge::BookmarkNodeRemoved(BookmarkModel* model,
-                                             const BookmarkNode* parent,
-                                             int old_index,
-                                             const BookmarkNode* node) {
+void BookmarkMenuBridge::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int old_index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
+  InvalidateMenu();
+}
+
+void BookmarkMenuBridge::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
   InvalidateMenu();
 }
 
@@ -165,8 +174,8 @@ void BookmarkMenuBridge::BuildMenu() {
 void BookmarkMenuBridge::ObserveBookmarkModel() {
   BookmarkModel* model = GetBookmarkModel();
   model->AddObserver(this);
-  if (model->IsLoaded())
-    Loaded(model, false);
+  if (model->loaded())
+    BookmarkModelLoaded(model, false);
 }
 
 BookmarkModel* BookmarkMenuBridge::GetBookmarkModel() {
@@ -253,6 +262,12 @@ void BookmarkMenuBridge::AddNodeToMenu(const BookmarkNode* node, NSMenu* menu,
     // Add menus for 'Open All Bookmarks'.
     [menu addItem:[NSMenuItem separatorItem]];
     bool enabled = child_count != 0;
+
+    IncognitoModePrefs::Availability incognito_availability =
+        IncognitoModePrefs::GetAvailability(profile_->GetPrefs());
+    bool incognito_enabled =
+        enabled && incognito_availability != IncognitoModePrefs::DISABLED;
+
     AddItemToMenu(IDC_BOOKMARK_BAR_OPEN_ALL,
                   IDS_BOOKMARK_BAR_OPEN_ALL,
                   node, menu, enabled);
@@ -261,7 +276,7 @@ void BookmarkMenuBridge::AddNodeToMenu(const BookmarkNode* node, NSMenu* menu,
                   node, menu, enabled);
     AddItemToMenu(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO,
                   IDS_BOOKMARK_BAR_OPEN_ALL_INCOGNITO,
-                  node, menu, enabled);
+                  node, menu, incognito_enabled);
   }
 }
 

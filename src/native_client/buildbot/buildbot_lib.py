@@ -42,6 +42,24 @@ def GetHostPlatform():
   else:
     raise Exception('Can not determine the platform!')
 
+def SetDefaultContextAttributes(context):
+  """
+  Set default values for the attributes needed by the SCons function, so that
+  SCons can be run without needing ParseStandardCommandLine
+  """
+  platform = GetHostPlatform()
+  context['platform'] = platform
+  context['mode'] = 'opt'
+  context['default_scons_mode'] = ['opt-host', 'nacl']
+  context['default_scons_platform'] = ('x86-64' if platform == 'win'
+                                       else 'x86-32')
+  context['clang'] = False
+  context['asan'] = False
+  context['pnacl'] = False
+  context['use_glibc'] = False
+  context['use_breakpad_tools'] = False
+  context['max_jobs'] = 8
+  context['scons_args'] = []
 
 def ParseStandardCommandLine(context):
   """
@@ -60,15 +78,23 @@ def ParseStandardCommandLine(context):
                     action='store_true', help='Inside toolchain build.')
   parser.add_option('--clang', dest='clang', default=False,
                     action='store_true', help='Build trusted code with Clang.')
+  parser.add_option('--coverage', dest='coverage', default=False,
+                    action='store_true',
+                    help='Build and test for code coverage.')
   parser.add_option('--validator', dest='validator', default=False,
                     action='store_true',
                     help='Only run validator regression test')
   parser.add_option('--asan', dest='asan', default=False,
                     action='store_true', help='Build trusted code with ASan.')
+  parser.add_option('--scons-args', dest='scons_args', default =[],
+                    action='append', help='Extra scons arguments.')
   parser.add_option('--step-suffix', metavar='SUFFIX', default='',
                     help='Append SUFFIX to buildbot step names.')
   parser.add_option('--no-gyp', dest='no_gyp', default=False,
                     action='store_true', help='Do not run the gyp build')
+  parser.add_option('--use-breakpad-tools', dest='use_breakpad_tools',
+                    default=False, action='store_true',
+                    help='Use breakpad tools for testing')
 
   options, args = parser.parse_args()
 
@@ -77,13 +103,13 @@ def ParseStandardCommandLine(context):
 
   # script + 3 args == 4
   mode, arch, clib = args
-  if mode not in ('dbg', 'opt'):
+  if mode not in ('dbg', 'opt', 'coverage'):
     parser.error('Invalid mode %r' % mode)
 
   if arch not in ARCH_MAP:
     parser.error('Invalid arch %r' % arch)
 
-  if clib not in ('newlib', 'glibc'):
+  if clib not in ('newlib', 'glibc', 'pnacl'):
     parser.error('Invalid clib %r' % clib)
 
   # TODO(ncbray) allow a command-line override
@@ -97,7 +123,10 @@ def ParseStandardCommandLine(context):
   context['validator'] = options.validator
   context['asan'] = options.asan
   # TODO(ncbray) turn derived values into methods.
-  context['gyp_mode'] = {'opt': 'Release', 'dbg': 'Debug'}[mode]
+  context['gyp_mode'] = {
+      'opt': 'Release',
+      'dbg': 'Debug',
+      'coverage': 'Debug'}[mode]
   context['gyp_arch'] = ARCH_MAP[arch]['gyp_arch']
   context['gyp_vars'] = []
   if context['clang']:
@@ -111,11 +140,18 @@ def ParseStandardCommandLine(context):
   if arch != 'arm' or platform == 'linux':
     context['default_scons_mode'] += [mode + '-host']
   context['use_glibc'] = clib == 'glibc'
+  context['pnacl'] = clib == 'pnacl'
   context['max_jobs'] = 8
   context['dry_run'] = options.dry_run
   context['inside_toolchain'] = options.inside_toolchain
   context['step_suffix'] = options.step_suffix
   context['no_gyp'] = options.no_gyp
+  context['coverage'] = options.coverage
+  context['use_breakpad_tools'] = options.use_breakpad_tools
+  context['scons_args'] = options.scons_args
+  # Don't run gyp on coverage builds.
+  if context['coverage']:
+    context['no_gyp'] = True
 
   for key, value in sorted(context.config.items()):
     print '%s=%s' % (key, value)
@@ -221,6 +257,28 @@ def FileCanBeFound(name, paths):
   return False
 
 
+def RemoveGypBuildDirectories():
+  # Remove all directories on all platforms.  Overkill, but it allows for
+  # straight-line code.
+  # Windows
+  RemoveDirectory('build/Debug')
+  RemoveDirectory('build/Release')
+  RemoveDirectory('build/Debug-Win32')
+  RemoveDirectory('build/Release-Win32')
+  RemoveDirectory('build/Debug-x64')
+  RemoveDirectory('build/Release-x64')
+
+  # Linux and Mac
+  RemoveDirectory('../xcodebuild')
+  RemoveDirectory('../out')
+  RemoveDirectory('src/third_party/nacl_sdk/arm-newlib')
+
+
+def RemoveSconsBuildDirectories():
+  RemoveDirectory('scons-out')
+  RemoveDirectory('breakpad-out')
+
+
 # Execute a command using Python's subprocess module.
 def Command(context, cmd, cwd=None):
   print 'Running command: %s' % ' '.join(cmd)
@@ -286,15 +344,14 @@ def SCons(context, mode=None, platform=None, parallel=False, browser_test=False,
       '-j%d' % jobs,
       '--mode='+','.join(mode),
       'platform='+platform,
-      # native_code=1 is to defeat the default of bitcode=1
-      # when platform=arm and has no effect for other platforms.
-      # TODO(mcgrathr): Eventually just make the scons default
-      # consistently bitcode=0 and require bitcode=1 for pnacl-arm.
-      'native_code=1',
       ])
+  cmd.extend(context['scons_args'])
   if context['clang']: cmd.append('--clang')
   if context['asan']: cmd.append('--asan')
   if context['use_glibc']: cmd.append('--nacl_glibc')
+  if context['pnacl']: cmd.append('bitcode=1')
+  if context['use_breakpad_tools']:
+    cmd.append('breakpad_tools_dir=breakpad-out')
   # Append used-specified arguments.
   cmd.extend(args)
   Command(context, cmd, cwd)
@@ -323,7 +380,12 @@ class Step(object):
 
   def __init__(self, name, status, halt_on_fail=True):
     self.status = status
-    self.name = name + status.context['step_suffix']
+
+    if 'step_suffix' in status.context:
+      suffix = status.context['step_suffix']
+    else:
+      suffix = ''
+    self.name = name + suffix
     self.halt_on_fail = halt_on_fail
     self.step_failed = False
 
@@ -367,7 +429,6 @@ class Step(object):
         raise StopBuild()
     else:
       self.status.ReportPass(self.name)
-      print '@@@STEP_SUCCESS@@@'
 
     # Suppress any exception that occurred.
     return True
@@ -446,6 +507,10 @@ class BuildContext(object):
   def __setitem__(self, key, value):
     self.config[key] = value
 
+  # Emulate dictionary membership test
+  def __contains__(self, key):
+    return key in self.config
+
   def Windows(self):
     return self.config['platform'] == 'win'
 
@@ -475,12 +540,19 @@ def RunBuild(script, status):
   except StopBuild:
     pass
 
-  # Workaround for an annotator bug.
-  # TODO(bradnelson@google.com) remove when the bug is fixed.
-  if status.ever_failed:
-    with Step('summary', status):
-        print 'There were failed stages.'
+  # Emit a summary step for three reasons:
+  # - The annotator will attribute non-zero exit status to the last build step.
+  #   This can misattribute failures to the last build step.
+  # - runtest.py wraps the builds to scrape perf data. It emits an annotator
+  #   tag on exit which misattributes perf results to the last build step.
+  # - Provide a label step in which to show summary result.
+  #   Otherwise these go back to the preamble.
+  with Step('summary', status):
+    if status.ever_failed:
+      print 'There were failed stages.'
+    else:
+      print 'Success.'
+    # Display a summary of the build.
+    status.DisplayBuildStatus()
 
-  # Display a summary of the build.  Useful when running outside the buildbot.
-  status.DisplayBuildStatus()
   sys.exit(status.ReturnValue())

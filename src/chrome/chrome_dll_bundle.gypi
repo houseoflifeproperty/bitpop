@@ -56,15 +56,11 @@
 
     'app/framework-Info.plist',
     '<@(mac_all_xibs)',
-    'app/theme/balloon_wrench.pdf',
-    'app/theme/chevron.pdf',
     'app/theme/find_next_Template.pdf',
     'app/theme/find_prev_Template.pdf',
-    'app/theme/menu_hierarchy_arrow.pdf',
     'app/theme/menu_overflow_down.pdf',
     'app/theme/menu_overflow_up.pdf',
     'browser/mac/install.sh',
-    '<(SHARED_INTERMEDIATE_DIR)/repack/chrome.pak',
     '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_100_percent.pak',
     '<(SHARED_INTERMEDIATE_DIR)/repack/resources.pak',
     '<!@pymod_do_main(repack_locales -o -p <(OS) -g <(grit_out_dir) -s <(SHARED_INTERMEDIATE_DIR) -x <(SHARED_INTERMEDIATE_DIR) <(locales))',
@@ -84,7 +80,7 @@
     # dependency here. flash_player.gyp will copy the Flash bundle
     # into PRODUCT_DIR.
     '../third_party/adobe/flash/flash_player.gyp:flapper_binaries',
-    '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmplugin',
+    '../third_party/widevine/cdm/widevine_cdm.gyp:widevinecdmadapter',
     'chrome_resources.gyp:packed_extra_resources',
     'chrome_resources.gyp:packed_resources',
   ],
@@ -111,7 +107,7 @@
         'theme_dir_name': 'chromium',
       }],
     ],
-    'repack_path': '../tools/grit/grit/format/repack.py',
+    'libpeer_target_type%': 'static_library',
   },
   'postbuilds': [
     {
@@ -142,9 +138,9 @@
   ],
   'copies': [
     {
-      # Copy FFmpeg binaries for audio/video support.
       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
       'files': [
+        '<(PRODUCT_DIR)/exif.so',
         '<(PRODUCT_DIR)/ffmpegsumo.so',
       ],
     },
@@ -160,9 +156,17 @@
         ['disable_nacl!=1', {
           'files': [
             '<(PRODUCT_DIR)/ppGoogleNaClPluginChrome.plugin',
-            # We leave out the x86-64 IRT nexe because we only
-            # support x86-32 NaCl on Mac OS X.
-            '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+          ],
+          'conditions': [
+            ['target_arch=="x64"', {
+              'files': [
+                '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+              ],
+            }, {
+              'files': [
+                '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+              ],
+            }],
           ],
         }],
       ],
@@ -178,7 +182,19 @@
         }],
       ],
     },
-    # TODO(ddorwin): Include CDM files in the Mac bundle.
+    {
+      # This file is used by the component installer.
+      # It is not a complete plug-in on its own.
+      'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Internet Plug-Ins/',
+      'files': [],
+      'conditions': [
+        ['branding == "Chrome"', {
+          'files': [
+            '<(PRODUCT_DIR)/widevinecdmadapter.plugin',
+          ],
+        }],
+      ],
+    },
     {
       # Copy of resources used by tests.
       'destination': '<(PRODUCT_DIR)',
@@ -224,7 +240,7 @@
     ['mac_breakpad_compiled_in==1', {
       'dependencies': [
         '../breakpad/breakpad.gyp:breakpad',
-        'app/policy/cloud_policy_codegen.gyp:policy',
+        '../components/components.gyp:policy',
       ],
       'copies': [
         {
@@ -271,8 +287,8 @@
       'postbuilds': [{
         'postbuild_name': 'Copy inspector files',
         'action': [
-          'cp',
-          '-r',
+          'ln',
+          '-fs',
           '${BUILT_PRODUCTS_DIR}/resources/inspector',
           '${BUILT_PRODUCTS_DIR}/${CONTENTS_FOLDER_PATH}/Resources',
         ],
@@ -281,6 +297,19 @@
     ['enable_hidpi==1', {
       'mac_bundle_resources': [
         '<(SHARED_INTERMEDIATE_DIR)/repack/chrome_200_percent.pak',
+      ],
+    }],
+    ['enable_webrtc==1 and libpeer_target_type!="static_library"', {
+      'copies': [{
+       'destination': '<(PRODUCT_DIR)/$(CONTENTS_FOLDER_PATH)/Libraries',
+       'files': [
+          '<(PRODUCT_DIR)/libpeerconnection.so',
+        ],
+      }],
+    }],
+    ['icu_use_data_file_flag==1', {
+      'mac_bundle_resources': [
+        '<(PRODUCT_DIR)/icudtl.dat',
       ],
     }],
   ],  # conditions

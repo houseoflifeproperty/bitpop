@@ -18,12 +18,14 @@ class View;
 }
 
 // This helper class is kept as a member by classes that need to show the Page
-// Info dialog on click, to encapsulate that logic in one place.
+// Info bubble on click, to encapsulate that logic in one place.
 class PageInfoHelper {
  public:
   PageInfoHelper(const views::View* owner, LocationBarView* location_bar);
 
   void ProcessEvent(const ui::LocatedEvent& event);
+
+  LocationBarView* location_bar() const { return location_bar_; }
 
  private:
   const views::View* owner_;

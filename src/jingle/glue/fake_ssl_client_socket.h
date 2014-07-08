@@ -22,7 +22,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
@@ -36,8 +36,7 @@ namespace jingle_glue {
 
 class FakeSSLClientSocket : public net::StreamSocket {
  public:
-  // Takes ownership of |transport_socket|.
-  explicit FakeSSLClientSocket(net::StreamSocket* transport_socket);
+  explicit FakeSSLClientSocket(scoped_ptr<net::StreamSocket> transport_socket);
 
   virtual ~FakeSSLClientSocket();
 
@@ -50,8 +49,8 @@ class FakeSSLClientSocket : public net::StreamSocket {
                    const net::CompletionCallback& callback) OVERRIDE;
   virtual int Write(net::IOBuffer* buf, int buf_len,
                     const net::CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
@@ -63,8 +62,6 @@ class FakeSSLClientSocket : public net::StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;

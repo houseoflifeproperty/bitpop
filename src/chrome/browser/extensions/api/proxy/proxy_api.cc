@@ -7,8 +7,8 @@
 #include "chrome/browser/extensions/api/proxy/proxy_api.h"
 
 #include "base/json/json_writer.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api_constants.h"
 #include "chrome/browser/extensions/api/proxy/proxy_api_helpers.h"
@@ -37,11 +37,11 @@ void ProxyEventRouter::OnProxyError(
     EventRouterForwarder* event_router,
     void* profile,
     int error_code) {
-  scoped_ptr<ListValue> args(new ListValue());
-  DictionaryValue* dict = new DictionaryValue();
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetBoolean(keys::kProxyEventFatal, true);
   dict->SetString(keys::kProxyEventError, net::ErrorToString(error_code));
-  dict->SetString(keys::kProxyEventDetails, "");
+  dict->SetString(keys::kProxyEventDetails, std::string());
   args->Append(dict);
 
   if (profile) {
@@ -57,18 +57,19 @@ void ProxyEventRouter::OnPACScriptError(
     EventRouterForwarder* event_router,
     void* profile,
     int line_number,
-    const string16& error) {
-  scoped_ptr<ListValue> args(new ListValue());
-  DictionaryValue* dict = new DictionaryValue();
+    const base::string16& error) {
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetBoolean(keys::kProxyEventFatal, false);
   dict->SetString(keys::kProxyEventError,
                   net::ErrorToString(net::ERR_PAC_SCRIPT_FAILED));
   std::string error_msg;
   if (line_number != -1) {
-    base::SStringPrintf(
-        &error_msg, "line: %d: %s", line_number, UTF16ToUTF8(error).c_str());
+    base::SStringPrintf(&error_msg,
+                        "line: %d: %s",
+                        line_number, base::UTF16ToUTF8(error).c_str());
   } else {
-    error_msg = UTF16ToUTF8(error);
+    error_msg = base::UTF16ToUTF8(error);
   }
   dict->SetString(keys::kProxyEventDetails, error_msg);
   args->Append(dict);
@@ -88,15 +89,16 @@ ProxyPrefTransformer::ProxyPrefTransformer() {
 ProxyPrefTransformer::~ProxyPrefTransformer() {
 }
 
-Value* ProxyPrefTransformer::ExtensionToBrowserPref(const Value* extension_pref,
-                                                    std::string* error,
-                                                    bool* bad_message) {
+base::Value* ProxyPrefTransformer::ExtensionToBrowserPref(
+    const base::Value* extension_pref,
+    std::string* error,
+    bool* bad_message) {
   // When ExtensionToBrowserPref is called, the format of |extension_pref|
   // has been verified already by the extension API to match the schema
   // defined in the extension API JSON.
-  CHECK(extension_pref->IsType(Value::TYPE_DICTIONARY));
-  const DictionaryValue* config =
-      static_cast<const DictionaryValue*>(extension_pref);
+  CHECK(extension_pref->IsType(base::Value::TYPE_DICTIONARY));
+  const base::DictionaryValue* config =
+      static_cast<const base::DictionaryValue*>(extension_pref);
 
   // Extract the various pieces of information passed to
   // chrome.proxy.settings.set(). Several of these strings will
@@ -129,13 +131,14 @@ Value* ProxyPrefTransformer::ExtensionToBrowserPref(const Value* extension_pref,
       bypass_list, error);
 }
 
-Value* ProxyPrefTransformer::BrowserToExtensionPref(const Value* browser_pref) {
-  CHECK(browser_pref->IsType(Value::TYPE_DICTIONARY));
+base::Value* ProxyPrefTransformer::BrowserToExtensionPref(
+    const base::Value* browser_pref) {
+  CHECK(browser_pref->IsType(base::Value::TYPE_DICTIONARY));
 
   // This is a dictionary wrapper that exposes the proxy configuration stored in
   // the browser preferences.
   ProxyConfigDictionary config(
-      static_cast<const DictionaryValue*>(browser_pref));
+      static_cast<const base::DictionaryValue*>(browser_pref));
 
   ProxyPrefs::ProxyMode mode;
   if (!config.GetMode(&mode)) {
@@ -144,7 +147,7 @@ Value* ProxyPrefTransformer::BrowserToExtensionPref(const Value* browser_pref) {
   }
 
   // Build a new ProxyConfig instance as defined in the extension API.
-  scoped_ptr<DictionaryValue> extension_pref(new DictionaryValue);
+  scoped_ptr<base::DictionaryValue> extension_pref(new base::DictionaryValue);
 
   extension_pref->SetString(keys::kProxyConfigMode,
                             ProxyPrefs::ProxyModeToString(mode));
@@ -159,7 +162,7 @@ Value* ProxyPrefTransformer::BrowserToExtensionPref(const Value* browser_pref) {
       // A PAC URL either point to a PAC script or contain a base64 encoded
       // PAC script. In either case we build a PacScript dictionary as defined
       // in the extension API.
-      DictionaryValue* pac_dict = helpers::CreatePacScriptDict(config);
+      base::DictionaryValue* pac_dict = helpers::CreatePacScriptDict(config);
       if (!pac_dict)
         return NULL;
       extension_pref->Set(keys::kProxyConfigPacScript, pac_dict);
@@ -167,7 +170,8 @@ Value* ProxyPrefTransformer::BrowserToExtensionPref(const Value* browser_pref) {
     }
     case ProxyPrefs::MODE_FIXED_SERVERS: {
       // Build ProxyRules dictionary according to the extension API.
-      DictionaryValue* proxy_rules_dict = helpers::CreateProxyRulesDict(config);
+      base::DictionaryValue* proxy_rules_dict =
+          helpers::CreateProxyRulesDict(config);
       if (!proxy_rules_dict)
         return NULL;
       extension_pref->Set(keys::kProxyConfigRules, proxy_rules_dict);

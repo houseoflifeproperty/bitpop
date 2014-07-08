@@ -2,13 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_controller.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
@@ -57,8 +58,9 @@ TEST_F(BookmarkFolderTargetTest, StartWithNothing) {
   // Make sure we get an addNew
   [[controller expect] addNewFolderControllerWithParentButton:sender];
 
-  scoped_nsobject<BookmarkFolderTarget> target(
-    [[BookmarkFolderTarget alloc] initWithController:controller]);
+  base::scoped_nsobject<BookmarkFolderTarget> target(
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);
@@ -82,8 +84,9 @@ TEST_F(BookmarkFolderTargetTest, ReopenSameFolder) {
   // any subfolders).
   [[controller expect] closeBookmarkFolder:controller];
 
-  scoped_nsobject<BookmarkFolderTarget> target(
-      [[BookmarkFolderTarget alloc] initWithController:controller]);
+  base::scoped_nsobject<BookmarkFolderTarget> target(
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);
@@ -111,8 +114,9 @@ TEST_F(BookmarkFolderTargetTest, ReopenNotSame) {
   // close and open.
   [[controller expect] addNewFolderControllerWithParentButton:sender];
 
-  scoped_nsobject<BookmarkFolderTarget> target(
-    [[BookmarkFolderTarget alloc] initWithController:controller]);
+  base::scoped_nsobject<BookmarkFolderTarget> target(
+      [[BookmarkFolderTarget alloc] initWithController:controller
+                                               profile:profile()]);
 
   [target openBookmarkFolderFromButton:sender];
   EXPECT_OCMOCK_VERIFY(controller);

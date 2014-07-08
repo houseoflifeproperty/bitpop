@@ -26,7 +26,7 @@ base::LazyInstance<WidgetHelperMap> g_widget_helpers =
 
 void AddWidgetHelper(int render_process_id,
                      const scoped_refptr<RenderWidgetHelper>& widget_helper) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   // We don't care if RenderWidgetHelpers overwrite an existing process_id. Just
   // want this to be up to date.
   g_widget_helpers.Get()[render_process_id] = widget_helper.get();
@@ -63,7 +63,7 @@ RenderWidgetHelper::BackingStoreMsgProxy::BackingStoreMsgProxy(
 RenderWidgetHelper::BackingStoreMsgProxy::~BackingStoreMsgProxy() {
   // If the paint message was never dispatched, then we need to let the
   // helper know that we are going away.
-  if (!cancelled_ && helper_)
+  if (!cancelled_ && helper_.get())
     helper_->OnDiscardBackingStoreMsg(this);
 }
 
@@ -85,7 +85,7 @@ RenderWidgetHelper::RenderWidgetHelper()
 }
 
 RenderWidgetHelper::~RenderWidgetHelper() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   // Delete this RWH from the map if it is found.
   WidgetHelperMap& widget_map = g_widget_helpers.Get();
@@ -97,7 +97,7 @@ RenderWidgetHelper::~RenderWidgetHelper() {
   // object, so we should not be destroyed unless pending_paints_ is empty!
   DCHECK(pending_paints_.empty());
 
-#if defined(OS_MACOSX)
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
   ClearAllocatedDIBs();
 #endif
 }
@@ -121,30 +121,19 @@ int RenderWidgetHelper::GetNextRoutingID() {
 // static
 RenderWidgetHelper* RenderWidgetHelper::FromProcessHostID(
     int render_process_host_id) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
   WidgetHelperMap::const_iterator ci = g_widget_helpers.Get().find(
       render_process_host_id);
   return (ci == g_widget_helpers.Get().end())? NULL : ci->second;
 }
 
-void RenderWidgetHelper::CancelResourceRequests(int render_widget_id) {
-  if (render_process_id_ == -1)
-    return;
-
+void RenderWidgetHelper::ResumeDeferredNavigation(
+    const GlobalRequestID& request_id) {
   BrowserThread::PostTask(
       BrowserThread::IO, FROM_HERE,
-      base::Bind(&RenderWidgetHelper::OnCancelResourceRequests,
+      base::Bind(&RenderWidgetHelper::OnResumeDeferredNavigation,
                  this,
-                 render_widget_id));
-}
-
-void RenderWidgetHelper::SimulateSwapOutACK(
-    const ViewMsg_SwapOut_Params& params) {
-  BrowserThread::PostTask(
-      BrowserThread::IO, FROM_HERE,
-      base::Bind(&RenderWidgetHelper::OnSimulateSwapOutACK,
-                 this,
-                 params));
+                 request_id));
 }
 
 bool RenderWidgetHelper::WaitForBackingStoreMsg(
@@ -251,15 +240,9 @@ void RenderWidgetHelper::OnDispatchBackingStoreMsg(
     host->OnMessageReceived(proxy->message());
 }
 
-void RenderWidgetHelper::OnCancelResourceRequests(
-    int render_widget_id) {
-  resource_dispatcher_host_->CancelRequestsForRoute(
-      render_process_id_, render_widget_id);
-}
-
-void RenderWidgetHelper::OnSimulateSwapOutACK(
-    const ViewMsg_SwapOut_Params& params) {
-  resource_dispatcher_host_->OnSimulateSwapOutACK(params);
+void RenderWidgetHelper::OnResumeDeferredNavigation(
+    const GlobalRequestID& request_id) {
+  resource_dispatcher_host_->ResumeDeferredNavigation(request_id);
 }
 
 void RenderWidgetHelper::CreateNewWindow(
@@ -267,6 +250,7 @@ void RenderWidgetHelper::CreateNewWindow(
     bool no_javascript_access,
     base::ProcessHandle render_process,
     int* route_id,
+    int* main_frame_route_id,
     int* surface_id,
     SessionStorageNamespace* session_storage_namespace) {
   if (params.opener_suppressed || no_javascript_access) {
@@ -276,32 +260,38 @@ void RenderWidgetHelper::CreateNewWindow(
     // it. Because of this, we will immediately show and navigate the window
     // in OnCreateWindowOnUI, using the params provided here.
     *route_id = MSG_ROUTING_NONE;
+    *main_frame_route_id = MSG_ROUTING_NONE;
     *surface_id = 0;
   } else {
     *route_id = GetNextRoutingID();
+    *main_frame_route_id = GetNextRoutingID();
     *surface_id = GpuSurfaceTracker::Get()->AddSurfaceForRenderer(
         render_process_id_, *route_id);
     // Block resource requests until the view is created, since the HWND might
     // be needed if a response ends up creating a plugin.
     resource_dispatcher_host_->BlockRequestsForRoute(
         render_process_id_, *route_id);
+    resource_dispatcher_host_->BlockRequestsForRoute(
+        render_process_id_, *main_frame_route_id);
   }
 
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&RenderWidgetHelper::OnCreateWindowOnUI,
-                 this, params, *route_id,
+                 this, params, *route_id, *main_frame_route_id,
                  make_scoped_refptr(session_storage_namespace)));
 }
 
 void RenderWidgetHelper::OnCreateWindowOnUI(
     const ViewHostMsg_CreateWindow_Params& params,
     int route_id,
+    int main_frame_route_id,
     SessionStorageNamespace* session_storage_namespace) {
   RenderViewHostImpl* host =
       RenderViewHostImpl::FromID(render_process_id_, params.opener_id);
   if (host)
-    host->CreateNewWindow(route_id, params, session_storage_namespace);
+    host->CreateNewWindow(route_id, main_frame_route_id, params,
+        session_storage_namespace);
 }
 
 void RenderWidgetHelper::OnResumeRequestsForView(int route_id) {
@@ -310,7 +300,7 @@ void RenderWidgetHelper::OnResumeRequestsForView(int route_id) {
 }
 
 void RenderWidgetHelper::CreateNewWidget(int opener_id,
-                                         WebKit::WebPopupType popup_type,
+                                         blink::WebPopupType popup_type,
                                          int* route_id,
                                          int* surface_id) {
   *route_id = GetNextRoutingID();
@@ -337,7 +327,7 @@ void RenderWidgetHelper::CreateNewFullscreenWidget(int opener_id,
 }
 
 void RenderWidgetHelper::OnCreateWidgetOnUI(
-    int opener_id, int route_id, WebKit::WebPopupType popup_type) {
+    int opener_id, int route_id, blink::WebPopupType popup_type) {
   RenderViewHostImpl* host = RenderViewHostImpl::FromID(
       render_process_id_, opener_id);
   if (host)
@@ -352,21 +342,10 @@ void RenderWidgetHelper::OnCreateFullscreenWidgetOnUI(int opener_id,
     host->CreateNewFullscreenWidget(route_id);
 }
 
-#if defined(OS_MACOSX)
-TransportDIB* RenderWidgetHelper::MapTransportDIB(TransportDIB::Id dib_id) {
-  base::AutoLock locked(allocated_dibs_lock_);
-
-  const std::map<TransportDIB::Id, int>::iterator
-      i = allocated_dibs_.find(dib_id);
-  if (i == allocated_dibs_.end())
-    return NULL;
-
-  base::FileDescriptor fd(dup(i->second), true);
-  return TransportDIB::Map(fd);
-}
-
-void RenderWidgetHelper::AllocTransportDIB(
-    size_t size, bool cache_in_browser, TransportDIB::Handle* result) {
+#if defined(OS_POSIX) && !defined(OS_ANDROID)
+void RenderWidgetHelper::AllocTransportDIB(uint32 size,
+                                           bool cache_in_browser,
+                                           TransportDIB::Handle* result) {
   scoped_ptr<base::SharedMemory> shared_memory(new base::SharedMemory());
   if (!shared_memory->CreateAnonymous(size)) {
     result->fd = -1;
@@ -390,7 +369,7 @@ void RenderWidgetHelper::FreeTransportDIB(TransportDIB::Id dib_id) {
     i = allocated_dibs_.find(dib_id);
 
   if (i != allocated_dibs_.end()) {
-    if (HANDLE_EINTR(close(i->second)) < 0)
+    if (IGNORE_EINTR(close(i->second)) < 0)
       PLOG(ERROR) << "close";
     allocated_dibs_.erase(i);
   } else {
@@ -401,7 +380,7 @@ void RenderWidgetHelper::FreeTransportDIB(TransportDIB::Id dib_id) {
 void RenderWidgetHelper::ClearAllocatedDIBs() {
   for (std::map<TransportDIB::Id, int>::iterator
        i = allocated_dibs_.begin(); i != allocated_dibs_.end(); ++i) {
-    if (HANDLE_EINTR(close(i->second)) < 0)
+    if (IGNORE_EINTR(close(i->second)) < 0)
       PLOG(ERROR) << "close: " << i->first;
   }
 

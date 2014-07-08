@@ -4,13 +4,15 @@
 # found in the LICENSE file.
 
 """Client-side script to send a try job to the try server. It communicates to
-the try server by either writting to a svn repository or by directly connecting
-to the server by HTTP.
+the try server by either writting to a svn/git repository or by directly
+connecting to the server by HTTP.
 """
 
+import contextlib
 import datetime
 import errno
 import getpass
+import itertools
 import json
 import logging
 import optparse
@@ -21,12 +23,15 @@ import shutil
 import sys
 import tempfile
 import urllib
+import urllib2
+import urlparse
 
 import breakpad  # pylint: disable=W0611
 
-import gcl
 import fix_encoding
+import gcl
 import gclient_utils
+import gerrit_util
 import scm
 import subprocess2
 
@@ -51,6 +56,9 @@ Examples:
   Try a change against a particular revision:
     %(prog)s -r 123
 
+  Try a change including changes to a sub repository:
+    %(prog)s -s third_party/WebKit
+
   A git patch off a web site (git inserts a/ and b/) and fix the base dir:
     %(prog)s --url http://url/to/patch.diff --patchlevel 1 --root src
 
@@ -65,6 +73,9 @@ Examples:
             -f include/b.h
 """
 
+GIT_PATCH_DIR_BASENAME = os.path.join('git-try', 'patches-git')
+GIT_BRANCH_FILE = 'ref'
+_GIT_PUSH_ATTEMPTS = 3
 
 def DieWithError(message):
   print >> sys.stderr, message
@@ -86,16 +97,20 @@ def RunGit(args, **kwargs):
   """Returns stdout."""
   return RunCommand(['git'] + args, **kwargs)
 
+class Error(Exception):
+  """An error during a try job submission.
 
-class InvalidScript(Exception):
+  For this error, trychange.py does not display stack trace, only message
+  """
+
+class InvalidScript(Error):
   def __str__(self):
     return self.args[0] + '\n' + HELP_STRING
 
 
-class NoTryServerAccess(Exception):
+class NoTryServerAccess(Error):
   def __str__(self):
     return self.args[0] + '\n' + HELP_STRING
-
 
 def Escape(name):
   """Escapes characters that could interfere with the file system or try job
@@ -149,27 +164,35 @@ class SCM(object):
     return self.codereview_settings.get(key, '')
 
   def _GclStyleSettings(self):
-    """Set default settings based on the gcl-style settings from the
-    repository."""
+    """Set default settings based on the gcl-style settings from the repository.
+
+    The settings in the self.options object will only be set if no previous
+    value exists (i.e. command line flags to the try command will override the
+    settings in codereview.settings).
+    """
     settings = {
       'port': self.GetCodeReviewSetting('TRYSERVER_HTTP_PORT'),
       'host': self.GetCodeReviewSetting('TRYSERVER_HTTP_HOST'),
       'svn_repo': self.GetCodeReviewSetting('TRYSERVER_SVN_URL'),
+      'gerrit_url': self.GetCodeReviewSetting('TRYSERVER_GERRIT_URL'),
+      'git_repo': self.GetCodeReviewSetting('TRYSERVER_GIT_URL'),
       'project': self.GetCodeReviewSetting('TRYSERVER_PROJECT'),
+      # Primarily for revision=auto
+      'revision': self.GetCodeReviewSetting('TRYSERVER_REVISION'),
       'root': self.GetCodeReviewSetting('TRYSERVER_ROOT'),
       'patchlevel': self.GetCodeReviewSetting('TRYSERVER_PATCHLEVEL'),
     }
     logging.info('\n'.join(['%s: %s' % (k, v)
                             for (k, v) in settings.iteritems() if v]))
     for (k, v) in settings.iteritems():
+      # Avoid overwriting options already set using command line flags.
       if v and getattr(self.options, k) is None:
         setattr(self.options, k, v)
 
   def AutomagicalSettings(self):
     """Determines settings based on supported code review and checkout tools.
     """
-    self._GclStyleSettings()
-    # Try to find gclient or repo root.
+    # Try to find gclient or repo root first.
     if not self.options.no_search:
       self.toplevel_root = gclient_utils.FindGclientRoot(self.checkout_root)
       if self.toplevel_root:
@@ -181,10 +204,17 @@ class SCM(object):
           logging.info('Found .repo dir at %s'
                        % os.path.dirname(self.toplevel_root))
 
+      # Parse TRYSERVER_* settings from codereview.settings before falling back
+      # on setting self.options.root manually further down. Otherwise
+      # TRYSERVER_ROOT would never be used in codereview.settings.
+      self._GclStyleSettings()
+
       if self.toplevel_root and not self.options.root:
         assert os.path.abspath(self.toplevel_root) == self.toplevel_root
         self.options.root = gclient_utils.PathDifference(self.toplevel_root,
                                                          self.checkout_root)
+    else:
+      self._GclStyleSettings()
 
   def ReadRootFile(self, filename):
     cur = self.checkout_root
@@ -303,48 +333,132 @@ class GIT(SCM):
         branch=self.diff_against)
 
 
-def _ParseSendChangeOptions(options):
-  """Parse common options passed to _SendChangeHTTP and _SendChangeSVN."""
-  values = [
-    ('user', options.user),
-    ('name', options.name),
-  ]
-  if options.email:
-    values.append(('email', options.email))
-  if options.revision:
-    values.append(('revision', options.revision))
-  if options.clobber:
-    values.append(('clobber', 'true'))
-  if options.root:
-    values.append(('root', options.root))
-  if options.patchlevel:
-    values.append(('patchlevel', options.patchlevel))
-  if options.issue:
-    values.append(('issue', options.issue))
-  if options.patchset:
-    values.append(('patchset', options.patchset))
-  if options.target:
-    values.append(('target', options.target))
-  if options.project:
-    values.append(('project', options.project))
-
-  filters = ','.join(options.testfilter)
-  if filters:
-    for botlist in options.bot:
-      for bot in botlist.split(','):
-        if ':' in bot:
+def _ParseBotList(botlist, testfilter):
+  """Parses bot configurations from a list of strings."""
+  bots = []
+  if testfilter:
+    for bot in itertools.chain.from_iterable(botspec.split(',')
+                                             for botspec in botlist):
+      tests = set()
+      if ':' in bot:
+        if bot.endswith(':compile'):
+          tests |= set(['compile'])
+        else:
           raise ValueError(
               'Can\'t use both --testfilter and --bot builder:test formats '
               'at the same time')
-        else:
-          values.append(('bot', '%s:%s' % (bot, filters)))
+
+      bots.append((bot, tests))
   else:
-    for bot in options.bot:
-      values.append(('bot', bot))
+    for botspec in botlist:
+      botname = botspec.split(':')[0]
+      tests = set()
+      if ':' in botspec:
+        tests |= set(filter(None, botspec.split(':')[1].split(',')))
+      bots.append((botname, tests))
+  return bots
+
+
+def _ApplyTestFilter(testfilter, bot_spec):
+  """Applies testfilter from CLI.
+
+  Specifying a testfilter strips off any builder-specified tests (except for
+  compile).
+  """
+  if testfilter:
+    return [(botname, set(testfilter) | (tests & set(['compile'])))
+            for botname, tests in bot_spec]
+  else:
+    return bot_spec
+
+
+def _GenTSBotSpec(checkouts, change, changed_files, options):
+  bot_spec = []
+  # Get try slaves from PRESUBMIT.py files if not specified.
+  # Even if the diff comes from options.url, use the local checkout for bot
+  # selection.
+  try:
+    import presubmit_support
+    root_presubmit = checkouts[0].ReadRootFile('PRESUBMIT.py')
+    if not change:
+      if not changed_files:
+        changed_files = checkouts[0].file_tuples
+      change = presubmit_support.Change(options.name,
+                                        '',
+                                        checkouts[0].checkout_root,
+                                        changed_files,
+                                        options.issue,
+                                        options.patchset,
+                                        options.email)
+    masters = presubmit_support.DoGetTryMasters(
+        change,
+        checkouts[0].GetFileNames(),
+        checkouts[0].checkout_root,
+        root_presubmit,
+        options.project,
+        options.verbose,
+        sys.stdout)
+
+    # Compatibility for old checkouts and bots that were on tryserver.chromium.
+    trybots = masters.get('tryserver.chromium', [])
+
+    # Compatibility for checkouts that are not using tryserver.chromium
+    # but are stuck with git-try or gcl-try.
+    if not trybots and len(masters) == 1:
+      trybots = masters.values()[0]
+
+    if trybots:
+      old_style = filter(lambda x: isinstance(x, basestring), trybots)
+      new_style = filter(lambda x: isinstance(x, tuple), trybots)
+
+      # _ParseBotList's testfilter is set to None otherwise it will complain.
+      bot_spec = _ApplyTestFilter(options.testfilter,
+                                  _ParseBotList(old_style, None))
+
+      bot_spec.extend(_ApplyTestFilter(options.testfilter, new_style))
+
+  except ImportError:
+    pass
+
+  return bot_spec
+
+
+def _ParseSendChangeOptions(bot_spec, options):
+  """Parse common options passed to _SendChangeHTTP, _SendChangeSVN and
+  _SendChangeGit.
+  """
+  values = [
+      ('user', options.user),
+      ('name', options.name),
+  ]
+  # A list of options to copy.
+  optional_values = (
+      'email',
+      'revision',
+      'root',
+      'patchlevel',
+      'issue',
+      'patchset',
+      'target',
+      'project',
+  )
+  for option_name in optional_values:
+    value = getattr(options, option_name)
+    if value:
+      values.append((option_name, value))
+
+  # Not putting clobber to optional_names
+  # because it used to have lower-case 'true'.
+  if options.clobber:
+    values.append(('clobber', 'true'))
+
+  for bot, tests in bot_spec:
+    values.append(('bot', ('%s:%s' % (bot, ','.join(tests)))))
+
   return values
 
 
-def _SendChangeHTTP(options):
+def _SendChangeHTTP(bot_spec, options):
   """Send a change to the try server using the HTTP protocol."""
   if not options.host:
     raise NoTryServerAccess('Please use the --host option to specify the try '
@@ -353,17 +467,10 @@ def _SendChangeHTTP(options):
     raise NoTryServerAccess('Please use the --port option to specify the try '
         'server port to connect to.')
 
-  values = _ParseSendChangeOptions(options)
+  values = _ParseSendChangeOptions(bot_spec, options)
   values.append(('patch', options.diff))
 
   url = 'http://%s:%s/send_try_patch' % (options.host, options.port)
-  proxies = None
-  if options.proxy:
-    if options.proxy.lower() == 'none':
-      # Effectively disable HTTP_PROXY or Internet settings proxy setup.
-      proxies = {}
-    else:
-      proxies = {'http': options.proxy, 'https': options.proxy}
 
   logging.info('Sending by HTTP')
   logging.info(''.join("%s=%s\n" % (k, v) for k, v in values))
@@ -374,11 +481,11 @@ def _SendChangeHTTP(options):
 
   try:
     logging.info('Opening connection...')
-    connection = urllib.urlopen(url, urllib.urlencode(values), proxies=proxies)
+    connection = urllib2.urlopen(url, urllib.urlencode(values))
     logging.info('Done')
   except IOError, e:
     logging.info(str(e))
-    if options.bot and len(e.args) > 2 and e.args[2] == 'got a bad status line':
+    if bot_spec and len(e.args) > 2 and e.args[2] == 'got a bad status line':
       raise NoTryServerAccess('%s is unaccessible. Bad --bot argument?' % url)
     else:
       raise NoTryServerAccess('%s is unaccessible. Reason: %s' % (url,
@@ -391,15 +498,54 @@ def _SendChangeHTTP(options):
   if response != 'OK':
     raise NoTryServerAccess('%s is unaccessible. Got:\n%s' % (url, response))
 
+  PrintSuccess(bot_spec, options)
 
-def _SendChangeSVN(options):
+@contextlib.contextmanager
+def _TempFilename(name, contents=None):
+  """Create a temporary directory, append the specified name and yield.
+
+  In contrast to NamedTemporaryFile, does not keep the file open.
+  Deletes the file on __exit__.
+  """
+  temp_dir = tempfile.mkdtemp(prefix=name)
+  try:
+    path = os.path.join(temp_dir, name)
+    if contents is not None:
+      with open(path, 'wb') as f:
+        f.write(contents)
+    yield path
+  finally:
+    shutil.rmtree(temp_dir, True)
+
+
+@contextlib.contextmanager
+def _PrepareDescriptionAndPatchFiles(description, options):
+  """Creates temporary files with description and patch.
+
+  __enter__ called on the return value returns a tuple of patch_filename and
+  description_filename.
+
+  Args:
+    description: contents of description file.
+    options: patchset options object. Must have attributes: user,
+        name (of patch) and diff (contents of patch).
+  """
+  current_time = str(datetime.datetime.now()).replace(':', '.')
+  patch_basename = '%s.%s.%s.diff' % (Escape(options.user),
+                                      Escape(options.name), current_time)
+  with _TempFilename('description', description) as description_filename:
+    with _TempFilename(patch_basename, options.diff) as patch_filename:
+      yield patch_filename, description_filename
+
+
+def _SendChangeSVN(bot_spec, options):
   """Send a change to the try server by committing a diff file on a subversion
   server."""
   if not options.svn_repo:
     raise NoTryServerAccess('Please use the --svn_repo option to specify the'
                             ' try server svn repository to connect to.')
 
-  values = _ParseSendChangeOptions(options)
+  values = _ParseSendChangeOptions(bot_spec, options)
   description = ''.join("%s=%s\n" % (k, v) for k, v in values)
   logging.info('Sending by SVN')
   logging.info(description)
@@ -408,52 +554,254 @@ def _SendChangeSVN(options):
   if options.dry_run:
     return
 
-  # Create a temporary directory, put a uniquely named file in it with the diff
-  # content and svn import that.
-  temp_dir = tempfile.mkdtemp()
-  temp_file = tempfile.NamedTemporaryFile()
-  try:
+  with _PrepareDescriptionAndPatchFiles(description, options) as (
+       patch_filename, description_filename):
+    if sys.platform == "cygwin":
+      # Small chromium-specific issue here:
+      # git-try uses /usr/bin/python on cygwin but svn.bat will be used
+      # instead of /usr/bin/svn by default. That causes bad things(tm) since
+      # Windows' svn.exe has no clue about cygwin paths. Hence force to use
+      # the cygwin version in this particular context.
+      exe = "/usr/bin/svn"
+    else:
+      exe = "svn"
+    patch_dir = os.path.dirname(patch_filename)
+    command = [exe, 'import', '-q', patch_dir, options.svn_repo, '--file',
+               description_filename]
+    if scm.SVN.AssertVersion("1.5")[0]:
+      command.append('--no-ignore')
+
     try:
-      # Description
-      temp_file.write(description)
-      temp_file.flush()
-
-      # Diff file
-      current_time = str(datetime.datetime.now()).replace(':', '.')
-      file_name = (Escape(options.user) + '.' + Escape(options.name) +
-                   '.%s.diff' % current_time)
-      full_path = os.path.join(temp_dir, file_name)
-      with open(full_path, 'wb') as f:
-        f.write(options.diff)
-
-      # Committing it will trigger a try job.
-      if sys.platform == "cygwin":
-        # Small chromium-specific issue here:
-        # git-try uses /usr/bin/python on cygwin but svn.bat will be used
-        # instead of /usr/bin/svn by default. That causes bad things(tm) since
-        # Windows' svn.exe has no clue about cygwin paths. Hence force to use
-        # the cygwin version in this particular context.
-        exe = "/usr/bin/svn"
-      else:
-        exe = "svn"
-      command = [exe, 'import', '-q', temp_dir, options.svn_repo, '--file',
-                 temp_file.name]
-      if scm.SVN.AssertVersion("1.5")[0]:
-        command.append('--no-ignore')
-
       subprocess2.check_call(command)
     except subprocess2.CalledProcessError, e:
       raise NoTryServerAccess(str(e))
-  finally:
-    temp_file.close()
-    shutil.rmtree(temp_dir, True)
+
+  PrintSuccess(bot_spec, options)
+
+def _GetPatchGitRepo(git_url):
+  """Gets a path to a Git repo with patches.
+
+  Stores patches in .git/git-try/patches-git directory, a git repo. If it
+  doesn't exist yet or its origin URL is different, cleans up and clones it.
+  If it existed before, then pulls changes.
+
+  Does not support SVN repo.
+
+  Returns a path to the directory with patches.
+  """
+  git_dir = scm.GIT.GetGitDir(os.getcwd())
+  patch_dir = os.path.join(git_dir, GIT_PATCH_DIR_BASENAME)
+
+  logging.info('Looking for git repo for patches')
+  # Is there already a repo with the expected url or should we clone?
+  clone = True
+  if os.path.exists(patch_dir) and scm.GIT.IsInsideWorkTree(patch_dir):
+    existing_url = scm.GIT.Capture(
+        ['config', '--local', 'remote.origin.url'],
+        cwd=patch_dir)
+    clone = existing_url != git_url
+
+  if clone:
+    if os.path.exists(patch_dir):
+      logging.info('Cleaning up')
+      shutil.rmtree(patch_dir, True)
+    logging.info('Cloning patch repo')
+    scm.GIT.Capture(['clone', git_url, GIT_PATCH_DIR_BASENAME], cwd=git_dir)
+    email = scm.GIT.GetEmail(cwd=os.getcwd())
+    scm.GIT.Capture(['config', '--local', 'user.email', email], cwd=patch_dir)
+  else:
+    if scm.GIT.IsWorkTreeDirty(patch_dir):
+      logging.info('Work dir is dirty: hard reset!')
+      scm.GIT.Capture(['reset', '--hard'], cwd=patch_dir)
+    logging.info('Updating patch repo')
+    scm.GIT.Capture(['pull', 'origin', 'master'], cwd=patch_dir)
+
+  return os.path.abspath(patch_dir)
 
 
-def PrintSuccess(options):
+def _SendChangeGit(bot_spec, options):
+  """Sends a change to the try server by committing a diff file to a GIT repo.
+
+  Creates a temp orphan branch, commits patch.diff, creates a ref pointing to
+  that commit, deletes the temp branch, checks master out, adds 'ref' file
+  containing the name of the new ref, pushes master and the ref to the origin.
+
+  TODO: instead of creating a temp branch, use git-commit-tree.
+  """
+
+  if not options.git_repo:
+    raise NoTryServerAccess('Please use the --git_repo option to specify the '
+                            'try server git repository to connect to.')
+
+  values = _ParseSendChangeOptions(bot_spec, options)
+  comment_subject = '%s.%s' % (options.user, options.name)
+  comment_body = ''.join("%s=%s\n" % (k, v) for k, v in values)
+  description = '%s\n\n%s' % (comment_subject, comment_body)
+  logging.info('Sending by GIT')
+  logging.info(description)
+  logging.info(options.git_repo)
+  logging.info(options.diff)
+  if options.dry_run:
+    return
+
+  patch_dir = _GetPatchGitRepo(options.git_repo)
+  def patch_git(*args):
+    return scm.GIT.Capture(list(args), cwd=patch_dir)
+  def add_and_commit(filename, comment_filename):
+    patch_git('add', filename)
+    patch_git('commit', '-F', comment_filename)
+
+  assert scm.GIT.IsInsideWorkTree(patch_dir)
+  assert not scm.GIT.IsWorkTreeDirty(patch_dir)
+
+  with _PrepareDescriptionAndPatchFiles(description, options) as (
+       patch_filename, description_filename):
+    logging.info('Committing patch')
+
+    temp_branch = 'tmp_patch'
+    target_ref = 'refs/patches/%s/%s' % (
+        Escape(options.user),
+        os.path.basename(patch_filename).replace(' ','_'))
+    target_filename = os.path.join(patch_dir, 'patch.diff')
+    branch_file = os.path.join(patch_dir, GIT_BRANCH_FILE)
+
+    patch_git('checkout', 'master')
+    try:
+      # Try deleting an existing temp branch, if any.
+      try:
+        patch_git('branch', '-D', temp_branch)
+        logging.debug('Deleted an existing temp branch.')
+      except subprocess2.CalledProcessError:
+        pass
+      # Create a new branch and put the patch there.
+      patch_git('checkout', '--orphan', temp_branch)
+      patch_git('reset')
+      patch_git('clean', '-f')
+      shutil.copyfile(patch_filename, target_filename)
+      add_and_commit(target_filename, description_filename)
+      assert not scm.GIT.IsWorkTreeDirty(patch_dir)
+
+      # Create a ref and point it to the commit referenced by temp_branch.
+      patch_git('update-ref', target_ref, temp_branch)
+
+      # Delete the temp ref.
+      patch_git('checkout', 'master')
+      patch_git('branch', '-D', temp_branch)
+
+      # Update the branch file in the master.
+      def update_branch():
+        with open(branch_file, 'w') as f:
+          f.write(target_ref)
+        add_and_commit(branch_file, description_filename)
+
+      update_branch()
+
+      # Push master and target_ref to origin.
+      logging.info('Pushing patch')
+      for attempt in xrange(_GIT_PUSH_ATTEMPTS):
+        try:
+          patch_git('push', 'origin', 'master', target_ref)
+        except subprocess2.CalledProcessError as e:
+          is_last = attempt == _GIT_PUSH_ATTEMPTS - 1
+          if is_last:
+            raise NoTryServerAccess(str(e))
+          # Fetch, reset, update branch file again.
+          patch_git('fetch', 'origin')
+          patch_git('reset', '--hard', 'origin/master')
+          update_branch()
+    except subprocess2.CalledProcessError, e:
+      # Restore state.
+      patch_git('checkout', 'master')
+      patch_git('reset', '--hard', 'origin/master')
+      raise
+
+  PrintSuccess(bot_spec, options)
+
+def _SendChangeGerrit(bot_spec, options):
+  """Posts a try job to a Gerrit change.
+
+  Reads Change-Id from the HEAD commit, resolves the current revision, checks
+  that local revision matches the uploaded one, posts a try job in form of a
+  message, sets Tryjob label to 1.
+
+  Gerrit message format: starts with !tryjob, optionally followed by a tryjob
+  definition in JSON format:
+      buildNames: list of strings specifying build names.
+  """
+
+  logging.info('Sending by Gerrit')
+  if not options.gerrit_url:
+    raise NoTryServerAccess('Please use --gerrit_url option to specify the '
+                            'Gerrit instance url to connect to')
+  gerrit_host = urlparse.urlparse(options.gerrit_url).hostname
+  logging.debug('Gerrit host: %s' % gerrit_host)
+
+  def GetChangeId(commmitish):
+    """Finds Change-ID of the HEAD commit."""
+    CHANGE_ID_RGX = '^Change-Id: (I[a-f0-9]{10,})'
+    comment = scm.GIT.Capture(['log', '-1', commmitish, '--format=%b'],
+                              cwd=os.getcwd())
+    change_id_match = re.search(CHANGE_ID_RGX, comment, re.I | re.M)
+    if not change_id_match:
+      raise Error('Change-Id was not found in the HEAD commit. Make sure you '
+                  'have a Git hook installed that generates and inserts a '
+                  'Change-Id into a commit message automatically.')
+    change_id = change_id_match.group(1)
+    return change_id
+
+  def FormatMessage():
+    # Build job definition.
+    job_def = {}
+    builderNames = [builder for builder, _ in bot_spec]
+    if builderNames:
+      job_def['builderNames'] = builderNames
+
+    # Format message.
+    msg = '!tryjob'
+    if job_def:
+      msg = '%s %s' % (msg, json.dumps(job_def, sort_keys=True))
+    return msg
+
+  def PostTryjob(message):
+    logging.info('Posting gerrit message: %s' % message)
+    if not options.dry_run:
+      # Post a message and set TryJob=1 label.
+      try:
+        gerrit_util.SetReview(gerrit_host, change_id, msg=message,
+                              labels={'Tryjob': 1})
+      except gerrit_util.GerritError, e:
+        if e.http_status == 400:
+          raise Error(e.reason)
+        else:
+          raise
+
+  head_sha = scm.GIT.Capture(['log', '-1', '--format=%H'], cwd=os.getcwd())
+
+  change_id = GetChangeId(head_sha)
+
+  # Check that the uploaded revision matches the local one.
+  changes = gerrit_util.GetChangeCurrentRevision(gerrit_host, change_id)
+  assert len(changes) <= 1, 'Multiple changes with id %s' % change_id
+  if not changes:
+    raise Error('A change %s was not found on the server. Was it uploaded?' %
+                change_id)
+  logging.debug('Found Gerrit change: %s' % changes[0])
+  if changes[0]['current_revision'] != head_sha:
+    raise Error('Please upload your latest local changes to Gerrit.')
+
+  # Post a try job.
+  message = FormatMessage()
+  PostTryjob(message)
+  change_url = urlparse.urljoin(options.gerrit_url,
+                                '/#/c/%s' % changes[0]['_number'])
+  print('A tryjob was posted on change %s' % change_url)
+
+def PrintSuccess(bot_spec, options):
   if not options.dry_run:
     text = 'Patch \'%s\' sent to try server' % options.name
-    if options.bot:
-      text += ': %s' % ', '.join(options.bot)
+    if bot_spec:
+      text += ': %s' % ', '.join(
+          '%s:%s' % (b[0], ','.join(b[1])) for b in bot_spec)
     print(text)
 
 
@@ -513,11 +861,15 @@ def GetMungedDiff(path_diff, diff):
   return (diff, changed_files)
 
 
+class OptionParser(optparse.OptionParser):
+  def format_epilog(self, _):
+    """Removes epilog formatting."""
+    return self.epilog or ''
+
+
 def gen_parser(prog):
   # Parse argv
-  parser = optparse.OptionParser(usage=USAGE,
-                                 version=__version__,
-                                 prog=prog)
+  parser = OptionParser(usage=USAGE, version=__version__, prog=prog)
   parser.add_option("-v", "--verbose", action="count", default=0,
                     help="Prints debugging infos")
   group = optparse.OptionGroup(parser, "Result and status")
@@ -557,7 +909,9 @@ def gen_parser(prog):
                          " and exit.  Do not send patch.  Like --dry_run"
                          " but less verbose.")
   group.add_option("-r", "--revision",
-                    help="Revision to use for the try job; default: the "
+                    help="Revision to use for the try job. If 'auto' is "
+                         "specified, it is resolved to the revision a patch is "
+                         "generated against (Git only). Default: the "
                          "revision will be determined by the try server; see "
                          "its waterfall for more info")
   group.add_option("-c", "--clobber", action="store_true",
@@ -630,8 +984,6 @@ def gen_parser(prog):
                    help="Host address")
   group.add_option("-P", "--port", type="int",
                    help="HTTP port")
-  group.add_option("--proxy",
-                   help="HTTP proxy")
   parser.add_option_group(group)
 
   group = optparse.OptionGroup(parser, "Access the try server with SVN")
@@ -645,6 +997,31 @@ def gen_parser(prog):
                    help="SVN url to use to write the changes in; --use_svn is "
                         "implied when using --svn_repo")
   parser.add_option_group(group)
+
+  group = optparse.OptionGroup(parser, "Access the try server with Git")
+  group.add_option("--use_git",
+                   action="store_const",
+                   const=_SendChangeGit,
+                   dest="send_patch",
+                   help="Use GIT to talk to the try server")
+  group.add_option("-G", "--git_repo",
+                   metavar="GIT_URL",
+                   help="GIT url to use to write the changes in; --use_git is "
+                        "implied when using --git_repo")
+  parser.add_option_group(group)
+
+  group = optparse.OptionGroup(parser, "Access the try server with Gerrit")
+  group.add_option("--use_gerrit",
+                   action="store_const",
+                   const=_SendChangeGerrit,
+                   dest="send_patch",
+                   help="Use Gerrit to talk to the try server")
+  group.add_option("--gerrit_url",
+                   metavar="GERRIT_URL",
+                   help="Gerrit url to post a tryjob to; --use_gerrit is "
+                        "implied when using --gerrit_url")
+  parser.add_option_group(group)
+
   return parser
 
 
@@ -664,8 +1041,6 @@ def TryChange(argv,
   if extra_epilog:
     epilog += extra_epilog
   parser.epilog = epilog
-  # Remove epilog formatting
-  parser.format_epilog = lambda x: parser.epilog
 
   options, args = parser.parse_args(argv)
 
@@ -715,7 +1090,6 @@ def TryChange(argv,
   try:
     changed_files = None
     # Always include os.getcwd() in the checkout settings.
-    checkouts = []
     path = os.getcwd()
 
     file_list = []
@@ -729,12 +1103,29 @@ def TryChange(argv,
       # Clear file list so that the correct list will be retrieved from the
       # upstream branch.
       file_list = []
-    checkouts.append(GuessVCS(options, path, file_list))
-    checkouts[0].AutomagicalSettings()
+
+    current_vcs = GuessVCS(options, path, file_list)
+    current_vcs.AutomagicalSettings()
+    options = current_vcs.options
+    vcs_is_git = type(current_vcs) is GIT
+
+    # So far, git_repo doesn't work with SVN
+    if options.git_repo and not vcs_is_git:
+      parser.error('--git_repo option is supported only for GIT repositories')
+
+    # If revision==auto, resolve it
+    if options.revision and options.revision.lower() == 'auto':
+      if not vcs_is_git:
+        parser.error('--revision=auto is supported only for GIT repositories')
+      options.revision = scm.GIT.Capture(
+          ['rev-parse', current_vcs.diff_against],
+          cwd=path)
+
+    checkouts = [current_vcs]
     for item in options.sub_rep:
       # Pass file_list=None because we don't know the sub repo's file list.
       checkout = GuessVCS(options,
-                          os.path.join(checkouts[0].checkout_root, item),
+                          os.path.join(current_vcs.checkout_root, item),
                           None)
       if checkout.checkout_root in [c.checkout_root for c in checkouts]:
         parser.error('Specified the root %s two times.' %
@@ -743,16 +1134,19 @@ def TryChange(argv,
 
     can_http = options.port and options.host
     can_svn = options.svn_repo
+    can_git = options.git_repo
+    can_gerrit = options.gerrit_url
+    can_something = can_http or can_svn or can_git or can_gerrit
     # If there was no transport selected yet, now we must have enough data to
     # select one.
-    if not options.send_patch and not (can_http or can_svn):
+    if not options.send_patch and not can_something:
       parser.error('Please specify an access method.')
 
     # Convert options.diff into the content of the diff.
     if options.url:
       if options.files:
         parser.error('You cannot specify files and --url at the same time.')
-      options.diff = urllib.urlopen(options.url).read()
+      options.diff = urllib2.urlopen(options.url).read()
     elif options.diff:
       if options.files:
         parser.error('You cannot specify files and --diff at the same time.')
@@ -762,11 +1156,11 @@ def TryChange(argv,
       # When patchset is specified, it's because it's done by gcl/git-try.
       api_url = '%s/api/%d' % (options.rietveld_url, options.issue)
       logging.debug(api_url)
-      contents = json.loads(urllib.urlopen(api_url).read())
+      contents = json.loads(urllib2.urlopen(api_url).read())
       options.patchset = contents['patchsets'][-1]
       diff_url = ('%s/download/issue%d_%d.diff' %
           (options.rietveld_url,  options.issue, options.patchset))
-      diff = GetMungedDiff('', urllib.urlopen(diff_url).readlines())
+      diff = GetMungedDiff('', urllib2.urlopen(diff_url).readlines())
       options.diff = ''.join(diff[0])
       changed_files = diff[1]
     else:
@@ -776,12 +1170,14 @@ def TryChange(argv,
       for checkout in checkouts:
         raw_diff = checkout.GenerateDiff()
         if not raw_diff:
-          logging.error('Empty or non-existant diff, exiting.')
-          return 1
+          continue
         diff = raw_diff.splitlines(True)
         path_diff = gclient_utils.PathDifference(root, checkout.checkout_root)
         # Munge it.
         diffs.extend(GetMungedDiff(path_diff, diff)[0])
+      if not diffs:
+        logging.error('Empty or non-existant diff, exiting.')
+        return 1
       options.diff = ''.join(diffs)
 
     if not options.name:
@@ -796,77 +1192,56 @@ def TryChange(argv,
                    'the TRYBOT_RESULTS_EMAIL_ADDRESS environment variable.')
     print('Results will be emailed to: ' + options.email)
 
-    if not options.bot:
-      # Get try slaves from PRESUBMIT.py files if not specified.
-      # Even if the diff comes from options.url, use the local checkout for bot
-      # selection.
-      try:
-        import presubmit_support
-        root_presubmit = checkouts[0].ReadRootFile('PRESUBMIT.py')
-        if not change:
-          if not changed_files:
-            changed_files = checkouts[0].file_tuples
-          change = presubmit_support.Change(options.name,
-                                            '',
-                                            checkouts[0].checkout_root,
-                                            changed_files,
-                                            options.issue,
-                                            options.patchset,
-                                            options.email)
-        options.bot = presubmit_support.DoGetTrySlaves(
-            change,
-            checkouts[0].GetFileNames(),
-            checkouts[0].checkout_root,
-            root_presubmit,
-            options.project,
-            options.verbose,
-            sys.stdout)
-      except ImportError:
-        pass
-      if options.testfilter:
-        bots = set()
-        for bot in options.bot:
-          assert ',' not in bot
-          if bot.endswith(':compile'):
-            # Skip over compile-only builders for now.
-            continue
-          bots.add(bot.split(':', 1)[0])
-        options.bot = list(bots)
+    if options.bot:
+      bot_spec = _ApplyTestFilter(
+          options.testfilter, _ParseBotList(options.bot, options.testfilter))
+    else:
+      bot_spec = _GenTSBotSpec(checkouts, change, changed_files, options)
 
-      # If no bot is specified, either the default pool will be selected or the
-      # try server will refuse the job. Either case we don't need to interfere.
+    if options.testfilter:
+      bot_spec = _ApplyTestFilter(options.testfilter, bot_spec)
 
-    if any('triggered' in b.split(':', 1)[0] for b in options.bot):
+    if any('triggered' in b[0] for b in bot_spec):
       print >> sys.stderr, (
           'ERROR You are trying to send a job to a triggered bot.  This type of'
           ' bot requires an\ninitial job from a parent (usually a builder).  '
-          'Instead send your job to the parent.\nBot list: %s' % options.bot)
+          'Instead send your job to the parent.\nBot list: %s' % bot_spec)
       return 1
 
     if options.print_bots:
       print 'Bots which would be used:'
-      for bot in options.bot:
-        print '  %s' % bot
+      for bot in bot_spec:
+        if bot[1]:
+          print '  %s:%s' % (bot[0], ','.join(bot[1]))
+        else:
+          print '  %s' % (bot[0])
       return 0
 
-    # Send the patch.
+    # Determine sending protocol
     if options.send_patch:
       # If forced.
-      options.send_patch(options)
-      PrintSuccess(options)
-      return 0
-    try:
-      if can_http:
-        _SendChangeHTTP(options)
-        PrintSuccess(options)
+      senders = [options.send_patch]
+    else:
+      # Try sending patch using avaialble protocols
+      all_senders = [
+        (_SendChangeHTTP, can_http),
+        (_SendChangeSVN, can_svn),
+        (_SendChangeGerrit, can_gerrit),
+        (_SendChangeGit, can_git),
+      ]
+      senders = [sender for sender, can in all_senders if can]
+
+    # Send the patch.
+    for sender in senders:
+      try:
+        sender(bot_spec, options)
         return 0
-    except NoTryServerAccess:
-      if not can_svn:
-        raise
-    _SendChangeSVN(options)
-    PrintSuccess(options)
-    return 0
-  except (InvalidScript, NoTryServerAccess), e:
+      except NoTryServerAccess:
+        is_last = sender == senders[-1]
+        if is_last:
+          raise
+    assert False, "Unreachable code"
+  except Error, e:
     if swallow_exception:
       return 1
     print >> sys.stderr, e

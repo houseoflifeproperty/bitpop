@@ -108,12 +108,12 @@ def main(base_dir, adb_cmd='adb'):
 
   # Set up the alarm for calling 'adb devices'. This is to ensure
   # our script doesn't get stuck waiting for a process response
-  def TimeoutHandler(_, unused_frame):
+  def TimeoutHandler(_signum, _unused_frame):
     raise TimeoutException()
   signal.signal(signal.SIGALRM, TimeoutHandler)
 
   # Handle SIGTERMs to ensure clean shutdown
-  def SigtermHandler(_, unused_frame):
+  def SigtermHandler(_signum, _unused_frame):
     raise SigtermError()
   signal.signal(signal.SIGTERM, SigtermHandler)
 
@@ -126,6 +126,7 @@ def main(base_dir, adb_cmd='adb'):
     while True:
       for device_id in GetAttachedDevices(adb_cmd):
         if not device_id in devices:
+          subprocess.call([adb_cmd, '-s', device_id, 'logcat', '-c'])
           devices[device_id] = (None, 0)
 
       for device in devices:

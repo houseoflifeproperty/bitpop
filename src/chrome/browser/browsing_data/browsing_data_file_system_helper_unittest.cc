@@ -7,18 +7,18 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/file_util.h"
+#include "base/message_loop/message_loop.h"
 #include "base/platform_file.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/stl_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_file_system_helper.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/test_browser_thread.h"
-#include "webkit/fileapi/file_system_context.h"
-#include "webkit/fileapi/file_system_types.h"
-#include "webkit/fileapi/file_system_url.h"
-#include "webkit/fileapi/file_system_usage_cache.h"
-#include "webkit/fileapi/sandbox_mount_point_provider.h"
+#include "content/public/test/test_browser_thread_bundle.h"
+#include "webkit/browser/fileapi/file_system_context.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/common/fileapi/file_system_types.h"
 
 using content::BrowserContext;
 using content::BrowserThread;
@@ -62,26 +62,19 @@ typedef scoped_ptr<FileSystemInfoList> ScopedFileSystemInfoList;
 // point.
 class BrowsingDataFileSystemHelperTest : public testing::Test {
  public:
-  BrowsingDataFileSystemHelperTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
-        db_thread_(BrowserThread::DB, &message_loop_),
-        webkit_thread_(BrowserThread::WEBKIT_DEPRECATED, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_),
-        file_user_blocking_thread_(
-            BrowserThread::FILE_USER_BLOCKING, &message_loop_),
-        io_thread_(BrowserThread::IO, &message_loop_) {
+  BrowsingDataFileSystemHelperTest() {
     profile_.reset(new TestingProfile());
 
     helper_ = BrowsingDataFileSystemHelper::Create(
         BrowserContext::GetDefaultStoragePartition(profile_.get())->
             GetFileSystemContext());
-    message_loop_.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     canned_helper_ = new CannedBrowsingDataFileSystemHelper(profile_.get());
   }
   virtual ~BrowsingDataFileSystemHelperTest() {
     // Avoid memory leaks.
     profile_.reset();
-    message_loop_.RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   TestingProfile* GetProfile() {
@@ -90,35 +83,46 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
 
   // Blocks on the current MessageLoop until Notify() is called.
   void BlockUntilNotified() {
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
   }
 
   // Unblocks the current MessageLoop. Should be called in response to some sort
   // of async activity in a callback method.
   void Notify() {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   // Callback that should be executed in response to
-  // fileapi::SandboxMountPointProvider::ValidateFileSystemRoot
-  void ValidateFileSystemCallback(base::PlatformFileError error) {
-    validate_file_system_result_ = error;
+  // fileapi::FileSystemContext::OpenFileSystem.
+  void OpenFileSystemCallback(const GURL& root,
+                              const std::string& name,
+                              base::File::Error error) {
+    open_file_system_result_ = error;
     Notify();
   }
 
-  // Calls fileapi::SandboxMountPointProvider::ValidateFileSystemRootAndGetURL
+  bool OpenFileSystem(const GURL& origin,
+                      fileapi::FileSystemType type,
+                      fileapi::OpenFileSystemMode open_mode) {
+    BrowserContext::GetDefaultStoragePartition(profile_.get())->
+        GetFileSystemContext()->OpenFileSystem(
+            origin, type, open_mode,
+            base::Bind(
+                &BrowsingDataFileSystemHelperTest::OpenFileSystemCallback,
+                base::Unretained(this)));
+    BlockUntilNotified();
+    return open_file_system_result_ == base::File::FILE_OK;
+  }
+
+  // Calls fileapi::FileSystemContext::OpenFileSystem with
+  // OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT flag
   // to verify the existence of a file system for a specified type and origin,
   // blocks until a response is available, then returns the result
   // synchronously to it's caller.
   bool FileSystemContainsOriginAndType(const GURL& origin,
                                        fileapi::FileSystemType type) {
-    sandbox_->ValidateFileSystemRoot(
-        origin, type, false,
-        base::Bind(
-            &BrowsingDataFileSystemHelperTest::ValidateFileSystemCallback,
-            base::Unretained(this)));
-    BlockUntilNotified();
-    return validate_file_system_result_ == base::PLATFORM_FILE_OK;
+    return OpenFileSystem(origin, type,
+                          fileapi::OPEN_FILE_SYSTEM_FAIL_IF_NONEXISTENT);
   }
 
   // Callback that should be executed in response to StartFetching(), and stores
@@ -153,9 +157,6 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
   // Sets up kOrigin1 with a temporary file system, kOrigin2 with a persistent
   // file system, and kOrigin3 with both.
   virtual void PopulateTestFileSystemData() {
-    sandbox_ = BrowserContext::GetDefaultStoragePartition(profile_.get())->
-        GetFileSystemContext()->sandbox_provider();
-
     CreateDirectoryForOriginAndType(kOrigin1, kTemporary);
     CreateDirectoryForOriginAndType(kOrigin2, kPersistent);
     CreateDirectoryForOriginAndType(kOrigin3, kTemporary);
@@ -169,13 +170,13 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
     EXPECT_TRUE(FileSystemContainsOriginAndType(kOrigin3, kTemporary));
   }
 
-  // Uses the fileapi methods to create a filesystem of a given type for a
-  // specified origin.
+  // Calls OpenFileSystem with OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT
+  // to create a filesystem of a given type for a specified origin.
   void CreateDirectoryForOriginAndType(const GURL& origin,
                                        fileapi::FileSystemType type) {
-    FilePath target = sandbox_->GetFileSystemRootPathOnFileThread(
-        fileapi::FileSystemURL(origin, type, FilePath()), true);
-    EXPECT_TRUE(file_util::DirectoryExists(target));
+    OpenFileSystem(origin, type,
+                   fileapi::OPEN_FILE_SYSTEM_CREATE_IF_NONEXISTENT);
+    EXPECT_EQ(base::File::FILE_OK, open_file_system_result_);
   }
 
   // Returns a list of the FileSystemInfo objects gathered in the most recent
@@ -184,29 +185,16 @@ class BrowsingDataFileSystemHelperTest : public testing::Test {
     return file_system_info_list_.get();
   }
 
+ protected:
+  content::TestBrowserThreadBundle thread_bundle_;
+  scoped_ptr<TestingProfile> profile_;
 
   // Temporary storage to pass information back from callbacks.
-  base::PlatformFileError validate_file_system_result_;
+  base::File::Error open_file_system_result_;
   ScopedFileSystemInfoList file_system_info_list_;
 
   scoped_refptr<BrowsingDataFileSystemHelper> helper_;
   scoped_refptr<CannedBrowsingDataFileSystemHelper> canned_helper_;
-
- private:
-  // message_loop_, as well as all the threads associated with it must be
-  // defined before profile_ to prevent explosions. The threads also must be
-  // defined in the order they're listed here. Oh how I love C++.
-  MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread db_thread_;
-  content::TestBrowserThread webkit_thread_;
-  content::TestBrowserThread file_thread_;
-  content::TestBrowserThread file_user_blocking_thread_;
-  content::TestBrowserThread io_thread_;
-  scoped_ptr<TestingProfile> profile_;
-
-  // We don't own this pointer: don't delete it.
-  fileapi::SandboxMountPointProvider* sandbox_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowsingDataFileSystemHelperTest);
 };
@@ -226,28 +214,27 @@ TEST_F(BrowsingDataFileSystemHelperTest, FetchData) {
        file_system_info_list_->begin(); info != file_system_info_list_->end();
        ++info) {
     if (info->origin == kOrigin1) {
-        EXPECT_FALSE(test_hosts_found[0]);
-        test_hosts_found[0] = true;
-        EXPECT_FALSE(info->has_persistent);
-        EXPECT_TRUE(info->has_temporary);
-        EXPECT_EQ(0, info->usage_persistent);
-        EXPECT_EQ(kEmptyFileSystemSize, info->usage_temporary);
+      EXPECT_FALSE(test_hosts_found[0]);
+      test_hosts_found[0] = true;
+      EXPECT_FALSE(ContainsKey(info->usage_map, kPersistent));
+      EXPECT_TRUE(ContainsKey(info->usage_map, kTemporary));
+      EXPECT_EQ(kEmptyFileSystemSize,
+                info->usage_map[fileapi::kFileSystemTypeTemporary]);
     } else if (info->origin == kOrigin2) {
-        EXPECT_FALSE(test_hosts_found[1]);
-        test_hosts_found[1] = true;
-        EXPECT_TRUE(info->has_persistent);
-        EXPECT_FALSE(info->has_temporary);
-        EXPECT_EQ(kEmptyFileSystemSize, info->usage_persistent);
-        EXPECT_EQ(0, info->usage_temporary);
+      EXPECT_FALSE(test_hosts_found[1]);
+      test_hosts_found[1] = true;
+      EXPECT_TRUE(ContainsKey(info->usage_map, kPersistent));
+      EXPECT_FALSE(ContainsKey(info->usage_map, kTemporary));
+      EXPECT_EQ(kEmptyFileSystemSize, info->usage_map[kPersistent]);
     } else if (info->origin == kOrigin3) {
-        EXPECT_FALSE(test_hosts_found[2]);
-        test_hosts_found[2] = true;
-        EXPECT_TRUE(info->has_persistent);
-        EXPECT_TRUE(info->has_temporary);
-        EXPECT_EQ(kEmptyFileSystemSize, info->usage_persistent);
-        EXPECT_EQ(kEmptyFileSystemSize, info->usage_temporary);
+      EXPECT_FALSE(test_hosts_found[2]);
+      test_hosts_found[2] = true;
+      EXPECT_TRUE(ContainsKey(info->usage_map, kPersistent));
+      EXPECT_TRUE(ContainsKey(info->usage_map, kTemporary));
+      EXPECT_EQ(kEmptyFileSystemSize, info->usage_map[kPersistent]);
+      EXPECT_EQ(kEmptyFileSystemSize, info->usage_map[kTemporary]);
     } else {
-        ADD_FAILURE() << info->origin.spec() << " isn't an origin we added.";
+      ADD_FAILURE() << info->origin.spec() << " isn't an origin we added.";
     }
   }
   for (size_t i = 0; i < arraysize(test_hosts_found); i++) {
@@ -269,10 +256,10 @@ TEST_F(BrowsingDataFileSystemHelperTest, DeleteData) {
   BrowsingDataFileSystemHelper::FileSystemInfo info =
       *(file_system_info_list_->begin());
   EXPECT_EQ(kOrigin3, info.origin);
-  EXPECT_TRUE(info.has_persistent);
-  EXPECT_TRUE(info.has_temporary);
-  EXPECT_EQ(kEmptyFileSystemSize, info.usage_persistent);
-  EXPECT_EQ(kEmptyFileSystemSize, info.usage_temporary);
+  EXPECT_TRUE(ContainsKey(info.usage_map, kPersistent));
+  EXPECT_TRUE(ContainsKey(info.usage_map, kTemporary));
+  EXPECT_EQ(kEmptyFileSystemSize, info.usage_map[kPersistent]);
+  EXPECT_EQ(kEmptyFileSystemSize, info.usage_map[kTemporary]);
 }
 
 // Verifies that the CannedBrowsingDataFileSystemHelper correctly reports
@@ -297,17 +284,15 @@ TEST_F(BrowsingDataFileSystemHelperTest, CannedAddFileSystem) {
   std::list<BrowsingDataFileSystemHelper::FileSystemInfo>::iterator info =
       file_system_info_list_->begin();
   EXPECT_EQ(kOrigin1, info->origin);
-  EXPECT_TRUE(info->has_persistent);
-  EXPECT_FALSE(info->has_temporary);
-  EXPECT_EQ(200, info->usage_persistent);
-  EXPECT_EQ(0, info->usage_temporary);
+  EXPECT_TRUE(ContainsKey(info->usage_map, kPersistent));
+  EXPECT_FALSE(ContainsKey(info->usage_map, kTemporary));
+  EXPECT_EQ(200, info->usage_map[kPersistent]);
 
   info++;
   EXPECT_EQ(kOrigin2, info->origin);
-  EXPECT_FALSE(info->has_persistent);
-  EXPECT_TRUE(info->has_temporary);
-  EXPECT_EQ(0, info->usage_persistent);
-  EXPECT_EQ(100, info->usage_temporary);
+  EXPECT_FALSE(ContainsKey(info->usage_map, kPersistent));
+  EXPECT_TRUE(ContainsKey(info->usage_map, kTemporary));
+  EXPECT_EQ(100, info->usage_map[kTemporary]);
 }
 
 // Verifies that the CannedBrowsingDataFileSystemHelper correctly ignores

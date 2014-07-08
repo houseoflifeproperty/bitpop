@@ -22,6 +22,9 @@ cr.define('options', function() {
     // Inherit ClearBrowserDataOverlay from OptionsPage.
     __proto__: OptionsPage.prototype,
 
+    // Whether deleting history and downloads is allowed.
+    allowDeletingHistory_: true,
+
     /**
      * Initialize the page.
      */
@@ -49,6 +52,8 @@ cr.define('options', function() {
       }
       this.updateCommitButtonState_();
 
+      this.createStuffRemainsFooter_();
+
       $('clear-browser-data-dismiss').onclick = function(event) {
         ClearBrowserDataOverlay.dismiss();
       };
@@ -56,6 +61,57 @@ cr.define('options', function() {
         ClearBrowserDataOverlay.setClearingState(true);
         chrome.send('performClearBrowserData');
       };
+
+      var show = loadTimeData.getBoolean('showDeleteBrowsingHistoryCheckboxes');
+      this.showDeleteHistoryCheckboxes_(show);
+    },
+
+    // Create a footer that explains that some content is not cleared by the
+    // clear browsing history dialog.
+    createStuffRemainsFooter_: function() {
+      // The localized string is of the form "Saved [content settings] and
+      // {search engines} will not be cleared and may reflect your browsing
+      // habits.". The following parses out the parts in brackts and braces and
+      // converts them into buttons whereas the remainders are represented as
+      // span elements.
+      var footer =
+          document.querySelector('#some-stuff-remains-footer p');
+      var footerFragments =
+          loadTimeData.getString('contentSettingsAndSearchEnginesRemain')
+                      .split(/([|#])/);
+      for (var i = 0; i < footerFragments.length;) {
+        var buttonId = '';
+        if (i + 2 < footerFragments.length) {
+          if (footerFragments[i] == '|' && footerFragments[i + 2] == '|') {
+            buttonId = 'open-content-settings-from-clear-browsing-data';
+          } else if (footerFragments[i] == '#' &&
+                     footerFragments[i + 2] == '#') {
+            buttonId = 'open-search-engines-from-clear-browsing-data';
+          }
+        }
+
+        if (buttonId != '') {
+          var button = document.createElement('button');
+          button.setAttribute('id', buttonId);
+          button.setAttribute('class', 'link-button');
+          button.textContent = footerFragments[i + 1];
+          footer.appendChild(button);
+          i += 3;
+        } else {
+          var span = document.createElement('span');
+          span.textContent = footerFragments[i];
+          footer.appendChild(span);
+          i += 1;
+        }
+      }
+      $('open-content-settings-from-clear-browsing-data').onclick =
+          function(event) {
+        OptionsPage.navigateToPage('content');
+      }
+      $('open-search-engines-from-clear-browsing-data').onclick =
+          function(event) {
+        OptionsPage.navigateToPage('searchEngines');
+      }
     },
 
     // Set the enabled state of the commit button.
@@ -71,11 +127,43 @@ cr.define('options', function() {
       }
       $('clear-browser-data-commit').disabled = !isChecked;
     },
+
+    setAllowDeletingHistory: function(allowed) {
+      this.allowDeletingHistory_ = allowed;
+    },
+
+    showDeleteHistoryCheckboxes_: function(show) {
+      if (!show) {
+        $('delete-browsing-history-container').hidden = true;
+        $('delete-download-history-container').hidden = true;
+      }
+    },
+
+    /** @override */
+    didShowPage: function() {
+      var allowed = ClearBrowserDataOverlay.getInstance().allowDeletingHistory_;
+      ClearBrowserDataOverlay.updateHistoryCheckboxes(allowed);
+    },
   };
 
   //
   // Chrome callbacks
   //
+  /**
+   * Updates the disabled status of the browsing-history and downloads
+   * checkboxes, also unchecking them if they are disabled. This is called in
+   * response to a change in the corresponding preference.
+   */
+  ClearBrowserDataOverlay.updateHistoryCheckboxes = function(allowed) {
+    $('delete-browsing-history-checkbox').disabled = !allowed;
+    $('delete-download-history-checkbox').disabled = !allowed;
+    if (!allowed) {
+      $('delete-browsing-history-checkbox').checked = false;
+      $('delete-download-history-checkbox').checked = false;
+    }
+    ClearBrowserDataOverlay.getInstance().setAllowDeletingHistory(allowed);
+  };
+
   ClearBrowserDataOverlay.setClearingState = function(state) {
     $('delete-browsing-history-checkbox').disabled = state;
     $('delete-download-history-checkbox').disabled = state;
@@ -95,6 +183,11 @@ cr.define('options', function() {
       ClearBrowserDataOverlay.getInstance().updateCommitButtonState_();
   };
 
+  ClearBrowserDataOverlay.setBannerVisibility = function(args) {
+    var visible = args[0];
+    $('clear-browser-data-info-banner').hidden = !visible;
+  };
+
   ClearBrowserDataOverlay.doneClearing = function() {
     // The delay gives the user some feedback that the clearing
     // actually worked. Otherwise the dialog just vanishes instantly in most
@@ -105,7 +198,9 @@ cr.define('options', function() {
   };
 
   ClearBrowserDataOverlay.dismiss = function() {
-    OptionsPage.closeOverlay();
+    var topmostVisiblePage = OptionsPage.getTopmostVisiblePage();
+    if (topmostVisiblePage && topmostVisiblePage.name == 'clearBrowserData')
+      OptionsPage.closeOverlay();
     this.setClearingState(false);
   };
 

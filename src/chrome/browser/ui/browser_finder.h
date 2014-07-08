@@ -17,7 +17,10 @@ class WebContents;
 
 // Collection of functions to find Browsers based on various criteria.
 
-namespace browser {
+namespace chrome {
+
+// If you want to find the last active tabbed browser and create a new browser
+// if there are no tabbed browsers, use ScopedTabbedBrowserDisplayer.
 
 // Retrieve the last active tabbed browser with a profile matching |profile|.
 // If |match_original_profiles| is true, matching is done based on the
@@ -28,20 +31,7 @@ namespace browser {
 // |type| refers to the host desktop the returned browser should belong to.
 Browser* FindTabbedBrowser(Profile* profile,
                            bool match_original_profiles,
-                           chrome::HostDesktopType type);
-
-// Deprecated. Call FindOrCreateTabbedBrowser and pass a desktop type instead.
-Browser* FindOrCreateTabbedBrowserDeprecated(Profile* profile);
-
-// Returns the first tabbed browser matching |profile|. If there is no tabbed
-// browser a new one is created and returned for the desktop specified by
-// |type|. If a new browser is created it is not made visible.
-Browser* FindOrCreateTabbedBrowser(Profile* profile,
-                                   chrome::HostDesktopType type);
-
-}  // namespace browser
-
-namespace chrome {
+                           HostDesktopType type);
 
 // Finds an existing browser window of any kind.
 // |type| refers to the host desktop the returned browser should belong to.
@@ -66,10 +56,6 @@ Browser* FindBrowserWithWindow(gfx::NativeWindow window);
 // |web_contents| must not be NULL.
 Browser* FindBrowserWithWebContents(const content::WebContents* web_contents);
 
-// Finds the host desktop type for the web_contents passed in.
-HostDesktopType FindHostDesktopTypeForWebContents(
-    const content::WebContents* web_contents);
-
 // Returns the Browser object owned by |profile| on the given desktop type
 // whose window was most recently active. If no such Browsers exist, returns
 // NULL.
@@ -91,11 +77,20 @@ Browser* FindLastActiveWithProfile(Profile* profile, HostDesktopType type);
 // WARNING #2: this will always be NULL in unit tests run on the bots.
 Browser* FindLastActiveWithHostDesktopType(HostDesktopType type);
 
-// Returns the number of browsers with the Profile |profile|.
-size_t GetBrowserCount(Profile* profile);
+// Returns the number of browsers across all profiles and desktops.
+size_t GetTotalBrowserCount();
 
-// Returns the number of tabbed browsers with the Profile |profile|.
-size_t GetTabbedBrowserCount(Profile* profile);
+// Returns the number of browsers with the Profile |profile| accross all
+// desktops.
+size_t GetTotalBrowserCountForProfile(Profile* profile);
+
+// Returns the number of browsers with the Profile |profile| on the desktop
+// defined by |type|.
+size_t GetBrowserCount(Profile* profile, HostDesktopType type);
+
+// Returns the number of tabbed browsers with the Profile |profile| on the
+// desktop defined by |type|.
+size_t GetTabbedBrowserCount(Profile* profile, HostDesktopType type);
 
 }  // namespace chrome
 

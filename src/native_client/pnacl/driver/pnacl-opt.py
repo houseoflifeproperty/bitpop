@@ -9,37 +9,50 @@
 # updates the copy in the toolchain/ tree.
 #
 
-from driver_env import env
-from driver_log import Log
-import driver_tools
 import subprocess
 
+from driver_env import env
+import driver_tools
+import filetype
+
 EXTRA_ENV = {
-  'DO_WRAP': '1',
   'ARGS'   : '',
+  'INPUT'  : '',
   'OUTPUT' : '',
+  # Binary output may go to stdout (when -o was not specified)
   'HAVE_OUTPUT' : '0',
+  # We disable the LLVM simplify-libcalls pass by default, since we
+  # statically link in libc, and pnacl-opt is typically used for post-link
+  # optimizations.  Changing one library call to another can lead
+  # to undefined symbol errors since which definitions from libc are linked
+  # in is already decided.
+  'DISABLE_SIMPLIFY_LIBCALLS' : '1',
 }
 
 PATTERNS  = [
-  ( '--do-not-wrap',   "env.set('DO_WRAP', '0')"),
+  ( '--enable-simplify-libcalls', "env.set('DISABLE_SIMPLIFY_LIBCALLS', '0')"),
   (('-o','(.*)'),      "env.set('OUTPUT', pathtools.normalize($0))\n" +
                        "env.set('HAVE_OUTPUT', '1')"),
-  ( '(.*)',            "env.append('ARGS', $0)"),
+  ( '(-.*)',           "env.append('ARGS', $0)"),
+  ( '(.*)',            "env.set('INPUT', $0)"),
 ]
 
 def main(argv):
   env.update(EXTRA_ENV)
   driver_tools.ParseArgs(argv, PATTERNS)
 
-  # Binary output may go to stdout (when -o was not specified)
-  driver_tools.Run('"${LLVM_OPT}" ${ARGS} ${HAVE_OUTPUT ? -o ${OUTPUT}}')
+  driver_tools.Run(
+      '"${LLVM_OPT}" ${ARGS} ' +
+      '${DISABLE_SIMPLIFY_LIBCALLS ? -disable-simplify-libcalls} ' +
+      '${HAVE_OUTPUT ? -o ${OUTPUT}} ' +
+      '${INPUT}')
 
-  if env.getbool('DO_WRAP'):
-    if not env.getbool('HAVE_OUTPUT'):
-      Log.Error("unable to wrap pexe on stdout, use: --do-no-wrap flag")
-    else:
-      driver_tools.WrapBitcode(env.getone('OUTPUT'))
+  # Opt is the only tool that will modify a file in-place. If this happens we
+  # need to clear the filetype cache so future invocations of the type checking
+  # routines will re-check the file.
+  if env.getone('INPUT') == env.getone('OUTPUT'):
+    filetype.ClearFileTypeCaches()
+
   # only reached in case of no errors
   return 0
 

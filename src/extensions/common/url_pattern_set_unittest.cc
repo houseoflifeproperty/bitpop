@@ -5,8 +5,8 @@
 #include "extensions/common/url_pattern_set.h"
 
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace extensions {
 
@@ -31,7 +31,7 @@ URLPatternSet Patterns(const std::string& pattern1,
   return set;
 }
 
-}
+}  // namespace
 
 TEST(URLPatternSetTest, Empty) {
   URLPatternSet set;
@@ -198,10 +198,10 @@ TEST(URLPatternSetTest, Contains) {
   EXPECT_FALSE(set1.Contains(set2));
   EXPECT_TRUE(set2.Contains(set1));
 
-  // Note that this just checks pattern equality, and not if individual patterns
-  // contain other patterns. For example:
+  // Note that this checks if individual patterns contain other patterns, not
+  // just equality. For example:
   AddPattern(&set1, "http://*.reddit.com/*");
-  EXPECT_FALSE(set1.Contains(set2));
+  EXPECT_TRUE(set1.Contains(set2));
   EXPECT_FALSE(set2.Contains(set1));
 }
 
@@ -276,7 +276,6 @@ TEST(URLPatternSetTest, NwayUnion) {
 
   // List with 2 elements.
   {
-
     std::vector<URLPatternSet> test;
     test.push_back(Patterns(google_a, google_b));
     test.push_back(Patterns(google_b, google_c));
@@ -364,7 +363,6 @@ TEST(URLPatternSetTest, NwayUnion) {
 
   // List with 9 elements.
   {
-
     std::vector<URLPatternSet> test;
     test.push_back(Patterns(google_a));
     test.push_back(Patterns(google_b));

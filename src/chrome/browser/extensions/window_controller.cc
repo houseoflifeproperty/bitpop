@@ -8,7 +8,7 @@
 #include "chrome/browser/extensions/api/tabs/tabs_constants.h"
 #include "chrome/browser/extensions/window_controller_list.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/base_window.h"
+#include "ui/base/base_window.h"
 #include "ui/gfx/rect.h"
 
 namespace extensions {
@@ -16,7 +16,7 @@ namespace extensions {
 ///////////////////////////////////////////////////////////////////////////////
 // WindowController
 
-WindowController::WindowController(BaseWindow* window, Profile* profile)
+WindowController::WindowController(ui::BaseWindow* window, Profile* profile)
     : window_(window), profile_(profile) {
 }
 
@@ -30,7 +30,7 @@ Browser* WindowController::GetBrowser() const {
 namespace keys = tabs_constants;
 
 base::DictionaryValue* WindowController::CreateWindowValue() const {
-  DictionaryValue* result = new DictionaryValue();
+  base::DictionaryValue* result = new base::DictionaryValue();
 
   result->SetInteger(keys::kIdKey, GetWindowId());
   result->SetString(keys::kWindowTypeKey, GetWindowTypeText());

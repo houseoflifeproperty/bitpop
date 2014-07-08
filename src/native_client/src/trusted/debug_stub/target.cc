@@ -12,6 +12,7 @@
 
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/shared/platform/nacl_check.h"
+#include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/debug_stub/abi.h"
 #include "native_client/src/trusted/debug_stub/packet.h"
@@ -37,6 +38,25 @@ using port::MutexLock;
 namespace gdb_rsp {
 
 
+// Arbitrary descriptor to return when the main nexe is opened.
+// This can be shared as the file connections are stateless.
+static const char kMainNexeFilename[] = "nexe";
+static const char kIrtNexeFilename[] = "irt";
+static const uint64_t kMainNexeFd = 123;
+static const uint64_t kIrtNexeFd = 234;
+
+// The GDB debug protocol specifies particular values for return values,
+// errno values, and mode flags. Explicitly defining the subset used herein.
+static const uint64_t kGdbErrorResult = static_cast<uint64_t>(-1);
+static const uint64_t kGdbO_RDONLY = 0;
+static const uint64_t kGdbEPERM = 1;
+static const uint64_t kGdbENOENT = 2;
+static const uint64_t kGdbEBADF = 9;
+
+// Assume a buffer size that matches GDB's actual current request size.
+static const size_t kGdbPreadChunkSize = 4096;
+
+
 Target::Target(struct NaClApp *nap, const Abi* abi)
   : nap_(nap),
     abi_(abi),
@@ -46,7 +66,10 @@ Target::Target(struct NaClApp *nap, const Abi* abi)
     cur_signal_(0),
     sig_thread_(0),
     reg_thread_(0),
-    step_over_breakpoint_thread_(0) {
+    step_over_breakpoint_thread_(0),
+    all_threads_suspended_(false),
+    detaching_(false),
+    should_exit_(false) {
   if (NULL == abi_) abi_ = Abi::Get();
 }
 
@@ -65,15 +88,11 @@ bool Target::Init() {
   // Set a more specific result which won't change.
   properties_["target.xml"] = targ_xml;
   properties_["Supported"] =
-    "PacketSize=7cf;qXfer:features:read+";
+    "PacketSize=1000;qXfer:features:read+";
 
   NaClXMutexCtor(&mutex_);
   ctx_ = new uint8_t[abi_->GetContextSize()];
 
-  if (NULL == ctx_) {
-    Destroy();
-    return false;
-  }
   initial_breakpoint_addr_ = (uint32_t) nap_->initial_entry_pt;
   if (!AddBreakpoint(initial_breakpoint_addr_))
     return false;
@@ -106,8 +125,6 @@ bool Target::AddBreakpoint(uint32_t user_address) {
   // to be able to remove the breakpoint later, we save a copy of the
   // locations we are overwriting into breakpoint_map_.
   uint8_t *data = new uint8_t[bp->size_];
-  if (NULL == data)
-    return false;
 
   // Copy the old code from here
   if (!IPlatform::GetMemory(sysaddr, bp->size_, data)) {
@@ -150,7 +167,9 @@ void Target::CopyFaultSignalFromAppThread(IThread *thread) {
     // reported as SIGTRAP rather than SIGSEGV.  This is necessary
     // because we use HLT (which produces SIGSEGV) rather than the
     // more usual INT3 (which produces SIGTRAP) on x86, in order to
-    // work around a Mac OS X bug.
+    // work around a Mac OS X bug.  Similarly, on ARM we use an
+    // illegal instruction (which produces SIGILL) rather than the
+    // more usual BKPT (which produces SIGTRAP).
     //
     // We need to check each thread to see whether it hit a
     // breakpoint.  We record this on the thread object because:
@@ -160,7 +179,10 @@ void Target::CopyFaultSignalFromAppThread(IThread *thread) {
     //    whether a thread hit a breakpoint.
     //  * Although we deliver fault events to GDB one by one, we might
     //    have multiple threads that have hit breakpoints.
-    if (signal == NACL_ABI_SIGSEGV) {
+    if ((NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 &&
+         signal == NACL_ABI_SIGSEGV) ||
+        (NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm &&
+         signal == NACL_ABI_SIGILL)) {
       // Casting to uint32_t is necessary to drop the top 32 bits of
       // %rip on x86-64.
       uint32_t prog_ctr = (uint32_t) thread->GetContext()->prog_ctr;
@@ -213,135 +235,180 @@ void Target::EraseBreakpointsFromCopyOfMemory(uint32_t user_address,
 }
 
 void Target::Run(Session *ses) {
-  bool initial_breakpoint_seen = false;
   NaClXMutexLock(&mutex_);
   session_ = ses;
   NaClXMutexUnlock(&mutex_);
-  do {
-    // We poll periodically for faulted threads or input on the socket.
-    // TODO(mseaborn): This is slow.  We should use proper thread
-    // wakeups instead.
-    // See http://code.google.com/p/nativeclient/issues/detail?id=2952
 
-    // Give everyone else a chance to use the lock
-    IPlatform::Relinquish(100);
+  do {
+    WaitForDebugEvent();
 
     // Lock to prevent anyone else from modifying threads
     // or updating the signal information.
     MutexLock lock(&mutex_);
-    Packet recv, reply;
 
-    if (step_over_breakpoint_thread_ != 0) {
-      // We are waiting for a specific thread to fault while all other
-      // threads are suspended.  Note that faulted_thread_count might
-      // be >1, because multiple threads can fault simultaneously
-      // before the debug stub gets a chance to suspend all threads.
-      // This is why we must check the status of a specific thread --
-      // we cannot call UnqueueAnyFaultedThread() and expect it to
-      // return step_over_breakpoint_thread_.
-      IThread *thread = threads_[step_over_breakpoint_thread_];
-      if (!thread->HasThreadFaulted()) {
-        // The thread has not faulted.  Nothing to do, so try again.
-        // Note that we do not respond to input from GDB while in this
-        // state.
-        // TODO(mseaborn): We should allow GDB to interrupt execution.
-        continue;
-      }
-      // All threads but one are already suspended.  We only need to
-      // suspend the single thread that we allowed to run.
-      thread->SuspendThread();
-      CopyFaultSignalFromAppThread(thread);
-      cur_signal_ = thread->GetFaultSignal();
-      thread->UnqueueFaultedThread();
-      sig_thread_ = step_over_breakpoint_thread_;
-      reg_thread_ = step_over_breakpoint_thread_;
-      step_over_breakpoint_thread_ = 0;
-    } else if (nap_->faulted_thread_count != 0) {
-      // At least one untrusted thread has got an exception.  First we
-      // need to ensure that all threads are suspended.  Then we can
-      // retrieve a thread from the set of faulted threads.
-      SuspendAllThreads();
-      UnqueueAnyFaultedThread(&sig_thread_, &cur_signal_);
-      reg_thread_ = sig_thread_;
-    } else {
-      // Otherwise look for messages from GDB.  To fix a potential
-      // race condition, we don't do this on the first run, because in
-      // that case we are waiting for the initial breakpoint to be
-      // reached.  We don't want GDB to observe states where the
-      // (internal) initial breakpoint is still registered or where
-      // the initial thread is suspended in NaClStartThreadInApp()
-      // before executing its first untrusted instruction.
-      if (!initial_breakpoint_seen || !ses->IsDataAvailable()) {
-        // No input from GDB.  Nothing to do, so try again.
-        continue;
-      }
-      // GDB should have tried to interrupt the target.
-      // See http://sourceware.org/gdb/current/onlinedocs/gdb/Interrupts.html
-      // TODO(eaeltsin): should we verify the interrupt sequence?
+    ProcessDebugEvent();
+    ProcessCommands();
+  } while (session_->Connected());
 
-      // Indicate we have no current thread.
-      // TODO(eaeltsin): or pick any thread? Add a test.
-      // See http://code.google.com/p/nativeclient/issues/detail?id=2743
-      sig_thread_ = 0;
-      SuspendAllThreads();
-    }
-
-    if (sig_thread_ != 0) {
-      // Reset single stepping.
-      threads_[sig_thread_]->SetStep(false);
-      RemoveInitialBreakpoint();
-    }
-
-    // Next update the current thread info
-    char tmp[16];
-    snprintf(tmp, sizeof(tmp), "QC%x", sig_thread_);
-    properties_["C"] = tmp;
-
-    if (!initial_breakpoint_seen) {
-      // First time on a connection, we don't send the signal
-      initial_breakpoint_seen = true;
-    } else {
-      // All other times, send the signal that triggered us
-      Packet pktOut;
-      SetStopReply(&pktOut);
-      ses->SendPacketOnly(&pktOut);
-    }
-
-    // Now we are ready to process commands
-    // Loop through packets until we process a continue
-    // packet.
-    do {
-      if (ses->GetPacket(&recv)) {
-        reply.Clear();
-        if (ProcessPacket(&recv, &reply)) {
-          // If this is a continue command, break out of this loop
-          break;
-        } else {
-          // Othwerise send the reponse
-          ses->SendPacket(&reply);
-        }
-      }
-    } while (ses->Connected());
-
-    // Reset the signal value
-    cur_signal_ = 0;
-
-    // TODO(eaeltsin): it might make sense to resume signaled thread before
-    // others, though it is not required by GDB docs.
-    if (step_over_breakpoint_thread_ == 0) {
-      ResumeAllThreads();
-    } else {
-      // Resume one thread while leaving all others suspended.
-      threads_[step_over_breakpoint_thread_]->ResumeThread();
-    }
-
-    // Continue running until the connection is lost.
-  } while (ses->Connected());
   NaClXMutexLock(&mutex_);
   session_ = NULL;
   NaClXMutexUnlock(&mutex_);
 }
 
+bool Target::IsInitialBreakpointActive() {
+  return initial_breakpoint_addr_ != 0;
+}
+
+void Target::WaitForDebugEvent() {
+  if (all_threads_suspended_) {
+    // If all threads are suspended (which may be left over from a previous
+    // connection), we are already ready to handle commands from GDB.
+    return;
+  }
+  // Wait for either:
+  //   * an untrusted thread to fault (or single-step)
+  //   * an interrupt from GDB
+  bool ignore_input_from_gdb = step_over_breakpoint_thread_ != 0 ||
+    IsInitialBreakpointActive();
+  session_->WaitForDebugStubEvent(nap_, ignore_input_from_gdb);
+}
+
+void Target::ProcessDebugEvent() {
+  if (all_threads_suspended_) {
+    // We are already in a suspended state.
+    return;
+  } else if (step_over_breakpoint_thread_ != 0) {
+    // We are waiting for a specific thread to fault while all other
+    // threads are suspended.  Note that faulted_thread_count might
+    // be >1, because multiple threads can fault simultaneously
+    // before the debug stub gets a chance to suspend all threads.
+    // This is why we must check the status of a specific thread --
+    // we cannot call UnqueueAnyFaultedThread() and expect it to
+    // return step_over_breakpoint_thread_.
+    IThread *thread = threads_[step_over_breakpoint_thread_];
+    if (!thread->HasThreadFaulted()) {
+      // The thread has not faulted.  Nothing to do, so try again.
+      // Note that we do not respond to input from GDB while in this
+      // state.
+      // TODO(mseaborn): We should allow GDB to interrupt execution.
+      return;
+    }
+    // All threads but one are already suspended.  We only need to
+    // suspend the single thread that we allowed to run.
+    thread->SuspendThread();
+    CopyFaultSignalFromAppThread(thread);
+    cur_signal_ = thread->GetFaultSignal();
+    thread->UnqueueFaultedThread();
+    sig_thread_ = step_over_breakpoint_thread_;
+    reg_thread_ = step_over_breakpoint_thread_;
+    step_over_breakpoint_thread_ = 0;
+  } else if (nap_->faulted_thread_count != 0) {
+    // At least one untrusted thread has got an exception.  First we
+    // need to ensure that all threads are suspended.  Then we can
+    // retrieve a thread from the set of faulted threads.
+    SuspendAllThreads();
+    UnqueueAnyFaultedThread(&sig_thread_, &cur_signal_);
+    reg_thread_ = sig_thread_;
+  } else {
+    // Otherwise look for messages from GDB.  To fix a potential
+    // race condition, we don't do this on the first run, because in
+    // that case we are waiting for the initial breakpoint to be
+    // reached.  We don't want GDB to observe states where the
+    // (internal) initial breakpoint is still registered or where
+    // the initial thread is suspended in NaClStartThreadInApp()
+    // before executing its first untrusted instruction.
+    if (IsInitialBreakpointActive() || !session_->IsDataAvailable()) {
+      // No input from GDB.  Nothing to do, so try again.
+      return;
+    }
+    // GDB should have tried to interrupt the target.
+    // See http://sourceware.org/gdb/current/onlinedocs/gdb/Interrupts.html
+    // TODO(eaeltsin): should we verify the interrupt sequence?
+
+    // Indicate we have no current thread.
+    // TODO(eaeltsin): or pick any thread? Add a test.
+    // See http://code.google.com/p/nativeclient/issues/detail?id=2743
+    sig_thread_ = 0;
+    SuspendAllThreads();
+  }
+
+  bool initial_breakpoint_was_active = IsInitialBreakpointActive();
+
+  if (sig_thread_ != 0) {
+    // Reset single stepping.
+    threads_[sig_thread_]->SetStep(false);
+    RemoveInitialBreakpoint();
+  }
+
+  // Next update the current thread info
+  char tmp[16];
+  snprintf(tmp, sizeof(tmp), "QC%x", sig_thread_);
+  properties_["C"] = tmp;
+
+  if (!initial_breakpoint_was_active) {
+    // First time on a connection, we don't send the signal.
+    // All other times, send the signal that triggered us.
+    Packet pktOut;
+    SetStopReply(&pktOut);
+    session_->SendPacketOnly(&pktOut);
+  }
+
+  all_threads_suspended_ = true;
+}
+
+void Target::ProcessCommands() {
+  if (!all_threads_suspended_) {
+    // Don't process commands if we haven't stopped all threads.
+    return;
+  }
+
+  // Now we are ready to process commands.
+  // Loop through packets until we process a continue packet or a detach.
+  Packet recv, reply;
+  do {
+    if (!session_->GetPacket(&recv))
+      continue;
+    reply.Clear();
+    if (ProcessPacket(&recv, &reply)) {
+      // If this is a continue type command, break out of this loop.
+      break;
+    }
+    // Otherwise send the response.
+    session_->SendPacket(&reply);
+
+    if (detaching_) {
+      detaching_ = false;
+      session_->Disconnect();
+      Resume();
+      return;
+    }
+
+    if (should_exit_) {
+      NaClExit(-9);
+    }
+  } while (session_->Connected());
+
+  if (session_->Connected()) {
+    // Continue if we're still connected.
+    Resume();
+  }
+}
+
+void Target::Resume() {
+  // Reset the signal value
+  cur_signal_ = 0;
+
+  // TODO(eaeltsin): it might make sense to resume signaled thread before
+  // others, though it is not required by GDB docs.
+  if (step_over_breakpoint_thread_ == 0) {
+    ResumeAllThreads();
+  } else {
+    // Resume one thread while leaving all others suspended.
+    threads_[step_over_breakpoint_thread_]->ResumeThread();
+  }
+
+  all_threads_suspended_ = false;
+}
 
 void Target::SetStopReply(Packet *pktOut) const {
   pktOut->AddRawChar('T');
@@ -388,6 +455,114 @@ uint64_t Target::AdjustUserAddr(uint64_t addr) {
   return addr;
 }
 
+void Target::EmitFileError(Packet *pktOut, int code) {
+  pktOut->AddString("F");
+  pktOut->AddNumberSep(kGdbErrorResult, ',');
+  pktOut->AddNumberSep(code, 0);
+}
+
+void Target::ProcessFilePacket(Packet *pktIn, Packet *pktOut, ErrDef *err) {
+  std::string cmd;
+  if (!pktIn->GetStringSep(&cmd, ':')) {
+    *err = BAD_FORMAT;
+    return;
+  }
+  CHECK(cmd == "File");
+  std::string subcmd;
+  if (!pktIn->GetStringSep(&subcmd, ':')) {
+    *err = BAD_FORMAT;
+    return;
+  }
+  if (subcmd == "open") {
+    std::string filename;
+    char sep;
+    uint64_t flags;
+    uint64_t mode;
+    if (!pktIn->GetHexString(&filename) ||
+        !pktIn->GetRawChar(&sep) ||
+        sep != ',' ||
+        !pktIn->GetNumberSep(&flags, NULL) ||
+        !pktIn->GetNumberSep(&mode, NULL)) {
+      *err = BAD_ARGS;
+      return;
+    }
+    if (filename == kMainNexeFilename) {
+      if (flags == kGdbO_RDONLY) {
+        pktOut->AddString("F");
+        pktOut->AddNumberSep(kMainNexeFd, 0);
+      } else {
+        EmitFileError(pktOut, kGdbEPERM);
+      }
+    } else if (filename == kIrtNexeFilename) {
+      if (flags == kGdbO_RDONLY) {
+        pktOut->AddString("F");
+        pktOut->AddNumberSep(kIrtNexeFd, 0);
+      } else {
+        EmitFileError(pktOut, kGdbEPERM);
+      }
+    } else {
+      EmitFileError(pktOut, kGdbENOENT);
+    }
+    return;
+  } else if (subcmd == "close") {
+    uint64_t fd;
+    if (!pktIn->GetNumberSep(&fd, NULL)) {
+      *err = BAD_ARGS;
+      return;
+    }
+    if (fd == kMainNexeFd) {
+      pktOut->AddString("F");
+      pktOut->AddNumberSep(0, 0);
+    } else if (fd == kIrtNexeFd) {
+      pktOut->AddString("F");
+      pktOut->AddNumberSep(0, 0);
+    } else {
+      EmitFileError(pktOut, kGdbEBADF);
+    }
+    return;
+  } else if (subcmd == "pread") {
+    uint64_t fd;
+    uint64_t count;
+    uint64_t offset;
+    std::string data;
+    if (!pktIn->GetNumberSep(&fd, NULL) ||
+        !pktIn->GetNumberSep(&count, NULL) ||
+        !pktIn->GetNumberSep(&offset, NULL)) {
+      *err = BAD_ARGS;
+      return;
+    }
+    NaClDesc *desc;
+    if (fd == kMainNexeFd) {
+      desc = nap_->main_nexe_desc;
+    } else if (fd == kIrtNexeFd) {
+      desc = nap_->irt_nexe_desc;
+    } else {
+      EmitFileError(pktOut, kGdbEBADF);
+      return;
+    }
+    CHECK(NULL != desc);
+    if (count > kGdbPreadChunkSize) {
+      count = kGdbPreadChunkSize;
+    }
+    nacl::scoped_array<char> buffer(new char[kGdbPreadChunkSize]);
+    ssize_t result = (*NACL_VTBL(NaClDesc, desc)->PRead)(
+        desc, buffer.get(),
+        static_cast<size_t>(count),
+        static_cast<nacl_off64_t>(offset));
+    pktOut->AddString("F");
+    if (result < 0) {
+      pktOut->AddNumberSep(kGdbErrorResult, ',');
+      pktOut->AddNumberSep(static_cast<uint64_t>(-result), 0);
+    } else {
+      pktOut->AddNumberSep(static_cast<uint64_t>(result), ';');
+      pktOut->AddEscapedData(buffer.get(), static_cast<size_t>(result));
+    }
+    return;
+  }
+  NaClLog(LOG_ERROR, "Unknown vFile command: %s\n", pktIn->GetPayload());
+  *err = BAD_FORMAT;
+}
+
 bool Target::ProcessPacket(Packet* pktIn, Packet* pktOut) {
   char cmd;
   int32_t seq = -1;
@@ -413,11 +588,19 @@ bool Target::ProcessPacket(Packet* pktIn, Packet* pktOut) {
     case 'c':
       return true;
 
-    // IN : $d
-    // OUT: -NONE-
-    case 'd':
+    // IN : $D
+    // OUT: $OK
+    case 'D':
       Detach();
-      break;
+      pktOut->AddString("OK");
+      return false;
+
+    // IN : $k
+    // OUT: $OK
+    case 'k':
+      Kill();
+      pktOut->AddString("OK");
+      return false;
 
     // IN : $g
     // OUT: $xx...xx
@@ -745,6 +928,9 @@ bool Target::ProcessPacket(Packet* pktIn, Packet* pktOut) {
         // Unsupported form of vCont.
         err = BAD_FORMAT;
         break;
+      } else if (strncmp(str, "File:", 5) == 0) {
+        ProcessFilePacket(pktIn, pktOut, &err);
+        break;
       }
 
       NaClLog(LOG_ERROR, "Unknown command: %s\n", pktIn->GetPayload());
@@ -846,14 +1032,19 @@ void Target::Exit() {
 
 void Target::Detach() {
   NaClLog(LOG_INFO, "Requested Detach.\n");
+  detaching_ = true;
 }
 
+void Target::Kill() {
+  NaClLog(LOG_INFO, "Requested Kill.\n");
+  should_exit_ = true;
+}
 
 IThread* Target::GetRegThread() {
   ThreadMap_t::const_iterator itr;
 
   switch (reg_thread_) {
-    // If we wany "any" then try the signal'd thread first
+    // If we want "any" then try the signal'd thread first
     case 0:
     case 0xFFFFFFFF:
       itr = threads_.begin();

@@ -22,10 +22,12 @@ class UberUI : public content::WebUIController {
   explicit UberUI(content::WebUI* web_ui);
   virtual ~UberUI();
 
+  content::WebUI* GetSubpage(const std::string& page_url);
+
   // WebUIController implementation.
   virtual bool OverrideHandleWebUIMessage(const GURL& source_url,
                                           const std::string& message,
-                                          const ListValue& args) OVERRIDE;
+                                          const base::ListValue& args) OVERRIDE;
 
   // We forward these to |sub_uis_|.
   virtual void RenderViewCreated(
@@ -38,7 +40,8 @@ class UberUI : public content::WebUIController {
   typedef std::map<std::string, content::WebUI*> SubpageMap;
 
   // Creates and stores a WebUI for the given URL.
-  void RegisterSubpage(const std::string& page_url);
+  void RegisterSubpage(const std::string& page_url,
+                       const std::string& page_host);
 
   // The WebUI*s in this map are owned.
   SubpageMap sub_uis_;

@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/app_list/app_list_export.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/selection_model.h"
@@ -23,16 +23,40 @@ class SearchBoxModelObserver;
 // text, cursor position and selected text in edit control.
 class APP_LIST_EXPORT SearchBoxModel {
  public:
+  // The properties of the speech button.
+  struct APP_LIST_EXPORT SpeechButtonProperty {
+    SpeechButtonProperty(const gfx::ImageSkia& on_icon,
+                         const base::string16& on_tooltip,
+                         const gfx::ImageSkia& off_icon,
+                         const base::string16& off_tooltip);
+    ~SpeechButtonProperty();
+
+    // The icon/tooltip when the hotword is on.
+    gfx::ImageSkia on_icon;
+    base::string16 on_tooltip;
+
+    // The icon/tooltip when the hotword is off.
+    gfx::ImageSkia off_icon;
+    base::string16 off_tooltip;
+  };
+
   SearchBoxModel();
   ~SearchBoxModel();
 
-  // Sets/gets the icon on side of edit box.
+  // Sets/gets the icon on the left side of edit box.
   void SetIcon(const gfx::ImageSkia& icon);
   const gfx::ImageSkia& icon() const { return icon_; }
 
+  // Sets/gets the properties for the button of speech recognition.
+  void SetSpeechRecognitionButton(
+      scoped_ptr<SpeechButtonProperty> speech_button);
+  const SpeechButtonProperty* speech_button() const {
+    return speech_button_.get();
+  }
+
   // Sets/gets the hint text to display when there is in input.
-  void SetHintText(const string16& hint_text);
-  const string16& hint_text() const { return hint_text_; }
+  void SetHintText(const base::string16& hint_text);
+  const base::string16& hint_text() const { return hint_text_; }
 
   // Sets/gets the selection model for the search box's Textfield.
   void SetSelectionModel(const gfx::SelectionModel& sel);
@@ -41,17 +65,18 @@ class APP_LIST_EXPORT SearchBoxModel {
   }
 
   // Sets/gets the text for the search box's Textfield.
-  void SetText(const string16& text);
-  const string16& text() const { return text_; }
+  void SetText(const base::string16& text);
+  const base::string16& text() const { return text_; }
 
   void AddObserver(SearchBoxModelObserver* observer);
   void RemoveObserver(SearchBoxModelObserver* observer);
 
  private:
   gfx::ImageSkia icon_;
-  string16 hint_text_;
+  scoped_ptr<SpeechButtonProperty> speech_button_;
+  base::string16 hint_text_;
   gfx::SelectionModel selection_model_;
-  string16 text_;
+  base::string16 text_;
 
   ObserverList<SearchBoxModelObserver> observers_;
 

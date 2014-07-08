@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <string>
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/history/archived_database.h"
 #include "sql/transaction.h"
 
@@ -24,7 +24,7 @@ ArchivedDatabase::ArchivedDatabase() {
 ArchivedDatabase::~ArchivedDatabase() {
 }
 
-bool ArchivedDatabase::Init(const FilePath& file_name) {
+bool ArchivedDatabase::Init(const base::FilePath& file_name) {
   // Set the database page size to something a little larger to give us
   // better performance (we're typically seek rather than bandwidth limited).
   // This only has an effect before any tables have been created, otherwise
@@ -72,6 +72,10 @@ bool ArchivedDatabase::InitTables() {
     return false;
 
   return transaction.Commit();
+}
+
+void ArchivedDatabase::TrimMemory(bool aggressively) {
+  db_.TrimMemory(aggressively);
 }
 
 void ArchivedDatabase::BeginTransaction() {

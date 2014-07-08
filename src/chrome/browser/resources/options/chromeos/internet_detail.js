@@ -14,13 +14,13 @@ cr.define('options.internet', function() {
   function Constants() {}
 
   // Network types:
-  Constants.TYPE_UNKNOWN = 0;
-  Constants.TYPE_ETHERNET = 1;
-  Constants.TYPE_WIFI = 2;
-  Constants.TYPE_WIMAX = 3;
-  Constants.TYPE_BLUETOOTH = 4;
-  Constants.TYPE_CELLULAR = 5;
-  Constants.TYPE_VPN = 6;
+  Constants.TYPE_UNKNOWN = 'UNKNOWN';
+  Constants.TYPE_ETHERNET = 'ethernet';
+  Constants.TYPE_WIFI = 'wifi';
+  Constants.TYPE_WIMAX = 'wimax';
+  Constants.TYPE_BLUETOOTH = 'bluetooth';
+  Constants.TYPE_CELLULAR = 'cellular';
+  Constants.TYPE_VPN = 'vpn';
 
   /*
    * Helper function to set hidden attribute for elements matching a selector.
@@ -31,6 +31,19 @@ cr.define('options.internet', function() {
     var elements = cr.doc.querySelectorAll(selector);
     for (var i = 0, el; el = elements[i]; i++) {
       el.hidden = hidden;
+    }
+  }
+
+  /*
+   * Helper function to update the properties of the data object from the
+   * properties in the update object.
+   * @param {object} data object to update.
+   * @param {object} object containing the updated properties.
+   */
+  function updateDataObject(data, update) {
+    for (prop in update) {
+      if (prop in data)
+        data[prop] = update[prop];
     }
   }
 
@@ -48,6 +61,27 @@ cr.define('options.internet', function() {
    */
   function handlePrefUpdate(e) {
     DetailsInternetPage.getInstance().updateControls();
+  }
+
+  /**
+   * Simple helper method for converting a field to a string. It is used to
+   * easily assign an empty string from fields that may be unknown or undefined.
+   * @param {object} value that should be converted to a string.
+   * @return {string} the result.
+   */
+  function stringFromValue(value) {
+    return value ? String(value) : '';
+  }
+
+  /**
+   * Sends the 'checked' state of a control to chrome for a network.
+   * @param {string} path The service path of the network.
+   * @param {string} message The message to send to chrome.
+   * @param {HTMLInputElement} checkbox The checkbox storing the value to send.
+   */
+  function sendCheckedIfEnabled(path, message, checkbox) {
+    if (!checkbox.hidden && !checkbox.disabled)
+      chrome.send(message, [path, checkbox.checked ? 'true' : 'false']);
   }
 
   /////////////////////////////////////////////////////////////////////////////
@@ -86,12 +120,10 @@ cr.define('options.internet', function() {
      */
     showNetworkDetails_: function(params) {
       var servicePath = params.servicePath;
-      var networkType = params.networkType;
-      if (!servicePath || !servicePath.length ||
-          !networkType || !networkType.length)
+      if (!servicePath || !servicePath.length)
         return;
-      chrome.send('networkCommand',
-          [networkType, servicePath, 'options']);
+      var networkType = '';  // ignored for 'options'
+      chrome.send('networkCommand', [networkType, servicePath, 'options']);
     },
 
 
@@ -114,6 +146,12 @@ cr.define('options.internet', function() {
         DetailsInternetPage.disconnectNetwork();
       });
 
+      $('details-internet-configure').addEventListener('click',
+                                                       function(event) {
+        DetailsInternetPage.setDetails();
+        DetailsInternetPage.configureNetwork();
+      });
+
       $('activate-details').addEventListener('click', function(event) {
         DetailsInternetPage.activateFromDetails();
       });
@@ -125,7 +163,8 @@ cr.define('options.internet', function() {
       });
 
       $('view-account-details').addEventListener('click', function(event) {
-        chrome.send('showMorePlanInfo');
+        var data = $('connection-state').data;
+        chrome.send('showMorePlanInfo', [data.servicePath]);
         OptionsPage.closeOverlay();
       });
 
@@ -140,13 +179,14 @@ cr.define('options.internet', function() {
 
         if (data.providerApnList.value.length > 0) {
           var iApn = 0;
-          data.apn.apn = data.providerApnList.value[iApn].apn;
-          data.apn.username = data.providerApnList.value[iApn].username;
-          data.apn.password = data.providerApnList.value[iApn].password;
+          var defaultApn = data.providerApnList.value[iApn];
+          data.apn.apn = stringFromValue(defaultApn.apn);
+          data.apn.username = stringFromValue(defaultApn.username);
+          data.apn.password = stringFromValue(defaultApn.password);
           chrome.send('setApn', [data.servicePath,
-                                 String(data.apn.apn),
-                                 String(data.apn.username),
-                                 String(data.apn.password)]);
+                                 data.apn.apn,
+                                 data.apn.username,
+                                 data.apn.password]);
           apnSelector.selectedIndex = iApn;
           data.selectedApn = iApn;
         } else {
@@ -167,13 +207,18 @@ cr.define('options.internet', function() {
         var data = $('connection-state').data;
         var apnSelector = $('select-apn');
 
-        data.apn.apn = String($('cellular-apn').value);
-        data.apn.username = String($('cellular-apn-username').value);
-        data.apn.password = String($('cellular-apn-password').value);
+        data.apn.apn = stringFromValue($('cellular-apn').value);
+        data.apn.username = stringFromValue($('cellular-apn-username').value);
+        data.apn.password = stringFromValue($('cellular-apn-password').value);
+        data.userApn = {
+          'apn': data.apn.apn,
+          'username': data.apn.username,
+          'password': data.apn.password
+        };
         chrome.send('setApn', [data.servicePath,
-                               String(data.apn.apn),
-                               String(data.apn.username),
-                               String(data.apn.password)]);
+                               data.apn.apn,
+                               data.apn.username,
+                               data.apn.password]);
 
         if (data.userApnIndex != -1) {
           apnSelector.remove(data.userApnIndex);
@@ -204,21 +249,21 @@ cr.define('options.internet', function() {
         if (apnSelector[apnSelector.selectedIndex].value != -1) {
           var apnList = data.providerApnList.value;
           chrome.send('setApn', [data.servicePath,
-              String(apnList[apnSelector.selectedIndex].apn),
-              String(apnList[apnSelector.selectedIndex].username),
-              String(apnList[apnSelector.selectedIndex].password)
-          ]);
+              stringFromValue(apnList[apnSelector.selectedIndex].apn),
+              stringFromValue(apnList[apnSelector.selectedIndex].username),
+              stringFromValue(apnList[apnSelector.selectedIndex].password)]
+          );
           data.selectedApn = apnSelector.selectedIndex;
         } else if (apnSelector.selectedIndex == data.userApnIndex) {
           chrome.send('setApn', [data.servicePath,
-                                 String(data.apn.apn),
-                                 String(data.apn.username),
-                                 String(data.apn.password)]);
+                                 stringFromValue(data.userApn.apn),
+                                 stringFromValue(data.userApn.username),
+                                 stringFromValue(data.userApn.password)]);
           data.selectedApn = apnSelector.selectedIndex;
         } else {
-          $('cellular-apn').value = data.apn.apn;
-          $('cellular-apn-username').value = data.apn.username;
-          $('cellular-apn-password').value = data.apn.password;
+          $('cellular-apn').value = stringFromValue(data.apn.apn);
+          $('cellular-apn-username').value = stringFromValue(data.apn.username);
+          $('cellular-apn-password').value = stringFromValue(data.apn.password);
 
           updateHidden('.apn-list-view', true);
           updateHidden('.apn-details-view', false);
@@ -238,6 +283,15 @@ cr.define('options.internet', function() {
       });
 
       // Proxy
+      ['proxy-host-single-port',
+       'secure-proxy-port',
+       'socks-port',
+       'ftp-proxy-port',
+       'proxy-host-port'
+      ].forEach(function(id) {
+        options.PrefPortNumber.decorate($(id));
+      });
+
       options.proxyexceptions.ProxyExceptions.decorate($('ignored-host-list'));
       $('remove-host').addEventListener('click',
                                         this.handleRemoveProxyExceptions_);
@@ -247,11 +301,14 @@ cr.define('options.internet', function() {
       $('auto-proxy').addEventListener('click', this.disableManualProxy_);
       $('proxy-all-protocols').addEventListener('click',
                                                 this.toggleSingleProxy_);
+      $('proxy-use-pac-url').addEventListener('change',
+                                              this.handleAutoConfigProxy_);
 
       observePrefsUI($('direct-proxy'));
       observePrefsUI($('manual-proxy'));
       observePrefsUI($('auto-proxy'));
       observePrefsUI($('proxy-all-protocols'));
+      observePrefsUI($('proxy-use-pac-url'));
 
       $('ip-automatic-configuration-checkbox').addEventListener('click',
         this.handleIpAutoConfig_);
@@ -261,6 +318,20 @@ cr.define('options.internet', function() {
         this.handleNameServerTypeChange_);
       $('user-dns-radio').addEventListener('click',
         this.handleNameServerTypeChange_);
+
+      // We only load this string if we have the string data available
+      // because the proxy settings page on the login screen re-uses the
+      // proxy sub-page from the internet options, and it doesn't ever
+      // show the DNS settings, so we don't need this string there.
+      // The string isn't available because
+      // chrome://settings-frame/strings.js (where the string is
+      // stored) is not accessible from the login screen.
+      // TODO(pneubeck): Remove this once i18n of the proxy dialog on the login
+      // page is fixed. http://crbug.com/242865
+      if (loadTimeData.data_) {
+        $('google-dns-label').innerHTML =
+          loadTimeData.getString('googleNameServers');
+      }
     },
 
     /**
@@ -339,6 +410,12 @@ cr.define('options.internet', function() {
       updateHidden('#details-internet-page .wimax-details', !this.wimax);
       updateHidden('#details-internet-page .vpn-details', !this.vpn);
       updateHidden('#details-internet-page .proxy-details', !this.showProxy);
+      // Conditionally call updateHidden on .gsm-only, so that we don't unhide
+      // a previously hidden element.
+      if (this.gsm)
+        updateHidden('#details-internet-page .cdma-only', true);
+      else
+        updateHidden('#details-internet-page .gsm-only', true);
       /* Network information merged into the Wifi tab for wireless networks
          unless the option is set for enabling a static IP configuration. */
       updateHidden('#details-internet-page .network-details',
@@ -373,7 +450,15 @@ cr.define('options.internet', function() {
      * @private
      */
     updateProxyBannerVisibility_: function() {
-      var bannerDiv = $('info-banner');
+      var bannerDiv = $('network-proxy-info-banner');
+      if (!loadTimeData.data_) {
+        // TODO(pneubeck): This temporarily prevents an exception below until
+        // i18n of the proxy dialog on the login page is
+        // fixed. http://crbug.com/242865
+        bannerDiv.hidden = true;
+        return;
+      }
+
       // Show banner and determine its message if necessary.
       var controlledBy = $('direct-proxy').controlledBy;
       if (!controlledBy || controlledBy == '') {
@@ -404,13 +489,26 @@ cr.define('options.internet', function() {
     },
 
     /**
+     * Handler for when the user clicks on the checkbox to enter
+     * auto configuration URL.
+     * @private
+     * @param {Event} e Click Event.
+     */
+    handleAutoConfigProxy_: function(e) {
+      $('proxy-pac-url').disabled = !$('proxy-use-pac-url').checked;
+    },
+
+    /**
      * Handler for selecting a radio button that will disable the manual
      * controls.
      * @private
      * @param {Event} e Click event.
      */
     disableManualProxy_: function(e) {
-      $('advanced-config').hidden = true;
+      $('ignored-host-list').disabled = true;
+      $('new-host').disabled = true;
+      $('remove-host').disabled = true;
+      $('add-host').disabled = true;
       $('proxy-all-protocols').disabled = true;
       $('proxy-host-name').disabled = true;
       $('proxy-host-port').disabled = true;
@@ -422,8 +520,14 @@ cr.define('options.internet', function() {
       $('ftp-proxy-port').disabled = true;
       $('socks-host').disabled = true;
       $('socks-port').disabled = true;
-      $('proxy-config').disabled = $('auto-proxy').disabled ||
-                                   !$('auto-proxy').checked;
+      $('proxy-use-pac-url').disabled = $('auto-proxy').disabled ||
+                                        !$('auto-proxy').checked;
+      $('proxy-pac-url').disabled = $('proxy-use-pac-url').disabled ||
+                                    !$('proxy-use-pac-url').checked;
+      $('auto-proxy-parms').hidden = !$('auto-proxy').checked;
+      $('manual-proxy-parms').hidden = !$('manual-proxy').checked;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_NetworkManualProxy_Disable']);
     },
 
     /**
@@ -433,24 +537,29 @@ cr.define('options.internet', function() {
      * @param {Event} e Click event.
      */
     enableManualProxy_: function(e) {
-      $('advanced-config').hidden = false;
       $('ignored-host-list').redraw();
-      var all_disabled = $('manual-proxy').disabled;
-      $('new-host').disabled = all_disabled;
-      $('remove-host').disabled = all_disabled;
-      $('add-host').disabled = all_disabled;
-      $('proxy-all-protocols').disabled = all_disabled;
-      $('proxy-host-name').disabled = all_disabled;
-      $('proxy-host-port').disabled = all_disabled;
-      $('proxy-host-single-name').disabled = all_disabled;
-      $('proxy-host-single-port').disabled = all_disabled;
-      $('secure-proxy-host-name').disabled = all_disabled;
-      $('secure-proxy-port').disabled = all_disabled;
-      $('ftp-proxy').disabled = all_disabled;
-      $('ftp-proxy-port').disabled = all_disabled;
-      $('socks-host').disabled = all_disabled;
-      $('socks-port').disabled = all_disabled;
-      $('proxy-config').disabled = true;
+      var allDisabled = $('manual-proxy').disabled;
+      $('ignored-host-list').disabled = allDisabled;
+      $('new-host').disabled = allDisabled;
+      $('remove-host').disabled = allDisabled;
+      $('add-host').disabled = allDisabled;
+      $('proxy-all-protocols').disabled = allDisabled;
+      $('proxy-host-name').disabled = allDisabled;
+      $('proxy-host-port').disabled = allDisabled;
+      $('proxy-host-single-name').disabled = allDisabled;
+      $('proxy-host-single-port').disabled = allDisabled;
+      $('secure-proxy-host-name').disabled = allDisabled;
+      $('secure-proxy-port').disabled = allDisabled;
+      $('ftp-proxy').disabled = allDisabled;
+      $('ftp-proxy-port').disabled = allDisabled;
+      $('socks-host').disabled = allDisabled;
+      $('socks-port').disabled = allDisabled;
+      $('proxy-use-pac-url').disabled = true;
+      $('proxy-pac-url').disabled = true;
+      $('auto-proxy-parms').hidden = !$('auto-proxy').checked;
+      $('manual-proxy-parms').hidden = !$('manual-proxy').checked;
+      chrome.send('coreOptionsUserMetricsAction',
+                  ['Options_NetworkManualProxy_Enable']);
     },
   };
 
@@ -462,6 +571,7 @@ cr.define('options.internet', function() {
     var buttonsToDisableList =
         new Array('details-internet-login',
                   'details-internet-disconnect',
+                  'details-internet-configure',
                   'activate-details',
                   'buyplan-details',
                   'view-account-details');
@@ -492,7 +602,6 @@ cr.define('options.internet', function() {
     chrome.send('setCarrier', [data.servicePath, carrier]);
   };
 
-
   /**
    * Performs minimal initialization of the InternetDetails dialog in
    * preparation for showing proxy-setttings.
@@ -511,6 +620,7 @@ cr.define('options.internet', function() {
     $('buyplan-details').hidden = true;
     $('activate-details').hidden = true;
     $('view-account-details').hidden = true;
+    $('web-proxy-auto-discovery').hidden = true;
     detailsPage.cellular = false;
     detailsPage.wireless = false;
     detailsPage.vpn = false;
@@ -520,9 +630,51 @@ cr.define('options.internet', function() {
     updateHidden('#details-internet-page .action-area', true);
     detailsPage.updateControls();
     detailsPage.visible = true;
+    chrome.send('coreOptionsUserMetricsAction',
+                ['Options_NetworkShowProxyTab']);
   };
 
-  DetailsInternetPage.updateCarrier = function(carrier) {
+  /**
+   * Initializes even handling for keyboard driven flow.
+   */
+  DetailsInternetPage.initializeKeyboardFlow = function() {
+    keyboard.initializeKeyboardFlow();
+  };
+
+  DetailsInternetPage.updateProxySettings = function(type) {
+      var proxyHost = null,
+          proxyPort = null;
+
+      if (type == 'cros.session.proxy.singlehttp') {
+        proxyHost = 'proxy-host-single-name';
+        proxyPort = 'proxy-host-single-port';
+      }else if (type == 'cros.session.proxy.httpurl') {
+        proxyHost = 'proxy-host-name';
+        proxyPort = 'proxy-host-port';
+      }else if (type == 'cros.session.proxy.httpsurl') {
+        proxyHost = 'secure-proxy-host-name';
+        proxyPort = 'secure-proxy-port';
+      }else if (type == 'cros.session.proxy.ftpurl') {
+        proxyHost = 'ftp-proxy';
+        proxyPort = 'ftp-proxy-port';
+      }else if (type == 'cros.session.proxy.socks') {
+        proxyHost = 'socks-host';
+        proxyPort = 'socks-port';
+      }else {
+        return;
+      }
+
+      var hostValue = $(proxyHost).value;
+      if (hostValue.indexOf(':') !== -1) {
+        if (hostValue.match(/:/g).length == 1) {
+          hostValue = hostValue.split(':');
+          $(proxyHost).value = hostValue[0];
+          $(proxyPort).value = hostValue[1];
+        }
+      }
+  };
+
+  DetailsInternetPage.updateCarrier = function() {
     DetailsInternetPage.showCarrierChangeSpinner(false);
   };
 
@@ -549,6 +701,15 @@ cr.define('options.internet', function() {
     OptionsPage.closeOverlay();
   };
 
+  DetailsInternetPage.configureNetwork = function() {
+    var data = $('connection-state').data;
+    var servicePath = data.servicePath;
+    chrome.send('networkCommand', [String(data.type),
+                                          servicePath,
+                                          'configure']);
+    OptionsPage.closeOverlay();
+  };
+
   DetailsInternetPage.activateFromDetails = function() {
     var data = $('connection-state').data;
     var servicePath = data.servicePath;
@@ -564,25 +725,22 @@ cr.define('options.internet', function() {
     var data = $('connection-state').data;
     var servicePath = data.servicePath;
     if (data.type == Constants.TYPE_WIFI) {
-      chrome.send('setPreferNetwork',
-                   [servicePath,
-                    $('prefer-network-wifi').checked ? 'true' : 'false']);
-      chrome.send('setAutoConnect',
-                  [servicePath,
-                   $('auto-connect-network-wifi').checked ? 'true' : 'false']);
+      sendCheckedIfEnabled(servicePath, 'setPreferNetwork',
+                           $('prefer-network-wifi'));
+      sendCheckedIfEnabled(servicePath, 'setAutoConnect',
+                           $('auto-connect-network-wifi'));
     } else if (data.type == Constants.TYPE_WIMAX) {
-      chrome.send('setAutoConnect',
-          [servicePath,
-           $('auto-connect-network-wimax').checked ? 'true' : 'false']);
+      sendCheckedIfEnabled(servicePath, 'setAutoConnect',
+                           $('auto-connect-network-wimax'));
     } else if (data.type == Constants.TYPE_CELLULAR) {
-      chrome.send('setAutoConnect',
-                  [servicePath,
-                   $('auto-connect-network-cellular').checked ? 'true' :
-                       'false']);
+      sendCheckedIfEnabled(servicePath, 'setAutoConnect',
+                           $('auto-connect-network-cellular'));
     } else if (data.type == Constants.TYPE_VPN) {
       chrome.send('setServerHostname',
                   [servicePath,
                    $('inet-server-hostname').value]);
+      sendCheckedIfEnabled(servicePath, 'setAutoConnect',
+                           $('auto-connect-network-vpn'));
     }
 
     var nameServerTypes = ['automatic', 'google', 'user'];
@@ -649,6 +807,68 @@ cr.define('options.internet', function() {
     }
   };
 
+  DetailsInternetPage.updateConnectionButtonVisibilty = function(data) {
+    $('details-internet-login').hidden = data.connected;
+    $('details-internet-login').disabled = data.disableConnectButton;
+
+    if (!data.connected &&
+        ((data.type == Constants.TYPE_WIFI && data.encryption) ||
+          data.type == Constants.TYPE_WIMAX ||
+          data.type == Constants.TYPE_VPN)) {
+      $('details-internet-configure').hidden = false;
+    } else if (data.type == Constants.TYPE_ETHERNET) {
+      // Ethernet (802.1x) can be configured while connected.
+      $('details-internet-configure').hidden = false;
+    } else {
+      $('details-internet-configure').hidden = true;
+    }
+
+    if (data.type == Constants.TYPE_ETHERNET)
+      $('details-internet-disconnect').hidden = true;
+    else
+      $('details-internet-disconnect').hidden = !data.connected;
+  };
+
+  DetailsInternetPage.updateConnectionData = function(update) {
+    var detailsPage = DetailsInternetPage.getInstance();
+    if (!detailsPage.visible)
+      return;
+
+    var data = $('connection-state').data;
+    if (!data)
+      return;
+
+    if (update.servicePath != data.servicePath)
+      return;
+
+    // Update our cached data object.
+    updateDataObject(data, update);
+
+    detailsPage.deviceConnected = data.deviceConnected;
+    detailsPage.connecting = data.connecting;
+    detailsPage.connected = data.connected;
+    $('connection-state').textContent = data.connectionState;
+
+    this.updateConnectionButtonVisibilty(data);
+
+    if (data.type == Constants.TYPE_WIFI) {
+      $('wifi-connection-state').textContent = data.connectionState;
+    } else if (data.type == Constants.TYPE_WIMAX) {
+      $('wimax-connection-state').textContent = data.connectionState;
+    } else if (data.type == Constants.TYPE_CELLULAR) {
+      $('activation-state').textContent = data.activationState;
+
+      $('buyplan-details').hidden = !data.showBuyButton;
+      $('view-account-details').hidden = !data.showViewAccountButton;
+
+      $('activate-details').hidden = !data.showActivateButton;
+      if (data.showActivateButton)
+        $('details-internet-login').hidden = true;
+    }
+
+    $('connection-state').data = data;
+  };
+
   DetailsInternetPage.showDetailedInfo = function(data) {
     var detailsPage = DetailsInternetPage.getInstance();
 
@@ -694,16 +914,18 @@ cr.define('options.internet', function() {
     $('buyplan-details').hidden = true;
     $('activate-details').hidden = true;
     $('view-account-details').hidden = true;
-    $('details-internet-login').hidden = data.connected;
-    if (data.type == Constants.TYPE_ETHERNET)
-      $('details-internet-disconnect').hidden = true;
-    else
-      $('details-internet-disconnect').hidden = !data.connected;
+
+    this.updateConnectionButtonVisibilty(data);
+
+    $('web-proxy-auto-discovery').hidden = true;
 
     detailsPage.deviceConnected = data.deviceConnected;
     detailsPage.connecting = data.connecting;
     detailsPage.connected = data.connected;
     detailsPage.showProxy = data.showProxy;
+    if (detailsPage.showProxy)
+      chrome.send('selectNetwork', [data.servicePath]);
+
     detailsPage.showStaticIPConfig = data.showStaticIPConfig;
     $('connection-state').textContent = data.connectionState;
 
@@ -720,6 +942,11 @@ cr.define('options.internet', function() {
       inetNetmask.value = data.ipconfig.value.netmask;
       inetGateway.automatic = data.ipconfig.value.gateway;
       inetGateway.value = data.ipconfig.value.gateway;
+      if (data.ipconfig.value.webProxyAutoDiscoveryUrl) {
+        $('web-proxy-auto-discovery').hidden = false;
+        $('web-proxy-auto-discovery-url').value =
+            data.ipconfig.value.webProxyAutoDiscoveryUrl;
+      }
     }
 
     // Override the "automatic" values with the real saved DHCP values,
@@ -893,21 +1120,38 @@ cr.define('options.internet', function() {
       $('roaming-state').textContent = data.roamingState;
       $('restricted-pool').textContent = data.restrictedPool;
       $('error-state').textContent = data.errorState;
-      $('manufacturer').textContent = data.manufacturer;
+      $('manufacturer').textContent = data.cellularManufacturer;
       $('model-id').textContent = data.modelId;
       $('firmware-revision').textContent = data.firmwareRevision;
       $('hardware-revision').textContent = data.hardwareRevision;
-      $('prl-version').textContent = data.prlVersion;
-      $('meid').textContent = data.meid;
-      $('imei').textContent = data.imei;
       $('mdn').textContent = data.mdn;
-      $('esn').textContent = data.esn;
-      $('min').textContent = data.min;
+      $('operator-name').textContent = data.operatorName;
+      $('operator-code').textContent = data.operatorCode;
+
+      // Make sure that GSM/CDMA specific properties that shouldn't be hidden
+      // are visible.
+      updateHidden('#details-internet-page .gsm-only', false);
+      updateHidden('#details-internet-page .cdma-only', false);
+
+      // Show IMEI/ESN/MEID/MIN/PRL only if they are available.
+      (function() {
+        var setContentOrHide = function(property) {
+          var value = data[property];
+          if (value)
+            $(property).textContent = value;
+          else
+            $(property).parentElement.hidden = true;
+        };
+        setContentOrHide('esn');
+        setContentOrHide('imei');
+        setContentOrHide('meid');
+        setContentOrHide('min');
+        setContentOrHide('prl-version');
+      })();
       detailsPage.gsm = data.gsm;
       if (data.gsm) {
-        $('operator-name').textContent = data.operatorName;
-        $('operator-code').textContent = data.operatorCode;
-        $('imsi').textContent = data.imsi;
+        $('iccid').textContent = stringFromValue(data.iccid);
+        $('imsi').textContent = stringFromValue(data.imsi);
 
         var apnSelector = $('select-apn');
         // Clear APN lists, keep only last element that "other".
@@ -919,20 +1163,20 @@ cr.define('options.internet', function() {
         var apnList = data.providerApnList.value;
         for (var i = 0; i < apnList.length; i++) {
           var option = document.createElement('option');
-          var name = apnList[i].localizedName;
-          if (name == '' && apnList[i].name != '')
-            name = apnList[i].name;
-          if (name == '')
-            name = apnList[i].apn;
-          else
-            name = name + ' (' + apnList[i].apn + ')';
-          option.textContent = name;
+          var localizedName = apnList[i].localizedName;
+          var name = localizedName ? localizedName : apnList[i].name;
+          var apn = apnList[i].apn;
+          option.textContent = name ? (name + ' (' + apn + ')') : apn;
           option.value = i;
-          if ((data.apn.apn == apnList[i].apn &&
+          // data.apn and data.lastGoodApn will always be defined, however
+          // data.apn.apn and data.lastGoodApn.apn may not be. This is not a
+          // problem, as apnList[i].apn will always be defined and the
+          // comparisons below will work as expected.
+          if ((data.apn.apn == apn &&
                data.apn.username == apnList[i].username &&
                data.apn.password == apnList[i].password) ||
-              (data.apn.apn == '' &&
-               data.lastGoodApn.apn == apnList[i].apn &&
+              (!data.apn.apn &&
+               data.lastGoodApn.apn == apn &&
                data.lastGoodApn.username == apnList[i].username &&
                data.lastGoodApn.password == apnList[i].password)) {
             data.selectedApn = i;
@@ -940,7 +1184,7 @@ cr.define('options.internet', function() {
           // Insert new option before "other" option.
           apnSelector.add(option, otherOption);
         }
-        if (data.selectedApn == -1 && data.apn.apn != '') {
+        if (data.selectedApn == -1 && data.apn.apn) {
           var option = document.createElement('option');
           option.textContent = data.apn.apn;
           option.value = -1;
@@ -970,8 +1214,8 @@ cr.define('options.internet', function() {
       detailsPage.ethernet = false;
       detailsPage.cellular = false;
       detailsPage.gsm = false;
-      $('inet-service-name').textContent = data.service_name;
-      $('inet-provider-type').textContent = data.provider_type;
+      $('inet-service-name').textContent = data.serviceName;
+      $('inet-provider-type').textContent = data.providerType;
       $('inet-username').textContent = data.username;
       var inetServerHostname = $('inet-server-hostname');
       inetServerHostname.value = data.serverHostname.value;
@@ -979,6 +1223,8 @@ cr.define('options.internet', function() {
         OptionsPage.hideBubble();
         inetServerHostname.value = data.serverHostname.recommendedValue;
       };
+      $('auto-connect-network-vpn').checked = data.autoConnect.value;
+      $('auto-connect-network-vpn').disabled = false;
     } else {
       OptionsPage.showTab($('internet-nav-tab'));
       detailsPage.ethernet = true;
@@ -999,7 +1245,7 @@ cr.define('options.internet', function() {
       var propData = data[propName];
       // Create a synthetic pref change event decorated as
       // CoreOptionsHandler::CreateValueForPref() does.
-      var event = new cr.Event(name);
+      var event = new Event(name);
       event.value = {
         value: propData.value,
         controlledBy: propData.controlledBy,
@@ -1008,7 +1254,8 @@ cr.define('options.internet', function() {
       indicators[i].handlePrefChange(event);
       var forElement = $(indicators[i].getAttribute('for'));
       if (forElement) {
-        forElement.disabled = propData.controlledBy == 'policy';
+        if (propData.controlledBy == 'policy')
+          forElement.disabled = true;
         if (forElement.resetHandler)
           indicators[i].resetHandler = forElement.resetHandler;
       }

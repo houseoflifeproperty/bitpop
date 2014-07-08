@@ -7,20 +7,22 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/bookmarks/bookmark_utils.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
 #include "content/public/browser/page_navigator.h"
 #include "content/public/test/test_browser_thread.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/clipboard/clipboard.h"
 
+using base::ASCIIToUTF16;
 using content::BrowserThread;
 using content::OpenURLParams;
 using content::PageNavigator;
@@ -45,25 +47,23 @@ class BookmarkContextMenuControllerTest : public testing::Test {
         model_(NULL) {
   }
 
-  virtual void SetUp() {
-#if defined(OS_WIN)
-    bookmark_utils::DisableBookmarkBarViewAnimationsForTesting(true);
-#endif
-
-    profile_.reset(new TestingProfile());
+  virtual void SetUp() OVERRIDE {
+    Reset(false);
+  }
+  void Reset(bool incognito) {
+    TestingProfile::Builder builder;
+    if (incognito)
+      builder.SetIncognito();
+    profile_ = builder.Build();
     profile_->CreateBookmarkModel(true);
-    profile_->BlockUntilBookmarkModelLoaded();
 
     model_ = BookmarkModelFactory::GetForProfile(profile_.get());
+    test::WaitForBookmarkModelToLoad(model_);
 
     AddTestData();
   }
 
-  virtual void TearDown() {
-#if defined(OS_WIN)
-    bookmark_utils::DisableBookmarkBarViewAnimationsForTesting(false);
-#endif
-
+  virtual void TearDown() OVERRIDE {
     ui::Clipboard::DestroyClipboardForCurrentThread();
 
     // Flush the message loop to make application verifiers happy.
@@ -71,7 +71,7 @@ class BookmarkContextMenuControllerTest : public testing::Test {
   }
 
  protected:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
   scoped_ptr<TestingProfile> profile_;
@@ -113,7 +113,7 @@ TEST_F(BookmarkContextMenuControllerTest, DeleteURL) {
   GURL url = model_->bookmark_bar_node()->GetChild(0)->url();
   ASSERT_TRUE(controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_REMOVE));
   // Delete the URL.
-  controller.ExecuteCommand(IDC_BOOKMARK_BAR_REMOVE);
+  controller.ExecuteCommand(IDC_BOOKMARK_BAR_REMOVE, 0);
   // Model shouldn't have URL anymore.
   ASSERT_FALSE(model_->IsBookmarked(url));
 }
@@ -245,11 +245,12 @@ TEST_F(BookmarkContextMenuControllerTest, MultipleFoldersWithURLs) {
 
 // Tests the enabled state of open incognito.
 TEST_F(BookmarkContextMenuControllerTest, DisableIncognito) {
+  // Create a new incognito profile.
+  Reset(true);
   std::vector<const BookmarkNode*> nodes;
   nodes.push_back(model_->bookmark_bar_node()->GetChild(0));
   BookmarkContextMenuController controller(
       NULL, NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes);
-  profile_->set_incognito(true);
   EXPECT_FALSE(controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_OPEN_INCOGNITO));
   EXPECT_FALSE(
       controller.IsCommandIdEnabled(IDC_BOOKMARK_BAR_OPEN_ALL_INCOGNITO));
@@ -313,12 +314,12 @@ TEST_F(BookmarkContextMenuControllerTest, CutCopyPasteNode) {
   EXPECT_TRUE(controller->IsCommandIdEnabled(IDC_CUT));
 
   // Copy the URL.
-  controller->ExecuteCommand(IDC_COPY);
+  controller->ExecuteCommand(IDC_COPY, 0);
 
   controller.reset(new BookmarkContextMenuController(
       NULL, NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes));
   int old_count = bb_node->child_count();
-  controller->ExecuteCommand(IDC_PASTE);
+  controller->ExecuteCommand(IDC_PASTE, 0);
 
   ASSERT_TRUE(bb_node->GetChild(1)->is_url());
   ASSERT_EQ(old_count + 1, bb_node->child_count());
@@ -327,7 +328,7 @@ TEST_F(BookmarkContextMenuControllerTest, CutCopyPasteNode) {
   controller.reset(new BookmarkContextMenuController(
       NULL, NULL, NULL, profile_.get(), NULL, nodes[0]->parent(), nodes));
   // Cut the URL.
-  controller->ExecuteCommand(IDC_CUT);
+  controller->ExecuteCommand(IDC_CUT, 0);
   ASSERT_TRUE(bb_node->GetChild(0)->is_url());
   ASSERT_TRUE(bb_node->GetChild(1)->is_folder());
   ASSERT_EQ(old_count, bb_node->child_count());

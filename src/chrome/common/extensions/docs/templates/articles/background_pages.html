@@ -16,7 +16,9 @@ Background pages to the rescue.
 As the <a href="overview.html#arch">architecture overview</a> explains,
 the background page is an HTML page that runs in the extension process.
 It exists for the lifetime of your extension,
-and only one instance of it at a time is active.
+and only one instance of it at a time is active. (Exception: if your
+extension uses <a href="manifest/incognito.html">incognito</a>
+"split" mode, a second instance is created for incognito windows.)
 </p>
 
 <p>
@@ -43,7 +45,8 @@ implemented using JavaScript files alone,
 like this:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"background": {
@@ -66,7 +69,8 @@ do that using the <code>page</code>
 property instead:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"background": {
@@ -79,7 +83,7 @@ property instead:
 If you need the browser to start up early&mdash;so
 you can display notifications, for example&mdash;then
 you might also want to specify the
-<a href="manifest.html#permissions">"background" permission</a>.
+<a href="declare_permissions.html#background">"background" permission</a>.
 </p>
 
 
@@ -88,11 +92,11 @@ you might also want to specify the
 <p>
 You can communicate between your various pages using direct script calls,
 similar to how frames can communicate.
-The $ref:extension.getViews method
+The $(ref:extension.getViews) method
 returns a list of window objects
 for every active page belonging to your extension,
 and the
-$ref:extension.getBackgroundPage method
+$(ref:extension.getBackgroundPage) method
 returns the background page.
 </p>
 
@@ -112,13 +116,12 @@ The extension in this example
 has a background page
 and multiple pages created
 (with
-$ref:tabs.create)
+$(ref:tabs.create))
 from a file named <code>image.html</code>.
 
 </p>
 
-<pre>
-<em>//In background.js:</em>
+<pre data-filename="background.js">
 // React when a browser action's icon is clicked.
 chrome.browserAction.onClicked.addListener(function(tab) {
   var viewTabUrl = chrome.extension.getURL('image.html');
@@ -139,8 +142,8 @@ chrome.browserAction.onClicked.addListener(function(tab) {
     }
   }
 });
-
-<em>//In image.html:</em>
+</pre>
+<pre data-filename="image.html">
 &lt;html>
   &lt;script>
     function setImageUrl(url) {

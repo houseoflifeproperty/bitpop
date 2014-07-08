@@ -1,4 +1,3 @@
-
 /*
  * Copyright 2010 Google Inc.
  *
@@ -6,15 +5,13 @@
  * found in the LICENSE file.
  */
 
-
-
 #ifndef GrClip_DEFINED
 #define GrClip_DEFINED
 
-#include "GrRect.h"
 #include "SkClipStack.h"
+#include "GrSurface.h"
 
-class GrSurface;
+struct SkIRect;
 
 /**
  * GrClipData encapsulates the information required to construct the clip
@@ -23,7 +20,7 @@ class GrSurface;
  * device coordinates (i.e., they have been translated by -fOrigin w.r.t.
  * the canvas' device coordinates).
  */
-class GrClipData : public SkNoncopyable {
+class GrClipData : SkNoncopyable {
 public:
     const SkClipStack*  fClipStack;
     SkIPoint            fOrigin;
@@ -50,9 +47,15 @@ public:
     }
 
     void getConservativeBounds(const GrSurface* surface,
-                               GrIRect* devResult,
+                               SkIRect* devResult,
+                               bool* isIntersectionOfRects = NULL) const {
+        this->getConservativeBounds(surface->width(), surface->height(),
+                                    devResult, isIntersectionOfRects);
+    }
+
+    void getConservativeBounds(int width, int height,
+                               SkIRect* devResult,
                                bool* isIntersectionOfRects = NULL) const;
 };
 
 #endif
-

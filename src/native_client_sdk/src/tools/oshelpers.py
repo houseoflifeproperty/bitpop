@@ -14,6 +14,10 @@ import sys
 import time
 import zipfile
 
+if sys.version_info < (2, 6, 0):
+  sys.stderr.write("python 2.6 or later is required run this script\n")
+  sys.exit(1)
+
 
 def IncludeFiles(filters, files):
   """Filter files based on inclusion lists
@@ -104,7 +108,7 @@ def Copy(args):
   Copies multiple sources to a single destination using the normal cp
   semantics.  In addition, it support inclusion and exclusion filters which
   allows the copy to skip certain types of files."""
-  parser = optparse.OptionParser(usage='usage: cp [Options] souces... dest')
+  parser = optparse.OptionParser(usage='usage: cp [Options] sources... dest')
   parser.add_option(
       '-R', '-r', '--recursive', dest='recursive', action='store_true',
       default=False,
@@ -129,7 +133,7 @@ def Copy(args):
   src_list = []
   for src in srcs:
     files = glob.glob(src)
-    if len(files) == 0:
+    if not files:
       raise OSError('cp: no such file or directory: ' + src)
     if files:
       src_list.extend(files)
@@ -168,7 +172,7 @@ def Mkdir(args):
       if os.path.isdir(dst):
         if options.parents:
           continue
-        raise OSError('mkdir: Already exsists: ' + dst)
+        raise OSError('mkdir: Already exists: ' + dst)
       else:
         raise OSError('mkdir: Failed to create: ' + dst)
   return 0
@@ -205,7 +209,7 @@ def MovePath(options, src, dst):
 
 
 def Move(args):
-  parser = optparse.OptionParser(usage='usage: mv [Options] souces... dest')
+  parser = optparse.OptionParser(usage='usage: mv [Options] sources... dest')
   parser.add_option(
       '-v', '--verbose', dest='verbose', action='store_true',
       default=False,
@@ -255,11 +259,10 @@ def Remove(args):
   try:
     for pattern in files:
       dst_files = glob.glob(pattern)
-      # Ignore non existing files when using force
-      if len(dst_files) == 0 and options.force:
-        print "rm: Skipping " + pattern
-        continue
-      elif len(dst_files) == 0:
+      if not dst_files:
+        # Ignore non existing files when using force
+        if options.force:
+          continue
         raise OSError('rm: no such file or directory: ' + pattern)
 
       for dst in dst_files:
@@ -359,7 +362,7 @@ def Zip(args):
   src_files = []
   for src_arg in src_args:
     globbed_src_args = glob.glob(src_arg)
-    if len(globbed_src_args) == 0:
+    if not globbed_src_args:
       if not options.quiet:
         print 'zip warning: name not matched: %s' % (src_arg,)
 
@@ -465,12 +468,55 @@ def Zip(args):
   return 0
 
 
+def FindExeInPath(filename):
+  env_path = os.environ.get('PATH', '')
+  paths = env_path.split(os.pathsep)
+
+  def IsExecutableFile(path):
+    return os.path.isfile(path) and os.access(path, os.X_OK)
+
+  if os.path.sep in filename:
+    if IsExecutableFile(filename):
+      return filename
+
+  for path in paths:
+    filepath = os.path.join(path, filename)
+    if IsExecutableFile(filepath):
+      return os.path.abspath(os.path.join(path, filename))
+
+
+def Which(args):
+  """A Unix style which.
+
+  Looks for all arguments in the PATH environment variable, and prints their
+  path if they are executable files.
+
+  Note: If you pass an argument with a path to which, it will just test if it
+  is executable, not if it is in the path.
+  """
+  parser = optparse.OptionParser(usage='usage: which args...')
+  _, files = parser.parse_args(args)
+  if not files:
+    return 0
+
+  retval = 0
+  for filename in files:
+    fullname = FindExeInPath(filename)
+    if fullname:
+      print fullname
+    else:
+      retval = 1
+
+  return retval
+
+
 FuncMap = {
   'cp': Copy,
   'mkdir': Mkdir,
   'mv': Move,
   'rm': Remove,
   'zip': Zip,
+  'which': Which,
 }
 
 
@@ -479,12 +525,17 @@ def main(args):
     print 'No command specified'
     print 'Available commands: %s' % ' '.join(FuncMap)
     return 1
-  func = FuncMap.get(args[0])
+  func_name = args[0]
+  func = FuncMap.get(func_name)
   if not func:
-    print 'Do not recognize command: ' + args[0]
+    print 'Do not recognize command: %s' % func_name
     print 'Available commands: %s' % ' '.join(FuncMap)
     return 1
-  return func(args[1:])
+  try:
+    return func(args[1:])
+  except KeyboardInterrupt:
+    print '%s: interrupted' % func_name
+    return 1
 
 if __name__ == '__main__':
   sys.exit(main(sys.argv[1:]))

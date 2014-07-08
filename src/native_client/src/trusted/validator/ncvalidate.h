@@ -11,18 +11,13 @@
 
 #include "native_client/src/include/nacl_base.h"
 #include "native_client/src/include/portability.h"
+#include "native_client/src/trusted/cpu_features/cpu_features.h"
 
 
 EXTERN_C_BEGIN
 
 struct NaClValidationCache;
-
-/*
- * Forward-declared (but never defined) generic CPU features.
- * Each architecture needs to cast from this generic type.
- */
-struct NaClCPUFeaturesAbstract;
-typedef struct NaClCPUFeaturesAbstract NaClCPUFeatures;
+struct NaClValidationMetadata;
 
 /* Defines possible validation status values. */
 typedef enum NaClValidationStatus {
@@ -69,6 +64,7 @@ typedef NaClValidationStatus (*NaClValidateFunc)(
     int stubout_mode,
     int readonly_text,
     const NaClCPUFeatures *cpu_features,
+    const struct NaClValidationMetadata *metadata,
     struct NaClValidationCache *cache);
 
 /* Function type to copy an instruction safely. Returns non-zero on success.
@@ -131,6 +127,15 @@ typedef int (*NaClCPUFeaturesFixFunc)(NaClCPUFeatures *f);
 
 /* The full set of validator APIs. */
 struct NaClValidatorInterface {
+  /* Meta-information for early diagnosis. We assume that at least basic
+   * validation is always supported: otherwise NaCl is pretty useless.
+   */
+  /* Optional stubout_mode. */
+  int stubout_mode_implemented;
+  /* Optional readonly_text mode. */
+  int readonly_text_implemented;
+  /* Functions for code replacement.  */
+  int code_replacement;
   /* Validation API. */
   NaClValidateFunc Validate;
   NaClCopyCodeFunc CopyCode;

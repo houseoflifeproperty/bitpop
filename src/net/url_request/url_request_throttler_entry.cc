@@ -10,7 +10,7 @@
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_log.h"
@@ -52,11 +52,11 @@ const char URLRequestThrottlerEntry::kExponentialThrottlingDisableValue[] =
     "disable";
 
 // Returns NetLog parameters when a request is rejected by throttling.
-Value* NetLogRejectedRequestCallback(const std::string* url_id,
-                                     int num_failures,
-                                     int release_after_ms,
-                                     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogRejectedRequestCallback(const std::string* url_id,
+                                           int num_failures,
+                                           int release_after_ms,
+                                           NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("url", *url_id);
   dict->SetInteger("num_failures", num_failures);
   dict->SetInteger("release_after_ms", release_after_ms);

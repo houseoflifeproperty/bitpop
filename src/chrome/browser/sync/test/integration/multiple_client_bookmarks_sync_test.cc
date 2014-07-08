@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 
 using bookmarks_helper::AddURL;
-using bookmarks_helper::AllModelsMatch;
+using bookmarks_helper::AwaitAllModelsMatch;
 
 class MultipleClientBookmarksSyncTest : public SyncTest {
  public:
@@ -24,8 +24,7 @@ IN_PROC_BROWSER_TEST_F(MultipleClientBookmarksSyncTest, Sanity) {
   DisableVerifier();
   for (int i = 0; i < num_clients(); ++i) {
     ASSERT_TRUE(AddURL(i, base::StringPrintf(L"Google URL %d", i),
-        GURL(StringPrintf("http://www.google.com/%d", i))) != NULL);
+        GURL(base::StringPrintf("http://www.google.com/%d", i))) != NULL);
   }
-  ASSERT_TRUE(AwaitQuiescence());
-  ASSERT_TRUE(AllModelsMatch());
+  ASSERT_TRUE(AwaitAllModelsMatch());
 }

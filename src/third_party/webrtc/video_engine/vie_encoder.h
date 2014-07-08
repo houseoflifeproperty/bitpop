@@ -14,28 +14,31 @@
 #include <list>
 #include <map>
 
-#include "common_types.h"  // NOLINT
-#include "typedefs.h"  //NOLINT
-#include "modules/bitrate_controller/include/bitrate_controller.h"
-#include "modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
-#include "modules/video_coding/main/interface/video_coding_defines.h"
-#include "modules/video_processing/main/interface/video_processing.h"
-#include "system_wrappers/interface/scoped_ptr.h"
-#include "video_engine/vie_defines.h"
-#include "video_engine/vie_file_recorder.h"
-#include "video_engine/vie_frame_provider_base.h"
+#include "webrtc/common_types.h"
+#include "webrtc/modules/bitrate_controller/include/bitrate_controller.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding_defines.h"
+#include "webrtc/modules/video_processing/main/interface/video_processing.h"
+#include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
+#include "webrtc/typedefs.h"
+#include "webrtc/frame_callback.h"
+#include "webrtc/video_engine/vie_defines.h"
+#include "webrtc/video_engine/vie_frame_provider_base.h"
 
 namespace webrtc {
 
+class Config;
 class CriticalSectionWrapper;
+class EncodedImageCallback;
 class PacedSender;
 class ProcessThread;
 class QMVideoSettingsCallback;
 class RtpRtcp;
-class VideoCodingModule;
 class ViEBitrateObserver;
 class ViEEffectFilter;
 class ViEEncoderObserver;
+class VideoCodingModule;
 class ViEPacedSenderCallback;
 
 class ViEEncoder
@@ -48,14 +51,17 @@ class ViEEncoder
   friend class ViEBitrateObserver;
   friend class ViEPacedSenderCallback;
 
-  ViEEncoder(WebRtc_Word32 engine_id,
-             WebRtc_Word32 channel_id,
-             WebRtc_UWord32 number_of_cores,
+  ViEEncoder(int32_t engine_id,
+             int32_t channel_id,
+             uint32_t number_of_cores,
+             const Config& config,
              ProcessThread& module_process_thread,
              BitrateController* bitrate_controller);
   ~ViEEncoder();
 
   bool Init();
+
+  void SetNetworkTransmissionState(bool is_transmitting);
 
   // Returns the id of the owning channel.
   int Owner() const;
@@ -64,25 +70,24 @@ class ViEEncoder
   void Pause();
   void Restart();
 
-  WebRtc_Word32 DropDeltaAfterKey(bool enable);
-
   // Codec settings.
-  WebRtc_UWord8 NumberOfCodecs();
-  WebRtc_Word32 GetCodec(WebRtc_UWord8 list_index, VideoCodec* video_codec);
-  WebRtc_Word32 RegisterExternalEncoder(VideoEncoder* encoder,
-                                        WebRtc_UWord8 pl_type);
-  WebRtc_Word32 DeRegisterExternalEncoder(WebRtc_UWord8 pl_type);
-  WebRtc_Word32 SetEncoder(const VideoCodec& video_codec);
-  WebRtc_Word32 GetEncoder(VideoCodec* video_codec);
+  uint8_t NumberOfCodecs();
+  int32_t GetCodec(uint8_t list_index, VideoCodec* video_codec);
+  int32_t RegisterExternalEncoder(VideoEncoder* encoder,
+                                  uint8_t pl_type,
+                                  bool internal_source);
+  int32_t DeRegisterExternalEncoder(uint8_t pl_type);
+  int32_t SetEncoder(const VideoCodec& video_codec);
+  int32_t GetEncoder(VideoCodec* video_codec);
 
-  WebRtc_Word32 GetCodecConfigParameters(
+  int32_t GetCodecConfigParameters(
     unsigned char config_parameters[kConfigParameterSize],
     unsigned char& config_parameters_size);
 
   PacedSender* GetPacedSender();
 
   // Scale or crop/pad image.
-  WebRtc_Word32 ScaleInputImage(bool enable);
+  int32_t ScaleInputImage(bool enable);
 
   // RTP settings.
   RtpRtcp* SendRtpRtcpModule();
@@ -91,7 +96,7 @@ class ViEEncoder
   virtual void DeliverFrame(int id,
                             I420VideoFrame* video_frame,
                             int num_csrcs = 0,
-                            const WebRtc_UWord32 CSRC[kRtpCsrcSize] = NULL);
+                            const uint32_t CSRC[kRtpCsrcSize] = NULL);
   virtual void DelayChanged(int id, int frame_delay);
   virtual int GetPreferedFrameSettings(int* width,
                                        int* height,
@@ -101,25 +106,28 @@ class ViEEncoder
     return;
   }
 
-  WebRtc_Word32 SendKeyFrame();
-  WebRtc_Word32 SendCodecStatistics(WebRtc_UWord32* num_key_frames,
-                                    WebRtc_UWord32* num_delta_frames);
+  int32_t SendKeyFrame();
+  int32_t SendCodecStatistics(uint32_t* num_key_frames,
+                              uint32_t* num_delta_frames);
 
-  WebRtc_Word32 EstimatedSendBandwidth(
-        WebRtc_UWord32* available_bandwidth) const;
+  int PacerQueuingDelayMs() const;
 
-  int CodecTargetBitrate(WebRtc_UWord32* bitrate) const;
+  int CodecTargetBitrate(uint32_t* bitrate) const;
   // Loss protection.
-  WebRtc_Word32 UpdateProtectionMethod();
+  int32_t UpdateProtectionMethod(bool enable_nack);
+  bool nack_enabled() const { return nack_enabled_; }
+
+  // Buffering mode.
+  void SetSenderBufferingMode(int target_delay_ms);
 
   // Implements VCMPacketizationCallback.
-  virtual WebRtc_Word32 SendData(
+  virtual int32_t SendData(
     FrameType frame_type,
-    WebRtc_UWord8 payload_type,
-    WebRtc_UWord32 time_stamp,
+    uint8_t payload_type,
+    uint32_t time_stamp,
     int64_t capture_time_ms,
-    const WebRtc_UWord8* payload_data,
-    WebRtc_UWord32 payload_size,
+    const uint8_t* payload_data,
+    uint32_t payload_size,
     const RTPFragmentationHeader& fragmentation_header,
     const RTPVideoHeader* rtp_video_hdr);
 
@@ -127,14 +135,14 @@ class ViEEncoder
   virtual int ProtectionRequest(
       const FecProtectionParams* delta_fec_params,
       const FecProtectionParams* key_fec_params,
-      WebRtc_UWord32* sent_video_rate_bps,
-      WebRtc_UWord32* sent_nack_rate_bps,
-      WebRtc_UWord32* sent_fec_rate_bps);
+      uint32_t* sent_video_rate_bps,
+      uint32_t* sent_nack_rate_bps,
+      uint32_t* sent_fec_rate_bps);
 
   // Implements VideoSendStatisticsCallback.
-  virtual WebRtc_Word32 SendStatistics(const WebRtc_UWord32 bit_rate,
-                                       const WebRtc_UWord32 frame_rate);
-  WebRtc_Word32 RegisterCodecObserver(ViEEncoderObserver* observer);
+  virtual int32_t SendStatistics(const uint32_t bit_rate,
+                                 const uint32_t frame_rate);
+  int32_t RegisterCodecObserver(ViEEncoderObserver* observer);
 
   // Implements RtcpIntraFrameObserver.
   virtual void OnReceivedIntraFrameRequest(uint32_t ssrc);
@@ -145,11 +153,10 @@ class ViEEncoder
   // Sets SSRCs for all streams.
   bool SetSsrcs(const std::list<unsigned int>& ssrcs);
 
-  // Effect filter.
-  WebRtc_Word32 RegisterEffectFilter(ViEEffectFilter* effect_filter);
+  void SetMinTransmitBitrate(int min_transmit_bitrate_kbps);
 
-  // Recording.
-  ViEFileRecorder& GetOutgoingFileRecorder();
+  // Effect filter.
+  int32_t RegisterEffectFilter(ViEEffectFilter* effect_filter);
 
   // Enables recording of debugging information.
   virtual int StartDebugRecording(const char* fileNameUTF8);
@@ -157,7 +164,20 @@ class ViEEncoder
   // Disables recording of debugging information.
   virtual int StopDebugRecording();
 
+  // Lets the sender suspend video when the rate drops below
+  // |threshold_bps|, and turns back on when the rate goes back up above
+  // |threshold_bps| + |window_bps|.
+  virtual void SuspendBelowMinBitrate();
+
+  // New-style callbacks, used by VideoSendStream.
+  void RegisterPreEncodeCallback(I420FrameCallback* pre_encode_callback);
+  void DeRegisterPreEncodeCallback();
+  void RegisterPostEncodeImageCallback(
+        EncodedImageCallback* post_encode_callback);
+  void DeRegisterPostEncodeImageCallback();
+
   int channel_id() const { return channel_id_; }
+
  protected:
   // Called by BitrateObserver.
   void OnNetworkChanged(const uint32_t bitrate_bps,
@@ -165,13 +185,15 @@ class ViEEncoder
                         const uint32_t round_trip_time_ms);
 
   // Called by PacedSender.
-  void TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
-                        int64_t capture_time_ms);
-
+  bool TimeToSendPacket(uint32_t ssrc, uint16_t sequence_number,
+                        int64_t capture_time_ms, bool retransmission);
+  int TimeToSendPadding(int bytes);
  private:
-  WebRtc_Word32 engine_id_;
+  bool EncoderPaused() const;
+
+  int32_t engine_id_;
   const int channel_id_;
-  const WebRtc_UWord32 number_of_cores_;
+  const uint32_t number_of_cores_;
 
   VideoCodingModule& vcm_;
   VideoProcessingModule& vpm_;
@@ -184,28 +206,32 @@ class ViEEncoder
 
   BitrateController* bitrate_controller_;
 
-  bool paused_;
+  int64_t time_of_last_incoming_frame_ms_;
+  bool send_padding_;
+  int min_transmit_bitrate_kbps_ GUARDED_BY(data_cs_);
+  int target_delay_ms_;
+  bool network_is_transmitting_;
+  bool encoder_paused_;
+  bool encoder_paused_and_dropped_frame_;
   std::map<unsigned int, int64_t> time_last_intra_request_ms_;
-  WebRtc_Word32 channels_dropping_delta_frames_;
-  bool drop_next_frame_;
 
   bool fec_enabled_;
   bool nack_enabled_;
 
-  ViEEncoderObserver* codec_observer_;
+  ViEEncoderObserver* codec_observer_ GUARDED_BY(callback_cs_);
   ViEEffectFilter* effect_filter_;
   ProcessThread& module_process_thread_;
 
   bool has_received_sli_;
-  WebRtc_UWord8 picture_id_sli_;
+  uint8_t picture_id_sli_;
   bool has_received_rpsi_;
-  WebRtc_UWord64 picture_id_rpsi_;
+  uint64_t picture_id_rpsi_;
   std::map<unsigned int, int> ssrc_streams_;
-
-  ViEFileRecorder file_recorder_;
 
   // Quality modes callback
   QMVideoSettingsCallback* qm_callback_;
+  bool video_suspended_;
+  I420FrameCallback* pre_encode_callback_;
 };
 
 }  // namespace webrtc

@@ -7,7 +7,7 @@
 
 #include <windows.h>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class WorkItemList;
 
@@ -27,7 +27,7 @@ class AppCommand {
   AppCommand();
   // Constructs a new command that will execute the given |command_line|.
   // All other properties default to false.
-  explicit AppCommand(const string16& command_line);
+  explicit AppCommand(const base::string16& command_line);
   // The implicit dtor, copy ctor and assignment operator are desired.
 
   // Initializes an instance from the command in |key|.
@@ -36,14 +36,14 @@ class AppCommand {
   // Adds to |item_list| work items to write this object to the key named
   // |command_path| under |predefined_root|.
   void AddWorkItems(HKEY predefined_root,
-                    const string16& command_path,
+                    const base::string16& command_path,
                     WorkItemList* item_list) const;
 
   // Returns the command-line for the app command as it is represented in the
   // registry.  Use CommandLine::FromString() on this value to check arguments
   // or to launch the command.
-  const string16& command_line() const { return command_line_; }
-  void set_command_line(const string16& command_line) {
+  const base::string16& command_line() const { return command_line_; }
+  void set_command_line(const base::string16& command_line) {
     command_line_ = command_line;
   }
 
@@ -60,11 +60,25 @@ class AppCommand {
     is_auto_run_on_os_upgrade_ = is_auto_run_on_os_upgrade;
   }
 
+  bool is_run_as_user() const { return is_run_as_user_; }
+  void set_is_run_as_user(bool is_run_as_user) {
+    is_run_as_user_ = is_run_as_user;
+  }
+
  protected:
-  string16 command_line_;
+  base::string16 command_line_;
   bool sends_pings_;
   bool is_web_accessible_;
   bool is_auto_run_on_os_upgrade_;
+  bool is_run_as_user_;
+
+ private:
+  struct NamedBoolVar {
+    bool AppCommand::* data;
+    const wchar_t* name;
+  };
+
+  static const NamedBoolVar kNameBoolVars[];
 };
 
 }  // namespace installer

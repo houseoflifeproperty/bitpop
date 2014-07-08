@@ -3,27 +3,43 @@
 // found in the LICENSE file.
 
 (function() {
-  var search_box = document.getElementById('search_input');
+  var searchBox = document.getElementById('search_input');
   var samples = document.getElementsByClassName('sample');
+  var SEARCH_PREFIX = 'search:';
 
   function filterSamples() {
-    var search_text = search_box.value.toLowerCase();
+    var searchText = searchBox.value.toLowerCase();
+    window.location.hash = SEARCH_PREFIX + encodeURIComponent(searchText);
     for (var i = 0; i < samples.length; ++i) {
-      var sample = samples[i]
-      if (sample.getAttribute('tags').toLowerCase().indexOf(search_text) < 0)
+      var sample = samples[i];
+      var sampleTitle = '';
+      if (sample.getElementsByTagName('h2').length > 0)
+        sampleTitle = sample.getElementsByTagName('h2')[0].textContent;
+      if (sample.getAttribute('tags').toLowerCase().indexOf(searchText) < 0 &&
+          sampleTitle.toLowerCase().indexOf(searchText) < 0)
         sample.style.display = 'none';
       else
         sample.style.display = '';
     }
   }
-  search_box.addEventListener('search', filterSamples);
-  search_box.addEventListener('keyup', filterSamples);
+  function updateSearchBox(value) {
+    searchBox.value = value;
+    filterSamples();
+  }
+  searchBox.addEventListener('search', filterSamples);
+  searchBox.addEventListener('keyup', filterSamples);
 
-  var api_filter_items = document.getElementById('api_filter_items');
-  api_filter_items.addEventListener('click', function(event) {
+  var apiFilterItems = document.getElementById('api_filter_items');
+  apiFilterItems.addEventListener('click', function(event) {
     if (event.target instanceof HTMLAnchorElement) {
-      search_box.value = event.target.innerText;
-      filterSamples();
+      updateSearchBox(event.target.innerText);
     }
   });
+
+  // If we have a #fragment that corresponds to a search, prefill the search box
+  // with it.
+  var fragment = window.location.hash.substr(1);
+  if (fragment.substr(0, SEARCH_PREFIX.length) == SEARCH_PREFIX) {
+    updateSearchBox(decodeURIComponent(fragment.substr(SEARCH_PREFIX.length)));
+  }
 })();

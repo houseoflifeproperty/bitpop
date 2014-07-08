@@ -5,12 +5,14 @@
 #ifndef CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_EDIT_CONTROLLER_H_
 #define CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_EDIT_CONTROLLER_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/common/page_transition_types.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
+#include "url/gurl.h"
 
-class GURL;
+class CommandUpdater;
 class InstantController;
+class ToolbarModel;
 
 namespace content {
 class WebContents;
@@ -26,51 +28,62 @@ class Image;
 // Embedders of an AutocompleteEdit widget must implement this class.
 class OmniboxEditController {
  public:
-  // When the user presses enter or selects a line with the mouse, this
-  // function will get called synchronously with the url to open and
-  // disposition and transition to use when opening it.
-  //
-  // |alternate_nav_url|, if non-empty, contains the alternate navigation URL
-  // for |url|, which the controller can check for existence.  See comments on
-  // AutocompleteResult::GetAlternateNavURL().
-  virtual void OnAutocompleteAccept(const GURL& url,
-                                    WindowOpenDisposition disposition,
-                                    content::PageTransition transition,
-                                    const GURL& alternate_nav_url) = 0;
+  void OnAutocompleteAccept(const GURL& destination_url,
+                            WindowOpenDisposition disposition,
+                            content::PageTransition transition);
+
+  // Updates the controller, and, if |contents| is non-NULL, restores saved
+  // state that the tab holds.
+  virtual void Update(const content::WebContents* contents) = 0;
 
   // Called when anything has changed that might affect the layout or contents
   // of the views around the edit, including the text of the edit and the
   // status of any keyword- or hint-related state.
   virtual void OnChanged() = 0;
 
-  // Called when the selection of the OmniboxView changes.
-  virtual void OnSelectionBoundsChanged() = 0;
-
-  // Called whenever the user starts or stops an input session (typing,
-  // interacting with the edit, etc.).  When user input is not in progress,
-  // the edit is guaranteed to be showing the permanent text.
-  virtual void OnInputInProgress(bool in_progress) = 0;
-
-  // Called whenever the autocomplete edit is losing focus.
-  virtual void OnKillFocus() = 0;
-
   // Called whenever the autocomplete edit gets focused.
   virtual void OnSetFocus() = 0;
 
-  // Returns the favicon of the current page.
-  virtual gfx::Image GetFavicon() const = 0;
+  // Hides the origin chip and shows the URL.
+  virtual void ShowURL() = 0;
 
-  // Returns the title of the current page.
-  virtual string16 GetTitle() const = 0;
+  // Hides the origin chip while leaving the Omnibox empty.
+  void HideOriginChip();
+
+  // Shows the origin chip.  Hides the URL if it was previously shown by a call
+  // to ShowURL().
+  void ShowOriginChip();
 
   // Returns the InstantController, or NULL if instant is not enabled.
   virtual InstantController* GetInstant() = 0;
 
   // Returns the WebContents of the currently active tab.
-  virtual content::WebContents* GetWebContents() const = 0;
+  virtual content::WebContents* GetWebContents() = 0;
+
+  virtual ToolbarModel* GetToolbarModel() = 0;
+  virtual const ToolbarModel* GetToolbarModel() const = 0;
 
  protected:
-  virtual ~OmniboxEditController() {}
+  explicit OmniboxEditController(CommandUpdater* command_updater);
+  virtual ~OmniboxEditController();
+
+  // Hides the URL and shows the origin chip.
+  virtual void HideURL() = 0;
+
+  CommandUpdater* command_updater() { return command_updater_; }
+  GURL destination_url() const { return destination_url_; }
+  WindowOpenDisposition disposition() const { return disposition_; }
+  content::PageTransition transition() const { return transition_; }
+
+ private:
+  CommandUpdater* command_updater_;
+
+  // The details necessary to open the user's desired omnibox match.
+  GURL destination_url_;
+  WindowOpenDisposition disposition_;
+  content::PageTransition transition_;
+
+  DISALLOW_COPY_AND_ASSIGN(OmniboxEditController);
 };
 
 #endif  // CHROME_BROWSER_UI_OMNIBOX_OMNIBOX_EDIT_CONTROLLER_H_

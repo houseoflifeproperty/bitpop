@@ -2,16 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
+#include "components/bookmarks/core/browser/bookmark_expanded_state_tracker.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/test/test_browser_thread.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-using content::BrowserThread;
 
 class BookmarkExpandedStateTrackerTest : public testing::Test {
  public:
@@ -25,22 +24,17 @@ class BookmarkExpandedStateTrackerTest : public testing::Test {
 
  private:
   scoped_ptr<TestingProfile> profile_;
-  MessageLoopForUI message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
 
   DISALLOW_COPY_AND_ASSIGN(BookmarkExpandedStateTrackerTest);
 };
 
-BookmarkExpandedStateTrackerTest::BookmarkExpandedStateTrackerTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_),
-      file_thread_(BrowserThread::FILE, &message_loop_) {
-}
+BookmarkExpandedStateTrackerTest::BookmarkExpandedStateTrackerTest() {}
 
 void BookmarkExpandedStateTrackerTest::SetUp() {
   profile_.reset(new TestingProfile);
   profile_->CreateBookmarkModel(true);
-  profile_->BlockUntilBookmarkModelLoaded();
+  test::WaitForBookmarkModelToLoad(GetModel());
 }
 
 BookmarkModel* BookmarkExpandedStateTrackerTest::GetModel() {
@@ -66,7 +60,7 @@ TEST_F(BookmarkExpandedStateTrackerTest, SetExpandedNodes) {
 
   // Add a folder and mark it expanded.
   const BookmarkNode* n1 = model->AddFolder(model->bookmark_bar_node(), 0,
-                                            ASCIIToUTF16("x"));
+                                            base::ASCIIToUTF16("x"));
   nodes.insert(n1);
   tracker->SetExpandedNodes(nodes);
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());
@@ -76,4 +70,22 @@ TEST_F(BookmarkExpandedStateTrackerTest, SetExpandedNodes) {
   nodes.erase(n1);
   n1 = NULL;
   EXPECT_EQ(nodes, tracker->GetExpandedNodes());
+}
+
+TEST_F(BookmarkExpandedStateTrackerTest, RemoveAll) {
+  BookmarkModel* model = GetModel();
+  BookmarkExpandedStateTracker* tracker = model->expanded_state_tracker();
+
+  // Add a folder and mark it expanded.
+  const BookmarkNode* n1 =
+      model->AddFolder(model->bookmark_bar_node(), 0, base::ASCIIToUTF16("x"));
+  BookmarkExpandedStateTracker::Nodes nodes;
+  nodes.insert(n1);
+  tracker->SetExpandedNodes(nodes);
+  // Verify that the node is present.
+  EXPECT_EQ(nodes, tracker->GetExpandedNodes());
+  // Call remove all.
+  model->RemoveAll();
+  // Verify node is not present.
+  EXPECT_TRUE(tracker->GetExpandedNodes().empty());
 }

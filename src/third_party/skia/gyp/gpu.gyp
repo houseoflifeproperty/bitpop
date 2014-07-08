@@ -1,3 +1,4 @@
+# GYP for building gpu
 {
   'target_defaults': {
     'conditions': [
@@ -9,7 +10,7 @@
         'sources/': [ ['exclude', '_mac.(h|cpp|m|mm)$'],
         ],
       }],
-      ['skia_os != "linux"', {
+      ['skia_os != "linux" and skia_os != "chromeos"', {
         'sources/': [ ['exclude', '_unix.(h|cpp)$'],
         ],
       }],
@@ -23,31 +24,6 @@
       }],
       ['skia_os != "nacl"', {
         'sources/': [ ['exclude', '_nacl.(h|cpp)$'],
-        ],
-      }],
-      [ 'skia_os == "android"', {
-        'defines': [
-          'GR_ANDROID_BUILD=1',
-        ],
-      }],
-      [ 'skia_os == "mac"', {
-        'defines': [
-          'GR_MAC_BUILD=1',
-        ],
-      }],
-      [ 'skia_os == "linux"', {
-        'defines': [
-          'GR_LINUX_BUILD=1',
-        ],
-      }],
-      [ 'skia_os == "ios"', {
-        'defines': [
-          'GR_IOS_BUILD=1',
-        ],
-      }],
-      [ 'skia_os == "win"', {
-        'defines': [
-          'GR_WIN32_BUILD=1',
         ],
       }],
       # nullify the targets in this gyp file if skia_gpu is 0
@@ -75,37 +51,21 @@
           ],
         },
       }],
-      [ 'skia_texture_cache_mb_limit != 0', {
+      [ 'skia_resource_cache_mb_limit != 0', {
         'defines': [
-          'GR_DEFAULT_TEXTURE_CACHE_MB_LIMIT=<(skia_texture_cache_mb_limit)',
+          'GR_DEFAULT_RESOURCE_CACHE_MB_LIMIT=<(skia_resource_cache_mb_limit)',
+        ],
+      }],
+      [ 'skia_resource_cache_count_limit != 0', {
+        'defines': [
+          'GR_DEFAULT_RESOURCE_CACHE_COUNT_LIMIT=<(skia_resource_cache_count_limit)',
         ],
       }],
     ],
     'direct_dependent_settings': {
       'conditions': [
-        [ 'skia_os == "android"', {
-          'defines': [
-            'GR_ANDROID_BUILD=1',
-          ],
-        }],
-        [ 'skia_os == "mac"', {
-          'defines': [
-            'GR_MAC_BUILD=1',
-          ],
-        }],
-        [ 'skia_os == "linux"', {
-          'defines': [
-            'GR_LINUX_BUILD=1',
-          ],
-        }],
-        [ 'skia_os == "ios"', {
-          'defines': [
-            'GR_IOS_BUILD=1',
-          ],
-        }],
         [ 'skia_os == "win"', {
           'defines': [
-            'GR_WIN32_BUILD=1',
             'GR_GL_FUNCTION_TYPE=__stdcall',
           ],
         }],
@@ -117,95 +77,63 @@
   },
   'targets': [
     {
-      'target_name': 'skgr',
-      'product_name': 'skia_skgr',
+      'target_name': 'skgpu',
+      'product_name': 'skia_skgpu',
       'type': 'static_library',
       'standalone_static_library': 1,
+      'dependencies': [
+        'core.gyp:*',
+        'utils.gyp:*',
+      ],
       'includes': [
         'gpu.gypi',
       ],
       'include_dirs': [
-        '../include/config',
-        '../include/core',
-        '../src/core',
         '../include/gpu',
+        '../src/core',
         '../src/gpu',
       ],
-      'dependencies': [
-        'angle.gyp:*',
-      ],
-      'export_dependent_settings': [
-        'angle.gyp:*',
-      ],
       'sources': [
-        '<@(skgr_sources)',
-        '<@(skgr_native_gl_sources)',
-        '<@(skgr_angle_gl_sources)',
-        '<@(skgr_mesa_gl_sources)',
-        '<@(skgr_debug_gl_sources)',
-        '<@(skgr_null_gl_sources)',
+        '<@(skgpu_sources)',
+        '<@(skgpu_native_gl_sources)',
+        '<@(skgpu_angle_gl_sources)',
+        '<@(skgpu_mesa_gl_sources)',
+        '<@(skgpu_debug_gl_sources)',
+        '<@(skgpu_null_gl_sources)',
         'gpu.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
       ],
       'conditions': [
-        [ 'not skia_mesa', {
-          'sources!': [
-            '../src/gpu/gl/mesa/SkMesaGLContext.cpp',
+        [ 'skia_stroke_path_rendering', {
+          'sources': [
+            '../experimental/StrokePathRenderer/GrStrokePathRenderer.h',
+            '../experimental/StrokePathRenderer/GrStrokePathRenderer.cpp',
           ],
-        }],
-        [ 'skia_mesa and skia_os == "mac"', {
-          'include_dirs': [
-             '$(SDKROOT)/usr/X11/include/',
-          ],
-        }],
-        [ 'not skia_angle', {
-          'sources!': [
-            '../include/gpu/gl/SkANGLEGLContext.h',
-            '../src/gpu/gl/angle/SkANGLEGLContext.cpp',
-            '../src/gpu/gl/angle/GrGLCreateANGLEInterface.cpp',
-          ],
-        }],
-      ],
-    },
-    {
-      'target_name': 'gr',
-      'product_name': 'skia_gr',
-      'type': 'static_library',
-      'standalone_static_library': 1,
-      'includes': [
-        'gpu.gypi',
-      ],
-     'include_dirs': [
-        '../include/core',
-        '../include/config',
-        '../include/gpu',
-        '../src/core', # SkRasterClip.h
-        '../src/gpu'
-      ],
-      'dependencies': [
-        'angle.gyp:*',
-      ],
-      'export_dependent_settings': [
-        'angle.gyp:*',
-      ],
-      'sources': [
-        '<@(gr_sources)',
-        '<@(gr_native_gl_sources)',
-        '<@(gr_angle_gl_sources)',
-        '<@(gr_mesa_gl_sources)',
-        '<@(gr_debug_gl_sources)',
-        '<@(gr_null_gl_sources)',
-        'gpu.gypi', # Makes the gypi appear in IDEs (but does not modify the build).
-      ],
-      'defines': [
-        'GR_IMPLEMENTATION=1',
-      ],
-      'conditions': [
-        [ 'skia_nv_path_rendering', {
           'defines': [
-            'GR_GL_USE_NV_PATH_RENDERING=1',
+            'GR_STROKE_PATH_RENDERING=1',
           ],
         }],
-        [ 'skia_os == "linux"', {
+        [ 'skia_android_path_rendering', {
+          'sources': [
+            '../experimental/AndroidPathRenderer/GrAndroidPathRenderer.cpp',
+            '../experimental/AndroidPathRenderer/GrAndroidPathRenderer.h',
+            '../experimental/AndroidPathRenderer/AndroidPathRenderer.cpp',
+            '../experimental/AndroidPathRenderer/AndroidPathRenderer.h',
+            '../experimental/AndroidPathRenderer/Vertex.h',
+          ],
+          'defines': [
+            'GR_ANDROID_PATH_RENDERING=1',
+          ],
+        }],
+        [ 'skia_chrome_utils', {
+          'sources': [
+            '../experimental/ChromeUtils/SkBorder.cpp',
+            '../experimental/ChromeUtils/SkBorder.h',
+          ],
+          'defines': [
+            'GR_CHROME_UTILS=1',
+          ],
+        }],
+        [ 'skia_os == "linux" or skia_os == "chromeos"', {
           'sources!': [
             '../src/gpu/gl/GrGLDefaultInterface_none.cpp',
             '../src/gpu/gl/GrGLCreateNativeInterface_none.cpp',
@@ -243,19 +171,20 @@
             '../src/gpu/gl/GrGLCreateNativeInterface_none.cpp',
           ],
         }],
+        [ 'not skia_mesa', {
+          'sources!': [
+            '../src/gpu/gl/mesa/SkMesaGLContext.cpp',
+            '../src/gpu/gl/mesa/GrGLCreateMesaInterface.cpp',
+          ],
+        }],
         [ 'skia_mesa and skia_os == "mac"', {
           'link_settings': {
             'libraries': [
-              '$(SDKROOT)/usr/X11/lib/libOSMesa.dylib',
+              '/opt/X11/lib/libOSMesa.dylib',
             ],
           },
           'include_dirs': [
-             '$(SDKROOT)/usr/X11/include/',
-          ],
-        }],
-        [ 'not skia_mesa', {
-          'sources!': [
-            '../src/gpu/gl/mesa/GrGLCreateMesaInterface.cpp',
+             '/opt/X11/include/',
           ],
         }],
         [ 'skia_os in ["win", "ios"]', {
@@ -264,12 +193,16 @@
             '../src/gpu/gl/GrGLCreateNativeInterface_none.cpp',
           ],
         }],
-        [ 'not skia_angle', {
+        [ 'skia_angle', {
+          'dependencies': [
+            'angle.gyp:*',
+          ],
+          'export_dependent_settings': [
+            'angle.gyp:*',
+          ],
+        }, { # not skia_angle
           'sources!': [
-            '../include/gpu/gl/SkANGLEGLContext.h',
-
-            '../src/gpu/gl/angle/GrGLCreateANGLEInterface.cpp',
-            '../src/gpu/gl/angle/SkANGLEGLContext.cpp',
+            '<@(skgpu_angle_gl_sources)',
           ],
         }],
         [ 'skia_os == "android"', {
@@ -288,9 +221,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

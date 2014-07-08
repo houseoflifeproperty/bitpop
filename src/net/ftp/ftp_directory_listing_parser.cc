@@ -9,9 +9,9 @@
 #include "base/i18n/icu_encoding_detection.h"
 #include "base/i18n/icu_string_conversions.h"
 #include "base/stl_util.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/ftp/ftp_directory_listing_parser_ls.h"
 #include "net/ftp/ftp_directory_listing_parser_netware.h"
@@ -41,13 +41,13 @@ int FillInRawName(const std::string& encoding,
 
 // Parses |text| as an FTP directory listing. Fills in |entries|
 // and |server_type| and returns network error code.
-int ParseListing(const string16& text,
-                 const string16& newline_separator,
+int ParseListing(const base::string16& text,
+                 const base::string16& newline_separator,
                  const std::string& encoding,
                  const base::Time& current_time,
                  std::vector<FtpDirectoryListingEntry>* entries,
                  FtpServerType* server_type) {
-  std::vector<string16> lines;
+  std::vector<base::string16> lines;
   base::SplitStringUsingSubstr(text, newline_separator, &lines);
 
   struct {
@@ -103,14 +103,14 @@ int DecodeAndParse(const std::string& text,
 
   // Use first encoding that can be used to decode the text.
   for (size_t i = 0; i < encodings.size(); i++) {
-    string16 converted_text;
+    base::string16 converted_text;
     if (base::CodepageToUTF16(text,
                               encodings[i].c_str(),
                               base::OnStringConversionError::FAIL,
                               &converted_text)) {
       for (size_t j = 0; j < arraysize(kNewlineSeparators); j++) {
         int rv = ParseListing(converted_text,
-                              ASCIIToUTF16(kNewlineSeparators[j]),
+                              base::ASCIIToUTF16(kNewlineSeparators[j]),
                               encodings[i],
                               current_time,
                               entries,

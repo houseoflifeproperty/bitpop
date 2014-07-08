@@ -7,78 +7,164 @@
 #include <fcntl.h>
 
 #include "base/debug/trace_event.h"
-#include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
+#include "base/synchronization/waitable_event.h"
 
 namespace {
 
 int g_atrace_fd = -1;
 const char* kATraceMarkerFile = "/sys/kernel/debug/tracing/trace_marker";
 
+void WriteEvent(
+    char phase,
+    const char* category_group,
+    const char* name,
+    unsigned long long id,
+    const char** arg_names,
+    const unsigned char* arg_types,
+    const base::debug::TraceEvent::TraceValue* arg_values,
+    const scoped_refptr<base::debug::ConvertableToTraceFormat>*
+        convertable_values,
+    unsigned char flags) {
+  std::string out = base::StringPrintf("%c|%d|%s", phase, getpid(), name);
+  if (flags & TRACE_EVENT_FLAG_HAS_ID)
+    base::StringAppendF(&out, "-%" PRIx64, static_cast<uint64>(id));
+  out += '|';
+
+  for (int i = 0; i < base::debug::kTraceMaxNumArgs && arg_names[i]; ++i) {
+    if (i)
+      out += ';';
+    out += arg_names[i];
+    out += '=';
+    std::string::size_type value_start = out.length();
+    if (arg_types[i] == TRACE_VALUE_TYPE_CONVERTABLE) {
+      convertable_values[i]->AppendAsTraceFormat(&out);
+    } else {
+      base::debug::TraceEvent::AppendValueAsJSON(
+          arg_types[i], arg_values[i], &out);
+    }
+    // Remove the quotes which may confuse the atrace script.
+    ReplaceSubstringsAfterOffset(&out, value_start, "\\\"", "'");
+    ReplaceSubstringsAfterOffset(&out, value_start, "\"", "");
+    // Replace chars used for separators with similar chars in the value.
+    std::replace(out.begin() + value_start, out.end(), ';', ',');
+    std::replace(out.begin() + value_start, out.end(), '|', '!');
+  }
+
+  out += '|';
+  out += category_group;
+  write(g_atrace_fd, out.c_str(), out.size());
+}
+
+void NoOpOutputCallback(base::WaitableEvent* complete_event,
+                        const scoped_refptr<base::RefCountedString>&,
+                        bool has_more_events) {
+  if (!has_more_events)
+    complete_event->Signal();
+}
+
+void EndChromeTracing(base::debug::TraceLog* trace_log,
+                      base::WaitableEvent* complete_event) {
+  trace_log->SetDisabled();
+  // Delete the buffered trace events as they have been sent to atrace.
+  trace_log->Flush(base::Bind(&NoOpOutputCallback, complete_event));
+}
+
 }  // namespace
 
 namespace base {
 namespace debug {
 
-// static
-void TraceLog::InitATrace() {
-  DCHECK(g_atrace_fd == -1);
-  g_atrace_fd = open(kATraceMarkerFile, O_WRONLY | O_APPEND);
-  if (g_atrace_fd == -1)
-    LOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
+// These functions support Android systrace.py when 'webview' category is
+// traced. With the new adb_profile_chrome, we may have two phases:
+// - before WebView is ready for combined tracing, we can use adb_profile_chrome
+//   to trace android categories other than 'webview' and chromium categories.
+//   In this way we can avoid the conflict between StartATrace/StopATrace and
+//   the intents.
+// - TODO(wangxianzhu): after WebView is ready for combined tracing, remove
+//   StartATrace, StopATrace and SendToATrace, and perhaps send Java traces
+//   directly to atrace in trace_event_binding.cc.
+
+void TraceLog::StartATrace() {
+  if (g_atrace_fd != -1)
+    return;
+
+  g_atrace_fd = open(kATraceMarkerFile, O_WRONLY);
+  if (g_atrace_fd == -1) {
+    PLOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
+    return;
+  }
+  SetEnabled(CategoryFilter(CategoryFilter::kDefaultCategoryFilterString),
+             base::debug::TraceLog::RECORDING_MODE,
+             RECORD_CONTINUOUSLY);
 }
 
-void TraceLog::SendToATrace(char phase,
-                            const char* category,
-                            const char* name,
-                            int num_args,
-                            const char** arg_names,
-                            const unsigned char* arg_types,
-                            const unsigned long long* arg_values) {
+void TraceLog::StopATrace() {
   if (g_atrace_fd == -1)
     return;
 
-  switch (phase) {
-    case TRACE_EVENT_PHASE_BEGIN:
-    case TRACE_EVENT_PHASE_INSTANT: {
-      std::string out = StringPrintf("B|%d|%s-%s", getpid(), category, name);
-      for (int i = 0; i < num_args; ++i) {
-        out += (i == 0 ? '|' : ';');
-        out += arg_names[i];
-        out += '=';
-        TraceEvent::TraceValue value;
-        value.as_uint = arg_values[i];
-        std::string::size_type value_start = out.length();
-        TraceEvent::AppendValueAsJSON(arg_types[i], value, &out);
-        // Remove the quotes which may confuse the atrace script.
-        ReplaceSubstringsAfterOffset(&out, value_start, "\\\"", "'");
-        ReplaceSubstringsAfterOffset(&out, value_start, "\"", "");
-        // Replace chars used for separators with similar chars in the value.
-        std::replace(out.begin() + value_start, out.end(), ';', ',');
-        std::replace(out.begin() + value_start, out.end(), '|', '!');
-      }
-      write(g_atrace_fd, out.c_str(), out.size());
+  close(g_atrace_fd);
+  g_atrace_fd = -1;
 
-      if (phase != TRACE_EVENT_PHASE_INSTANT)
-        break;
-      // Fall through. Simulate an instance event with a pair of begin/end.
-    }
-    case TRACE_EVENT_PHASE_END: {
-      // Though a single 'E' is enough, here append pid and name so that
-      // unpaired events can be found easily.
-      std::string out = StringPrintf("E|%d|%s-%s", getpid(), category, name);
-      write(g_atrace_fd, out.c_str(), out.size());
+  // TraceLog::Flush() requires the current thread to have a message loop, but
+  // this thread called from Java may not have one, so flush in another thread.
+  Thread end_chrome_tracing_thread("end_chrome_tracing");
+  WaitableEvent complete_event(false, false);
+  end_chrome_tracing_thread.Start();
+  end_chrome_tracing_thread.message_loop()->PostTask(
+      FROM_HERE, base::Bind(&EndChromeTracing, Unretained(this),
+                            Unretained(&complete_event)));
+  complete_event.Wait();
+}
+
+void TraceEvent::SendToATrace() {
+  if (g_atrace_fd == -1)
+    return;
+
+  const char* category_group =
+      TraceLog::GetCategoryGroupName(category_group_enabled_);
+
+  switch (phase_) {
+    case TRACE_EVENT_PHASE_BEGIN:
+      WriteEvent('B', category_group, name_, id_,
+                 arg_names_, arg_types_, arg_values_, convertable_values_,
+                 flags_);
       break;
-    }
+
+    case TRACE_EVENT_PHASE_COMPLETE:
+      WriteEvent(duration_.ToInternalValue() == -1 ? 'B' : 'E',
+                 category_group, name_, id_,
+                 arg_names_, arg_types_, arg_values_, convertable_values_,
+                 flags_);
+      break;
+
+    case TRACE_EVENT_PHASE_END:
+      // Though a single 'E' is enough, here append pid, name and
+      // category_group etc. So that unpaired events can be found easily.
+      WriteEvent('E', category_group, name_, id_,
+                 arg_names_, arg_types_, arg_values_, convertable_values_,
+                 flags_);
+      break;
+
+    case TRACE_EVENT_PHASE_INSTANT:
+      // Simulate an instance event with a pair of begin/end events.
+      WriteEvent('B', category_group, name_, id_,
+                 arg_names_, arg_types_, arg_values_, convertable_values_,
+                 flags_);
+      write(g_atrace_fd, "E", 1);
+      break;
+
     case TRACE_EVENT_PHASE_COUNTER:
-      for (int i = 0; i < num_args; ++i) {
-        DCHECK(arg_types[i] == TRACE_VALUE_TYPE_INT);
-        std::string out = StringPrintf(
-            "C|%d|%s-%s-%s|%d",
-            getpid(), category, name,
-            arg_names[i], static_cast<int>(arg_values[i]));
+      for (int i = 0; i < kTraceMaxNumArgs && arg_names_[i]; ++i) {
+        DCHECK(arg_types_[i] == TRACE_VALUE_TYPE_INT);
+        std::string out = base::StringPrintf(
+            "C|%d|%s-%s", getpid(), name_, arg_names_[i]);
+        if (flags_ & TRACE_EVENT_FLAG_HAS_ID)
+          StringAppendF(&out, "-%" PRIx64, static_cast<uint64>(id_));
+        StringAppendF(&out, "|%d|%s",
+                      static_cast<int>(arg_values_[i].as_int), category_group);
         write(g_atrace_fd, out.c_str(), out.size());
       }
       break;
@@ -89,32 +175,11 @@ void TraceLog::SendToATrace(char phase,
   }
 }
 
-void TraceLog::AddClockSyncMetadataEvents() {
-  // Since Android does not support sched_setaffinity, we cannot establish clock
-  // sync unless the scheduler clock is set to global. If the trace_clock file
-  // can't be read, we will assume the kernel doesn't support tracing and do
-  // nothing.
-  std::string clock_mode;
-  if (!file_util::ReadFileToString(
-      FilePath("/sys/kernel/debug/tracing/trace_clock"), &clock_mode))
-    return;
-
-  if (clock_mode != "local [global]\n") {
-    DLOG(WARNING) <<
-        "The kernel's tracing clock must be set to global in order for " <<
-        "trace_event to be synchronized with . Do this by\n" <<
-        "  echo global > /sys/kerel/debug/tracing/trace_clock";
-    return;
-  }
-
-  int atrace_fd = g_atrace_fd;
+void TraceLog::AddClockSyncMetadataEvent() {
+  int atrace_fd = open(kATraceMarkerFile, O_WRONLY | O_APPEND);
   if (atrace_fd == -1) {
-    // This function may be called when atrace is not enabled.
-    atrace_fd = open(kATraceMarkerFile, O_WRONLY | O_APPEND);
-    if (atrace_fd == -1) {
-      LOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
-      return;
-    }
+    PLOG(WARNING) << "Couldn't open " << kATraceMarkerFile;
+    return;
   }
 
   // Android's kernel trace system has a trace_marker feature: this is a file on
@@ -125,19 +190,9 @@ void TraceLog::AddClockSyncMetadataEvents() {
   double now_in_seconds = now.ToInternalValue() / 1000000.0;
   std::string marker = StringPrintf(
       "trace_event_clock_sync: parent_ts=%f\n", now_in_seconds);
-  if (write(atrace_fd, marker.c_str(), marker.size()) != 0) {
-    DLOG(WARNING) << "Couldn't write to " << kATraceMarkerFile << ": "
-                  << strerror(errno);
-  }
-
-  if (g_atrace_fd == -1)
-    close(atrace_fd);
-}
-
-// Must be called with lock_ locked.
-void TraceLog::ApplyATraceEnabledFlag(unsigned char* category_enabled) {
-  if (g_atrace_fd != -1)
-    *category_enabled |= ATRACE_ENABLED;
+  if (write(atrace_fd, marker.c_str(), marker.size()) == -1)
+    PLOG(WARNING) << "Couldn't write to " << kATraceMarkerFile;
+  close(atrace_fd);
 }
 
 }  // namespace debug

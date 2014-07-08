@@ -8,16 +8,13 @@
 #include "ui/base/l10n/l10n_util.h"
 
 PermissionMenuModel::PermissionMenuModel(
-    Delegate* delegate,
     const GURL& url,
-    ContentSettingsType type,
-    ContentSetting default_setting,
-    ContentSetting current_setting)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
-      delegate_(delegate),
-      site_url_(url) {
-  string16 label;
-  switch (default_setting) {
+    const WebsiteSettingsUI::PermissionInfo& info,
+    const ChangeCallback& callback)
+    : ui::SimpleMenuModel(this), permission_(info), callback_(callback) {
+  DCHECK(!callback_.is_null());
+  base::string16 label;
+  switch (permission_.default_setting) {
     case CONTENT_SETTING_ALLOW:
       label = l10n_util::GetStringUTF16(
           IDS_WEBSITE_SETTINGS_MENU_ITEM_DEFAULT_ALLOW);
@@ -30,29 +27,46 @@ PermissionMenuModel::PermissionMenuModel(
       label = l10n_util::GetStringUTF16(
           IDS_WEBSITE_SETTINGS_MENU_ITEM_DEFAULT_ASK);
       break;
+    case CONTENT_SETTING_NUM_SETTINGS:
+      NOTREACHED();
     default:
       break;
   }
-  AddCheckItem(COMMAND_SET_TO_DEFAULT, label);
+  AddCheckItem(CONTENT_SETTING_DEFAULT, label);
 
-  // Media only support COMMAND_SET_TO_ALLOW for https.
-  if (type != CONTENT_SETTINGS_TYPE_MEDIASTREAM ||
+  // Media only support CONTENTE_SETTTING_ALLOW for https.
+  if (permission_.type != CONTENT_SETTINGS_TYPE_MEDIASTREAM ||
       url.SchemeIsSecure()) {
     label = l10n_util::GetStringUTF16(
         IDS_WEBSITE_SETTINGS_MENU_ITEM_ALLOW);
-    AddCheckItem(COMMAND_SET_TO_ALLOW, label);
+    AddCheckItem(CONTENT_SETTING_ALLOW, label);
   }
-  if (type != CONTENT_SETTINGS_TYPE_FULLSCREEN) {
+
+  if (permission_.type != CONTENT_SETTINGS_TYPE_FULLSCREEN) {
     label = l10n_util::GetStringUTF16(
         IDS_WEBSITE_SETTINGS_MENU_ITEM_BLOCK);
-    AddCheckItem(COMMAND_SET_TO_BLOCK, label);
+    AddCheckItem(CONTENT_SETTING_BLOCK, label);
   }
 }
 
+PermissionMenuModel::PermissionMenuModel(const GURL& url,
+                                         ContentSetting setting,
+                                         const ChangeCallback& callback)
+    : ui::SimpleMenuModel(this), callback_(callback) {
+  DCHECK(setting == CONTENT_SETTING_ALLOW || setting == CONTENT_SETTING_BLOCK);
+  permission_.type = CONTENT_SETTINGS_TYPE_DEFAULT;
+  permission_.setting = setting;
+  permission_.default_setting = CONTENT_SETTING_NUM_SETTINGS;
+  AddCheckItem(CONTENT_SETTING_ALLOW,
+               l10n_util::GetStringUTF16(IDS_PERMISSION_ALLOW));
+  AddCheckItem(CONTENT_SETTING_BLOCK,
+               l10n_util::GetStringUTF16(IDS_PERMISSION_DENY));
+}
+
+PermissionMenuModel::~PermissionMenuModel() {}
+
 bool PermissionMenuModel::IsCommandIdChecked(int command_id) const {
-  if (delegate_)
-    return delegate_->IsCommandIdChecked(command_id);
-  return false;
+  return permission_.setting == command_id;
 }
 
 bool PermissionMenuModel::IsCommandIdEnabled(int command_id) const {
@@ -66,7 +80,7 @@ bool PermissionMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void PermissionMenuModel::ExecuteCommand(int command_id) {
-  if (delegate_)
-    delegate_->ExecuteCommand(command_id);
+void PermissionMenuModel::ExecuteCommand(int command_id, int event_flags) {
+  permission_.setting = static_cast<ContentSetting>(command_id);
+  callback_.Run(permission_);
 }

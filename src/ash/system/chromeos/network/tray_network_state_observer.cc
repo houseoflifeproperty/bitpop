@@ -4,54 +4,70 @@
 
 #include "ash/system/chromeos/network/tray_network_state_observer.h"
 
-#include "ash/system/chromeos/network/network_detailed_view.h"
-#include "ash/system/chromeos/network/tray_network.h"
-#include "ash/system/tray/tray_constants.h"
+#include <set>
+#include <string>
+
+#include "ash/system/chromeos/network/network_icon.h"
+#include "base/location.h"
+#include "chromeos/network/network_state.h"
 #include "chromeos/network/network_state_handler.h"
 #include "third_party/cros_system_api/dbus/service_constants.h"
 
-namespace ash {
-namespace internal {
+using chromeos::NetworkHandler;
 
-TrayNetworkStateObserver::TrayNetworkStateObserver(TrayNetwork* tray)
-    : tray_(tray),
-      wifi_state_(WIFI_UNKNOWN) {
-  chromeos::NetworkStateHandler::Get()->AddObserver(this);
+namespace ash {
+
+TrayNetworkStateObserver::TrayNetworkStateObserver(Delegate* delegate)
+    : delegate_(delegate) {
+  if (NetworkHandler::IsInitialized()) {
+    NetworkHandler::Get()->network_state_handler()->AddObserver(
+        this, FROM_HERE);
+  }
 }
 
 TrayNetworkStateObserver::~TrayNetworkStateObserver() {
-  chromeos::NetworkStateHandler::Get()->RemoveObserver(this);
-}
-
-void TrayNetworkStateObserver::NetworkManagerChanged() {
-  tray::NetworkDetailedView* detailed = tray_->detailed();
-  bool wifi_enabled = chromeos::NetworkStateHandler::Get()->
-      TechnologyEnabled(flimflam::kTypeWifi);
-  WifiState wifi_state = wifi_enabled ? WIFI_ENABLED : WIFI_DISABLED;
-  if ((wifi_state_ != WIFI_UNKNOWN && wifi_state_ != wifi_state) &&
-      (!detailed ||
-       detailed->GetViewType() == tray::NetworkDetailedView::WIFI_VIEW)) {
-    tray_->set_request_wifi_view(true);
-    tray_->PopupDetailedView(kTrayPopupAutoCloseDelayForTextInSeconds, false);
+  if (NetworkHandler::IsInitialized()) {
+    NetworkHandler::Get()->network_state_handler()->RemoveObserver(
+        this, FROM_HERE);
   }
-  wifi_state_ = wifi_state;
-  if (detailed)
-    detailed->ManagerChanged();
 }
 
-void TrayNetworkStateObserver::NetworkListChanged(
-    const NetworkStateList& networks) {
-  tray::NetworkDetailedView* detailed = tray_->detailed();
-  if (detailed)
-    detailed->NetworkListChanged(networks);
+void TrayNetworkStateObserver::NetworkListChanged() {
+  delegate_->NetworkStateChanged(true);
+  network_icon::PurgeNetworkIconCache();
 }
 
-void TrayNetworkStateObserver::NetworkServiceChanged(
+void TrayNetworkStateObserver::DeviceListChanged() {
+  delegate_->NetworkStateChanged(false);
+}
+
+// Any change to the Default (primary connected) network, including Strength
+// changes, should trigger a NetworkStateChanged update.
+void TrayNetworkStateObserver::DefaultNetworkChanged(
     const chromeos::NetworkState* network) {
-  tray::NetworkDetailedView* detailed = tray_->detailed();
-  if (detailed)
-    detailed->NetworkServiceChanged(network);
+  delegate_->NetworkStateChanged(true);
+}
+
+// Any change to the Connection State should trigger a NetworkStateChanged
+// update. This is important when both a VPN and a physical network are
+// connected.
+void TrayNetworkStateObserver::NetworkConnectionStateChanged(
+    const chromeos::NetworkState* network) {
+  delegate_->NetworkStateChanged(true);
+}
+
+// This tracks Strength and other property changes for all networks. It will
+// be called in addition to NetworkConnectionStateChanged for connection state
+// changes.
+void TrayNetworkStateObserver::NetworkPropertiesUpdated(
+    const chromeos::NetworkState* network) {
+  if (network ==
+      NetworkHandler::Get()->network_state_handler()->DefaultNetwork()) {
+    // Trigger NetworkStateChanged in case the Strength property of the
+    // Default network changed.
+    delegate_->NetworkStateChanged(true);
+  }
+  delegate_->NetworkServiceChanged(network);
 }
 
 }  // namespace ash
-}  // namespace internal

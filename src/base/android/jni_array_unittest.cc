@@ -27,6 +27,115 @@ TEST(JniArray, BasicConversions) {
   EXPECT_EQ(8U, vec.size());
 }
 
+void CheckIntConversion(
+    JNIEnv* env,
+    const int* int_array,
+    const size_t len,
+    const ScopedJavaLocalRef<jintArray>& ints) {
+  ASSERT_TRUE(ints.obj());
+
+  jsize java_array_len = env->GetArrayLength(ints.obj());
+  ASSERT_EQ(static_cast<jsize>(len), java_array_len);
+
+  jint value;
+  for (size_t i = 0; i < len; ++i) {
+    env->GetIntArrayRegion(ints.obj(), i, 1, &value);
+    ASSERT_EQ(int_array[i], value);
+  }
+}
+
+TEST(JniArray, IntConversions) {
+  const int kInts[] = { 0, 1, -1, kint32min, kint32max};
+  const size_t kLen = arraysize(kInts);
+
+  JNIEnv* env = AttachCurrentThread();
+  CheckIntConversion(env, kInts, kLen, ToJavaIntArray(env, kInts, kLen));
+
+  const std::vector<int> vec(kInts, kInts + kLen);
+  CheckIntConversion(env, kInts, kLen, ToJavaIntArray(env, vec));
+}
+
+void CheckLongConversion(
+    JNIEnv* env,
+    const int64* long_array,
+    const size_t len,
+    const ScopedJavaLocalRef<jlongArray>& longs) {
+  ASSERT_TRUE(longs.obj());
+
+  jsize java_array_len = env->GetArrayLength(longs.obj());
+  ASSERT_EQ(static_cast<jsize>(len), java_array_len);
+
+  jlong value;
+  for (size_t i = 0; i < len; ++i) {
+    env->GetLongArrayRegion(longs.obj(), i, 1, &value);
+    ASSERT_EQ(long_array[i], value);
+  }
+}
+
+TEST(JniArray, LongConversions) {
+  const int64 kLongs[] = { 0, 1, -1, kint64min, kint64max};
+  const size_t kLen = arraysize(kLongs);
+
+  JNIEnv* env = AttachCurrentThread();
+  CheckLongConversion(env, kLongs, kLen, ToJavaLongArray(env, kLongs, kLen));
+
+  const std::vector<int64> vec(kLongs, kLongs + kLen);
+  CheckLongConversion(env, kLongs, kLen, ToJavaLongArray(env, vec));
+}
+
+TEST(JniArray, JavaIntArrayToIntVector) {
+  const int kInts[] = {0, 1, -1};
+  const size_t kLen = arraysize(kInts);
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jintArray> jints(env, env->NewIntArray(kLen));
+  ASSERT_TRUE(jints.obj());
+
+  for (size_t i = 0; i < kLen; ++i) {
+    jint j = static_cast<jint>(kInts[i]);
+    env->SetIntArrayRegion(jints.obj(), i, 1, &j);
+    ASSERT_FALSE(HasException(env));
+  }
+
+  std::vector<int> ints;
+  JavaIntArrayToIntVector(env, jints.obj(), &ints);
+
+  ASSERT_EQ(static_cast<jsize>(ints.size()), env->GetArrayLength(jints.obj()));
+
+  jint value;
+  for (size_t i = 0; i < kLen; ++i) {
+    env->GetIntArrayRegion(jints.obj(), i, 1, &value);
+    ASSERT_EQ(ints[i], value);
+  }
+}
+
+TEST(JniArray, JavaFloatArrayToFloatVector) {
+  const float kFloats[] = {0.0, 0.5, -0.5};
+  const size_t kLen = arraysize(kFloats);
+
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jfloatArray> jfloats(env, env->NewFloatArray(kLen));
+  ASSERT_TRUE(jfloats.obj());
+
+  for (size_t i = 0; i < kLen; ++i) {
+    jfloat j = static_cast<jfloat>(kFloats[i]);
+    env->SetFloatArrayRegion(jfloats.obj(), i, 1, &j);
+    ASSERT_FALSE(HasException(env));
+  }
+
+  std::vector<float> floats;
+  JavaFloatArrayToFloatVector(env, jfloats.obj(), &floats);
+
+  ASSERT_EQ(static_cast<jsize>(floats.size()),
+      env->GetArrayLength(jfloats.obj()));
+
+  jfloat value;
+  for (size_t i = 0; i < kLen; ++i) {
+    env->GetFloatArrayRegion(jfloats.obj(), i, 1, &value);
+    ASSERT_EQ(floats[i], value);
+  }
+}
+
 TEST(JniArray, JavaArrayOfByteArrayToStringVector) {
   const int kMaxItems = 50;
   JNIEnv* env = AttachCurrentThread();

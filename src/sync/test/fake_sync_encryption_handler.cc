@@ -18,7 +18,9 @@ FakeSyncEncryptionHandler::FakeSyncEncryptionHandler()
 FakeSyncEncryptionHandler::~FakeSyncEncryptionHandler() {}
 
 void FakeSyncEncryptionHandler::Init() {
-  // Do nothing.
+  // Set up a basic cryptographer.
+  KeyParams keystore_params = {"localhost", "dummy", "keystore_key"};
+  cryptographer_.AddKey(keystore_params);
 }
 
 void FakeSyncEncryptionHandler::ApplyNigoriUpdate(
@@ -63,16 +65,20 @@ bool FakeSyncEncryptionHandler::NeedKeystoreKey(
   return keystore_key_.empty();
 }
 
-bool FakeSyncEncryptionHandler::SetKeystoreKey(
-    const std::string& key,
+bool FakeSyncEncryptionHandler::SetKeystoreKeys(
+    const google::protobuf::RepeatedPtrField<google::protobuf::string>& keys,
     syncable::BaseTransaction* const trans) {
-  if (!keystore_key_.empty() || key.empty())
+  if (keys.size() == 0)
     return false;
-  keystore_key_ = key;
+  std::string new_key = keys.Get(keys.size()-1);
+  if (new_key.empty())
+    return false;
+  keystore_key_ = new_key;
+
 
   DVLOG(1) << "Keystore bootstrap token updated.";
   FOR_EACH_OBSERVER(SyncEncryptionHandler::Observer, observers_,
-                    OnBootstrapTokenUpdated(key,
+                    OnBootstrapTokenUpdated(keystore_key_,
                                             KEYSTORE_BOOTSTRAP_TOKEN));
   return true;
 }

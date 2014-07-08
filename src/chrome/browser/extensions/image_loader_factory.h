@@ -6,22 +6,23 @@
 #define CHROME_BROWSER_EXTENSIONS_IMAGE_LOADER_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
-class Profile;
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
 class ImageLoader;
 
 // Singleton that owns all ImageLoaders and associates them with
-// Profiles. Listens for the Profile's destruction notification and cleans up
-// the associated ImageLoader.
-class ImageLoaderFactory : public ProfileKeyedServiceFactory {
+// BrowserContexts. Listens for the BrowserContext's destruction notification
+// and cleans up the associated ImageLoader. Uses the original BrowserContext
+// for incognito contexts.
+class ImageLoaderFactory : public BrowserContextKeyedServiceFactory {
  public:
-  static ImageLoader* GetForProfile(Profile* profile);
-
-  static void ResetForProfile(Profile* profile);
+  static ImageLoader* GetForBrowserContext(content::BrowserContext* context);
 
   static ImageLoaderFactory* GetInstance();
 
@@ -31,11 +32,12 @@ class ImageLoaderFactory : public ProfileKeyedServiceFactory {
   ImageLoaderFactory();
   virtual ~ImageLoaderFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
 };
 
 }  // namespace extensions

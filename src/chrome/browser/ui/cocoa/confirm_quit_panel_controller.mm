@@ -8,11 +8,11 @@
 #import "chrome/browser/ui/cocoa/confirm_quit_panel_controller.h"
 
 #include "base/logging.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/metrics/histogram.h"
-#include "base/sys_string_conversions.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/ui/cocoa/confirm_quit.h"
@@ -45,8 +45,8 @@ void RecordHistogram(ConfirmQuitMetric sample) {
   UMA_HISTOGRAM_ENUMERATION("OSX.ConfirmToQuit", sample, kSampleCount);
 }
 
-void RegisterLocalState(PrefService* local_state) {
-  local_state->RegisterBooleanPref(prefs::kConfirmToQuitEnabled, false);
+void RegisterLocalState(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kConfirmToQuitEnabled, false);
 }
 
 }  // namespace confirm_quit
@@ -65,9 +65,9 @@ void RegisterLocalState(PrefService* local_state) {
 
 - (id)initWithFrame:(NSRect)frameRect {
   if ((self = [super initWithFrame:frameRect])) {
-    scoped_nsobject<NSTextField> message(
+    base::scoped_nsobject<NSTextField> message(
         // The frame will be fixed up when |-setMessageText:| is called.
-        [[NSTextField alloc] initWithFrame:NSMakeRect(0, 0, 0, 0)]);
+        [[NSTextField alloc] initWithFrame:NSZeroRect]);
     message_ = message.get();
     [message_ setEditable:NO];
     [message_ setSelectable:NO];
@@ -95,9 +95,9 @@ void RegisterLocalState(PrefService* local_state) {
   const CGFloat kHorizontalPadding = 30;  // In view coordinates.
 
   // Style the string.
-  scoped_nsobject<NSMutableAttributedString> attrString(
+  base::scoped_nsobject<NSMutableAttributedString> attrString(
       [[NSMutableAttributedString alloc] initWithString:text]);
-  scoped_nsobject<NSShadow> textShadow([[NSShadow alloc] init]);
+  base::scoped_nsobject<NSShadow> textShadow([[NSShadow alloc] init]);
   [textShadow.get() setShadowColor:[NSColor colorWithCalibratedWhite:0
                                                                alpha:0.6]];
   [textShadow.get() setShadowOffset:NSMakeSize(0, -1)];
@@ -192,7 +192,7 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 
 - (id)init {
   const NSRect kWindowFrame = NSMakeRect(0, 0, 350, 70);
-  scoped_nsobject<NSWindow> window(
+  base::scoped_nsobject<NSWindow> window(
       [[NSWindow alloc] initWithContentRect:kWindowFrame
                                   styleMask:NSBorderlessWindowMask
                                     backing:NSBackingStoreBuffered
@@ -205,7 +205,7 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 
     // Create the content view. Take the frame from the existing content view.
     NSRect frame = [[window contentView] frame];
-    scoped_nsobject<ConfirmQuitFrameView> frameView(
+    base::scoped_nsobject<ConfirmQuitFrameView> frameView(
         [[ConfirmQuitFrameView alloc] initWithFrame:frame]);
     contentView_ = frameView.get();
     [window setContentView:contentView_];
@@ -230,7 +230,7 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 }
 
 - (NSApplicationTerminateReply)runModalLoopForApplication:(NSApplication*)app {
-  scoped_nsobject<ConfirmQuitPanelController> keepAlive([self retain]);
+  base::scoped_nsobject<ConfirmQuitPanelController> keepAlive([self retain]);
 
   // If this is the second of two such attempts to quit within a certain time
   // interval, then just quit.
@@ -327,7 +327,7 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 - (void)showWindow:(id)sender {
   // If a panel that is fading out is going to be reused here, make sure it
   // does not get released when the animation finishes.
-  scoped_nsobject<ConfirmQuitPanelController> keepAlive([self retain]);
+  base::scoped_nsobject<ConfirmQuitPanelController> keepAlive([self retain]);
   [[self window] setAnimations:[NSDictionary dictionary]];
   [[self window] center];
   [[self window] setAlphaValue:1.0];
@@ -342,7 +342,7 @@ ConfirmQuitPanelController* g_confirmQuitPanelController = nil;
 
 - (void)animateFadeOut {
   NSWindow* window = [self window];
-  scoped_nsobject<CAAnimation> animation(
+  base::scoped_nsobject<CAAnimation> animation(
       [[window animationForKey:@"alphaValue"] copy]);
   [animation setDelegate:self];
   [animation setDuration:0.2];

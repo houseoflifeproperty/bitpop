@@ -337,13 +337,11 @@ void av_des_mac(AVDES *d, uint8_t *dst, const uint8_t *src, int count) {
 }
 
 #ifdef TEST
-// LCOV_EXCL_START
-#undef printf
-#undef rand
-#undef srand
 #include <stdlib.h>
 #include <stdio.h>
-#include "libavutil/time.h"
+
+#include "time.h"
+
 static uint64_t rand64(void) {
     uint64_t r = rand();
     r = (r << 32) | rand();
@@ -442,5 +440,4 @@ int main(void) {
 #endif
     return 0;
 }
-// LCOV_EXCL_STOP
 #endif

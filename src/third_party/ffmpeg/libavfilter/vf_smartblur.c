@@ -25,6 +25,7 @@
  * Ported from MPlayer libmpcodecs/vf_smartblur.c by Michael Niedermayer.
  */
 
+#include "libavutil/opt.h"
 #include "libavutil/pixdesc.h"
 #include "libswscale/swscale.h"
 
@@ -50,6 +51,7 @@ typedef struct {
 } FilterParam;
 
 typedef struct {
+    const AVClass *class;
     FilterParam  luma;
     FilterParam  chroma;
     int          hsub;
@@ -57,63 +59,51 @@ typedef struct {
     unsigned int sws_flags;
 } SmartblurContext;
 
-#define CHECK_PARAM(param, name, min, max, format, ret)                       \
-    if (param < min || param > max) {                                         \
-        av_log(ctx, AV_LOG_ERROR,                                             \
-               "Invalid " #name " value " #format ": "                        \
-               "must be included between range " #format " and " #format "\n",\
-               param, min, max);                                              \
-        ret = AVERROR(EINVAL);                                                \
-    }
+#define OFFSET(x) offsetof(SmartblurContext, x)
+#define FLAGS AV_OPT_FLAG_FILTERING_PARAM|AV_OPT_FLAG_VIDEO_PARAM
 
-static av_cold int init(AVFilterContext *ctx, const char *args)
+static const AVOption smartblur_options[] = {
+    { "luma_radius",    "set luma radius",    OFFSET(luma.radius),    AV_OPT_TYPE_FLOAT, {.dbl=1.0}, RADIUS_MIN, RADIUS_MAX, .flags=FLAGS },
+    { "lr"         ,    "set luma radius",    OFFSET(luma.radius),    AV_OPT_TYPE_FLOAT, {.dbl=1.0}, RADIUS_MIN, RADIUS_MAX, .flags=FLAGS },
+    { "luma_strength",  "set luma strength",  OFFSET(luma.strength),  AV_OPT_TYPE_FLOAT, {.dbl=1.0}, STRENGTH_MIN, STRENGTH_MAX, .flags=FLAGS },
+    { "ls",             "set luma strength",  OFFSET(luma.strength),  AV_OPT_TYPE_FLOAT, {.dbl=1.0}, STRENGTH_MIN, STRENGTH_MAX, .flags=FLAGS },
+    { "luma_threshold", "set luma threshold", OFFSET(luma.threshold), AV_OPT_TYPE_INT,   {.i64=0}, THRESHOLD_MIN, THRESHOLD_MAX, .flags=FLAGS },
+    { "lt",             "set luma threshold", OFFSET(luma.threshold), AV_OPT_TYPE_INT,   {.i64=0}, THRESHOLD_MIN, THRESHOLD_MAX, .flags=FLAGS },
+
+    { "chroma_radius",    "set chroma radius",    OFFSET(chroma.radius),    AV_OPT_TYPE_FLOAT, {.dbl=RADIUS_MIN-1},   RADIUS_MIN-1, RADIUS_MAX, .flags=FLAGS },
+    { "cr",               "set chroma radius",    OFFSET(chroma.radius),    AV_OPT_TYPE_FLOAT, {.dbl=RADIUS_MIN-1},   RADIUS_MIN-1, RADIUS_MAX, .flags=FLAGS },
+    { "chroma_strength",  "set chroma strength",  OFFSET(chroma.strength),  AV_OPT_TYPE_FLOAT, {.dbl=STRENGTH_MIN-1}, STRENGTH_MIN-1, STRENGTH_MAX, .flags=FLAGS },
+    { "cs",               "set chroma strength",  OFFSET(chroma.strength),  AV_OPT_TYPE_FLOAT, {.dbl=STRENGTH_MIN-1}, STRENGTH_MIN-1, STRENGTH_MAX, .flags=FLAGS },
+    { "chroma_threshold", "set chroma threshold", OFFSET(chroma.threshold), AV_OPT_TYPE_INT,   {.i64=THRESHOLD_MIN-1}, THRESHOLD_MIN-1, THRESHOLD_MAX, .flags=FLAGS },
+    { "ct",               "set chroma threshold", OFFSET(chroma.threshold), AV_OPT_TYPE_INT,   {.i64=THRESHOLD_MIN-1}, THRESHOLD_MIN-1, THRESHOLD_MAX, .flags=FLAGS },
+
+    { NULL }
+};
+
+AVFILTER_DEFINE_CLASS(smartblur);
+
+static av_cold int init(AVFilterContext *ctx)
 {
     SmartblurContext *sblur = ctx->priv;
-    int n = 0, ret = 0;
-    float lradius, lstrength, cradius, cstrength;
-    int lthreshold, cthreshold;
 
-    if (args)
-        n = sscanf(args, "%f:%f:%d:%f:%f:%d",
-                   &lradius, &lstrength, &lthreshold,
-                   &cradius, &cstrength, &cthreshold);
-
-    if (n != 3 && n != 6) {
-        av_log(ctx, AV_LOG_ERROR,
-               "Incorrect number of parameters or invalid syntax: "
-               "must be luma_radius:luma_strength:luma_threshold"
-               "[:chroma_radius:chroma_strength:chroma_threshold]\n");
-        return AVERROR(EINVAL);
-    }
-
-    sblur->luma.radius    = lradius;
-    sblur->luma.strength  = lstrength;
-    sblur->luma.threshold = lthreshold;
-
-    if (n == 3) {
-        sblur->chroma.radius    = sblur->luma.radius;
+    /* make chroma default to luma values, if not explicitly set */
+    if (sblur->chroma.radius < RADIUS_MIN)
+        sblur->chroma.radius = sblur->luma.radius;
+    if (sblur->chroma.strength < STRENGTH_MIN)
         sblur->chroma.strength  = sblur->luma.strength;
+    if (sblur->chroma.threshold < THRESHOLD_MIN)
         sblur->chroma.threshold = sblur->luma.threshold;
-    } else {
-        sblur->chroma.radius    = cradius;
-        sblur->chroma.strength  = cstrength;
-        sblur->chroma.threshold = cthreshold;
-    }
 
     sblur->luma.quality = sblur->chroma.quality = 3.0;
     sblur->sws_flags = SWS_BICUBIC;
 
-    CHECK_PARAM(lradius,    luma radius,    RADIUS_MIN,    RADIUS_MAX,    %0.1f, ret)
-    CHECK_PARAM(lstrength,  luma strength,  STRENGTH_MIN,  STRENGTH_MAX,  %0.1f, ret)
-    CHECK_PARAM(lthreshold, luma threshold, THRESHOLD_MIN, THRESHOLD_MAX, %d,    ret)
+    av_log(ctx, AV_LOG_VERBOSE,
+           "luma_radius:%f luma_strength:%f luma_threshold:%d "
+           "chroma_radius:%f chroma_strength:%f chroma_threshold:%d\n",
+           sblur->luma.radius, sblur->luma.strength, sblur->luma.threshold,
+           sblur->chroma.radius, sblur->chroma.strength, sblur->chroma.threshold);
 
-    if (n != 3) {
-        CHECK_PARAM(sblur->chroma.radius,    chroma radius,    RADIUS_MIN,   RADIUS_MAX,    %0.1f, ret)
-        CHECK_PARAM(sblur->chroma.strength,  chroma strength,  STRENGTH_MIN, STRENGTH_MAX,  %0.1f, ret)
-        CHECK_PARAM(sblur->chroma.threshold, chroma threshold, THRESHOLD_MIN,THRESHOLD_MAX, %d,    ret)
-    }
-
-    return ret;
+    return 0;
 }
 
 static av_cold void uninit(AVFilterContext *ctx)
@@ -126,12 +116,12 @@ static av_cold void uninit(AVFilterContext *ctx)
 
 static int query_formats(AVFilterContext *ctx)
 {
-    static const enum PixelFormat pix_fmts[] = {
-        PIX_FMT_YUV444P,      PIX_FMT_YUV422P,
-        PIX_FMT_YUV420P,      PIX_FMT_YUV411P,
-        PIX_FMT_YUV410P,      PIX_FMT_YUV440P,
-        PIX_FMT_GRAY8,
-        PIX_FMT_NONE
+    static const enum AVPixelFormat pix_fmts[] = {
+        AV_PIX_FMT_YUV444P,      AV_PIX_FMT_YUV422P,
+        AV_PIX_FMT_YUV420P,      AV_PIX_FMT_YUV411P,
+        AV_PIX_FMT_YUV410P,      AV_PIX_FMT_YUV440P,
+        AV_PIX_FMT_GRAY8,
+        AV_PIX_FMT_NONE
     };
 
     ff_set_common_formats(ctx, ff_make_format_list(pix_fmts));
@@ -154,8 +144,8 @@ static int alloc_sws_context(FilterParam *f, int width, int height, unsigned int
     sws_filter.lumH = sws_filter.lumV = vec;
     sws_filter.chrH = sws_filter.chrV = NULL;
     f->filter_context = sws_getCachedContext(NULL,
-                                             width, height, PIX_FMT_GRAY8,
-                                             width, height, PIX_FMT_GRAY8,
+                                             width, height, AV_PIX_FMT_GRAY8,
+                                             width, height, AV_PIX_FMT_GRAY8,
                                              flags, &sws_filter, NULL, NULL);
 
     sws_freeVec(vec);
@@ -169,14 +159,15 @@ static int alloc_sws_context(FilterParam *f, int width, int height, unsigned int
 static int config_props(AVFilterLink *inlink)
 {
     SmartblurContext *sblur = inlink->dst->priv;
-    const AVPixFmtDescriptor *desc = &av_pix_fmt_descriptors[inlink->format];
+    const AVPixFmtDescriptor *desc = av_pix_fmt_desc_get(inlink->format);
 
     sblur->hsub = desc->log2_chroma_w;
     sblur->vsub = desc->log2_chroma_h;
 
     alloc_sws_context(&sblur->luma, inlink->w, inlink->h, sblur->sws_flags);
     alloc_sws_context(&sblur->chroma,
-                      inlink->w >> sblur->hsub, inlink->h >> sblur->vsub,
+                      FF_CEIL_RSHIFT(inlink->w, sblur->hsub),
+                      FF_CEIL_RSHIFT(inlink->h, sblur->vsub),
                       sblur->sws_flags);
 
     return 0;
@@ -246,13 +237,20 @@ static void blur(uint8_t       *dst, const int dst_linesize,
     }
 }
 
-static int end_frame(AVFilterLink *inlink)
+static int filter_frame(AVFilterLink *inlink, AVFrame *inpic)
 {
     SmartblurContext  *sblur  = inlink->dst->priv;
-    AVFilterBufferRef *inpic  = inlink->cur_buf;
-    AVFilterBufferRef *outpic = inlink->dst->outputs[0]->out_buf;
-    int cw = inlink->w >> sblur->hsub;
-    int ch = inlink->h >> sblur->vsub;
+    AVFilterLink *outlink     = inlink->dst->outputs[0];
+    AVFrame *outpic;
+    int cw = FF_CEIL_RSHIFT(inlink->w, sblur->hsub);
+    int ch = FF_CEIL_RSHIFT(inlink->h, sblur->vsub);
+
+    outpic = ff_get_video_buffer(outlink, outlink->w, outlink->h);
+    if (!outpic) {
+        av_frame_free(&inpic);
+        return AVERROR(ENOMEM);
+    }
+    av_frame_copy_props(outpic, inpic);
 
     blur(outpic->data[0], outpic->linesize[0],
          inpic->data[0],  inpic->linesize[0],
@@ -270,34 +268,37 @@ static int end_frame(AVFilterLink *inlink)
              sblur->chroma.filter_context);
     }
 
-    return ff_end_frame(inlink->dst->outputs[0]);
+    av_frame_free(&inpic);
+    return ff_filter_frame(outlink, outpic);
 }
 
-AVFilter avfilter_vf_smartblur = {
-    .name        = "smartblur",
-    .description = NULL_IF_CONFIG_SMALL("Blur the input video without impacting the outlines."),
+static const AVFilterPad smartblur_inputs[] = {
+    {
+        .name         = "default",
+        .type         = AVMEDIA_TYPE_VIDEO,
+        .filter_frame = filter_frame,
+        .config_props = config_props,
+    },
+    { NULL }
+};
 
-    .priv_size = sizeof(SmartblurContext),
+static const AVFilterPad smartblur_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
 
+AVFilter ff_vf_smartblur = {
+    .name          = "smartblur",
+    .description   = NULL_IF_CONFIG_SMALL("Blur the input video without impacting the outlines."),
+    .priv_size     = sizeof(SmartblurContext),
     .init          = init,
     .uninit        = uninit,
     .query_formats = query_formats,
-
-    .inputs = (const AVFilterPad[]) {
-        {
-            .name         = "default",
-            .type         = AVMEDIA_TYPE_VIDEO,
-            .end_frame    = end_frame,
-            .config_props = config_props,
-            .min_perms    = AV_PERM_READ,
-        },
-        { .name = NULL }
-    },
-    .outputs = (const AVFilterPad[]) {
-        {
-            .name         = "default",
-            .type         = AVMEDIA_TYPE_VIDEO,
-        },
-        { .name = NULL }
-    }
+    .inputs        = smartblur_inputs,
+    .outputs       = smartblur_outputs,
+    .priv_class    = &smartblur_class,
+    .flags         = AVFILTER_FLAG_SUPPORT_TIMELINE_GENERIC,
 };

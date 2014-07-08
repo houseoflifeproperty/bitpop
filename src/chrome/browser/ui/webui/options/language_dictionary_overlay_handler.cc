@@ -44,12 +44,6 @@ void LanguageDictionaryOverlayHandler::GetLocalizedValues(
       l10n_util::GetStringUTF16(IDS_LANGUAGE_DICTIONARY_OVERLAY_NO_MATCHES));
 }
 
-void LanguageDictionaryOverlayHandler::InitializeHandler() {
-}
-
-void LanguageDictionaryOverlayHandler::InitializePage() {
-}
-
 void LanguageDictionaryOverlayHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback(
       "addDictionaryWord",
@@ -75,12 +69,15 @@ void LanguageDictionaryOverlayHandler::OnCustomDictionaryLoaded() {
   ResetDictionaryWords();
 }
 
-void LanguageDictionaryOverlayHandler::OnCustomDictionaryWordAdded(
-    const std::string& word) {
-}
-
-void LanguageDictionaryOverlayHandler::OnCustomDictionaryWordRemoved(
-    const std::string& word) {
+void LanguageDictionaryOverlayHandler::OnCustomDictionaryChanged(
+    const SpellcheckCustomDictionary::Change& dictionary_change) {
+  base::ListValue add_words;
+  base::ListValue remove_words;
+  add_words.AppendStrings(dictionary_change.to_add());
+  remove_words.AppendStrings(dictionary_change.to_remove());
+  web_ui()->CallJavascriptFunction("EditDictionaryOverlay.updateWords",
+                                   add_words,
+                                   remove_words);
 }
 
 void LanguageDictionaryOverlayHandler::ResetDictionaryWords() {
@@ -88,23 +85,29 @@ void LanguageDictionaryOverlayHandler::ResetDictionaryWords() {
     return;
 
   if (!dictionary_) {
-    dictionary_ = SpellcheckServiceFactory::GetForProfile(
-        Profile::FromWebUI(web_ui()))->GetCustomDictionary();
+    SpellcheckService* service = SpellcheckServiceFactory::GetForContext(
+        Profile::FromWebUI(web_ui()));
+    dictionary_ = service->GetCustomDictionary();
     dictionary_->AddObserver(this);
   }
 
-  ListValue list_value;
-  list_value.AppendStrings(dictionary_->GetWords());
+  base::ListValue list_value;
+  const chrome::spellcheck_common::WordSet& words = dictionary_->GetWords();
+  for (chrome::spellcheck_common::WordSet::const_iterator it = words.begin();
+       it != words.end(); ++it) {
+    list_value.AppendString(*it);
+  }
   web_ui()->CallJavascriptFunction("EditDictionaryOverlay.setWordList",
                                    list_value);
 }
 
-void LanguageDictionaryOverlayHandler::RefreshWords(const ListValue* args) {
+void LanguageDictionaryOverlayHandler::RefreshWords(
+    const base::ListValue* args) {
   overlay_initialized_ = true;
   ResetDictionaryWords();
 }
 
-void LanguageDictionaryOverlayHandler::AddWord(const ListValue* args) {
+void LanguageDictionaryOverlayHandler::AddWord(const base::ListValue* args) {
   std::string new_word;
   if (!args->GetString(0, &new_word) || new_word.empty() || !dictionary_) {
     NOTREACHED();
@@ -113,7 +116,7 @@ void LanguageDictionaryOverlayHandler::AddWord(const ListValue* args) {
   dictionary_->AddWord(new_word);
 }
 
-void LanguageDictionaryOverlayHandler::RemoveWord(const ListValue* args) {
+void LanguageDictionaryOverlayHandler::RemoveWord(const base::ListValue* args) {
   std::string old_word;
   if (!args->GetString(0, &old_word) || old_word.empty() || !dictionary_) {
     NOTREACHED();

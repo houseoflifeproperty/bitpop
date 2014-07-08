@@ -9,26 +9,24 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 
-@class ExtensionActionContextMenu;
+@class ExtensionActionContextMenuController;
 class InfobarBridge;
 @class MenuButton;
 
-@interface ExtensionInfoBarController : InfoBarController {
+@interface ExtensionInfoBarController : InfoBarController<NSMenuDelegate> {
   // The native extension view retrieved from the extension host. Weak.
   NSView* extensionView_;
 
-  // The window containing this InfoBar. Weak.
-  NSWindow* window_;
-
   // The InfoBar's button with the Extension's icon that launches the context
   // menu.
-  scoped_nsobject<MenuButton> dropdownButton_;
+  base::scoped_nsobject<MenuButton> dropdownButton_;
 
-  // The context menu that pops up when the left button is clicked.
-  scoped_nsobject<ExtensionActionContextMenu> contextMenu_;
+  // Controller for the context menu when the left button is clicked.
+  base::scoped_nsobject<
+      ExtensionActionContextMenuController> contextMenuController_;
 
   // Helper class to bridge C++ and ObjC functionality together for the infobar.
   scoped_ptr<InfobarBridge> bridge_;

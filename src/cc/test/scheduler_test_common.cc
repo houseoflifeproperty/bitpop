@@ -8,75 +8,10 @@
 
 namespace cc {
 
-void FakeTimeSourceClient::onTimerTick()
-{
-    m_tickCalled = true;
+void FakeTimeSourceClient::OnTimerTick() {
+  tick_called_ = true;
 }
 
-FakeThread::FakeThread()
-{
-    reset();
-}
-
-FakeThread::~FakeThread()
-{
-}
-
-void FakeThread::runPendingTask()
-{
-    ASSERT_TRUE(m_pendingTask);
-    scoped_ptr<base::Closure> task = m_pendingTask.Pass();
-    task->Run();
-}
-
-void FakeThread::postTask(base::Closure cb)
-{
-    postDelayedTask(cb, 0);
-}
-
-void FakeThread::postDelayedTask(base::Closure cb, long long delay)
-{
-    if (m_runPendingTaskOnOverwrite && hasPendingTask())
-        runPendingTask();
-
-    ASSERT_FALSE(hasPendingTask());
-    m_pendingTask.reset(new base::Closure(cb));
-    m_pendingTaskDelay = delay;
-}
-
-bool FakeThread::belongsToCurrentThread() const
-{
-    return true;
-}
-
-void FakeTimeSource::setClient(cc::TimeSourceClient* client)
-{
-    m_client = client;
-}
-
-void FakeTimeSource::setActive(bool b)
-{
-    m_active = b;
-}
-
-bool FakeTimeSource::active() const
-{
-    return m_active;
-}
-
-base::TimeTicks FakeTimeSource::lastTickTime()
-{
-    return base::TimeTicks();
-}
-
-base::TimeTicks FakeTimeSource::nextTickTime()
-{
-    return base::TimeTicks();
-}
-
-base::TimeTicks FakeDelayBasedTimeSource::now() const
-{
-    return m_now;
-}
+base::TimeTicks FakeDelayBasedTimeSource::Now() const { return now_; }
 
 }  // namespace cc

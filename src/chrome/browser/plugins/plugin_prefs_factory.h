@@ -7,14 +7,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/refcounted_profile_keyed_service_factory.h"
+#include "components/keyed_service/content/refcounted_browser_context_keyed_service_factory.h"
 
 class PluginPrefs;
-class PrefService;
 class Profile;
-class ProfileKeyedService;
 
-class PluginPrefsFactory : public RefcountedProfileKeyedServiceFactory {
+class PluginPrefsFactory : public RefcountedBrowserContextKeyedServiceFactory {
  public:
   static scoped_refptr<PluginPrefs> GetPrefsForProfile(Profile* profile);
 
@@ -25,21 +23,23 @@ class PluginPrefsFactory : public RefcountedProfileKeyedServiceFactory {
   friend struct DefaultSingletonTraits<PluginPrefsFactory>;
 
   // Helper method for PluginPrefs::GetForTestingProfile.
-  static scoped_refptr<RefcountedProfileKeyedService> CreateForTestingProfile(
-      Profile* profile);
+  static scoped_refptr<RefcountedBrowserContextKeyedService>
+      CreateForTestingProfile(content::BrowserContext* profile);
 
   PluginPrefsFactory();
   virtual ~PluginPrefsFactory();
 
-  // RefcountedProfileKeyedServiceFactory methods:
-  virtual scoped_refptr<RefcountedProfileKeyedService> BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // RefcountedBrowserContextKeyedServiceFactory methods:
+  virtual scoped_refptr<RefcountedBrowserContextKeyedService>
+      BuildServiceInstanceFor(content::BrowserContext* context) const OVERRIDE;
 
-  // ProfileKeyedServiceFactory methods:
-  virtual void RegisterUserPrefs(PrefService* prefs) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory methods:
+  virtual void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-  virtual bool ServiceIsCreatedWithProfile() const OVERRIDE;
+  virtual bool ServiceIsCreatedWithBrowserContext() const OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_PLUGINS_PLUGIN_PREFS_FACTORY_H_

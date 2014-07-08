@@ -19,14 +19,10 @@
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "chrome/test/base/test_switches.h"
 #include "chrome/test/base/testing_profile.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "ui/gfx/rect.h"
-
-// On GTK, resizing happens asynchronously and we currently don't have a way to
-// get called back (it's probably possible, but we don't have that code). Since
-// the GTK code is going away, not spending more time on this.
-#if !defined(TOOLKIT_GTK)
 
 typedef InProcessBrowserTest PreservedWindowPlacement;
 
@@ -42,12 +38,16 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, PRE_Test) {
 #define MAYBE_Test Test
 #endif
 IN_PROC_BROWSER_TEST_F(PreservedWindowPlacement, MAYBE_Test) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+    return;
+#endif
+
   gfx::Rect bounds = browser()->window()->GetBounds();
   gfx::Rect expected_bounds(gfx::Rect(20, 30, 400, 500));
   ASSERT_EQ(expected_bounds.ToString(), bounds.ToString());
 }
-
-#endif  // defined(TOOLKIT_GTK)
 
 class PreferenceServiceTest : public InProcessBrowserTest {
  public:
@@ -55,32 +55,31 @@ class PreferenceServiceTest : public InProcessBrowserTest {
   }
 
   virtual bool SetUpUserDataDirectory() OVERRIDE {
-    FilePath user_data_directory;
+    base::FilePath user_data_directory;
     PathService::Get(chrome::DIR_USER_DATA, &user_data_directory);
 
-    FilePath reference_pref_file;
     if (new_profile_) {
-      reference_pref_file = ui_test_utils::GetTestFilePath(
-          FilePath().AppendASCII("profiles").
+      original_pref_file_ = ui_test_utils::GetTestFilePath(
+          base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement").
                      AppendASCII("Default"),
-          FilePath().Append(chrome::kPreferencesFilename));
+          base::FilePath().Append(chrome::kPreferencesFilename));
       tmp_pref_file_ =
           user_data_directory.AppendASCII(TestingProfile::kTestUserProfileDir);
-      CHECK(file_util::CreateDirectory(tmp_pref_file_));
+      CHECK(base::CreateDirectory(tmp_pref_file_));
       tmp_pref_file_ = tmp_pref_file_.Append(chrome::kPreferencesFilename);
     } else {
-      reference_pref_file = ui_test_utils::GetTestFilePath(
-          FilePath().AppendASCII("profiles").
+      original_pref_file_ = ui_test_utils::GetTestFilePath(
+          base::FilePath().AppendASCII("profiles").
                      AppendASCII("window_placement"),
-          FilePath().Append(chrome::kLocalStateFilename));
+          base::FilePath().Append(chrome::kLocalStateFilename));
       tmp_pref_file_ = user_data_directory.Append(chrome::kLocalStateFilename);
     }
 
-    CHECK(file_util::PathExists(reference_pref_file));
+    CHECK(base::PathExists(original_pref_file_));
     // Copy only the Preferences file if |new_profile_|, or Local State if not,
     // and the rest will be automatically created.
-    CHECK(file_util::CopyFile(reference_pref_file, tmp_pref_file_));
+    CHECK(base::CopyFile(original_pref_file_, tmp_pref_file_));
 
 #if defined(OS_WIN)
     // Make the copy writable.  On POSIX we assume the umask allows files
@@ -92,7 +91,8 @@ class PreferenceServiceTest : public InProcessBrowserTest {
   }
 
  protected:
-  FilePath tmp_pref_file_;
+  base::FilePath original_pref_file_;
+  base::FilePath tmp_pref_file_;
 
  private:
   bool new_profile_;
@@ -112,15 +112,22 @@ class PreservedWindowPlacementIsLoaded : public PreferenceServiceTest {
 };
 
 IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsLoaded, Test) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+    return;
+#endif
+
   // The window should open with the new reference profile, with window
   // placement values stored in the user data directory.
-  JSONFileValueSerializer deserializer(tmp_pref_file_);
-  scoped_ptr<Value> root(deserializer.Deserialize(NULL, NULL));
+  JSONFileValueSerializer deserializer(original_pref_file_);
+  scoped_ptr<base::Value> root(deserializer.Deserialize(NULL, NULL));
 
   ASSERT_TRUE(root.get());
-  ASSERT_TRUE(root->IsType(Value::TYPE_DICTIONARY));
+  ASSERT_TRUE(root->IsType(base::Value::TYPE_DICTIONARY));
 
-  DictionaryValue* root_dict = static_cast<DictionaryValue*>(root.get());
+  base::DictionaryValue* root_dict =
+      static_cast<base::DictionaryValue*>(root.get());
 
   // Retrieve the screen rect for the launched window
   gfx::Rect bounds = browser()->window()->GetRestoredBounds();
@@ -165,14 +172,20 @@ class PreservedWindowPlacementIsMigrated : public PreferenceServiceTest {
 };
 
 IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsMigrated, Test) {
+#if defined(OS_WIN) && defined(USE_ASH)
+  // Disable this test in Metro+Ash for now (http://crbug.com/262796).
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kAshBrowserTests))
+    return;
+#endif
+
   // The window should open with the old reference profile, with window
   // placement values stored in Local State.
 
-  JSONFileValueSerializer deserializer(tmp_pref_file_);
-  scoped_ptr<Value> root(deserializer.Deserialize(NULL, NULL));
+  JSONFileValueSerializer deserializer(original_pref_file_);
+  scoped_ptr<base::Value> root(deserializer.Deserialize(NULL, NULL));
 
   ASSERT_TRUE(root.get());
-  ASSERT_TRUE(root->IsType(Value::TYPE_DICTIONARY));
+  ASSERT_TRUE(root->IsType(base::Value::TYPE_DICTIONARY));
 
   // Retrieve the screen rect for the launched window
   gfx::Rect bounds = browser()->window()->GetRestoredBounds();
@@ -180,7 +193,8 @@ IN_PROC_BROWSER_TEST_F(PreservedWindowPlacementIsMigrated, Test) {
   // Values from old reference profile in Local State should have been
   // correctly migrated to the user's Preferences -- if so, the window
   // should be set to values taken from the user's Local State.
-  DictionaryValue* root_dict = static_cast<DictionaryValue*>(root.get());
+  base::DictionaryValue* root_dict =
+      static_cast<base::DictionaryValue*>(root.get());
 
   // Retrieve the expected rect values from User Preferences, where they
   // should have been migrated from Local State.

@@ -7,15 +7,15 @@
 #include <fcntl.h>
 
 #include "base/bind.h"
-#include "base/chromeos/chromeos_version.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/message_loop/message_loop.h"
+#include "base/sys_info.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/zygote_host_linux.h"
 
 using content::BrowserThread;
 
@@ -73,13 +73,13 @@ class LowMemoryObserverImpl
   void StartWatchingDescriptor();
 
   // Delegate to receive events from WatchFileDescriptor.
-  class FileWatcherDelegate : public MessageLoopForIO::Watcher {
+  class FileWatcherDelegate : public base::MessageLoopForIO::Watcher {
    public:
     explicit FileWatcherDelegate(LowMemoryObserverImpl* owner)
         : owner_(owner) {}
     virtual ~FileWatcherDelegate() {}
 
-    // Overrides for MessageLoopForIO::Watcher
+    // Overrides for base::MessageLoopForIO::Watcher
     virtual void OnFileCanWriteWithoutBlocking(int fd) OVERRIDE {}
     virtual void OnFileCanReadWithoutBlocking(int fd) OVERRIDE {
       LOG(WARNING) << "Low memory condition detected.  Discarding a tab.";
@@ -93,8 +93,11 @@ class LowMemoryObserverImpl
     // the UI thread.
     static void DiscardTab() {
       CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-      if (g_browser_process && g_browser_process->oom_priority_manager())
-        g_browser_process->oom_priority_manager()->LogMemoryAndDiscardTab();
+      if (g_browser_process &&
+          g_browser_process->platform_part()->oom_priority_manager()) {
+        g_browser_process->platform_part()->
+            oom_priority_manager()->LogMemoryAndDiscardTab();
+      }
     }
 
    private:
@@ -102,7 +105,7 @@ class LowMemoryObserverImpl
     DISALLOW_COPY_AND_ASSIGN(FileWatcherDelegate);
   };
 
-  scoped_ptr<MessageLoopForIO::FileDescriptorWatcher> watcher_;
+  scoped_ptr<base::MessageLoopForIO::FileDescriptorWatcher> watcher_;
   FileWatcherDelegate watcher_delegate_;
   int file_descriptor_;
   base::OneShotTimer<LowMemoryObserverImpl> timer_;
@@ -115,16 +118,16 @@ void LowMemoryObserverImpl::StartObservingOnFileThread() {
       << "Attempted to start observation when it was already started.";
   DCHECK(watcher_.get() == NULL);
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  DCHECK(MessageLoopForIO::current());
+  DCHECK(base::MessageLoopForIO::current());
 
   file_descriptor_ = ::open(kLowMemFile, O_RDONLY);
   // Don't report this error unless we're really running on ChromeOS
   // to avoid testing spam.
-  if (file_descriptor_ < 0 && base::chromeos::IsRunningOnChromeOS()) {
+  if (file_descriptor_ < 0 && base::SysInfo::IsRunningOnChromeOS()) {
     PLOG(ERROR) << "Unable to open " << kLowMemFile;
     return;
   }
-  watcher_.reset(new MessageLoopForIO::FileDescriptorWatcher);
+  watcher_.reset(new base::MessageLoopForIO::FileDescriptorWatcher);
   StartWatchingDescriptor();
 }
 
@@ -149,13 +152,13 @@ void LowMemoryObserverImpl::ScheduleNextObservation() {
 void LowMemoryObserverImpl::StartWatchingDescriptor() {
   DCHECK(watcher_.get());
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  DCHECK(MessageLoopForIO::current());
+  DCHECK(base::MessageLoopForIO::current());
   if (file_descriptor_ < 0)
     return;
-  if (!MessageLoopForIO::current()->WatchFileDescriptor(
+  if (!base::MessageLoopForIO::current()->WatchFileDescriptor(
           file_descriptor_,
           false,  // persistent=false: We want it to fire once and reschedule.
-          MessageLoopForIO::WATCH_READ,
+          base::MessageLoopForIO::WATCH_READ,
           watcher_.get(),
           &watcher_delegate_)) {
     LOG(ERROR) << "Unable to watch " << kLowMemFile;
@@ -183,11 +186,6 @@ void LowMemoryObserver::Stop() {
       FROM_HERE,
       base::Bind(&LowMemoryObserverImpl::StopObservingOnFileThread,
                  observer_.get()));
-}
-
-// static
-void LowMemoryObserver::SetLowMemoryMargin(int64 margin_mb) {
-  content::ZygoteHost::GetInstance()->AdjustLowMemoryMargin(margin_mb);
 }
 
 }  // namespace chromeos

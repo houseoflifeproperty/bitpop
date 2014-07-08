@@ -7,14 +7,15 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/non_thread_safe.h"
 #include "net/base/completion_callback.h"
-#include "net/base/net_export.h"
-#include "net/base/rand_callback.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
+#include "net/base/net_export.h"
 #include "net/base/net_log.h"
+#include "net/base/rand_callback.h"
+#include "net/socket/socket_descriptor.h"
 #include "net/udp/datagram_socket.h"
 
 namespace net {
@@ -93,10 +94,10 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
              const CompletionCallback& callback);
 
   // Set the receive buffer size (in bytes) for the socket.
-  bool SetReceiveBufferSize(int32 size);
+  int SetReceiveBufferSize(int32 size);
 
   // Set the send buffer size (in bytes) for the socket.
-  bool SetSendBufferSize(int32 size);
+  int SetSendBufferSize(int32 size);
 
   // Returns true if the socket is already connected or bound.
   bool is_connected() const { return socket_ != kInvalidSocket; }
@@ -113,15 +114,66 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   // called before Bind().
   void AllowBroadcast();
 
- private:
-  static const int kInvalidSocket = -1;
+  // Join the multicast group.
+  // |group_address| is the group address to join, could be either
+  // an IPv4 or IPv6 address.
+  // Return a network error code.
+  int JoinGroup(const IPAddressNumber& group_address) const;
 
+  // Leave the multicast group.
+  // |group_address| is the group address to leave, could be either
+  // an IPv4 or IPv6 address. If the socket hasn't joined the group,
+  // it will be ignored.
+  // It's optional to leave the multicast group before destroying
+  // the socket. It will be done by the OS.
+  // Return a network error code.
+  int LeaveGroup(const IPAddressNumber& group_address) const;
+
+  // Set interface to use for multicast. If |interface_index| set to 0, default
+  // interface is used.
+  // Should be called before Bind().
+  // Returns a network error code.
+  int SetMulticastInterface(uint32 interface_index);
+
+  // Set the time-to-live option for UDP packets sent to the multicast
+  // group address. The default value of this option is 1.
+  // Cannot be negative or more than 255.
+  // Should be called before Bind().
+  // Return a network error code.
+  int SetMulticastTimeToLive(int time_to_live);
+
+  // Set the loopback flag for UDP socket. If this flag is true, the host
+  // will receive packets sent to the joined group from itself.
+  // The default value of this option is true.
+  // Should be called before Bind().
+  // Return a network error code.
+  //
+  // Note: the behavior of |SetMulticastLoopbackMode| is slightly
+  // different between Windows and Unix-like systems. The inconsistency only
+  // happens when there are more than one applications on the same host
+  // joined to the same multicast group while having different settings on
+  // multicast loopback mode. On Windows, the applications with loopback off
+  // will not RECEIVE the loopback packets; while on Unix-like systems, the
+  // applications with loopback off will not SEND the loopback packets to
+  // other applications on the same host. See MSDN: http://goo.gl/6vqbj
+  int SetMulticastLoopbackMode(bool loopback);
+
+  // Set the differentiated services flags on outgoing packets. May not
+  // do anything on some platforms.
+  // Return a network error code.
+  int SetDiffServCodePoint(DiffServCodePoint dscp);
+
+  // Resets the thread to be used for thread-safety checks.
+  void DetachFromThread();
+
+ private:
   enum SocketOptions {
-    SOCKET_OPTION_REUSE_ADDRESS = 1 << 0,
-    SOCKET_OPTION_BROADCAST     = 1 << 1
+    SOCKET_OPTION_REUSE_ADDRESS  = 1 << 0,
+    SOCKET_OPTION_BROADCAST      = 1 << 1,
+    SOCKET_OPTION_MULTICAST_LOOP = 1 << 2
   };
 
-  class ReadWatcher : public MessageLoopForIO::Watcher {
+  class ReadWatcher : public base::MessageLoopForIO::Watcher {
    public:
     explicit ReadWatcher(UDPSocketLibevent* socket) : socket_(socket) {}
 
@@ -137,7 +189,7 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
     DISALLOW_COPY_AND_ASSIGN(ReadWatcher);
   };
 
-  class WriteWatcher : public MessageLoopForIO::Watcher {
+  class WriteWatcher : public base::MessageLoopForIO::Watcher {
    public:
     explicit WriteWatcher(UDPSocketLibevent* socket) : socket_(socket) {}
 
@@ -167,7 +219,7 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   void LogWrite(int result, const char* bytes, const IPEndPoint* address) const;
 
   // Returns the OS error code (or 0 on success).
-  int CreateSocket(const IPEndPoint& address);
+  int CreateSocket(int addr_family);
 
   // Same as SendTo(), except that address is passed by pointer
   // instead of by reference. It is called from Write() with |address|
@@ -185,13 +237,22 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   // Bind().
   int SetSocketOptions();
   int DoBind(const IPEndPoint& address);
-  int RandomBind(const IPEndPoint& address);
+  // Binds to a random port on |address|.
+  int RandomBind(const IPAddressNumber& address);
 
   int socket_;
+  int addr_family_;
 
   // Bitwise-or'd combination of SocketOptions. Specifies the set of
   // options that should be applied to |socket_| before Bind().
   int socket_options_;
+
+  // Multicast interface.
+  uint32 multicast_interface_;
+
+  // Multicast socket options cached for SetSocketOption.
+  // Cannot be used after Bind().
+  int multicast_time_to_live_;
 
   // How to do source port binding, used only when UDPSocket is part of
   // UDPClientSocket, since UDPServerSocket provides Bind.
@@ -206,8 +267,8 @@ class NET_EXPORT UDPSocketLibevent : public base::NonThreadSafe {
   mutable scoped_ptr<IPEndPoint> remote_address_;
 
   // The socket's libevent wrappers
-  MessageLoopForIO::FileDescriptorWatcher read_socket_watcher_;
-  MessageLoopForIO::FileDescriptorWatcher write_socket_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher read_socket_watcher_;
+  base::MessageLoopForIO::FileDescriptorWatcher write_socket_watcher_;
 
   // The corresponding watchers for reads and writes.
   ReadWatcher read_watcher_;

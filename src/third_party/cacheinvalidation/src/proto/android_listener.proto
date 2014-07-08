@@ -97,5 +97,8 @@ message StartCommand {
 
   // Name of client to start.
   optional bytes client_name = 2;
+
+  // Whether suppression is permitted for this client.
+  optional bool allow_suppression = 3;
 }
 

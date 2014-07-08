@@ -22,9 +22,9 @@
 
 #include <map>
 
-#include "base/memory/scoped_nsobject.h"
-#include "chrome/browser/bookmarks/bookmark_model_observer.h"
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/main_menu_item.h"
+#include "components/bookmarks/core/browser/bookmark_model_observer.h"
 
 class BookmarkNode;
 class Profile;
@@ -40,7 +40,8 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   virtual ~BookmarkMenuBridge();
 
   // BookmarkModelObserver:
-  virtual void Loaded(BookmarkModel* model, bool ids_reassigned) OVERRIDE;
+  virtual void BookmarkModelLoaded(BookmarkModel* model,
+                                   bool ids_reassigned) OVERRIDE;
   virtual void BookmarkModelBeingDeleted(BookmarkModel* model) OVERRIDE;
   virtual void BookmarkNodeMoved(BookmarkModel* model,
                                  const BookmarkNode* old_parent,
@@ -53,7 +54,11 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   virtual void BookmarkNodeRemoved(BookmarkModel* model,
                                    const BookmarkNode* parent,
                                    int old_index,
-                                   const BookmarkNode* node) OVERRIDE;
+                                   const BookmarkNode* node,
+                                   const std::set<GURL>& removed_urls) OVERRIDE;
+  virtual void BookmarkAllNodesRemoved(
+      BookmarkModel* model,
+      const std::set<GURL>& removed_urls) OVERRIDE;
   virtual void BookmarkNodeChanged(BookmarkModel* model,
                                    const BookmarkNode* node) OVERRIDE;
   virtual void BookmarkNodeFaviconChanged(BookmarkModel* model,
@@ -138,7 +143,7 @@ class BookmarkMenuBridge : public BookmarkModelObserver,
   BookmarkMenuCocoaController* controller_;  // strong
 
   // The folder image so we can use one copy for all.
-  scoped_nsobject<NSImage> folder_image_;
+  base::scoped_nsobject<NSImage> folder_image_;
 
   // In order to appropriately update items in the bookmark menu, without
   // forcing a rebuild, map the model's nodes to menu items.

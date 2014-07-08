@@ -488,7 +488,7 @@ static int parse_timestamp(struct sbg_parser *p,
 
 static int parse_fade(struct sbg_parser *p, struct sbg_fade *fr)
 {
-    struct sbg_fade f;
+    struct sbg_fade f = {0};
 
     if (lex_char(p, '<'))
         f.in = SBG_FADE_SILENCE;
@@ -946,7 +946,7 @@ static int expand_tseq(void *log, struct sbg_script *s, int *nb_ev_max,
     struct sbg_script_event *ev;
 
     if (tseq->lock++) {
-        av_log(log, 16, "Recursion loop on \"%.*s\"\n",
+        av_log(log, AV_LOG_ERROR, "Recursion loop on \"%.*s\"\n",
                tseq->name_len, tseq->name);
         return AVERROR(EINVAL);
     }
@@ -957,7 +957,7 @@ static int expand_tseq(void *log, struct sbg_script *s, int *nb_ev_max,
             break;
     }
     if (i >= s->nb_def) {
-        av_log(log, 16, "Tone-set \"%.*s\" not defined\n",
+        av_log(log, AV_LOG_ERROR, "Tone-set \"%.*s\" not defined\n",
                tseq->name_len, tseq->name);
         return AVERROR(EINVAL);
     }
@@ -1333,11 +1333,9 @@ static int encode_intervals(struct sbg_script *s, AVCodecContext *avc,
         if (edata_size < 0)
             return AVERROR(ENOMEM);
     }
-    edata = av_malloc(edata_size);
-    if (!edata)
+    if (ff_alloc_extradata(avc, edata_size))
         return AVERROR(ENOMEM);
-    avc->extradata = edata;
-    avc->extradata_size = edata_size;
+    edata = avc->extradata;
 
 #define ADD_EDATA32(v) do { AV_WL32(edata, (v)); edata += 4; } while(0)
 #define ADD_EDATA64(v) do { AV_WL64(edata, (v)); edata += 8; } while(0)

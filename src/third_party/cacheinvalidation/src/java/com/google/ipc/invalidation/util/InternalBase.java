@@ -29,10 +29,7 @@ public abstract class InternalBase {
    *
    * @param builder the builder in which the string representation is added
    */
-  public void toCompactString(TextBuilder builder) {
-    builder.appendFormat("%s: ", getClass().getSimpleName());
-    TextBuilder.outputFieldsToBuilder(builder, this);
-  }
+  public abstract void toCompactString(TextBuilder builder);
 
   /**
    * Adds a verbose representation of this object to {@code builder}. The

@@ -1,0 +1,22 @@
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+declare_args() {
+  # Path to Visual Studio. If empty, the default is used which is to use the
+  # automatic toolchain in depot_tools.
+  visual_studio_path = ""
+
+  # Full path to the Windows SDK, not including a backslash at the end.
+  # This value is the default location, override if you have a different
+  # installation location.
+  windows_sdk_path = "C:\Program Files (x86)\Windows Kits\8.0"
+}
+
+if (visual_studio_path == "") {
+  toolchain_data = 
+      exec_script("../../vs_toolchain.py", [ "get_toolchain_dir" ], "value")
+  visual_studio_path = toolchain_data[0]
+  windows_sdk_path = toolchain_data[1]
+}
+

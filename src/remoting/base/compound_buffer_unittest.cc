@@ -35,7 +35,7 @@ class CompoundBufferTest : public testing::Test {
 
   // Following 5 methods are used with IterateOverPieces().
   void Append(int pos, int size) {
-    target_.Append(data_, data_->data() + pos, size);
+    target_.Append(data_.get(), data_->data() + pos, size);
   }
 
   void AppendCopyOf(int pos, int size) {
@@ -43,7 +43,7 @@ class CompoundBufferTest : public testing::Test {
   }
 
   void Prepend(int pos, int size) {
-    target_.Prepend(data_, data_->data() + kDataSize - pos - size, size);
+    target_.Prepend(data_.get(), data_->data() + kDataSize - pos - size, size);
   }
 
   void PrependCopyOf(int pos, int size) {
@@ -137,7 +137,7 @@ class CompoundBufferTest : public testing::Test {
   static void ReadString(CompoundBufferInputStream* input,
                          const std::string& str) {
     SCOPED_TRACE(str);
-    scoped_array<char> buffer(new char[str.size() + 1]);
+    scoped_ptr<char[]> buffer(new char[str.size() + 1]);
     buffer[str.size()] = '\0';
     EXPECT_EQ(ReadFromInput(input, buffer.get(), str.size()), str.size());
     EXPECT_STREQ(str.data(), buffer.get());

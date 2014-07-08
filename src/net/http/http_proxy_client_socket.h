@@ -11,6 +11,7 @@
 #include "base/memory/ref_counted.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_log.h"
 #include "net/http/http_auth_controller.h"
 #include "net/http/http_request_headers.h"
@@ -70,8 +71,6 @@ class HttpProxyClientSocket : public ProxyClientSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
@@ -83,8 +82,8 @@ class HttpProxyClientSocket : public ProxyClientSocket {
   virtual int Write(IOBuffer* buf,
                     int buf_len,
                     const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
 
@@ -159,6 +158,10 @@ class HttpProxyClientSocket : public ProxyClientSocket {
 
   std::string request_line_;
   HttpRequestHeaders request_headers_;
+
+  // Used only for redirects.
+  bool redirect_has_load_timing_info_;
+  LoadTimingInfo redirect_load_timing_info_;
 
   const BoundNetLog net_log_;
 

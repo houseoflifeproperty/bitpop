@@ -28,6 +28,7 @@ SpellCheckHostMetrics::SpellCheckHostMetrics()
 SpellCheckHostMetrics::~SpellCheckHostMetrics() {
 }
 
+// static
 void SpellCheckHostMetrics::RecordCustomWordCountStats(size_t count) {
   UMA_HISTOGRAM_COUNTS("SpellCheck.CustomWords", count);
 }
@@ -41,7 +42,7 @@ void SpellCheckHostMetrics::RecordEnabledStats(bool enabled) {
     RecordCustomWordCountStats(-1);
 }
 
-void SpellCheckHostMetrics::RecordCheckedWordStats(const string16& word,
+void SpellCheckHostMetrics::RecordCheckedWordStats(const base::string16& word,
                                                    bool misspell) {
   spellchecked_word_count_++;
   if (misspell) {
@@ -59,7 +60,7 @@ void SpellCheckHostMetrics::RecordCheckedWordStats(const string16& word,
   // Collects actual number of checked words, excluding duplication.
   base::MD5Digest digest;
   base::MD5Sum(reinterpret_cast<const unsigned char*>(word.c_str()),
-         word.size() * sizeof(char16), &digest);
+         word.size() * sizeof(base::char16), &digest);
   checked_word_hashes_.insert(base::MD5DigestToBase16(digest));
 
   RecordWordCounts();
@@ -139,4 +140,8 @@ void SpellCheckHostMetrics::RecordWordCounts() {
     UMA_HISTOGRAM_COUNTS("SpellCheck.ShownSuggestions", suggestion_show_count_);
     last_suggestion_show_count_ = suggestion_show_count_;
   }
+}
+
+void SpellCheckHostMetrics::RecordSpellingServiceStats(bool enabled) {
+  UMA_HISTOGRAM_BOOLEAN("SpellCheck.SpellingService.Enabled", enabled);
 }

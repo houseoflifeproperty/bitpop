@@ -7,53 +7,50 @@
 
 #include <windows.h>
 
+#include <list>
+
 #include "base/memory/ref_counted.h"
 #include "base/memory/singleton.h"
-#include "base/observer_list.h"
+#include "base/memory/weak_ptr.h"
 #include "base/synchronization/waitable_event.h"
-#include "remoting/host/win/wts_console_monitor.h"
-
-class CommandLine;
+#include "remoting/host/win/wts_terminal_monitor.h"
 
 namespace base {
+class CommandLine;
 class SingleThreadTaskRunner;
 }  // namespace base
 
 namespace remoting {
 
 class AutoThreadTaskRunner;
-class Stoppable;
-class WtsConsoleObserver;
+class DaemonProcess;
+class WtsTerminalObserver;
 
-class HostService : public WtsConsoleMonitor {
+class HostService : public WtsTerminalMonitor {
  public:
   static HostService* GetInstance();
 
   // This function parses the command line and selects the action routine.
-  bool InitWithCommandLine(const CommandLine* command_line);
+  bool InitWithCommandLine(const base::CommandLine* command_line);
 
   // Invoke the choosen action routine.
   int Run();
 
-  // WtsConsoleMonitor implementation
-  virtual void AddWtsConsoleObserver(WtsConsoleObserver* observer) OVERRIDE;
-  virtual void RemoveWtsConsoleObserver(
-                   WtsConsoleObserver* observer) OVERRIDE;
+  // WtsTerminalMonitor implementation
+  virtual bool AddWtsTerminalObserver(const std::string& terminal_id,
+                                      WtsTerminalObserver* observer) OVERRIDE;
+  virtual void RemoveWtsTerminalObserver(
+      WtsTerminalObserver* observer) OVERRIDE;
 
  private:
   HostService();
   ~HostService();
 
-  void OnChildStopped();
-
   // Notifies the service of changes in session state.
-  void OnSessionChange();
+  void OnSessionChange(uint32 event, uint32 session_id);
 
   // Creates the process launcher.
   void CreateLauncher(scoped_refptr<AutoThreadTaskRunner> task_runner);
-
-  // Runs the binary specified by the command line, elevated.
-  int Elevate();
 
   // This function handshakes with the service control manager and starts
   // the service.
@@ -68,6 +65,15 @@ class HostService : public WtsConsoleMonitor {
   // console application).
   int RunInConsole();
 
+  // Stops and deletes |daemon_process_|.
+  void StopDaemonProcess();
+
+  // Handles WM_WTSSESSION_CHANGE messages.
+  bool HandleMessage(UINT message,
+                     WPARAM wparam,
+                     LPARAM lparam,
+                     LRESULT* result);
+
   static BOOL WINAPI ConsoleControlHandler(DWORD event);
 
   // The control handler of the service.
@@ -79,21 +85,26 @@ class HostService : public WtsConsoleMonitor {
   // The main service entry point.
   static VOID WINAPI ServiceMain(DWORD argc, WCHAR* argv[]);
 
-  static LRESULT CALLBACK SessionChangeNotificationProc(HWND hwnd,
-                                                        UINT message,
-                                                        WPARAM wparam,
-                                                        LPARAM lparam);
+  struct RegisteredObserver {
+    // Unique identifier of the terminal to observe.
+    std::string terminal_id;
 
-  // Current physical console session id.
-  uint32 console_session_id_;
+    // Specifies ID of the attached session or |kInvalidSession| if no session
+    // is attached to the WTS terminal.
+    uint32 session_id;
 
-  // The list of observers receiving notifications about any session attached
-  // to the physical console.
-  ObserverList<WtsConsoleObserver> console_observers_;
+    // Points to the observer receiving notifications about the WTS terminal
+    // identified by |terminal_id|.
+    WtsTerminalObserver* observer;
+  };
 
-  scoped_ptr<Stoppable> child_;
+  // The list of observers receiving session notifications.
+  std::list<RegisteredObserver> observers_;
 
-  // Service message loop.
+  scoped_ptr<DaemonProcess> daemon_process_;
+
+  // Service message loop. |main_task_runner_| must be valid as long as the
+  // Control+C or service notification handler is registered.
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
 
   // The action routine to be executed.
@@ -104,6 +115,10 @@ class HostService : public WtsConsoleMonitor {
 
   // A waitable event that is used to wait until the service is stopped.
   base::WaitableEvent stopped_event_;
+
+  // Used to post session change notifications and control events.
+  base::WeakPtrFactory<HostService> weak_factory_;
+  base::WeakPtr<HostService> weak_ptr_;
 
   // Singleton.
   friend struct DefaultSingletonTraits<HostService>;

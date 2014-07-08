@@ -19,6 +19,7 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -51,8 +52,8 @@ static int read_header(AVFormatContext *s)
     if (!vst)
         return AVERROR(ENOMEM);
 
-    vst->codec->extradata_size = 2;
-    vst->codec->extradata = av_mallocz(2 + FF_INPUT_BUFFER_PADDING_SIZE);
+    if (ff_alloc_extradata(vst->codec, 2))
+        return AVERROR(ENOMEM);
 
     version                  = avio_r8(pb);
     vst->codec->extradata[0] = avio_r8(pb);
@@ -81,16 +82,24 @@ static int read_header(AVFormatContext *s)
     ast->codec->codec_type      = AVMEDIA_TYPE_AUDIO;
     ast->codec->codec_id        = AV_CODEC_ID_PCM_U8;
     ast->codec->channels        = 1;
+    ast->codec->channel_layout  = AV_CH_LAYOUT_MONO;
     ast->codec->bits_per_coded_sample = 8;
     ast->codec->bit_rate        = ast->codec->sample_rate * 8;
 
     avpriv_set_pts_info(vst, 64, msecs_per_frame, 1000000);
+    vst->avg_frame_rate    = av_inv_q(vst->time_base);
     vst->codec->codec_type = AVMEDIA_TYPE_VIDEO;
     vst->codec->codec_id   = AV_CODEC_ID_MOTIONPIXELS;
 
     mvi->get_int = (vst->codec->width * vst->codec->height < (1 << 16)) ? avio_rl16 : avio_rl24;
 
     mvi->audio_frame_size   = ((uint64_t)mvi->audio_data_size << MVI_FRAC_BITS) / frames_count;
+    if (mvi->audio_frame_size <= 1 << MVI_FRAC_BITS - 1) {
+        av_log(s, AV_LOG_ERROR, "Invalid audio_data_size (%d) or frames_count (%d)\n",
+               mvi->audio_data_size, frames_count);
+        return AVERROR_INVALIDDATA;
+    }
+
     mvi->audio_size_counter = (ast->codec->sample_rate * 830 / mvi->audio_frame_size - 1) * mvi->audio_frame_size;
     mvi->audio_size_left    = mvi->audio_data_size;
 

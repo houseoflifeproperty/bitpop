@@ -5,17 +5,14 @@
 #ifndef MEDIA_BASE_FILTER_COLLECTION_H_
 #define MEDIA_BASE_FILTER_COLLECTION_H_
 
-#include <list>
-
-#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "media/base/media_export.h"
 
 namespace media {
 
-class AudioDecoder;
 class AudioRenderer;
 class Demuxer;
-class VideoDecoder;
+class TextRenderer;
 class VideoRenderer;
 
 // Represents a set of uninitialized demuxer and audio/video decoders and
@@ -25,40 +22,26 @@ class VideoRenderer;
 // http://crbug.com/110800
 class MEDIA_EXPORT FilterCollection {
  public:
-  typedef std::list<scoped_refptr<AudioDecoder> > AudioDecoderList;
-  typedef std::list<scoped_refptr<VideoDecoder> > VideoDecoderList;
-
   FilterCollection();
   ~FilterCollection();
 
-  // Demuxer accessor methods.
-  void SetDemuxer(const scoped_refptr<Demuxer>& demuxer);
-  const scoped_refptr<Demuxer>& GetDemuxer();
+  void SetDemuxer(Demuxer* demuxer);
+  Demuxer* GetDemuxer();
 
-  // Adds a filter to the collection.
-  void AddAudioDecoder(AudioDecoder* audio_decoder);
-  void AddAudioRenderer(AudioRenderer* audio_renderer);
-  void AddVideoRenderer(VideoRenderer* video_renderer);
+  void SetAudioRenderer(scoped_ptr<AudioRenderer> audio_renderer);
+  scoped_ptr<AudioRenderer> GetAudioRenderer();
 
-  // Remove remaining filters.
-  void Clear();
+  void SetVideoRenderer(scoped_ptr<VideoRenderer> video_renderer);
+  scoped_ptr<VideoRenderer> GetVideoRenderer();
 
-  // Selects a filter of the specified type from the collection.
-  // If the required filter cannot be found, NULL is returned.
-  // If a filter is returned it is removed from the collection.
-  // Filters are selected in FIFO order.
-  void SelectAudioRenderer(scoped_refptr<AudioRenderer>* out);
-  void SelectVideoRenderer(scoped_refptr<VideoRenderer>* out);
-
-  AudioDecoderList* GetAudioDecoders();
-  VideoDecoderList* GetVideoDecoders();
+  void SetTextRenderer(scoped_ptr<TextRenderer> text_renderer);
+  scoped_ptr<TextRenderer> GetTextRenderer();
 
  private:
-  scoped_refptr<Demuxer> demuxer_;
-  AudioDecoderList audio_decoders_;
-  VideoDecoderList video_decoders_;
-  std::list<scoped_refptr<AudioRenderer> > audio_renderers_;
-  std::list<scoped_refptr<VideoRenderer> > video_renderers_;
+  Demuxer* demuxer_;
+  scoped_ptr<AudioRenderer> audio_renderer_;
+  scoped_ptr<VideoRenderer> video_renderer_;
+  scoped_ptr<TextRenderer> text_renderer_;
 
   DISALLOW_COPY_AND_ASSIGN(FilterCollection);
 };

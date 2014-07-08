@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "ui/gl/gl_glx_api_implementation.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gfx {
 
 RealGLXApi* g_real_glx;
 
-void InitializeGLBindingsGLX() {
-  g_driver_glx.InitializeBindings();
+void InitializeStaticGLBindingsGLX() {
+  g_driver_glx.InitializeStaticBindings();
   if (!g_real_glx) {
     g_real_glx = new RealGLXApi();
   }
@@ -17,8 +18,8 @@ void InitializeGLBindingsGLX() {
   g_current_glx_context = g_real_glx;
 }
 
-void InitializeGLExtensionBindingsGLX(GLContext* context) {
-  g_driver_glx.InitializeExtensionBindings(context);
+void InitializeDynamicGLBindingsGLX(GLContext* context) {
+  g_driver_glx.InitializeDynamicBindings(context);
 }
 
 void InitializeDebugGLBindingsGLX() {
@@ -59,6 +60,29 @@ RealGLXApi::~RealGLXApi() {
 
 void RealGLXApi::Initialize(DriverGLX* driver) {
   InitializeBase(driver);
+}
+
+TraceGLXApi::~TraceGLXApi() {
+}
+
+bool GetGLWindowSystemBindingInfoGLX(GLWindowSystemBindingInfo* info) {
+  Display* display = glXGetCurrentDisplay();
+  const int kDefaultScreen = 0;
+  const char* vendor =
+      glXQueryServerString(display, kDefaultScreen, GLX_VENDOR);
+  const char* version =
+      glXQueryServerString(display, kDefaultScreen, GLX_VERSION);
+  const char* extensions =
+      glXQueryServerString(display, kDefaultScreen, GLX_EXTENSIONS);
+  *info = GLWindowSystemBindingInfo();
+  if (vendor)
+    info->vendor = vendor;
+  if (version)
+    info->version = version;
+  if (extensions)
+    info->extensions = extensions;
+  info->direct_rendering = !!glXIsDirect(display, glXGetCurrentContext());
+  return true;
 }
 
 }  // namespace gfx

@@ -4,7 +4,8 @@
 
 #include "chromeos/network/onc/onc_test_utils.h"
 
-#include "base/file_path.h"
+#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_file_value_serializer.h"
 #include "base/logging.h"
 #include "base/path_service.h"
@@ -22,10 +23,24 @@ const char kNetworkComponentDirectory[] = "network";
 
 }  // namespace
 
+std::string ReadTestData(const std::string& filename) {
+  base::FilePath path;
+  if (!chromeos::test_utils::GetTestDataPath(kNetworkComponentDirectory,
+                                             filename,
+                                             &path)) {
+    NOTREACHED() << "Unable to get test data path for "
+                 << kNetworkComponentDirectory << "/" << filename;
+    return "";
+  }
+  std::string result;
+  base::ReadFileToString(path, &result);
+  return result;
+}
+
 scoped_ptr<base::DictionaryValue> ReadTestDictionary(
     const std::string& filename) {
   base::DictionaryValue* dict = NULL;
-  FilePath path;
+  base::FilePath path;
   if (!chromeos::test_utils::GetTestDataPath(kNetworkComponentDirectory,
                                              filename,
                                              &path)) {
@@ -49,18 +64,18 @@ scoped_ptr<base::DictionaryValue> ReadTestDictionary(
   return make_scoped_ptr(dict);
 }
 
-::testing::AssertionResult Equals(const base::DictionaryValue* expected,
-                                  const base::DictionaryValue* actual) {
+::testing::AssertionResult Equals(const base::Value* expected,
+                                  const base::Value* actual) {
   CHECK(expected != NULL);
   if (actual == NULL)
-    return ::testing::AssertionFailure() << "Actual dictionary pointer is NULL";
+    return ::testing::AssertionFailure() << "Actual value pointer is NULL";
 
   if (expected->Equals(actual))
-    return ::testing::AssertionSuccess() << "Dictionaries are equal";
+    return ::testing::AssertionSuccess() << "Values are equal";
 
-  return ::testing::AssertionFailure() << "Dictionaries are unequal.\n"
-                                       << "Expected dictionary:\n" << *expected
-                                       << "Actual dictionary:\n" << *actual;
+  return ::testing::AssertionFailure() << "Values are unequal.\n"
+                                       << "Expected value:\n" << *expected
+                                       << "Actual value:\n" << *actual;
 }
 
 }  // namespace test_utils

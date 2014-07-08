@@ -47,14 +47,19 @@ class PPAPI_HOST_EXPORT ResourceHost : public ResourceMessageHandler {
   // host. This will notify subclasses by calling
   // DidConnectPendingHostToResource.
   //
-  // The current PP_Resource for all pending hosts should be 0.  See
+  // The current PP_Resource for all pending hosts should be 0. See
   // PpapiHostMsg_AttachToPendingHost.
   void SetPPResourceForPendingHost(PP_Resource pp_resource);
 
   virtual void SendReply(const ReplyMessageContext& context,
                          const IPC::Message& msg) OVERRIDE;
 
-  virtual bool IsGraphics2DHost() const { return false; }
+  // Simple RTTI. A subclass that is a host for one of these APIs will override
+  // the appropriate function and return true.
+  virtual bool IsFileRefHost();
+  virtual bool IsFileSystemHost();
+  virtual bool IsGraphics2DHost();
+  virtual bool IsMediaStreamVideoTrackHost();
 
  protected:
   // Adds a ResourceMessageFilter to handle resource messages. Incoming

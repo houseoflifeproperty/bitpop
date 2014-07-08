@@ -6,7 +6,7 @@
 
 #include "base/basictypes.h"
 #include "base/metrics/histogram.h"
-#include "base/stringize_macros.h"
+#include "base/strings/stringize_macros.h"
 
 namespace {
 
@@ -44,16 +44,15 @@ std::vector<int> GetAllErrorCodesForUma() {
       kAllErrorCodes, arraysize(kAllErrorCodes));
 }
 
-Error PlatformFileErrorToNetError(
-    base::PlatformFileError file_error) {
+Error FileErrorToNetError(base::File::Error file_error) {
   switch (file_error) {
-    case base::PLATFORM_FILE_OK:
+    case base::File::FILE_OK:
       return net::OK;
-    case base::PLATFORM_FILE_ERROR_ACCESS_DENIED:
+    case base::File::FILE_ERROR_ACCESS_DENIED:
       return net::ERR_ACCESS_DENIED;
-    case base::PLATFORM_FILE_ERROR_INVALID_URL:
+    case base::File::FILE_ERROR_INVALID_URL:
       return net::ERR_INVALID_URL;
-    case base::PLATFORM_FILE_ERROR_NOT_FOUND:
+    case base::File::FILE_ERROR_NOT_FOUND:
       return net::ERR_FILE_NOT_FOUND;
     default:
       return net::ERR_FAILED;

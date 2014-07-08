@@ -5,9 +5,18 @@
  * found in the LICENSE file.
  */
 
-#include <tmmintrin.h>  // SSSE3
 #include "SkBitmapProcState_opts_SSSE3.h"
+#include "SkPaint.h"
 #include "SkUtils.h"
+
+/* With the exception of the Android framework we always build the SSSE3 functions
+ * and enable the caller to determine SSSE3 support.  However for the Android framework
+ * if the device does not support SSSE3 then the compiler will not supply the required
+ * -mssse3 option needed to build this file, so instead we provide a stub implementation.
+ */
+#if !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) || SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSSE3
+
+#include <tmmintrin.h>  // SSSE3
 
 // adding anonymous namespace seemed to force gcc to inline directly the
 // instantiation, instead of creating the functions
@@ -385,7 +394,7 @@ void S32_generic_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
                                      const uint32_t* xy,
                                      int count, uint32_t* colors) {
     SkASSERT(count > 0 && colors != NULL);
-    SkASSERT(s.fDoFilter);
+    SkASSERT(s.fFilterLevel != SkPaint::kNone_FilterLevel);
     SkASSERT(s.fBitmap->config() == SkBitmap::kARGB_8888_Config);
     if (has_alpha) {
         SkASSERT(s.fAlphaScale < 256);
@@ -395,7 +404,7 @@ void S32_generic_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
 
     const uint8_t* src_addr =
             static_cast<const uint8_t*>(s.fBitmap->getPixels());
-    const unsigned rb = s.fBitmap->rowBytes();
+    const size_t rb = s.fBitmap->rowBytes();
     const uint32_t XY = *xy++;
     const unsigned y0 = XY >> 14;
     const uint32_t* row0 =
@@ -416,9 +425,10 @@ void S32_generic_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
     const __m128i zero = _mm_setzero_si128();
 
     __m128i alpha = _mm_setzero_si128();
-    if (has_alpha)
+    if (has_alpha) {
         // 8x(alpha)
         alpha = _mm_set1_epi16(s.fAlphaScale);
+    }
 
     if (sub_y == 0) {
         // Unroll 4x, interleave bytes, use pmaddubsw (all_x is small)
@@ -576,7 +586,7 @@ void S32_generic_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
                                        const uint32_t* xy,
                                        int count, uint32_t* colors) {
     SkASSERT(count > 0 && colors != NULL);
-    SkASSERT(s.fDoFilter);
+    SkASSERT(s.fFilterLevel != SkPaint::kNone_FilterLevel);
     SkASSERT(s.fBitmap->config() == SkBitmap::kARGB_8888_Config);
     if (has_alpha) {
         SkASSERT(s.fAlphaScale < 256);
@@ -586,7 +596,7 @@ void S32_generic_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
 
     const uint8_t* src_addr =
                         static_cast<const uint8_t*>(s.fBitmap->getPixels());
-    const unsigned rb = s.fBitmap->rowBytes();
+    const size_t rb = s.fBitmap->rowBytes();
 
     // vector constants
     const __m128i mask_dist_select = _mm_set_epi8(12, 12, 12, 12,
@@ -696,7 +706,7 @@ void S32_generic_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
         *colors++ = _mm_cvtsi128_si32(sum0);
     }
 }
-}  // namepace
+}  // namespace
 
 void S32_opaque_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
                                     const uint32_t* xy,
@@ -721,3 +731,31 @@ void S32_alpha_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
                                    int count, uint32_t* colors) {
     S32_generic_D32_filter_DXDY_SSSE3<true>(s, xy, count, colors);
 }
+
+#else // !defined(SK_BUILD_FOR_ANDROID_FRAMEWORK) || SK_CPU_SSE_LEVEL >= SK_CPU_SSE_LEVEL_SSSE3
+
+void S32_opaque_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
+                                    const uint32_t* xy,
+                                    int count, uint32_t* colors) {
+    sk_throw();
+}
+
+void S32_alpha_D32_filter_DX_SSSE3(const SkBitmapProcState& s,
+                                   const uint32_t* xy,
+                                   int count, uint32_t* colors) {
+    sk_throw();
+}
+
+void S32_opaque_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
+                                    const uint32_t* xy,
+                                    int count, uint32_t* colors) {
+    sk_throw();
+}
+
+void S32_alpha_D32_filter_DXDY_SSSE3(const SkBitmapProcState& s,
+                                   const uint32_t* xy,
+                                   int count, uint32_t* colors) {
+    sk_throw();
+}
+
+#endif

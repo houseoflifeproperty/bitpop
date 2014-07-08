@@ -81,8 +81,8 @@ class MediaMessagesTest : public testing::Test {
                                             const std::string& type,
                                             const std::string& display) {
     StreamParams stream;
-    stream.nick = nick;
-    stream.name = name;
+    stream.groupid = nick;
+    stream.id = name;
     stream.ssrcs.push_back(ssrc1);
     stream.ssrcs.push_back(ssrc2);
     stream.ssrc_groups.push_back(
@@ -93,7 +93,7 @@ class MediaMessagesTest : public testing::Test {
   }
 
   static std::string StreamsXml(const std::string& stream1,
-                               const std::string& stream2) {
+                                const std::string& stream2) {
     return "<streams xmlns='google:jingle'>"
            + stream1
            + stream2 +
@@ -125,6 +125,22 @@ class MediaMessagesTest : public testing::Test {
            "</stream>";
   }
 
+  static std::string HeaderExtensionsXml(const std::string& hdrext1,
+                                         const std::string& hdrext2) {
+    return "<rtp:description xmlns:rtp=\"urn:xmpp:jingle:apps:rtp:1\">"
+           + hdrext1
+           + hdrext2 +
+           "</rtp:description>";
+  }
+
+  static std::string HeaderExtensionXml(const std::string& uri,
+                                        const std::string& id) {
+    return "<rtp:rtp-hdrext"
+           " uri='" + uri + "'"
+           " id='" + id + "'"
+           "/>";
+  }
+
   static cricket::SessionDescription* CreateMediaSessionDescription(
       const std::string& audio_content_name,
       const std::string& video_content_name) {
@@ -134,6 +150,15 @@ class MediaMessagesTest : public testing::Test {
     desc->AddContent(video_content_name, cricket::NS_JINGLE_RTP,
                      new cricket::VideoContentDescription());
     return desc;
+  }
+
+  size_t ClearXmlElements(cricket::XmlElements* elements) {
+    size_t size = elements->size();
+    for (size_t i = 0; i < size; i++) {
+      delete elements->at(i);
+    }
+    elements->clear();
+    return size;
   }
 
   talk_base::scoped_ptr<cricket::SessionDescription> remote_description_;
@@ -161,6 +186,7 @@ TEST_F(MediaMessagesTest, ViewNoneToFromXml) {
 
   ASSERT_EQ(1U, actual_view_elems.size());
   EXPECT_EQ(expected_view_elem->Str(), actual_view_elems[0]->Str());
+  ClearXmlElements(&actual_view_elems);
 
   cricket::ParseError parse_error;
   EXPECT_TRUE(cricket::IsJingleViewRequest(action_elem.get()));
@@ -184,10 +210,10 @@ TEST_F(MediaMessagesTest, ViewVgaToFromXml) {
   cricket::XmlElements actual_view_elems;
   cricket::WriteError error;
 
-  view_request.static_video_views.push_back(
-      cricket::StaticVideoView(1234, 640, 480, 30));
-  view_request.static_video_views.push_back(
-      cricket::StaticVideoView(2468, 640, 480, 30));
+  view_request.static_video_views.push_back(cricket::StaticVideoView(
+      cricket::StreamSelector(1234), 640, 480, 30));
+  view_request.static_video_views.push_back(cricket::StaticVideoView(
+      cricket::StreamSelector(2468), 640, 480, 30));
 
   ASSERT_TRUE(cricket::WriteJingleViewRequest(
       "video1", view_request, &actual_view_elems, &error));
@@ -195,6 +221,7 @@ TEST_F(MediaMessagesTest, ViewVgaToFromXml) {
   ASSERT_EQ(2U, actual_view_elems.size());
   EXPECT_EQ(expected_view_elem1->Str(), actual_view_elems[0]->Str());
   EXPECT_EQ(expected_view_elem2->Str(), actual_view_elems[1]->Str());
+  ClearXmlElements(&actual_view_elems);
 
   view_request.static_video_views.clear();
   cricket::ParseError parse_error;
@@ -202,11 +229,11 @@ TEST_F(MediaMessagesTest, ViewVgaToFromXml) {
   ASSERT_TRUE(cricket::ParseJingleViewRequest(
       action_elem.get(), &view_request, &parse_error));
   EXPECT_EQ(2U, view_request.static_video_views.size());
-  EXPECT_EQ(1234U, view_request.static_video_views[0].ssrc);
+  EXPECT_EQ(1234U, view_request.static_video_views[0].selector.ssrc);
   EXPECT_EQ(640, view_request.static_video_views[0].width);
   EXPECT_EQ(480, view_request.static_video_views[0].height);
   EXPECT_EQ(30, view_request.static_video_views[0].framerate);
-  EXPECT_EQ(2468U, view_request.static_video_views[1].ssrc);
+  EXPECT_EQ(2468U, view_request.static_video_views[1].selector.ssrc);
 }
 
 // Test deserializing bad view XML.
@@ -229,15 +256,15 @@ TEST_F(MediaMessagesTest, StreamsToFromXml) {
   talk_base::scoped_ptr<buzz::XmlElement> expected_streams_elem(
       buzz::XmlElement::ForStr(
           StreamsXml(
-              StreamXml("nick1", "name1", "101", "102",
+              StreamXml("nick1", "stream1", "101", "102",
                         "semantics1", "type1", "display1"),
-              StreamXml("nick2", "name2", "201", "202",
+              StreamXml("nick2", "stream2", "201", "202",
                         "semantics2", "type2", "display2"))));
 
   std::vector<cricket::StreamParams> expected_streams;
-  expected_streams.push_back(CreateStream("nick1", "name1", 101U, 102U,
+  expected_streams.push_back(CreateStream("nick1", "stream1", 101U, 102U,
                                           "semantics1", "type1", "display1"));
-  expected_streams.push_back(CreateStream("nick2", "name2", 201U, 202U,
+  expected_streams.push_back(CreateStream("nick2", "stream2", 201U, 202U,
                                           "semantics2", "type2", "display2"));
 
   talk_base::scoped_ptr<buzz::XmlElement> actual_desc_elem(
@@ -281,6 +308,56 @@ TEST_F(MediaMessagesTest, StreamsFromBadXml) {
   cricket::ParseError parse_error;
   ASSERT_FALSE(cricket::ParseJingleStreams(
       desc_elem.get(), &actual_streams, &parse_error));
+}
+
+// Test serializing/deserializing typical RTP Header Extension xml.
+TEST_F(MediaMessagesTest, HeaderExtensionsToFromXml) {
+  talk_base::scoped_ptr<buzz::XmlElement> expected_desc_elem(
+      buzz::XmlElement::ForStr(
+          HeaderExtensionsXml(
+              HeaderExtensionXml("abc", "123"),
+              HeaderExtensionXml("def", "456"))));
+
+  std::vector<cricket::RtpHeaderExtension> expected_hdrexts;
+  expected_hdrexts.push_back(RtpHeaderExtension("abc", 123));
+  expected_hdrexts.push_back(RtpHeaderExtension("def", 456));
+
+  talk_base::scoped_ptr<buzz::XmlElement> actual_desc_elem(
+      new buzz::XmlElement(QN_JINGLE_RTP_CONTENT));
+  cricket::WriteJingleRtpHeaderExtensions(expected_hdrexts, actual_desc_elem.get());
+
+  ASSERT_TRUE(actual_desc_elem != NULL);
+  EXPECT_EQ(expected_desc_elem->Str(), actual_desc_elem->Str());
+
+  std::vector<cricket::RtpHeaderExtension> actual_hdrexts;
+  cricket::ParseError parse_error;
+  ASSERT_TRUE(cricket::ParseJingleRtpHeaderExtensions(
+      expected_desc_elem.get(), &actual_hdrexts, &parse_error));
+  EXPECT_EQ(2U, actual_hdrexts.size());
+  EXPECT_EQ(expected_hdrexts[0], actual_hdrexts[0]);
+  EXPECT_EQ(expected_hdrexts[1], actual_hdrexts[1]);
+}
+
+// Test deserializing bad RTP header extension xml.
+TEST_F(MediaMessagesTest, HeaderExtensionsFromBadXml) {
+  std::vector<cricket::RtpHeaderExtension> actual_hdrexts;
+  cricket::ParseError parse_error;
+
+  talk_base::scoped_ptr<buzz::XmlElement> desc_elem(
+      buzz::XmlElement::ForStr(
+          HeaderExtensionsXml(
+              HeaderExtensionXml("abc", "123"),
+              HeaderExtensionXml("def", "not-an-id"))));
+  ASSERT_FALSE(cricket::ParseJingleRtpHeaderExtensions(
+      desc_elem.get(), &actual_hdrexts, &parse_error));
+
+  desc_elem.reset(
+      buzz::XmlElement::ForStr(
+          HeaderExtensionsXml(
+              HeaderExtensionXml("abc", "123"),
+              HeaderExtensionXml("def", "-1"))));
+  ASSERT_FALSE(cricket::ParseJingleRtpHeaderExtensions(
+      desc_elem.get(), &actual_hdrexts, &parse_error));
 }
 
 }  // namespace cricket

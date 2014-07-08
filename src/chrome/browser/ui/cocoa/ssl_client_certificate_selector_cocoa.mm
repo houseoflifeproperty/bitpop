@@ -8,18 +8,18 @@
 
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
-#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ssl/ssl_client_auth_observer.h"
+#import "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
 #include "grit/generated_resources.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/x509_certificate.h"
-#include "net/base/x509_util_mac.h"
+#include "net/cert/x509_certificate.h"
+#include "net/cert/x509_util_mac.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 
 using content::BrowserThread;
@@ -50,7 +50,7 @@ class SSLClientAuthObserverCocoaBridge : public SSLClientAuthObserver,
 
   // SSLClientAuthObserver implementation:
   virtual void OnCertSelectedByNotification() OVERRIDE {
-    [controller_ closeSheetWithAnimation:NO];
+    [controller_ closeWebContentsModalDialog];
   }
 
   // ConstrainedWindowMacDelegate implementation:
@@ -75,7 +75,7 @@ void ShowSSLClientCertificateSelector(
     const net::HttpNetworkSession* network_session,
     net::SSLCertRequestInfo* cert_request_info,
     const SelectCertificateCallback& callback) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   // The dialog manages its own lifetime.
   SSLClientCertificateSelectorCocoa* selector =
       [[SSLClientCertificateSelectorCocoa alloc]
@@ -110,7 +110,7 @@ void ShowSSLClientCertificateSelector(
     CFIndex index =
         CFArrayGetFirstIndexOfValue(identities_, range, [panel_ identity]);
     if (index != -1)
-      cert = certificates_[index];
+      cert = certificates_[index].get();
     else
       NOTREACHED();
   }
@@ -120,7 +120,7 @@ void ShowSSLClientCertificateSelector(
   observer_->CertificateSelected(cert);
 
   if (!closePending_)
-    constrainedWindow_->CloseConstrainedWindow();
+    constrainedWindow_->CloseWebContentsModalDialog();
 }
 
 - (void)displayForWebContents:(content::WebContents*)webContents {
@@ -142,7 +142,8 @@ void ShowSSLClientCertificateSelector(
   // Get the message to display:
   NSString* message = l10n_util::GetNSStringF(
       IDS_CLIENT_CERT_DIALOG_TEXT,
-      ASCIIToUTF16(observer_->cert_request_info()->host_and_port));
+      base::ASCIIToUTF16(
+          observer_->cert_request_info()->host_and_port.ToString()));
 
   // Create and set up a system choose-identity panel.
   panel_.reset([[SFChooseIdentityPanel alloc] init]);
@@ -157,6 +158,16 @@ void ShowSSLClientCertificateSelector(
 
   constrainedWindow_.reset(
       new ConstrainedWindowMac(observer_.get(), webContents, self));
+  observer_->StartObserving();
+}
+
+- (void)closeWebContentsModalDialog {
+  DCHECK(constrainedWindow_);
+  constrainedWindow_->CloseWebContentsModalDialog();
+}
+
+- (NSWindow*)overlayWindow {
+  return overlayWindow_;
 }
 
 - (SFChooseIdentityPanel*)panel {
@@ -172,7 +183,6 @@ void ShowSSLClientCertificateSelector(
                   contextInfo:NULL
                    identities:base::mac::CFToNSCast(identities_)
                       message:title];
-  observer_->StartObserving();
 }
 
 - (void)closeSheetWithAnimation:(BOOL)withAnimation {
@@ -184,10 +194,26 @@ void ShowSSLClientCertificateSelector(
 }
 
 - (void)hideSheet {
-  [[overlayWindow_ attachedSheet] setAlphaValue:0.0];
+  NSWindow* sheetWindow = [overlayWindow_ attachedSheet];
+  [sheetWindow setAlphaValue:0.0];
+
+  oldResizesSubviews_ = [[sheetWindow contentView] autoresizesSubviews];
+  [[sheetWindow contentView] setAutoresizesSubviews:NO];
+
+  oldSheetFrame_ = [sheetWindow frame];
+  NSRect overlayFrame = [overlayWindow_ frame];
+  oldSheetFrame_.origin.x -= NSMinX(overlayFrame);
+  oldSheetFrame_.origin.y -= NSMinY(overlayFrame);
+  [sheetWindow setFrame:ui::kWindowSizeDeterminedLater display:NO];
 }
 
 - (void)unhideSheet {
+  NSWindow* sheetWindow = [overlayWindow_ attachedSheet];
+  NSRect overlayFrame = [overlayWindow_ frame];
+  oldSheetFrame_.origin.x += NSMinX(overlayFrame);
+  oldSheetFrame_.origin.y += NSMinY(overlayFrame);
+  [sheetWindow setFrame:oldSheetFrame_ display:NO];
+  [[sheetWindow contentView] setAutoresizesSubviews:oldResizesSubviews_];
   [[overlayWindow_ attachedSheet] setAlphaValue:1.0];
 }
 
@@ -204,6 +230,7 @@ void ShowSSLClientCertificateSelector(
 }
 
 - (void)onConstrainedWindowClosed {
+  observer_->StopObserving();
   panel_.reset();
   constrainedWindow_.reset();
   [self release];

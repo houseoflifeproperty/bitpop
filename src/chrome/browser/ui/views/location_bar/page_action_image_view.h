@@ -33,8 +33,7 @@ class PageActionImageView : public views::ImageView,
                             public ExtensionContextMenuModel::PopupDelegate,
                             public views::WidgetObserver,
                             public views::ContextMenuController,
-                            public ExtensionActionIconFactory::Observer,
-                            public ExtensionAction::IconAnimation::Observer {
+                            public ExtensionActionIconFactory::Observer {
  public:
   PageActionImageView(LocationBarView* owner,
                       ExtensionAction* page_action,
@@ -50,7 +49,7 @@ class PageActionImageView : public views::ImageView,
   }
 
   // Overridden from views::View:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
@@ -59,11 +58,12 @@ class PageActionImageView : public views::ImageView,
   virtual void InspectPopup(ExtensionAction* action) OVERRIDE;
 
   // Overridden from views::WidgetObserver:
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // Overridden from views::ContextMenuController.
   virtual void ShowContextMenuForView(View* source,
-                                      const gfx::Point& point) OVERRIDE;
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
   // Overriden from ExtensionActionIconFactory::Observer.
   virtual void OnIconUpdated() OVERRIDE;
@@ -81,9 +81,6 @@ class PageActionImageView : public views::ImageView,
   void ExecuteAction(ExtensionPopup::ShowAction show_action);
 
  private:
-  // Overridden from ExtensionAction::IconAnimation::Observer:
-  virtual void OnIconChanged() OVERRIDE;
-
   // Overridden from View.
   virtual void PaintChildren(gfx::Canvas* canvas) OVERRIDE;
 
@@ -130,15 +127,7 @@ class PageActionImageView : public views::ImageView,
   // show the popup).
   scoped_ptr<ui::Accelerator> page_action_keybinding_;
 
-  // The extension command accelerator this script badge is listening for (to
-  // show the popup).
-  scoped_ptr<ui::Accelerator> script_badge_keybinding_;
-
   scoped_ptr<views::MenuRunner> menu_runner_;
-
-  // Fade-in animation for the icon with observer scoped to this.
-  ExtensionAction::IconAnimation::ScopedObserver
-      scoped_icon_animation_observer_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(PageActionImageView);
 };

@@ -57,10 +57,10 @@ class SequencedTaskRunner;
 // These will be executed in an unspecified order. The order of execution
 // between tasks with different sequence tokens is also unspecified.
 //
-// This class is designed to be leaked on shutdown to allow the
-// CONTINUE_ON_SHUTDOWN behavior to be implemented. To enforce the
-// BLOCK_SHUTDOWN behavior, you must call Shutdown() which will wait until
-// the necessary tasks have completed.
+// This class may be leaked on shutdown to facilitate fast shutdown. The
+// expected usage, however, is to call Shutdown(), which correctly accounts
+// for CONTINUE_ON_SHUTDOWN behavior and is required for BLOCK_SHUTDOWN
+// behavior.
 //
 // Implementation note: This does not use a base::WorkerPool since that does
 // not enforce shutdown semantics or allow us to specify how many worker
@@ -69,6 +69,9 @@ class SequencedTaskRunner;
 //
 // Note that SequencedWorkerPool is RefCountedThreadSafe (inherited
 // from TaskRunner).
+//
+// Test-only code should wrap this in a base::SequencedWorkerPoolOwner to avoid
+// memory leaks. See http://crbug.com/273800
 class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
  public:
   // Defines what should happen to a task posted to the worker pool on
@@ -126,6 +129,11 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
       return id_ == other.id_;
     }
 
+    // Returns false if current thread is executing an unsequenced task.
+    bool IsValid() const {
+      return id_ != 0;
+    }
+
    private:
     friend class SequencedWorkerPool;
 
@@ -143,6 +151,11 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
     virtual void OnDestruct() = 0;
   };
 
+  // Gets the SequencedToken of the current thread.
+  // If current thread is not a SequencedWorkerPool worker thread or is running
+  // an unsequenced task, returns an invalid SequenceToken.
+  static SequenceToken GetSequenceTokenForCurrentThread();
+
   // When constructing a SequencedWorkerPool, there must be a
   // MessageLoop on the current thread unless you plan to deliberately
   // leak it.
@@ -159,7 +172,7 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
                       TestingObserver* observer);
 
   // Returns a unique token that can be used to sequence tasks posted to
-  // PostSequencedWorkerTask(). Valid tokens are alwys nonzero.
+  // PostSequencedWorkerTask(). Valid tokens are always nonzero.
   SequenceToken GetSequenceToken();
 
   // Returns the sequence token associated with the given name. Calling this
@@ -288,6 +301,7 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
 
   // Blocks until all pending tasks are complete. This should only be called in
   // unit tests when you want to validate something that should have happened.
+  // This will not flush delayed tasks; delayed tasks get deleted.
   //
   // Note that calling this will not prevent other threads from posting work to
   // the queue while the calling thread is waiting on Flush(). In this case,
@@ -304,7 +318,22 @@ class BASE_EXPORT SequencedWorkerPool : public TaskRunner {
   // After this call, subsequent calls to post tasks will fail.
   //
   // Must be called from the same thread this object was constructed on.
-  void Shutdown();
+  void Shutdown() { Shutdown(0); }
+
+  // A variant that allows an arbitrary number of new blocking tasks to
+  // be posted during shutdown from within tasks that execute during shutdown.
+  // Only tasks designated as BLOCKING_SHUTDOWN will be allowed, and only if
+  // posted by tasks that are not designated as CONTINUE_ON_SHUTDOWN. Once
+  // the limit is reached, subsequent calls to post task fail in all cases.
+  //
+  // Must be called from the same thread this object was constructed on.
+  void Shutdown(int max_new_blocking_tasks_after_shutdown);
+
+  // Check if Shutdown was called for given threading pool. This method is used
+  // for aborting time consuming operation to avoid blocking shutdown.
+  //
+  // Can be called from any thread.
+  bool IsShutdownInProgress();
 
  protected:
   virtual ~SequencedWorkerPool();

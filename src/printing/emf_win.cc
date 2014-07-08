@@ -4,7 +4,7 @@
 
 #include "printing/emf_win.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/win/scoped_gdi_object.h"
@@ -125,7 +125,8 @@ class RasterBitmap {
       NOTREACHED() << "Raster bitmap creation for printing failed";
 
     saved_object_ = ::SelectObject(context_, bitmap_);
-    ::FillRect(context_, &bitmap_rect.ToRECT(),
+    RECT rect = bitmap_rect.ToRECT();
+    ::FillRect(context_, &rect,
                static_cast<HBRUSH>(::GetStockObject(WHITE_BRUSH)));
 
   }
@@ -173,14 +174,14 @@ Emf::~Emf() {
     DeleteEnhMetaFile(emf_);
 }
 
-bool Emf::InitToFile(const FilePath& metafile_path) {
+bool Emf::InitToFile(const base::FilePath& metafile_path) {
   DCHECK(!emf_ && !hdc_);
   hdc_ = CreateEnhMetaFile(NULL, metafile_path.value().c_str(), NULL, NULL);
   DCHECK(hdc_);
   return hdc_ != NULL;
 }
 
-bool Emf::InitFromFile(const FilePath& metafile_path) {
+bool Emf::InitFromFile(const base::FilePath& metafile_path) {
   DCHECK(!emf_ && !hdc_);
   emf_ = GetEnhMetaFile(metafile_path.value().c_str());
   DCHECK(emf_);
@@ -229,11 +230,12 @@ bool Emf::SafePlayback(HDC context) const {
   }
   Emf::EnumerationContext playback_context;
   playback_context.base_matrix = &base_matrix;
+  RECT rect = GetPageBounds(1).ToRECT();
   return EnumEnhMetaFile(context,
                          emf_,
                          &Emf::SafePlaybackProc,
                          reinterpret_cast<void*>(&playback_context),
-                         &GetPageBounds(1).ToRECT()) != 0;
+                         &rect) != 0;
 }
 
 gfx::Rect Emf::GetPageBounds(unsigned int page_number) const {
@@ -277,7 +279,7 @@ bool Emf::GetDataAsVector(std::vector<uint8>* buffer) const {
   return true;
 }
 
-bool Emf::SaveTo(const FilePath& file_path) const {
+bool Emf::SaveTo(const base::FilePath& file_path) const {
   HANDLE file = CreateFile(file_path.value().c_str(), GENERIC_WRITE,
                            FILE_SHARE_READ | FILE_SHARE_WRITE, NULL,
                            CREATE_ALWAYS, 0, NULL);
@@ -515,7 +517,7 @@ bool Emf::Record::SafePlayback(Emf::EnumerationContext* context) const {
   return res;
 }
 
-SkDevice* Emf::StartPageForVectorCanvas(
+SkBaseDevice* Emf::StartPageForVectorCanvas(
     const gfx::Size& page_size, const gfx::Rect& content_area,
     const float& scale_factor) {
   if (!StartPage(page_size, content_area, scale_factor))
@@ -615,7 +617,8 @@ Emf* Emf::RasterizeMetafile(int raster_area_in_pixels) const {
   RasterBitmap bitmap(page_size);
 
   gfx::Rect bitmap_rect(page_size);
-  Playback(bitmap.context(), &bitmap_rect.ToRECT());
+  RECT rect = bitmap_rect.ToRECT();
+  Playback(bitmap.context(), &rect);
 
   scoped_ptr<Emf> result(new Emf);
   result->Init();
@@ -663,8 +666,8 @@ Emf* Emf::RasterizeAlphaBlend() const {
   skia::InitializeDC(hdc);
 
   HDC bitmap_dc = bitmap.context();
-  ::EnumEnhMetaFile(hdc, emf(), &RasterizeAlphaBlendProc, &bitmap_dc,
-                    &page_bounds.ToRECT());
+  RECT rect = page_bounds.ToRECT();
+  ::EnumEnhMetaFile(hdc, emf(), &RasterizeAlphaBlendProc, &bitmap_dc, &rect);
 
   result->FinishDocument();
 

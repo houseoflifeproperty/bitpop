@@ -11,9 +11,9 @@
 namespace sandbox {
 
 // This is the list of all imported symbols from ntdll.dll.
-SANDBOX_INTERCEPT NtExports g_nt = { NULL };
+SANDBOX_INTERCEPT NtExports g_nt;
 
-}  // namespace
+}  // namespace sandbox
 
 namespace {
 
@@ -22,26 +22,20 @@ void* AllocateNearTo(void* source, size_t size) {
   using sandbox::g_nt;
 
   // Start with 1 GB above the source.
-  const unsigned int kOneGB = 0x40000000;
+  const size_t kOneGB = 0x40000000;
   void* base = reinterpret_cast<char*>(source) + kOneGB;
   SIZE_T actual_size = size;
   ULONG_PTR zero_bits = 0;  // Not the correct type if used.
   ULONG type = MEM_RESERVE;
 
-  if (reinterpret_cast<SIZE_T>(source) > 0x7ff80000000) {
-    // We are at the top of the address space. Let's try the highest available
-    // address.
-    base = NULL;
-    type |= MEM_TOP_DOWN;
-  }
-
   NTSTATUS ret;
   int attempts = 0;
-  for (; attempts < 20; attempts++) {
+  for (; attempts < 41; attempts++) {
     ret = g_nt.AllocateVirtualMemory(NtCurrentProcess, &base, zero_bits,
                                      &actual_size, type, PAGE_READWRITE);
     if (NT_SUCCESS(ret)) {
-      if (base < source) {
+      if (base < source ||
+          base >= reinterpret_cast<char*>(source) + 4 * kOneGB) {
         // We won't be able to patch this dll.
         VERIFY_SUCCESS(g_nt.FreeVirtualMemory(NtCurrentProcess, &base, &size,
                                               MEM_RELEASE));
@@ -50,11 +44,20 @@ void* AllocateNearTo(void* source, size_t size) {
       break;
     }
 
+    if (attempts == 30) {
+      // Try the first GB.
+      base = reinterpret_cast<char*>(source);
+    } else if (attempts == 40) {
+      // Try the highest available address.
+      base = NULL;
+      type |= MEM_TOP_DOWN;
+    }
+
     // Try 100 MB higher.
     base = reinterpret_cast<char*>(base) + 100 * 0x100000;
   };
 
-  if (attempts == 20)
+  if (attempts == 41)
     return NULL;
 
   ret = g_nt.AllocateVirtualMemory(NtCurrentProcess, &base, zero_bits,
@@ -205,15 +208,7 @@ bool ValidParameter(void* buffer, size_t size, RequiredAccess intent) {
 NTSTATUS CopyData(void* destination, const void* source, size_t bytes) {
   NTSTATUS ret = STATUS_SUCCESS;
   __try {
-    if (SandboxFactory::GetTargetServices()->GetState()->InitCalled()) {
-      memcpy(destination, source, bytes);
-    } else {
-      const char* from = reinterpret_cast<const char*>(source);
-      char* to = reinterpret_cast<char*>(destination);
-      for (size_t i = 0; i < bytes; i++) {
-        to[i] = from[i];
-      }
-    }
+    g_nt.memcpy(destination, source, bytes);
   } __except(EXCEPTION_EXECUTE_HANDLER) {
     ret = GetExceptionCode();
   }
@@ -530,14 +525,17 @@ bool IsSupportedRenameCall(FILE_RENAME_INFORMATION* file_info, DWORD length,
   if (file_info->RootDirectory)
     return false;
 
+  static const wchar_t kPathPrefix[] = { L'\\', L'?', L'?', L'\\'};
+
   // Check if it starts with \\??\\. We don't support relative paths.
-  if (file_info->FileNameLength < 4 || file_info->FileNameLength > kuint16max)
+  if (file_info->FileNameLength < sizeof(kPathPrefix) ||
+      file_info->FileNameLength > kuint16max)
     return false;
 
-  if (file_info->FileName[0] != L'\\' ||
-      file_info->FileName[1] != L'?' ||
-      file_info->FileName[2] != L'?' ||
-      file_info->FileName[3] != L'\\')
+  if (file_info->FileName[0] != kPathPrefix[0] ||
+      file_info->FileName[1] != kPathPrefix[1] ||
+      file_info->FileName[2] != kPathPrefix[2] ||
+      file_info->FileName[3] != kPathPrefix[3])
     return false;
 
   return true;

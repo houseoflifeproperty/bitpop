@@ -18,6 +18,7 @@
 #include "native_client/src/trusted/service_runtime/sel_memory.h"
 #include "native_client/src/trusted/service_runtime/sel_util.h"
 
+#include "native_client/src/trusted/service_runtime/include/bits/mman.h"
 
 NaClErrorCode NaClAllocAddrSpaceAslr(struct NaClApp *nap,
                                      enum NaClAslrMode aslr_mode) {
@@ -79,18 +80,18 @@ NaClErrorCode NaClAllocAddrSpaceAslr(struct NaClApp *nap,
             ("madvising 0x%08"NACL_PRIxPTR", 0x%08"NACL_PRIxS
              ", MADV_DONTNEED\n"),
             nap->mem_start + hole_start, hole_size);
-    if (0 != NaCl_madvise((void *) (nap->mem_start + hole_start),
-                          hole_size,
-                          MADV_DONTNEED)) {
+    if (0 != NaClMadvise((void *) (nap->mem_start + hole_start),
+                         hole_size,
+                         MADV_DONTNEED)) {
       NaClLog(1, "madvise, errno %d\n", errno);
       return LOAD_MADVISE_FAIL;
     }
     NaClLog(2,
             "mprotecting 0x%08"NACL_PRIxPTR", 0x%08"NACL_PRIxS", PROT_NONE\n",
             nap->mem_start + hole_start, hole_size);
-    if (0 != NaCl_mprotect((void *) (nap->mem_start + hole_start),
-                           hole_size,
-                           PROT_NONE)) {
+    if (0 != NaClMprotect((void *) (nap->mem_start + hole_start),
+                          hole_size,
+                          PROT_NONE)) {
       NaClLog(1, "mprotect, errno %d\n", errno);
       return LOAD_MPROTECT_FAIL;
     }
@@ -124,8 +125,10 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
                0,
                NACL_SYSCALL_START_ADDR >> NACL_PAGESHIFT,
                PROT_NONE,
-               PROT_NONE,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
 
   start_addr = nap->mem_start + NACL_SYSCALL_START_ADDR;
   /*
@@ -139,14 +142,14 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
            " size 0x%08"NACL_PRIxS", end 0x%08"NACL_PRIxPTR"\n"),
           start_addr, region_size,
           start_addr + region_size);
-  if (0 != (err = NaCl_mprotect((void *) start_addr,
-                                region_size,
-                                PROT_READ | PROT_EXEC))) {
+  if (0 != (err = NaClMprotect((void *) start_addr,
+                               region_size,
+                               PROT_READ | PROT_EXEC))) {
     NaClLog(LOG_ERROR,
             ("NaClMemoryProtection: "
-             "NaCl_mprotect(0x%08"NACL_PRIxPTR", "
+             "NaClMprotect(0x%08"NACL_PRIxPTR", "
              "0x%08"NACL_PRIxS", 0x%x) failed, "
-             "error %d (trampoline)\n"),
+             "error %d (trampoline + code)\n"),
             start_addr, region_size, PROT_READ | PROT_EXEC,
             err);
     return LOAD_MPROTECT_FAIL;
@@ -154,9 +157,11 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
   NaClVmmapAdd(&nap->mem_map,
                NaClSysToUser(nap, start_addr) >> NACL_PAGESHIFT,
                region_size >> NACL_PAGESHIFT,
-               PROT_READ | PROT_EXEC,
-               PROT_READ | PROT_EXEC,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
 
   start_addr = NaClUserToSys(nap, nap->dynamic_text_start);
   region_size = nap->dynamic_text_end - nap->dynamic_text_start;
@@ -178,9 +183,11 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
     NaClVmmapAdd(&nap->mem_map,
                  NaClSysToUser(nap, start_addr) >> NACL_PAGESHIFT,
                  region_size >> NACL_PAGESHIFT,
-                 PROT_READ | PROT_EXEC,
-                 PROT_READ | PROT_EXEC,
-                 NACL_VMMAP_ENTRY_MAPPED);
+                 NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                 NACL_ABI_MAP_PRIVATE,
+                 nap->text_shm,
+                 0,
+                 region_size);
   }
 
   if (0 != nap->rodata_start) {
@@ -205,14 +212,14 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
              " end 0x%08"NACL_PRIxPTR"\n"),
             start_addr, region_size,
             start_addr + region_size);
-    if (0 != (err = NaCl_mprotect((void *) start_addr,
-                                  region_size,
-                                  PROT_READ))) {
+    if (0 != (err = NaClMprotect((void *) start_addr,
+                                 region_size,
+                                 PROT_READ))) {
       NaClLog(LOG_ERROR,
               ("NaClMemoryProtection: "
-               "NaCl_mprotect(0x%08"NACL_PRIxPTR", "
+               "NaClMprotect(0x%08"NACL_PRIxPTR", "
                "0x%08"NACL_PRIxS", 0x%x) failed, "
-               "error %d (data)\n"),
+               "error %d (rodata)\n"),
               start_addr, region_size, PROT_READ,
               err);
       return LOAD_MPROTECT_FAIL;
@@ -220,9 +227,11 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
     NaClVmmapAdd(&nap->mem_map,
                  NaClSysToUser(nap, start_addr) >> NACL_PAGESHIFT,
                  region_size >> NACL_PAGESHIFT,
-                 PROT_READ,
-                 PROT_READ,
-                 NACL_VMMAP_ENTRY_ANONYMOUS);
+                 NACL_ABI_PROT_READ,
+                 NACL_ABI_MAP_PRIVATE,
+                 NULL,
+                 0,
+                 0);
   }
 
   /*
@@ -239,12 +248,12 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
              " end 0x%08"NACL_PRIxPTR"\n"),
             start_addr, region_size,
             start_addr + region_size);
-    if (0 != (err = NaCl_mprotect((void *) start_addr,
-                                  region_size,
-                                  PROT_READ | PROT_WRITE))) {
+    if (0 != (err = NaClMprotect((void *) start_addr,
+                                 region_size,
+                                 PROT_READ | PROT_WRITE))) {
       NaClLog(LOG_ERROR,
               ("NaClMemoryProtection: "
-               "NaCl_mprotect(0x%08"NACL_PRIxPTR", "
+               "NaClMprotect(0x%08"NACL_PRIxPTR", "
                "0x%08"NACL_PRIxS", 0x%x) failed, "
                "error %d (data)\n"),
               start_addr, region_size, PROT_READ | PROT_WRITE,
@@ -254,9 +263,11 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
     NaClVmmapAdd(&nap->mem_map,
                  NaClSysToUser(nap, start_addr) >> NACL_PAGESHIFT,
                  region_size >> NACL_PAGESHIFT,
-                 PROT_READ | PROT_WRITE,
-                 PROT_READ | PROT_WRITE,
-                 NACL_VMMAP_ENTRY_ANONYMOUS);
+                 NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
+                 NACL_ABI_MAP_PRIVATE,
+                 NULL,
+                 0,
+                 0);
   }
 
   /* stack is read/write but not execute */
@@ -270,12 +281,12 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
            " end 0x%08"NACL_PRIxPTR"\n"),
           start_addr, region_size,
           start_addr + region_size);
-  if (0 != (err = NaCl_mprotect((void *) start_addr,
-                                NaClRoundAllocPage(nap->stack_size),
-                                PROT_READ | PROT_WRITE))) {
+  if (0 != (err = NaClMprotect((void *) start_addr,
+                               NaClRoundAllocPage(nap->stack_size),
+                               PROT_READ | PROT_WRITE))) {
     NaClLog(LOG_ERROR,
             ("NaClMemoryProtection: "
-             "NaCl_mprotect(0x%08"NACL_PRIxPTR", "
+             "NaClMprotect(0x%08"NACL_PRIxPTR", "
              "0x%08"NACL_PRIxS", 0x%x) failed, "
              "error %d (stack)\n"),
             start_addr, region_size, PROT_READ | PROT_WRITE,
@@ -286,9 +297,11 @@ NaClErrorCode NaClMemoryProtection(struct NaClApp *nap) {
   NaClVmmapAdd(&nap->mem_map,
                NaClSysToUser(nap, start_addr) >> NACL_PAGESHIFT,
                nap->stack_size >> NACL_PAGESHIFT,
-               PROT_READ | PROT_WRITE,
-               PROT_READ | PROT_WRITE,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
   return LOAD_OK;
 }
 

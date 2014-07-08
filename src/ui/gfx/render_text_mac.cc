@@ -6,12 +6,13 @@
 
 #include <ApplicationServices/ApplicationServices.h>
 
+#include <algorithm>
 #include <cmath>
 #include <utility>
 
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "skia/ext/skia_utils_mac.h"
 
 namespace gfx {
@@ -24,12 +25,12 @@ RenderTextMac::~RenderTextMac() {
 
 Size RenderTextMac::GetStringSize() {
   EnsureLayout();
-  return string_size_;
+  return Size(std::ceil(string_size_.width()), string_size_.height());
 }
 
-int RenderTextMac::GetBaseline() {
+SizeF RenderTextMac::GetStringSizeF() {
   EnsureLayout();
-  return common_baseline_;
+  return string_size_;
 }
 
 SelectionModel RenderTextMac::FindCursorPosition(const Point& point) {
@@ -44,14 +45,18 @@ std::vector<RenderText::FontSpan> RenderTextMac::GetFontSpansForTesting() {
 
   std::vector<RenderText::FontSpan> spans;
   for (size_t i = 0; i < runs_.size(); ++i) {
-    gfx::Font font(runs_[i].font_name, runs_[i].text_size);
+    Font font(runs_[i].font_name, runs_[i].text_size);
     const CFRange cf_range = CTRunGetStringRange(runs_[i].ct_run);
-    const ui::Range range(cf_range.location,
-                          cf_range.location + cf_range.length);
+    const Range range(cf_range.location, cf_range.location + cf_range.length);
     spans.push_back(RenderText::FontSpan(font, range));
   }
 
   return spans;
+}
+
+int RenderTextMac::GetLayoutTextBaseline() {
+  EnsureLayout();
+  return common_baseline_;
 }
 
 SelectionModel RenderTextMac::AdjacentCharSelectionModel(
@@ -68,13 +73,12 @@ SelectionModel RenderTextMac::AdjacentWordSelectionModel(
   return SelectionModel();
 }
 
-void RenderTextMac::GetGlyphBounds(size_t index,
-                                   ui::Range* xspan,
-                                   int* height) {
+Range RenderTextMac::GetGlyphBounds(size_t index) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
+  return Range();
 }
 
-std::vector<Rect> RenderTextMac::GetSubstringBounds(const ui::Range& range) {
+std::vector<Rect> RenderTextMac::GetSubstringBounds(const Range& range) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
   return std::vector<Rect>();
 }
@@ -89,9 +93,9 @@ size_t RenderTextMac::LayoutIndexToTextIndex(size_t index) const {
   return index;
 }
 
-bool RenderTextMac::IsCursorablePosition(size_t position) {
+bool RenderTextMac::IsValidCursorIndex(size_t index) {
   // TODO(asvitkine): Implement this. http://crbug.com/131618
-  return false;
+  return IsValidLogicalIndex(index);
 }
 
 void RenderTextMac::ResetLayout() {
@@ -107,23 +111,24 @@ void RenderTextMac::EnsureLayout() {
   runs_.clear();
   runs_valid_ = false;
 
-  const Font& font = GetFont();
-  base::mac::ScopedCFTypeRef<CFStringRef> font_name_cf_string(
-      base::SysUTF8ToCFStringRef(font.GetFontName()));
-  base::mac::ScopedCFTypeRef<CTFontRef> ct_font(
-      CTFontCreateWithName(font_name_cf_string, font.GetFontSize(), NULL));
+  CTFontRef ct_font = base::mac::NSToCFCast(
+      font_list().GetPrimaryFont().GetNativeFont());
 
   const void* keys[] = { kCTFontAttributeName };
   const void* values[] = { ct_font };
-  base::mac::ScopedCFTypeRef<CFDictionaryRef> attributes(
-      CFDictionaryCreate(NULL, keys, values, arraysize(keys), NULL,
+  base::ScopedCFTypeRef<CFDictionaryRef> attributes(
+      CFDictionaryCreate(NULL,
+                         keys,
+                         values,
+                         arraysize(keys),
+                         NULL,
                          &kCFTypeDictionaryValueCallBacks));
 
-  base::mac::ScopedCFTypeRef<CFStringRef> cf_text(
+  base::ScopedCFTypeRef<CFStringRef> cf_text(
       base::SysUTF16ToCFStringRef(text()));
-  base::mac::ScopedCFTypeRef<CFAttributedStringRef> attr_text(
+  base::ScopedCFTypeRef<CFAttributedStringRef> attr_text(
       CFAttributedStringCreate(NULL, cf_text, attributes));
-  base::mac::ScopedCFTypeRef<CFMutableAttributedStringRef> attr_text_mutable(
+  base::ScopedCFTypeRef<CFMutableAttributedStringRef> attr_text_mutable(
       CFAttributedStringCreateMutableCopy(NULL, 0, attr_text));
 
   // TODO(asvitkine|msw): Respect GetTextDirection(), which may not match the
@@ -137,7 +142,16 @@ void RenderTextMac::EnsureLayout() {
   CGFloat leading = 0;
   // TODO(asvitkine): Consider using CTLineGetBoundsWithOptions() on 10.8+.
   double width = CTLineGetTypographicBounds(line_, &ascent, &descent, &leading);
-  string_size_ = Size(width, ascent + descent + leading);
+  // Ensure ascent and descent are not smaller than ones of the font list.
+  // Keep them tall enough to draw often-used characters.
+  // For example, if a text field contains a Japanese character, which is
+  // smaller than Latin ones, and then later a Latin one is inserted, this
+  // ensures that the text baseline does not shift.
+  CGFloat font_list_height = font_list().GetHeight();
+  CGFloat font_list_baseline = font_list().GetBaseline();
+  ascent = std::max(ascent, font_list_baseline);
+  descent = std::max(descent, font_list_height - font_list_baseline);
+  string_size_ = SizeF(width, ascent + descent + leading);
   common_baseline_ = ascent;
 }
 
@@ -158,8 +172,10 @@ void RenderTextMac::DrawVisualText(Canvas* canvas) {
     renderer.DrawPosText(&run.glyph_positions[0], &run.glyphs[0],
                          run.glyphs.size());
     renderer.DrawDecorations(run.origin.x(), run.origin.y(), run.width,
-                             run.style);
+                             run.underline, run.strike, run.diagonal_strike);
   }
+
+  renderer.EndDiagonalStrike();
 }
 
 RenderTextMac::TextRun::TextRun()
@@ -168,7 +184,10 @@ RenderTextMac::TextRun::TextRun()
       width(0),
       font_style(Font::NORMAL),
       text_size(0),
-      foreground(SK_ColorBLACK) {
+      foreground(SK_ColorBLACK),
+      underline(false),
+      strike(false),
+      diagonal_strike(false) {
 }
 
 RenderTextMac::TextRun::~TextRun() {
@@ -176,45 +195,41 @@ RenderTextMac::TextRun::~TextRun() {
 
 void RenderTextMac::ApplyStyles(CFMutableAttributedStringRef attr_string,
                                 CTFontRef font) {
-  // Clear attributes and reserve space to hold the maximum number of entries,
-  // which is at most three per style range per the code below.
-  attributes_.reset(CFArrayCreateMutable(NULL, 3 * style_ranges().size(),
-                                         &kCFTypeArrayCallBacks));
+  // Temporarily apply composition underlines and selection colors.
+  ApplyCompositionAndSelectionStyles();
+
+  // Note: CFAttributedStringSetAttribute() does not appear to retain the values
+  // passed in, as can be verified via CFGetRetainCount(). To ensure the
+  // attribute objects do not leak, they are saved to |attributes_|.
+  // Clear the attributes storage.
+  attributes_.reset(CFArrayCreateMutable(NULL, 0, &kCFTypeArrayCallBacks));
 
   // https://developer.apple.com/library/mac/#documentation/Carbon/Reference/CoreText_StringAttributes_Ref/Reference/reference.html
-  for (size_t i = 0; i < style_ranges().size(); ++i) {
-    const StyleRange& style = style_ranges()[i];
-    const CFRange range = CFRangeMake(style.range.start(),
-                                      style.range.length());
-
-    // Note: CFAttributedStringSetAttribute() does not appear to retain the
-    // values passed in, as can be verified via CFGetRetainCount(). To ensure
-    // the attribute objects do not leak, they are saved to |attributes_|.
-
-    base::mac::ScopedCFTypeRef<CGColorRef> foreground(
-        gfx::CGColorCreateFromSkColor(style.foreground));
+  internal::StyleIterator style(colors(), styles());
+  const size_t layout_text_length = GetLayoutText().length();
+  for (size_t i = 0, end = 0; i < layout_text_length; i = end) {
+    end = TextIndexToLayoutIndex(style.GetRange().end());
+    const CFRange range = CFRangeMake(i, end - i);
+    base::ScopedCFTypeRef<CGColorRef> foreground(
+        CGColorCreateFromSkColor(style.color()));
     CFAttributedStringSetAttribute(attr_string, range,
-                                   kCTForegroundColorAttributeName,
-                                   foreground);
+        kCTForegroundColorAttributeName, foreground);
     CFArrayAppendValue(attributes_, foreground);
 
-    if (style.underline) {
+    if (style.style(UNDERLINE)) {
       CTUnderlineStyle value = kCTUnderlineStyleSingle;
-      base::mac::ScopedCFTypeRef<CFNumberRef> underline(
+      base::ScopedCFTypeRef<CFNumberRef> underline_value(
           CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
       CFAttributedStringSetAttribute(attr_string, range,
                                      kCTUnderlineStyleAttributeName,
-                                     underline);
-      CFArrayAppendValue(attributes_, underline);
+                                     underline_value);
+      CFArrayAppendValue(attributes_, underline_value);
     }
 
-    if (style.font_style & (Font::BOLD | Font::ITALIC)) {
-      int traits = 0;
-      if (style.font_style & Font::BOLD)
-        traits |= kCTFontBoldTrait;
-      if (style.font_style & Font::ITALIC)
-        traits |= kCTFontItalicTrait;
-      base::mac::ScopedCFTypeRef<CTFontRef> styled_font(
+    const int traits = (style.style(BOLD) ? kCTFontBoldTrait : 0) |
+                       (style.style(ITALIC) ? kCTFontItalicTrait : 0);
+    if (traits != 0) {
+      base::ScopedCFTypeRef<CTFontRef> styled_font(
           CTFontCreateCopyWithSymbolicTraits(font, 0.0, NULL, traits, traits));
       // TODO(asvitkine): Handle |styled_font| == NULL case better.
       if (styled_font) {
@@ -223,7 +238,12 @@ void RenderTextMac::ApplyStyles(CFMutableAttributedStringRef attr_string,
         CFArrayAppendValue(attributes_, styled_font);
       }
     }
+
+    style.UpdatePosition(LayoutIndexToTextIndex(end));
   }
+
+  // Undo the temporarily applied composition underlines and selection colors.
+  UndoCompositionAndSelectionStyles();
 }
 
 void RenderTextMac::ComputeRuns() {
@@ -232,9 +252,11 @@ void RenderTextMac::ComputeRuns() {
   CFArrayRef ct_runs = CTLineGetGlyphRuns(line_);
   const CFIndex ct_runs_count = CFArrayGetCount(ct_runs);
 
-  gfx::Vector2d text_offset = GetTextOffset();
+  // TODO(asvitkine): Don't use GetLineOffset() until draw time, since it may be
+  // updated based on alignment changes without resetting the layout.
+  Vector2d text_offset = GetLineOffset(0);
   // Skia will draw glyphs with respect to the baseline.
-  text_offset += gfx::Vector2d(0, common_baseline_);
+  text_offset += Vector2d(0, common_baseline_);
 
   const SkScalar x = SkIntToScalar(text_offset.x());
   const SkScalar y = SkIntToScalar(text_offset.y());
@@ -283,12 +305,12 @@ void RenderTextMac::ComputeRuns() {
     }
 
     // TODO(asvitkine): Style boundaries are not necessarily per-run. Handle
-    //                  this better.
+    //                  this better. Also, support strike and diagonal_strike.
     CFDictionaryRef attributes = CTRunGetAttributes(ct_run);
     CTFontRef ct_font =
         base::mac::GetValueFromDictionary<CTFontRef>(attributes,
                                                      kCTFontAttributeName);
-    base::mac::ScopedCFTypeRef<CFStringRef> font_name_ref(
+    base::ScopedCFTypeRef<CFStringRef> font_name_ref(
         CTFontCopyFamilyName(ct_font));
     run->font_name = base::SysCFStringRefToUTF8(font_name_ref);
     run->text_size = CTFontGetSize(ct_font);
@@ -303,14 +325,14 @@ void RenderTextMac::ComputeRuns() {
         base::mac::GetValueFromDictionary<CGColorRef>(
             attributes, kCTForegroundColorAttributeName);
     if (foreground)
-      run->foreground = gfx::CGColorRefToSkColor(foreground);
+      run->foreground = CGColorRefToSkColor(foreground);
 
     const CFNumberRef underline =
         base::mac::GetValueFromDictionary<CFNumberRef>(
             attributes, kCTUnderlineStyleAttributeName);
     CTUnderlineStyle value = kCTUnderlineStyleNone;
     if (underline && CFNumberGetValue(underline, kCFNumberSInt32Type, &value))
-      run->style.underline = (value == kCTUnderlineStyleSingle);
+      run->underline = (value == kCTUnderlineStyleSingle);
 
     run_origin.offset(run_width, 0);
   }

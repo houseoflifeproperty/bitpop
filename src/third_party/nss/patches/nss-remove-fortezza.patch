@@ -1,11 +1,7 @@
-Index: mozilla/security/nss/lib/pk11wrap/pk11akey.c
-===================================================================
-RCS file: /cvsroot/mozilla/security/nss/lib/pk11wrap/pk11akey.c,v
-retrieving revision 1.30
-diff -p -u -r1.30 pk11akey.c
---- mozilla/security/nss/lib/pk11wrap/pk11akey.c	17 Jun 2010 20:36:37 -0000	1.30
-+++ mozilla/security/nss/lib/pk11wrap/pk11akey.c	22 Jul 2011 20:57:00 -0000
-@@ -171,20 +171,6 @@ PK11_ImportPublicKey(PK11SlotInfo *slot,
+diff -r 3f0105dfc733 lib/pk11wrap/pk11akey.c
+--- a/lib/pk11wrap/pk11akey.c	Mon Apr 22 14:22:48 2013 +0200
++++ b/lib/pk11wrap/pk11akey.c	Mon Apr 22 14:41:49 2013 -0700
+@@ -136,20 +136,6 @@
  	    PK11_SETATTRS(attrs, CKA_VALUE,    pubKey->u.dsa.publicValue.data, 
  					pubKey->u.dsa.publicValue.len); attrs++;
  	    break;
@@ -26,7 +22,7 @@ diff -p -u -r1.30 pk11akey.c
          case dhKey:
  	    keyType = CKK_DH;
  	    PK11_SETATTRS(attrs, CKA_DERIVE, &cktrue, sizeof(CK_BBOOL));attrs++;
-@@ -242,6 +231,10 @@ PK11_ImportPublicKey(PK11SlotInfo *slot,
+@@ -210,6 +196,10 @@
  	    SECITEM_FreeItem(pubValue,PR_TRUE);
  	}
  	if ( rv != SECSuccess) {

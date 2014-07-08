@@ -36,18 +36,17 @@ class CryptoModulePasswordDialogView : public views::DialogDelegateView,
   // views::WidgetDelegate:
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual views::View* GetContentsView() OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
 
   // views::DialogDelegate:
-  virtual string16 GetDialogButtonLabel(
+  virtual base::string16 GetDialogButtonLabel(
       ui::DialogButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   // views::TextfieldController:
   virtual void ContentsChanged(views::Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(views::Textfield* sender,
                               const ui::KeyEvent& keystroke) OVERRIDE;
 
@@ -56,7 +55,6 @@ class CryptoModulePasswordDialogView : public views::DialogDelegateView,
             const std::string& slot_name,
             CryptoModulePasswordReason reason);
 
-  views::Label* title_label_;
   views::Label* reason_label_;
   views::Label* password_label_;
   views::Textfield* password_entry_;

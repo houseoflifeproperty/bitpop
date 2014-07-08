@@ -13,6 +13,7 @@ namespace net {
 namespace dns_protocol {
 
 static const uint16 kDefaultPort = 53;
+static const uint16 kDefaultPortMulticast = 5353;
 
 // DNS packet consists of a header followed by questions and/or answers.
 // For the meaning of specific fields, please see RFC 1035 and 2535
@@ -90,11 +91,20 @@ static const uint8 kLabelPointer = 0xc0;
 static const uint8 kLabelDirect = 0x0;
 static const uint16 kOffsetMask = 0x3fff;
 
+// In MDns the most significant bit of the rrclass is designated as the
+// "cache-flush bit", as described in http://www.rfc-editor.org/rfc/rfc6762.txt
+// section 10.2.
+static const uint16 kMDnsClassMask = 0x7FFF;
+
 static const int kMaxNameLength = 255;
 
 // RFC 1035, section 4.2.1: Messages carried by UDP are restricted to 512
 // bytes (not counting the IP nor UDP headers).
 static const int kMaxUDPSize = 512;
+
+// RFC 6762, section 17: Messages over the local link are restricted by the
+// medium's MTU, and must be under 9000 bytes
+static const int kMaxMulticastSize = 9000;
 
 // DNS class types.
 static const uint16 kClassIN = 1;
@@ -103,8 +113,12 @@ static const uint16 kClassIN = 1;
 // http://www.iana.org/assignments/dns-parameters
 static const uint16 kTypeA = 1;
 static const uint16 kTypeCNAME = 5;
+static const uint16 kTypePTR = 12;
 static const uint16 kTypeTXT = 16;
 static const uint16 kTypeAAAA = 28;
+static const uint16 kTypeSRV = 33;
+static const uint16 kTypeNSEC = 47;
+
 
 // DNS rcode values.
 static const uint8 kRcodeMask = 0xf;
@@ -127,4 +141,3 @@ static const uint16 kFlagAA = 0x400;
 }  // namespace net
 
 #endif  // NET_DNS_DNS_PROTOCOL_H_
-

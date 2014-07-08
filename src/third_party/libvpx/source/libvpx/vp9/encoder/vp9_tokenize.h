@@ -8,60 +8,54 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #ifndef VP9_ENCODER_VP9_TOKENIZE_H_
 #define VP9_ENCODER_VP9_TOKENIZE_H_
 
 #include "vp9/common/vp9_entropy.h"
+
 #include "vp9/encoder/vp9_block.h"
+#include "vp9/encoder/vp9_treewriter.h"
+
+#ifdef __cplusplus
+extern "C" {
+#endif
 
 void vp9_tokenize_initialize();
 
+#define EOSB_TOKEN 127     // Not signalled, encoder only
+
 typedef struct {
-  short Token;
-  short Extra;
+  int16_t token;
+  int16_t extra;
 } TOKENVALUE;
 
 typedef struct {
   const vp9_prob *context_tree;
-  short           Extra;
-  unsigned char   Token;
-  unsigned char   skip_eob_node;
+  int16_t         extra;
+  uint8_t         token;
+  uint8_t         skip_eob_node;
 } TOKENEXTRA;
 
-extern int vp9_mby_is_skippable_4x4(MACROBLOCKD *xd, int has_y2_block);
-extern int vp9_mbuv_is_skippable_4x4(MACROBLOCKD *xd);
-extern int vp9_mby_is_skippable_8x8(MACROBLOCKD *xd, int has_y2_block);
-extern int vp9_mbuv_is_skippable_8x8(MACROBLOCKD *xd);
-extern int vp9_mby_is_skippable_16x16(MACROBLOCKD *xd);
+extern const vp9_tree_index vp9_coef_tree[];
+extern const vp9_tree_index vp9_coef_con_tree[];
+extern struct vp9_token vp9_coef_encodings[];
+
+int vp9_is_skippable_in_plane(MACROBLOCK *x, BLOCK_SIZE bsize, int plane);
 
 struct VP9_COMP;
 
-extern void vp9_tokenize_mb(struct VP9_COMP *cpi, MACROBLOCKD *xd,
-                            TOKENEXTRA **t, int dry_run);
+void vp9_tokenize_sb(struct VP9_COMP *cpi, TOKENEXTRA **t, int dry_run,
+                     BLOCK_SIZE bsize);
 
-extern void vp9_stuff_mb(struct VP9_COMP *cpi, MACROBLOCKD *xd,
-                         TOKENEXTRA **t, int dry_run);
-
-extern void vp9_fix_contexts(MACROBLOCKD *xd);
-
-#ifdef ENTROPY_STATS
-void init_context_counters();
-void print_context_counters();
-
-extern INT64 context_counters[BLOCK_TYPES][COEF_BANDS]
-                             [PREV_COEF_CONTEXTS][MAX_ENTROPY_TOKENS];
-extern INT64 context_counters_8x8[BLOCK_TYPES_8X8][COEF_BANDS]
-                                 [PREV_COEF_CONTEXTS][MAX_ENTROPY_TOKENS];
-extern INT64 context_counters_16x16[BLOCK_TYPES_16X16][COEF_BANDS]
-                                   [PREV_COEF_CONTEXTS][MAX_ENTROPY_TOKENS];
-#endif
-
-extern const int *vp9_dct_value_cost_ptr;
+extern const int16_t *vp9_dct_value_cost_ptr;
 /* TODO: The Token field should be broken out into a separate char array to
  *  improve cache locality, since it's needed for costing when the rest of the
  *  fields are not.
  */
 extern const TOKENVALUE *vp9_dct_value_tokens_ptr;
 
-#endif  /* tokenize_h */
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
+#endif  // VP9_ENCODER_VP9_TOKENIZE_H_

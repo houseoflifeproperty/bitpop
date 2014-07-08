@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/threading/thread_restrictions.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -84,7 +84,7 @@ void ExportedObject::ExportMethod(const std::string& interface_name,
                                   method_name,
                                   method_call_callback,
                                   on_exported_calback);
-  bus_->PostTaskToDBusThread(FROM_HERE, task);
+  bus_->GetDBusTaskRunner()->PostTask(FROM_HERE, task);
 }
 
 void ExportedObject::SendSignal(Signal* signal) {
@@ -99,11 +99,12 @@ void ExportedObject::SendSignal(Signal* signal) {
   dbus_message_ref(signal_message);
 
   const base::TimeTicks start_time = base::TimeTicks::Now();
-  bus_->PostTaskToDBusThread(FROM_HERE,
-                             base::Bind(&ExportedObject::SendSignalInternal,
-                                        this,
-                                        start_time,
-                                        signal_message));
+  bus_->GetDBusTaskRunner()->PostTask(
+      FROM_HERE,
+      base::Bind(&ExportedObject::SendSignalInternal,
+                 this,
+                 start_time,
+                 signal_message));
 }
 
 void ExportedObject::Unregister() {
@@ -126,13 +127,13 @@ void ExportedObject::ExportMethodInternal(
   const bool success = ExportMethodAndBlock(interface_name,
                                             method_name,
                                             method_call_callback);
-  bus_->PostTaskToOriginThread(FROM_HERE,
-                               base::Bind(&ExportedObject::OnExported,
-                                          this,
-                                          on_exported_calback,
-                                          interface_name,
-                                          method_name,
-                                          success));
+  bus_->GetOriginTaskRunner()->PostTask(FROM_HERE,
+                                        base::Bind(&ExportedObject::OnExported,
+                                                   this,
+                                                   on_exported_calback,
+                                                   interface_name,
+                                                   method_name,
+                                                   success));
 }
 
 void ExportedObject::OnExported(OnExportedCallback on_exported_callback,
@@ -214,20 +215,20 @@ DBusHandlerResult ExportedObject::HandleMessage(
   const base::TimeTicks start_time = base::TimeTicks::Now();
   if (bus_->HasDBusThread()) {
     // Post a task to run the method in the origin thread.
-    bus_->PostTaskToOriginThread(FROM_HERE,
-                                 base::Bind(&ExportedObject::RunMethod,
-                                            this,
-                                            iter->second,
-                                            method_call.release(),
-                                            start_time));
+    bus_->GetOriginTaskRunner()->PostTask(FROM_HERE,
+                                          base::Bind(&ExportedObject::RunMethod,
+                                                     this,
+                                                     iter->second,
+                                                     base::Passed(&method_call),
+                                                     start_time));
   } else {
     // If the D-Bus thread is not used, just call the method directly.
-    MethodCall* released_method_call = method_call.release();
-    iter->second.Run(released_method_call,
+    MethodCall* method = method_call.get();
+    iter->second.Run(method,
                      base::Bind(&ExportedObject::SendResponse,
                                 this,
                                 start_time,
-                                released_method_call));
+                                base::Passed(&method_call)));
   }
 
   // It's valid to say HANDLED here, and send a method response at a later
@@ -236,38 +237,38 @@ DBusHandlerResult ExportedObject::HandleMessage(
 }
 
 void ExportedObject::RunMethod(MethodCallCallback method_call_callback,
-                               MethodCall* method_call,
+                               scoped_ptr<MethodCall> method_call,
                                base::TimeTicks start_time) {
   bus_->AssertOnOriginThread();
-  method_call_callback.Run(method_call,
+  MethodCall* method = method_call.get();
+  method_call_callback.Run(method,
                            base::Bind(&ExportedObject::SendResponse,
                                       this,
                                       start_time,
-                                      method_call));
+                                      base::Passed(&method_call)));
 }
 
 void ExportedObject::SendResponse(base::TimeTicks start_time,
-                                  MethodCall* method_call,
-                                  Response* response) {
+                                  scoped_ptr<MethodCall> method_call,
+                                  scoped_ptr<Response> response) {
   DCHECK(method_call);
   if (bus_->HasDBusThread()) {
-    bus_->PostTaskToDBusThread(FROM_HERE,
-                               base::Bind(&ExportedObject::OnMethodCompleted,
-                                          this,
-                                          method_call,
-                                          response,
-                                          start_time));
+    bus_->GetDBusTaskRunner()->PostTask(
+        FROM_HERE,
+        base::Bind(&ExportedObject::OnMethodCompleted,
+                   this,
+                   base::Passed(&method_call),
+                   base::Passed(&response),
+                   start_time));
   } else {
-    OnMethodCompleted(method_call, response, start_time);
+    OnMethodCompleted(method_call.Pass(), response.Pass(), start_time);
   }
 }
 
-void ExportedObject::OnMethodCompleted(MethodCall* method_call,
-                                       Response* response,
+void ExportedObject::OnMethodCompleted(scoped_ptr<MethodCall> method_call,
+                                       scoped_ptr<Response> response,
                                        base::TimeTicks start_time) {
   bus_->AssertOnDBusThread();
-  scoped_ptr<MethodCall> method_call_deleter(method_call);
-  scoped_ptr<Response> response_deleter(response);
 
   // Record if the method call is successful, or not. 1 if successful.
   UMA_HISTOGRAM_ENUMERATION("DBus.ExportedMethodHandleSuccess",
@@ -281,9 +282,9 @@ void ExportedObject::OnMethodCompleted(MethodCall* method_call,
 
   if (!response) {
     // Something bad happened in the method call.
-    scoped_ptr<dbus::ErrorResponse> error_response(
+    scoped_ptr<ErrorResponse> error_response(
         ErrorResponse::FromMethodCall(
-            method_call,
+            method_call.get(),
             DBUS_ERROR_FAILED,
             "error occurred in " + method_call->GetMember()));
     bus_->Send(error_response->raw_message(), NULL);

@@ -14,6 +14,8 @@ class Canvas;
 
 namespace views {
 
+class Painter;
+
 /////////////////////////////////////////////////////////////////////////////
 //
 // ImageView class.
@@ -70,20 +72,31 @@ class VIEWS_EXPORT ImageView : public View {
   Alignment GetVerticalAlignment() const;
 
   // Set / Get the tooltip text.
-  void SetTooltipText(const string16& tooltip);
-  string16 GetTooltipText() const;
+  void SetTooltipText(const base::string16& tooltip);
+  base::string16 GetTooltipText() const;
 
   void set_interactive(bool interactive) { interactive_ = interactive; }
 
+  void SetFocusPainter(scoped_ptr<Painter> focus_painter);
+
   // Overriden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual void OnFocus() OVERRIDE;
+  virtual void OnBlur() OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual bool GetTooltipText(const gfx::Point& p,
-                              string16* tooltip) const OVERRIDE;
+                              base::string16* tooltip) const OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
 
  private:
+  void OnPaintImage(gfx::Canvas* canvas);
+
+  // Returns true if |img| is the same as the last image we painted. This is
+  // intended to be a quick check, not exhaustive. In other words it's possible
+  // for this to return false even though the images are in fact equal.
+  bool IsImageEqual(const gfx::ImageSkia& img) const;
+
   // Compute the image origin given the desired size and the receiver alignment
   // properties.
   gfx::Point ComputeImageOrigin(const gfx::Size& image_size) const;
@@ -104,10 +117,19 @@ class VIEWS_EXPORT ImageView : public View {
   Alignment vert_alignment_;
 
   // The current tooltip text.
-  string16 tooltip_text_;
+  base::string16 tooltip_text_;
 
   // A flag controlling hit test handling for interactivity.
   bool interactive_;
+
+  // Scale last painted at.
+  float last_paint_scale_;
+
+  // Address of bytes we last painted. This is used only for comparison, so its
+  // safe to cache.
+  void* last_painted_bitmap_pixels_;
+
+  scoped_ptr<views::Painter> focus_painter_;
 
   DISALLOW_COPY_AND_ASSIGN(ImageView);
 };

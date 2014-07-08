@@ -18,10 +18,10 @@ function getURLNonUTF8SetCookie() {
 }
 
 function getURLHttpSimpleLoad() {
-  return getServerURL('files/extensions/api_test/webrequest/simpleLoad/a.html');
+  return getServerURL('extensions/api_test/webrequest/simpleLoad/a.html');
 }
 function getURLHttpXHRData() {
-  return getServerURL('files/extensions/api_test/webrequest/xhr/data.json');
+  return getServerURL('extensions/api_test/webrequest/xhr/data.json');
 }
 
 function toCharCodes(str) {
@@ -100,7 +100,7 @@ runTests([
           event: "onHeadersReceived",
           details: {
             url: getURLHttpSimpleLoad(),
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           },
           retval: {cancel: true}
         },
@@ -121,6 +121,144 @@ runTests([
       ],
       {urls: ["<all_urls>"]},  // filter
       ["blocking"]);
+    navigateAndWait(getURLHttpSimpleLoad());
+  },
+
+  // Navigates to a page and provides invalid header information. The request
+  // should continue as if the headers were not changed.
+  function simpleLoadIgnoreOnBeforeSendHeadersInvalidHeaders() {
+    expect(
+      [  // events
+        { label: "onBeforeRequest",
+          event: "onBeforeRequest",
+          details: {
+            method: "GET",
+            type: "main_frame",
+            url: getURLHttpSimpleLoad(),
+            frameUrl: getURLHttpSimpleLoad()
+          },
+        },
+        { label: "onBeforeSendHeaders",
+          event: "onBeforeSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            requestHeadersValid: true
+          },
+          retval: {requestHeaders: [{name: "User-Agent"}]}
+        },
+        // The headers were invalid, so they should not be modified.
+        // TODO(robwu): Test whether an error is logged to the console.
+        { label: "onSendHeaders",
+          event: "onSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            requestHeadersValid: true
+          }
+        },
+        { label: "onHeadersReceived",
+          event: "onHeadersReceived",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+        { label: "onResponseStarted",
+          event: "onResponseStarted",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            fromCache: false,
+            statusCode: 200,
+            ip: "127.0.0.1",
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+        { label: "onCompleted",
+          event: "onCompleted",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            fromCache: false,
+            statusCode: 200,
+            ip: "127.0.0.1",
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+      ],
+      [  // event order
+        ["onBeforeRequest", "onBeforeSendHeaders", "onSendHeaders",
+         "onHeadersReceived", "onResponseStarted", "onCompleted"]
+      ],
+      {urls: ["<all_urls>"]},  // filter
+      ["blocking", "requestHeaders"]);
+    navigateAndWait(getURLHttpSimpleLoad());
+  },
+
+  // Navigates to a page and provides invalid header information. The request
+  // should continue as if the headers were not changed.
+  function simpleLoadIgnoreOnBeforeSendHeadersInvalidResponse() {
+    // Exception handling seems to break this test, so disable it.
+    // See http://crbug.com/370897. TODO(robwu): Fix me.
+    chrome.test.setExceptionHandler(function(){});
+    expect(
+      [  // events
+        { label: "onBeforeRequest",
+          event: "onBeforeRequest",
+          details: {
+            method: "GET",
+            type: "main_frame",
+            url: getURLHttpSimpleLoad(),
+            frameUrl: getURLHttpSimpleLoad()
+          },
+        },
+        { label: "onBeforeSendHeaders",
+          event: "onBeforeSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            requestHeadersValid: true
+          },
+          retval: {foo: "bar"}
+        },
+        // TODO(robwu): Test whether an error is logged to the console.
+        { label: "onSendHeaders",
+          event: "onSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            requestHeadersValid: true
+          }
+        },
+        { label: "onHeadersReceived",
+          event: "onHeadersReceived",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+        { label: "onResponseStarted",
+          event: "onResponseStarted",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            fromCache: false,
+            statusCode: 200,
+            ip: "127.0.0.1",
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+        { label: "onCompleted",
+          event: "onCompleted",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            fromCache: false,
+            statusCode: 200,
+            ip: "127.0.0.1",
+            statusLine: "HTTP/1.1 200 OK",
+          }
+        },
+      ],
+      [  // event order
+        ["onBeforeRequest", "onBeforeSendHeaders", "onSendHeaders",
+         "onHeadersReceived", "onResponseStarted", "onCompleted"]
+      ],
+      {urls: ["<all_urls>"]},  // filter
+      ["blocking", "requestHeaders"]);
     navigateAndWait(getURLHttpSimpleLoad());
   },
 
@@ -215,7 +353,7 @@ runTests([
           event: "onHeadersReceived",
           details: {
             url: getURLEchoUserAgent(),
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
         { label: "onResponseStarted",
@@ -225,7 +363,7 @@ runTests([
             fromCache: false,
             statusCode: 200,
             ip: "127.0.0.1",
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
         { label: "onCompleted",
@@ -235,7 +373,7 @@ runTests([
             fromCache: false,
             statusCode: 200,
             ip: "127.0.0.1",
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
       ],
@@ -290,7 +428,7 @@ runTests([
           event: "onHeadersReceived",
           details: {
             url: getURLEchoUserAgent(),
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
         { label: "onResponseStarted",
@@ -300,7 +438,7 @@ runTests([
             fromCache: false,
             statusCode: 200,
             ip: "127.0.0.1",
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
         { label: "onCompleted",
@@ -310,7 +448,7 @@ runTests([
             fromCache: false,
             statusCode: 200,
             ip: "127.0.0.1",
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
       ],
@@ -363,7 +501,7 @@ runTests([
           event: "onHeadersReceived",
           details: {
             url: getURLSetCookie(),
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             responseHeadersExist: true,
           },
           retval_function: function(name, details) {
@@ -387,7 +525,7 @@ runTests([
             url: getURLSetCookie(),
             fromCache: false,
             statusCode: 200,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             ip: "127.0.0.1",
             responseHeadersExist: true,
           }
@@ -398,7 +536,7 @@ runTests([
             url: getURLSetCookie(),
             fromCache: false,
             statusCode: 200,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             ip: "127.0.0.1",
             responseHeadersExist: true,
           }
@@ -453,7 +591,7 @@ runTests([
           event: "onHeadersReceived",
           details: {
             url: getURLNonUTF8SetCookie(),
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             responseHeadersExist: true,
           },
           retval_function: function(name, details) {
@@ -484,7 +622,7 @@ runTests([
             url: getURLNonUTF8SetCookie(),
             fromCache: false,
             statusCode: 200,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             ip: "127.0.0.1",
             responseHeadersExist: true,
           }
@@ -495,7 +633,7 @@ runTests([
             url: getURLNonUTF8SetCookie(),
             fromCache: false,
             statusCode: 200,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             ip: "127.0.0.1",
             responseHeadersExist: true,
           }
@@ -516,6 +654,91 @@ runTests([
             "{pass: document.cookie.indexOf('Foo') == -1});"
         });
     });
+  },
+
+  // Navigates to a page with a blocking handler that redirects to a different
+  // non-http page during onHeadersReceived. The requested page should not be
+  // loaded, and the redirect should succeed.
+  function simpleLoadRedirectOnReceiveHeaders() {
+    expect(
+      [  // events
+        { label: "onBeforeRequest-1",
+          event: "onBeforeRequest",
+          details: {
+            method: "GET",
+            type: "main_frame",
+            url: getURLHttpSimpleLoad(),
+            frameUrl: getURLHttpSimpleLoad()
+          },
+        },
+        { label: "onBeforeSendHeaders",
+          event: "onBeforeSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            // Note: no requestHeaders because we don't ask for them.
+          },
+        },
+        { label: "onSendHeaders",
+          event: "onSendHeaders",
+          details: {
+            url: getURLHttpSimpleLoad()
+          }
+        },
+        { label: "onHeadersReceived",
+          event: "onHeadersReceived",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            statusLine: "HTTP/1.1 200 OK",
+          },
+          retval: {redirectUrl: getURL("simpleLoad/a.html")}
+        },
+        { label: "onBeforeRedirect",
+          event: "onBeforeRedirect",
+          details: {
+            url: getURLHttpSimpleLoad(),
+            redirectUrl: getURL("simpleLoad/a.html"),
+            statusLine: "HTTP/1.1 302 Found",
+            statusCode: 302,
+            fromCache: false,
+            ip: "127.0.0.1",
+          }
+        },
+        { label: "onBeforeRequest-2",
+          event: "onBeforeRequest",
+          details: {
+            url: getURL("simpleLoad/a.html"),
+            frameUrl: getURL("simpleLoad/a.html"),
+          },
+        },
+        { label: "onResponseStarted",
+          event: "onResponseStarted",
+          details: {
+            url: getURL("simpleLoad/a.html"),
+            fromCache: false,
+            statusCode: 200,
+            statusLine: "HTTP/1.1 200 OK",
+            // Request to chrome-extension:// url has no IP.
+          }
+        },
+        { label: "onCompleted",
+          event: "onCompleted",
+          details: {
+            url: getURL("simpleLoad/a.html"),
+            fromCache: false,
+            statusCode: 200,
+            statusLine: "HTTP/1.1 200 OK",
+            // Request to chrome-extension:// url has no IP.
+          }
+        },
+      ],
+      [  // event order
+        ["onBeforeRequest-1", "onBeforeSendHeaders", "onSendHeaders",
+         "onHeadersReceived", "onBeforeRedirect", "onBeforeRequest-2",
+         "onResponseStarted", "onCompleted"]
+      ],
+      {urls: ["<all_urls>"]},  // filter
+      ["blocking"]);
+    navigateAndWait(getURLHttpSimpleLoad());
   },
 
   // Checks that synchronous XHR requests from ourself are invisible to blocking
@@ -566,7 +789,7 @@ runTests([
             url: getURLHttpXHRData(),
             statusCode: 200,
             fromCache: false,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             tabId: 1,
             type: "xmlhttprequest",
             ip: "127.0.0.1",
@@ -579,7 +802,7 @@ runTests([
             url: getURLHttpXHRData(),
             statusCode: 200,
             fromCache: false,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             tabId: 1,
             type: "xmlhttprequest",
             ip: "127.0.0.1",
@@ -695,7 +918,7 @@ runTests([
             url: getURLHttpXHRData(),
             statusCode: 200,
             fromCache: false,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             tabId: 1,
             type: "xmlhttprequest",
             ip: "127.0.0.1",
@@ -709,7 +932,7 @@ runTests([
             url: getURLHttpXHRData(),
             tabId: 1,
             type: "xmlhttprequest",
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
           }
         },
         { label: "x-onCompleted",
@@ -718,7 +941,7 @@ runTests([
             url: getURLHttpXHRData(),
             statusCode: 200,
             fromCache: false,
-            statusLine: "HTTP/1.0 200 OK",
+            statusLine: "HTTP/1.1 200 OK",
             tabId: 1,
             type: "xmlhttprequest",
             ip: "127.0.0.1",

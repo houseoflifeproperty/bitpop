@@ -21,8 +21,8 @@
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/string_number_conversions.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/facebook_chat/facebook_chatbar.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
 #include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
@@ -33,10 +33,8 @@
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_popup_controller.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_controller.h"
 #include "chrome/browser/ui/lion_badge_image_source.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_util.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -47,6 +45,8 @@
 #include "ui/gfx/image/image_skia_util_mac.h"
 #include "ui/gfx/screen.h"
 #include "ui/gfx/skia_util.h"
+#include "url/gurl.h"
+#include "url/url_util.h"
 
 namespace {
   const int kButtonWidth = 178;
@@ -230,8 +230,8 @@ if (!button_)
   urlString += mgr->global_my_uid();
   urlString += "&name=";
   urlString += bridge_->chat()->username();
-  url_canon::RawCanonOutput<1024> out;
-  url_util::EncodeURIComponent(
+  url::RawCanonOutput<1024> out;
+  url::EncodeURIComponent(
                   bridge_->chat()->username().c_str(),
                   bridge_->chat()->username().length(),
                   &out);

@@ -17,14 +17,24 @@
 namespace remoting {
 namespace protocol {
 
+class Capabilities;
+class ExtensionMessage;
+class PairingResponse;
+
 class ClientStub : public ClipboardStub,
                    public CursorShapeStub {
  public:
   ClientStub() {}
   virtual ~ClientStub() {}
 
-  // Currently we don't use the control channel for anything. Add new
-  // message handlers here when necessary.
+  // Passes the set of capabilities supported by the host to the client.
+  virtual void SetCapabilities(const Capabilities& capabilities) = 0;
+
+  // Passes a pairing response message to the client.
+  virtual void SetPairingResponse(const PairingResponse& pairing_response) = 0;
+
+  // Deliver an extension message from the host to the client.
+  virtual void DeliverHostMessage(const ExtensionMessage& message) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(ClientStub);

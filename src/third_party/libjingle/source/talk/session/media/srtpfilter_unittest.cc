@@ -322,6 +322,22 @@ TEST_F(SrtpFilterTest, TestUnsupportedOptions) {
   EXPECT_FALSE(f1_.IsActive());
 }
 
+// Test that we can encrypt/decrypt after setting the same CryptoParams again on
+// one side.
+TEST_F(SrtpFilterTest, TestSettingSameKeyOnOneSide) {
+  std::vector<CryptoParams> offer(MakeVector(kTestCryptoParams1));
+  std::vector<CryptoParams> answer(MakeVector(kTestCryptoParams2));
+  TestSetParams(offer, answer);
+
+  TestProtectUnprotect(CS_AES_CM_128_HMAC_SHA1_80,
+                       CS_AES_CM_128_HMAC_SHA1_80);
+
+  // Re-applying the same keys on one end and it should not reset the ROC.
+  EXPECT_TRUE(f2_.SetOffer(offer, CS_REMOTE));
+  EXPECT_TRUE(f2_.SetAnswer(answer, CS_LOCAL));
+  TestProtectUnprotect(CS_AES_CM_128_HMAC_SHA1_80, CS_AES_CM_128_HMAC_SHA1_80);
+}
+
 // Test that we can encrypt/decrypt after negotiating AES_CM_128_HMAC_SHA1_80.
 TEST_F(SrtpFilterTest, TestProtect_AES_CM_128_HMAC_SHA1_80) {
   std::vector<CryptoParams> offer(MakeVector(kTestCryptoParams1));
@@ -506,6 +522,25 @@ TEST_F(SrtpFilterTest, TestSetParamsKeyTooShort) {
                                  kTestKey1, kTestKeyLen - 1));
 }
 
+#if defined(ENABLE_EXTERNAL_AUTH)
+TEST_F(SrtpFilterTest, TestGetSendAuthParams) {
+  EXPECT_TRUE(f1_.SetRtpParams(CS_AES_CM_128_HMAC_SHA1_32,
+                               kTestKey1, kTestKeyLen,
+                               CS_AES_CM_128_HMAC_SHA1_32,
+                               kTestKey2, kTestKeyLen));
+  EXPECT_TRUE(f1_.SetRtcpParams(CS_AES_CM_128_HMAC_SHA1_32,
+                                kTestKey1, kTestKeyLen,
+                                CS_AES_CM_128_HMAC_SHA1_32,
+                                kTestKey2, kTestKeyLen));
+  uint8* auth_key = NULL;
+  int auth_key_len = 0, auth_tag_len = 0;
+  EXPECT_TRUE(f1_.GetRtpAuthParams(&auth_key, &auth_key_len, &auth_tag_len));
+  EXPECT_TRUE(auth_key != NULL);
+  EXPECT_EQ(20, auth_key_len);
+  EXPECT_EQ(4, auth_tag_len);
+}
+#endif
+
 class SrtpSessionTest : public testing::Test {
  protected:
   virtual void SetUp() {
@@ -588,6 +623,17 @@ TEST_F(SrtpSessionTest, TestProtect_AES_CM_128_HMAC_SHA1_32) {
   TestProtectRtcp(CS_AES_CM_128_HMAC_SHA1_32);
   TestUnprotectRtp(CS_AES_CM_128_HMAC_SHA1_32);
   TestUnprotectRtcp(CS_AES_CM_128_HMAC_SHA1_32);
+}
+
+TEST_F(SrtpSessionTest, TestGetSendStreamPacketIndex) {
+  EXPECT_TRUE(s1_.SetSend(CS_AES_CM_128_HMAC_SHA1_32, kTestKey1, kTestKeyLen));
+  int64 index;
+  int out_len = 0;
+  EXPECT_TRUE(s1_.ProtectRtp(rtp_packet_, rtp_len_,
+                             sizeof(rtp_packet_), &out_len, &index));
+  // |index| will be shifted by 16.
+  int64 be64_index = be64_to_cpu(1 << 16);
+  EXPECT_EQ(be64_index, index);
 }
 
 // Test that we fail to unprotect if someone tampers with the RTP/RTCP paylaods.

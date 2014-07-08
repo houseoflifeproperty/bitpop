@@ -61,32 +61,45 @@
 #include "base/basictypes.h"
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/shared_memory.h"
-#include "media/base/media_export.h"
+#include "base/memory/shared_memory.h"
 #include "media/audio/audio_device_thread.h"
 #include "media/audio/audio_output_ipc.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/scoped_loop_observer.h"
+#include "media/audio/scoped_task_runner_observer.h"
 #include "media/base/audio_renderer_sink.h"
+#include "media/base/media_export.h"
 
 namespace media {
 
 class MEDIA_EXPORT AudioOutputDevice
     : NON_EXPORTED_BASE(public AudioRendererSink),
-      public AudioOutputIPCDelegate,
-      NON_EXPORTED_BASE(public ScopedLoopObserver) {
+      NON_EXPORTED_BASE(public AudioOutputIPCDelegate),
+      NON_EXPORTED_BASE(public ScopedTaskRunnerObserver) {
  public:
+  // NOTE: Clients must call Initialize() before using.
+  AudioOutputDevice(
+      scoped_ptr<AudioOutputIPC> ipc,
+      const scoped_refptr<base::SingleThreadTaskRunner>& io_task_runner);
+
+  // Initialize function for clients wishing to have unified input and
+  // output, |params| may specify |input_channels| > 0, representing a
+  // number of input channels which will be at the same sample-rate
+  // and buffer-size as the output as specified in |params|. |session_id| is
+  // used for the browser to select the correct input device.
+  // In this case, the callback's RenderIO() method will be called instead
+  // of Render(), providing the synchronized input data at the same time as
+  // when new output data is to be rendered.
+  void InitializeUnifiedStream(const AudioParameters& params,
+                               RenderCallback* callback,
+                               int session_id);
+
   // AudioRendererSink implementation.
   virtual void Initialize(const AudioParameters& params,
                           RenderCallback* callback) OVERRIDE;
-  virtual void InitializeIO(const AudioParameters& params,
-                            int input_channels,
-                            RenderCallback* callback) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
   virtual void Play() OVERRIDE;
-  virtual void Pause(bool flush) OVERRIDE;
+  virtual void Pause() OVERRIDE;
   virtual bool SetVolume(double volume) OVERRIDE;
 
   // Methods called on IO thread ----------------------------------------------
@@ -97,20 +110,11 @@ class MEDIA_EXPORT AudioOutputDevice
                                int length) OVERRIDE;
   virtual void OnIPCClosed() OVERRIDE;
 
-  // Creates an uninitialized AudioOutputDevice. Clients must call Initialize()
-  // before using.
-  AudioOutputDevice(AudioOutputIPC* ipc,
-                    const scoped_refptr<base::MessageLoopProxy>& io_loop);
-
  protected:
   // Magic required by ref_counted.h to avoid any code deleting the object
   // accidentally while there are references to it.
   friend class base::RefCountedThreadSafe<AudioOutputDevice>;
   virtual ~AudioOutputDevice();
-
-  // Accessors for subclasses (via IO thread only).
-  int stream_id() const { return stream_id_; }
-  AudioOutputIPC* audio_output_ipc() const { return ipc_; }
 
  private:
   // Note: The ordering of members in this enum is critical to correct behavior!
@@ -123,35 +127,27 @@ class MEDIA_EXPORT AudioOutputDevice
   };
 
   // Methods called on IO thread ----------------------------------------------
-  // The following methods are tasks posted on the IO thread that needs to
-  // be executed on that thread. They interact with AudioMessageFilter and
-  // sends IPC messages on that thread.
-  void CreateStreamOnIOThread(const AudioParameters& params,
-                              int input_channels);
+  // The following methods are tasks posted on the IO thread that need to
+  // be executed on that thread.  They use AudioOutputIPC to send IPC messages
+  // upon state changes.
+  void CreateStreamOnIOThread(const AudioParameters& params);
   void PlayOnIOThread();
-  void PauseOnIOThread(bool flush);
+  void PauseOnIOThread();
   void ShutDownOnIOThread();
   void SetVolumeOnIOThread(double volume);
 
-  // MessageLoop::DestructionObserver implementation for the IO loop.
+  // base::MessageLoop::DestructionObserver implementation for the IO loop.
   // If the IO loop dies before we do, we shut down the audio thread from here.
   virtual void WillDestroyCurrentMessageLoop() OVERRIDE;
 
   AudioParameters audio_parameters_;
 
-  // The number of optional synchronized input channels having the same
-  // sample-rate and buffer-size as specified in audio_parameters_.
-  int input_channels_;
-
   RenderCallback* callback_;
 
   // A pointer to the IPC layer that takes care of sending requests over to
-  // the AudioRendererHost.
-  AudioOutputIPC* ipc_;
-
-  // Our stream ID on the message filter. Only accessed on the IO thread.
-  // Must only be modified on the IO thread.
-  int stream_id_;
+  // the AudioRendererHost.  Only valid when state_ != IPC_CLOSED and must only
+  // be accessed on the IO thread.
+  scoped_ptr<AudioOutputIPC> ipc_;
 
   // Current state (must only be accessed from the IO thread).  See comments for
   // State enum above.
@@ -159,6 +155,10 @@ class MEDIA_EXPORT AudioOutputDevice
 
   // State of Play() / Pause() calls before OnStreamCreated() is called.
   bool play_on_start_;
+
+  // The media session ID used to identify which input device to be started.
+  // Only used by Unified IO.
+  int session_id_;
 
   // Our audio thread callback class.  See source file for details.
   class AudioThreadCallback;

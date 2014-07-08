@@ -13,6 +13,7 @@
 #include "net/base/net_errors.h"
 #include "net/udp/udp_server_socket.h"
 #include "third_party/libjingle/source/talk/base/asyncpacketsocket.h"
+#include "third_party/libjingle/source/talk/base/nethelpers.h"
 
 namespace remoting {
 
@@ -43,17 +44,19 @@ class UdpPacketSocket : public talk_base::AsyncPacketSocket {
             int min_port, int max_port);
 
   // talk_base::AsyncPacketSocket interface.
-  virtual talk_base::SocketAddress GetLocalAddress() const;
-  virtual talk_base::SocketAddress GetRemoteAddress() const;
-  virtual int Send(const void* data, size_t data_size);
+  virtual talk_base::SocketAddress GetLocalAddress() const OVERRIDE;
+  virtual talk_base::SocketAddress GetRemoteAddress() const OVERRIDE;
+  virtual int Send(const void* data, size_t data_size,
+                   const talk_base::PacketOptions& options) OVERRIDE;
   virtual int SendTo(const void* data, size_t data_size,
-                     const talk_base::SocketAddress& address);
-  virtual int Close();
-  virtual State GetState() const;
-  virtual int GetOption(talk_base::Socket::Option option, int* value);
-  virtual int SetOption(talk_base::Socket::Option option, int value);
-  virtual int GetError() const;
-  virtual void SetError(int error);
+                     const talk_base::SocketAddress& address,
+                     const talk_base::PacketOptions& options) OVERRIDE;
+  virtual int Close() OVERRIDE;
+  virtual State GetState() const OVERRIDE;
+  virtual int GetOption(talk_base::Socket::Option option, int* value) OVERRIDE;
+  virtual int SetOption(talk_base::Socket::Option option, int value) OVERRIDE;
+  virtual int GetError() const OVERRIDE;
+  virtual void SetError(int error) OVERRIDE;
 
  private:
   struct PendingPacket {
@@ -159,14 +162,16 @@ talk_base::SocketAddress UdpPacketSocket::GetRemoteAddress() const {
   return talk_base::SocketAddress();
 }
 
-int UdpPacketSocket::Send(const void* data, size_t data_size) {
+int UdpPacketSocket::Send(const void* data, size_t data_size,
+                          const talk_base::PacketOptions& options) {
   // UDP sockets are not connected - this method should never be called.
   NOTREACHED();
   return EWOULDBLOCK;
 }
 
 int UdpPacketSocket::SendTo(const void* data, size_t data_size,
-                            const talk_base::SocketAddress& address) {
+                            const talk_base::SocketAddress& address,
+                            const talk_base::PacketOptions& options) {
   if (state_ != STATE_BOUND) {
     NOTREACHED();
     return EINVAL;
@@ -220,13 +225,13 @@ int UdpPacketSocket::SetOption(talk_base::Socket::Option option, int value) {
       return -1;
 
     case talk_base::Socket::OPT_RCVBUF: {
-      bool success = socket_->SetReceiveBufferSize(value);
-      return success ? 0 : -1;
+      int net_error = socket_->SetReceiveBufferSize(value);
+      return (net_error == net::OK) ? 0 : -1;
     }
 
     case talk_base::Socket::OPT_SNDBUF: {
-      bool success = socket_->SetSendBufferSize(value);
-      return success ? 0 : -1;
+      int net_error = socket_->SetSendBufferSize(value);
+      return (net_error == net::OK) ? 0 : -1;
     }
 
     case talk_base::Socket::OPT_NODELAY:
@@ -235,6 +240,14 @@ int UdpPacketSocket::SetOption(talk_base::Socket::Option option, int value) {
       return -1;
 
     case talk_base::Socket::OPT_IPV6_V6ONLY:
+      NOTIMPLEMENTED();
+      return -1;
+
+    case talk_base::Socket::OPT_DSCP:
+      NOTIMPLEMENTED();
+      return -1;
+
+    case talk_base::Socket::OPT_RTP_SENDTIME_EXTN_ID:
       NOTIMPLEMENTED();
       return -1;
   }
@@ -257,9 +270,10 @@ void UdpPacketSocket::DoSend() {
 
   PendingPacket& packet = send_queue_.front();
   int result = socket_->SendTo(
-      packet.data, packet.data->size(), packet.address,
-      base::Bind(&UdpPacketSocket::OnSendCompleted,
-                 base::Unretained(this)));
+      packet.data.get(),
+      packet.data->size(),
+      packet.address,
+      base::Bind(&UdpPacketSocket::OnSendCompleted, base::Unretained(this)));
   if (result == net::ERR_IO_PENDING) {
     send_pending_ = true;
   } else {
@@ -290,7 +304,9 @@ void UdpPacketSocket::DoRead() {
   while (result >= 0) {
     receive_buffer_ = new net::IOBuffer(kReceiveBufferSize);
     result = socket_->RecvFrom(
-        receive_buffer_, kReceiveBufferSize, &receive_address_,
+        receive_buffer_.get(),
+        kReceiveBufferSize,
+        &receive_address_,
         base::Bind(&UdpPacketSocket::OnReadCompleted, base::Unretained(this)));
     HandleReadResult(result);
   }
@@ -315,7 +331,8 @@ void UdpPacketSocket::HandleReadResult(int result) {
       LOG(ERROR) << "Failed to convert address received from RecvFrom().";
       return;
     }
-    SignalReadPacket(this, receive_buffer_->data(), result, address);
+    SignalReadPacket(this, receive_buffer_->data(), result, address,
+                     talk_base::CreatePacketTime(0));
   } else {
     LOG(ERROR) << "Received error when reading from UDP socket: " << result;
   }
@@ -342,7 +359,7 @@ talk_base::AsyncPacketSocket*
 ChromiumPacketSocketFactory::CreateServerTcpSocket(
     const talk_base::SocketAddress& local_address,
     int min_port, int max_port,
-    bool ssl) {
+    int opts) {
   // We don't use TCP sockets for remoting connections.
   NOTREACHED();
   return NULL;
@@ -354,10 +371,15 @@ ChromiumPacketSocketFactory::CreateClientTcpSocket(
       const talk_base::SocketAddress& remote_address,
       const talk_base::ProxyInfo& proxy_info,
       const std::string& user_agent,
-      bool ssl) {
+      int opts) {
   // We don't use TCP sockets for remoting connections.
   NOTREACHED();
   return NULL;
+}
+
+talk_base::AsyncResolverInterface*
+ChromiumPacketSocketFactory::CreateAsyncResolver() {
+  return new talk_base::AsyncResolver();
 }
 
 }  // namespace remoting

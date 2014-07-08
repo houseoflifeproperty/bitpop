@@ -6,7 +6,7 @@
 #define CONTENT_BROWSER_RENDERER_HOST_WEB_INPUT_EVENT_AURA_H_
 
 #include "content/common/content_export.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 
 namespace ui {
 class GestureEvent;
@@ -22,19 +22,23 @@ namespace content {
 // Used for scrolling. This matches Firefox behavior.
 const int kPixelsPerTick = 53;
 
-CONTENT_EXPORT WebKit::WebMouseEvent MakeWebMouseEvent(
+#if defined(USE_X11) || defined(USE_OZONE)
+CONTENT_EXPORT blink::WebUChar GetControlCharacter(
+    int windows_key_code, bool shift);
+#endif
+CONTENT_EXPORT blink::WebMouseEvent MakeWebMouseEvent(
     ui::MouseEvent* event);
-CONTENT_EXPORT WebKit::WebMouseWheelEvent MakeWebMouseWheelEvent(
+CONTENT_EXPORT blink::WebMouseWheelEvent MakeWebMouseWheelEvent(
     ui::MouseWheelEvent* event);
-CONTENT_EXPORT WebKit::WebMouseWheelEvent MakeWebMouseWheelEvent(
+CONTENT_EXPORT blink::WebMouseWheelEvent MakeWebMouseWheelEvent(
     ui::ScrollEvent* event);
-CONTENT_EXPORT WebKit::WebKeyboardEvent MakeWebKeyboardEvent(
+CONTENT_EXPORT blink::WebKeyboardEvent MakeWebKeyboardEvent(
     ui::KeyEvent* event);
-CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEvent(
+CONTENT_EXPORT blink::WebGestureEvent MakeWebGestureEvent(
     ui::GestureEvent* event);
-CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEvent(
+CONTENT_EXPORT blink::WebGestureEvent MakeWebGestureEvent(
     ui::ScrollEvent* event);
-CONTENT_EXPORT WebKit::WebGestureEvent MakeWebGestureEventFlingCancel();
+CONTENT_EXPORT blink::WebGestureEvent MakeWebGestureEventFlingCancel();
 
 }  // namespace content
 

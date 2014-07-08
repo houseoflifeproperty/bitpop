@@ -8,10 +8,10 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/base/ui_base_types.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/web_dialogs/web_dialogs_export.h"
-#include "webkit/glue/window_open_disposition.h"
 
 class GURL;
 
@@ -38,7 +38,7 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   virtual ModalType GetDialogModalType() const = 0;
 
   // Returns the title of the dialog.
-  virtual string16 GetDialogTitle() const = 0;
+  virtual base::string16 GetDialogTitle() const = 0;
 
   // Returns the dialog's name identifier. Used to identify this dialog for
   // state restoration.
@@ -63,6 +63,12 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   // Gets the JSON string input to use when showing the dialog.
   virtual std::string GetDialogArgs() const = 0;
 
+  // Returns true to signal that the dialog can be closed. Specialized
+  // WebDialogDelegate subclasses can override this default behavior to allow
+  // the close to be blocked until the user corrects mistakes, accepts an
+  // agreement, etc.
+  virtual bool CanCloseDialog() const;
+
   // A callback to notify the delegate that |source|'s loading state has
   // changed.
   virtual void OnLoadingStateChanged(content::WebContents* source) {}
@@ -78,6 +84,10 @@ class WEB_DIALOGS_EXPORT WebDialogDelegate {
   // arranged for the delegate to be deleted in some other way, e.g. by
   // registering it as a message handler in the WebUI object).
   virtual void OnDialogClosed(const std::string& json_retval) = 0;
+
+  // A callback to notify the delegate that the dialog is being closed in
+  // response to a "dialogClose" message from WebUI.
+  virtual void OnDialogCloseFromWebUI(const std::string& json_retval);
 
   // A callback to notify the delegate that the contents have gone
   // away. Only relevant if your dialog hosts code that calls

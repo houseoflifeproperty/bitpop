@@ -10,7 +10,7 @@
 #include "ash/system/tray/system_tray_item.h"
 #include "ash/system/tray/tray_bubble_wrapper.h"
 #include "ash/system/tray/tray_constants.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ui/aura/window.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
@@ -33,6 +33,10 @@ namespace {
 // detailed view.
 const int kDetailedBubbleMaxHeight = kTrayPopupItemHeight * 5;
 
+// Duration of swipe animation used when transitioning from a default to
+// detailed view or vice versa.
+const int kSwipeDelayMS = 150;
+
 // A view with some special behaviour for tray items in the popup:
 // - optionally changes background color on hover.
 class TrayPopupItemContainer : public views::View {
@@ -44,7 +48,7 @@ class TrayPopupItemContainer : public views::View {
         change_background_(change_background) {
     set_notify_enter_exit_on_child(true);
     if (draw_border) {
-      set_border(
+      SetBorder(
           views::Border::CreateSolidSidedBorder(0, 0, 1, 0, kBorderLightColor));
     }
     views::BoxLayout* layout = new views::BoxLayout(
@@ -112,7 +116,7 @@ class AnimationObserverDeleteLayer : public ui::ImplicitAnimationObserver {
   }
 
   virtual void OnImplicitAnimationsCompleted() OVERRIDE {
-    MessageLoopForUI::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoopForUI::current()->DeleteSoon(FROM_HERE, this);
   }
 
  private:
@@ -122,8 +126,6 @@ class AnimationObserverDeleteLayer : public ui::ImplicitAnimationObserver {
 };
 
 }  // namespace
-
-namespace internal {
 
 // SystemTrayBubble
 
@@ -149,51 +151,52 @@ void SystemTrayBubble::UpdateView(
     const std::vector<ash::SystemTrayItem*>& items,
     BubbleType bubble_type) {
   DCHECK(bubble_type != BUBBLE_TYPE_NOTIFICATION);
-  DCHECK(bubble_type != bubble_type_);
 
-  const int kSwipeDelayMS = 150;
-  base::TimeDelta swipe_duration =
-      base::TimeDelta::FromMilliseconds(kSwipeDelayMS);
-  ui::Layer* layer = bubble_view_->RecreateLayer();
-  DCHECK(layer);
-  layer->SuppressPaint();
+  scoped_ptr<ui::Layer> scoped_layer;
+  if (bubble_type != bubble_type_) {
+    base::TimeDelta swipe_duration =
+        base::TimeDelta::FromMilliseconds(kSwipeDelayMS);
+    scoped_layer = bubble_view_->RecreateLayer();
+    // Keep the reference to layer as we need it after releasing it.
+    ui::Layer* layer = scoped_layer.get();
+    DCHECK(layer);
+    layer->SuppressPaint();
 
-  // When transitioning from detailed view to default view, animate the existing
-  // view (slide out towards the right).
-  if (bubble_type == BUBBLE_TYPE_DEFAULT) {
-    // Make sure the old view is visibile over the new view during the
-    // animation.
-    layer->parent()->StackAbove(layer, bubble_view_->layer());
-    ui::ScopedLayerAnimationSettings settings(layer->GetAnimator());
-    settings.AddObserver(new AnimationObserverDeleteLayer(layer));
-    settings.SetTransitionDuration(swipe_duration);
-    settings.SetTweenType(ui::Tween::EASE_OUT);
-    gfx::Transform transform;
-    transform.Translate(layer->bounds().width(), 0.0);
-    layer->SetTransform(transform);
-  }
+    // When transitioning from detailed view to default view, animate the
+    // existing view (slide out towards the right).
+    if (bubble_type == BUBBLE_TYPE_DEFAULT) {
+      ui::ScopedLayerAnimationSettings settings(layer->GetAnimator());
+      settings.AddObserver(
+          new AnimationObserverDeleteLayer(scoped_layer.release()));
+      settings.SetTransitionDuration(swipe_duration);
+      settings.SetTweenType(gfx::Tween::EASE_OUT);
+      gfx::Transform transform;
+      transform.Translate(layer->bounds().width(), 0.0);
+      layer->SetTransform(transform);
+    }
 
-  {
-    // Add a shadow layer to make the old layer darker as the animation
-    // progresses.
-    ui::Layer* shadow = new ui::Layer(ui::LAYER_SOLID_COLOR);
-    shadow->SetColor(SK_ColorBLACK);
-    shadow->SetOpacity(0.01f);
-    shadow->SetBounds(layer->bounds());
-    layer->Add(shadow);
-    layer->StackAtTop(shadow);
     {
-      // Animate the darkening effect a little longer than the swipe-in. This is
-      // to make sure the darkening animation does not end up finishing early,
-      // because the dark layer goes away at the end of the animation, and there
-      // is a brief moment when the old view is still visible, but it does not
-      // have the shadow layer on top.
-      ui::ScopedLayerAnimationSettings settings(shadow->GetAnimator());
-      settings.AddObserver(new AnimationObserverDeleteLayer(shadow));
-      settings.SetTransitionDuration(swipe_duration +
-                                     base::TimeDelta::FromMilliseconds(150));
-      settings.SetTweenType(ui::Tween::LINEAR);
-      shadow->SetOpacity(0.15f);
+      // Add a shadow layer to make the old layer darker as the animation
+      // progresses.
+      ui::Layer* shadow = new ui::Layer(ui::LAYER_SOLID_COLOR);
+      shadow->SetColor(SK_ColorBLACK);
+      shadow->SetOpacity(0.01f);
+      shadow->SetBounds(layer->bounds());
+      layer->Add(shadow);
+      layer->StackAtTop(shadow);
+      {
+        // Animate the darkening effect a little longer than the swipe-in. This
+        // is to make sure the darkening animation does not end up finishing
+        // early, because the dark layer goes away at the end of the animation,
+        // and there is a brief moment when the old view is still visible, but
+        // it does not have the shadow layer on top.
+        ui::ScopedLayerAnimationSettings settings(shadow->GetAnimator());
+        settings.AddObserver(new AnimationObserverDeleteLayer(shadow));
+        settings.SetTransitionDuration(swipe_duration +
+                                       base::TimeDelta::FromMilliseconds(150));
+        settings.SetTweenType(gfx::Tween::LINEAR);
+        shadow->SetOpacity(0.15f);
+      }
     }
   }
 
@@ -217,20 +220,29 @@ void SystemTrayBubble::UpdateView(
     bubble_view_->SetMaxHeight(0);  // Clear max height limit.
   }
 
-  // When transitioning from default view to detailed view, animate the new
-  // view (slide in from the right).
-  if (bubble_type == BUBBLE_TYPE_DETAILED) {
-    ui::Layer* new_layer = bubble_view_->layer();
-    gfx::Rect bounds = new_layer->bounds();
-    gfx::Transform transform;
-    transform.Translate(bounds.width(), 0.0);
-    new_layer->SetTransform(transform);
-    {
-      ui::ScopedLayerAnimationSettings settings(new_layer->GetAnimator());
-      settings.AddObserver(new AnimationObserverDeleteLayer(layer));
-      settings.SetTransitionDuration(swipe_duration);
-      settings.SetTweenType(ui::Tween::EASE_OUT);
-      new_layer->SetTransform(gfx::Transform());
+  if (scoped_layer) {
+    // When transitioning from default view to detailed view, animate the new
+    // view (slide in from the right).
+    if (bubble_type == BUBBLE_TYPE_DETAILED) {
+      ui::Layer* new_layer = bubble_view_->layer();
+
+      // Make sure the new layer is stacked above the old layer during the
+      // animation.
+      new_layer->parent()->StackAbove(new_layer, scoped_layer.get());
+
+      gfx::Rect bounds = new_layer->bounds();
+      gfx::Transform transform;
+      transform.Translate(bounds.width(), 0.0);
+      new_layer->SetTransform(transform);
+      {
+        ui::ScopedLayerAnimationSettings settings(new_layer->GetAnimator());
+        settings.AddObserver(
+            new AnimationObserverDeleteLayer(scoped_layer.release()));
+        settings.SetTransitionDuration(
+            base::TimeDelta::FromMilliseconds(kSwipeDelayMS));
+        settings.SetTweenType(gfx::Tween::EASE_OUT);
+        new_layer->SetTransform(gfx::Transform());
+      }
     }
   }
 }
@@ -248,8 +260,23 @@ void SystemTrayBubble::InitView(views::View* anchor,
   }
   bubble_view_ = TrayBubbleView::Create(
       tray_->GetBubbleWindowContainer(), anchor, tray_, init_params);
-
+  bubble_view_->set_adjust_if_offscreen(false);
   CreateItemViews(login_status);
+
+  if (bubble_view_->CanActivate()) {
+    bubble_view_->NotifyAccessibilityEvent(
+        ui::AX_EVENT_ALERT, true);
+  }
+}
+
+void SystemTrayBubble::FocusDefaultIfNeeded() {
+  views::FocusManager* manager = bubble_view_->GetFocusManager();
+  if (!manager || manager->GetFocusedView())
+    return;
+
+  views::View* view = manager->GetNextFocusableView(NULL, NULL, false, false);
+  if (view)
+    view->RequestFocus();
 }
 
 void SystemTrayBubble::DestroyItemViews() {
@@ -311,22 +338,33 @@ bool SystemTrayBubble::IsVisible() {
   return bubble_view() && bubble_view()->GetWidget()->IsVisible();
 }
 
-bool SystemTrayBubble::ShouldShowLauncher() const {
+bool SystemTrayBubble::ShouldShowShelf() const {
   for (std::vector<ash::SystemTrayItem*>::const_iterator it = items_.begin();
        it != items_.end();
        ++it) {
-    if ((*it)->ShouldShowLauncher())
+    if ((*it)->ShouldShowShelf())
       return true;
   }
   return false;
 }
 
 void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
+  std::vector<views::View*> item_views;
+  // If a system modal dialog is present, create the same tray as
+  // in locked state.
+  if (Shell::GetInstance()->IsSystemModalWindowOpen() &&
+      login_status != user::LOGGED_IN_NONE) {
+    login_status = user::LOGGED_IN_LOCKED;
+  }
+
+  views::View* focus_view = NULL;
   for (size_t i = 0; i < items_.size(); ++i) {
     views::View* view = NULL;
     switch (bubble_type_) {
       case BUBBLE_TYPE_DEFAULT:
         view = items_[i]->CreateDefaultView(login_status);
+        if (items_[i]->restore_focus())
+          focus_view = view;
         break;
       case BUBBLE_TYPE_DETAILED:
         view = items_[i]->CreateDetailedView(login_status);
@@ -335,16 +373,20 @@ void SystemTrayBubble::CreateItemViews(user::LoginStatus login_status) {
         view = items_[i]->CreateNotificationView(login_status);
         break;
     }
-    if (view) {
-      // For default view, draw bottom border for each item, except the last
-      // 2 items, which are the bottom header row and the one just above it.
-      bool is_default_bubble = bubble_type_ == BUBBLE_TYPE_DEFAULT;
-      bubble_view_->AddChildView(new TrayPopupItemContainer(
-          view, is_default_bubble,
-          is_default_bubble && (i < items_.size() - 2)));
-    }
+    if (view)
+      item_views.push_back(view);
   }
+
+  bool is_default_bubble = bubble_type_ == BUBBLE_TYPE_DEFAULT;
+  for (size_t i = 0; i < item_views.size(); ++i) {
+    // For default view, draw bottom border for each item, except the last
+    // 2 items, which are the bottom header row and the one just above it.
+    bubble_view_->AddChildView(new TrayPopupItemContainer(
+        item_views[i], is_default_bubble,
+        is_default_bubble && (i < item_views.size() - 2)));
+  }
+  if (focus_view)
+    focus_view->RequestFocus();
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -1748,7 +1748,8 @@ typedef void  (GL_APIENTRYP PFNGLUNMAPTEXSUBIMAGE2DCHROMIUM) (const void* mem);
 #ifdef GL_GLEXT_PROTOTYPES
 #define glResizeCHROMIUM GLES2_GET_FUN(ResizeCHROMIUM)
 #if !defined(GLES2_USE_CPP_BINDINGS)
-GL_APICALL void GL_APIENTRY glResizeCHROMIUM (GLuint width, GLuint height);
+GL_APICALL void GL_APIENTRY glResizeCHROMIUM (
+    GLuint width, GLuint height, GLfloat scale_factor);
 #endif
 #else
 typedef void (GL_APIENTRYP PFNGLRESIZECHROMIUM) (GLuint width, GLuint height);
@@ -1873,16 +1874,6 @@ GL_APICALL void GL_APIENTRY glPostSubBufferCHROMIUM (GLint x, GLint y, GLint wid
 #else
 typedef void (GL_APIENTRYP PFNGLPOSTSUBBUFFERCHROMIUM) (GLint x, GLint y, GLint width, GLint height);
 #endif
-#endif
-
-/* GL_CHROMIUM_front_buffer_cached */
-/* This extension implies that there is a cache of the front buffer of the
- * surface supporting this extension (e.g. on OSX the front buffer
- * is often backed by an IOSurface). Hence we do not need to redraw
- * (via a SwapBuffers) in order to display the last frame.
- */
-#ifndef GL_CHROMIUM_front_buffer_cached
-#define GL_CHROMIUM_front_buffer_cached 1
 #endif
 
 /* GL_ARB_robustness */

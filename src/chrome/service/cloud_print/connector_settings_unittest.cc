@@ -8,8 +8,8 @@
 
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/values.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
 #include "chrome/service/service_process_prefs.h"
@@ -28,18 +28,20 @@ const char kServiceStateContent[] =
     "      'proxy_id': 'PROXY',"
     "      'robot_email': '123@cloudprint.googleusercontent.com',"
     "      'robot_refresh_token': '123',"
-    "      'service_url': 'http://cp.google.com',"
     "      'xmpp_auth_token': 'xmp token',"
-    "      'connect_new_printers': false,"
     "      'xmpp_ping_enabled': true,"
     "      'xmpp_ping_timeout_sec': 256,"
-    "      'printer_blacklist': ["
-    "         'prn1',"
-    "         'prn2'"
-    "       ],"
+    "      'user_settings': {"
+    "        'printers': ["
+    "          { 'name': 'prn1', 'connect': false },"
+    "          { 'name': 'prn2', 'connect': false },"
+    "          { 'name': 'prn3', 'connect': true }"
+    "        ],"
+    "        'connectNewPrinters': false"
+    "      },"
     "      'print_system_settings': {"
     "         'delete_on_enum_fail' : true"
-    "       }"
+    "      }"
     "   }"
     "}";
 
@@ -52,21 +54,21 @@ class ConnectorSettingsTest : public testing::Test {
   }
 
   ServiceProcessPrefs* CreateTestFile(const char* json) {
-    FilePath file_name = temp_dir_.path().AppendASCII("file.txt");
-    file_util::Delete(file_name, false);
+    base::FilePath file_name = temp_dir_.path().AppendASCII("file.txt");
+    base::DeleteFile(file_name, false);
     if (json) {
       std::string content = json;
       std::replace(content.begin(), content.end(), '\'', '"');
-      file_util::WriteFile(file_name, content.c_str(), content.size());
+      base::WriteFile(file_name, content.c_str(), content.size());
     }
     ServiceProcessPrefs* prefs =
-        new ServiceProcessPrefs(file_name, message_loop_proxy_);
+        new ServiceProcessPrefs(file_name, message_loop_proxy_.get());
     prefs->ReadPrefs();
     return prefs;
   }
 
   base::ScopedTempDir temp_dir_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy_;
 };
 
@@ -87,9 +89,8 @@ TEST_F(ConnectorSettingsTest, InitFromEmpty) {
     EXPECT_FALSE(settings.proxy_id().empty());
     EXPECT_FALSE(settings.delete_on_enum_fail());
     EXPECT_EQ(NULL, settings.print_system_settings());
-    EXPECT_TRUE(settings.connect_new_printers());
+    EXPECT_TRUE(settings.ShouldConnect("prn1"));
     EXPECT_FALSE(settings.xmpp_ping_enabled());
-    EXPECT_FALSE(settings.IsPrinterBlacklisted("prn1"));
   }
 }
 
@@ -97,16 +98,16 @@ TEST_F(ConnectorSettingsTest, InitFromFile) {
   scoped_ptr<ServiceProcessPrefs> prefs(CreateTestFile(kServiceStateContent));
   ConnectorSettings settings;
   settings.InitFrom(prefs.get());
-  EXPECT_EQ("http://cp.google.com/", settings.server_url().spec());
+  EXPECT_EQ("https://www.google.com/cloudprint", settings.server_url().spec());
   EXPECT_EQ("PROXY", settings.proxy_id());
   EXPECT_FALSE(settings.proxy_id().empty());
   EXPECT_TRUE(settings.delete_on_enum_fail());
   EXPECT_TRUE(settings.print_system_settings());
-  EXPECT_FALSE(settings.connect_new_printers());
   EXPECT_TRUE(settings.xmpp_ping_enabled());
   EXPECT_EQ(settings.xmpp_ping_timeout_sec(), 256);
-  EXPECT_FALSE(settings.IsPrinterBlacklisted("prn0"));
-  EXPECT_TRUE(settings.IsPrinterBlacklisted("prn1"));
+  EXPECT_FALSE(settings.ShouldConnect("prn0"));
+  EXPECT_FALSE(settings.ShouldConnect("prn1"));
+  EXPECT_TRUE(settings.ShouldConnect("prn3"));
 }
 
 TEST_F(ConnectorSettingsTest, CopyFrom) {
@@ -122,11 +123,12 @@ TEST_F(ConnectorSettingsTest, CopyFrom) {
   EXPECT_EQ(settings1.delete_on_enum_fail(), settings2.delete_on_enum_fail());
   EXPECT_EQ(settings1.print_system_settings()->size(),
             settings2.print_system_settings()->size());
-  EXPECT_EQ(settings1.connect_new_printers(), settings2.connect_new_printers());
   EXPECT_EQ(settings1.xmpp_ping_enabled(), settings2.xmpp_ping_enabled());
   EXPECT_EQ(settings1.xmpp_ping_timeout_sec(),
             settings2.xmpp_ping_timeout_sec());
-  EXPECT_TRUE(settings2.IsPrinterBlacklisted("prn1"));
+  EXPECT_FALSE(settings2.ShouldConnect("prn0"));
+  EXPECT_FALSE(settings2.ShouldConnect("prn1"));
+  EXPECT_TRUE(settings2.ShouldConnect("prn3"));
 }
 
 TEST_F(ConnectorSettingsTest, SettersTest) {
@@ -143,7 +145,7 @@ TEST_F(ConnectorSettingsTest, SettersTest) {
 
   // Set invalid settings, and check correct defaults.
   settings.SetXmppPingTimeoutSec(1);
-  EXPECT_EQ(settings.xmpp_ping_timeout_sec(), kMinimumXmppPingTimeoutSecs);
+  EXPECT_EQ(settings.xmpp_ping_timeout_sec(), kMinXmppPingTimeoutSecs);
 }
 
 }  // namespace cloud_print

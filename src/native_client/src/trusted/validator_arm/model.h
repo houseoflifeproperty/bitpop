@@ -50,6 +50,15 @@ inline uint32_t ArchVersion() {
   return 7;
 }
 
+// Returns FALSE if all of the 32 registers D0-D31 can be accessed, and TRUE if
+// only the 16 registers D0-D15 can be accessed.
+inline bool VFPSmallRegisterBank() {
+  // Note: The minimum supported platform, which is checked in (see
+  // native_client/src/trusted/platform_qualify/arch/arm/nacl_arm_qualify.h)
+  // allows access to all 32 registers D0-D31.
+  return false;
+}
+
 // A (POD) value class that names a single register.  We could use a typedef
 // for this, but it introduces some ambiguity problems because of the
 // implicit conversion to/from int.
@@ -100,15 +109,15 @@ class Register {
     return *this;
   }
 
+  const char* ToString() const;
+
   // TODO(jfb) Need different numbers for aarch64.
   static const Number kTp = 9;   // Thread local pointer.
   static const Number kSp = 13;  // Stack pointer.
   static const Number kLr = 14;  // Link register.
   static const Number kPc = 15;  // Program counter.
+  static const Number kNumberGPRs = 16;  // Number of General purpose registers.
   static const Number kConditions = 16;
-  // TODO(karl): CondsDontCare is deprecated, and should be removed as soon
-  // as possible
-  static const Number kCondsDontCareFlag = 17;
   static const Number kNone = 32;  // Out of GPR and FPR range.
 
   // A special value used to indicate that a register field is not used.
@@ -123,18 +132,6 @@ class Register {
   // affected. If you need to track other bits in the APSR, add them as
   // a separate register.
   static Register Conditions() { return Register(kConditions); }
-
-  // For most class decoders, we don't care what the instruction does, other
-  // than if it is safe, and what general purpose registers are changed.
-  // Hence, we may have simplified the "defs" virtual of a class decoder
-  // to always return Register::Conditions() (rather than accurately modeling
-  // if and when it gets updated).
-  //
-  // Note: Do not add Register::CondsDontCareFlag() to a RegisterList. Rather,
-  // use the constant RegisterList::CondsDontCare().
-  // TODO(karl): CondsDontCare is deprecated, and should be removed as soon
-  // as possible
-  static Register CondsDontCareFlag() { return Register(kCondsDontCareFlag); }
 
   // Registers with special meaning in our model:
   static Register Tp() { return Register(kTp); }
@@ -186,12 +183,6 @@ class RegisterList {
     return bits_ == other.bits_;
   }
 
-  // Returns true if the two register list contain the same
-  // general purpose registers and NZCV APSR flags.
-  bool IsSame(const RegisterList& other) const {
-    return JustGprAndApsrBits() == other.JustGprAndApsrBits();
-  }
-
   // Adds a register to the register list.
   RegisterList& Add(const Register& r) {
     bits_ |= r.BitMask();
@@ -233,21 +224,12 @@ class RegisterList {
     return nacl::PopCount(gprs);
   }
 
+  // Returns the smallest GPR register in the list.
+  Register::Number SmallestGPR() const;
+
   // A list containing every possible register, even some we don't define.
   // Used exclusively as a bogus scary return value for forbidden instructions.
   static RegisterList Everything() { return RegisterList(-1); }
-
-  // A special register list to communicate that we don't care about conditions
-  // for the given class decoder. Note: This should only be added to register
-  // lists returned from virtual ClassDecoder::defs, and only for actual
-  // class decoders. It is used to communicate to class decoder testers
-  // that the actual class decoder is not tracking conditions.
-  // TODO(karl): CondsDontCare is deprecated, and should be removed as soon
-  // as possible
-  static RegisterList CondsDontCare() {
-    return RegisterList(((1 << Register::kConditions) |
-                         (1 << Register::kCondsDontCareFlag)));
-  }
 
   // A special register list to communicate registers that can't be changed
   // when doing dynamic code replacement.
@@ -261,23 +243,11 @@ class RegisterList {
  private:
   Register::Mask bits_;
   RegisterList& operator=(const RegisterList& r);  // Disallow assignment.
-
-  // Returns just the general purpose registers and NZCV APSR flags
-  // register (i.e. it removes the CondsDontCare bit), so that they
-  // can be compared.
-  // TODO(karl): CondsDontCare is deprecated, and should be removed as soon
-  // as possible
-  Register::Mask JustGprAndApsrBits() const {
-    return bits() & ~(1 << Register::kCondsDontCareFlag);
-  }
 };
 
 
 // The number of bits in an ARM instruction.
 static const int kArm32InstSize = 32;
-
-// The number of bits in a word of a THUMB instruction.
-static const int kThumbWordSize = 16;
 
 // Special ARM instructions for sandboxing.
 static const uint32_t kLiteralPoolHead = NACL_INSTR_ARM_LITERAL_POOL_HEAD;
@@ -289,21 +259,14 @@ static const uint32_t kFailValidation = NACL_INSTR_ARM_FAIL_VALIDATION;
 // Not-so-special instructions.
 static const uint32_t kNop = NACL_INSTR_ARM_NOP;
 
-// Models an instruction, either a 32-bit ARM instruction of unspecified type,
-// or one word (16-bit) and two word (32-bit) THUMB instructions.
+// Models a 32-bit ARM instruction.
 //
 // This class is designed for efficiency:
 //  - Its public methods for bitfield extraction are short and inline.
 //  - It has no vtable, so on 32-bit platforms it's exactly the size of the
 //    instruction it models.
-//  - API's exist for accessing both ARM (32-bit) instructions and
-//    THUMB instructions (which are 1 or two (16-bit) words).
 class Instruction {
  public:
-  // ****************************
-  // Arm 32-bit instruction API *
-  // ****************************
-
   Instruction() : bits_(0) {}
 
   Instruction(const Instruction& inst) : bits_(inst.bits_) {}
@@ -421,91 +384,6 @@ class Instruction {
       return Instruction::AL;
     }
     return cc;
-  }
-
-  // **********************************
-  // Arm 16-bit instruction words API *
-  // **********************************
-  //
-  // TODO(jfb) This Thumb API isn't currently used, and should be fixed up
-  //           before it does get used.
-
-  // Creates a 1 word THUMB instruction.
-  explicit Instruction(uint16_t word)
-      : bits_(static_cast<uint32_t>(word)) {}
-
-  // Creates a 2 word THUMB instruction.
-  explicit Instruction(uint16_t word1, uint16_t word2)
-      : bits_(((static_cast<uint32_t>(word2) << kThumbWordSize)
-               | static_cast<uint32_t>(word1)))
-  {}
-
-  // Extracts a range of contiguous bits from the first word of a
-  // THUMB instruction , right-justifies it, and returns it.  Note
-  // that the range follows hardware convention, with the high bit
-  // first.
-  uint16_t Word1Bits(int hi, int lo) const {
-    return static_cast<uint16_t>(Bits(hi, lo));
-  }
-
-  // Extracts a range of contiguous bits from the second word of a
-  // THUMB instruction , right-justifies it, and returns it.  Note
-  // that the range follows hardware convention, with the high bit
-  // first.
-  uint16_t Word2Bits(int hi, int lo) const {
-    return
-        static_cast<uint16_t>(Bits(hi + kThumbWordSize, lo + kThumbWordSize));
-  }
-
-  // Changes the range of contiguous bits of the first word of a THUMB
-  // instruction, with the given value.  Note: Assumes the value fits,
-  // if not, it is truncated.
-  void Word1SetBits(int hi, int lo, uint16_t value)  {
-    SetBits(hi, lo, (uint32_t) value);
-  }
-
-  // Changes the range of contiguous bits of the second word of a THUMB
-  // instruction, with the given value.  Note: Assumes the value fits,
-  // if not, it is truncated.
-  void Word2SetBits(int hi, int lo, uint16_t value) {
-    SetBits(hi + kThumbWordSize, lo + kThumbWordSize,
-             static_cast<uint32_t>(value));
-  }
-
-  // A convenience method that extracts the register specified by
-  // the corresponding bits of the first word of a THUMB instruction.
-  const Register Word1Reg(int hi, int lo) const {
-    return Register(static_cast<Register::Number>(Word1Bits(hi, lo)));
-  }
-
-  // A convenience method that extracts the register specified by
-  // the corresponding bits of the second word of a THUMB instruction.
-  const Register Word2Reg(int hi, int lo) const {
-    return Register(static_cast<Register::Number>(Word2Bits(hi, lo)));
-  }
-
-  // Extracts a single bit (0 - 15) from the first word of a
-  // THUMB instruction.
-  bool Word1Bit(int index) const {
-    return Bit(index);
-  }
-
-  // Extracts a single bit (0 - 15) from the second word of
-  // a THUMB instruction.
-  bool Word2Bit(int index) const {
-    return Bit(index + kThumbWordSize);
-  }
-
-  // Sets the specified bit of the first word in a THUMB instruction
-  // to the corresponding value.
-  void Word1SetBit(int index, bool value) {
-    SetBit(index, value);
-  }
-
-  // Sets the specified bit of the second word in a THUMB instruction
-  // to the corresponding value.
-  void Word2SetBit(int index, bool value) {
-    SetBit(index + kThumbWordSize, value);
   }
 
   // Returns true if this and the given instruction are equal.

@@ -4,16 +4,17 @@
 
 #include "chrome/browser/ui/views/network_profile_bubble_view.h"
 
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/network_profile_bubble.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "chrome/browser/ui/views/toolbar_view.h"
+#include "chrome/browser/ui/views/toolbar/toolbar_view.h"
 #include "chrome/common/pref_names.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/layout/grid_layout.h"
@@ -36,8 +37,7 @@ void NetworkProfileBubble::ShowNotification(Browser* browser) {
     anchor = browser_view->GetToolbarView()->app_menu();
   NetworkProfileBubbleView* bubble =
       new NetworkProfileBubbleView(anchor, browser, browser->profile());
-  views::BubbleDelegateView::CreateBubble(bubble);
-  bubble->Show();
+  views::BubbleDelegateView::CreateBubble(bubble)->Show();
   NetworkProfileBubble::SetNotificationShown(true);
 
   // Mark the time of the last bubble and reduce the number of warnings left
@@ -61,7 +61,7 @@ NetworkProfileBubbleView::NetworkProfileBubbleView(
       navigator_(navigator),
       profile_(profile) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(
+  set_anchor_view_insets(
       gfx::Insets(kAnchorVerticalInset, 0, kAnchorVerticalInset, 0));
 }
 
@@ -104,8 +104,9 @@ void NetworkProfileBubbleView::Init() {
   learn_more->set_listener(this);
   layout->AddView(learn_more);
 
-  views::NativeTextButton* ok_button = new views::NativeTextButton(
+  views::LabelButton* ok_button = new views::LabelButton(
       this, l10n_util::GetStringUTF16(IDS_OK));
+  ok_button->SetStyle(views::Button::STYLE_BUTTON);
   ok_button->SetIsDefault(true);
   layout->AddView(ok_button);
 }
@@ -123,7 +124,7 @@ void NetworkProfileBubbleView::LinkClicked(views::Link* source,
   NetworkProfileBubble::RecordUmaEvent(
       NetworkProfileBubble::METRIC_LEARN_MORE_CLICKED);
   WindowOpenDisposition disposition =
-      chrome::DispositionFromEventFlags(event_flags);
+      ui::DispositionFromEventFlags(event_flags);
   content::OpenURLParams params(
       GURL("https://sites.google.com/a/chromium.org/dev/administrators/"
             "common-problems-and-solutions#network_profile"),

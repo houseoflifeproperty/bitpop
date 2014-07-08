@@ -9,9 +9,10 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/sys_string_conversions.h"
-#include "base/timer.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/timer/timer.h"
 #include "remoting/base/constants.h"
+#include "remoting/base/util.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/clipboard_stub.h"
 
@@ -72,7 +73,10 @@ void ClipboardMac::Start(scoped_ptr<protocol::ClipboardStub> client_clipboard) {
 
 void ClipboardMac::InjectClipboardEvent(const protocol::ClipboardEvent& event) {
   // Currently we only handle UTF-8 text.
-  if (event.mime_type().compare(kMimeTypeTextUtf8)) {
+  if (event.mime_type().compare(kMimeTypeTextUtf8) != 0)
+    return;
+  if (!StringIsUtf8(event.data().c_str(), event.data().length())) {
+    LOG(ERROR) << "ClipboardEvent data is not UTF-8 encoded.";
     return;
   }
 

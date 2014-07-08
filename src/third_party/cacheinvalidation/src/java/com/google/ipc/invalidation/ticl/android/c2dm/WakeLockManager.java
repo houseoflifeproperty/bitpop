@@ -17,12 +17,13 @@
 package com.google.ipc.invalidation.ticl.android.c2dm;
 
 import com.google.common.base.Preconditions;
+import com.google.ipc.invalidation.external.client.SystemResources.Logger;
+import com.google.ipc.invalidation.external.client.android.service.AndroidLogger;
 
 import android.content.Context;
 import android.os.Build;
 import android.os.PowerManager;
 import android.os.PowerManager.WakeLock;
-import android.util.Log;
 
 import java.util.HashMap;
 import java.util.Iterator;
@@ -34,8 +35,8 @@ import java.util.Map;
  * equivalent number of times.
  */
 public class WakeLockManager {
-  /** Logging tag. */
-  private static final String TAG = "WakeLockMgr";
+  /** Logger. */
+  private static final Logger logger = AndroidLogger.forTag("WakeLockMgr");
 
   /** Lock over all state. Must be acquired by all non-private methods. */
   private static final Object LOCK = new Object();
@@ -110,13 +111,21 @@ public class WakeLockManager {
       Preconditions.checkNotNull(key, "Key can not be null");
       PowerManager.WakeLock wakelock = getWakeLock(key);
 
-      // If the lock is not held, this is a bogus release.
+      // If the lock is not held (if for instance there is a wake lock timeout), we cannot release
+      // again without triggering a RuntimeException.
       if (!wakelock.isHeld()) {
-        Log.w(TAG, "Over-release of wakelock: " + key);
+        logger.warning("Over-release of wakelock: %s", key);
         return;
       }
-      // We hold the lock, so we can safely release it.
-      wakelock.release();
+
+      // We held the wake lock recently, so it's likely safe to release it. Between the isHeld()
+      // check and the release() call, the wake lock may time out however and we catch the resulting
+      // RuntimeException.
+      try {
+        wakelock.release();
+      } catch (RuntimeException exception) {
+        logger.warning("Over-release of wakelock: %s, %s", key, exception);
+      }
       log(key, "released");
 
       // Now if the lock is not held, that means we were the last holder, so we should remove it
@@ -142,7 +151,7 @@ public class WakeLockManager {
     }
   }
 
-  /** Returns whether the manager has any active (held) wakelocks. */
+  /** Returns whether the manager has any active (held) wake locks. */
   
   public boolean hasWakeLocks() {
     synchronized (LOCK) {
@@ -151,7 +160,7 @@ public class WakeLockManager {
     }
   }
 
-  /** Discards (without releasing) all wakelocks. */
+  /** Discards (without releasing) all wake locks. */
   
   public void resetForTest() {
     synchronized (LOCK) {
@@ -161,7 +170,7 @@ public class WakeLockManager {
   }
 
   /**
-   * Returns a wakelock to use for {@code key}. If a lock is already present in the map,
+   * Returns a wake lock to use for {@code key}. If a lock is already present in the map,
    * returns that lock. Else, creates a new lock, installs it in the map, and returns it.
    * <p>
    * REQUIRES: caller must hold {@link #LOCK}.
@@ -179,10 +188,10 @@ public class WakeLockManager {
   }
 
   /**
-   * Removes any non-held wakelocks from {@link #wakeLocks}. Such locks may be present when a
-   * wakelock acquired with a timeout is not released before the timeout expires. We only explicitly
-   * remove wakelocks from the map when {@link #release} is called, so a timeout results in a
-   * non-held wakelock in the map.
+   * Removes any non-held wake locks from {@link #wakeLocks}. Such locks may be present when a
+   * wake lock acquired with a timeout is not released before the timeout expires. We only
+   * explicitly remove wake locks from the map when {@link #release} is called, so a timeout results
+   * in a non-held wake lock in the map.
    * <p>
    * Must be called as the first line of all non-private methods.
    * <p>
@@ -196,7 +205,7 @@ public class WakeLockManager {
       Map.Entry<Object, WakeLock> wakeLockEntry = wakeLockIter.next();
       if (!wakeLockEntry.getValue().isHeld()) {
         // Warn and remove the entry from the map if the lock is not held.
-        Log.w(TAG, "Found un-held wakelock '" + wakeLockEntry.getKey() + "' -- timed-out?");
+        logger.warning("Found un-held wakelock '%s' -- timed-out?", wakeLockEntry.getKey());
         wakeLockIter.remove();
       }
     }
@@ -204,7 +213,6 @@ public class WakeLockManager {
 
   /** Logs a debug message that {@code action} has occurred for {@code key}. */
   private static void log(Object key, String action) {
-    // TODO: revert to using  logging.
-    Log.d(TAG, "WakeLock " + action + " for key: {" + key + "}");
+    logger.fine("WakeLock %s for key: {%s}", action, key);
   }
 }

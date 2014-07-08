@@ -6,38 +6,37 @@
 
 #include "base/base_paths.h"
 #include "base/i18n/rtl.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "chrome/browser/autofill/autofill_common_test.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/base/resource/resource_bundle.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#endif
+using autofill::AutofillProfile;
+using autofill::PersonalDataManager;
 
-static const FilePath::CharType* kWebUIBidiCheckerLibraryJS =
+static const base::FilePath::CharType* kWebUIBidiCheckerLibraryJS =
     FILE_PATH_LITERAL("third_party/bidichecker/bidichecker_packaged.js");
 
 namespace {
-FilePath WebUIBidiCheckerLibraryJSPath() {
-  FilePath src_root;
+base::FilePath WebUIBidiCheckerLibraryJSPath() {
+  base::FilePath src_root;
   if (!PathService::Get(base::DIR_SOURCE_ROOT, &src_root))
     LOG(ERROR) << "Couldn't find source root";
   return src_root.Append(kWebUIBidiCheckerLibraryJS);
@@ -68,16 +67,26 @@ void ReloadLocaleResourcesOnIOThread(const std::string& new_locale) {
 // crbug.com/95425, crbug.com/132752
 void ReloadLocaleResources(const std::string& new_locale) {
   content::BrowserThread::PostTaskAndReply(
-      content::BrowserThread::IO, FROM_HERE,
+      content::BrowserThread::IO,
+      FROM_HERE,
       base::Bind(&ReloadLocaleResourcesOnIOThread, base::ConstRef(new_locale)),
-      MessageLoop::QuitClosure());
+      base::MessageLoop::QuitClosure());
   content::RunMessageLoop();
 }
 
 }  // namespace
 
-static const FilePath::CharType* kBidiCheckerTestsJS =
+static const base::FilePath::CharType* kBidiCheckerTestsJS =
     FILE_PATH_LITERAL("bidichecker_tests.js");
+
+void WebUIBidiCheckerBrowserTest::SetUp() {
+  argv_ = CommandLine::ForCurrentProcess()->GetArgs();
+}
+
+void WebUIBidiCheckerBrowserTest::TearDown() {
+  // Reset command line to the way it was before the test was run.
+  CommandLine::ForCurrentProcess()->InitFromArgv(argv_);
+}
 
 WebUIBidiCheckerBrowserTest::~WebUIBidiCheckerBrowserTest() {}
 
@@ -86,15 +95,15 @@ WebUIBidiCheckerBrowserTest::WebUIBidiCheckerBrowserTest() {}
 void WebUIBidiCheckerBrowserTest::SetUpInProcessBrowserTestFixture() {
   WebUIBrowserTest::SetUpInProcessBrowserTestFixture();
   WebUIBrowserTest::AddLibrary(WebUIBidiCheckerLibraryJSPath());
-  WebUIBrowserTest::AddLibrary(FilePath(kBidiCheckerTestsJS));
+  WebUIBrowserTest::AddLibrary(base::FilePath(kBidiCheckerTestsJS));
 }
 
 void WebUIBidiCheckerBrowserTest::RunBidiCheckerOnPage(
     const std::string& page_url, bool is_rtl) {
   ui_test_utils::NavigateToURL(browser(), GURL(page_url));
   ASSERT_TRUE(RunJavascriptTest("runBidiChecker",
-                                Value::CreateStringValue(page_url),
-                                Value::CreateBooleanValue(is_rtl)));
+                                base::Value::CreateStringValue(page_url),
+                                base::Value::CreateBooleanValue(is_rtl)));
 }
 
 void WebUIBidiCheckerBrowserTestLTR::RunBidiCheckerOnPage(
@@ -109,7 +118,7 @@ void WebUIBidiCheckerBrowserTestRTL::RunBidiCheckerOnPage(
 
 void WebUIBidiCheckerBrowserTestRTL::SetUpOnMainThread() {
   WebUIBidiCheckerBrowserTest::SetUpOnMainThread();
-  FilePath pak_path;
+  base::FilePath pak_path;
   app_locale_ = base::i18n::GetConfiguredLocale();
   ASSERT_TRUE(PathService::Get(base::FILE_MODULE, &pak_path));
   pak_path = pak_path.DirName();
@@ -119,19 +128,14 @@ void WebUIBidiCheckerBrowserTestRTL::SetUpOnMainThread() {
   ResourceBundle::GetSharedInstance().OverrideLocalePakForTest(pak_path);
   ReloadLocaleResources("he");
   base::i18n::SetICUDefaultLocale("he");
-#if defined(OS_POSIX) && defined(TOOLKIT_GTK)
-  gtk_widget_set_default_direction(GTK_TEXT_DIR_RTL);
-#endif
 }
 
 void WebUIBidiCheckerBrowserTestRTL::CleanUpOnMainThread() {
   WebUIBidiCheckerBrowserTest::CleanUpOnMainThread();
-#if defined(OS_POSIX) && defined(TOOLKIT_GTK)
-  gtk_widget_set_default_direction(GTK_TEXT_DIR_LTR);
-#endif
 
   base::i18n::SetICUDefaultLocale(app_locale_);
-  ResourceBundle::GetSharedInstance().OverrideLocalePakForTest(FilePath());
+  ResourceBundle::GetSharedInstance().OverrideLocalePakForTest(
+      base::FilePath());
   ReloadLocaleResources(app_locale_);
 }
 
@@ -142,17 +146,16 @@ void WebUIBidiCheckerBrowserTestRTL::CleanUpOnMainThread() {
 //==============================
 
 static void SetupHistoryPageTest(Browser* browser,
-                                 const std::string page_url,
-                                 const std::string page_title) {
+                                 const std::string& page_url,
+                                 const std::string& page_title) {
   HistoryService* history_service = HistoryServiceFactory::GetForProfile(
       browser->profile(), Profile::IMPLICIT_ACCESS);
   const GURL history_url = GURL(page_url);
   history_service->AddPage(
       history_url, base::Time::Now(), history::SOURCE_BROWSED);
-  history_service->SetPageTitle(history_url, UTF8ToUTF16(page_title));
+  history_service->SetPageTitle(history_url, base::UTF8ToUTF16(page_title));
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
                        TestHistoryPage) {
   // Test an Israeli news site with a Hebrew title.
@@ -162,7 +165,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
   RunBidiCheckerOnPage(chrome::kChromeUIHistoryFrameURL);
 }
 
-// TODO(estade): fix this test: http://crbug.com/119595
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
                        TestHistoryPage) {
   SetupHistoryPageTest(browser(), "http://www.google.com", "Google");
@@ -176,27 +178,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
 // This page isn't localized to an RTL language so we test it only in English.
 IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR, TestAboutPage) {
   RunBidiCheckerOnPage(chrome::kChromeUIAboutURL);
-}
-
-//==============================
-// chrome://bugreport
-//==============================
-
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR, TestFeedbackPage) {
-  // The bugreport page receives its contents as GET arguments. Here we provide
-  // a custom, Hebrew typed, description message.
-  RunBidiCheckerOnPage(
-      "chrome://feedback?session_id=1&tab_index=0&description=%D7%91%D7%93%D7%99%D7%A7%D7%94");
-}
-
-// Test disabled because it is flaky (http://crbug.com/134434)
-#if defined(OS_CHROMEOS)
-#define MAYBE_TestFeedbackPage DISABLED_TestFeedbackPage
-#else
-#define MAYBE_TestFeedbackPage TestFeedbackPage
-#endif
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL, MAYBE_TestFeedbackPage) {
-  RunBidiCheckerOnPage("chrome://feedback?session_id=1&tab_index=0&description=test");
 }
 
 //==============================
@@ -274,23 +255,23 @@ static void SetupSettingsAutofillPageTest(Profile* profile,
                                           const char* zipcode,
                                           const char* country,
                                           const char* phone) {
-  autofill_test::DisableSystemServices(profile);
+  autofill::test::DisableSystemServices(profile->GetPrefs());
   AutofillProfile autofill_profile;
-  autofill_test::SetProfileInfo(&autofill_profile,
-                                first_name,
-                                middle_name,
-                                last_name,
-                                email,
-                                company,
-                                address1,
-                                address2,
-                                city,
-                                state,
-                                zipcode,
-                                country,
-                                phone);
+  autofill::test::SetProfileInfo(&autofill_profile,
+                                 first_name,
+                                 middle_name,
+                                 last_name,
+                                 email,
+                                 company,
+                                 address1,
+                                 address2,
+                                 city,
+                                 state,
+                                 zipcode,
+                                 country,
+                                 phone);
   PersonalDataManager* personal_data_manager =
-      PersonalDataManagerFactory::GetForProfile(profile);
+      autofill::PersonalDataManagerFactory::GetForProfile(profile);
   ASSERT_TRUE(personal_data_manager);
   personal_data_manager->AddProfile(autofill_profile);
 }
@@ -408,24 +389,6 @@ IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
                        TestSettingsSearchEnginesOptionsPage) {
   std::string url(chrome::kChromeUISettingsFrameURL);
   url += std::string(chrome::kSearchEnginesSubPage);
-  RunBidiCheckerOnPage(url);
-}
-
-//===================================
-// chrome://settings-frame/syncSetup
-//===================================
-
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestLTR,
-                       TestSettingsFrameSyncSetup) {
-  std::string url(chrome::kChromeUISettingsFrameURL);
-  url += std::string(chrome::kSyncSetupSubPage);
-  RunBidiCheckerOnPage(url);
-}
-
-IN_PROC_BROWSER_TEST_F(WebUIBidiCheckerBrowserTestRTL,
-                       TestSettingsFrameSyncSetup) {
-  std::string url(chrome::kChromeUISettingsFrameURL);
-  url += std::string(chrome::kSyncSetupSubPage);
   RunBidiCheckerOnPage(url);
 }
 

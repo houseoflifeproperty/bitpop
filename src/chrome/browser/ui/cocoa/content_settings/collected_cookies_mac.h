@@ -4,11 +4,12 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/ui/cocoa/constrained_window/constrained_window_mac.h"
 #import "chrome/browser/ui/cocoa/content_settings/cookie_tree_node.h"
+#import "chrome/browser/ui/cocoa/content_settings/cookies_tree_controller_bridge.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -48,7 +49,7 @@ class CollectedCookiesMac : public ConstrainedWindowMacDelegate,
 
   scoped_ptr<ConstrainedWindowMac> window_;
 
-  scoped_nsobject<CollectedCookiesWindowController> sheet_controller_;
+  base::scoped_nsobject<CollectedCookiesWindowController> sheet_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(CollectedCookiesMac);
 };
@@ -68,14 +69,15 @@ class CollectedCookiesMac : public ConstrainedWindowMacDelegate,
   scoped_ptr<CookiesTreeModel> blockedTreeModel_;
 
   // Cached array of icons.
-  scoped_nsobject<NSMutableArray> icons_;
+  base::scoped_nsobject<NSMutableArray> icons_;
 
   // Our Cocoa copy of the model.
-  scoped_nsobject<CocoaCookieTreeNode> cocoaAllowedTreeModel_;
-  scoped_nsobject<CocoaCookieTreeNode> cocoaBlockedTreeModel_;
+  scoped_ptr<CookiesTreeControllerBridge> allowedControllerBridge_;
+  scoped_ptr<CookiesTreeControllerBridge> blockedControllerBridge_;
 
   BOOL allowedCookiesButtonsEnabled_;
   BOOL blockedCookiesButtonsEnabled_;
+  BOOL deleteCookiesButtonEnabled_;  // Only in the allowed pane.
 
   IBOutlet NSTreeController* allowedTreeController_;
   IBOutlet NSTreeController* blockedTreeController_;
@@ -89,9 +91,9 @@ class CollectedCookiesMac : public ConstrainedWindowMacDelegate,
   IBOutlet NSTextField* blockedCookiesText_;
   IBOutlet NSView* cookieDetailsViewPlaceholder_;
 
-  scoped_nsobject<NSViewAnimation> animation_;
+  base::scoped_nsobject<NSViewAnimation> animation_;
 
-  scoped_nsobject<CookieDetailsViewController> detailsViewController_;
+  base::scoped_nsobject<CookieDetailsViewController> detailsViewController_;
 
   content::WebContents* webContents_;  // weak
 
@@ -116,6 +118,7 @@ class CollectedCookiesMac : public ConstrainedWindowMacDelegate,
 
 @property(assign, nonatomic) BOOL allowedCookiesButtonsEnabled;
 @property(assign, nonatomic) BOOL blockedCookiesButtonsEnabled;
+@property(assign, nonatomic) BOOL deleteCookiesButtonEnabled;
 
 // Designated initializer. The WebContents cannot be NULL.
 - (id)initWithWebContents:(content::WebContents*)webContents
@@ -128,15 +131,21 @@ class CollectedCookiesMac : public ConstrainedWindowMacDelegate,
 - (IBAction)allowForSessionFromOrigin:(id)sender;
 - (IBAction)blockOrigin:(id)sender;
 
+// Allows the deletion of set cookies (only visible in the Allowed pane).
+- (IBAction)deleteSelected:(id)sender;
+
 // Returns the |cocoaAllowedTreeModel_| and |cocoaBlockedTreeModel_|.
 - (CocoaCookieTreeNode*)cocoaAllowedTreeModel;
 - (CocoaCookieTreeNode*)cocoaBlockedTreeModel;
-- (void)setCocoaAllowedTreeModel:(CocoaCookieTreeNode*)model;
-- (void)setCocoaBlockedTreeModel:(CocoaCookieTreeNode*)model;
 
 // Returns the |allowedTreeModel_| and |blockedTreeModel_|.
 - (CookiesTreeModel*)allowedTreeModel;
 - (CookiesTreeModel*)blockedTreeModel;
 
 - (void)loadTreeModelFromWebContents;
+
+// Given an array of selected NSTreeNode objects, normalizes the selection so
+// that it does not contain any children whose parents are also in the array.
++ (NSArray*)normalizeNodeSelection:(NSArray*)selection;
+
 @end

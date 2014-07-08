@@ -7,7 +7,7 @@
 
 #include "chrome/browser/ui/view_ids.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "ui/ui_controls/ui_controls.h"
+#include "ui/base/test/ui_controls.h"
 
 #if defined(TOOLKIT_VIEWS)
 #include "ui/views/view.h"
@@ -48,6 +48,16 @@ bool SendKeyPressSync(const Browser* browser,
                       bool shift,
                       bool alt,
                       bool command) WARN_UNUSED_RESULT;
+
+// Sends a key press, blocking until the key press is received or the test times
+// out. This uses ui_controls::SendKeyPress, see it for details. Returns true
+// if the event was successfully sent and received.
+bool SendKeyPressToWindowSync(const gfx::NativeWindow window,
+                              ui::KeyboardCode key,
+                              bool control,
+                              bool shift,
+                              bool alt,
+                              bool command) WARN_UNUSED_RESULT;
 
 // Sends a key press, blocking until both the key press and a notification from
 // |source| of type |type| are received, or until the test times out. This uses
@@ -114,8 +124,6 @@ bool SendKeyPressAndWaitWithDetails(
 void MoveMouseToCenterAndPress(
 #if defined(TOOLKIT_VIEWS)
     views::View* view,
-#elif defined(TOOLKIT_GTK)
-    GtkWidget* widget,
 #elif defined(OS_IOS)
     UIView* view,
 #elif defined(OS_MACOSX)

@@ -12,23 +12,22 @@
 
 class SkDeviceImageFilterProxy : public SkImageFilter::Proxy {
 public:
-    SkDeviceImageFilterProxy(SkDevice* device) : fDevice(device) {}
+    SkDeviceImageFilterProxy(SkBaseDevice* device) : fDevice(device) {}
 
-    virtual SkDevice* createDevice(int w, int h) SK_OVERRIDE {
-        return fDevice->createCompatibleDevice(SkBitmap::kARGB_8888_Config,
-                                               w, h, false);
+    virtual SkBaseDevice* createDevice(int w, int h) SK_OVERRIDE {
+        return fDevice->createCompatibleDevice(SkImageInfo::MakeN32Premul(w, h));
     }
-    virtual bool canHandleImageFilter(SkImageFilter* filter) SK_OVERRIDE {
+    virtual bool canHandleImageFilter(const SkImageFilter* filter) SK_OVERRIDE {
         return fDevice->canHandleImageFilter(filter);
     }
-    virtual bool filterImage(SkImageFilter* filter, const SkBitmap& src,
-                             const SkMatrix& ctm,
+    virtual bool filterImage(const SkImageFilter* filter, const SkBitmap& src,
+                             const SkImageFilter::Context& ctx,
                              SkBitmap* result, SkIPoint* offset) SK_OVERRIDE {
-        return fDevice->filterImage(filter, src, ctm, result, offset);
+        return fDevice->filterImage(filter, src, ctx, result, offset);
     }
 
 private:
-    SkDevice* fDevice;
+    SkBaseDevice* fDevice;
 };
 
 #endif

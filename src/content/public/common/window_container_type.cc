@@ -4,20 +4,20 @@
 
 #include "content/public/common/window_container_type.h"
 
-#include "base/string_util.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebWindowFeatures.h"
+#include "base/strings/string_util.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebWindowFeatures.h"
 
 namespace {
 
 const char kBackground[] = "background";
 const char kPersistent[] = "persistent";
 
-}
+}  // namespace
 
 WindowContainerType WindowFeaturesToContainerType(
-    const WebKit::WebWindowFeatures& window_features) {
+    const blink::WebWindowFeatures& window_features) {
   bool background = false;
   bool persistent = false;
 

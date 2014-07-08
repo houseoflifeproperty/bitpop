@@ -7,15 +7,16 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_filter.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -25,6 +26,8 @@ const char URLRequestSlowDownloadJob::kKnownSizeUrl[] =
   "http://url.handled.by.slow.download/download-known-size";
 const char URLRequestSlowDownloadJob::kFinishDownloadUrl[] =
   "http://url.handled.by.slow.download/download-finish";
+const char URLRequestSlowDownloadJob::kErrorDownloadUrl[] =
+  "http://url.handled.by.slow.download/download-error";
 
 const int URLRequestSlowDownloadJob::kFirstDownloadSize = 1024 * 35;
 const int URLRequestSlowDownloadJob::kSecondDownloadSize = 1024 * 10;
@@ -34,7 +37,7 @@ base::LazyInstance<URLRequestSlowDownloadJob::SlowJobsSet>::Leaky
     URLRequestSlowDownloadJob::pending_requests_ = LAZY_INSTANCE_INITIALIZER;
 
 void URLRequestSlowDownloadJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestSlowDownloadJob::StartAsync,
                  weak_factory_.GetWeakPtr()));
@@ -49,6 +52,8 @@ void URLRequestSlowDownloadJob::AddUrlHandler() {
                         &URLRequestSlowDownloadJob::Factory);
   filter->AddUrlHandler(GURL(kFinishDownloadUrl),
                         &URLRequestSlowDownloadJob::Factory);
+  filter->AddUrlHandler(GURL(kErrorDownloadUrl),
+                        &URLRequestSlowDownloadJob::Factory);
 }
 
 // static
@@ -59,7 +64,8 @@ net::URLRequestJob* URLRequestSlowDownloadJob::Factory(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   URLRequestSlowDownloadJob* job = new URLRequestSlowDownloadJob(
       request, network_delegate);
-  if (request->url().spec() != kFinishDownloadUrl)
+  if (request->url().spec() != kFinishDownloadUrl &&
+      request->url().spec() != kErrorDownloadUrl)
     pending_requests_.Get().insert(job);
   return job;
 }
@@ -80,18 +86,30 @@ void URLRequestSlowDownloadJob::FinishPendingRequests() {
   }
 }
 
+void URLRequestSlowDownloadJob::ErrorPendingRequests() {
+  typedef std::set<URLRequestSlowDownloadJob*> JobList;
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  for (JobList::iterator it = pending_requests_.Get().begin(); it !=
+       pending_requests_.Get().end(); ++it) {
+    (*it)->set_should_error_download();
+  }
+}
+
 URLRequestSlowDownloadJob::URLRequestSlowDownloadJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate)
     : net::URLRequestJob(request, network_delegate),
       bytes_already_sent_(0),
+      should_error_download_(false),
       should_finish_download_(false),
       buffer_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 void URLRequestSlowDownloadJob::StartAsync() {
   if (LowerCaseEqualsASCII(kFinishDownloadUrl, request_->url().spec().c_str()))
     URLRequestSlowDownloadJob::FinishPendingRequests();
+  if (LowerCaseEqualsASCII(kErrorDownloadUrl, request_->url().spec().c_str()))
+    URLRequestSlowDownloadJob::ErrorPendingRequests();
 
   NotifyHeadersComplete();
 }
@@ -150,8 +168,10 @@ URLRequestSlowDownloadJob::FillBufferHelper(
 bool URLRequestSlowDownloadJob::ReadRawData(net::IOBuffer* buf, int buf_size,
                                             int* bytes_read) {
   if (LowerCaseEqualsASCII(kFinishDownloadUrl,
+                           request_->url().spec().c_str()) ||
+      LowerCaseEqualsASCII(kErrorDownloadUrl,
                            request_->url().spec().c_str())) {
-    VLOG(10) << __FUNCTION__ << " called w/ kFinishDownloadUrl.";
+    VLOG(10) << __FUNCTION__ << " called w/ kFinish/ErrorDownloadUrl.";
     *bytes_read = 0;
     return true;
   }
@@ -166,7 +186,7 @@ bool URLRequestSlowDownloadJob::ReadRawData(net::IOBuffer* buf, int buf_size,
       buffer_ = buf;
       buffer_size_ = buf_size;
       SetStatus(net::URLRequestStatus(net::URLRequestStatus::IO_PENDING, 0));
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&URLRequestSlowDownloadJob::CheckDoneStatus,
                      weak_factory_.GetWeakPtr()),
@@ -183,15 +203,20 @@ bool URLRequestSlowDownloadJob::ReadRawData(net::IOBuffer* buf, int buf_size,
 void URLRequestSlowDownloadJob::CheckDoneStatus() {
   if (should_finish_download_) {
     VLOG(10) << __FUNCTION__ << " called w/ should_finish_download_ set.";
-    DCHECK(NULL != buffer_);
+    DCHECK(NULL != buffer_.get());
     int bytes_written = 0;
-    ReadStatus status = FillBufferHelper(buffer_, buffer_size_, &bytes_written);
+    ReadStatus status =
+        FillBufferHelper(buffer_.get(), buffer_size_, &bytes_written);
     DCHECK_EQ(BUFFER_FILLED, status);
     buffer_ = NULL;                     // Release the reference.
     SetStatus(net::URLRequestStatus());
     NotifyReadComplete(bytes_written);
+  } else if (should_error_download_) {
+    VLOG(10) << __FUNCTION__ << " called w/ should_finish_ownload_ set.";
+    NotifyDone(net::URLRequestStatus(
+        net::URLRequestStatus::FAILED, net::ERR_CONNECTION_RESET));
   } else {
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&URLRequestSlowDownloadJob::CheckDoneStatus,
                    weak_factory_.GetWeakPtr()),
@@ -216,6 +241,8 @@ void URLRequestSlowDownloadJob::GetResponseInfoConst(
   // Send back mock headers.
   std::string raw_headers;
   if (LowerCaseEqualsASCII(kFinishDownloadUrl,
+                           request_->url().spec().c_str()) ||
+      LowerCaseEqualsASCII(kErrorDownloadUrl,
                            request_->url().spec().c_str())) {
     raw_headers.append(
       "HTTP/1.1 200 OK\n"
@@ -241,7 +268,7 @@ void URLRequestSlowDownloadJob::GetResponseInfoConst(
 bool URLRequestSlowDownloadJob::GetMimeType(std::string* mime_type) const {
   net::HttpResponseInfo info;
   GetResponseInfoConst(&info);
-  return info.headers && info.headers->GetMimeType(mime_type);
+  return info.headers.get() && info.headers->GetMimeType(mime_type);
 }
 
 }  // namespace content

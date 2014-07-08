@@ -37,9 +37,11 @@ class BrowserRootView : public views::internal::RootView {
   virtual int OnDragUpdated(const ui::DropTargetEvent& event) OVERRIDE;
   virtual void OnDragExited() OVERRIDE;
   virtual int OnPerformDrop(const ui::DropTargetEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
-  virtual void SchedulePaintInRect(const gfx::Rect& rect) OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
+  virtual bool OnMouseWheel(const ui::MouseWheelEvent& event) OVERRIDE;
+
+  // Overridden from internal::RootView:
+  virtual void DispatchGestureEvent(ui::GestureEvent* event) OVERRIDE;
 
  private:
   // Returns true if the event should be forwarded to the tabstrip.
@@ -60,13 +62,6 @@ class BrowserRootView : public views::internal::RootView {
 
   // The BrowserView.
   BrowserView* browser_view_;
-
-  // In immersive mode, when the immersive-controller temporarily reveals the
-  // top views, it is necessary to redirect some of the SchedulePaint() calls
-  // from views in the non-client view (e.g. maximize/close button etc.) to the
-  // reveal-view so that they are painted correctly. This keeps track of when
-  // such redirection is done.
-  bool scheduling_immersive_reveal_painting_;
 
   // If true, drag and drop events are being forwarded to the tab strip.
   // This is used to determine when to send OnDragEntered and OnDragExited

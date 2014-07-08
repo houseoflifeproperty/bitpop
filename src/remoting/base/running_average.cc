@@ -2,15 +2,16 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/logging.h"
 #include "remoting/base/running_average.h"
+
+#include "base/logging.h"
 
 namespace remoting {
 
 RunningAverage::RunningAverage(int window_size)
     : window_size_(window_size),
       sum_(0) {
-  CHECK(window_size_);
+  DCHECK_GT(window_size, 0);
 }
 
 RunningAverage::~RunningAverage() {

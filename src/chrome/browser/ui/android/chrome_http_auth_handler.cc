@@ -10,7 +10,7 @@
 #include "base/android/jni_string.h"
 #include "base/android/scoped_java_ref.h"
 #include "base/logging.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "grit/generated_resources.h"
 #include "jni/ChromeHttpAuthHandler_jni.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -21,7 +21,7 @@ using base::android::ConvertJavaStringToUTF16;
 using base::android::ConvertUTF16ToJavaString;
 using base::android::ScopedJavaLocalRef;
 
-ChromeHttpAuthHandler::ChromeHttpAuthHandler(const string16& explanation)
+ChromeHttpAuthHandler::ChromeHttpAuthHandler(const base::string16& explanation)
     : observer_(NULL),
       explanation_(explanation) {
 }
@@ -32,7 +32,7 @@ void ChromeHttpAuthHandler::Init() {
   DCHECK(java_chrome_http_auth_handler_.is_null());
   JNIEnv* env = AttachCurrentThread();
   java_chrome_http_auth_handler_.Reset(
-      Java_ChromeHttpAuthHandler_create(env, reinterpret_cast<jint>(this)));
+      Java_ChromeHttpAuthHandler_create(env, reinterpret_cast<intptr_t>(this)));
 }
 
 void ChromeHttpAuthHandler::SetObserver(LoginHandler* observer) {
@@ -43,8 +43,9 @@ jobject ChromeHttpAuthHandler::GetJavaObject() {
   return java_chrome_http_auth_handler_.obj();
 }
 
-void ChromeHttpAuthHandler::OnAutofillDataAvailable(const string16& username,
-                                                    const string16& password) {
+void ChromeHttpAuthHandler::OnAutofillDataAvailable(
+    const base::string16& username,
+    const base::string16& password) {
   DCHECK(java_chrome_http_auth_handler_.obj() != NULL);
   JNIEnv* env = base::android::AttachCurrentThread();
   ScopedJavaLocalRef<jstring> j_username =
@@ -61,8 +62,8 @@ void ChromeHttpAuthHandler::SetAuth(JNIEnv* env,
                                     jstring username,
                                     jstring password) {
   if (observer_) {
-    string16 username16 = ConvertJavaStringToUTF16(env, username);
-    string16 password16 = ConvertJavaStringToUTF16(env, password);
+    base::string16 username16 = ConvertJavaStringToUTF16(env, username);
+    base::string16 password16 = ConvertJavaStringToUTF16(env, password);
     observer_->SetAuth(username16, password16);
   }
 }

@@ -14,40 +14,45 @@ S = helper.Scheduler
 T = helper.Triggerable
 
 
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
+def linux():
+  return chromium_factory.ChromiumFactory('src/out', 'linux2')
 
-# Scheduler for the WebRTC trunk branch.
-S('linux_rel_scheduler', branch='trunk', treeStableTimer=0)
+S('linux_rel_scheduler', branch='src', treeStableTimer=60)
 T('linux_rel_trigger')
 
-chromium_rel_linux_archive = master_config.GetArchiveUrl('ChromiumWebRTC',
-    'Linux Builder',
-    'chromium-webrtc-rel-linux-builder',
-    'linux')
-
-tests = ['pyauto_webrtc_tests']
+chromium_rel_archive = master_config.GetGSUtilUrl('chromium-webrtc',
+                                                  'Linux Builder')
+tests = [
+    'webrtc_manual_browser_tests',
+    # 'webrtc_manual_content_browsertests',  Disabled: crbug.com/281492.
+    # 'webrtc_content_unittests',  # Disabled: crbug.com/310115.
+]
 
 defaults['category'] = 'linux'
 
 B('Linux Builder', 'linux_rel_factory', scheduler='linux_rel_scheduler',
-  builddir='chromium-webrtc-rel-linux-builder', notify_on_missing=True)
-F('linux_rel_factory', linux().ChromiumWebRTCLatestFactory(
+  notify_on_missing=True)
+F('linux_rel_factory', linux().ChromiumWebRTCFactory(
     slave_type='Builder',
     target='Release',
-    options=['--compiler=goma', 'chromium_builder_webrtc'],
-    factory_properties={'lkgr': True,
-                        'trigger': 'linux_rel_trigger',}))
+    options=['--compiler=goma', '--', 'chromium_builder_webrtc'],
+    factory_properties={
+        'trigger': 'linux_rel_trigger',
+        'build_url': chromium_rel_archive,
+    }))
 
 B('Linux Tester', 'linux_tester_factory', scheduler='linux_rel_trigger')
-F('linux_tester_factory', linux().ChromiumWebRTCLatestFactory(
+F('linux_tester_factory', linux().ChromiumWebRTCFactory(
     slave_type='Tester',
-    build_url=chromium_rel_linux_archive,
+    build_url=chromium_rel_archive,
     tests=tests,
-    factory_properties={'use_xvfb_on_linux': True,
-                        'show_perf_results': True,
-                        'halt_on_missing_build': True,
-                        'perf_id': 'chromium-webrtc-rel-linux',}))
+    factory_properties={
+        'use_xvfb_on_linux': True,
+        'show_perf_results': True,
+        'halt_on_missing_build': True,
+        'perf_id': 'chromium-webrtc-rel-linux',
+    }))
 
 
 def Update(config, active_master, c):
-  return helper.Update(c)
+  helper.Update(c)

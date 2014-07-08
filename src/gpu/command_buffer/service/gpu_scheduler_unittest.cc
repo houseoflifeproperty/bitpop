@@ -2,14 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "gpu/command_buffer/common/command_buffer_mock.h"
-#include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder_mock.h"
+#include "gpu/command_buffer/service/gpu_scheduler.h"
 #include "gpu/command_buffer/service/mocks.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -33,18 +33,18 @@ class GpuSchedulerTest : public testing::Test {
   static const int32 kTransferBufferId = 123;
 
   virtual void SetUp() {
-    shared_memory_.reset(new ::base::SharedMemory);
-    shared_memory_->CreateAndMapAnonymous(kRingBufferSize);
-    buffer_ = static_cast<int32*>(shared_memory_->memory());
-    shared_memory_buffer_.ptr = buffer_;
-    shared_memory_buffer_.size = kRingBufferSize;
+    scoped_ptr<base::SharedMemory> shared_memory(new ::base::SharedMemory);
+    shared_memory->CreateAndMapAnonymous(kRingBufferSize);
+    buffer_ = static_cast<int32*>(shared_memory->memory());
+    shared_memory_buffer_ =
+        MakeBufferFromSharedMemory(shared_memory.Pass(), kRingBufferSize);
     memset(buffer_, 0, kRingBufferSize);
 
     command_buffer_.reset(new MockCommandBuffer);
 
     CommandBuffer::State default_state;
     default_state.num_entries = kRingBufferEntries;
-    ON_CALL(*command_buffer_.get(), GetState())
+    ON_CALL(*command_buffer_.get(), GetLastState())
         .WillByDefault(Return(default_state));
 
     decoder_.reset(new gles2::MockGLES2Decoder());
@@ -60,20 +60,19 @@ class GpuSchedulerTest : public testing::Test {
   virtual void TearDown() {
     // Ensure that any unexpected tasks posted by the GPU scheduler are executed
     // in order to fail the test.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
   }
 
   error::Error GetError() {
-    return command_buffer_->GetState().error;
+    return command_buffer_->GetLastState().error;
   }
 
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool autorelease_pool_;
 #endif
-  MessageLoop message_loop;
+  base::MessageLoop message_loop;
   scoped_ptr<MockCommandBuffer> command_buffer_;
-  scoped_ptr<base::SharedMemory> shared_memory_;
-  Buffer shared_memory_buffer_;
+  scoped_refptr<Buffer> shared_memory_buffer_;
   int32* buffer_;
   scoped_ptr<gles2::MockGLES2Decoder> decoder_;
   scoped_ptr<GpuScheduler> scheduler_;
@@ -83,7 +82,7 @@ TEST_F(GpuSchedulerTest, SchedulerDoesNothingIfRingBufferIsEmpty) {
   CommandBuffer::State state;
 
   state.put_offset = 0;
-  EXPECT_CALL(*command_buffer_, GetState())
+  EXPECT_CALL(*command_buffer_, GetLastState())
     .WillRepeatedly(Return(state));
 
   EXPECT_CALL(*command_buffer_, SetParseError(_))
@@ -119,7 +118,7 @@ TEST_F(GpuSchedulerTest, ProcessesOneCommand) {
   CommandBuffer::State state;
 
   state.put_offset = 2;
-  EXPECT_CALL(*command_buffer_, GetState())
+  EXPECT_CALL(*command_buffer_, GetLastState())
     .WillRepeatedly(Return(state));
   EXPECT_CALL(*command_buffer_, SetGetOffset(2));
 
@@ -143,7 +142,7 @@ TEST_F(GpuSchedulerTest, ProcessesTwoCommands) {
   CommandBuffer::State state;
 
   state.put_offset = 3;
-  EXPECT_CALL(*command_buffer_, GetState())
+  EXPECT_CALL(*command_buffer_, GetLastState())
     .WillRepeatedly(Return(state));
 
   EXPECT_CALL(*decoder_, DoCommand(7, 1, &buffer_[0]))
@@ -165,7 +164,7 @@ TEST_F(GpuSchedulerTest, SetsErrorCodeOnCommandBuffer) {
   CommandBuffer::State state;
 
   state.put_offset = 1;
-  EXPECT_CALL(*command_buffer_, GetState())
+  EXPECT_CALL(*command_buffer_, GetLastState())
     .WillRepeatedly(Return(state));
 
   EXPECT_CALL(*decoder_, DoCommand(7, 0, &buffer_[0]))
@@ -186,7 +185,7 @@ TEST_F(GpuSchedulerTest, ProcessCommandsDoesNothingAfterError) {
   CommandBuffer::State state;
   state.error = error::kGenericError;
 
-  EXPECT_CALL(*command_buffer_, GetState())
+  EXPECT_CALL(*command_buffer_, GetLastState())
     .WillRepeatedly(Return(state));
 
   scheduler_->PutChanged();
@@ -196,7 +195,7 @@ TEST_F(GpuSchedulerTest, CanGetAddressOfSharedMemory) {
   EXPECT_CALL(*command_buffer_.get(), GetTransferBuffer(7))
     .WillOnce(Return(shared_memory_buffer_));
 
-  EXPECT_EQ(&buffer_[0], scheduler_->GetSharedMemoryBuffer(7).ptr);
+  EXPECT_EQ(&buffer_[0], scheduler_->GetSharedMemoryBuffer(7)->memory());
 }
 
 ACTION_P2(SetPointee, address, value) {
@@ -207,7 +206,7 @@ TEST_F(GpuSchedulerTest, CanGetSizeOfSharedMemory) {
   EXPECT_CALL(*command_buffer_.get(), GetTransferBuffer(7))
     .WillOnce(Return(shared_memory_buffer_));
 
-  EXPECT_EQ(kRingBufferSize, scheduler_->GetSharedMemoryBuffer(7).size);
+  EXPECT_EQ(kRingBufferSize, scheduler_->GetSharedMemoryBuffer(7)->size());
 }
 
 TEST_F(GpuSchedulerTest, SetTokenForwardsToCommandBuffer) {

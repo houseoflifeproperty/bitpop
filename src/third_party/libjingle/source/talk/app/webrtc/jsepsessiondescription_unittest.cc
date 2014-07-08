@@ -32,6 +32,7 @@
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
 #include "talk/base/scoped_ptr.h"
+#include "talk/base/ssladapter.h"
 #include "talk/base/stringencode.h"
 #include "talk/p2p/base/candidate.h"
 #include "talk/p2p/base/constants.h"
@@ -77,21 +78,33 @@ static cricket::SessionDescription* CreateCricketSessionDescription() {
                              cricket::CN_AUDIO,
                              cricket::TransportDescription(
                                  cricket::NS_GINGLE_P2P,
-                                 cricket::TransportOptions(),
+                                 std::vector<std::string>(),
                                  kCandidateUfragVoice, kCandidatePwdVoice,
+                                 cricket::ICEMODE_FULL,
+                                 cricket::CONNECTIONROLE_NONE,
                                  NULL, cricket::Candidates()))));
   EXPECT_TRUE(desc->AddTransportInfo(
       cricket::TransportInfo(cricket::CN_VIDEO,
                              cricket::TransportDescription(
                                  cricket::NS_GINGLE_P2P,
-                                 cricket::TransportOptions(),
+                                 std::vector<std::string>(),
                                  kCandidateUfragVideo, kCandidatePwdVideo,
+                                 cricket::ICEMODE_FULL,
+                                 cricket::CONNECTIONROLE_NONE,
                                  NULL, cricket::Candidates()))));
   return desc;
 }
 
 class JsepSessionDescriptionTest : public testing::Test {
  protected:
+  static void SetUpTestCase() {
+    talk_base::InitializeSSL();
+  }
+
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
+  }
+
   virtual void SetUp() {
     int port = 1234;
     talk_base::SocketAddress address("127.0.0.1", port++);
@@ -100,7 +113,7 @@ class JsepSessionDescriptionTest : public testing::Test {
                                  "", "local", "eth0", 0, "1");
     candidate_ = candidate;
     const std::string session_id =
-        talk_base::ToString(talk_base::CreateRandomId());
+        talk_base::ToString(talk_base::CreateRandomId64());
     const std::string session_version =
         talk_base::ToString(talk_base::CreateRandomId());
     jsep_desc_.reset(new JsepSessionDescription("dummy"));
@@ -117,7 +130,7 @@ class JsepSessionDescriptionTest : public testing::Test {
 
   SessionDescriptionInterface* DeSerialize(const std::string& sdp) {
     JsepSessionDescription* desc(new JsepSessionDescription("dummy"));
-    EXPECT_TRUE(desc->Initialize(sdp));
+    EXPECT_TRUE(desc->Initialize(sdp, NULL));
     return desc;
   }
 
@@ -189,6 +202,28 @@ TEST_F(JsepSessionDescriptionTest, AddBadCandidate) {
 
   JsepIceCandidate bad_candidate2("some weird mid", 0, candidate_);
   EXPECT_FALSE(jsep_desc_->AddCandidate(&bad_candidate2));
+}
+
+// Tests that repeatedly adding the same candidate, with or without credentials,
+// does not increase the number of candidates in the description.
+TEST_F(JsepSessionDescriptionTest, AddCandidateDuplicates) {
+  JsepIceCandidate jsep_candidate("", 0, candidate_);
+  EXPECT_TRUE(jsep_desc_->AddCandidate(&jsep_candidate));
+  EXPECT_EQ(1u, jsep_desc_->candidates(0)->count());
+
+  // Add the same candidate again.  It should be ignored.
+  EXPECT_TRUE(jsep_desc_->AddCandidate(&jsep_candidate));
+  EXPECT_EQ(1u, jsep_desc_->candidates(0)->count());
+
+  // Create a new candidate, identical except that the ufrag and pwd are now
+  // populated.
+  candidate_.set_username(kCandidateUfragVoice);
+  candidate_.set_password(kCandidatePwdVoice);
+  JsepIceCandidate jsep_candidate_with_credentials("", 0, candidate_);
+
+  // This should also be identified as redundant and ignored.
+  EXPECT_TRUE(jsep_desc_->AddCandidate(&jsep_candidate_with_credentials));
+  EXPECT_EQ(1u, jsep_desc_->candidates(0)->count());
 }
 
 // Test that we can serialize a JsepSessionDescription and deserialize it again.

@@ -5,26 +5,24 @@
 #include <vector>
 
 #include "base/memory/ref_counted_memory.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/printing/print_preview_tab_controller.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/printing/print_preview_dialog_controller.h"
 #include "chrome/browser/printing/print_preview_test.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/browser/ui/constrained_window_tab_helper.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/print_preview/print_preview_ui.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/test/web_contents_tester.h"
 #include "printing/print_job_constants.h"
-#include "webkit/plugins/npapi/mock_plugin_list.h"
 
 using content::WebContents;
-using content::WebContentsTester;
+using web_modal::WebContentsModalDialogManager;
 
 namespace {
 
@@ -35,10 +33,10 @@ base::RefCountedBytes* CreateTestData() {
   return new base::RefCountedBytes(preview_data);
 }
 
-size_t GetConstrainedWindowCount(WebContents* tab) {
-  ConstrainedWindowTabHelper* constrained_window_tab_helper =
-      ConstrainedWindowTabHelper::FromWebContents(tab);
-  return constrained_window_tab_helper->constrained_window_count();
+bool IsShowingWebContentsModalDialog(WebContents* tab) {
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(tab);
+  return web_contents_modal_dialog_manager->IsDialogActive();
 }
 
 }  // namespace
@@ -63,28 +61,27 @@ void PrintPreviewUIUnitTest::SetUp() {
   chrome::NewTab(browser());
 }
 
-// Create/Get a preview tab for initiator tab.
+// Create/Get a preview tab for initiator.
 TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
-  WebContents* initiator_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  ASSERT_TRUE(initiator_tab);
-  EXPECT_EQ(0U, GetConstrainedWindowCount(initiator_tab));
+  WebContents* initiator = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(initiator);
+  EXPECT_FALSE(IsShowingWebContentsModalDialog(initiator));
 
-  printing::PrintPreviewTabController* controller =
-      printing::PrintPreviewTabController::GetInstance();
+  printing::PrintPreviewDialogController* controller =
+      printing::PrintPreviewDialogController::GetInstance();
   ASSERT_TRUE(controller);
 
   printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(initiator_tab);
-  print_view_manager->PrintPreviewNow();
-  WebContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
+      printing::PrintViewManager::FromWebContents(initiator);
+  print_view_manager->PrintPreviewNow(false);
+  WebContents* preview_dialog = controller->GetOrCreatePreviewDialog(initiator);
 
-  EXPECT_NE(initiator_tab, preview_tab);
-  EXPECT_EQ(1, browser()->tab_count());
-  EXPECT_EQ(1U, GetConstrainedWindowCount(initiator_tab));
+  EXPECT_NE(initiator, preview_dialog);
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  EXPECT_TRUE(IsShowingWebContentsModalDialog(initiator));
 
   PrintPreviewUI* preview_ui = static_cast<PrintPreviewUI*>(
-      preview_tab->GetWebUI()->GetController());
+      preview_dialog->GetWebUI()->GetController());
   ASSERT_TRUE(preview_ui != NULL);
 
   scoped_refptr<base::RefCountedBytes> data;
@@ -107,7 +104,7 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
   // This should not cause any memory leaks.
   dummy_data = new base::RefCountedBytes();
   preview_ui->SetPrintPreviewDataForIndex(printing::FIRST_PAGE_INDEX,
-                                          dummy_data);
+                                          dummy_data.get());
 
   // Clear the preview data.
   preview_ui->ClearAllPreviewData();
@@ -120,25 +117,24 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewData) {
 
 // Set and get the individual draft pages.
 TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
-  WebContents* initiator_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  ASSERT_TRUE(initiator_tab);
+  WebContents* initiator = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(initiator);
 
-  printing::PrintPreviewTabController* controller =
-      printing::PrintPreviewTabController::GetInstance();
+  printing::PrintPreviewDialogController* controller =
+      printing::PrintPreviewDialogController::GetInstance();
   ASSERT_TRUE(controller);
 
   printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(initiator_tab);
-  print_view_manager->PrintPreviewNow();
-  WebContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
+      printing::PrintViewManager::FromWebContents(initiator);
+  print_view_manager->PrintPreviewNow(false);
+  WebContents* preview_dialog = controller->GetOrCreatePreviewDialog(initiator);
 
-  EXPECT_NE(initiator_tab, preview_tab);
-  EXPECT_EQ(1, browser()->tab_count());
-  EXPECT_EQ(1U, GetConstrainedWindowCount(initiator_tab));
+  EXPECT_NE(initiator, preview_dialog);
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  EXPECT_TRUE(IsShowingWebContentsModalDialog(initiator));
 
   PrintPreviewUI* preview_ui = static_cast<PrintPreviewUI*>(
-      preview_tab->GetWebUI()->GetController());
+      preview_dialog->GetWebUI()->GetController());
   ASSERT_TRUE(preview_ui != NULL);
 
   scoped_refptr<base::RefCountedBytes> data;
@@ -181,25 +177,24 @@ TEST_F(PrintPreviewUIUnitTest, PrintPreviewDraftPages) {
 
 // Test the browser-side print preview cancellation functionality.
 TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
-  WebContents* initiator_tab =
-      browser()->tab_strip_model()->GetActiveWebContents();
-  ASSERT_TRUE(initiator_tab);
+  WebContents* initiator = browser()->tab_strip_model()->GetActiveWebContents();
+  ASSERT_TRUE(initiator);
 
-  printing::PrintPreviewTabController* controller =
-      printing::PrintPreviewTabController::GetInstance();
+  printing::PrintPreviewDialogController* controller =
+      printing::PrintPreviewDialogController::GetInstance();
   ASSERT_TRUE(controller);
 
   printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(initiator_tab);
-  print_view_manager->PrintPreviewNow();
-  WebContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
+      printing::PrintViewManager::FromWebContents(initiator);
+  print_view_manager->PrintPreviewNow(false);
+  WebContents* preview_dialog = controller->GetOrCreatePreviewDialog(initiator);
 
-  EXPECT_NE(initiator_tab, preview_tab);
-  EXPECT_EQ(1, browser()->tab_count());
-  EXPECT_EQ(1U, GetConstrainedWindowCount(initiator_tab));
+  EXPECT_NE(initiator, preview_dialog);
+  EXPECT_EQ(1, browser()->tab_strip_model()->count());
+  EXPECT_TRUE(IsShowingWebContentsModalDialog(initiator));
 
   PrintPreviewUI* preview_ui = static_cast<PrintPreviewUI*>(
-      preview_tab->GetWebUI()->GetController());
+      preview_dialog->GetWebUI()->GetController());
   ASSERT_TRUE(preview_ui != NULL);
 
   // Test with invalid |preview_ui_addr|.
@@ -235,39 +230,4 @@ TEST_F(PrintPreviewUIUnitTest, GetCurrentPrintPreviewStatus) {
   preview_ui->GetCurrentPrintPreviewStatus(preview_ui_addr, kSecondRequestId,
                                            &cancel);
   EXPECT_FALSE(cancel);
-}
-
-TEST_F(PrintPreviewUIUnitTest, InitiatorTabGetsFocusOnPrintPreviewTabClose) {
-  EXPECT_EQ(1, browser()->tab_count());
-  WebContents* initiator_tab =
-      WebContentsTester::CreateTestWebContentsCountFocus(profile(), NULL);
-  WebContentsTester* initiator_tester = WebContentsTester::For(initiator_tab);
-  chrome::AddWebContents(browser(), NULL, initiator_tab,
-                         NEW_FOREGROUND_TAB, gfx::Rect(), false, NULL);
-  EXPECT_EQ(2, browser()->tab_count());
-  EXPECT_EQ(0, initiator_tester->GetNumberOfFocusCalls());
-
-  printing::PrintPreviewTabController* controller =
-      printing::PrintPreviewTabController::GetInstance();
-  ASSERT_TRUE(controller);
-
-  printing::PrintViewManager* print_view_manager =
-      printing::PrintViewManager::FromWebContents(initiator_tab);
-  print_view_manager->PrintPreviewNow();
-  WebContents* preview_tab = controller->GetOrCreatePreviewTab(initiator_tab);
-
-  EXPECT_NE(initiator_tab, preview_tab);
-  EXPECT_EQ(2, browser()->tab_count());
-  EXPECT_EQ(1U, GetConstrainedWindowCount(initiator_tab));
-  EXPECT_EQ(0, initiator_tester->GetNumberOfFocusCalls());
-
-  PrintPreviewUI* preview_ui = static_cast<PrintPreviewUI*>(
-      preview_tab->GetWebUI()->GetController());
-  ASSERT_TRUE(preview_ui != NULL);
-
-  preview_ui->OnPrintPreviewTabClosed();
-
-  EXPECT_EQ(2, browser()->tab_count());
-  EXPECT_EQ(0U, GetConstrainedWindowCount(initiator_tab));
-  EXPECT_EQ(1, initiator_tester->GetNumberOfFocusCalls());
 }

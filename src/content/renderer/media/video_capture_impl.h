@@ -6,15 +6,16 @@
 // interfaces for clients to Start/Stop capture. It also communicates to clients
 // when buffer is ready, state of capture device is changed.
 
-// VideoCaptureImpl is also a delegate of VideoCaptureMessageFilter which
-// relays operation of capture device to browser process and receives response
+// VideoCaptureImpl is also a delegate of VideoCaptureMessageFilter which relays
+// operation of a capture device to the browser process and receives responses
 // from browser process.
-
-// The media::VideoCapture and VideoCaptureMessageFilter::Delegate are
-// asynchronous interfaces, which means callers can call those interfaces
-// from any threads without worrying about thread safety.
-// The |capture_message_loop_proxy_| is the working thread of VideoCaptureImpl.
-// All non-const members are accessed only on that working thread.
+//
+// VideoCaptureImpl is an IO thread only object. See the comments in
+// video_capture_impl_manager.cc for the lifetime of this object.
+// All methods must be called on the IO thread.
+//
+// This is an internal class used by VideoCaptureImplManager only. Do not access
+// this directly.
 
 #ifndef CONTENT_RENDERER_MEDIA_VIDEO_CAPTURE_IMPL_H_
 #define CONTENT_RENDERER_MEDIA_VIDEO_CAPTURE_IMPL_H_
@@ -22,109 +23,163 @@
 #include <list>
 #include <map>
 
+#include "base/memory/weak_ptr.h"
+#include "base/threading/thread_checker.h"
 #include "content/common/content_export.h"
 #include "content/common/media/video_capture.h"
 #include "content/renderer/media/video_capture_message_filter.h"
-#include "media/video/capture/video_capture.h"
 #include "media/video/capture/video_capture_types.h"
 
 namespace base {
 class MessageLoopProxy;
-}
+}  // namespace base
+
+namespace gpu {
+struct MailboxHolder;
+}  // namespace gpu
+
+namespace media {
+class VideoFrame;
+}  // namespace media
 
 namespace content {
 
 class CONTENT_EXPORT VideoCaptureImpl
-    : public media::VideoCapture, public VideoCaptureMessageFilter::Delegate {
+    : public VideoCaptureMessageFilter::Delegate {
  public:
-  // media::VideoCapture interface.
-  virtual void StartCapture(
-      media::VideoCapture::EventHandler* handler,
-      const media::VideoCaptureCapability& capability) OVERRIDE;
-  virtual void StopCapture(media::VideoCapture::EventHandler* handler) OVERRIDE;
-  virtual void FeedBuffer(scoped_refptr<VideoFrameBuffer> buffer) OVERRIDE;
-  virtual bool CaptureStarted() OVERRIDE;
-  virtual int CaptureWidth() OVERRIDE;
-  virtual int CaptureHeight() OVERRIDE;
-  virtual int CaptureFrameRate() OVERRIDE;
+  virtual ~VideoCaptureImpl();
 
-  // VideoCaptureMessageFilter::Delegate interface.
-  virtual void OnBufferCreated(base::SharedMemoryHandle handle,
-                               int length, int buffer_id) OVERRIDE;
-  virtual void OnBufferReceived(int buffer_id, base::Time timestamp) OVERRIDE;
-  virtual void OnStateChanged(VideoCaptureState state) OVERRIDE;
-  virtual void OnDeviceInfoReceived(
-      const media::VideoCaptureParams& device_info) OVERRIDE;
-  virtual void OnDelegateAdded(int32 device_id) OVERRIDE;
+  VideoCaptureImpl(media::VideoCaptureSessionId session_id,
+                   VideoCaptureMessageFilter* filter);
+
+  // Start listening to IPC messages.
+  void Init();
+
+  // Stop listening to IPC messages.
+  void DeInit();
+
+  // Stop/resume delivering video frames to clients, based on flag |suspend|.
+  void SuspendCapture(bool suspend);
+
+  // Start capturing using the provided parameters.
+  // |client_id| must be unique to this object in the render process. It is
+  // used later to stop receiving video frames.
+  // |state_update_cb| will be called when state changes.
+  // |deliver_frame_cb| will be called when a frame is ready.
+  void StartCapture(
+      int client_id,
+      const media::VideoCaptureParams& params,
+      const VideoCaptureStateUpdateCB& state_update_cb,
+      const VideoCaptureDeliverFrameCB& deliver_frame_cb);
+
+  // Stop capturing. |client_id| is the identifier used to call StartCapture.
+  void StopCapture(int client_id);
+
+  // Get capturing formats supported by this device.
+  // |callback| will be invoked with the results.
+  void GetDeviceSupportedFormats(
+      const VideoCaptureDeviceFormatsCB& callback);
+
+  // Get capturing formats currently in use by this device.
+  // |callback| will be invoked with the results.
+  void GetDeviceFormatsInUse(
+      const VideoCaptureDeviceFormatsCB& callback);
+
+  media::VideoCaptureSessionId session_id() const { return session_id_; }
 
  private:
-  friend class VideoCaptureImplManager;
   friend class VideoCaptureImplTest;
   friend class MockVideoCaptureImpl;
 
-  struct DIBBuffer;
-  typedef std::map<media::VideoCapture::EventHandler*,
-      media::VideoCaptureCapability> ClientInfo;
+  // Carries a shared memory for transferring video frames from browser to
+  // renderer.
+  class ClientBuffer;
 
-  VideoCaptureImpl(media::VideoCaptureSessionId id,
-                   base::MessageLoopProxy* capture_message_loop_proxy,
-                   VideoCaptureMessageFilter* filter);
-  virtual ~VideoCaptureImpl();
+  // Contains information for a video capture client. Including parameters
+  // for capturing and callbacks to the client.
+  struct ClientInfo {
+    ClientInfo();
+    ~ClientInfo();
+    media::VideoCaptureParams params;
+    VideoCaptureStateUpdateCB state_update_cb;
+    VideoCaptureDeliverFrameCB deliver_frame_cb;
+  };
+  typedef std::map<int, ClientInfo> ClientInfoMap;
 
-  void DoStartCaptureOnCaptureThread(
-      media::VideoCapture::EventHandler* handler,
-      const media::VideoCaptureCapability& capability);
-  void DoStopCaptureOnCaptureThread(media::VideoCapture::EventHandler* handler);
-  void DoFeedBufferOnCaptureThread(scoped_refptr<VideoFrameBuffer> buffer);
+  // VideoCaptureMessageFilter::Delegate interface.
+  virtual void OnBufferCreated(base::SharedMemoryHandle handle,
+                               int length,
+                               int buffer_id) OVERRIDE;
+  virtual void OnBufferDestroyed(int buffer_id) OVERRIDE;
+  virtual void OnBufferReceived(int buffer_id,
+                                const media::VideoCaptureFormat& format,
+                                base::TimeTicks) OVERRIDE;
+  virtual void OnMailboxBufferReceived(int buffer_id,
+                                       const gpu::MailboxHolder& mailbox_holder,
+                                       const media::VideoCaptureFormat& format,
+                                       base::TimeTicks timestamp) OVERRIDE;
+  virtual void OnStateChanged(VideoCaptureState state) OVERRIDE;
+  virtual void OnDeviceSupportedFormatsEnumerated(
+      const media::VideoCaptureFormats& supported_formats) OVERRIDE;
+  virtual void OnDeviceFormatsInUseReceived(
+      const media::VideoCaptureFormats& formats_in_use) OVERRIDE;
+  virtual void OnDelegateAdded(int32 device_id) OVERRIDE;
 
-  void DoBufferCreatedOnCaptureThread(base::SharedMemoryHandle handle,
-                                      int length, int buffer_id);
-  void DoBufferReceivedOnCaptureThread(int buffer_id, base::Time timestamp);
-  void DoStateChangedOnCaptureThread(VideoCaptureState state);
-  void DoDeviceInfoReceivedOnCaptureThread(
-      const media::VideoCaptureParams& device_info);
-  void DoDelegateAddedOnCaptureThread(int32 device_id);
+  // Sends an IPC message to browser process when all clients are done with the
+  // buffer.
+  void OnClientBufferFinished(int buffer_id,
+                              const scoped_refptr<ClientBuffer>& buffer,
+                              const std::vector<uint32>& release_sync_points);
 
-  void Init();
-  void DeInit(base::Closure task);
-  void DoDeInitOnCaptureThread(base::Closure task);
   void StopDevice();
   void RestartCapture();
   void StartCaptureInternal();
-  void AddDelegateOnIOThread();
-  void RemoveDelegateOnIOThread(base::Closure task);
+
   virtual void Send(IPC::Message* message);
 
   // Helpers.
-  bool ClientHasDIB() const;
-  bool RemoveClient(media::VideoCapture::EventHandler* handler,
-                    ClientInfo* clients);
+  bool RemoveClient(int client_id, ClientInfoMap* clients);
 
   const scoped_refptr<VideoCaptureMessageFilter> message_filter_;
-  const scoped_refptr<base::MessageLoopProxy> capture_message_loop_proxy_;
-  const scoped_refptr<base::MessageLoopProxy> io_message_loop_proxy_;
   int device_id_;
+  const int session_id_;
 
-  // Pool of DIBs. The key is buffer_id.
-  typedef std::map<int, DIBBuffer*> CachedDIB;
-  CachedDIB cached_dibs_;
+  // Vector of callbacks to be notified of device format enumerations, used only
+  // on IO Thread.
+  std::vector<VideoCaptureDeviceFormatsCB> device_formats_cb_queue_;
+  // Vector of callbacks to be notified of a device's in use capture format(s),
+  // used only on IO Thread.
+  std::vector<VideoCaptureDeviceFormatsCB> device_formats_in_use_cb_queue_;
 
-  ClientInfo clients_;
+  // Buffers available for sending to the client.
+  typedef std::map<int32, scoped_refptr<ClientBuffer> > ClientBufferMap;
+  ClientBufferMap client_buffers_;
 
-  ClientInfo clients_pending_on_filter_;
-  ClientInfo clients_pending_on_restart_;
+  ClientInfoMap clients_;
+  ClientInfoMap clients_pending_on_filter_;
+  ClientInfoMap clients_pending_on_restart_;
 
-  media::VideoCaptureCapability::Format video_type_;
+  // Member params_ represents the video format requested by the
+  // client to this class via StartCapture().
+  media::VideoCaptureParams params_;
 
-  // The parameter is being used in current capture session. A capture session
-  // starts with StartCapture and ends with StopCapture.
-  media::VideoCaptureParams current_params_;
+  // The device's video capture format sent from browser process side.
+  media::VideoCaptureFormat last_frame_format_;
 
-  // The information about the device sent from browser process side.
-  media::VideoCaptureParams device_info_;
-  bool device_info_available_;
+  // The device's first captured frame timestamp sent from browser process side.
+  base::TimeTicks first_frame_timestamp_;
 
+  bool suspended_;
   VideoCaptureState state_;
+
+  // |weak_factory_| and |thread_checker_| are bound to the IO thread.
+  base::ThreadChecker thread_checker_;
+
+  // WeakPtrFactory pointing back to |this| object, for use with
+  // media::VideoFrames constructed in OnBufferReceived() from buffers cached
+  // in |client_buffers_|.
+  // NOTE: Weak pointers must be invalidated before all other member variables.
+  base::WeakPtrFactory<VideoCaptureImpl> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(VideoCaptureImpl);
 };

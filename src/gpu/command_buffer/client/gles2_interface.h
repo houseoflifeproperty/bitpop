@@ -6,21 +6,22 @@
 #define GPU_COMMAND_BUFFER_CLIENT_GLES2_INTERFACE_H_
 
 #include <GLES2/gl2.h>
-#include "gles2_impl_export.h"
+
+#include "base/compiler_specific.h"
 
 namespace gpu {
 namespace gles2 {
 
 // This class is the interface for all client side GL functions.
-class GLES2_IMPL_EXPORT GLES2Interface {
+class GLES2Interface {
  public:
-  GLES2Interface();
-  virtual ~GLES2Interface();
+  GLES2Interface() {}
+  virtual ~GLES2Interface() {}
 
   // Include the auto-generated part of this class. We split this because
   // it means we can easily edit the non-auto generated parts right here in
   // this file instead of having to edit some template or the code generator.
-  #include "../client/gles2_interface_autogen.h"
+  #include "gpu/command_buffer/client/gles2_interface_autogen.h"
 };
 
 }  // namespace gles2

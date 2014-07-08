@@ -29,7 +29,6 @@ class TryChangeTestsBase(SuperMoxTestBase):
     self.mox.StubOutWithMock(trychange.scm.GIT, 'GetEmail')
     self.mox.StubOutWithMock(trychange.scm.GIT, 'GetPatchName')
     self.mox.StubOutWithMock(trychange.scm.GIT, 'GetUpstreamBranch')
-    self.mox.StubOutWithMock(trychange.scm.SVN, 'DiffItem')
     self.mox.StubOutWithMock(trychange.scm.SVN, 'GenerateDiff')
     self.mox.StubOutWithMock(trychange.scm.SVN, 'GetCheckoutRoot')
     self.mox.StubOutWithMock(trychange.scm.SVN, 'GetEmail')
@@ -47,12 +46,17 @@ class TryChangeUnittest(TryChangeTestsBase):
   """General trychange.py tests."""
   def testMembersChanged(self):
     members = [
-      'DieWithError', 'EPILOG', 'Escape', 'GIT', 'GetMungedDiff', 'GuessVCS',
-      'HELP_STRING', 'InvalidScript', 'NoTryServerAccess', 'PrintSuccess',
-      'RunCommand', 'RunGit', 'SCM', 'SVN', 'TryChange', 'USAGE', 'breakpad',
-      'datetime', 'errno', 'fix_encoding', 'gcl', 'gclient_utils', 'gen_parser',
-      'getpass', 'json', 'logging', 'optparse', 'os', 'posixpath', 're', 'scm',
-      'shutil', 'subprocess2', 'sys', 'tempfile', 'urllib']
+      'DieWithError', 'EPILOG', 'Escape', 'GIT', 'GIT_PATCH_DIR_BASENAME',
+      'GetMungedDiff', 'GuessVCS', 'GIT_BRANCH_FILE',
+      'HELP_STRING', 'Error', 'InvalidScript', 'NoTryServerAccess',
+      'OptionParser', 'PrintSuccess',
+      'RunCommand', 'RunGit', 'SCM', 'SVN', 'TryChange', 'USAGE', 'contextlib',
+      'breakpad',
+      'datetime', 'errno', 'fix_encoding', 'gcl', 'gclient_utils',
+      'gerrit_util', 'gen_parser',
+      'getpass', 'itertools', 'json', 'logging', 'optparse', 'os', 'posixpath',
+      're', 'scm', 'shutil', 'subprocess2', 'sys', 'tempfile', 'urllib',
+      'urllib2', 'urlparse']
     # If this test fails, you should add the relevant test.
     self.compareMembers(trychange, members)
 
@@ -70,7 +74,10 @@ class TryChangeSimpleTest(unittest.TestCase):
     options, args = trychange.gen_parser(None).parse_args(cmd)
     self.assertEquals([], args)
     # pylint: disable=W0212
-    values = trychange._ParseSendChangeOptions(options)
+    bot_spec = trychange._ParseBotList(options.bot, options.testfilter)
+    if options.testfilter:
+      bot_spec = trychange._ApplyTestFilter(options.testfilter, bot_spec)
+    values = trychange._ParseSendChangeOptions(bot_spec, options)
     self.assertEquals(
         [
           ('user', 'joe'),
@@ -90,7 +97,7 @@ class TryChangeSimpleTest(unittest.TestCase):
     self.assertEquals([], args)
     try:
       # pylint: disable=W0212
-      trychange._ParseSendChangeOptions(options)
+      trychange._ParseBotList(options.bot, options.testfilter)
       self.fail()
     except ValueError:
       pass

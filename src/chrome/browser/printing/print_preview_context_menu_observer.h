@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/tab_contents/render_view_context_menu_observer.h"
+#include "chrome/browser/renderer_context_menu/render_view_context_menu_observer.h"
 
 namespace content {
 class WebContents;
@@ -15,7 +15,7 @@ class WebContents;
 
 class PrintPreviewContextMenuObserver : public RenderViewContextMenuObserver {
  public:
-  explicit PrintPreviewContextMenuObserver(content::WebContents* tab);
+  explicit PrintPreviewContextMenuObserver(content::WebContents* contents);
   virtual ~PrintPreviewContextMenuObserver();
 
   // RenderViewContextMenuObserver implementation.
@@ -23,9 +23,9 @@ class PrintPreviewContextMenuObserver : public RenderViewContextMenuObserver {
   virtual bool IsCommandIdEnabled(int command_id) OVERRIDE;
 
  private:
-  bool IsPrintPreviewTab();
+  bool IsPrintPreviewDialog();
 
-  content::WebContents* tab_;
+  content::WebContents* contents_;
 
   DISALLOW_COPY_AND_ASSIGN(PrintPreviewContextMenuObserver);
 };

@@ -23,14 +23,10 @@
 
 static struct NaClDescVtbl const kNaClDescQuotaVtbl;
 
-int NaClDescQuotaCtor(struct NaClDescQuota           *self,
-                      struct NaClDesc                *desc,
-                      uint8_t const                  *file_id,
-                      struct NaClDescQuotaInterface  *quota_interface) {
-  if (!NaClDescCtor(&self->base)) {
-    NACL_VTBL(NaClDescQuota, self) = NULL;
-    return 0;
-  }
+int NaClDescQuotaSubclassCtor(struct NaClDescQuota           *self,
+                              struct NaClDesc                *desc,
+                              uint8_t const                  *file_id,
+                              struct NaClDescQuotaInterface  *quota_interface) {
   if (!NaClMutexCtor(&self->mu)) {
     /* do not NaClRefCountUnref, since we cannot free: caller must do that */
     (*NACL_VTBL(NaClRefCount, self)->Dtor)((struct NaClRefCount *) self);
@@ -45,6 +41,23 @@ int NaClDescQuotaCtor(struct NaClDescQuota           *self,
   }
   NACL_VTBL(NaClDesc, self) = &kNaClDescQuotaVtbl;
   return 1;
+}
+
+int NaClDescQuotaCtor(struct NaClDescQuota           *self,
+                      struct NaClDesc                *desc,
+                      uint8_t const                  *file_id,
+                      struct NaClDescQuotaInterface  *quota_interface) {
+  int rv;
+  if (!NaClDescCtor(&self->base)) {
+    NACL_VTBL(NaClDescQuota, self) = NULL;
+    return 0;
+  }
+  rv = NaClDescQuotaSubclassCtor(self, desc, file_id, quota_interface);
+  if (!rv) {
+    (*NACL_VTBL(NaClRefCount, self)->Dtor)((struct NaClRefCount *) self);
+    return 0;
+  }
+  return rv;
 }
 
 void NaClDescQuotaDtor(struct NaClRefCount *vself) {
@@ -144,8 +157,8 @@ ssize_t NaClDescQuotaWrite(struct NaClDesc  *vself,
      */
     if ((uint64_t) allowed > len) {
       NaClLog(LOG_WARNING,
-              ("NaClSrpcPepperWriteRequest returned an allowed quota that"
-               " is larger than that requested; reducing to original"
+              ("NaClDescQuotaWrite: WriteRequest returned an allowed quota"
+               " that is larger than that requested; reducing to original"
                " request amount.\n"));
       allowed = len;
     }
@@ -163,6 +176,75 @@ abort:
   return rv;
 }
 
+ssize_t NaClDescQuotaPRead(struct NaClDesc *vself,
+                           void *buf,
+                           size_t len,
+                           nacl_off64_t offset) {
+  struct NaClDescQuota  *self = (struct NaClDescQuota *) vself;
+
+  return (*NACL_VTBL(NaClDesc, self->desc)->PRead)(self->desc, buf, len,
+                                                   offset);
+}
+
+ssize_t NaClDescQuotaPWrite(struct NaClDesc *vself,
+                            void const *buf,
+                            size_t len,
+                            nacl_off64_t offset) {
+  struct NaClDescQuota  *self = (struct NaClDescQuota *) vself;
+  uint64_t              len_u64;
+  int64_t               allowed;
+  ssize_t               rv;
+
+  if (0 == len) {
+    allowed = 0;
+  } else {
+    NACL_COMPILE_TIME_ASSERT(SIZE_T_MAX <= NACL_UMAX_VAL(uint64_t));
+    /*
+     * Write can always return a short, non-zero transfer count.
+     */
+    len_u64 = (uint64_t) len;
+    /* get rid of the always-true/always-false comparison warning */
+    if (len_u64 > NACL_MAX_VAL(int64_t)) {
+      len = (size_t) NACL_MAX_VAL(int64_t);
+    }
+
+    if (NULL == self->quota_interface) {
+      /* If there is no quota_interface, do not allow writes. */
+      allowed = 0;
+    } else {
+      allowed = (*NACL_VTBL(NaClDescQuotaInterface, self->quota_interface)->
+                 WriteRequest)(self->quota_interface,
+                               self->file_id, offset, len);
+    }
+    if (allowed <= 0) {
+      rv = -NACL_ABI_EDQUOT;
+      goto abort;
+    }
+    /*
+     * allowed <= len should be a post-condition, but we check for
+     * it anyway.
+     */
+    if ((uint64_t) allowed > len) {
+      NaClLog(LOG_WARNING,
+              ("NaClDescQuotaPWrite: WriteRequest returned an allowed quota"
+               " that is larger than that requested; reducing to original"
+               " request amount.\n"));
+      allowed = len;
+    }
+  }
+
+  /*
+   * It is possible for Write to write fewer than bytes than the quota
+   * that was granted, in which case quota will leak.
+   * TODO(sehr,bsy): eliminate quota leakage.
+   */
+  rv = (*NACL_VTBL(NaClDesc, self->desc)->PWrite)(self->desc,
+                                                  buf, (size_t) allowed,
+                                                  offset);
+abort:
+  return rv;
+}
+
 nacl_off64_t NaClDescQuotaSeek(struct NaClDesc  *vself,
                                nacl_off64_t     offset,
                                int              whence) {
@@ -174,14 +256,6 @@ nacl_off64_t NaClDescQuotaSeek(struct NaClDesc  *vself,
   NaClXMutexUnlock(&self->mu);
 
   return rv;
-}
-
-int NaClDescQuotaIoctl(struct NaClDesc  *vself,
-                       int              request,
-                       void             *arg) {
-  struct NaClDescQuota  *self = (struct NaClDescQuota *) vself;
-
-  return (*NACL_VTBL(NaClDesc, self->desc)->Ioctl)(self->desc, request, arg);
 }
 
 int NaClDescQuotaFstat(struct NaClDesc      *vself,
@@ -396,6 +470,37 @@ int NaClDescQuotaGetValue(struct NaClDesc *vself) {
   return (*NACL_VTBL(NaClDesc, self->desc)->GetValue)(self->desc);
 }
 
+int NaClDescQuotaSetMetadata(struct NaClDesc *vself,
+                             int32_t metadata_type,
+                             uint32_t metadata_num_bytes,
+                             uint8_t const *metadata_bytes) {
+  struct NaClDescQuota *self = (struct NaClDescQuota *) vself;
+  return (*NACL_VTBL(NaClDesc, self->desc)->SetMetadata)(self->desc,
+                                                         metadata_type,
+                                                         metadata_num_bytes,
+                                                         metadata_bytes);
+}
+
+int32_t NaClDescQuotaGetMetadata(struct NaClDesc *vself,
+                                 uint32_t *metadata_buffer_bytes_in_out,
+                                 uint8_t *metadata_buffer) {
+  struct NaClDescQuota *self = (struct NaClDescQuota *) vself;
+  return (*NACL_VTBL(NaClDesc,
+                     self->desc)->GetMetadata)(self->desc,
+                                               metadata_buffer_bytes_in_out,
+                                               metadata_buffer);
+}
+
+void NaClDescQuotaSetFlags(struct NaClDesc *vself,
+                           uint32_t flags) {
+  struct NaClDescQuota *self = (struct NaClDescQuota *) vself;
+  (*NACL_VTBL(NaClDesc, self->desc)->SetFlags)(self->desc, flags);
+}
+
+uint32_t NaClDescQuotaGetFlags(struct NaClDesc *vself) {
+  struct NaClDescQuota *self = (struct NaClDescQuota *) vself;
+  return (*NACL_VTBL(NaClDesc, self->desc)->GetFlags)(self->desc);
+}
 
 static struct NaClDescVtbl const kNaClDescQuotaVtbl = {
   {
@@ -410,10 +515,10 @@ static struct NaClDescVtbl const kNaClDescQuotaVtbl = {
   NaClDescQuotaRead,
   NaClDescQuotaWrite,
   NaClDescQuotaSeek,
-  NaClDescQuotaIoctl,
+  NaClDescQuotaPRead,
+  NaClDescQuotaPWrite,
   NaClDescQuotaFstat,
   NaClDescQuotaGetdents,
-  NACL_DESC_QUOTA,
   NaClDescQuotaExternalizeSize,
   NaClDescQuotaExternalize,
   NaClDescQuotaLock,
@@ -432,4 +537,10 @@ static struct NaClDescVtbl const kNaClDescQuotaVtbl = {
   NaClDescQuotaPost,
   NaClDescQuotaSemWait,
   NaClDescQuotaGetValue,
+  NaClDescQuotaSetMetadata,
+  NaClDescQuotaGetMetadata,
+  NaClDescQuotaSetFlags,
+  NaClDescQuotaGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_QUOTA,
 };

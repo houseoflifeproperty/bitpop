@@ -1,21 +1,19 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-package org.chromium.chrome.testshell;
+package org.chromium.chrome.browser.test;
 
 import android.content.ContentValues;
 import android.database.Cursor;
 import android.net.Uri;
 import android.provider.Browser.BookmarkColumns;
-import android.test.suitebuilder.annotation.MediumTest;
-
-import java.util.Date;
 
 import org.chromium.base.test.util.DisabledTest;
-import org.chromium.base.test.util.Feature;
 import org.chromium.chrome.browser.ChromeBrowserProvider;
-import org.chromium.chrome.testshell.util.BookmarkUtils;
+import org.chromium.chrome.browser.test.util.BookmarkUtils;
+
+import java.util.Date;
 
 /**
  * Tests the use of the Bookmark URI as part of the Android provider public API.
@@ -322,8 +320,8 @@ public class ProviderBookmarksUriTest extends ProviderTestBase {
                 BookmarkColumns.DATE);
         assertTrue(cursor.moveToNext());
         assertEquals(insertBookmarkTitle, cursor.getString(TITLE_INDEX));
-        assertEquals(insertBookmarkUrl,cursor.getString(URL_INDEX));
-        assertEquals(0,cursor.getInt(VISITS_INDEX));
+        assertEquals(insertBookmarkUrl, cursor.getString(URL_INDEX));
+        assertEquals(0, cursor.getInt(VISITS_INDEX));
         assertEquals(createDate, cursor.getLong(DATE_INDEX));
         assertEquals(createDate, cursor.getLong(CREATED_INDEX));
         assertEquals(0, cursor.getInt(BOOKMARK_INDEX));
@@ -351,8 +349,8 @@ public class ProviderBookmarksUriTest extends ProviderTestBase {
                 null, null);
         assertTrue(cursor.moveToNext());
         assertEquals(updateBookmarkTitle, cursor.getString(TITLE_INDEX));
-        assertEquals(updateBookmarkUrl,cursor.getString(URL_INDEX));
-        assertEquals(1,cursor.getInt(VISITS_INDEX));
+        assertEquals(updateBookmarkUrl, cursor.getString(URL_INDEX));
+        assertEquals(1, cursor.getInt(VISITS_INDEX));
         assertEquals(updateDate, cursor.getLong(DATE_INDEX));
         assertEquals(createDate, cursor.getLong(CREATED_INDEX));
         assertEquals(0, cursor.getInt(BOOKMARK_INDEX));

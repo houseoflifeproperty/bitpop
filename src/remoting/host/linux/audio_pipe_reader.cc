@@ -9,7 +9,7 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/stl_util.h"
@@ -42,26 +42,12 @@ const int kPipeBufferSizeBytes = kPipeBufferSizeMs * kSampleBytesPerSecond /
 #define F_SETPIPE_SZ 1031
 #endif  // defined(F_SETPIPE_SZ)
 
-const int IsPacketOfSilence(const std::string& data) {
-  const int64* int_buf = reinterpret_cast<const int64*>(data.data());
-  for (size_t i = 0; i < data.size() / sizeof(int64); i++) {
-    if (int_buf[i] != 0)
-      return false;
-  }
-  for (size_t i = data.size() - data.size() % sizeof(int64);
-       i < data.size(); i++) {
-    if (data.data()[i] != 0)
-      return false;
-  }
-  return true;
-}
-
 }  // namespace
 
 // static
 scoped_refptr<AudioPipeReader> AudioPipeReader::Create(
     scoped_refptr<base::SingleThreadTaskRunner> task_runner,
-    const FilePath& pipe_name) {
+    const base::FilePath& pipe_name) {
   // Create a reference to the new AudioPipeReader before posting the
   // StartOnAudioThread task, otherwise it may be deleted on the audio
   // thread before we return.
@@ -72,7 +58,7 @@ scoped_refptr<AudioPipeReader> AudioPipeReader::Create(
   return pipe_reader;
 }
 
-void AudioPipeReader::StartOnAudioThread(const FilePath& pipe_name) {
+void AudioPipeReader::StartOnAudioThread(const base::FilePath& pipe_name) {
   DCHECK(task_runner_->BelongsToCurrentThread());
 
   pipe_fd_ = HANDLE_EINTR(open(
@@ -176,9 +162,6 @@ void AudioPipeReader::DoCapture() {
     last_capture_position_ = stream_position_bytes - kPipeBufferSizeBytes;
   DCHECK_LE(last_capture_position_, stream_position_bytes);
 
-  if (IsPacketOfSilence(data))
-    return;
-
   // Dispatch asynchronous notification to the stream observers.
   scoped_refptr<base::RefCountedString> data_ref =
       base::RefCountedString::TakeString(&data);
@@ -187,9 +170,12 @@ void AudioPipeReader::DoCapture() {
 
 void AudioPipeReader::WaitForPipeReadable() {
   timer_.Stop();
-  MessageLoopForIO::current()->WatchFileDescriptor(
-      pipe_fd_, false, MessageLoopForIO::WATCH_READ,
-      &file_descriptor_watcher_, this);
+  base::MessageLoopForIO::current()->WatchFileDescriptor(
+      pipe_fd_,
+      false,
+      base::MessageLoopForIO::WATCH_READ,
+      &file_descriptor_watcher_,
+      this);
 }
 
 // static

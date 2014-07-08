@@ -9,7 +9,8 @@ DOCINPUTS = $(top_srcdir)/include/opus.h \
             $(top_srcdir)/doc/footer.html \
             $(top_srcdir)/doc/customdoxygen.css
 
-EXTRA_DIST = customdoxygen.css Doxyfile.in footer.html header.html opus_logo.svg
+EXTRA_DIST = customdoxygen.css Doxyfile.in footer.html header.html \
+             opus_logo.svg trivial_example.c
 
 
 if HAVE_DOXYGEN
@@ -21,8 +22,9 @@ doxygen-build.stamp: Doxyfile $(DOCINPUTS)
 	touch $@
 
 install-data-local:
+	$(INSTALL) -d $(DESTDIR)$(docdir)/html/search
 	for f in `find html -type f \! -name "installdox"`; do	\
-		$(INSTALL_DATA) -D $$f $(DESTDIR)$(docdir)/$$f;	\
+		$(INSTALL_DATA) $$f $(DESTDIR)$(docdir)/$$f;	\
 	done
 
 	$(INSTALL) -d $(DESTDIR)$(mandir)/man3

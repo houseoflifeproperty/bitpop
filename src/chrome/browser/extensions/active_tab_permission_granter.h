@@ -8,10 +8,10 @@
 #include <set>
 #include <string>
 
-#include "chrome/common/extensions/extension_set.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "base/scoped_observer.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/browser/extension_registry_observer.h"
+#include "extensions/common/extension_set.h"
 #include "extensions/common/url_pattern_set.h"
 
 class Profile;
@@ -23,44 +23,39 @@ class WebContents;
 namespace extensions {
 
 class Extension;
+class ExtensionRegistry;
 
 // Responsible for granting and revoking tab-specific permissions to extensions
-// with the activeTab permission.
-class ActiveTabPermissionGranter : public content::WebContentsObserver,
-                                   public content::NotificationObserver {
+// with the activeTab or tabCapture permission.
+class ActiveTabPermissionGranter
+    : public content::WebContentsObserver,
+      public extensions::ExtensionRegistryObserver {
  public:
   ActiveTabPermissionGranter(content::WebContents* web_contents,
                              int tab_id,
                              Profile* profile);
   virtual ~ActiveTabPermissionGranter();
 
-  // If |extension| has the activeTab permission, grants tab-specific
-  // permissions to it until the next page navigation or refresh.
+  // If |extension| has the activeTab or tabCapture permission, grants
+  // tab-specific permissions to it until the next page navigation or refresh.
   void GrantIfRequested(const Extension* extension);
-
-  // Returns true if |extension| has been granted tab-specific permissions
-  // for this tab.
-  bool IsGranted(const Extension* extension);
 
  private:
   // content::WebContentsObserver implementation.
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
-  virtual void WebContentsDestroyed(content::WebContents* web_contents)
-      OVERRIDE;
+  virtual void WebContentsDestroyed() OVERRIDE;
 
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // extensions::ExtensionRegistryObserver implementation.
+  virtual void OnExtensionUnloaded(content::BrowserContext* browser_context,
+                                   const Extension* extension,
+                                   UnloadedExtensionInfo::Reason reason)
+      OVERRIDE;
 
   // Clears any tab-specific permissions for all extensions on |tab_id_| and
   // notifies renderers.
   void ClearActiveExtensionsAndNotify();
-
-  // Gets the current page id.
-  int32 GetPageID();
 
   // The tab ID for this tab.
   int tab_id_;
@@ -70,7 +65,8 @@ class ActiveTabPermissionGranter : public content::WebContentsObserver,
   ExtensionSet granted_extensions_;
 
   // Listen to extension unloaded notifications.
-  content::NotificationRegistrar registrar_;
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ActiveTabPermissionGranter);
 };

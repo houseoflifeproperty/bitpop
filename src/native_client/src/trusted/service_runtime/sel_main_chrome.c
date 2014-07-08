@@ -4,7 +4,7 @@
  * found in the LICENSE file.
  */
 
-#include "native_client/src/trusted/service_runtime/sel_main_chrome.h"
+#include "native_client/src/public/chrome_main.h"
 
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/portability_io.h"
@@ -18,6 +18,7 @@
 #include <string.h>
 
 #include "native_client/src/include/nacl_macros.h"
+#include "native_client/src/public/nacl_app.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
@@ -41,18 +42,42 @@
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/src/trusted/service_runtime/sel_qualify.h"
 #include "native_client/src/trusted/service_runtime/win/exception_patch/ntdll_patch.h"
+#include "native_client/src/trusted/validator/validation_metadata.h"
+
+static int g_initialized = 0;
+
+#if NACL_LINUX || NACL_OSX
+void NaClChromeMainSetUrandomFd(int urandom_fd) {
+  CHECK(!g_initialized);
+  NaClSecureRngModuleSetUrandomFd(urandom_fd);
+}
+#endif
+
+void NaClChromeMainInit(void) {
+  CHECK(!g_initialized);
+  NaClAllModulesInit();
+  g_initialized = 1;
+}
 
 struct NaClChromeMainArgs *NaClChromeMainArgsCreate(void) {
-  struct NaClChromeMainArgs *args = malloc(sizeof(*args));
+  struct NaClChromeMainArgs *args;
+
+  CHECK(g_initialized);
+  args = malloc(sizeof(*args));
   if (args == NULL)
     return NULL;
   args->imc_bootstrap_handle = NACL_INVALID_HANDLE;
   args->irt_fd = -1;
-  args->initial_ipc_desc = NULL;
   args->enable_exception_handling = 0;
   args->enable_debug_stub = 0;
+  args->enable_dyncode_syscalls = 1;
+  args->pnacl_mode = 0;
+  args->initial_nexe_max_code_bytes = 0;  /* No limit */
 #if NACL_LINUX || NACL_OSX
   args->debug_stub_server_bound_socket_fd = NACL_INVALID_SOCKET;
+#endif
+#if NACL_WINDOWS
+  args->debug_stub_server_port_selected_handler_func = NULL;
 #endif
   args->create_memory_object_func = NULL;
   args->validation_cache = NULL;
@@ -61,26 +86,21 @@ struct NaClChromeMainArgs *NaClChromeMainArgsCreate(void) {
   args->attach_debug_exception_handler_func = NULL;
 #endif
 #if NACL_LINUX || NACL_OSX
-  args->urandom_fd = -1;
+  args->number_of_cores = -1;  /* unknown */
 #endif
 #if NACL_LINUX
   args->prereserved_sandbox_size = 0;
 #endif
-
-  /*
-   * Initialize NaClLog so that Chromium can call
-   * NaClDescMakeCustomDesc() between calling
-   * NaClChromeMainArgsCreate() and NaClChromeMainStart().
-   */
-  NaClLogModuleInit();
-
   return args;
 }
 
+static char kFakeIrtName[] = "\0IRT";
+
 static void NaClLoadIrt(struct NaClApp *nap, int irt_fd) {
   int file_desc;
-  struct GioPio gio_pio;
-  struct Gio *gio_desc;
+  struct NaClDesc *nd;
+  struct NaClValidationMetadata metadata;
+  NaClErrorCode errcode;
 
   if (irt_fd == -1) {
     NaClLog(LOG_FATAL, "NaClLoadIrt: Integrated runtime (IRT) not present.\n");
@@ -92,72 +112,60 @@ static void NaClLoadIrt(struct NaClApp *nap, int irt_fd) {
   }
 
   /*
-   * The GioPio type is safe to use when this file descriptor is shared
-   * with other processes, because it does not use the shared file position.
+   * For the IRT use a fake file name with null characters at the begining and
+   * the end of the name.
    */
-  if (!GioPioCtor(&gio_pio, file_desc)) {
-    NaClLog(LOG_FATAL, "NaClLoadIrt: Failed to create Gio wrapper\n");
-  }
-  gio_desc = (struct Gio *) &gio_pio;
+  /* TODO(ncbray) plumb the real filename in from Chrome. */
+  NaClMetadataFromFDCtor(&metadata, file_desc,
+                         kFakeIrtName, sizeof(kFakeIrtName));
 
-  if (NaClAppLoadFileDynamically(nap, gio_desc) != LOAD_OK) {
+  nd = NaClDescIoDescFromDescAllocCtor(file_desc, NACL_ABI_O_RDONLY);
+  if (NULL == nd) {
     NaClLog(LOG_FATAL,
-            "NaClLoadIrt: Failed to load the integrated runtime (IRT).  "
-            "The user executable was probably not built to use the IRT.\n");
+            "NaClLoadIrt: failed to construct NaClDesc object from"
+            " descriptor\n");
   }
 
-  (*NACL_VTBL(Gio, gio_desc)->Close)(gio_desc);
-  (*NACL_VTBL(Gio, gio_desc)->Dtor)(gio_desc);
+  errcode = NaClAppLoadFileDynamically(nap, nd, &metadata);
+  if (errcode != LOAD_OK) {
+    NaClLog(LOG_FATAL,
+            "NaClLoadIrt: Failed to load the integrated runtime (IRT): %s\n",
+            NaClErrorString(errcode));
+  }
+
+  CHECK(NULL == nap->irt_nexe_desc);
+  nap->irt_nexe_desc = nd;
+  NaClMetadataDtor(&metadata);
 }
 
-void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
-  char *av[1];
-  int ac = 1;
-  const char **envp;
-  struct NaClApp state;
-  struct NaClApp *nap = &state;
-  NaClErrorCode errcode = LOAD_INTERNAL;
-  int ret_code = 1;
-  struct NaClEnvCleanser env_cleanser;
+int NaClChromeMainLoad(struct NaClApp *nap,
+                       struct NaClChromeMainArgs *args) {
+  NaClErrorCode errcode = LOAD_OK;
   int skip_qualification;
 
-#if NACL_OSX
-  /* Mac dynamic libraries cannot access the environ variable directly. */
-  envp = (const char **) *_NSGetEnviron();
-#else
-  /* Overzealous code style check is overzealous. */
-  /* @IGNORE_LINES_FOR_CODE_HYGIENE[1] */
-  extern char **environ;
-  envp = (const char **) environ;
-#endif
+  CHECK(g_initialized);
 
-#if NACL_LINUX || NACL_OSX
-  /* This needs to happen before NaClAllModulesInit(). */
-  if (args->urandom_fd != -1)
-    NaClSecureRngModuleSetUrandomFd(args->urandom_fd);
-#endif
-
-  /*
-   * Clear state so that NaClBootstrapChannelErrorReporter will be
-   * able to know if the bootstrap channel is available or not.
-   */
-  memset(&state, 0, sizeof state);
-  NaClAllModulesInit();
   NaClBootstrapChannelErrorReporterInit();
-  NaClErrorLogHookInit(NaClBootstrapChannelErrorReporter, &state);
+  NaClErrorLogHookInit(NaClBootstrapChannelErrorReporter, nap);
 
-  /* to be passed to NaClMain, eventually... */
-  av[0] = "NaClMain";
-
-  if (NACL_FI_ERROR_COND("AppCtor", !NaClAppCtor(&state))) {
-    NaClLog(LOG_FATAL, "Error while constructing app state\n");
-    goto done;
-  }
-
-  errcode = LOAD_OK;
+  /* Allow or disallow dyncode API based on args. */
+  nap->enable_dyncode_syscalls = args->enable_dyncode_syscalls;
+  nap->initial_nexe_max_code_bytes = args->initial_nexe_max_code_bytes;
+  nap->pnacl_mode = args->pnacl_mode;
 
 #if NACL_LINUX
   g_prereserved_sandbox_size = args->prereserved_sandbox_size;
+#endif
+#if NACL_LINUX || NACL_OSX
+  /*
+   * Overwrite value of sc_nprocessors_onln set in NaClAppCtor.  In
+   * the Chrome embedding, the outer sandbox was already enabled when
+   * the NaClApp Ctor was invoked, so a bogus value was written in
+   * sc_nprocessors_onln.
+   */
+  if (-1 != args->number_of_cores) {
+    nap->sc_nprocessors_onln = args->number_of_cores;
+  }
 #endif
 
   if (args->create_memory_object_func != NULL)
@@ -177,10 +185,6 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
    * NACL_SERVICE_PORT_DESCRIPTOR and NACL_SERVICE_ADDRESS_DESCRIPTOR
    * are 3 and 4.
    */
-
-  if (args->initial_ipc_desc != NULL) {
-    NaClSetDesc(nap, NACL_CHROME_INITIAL_IPC_DESC, args->initial_ipc_desc);
-  }
 
   /*
    * in order to report load error to the browser plugin through the
@@ -218,30 +222,14 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
 #endif
   NaClSignalTestCrashOnStartup();
 
-  /*
-   * Check that Chrome did not register any signal handlers, because
-   * these are not always safe.
-   *
-   * This check is disabled for Mac OS X because it currently does not
-   * pass there in Chromium, which registers a handler for at least
-   * SIGILL (signal 4).  Luckily, OS X restores %gs when entering a
-   * signal handler, so there should not be a vulnerability.
-   * TODO(mseaborn): However, we should reinstate the check for Mac to
-   * be on the safe side.
-   */
-  if (!NACL_OSX) {
-    NACL_FI_FATAL("NaClSignalAssertNoHandlers");
-    NaClSignalAssertNoHandlers();
-  }
-
   nap->enable_exception_handling = args->enable_exception_handling;
 
   if (args->enable_exception_handling || args->enable_debug_stub) {
 #if NACL_LINUX
-    NaClSignalHandlerInit();
+    /* NaCl's signal handler is always enabled on Linux. */
 #elif NACL_OSX
     if (!NaClInterceptMachExceptions()) {
-      NaClLog(LOG_FATAL, "NaClChromeMainStart: "
+      NaClLog(LOG_FATAL, "NaClChromeMainLoad: "
               "Failed to set up Mach exception handler\n");
     }
 #elif NACL_WINDOWS
@@ -251,9 +239,12 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
 # error Unknown host OS
 #endif
   }
+#if NACL_LINUX
+  NaClSignalHandlerInit();
+#endif
 
   /* Give debuggers a well known point at which xlate_base is known.  */
-  NaClGdbHook(&state);
+  NaClGdbHook(nap);
 
   NaClCreateServiceSocket(nap);
   /*
@@ -271,10 +262,8 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
 
   NACL_FI_FATAL("BeforeSecureCommandChannel");
   /*
-   * NB: Spawns a thread that uses the command channel.  We do this
-   * after NaClAppLoadFile so that the NaClApp object is more fully
-   * populated.  Hereafter any changes to nap should be done while
-   * holding locks.
+   * Spawns a thread that uses the command channel.
+   * Hereafter any changes to nap should be done while holding locks.
    */
   NaClSecureCommandChannel(nap);
 
@@ -306,26 +295,10 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
 
   /*
    * Load the integrated runtime (IRT) library.
-   * We check if there is a segment gap before trying to load the IRT.  This
-   * is to support IRT-less / segment-gap-free PNaCl translator nexes.
-   * TODO(mseaborn): Plumb through a flag from Chrome in such cases,
-   * instead of looking for the absence of a segment gap, when the nexe does
-   * not follow NaCl's stable ABI.
    */
-  if (NULL != nap->text_shm) {
+  if (args->irt_fd != -1 && !nap->irt_loaded) {
     NaClLoadIrt(nap, args->irt_fd);
-  } else {
-    NaClLog(
-        LOG_WARNING,
-        "Main executable has no segment gap; skipping loading IRT library. "
-        "This is expected for PNaCl's translator nexes.\n");
-  }
-
-  NACL_FI_FATAL("BeforeEnvCleanserCtor");
-
-  NaClEnvCleanserCtor(&env_cleanser, 1);
-  if (!NaClEnvCleanserInit(&env_cleanser, envp, NULL)) {
-    NaClLog(LOG_FATAL, "Failed to initialise env cleanser\n");
+    nap->irt_loaded = 1;
   }
 
   if (NACL_FI_ERROR_COND("LaunchServiceThreads",
@@ -342,10 +315,64 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
     if (!NaClDebugInit(nap)) {
       goto done;
     }
+#if NACL_WINDOWS
+    if (NULL != args->debug_stub_server_port_selected_handler_func) {
+      args->debug_stub_server_port_selected_handler_func(nap->debug_stub_port);
+    }
+#endif
   }
 
   free(args);
-  args = NULL;
+  return LOAD_OK;
+
+done:
+  fflush(stdout);
+
+  /*
+   * If there is a secure command channel, we sent an RPC reply with
+   * the reason that the nexe was rejected.  If we exit now, that
+   * reply may still be in-flight and the various channel closure (esp
+   * reverse channel) may be detected first.  This would result in a
+   * crash being reported, rather than the error in the RPC reply.
+   * Instead, we wait for the hard-shutdown on the command channel.
+   */
+  if (LOAD_OK != errcode) {
+    NaClBlockIfCommandChannelExists(nap);
+  } else {
+    /*
+     * Don't return LOAD_OK if we had some failure loading.
+     */
+    errcode = LOAD_INTERNAL;
+  }
+  return errcode;
+}
+
+void NaClChromeMainStart(struct NaClApp *nap) {
+  int ac = 1;
+  char *av[1];
+  int ret_code;
+  const char **envp;
+  struct NaClEnvCleanser env_cleanser;
+
+#if NACL_OSX
+  /* Mac dynamic libraries cannot access the environ variable directly. */
+  envp = (const char **) *_NSGetEnviron();
+#else
+  /* Overzealous code style check is overzealous. */
+  /* @IGNORE_LINES_FOR_CODE_HYGIENE[1] */
+  extern char **environ;
+  envp = (const char **) environ;
+#endif
+
+  NACL_FI_FATAL("BeforeEnvCleanserCtor");
+
+  NaClEnvCleanserCtor(&env_cleanser, 1);
+  if (!NaClEnvCleanserInit(&env_cleanser, envp, NULL)) {
+    NaClLog(LOG_FATAL, "Failed to initialise env cleanser\n");
+  }
+
+  /* to be passed to NaClMain, eventually... */
+  av[0] = "NaClMain";
 
   if (NACL_FI_ERROR_COND(
           "CreateMainThread",
@@ -359,29 +386,31 @@ void NaClChromeMainStart(struct NaClChromeMainArgs *args) {
 
   ret_code = NaClWaitForMainThreadToExit(nap);
 
+  if (NACL_ABI_WIFEXITED(nap->exit_status)) {
+    /*
+     * Under Chrome, a call to _exit() often indicates that something
+     * has gone awry, so we report it here to aid debugging.
+     *
+     * This conditional does not run if the NaCl process was
+     * terminated forcibly, which is the normal case under Chrome.
+     * This forcible exit is triggered by the renderer closing the
+     * trusted SRPC channel, which we record as NACL_ABI_SIGKILL
+     * internally.
+     */
+    NaClLog(LOG_INFO, "NaCl untrusted code called _exit(0x%x)\n", ret_code);
+  }
+
   /*
    * exit_group or equiv kills any still running threads while module
    * addr space is still valid.  otherwise we'd have to kill threads
    * before we clean up the address space.
    */
   NaClExit(ret_code);
+}
 
- done:
-  fflush(stdout);
-
-  /*
-   * If there is a secure command channel, we sent an RPC reply with
-   * the reason that the nexe was rejected.  If we exit now, that
-   * reply may still be in-flight and the various channel closure (esp
-   * reverse channel) may be detected first.  This would result in a
-   * crash being reported, rather than the error in the RPC reply.
-   * Instead, we wait for the hard-shutdown on the command channel.
-   */
-  if (LOAD_OK != errcode) {
-    NaClBlockIfCommandChannelExists(nap);
-  }
-
-  NaClAllModulesFini();
-
-  NaClExit(ret_code);
+void NaClChromeMainStartApp(struct NaClApp *nap,
+                            struct NaClChromeMainArgs *args) {
+  if (NaClChromeMainLoad(nap, args) != 0)
+    NaClExit(1);
+  NaClChromeMainStart(nap);
 }

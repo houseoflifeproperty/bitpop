@@ -5,13 +5,19 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_FEATURE_INFO_H_
 #define GPU_COMMAND_BUFFER_SERVICE_FEATURE_INFO_H_
 
+#include <set>
 #include <string>
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/sys_info.h"
 #include "gpu/command_buffer/service/gles2_cmd_decoder.h"
 #include "gpu/command_buffer/service/gles2_cmd_validation.h"
+#include "gpu/config/gpu_driver_bug_workaround_type.h"
 #include "gpu/gpu_export.h"
+
+namespace base {
+class CommandLine;
+}
 
 namespace gpu {
 namespace gles2 {
@@ -19,19 +25,28 @@ namespace gles2 {
 // FeatureInfo records the features that are available for a ContextGroup.
 class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
  public:
-  typedef scoped_refptr<FeatureInfo> Ref;
-
   struct FeatureFlags {
     FeatureFlags();
 
+    bool chromium_color_buffer_float_rgba;
+    bool chromium_color_buffer_float_rgb;
     bool chromium_framebuffer_multisample;
+    bool chromium_sync_query;
+    // Use glBlitFramebuffer() and glRenderbufferStorageMultisample() with
+    // GL_EXT_framebuffer_multisample-style semantics, since they are exposed
+    // as core GL functions on this implementation.
+    bool use_core_framebuffer_multisample;
+    bool multisampled_render_to_texture;
+    // Use the IMG GLenum values and functions rather than EXT.
+    bool use_img_for_multisampled_render_to_texture;
     bool oes_standard_derivatives;
     bool oes_egl_image_external;
+    bool oes_depth24;
+    bool oes_compressed_etc1_rgb8_texture;
+    bool packed_depth24_stencil8;
     bool npot_ok;
     bool enable_texture_float_linear;
     bool enable_texture_half_float_linear;
-    bool chromium_webglsl;
-    bool chromium_stream_texture;
     bool angle_translated_shader_source;
     bool angle_pack_reverse_row_order;
     bool arb_texture_rectangle;
@@ -40,38 +55,46 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
     bool use_arb_occlusion_query2_for_occlusion_query_boolean;
     bool use_arb_occlusion_query_for_occlusion_query_boolean;
     bool native_vertex_array_object;
-    bool disable_workarounds;
+    bool ext_texture_format_bgra8888;
     bool enable_shader_name_hashing;
+    bool enable_samplers;
+    bool ext_draw_buffers;
+    bool ext_frag_depth;
+    bool ext_shader_texture_lod;
+    bool use_async_readpixels;
+    bool map_buffer_range;
+    bool ext_discard_framebuffer;
+    bool angle_depth_texture;
+    bool is_angle;
+    bool is_swiftshader;
+    bool angle_texture_usage;
+    bool ext_texture_storage;
   };
 
   struct Workarounds {
     Workarounds();
 
-    bool clear_alpha_in_readpixels;
-    bool clear_uniforms_before_program_use;
-    bool needs_glsl_built_in_function_emulation;
-    bool needs_offscreen_buffer_workaround;
-    bool reverse_point_sprite_coord_origin;
-    bool set_texture_filter_before_generating_mipmap;
-    bool use_current_program_after_successful_link;
-    bool restore_scissor_on_fbo_change;
+#define GPU_OP(type, name) bool name;
+    GPU_DRIVER_BUG_WORKAROUNDS(GPU_OP)
+#undef GPU_OP
 
     // Note: 0 here means use driver limit.
     GLint max_texture_size;
     GLint max_cube_map_texture_size;
+    GLint max_fragment_uniform_vectors;
+    GLint max_varying_vectors;
+    GLint max_vertex_uniform_vectors;
   };
 
+  // Constructor with workarounds taken from the current process's CommandLine
   FeatureInfo();
 
-  // If allowed features = NULL or "*", all features are allowed. Otherwise
-  // only features that match the strings in allowed_features are allowed.
-  bool Initialize(const char* allowed_features);
-  bool Initialize(const DisallowedFeatures& disallowed_features,
-                  const char* allowed_features);
+  // Constructor with workarounds taken from |command_line|
+  FeatureInfo(const base::CommandLine& command_line);
 
-  // Turns on certain features if they can be turned on. NULL turns on
-  // all available features.
-  void AddFeatures(const char* desired_features);
+  // Initializes the feature information. Needs a current GL context.
+  bool Initialize();
+  bool Initialize(const DisallowedFeatures& disallowed_features);
 
   const Validators* validators() const {
     return &validators_;
@@ -95,6 +118,7 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
 
  private:
   friend class base::RefCounted<FeatureInfo>;
+  friend class BufferManagerClientSideArraysTest;
 
   typedef base::hash_map<GLenum, ValueValidator<GLenum> > ValidatorMap;
   ValidatorMap texture_format_validators_;
@@ -102,6 +126,8 @@ class GPU_EXPORT FeatureInfo : public base::RefCounted<FeatureInfo> {
   ~FeatureInfo();
 
   void AddExtensionString(const std::string& str);
+  void InitializeBasicState(const base::CommandLine& command_line);
+  void InitializeFeatures();
 
   Validators validators_;
 

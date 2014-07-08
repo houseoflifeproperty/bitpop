@@ -13,8 +13,7 @@ namespace {
 
 class EVBubbleDecorationTest : public CocoaTest {
  public:
-  EVBubbleDecorationTest()
-      : decoration_(NULL, [NSFont userFontOfSize:12]) {
+  EVBubbleDecorationTest() : decoration_(NULL) {
   }
 
   EVBubbleDecoration decoration_;
@@ -29,7 +28,8 @@ TEST_F(EVBubbleDecorationTest, MiddleElide) {
   const CGFloat kMinimumWidth = 100.0;  // Never should get this small.
 
   const NSSize kImageSize = NSMakeSize(20.0, 20.0);
-  scoped_nsobject<NSImage> image([[NSImage alloc] initWithSize:kImageSize]);
+  base::scoped_nsobject<NSImage> image(
+      [[NSImage alloc] initWithSize:kImageSize]);
 
   decoration_.SetImage(image);
   decoration_.SetFullLabel(kLongString);

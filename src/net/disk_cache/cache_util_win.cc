@@ -6,37 +6,14 @@
 
 #include <windows.h>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/win/scoped_handle.h"
-
-namespace {
-
-// Deletes all the files on path that match search_name pattern.
-void DeleteFiles(const FilePath& path, const wchar_t* search_name) {
-  FilePath name(path.Append(search_name));
-
-  WIN32_FIND_DATA data;
-  HANDLE handle = FindFirstFile(name.value().c_str(), &data);
-  if (handle == INVALID_HANDLE_VALUE)
-    return;
-
-  do {
-    if (data.dwFileAttributes == FILE_ATTRIBUTE_DIRECTORY ||
-        data.dwFileAttributes == FILE_ATTRIBUTE_REPARSE_POINT)
-      continue;
-    DeleteFile(path.Append(data.cFileName).value().c_str());
-  } while (FindNextFile(handle, &data));
-
-  FindClose(handle);
-}
-
-}  // namespace
 
 namespace disk_cache {
 
-bool MoveCache(const FilePath& from_path, const FilePath& to_path) {
+bool MoveCache(const base::FilePath& from_path, const base::FilePath& to_path) {
   // I don't want to use the shell version of move because if something goes
   // wrong, that version will attempt to move file by file and fail at the end.
   if (!MoveFileEx(from_path.value().c_str(), to_path.value().c_str(), 0)) {
@@ -46,13 +23,7 @@ bool MoveCache(const FilePath& from_path, const FilePath& to_path) {
   return true;
 }
 
-void DeleteCache(const FilePath& path, bool remove_folder) {
-  DeleteFiles(path, L"*");
-  if (remove_folder)
-    RemoveDirectory(path.value().c_str());
-}
-
-bool DeleteCacheFile(const FilePath& name) {
+bool DeleteCacheFile(const base::FilePath& name) {
   // We do a simple delete, without ever falling back to SHFileOperation, as the
   // version from base does.
   if (!DeleteFile(name.value().c_str())) {

@@ -5,7 +5,7 @@
 #include "remoting/host/server_log_entry.h"
 
 #include "base/logging.h"
-#include "base/stringize_macros.h"
+#include "base/strings/stringize_macros.h"
 #include "base/sys_info.h"
 #include "remoting/base/constants.h"
 #include "remoting/protocol/session.h"
@@ -26,6 +26,7 @@ const char kLogEntry[] = "entry";
 const char kKeyEventName[] = "event-name";
 const char kValueEventNameSessionState[] = "session-state";
 const char kValueEventNameHeartbeat[] = "heartbeat";
+const char kValueEventNameHostStatus[] = "host-status";
 
 const char kKeyRole[] = "role";
 const char kValueRoleHost[] = "host";
@@ -38,13 +39,14 @@ const char kKeySessionState[] = "session-state";
 const char kValueSessionStateConnected[] = "connected";
 const char kValueSessionStateClosed[] = "closed";
 
-const char kKeyOsName[] = "os-name";
-const char kValueOsNameWindows[] = "Windows";
-const char kValueOsNameLinux[] = "Linux";
-const char kValueOsNameMac[] = "Mac";
-const char kValueOsNameChromeOS[] = "ChromeOS";
+const char kStatusName[] = "status";
+const char kExitCodeName[] = "exit-code";
 
+const char kKeyOsName[] = "os-name";
+
+#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_CHROMEOS)
 const char kKeyOsVersion[] = "os-version";
+#endif
 
 const char kKeyHostVersion[] = "host-version";
 
@@ -84,15 +86,27 @@ scoped_ptr<ServerLogEntry> ServerLogEntry::MakeForHeartbeat() {
   return entry.Pass();
 }
 
+// static
+scoped_ptr<ServerLogEntry> ServerLogEntry::MakeForHostStatus(
+    HostStatusSender::HostStatus host_status, HostExitCodes exit_code) {
+  scoped_ptr<ServerLogEntry> entry(new ServerLogEntry());
+  entry->Set(kKeyRole, kValueRoleHost);
+  entry->Set(kKeyEventName, kValueEventNameHostStatus);
+  entry->Set(kStatusName, HostStatusSender::HostStatusToString(host_status));
+  if (host_status == HostStatusSender::OFFLINE)
+    entry->Set(kExitCodeName, ExitCodeToString(exit_code));
+  return entry.Pass();
+}
+
 void ServerLogEntry::AddHostFields() {
 #if defined(OS_WIN)
-  Set(kKeyOsName, kValueOsNameWindows);
+  Set(kKeyOsName, "Windows");
 #elif defined(OS_MACOSX)
-  Set(kKeyOsName, kValueOsNameMac);
+  Set(kKeyOsName, "Mac");
 #elif defined(OS_CHROMEOS)
-  Set(kKeyOsName, kValueOsNameChromeOS);
+  Set(kKeyOsName, "ChromeOS");
 #elif defined(OS_LINUX)
-  Set(kKeyOsName, kValueOsNameLinux);
+  Set(kKeyOsName, "Linux");
 #endif
 
   // SysInfo::OperatingSystemVersionNumbers is only defined for the following
@@ -140,7 +154,7 @@ scoped_ptr<XmlElement> ServerLogEntry::ToStanza() const {
       kChromotingXmlNamespace, kLogEntry)));
   ValuesMap::const_iterator iter;
   for (iter = values_map_.begin(); iter != values_map_.end(); ++iter) {
-    stanza->AddAttr(QName("", iter->first), iter->second);
+    stanza->AddAttr(QName(std::string(), iter->first), iter->second);
   }
   return stanza.Pass();
 }

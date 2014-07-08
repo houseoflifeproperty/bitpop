@@ -13,6 +13,8 @@ import sys
 EXCLUDE_PROJECT_CHECKS_DIRS = [
     # The following contain test data (including automatically generated),
     # and do not follow our conventions.
+    'src/trusted/validator_ragel/testdata/32',
+    'src/trusted/validator_ragel/testdata/64',
     'src/trusted/validator_x86/testdata/32',
     'src/trusted/validator_x86/testdata/64',
     'src/trusted/validator/x86/decoder/generator/testdata/32',
@@ -27,7 +29,7 @@ EXCLUDE_PROJECT_CHECKS_DIRS = [
     'src/trusted/validator_ragel/gen',
     ]
 
-def NaclTopDir():
+def NaClTopDir():
   # git-cl and gcl run PRESUBMIT.py with the current directory set to
   # the native_client directory (which may have a different basename
   # in a standalone checkout).
@@ -62,15 +64,15 @@ def CheckChangeOnUpload(input_api, output_api):
   # it can be used by the commit queue.
   old_sys_path = list(sys.path)
   try:
-    sys.path.append(os.path.join(NaclTopDir(), 'tools'))
-    sys.path.append(os.path.join(NaclTopDir(), 'build'))
+    sys.path.append(os.path.join(NaClTopDir(), 'tools'))
+    sys.path.append(os.path.join(NaClTopDir(), 'build'))
     import code_hygiene
   finally:
     sys.path = old_sys_path
     del old_sys_path
 
   affected_files = input_api.AffectedFiles(include_deletes=False)
-  exclude_dirs = [ NaclTopDir() + '/' + x + '/'
+  exclude_dirs = [ NaClTopDir() + '/' + x + '/'
                    for x in EXCLUDE_PROJECT_CHECKS_DIRS ]
   for filename in affected_files:
     filename = filename.AbsoluteLocalPath()
@@ -99,56 +101,96 @@ def CheckChangeOnCommit(input_api, output_api):
   return report
 
 
-def GetPreferredTrySlaves(_, change):
-
-  # This is a heuristic to (conservatively) detect if the change only
-  # affects the pnacl toolchain and not the main builders, and run the
-  # appropriate trybots.
-  is_pnacl_toolchain_only = True
-  for f in change.AffectedFiles(include_dirs=True):
-    if not f.LocalPath().startswith('pnacl'):
-      is_pnacl_toolchain_only = False
-  if is_pnacl_toolchain_only:
-    return [
-        'nacl-toolchain-linux-pnacl-x86_64',
-        'nacl-toolchain-linux-pnacl-x86_32',
-        'nacl-toolchain-mac-pnacl-x86_32',
-        'nacl-toolchain-win7-pnacl-x86_64',
+DEFAULT_TRYBOTS = [
+    'nacl-precise32_newlib_dbg',
+    'nacl-precise32_newlib_opt',
+    'nacl-precise32_glibc_opt',
+    'nacl-precise64_newlib_dbg',
+    'nacl-precise64_newlib_opt',
+    'nacl-precise64_glibc_opt',
+    'nacl-mac10.6_newlib_opt',
+    'nacl-mac10.6_glibc_opt',
+    'nacl-mac10.6_64_newlib_dbg',
+    'nacl-mac10.6_64_glibc_opt',
+    'nacl-mac10.7_newlib_opt',
+    'nacl-mac10.7_glibc_opt',
+    'nacl-mac10.7_64_newlib_dbg',
+    'nacl-mac10.7_64_glibc_opt',
+    'nacl-mac10.8_32_newlib_dbg',
+    'nacl-mac10.8_32_glibc_opt',
+    'nacl-mac10.8_64_newlib_dbg',
+    'nacl-mac10.8_64_glibc_opt',
+    'nacl-win32_newlib_opt',
+    'nacl-win32_glibc_opt',
+    'nacl-win64_newlib_dbg',
+    'nacl-win64_newlib_opt',
+    'nacl-win64_glibc_opt',
+    'nacl-win8-64_newlib_dbg',
+    'nacl-win8-64_newlib_opt',
+    'nacl-arm_opt_panda',
+    # arm-nacl-gcc bots
+    'nacl-win7_64_arm_newlib_opt',
+    'nacl-mac10.7_arm_newlib_opt',
+    'nacl-precise64_arm_newlib_opt',
+    # Clang bots
+    'nacl-precise_64-newlib-dbg-clang',
+    'nacl-mac10.6-newlib-dbg-clang',
+    # pnacl scons bots
+    'nacl-precise_64-newlib-arm_qemu-pnacl',
+    'nacl-precise_64-newlib-x86_32-pnacl',
+    'nacl-precise_64-newlib-x86_64-pnacl',
+    # pnacl spec2k bots
+    'nacl-arm_perf_panda',
+    'nacl-precise_64-newlib-x86_32-pnacl-spec',
+    'nacl-precise_64-newlib-x86_64-pnacl-spec',
     ]
 
-  return [
-      'nacl-lucid32_newlib_dbg',
-      'nacl-lucid32_newlib_opt',
-      'nacl-lucid32_glibc_opt',
-      'nacl-lucid64_newlib_dbg',
-      'nacl-lucid64_newlib_opt',
-      'nacl-lucid64_glibc_opt',
-      'nacl-lucid64_newlib_dbg_valgrind',
-      'nacl-lucid64_glibc_dbg_valgrind',
-      'nacl-mac10.6_newlib_opt',
-      'nacl-mac10.6_glibc_opt',
-      'nacl-mac10.7_newlib_opt',
-      'nacl-mac10.7_glibc_opt',
-      'nacl-win32_newlib_opt',
-      'nacl-win32_glibc_opt',
-      'nacl-win64_newlib_dbg',
-      'nacl-win64_newlib_opt',
-      'nacl-win64_glibc_opt',
-      'nacl-arm_opt_panda',
-      # arm-nacl-gcc bots
-      'nacl-win7_64_arm_newlib_opt',
-      'nacl-mac10.7_arm_newlib_opt',
-      'nacl-lucid64_arm_newlib_opt',
-      # Clang bots
-      'nacl-lucid_64-newlib-dbg-clang',
-      'nacl-mac10.6-newlib-dbg-clang',
-      # pnacl scons bots
-      'nacl-lucid_64-newlib-arm_qemu-pnacl',
-      'nacl-lucid_64-newlib-x86_32-pnacl',
-      'nacl-lucid_64-newlib-x86_64-pnacl',
-      'nacl-precise_64-newlib-x86_64-pnacl',
-      # pnacl spec2k bots
-      'nacl-lucid_64-newlib-arm_qemu-pnacl-spec',
-      'nacl-lucid_64-newlib-x86_32-pnacl-spec',
-      'nacl-lucid_64-newlib-x86_64-pnacl-spec',
-  ]
+PNACL_TOOLCHAIN_TRYBOTS = [
+    'nacl-toolchain-linux-pnacl-x86_64',
+    'nacl-toolchain-linux-pnacl-x86_32',
+    'nacl-toolchain-mac-pnacl-x86_32',
+    'nacl-toolchain-win7-pnacl-x86_64',
+    ]
+
+TOOLCHAIN_BUILD_TRYBOTS = [
+    'nacl-toolchain-precise64-newlib-arm',
+    'nacl-toolchain-mac-newlib-arm',
+    ]
+
+
+def GetPreferredTryMasters(_, change):
+
+  has_pnacl = False
+  has_toolchain_build = False
+  has_others = False
+
+  for file in change.AffectedFiles(include_dirs=True):
+    if IsFileInDirectories(file.AbsoluteLocalPath(),
+                           [os.path.join(NaClTopDir(), 'build'),
+                            os.path.join(NaClTopDir(), 'buildbot'),
+                            os.path.join(NaClTopDir(), 'pynacl')]):
+      # Buildbot and infrastructure changes should trigger all the try bots.
+      has_pnacl = True
+      has_toolchain_build = True
+      has_others = True
+      break
+    elif IsFileInDirectories(file.AbsoluteLocalPath(),
+                           [os.path.join(NaClTopDir(), 'pnacl')]):
+      has_pnacl = True
+    elif IsFileInDirectories(file.AbsoluteLocalPath(),
+                             [os.path.join(NaClTopDir(), 'toolchain_build')]):
+      has_toolchain_build = True
+    else:
+      has_others = True
+
+  trybots = []
+  if has_pnacl:
+    trybots += PNACL_TOOLCHAIN_TRYBOTS
+  if has_toolchain_build:
+    trybots += TOOLCHAIN_BUILD_TRYBOTS
+  if has_others:
+    trybots += DEFAULT_TRYBOTS
+
+  return {
+    'tryserver.chromium': { t: set(['defaulttests']) for t in trybots },
+  }

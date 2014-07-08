@@ -5,7 +5,7 @@
 #include "ui/views/controls/scrollbar/native_scroll_bar_views.h"
 
 #include "base/logging.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/path.h"
 #include "ui/views/controls/button/custom_button.h"
@@ -33,8 +33,8 @@ class ScrollBarButton : public BaseScrollBarButton {
   virtual ~ScrollBarButton();
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE {
-    return "views/ScrollBarButton";
+  virtual const char* GetClassName() const OVERRIDE {
+    return "ScrollBarButton";
   }
 
  protected:
@@ -55,8 +55,8 @@ class ScrollBarThumb : public BaseScrollBarThumb {
   virtual ~ScrollBarThumb();
 
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE {
-    return "views/ScrollBarThumb";
+  virtual const char* GetClassName() const OVERRIDE {
+    return "ScrollBarThumb";
   }
 
  protected:
@@ -73,13 +73,11 @@ class ScrollBarThumb : public BaseScrollBarThumb {
 /////////////////////////////////////////////////////////////////////////////
 // ScrollBarButton
 
-ScrollBarButton::ScrollBarButton(
-    ButtonListener* listener,
-    Type type)
+ScrollBarButton::ScrollBarButton(ButtonListener* listener, Type type)
     : BaseScrollBarButton(listener),
       type_(type) {
-  set_focusable(false);
-  set_accessibility_focusable(false);
+  SetFocusable(false);
+  SetAccessibilityFocusable(false);
 }
 
 ScrollBarButton::~ScrollBarButton() {
@@ -159,8 +157,8 @@ ui::NativeTheme::State
 ScrollBarThumb::ScrollBarThumb(BaseScrollBar* scroll_bar)
     : BaseScrollBarThumb(scroll_bar),
       scroll_bar_(scroll_bar) {
-  set_focusable(false);
-  set_accessibility_focusable(false);
+  SetFocusable(false);
+  SetAccessibilityFocusable(false);
 }
 
 ScrollBarThumb::~ScrollBarThumb() {
@@ -173,26 +171,26 @@ gfx::Size ScrollBarThumb::GetPreferredSize() {
 }
 
 void ScrollBarThumb::OnPaint(gfx::Canvas* canvas) {
+  const gfx::Rect local_bounds(GetLocalBounds());
+  const ui::NativeTheme::State theme_state = GetNativeThemeState();
+  const ui::NativeTheme::ExtraParams extra_params(GetNativeThemeParams());
   GetNativeTheme()->Paint(canvas->sk_canvas(),
                           GetNativeThemePart(),
-                          GetNativeThemeState(),
-                          GetLocalBounds(),
-                          GetNativeThemeParams());
+                          theme_state,
+                          local_bounds,
+                          extra_params);
+  const ui::NativeTheme::Part gripper_part = scroll_bar_->IsHorizontal() ?
+      ui::NativeTheme::kScrollbarHorizontalGripper :
+      ui::NativeTheme::kScrollbarVerticalGripper;
+  GetNativeTheme()->Paint(canvas->sk_canvas(), gripper_part, theme_state,
+                          local_bounds, extra_params);
 }
 
-ui::NativeTheme::ExtraParams
-    ScrollBarThumb::GetNativeThemeParams() const {
+ui::NativeTheme::ExtraParams ScrollBarThumb::GetNativeThemeParams() const {
+  // This gives the behavior we want.
   ui::NativeTheme::ExtraParams params;
-
-  switch (GetState()) {
-    case CustomButton::STATE_HOVERED:
-      params.scrollbar_thumb.is_hovering = true;
-      break;
-    default:
-      params.scrollbar_thumb.is_hovering = false;
-      break;
-  }
-
+  params.scrollbar_thumb.is_hovering =
+      (GetState() != CustomButton::STATE_HOVERED);
   return params;
 }
 
@@ -229,8 +227,7 @@ ui::NativeTheme::State ScrollBarThumb::GetNativeThemeState() const {
 ////////////////////////////////////////////////////////////////////////////////
 // NativeScrollBarViews, public:
 
-const char NativeScrollBarViews::kViewClassName[] =
-    "views/NativeScrollBarViews";
+const char NativeScrollBarViews::kViewClassName[] = "NativeScrollBarViews";
 
 NativeScrollBarViews::NativeScrollBarViews(NativeScrollBar* scroll_bar)
     : BaseScrollBar(scroll_bar->IsHorizontal(),
@@ -290,6 +287,7 @@ void NativeScrollBarViews::OnPaint(gfx::Canvas* canvas) {
   params_.scrollbar_track.track_y = bounds.y();
   params_.scrollbar_track.track_width = bounds.width();
   params_.scrollbar_track.track_height = bounds.height();
+  params_.scrollbar_track.classic_state = 0;
 
   GetNativeTheme()->Paint(canvas->sk_canvas(), part_, state_, bounds, params_);
 }
@@ -301,7 +299,7 @@ gfx::Size NativeScrollBarViews::GetPreferredSize() {
   return gfx::Size(GetVerticalScrollBarWidth(theme), 0);
 }
 
-std::string NativeScrollBarViews::GetClassName() const {
+const char* NativeScrollBarViews::GetClassName() const {
   return kViewClassName;
 }
 
@@ -370,7 +368,6 @@ gfx::Rect NativeScrollBarViews::GetTrackBounds() const {
   return bounds;
 }
 
-#if defined(USE_AURA)
 ////////////////////////////////////////////////////////////////////////////////
 // NativewScrollBarWrapper, public:
 
@@ -383,6 +380,8 @@ NativeScrollBarWrapper* NativeScrollBarWrapper::CreateWrapper(
 // static
 int NativeScrollBarWrapper::GetHorizontalScrollBarHeight(
     const ui::NativeTheme* theme) {
+  if (!theme)
+    theme = ui::NativeTheme::instance();
   ui::NativeTheme::ExtraParams button_params;
   button_params.scrollbar_arrow.is_hovering = false;
   gfx::Size button_size = theme->GetPartSize(
@@ -403,6 +402,8 @@ int NativeScrollBarWrapper::GetHorizontalScrollBarHeight(
 // static
 int NativeScrollBarWrapper::GetVerticalScrollBarWidth(
     const ui::NativeTheme* theme) {
+  if (!theme)
+    theme = ui::NativeTheme::instance();
   ui::NativeTheme::ExtraParams button_params;
   button_params.scrollbar_arrow.is_hovering = false;
   gfx::Size button_size = theme->GetPartSize(
@@ -419,6 +420,5 @@ int NativeScrollBarWrapper::GetVerticalScrollBarWidth(
 
   return std::max(track_size.width(), button_size.width());
 }
-#endif
 
 }  // namespace views

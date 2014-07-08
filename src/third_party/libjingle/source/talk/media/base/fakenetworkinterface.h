@@ -34,6 +34,7 @@
 #include "talk/base/buffer.h"
 #include "talk/base/byteorder.h"
 #include "talk/base/criticalsection.h"
+#include "talk/base/dscp.h"
 #include "talk/base/messagehandler.h"
 #include "talk/base/messagequeue.h"
 #include "talk/base/thread.h"
@@ -51,7 +52,8 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
         dest_(NULL),
         conf_(false),
         sendbuf_size_(-1),
-        recvbuf_size_(-1) {
+        recvbuf_size_(-1),
+        dscp_(talk_base::DSCP_NO_CHANGE) {
   }
 
   void SetDestination(MediaChannel* dest) { dest_ = dest; }
@@ -69,7 +71,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
     talk_base::CritScope cs(&crit_);
     int bytes = 0;
     for (size_t i = 0; i < rtp_packets_.size(); ++i) {
-      bytes += rtp_packets_[i].length();
+      bytes += static_cast<int>(rtp_packets_[i].length());
     }
     return bytes;
   }
@@ -83,7 +85,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
 
   int NumRtpPackets() {
     talk_base::CritScope cs(&crit_);
-    return rtp_packets_.size();
+    return static_cast<int>(rtp_packets_.size());
   }
 
   int NumRtpPackets(uint32 ssrc) {
@@ -95,7 +97,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
 
   int NumSentSsrcs() {
     talk_base::CritScope cs(&crit_);
-    return sent_ssrcs_.size();
+    return static_cast<int>(sent_ssrcs_.size());
   }
 
   // Note: callers are responsible for deleting the returned buffer.
@@ -109,7 +111,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
 
   int NumRtcpPackets() {
     talk_base::CritScope cs(&crit_);
-    return rtcp_packets_.size();
+    return static_cast<int>(rtcp_packets_.size());
   }
 
   // Note: callers are responsible for deleting the returned buffer.
@@ -128,9 +130,11 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
 
   int sendbuf_size() const { return sendbuf_size_; }
   int recvbuf_size() const { return recvbuf_size_; }
+  talk_base::DiffServCodePoint dscp() const { return dscp_; }
 
  protected:
-  virtual bool SendPacket(talk_base::Buffer* packet) {
+  virtual bool SendPacket(talk_base::Buffer* packet,
+                          talk_base::DiffServCodePoint dscp) {
     talk_base::CritScope cs(&crit_);
 
     uint32 cur_ssrc = 0;
@@ -164,7 +168,8 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
     return true;
   }
 
-  virtual bool SendRtcp(talk_base::Buffer* packet) {
+  virtual bool SendRtcp(talk_base::Buffer* packet,
+                        talk_base::DiffServCodePoint dscp) {
     talk_base::CritScope cs(&crit_);
     rtcp_packets_.push_back(*packet);
     if (!conf_) {
@@ -180,6 +185,8 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
       sendbuf_size_ = option;
     } else if (opt == talk_base::Socket::OPT_RCVBUF) {
       recvbuf_size_ = option;
+    } else if (opt == talk_base::Socket::OPT_DSCP) {
+      dscp_ = static_cast<talk_base::DiffServCodePoint>(option);
     }
     return 0;
   }
@@ -194,9 +201,11 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
             msg->pdata);
     if (dest_) {
       if (msg->message_id == ST_RTP) {
-        dest_->OnPacketReceived(&msg_data->data());
+        dest_->OnPacketReceived(&msg_data->data(),
+                                talk_base::CreatePacketTime(0));
       } else {
-        dest_->OnRtcpReceived(&msg_data->data());
+        dest_->OnRtcpReceived(&msg_data->data(),
+                              talk_base::CreatePacketTime(0));
       }
     }
     delete msg_data;
@@ -218,7 +227,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
       }
       if (ssrc == cur_ssrc) {
         if (bytes) {
-          *bytes += rtp_packets_[i].length();
+          *bytes += static_cast<int>(rtp_packets_[i].length());
         }
         if (packets) {
           ++(*packets);
@@ -242,6 +251,7 @@ class FakeNetworkInterface : public MediaChannel::NetworkInterface,
   std::vector<talk_base::Buffer> rtcp_packets_;
   int sendbuf_size_;
   int recvbuf_size_;
+  talk_base::DiffServCodePoint dscp_;
 };
 
 }  // namespace cricket

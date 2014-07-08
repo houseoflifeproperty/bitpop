@@ -8,13 +8,13 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "system_wrappers/interface/condition_variable_wrapper.h"
+#include "webrtc/system_wrappers/interface/condition_variable_wrapper.h"
 
-#include "gtest/gtest.h"
-#include "system_wrappers/interface/critical_section_wrapper.h"
-#include "system_wrappers/interface/thread_wrapper.h"
-#include "system_wrappers/interface/trace.h"
-#include "system_wrappers/source/unittest_utilities.h"
+#include "testing/gtest/include/gtest/gtest.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/thread_wrapper.h"
+#include "webrtc/system_wrappers/interface/trace.h"
+#include "webrtc/system_wrappers/source/unittest_utilities.h"
 
 namespace webrtc {
 
@@ -50,7 +50,7 @@ class Baton {
   // Pass the baton. Returns false if baton is not picked up in |max_msecs|.
   // Only one process can pass at the same time; this property is
   // ensured by the |giver_sect_| lock.
-  bool Pass(WebRtc_UWord32 max_msecs) {
+  bool Pass(uint32_t max_msecs) {
     CriticalSectionScoped cs_giver(giver_sect_);
     CriticalSectionScoped cs(crit_sect_);
     SignalBatonAvailable();
@@ -62,7 +62,7 @@ class Baton {
   }
 
   // Grab the baton. Returns false if baton is not passed.
-  bool Grab(WebRtc_UWord32 max_msecs) {
+  bool Grab(uint32_t max_msecs) {
     CriticalSectionScoped cs(crit_sect_);
     return WaitUntilBatonOffered(max_msecs);
   }

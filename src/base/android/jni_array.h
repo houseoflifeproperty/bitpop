@@ -11,7 +11,7 @@
 
 #include "base/android/scoped_java_ref.h"
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace base {
 namespace android {
@@ -19,6 +19,20 @@ namespace android {
 // Returns a new Java byte array converted from the given bytes array.
 BASE_EXPORT ScopedJavaLocalRef<jbyteArray> ToJavaByteArray(
     JNIEnv* env, const uint8* bytes, size_t len);
+
+// Returns a new Java int array converted from the given int array.
+BASE_EXPORT ScopedJavaLocalRef<jintArray> ToJavaIntArray(
+    JNIEnv* env, const int* ints, size_t len);
+
+BASE_EXPORT ScopedJavaLocalRef<jintArray> ToJavaIntArray(
+    JNIEnv* env, const std::vector<int>& ints);
+
+// Returns a new Java long array converted from the given int64 array.
+BASE_EXPORT ScopedJavaLocalRef<jlongArray> ToJavaLongArray(
+    JNIEnv* env, const int64* longs, size_t len);
+
+BASE_EXPORT ScopedJavaLocalRef<jlongArray> ToJavaLongArray(
+    JNIEnv* env, const std::vector<int64>& longs);
 
 // Returns a array of Java byte array converted from |v|.
 BASE_EXPORT ScopedJavaLocalRef<jobjectArray> ToJavaArrayOfByteArray(
@@ -59,10 +73,16 @@ BASE_EXPORT void JavaIntArrayToIntVector(
     jintArray int_array,
     std::vector<int>* out);
 
+// Replaces the content of |out| with the Java floats in |float_array|.
+BASE_EXPORT void JavaFloatArrayToFloatVector(
+    JNIEnv* env,
+    jfloatArray float_array,
+    std::vector<float>* out);
+
 // Assuming |array| is an byte[][] (array of byte arrays), replaces the
 // content of |out| with the corresponding vector of strings. No UTF-8
 // conversion is performed.
-void JavaArrayOfByteArrayToStringVector(
+BASE_EXPORT void JavaArrayOfByteArrayToStringVector(
     JNIEnv* env,
     jobjectArray array,
     std::vector<std::string>* out);

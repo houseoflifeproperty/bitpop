@@ -22,16 +22,16 @@
 #include <set>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/observer_list.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "chrome/browser/facebook_chat/facebook_chat_create_info.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
 class Browser;
 class Profile;
 
-class FacebookChatManager : public ProfileKeyedService {
+class FacebookChatManager : public KeyedService {
   public:
     FacebookChatManager();
 

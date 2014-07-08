@@ -5,10 +5,7 @@
 [
   {
     "namespace": "bookmarks",
-    "uses_feature_system": true,
-    "channel": "stable",
-    "dependencies": ["permission:bookmarks"],
-    "contexts": ["blessed_extension"],
+    "description": "Use the <code>chrome.bookmarks</code> API to create, organize, and otherwise manipulate bookmarks. Also see <a href='override.html'>Override Pages</a>, which you can use to create a custom Bookmark Manager page.",
     "properties": {
       "MAX_WRITE_OPERATIONS_PER_HOUR": {
         "value": 100,
@@ -65,6 +62,33 @@
             "optional": true,
             "items": { "$ref": "BookmarkTreeNode" },
             "description": "An ordered list of children of this node."
+          }
+        }
+      },
+      {
+        "id": "CreateDetails",
+        "description": "Object passed to the create() function.",
+        "inline_doc": true,
+        "type": "object",
+        "properties": {
+          "parentId": {
+            "type": "string",
+            "serialized_type": "int64",
+            "optional": true,
+            "description": "Defaults to the Other Bookmarks folder."
+          },
+          "index": {
+            "type": "integer",
+            "minimum": 0,
+            "optional": true
+          },
+          "title": {
+            "type": "string",
+            "optional": true
+          },
+          "url": {
+            "type": "string",
+            "optional": true
           }
         }
       }
@@ -198,11 +222,38 @@
       {
         "name": "search",
         "type": "function",
-        "description": "Searches for BookmarkTreeNodes matching the given query.",
+        "description": "Searches for BookmarkTreeNodes matching the given query. Queries specified with an object produce BookmarkTreeNodes matching all specified properties.",
         "parameters": [
           {
-            "type": "string",
-            "name": "query"
+            "name": "query",
+            "description": "Either a string of words and quoted phrases that are matched against bookmark URLs and titles, or an object. If an object, the properties <code>query</code>, <code>url</code>, and <code>title</code> may be specified and bookmarks matching all specified properties will be produced.",
+            "choices": [
+              {
+                "type": "string",
+                "description": "A string of words and quoted phrases that are matched against bookmark URLs and titles."
+              },
+              {
+                "type": "object",
+                "description": "An object specifying properties and values to match when searching. Produces bookmarks matching all properties.",
+                "properties": {
+                  "query": {
+                    "type": "string",
+                    "optional": true,
+                    "description": "A string of words and quoted phrases that are matched against bookmark URLs and titles."
+                  },
+                  "url": {
+                    "type": "string",
+                    "optional": true,
+                    "description": "The URL of the bookmark; matches verbatim. Note that folders have no URL."
+                  },
+                  "title": {
+                    "type": "string",
+                    "optional": true,
+                    "description": "The title of the bookmark; matches verbatim."
+                  }
+                }
+              }
+            ]
           },
           {
             "type": "function",
@@ -223,29 +274,8 @@
         "description": "Creates a bookmark or folder under the specified parentId.  If url is NULL or missing, it will be a folder.",
         "parameters": [
           {
-            "type": "object",
-            "name": "bookmark",
-            "properties": {
-              "parentId": {
-                "type": "string",
-                "serialized_type": "int64",
-                "optional": true,
-                "description": "Defaults to the Other Bookmarks folder."
-              },
-              "index": {
-                "type": "integer",
-                "minimum": 0,
-                "optional": true
-              },
-              "title": {
-                "type": "string",
-                "optional": true
-              },
-              "url": {
-                "type": "string",
-                "optional": true
-              }
-            }
+            "$ref": "CreateDetails",
+            "name": "bookmark"
           },
           {
             "type": "function",
@@ -502,7 +532,7 @@
       {
         "name": "onImportBegan",
         "type": "function",
-        "description": "Fired when a bookmark import session is begun.  Expensive observers should ignore handleCreated updates until onImportEnded is fired.  Observers should still handle other notifications immediately.",
+        "description": "Fired when a bookmark import session is begun.  Expensive observers should ignore onCreated updates until onImportEnded is fired.  Observers should still handle other notifications immediately.",
         "parameters": []
       },
       {

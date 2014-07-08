@@ -17,8 +17,6 @@
 #include "content/public/common/child_process_sandbox_support_linux.h"
 #endif
 
-namespace chrome {
-
 PepperFlashFontFileHost::PepperFlashFontFileHost(
     content::RendererPpapiHost* host,
     PP_Instance instance,
@@ -30,26 +28,27 @@ PepperFlashFontFileHost::PepperFlashFontFileHost(
       fd_(-1) {
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   fd_ = content::MatchFontWithFallback(
-      description.face.c_str(), description.weight >=
-          PP_BROWSERFONT_TRUSTED_WEIGHT_BOLD,
-      description.italic, charset);
+      description.face.c_str(),
+      description.weight >= PP_BROWSERFONT_TRUSTED_WEIGHT_BOLD,
+      description.italic,
+      charset,
+      PP_BROWSERFONT_TRUSTED_FAMILY_DEFAULT);
 #endif  // defined(OS_LINUX) || defined(OS_OPENBSD)
 }
 
-PepperFlashFontFileHost::~PepperFlashFontFileHost() {
-}
+PepperFlashFontFileHost::~PepperFlashFontFileHost() {}
 
 int32_t PepperFlashFontFileHost::OnResourceMessageReceived(
     const IPC::Message& msg,
     ppapi::host::HostMessageContext* context) {
   IPC_BEGIN_MESSAGE_MAP(PepperFlashFontFileHost, msg)
-    PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FlashFontFile_GetFontTable,
-                                      OnMsgGetFontTable)
+  PPAPI_DISPATCH_HOST_RESOURCE_CALL(PpapiHostMsg_FlashFontFile_GetFontTable,
+                                    OnGetFontTable)
   IPC_END_MESSAGE_MAP()
   return PP_ERROR_FAILED;
 }
 
-int32_t PepperFlashFontFileHost::OnMsgGetFontTable(
+int32_t PepperFlashFontFileHost::OnGetFontTable(
     ppapi::host::HostMessageContext* context,
     uint32_t table) {
   std::string contents;
@@ -57,11 +56,12 @@ int32_t PepperFlashFontFileHost::OnMsgGetFontTable(
 #if defined(OS_LINUX) || defined(OS_OPENBSD)
   if (fd_ != -1) {
     size_t length = 0;
-    if (content::GetFontTable(fd_, table, NULL, &length)) {
+    if (content::GetFontTable(fd_, table, 0 /* offset */, NULL, &length)) {
       contents.resize(length);
       uint8_t* contents_ptr =
           reinterpret_cast<uint8_t*>(const_cast<char*>(contents.c_str()));
-      if (content::GetFontTable(fd_, table, contents_ptr, &length)) {
+      if (content::GetFontTable(
+              fd_, table, 0 /* offset */, contents_ptr, &length)) {
         result = PP_OK;
       } else {
         contents.clear();
@@ -73,6 +73,3 @@ int32_t PepperFlashFontFileHost::OnMsgGetFontTable(
   context->reply_msg = PpapiPluginMsg_FlashFontFile_GetFontTableReply(contents);
   return result;
 }
-
-}  // namespace chrome
-

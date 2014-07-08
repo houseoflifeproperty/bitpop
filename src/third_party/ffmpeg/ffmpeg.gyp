@@ -7,10 +7,6 @@
 #     Controls whether we build the Chromium or Google Chrome version of
 #     FFmpeg.  The Google Chrome version contains additional codecs.
 #     Typical values are Chromium, Chrome, ChromiumOS, and ChromeOS.
-#   use_system_ffmpeg
-#     When set to non-zero will build Chromium against the system FFmpeg
-#     headers via pkg-config.  When Chromium is launched it will assume that
-#     FFmpeg is present in the system library path.  Default value is 0.
 #   build_ffmpegsumo
 #     When set to zero will build Chromium against Chrome's FFmpeg headers, but
 #     not build ffmpegsumo itself.  Users are expected to build and provide
@@ -34,13 +30,26 @@
       'win_debug_Optimization': '2',
       # Run time checks are incompatible with any level of optimizations.
       'win_debug_RuntimeChecks': '0',
+      'conditions': [
+        ['OS == "win"', {
+          # Setting the optimizations to 'speed' or to 'max' results in a lot of
+          # unresolved symbols. The only supported mode is 'size' (see
+          # crbug.com/264459).
+          'optimize' :'size',
+        }],
+      ],
     },
   },
   'variables': {
+    # Make sure asm_sources is always defined even if an arch doesn't have any
+    # asm sources (e.g. mips or x86 with forcefully disabled asm).
+    'asm_sources': [
+    ],
+
     # Allow overriding the selection of which FFmpeg binaries to copy via an
     # environment variable.  Affects the ffmpeg_binaries target.
     'conditions': [
-      ['armv7 == 1 and arm_neon == 1', {
+      ['target_arch == "arm" and arm_version == 7 and arm_neon == 1', {
         # Need a separate config for arm+neon vs arm
         'ffmpeg_config%': 'arm-neon',
       }, {
@@ -49,7 +58,14 @@
       ['OS == "mac" or OS == "win" or OS == "openbsd"', {
         'os_config%': '<(OS)',
       }, {  # all other Unix OS's use the linux config
-        'os_config%': 'linux',
+        'conditions': [
+          ['msan==1', {
+            # MemorySanitizer doesn't like assembly code.
+            'os_config%': 'linux-noasm',
+          }, {
+            'os_config%': 'linux',
+          }]
+        ],
       }],
       ['chromeos == 1', {
         'ffmpeg_branding%': '<(branding)OS',
@@ -58,9 +74,6 @@
       }],
     ],
 
-    'ffmpeg_variant%': '<(target_arch)',
-
-    'use_system_ffmpeg%': 0,
     'build_ffmpegsumo%': 1,
 
     # Locations for generated artifacts.
@@ -72,22 +85,76 @@
     'extra_header': 'chromium/ffmpeg_stub_headers.fragment',
   },
   'conditions': [
-    ['OS != "win" and use_system_ffmpeg == 0 and build_ffmpegsumo != 0', {
+    ['target_arch != "arm" and os_config != "linux-noasm"', {
+      'targets': [
+        {
+          'target_name': 'ffmpeg_yasm',
+          'type': 'static_library',
+          'includes': [
+            'ffmpeg_generated.gypi',
+            '../yasm/yasm_compile.gypi',
+          ],
+          'sources': [
+            '<@(asm_sources)',
+            # XCode doesn't want to link a pure assembly target and will fail
+            # to link when it creates an empty file list.  So add a dummy file
+            # keep the linker happy.  See http://crbug.com/157073
+            'xcode_hack.c',
+          ],
+          'variables': {
+            # Path to platform configuration files.
+            'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
+
+            'conditions': [
+              ['target_arch == "ia32"', {
+                'more_yasm_flags': [
+                  '-DARCH_X86_32',
+                 ],
+              }, {
+                'more_yasm_flags': [
+                  '-DARCH_X86_64',
+                ],
+              }],
+              ['OS == "mac"', {
+                'more_yasm_flags': [
+                  # Necessary to ensure symbols end up with a _ prefix; added by
+                  # yasm_compile.gypi for Windows, but not Mac.
+                  '-DPREFIX',
+                ]
+              }],
+            ],
+            'yasm_flags': [
+              '-DPIC',
+              '>@(more_yasm_flags)',
+              '-I', '<(platform_config_root)',
+              '-I', 'libavcodec/x86/',
+              '-I', 'libavutil/x86/',
+              '-I', '.',
+              # Disable warnings, prevents log spam for things we won't fix.
+              '-w',
+              '-P', 'config.asm',
+            ],
+            'yasm_output_path': '<(shared_generated_dir)/yasm'
+          },
+        },
+      ] # targets
+    }], # arch != arm
+    ['build_ffmpegsumo != 0', {
+      'includes': [
+        'ffmpeg_generated.gypi',
+      ],
       'variables': {
         # Path to platform configuration files.
         'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
       },
-      'includes': [
-        'ffmpeg_generated.gypi',
-      ],
       'targets': [
         {
           'target_name': 'ffmpegsumo',
           'type': 'loadable_module',
           'sources': [
+            '<@(c_sources)',
             '<(platform_config_root)/config.h',
             '<(platform_config_root)/libavutil/avconfig.h',
-            '<@(c_sources)',
           ],
           'include_dirs': [
             '<(platform_config_root)',
@@ -104,7 +171,7 @@
             '-fomit-frame-pointer',
           ],
           'conditions': [
-            ['target_arch != "arm"', {
+            ['target_arch != "arm" and target_arch != "mipsel" and os_config != "linux-noasm"', {
               'dependencies': [
                 'ffmpeg_yasm',
               ],
@@ -112,6 +179,7 @@
             ['clang == 1', {
               'xcode_settings': {
                 'WARNING_CFLAGS': [
+                  '-Wno-absolute-value',
                   # ffmpeg uses its own deprecated functions.
                   '-Wno-deprecated-declarations',
                   # ffmpeg doesn't care about pointer constness.
@@ -125,6 +193,7 @@
                 ],
               },
               'cflags': [
+                '-Wno-absolute-value',
                 '-Wno-deprecated-declarations',
                 '-Wno-incompatible-pointer-types',
                 '-Wno-logical-op-parentheses',
@@ -205,6 +274,12 @@
                 }],
               ],
             }],
+            ['target_arch == "mipsel"', {
+              'cflags': [
+                '-mips32',
+                '-EL -Wl,-EL',
+              ],
+            }],  # target_arch == "mipsel"
             ['os_posix == 1 and OS != "mac"', {
               'defines': [
                 '_ISOC99_SOURCE',
@@ -261,6 +336,27 @@
                     'mac_real_dsym': 1,
                   },
                 }],
+                ['target_arch != "x64"', {
+                  # -read_only_relocs cannot be used with x86_64
+                  'xcode_settings': {
+                    'OTHER_LDFLAGS': [
+                      # This is needed because even though FFmpeg now builds
+                      # with -fPIC, it's not quite a complete PIC build, only
+                      # partial :( Thus we need to instruct the linker to allow
+                      # relocations for read-only segments for this target to be
+                      # able to generated the shared library on Mac.
+                      #
+                      # This makes Mark sad, but he's okay with it since it is
+                      # isolated to this module. When Mark finds this in the
+                      # future, and has forgotten this conversation, this
+                      # comment should remind him that the world is still nice
+                      # and butterflies still exist...as do rainbows, sunshine,
+                      # tulips, etc., etc...but not kittens. Those went away
+                      # with this flag.
+                      '-Wl,-read_only_relocs,suppress',
+                    ],
+                  },
+                }],
               ],
               'link_settings': {
                 'libraries': [
@@ -273,126 +369,72 @@
                 'LIBRARY_SEARCH_PATHS': [
                   '<(shared_generated_dir)'
                 ],
-                'OTHER_LDFLAGS': [
-                  # This is needed because even though FFmpeg now builds with
-                  # -fPIC, it's not quite a complete PIC build, only partial :(
-                  # Thus we need to instruct the linker to allow relocations
-                  # for read-only segments for this target to be able to
-                  # generated the shared library on Mac.
-                  #
-                  # This makes Mark sad, but he's okay with it since it is
-                  # isolated to this module. When Mark finds this in the
-                  # future, and has forgotten this conversation, this comment
-                  # should remind him that the world is still nice and
-                  # butterflies still exist...as do rainbows, sunshine,
-                  # tulips, etc., etc...but not kittens. Those went away
-                  # with this flag.
-                  '-Wl,-read_only_relocs,suppress',
-                ],
               },
             }],  # OS == "mac"
-          ],
-        },
-      ],
-    }],
-    ['OS == "win"', {
-      'variables': {
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-      },
-      'includes': [
-        'ffmpeg_generated.gypi',
-      ],
-      'targets': [
-        {
-          'target_name': 'convert_ffmpeg_sources',
-          'type': 'none',
-          'sources': [
-            '<@(c_sources)',
-          ],
-          'variables': {
-            'converter_script': 'chromium/scripts/c99conv.py',
-            'converter_executable': 'chromium/binaries/c99conv.exe',
-          },
-          'rules': [
-            {
-              'rule_name': 'convert_c99_to_c89',
-              'extension': 'c',
-              'inputs': [
-                '<(converter_script)',
-                '<(converter_executable)',
-                # Since we don't know the dependency graph for header includes
-                # we need to list them all here to ensure a header change causes
-                # a recompilation.
-                '<(platform_config_root)/config.h',
-                '<(platform_config_root)/libavutil/avconfig.h',
-                '<@(c_headers)',
-              ],
-              # Argh!  Required so that the msvs generator will properly convert
-              # RULE_INPUT_DIRNAME to a relative path.
-              'msvs_external_rule': 1,
-              'outputs': [
-                '<(shared_generated_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).c',
-              ],
-              'action': [
-                'python',
-                '<(converter_script)',
-                '<(RULE_INPUT_PATH)',
-                '<(shared_generated_dir)/<(RULE_INPUT_DIRNAME)/<(RULE_INPUT_ROOT).c',
-                '-I', '<(platform_config_root)',
-              ],
-              'message': 'Converting <(RULE_INPUT_PATH) from C99 to C89.',
-              'process_outputs_as_sources': 1,
-            },
-          ],
-        },
-        {
-          'target_name': 'ffmpegsumo',
-          'type': 'loadable_module',
-          'dependencies': [
-            'convert_ffmpeg_sources',
-            'ffmpeg_yasm',
-          ],
-          'sources': [
-            '<(platform_config_root)/config.h',
-            '<(platform_config_root)/libavutil/avconfig.h',
-            '<@(converter_outputs)',
-            '<(shared_generated_dir)/ffmpegsumo.def',
-          ],
-          # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
-          'msvs_disabled_warnings': [
-            4996, 4018, 4090, 4305, 4133, 4146, 4554, 4028, 4334, 4101, 4102,
-            4116, 4307
-          ],
-          # This magical incantation is necessary because VC++ will compile all
-          # object files to same directory... even if they have the same name!
-          'msvs_settings': {
-            'VCCLCompilerTool': {
-              'ObjectFile': '$(IntDir)/%(RelativeDir)/',
-            }
-          },
-          'actions': [
-            {
-              'action_name': 'generate_def',
-              'inputs': [
-                '<(generate_stubs_script)',
-                '<@(sig_files)',
-              ],
-              'outputs': [
+            ['OS == "win"', {
+              'sources': [
                 '<(shared_generated_dir)/ffmpegsumo.def',
               ],
-              'action': ['python',
-                         '<(generate_stubs_script)',
-                         '-i', '<(INTERMEDIATE_DIR)',
-                         '-o', '<(shared_generated_dir)',
-                         '-t', 'windows_def',
-                         '-m', 'ffmpegsumo.dll',
-                         '<@(_inputs)',
+              'include_dirs': [
+                'chromium/include/win',
               ],
-              'message': 'Generating FFmpeg export definitions.',
-            },
+              # TODO(dalecurtis): We should fix these.  http://crbug.com/154421
+              'msvs_disabled_warnings': [
+                4996, 4018, 4090, 4305, 4133, 4146, 4554, 4028, 4334, 4101, 4102,
+                4116, 4307, 4273, 4005, 4056, 4756,
+              ],
+              'conditions': [
+                ['clang == 1 or (OS == "win" and (MSVS_VERSION == "2013" or MSVS_VERSION == "2013e"))', {
+                  'defines': [
+                    'inline=__inline',
+                    'strtoll=_strtoi64',
+                    '_ISOC99_SOURCE',
+                    '_LARGEFILE_SOURCE',
+                    'HAVE_AV_CONFIG_H',
+                    'strtod=avpriv_strtod',
+                    'snprintf=avpriv_snprintf',
+                    '_snprintf=avpriv_snprintf',
+                    'vsnprintf=avpriv_vsnprintf',
+                  ],
+                }],
+                ['target_arch == "x64"', {
+                  # TODO(wolenetz): We should fix this.  http://crbug.com/171009
+                  'msvs_disabled_warnings' : [
+                    4267
+                  ],
+                }],
+              ],
+              'msvs_settings': {
+                # Ignore warnings about a local symbol being inefficiently imported,
+                # upstream is working on a fix.
+                'VCLinkerTool': {
+                  'AdditionalOptions': ['/ignore:4049', '/ignore:4217'],
+                }
+              },
+              'actions': [
+                {
+                  'action_name': 'generate_def',
+                  'inputs': [
+                    '<(generate_stubs_script)',
+                    '<@(sig_files)',
+                  ],
+                  'outputs': [
+                    '<(shared_generated_dir)/ffmpegsumo.def',
+                  ],
+                  'action': ['python',
+                             '<(generate_stubs_script)',
+                             '-i', '<(INTERMEDIATE_DIR)',
+                             '-o', '<(shared_generated_dir)',
+                             '-t', 'windows_def',
+                             '-m', 'ffmpegsumo.dll',
+                             '<@(_inputs)',
+                  ],
+                  'message': 'Generating FFmpeg export definitions',
+                },
+              ],
+            }],
           ],
-        }
+        },
       ],
     }],
   ],  # conditions
@@ -411,13 +453,17 @@
       # Do not fear the massive conditional blocks!  They do the following:
       #   1) Use the Window stub generator on Windows
       #   2) Else, use the POSIX stub generator on non-Windows
-      #     a) Use system includes when use_system_ffmpeg != 0
-      #     b) Else, use our local copy
       'conditions': [
         ['OS == "win"', {
           'msvs_guid': 'D7A94F58-576A-45D9-A45F-EB87C63ABBB0',
           'variables': {
-            'outfile_type': 'windows_lib',
+            'conditions': [
+              ['target_arch == "x64"', {
+                'outfile_type': 'windows_lib_x64',
+              }, {  # else, generate x86 stub library
+                'outfile_type': 'windows_lib',
+              }],
+            ],
             'output_dir': '<(PRODUCT_DIR)/lib',
             'intermediate_dir': '<(INTERMEDIATE_DIR)',
           },
@@ -465,7 +511,7 @@
                          '-t', '<(outfile_type)',
                          '<@(RULE_INPUT_PATH)',
               ],
-              'message': 'Generating FFmpeg import libraries.',
+              'message': 'Generating FFmpeg import libraries',
             },
           ],
         }, {  # else OS != "win", use POSIX stub generator
@@ -475,6 +521,7 @@
             'project_path': 'third_party/ffmpeg',
             'intermediate_dir': '<(INTERMEDIATE_DIR)',
             'output_root': '<(SHARED_INTERMEDIATE_DIR)/ffmpeg',
+            'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)'
           },
           'sources': [
             '<(extra_header)',
@@ -483,6 +530,8 @@
           'include_dirs': [
             '<(output_root)',
             '../..',  # The chromium 'src' directory.
+            '<(platform_config_root)',
+            '.',
           ],
           'dependencies': [
             # Required for the logging done in the stubs generator.
@@ -495,39 +544,37 @@
             'include_dirs': [
               '<(output_root)',
               '../..',  # The chromium 'src' directory.
+              '<(platform_config_root)',
+              '.',
             ],
           },
-          'conditions': [
-            ['use_system_ffmpeg==0', {
-              'actions': [
-                {
-                  'action_name': 'generate_stubs',
-                  'inputs': [
-                    '<(generate_stubs_script)',
-                    '<(extra_header)',
-                    '<@(sig_files)',
-                  ],
-                  'outputs': [
-                    '<(intermediate_dir)/<(stubs_filename_root).cc',
-                    '<(output_root)/<(project_path)/<(stubs_filename_root).h',
-                  ],
-                  'action': ['python',
-                             '<(generate_stubs_script)',
-                             '-i', '<(intermediate_dir)',
-                             '-o', '<(output_root)/<(project_path)',
-                             '-t', '<(outfile_type)',
-                             '-e', '<(extra_header)',
-                             '-s', '<(stubs_filename_root)',
-                             '-p', '<(project_path)',
-                             '<@(_inputs)',
-                  ],
-                  'process_outputs_as_sources': 1,
-                  'message': 'Generating FFmpeg stubs for dynamic loading.',
-                },
+          'actions': [
+            {
+              'action_name': 'generate_stubs',
+              'inputs': [
+                '<(generate_stubs_script)',
+                '<(extra_header)',
+                '<@(sig_files)',
               ],
-
-            }],
-
+              'outputs': [
+                '<(intermediate_dir)/<(stubs_filename_root).cc',
+                '<(output_root)/<(project_path)/<(stubs_filename_root).h',
+              ],
+              'action': ['python',
+                         '<(generate_stubs_script)',
+                         '-i', '<(intermediate_dir)',
+                         '-o', '<(output_root)/<(project_path)',
+                         '-t', '<(outfile_type)',
+                         '-e', '<(extra_header)',
+                         '-s', '<(stubs_filename_root)',
+                         '-p', '<(project_path)',
+                         '<@(_inputs)',
+              ],
+              'process_outputs_as_sources': 1,
+              'message': 'Generating FFmpeg stubs for dynamic loading',
+            },
+          ],
+          'conditions': [
             # Linux/Solaris need libdl for dlopen() and friends.
             ['OS == "linux" or OS == "solaris"', {
               'link_settings': {
@@ -536,110 +583,20 @@
                 ],
               },
             }],
-
             ['component == "shared_library"', {
               'cflags!': ['-fvisibility=hidden'],
               'xcode_settings': {
                 'GCC_SYMBOLS_PRIVATE_EXTERN': 'NO',  # no -fvisibility=hidden
               },
             }],
-
-            # Add pkg-config result to include path when use_system_ffmpeg != 0
-            ['use_system_ffmpeg != 0', {
-              'cflags': [
-                '<!@(pkg-config --cflags libavcodec libavformat libavutil)',
-              ],
-              'direct_dependent_settings': {
-                'cflags': [
-                  '<!@(pkg-config --cflags libavcodec libavformat libavutil)',
-                ],
-                'defines': [
-                  'USE_SYSTEM_FFMPEG',
-                ],
-              },
-              'link_settings': {
-                'ldflags': [
-                  '<!@(pkg-config --libs-only-L --libs-only-other libavcodec libavformat libavutil)',
-                ],
-                'libraries': [
-                  '<!@(pkg-config --libs-only-l libavcodec libavformat libavutil)',
-                ],
-              },
-            }, {  # else use_system_ffmpeg == 0, add local copy to include path
-              'include_dirs': [
-                '<(platform_config_root)',
-                '.',
-              ],
-              'direct_dependent_settings': {
-                'include_dirs': [
-                 '<(platform_config_root)',
-                  '.',
-                ],
-              },
-              'conditions': [
-                ['build_ffmpegsumo != 0', {
-                  'dependencies': [
-                    'ffmpegsumo',
-                  ],
-                }],
+            ['build_ffmpegsumo != 0', {
+              'dependencies': [
+                'ffmpegsumo',
               ],
             }],
           ],  # conditions
         }],
       ],  # conditions
-    },
-    {
-      'target_name': 'ffmpeg_yasm',
-      'type': 'static_library',
-      # VS2010 does not correctly incrementally link obj files generated
-      # from asm files. This flag disables UseLibraryDependencyInputs to
-      # avoid this problem.
-      'msvs_2010_disable_uldi_when_referenced': 1,
-      'includes': [
-        'ffmpeg_generated.gypi',
-        '../yasm/yasm_compile.gypi',
-      ],
-      'sources': [
-        '<@(asm_sources)',
-        # XCode doesn't want to link a pure assembly target and will fail
-        # to link when it creates an empty file list.  So add a dummy file
-        # keep the linker happy.  See http://crbug.com/157073
-        'xcode_hack.c',
-      ],
-      'variables': {
-        # Path to platform configuration files.
-        'platform_config_root': 'chromium/config/<(ffmpeg_branding)/<(os_config)/<(ffmpeg_config)',
-        'conditions': [
-          ['target_arch == "ia32"', {
-            'more_yasm_flags': [
-              '-DARCH_X86_32',
-             ],
-          }, {
-            'more_yasm_flags': [
-              '-DARCH_X86_64',
-            ],
-          }],
-          ['OS == "mac"', {
-            'more_yasm_flags': [
-              # Necessary to ensure symbols end up with a _ prefix; added by
-              # yasm_compile.gypi for Windows, but not Mac.
-              '-DPREFIX',
-            ]
-          }],
-        ],
-        'yasm_flags': [
-          '-DPIC',
-          '>@(more_yasm_flags)',
-          '-I', '<(platform_config_root)',
-          '-I', 'libavcodec/x86/',
-          '-I', 'libavutil/x86/',
-          '-I', '.',
-          # Disable warnings, prevents log spam for things we won't fix.
-          '-w',
-          '-P', 'config.asm',
-        ],
-        'yasm_output_path': '<(shared_generated_dir)/yasm'
-      },
     },
   ],  # targets
 }

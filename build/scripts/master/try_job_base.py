@@ -68,91 +68,38 @@ def comma_separated(options, key):
 def dict_comma(values, valid_keys, default):
   """Splits comma separated strings with : to create a dict."""
   out = {}
-  # See the unit test to understand all the supported formats. It's insane
-  # for now.
+  # We accept two formats:
+  # 1. Builder(s) only, will run default tests.  Eg. win,mac
+  # 2. Builder(s) with test(s): Eg. win,mac:test1:filter1,test2:filter2,test3
+  #    In this example, win will run default tests, and mac will be ran with
+  #    test1:filter1, test2:filter2, and test3.
+  # In no cases are builders allowed to be specified after tests are specified.
+
   for value in values:
-    # Slowly process the line as a state machine.
-    # The inputs are:
-    #  A. The next symbol, a string and the one after.
-    #  B. The separator after: (',', ':', None).
-    #  C. The last processed bot name.
-    #  D. The last processed test name.
-    # There is 4 states:
-    #  1. Next item must be a bot: value='builder'. Next state can be 1 or 2.
-    #  2. Next item must be a test: value='builder:test' when the index is at
-    #     test. Next state can be 3 or 4.
-    #  3. Next item must be a test filter: builder:test:filter when the index is
-    #     at filter. Next state is 4.
-    #  4. Next item can be a bot or is a test: value='builder:test,not_sure' or
-    #     value='builder:test:filter,not_sure' when the index is at not_sure. It
-    #     depends on not_sure being in valid_keys or not. Next state is 2 or 4.
-    items = re.split(r'([\,\:])', value)
-    if not items or ((len(items) - 1) % 2) != 0:
+    sections_match = re.match(r'^([^\:]+):?(.*)$', value)
+    if sections_match:
+      builders_raw, tests_raw = sections_match.groups()
+      builders = builders_raw.split(',')
+      tests = [test for test in tests_raw.split(',') if test]
+      for builder in builders:
+        if not builder:
+          # Empty builder means trailing comma.
+          raise BadJobfile('Bad input - trailing comma: %s' % value)
+        if builder not in valid_keys:
+          # Drop unrecognized builders.
+          log.msg('%s not in builders, dropping.' % builder)
+          continue
+        if not tests or builder != builders[-1]:
+          # We can only add filters to the last builder.
+          out.setdefault(builder, set()).add(default)
+        else:
+          for test in tests:
+            if len(test.split(':')) > 2:
+              # Don't support test:filter:foo.
+              raise BadJobfile('Failed to process test %s' % value)
+            out.setdefault(builder, set()).add(test)
+    else:
       raise BadJobfile('Failed to process value %s' % value)
-
-    last_key = None  # A bot
-    last_value = None  # A test
-    state = 1  # The initial item is a last_key (bot).
-
-    while items:
-      # Eat two items at a time:
-      item = items.pop(0)
-      separator = items.pop(0) if items else None  # Technically, next_separator
-
-      # Refuse "foo,:bar"
-      if item in (',', ':') or separator not in (',', ':', None):
-        raise BadJobfile('Failed to process value %s' % value)
-
-      if state == 1:
-        assert last_key is None
-        assert last_value is None
-        if item not in valid_keys:
-          raise BadJobfile('Failed to process value %s' % value)
-        if separator == ':':
-          # Don't save it yet.
-          last_key = item
-          state = 2
-        else:
-          out.setdefault(item, set()).add(default)
-          state = 1
-
-      elif state == 2:
-        assert last_key is not None
-        assert last_value is None
-        if separator == ':':
-          last_value = item
-          state = 3
-        else:
-          out.setdefault(last_key, set()).add(item)
-          last_value = None
-          state = 4
-
-      elif state == 3:
-        assert last_key is not None
-        assert last_value is not None
-        if separator == ':':
-          raise BadJobfile('Failed to process value %s' % value)
-        out.setdefault(last_key, set()).add('%s:%s' % (last_value, item))
-        last_value = None
-        state = 4
-
-      elif state == 4:
-        assert last_key is not None
-        assert last_value is None
-        if separator == ':':
-          if item not in valid_keys:
-            last_value = item
-            state = 3
-          else:
-            last_key = item
-            state = 2
-        else:
-          if item not in valid_keys:
-            # A value.
-            out.setdefault(last_key, set()).add(item)
-          else:
-            # A key.
-            out.setdefault(item, set()).add(default)
 
   return out
 
@@ -181,7 +128,10 @@ def parse_options(options, builders, pools):
     flatten(options, 'root', None)
     try_int(options, 'patchlevel', 0)
     flatten(options, 'branch', None)
+
     flatten(options, 'revision', None)
+    options.setdefault('orig_revision', options['revision'])
+
     flatten(options, 'reason', '%s: %s' % (options['user'], options['name']))
     try_bool(options, 'clobber', False)
 
@@ -228,7 +178,7 @@ class TryJobBase(TryBase):
 
   # Simplistic email matching regexp.
   _EMAIL_VALIDATOR = re.compile(
-      r'[a-zA-Z][a-zA-Z0-9\.\+\-\_]*@[a-zA-Z0-9\.\-]+\.[a-zA-Z]{2,3}$')
+      r'[a-zA-Z0-9][a-zA-Z0-9\.\+\-\_]*@[a-zA-Z0-9\.\-]+\.[a-zA-Z]{2,}$')
 
   _PROPERTY_SOURCE = 'Try job'
 
@@ -239,7 +189,7 @@ class TryJobBase(TryBase):
     pools.SetParent(self)
     self.last_good_urls = last_good_urls
     self.code_review_sites = code_review_sites
-    self._last_lkgr = None
+    self._last_lkgr = {}
     self.valid_builders = []
 
   def setServiceParent(self, parent):
@@ -256,19 +206,37 @@ class TryJobBase(TryBase):
     """Current job extra properties that are not related to the source stamp.
     Initialize with the Scheduler's base properties.
     """
-    keys = (
+    always_included_keys = (
+      'orig_revision',
+    )
+
+    optional_keys = (
       'clobber',
       'issue',
+      'patch_ref',
+      'patch_repo_url',
+      'patch_storage',
+      'patch_url',
       'patchset',
       'requester',
       'rietveld',
       'root',
       'try_job_key',
     )
+
     # All these settings have no meaning when False or not set, so don't set
     # them in that case.
-    properties = dict((i, options[i]) for i in keys if options.get(i))
+    properties = dict((i, options[i]) for i in optional_keys if options.get(i))
+
+    # These settings are meaningful even if the value evaluates to False
+    # or None. Note that when options don't contain given key, it will
+    # be set to None.
+    properties.update(dict((i, options.get(i)) for i in always_included_keys))
+
+    # Specially evaluated properties, e.g. ones where key name is different
+    # between properties and options.
     properties['testfilter'] = options['bot'].get(builder, None)
+
     props = Properties()
     props.updateFromProperties(self.properties)
     props.update(properties, self._PROPERTY_SOURCE)
@@ -313,22 +281,30 @@ class TryJobBase(TryBase):
 
   def get_lkgr(self, options):
     """Grabs last known good revision number if necessary."""
-    options['rietveld'] = (self.code_review_sites or {}).get(options['project'])
-    last_good_url = (self.last_good_urls or {}).get(options['project'])
+
+    # TODO: crbug.com/233418 - Only use the blink url for jobs with the blink
+    # project set. This will require us to always set the project in blink
+    # configs.
+    project = options['project'] or 'chrome'
+    if project == 'chrome' and all('_layout' in bot for bot in options['bot']):
+      project = 'blink'
+
+    options['rietveld'] = (self.code_review_sites or {}).get(project)
+    self._last_lkgr.setdefault(project, None)
+    last_good_url = (self.last_good_urls or {}).get(project)
+
     if options['revision'] or not last_good_url:
       return defer.succeed(0)
 
     def Success(result):
-      try:
-        new_value = int(result.strip())
-      except (TypeError, ValueError):
-        new_value = None
-      if new_value and (not self._last_lkgr or new_value > self._last_lkgr):
-        self._last_lkgr = new_value
-      options['revision'] = self._last_lkgr or 'HEAD'
+      new_value = result.strip()
+      if new_value and (not self._last_lkgr[project] or
+                        new_value != self._last_lkgr[project]):
+        self._last_lkgr[project] = new_value
+      options['revision'] = self._last_lkgr[project] or 'HEAD'
 
     def Failure(result):
-      options['revision'] = self._last_lkgr or 'HEAD'
+      options['revision'] = self._last_lkgr[project] or 'HEAD'
 
     connection = client.getPage(last_good_url, agent='buildbot')
     connection.addCallbacks(Success, Failure)

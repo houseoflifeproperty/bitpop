@@ -18,7 +18,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chat_item_controller.h"
 #include "chrome/browser/facebook_chat/facebook_chat_item.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
@@ -43,7 +43,7 @@ namespace {
       hlBounds2.size.height -= 2;
 
       gfx::ScopedNSGraphicsContextSaveGState scopedGState;
-      scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+      base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
       [shadow.get() setShadowOffset:NSMakeSize(1, 1)];
       [shadow setShadowBlurRadius:8];
       [shadow setShadowColor:[NSColor colorWithCalibratedRed: 0.0

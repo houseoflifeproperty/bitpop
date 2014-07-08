@@ -5,19 +5,43 @@
 #import "chrome/browser/chrome_browser_application_mac.h"
 
 #import "base/auto_reset.h"
+#include "base/debug/crash_logging.h"
+#include "base/debug/stack_trace.h"
 #import "base/logging.h"
-#include "base/mac/crash_logging.h"
 #import "base/mac/scoped_nsexception_enabler.h"
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #import "base/metrics/histogram.h"
-#import "base/sys_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#import "base/strings/sys_string_conversions.h"
 #import "chrome/browser/app_controller_mac.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
+#include "chrome/common/crash_keys.h"
 #import "chrome/common/mac/objc_method_swizzle.h"
 #import "chrome/common/mac/objc_zombie.h"
 #include "content/public/browser/browser_accessibility_state.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
+
+namespace {
+
+// Tracking for cases being hit by -crInitWithName:reason:userInfo:.
+enum ExceptionEventType {
+  EXCEPTION_ACCESSIBILITY = 0,
+  EXCEPTION_MENU_ITEM_BOUNDS_CHECK,
+  EXCEPTION_VIEW_NOT_IN_WINDOW,
+  EXCEPTION_NSURL_INIT_NIL,
+  EXCEPTION_NSDATADETECTOR_NIL_STRING,
+
+  // Always keep this at the end.
+  EXCEPTION_MAX,
+};
+
+void RecordExceptionEvent(ExceptionEventType event_type) {
+  UMA_HISTOGRAM_ENUMERATION("OSX.ExceptionHandlerEvents",
+                            event_type, EXCEPTION_MAX);
+}
+
+}  // namespace
 
 // The implementation of NSExceptions break various assumptions in the
 // Chrome code.  This category defines a replacement for
@@ -48,23 +72,24 @@ static IMP gOriginalInitIMP = NULL;
     // If an object does not support an accessibility attribute, this will
     // get thrown.
     NSAccessibilityException,
-
-    nil
   };
 
   BOOL found = NO;
-  for (int i = 0; kAcceptableNSExceptionNames[i]; ++i) {
+  for (size_t i = 0; i < arraysize(kAcceptableNSExceptionNames); ++i) {
     if (aName == kAcceptableNSExceptionNames[i]) {
       found = YES;
+      RecordExceptionEvent(EXCEPTION_ACCESSIBILITY);
+      break;
     }
   }
 
   if (!found) {
     // Update breakpad with the exception info.
-    static NSString* const kNSExceptionKey = @"nsexception";
-    NSString* value =
-        [NSString stringWithFormat:@"%@ reason %@", aName, aReason];
-    base::mac::SetCrashKeyValue(kNSExceptionKey, value);
+    std::string value = base::StringPrintf("%s reason %s",
+        [aName UTF8String], [aReason UTF8String]);
+    base::debug::SetCrashKeyValue(crash_keys::mac::kNSException, value);
+    base::debug::SetCrashKeyToStackTrace(crash_keys::mac::kNSExceptionTrace,
+                                         base::debug::StackTrace());
 
     // Force crash for selected exceptions to generate crash dumps.
     BOOL fatal = NO;
@@ -73,11 +98,13 @@ static IMP gOriginalInitIMP = NULL;
           @"Invalid parameter not satisfying: (index >= 0) && "
           @"(index < [_itemArray count])";
       if ([aReason isEqualToString:kNSMenuItemArrayBoundsCheck]) {
+        RecordExceptionEvent(EXCEPTION_MENU_ITEM_BOUNDS_CHECK);
         fatal = YES;
       }
 
       NSString* const kNoWindowCheck = @"View is not in any window";
       if ([aReason isEqualToString:kNoWindowCheck]) {
+        RecordExceptionEvent(EXCEPTION_VIEW_NOT_IN_WINDOW);
         fatal = YES;
       }
     }
@@ -94,6 +121,17 @@ static IMP gOriginalInitIMP = NULL;
           @"*** -[NSURL initFileURLWithPath:isDirectory:]: "
           @"nil string parameter";
       if ([aReason isEqualToString:kNSURLInitNilCheck]) {
+        RecordExceptionEvent(EXCEPTION_NSURL_INIT_NIL);
+        fatal = NO;
+      }
+
+      // TODO(shess): <http://crbug.com/316759> OSX 10.9 is failing
+      // trying to extract structure from a string.
+      NSString* const kNSDataDetectorNilCheck =
+          @"*** -[NSDataDetector enumerateMatchesInString:"
+          @"options:range:usingBlock:]: nil argument";
+      if ([aReason isEqualToString:kNSDataDetectorNilCheck]) {
+        RecordExceptionEvent(EXCEPTION_NSDATADETECTOR_NIL_STRING);
         fatal = NO;
       }
     }
@@ -107,12 +145,12 @@ static IMP gOriginalInitIMP = NULL;
     const bool allow = base::mac::GetNSExceptionsAllowed();
     if (fatal && !allow) {
       LOG(FATAL) << "Someone is trying to raise an exception!  "
-                 << base::SysNSStringToUTF8(value);
+                 << value;
     } else {
       // Make sure that developers see when their code throws
       // exceptions.
       DCHECK(allow) << "Someone is trying to raise an exception!  "
-                    << base::SysNSStringToUTF8(value);
+                    << value;
     }
   }
 
@@ -230,9 +268,7 @@ void SwizzleInit() {
 
 - (id)init {
   SwizzleInit();
-  if ((self = [super init])) {
-    eventHooks_.reset([[NSMutableArray alloc] init]);
-  }
+  self = [super init];
 
   // Sanity check to alert if overridden methods are not supported.
   DCHECK([NSApplication
@@ -331,7 +367,7 @@ void SwizzleInit() {
 // must be redirected.
 //
 // When the last browser has been destroyed, the BrowserList calls
-// browser::OnAppExiting(), which is the point of no return. That will cause
+// chrome::OnAppExiting(), which is the point of no return. That will cause
 // the NSApplicationWillTerminateNotification to be posted, which ends the
 // NSApplication event loop, so final post- MessageLoop::Run() work is done
 // before exiting.
@@ -371,7 +407,6 @@ void SwizzleInit() {
   // When a Cocoa control is wired to a freed object, we get crashers
   // in the call to |super| with no useful information in the
   // backtrace.  Attempt to add some useful information.
-  static NSString* const kActionKey = @"sendaction";
 
   // If the action is something generic like -commandDispatch:, then
   // the tag is essential.
@@ -386,14 +421,13 @@ void SwizzleInit() {
   }
 
   NSString* actionString = NSStringFromSelector(anAction);
-  NSString* value =
-        [NSString stringWithFormat:@"%@ tag %ld sending %@ to %p",
-                  [sender className],
-                  static_cast<long>(tag),
-                  actionString,
-                  aTarget];
+  std::string value = base::StringPrintf("%s tag %ld sending %s to %p",
+      [[sender className] UTF8String],
+      static_cast<long>(tag),
+      [actionString UTF8String],
+      aTarget);
 
-  base::mac::ScopedCrashKey key(kActionKey, value);
+  base::debug::ScopedCrashKey key(crash_keys::mac::kSendAction, value);
 
   // Certain third-party code, such as print drivers, can still throw
   // exceptions and Chromium cannot fix them.  This provides a way to
@@ -406,18 +440,10 @@ void SwizzleInit() {
   }
 
   // Minimize the window by keeping this close to the super call.
-  scoped_ptr<base::mac::ScopedNSExceptionEnabler> enabler(NULL);
+  scoped_ptr<base::mac::ScopedNSExceptionEnabler> enabler;
   if (enableNSExceptions)
     enabler.reset(new base::mac::ScopedNSExceptionEnabler());
   return [super sendAction:anAction to:aTarget from:sender];
-}
-
-- (void)addEventHook:(id<CrApplicationEventHookProtocol>)handler {
-  [eventHooks_ addObject:handler];
-}
-
-- (void)removeEventHook:(id<CrApplicationEventHookProtocol>)handler {
-  [eventHooks_ removeObject:handler];
 }
 
 - (BOOL)isHandlingSendEvent {
@@ -430,9 +456,6 @@ void SwizzleInit() {
 
 - (void)sendEvent:(NSEvent*)event {
   base::mac::ScopedSendingEvent sendingEventScoper;
-  for (id<CrApplicationEventHookProtocol> handler in eventHooks_.get()) {
-    [handler hookForEvent:event];
-  }
   [super sendEvent:event];
 }
 
@@ -469,24 +492,22 @@ void SwizzleInit() {
     // is tracked because it may be the one which caused the system to
     // go off the rails.  The last exception thrown is tracked because
     // it may be the one most directly associated with the crash.
-    static NSString* const kFirstExceptionKey = @"firstexception";
-    static NSString* const kFirstExceptionBtKey = @"firstexception_bt";
     static BOOL trackedFirstException = NO;
-    static NSString* const kLastExceptionKey = @"lastexception";
-    static NSString* const kLastExceptionBtKey = @"lastexception_bt";
 
-    NSString* const kExceptionKey =
-        trackedFirstException ? kLastExceptionKey : kFirstExceptionKey;
+    const char* const kExceptionKey =
+        trackedFirstException ? crash_keys::mac::kLastNSException
+                              : crash_keys::mac::kFirstNSException;
     NSString* value = [NSString stringWithFormat:@"%@ reason %@",
                                 [anException name], [anException reason]];
-    base::mac::SetCrashKeyValue(kExceptionKey, value);
+    base::debug::SetCrashKeyValue(kExceptionKey, [value UTF8String]);
 
     // Encode the callstack from point of throw.
     // TODO(shess): Our swizzle plus the 23-frame limit plus Cocoa
     // overhead may make this less than useful.  If so, perhaps skip
     // some items and/or use two keys.
-    NSString* const kExceptionBtKey =
-        trackedFirstException ? kLastExceptionBtKey : kFirstExceptionBtKey;
+    const char* const kExceptionBtKey =
+        trackedFirstException ? crash_keys::mac::kLastNSExceptionTrace
+                              : crash_keys::mac::kFirstNSExceptionTrace;
     NSArray* addressArray = [anException callStackReturnAddresses];
     NSUInteger addressCount = [addressArray count];
     if (addressCount) {
@@ -500,10 +521,10 @@ void SwizzleInit() {
         addresses[i] = reinterpret_cast<void*>(
             [[addressArray objectAtIndex:i] unsignedIntegerValue]);
       }
-      base::mac::SetCrashKeyFromAddresses(
+      base::debug::SetCrashKeyFromAddresses(
           kExceptionBtKey, addresses, static_cast<size_t>(addressCount));
     } else {
-      base::mac::ClearCrashKey(kExceptionBtKey);
+      base::debug::ClearCrashKey(kExceptionBtKey);
     }
     trackedFirstException = YES;
 
@@ -517,7 +538,7 @@ void SwizzleInit() {
   if ([attribute isEqualToString:@"AXEnhancedUserInterface"] &&
       [value intValue] == 1) {
     content::BrowserAccessibilityState::GetInstance()->OnScreenReaderDetected();
-    for (TabContentsIterator it; !it.done(); ++it) {
+    for (TabContentsIterator it; !it.done(); it.Next()) {
       if (content::WebContents* contents = *it)
         if (content::RenderViewHost* rvh = contents->GetRenderViewHost())
           rvh->EnableFullAccessibilityMode();

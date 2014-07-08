@@ -8,7 +8,11 @@
 #include "chrome/browser/chromeos/login/login_web_dialog.h"
 #include "ui/gfx/native_widget_types.h"
 
+class Profile;
+
 namespace chromeos {
+
+class NetworkState;
 
 // Should be used on the UI thread only, because of static |instance_count_|.
 class ProxySettingsDialog : public LoginWebDialog {
@@ -16,7 +20,9 @@ class ProxySettingsDialog : public LoginWebDialog {
   // Returns whether the dialog is being shown.
   static bool IsShown();
 
-  ProxySettingsDialog(LoginWebDialog::Delegate* delegate,
+  ProxySettingsDialog(Profile* profile,
+                      const NetworkState& network,
+                      LoginWebDialog::Delegate* delegate,
                       gfx::NativeWindow window);
   virtual ~ProxySettingsDialog();
 

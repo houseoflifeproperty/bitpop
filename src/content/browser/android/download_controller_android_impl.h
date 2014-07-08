@@ -21,13 +21,14 @@
 
 #include <string>
 
-#include "base/android/jni_helper.h"
+#include "base/android/jni_weak_ref.h"
 #include "base/android/scoped_java_ref.h"
+#include "base/callback.h"
 #include "base/memory/singleton.h"
 #include "content/public/browser/android/download_controller_android.h"
 #include "content/public/browser/download_item.h"
-#include "googleurl/src/gurl.h"
 #include "net/cookies/cookie_monster.h"
+#include "url/gurl.h"
 
 namespace net {
 class URLRequest;
@@ -74,39 +75,40 @@ class DownloadControllerAndroidImpl : public DownloadControllerAndroid,
   virtual ~DownloadControllerAndroidImpl();
 
   // DownloadControllerAndroid implementation.
-  virtual void CreateGETDownload(RenderViewHost* source,
+  virtual void CreateGETDownload(int render_process_id, int render_view_id,
                                  int request_id) OVERRIDE;
-  virtual void OnPostDownloadStarted(WebContents* web_contents,
-                                     DownloadItem* download_item) OVERRIDE;
+  virtual void OnDownloadStarted(DownloadItem* download_item) OVERRIDE;
+  virtual void StartContextMenuDownload(
+      const ContextMenuParams& params, WebContents* web_contents,
+      bool is_link) OVERRIDE;
+  virtual void DangerousDownloadValidated(
+      WebContents* web_contents, int download_id, bool accept) OVERRIDE;
 
   // DownloadItem::Observer interface.
   virtual void OnDownloadUpdated(DownloadItem* item) OVERRIDE;
-  virtual void OnDownloadOpened(DownloadItem* item) OVERRIDE;
 
-
+  typedef base::Callback<void(const DownloadInfoAndroid&)>
+      GetDownloadInfoCB;
   void PrepareDownloadInfo(const GlobalRequestID& global_id,
-                           int render_process_id,
-                           int render_view_id);
-
+                           const GetDownloadInfoCB& callback);
   void CheckPolicyAndLoadCookies(const DownloadInfoAndroid& info,
-                                 int render_process_id,
-                                 int render_view_id,
+                                 const GetDownloadInfoCB& callback,
                                  const GlobalRequestID& global_id,
                                  const net::CookieList& cookie_list);
-
   void DoLoadCookies(const DownloadInfoAndroid& info,
-                     int render_process_id,
-                     int render_view_id,
+                     const GetDownloadInfoCB& callback,
                      const GlobalRequestID& global_id);
-
   void OnCookieResponse(DownloadInfoAndroid info,
-                        int render_process_id,
-                        int render_view_id,
+                        const GetDownloadInfoCB& callback,
                         const std::string& cookie);
+  void StartDownloadOnUIThread(const GetDownloadInfoCB& callback,
+                               const DownloadInfoAndroid& info);
+  void StartAndroidDownload(int render_process_id,
+                            int render_view_id,
+                            const DownloadInfoAndroid& info);
 
-  void StartAndroidDownload(const DownloadInfoAndroid& info,
-                            int render_process_id,
-                            int render_view_id);
+  // The download item contains dangerous file types.
+  void OnDangerousDownload(DownloadItem *item);
 
   base::android::ScopedJavaLocalRef<jobject> GetContentViewCoreFromWebContents(
       WebContents* web_contents);

@@ -10,90 +10,73 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/ref_counted.h"
-#include "crypto/hmac.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/mailbox.h"
 #include "gpu/gpu_export.h"
-
-// From gl2/gl2ext.h.
-#ifndef GL_MAILBOX_SIZE_CHROMIUM
-#define GL_MAILBOX_SIZE_CHROMIUM 64
-#endif
 
 typedef signed char GLbyte;
 
 namespace gpu {
 namespace gles2 {
 
-class TextureDefinition;
+class MailboxSynchronizer;
+class Texture;
 class TextureManager;
-
-// Identifies a mailbox where a texture definition can be stored for
-// transferring textures between contexts that are not in the same context
-// group. It is a random key signed with a hash of a private key.
-struct GPU_EXPORT MailboxName {
-  MailboxName();
-  GLbyte key[GL_MAILBOX_SIZE_CHROMIUM / 2];
-  GLbyte signature[GL_MAILBOX_SIZE_CHROMIUM / 2];
-};
 
 // Manages resources scoped beyond the context or context group level.
 class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
  public:
   MailboxManager();
 
-  // Generate a unique mailbox name signed with the manager's private key.
-  void GenerateMailboxName(MailboxName* name);
+  // Look up the texture definition from the named mailbox.
+  Texture* ConsumeTexture(unsigned target, const Mailbox& mailbox);
 
-  // Remove the texture definition from the named mailbox and empty the mailbox.
-  TextureDefinition* ConsumeTexture(unsigned target, const MailboxName& name);
+  // Put the texture into the named mailbox.
+  void ProduceTexture(unsigned target,
+                      const Mailbox& mailbox,
+                      Texture* texture);
 
-  // Put the texture definition in the named mailbox.
-  bool ProduceTexture(unsigned target,
-                      const MailboxName& name,
-                      TextureDefinition* definition,
-                      TextureManager* owner);
+  // Returns whether this manager synchronizes with other instances.
+  bool UsesSync() { return sync_ != NULL; }
 
-  // Destroy any texture definitions and mailboxes owned by the given texture
-  // manager.
-  void DestroyOwnedTextures(TextureManager* owner, bool have_context);
+  // Used with the MailboxSynchronizer to push/pull texture state to/from
+  // other manager instances.
+  void PushTextureUpdates();
+  void PullTextureUpdates();
 
-  std::string private_key() {
-    return std::string(private_key_, sizeof(private_key_));
-  }
+  // Destroy any mailbox that reference the given texture.
+  void TextureDeleted(Texture* texture);
 
  private:
   friend class base::RefCounted<MailboxManager>;
+  friend class MailboxSynchronizer;
 
   ~MailboxManager();
 
-  void SignMailboxName(MailboxName* name);
-  bool IsMailboxNameValid(const MailboxName& name);
-
   struct TargetName {
-    TargetName(unsigned target, const MailboxName& name);
+    TargetName(unsigned target, const Mailbox& mailbox);
     unsigned target;
-    MailboxName name;
+    Mailbox mailbox;
   };
+  void InsertTexture(TargetName target_name, Texture* texture);
 
   static bool TargetNameLess(const TargetName& lhs, const TargetName& rhs);
 
-  struct OwnedTextureDefinition {
-    OwnedTextureDefinition(TextureDefinition* definition,
-                           TextureManager* owner);
-    ~OwnedTextureDefinition();
-    linked_ptr<TextureDefinition> definition;
-    TextureManager* owner;
-  };
+  // This is a bidirectional map between mailbox and textures. We can have
+  // multiple mailboxes per texture, but one texture per mailbox. We keep an
+  // iterator in the MailboxToTextureMap to be able to manage changes to
+  // the TextureToMailboxMap efficiently.
+  typedef std::multimap<Texture*, TargetName> TextureToMailboxMap;
+  typedef std::map<TargetName,
+                   TextureToMailboxMap::iterator,
+                   std::pointer_to_binary_function<const TargetName&,
+                                                   const TargetName&,
+                                                   bool> > MailboxToTextureMap;
 
-  typedef std::map<
-      TargetName,
-      OwnedTextureDefinition,
-      std::pointer_to_binary_function<
-          const TargetName&, const TargetName&, bool> > TextureDefinitionMap;
+  MailboxToTextureMap mailbox_to_textures_;
+  TextureToMailboxMap textures_to_mailboxes_;
 
-  char private_key_[GL_MAILBOX_SIZE_CHROMIUM / 2];
-  crypto::HMAC hmac_;
-  TextureDefinitionMap textures_;
+  MailboxSynchronizer* sync_;
 
   DISALLOW_COPY_AND_ASSIGN(MailboxManager);
 };
@@ -101,5 +84,4 @@ class GPU_EXPORT MailboxManager : public base::RefCounted<MailboxManager> {
 }  // namespace gpu
 
 #endif  // GPU_COMMAND_BUFFER_SERVICE_MAILBOX_MANAGER_H_
-
 

@@ -8,10 +8,8 @@
 
 #include "jingle/notifier/listener/fake_push_client.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/model_type_invalidation_map.h"
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -27,6 +25,7 @@ class P2PInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
@@ -36,6 +35,7 @@ class P2PInvalidatorTestDelegate {
     invalidator_.reset(
         new P2PInvalidator(
             scoped_ptr<notifier::PushClient>(fake_push_client_),
+            invalidator_client_id,
             NOTIFY_OTHERS));
   }
 
@@ -65,18 +65,13 @@ class P2PInvalidatorTestDelegate {
   }
 
   void TriggerOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) {
+      const ObjectIdInvalidationMap& invalidation_map) {
     const P2PNotificationData notification_data(
-        "", NOTIFY_ALL, invalidation_map, source);
+        std::string(), NOTIFY_ALL, invalidation_map);
     notifier::Notification notification;
     notification.channel = kSyncP2PNotificationChannel;
     notification.data = notification_data.ToString();
     fake_push_client_->SimulateIncomingNotification(notification);
-  }
-
-  static bool InvalidatorHandlesDeprecatedState() {
-    return false;
   }
 
  private:
@@ -89,7 +84,8 @@ class P2PInvalidatorTest : public testing::Test {
  protected:
   P2PInvalidatorTest()
       : next_sent_notification_to_reflect_(0) {
-    delegate_.CreateInvalidator("fake_state",
+    delegate_.CreateInvalidator("sender",
+                                "fake_state",
                                 base::WeakPtr<InvalidationStateTracker>());
     delegate_.GetInvalidator()->RegisterHandler(&fake_handler_);
   }
@@ -98,8 +94,10 @@ class P2PInvalidatorTest : public testing::Test {
     delegate_.GetInvalidator()->UnregisterHandler(&fake_handler_);
   }
 
-  ModelTypeInvalidationMap MakeInvalidationMap(ModelTypeSet types) {
-    return ModelTypeSetToInvalidationMap(types, std::string());
+  ObjectIdInvalidationMap MakeInvalidationMap(ModelTypeSet types) {
+    ObjectIdInvalidationMap invalidations;
+    ObjectIdSet ids = ModelTypeSetToObjectIdSet(types);
+    return ObjectIdInvalidationMap::InvalidateAll(ids);
   }
 
   // Simulate receiving all the notifications we sent out since last
@@ -137,22 +135,21 @@ TEST_F(P2PInvalidatorTest, P2PNotificationTarget) {
 TEST_F(P2PInvalidatorTest, P2PNotificationDataIsTargeted) {
   {
     const P2PNotificationData notification_data(
-        "sender", NOTIFY_SELF, ObjectIdInvalidationMap(), REMOTE_INVALIDATION);
+        "sender", NOTIFY_SELF, ObjectIdInvalidationMap());
     EXPECT_TRUE(notification_data.IsTargeted("sender"));
     EXPECT_FALSE(notification_data.IsTargeted("other1"));
     EXPECT_FALSE(notification_data.IsTargeted("other2"));
   }
   {
     const P2PNotificationData notification_data(
-        "sender", NOTIFY_OTHERS, ObjectIdInvalidationMap(),
-        REMOTE_INVALIDATION);
+        "sender", NOTIFY_OTHERS, ObjectIdInvalidationMap());
     EXPECT_FALSE(notification_data.IsTargeted("sender"));
     EXPECT_TRUE(notification_data.IsTargeted("other1"));
     EXPECT_TRUE(notification_data.IsTargeted("other2"));
   }
   {
     const P2PNotificationData notification_data(
-        "sender", NOTIFY_ALL, ObjectIdInvalidationMap(), REMOTE_INVALIDATION);
+        "sender", NOTIFY_ALL, ObjectIdInvalidationMap());
     EXPECT_TRUE(notification_data.IsTargeted("sender"));
     EXPECT_TRUE(notification_data.IsTargeted("other1"));
     EXPECT_TRUE(notification_data.IsTargeted("other2"));
@@ -163,14 +160,14 @@ TEST_F(P2PInvalidatorTest, P2PNotificationDataIsTargeted) {
 // default-constructed P2PNotificationData.
 TEST_F(P2PInvalidatorTest, P2PNotificationDataDefault) {
   const P2PNotificationData notification_data;
-  EXPECT_TRUE(notification_data.IsTargeted(""));
+  EXPECT_TRUE(notification_data.IsTargeted(std::string()));
   EXPECT_FALSE(notification_data.IsTargeted("other1"));
   EXPECT_FALSE(notification_data.IsTargeted("other2"));
-  EXPECT_TRUE(notification_data.GetIdInvalidationMap().empty());
+  EXPECT_TRUE(notification_data.GetIdInvalidationMap().Empty());
   const std::string& notification_data_str = notification_data.ToString();
   EXPECT_EQ(
-      "{\"idInvalidationMap\":[],\"notificationType\":\"notifySelf\","
-      "\"senderId\":\"\",\"source\":0}", notification_data_str);
+      "{\"invalidations\":[],\"notificationType\":\"notifySelf\","
+      "\"senderId\":\"\"}", notification_data_str);
 
   P2PNotificationData notification_data_parsed;
   EXPECT_TRUE(notification_data_parsed.ResetFromString(notification_data_str));
@@ -180,27 +177,25 @@ TEST_F(P2PInvalidatorTest, P2PNotificationDataDefault) {
 // Make sure the P2PNotificationData <-> string conversions work for a
 // non-default-constructed P2PNotificationData.
 TEST_F(P2PInvalidatorTest, P2PNotificationDataNonDefault) {
-  const ObjectIdInvalidationMap& invalidation_map =
-      ObjectIdSetToInvalidationMap(
-          ModelTypeSetToObjectIdSet(ModelTypeSet(BOOKMARKS, THEMES)), "");
-  const P2PNotificationData notification_data(
-      "sender", NOTIFY_ALL, invalidation_map, LOCAL_INVALIDATION);
+  ObjectIdInvalidationMap invalidation_map =
+      ObjectIdInvalidationMap::InvalidateAll(
+          ModelTypeSetToObjectIdSet(ModelTypeSet(BOOKMARKS, THEMES)));
+  const P2PNotificationData notification_data("sender",
+                                              NOTIFY_ALL,
+                                              invalidation_map);
   EXPECT_TRUE(notification_data.IsTargeted("sender"));
   EXPECT_TRUE(notification_data.IsTargeted("other1"));
   EXPECT_TRUE(notification_data.IsTargeted("other2"));
-  EXPECT_THAT(invalidation_map,
-              Eq(notification_data.GetIdInvalidationMap()));
+  EXPECT_EQ(invalidation_map, notification_data.GetIdInvalidationMap());
   const std::string& notification_data_str = notification_data.ToString();
   EXPECT_EQ(
-      "{\"idInvalidationMap\":["
-      "{\"objectId\":{\"name\":\"BOOKMARK\",\"source\":1004},"
-      "\"state\":{\"ackHandle\":{\"state\":\"\",\"timestamp\":\"0\"},"
-      "\"payload\":\"\"}},"
-      "{\"objectId\":{\"name\":\"THEME\",\"source\":1004},"
-      "\"state\":{\"ackHandle\":{\"state\":\"\",\"timestamp\":\"0\"},"
-      "\"payload\":\"\"}}"
+      "{\"invalidations\":["
+      "{\"isUnknownVersion\":true,"
+       "\"objectId\":{\"name\":\"BOOKMARK\",\"source\":1004}},"
+      "{\"isUnknownVersion\":true,"
+       "\"objectId\":{\"name\":\"THEME\",\"source\":1004}}"
       "],\"notificationType\":\"notifyAll\","
-      "\"senderId\":\"sender\",\"source\":1}", notification_data_str);
+      "\"senderId\":\"sender\"}", notification_data_str);
 
   P2PNotificationData notification_data_parsed;
   EXPECT_TRUE(notification_data_parsed.ResetFromString(notification_data_str));
@@ -219,8 +214,6 @@ TEST_F(P2PInvalidatorTest, NotificationsBasic) {
 
   invalidator->UpdateRegisteredIds(&fake_handler_,
                                    ModelTypeSetToObjectIdSet(enabled_types));
-
-  invalidator->SetUniqueId("sender");
 
   const char kEmail[] = "foo@bar.com";
   const char kToken[] = "token";
@@ -243,19 +236,13 @@ TEST_F(P2PInvalidatorTest, NotificationsBasic) {
   ReflectSentNotifications();
   EXPECT_EQ(1, fake_handler_.GetInvalidationCount());
   EXPECT_THAT(
-      ModelTypeInvalidationMapToObjectIdInvalidationMap(
-          MakeInvalidationMap(enabled_types)),
+      MakeInvalidationMap(enabled_types),
       Eq(fake_handler_.GetLastInvalidationMap()));
-  EXPECT_EQ(REMOTE_INVALIDATION, fake_handler_.GetLastInvalidationSource());
 
   // Sent with target NOTIFY_OTHERS so should not be propagated to
   // |fake_handler_|.
-  {
-    const ObjectIdInvalidationMap& invalidation_map =
-        ObjectIdSetToInvalidationMap(
-            ModelTypeSetToObjectIdSet(ModelTypeSet(THEMES, APPS)), "");
-    invalidator->SendInvalidation(invalidation_map);
-  }
+  invalidator->SendInvalidation(
+      ModelTypeSetToObjectIdSet(ModelTypeSet(THEMES, APPS)));
 
   ReflectSentNotifications();
   EXPECT_EQ(1, fake_handler_.GetInvalidationCount());
@@ -270,8 +257,7 @@ TEST_F(P2PInvalidatorTest, SendNotificationData) {
   const ModelTypeSet expected_types(THEMES);
 
   const ObjectIdInvalidationMap& invalidation_map =
-      ObjectIdSetToInvalidationMap(
-          ModelTypeSetToObjectIdSet(changed_types), "");
+      MakeInvalidationMap(changed_types);
 
   P2PInvalidator* const invalidator = delegate_.GetInvalidator();
   notifier::FakePushClient* const push_client = delegate_.GetPushClient();
@@ -279,7 +265,6 @@ TEST_F(P2PInvalidatorTest, SendNotificationData) {
   invalidator->UpdateRegisteredIds(&fake_handler_,
                                    ModelTypeSetToObjectIdSet(enabled_types));
 
-  invalidator->SetUniqueId("sender");
   invalidator->UpdateCredentials("foo@bar.com", "fake_token");
 
   ReflectSentNotifications();
@@ -288,85 +273,75 @@ TEST_F(P2PInvalidatorTest, SendNotificationData) {
 
   ReflectSentNotifications();
   EXPECT_EQ(1, fake_handler_.GetInvalidationCount());
-  EXPECT_THAT(
-      ModelTypeInvalidationMapToObjectIdInvalidationMap(
-          MakeInvalidationMap(enabled_types)),
-      Eq(fake_handler_.GetLastInvalidationMap()));
-  EXPECT_EQ(REMOTE_INVALIDATION, fake_handler_.GetLastInvalidationSource());
+  EXPECT_EQ(ModelTypeSetToObjectIdSet(enabled_types),
+            fake_handler_.GetLastInvalidationMap().GetObjectIds());
 
   // Should be dropped.
   invalidator->SendNotificationDataForTest(P2PNotificationData());
   ReflectSentNotifications();
   EXPECT_EQ(1, fake_handler_.GetInvalidationCount());
 
-  const ObjectIdInvalidationMap& expected_ids =
-      ModelTypeInvalidationMapToObjectIdInvalidationMap(
-          MakeInvalidationMap(expected_types));
+  const ObjectIdSet& expected_ids = ModelTypeSetToObjectIdSet(expected_types);
 
   // Should be propagated.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender", NOTIFY_SELF,
-                          invalidation_map, REMOTE_INVALIDATION));
+      P2PNotificationData("sender", NOTIFY_SELF, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(2, fake_handler_.GetInvalidationCount());
-  EXPECT_THAT(expected_ids, Eq(fake_handler_.GetLastInvalidationMap()));
+  EXPECT_EQ(expected_ids,
+            fake_handler_.GetLastInvalidationMap().GetObjectIds());
 
   // Should be dropped.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender2", NOTIFY_SELF,
-                          invalidation_map, REMOTE_INVALIDATION));
-  ReflectSentNotifications();
-  EXPECT_EQ(2, fake_handler_.GetInvalidationCount());
-
-  // Should be dropped.
-  invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender", NOTIFY_SELF,
-                          ObjectIdInvalidationMap(), REMOTE_INVALIDATION));
+      P2PNotificationData("sender2", NOTIFY_SELF, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(2, fake_handler_.GetInvalidationCount());
 
   // Should be dropped.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender", NOTIFY_OTHERS,
-                          invalidation_map, REMOTE_INVALIDATION));
+      P2PNotificationData("sender", NOTIFY_SELF, ObjectIdInvalidationMap()));
+  ReflectSentNotifications();
+  EXPECT_EQ(2, fake_handler_.GetInvalidationCount());
+
+  // Should be dropped.
+  invalidator->SendNotificationDataForTest(
+      P2PNotificationData("sender", NOTIFY_OTHERS, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(2, fake_handler_.GetInvalidationCount());
 
   // Should be propagated.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender2", NOTIFY_OTHERS,
-                          invalidation_map, REMOTE_INVALIDATION));
+      P2PNotificationData("sender2", NOTIFY_OTHERS, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(3, fake_handler_.GetInvalidationCount());
-  EXPECT_THAT(expected_ids, Eq(fake_handler_.GetLastInvalidationMap()));
+  EXPECT_EQ(expected_ids,
+            fake_handler_.GetLastInvalidationMap().GetObjectIds());
 
   // Should be dropped.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender2", NOTIFY_OTHERS,
-                          ObjectIdInvalidationMap(), REMOTE_INVALIDATION));
+      P2PNotificationData("sender2", NOTIFY_OTHERS, ObjectIdInvalidationMap()));
   ReflectSentNotifications();
   EXPECT_EQ(3, fake_handler_.GetInvalidationCount());
 
   // Should be propagated.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender", NOTIFY_ALL,
-                          invalidation_map, REMOTE_INVALIDATION));
+      P2PNotificationData("sender", NOTIFY_ALL, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(4, fake_handler_.GetInvalidationCount());
-  EXPECT_THAT(expected_ids, Eq(fake_handler_.GetLastInvalidationMap()));
+  EXPECT_EQ(expected_ids,
+            fake_handler_.GetLastInvalidationMap().GetObjectIds());
 
   // Should be propagated.
   invalidator->SendNotificationDataForTest(
-      P2PNotificationData("sender2", NOTIFY_ALL,
-                          invalidation_map, REMOTE_INVALIDATION));
+      P2PNotificationData("sender2", NOTIFY_ALL, invalidation_map));
   ReflectSentNotifications();
   EXPECT_EQ(5, fake_handler_.GetInvalidationCount());
-  EXPECT_THAT(expected_ids, Eq(fake_handler_.GetLastInvalidationMap()));
+  EXPECT_EQ(expected_ids,
+            fake_handler_.GetLastInvalidationMap().GetObjectIds());
 
   // Should be dropped.
   invalidator->SendNotificationDataForTest(
-  P2PNotificationData("sender2", NOTIFY_ALL,
-                      ObjectIdInvalidationMap(), REMOTE_INVALIDATION));
+  P2PNotificationData("sender2", NOTIFY_ALL, ObjectIdInvalidationMap()));
   ReflectSentNotifications();
   EXPECT_EQ(5, fake_handler_.GetInvalidationCount());
 }

@@ -8,9 +8,9 @@
 #include "ash/shell_window_ids.h"
 #include "ash/test/ash_test_base.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/test/test_windows.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 
 namespace ash {
 namespace test {
@@ -19,7 +19,7 @@ class DragDropTrackerTest : public test::AshTestBase {
  public:
   virtual void SetUp() OVERRIDE {
     AshTestBase::SetUp();
-    UpdateDisplay("200x200,200x200");
+    UpdateDisplay("200x200,300x300");
   }
 
   aura::Window* CreateTestWindow(const gfx::Rect& bounds) {
@@ -31,11 +31,12 @@ class DragDropTrackerTest : public test::AshTestBase {
   }
 
   static aura::Window* GetTarget(const gfx::Point& location) {
-    scoped_ptr<internal::DragDropTracker> tracker(
-        new internal::DragDropTracker(Shell::GetPrimaryRootWindow()));
+    scoped_ptr<DragDropTracker> tracker(
+        new DragDropTracker(Shell::GetPrimaryRootWindow(), NULL));
     ui::MouseEvent e(ui::ET_MOUSE_DRAGGED,
                      location,
                      location,
+                     ui::EF_NONE,
                      ui::EF_NONE);
     aura::Window* target = tracker->GetTarget(e);
     return target;
@@ -43,8 +44,8 @@ class DragDropTrackerTest : public test::AshTestBase {
 
   static ui::LocatedEvent* ConvertEvent(aura::Window* target,
                                            const ui::MouseEvent& event) {
-    scoped_ptr<internal::DragDropTracker> tracker(
-        new internal::DragDropTracker(Shell::GetPrimaryRootWindow()));
+    scoped_ptr<DragDropTracker> tracker(
+        new DragDropTracker(Shell::GetPrimaryRootWindow(), NULL));
     ui::LocatedEvent* converted = tracker->ConvertEvent(target, event);
     return converted;
   }
@@ -59,23 +60,23 @@ class DragDropTrackerTest : public test::AshTestBase {
 #endif
 
 TEST_F(DragDropTrackerTest, MAYBE_GetTarget) {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ(2U, root_windows.size());
-
-  Shell::GetInstance()->set_active_root_window(root_windows[0]);
 
   scoped_ptr<aura::Window> window0(
       CreateTestWindow(gfx::Rect(0, 0, 100, 100)));
   window0->Show();
 
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
-
   scoped_ptr<aura::Window> window1(
-      CreateTestWindow(gfx::Rect(100, 100, 100, 100)));
+      CreateTestWindow(gfx::Rect(300, 100, 100, 100)));
   window1->Show();
+  EXPECT_EQ(root_windows[0], window0->GetRootWindow());
+  EXPECT_EQ(root_windows[1], window1->GetRootWindow());
+  EXPECT_EQ("0,0 100x100", window0->GetBoundsInScreen().ToString());
+  EXPECT_EQ("300,100 100x100", window1->GetBoundsInScreen().ToString());
 
   // Make RootWindow0 active so that capture window is parented to it.
-  Shell::GetInstance()->set_active_root_window(root_windows[0]);
+  Shell::GetInstance()->set_target_root_window(root_windows[0]);
 
   // Start tracking from the RootWindow1 and check the point on RootWindow0 that
   // |window0| covers.
@@ -96,7 +97,7 @@ TEST_F(DragDropTrackerTest, MAYBE_GetTarget) {
   EXPECT_NE(window1.get(), GetTarget(gfx::Point(50, 250)));
 
   // Make RootWindow1 active so that capture window is parented to it.
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
+  Shell::GetInstance()->set_target_root_window(root_windows[1]);
 
   // Start tracking from the RootWindow1 and check the point on RootWindow0 that
   // |window0| covers.
@@ -126,27 +127,26 @@ TEST_F(DragDropTrackerTest, MAYBE_GetTarget) {
 #endif
 
 TEST_F(DragDropTrackerTest, MAYBE_ConvertEvent) {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   EXPECT_EQ(2U, root_windows.size());
 
-  Shell::GetInstance()->set_active_root_window(root_windows[0]);
   scoped_ptr<aura::Window> window0(
       CreateTestWindow(gfx::Rect(0, 0, 100, 100)));
   window0->Show();
 
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
   scoped_ptr<aura::Window> window1(
-      CreateTestWindow(gfx::Rect(100, 100, 100, 100)));
+      CreateTestWindow(gfx::Rect(300, 100, 100, 100)));
   window1->Show();
 
   // Make RootWindow0 active so that capture window is parented to it.
-  Shell::GetInstance()->set_active_root_window(root_windows[0]);
+  Shell::GetInstance()->set_target_root_window(root_windows[0]);
 
   // Start tracking from the RootWindow0 and converts the mouse event into
   // |window0|'s coodinates.
   ui::MouseEvent original00(ui::ET_MOUSE_DRAGGED,
                             gfx::Point(50, 50),
                             gfx::Point(50, 50),
+                            ui::EF_NONE,
                             ui::EF_NONE);
   scoped_ptr<ui::LocatedEvent> converted00(ConvertEvent(window0.get(),
                                                         original00));
@@ -160,6 +160,7 @@ TEST_F(DragDropTrackerTest, MAYBE_ConvertEvent) {
   ui::MouseEvent original01(ui::ET_MOUSE_DRAGGED,
                             gfx::Point(350, 150),
                             gfx::Point(350, 150),
+                            ui::EF_NONE,
                             ui::EF_NONE);
   scoped_ptr<ui::LocatedEvent> converted01(ConvertEvent(window1.get(),
                                                         original01));
@@ -169,13 +170,14 @@ TEST_F(DragDropTrackerTest, MAYBE_ConvertEvent) {
   EXPECT_EQ(original01.flags(), converted01->flags());
 
   // Make RootWindow1 active so that capture window is parented to it.
-  Shell::GetInstance()->set_active_root_window(root_windows[1]);
+  Shell::GetInstance()->set_target_root_window(root_windows[1]);
 
   // Start tracking from the RootWindow1 and converts the mouse event into
   // |window0|'s coodinates.
   ui::MouseEvent original10(ui::ET_MOUSE_DRAGGED,
                             gfx::Point(-150, 50),
                             gfx::Point(-150, 50),
+                            ui::EF_NONE,
                             ui::EF_NONE);
   scoped_ptr<ui::LocatedEvent> converted10(ConvertEvent(window0.get(),
                                                         original10));
@@ -189,6 +191,7 @@ TEST_F(DragDropTrackerTest, MAYBE_ConvertEvent) {
   ui::MouseEvent original11(ui::ET_MOUSE_DRAGGED,
                             gfx::Point(150, 150),
                             gfx::Point(150, 150),
+                            ui::EF_NONE,
                             ui::EF_NONE);
   scoped_ptr<ui::LocatedEvent> converted11(ConvertEvent(window1.get(),
                                                            original11));

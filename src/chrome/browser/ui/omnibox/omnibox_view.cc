@@ -7,45 +7,61 @@
 
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
 
-#include "base/string_util.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/search/search.h"
+#include "chrome/browser/search_engines/template_url.h"
+#include "chrome/browser/search_engines/template_url_service.h"
+#include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/omnibox/omnibox_edit_controller.h"
+#include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "grit/generated_resources.h"
 #include "ui/base/clipboard/clipboard.h"
+#include "ui/base/l10n/l10n_util.h"
 
 // static
-string16 OmniboxView::StripJavascriptSchemas(const string16& text) {
-  const string16 kJsPrefix(ASCIIToUTF16(chrome::kJavaScriptScheme) +
-                           ASCIIToUTF16(":"));
-  string16 out(text);
-  while (StartsWith(out, kJsPrefix, false))
-    TrimWhitespace(out.substr(kJsPrefix.length()), TRIM_LEADING, &out);
+base::string16 OmniboxView::StripJavascriptSchemas(const base::string16& text) {
+  const base::string16 kJsPrefix(
+      base::ASCIIToUTF16(content::kJavaScriptScheme) + base::ASCIIToUTF16(":"));
+  base::string16 out(text);
+  while (StartsWith(out, kJsPrefix, false)) {
+    base::TrimWhitespace(out.substr(kJsPrefix.length()), base::TRIM_LEADING,
+                         &out);
+  }
   return out;
 }
 
 // static
-string16 OmniboxView::GetClipboardText() {
+base::string16 OmniboxView::SanitizeTextForPaste(const base::string16& text) {
+  // Check for non-newline whitespace; if found, collapse whitespace runs down
+  // to single spaces.
+  // TODO(shess): It may also make sense to ignore leading or
+  // trailing whitespace when making this determination.
+  for (size_t i = 0; i < text.size(); ++i) {
+    if (IsWhitespace(text[i]) && text[i] != '\n' && text[i] != '\r') {
+      const base::string16 collapsed = base::CollapseWhitespace(text, false);
+      // If the user is pasting all-whitespace, paste a single space
+      // rather than nothing, since pasting nothing feels broken.
+      return collapsed.empty() ?
+          base::ASCIIToUTF16(" ") : StripJavascriptSchemas(collapsed);
+    }
+  }
+
+  // Otherwise, all whitespace is newlines; remove it entirely.
+  return StripJavascriptSchemas(base::CollapseWhitespace(text, true));
+}
+
+// static
+base::string16 OmniboxView::GetClipboardText() {
   // Try text format.
   ui::Clipboard* clipboard = ui::Clipboard::GetForCurrentThread();
   if (clipboard->IsFormatAvailable(ui::Clipboard::GetPlainTextWFormatType(),
-                                   ui::Clipboard::BUFFER_STANDARD)) {
-    string16 text;
-    clipboard->ReadText(ui::Clipboard::BUFFER_STANDARD, &text);
-
-    // If the input contains non-newline whitespace, treat it as
-    // search data and convert newlines to spaces.  For instance, a
-    // street address.
-    // TODO(shess): It may also make sense to ignore leading or
-    // trailing whitespace when making this determination.
-    for (size_t i = 0; i < text.size(); ++i) {
-      if (IsWhitespace(text[i]) && text[i] != '\n' && text[i] != '\r')
-        return StripJavascriptSchemas(CollapseWhitespace(text, false));
-    }
-
-    // Otherwise, the only whitespace in |text| is newlines.  Remove
-    // these entirely, because users are most likely pasting URLs
-    // split into multiple lines by terminals, email programs, etc.
-    return StripJavascriptSchemas(CollapseWhitespace(text, true));
+                                   ui::CLIPBOARD_TYPE_COPY_PASTE)) {
+    base::string16 text;
+    clipboard->ReadText(ui::CLIPBOARD_TYPE_COPY_PASTE, &text);
+    return SanitizeTextForPaste(text);
   }
 
   // Try bookmark format.
@@ -56,30 +72,49 @@ string16 OmniboxView::GetClipboardText() {
   // cannonicalized, which is not what the user expects.  By pasting in this
   // order, we are sure to paste what the user copied.
   if (clipboard->IsFormatAvailable(ui::Clipboard::GetUrlWFormatType(),
-                                   ui::Clipboard::BUFFER_STANDARD)) {
+                                   ui::CLIPBOARD_TYPE_COPY_PASTE)) {
     std::string url_str;
     clipboard->ReadBookmark(NULL, &url_str);
     // pass resulting url string through GURL to normalize
     GURL url(url_str);
     if (url.is_valid())
-      return StripJavascriptSchemas(UTF8ToUTF16(url.spec()));
+      return StripJavascriptSchemas(base::UTF8ToUTF16(url.spec()));
   }
 
-  return string16();
+  return base::string16();
 }
 
 OmniboxView::~OmniboxView() {
 }
 
+void OmniboxView::HandleOriginChipMouseRelease() {
+  // HIDE_ON_MOUSE_RELEASE only hides if there isn't any current text in the
+  // Omnibox (e.g. search terms).
+  if ((chrome::GetOriginChipV2Condition() ==
+       chrome::ORIGIN_CHIP_V2_HIDE_ON_MOUSE_RELEASE) &&
+      controller()->GetToolbarModel()->GetText().empty()) {
+    controller()->HideOriginChip();
+  }
+}
+
+void OmniboxView::OnDidKillFocus() {
+  if (chrome::ShouldDisplayOriginChipV2() &&
+      !model()->user_input_in_progress()) {
+    controller()->ShowOriginChip();
+  }
+}
+
 void OmniboxView::OpenMatch(const AutocompleteMatch& match,
                             WindowOpenDisposition disposition,
                             const GURL& alternate_nav_url,
+                            const base::string16& pasted_text,
                             size_t selected_line) {
   // Invalid URLs such as chrome://history can end up here.
-  if (!match.destination_url.is_valid())
+  if (!match.destination_url.is_valid() || !model_)
     return;
-  if (model_.get())
-    model_->OpenMatch(match, disposition, alternate_nav_url, selected_line);
+  model_->OpenMatch(
+      match, disposition, alternate_nav_url, pasted_text, selected_line);
+  OnMatchOpened(match, model_->profile(), controller_->GetWebContents());
 }
 
 bool OmniboxView::IsEditingOrEmpty() const {
@@ -88,20 +123,37 @@ bool OmniboxView::IsEditingOrEmpty() const {
 }
 
 int OmniboxView::GetIcon() const {
-  if (IsEditingOrEmpty()) {
-    return AutocompleteMatch::TypeToLocationBarIcon(model_.get() ?
-          model_->CurrentTextType() : AutocompleteMatch::URL_WHAT_YOU_TYPED);
-  } else {
-    return toolbar_model_->GetIcon();
-  }
+  if (!IsEditingOrEmpty())
+    return controller_->GetToolbarModel()->GetIcon();
+  return AutocompleteMatch::TypeToLocationBarIcon(model_.get() ?
+      model_->CurrentTextType() : AutocompleteMatchType::URL_WHAT_YOU_TYPED);
 }
 
-void OmniboxView::SetUserText(const string16& text) {
+base::string16 OmniboxView::GetHintText() const {
+  // Attempt to determine the default search provider and use that in the hint
+  // text.
+  TemplateURLService* template_url_service =
+      TemplateURLServiceFactory::GetForProfile(model_->profile());
+  if (template_url_service) {
+    TemplateURL* template_url =
+        template_url_service->GetDefaultSearchProvider();
+    if (template_url)
+      return l10n_util::GetStringFUTF16(
+          IDS_OMNIBOX_EMPTY_HINT_WITH_DEFAULT_SEARCH_PROVIDER,
+          template_url->AdjustedShortNameForLocaleDirection());
+  }
+
+  // Otherwise return a hint based on there being no default search provider.
+  return l10n_util::GetStringUTF16(
+      IDS_OMNIBOX_EMPTY_HINT_NO_DEFAULT_SEARCH_PROVIDER);
+}
+
+void OmniboxView::SetUserText(const base::string16& text) {
   SetUserText(text, text, true);
 }
 
-void OmniboxView::SetUserText(const string16& text,
-                              const string16& display_text,
+void OmniboxView::SetUserText(const base::string16& text,
+                              const base::string16& display_text,
                               bool update_popup) {
   if (model_.get())
     model_->SetUserText(text);
@@ -109,7 +161,29 @@ void OmniboxView::SetUserText(const string16& text,
                            true);
 }
 
+void OmniboxView::ShowURL() {
+  SetFocus();
+  controller_->GetToolbarModel()->set_origin_chip_enabled(false);
+  controller_->GetToolbarModel()->set_url_replacement_enabled(false);
+  model_->UpdatePermanentText();
+  RevertWithoutResettingSearchTermReplacement();
+  SelectAll(true);
+}
+
+void OmniboxView::HideURL() {
+  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
+  controller_->GetToolbarModel()->set_url_replacement_enabled(true);
+  model_->UpdatePermanentText();
+  RevertWithoutResettingSearchTermReplacement();
+}
+
 void OmniboxView::RevertAll() {
+  controller_->GetToolbarModel()->set_origin_chip_enabled(true);
+  controller_->GetToolbarModel()->set_url_replacement_enabled(true);
+  RevertWithoutResettingSearchTermReplacement();
+}
+
+void OmniboxView::RevertWithoutResettingSearchTermReplacement() {
   CloseOmniboxPopup();
   if (model_.get())
     model_->Revert();
@@ -121,12 +195,30 @@ void OmniboxView::CloseOmniboxPopup() {
     model_->StopAutocomplete();
 }
 
+bool OmniboxView::IsImeShowingPopup() const {
+  // Default to claiming that the IME is not showing a popup, since hiding the
+  // omnibox dropdown is a bad user experience when we don't know for sure that
+  // we have to.
+  return false;
+}
+
+void OmniboxView::ShowImeIfNeeded() {
+}
+
+bool OmniboxView::IsIndicatingQueryRefinement() const {
+  // The default implementation always returns false.  Mobile ports can override
+  // this method and implement as needed.
+  return false;
+}
+
+void OmniboxView::OnMatchOpened(const AutocompleteMatch& match,
+                                Profile* profile,
+                                content::WebContents* web_contents) const {}
+
 OmniboxView::OmniboxView(Profile* profile,
                          OmniboxEditController* controller,
-                         ToolbarModel* toolbar_model,
                          CommandUpdater* command_updater)
     : controller_(controller),
-      toolbar_model_(toolbar_model),
       command_updater_(command_updater) {
   // |profile| can be NULL in tests.
   if (profile)

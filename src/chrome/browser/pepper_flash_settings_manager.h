@@ -16,10 +16,11 @@ class PrefService;
 
 namespace content {
 class BrowserContext;
+struct WebPluginInfo;
 }
 
-namespace webkit {
-struct WebPluginInfo;
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // PepperFlashSettingsManager communicates with a PPAPI broker process to
@@ -60,16 +61,16 @@ class PepperFlashSettingsManager {
   // |plugin_info| will be updated if it is not NULL and the method returns
   // true.
   static bool IsPepperFlashInUse(PluginPrefs* plugin_prefs,
-                                 webkit::WebPluginInfo* plugin_info);
+                                 content::WebPluginInfo* plugin_info);
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
   // Requests to deauthorize content licenses.
   // Client::OnDeauthorizeContentLicensesCompleted() will be called when the
   // operation is completed.
   // The return value is the same as the request ID passed into
   // Client::OnDeauthorizeContentLicensesCompleted().
-  uint32 DeauthorizeContentLicenses();
+  uint32 DeauthorizeContentLicenses(PrefService* prefs);
 
   // Gets permission settings.
   // Client::OnGetPermissionSettingsCompleted() will be called when the
@@ -117,8 +118,6 @@ class PepperFlashSettingsManager {
   // Notifies us that an error occurred in |core|.
   void OnError(Core* core);
 
-  base::WeakPtrFactory<PepperFlashSettingsManager> weak_ptr_factory_;
-
   // |client_| is not owned by this object and must outlive it.
   Client* client_;
 
@@ -128,6 +127,8 @@ class PepperFlashSettingsManager {
   scoped_refptr<Core> core_;
 
   uint32 next_request_id_;
+
+  base::WeakPtrFactory<PepperFlashSettingsManager> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFlashSettingsManager);
 };

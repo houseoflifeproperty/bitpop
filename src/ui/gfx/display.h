@@ -7,17 +7,36 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/rect.h"
 
 namespace gfx {
 
+// This class typically, but does not always, correspond to a physical display
+// connected to the system. A fake Display may exist on a headless system, or a
+// Display may correspond to a remote, virtual display.
+//
 // Note: The screen and display currently uses pixel coordinate
 // system. For platforms that support DIP (density independent pixel),
 // |bounds()| and |work_area| will return values in DIP coordinate
 // system, not in backing pixels.
-class UI_EXPORT Display {
+class GFX_EXPORT Display {
  public:
+  // Screen Rotation in clock-wise degrees.
+  enum Rotation {
+    ROTATE_0 = 0,
+    ROTATE_90,
+    ROTATE_180,
+    ROTATE_270,
+  };
+
+  // Touch support for the display.
+  enum TouchSupport {
+    TOUCH_SUPPORT_UNKNOWN,
+    TOUCH_SUPPORT_AVAILABLE,
+    TOUCH_SUPPORT_UNAVAILABLE,
+  };
+
   // Creates a display with kInvalidDisplayID as default.
   Display();
   explicit Display(int64 id);
@@ -28,16 +47,9 @@ class UI_EXPORT Display {
   // "--force-device-scale-factor".
   static float GetForcedDeviceScaleFactor();
 
-  // Returns 64-bit persistent ID for the specified manufacturer's ID and
-  // product_code, and the index of the output it is connected to.
-  // |output_index| is used to distinguish the displays of the same type. For
-  // example, swapping two identical display between two outputs will not be
-  // treated as swap. The 'serial number' field in EDID isn't used here because
-  // it is not guaranteed to have unique number and it may have the same fixed
-  // value (like 0).
-  static int64 GetID(uint16 manufacturer_id,
-                     uint16 product_code,
-                     uint8 output_index);
+  // Indicates if a device scale factor is being explicitly enforced from the
+  // command line via "--force-device-scale-factor".
+  static bool HasForceDeviceScaleFactor();
 
   // Sets/Gets unique identifier associated with the display.
   // -1 means invalid display and it doesn't not exit.
@@ -58,6 +70,14 @@ class UI_EXPORT Display {
   // values depend on each platforms.
   float device_scale_factor() const { return device_scale_factor_; }
   void set_device_scale_factor(float scale) { device_scale_factor_ = scale; }
+
+  Rotation rotation() const { return rotation_; }
+  void set_rotation(Rotation rotation) { rotation_ = rotation; }
+  int RotationAsDegree() const;
+  void SetRotationAsDegree(int rotation);
+
+  TouchSupport touch_support() const { return touch_support_; }
+  void set_touch_support(TouchSupport support) { touch_support_ = support; }
 
   // Utility functions that just return the size of display and
   // work area.
@@ -84,18 +104,18 @@ class UI_EXPORT Display {
   // Returns the display's size in pixel coordinates.
   gfx::Size GetSizeInPixel() const;
 
-#if defined(USE_AURA)
-  // TODO(oshima|skuhne): Eliminate the use of bounds_in_pixel in events_x.cc
-  // and remove bounds_in_pixel from gfx::Display.
-  // Returns the display's bounds in pixel coordinates.
-  const Rect& bounds_in_pixel() const { return bounds_in_pixel_; }
-#endif
-
   // Returns a string representation of the display;
   std::string ToString() const;
 
   // True if the display contains valid display id.
   bool is_valid() const { return id_ != kInvalidDisplayID; }
+
+  // True if the display corresponds to internal panel.
+  bool IsInternal() const;
+
+  // Gets/Sets an id of display corresponding to internal panel.
+  static int64 InternalDisplayId();
+  static void SetInternalDisplayId(int64 internal_display_id);
 
   static const int64 kInvalidDisplayID;
 
@@ -103,10 +123,9 @@ class UI_EXPORT Display {
   int64 id_;
   Rect bounds_;
   Rect work_area_;
-#if defined(USE_AURA)
-  Rect bounds_in_pixel_;
-#endif
   float device_scale_factor_;
+  Rotation rotation_;
+  TouchSupport touch_support_;
 };
 
 }  // namespace gfx

@@ -7,8 +7,8 @@
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/string_util.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/string_util.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_model_observer_bridge.h"
@@ -16,11 +16,16 @@
 #include "ui/base/l10n/l10n_util.h"
 
 @interface BaseBubbleController (Private)
+- (void)registerForNotifications;
 - (void)updateOriginFromAnchor;
 - (void)activateTabWithContents:(content::WebContents*)newContents
                previousContents:(content::WebContents*)oldContents
                         atIndex:(NSInteger)index
-                    userGesture:(bool)wasUserGesture;
+                         reason:(int)reason;
+- (void)recordAnchorOffset;
+- (void)parentWindowDidResize:(NSNotification*)notification;
+- (void)parentWindowWillClose:(NSNotification*)notification;
+- (void)closeCleanup;
 @end
 
 @implementation BaseBubbleController
@@ -28,6 +33,8 @@
 @synthesize parentWindow = parentWindow_;
 @synthesize anchorPoint = anchor_;
 @synthesize bubble = bubble_;
+@synthesize shouldOpenAsKeyWindow = shouldOpenAsKeyWindow_;
+@synthesize shouldCloseOnResignKey = shouldCloseOnResignKey_;
 
 - (id)initWithWindowNibPath:(NSString*)nibPath
                parentWindow:(NSWindow*)parentWindow
@@ -37,13 +44,9 @@
   if ((self = [super initWithWindowNibPath:nibPath owner:self])) {
     parentWindow_ = parentWindow;
     anchor_ = anchoredAt;
-
-    // Watch to see if the parent window closes, and if so, close this one.
-    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-    [center addObserver:self
-               selector:@selector(parentWindowWillClose:)
-                   name:NSWindowWillCloseNotification
-                 object:parentWindow_];
+    shouldOpenAsKeyWindow_ = YES;
+    shouldCloseOnResignKey_ = YES;
+    [self registerForNotifications];
   }
   return self;
 }
@@ -69,22 +72,18 @@
   if ((self = [super initWithWindow:theWindow])) {
     parentWindow_ = parentWindow;
     anchor_ = anchoredAt;
+    shouldOpenAsKeyWindow_ = YES;
+    shouldCloseOnResignKey_ = YES;
 
     DCHECK(![[self window] delegate]);
     [theWindow setDelegate:self];
 
-    scoped_nsobject<InfoBubbleView> contentView(
-        [[InfoBubbleView alloc] initWithFrame:NSMakeRect(0, 0, 0, 0)]);
+    base::scoped_nsobject<InfoBubbleView> contentView(
+        [[InfoBubbleView alloc] initWithFrame:NSZeroRect]);
     [theWindow setContentView:contentView.get()];
     bubble_ = contentView.get();
 
-    // Watch to see if the parent window closes, and if so, close this one.
-    NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
-    [center addObserver:self
-               selector:@selector(parentWindowWillClose:)
-                   name:NSWindowWillCloseNotification
-                 object:parentWindow_];
-
+    [self registerForNotifications];
     [self awakeFromNib];
   }
   return self;
@@ -113,18 +112,51 @@
   [super dealloc];
 }
 
+- (void)registerForNotifications {
+  NSNotificationCenter* center = [NSNotificationCenter defaultCenter];
+  // Watch to see if the parent window closes, and if so, close this one.
+  [center addObserver:self
+             selector:@selector(parentWindowWillClose:)
+                 name:NSWindowWillCloseNotification
+               object:parentWindow_];
+  // Watch for parent window's resizing, to ensure this one is always
+  // anchored correctly.
+  [center addObserver:self
+             selector:@selector(parentWindowDidResize:)
+                 name:NSWindowDidResizeNotification
+               object:parentWindow_];
+}
+
 - (void)setAnchorPoint:(NSPoint)anchor {
   anchor_ = anchor;
   [self updateOriginFromAnchor];
 }
 
+- (void)recordAnchorOffset {
+  // The offset of the anchor from the parent's upper-left-hand corner is kept
+  // to ensure the bubble stays anchored correctly if the parent is resized.
+  anchorOffset_ = NSMakePoint(NSMinX([parentWindow_ frame]),
+                              NSMaxY([parentWindow_ frame]));
+  anchorOffset_.x -= anchor_.x;
+  anchorOffset_.y -= anchor_.y;
+}
+
 - (NSBox*)separatorWithFrame:(NSRect)frame {
   frame.size.height = 1.0;
-  scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
+  base::scoped_nsobject<NSBox> spacer([[NSBox alloc] initWithFrame:frame]);
   [spacer setBoxType:NSBoxSeparator];
   [spacer setBorderType:NSLineBorder];
   [spacer setAlphaValue:0.2];
   return [spacer.release() autorelease];
+}
+
+- (void)parentWindowDidResize:(NSNotification*)notification {
+  DCHECK_EQ(parentWindow_, [notification object]);
+  NSPoint newOrigin = NSMakePoint(NSMinX([parentWindow_ frame]),
+                                  NSMaxY([parentWindow_ frame]));
+  newOrigin.x -= anchorOffset_.x;
+  newOrigin.y -= anchorOffset_.y;
+  [self setAnchorPoint:newOrigin];
 }
 
 - (void)parentWindowWillClose:(NSNotification*)notification {
@@ -132,28 +164,7 @@
   [self close];
 }
 
-- (void)windowWillClose:(NSNotification*)notification {
-  // We caught a close so we don't need to watch for the parent closing.
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [self autorelease];
-}
-
-// We want this to be a child of a browser window.  addChildWindow:
-// (called from this function) will bring the window on-screen;
-// unfortunately, [NSWindowController showWindow:] will also bring it
-// on-screen (but will cause unexpected changes to the window's
-// position).  We cannot have an addChildWindow: and a subsequent
-// showWindow:. Thus, we have our own version.
-- (void)showWindow:(id)sender {
-  NSWindow* window = [self window];  // Completes nib load.
-  [self updateOriginFromAnchor];
-  [parentWindow_ addChildWindow:window ordered:NSWindowAbove];
-  [window makeKeyAndOrderFront:self];
-  [self registerKeyStateEventTap];
-}
-
-- (void)close {
-  // The bubble will be closing, so remove the event taps.
+- (void)closeCleanup {
   if (eventTap_) {
     [NSEvent removeMonitor:eventTap_];
     eventTap_ = nil;
@@ -168,7 +179,36 @@
 
   tabStripObserverBridge_.reset();
 
-  [[[self window] parentWindow] removeChildWindow:[self window]];
+  NSWindow* window = [self window];
+  [[window parentWindow] removeChildWindow:window];
+}
+
+- (void)windowWillClose:(NSNotification*)notification {
+  [self closeCleanup];
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [self autorelease];
+}
+
+// We want this to be a child of a browser window.  addChildWindow:
+// (called from this function) will bring the window on-screen;
+// unfortunately, [NSWindowController showWindow:] will also bring it
+// on-screen (but will cause unexpected changes to the window's
+// position).  We cannot have an addChildWindow: and a subsequent
+// showWindow:. Thus, we have our own version.
+- (void)showWindow:(id)sender {
+  NSWindow* window = [self window];  // Completes nib load.
+  [self updateOriginFromAnchor];
+  [parentWindow_ addChildWindow:window ordered:NSWindowAbove];
+  if (shouldOpenAsKeyWindow_)
+    [window makeKeyAndOrderFront:self];
+  else
+    [window orderFront:nil];
+  [self registerKeyStateEventTap];
+  [self recordAnchorOffset];
+}
+
+- (void)close {
+  [self closeCleanup];
   [super close];
 }
 
@@ -178,7 +218,7 @@
 - (void)windowDidResignKey:(NSNotification*)notification {
   NSWindow* window = [self window];
   DCHECK_EQ([notification object], window);
-  if ([window isVisible]) {
+  if ([window isVisible] && [self shouldCloseOnResignKey]) {
     // If the window isn't visible, it is already closed, and this notification
     // has been sent as part of the closing operation, so no need to close.
     [self close];
@@ -242,12 +282,20 @@
       NSSize offsets = NSMakeSize(info_bubble::kBubbleArrowXOffset +
                                   info_bubble::kBubbleArrowWidth / 2.0, 0);
       offsets = [[parentWindow_ contentView] convertSize:offsets toView:nil];
-      if ([bubble_ arrowLocation] == info_bubble::kBottomCenter) {
-        origin.x -= NSWidth([window frame]) / 2;
-      } else if ([bubble_ arrowLocation] == info_bubble::kTopRight) {
-        origin.x -= NSWidth([window frame]) - offsets.width;
-      } else {
-        origin.x -= offsets.width;
+      switch ([bubble_ arrowLocation]) {
+        case info_bubble::kTopRight:
+          origin.x -= NSWidth([window frame]) - offsets.width;
+          break;
+        case info_bubble::kTopLeft:
+          origin.x -= offsets.width;
+          break;
+        case info_bubble::kTopCenter:
+        case info_bubble::kBottomCenter:
+          origin.x -= NSWidth([window frame]) / 2.0;
+          break;
+        case info_bubble::kNoArrow:
+          NOTREACHED();
+          break;
       }
       break;
     }
@@ -284,7 +332,7 @@
 - (void)activateTabWithContents:(content::WebContents*)newContents
                previousContents:(content::WebContents*)oldContents
                         atIndex:(NSInteger)index
-                    userGesture:(bool)wasUserGesture {
+                         reason:(int)reason {
   // The user switched tabs; close.
   [self close];
 }

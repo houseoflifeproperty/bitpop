@@ -5,6 +5,7 @@
 [
   {
     "namespace": "tts",
+    "description": "Use the <code>chrome.tts</code> API to play synthesized text-to-speech (TTS). See also the related <a href='http://developer.chrome.com/extensions/ttsEngine.html'>ttsEngine</a> API, which allows an extension to implement a speech engine.",
     "types": [
       {
         "id": "TtsEvent",
@@ -13,8 +14,8 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["start", "end", "word", "sentence", "marker", "interrupted", "cancelled", "error"],
-            "description": "The type can be 'start' as soon as speech has started, 'word' when a word boundary is reached, 'sentence' when a sentence boundary is reached, 'marker' when an SSML mark element is reached, 'end' when the end of the utterance is reached, 'interrupted' when the utterance is stopped or interrupted before reaching the end, 'cancelled' when it's removed from the queue before ever being synthesized, or 'error' when any other error occurs."
+            "enum": ["start", "end", "word", "sentence", "marker", "interrupted", "cancelled", "error", "pause", "resume"],
+            "description": "The type can be 'start' as soon as speech has started, 'word' when a word boundary is reached, 'sentence' when a sentence boundary is reached, 'marker' when an SSML mark element is reached, 'end' when the end of the utterance is reached, 'interrupted' when the utterance is stopped or interrupted before reaching the end, 'cancelled' when it's removed from the queue before ever being synthesized, or 'error' when any other error occurs. When pausing speech, a 'pause' event is fired if a particular utterance is paused in the middle, and 'resume' if an utterance resumes speech. Note that pause and resume events may not fire if speech is paused in-between utterances."
           },
           "charIndex": {
             "type": "number",
@@ -60,6 +61,11 @@
             "optional": true,
             "description": "This voice's gender.",
             "enum": ["male", "female"]
+          },
+          "remote": {
+            "type": "boolean",
+            "optional": true,
+            "description": "If true, the synthesis engine is a remote network resource. It may be higher latency and may incur bandwidth costs."
           },
           "extensionId": {
             "type": "string",
@@ -169,7 +175,7 @@
             "type": "function",
             "name": "callback",
             "optional": true,
-            "description": "Called right away, before speech finishes. Check chrome.extension.lastError to make sure there were no errors. Use options.onEvent to get more detailed feedback.",
+            "description": "Called right away, before speech finishes. Check chrome.runtime.lastError to make sure there were no errors. Use options.onEvent to get more detailed feedback.",
             "parameters": []
           }
         ]
@@ -177,7 +183,19 @@
       {
         "name": "stop",
         "type": "function",
-        "description": "Stops any current speech.",
+        "description": "Stops any current speech and flushes the queue of any pending utterances. In addition, if speech was paused, it will now be un-paused for the next call to speak.",
+        "parameters": []
+      },
+      {
+        "name": "pause",
+        "type": "function",
+        "description": "Pauses speech synthesis, potentially in the middle of an utterance. A call to resume or stop will un-pause speech.",
+        "parameters": []
+      },
+      {
+        "name": "resume",
+        "type": "function",
+        "description": "If speech was paused, resumes speaking where it left off.",
         "parameters": []
       },
       {
@@ -213,7 +231,7 @@
                 "type": "array",
                 "name": "voices",
                 "items": { "$ref": "TtsVoice" },
-                "description": "Array of $ref:TtsVoice objects representing the available voices for speech synthesis."
+                "description": "Array of $(ref:tts.TtsVoice) objects representing the available voices for speech synthesis."
               }
             ]
           }

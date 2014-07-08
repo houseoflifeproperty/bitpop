@@ -7,25 +7,24 @@
 #include "base/logging.h"  // for NOTREACHED()
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
-#include "chrome/browser/ui/cocoa/event_utils.h"
 #import "chrome/browser/ui/cocoa/fullscreen_exit_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
-#include "chrome/browser/profiles/profile.h"
 #include "grit/generated_resources.h"
 #include "grit/ui_strings.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
-#include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
+#include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/accelerators/platform_accelerator_cocoa.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
@@ -96,13 +95,12 @@ const float kHideDuration = 0.7;
     [[self window] setIgnoresMouseEvents:YES];
 
   DCHECK(fullscreen_bubble::ShowButtonsForType(bubbleType_));
-  browser_->fullscreen_controller()->OnAcceptFullscreenPermission(
-      url_, bubbleType_);
+  browser_->fullscreen_controller()->OnAcceptFullscreenPermission();
 }
 
 - (void)deny:(id)sender {
   DCHECK(fullscreen_bubble::ShowButtonsForType(bubbleType_));
-  browser_->fullscreen_controller()->OnDenyFullscreenPermission(bubbleType_);
+  browser_->fullscreen_controller()->OnDenyFullscreenPermission();
 }
 
 - (void)showButtons:(BOOL)show {
@@ -152,7 +150,8 @@ const float kHideDuration = 0.7;
 - (BOOL) textView:(NSTextView*)textView
     clickedOnLink:(id)link
           atIndex:(NSUInteger)charIndex {
-  chrome::ExecuteCommand(browser_, IDC_FULLSCREEN);
+  browser_->fullscreen_controller()->
+      ExitTabOrBrowserFullscreenToPreviousState();
   return YES;
 }
 
@@ -183,7 +182,7 @@ const float kHideDuration = 0.7;
   [[infoBubble parentWindow] removeChildWindow:infoBubble];
   [hideAnimation_.get() stopAnimation];
   [hideTimer_ invalidate];
-  [infoBubble setDelayOnClose:NO];
+  [infoBubble setAllowedAnimations:info_bubble::kAnimateNone];
   [self close];
 }
 

@@ -23,14 +23,13 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/single_thread_task_runner.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "build/build_config.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
 #include "net/http/http_response_headers.h"
@@ -40,6 +39,7 @@
 #include "net/url_request/url_request_context_builder.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_nsautorelease_pool.h"
@@ -47,6 +47,8 @@
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_fixed.h"
 #endif
+
+using base::UTF16ToUTF8;
 
 namespace {
 
@@ -74,24 +76,13 @@ class QuitDelegate : public net::URLFetcherDelegate {
 
   // net::URLFetcherDelegate implementation.
   virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
   virtual void OnURLFetchDownloadProgress(
       const net::URLFetcher* source,
       int64 current, int64 total) OVERRIDE {
     NOTREACHED();
-  }
-
-  virtual void OnURLFetchDownloadData(
-      const net::URLFetcher* source,
-      scoped_ptr<std::string> download_data) OVERRIDE{
-    NOTREACHED();
-  }
-
-  virtual bool ShouldSendDownloadData() OVERRIDE {
-    NOTREACHED();
-    return false;
   }
 
   virtual void OnURLFetchUploadProgress(const net::URLFetcher* source,
@@ -103,14 +94,18 @@ class QuitDelegate : public net::URLFetcherDelegate {
   DISALLOW_COPY_AND_ASSIGN(QuitDelegate);
 };
 
-// NetLog implementation that simply prints events to the logs.
-class PrintingLog : public net::NetLog {
+// NetLog::ThreadSafeObserver implementation that simply prints events
+// to the logs.
+class PrintingLogObserver : public net::NetLog::ThreadSafeObserver {
  public:
-  PrintingLog() : next_id_(1) {}
+  PrintingLogObserver() {}
 
-  virtual ~PrintingLog() {}
+  virtual ~PrintingLogObserver() {
+    // This is guaranteed to be safe as this program is single threaded.
+    net_log()->RemoveThreadSafeObserver(this);
+  }
 
-  // NetLog implementation:
+  // NetLog::ThreadSafeObserver implementation:
   virtual void OnAddEntry(const net::NetLog::Entry& entry) OVERRIDE {
     // The log level of the entry is unknown, so just assume it maps
     // to VLOG(1).
@@ -134,43 +129,13 @@ class PrintingLog : public net::NetLog {
             << event_type << ": " << event_phase << params_str;
   }
 
-  virtual uint32 NextID() OVERRIDE {
-    return next_id_++;
-  }
-
-  virtual LogLevel GetLogLevel() const OVERRIDE {
-    const int vlog_level = logging::GetVlogLevel(__FILE__);
-    if (vlog_level <= 0) {
-      return LOG_BASIC;
-    }
-    if (vlog_level == 1) {
-      return LOG_ALL_BUT_BYTES;
-    }
-    return LOG_ALL;
-  }
-
-  virtual void AddThreadSafeObserver(ThreadSafeObserver* observer,
-                                     LogLevel log_level) OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-
-  virtual void SetObserverLogLevel(ThreadSafeObserver* observer,
-                                   LogLevel log_level) OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-
-  virtual void RemoveThreadSafeObserver(ThreadSafeObserver* observer) OVERRIDE {
-    NOTIMPLEMENTED();
-  }
-
  private:
-  uint32 next_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(PrintingLog);
+  DISALLOW_COPY_AND_ASSIGN(PrintingLogObserver);
 };
 
 // Builds a URLRequestContext assuming there's only a single loop.
-scoped_ptr<net::URLRequestContext> BuildURLRequestContext() {
+scoped_ptr<net::URLRequestContext>
+BuildURLRequestContext(net::NetLog* net_log) {
   net::URLRequestContextBuilder builder;
 #if defined(OS_LINUX)
   // On Linux, use a fixed ProxyConfigService, since the default one
@@ -181,7 +146,7 @@ scoped_ptr<net::URLRequestContext> BuildURLRequestContext() {
       new net::ProxyConfigServiceFixed(net::ProxyConfig()));
 #endif
   scoped_ptr<net::URLRequestContext> context(builder.Build());
-  context->set_net_log(new PrintingLog());
+  context->set_net_log(net_log);
   return context.Pass();
 }
 
@@ -189,9 +154,10 @@ class SingleThreadRequestContextGetter : public net::URLRequestContextGetter {
  public:
   // Since there's only a single thread, there's no need to worry
   // about when |context_| gets created.
-  explicit SingleThreadRequestContextGetter(
+  SingleThreadRequestContextGetter(
+      net::NetLog* net_log,
       const scoped_refptr<base::SingleThreadTaskRunner>& main_task_runner)
-      : context_(BuildURLRequestContext()),
+      : context_(BuildURLRequestContext(net_log)),
         main_task_runner_(main_task_runner) {}
 
   virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
@@ -255,12 +221,9 @@ int main(int argc, char* argv[]) {
 
   base::AtExitManager exit_manager;
   CommandLine::Init(argc, argv);
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
   const CommandLine& parsed_command_line = *CommandLine::ForCurrentProcess();
   GURL url(parsed_command_line.GetSwitchValueASCII("url"));
@@ -273,7 +236,7 @@ int main(int argc, char* argv[]) {
     return EXIT_FAILURE;
   }
 
-  MessageLoopForIO main_loop;
+  base::MessageLoopForIO main_loop;
 
   // NOTE: A NetworkChangeNotifier could be instantiated here, but
   // that interferes with the request that will be sent; some
@@ -281,8 +244,16 @@ int main(int argc, char* argv[]) {
   // which causes the DNS resolution to abort.  It's simpler to just
   // not instantiate one, since only a single request is sent anyway.
 
+  // The declaration order for net_log and printing_log_observer is
+  // important. The destructor of PrintingLogObserver removes itself
+  // from net_log, so net_log must be available for entire lifetime of
+  // printing_log_observer.
+  net::NetLog net_log;
+  PrintingLogObserver printing_log_observer;
+  net_log.AddThreadSafeObserver(&printing_log_observer, net::NetLog::LOG_ALL);
   scoped_refptr<SingleThreadRequestContextGetter> context_getter(
-      new SingleThreadRequestContextGetter(main_loop.message_loop_proxy()));
+      new SingleThreadRequestContextGetter(&net_log,
+                                           main_loop.message_loop_proxy()));
 
   QuitDelegate delegate;
   scoped_ptr<net::URLFetcher> fetcher(
@@ -294,7 +265,7 @@ int main(int argc, char* argv[]) {
 
   fetcher->Start();
   std::printf(
-      "Request started at %s (ticks = %"PRId64")\n",
+      "Request started at %s (ticks = %" PRId64 ")\n",
       UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(start_time)).c_str(),
       start_ticks.ToInternalValue());
 
@@ -305,7 +276,7 @@ int main(int argc, char* argv[]) {
   const base::TimeTicks end_ticks = base::TimeTicks::Now();
 
   std::printf(
-      "Request ended at %s (ticks = %"PRId64")\n",
+      "Request ended at %s (ticks = %" PRId64 ")\n",
       UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(end_time)).c_str(),
       end_ticks.ToInternalValue());
 
@@ -314,7 +285,7 @@ int main(int argc, char* argv[]) {
   const base::TimeDelta delta_ticks = end_ticks - start_ticks;
 
   std::printf(
-      "Request took %"PRId64" ticks (%.2f ms)\n",
+      "Request took %" PRId64 " ticks (%.2f ms)\n",
       delta_ticks_internal, delta_ticks.InMillisecondsF());
 
   const net::URLRequestStatus status = fetcher->GetStatus();

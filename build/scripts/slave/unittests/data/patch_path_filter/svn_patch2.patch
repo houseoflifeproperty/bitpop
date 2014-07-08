@@ -1,0 +1,35 @@
+Index: OWNERS
+===================================================================
+--- OWNERS	(revision 5292)
++++ OWNERS	(working copy)
+@@ -1,4 +1,5 @@
+ andrew@webrtc.org
++someone@webrtc.org
+ henrika@webrtc.org
+ mflodman@webrtc.org
+ niklas.enbom@webrtc.org
+
+Property changes on: tools/PRESUBMIT.py
+___________________________________________________________________
+Added: svn:executable
+   + *
+
+
+Property changes on: webrtc/LICENSE
+___________________________________________________________________
+Added: svn:executable
+   + *
+
+Index: webrtc/common_types.h
+===================================================================
+--- webrtc/common_types.h	(revision 5292)
++++ webrtc/common_types.h	(working copy)
+@@ -10,7 +10,7 @@
+ 
+ #ifndef WEBRTC_COMMON_TYPES_H_
+ #define WEBRTC_COMMON_TYPES_H_
+-
++// test
+ #include "webrtc/typedefs.h"
+ 
+ #if defined(_MSC_VER)

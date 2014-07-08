@@ -5,7 +5,7 @@
 #include "chrome/browser/prerender/prerender_history.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 
 namespace prerender {
@@ -29,15 +29,15 @@ void PrerenderHistory::Clear() {
   entries_.clear();
 }
 
-Value* PrerenderHistory::GetEntriesAsValue() const {
-  ListValue* return_list = new ListValue();
+base::Value* PrerenderHistory::GetEntriesAsValue() const {
+  base::ListValue* return_list = new base::ListValue();
   // Javascript needs times in terms of milliseconds since Jan 1, 1970.
   base::Time epoch_start = base::Time::UnixEpoch();
   for (std::list<Entry>::const_reverse_iterator it = entries_.rbegin();
        it != entries_.rend();
        ++it) {
     const Entry& entry = *it;
-    DictionaryValue* entry_dict = new DictionaryValue();
+    base::DictionaryValue* entry_dict = new base::DictionaryValue();
     entry_dict->SetString("url", entry.url.spec());
     entry_dict->SetString("final_status",
                           NameFromFinalStatus(entry.final_status));

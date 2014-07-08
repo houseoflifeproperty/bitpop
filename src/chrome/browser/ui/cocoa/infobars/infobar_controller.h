@@ -4,13 +4,17 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/memory/weak_ptr.h"
 
-@class AnimatableView;
-@protocol InfoBarContainer;
-class InfoBarDelegate;
+@protocol InfoBarContainerControllerBase;
+class InfoBarCocoa;
 class InfoBarService;
 @class InfoBarGradientView;
+
+namespace infobars {
+class InfoBarDelegate;
+}
 
 // A controller for an infobar in the browser window.  There is one
 // controller per infobar view.  The base InfoBarController is able to
@@ -18,9 +22,8 @@ class InfoBarService;
 // override addAdditionalControls to customize the UI.
 @interface InfoBarController : NSViewController<NSTextViewDelegate> {
  @private
-  id<InfoBarContainer> containerController_;  // weak, owns us
-  InfoBarService* owner_;  // weak
-  BOOL infoBarClosing_;
+  id<InfoBarContainerControllerBase> containerController_;  // weak, owns us
+  base::WeakPtr<InfoBarCocoa> infobar_;
 
  @protected
   IBOutlet InfoBarGradientView* infoBarView_;
@@ -30,21 +33,20 @@ class InfoBarService;
   IBOutlet NSButton* cancelButton_;
   IBOutlet NSButton* closeButton_;
 
-  // In rare instances, it can be possible for |delegate_| to delete itself
-  // while this controller is still alive.  Always check |delegate_| against
-  // NULL before using it.
-  InfoBarDelegate* delegate_;  // weak, can be NULL
-
   // Text fields don't work as well with embedded links as text views, but
   // text views cannot conveniently be created in IB. The xib file contains
   // a text field |labelPlaceholder_| that's replaced by this text view |label_|
   // in -awakeFromNib.
-  scoped_nsobject<NSTextView> label_;
-};
+  base::scoped_nsobject<NSTextView> label_;
+}
 
-// Initializes a new InfoBarController.
-- (id)initWithDelegate:(InfoBarDelegate*)delegate
-                 owner:(InfoBarService*)owner;
+@property(nonatomic, assign)
+    id<InfoBarContainerControllerBase> containerController;
+@property(nonatomic, readonly) infobars::InfoBarDelegate* delegate;
+@property(nonatomic, readonly) InfoBarCocoa* infobar;
+
+// Initializes a new InfoBarController and takes a WeakPtr to |infobar|.
+- (id)initWithInfoBar:(InfoBarCocoa*)infobar;
 
 // Returns YES if the infobar is owned.  If this is NO, it is not safe to call
 // any delegate functions, since they might attempt to access the owner.  Code
@@ -67,21 +69,14 @@ class InfoBarService;
 // call will trigger a notification that starts the infobar animating closed.
 - (void)removeSelf;
 
-// Returns a pointer to this controller's view, cast as an AnimatableView.
-- (AnimatableView*)animatableView;
-
-// Open or animate open the infobar.
-- (void)open;
-- (void)animateOpen;
-
-// Close or animate close the infobar.
-- (void)close;
-- (void)animateClosed;
-
 // Subclasses can override this method to add additional controls to
 // the infobar view.  This method is called by awakeFromNib.  The
 // default implementation does nothing.
 - (void)addAdditionalControls;
+
+// Subclasses must override this method to perform cleanup just before the
+// infobar hides.
+- (void)infobarWillHide;
 
 // Subclasses must override this method to perform cleanup just before the
 // infobar closes.
@@ -91,14 +86,14 @@ class InfoBarService;
 // space.
 - (void)removeButtons;
 
-@property(nonatomic, assign) id<InfoBarContainer> containerController;
-@property(nonatomic, readonly) InfoBarDelegate* delegate;
+// Updates the view's arrow position.
+- (void)layoutArrow;
 
 @end
 
 @interface InfoBarController (Protected)
-// Closes and disables the provided menu.  Subclasses should call this for each
-// popup menu in -infobarWillClose.
+// Disables the provided menu.  Subclasses should call this for each popup menu
+// in -infobarWillClose.
 - (void)disablePopUpMenu:(NSMenu*)menu;
 @end
 
@@ -106,17 +101,3 @@ class InfoBarService;
 // InfoBarController subclasses, one for each InfoBarDelegate
 // subclass.  Each of these subclasses overrides addAdditionalControls to
 // configure its view as necessary.
-
-@interface LinkInfoBarController : InfoBarController
-// Called when there is a click on the link in the infobar.
-- (void)linkClicked;
-@end
-
-
-@interface ConfirmInfoBarController : InfoBarController
-// Called when the OK and Cancel buttons are clicked.
-- (IBAction)ok:(id)sender;
-- (IBAction)cancel:(id)sender;
-// Called when there is a click on the link in the infobar.
-- (void)linkClicked;
-@end

@@ -5,18 +5,18 @@
 #include <string>
 #include <vector>
 
-#include "base/command_line.h"
+#include "base/bind.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/spellchecker/spelling_service_client.h"
-#include "chrome/common/chrome_switches.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/test_url_fetcher_factory.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,7 +55,7 @@ class TestSpellingURLFetcher : public net::TestURLFetcher {
     EXPECT_EQ("application/json", upload_content_type);
 
     // Parse the JSON to be sent to the service, and verify its parameters.
-    scoped_ptr<DictionaryValue> value(static_cast<DictionaryValue*>(
+    scoped_ptr<base::DictionaryValue> value(static_cast<base::DictionaryValue*>(
         base::JSONReader::Read(upload_content,
                                base::JSON_ALLOW_TRAILING_COMMAS)));
     ASSERT_TRUE(!!value.get());
@@ -112,7 +112,8 @@ class TestSpellingURLFetcher : public net::TestURLFetcher {
 
 // A class derived from the SpellingServiceClient class used by the
 // SpellingServiceClientTest class. This class overrides CreateURLFetcher so
-// this test can use TestSpellingURLFetcher.
+// this test can use TestSpellingURLFetcher. This class also lets tests access
+// the ParseResponse method.
 class TestingSpellingServiceClient : public SpellingServiceClient {
  public:
   TestingSpellingServiceClient()
@@ -139,7 +140,7 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
 
   void SetExpectedTextCheckResult(bool success, const char* text) {
     success_ = success;
-    corrected_text_.assign(UTF8ToUTF16(text));
+    corrected_text_.assign(base::UTF8ToUTF16(text));
   }
 
   void CallOnURLFetchComplete() {
@@ -149,10 +150,10 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
   }
 
   void VerifyResponse(bool success,
-                      const string16& request_text,
+                      const base::string16& request_text,
                       const std::vector<SpellCheckResult>& results) {
     EXPECT_EQ(success_, success);
-    string16 text(UTF8ToUTF16(request_text_));
+    base::string16 text(base::UTF8ToUTF16(request_text_));
     EXPECT_EQ(text, request_text);
     for (std::vector<SpellCheckResult>::const_iterator it = results.begin();
          it != results.end(); ++it) {
@@ -161,8 +162,13 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
     EXPECT_EQ(corrected_text_, text);
   }
 
+  bool ParseResponseSuccess(const std::string& data) {
+    std::vector<SpellCheckResult> results;
+    return ParseResponse(data, &results);
+  }
+
  private:
-  virtual net::URLFetcher* CreateURLFetcher(const GURL& url) {
+  virtual net::URLFetcher* CreateURLFetcher(const GURL& url) OVERRIDE {
     EXPECT_EQ("https://www.googleapis.com/rpc", url.spec());
     fetcher_ = new TestSpellingURLFetcher(0, url, this,
                                           request_type_, request_text_,
@@ -177,7 +183,7 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
   int response_status_;
   std::string response_data_;
   bool success_;
-  string16 corrected_text_;
+  base::string16 corrected_text_;
   TestSpellingURLFetcher* fetcher_;  // weak
 };
 
@@ -186,22 +192,15 @@ class TestingSpellingServiceClient : public SpellingServiceClient {
 // monitor the class calls the callback with expected results.
 class SpellingServiceClientTest : public testing::Test {
  public:
-  SpellingServiceClientTest() {}
-  virtual ~SpellingServiceClientTest() {}
-
-  void SetUp() OVERRIDE {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kUseSpellingService);
-  }
-
   void OnTextCheckComplete(int tag,
                            bool success,
-                           const string16& text,
+                           const base::string16& text,
                            const std::vector<SpellCheckResult>& results) {
     client_.VerifyResponse(success, text, results);
   }
 
  protected:
+  content::TestBrowserThreadBundle thread_bundle_;
   TestingSpellingServiceClient client_;
   TestingProfile profile_;
 };
@@ -314,11 +313,10 @@ TEST_F(SpellingServiceClientTest, RequestTextCheck) {
     pref->SetString(prefs::kSpellCheckDictionary, kTests[i].language);
     client_.RequestTextCheck(
         &profile_,
-        0,
         kTests[i].request_type,
-        ASCIIToUTF16(kTests[i].request_text),
+        base::ASCIIToUTF16(kTests[i].request_text),
         base::Bind(&SpellingServiceClientTest::OnTextCheckComplete,
-                   base::Unretained(this)));
+                   base::Unretained(this), 0));
     client_.CallOnURLFetchComplete();
   }
 }
@@ -347,7 +345,7 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
   // SpellingServiceClient::IsAvailable() describes why this function returns
   // false for suggestions.) If there is no language set, then we
   // do not allow any remote.
-  pref->SetString(prefs::kSpellCheckDictionary, "");
+  pref->SetString(prefs::kSpellCheckDictionary, std::string());
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
   EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
 
@@ -356,11 +354,11 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
     "en-AU", "en-CA", "en-GB", "en-US",
 #endif
   };
-  // TODO(rlp): We are currently allowing suggest for languages even if
-  // spellcheck is also available.
+  // If spellcheck is allowed, then suggest is not since spellcheck is a
+  // superset of suggest.
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kSupported); ++i) {
     pref->SetString(prefs::kSpellCheckDictionary, kSupported[i]);
-    EXPECT_TRUE(client_.IsAvailable(&profile_, kSuggest));
+    EXPECT_FALSE(client_.IsAvailable(&profile_, kSuggest));
     EXPECT_TRUE(client_.IsAvailable(&profile_, kSpellcheck));
   }
 
@@ -380,4 +378,11 @@ TEST_F(SpellingServiceClientTest, AvailableServices) {
     EXPECT_TRUE(client_.IsAvailable(&profile_, kSuggest));
     EXPECT_FALSE(client_.IsAvailable(&profile_, kSpellcheck));
   }
+}
+
+// Verify that an error in JSON response from spelling service will result in
+// ParseResponse returning false.
+TEST_F(SpellingServiceClientTest, ResponseErrorTest) {
+  EXPECT_TRUE(client_.ParseResponseSuccess("{\"result\": {}}"));
+  EXPECT_FALSE(client_.ParseResponseSuccess("{\"error\": {}}"));
 }

@@ -5,23 +5,25 @@
 #import "chrome/browser/ui/cocoa/browser/password_generation_bubble_controller.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/autofill/password_generator.h"
-#include "chrome/browser/password_manager/password_manager.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "chrome/browser/ui/cocoa/key_equivalent_constants.h"
 #import "chrome/browser/ui/cocoa/styled_text_field_cell.h"
-#import "chrome/browser/ui/cocoa/tracking_area.h"
-#include "chrome/common/autofill_messages.h"
+#include "components/autofill/content/common/autofill_messages.h"
+#include "components/autofill/core/browser/password_generator.h"
+#include "components/autofill/core/common/password_form.h"
+#include "components/autofill/core/common/password_generation_util.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/common/password_form.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/tracking_area.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/font_list.h"
 
 namespace {
 
@@ -68,8 +70,8 @@ const CGFloat kIconSize = 26.0;
  @private
   PasswordGenerationBubbleController* controller_;
   BOOL hovering_;
-  scoped_nsobject<NSImage> normalImage_;
-  scoped_nsobject<NSImage> hoverImage_;
+  base::scoped_nsobject<NSImage> normalImage_;
+  base::scoped_nsobject<NSImage> hoverImage_;
 }
 
 - (void)setUpWithController:(PasswordGenerationBubbleController*)controller
@@ -220,7 +222,7 @@ const CGFloat kIconSize = 26.0;
 }
 
 - (NSRect)textFrameForFrame:(NSRect)cellFrame {
-  // Baseclass insets the rect by baselineAdjust.
+  // Baseclass insets the rect by top and bottom offsets.
   NSRect textFrame = [super textFrameForFrame:cellFrame];
   textFrame = [self getTextFrame:textFrame];
   return [self adjustFrameForFrame:textFrame];
@@ -259,16 +261,18 @@ const CGFloat kIconSize = 26.0;
 - (void)setUpTrackingAreaInRect:(NSRect)frame
                          ofView:(PasswordGenerationTextField*)view {
   NSRect iconFrame = [self getIconFrame:frame];
-  scoped_nsobject<CrTrackingArea> area(
+  base::scoped_nsobject<CrTrackingArea> area(
       [[CrTrackingArea alloc] initWithRect:iconFrame
                                    options:NSTrackingMouseEnteredAndExited |
-                                           NSTrackingActiveAlways
-                                     owner:view
-                                  userInfo:nil]);
+          NSTrackingActiveAlways owner:view userInfo:nil]);
   [view addTrackingArea:area];
 }
 
-- (CGFloat)baselineAdjust {
+- (CGFloat)topTextFrameOffset {
+  return 1.0;
+}
+
+- (CGFloat)bottomTextFrameOffset {
   return 1.0;
 }
 
@@ -289,9 +293,9 @@ const CGFloat kIconSize = 26.0;
 - (id)initWithWindow:(NSWindow*)parentWindow
           anchoredAt:(NSPoint)point
       renderViewHost:(content::RenderViewHost*)renderViewHost
-     passwordManager:(PasswordManager*)passwordManager
+     passwordManager:(password_manager::PasswordManager*)passwordManager
       usingGenerator:(autofill::PasswordGenerator*)passwordGenerator
-             forForm:(const content::PasswordForm&)form {
+             forForm:(const autofill::PasswordForm&)form {
   CGFloat width = (kBorderSize*2 +
                    kTextFieldWidth +
                    kHorizontalSpacing +
@@ -303,7 +307,7 @@ const CGFloat kIconSize = 26.0;
                     kTopBorderOffset +
                     info_bubble::kBubbleArrowHeight);
   NSRect contentRect = NSMakeRect(0, 0, width, height);
-  scoped_nsobject<InfoBubbleWindow> window(
+  base::scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc] initWithContentRect:contentRect
                                           styleMask:NSBorderlessWindowMask
                                             backing:NSBackingStoreBuffered
@@ -324,22 +328,23 @@ const CGFloat kIconSize = 26.0;
 
 - (void)performLayout {
   NSView* contentView = [[self window] contentView];
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
-  textField_ =
-      [[PasswordGenerationTextField alloc]
-         initWithFrame:NSMakeRect(kBorderSize,
-                                  kBorderSize,
-                                  kTextFieldWidth,
-                                  kTextFieldHeight + kTextFieldTopPadding)
-        withController:self
-           normalImage:rb.GetNativeImageNamed(IDR_RELOAD_DIMMED).ToNSImage()
-            hoverImage:rb.GetNativeImageNamed(IDR_RELOAD).ToNSImage()];
-  gfx::Font smallBoldFont =
-      rb.GetFont(ResourceBundle::SmallFont).DeriveFont(0, gfx::Font::BOLD);
-  [textField_ setFont:smallBoldFont.GetNativeFont()];
+  textField_ = [[[PasswordGenerationTextField alloc]
+      initWithFrame:NSMakeRect(kBorderSize,
+                               kBorderSize,
+                               kTextFieldWidth,
+                               kTextFieldHeight + kTextFieldTopPadding)
+     withController:self
+        normalImage:rb.GetNativeImageNamed(IDR_RELOAD_DIMMED).ToNSImage()
+         hoverImage:rb.GetNativeImageNamed(IDR_RELOAD)
+             .ToNSImage()] autorelease];
+  const gfx::FontList& smallBoldFont =
+      rb.GetFontList(ui::ResourceBundle::SmallBoldFont);
+  [textField_ setFont:smallBoldFont.GetPrimaryFont().GetNativeFont()];
   [textField_
     setStringValue:base::SysUTF8ToNSString(passwordGenerator_->Generate())];
+  [textField_ setDelegate:self];
   [contentView addSubview:textField_];
 
   CGFloat buttonX = (NSMaxX([textField_ frame]) +
@@ -358,12 +363,11 @@ const CGFloat kIconSize = 26.0;
   [button setAction:@selector(fillPassword:)];
   [contentView addSubview:button];
 
-  NSTextField* title = [[NSTextField alloc]
-                         initWithFrame:NSMakeRect(
-                             kBorderSize,
-                             kBorderSize + kTextFieldHeight + kVerticalSpacing,
-                             kTitleWidth,
-                             kTitleHeight)];
+  base::scoped_nsobject<NSTextField> title([[NSTextField alloc] initWithFrame:
+          NSMakeRect(kBorderSize,
+                     kBorderSize + kTextFieldHeight + kVerticalSpacing,
+                     kTitleWidth,
+                     kTitleHeight)]);
   [title setEditable:NO];
   [title setBordered:NO];
   [title setStringValue:l10n_util::GetNSString(
@@ -372,17 +376,32 @@ const CGFloat kIconSize = 26.0;
 }
 
 - (IBAction)fillPassword:(id)sender {
-  renderViewHost_->Send(
-      new AutofillMsg_GeneratedPasswordAccepted(
-          renderViewHost_->GetRoutingID(),
-          base::SysNSStringToUTF16([textField_ stringValue])));
-  passwordManager_->SetFormHasGeneratedPassword(form_);
+  if (renderViewHost_) {
+    renderViewHost_->Send(
+        new AutofillMsg_GeneratedPasswordAccepted(
+            renderViewHost_->GetRoutingID(),
+            base::SysNSStringToUTF16([textField_ stringValue])));
+  }
+  if (passwordManager_)
+    passwordManager_->SetFormHasGeneratedPassword(form_);
+
+  actions_.password_accepted = true;
   [self close];
 }
 
 - (void)regeneratePassword {
   [textField_
     setStringValue:base::SysUTF8ToNSString(passwordGenerator_->Generate())];
+  actions_.password_regenerated = true;
+}
+
+- (void)controlTextDidChange:(NSNotification*)notification {
+  actions_.password_edited = true;
+}
+
+- (void)windowWillClose:(NSNotification*)notification {
+  autofill::password_generation::LogUserActions(actions_);
+  [super windowWillClose:notification];
 }
 
 @end

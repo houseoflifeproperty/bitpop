@@ -8,12 +8,18 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
-#include "chrome/browser/password_manager/password_store_default.h"
+#include "base/time/time.h"
+#include "components/password_manager/core/browser/password_store_default.h"
 
-class LoginDatabase;
 class PrefService;
-class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
+namespace password_manager {
+class LoginDatabase;
+}
 
 // PasswordStoreX is used on Linux and other non-Windows, non-Mac OS X
 // operating systems. It uses a "native backend" to actually store the password
@@ -22,24 +28,24 @@ class Profile;
 // migrating password data to a native backend from the login database.
 //
 // There are currently native backends for GNOME Keyring and KWallet.
-class PasswordStoreX : public PasswordStoreDefault {
+class PasswordStoreX : public password_manager::PasswordStoreDefault {
  public:
   // NativeBackends more or less implement the PaswordStore interface, but
   // with return values rather than implicit consumer notification.
   class NativeBackend {
    public:
-    typedef std::vector<content::PasswordForm*> PasswordFormList;
+    typedef std::vector<autofill::PasswordForm*> PasswordFormList;
 
     virtual ~NativeBackend() {}
 
     virtual bool Init() = 0;
 
-    virtual bool AddLogin(const content::PasswordForm& form) = 0;
-    virtual bool UpdateLogin(const content::PasswordForm& form) = 0;
-    virtual bool RemoveLogin(const content::PasswordForm& form) = 0;
+    virtual bool AddLogin(const autofill::PasswordForm& form) = 0;
+    virtual bool UpdateLogin(const autofill::PasswordForm& form) = 0;
+    virtual bool RemoveLogin(const autofill::PasswordForm& form) = 0;
     virtual bool RemoveLoginsCreatedBetween(const base::Time& delete_begin,
                                             const base::Time& delete_end) = 0;
-    virtual bool GetLogins(const content::PasswordForm& form,
+    virtual bool GetLogins(const autofill::PasswordForm& form,
                            PasswordFormList* forms) = 0;
     virtual bool GetLoginsCreatedBetween(const base::Time& get_begin,
                                          const base::Time& get_end,
@@ -50,22 +56,10 @@ class PasswordStoreX : public PasswordStoreDefault {
 
   // Takes ownership of |login_db| and |backend|. |backend| may be NULL in which
   // case this PasswordStoreX will act the same as PasswordStoreDefault.
-  PasswordStoreX(LoginDatabase* login_db,
-                 Profile* profile,
+  PasswordStoreX(scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+                 scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+                 password_manager::LoginDatabase* login_db,
                  NativeBackend* backend);
-
-#if !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
-  // Registers the pref setting used for the methods below.
-  static void RegisterUserPrefs(PrefService* prefs);
-
-  // Returns true if passwords have been tagged with the local profile id.
-  static bool PasswordsUseLocalProfileId(PrefService* prefs);
-
-  // Sets the persistent bit indicating that passwords have been tagged with the
-  // local profile id. This cannot be unset; passwords get migrated only once.
-  // The caller promises that |prefs| will not be deleted any time soon.
-  static void SetPasswordsUseLocalProfileId(PrefService* prefs);
-#endif  // !defined(OS_MACOSX) && !defined(OS_CHROMEOS) && defined(OS_POSIX)
 
  private:
   friend class PasswordStoreXTest;
@@ -73,22 +67,25 @@ class PasswordStoreX : public PasswordStoreDefault {
   virtual ~PasswordStoreX();
 
   // Implements PasswordStore interface.
-  virtual void AddLoginImpl(const content::PasswordForm& form) OVERRIDE;
-  virtual void UpdateLoginImpl(
-      const content::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginImpl(
-      const content::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList AddLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList UpdateLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
+                                     const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       const ConsumerCallbackRunner& callback_runner) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual bool FillAutofillableLogins(
-      std::vector<content::PasswordForm*>* forms) OVERRIDE;
+      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
   virtual bool FillBlacklistLogins(
-      std::vector<content::PasswordForm*>* forms) OVERRIDE;
+      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
 
   // Sort logins by origin, like the ORDER BY clause in login_database.cc.
   void SortLoginsByOrigin(NativeBackend::PasswordFormList* list);

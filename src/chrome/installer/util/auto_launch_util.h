@@ -5,9 +5,11 @@
 #ifndef CHROME_INSTALLER_UTIL_AUTO_LAUNCH_UTIL_H_
 #define CHROME_INSTALLER_UTIL_AUTO_LAUNCH_UTIL_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
+namespace base {
 class FilePath;
+}
 
 // A namespace containing the platform specific implementation of setting Chrome
 // to launch at user login.
@@ -30,14 +32,14 @@ namespace auto_launch_util {
 // words, showing a window trumps not showing a window.
 // ALSO NOTE: |application_path| is optional and should be blank in most cases
 // (as it will default to the application path of the current executable).
-bool AutoStartRequested(const string16& profile_directory,
+bool AutoStartRequested(const base::string16& profile_directory,
                         bool window_requested,
-                        const FilePath& application_path);
+                        const base::FilePath& application_path);
 
 // Disables all auto-start features. |profile_directory| is the name of the
 // directory (leaf, not the full path) that contains the profile that was set
 // to be opened at user login.
-void DisableAllAutoStartFeatures(const string16& profile_directory);
+void DisableAllAutoStartFeatures(const base::string16& profile_directory);
 
 // Configures Chrome to auto-launch at user login and show a window. See also
 // EnableBackgroundStartAtLogin, which does the same, except without a window.
@@ -46,15 +48,15 @@ void DisableAllAutoStartFeatures(const string16& profile_directory);
 // |application_path| is needed when the caller is not the process being set to
 // auto-launch, ie. the installer. This is because |application_path|, if left
 // blank, defaults to the application path of the current executable.
-void EnableForegroundStartAtLogin(const string16& profile_directory,
-                                  const FilePath& application_path);
+void EnableForegroundStartAtLogin(const base::string16& profile_directory,
+                                  const base::FilePath& application_path);
 
 // Disables auto-starting Chrome in foreground mode at user login.
 // |profile_directory| is the name of the directory (leaf, not the full path)
 // that contains the profile that was set to be opened at user login.
 // NOTE: Chrome may still launch if the other auto-start flavor is active
 // (background mode).
-void DisableForegroundStartAtLogin(const string16& profile_directory);
+void DisableForegroundStartAtLogin(const base::string16& profile_directory);
 
 // Requests that Chrome start in Background Mode at user login (without a
 // window being shown, except if EnableForegroundStartAtLogin has also been

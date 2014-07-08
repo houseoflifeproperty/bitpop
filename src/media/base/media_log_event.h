@@ -5,12 +5,27 @@
 #ifndef MEDIA_BASE_MEDIA_LOG_EVENT_H_
 #define MEDIA_BASE_MEDIA_LOG_EVENT_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 
 namespace media {
 
 struct MediaLogEvent {
+  MediaLogEvent() {}
+
+  MediaLogEvent(const MediaLogEvent& event) {
+    *this = event;
+  }
+
+  MediaLogEvent& operator=(const MediaLogEvent& event) {
+    id = event.id;
+    type = event.type;
+    scoped_ptr<base::DictionaryValue> event_copy(event.params.DeepCopy());
+    params.Swap(event_copy.get());
+    time = event.time;
+    return *this;
+  }
+
   enum Type {
     // A WebMediaPlayer is being created or destroyed.
     // params: none.
@@ -55,13 +70,10 @@ struct MediaLogEvent {
     TOTAL_BYTES_SET,
     NETWORK_ACTIVITY_SET,
 
-    // Audio/Video stream playback has ended.
+    // Audio/Video/Text stream playback has ended.
     AUDIO_ENDED,
     VIDEO_ENDED,
-
-    // The audio renderer has been disabled.
-    // params: none.
-    AUDIO_RENDERER_DISABLED,
+    TEXT_ENDED,
 
     // The extents of the sliding buffer have changed.
     // params: "buffer_start": <first buffered byte>.
@@ -72,12 +84,15 @@ struct MediaLogEvent {
     // Errors reported by Media Source Extensions code.
     MEDIA_SOURCE_ERROR,
     // params: "error": Error string describing the error detected.
+
+    // A property has changed without any special event occurring.
+    PROPERTY_CHANGE,
   };
 
   int32 id;
   Type type;
   base::DictionaryValue params;
-  base::Time time;
+  base::TimeTicks time;
 };
 
 }  // namespace media

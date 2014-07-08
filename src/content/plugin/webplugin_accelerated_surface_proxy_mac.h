@@ -6,8 +6,8 @@
 #define CONTENT_PLUGIN_WEBPLUGIN_ACCELERATED_SURFACE_PROXY_H_
 
 #include "base/compiler_specific.h"
+#include "content/child/npapi/webplugin_accelerated_surface_mac.h"
 #include "ui/gl/gpu_preference.h"
-#include "webkit/plugins/npapi/webplugin_accelerated_surface_mac.h"
 
 class AcceleratedSurface;
 
@@ -16,8 +16,7 @@ class WebPluginProxy;
 
 // Out-of-process implementation of WebPluginAcceleratedSurface that proxies
 // calls through a WebPluginProxy.
-class WebPluginAcceleratedSurfaceProxy
-    : public webkit::npapi::WebPluginAcceleratedSurface {
+class WebPluginAcceleratedSurfaceProxy : public WebPluginAcceleratedSurface {
  public:
   // Creates a new WebPluginAcceleratedSurfaceProxy that uses plugin_proxy
   // to proxy calls. plugin_proxy must outlive this object. Returns NULL if
@@ -29,8 +28,6 @@ class WebPluginAcceleratedSurfaceProxy
   virtual ~WebPluginAcceleratedSurfaceProxy();
 
   // WebPluginAcceleratedSurface implementation.
-  virtual void SetWindowHandle(gfx::PluginWindowHandle window) OVERRIDE;
-  virtual bool IsComposited() OVERRIDE;
   virtual void SetSize(const gfx::Size& size) OVERRIDE;
   virtual CGLContextObj context() OVERRIDE;
   virtual void StartDrawing() OVERRIDE;
@@ -38,13 +35,10 @@ class WebPluginAcceleratedSurfaceProxy
 
  private:
   WebPluginAcceleratedSurfaceProxy(WebPluginProxy* plugin_proxy,
-                                   AcceleratedSurface* surface,
-                                   bool composited);
+                                   AcceleratedSurface* surface);
 
   WebPluginProxy* plugin_proxy_;  // Weak ref.
-  gfx::PluginWindowHandle window_handle_;
   AcceleratedSurface* surface_;
-  bool composited_;
 
   DISALLOW_COPY_AND_ASSIGN(WebPluginAcceleratedSurfaceProxy);
 };

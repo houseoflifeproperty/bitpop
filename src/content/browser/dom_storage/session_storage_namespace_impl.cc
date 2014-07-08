@@ -4,29 +4,33 @@
 
 #include "content/browser/dom_storage/session_storage_namespace_impl.h"
 
-#include "content/browser/dom_storage/dom_storage_context_impl.h"
-#include "webkit/dom_storage/dom_storage_session.h"
-
-using dom_storage::DomStorageContext;
-using dom_storage::DomStorageSession;
+#include "content/browser/dom_storage/dom_storage_context_wrapper.h"
+#include "content/browser/dom_storage/dom_storage_session.h"
 
 namespace content {
 
 SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
-    DOMStorageContextImpl* context)
-    : session_(new DomStorageSession(context->context())) {
+    DOMStorageContextWrapper* context)
+    : session_(new DOMStorageSession(context->context())) {
 }
 
 SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
-    DOMStorageContextImpl* context, int64 namepace_id_to_clone)
-    : session_(DomStorageSession::CloneFrom(context->context(),
+    DOMStorageContextWrapper* context, int64 namepace_id_to_clone)
+    : session_(DOMStorageSession::CloneFrom(context->context(),
                                             namepace_id_to_clone)) {
 }
 
 SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
-    DOMStorageContextImpl* context, const std::string& persistent_id)
-    : session_(new DomStorageSession(context->context(), persistent_id)) {
+    DOMStorageContextWrapper* context, const std::string& persistent_id)
+    : session_(new DOMStorageSession(context->context(), persistent_id)) {
 }
+
+SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
+    SessionStorageNamespaceImpl* master_session_storage_namespace)
+    : session_(new DOMStorageSession(
+          master_session_storage_namespace->session_)) {
+}
+
 
 int64 SessionStorageNamespaceImpl::id() const {
   return session_->namespace_id();
@@ -49,16 +53,43 @@ SessionStorageNamespaceImpl* SessionStorageNamespaceImpl::Clone() {
 }
 
 bool SessionStorageNamespaceImpl::IsFromContext(
-    DOMStorageContextImpl* context) {
+    DOMStorageContextWrapper* context) {
   return session_->IsFromContext(context->context());
 }
 
 SessionStorageNamespaceImpl::SessionStorageNamespaceImpl(
-    DomStorageSession* clone)
+    DOMStorageSession* clone)
     : session_(clone) {
 }
 
 SessionStorageNamespaceImpl::~SessionStorageNamespaceImpl() {
+}
+
+void SessionStorageNamespaceImpl::AddTransactionLogProcessId(int process_id) {
+  session_->AddTransactionLogProcessId(process_id);
+}
+
+void SessionStorageNamespaceImpl::RemoveTransactionLogProcessId(
+    int process_id) {
+  session_->RemoveTransactionLogProcessId(process_id);
+}
+
+void SessionStorageNamespaceImpl::Merge(
+    bool actually_merge,
+    int process_id,
+    SessionStorageNamespace* other,
+    const MergeResultCallback& callback) {
+  SessionStorageNamespaceImpl* other_impl =
+      static_cast<SessionStorageNamespaceImpl*>(other);
+  session_->Merge(actually_merge, process_id, other_impl->session_, callback);
+}
+
+bool SessionStorageNamespaceImpl::IsAliasOf(SessionStorageNamespace* other) {
+  return persistent_id() == other->persistent_id();
+}
+
+SessionStorageNamespace* SessionStorageNamespaceImpl::CreateAlias() {
+  return new SessionStorageNamespaceImpl(this);
 }
 
 }  // namespace content

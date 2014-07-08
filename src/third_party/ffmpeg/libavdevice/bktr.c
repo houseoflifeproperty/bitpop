@@ -25,9 +25,11 @@
  */
 
 #include "libavformat/internal.h"
+#include "libavutil/internal.h"
 #include "libavutil/log.h"
 #include "libavutil/opt.h"
 #include "libavutil/parseutils.h"
+#include "libavutil/time.h"
 #if HAVE_DEV_BKTR_IOCTL_METEOR_H && HAVE_DEV_BKTR_IOCTL_BT848_H
 # include <dev/bktr/ioctl_meteor.h>
 # include <dev/bktr/ioctl_bt848.h>
@@ -101,7 +103,7 @@ static av_cold int bktr_init(const char *video_device, int width, int height,
     long ioctl_frequency;
     char *arg;
     int c;
-    struct sigaction act = { 0 }, old;
+    struct sigaction act = { {0} }, old;
 
     if (idev < 0 || idev > 4)
     {
@@ -134,11 +136,11 @@ static av_cold int bktr_init(const char *video_device, int width, int height,
     act.sa_handler = catchsignal;
     sigaction(SIGUSR1, &act, &old);
 
-    *tuner_fd = open("/dev/tuner0", O_RDONLY);
+    *tuner_fd = avpriv_open("/dev/tuner0", O_RDONLY);
     if (*tuner_fd < 0)
         av_log(NULL, AV_LOG_ERROR, "Warning. Tuner not opened, continuing: %s\n", strerror(errno));
 
-    *video_fd = open(video_device, O_RDONLY);
+    *video_fd = avpriv_open(video_device, O_RDONLY);
     if (*video_fd < 0) {
         av_log(NULL, AV_LOG_ERROR, "%s: %s\n", video_device, strerror(errno));
         return -1;
@@ -273,7 +275,7 @@ static int grab_read_header(AVFormatContext *s1)
     s->per_frame = ((uint64_t)1000000 * framerate.den) / framerate.num;
 
     st->codec->codec_type = AVMEDIA_TYPE_VIDEO;
-    st->codec->pix_fmt = PIX_FMT_YUV420P;
+    st->codec->pix_fmt = AV_PIX_FMT_YUV420P;
     st->codec->codec_id = AV_CODEC_ID_RAWVIDEO;
     st->codec->width = s->width;
     st->codec->height = s->height;

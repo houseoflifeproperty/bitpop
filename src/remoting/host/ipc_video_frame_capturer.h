@@ -6,48 +6,62 @@
 #define REMOTING_HOST_IPC_VIDEO_FRAME_CAPTURER_H_
 
 #include "base/memory/ref_counted.h"
-#include "remoting/host/video_frame_capturer.h"
+#include "base/memory/weak_ptr.h"
+#include "base/memory/scoped_ptr.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace IPC {
 class Message;
-}  // IPC
+}  // namespace IPC
+
+namespace media {
+struct MouseCursorShape;
+}  // namespace media
 
 namespace remoting {
 
 class DesktopSessionProxy;
 
-// Routes VideoFrameCapturer calls though the IPC channel to the desktop session
-// agent running in the desktop integration process.
-class IpcVideoFrameCapturer : public VideoFrameCapturer {
+// Routes webrtc::ScreenCapturer calls though the IPC channel to the desktop
+// session agent running in the desktop integration process.
+class IpcVideoFrameCapturer : public webrtc::ScreenCapturer {
  public:
   explicit IpcVideoFrameCapturer(
       scoped_refptr<DesktopSessionProxy> desktop_session_proxy);
   virtual ~IpcVideoFrameCapturer();
 
-  // VideoFrameCapturer interface.
-  virtual void Start(Delegate* delegate) OVERRIDE;
-  virtual void Stop() OVERRIDE;
-  virtual media::VideoFrame::Format pixel_format() const OVERRIDE;
-  virtual void InvalidateRegion(const SkRegion& invalid_region) OVERRIDE;
-  virtual void CaptureFrame() OVERRIDE;
-  virtual const SkISize& size_most_recent() const OVERRIDE;
+  // webrtc::DesktopCapturer interface.
+  virtual void Start(Callback* callback) OVERRIDE;
+  virtual void Capture(const webrtc::DesktopRegion& region) OVERRIDE;
 
-  // Called when a video frame has been captured. |capture_data| describes
-  // a captured frame.
-  void OnCaptureCompleted(scoped_refptr<CaptureData> capture_data);
+  // webrtc::ScreenCapturer interface.
+  virtual void SetMouseShapeObserver(
+      MouseShapeObserver* mouse_shape_observer) OVERRIDE;
+
+  virtual bool GetScreenList(ScreenList* screens) OVERRIDE;
+
+  virtual bool SelectScreen(webrtc::ScreenId id) OVERRIDE;
+
+  // Called when a video |frame| has been captured.
+  void OnCaptureCompleted(scoped_ptr<webrtc::DesktopFrame> frame);
 
   // Called when the cursor shape has changed.
-  void OnCursorShapeChanged(scoped_ptr<protocol::CursorShapeInfo> cursor_shape);
+  void OnCursorShapeChanged(scoped_ptr<webrtc::MouseCursorShape> cursor_shape);
 
  private:
-  // Points to the delegate passed to VideoFrameCapturer::Start().
-  VideoFrameCapturer::Delegate* delegate_;
+  // Points to the callback passed to webrtc::ScreenCapturer::Start().
+  webrtc::ScreenCapturer::Callback* callback_;
+
+  MouseShapeObserver* mouse_shape_observer_;
 
   // Wraps the IPC channel to the desktop session agent.
   scoped_refptr<DesktopSessionProxy> desktop_session_proxy_;
 
-  // Size of the most recent captured frame.
-  SkISize size_most_recent_;
+  // Set to true when a frame is being captured.
+  bool capture_pending_;
+
+  // Used to cancel tasks pending on the capturer when it is stopped.
+  base::WeakPtrFactory<IpcVideoFrameCapturer> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(IpcVideoFrameCapturer);
 };

@@ -69,6 +69,10 @@ static INLINE uintptr_t NaClUserToSysAddr(struct NaClApp  *nap,
 
 static INLINE int NaClIsUserAddr(struct NaClApp  *nap,
                                  uintptr_t       sysaddr) {
+  /*
+   * Note that NaClIsUserAddr() is used in the Windows debug exception
+   * handler so must remain safe to use on a copy of NaClApp.
+   */
   return nap->mem_start <= sysaddr &&
          sysaddr < nap->mem_start + ((uintptr_t) 1U << nap->addr_bits);
 }
@@ -96,8 +100,8 @@ static INLINE uintptr_t NaClUserToSys(struct NaClApp  *nap,
                                       uintptr_t       uaddr) {
   if (0 == uaddr || ((uintptr_t) 1U << nap->addr_bits) <= uaddr) {
     NaClLog(LOG_FATAL,
-            "NaClUserToSys: uaddr 0x%08"NACL_PRIxPTR", "
-            "addr space %"NACL_PRId8" bits\n",
+            "NaClUserToSys: uaddr 0x%08" NACL_PRIxPTR ", "
+            "addr space %" NACL_PRId8 " bits\n",
             uaddr, nap->addr_bits);
   }
   return uaddr + nap->mem_start;
@@ -108,9 +112,9 @@ static INLINE uintptr_t NaClSysToUser(struct NaClApp  *nap,
   if (sysaddr < nap->mem_start ||
       nap->mem_start + ((uintptr_t) 1U << nap->addr_bits) <= sysaddr) {
     NaClLog(LOG_FATAL,
-            ("NaclSysToUser: sysaddr 0x%08"NACL_PRIxPTR","
-             " mem_start 0x%08"NACL_PRIxPTR","
-             " addr space %"NACL_PRId8" bits\n"),
+            ("NaClSysToUser: sysaddr 0x%08" NACL_PRIxPTR ","
+             " mem_start 0x%08" NACL_PRIxPTR ","
+             " addr space %" NACL_PRId8 " bits\n"),
             sysaddr, nap->mem_start, nap->addr_bits);
   }
   return sysaddr - nap->mem_start;
@@ -186,9 +190,6 @@ static INLINE uintptr_t NaClSandboxCodeAddr(struct NaClApp *nap,
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
   UNREFERENCED_PARAMETER(nap);
   addr &= ~NACL_CONTROL_FLOW_MASK;
-# if defined(NACL_TARGET_ARM_THUMB2_MODE)
-  addr |= 0xf;
-# endif  /* defined(NACL_TARGET_ARM_THUMB2_MODE) */
   return addr;
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
   UNREFERENCED_PARAMETER(nap);

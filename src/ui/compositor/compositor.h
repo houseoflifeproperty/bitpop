@@ -5,43 +5,54 @@
 #ifndef UI_COMPOSITOR_COMPOSITOR_H_
 #define UI_COMPOSITOR_COMPOSITOR_H_
 
-#include "base/hash_tables.h"
+#include <string>
+
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "cc/layer_tree_host_client.h"
+#include "base/time/time.h"
+#include "cc/trees/layer_tree_host_client.h"
+#include "cc/trees/layer_tree_host_single_thread_client.h"
+#include "third_party/skia/include/core/SkColor.h"
 #include "ui/compositor/compositor_export.h"
+#include "ui/compositor/compositor_observer.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
-#include "ui/gfx/transform.h"
-#include "ui/gl/gl_share_group.h"
+#include "ui/gfx/vector2d.h"
 
 class SkBitmap;
 
+namespace base {
+class MessageLoopProxy;
+class RunLoop;
+}
+
 namespace cc {
-class FontAtlas;
+class ContextProvider;
 class Layer;
+class LayerTreeDebugState;
 class LayerTreeHost;
+class SharedBitmapManager;
 }
 
 namespace gfx {
-class GLContext;
-class GLSurface;
-class GLShareGroup;
-class Point;
 class Rect;
+class Size;
 }
 
-namespace WebKit {
-class WebGraphicsContext3D;
+namespace gpu {
+struct Mailbox;
 }
 
 namespace ui {
 
 class Compositor;
-class CompositorObserver;
+class CompositorVSyncManager;
 class Layer;
-class PostedSwapQueue;
+class Reflector;
+class Texture;
+struct LatencyInfo;
 
 // This class abstracts the creation of the 3D context for the compositor. It is
 // a global object.
@@ -60,82 +71,31 @@ class COMPOSITOR_EXPORT ContextFactory {
   // Creates an output surface for the given compositor. The factory may keep
   // per-compositor data (e.g. a shared context), that needs to be cleaned up
   // by calling RemoveCompositor when the compositor gets destroyed.
-  virtual cc::OutputSurface* CreateOutputSurface(
-      Compositor* compositor) = 0;
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(
+      Compositor* compositor, bool software_fallback) = 0;
 
-  // Creates a context used for offscreen rendering. This context can be shared
-  // with all compositors.
-  virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() = 0;
+  // Creates a reflector that copies the content of the |mirrored_compositor|
+  // onto |mirroing_layer|.
+  virtual scoped_refptr<Reflector> CreateReflector(
+      Compositor* mirrored_compositor,
+      Layer* mirroring_layer) = 0;
+  // Removes the reflector, which stops the mirroring.
+  virtual void RemoveReflector(scoped_refptr<Reflector> reflector) = 0;
+
+  // Return a reference to a shared offscreen context provider usable from the
+  // main thread.
+  virtual scoped_refptr<cc::ContextProvider>
+      SharedMainThreadContextProvider() = 0;
 
   // Destroys per-compositor data.
   virtual void RemoveCompositor(Compositor* compositor) = 0;
-};
 
-// The default factory that creates in-process contexts.
-class COMPOSITOR_EXPORT DefaultContextFactory : public ContextFactory {
- public:
-  DefaultContextFactory();
-  virtual ~DefaultContextFactory();
+  // When true, the factory uses test contexts that do not do real GL
+  // operations.
+  virtual bool DoesCreateTestContexts() = 0;
 
-  // ContextFactory implementation
-  virtual cc::OutputSurface* CreateOutputSurface(
-      Compositor* compositor) OVERRIDE;
-  virtual WebKit::WebGraphicsContext3D* CreateOffscreenContext() OVERRIDE;
-  virtual void RemoveCompositor(Compositor* compositor) OVERRIDE;
-
-  bool Initialize();
-
-  void set_share_group(gfx::GLShareGroup* share_group) {
-    share_group_ = share_group;
-  }
-
- private:
-  WebKit::WebGraphicsContext3D* CreateContextCommon(
-      Compositor* compositor,
-      bool offscreen);
-
-  scoped_refptr<gfx::GLShareGroup> share_group_;
-
-  DISALLOW_COPY_AND_ASSIGN(DefaultContextFactory);
-};
-
-// Texture provide an abstraction over the external texture that can be passed
-// to a layer.
-class COMPOSITOR_EXPORT Texture : public base::RefCounted<Texture> {
- public:
-  Texture(bool flipped, const gfx::Size& size, float device_scale_factor);
-
-  bool flipped() const { return flipped_; }
-  gfx::Size size() const { return size_; }
-  float device_scale_factor() const { return device_scale_factor_; }
-
-  virtual unsigned int PrepareTexture() = 0;
-  virtual WebKit::WebGraphicsContext3D* HostContext3D() = 0;
-
-  virtual void Consume(const gfx::Size& new_size) {}
-  virtual void Produce() {}
-
- protected:
-  virtual ~Texture();
-  gfx::Size size_;  // in pixel
-
- private:
-  friend class base::RefCounted<Texture>;
-
-  bool flipped_;
-  float device_scale_factor_;
-
-  DISALLOW_COPY_AND_ASSIGN(Texture);
-};
-
-// An interface to allow the compositor to communicate with its owner.
-class COMPOSITOR_EXPORT CompositorDelegate {
- public:
-  // Requests the owner to schedule a redraw of the layer tree.
-  virtual void ScheduleDraw() = 0;
-
- protected:
-  virtual ~CompositorDelegate() {}
+  // Gets the shared bitmap manager for software mode.
+  virtual cc::SharedBitmapManager* GetSharedBitmapManager() = 0;
 };
 
 // This class represents a lock on the compositor, that can be used to prevent
@@ -163,20 +123,21 @@ class COMPOSITOR_EXPORT CompositorLock
   DISALLOW_COPY_AND_ASSIGN(CompositorLock);
 };
 
-
 // Compositor object to take care of GPU painting.
 // A Browser compositor object is responsible for generating the final
 // displayable form of pixels comprising a single widget's contents. It draws an
 // appropriately transformed texture for each transformed view in the widget's
 // view hierarchy.
 class COMPOSITOR_EXPORT Compositor
-    : NON_EXPORTED_BASE(public cc::LayerTreeHostClient) {
+    : NON_EXPORTED_BASE(public cc::LayerTreeHostClient),
+      NON_EXPORTED_BASE(public cc::LayerTreeHostSingleThreadClient) {
  public:
-  Compositor(CompositorDelegate* delegate,
-             gfx::AcceleratedWidget widget);
+  explicit Compositor(gfx::AcceleratedWidget widget);
   virtual ~Compositor();
 
-  static void Initialize(bool useThread);
+  static void Initialize();
+  static bool WasInitializedWithThread();
+  static scoped_refptr<base::MessageLoopProxy> GetCompositorMessageLoop();
   static void Terminate();
 
   // Schedules a redraw of the layer tree associated with this compositor.
@@ -200,20 +161,22 @@ class COMPOSITOR_EXPORT Compositor
   // compositing layers on.
   float device_scale_factor() const { return device_scale_factor_; }
 
-  // Draws the scene created by the layer tree and any visual effects. If
-  // |force_clear| is true, this will cause the compositor to clear before
-  // compositing.
-  void Draw(bool force_clear);
+  // Draws the scene created by the layer tree and any visual effects.
+  void Draw();
 
   // Where possible, draws are scissored to a damage region calculated from
   // changes to layer properties.  This bypasses that and indicates that
   // the whole frame needs to be drawn.
-  void ScheduleFullDraw();
+  void ScheduleFullRedraw();
 
-  // Reads the region |bounds_in_pixel| of the contents of the last rendered
-  // frame into the given bitmap.
-  // Returns false if the pixels could not be read.
-  bool ReadPixels(SkBitmap* bitmap, const gfx::Rect& bounds_in_pixel);
+  // Schedule redraw and append damage_rect to the damage region calculated
+  // from changes to layer properties.
+  void ScheduleRedrawRect(const gfx::Rect& damage_rect);
+
+  // Finishes all outstanding rendering on the GPU.
+  void FinishAllRendering();
+
+  void SetLatencyInfo(const LatencyInfo& latency_info);
 
   // Sets the compositor's device scale factor and size.
   void SetScaleAndSize(float scale, const gfx::Size& size_in_pixel);
@@ -221,8 +184,15 @@ class COMPOSITOR_EXPORT Compositor
   // Returns the size of the widget that is being drawn to in pixel coordinates.
   const gfx::Size& size() const { return size_; }
 
+  // Sets the background color used for areas that aren't covered by
+  // the |root_layer|.
+  void SetBackgroundColor(SkColor color);
+
   // Returns the widget for this compositor.
   gfx::AcceleratedWidget widget() const { return widget_; }
+
+  // Returns the vsync manager for this compositor.
+  scoped_refptr<CompositorVSyncManager> vsync_manager() const;
 
   // Compositor does not own observers. It is the responsibility of the
   // observer to remove itself when it is done observing.
@@ -247,28 +217,33 @@ class COMPOSITOR_EXPORT Compositor
   void OnSwapBuffersAborted();
 
   // LayerTreeHostClient implementation.
-  virtual void willBeginFrame() OVERRIDE;
-  virtual void didBeginFrame() OVERRIDE;
-  virtual void animate(double frameBeginTime) OVERRIDE;
-  virtual void layout() OVERRIDE;
-  virtual void applyScrollAndScale(gfx::Vector2d scrollDelta,
-                                   float pageScale) OVERRIDE;
-  virtual scoped_ptr<cc::OutputSurface>
-      createOutputSurface() OVERRIDE;
-  virtual void didRecreateOutputSurface(bool success) OVERRIDE;
-  virtual scoped_ptr<cc::InputHandler> createInputHandler() OVERRIDE;
-  virtual void willCommit() OVERRIDE;
-  virtual void didCommit() OVERRIDE;
-  virtual void didCommitAndDrawFrame() OVERRIDE;
-  virtual void didCompleteSwapBuffers() OVERRIDE;
-  virtual void scheduleComposite() OVERRIDE;
-  virtual scoped_ptr<cc::FontAtlas> createFontAtlas() OVERRIDE;
+  virtual void WillBeginMainFrame(int frame_id) OVERRIDE {}
+  virtual void DidBeginMainFrame() OVERRIDE {}
+  virtual void Animate(base::TimeTicks frame_begin_time) OVERRIDE {}
+  virtual void Layout() OVERRIDE;
+  virtual void ApplyScrollAndScale(const gfx::Vector2d& scroll_delta,
+                                   float page_scale) OVERRIDE {}
+  virtual scoped_ptr<cc::OutputSurface> CreateOutputSurface(bool fallback)
+      OVERRIDE;
+  virtual void DidInitializeOutputSurface() OVERRIDE {}
+  virtual void WillCommit() OVERRIDE {}
+  virtual void DidCommit() OVERRIDE;
+  virtual void DidCommitAndDrawFrame() OVERRIDE;
+  virtual void DidCompleteSwapBuffers() OVERRIDE;
 
+  // cc::LayerTreeHostSingleThreadClient implementation.
+  virtual void ScheduleComposite() OVERRIDE;
+  virtual void ScheduleAnimation() OVERRIDE;
+  virtual void DidPostSwapBuffers() OVERRIDE;
+  virtual void DidAbortSwapBuffers() OVERRIDE;
 
   int last_started_frame() { return last_started_frame_; }
   int last_ended_frame() { return last_ended_frame_; }
 
   bool IsLocked() { return compositor_lock_ != NULL; }
+
+  const cc::LayerTreeDebugState& GetLayerTreeDebugState() const;
+  void SetLayerTreeDebugState(const cc::LayerTreeDebugState& debug_state);
 
  private:
   friend class base::RefCounted<Compositor>;
@@ -283,7 +258,6 @@ class COMPOSITOR_EXPORT Compositor
   // Notifies the compositor that compositing is complete.
   void NotifyEnd();
 
-  CompositorDelegate* delegate_;
   gfx::Size size_;
 
   // The root of the Layer tree drawn by this compositor.
@@ -295,8 +269,8 @@ class COMPOSITOR_EXPORT Compositor
   scoped_refptr<cc::Layer> root_web_layer_;
   scoped_ptr<cc::LayerTreeHost> host_;
 
-  // Used to verify that we have at most one draw swap in flight.
-  scoped_ptr<PostedSwapQueue> posted_swaps_;
+  // The manager of vsync parameters for this compositor.
+  scoped_refptr<CompositorVSyncManager> vsync_manager_;
 
   // The device scale factor of the monitor that this compositor is compositing
   // layers on.
@@ -308,6 +282,17 @@ class COMPOSITOR_EXPORT Compositor
   bool disable_schedule_composite_;
 
   CompositorLock* compositor_lock_;
+
+  // Prevent more than one draw from being scheduled.
+  bool defer_draw_scheduling_;
+
+  // Used to prevent Draw()s while a composite is in progress.
+  bool waiting_on_compositing_end_;
+  bool draw_on_compositing_end_;
+  enum SwapState { SWAP_NONE, SWAP_POSTED, SWAP_COMPLETED };
+  SwapState swap_state_;
+
+  base::WeakPtrFactory<Compositor> schedule_draw_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(Compositor);
 };

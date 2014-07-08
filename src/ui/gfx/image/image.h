@@ -25,8 +25,12 @@
 #include "base/basictypes.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted_memory.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+typedef struct CGColorSpace* CGColorSpaceRef;
+#endif
 
 class SkBitmap;
 
@@ -38,17 +42,14 @@ class ImageMacTest;
 namespace gfx {
 struct ImagePNGRep;
 class ImageSkia;
-
-#if defined(TOOLKIT_GTK)
-class CairoCachedSurface;
-#endif
+class Size;
 
 namespace internal {
 class ImageRep;
 class ImageStorage;
 }
 
-class UI_EXPORT Image {
+class GFX_EXPORT Image {
  public:
   enum RepresentationType {
     kImageRepGdk,
@@ -72,15 +73,7 @@ class UI_EXPORT Image {
   // representation.
   explicit Image(const ImageSkia& image);
 
-  // Creates a new image by copying the bitmap for use as the default
-  // representation.
-  // TODO(pkotwicz): Get rid of this constructor.
-  explicit Image(const SkBitmap& bitmap);
-
-#if defined(TOOLKIT_GTK)
-  // Does not increase |pixbuf|'s reference count; expects to take ownership.
-  explicit Image(GdkPixbuf* pixbuf);
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   // Does not retain |image|; expects to take ownership.
   explicit Image(UIImage* image);
 #elif defined(OS_MACOSX)
@@ -100,6 +93,11 @@ class UI_EXPORT Image {
   // representations.
   ~Image();
 
+  // Creates an image from the passed in 1x bitmap.
+  // WARNING: The resulting image will be pixelated when painted on a high
+  // density display.
+  static Image CreateFrom1xBitmap(const SkBitmap& bitmap);
+
   // Creates an image from the PNG encoded input.
   // For example (from an std::vector):
   // std::vector<unsigned char> png = ...;
@@ -108,15 +106,16 @@ class UI_EXPORT Image {
   static Image CreateFrom1xPNGBytes(const unsigned char* input,
                                     size_t input_size);
 
+  // Creates an image from the PNG encoded input.
+  static Image CreateFrom1xPNGBytes(
+      const scoped_refptr<base::RefCountedMemory>& input);
+
   // Converts the Image to the desired representation and stores it internally.
   // The returned result is a weak pointer owned by and scoped to the life of
   // the Image. Must only be called if IsEmpty() is false.
   const SkBitmap* ToSkBitmap() const;
   const ImageSkia* ToImageSkia() const;
-#if defined(TOOLKIT_GTK)
-  GdkPixbuf* ToGdkPixbuf() const;
-  CairoCachedSurface* const ToCairo() const;
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   UIImage* ToUIImage() const;
 #elif defined(OS_MACOSX)
   NSImage* ToNSImage() const;
@@ -149,9 +148,7 @@ class UI_EXPORT Image {
   scoped_refptr<base::RefCountedMemory> Copy1xPNGBytes() const;
   ImageSkia* CopyImageSkia() const;
   SkBitmap* CopySkBitmap() const;
-#if defined(TOOLKIT_GTK)
-  GdkPixbuf* CopyGdkPixbuf() const;
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
   UIImage* CopyUIImage() const;
 #elif defined(OS_MACOSX)
   NSImage* CopyNSImage() const;
@@ -166,8 +163,20 @@ class UI_EXPORT Image {
   // Returns true if this Image has no representations.
   bool IsEmpty() const;
 
+  // Width and height of image in DIP coordinate system.
+  int Width() const;
+  int Height() const;
+  gfx::Size Size() const;
+
   // Swaps this image's internal representations with |other|.
   void SwapRepresentations(gfx::Image* other);
+
+#if defined(OS_MACOSX) && !defined(OS_IOS)
+  // Set the default representation's color space. This is used for converting
+  // to NSImage. This is used to compensate for PNGCodec not writing or reading
+  // colorspace ancillary chunks. (sRGB, iCCP).
+  void SetSourceColorSpace(CGColorSpaceRef color_space);
+#endif  // defined(OS_MACOSX) && !defined(OS_IOS)
 
  private:
   // Returns the type of the default representation.

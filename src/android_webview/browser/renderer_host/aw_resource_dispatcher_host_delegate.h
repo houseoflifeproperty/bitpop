@@ -12,7 +12,12 @@
 
 namespace content {
 class ResourceDispatcherHostLoginDelegate;
-}
+struct ResourceResponse;
+}  // namespace content
+
+namespace IPC {
+class Sender;
+}  // namespace IPC
 
 namespace android_webview {
 
@@ -31,9 +36,7 @@ class AwResourceDispatcherHostDelegate
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
-      bool is_continuation_of_transferred_request,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
-
   virtual void DownloadStarting(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
@@ -41,24 +44,33 @@ class AwResourceDispatcherHostDelegate
       int route_id,
       int request_id,
       bool is_content_initiated,
+      bool must_download,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
-
-  virtual bool AcceptAuthRequest(net::URLRequest* request,
-                                 net::AuthChallengeInfo* auth_info) OVERRIDE;
-
   virtual content::ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info,
       net::URLRequest* request) OVERRIDE;
-
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id) OVERRIDE;
+                                      int route_id,
+                                      bool initiated_by_user_gesture) OVERRIDE;
+  virtual void OnResponseStarted(
+      net::URLRequest* request,
+      content::ResourceContext* resource_context,
+      content::ResourceResponse* response,
+      IPC::Sender* sender) OVERRIDE;
+
+  virtual void OnRequestRedirected(
+      const GURL& redirect_url,
+      net::URLRequest* request,
+      content::ResourceContext* resource_context,
+      content::ResourceResponse* response) OVERRIDE;
 
   void RemovePendingThrottleOnIoThread(IoThreadClientThrottle* throttle);
 
-  static void OnIoThreadClientReady(int new_child_id, int new_route_id);
-  static void AddPendingThrottle(int child_id,
-                                 int route_id,
+  static void OnIoThreadClientReady(int new_render_process_id,
+                                    int new_render_frame_id);
+  static void AddPendingThrottle(int render_process_id,
+                                 int render_frame_id,
                                  IoThreadClientThrottle* pending_throttle);
 
  private:
@@ -68,13 +80,17 @@ class AwResourceDispatcherHostDelegate
   virtual ~AwResourceDispatcherHostDelegate();
 
   // These methods must be called on IO thread.
-  void OnIoThreadClientReadyInternal(int child_id, int route_id);
-  void AddPendingThrottleOnIoThread(int child_id,
-                                    int route_id,
+  void OnIoThreadClientReadyInternal(int new_render_process_id,
+                                     int new_render_frame_id);
+  void AddPendingThrottleOnIoThread(int render_process_id,
+                                    int render_frame_id,
                                     IoThreadClientThrottle* pending_throttle);
+  void AddExtraHeadersIfNeeded(net::URLRequest* request,
+                               content::ResourceContext* resource_context);
 
-  typedef std::pair<int, int> ChildRouteIDPair;
-  typedef std::map<ChildRouteIDPair, IoThreadClientThrottle*>
+  // Pair of render_process_id and render_frame_id.
+  typedef std::pair<int, int> FrameRouteIDPair;
+  typedef std::map<FrameRouteIDPair, IoThreadClientThrottle*>
       PendingThrottleMap;
 
   // Only accessed on the IO thread.

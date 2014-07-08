@@ -7,6 +7,7 @@
 
 #import "chrome/browser/ui/cocoa/gradient_button_cell.h"
 
+@class BookmarkContextMenuCocoaController;
 class BookmarkNode;
 
 // A button cell that handles drawing/highlighting of buttons in the
@@ -15,6 +16,10 @@ class BookmarkNode;
 // (e.g. hover-over to open) can be implemented.
 @interface BookmarkButtonCell : GradientButtonCell<NSMenuDelegate> {
  @private
+  // Controller for showing the context menu. Weak, owned by
+  // BookmarkBarController.
+  BookmarkContextMenuCocoaController* menuController_;
+
   BOOL empty_;  // is this an "empty" button placeholder button cell?
 
   // Starting index of bookmarkFolder children that we care to use.
@@ -25,10 +30,10 @@ class BookmarkNode;
   BOOL drawFolderArrow_;
 
   // Arrow for folders
-  scoped_nsobject<NSImage> arrowImage_;
+  base::scoped_nsobject<NSImage> arrowImage_;
 
   // Text color for title.
-  scoped_nsobject<NSColor> textColor_;
+  base::scoped_nsobject<NSColor> textColor_;
 }
 
 @property(nonatomic, readwrite, assign) const BookmarkNode* bookmarkNode;
@@ -37,18 +42,31 @@ class BookmarkNode;
 
 // Create a button cell which draws with a theme.
 + (id)buttonCellForNode:(const BookmarkNode*)node
-            contextMenu:(NSMenu*)contextMenu
-               cellText:(NSString*)cellText
-              cellImage:(NSImage*)cellImage;
+                   text:(NSString*)text
+                  image:(NSImage*)image
+         menuController:(BookmarkContextMenuCocoaController*)menuController;
+
+// Create a button cell not attached to any node which draws with a theme.
++ (id)buttonCellWithText:(NSString*)text
+                   image:(NSImage*)image
+          menuController:(BookmarkContextMenuCocoaController*)menuController;
 
 // Initialize a button cell which draws with a theme.
 // Designated initializer.
 - (id)initForNode:(const BookmarkNode*)node
-      contextMenu:(NSMenu*)contextMenu
-         cellText:(NSString*)cellText
-        cellImage:(NSImage*)cellImage;
+             text:(NSString*)text
+            image:(NSImage*)image
+   menuController:(BookmarkContextMenuCocoaController*)menuController;
 
-- (BOOL)empty;  // returns YES if empty.
+// Initialize a button cell not attached to any node which draws with a theme.
+- (id)initWithText:(NSString*)text
+             image:(NSImage*)image
+    menuController:(BookmarkContextMenuCocoaController*)menuController;
+
+// A button cell is considered empty if it is expected to be attached to a node
+// and this node is NULL. If the button was created with
+// buttonCellForContextMenu then no node is expected and empty is always NO.
+- (BOOL)empty;
 - (void)setEmpty:(BOOL)empty;
 
 // |-setBookmarkCellText:image:| is used to set the text and image of

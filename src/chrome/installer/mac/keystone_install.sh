@@ -31,9 +31,10 @@
 # 11  ksadmin failure
 # 12  dirpatcher failed for versioned directory
 # 13  dirpatcher failed for outer .app bundle
+# 14  The update is incompatible with the system
 #
-# The following exit codes are not used by this script, but can be used to
-# convey special meaning to Keystone:
+# The following exit codes can be used to convey special meaning to Keystone.
+# KeystoneRegistration will present these codes to Chrome as "success."
 # 66  (unused) success, request reboot
 # 77  (unused) try installation again later
 
@@ -60,6 +61,8 @@ shopt -s nullglob
 
 ME="$(basename "${0}")"
 readonly ME
+
+readonly KS_CHANNEL_KEY="KSChannelID"
 
 # Workaround for http://code.google.com/p/chromium/issues/detail?id=83180#c3
 # In bash 4.0, "declare VAR" no longer initializes VAR if not already set.
@@ -451,6 +454,14 @@ ksadmin_supports_versionpath_versionkey() {
   # return value.
 }
 
+has_32_bit_only_cpu() {
+  local cpu_64_bit_capable="$(sysctl -n hw.cpu64bit_capable 2>/dev/null)"
+  [[ -z "${cpu_64_bit_capable}" || "${cpu_64_bit_capable}" -eq 0 ]]
+
+  # The return value of the comparison is used as this function's return
+  # value.
+}
+
 # Runs "defaults read" to obtain the value of a key in a property list. As
 # with "defaults read", an absolute path to a plist is supplied, without the
 # ".plist" extension.
@@ -484,6 +495,199 @@ infoplist_read() {
   __CFPREFERENCES_AVOID_DAEMON=1 defaults read "${@}"
 }
 
+# Adjust the tag to contain the -32bit tag suffix. This is intended to be used
+# as a last resort, if sanity checks show that a non-32-bit update is about to
+# be applied to a 32-bit-only system. If this happens, it means that the
+# server delivered a non-32-bit update to a 32-bit-only system, most likely
+# because the tag was never updated to include the -32bit tag suffix.
+#
+# This mechanism takes a heavy-handed approach, clearing --tag-path and
+# --tag-key so that the channel identity will no longer follow the installed
+# application. However, it's expected that once -32bit is added to the tag,
+# the server will deliver a 32-bit update (possibly the final 32-bit version),
+# and once installed, that update will restore the --tag-path and --tag-key.
+# In any event, channel identity in this case may be moot, if 32-bit builds
+# are no longer being produced.
+#
+# This provides some resilience in the update system for old 32-bit-only
+# systems that aren't used during the window between when the -32bit tag
+# suffix begins being used and 32-bit releases end.
+mark_32_bit_only_system() {
+  local product_id="${1}"
+
+  # This step isn't critical.
+  local set_e=
+  if [[ "${-}" =~ e ]]; then
+    set_e="y"
+    set +e
+  fi
+
+  note "marking 32-bit-only system"
+
+  if ! ksadmin_supports_tagpath_tagkey; then
+    note "couldn't mark 32-bit-only system, no ksadmin support"
+    if [[ -n "${set_e}" ]]; then
+      set -e
+    fi
+    return 0
+  fi
+
+  local current_tag="$(ksadmin --productid "${product_id}" --print-tag)"
+  note "current_tag = ${current_tag}"
+
+  if grep -Eq -- '-32bit(-|$)' <<< "${current_tag}"; then
+    note "current tag already has -32bit"
+    if [[ -n "${set_e}" ]]; then
+      set -e
+    fi
+    return 0
+  fi
+
+  # This clears any other tag suffix, but that shouldn't be a problem. The
+  # only other currently-defined tag suffix component is -full, but -full and
+  # -32bit were introduced at the same time, so if -full appears, whatever set
+  # it would have already had enough knowledge to set -32bit as well, and this
+  # codepath wouldn't be entered.
+  local current_channel="$(sed -e 's/-.*//' <<< "${current_tag}")"
+  local new_tag="${current_channel}-32bit"
+  note "new_tag = ${new_tag}"
+
+  # Using ksadmin without --register only updates specified values in the
+  # ticket, without changing other existing values. Giving empty values for
+  # --tag-path and --tag-key clears those fields.
+  if ! ksadmin --productid "${product_id}" \
+               --tag "${new_tag}" --tag-path '' --tag-key ''; then
+    err "ksadmin failed to mark 32-bit-only system"
+  else
+    note "marked 32-bit-only system"
+  fi
+
+  # Go back to how things were.
+  if [[ -n "${set_e}" ]]; then
+    set -e
+  fi
+}
+
+# When a patch update fails because the old installed copy doesn't match the
+# expected state, mark_failed_patch_update updates the Keystone ticket by
+# adding "-full" to the tag. The server will see this on a subsequent update
+# attempt and will provide a full update (as opposed to a patch) to the
+# client.
+#
+# Even if mark_failed_patch_update fails to modify the tag, the user will
+# eventually be updated. Patch updates are only provided for successive
+# releases on a particular channel, to update version o to version o+1. If a
+# patch update fails in this case, eventually version o+2 will be released,
+# and no patch update will exist to update o to o+2, so the server will
+# provide a full update package.
+mark_failed_patch_update() {
+  local product_id="${1}"
+  local want_full_installer_path="${2}"
+  local old_ks_plist="${3}"
+  local old_version_app="${4}"
+  local system_ticket="${5}"
+
+  # This step isn't critical.
+  local set_e=
+  if [[ "${-}" =~ e ]]; then
+    set_e="y"
+    set +e
+  fi
+
+  note "marking failed patch update"
+
+  local channel
+  channel="$(infoplist_read "${old_ks_plist}" "${KS_CHANNEL_KEY}" 2> /dev/null)"
+
+  local tag="${channel}"
+  local tag_key="${KS_CHANNEL_KEY}"
+  if has_32_bit_only_cpu; then
+    tag="${tag}-32bit"
+    tag_key="${tag_key}-32bit"
+  fi
+
+  tag="${tag}-full"
+  tag_key="${tag_key}-full"
+
+  note "tag = ${tag}"
+  note "tag_key = ${tag_key}"
+
+  # ${old_ks_plist}, used for --tag-path, is the Info.plist for the old
+  # version of Chrome. It may not contain the keys for the "-full" tag suffix.
+  # If it doesn't, just bail out without marking the patch update as failed.
+  local read_tag="$(infoplist_read "${old_ks_plist}" "${tag_key}" 2> /dev/null)"
+  note "read_tag = ${read_tag}"
+  if [[ -z "${read_tag}" ]]; then
+    note "couldn't mark failed patch update"
+    if [[ -n "${set_e}" ]]; then
+      set -e
+    fi
+    return 0
+  fi
+
+  # Chrome can't easily read its Keystone ticket prior to registration, and
+  # when Chrome registers with Keystone, it obliterates old tag values in its
+  # ticket. Therefore, an alternative mechanism is provided to signal to
+  # Chrome that a full installer is desired. If the .want_full_installer file
+  # is present and it contains Chrome's current version number, Chrome will
+  # include "-full" in its tag when it registers with Keystone. This allows
+  # "-full" to persist in the tag even after Chrome is relaunched, which on a
+  # user ticket, triggers a re-registration.
+  #
+  # .want_full_installer is placed immediately inside the .app bundle as a
+  # sibling to the Contents directory. In this location, it's outside of the
+  # view of the code signing and code signature verification machinery. This
+  # file can safely be added, modified, and removed without affecting the
+  # signature.
+  rm -f "${want_full_installer_path}" 2> /dev/null
+  echo "${old_version_app}" > "${want_full_installer_path}"
+
+  # See the comment below in the "setting permissions" section for an
+  # explanation of the groups and modes selected here.
+  local chmod_mode="644"
+  if [[ -z "${system_ticket}" ]] &&
+     [[ "${want_full_installer_path:0:14}" = "/Applications/" ]] &&
+     chgrp admin "${want_full_installer_path}" 2> /dev/null; then
+    chmod_mode="664"
+  fi
+  note "chmod_mode = ${chmod_mode}"
+  chmod "${chmod_mode}" "${want_full_installer_path}" 2> /dev/null
+
+  local old_ks_plist_path="${old_ks_plist}.plist"
+
+  # Using ksadmin without --register only updates specified values in the
+  # ticket, without changing other existing values.
+  local ksadmin_args=(
+    --productid "${product_id}"
+  )
+
+  if ksadmin_supports_tag; then
+    ksadmin_args+=(
+      --tag "${tag}"
+    )
+  fi
+
+  if ksadmin_supports_tagpath_tagkey; then
+    ksadmin_args+=(
+      --tag-path "${old_ks_plist_path}"
+      --tag-key "${tag_key}"
+    )
+  fi
+
+  note "ksadmin_args = ${ksadmin_args[*]}"
+
+  if ! ksadmin "${ksadmin_args[@]}"; then
+    err "ksadmin failed to mark failed patch update"
+  else
+    note "marked failed patch update"
+  fi
+
+  # Go back to how things were.
+  if [[ -n "${set_e}" ]]; then
+    set -e
+  fi
+}
+
 usage() {
   echo "usage: ${ME} update_dmg_mount_point" >& 2
 }
@@ -513,11 +717,9 @@ main() {
   readonly KS_VERSION_KEY="KSVersion"
   readonly KS_PRODUCT_KEY="KSProductID"
   readonly KS_URL_KEY="KSUpdateURL"
-  readonly KS_CHANNEL_KEY="KSChannelID"
   readonly KS_BRAND_KEY="KSBrandID"
 
   readonly QUARANTINE_ATTR="com.apple.quarantine"
-  readonly KEYCHAIN_REAUTHORIZE_DIR=".keychain_reauthorize"
 
   # Don't use rsync -a, because -a expands to -rlptgoD.  -g and -o copy owners
   # and groups, respectively, from the source, and that is undesirable in this
@@ -740,6 +942,9 @@ main() {
   fi
   note "installed_app = ${installed_app}"
 
+  local want_full_installer_path="${installed_app}/.want_full_installer"
+  note "want_full_installer_path = ${want_full_installer_path}"
+
   if [[ "${installed_app:0:1}" != "/" ]] ||
      ! [[ -d "${installed_app}" ]]; then
     err "installed_app must be an absolute path to a directory"
@@ -829,6 +1034,40 @@ main() {
                true)"
   note "old_brand = ${old_brand}"
 
+  local update_versioned_dir=
+  if [[ -z "${is_patch}" ]]; then
+    update_versioned_dir="${update_app}/${VERSIONS_DIR}/${update_version_app}"
+    note "update_versioned_dir = ${update_versioned_dir}"
+  fi
+
+  if has_32_bit_only_cpu; then
+    # On a 32-bit-only system, make sure that the update contains 32-bit code.
+    note "system is 32-bit-only"
+
+    local test_binary
+    if [[ -z "${is_patch}" ]]; then
+      # For a full installer, the framework is available, so check it for
+      # 32-bit code.
+      local update_framework_dir="${update_versioned_dir}/${FRAMEWORK_DIR}"
+      test_binary="${update_framework_dir}/${FRAMEWORK_NAME}"
+    else
+      # No application code is guaranteed to be available at this point for a
+      # patch updater, but goobspatch is built alongside and will have the
+      # same bitness of the product that this updater will install, so it's a
+      # reasonable proxy.
+      test_binary="${patch_dir}/goobspatch"
+    fi
+    note "test_binary = ${test_binary}"
+
+    if ! file "${test_binary}" | grep -q 'i386$'; then
+      err "can't install non-32-bit update on 32-bit-only system"
+      mark_32_bit_only_system "${product_id}"
+      exit 14
+    else
+      note "update will run on a 32-bit-only system"
+    fi
+  fi
+
   ensure_writable_symlinks_recursive "${installed_app}"
 
   # By copying to ${installed_app}, the existing application name will be
@@ -870,11 +1109,7 @@ main() {
     rm -f "${new_versioned_dir}" 2> /dev/null || true
   fi
 
-  local update_versioned_dir
-  if [[ -z "${is_patch}" ]]; then
-    update_versioned_dir="${update_app}/${VERSIONS_DIR}/${update_version_app}"
-    note "update_versioned_dir = ${update_versioned_dir}"
-  else  # [[ -n "${is_patch}" ]]
+  if [[ -n "${is_patch}" ]]; then
     # dirpatcher won't patch into a directory that already exists.  Doing so
     # would be a bad idea, anyway.  If ${new_versioned_dir} already exists,
     # it may be something left over from a previous failed or incomplete
@@ -902,6 +1137,11 @@ main() {
                          "${patch_versioned_dir}" \
                          "${versioned_dir_target}"; then
       err "dirpatcher of versioned directory failed, status ${PIPESTATUS[0]}"
+      mark_failed_patch_update "${product_id}" \
+                               "${want_full_installer_path}" \
+                               "${old_ks_plist}" \
+                               "${old_version_app}" \
+                               "${system_ticket}"
       exit 12
     fi
   fi
@@ -956,6 +1196,11 @@ main() {
                          "${patch_app_dir}" \
                          "${update_app}"; then
       err "dirpatcher of app directory failed, status ${PIPESTATUS[0]}"
+      mark_failed_patch_update "${product_id}" \
+                               "${want_full_installer_path}" \
+                               "${old_ks_plist}" \
+                               "${old_version_app}" \
+                               "${system_ticket}"
       exit 13
     fi
   fi
@@ -1003,6 +1248,11 @@ main() {
     g_temp_dir=
     note "g_temp_dir = ${g_temp_dir}"
   fi
+
+  # Clean up any old .want_full_installer files from previous dirpatcher
+  # failures. This is not considered a critical step, because this file
+  # normally does not exist at all.
+  rm -f "${want_full_installer_path}" || true
 
   # If necessary, touch the outermost .app so that it appears to the outside
   # world that something was done to the bundle.  This will cause
@@ -1056,6 +1306,15 @@ main() {
   channel="$(infoplist_read "${new_ks_plist}" \
                             "${KS_CHANNEL_KEY}" 2> /dev/null || true)"
   note "channel = ${channel}"
+
+  local tag="${channel}"
+  local tag_key="${KS_CHANNEL_KEY}"
+  if has_32_bit_only_cpu; then
+    tag="${tag}-32bit"
+    tag_key="${tag_key}-32bit"
+  fi
+  note "tag = ${tag}"
+  note "tag_key = ${tag_key}"
 
   # Make sure that the update was successful by comparing the version found in
   # the update with the version now on disk.
@@ -1165,14 +1424,14 @@ main() {
 
   if ksadmin_supports_tag; then
     ksadmin_args+=(
-      --tag "${channel}"
+      --tag "${tag}"
     )
   fi
 
   if ksadmin_supports_tagpath_tagkey; then
     ksadmin_args+=(
       --tag-path "${installed_app_plist_path}"
-      --tag-key "${KS_CHANNEL_KEY}"
+      --tag-key "${tag_key}"
     )
   fi
 
@@ -1348,51 +1607,6 @@ main() {
     # On earlier systems, xattr doesn't support -r, so run xattr via find.
     find "${installed_app}" -exec xattr -d "${QUARANTINE_ATTR}" {} + \
         2> /dev/null
-  fi
-
-  # Do Keychain reauthorization. This involves running a stub executable on
-  # the dmg that loads the newly-updated framework and jumps to it to perform
-  # the reauthorization. The stub executable can be signed by the old
-  # certificate even after the rest of Chrome switches to the new certificate,
-  # so it still has access to the old Keychain items. The stub executable is
-  # an unbundled flat file executable whose name matches the real
-  # application's bundle identifier, so it's permitted access to the Keychain
-  # items. Doing a reauthorization step at update time reauthorizes Keychain
-  # items for users who never bother restarting Chrome, and provides a
-  # mechanism to continue doing reauthorizations even after the certificate
-  # changes. However, it only works for non-system ticket installations of
-  # Chrome, because the updater runs as root when on a system ticket, and root
-  # can't access individual user Keychains.
-  #
-  # Even if the reauthorization tool is launched, it doesn't necessarily try
-  # to do anything. It will only attempt to perform a reauthorization if one
-  # hasn't yet been done at update time.
-  note "maybe reauthorizing Keychain"
-
-  if [[ -z "${system_ticket}" ]]; then
-    local new_bundleid_app
-    new_bundleid_app="$(infoplist_read "${installed_app_plist}" \
-                                       "${APP_BUNDLEID_KEY}" || true)"
-    note "new_bundleid_app = ${new_bundleid_app}"
-
-    local keychain_reauthorize_dir="\
-${update_dmg_mount_point}/${KEYCHAIN_REAUTHORIZE_DIR}"
-    local keychain_reauthorize_path="\
-${keychain_reauthorize_dir}/${new_bundleid_app}"
-    note "keychain_reauthorize_path = ${keychain_reauthorize_path}"
-
-    if [[ -x "${keychain_reauthorize_path}" ]]; then
-      local framework_dir="${new_versioned_dir}/${FRAMEWORK_DIR}"
-      local framework_code_path="${framework_dir}/${FRAMEWORK_NAME}"
-      note "framework_code_path = ${framework_code_path}"
-
-      if [[ -f "${framework_code_path}" ]]; then
-        note "reauthorizing Keychain"
-        "${keychain_reauthorize_path}" "${framework_code_path}"
-      fi
-    fi
-  else
-    note "system ticket, not reauthorizing Keychain"
   fi
 
   # Great success!

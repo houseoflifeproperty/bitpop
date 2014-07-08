@@ -6,7 +6,7 @@
 
 #include "base/ios/device_util.h"
 #include "base/ios/ios_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
 #include "testing/platform_test.h"
@@ -22,15 +22,12 @@ void CleanNSUserDefaultsForDeviceId() {
   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
   [defaults removeObjectForKey:@"ChromeClientID"];
   [defaults removeObjectForKey:@"ChromiumClientID"];
+  [defaults removeObjectForKey:@"ClientIDGenerationHardwareType"];
   [defaults synchronize];
 }
 
 TEST_F(DeviceUtilTest, GetPlatform) {
   GTEST_ASSERT_GT(ios::device_util::GetPlatform().length(), 0U);
-}
-
-TEST_F(DeviceUtilTest, IsRunningOnHighRamDevice) {
-  ios::device_util::IsRunningOnHighRamDevice();
 }
 
 TEST_F(DeviceUtilTest, IsSingleCoreDevice) {
@@ -98,6 +95,22 @@ TEST_F(DeviceUtilTest, CheckMigrationFromZero) {
   [defaults synchronize];
   std::string new_id = ios::device_util::GetDeviceIdentifier(NULL);
   EXPECT_NE(zero_id, new_id);
+
+  CleanNSUserDefaultsForDeviceId();
+}
+
+TEST_F(DeviceUtilTest, CheckDeviceMigration) {
+  CleanNSUserDefaultsForDeviceId();
+
+  NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+  [defaults setObject:@"10000000-0000-0000-0000-000000000000"
+               forKey:@"ChromeClientID"];
+  [defaults synchronize];
+  std::string base_id = ios::device_util::GetDeviceIdentifier(NULL);
+  [defaults setObject:@"Foo" forKey:@"ClientIDGenerationHardwareType"];
+  [defaults synchronize];
+  std::string new_id = ios::device_util::GetDeviceIdentifier(NULL);
+  EXPECT_NE(new_id, base_id);
 
   CleanNSUserDefaultsForDeviceId();
 }

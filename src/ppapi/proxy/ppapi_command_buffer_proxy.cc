@@ -8,6 +8,7 @@
 #include "ppapi/proxy/proxy_channel.h"
 #include "ppapi/shared_impl/api_id.h"
 #include "ppapi/shared_impl/host_resource.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 
 namespace ppapi {
 namespace proxy {
@@ -20,68 +21,22 @@ PpapiCommandBufferProxy::PpapiCommandBufferProxy(
 }
 
 PpapiCommandBufferProxy::~PpapiCommandBufferProxy() {
-  // Delete all the locally cached shared memory objects, closing the handle
-  // in this process.
-  for (TransferBufferMap::iterator it = transfer_buffers_.begin();
-       it != transfer_buffers_.end(); ++it) {
-    delete it->second.shared_memory;
-    it->second.shared_memory = NULL;
-  }
-}
-
-void PpapiCommandBufferProxy::ReportChannelError() {
-  if (!channel_error_callback_.is_null()) {
-    channel_error_callback_.Run();
-    channel_error_callback_.Reset();
-  }
-}
-
-int PpapiCommandBufferProxy::GetRouteID() const {
-  NOTIMPLEMENTED();
-  return 0;
-}
-
-bool PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
-  return false;
-}
-
-bool PpapiCommandBufferProxy::SetParent(
-    CommandBufferProxy* parent_command_buffer,
-    uint32 parent_texture_id) {
-  // TODO(fsamuel): Need a proper implementation of this to support offscreen
-  // contexts in the guest renderer (WebGL, canvas, etc).
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void PpapiCommandBufferProxy::SetChannelErrorCallback(
-    const base::Closure& callback) {
-  channel_error_callback_ = callback;
+  // gpu::Buffers are no longer referenced, allowing shared memory objects to be
+  // deleted, closing the handle in this process.
 }
 
 bool PpapiCommandBufferProxy::Initialize() {
-  return Send(new PpapiHostMsg_PPBGraphics3D_InitCommandBuffer(
-      ppapi::API_ID_PPB_GRAPHICS_3D, resource_));
-}
-
-gpu::CommandBuffer::State PpapiCommandBufferProxy::GetState() {
-  // Send will flag state with lost context if IPC fails.
-  if (last_state_.error == gpu::error::kNoError) {
-    gpu::CommandBuffer::State state;
-    bool success = false;
-    if (Send(new PpapiHostMsg_PPBGraphics3D_GetState(
-             ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &state, &success))) {
-      UpdateState(state, success);
-    }
-  }
-
-  return last_state_;
+  return true;
 }
 
 gpu::CommandBuffer::State PpapiCommandBufferProxy::GetLastState() {
-  // Note: The locking command buffer wrapper does not take a global lock before
-  // calling this function.
+  ppapi::ProxyLock::AssertAcquiredDebugOnly();
   return last_state_;
+}
+
+int32 PpapiCommandBufferProxy::GetLastToken() {
+  ppapi::ProxyLock::AssertAcquiredDebugOnly();
+  return last_state_.token;
 }
 
 void PpapiCommandBufferProxy::Flush(int32 put_offset) {
@@ -98,23 +53,36 @@ void PpapiCommandBufferProxy::Flush(int32 put_offset) {
   Send(message);
 }
 
-gpu::CommandBuffer::State PpapiCommandBufferProxy::FlushSync(int32 put_offset,
-                                                   int32 last_known_get) {
-  if (last_known_get == last_state_.get_offset) {
-    // Send will flag state with lost context if IPC fails.
-    if (last_state_.error == gpu::error::kNoError) {
-      gpu::CommandBuffer::State state;
-      bool success = false;
-      if (Send(new PpapiHostMsg_PPBGraphics3D_Flush(
-               ppapi::API_ID_PPB_GRAPHICS_3D, resource_, put_offset,
-              last_known_get, &state, &success))) {
-        UpdateState(state, success);
-      }
-    }
-  } else {
-    Flush(put_offset);
-  }
-  return last_state_;
+void PpapiCommandBufferProxy::WaitForTokenInRange(int32 start, int32 end) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  bool success;
+  gpu::CommandBuffer::State state;
+  if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForTokenInRange(
+          ppapi::API_ID_PPB_GRAPHICS_3D,
+          resource_,
+          start,
+          end,
+          &state,
+          &success)))
+    UpdateState(state, success);
+}
+
+void PpapiCommandBufferProxy::WaitForGetOffsetInRange(int32 start, int32 end) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  bool success;
+  gpu::CommandBuffer::State state;
+  if (Send(new PpapiHostMsg_PPBGraphics3D_WaitForGetOffsetInRange(
+          ppapi::API_ID_PPB_GRAPHICS_3D,
+          resource_,
+          start,
+          end,
+          &state,
+          &success)))
+    UpdateState(state, success);
 }
 
 void PpapiCommandBufferProxy::SetGetBuffer(int32 transfer_buffer_id) {
@@ -124,103 +92,102 @@ void PpapiCommandBufferProxy::SetGetBuffer(int32 transfer_buffer_id) {
   }
 }
 
-void PpapiCommandBufferProxy::SetGetOffset(int32 get_offset) {
-  // Not implemented in proxy.
-  NOTREACHED();
-}
-
-int32 PpapiCommandBufferProxy::CreateTransferBuffer(
+scoped_refptr<gpu::Buffer> PpapiCommandBufferProxy::CreateTransferBuffer(
     size_t size,
-    int32 id_request) {
-  if (last_state_.error == gpu::error::kNoError) {
-    int32 id;
-    if (Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
-             ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, &id))) {
-      return id;
-    }
-  }
-  return -1;
-}
+    int32* id) {
+  *id = -1;
 
-int32 PpapiCommandBufferProxy::RegisterTransferBuffer(
-    base::SharedMemory* shared_memory,
-    size_t size,
-    int32 id_request) {
-  // Not implemented in proxy.
-  NOTREACHED();
-  return -1;
-}
-
-void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
   if (last_state_.error != gpu::error::kNoError)
-    return;
-
-  // Remove the transfer buffer from the client side4 cache.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-
-  if (it != transfer_buffers_.end()) {
-    // Delete the shared memory object, closing the handle in this process.
-    delete it->second.shared_memory;
-
-    transfer_buffers_.erase(it);
-  }
-
-  Send(new PpapiHostMsg_PPBGraphics3D_DestroyTransferBuffer(
-      ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id));
-}
-
-gpu::Buffer PpapiCommandBufferProxy::GetTransferBuffer(int32 id) {
-  if (last_state_.error != gpu::error::kNoError)
-    return gpu::Buffer();
-
-  // Check local cache to see if there is already a client side shared memory
-  // object for this id.
-  TransferBufferMap::iterator it = transfer_buffers_.find(id);
-  if (it != transfer_buffers_.end()) {
-    return it->second;
-  }
+    return NULL;
 
   // Assuming we are in the renderer process, the service is responsible for
   // duplicating the handle. This might not be true for NaCl.
   ppapi::proxy::SerializedHandle handle(
       ppapi::proxy::SerializedHandle::SHARED_MEMORY);
-  if (!Send(new PpapiHostMsg_PPBGraphics3D_GetTransferBuffer(
-            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id, &handle))) {
-    return gpu::Buffer();
+  if (!Send(new PpapiHostMsg_PPBGraphics3D_CreateTransferBuffer(
+            ppapi::API_ID_PPB_GRAPHICS_3D, resource_, size, id, &handle))) {
+    return NULL;
   }
-  if (!handle.is_shmem())
-    return gpu::Buffer();
 
-  // Cache the transfer buffer shared memory object client side.
+  if (*id <= 0 || !handle.is_shmem())
+    return NULL;
+
   scoped_ptr<base::SharedMemory> shared_memory(
       new base::SharedMemory(handle.shmem(), false));
 
   // Map the shared memory on demand.
   if (!shared_memory->memory()) {
     if (!shared_memory->Map(handle.size())) {
-      return gpu::Buffer();
+      *id = -1;
+      return NULL;
     }
   }
 
-  gpu::Buffer buffer;
-  buffer.ptr = shared_memory->memory();
-  buffer.size = handle.size();
-  buffer.shared_memory = shared_memory.release();
-  transfer_buffers_[id] = buffer;
-
-  return buffer;
+  return gpu::MakeBufferFromSharedMemory(shared_memory.Pass(), handle.size());
 }
 
-void PpapiCommandBufferProxy::SetToken(int32 token) {
+void PpapiCommandBufferProxy::DestroyTransferBuffer(int32 id) {
+  if (last_state_.error != gpu::error::kNoError)
+    return;
+
+  Send(new PpapiHostMsg_PPBGraphics3D_DestroyTransferBuffer(
+      ppapi::API_ID_PPB_GRAPHICS_3D, resource_, id));
+}
+
+void PpapiCommandBufferProxy::Echo(const base::Closure& callback) {
   NOTREACHED();
 }
 
-void PpapiCommandBufferProxy::SetParseError(gpu::error::Error error) {
+uint32 PpapiCommandBufferProxy::CreateStreamTexture(uint32 texture_id) {
+  NOTREACHED();
+  return 0;
+}
+
+uint32 PpapiCommandBufferProxy::InsertSyncPoint() {
+  uint32 sync_point = 0;
+  if (last_state_.error == gpu::error::kNoError) {
+    Send(new PpapiHostMsg_PPBGraphics3D_InsertSyncPoint(
+         ppapi::API_ID_PPB_GRAPHICS_3D, resource_, &sync_point));
+  }
+  return sync_point;
+}
+
+void PpapiCommandBufferProxy::SignalSyncPoint(uint32 sync_point,
+                                              const base::Closure& callback) {
   NOTREACHED();
 }
 
-void PpapiCommandBufferProxy::SetContextLostReason(
-    gpu::error::ContextLostReason reason) {
+void PpapiCommandBufferProxy::SignalQuery(uint32 query,
+                                          const base::Closure& callback) {
+  NOTREACHED();
+}
+
+void PpapiCommandBufferProxy::SetSurfaceVisible(bool visible) {
+  NOTREACHED();
+}
+
+void PpapiCommandBufferProxy::SendManagedMemoryStats(
+    const gpu::ManagedMemoryStats& stats) {
+  NOTREACHED();
+}
+
+gpu::Capabilities PpapiCommandBufferProxy::GetCapabilities() {
+  // TODO(boliu): Need to implement this to use cc in Pepper. Tracked in
+  // crbug.com/325391.
+  return gpu::Capabilities();
+}
+
+gfx::GpuMemoryBuffer* PpapiCommandBufferProxy::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    unsigned usage,
+    int32* id) {
+  NOTREACHED();
+  return NULL;
+}
+
+void PpapiCommandBufferProxy::DestroyGpuMemoryBuffer(int32 id) {
   NOTREACHED();
 }
 

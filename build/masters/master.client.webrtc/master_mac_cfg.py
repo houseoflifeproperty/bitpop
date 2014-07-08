@@ -2,77 +2,83 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from master import master_config
-from master.factory import webrtc_factory
+from buildbot.schedulers.basic import SingleBranchScheduler
 
-defaults = {}
+from master.factory import annotator_factory
 
+m_annotator = annotator_factory.AnnotatorFactory()
 
-def ConfigureBuilders(c, svn_url, branch, category, custom_deps_list=None):
-  def mac():
-    return webrtc_factory.WebRTCFactory('src/build', 'darwin', svn_url,
-                                        branch, custom_deps_list)
-  helper = master_config.Helper(defaults)
-  B = helper.Builder
-  F = helper.Factory
-  S = helper.Scheduler
+def Update(c):
+  c['schedulers'].extend([
+      SingleBranchScheduler(name='webrtc_mac_scheduler',
+                            branch='trunk',
+                            treeStableTimer=0,
+                            builderNames=[
+          'Mac32 Debug',
+          'Mac32 Release',
+          'Mac64 Debug',
+          'Mac64 Release',
+          'Mac32 Release [large tests]',
+          'Mac Asan',
+          'iOS Debug',
+          'iOS Release',
+      ]),
+  ])
 
-  scheduler = 'webrtc_%s_mac_scheduler' % category
-  S(scheduler, branch=branch, treeStableTimer=0)
-
-  normal_tests = ['audio_coding_module_test',
-                  'audio_coding_unittests',
-                  'audioproc_unittest',
-                  'bitrate_controller_unittests',
-                  'common_video_unittests',
-                  'media_file_unittests',
-                  'metrics_unittests',
-                  'neteq_unittests',
-                  'resampler_unittests',
-                  'rtp_rtcp_unittests',
-                  'signal_processing_unittests',
-                  'system_wrappers_unittests',
-                  'remote_bitrate_estimator_unittests',
-                  'test_fec',
-                  'test_support_unittests',
-                  'udp_transport_unittests',
-                  'vad_unittests',
-                  'video_coding_unittests',
-                  'video_engine_core_unittests',
-                  'video_processing_unittests',
-                  'voice_engine_unittests',
-                  'vp8_integrationtests',
-                  'vp8_unittests',
-                  'webrtc_utility_unittests',]
-
-  asan_disabled_tests = [
-      'audio_coding_module_test', # Issue 281
-      'neteq_unittests',          # Issue 282
+  # Recipe based builders.
+  specs = [
+    {'name': 'Mac32 Debug', 'slavebuilddir': 'mac32'},
+    {'name': 'Mac32 Release', 'slavebuilddir': 'mac32'},
+    {'name': 'Mac64 Debug', 'slavebuilddir': 'mac64'},
+    {'name': 'Mac64 Release', 'slavebuilddir': 'mac64'},
+    {'name': 'Mac Asan', 'slavebuilddir': 'mac_asan'},
+    {'name': 'iOS Debug', 'slavebuilddir': 'ios'},
+    {'name': 'iOS Release', 'slavebuilddir': 'ios'},
   ]
-  asan_tests = filter(lambda test: test not in asan_disabled_tests,
-                      normal_tests)
-  options = ['--', '-project', '../webrtc.xcodeproj']
 
-  defaults['category'] = category
+  c['builders'].extend([
+      {
+        'name': spec['name'],
+        'factory': m_annotator.BaseFactory('webrtc/standalone'),
+        'notify_on_missing': True,
+        'category': 'compile|testers',
+        'slavebuilddir': spec.get('slavebuilddir'),
+      } for spec in specs
+  ])
 
-  B('Mac32Debug', 'mac_debug_factory', scheduler=scheduler)
-  F('mac_debug_factory', mac().WebRTCFactory(
-      target='Debug',
-      options=options,
-      tests=normal_tests))
-  B('Mac32Release', 'mac_release_factory', scheduler=scheduler)
-  F('mac_release_factory', mac().WebRTCFactory(
+  # Builders not-yet-switched to recipes.
+  from master.factory import webrtc_factory
+  def mac():
+    return webrtc_factory.WebRTCFactory('src/out', 'darwin')
+
+  f_mac32_largetests = mac().WebRTCFactory(
       target='Release',
-      options=options,
-      tests=normal_tests))
-  B('MacAsan', 'mac_asan_factory', scheduler=scheduler)
-  F('mac_asan_factory', mac().WebRTCFactory(
-      target='Release',
-      options=options,
-      tests=asan_tests,
-      factory_properties={'asan': True,
-                          'gclient_env':
-                          {'GYP_DEFINES': ('asan=1'
-                                           ' release_extra_cflags=-g '
-                                           ' linux_use_tcmalloc=0 ')}}))
-  helper.Update(c)
+      options=['--compiler=goma-clang'],
+      tests=[
+        'audio_device_tests',
+        'video_capture_tests',
+        'vie_auto_test',
+        'voe_auto_test',
+        'webrtc_perf_tests',
+      ],
+      factory_properties={
+        'virtual_webcam': True,
+        'show_perf_results': True,
+        'expectations': True,
+        'perf_id': 'webrtc-mac-large-tests',
+        'perf_config': {'a_default_rev': 'r_webrtc_rev'},
+        'perf_measuring_tests': ['vie_auto_test',
+                                 'webrtc_perf_tests'],
+        'custom_cmd_line_tests': ['vie_auto_test',
+                                  'voe_auto_test'],
+      })
+  b_mac32_largetests = {
+    'name': 'Mac32 Release [large tests]',
+    'factory': f_mac32_largetests,
+    'category': 'compile|baremetal',
+    'auto_reboot' : True,
+  }
+
+  c['builders'].extend([
+      b_mac32_largetests,
+  ])

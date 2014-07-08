@@ -4,9 +4,12 @@
 
 #include "ash/shell/panel_window.h"
 
-#include "ash/wm/panel_frame_view.h"
-#include "base/utf_string_conversions.h"
+#include "ash/screen_util.h"
+#include "ash/shell.h"
+#include "ash/wm/panels/panel_frame_view.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/widget/widget.h"
 
@@ -23,6 +26,7 @@ namespace ash {
 views::Widget* PanelWindow::CreatePanelWindow(const gfx::Rect& rect) {
   PanelWindow* panel_window = new PanelWindow("Example Panel Window");
   panel_window->params().bounds = rect;
+  panel_window->params().context = Shell::GetPrimaryRootWindow();
   return panel_window->CreateWidget();
 }
 
@@ -42,6 +46,9 @@ views::Widget* PanelWindow::CreateWidget() {
     params().bounds.set_width(kDefaultWidth);
   if (params().bounds.height() == 0)
     params().bounds.set_height(kDefaultHeight);
+  params().bounds = ScreenUtil::ConvertRectToScreen(
+      Shell::GetTargetRootWindow(),
+      params().bounds);
 
   widget->Init(params());
   widget->GetNativeView()->SetName(name_);
@@ -58,8 +65,8 @@ void PanelWindow::OnPaint(gfx::Canvas* canvas) {
   canvas->FillRect(GetLocalBounds(), SK_ColorGREEN);
 }
 
-string16 PanelWindow::GetWindowTitle() const {
-  return ASCIIToUTF16(name_);
+base::string16 PanelWindow::GetWindowTitle() const {
+  return base::ASCIIToUTF16(name_);
 }
 
 views::View* PanelWindow::GetContentsView() {

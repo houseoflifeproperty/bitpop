@@ -4,16 +4,20 @@
 
 #include "base/prefs/json_pref_store.h"
 
+#include "base/bind.h"
 #include "base/file_util.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/prefs/pref_filter.h"
+#include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,6 +26,50 @@ namespace base {
 namespace {
 
 const char kHomePage[] = "homepage";
+
+// A PrefFilter that will intercept all calls to FilterOnLoad() and hold on
+// to the |prefs| until explicitly asked to release them.
+class InterceptingPrefFilter : public PrefFilter {
+ public:
+  InterceptingPrefFilter();
+  virtual ~InterceptingPrefFilter();
+
+  // PrefFilter implementation:
+  virtual void FilterOnLoad(
+      const PostFilterOnLoadCallback& post_filter_on_load_callback,
+      scoped_ptr<base::DictionaryValue> pref_store_contents) OVERRIDE;
+  virtual void FilterUpdate(const std::string& path) OVERRIDE {}
+  virtual void FilterSerializeData(
+      const base::DictionaryValue* pref_store_contents) OVERRIDE {}
+
+  bool has_intercepted_prefs() const { return intercepted_prefs_ != NULL; }
+
+  // Finalize an intercepted read, handing |intercept_prefs_| back to its
+  // JsonPrefStore.
+  void ReleasePrefs();
+
+ private:
+  PostFilterOnLoadCallback post_filter_on_load_callback_;
+  scoped_ptr<base::DictionaryValue> intercepted_prefs_;
+
+  DISALLOW_COPY_AND_ASSIGN(InterceptingPrefFilter);
+};
+
+InterceptingPrefFilter::InterceptingPrefFilter() {}
+InterceptingPrefFilter::~InterceptingPrefFilter() {}
+
+void InterceptingPrefFilter::FilterOnLoad(
+    const PostFilterOnLoadCallback& post_filter_on_load_callback,
+    scoped_ptr<base::DictionaryValue> pref_store_contents) {
+  post_filter_on_load_callback_ = post_filter_on_load_callback;
+  intercepted_prefs_ = pref_store_contents.Pass();
+}
+
+void InterceptingPrefFilter::ReleasePrefs() {
+  EXPECT_FALSE(post_filter_on_load_callback_.is_null());
+  post_filter_on_load_callback_.Run(intercepted_prefs_.Pass(), false);
+  post_filter_on_load_callback_.Reset();
+}
 
 class MockPrefStoreObserver : public PrefStore::Observer {
  public:
@@ -41,31 +89,34 @@ class JsonPrefStoreTest : public testing::Test {
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 
-    ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &data_dir_));
-    data_dir_ = data_dir_.AppendASCII("base");
+    ASSERT_TRUE(PathService::Get(base::DIR_TEST_DATA, &data_dir_));
     data_dir_ = data_dir_.AppendASCII("prefs");
-    data_dir_ = data_dir_.AppendASCII("test");
-    data_dir_ = data_dir_.AppendASCII("data");
-    data_dir_ = data_dir_.AppendASCII("pref_service");
-    LOG(WARNING) << data_dir_.value().c_str();
-    ASSERT_TRUE(file_util::PathExists(data_dir_));
+    ASSERT_TRUE(PathExists(data_dir_));
+  }
+
+  virtual void TearDown() OVERRIDE {
+    // Make sure all pending tasks have been processed (e.g., deleting the
+    // JsonPrefStore may post write tasks).
+    message_loop_.PostTask(FROM_HERE, MessageLoop::QuitWhenIdleClosure());
+    message_loop_.Run();
   }
 
   // The path to temporary directory used to contain the test operations.
   base::ScopedTempDir temp_dir_;
   // The path to the directory where the test data is stored.
-  FilePath data_dir_;
+  base::FilePath data_dir_;
   // A message loop that we can use as the file thread message loop.
   MessageLoop message_loop_;
 };
 
 // Test fallback behavior for a nonexistent file.
 TEST_F(JsonPrefStoreTest, NonExistentFile) {
-  FilePath bogus_input_file = data_dir_.AppendASCII("read.txt");
-  ASSERT_FALSE(file_util::PathExists(bogus_input_file));
-  scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          bogus_input_file, message_loop_.message_loop_proxy());
+  base::FilePath bogus_input_file = data_dir_.AppendASCII("read.txt");
+  ASSERT_FALSE(PathExists(bogus_input_file));
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      bogus_input_file,
+      message_loop_.message_loop_proxy().get(),
+      scoped_ptr<PrefFilter>());
   EXPECT_EQ(PersistentPrefStore::PREF_READ_ERROR_NO_FILE,
             pref_store->ReadPrefs());
   EXPECT_FALSE(pref_store->ReadOnly());
@@ -73,29 +124,29 @@ TEST_F(JsonPrefStoreTest, NonExistentFile) {
 
 // Test fallback behavior for an invalid file.
 TEST_F(JsonPrefStoreTest, InvalidFile) {
-  FilePath invalid_file_original = data_dir_.AppendASCII("invalid.json");
-  FilePath invalid_file = temp_dir_.path().AppendASCII("invalid.json");
-  ASSERT_TRUE(file_util::CopyFile(invalid_file_original, invalid_file));
+  base::FilePath invalid_file_original = data_dir_.AppendASCII("invalid.json");
+  base::FilePath invalid_file = temp_dir_.path().AppendASCII("invalid.json");
+  ASSERT_TRUE(base::CopyFile(invalid_file_original, invalid_file));
   scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          invalid_file, message_loop_.message_loop_proxy());
+      new JsonPrefStore(invalid_file,
+                        message_loop_.message_loop_proxy().get(),
+                        scoped_ptr<PrefFilter>());
   EXPECT_EQ(PersistentPrefStore::PREF_READ_ERROR_JSON_PARSE,
             pref_store->ReadPrefs());
   EXPECT_FALSE(pref_store->ReadOnly());
 
   // The file should have been moved aside.
-  EXPECT_FALSE(file_util::PathExists(invalid_file));
-  FilePath moved_aside = temp_dir_.path().AppendASCII("invalid.bad");
-  EXPECT_TRUE(file_util::PathExists(moved_aside));
-  EXPECT_TRUE(file_util::TextContentsEqual(invalid_file_original,
-                                           moved_aside));
+  EXPECT_FALSE(PathExists(invalid_file));
+  base::FilePath moved_aside = temp_dir_.path().AppendASCII("invalid.bad");
+  EXPECT_TRUE(PathExists(moved_aside));
+  EXPECT_TRUE(TextContentsEqual(invalid_file_original, moved_aside));
 }
 
 // This function is used to avoid code duplication while testing synchronous and
 // asynchronous version of the JsonPrefStore loading.
 void RunBasicJsonPrefStoreTest(JsonPrefStore* pref_store,
-                               const FilePath& output_file,
-                               const FilePath& golden_output_file) {
+                               const base::FilePath& output_file,
+                               const base::FilePath& golden_output_file) {
   const char kNewWindowsInTabs[] = "tabs.new_windows_in_tabs";
   const char kMaxTabs[] = "tabs.max_tabs";
   const char kLongIntPref[] = "long_int.pref";
@@ -111,10 +162,10 @@ void RunBasicJsonPrefStoreTest(JsonPrefStore* pref_store,
   const char kSomeDirectory[] = "some_directory";
 
   EXPECT_TRUE(pref_store->GetValue(kSomeDirectory, &actual));
-  FilePath::StringType path;
+  base::FilePath::StringType path;
   EXPECT_TRUE(actual->GetAsString(&path));
-  EXPECT_EQ(FilePath::StringType(FILE_PATH_LITERAL("/usr/local/")), path);
-  FilePath some_path(FILE_PATH_LITERAL("/usr/sbin/"));
+  EXPECT_EQ(base::FilePath::StringType(FILE_PATH_LITERAL("/usr/local/")), path);
+  base::FilePath some_path(FILE_PATH_LITERAL("/usr/sbin/"));
 
   pref_store->SetValue(kSomeDirectory, new StringValue(some_path.value()));
   EXPECT_TRUE(pref_store->GetValue(kSomeDirectory, &actual));
@@ -150,25 +201,27 @@ void RunBasicJsonPrefStoreTest(JsonPrefStore* pref_store,
   EXPECT_EQ(214748364842LL, value);
 
   // Serialize and compare to expected output.
-  ASSERT_TRUE(file_util::PathExists(golden_output_file));
+  ASSERT_TRUE(PathExists(golden_output_file));
   pref_store->CommitPendingWrite();
-  MessageLoop::current()->RunUntilIdle();
-  EXPECT_TRUE(file_util::TextContentsEqual(golden_output_file, output_file));
-  ASSERT_TRUE(file_util::Delete(output_file, false));
+  RunLoop().RunUntilIdle();
+  EXPECT_TRUE(TextContentsEqual(golden_output_file, output_file));
+  ASSERT_TRUE(base::DeleteFile(output_file, false));
 }
 
 TEST_F(JsonPrefStoreTest, Basic) {
-  ASSERT_TRUE(file_util::CopyFile(data_dir_.AppendASCII("read.json"),
-                                  temp_dir_.path().AppendASCII("write.json")));
+  ASSERT_TRUE(base::CopyFile(data_dir_.AppendASCII("read.json"),
+                             temp_dir_.path().AppendASCII("write.json")));
 
   // Test that the persistent value can be loaded.
-  FilePath input_file = temp_dir_.path().AppendASCII("write.json");
-  ASSERT_TRUE(file_util::PathExists(input_file));
-  scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          input_file, message_loop_.message_loop_proxy());
+  base::FilePath input_file = temp_dir_.path().AppendASCII("write.json");
+  ASSERT_TRUE(PathExists(input_file));
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      input_file,
+      message_loop_.message_loop_proxy().get(),
+      scoped_ptr<PrefFilter>());
   ASSERT_EQ(PersistentPrefStore::PREF_READ_ERROR_NONE, pref_store->ReadPrefs());
-  ASSERT_FALSE(pref_store->ReadOnly());
+  EXPECT_FALSE(pref_store->ReadOnly());
+  EXPECT_TRUE(pref_store->IsInitializationComplete());
 
   // The JSON file looks like this:
   // {
@@ -180,21 +233,21 @@ TEST_F(JsonPrefStoreTest, Basic) {
   //   }
   // }
 
-  RunBasicJsonPrefStoreTest(pref_store,
-                            input_file,
-                            data_dir_.AppendASCII("write.golden.json"));
+  RunBasicJsonPrefStoreTest(
+      pref_store.get(), input_file, data_dir_.AppendASCII("write.golden.json"));
 }
 
 TEST_F(JsonPrefStoreTest, BasicAsync) {
-  ASSERT_TRUE(file_util::CopyFile(data_dir_.AppendASCII("read.json"),
-                                  temp_dir_.path().AppendASCII("write.json")));
+  ASSERT_TRUE(base::CopyFile(data_dir_.AppendASCII("read.json"),
+                             temp_dir_.path().AppendASCII("write.json")));
 
   // Test that the persistent value can be loaded.
-  FilePath input_file = temp_dir_.path().AppendASCII("write.json");
-  ASSERT_TRUE(file_util::PathExists(input_file));
-  scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          input_file, message_loop_.message_loop_proxy());
+  base::FilePath input_file = temp_dir_.path().AppendASCII("write.json");
+  ASSERT_TRUE(PathExists(input_file));
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      input_file,
+      message_loop_.message_loop_proxy().get(),
+      scoped_ptr<PrefFilter>());
 
   {
     MockPrefStoreObserver mock_observer;
@@ -206,10 +259,11 @@ TEST_F(JsonPrefStoreTest, BasicAsync) {
     EXPECT_CALL(mock_observer, OnInitializationCompleted(true)).Times(1);
     EXPECT_CALL(*mock_error_delegate,
                 OnError(PersistentPrefStore::PREF_READ_ERROR_NONE)).Times(0);
-    message_loop_.RunUntilIdle();
+    RunLoop().RunUntilIdle();
     pref_store->RemoveObserver(&mock_observer);
 
-    ASSERT_FALSE(pref_store->ReadOnly());
+    EXPECT_FALSE(pref_store->ReadOnly());
+    EXPECT_TRUE(pref_store->IsInitializationComplete());
   }
 
   // The JSON file looks like this:
@@ -222,18 +276,71 @@ TEST_F(JsonPrefStoreTest, BasicAsync) {
   //   }
   // }
 
-  RunBasicJsonPrefStoreTest(pref_store,
-                            input_file,
-                            data_dir_.AppendASCII("write.golden.json"));
+  RunBasicJsonPrefStoreTest(
+      pref_store.get(), input_file, data_dir_.AppendASCII("write.golden.json"));
+}
+
+TEST_F(JsonPrefStoreTest, PreserveEmptyValues) {
+  FilePath pref_file = temp_dir_.path().AppendASCII("empty_values.json");
+
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      pref_file,
+      message_loop_.message_loop_proxy(),
+      scoped_ptr<PrefFilter>());
+
+  // Set some keys with empty values.
+  pref_store->SetValue("list", new base::ListValue);
+  pref_store->SetValue("dict", new base::DictionaryValue);
+
+  // Write to file.
+  pref_store->CommitPendingWrite();
+  MessageLoop::current()->RunUntilIdle();
+
+  // Reload.
+  pref_store = new JsonPrefStore(
+      pref_file,
+      message_loop_.message_loop_proxy(),
+      scoped_ptr<PrefFilter>());
+  ASSERT_EQ(PersistentPrefStore::PREF_READ_ERROR_NONE, pref_store->ReadPrefs());
+  ASSERT_FALSE(pref_store->ReadOnly());
+
+  // Check values.
+  const Value* result = NULL;
+  EXPECT_TRUE(pref_store->GetValue("list", &result));
+  EXPECT_TRUE(ListValue().Equals(result));
+  EXPECT_TRUE(pref_store->GetValue("dict", &result));
+  EXPECT_TRUE(DictionaryValue().Equals(result));
+}
+
+// This test is just documenting some potentially non-obvious behavior. It
+// shouldn't be taken as normative.
+TEST_F(JsonPrefStoreTest, RemoveClearsEmptyParent) {
+  FilePath pref_file = temp_dir_.path().AppendASCII("empty_values.json");
+
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      pref_file,
+      message_loop_.message_loop_proxy(),
+      scoped_ptr<PrefFilter>());
+
+  base::DictionaryValue* dict = new base::DictionaryValue;
+  dict->SetString("key", "value");
+  pref_store->SetValue("dict", dict);
+
+  pref_store->RemoveValue("dict.key");
+
+  const base::Value* retrieved_dict = NULL;
+  bool has_dict = pref_store->GetValue("dict", &retrieved_dict);
+  EXPECT_FALSE(has_dict);
 }
 
 // Tests asynchronous reading of the file when there is no file.
 TEST_F(JsonPrefStoreTest, AsyncNonExistingFile) {
-  FilePath bogus_input_file = data_dir_.AppendASCII("read.txt");
-  ASSERT_FALSE(file_util::PathExists(bogus_input_file));
-  scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          bogus_input_file, message_loop_.message_loop_proxy());
+  base::FilePath bogus_input_file = data_dir_.AppendASCII("read.txt");
+  ASSERT_FALSE(PathExists(bogus_input_file));
+  scoped_refptr<JsonPrefStore> pref_store = new JsonPrefStore(
+      bogus_input_file,
+      message_loop_.message_loop_proxy().get(),
+      scoped_ptr<PrefFilter>());
   MockPrefStoreObserver mock_observer;
   pref_store->AddObserver(&mock_observer);
 
@@ -243,58 +350,123 @@ TEST_F(JsonPrefStoreTest, AsyncNonExistingFile) {
   EXPECT_CALL(mock_observer, OnInitializationCompleted(true)).Times(1);
   EXPECT_CALL(*mock_error_delegate,
               OnError(PersistentPrefStore::PREF_READ_ERROR_NO_FILE)).Times(1);
-  message_loop_.RunUntilIdle();
+  RunLoop().RunUntilIdle();
   pref_store->RemoveObserver(&mock_observer);
 
   EXPECT_FALSE(pref_store->ReadOnly());
 }
 
-TEST_F(JsonPrefStoreTest, NeedsEmptyValue) {
-  FilePath pref_file = temp_dir_.path().AppendASCII("write.json");
-
-  ASSERT_TRUE(file_util::CopyFile(
-      data_dir_.AppendASCII("read.need_empty_value.json"),
-      pref_file));
+TEST_F(JsonPrefStoreTest, ReadWithInterceptor) {
+  ASSERT_TRUE(base::CopyFile(data_dir_.AppendASCII("read.json"),
+                             temp_dir_.path().AppendASCII("write.json")));
 
   // Test that the persistent value can be loaded.
-  ASSERT_TRUE(file_util::PathExists(pref_file));
+  base::FilePath input_file = temp_dir_.path().AppendASCII("write.json");
+  ASSERT_TRUE(PathExists(input_file));
+
+  scoped_ptr<InterceptingPrefFilter> intercepting_pref_filter(
+      new InterceptingPrefFilter());
+  InterceptingPrefFilter* raw_intercepting_pref_filter_ =
+      intercepting_pref_filter.get();
   scoped_refptr<JsonPrefStore> pref_store =
-      new JsonPrefStore(
-          pref_file, message_loop_.message_loop_proxy());
-  ASSERT_EQ(PersistentPrefStore::PREF_READ_ERROR_NONE, pref_store->ReadPrefs());
-  ASSERT_FALSE(pref_store->ReadOnly());
+      new JsonPrefStore(input_file,
+                        message_loop_.message_loop_proxy().get(),
+                        intercepting_pref_filter.PassAs<PrefFilter>());
+
+  ASSERT_EQ(PersistentPrefStore::PREF_READ_ERROR_ASYNCHRONOUS_TASK_INCOMPLETE,
+            pref_store->ReadPrefs());
+  EXPECT_FALSE(pref_store->ReadOnly());
+
+  // The store shouldn't be considered initialized until the interceptor
+  // returns.
+  EXPECT_TRUE(raw_intercepting_pref_filter_->has_intercepted_prefs());
+  EXPECT_FALSE(pref_store->IsInitializationComplete());
+  EXPECT_FALSE(pref_store->GetValue(kHomePage, NULL));
+
+  raw_intercepting_pref_filter_->ReleasePrefs();
+
+  EXPECT_FALSE(raw_intercepting_pref_filter_->has_intercepted_prefs());
+  EXPECT_TRUE(pref_store->IsInitializationComplete());
+  EXPECT_TRUE(pref_store->GetValue(kHomePage, NULL));
 
   // The JSON file looks like this:
   // {
-  //   "list": [ 1 ],
-  //   "list_needs_empty_value": [ 2 ],
-  //   "dict": {
-  //     "dummy": true,
-  //   },
-  //   "dict_needs_empty_value": {
-  //     "dummy": true,
-  //   },
+  //   "homepage": "http://www.cnn.com",
+  //   "some_directory": "/usr/local/",
+  //   "tabs": {
+  //     "new_windows_in_tabs": true,
+  //     "max_tabs": 20
+  //   }
   // }
 
-  // Set flag to preserve empty values for the following keys.
-  pref_store->MarkNeedsEmptyValue("list_needs_empty_value");
-  pref_store->MarkNeedsEmptyValue("dict_needs_empty_value");
+  RunBasicJsonPrefStoreTest(
+      pref_store.get(), input_file, data_dir_.AppendASCII("write.golden.json"));
+}
 
-  // Set all keys to empty values.
-  pref_store->SetValue("list", new base::ListValue);
-  pref_store->SetValue("list_needs_empty_value", new base::ListValue);
-  pref_store->SetValue("dict", new base::DictionaryValue);
-  pref_store->SetValue("dict_needs_empty_value", new base::DictionaryValue);
+TEST_F(JsonPrefStoreTest, ReadAsyncWithInterceptor) {
+  ASSERT_TRUE(base::CopyFile(data_dir_.AppendASCII("read.json"),
+                             temp_dir_.path().AppendASCII("write.json")));
 
-  // Write to file.
-  pref_store->CommitPendingWrite();
-  MessageLoop::current()->RunUntilIdle();
+  // Test that the persistent value can be loaded.
+  base::FilePath input_file = temp_dir_.path().AppendASCII("write.json");
+  ASSERT_TRUE(PathExists(input_file));
 
-  // Compare to expected output.
-  FilePath golden_output_file =
-      data_dir_.AppendASCII("write.golden.need_empty_value.json");
-  ASSERT_TRUE(file_util::PathExists(golden_output_file));
-  EXPECT_TRUE(file_util::TextContentsEqual(golden_output_file, pref_file));
+  scoped_ptr<InterceptingPrefFilter> intercepting_pref_filter(
+      new InterceptingPrefFilter());
+  InterceptingPrefFilter* raw_intercepting_pref_filter_ =
+      intercepting_pref_filter.get();
+  scoped_refptr<JsonPrefStore> pref_store =
+      new JsonPrefStore(input_file,
+                        message_loop_.message_loop_proxy().get(),
+                        intercepting_pref_filter.PassAs<PrefFilter>());
+
+  MockPrefStoreObserver mock_observer;
+  pref_store->AddObserver(&mock_observer);
+
+  // Ownership of the |mock_error_delegate| is handed to the |pref_store| below.
+  MockReadErrorDelegate* mock_error_delegate = new MockReadErrorDelegate;
+
+  {
+    pref_store->ReadPrefsAsync(mock_error_delegate);
+
+    EXPECT_CALL(mock_observer, OnInitializationCompleted(true)).Times(0);
+    // EXPECT_CALL(*mock_error_delegate,
+    //             OnError(PersistentPrefStore::PREF_READ_ERROR_NONE)).Times(0);
+    RunLoop().RunUntilIdle();
+
+    EXPECT_FALSE(pref_store->ReadOnly());
+    EXPECT_TRUE(raw_intercepting_pref_filter_->has_intercepted_prefs());
+    EXPECT_FALSE(pref_store->IsInitializationComplete());
+    EXPECT_FALSE(pref_store->GetValue(kHomePage, NULL));
+  }
+
+  {
+    EXPECT_CALL(mock_observer, OnInitializationCompleted(true)).Times(1);
+    // EXPECT_CALL(*mock_error_delegate,
+    //             OnError(PersistentPrefStore::PREF_READ_ERROR_NONE)).Times(0);
+
+    raw_intercepting_pref_filter_->ReleasePrefs();
+
+    EXPECT_FALSE(pref_store->ReadOnly());
+    EXPECT_FALSE(raw_intercepting_pref_filter_->has_intercepted_prefs());
+    EXPECT_TRUE(pref_store->IsInitializationComplete());
+    EXPECT_TRUE(pref_store->GetValue(kHomePage, NULL));
+  }
+
+  pref_store->RemoveObserver(&mock_observer);
+
+  // The JSON file looks like this:
+  // {
+  //   "homepage": "http://www.cnn.com",
+  //   "some_directory": "/usr/local/",
+  //   "tabs": {
+  //     "new_windows_in_tabs": true,
+  //     "max_tabs": 20
+  //   }
+  // }
+
+  RunBasicJsonPrefStoreTest(
+      pref_store.get(), input_file, data_dir_.AppendASCII("write.golden.json"));
 }
 
 }  // namespace base

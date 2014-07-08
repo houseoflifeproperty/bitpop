@@ -31,10 +31,12 @@
 #ifndef TALK_APP_WEBRTC_STATSCOLLECTOR_H_
 #define TALK_APP_WEBRTC_STATSCOLLECTOR_H_
 
-#include <string>
 #include <map>
+#include <string>
+#include <vector>
 
 #include "talk/app/webrtc/mediastreaminterface.h"
+#include "talk/app/webrtc/peerconnectioninterface.h"
 #include "talk/app/webrtc/statstypes.h"
 #include "talk/app/webrtc/webrtcsession.h"
 
@@ -56,30 +58,70 @@ class StatsCollector {
   // to GetStats.
   void AddStream(MediaStreamInterface* stream);
 
+  // Adds a local audio track that is used for getting some voice statistics.
+  void AddLocalAudioTrack(AudioTrackInterface* audio_track, uint32 ssrc);
+
+  // Removes a local audio tracks that is used for getting some voice
+  // statistics.
+  void RemoveLocalAudioTrack(AudioTrackInterface* audio_track, uint32 ssrc);
+
   // Gather statistics from the session and store them for future use.
-  void UpdateStats();
+  void UpdateStats(PeerConnectionInterface::StatsOutputLevel level);
 
   // Gets a StatsReports of the last collected stats. Note that UpdateStats must
   // be called before this function to get the most recent stats. |selector| is
   // a track label or empty string. The most recent reports are stored in
   // |reports|.
-  bool GetStats(MediaStreamTrackInterface* track, StatsReports* reports);
+  bool GetStats(MediaStreamTrackInterface* track,
+                StatsReports* reports);
+
+  // Prepare an SSRC report for the given ssrc. Used internally
+  // in the ExtractStatsFromList template.
+  StatsReport* PrepareLocalReport(uint32 ssrc, const std::string& transport);
+  // Prepare an SSRC report for the given remote ssrc. Used internally.
+  StatsReport* PrepareRemoteReport(uint32 ssrc, const std::string& transport);
+  // Extracts the ID of a Transport belonging to an SSRC. Used internally.
+  bool GetTransportIdFromProxy(const std::string& proxy,
+                               std::string* transport_id);
 
  private:
   bool CopySelectedReports(const std::string& selector, StatsReports* reports);
 
-  StatsReport* PrepareReport(const std::string& name, uint32 ssrc);
-  void GetRemoteAudioTrackStats();
-  double GetTimeNow();
+  // Helper method for AddCertificateReports.
+  std::string AddOneCertificateReport(
+      const talk_base::SSLCertificate* cert, const std::string& issuer_id);
 
-  // |track_reports_| contain the last gathered stats for all tracks.
-  // The reason for this is so that GetStats can return statistics about a track
-  // even if it no longer is active.
-  std::map<std::string, webrtc::StatsReport> track_reports_;
+  // Adds a report for this certificate and every certificate in its chain, and
+  // returns the leaf certificate's report's ID.
+  std::string AddCertificateReports(const talk_base::SSLCertificate* cert);
+
+  void ExtractSessionInfo();
+  void ExtractVoiceInfo();
+  void ExtractVideoInfo(PeerConnectionInterface::StatsOutputLevel level);
+  double GetTimeNow();
+  void BuildSsrcToTransportId();
+  WebRtcSession* session() { return session_; }
+  webrtc::StatsReport* GetOrCreateReport(const std::string& type,
+                                         const std::string& id);
+  webrtc::StatsReport* GetReport(const std::string& type,
+                                 const std::string& id);
+
+  // Helper method to get stats from the local audio tracks.
+  void UpdateStatsFromExistingLocalAudioTracks();
+  void UpdateReportFromAudioTrack(AudioTrackInterface* track,
+                                  StatsReport* report);
+
+  // A map from the report id to the report.
+  std::map<std::string, StatsReport> reports_;
   // Raw pointer to the session the statistics are gathered from.
   WebRtcSession* session_;
   double stats_gathering_started_;
   talk_base::Timing timing_;
+  cricket::ProxyTransportMap proxy_to_transport_;
+
+  typedef std::vector<std::pair<AudioTrackInterface*, uint32> >
+      LocalAudioTrackVector;
+  LocalAudioTrackVector local_audio_tracks_;
 };
 
 }  // namespace webrtc

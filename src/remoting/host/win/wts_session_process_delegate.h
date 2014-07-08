@@ -8,16 +8,16 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/threading/non_thread_safe.h"
 #include "remoting/host/win/worker_process_launcher.h"
 
-class FilePath;
-
 namespace base {
+class CommandLine;
 class SingleThreadTaskRunner;
 } // namespace base
 
 namespace IPC {
-class Listener;
 class Message;
 } // namespace base
 
@@ -26,27 +26,24 @@ namespace remoting {
 // Implements logic for launching and monitoring a worker process in a different
 // session.
 class WtsSessionProcessDelegate
-    : public WorkerProcessLauncher::Delegate {
+    : public base::NonThreadSafe,
+      public WorkerProcessLauncher::Delegate {
  public:
   WtsSessionProcessDelegate(
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-      const FilePath& binary_path,
-      uint32 session_id,
+      scoped_ptr<base::CommandLine> target,
       bool launch_elevated,
       const std::string& channel_security);
   ~WtsSessionProcessDelegate();
 
-  // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
+  // Initializes the object returning true on success.
+  bool Initialize(uint32 session_id);
 
   // WorkerProcessLauncher::Delegate implementation.
-  virtual DWORD GetProcessId() const OVERRIDE;
-  virtual bool IsPermanentError(int failure_count) const OVERRIDE;
-  virtual void KillProcess(DWORD exit_code) OVERRIDE;
-  virtual bool LaunchProcess(
-      IPC::Listener* delegate,
-      base::win::ScopedHandle* process_exit_event_out) OVERRIDE;
+  virtual void LaunchProcess(WorkerProcessLauncher* event_handler) OVERRIDE;
+  virtual void Send(IPC::Message* message) OVERRIDE;
+  virtual void CloseChannel() OVERRIDE;
+  virtual void KillProcess() OVERRIDE;
 
  private:
   // The actual implementation resides in WtsSessionProcessDelegate::Core class.

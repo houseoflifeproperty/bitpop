@@ -28,7 +28,7 @@
       'sources': [
         '<(SHARED_INTERMEDIATE_DIR)/content/content_resources.rc',
         '<(SHARED_INTERMEDIATE_DIR)/net/net_resources.rc',
-        '<(SHARED_INTERMEDIATE_DIR)/webkit/webkit_chromium_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/webkit/blink_resources.rc',
       ],
       'conditions': [
         ['win_use_allocator_shim==1', {
@@ -51,12 +51,7 @@
       # See comments about "xcode_settings" elsewhere in this file.
       'xcode_settings': {'OTHER_LDFLAGS': ['-Wl,-ObjC']},
     }],
-    ['toolkit_uses_gtk == 1', {
-       'dependencies': [
-         '<(src_dir)/build/linux/system.gyp:gtk',
-       ],
-    }],
-    ['toolkit_uses_gtk == 1 or chromeos==1 or (OS=="linux" and use_aura==1)', {
+    ['chromeos==1 or (OS=="linux" and use_aura==1)', {
       'dependencies': [
         '<(src_dir)/build/linux/system.gyp:ssl',
       ],

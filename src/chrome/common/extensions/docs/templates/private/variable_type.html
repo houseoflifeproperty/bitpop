@@ -1,20 +1,26 @@
+{{#type}}
 {{?link}}
-{{+partials.ref_link}}
-{{/}}
+  {{?disableLink}}
+    {{link.text}}
+  {{:disableLink}}
+    {{+partials.ref_link link:link/}}
+  {{/disableLink}}
+{{/link}}
 {{?choices}}
-{{#choices}}
-{{+partials.variable_type}}{{^@.last}} or {{/}}
-{{/}}
-{{/}}
+{{#c:choices}}
+{{+partials.variable_type type:c/}}{{^c.last}} or {{/}}
+{{/choices}}
+{{/choices}}
 {{?array}}
-array of {{+partials.variable_type}}
-{{/}}
+array of {{+partials.variable_type type:array/}}
+{{/array}}
 {{?simple_type}}
 {{simple_type}}
-{{/}}
+{{/simple_type}}
 {{?enum_values}}
-enumerated string [{{#enum_values}}"{{name}}"{{^last}}, {{/}}{{/}}]
-{{/}}
+enum of {{#e:enum_values}}{{?e.last}}or {{/}}<code>"{{e.name}}"</code>{{^e.last}}, {{/}}{{/}}
+{{/enum_values}}
 {{?value}}
 <code>{{value}}</code>
-{{/}}
+{{/value}}
+{{/type}}

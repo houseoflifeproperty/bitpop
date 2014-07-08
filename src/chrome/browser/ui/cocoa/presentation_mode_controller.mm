@@ -8,9 +8,11 @@
 
 #include "base/command_line.h"
 #import "base/mac/mac_util.h"
+#include "chrome/browser/fullscreen.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
+#import "chrome/browser/ui/cocoa/nsview_additions.h"
 #include "chrome/common/chrome_switches.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 
 NSString* const kWillEnterFullscreenNotification =
     @"WillEnterFullscreenNotification";
@@ -53,7 +55,7 @@ const CGFloat kFloatingBarVerticalOffset = 22;
 // duration may be less than |fullDuration|.
 - (id)initWithFraction:(CGFloat)fromFraction
           fullDuration:(CGFloat)fullDuration
-        animationCurve:(NSInteger)animationCurve
+        animationCurve:(NSAnimationCurve)animationCurve
             controller:(PresentationModeController*)controller;
 
 @end
@@ -65,7 +67,7 @@ const CGFloat kFloatingBarVerticalOffset = 22;
 
 - (id)initWithFraction:(CGFloat)toFraction
           fullDuration:(CGFloat)fullDuration
-        animationCurve:(NSInteger)animationCurve
+        animationCurve:(NSAnimationCurve)animationCurve
             controller:(PresentationModeController*)controller {
   // Calculate the effective duration, based on the current shown fraction.
   DCHECK(controller);
@@ -231,6 +233,7 @@ const CGFloat kFloatingBarVerticalOffset = 22;
                   object:nil];
   DCHECK(inPresentationMode_);
   inPresentationMode_ = NO;
+
   [self cleanup];
 }
 
@@ -332,17 +335,23 @@ const CGFloat kFloatingBarVerticalOffset = 22;
   return [browserController_ floatingBarShownFraction];
 }
 
+- (void)setSystemFullscreenModeTo:(base::mac::FullScreenMode)mode {
+  if (mode == systemFullscreenMode_)
+    return;
+  if (systemFullscreenMode_ == base::mac::kFullScreenModeNormal)
+    base::mac::RequestFullScreen(mode);
+  else if (mode == base::mac::kFullScreenModeNormal)
+    base::mac::ReleaseFullScreen(systemFullscreenMode_);
+  else
+    base::mac::SwitchFullScreenModes(systemFullscreenMode_, mode);
+  systemFullscreenMode_ = mode;
+}
+
 - (void)changeFloatingBarShownFraction:(CGFloat)fraction {
   [browserController_ setFloatingBarShownFraction:fraction];
 
-  base::mac::FullScreenMode desiredMode = [self desiredSystemFullscreenMode];
-  if (desiredMode != systemFullscreenMode_ && [self shouldToggleMenuBar]) {
-    if (systemFullscreenMode_ == base::mac::kFullScreenModeNormal)
-      base::mac::RequestFullScreen(desiredMode);
-    else
-      base::mac::SwitchFullScreenModes(systemFullscreenMode_, desiredMode);
-    systemFullscreenMode_ = desiredMode;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:[self desiredSystemFullscreenMode]];
 }
 
 // Used to activate the floating bar in presentation mode.
@@ -421,7 +430,7 @@ const CGFloat kFloatingBarVerticalOffset = 22;
 }
 
 - (BOOL)shouldToggleMenuBar {
-  return base::mac::IsOSSnowLeopard() &&
+  return [browserController_ isInImmersiveFullscreen] &&
          [self isWindowOnPrimaryScreen] &&
          [[browserController_ window] isMainWindow];
 }
@@ -633,20 +642,15 @@ const CGFloat kFloatingBarVerticalOffset = 22;
   if (systemFullscreenMode_ != base::mac::kFullScreenModeNormal)
     return;
 
-  if ([self shouldToggleMenuBar]) {
-    base::mac::FullScreenMode desiredMode = [self desiredSystemFullscreenMode];
-    base::mac::RequestFullScreen(desiredMode);
-    systemFullscreenMode_ = desiredMode;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:[self desiredSystemFullscreenMode]];
 
   // TODO(rohitrao): Insert the Exit Fullscreen button.  http://crbug.com/35956
 }
 
 - (void)hideActiveWindowUI {
-  if (systemFullscreenMode_ != base::mac::kFullScreenModeNormal) {
-    base::mac::ReleaseFullScreen(systemFullscreenMode_);
-    systemFullscreenMode_ = base::mac::kFullScreenModeNormal;
-  }
+  if ([self shouldToggleMenuBar])
+    [self setSystemFullscreenModeTo:base::mac::kFullScreenModeNormal];
 
   // TODO(rohitrao): Remove the Exit Fullscreen button.  http://crbug.com/35956
 }

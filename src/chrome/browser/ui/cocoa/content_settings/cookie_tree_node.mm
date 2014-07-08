@@ -4,7 +4,7 @@
 
 #import "chrome/browser/ui/cocoa/content_settings/cookie_tree_node.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 @implementation CocoaCookieTreeNode
 
@@ -43,7 +43,7 @@
     children_.reset([[NSMutableArray alloc] initWithCapacity:childCount]);
     for (int i = 0; i < childCount; ++i) {
       CookieTreeNode* child = treeNode_->GetChild(i);
-      scoped_nsobject<CocoaCookieTreeNode> childNode(
+      base::scoped_nsobject<CocoaCookieTreeNode> childNode(
           [[CocoaCookieTreeNode alloc] initWithNode:child]);
       [children_ addObject:childNode.get()];
     }

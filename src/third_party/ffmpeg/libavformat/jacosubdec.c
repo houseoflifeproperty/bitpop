@@ -28,6 +28,7 @@
 #include "avformat.h"
 #include "internal.h"
 #include "subtitles.h"
+#include "libavcodec/internal.h"
 #include "libavcodec/jacosub.h"
 #include "libavutil/avstring.h"
 #include "libavutil/bprint.h"
@@ -42,8 +43,9 @@ typedef struct {
 static int timed_line(const char *ptr)
 {
     char c;
+    int fs, fe;
     return (sscanf(ptr, "%*u:%*u:%*u.%*u %*u:%*u:%*u.%*u %c", &c) == 1 ||
-            sscanf(ptr, "@%*u @%*u %c",                       &c) == 1);
+            (sscanf(ptr, "@%u @%u %c", &fs, &fe, &c) == 3 && fs < fe));
 }
 
 static int jacosub_probe(AVProbeData *p)
@@ -59,10 +61,10 @@ static int jacosub_probe(AVProbeData *p)
             ptr++;
         if (*ptr != '#' && *ptr != '\n') {
             if (timed_line(ptr))
-                return AVPROBE_SCORE_MAX/2 + 1;
+                return AVPROBE_SCORE_EXTENSION + 1;
             return 0;
         }
-        ptr += strcspn(ptr, "\n") + 1;
+        ptr += ff_subtitles_next_line(ptr);
     }
     return 0;
 }
@@ -159,7 +161,7 @@ static int jacosub_read_header(AVFormatContext *s)
     JACOsubContext *jacosub = s->priv_data;
     int shift_set = 0; // only the first shift matters
     int merge_line = 0;
-    int i;
+    int i, ret;
 
     AVStream *st = avformat_new_stream(s, NULL);
     if (!st)
@@ -228,8 +230,9 @@ static int jacosub_read_header(AVFormatContext *s)
     }
 
     /* general/essential directives in the extradata */
-    av_bprint_finalize(&header, (char **)&st->codec->extradata);
-    st->codec->extradata_size = header.len + 1;
+    ret = avpriv_bprint_to_extradata(st->codec, &header);
+    if (ret < 0)
+        return ret;
 
     /* SHIFT and TIMERES affect the whole script so packet timing can only be
      * done in a second pass */
@@ -248,6 +251,14 @@ static int jacosub_read_packet(AVFormatContext *s, AVPacket *pkt)
     return ff_subtitles_queue_read_packet(&jacosub->q, pkt);
 }
 
+static int jacosub_read_seek(AVFormatContext *s, int stream_index,
+                             int64_t min_ts, int64_t ts, int64_t max_ts, int flags)
+{
+    JACOsubContext *jacosub = s->priv_data;
+    return ff_subtitles_queue_seek(&jacosub->q, s, stream_index,
+                                   min_ts, ts, max_ts, flags);
+}
+
 AVInputFormat ff_jacosub_demuxer = {
     .name           = "jacosub",
     .long_name      = NULL_IF_CONFIG_SMALL("JACOsub subtitle format"),
@@ -255,6 +266,6 @@ AVInputFormat ff_jacosub_demuxer = {
     .read_probe     = jacosub_probe,
     .read_header    = jacosub_read_header,
     .read_packet    = jacosub_read_packet,
+    .read_seek2     = jacosub_read_seek,
     .read_close     = jacosub_read_close,
-    .flags          = AVFMT_GENERIC_INDEX,
 };

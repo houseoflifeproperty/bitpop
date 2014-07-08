@@ -7,7 +7,6 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
 #include "chrome/browser/ui/cocoa/chrome_browser_window.h"
 
 // Offsets from the top/left of the window frame to the top of the window
@@ -58,7 +57,6 @@ const NSInteger kFramedWindowButtonsWithoutTabStripOffsetFromLeft = 8;
 + (BOOL)drawWindowThemeInDirtyRect:(NSRect)dirtyRect
                            forView:(NSView*)view
                             bounds:(NSRect)bounds
-                            offset:(NSPoint)offset
               forceBlackBackground:(BOOL)forceBlackBackground;
 
 // Gets the color to draw title text.

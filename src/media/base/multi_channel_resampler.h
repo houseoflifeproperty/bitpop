@@ -27,25 +27,34 @@ class MEDIA_EXPORT MultiChannelResampler {
 
   // Constructs a MultiChannelResampler with the specified |read_cb|, which is
   // used to acquire audio data for resampling.  |io_sample_rate_ratio| is the
-  // ratio of input / output sample rates.
-  MultiChannelResampler(int channels, double io_sample_rate_ratio,
+  // ratio of input / output sample rates.  |request_frames| is the size in
+  // frames of the AudioBus to be filled by |read_cb|.
+  MultiChannelResampler(int channels,
+                        double io_sample_rate_ratio,
+                        size_t request_frames,
                         const ReadCB& read_cb);
   virtual ~MultiChannelResampler();
 
   // Resamples |frames| of data from |read_cb_| into AudioBus.
-  void Resample(AudioBus* audio_bus, int frames);
+  void Resample(int frames, AudioBus* audio_bus);
 
-  // Flush all buffered data and reset internal indices.
+  // Flush all buffered data and reset internal indices.  Not thread safe, do
+  // not call while Resample() is in progress.
   void Flush();
+
+  // Update ratio for all SincResamplers.  SetRatio() will cause reconstruction
+  // of the kernels used for resampling.  Not thread safe, do not call while
+  // Resample() is in progress.
+  void SetRatio(double io_sample_rate_ratio);
+
+  // The maximum size in frames that guarantees Resample() will only make a
+  // single call to |read_cb_| for more data.
+  int ChunkSize() const;
 
  private:
   // SincResampler::ReadCB implementation.  ProvideInput() will be called for
   // each channel (in channel order) as SincResampler needs more data.
-  void ProvideInput(int channel, float* destination, int frames);
-
-  // Sanity check to ensure that ProvideInput() retrieves the same number of
-  // frames for every channel.
-  int last_frame_count_;
+  void ProvideInput(int channel, int frames, float* destination);
 
   // Source of data for resampling.
   ReadCB read_cb_;
@@ -55,8 +64,10 @@ class MEDIA_EXPORT MultiChannelResampler {
 
   // Buffers for audio data going into SincResampler from ReadCB.
   scoped_ptr<AudioBus> resampler_audio_bus_;
+
+  // To avoid a memcpy() on the first channel we create a wrapped AudioBus where
+  // the first channel points to the |destination| provided to ProvideInput().
   scoped_ptr<AudioBus> wrapped_resampler_audio_bus_;
-  std::vector<float*> resampler_audio_data_;
 
   // The number of output frames that have successfully been processed during
   // the current Resample() call.

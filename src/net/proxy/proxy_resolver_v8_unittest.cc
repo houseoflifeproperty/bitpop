@@ -5,16 +5,15 @@
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log_unittest.h"
 #include "net/proxy/proxy_info.h"
-#include "net/proxy/proxy_resolver_js_bindings.h"
 #include "net/proxy/proxy_resolver_v8.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace net {
 namespace {
@@ -22,50 +21,58 @@ namespace {
 // Javascript bindings for ProxyResolverV8, which returns mock values.
 // Each time one of the bindings is called into, we push the input into a
 // list, for later verification.
-class MockJSBindings : public ProxyResolverJSBindings {
+class MockJSBindings : public ProxyResolverV8::JSBindings {
  public:
-  MockJSBindings() : my_ip_address_count(0), my_ip_address_ex_count(0) {}
+  MockJSBindings() : my_ip_address_count(0), my_ip_address_ex_count(0),
+                     should_terminate(false) {}
 
-  virtual void Alert(const string16& message) OVERRIDE {
+  virtual void Alert(const base::string16& message) OVERRIDE {
     VLOG(1) << "PAC-alert: " << message;  // Helpful when debugging.
-    alerts.push_back(UTF16ToUTF8(message));
+    alerts.push_back(base::UTF16ToUTF8(message));
   }
 
-  virtual bool MyIpAddress(std::string* ip_address) OVERRIDE {
-    my_ip_address_count++;
-    *ip_address = my_ip_address_result;
-    return !my_ip_address_result.empty();
+  virtual bool ResolveDns(const std::string& host,
+                          ResolveDnsOperation op,
+                          std::string* output,
+                          bool* terminate) OVERRIDE {
+    *terminate = should_terminate;
+
+    if (op == MY_IP_ADDRESS) {
+      my_ip_address_count++;
+      *output = my_ip_address_result;
+      return !my_ip_address_result.empty();
+    }
+
+    if (op == MY_IP_ADDRESS_EX) {
+      my_ip_address_ex_count++;
+      *output = my_ip_address_ex_result;
+      return !my_ip_address_ex_result.empty();
+    }
+
+    if (op == DNS_RESOLVE) {
+      dns_resolves.push_back(host);
+      *output = dns_resolve_result;
+      return !dns_resolve_result.empty();
+    }
+
+    if (op == DNS_RESOLVE_EX) {
+      dns_resolves_ex.push_back(host);
+      *output = dns_resolve_ex_result;
+      return !dns_resolve_ex_result.empty();
+    }
+
+    CHECK(false);
+    return false;
   }
 
-  virtual bool MyIpAddressEx(std::string* ip_address_list) OVERRIDE {
-    my_ip_address_ex_count++;
-    *ip_address_list = my_ip_address_ex_result;
-    return !my_ip_address_ex_result.empty();
-  }
-
-  virtual bool DnsResolve(const std::string& host, std::string* ip_address)
-      OVERRIDE {
-    dns_resolves.push_back(host);
-    *ip_address = dns_resolve_result;
-    return !dns_resolve_result.empty();
-  }
-
-  virtual bool DnsResolveEx(const std::string& host,
-                            std::string* ip_address_list) OVERRIDE {
-    dns_resolves_ex.push_back(host);
-    *ip_address_list = dns_resolve_ex_result;
-    return !dns_resolve_ex_result.empty();
-  }
-
-  virtual void OnError(int line_number, const string16& message) OVERRIDE {
+  virtual void OnError(int line_number,
+                       const base::string16& message) OVERRIDE {
     // Helpful when debugging.
     VLOG(1) << "PAC-error: [" << line_number << "] " << message;
 
-    errors.push_back(UTF16ToUTF8(message));
+    errors.push_back(base::UTF16ToUTF8(message));
     errors_line_number.push_back(line_number);
   }
-
-  virtual void Shutdown() OVERRIDE {}
 
   // Mock values to return.
   std::string my_ip_address_result;
@@ -81,6 +88,9 @@ class MockJSBindings : public ProxyResolverJSBindings {
   std::vector<std::string> dns_resolves_ex;
   int my_ip_address_count;
   int my_ip_address_ex_count;
+
+  // Whether ResolveDns() should terminate script execution.
+  bool should_terminate;
 };
 
 // This is the same as ProxyResolverV8, but it uses mock bindings in place of
@@ -88,15 +98,20 @@ class MockJSBindings : public ProxyResolverJSBindings {
 // disk.
 class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
  public:
-  ProxyResolverV8WithMockBindings() : ProxyResolverV8(new MockJSBindings()) {}
+  ProxyResolverV8WithMockBindings() {
+    set_js_bindings(&mock_js_bindings_);
+  }
 
-  MockJSBindings* mock_js_bindings() const {
-    return reinterpret_cast<MockJSBindings*>(js_bindings());
+  virtual ~ProxyResolverV8WithMockBindings() {
+  }
+
+  MockJSBindings* mock_js_bindings() {
+    return &mock_js_bindings_;
   }
 
   // Initialize with the PAC script data at |filename|.
   int SetPacScriptFromDisk(const char* filename) {
-    FilePath path;
+    base::FilePath path;
     PathService::Get(base::DIR_SOURCE_ROOT, &path);
     path = path.AppendASCII("net");
     path = path.AppendASCII("data");
@@ -105,7 +120,7 @@ class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
 
     // Try to read the file from disk.
     std::string file_contents;
-    bool ok = file_util::ReadFileToString(path, &file_contents);
+    bool ok = base::ReadFileToString(path, &file_contents);
 
     // If we can't load the file from disk, something is misconfigured.
     if (!ok) {
@@ -117,12 +132,14 @@ class ProxyResolverV8WithMockBindings : public ProxyResolverV8 {
     return SetPacScript(ProxyResolverScriptData::FromUTF8(file_contents),
                         CompletionCallback());
   }
+
+ private:
+  MockJSBindings mock_js_bindings_;
 };
 
 // Doesn't really matter what these values are for many of the tests.
 const GURL kQueryUrl("http://www.google.com");
 const GURL kPacUrl;
-
 
 TEST(ProxyResolverV8Test, Direct) {
   ProxyResolverV8WithMockBindings resolver;
@@ -192,13 +209,6 @@ TEST(ProxyResolverV8Test, Basic) {
     EXPECT_EQ(0U, resolver.mock_js_bindings()->alerts.size());
     EXPECT_EQ(0U, resolver.mock_js_bindings()->errors.size());
   }
-
-  // We call this so we'll have code coverage of the function and valgrind will
-  // make sure nothing bad happens.
-  //
-  // NOTE: This is here instead of in its own test so that we'll be calling it
-  // after having done something, in hopes it won't be a no-op.
-  resolver.PurgeMemory();
 }
 
 TEST(ProxyResolverV8Test, BadReturnType) {
@@ -375,7 +385,8 @@ TEST(ProxyResolverV8Test, NoSetPacScript) {
 
   // Clear it, by initializing with an empty string.
   resolver.SetPacScript(
-      ProxyResolverScriptData::FromUTF16(string16()), CompletionCallback());
+      ProxyResolverScriptData::FromUTF16(base::string16()),
+      CompletionCallback());
 
   // Resolve should fail again now.
   result = resolver.GetProxyForURL(
@@ -565,6 +576,51 @@ TEST(ProxyResolverV8Test, IPv6HostnamesNotBracketed) {
   // argument to FindProxyForURL(). The brackets should have been stripped.
   ASSERT_EQ(1U, resolver.mock_js_bindings()->dns_resolves_ex.size());
   EXPECT_EQ("abcd::efff", resolver.mock_js_bindings()->dns_resolves_ex[0]);
+}
+
+// Test that terminating a script within DnsResolve() leads to eventual
+// termination of the script. Also test that repeatedly calling terminate is
+// safe, and running the script again after termination still works.
+TEST(ProxyResolverV8Test, Terminate) {
+  ProxyResolverV8WithMockBindings resolver;
+  int result = resolver.SetPacScriptFromDisk("terminate.js");
+  EXPECT_EQ(OK, result);
+
+  MockJSBindings* bindings = resolver.mock_js_bindings();
+
+  // Terminate script execution upon reaching dnsResolve(). Note that
+  // termination may not take effect right away (so the subsequent dnsResolve()
+  // and alert() may be run).
+  bindings->should_terminate = true;
+
+  ProxyInfo proxy_info;
+  result = resolver.GetProxyForURL(
+      GURL("http://hang/"), &proxy_info,
+      CompletionCallback(), NULL, BoundNetLog());
+
+  // The script execution was terminated.
+  EXPECT_EQ(ERR_PAC_SCRIPT_FAILED, result);
+
+  EXPECT_EQ(1U, resolver.mock_js_bindings()->dns_resolves.size());
+  EXPECT_GE(2U, resolver.mock_js_bindings()->dns_resolves_ex.size());
+  EXPECT_GE(1U, bindings->alerts.size());
+
+  EXPECT_EQ(1U, bindings->errors.size());
+
+  // Termination shows up as an uncaught exception without any message.
+  EXPECT_EQ("", bindings->errors[0]);
+
+  bindings->errors.clear();
+
+  // Try running the script again, this time with a different input which won't
+  // cause a termination+hang.
+  result = resolver.GetProxyForURL(
+      GURL("http://kittens/"), &proxy_info,
+      CompletionCallback(), NULL, BoundNetLog());
+
+  EXPECT_EQ(OK, result);
+  EXPECT_EQ(0u, bindings->errors.size());
+  EXPECT_EQ("kittens:88", proxy_info.proxy_server().ToURI());
 }
 
 }  // namespace

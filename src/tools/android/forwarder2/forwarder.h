@@ -5,35 +5,43 @@
 #ifndef TOOLS_ANDROID_FORWARDER2_FORWARDER_H_
 #define TOOLS_ANDROID_FORWARDER2_FORWARDER_H_
 
-#include "base/compiler_specific.h"
-#include "base/logging.h"
+#include <sys/select.h>
+
 #include "base/memory/scoped_ptr.h"
-#include "tools/android/forwarder2/socket.h"
-#include "tools/android/forwarder2/thread.h"
+#include "base/threading/thread_checker.h"
 
 namespace forwarder2 {
 
-class Forwarder : public Thread {
+class Socket;
+
+// Internal class that forwards traffic between |socket1| and |socket2|. Note
+// that this class is not thread-safe.
+class Forwarder {
  public:
   Forwarder(scoped_ptr<Socket> socket1, scoped_ptr<Socket> socket2);
-  virtual ~Forwarder();
 
-  // This object self deletes after running, so one cannot join.
-  // Thread:
-  virtual void Join() OVERRIDE;
+  ~Forwarder();
 
- protected:
-  // Thread:
-  // This object self deletes after running.
-  virtual void Run() OVERRIDE;
+  void RegisterFDs(fd_set* read_fds, fd_set* write_fds, int* max_fd);
+
+  void ProcessEvents(const fd_set& read_fds, const fd_set& write_fds);
+
+  bool IsClosed() const;
+
+  void Shutdown();
 
  private:
-  scoped_ptr<Socket> socket1_;
-  scoped_ptr<Socket> socket2_;
+  class BufferedCopier;
 
-  DISALLOW_COPY_AND_ASSIGN(Forwarder);
+  base::ThreadChecker thread_checker_;
+  const scoped_ptr<Socket> socket1_;
+  const scoped_ptr<Socket> socket2_;
+  // Copies data from socket1 to socket2.
+  const scoped_ptr<BufferedCopier> buffer1_;
+  // Copies data from socket2 to socket1.
+  const scoped_ptr<BufferedCopier> buffer2_;
 };
 
-}  // namespace forwarder
+}  // namespace forwarder2
 
 #endif  // TOOLS_ANDROID_FORWARDER2_FORWARDER_H_

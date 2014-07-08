@@ -6,8 +6,10 @@
 #define UI_VIEWS_WIDGET_DESKTOP_AURA_DESKTOP_DISPATCHER_CLIENT_H_
 
 #include "base/basictypes.h"
-#include "ui/aura/client/dispatcher_client.h"
+#include "base/callback.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/views/views_export.h"
+#include "ui/wm/public/dispatcher_client.h"
 
 namespace views {
 
@@ -18,11 +20,17 @@ class VIEWS_EXPORT DesktopDispatcherClient
   DesktopDispatcherClient();
   virtual ~DesktopDispatcherClient();
 
-  virtual void RunWithDispatcher(MessageLoop::Dispatcher* dispatcher,
-                                 aura::Window* associated_window,
-                                 bool nestable_tasks_allowed) OVERRIDE;
+  virtual void RunWithDispatcher(
+      base::MessagePumpDispatcher* dispatcher) OVERRIDE;
+  virtual void QuitNestedMessageLoop() OVERRIDE;
 
  private:
+  base::Closure quit_closure_;
+
+  // Used to keep track of whether the client has been destroyed while the
+  // nested loop was running.
+  base::WeakPtrFactory<DesktopDispatcherClient> weak_ptr_factory_;
+
   DISALLOW_COPY_AND_ASSIGN(DesktopDispatcherClient);
 };
 

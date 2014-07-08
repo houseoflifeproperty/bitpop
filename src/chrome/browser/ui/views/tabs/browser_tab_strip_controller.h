@@ -7,19 +7,23 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
 #include "chrome/browser/ui/tabs/hover_tab_selector.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
+#include "chrome/browser/ui/views/frame/immersive_mode_controller.h"
 #include "chrome/browser/ui/views/tabs/tab_strip_controller.h"
 
 class Browser;
 class Tab;
 class TabStrip;
-class TabStripSelectionModel;
 struct TabRendererData;
 
 namespace content {
 class WebContents;
+}
+
+namespace ui {
+class ListSelectionModel;
 }
 
 // An implementation of TabStripController that sources data from the
@@ -41,7 +45,7 @@ class BrowserTabStripController : public TabStripController,
   bool IsTabPinned(Tab* tab) const;
 
   // TabStripController implementation:
-  virtual const TabStripSelectionModel& GetSelectionModel() OVERRIDE;
+  virtual const ui::ListSelectionModel& GetSelectionModel() OVERRIDE;
   virtual int GetCount() const OVERRIDE;
   virtual bool IsValidIndex(int model_index) const OVERRIDE;
   virtual bool IsActiveTab(int model_index) const OVERRIDE;
@@ -55,7 +59,8 @@ class BrowserTabStripController : public TabStripController,
   virtual void AddSelectionFromAnchorTo(int model_index) OVERRIDE;
   virtual void CloseTab(int model_index, CloseTabSource source) OVERRIDE;
   virtual void ShowContextMenuForTab(Tab* tab,
-                                     const gfx::Point& p) OVERRIDE;
+                                     const gfx::Point& p,
+                                     ui::MenuSourceType source_type) OVERRIDE;
   virtual void UpdateLoadingAnimations() OVERRIDE;
   virtual int HasAvailableDragActions() const OVERRIDE;
   virtual void OnDropIndexUpdate(int index, bool drop_before) OVERRIDE;
@@ -64,8 +69,12 @@ class BrowserTabStripController : public TabStripController,
                            const GURL& url) OVERRIDE;
   virtual bool IsCompatibleWith(TabStrip* other) const OVERRIDE;
   virtual void CreateNewTab() OVERRIDE;
+  virtual void CreateNewTabWithLocation(const base::string16& loc) OVERRIDE;
   virtual bool IsIncognito() OVERRIDE;
   virtual void LayoutTypeMaybeChanged() OVERRIDE;
+  virtual void OnStartedDraggingTabs() OVERRIDE;
+  virtual void OnStoppedDraggingTabs() OVERRIDE;
+  virtual void CheckFileSupported(const GURL& url) OVERRIDE;
 
   // TabStripModelObserver implementation:
   virtual void TabInsertedAt(content::WebContents* contents,
@@ -75,7 +84,7 @@ class BrowserTabStripController : public TabStripController,
                              int model_index) OVERRIDE;
   virtual void TabSelectionChanged(
       TabStripModel* tab_strip_model,
-      const TabStripSelectionModel& old_model) OVERRIDE;
+      const ui::ListSelectionModel& old_model) OVERRIDE;
   virtual void TabMoved(content::WebContents* contents,
                         int from_model_index,
                         int to_model_index) OVERRIDE;
@@ -131,6 +140,11 @@ class BrowserTabStripController : public TabStripController,
   // Resets the tabstrips layout type from prefs.
   void UpdateLayoutType();
 
+  // Notifies the tabstrip whether |url| is supported once a MIME type request
+  // has completed.
+  void OnFindURLMimeTypeCompleted(const GURL& url,
+                                  const std::string& mime_type);
+
   TabStripModel* model_;
 
   TabStrip* tabstrip_;
@@ -144,7 +158,14 @@ class BrowserTabStripController : public TabStripController,
   // Helper for performing tab selection as a result of dragging over a tab.
   HoverTabSelector hover_tab_selector_;
 
+  // Forces the tabs to use the regular (non-immersive) style and the
+  // top-of-window views to be revealed when the user is dragging |tabstrip|'s
+  // tabs.
+  scoped_ptr<ImmersiveRevealedLock> immersive_reveal_lock_;
+
   PrefChangeRegistrar local_pref_registrar_;
+
+  base::WeakPtrFactory<BrowserTabStripController> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserTabStripController);
 };

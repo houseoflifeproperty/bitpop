@@ -6,8 +6,14 @@
 #define CHROME_BROWSER_CHROMEOS_DISPLAY_DISPLAY_PREFERENCES_H_
 
 #include "base/basictypes.h"
+#include "third_party/cros_system_api/dbus/service_constants.h"
 
-class PrefService;
+class PrefRegistrySimple;
+
+namespace ash {
+struct DisplayLayout;
+}
+
 namespace gfx {
 class Display;
 class Insets;
@@ -17,29 +23,27 @@ namespace chromeos {
 
 // Registers the prefs associated with display settings and stored
 // into Local State.
-void RegisterDisplayLocalStatePrefs(PrefService* local_state);
+void RegisterDisplayLocalStatePrefs(PrefRegistrySimple* registry);
 
-// Sets or updates the display layout data to the specified |display| and
-// |pref_service|.
-void SetDisplayLayoutPref(const gfx::Display& display,
-                          int layout,
-                          int offset);
+// Stores the current displays prefereces (both primary display id and
+// dispay layout).
+void StoreDisplayPrefs();
 
-// Stores the specified ID as the primary display ID to Local State.  Clears
-// the data if the internal display's ID is specified.
-void StorePrimaryDisplayIDPref(int64 display_id);
+// Sets the display layout for the current displays.
+void SetCurrentDisplayLayout(const ash::DisplayLayout& layout);
 
-// Sets or updates the primary display device by its ID, and notifies the update
-// to the system.
-void SetPrimaryDisplayIDPref(int64 display_id);
+// Load display preferences from Local Store. |first_run_after_boot| is used
+// determine if a certain preference should be applied at boot time or
+// restart.
+void LoadDisplayPreferences(bool first_run_after_boot);
 
-// Sets or updates the overscan preference for the specified |display| to Local
-// State.
-void SetDisplayOverscan(const gfx::Display& display, const gfx::Insets& insets);
+// Stores the display layout for given display pairs for tests.
+void StoreDisplayLayoutPrefForTest(int64 id1,
+                                   int64 id2,
+                                   const ash::DisplayLayout& layout);
 
-// Checks the current display settings in Local State and notifies them to the
-// system.
-void NotifyDisplayLocalStatePrefChanged();
+// Stores the given |power_state| for tests.
+void StoreDisplayPowerStateForTest(DisplayPowerState power_state);
 
 }  // namespace chromeos
 

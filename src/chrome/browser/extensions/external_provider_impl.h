@@ -7,21 +7,19 @@
 
 #include <string>
 
-#include "chrome/browser/extensions/external_provider_interface.h"
-
 #include "base/memory/ref_counted.h"
 #include "chrome/browser/extensions/external_loader.h"
+#include "extensions/browser/external_provider_interface.h"
+#include "extensions/common/manifest.h"
 
 class Profile;
-class Version;
 
 namespace base {
 class DictionaryValue;
+class Version;
 }
 
 namespace extensions {
-class Extension;
-class ExternalLoader;
 
 // A specialization of the ExternalProvider that uses an instance of
 // ExternalLoader to provide external extensions. This class can be seen as a
@@ -35,11 +33,12 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   // |crx_location|: extensions originating from crx files
   // |download_location|: extensions originating from update URLs
   // If either of the origins is not supported by this provider, then it should
-  // be initialized as Extensions::INVALID.
+  // be initialized as Manifest::INVALID_LOCATION.
   ExternalProviderImpl(VisitorInterface* service,
-                       ExternalLoader* loader,
-                       Extension::Location crx_location,
-                       Extension::Location download_location,
+                       const scoped_refptr<ExternalLoader>& loader,
+                       Profile* profile,
+                       Manifest::Location crx_location,
+                       Manifest::Location download_location,
                        int creation_flags);
 
   virtual ~ExternalProviderImpl();
@@ -58,18 +57,22 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   virtual void ServiceShutdown() OVERRIDE;
   virtual void VisitRegisteredExtension() OVERRIDE;
   virtual bool HasExtension(const std::string& id) const OVERRIDE;
-  virtual bool GetExtensionDetails(const std::string& id,
-                                   Extension::Location* location,
-                                   scoped_ptr<Version>* version) const OVERRIDE;
+  virtual bool GetExtensionDetails(
+      const std::string& id,
+      Manifest::Location* location,
+      scoped_ptr<base::Version>* version) const OVERRIDE;
 
   virtual bool IsReady() const OVERRIDE;
 
   static const char kExternalCrx[];
   static const char kExternalVersion[];
   static const char kExternalUpdateUrl[];
-  static const char kSupportedLocales[];
+  static const char kInstallParam[];
   static const char kIsBookmarkApp[];
   static const char kIsFromWebstore[];
+  static const char kKeepIfPresent[];
+  static const char kSupportedLocales[];
+  static const char kWasInstalledByOem[];
 
   void set_auto_acknowledge(bool auto_acknowledge) {
     auto_acknowledge_ = auto_acknowledge;
@@ -78,11 +81,11 @@ class ExternalProviderImpl : public ExternalProviderInterface {
  private:
   // Location for external extensions that are provided by this provider from
   // local crx files.
-  const Extension::Location crx_location_;
+  const Manifest::Location crx_location_;
 
   // Location for external extensions that are provided by this provider from
   // update URLs.
-  const Extension::Location download_location_;
+  const Manifest::Location download_location_;
 
   // Weak pointer to the object that consumes the external extensions.
   // This is zeroed out by: ServiceShutdown()
@@ -99,8 +102,11 @@ class ExternalProviderImpl : public ExternalProviderInterface {
   // via |SetPrefs|.
   scoped_refptr<ExternalLoader> loader_;
 
+  // The profile that will be used to install external extensions.
+  Profile* profile_;
+
   // Creation flags to use for the extension.  These flags will be used
-  // when calling Extenion::Create() by the crx installer.
+  // when calling Extension::Create() by the crx installer.
   int creation_flags_;
 
   // Whether loaded extensions should be automatically acknowledged, so that

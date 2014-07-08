@@ -30,6 +30,7 @@
             'tests/test_case.html.mock-http-headers',
             'tests/test_page.css',
             'tests/ppapi_nacl_tests_newlib.nmf',
+            'tests/ppapi_nacl_tests_pnacl_nonsfi.nmf',
           ],
         },
         {
@@ -55,6 +56,8 @@
             '_CRT_NONSTDC_NO_DEPRECATE',
             '_SCL_SECURE_NO_DEPRECATE',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         }],
         ['OS=="mac"', {
           'mac_bundle': 1,
@@ -62,6 +65,8 @@
           'product_extension': 'plugin',
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
 # TODO(dmichael):  Figure out what is wrong with the script on Windows and add
 #                  it as an automated action.
 #      'actions': [
@@ -97,6 +102,8 @@
         'proxy/resource_message_test_sink.h',
         'shared_impl/test_globals.cc',
         'shared_impl/test_globals.h',
+        'shared_impl/unittest_utils.cc',
+        'shared_impl/unittest_utils.h',
       ],
     },
 
@@ -117,6 +124,14 @@
         'proxy/ppapi_perftests.cc',
         'proxy/ppp_messaging_proxy_perftest.cc',
       ],
+      'conditions': [
+        # See http://crbug.com/162998#c4 for why this is needed.
+        ['OS=="linux" and use_allocator!="none"', {
+          'dependencies': [
+            '../base/allocator/allocator.gyp:allocator',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'ppapi_unittests',
@@ -129,6 +144,7 @@
         'ppapi_proxy',
         'ppapi_shared',
         'ppapi_unittest_shared',
+        '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
         '../gpu/gpu.gyp:gpu_ipc',
         '../ipc/ipc.gyp:ipc',
@@ -139,14 +155,16 @@
         '../ui/surface/surface.gyp:surface',
       ],
       'sources': [
-        'proxy/run_all_unittests.cc',
-
         'host/resource_message_filter_unittest.cc',
         'proxy/device_enumeration_resource_helper_unittest.cc',
         'proxy/file_chooser_resource_unittest.cc',
+        'proxy/file_system_resource_unittest.cc',
         'proxy/flash_resource_unittest.cc',
+        'proxy/interface_list_unittest.cc',
         'proxy/mock_resource.cc',
         'proxy/mock_resource.h',
+        'proxy/nacl_message_scanner_unittest.cc',
+        'proxy/pdf_resource_unittest.cc',
         'proxy/plugin_dispatcher_unittest.cc',
         'proxy/plugin_resource_tracker_unittest.cc',
         'proxy/plugin_var_tracker_unittest.cc',
@@ -155,17 +173,24 @@
         'proxy/ppp_instance_proxy_unittest.cc',
         'proxy/ppp_messaging_proxy_unittest.cc',
         'proxy/printing_resource_unittest.cc',
+        'proxy/raw_var_data_unittest.cc',
         'proxy/serialized_var_unittest.cc',
+        'proxy/talk_resource_unittest.cc',
         'proxy/websocket_resource_unittest.cc',
+        'shared_impl/media_stream_buffer_manager_unittest.cc',
+        'shared_impl/media_stream_video_track_shared_unittest.cc',
+        'shared_impl/proxy_lock_unittest.cc',
         'shared_impl/resource_tracker_unittest.cc',
+        'shared_impl/thread_aware_callback_unittest.cc',
         'shared_impl/time_conversion_unittest.cc',
         'shared_impl/tracked_callback_unittest.cc',
         'shared_impl/var_tracker_unittest.cc',
+        'shared_impl/var_value_conversions_unittest.cc',
       ],
       'conditions': [
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            [ 'linux_use_tcmalloc == 1', {
+            [ 'use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -173,6 +198,8 @@
           ],
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_skeleton',
@@ -184,9 +211,6 @@
           ['os_posix==1 and OS!="mac"', {
             'cflags': ['-fvisibility=hidden'],
             'type': 'shared_library',
-            # -gstabs, used in the official builds, causes an ICE. Simply remove
-            # it.
-            'cflags!': ['-gstabs'],
           }],
           ['OS=="win"', {
             'type': 'shared_library',
@@ -236,6 +260,8 @@
       'sources': [
         'examples/gamepad/gamepad.cc',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
 
     {
@@ -256,6 +282,16 @@
       ],
       'sources': [
         'examples/stub/stub.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_crxfs',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/crxfs/crxfs.cc',
       ],
     },
     {
@@ -307,6 +343,8 @@
       'sources': [
         'examples/ime/ime.cc',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_paint_manager',
@@ -336,6 +374,16 @@
       ],
       'sources': [
         'examples/scripting/post_message.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_scaling',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/scaling/scaling.cc',
       ],
     },
     {
@@ -384,7 +432,6 @@
         'ppapi_example_skeleton',
         'ppapi.gyp:ppapi_cpp',
         'ppapi.gyp:ppapi_gles2',
-        'ppapi.gyp:ppapi_egl',
       ],
       'include_dirs': [
         'lib/gl/include',
@@ -399,15 +446,34 @@
         'ppapi_example_skeleton',
         'ppapi.gyp:ppapi_cpp',
         'ppapi.gyp:ppapi_gles2',
-        'ppapi.gyp:ppapi_egl',
       ],
       'include_dirs': [
         'lib/gl/include',
       ],
       'sources': [
-        'examples/video_decode/video_decode.cc',
+        # TODO(bbudge) Change to new example when implementation lands.
+        'examples/video_decode/video_decode_dev.cc',
         'examples/video_decode/testdata.h',
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'ppapi_example_video_decode_dev',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/video_decode/video_decode_dev.cc',
+        'examples/video_decode/testdata.h',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'ppapi_example_vc',
@@ -415,13 +481,22 @@
         'ppapi_example_skeleton',
         'ppapi.gyp:ppapi_cpp',
         'ppapi.gyp:ppapi_gles2',
-        'ppapi.gyp:ppapi_egl',
       ],
       'include_dirs': [
         'lib/gl/include',
       ],
       'sources': [
         'examples/video_capture/video_capture.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_video_effects',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/video_effects/video_effects.cc',
       ],
     },
     {
@@ -452,6 +527,48 @@
       ],
       'sources': [
         'examples/printing/printing.cc',
+      ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_audio',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+      ],
+      'sources': [
+        'examples/media_stream_audio/media_stream_audio.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_media_stream_video',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/media_stream_video/media_stream_video.cc',
+      ],
+    },
+    {
+      'target_name': 'ppapi_example_gles2_spinning_cube',
+      'dependencies': [
+        'ppapi_example_skeleton',
+        'ppapi.gyp:ppapi_cpp',
+        'ppapi.gyp:ppapi_gles2',
+      ],
+      'include_dirs': [
+        'lib/gl/include',
+      ],
+      'sources': [
+        'examples/gles2_spinning_cube/gles2_spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.cc',
+        'examples/gles2_spinning_cube/spinning_cube.h',
       ],
     },
   ],

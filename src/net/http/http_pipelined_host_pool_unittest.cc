@@ -6,11 +6,11 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"
-#include "net/base/ssl_config_service.h"
 #include "net/http/http_pipelined_host.h"
 #include "net/http/http_pipelined_host_capability.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_info.h"
+#include "net/ssl/ssl_config_service.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -73,9 +73,10 @@ class HttpPipelinedHostPoolTest : public testing::Test {
       : key_(HostPortPair("host", 123)),
         factory_(new MockHostFactory),  // Owned by pool_.
         host_(new MockHost(key_)),  // Owned by pool_.
-        http_server_properties_(new HttpServerPropertiesImpl),
-        pool_(new HttpPipelinedHostPool(&delegate_, factory_,
-                                        http_server_properties_.get(), false)),
+        http_server_properties_(new HttpServerPropertiesImpl()),
+        pool_(new HttpPipelinedHostPool(
+            &delegate_, factory_,
+            http_server_properties_->GetWeakPtr(), false)),
         was_npn_negotiated_(false),
         protocol_negotiated_(kProtoUnknown) {
   }

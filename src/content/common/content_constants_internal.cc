@@ -6,10 +6,19 @@
 
 namespace content {
 
-const char kFrameTreeNodeNameKey[] = "name";
-const char kFrameTreeNodeIdKey[] = "id";
-const char kFrameTreeNodeSubtreeKey[] = "subtree";
-
 const int kHungRendererDelayMs = 30000;
+
+const uint16 kMaxPluginSideLength = 1 << 15;
+// 8m pixels.
+const uint32 kMaxPluginSize = 8 << 20;
+
+const int kTraceEventBrowserProcessSortIndex = -6;
+const int kTraceEventRendererProcessSortIndex = -5;
+const int kTraceEventPluginProcessSortIndex = -4;
+const int kTraceEventPpapiProcessSortIndex = -3;
+const int kTraceEventPpapiBrokerProcessSortIndex = -2;
+const int kTraceEventGpuProcessSortIndex = -1;
+
+const int kTraceEventRendererMainThreadSortIndex = -1;
 
 } // namespace content

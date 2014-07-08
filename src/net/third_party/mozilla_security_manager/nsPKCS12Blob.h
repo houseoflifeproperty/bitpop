@@ -42,7 +42,7 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 typedef struct CERTCertificateStr CERTCertificate;
 typedef struct PK11SlotInfoStr PK11SlotInfo;
@@ -63,7 +63,7 @@ void EnsurePKCS12Init();
 int nsPKCS12Blob_Import(PK11SlotInfo* slot,
                         const char* pkcs12_data,
                         size_t pkcs12_len,
-                        const string16& password,
+                        const base::string16& password,
                         bool is_extractable,
                         net::CertificateList* imported_certs);
 
@@ -72,7 +72,7 @@ int nsPKCS12Blob_Import(PK11SlotInfo* slot,
 // TODO(mattm): provide better error return status?
 int nsPKCS12Blob_Export(std::string* output,
                         const net::CertificateList& certs,
-                        const string16& password);
+                        const base::string16& password);
 
 }  // namespace mozilla_security_manager
 

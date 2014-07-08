@@ -36,6 +36,7 @@ import com.google.protos.ipc.invalidation.AndroidService.ClientDowncall.Registra
 import com.google.protos.ipc.invalidation.AndroidService.InternalDowncall;
 import com.google.protos.ipc.invalidation.AndroidService.InternalDowncall.CreateClient;
 import com.google.protos.ipc.invalidation.Client.PersistentTiclState;
+import com.google.protos.ipc.invalidation.ClientProtocol.ServerToClientMessage;
 
 import android.app.IntentService;
 import android.content.Intent;
@@ -67,6 +68,10 @@ public class TiclService extends IntentService {
 
   public TiclService() {
     super("TiclService");
+
+    // If the process dies during a call to onHandleIntent, redeliver the intent when the service
+    // restarts.
+    setIntentRedelivery(true);
   }
 
   /**
@@ -82,8 +87,8 @@ public class TiclService extends IntentService {
   protected void onHandleIntent(Intent intent) {
     // TODO: We may want to use wakelocks to prevent the phone from sleeping
     // before we have finished handling the Intent.
+
     if (intent == null) {
-      resources.getLogger().fine("Ignoring null intent");
       return;
     }
 
@@ -93,22 +98,24 @@ public class TiclService extends IntentService {
     resources.getLogger().fine("onHandleIntent(%s)", AndroidStrings.toLazyCompactString(intent));
     validator = new AndroidIntentProtocolValidator(resources.getLogger());
 
-    // Dispatch the appropriate handler function based on which extra key is set.
-    if (intent.hasExtra(ProtocolIntents.CLIENT_DOWNCALL_KEY)) {
-      handleClientDowncall(intent.getByteArrayExtra(ProtocolIntents.CLIENT_DOWNCALL_KEY));
-    } else if (intent.hasExtra(ProtocolIntents.INTERNAL_DOWNCALL_KEY)) {
-      handleInternalDowncall(intent.getByteArrayExtra(ProtocolIntents.INTERNAL_DOWNCALL_KEY));
-    } else if (intent.hasExtra(ProtocolIntents.SCHEDULER_KEY)) {
-      handleSchedulerEvent(intent.getByteArrayExtra(ProtocolIntents.SCHEDULER_KEY));
-    } else {
-      resources.getLogger().warning("Received Intent without any recognized extras: %s", intent);
+    try {
+      // Dispatch the appropriate handler function based on which extra key is set.
+      if (intent.hasExtra(ProtocolIntents.CLIENT_DOWNCALL_KEY)) {
+        handleClientDowncall(intent.getByteArrayExtra(ProtocolIntents.CLIENT_DOWNCALL_KEY));
+      } else if (intent.hasExtra(ProtocolIntents.INTERNAL_DOWNCALL_KEY)) {
+        handleInternalDowncall(intent.getByteArrayExtra(ProtocolIntents.INTERNAL_DOWNCALL_KEY));
+      } else if (intent.hasExtra(ProtocolIntents.SCHEDULER_KEY)) {
+        handleSchedulerEvent(intent.getByteArrayExtra(ProtocolIntents.SCHEDULER_KEY));
+      } else {
+        resources.getLogger().warning("Received Intent without any recognized extras: %s", intent);
+      }
+    } finally {
+      // Null out resources and validator to prevent accidentally using them in the future before
+      // they have been properly re-created.
+      resources.stop();
+      resources = null;
+      validator = null;
     }
-    resources.stop();
-
-    // Null out resources and validator to prevent accidentally using them in the future before they
-    // have been properly re-created.
-    resources = null;
-    validator = null;
   }
 
   /** Handles a request to call a function on the ticl. */
@@ -255,6 +262,11 @@ public class TiclService extends IntentService {
       resources.getNetworkListener().onMessageReceived(message);
       return;
     }
+
+    // Even if the client is stopped, attempt to send invalidations if the client is configured to
+    // receive them.
+    maybeSendBackgroundInvalidationIntent(message);
+
     // The Ticl isn't started. Rewrite persistent storage so that the last-send-time is a long
     // time ago. The next time the Ticl starts, it will send a message to the data center, which
     // ensures that it will be marked online and that the dropped message (or an equivalent) will
@@ -297,6 +309,31 @@ public class TiclService extends IntentService {
         });
       }
     });
+  }
+
+  /**
+   * If a service is registered to handle them, forward invalidations received while the
+   * invalidation client is stopped.
+   */
+  private void maybeSendBackgroundInvalidationIntent(byte[] message) {
+    // If a service is registered to receive background invalidations, parse the message to see if
+    // any of them should be forwarded.
+    AndroidTiclManifest manifest = new AndroidTiclManifest(getApplicationContext());
+    String backgroundServiceClass =
+        manifest.getBackgroundInvalidationListenerServiceClass();
+    if (backgroundServiceClass != null) {
+      try {
+        ServerToClientMessage s2cMessage = ServerToClientMessage.parseFrom(message);
+        if (s2cMessage.hasInvalidationMessage()) {
+          Intent intent =
+              ProtocolIntents.newBackgroundInvalidationIntent(s2cMessage.getInvalidationMessage());
+          intent.setClassName(getApplicationContext(), backgroundServiceClass);
+          startService(intent);
+        }
+      } catch (InvalidProtocolBufferException exception) {
+        resources.getLogger().info("Failed to parse message: %s", exception.getMessage());
+      }
+    }
   }
 
   /** Handles a request to call a particular recurring task on the Ticl. */

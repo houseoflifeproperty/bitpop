@@ -20,6 +20,7 @@ class MockShillProfileClient : public ShillProfileClient {
   MockShillProfileClient();
   virtual ~MockShillProfileClient();
 
+  MOCK_METHOD1(Init, void(dbus::Bus* bus));
   MOCK_METHOD2(AddPropertyChangedObserver,
                void(const dbus::ObjectPath& profile_path,
                     ShillPropertyChangedObserver* observer));
@@ -39,6 +40,7 @@ class MockShillProfileClient : public ShillProfileClient {
                                  const std::string& entry_path,
                                  const base::Closure& callback,
                                  const ErrorCallback& error_callback));
+  MOCK_METHOD0(GetTestInterface, TestInterface*());
 };
 
 }  // namespace chromeos

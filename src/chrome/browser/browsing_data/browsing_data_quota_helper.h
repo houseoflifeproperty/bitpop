@@ -10,10 +10,9 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "content/public/browser/browser_thread.h"
-#include "webkit/quota/quota_types.h"
+#include "webkit/common/quota/quota_types.h"
 
 class BrowsingDataQuotaHelper;
 class Profile;
@@ -42,7 +41,8 @@ class BrowsingDataQuotaHelper
     explicit QuotaInfo(const std::string& host);
     QuotaInfo(const std::string& host,
               int64 temporary_usage,
-              int64 persistent_usage);
+              int64 persistent_usage,
+              int64 syncable_usage);
     ~QuotaInfo();
 
     // Certain versions of MSVC 2008 have bad implementations of ADL for nested
@@ -54,6 +54,7 @@ class BrowsingDataQuotaHelper
     std::string host;
     int64 temporary_usage;
     int64 persistent_usage;
+    int64 syncable_usage;
   };
 
   typedef std::list<QuotaInfo> QuotaInfoArray;

@@ -11,8 +11,8 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
 #include "chrome/browser/sync/glue/shared_change_processor.h"
+#include "components/sync_driver/data_type_controller.h"
 
 class Profile;
 class ProfileSyncService;
@@ -27,6 +27,8 @@ namespace browser_sync {
 class NonUIDataTypeController : public DataTypeController {
  public:
   NonUIDataTypeController(
+      scoped_refptr<base::MessageLoopProxy> ui_thread,
+      const base::Closure& error_callback,
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
@@ -38,6 +40,7 @@ class NonUIDataTypeController : public DataTypeController {
   virtual void Stop() OVERRIDE;
   virtual syncer::ModelType type() const = 0;
   virtual syncer::ModelSafeGroup model_safe_group() const = 0;
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
   virtual std::string name() const OVERRIDE;
   virtual State state() const OVERRIDE;
   virtual void OnSingleDatatypeUnrecoverableError(
@@ -97,6 +100,10 @@ class NonUIDataTypeController : public DataTypeController {
   // Record causes of start failure.
   virtual void RecordStartFailure(StartResult result);
 
+  // To allow unit tests to control thread interaction during non-ui startup
+  // and shutdown, use a factory method to create the SharedChangeProcessor.
+  virtual SharedChangeProcessor* CreateSharedChangeProcessor();
+
   Profile* profile() const { return profile_; }
 
  private:
@@ -151,6 +158,10 @@ class NonUIDataTypeController : public DataTypeController {
   // since we call Disconnect() before releasing the UI thread
   // reference).
   scoped_refptr<SharedChangeProcessor> shared_change_processor_;
+
+  // The UserShare to connect the SharedChangeProcessor to. NULL until set in
+  // LoadModels.
+  syncer::UserShare* user_share_;
 
   // A weak pointer to the actual local syncable service, which performs all the
   // real work. We do not own the object, and it is only safe to access on the

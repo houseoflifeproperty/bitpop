@@ -12,6 +12,10 @@
 #ifndef VP9_COMMON_X86_VP9_POSTPROC_X86_H_
 #define VP9_COMMON_X86_VP9_POSTPROC_X86_H_
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /* Note:
  *
  * This platform is commonly built for runtime CPU detection. If you modify
@@ -61,4 +65,8 @@ extern prototype_postproc_addnoise(vp9_plane_add_noise_wmt);
 #endif
 #endif
 
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VP9_COMMON_X86_VP9_POSTPROC_X86_H_

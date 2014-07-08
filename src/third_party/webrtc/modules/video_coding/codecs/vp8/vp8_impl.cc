@@ -11,30 +11,29 @@
  *
  */
 
-#include "modules/video_coding/codecs/vp8/vp8_impl.h"
+#include "webrtc/modules/video_coding/codecs/vp8/vp8_impl.h"
 
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <vector>
 
 #include "vpx/vpx_encoder.h"
 #include "vpx/vpx_decoder.h"
 #include "vpx/vp8cx.h"
 #include "vpx/vp8dx.h"
 
-#include "common_video/libyuv/include/webrtc_libyuv.h"
-#include "module_common_types.h"
-#include "modules/video_coding/codecs/vp8/reference_picture_selection.h"
-#include "modules/video_coding/codecs/vp8/temporal_layers.h"
-#include "system_wrappers/interface/tick_util.h"
+#include "webrtc/common.h"
+#include "webrtc/common_video/libyuv/include/webrtc_libyuv.h"
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/video_coding/codecs/vp8/temporal_layers.h"
+#include "webrtc/modules/video_coding/codecs/vp8/reference_picture_selection.h"
+#include "webrtc/system_wrappers/interface/tick_util.h"
+#include "webrtc/system_wrappers/interface/trace_event.h"
 
 enum { kVp8ErrorPropagationTh = 30 };
 
 namespace webrtc {
-
-VP8Encoder* VP8Encoder::Create() {
-  return new VP8EncoderImpl();
-}
 
 VP8EncoderImpl::VP8EncoderImpl()
     : encoded_image_(),
@@ -47,9 +46,7 @@ VP8EncoderImpl::VP8EncoderImpl()
       rc_max_intra_target_(0),
       token_partitions_(VP8_ONE_TOKENPARTITION),
       rps_(new ReferencePictureSelection),
-#if WEBRTC_LIBVPX_VERSION >= 971
       temporal_layers_(NULL),
-#endif
       encoder_(NULL),
       config_(NULL),
       raw_(NULL) {
@@ -83,12 +80,8 @@ int VP8EncoderImpl::Release() {
     vpx_img_free(raw_);
     raw_ = NULL;
   }
-#if WEBRTC_LIBVPX_VERSION >= 971
-  if (temporal_layers_ != NULL) {
-    delete temporal_layers_;
-    temporal_layers_ = NULL;
-  }
-#endif
+  delete temporal_layers_;
+  temporal_layers_ = NULL;
   inited_ = false;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -109,10 +102,8 @@ int VP8EncoderImpl::SetRates(uint32_t new_bitrate_kbit,
     new_bitrate_kbit = codec_.maxBitrate;
   }
   config_->rc_target_bitrate = new_bitrate_kbit;  // in kbit/s
-
-#if WEBRTC_LIBVPX_VERSION >= 971
-  temporal_layers_->ConfigureBitrates(new_bitrate_kbit, config_);
-#endif
+  temporal_layers_->ConfigureBitrates(new_bitrate_kbit, codec_.maxBitrate,
+                                      new_framerate, config_);
   codec_.maxFramerate = new_framerate;
 
   // update encoder context
@@ -155,14 +146,20 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   }
   timestamp_ = 0;
 
-  codec_ = *inst;
+  if (&codec_ != inst) {
+    codec_ = *inst;
+  }
 
-#if WEBRTC_LIBVPX_VERSION >= 971
+  // TODO(andresp): assert(inst->extra_options) and cleanup.
+  Config default_options;
+  const Config& options =
+      inst->extra_options ? *inst->extra_options : default_options;
+
   int num_temporal_layers = inst->codecSpecific.VP8.numberOfTemporalLayers > 1 ?
       inst->codecSpecific.VP8.numberOfTemporalLayers : 1;
   assert(temporal_layers_ == NULL);
-  temporal_layers_ = new TemporalLayers(num_temporal_layers);
-#endif
+  temporal_layers_ = options.Get<TemporalLayers::Factory>()
+                         .Create(num_temporal_layers, rand());
   // random start 16 bits is enough.
   picture_id_ = static_cast<uint16_t>(rand()) & 0x7FFF;
 
@@ -186,10 +183,8 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   config_->g_w = codec_.width;
   config_->g_h = codec_.height;
   config_->rc_target_bitrate = inst->startBitrate;  // in kbit/s
-
-#if WEBRTC_LIBVPX_VERSION >= 971
-  temporal_layers_->ConfigureBitrates(inst->startBitrate, config_);
-#endif
+  temporal_layers_->ConfigureBitrates(inst->startBitrate, inst->maxBitrate,
+                                      inst->maxFramerate, config_);
   // setting the time base of the codec
   config_->g_timebase.num = 1;
   config_->g_timebase.den = 90000;
@@ -198,12 +193,10 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   switch (inst->codecSpecific.VP8.resilience) {
     case kResilienceOff:
       config_->g_error_resilient = 0;
-#if WEBRTC_LIBVPX_VERSION >= 971
       if (num_temporal_layers > 1) {
         // Must be on for temporal layers (i.e., |num_temporal_layers| > 1).
         config_->g_error_resilient = 1;
       }
-#endif
       break;
     case kResilientStream:
       config_->g_error_resilient = 1;  // TODO(holmer): Replace with
@@ -221,12 +214,12 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   }
   config_->g_lag_in_frames = 0;  // 0- no frame lagging
 
-  // Determining number of threads based on the image size
-  if (codec_.width * codec_.height > 704 * 576 && number_of_cores > 1) {
-    // 2 threads when larger than 4CIF
-    config_->g_threads = 2;
+  if (codec_.width * codec_.height > 1280 * 960 && number_of_cores >= 6) {
+    config_->g_threads = 3;  // 3 threads for 1080p.
+  } else if (codec_.width * codec_.height > 640 * 480 && number_of_cores >= 3) {
+    config_->g_threads = 2;  // 2 threads for qHD/HD.
   } else {
-    config_->g_threads = 1;
+    config_->g_threads = 1;  // 1 thread for VGA or less
   }
 
   // rate control settings
@@ -237,7 +230,7 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
   config_->rc_resize_allowed = inst->codecSpecific.VP8.automaticResizeOn ?
       1 : 0;
   config_->rc_min_quantizer = 2;
-  config_->rc_max_quantizer = 56;
+  config_->rc_max_quantizer = inst->qpMax;
   config_->rc_undershoot_pct = 100;
   config_->rc_overshoot_pct = 15;
   config_->rc_buf_initial_sz = 500;
@@ -250,9 +243,11 @@ int VP8EncoderImpl::InitEncode(const VideoCodec* inst,
     // Disable periodic key frames if we get feedback from the decoder
     // through SLI and RPSI.
     config_->kf_mode = VPX_KF_DISABLED;
-  } else {
+  } else if (inst->codecSpecific.VP8.keyFrameInterval  > 0) {
     config_->kf_mode = VPX_KF_AUTO;
-    config_->kf_max_dist = 3000;
+    config_->kf_max_dist = inst->codecSpecific.VP8.keyFrameInterval;
+  } else {
+    config_->kf_mode = VPX_KF_DISABLED;
   }
   switch (inst->codecSpecific.VP8.complexity) {
     case kComplexityHigh:
@@ -282,10 +277,7 @@ int VP8EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   // TODO(holmer): We should make a smarter decision on the number of
   // partitions. Eight is probably not the optimal number for low resolution
   // video.
-
-#if WEBRTC_LIBVPX_VERSION >= 971
   flags |= VPX_CODEC_USE_OUTPUT_PARTITION;
-#endif
   if (vpx_codec_enc_init(encoder_, vpx_codec_vp8_cx(), config_, flags)) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
@@ -298,10 +290,8 @@ int VP8EncoderImpl::InitAndSetControlSettings(const VideoCodec* inst) {
   vpx_codec_control(encoder_, VP8E_SET_NOISE_SENSITIVITY,
                     inst->codecSpecific.VP8.denoisingOn ? 1 : 0);
 #endif
-#if WEBRTC_LIBVPX_VERSION >= 971
   vpx_codec_control(encoder_, VP8E_SET_MAX_INTRA_BITRATE_PCT,
                     rc_max_intra_target_);
-#endif
   inited_ = true;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -325,6 +315,8 @@ uint32_t VP8EncoderImpl::MaxIntraTarget(uint32_t optimalBuffersize) {
 int VP8EncoderImpl::Encode(const I420VideoFrame& input_image,
                            const CodecSpecificInfo* codec_specific_info,
                            const std::vector<VideoFrameType>* frame_types) {
+  TRACE_EVENT1("webrtc", "VP8::Encode", "timestamp", input_image.timestamp());
+
   if (!inited_) {
     return WEBRTC_VIDEO_CODEC_UNINITIALIZED;
   }
@@ -359,10 +351,8 @@ int VP8EncoderImpl::Encode(const I420VideoFrame& input_image,
   raw_->stride[VPX_PLANE_U] = input_image.stride(kUPlane);
   raw_->stride[VPX_PLANE_V] = input_image.stride(kVPlane);
 
-  int flags = 0;
-#if WEBRTC_LIBVPX_VERSION >= 971
-  flags |= temporal_layers_->EncodeFlags();
-#endif
+  int flags = temporal_layers_->EncodeFlags(input_image.timestamp());
+
   bool send_keyframe = (frame_type == kKeyFrame);
   if (send_keyframe) {
     // Key frame request from caller.
@@ -397,11 +387,7 @@ int VP8EncoderImpl::Encode(const I420VideoFrame& input_image,
   }
   timestamp_ += duration;
 
-#if WEBRTC_LIBVPX_VERSION >= 971
   return GetEncodedPartitions(input_image);
-#else
-  return GetEncodedFrame(input_image);
-#endif
 }
 
 int VP8EncoderImpl::UpdateCodecFrameSize(const I420VideoFrame& input_image) {
@@ -437,80 +423,12 @@ void VP8EncoderImpl::PopulateCodecSpecific(CodecSpecificInfo* codec_specific,
   vp8Info->simulcastIdx = 0;
   vp8Info->keyIdx = kNoKeyIdx;  // TODO(hlundin) populate this
   vp8Info->nonReference = (pkt.data.frame.flags & VPX_FRAME_IS_DROPPABLE) != 0;
-#if WEBRTC_LIBVPX_VERSION >= 971
   temporal_layers_->PopulateCodecSpecific(
       (pkt.data.frame.flags & VPX_FRAME_IS_KEY) ? true : false, vp8Info,
           timestamp);
-#else
-  vp8Info->temporalIdx = kNoTemporalIdx;
-  vp8Info->layerSync = false;
-  vp8Info->tl0PicIdx = kNoTl0PicIdx;
-#endif
   picture_id_ = (picture_id_ + 1) & 0x7FFF;  // prepare next
 }
 
-int VP8EncoderImpl::GetEncodedFrame(const I420VideoFrame& input_image) {
-  vpx_codec_iter_t iter = NULL;
-  encoded_image_._frameType = kDeltaFrame;
-  const vpx_codec_cx_pkt_t *pkt= vpx_codec_get_cx_data(encoder_, &iter);
-  if (pkt == NULL) {
-    if (!encoder_->err) {
-      // dropped frame
-      return WEBRTC_VIDEO_CODEC_OK;
-    } else {
-      return WEBRTC_VIDEO_CODEC_ERROR;
-    }
-  } else if (pkt->kind == VPX_CODEC_CX_FRAME_PKT) {
-    CodecSpecificInfo codecSpecific;
-    PopulateCodecSpecific(&codecSpecific, *pkt, input_image.timestamp());
-
-    assert(pkt->data.frame.sz <= encoded_image_._size);
-    memcpy(encoded_image_._buffer, pkt->data.frame.buf, pkt->data.frame.sz);
-    encoded_image_._length = uint32_t(pkt->data.frame.sz);
-    encoded_image_._encodedHeight = raw_->h;
-    encoded_image_._encodedWidth = raw_->w;
-
-    // Check if encoded frame is a key frame.
-    if (pkt->data.frame.flags & VPX_FRAME_IS_KEY) {
-      encoded_image_._frameType = kKeyFrame;
-      rps_->EncodedKeyFrame(picture_id_);
-    }
-
-    if (encoded_image_._length > 0) {
-      encoded_image_._timeStamp = input_image.timestamp();
-      // TODO(mikhal): Resolve confusion in terms.
-      encoded_image_.capture_time_ms_ = input_image.render_time_ms();
-
-      // Figure out where partition boundaries are located.
-      RTPFragmentationHeader fragInfo;
-      fragInfo.VerifyAndAllocateFragmentationHeader(2);
-      // two partitions: 1st and 2nd
-
-      // First partition
-      fragInfo.fragmentationOffset[0] = 0;
-      uint8_t *firstByte = encoded_image_._buffer;
-      uint32_t tmpSize = (firstByte[2] << 16) | (firstByte[1] << 8)
-                    | firstByte[0];
-      fragInfo.fragmentationLength[0] = (tmpSize >> 5) & 0x7FFFF;
-      fragInfo.fragmentationPlType[0] = 0;  // not known here
-      fragInfo.fragmentationTimeDiff[0] = 0;
-
-      // Second partition
-      fragInfo.fragmentationOffset[1] = fragInfo.fragmentationLength[0];
-      fragInfo.fragmentationLength[1] = encoded_image_._length -
-          fragInfo.fragmentationLength[0];
-      fragInfo.fragmentationPlType[1] = 0;  // not known here
-      fragInfo.fragmentationTimeDiff[1] = 0;
-
-      encoded_complete_callback_->Encoded(encoded_image_, &codecSpecific,
-                                        &fragInfo);
-    }
-    return WEBRTC_VIDEO_CODEC_OK;
-  }
-  return WEBRTC_VIDEO_CODEC_ERROR;
-}
-
-#if WEBRTC_LIBVPX_VERSION >= 971
 int VP8EncoderImpl::GetEncodedPartitions(const I420VideoFrame& input_image) {
   vpx_codec_iter_t iter = NULL;
   int part_idx = 0;
@@ -552,16 +470,16 @@ int VP8EncoderImpl::GetEncodedPartitions(const I420VideoFrame& input_image) {
     }
   }
   if (encoded_image_._length > 0) {
+    TRACE_COUNTER1("webrtc", "EncodedFrameSize", encoded_image_._length);
     encoded_image_._timeStamp = input_image.timestamp();
     encoded_image_.capture_time_ms_ = input_image.render_time_ms();
-    encoded_image_._encodedHeight = raw_->h;
-    encoded_image_._encodedWidth = raw_->w;
+    encoded_image_._encodedHeight = codec_.height;
+    encoded_image_._encodedWidth = codec_.width;
     encoded_complete_callback_->Encoded(encoded_image_, &codec_specific,
                                       &frag_info);
   }
   return WEBRTC_VIDEO_CODEC_OK;
 }
-#endif
 
 int VP8EncoderImpl::SetChannelParameters(uint32_t /*packet_loss*/, int rtt) {
   rps_->SetRtt(rtt);
@@ -574,10 +492,6 @@ int VP8EncoderImpl::RegisterEncodeCompleteCallback(
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-VP8Decoder* VP8Decoder::Create() {
-  return new VP8DecoderImpl();
-}
-
 VP8DecoderImpl::VP8DecoderImpl()
     : decode_complete_callback_(NULL),
       inited_(false),
@@ -587,8 +501,8 @@ VP8DecoderImpl::VP8DecoderImpl()
       image_format_(VPX_IMG_FMT_NONE),
       ref_frame_(NULL),
       propagation_cnt_(-1),
-      latest_keyframe_complete_(false),
-      mfqe_enabled_(false) {
+      mfqe_enabled_(false),
+      key_frame_required_(true) {
   memset(&codec_, 0, sizeof(codec_));
 }
 
@@ -603,7 +517,6 @@ int VP8DecoderImpl::Reset() {
   }
   InitDecode(&codec_, 1);
   propagation_cnt_ = -1;
-  latest_keyframe_complete_ = false;
   mfqe_enabled_ = false;
   return WEBRTC_VIDEO_CODEC_OK;
 }
@@ -628,7 +541,7 @@ int VP8DecoderImpl::InitDecode(const VideoCodec* inst, int number_of_cores) {
   cfg.h = cfg.w = 0;  // set after decode
 
   vpx_codec_flags_t flags = 0;
-#if (WEBRTC_LIBVPX_VERSION >= 971) && !defined(WEBRTC_ARCH_ARM)
+#ifndef WEBRTC_ARCH_ARM
   flags = VPX_CODEC_USE_POSTPROC;
   if (inst->codecSpecific.VP8.errorConcealmentOn) {
     flags |= VPX_CODEC_USE_ERROR_CONCEALMENT;
@@ -642,7 +555,7 @@ int VP8DecoderImpl::InitDecode(const VideoCodec* inst, int number_of_cores) {
     return WEBRTC_VIDEO_CODEC_MEMORY;
   }
 
-#if (WEBRTC_LIBVPX_VERSION >= 971) && !defined(WEBRTC_ARCH_ARM)
+#ifndef WEBRTC_ARCH_ARM
   vp8_postproc_cfg_t  ppcfg;
   ppcfg.post_proc_flag = VP8_DEMACROBLOCK | VP8_DEBLOCK;
   // Strength of deblocking filter. Valid range:[0,16]
@@ -650,12 +563,18 @@ int VP8DecoderImpl::InitDecode(const VideoCodec* inst, int number_of_cores) {
   vpx_codec_control(decoder_, VP8_SET_POSTPROC, &ppcfg);
 #endif
 
-  // Save VideoCodec instance for later; mainly for duplicating the decoder.
-  codec_ = *inst;
+  if (&codec_ != inst) {
+    // Save VideoCodec instance for later; mainly for duplicating the decoder.
+    codec_ = *inst;
+  }
+
   propagation_cnt_ = -1;
-  latest_keyframe_complete_ = false;
 
   inited_ = true;
+
+  // Always start with a complete key frame.
+  key_frame_required_ = true;
+
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
@@ -683,7 +602,7 @@ int VP8DecoderImpl::Decode(const EncodedImage& input_image,
   }
 #endif
 
-#if (WEBRTC_LIBVPX_VERSION >= 971) && !defined(WEBRTC_ARCH_ARM)
+#ifndef WEBRTC_ARCH_ARM
   if (!mfqe_enabled_ && codec_specific_info &&
       codec_specific_info->codecSpecific.VP8.temporalIdx > 0) {
     // Enable MFQE if we are receiving layers.
@@ -697,6 +616,18 @@ int VP8DecoderImpl::Decode(const EncodedImage& input_image,
   }
 #endif
 
+
+  // Always start with a complete key frame.
+  if (key_frame_required_) {
+    if (input_image._frameType != kKeyFrame)
+      return WEBRTC_VIDEO_CODEC_ERROR;
+    // We have a key frame - is it complete?
+    if (input_image._completeFrame) {
+      key_frame_required_ = false;
+    } else {
+      return WEBRTC_VIDEO_CODEC_ERROR;
+    }
+  }
   // Restrict error propagation using key frame requests. Disabled when
   // the feedback mode is enabled (RPS).
   // Reset on a key frame refresh.
@@ -779,7 +710,7 @@ int VP8DecoderImpl::Decode(const EncodedImage& input_image,
   }
 
   img = vpx_codec_get_frame(decoder_, &iter);
-  ret = ReturnFrame(img, input_image._timeStamp);
+  ret = ReturnFrame(img, input_image._timeStamp, input_image.ntp_time_ms_);
   if (ret != 0) {
     // Reset to avoid requesting key frames too often.
     if (ret < 0 && propagation_cnt_ > 0)
@@ -790,9 +721,7 @@ int VP8DecoderImpl::Decode(const EncodedImage& input_image,
     // Whenever we receive an incomplete key frame all reference buffers will
     // be corrupt. If that happens we must request new key frames until we
     // decode a complete.
-    if (input_image._frameType == kKeyFrame)
-      latest_keyframe_complete_ = input_image._completeFrame;
-    if (!latest_keyframe_complete_)
+    if (input_image._frameType == kKeyFrame && !input_image._completeFrame)
       return WEBRTC_VIDEO_CODEC_ERROR;
 
     // Check for reference updates and last reference buffer corruption and
@@ -861,7 +790,9 @@ int VP8DecoderImpl::DecodePartitions(
   return WEBRTC_VIDEO_CODEC_OK;
 }
 
-int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
+int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img,
+                                uint32_t timestamp,
+                                int64_t ntp_time_ms) {
   if (img == NULL) {
     // Decoder OK and NULL image => No show frame
     return WEBRTC_VIDEO_CODEC_NO_OUTPUT;
@@ -879,6 +810,7 @@ int VP8DecoderImpl::ReturnFrame(const vpx_image_t* img, uint32_t timestamp) {
                              img->stride[VPX_PLANE_U],
                              img->stride[VPX_PLANE_V]);
   decoded_image_.set_timestamp(timestamp);
+  decoded_image_.set_ntp_time_ms(ntp_time_ms);
   int ret = decode_complete_callback_->Decoded(decoded_image_);
   if (ret != 0)
     return ret;

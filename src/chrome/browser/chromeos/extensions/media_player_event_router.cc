@@ -5,45 +5,38 @@
 #include "chrome/browser/chromeos/extensions/media_player_event_router.h"
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_context.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
-static void BroadcastEvent(Profile* profile, const std::string& event_name) {
-  if (profile && extensions::ExtensionSystem::Get(profile)->event_router()) {
-    scoped_ptr<ListValue> args(new ListValue());
+namespace extensions {
+
+static void BroadcastEvent(content::BrowserContext* context,
+                           const std::string& event_name) {
+  if (context && EventRouter::Get(context)) {
+    scoped_ptr<base::ListValue> args(new base::ListValue());
     scoped_ptr<extensions::Event> event(new extensions::Event(
         event_name, args.Pass()));
-    extensions::ExtensionSystem::Get(profile)->event_router()->
-        BroadcastEvent(event.Pass());
+    EventRouter::Get(context)->BroadcastEvent(event.Pass());
   }
 }
 
-ExtensionMediaPlayerEventRouter::ExtensionMediaPlayerEventRouter()
-    : profile_(NULL) {
+MediaPlayerEventRouter::MediaPlayerEventRouter(content::BrowserContext* context)
+    : browser_context_(context) {}
+
+MediaPlayerEventRouter::~MediaPlayerEventRouter() {
 }
 
-ExtensionMediaPlayerEventRouter*
-    ExtensionMediaPlayerEventRouter::GetInstance() {
-  return Singleton<ExtensionMediaPlayerEventRouter>::get();
+void MediaPlayerEventRouter::NotifyNextTrack() {
+  BroadcastEvent(browser_context_, "mediaPlayerPrivate.onNextTrack");
 }
 
-void ExtensionMediaPlayerEventRouter::Init(Profile* profile) {
-  profile_ = profile;
+void MediaPlayerEventRouter::NotifyPrevTrack() {
+  BroadcastEvent(browser_context_, "mediaPlayerPrivate.onPrevTrack");
 }
 
-void ExtensionMediaPlayerEventRouter::NotifyNextTrack() {
-  BroadcastEvent(profile_, "mediaPlayerPrivate.onNextTrack");
+void MediaPlayerEventRouter::NotifyTogglePlayState() {
+  BroadcastEvent(browser_context_, "mediaPlayerPrivate.onTogglePlayState");
 }
 
-void ExtensionMediaPlayerEventRouter::NotifyPlaylistChanged() {
-  BroadcastEvent(profile_, "mediaPlayerPrivate.onPlaylistChanged");
-}
-
-void ExtensionMediaPlayerEventRouter::NotifyPrevTrack() {
-  BroadcastEvent(profile_, "mediaPlayerPrivate.onPrevTrack");
-}
-
-void ExtensionMediaPlayerEventRouter::NotifyTogglePlayState() {
-  BroadcastEvent(profile_, "mediaPlayerPrivate.onTogglePlayState");
-}
+}  // namespace extensions

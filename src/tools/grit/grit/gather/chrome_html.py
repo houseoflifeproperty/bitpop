@@ -29,26 +29,32 @@ DIST_SUBSTR = '%DISTRIBUTION%'
 
 
 # Matches a chrome theme source URL.
-_THEME_SOURCE = lazy_re.compile('chrome://theme/IDR_[A-Z0-9_]*')
-# Matches CSS image urls with the capture group 'filename'.
+_THEME_SOURCE = lazy_re.compile(
+    '(?P<baseurl>chrome://theme/IDR_[A-Z0-9_]*)(?P<query>\?.*)?')
+# Pattern for matching CSS url() function.
+_CSS_URL_PATTERN = 'url\((?P<quote>"|\'|)(?P<filename>[^"\'()]*)(?P=quote)\)'
+# Matches CSS url() functions with the capture group 'filename'.
+_CSS_URL = lazy_re.compile(_CSS_URL_PATTERN)
+# Matches one or more CSS image urls used in given properties.
 _CSS_IMAGE_URLS = lazy_re.compile(
-    '(?P<attribute>content|background|[\w-]*-image):[ ]*' +
-    'url\((?P<quote>"|\'|)(?P<filename>[^"\'()]*)(?P=quote)')
+    '(?P<attribute>content|background|[\w-]*-image):\s*' +
+        '(?P<urls>(' + _CSS_URL_PATTERN + '\s*,?\s*)+)')
 # Matches CSS image sets.
 _CSS_IMAGE_SETS = lazy_re.compile(
     '(?P<attribute>content|background|[\w-]*-image):[ ]*' +
         '-webkit-image-set\((?P<images>' +
-        '([,\n ]*url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*[0-9.]*x)*)\)',
+        '(\s*,?\s*url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*[0-9.]*x)*)\)',
     re.MULTILINE)
 # Matches a single image in a CSS image set with the capture group scale.
-_CSS_IMAGE_SET_IMAGE = lazy_re.compile(
-    '[,\n ]*url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*(?P<scale>[0-9.]*x)',
+_CSS_IMAGE_SET_IMAGE = lazy_re.compile('\s*,?\s*' +
+    'url\((?P<quote>"|\'|)[^"\'()]*(?P=quote)\)[ ]*(?P<scale>[0-9.]*x)',
     re.MULTILINE)
 _HTML_IMAGE_SRC = lazy_re.compile(
     '<img[^>]+src=\"(?P<filename>[^">]*)\"[^>]*>')
 
 def GetImageList(
-    base_path, filename, scale_factors, distribution):
+    base_path, filename, scale_factors, distribution,
+    filename_expansion_function=None):
   """Generate the list of images which match the provided scale factors.
 
   Takes an image filename and checks for files of the same name in folders
@@ -68,10 +74,14 @@ def GetImageList(
   """
   # Any matches for which a chrome URL handler will serve all scale factors
   # can simply request all scale factors.
-  if _THEME_SOURCE.match(filename):
+  theme_match = _THEME_SOURCE.match(filename)
+  if theme_match:
     images = [('1x', filename)]
     for scale_factor in scale_factors:
-      images.append((scale_factor, "%s@%s" % (filename, scale_factor)))
+      scale_filename = "%s@%s" % (theme_match.group('baseurl'), scale_factor)
+      if theme_match.group('query'):
+        scale_filename += theme_match.group('query')
+      images.append((scale_factor, scale_filename))
     return images
 
   if filename.find(':') != -1:
@@ -79,6 +89,8 @@ def GetImageList(
     return [('1x', filename)]
 
   filename = filename.replace(DIST_SUBSTR, distribution)
+  if filename_expansion_function:
+    filename = filename_expansion_function(filename)
   filepath = os.path.join(base_path, filename)
   images = [('1x', filename)]
 
@@ -113,9 +125,10 @@ def GenerateImageSet(images, quote):
   return "-webkit-image-set(%s)" % (', '.join(imageset))
 
 
-def InsertImageSet(
-    src_match, base_path, scale_factors, distribution):
-  """Regex replace function which inserts -webkit-image-set.
+def UrlToImageSet(
+    src_match, base_path, scale_factors, distribution,
+    filename_expansion_function=None):
+  """Regex replace function which replaces url() with -webkit-image-set.
 
   Takes a regex match for url('path'). If the file is local, checks for
   files of the same name in folders corresponding to the supported scale
@@ -123,6 +136,36 @@ def InsertImageSet(
   supported @Nx scale factor request. In either case inserts a
   -webkit-image-set rule to fetch the appropriate image for the current
   scale factor.
+
+  Args:
+    src_match: regex match object from _CSS_URLS
+    base_path: path to look for relative file paths in
+    scale_factors: a list of the supported scale factors (i.e. ['2x'])
+    distribution: string that should replace %DISTRIBUTION%.
+
+  Returns:
+    string
+  """
+  quote = src_match.group('quote')
+  filename = src_match.group('filename')
+  image_list = GetImageList(
+      base_path, filename, scale_factors, distribution,
+      filename_expansion_function=filename_expansion_function)
+
+  # Don't modify the source if there is only one image.
+  if len(image_list) == 1:
+    return src_match.group(0)
+
+  return GenerateImageSet(image_list, quote)
+
+
+def InsertImageSet(
+    src_match, base_path, scale_factors, distribution,
+    filename_expansion_function=None):
+  """Regex replace function which inserts -webkit-image-set rules.
+
+  Takes a regex match for `property: url('path')[, url('path')]+`.
+  Replaces one or more occurances of the match with image set rules.
 
   Args:
     src_match: regex match object from _CSS_IMAGE_URLS
@@ -133,27 +176,27 @@ def InsertImageSet(
   Returns:
     string
   """
-  quote = src_match.group('quote')
-  filename = src_match.group('filename')
   attr = src_match.group('attribute')
-  image_list = GetImageList(base_path, filename, scale_factors, distribution)
+  urls = _CSS_URL.sub(
+      lambda m: UrlToImageSet(m, base_path, scale_factors, distribution,
+                              filename_expansion_function),
+      src_match.group('urls'))
 
-  # Don't modify the source if there is only one image.
-  if len(image_list) == 1:
-    return src_match.group(0)
-
-  return "%s: %s" % (attr, GenerateImageSet(image_list, quote)[:-1])
+  return "%s: %s" % (attr, urls)
 
 
 def InsertImageStyle(
-    src_match, base_path, scale_factors, distribution):
+    src_match, base_path, scale_factors, distribution,
+    filename_expansion_function=None):
   """Regex replace function which adds a content style to an <img>.
 
   Takes a regex match from _HTML_IMAGE_SRC and replaces the attribute with a CSS
   style which defines the image set.
   """
   filename = src_match.group('filename')
-  image_list = GetImageList(base_path, filename, scale_factors, distribution)
+  image_list = GetImageList(
+      base_path, filename, scale_factors, distribution,
+      filename_expansion_function=filename_expansion_function)
 
   # Don't modify the source if there is only one image or image already defines
   # a style.
@@ -165,16 +208,21 @@ def InsertImageStyle(
 
 
 def InsertImageSets(
-    filepath, text, scale_factors, distribution):
+    filepath, text, scale_factors, distribution,
+    filename_expansion_function=None):
   """Helper function that adds references to external images available in any of
   scale_factors in CSS backgrounds.
   """
   # Add high DPI urls for css attributes: content, background,
   # or *-image or <img src="foo">.
   return _CSS_IMAGE_URLS.sub(
-      lambda m: InsertImageSet(m, filepath, scale_factors, distribution),
+      lambda m: InsertImageSet(
+          m, filepath, scale_factors, distribution,
+          filename_expansion_function=filename_expansion_function),
       _HTML_IMAGE_SRC.sub(
-          lambda m: InsertImageStyle(m, filepath, scale_factors, distribution),
+          lambda m: InsertImageStyle(
+              m, filepath, scale_factors, distribution,
+              filename_expansion_function=filename_expansion_function),
           text)).decode('utf-8').encode('utf-8')
 
 
@@ -208,17 +256,20 @@ def RemoveImageSetImages(text, scale_factors):
 
 
 def ProcessImageSets(
-    filepath, text, scale_factors, distribution):
+    filepath, text, scale_factors, distribution,
+    filename_expansion_function=None):
   """Helper function that adds references to external images available in other
   scale_factors and removes images from image-sets in unsupported scale_factors.
   """
   # Explicitly add 1x to supported scale factors so that it is not removed.
   supported_scale_factors = ['1x']
   supported_scale_factors.extend(scale_factors)
-  return InsertImageSets(filepath,
-                         RemoveImageSetImages(text, supported_scale_factors),
-                         scale_factors,
-                         distribution)
+  return InsertImageSets(
+      filepath,
+      RemoveImageSetImages(text, supported_scale_factors),
+      scale_factors,
+      distribution,
+      filename_expansion_function=filename_expansion_function)
 
 
 class ChromeHtml(interface.GathererBase):
@@ -238,6 +289,7 @@ class ChromeHtml(interface.GathererBase):
     # 1x resources are implicitly already in the source and do not need to be
     # added.
     self.scale_factors_ = []
+    self.filename_expansion_function = None
 
   def SetAttributes(self, attrs):
     self.allow_external_script_ = ('allowexternalscript' in attrs and
@@ -267,7 +319,9 @@ class ChromeHtml(interface.GathererBase):
           self.grd_node.ToRealPath(self.GetInputPath()),
           allow_external_script=self.allow_external_script_,
           rewrite_function=lambda fp, t, d: ProcessImageSets(
-              fp, t, self.scale_factors_, d))
+              fp, t, self.scale_factors_, d,
+              filename_expansion_function=self.filename_expansion_function),
+          filename_expansion_function=self.filename_expansion_function)
     return []
 
   def Translate(self, lang, pseudo_if_not_available=True,
@@ -275,10 +329,15 @@ class ChromeHtml(interface.GathererBase):
     """Returns this document translated."""
     return self.inlined_text_
 
+  def SetFilenameExpansionFunction(self, fn):
+    self.filename_expansion_function = fn
+
   def Parse(self):
     """Parses and inlines the represented file."""
 
     filename = self.GetInputPath()
+    if self.filename_expansion_function:
+      filename = self.filename_expansion_function(filename)
     # Hack: some unit tests supply an absolute path and no root node.
     if not os.path.isabs(filename):
       filename = self.grd_node.ToRealPath(filename)
@@ -288,11 +347,14 @@ class ChromeHtml(interface.GathererBase):
           self.grd_node,
           allow_external_script = self.allow_external_script_,
           rewrite_function=lambda fp, t, d: ProcessImageSets(
-              fp, t, self.scale_factors_, d))
+              fp, t, self.scale_factors_, d,
+              filename_expansion_function=self.filename_expansion_function),
+          filename_expansion_function=self.filename_expansion_function)
     else:
       distribution = html_inline.GetDistribution()
       self.inlined_text_ = ProcessImageSets(
           os.path.dirname(filename),
           util.ReadFile(filename, 'utf-8'),
           self.scale_factors_,
-          distribution)
+          distribution,
+          filename_expansion_function=self.filename_expansion_function)

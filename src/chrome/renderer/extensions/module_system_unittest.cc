@@ -2,29 +2,31 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/test/base/module_system_test.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/renderer/extensions/module_system.h"
+#include "chrome/test/base/module_system_test.h"
+#include "extensions/renderer/module_system.h"
 
+// TODO(cduvall/kalman): Put this file in extensions namespace.
 using extensions::ModuleSystem;
 using extensions::NativeHandler;
+using extensions::ObjectBackedNativeHandler;
 
-class CounterNatives : public NativeHandler {
+class CounterNatives : public ObjectBackedNativeHandler {
  public:
-  CounterNatives() : counter_(0) {
+  explicit CounterNatives(extensions::ChromeV8Context* context)
+      : ObjectBackedNativeHandler(context), counter_(0) {
     RouteFunction("Get", base::Bind(&CounterNatives::Get,
         base::Unretained(this)));
     RouteFunction("Increment", base::Bind(&CounterNatives::Increment,
         base::Unretained(this)));
   }
 
-  v8::Handle<v8::Value> Get(const v8::Arguments& args) {
-    return v8::Integer::New(counter_);
+  void Get(const v8::FunctionCallbackInfo<v8::Value>& args) {
+    args.GetReturnValue().Set(static_cast<int32_t>(counter_));
   }
 
-  v8::Handle<v8::Value> Increment(const v8::Arguments& args) {
+  void Increment(const v8::FunctionCallbackInfo<v8::Value>& args) {
     counter_++;
-    return v8::Undefined();
   }
 
  private:
@@ -37,7 +39,7 @@ class TestExceptionHandler : public ModuleSystem::ExceptionHandler {
       : handled_exception_(false) {
   }
 
-  virtual void HandleUncaughtException() {
+  virtual void HandleUncaughtException(const v8::TryCatch& try_catch) OVERRIDE {
     handled_exception_ = true;
   }
 
@@ -48,30 +50,33 @@ class TestExceptionHandler : public ModuleSystem::ExceptionHandler {
 };
 
 TEST_F(ModuleSystemTest, TestExceptionHandling) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   TestExceptionHandler* handler = new TestExceptionHandler;
   scoped_ptr<ModuleSystem::ExceptionHandler> scoped_handler(handler);
   ASSERT_FALSE(handler->handled_exception());
-  module_system_->set_exception_handler(scoped_handler.Pass());
+  context_->module_system()->SetExceptionHandlerForTest(scoped_handler.Pass());
 
   RegisterModule("test", "throw 'hi';");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
   ASSERT_TRUE(handler->handled_exception());
 
   ExpectNoAssertionsMade();
 }
 
 TEST_F(ModuleSystemTest, TestRequire) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("add", "exports.Add = function(x, y) { return x + y; };");
   RegisterModule("test",
       "var Add = require('add').Add;"
       "requireNative('assert').AssertTrue(Add(3, 5) == 8);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestNestedRequire) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("add", "exports.Add = function(x, y) { return x + y; };");
   RegisterModule("double",
       "var Add = require('add').Add;"
@@ -79,11 +84,12 @@ TEST_F(ModuleSystemTest, TestNestedRequire) {
   RegisterModule("test",
       "var Double = require('double').Double;"
       "requireNative('assert').AssertTrue(Double(3) == 6);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestModuleInsulation) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("x",
       "var x = 10;"
       "exports.X = function() { return x; };");
@@ -98,7 +104,7 @@ TEST_F(ModuleSystemTest, TestModuleInsulation) {
       "assert.AssertTrue(!this.hasOwnProperty('x'));"
       "assert.AssertTrue(Y() == 15);"
       "assert.AssertTrue(X() == 10);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestNativesAreDisabledOutsideANativesEnabledScope) {
@@ -107,12 +113,12 @@ TEST_F(ModuleSystemTest, TestNativesAreDisabledOutsideANativesEnabledScope) {
       "try {"
       "  assert = requireNative('assert');"
       "} catch (e) {"
-      "  caught = true;"
+      "  var caught = true;"
       "}"
       "if (assert) {"
       "  assert.AssertTrue(true);"
       "}");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
   ExpectNoAssertionsMade();
 }
 
@@ -122,32 +128,35 @@ TEST_F(ModuleSystemTest, TestNativesAreEnabledWithinANativesEnabledScope) {
       "assert.AssertTrue(true);");
 
   {
-    ModuleSystem::NativesEnabledScope natives_enabled(module_system_.get());
+    ModuleSystem::NativesEnabledScope natives_enabled(
+        context_->module_system());
     {
       ModuleSystem::NativesEnabledScope natives_enabled_inner(
-          module_system_.get());
+          context_->module_system());
     }
-    module_system_->Require("test");
+    context_->module_system()->Require("test");
   }
 }
 
 TEST_F(ModuleSystemTest, TestLazyField) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("lazy",
       "exports.x = 5;");
 
   v8::Handle<v8::Object> object = CreateGlobal("object");
 
-  module_system_->SetLazyField(object, "blah", "lazy", "x");
+  context_->module_system()->SetLazyField(object, "blah", "lazy", "x");
 
   RegisterModule("test",
       "var assert = requireNative('assert');"
       "assert.AssertTrue(object.blah == 5);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestLazyFieldYieldingObject) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("lazy",
       "var object = {};"
       "object.__defineGetter__('z', function() { return 1; });"
@@ -157,7 +166,7 @@ TEST_F(ModuleSystemTest, TestLazyFieldYieldingObject) {
 
   v8::Handle<v8::Object> object = CreateGlobal("object");
 
-  module_system_->SetLazyField(object, "thing", "lazy", "object");
+  context_->module_system()->SetLazyField(object, "thing", "lazy", "object");
 
   RegisterModule("test",
       "var assert = requireNative('assert');"
@@ -165,21 +174,22 @@ TEST_F(ModuleSystemTest, TestLazyFieldYieldingObject) {
       "assert.AssertTrue(object.thing.y() == 10);"
       "assert.AssertTrue(object.thing.z == 1);"
       );
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestLazyFieldIsOnlyEvaledOnce) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
-  module_system_->RegisterNativeHandler(
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
+  context_->module_system()->RegisterNativeHandler(
       "counter",
-      scoped_ptr<NativeHandler>(new CounterNatives()));
+      scoped_ptr<NativeHandler>(new CounterNatives(context_.get())));
   RegisterModule("lazy",
       "requireNative('counter').Increment();"
       "exports.x = 5;");
 
   v8::Handle<v8::Object> object = CreateGlobal("object");
 
-  module_system_->SetLazyField(object, "x", "lazy", "x");
+  context_->module_system()->SetLazyField(object, "x", "lazy", "x");
 
   RegisterModule("test",
       "var assert = requireNative('assert');"
@@ -189,24 +199,26 @@ TEST_F(ModuleSystemTest, TestLazyFieldIsOnlyEvaledOnce) {
       "assert.AssertTrue(counter.Get() == 1);"
       "object.x;"
       "assert.AssertTrue(counter.Get() == 1);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestRequireNativesAfterLazyEvaluation) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("lazy",
       "exports.x = 5;");
   v8::Handle<v8::Object> object = CreateGlobal("object");
 
-  module_system_->SetLazyField(object, "x", "lazy", "x");
+  context_->module_system()->SetLazyField(object, "x", "lazy", "x");
   RegisterModule("test",
       "object.x;"
       "requireNative('assert').AssertTrue(true);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestTransitiveRequire) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   RegisterModule("dependency",
       "exports.x = 5;");
   RegisterModule("lazy",
@@ -214,19 +226,20 @@ TEST_F(ModuleSystemTest, TestTransitiveRequire) {
 
   v8::Handle<v8::Object> object = CreateGlobal("object");
 
-  module_system_->SetLazyField(object, "thing", "lazy", "output");
+  context_->module_system()->SetLazyField(object, "thing", "lazy", "output");
 
   RegisterModule("test",
       "var assert = requireNative('assert');"
       "assert.AssertTrue(object.thing.x == 5);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestModulesOnlyGetEvaledOnce) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
-  module_system_->RegisterNativeHandler(
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
+  context_->module_system()->RegisterNativeHandler(
       "counter",
-      scoped_ptr<NativeHandler>(new CounterNatives()));
+      scoped_ptr<NativeHandler>(new CounterNatives(context_.get())));
 
   RegisterModule("incrementsWhenEvaled",
       "requireNative('counter').Increment();");
@@ -239,22 +252,24 @@ TEST_F(ModuleSystemTest, TestModulesOnlyGetEvaledOnce) {
       "require('incrementsWhenEvaled');"
       "assert.AssertTrue(counter.Get() == 1);");
 
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestOverrideNativeHandler) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   OverrideNativeHandler("assert", "exports.AssertTrue = function() {};");
   RegisterModule("test", "requireNative('assert').AssertTrue(true);");
   ExpectNoAssertionsMade();
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }
 
 TEST_F(ModuleSystemTest, TestOverrideNonExistentNativeHandler) {
-  ModuleSystem::NativesEnabledScope natives_enabled_scope(module_system_.get());
+  ModuleSystem::NativesEnabledScope natives_enabled_scope(
+      context_->module_system());
   OverrideNativeHandler("thing", "exports.x = 5;");
   RegisterModule("test",
       "var assert = requireNative('assert');"
       "assert.AssertTrue(requireNative('thing').x == 5);");
-  module_system_->Require("test");
+  context_->module_system()->Require("test");
 }

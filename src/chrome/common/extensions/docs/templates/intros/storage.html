@@ -1,6 +1,6 @@
-<p id="classSummary">
-Use the <code>chrome.storage</code> module
-to store, retrieve, and track changes to user data.
+<h2 id="overview">Overview</h2>
+
+<p>
 This API has been optimized
 to meet the specific storage needs of extensions.
 It provides the same storage capabilities as the
@@ -11,15 +11,18 @@ with the following key differences:
 <ul>
   <li>User data can be automatically synced with Chrome sync
   (using <code>storage.sync</code>).</li>
-  <li>Your extension's content scripts can directly access user data
+  <li>Your {{platform}}'s content scripts can directly access user data
   without the need for a background page.</li>
   <li>A user's extension settings can be persisted
   even when using
-  <a href="manifest.html#incognito">split incognito behavior</a>.</li>
+  <a href="manifest/incognito.html">split incognito behavior</a>.</li>
   <li>It's asynchronous with bulk read and write operations, and therefore
   faster than the blocking and serial <code>localStorage API</code>.
   <li>User data can be stored as objects
   (the <code>localStorage API</code> stores data in strings).</li>
+  <li>Enterprise policies configured by the administrator for the extension
+  can be read (using <code>storage.managed</code> with a
+  <a href="manifest/storage.html">schema</a>).</li>
 </ul>
 
 <h2 id="manifest">Manifest</h2>
@@ -27,19 +30,21 @@ with the following key differences:
   href="manifest.html">extension manifest</a>
   to use the storage API.
   For example:</p>
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"permissions": [
     "storage"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="using-sync">Usage</h2>
 
 <p>
-To store user data for your extension,
+To store user data for your {{platform}},
 you can use either
 <code>storage.sync</code> or
 <code>storage.local</code>.
@@ -65,6 +70,10 @@ Confidential user information should not be stored!
 The storage area isn't encrypted.
 </p>
 
+<p>
+The <code>storage.managed</code> storage is read-only.
+</p>
+
 <h2 id="limits">Storage and throttling limits</h2>
 
 <p><code>chrome.storage</code> is not a big truck.
@@ -81,8 +90,9 @@ enormous amounts of material.
 <p>For details on the current limits
 of the storage API, and what happens
 when those limits are exceeded, please
-see the <a href="#apiReference">API reference</a>.
-
+see the quota information for
+<a href="#sync-properties">sync</a> and
+<a href="#local-properties">local</a>.
 
 <h2 id="examples">Examples</h2>
 
@@ -134,8 +144,3 @@ chrome.storage.onChanged.addListener(function(changes, namespace) {
   }
 });
 </pre>
-
-<p>
-You can find examples that use this API on the
-<a href="samples.html#sty">Samples page</a>.
-</p>

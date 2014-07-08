@@ -4,8 +4,8 @@
 
 #include "ui/views/controls/table/test_table_model.h"
 
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/models/table_model_observer.h"
 #include "ui/gfx/image/image_skia.h"
@@ -22,15 +22,15 @@ int TestTableModel::RowCount() {
   return row_count_;
 }
 
-string16 TestTableModel::GetText(int row, int column_id) {
-  return ASCIIToUTF16(base::IntToString(row) + "x" +
-                      base::IntToString(column_id));
+base::string16 TestTableModel::GetText(int row, int column_id) {
+  return base::ASCIIToUTF16(base::IntToString(row) + "x" +
+                            base::IntToString(column_id));
 }
 
 gfx::ImageSkia TestTableModel::GetIcon(int row) {
   SkBitmap bitmap;
   bitmap.setConfig(SkBitmap::kARGB_8888_Config, 16, 16);
-  return gfx::ImageSkia(bitmap);
+  return gfx::ImageSkia::CreateFrom1xBitmap(bitmap);
 }
 
 void TestTableModel::SetObserver(ui::TableModelObserver* observer) {

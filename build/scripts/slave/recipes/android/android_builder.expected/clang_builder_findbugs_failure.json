@@ -1,0 +1,242 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': '.DEPS.git', 'managed': True, 'name': 'src/repo', 'url': 'svn://svn.chromium.org/chrome/trunk/src'}]\ntarget_os = ['android']"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "src/repo@4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/repo/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 126336@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/clank/build/dump_app_manifest_vars.py",
+      "-b",
+      "clang_builder",
+      "-v",
+      "[SLAVE_BUILD]/src/chrome/VERSION",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "get app_manifest_vars",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"build_id\": 3333, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"date_string\": 6001, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"version_code\": 10, @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"version_name\": \"some_builder_1234\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/clank/build/dump_internal_names.py",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "get_internal_names",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"BUILD_BUCKET\": \"build-bucket\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"FLAKINESS_DASHBOARD_SERVER\": \"test-results.appspot.com\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"INSTRUMENTATION_TEST_DATA\": \"a:b/test/data/android/device_files\", @@@",
+      "@@@STEP_LOG_LINE@json.output@  \"SCREENSHOT_BUCKET\": \"screenshot-archive\"@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil, sys, os\nshutil.rmtree(sys.argv[1], True)\nshutil.rmtree(sys.argv[2], True)\nfor base, _dirs, files in os.walk(sys.argv[3]):\n  for f in files:\n    if f.endswith('.pyc'):\n      os.remove(os.path.join(base, f))\n",
+      "[SLAVE_BUILD]/src/out/Debug/debug_info_dumps",
+      "[SLAVE_BUILD]/src/out/Debug/test_logs",
+      "[SLAVE_BUILD]/src"
+    ],
+    "name": "clean local files",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import shutil, sys, os@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[1], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@shutil.rmtree(sys.argv[2], True)@@@",
+      "@@@STEP_LOG_LINE@python.inline@for base, _dirs, files in os.walk(sys.argv[3]):@@@",
+      "@@@STEP_LOG_LINE@python.inline@  for f in files:@@@",
+      "@@@STEP_LOG_LINE@python.inline@    if f.endswith('.pyc'):@@@",
+      "@@@STEP_LOG_LINE@python.inline@      os.remove(os.path.join(base, f))@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "allow_subannotations": false,
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/tree_truth.sh",
+      "[SLAVE_BUILD]/src",
+      "src",
+      "src-internal",
+      "src/repo"
+    ],
+    "name": "tree truth steps"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "EXTRA_LANDMINES_SCRIPT": "[SLAVE_BUILD]/src/clank/build/get_internal_landmines.py",
+      "GYP_DEFINES": "OS=android app_manifest_version_code=10 app_manifest_version_name=some_builder_1234 asan=1 chrome_build_id=3333 clang=1 component=shared_library fastbuild=1 gomadir='[BUILD]/goma' target_arch=arm use_allocator=none use_goma=1",
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Debug",
+      "--src-dir",
+      "[SLAVE_BUILD]/src",
+      "--build-tool",
+      "ninja",
+      "--compiler",
+      "goma-clang",
+      "--goma-dir",
+      "[BUILD]/goma",
+      "--"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "compile"
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/build/android/findbugs_diff.py",
+      "-b",
+      "[SLAVE_BUILD]/src/clank/bin/findbugs_filter",
+      "-o",
+      "com.google.android.apps.chrome.-,org.chromium.-"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "findbugs internal",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport sys\nfrom common import chromium_utils\n\nchromium_utils.RemoveFilesWildcards(sys.argv[1], root=sys.argv[2])\n",
+      "*.class",
+      "[SLAVE_BUILD]/src/out"
+    ],
+    "name": "rmwildcard *.class in [SLAVE_BUILD]/src/out",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@import sys@@@",
+      "@@@STEP_LOG_LINE@python.inline@from common import chromium_utils@@@",
+      "@@@STEP_LOG_LINE@python.inline@@@@",
+      "@@@STEP_LOG_LINE@python.inline@chromium_utils.RemoveFilesWildcards(sys.argv[1], root=sys.argv[2])@@@",
+      "@@@STEP_LOG_END@python.inline@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/clank/bin/lint.py"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "lint",
+    "skip": true
+  },
+  {
+    "cmd": [
+      "[SLAVE_BUILD]/src/tools/checkdeps/checkdeps.py",
+      "--root=[SLAVE_BUILD]/src/clank"
+    ],
+    "env": {
+      "PATH": "[SLAVE_BUILD]/src/third_party/android_tools/sdk/platform-tools:[SLAVE_BUILD]/src/build/android:%(PATH)s"
+    },
+    "name": "checkdeps",
+    "skip": true
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/android/archive_build.py",
+      "--target",
+      "Debug",
+      "--name",
+      "build_product.zip"
+    ],
+    "cwd": "[SLAVE_BUILD]/src",
+    "name": "zip_build_product"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/recipe_modules/gsutil/resources/gsutil_wrapper.py",
+      "[DEPOT_TOOLS]/third_party/gsutil/gsutil",
+      "cp",
+      "[SLAVE_BUILD]/src/out/build_product.zip",
+      "gs://build-bucket/clang_builder/build_product_4f4b02f6b7fa20a3a25682c457bbc8ad589c8a00.zip"
+    ],
+    "name": "gsutil upload_build_product",
+    "skip": true
+  },
+  {
+    "always_run": true,
+    "cmd": [
+      "rm",
+      "-rf",
+      "[SLAVE_BUILD]/src/out/build_product.zip"
+    ],
+    "name": "cleanup_build"
+  }
+]

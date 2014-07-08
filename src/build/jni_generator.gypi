@@ -16,7 +16,7 @@
 #      'android/java/src/org/chromium/base/SystemMessageHandler.java',
 #    ],
 #    'variables': {
-#      'jni_gen_dir': 'base',
+#      'jni_gen_package': 'base',
 #    },
 #    'includes': [ '../build/jni_generator.gypi' ],
 #  },
@@ -30,6 +30,12 @@
 {
   'variables': {
     'jni_generator': '<(DEPTH)/base/android/jni_generator/jni_generator.py',
+    'jni_generator_jarjar_file%': '',
+    'jni_generator_ptr_type%': 'long',
+    # A comma separated string of include files.
+    'jni_generator_includes%': (
+        'base/android/jni_generator/jni_generator_helper.h'
+    ),
   },
   'rules': [
     {
@@ -39,19 +45,39 @@
         '<(jni_generator)',
       ],
       'outputs': [
-        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_dir)/jni/<(RULE_INPUT_ROOT)_jni.h',
+        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_package)/jni/<(RULE_INPUT_ROOT)_jni.h',
       ],
       'action': [
         '<(jni_generator)',
         '--input_file',
         '<(RULE_INPUT_PATH)',
         '--output_dir',
-        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_dir)/jni',
+        '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_package)/jni',
+        '--includes',
+        '<(jni_generator_includes)',
+        '--optimize_generation',
+        '<(optimize_jni_generation)',
+        '--jarjar',
+        '<(jni_generator_jarjar_file)',
+        '--ptr_type',
+        '<(jni_generator_ptr_type)',
       ],
       'message': 'Generating JNI bindings from <(RULE_INPUT_PATH)',
       'process_outputs_as_sources': 1,
+      'conditions': [
+        ['jni_generator_jarjar_file != ""', {
+          'inputs': [
+            '<(jni_generator_jarjar_file)',
+          ],
+        }]
+      ],
     },
   ],
+  'direct_dependent_settings': {
+    'include_dirs': [
+      '<(SHARED_INTERMEDIATE_DIR)/<(jni_gen_package)',
+    ],
+  },
   # This target exports a hard dependency because it generates header
   # files.
   'hard_dependency': 1,

@@ -10,18 +10,26 @@
  * and the symbol for __EH_FRAME_BEGIN__. This is native because
  * exception handling is also native (externally provided).
  *
- * One x86-64 we also need to sneak in the native shim library
- * between these bookends because otherwise the unwind tables will be
- * messed up, c.f.
+ * We also need to sneak in the native PPAPI shim library between
+ * these bookends because otherwise the unwind tables will be messed
+ * up, c.f.
  * https://chromiumcodereview.appspot.com/9909016/
  * TODO(robertm): see whether this problem goes away once we switch
  * eh_frame_headers
  */
 
+/* This goes first to ensure that tls_params.h hasn't been #included before. */
+#define NACL_DEFINE_EXTERNAL_NATIVE_SUPPORT_FUNCS
+#include "native_client/src/untrusted/nacl/pnacl.h"
+#include "native_client/src/untrusted/nacl/tls_params.h"
+
 #include <stdint.h>
 
+#include "native_client/pnacl/support/pnacl_irt.h"
+#include "native_client/pnacl/support/relocate.h"
+
+
 void _pnacl_wrapper_start(uint32_t *info);
-void _start(uint32_t *info);
 
 /*
  * HACK:
@@ -33,15 +41,19 @@ struct object {
 };
 
 /*
- * __[de]register_frame_info() are provided by libgcc_eh
+ * __[de]register_frame_info() are provided by libgcc_eh. When not linking
+ * with libgcc_eh, dummy implementations are provided.
  * See: gcc/unwind-dw2-fde.c
- * GCC uses weak linkage to make this library optional, but
- * we always link it in.
  */
 
-/* @IGNORE_LINES_FOR_CODE_HYGIENE[2] */
+#ifdef LINKING_WITH_LIBGCC_EH
 extern void __register_frame_info(void *begin, struct object *ob);
 extern void __deregister_frame_info(const void *begin);
+#else /* not LINKING_WITH_LIBGCC_EH */
+void __register_frame_info(void *begin, struct object *ob) {}
+void __deregister_frame_info(const void *begin) {}
+#endif /* LINKING_WITH_LIBGCC_EH */
+
 
 /*
  * Exception handling frames are aggregated into a single section called
@@ -53,35 +65,6 @@ static char __EH_FRAME_BEGIN__[]
     __attribute__((section(".eh_frame"), aligned(4)))
     = { };
 
-
-#if defined(SHARED)
-
-/*
- * Registration and deregistration of exception handling tables are done
- * by .init_array and .fini_array elements added here.
- */
-/*
- * __attribute__((constructor)) places a call to the function in the
- * .init_array section in PNaCl.  The function pointers in .init_array
- * are then invoked in order (__do_eh_ctor is invoked first) before main.
- */
-static void __attribute__((constructor)) __do_eh_ctor(void) {
-  static struct object object;
-  __register_frame_info (__EH_FRAME_BEGIN__, &object);
-}
-
-/*
- * __attribute__((destructor)) places a call to the function in the
- * .fini_array section in PNaCl.  The function pointers in .fini_array
- * are then invoked in inverse order (__do_global_dtors_aux is invoked last)
- * at exit.
- */
-static void __attribute__((destructor)) __do_eh_dtor(void) {
-  __deregister_frame_info (__EH_FRAME_BEGIN__);
-}
-
-#else
-
 static void __do_eh_ctor(void) {
   static struct object object;
   __register_frame_info (__EH_FRAME_BEGIN__, &object);
@@ -89,6 +72,12 @@ static void __do_eh_ctor(void) {
 
 /* This defines the entry point for a nexe produced by the PNaCl translator. */
 void __pnacl_start(uint32_t *info) {
+#if defined(__native_client_nonsfi__)
+  apply_relocations();
+#endif
+
+  __pnacl_init_irt(info);
+
   /*
    * We must register exception handling unwind info before calling
    * any user code.  Note that we do not attempt to deregister the
@@ -98,5 +87,3 @@ void __pnacl_start(uint32_t *info) {
 
   _pnacl_wrapper_start(info);
 }
-
-#endif

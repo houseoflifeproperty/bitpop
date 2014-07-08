@@ -11,8 +11,8 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/process_util.h"
+#include "base/files/file_path.h"
+#include "base/process/process_handle.h"
 #include "win8/delegate_execute/resource.h"       // main symbols
 
 using namespace ATL;
@@ -23,13 +23,12 @@ EXTERN_C const GUID CLSID_CommandExecuteImpl;
 // This class implements the IExecuteCommand and related interfaces for
 // handling ShellExecute launches of the Chrome browser, i.e. whether to
 // launch Chrome in metro mode or desktop mode.
-#if defined(GOOGLE_CHROME_BUILD)
-class ATL_NO_VTABLE DECLSPEC_UUID("5C65F4B0-3651-4514-B207-D10CB699B14B")
-    CommandExecuteImpl
-#else  // GOOGLE_CHROME_BUILD
+// The CLSID here is a dummy CLSID not used for anything, since we register
+// the class with a dynamic CLSID.  However, a static CLSID is necessary
+// so that we can force at least one entry into ATL's object map (it will
+// treat a 0-element object map as an initialization failure case).
 class ATL_NO_VTABLE DECLSPEC_UUID("45F07275-4EEA-47AD-A356-755AED238AAD")
     CommandExecuteImpl
-#endif  // GOOGLE_CHROME_BUILD
     : public CComObjectRootEx<CComSingleThreadModel>,
       public CComCoClass<CommandExecuteImpl, &CLSID_CommandExecuteImpl>,
       public IExecuteCommand,
@@ -85,25 +84,24 @@ class ATL_NO_VTABLE DECLSPEC_UUID("45F07275-4EEA-47AD-A356-755AED238AAD")
   STDMETHOD(AllowForegroundTransfer)(void* reserved);
 
  private:
-  static bool FindChromeExe(FilePath* chrome_exe);
+  static bool FindChromeExe(base::FilePath* chrome_exe);
 
   static bool path_provider_initialized_;
 
-  bool GetLaunchScheme(string16* display_name, INTERNET_SCHEME* scheme);
+  bool GetLaunchScheme(base::string16* display_name, INTERNET_SCHEME* scheme);
   HRESULT LaunchDesktopChrome();
   // Returns the launch mode, i.e. desktop launch/metro launch, etc.
   EC_HOST_UI_MODE GetLaunchMode();
 
   CComPtr<IShellItemArray> item_array_;
-  CommandLine parameters_;
-  FilePath chrome_exe_;
+  base::CommandLine parameters_;
+  base::FilePath chrome_exe_;
   STARTUPINFO start_info_;
-  string16 verb_;
-  string16 display_name_;
+  base::string16 verb_;
+  base::string16 display_name_;
   INTERNET_SCHEME launch_scheme_;
 
   base::IntegrityLevel integrity_level_;
-  EC_HOST_UI_MODE chrome_mode_;
 };
 
 OBJECT_ENTRY_AUTO(__uuidof(CommandExecuteImpl), CommandExecuteImpl)

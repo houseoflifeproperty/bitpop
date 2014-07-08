@@ -6,9 +6,12 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/callback.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/task_runner.h"
+#include "ui/gfx/image/image.h"
 #include "ui/gfx/rect.h"
 
 namespace ui {
@@ -41,13 +44,15 @@ bool GrabViewSnapshot(gfx::NativeView view,
 
   png_representation->clear();
 
-  base::mac::ScopedCFTypeRef<CGImageRef> windowSnapshot(CGWindowListCreateImage(
-      screen_snapshot_bounds.ToCGRect(), kCGWindowListOptionIncludingWindow,
-      [window windowNumber], kCGWindowImageBoundsIgnoreFraming));
+  base::ScopedCFTypeRef<CGImageRef> windowSnapshot(
+      CGWindowListCreateImage(screen_snapshot_bounds.ToCGRect(),
+                              kCGWindowListOptionIncludingWindow,
+                              [window windowNumber],
+                              kCGWindowImageBoundsIgnoreFraming));
   if (CGImageGetWidth(windowSnapshot) <= 0)
     return false;
 
-  scoped_nsobject<NSBitmapImageRep> rep(
+  base::scoped_nsobject<NSBitmapImageRep> rep(
       [[NSBitmapImageRep alloc] initWithCGImage:windowSnapshot]);
   NSData* data = [rep representationUsingType:NSPNGFileType properties:nil];
   const unsigned char* buf = static_cast<const unsigned char*>([data bytes]);
@@ -68,6 +73,32 @@ bool GrabWindowSnapshot(gfx::NativeWindow window,
   // tabstrip.
   return GrabViewSnapshot([[window contentView] superview], png_representation,
       snapshot_bounds);
+}
+
+void GrabWindowSnapshotAndScaleAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& snapshot_bounds,
+    const gfx::Size& target_size,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    GrabWindowSnapshotAsyncCallback callback) {
+  callback.Run(gfx::Image());
+}
+
+void GrabViewSnapshotAsync(
+    gfx::NativeView view,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  callback.Run(scoped_refptr<base::RefCountedBytes>());
+}
+
+void GrabWindowSnapshotAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  return GrabViewSnapshotAsync([[window contentView] superview], source_rect,
+      background_task_runner, callback);
 }
 
 }  // namespace ui

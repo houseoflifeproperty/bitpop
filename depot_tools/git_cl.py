@@ -7,16 +7,23 @@
 
 """A git-command for integrating reviews on Rietveld."""
 
+import datetime
+from distutils.version import LooseVersion
+import glob
 import json
 import logging
 import optparse
 import os
+import Queue
 import re
 import stat
 import sys
 import textwrap
-import urlparse
+import time
+import threading
 import urllib2
+import urlparse
+import webbrowser
 
 try:
   import readline  # pylint: disable=F0401,W0611
@@ -24,23 +31,35 @@ except ImportError:
   pass
 
 
+from third_party import colorama
 from third_party import upload
 import breakpad  # pylint: disable=W0611
+import clang_format
 import fix_encoding
 import gclient_utils
+import git_common
+import owners_finder
 import presubmit_support
 import rietveld
 import scm
+import subcommand
 import subprocess2
 import watchlists
 
+__version__ = '1.0'
 
 DEFAULT_SERVER = 'https://codereview.appspot.com'
 POSTUPSTREAM_HOOK_PATTERN = '.git/hooks/post-cl-%s'
 DESCRIPTION_BACKUP_FILE = '~/.git_cl_description_backup'
-GIT_INSTRUCTIONS_URL = 'http://code.google.com/p/chromium/wiki/UsingNewGit'
+GIT_INSTRUCTIONS_URL = 'http://code.google.com/p/chromium/wiki/UsingGit'
 CHANGE_ID = 'Change-Id:'
 
+# Valid extensions for files we want to lint.
+DEFAULT_LINT_REGEX = r"(.*\.cpp|.*\.cc|.*\.h)"
+DEFAULT_LINT_IGNORE_REGEX = r"$^"
+
+# Shortcut since it quickly becomes redundant.
+Fore = colorama.Fore
 
 # Initialized in main()
 settings = None
@@ -51,10 +70,17 @@ def DieWithError(message):
   sys.exit(1)
 
 
+def GetNoGitPagerEnv():
+  env = os.environ.copy()
+  # 'cat' is a magical git string that disables pagers on all platforms.
+  env['GIT_PAGER'] = 'cat'
+  return env
+
 def RunCommand(args, error_ok=False, error_message=None, **kwargs):
   try:
     return subprocess2.check_output(args, shell=False, **kwargs)
-  except subprocess2.CalledProcessError, e:
+  except subprocess2.CalledProcessError as e:
+    logging.debug('Failed running %s', args)
     if not error_ok:
       DieWithError(
           'Command "%s" failed.\n%s' % (
@@ -67,10 +93,17 @@ def RunGit(args, **kwargs):
   return RunCommand(['git'] + args, **kwargs)
 
 
-def RunGitWithCode(args):
+def RunGitWithCode(args, suppress_stderr=False):
   """Returns return code and stdout."""
   try:
-    out, code = subprocess2.communicate(['git'] + args, stdout=subprocess2.PIPE)
+    if suppress_stderr:
+      stderr = subprocess2.VOID
+    else:
+      stderr = sys.stderr
+    out, code = subprocess2.communicate(['git'] + args,
+                                        env=GetNoGitPagerEnv(),
+                                        stdout=subprocess2.PIPE,
+                                        stderr=stderr)
     return code, out[0]
   except ValueError:
     # When the subprocess fails, it returns None.  That triggers a ValueError
@@ -78,11 +111,11 @@ def RunGitWithCode(args):
     return 1, ''
 
 
-def usage(more):
-  def hook(fn):
-    fn.usage_more = more
-    return fn
-  return hook
+def IsGitVersionAtLeast(min_version):
+  prefix = 'git version '
+  version = RunGit(['--version']).strip()
+  return (version.startswith(prefix) and
+      LooseVersion(version[len(prefix):]) >= LooseVersion(min_version))
 
 
 def ask_for_data(prompt):
@@ -95,9 +128,14 @@ def ask_for_data(prompt):
 
 def git_set_branch_value(key, value):
   branch = Changelist().GetBranch()
-  if branch:
-    git_key = 'branch.%s.%s' % (branch, key)
-    RunGit(['config', '--int', git_key, "%d" % value])
+  if not branch:
+    return
+
+  cmd = ['config']
+  if isinstance(value, int):
+    cmd.append('--int')
+  git_key = 'branch.%s.%s' % (branch, key)
+  RunGit(cmd + [git_key, str(value)])
 
 
 def git_get_branch_default(key, default):
@@ -211,7 +249,7 @@ def print_stats(similarity, find_copies, args):
   # --no-ext-diff is broken in some versions of Git, so try to work around
   # this by overriding the environment (but there is still a problem if the
   # git config key "diff.external" is used).
-  env = os.environ.copy()
+  env = GetNoGitPagerEnv()
   if 'GIT_EXTERNAL_DIFF' in env:
     del env['GIT_EXTERNAL_DIFF']
 
@@ -222,7 +260,8 @@ def print_stats(similarity, find_copies, args):
     similarity_options = ['-M%s' % similarity]
 
   return subprocess2.call(
-      ['git', 'diff', '--no-ext-diff', '--stat'] + similarity_options + args,
+      ['git',
+       'diff', '--no-ext-diff', '--stat'] + similarity_options + args,
       env=env)
 
 
@@ -237,13 +276,22 @@ class Settings(object):
     self.viewvc_url = None
     self.updated = False
     self.is_gerrit = None
+    self.git_editor = None
 
   def LazyUpdateIfNeeded(self):
     """Updates the settings from a codereview.settings file, if available."""
     if not self.updated:
+      # The only value that actually changes the behavior is
+      # autoupdate = "false". Everything else means "true".
+      autoupdate = RunGit(['config', 'rietveld.autoupdate'],
+                          error_ok=True
+                          ).strip().lower()
+
       cr_settings_file = FindCodereviewSettingsFile()
-      if cr_settings_file:
+      if autoupdate != 'false' and cr_settings_file:
         LoadCodereviewSettingsFromFile(cr_settings_file)
+        # set updated to True to avoid infinite calling loop
+        # through DownloadHooks
         self.updated = True
         DownloadHooks(False)
       self.updated = True
@@ -252,19 +300,23 @@ class Settings(object):
     if not self.default_server:
       self.LazyUpdateIfNeeded()
       self.default_server = gclient_utils.UpgradeToHttps(
-          self._GetConfig('rietveld.server', error_ok=True))
+          self._GetRietveldConfig('server', error_ok=True))
       if error_ok:
         return self.default_server
       if not self.default_server:
         error_message = ('Could not find settings file. You must configure '
                          'your review setup by running "git cl config".')
         self.default_server = gclient_utils.UpgradeToHttps(
-            self._GetConfig('rietveld.server', error_message=error_message))
+            self._GetRietveldConfig('server', error_message=error_message))
     return self.default_server
 
+  @staticmethod
+  def GetRelativeRoot():
+    return RunGit(['rev-parse', '--show-cdup']).strip()
+
   def GetRoot(self):
-    if not self.root:
-      self.root = os.path.abspath(RunGit(['rev-parse', '--show-cdup']).strip())
+    if self.root is None:
+      self.root = os.path.abspath(self.GetRelativeRoot())
     return self.root
 
   def GetIsGitSvn(self):
@@ -272,7 +324,7 @@ class Settings(object):
     if self.is_git_svn is None:
       # If you have any "svn-remote.*" config keys, we think you're using svn.
       self.is_git_svn = RunGitWithCode(
-          ['config', '--get-regexp', r'^svn-remote\.'])[0] == 0
+          ['config', '--local', '--get-regexp', r'^svn-remote\.'])[0] == 0
     return self.is_git_svn
 
   def GetSVNBranch(self):
@@ -292,7 +344,8 @@ class Settings(object):
       # pipe at a time.
       # The -100 is an arbitrary limit so we don't search forever.
       cmd = ['git', 'log', '-100', '--pretty=medium']
-      proc = subprocess2.Popen(cmd, stdout=subprocess2.PIPE)
+      proc = subprocess2.Popen(cmd, stdout=subprocess2.PIPE,
+                               env=GetNoGitPagerEnv())
       url = None
       for line in proc.stdout:
         match = git_svn_re.match(line)
@@ -310,6 +363,11 @@ class Settings(object):
           if match:
             remote = match.group(1)
             base_url = match.group(2)
+            rewrite_root = RunGit(
+                ['config', 'svn-remote.%s.rewriteRoot' % remote],
+                error_ok=True).strip()
+            if rewrite_root:
+              base_url = rewrite_root
             fetch_spec = RunGit(
                 ['config', 'svn-remote.%s.fetch' % remote],
                 error_ok=True).strip()
@@ -342,24 +400,46 @@ class Settings(object):
     if not self.tree_status_url:
       error_message = ('You must configure your tree status URL by running '
                        '"git cl config".')
-      self.tree_status_url = self._GetConfig('rietveld.tree-status-url',
-                                             error_ok=error_ok,
-                                             error_message=error_message)
+      self.tree_status_url = self._GetRietveldConfig(
+          'tree-status-url', error_ok=error_ok, error_message=error_message)
     return self.tree_status_url
 
   def GetViewVCUrl(self):
     if not self.viewvc_url:
-      self.viewvc_url = self._GetConfig('rietveld.viewvc-url', error_ok=True)
+      self.viewvc_url = self._GetRietveldConfig('viewvc-url', error_ok=True)
     return self.viewvc_url
 
+  def GetBugPrefix(self):
+    return self._GetRietveldConfig('bug-prefix', error_ok=True)
+
   def GetDefaultCCList(self):
-    return self._GetConfig('rietveld.cc', error_ok=True)
+    return self._GetRietveldConfig('cc', error_ok=True)
+
+  def GetDefaultPrivateFlag(self):
+    return self._GetRietveldConfig('private', error_ok=True)
 
   def GetIsGerrit(self):
     """Return true if this repo is assosiated with gerrit code review system."""
     if self.is_gerrit is None:
       self.is_gerrit = self._GetConfig('gerrit.host', error_ok=True)
     return self.is_gerrit
+
+  def GetGitEditor(self):
+    """Return the editor specified in the git config, or None if none is."""
+    if self.git_editor is None:
+      self.git_editor = self._GetConfig('core.editor', error_ok=True)
+    return self.git_editor or None
+
+  def GetLintRegex(self):
+    return (self._GetRietveldConfig('cpplint-regex', error_ok=True) or
+            DEFAULT_LINT_REGEX)
+
+  def GetLintIgnoreRegex(self):
+    return (self._GetRietveldConfig('cpplint-ignore-regex', error_ok=True) or
+            DEFAULT_LINT_IGNORE_REGEX)
+
+  def _GetRietveldConfig(self, param, **kwargs):
+    return self._GetConfig('rietveld.' + param, **kwargs)
 
   def _GetConfig(self, param, **kwargs):
     self.LazyUpdateIfNeeded()
@@ -372,7 +452,7 @@ def ShortBranchName(branch):
 
 
 class Changelist(object):
-  def __init__(self, branchref=None):
+  def __init__(self, branchref=None, issue=None):
     # Poke settings so we get the "configure your server" message if necessary.
     global settings
     if not settings:
@@ -386,16 +466,17 @@ class Changelist(object):
       self.branch = None
     self.rietveld_server = None
     self.upstream_branch = None
-    self.has_issue = False
-    self.issue = None
+    self.lookedup_issue = False
+    self.issue = issue or None
     self.has_description = False
     self.description = None
-    self.has_patchset = False
+    self.lookedup_patchset = False
     self.patchset = None
     self._rpc_server = None
     self.cc = None
     self.watchers = ()
     self._remote = None
+    self._props = None
 
   def GetCCList(self):
     """Return the users cc'd on this CL.
@@ -403,9 +484,15 @@ class Changelist(object):
     Return is a string suitable for passing to gcl with the --cc flag.
     """
     if self.cc is None:
-      base_cc = settings  .GetDefaultCCList()
+      base_cc = settings.GetDefaultCCList()
       more_cc = ','.join(self.watchers)
       self.cc = ','.join(filter(None, (base_cc, more_cc))) or ''
+    return self.cc
+
+  def GetCCListWithoutDefault(self):
+    """Return the users cc'd on this CL excluding default ones."""
+    if self.cc is None:
+      self.cc = ','.join(self.watchers)
     return self.cc
 
   def SetWatchers(self, watchers):
@@ -428,7 +515,7 @@ class Changelist(object):
 
   @staticmethod
   def FetchUpstreamTuple(branch):
-    """Returns a tuple containg remote and remote ref,
+    """Returns a tuple containing remote and remote ref,
        e.g. 'origin', 'refs/heads/master'
     """
     remote = '.'
@@ -465,6 +552,10 @@ or verify this branch is set up to track another (via the --track argument to
 "git checkout -b ...").""")
 
     return remote, upstream_branch
+
+  def GetCommonAncestorWithUpstream(self):
+    return git_common.get_or_create_merge_base(self.GetBranch(),
+                                               self.GetUpstreamBranch())
 
   def GetUpstreamBranch(self):
     if self.upstream_branch is None:
@@ -561,13 +652,10 @@ or verify this branch is set up to track another (via the --track argument to
 
   def GetIssue(self):
     """Returns the issue number as a int or None if not set."""
-    if not self.has_issue:
+    if self.issue is None and not self.lookedup_issue:
       issue = RunGit(['config', self._IssueSetting()], error_ok=True).strip()
-      if issue:
-        self.issue = int(issue)
-      else:
-        self.issue = None
-      self.has_issue = True
+      self.issue = int(issue) or None if issue else None
+      self.lookedup_issue = True
     return self.issue
 
   def GetRietveldServer(self):
@@ -583,6 +671,8 @@ or verify this branch is set up to track another (via the --track argument to
 
   def GetIssueURL(self):
     """Get the URL for a particular issue."""
+    if not self.GetIssue():
+      return None
     return '%s/%s' % (self.GetRietveldServer(), self.GetIssue())
 
   def GetDescription(self, pretty=False):
@@ -604,7 +694,7 @@ or verify this branch is set up to track another (via the --track argument to
                  'this command again.') % issue)
           else:
             DieWithError(
-                '\nFailed to fetch issue description. HTTP error ' + e.code)
+                '\nFailed to fetch issue description. HTTP error %d' % e.code)
       self.has_description = True
     if pretty:
       wrapper = textwrap.TextWrapper()
@@ -614,59 +704,73 @@ or verify this branch is set up to track another (via the --track argument to
 
   def GetPatchset(self):
     """Returns the patchset number as a int or None if not set."""
-    if not self.has_patchset:
+    if self.patchset is None and not self.lookedup_patchset:
       patchset = RunGit(['config', self._PatchsetSetting()],
                         error_ok=True).strip()
-      if patchset:
-        self.patchset = int(patchset)
-      else:
-        self.patchset = None
-      self.has_patchset = True
+      self.patchset = int(patchset) or None if patchset else None
+      self.lookedup_patchset = True
     return self.patchset
 
   def SetPatchset(self, patchset):
     """Set this branch's patchset.  If patchset=0, clears the patchset."""
     if patchset:
       RunGit(['config', self._PatchsetSetting(), str(patchset)])
+      self.patchset = patchset
     else:
       RunGit(['config', '--unset', self._PatchsetSetting()],
              stderr=subprocess2.PIPE, error_ok=True)
-    self.has_patchset = False
+      self.patchset = None
 
-  def GetMostRecentPatchset(self, issue):
-    return self.RpcServer().get_issue_properties(
-        int(issue), False)['patchsets'][-1]
+  def GetMostRecentPatchset(self):
+    return self.GetIssueProperties()['patchsets'][-1]
 
   def GetPatchSetDiff(self, issue, patchset):
     return self.RpcServer().get(
         '/download/issue%s_%s.diff' % (issue, patchset))
 
+  def GetIssueProperties(self):
+    if self._props is None:
+      issue = self.GetIssue()
+      if not issue:
+        self._props = {}
+      else:
+        self._props = self.RpcServer().get_issue_properties(issue, True)
+    return self._props
+
+  def GetApprovingReviewers(self):
+    return get_approving_reviewers(self.GetIssueProperties())
+
   def SetIssue(self, issue):
     """Set this branch's issue.  If issue=0, clears the issue."""
     if issue:
+      self.issue = issue
       RunGit(['config', self._IssueSetting(), str(issue)])
       if self.rietveld_server:
         RunGit(['config', self._RietveldServer(), self.rietveld_server])
     else:
-      RunGit(['config', '--unset', self._IssueSetting()])
-      self.SetPatchset(0)
-    self.has_issue = False
+      current_issue = self.GetIssue()
+      if current_issue:
+        RunGit(['config', '--unset', self._IssueSetting()])
+      self.issue = None
+      self.SetPatchset(None)
 
   def GetChange(self, upstream_branch, author):
     if not self.GitSanityChecks(upstream_branch):
       DieWithError('\nGit sanity check failure')
 
-    root = RunCommand(['git', 'rev-parse', '--show-cdup']).strip() or '.'
+    root = settings.GetRelativeRoot()
+    if not root:
+      root = '.'
     absroot = os.path.abspath(root)
 
     # We use the sha1 of HEAD as a name of this change.
-    name = RunCommand(['git', 'rev-parse', 'HEAD']).strip()
+    name = RunGitWithCode(['rev-parse', 'HEAD'])[1].strip()
     # Need to pass a relative path for msysgit.
     try:
       files = scm.GIT.CaptureStatus([root], '.', upstream_branch)
     except subprocess2.CalledProcessError:
       DieWithError(
-          ('\nFailed to diff against upstream branch %s!\n\n'
+          ('\nFailed to diff against upstream branch %s\n\n'
            'This branch probably doesn\'t exist anymore. To reset the\n'
            'tracking branch, please run\n'
            '    git branch --set-upstream %s trunk\n'
@@ -681,8 +785,8 @@ or verify this branch is set up to track another (via the --track argument to
       # If the change was never uploaded, use the log messages of all commits
       # up to the branch point, as git cl upload will prefill the description
       # with these log messages.
-      description = RunCommand(['git', 'log', '--pretty=format:%s%n%n%b',
-                                '%s...' % (upstream_branch)]).strip()
+      args = ['log', '--pretty=format:%s%n%n%b', '%s...' % (upstream_branch)]
+      description = RunGitWithCode(args)[1].strip()
 
     if not author:
       author = RunGit(['config', 'user.email']).strip() or None
@@ -693,17 +797,11 @@ or verify this branch is set up to track another (via the --track argument to
         files,
         issue,
         patchset,
-        author)
+        author,
+        upstream=upstream_branch)
 
-  def RunHook(self, committing, upstream_branch, may_prompt, verbose, author):
+  def RunHook(self, committing, may_prompt, verbose, change):
     """Calls sys.exit() if the hook fails; returns a HookResults otherwise."""
-    change = self.GetChange(upstream_branch, author)
-
-    # Apply watchlists on upload.
-    if not committing:
-      watchlist = watchlists.Watchlists(change.RepositoryRoot())
-      files = [f.LocalPath() for f in change.AffectedFiles()]
-      self.SetWatchers(watchlist.GetWatchersForPaths(files))
 
     try:
       return presubmit_support.DoPresubmitChecks(change, committing,
@@ -715,11 +813,14 @@ or verify this branch is set up to track another (via the --track argument to
           ('%s\nMaybe your depot_tools is out of date?\n'
            'If all fails, contact maruel@') % e)
 
+  def UpdateDescription(self, description):
+    self.description = description
+    return self.RpcServer().update_description(
+        self.GetIssue(), self.description)
+
   def CloseIssue(self):
     """Updates the description and closes the issue."""
-    issue = self.GetIssue()
-    self.RpcServer().update_description(issue, self.description)
-    return self.RpcServer().close_issue(issue)
+    return self.RpcServer().close_issue(self.GetIssue())
 
   def SetFlag(self, flag, value):
     """Patchset must match."""
@@ -786,9 +887,12 @@ def GetCodereviewSettingsInteractively():
         RunGit(['config', 'rietveld.' + name, new_val])
 
   SetProperty(settings.GetDefaultCCList(), 'CC list', 'cc', False)
+  SetProperty(settings.GetDefaultPrivateFlag(),
+              'Private flag (rietveld only)', 'private', False)
   SetProperty(settings.GetTreeStatusUrl(error_ok=True), 'Tree status URL',
               'tree-status-url', False)
   SetProperty(settings.GetViewVCUrl(), 'ViewVC URL', 'viewvc-url', True)
+  SetProperty(settings.GetBugPrefix(), 'Bug Prefix', 'bug-prefix', False)
 
   # TODO: configure a default branch to diff against, rather than this
   # svn-based hackery.
@@ -796,44 +900,126 @@ def GetCodereviewSettingsInteractively():
 
 class ChangeDescription(object):
   """Contains a parsed form of the change description."""
-  def __init__(self, log_desc, reviewers):
-    self.log_desc = log_desc
-    self.reviewers = reviewers
-    self.description = self.log_desc
+  R_LINE = r'^[ \t]*(TBR|R)[ \t]*=[ \t]*(.*?)[ \t]*$'
+  BUG_LINE = r'^[ \t]*(BUG)[ \t]*=[ \t]*(.*?)[ \t]*$'
 
-  def Prompt(self):
-    content = """# Enter a description of the change.
-# This will displayed on the codereview site.
-# The first line will also be used as the subject of the review.
-"""
-    content += self.description
-    if ('\nR=' not in self.description and
-        '\nTBR=' not in self.description and
-        self.reviewers):
-      content += '\nR=' + self.reviewers
-    if '\nBUG=' not in self.description:
-      content += '\nBUG='
-    content = content.rstrip('\n') + '\n'
-    content = gclient_utils.RunEditor(content, True)
+  def __init__(self, description):
+    self._description_lines = (description or '').strip().splitlines()
+
+  @property               # www.logilab.org/ticket/89786
+  def description(self):  # pylint: disable=E0202
+    return '\n'.join(self._description_lines)
+
+  def set_description(self, desc):
+    if isinstance(desc, basestring):
+      lines = desc.splitlines()
+    else:
+      lines = [line.rstrip() for line in desc]
+    while lines and not lines[0]:
+      lines.pop(0)
+    while lines and not lines[-1]:
+      lines.pop(-1)
+    self._description_lines = lines
+
+  def update_reviewers(self, reviewers):
+    """Rewrites the R=/TBR= line(s) as a single line each."""
+    assert isinstance(reviewers, list), reviewers
+    if not reviewers:
+      return
+    reviewers = reviewers[:]
+
+    # Get the set of R= and TBR= lines and remove them from the desciption.
+    regexp = re.compile(self.R_LINE)
+    matches = [regexp.match(line) for line in self._description_lines]
+    new_desc = [l for i, l in enumerate(self._description_lines)
+                if not matches[i]]
+    self.set_description(new_desc)
+
+    # Construct new unified R= and TBR= lines.
+    r_names = []
+    tbr_names = []
+    for match in matches:
+      if not match:
+        continue
+      people = cleanup_list([match.group(2).strip()])
+      if match.group(1) == 'TBR':
+        tbr_names.extend(people)
+      else:
+        r_names.extend(people)
+    for name in r_names:
+      if name not in reviewers:
+        reviewers.append(name)
+    new_r_line = 'R=' + ', '.join(reviewers) if reviewers else None
+    new_tbr_line = 'TBR=' + ', '.join(tbr_names) if tbr_names else None
+
+    # Put the new lines in the description where the old first R= line was.
+    line_loc = next((i for i, match in enumerate(matches) if match), -1)
+    if 0 <= line_loc < len(self._description_lines):
+      if new_tbr_line:
+        self._description_lines.insert(line_loc, new_tbr_line)
+      if new_r_line:
+        self._description_lines.insert(line_loc, new_r_line)
+    else:
+      if new_r_line:
+        self.append_footer(new_r_line)
+      if new_tbr_line:
+        self.append_footer(new_tbr_line)
+
+  def prompt(self):
+    """Asks the user to update the description."""
+    self.set_description([
+      '# Enter a description of the change.',
+      '# This will be displayed on the codereview site.',
+      '# The first line will also be used as the subject of the review.',
+      '#--------------------This line is 72 characters long'
+      '--------------------',
+    ] + self._description_lines)
+
+    regexp = re.compile(self.BUG_LINE)
+    if not any((regexp.match(line) for line in self._description_lines)):
+      self.append_footer('BUG=%s' % settings.GetBugPrefix())
+    content = gclient_utils.RunEditor(self.description, True,
+                                      git_editor=settings.GetGitEditor())
     if not content:
       DieWithError('Running editor failed')
-    content = re.compile(r'^#.*$', re.MULTILINE).sub('', content).strip()
-    if not content.strip():
+    lines = content.splitlines()
+
+    # Strip off comments.
+    clean_lines = [line.rstrip() for line in lines if not line.startswith('#')]
+    if not clean_lines:
       DieWithError('No CL description, aborting')
-    self.description = content
+    self.set_description(clean_lines)
 
-  def ParseDescription(self):
-    """Updates the list of reviewers and subject from the description."""
-    self.description = self.description.strip('\n') + '\n'
-    # Retrieves all reviewer lines
-    regexp = re.compile(r'^\s*(TBR|R)=(.+)$', re.MULTILINE)
-    reviewers = ','.join(
-        i.group(2).strip() for i in regexp.finditer(self.description))
-    if reviewers:
-      self.reviewers = reviewers
+  def append_footer(self, line):
+    if self._description_lines:
+      # Add an empty line if either the last line or the new line isn't a tag.
+      last_line = self._description_lines[-1]
+      if (not presubmit_support.Change.TAG_LINE_RE.match(last_line) or
+          not presubmit_support.Change.TAG_LINE_RE.match(line)):
+        self._description_lines.append('')
+    self._description_lines.append(line)
 
-  def IsEmpty(self):
-    return not self.description
+  def get_reviewers(self):
+    """Retrieves the list of reviewers."""
+    matches = [re.match(self.R_LINE, line) for line in self._description_lines]
+    reviewers = [match.group(2).strip() for match in matches if match]
+    return cleanup_list(reviewers)
+
+
+def get_approving_reviewers(props):
+  """Retrieves the reviewers that approved a CL from the issue properties with
+  messages.
+
+  Note that the list may contain reviewers that are not committer, thus are not
+  considered by the CQ.
+  """
+  return sorted(
+      set(
+        message['sender']
+        for message in props['messages']
+        if message['approval'] and message['sender'] in props['reviewers']
+      )
+  )
 
 
 def FindCodereviewSettingsFile(filename='codereview.settings'):
@@ -844,7 +1030,7 @@ def FindCodereviewSettingsFile(filename='codereview.settings'):
   """
   inherit_ok_file = 'inherit-review-settings-ok'
   cwd = os.getcwd()
-  root = os.path.abspath(RunGit(['rev-parse', '--show-cdup']).strip())
+  root = settings.GetRoot()
   if os.path.isfile(os.path.join(root, inherit_ok_file)):
     root = '/'
   while True:
@@ -871,12 +1057,15 @@ def LoadCodereviewSettingsFromFile(fileobj):
   # Only server setting is required. Other settings can be absent.
   # In that case, we ignore errors raised during option deletion attempt.
   SetProperty('cc', 'CC_LIST', unset_error_ok=True)
+  SetProperty('private', 'PRIVATE', unset_error_ok=True)
   SetProperty('tree-status-url', 'STATUS', unset_error_ok=True)
   SetProperty('viewvc-url', 'VIEW_VC', unset_error_ok=True)
+  SetProperty('bug-prefix', 'BUG_PREFIX', unset_error_ok=True)
+  SetProperty('cpplint-regex', 'LINT_REGEX', unset_error_ok=True)
+  SetProperty('cpplint-ignore-regex', 'LINT_IGNORE_REGEX', unset_error_ok=True)
 
-  if 'GERRIT_HOST' in keyvals and 'GERRIT_PORT' in keyvals:
+  if 'GERRIT_HOST' in keyvals:
     RunGit(['config', 'gerrit.host', keyvals['GERRIT_HOST']])
-    RunGit(['config', 'gerrit.port', keyvals['GERRIT_PORT']])
 
   if 'PUSH_URL_CONFIG' in keyvals and 'ORIGIN_URL_CONFIG' in keyvals:
     #should be of the form
@@ -893,6 +1082,12 @@ def urlretrieve(source, destination):
     f.write(urllib2.urlopen(source).read())
 
 
+def hasSheBang(fname):
+  """Checks fname is a #! script."""
+  with open(fname) as f:
+    return f.read(2).startswith('#!')
+
+
 def DownloadHooks(force):
   """downloads hooks
 
@@ -901,28 +1096,49 @@ def DownloadHooks(force):
   """
   if not settings.GetIsGerrit():
     return
-  server_url = settings.GetDefaultServerUrl()
-  src = '%s/tools/hooks/commit-msg' % server_url
+  src = 'https://gerrit-review.googlesource.com/tools/hooks/commit-msg'
   dst = os.path.join(settings.GetRoot(), '.git', 'hooks', 'commit-msg')
   if not os.access(dst, os.X_OK):
     if os.path.exists(dst):
       if not force:
         return
-      os.remove(dst)
     try:
       urlretrieve(src, dst)
+      if not hasSheBang(dst):
+        DieWithError('Not a script: %s\n'
+                     'You need to download from\n%s\n'
+                     'into .git/hooks/commit-msg and '
+                     'chmod +x .git/hooks/commit-msg' % (dst, src))
       os.chmod(dst, stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR)
     except Exception:
       if os.path.exists(dst):
         os.remove(dst)
-      DieWithError('\nFailed to download hooks from %s' % src)
+      DieWithError('\nFailed to download hooks.\n'
+                   'You need to download from\n%s\n'
+                   'into .git/hooks/commit-msg and '
+                   'chmod +x .git/hooks/commit-msg' % src)
 
 
-@usage('[repo root containing codereview.settings]')
+@subcommand.usage('[repo root containing codereview.settings]')
 def CMDconfig(parser, args):
-  """edit configuration for this tree"""
+  """Edits configuration for this tree."""
 
-  _, args = parser.parse_args(args)
+  parser.add_option('--activate-update', action='store_true',
+                    help='activate auto-updating [rietveld] section in '
+                         '.git/config')
+  parser.add_option('--deactivate-update', action='store_true',
+                    help='deactivate auto-updating [rietveld] section in '
+                         '.git/config')
+  options, args = parser.parse_args(args)
+
+  if options.deactivate_update:
+    RunGit(['config', 'rietveld.autoupdate', 'false'])
+    return
+
+  if options.activate_update:
+    RunGit(['config', '--unset', 'rietveld.autoupdate'])
+    return
+
   if len(args) == 0:
     GetCodereviewSettingsInteractively()
     DownloadHooks(True)
@@ -939,7 +1155,7 @@ def CMDconfig(parser, args):
 
 
 def CMDbaseurl(parser, args):
-  """get or set base-url for this branch"""
+  """Gets or sets base-url for this branch."""
   branchref = RunGit(['symbolic-ref', 'HEAD']).strip()
   branch = ShortBranchName(branchref)
   _, args = parser.parse_args(args)
@@ -954,26 +1170,28 @@ def CMDbaseurl(parser, args):
 
 
 def CMDstatus(parser, args):
-  """show status of changelists"""
+  """Show status of changelists.
+
+  Colors are used to tell the state of the CL unless --fast is used:
+    - Red      not sent for review or broken
+    - Blue     waiting for review
+    - Yellow   waiting for you to reply to review
+    - Green    LGTM'ed
+    - Magenta  in the commit queue
+    - Cyan     was committed, branch can be deleted
+
+  Also see 'git cl comments'.
+  """
   parser.add_option('--field',
                     help='print only specific field (desc|id|patch|url)')
+  parser.add_option('-f', '--fast', action='store_true',
+                    help='Do not retrieve review status')
   (options, args) = parser.parse_args(args)
+  if args:
+    parser.error('Unsupported args: %s' % args)
 
-  # TODO: maybe make show_branches a flag if necessary.
-  show_branches = not options.field
-
-  if show_branches:
-    branches = RunGit(['for-each-ref', '--format=%(refname)', 'refs/heads'])
-    if branches:
-      print 'Branches associated with reviews:'
-      changes = (Changelist(branchref=b) for b in branches.splitlines())
-      branches = dict((cl.GetBranch(), cl.GetIssue()) for cl in changes)
-      alignment = max(5, max(len(b) for b in branches))
-      for branch in sorted(branches):
-        print "  %*s: %s" % (alignment, branch, branches[branch])
-
-  cl = Changelist()
   if options.field:
+    cl = Changelist()
     if options.field.startswith('desc'):
       print cl.GetDescription()
     elif options.field == 'id':
@@ -988,25 +1206,125 @@ def CMDstatus(parser, args):
       url = cl.GetIssueURL()
       if url:
         print url
+    return 0
+
+  branches = RunGit(['for-each-ref', '--format=%(refname)', 'refs/heads'])
+  if not branches:
+    print('No local branch found.')
+    return 0
+
+  changes = (Changelist(branchref=b) for b in branches.splitlines())
+  branches = [c.GetBranch() for c in changes]
+  alignment = max(5, max(len(b) for b in branches))
+  print 'Branches associated with reviews:'
+  # Adhoc thread pool to request data concurrently.
+  output = Queue.Queue()
+
+  # Silence upload.py otherwise it becomes unweldly.
+  upload.verbosity = 0
+
+  if not options.fast:
+    def fetch(b):
+      """Fetches information for an issue and returns (branch, issue, color)."""
+      c = Changelist(branchref=b)
+      i = c.GetIssueURL()
+      props = {}
+      r = None
+      if i:
+        try:
+          props = c.GetIssueProperties()
+          r = c.GetApprovingReviewers() if i else None
+        except urllib2.HTTPError:
+          # The issue probably doesn't exist anymore.
+          i += ' (broken)'
+
+      msgs = props.get('messages') or []
+
+      if not i:
+        color = Fore.WHITE
+      elif props.get('closed'):
+        # Issue is closed.
+        color = Fore.CYAN
+      elif props.get('commit'):
+        # Issue is in the commit queue.
+        color = Fore.MAGENTA
+      elif r:
+        # Was LGTM'ed.
+        color = Fore.GREEN
+      elif not msgs:
+        # No message was sent.
+        color = Fore.RED
+      elif msgs[-1]['sender'] != props.get('owner_email'):
+        color = Fore.YELLOW
+      else:
+        color = Fore.BLUE
+      output.put((b, i, color))
+
+    # Process one branch synchronously to work through authentication, then
+    # spawn threads to process all the other branches in parallel.
+    if branches:
+      fetch(branches[0])
+    threads = [
+      threading.Thread(target=fetch, args=(b,)) for b in branches[1:]]
+    for t in threads:
+      t.daemon = True
+      t.start()
   else:
-    print
-    print 'Current branch:',
-    if not cl.GetIssue():
-      print 'no issue assigned.'
-      return 0
-    print cl.GetBranch()
-    print 'Issue number: %s (%s)' % (cl.GetIssue(), cl.GetIssueURL())
-    print 'Issue description:'
-    print cl.GetDescription(pretty=True)
+    # Do not use GetApprovingReviewers(), since it requires an HTTP request.
+    for b in branches:
+      c = Changelist(branchref=b)
+      url = c.GetIssueURL()
+      output.put((b, url, Fore.BLUE if url else Fore.WHITE))
+
+  tmp = {}
+  alignment = max(5, max(len(ShortBranchName(b)) for b in branches))
+  for branch in sorted(branches):
+    while branch not in tmp:
+      b, i, color = output.get()
+      tmp[b] = (i, color)
+    issue, color = tmp.pop(branch)
+    reset = Fore.RESET
+    if not sys.stdout.isatty():
+      color = ''
+      reset = ''
+    print '  %*s : %s%s%s' % (
+          alignment, ShortBranchName(branch), color, issue, reset)
+
+  cl = Changelist()
+  print
+  print 'Current branch:',
+  if not cl.GetIssue():
+    print 'no issue assigned.'
+    return 0
+  print cl.GetBranch()
+  print 'Issue number: %s (%s)' % (cl.GetIssue(), cl.GetIssueURL())
+  print 'Issue description:'
+  print cl.GetDescription(pretty=True)
   return 0
 
 
-@usage('[issue_number]')
+def colorize_CMDstatus_doc():
+  """To be called once in main() to add colors to git cl status help."""
+  colors = [i for i in dir(Fore) if i[0].isupper()]
+
+  def colorize_line(line):
+    for color in colors:
+      if color in line.upper():
+        # Extract whitespaces first and the leading '-'.
+        indent = len(line) - len(line.lstrip(' ')) + 1
+        return line[:indent] + getattr(Fore, color) + line[indent:] + Fore.RESET
+    return line
+
+  lines = CMDstatus.__doc__.splitlines()
+  CMDstatus.__doc__ = '\n'.join(colorize_line(l) for l in lines)
+
+
+@subcommand.usage('[issue_number]')
 def CMDissue(parser, args):
-  """Set or display the current code review issue number.
+  """Sets or displays the current code review issue number.
 
   Pass issue number 0 to clear the current issue.
-"""
+  """
   _, args = parser.parse_args(args)
 
   cl = Changelist()
@@ -1022,18 +1340,39 @@ def CMDissue(parser, args):
 
 
 def CMDcomments(parser, args):
-  """show review comments of the current changelist"""
+  """Shows review comments of the current changelist."""
   (_, args) = parser.parse_args(args)
   if args:
     parser.error('Unsupported argument: %s' % args)
 
   cl = Changelist()
   if cl.GetIssue():
-    data = cl.RpcServer().get_issue_properties(cl.GetIssue(), True)
+    data = cl.GetIssueProperties()
     for message in sorted(data['messages'], key=lambda x: x['date']):
-      print '\n%s  %s' % (message['date'].split('.', 1)[0], message['sender'])
+      if message['disapproval']:
+        color = Fore.RED
+      elif message['approval']:
+        color = Fore.GREEN
+      elif message['sender'] == data['owner_email']:
+        color = Fore.MAGENTA
+      else:
+        color = Fore.BLUE
+      print '\n%s%s  %s%s' % (
+          color, message['date'].split('.', 1)[0], message['sender'],
+          Fore.RESET)
       if message['text'].strip():
         print '\n'.join('  ' + l for l in message['text'].splitlines())
+  return 0
+
+
+def CMDdescription(parser, args):
+  """Brings up the editor for the current CL's description."""
+  cl = Changelist()
+  if not cl.GetIssue():
+    DieWithError('This branch has no associated changelist.')
+  description = ChangeDescription(cl.GetDescription())
+  description.prompt()
+  cl.UpdateDescription(description.description)
   return 0
 
 
@@ -1051,11 +1390,61 @@ def CreateDescriptionFromLog(args):
   return RunGit(['log', '--pretty=format:%s\n\n%b'] + log_args)
 
 
+def CMDlint(parser, args):
+  """Runs cpplint on the current changelist."""
+  parser.add_option('--filter', action='append', metavar='-x,+y',
+                    help='Comma-separated list of cpplint\'s category-filters')
+  (options, args) = parser.parse_args(args)
+
+  # Access to a protected member _XX of a client class
+  # pylint: disable=W0212
+  try:
+    import cpplint
+    import cpplint_chromium
+  except ImportError:
+    print "Your depot_tools is missing cpplint.py and/or cpplint_chromium.py."
+    return 1
+
+  # Change the current working directory before calling lint so that it
+  # shows the correct base.
+  previous_cwd = os.getcwd()
+  os.chdir(settings.GetRoot())
+  try:
+    cl = Changelist()
+    change = cl.GetChange(cl.GetCommonAncestorWithUpstream(), None)
+    files = [f.LocalPath() for f in change.AffectedFiles()]
+
+    # Process cpplints arguments if any.
+    command = args + files
+    if options.filter:
+      command = ['--filter=' + ','.join(options.filter)] + command
+    filenames = cpplint.ParseArguments(command)
+
+    white_regex = re.compile(settings.GetLintRegex())
+    black_regex = re.compile(settings.GetLintIgnoreRegex())
+    extra_check_functions = [cpplint_chromium.CheckPointerDeclarationWhitespace]
+    for filename in filenames:
+      if white_regex.match(filename):
+        if black_regex.match(filename):
+          print "Ignoring file %s" % filename
+        else:
+          cpplint.ProcessFile(filename, cpplint._cpplint_state.verbose_level,
+                              extra_check_functions)
+      else:
+        print "Skipping file %s" % filename
+  finally:
+    os.chdir(previous_cwd)
+  print "Total errors found: %d\n" % cpplint._cpplint_state.error_count
+  if cpplint._cpplint_state.error_count != 0:
+    return 1
+  return 0
+
+
 def CMDpresubmit(parser, args):
-  """run presubmit tests on the current changelist"""
-  parser.add_option('--upload', action='store_true',
+  """Runs presubmit tests on the current changelist."""
+  parser.add_option('-u', '--upload', action='store_true',
                     help='Run upload hook instead of the push/dcommit hook')
-  parser.add_option('--force', action='store_true',
+  parser.add_option('-f', '--force', action='store_true',
                     help='Run checks even if tree is dirty')
   (options, args) = parser.parse_args(args)
 
@@ -1068,11 +1457,13 @@ def CMDpresubmit(parser, args):
     base_branch = args[0]
   else:
     # Default to diffing against the common ancestor of the upstream branch.
-    base_branch = RunGit(['merge-base', cl.GetUpstreamBranch(), 'HEAD']).strip()
+    base_branch = cl.GetCommonAncestorWithUpstream()
 
-  cl.RunHook(committing=not options.upload, upstream_branch=base_branch,
-             may_prompt=False, verbose=options.verbose,
-             author=None)
+  cl.RunHook(
+      committing=not options.upload,
+      may_prompt=False,
+      verbose=options.verbose,
+      change=cl.GetChange(base_branch, None))
   return 0
 
 
@@ -1099,28 +1490,36 @@ def GerritUpload(options, args, cl):
   if options.target_branch:
     branch = options.target_branch
 
-  log_desc = options.message or CreateDescriptionFromLog(args)
-  if CHANGE_ID not in log_desc:
-    AddChangeIdToCommitMessage(options, args)
-  if options.reviewers:
-    log_desc += '\nR=' + options.reviewers
-  change_desc = ChangeDescription(log_desc, options.reviewers)
-  change_desc.ParseDescription()
-  if change_desc.IsEmpty():
+  change_desc = ChangeDescription(
+      options.message or CreateDescriptionFromLog(args))
+  if not change_desc.description:
     print "Description is empty; aborting."
     return 1
+  if CHANGE_ID not in change_desc.description:
+    AddChangeIdToCommitMessage(options, args)
+
+  commits = RunGit(['rev-list', '%s/%s...' % (remote, branch)]).splitlines()
+  if len(commits) > 1:
+    print('WARNING: This will upload %d commits. Run the following command '
+          'to see which commits will be uploaded: ' % len(commits))
+    print('git log %s/%s...' % (remote, branch))
+    print('You can also use `git squash-branch` to squash these into a single'
+          'commit.')
+    ask_for_data('About to upload; enter to confirm.')
+
+  if options.reviewers:
+    change_desc.update_reviewers(options.reviewers)
 
   receive_options = []
   cc = cl.GetCCList().split(',')
   if options.cc:
-    cc += options.cc.split(',')
+    cc.extend(options.cc)
   cc = filter(None, cc)
   if cc:
     receive_options += ['--cc=' + email for email in cc]
-  if change_desc.reviewers:
-    reviewers = filter(None, change_desc.reviewers.split(','))
-    if reviewers:
-      receive_options += ['--reviewer=' + email for email in reviewers]
+  if change_desc.get_reviewers():
+    receive_options.extend(
+        '--reviewer=' + email for email in change_desc.get_reviewers())
 
   git_command = ['push']
   if receive_options:
@@ -1141,40 +1540,55 @@ def RietveldUpload(options, args, cl):
 
   change_desc = None
 
+  if options.email is not None:
+    upload_args.extend(['--email', options.email])
+
   if cl.GetIssue():
     if options.title:
       upload_args.extend(['--title', options.title])
-    elif options.message:
-      # TODO(rogerta): for now, the -m option will also set the --title option
-      # for upload.py.  Soon this will be changed to set the --message option.
-      # Will wait until people are used to typing -t instead of -m.
-      upload_args.extend(['--title', options.message])
+    if options.message:
+      upload_args.extend(['--message', options.message])
     upload_args.extend(['--issue', str(cl.GetIssue())])
     print ("This branch is associated with issue %s. "
            "Adding patch to that issue." % cl.GetIssue())
   else:
     if options.title:
       upload_args.extend(['--title', options.title])
-    message = options.message or CreateDescriptionFromLog(args)
-    change_desc = ChangeDescription(message, options.reviewers)
+    message = options.title or options.message or CreateDescriptionFromLog(args)
+    change_desc = ChangeDescription(message)
+    if options.reviewers:
+      change_desc.update_reviewers(options.reviewers)
     if not options.force:
-      change_desc.Prompt()
-    change_desc.ParseDescription()
+      change_desc.prompt()
 
-    if change_desc.IsEmpty():
+    if not change_desc.description:
       print "Description is empty; aborting."
       return 1
 
     upload_args.extend(['--message', change_desc.description])
-    if change_desc.reviewers:
-      upload_args.extend(['--reviewers', change_desc.reviewers])
+    if change_desc.get_reviewers():
+      upload_args.append('--reviewers=' + ','.join(change_desc.get_reviewers()))
     if options.send_mail:
-      if not change_desc.reviewers:
+      if not change_desc.get_reviewers():
         DieWithError("Must specify reviewers to send email.")
       upload_args.append('--send_mail')
-    cc = ','.join(filter(None, (cl.GetCCList(), options.cc)))
+
+    # We check this before applying rietveld.private assuming that in
+    # rietveld.cc only addresses which we can send private CLs to are listed
+    # if rietveld.private is set, and so we should ignore rietveld.cc only when
+    # --private is specified explicitly on the command line.
+    if options.private:
+      logging.warn('rietveld.cc is ignored since private flag is specified.  '
+                   'You need to review and add them manually if necessary.')
+      cc = cl.GetCCListWithoutDefault()
+    else:
+      cc = cl.GetCCList()
+    cc = ','.join(filter(None, (cc, ','.join(options.cc))))
     if cc:
       upload_args.extend(['--cc', cc])
+
+  if options.private or settings.GetDefaultPrivateFlag() == "True":
+    upload_args.append('--private')
 
   upload_args.extend(['--git_similarity', str(options.similarity)])
   if not options.find_copies:
@@ -1202,6 +1616,8 @@ def RietveldUpload(options, args, cl):
     upload_args = ['upload'] + upload_args + args
     logging.info('upload.RealMain(%s)', upload_args)
     issue, patchset = upload.RealMain(upload_args)
+    issue = int(issue)
+    patchset = int(patchset)
   except KeyboardInterrupt:
     sys.exit(1)
   except:
@@ -1225,45 +1641,61 @@ def RietveldUpload(options, args, cl):
   return 0
 
 
-@usage('[args to "git diff"]')
+def cleanup_list(l):
+  """Fixes a list so that comma separated items are put as individual items.
+
+  So that "--reviewers joe@c,john@c --reviewers joa@c" results in
+  options.reviewers == sorted(['joe@c', 'john@c', 'joa@c']).
+  """
+  items = sum((i.split(',') for i in l), [])
+  stripped_items = (i.strip() for i in items)
+  return sorted(filter(None, stripped_items))
+
+
+@subcommand.usage('[args to "git diff"]')
 def CMDupload(parser, args):
-  """upload the current changelist to codereview"""
+  """Uploads the current changelist to codereview."""
   parser.add_option('--bypass-hooks', action='store_true', dest='bypass_hooks',
                     help='bypass upload presubmit hook')
+  parser.add_option('--bypass-watchlists', action='store_true',
+                    dest='bypass_watchlists',
+                    help='bypass watchlists auto CC-ing reviewers')
   parser.add_option('-f', action='store_true', dest='force',
                     help="force yes to questions (don't prompt)")
   parser.add_option('-m', dest='message', help='message for patchset')
   parser.add_option('-t', dest='title', help='title for patchset')
   parser.add_option('-r', '--reviewers',
+                    action='append', default=[],
                     help='reviewer email addresses')
   parser.add_option('--cc',
+                    action='append', default=[],
                     help='cc email addresses')
-  parser.add_option('--send-mail', action='store_true',
+  parser.add_option('-s', '--send-mail', action='store_true',
                     help='send email to reviewer immediately')
   parser.add_option("--emulate_svn_auto_props", action="store_true",
                     dest="emulate_svn_auto_props",
                     help="Emulate Subversion's auto properties feature.")
   parser.add_option('-c', '--use-commit-queue', action='store_true',
                     help='tell the commit queue to commit this patchset')
+  parser.add_option('--private', action='store_true',
+                    help='set the review private (rietveld only)')
   parser.add_option('--target_branch',
                     help='When uploading to gerrit, remote branch to '
                          'use for CL.  Default: master')
+  parser.add_option('--email', default=None,
+                    help='email address to use to connect to Rietveld')
+
   add_git_similarity(parser)
   (options, args) = parser.parse_args(args)
 
   if options.target_branch and not settings.GetIsGerrit():
     parser.error('Use --target_branch for non gerrit repository.')
 
-  # Print warning if the user used the -m/--message argument.  This will soon
-  # change to -t/--title.
-  if options.message:
-    print >> sys.stderr, (
-        '\nWARNING: Use -t or --title to set the title of the patchset.\n'
-        'In the near future, -m or --message will send a message instead.\n'
-        'See http://goo.gl/JGg0Z for details.\n')
-
   if is_dirty_git_tree('upload'):
     return 1
+
+  options.reviewers = cleanup_list(options.reviewers)
+  options.cc = cleanup_list(options.cc)
 
   cl = Changelist()
   if args:
@@ -1271,23 +1703,52 @@ def CMDupload(parser, args):
     base_branch = args[0]
   else:
     # Default to diffing against common ancestor of upstream branch
-    base_branch = RunGit(['merge-base', cl.GetUpstreamBranch(), 'HEAD']).strip()
-    args = [base_branch]
+    base_branch = cl.GetCommonAncestorWithUpstream()
+    args = [base_branch, 'HEAD']
+
+  # Apply watchlists on upload.
+  change = cl.GetChange(base_branch, None)
+  watchlist = watchlists.Watchlists(change.RepositoryRoot())
+  files = [f.LocalPath() for f in change.AffectedFiles()]
+  if not options.bypass_watchlists:
+    cl.SetWatchers(watchlist.GetWatchersForPaths(files))
 
   if not options.bypass_hooks:
-    hook_results = cl.RunHook(committing=False, upstream_branch=base_branch,
+    if options.reviewers:
+      # Set the reviewer list now so that presubmit checks can access it.
+      change_description = ChangeDescription(change.FullDescriptionText())
+      change_description.update_reviewers(options.reviewers)
+      change.SetDescriptionText(change_description.description)
+    hook_results = cl.RunHook(committing=False,
                               may_prompt=not options.force,
                               verbose=options.verbose,
-                              author=None)
+                              change=change)
     if not hook_results.should_continue():
       return 1
     if not options.reviewers and hook_results.reviewers:
-      options.reviewers = hook_results.reviewers
+      options.reviewers = hook_results.reviewers.split(',')
+
+  if cl.GetIssue():
+    latest_patchset = cl.GetMostRecentPatchset()
+    local_patchset = cl.GetPatchset()
+    if latest_patchset and local_patchset and local_patchset != latest_patchset:
+      print ('The last upload made from this repository was patchset #%d but '
+            'the most recent patchset on the server is #%d.'
+            % (local_patchset, latest_patchset))
+      print ('Uploading will still work, but if you\'ve uploaded to this issue '
+            'from another machine or branch the patch you\'re uploading now '
+            'might not include those changes.')
+      ask_for_data('About to upload; enter to confirm.')
 
   print_stats(options.similarity, options.find_copies, args)
   if settings.GetIsGerrit():
     return GerritUpload(options, args, cl)
-  return RietveldUpload(options, args, cl)
+  ret = RietveldUpload(options, args, cl)
+  if not ret:
+    git_set_branch_value('last-upload-hash',
+                         RunGit(['rev-parse', 'HEAD']).strip())
+
+  return ret
 
 
 def IsSubmoduleMergeCommit(ref):
@@ -1299,9 +1760,9 @@ def IsSubmoduleMergeCommit(ref):
 
 
 def SendUpstream(parser, args, cmd):
-  """Common code for CmdPush and CmdDCommit
+  """Common code for CMDland and CmdDCommit
 
-  Squashed commit into a single.
+  Squashes branch into a single commit.
   Updates changelog with metadata (e.g. pointer to review).
   Pushes/dcommits the code upstream.
   Updates review and closes.
@@ -1319,6 +1780,21 @@ def SendUpstream(parser, args, cmd):
   add_git_similarity(parser)
   (options, args) = parser.parse_args(args)
   cl = Changelist()
+
+  current = cl.GetBranch()
+  remote, upstream_branch = cl.FetchUpstreamTuple(cl.GetBranch())
+  if not settings.GetIsGitSvn() and remote == '.':
+    print
+    print 'Attempting to push branch %r into another local branch!' % current
+    print
+    print 'Either reparent this branch on top of origin/master:'
+    print '  git reparent-branch --root'
+    print
+    print 'OR run `git rebase-update` if you think the parent branch is already'
+    print 'committed.'
+    print
+    print '  Current parent: %r' % upstream_branch
+    return 1
 
   if not args or cmd == 'push':
     # Default to merging against our best guess of the upstream branch.
@@ -1371,10 +1847,9 @@ def SendUpstream(parser, args, cmd):
       author = re.search(r'\<(.*)\>', options.contributor).group(1)
     hook_results = cl.RunHook(
         committing=True,
-        upstream_branch=base_branch,
         may_prompt=not options.force,
         verbose=options.verbose,
-        author=author)
+        change=cl.GetChange(base_branch, author))
     if not hook_results.should_continue():
       return 1
 
@@ -1391,28 +1866,37 @@ def SendUpstream(parser, args, cmd):
   else:
     breakpad.SendStack(
         'GitClHooksBypassedCommit',
-        'Issue %s/%s bypassed hook when committing' %
-        (cl.GetRietveldServer(), cl.GetIssue()),
+        'Issue %s/%s bypassed hook when committing (tree status was "%s")' %
+        (cl.GetRietveldServer(), cl.GetIssue(), GetTreeStatus()),
         verbose=False)
 
-  description = options.message
-  if not description and cl.GetIssue():
-    description = cl.GetDescription()
+  change_desc = ChangeDescription(options.message)
+  if not change_desc.description and cl.GetIssue():
+    change_desc = ChangeDescription(cl.GetDescription())
 
-  if not description:
+  if not change_desc.description:
     if not cl.GetIssue() and options.bypass_hooks:
-      description = CreateDescriptionFromLog([base_branch])
+      change_desc = ChangeDescription(CreateDescriptionFromLog([base_branch]))
     else:
       print 'No description set.'
       print 'Visit %s/edit to set it.' % (cl.GetIssueURL())
       return 1
 
+  # Keep a separate copy for the commit message, because the commit message
+  # contains the link to the Rietveld issue, while the Rietveld message contains
+  # the commit viewvc url.
+  # Keep a separate copy for the commit message.
   if cl.GetIssue():
-    description += "\n\nReview URL: %s" % cl.GetIssueURL()
+    change_desc.update_reviewers(cl.GetApprovingReviewers())
 
+  commit_desc = ChangeDescription(change_desc.description)
+  if cl.GetIssue():
+    commit_desc.append_footer('Review URL: %s' % cl.GetIssueURL())
   if options.contributor:
-    description += "\nPatch from %s." % options.contributor
-  print 'Description:', repr(description)
+    commit_desc.append_footer('Patch from %s.' % options.contributor)
+
+  print('Description:')
+  print(commit_desc.description)
 
   branches = [base_branch, cl.GetBranchRef()]
   if not options.force:
@@ -1436,7 +1920,7 @@ def SendUpstream(parser, args, cmd):
   # We might be in a directory that's present in this branch but not in the
   # trunk.  Move up to the top of the tree so that git commands that expect a
   # valid CWD won't fail after we check out the merge branch.
-  rel_base_path = RunGit(['rev-parse', '--show-cdup']).strip()
+  rel_base_path = settings.GetRelativeRoot()
   if rel_base_path:
     os.chdir(rel_base_path)
 
@@ -1448,9 +1932,13 @@ def SendUpstream(parser, args, cmd):
     RunGit(['checkout', '-q', '-b', MERGE_BRANCH])
     RunGit(['reset', '--soft', base_branch])
     if options.contributor:
-      RunGit(['commit', '--author', options.contributor, '-m', description])
+      RunGit(
+          [
+            'commit', '--author', options.contributor,
+            '-m', commit_desc.description,
+          ])
     else:
-      RunGit(['commit', '-m', description])
+      RunGit(['commit', '-m', commit_desc.description])
     if base_has_submodules:
       cherry_pick_commit = RunGit(['rev-list', 'HEAD^!']).rstrip()
       RunGit(['branch', CHERRY_PICK_BRANCH, svn_head])
@@ -1489,13 +1977,22 @@ def SendUpstream(parser, args, cmd):
       return 1
     viewvc_url = settings.GetViewVCUrl()
     if viewvc_url and revision:
-      cl.description += ('\n\nCommitted: ' + viewvc_url + revision)
+      change_desc.append_footer('Committed: ' + viewvc_url + revision)
     elif revision:
-      cl.description += ('\n\nCommitted: ' + revision)
+      change_desc.append_footer('Committed: ' + revision)
     print ('Closing issue '
            '(you may be prompted for your codereview password)...')
+    cl.UpdateDescription(change_desc.description)
     cl.CloseIssue()
-    cl.SetIssue(0)
+    props = cl.GetIssueProperties()
+    patch_num = len(props['patchsets'])
+    comment = "Committed patchset #%d manually as r%s" % (patch_num, revision)
+    if options.bypass_hooks:
+      comment += ' (tree was closed).' if GetTreeStatus() == 'closed' else '.'
+    else:
+      comment += ' (presubmit successful).'
+    cl.RpcServer().add_comment(cl.GetIssue(), comment)
+    cl.SetIssue(None)
 
   if retcode == 0:
     hook = POSTUPSTREAM_HOOK_PATTERN % cmd
@@ -1505,9 +2002,9 @@ def SendUpstream(parser, args, cmd):
   return 0
 
 
-@usage('[upstream branch to apply against]')
+@subcommand.usage('[upstream branch to apply against]')
 def CMDdcommit(parser, args):
-  """commit the current changelist via git-svn"""
+  """Commits the current changelist via git-svn."""
   if not settings.GetIsGitSvn():
     message = """This doesn't appear to be an SVN repository.
 If your project has a git mirror with an upstream SVN master, you probably need
@@ -1521,9 +2018,9 @@ will instead be silently ignored."""
   return SendUpstream(parser, args, 'dcommit')
 
 
-@usage('[upstream branch to apply against]')
-def CMDpush(parser, args):
-  """commit the current changelist via git"""
+@subcommand.usage('[upstream branch to apply against]')
+def CMDland(parser, args):
+  """Commits the current changelist via git."""
   if settings.GetIsGitSvn():
     print('This appears to be an SVN repository.')
     print('Are you sure you didn\'t mean \'git cl dcommit\'?')
@@ -1531,15 +2028,40 @@ def CMDpush(parser, args):
   return SendUpstream(parser, args, 'push')
 
 
-@usage('<patch url or issue id>')
+@subcommand.usage('[upstream branch to apply against]')
+def CMDpush(parser, args):
+  """Temporary alias for 'land'.
+  """
+  print(
+    "\n=======\n"
+    "'git cl push' has been renamed to 'git cl land'.\n"
+    "Currently they are treated as synonyms, but 'git cl push' will stop\n"
+    "working after 2014/07/01.\n"
+    "=======\n")
+  now = datetime.datetime.utcfromtimestamp(time.time())
+  if now > datetime.datetime(2014, 7, 1):
+    print('******\nReally, you should not use this command anymore... \n'
+    'Pausing 10 sec to help you remember :-)')
+    for n in xrange(10):
+      time.sleep(1)
+      print('%s seconds...' % (n+1))
+    print('******')
+  return CMDland(parser, args)
+
+
+@subcommand.usage('<patch url or issue id>')
 def CMDpatch(parser, args):
-  """patch in a code review"""
+  """Patches in a code review."""
   parser.add_option('-b', dest='newbranch',
                     help='create a new branch off trunk for the patch')
-  parser.add_option('-f', action='store_true', dest='force',
+  parser.add_option('-f', '--force', action='store_true',
                     help='with -b, clobber any existing branch')
-  parser.add_option('--reject', action='store_true', dest='reject',
-                    help='allow failed patches and spew .rej files')
+  parser.add_option('-d', '--directory', action='store', metavar='DIR',
+                    help='Change to the directory DIR immediately, '
+                         'before doing anything else.')
+  parser.add_option('--reject', action='store_true',
+                    help='failed patches spew .rej files rather than '
+                        'attempting a 3-way merge')
   parser.add_option('-n', '--no-commit', action='store_true', dest='nocommit',
                     help="don't commit after patch applies")
   (options, args) = parser.parse_args(args)
@@ -1551,11 +2073,23 @@ def CMDpatch(parser, args):
   # TODO(maruel): Use apply_issue.py
   # TODO(ukai): use gerrit-cherry-pick for gerrit repository?
 
-  if issue_arg.isdigit():
+  if options.newbranch:
+    if options.force:
+      RunGit(['branch', '-D', options.newbranch],
+          stderr=subprocess2.PIPE, error_ok=True)
+    RunGit(['checkout', '-b', options.newbranch,
+            Changelist().GetUpstreamBranch()])
+
+  return PatchIssue(issue_arg, options.reject, options.nocommit,
+                    options.directory)
+
+
+def PatchIssue(issue_arg, reject, nocommit, directory):
+  if type(issue_arg) is int or issue_arg.isdigit():
     # Input is an issue id.  Figure out the URL.
-    cl = Changelist()
     issue = int(issue_arg)
-    patchset = cl.GetMostRecentPatchset(issue)
+    cl = Changelist(issue=issue)
+    patchset = cl.GetMostRecentPatchset()
     patch_data = cl.GetPatchSetDiff(issue, patchset)
   else:
     # Assume it's a URL to the patch. Default to https.
@@ -1568,16 +2102,9 @@ def CMDpatch(parser, args):
     patchset = int(match.group(2))
     patch_data = urllib2.urlopen(issue_arg).read()
 
-  if options.newbranch:
-    if options.force:
-      RunGit(['branch', '-D', options.newbranch],
-          stderr=subprocess2.PIPE, error_ok=True)
-    RunGit(['checkout', '-b', options.newbranch,
-            Changelist().GetUpstreamBranch()])
-
   # Switch up to the top-level directory, if necessary, in preparation for
   # applying the patch.
-  top = RunGit(['rev-parse', '--show-cdup']).strip()
+  top = settings.GetRelativeRoot()
   if top:
     os.chdir(top)
 
@@ -1591,42 +2118,49 @@ def CMDpatch(parser, args):
   except subprocess2.CalledProcessError:
     DieWithError('Git patch mungling failed.')
   logging.info(patch_data)
+
   # We use "git apply" to apply the patch instead of "patch" so that we can
   # pick up file adds.
   # The --index flag means: also insert into the index (so we catch adds).
   cmd = ['git', 'apply', '--index', '-p0']
-  if options.reject:
+  if directory:
+    cmd.extend(('--directory', directory))
+  if reject:
     cmd.append('--reject')
+  elif IsGitVersionAtLeast('1.7.12'):
+    cmd.append('--3way')
   try:
-    subprocess2.check_call(cmd, stdin=patch_data, stdout=subprocess2.VOID)
+    subprocess2.check_call(cmd, env=GetNoGitPagerEnv(),
+                           stdin=patch_data, stdout=subprocess2.VOID)
   except subprocess2.CalledProcessError:
     DieWithError('Failed to apply the patch')
 
   # If we had an issue, commit the current state and register the issue.
-  if not options.nocommit:
+  if not nocommit:
     RunGit(['commit', '-m', 'patch from issue %s' % issue])
     cl = Changelist()
     cl.SetIssue(issue)
     cl.SetPatchset(patchset)
-    print "Committed patch."
+    print "Committed patch locally."
   else:
     print "Patch applied to index."
   return 0
 
 
 def CMDrebase(parser, args):
-  """rebase current branch on top of svn repo"""
+  """Rebases current branch on top of svn repo."""
   # Provide a wrapper for git svn rebase to help avoid accidental
   # git svn dcommit.
   # It's the only command that doesn't use parser at all since we just defer
   # execution to git-svn.
-  return subprocess2.call(['git', 'svn', 'rebase'] + args)
+
+  return RunGitWithCode(['svn', 'rebase'] + args)[1]
 
 
-def GetTreeStatus():
+def GetTreeStatus(url=None):
   """Fetches the tree status and returns either 'open', 'closed',
   'unknown' or 'unset'."""
-  url = settings.GetTreeStatusUrl(error_ok=True)
+  url = url or settings.GetTreeStatusUrl(error_ok=True)
   if url:
     status = urllib2.urlopen(url).read().lower()
     if status.find('closed') != -1 or status == '0':
@@ -1649,7 +2183,7 @@ def GetTreeStatusReason():
 
 
 def CMDtree(parser, args):
-  """show the status of the tree"""
+  """Shows the status of the tree."""
   _, args = parser.parse_args(args)
   status = GetTreeStatus()
   if 'unset' == status:
@@ -1675,6 +2209,9 @@ def CMDtry(parser, args):
             "the try server waterfall for the builders name and the tests "
             "available. Can also be used to specify gtest_filter, e.g. "
             "-bwin_rel:base_unittests:ValuesTest.*Value"))
+  group.add_option(
+      "-m", "--master", default='',
+      help=("Specify a try master where to run the tries."))
   group.add_option(
       "-r", "--revision",
       help="Revision to use for the try job; default: the "
@@ -1708,82 +2245,144 @@ def CMDtry(parser, args):
   if not options.name:
     options.name = cl.GetBranch()
 
-  # Process --bot and --testfilter.
-  if not options.bot:
-    # Get try slaves from PRESUBMIT.py files if not specified.
-    change = cl.GetChange(
-      RunGit(['merge-base', cl.GetUpstreamBranch(), 'HEAD']).strip(),
-      None)
-    options.bot = presubmit_support.DoGetTrySlaves(
-        change,
-        change.LocalPaths(),
-        settings.GetRoot(),
-        None,
-        None,
-        options.verbose,
-        sys.stdout)
-  if not options.bot:
-    parser.error('No default try builder to try, use --bot')
+  if options.bot and not options.master:
+    parser.error('For manually specified bots please also specify the '
+                 'tryserver master, e.g. "-m tryserver.chromium".')
 
-  builders_and_tests = {}
-  for bot in options.bot:
-    if ':' in bot:
-      builder, tests = bot.split(':', 1)
-      builders_and_tests.setdefault(builder, []).extend(tests.split(','))
-    elif ',' in bot:
-      parser.error('Specify one bot per --bot flag')
-    else:
-      builders_and_tests.setdefault(bot, []).append('defaulttests')
+  def GetMasterMap():
+    # Process --bot and --testfilter.
+    if not options.bot:
+      change = cl.GetChange(cl.GetCommonAncestorWithUpstream(), None)
+
+      # Get try masters from PRESUBMIT.py files.
+      masters = presubmit_support.DoGetTryMasters(
+          change,
+          change.LocalPaths(),
+          settings.GetRoot(),
+          None,
+          None,
+          options.verbose,
+          sys.stdout)
+      if masters:
+        return masters
+
+      # Fall back to deprecated method: get try slaves from PRESUBMIT.py files.
+      options.bot = presubmit_support.DoGetTrySlaves(
+          change,
+          change.LocalPaths(),
+          settings.GetRoot(),
+          None,
+          None,
+          options.verbose,
+          sys.stdout)
+    if not options.bot:
+      parser.error('No default try builder to try, use --bot')
+
+    builders_and_tests = {}
+    # TODO(machenbach): The old style command-line options don't support
+    # multiple try masters yet.
+    old_style = filter(lambda x: isinstance(x, basestring), options.bot)
+    new_style = filter(lambda x: isinstance(x, tuple), options.bot)
+
+    for bot in old_style:
+      if ':' in bot:
+        builder, tests = bot.split(':', 1)
+        builders_and_tests.setdefault(builder, []).extend(tests.split(','))
+      elif ',' in bot:
+        parser.error('Specify one bot per --bot flag')
+      else:
+        builders_and_tests.setdefault(bot, []).append('defaulttests')
+
+    for bot, tests in new_style:
+      builders_and_tests.setdefault(bot, []).extend(tests)
+
+    # Return a master map with one master to be backwards compatible. The
+    # master name defaults to an empty string, which will cause the master
+    # not to be set on rietveld (deprecated).
+    return {options.master: builders_and_tests}
+
+  masters = GetMasterMap()
 
   if options.testfilter:
     forced_tests = sum((t.split(',') for t in options.testfilter), [])
-    builders_and_tests = dict(
-      (b, forced_tests) for b, t in builders_and_tests.iteritems()
-      if t != ['compile'])
+    masters = dict((master, dict(
+        (b, forced_tests) for b, t in slaves.iteritems()
+        if t != ['compile'])) for master, slaves in masters.iteritems())
 
-  if any('triggered' in b for b in builders_and_tests):
-    print >> sys.stderr, (
-        'ERROR You are trying to send a job to a triggered bot.  This type of'
-        ' bot requires an\ninitial job from a parent (usually a builder).  '
-        'Instead send your job to the parent.\n'
-        'Bot list: %s' % builders_and_tests)
-    return 1
+  for builders in masters.itervalues():
+    if any('triggered' in b for b in builders):
+      print >> sys.stderr, (
+          'ERROR You are trying to send a job to a triggered bot. This type of'
+          ' bot requires an\ninitial job from a parent (usually a builder).  '
+          'Instead send your job to the parent.\n'
+          'Bot list: %s' % builders)
+      return 1
 
-  patchset = cl.GetPatchset()
-  if not cl.GetPatchset():
-    patchset = cl.GetMostRecentPatchset(cl.GetIssue())
-
-  cl.RpcServer().trigger_try_jobs(
-      cl.GetIssue(), patchset, options.name, options.clobber, options.revision,
-      builders_and_tests)
+  patchset = cl.GetMostRecentPatchset()
+  if patchset and patchset != cl.GetPatchset():
+    print(
+        '\nWARNING Mismatch between local config and server. Did a previous '
+        'upload fail?\ngit-cl try always uses latest patchset from rietveld. '
+        'Continuing using\npatchset %s.\n' % patchset)
+  try:
+    cl.RpcServer().trigger_distributed_try_jobs(
+        cl.GetIssue(), patchset, options.name, options.clobber,
+        options.revision, masters)
+  except urllib2.HTTPError, e:
+    if e.code == 404:
+      print('404 from rietveld; '
+            'did you mean to use "git try" instead of "git cl try"?')
+      return 1
   print('Tried jobs on:')
-  length = max(len(builder) for builder in builders_and_tests)
-  for builder in sorted(builders_and_tests):
-    print '  %*s: %s' % (length, builder, ','.join(builders_and_tests[builder]))
+
+  for (master, builders) in masters.iteritems():
+    if master:
+      print 'Master: %s' % master
+    length = max(len(builder) for builder in builders)
+    for builder in sorted(builders):
+      print '  %*s: %s' % (length, builder, ','.join(builders[builder]))
   return 0
 
 
-@usage('[new upstream branch]')
+@subcommand.usage('[new upstream branch]')
 def CMDupstream(parser, args):
-  """prints or sets the name of the upstream branch, if any"""
+  """Prints or sets the name of the upstream branch, if any."""
   _, args = parser.parse_args(args)
   if len(args) > 1:
     parser.error('Unrecognized args: %s' % ' '.join(args))
-    return 0
 
   cl = Changelist()
   if args:
     # One arg means set upstream branch.
-    RunGit(['branch', '--set-upstream', cl.GetBranch(), args[0]])
+    branch = cl.GetBranch()
+    RunGit(['branch', '--set-upstream', branch, args[0]])
     cl = Changelist()
     print "Upstream branch set to " + cl.GetUpstreamBranch()
+
+    # Clear configured merge-base, if there is one.
+    git_common.remove_merge_base(branch)
   else:
     print cl.GetUpstreamBranch()
   return 0
 
 
+def CMDweb(parser, args):
+  """Opens the current CL in the web browser."""
+  _, args = parser.parse_args(args)
+  if args:
+    parser.error('Unrecognized args: %s' % ' '.join(args))
+
+  issue_url = Changelist().GetIssueURL()
+  if not issue_url:
+    print >> sys.stderr, 'ERROR No issue to open'
+    return 1
+
+  webbrowser.open(issue_url)
+  return 0
+
+
 def CMDset_commit(parser, args):
-  """set the commit bit"""
+  """Sets the commit bit to trigger the Commit Queue."""
   _, args = parser.parse_args(args)
   if args:
     parser.error('Unrecognized args: %s' % ' '.join(args))
@@ -1792,84 +2391,219 @@ def CMDset_commit(parser, args):
   return 0
 
 
-def Command(name):
-  return getattr(sys.modules[__name__], 'CMD' + name, None)
-
-
-def CMDhelp(parser, args):
-  """print list of commands or help for a specific command"""
+def CMDset_close(parser, args):
+  """Closes the issue."""
   _, args = parser.parse_args(args)
-  if len(args) == 1:
-    return main(args + ['--help'])
-  parser.print_help()
+  if args:
+    parser.error('Unrecognized args: %s' % ' '.join(args))
+  cl = Changelist()
+  # Ensure there actually is an issue to close.
+  cl.GetDescription()
+  cl.CloseIssue()
   return 0
 
 
-def GenUsage(parser, command):
-  """Modify an OptParse object with the function's documentation."""
-  obj = Command(command)
-  more = getattr(obj, 'usage_more', '')
-  if command == 'help':
-    command = '<command>'
+def CMDdiff(parser, args):
+  """shows differences between local tree and last upload."""
+  cl = Changelist()
+  issue = cl.GetIssue()
+  branch = cl.GetBranch()
+  if not issue:
+    DieWithError('No issue found for current branch (%s)' % branch)
+  TMP_BRANCH = 'git-cl-diff'
+  base_branch = cl.GetCommonAncestorWithUpstream()
+
+  # Create a new branch based on the merge-base
+  RunGit(['checkout', '-q', '-b', TMP_BRANCH, base_branch])
+  try:
+    # Patch in the latest changes from rietveld.
+    rtn = PatchIssue(issue, False, False, None)
+    if rtn != 0:
+      return rtn
+
+    # Switch back to starting brand and diff against the temporary
+    # branch containing the latest rietveld patch.
+    subprocess2.check_call(['git', 'diff', TMP_BRANCH, branch])
+  finally:
+    RunGit(['checkout', '-q', branch])
+    RunGit(['branch', '-D', TMP_BRANCH])
+
+  return 0
+
+
+def CMDowners(parser, args):
+  """interactively find the owners for reviewing"""
+  parser.add_option(
+      '--no-color',
+      action='store_true',
+      help='Use this option to disable color output')
+  options, args = parser.parse_args(args)
+
+  author = RunGit(['config', 'user.email']).strip() or None
+
+  cl = Changelist()
+
+  if args:
+    if len(args) > 1:
+      parser.error('Unknown args')
+    base_branch = args[0]
   else:
-    # OptParser.description prefer nicely non-formatted strings.
-    parser.description = re.sub('[\r\n ]{2,}', ' ', obj.__doc__)
-  parser.set_usage('usage: %%prog %s [options] %s' % (command, more))
+    # Default to diffing against the common ancestor of the upstream branch.
+    base_branch = cl.GetCommonAncestorWithUpstream()
+
+  change = cl.GetChange(base_branch, None)
+  return owners_finder.OwnersFinder(
+      [f.LocalPath() for f in
+          cl.GetChange(base_branch, None).AffectedFiles()],
+      change.RepositoryRoot(), author,
+      fopen=file, os_path=os.path, glob=glob.glob,
+      disable_color=options.no_color).run()
+
+
+@subcommand.usage('[files or directories to diff]')
+def CMDformat(parser, args):
+  """Runs clang-format on the diff."""
+  CLANG_EXTS = ['.cc', '.cpp', '.h', '.mm', '.proto']
+  parser.add_option('--full', action='store_true',
+                    help='Reformat the full content of all touched files')
+  parser.add_option('--dry-run', action='store_true',
+                    help='Don\'t modify any file on disk.')
+  parser.add_option('--diff', action='store_true',
+                    help='Print diff to stdout rather than modifying files.')
+  opts, args = parser.parse_args(args)
+
+  # git diff generates paths against the root of the repository.  Change
+  # to that directory so clang-format can find files even within subdirs.
+  rel_base_path = settings.GetRelativeRoot()
+  if rel_base_path:
+    os.chdir(rel_base_path)
+
+  # Generate diff for the current branch's changes.
+  diff_cmd = ['diff', '--no-ext-diff', '--no-prefix']
+  if opts.full:
+    # Only list the names of modified files.
+    diff_cmd.append('--name-only')
+  else:
+    # Only generate context-less patches.
+    diff_cmd.append('-U0')
+
+  # Grab the merge-base commit, i.e. the upstream commit of the current
+  # branch when it was created or the last time it was rebased. This is
+  # to cover the case where the user may have called "git fetch origin",
+  # moving the origin branch to a newer commit, but hasn't rebased yet.
+  upstream_commit = None
+  cl = Changelist()
+  upstream_branch = cl.GetUpstreamBranch()
+  if upstream_branch:
+    upstream_commit = RunGit(['merge-base', 'HEAD', upstream_branch])
+    upstream_commit = upstream_commit.strip()
+
+  if not upstream_commit:
+    DieWithError('Could not find base commit for this branch. '
+                 'Are you in detached state?')
+
+  diff_cmd.append(upstream_commit)
+
+  # Handle source file filtering.
+  diff_cmd.append('--')
+  if args:
+    for arg in args:
+      if os.path.isdir(arg):
+        diff_cmd += [os.path.join(arg, '*' + ext) for ext in CLANG_EXTS]
+      elif os.path.isfile(arg):
+        diff_cmd.append(arg)
+      else:
+        DieWithError('Argument "%s" is not a file or a directory' % arg)
+  else:
+    diff_cmd += ['*' + ext for ext in CLANG_EXTS]
+  diff_output = RunGit(diff_cmd)
+
+  top_dir = os.path.normpath(
+      RunGit(["rev-parse", "--show-toplevel"]).rstrip('\n'))
+
+  # Locate the clang-format binary in the checkout
+  try:
+    clang_format_tool = clang_format.FindClangFormatToolInChromiumTree()
+  except clang_format.NotFoundError, e:
+    DieWithError(e)
+
+  if opts.full:
+    # diff_output is a list of files to send to clang-format.
+    files = diff_output.splitlines()
+    if not files:
+      print "Nothing to format."
+      return 0
+    cmd = [clang_format_tool]
+    if not opts.dry_run and not opts.diff:
+      cmd.append('-i')
+    stdout = RunCommand(cmd + files, cwd=top_dir)
+    if opts.diff:
+      sys.stdout.write(stdout)
+  else:
+    env = os.environ.copy()
+    env['PATH'] = os.path.dirname(clang_format_tool)
+    # diff_output is a patch to send to clang-format-diff.py
+    try:
+      script = clang_format.FindClangFormatScriptInChromiumTree(
+          'clang-format-diff.py')
+    except clang_format.NotFoundError, e:
+      DieWithError(e)
+
+    cmd = [sys.executable, script, '-p0']
+    if not opts.dry_run and not opts.diff:
+      cmd.append('-i')
+
+    stdout = RunCommand(cmd, stdin=diff_output, cwd=top_dir, env=env)
+    if opts.diff:
+      sys.stdout.write(stdout)
+    if opts.dry_run and len(stdout) > 0:
+      return 2
+
+  return 0
+
+
+class OptionParser(optparse.OptionParser):
+  """Creates the option parse and add --verbose support."""
+  def __init__(self, *args, **kwargs):
+    optparse.OptionParser.__init__(
+        self, *args, prog='git cl', version=__version__, **kwargs)
+    self.add_option(
+        '-v', '--verbose', action='count', default=0,
+        help='Use 2 times for more debugging info')
+
+  def parse_args(self, args=None, values=None):
+    options, args = optparse.OptionParser.parse_args(self, args, values)
+    levels = [logging.WARNING, logging.INFO, logging.DEBUG]
+    logging.basicConfig(level=levels[min(options.verbose, len(levels) - 1)])
+    return options, args
 
 
 def main(argv):
-  """Doesn't parse the arguments here, just find the right subcommand to
-  execute."""
   if sys.hexversion < 0x02060000:
     print >> sys.stderr, (
         '\nYour python version %s is unsupported, please upgrade.\n' %
         sys.version.split(' ', 1)[0])
     return 2
+
   # Reload settings.
   global settings
   settings = Settings()
 
-  # Do it late so all commands are listed.
-  CMDhelp.usage_more = ('\n\nCommands are:\n' + '\n'.join([
-      '  %-10s %s' % (fn[3:], Command(fn[3:]).__doc__.split('\n')[0].strip())
-      for fn in dir(sys.modules[__name__]) if fn.startswith('CMD')]))
-
-  # Create the option parse and add --verbose support.
-  parser = optparse.OptionParser()
-  parser.add_option(
-      '-v', '--verbose', action='count', default=0,
-      help='Use 2 times for more debugging info')
-  old_parser_args = parser.parse_args
-  def Parse(args):
-    options, args = old_parser_args(args)
-    if options.verbose >= 2:
-      logging.basicConfig(level=logging.DEBUG)
-    elif options.verbose:
-      logging.basicConfig(level=logging.INFO)
-    else:
-      logging.basicConfig(level=logging.WARNING)
-    return options, args
-  parser.parse_args = Parse
-
-  if argv:
-    command = Command(argv[0])
-    if command:
-      # "fix" the usage and the description now that we know the subcommand.
-      GenUsage(parser, argv[0])
-      try:
-        return command(parser, argv[1:])
-      except urllib2.HTTPError, e:
-        if e.code != 500:
-          raise
-        DieWithError(
-            ('AppEngine is misbehaving and returned HTTP %d, again. Keep faith '
-             'and retry or visit go/isgaeup.\n%s') % (e.code, str(e)))
-
-  # Not a known command. Default to help.
-  GenUsage(parser, 'help')
-  return CMDhelp(parser, argv)
+  colorize_CMDstatus_doc()
+  dispatcher = subcommand.CommandDispatcher(__name__)
+  try:
+    return dispatcher.execute(OptionParser(), argv)
+  except urllib2.HTTPError, e:
+    if e.code != 500:
+      raise
+    DieWithError(
+        ('AppEngine is misbehaving and returned HTTP %d, again. Keep faith '
+          'and retry or visit go/isgaeup.\n%s') % (e.code, str(e)))
 
 
 if __name__ == '__main__':
+  # These affect sys.stdout so do it outside of main() to simplify mocks in
+  # unit testing.
   fix_encoding.fix_encoding()
+  colorama.init()
   sys.exit(main(sys.argv[1:]))

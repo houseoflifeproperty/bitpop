@@ -17,11 +17,14 @@
 
 class GURL;
 class PageUsageData;
-class PrefService;
 
 namespace base {
 class ListValue;
 class Value;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 // The handler for Javascript messages related to the "most visited" view.
@@ -67,7 +70,7 @@ class MostVisitedHandler : public content::WebUIMessageHandler,
     return most_visited_urls_;
   }
 
-  static void RegisterUserPrefs(PrefService* prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  private:
   struct MostVisitedPage;
@@ -87,13 +90,15 @@ class MostVisitedHandler : public content::WebUIMessageHandler,
   // Returns the key used in url_blacklist_ for the passed |url|.
   std::string GetDictionaryKeyForUrl(const std::string& url);
 
-  // Sends pages_value_ to the javascript side to and resets page_value_.
+  // Removes recommended URLs if a matching URL is already open in the Browser,
+  // if the Most Visited Tile Placement experiment is enabled, and the client is
+  // in the experiment group.
+  void MaybeRemovePageValues();
+
+  // Sends pages_value_ to the javascript side and resets page_value_.
   void SendPagesValue();
 
   content::NotificationRegistrar registrar_;
-
-  // For callbacks may be run after destruction.
-  base::WeakPtrFactory<MostVisitedHandler> weak_ptr_factory_;
 
   // The most visited URLs, in priority order.
   // Only used for matching up clicks on the page to which most visited entry
@@ -112,6 +117,9 @@ class MostVisitedHandler : public content::WebUIMessageHandler,
 
   // Whether the user has performed a "tracked" action to leave the page or not.
   bool user_action_logged_;
+
+  // For callbacks which may be run after destruction.
+  base::WeakPtrFactory<MostVisitedHandler> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(MostVisitedHandler);
 };

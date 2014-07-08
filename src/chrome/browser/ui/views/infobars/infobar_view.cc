@@ -4,66 +4,76 @@
 
 #include "chrome/browser/ui/views/infobars/infobar_view.h"
 
-#if defined(OS_WIN)
-#include <shellapi.h>
-#endif
-
 #include <algorithm>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/infobar_delegate.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/views/infobars/infobar_background.h"
-#include "chrome/browser/ui/views/infobars/infobar_button_border.h"
+#include "components/infobars/core/infobar_delegate.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #include "third_party/skia/include/effects/SkGradientShader.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/button/menu_button.h"
-#include "ui/views/controls/button/text_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
-#include "ui/views/focus/external_focus_tracker.h"
+#include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/non_client_view.h"
 
-#if defined(OS_WIN)
-#include "base/win/win_util.h"
-#include "base/win/windows_version.h"
-#include "ui/base/win/hwnd_util.h"
-#include "ui/gfx/icon_util.h"
-#endif
+
+// Helpers --------------------------------------------------------------------
+
+namespace {
+
+const int kEdgeItemPadding = views::kRelatedControlHorizontalSpacing;
+const int kIconToLabelSpacing = views::kRelatedControlHorizontalSpacing;
+const int kBeforeCloseButtonSpacing = views::kUnrelatedControlHorizontalSpacing;
+
+bool SortLabelsByDecreasingWidth(views::Label* label_1, views::Label* label_2) {
+  return label_1->GetPreferredSize().width() >
+      label_2->GetPreferredSize().width();
+}
+
+}  // namespace
+
+
+// InfoBar --------------------------------------------------------------------
 
 // static
-const int InfoBar::kSeparatorLineHeight =
+const int infobars::InfoBar::kSeparatorLineHeight =
     views::NonClientFrameView::kClientEdgeThickness;
-const int InfoBar::kDefaultArrowTargetHeight = 9;
-const int InfoBar::kMaximumArrowTargetHeight = 24;
-const int InfoBar::kDefaultArrowTargetHalfWidth = kDefaultArrowTargetHeight;
-const int InfoBar::kMaximumArrowTargetHalfWidth = 14;
-const int InfoBar::kDefaultBarTargetHeight = 36;
+const int infobars::InfoBar::kDefaultArrowTargetHeight = 9;
+const int infobars::InfoBar::kMaximumArrowTargetHeight = 24;
+const int infobars::InfoBar::kDefaultArrowTargetHalfWidth =
+    kDefaultArrowTargetHeight;
+const int infobars::InfoBar::kMaximumArrowTargetHalfWidth = 14;
+const int infobars::InfoBar::kDefaultBarTargetHeight = 36;
 
-const int InfoBarView::kButtonButtonSpacing = 10;
-const int InfoBarView::kEndOfLabelSpacing = 16;
-const int InfoBarView::kHorizontalPadding = 6;
+// InfoBarView ----------------------------------------------------------------
 
-InfoBarView::InfoBarView(InfoBarTabHelper* owner, InfoBarDelegate* delegate)
-    : InfoBar(owner, delegate),
+// static
+const int InfoBarView::kButtonButtonSpacing = views::kRelatedButtonHSpacing;
+const int InfoBarView::kEndOfLabelSpacing = views::kItemLabelSpacing;
+
+InfoBarView::InfoBarView(scoped_ptr<infobars::InfoBarDelegate> delegate)
+    : infobars::InfoBar(delegate.Pass()),
+      views::ExternalFocusTracker(this, NULL),
       icon_(NULL),
       close_button_(NULL) {
   set_owned_by_client();  // InfoBar deletes itself at the appropriate time.
-  set_background(new InfoBarBackground(
-      GetInfoBarTopColor(delegate->GetInfoBarType()),
-      GetInfoBarBottomColor(delegate->GetInfoBarType())));
+  set_background(
+      new InfoBarBackground(infobars::InfoBar::delegate()->GetInfoBarType()));
 }
 
 InfoBarView::~InfoBarView() {
@@ -73,86 +83,95 @@ InfoBarView::~InfoBarView() {
   DCHECK(!menu_runner_.get());
 }
 
-views::Label* InfoBarView::CreateLabel(const string16& text) const {
+views::Label* InfoBarView::CreateLabel(const base::string16& text) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  views::Label* label = new views::Label(text,
-      rb.GetFont(ui::ResourceBundle::MediumFont));
+  views::Label* label = new views::Label(
+      text, rb.GetFontList(ui::ResourceBundle::MediumFont));
+  label->SizeToPreferredSize();
   label->SetBackgroundColor(background()->get_color());
   label->SetEnabledColor(SK_ColorBLACK);
   label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   return label;
 }
 
-views::Link* InfoBarView::CreateLink(const string16& text,
+views::Link* InfoBarView::CreateLink(const base::string16& text,
                                      views::LinkListener* listener) const {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  views::Link* link = new views::Link;
-  link->SetText(text);
-  link->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
+  views::Link* link = new views::Link(text);
+  link->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
+  link->SizeToPreferredSize();
   link->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   link->set_listener(listener);
   link->SetBackgroundColor(background()->get_color());
-  link->set_focusable(true);
   return link;
 }
 
 // static
 views::MenuButton* InfoBarView::CreateMenuButton(
-    const string16& text,
+    const base::string16& text,
     views::MenuButtonListener* menu_button_listener) {
+  scoped_ptr<views::TextButtonDefaultBorder> menu_button_border(
+      new views::TextButtonDefaultBorder());
+  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+  menu_button_border->set_normal_painter(
+      views::Painter::CreateImageGridPainter(kNormalImageSet));
+  const int kHotImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+  menu_button_border->set_hot_painter(
+      views::Painter::CreateImageGridPainter(kHotImageSet));
+  const int kPushedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
+  menu_button_border->set_pushed_painter(
+      views::Painter::CreateImageGridPainter(kPushedImageSet));
+
   views::MenuButton* menu_button = new views::MenuButton(
       NULL, text, menu_button_listener, true);
-  menu_button->set_border(new InfoBarButtonBorder);
+  menu_button->SetBorder(menu_button_border.PassAs<views::Border>());
   menu_button->set_animate_on_state_change(false);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
   menu_button->set_menu_marker(
       rb.GetImageNamed(IDR_INFOBARBUTTON_MENU_DROPARROW).ToImageSkia());
   menu_button->SetEnabledColor(SK_ColorBLACK);
-  menu_button->SetHighlightColor(SK_ColorBLACK);
   menu_button->SetHoverColor(SK_ColorBLACK);
-  menu_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-  menu_button->set_focusable(true);
+  menu_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
+  menu_button->SizeToPreferredSize();
+  menu_button->SetFocusable(true);
   return menu_button;
 }
 
 // static
-views::TextButton* InfoBarView::CreateTextButton(
+views::LabelButton* InfoBarView::CreateLabelButton(
     views::ButtonListener* listener,
-    const string16& text,
-    bool needs_elevation) {
-  views::TextButton* text_button = new views::TextButton(listener, text);
-  text_button->set_border(new InfoBarButtonBorder);
-  text_button->set_animate_on_state_change(false);
-  text_button->SetEnabledColor(SK_ColorBLACK);
-  text_button->SetHighlightColor(SK_ColorBLACK);
-  text_button->SetHoverColor(SK_ColorBLACK);
+    const base::string16& text) {
+  scoped_ptr<views::LabelButtonBorder> label_button_border(
+      new views::LabelButtonBorder(views::Button::STYLE_TEXTBUTTON));
+  const int kNormalImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_NORMAL);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_NORMAL,
+      views::Painter::CreateImageGridPainter(kNormalImageSet));
+  const int kHoveredImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_HOVER);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_HOVERED,
+      views::Painter::CreateImageGridPainter(kHoveredImageSet));
+  const int kPressedImageSet[] = IMAGE_GRID(IDR_INFOBARBUTTON_PRESSED);
+  label_button_border->SetPainter(
+      false, views::Button::STATE_PRESSED,
+      views::Painter::CreateImageGridPainter(kPressedImageSet));
+
+  views::LabelButton* label_button = new views::LabelButton(listener, text);
+  label_button->SetBorder(label_button_border.PassAs<views::Border>());
+  label_button->set_animate_on_state_change(false);
+  label_button->SetTextColor(views::Button::STATE_NORMAL, SK_ColorBLACK);
+  label_button->SetTextColor(views::Button::STATE_HOVERED, SK_ColorBLACK);
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  text_button->SetFont(rb.GetFont(ui::ResourceBundle::MediumFont));
-#if defined(OS_WIN)
-  if (needs_elevation &&
-      (base::win::GetVersion() >= base::win::VERSION_VISTA) &&
-      base::win::UserAccountControlIsEnabled()) {
-    SHSTOCKICONINFO icon_info = { sizeof(SHSTOCKICONINFO) };
-    // Even with the runtime guard above, we have to use GetProcAddress() here,
-    // because otherwise the loader will try to resolve the function address on
-    // startup, which will break on XP.
-    typedef HRESULT (STDAPICALLTYPE *GetStockIconInfo)(SHSTOCKICONID, UINT,
-                                                       SHSTOCKICONINFO*);
-    GetStockIconInfo func = reinterpret_cast<GetStockIconInfo>(
-        GetProcAddress(GetModuleHandle(L"shell32.dll"), "SHGetStockIconInfo"));
-    if (SUCCEEDED((*func)(SIID_SHIELD, SHGSI_ICON | SHGSI_SMALLICON,
-                          &icon_info))) {
-      scoped_ptr<SkBitmap> icon(IconUtil::CreateSkBitmapFromHICON(
-          icon_info.hIcon, gfx::Size(GetSystemMetrics(SM_CXSMICON),
-                                     GetSystemMetrics(SM_CYSMICON))));
-      if (icon.get())
-        text_button->SetIcon(gfx::ImageSkia(*icon));
-      DestroyIcon(icon_info.hIcon);
-    }
-  }
-#endif
-  text_button->set_focusable(true);
-  return text_button;
+  label_button->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
+  label_button->SizeToPreferredSize();
+  label_button->SetFocusable(true);
+  return label_button;
+}
+
+// static
+void InfoBarView::AssignWidths(Labels* labels, int available_width) {
+  std::sort(labels->begin(), labels->end(), SortLabelsByDecreasingWidth);
+  AssignWidthsSorted(labels, available_width);
 }
 
 void InfoBarView::Layout() {
@@ -161,7 +180,7 @@ void InfoBarView::Layout() {
   // width is changed, which affects both paths.
   stroke_path_.rewind();
   fill_path_.rewind();
-  const InfoBarContainer::Delegate* delegate = container_delegate();
+  const infobars::InfoBarContainer::Delegate* delegate = container_delegate();
   if (delegate) {
     static_cast<InfoBarBackground*>(background())->set_separator_color(
         delegate->GetInfoBarSeparatorColor());
@@ -200,44 +219,49 @@ void InfoBarView::Layout() {
         SkIntToScalar(width()), SkIntToScalar(height() - kSeparatorLineHeight));
   }
 
-  int start_x = kHorizontalPadding;
+  int start_x = kEdgeItemPadding;
   if (icon_ != NULL) {
-    gfx::Size icon_size = icon_->GetPreferredSize();
-    icon_->SetBounds(start_x, OffsetY(icon_size), icon_size.width(),
-                     icon_size.height());
+    icon_->SetPosition(gfx::Point(start_x, OffsetY(icon_)));
+    start_x = icon_->bounds().right() + kIconToLabelSpacing;
   }
 
-  gfx::Size button_size = close_button_->GetPreferredSize();
-  close_button_->SetBounds(std::max(start_x + ContentMinimumWidth(),
-      width() - kHorizontalPadding - button_size.width()), OffsetY(button_size),
-      button_size.width(), button_size.height());
+  int content_minimum_width = ContentMinimumWidth();
+  close_button_->SetPosition(gfx::Point(
+      std::max(
+          start_x + content_minimum_width +
+              ((content_minimum_width > 0) ? kBeforeCloseButtonSpacing : 0),
+          width() - kEdgeItemPadding - close_button_->width()),
+      OffsetY(close_button_)));
 }
 
-void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
-  View::ViewHierarchyChanged(is_add, parent, child);
+void InfoBarView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  View::ViewHierarchyChanged(details);
 
-  if (is_add && (child == this) && (close_button_ == NULL)) {
-    gfx::Image* image = delegate()->GetIcon();
-    if (image) {
+  if (details.is_add && (details.child == this) && (close_button_ == NULL)) {
+    gfx::Image image = delegate()->GetIcon();
+    if (!image.IsEmpty()) {
       icon_ = new views::ImageView;
-      icon_->SetImage(image->ToImageSkia());
+      icon_->SetImage(image.ToImageSkia());
+      icon_->SizeToPreferredSize();
       AddChildView(icon_);
     }
 
     close_button_ = new views::ImageButton(this);
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                            rb.GetImageNamed(IDR_CLOSE_BAR).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1).ToImageSkia());
     close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                            rb.GetImageNamed(IDR_CLOSE_BAR_H).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1_H).ToImageSkia());
     close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                            rb.GetImageNamed(IDR_CLOSE_BAR_P).ToImageSkia());
+                            rb.GetImageNamed(IDR_CLOSE_1_P).ToImageSkia());
+    close_button_->SizeToPreferredSize();
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
-    close_button_->set_focusable(true);
+    close_button_->SetFocusable(true);
     AddChildView(close_button_);
-  } else if ((close_button_ != NULL) && (parent == this) &&
-      (child != close_button_) && (close_button_->parent() == this) &&
+  } else if ((close_button_ != NULL) && (details.parent == this) &&
+      (details.child != close_button_) && (close_button_->parent() == this) &&
       (child_at(child_count() - 1) != close_button_)) {
     // For accessibility, ensure the close button is the last child view.
     RemoveChildView(close_button_);
@@ -248,7 +272,7 @@ void InfoBarView::ViewHierarchyChanged(bool is_add, View* parent, View* child) {
   const int kMinimumVerticalPadding = 6;
   int height = kDefaultBarTargetHeight;
   for (int i = 0; i < child_count(); ++i) {
-    const int child_height = child_at(i)->GetPreferredSize().height();
+    const int child_height = child_at(i)->height();
     height = std::max(height, child_height + kMinimumVerticalPadding);
   }
   SetBarTargetHeight(height);
@@ -271,7 +295,7 @@ void InfoBarView::PaintChildren(gfx::Canvas* canvas) {
 
 void InfoBarView::ButtonPressed(views::Button* sender,
                                 const ui::Event& event) {
-  if (!owned())
+  if (!owner())
     return;  // We're closing; don't call anything, it might access the owner.
   if (sender == close_button_) {
     delegate()->InfoBarDismissed();
@@ -279,7 +303,7 @@ void InfoBarView::ButtonPressed(views::Button* sender,
   }
 }
 
-int InfoBarView::ContentMinimumWidth() const {
+int InfoBarView::ContentMinimumWidth() {
   return 0;
 }
 
@@ -287,52 +311,59 @@ int InfoBarView::StartX() const {
   // Ensure we don't return a value greater than EndX(), so children can safely
   // set something's width to "EndX() - StartX()" without risking that being
   // negative.
-  return std::min(EndX(),
-      ((icon_ != NULL) ? icon_->bounds().right() : 0) + kHorizontalPadding);
+  return std::min(EndX(), (icon_ != NULL) ?
+      (icon_->bounds().right() + kIconToLabelSpacing) : kEdgeItemPadding);
 }
 
 int InfoBarView::EndX() const {
-  const int kCloseButtonSpacing = 12;
-  return close_button_->x() - kCloseButtonSpacing;
+  return close_button_->x() - kBeforeCloseButtonSpacing;
 }
 
-const InfoBarContainer::Delegate* InfoBarView::container_delegate() const {
-  const InfoBarContainer* infobar_container = container();
+int InfoBarView::OffsetY(views::View* view) const {
+  return arrow_height() +
+      std::max((bar_target_height() - view->height()) / 2, 0) -
+      (bar_target_height() - bar_height());
+}
+
+const infobars::InfoBarContainer::Delegate* InfoBarView::container_delegate()
+    const {
+  const infobars::InfoBarContainer* infobar_container = container();
   return infobar_container ? infobar_container->delegate() : NULL;
 }
 
 void InfoBarView::RunMenuAt(ui::MenuModel* menu_model,
                             views::MenuButton* button,
-                            views::MenuItemView::AnchorPosition anchor) {
-  DCHECK(owned());  // We'd better not open any menus while we're closing.
-  views::MenuModelAdapter adapter(menu_model);
+                            views::MenuAnchorPosition anchor) {
+  DCHECK(owner());  // We'd better not open any menus while we're closing.
   gfx::Point screen_point;
   views::View::ConvertPointToScreen(button, &screen_point);
-  menu_runner_.reset(new views::MenuRunner(adapter.CreateMenu()));
+  menu_runner_.reset(new views::MenuRunner(menu_model));
   // Ignore the result since we don't need to handle a deleted menu specially.
   ignore_result(menu_runner_->RunMenuAt(
       GetWidget(), button, gfx::Rect(screen_point, button->size()), anchor,
-      views::MenuRunner::HAS_MNEMONICS));
+      ui::MENU_SOURCE_NONE, views::MenuRunner::HAS_MNEMONICS));
+}
+
+// static
+void InfoBarView::AssignWidthsSorted(Labels* labels, int available_width) {
+  if (labels->empty())
+    return;
+  gfx::Size back_label_size(labels->back()->GetPreferredSize());
+  back_label_size.set_width(
+      std::min(back_label_size.width(),
+               available_width / static_cast<int>(labels->size())));
+  labels->back()->SetSize(back_label_size);
+  labels->pop_back();
+  AssignWidthsSorted(labels, available_width - back_label_size.width());
 }
 
 void InfoBarView::PlatformSpecificShow(bool animate) {
-  views::Widget* widget = GetWidget();
-  views::FocusManager* focus_manager = GetFocusManager();
-#if defined(OS_WIN)
   // If we gain focus, we want to restore it to the previously-focused element
-  // when we're hidden.  So when we're in a Widget, create a focus tracker so
+  // when we're hidden. So when we're in a Widget, create a focus tracker so
   // that if we gain focus we'll know what the previously-focused element was.
-  if (widget) {
-    focus_tracker_.reset(
-        new views::ExternalFocusTracker(this, focus_manager));
-  }
-#endif
-  if (focus_manager)
-    focus_manager->AddFocusChangeListener(this);
-  if (widget) {
-    widget->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
-  }
+  SetFocusManager(GetFocusManager());
+
+  NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
 }
 
 void InfoBarView::PlatformSpecificHide(bool animate) {
@@ -343,23 +374,17 @@ void InfoBarView::PlatformSpecificHide(bool animate) {
   menu_runner_.reset();
 
   // It's possible to be called twice (once with |animate| true and once with it
-  // false); in this case the second RemoveFocusChangeListener() call will
-  // silently no-op.
-  views::FocusManager* focus_manager = GetFocusManager();
-  if (focus_manager)
-    focus_manager->RemoveFocusChangeListener(this);
+  // false); in this case the second SetFocusManager() call will silently no-op.
+  SetFocusManager(NULL);
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-  if (!animate || !focus_tracker_.get())
+  if (!animate)
     return;
 
   // Do not restore focus (and active state with it) if some other top-level
   // window became active.
   views::Widget* widget = GetWidget();
-  if (!widget || ui::DoesWindowBelongToActiveWindow(widget->GetNativeView()))
-    focus_tracker_->FocusLastFocusedExternalView();
-  focus_tracker_.reset();
-#endif
+  if (!widget || widget->IsActive())
+    FocusLastFocusedExternalView();
 }
 
 void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
@@ -368,28 +393,30 @@ void InfoBarView::PlatformSpecificOnHeightsRecalculated() {
   InvalidateLayout();
 }
 
-void InfoBarView::GetAccessibleState(ui::AccessibleViewState* state) {
-  if (delegate()) {
-    state->name = l10n_util::GetStringUTF16(
-        (delegate()->GetInfoBarType() == InfoBarDelegate::WARNING_TYPE) ?
-        IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
-  }
-  state->role = ui::AccessibilityTypes::ROLE_ALERT;
+void InfoBarView::GetAccessibleState(ui::AXViewState* state) {
+  state->name = l10n_util::GetStringUTF16(
+      (delegate()->GetInfoBarType() ==
+       infobars::InfoBarDelegate::WARNING_TYPE) ?
+          IDS_ACCNAME_INFOBAR_WARNING : IDS_ACCNAME_INFOBAR_PAGE_ACTION);
+  state->role = ui::AX_ROLE_ALERT;
+  state->keyboard_shortcut = base::ASCIIToUTF16("Alt+Shift+A");
 }
 
 gfx::Size InfoBarView::GetPreferredSize() {
-  return gfx::Size(0, total_height());
+  return gfx::Size(
+      kEdgeItemPadding + (icon_ ? (icon_->width() + kIconToLabelSpacing) : 0) +
+          ContentMinimumWidth() + kBeforeCloseButtonSpacing +
+          close_button_->width() + kEdgeItemPadding,
+      total_height());
 }
 
 void InfoBarView::OnWillChangeFocus(View* focused_before, View* focused_now) {
+  views::ExternalFocusTracker::OnWillChangeFocus(focused_before, focused_now);
+
   // This will trigger some screen readers to read the entire contents of this
   // infobar.
   if (focused_before && focused_now && !Contains(focused_before) &&
-      Contains(focused_now) && GetWidget()) {
-    GetWidget()->NotifyAccessibilityEvent(
-        this, ui::AccessibilityTypes::EVENT_ALERT, true);
+      Contains(focused_now)) {
+    NotifyAccessibilityEvent(ui::AX_EVENT_ALERT, true);
   }
-}
-
-void InfoBarView::OnDidChangeFocus(View* focused_before, View* focused_now) {
 }

@@ -3,10 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/compiler_specific.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "chrome/browser/ui/cocoa/confirm_bubble_cocoa.h"
 #import "chrome/browser/ui/cocoa/confirm_bubble_controller.h"
@@ -28,14 +26,14 @@ class TestConfirmBubbleModel : public ConfirmBubbleModel {
                          bool* link_clicked);
   TestConfirmBubbleModel();
   virtual ~TestConfirmBubbleModel() OVERRIDE;
-  virtual string16 GetTitle() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetTitle() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual gfx::Image* GetIcon() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(BubbleButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(BubbleButton button) const OVERRIDE;
   virtual void Accept() OVERRIDE;
   virtual void Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
   virtual void LinkClicked() OVERRIDE;
 
  private:
@@ -59,12 +57,12 @@ TestConfirmBubbleModel::~TestConfirmBubbleModel() {
   *model_deleted_ = true;
 }
 
-string16 TestConfirmBubbleModel::GetTitle() const {
-  return ASCIIToUTF16("Test");
+base::string16 TestConfirmBubbleModel::GetTitle() const {
+  return base::ASCIIToUTF16("Test");
 }
 
-string16 TestConfirmBubbleModel::GetMessageText() const {
-  return ASCIIToUTF16("Test Message");
+base::string16 TestConfirmBubbleModel::GetMessageText() const {
+  return base::ASCIIToUTF16("Test Message");
 }
 
 gfx::Image* TestConfirmBubbleModel::GetIcon() const {
@@ -76,8 +74,10 @@ int TestConfirmBubbleModel::GetButtons() const {
   return BUTTON_OK | BUTTON_CANCEL;
 }
 
-string16 TestConfirmBubbleModel::GetButtonLabel(BubbleButton button) const {
-  return button == BUTTON_OK ? ASCIIToUTF16("OK") : ASCIIToUTF16("Cancel");
+base::string16 TestConfirmBubbleModel::GetButtonLabel(
+    BubbleButton button) const {
+  return button == BUTTON_OK ? base::ASCIIToUTF16("OK")
+                             : base::ASCIIToUTF16("Cancel");
 }
 
 void TestConfirmBubbleModel::Accept() {
@@ -88,8 +88,8 @@ void TestConfirmBubbleModel::Cancel() {
   *cancel_clicked_ = true;
 }
 
-string16 TestConfirmBubbleModel::GetLinkText() const {
-  return ASCIIToUTF16("Link");
+base::string16 TestConfirmBubbleModel::GetLinkText() const {
+  return base::ASCIIToUTF16("Link");
 }
 
 void TestConfirmBubbleModel::LinkClicked() {

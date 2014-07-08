@@ -23,18 +23,32 @@
               'binaries/ppapi/linux_x64/manifest.json',
             ],
           }],
-          [ 'OS == "mac"', {
+          [ 'OS == "mac" and target_arch == "ia32"', {
             'flapper_version_h_file%': 'symbols/ppapi/mac/flapper_version.h',
             'flapper_binary_files%': [
               'binaries/ppapi/mac/PepperFlashPlayer.plugin',
               'binaries/ppapi/mac/manifest.json',
             ],
           }],
-          [ 'OS == "win"', {
+          [ 'OS == "mac" and target_arch == "x64"', {
+            'flapper_version_h_file%': 'symbols/ppapi/mac_64/flapper_version.h',
+            'flapper_binary_files%': [
+              'binaries/ppapi/mac_64/PepperFlashPlayer.plugin',
+              'binaries/ppapi/mac_64/manifest.json',
+            ],
+          }],
+          [ 'OS == "win" and target_arch == "ia32"', {
             'flapper_version_h_file%': 'symbols/ppapi/win/flapper_version.h',
             'flapper_binary_files%': [
               'binaries/ppapi/win/pepflashplayer.dll',
               'binaries/ppapi/win/manifest.json',
+            ],
+          }],
+          [ 'OS == "win" and target_arch == "x64"', {
+            'flapper_version_h_file%': 'symbols/ppapi/win_x64/flapper_version.h',
+            'flapper_binary_files%': [
+              'binaries/ppapi/win_x64/pepflashplayer.dll',
+              'binaries/ppapi/win_x64/manifest.json',
             ],
           }],
         ],

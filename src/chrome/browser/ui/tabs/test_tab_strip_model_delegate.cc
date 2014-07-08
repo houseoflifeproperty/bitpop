@@ -13,13 +13,14 @@ TestTabStripModelDelegate::TestTabStripModelDelegate() {
 TestTabStripModelDelegate::~TestTabStripModelDelegate() {
 }
 
-void TestTabStripModelDelegate::AddBlankTabAt(int index, bool foreground) {
+void TestTabStripModelDelegate::AddTabAt(const GURL& url,
+                                            int index,
+                                            bool foreground) {
 }
 
 Browser* TestTabStripModelDelegate::CreateNewStripWithContents(
     const std::vector<NewStripContents>& contentses,
     const gfx::Rect& window_bounds,
-    const DockInfo& dock_info,
     bool maximize) {
   return NULL;
 }
@@ -50,13 +51,19 @@ void TestTabStripModelDelegate::CreateHistoricalTab(
     content::WebContents* contents) {
 }
 
+bool TestTabStripModelDelegate::ShouldRunUnloadListenerBeforeClosing(
+    content::WebContents* contents) {
+  return false;
+}
+
 bool TestTabStripModelDelegate::RunUnloadListenerBeforeClosing(
     content::WebContents* contents) {
   return true;
 }
 
-bool TestTabStripModelDelegate::CanRestoreTab() {
-  return false;
+TabStripModelDelegate::RestoreTabType
+TestTabStripModelDelegate::GetRestoreTabType() {
+  return TabStripModelDelegate::RESTORE_NONE;
 }
 
 void TestTabStripModelDelegate::RestoreTab() {

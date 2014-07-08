@@ -5,13 +5,23 @@
 #ifndef ASH_SHELL_SHELL_DELEGATE_IMPL_H_
 #define ASH_SHELL_SHELL_DELEGATE_IMPL_H_
 
+#include <string>
+
 #include "ash/shell_delegate.h"
 #include "base/compiler_specific.h"
+
+namespace content {
+class BrowserContext;
+}
+
+namespace keyboard {
+class KeyboardControllerProxy;
+}
 
 namespace ash {
 namespace shell {
 
-class LauncherDelegateImpl;
+class ShelfDelegateImpl;
 class WindowWatcher;
 
 class ShellDelegateImpl : public ash::ShellDelegate {
@@ -20,67 +30,47 @@ class ShellDelegateImpl : public ash::ShellDelegate {
   virtual ~ShellDelegateImpl();
 
   void SetWatcher(WindowWatcher* watcher);
+  void set_browser_context(content::BrowserContext* browser_context) {
+    browser_context_ = browser_context;
+  }
 
-  virtual bool IsUserLoggedIn() const OVERRIDE;
-  virtual bool IsSessionStarted() const OVERRIDE;
   virtual bool IsFirstRunAfterBoot() const OVERRIDE;
-  virtual bool CanLockScreen() const OVERRIDE;
-  virtual void LockScreen() OVERRIDE;
-  virtual void UnlockScreen() OVERRIDE;
-  virtual bool IsScreenLocked() const OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
+  virtual bool IsIncognitoAllowed() const OVERRIDE;
+  virtual bool IsMultiProfilesEnabled() const OVERRIDE;
+  virtual bool IsRunningInForcedAppMode() const OVERRIDE;
+  virtual bool IsMultiAccountEnabled() const OVERRIDE;
+  virtual void PreInit() OVERRIDE;
+  virtual void PreShutdown() OVERRIDE;
   virtual void Exit() OVERRIDE;
-  virtual void NewTab() OVERRIDE;
-  virtual void NewWindow(bool incognito) OVERRIDE;
-  virtual void ToggleMaximized() OVERRIDE;
-  virtual void OpenFileManager() OVERRIDE;
-  virtual void OpenCrosh() OVERRIDE;
-  virtual void OpenMobileSetup(const std::string& service_path) OVERRIDE;
-  virtual void RestoreTab() OVERRIDE;
-  virtual bool RotatePaneFocus(Shell::Direction direction) OVERRIDE;
-  virtual void ShowKeyboardOverlay() OVERRIDE;
-  virtual void ShowTaskManager() OVERRIDE;
-  virtual content::BrowserContext* GetCurrentBrowserContext() OVERRIDE;
-  virtual void ToggleSpokenFeedback(
-      AccessibilityNotificationVisibility notify) OVERRIDE;
-  virtual bool IsSpokenFeedbackEnabled() const OVERRIDE;
-  virtual void ToggleHighContrast() OVERRIDE;
-  virtual bool IsHighContrastEnabled() const OVERRIDE;
-  virtual void SetMagnifier(MagnifierType type) OVERRIDE;
-  virtual MagnifierType GetMagnifierType() const OVERRIDE;
-  virtual bool ShouldAlwaysShowAccessibilityMenu() const OVERRIDE;
+  virtual keyboard::KeyboardControllerProxy*
+      CreateKeyboardControllerProxy() OVERRIDE;
+  virtual void VirtualKeyboardActivated(bool activated) OVERRIDE;
+  virtual void AddVirtualKeyboardStateObserver(
+      VirtualKeyboardStateObserver* observer) OVERRIDE;
+  virtual void RemoveVirtualKeyboardStateObserver(
+      VirtualKeyboardStateObserver* observer) OVERRIDE;
+  virtual content::BrowserContext* GetActiveBrowserContext() OVERRIDE;
   virtual app_list::AppListViewDelegate* CreateAppListViewDelegate() OVERRIDE;
-  virtual ash::LauncherDelegate* CreateLauncherDelegate(
-      ash::LauncherModel* model) OVERRIDE;
+  virtual ShelfDelegate* CreateShelfDelegate(ShelfModel* model) OVERRIDE;
   virtual ash::SystemTrayDelegate* CreateSystemTrayDelegate() OVERRIDE;
   virtual ash::UserWallpaperDelegate* CreateUserWallpaperDelegate() OVERRIDE;
-  virtual ash::CapsLockDelegate* CreateCapsLockDelegate() OVERRIDE;
-  virtual aura::client::UserActionClient* CreateUserActionClient() OVERRIDE;
-  virtual void OpenFeedbackPage() OVERRIDE;
-  virtual void RecordUserMetricsAction(UserMetricsAction action) OVERRIDE;
-  virtual void HandleMediaNextTrack() OVERRIDE;
-  virtual void HandleMediaPlayPause() OVERRIDE;
-  virtual void HandleMediaPrevTrack() OVERRIDE;
-  virtual string16 GetTimeRemainingString(base::TimeDelta delta) OVERRIDE;
-  virtual string16 GetTimeDurationLongString(base::TimeDelta delta) OVERRIDE;
-  virtual void SaveScreenMagnifierScale(double scale) OVERRIDE;
-  virtual double GetSavedScreenMagnifierScale() OVERRIDE;
+  virtual ash::SessionStateDelegate* CreateSessionStateDelegate() OVERRIDE;
+  virtual ash::AccessibilityDelegate* CreateAccessibilityDelegate() OVERRIDE;
+  virtual ash::NewWindowDelegate* CreateNewWindowDelegate() OVERRIDE;
+  virtual ash::MediaDelegate* CreateMediaDelegate() OVERRIDE;
   virtual ui::MenuModel* CreateContextMenu(
-      aura::RootWindow* root_window) OVERRIDE;
-  virtual aura::client::StackingClient* CreateStackingClient() OVERRIDE;
-  virtual RootWindowHostFactory* CreateRootWindowHostFactory() OVERRIDE;
-  virtual string16 GetProductName() const OVERRIDE;
+      aura::Window* root_window,
+      ash::ShelfItemDelegate* item_delegate,
+      ash::ShelfItem* item) OVERRIDE;
+  virtual GPUSupport* CreateGPUSupport() OVERRIDE;
+  virtual base::string16 GetProductName() const OVERRIDE;
 
  private:
   // Used to update Launcher. Owned by main.
   WindowWatcher* watcher_;
 
-  LauncherDelegateImpl* launcher_delegate_;
-
-  bool locked_;
-  bool spoken_feedback_enabled_;
-  bool high_contrast_enabled_;
-  MagnifierType screen_magnifier_type_;
+  ShelfDelegateImpl* shelf_delegate_;
+  content::BrowserContext* browser_context_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellDelegateImpl);
 };

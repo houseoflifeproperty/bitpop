@@ -9,48 +9,43 @@
 
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/process.h"
-#include "base/process_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/process/process.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/windows_version.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
 #include "sandbox/win/src/handle_table.h"
 
+using base::ASCIIToUTF16;
+
+namespace content {
 namespace {
 
-typedef std::map<const string16, content::HandleType> HandleTypeMap;
+typedef std::map<const base::string16, HandleType> HandleTypeMap;
 
 HandleTypeMap& MakeHandleTypeMap() {
   HandleTypeMap& handle_types = *(new HandleTypeMap());
-  handle_types[sandbox::HandleTable::kTypeProcess] = content::ProcessHandle;
-  handle_types[sandbox::HandleTable::kTypeThread] = content::ThreadHandle;
-  handle_types[sandbox::HandleTable::kTypeFile] = content::FileHandle;
-  handle_types[sandbox::HandleTable::kTypeDirectory] =
-      content::DirectoryHandle;
-  handle_types[sandbox::HandleTable::kTypeKey] = content::KeyHandle;
-  handle_types[sandbox::HandleTable::kTypeWindowStation] =
-      content::WindowStationHandle;
-  handle_types[sandbox::HandleTable::kTypeDesktop] = content::DesktopHandle;
-  handle_types[sandbox::HandleTable::kTypeService] = content::ServiceHandle;
-  handle_types[sandbox::HandleTable::kTypeMutex] = content::MutexHandle;
-  handle_types[sandbox::HandleTable::kTypeSemaphore] =
-      content::SemaphoreHandle;
-  handle_types[sandbox::HandleTable::kTypeEvent] = content::EventHandle;
-  handle_types[sandbox::HandleTable::kTypeTimer] = content::TimerHandle;
-  handle_types[sandbox::HandleTable::kTypeNamedPipe] =
-      content::NamedPipeHandle;
-  handle_types[sandbox::HandleTable::kTypeJobObject] = content::JobHandle;
-  handle_types[sandbox::HandleTable::kTypeFileMap] = content::FileMapHandle;
-  handle_types[sandbox::HandleTable::kTypeAlpcPort] =
-      content::AlpcPortHandle;
+  handle_types[sandbox::HandleTable::kTypeProcess] = ProcessHandle;
+  handle_types[sandbox::HandleTable::kTypeThread] = ThreadHandle;
+  handle_types[sandbox::HandleTable::kTypeFile] = FileHandle;
+  handle_types[sandbox::HandleTable::kTypeDirectory] = DirectoryHandle;
+  handle_types[sandbox::HandleTable::kTypeKey] = KeyHandle;
+  handle_types[sandbox::HandleTable::kTypeWindowStation] = WindowStationHandle;
+  handle_types[sandbox::HandleTable::kTypeDesktop] = DesktopHandle;
+  handle_types[sandbox::HandleTable::kTypeService] = ServiceHandle;
+  handle_types[sandbox::HandleTable::kTypeMutex] = MutexHandle;
+  handle_types[sandbox::HandleTable::kTypeSemaphore] = SemaphoreHandle;
+  handle_types[sandbox::HandleTable::kTypeEvent] = EventHandle;
+  handle_types[sandbox::HandleTable::kTypeTimer] = TimerHandle;
+  handle_types[sandbox::HandleTable::kTypeNamedPipe] = NamedPipeHandle;
+  handle_types[sandbox::HandleTable::kTypeJobObject] = JobHandle;
+  handle_types[sandbox::HandleTable::kTypeFileMap] = FileMapHandle;
+  handle_types[sandbox::HandleTable::kTypeAlpcPort] = AlpcPortHandle;
 
   return handle_types;
 }
 
 }  // namespace
-
-namespace content {
 
 const size_t kMaxHandleNameLength = 1024;
 
@@ -59,7 +54,7 @@ void HandleEnumerator::EnumerateHandles() {
   std::string process_type =
       CommandLine::ForCurrentProcess()->GetSwitchValueASCII(
           switches::kProcessType);
-  string16 output = ASCIIToUTF16(process_type);
+  base::string16 output = ASCIIToUTF16(process_type);
   output.append(ASCIIToUTF16(" process - Handles at shutdown:\n"));
   for (sandbox::HandleTable::Iterator sys_handle
       = handles.HandlesForProcess(::GetCurrentProcessId());
@@ -82,18 +77,18 @@ void HandleEnumerator::EnumerateHandles() {
     output += GetAccessString(current_type,
         sys_handle->handle_entry()->GrantedAccess);
   }
-  DLOG(INFO) << output;
+  DVLOG(0) << output;
 }
 
-HandleType StringToHandleType(const string16& type) {
+HandleType StringToHandleType(const base::string16& type) {
   static HandleTypeMap handle_types = MakeHandleTypeMap();
   HandleTypeMap::iterator result = handle_types.find(type);
   return result != handle_types.end() ? result->second : OtherHandle;
 }
 
-string16 GetAccessString(HandleType handle_type,
+base::string16 GetAccessString(HandleType handle_type,
                                            ACCESS_MASK access) {
-  string16 output;
+  base::string16 output;
   if (access & GENERIC_READ)
     output.append(ASCIIToUTF16("\tGENERIC_READ\n"));
   if (access & GENERIC_WRITE)
@@ -179,8 +174,6 @@ string16 GetAccessString(HandleType handle_type,
         output.append(ASCIIToUTF16("\tFILE_WRITE_ATTRIBUTES\n"));
       if (access & FILE_WRITE_DATA)
         output.append(ASCIIToUTF16("\tFILE_WRITE_DATA\n"));
-      if (access & FILE_WRITE_EA)
-        output.append(ASCIIToUTF16("\tFILE_WRITE_EA\n"));
       if (access & FILE_WRITE_EA)
         output.append(ASCIIToUTF16("\tFILE_WRITE_EA\n"));
       break;

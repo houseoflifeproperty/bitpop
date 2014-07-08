@@ -45,13 +45,13 @@ void HomePageOverlayHandler::GetLocalizedValues(
 
 void HomePageOverlayHandler::RequestAutocompleteSuggestions(
     const base::ListValue* args) {
-  string16 input;
+  base::string16 input;
   CHECK_EQ(args->GetSize(), 1U);
   CHECK(args->GetString(0, &input));
 
   autocomplete_controller_->Start(AutocompleteInput(
-      input, string16::npos, string16(), true,
-      false, false, AutocompleteInput::ALL_MATCHES));
+      input, base::string16::npos, base::string16(), GURL(),
+      AutocompleteInput::INVALID_SPEC, true, false, false, true));
 }
 
 void HomePageOverlayHandler::OnResultChanged(bool default_match_changed) {

@@ -1,5 +1,3 @@
 This directory containing all the files required to bootstrap a machine to
 become a swarm bot. It is assumed that any machine becoming a swarm bot will
 already have python2.6+ installed and ssh server with sftp enabled.
-
-xmlrpc_server.py was copied from the swarming project.

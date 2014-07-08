@@ -7,23 +7,22 @@
 
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/logging.h"
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_interrupt_reasons.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/file_stream.h"
+#include "crypto/sha2.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
+#include "url/gurl.h"
 
 namespace crypto {
 class SecureHash;
-}
-namespace net {
-class FileStream;
 }
 
 namespace content {
@@ -34,13 +33,13 @@ class CONTENT_EXPORT BaseFile {
  public:
   // May be constructed on any thread.  All other routines (including
   // destruction) must occur on the FILE thread.
-  BaseFile(const FilePath& full_path,
+  BaseFile(const base::FilePath& full_path,
            const GURL& source_url,
            const GURL& referrer_url,
            int64 received_bytes,
            bool calculate_hash,
            const std::string& hash_state,
-           scoped_ptr<net::FileStream> file_stream,
+           base::File file,
            const net::BoundNetLog& bound_net_log);
   virtual ~BaseFile();
 
@@ -50,7 +49,7 @@ class CONTENT_EXPORT BaseFile {
   // |default_directory| and |full_path()| are empty, then a temporary file will
   // be created in the default download location as determined by
   // ContentBrowserClient.
-  DownloadInterruptReason Initialize(const FilePath& default_directory);
+  DownloadInterruptReason Initialize(const base::FilePath& default_directory);
 
   // Write a new chunk of data to the file. Returns a DownloadInterruptReason
   // indicating the result of the operation.
@@ -58,7 +57,7 @@ class CONTENT_EXPORT BaseFile {
 
   // Rename the download file. Returns a DownloadInterruptReason indicating the
   // result of the operation.
-  virtual DownloadInterruptReason Rename(const FilePath& full_path);
+  virtual DownloadInterruptReason Rename(const base::FilePath& full_path);
 
   // Detach the file so it is not deleted on destruction.
   virtual void Detach();
@@ -69,15 +68,19 @@ class CONTENT_EXPORT BaseFile {
   // Indicate that the download has finished. No new data will be received.
   void Finish();
 
+  // Set the client guid which will be used to identify the app to the
+  // system AV scanning function. Should be called before
+  // AnnotateWithSourceInformation() to take effect.
+  void SetClientGuid(const std::string& guid);
+
   // Informs the OS that this file came from the internet. Returns a
   // DownloadInterruptReason indicating the result of the operation.
+  // Note: SetClientGuid() should be called before this function on
+  // Windows to ensure the correct app client ID is available.
   DownloadInterruptReason AnnotateWithSourceInformation();
 
-  // Calculate and return the current speed in bytes per second.
-  int64 CurrentSpeed() const;
-
-  FilePath full_path() const { return full_path_; }
-  bool in_progress() const { return file_stream_.get() != NULL; }
+  base::FilePath full_path() const { return full_path_; }
+  bool in_progress() const { return file_.IsValid(); }
   int64 bytes_so_far() const { return bytes_so_far_; }
 
   // Fills |hash| with the hash digest for the file.
@@ -88,8 +91,8 @@ class CONTENT_EXPORT BaseFile {
   virtual std::string GetHashState();
 
   // Returns true if the given hash is considered empty.  An empty hash is
-  // a string of size kSha256HashLen that contains only zeros (initial value
-  // for the hash).
+  // a string of size crypto::kSHA256Length that contains only zeros (initial
+  // value for the hash).
   static bool IsEmptyHash(const std::string& hash);
 
   virtual std::string DebugString() const;
@@ -98,23 +101,20 @@ class CONTENT_EXPORT BaseFile {
   friend class BaseFileTest;
   FRIEND_TEST_ALL_PREFIXES(BaseFileTest, IsEmptyHash);
 
-  // Re-initializes file_stream_ with a newly allocated net::FileStream().
-  void CreateFileStream();
-
-  // Creates and opens the file_stream_ if it is NULL.
+  // Creates and opens the file_ if it is NULL.
   DownloadInterruptReason Open();
 
-  // Closes and resets file_stream_.
+  // Closes and resets file_.
   void Close();
 
-  // Resets file_stream_.
-  void ClearStream();
+  // Resets file_.
+  void ClearFile();
 
   // Platform specific method that moves a file to a new path and adjusts the
   // security descriptor / permissions on the file to match the defaults for the
   // new directory.
   DownloadInterruptReason MoveFileAndAdjustPermissions(
-      const FilePath& new_path);
+      const base::FilePath& new_path);
 
   // Split out from CurrentSpeed to enable testing.
   int64 CurrentSpeedAtTime(base::TimeTicks current_time) const;
@@ -125,7 +125,8 @@ class CONTENT_EXPORT BaseFile {
 
   // Log the system error in |os_error| and converts it into a
   // |DownloadInterruptReason|.
-  DownloadInterruptReason LogSystemError(const char* operation, int os_error);
+  DownloadInterruptReason LogSystemError(const char* operation,
+                                         logging::SystemErrorCode os_error);
 
   // Log a TYPE_DOWNLOAD_FILE_ERROR NetLog event with |os_error| and |reason|.
   // Returns |reason|.
@@ -133,11 +134,10 @@ class CONTENT_EXPORT BaseFile {
       const char* operation, int os_error,
       DownloadInterruptReason reason);
 
-  static const size_t kSha256HashLen = 32;
-  static const unsigned char kEmptySha256Hash[kSha256HashLen];
+  static const unsigned char kEmptySha256Hash[crypto::kSHA256Length];
 
   // Full path to the file including the file name.
-  FilePath full_path_;
+  base::FilePath full_path_;
 
   // Source URL for the file being downloaded.
   GURL source_url_;
@@ -145,8 +145,10 @@ class CONTENT_EXPORT BaseFile {
   // The URL where the download was initiated.
   GURL referrer_url_;
 
-  // OS file stream for writing
-  scoped_ptr<net::FileStream> file_stream_;
+  std::string client_guid_;
+
+  // OS file for writing
+  base::File file_;
 
   // Amount of data received up so far, in bytes.
   int64 bytes_so_far_;
@@ -161,7 +163,7 @@ class CONTENT_EXPORT BaseFile {
   // is set.
   scoped_ptr<crypto::SecureHash> secure_hash_;
 
-  unsigned char sha256_hash_[kSha256HashLen];
+  unsigned char sha256_hash_[crypto::kSHA256Length];
 
   // Indicates that this class no longer owns the associated file, and so
   // won't delete it on destruction.

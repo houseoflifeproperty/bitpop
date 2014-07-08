@@ -15,31 +15,22 @@ from twisted.internet import defer
 
 from common import chromium_utils
 
-# TODO(maruel): REMOVE as soon as conversion to buildbot 0.8.4p1 is done.
-# pylint: disable=E1101
+from buildslave.commands.base import SourceBaseCommand
+from buildslave.commands.registry import commandRegistry
+from buildslave import runprocess
 
-try:
-  # Buildbot 0.8.x
-  # Unable to import 'XX'
-  # pylint: disable=F0401
-  from buildslave.commands.base import Command
-  from buildslave.commands.base import SourceBaseCommand
-  from buildslave.commands.registry import commandRegistry
-  from buildslave import runprocess
-  commandbase = Command
-  sourcebase = SourceBaseCommand
-  runprocesscmd = runprocess.RunProcess
-  bbver = 8.4
-except ImportError:
-  # Buildbot 0.7.12
-  # Unable to import 'XX'
-  # pylint: disable=E0611,E1101,F0401
-  from buildbot.slave import commands
-  from buildbot.slave.registry import registerSlaveCommand
-  commandbase = commands.ShellCommand
-  sourcebase = commands.SourceBase
-  runprocesscmd = commands.ShellCommand
-  bbver = 7.12
+
+PROJECTS_LOOKING_FOR = {
+  os.path.join('src'): 'got_chromium_revision',
+  os.path.join('src', 'native_client'): 'got_nacl_revision',
+  os.path.join('src', 'tools', 'swarm_client'): 'got_swarm_client_revision',
+  os.path.join('src', 'tools', 'swarming_client'):
+    'got_swarming_client_revision',
+  os.path.join('src', 'v8'): 'got_v8_revision',
+  os.path.join('src', 'third_party', 'WebKit'): 'got_webkit_revision',
+  os.path.join('src', 'third_party', 'webrtc'): 'got_webrtc_revision',
+}
+
 
 # Local errors.
 class InvalidPath(Exception): pass
@@ -83,6 +74,88 @@ def untangle(stdout_lines):
   return out
 
 
+def extract_revisions(output):
+  """Extracts revision numbers for all the dependencies checked out.
+
+  svn checkout operations finish with 'Checked out revision 16657.'
+  svn update operations finish the line 'At revision 16654.' when there is no
+  change. They finish with 'Updated to revision 16655.' otherwise.
+
+  The first project checked out gets to be set to got_revision property. This is
+  important since this class is not only used for chromium, it's also used for
+  other projects.
+  """
+  SCM_RE = {
+    'git': r'^Checked out revision ([0-9a-fA-F]{40})$',
+    'svn': r'^(?:Checked out|At|Updated to) revision ([0-9]+)\.',
+  }
+  GCLIENT_CMD = re.compile(r'^________ running \'(.+?)\' in \'(.+?)\'$')
+  GCLIENT_AT_REV = re.compile(r'_____ (.+?) at (\d+|[0-9a-fA-F]{40})$')
+
+  untangled_stdout = untangle(output.splitlines(False))
+  # We only care about the last sync which starts with "solutions=[...".
+  # Look backwards to find the last gclient sync call. It's parsing the whole
+  # sync step in one pass here, which could include gclient revert and two
+  # gclient sync calls. Only the last gclient sync call should be parsed.
+  for i, line in enumerate(reversed(untangled_stdout)):
+    if line.startswith('solutions=['):
+      # Only keep from "solutions" line to end.
+      untangled_stdout = untangled_stdout[-i-1:]
+      break
+
+  revisions_found = {}
+  current_scm = None
+  current_project = None
+  reldir = None
+  for line in untangled_stdout:
+    match = GCLIENT_AT_REV.match(line)
+    if match:
+      current_project = None
+      current_scm = None
+      log.msg('gclient: %s == %s' % match.groups())
+      project = PROJECTS_LOOKING_FOR.get(match.group(1))
+      if not revisions_found:
+        # Set it to got_revision, independent if it's a chromium-specific
+        # thing.
+        revisions_found['got_revision'] = match.group(2)
+      if project:
+        revisions_found[project] = match.group(2)
+      continue
+
+    if current_scm:
+      # Look for revision.
+      match = re.match(SCM_RE[current_scm], line)
+      if match:
+        # Override any previous value, since update can happen multiple times.
+        log.msg(
+            'scm: %s (%s) == %s' % (reldir, current_project, match.group(1)))
+        if not revisions_found:
+          revisions_found['got_revision'] = match.group(1)
+        if current_project:
+          revisions_found[current_project] = match.group(1)
+        current_project = None
+        current_scm = None
+        continue
+
+    match = GCLIENT_CMD.match(line)
+    if match:
+      command, directory = match.groups()
+      parts = command.split(' ')
+      directory = directory.rstrip(os.path.sep) + os.path.sep
+      if parts[0] in SCM_RE:
+        for part in parts:
+          # This code assumes absolute paths, which are easy to find in the
+          # argument list.
+          if part.startswith(directory):
+            reldir = part[len(directory):]
+            if reldir:
+              current_project = PROJECTS_LOOKING_FOR.get(reldir)
+              current_scm = parts[0]
+              break
+
+  return revisions_found
+
+
 def _RenameDirectoryCommand(src_dir, dest_dir):
   """Returns a command list to rename a directory (or file) using Python."""
   # Use / instead of \ in paths to avoid issues with escaping.
@@ -100,7 +173,7 @@ def _RemoveFileCommand(filename):
           'chromium_utils.RemoveFile("%s")' % filename.replace('\\', '/')]
 
 
-class GClient(sourcebase):
+class GClient(SourceBaseCommand):
   """Source class that handles gclient checkouts.
 
   Buildbot 8.3 changed from commands.SourceBase to SourceBaseCommand,
@@ -127,13 +200,19 @@ class GClient(sourcebase):
     if not None, then this specifies the module name to pass to 'gclient sync'
     in --revision argument.
 
+  ['project']:
+    if not None, then this specifies the module name to pass to 'gclient sync'
+    in --revision argument. This value overloads 'branch', and is mostly useful
+    for git checkouts. See also 'no_gclient_branch'.
+
   ['env']:
     Augment os.environ.
 
   ['no_gclient_branch']:
     If --revision is specified, don't prepend it with <branch>@.  This is
     necessary for git, where the solution name is 'src' and the branch name
-    is 'master'.
+    is 'master'. Use the project attribute if there are several solution in
+    the .gclient file.
 
   ['no_gclient_revision']:
     Do not specify the --revision argument to gclient at all.
@@ -169,25 +248,18 @@ class GClient(sourcebase):
     self.gclient_transitive = False
     self.delete_unversioned_trees_when_updating = True
     self.gclient_jobs = None
+    self.project = None
     # TODO(maruel): Remove once buildbot 0.8.4p1 conversion is complete.
     self.sourcedata = None
+    self.do_nothing = None
     chromium_utils.GetParentClass(GClient).__init__(self, *args, **kwargs)
-
-  if bbver == 7.12:
-    def getCommand(self, arg): # pylint: disable=R0201
-      """In BB 8.3, this function is inherited"""
-      return commands.getCommand(arg)
 
   def setup(self, args):
     """Our implementation of command.Commands.setup() method.
     The method will get all the arguments that are passed to remote command
     and is invoked before start() method (that will in turn call doVCUpdate()).
     """
-
-    if bbver == 7.12:
-      commands.SourceBase.setup(self, args)
-    else:
-      sourcebase.setup(self, args)
+    SourceBaseCommand.setup(self, args)
     self.vcexe = self.getCommand('gclient')
     self.svnurl = args['svnurl']
     self.branch =  args.get('branch')
@@ -205,6 +277,7 @@ class GClient(sourcebase):
     self.no_gclient_revision = args.get('no_gclient_revision', False)
     self.gclient_transitive = args.get('gclient_transitive')
     self.gclient_jobs = args.get('gclient_jobs')
+    self.project = args.get('project', None)
 
   def start(self):
     """Start the update process.
@@ -223,8 +296,21 @@ class GClient(sourcebase):
     self.sourcedatafile = os.path.join(self.builder.basedir,
                                        self.srcdir,
                                        ".buildbot-sourcedata")
+    self.do_nothing = os.path.isfile(os.path.join(self.builder.basedir,
+                                                  self.srcdir,
+                                                  'update.flag'))
 
-    d = defer.succeed(None)
+    d = defer.succeed(0)
+
+    if self.do_nothing:
+      # If bot update is run, we don't need to run the traditional update step.
+      msg = 'update.flag file found: bot_update has run and checkout is \n'
+      msg += 'already in a consistent state.\n'
+      msg += 'No actions will be performed in this step.'
+      self.sendStatus({'header': msg})
+      d.addCallback(self._sendRC)
+      return d
+
     # Do we need to clobber anything?
     if self.mode in ("copy", "clobber", "export"):
       d.addCallback(self.doClobber, self.workdir)
@@ -244,6 +330,10 @@ class GClient(sourcebase):
       d.addCallback(self.doCopy)
     if self.patch:
       d.addCallback(self.doPatch)
+
+    # Only after the patch call the actual code to get the revision numbers.
+    d.addCallback(self._handleGotRevision)
+
     if (self.patch or self.was_patched) and not self.gclient_nohooks:
       # Always run doRunHooks if there *is* or there *was* a patch because
       # revert is run with --nohooks and `gclient sync` will not regenerate the
@@ -278,7 +368,7 @@ class GClient(sourcebase):
     dirname = os.path.join(self.builder.basedir, self.srcdir)
     command = [chromium_utils.GetGClientCommand(),
                'sync', '--verbose', '--reset', '--manually_grab_svn_rev',
-               '--force']
+               '--force', '--with_branch_heads']
     if self.delete_unversioned_trees_when_updating:
       command.append('--delete_unversioned_trees')
     if self.gclient_jobs:
@@ -300,7 +390,8 @@ class GClient(sourcebase):
         command.append(str(self.revision))
       else:
         # Make the revision look like branch@revision.
-        command.append('%s@%s' % (self.branch, self.revision))
+        prefix = self.project if self.project else self.branch
+        command.append('%s@%s' % (prefix, self.revision))
       # We only add the transitive flag if we have a revision, otherwise it is
       # meaningless.
       if self.gclient_transitive:
@@ -309,9 +400,10 @@ class GClient(sourcebase):
     if self.gclient_deps:
       command.append('--deps=' + self.gclient_deps)
 
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      keepStdout=True, environ=self.env)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        keepStdout=True, environ=self.env)
     self.command = c
     return c.start()
 
@@ -326,9 +418,14 @@ class GClient(sourcebase):
     else:
       command.append(self.svnurl)
 
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      keepStdout=True, environ=self.env)
+    git_cache_dir = os.path.abspath(
+        os.path.join(self.builder.basedir, os.pardir, os.pardir, os.pardir,
+                     'git_cache'))
+    command.append('--cache-dir=' + git_cache_dir)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        keepStdout=True, environ=self.env)
     return c
 
   def doVCUpdate(self):
@@ -379,9 +476,10 @@ class GClient(sourcebase):
         command = self._RemoveDirectoryCommand(old_dir)
       else:
         command = _RenameDirectoryCommand(old_dir, dead_dir)
-      c = runprocesscmd(self.builder, command, self.builder.basedir,
-                        sendRC=0, timeout=self.rm_timeout,
-                        environ=self.env)
+      c = runprocess.RunProcess(
+          self.builder, command, self.builder.basedir,
+          sendRC=0, timeout=self.rm_timeout,
+          environ=self.env)
       self.command = c
       # See commands.SVN.doClobber for notes about sendRC.
       d = c.start()
@@ -398,9 +496,10 @@ class GClient(sourcebase):
     'global-ignores=*.orig', patch failure will occur."""
     dirname = os.path.join(self.builder.basedir, self.srcdir)
     command = [chromium_utils.GetGClientCommand(), 'revert', '--nohooks']
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      keepStdout=True, environ=self.env)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        keepStdout=True, environ=self.env)
     self.command = c
     d = c.start()
     d.addCallback(self._abandonOnFailure)
@@ -416,9 +515,10 @@ class GClient(sourcebase):
     command = _RemoveFileCommand(os.path.join(self.builder.basedir,
                                  self.srcdir, '.buildbot-patched'))
     dirname = os.path.join(self.builder.basedir, self.srcdir)
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      keepStdout=True, environ=self.env)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        keepStdout=True, environ=self.env)
     self.command = c
     d = c.start()
     d.addCallback(self._abandonOnFailure)
@@ -427,8 +527,11 @@ class GClient(sourcebase):
   def doPatch(self, res):
     patchlevel = self.patch[0]
     diff = FixDiffLineEnding(self.patch[1])
-    root = None
-    if len(self.patch) >= 3:
+
+    # Allow overwriting the root with an environment variable.
+    root = self.env.get("GCLIENT_PATCH_ROOT", None)
+
+    if len(self.patch) >= 3 and root is None:
       root = self.patch[2]
     command = [
         self.getCommand("patch"),
@@ -449,9 +552,10 @@ class GClient(sourcebase):
       dirname = os.path.join(dirname, root)
 
     # Now apply the patch.
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      initialStdin=diff, environ=self.env)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        initialStdin=diff, environ=self.env)
     self.command = c
     d = c.start()
     d.addCallback(self._abandonOnFailure)
@@ -470,9 +574,10 @@ class GClient(sourcebase):
     """Runs "gclient runhooks" after patching."""
     dirname = os.path.join(self.builder.basedir, self.srcdir)
     command = [chromium_utils.GetGClientCommand(), 'runhooks']
-    c = runprocesscmd(self.builder, command, dirname,
-                      sendRC=False, timeout=self.timeout,
-                      keepStdout=True, environ=self.env)
+    c = runprocess.RunProcess(
+        self.builder, command, dirname,
+        sendRC=False, timeout=self.timeout,
+        keepStdout=True, environ=self.env)
     self.command = c
     d = c.start()
     d.addCallback(self._abandonOnFailure)
@@ -486,9 +591,10 @@ class GClient(sourcebase):
       self.sendStatus({'header': msg + '\n'})
       log.msg(msg)
       command = self._RemoveDirectoryCommand(dead_dir)
-      c = runprocesscmd(self.builder, command, self.builder.basedir,
-                        sendRC=0, timeout=self.rm_timeout,
-                        environ=self.env)
+      c = runprocess.RunProcess(
+          self.builder, command, self.builder.basedir,
+          sendRC=0, timeout=self.rm_timeout,
+          environ=self.env)
       self.command = c
       d = c.start()
       d.addCallback(self._abandonOnFailure)
@@ -496,137 +602,24 @@ class GClient(sourcebase):
     return res
 
   def parseGotRevision(self):
-    """Extract the Chromium and WebKit revision numbers from the svn output.
+    if not hasattr(self.command, 'stdout'):
+      # self.command may or may not have a .stdout property. The problem is when
+      # buildslave.runprocess.RunProcess(keepStdout=False) is used, it doesn't
+      # set the property .stdout at all.
+      #
+      # It may happen depending on the order of execution as self.command only
+      # tracks the last run command.
+      return {}
+    return extract_revisions(self.command.stdout)
 
-    svn checkout operations finish with 'Checked out revision 16657.'
-    svn update operations finish the line 'At revision 16654.' when there
-    is no change. They finish with 'Updated to revision 16655.' otherwise.
-
-    A tuple of the two revisions is always returned, although either or both
-    may be None if they could not be found.
-    """
-    SVN_REVISION_RE = re.compile(
-        r'^(Checked out|At|Updated to) revision ([0-9]+)\.')
-    def findRevisionNumberFromSvn(line):
-      m = SVN_REVISION_RE.search(line)
-      if m:
-        return int(m.group(2))
-      return None
-    GIT_REVISION_RE = re.compile(
-        r'^Checked out revision ([0-9a-fA-F]{40})$')
-    def findRevisionNumberFromGit(line):
-      m = GIT_REVISION_RE.search(line)
-      if m:
-        return m.group(1)
-      return None
-
-    WEBKIT_CHECKOUT_PATH = os.path.join(
-        'src', 'third_party', 'WebKit', 'Source').replace('\\', '\\\\')
-
-    WEBKIT_UPDATE_RE = re.compile(
-        r'svn (checkout|update) .*%s ' % WEBKIT_CHECKOUT_PATH)
-    def findWebKitUpdate(line):
-      return WEBKIT_UPDATE_RE.search(line)
-
-    NACL_CHECKOUT_PATH = os.path.join(
-        'src', 'native_client').replace('\\', '\\\\')
-
-    NACL_UPDATE_RE = re.compile(
-        r'svn (checkout|update) .*%s ' % NACL_CHECKOUT_PATH)
-    def findNaClUpdate(line):
-      return NACL_UPDATE_RE.search(line)
-
-    V8_CHECKOUT_PATH = os.path.join('src', 'v8').replace('\\', '\\\\')
-
-    V8_UPDATE_RE = re.compile(r'svn (checkout|update) .*%s ' % V8_CHECKOUT_PATH)
-    def findV8Update(line):
-      return V8_UPDATE_RE.search(line)
-
-    def findRevisionNumberFromGclient(repo, line):
-      m = re.match(r'_____ %s at ([0-9]+)$' % repo, line)
-      if m:
-        return int(m.group(1))
-      return None
-
-    chromium_revision = None
-    webkit_revision = None
-    nacl_revision = None
-    v8_revision = None
-    found_webkit_update = False
-    found_nacl_update = False
-    found_v8_update = False
-
-    untangled_stdout = untangle(self.command.stdout.splitlines(False))
-    # We only care about the last sync which starts with "solutions=[...".
-    # Look backwards to find the last one first.
-    for i, line in enumerate(reversed(untangled_stdout)):
-      if line.startswith('solutions=['):
-        # Only keep from "solutions" line to end.
-        untangled_stdout = untangled_stdout[-i-1:]
-        break
-
-    # http://crbug.com/82939: This is very fragile, see the bug for the
-    # details.
-    for line in untangled_stdout:
-      revision = findRevisionNumberFromSvn(line)
-      if not revision:
-        revision = findRevisionNumberFromGit(line)
-      if revision:
-        if (not found_webkit_update and
-            not found_nacl_update and
-            not found_v8_update and
-            not chromium_revision):
-          chromium_revision = revision
-        elif found_webkit_update and not webkit_revision:
-          webkit_revision = revision
-        elif found_nacl_update and not nacl_revision:
-          nacl_revision = revision
-        elif found_v8_update and not v8_revision:
-          v8_revision = revision
-
-      # No revision number found, look for the svn update for WebKit.
-      if not found_webkit_update:
-        found_webkit_update = findWebKitUpdate(line)
-
-      # No revision number found, look for the svn update for NaCl.
-      if not found_nacl_update:
-        found_nacl_update = findNaClUpdate(line)
-
-      # No revision number found, look for the svn update for V8.
-      if not found_v8_update:
-        found_v8_update = findV8Update(line)
-
-      # Check for gclient output.
-      if not chromium_revision:
-        chromium_revision = findRevisionNumberFromGclient('src', line)
-      if not webkit_revision:
-        webkit_revision = findRevisionNumberFromGclient(
-            WEBKIT_CHECKOUT_PATH, line)
-      if not nacl_revision:
-        nacl_revision = findRevisionNumberFromGclient(
-            NACL_CHECKOUT_PATH, line)
-      if not v8_revision:
-        v8_revision = findRevisionNumberFromGclient(V8_CHECKOUT_PATH, line)
-
-      # Exit if we're done.
-      if (chromium_revision and
-          webkit_revision and
-          nacl_revision and
-          v8_revision):
-        break
-
-    return chromium_revision, webkit_revision, nacl_revision, v8_revision
 
   def _handleGotRevision(self, res):
-    """Send parseGotRevision() return values as status updates to the master."""
+    """Sends parseGotRevision() return values as status updates to the master.
+    """
     d = defer.maybeDeferred(self.parseGotRevision)
-    def sendStatusUpdatesToMaster(revisions):
-      chromium_revision, webkit_revision, nacl_revision, v8_revision = revisions
-      self.sendStatus({'got_revision': chromium_revision})
-      self.sendStatus({'got_webkit_revision': webkit_revision})
-      self.sendStatus({'got_nacl_revision': nacl_revision})
-      self.sendStatus({'got_v8_revision': v8_revision})
-    d.addCallback(sendStatusUpdatesToMaster)
+    # parseGotRevision returns the revision dict, which is passed as the first
+    # argument to sendStatus.
+    d.addCallback(self.sendStatus)
     return d
 
   def maybeDoVCFallback(self, rc):
@@ -636,7 +629,7 @@ class GClient(sourcebase):
       return rc
 
     # super
-    return sourcebase.maybeDoVCFallback(self, rc)
+    return SourceBaseCommand.maybeDoVCFallback(self, rc)
 
   def maybeDoVCRetry(self, res):
     """Called after doVCFull."""
@@ -645,83 +638,16 @@ class GClient(sourcebase):
       return res
 
     # super
-    return sourcebase.maybeDoVCRetry(self, res)
-
-
-class ApplyIssue(commandbase):
-  """Command to run apple_issue.py on the checkbout."""
-
-  def __init__(self, *args, **kwargs):
-    log.msg('ApplyIssue.__init__')
-    self.root = None
-    self.issue = None
-    self.patchset = None
-    self.email = None
-    self.password = None
-    self.workdir = None
-    self.timeout = None
-    self.server = None
-    chromium_utils.GetParentClass(ApplyIssue).__init__(self, *args, **kwargs)
-
-  def _doApplyIssue(self, _):
-    """Run the apply_issue.py script in the source checkout directory."""
-    log.msg('ApplyIssue._doApplyIssue')
-    cmd = [
-        'apply_issue.bat' if chromium_utils.IsWindows() else 'apply_issue',
-        '-r', self.root,
-        '-i', self.issue,
-        '-p', self.patchset,
-        '-e', self.email,
-        '-w', '-',
-    ]
-
-    if self.server:
-      cmd.extend(['-s', self.server])
-
-    command = runprocesscmd(
-        self.builder, cmd, os.path.join(self.builder.basedir, self.workdir),
-        timeout=self.timeout, initialStdin=self.password)
-    return command.start()
-
-  # commandbase overrides:
-
-  def setup(self, args):
-    self.root = args['root']
-    self.issue = args['issue']
-    self.patchset = args['patchset']
-    self.email = args['email']
-    self.password = args['password']
-    self.workdir = args['workdir']
-    self.timeout = args['timeout']
-    self.server = args.get('server')
-
-  def start(self):
-    log.msg('ApplyIssue.start')
-    d = defer.succeed(None)
-    d.addCallback(self._doApplyIssue)
-    return d
+    return SourceBaseCommand.maybeDoVCRetry(self, res)
 
 
 def RegisterCommands():
   """Registers all command objects defined in this file."""
   try:
-    # This version should work on BB 8.3
-
     # We run this code in a try because it fails with an assertion if
     # the module is loaded twice.
     commandRegistry['gclient'] = 'slave.chromium_commands.GClient'
-    commandRegistry['apply_issue'] = 'slave.chromium_commands.ApplyIssue'
     return
-  except (AssertionError, NameError):
-    pass
-
-  try:
-    # This version should work on BB 7.12
-
-    # We run this code in a try because it fails with an assertion if
-    # the module is loaded twice.
-    registerSlaveCommand('gclient', GClient, commands.command_version)
-    registerSlaveCommand('apply_issue', ApplyIssue, commands.command_version)
   except (AssertionError, NameError):
     pass
 

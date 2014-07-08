@@ -5,7 +5,7 @@
 #include "remoting/protocol/connection_tester.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/socket/stream_socket.h"
@@ -18,7 +18,7 @@ StreamConnectionTester::StreamConnectionTester(net::StreamSocket* client_socket,
                                                net::StreamSocket* host_socket,
                                                int message_size,
                                                int message_count)
-    : message_loop_(MessageLoop::current()),
+    : message_loop_(base::MessageLoop::current()),
       host_socket_(host_socket),
       client_socket_(client_socket),
       message_size_(message_size),
@@ -52,7 +52,7 @@ void StreamConnectionTester::CheckResults() {
 
 void StreamConnectionTester::Done() {
   done_ = true;
-  message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 void StreamConnectionTester::InitBuffers() {
@@ -74,7 +74,8 @@ void StreamConnectionTester::DoWrite() {
     int bytes_to_write = std::min(output_buffer_->BytesRemaining(),
                                   message_size_);
     result = client_socket_->Write(
-        output_buffer_, bytes_to_write,
+        output_buffer_.get(),
+        bytes_to_write,
         base::Bind(&StreamConnectionTester::OnWritten, base::Unretained(this)));
     HandleWriteResult(result);
   }
@@ -100,7 +101,8 @@ void StreamConnectionTester::DoRead() {
   while (result > 0) {
     input_buffer_->SetCapacity(input_buffer_->offset() + message_size_);
     result = host_socket_->Read(
-        input_buffer_, message_size_,
+        input_buffer_.get(),
+        message_size_,
         base::Bind(&StreamConnectionTester::OnRead, base::Unretained(this)));
     HandleReadResult(result);
   };
@@ -130,7 +132,7 @@ DatagramConnectionTester::DatagramConnectionTester(net::Socket* client_socket,
                                                    int message_size,
                                                    int message_count,
                                                    int delay_ms)
-    : message_loop_(MessageLoop::current()),
+    : message_loop_(base::MessageLoop::current()),
       host_socket_(host_socket),
       client_socket_(client_socket),
       message_size_(message_size),
@@ -161,13 +163,13 @@ void DatagramConnectionTester::CheckResults() {
 
   // Verify that we've received at least one packet.
   EXPECT_GT(packets_received_, 0);
-  LOG(INFO) << "Received " << packets_received_ << " packets out of "
-            << message_count_;
+  VLOG(0) << "Received " << packets_received_ << " packets out of "
+          << message_count_;
 }
 
 void DatagramConnectionTester::Done() {
   done_ = true;
-  message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 void DatagramConnectionTester::DoWrite() {
@@ -185,7 +187,8 @@ void DatagramConnectionTester::DoWrite() {
   memcpy(packet->data(), &packets_sent_, sizeof(packets_sent_));
 
   int result = client_socket_->Write(
-      packet, message_size_,
+      packet.get(),
+      message_size_,
       base::Bind(&DatagramConnectionTester::OnWritten, base::Unretained(this)));
   HandleWriteResult(result);
 }
@@ -216,7 +219,8 @@ void DatagramConnectionTester::DoRead() {
     read_buffer_ = new net::IOBuffer(kReadSize);
 
     result = host_socket_->Read(
-        read_buffer_, kReadSize,
+        read_buffer_.get(),
+        kReadSize,
         base::Bind(&DatagramConnectionTester::OnRead, base::Unretained(this)));
     HandleReadResult(result);
   };

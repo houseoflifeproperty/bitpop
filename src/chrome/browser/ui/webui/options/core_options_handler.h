@@ -9,10 +9,10 @@
 #include <string>
 
 #include "base/callback.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
 #include "base/values.h"
 #include "chrome/browser/plugins/plugin_status_pref_setter.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 
 namespace options {
@@ -25,7 +25,8 @@ class CoreOptionsHandler : public OptionsPageUIHandler {
   virtual ~CoreOptionsHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings) OVERRIDE;
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
   virtual void InitializeHandler() OVERRIDE;
   virtual void InitializePage() OVERRIDE;
   virtual void Uninitialize() OVERRIDE;
@@ -65,10 +66,10 @@ class CoreOptionsHandler : public OptionsPageUIHandler {
                          const std::string& metric);
 
   // Virtual dispatch is needed as handling of some prefs may be
-  // finessed in subclasses.  The PrefServiceBase pointer is included
+  // finessed in subclasses.  The PrefService pointer is included
   // so that subclasses can know whether the observed pref is from the
   // local state or not.
-  virtual void OnPreferenceChanged(PrefServiceBase* service,
+  virtual void OnPreferenceChanged(PrefService* service,
                                    const std::string& pref_name);
 
   // Notifies registered JS callbacks on change in |pref_name| preference.
@@ -87,8 +88,9 @@ class CoreOptionsHandler : public OptionsPageUIHandler {
   // Creates dictionary value for the pref described by |pref_name|.
   // If |controlling_pref| is not empty, it describes the pref that manages
   // |pref| via policy or extension.
-  base::Value* CreateValueForPref(const std::string& pref_name,
-                                  const std::string& controlling_pref_name);
+  virtual base::Value* CreateValueForPref(
+      const std::string& pref_name,
+      const std::string& controlling_pref_name);
 
   typedef std::multimap<std::string, std::string> PreferenceCallbackMap;
   PreferenceCallbackMap pref_callback_map_;
@@ -112,42 +114,51 @@ class CoreOptionsHandler : public OptionsPageUIHandler {
   // Callback for the "coreOptionsInitialize" message.  This message will
   // trigger the Initialize() method of all other handlers so that final
   // setup can be performed before the page is shown.
-  void HandleInitialize(const ListValue* args);
+  void HandleInitialize(const base::ListValue* args);
+
+  // Callback for the "onFinishedLoadingOptions" message. This message is sent
+  // when the load() handler for the options frame, along with all asynchronous
+  // calls it has spawned, have finished running.
+  void OnFinishedLoading(const base::ListValue* args);
 
   // Callback for the "fetchPrefs" message. This message accepts the list of
   // preference names passed as the |args| parameter (ListValue). It passes
   // results dictionary of preference values by calling prefsFetched() JS method
   // on the page.
-  void HandleFetchPrefs(const ListValue* args);
+  void HandleFetchPrefs(const base::ListValue* args);
 
   // Callback for the "observePrefs" message. This message initiates
   // notification observing for given array of preference names.
-  void HandleObservePrefs(const ListValue* args);
+  void HandleObservePrefs(const base::ListValue* args);
 
   // Callbacks for the "set<type>Pref" message. This message saves the new
   // preference value. |args| is an array of parameters as follows:
   //  item 0 - name of the preference.
   //  item 1 - the value of the preference in string form.
   //  item 2 - name of the metric identifier (optional).
-  void HandleSetBooleanPref(const ListValue* args);
-  void HandleSetIntegerPref(const ListValue* args);
-  void HandleSetDoublePref(const ListValue* args);
-  void HandleSetStringPref(const ListValue* args);
-  void HandleSetURLPref(const ListValue* args);
-  void HandleSetListPref(const ListValue* args);
+  void HandleSetBooleanPref(const base::ListValue* args);
+  void HandleSetIntegerPref(const base::ListValue* args);
+  void HandleSetDoublePref(const base::ListValue* args);
+  void HandleSetStringPref(const base::ListValue* args);
+  void HandleSetURLPref(const base::ListValue* args);
+  void HandleSetListPref(const base::ListValue* args);
 
-  void HandleSetPref(const ListValue* args, PrefType type);
+  void HandleSetPref(const base::ListValue* args, PrefType type);
 
   // Callback for the "clearPref" message.  This message clears a preference
   // value. |args| is an array of parameters as follows:
   //  item 0 - name of the preference.
   //  item 1 - name of the metric identifier (optional).
-  void HandleClearPref(const ListValue* args);
+  void HandleClearPref(const base::ListValue* args);
 
   // Callback for the "coreOptionsUserMetricsAction" message.  This records
   // an action that should be tracked if metrics recording is enabled. |args|
   // is an array that contains a single item, the name of the metric identifier.
-  void HandleUserMetricsAction(const ListValue* args);
+  void HandleUserMetricsAction(const base::ListValue* args);
+
+  // Callback for the "disableExtension" message. The extension ID string is the
+  // only argument in the |args| list.
+  void HandleDisableExtension(const base::ListValue* args);
 
   void UpdateClearPluginLSOData();
   void UpdatePepperFlashSettingsEnabled();

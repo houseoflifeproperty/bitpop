@@ -17,7 +17,149 @@
 namespace gpu {
 namespace gles2 {
 
+class FeatureInfo;
+class GLES2Decoder;
+class Program;
 class VertexArrayManager;
+
+// Info about a Vertex Attribute. This is used to track what the user currently
+// has bound on each Vertex Attribute so that checking can be done at
+// glDrawXXX time.
+class GPU_EXPORT VertexAttrib {
+ public:
+  typedef std::list<VertexAttrib*> VertexAttribList;
+
+  VertexAttrib();
+  ~VertexAttrib();
+
+  // Returns true if this VertexAttrib can access index.
+  bool CanAccess(GLuint index) const;
+
+  Buffer* buffer() const { return buffer_.get(); }
+
+  GLsizei offset() const {
+    return offset_;
+  }
+
+  GLuint index() const {
+    return index_;
+  }
+
+  GLint size() const {
+    return size_;
+  }
+
+  GLenum type() const {
+    return type_;
+  }
+
+  GLboolean normalized() const {
+    return normalized_;
+  }
+
+  GLsizei gl_stride() const {
+    return gl_stride_;
+  }
+
+  GLuint divisor() const {
+    return divisor_;
+  }
+
+  bool enabled() const {
+    return enabled_;
+  }
+
+  // Find the maximum vertex accessed, accounting for instancing.
+  GLuint MaxVertexAccessed(GLsizei primcount,
+                           GLuint max_vertex_accessed) const {
+    return (primcount && divisor_) ? ((primcount - 1) / divisor_) :
+                                     max_vertex_accessed;
+  }
+
+  bool is_client_side_array() const {
+    return is_client_side_array_;
+  }
+
+  void set_is_client_side_array(bool value) {
+    is_client_side_array_ = value;
+  }
+
+ private:
+  friend class VertexAttribManager;
+
+  void set_enabled(bool enabled) {
+    enabled_ = enabled;
+  }
+
+  void set_index(GLuint index) {
+    index_ = index;
+  }
+
+  void SetList(VertexAttribList* new_list) {
+    DCHECK(new_list);
+
+    if (list_) {
+      list_->erase(it_);
+    }
+
+    it_ = new_list->insert(new_list->end(), this);
+    list_ = new_list;
+  }
+
+  void SetInfo(
+      Buffer* buffer,
+      GLint size,
+      GLenum type,
+      GLboolean normalized,
+      GLsizei gl_stride,
+      GLsizei real_stride,
+      GLsizei offset);
+
+  void SetDivisor(GLsizei divisor) {
+    divisor_ = divisor;
+  }
+
+  void Unbind(Buffer* buffer);
+
+  // The index of this attrib.
+  GLuint index_;
+
+  // Whether or not this attribute is enabled.
+  bool enabled_;
+
+  // number of components (1, 2, 3, 4)
+  GLint size_;
+
+  // GL_BYTE, GL_FLOAT, etc. See glVertexAttribPointer.
+  GLenum type_;
+
+  // The offset into the buffer.
+  GLsizei offset_;
+
+  GLboolean normalized_;
+
+  // The stride passed to glVertexAttribPointer.
+  GLsizei gl_stride_;
+
+  // The stride that will be used to access the buffer. This is the actual
+  // stide, NOT the GL bogus stride. In other words there is never a stride
+  // of 0.
+  GLsizei real_stride_;
+
+  GLsizei divisor_;
+
+  // Will be true if this was assigned to a client side array.
+  bool is_client_side_array_;
+
+  // The buffer bound to this attribute.
+  scoped_refptr<Buffer> buffer_;
+
+  // List this info is on.
+  VertexAttribList* list_;
+
+  // Iterator for list this info is on. Enabled/Disabled
+  VertexAttribList::iterator it_;
+};
 
 // Manages vertex attributes.
 // This class also acts as the service-side representation of a
@@ -25,156 +167,11 @@ class VertexArrayManager;
 class GPU_EXPORT VertexAttribManager :
     public base::RefCounted<VertexAttribManager> {
  public:
-  typedef scoped_refptr<VertexAttribManager> Ref;
-
-  // Info about Vertex Attributes. This is used to track what the user currently
-  // has bound on each Vertex Attribute so that checking can be done at
-  // glDrawXXX time.
-  class GPU_EXPORT VertexAttribInfo {
-   public:
-    typedef std::list<VertexAttribInfo*> VertexAttribInfoList;
-
-    VertexAttribInfo();
-    ~VertexAttribInfo();
-
-    // Returns true if this VertexAttrib can access index.
-    bool CanAccess(GLuint index) const;
-
-    BufferManager::BufferInfo* buffer() const {
-      return buffer_;
-    }
-
-    GLsizei offset() const {
-      return offset_;
-    }
-
-    GLuint index() const {
-      return index_;
-    }
-
-    GLint size() const {
-      return size_;
-    }
-
-    GLenum type() const {
-      return type_;
-    }
-
-    GLboolean normalized() const {
-      return normalized_;
-    }
-
-    GLsizei gl_stride() const {
-      return gl_stride_;
-    }
-
-    GLuint divisor() const {
-      return divisor_;
-    }
-
-    bool enabled() const {
-      return enabled_;
-    }
-
-    // Find the maximum vertex accessed, accounting for instancing.
-    GLuint MaxVertexAccessed(GLsizei primcount,
-                             GLuint max_vertex_accessed) const {
-      return (primcount && divisor_) ? ((primcount - 1) / divisor_) :
-                                       max_vertex_accessed;
-    }
-
-   private:
-    friend class VertexAttribManager;
-
-    void set_enabled(bool enabled) {
-      enabled_ = enabled;
-    }
-
-    void set_index(GLuint index) {
-      index_ = index;
-    }
-
-    void SetList(VertexAttribInfoList* new_list) {
-      DCHECK(new_list);
-
-      if (list_) {
-        list_->erase(it_);
-      }
-
-      it_ = new_list->insert(new_list->end(), this);
-      list_ = new_list;
-    }
-
-    void SetInfo(
-        BufferManager::BufferInfo* buffer,
-        GLint size,
-        GLenum type,
-        GLboolean normalized,
-        GLsizei gl_stride,
-        GLsizei real_stride,
-        GLsizei offset) {
-      DCHECK_GT(real_stride, 0);
-      buffer_ = buffer;
-      size_ = size;
-      type_ = type;
-      normalized_ = normalized;
-      gl_stride_ = gl_stride;
-      real_stride_ = real_stride;
-      offset_ = offset;
-    }
-
-    void SetDivisor(GLsizei divisor) {
-      divisor_ = divisor;
-    }
-
-    void Unbind(BufferManager::BufferInfo* buffer) {
-      if (buffer_ == buffer) {
-        buffer_ = NULL;
-      }
-    }
-
-    // The index of this attrib.
-    GLuint index_;
-
-    // Whether or not this attribute is enabled.
-    bool enabled_;
-
-    // number of components (1, 2, 3, 4)
-    GLint size_;
-
-    // GL_BYTE, GL_FLOAT, etc. See glVertexAttribPointer.
-    GLenum type_;
-
-    // The offset into the buffer.
-    GLsizei offset_;
-
-    GLboolean normalized_;
-
-    // The stride passed to glVertexAttribPointer.
-    GLsizei gl_stride_;
-
-    // The stride that will be used to access the buffer. This is the actual
-    // stide, NOT the GL bogus stride. In other words there is never a stride
-    // of 0.
-    GLsizei real_stride_;
-
-    GLsizei divisor_;
-
-    // The buffer bound to this attribute.
-    BufferManager::BufferInfo::Ref buffer_;
-
-    // List this info is on.
-    VertexAttribInfoList* list_;
-
-    // Iterator for list this info is on. Enabled/Disabled
-    VertexAttribInfoList::iterator it_;
-  };
-
-  typedef std::list<VertexAttribInfo*> VertexAttribInfoList;
+  typedef std::list<VertexAttrib*> VertexAttribList;
 
   VertexAttribManager();
 
-  void Initialize(uint32 num_vertex_attribs, bool init_attribs = true);
+  void Initialize(uint32 num_vertex_attribs, bool init_attribs);
 
   bool Enable(GLuint index, bool enable);
 
@@ -182,59 +179,55 @@ class GPU_EXPORT VertexAttribManager :
     return num_fixed_attribs_ != 0;
   }
 
-  const VertexAttribInfoList& GetEnabledVertexAttribInfos() const {
+  const VertexAttribList& GetEnabledVertexAttribs() const {
     return enabled_vertex_attribs_;
   }
 
-  VertexAttribInfo* GetVertexAttribInfo(GLuint index) {
-    if (index < vertex_attrib_infos_.size()) {
-      return &vertex_attrib_infos_[index];
+  VertexAttrib* GetVertexAttrib(GLuint index) {
+    if (index < vertex_attribs_.size()) {
+      return &vertex_attribs_[index];
     }
     return NULL;
   }
 
   void SetAttribInfo(
       GLuint index,
-      BufferManager::BufferInfo* buffer,
+      Buffer* buffer,
       GLint size,
       GLenum type,
       GLboolean normalized,
       GLsizei gl_stride,
       GLsizei real_stride,
       GLsizei offset) {
-    VertexAttribInfo* info = GetVertexAttribInfo(index);
-    if (info) {
-      if (info->type() == GL_FIXED) {
+    VertexAttrib* attrib = GetVertexAttrib(index);
+    if (attrib) {
+      if (attrib->type() == GL_FIXED) {
         --num_fixed_attribs_;
       }
       if (type == GL_FIXED) {
         ++num_fixed_attribs_;
       }
-      info->SetInfo(
+      attrib->SetInfo(
           buffer, size, type, normalized, gl_stride, real_stride, offset);
     }
   }
 
   void SetDivisor(GLuint index, GLuint divisor) {
-    VertexAttribInfo* info = GetVertexAttribInfo(index);
-    if (info) {
-      info->SetDivisor(divisor);
+    VertexAttrib* attrib = GetVertexAttrib(index);
+    if (attrib) {
+      attrib->SetDivisor(divisor);
     }
   }
 
-  void SetElementArrayBuffer(BufferManager::BufferInfo* buffer) {
-    element_array_buffer_ = buffer;
-  }
+  void SetElementArrayBuffer(Buffer* buffer);
 
-  BufferManager::BufferInfo* element_array_buffer() const {
-    return element_array_buffer_;
-  }
+  Buffer* element_array_buffer() const { return element_array_buffer_.get(); }
 
   GLuint service_id() const {
     return service_id_;
   }
 
-  void Unbind(BufferManager::BufferInfo* buffer);
+  void Unbind(Buffer* buffer);
 
   bool IsDeleted() const {
     return deleted_;
@@ -245,8 +238,16 @@ class GPU_EXPORT VertexAttribManager :
   }
 
   size_t num_attribs() const {
-    return vertex_attrib_infos_.size();
+    return vertex_attribs_.size();
   }
+
+  bool ValidateBindings(
+      const char* function_name,
+      GLES2Decoder* decoder,
+      FeatureInfo* feature_info,
+      Program* current_program,
+      GLuint max_vertex_accessed,
+      GLsizei primcount);
 
  private:
   friend class VertexArrayManager;
@@ -268,15 +269,15 @@ class GPU_EXPORT VertexAttribManager :
 
   // Info for each vertex attribute saved so we can check at glDrawXXX time
   // if it is safe to draw.
-  std::vector<VertexAttribInfo> vertex_attrib_infos_;
+  std::vector<VertexAttrib> vertex_attribs_;
 
   // The currently bound element array buffer. If this is 0 it is illegal
   // to call glDrawElements.
-  BufferManager::BufferInfo::Ref element_array_buffer_;
+  scoped_refptr<Buffer> element_array_buffer_;
 
   // Lists for which vertex attribs are enabled, disabled.
-  VertexAttribInfoList enabled_vertex_attribs_;
-  VertexAttribInfoList disabled_vertex_attribs_;
+  VertexAttribList enabled_vertex_attribs_;
+  VertexAttribList disabled_vertex_attribs_;
 
   // The VertexArrayManager that owns this VertexAttribManager
   VertexArrayManager* manager_;

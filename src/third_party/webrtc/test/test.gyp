@@ -13,28 +13,70 @@
   ],
   'targets': [
     {
+      'target_name': 'channel_transport',
+      'type': 'static_library',
+      'dependencies': [
+        '<(DEPTH)/testing/gtest.gyp:gtest',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
+      ],
+      'sources': [
+        'channel_transport/channel_transport.cc',
+        'channel_transport/include/channel_transport.h',
+        'channel_transport/traffic_control_win.cc',
+        'channel_transport/traffic_control_win.h',
+        'channel_transport/udp_socket_manager_posix.cc',
+        'channel_transport/udp_socket_manager_posix.h',
+        'channel_transport/udp_socket_manager_wrapper.cc',
+        'channel_transport/udp_socket_manager_wrapper.h',
+        'channel_transport/udp_socket_posix.cc',
+        'channel_transport/udp_socket_posix.h',
+        'channel_transport/udp_socket_wrapper.cc',
+        'channel_transport/udp_socket_wrapper.h',
+        'channel_transport/udp_socket2_manager_win.cc',
+        'channel_transport/udp_socket2_manager_win.h',
+        'channel_transport/udp_socket2_win.cc',
+        'channel_transport/udp_socket2_win.h',
+        'channel_transport/udp_transport.h',
+        'channel_transport/udp_transport_impl.cc',
+        'channel_transport/udp_transport_impl.h',
+      ],
+    },
+    {
+      'target_name': 'frame_generator',
+      'type': 'static_library',
+      'sources': [
+        'frame_generator.cc',
+        'frame_generator.h',
+      ],
+      'dependencies': [
+        '<(webrtc_root)/common_video/common_video.gyp:common_video',
+      ],
+    },
+    {
+      'target_name': 'rtcp_packet_parser',
+      'type': 'static_library',
+      'sources': [
+        'rtcp_packet_parser.cc',
+        'rtcp_packet_parser.h',
+      ],
+      'dependencies': [
+        '<(webrtc_root)/modules/modules.gyp:rtp_rtcp',
+      ],
+    },
+    {
       'target_name': 'test_support',
       'type': 'static_library',
-      'include_dirs': [
-        '.',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          '.', # Some includes are hierarchical
-        ],
-      },
       'dependencies': [
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(DEPTH)/testing/gmock.gyp:gmock',
+        '<(DEPTH)/third_party/gflags/gflags.gyp:gflags',
+        '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
       ],
-      'all_dependent_settings': {
-        'include_dirs': [
-          '.',
-        ],
-      },
       'sources': [
         'test_suite.cc',
         'test_suite.h',
+        'testsupport/android/root_path_android.cc',
+        'testsupport/android/root_path_android_chromium.cc',
         'testsupport/fileutils.cc',
         'testsupport/fileutils.h',
         'testsupport/frame_reader.cc',
@@ -42,12 +84,31 @@
         'testsupport/frame_writer.cc',
         'testsupport/frame_writer.h',
         'testsupport/gtest_prod_util.h',
+        'testsupport/gtest_disable.h',
         'testsupport/mock/mock_frame_reader.h',
         'testsupport/mock/mock_frame_writer.h',
         'testsupport/packet_reader.cc',
         'testsupport/packet_reader.h',
         'testsupport/perf_test.cc',
         'testsupport/perf_test.h',
+        'testsupport/trace_to_stderr.cc',
+        'testsupport/trace_to_stderr.h',
+      ],
+      'conditions': [
+        # TODO(henrike): remove build_with_chromium==1 when the bots are using
+        # Chromium's buildbots.
+        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+          'dependencies': [
+            '<(DEPTH)/base/base.gyp:base',
+          ],
+          'sources!': [
+            'testsupport/android/root_path_android.cc',
+          ],
+        }, {
+          'sources!': [
+            'testsupport/android/root_path_android_chromium.cc',
+          ],
+        }],
       ],
     },
     {
@@ -81,12 +142,17 @@
     },
     {
       'target_name': 'test_support_unittests',
-      'type': 'executable',
+      'type': '<(gtest_target_type)',
       'dependencies': [
+        'channel_transport',
         'test_support_main',
+        '<(DEPTH)/testing/gmock.gyp:gmock',
         '<(DEPTH)/testing/gtest.gyp:gtest',
       ],
       'sources': [
+        'channel_transport/udp_transport_unittest.cc',
+        'channel_transport/udp_socket_manager_unittest.cc',
+        'channel_transport/udp_socket_wrapper_unittest.cc',
         'testsupport/unittest_utils.h',
         'testsupport/fileutils_unittest.cc',
         'testsupport/frame_reader_unittest.cc',
@@ -94,6 +160,76 @@
         'testsupport/packet_reader_unittest.cc',
         'testsupport/perf_test_unittest.cc',
       ],
+      # Disable warnings to enable Win64 build, issue 1323.
+      'msvs_disabled_warnings': [
+        4267,  # size_t to int truncation.
+      ],
+      'conditions': [
+        # TODO(henrike): remove build_with_chromium==1 when the bots are
+        # using Chromium's buildbots.
+        ['build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+          'dependencies': [
+            '<(DEPTH)/testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+      ],
     },
+  ],
+  'conditions': [
+    ['build_with_chromium==0', {
+      'targets': [
+        {
+          'target_name': 'buildbot_tests_scripts',
+          'type': 'none',
+          'copies': [
+            {
+              'destination': '<(PRODUCT_DIR)',
+              'files': [
+                'buildbot_tests.py',
+                '<(webrtc_root)/tools/e2e_quality/audio/run_audio_test.py',
+              ],
+            },
+            {
+              'destination': '<(PRODUCT_DIR)/perf',
+              'files': [
+                '<(DEPTH)/tools/perf/__init__.py',
+                '<(DEPTH)/tools/perf/perf_utils.py',
+              ],
+            },
+          ],
+        },  # target buildbot_tests_scripts
+      ],
+    }],
+    # TODO(henrike): remove build_with_chromium==1 when the bots are using
+    # Chromium's buildbots.
+    ['include_tests==1 and build_with_chromium==1 and OS=="android" and gtest_target_type=="shared_library"', {
+      'targets': [
+        {
+          'target_name': 'test_support_unittests_apk_target',
+          'type': 'none',
+          'dependencies': [
+            '<(apk_tests_path):test_support_unittests_apk',
+          ],
+        },
+      ],
+    }],
+    ['test_isolation_mode != "noop"', {
+      'targets': [
+        {
+          'target_name': 'test_support_unittests_run',
+          'type': 'none',
+          'dependencies': [
+            'test_support_unittests',
+          ],
+          'includes': [
+            '../build/isolate.gypi',
+            'test_support_unittests.isolate',
+          ],
+          'sources': [
+            'test_support_unittests.isolate',
+          ],
+        },
+      ],
+    }],
   ],
 }

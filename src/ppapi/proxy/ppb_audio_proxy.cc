@@ -6,12 +6,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/threading/simple_thread.h"
-#include "media/audio/shared_memory_util.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/c/ppb_audio.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/c/ppb_var.h"
-#include "ppapi/c/trusted/ppb_audio_trusted.h"
 #include "ppapi/proxy/enter_proxy.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/ppapi_messages.h"
@@ -38,7 +36,7 @@ class Audio : public Resource, public PPB_Audio_Shared {
  public:
   Audio(const HostResource& audio_id,
         PP_Resource config_id,
-        PPB_Audio_Callback callback,
+        const AudioCallbackCombined& callback,
         void* user_data);
   virtual ~Audio();
 
@@ -49,7 +47,7 @@ class Audio : public Resource, public PPB_Audio_Shared {
   virtual PP_Resource GetCurrentConfig() OVERRIDE;
   virtual PP_Bool StartPlayback() OVERRIDE;
   virtual PP_Bool StopPlayback() OVERRIDE;
-  virtual int32_t OpenTrusted(
+  virtual int32_t Open(
       PP_Resource config_id,
       scoped_refptr<TrackedCallback> create_callback) OVERRIDE;
   virtual int32_t GetSyncSocket(int* sync_socket) OVERRIDE;
@@ -65,7 +63,7 @@ class Audio : public Resource, public PPB_Audio_Shared {
 
 Audio::Audio(const HostResource& audio_id,
              PP_Resource config_id,
-             PPB_Audio_Callback callback,
+             const AudioCallbackCombined& callback,
              void* user_data)
     : Resource(OBJECT_IS_PROXY, audio_id),
       config_(config_id) {
@@ -97,6 +95,8 @@ PP_Resource Audio::GetCurrentConfig() {
 PP_Bool Audio::StartPlayback() {
   if (playing())
     return PP_TRUE;
+  if (!PPB_Audio_Shared::IsThreadFunctionReady())
+    return PP_FALSE;
   SetStartPlaybackState();
   PluginDispatcher::GetForResource(this)->Send(
       new PpapiHostMsg_PPBAudio_StartOrStop(
@@ -114,8 +114,8 @@ PP_Bool Audio::StopPlayback() {
   return PP_TRUE;
 }
 
-int32_t Audio::OpenTrusted(PP_Resource config_id,
-                           scoped_refptr<TrackedCallback> create_callback) {
+int32_t Audio::Open(PP_Resource config_id,
+                    scoped_refptr<TrackedCallback> create_callback) {
   return PP_ERROR_NOTSUPPORTED;  // Don't proxy the trusted interface.
 }
 
@@ -129,7 +129,7 @@ int32_t Audio::GetSharedMemory(int* shm_handle, uint32_t* shm_size) {
 
 PPB_Audio_Proxy::PPB_Audio_Proxy(Dispatcher* dispatcher)
     : InterfaceProxy(dispatcher),
-      callback_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      callback_factory_(this) {
 }
 
 PPB_Audio_Proxy::~PPB_Audio_Proxy() {
@@ -139,7 +139,7 @@ PPB_Audio_Proxy::~PPB_Audio_Proxy() {
 PP_Resource PPB_Audio_Proxy::CreateProxyResource(
     PP_Instance instance_id,
     PP_Resource config_id,
-    PPB_Audio_Callback audio_callback,
+    const AudioCallbackCombined& audio_callback,
     void* user_data) {
   PluginDispatcher* dispatcher = PluginDispatcher::GetForInstance(instance_id);
   if (!dispatcher)
@@ -149,7 +149,7 @@ PP_Resource PPB_Audio_Proxy::CreateProxyResource(
   if (config.failed())
     return 0;
 
-  if (!audio_callback)
+  if (!audio_callback.IsValid())
     return 0;
 
   HostResource result;
@@ -222,8 +222,8 @@ void PPB_Audio_Proxy::OnMsgCreate(PP_Instance instance_id,
   }
 
   // Initiate opening the audio object.
-  enter.SetResult(enter.object()->OpenTrusted(audio_config_res,
-                                              enter.callback()));
+  enter.SetResult(enter.object()->Open(audio_config_res,
+                                       enter.callback()));
 
   // Clean up the temporary audio config resource we made.
   const PPB_Core* core = static_cast<const PPB_Core*>(
@@ -263,15 +263,7 @@ void PPB_Audio_Proxy::AudioChannelConnected(
   // us, as long as the remote side always closes the handles it receives
   // (in OnMsgNotifyAudioStreamCreated), even in the failure case.
   SerializedHandle fd_wrapper(SerializedHandle::SOCKET, socket_handle);
-
-  // Note that we must call TotalSharedMemorySizeInBytes because
-  // Audio allocates extra space in shared memory for book-keeping, so the
-  // actual size of the shared memory buffer is larger than audio_buffer_length.
-  // When sending to NaCl, NaClIPCAdapter expects this size to match the size
-  // of the full shared memory buffer.
-  SerializedHandle handle_wrapper(
-      shared_memory,
-      media::TotalSharedMemorySizeInBytes(audio_buffer_length));
+  SerializedHandle handle_wrapper(shared_memory, audio_buffer_length);
   dispatcher()->Send(new PpapiMsg_PPBAudio_NotifyAudioStreamCreated(
       API_ID_PPB_AUDIO, resource, result_code, fd_wrapper, handle_wrapper));
 }
@@ -334,14 +326,10 @@ void PPB_Audio_Proxy::OnMsgNotifyAudioStreamCreated(
   } else {
     EnterResourceNoLock<PPB_AudioConfig_API> config(
         static_cast<Audio*>(enter.object())->GetCurrentConfig(), true);
-    // See the comment above about how we must call
-    // TotalSharedMemorySizeInBytes to get the actual size of the buffer. Here,
-    // we must call PacketSizeInBytes to get back the size of the audio buffer,
-    // excluding the bytes that audio uses for book-keeping.
     static_cast<Audio*>(enter.object())->SetStreamInfo(
-        enter.resource()->pp_instance(), handle.shmem(),
-        media::PacketSizeInBytes(handle.size()),
+        enter.resource()->pp_instance(), handle.shmem(), handle.size(),
         IPC::PlatformFileForTransitToPlatformFile(socket_handle.descriptor()),
+        config.object()->GetSampleRate(),
         config.object()->GetSampleFrameCount());
   }
 }

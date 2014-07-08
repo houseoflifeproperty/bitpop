@@ -4,13 +4,12 @@
 
 #include "content/public/browser/download_manager_delegate.h"
 
-#include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
 
 namespace content {
 
-DownloadId DownloadManagerDelegate::GetNextId() {
-  return DownloadId::Invalid();
+void DownloadManagerDelegate::GetNextId(const DownloadIdCallback& callback) {
+  callback.Run(content::DownloadItem::kInvalidId);
 }
 
 bool DownloadManagerDelegate::DetermineDownloadTarget(
@@ -19,13 +18,8 @@ bool DownloadManagerDelegate::DetermineDownloadTarget(
   return false;
 }
 
-WebContents* DownloadManagerDelegate::
-    GetAlternativeWebContentsToNotifyForDownload() {
-  return NULL;
-}
-
 bool DownloadManagerDelegate::ShouldOpenFileBasedOnExtension(
-    const FilePath& path) {
+    const base::FilePath& path) {
   return false;
 }
 
@@ -42,6 +36,11 @@ bool DownloadManagerDelegate::ShouldOpenDownload(
 
 bool DownloadManagerDelegate::GenerateFileHash() {
   return false;
+}
+
+std::string
+DownloadManagerDelegate::ApplicationClientIdForFileScanning() const {
+  return std::string();
 }
 
 DownloadManagerDelegate::~DownloadManagerDelegate() {}

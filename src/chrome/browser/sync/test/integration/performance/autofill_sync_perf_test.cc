@@ -2,16 +2,20 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/autofill/autofill_common_test.h"
-#include "chrome/browser/autofill/autofill_profile.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/sync/test/integration/autofill_helper.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
 #include "chrome/browser/sync/test/integration/performance/sync_timing_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
-#include "chrome/browser/webdata/autofill_entry.h"
+#include "components/autofill/core/browser/autofill_profile.h"
+#include "components/autofill/core/browser/autofill_test_utils.h"
+#include "components/autofill/core/browser/webdata/autofill_entry.h"
+
+using autofill::ServerFieldType;
+using autofill::AutofillKey;
+using autofill::AutofillProfile;
 
 using autofill_helper::AllProfilesMatch;
 using autofill_helper::GetAllKeys;
@@ -99,8 +103,8 @@ void AutofillSyncPerfTest::UpdateProfiles(int profile) {
   std::vector<AutofillProfile> autofill_profiles;
   for (size_t i = 0; i < all_profiles.size(); ++i) {
     autofill_profiles.push_back(*all_profiles[i]);
-    autofill_profiles.back().SetRawInfo(AutofillFieldType(NAME_FIRST),
-                                        UTF8ToUTF16(NextName()));
+    autofill_profiles.back().SetRawInfo(autofill::NAME_FIRST,
+                                        base::UTF8ToUTF16(NextName()));
   }
   SetProfiles(profile, &autofill_profiles);
 }
@@ -120,9 +124,9 @@ void AutofillSyncPerfTest::AddKeys(int profile, int num_keys) {
 
 const AutofillProfile AutofillSyncPerfTest::NextAutofillProfile() {
   AutofillProfile profile;
-  autofill_test::SetProfileInfoWithGuid(&profile, NextGUID().c_str(),
-                                        NextName().c_str(), "", "", "", "", "",
-                                        "", "", "", "", "", "");
+  autofill::test::SetProfileInfoWithGuid(&profile, NextGUID().c_str(),
+                                         NextName().c_str(), "", "", "", "", "",
+                                         "", "", "", "", "", "");
   return profile;
 }
 
@@ -135,7 +139,7 @@ const std::string AutofillSyncPerfTest::NextGUID() {
 }
 
 const std::string AutofillSyncPerfTest::IntToGUID(int n) {
-  return StringPrintf("00000000-0000-0000-0000-%012X", n);
+  return base::StringPrintf("00000000-0000-0000-0000-%012X", n);
 }
 
 const std::string AutofillSyncPerfTest::NextName() {
@@ -143,7 +147,7 @@ const std::string AutofillSyncPerfTest::NextName() {
 }
 
 const std::string AutofillSyncPerfTest::IntToName(int n) {
-  return StringPrintf("Name%d", n);
+  return base::StringPrintf("Name%d", n);
 }
 
 const std::string AutofillSyncPerfTest::NextValue() {
@@ -151,7 +155,7 @@ const std::string AutofillSyncPerfTest::NextValue() {
 }
 
 const std::string AutofillSyncPerfTest::IntToValue(int n) {
-  return StringPrintf("Value%d", n);
+  return base::StringPrintf("Value%d", n);
 }
 
 void ForceSync(int profile) {

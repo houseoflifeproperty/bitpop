@@ -10,11 +10,12 @@
 #include <vector>
 
 #include "base/i18n/case_conversion.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/net_util.h"
 #include "sql/statement.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace history {
 
@@ -31,24 +32,12 @@ URLDatabase::URLEnumeratorBase::~URLEnumeratorBase() {
 URLDatabase::URLEnumerator::URLEnumerator() {
 }
 
-URLDatabase::IconMappingEnumerator::IconMappingEnumerator() {
-}
-
 bool URLDatabase::URLEnumerator::GetNextURL(URLRow* r) {
   if (statement_.Step()) {
     FillURLRow(statement_, r);
     return true;
   }
   return false;
-}
-
-bool URLDatabase::IconMappingEnumerator::GetNextIconMapping(IconMapping* r) {
-  if (!statement_.Step())
-    return false;
-
-  r->page_url = GURL(statement_.ColumnString(0));
-  r->icon_id =  statement_.ColumnInt64(1);
-  return true;
 }
 
 URLDatabase::URLDatabase()
@@ -179,6 +168,35 @@ URLID URLDatabase::AddURLInternal(const history::URLRow& info,
   return GetDB().GetLastInsertRowId();
 }
 
+bool URLDatabase::InsertOrUpdateURLRowByID(const history::URLRow& info) {
+  // SQLite does not support INSERT OR UPDATE, however, it does have INSERT OR
+  // REPLACE, which is feasible to use, because of the following.
+  //  * Before INSERTing, REPLACE will delete all pre-existing rows that cause
+  //    constraint violations. Here, we only have a PRIMARY KEY constraint, so
+  //    the only row that might get deleted is an old one with the same ID.
+  //  * Another difference between the two flavors is that the latter actually
+  //    deletes the old row, and thus the old values are lost in columns which
+  //    are not explicitly assigned new values. This is not an issue, however,
+  //    as we assign values to all columns.
+  //  * When rows are deleted due to constraint violations, the delete triggers
+  //    may not be invoked. As of now, we do not have any delete triggers.
+  // For more details, see: http://www.sqlite.org/lang_conflict.html.
+  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "INSERT OR REPLACE INTO urls "
+      "(id, url, title, visit_count, typed_count, last_visit_time, hidden) "
+      "VALUES (?, ?, ?, ?, ?, ?, ?)"));
+
+  statement.BindInt64(0, info.id());
+  statement.BindString(1, GURLToDatabaseURL(info.url()));
+  statement.BindString16(2, info.title());
+  statement.BindInt(3, info.visit_count());
+  statement.BindInt(4, info.typed_count());
+  statement.BindInt64(5, info.last_visit().ToInternalValue());
+  statement.BindInt(6, info.hidden() ? 1 : 0);
+
+  return statement.Run();
+}
+
 bool URLDatabase::DeleteURLRow(URLID id) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM urls WHERE id = ?"));
@@ -188,14 +206,7 @@ bool URLDatabase::DeleteURLRow(URLID id) {
     return false;
 
   // And delete any keyword visits.
-  if (!has_keyword_search_terms_)
-    return true;
-
-  sql::Statement del_keyword_visit(GetDB().GetCachedStatement(SQL_FROM_HERE,
-                          "DELETE FROM keyword_search_terms WHERE url_id=?"));
-  del_keyword_visit.BindInt64(0, id);
-
-  return del_keyword_visit.Run();
+  return !has_keyword_search_terms_ || DeleteKeywordSearchTermForURL(id);
 }
 
 bool URLDatabase::CreateTemporaryURLTable() {
@@ -254,15 +265,6 @@ bool URLDatabase::InitURLEnumeratorForSignificant(URLEnumerator* enumerator) {
   return enumerator->statement_.is_valid();
 }
 
-bool URLDatabase::InitIconMappingEnumeratorForEverything(
-    IconMappingEnumerator* enumerator) {
-  DCHECK(!enumerator->initialized_);
-  enumerator->statement_.Assign(GetDB().GetUniqueStatement(
-      "SELECT url, favicon_id FROM urls WHERE favicon_id <> 0"));
-  enumerator->initialized_ = enumerator->statement_.is_valid();
-  return enumerator->statement_.is_valid();
-}
-
 bool URLDatabase::AutocompleteForPrefix(const std::string& prefix,
                                         size_t max_results,
                                         bool typed_only,
@@ -311,9 +313,9 @@ bool URLDatabase::AutocompleteForPrefix(const std::string& prefix,
 
 bool URLDatabase::IsTypedHost(const std::string& host) {
   const char* schemes[] = {
-    chrome::kHttpScheme,
-    chrome::kHttpsScheme,
-    chrome::kFtpScheme
+    url::kHttpScheme,
+    url::kHttpsScheme,
+    content::kFtpScheme
   };
   URLRows dummy;
   for (size_t i = 0; i < arraysize(schemes); ++i) {
@@ -356,6 +358,42 @@ bool URLDatabase::FindShortestURLFromBase(const std::string& base,
   DCHECK(info);
   FillURLRow(statement, info);
   return true;
+}
+
+bool URLDatabase::GetTextMatches(const base::string16& query,
+                                 URLRows* results) {
+  ScopedVector<query_parser::QueryNode> query_nodes;
+  query_parser_.ParseQueryNodes(query, &query_nodes.get());
+
+  results->clear();
+  sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
+      "SELECT" HISTORY_URL_ROW_FIELDS "FROM urls WHERE hidden = 0"));
+
+  while (statement.Step()) {
+    query_parser::QueryWordVector query_words;
+    base::string16 url = base::i18n::ToLower(statement.ColumnString16(1));
+    query_parser_.ExtractQueryWords(url, &query_words);
+    GURL gurl(url);
+    if (gurl.is_valid()) {
+      // Decode punycode to match IDN.
+      // |query_words| won't be shown to user - therefore we can use empty
+      // |languages| to reduce dependency (no need to call PrefService).
+      base::string16 ascii = base::ASCIIToUTF16(gurl.host());
+      base::string16 utf = net::IDNToUnicode(gurl.host(), std::string());
+      if (ascii != utf)
+        query_parser_.ExtractQueryWords(utf, &query_words);
+    }
+    base::string16 title = base::i18n::ToLower(statement.ColumnString16(2));
+    query_parser_.ExtractQueryWords(title, &query_words);
+
+    if (query_parser_.DoesQueryMatch(query_words, query_nodes.get())) {
+      history::URLResult info;
+      FillURLRow(statement, &info);
+      if (info.url().is_valid())
+        results->push_back(info);
+    }
+  }
+  return !results->empty();
 }
 
 bool URLDatabase::InitKeywordSearchTermsTable() {
@@ -402,7 +440,7 @@ bool URLDatabase::DropKeywordSearchTermsTable() {
 
 bool URLDatabase::SetKeywordSearchTermsForURL(URLID url_id,
                                               TemplateURLID keyword_id,
-                                              const string16& term) {
+                                              const base::string16& term) {
   DCHECK(url_id && keyword_id && !term.empty());
 
   sql::Statement exist_statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
@@ -446,7 +484,7 @@ bool URLDatabase::GetKeywordSearchTermRow(URLID url_id,
 }
 
 bool URLDatabase::GetKeywordSearchTermRows(
-    const string16& term,
+    const base::string16& term,
     std::vector<KeywordSearchTermRow>* rows) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "SELECT keyword_id, url_id FROM keyword_search_terms WHERE term=?"));
@@ -477,7 +515,7 @@ void URLDatabase::DeleteAllSearchTermsForKeyword(
 
 void URLDatabase::GetMostRecentKeywordSearchTerms(
     TemplateURLID keyword_id,
-    const string16& prefix,
+    const base::string16& prefix,
     int max_count,
     std::vector<KeywordSearchTermVisit>* matches) {
   // NOTE: the keyword_id can be zero if on first run the user does a query
@@ -495,9 +533,9 @@ void URLDatabase::GetMostRecentKeywordSearchTerms(
       "ORDER BY u.last_visit_time DESC LIMIT ?"));
 
   // NOTE: Keep this ToLower() call in sync with search_provider.cc.
-  string16 lower_prefix = base::i18n::ToLower(prefix);
+  base::string16 lower_prefix = base::i18n::ToLower(prefix);
   // This magic gives us a prefix search.
-  string16 next_prefix = lower_prefix;
+  base::string16 next_prefix = lower_prefix;
   next_prefix[next_prefix.size() - 1] =
       next_prefix[next_prefix.size() - 1] + 1;
   statement.BindInt64(0, keyword_id);
@@ -514,11 +552,18 @@ void URLDatabase::GetMostRecentKeywordSearchTerms(
   }
 }
 
-bool URLDatabase::DeleteKeywordSearchTerm(const string16& term) {
+bool URLDatabase::DeleteKeywordSearchTerm(const base::string16& term) {
   sql::Statement statement(GetDB().GetCachedStatement(SQL_FROM_HERE,
       "DELETE FROM keyword_search_terms WHERE term=?"));
   statement.BindString16(0, term);
 
+  return statement.Run();
+}
+
+bool URLDatabase::DeleteKeywordSearchTermForURL(URLID url_id) {
+  sql::Statement statement(GetDB().GetCachedStatement(
+      SQL_FROM_HERE, "DELETE FROM keyword_search_terms WHERE url_id=?"));
+  statement.BindInt64(0, url_id);
   return statement.Run();
 }
 
@@ -553,6 +598,8 @@ bool URLDatabase::CreateURLTable(bool is_temporary) {
   if (GetDB().DoesTableExist(name))
     return true;
 
+  // Note: revise implementation for InsertOrUpdateURLRowByID() if you add any
+  // new constraints to the schema.
   std::string sql;
   sql.append("CREATE TABLE ");
   sql.append(name);

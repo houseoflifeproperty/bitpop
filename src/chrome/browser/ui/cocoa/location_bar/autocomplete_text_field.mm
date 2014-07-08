@@ -8,9 +8,11 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_cell.h"
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
+#import "chrome/browser/ui/cocoa/location_bar/location_bar_decoration.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation AutocompleteTextField
 
@@ -78,6 +80,8 @@
 // a decoration area and get the expected selection behaviour,
 // likewise for multiple clicks in those areas.
 - (void)mouseDown:(NSEvent*)theEvent {
+  // TODO(groby): Figure out if OnMouseDown needs to be postponed/skipped
+  // for button decorations.
   if (observer_)
     observer_->OnMouseDown([theEvent buttonNumber]);
 
@@ -127,7 +131,8 @@
     if (editor) {
       NSEvent* currentEvent = [NSApp currentEvent];
       if ([currentEvent type] == NSLeftMouseUp &&
-          ![editor selectedRange].length) {
+          ![editor selectedRange].length &&
+          (!observer_ || observer_->ShouldSelectAllOnMouseDown())) {
         [editor selectAll:nil];
       }
     }
@@ -231,6 +236,28 @@
 - (void)addToolTip:(NSString*)tooltip forRect:(NSRect)aRect {
   [currentToolTips_ addObject:tooltip];
   [self addToolTipRect:aRect owner:tooltip userData:nil];
+}
+
+- (void)setGrayTextAutocompletion:(NSString*)suggestText
+                        textColor:(NSColor*)suggestColor {
+  [self setNeedsDisplay:YES];
+  suggestText_.reset([suggestText retain]);
+  suggestColor_.reset([suggestColor retain]);
+}
+
+- (NSString*)suggestText {
+  return suggestText_;
+}
+
+- (NSColor*)suggestColor {
+  return suggestColor_;
+}
+
+- (NSPoint)bubblePointForDecoration:(LocationBarDecoration*)decoration {
+  const NSRect frame =
+      [[self cell] frameForDecoration:decoration inFrame:[self bounds]];
+  const NSPoint point = decoration->GetBubblePointInFrame(frame);
+  return [self convertPoint:point toView:nil];
 }
 
 // TODO(shess): -resetFieldEditorFrameIfNeeded is the place where
@@ -351,11 +378,7 @@
     // because the first responder will be immediately set to the field editor
     // when calling [super becomeFirstResponder], thus we won't receive
     // resignFirstResponder: anymore when losing focus.
-    if (observer_) {
-      NSEvent* theEvent = [NSApp currentEvent];
-      const bool controlDown = ([theEvent modifierFlags]&NSControlKeyMask) != 0;
-      observer_->OnSetFocus(controlDown);
-    }
+    [[self cell] handleFocusEvent:[NSApp currentEvent] ofView:self];
   }
   return doAccept;
 }
@@ -368,6 +391,16 @@
         releaseBarVisibilityForOwner:self withAnimation:YES delay:YES];
   }
   return doResign;
+}
+
+- (void)drawRect:(NSRect)rect {
+  [super drawRect:rect];
+  autocomplete_text_field::DrawGrayTextAutocompletion(
+      [self attributedStringValue],
+      suggestText_,
+      suggestColor_,
+      self,
+      [[self cell] drawingRectForBounds:[self bounds]]);
 }
 
 // (URLDropTarget protocol)
@@ -408,7 +441,46 @@
 }
 
 - (ViewID)viewID {
-  return VIEW_ID_LOCATION_BAR;
+  return VIEW_ID_OMNIBOX;
 }
 
 @end
+
+namespace autocomplete_text_field {
+
+void DrawGrayTextAutocompletion(NSAttributedString* mainText,
+                                NSString* suggestText,
+                                NSColor* suggestColor,
+                                NSView* controlView,
+                                NSRect frame) {
+  if (![suggestText length])
+    return;
+
+  base::scoped_nsobject<NSTextFieldCell> cell(
+      [[NSTextFieldCell alloc] initTextCell:@""]);
+  [cell setBordered:NO];
+  [cell setDrawsBackground:NO];
+  [cell setEditable:NO];
+
+  base::scoped_nsobject<NSMutableAttributedString> combinedText(
+      [[NSMutableAttributedString alloc] initWithAttributedString:mainText]);
+  NSRange range = NSMakeRange([combinedText length], 0);
+  [combinedText replaceCharactersInRange:range withString:suggestText];
+  [combinedText addAttribute:NSForegroundColorAttributeName
+                       value:suggestColor
+                       range:NSMakeRange(range.location, [suggestText length])];
+  [cell setAttributedStringValue:combinedText];
+
+  CGFloat mainTextWidth = [mainText size].width;
+  CGFloat suggestWidth = NSWidth(frame) - mainTextWidth;
+  NSRect suggestRect = NSMakeRect(NSMinX(frame) + mainTextWidth,
+                                  NSMinY(frame),
+                                  suggestWidth,
+                                  NSHeight(frame));
+
+  gfx::ScopedNSGraphicsContextSaveGState saveGState;
+  NSRectClip(suggestRect);
+  [cell drawInteriorWithFrame:frame inView:controlView];
+}
+
+}  // namespace autocomplete_text_field

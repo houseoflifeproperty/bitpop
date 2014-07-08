@@ -18,6 +18,10 @@
 #include <getopt.h>
 #endif
 
+#if !NACL_WINDOWS
+#include <signal.h>
+#endif
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -31,17 +35,21 @@
 #include "native_client/src/shared/platform/nacl_sync_checked.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
 
+#include "native_client/src/trusted/desc/nacl_desc_base.h"
+#include "native_client/src/trusted/desc/nacl_desc_io.h"
 #include "native_client/src/trusted/fault_injection/fault_injection.h"
 #include "native_client/src/trusted/fault_injection/test_injection.h"
 #include "native_client/src/trusted/perf_counter/nacl_perf_counter.h"
 #include "native_client/src/trusted/service_runtime/env_cleanser.h"
 #include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
+#include "native_client/src/trusted/service_runtime/load_file.h"
 #include "native_client/src/trusted/service_runtime/nacl_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_all_modules.h"
 #include "native_client/src/trusted/service_runtime/nacl_bootstrap_channel_error_reporter.h"
 #include "native_client/src/trusted/service_runtime/nacl_debug_init.h"
 #include "native_client/src/trusted/service_runtime/nacl_error_log_hook.h"
 #include "native_client/src/trusted/service_runtime/nacl_globals.h"
+#include "native_client/src/trusted/service_runtime/nacl_runtime_host_interface.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
 #include "native_client/src/trusted/service_runtime/nacl_valgrind_hooks.h"
@@ -152,11 +160,14 @@ static void PrintUsage(void) {
           " -F fuzz testing; quit after loading NaCl app\n"
           " -g enable gdb debug stub.  Not secure on x86-64 Windows.\n"
           " -l <file>  write log output to the given file\n"
+          " -q quiet; suppress diagnostic/warning messages at startup\n"
           " -Q disable platform qualification (dangerous!)\n"
           " -s safely stub out non-validating instructions\n"
           " -S enable signal handling.  Not supported on Windows.\n"
           " -E <name=value>|<name> set an environment variable\n"
           " -Z use fixed feature x86 CPU mode\n"
+          "\n"
+          " (For full effect, put -l and -q at the beginning.)\n"
           );  /* easier to add new flags/lines */
 }
 
@@ -192,16 +203,17 @@ int NaClSelLdrMain(int argc, char **argv) {
 
   struct GioFile                gout;
   NaClErrorCode                 errcode = LOAD_INTERNAL;
-  struct GioMemoryFileSnapshot  blob_file;
+  struct NaClDesc               *blob_file = NULL;
 
   int                           ret_code;
   struct DynArray               env_vars;
 
-  char                          *log_file = NULL;
   int                           verbosity = 0;
+  int                           quiet = 0;
   int                           fuzzing_quit_after_load = 0;
   int                           debug_mode_bypass_acl_checks = 0;
   int                           debug_mode_ignore_validator = 0;
+  int                           debug_mode_startup_signal = 0;
   int                           skip_qualification = 0;
   int                           handle_signals = 0;
   int                           enable_debug_stub = 0;
@@ -262,10 +274,11 @@ int NaClSelLdrMain(int argc, char **argv) {
 #if NACL_LINUX
                        "+D:z:"
 #endif
-                       "aB:ceE:f:Fgh:i:l:Qr:RsSvw:X:Z")) != -1) {
+                       "aB:cdeE:f:Fgh:i:l:qQr:RsSvw:X:Z")) != -1) {
     switch (opt) {
       case 'a':
-        fprintf(stderr, "DEBUG MODE ENABLED (bypass acl)\n");
+        if (!quiet)
+          fprintf(stderr, "DEBUG MODE ENABLED (bypass acl)\n");
         debug_mode_bypass_acl_checks = 1;
         break;
       case 'B':
@@ -273,6 +286,9 @@ int NaClSelLdrMain(int argc, char **argv) {
         break;
       case 'c':
         ++debug_mode_ignore_validator;
+        break;
+      case 'd':
+        debug_mode_startup_signal = 1;
         break;
 #if NACL_LINUX
       case 'D':
@@ -343,11 +359,23 @@ int NaClSelLdrMain(int argc, char **argv) {
         redir_qend = &entry->next;
         break;
       case 'l':
-        log_file = optarg;
+        if (NULL != optarg) {
+          /*
+           * change stdout/stderr to log file now, so that subsequent error
+           * messages will go there.  unfortunately, error messages that
+           * result from getopt processing -- usually out-of-memory, which
+           * shouldn't happen -- won't show up.
+           */
+          NaClLogSetFile(optarg);
+        }
+        break;
+      case 'q':
+        quiet = 1;
         break;
       case 'Q':
-        fprintf(stderr, "PLATFORM QUALIFICATION DISABLED BY -Q - "
-                "Native Client's sandbox will be unreliable!\n");
+        if (!quiet)
+          fprintf(stderr, "PLATFORM QUALIFICATION DISABLED BY -Q - "
+                  "Native Client's sandbox will be unreliable!\n");
         skip_qualification = 1;
         break;
       case 'R':
@@ -355,7 +383,12 @@ int NaClSelLdrMain(int argc, char **argv) {
         break;
       /* case 'r':  with 'h' and 'w' above */
       case 's':
-        nap->validator_stub_out_mode = 1;
+        if (nap->validator->stubout_mode_implemented) {
+          nap->validator_stub_out_mode = 1;
+        } else {
+           NaClLog(LOG_WARNING,
+                   "stub_out_mode is not supported, disabled\n");
+        }
         break;
       case 'S':
         handle_signals = 1;
@@ -374,13 +407,19 @@ int NaClSelLdrMain(int argc, char **argv) {
         break;
 #endif
       case 'Z':
-        NaClLog(LOG_WARNING, "Enabling Fixed-Feature CPU Mode\n");
-        nap->fixed_feature_cpu_mode = 1;
-        if (!nap->validator->FixCPUFeatures(nap->cpu_features)) {
-          NaClLog(LOG_ERROR,
-                  "This CPU lacks features required by "
-                  "fixed-function CPU mode.\n");
-          exit(1);
+        if (nap->validator->readonly_text_implemented) {
+          NaClLog(LOG_WARNING, "Enabling Fixed-Feature CPU Mode\n");
+          nap->fixed_feature_cpu_mode = 1;
+          if (!nap->validator->FixCPUFeatures(nap->cpu_features)) {
+            NaClLog(LOG_ERROR,
+                    "This CPU lacks features required by "
+                    "fixed-function CPU mode.\n");
+            exit(1);
+          }
+        } else {
+           NaClLog(LOG_ERROR,
+                   "fixed_feature_cpu_mode is not supported\n");
+           exit(1);
         }
         break;
       default:
@@ -390,10 +429,35 @@ int NaClSelLdrMain(int argc, char **argv) {
     }
   }
 
-  if (debug_mode_ignore_validator == 1)
-    fprintf(stderr, "DEBUG MODE ENABLED (ignore validator)\n");
-  else if (debug_mode_ignore_validator > 1)
-    fprintf(stderr, "DEBUG MODE ENABLED (skip validator)\n");
+  if (debug_mode_startup_signal) {
+#if NACL_WINDOWS
+    fprintf(stderr, "DEBUG startup signal not supported on Windows\n");
+    exit(1);
+#else
+    /*
+     * SIGCONT is ignored by default, so this doesn't actually do anything
+     * by itself.  The purpose of raising the signal is to get a debugger
+     * to stop and inspect the process before it does anything else.  When
+     * sel_ldr is started via nacl_helper_bootstrap, it needs to run as far
+     * as doing its option processing and calling NaClHandleRDebug before
+     * the debugger will understand the association between the address
+     * space and the sel_ldr binary and its dependent shared libraries.
+     * When the debugger stops for the signal, the hacker can run the
+     * "sharedlibrary" command (if the debugger is GDB) and thereafter
+     * it becomes possible to set symbolic breakpoints and so forth.
+     */
+    fprintf(stderr, "DEBUG taking startup signal (SIGCONT) now\n");
+    raise(SIGCONT);
+#endif
+  }
+
+  if (debug_mode_ignore_validator == 1) {
+    if (!quiet)
+      fprintf(stderr, "DEBUG MODE ENABLED (ignore validator)\n");
+  } else if (debug_mode_ignore_validator > 1) {
+    if (!quiet)
+      fprintf(stderr, "DEBUG MODE ENABLED (skip validator)\n");
+  }
 
   if (verbosity) {
     int         ix;
@@ -409,16 +473,6 @@ int NaClSelLdrMain(int argc, char **argv) {
 
   if (debug_mode_bypass_acl_checks) {
     NaClInsecurelyBypassAllAclChecks();
-  }
-
-  /*
-   * change stdout/stderr to log file now, so that subsequent error
-   * messages will go there.  unfortunately, error messages that
-   * result from getopt processing -- usually out-of-memory, which
-   * shouldn't happen -- won't show up.
-   */
-  if (NULL != log_file) {
-    NaClLogSetFile(log_file);
   }
 
   if (rpc_supplies_nexe) {
@@ -464,12 +518,17 @@ int NaClSelLdrMain(int argc, char **argv) {
   if (getenv("NACL_UNTRUSTED_EXCEPTION_HANDLING") != NULL) {
     state.enable_exception_handling = 1;
   }
-  if (state.enable_exception_handling || enable_debug_stub) {
+  /*
+   * TODO(mseaborn): Always enable the Mach exception handler on Mac
+   * OS X, and remove handle_signals and sel_ldr's "-S" option.
+   */
+  if (state.enable_exception_handling || enable_debug_stub ||
+      (handle_signals && NACL_OSX)) {
 #if NACL_WINDOWS
     state.attach_debug_exception_handler_func =
         NaClDebugExceptionHandlerStandaloneAttach;
 #elif NACL_LINUX
-    handle_signals = 1;
+    /* NaCl's signal handler is always enabled on Linux. */
 #elif NACL_OSX
     if (!NaClInterceptMachExceptions()) {
       fprintf(stderr, "ERROR setting up Mach exception interception.\n");
@@ -479,7 +538,6 @@ int NaClSelLdrMain(int argc, char **argv) {
 # error Unknown host OS
 #endif
   }
-
 
   errcode = LOAD_OK;
 
@@ -499,8 +557,9 @@ int NaClSelLdrMain(int argc, char **argv) {
    */
   if (!skip_qualification &&
       getenv("NACL_DANGEROUS_SKIP_QUALIFICATION_TEST") != NULL) {
-    fprintf(stderr, "PLATFORM QUALIFICATION DISABLED BY ENVIRONMENT - "
-            "Native Client's sandbox will be unreliable!\n");
+    if (!quiet)
+      fprintf(stderr, "PLATFORM QUALIFICATION DISABLED BY ENVIRONMENT - "
+              "Native Client's sandbox will be unreliable!\n");
     skip_qualification = 1;
   }
 
@@ -510,29 +569,26 @@ int NaClSelLdrMain(int argc, char **argv) {
     if (LOAD_OK != pq_error) {
       errcode = pq_error;
       nap->module_load_status = pq_error;
-      fprintf(stderr, "Error while loading \"%s\": %s\n",
-              NULL != nacl_file ? nacl_file
-                                : "(no file, to-be-supplied-via-RPC)",
-              NaClErrorString(errcode));
+      if (!quiet)
+        fprintf(stderr, "Error while loading \"%s\": %s\n",
+                NULL != nacl_file ? nacl_file
+                                  : "(no file, to-be-supplied-via-RPC)",
+                NaClErrorString(errcode));
     }
   }
 
-  /* Sanity check. */
-  NaClSignalAssertNoHandlers();
-
-  if (handle_signals) {
-    NaClSignalHandlerInit();
-  } else {
-    /*
-     * Patch the Windows exception dispatcher to be safe in the case
-     * of faults inside x86-64 sandboxed code.  The sandbox is not
-     * secure on 64-bit Windows without this.
-     */
+#if NACL_LINUX
+  NaClSignalHandlerInit();
+#endif
+  /*
+   * Patch the Windows exception dispatcher to be safe in the case of
+   * faults inside x86-64 sandboxed code.  The sandbox is not secure
+   * on 64-bit Windows without this.
+   */
 #if (NACL_WINDOWS && NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && \
      NACL_BUILD_SUBARCH == 64)
-    NaClPatchWindowsExceptionDispatcher();
+  NaClPatchWindowsExceptionDispatcher();
 #endif
-  }
   NaClSignalTestCrashOnStartup();
 
   /*
@@ -541,7 +597,9 @@ int NaClSelLdrMain(int argc, char **argv) {
    */
   if (NULL != blob_library_file) {
     NaClFileNameForValgrind(blob_library_file);
-    if (0 == GioMemoryFileSnapshotCtor(&blob_file, blob_library_file)) {
+    blob_file = (struct NaClDesc *) NaClDescIoDescOpen(blob_library_file,
+                                                       NACL_ABI_O_RDONLY, 0);
+    if (NULL == blob_file) {
       perror("sel_main");
       fprintf(stderr, "Cannot open \"%s\".\n", blob_library_file);
       exit(1);
@@ -553,21 +611,10 @@ int NaClSelLdrMain(int argc, char **argv) {
   NaClAppInitialDescriptorHookup(nap);
 
   if (!rpc_supplies_nexe) {
-    struct GioMemoryFileSnapshot main_file;
-
-    NaClFileNameForValgrind(nacl_file);
-    if (0 == GioMemoryFileSnapshotCtor(&main_file, nacl_file)) {
-      perror("sel_main");
-      fprintf(stderr, "Cannot open \"%s\".\n", nacl_file);
-      exit(1);
-    }
-    NaClPerfCounterMark(&time_all_main, "SnapshotNaclFile");
-    NaClPerfCounterIntervalLast(&time_all_main);
-
     if (LOAD_OK == errcode) {
       NaClLog(2, "Loading nacl file %s (non-RPC)\n", nacl_file);
-      errcode = NaClAppLoadFile((struct Gio *) &main_file, nap);
-      if (LOAD_OK != errcode) {
+      errcode = NaClAppLoadFileFromFilename(nap, nacl_file);
+      if (LOAD_OK != errcode && !quiet) {
         fprintf(stderr, "Error while loading \"%s\": %s\n",
                 nacl_file,
                 NaClErrorString(errcode));
@@ -579,18 +626,7 @@ int NaClSelLdrMain(int argc, char **argv) {
       }
       NaClPerfCounterMark(&time_all_main, "AppLoadEnd");
       NaClPerfCounterIntervalLast(&time_all_main);
-
-      NaClXMutexLock(&nap->mu);
-      nap->module_load_status = errcode;
-      NaClXCondVarBroadcast(&nap->cv);
-      NaClXMutexUnlock(&nap->mu);
     }
-
-    if (-1 == (*((struct Gio *) &main_file)->vtbl->Close)((struct Gio *)
-                                                          &main_file)) {
-      fprintf(stderr, "Error while closing \"%s\".\n", nacl_file);
-    }
-    (*((struct Gio *) &main_file)->vtbl->Dtor)((struct Gio *) &main_file);
 
     if (fuzzing_quit_after_load) {
       exit(0);
@@ -657,40 +693,16 @@ int NaClSelLdrMain(int argc, char **argv) {
    */
 
   if (rpc_supplies_nexe) {
-    errcode = NaClWaitForLoadModuleStatus(nap);
+    errcode = NaClWaitForLoadModuleCommand(nap);
     NaClPerfCounterMark(&time_all_main, "WaitForLoad");
     NaClPerfCounterIntervalLast(&time_all_main);
-  } else {
-    /**************************************************************************
-     * TODO(bsy): This else block should be made unconditional and
-     * invoked after the LoadModule RPC completes, eliminating the
-     * essentially dulicated code in latter part of NaClLoadModuleRpc.
-     * This cannot be done until we have full saucer separation
-     * technology, since Chrome currently uses sel_main_chrome.c and
-     * relies on the functionality of the duplicated code.
-     *************************************************************************/
-    if (LOAD_OK == errcode) {
-      if (verbosity) {
-        gprintf((struct Gio *) &gout, "printing NaClApp details\n");
-        NaClAppPrintDetails(nap, (struct Gio *) &gout);
-      }
+  }
 
-      /*
-       * Finish setting up the NaCl App.  On x86-32, this means
-       * allocating segment selectors.  On x86-64 and ARM, this is
-       * (currently) a no-op.
-       */
-      errcode = NaClAppPrepareToLaunch(nap);
-      if (LOAD_OK != errcode) {
-        nap->module_load_status = errcode;
-        fprintf(stderr, "NaClAppPrepareToLaunch returned %d", errcode);
-      }
-      NaClPerfCounterMark(&time_all_main, "AppPrepLaunch");
-      NaClPerfCounterIntervalLast(&time_all_main);
+  if (LOAD_OK == errcode) {
+    if (verbosity) {
+      gprintf((struct Gio *) &gout, "printing NaClApp details\n");
+      NaClAppPrintDetails(nap, (struct Gio *) &gout);
     }
-
-    /* Give debuggers a well known point at which xlate_base is known.  */
-    NaClGdbHook(&state);
   }
 
   /*
@@ -711,7 +723,7 @@ int NaClSelLdrMain(int argc, char **argv) {
    * Enable the outer sandbox, if one is defined.  Do this as soon as
    * possible.
    *
-   * This must come after NaClWaitForLoadModuleStatus(), which waits
+   * This must come after NaClWaitForLoadModuleCommand(), which waits
    * for another thread to have called NaClAppLoadFile().
    * NaClAppLoadFile() does not work inside the Mac outer sandbox in
    * standalone sel_ldr when using a dynamic code area because it uses
@@ -724,34 +736,27 @@ int NaClSelLdrMain(int argc, char **argv) {
   }
 
   if (NULL != blob_library_file) {
-    if (LOAD_OK == errcode) {
-      if (NULL != nap->text_shm) {
-        NaClLog(2, "Loading blob file %s\n", blob_library_file);
-        errcode = NaClAppLoadFileDynamically(nap, (struct Gio *) &blob_file);
-        if (LOAD_OK != errcode) {
-          fprintf(stderr, "Error while loading \"%s\": %s\n",
-                  blob_library_file,
-                  NaClErrorString(errcode));
-        }
-        NaClPerfCounterMark(&time_all_main, "BlobLoaded");
-        NaClPerfCounterIntervalLast(&time_all_main);
+    if (nap->irt_loaded) {
+      NaClLog(LOG_INFO, "IRT loaded via command channel; ignoring -B irt\n");
+    } else if (LOAD_OK == errcode) {
+      NaClLog(2, "Loading blob file %s\n", blob_library_file);
+      errcode = NaClAppLoadFileDynamically(nap, blob_file,
+                                           NULL);
+      if (LOAD_OK == errcode) {
+        nap->irt_loaded = 1;
+        CHECK(NULL == nap->irt_nexe_desc);
+        NaClDescRef(blob_file);
+        nap->irt_nexe_desc = blob_file;
       } else {
-        /*
-         * TODO(mseaborn): Omit -B when the IRT is not wanted (e.g., from
-         * sel_ldr_launcher_standalone), instead of looking for the absence
-         * of a segment gap, when the nexe does not follow NaCl's stable ABI.
-         */
-        NaClLog(LOG_WARNING,
-                "Main executable has no segment gap; not loading IRT library. "
-                "This is expected for PNaCl's translator nexes.\n");
+        fprintf(stderr, "Error while loading \"%s\": %s\n",
+                blob_library_file,
+                NaClErrorString(errcode));
       }
+      NaClPerfCounterMark(&time_all_main, "BlobLoaded");
+      NaClPerfCounterIntervalLast(&time_all_main);
     }
 
-    if (-1 == (*((struct Gio *) &blob_file)->vtbl->Close)((struct Gio *)
-                                                          &blob_file)) {
-      fprintf(stderr, "Error while closing \"%s\".\n", blob_library_file);
-    }
-    (*((struct Gio *) &blob_file)->vtbl->Dtor)((struct Gio *) &blob_file);
+    NaClDescUnref(blob_file);
     if (verbosity) {
       gprintf((struct Gio *) &gout, "printing post-IRT NaClApp details\n");
       NaClAppPrintDetails(nap, (struct Gio *) &gout);
@@ -781,6 +786,8 @@ int NaClSelLdrMain(int argc, char **argv) {
     if (LOAD_OK == errcode) {
       errcode = start_result;
     }
+  } else {
+    NaClAppStartModule(nap, NULL, NULL);
   }
 
   /*
@@ -870,7 +877,9 @@ int NaClSelLdrMain(int argc, char **argv) {
   }
   fflush(stdout);
 
-  if (handle_signals) NaClSignalHandlerFini();
+#if NACL_LINUX
+  NaClSignalHandlerFini();
+#endif
   NaClAllModulesFini();
 
   NaClExit(ret_code);

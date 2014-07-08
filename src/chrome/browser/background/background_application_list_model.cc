@@ -7,26 +7,32 @@
 #include <algorithm>
 #include <set>
 
+#include "base/sha1.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/background/background_contents_service.h"
 #include "chrome/browser/background/background_contents_service_factory.h"
 #include "chrome/browser/background/background_mode_manager.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/extensions/extension_prefs.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/image_loader.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_resource.h"
-#include "chrome/common/extensions/permissions/permission_set.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/extension_resource.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest_handlers/background_info.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
+#include "extensions/common/permissions/permission_set.h"
 #include "ui/base/l10n/l10n_util_collator.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
@@ -34,6 +40,8 @@
 using extensions::APIPermission;
 using extensions::Extension;
 using extensions::ExtensionList;
+using extensions::ExtensionRegistry;
+using extensions::ExtensionSet;
 using extensions::PermissionSet;
 using extensions::UnloadedExtensionInfo;
 using extensions::UpdatedExtensionPermissionsInfo;
@@ -41,7 +49,8 @@ using extensions::UpdatedExtensionPermissionsInfo;
 class ExtensionNameComparator {
  public:
   explicit ExtensionNameComparator(icu::Collator* collator);
-  bool operator()(const Extension* x, const Extension* y);
+  bool operator()(const scoped_refptr<const Extension>& x,
+                  const scoped_refptr<const Extension>& y);
 
  private:
   icu::Collator* collator_;
@@ -51,11 +60,11 @@ ExtensionNameComparator::ExtensionNameComparator(icu::Collator* collator)
   : collator_(collator) {
 }
 
-bool ExtensionNameComparator::operator()(const Extension* x,
-                                         const Extension* y) {
-  return l10n_util::StringComparator<string16>(collator_)(
-    UTF8ToUTF16(x->name()),
-    UTF8ToUTF16(y->name()));
+bool ExtensionNameComparator::operator()(
+    const scoped_refptr<const Extension>& x,
+    const scoped_refptr<const Extension>& y) {
+  return l10n_util::StringComparator<base::string16>(collator_)(
+      base::UTF8ToUTF16(x->name()), base::UTF8ToUTF16(y->name()));
 }
 
 // Background application representation, private to the
@@ -83,12 +92,13 @@ class BackgroundApplicationListModel::Application
 namespace {
 void GetServiceApplications(ExtensionService* service,
                             ExtensionList* applications_result) {
-  const ExtensionSet* extensions = service->extensions();
+  ExtensionRegistry* registry = ExtensionRegistry::Get(service->profile());
+  const ExtensionSet& enabled_extensions = registry->enabled_extensions();
 
-  for (ExtensionSet::const_iterator cursor = extensions->begin();
-       cursor != extensions->end();
+  for (ExtensionSet::const_iterator cursor = enabled_extensions.begin();
+       cursor != enabled_extensions.end();
        ++cursor) {
-    const Extension* extension = *cursor;
+    const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
                                                         service->profile())) {
       applications_result->push_back(extension);
@@ -97,11 +107,11 @@ void GetServiceApplications(ExtensionService* service,
 
   // Walk the list of terminated extensions also (just because an extension
   // crashed doesn't mean we should ignore it).
-  extensions = service->terminated_extensions();
-  for (ExtensionSet::const_iterator cursor = extensions->begin();
-       cursor != extensions->end();
+  const ExtensionSet& terminated_extensions = registry->terminated_extensions();
+  for (ExtensionSet::const_iterator cursor = terminated_extensions.begin();
+       cursor != terminated_extensions.end();
        ++cursor) {
-    const Extension* extension = *cursor;
+    const Extension* extension = cursor->get();
     if (BackgroundApplicationListModel::IsBackgroundApp(*extension,
                                                         service->profile())) {
       applications_result->push_back(extension);
@@ -137,10 +147,7 @@ BackgroundApplicationListModel::Application::~Application() {
 BackgroundApplicationListModel::Application::Application(
     BackgroundApplicationListModel* model,
     const Extension* extension)
-    : extension_(extension),
-      icon_(NULL),
-      model_(model) {
-}
+    : extension_(extension), model_(model) {}
 
 void BackgroundApplicationListModel::Application::OnImageLoaded(
     const gfx::Image& image) {
@@ -152,8 +159,9 @@ void BackgroundApplicationListModel::Application::OnImageLoaded(
 
 void BackgroundApplicationListModel::Application::RequestIcon(
     extension_misc::ExtensionIcons size) {
-  ExtensionResource resource = extension_->GetIconResource(
-      size, ExtensionIconSet::MATCH_BIGGER);
+  extensions::ExtensionResource resource =
+      extensions::IconsInfo::GetIconResource(
+          extension_, size, ExtensionIconSet::MATCH_BIGGER);
   extensions::ImageLoader::Get(model_->profile_)->LoadImageAsync(
       extension_, resource, gfx::Size(size, size),
       base::Bind(&Application::OnImageLoaded, AsWeakPtr()));
@@ -168,10 +176,10 @@ BackgroundApplicationListModel::BackgroundApplicationListModel(Profile* profile)
     : profile_(profile) {
   DCHECK(profile_);
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_LOADED,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this,
-                 chrome::NOTIFICATION_EXTENSION_UNLOADED,
+                 chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile));
   registrar_.Add(this,
                  chrome::NOTIFICATION_EXTENSIONS_READY,
@@ -223,7 +231,7 @@ void BackgroundApplicationListModel::DissociateApplicationData(
 const Extension* BackgroundApplicationListModel::GetExtension(
     int position) const {
   DCHECK(position >= 0 && static_cast<size_t>(position) < extensions_.size());
-  return extensions_[position];
+  return extensions_[position].get();
 }
 
 const BackgroundApplicationListModel::Application*
@@ -266,6 +274,28 @@ int BackgroundApplicationListModel::GetPosition(
 }
 
 // static
+bool BackgroundApplicationListModel::RequiresBackgroundModeForPushMessaging(
+    const Extension& extension) {
+  // No PushMessaging permission - does not require the background mode.
+  if (!extension.HasAPIPermission(APIPermission::kPushMessaging))
+    return false;
+
+  // If in the whitelist, then does not require background mode even if
+  // uses push messaging.
+  // TODO(dimich): remove this whitelist once we have a better way to keep
+  // listening for GCM. http://crbug.com/311268
+  std::string id_hash = base::SHA1HashString(extension.id());
+  std::string hexencoded_id_hash = base::HexEncode(id_hash.c_str(),
+                                                   id_hash.length());
+  // The id starting from "9A04..." is a one from unit test.
+  if (hexencoded_id_hash == "C41AD9DCD670210295614257EF8C9945AD68D86E" ||
+      hexencoded_id_hash == "9A0417016F345C934A1A88F55CA17C05014EEEBA")
+     return false;
+
+   return true;
+ }
+
+// static
 bool BackgroundApplicationListModel::IsBackgroundApp(
     const Extension& extension, Profile* profile) {
   // An extension is a "background app" if it has the "background API"
@@ -277,7 +307,7 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
   // Not a background app if we don't have the background permission or
   // the push messaging permission
   if (!extension.HasAPIPermission(APIPermission::kBackground) &&
-      !extension.HasAPIPermission(APIPermission::kPushMessaging) )
+      !RequiresBackgroundModeForPushMessaging(extension))
     return false;
 
   // Extensions and packaged apps with background permission are always treated
@@ -286,12 +316,12 @@ bool BackgroundApplicationListModel::IsBackgroundApp(
     return true;
 
   // Hosted apps with manifest-provided background pages are background apps.
-  if (extension.has_background_page())
+  if (extensions::BackgroundInfo::HasBackgroundPage(&extension))
     return true;
 
   BackgroundContentsService* service =
       BackgroundContentsServiceFactory::GetForProfile(profile);
-  string16 app_id = ASCIIToUTF16(extension.id());
+  base::string16 app_id = base::ASCIIToUTF16(extension.id());
   // If we have an active or registered background contents for this app, then
   // it's a background app. This covers the cases where the app has created its
   // background contents, but it hasn't navigated yet, or the background
@@ -320,10 +350,10 @@ void BackgroundApplicationListModel::Observe(
     return;
 
   switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_LOADED:
+    case chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED:
       OnExtensionLoaded(content::Details<Extension>(details).ptr());
       break;
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
+    case chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED:
       OnExtensionUnloaded(
           content::Details<UnloadedExtensionInfo>(details)->extension);
       break;

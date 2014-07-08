@@ -14,32 +14,28 @@
 #include <map>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/common/child_process_logging.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
-#include "chrome/service/cloud_print/cloud_print_helpers.h"
-#include "googleurl/src/gurl.h"
+#include "chrome/common/crash_keys.h"
+#include "chrome/service/cloud_print/cloud_print_service_helpers.h"
 #include "grit/generated_resources.h"
 #include "printing/backend/cups_helper.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 namespace {
-
-// CUPS specific options.
-const char kCUPSPrinterInfoOpt[] = "printer-info";
-const char kCUPSPrinterStateOpt[] = "printer-state";
 
 // Print system config options.
 const char kCUPSPrintServerURLs[] = "print_server_urls";
@@ -51,9 +47,6 @@ const char kCUPSSupportedMimeTipes[] = "supported_mime_types";
 // http://www.cups.org/articles.php?L205+TFAQ+Q
 const char kCUPSDefaultSupportedTypes[] =
     "application/pdf,application/postscript,image/jpeg,image/png,image/gif";
-
-// Default port for IPP print servers.
-const int kDefaultIPPServerPort = 631;
 
 // Time interval to check for printer's updates.
 const int kCheckForPrinterUpdatesMinutes = 5;
@@ -82,7 +75,7 @@ struct PrintServerInfoCUPS {
 
 class PrintSystemCUPS : public PrintSystem {
  public:
-  explicit PrintSystemCUPS(const DictionaryValue* print_system_settings);
+  explicit PrintSystemCUPS(const base::DictionaryValue* print_system_settings);
 
   // PrintSystem implementation.
   virtual PrintSystemResult Init() OVERRIDE;
@@ -94,7 +87,8 @@ class PrintSystemCUPS : public PrintSystem {
   virtual bool IsValidPrinter(const std::string& printer_name) OVERRIDE;
   virtual bool ValidatePrintTicket(
       const std::string& printer_name,
-      const std::string& print_ticket_data) OVERRIDE;
+      const std::string& print_ticket_data,
+      const std::string& print_ticket_mime_type) OVERRIDE;
   virtual bool GetJobDetails(const std::string& printer_name,
                              PlatformJobId job_id,
                              PrintJobDetails *job_details) OVERRIDE;
@@ -102,11 +96,12 @@ class PrintSystemCUPS : public PrintSystem {
   virtual PrintSystem::PrinterWatcher* CreatePrinterWatcher(
       const std::string& printer_name) OVERRIDE;
   virtual PrintSystem::JobSpooler* CreateJobSpooler() OVERRIDE;
+  virtual bool UseCddAndCjt() OVERRIDE;
   virtual std::string GetSupportedMimeTypes() OVERRIDE;
 
   // Helper functions.
   PlatformJobId SpoolPrintJob(const std::string& print_ticket,
-                              const FilePath& print_data_file_path,
+                              const base::FilePath& print_data_file_path,
                               const std::string& print_data_mime_type,
                               const std::string& printer_name,
                               const std::string& job_title,
@@ -146,7 +141,7 @@ class PrintSystemCUPS : public PrintSystem {
                 const char* name, const char* filename,
                 const char* title, int num_options, cups_option_t* options);
 
-  void InitPrintBackends(const DictionaryValue* print_system_settings);
+  void InitPrintBackends(const base::DictionaryValue* print_system_settings);
   void AddPrintServer(const std::string& url);
 
   void UpdatePrinters();
@@ -191,7 +186,7 @@ class PrintServerWatcherCUPS
       PrintSystem::PrintServerWatcher::Delegate* delegate) OVERRIDE {
     delegate_ = delegate;
     printers_hash_ = GetPrintersHash();
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
         print_system_->GetUpdateTimeout());
@@ -212,7 +207,7 @@ class PrintServerWatcherCUPS
       printers_hash_ = new_hash;
       delegate_->OnPrinterAdded();
     }
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrintServerWatcherCUPS::CheckForUpdates, this),
         print_system_->GetUpdateTimeout());
@@ -264,20 +259,20 @@ class PrinterWatcherCUPS
       PrintSystem::PrinterWatcher::Delegate* delegate) OVERRIDE{
     scoped_refptr<printing::PrintBackend> print_backend(
         printing::PrintBackend::CreateInstance(NULL));
-    child_process_logging::ScopedPrinterInfoSetter prn_info(
+    crash_keys::ScopedPrinterInfo crash_key(
         print_backend->GetPrinterDriverInfo(printer_name_));
     if (delegate_ != NULL)
       StopWatching();
     delegate_ = delegate;
     settings_hash_ = GetSettingsHash();
     // Schedule next job status update.
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
         base::TimeDelta::FromSeconds(kJobUpdateTimeoutSeconds));
     // Schedule next printer check.
     // TODO(gene): Randomize time for the next printer update.
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
         print_system_->GetUpdateTimeout());
@@ -289,7 +284,8 @@ class PrinterWatcherCUPS
     return true;
   }
 
-  bool GetCurrentPrinterInfo(printing::PrinterBasicInfo* printer_info) {
+  virtual bool GetCurrentPrinterInfo(
+      printing::PrinterBasicInfo* printer_info) OVERRIDE {
     DCHECK(printer_info);
     return print_system_->GetPrinterInfo(printer_name_, printer_info);
   }
@@ -302,7 +298,7 @@ class PrinterWatcherCUPS
     // jobs for this printer and check their status. If printer has no
     // outstanding jobs, OnJobChanged() will do nothing.
     delegate_->OnJobChanged();
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::JobStatusUpdate, this),
         base::TimeDelta::FromSeconds(kJobUpdateTimeoutSeconds));
@@ -327,7 +323,7 @@ class PrinterWatcherCUPS
                 << ", printer name: " << printer_name_;
       }
     }
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&PrinterWatcherCUPS::PrinterUpdate, this),
         print_system_->GetUpdateTimeout());
@@ -380,7 +376,8 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
 
   // PrintSystem::JobSpooler implementation.
   virtual bool Spool(const std::string& print_ticket,
-                     const FilePath& print_data_file_path,
+                     const std::string& print_ticket_mime_type,
+                     const base::FilePath& print_data_file_path,
                      const std::string& print_data_mime_type,
                      const std::string& printer_name,
                      const std::string& job_title,
@@ -391,7 +388,7 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
     int job_id = print_system_->SpoolPrintJob(
         print_ticket, print_data_file_path, print_data_mime_type,
         printer_name, job_title, tags, &dry_run);
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&JobSpoolerCUPS::NotifyDelegate, delegate, job_id, dry_run));
     return true;
@@ -414,7 +411,8 @@ class JobSpoolerCUPS : public PrintSystem::JobSpooler {
   DISALLOW_COPY_AND_ASSIGN(JobSpoolerCUPS);
 };
 
-PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
+PrintSystemCUPS::PrintSystemCUPS(
+    const base::DictionaryValue* print_system_settings)
     : update_timeout_(base::TimeDelta::FromMinutes(
         kCheckForPrinterUpdatesMinutes)),
       initialized_(false),
@@ -445,8 +443,8 @@ PrintSystemCUPS::PrintSystemCUPS(const DictionaryValue* print_system_settings)
 }
 
 void PrintSystemCUPS::InitPrintBackends(
-    const DictionaryValue* print_system_settings) {
-  const ListValue* url_list;
+    const base::DictionaryValue* print_system_settings) {
+  const base::ListValue* url_list;
   if (print_system_settings &&
       print_system_settings->GetList(kCUPSPrintServerURLs, &url_list)) {
     for (size_t i = 0; i < url_list->GetSize(); i++) {
@@ -466,7 +464,7 @@ void PrintSystemCUPS::AddPrintServer(const std::string& url) {
     LOG(WARNING) << "No print server specified. Using default print server.";
 
   // Get Print backend for the specific print server.
-  DictionaryValue backend_settings;
+  base::DictionaryValue backend_settings;
   backend_settings.SetString(kCUPSPrintServerURL, url);
 
   // Make CUPS requests non-blocking.
@@ -508,9 +506,10 @@ void PrintSystemCUPS::UpdatePrinters() {
   }
 
   // Schedule next update.
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
-      base::Bind(&PrintSystemCUPS::UpdatePrinters, this), GetUpdateTimeout());
+      base::Bind(&PrintSystemCUPS::UpdatePrinters, this),
+      GetUpdateTimeout());
 }
 
 PrintSystem::PrintSystemResult PrintSystemCUPS::EnumeratePrinters(
@@ -533,21 +532,28 @@ void PrintSystemCUPS::GetPrinterCapsAndDefaults(
     const PrinterCapsAndDefaultsCallback& callback) {
   printing::PrinterCapsAndDefaults printer_info;
   bool succeeded = GetPrinterCapsAndDefaults(printer_name, &printer_info);
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
-      base::Bind(&PrintSystemCUPS::RunCapsCallback, callback, succeeded,
-                 printer_name, printer_info));
+      base::Bind(&PrintSystemCUPS::RunCapsCallback,
+                 callback,
+                 succeeded,
+                 printer_name,
+                 printer_info));
 }
 
 bool PrintSystemCUPS::IsValidPrinter(const std::string& printer_name) {
   return GetPrinterInfo(printer_name, NULL);
 }
 
-bool PrintSystemCUPS::ValidatePrintTicket(const std::string& printer_name,
-                                        const std::string& print_ticket_data) {
+bool PrintSystemCUPS::ValidatePrintTicket(
+    const std::string& printer_name,
+    const std::string& print_ticket_data,
+    const std::string& print_ticket_mime_type) {
   DCHECK(initialized_);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket_data));
-  return ticket_value != NULL && ticket_value->IsType(Value::TYPE_DICTIONARY);
+  scoped_ptr<base::Value> ticket_value(
+      base::JSONReader::Read(print_ticket_data));
+  return ticket_value != NULL &&
+         ticket_value->IsType(base::Value::TYPE_DICTIONARY);
 }
 
 // Print ticket on linux is a JSON string containing only one dictionary.
@@ -555,20 +561,20 @@ bool PrintSystemCUPS::ParsePrintTicket(
     const std::string& print_ticket,
     std::map<std::string, std::string>* options) {
   DCHECK(options);
-  scoped_ptr<Value> ticket_value(base::JSONReader::Read(print_ticket));
-  if (ticket_value == NULL || !ticket_value->IsType(Value::TYPE_DICTIONARY))
+  scoped_ptr<base::Value> ticket_value(base::JSONReader::Read(print_ticket));
+  if (ticket_value == NULL ||
+      !ticket_value->IsType(base::Value::TYPE_DICTIONARY)) {
     return false;
+  }
 
   options->clear();
-  DictionaryValue* ticket_dict =
-      static_cast<DictionaryValue*>(ticket_value.get());
-  DictionaryValue::key_iterator it(ticket_dict->begin_keys());
-  for (; it != ticket_dict->end_keys(); ++it) {
-    const std::string& key = *it;
+  base::DictionaryValue* ticket_dict =
+      static_cast<base::DictionaryValue*>(ticket_value.get());
+  for (base::DictionaryValue::Iterator it(*ticket_dict); !it.IsAtEnd();
+       it.Advance()) {
     std::string value;
-    if (ticket_dict->GetString(key, &value)) {
-      (*options)[key] = value;
-    }
+    if (it.value().GetAsString(&value))
+      (*options)[it.key()] = value;
   }
 
   return true;
@@ -592,7 +598,7 @@ bool PrintSystemCUPS::GetPrinterCapsAndDefaults(
   }
 
   // TODO(gene): Retry multiple times in case of error.
-  child_process_logging::ScopedPrinterInfoSetter prn_info(
+  crash_keys::ScopedPrinterInfo crash_key(
       server_info->backend->GetPrinterDriverInfo(short_printer_name));
   if (!server_info->backend->GetPrinterCapsAndDefaults(short_printer_name,
                                                        printer_info) ) {
@@ -615,7 +621,7 @@ bool PrintSystemCUPS::GetJobDetails(const std::string& printer_name,
   if (!server_info)
     return false;
 
-  child_process_logging::ScopedPrinterInfoSetter prn_info(
+  crash_keys::ScopedPrinterInfo crash_key(
       server_info->backend->GetPrinterDriverInfo(short_printer_name));
   cups_job_t* jobs = NULL;
   int num_jobs = GetJobs(&jobs, server_info->url, cups_encryption_,
@@ -723,12 +729,16 @@ PrintSystem::JobSpooler* PrintSystemCUPS::CreateJobSpooler() {
   return new JobSpoolerCUPS(this);
 }
 
+bool PrintSystemCUPS::UseCddAndCjt() {
+  return false;
+}
+
 std::string PrintSystemCUPS::GetSupportedMimeTypes() {
   return supported_mime_types_;
 }
 
 scoped_refptr<PrintSystem> PrintSystem::CreateInstance(
-    const DictionaryValue* print_system_settings) {
+    const base::DictionaryValue* print_system_settings) {
   return new PrintSystemCUPS(print_system_settings);
 }
 
@@ -760,7 +770,7 @@ int PrintSystemCUPS::GetJobs(cups_job_t** jobs, const GURL& url,
 
 PlatformJobId PrintSystemCUPS::SpoolPrintJob(
     const std::string& print_ticket,
-    const FilePath& print_data_file_path,
+    const base::FilePath& print_data_file_path,
     const std::string& print_data_mime_type,
     const std::string& printer_name,
     const std::string& job_title,
@@ -775,7 +785,7 @@ PlatformJobId PrintSystemCUPS::SpoolPrintJob(
   if (!server_info)
     return false;
 
-  child_process_logging::ScopedPrinterInfoSetter prn_info(
+  crash_keys::ScopedPrinterInfo crash_key(
       server_info->backend->GetPrinterDriverInfo(printer_name));
 
   // We need to store options as char* string for the duration of the

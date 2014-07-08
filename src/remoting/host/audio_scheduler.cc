@@ -5,7 +5,6 @@
 #include "remoting/host/audio_scheduler.h"
 
 #include "base/bind.h"
-#include "base/callback.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/single_thread_task_runner.h"
@@ -16,30 +15,34 @@
 
 namespace remoting {
 
-// static
-scoped_refptr<AudioScheduler> AudioScheduler::Create(
+AudioScheduler::AudioScheduler(
     scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner,
     scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-    AudioCapturer* audio_capturer,
+    scoped_ptr<AudioCapturer> audio_capturer,
     scoped_ptr<AudioEncoder> audio_encoder,
-    protocol::AudioStub* audio_stub) {
-  DCHECK(network_task_runner->BelongsToCurrentThread());
-  DCHECK(audio_capturer);
-  DCHECK(audio_encoder);
-  DCHECK(audio_stub);
-
-  scoped_refptr<AudioScheduler> scheduler = new AudioScheduler(
-      audio_task_runner, network_task_runner,
-      audio_capturer, audio_encoder.Pass(), audio_stub);
-  audio_task_runner->PostTask(
-      FROM_HERE, base::Bind(&AudioScheduler::StartOnAudioThread, scheduler));
-
-  return scheduler;
+    protocol::AudioStub* audio_stub)
+    : audio_task_runner_(audio_task_runner),
+      network_task_runner_(network_task_runner),
+      audio_capturer_(audio_capturer.Pass()),
+      audio_encoder_(audio_encoder.Pass()),
+      audio_stub_(audio_stub),
+      network_stopped_(false),
+      enabled_(true) {
+  DCHECK(network_task_runner_->BelongsToCurrentThread());
+  DCHECK(audio_capturer_);
+  DCHECK(audio_encoder_);
+  DCHECK(audio_stub_);
 }
 
-void AudioScheduler::Stop(const base::Closure& done_task) {
+void AudioScheduler::Start() {
   DCHECK(network_task_runner_->BelongsToCurrentThread());
-  DCHECK(!done_task.is_null());
+
+  audio_task_runner_->PostTask(
+      FROM_HERE, base::Bind(&AudioScheduler::StartOnAudioThread, this));
+}
+
+void AudioScheduler::Stop() {
+  DCHECK(network_task_runner_->BelongsToCurrentThread());
   DCHECK(audio_stub_);
 
   // Clear |audio_stub_| to prevent audio packets being delivered to the client.
@@ -47,22 +50,7 @@ void AudioScheduler::Stop(const base::Closure& done_task) {
 
   audio_task_runner_->PostTask(
       FROM_HERE,
-      base::Bind(&AudioScheduler::StopOnAudioThread, this, done_task));
-}
-
-AudioScheduler::AudioScheduler(
-    scoped_refptr<base::SingleThreadTaskRunner> audio_task_runner,
-    scoped_refptr<base::SingleThreadTaskRunner> network_task_runner,
-    AudioCapturer* audio_capturer,
-    scoped_ptr<AudioEncoder> audio_encoder,
-    protocol::AudioStub* audio_stub)
-    : audio_task_runner_(audio_task_runner),
-      network_task_runner_(network_task_runner),
-      audio_capturer_(audio_capturer),
-      audio_encoder_(audio_encoder.Pass()),
-      audio_stub_(audio_stub),
-      network_stopped_(false),
-      enabled_(true) {
+      base::Bind(&AudioScheduler::StopOnAudioThread, this));
 }
 
 AudioScheduler::~AudioScheduler() {
@@ -76,21 +64,19 @@ void AudioScheduler::StartOnAudioThread() {
       base::Bind(&AudioScheduler::EncodeAudioPacket, this));
 }
 
-void AudioScheduler::StopOnAudioThread(const base::Closure& done_task) {
+void AudioScheduler::StopOnAudioThread() {
   DCHECK(audio_task_runner_->BelongsToCurrentThread());
   audio_capturer_->Stop();
-
-  network_task_runner_->PostTask(FROM_HERE, done_task);
 }
 
-void AudioScheduler::SetEnabled(bool enabled) {
+void AudioScheduler::Pause(bool pause) {
   if (!audio_task_runner_->BelongsToCurrentThread()) {
     audio_task_runner_->PostTask(
-        FROM_HERE, base::Bind(&AudioScheduler::SetEnabled, this, enabled));
+        FROM_HERE, base::Bind(&AudioScheduler::Pause, this, pause));
     return;
   }
 
-  enabled_ = enabled;
+  enabled_ = !pause;
 }
 
 void AudioScheduler::EncodeAudioPacket(scoped_ptr<AudioPacket> packet) {
@@ -107,7 +93,7 @@ void AudioScheduler::EncodeAudioPacket(scoped_ptr<AudioPacket> packet) {
   if (encoded_packet.get()) {
     network_task_runner_->PostTask(
         FROM_HERE, base::Bind(&AudioScheduler::SendAudioPacket,
-                              this, base::Passed(encoded_packet.Pass())));
+                              this, base::Passed(&encoded_packet)));
   }
 }
 

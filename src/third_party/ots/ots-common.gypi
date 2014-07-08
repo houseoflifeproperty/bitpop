@@ -45,6 +45,8 @@
       'src/ltsh.h',
       'src/maxp.cc',
       'src/maxp.h',
+      'src/math.cc',
+      'src/math_.h',
       'src/metrics.cc',
       'src/metrics.h',
       'src/name.cc',
@@ -65,6 +67,8 @@
       'src/vmtx.h',
       'src/vorg.cc',
       'src/vorg.h',
+      'src/woff2.cc',
+      'src/woff2.h',
     ],
     'ots_include_dirs': [
       'include',

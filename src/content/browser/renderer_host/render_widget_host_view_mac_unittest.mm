@@ -4,21 +4,99 @@
 
 #include "content/browser/renderer_host/render_widget_host_view_mac.h"
 
+#include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/common/gpu/gpu_messages.h"
+#include "content/common/input_messages.h"
+#include "content/common/view_messages.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_widget_host_view_mac_delegate.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_utils.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/test/cocoa_test_event_utils.h"
-#import "ui/base/test/ui_cocoa_test_helper.h"
-#include "webkit/plugins/npapi/webplugin.h"
+#include "ui/events/test/cocoa_test_event_utils.h"
+#import "ui/gfx/test/ui_cocoa_test_helper.h"
+
+// Declare things that are part of the 10.7 SDK.
+#if !defined(MAC_OS_X_VERSION_10_7) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
+enum {
+  NSEventPhaseNone        = 0, // event not associated with a phase.
+  NSEventPhaseBegan       = 0x1 << 0,
+  NSEventPhaseStationary  = 0x1 << 1,
+  NSEventPhaseChanged     = 0x1 << 2,
+  NSEventPhaseEnded       = 0x1 << 3,
+  NSEventPhaseCancelled   = 0x1 << 4,
+};
+typedef NSUInteger NSEventPhase;
+
+@interface NSEvent (LionAPI)
+- (NSEventPhase)phase;
+@end
+
+#endif  // 10.7
+
+// Helper class with methods used to mock -[NSEvent phase], used by
+// |MockScrollWheelEventWithPhase()|.
+@interface MockPhaseMethods : NSObject {
+}
+
+- (NSEventPhase)phaseBegan;
+- (NSEventPhase)phaseChanged;
+- (NSEventPhase)phaseEnded;
+@end
+
+@implementation MockPhaseMethods
+
+- (NSEventPhase)phaseBegan {
+  return NSEventPhaseBegan;
+}
+- (NSEventPhase)phaseChanged {
+  return NSEventPhaseChanged;
+}
+- (NSEventPhase)phaseEnded {
+  return NSEventPhaseEnded;
+}
+
+@end
+
+@interface MockRenderWidgetHostViewMacDelegate
+    : NSObject<RenderWidgetHostViewMacDelegate> {
+  BOOL unhandledWheelEventReceived_;
+}
+
+@property(nonatomic) BOOL unhandledWheelEventReceived;
+
+- (void)gotUnhandledWheelEvent;
+@end
+
+@implementation MockRenderWidgetHostViewMacDelegate
+
+@synthesize unhandledWheelEventReceived = unhandledWheelEventReceived_;
+
+- (void)gotUnhandledWheelEvent {
+  unhandledWheelEventReceived_ = true;
+}
+- (void)touchesBeganWithEvent:(NSEvent*)event{}
+- (void)touchesMovedWithEvent:(NSEvent*)event{}
+- (void)touchesCancelledWithEvent:(NSEvent*)event{}
+- (void)touchesEndedWithEvent:(NSEvent*)event{}
+- (void)beginGestureWithEvent:(NSEvent*)event{}
+- (void)endGestureWithEvent:(NSEvent*)event{}
+- (BOOL)canRubberbandLeft:(NSView*)view {
+  return true;
+}
+- (BOOL)canRubberbandRight:(NSView*)view {
+  return true;
+}
+
+@end
 
 namespace content {
 
@@ -35,7 +113,7 @@ class MockRenderWidgetHostImpl : public RenderWidgetHostImpl {
   MockRenderWidgetHostImpl(RenderWidgetHostDelegate* delegate,
                            RenderProcessHost* process,
                            int routing_id)
-      : RenderWidgetHostImpl(delegate, process, routing_id) {
+      : RenderWidgetHostImpl(delegate, process, routing_id, false) {
   }
 
   MOCK_METHOD0(Focus, void());
@@ -74,13 +152,26 @@ void GenerateCompositionRectArray(const gfx::Point& origin,
 
 gfx::Rect GetExpectedRect(const gfx::Point& origin,
                           const gfx::Size& size,
-                          const ui::Range& range,
+                          const gfx::Range& range,
                           int line_no) {
   return gfx::Rect(
       origin.x() + range.start() * size.width(),
       origin.y() + line_no * size.height(),
       range.length() * size.width(),
       size.height());
+}
+
+// Returns NSScrollWheel event that mocks -phase. |mockPhaseSelector| should
+// correspond to a method in |MockPhaseMethods| that returns the desired phase.
+NSEvent* MockScrollWheelEventWithPhase(SEL mockPhaseSelector, int32_t delta) {
+  CGEventRef cg_event =
+      CGEventCreateScrollWheelEvent(NULL, kCGScrollEventUnitLine, 1, delta, 0);
+  NSEvent* event = [NSEvent eventWithCGEvent:cg_event];
+  CFRelease(cg_event);
+  method_setImplementation(
+      class_getInstanceMethod([NSEvent class], @selector(phase)),
+      [MockPhaseMethods instanceMethodForSelector:mockPhaseSelector]);
+  return event;
 }
 
 }  // namespace
@@ -98,52 +189,22 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
     old_rwhv_ = rvh()->GetView();
 
     // Owned by its |cocoa_view()|, i.e. |rwhv_cocoa_|.
-    rwhv_mac_ = static_cast<RenderWidgetHostViewMac*>(
-        RenderWidgetHostView::CreateViewForWidget(rvh()));
+    rwhv_mac_ = new RenderWidgetHostViewMac(rvh());
     rwhv_cocoa_.reset([rwhv_mac_->cocoa_view() retain]);
   }
   virtual void TearDown() {
     // Make sure the rwhv_mac_ is gone once the superclass's |TearDown()| runs.
     rwhv_cocoa_.reset();
     pool_.Recycle();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     pool_.Recycle();
 
     // See comment in SetUp().
-    test_rvh()->SetView(old_rwhv_);
+    test_rvh()->SetView(static_cast<RenderWidgetHostViewBase*>(old_rwhv_));
 
     RenderViewHostImplTestHarness::TearDown();
   }
  protected:
-  // Adds an accelerated plugin view to |rwhv_cocoa_|.  Returns a handle to the
-  // newly-added view.  Callers must ensure that a UI thread is present and
-  // running before calling this function.
-  gfx::PluginWindowHandle AddAcceleratedPluginView(int w, int h) {
-    // Create an accelerated view the size of the rhwvmac.
-    [rwhv_cocoa_.get() setFrame:NSMakeRect(0, 0, w, h)];
-    gfx::PluginWindowHandle accelerated_handle =
-        rwhv_mac_->AllocateFakePluginWindowHandle(/*opaque=*/false,
-                                                  /*root=*/false);
-    rwhv_mac_->AcceleratedSurfaceSetIOSurface(accelerated_handle, w, h, 0);
-
-    // The accelerated view isn't shown until it has a valid rect and has been
-    // painted to.
-    GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
-    params.window = accelerated_handle;
-    rwhv_mac_->AcceleratedSurfaceBuffersSwapped(params, 0);
-    webkit::npapi::WebPluginGeometry geom;
-    gfx::Rect rect(0, 0, w, h);
-    geom.window = accelerated_handle;
-    geom.window_rect = rect;
-    geom.clip_rect = rect;
-    geom.visible = true;
-    geom.rects_valid = true;
-    rwhv_mac_->MovePluginWindows(
-        gfx::Vector2d(),
-        std::vector<webkit::npapi::WebPluginGeometry>(1, geom));
-
-    return accelerated_handle;
-  }
  private:
   // This class isn't derived from PlatformTest.
   base::mac::ScopedNSAutoreleasePool pool_;
@@ -152,53 +213,13 @@ class RenderWidgetHostViewMacTest : public RenderViewHostImplTestHarness {
 
  protected:
   RenderWidgetHostViewMac* rwhv_mac_;
-  scoped_nsobject<RenderWidgetHostViewCocoa> rwhv_cocoa_;
+  base::scoped_nsobject<RenderWidgetHostViewCocoa> rwhv_cocoa_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(RenderWidgetHostViewMacTest);
 };
 
 TEST_F(RenderWidgetHostViewMacTest, Basic) {
-}
-
-// Regression test for http://crbug.com/60318
-TEST_F(RenderWidgetHostViewMacTest, FocusAcceleratedView) {
-  // The accelerated view methods want to be called on the UI thread.
-  scoped_ptr<BrowserThreadImpl> ui_thread_(
-      new BrowserThreadImpl(BrowserThread::UI,
-                            MessageLoop::current()));
-
-  int w = 400, h = 300;
-  gfx::PluginWindowHandle accelerated_handle = AddAcceleratedPluginView(w, h);
-  EXPECT_FALSE([rwhv_cocoa_.get() isHidden]);
-  NSView* accelerated_view = static_cast<NSView*>(
-      rwhv_mac_->ViewForPluginWindowHandle(accelerated_handle));
-  EXPECT_FALSE([accelerated_view isHidden]);
-
-  // Take away first responder from the rwhvmac, then simulate the effect of a
-  // click on the accelerated view. The rwhvmac should be first responder
-  // again.
-  scoped_nsobject<NSWindow> window([[CocoaTestHelperWindow alloc] init]);
-  scoped_nsobject<NSView> other_view(
-      [[NSTextField alloc] initWithFrame:NSMakeRect(0, h, w, 40)]);
-  [[window contentView] addSubview:rwhv_cocoa_.get()];
-  [[window contentView] addSubview:other_view.get()];
-
-  EXPECT_TRUE([rwhv_cocoa_.get() acceptsFirstResponder]);
-  [window makeFirstResponder:rwhv_cocoa_.get()];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-  EXPECT_FALSE([accelerated_view acceptsFirstResponder]);
-
-  EXPECT_TRUE([other_view acceptsFirstResponder]);
-  [window makeFirstResponder:other_view];
-  EXPECT_NE(rwhv_cocoa_.get(), [window firstResponder]);
-
-  EXPECT_TRUE([accelerated_view acceptsFirstResponder]);
-  [window makeFirstResponder:accelerated_view];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Clean up.
-  rwhv_mac_->DestroyFakePluginWindowHandle(accelerated_handle);
 }
 
 TEST_F(RenderWidgetHostViewMacTest, AcceptsFirstResponder) {
@@ -215,8 +236,8 @@ TEST_F(RenderWidgetHostViewMacTest, AcceptsFirstResponder) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDown) {
-  scoped_nsobject<CocoaTestHelperWindow>
-      window([[CocoaTestHelperWindow alloc] init]);
+  base::scoped_nsobject<CocoaTestHelperWindow> window(
+      [[CocoaTestHelperWindow alloc] init]);
   [[window contentView] addSubview:rwhv_cocoa_.get()];
 
   // Even if the RWHVCocoa disallows first responder, clicking on it gives it
@@ -234,46 +255,14 @@ TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDown) {
   EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
 }
 
-// Regression test for http://crbug.com/64256
-TEST_F(RenderWidgetHostViewMacTest, TakesFocusOnMouseDownWithAcceleratedView) {
-  // The accelerated view methods want to be called on the UI thread.
-  scoped_ptr<BrowserThreadImpl> ui_thread_(
-      new BrowserThreadImpl(BrowserThread::UI,
-                            MessageLoop::current()));
-
-  int w = 400, h = 300;
-  gfx::PluginWindowHandle accelerated_handle = AddAcceleratedPluginView(w, h);
-  EXPECT_FALSE([rwhv_cocoa_.get() isHidden]);
-  NSView* accelerated_view = static_cast<NSView*>(
-      rwhv_mac_->ViewForPluginWindowHandle(accelerated_handle));
-  EXPECT_FALSE([accelerated_view isHidden]);
-
-  // Add the RWHVCocoa to the window and remove first responder status.
-  scoped_nsobject<CocoaTestHelperWindow>
-      window([[CocoaTestHelperWindow alloc] init]);
-  [[window contentView] addSubview:rwhv_cocoa_.get()];
-  [window setPretendIsKeyWindow:YES];
-  [window makeFirstResponder:nil];
-  EXPECT_NE(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Tell the RWHVMac to not accept first responder status.  The accelerated
-  // view should also stop accepting first responder.
-  rwhv_mac_->SetTakesFocusOnlyOnMouseDown(true);
-  EXPECT_FALSE([accelerated_view acceptsFirstResponder]);
-
-  // A click on the accelerated view should focus the RWHVCocoa.
-  std::pair<NSEvent*, NSEvent*> clicks =
-      cocoa_test_event_utils::MouseClickInView(accelerated_view, 1);
-  [rwhv_cocoa_.get() mouseDown:clicks.first];
-  EXPECT_EQ(rwhv_cocoa_.get(), [window firstResponder]);
-
-  // Clean up.
-  rwhv_mac_->DestroyFakePluginWindowHandle(accelerated_handle);
-}
-
 TEST_F(RenderWidgetHostViewMacTest, Fullscreen) {
   rwhv_mac_->InitAsFullscreen(NULL);
   EXPECT_TRUE(rwhv_mac_->pepper_fullscreen_window());
+
+  // Break the reference cycle caused by pepper_fullscreen_window() without
+  // an <esc> event. See comment in
+  // release_pepper_fullscreen_window_for_testing().
+  rwhv_mac_->release_pepper_fullscreen_window_for_testing();
 }
 
 // Verify that escape key down in fullscreen mode suppressed the keyup event on
@@ -286,9 +275,8 @@ TEST_F(RenderWidgetHostViewMacTest, FullscreenCloseOnEscape) {
       new MockRenderProcessHost(&browser_context);
   // Owned by its |cocoa_view()|.
   RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
-      &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(rwh));
+      &delegate, process_host, MSG_ROUTING_NONE, false);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
 
   view->InitAsFullscreen(rwhv_mac_);
 
@@ -320,9 +308,8 @@ TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
       new MockRenderProcessHost(&browser_context);
   // Owned by its |cocoa_view()|.
   RenderWidgetHostImpl* rwh = new RenderWidgetHostImpl(
-      &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(rwh));
+      &delegate, process_host, MSG_ROUTING_NONE, false);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
 
   view->InitAsFullscreen(rwhv_mac_);
 
@@ -340,89 +327,89 @@ TEST_F(RenderWidgetHostViewMacTest, AcceleratorDestroy) {
 }
 
 TEST_F(RenderWidgetHostViewMacTest, GetFirstRectForCharacterRangeCaretCase) {
-  const string16 kDummyString = UTF8ToUTF16("hogehoge");
+  const base::string16 kDummyString = base::UTF8ToUTF16("hogehoge");
   const size_t kDummyOffset = 0;
 
   gfx::Rect caret_rect(10, 11, 0, 10);
-  ui::Range caret_range(0, 0);
+  gfx::Range caret_range(0, 0);
+  ViewHostMsg_SelectionBounds_Params params;
 
   NSRect rect;
   NSRange actual_range;
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-       caret_rect, WebKit::WebTextDirectionLeftToRight,
-       caret_rect, WebKit::WebTextDirectionLeftToRight);
+  params.anchor_rect = params.focus_rect = caret_rect;
+  params.anchor_dir = params.focus_dir = blink::WebTextDirectionLeftToRight;
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_EQ(caret_rect, gfx::Rect(NSRectToCGRect(rect)));
-  EXPECT_EQ(caret_range, ui::Range(actual_range));
+  EXPECT_EQ(caret_range, gfx::Range(actual_range));
 
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(0, 1).ToNSRange(),
+        gfx::Range(0, 1).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(1, 1).ToNSRange(),
+        gfx::Range(1, 1).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(2, 3).ToNSRange(),
+        gfx::Range(2, 3).ToNSRange(),
         &rect,
         &actual_range));
 
   // Caret moved.
   caret_rect = gfx::Rect(20, 11, 0, 10);
-  caret_range = ui::Range(1, 1);
+  caret_range = gfx::Range(1, 1);
+  params.anchor_rect = params.focus_rect = caret_rect;
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-       caret_rect, WebKit::WebTextDirectionLeftToRight,
-       caret_rect, WebKit::WebTextDirectionLeftToRight);
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
         caret_range.ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_EQ(caret_rect, gfx::Rect(NSRectToCGRect(rect)));
-  EXPECT_EQ(caret_range, ui::Range(actual_range));
+  EXPECT_EQ(caret_range, gfx::Range(actual_range));
 
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(0, 0).ToNSRange(),
+        gfx::Range(0, 0).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(1, 2).ToNSRange(),
+        gfx::Range(1, 2).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(2, 3).ToNSRange(),
+        gfx::Range(2, 3).ToNSRange(),
         &rect,
         &actual_range));
 
   // No caret.
-  caret_range = ui::Range(1, 2);
+  caret_range = gfx::Range(1, 2);
   rwhv_mac_->SelectionChanged(kDummyString, kDummyOffset, caret_range);
-  rwhv_mac_->SelectionBoundsChanged(
-        caret_rect, WebKit::WebTextDirectionLeftToRight,
-        gfx::Rect(30, 11, 0, 10), WebKit::WebTextDirectionLeftToRight);
+  params.anchor_rect = caret_rect;
+  params.focus_rect = gfx::Rect(30, 11, 0, 10);
+  rwhv_mac_->SelectionBoundsChanged(params);
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(0, 0).ToNSRange(),
+        gfx::Range(0, 0).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(0, 1).ToNSRange(),
+        gfx::Range(0, 1).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(1, 1).ToNSRange(),
+        gfx::Range(1, 1).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(1, 2).ToNSRange(),
+        gfx::Range(1, 2).ToNSRange(),
         &rect,
         &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-        ui::Range(2, 2).ToNSRange(),
+        gfx::Range(2, 2).ToNSRange(),
         &rect,
         &actual_range));
 }
@@ -434,46 +421,46 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionSinglelineCase) {
   NSRect rect;
   // Make sure not crashing by passing NULL pointer instead of |actual_range|.
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(0, 0).ToNSRange(),
+      gfx::Range(0, 0).ToNSRange(),
       &rect,
       NULL));
 
   // If there are no update from renderer, always returned caret position.
   NSRange actual_range;
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(0, 0).ToNSRange(),
+      gfx::Range(0, 0).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(0, 1).ToNSRange(),
+      gfx::Range(0, 1).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(1, 0).ToNSRange(),
+      gfx::Range(1, 0).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(1, 1).ToNSRange(),
+      gfx::Range(1, 1).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(1, 2).ToNSRange(),
+      gfx::Range(1, 2).ToNSRange(),
       &rect,
       &actual_range));
 
   // If the firstRectForCharacterRange is failed in renderer, empty rect vector
   // is sent. Make sure this does not crash.
-  rwhv_mac_->ImeCompositionRangeChanged(ui::Range(10, 12),
+  rwhv_mac_->ImeCompositionRangeChanged(gfx::Range(10, 12),
                                         std::vector<gfx::Rect>());
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(10, 11).ToNSRange(),
+      gfx::Range(10, 11).ToNSRange(),
       &rect,
       NULL));
 
   const int kCompositionLength = 10;
   std::vector<gfx::Rect> composition_bounds;
   const int kCompositionStart = 3;
-  const ui::Range kCompositionRange(kCompositionStart,
+  const gfx::Range kCompositionRange(kCompositionStart,
                                     kCompositionStart + kCompositionLength);
   GenerateCompositionRectArray(kOrigin,
                                kBoundsUnit,
@@ -484,45 +471,45 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionSinglelineCase) {
 
   // Out of range requests will return caret position.
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(0, 0).ToNSRange(),
+      gfx::Range(0, 0).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(1, 1).ToNSRange(),
+      gfx::Range(1, 1).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(1, 2).ToNSRange(),
+      gfx::Range(1, 2).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(2, 2).ToNSRange(),
+      gfx::Range(2, 2).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(13, 14).ToNSRange(),
+      gfx::Range(13, 14).ToNSRange(),
       &rect,
       &actual_range));
   EXPECT_FALSE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
-      ui::Range(14, 15).ToNSRange(),
+      gfx::Range(14, 15).ToNSRange(),
       &rect,
       &actual_range));
 
   for (int i = 0; i <= kCompositionLength; ++i) {
     for (int j = 0; j <= kCompositionLength - i; ++j) {
-      const ui::Range range(i, i + j);
+      const gfx::Range range(i, i + j);
       const gfx::Rect expected_rect = GetExpectedRect(kOrigin,
                                                       kBoundsUnit,
                                                       range,
                                                       0);
-      const NSRange request_range = ui::Range(
+      const NSRange request_range = gfx::Range(
           kCompositionStart + range.start(),
           kCompositionStart + range.end()).ToNSRange();
       EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(
             request_range,
             &rect,
             &actual_range));
-      EXPECT_EQ(ui::Range(request_range), ui::Range(actual_range));
+      EXPECT_EQ(gfx::Range(request_range), gfx::Range(actual_range));
       EXPECT_EQ(expected_rect, gfx::Rect(NSRectToCGRect(rect)));
 
       // Make sure not crashing by passing NULL pointer instead of
@@ -542,7 +529,7 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionMultilineCase) {
 
   const int kCompositionLength = 30;
   std::vector<gfx::Rect> composition_bounds;
-  const ui::Range kCompositionRange(0, kCompositionLength);
+  const gfx::Range kCompositionRange(0, kCompositionLength);
   // Set breaking point at 10 and 20.
   std::vector<size_t> break_points;
   break_points.push_back(10);
@@ -555,113 +542,113 @@ TEST_F(RenderWidgetHostViewMacTest, UpdateCompositionMultilineCase) {
   rwhv_mac_->ImeCompositionRangeChanged(kCompositionRange, composition_bounds);
 
   // Range doesn't contain line breaking point.
-  ui::Range range;
-  range = ui::Range(5, 8);
+  gfx::Range range;
+  range = gfx::Range(5, 8);
   NSRange actual_range;
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(range, ui::Range(actual_range));
+  EXPECT_EQ(range, gfx::Range(actual_range));
   EXPECT_EQ(
       GetExpectedRect(kOrigin, kBoundsUnit, range, 0),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(15, 18);
+  range = gfx::Range(15, 18);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(range, ui::Range(actual_range));
+  EXPECT_EQ(range, gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(5, 8), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(5, 8), 1),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(25, 28);
+  range = gfx::Range(25, 28);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(range, ui::Range(actual_range));
+  EXPECT_EQ(range, gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(5, 8), 2),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(5, 8), 2),
       gfx::Rect(NSRectToCGRect(rect)));
 
   // Range contains line breaking point.
-  range = ui::Range(8, 12);
+  range = gfx::Range(8, 12);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(8, 10), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(8, 10), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(8, 10), 0),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(8, 10), 0),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(18, 22);
+  range = gfx::Range(18, 22);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(18, 20), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(18, 20), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(8, 10), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(8, 10), 1),
       gfx::Rect(NSRectToCGRect(rect)));
 
   // Start point is line breaking point.
-  range = ui::Range(10, 12);
+  range = gfx::Range(10, 12);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(10, 12), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(10, 12), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 2), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(0, 2), 1),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(20, 22);
+  range = gfx::Range(20, 22);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(20, 22), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(20, 22), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 2), 2),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(0, 2), 2),
       gfx::Rect(NSRectToCGRect(rect)));
 
   // End point is line breaking point.
-  range = ui::Range(5, 10);
+  range = gfx::Range(5, 10);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(5, 10), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(5, 10), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(5, 10), 0),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(5, 10), 0),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(15, 20);
+  range = gfx::Range(15, 20);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(15, 20), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(15, 20), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(5, 10), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(5, 10), 1),
       gfx::Rect(NSRectToCGRect(rect)));
 
   // Start and end point are same line breaking point.
-  range = ui::Range(10, 10);
+  range = gfx::Range(10, 10);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(10, 10), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(10, 10), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 0), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(0, 0), 1),
       gfx::Rect(NSRectToCGRect(rect)));
-  range = ui::Range(20, 20);
+  range = gfx::Range(20, 20);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(20, 20), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(20, 20), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 0), 2),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(0, 0), 2),
       gfx::Rect(NSRectToCGRect(rect)));
 
   // Start and end point are different line breaking point.
-  range = ui::Range(10, 20);
+  range = gfx::Range(10, 20);
   EXPECT_TRUE(rwhv_mac_->GetCachedFirstRectForCharacterRange(range.ToNSRange(),
                                                              &rect,
                                                              &actual_range));
-  EXPECT_EQ(ui::Range(10, 20), ui::Range(actual_range));
+  EXPECT_EQ(gfx::Range(10, 20), gfx::Range(actual_range));
   EXPECT_EQ(
-      GetExpectedRect(kOrigin, kBoundsUnit, ui::Range(0, 10), 1),
+      GetExpectedRect(kOrigin, kBoundsUnit, gfx::Range(0, 10), 1),
       gfx::Rect(NSRectToCGRect(rect)));
 }
 
@@ -676,11 +663,10 @@ TEST_F(RenderWidgetHostViewMacTest, BlurAndFocusOnSetActive) {
   // Owned by its |cocoa_view()|.
   MockRenderWidgetHostImpl* rwh = new MockRenderWidgetHostImpl(
       &delegate, process_host, MSG_ROUTING_NONE);
-  RenderWidgetHostViewMac* view = static_cast<RenderWidgetHostViewMac*>(
-      RenderWidgetHostView::CreateViewForWidget(rwh));
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(rwh);
 
-  scoped_nsobject<CocoaTestHelperWindow>
-      window([[CocoaTestHelperWindow alloc] init]);
+  base::scoped_nsobject<CocoaTestHelperWindow> window(
+      [[CocoaTestHelperWindow alloc] init]);
   [[window contentView] addSubview:view->cocoa_view()];
 
   EXPECT_CALL(*rwh, Focus());
@@ -707,6 +693,99 @@ TEST_F(RenderWidgetHostViewMacTest, BlurAndFocusOnSetActive) {
 
   // Clean up.
   rwh->Shutdown();
+}
+
+TEST_F(RenderWidgetHostViewMacTest, ScrollWheelEndEventDelivery) {
+  // This tests Lion+ functionality, so don't run the test pre-Lion.
+  if (!base::mac::IsOSLionOrLater())
+    return;
+
+  // Initialize the view associated with a MockRenderWidgetHostImpl, rather than
+  // the MockRenderProcessHost that is set up by the test harness which mocks
+  // out |OnMessageReceived()|.
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  MockRenderWidgetHostDelegate delegate;
+  MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host);
+
+  // Send an initial wheel event with NSEventPhaseBegan to the view.
+  NSEvent* event1 = MockScrollWheelEventWithPhase(@selector(phaseBegan), 0);
+  [view->cocoa_view() scrollWheel:event1];
+  ASSERT_EQ(1U, process_host->sink().message_count());
+
+  // Send an ACK for the first wheel event, so that the queue will be flushed.
+  scoped_ptr<IPC::Message> response(new InputHostMsg_HandleInputEvent_ACK(
+      0, blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_CONSUMED,
+      ui::LatencyInfo()));
+  host->OnMessageReceived(*response);
+
+  // Post the NSEventPhaseEnded wheel event to NSApp and check whether the
+  // render view receives it.
+  NSEvent* event2 = MockScrollWheelEventWithPhase(@selector(phaseEnded), 0);
+  [NSApp postEvent:event2 atStart:NO];
+  base::MessageLoop::current()->RunUntilIdle();
+  ASSERT_EQ(2U, process_host->sink().message_count());
+
+  // Clean up.
+  host->Shutdown();
+}
+
+TEST_F(RenderWidgetHostViewMacTest, IgnoreEmptyUnhandledWheelEvent) {
+  // This tests Lion+ functionality, so don't run the test pre-Lion.
+  if (!base::mac::IsOSLionOrLater())
+    return;
+
+  // Initialize the view associated with a MockRenderWidgetHostImpl, rather than
+  // the MockRenderProcessHost that is set up by the test harness which mocks
+  // out |OnMessageReceived()|.
+  TestBrowserContext browser_context;
+  MockRenderProcessHost* process_host =
+      new MockRenderProcessHost(&browser_context);
+  MockRenderWidgetHostDelegate delegate;
+  MockRenderWidgetHostImpl* host = new MockRenderWidgetHostImpl(
+      &delegate, process_host, MSG_ROUTING_NONE);
+  RenderWidgetHostViewMac* view = new RenderWidgetHostViewMac(host);
+
+  // Add a delegate to the view.
+  base::scoped_nsobject<MockRenderWidgetHostViewMacDelegate> view_delegate(
+      [[MockRenderWidgetHostViewMacDelegate alloc] init]);
+  view->SetDelegate(view_delegate.get());
+
+  // Send an initial wheel event for scrolling by 3 lines.
+  NSEvent* event1 = MockScrollWheelEventWithPhase(@selector(phaseBegan), 3);
+  [view->cocoa_view() scrollWheel:event1];
+  ASSERT_EQ(1U, process_host->sink().message_count());
+  process_host->sink().ClearMessages();
+
+  // Indicate that the wheel event was unhandled.
+  scoped_ptr<IPC::Message> response1(new InputHostMsg_HandleInputEvent_ACK(0,
+      blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_NOT_CONSUMED,
+      ui::LatencyInfo()));
+  host->OnMessageReceived(*response1);
+
+  // Check that the view delegate got an unhandled wheel event.
+  ASSERT_EQ(YES, view_delegate.get().unhandledWheelEventReceived);
+  view_delegate.get().unhandledWheelEventReceived = NO;
+
+  // Send another wheel event, this time for scrolling by 0 lines (empty event).
+  NSEvent* event2 = MockScrollWheelEventWithPhase(@selector(phaseChanged), 0);
+  [view->cocoa_view() scrollWheel:event2];
+  ASSERT_EQ(1U, process_host->sink().message_count());
+
+  // Indicate that the wheel event was also unhandled.
+  scoped_ptr<IPC::Message> response2(new InputHostMsg_HandleInputEvent_ACK(0,
+      blink::WebInputEvent::MouseWheel, INPUT_EVENT_ACK_STATE_NOT_CONSUMED,
+      ui::LatencyInfo()));
+  host->OnMessageReceived(*response2);
+
+  // Check that the view delegate ignored the empty unhandled wheel event.
+  ASSERT_EQ(NO, view_delegate.get().unhandledWheelEventReceived);
+
+  // Clean up.
+  host->Shutdown();
 }
 
 }  // namespace content

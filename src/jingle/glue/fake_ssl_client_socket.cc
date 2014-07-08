@@ -77,8 +77,8 @@ base::StringPiece FakeSSLClientSocket::GetSslServerHello() {
 }
 
 FakeSSLClientSocket::FakeSSLClientSocket(
-    net::StreamSocket* transport_socket)
-    : transport_socket_(transport_socket),
+    scoped_ptr<net::StreamSocket> transport_socket)
+    : transport_socket_(transport_socket.Pass()),
       next_handshake_state_(STATE_NONE),
       handshake_completed_(false),
       write_buf_(NewDrainableIOBufferWithSize(arraysize(kSslClientHello))),
@@ -103,11 +103,11 @@ int FakeSSLClientSocket::Write(net::IOBuffer* buf, int buf_len,
   return transport_socket_->Write(buf, buf_len, callback);
 }
 
-bool FakeSSLClientSocket::SetReceiveBufferSize(int32 size) {
+int FakeSSLClientSocket::SetReceiveBufferSize(int32 size) {
   return transport_socket_->SetReceiveBufferSize(size);
 }
 
-bool FakeSSLClientSocket::SetSendBufferSize(int32 size) {
+int FakeSSLClientSocket::SetSendBufferSize(int32 size) {
   return transport_socket_->SetSendBufferSize(size);
 }
 
@@ -200,7 +200,8 @@ void FakeSSLClientSocket::ProcessConnectDone() {
 
 int FakeSSLClientSocket::DoSendClientHello() {
   int status = transport_socket_->Write(
-      write_buf_, write_buf_->BytesRemaining(),
+      write_buf_.get(),
+      write_buf_->BytesRemaining(),
       base::Bind(&FakeSSLClientSocket::OnSendClientHelloDone,
                  base::Unretained(this)));
   if (status < net::OK) {
@@ -234,7 +235,8 @@ void FakeSSLClientSocket::ProcessSendClientHelloDone(size_t written) {
 
 int FakeSSLClientSocket::DoVerifyServerHello() {
   int status = transport_socket_->Read(
-      read_buf_, read_buf_->BytesRemaining(),
+      read_buf_.get(),
+      read_buf_->BytesRemaining(),
       base::Bind(&FakeSSLClientSocket::OnVerifyServerHelloDone,
                  base::Unretained(this)));
   if (status < net::OK) {
@@ -328,14 +330,6 @@ bool FakeSSLClientSocket::WasEverUsed() const {
 
 bool FakeSSLClientSocket::UsingTCPFastOpen() const {
   return transport_socket_->UsingTCPFastOpen();
-}
-
-int64 FakeSSLClientSocket::NumBytesRead() const {
-  return transport_socket_->NumBytesRead();
-}
-
-base::TimeDelta FakeSSLClientSocket::GetConnectTimeMicros() const {
-  return transport_socket_->GetConnectTimeMicros();
 }
 
 bool FakeSSLClientSocket::WasNpnNegotiated() const {

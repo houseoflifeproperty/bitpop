@@ -10,15 +10,16 @@
 #include <string>
 #include <vector>
 
-#include "base/command_line.h"
+#include "base/metrics/histogram.h"
 #include "build/build_config.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_status_code.h"
 #include "sync/engine/net/url_translator.h"
 #include "sync/engine/syncer.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/syncable/directory.h"
+#include "url/gurl.h"
 
 namespace syncer {
 
@@ -27,11 +28,6 @@ using std::string;
 using std::vector;
 
 static const char kSyncServerSyncPath[] = "/command/";
-
-// At the /time/ path of the sync server, we expect to find a very simple
-// time of day service that we can use to synchronize the local clock with
-// server time.
-static const char kSyncServerGetTimePath[] = "/time";
 
 HttpResponse::HttpResponse()
     : response_code(kUnsetResponseCode),
@@ -123,7 +119,7 @@ ServerConnectionManager::ScopedConnectionHelper::ScopedConnectionHelper(
     : manager_(manager), connection_(connection) {}
 
 ServerConnectionManager::ScopedConnectionHelper::~ScopedConnectionHelper() {
-  if (connection_.get())
+  if (connection_)
     manager_->OnConnectionDestroyed(connection_.get());
   connection_.reset();
 }
@@ -175,28 +171,36 @@ ScopedServerStatusWatcher::ScopedServerStatusWatcher(
 }
 
 ScopedServerStatusWatcher::~ScopedServerStatusWatcher() {
-  if (conn_mgr_->server_status_ != response_->server_status) {
-    conn_mgr_->server_status_ = response_->server_status;
-    conn_mgr_->NotifyStatusChanged();
-    return;
-  }
+  conn_mgr_->SetServerStatus(response_->server_status);
 }
 
 ServerConnectionManager::ServerConnectionManager(
     const string& server,
     int port,
-    bool use_ssl)
+    bool use_ssl,
+    CancelationSignal* cancelation_signal)
     : sync_server_(server),
       sync_server_port_(port),
       use_ssl_(use_ssl),
       proto_sync_path_(kSyncServerSyncPath),
-      get_time_path_(kSyncServerGetTimePath),
       server_status_(HttpResponse::NONE),
       terminated_(false),
-      active_connection_(NULL) {
+      active_connection_(NULL),
+      cancelation_signal_(cancelation_signal),
+      signal_handler_registered_(false) {
+  signal_handler_registered_ = cancelation_signal_->TryRegisterHandler(this);
+  if (!signal_handler_registered_) {
+    // Calling a virtual function from a constructor.  We can get away with it
+    // here because ServerConnectionManager::OnSignalReceived() is the function
+    // we want to call.
+    OnSignalReceived();
+  }
 }
 
 ServerConnectionManager::~ServerConnectionManager() {
+  if (signal_handler_registered_) {
+    cancelation_signal_->UnregisterHandler(this);
+  }
 }
 
 ServerConnectionManager::Connection*
@@ -222,6 +226,45 @@ void ServerConnectionManager::OnConnectionDestroyed(Connection* connection) {
   active_connection_ = NULL;
 }
 
+bool ServerConnectionManager::SetAuthToken(const std::string& auth_token) {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  if (previously_invalidated_token != auth_token) {
+    auth_token_.assign(auth_token);
+    previously_invalidated_token = std::string();
+    return true;
+  }
+
+  // This could happen in case like server outage/bug. E.g. token returned by
+  // first request is considered invalid by sync server and because
+  // of token server's caching policy, etc, same token is returned on second
+  // request. Need to notify sync frontend again to request new token,
+  // otherwise backend will stay in SYNC_AUTH_ERROR state while frontend thinks
+  // everything is fine and takes no actions.
+  SetServerStatus(HttpResponse::SYNC_AUTH_ERROR);
+  return false;
+}
+
+void ServerConnectionManager::InvalidateAndClearAuthToken() {
+  DCHECK(thread_checker_.CalledOnValidThread());
+  // Copy over the token to previous invalid token.
+  if (!auth_token_.empty()) {
+    previously_invalidated_token.assign(auth_token_);
+    auth_token_ = std::string();
+  }
+}
+
+void ServerConnectionManager::SetServerStatus(
+    HttpResponse::ServerConnectionCode server_status) {
+  // SYNC_AUTH_ERROR is permanent error. Need to notify observer to take
+  // action externally to resolve.
+  if (server_status != HttpResponse::SYNC_AUTH_ERROR &&
+      server_status_ == server_status) {
+    return;
+  }
+  server_status_ = server_status;
+  NotifyStatusChanged();
+}
+
 void ServerConnectionManager::NotifyStatusChanged() {
   DCHECK(thread_checker_.CalledOnValidThread());
   FOR_EACH_OBSERVER(ServerConnectionEventListener, listeners_,
@@ -243,8 +286,14 @@ bool ServerConnectionManager::PostBufferToPath(PostBufferParams* params,
   DCHECK(thread_checker_.CalledOnValidThread());
   DCHECK(watcher != NULL);
 
-  if (auth_token.empty()) {
+  // TODO(pavely): crbug.com/273096. Check for "credentials_lost" is added as
+  // workaround for M29 blocker to avoid sending RPC to sync with known invalid
+  // token but instead to trigger refreshing token in ProfileSyncService. Need
+  // to clean it.
+  if (auth_token.empty() || auth_token == "credentials_lost") {
     params->response.server_status = HttpResponse::SYNC_AUTH_ERROR;
+    // Print a log to distinguish this "known failure" from others.
+    LOG(WARNING) << "ServerConnectionManager forcing SYNC_AUTH_ERROR";
     return false;
   }
 
@@ -261,8 +310,9 @@ bool ServerConnectionManager::PostBufferToPath(PostBufferParams* params,
   bool ok = post.get()->Init(
       path.c_str(), auth_token, params->buffer_in, &params->response);
 
-  if (params->response.server_status == HttpResponse::SYNC_AUTH_ERROR)
+  if (params->response.server_status == HttpResponse::SYNC_AUTH_ERROR) {
     InvalidateAndClearAuthToken();
+  }
 
   if (!ok || net::HTTP_OK != params->response.response_code)
     return false;
@@ -319,7 +369,7 @@ ServerConnectionManager::Connection* ServerConnectionManager::MakeConnection()
   return NULL;  // For testing.
 }
 
-void ServerConnectionManager::TerminateAllIO() {
+void ServerConnectionManager::OnSignalReceived() {
   base::AutoLock lock(terminate_connection_lock_);
   terminated_ = true;
   if (active_connection_)
@@ -328,16 +378,6 @@ void ServerConnectionManager::TerminateAllIO() {
   // Sever our ties to this connection object. Note that it still may exist,
   // since we don't own it, but it has been neutered.
   active_connection_ = NULL;
-}
-
-bool FillMessageWithShareDetails(sync_pb::ClientToServerMessage* csm,
-                                 syncable::Directory* directory,
-                                 const std::string& share) {
-  string birthday = directory->store_birthday();
-  if (!birthday.empty())
-    csm->set_store_birthday(birthday);
-  csm->set_share(share);
-  return true;
 }
 
 std::ostream& operator << (std::ostream& s, const struct HttpResponse& hr) {

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 
@@ -34,25 +34,26 @@ class CONTENT_EXPORT DownloadFile {
   // was done to.  On a failed rename, |reason| will contain the
   // error.
   typedef base::Callback<void(DownloadInterruptReason reason,
-                              const FilePath& path)> RenameCompletionCallback;
+                              const base::FilePath& path)>
+      RenameCompletionCallback;
 
   virtual ~DownloadFile() {}
 
-  // Returns DOWNLOAD_INTERRUPT_REASON_NONE on success, or a network
-  // error code on failure.  Upon completion, |callback| will be
-  // called on the UI thread as per the comment above.
+  // Upon completion, |callback| will be called on the UI
+  // thread as per the comment above, passing DOWNLOAD_INTERRUPT_REASON_NONE
+  // on success, or a network download interrupt reason on failure.
   virtual void Initialize(const InitializeCallback& callback) = 0;
 
   // Rename the download file to |full_path|.  If that file exists
   // |full_path| will be uniquified by suffixing " (<number>)" to the
   // file name before the extension.
-  virtual void RenameAndUniquify(const FilePath& full_path,
+  virtual void RenameAndUniquify(const base::FilePath& full_path,
                                  const RenameCompletionCallback& callback) = 0;
 
   // Rename the download file to |full_path| and annotate it with
   // "Mark of the Web" information about its source.  No uniquification
   // will be performed.
-  virtual void RenameAndAnnotate(const FilePath& full_path,
+  virtual void RenameAndAnnotate(const base::FilePath& full_path,
                                  const RenameCompletionCallback& callback) = 0;
 
   // Detach the file so it is not deleted on destruction.
@@ -61,9 +62,8 @@ class CONTENT_EXPORT DownloadFile {
   // Abort the download and automatically close the file.
   virtual void Cancel() = 0;
 
-  virtual FilePath FullPath() const = 0;
+  virtual base::FilePath FullPath() const = 0;
   virtual bool InProgress() const = 0;
-  virtual int64 BytesSoFar() const = 0;
   virtual int64 CurrentSpeed() const = 0;
 
   // Set |hash| with sha256 digest for the file.
@@ -72,6 +72,11 @@ class CONTENT_EXPORT DownloadFile {
 
   // Returns the current (intermediate) state of the hash as a byte string.
   virtual std::string GetHashState() = 0;
+
+  // Set the application GUID to be used to identify the app to the
+  // system AV function when scanning downloaded files. Should be called
+  // before RenameAndAnnotate() to take effect.
+  virtual void SetClientGuid(const std::string& guid) = 0;
 
   // For testing.  Must be called on FILE thread.
   // TODO(rdsmith): Replace use of EnsureNoPendingDownloads()

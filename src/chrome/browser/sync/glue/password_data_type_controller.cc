@@ -6,14 +6,11 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_components_factory.h"
+#include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/webdata/web_data_service.h"
+#include "components/password_manager/core/browser/password_store.h"
 #include "content/public/browser/browser_thread.h"
-#include "sync/api/sync_error.h"
 
 using content::BrowserThread;
 
@@ -23,9 +20,12 @@ PasswordDataTypeController::PasswordDataTypeController(
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : NonFrontendDataTypeController(profile_sync_factory,
-                                    profile,
-                                    sync_service) {
+    : NonUIDataTypeController(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+          base::Bind(&ChromeReportUnrecoverableError),
+          profile_sync_factory,
+          profile,
+          sync_service) {
 }
 
 syncer::ModelType PasswordDataTypeController::type() const {
@@ -43,28 +43,17 @@ bool PasswordDataTypeController::PostTaskOnBackendThread(
       const tracked_objects::Location& from_here,
       const base::Closure& task) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(password_store_.get());
+  if (!password_store_)
+    return false;
   return password_store_->ScheduleTask(task);
 }
 
 bool PasswordDataTypeController::StartModels() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(state(), MODEL_STARTING);
+  DCHECK_EQ(MODEL_STARTING, state());
   password_store_ = PasswordStoreFactory::GetForProfile(
       profile(), Profile::EXPLICIT_ACCESS);
-  return password_store_.get() != NULL;
-}
-
-void PasswordDataTypeController::CreateSyncComponents() {
-  DCHECK(!BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK_EQ(state(), ASSOCIATING);
-  ProfileSyncComponentsFactory::SyncComponents sync_components =
-      profile_sync_factory()->CreatePasswordSyncComponents(
-          profile_sync_service(),
-          password_store_.get(),
-          this);
-  set_model_associator(sync_components.model_associator);
-  set_change_processor(sync_components.change_processor);
+  return !!password_store_;
 }
 
 }  // namespace browser_sync

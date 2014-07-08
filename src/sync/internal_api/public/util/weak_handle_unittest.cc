@@ -8,7 +8,7 @@
 #include "base/compiler_specific.h"
 #include "base/location.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -21,7 +21,7 @@ using ::testing::StrictMock;
 
 class Base {
  public:
-  Base() : weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {}
+  Base() : weak_ptr_factory_(this) {}
 
   WeakHandle<Base> AsWeakHandle() {
     return MakeWeakHandle(weak_ptr_factory_.GetWeakPtr());
@@ -70,7 +70,7 @@ class WeakHandleTest : public ::testing::Test {
     h.Call(from_here, &Base::Test);
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 };
 
 TEST_F(WeakHandleTest, Uninitialized) {

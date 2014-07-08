@@ -7,16 +7,12 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/mesa/include/osmesa.h"
+#include "third_party/mesa/src/include/GL/osmesa.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_cgl.h"
 #include "ui/gl/gl_surface_osmesa.h"
 #include "ui/gl/gl_surface_stub.h"
-
-#if defined(USE_AURA)
-#include "ui/gl/gl_surface_nsview.h"
-#endif
 
 namespace gfx {
 
@@ -36,21 +32,13 @@ bool GLSurface::InitializeOneOffInternal() {
 }
 
 scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
-    bool software,
     gfx::AcceleratedWidget window) {
   TRACE_EVENT0("gpu", "GLSurface::CreateViewGLSurface");
-#if defined(USE_AURA)
-  if (software)
-    return NULL;
-
   switch (GetGLImplementation()) {
     case kGLImplementationDesktopGL:
     case kGLImplementationAppleGL: {
-      scoped_refptr<GLSurface> surface(new GLSurfaceNSView(window));
-      if (!surface->Initialize())
-        return NULL;
-
-      return surface;
+      NOTIMPLEMENTED() << "No onscreen support on Mac.";
+      return NULL;
     }
     case kGLImplementationMockGL:
       return new GLSurfaceStub;
@@ -58,18 +46,11 @@ scoped_refptr<GLSurface> GLSurface::CreateViewGLSurface(
       NOTREACHED();
       return NULL;
   }
-#else
-  return CreateOffscreenGLSurface(software, gfx::Size(1,1));
-#endif
 }
 
 scoped_refptr<GLSurface> GLSurface::CreateOffscreenGLSurface(
-    bool software,
     const gfx::Size& size) {
   TRACE_EVENT0("gpu", "GLSurface::CreateOffscreenGLSurface");
-  if (software)
-    return NULL;
-
   switch (GetGLImplementation()) {
     case kGLImplementationOSMesaGL: {
       scoped_refptr<GLSurface> surface(new GLSurfaceOSMesa(OSMESA_RGBA,

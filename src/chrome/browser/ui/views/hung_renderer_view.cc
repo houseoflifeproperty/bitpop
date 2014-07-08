@@ -4,21 +4,20 @@
 
 #include "chrome/browser/ui/views/hung_renderer_view.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-#include <windows.h>
-#endif
-
 #include "base/i18n/rtl.h"
 #include "base/memory/scoped_vector.h"
-#include "base/process_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/favicon/favicon_tab_helper.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/ui/browser_finder.h"
+#include "chrome/browser/ui/chrome_web_modal_dialog_manager_delegate.h"
 #include "chrome/browser/ui/tab_contents/core_tab_helper.h"
 #include "chrome/browser/ui/tab_contents/tab_contents_iterator.h"
+#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/logging_chrome.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
@@ -26,9 +25,11 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#include "ui/aura/window.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
@@ -36,26 +37,19 @@
 #include "ui/views/widget/widget.h"
 #include "ui/views/window/client_view.h"
 
-#if defined(USE_AURA)
-#include "ui/aura/window.h"
+#if defined(OS_WIN)
+#include "chrome/browser/hang_monitor/hang_crash_dump_win.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/shell_integration.h"
+#include "ui/base/win/shell.h"
+#include "ui/views/win/hwnd_util.h"
+#endif
+
+#if defined(OS_WIN)
+#include "ui/base/win/shell.h"
 #endif
 
 using content::WebContents;
-
-// These functions allow certain chrome platforms to override the default hung
-// renderer dialog. For e.g. Chrome on Windows 8 metro
-bool PlatformShowCustomHungRendererDialog(WebContents* contents);
-bool PlatformHideCustomHungRendererDialog(WebContents* contents);
-
-#if !defined(OS_WIN)
-bool PlatformShowCustomHungRendererDialog(WebContents* contents) {
-  return false;
-}
-
-bool PlatformHideCustomHungRendererDialog(WebContents* contents) {
-  return false;
-}
-#endif  // OS_WIN
 
 HungRendererDialogView* HungRendererDialogView::g_instance_ = NULL;
 
@@ -88,7 +82,7 @@ void HungPagesTableModel::InitForWebContents(WebContents* hung_contents) {
       tab_observers_.push_back(new WebContentsObserverImpl(this,
                                                            hung_contents));
     }
-    for (TabContentsIterator it; !it.done(); ++it) {
+    for (TabContentsIterator it; !it.done(); it.Next()) {
       if (*it != hung_contents &&
           it->GetRenderProcessHost() == hung_contents->GetRenderProcessHost())
         tab_observers_.push_back(new WebContentsObserverImpl(this, *it));
@@ -100,15 +94,15 @@ void HungPagesTableModel::InitForWebContents(WebContents* hung_contents) {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// HungPagesTableModel, views::GroupTableModel implementation:
+// HungPagesTableModel, ui::TableModel implementation:
 
 int HungPagesTableModel::RowCount() {
   return static_cast<int>(tab_observers_.size());
 }
 
-string16 HungPagesTableModel::GetText(int row, int column_id) {
+base::string16 HungPagesTableModel::GetText(int row, int column_id) {
   DCHECK(row >= 0 && row < RowCount());
-  string16 title = tab_observers_[row]->web_contents()->GetTitle();
+  base::string16 title = tab_observers_[row]->web_contents()->GetTitle();
   if (title.empty())
     title = CoreTabHelper::GetDefaultTitle();
   // TODO(xji): Consider adding a special case if the title text is a URL,
@@ -128,8 +122,8 @@ void HungPagesTableModel::SetObserver(ui::TableModelObserver* observer) {
   observer_ = observer;
 }
 
-void HungPagesTableModel::GetGroupRangeForItem(int item,
-                                               views::GroupRange* range) {
+void HungPagesTableModel::GetGroupRange(int model_index,
+                                        views::GroupRange* range) {
   DCHECK(range);
   range->start = 0;
   range->length = RowCount();
@@ -156,13 +150,12 @@ HungPagesTableModel::WebContentsObserverImpl::WebContentsObserverImpl(
       model_(model) {
 }
 
-void HungPagesTableModel::WebContentsObserverImpl::RenderViewGone(
+void HungPagesTableModel::WebContentsObserverImpl::RenderProcessGone(
     base::TerminationStatus status) {
   model_->TabDestroyed(this);
 }
 
-void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed(
-    WebContents* tab) {
+void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed() {
   model_->TabDestroyed(this);
 }
 
@@ -171,10 +164,6 @@ void HungPagesTableModel::WebContentsObserverImpl::WebContentsDestroyed(
 
 // static
 gfx::ImageSkia* HungRendererDialogView::frozen_icon_ = NULL;
-
-// The distance in pixels from the top of the relevant contents to place the
-// warning window.
-static const int kOverlayContentsOffsetY = 50;
 
 // The dimensions of the hung pages list table view, in pixels.
 static const int kTableViewWidth = 300;
@@ -189,10 +178,11 @@ static const int kCentralColumnPadding =
 // HungRendererDialogView, public:
 
 // static
-HungRendererDialogView* HungRendererDialogView::Create() {
+HungRendererDialogView* HungRendererDialogView::Create(
+    gfx::NativeView context) {
   if (!g_instance_) {
     g_instance_ = new HungRendererDialogView;
-    views::Widget::CreateWindow(g_instance_);
+    views::DialogDelegate::CreateDialogWidget(g_instance_, context, NULL);
   }
   return g_instance_;
 }
@@ -209,19 +199,21 @@ bool HungRendererDialogView::IsFrameActive(WebContents* contents) {
   return platform_util::IsWindowActive(frame_view);
 }
 
-#if !defined(OS_WIN)
 // static
 void HungRendererDialogView::KillRendererProcess(
     base::ProcessHandle process_handle) {
+#if defined(OS_WIN)
+  // Try to generate a crash report for the hung process.
+  CrashDumpAndTerminateHungChildProcess(process_handle);
+#else
   base::KillProcess(process_handle, content::RESULT_CODE_HUNG, false);
+#endif
 }
-#endif  // OS_WIN
 
 
 HungRendererDialogView::HungRendererDialogView()
     : hung_pages_table_(NULL),
       kill_button_(NULL),
-      kill_button_container_(NULL),
       initialized_(false) {
   InitClass();
 }
@@ -241,16 +233,29 @@ void HungRendererDialogView::ShowForWebContents(WebContents* contents) {
     return;
 
   if (!GetWidget()->IsActive()) {
-    gfx::Rect bounds = GetDisplayBounds(contents);
+    // Place the dialog over content's browser window, similar to modal dialogs.
+    Browser* browser = chrome::FindBrowserWithWebContents(contents);
+    if (browser) {
+      ChromeWebModalDialogManagerDelegate* manager = browser;
+      UpdateBrowserModalDialogPosition(
+          GetWidget(), manager->GetWebContentsModalDialogHost());
+    }
 
     gfx::NativeView frame_view =
         platform_util::GetTopLevel(contents->GetNativeView());
-
     views::Widget* insert_after =
         views::Widget::GetWidgetForNativeView(frame_view);
-    GetWidget()->SetBoundsConstrained(bounds);
     if (insert_after)
       GetWidget()->StackAboveWidget(insert_after);
+
+#if defined(OS_WIN)
+    // Group the hung renderer dialog with the browsers with the same profile.
+    Profile* profile =
+        Profile::FromBrowserContext(contents->GetBrowserContext());
+    ui::win::SetAppIdForWindow(
+        ShellIntegration::GetChromiumModelIdForProfile(profile->GetPath()),
+        views::HWNDForWidget(GetWidget()));
+#endif
 
     // We only do this if the window isn't active (i.e. hasn't been shown yet,
     // or is currently shown but deactivated for another WebContents). This is
@@ -278,7 +283,7 @@ void HungRendererDialogView::EndForWebContents(WebContents* contents) {
 ///////////////////////////////////////////////////////////////////////////////
 // HungRendererDialogView, views::DialogDelegate implementation:
 
-string16 HungRendererDialogView::GetWindowTitle() const {
+base::string16 HungRendererDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_TITLE);
 }
 
@@ -297,15 +302,19 @@ int HungRendererDialogView::GetDialogButtons() const {
   return ui::DIALOG_BUTTON_OK;
 }
 
-string16 HungRendererDialogView::GetDialogButtonLabel(
+base::string16 HungRendererDialogView::GetDialogButtonLabel(
     ui::DialogButton button) const {
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_WAIT);
-  return string16();
+  return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
-views::View* HungRendererDialogView::GetExtraView() {
-  return kill_button_container_;
+views::View* HungRendererDialogView::CreateExtraView() {
+  DCHECK(!kill_button_);
+  kill_button_ = new views::LabelButton(this,
+      l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_END));
+  kill_button_->SetStyle(views::Button::STYLE_BUTTON);
+  return kill_button_;
 }
 
 bool HungRendererDialogView::Accept(bool window_closing) {
@@ -320,8 +329,15 @@ bool HungRendererDialogView::Accept(bool window_closing) {
   return true;
 }
 
-views::View* HungRendererDialogView::GetContentsView() {
-  return this;
+
+bool HungRendererDialogView::UseNewStyleForThisDialog() const {
+#if defined(OS_WIN)
+  // Use the old dialog style without Aero glass, otherwise the dialog will be
+  // visually constrained to browser window bounds. See http://crbug.com/323278
+  return ui::win::IsAeroGlassEnabled();
+#else
+  return views::DialogDelegateView::UseNewStyleForThisDialog();
+#endif
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -349,10 +365,9 @@ void HungRendererDialogView::TabDestroyed() {
 ///////////////////////////////////////////////////////////////////////////////
 // HungRendererDialogView, views::View overrides:
 
-void HungRendererDialogView::ViewHierarchyChanged(bool is_add,
-                                                  views::View* parent,
-                                                  views::View* child) {
-  if (!initialized_ && is_add && child == this && GetWidget())
+void HungRendererDialogView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (!initialized_ && details.is_add && details.child == this && GetWidget())
     Init();
 }
 
@@ -371,11 +386,9 @@ void HungRendererDialogView::Init() {
   hung_pages_table_model_.reset(new HungPagesTableModel(this));
   std::vector<ui::TableColumn> columns;
   columns.push_back(ui::TableColumn());
-  hung_pages_table_ = new views::GroupTableView(
-      hung_pages_table_model_.get(), columns, views::ICON_AND_TEXT, true,
-      false, true, false);
-
-  CreateKillButtonView();
+  hung_pages_table_ = new views::TableView(
+      hung_pages_table_model_.get(), columns, views::ICON_AND_TEXT, true);
+  hung_pages_table_->SetGrouper(hung_pages_table_model_.get());
 
   using views::GridLayout;
   using views::ColumnSet;
@@ -409,48 +422,6 @@ void HungRendererDialogView::Init() {
   initialized_ = true;
 }
 
-void HungRendererDialogView::CreateKillButtonView() {
-  kill_button_ = new views::NativeTextButton(this,
-      l10n_util::GetStringUTF16(IDS_BROWSER_HANGMONITOR_RENDERER_END));
-
-  kill_button_container_ = new View;
-
-  using views::GridLayout;
-  using views::ColumnSet;
-
-  GridLayout* layout = new GridLayout(kill_button_container_);
-  kill_button_container_->SetLayoutManager(layout);
-
-  const int single_column_set_id = 0;
-  ColumnSet* column_set = layout->AddColumnSet(single_column_set_id);
-  column_set->AddPaddingColumn(0, frozen_icon_->width() +
-      kCentralColumnPadding);
-  column_set->AddColumn(GridLayout::LEADING, GridLayout::LEADING, 0,
-                        GridLayout::USE_PREF, 0, 0);
-
-  layout->StartRow(0, single_column_set_id);
-  layout->AddView(kill_button_);
-}
-
-gfx::Rect HungRendererDialogView::GetDisplayBounds(
-    WebContents* contents) {
-#if defined(USE_AURA)
-  gfx::Rect contents_bounds(contents->GetNativeView()->GetBoundsInRootWindow());
-#elif defined(OS_WIN)
-  HWND contents_hwnd = contents->GetNativeView();
-  RECT contents_bounds_rect;
-  GetWindowRect(contents_hwnd, &contents_bounds_rect);
-  gfx::Rect contents_bounds(contents_bounds_rect);
-#endif
-  gfx::Rect window_bounds = GetWidget()->GetWindowBoundsInScreen();
-
-  int window_x = contents_bounds.x() +
-      (contents_bounds.width() - window_bounds.width()) / 2;
-  int window_y = contents_bounds.y() + kOverlayContentsOffsetY;
-  return gfx::Rect(window_x, window_y, window_bounds.width(),
-                   window_bounds.height());
-}
-
 // static
 void HungRendererDialogView::InitClass() {
   static bool initialized = false;
@@ -464,17 +435,22 @@ void HungRendererDialogView::InitClass() {
 namespace chrome {
 
 void ShowHungRendererDialog(WebContents* contents) {
-  if (!logging::DialogsAreSuppressed() &&
-      !PlatformShowCustomHungRendererDialog(contents)) {
-    HungRendererDialogView* view = HungRendererDialogView::Create();
-    view->ShowForWebContents(contents);
-  }
+  if (logging::DialogsAreSuppressed())
+    return;
+
+  gfx::NativeView toplevel_view =
+      platform_util::GetTopLevel(contents->GetNativeView());
+  // Don't show the dialog if there is no root window for the renderer, because
+  // it's invisible to the user (happens when the renderer is for prerendering
+  // for example).
+  if (!toplevel_view->GetRootWindow())
+    return;
+  HungRendererDialogView* view = HungRendererDialogView::Create(toplevel_view);
+  view->ShowForWebContents(contents);
 }
 
 void HideHungRendererDialog(WebContents* contents) {
-  if (!logging::DialogsAreSuppressed() &&
-      !PlatformHideCustomHungRendererDialog(contents) &&
-      HungRendererDialogView::GetInstance())
+  if (!logging::DialogsAreSuppressed() && HungRendererDialogView::GetInstance())
     HungRendererDialogView::GetInstance()->EndForWebContents(contents);
 }
 

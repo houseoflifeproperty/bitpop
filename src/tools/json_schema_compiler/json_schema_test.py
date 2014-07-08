@@ -4,7 +4,6 @@
 # found in the LICENSE file.
 
 import json_schema
-import json_schema_test
 import unittest
 
 class JsonSchemaUnittest(unittest.TestCase):
@@ -12,12 +11,14 @@ class JsonSchemaUnittest(unittest.TestCase):
     compiled = [
       {
         "namespace": "compile",
+        "description": "The compile API.",
         "functions": [],
         "types":     {}
       },
 
       {
         "namespace": "functions",
+        "description": "The functions API.",
         "functions": [
           {
             "id": "two"
@@ -34,6 +35,7 @@ class JsonSchemaUnittest(unittest.TestCase):
 
       {
         "namespace": "types",
+        "description": "The types API.",
         "functions": [
           { "id": "one" }
         ],
@@ -49,6 +51,7 @@ class JsonSchemaUnittest(unittest.TestCase):
 
       {
         "namespace": "nested",
+        "description": "The nested API.",
         "properties": {
           "sync": {
             "functions": [
@@ -73,7 +76,8 @@ class JsonSchemaUnittest(unittest.TestCase):
     ]
 
     schema = json_schema.CachedLoad('test/json_schema_test.json')
-    self.assertEquals(compiled, json_schema.DeleteNocompileNodes(schema))
+    self.assertEquals(compiled, json_schema.DeleteNodes(schema, 'nocompile'))
+
 
 if __name__ == '__main__':
   unittest.main()

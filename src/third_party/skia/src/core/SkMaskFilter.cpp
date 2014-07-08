@@ -12,12 +12,21 @@
 #include "SkBounder.h"
 #include "SkDraw.h"
 #include "SkRasterClip.h"
+#include "SkRRect.h"
+#include "SkTypes.h"
 
-
-SK_DEFINE_INST_COUNT(SkMaskFilter)
+#if SK_SUPPORT_GPU
+#include "GrTexture.h"
+#include "SkGr.h"
+#include "SkGrPixelRef.h"
+#endif
 
 bool SkMaskFilter::filterMask(SkMask*, const SkMask&, const SkMatrix&,
-                              SkIPoint*) {
+                              SkIPoint*) const {
+    return false;
+}
+
+bool SkMaskFilter::asABlur(BlurRec*) const {
     return false;
 }
 
@@ -69,34 +78,42 @@ static void draw_nine_clipped(const SkMask& mask, const SkIRect& outerR,
     m.fBounds = mask.fBounds;
     m.fBounds.fRight = cx;
     m.fBounds.fBottom = cy;
-    extractMaskSubset(mask, &m);
-    m.fBounds.offsetTo(outerR.left(), outerR.top());
-    blitClippedMask(blitter, m, m.fBounds, clipR);
+    if (m.fBounds.width() > 0 && m.fBounds.height() > 0) {
+        extractMaskSubset(mask, &m);
+        m.fBounds.offsetTo(outerR.left(), outerR.top());
+        blitClippedMask(blitter, m, m.fBounds, clipR);
+    }
 
     // top-right
     m.fBounds = mask.fBounds;
     m.fBounds.fLeft = cx + 1;
     m.fBounds.fBottom = cy;
-    extractMaskSubset(mask, &m);
-    m.fBounds.offsetTo(outerR.right() - m.fBounds.width(), outerR.top());
-    blitClippedMask(blitter, m, m.fBounds, clipR);
+    if (m.fBounds.width() > 0 && m.fBounds.height() > 0) {
+        extractMaskSubset(mask, &m);
+        m.fBounds.offsetTo(outerR.right() - m.fBounds.width(), outerR.top());
+        blitClippedMask(blitter, m, m.fBounds, clipR);
+    }
 
     // bottom-left
     m.fBounds = mask.fBounds;
     m.fBounds.fRight = cx;
     m.fBounds.fTop = cy + 1;
-    extractMaskSubset(mask, &m);
-    m.fBounds.offsetTo(outerR.left(), outerR.bottom() - m.fBounds.height());
-    blitClippedMask(blitter, m, m.fBounds, clipR);
+    if (m.fBounds.width() > 0 && m.fBounds.height() > 0) {
+        extractMaskSubset(mask, &m);
+        m.fBounds.offsetTo(outerR.left(), outerR.bottom() - m.fBounds.height());
+        blitClippedMask(blitter, m, m.fBounds, clipR);
+    }
 
     // bottom-right
     m.fBounds = mask.fBounds;
     m.fBounds.fLeft = cx + 1;
     m.fBounds.fTop = cy + 1;
-    extractMaskSubset(mask, &m);
-    m.fBounds.offsetTo(outerR.right() - m.fBounds.width(),
-                       outerR.bottom() - m.fBounds.height());
-    blitClippedMask(blitter, m, m.fBounds, clipR);
+    if (m.fBounds.width() > 0 && m.fBounds.height() > 0) {
+        extractMaskSubset(mask, &m);
+        m.fBounds.offsetTo(outerR.right() - m.fBounds.width(),
+                           outerR.bottom() - m.fBounds.height());
+        blitClippedMask(blitter, m, m.fBounds, clipR);
+    }
 
     SkIRect innerR;
     innerR.set(outerR.left() + cx - mask.fBounds.left(),
@@ -190,9 +207,29 @@ static int countNestedRects(const SkPath& path, SkRect rects[2]) {
     return path.isRect(&rects[0]);
 }
 
+bool SkMaskFilter::filterRRect(const SkRRect& devRRect, const SkMatrix& matrix,
+                               const SkRasterClip& clip, SkBounder* bounder,
+                               SkBlitter* blitter, SkPaint::Style style) const {
+    // Attempt to speed up drawing by creating a nine patch. If a nine patch
+    // cannot be used, return false to allow our caller to recover and perform
+    // the drawing another way.
+    NinePatch patch;
+    patch.fMask.fImage = NULL;
+    if (kTrue_FilterReturn != this->filterRRectToNine(devRRect, matrix,
+                                                      clip.getBounds(),
+                                                      &patch)) {
+        SkASSERT(NULL == patch.fMask.fImage);
+        return false;
+    }
+    draw_nine(patch.fMask, patch.fOuterRect, patch.fCenter, true, clip,
+              bounder, blitter);
+    SkMask::FreeImage(patch.fMask.fImage);
+    return true;
+}
+
 bool SkMaskFilter::filterPath(const SkPath& devPath, const SkMatrix& matrix,
                               const SkRasterClip& clip, SkBounder* bounder,
-                              SkBlitter* blitter, SkPaint::Style style) {
+                              SkBlitter* blitter, SkPaint::Style style) const {
     SkRect rects[2];
     int rectCount = 0;
     if (SkPaint::kFill_Style == style) {
@@ -253,19 +290,54 @@ bool SkMaskFilter::filterPath(const SkPath& devPath, const SkMatrix& matrix,
 }
 
 SkMaskFilter::FilterReturn
-SkMaskFilter::filterRectsToNine(const SkRect[], int count, const SkMatrix&,
-                                const SkIRect& clipBounds, NinePatch*) {
+SkMaskFilter::filterRRectToNine(const SkRRect&, const SkMatrix&,
+                                const SkIRect& clipBounds, NinePatch*) const {
     return kUnimplemented_FilterReturn;
 }
 
-SkMaskFilter::BlurType SkMaskFilter::asABlur(BlurInfo*) const {
-    return kNone_BlurType;
+SkMaskFilter::FilterReturn
+SkMaskFilter::filterRectsToNine(const SkRect[], int count, const SkMatrix&,
+                                const SkIRect& clipBounds, NinePatch*) const {
+    return kUnimplemented_FilterReturn;
 }
 
-void SkMaskFilter::setAsABlur(const BlurInfo& ) {
+#if SK_SUPPORT_GPU
+bool SkMaskFilter::asNewEffect(GrEffectRef** effect, GrTexture*, const SkMatrix&) const {
+    return false;
 }
 
-void SkMaskFilter::computeFastBounds(const SkRect& src, SkRect* dst) {
+bool SkMaskFilter::canFilterMaskGPU(const SkRect& devBounds,
+                                    const SkIRect& clipBounds,
+                                    const SkMatrix& ctm,
+                                    SkRect* maskRect) const {
+    return false;
+}
+
+ bool SkMaskFilter::directFilterMaskGPU(GrContext* context,
+                                        GrPaint* grp,
+                                        const SkStrokeRec& strokeRec,
+                                        const SkPath& path) const {
+    return false;
+}
+
+
+bool SkMaskFilter::directFilterRRectMaskGPU(GrContext* context,
+                                            GrPaint* grp,
+                                            const SkStrokeRec& strokeRec,
+                                            const SkRRect& rrect) const {
+    return false;
+}
+
+bool SkMaskFilter::filterMaskGPU(GrTexture* src,
+                                 const SkMatrix& ctm,
+                                 const SkRect& maskRect,
+                                 GrTexture** result,
+                                 bool canOverwriteSrc) const {
+    return false;
+}
+#endif
+
+void SkMaskFilter::computeFastBounds(const SkRect& src, SkRect* dst) const {
     SkMask  srcM, dstM;
 
     srcM.fImage = NULL;
@@ -280,5 +352,3 @@ void SkMaskFilter::computeFastBounds(const SkRect& src, SkRect* dst) {
         dst->set(srcM.fBounds);
     }
 }
-
-

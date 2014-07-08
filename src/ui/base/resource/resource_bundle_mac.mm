@@ -7,14 +7,14 @@
 #import <AppKit/AppKit.h>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/sys_string_conversions.h"
 #include "ui/base/resource/resource_handle.h"
 #include "ui/gfx/image/image.h"
 
@@ -22,7 +22,7 @@ namespace ui {
 
 namespace {
 
-FilePath GetResourcesPakFilePath(NSString* name, NSString* mac_locale) {
+base::FilePath GetResourcesPakFilePath(NSString* name, NSString* mac_locale) {
   NSString *resource_path;
   // Some of the helper processes need to be able to fetch resources
   // (chrome_main.cc: SubprocessNeedsResourceBundle()). Fetch the same locale
@@ -40,17 +40,15 @@ FilePath GetResourcesPakFilePath(NSString* name, NSString* mac_locale) {
 
   if (!resource_path) {
     // Return just the name of the pack file.
-    return FilePath(base::SysNSStringToUTF8(name) + ".pak");
+    return base::FilePath(base::SysNSStringToUTF8(name) + ".pak");
   }
 
-  return FilePath([resource_path fileSystemRepresentation]);
+  return base::FilePath([resource_path fileSystemRepresentation]);
 }
 
 }  // namespace
 
 void ResourceBundle::LoadCommonResources() {
-  AddDataPackFromPath(GetResourcesPakFilePath(@"chrome", nil),
-                      SCALE_FACTOR_NONE);
   AddDataPackFromPath(GetResourcesPakFilePath(@"chrome_100_percent",
                         nil), SCALE_FACTOR_100P);
   AddDataPackFromPath(GetResourcesPakFilePath(@"webkit_resources_100_percent",
@@ -66,8 +64,8 @@ void ResourceBundle::LoadCommonResources() {
   }
 }
 
-FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
-                                           bool test_file_exists) {
+base::FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
+                                                 bool test_file_exists) {
   NSString* mac_locale = base::SysUTF8ToNSString(app_locale);
 
   // Mac OS X uses "_" instead of "-", so swap to get a Mac-style value.
@@ -78,7 +76,8 @@ FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
   if ([mac_locale isEqual:@"en_US"])
     mac_locale = @"en";
 
-  FilePath locale_file_path = GetResourcesPakFilePath(@"locale", mac_locale);
+  base::FilePath locale_file_path =
+      GetResourcesPakFilePath(@"locale", mac_locale);
 
   if (delegate_) {
     locale_file_path =
@@ -87,10 +86,10 @@ FilePath ResourceBundle::GetLocaleFilePath(const std::string& app_locale,
 
   // Don't try to load empty values or values that are not absolute paths.
   if (locale_file_path.empty() || !locale_file_path.IsAbsolute())
-    return FilePath();
+    return base::FilePath();
 
-  if (test_file_exists && !file_util::PathExists(locale_file_path))
-    return FilePath();
+  if (test_file_exists && !base::PathExists(locale_file_path))
+    return base::FilePath();
 
   return locale_file_path;
 }
@@ -118,16 +117,15 @@ gfx::Image& ResourceBundle::GetNativeImageNamed(int resource_id, ImageRTL rtl) {
     image = delegate_->GetNativeImageNamed(resource_id, rtl);
 
   if (image.IsEmpty()) {
-    scoped_nsobject<NSImage> ns_image;
+    base::scoped_nsobject<NSImage> ns_image;
     for (size_t i = 0; i < data_packs_.size(); ++i) {
       scoped_refptr<base::RefCountedStaticMemory> data(
           data_packs_[i]->GetStaticMemory(resource_id));
       if (!data.get())
         continue;
 
-      scoped_nsobject<NSData> ns_data(
-          [[NSData alloc] initWithBytes:data->front()
-                                 length:data->size()]);
+      base::scoped_nsobject<NSData> ns_data(
+          [[NSData alloc] initWithBytes:data->front() length:data->size()]);
       if (!ns_image.get()) {
         ns_image.reset([[NSImage alloc] initWithData:ns_data]);
       } else {

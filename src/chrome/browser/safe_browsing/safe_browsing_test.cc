@@ -20,33 +20,32 @@
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/platform_thread.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/browser/safe_browsing/local_safebrowsing_test_server.h"
 #include "chrome/browser/safe_browsing/protocol_manager.h"
 #include "chrome/browser/safe_browsing/safe_browsing_service.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/test/test_browser_thread.h"
-#include "net/base/host_resolver.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_log.h"
+#include "net/dns/host_resolver.h"
 #include "net/test/python_utils.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
@@ -57,7 +56,7 @@ using content::BrowserThread;
 
 namespace {
 
-const FilePath::CharType kDataFile[] =
+const base::FilePath::CharType kDataFile[] =
     FILE_PATH_LITERAL("testing_input_nomac.dat");
 const char kUrlVerifyPath[] = "safebrowsing/verify_urls";
 const char kDBVerifyPath[] = "safebrowsing/verify_database";
@@ -92,8 +91,7 @@ bool ParsePhishingUrls(const std::string& data,
                  << urls[i];
       return false;
     }
-    phishing_url.url = std::string(chrome::kHttpScheme) +
-        "://" + record_parts[0];
+    phishing_url.url = std::string(url::kHttpScheme) + "://" + record_parts[0];
     phishing_url.list_name = record_parts[1];
     if (record_parts[2] == "yes") {
       phishing_url.is_phishing = true;
@@ -108,6 +106,43 @@ bool ParsePhishingUrls(const std::string& data,
   }
   return true;
 }
+
+class FakeSafeBrowsingService : public SafeBrowsingService {
+ public:
+  explicit FakeSafeBrowsingService(const std::string& url_prefix)
+      : url_prefix_(url_prefix) {}
+
+  virtual SafeBrowsingProtocolConfig GetProtocolConfig() const OVERRIDE {
+    SafeBrowsingProtocolConfig config;
+    config.url_prefix = url_prefix_;
+    // Makes sure the auto update is not triggered. The tests will force the
+    // update when needed.
+    config.disable_auto_update = true;
+    config.client_name = "browser_tests";
+    return config;
+  }
+
+ private:
+  virtual ~FakeSafeBrowsingService() {}
+
+  std::string url_prefix_;
+
+  DISALLOW_COPY_AND_ASSIGN(FakeSafeBrowsingService);
+};
+
+// Factory that creates FakeSafeBrowsingService instances.
+class TestSafeBrowsingServiceFactory : public SafeBrowsingServiceFactory {
+ public:
+  explicit TestSafeBrowsingServiceFactory(const std::string& url_prefix)
+      : url_prefix_(url_prefix) {}
+
+  virtual SafeBrowsingService* CreateSafeBrowsingService() OVERRIDE {
+    return new FakeSafeBrowsingService(url_prefix_);
+  }
+
+ private:
+  std::string url_prefix_;
+};
 
 }  // namespace
 
@@ -170,7 +205,7 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
   }
 
   SafeBrowsingDatabaseManager* database_manager() {
-    return safe_browsing_service_->database_manager();
+    return safe_browsing_service_->database_manager().get();
   }
 
   bool is_checked_url_in_db() {
@@ -203,11 +238,11 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     return is_update_scheduled_;
   }
 
-  MessageLoop* SafeBrowsingMessageLoop() {
+  base::MessageLoop* SafeBrowsingMessageLoop() {
     return database_manager()->safe_browsing_thread_->message_loop();
   }
 
-  const net::TestServer& test_server() const {
+  const net::SpawnedTestServer& test_server() const {
     return *test_server_;
   }
 
@@ -217,8 +252,8 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     return safe_browsing_service_ != NULL;
   }
 
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
-    FilePath datafile_path;
+  virtual void SetUp() OVERRIDE {
+    base::FilePath datafile_path;
     ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &datafile_path));
 
     datafile_path = datafile_path.Append(FILE_PATH_LITERAL("third_party"))
@@ -229,10 +264,21 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     ASSERT_TRUE(test_server_->Start());
     LOG(INFO) << "server is " << test_server_->host_port_pair().ToString();
 
-    // Makes sure the auto update is not triggered. This test will force the
-    // update when needed.
-    command_line->AppendSwitch(switches::kSbDisableAutoUpdate);
+    // Point to the testing server for all SafeBrowsing requests.
+    std::string url_prefix = test_server_->GetURL("safebrowsing").spec();
+    sb_factory_.reset(new TestSafeBrowsingServiceFactory(url_prefix));
+    SafeBrowsingService::RegisterFactory(sb_factory_.get());
 
+    InProcessBrowserTest::SetUp();
+  }
+
+  virtual void TearDown() OVERRIDE {
+    InProcessBrowserTest::TearDown();
+
+    SafeBrowsingService::RegisterFactory(NULL);
+  }
+
+  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE {
     // This test uses loopback. No need to use IPv6 especially it makes
     // local requests slow on Windows trybot when ipv6 local address [::1]
     // is not setup.
@@ -247,9 +293,13 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
     command_line->AppendSwitch(
         switches::kDisableClientSidePhishingDetection);
 
-    // Point to the testing server for all SafeBrowsing requests.
-    std::string url_prefix = test_server_->GetURL("safebrowsing").spec();
-    command_line->AppendSwitchASCII(switches::kSbURLPrefix, url_prefix);
+    // TODO(kalman): Generate new testing data that includes the extension
+    // blacklist.
+    command_line->AppendSwitch(switches::kSbDisableExtensionBlacklist);
+
+    // TODO(tburkard): Generate new testing data that includes the side-effect
+    // free whitelist.
+    command_line->AppendSwitch(switches::kSbDisableSideEffectFreeWhitelist);
   }
 
   void SetTestStep(int step) {
@@ -258,9 +308,11 @@ class SafeBrowsingServerTest : public InProcessBrowserTest {
   }
 
  private:
+  scoped_ptr<TestSafeBrowsingServiceFactory> sb_factory_;
+
   SafeBrowsingService* safe_browsing_service_;
 
-  scoped_ptr<net::TestServer> test_server_;
+  scoped_ptr<net::SpawnedTestServer> test_server_;
 
   // Protects all variables below since they are read on UI thread
   // but updated on IO thread or safebrowsing thread.
@@ -342,7 +394,7 @@ class SafeBrowsingServerTestHelper
 
   // Checks status in SafeBrowsing Thread.
   void CheckIsDatabaseReady() {
-    EXPECT_EQ(MessageLoop::current(),
+    EXPECT_EQ(base::MessageLoop::current(),
               safe_browsing_test_->SafeBrowsingMessageLoop());
     safe_browsing_test_->CheckIsDatabaseReady();
     BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
@@ -366,7 +418,7 @@ class SafeBrowsingServerTestHelper
 
   // Calls test server to fetch database for verification.
   net::URLRequestStatus::Status FetchDBToVerify(
-      const net::TestServer& test_server,
+      const net::SpawnedTestServer& test_server,
       int test_step) {
     // TODO(lzheng): Remove chunk_type=add once it is not needed by the server.
     std::string path = base::StringPrintf(
@@ -377,7 +429,7 @@ class SafeBrowsingServerTestHelper
 
   // Calls test server to fetch URLs for verification.
   net::URLRequestStatus::Status FetchUrlsToVerify(
-      const net::TestServer& test_server,
+      const net::SpawnedTestServer& test_server,
       int test_step) {
     std::string path = base::StringPrintf(
         "%s?client=chromium&appver=1.0&pver=2.2&test_step=%d",
@@ -389,7 +441,7 @@ class SafeBrowsingServerTestHelper
   // bad URL that server expects test to fetch full hash but the test didn't,
   // this verification will fail.
   net::URLRequestStatus::Status VerifyTestComplete(
-      const net::TestServer& test_server,
+      const net::SpawnedTestServer& test_server,
       int test_step) {
     std::string path = base::StringPrintf(
         "%s?test_step=%d", kTestCompletePath, test_step);
@@ -397,7 +449,7 @@ class SafeBrowsingServerTestHelper
   }
 
   // Callback for URLFetcher.
-  virtual void OnURLFetchComplete(const net::URLFetcher* source) {
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE {
     source->GetResponseAsString(&response_data_);
     response_status_ = source->GetStatus().status();
     StopUILoop();
@@ -414,7 +466,7 @@ class SafeBrowsingServerTestHelper
   // Stops UI loop after desired status is updated.
   void StopUILoop() {
     EXPECT_TRUE(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
   }
 
   // Fetch a URL. If message_loop_started is true, starts the message loop

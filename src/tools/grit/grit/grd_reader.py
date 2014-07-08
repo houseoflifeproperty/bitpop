@@ -24,7 +24,8 @@ class StopParsingException(Exception):
 
 
 class GrdContentHandler(xml.sax.handler.ContentHandler):
-  def __init__(self, stop_after, debug, dir, defines, tags_to_ignore):
+  def __init__(self, stop_after, debug, dir, defines, tags_to_ignore,
+               target_platform):
     # Invariant of data:
     # 'root' is the root of the parse tree being created, or None if we haven't
     # parsed out any elements.
@@ -39,6 +40,7 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
     self.defines = defines
     self.tags_to_ignore = tags_to_ignore or set()
     self.ignore_depth = 0
+    self.target_platform = target_platform
 
   def startElement(self, name, attrs):
     if self.ignore_depth or name in self.tags_to_ignore:
@@ -61,6 +63,9 @@ class GrdContentHandler(xml.sax.handler.ContentHandler):
     else:
       assert self.root is None
       self.root = node
+      if isinstance(self.root, misc.GritNode):
+        if self.target_platform:
+          self.root.SetTargetPlatform(self.target_platform)
       node.StartParsing(name, None)
       if self.defines:
         node.SetDefines(self.defines)
@@ -134,7 +139,7 @@ class GrdPartContentHandler(xml.sax.handler.ContentHandler):
 
 
 def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
-          debug=False, defines=None, tags_to_ignore=None):
+          debug=False, defines=None, tags_to_ignore=None, target_platform=None):
   '''Parses a GRD file into a tree of nodes (from grit.node).
 
   If filename_or_stream is a stream, 'dir' should point to the directory
@@ -146,8 +151,13 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
   If 'debug' is true, lots of information about the parsing events will be
   printed out during parsing of the file.
 
-  If 'first_ids_file' is non-empty, it is used to override the setting
-  for the first_ids_file attribute of the <grit> root node.
+  If 'first_ids_file' is non-empty, it is used to override the setting for the
+  first_ids_file attribute of the <grit> root node. Note that the first_ids_file
+  parameter should be relative to the cwd, even though the first_ids_file
+  attribute of the <grit> node is relative to the grd file.
+
+  If 'target_platform' is set, this is used to determine the target
+  platform of builds, instead of using |sys.platform|.
 
   Args:
     filename_or_stream: './bla.xml'
@@ -156,6 +166,8 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
     first_ids_file: 'GRIT_DIR/../gritsettings/resource_ids'
     debug: False
     defines: dictionary of defines, like {'chromeos': '1'}
+    target_platform: None or the value that would be returned by sys.platform
+        on your target platform.
 
   Return:
     Subclass of grit.node.base.Node
@@ -168,7 +180,8 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
     dir = util.dirname(filename_or_stream)
 
   handler = GrdContentHandler(stop_after=stop_after, debug=debug, dir=dir,
-                              defines=defines, tags_to_ignore=tags_to_ignore)
+                              defines=defines, tags_to_ignore=tags_to_ignore,
+                              target_platform=target_platform)
   try:
     xml.sax.parse(filename_or_stream, handler)
   except StopParsingException:
@@ -189,6 +202,13 @@ def Parse(filename_or_stream, dir=None, stop_after=None, first_ids_file=None,
 
   if isinstance(handler.root, misc.GritNode):
     if first_ids_file:
+      # Make the path to the first_ids_file relative to the grd file,
+      # unless it begins with GRIT_DIR.
+      GRIT_DIR_PREFIX = 'GRIT_DIR'
+      if not (first_ids_file.startswith(GRIT_DIR_PREFIX)
+          and first_ids_file[len(GRIT_DIR_PREFIX)] in ['/', '\\']):
+        rel_dir = os.path.relpath(os.getcwd(), dir)
+        first_ids_file = util.normpath(os.path.join(rel_dir, first_ids_file))
       handler.root.attrs['first_ids_file'] = first_ids_file
     # Assign first ids to the nodes that don't have them.
     handler.root.AssignFirstIds(filename_or_stream, defines)

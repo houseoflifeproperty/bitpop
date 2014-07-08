@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/rand_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/host_port_pair.h"
 #include "talk/base/common.h"
 #include "talk/base/firewallsocketserver.h"
@@ -23,9 +23,6 @@
 #include "talk/xmpp/xmppengine.h"
 
 namespace notifier {
-
-// Redirect valid for 5 minutes.
-static const int kRedirectTimeoutMinutes = 5;
 
 Login::Delegate::~Delegate() {}
 

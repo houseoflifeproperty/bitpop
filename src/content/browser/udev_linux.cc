@@ -6,7 +6,7 @@
 
 #include <libudev.h>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 namespace content {
 
@@ -32,8 +32,12 @@ UdevLinux::UdevLinux(const std::vector<UdevMonitorFilter>& filters,
   monitor_fd_ = udev_monitor_get_fd(monitor_);
   CHECK_GE(monitor_fd_, 0);
 
-  bool success = MessageLoopForIO::current()->WatchFileDescriptor(monitor_fd_,
-      true, MessageLoopForIO::WATCH_READ, &monitor_watcher_, this);
+  bool success = base::MessageLoopForIO::current()->WatchFileDescriptor(
+      monitor_fd_,
+      true,
+      base::MessageLoopForIO::WATCH_READ,
+      &monitor_watcher_,
+      this);
   CHECK(success);
 }
 
@@ -53,10 +57,9 @@ void UdevLinux::OnFileCanReadWithoutBlocking(int fd) {
   // representing the device which changed and what type of change occured.
   DCHECK_EQ(monitor_fd_, fd);
   udev_device* dev = udev_monitor_receive_device(monitor_);
-  if (!dev) {
-    NOTREACHED();
+  if (!dev)
     return;
-  }
+
   callback_.Run(dev);
   udev_device_unref(dev);
 }

@@ -8,9 +8,10 @@
 #include <vector>
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_handle.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
-#include "content/common/np_channel_base.h"
+#include "content/child/npapi/np_channel_base.h"
+#include "content/child/scoped_child_process_reference.h"
 #include "content/plugin/webplugin_delegate_stub.h"
 
 namespace base {
@@ -81,8 +82,11 @@ class PluginChannel : public NPChannelBase {
   void OnClearSiteData(const std::string& site,
                        uint64 flags,
                        uint64 max_age);
+  void OnDidAbortLoading(int render_view_id);
 
   std::vector<scoped_refptr<WebPluginDelegateStub> > plugin_stubs_;
+
+  ScopedChildProcessReference process_ref_;
 
   // The id of the renderer who is on the other side of the channel.
   int renderer_id_;
@@ -91,6 +95,10 @@ class PluginChannel : public NPChannelBase {
   bool log_messages_;  // True if we should log sent and received messages.
   bool incognito_; // True if the renderer is in incognito mode.
   scoped_refptr<MessageFilter> filter_;  // Handles the modal dialog events.
+
+  // Dummy NPP value used in the plugin process to represent entities other
+  // that other plugin instances for the purpose of object ownership tracking.
+  scoped_ptr<struct _NPP> npp_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginChannel);
 };

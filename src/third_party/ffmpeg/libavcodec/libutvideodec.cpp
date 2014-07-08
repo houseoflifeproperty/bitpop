@@ -21,7 +21,8 @@
 /**
  * @file
  * Known FOURCCs:
- *     'ULY0' (YCbCr 4:2:0), 'ULY2' (YCbCr 4:2:2), 'ULRG' (RGB), 'ULRA' (RGBA)
+ *     'ULY0' (YCbCr 4:2:0), 'ULY2' (YCbCr 4:2:2), 'ULRG' (RGB), 'ULRA' (RGBA),
+ *     'ULH0' (YCbCr 4:2:0 BT.709), 'ULH2' (YCbCr 4:2:2 BT.709)
  */
 
 extern "C" {
@@ -51,21 +52,33 @@ static av_cold int utvideo_decode_init(AVCodecContext *avctx)
 
     /* Pick format based on FOURCC */
     switch (avctx->codec_tag) {
+#ifdef UTV_BT709
+    case MKTAG('U', 'L', 'H', '0'):
+        avctx->pix_fmt = AV_PIX_FMT_YUV420P;
+        avctx->colorspace = AVCOL_SPC_BT709;
+        format = UTVF_YV12;
+        break;
+    case MKTAG('U', 'L', 'H', '2'):
+        avctx->pix_fmt = AV_PIX_FMT_YUYV422;
+        avctx->colorspace = AVCOL_SPC_BT709;
+        format = UTVF_YUY2;
+        break;
+#endif
     case MKTAG('U', 'L', 'Y', '0'):
-        avctx->pix_fmt = PIX_FMT_YUV420P;
+        avctx->pix_fmt = AV_PIX_FMT_YUV420P;
         format = UTVF_YV12;
         break;
     case MKTAG('U', 'L', 'Y', '2'):
-        avctx->pix_fmt = PIX_FMT_YUYV422;
+        avctx->pix_fmt = AV_PIX_FMT_YUYV422;
         format = UTVF_YUY2;
         break;
     case MKTAG('U', 'L', 'R', 'G'):
-        avctx->pix_fmt = PIX_FMT_BGR24;
-        format = UTVF_RGB24_WIN;
+        avctx->pix_fmt = AV_PIX_FMT_BGR24;
+        format = UTVF_NFCC_BGR_BU;
         break;
     case MKTAG('U', 'L', 'R', 'A'):
-        avctx->pix_fmt = PIX_FMT_RGB32;
-        format = UTVF_RGB32_WIN;
+        avctx->pix_fmt = AV_PIX_FMT_RGB32;
+        format = UTVF_NFCC_BGRA_BU;
         break;
     default:
         av_log(avctx, AV_LOG_ERROR,
@@ -83,7 +96,7 @@ static av_cold int utvideo_decode_init(AVCodecContext *avctx)
     }
 
     /* Allocate the output frame */
-    avctx->coded_frame = avcodec_alloc_frame();
+    avctx->coded_frame = av_frame_alloc();
 
     /* Ut Video only supports 8-bit */
     avctx->bits_per_raw_sample = 8;
@@ -115,7 +128,7 @@ static av_cold int utvideo_decode_init(AVCodecContext *avctx)
 }
 
 static int utvideo_decode_frame(AVCodecContext *avctx, void *data,
-                                int *data_size, AVPacket *avpkt)
+                                int *got_frame, AVPacket *avpkt)
 {
     UtVideoContext *utv = (UtVideoContext *)avctx->priv_data;
     AVFrame *pic = avctx->coded_frame;
@@ -131,26 +144,26 @@ static int utvideo_decode_frame(AVCodecContext *avctx, void *data,
 
     /* Set the output data depending on the colorspace */
     switch (avctx->pix_fmt) {
-    case PIX_FMT_YUV420P:
+    case AV_PIX_FMT_YUV420P:
         pic->linesize[0] = w;
         pic->linesize[1] = pic->linesize[2] = w / 2;
         pic->data[0] = utv->buffer;
         pic->data[2] = utv->buffer + (w * h);
         pic->data[1] = pic->data[2] + (w * h / 4);
         break;
-    case PIX_FMT_YUYV422:
+    case AV_PIX_FMT_YUYV422:
         pic->linesize[0] = w * 2;
         pic->data[0] = utv->buffer;
         break;
-    case PIX_FMT_BGR24:
-    case PIX_FMT_RGB32:
+    case AV_PIX_FMT_BGR24:
+    case AV_PIX_FMT_RGB32:
         /* Make the linesize negative, since Ut Video uses bottom-up BGR */
-        pic->linesize[0] = -1 * w * (avctx->pix_fmt == PIX_FMT_BGR24 ? 3 : 4);
+        pic->linesize[0] = -1 * w * (avctx->pix_fmt == AV_PIX_FMT_BGR24 ? 3 : 4);
         pic->data[0] = utv->buffer + utv->buf_size + pic->linesize[0];
         break;
     }
 
-    *data_size = sizeof(AVFrame);
+    *got_frame = 1;
     *(AVFrame *)data = *pic;
 
     return avpkt->size;

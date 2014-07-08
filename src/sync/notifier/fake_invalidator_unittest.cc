@@ -21,6 +21,7 @@ class FakeInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
@@ -45,13 +46,8 @@ class FakeInvalidatorTestDelegate {
   }
 
   void TriggerOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) {
-    invalidator_->EmitOnIncomingInvalidation(invalidation_map, source);
-  }
-
-  static bool InvalidatorHandlesDeprecatedState() {
-    return false;
+      const ObjectIdInvalidationMap& invalidation_map) {
+    invalidator_->EmitOnIncomingInvalidation(invalidation_map);
   }
 
  private:

@@ -70,7 +70,7 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerNegotiate : public HttpAuthHandler {
     }
 
     virtual int CreateAuthHandler(
-        HttpAuth::ChallengeTokenizer* challenge,
+        HttpAuthChallengeTokenizer* challenge,
         HttpAuth::Target target,
         const GURL& origin,
         CreateReason reason,
@@ -102,18 +102,18 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerNegotiate : public HttpAuthHandler {
   virtual ~HttpAuthHandlerNegotiate();
 
   // These are public for unit tests
-  std::wstring CreateSPN(const AddressList& address_list, const GURL& orign);
-  const std::wstring& spn() const { return spn_; }
+  std::string CreateSPN(const AddressList& address_list, const GURL& orign);
+  const std::string& spn() const { return spn_; }
 
   // HttpAuthHandler:
   virtual HttpAuth::AuthorizationResult HandleAnotherChallenge(
-      HttpAuth::ChallengeTokenizer* challenge) OVERRIDE;
+      HttpAuthChallengeTokenizer* challenge) OVERRIDE;
   virtual bool NeedsIdentity() OVERRIDE;
   virtual bool AllowsDefaultCredentials() OVERRIDE;
   virtual bool AllowsExplicitCredentials() OVERRIDE;
 
  protected:
-  virtual bool Init(HttpAuth::ChallengeTokenizer* challenge) OVERRIDE;
+  virtual bool Init(HttpAuthChallengeTokenizer* challenge) OVERRIDE;
 
   virtual int GenerateAuthTokenImpl(const AuthCredentials* credentials,
                                     const HttpRequestInfo* request,
@@ -152,7 +152,7 @@ class NET_EXPORT_PRIVATE HttpAuthHandlerNegotiate : public HttpAuthHandler {
   bool already_called_;
   bool has_credentials_;
   AuthCredentials credentials_;
-  std::wstring spn_;
+  std::string spn_;
 
   // Things which vary each round.
   CompletionCallback callback_;

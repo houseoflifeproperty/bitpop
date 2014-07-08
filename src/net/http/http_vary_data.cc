@@ -7,7 +7,7 @@
 #include <stdlib.h>
 
 #include "base/pickle.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_request_info.h"
 #include "net/http/http_response_headers.h"
@@ -105,7 +105,7 @@ std::string HttpVaryData::GetRequestValue(
   if (request_info.extra_headers.GetHeader(request_header, &result))
     return result;
 
-  return "";
+  return std::string();
 }
 
 // static

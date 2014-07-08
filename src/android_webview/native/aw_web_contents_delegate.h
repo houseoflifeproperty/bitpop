@@ -7,7 +7,7 @@
 
 #include <jni.h>
 
-#include "content/components/web_contents_delegate_android/web_contents_delegate_android.h"
+#include "components/web_contents_delegate_android/web_contents_delegate_android.h"
 
 namespace android_webview {
 
@@ -15,11 +15,11 @@ namespace android_webview {
 // Should contain WebContentsDelegate code required by WebView that should not
 // be part of the Chromium Android port.
 class AwWebContentsDelegate
-    : public content::WebContentsDelegateAndroid {
+    : public web_contents_delegate_android::WebContentsDelegateAndroid {
  public:
   AwWebContentsDelegate(JNIEnv* env, jobject obj);
   virtual ~AwWebContentsDelegate();
-  virtual content::JavaScriptDialogCreator* GetJavaScriptDialogCreator()
+  virtual content::JavaScriptDialogManager* GetJavaScriptDialogManager()
       OVERRIDE;
   virtual void FindReply(content::WebContents* web_contents,
                          int request_id,
@@ -27,19 +27,32 @@ class AwWebContentsDelegate
                          const gfx::Rect& selection_rect,
                          int active_match_ordinal,
                          bool final_update) OVERRIDE;
-  virtual bool CanDownload(content::RenderViewHost* source,
+  virtual void CanDownload(content::RenderViewHost* source,
                            int request_id,
-                           const std::string& request_method) OVERRIDE;
-  virtual void OnStartDownload(content::WebContents* source,
-                               content::DownloadItem* download) OVERRIDE;
+                           const std::string& request_method,
+                           const base::Callback<void(bool)>& callback) OVERRIDE;
+  virtual void RunFileChooser(
+      content::WebContents* web_contents,
+      const content::FileChooserParams& params) OVERRIDE;
   virtual void AddNewContents(content::WebContents* source,
                               content::WebContents* new_contents,
                               WindowOpenDisposition disposition,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
+
+  virtual void WebContentsCreated(content::WebContents* source_contents,
+                                  int opener_render_frame_id,
+                                  const base::string16& frame_name,
+                                  const GURL& target_url,
+                                  content::WebContents* new_contents) OVERRIDE;
+
   virtual void CloseContents(content::WebContents* source) OVERRIDE;
   virtual void ActivateContents(content::WebContents* contents) OVERRIDE;
+  virtual void RequestMediaAccessPermission(
+      content::WebContents* web_contents,
+      const content::MediaStreamRequest& request,
+      const content::MediaResponseCallback& callback) OVERRIDE;
 };
 
 bool RegisterAwWebContentsDelegate(JNIEnv* env);

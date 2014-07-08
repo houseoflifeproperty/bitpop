@@ -38,6 +38,7 @@ class TestFileIO : public TestCase {
   };
 
   std::string TestOpen();
+  std::string TestOpenDirectory();
   std::string TestReadWriteSetLength();
   std::string TestReadToArrayWriteSetLength();
   std::string TestTouchQuery();
@@ -45,7 +46,9 @@ class TestFileIO : public TestCase {
   std::string TestParallelReads();
   std::string TestParallelWrites();
   std::string TestNotAllowMixedReadWrite();
-  std::string TestWillWriteWillSetLength();
+  std::string TestRequestOSFileHandle();
+  std::string TestRequestOSFileHandleWithOpenExclusive();
+  std::string TestMmap();
 
   // Helper method used by TestOpen().
   // |expectations| is a combination of OpenExpectation values. The followings

@@ -8,9 +8,9 @@
 #include "base/basictypes.h"
 #include "base/files/scoped_temp_dir.h"
 
-class FilePath;
-
 namespace base {
+
+class FilePath;
 
 // Sets a path override on construction, and removes it when the object goes out
 // of scope. This class is intended to be used by tests that need to override
@@ -18,7 +18,7 @@ namespace base {
 // scope of the test is left.
 class ScopedPathOverride {
  public:
-  // Contructor that intializes the override to a scoped temp directory.
+  // Contructor that initializes the override to a scoped temp directory.
   explicit ScopedPathOverride(int key);
   // Constructor that would use a path provided by the user.
   ScopedPathOverride(int key, const FilePath& dir);

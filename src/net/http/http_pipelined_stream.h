@@ -38,6 +38,7 @@ class HttpPipelinedStream : public HttpStream {
 
   // HttpStream methods:
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) OVERRIDE;
 
@@ -62,13 +63,16 @@ class HttpPipelinedStream : public HttpStream {
 
   virtual bool CanFindEndOfResponse() const OVERRIDE;
 
-  virtual bool IsMoreDataBuffered() const OVERRIDE;
-
   virtual bool IsConnectionReused() const OVERRIDE;
 
   virtual void SetConnectionReused() OVERRIDE;
 
   virtual bool IsConnectionReusable() const OVERRIDE;
+
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
+
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
 
   virtual void GetSSLInfo(SSLInfo* ssl_info) OVERRIDE;
 
@@ -77,9 +81,9 @@ class HttpPipelinedStream : public HttpStream {
 
   virtual bool IsSpdyHttpStream() const OVERRIDE;
 
-  virtual void LogNumRttVsBytesMetrics() const OVERRIDE;
-
   virtual void Drain(HttpNetworkSession* session) OVERRIDE;
+
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
 
   // The SSLConfig used to establish this stream's pipeline.
   const SSLConfig& used_ssl_config() const;

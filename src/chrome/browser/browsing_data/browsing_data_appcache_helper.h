@@ -8,8 +8,8 @@
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
 #include "net/base/completion_callback.h"
-#include "googleurl/src/gurl.h"
-#include "webkit/appcache/appcache_service.h"
+#include "url/gurl.h"
+#include "webkit/browser/appcache/appcache_service.h"
 
 class Profile;
 
@@ -31,7 +31,7 @@ class BrowsingDataAppCacheHelper
 
   appcache::AppCacheInfoCollection* info_collection() const {
     DCHECK(!is_fetching_);
-    return info_collection_;
+    return info_collection_.get();
   }
 
  protected:
@@ -81,6 +81,7 @@ class CannedBrowsingDataAppCacheHelper : public BrowsingDataAppCacheHelper {
 
   // BrowsingDataAppCacheHelper methods.
   virtual void StartFetching(const base::Closure& completion_callback) OVERRIDE;
+  virtual void DeleteAppCacheGroup(const GURL& manifest_url) OVERRIDE;
 
  private:
   virtual ~CannedBrowsingDataAppCacheHelper();

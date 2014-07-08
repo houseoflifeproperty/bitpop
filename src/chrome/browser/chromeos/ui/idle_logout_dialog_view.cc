@@ -7,18 +7,16 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/time.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_settings.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
-#include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
@@ -76,7 +74,7 @@ void IdleLogoutDialogView::ShowDialog() {
 // static
 void IdleLogoutDialogView::CloseDialog() {
   if (g_instance)
-    g_instance->Close();
+    g_instance->GetWidget()->Close();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -89,19 +87,26 @@ ui::ModalType IdleLogoutDialogView::GetModalType() const {
   return ui::MODAL_TYPE_WINDOW;
 }
 
-string16 IdleLogoutDialogView::GetWindowTitle() const {
+base::string16 IdleLogoutDialogView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_IDLE_LOGOUT_TITLE);
 }
 
-views::View* IdleLogoutDialogView::GetContentsView() {
-  return this;
+bool IdleLogoutDialogView::Close() {
+  if (timer_.IsRunning())
+    timer_.Stop();
+
+  // We just closed our dialog. The global
+  // instance is invalid now, set it to null.
+  g_instance = NULL;
+
+  return true;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // IdleLogoutDialog private methods
 IdleLogoutDialogView::IdleLogoutDialogView()
     : restart_label_(NULL),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_ptr_factory_(this) {
   if (!IdleLogoutDialogView::provider_)
     IdleLogoutDialogView::provider_ = new IdleLogoutSettingsProvider();
 }
@@ -120,12 +125,9 @@ void IdleLogoutDialogView::InitAndShow() {
     return;
   }
 
-  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-
   restart_label_ = new views::Label();
   restart_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   restart_label_->SetMultiLine(true);
-  restart_label_->SetFont(rb.GetFont(ui::ResourceBundle::BaseFont));
 
   views::GridLayout* layout = views::GridLayout::CreatePanel(this);
   SetLayoutManager(layout);
@@ -153,8 +155,8 @@ void IdleLogoutDialogView::Show() {
 
   UpdateCountdown();
 
-  views::Widget::CreateWindowWithContext(this,
-                                         ash::Shell::GetPrimaryRootWindow());
+  views::DialogDelegate::CreateDialogWidget(
+      this, ash::Shell::GetPrimaryRootWindow(), NULL);
   GetWidget()->SetAlwaysOnTop(true);
   GetWidget()->Show();
 
@@ -163,18 +165,6 @@ void IdleLogoutDialogView::Show() {
                IdleLogoutDialogView::provider_->GetCountdownUpdateInterval(),
                this,
                &IdleLogoutDialogView::UpdateCountdown);
-}
-
-void IdleLogoutDialogView::Close() {
-  DCHECK(GetWidget());
-
-  if (timer_.IsRunning())
-    timer_.Stop();
-  GetWidget()->Close();
-
-  // We just closed our dialog. The global
-  // instance is invalid now, set it to null.
-  g_instance = NULL;
 }
 
 void IdleLogoutDialogView::UpdateCountdown() {

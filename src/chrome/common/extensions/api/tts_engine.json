@@ -5,7 +5,7 @@
 [
   {
     "namespace": "ttsEngine",
-    "dependencies": [ "tts" ],
+    "description": "Use the <code>chrome.ttsEngine</code> API to implement a text-to-speech(TTS) engine using an extension. If your extension registers using this API, it will receive events containing an utterance to be spoken and other parameters when any extension or Chrome App uses the <a href='tts.html'>tts</a> API to generate speech. Your extension can then use any available web technology to synthesize and output the speech, and send events back to the calling function to report the status.",
     "functions": [
       {
         "name": "sendTtsEvent",
@@ -97,7 +97,17 @@
       {
         "name": "onStop",
         "type": "function",
-        "description": "Fired when a call is made to tts.stop and this extension may be in the middle of speaking. If an extension receives a call to onStop and speech is already stopped, it should do nothing (not raise an error)."
+        "description": "Fired when a call is made to tts.stop and this extension may be in the middle of speaking. If an extension receives a call to onStop and speech is already stopped, it should do nothing (not raise an error). If speech is in the paused state, this should cancel the paused state."
+      },
+      {
+        "name": "onPause",
+        "type": "function",
+        "description": "Optional: if an engine supports the pause event, it should pause the current utterance being spoken, if any, until it receives a resume event or stop event. Note that a stop event should also clear the paused state."
+      },
+      {
+        "name": "onResume",
+        "type": "function",
+        "description": "Optional: if an engine supports the pause event, it should also support the resume event, to continue speaking the current utterance, if any. Note that a stop event should also clear the paused state."
       }
     ]
   }

@@ -11,8 +11,13 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
+#include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/proxy/raw_var_data.h"
+#include "ppapi/proxy/serialized_handle.h"
+#include "ppapi/proxy/serialized_structs.h"
 #include "ppapi/proxy/var_serialization_rules.h"
 
 class PickleIterator;
@@ -75,8 +80,24 @@ class PPAPI_PROXY_EXPORT SerializedVar {
   void WriteToMessage(IPC::Message* m) const {
     inner_->WriteToMessage(m);
   }
+  // If ReadFromMessage has been called, WriteDataToMessage will write the var
+  // that has been read from ReadFromMessage back to a message. This is used
+  // when converting handles for use in NaCl.
+  void WriteDataToMessage(IPC::Message* m,
+                          const HandleWriter& handle_writer) const {
+    inner_->WriteDataToMessage(m, handle_writer);
+  }
   bool ReadFromMessage(const IPC::Message* m, PickleIterator* iter) {
     return inner_->ReadFromMessage(m, iter);
+  }
+
+  bool is_valid_var() const {
+    return inner_->is_valid_var();
+  }
+
+  // Returns the shared memory handles associated with this SerializedVar.
+  std::vector<SerializedHandle*> GetHandles() const {
+    return inner_->GetHandles();
   }
 
  protected:
@@ -84,6 +105,7 @@ class PPAPI_PROXY_EXPORT SerializedVar {
   friend class SerializedVarReturnValue;
   friend class SerializedVarOutParam;
   friend class SerializedVarSendInput;
+  friend class SerializedVarSendInputShmem;
   friend class SerializedVarTestConstructor;
   friend class SerializedVarVectorReceiveInput;
 
@@ -94,21 +116,33 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     ~Inner();
 
     VarSerializationRules* serialization_rules() {
-      return serialization_rules_;
+      return serialization_rules_.get();
     }
     void set_serialization_rules(VarSerializationRules* serialization_rules) {
       serialization_rules_ = serialization_rules;
     }
 
+    bool is_valid_var() const {
+      return is_valid_var_;
+    }
+
+    std::vector<SerializedHandle*> GetHandles() {
+      return (raw_var_data_ ? raw_var_data_->GetHandles() :
+          std::vector<SerializedHandle*>());
+    }
+
     // See outer class's declarations above.
     PP_Var GetVar();
     void SetVar(PP_Var var);
+    void SetInstance(PP_Instance instance);
 
     // For the SerializedVarTestConstructor, this writes the Var value as if
     // it was just received off the wire, without any serialization rules.
     void ForceSetVarValueForTest(PP_Var value);
 
     void WriteToMessage(IPC::Message* m) const;
+    void WriteDataToMessage(IPC::Message* m,
+                            const HandleWriter& handle_writer) const;
     bool ReadFromMessage(const IPC::Message* m, PickleIterator* iter);
 
     // Sets the cleanup mode. See the CleanupMode enum below.
@@ -128,21 +162,6 @@ class PPAPI_PROXY_EXPORT SerializedVar {
       END_RECEIVE_CALLER_OWNED
     };
 
-    // ReadFromMessage() may be called on the I/O thread, e.g., when reading the
-    // reply to a sync message. We cannot use the var tracker on the I/O thread,
-    // which means we cannot create PP_Var for PP_VARTYPE_STRING and
-    // PP_VARTYPE_ARRAY_BUFFER in ReadFromMessage(). So we save the raw var data
-    // and create PP_Var later when GetVar() is called, which should happen on
-    // the main thread.
-    struct RawVarData {
-      PP_VarType type;
-      std::string data;
-    };
-
-    // Converts |raw_var_data_| to |var_|. It is a no-op if |raw_var_data_| is
-    // NULL.
-    void ConvertRawVarData();
-
     // Rules for serializing and deserializing vars for this process type.
     // This may be NULL, but must be set before trying to serialize to IPC when
     // sending, or before converting back to a PP_Var when receiving.
@@ -158,7 +177,12 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     // a string ID. Before this, the as_id will be 0 for VARTYPE_STRING.
     PP_Var var_;
 
+    PP_Instance instance_;
+
     CleanupMode cleanup_mode_;
+
+    // If the var is not properly serialized, this will be false.
+    bool is_valid_var_;
 
 #ifndef NDEBUG
     // When being sent or received over IPC, we should only be serialized or
@@ -167,10 +191,12 @@ class PPAPI_PROXY_EXPORT SerializedVar {
     mutable bool has_been_deserialized_;
 #endif
 
-    // It will be non-NULL if there is PP_VARTYPE_STRING or
-    // PP_VARTYPE_ARRAY_BUFFER data from ReadFromMessage() that hasn't been
-    // converted to PP_Var.
-    scoped_ptr<RawVarData> raw_var_data_;
+    // ReadFromMessage() may be called on the I/O thread, e.g., when reading the
+    // reply to a sync message. We cannot use the var tracker on the I/O thread,
+    // which means we cannot create some types of PP_Var
+    // (e.g. PP_VARTYPE_STRING). The data is stored in |raw_var_data_| and the
+    // PP_Var is constructed when |GetVar()| is called.
+    scoped_ptr<RawVarDataGraph> raw_var_data_;
 
     DISALLOW_COPY_AND_ASSIGN(Inner);
   };
@@ -207,6 +233,19 @@ class PPAPI_PROXY_EXPORT SerializedVarSendInput : public SerializedVar {
   // which is required to send the object to the IPC system.
   SerializedVarSendInput();
 };
+
+// Specialization for optionally sending over shared memory.
+class PPAPI_PROXY_EXPORT SerializedVarSendInputShmem : public SerializedVar {
+ public:
+  SerializedVarSendInputShmem(Dispatcher* dispatcher, const PP_Var& var,
+                              const PP_Instance& instance);
+
+ private:
+  // Disallow the empty constructor, but keep the default copy constructor
+  // which is required to send the object to the IPC system.
+  SerializedVarSendInputShmem();
+};
+
 
 // For the calling side of a function returning a var. The sending side uses
 // SerializedVarReturnValue.
@@ -324,6 +363,8 @@ class PPAPI_PROXY_EXPORT SerializedVarReceiveInput {
   ~SerializedVarReceiveInput();
 
   PP_Var Get(Dispatcher* dispatcher);
+  PP_Var GetForInstance(Dispatcher* dispatcher, PP_Instance instance);
+  bool is_valid_var() { return serialized_.is_valid_var(); }
 
  private:
   const SerializedVar& serialized_;
@@ -452,9 +493,6 @@ class PPAPI_PROXY_EXPORT SerializedVarTestReader : public SerializedVar {
  public:
   explicit SerializedVarTestReader(const SerializedVar& var);
 
-  // The "incomplete" var is the one sent over the wire. Strings and object
-  // IDs have not yet been converted, so this is the thing that tests will
-  // actually want to check.
   PP_Var GetVar() const { return inner_->GetVar(); }
 };
 

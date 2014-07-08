@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,6 +9,8 @@ import android.database.AbstractCursor;
 import android.database.CursorWindow;
 import android.util.Log;
 
+import org.chromium.base.CalledByNative;
+
 import java.sql.Types;
 
 /**
@@ -17,7 +19,7 @@ import java.sql.Types;
 public class SQLiteCursor extends AbstractCursor {
     private static final String TAG = "SQLiteCursor";
     // Used by JNI.
-    private int mNativeSQLiteCursor;
+    private long mNativeSQLiteCursor;
 
     // The count of result rows.
     private int mCount = -1;
@@ -25,14 +27,20 @@ public class SQLiteCursor extends AbstractCursor {
     private int[] mColumnTypes;
 
     private final Object mColumnTypeLock = new Object();
+    private final Object mDestoryNativeLock = new Object();
 
     // The belows are the locks for those methods that need wait for
     // the callback result in native side.
     private final Object mMoveLock = new Object();
     private final Object mGetBlobLock = new Object();
 
-    SQLiteCursor(int nativeSQLiteCursor) {
+    private SQLiteCursor(long nativeSQLiteCursor) {
         mNativeSQLiteCursor = nativeSQLiteCursor;
+    }
+
+    @CalledByNative
+    private static SQLiteCursor create(long nativeSQLiteCursor) {
+        return new SQLiteCursor(nativeSQLiteCursor);
     }
 
     @Override
@@ -71,7 +79,7 @@ public class SQLiteCursor extends AbstractCursor {
 
     @Override
     public float getFloat(int column) {
-        return (float)nativeGetDouble(mNativeSQLiteCursor, column);
+        return (float) nativeGetDouble(mNativeSQLiteCursor, column);
     }
 
     @Override
@@ -87,8 +95,12 @@ public class SQLiteCursor extends AbstractCursor {
     @Override
     public void close() {
         super.close();
-        nativeDestroy(mNativeSQLiteCursor);
-        mNativeSQLiteCursor = 0;
+        synchronized (mDestoryNativeLock) {
+            if (mNativeSQLiteCursor != 0) {
+                nativeDestroy(mNativeSQLiteCursor);
+                mNativeSQLiteCursor = 0;
+            }
+        }
     }
 
     @Override
@@ -152,6 +164,8 @@ public class SQLiteCursor extends AbstractCursor {
                         case Types.NULL:
                             hasRoom = fillRow(window, null, mPos, i);
                             break;
+                        default:
+                            // Ignore an unknown type.
                     }
                     if (!hasRoom) {
                         break;
@@ -220,15 +234,15 @@ public class SQLiteCursor extends AbstractCursor {
         return mColumnTypes[index];
     }
 
-    private native void nativeDestroy(int nativeSQLiteCursor);
-    private native int nativeGetCount(int nativeSQLiteCursor);
-    private native String[] nativeGetColumnNames(int nativeSQLiteCursor);
-    private native int nativeGetColumnType(int nativeSQLiteCursor, int column);
-    private native String nativeGetString(int nativeSQLiteCursor, int column);
-    private native byte[] nativeGetBlob(int nativeSQLiteCursor, int column);
-    private native boolean nativeIsNull(int nativeSQLiteCursor, int column);
-    private native long nativeGetLong(int nativeSQLiteCursor, int column);
-    private native int nativeGetInt(int nativeSQLiteCursor, int column);
-    private native double nativeGetDouble(int nativeSQLiteCursor, int column);
-    private native int nativeMoveTo(int nativeSQLiteCursor, int newPosition);
+    private native void nativeDestroy(long nativeSQLiteCursor);
+    private native int nativeGetCount(long nativeSQLiteCursor);
+    private native String[] nativeGetColumnNames(long nativeSQLiteCursor);
+    private native int nativeGetColumnType(long nativeSQLiteCursor, int column);
+    private native String nativeGetString(long nativeSQLiteCursor, int column);
+    private native byte[] nativeGetBlob(long nativeSQLiteCursor, int column);
+    private native boolean nativeIsNull(long nativeSQLiteCursor, int column);
+    private native long nativeGetLong(long nativeSQLiteCursor, int column);
+    private native int nativeGetInt(long nativeSQLiteCursor, int column);
+    private native double nativeGetDouble(long nativeSQLiteCursor, int column);
+    private native int nativeMoveTo(long nativeSQLiteCursor, int newPosition);
 }

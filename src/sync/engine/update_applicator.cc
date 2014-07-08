@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -11,7 +11,7 @@
 #include "sync/syncable/entry.h"
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/syncable_id.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 
 using std::vector;
 
@@ -19,12 +19,8 @@ namespace syncer {
 
 using syncable::ID;
 
-UpdateApplicator::UpdateApplicator(Cryptographer* cryptographer,
-                                   const ModelSafeRoutingInfo& routes,
-                                   ModelSafeGroup group_filter)
+UpdateApplicator::UpdateApplicator(Cryptographer* cryptographer)
     : cryptographer_(cryptographer),
-      group_filter_(group_filter),
-      routing_info_(routes),
       updates_applied_(0),
       encryption_conflicts_(0),
       hierarchy_conflicts_(0) {
@@ -58,11 +54,6 @@ void UpdateApplicator::AttemptApplications(
 
     for (std::vector<int64>::iterator i = to_apply.begin();
          i != to_apply.end(); ++i) {
-      syncable::Entry read_entry(trans, syncable::GET_BY_HANDLE, *i);
-      if (SkipUpdate(read_entry)) {
-        continue;
-      }
-
       syncable::MutableEntry entry(trans, syncable::GET_BY_HANDLE, *i);
       UpdateAttemptResponse result = AttemptToUpdateEntry(
           trans, &entry, cryptographer_);
@@ -72,7 +63,7 @@ void UpdateApplicator::AttemptApplications(
           updates_applied_++;
           break;
         case CONFLICT_SIMPLE:
-          simple_conflict_ids_.insert(entry.Get(ID));
+          simple_conflict_ids_.insert(entry.GetId());
           break;
         case CONFLICT_ENCRYPTION:
           encryption_conflicts_++;
@@ -101,25 +92,6 @@ void UpdateApplicator::AttemptApplications(
     to_apply.swap(to_reapply);
     to_reapply.clear();
   }
-}
-
-bool UpdateApplicator::SkipUpdate(const syncable::Entry& entry) {
-  ModelType type = entry.GetServerModelType();
-  ModelSafeGroup g = GetGroupForModelType(type, routing_info_);
-  // The set of updates passed to the UpdateApplicator should already
-  // be group-filtered.
-  if (g != group_filter_) {
-    NOTREACHED();
-    return true;
-  }
-  if (g == GROUP_PASSIVE &&
-      !routing_info_.count(type) &&
-      type != UNSPECIFIED &&
-      type != TOP_LEVEL_FOLDER) {
-    DVLOG(1) << "Skipping update application, type not permitted.";
-    return true;
-  }
-  return false;
 }
 
 }  // namespace syncer

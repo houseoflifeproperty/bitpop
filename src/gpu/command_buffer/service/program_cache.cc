@@ -4,7 +4,9 @@
 
 #include "gpu/command_buffer/service/program_cache.h"
 
+#include <string>
 #include "base/memory/scoped_ptr.h"
+#include "gpu/command_buffer/service/shader_manager.h"
 
 namespace gpu {
 namespace gles2 {
@@ -13,48 +15,20 @@ ProgramCache::ProgramCache() {}
 ProgramCache::~ProgramCache() {}
 
 void ProgramCache::Clear() {
-  shader_status_.clear();
-  link_status_.clear();
   ClearBackend();
-}
-
-ProgramCache::CompiledShaderStatus ProgramCache::GetShaderCompilationStatus(
-    const std::string& shader_src) const {
-  char sha[kHashLength];
-  ComputeShaderHash(shader_src, sha);
-  const std::string sha_string(sha, kHashLength);
-
-  CompileStatusMap::const_iterator found = shader_status_.find(sha_string);
-
-  if (found == shader_status_.end()) {
-    return ProgramCache::COMPILATION_UNKNOWN;
-  } else {
-    return found->second.status;
-  }
-}
-
-void ProgramCache::ShaderCompilationSucceeded(
-    const std::string& shader_src) {
-  char sha[kHashLength];
-  ComputeShaderHash(shader_src, sha);
-  const std::string sha_string(sha, kHashLength);
-
-  CompileStatusMap::iterator it = shader_status_.find(sha_string);
-  if (it == shader_status_.end()) {
-    shader_status_[sha_string] = CompiledShaderInfo(COMPILATION_SUCCEEDED);
-  } else {
-    it->second.status = COMPILATION_SUCCEEDED;
-  }
+  link_status_.clear();
 }
 
 ProgramCache::LinkedProgramStatus ProgramCache::GetLinkedProgramStatus(
     const std::string& untranslated_a,
+    const ShaderTranslatorInterface* translator_a,
     const std::string& untranslated_b,
+    const ShaderTranslatorInterface* translator_b,
     const std::map<std::string, GLint>* bind_attrib_location_map) const {
   char a_sha[kHashLength];
   char b_sha[kHashLength];
-  ComputeShaderHash(untranslated_a, a_sha);
-  ComputeShaderHash(untranslated_b, b_sha);
+  ComputeShaderHash(untranslated_a, translator_a, a_sha);
+  ComputeShaderHash(untranslated_b, translator_b, b_sha);
 
   char sha[kHashLength];
   ComputeProgramHash(a_sha,
@@ -73,12 +47,14 @@ ProgramCache::LinkedProgramStatus ProgramCache::GetLinkedProgramStatus(
 
 void ProgramCache::LinkedProgramCacheSuccess(
     const std::string& shader_a,
+    const ShaderTranslatorInterface* translator_a,
     const std::string& shader_b,
+    const ShaderTranslatorInterface* translator_b,
     const LocationMap* bind_attrib_location_map) {
   char a_sha[kHashLength];
   char b_sha[kHashLength];
-  ComputeShaderHash(shader_a, a_sha);
-  ComputeShaderHash(shader_b, b_sha);
+  ComputeShaderHash(shader_a, translator_a, a_sha);
+  ComputeShaderHash(shader_b, translator_b, b_sha);
   char sha[kHashLength];
   ComputeProgramHash(a_sha,
                      b_sha,
@@ -86,40 +62,25 @@ void ProgramCache::LinkedProgramCacheSuccess(
                      sha);
   const std::string sha_string(sha, kHashLength);
 
-  LinkedProgramCacheSuccess(sha_string,
-                            std::string(a_sha, kHashLength),
-                            std::string(b_sha, kHashLength));
+  LinkedProgramCacheSuccess(sha_string);
 }
 
-void ProgramCache::LinkedProgramCacheSuccess(const std::string& program_hash,
-                                             const std::string& shader_a_hash,
-                                             const std::string& shader_b_hash) {
+void ProgramCache::LinkedProgramCacheSuccess(const std::string& program_hash) {
   link_status_[program_hash] = LINK_SUCCEEDED;
-  shader_status_[shader_a_hash].ref_count++;
-  shader_status_[shader_b_hash].ref_count++;
 }
 
-void ProgramCache::ComputeShaderHash(const std::string& str,
-                                     char* result) const {
-  base::SHA1HashBytes(reinterpret_cast<const unsigned char*>(str.c_str()),
-                      str.length(), reinterpret_cast<unsigned char*>(result));
+void ProgramCache::ComputeShaderHash(
+    const std::string& str,
+    const ShaderTranslatorInterface* translator,
+    char* result) const {
+  std::string s((
+      translator ? translator->GetStringForOptionsThatWouldEffectCompilation() :
+                   std::string()) + str);
+  base::SHA1HashBytes(reinterpret_cast<const unsigned char*>(s.c_str()),
+                      s.length(), reinterpret_cast<unsigned char*>(result));
 }
 
-void ProgramCache::Evict(const std::string& program_hash,
-                         const std::string& shader_0_hash,
-                         const std::string& shader_1_hash) {
-  CompileStatusMap::iterator info0 = shader_status_.find(shader_0_hash);
-  CompileStatusMap::iterator info1 = shader_status_.find(shader_1_hash);
-  DCHECK(info0 != shader_status_.end());
-  DCHECK(info1 != shader_status_.end());
-  DCHECK(info0->second.ref_count > 0);
-  DCHECK(info1->second.ref_count > 0);
-  if (--info0->second.ref_count <= 0) {
-    shader_status_.erase(shader_0_hash);
-  }
-  if (--info1->second.ref_count <= 0) {
-    shader_status_.erase(shader_1_hash);
-  }
+void ProgramCache::Evict(const std::string& program_hash) {
   link_status_.erase(program_hash);
 }
 
@@ -147,7 +108,7 @@ void ProgramCache::ComputeProgramHash(
   const size_t map_size = CalculateMapSize(bind_attrib_location_map);
   const size_t total_size = shader0_size + shader1_size + map_size;
 
-  scoped_array<unsigned char> buffer(new unsigned char[total_size]);
+  scoped_ptr<unsigned char[]> buffer(new unsigned char[total_size]);
   memcpy(buffer.get(), hashed_shader_0, shader0_size);
   memcpy(&buffer[shader0_size], hashed_shader_1, shader1_size);
   if (map_size != 0) {

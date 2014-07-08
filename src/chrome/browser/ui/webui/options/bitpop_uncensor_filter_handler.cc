@@ -18,11 +18,11 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/pref_names.h"
@@ -91,13 +91,11 @@ void BitpopUncensorFilterHandler::ChangeUncensorExceptions(
   if (pref_service->IsUserModifiablePreference(prefs::kUncensorDomainExceptions))
     pref_service->SetString(prefs::kUncensorDomainExceptions, strValue);
   else {
-    extensions::ExtensionPrefs* prefs =
-        profile->GetExtensionService()->extension_prefs();
-    prefs->SetExtensionControlledPref(
+    extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile);
+    prefs->UpdateExtensionPref(
         chrome::kUncensorFilterExtensionId,
         prefs::kUncensorDomainExceptions,
-        extensions::kExtensionPrefsScopeRegular,
-        Value::CreateStringValue(strValue));
+        base::Value::CreateStringValue(strValue));
   }
 }
 

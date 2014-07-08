@@ -5,16 +5,19 @@
 #ifndef CONTENT_PUBLIC_COMMON_CONTEXT_MENU_PARAMS_H_
 #define CONTENT_PUBLIC_COMMON_CONTEXT_MENU_PARAMS_H_
 
+#include <string>
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
+#include "content/public/common/menu_item.h"
+#include "content/public/common/page_state.h"
 #include "content/public/common/ssl_status.h"
-#include "third_party/WebKit/Source/Platform/chromium/public/WebReferrerPolicy.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebContextMenuData.h"
-#include "webkit/glue/webmenuitem.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/web/WebContextMenuData.h"
+#include "ui/base/ui_base_types.h"
+#include "url/gurl.h"
 
 #if defined(OS_ANDROID)
 #include "ui/gfx/point.h"
@@ -42,11 +45,10 @@ struct CONTENT_EXPORT CustomContextMenuContext {
 //              could be used for more contextual actions.
 struct CONTENT_EXPORT ContextMenuParams {
   ContextMenuParams();
-  explicit ContextMenuParams(const WebKit::WebContextMenuData& data);
   ~ContextMenuParams();
 
   // This is the type of Context Node that the context menu was invoked on.
-  WebKit::WebContextMenuData::MediaType media_type;
+  blink::WebContextMenuData::MediaType media_type;
 
   // These values represent the coordinates of the mouse when the context menu
   // was invoked.  Coords are relative to the associated RenderView's origin.
@@ -60,7 +62,7 @@ struct CONTENT_EXPORT ContextMenuParams {
   // The text associated with the link. May be an empty string if the contents
   // of the link are an image.
   // Will be empty if link_url is empty.
-  string16 link_text;
+  base::string16 link_text;
 
   // The link URL to be used ONLY for "copy link address". We don't validate
   // this field in the frontend process.
@@ -71,8 +73,9 @@ struct CONTENT_EXPORT ContextMenuParams {
   // video.
   GURL src_url;
 
-  // This is true if the context menu was invoked on a blocked image.
-  bool is_image_blocked;
+  // This is true if the context menu was invoked on an image which has
+  // non-empty contents.
+  bool has_image_contents;
 
   // This is the URL of the top level page that the context menu was invoked
   // on.
@@ -85,33 +88,29 @@ struct CONTENT_EXPORT ContextMenuParams {
   // This is the URL of the subframe that the context menu was invoked on.
   GURL frame_url;
 
-  // This is the ID of the subframe that the context menu was invoked on.
-  int64 frame_id;
-
-  // This is the history item state of the subframe that the context menu was
-  // invoked on.
-  std::string frame_content_state;
+  // This is the page state of the frame on which the context menu was invoked.
+  PageState frame_page_state;
 
   // These are the parameters for the media element that the context menu
   // was invoked on.
   int media_flags;
 
   // This is the text of the selection that the context menu was invoked on.
-  string16 selection_text;
+  base::string16 selection_text;
 
   // The misspelled word under the cursor, if any. Used to generate the
   // |dictionary_suggestions| list.
-  string16 misspelled_word;
+  base::string16 misspelled_word;
+
+  // The identifier of the misspelling under the cursor, if any.
+  uint32 misspelling_hash;
 
   // Suggested replacements for a misspelled word under the cursor.
   // This vector gets populated in the render process host
   // by intercepting ViewHostMsg_ContextMenu in ResourceMessageFilter
   // and populating dictionary_suggestions if the type is EDITABLE
   // and the misspelled_word is not empty.
-  std::vector<string16> dictionary_suggestions;
-
-  // If editable, flag for whether node is speech-input enabled.
-  bool speech_input_enabled;
+  std::vector<base::string16> dictionary_suggestions;
 
   // If editable, flag for whether spell check is enabled or not.
   bool spellcheck_enabled;
@@ -119,13 +118,10 @@ struct CONTENT_EXPORT ContextMenuParams {
   // Whether context is editable.
   bool is_editable;
 
-#if defined(OS_MACOSX)
   // Writing direction menu items.
-  // Currently only used on OS X.
   int writing_direction_default;
   int writing_direction_left_to_right;
   int writing_direction_right_to_left;
-#endif  // OS_MACOSX
 
   // These flags indicate to the browser whether the renderer believes it is
   // able to perform the corresponding action.
@@ -138,10 +134,12 @@ struct CONTENT_EXPORT ContextMenuParams {
   std::string frame_charset;
 
   // The referrer policy of the frame on which the menu is invoked.
-  WebKit::WebReferrerPolicy referrer_policy;
+  blink::WebReferrerPolicy referrer_policy;
 
   CustomContextMenuContext custom_context;
-  std::vector<WebMenuItem> custom_items;
+  std::vector<MenuItem> custom_items;
+
+  ui::MenuSourceType source_type;
 
 #if defined(OS_ANDROID)
   // Points representing the coordinates in the document space of the start and
@@ -149,7 +147,6 @@ struct CONTENT_EXPORT ContextMenuParams {
   gfx::Point selection_start;
   gfx::Point selection_end;
 #endif
-
 };
 
 }  // namespace content

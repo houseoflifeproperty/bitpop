@@ -163,12 +163,14 @@ class WebKitCommand(shell.ShellCommand):
 
     full_desc.append('<a href="%s#master=%s&tests=%s">' % (
         self._LAYOUT_TEST_DASHBOARD_BASE, self.test_observer.master_name,
-        ','.join(tests)))
+        ','.join(sorted(tests))))
 
     # Display test names, with full paths as tooltips.
-    for path in tests[:maxlen]:
-      full_desc.append('<abbr title="%s">%s</abbr>' %
-                       (path, _BasenameFromPath(path)))
+    name_path_pairs = [(_BasenameFromPath(path), path)
+        for path in tests[:maxlen]]
+    for name, path in sorted(name_path_pairs):
+      full_desc.append('<abbr title="%s">%s</abbr>' % (path, name))
+      full_desc.append('<br>')
     if len(tests) > maxlen:
       full_desc.append('...and more')
 

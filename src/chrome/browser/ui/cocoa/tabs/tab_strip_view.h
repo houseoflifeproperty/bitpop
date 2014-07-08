@@ -7,7 +7,8 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#import "chrome/browser/ui/cocoa/background_gradient_view.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 
 @class NewTabButton;
@@ -16,16 +17,16 @@
 // A view class that handles rendering the tab strip and drops of URLS with
 // a positioning locator for drop feedback.
 
-@interface TabStripView : NSView<URLDropTarget> {
+@interface TabStripView : BackgroundGradientView<URLDropTarget> {
  @private
   TabStripController* controller_;  // Weak; owns us.
 
   NSTimeInterval lastMouseUp_;
 
   // Handles being a drag-and-drop target.
-  scoped_nsobject<URLDropTargetHandler> dropHandler_;
+  base::scoped_nsobject<URLDropTargetHandler> dropHandler_;
 
-  scoped_nsobject<NewTabButton> newTabButton_;
+  base::scoped_nsobject<NewTabButton> newTabButton_;
 
   // Whether the drop-indicator arrow is shown, and if it is, the coordinate of
   // its tip.

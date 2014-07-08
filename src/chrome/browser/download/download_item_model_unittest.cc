@@ -8,18 +8,22 @@
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/test/mock_download_item.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/text/bytes_formatting.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/text_utils.h"
 
+using content::DownloadItem;
 using ::testing::Mock;
 using ::testing::NiceMock;
 using ::testing::Return;
@@ -42,10 +46,10 @@ char kInterruptReasonCounter[] = {
 const size_t kInterruptReasonCount = ARRAYSIZE_UNSAFE(kInterruptReasonCounter);
 
 // Default target path for a mock download item in DownloadItemModelTest.
-const FilePath::CharType kDefaultTargetFilePath[] =
+const base::FilePath::CharType kDefaultTargetFilePath[] =
     FILE_PATH_LITERAL("/foo/bar/foo.bar");
 
-const FilePath::CharType kDefaultDisplayFileName[] =
+const base::FilePath::CharType kDefaultDisplayFileName[] =
     FILE_PATH_LITERAL("foo.bar");
 
 // Default URL for a mock download item in DownloadItemModelTest.
@@ -65,23 +69,22 @@ class DownloadItemModelTest : public testing::Test {
   void SetupDownloadItemDefaults() {
     ON_CALL(item_, GetReceivedBytes()).WillByDefault(Return(1));
     ON_CALL(item_, GetTotalBytes()).WillByDefault(Return(2));
-    ON_CALL(item_, IsInProgress()).WillByDefault(Return(true));
     ON_CALL(item_, TimeRemaining(_)).WillByDefault(Return(false));
     ON_CALL(item_, GetMimeType()).WillByDefault(Return("text/html"));
     ON_CALL(item_, AllDataSaved()).WillByDefault(Return(false));
     ON_CALL(item_, GetOpenWhenComplete()).WillByDefault(Return(false));
     ON_CALL(item_, GetFileExternallyRemoved()).WillByDefault(Return(false));
     ON_CALL(item_, GetState())
-        .WillByDefault(Return(content::DownloadItem::IN_PROGRESS));
+        .WillByDefault(Return(DownloadItem::IN_PROGRESS));
     ON_CALL(item_, GetURL())
         .WillByDefault(ReturnRefOfCopy(GURL(kDefaultURL)));
     ON_CALL(item_, GetFileNameToReportUser())
-        .WillByDefault(Return(FilePath(kDefaultDisplayFileName)));
+        .WillByDefault(Return(base::FilePath(kDefaultDisplayFileName)));
     ON_CALL(item_, GetTargetFilePath())
-        .WillByDefault(ReturnRefOfCopy(FilePath(kDefaultTargetFilePath)));
+        .WillByDefault(ReturnRefOfCopy(base::FilePath(kDefaultTargetFilePath)));
     ON_CALL(item_, GetTargetDisposition())
         .WillByDefault(
-            Return(content::DownloadItem::TARGET_DISPOSITION_OVERWRITE));
+            Return(DownloadItem::TARGET_DISPOSITION_OVERWRITE));
     ON_CALL(item_, IsPaused()).WillByDefault(Return(false));
   }
 
@@ -90,11 +93,8 @@ class DownloadItemModelTest : public testing::Test {
     EXPECT_CALL(item_, GetState())
         .WillRepeatedly(Return(
             (reason == content::DOWNLOAD_INTERRUPT_REASON_NONE) ?
-                content::DownloadItem::IN_PROGRESS :
-                content::DownloadItem::INTERRUPTED));
-    EXPECT_CALL(item_, IsInProgress())
-        .WillRepeatedly(Return(
-            reason == content::DOWNLOAD_INTERRUPT_REASON_NONE));
+                DownloadItem::IN_PROGRESS :
+                DownloadItem::INTERRUPTED));
   }
 
   content::MockDownloadItem& item() {
@@ -140,6 +140,8 @@ TEST_F(DownloadItemModelTest, InterruptedStatus) {
       "Failed - Blocked" },
     { content::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED,
       "Failed - Virus scan failed" },
+    { content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_SHORT,
+      "Failed - File truncated" },
     { content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR,
       "Failed - System busy" },
     { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED,
@@ -150,6 +152,8 @@ TEST_F(DownloadItemModelTest, InterruptedStatus) {
       "Failed - Network disconnected" },
     { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN,
       "Failed - Server unavailable" },
+    { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST,
+      "Failed - Network error" },
     { content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED,
       "Failed - Server problem" },
     { content::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE,
@@ -163,7 +167,7 @@ TEST_F(DownloadItemModelTest, InterruptedStatus) {
     { content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN,
       "Failed - Shutdown" },
     { content::DOWNLOAD_INTERRUPT_REASON_CRASH,
-      "Failed - Shutdown" },
+      "Failed - Crash" },
   };
   COMPILE_ASSERT(kInterruptReasonCount == ARRAYSIZE_UNSAFE(kTestCases),
                  interrupt_reason_mismatch);
@@ -173,7 +177,7 @@ TEST_F(DownloadItemModelTest, InterruptedStatus) {
     const TestCase& test_case = kTestCases[i];
     SetupInterruptedDownloadItem(test_case.reason);
     EXPECT_STREQ(test_case.expected_status,
-                 UTF16ToUTF8(model().GetStatusText()).c_str());
+                 base::UTF16ToUTF8(model().GetStatusText()).c_str());
   }
 }
 
@@ -208,6 +212,8 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
       "foo.bar\nBlocked" },
     { content::DOWNLOAD_INTERRUPT_REASON_FILE_SECURITY_CHECK_FAILED,
       "foo.bar\nVirus scan failed" },
+    { content::DOWNLOAD_INTERRUPT_REASON_FILE_TOO_SHORT,
+      "foo.bar\nFile truncated" },
     { content::DOWNLOAD_INTERRUPT_REASON_FILE_TRANSIENT_ERROR,
       "foo.bar\nSystem busy" },
     { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_FAILED,
@@ -218,6 +224,8 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
       "foo.bar\nNetwork disconnected" },
     { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_SERVER_DOWN,
       "foo.bar\nServer unavailable" },
+    { content::DOWNLOAD_INTERRUPT_REASON_NETWORK_INVALID_REQUEST,
+      "foo.bar\nNetwork error" },
     { content::DOWNLOAD_INTERRUPT_REASON_SERVER_FAILED,
       "foo.bar\nServer problem" },
     { content::DOWNLOAD_INTERRUPT_REASON_SERVER_NO_RANGE,
@@ -231,7 +239,7 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
     { content::DOWNLOAD_INTERRUPT_REASON_USER_SHUTDOWN,
       "foo.bar\nShutdown" },
     { content::DOWNLOAD_INTERRUPT_REASON_CRASH,
-      "foo.bar\nShutdown" },
+      "foo.bar\nCrash" },
   };
   COMPILE_ASSERT(kInterruptReasonCount == ARRAYSIZE_UNSAFE(kTestCases),
                  interrupt_reason_mismatch);
@@ -244,32 +252,35 @@ TEST_F(DownloadItemModelTest, InterruptTooltip) {
   // tooltips. Used to test eliding logic.
   const int kSmallTooltipWidth = 40;
 
-  gfx::Font font;
+  const gfx::FontList& font_list =
+      ui::ResourceBundle::GetSharedInstance().GetFontList(
+          ui::ResourceBundle::BaseFont);
   SetupDownloadItemDefaults();
   for (unsigned i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); ++i) {
     const TestCase& test_case = kTestCases[i];
     SetupInterruptedDownloadItem(test_case.reason);
 
     // GetTooltipText() elides the tooltip so that the text would fit within a
-    // given width. The following test would fail if kLargeTooltipWidth is large
-    // enough to accomodate all the strings.
+    // given width. The following test would fail if kLargeTooltipWidth isn't
+    // large enough to accomodate all the strings.
     EXPECT_STREQ(
         test_case.expected_tooltip,
-        UTF16ToUTF8(model().GetTooltipText(font, kLargeTooltipWidth)).c_str());
+        base::UTF16ToUTF8(model().GetTooltipText(font_list,
+                                                 kLargeTooltipWidth)).c_str());
 
     // Check that if the width is small, the returned tooltip only contains
     // lines of the given width or smaller.
-    std::vector<string16> lines;
-    string16 truncated_tooltip =
-        model().GetTooltipText(font, kSmallTooltipWidth);
-    Tokenize(truncated_tooltip, ASCIIToUTF16("\n"), &lines);
+    std::vector<base::string16> lines;
+    base::string16 truncated_tooltip =
+        model().GetTooltipText(font_list, kSmallTooltipWidth);
+    Tokenize(truncated_tooltip, base::ASCIIToUTF16("\n"), &lines);
     for (unsigned i = 0; i < lines.size(); ++i)
-      EXPECT_GE(kSmallTooltipWidth, font.GetStringWidth(lines[i]));
+      EXPECT_GE(kSmallTooltipWidth, gfx::GetStringWidth(lines[i], font_list));
   }
 }
 
 TEST_F(DownloadItemModelTest, InProgressStatus) {
-  struct TestCase {
+  const struct TestCase {
     int64 received_bytes;               // Return value of GetReceivedBytes().
     int64 total_bytes;                  // Return value of GetTotalBytes().
     bool  time_remaining_known;         // If TimeRemaining() is known.
@@ -319,7 +330,7 @@ TEST_F(DownloadItemModelTest, InProgressStatus) {
   SetupDownloadItemDefaults();
 
   for (unsigned i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); i++) {
-    TestCase& test_case = kTestCases[i];
+    const TestCase& test_case = kTestCases[i];
     Mock::VerifyAndClearExpectations(&item());
     Mock::VerifyAndClearExpectations(&model());
     EXPECT_CALL(item(), GetReceivedBytes())
@@ -336,7 +347,7 @@ TEST_F(DownloadItemModelTest, InProgressStatus) {
         .WillRepeatedly(Return(test_case.is_paused));
 
     EXPECT_STREQ(test_case.expected_status,
-                 UTF16ToUTF8(model().GetStatusText()).c_str());
+                 base::UTF16ToUTF8(model().GetStatusText()).c_str());
   }
 }
 
@@ -352,4 +363,59 @@ TEST_F(DownloadItemModelTest, ShouldShowInShelf) {
 
   model().SetShouldShowInShelf(true);
   EXPECT_TRUE(model().ShouldShowInShelf());
+}
+
+TEST_F(DownloadItemModelTest, ShouldRemoveFromShelfWhenComplete) {
+  const struct TestCase {
+    DownloadItem::DownloadState state;
+    bool is_dangerous;  // Expectation for IsDangerous().
+    bool is_auto_open;  // Expectation for GetOpenWhenComplete().
+    bool auto_opened;   // Whether the download was successfully
+                        // auto-opened. Expecation for GetAutoOpened().
+    bool expected_result;
+  } kTestCases[] = {
+    // All the valid combinations of state, is_dangerous, is_auto_open and
+    // auto_opened.
+    //
+    //                              .--- Is dangerous.
+    //                             |       .--- Auto open or temporary.
+    //                             |      |      .--- Auto opened.
+    //                             |      |      |      .--- Expected result.
+    { DownloadItem::IN_PROGRESS, false, false, false, false},
+    { DownloadItem::IN_PROGRESS, false, true , false, true },
+    { DownloadItem::IN_PROGRESS, true , false, false, false},
+    { DownloadItem::IN_PROGRESS, true , true , false, false},
+    { DownloadItem::COMPLETE,    false, false, false, false},
+    { DownloadItem::COMPLETE,    false, true , false, false},
+    { DownloadItem::COMPLETE,    false, false, true , true },
+    { DownloadItem::COMPLETE,    false, true , true , true },
+    { DownloadItem::CANCELLED,   false, false, false, false},
+    { DownloadItem::CANCELLED,   false, true , false, false},
+    { DownloadItem::CANCELLED,   true , false, false, false},
+    { DownloadItem::CANCELLED,   true , true , false, false},
+    { DownloadItem::INTERRUPTED, false, false, false, false},
+    { DownloadItem::INTERRUPTED, false, true , false, false},
+    { DownloadItem::INTERRUPTED, true , false, false, false},
+    { DownloadItem::INTERRUPTED, true , true , false, false}
+  };
+
+  SetupDownloadItemDefaults();
+
+  for (unsigned i = 0; i < ARRAYSIZE_UNSAFE(kTestCases); i++) {
+    const TestCase& test_case = kTestCases[i];
+    EXPECT_CALL(item(), GetOpenWhenComplete())
+        .WillRepeatedly(Return(test_case.is_auto_open));
+    EXPECT_CALL(item(), GetState())
+        .WillRepeatedly(Return(test_case.state));
+    EXPECT_CALL(item(), IsDangerous())
+        .WillRepeatedly(Return(test_case.is_dangerous));
+    EXPECT_CALL(item(), GetAutoOpened())
+        .WillRepeatedly(Return(test_case.auto_opened));
+
+    EXPECT_EQ(test_case.expected_result,
+              model().ShouldRemoveFromShelfWhenComplete())
+        << "Test case: " << i;
+    Mock::VerifyAndClearExpectations(&item());
+    Mock::VerifyAndClearExpectations(&model());
+  }
 }

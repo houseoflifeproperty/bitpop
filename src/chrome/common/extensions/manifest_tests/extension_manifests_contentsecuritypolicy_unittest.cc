@@ -3,14 +3,15 @@
 // found in the LICENSE file.
 
 #include "chrome/common/extensions/manifest_tests/extension_manifest_test.h"
-
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "extensions/common/manifest_constants.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace errors = extension_manifest_errors;
+namespace errors = extensions::manifest_errors;
 
-TEST_F(ExtensionManifestTest, InsecureContentSecurityPolicy) {
+class ContentSecurityPolicyManifestTest : public ExtensionManifestTest {
+};
+
+TEST_F(ContentSecurityPolicyManifestTest, InsecureContentSecurityPolicy) {
   Testcase testcases[] = {
     Testcase("insecure_contentsecuritypolicy_1.json",
         errors::kInsecureContentSecurityPolicy),
@@ -19,6 +20,5 @@ TEST_F(ExtensionManifestTest, InsecureContentSecurityPolicy) {
     Testcase("insecure_contentsecuritypolicy_3.json",
         errors::kInsecureContentSecurityPolicy),
   };
-  RunTestcases(testcases, arraysize(testcases),
-               EXPECT_TYPE_ERROR);
+  RunTestcases(testcases, arraysize(testcases), EXPECT_TYPE_ERROR);
 }

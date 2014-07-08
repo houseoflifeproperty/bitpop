@@ -10,18 +10,14 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/location.h"
-#include "base/message_loop_proxy.h"
+#include "base/logging.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/task_runner_util.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 
-#if defined(UNIT_TEST)
-#include "base/logging.h"
-#endif  // UNIT_TEST
-
-class MessageLoop;
-
 namespace base {
+class MessageLoop;
 class SequencedWorkerPool;
 class Thread;
 }
@@ -30,6 +26,13 @@ namespace content {
 
 class BrowserThreadDelegate;
 class BrowserThreadImpl;
+
+// Use DCHECK_CURRENTLY_ON(BrowserThread::ID) to assert that a function can only
+// be called on the named BrowserThread.
+#define DCHECK_CURRENTLY_ON(thread_identifier)                      \
+  (DCHECK(::content::BrowserThread::CurrentlyOn(thread_identifier)) \
+   << ::content::BrowserThread::GetDCheckCurrentlyOnErrorMessage(   \
+          thread_identifier))
 
 ///////////////////////////////////////////////////////////////////////////////
 // BrowserThread
@@ -64,12 +67,6 @@ class CONTENT_EXPORT BrowserThread {
 
     // This is the thread that interacts with the database.
     DB,
-
-    // This is the "main" thread for WebKit within the browser process when
-    // NOT in --single-process mode.
-    // Deprecated: Do not design new code to use this thread; see
-    // http://crbug.com/106839
-    WEBKIT_DEPRECATED,
 
     // This is the thread that interacts with the file system.
     FILE,
@@ -125,15 +122,15 @@ class CONTENT_EXPORT BrowserThread {
       const base::Closure& task,
       const base::Closure& reply);
 
-  template <typename ReturnType>
+  template <typename ReturnType, typename ReplyArgType>
   static bool PostTaskAndReplyWithResult(
       ID identifier,
       const tracked_objects::Location& from_here,
       const base::Callback<ReturnType(void)>& task,
-      const base::Callback<void(ReturnType)>& reply) {
+      const base::Callback<void(ReplyArgType)>& reply) {
     scoped_refptr<base::MessageLoopProxy> message_loop_proxy =
         GetMessageLoopProxyForThread(identifier);
-    return base::PostTaskAndReplyWithResult<ReturnType>(
+    return base::PostTaskAndReplyWithResult(
         message_loop_proxy.get(), from_here, task, reply);
   }
 
@@ -170,6 +167,10 @@ class CONTENT_EXPORT BrowserThread {
   // lookup and is guaranteed unique without you having to come up with a
   // unique string), you can access the sequenced worker pool directly via
   // GetBlockingPool().
+  //
+  // If you need to PostTaskAndReplyWithResult, use
+  // base::PostTaskAndReplyWithResult() with GetBlockingPool() as the task
+  // runner.
   static bool PostBlockingPoolTask(const tracked_objects::Location& from_here,
                                    const base::Closure& task);
   static bool PostBlockingPoolTaskAndReply(
@@ -184,24 +185,24 @@ class CONTENT_EXPORT BrowserThread {
   // Returns the thread pool used for blocking file I/O. Use this object to
   // perform random blocking operations such as file writes or querying the
   // Windows registry.
-  static base::SequencedWorkerPool* GetBlockingPool();
+  static base::SequencedWorkerPool* GetBlockingPool() WARN_UNUSED_RESULT;
 
-  // Callable on any thread.  Returns whether the given ID corresponds to a well
-  // known thread.
-  static bool IsWellKnownThread(ID identifier);
+  // Callable on any thread.  Returns whether the given well-known thread is
+  // initialized.
+  static bool IsThreadInitialized(ID identifier) WARN_UNUSED_RESULT;
 
   // Callable on any thread.  Returns whether you're currently on a particular
-  // thread.
-  static bool CurrentlyOn(ID identifier);
+  // thread.  To DCHECK this, use the DCHECK_CURRENTLY_ON() macro above.
+  static bool CurrentlyOn(ID identifier) WARN_UNUSED_RESULT;
 
   // Callable on any thread.  Returns whether the threads message loop is valid.
   // If this returns false it means the thread is in the process of shutting
   // down.
-  static bool IsMessageLoopValid(ID identifier);
+  static bool IsMessageLoopValid(ID identifier) WARN_UNUSED_RESULT;
 
   // If the current message loop is one of the known threads, returns true and
   // sets identifier to its ID.  Otherwise returns false.
-  static bool GetCurrentThreadIdentifier(ID* identifier);
+  static bool GetCurrentThreadIdentifier(ID* identifier) WARN_UNUSED_RESULT;
 
   // Callers can hold on to a refcounted MessageLoopProxy beyond the lifetime
   // of the thread.
@@ -216,7 +217,7 @@ class CONTENT_EXPORT BrowserThread {
   //
   // Ownership remains with the BrowserThread implementation, so you
   // must not delete the pointer.
-  static MessageLoop* UnsafeGetMessageLoopForThread(ID identifier);
+  static base::MessageLoop* UnsafeGetMessageLoopForThread(ID identifier);
 
   // Sets the delegate for the specified BrowserThread.
   //
@@ -268,7 +269,9 @@ class CONTENT_EXPORT BrowserThread {
   struct DeleteOnIOThread : public DeleteOnThread<IO> { };
   struct DeleteOnFileThread : public DeleteOnThread<FILE> { };
   struct DeleteOnDBThread : public DeleteOnThread<DB> { };
-  struct DeleteOnWebKitThread : public DeleteOnThread<WEBKIT_DEPRECATED> { };
+
+  // Returns an appropriate error message for when DCHECK_CURRENTLY_ON() fails.
+  static std::string GetDCheckCurrentlyOnErrorMessage(ID expected);
 
  private:
   friend class BrowserThreadImpl;

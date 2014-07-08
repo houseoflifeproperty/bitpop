@@ -83,7 +83,7 @@ chrome.test.getConfig(function(config) {
     function contentScriptTestIncognito() {
       assertTrue(!chrome.extension.inIncognitoContext);
 
-      var testUrl = "http://localhost:PORT/files/extensions/test_file.html"
+      var testUrl = "http://localhost:PORT/extensions/test_file.html"
           .replace(/PORT/, config.testServer.port);
 
       // Test that chrome.extension.inIncognitoTab is true for incognito tabs.
@@ -92,7 +92,7 @@ chrome.test.getConfig(function(config) {
           chrome.tabs.executeScript(tab.id,
             {code: 'document.title = chrome.extension.inIncognitoContext'},
             pass(function() {
-              assertEq(undefined, chrome.extension.lastError);
+              assertEq(undefined, chrome.runtime.lastError);
               chrome.tabs.get(tab.id, pass(function(tab) {
                   assertEq("true", tab.title);
                 }));
@@ -105,7 +105,7 @@ chrome.test.getConfig(function(config) {
           chrome.tabs.executeScript(tab.id,
             {code: 'document.title = chrome.extension.inIncognitoContext'},
             pass(function() {
-              assertEq(undefined, chrome.extension.lastError);
+              assertEq(undefined, chrome.runtime.lastError);
               chrome.tabs.get(tab.id, pass(function(tab) {
                   assertEq("false", tab.title);
                 }));

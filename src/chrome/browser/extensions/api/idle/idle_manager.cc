@@ -7,15 +7,18 @@
 #include <utility>
 
 #include "base/stl_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/idle/idle_api_constants.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/api/idle.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 
 namespace keys = extensions::idle_api_constants;
+namespace idle = extensions::api::idle;
 
 namespace extensions {
 
@@ -47,24 +50,24 @@ DefaultEventDelegate::~DefaultEventDelegate() {
 
 void DefaultEventDelegate::OnStateChanged(const std::string& extension_id,
                                           IdleState new_state) {
-  scoped_ptr<ListValue> args(new ListValue());
+  scoped_ptr<base::ListValue> args(new base::ListValue());
   args->Append(IdleManager::CreateIdleValue(new_state));
-  scoped_ptr<Event> event(new Event(keys::kOnStateChanged, args.Pass()));
-  event->restrict_to_profile = profile_;
-  ExtensionSystem::Get(profile_)->event_router()->DispatchEventToExtension(
-      extension_id, event.Pass());
+  scoped_ptr<Event> event(new Event(idle::OnStateChanged::kEventName,
+                                    args.Pass()));
+  event->restrict_to_browser_context = profile_;
+  EventRouter::Get(profile_)
+      ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
 void DefaultEventDelegate::RegisterObserver(
     EventRouter::Observer* observer) {
-  ExtensionSystem::Get(profile_)->event_router()->RegisterObserver(
-      observer, idle_api_constants::kOnStateChanged);
+  EventRouter::Get(profile_)
+      ->RegisterObserver(observer, idle::OnStateChanged::kEventName);
 }
 
 void DefaultEventDelegate::UnregisterObserver(EventRouter::Observer* observer) {
-  ExtensionSystem::Get(profile_)->event_router()->UnregisterObserver(observer);
+  EventRouter::Get(profile_)->UnregisterObserver(observer);
 }
-
 
 class DefaultIdleProvider : public IdleManager::IdleTimeProvider {
  public:
@@ -129,7 +132,7 @@ IdleManager::~IdleManager() {
 }
 
 void IdleManager::Init() {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
   event_delegate_->RegisterObserver(this);
 }
@@ -144,7 +147,7 @@ void IdleManager::Observe(int type,
                           const content::NotificationDetails& details) {
   DCHECK(thread_checker_.CalledOnValidThread());
 
-  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
+  if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
     const Extension* extension =
         content::Details<extensions::UnloadedExtensionInfo>(details)->extension;
     monitors_.erase(extension->id());
@@ -168,6 +171,9 @@ void IdleManager::OnListenerRemoved(const EventListenerInfo& details) {
   MonitorMap::iterator it = monitors_.find(details.extension_id);
   if (it != monitors_.end()) {
     DCHECK_GT(it->second.listeners, 0);
+    // Note: Deliberately leave the listener count as 0 rather than erase()ing
+    // this record so that the threshold doesn't get reset when all listeners
+    // are removed.
     --it->second.listeners;
   }
 }
@@ -184,7 +190,7 @@ void IdleManager::SetThreshold(const std::string& extension_id,
 }
 
 // static
-StringValue* IdleManager::CreateIdleValue(IdleState idle_state) {
+base::StringValue* IdleManager::CreateIdleValue(IdleState idle_state) {
   const char* description;
 
   if (idle_state == IDLE_STATE_ACTIVE) {
@@ -195,7 +201,7 @@ StringValue* IdleManager::CreateIdleValue(IdleState idle_state) {
     description = keys::kStateLocked;
   }
 
-  return new StringValue(description);
+  return new base::StringValue(description);
 }
 
 void IdleManager::SetEventDelegateForTest(
@@ -256,24 +262,18 @@ void IdleManager::UpdateIdleStateCallback(int idle_time) {
 
   for (MonitorMap::iterator it = monitors_.begin();
        it != monitors_.end(); ++it) {
-    if (it->second.listeners < 1)
-      continue;
-
-    ++listener_count;
-
-    IdleState new_state = IdleTimeToIdleState(locked,
-                                              idle_time,
-                                              it->second.threshold);
-
-    if (new_state != it->second.last_state) {
-      it->second.last_state = new_state;
+    IdleMonitor& monitor = it->second;
+    IdleState new_state =
+        IdleTimeToIdleState(locked, idle_time, monitor.threshold);
+    // TODO(kalman): Use EventRouter::HasListeners for these sorts of checks.
+    if (monitor.listeners > 0 && monitor.last_state != new_state)
       event_delegate_->OnStateChanged(it->first, new_state);
-    }
+    monitor.last_state = new_state;
+    listener_count += monitor.listeners;
   }
 
-  if (listener_count == 0) {
+  if (listener_count == 0)
     StopPolling();
-  }
 }
 
 }  // namespace extensions

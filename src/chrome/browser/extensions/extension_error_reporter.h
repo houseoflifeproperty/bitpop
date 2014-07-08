@@ -8,9 +8,14 @@
 #include <string>
 #include <vector>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
+namespace base {
 class MessageLoop;
+class FilePath;
+}
+
+class Profile;
 
 // Exposes an easy way for the various components of the extension system to
 // report errors. This is a singleton that lives on the UI thread, with the
@@ -29,12 +34,22 @@ class ExtensionErrorReporter {
   // Get the singleton instance.
   static ExtensionErrorReporter* GetInstance();
 
+  // Report an extension load error. This forwards to ReportError() after
+  // sending an EXTENSION_LOAD_ERROR notification.
+  // TODO(rdevlin.cronin): There's a lot wrong with this. But some of our
+  // systems rely on the notification. Investigate what it will take to remove
+  // the notification and this method.
+  void ReportLoadError(const base::FilePath& extension_path,
+                       const std::string& error,
+                       Profile* profile,
+                       bool be_noisy);
+
   // Report an error. Errors always go to VLOG(1). Optionally, they can also
-  // cause a noisy alert box. This method can be called from any thread.
-  void ReportError(const string16& message, bool be_noisy);
+  // cause a noisy alert box.
+  void ReportError(const base::string16& message, bool be_noisy);
 
   // Get the errors that have been reported so far.
-  const std::vector<string16>* GetErrors();
+  const std::vector<base::string16>* GetErrors();
 
   // Clear the list of errors reported so far.
   void ClearErrors();
@@ -45,8 +60,8 @@ class ExtensionErrorReporter {
   explicit ExtensionErrorReporter(bool enable_noisy_errors);
   ~ExtensionErrorReporter();
 
-  MessageLoop* ui_loop_;
-  std::vector<string16> errors_;
+  base::MessageLoop* ui_loop_;
+  std::vector<base::string16> errors_;
   bool enable_noisy_errors_;
 };
 

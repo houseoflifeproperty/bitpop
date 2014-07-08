@@ -2,13 +2,13 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details.h"
-#include "googleurl/src/gurl.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/parsed_cookie.h"
 #import "testing/gtest_mac.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -16,14 +16,14 @@ class CookiesDetailsTest : public CocoaTest {
 };
 
 TEST_F(CookiesDetailsTest, CreateForFolder) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   details.reset([[CocoaCookieDetails alloc] initAsFolder]);
 
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeFolder);
 }
 
 TEST_F(CookiesDetailsTest, CreateForCookie) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   GURL url("http://chromium.org");
   std::string cookieLine(
       "PHPSESSID=0123456789abcdef0123456789abcdef; path=/");
@@ -53,15 +53,15 @@ TEST_F(CookiesDetailsTest, CreateForCookie) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForTreeDatabase) {
-  scoped_nsobject<CocoaCookieDetails> details;
-  std::string host("http://chromium.org");
+  base::scoped_nsobject<CocoaCookieDetails> details;
+  GURL origin("http://chromium.org");
   std::string database_name("sassolungo");
-  std::string origin_identifier("dolomites");
   std::string description("a great place to climb");
   int64 size = 1234;
   base::Time last_modified = base::Time::Now();
-  BrowsingDataDatabaseHelper::DatabaseInfo info(host, database_name,
-      origin_identifier, description, host, size, last_modified);
+  BrowsingDataDatabaseHelper::DatabaseInfo info(
+      webkit_database::DatabaseIdentifier::CreateFromOrigin(origin),
+      database_name, description, size, last_modified);
   details.reset([[CocoaCookieDetails alloc] initWithDatabase:&info]);
 
   EXPECT_EQ([details.get() type], kCocoaCookieDetailsTypeTreeDatabase);
@@ -80,7 +80,7 @@ TEST_F(CookiesDetailsTest, CreateForTreeDatabase) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForTreeLocalStorage) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   const GURL kOrigin("http://chromium.org/");
   int64 size = 1234;
   base::Time last_modified = base::Time::Now();
@@ -104,7 +104,7 @@ TEST_F(CookiesDetailsTest, CreateForTreeLocalStorage) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForTreeAppCache) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
 
   GURL url("http://chromium.org/stuff.manifest");
   appcache::AppCacheInfo info;
@@ -133,14 +133,17 @@ TEST_F(CookiesDetailsTest, CreateForTreeAppCache) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForTreeIndexedDB) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
 
   GURL origin("http://moose.org/");
   int64 size = 1234;
   base::Time last_modified = base::Time::Now();
-  BrowsingDataIndexedDBHelper::IndexedDBInfo info(origin,
-                                                  size,
-                                                  last_modified);
+  base::FilePath file_path;
+  content::IndexedDBInfo info(origin,
+                              size,
+                              last_modified,
+                              file_path,
+                              0);
 
   details.reset([[CocoaCookieDetails alloc] initWithIndexedDBInfo:&info]);
 
@@ -160,10 +163,10 @@ TEST_F(CookiesDetailsTest, CreateForTreeIndexedDB) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForPromptDatabase) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   std::string domain("chromium.org");
-  string16 name(base::SysNSStringToUTF16(@"wicked_name"));
-  string16 desc(base::SysNSStringToUTF16(@"desc"));
+  base::string16 name(base::SysNSStringToUTF16(@"wicked_name"));
+  base::string16 desc(base::SysNSStringToUTF16(@"desc"));
   details.reset([[CocoaCookieDetails alloc] initWithDatabase:domain
                                                 databaseName:name
                                          databaseDescription:desc
@@ -186,10 +189,10 @@ TEST_F(CookiesDetailsTest, CreateForPromptDatabase) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForPromptLocalStorage) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   std::string domain("chromium.org");
-  string16 key(base::SysNSStringToUTF16(@"testKey"));
-  string16 value(base::SysNSStringToUTF16(@"testValue"));
+  base::string16 key(base::SysNSStringToUTF16(@"testKey"));
+  base::string16 value(base::SysNSStringToUTF16(@"testValue"));
   details.reset([[CocoaCookieDetails alloc] initWithLocalStorage:domain
                                                              key:key
                                                            value:value]);
@@ -210,7 +213,7 @@ TEST_F(CookiesDetailsTest, CreateForPromptLocalStorage) {
 }
 
 TEST_F(CookiesDetailsTest, CreateForPromptAppCache) {
-  scoped_nsobject<CocoaCookieDetails> details;
+  base::scoped_nsobject<CocoaCookieDetails> details;
   std::string manifestURL("http://html5demos.com/html5demo.manifest");
   details.reset([[CocoaCookieDetails alloc]
       initWithAppCacheManifestURL:manifestURL.c_str()]);

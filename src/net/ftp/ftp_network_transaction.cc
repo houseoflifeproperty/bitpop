@@ -8,10 +8,10 @@
 #include "base/bind_helpers.h"
 #include "base/compiler_specific.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
 #include "net/base/connection_type_histograms.h"
@@ -152,7 +152,7 @@ bool ExtractPortFromPASVResponse(const net::FtpCtrlResponse& response,
     return false;
 
   std::string line(response.lines[0]);
-  if (!IsStringASCII(line))
+  if (!base::IsStringASCII(line))
     return false;
   if (line.length() < 2)
     return false;
@@ -206,14 +206,12 @@ FtpNetworkTransaction::FtpNetworkTransaction(
     FtpNetworkSession* session,
     ClientSocketFactory* socket_factory)
     : command_sent_(COMMAND_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          io_callback_(base::Bind(&FtpNetworkTransaction::OnIOComplete,
-                                  base::Unretained(this)))),
+      io_callback_(base::Bind(&FtpNetworkTransaction::OnIOComplete,
+                              base::Unretained(this))),
       session_(session),
       request_(NULL),
       resolver_(session->host_resolver()),
       read_ctrl_buf_(new IOBuffer(kCtrlBufLen)),
-      ctrl_response_buffer_(NULL),
       read_data_buf_len_(0),
       last_error_(OK),
       system_type_(SYSTEM_TYPE_UNKNOWN),
@@ -225,8 +223,7 @@ FtpNetworkTransaction::FtpNetworkTransaction(
       data_connection_port_(0),
       socket_factory_(socket_factory),
       next_state_(STATE_NONE),
-      state_after_data_connect_complete_(STATE_CTRL_WRITE_SIZE) {
-}
+      state_after_data_connect_complete_(STATE_CTRL_WRITE_SIZE) {}
 
 FtpNetworkTransaction::~FtpNetworkTransaction() {
 }
@@ -254,13 +251,13 @@ int FtpNetworkTransaction::Start(const FtpRequestInfo* request_info,
   ctrl_response_buffer_.reset(new FtpCtrlResponseBuffer(net_log_));
 
   if (request_->url.has_username()) {
-    string16 username;
-    string16 password;
+    base::string16 username;
+    base::string16 password;
     GetIdentityFromURL(request_->url, &username, &password);
     credentials_.Set(username, password);
   } else {
-    credentials_.Set(ASCIIToUTF16("anonymous"),
-                     ASCIIToUTF16("chrome@example.com"));
+    credentials_.Set(base::ASCIIToUTF16("anonymous"),
+                     base::ASCIIToUTF16("chrome@example.com"));
   }
 
   DetectTypecode();
@@ -340,7 +337,7 @@ void FtpNetworkTransaction::ResetStateForRestart() {
   ctrl_response_buffer_.reset(new FtpCtrlResponseBuffer(net_log_));
   read_data_buf_ = NULL;
   read_data_buf_len_ = 0;
-  if (write_buf_)
+  if (write_buf_.get())
     write_buf_->SetOffset(0);
   last_error_ = OK;
   data_connection_port_ = 0;
@@ -460,8 +457,8 @@ int FtpNetworkTransaction::SendFtpCommand(const std::string& command,
   // which responses are for which command.
   DCHECK(!ctrl_response_buffer_->ResponseAvailable());
 
-  DCHECK(!write_command_buf_);
-  DCHECK(!write_buf_);
+  DCHECK(!write_command_buf_.get());
+  DCHECK(!write_buf_.get());
 
   if (!IsValidFTPCommandString(command)) {
     // Callers should validate the command themselves and return a more specific
@@ -473,7 +470,7 @@ int FtpNetworkTransaction::SendFtpCommand(const std::string& command,
   command_sent_ = cmd;
 
   write_command_buf_ = new IOBufferWithSize(command.length() + 2);
-  write_buf_ = new DrainableIOBuffer(write_command_buf_,
+  write_buf_ = new DrainableIOBuffer(write_command_buf_.get(),
                                      write_command_buf_->size());
   memcpy(write_command_buf_->data(), command.data(), command.length());
   memcpy(write_command_buf_->data() + command.length(), kCRLF, 2);
@@ -653,7 +650,9 @@ int FtpNetworkTransaction::DoCtrlResolveHost() {
   HostResolver::RequestInfo info(HostPortPair::FromURL(request_->url));
   // No known referrer.
   return resolver_.Resolve(
-      info, &addresses_,
+      info,
+      DEFAULT_PRIORITY,
+      &addresses_,
       base::Bind(&FtpNetworkTransaction::OnIOComplete, base::Unretained(this)),
       net_log_);
 }
@@ -666,8 +665,8 @@ int FtpNetworkTransaction::DoCtrlResolveHostComplete(int result) {
 
 int FtpNetworkTransaction::DoCtrlConnect() {
   next_state_ = STATE_CTRL_CONNECT_COMPLETE;
-  ctrl_socket_.reset(socket_factory_->CreateTransportClientSocket(
-        addresses_, net_log_.net_log(), net_log_.source()));
+  ctrl_socket_ = socket_factory_->CreateTransportClientSocket(
+      addresses_, net_log_.net_log(), net_log_.source());
   net_log_.AddEvent(
       NetLog::TYPE_FTP_CONTROL_CONNECTION,
       ctrl_socket_->NetLog().source().ToEventParametersCallback());
@@ -698,7 +697,7 @@ int FtpNetworkTransaction::DoCtrlConnectComplete(int result) {
 
 int FtpNetworkTransaction::DoCtrlRead() {
   next_state_ = STATE_CTRL_READ_COMPLETE;
-  return ctrl_socket_->Read(read_ctrl_buf_, kCtrlBufLen, io_callback_);
+  return ctrl_socket_->Read(read_ctrl_buf_.get(), kCtrlBufLen, io_callback_);
 }
 
 int FtpNetworkTransaction::DoCtrlReadComplete(int result) {
@@ -707,7 +706,7 @@ int FtpNetworkTransaction::DoCtrlReadComplete(int result) {
     // connection when anonymous login is not permitted. For more details
     // see http://crbug.com/25023.
     if (command_sent_ == COMMAND_USER &&
-        credentials_.username() == ASCIIToUTF16("anonymous")) {
+        credentials_.username() == base::ASCIIToUTF16("anonymous")) {
       response_.needs_auth = true;
     }
     return Stop(ERR_EMPTY_RESPONSE);
@@ -729,9 +728,8 @@ int FtpNetworkTransaction::DoCtrlReadComplete(int result) {
 int FtpNetworkTransaction::DoCtrlWrite() {
   next_state_ = STATE_CTRL_WRITE_COMPLETE;
 
-  return ctrl_socket_->Write(write_buf_,
-                             write_buf_->BytesRemaining(),
-                             io_callback_);
+  return ctrl_socket_->Write(
+      write_buf_.get(), write_buf_->BytesRemaining(), io_callback_);
 }
 
 int FtpNetworkTransaction::DoCtrlWriteComplete(int result) {
@@ -755,7 +753,7 @@ int FtpNetworkTransaction::DoCtrlWriteComplete(int result) {
 
 // USER Command.
 int FtpNetworkTransaction::DoCtrlWriteUSER() {
-  std::string command = "USER " + UTF16ToUTF8(credentials_.username());
+  std::string command = "USER " + base::UTF16ToUTF8(credentials_.username());
 
   if (!IsValidFTPCommandString(command))
     return Stop(ERR_MALFORMED_IDENTITY);
@@ -786,7 +784,7 @@ int FtpNetworkTransaction::ProcessResponseUSER(
 
 // PASS command.
 int FtpNetworkTransaction::DoCtrlWritePASS() {
-  std::string command = "PASS " + UTF16ToUTF8(credentials_.password());
+  std::string command = "PASS " + base::UTF16ToUTF8(credentials_.password());
 
   if (!IsValidFTPCommandString(command))
     return Stop(ERR_MALFORMED_IDENTITY);
@@ -832,12 +830,12 @@ int FtpNetworkTransaction::ProcessResponseSYST(
       // The response should be ASCII, which allows us to do case-insensitive
       // comparisons easily. If it is not ASCII, we leave the system type
       // as unknown.
-      if (IsStringASCII(line)) {
+      if (base::IsStringASCII(line)) {
         line = StringToLowerASCII(line);
 
         // Remove all whitespace, to correctly handle cases like fancy "V M S"
         // response instead of "VMS".
-        RemoveChars(line, kWhitespaceASCII, &line);
+        base::RemoveChars(line, base::kWhitespaceASCII, &line);
 
         // The "magic" strings we test for below have been gathered by an
         // empirical study. VMS needs to come first because some VMS systems
@@ -1253,8 +1251,8 @@ int FtpNetworkTransaction::DoDataConnect() {
     return Stop(rv);
   data_address = AddressList::CreateFromIPAddress(
       ip_endpoint.address(), data_connection_port_);
-  data_socket_.reset(socket_factory_->CreateTransportClientSocket(
-        data_address, net_log_.net_log(), net_log_.source()));
+  data_socket_ = socket_factory_->CreateTransportClientSocket(
+        data_address, net_log_.net_log(), net_log_.source());
   net_log_.AddEvent(
       NetLog::TYPE_FTP_DATA_CONNECTION,
       data_socket_->NetLog().source().ToEventParametersCallback());
@@ -1284,7 +1282,7 @@ int FtpNetworkTransaction::DoDataConnectComplete(int result) {
 }
 
 int FtpNetworkTransaction::DoDataRead() {
-  DCHECK(read_data_buf_);
+  DCHECK(read_data_buf_.get());
   DCHECK_GT(read_data_buf_len_, 0);
 
   if (data_socket_ == NULL || !data_socket_->IsConnected()) {
@@ -1305,7 +1303,8 @@ int FtpNetworkTransaction::DoDataRead() {
 
   next_state_ = STATE_DATA_READ_COMPLETE;
   read_data_buf_->data()[0] = 0;
-  return data_socket_->Read(read_data_buf_, read_data_buf_len_, io_callback_);
+  return data_socket_->Read(
+      read_data_buf_.get(), read_data_buf_len_, io_callback_);
 }
 
 int FtpNetworkTransaction::DoDataReadComplete(int result) {

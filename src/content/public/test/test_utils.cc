@@ -5,9 +5,15 @@
 #include "content/public/test/test_utils.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/values.h"
+#include "content/public/browser/browser_child_process_host_iterator.h"
 #include "content/public/browser/notification_service.h"
+#include "content/public/browser/render_frame_host.h"
+#include "content/public/browser/render_process_host.h"
+#include "content/public/common/process_type.h"
 #include "content/public/test/test_launcher.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -31,7 +37,8 @@ static void DeferredQuitRunLoop(const base::Closure& quit_task,
   if (num_quit_deferrals <= 0) {
     quit_task.Run();
   } else {
-    MessageLoop::current()->PostTask(FROM_HERE,
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
         base::Bind(&DeferredQuitRunLoop, quit_task, num_quit_deferrals - 1));
   }
 }
@@ -42,6 +49,38 @@ void RunAllPendingMessageAndSendQuit(BrowserThread::ID thread_id,
   BrowserThread::PostTask(thread_id, FROM_HERE, quit_task);
 }
 
+// Class used handle result callbacks for ExecuteScriptAndGetValue.
+class ScriptCallback {
+ public:
+  ScriptCallback() { }
+  virtual ~ScriptCallback() { }
+  void ResultCallback(const base::Value* result);
+
+  scoped_ptr<base::Value> result() { return result_.Pass(); }
+
+ private:
+  scoped_ptr<base::Value> result_;
+
+  DISALLOW_COPY_AND_ASSIGN(ScriptCallback);
+};
+
+void ScriptCallback::ResultCallback(const base::Value* result) {
+  if (result)
+    result_.reset(result->DeepCopy());
+  base::MessageLoop::current()->Quit();
+}
+
+// Adapter that makes a WindowedNotificationObserver::ConditionTestCallback from
+// a WindowedNotificationObserver::ConditionTestCallbackWithoutSourceAndDetails
+// by ignoring the notification source and details.
+bool IgnoreSourceAndDetails(
+    const WindowedNotificationObserver::
+        ConditionTestCallbackWithoutSourceAndDetails& callback,
+    const NotificationSource& source,
+    const NotificationDetails& details) {
+  return callback.Run();
+}
+
 }  // namespace
 
 void RunMessageLoop() {
@@ -50,11 +89,15 @@ void RunMessageLoop() {
 }
 
 void RunThisRunLoop(base::RunLoop* run_loop) {
-  MessageLoop::ScopedNestableTaskAllower allow(MessageLoop::current());
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
 
   // If we're running inside a browser test, we might need to allow the test
   // launcher to do extra work before/after running a nested message loop.
-  TestLauncherDelegate* delegate = GetCurrentTestLauncherDelegate();
+  TestLauncherDelegate* delegate = NULL;
+#if !defined(OS_IOS)
+  delegate = GetCurrentTestLauncherDelegate();
+#endif
   if (delegate)
     delegate->PreRunMessageLoop(run_loop);
   run_loop->Run();
@@ -63,8 +106,8 @@ void RunThisRunLoop(base::RunLoop* run_loop) {
 }
 
 void RunAllPendingInMessageLoop() {
-  MessageLoop::current()->PostTask(FROM_HERE,
-                                   MessageLoop::QuitWhenIdleClosure());
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE, base::MessageLoop::QuitWhenIdleClosure());
   RunMessageLoop();
 }
 
@@ -91,13 +134,34 @@ base::Closure GetQuitTaskForRunLoop(base::RunLoop* run_loop) {
                     kNumQuitDeferrals);
 }
 
-MessageLoopRunner::MessageLoopRunner() {
+scoped_ptr<base::Value> ExecuteScriptAndGetValue(
+    RenderFrameHost* render_frame_host, const std::string& script) {
+  ScriptCallback observer;
+
+  render_frame_host->ExecuteJavaScript(
+      base::UTF8ToUTF16(script),
+      base::Bind(&ScriptCallback::ResultCallback, base::Unretained(&observer)));
+  base::MessageLoop* loop = base::MessageLoop::current();
+  loop->Run();
+  return observer.result().Pass();
+}
+
+MessageLoopRunner::MessageLoopRunner()
+    : loop_running_(false),
+      quit_closure_called_(false) {
 }
 
 MessageLoopRunner::~MessageLoopRunner() {
 }
 
 void MessageLoopRunner::Run() {
+  // Do not run the message loop if our quit closure has already been called.
+  // This helps in scenarios where the closure has a chance to run before
+  // we Run explicitly.
+  if (quit_closure_called_)
+    return;
+
+  loop_running_ = true;
   RunThisRunLoop(&run_loop_);
 }
 
@@ -106,7 +170,13 @@ base::Closure MessageLoopRunner::QuitClosure() {
 }
 
 void MessageLoopRunner::Quit() {
-  GetQuitTaskForRunLoop(&run_loop_).Run();
+  quit_closure_called_ = true;
+
+  // Only run the quit task if we are running the message loop.
+  if (loop_running_) {
+    GetQuitTaskForRunLoop(&run_loop_).Run();
+    loop_running_ = false;
+  }
 }
 
 WindowedNotificationObserver::WindowedNotificationObserver(
@@ -115,10 +185,36 @@ WindowedNotificationObserver::WindowedNotificationObserver(
     : seen_(false),
       running_(false),
       source_(NotificationService::AllSources()) {
-  registrar_.Add(this, notification_type, source);
+  AddNotificationType(notification_type, source);
+}
+
+WindowedNotificationObserver::WindowedNotificationObserver(
+    int notification_type,
+    const ConditionTestCallback& callback)
+    : seen_(false),
+      running_(false),
+      callback_(callback),
+      source_(NotificationService::AllSources()) {
+  AddNotificationType(notification_type, source_);
+}
+
+WindowedNotificationObserver::WindowedNotificationObserver(
+    int notification_type,
+    const ConditionTestCallbackWithoutSourceAndDetails& callback)
+    : seen_(false),
+      running_(false),
+      callback_(base::Bind(&IgnoreSourceAndDetails, callback)),
+      source_(NotificationService::AllSources()) {
+  registrar_.Add(this, notification_type, source_);
 }
 
 WindowedNotificationObserver::~WindowedNotificationObserver() {}
+
+void WindowedNotificationObserver::AddNotificationType(
+    int notification_type,
+    const NotificationSource& source) {
+  registrar_.Add(this, notification_type, source);
+}
 
 void WindowedNotificationObserver::Wait() {
   if (seen_)
@@ -136,12 +232,46 @@ void WindowedNotificationObserver::Observe(
     const NotificationDetails& details) {
   source_ = source;
   details_ = details;
+  if (!callback_.is_null() && !callback_.Run(source, details))
+    return;
+
   seen_ = true;
   if (!running_)
     return;
 
   message_loop_runner_->Quit();
   running_ = false;
+}
+
+InProcessUtilityThreadHelper::InProcessUtilityThreadHelper()
+    : child_thread_count_(0) {
+  RenderProcessHost::SetRunRendererInProcess(true);
+  BrowserChildProcessObserver::Add(this);
+}
+
+InProcessUtilityThreadHelper::~InProcessUtilityThreadHelper() {
+  if (child_thread_count_) {
+    DCHECK(BrowserThread::IsMessageLoopValid(BrowserThread::UI));
+    DCHECK(BrowserThread::IsMessageLoopValid(BrowserThread::IO));
+    runner_ = new MessageLoopRunner;
+    runner_->Run();
+  }
+  BrowserChildProcessObserver::Remove(this);
+  RenderProcessHost::SetRunRendererInProcess(false);
+}
+
+void InProcessUtilityThreadHelper::BrowserChildProcessHostConnected(
+    const ChildProcessData& data) {
+  child_thread_count_++;
+}
+
+void InProcessUtilityThreadHelper::BrowserChildProcessHostDisconnected(
+    const ChildProcessData& data) {
+  if (--child_thread_count_)
+    return;
+
+  if (runner_.get())
+    runner_->Quit();
 }
 
 }  // namespace content

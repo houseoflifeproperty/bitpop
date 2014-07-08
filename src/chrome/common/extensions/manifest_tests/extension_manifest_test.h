@@ -5,32 +5,26 @@
 #ifndef CHROME_COMMON_EXTENSIONS_MANIFEST_TESTS_EXTENSION_MANIFEST_TEST_H_
 #define CHROME_COMMON_EXTENSIONS_MANIFEST_TESTS_EXTENSION_MANIFEST_TEST_H_
 
-#include "base/values.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
-#include "chrome/common/extensions/features/feature.h"
+#include "base/values.h"
+#include "chrome/common/extensions/features/feature_channel.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
-
-namespace errors = extension_manifest_errors;
-namespace keys = extension_manifest_keys;
 
 class ExtensionManifestTest : public testing::Test {
  public:
   ExtensionManifestTest();
 
  protected:
-  // If filename is a relative path, LoadManifestFile will treat it relative to
-  // the appropriate test directory.
-  static DictionaryValue* LoadManifestFile(const std::string& filename,
-                                           std::string* error);
-
   // Helper class that simplifies creating methods that take either a filename
   // to a manifest or the manifest itself.
   class Manifest {
    public:
     explicit Manifest(const char* name);
-    Manifest(DictionaryValue* manifest, const char* name);
+    Manifest(base::DictionaryValue* manifest, const char* name);
+    explicit Manifest(scoped_ptr<base::DictionaryValue> manifest);
     // C++98 requires the copy constructor for a type to be visible if you
     // take a const-ref of a temporary for that type.  Since Manifest
     // contains a scoped_ptr, its implicit copy constructor is declared
@@ -46,45 +40,58 @@ class ExtensionManifestTest : public testing::Test {
 
     const std::string& name() const { return name_; };
 
-    DictionaryValue* GetManifest(std::string* error) const;
+    base::DictionaryValue* GetManifest(char const* test_data_dir,
+                                       std::string* error) const;
 
    private:
     const std::string name_;
-    mutable DictionaryValue* manifest_;
-    mutable scoped_ptr<DictionaryValue> manifest_holder_;
+    mutable base::DictionaryValue* manifest_;
+    mutable scoped_ptr<base::DictionaryValue> manifest_holder_;
   };
+
+  // The subdirectory in which to find test data files.
+  virtual char const* test_data_dir();
+
+  scoped_ptr<base::DictionaryValue> LoadManifest(
+      char const* manifest_name,
+      std::string* error);
 
   scoped_refptr<extensions::Extension> LoadExtension(
       const Manifest& manifest,
       std::string* error,
-      extensions::Extension::Location location =
-          extensions::Extension::INTERNAL,
+      extensions::Manifest::Location location =
+          extensions::Manifest::INTERNAL,
       int flags = extensions::Extension::NO_FLAGS);
 
   scoped_refptr<extensions::Extension> LoadAndExpectSuccess(
       const Manifest& manifest,
-      extensions::Extension::Location location =
-          extensions::Extension::INTERNAL,
+      extensions::Manifest::Location location =
+          extensions::Manifest::INTERNAL,
       int flags = extensions::Extension::NO_FLAGS);
 
   scoped_refptr<extensions::Extension> LoadAndExpectSuccess(
       char const* manifest_name,
-      extensions::Extension::Location location =
-          extensions::Extension::INTERNAL,
+      extensions::Manifest::Location location =
+          extensions::Manifest::INTERNAL,
       int flags = extensions::Extension::NO_FLAGS);
+
+  // Load and expect success from a manifest provided as a json string. Single
+  // quotes will be replaced with double quotes for test readability.
+  scoped_refptr<extensions::Extension> LoadFromStringAndExpectSuccess(
+      char const* manifest_json);
 
   scoped_refptr<extensions::Extension> LoadAndExpectWarning(
       const Manifest& manifest,
       const std::string& expected_error,
-      extensions::Extension::Location location =
-          extensions::Extension::INTERNAL,
+      extensions::Manifest::Location location =
+          extensions::Manifest::INTERNAL,
       int flags = extensions::Extension::NO_FLAGS);
 
   scoped_refptr<extensions::Extension> LoadAndExpectWarning(
       char const* manifest_name,
       const std::string& expected_error,
-      extensions::Extension::Location location =
-          extensions::Extension::INTERNAL,
+      extensions::Manifest::Location location =
+          extensions::Manifest::INTERNAL,
       int flags = extensions::Extension::NO_FLAGS);
 
   void VerifyExpectedError(extensions::Extension* extension,
@@ -94,22 +101,27 @@ class ExtensionManifestTest : public testing::Test {
 
   void LoadAndExpectError(char const* manifest_name,
                           const std::string& expected_error,
-                          extensions::Extension::Location location =
-                              extensions::Extension::INTERNAL,
+                          extensions::Manifest::Location location =
+                              extensions::Manifest::INTERNAL,
                           int flags = extensions::Extension::NO_FLAGS);
 
   void LoadAndExpectError(const Manifest& manifest,
                           const std::string& expected_error,
-                          extensions::Extension::Location location =
-                              extensions::Extension::INTERNAL,
+                          extensions::Manifest::Location location =
+                              extensions::Manifest::INTERNAL,
                           int flags = extensions::Extension::NO_FLAGS);
+
+  // Load and expect an error from a manifest provided as a json string. Single
+  // quotes will be replaced with double quotes for test readability.
+  void LoadFromStringAndExpectError(char const* manifest_json,
+                                    const std::string& expected_error);
 
   void AddPattern(extensions::URLPatternSet* extent,
                   const std::string& pattern);
 
   // used to differentiate between calls to LoadAndExpectError,
   // LoadAndExpectWarning and LoadAndExpectSuccess via function RunTestcases.
-  enum EXPECT_TYPE {
+  enum ExpectType {
     EXPECT_TYPE_ERROR,
     EXPECT_TYPE_WARNING,
     EXPECT_TYPE_SUCCESS
@@ -118,23 +130,26 @@ class ExtensionManifestTest : public testing::Test {
   struct Testcase {
     std::string manifest_filename_;
     std::string expected_error_; // only used for ExpectedError tests
-    extensions::Extension::Location location_;
+    extensions::Manifest::Location location_;
     int flags_;
 
     Testcase(std::string manifest_filename, std::string expected_error,
-        extensions::Extension::Location location, int flags);
+        extensions::Manifest::Location location, int flags);
 
     Testcase(std::string manifest_filename, std::string expected_error);
 
     explicit Testcase(std::string manifest_filename);
 
     Testcase(std::string manifest_filename,
-             extensions::Extension::Location location,
+             extensions::Manifest::Location location,
              int flags);
   };
 
-  void RunTestcases(const Testcase* testcases, size_t num_testcases,
-      EXPECT_TYPE type);
+  void RunTestcases(const Testcase* testcases,
+                    size_t num_testcases,
+                    ExpectType type);
+
+  void RunTestcase(const Testcase& testcase, ExpectType type);
 
   bool enable_apps_;
 
@@ -144,7 +159,7 @@ class ExtensionManifestTest : public testing::Test {
   //
   // These objects nest, so if a test wants to explicitly test the behaviour
   // on stable or beta, declare it inside that test.
-  extensions::Feature::ScopedCurrentChannel current_channel_;
+  extensions::ScopedCurrentChannel current_channel_;
 };
 
 #endif  // CHROME_COMMON_EXTENSIONS_MANIFEST_TESTS_EXTENSION_MANIFEST_TEST_H_

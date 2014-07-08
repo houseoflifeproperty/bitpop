@@ -8,7 +8,7 @@
 #include <utility>
 
 #include "base/basictypes.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/pp_instance.h"
@@ -17,14 +17,16 @@
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/proxy/interface_proxy.h"
 #include "ppapi/proxy/proxy_completion_callback_factory.h"
-#include "ppapi/proxy/serialized_structs.h"
 #include "ppapi/utility/completion_callback_factory.h"
 
 namespace ppapi {
 
+class AudioCallbackCombined;
 class HostResource;
 
 namespace proxy {
+
+class SerializedHandle;
 
 class PPB_Audio_Proxy : public InterfaceProxy {
  public:
@@ -32,11 +34,11 @@ class PPB_Audio_Proxy : public InterfaceProxy {
   virtual ~PPB_Audio_Proxy();
 
   // Creates an Audio object in the plugin process.
-  static PP_Resource CreateProxyResource(PP_Instance instance_id,
-                                         PP_Resource config_id,
-                                         PPB_Audio_Callback audio_callback,
-                                         void* user_data);
-
+  static PP_Resource CreateProxyResource(
+      PP_Instance instance_id,
+      PP_Resource config_id,
+      const AudioCallbackCombined& audio_callback,
+      void* user_data);
 
   // InterfaceProxy implementation.
   virtual bool OnMessageReceived(const IPC::Message& msg);

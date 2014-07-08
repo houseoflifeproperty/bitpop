@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/text/bytes_formatting.h"
 
@@ -69,9 +69,9 @@ TEST(BytesFormattingTest, FormatBytes) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(cases); ++i) {
-    EXPECT_EQ(ASCIIToUTF16(cases[i].expected),
+    EXPECT_EQ(base::ASCIIToUTF16(cases[i].expected),
               FormatBytesWithUnits(cases[i].bytes, cases[i].units, false));
-    EXPECT_EQ(ASCIIToUTF16(cases[i].expected_with_units),
+    EXPECT_EQ(base::ASCIIToUTF16(cases[i].expected_with_units),
               FormatBytesWithUnits(cases[i].bytes, cases[i].units, true));
   }
 }

@@ -4,17 +4,19 @@
 
 #include "chrome/browser/crash_upload_list_win.h"
 
-#include "base/stringprintf.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
 
-CrashUploadListWin::CrashUploadListWin(Delegate* delegate)
-    : CrashUploadList(delegate) {}
+CrashUploadListWin::CrashUploadListWin(Delegate* delegate,
+                                       const base::FilePath& upload_log_path)
+    : CrashUploadList(delegate, upload_log_path) {}
 
-void CrashUploadListWin::LoadCrashList() {
+void CrashUploadListWin::LoadUploadList() {
   std::vector<uint8> buffer(1024);
   HANDLE event_log = OpenEventLog(NULL, L"Application");
   if (event_log) {
+    ClearUploads();
     while (true) {
       DWORD bytes_read;
       DWORD bytes_needed;
@@ -72,9 +74,9 @@ void CrashUploadListWin::ProcessPossibleCrashLogRecord(EVENTLOGRECORD* record) {
     if (end_index != std::wstring::npos) {
       std::wstring crash_id =
           message.substr(start_index, end_index - start_index);
-      crashes().push_back(
-          CrashInfo(base::SysWideToUTF8(crash_id),
-                    base::Time::FromDoubleT(record->TimeGenerated)));
+      AppendUploadInfo(
+          UploadInfo(base::SysWideToUTF8(crash_id),
+                     base::Time::FromDoubleT(record->TimeGenerated)));
     }
   }
 }

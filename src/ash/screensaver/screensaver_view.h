@@ -5,11 +5,11 @@
 #ifndef ASH_SCREENSAVER_SCREENSAVER_VIEW_H_
 #define ASH_SCREENSAVER_SCREENSAVER_VIEW_H_
 
-#include "ash/ash_export.h"
+#include "ash/content_support/ash_with_content_export.h"
 #include "base/callback.h"
 #include "content/public/browser/web_contents_observer.h"
-#include "googleurl/src/gurl.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "url/gurl.h"
 
 namespace content {
 class BrowserContent;
@@ -25,13 +25,12 @@ namespace test {
 class ScreensaverViewTest;
 }
 
-ASH_EXPORT void ShowScreensaver(const GURL& url);
-ASH_EXPORT void CloseScreensaver();
+ASH_WITH_CONTENT_EXPORT void ShowScreensaver(const GURL& url);
+ASH_WITH_CONTENT_EXPORT void CloseScreensaver();
+ASH_WITH_CONTENT_EXPORT bool IsScreensaverShown();
 
 typedef
     base::Callback<views::WebView*(content::BrowserContext*)> WebViewFactory;
-
-namespace internal {
 
 // Shows a URL as a screensaver. The screensaver window is fullscreen,
 // always on top of every other window and will reload the URL if the
@@ -41,6 +40,8 @@ class ScreensaverView : public views::WidgetDelegateView,
  public:
   static void ShowScreensaver(const GURL& url);
   static void CloseScreensaver();
+
+  static bool IsScreensaverShown();
 
  private:
   friend class test::ScreensaverViewTest;
@@ -52,7 +53,7 @@ class ScreensaverView : public views::WidgetDelegateView,
   virtual views::View* GetContentsView() OVERRIDE;
 
   // content::WebContentsObserver overrides.
-  virtual void RenderViewGone(base::TerminationStatus status) OVERRIDE;
+  virtual void RenderProcessGone(base::TerminationStatus status) OVERRIDE;
 
   void Show();
   void Close();
@@ -66,7 +67,8 @@ class ScreensaverView : public views::WidgetDelegateView,
   void ShowWindow();
 
   // For testing purposes.
-  static ASH_EXPORT ScreensaverView* GetInstance();
+  static ASH_WITH_CONTENT_EXPORT ScreensaverView* GetInstance();
+  ASH_WITH_CONTENT_EXPORT bool IsScreensaverShowingURL(const GURL& url);
 
   // URL to show in the screensaver.
   GURL url_;
@@ -84,7 +86,6 @@ class ScreensaverView : public views::WidgetDelegateView,
   DISALLOW_COPY_AND_ASSIGN(ScreensaverView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SCREENSAVER_SCREENSAVER_VIEW_H_

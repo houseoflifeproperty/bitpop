@@ -6,9 +6,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "net/base/mock_host_resolver.h"
+#include "base/message_loop/message_loop.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/socket_test_util.h"
 #include "net/url_request/url_request_context_getter.h"
@@ -48,7 +48,7 @@ class ProxyResolvingClientSocketTest : public testing::Test {
     message_loop_.RunUntilIdle();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   scoped_refptr<net::TestURLRequestContextGetter> url_request_context_getter_;
 };
 

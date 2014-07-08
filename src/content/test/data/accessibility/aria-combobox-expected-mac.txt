@@ -1,8 +1,8 @@
-AXWebArea title='' value=''
-    AXGroup title='' value=''
-        AXStaticText title='' value='State'
-        AXComboBox title='' value=''
-    AXList title='Alabama
-Alaska' value=''
-        AXStaticText title='Alabama' value=''
-        AXStaticText title='Alaska' value=''
+AXWebArea
+    AXGroup
+        AXStaticText AXValue='State'
+    AXGroup
+        AXComboBox AXTitleUIElement='AXGroup group' AXLinkedUIElements=["AXList"]
+    AXList
+        AXStaticText AXTitle='Alabama'
+        AXStaticText AXTitle='Alaska' AXFocused='1'

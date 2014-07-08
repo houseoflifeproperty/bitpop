@@ -7,15 +7,17 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "crypto/secure_util.h"
-#include "net/base/cert_verifier.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
+#include "net/http/transport_security_state.h"
 #include "net/socket/client_socket_factory.h"
+#include "net/socket/client_socket_handle.h"
 #include "net/socket/ssl_client_socket.h"
 #include "net/socket/ssl_server_socket.h"
+#include "net/ssl/ssl_config_service.h"
+#include "remoting/base/rsa_key_pair.h"
 #include "remoting/protocol/auth_util.h"
 
 namespace remoting {
@@ -35,19 +37,18 @@ SslHmacChannelAuthenticator::CreateForClient(
 scoped_ptr<SslHmacChannelAuthenticator>
 SslHmacChannelAuthenticator::CreateForHost(
     const std::string& local_cert,
-    crypto::RSAPrivateKey* local_private_key,
+    scoped_refptr<RsaKeyPair> key_pair,
     const std::string& auth_key) {
   scoped_ptr<SslHmacChannelAuthenticator> result(
       new SslHmacChannelAuthenticator(auth_key));
   result->local_cert_ = local_cert;
-  result->local_private_key_ = local_private_key;
+  result->local_key_pair_ = key_pair;
   return result.Pass();
 }
 
 SslHmacChannelAuthenticator::SslHmacChannelAuthenticator(
     const std::string& auth_key)
-    : auth_key_(auth_key),
-      local_private_key_(NULL) {
+    : auth_key_(auth_key) {
 }
 
 SslHmacChannelAuthenticator::~SslHmacChannelAuthenticator() {
@@ -65,21 +66,27 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
     scoped_refptr<net::X509Certificate> cert =
         net::X509Certificate::CreateFromBytes(
             local_cert_.data(), local_cert_.length());
-    if (!cert) {
+    if (!cert.get()) {
       LOG(ERROR) << "Failed to parse X509Certificate";
       NotifyError(net::ERR_FAILED);
       return;
     }
 
     net::SSLConfig ssl_config;
-    net::SSLServerSocket* server_socket = net::CreateSSLServerSocket(
-        socket.release(), cert, local_private_key_, ssl_config);
-    socket_.reset(server_socket);
+    ssl_config.require_forward_secrecy = true;
 
-    result = server_socket->Handshake(base::Bind(
-        &SslHmacChannelAuthenticator::OnConnected, base::Unretained(this)));
+    scoped_ptr<net::SSLServerSocket> server_socket =
+        net::CreateSSLServerSocket(socket.Pass(),
+                                   cert.get(),
+                                   local_key_pair_->private_key(),
+                                   ssl_config);
+    net::SSLServerSocket* raw_server_socket = server_socket.get();
+    socket_ = server_socket.Pass();
+    result = raw_server_socket->Handshake(
+        base::Bind(&SslHmacChannelAuthenticator::OnConnected,
+                   base::Unretained(this)));
   } else {
-    cert_verifier_.reset(net::CertVerifier::CreateDefault());
+    transport_security_state_.reset(new net::TransportSecurityState);
 
     net::SSLConfig::CertAndStatus cert_and_status;
     cert_and_status.cert_status = net::CERT_STATUS_AUTHORITY_INVALID;
@@ -96,10 +103,12 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
 
     net::HostPortPair host_and_port(kSslFakeHostName, 0);
     net::SSLClientSocketContext context;
-    context.cert_verifier = cert_verifier_.get();
-    socket_.reset(
+    context.transport_security_state = transport_security_state_.get();
+    scoped_ptr<net::ClientSocketHandle> connection(new net::ClientSocketHandle);
+    connection->SetSocket(socket.Pass());
+    socket_ =
         net::ClientSocketFactory::GetDefaultFactory()->CreateSSLClientSocket(
-            socket.release(), host_and_port, ssl_config, context));
+            connection.Pass(), host_and_port, ssl_config, context);
 
     result = socket_->Connect(
         base::Bind(&SslHmacChannelAuthenticator::OnConnected,
@@ -113,7 +122,7 @@ void SslHmacChannelAuthenticator::SecureAndAuthenticate(
 }
 
 bool SslHmacChannelAuthenticator::is_ssl_server() {
-  return local_private_key_ != NULL;
+  return local_key_pair_.get() != NULL;
 }
 
 void SslHmacChannelAuthenticator::OnConnected(int result) {
@@ -153,7 +162,8 @@ void SslHmacChannelAuthenticator::WriteAuthenticationBytes(
     bool* callback_called) {
   while (true) {
     int result = socket_->Write(
-        auth_write_buf_, auth_write_buf_->BytesRemaining(),
+        auth_write_buf_.get(),
+        auth_write_buf_->BytesRemaining(),
         base::Bind(&SslHmacChannelAuthenticator::OnAuthBytesWritten,
                    base::Unretained(this)));
     if (result == net::ERR_IO_PENDING)
@@ -191,11 +201,11 @@ bool SslHmacChannelAuthenticator::HandleAuthBytesWritten(
 
 void SslHmacChannelAuthenticator::ReadAuthenticationBytes() {
   while (true) {
-    int result = socket_->Read(
-        auth_read_buf_,
-        auth_read_buf_->RemainingCapacity(),
-        base::Bind(&SslHmacChannelAuthenticator::OnAuthBytesRead,
-                   base::Unretained(this)));
+    int result =
+        socket_->Read(auth_read_buf_.get(),
+                      auth_read_buf_->RemainingCapacity(),
+                      base::Bind(&SslHmacChannelAuthenticator::OnAuthBytesRead,
+                                 base::Unretained(this)));
     if (result == net::ERR_IO_PENDING)
       break;
     if (!HandleAuthBytesRead(result))
@@ -249,7 +259,7 @@ bool SslHmacChannelAuthenticator::VerifyAuthBytes(
 }
 
 void SslHmacChannelAuthenticator::CheckDone(bool* callback_called) {
-  if (auth_write_buf_ == NULL && auth_read_buf_ == NULL) {
+  if (auth_write_buf_.get() == NULL && auth_read_buf_.get() == NULL) {
     DCHECK(socket_.get() != NULL);
     if (callback_called)
       *callback_called = true;
@@ -259,7 +269,7 @@ void SslHmacChannelAuthenticator::CheckDone(bool* callback_called) {
 
 void SslHmacChannelAuthenticator::NotifyError(int error) {
   done_callback_.Run(static_cast<net::Error>(error),
-                     scoped_ptr<net::StreamSocket>(NULL));
+                     scoped_ptr<net::StreamSocket>());
 }
 
 }  // namespace protocol

@@ -7,8 +7,8 @@
 
 #include <vector>
 
+#include "ash/display/display_controller.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
-#include "ui/gfx/display_observer.h"
 
 namespace base {
 class DictionaryValue;
@@ -16,13 +16,11 @@ class ListValue;
 }
 
 namespace chromeos {
-class OverscanCalibrator;
-
 namespace options {
 
 // Display options overlay page UI handler.
 class DisplayOptionsHandler : public ::options::OptionsPageUIHandler,
-                              public gfx::DisplayObserver {
+                              public ash::DisplayController::Observer {
  public:
   DisplayOptionsHandler();
   virtual ~DisplayOptionsHandler();
@@ -35,18 +33,16 @@ class DisplayOptionsHandler : public ::options::OptionsPageUIHandler,
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  // gfx::DisplayObserver implementation.
-  virtual void OnDisplayBoundsChanged(const gfx::Display& display) OVERRIDE;
-  virtual void OnDisplayAdded(const gfx::Display& new_display) OVERRIDE;
-  virtual void OnDisplayRemoved(const gfx::Display& old_display) OVERRIDE;
+  // ash::DisplayController::Observer implementation.
+  virtual void OnDisplayConfigurationChanging() OVERRIDE;
+  virtual void OnDisplayConfigurationChanged() OVERRIDE;
 
  private:
-  // Updates the display section visibility based on the current display
-  // configurations.
-  void UpdateDisplaySectionVisibility();
+  // Sends all of the current display information to the web_ui of options page.
+  void SendAllDisplayInfo();
 
-  // Sends the current display information to the web_ui of options page.
-  void SendDisplayInfo();
+  // Sends the specified display information to the web_ui of options page.
+  void SendDisplayInfo(const std::vector<gfx::Display>& displays);
 
   // Called when the fade-out animation for mirroring status change is finished.
   void OnFadeOutForMirroringFinished(bool is_mirroring);
@@ -62,12 +58,10 @@ class DisplayOptionsHandler : public ::options::OptionsPageUIHandler,
   void HandleMirroring(const base::ListValue* args);
   void HandleSetPrimary(const base::ListValue* args);
   void HandleDisplayLayout(const base::ListValue* args);
-  void HandleStartOverscanCalibration(const base::ListValue* args);
-  void HandleFinishOverscanCalibration(const base::ListValue* args);
-  void HandleClearOverscanCalibration(const base::ListValue* args);
-  void HandleUpdateOverscanCalibration(const base::ListValue* args);
-
-  scoped_ptr<OverscanCalibrator> overscan_calibrator_;
+  void HandleSetUIScale(const base::ListValue* args);
+  void HandleSetResolution(const base::ListValue* args);
+  void HandleSetOrientation(const base::ListValue* args);
+  void HandleSetColorProfile(const base::ListValue* args);
 
   DISALLOW_COPY_AND_ASSIGN(DisplayOptionsHandler);
 };

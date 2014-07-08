@@ -8,24 +8,26 @@
 
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/feedback/feedback_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/common/url_constants.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/web_contents.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/gfx/font.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/controls/button/label_button_border.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/link.h"
 #include "ui/views/layout/grid_layout.h"
+#include "ui/views/widget/widget.h"
 
 using content::OpenURLParams;
 using content::WebContents;
@@ -40,30 +42,12 @@ const SkColor kKillColor = SkColorSetRGB(57, 48, 88);
 
 const char kCategoryTagCrash[] = "Crash";
 
-// Font size correction.
-const int kTitleFontSizeDelta = 2;
-const int kMessageFontSizeDelta = 1;
-
-// Name of the experiment to run.
-const char kExperiment[] = "LowMemoryMargin";
-
-#define EXPERIMENT_CUSTOM_COUNTS(name, sample, min, max, buckets)          \
-    {                                                                      \
-      UMA_HISTOGRAM_CUSTOM_COUNTS(name, sample, min, max, buckets);        \
-      if (base::FieldTrialList::TrialExists(kExperiment))                  \
-        UMA_HISTOGRAM_CUSTOM_COUNTS(                                       \
-            base::FieldTrial::MakeName(name, kExperiment),                 \
-            sample, min, max, buckets);                                    \
-    }
-
 }  // namespace
 
 SadTabView::SadTabView(WebContents* web_contents, chrome::SadTabKind kind)
     : web_contents_(web_contents),
       kind_(kind),
       painted_(false),
-      base_font_(ui::ResourceBundle::GetSharedInstance().GetFont(
-          ui::ResourceBundle::BaseFont)),
       message_(NULL),
       help_link_(NULL),
       feedback_link_(NULL),
@@ -84,14 +68,14 @@ SadTabView::SadTabView(WebContents* web_contents, chrome::SadTabKind kind)
     case chrome::SAD_TAB_KIND_CRASHED: {
       static int crashed = 0;
       crashed++;
-      EXPERIMENT_CUSTOM_COUNTS(
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Tabs.SadTab.CrashCreated", crashed, 1, 1000, 50);
       break;
     }
     case chrome::SAD_TAB_KIND_KILLED: {
       static int killed = 0;
       killed++;
-      EXPERIMENT_CUSTOM_COUNTS(
+      UMA_HISTOGRAM_CUSTOM_COUNTS(
           "Tabs.SadTab.KillCreated", killed, 1, 1000, 50);
       break;
     }
@@ -102,6 +86,86 @@ SadTabView::SadTabView(WebContents* web_contents, chrome::SadTabKind kind)
   // Set the background color.
   set_background(views::Background::CreateSolidBackground(
       (kind_ == chrome::SAD_TAB_KIND_CRASHED) ? kCrashColor : kKillColor));
+
+  views::GridLayout* layout = new views::GridLayout(this);
+  SetLayoutManager(layout);
+
+  const int column_set_id = 0;
+  views::ColumnSet* columns = layout->AddColumnSet(column_set_id);
+  columns->AddPaddingColumn(1, kPadding);
+  columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::CENTER,
+                     0, views::GridLayout::USE_PREF, 0, 0);
+  columns->AddPaddingColumn(1, kPadding);
+
+  views::ImageView* image = new views::ImageView();
+  image->SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
+      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ? IDR_SAD_TAB : IDR_KILLED_TAB));
+  layout->StartRowWithPadding(0, column_set_id, 1, kPadding);
+  layout->AddView(image);
+
+  views::Label* title = CreateLabel(l10n_util::GetStringUTF16(
+      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
+          IDS_SAD_TAB_TITLE : IDS_KILLED_TAB_TITLE));
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+  title->SetFontList(rb.GetFontList(ui::ResourceBundle::MediumFont));
+  layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
+  layout->AddView(title);
+
+  message_ = CreateLabel(l10n_util::GetStringUTF16(
+      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
+          IDS_SAD_TAB_MESSAGE : IDS_KILLED_TAB_MESSAGE));
+  message_->SetMultiLine(true);
+  layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
+  layout->AddView(message_);
+
+  if (web_contents_) {
+    layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
+    reload_button_ = new views::LabelButton(
+        this,
+        l10n_util::GetStringUTF16(IDS_SAD_TAB_RELOAD_LABEL));
+    reload_button_->SetStyle(views::Button::STYLE_BUTTON);
+    // Always render the reload button with chrome style borders; never rely on
+    // native styles.
+    reload_button_->SetBorder(scoped_ptr<views::Border>(
+        new views::LabelButtonBorder(reload_button_->style())));
+    layout->AddView(reload_button_);
+
+    help_link_ = CreateLink(l10n_util::GetStringUTF16(
+        (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
+            IDS_SAD_TAB_HELP_LINK : IDS_LEARN_MORE));
+
+    if (kind_ == chrome::SAD_TAB_KIND_CRASHED) {
+      size_t offset = 0;
+      base::string16 help_text(
+          l10n_util::GetStringFUTF16(IDS_SAD_TAB_HELP_MESSAGE,
+                                     base::string16(), &offset));
+      views::Label* help_prefix = CreateLabel(help_text.substr(0, offset));
+      views::Label* help_suffix = CreateLabel(help_text.substr(offset));
+
+      const int help_column_set_id = 1;
+      views::ColumnSet* help_columns = layout->AddColumnSet(help_column_set_id);
+      help_columns->AddPaddingColumn(1, kPadding);
+      // Center three middle columns for the help's [prefix][link][suffix].
+      for (size_t column = 0; column < 3; column++)
+        help_columns->AddColumn(views::GridLayout::CENTER,
+            views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
+      help_columns->AddPaddingColumn(1, kPadding);
+
+      layout->StartRowWithPadding(0, help_column_set_id, 0, kPadding);
+      layout->AddView(help_prefix);
+      layout->AddView(help_link_);
+      layout->AddView(help_suffix);
+    } else {
+      layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
+      layout->AddView(help_link_);
+
+      feedback_link_ = CreateLink(
+          l10n_util::GetStringUTF16(IDS_KILLED_TAB_FEEDBACK_LINK));
+      layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
+      layout->AddView(feedback_link_);
+    }
+  }
+  layout->AddPaddingRow(1, kPadding);
 }
 
 SadTabView::~SadTabView() {}
@@ -136,88 +200,6 @@ void SadTabView::Layout() {
   View::Layout();
 }
 
-void SadTabView::ViewHierarchyChanged(bool is_add,
-                                      views::View* parent,
-                                      views::View* child) {
-  if (child != this || !is_add)
-    return;
-
-  views::GridLayout* layout = views::GridLayout::CreatePanel(this);
-  SetLayoutManager(layout);
-
-  const int column_set_id = 0;
-  views::ColumnSet* columns = layout->AddColumnSet(column_set_id);
-  columns->AddPaddingColumn(1, kPadding);
-  columns->AddColumn(views::GridLayout::CENTER, views::GridLayout::CENTER,
-                     0, views::GridLayout::USE_PREF, 0, 0);
-  columns->AddPaddingColumn(1, kPadding);
-
-  views::ImageView* image = new views::ImageView();
-  image->SetImage(ui::ResourceBundle::GetSharedInstance().GetImageSkiaNamed(
-      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ? IDR_SAD_TAB : IDR_KILLED_TAB));
-  layout->StartRowWithPadding(0, column_set_id, 1, kPadding);
-  layout->AddView(image);
-
-  views::Label* title = CreateLabel(l10n_util::GetStringUTF16(
-      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
-          IDS_SAD_TAB_TITLE : IDS_KILLED_TAB_TITLE));
-  title->SetFont(base_font_.DeriveFont(kTitleFontSizeDelta, gfx::Font::BOLD));
-  layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-  layout->AddView(title);
-
-  message_ = CreateLabel(l10n_util::GetStringUTF16(
-      (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
-          IDS_SAD_TAB_MESSAGE : IDS_KILLED_TAB_MESSAGE));
-  message_->SetMultiLine(true);
-  layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-  layout->AddView(message_);
-
-  if (web_contents_) {
-    layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-    reload_button_ = new views::TextButton(
-        this,
-        l10n_util::GetStringUTF16(IDS_SAD_TAB_RELOAD_LABEL));
-    reload_button_->set_border(new views::TextButtonNativeThemeBorder(
-        reload_button_));
-    layout->AddView(reload_button_);
-
-    help_link_ = CreateLink(l10n_util::GetStringUTF16(
-        (kind_ == chrome::SAD_TAB_KIND_CRASHED) ?
-            IDS_SAD_TAB_HELP_LINK : IDS_LEARN_MORE));
-
-    if (kind_ == chrome::SAD_TAB_KIND_CRASHED) {
-      size_t offset = 0;
-      string16 help_text(l10n_util::GetStringFUTF16(IDS_SAD_TAB_HELP_MESSAGE,
-                                                    string16(), &offset));
-      views::Label* help_prefix = CreateLabel(help_text.substr(0, offset));
-      views::Label* help_suffix = CreateLabel(help_text.substr(offset));
-
-      const int help_column_set_id = 1;
-      views::ColumnSet* help_columns = layout->AddColumnSet(help_column_set_id);
-      help_columns->AddPaddingColumn(1, kPadding);
-      // Center three middle columns for the help's [prefix][link][suffix].
-      for (size_t column = 0; column < 3; column++)
-        help_columns->AddColumn(views::GridLayout::CENTER,
-            views::GridLayout::CENTER, 0, views::GridLayout::USE_PREF, 0, 0);
-      help_columns->AddPaddingColumn(1, kPadding);
-
-      layout->StartRowWithPadding(0, help_column_set_id, 0, kPadding);
-      layout->AddView(help_prefix);
-      layout->AddView(help_link_);
-      layout->AddView(help_suffix);
-    } else {
-      layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-      layout->AddView(help_link_);
-
-      feedback_link_ = CreateLink(
-          l10n_util::GetStringUTF16(IDS_KILLED_TAB_FEEDBACK_LINK));
-      layout->StartRowWithPadding(0, column_set_id, 0, kPadding);
-      layout->AddView(feedback_link_);
-    }
-  }
-  layout->AddPaddingRow(1, kPadding);
-}
-
 void SadTabView::OnPaint(gfx::Canvas* canvas) {
   if (!painted_) {
     // User actually saw the error, keep track for user experience stats.
@@ -249,19 +231,52 @@ void SadTabView::OnPaint(gfx::Canvas* canvas) {
   View::OnPaint(canvas);
 }
 
-views::Label* SadTabView::CreateLabel(const string16& text) {
+void SadTabView::Show() {
+  views::Widget::InitParams sad_tab_params(
+      views::Widget::InitParams::TYPE_CONTROL);
+
+  // It is not possible to create a native_widget_win that has no parent in
+  // and later re-parent it.
+  // TODO(avi): This is a cheat. Can this be made cleaner?
+  sad_tab_params.parent = web_contents_->GetNativeView();
+
+  set_owned_by_client();
+
+  views::Widget* sad_tab = new views::Widget;
+  sad_tab->Init(sad_tab_params);
+  sad_tab->SetContentsView(this);
+
+  views::Widget::ReparentNativeView(sad_tab->GetNativeView(),
+                                    web_contents_->GetNativeView());
+  gfx::Rect bounds = web_contents_->GetContainerBounds();
+  sad_tab->SetBounds(gfx::Rect(bounds.size()));
+}
+
+void SadTabView::Close() {
+  if (GetWidget())
+    GetWidget()->Close();
+}
+
+views::Label* SadTabView::CreateLabel(const base::string16& text) {
   views::Label* label = new views::Label(text);
-  label->SetFont(base_font_.DeriveFont(kMessageFontSizeDelta));
   label->SetBackgroundColor(background()->get_color());
   label->SetEnabledColor(kTextColor);
   return label;
 }
 
-views::Link* SadTabView::CreateLink(const string16& text) {
+views::Link* SadTabView::CreateLink(const base::string16& text) {
   views::Link* link = new views::Link(text);
-  link->SetFont(base_font_.DeriveFont(kMessageFontSizeDelta));
   link->SetBackgroundColor(background()->get_color());
   link->SetEnabledColor(kTextColor);
   link->set_listener(this);
   return link;
 }
+
+namespace chrome {
+
+SadTab* SadTab::Create(content::WebContents* web_contents,
+                       SadTabKind kind) {
+  return new SadTabView(web_contents, kind);
+}
+
+}  // namespace chrome

@@ -8,15 +8,16 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_tokenizer.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_tokenizer.h"
 #include "base/synchronization/condition_variable.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/platform_thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "chrome/browser/metrics/thread_watcher.h"
 #include "chrome/common/chrome_switches.h"
@@ -64,8 +65,8 @@ class CustomThreadWatcher : public ThreadWatcher {
   CheckResponseState check_response_state_;
   uint64 ping_sent_;
   uint64 pong_received_;
-  uint64 success_response_;
-  uint64 failed_response_;
+  base::subtle::Atomic32 success_response_;
+  base::subtle::Atomic32 failed_response_;
   base::TimeTicks saved_ping_time_;
   uint64 saved_ping_sequence_number_;
 
@@ -117,40 +118,42 @@ class CustomThreadWatcher : public ThreadWatcher {
     return old_state;
   }
 
-  void ActivateThreadWatching() {
+  virtual void ActivateThreadWatching() OVERRIDE {
     State old_state = UpdateState(ACTIVATED);
     EXPECT_EQ(old_state, INITIALIZED);
     ThreadWatcher::ActivateThreadWatching();
   }
 
-  void DeActivateThreadWatching() {
+  virtual void DeActivateThreadWatching() OVERRIDE {
     State old_state = UpdateState(DEACTIVATED);
     EXPECT_TRUE(old_state == ACTIVATED || old_state == SENT_PING ||
                 old_state == RECEIVED_PONG);
     ThreadWatcher::DeActivateThreadWatching();
   }
 
-  void PostPingMessage() {
+  virtual void PostPingMessage() OVERRIDE {
     State old_state = UpdateState(SENT_PING);
     EXPECT_TRUE(old_state == ACTIVATED || old_state == RECEIVED_PONG);
     ThreadWatcher::PostPingMessage();
   }
 
-  void OnPongMessage(uint64 ping_sequence_number) {
+  virtual void OnPongMessage(uint64 ping_sequence_number) OVERRIDE {
     State old_state = UpdateState(RECEIVED_PONG);
     EXPECT_TRUE(old_state == SENT_PING || old_state == DEACTIVATED);
     ThreadWatcher::OnPongMessage(ping_sequence_number);
   }
 
-  void OnCheckResponsiveness(uint64 ping_sequence_number) {
+  virtual void OnCheckResponsiveness(uint64 ping_sequence_number) OVERRIDE {
     ThreadWatcher::OnCheckResponsiveness(ping_sequence_number);
     {
       base::AutoLock auto_lock(custom_lock_);
       if (responsive_) {
-        ++success_response_;
+        base::subtle::Release_Store(&success_response_,
+            base::subtle::Acquire_Load(&success_response_) + 1);
         check_response_state_ = SUCCESSFUL;
       } else {
-        ++failed_response_;
+        base::subtle::Release_Store(&failed_response_,
+            base::subtle::Acquire_Load(&failed_response_) + 1);
         check_response_state_ = FAILED;
       }
     }
@@ -238,22 +241,23 @@ class ThreadWatcherTest : public ::testing::Test {
   static const TimeDelta kUnresponsiveTime;
   static const BrowserThread::ID io_thread_id;
   static const std::string io_thread_name;
-  static const BrowserThread::ID webkit_thread_id;
-  static const std::string webkit_thread_name;
+  static const BrowserThread::ID db_thread_id;
+  static const std::string db_thread_name;
   static const std::string crash_on_hang_seconds;
   static const std::string crash_on_hang_thread_names;
+  static const std::string thread_names_and_live_threshold;
+  static const std::string crash_on_hang_thread_data;
   CustomThreadWatcher* io_watcher_;
-  CustomThreadWatcher* webkit_watcher_;
+  CustomThreadWatcher* db_watcher_;
   ThreadWatcherList* thread_watcher_list_;
 
   ThreadWatcherTest()
       : setup_complete_(&lock_),
         initialized_(false) {
-    webkit_thread_.reset(new content::TestBrowserThread(
-        BrowserThread::WEBKIT_DEPRECATED));
+    db_thread_.reset(new content::TestBrowserThread(BrowserThread::DB));
     io_thread_.reset(new content::TestBrowserThread(BrowserThread::IO));
     watchdog_thread_.reset(new WatchDogThread());
-    webkit_thread_->Start();
+    db_thread_->Start();
     io_thread_->Start();
     watchdog_thread_->Start();
 
@@ -275,10 +279,10 @@ class ThreadWatcherTest : public ::testing::Test {
                                           kSleepTime, kUnresponsiveTime);
     EXPECT_EQ(io_watcher_, thread_watcher_list_->Find(io_thread_id));
 
-    // Create thread watcher object for the WEBKIT thread.
-    webkit_watcher_ = new CustomThreadWatcher(
-        webkit_thread_id, webkit_thread_name, kSleepTime, kUnresponsiveTime);
-    EXPECT_EQ(webkit_watcher_, thread_watcher_list_->Find(webkit_thread_id));
+    // Create thread watcher object for the DB thread.
+    db_watcher_ = new CustomThreadWatcher(
+        db_thread_id, db_thread_name, kSleepTime, kUnresponsiveTime);
+    EXPECT_EQ(db_watcher_, thread_watcher_list_->Find(db_thread_id));
 
     {
       base::AutoLock lock(lock_);
@@ -297,12 +301,12 @@ class ThreadWatcherTest : public ::testing::Test {
     }
   }
 
-  ~ThreadWatcherTest() {
+  virtual ~ThreadWatcherTest() {
     ThreadWatcherList::DeleteAll();
     io_watcher_ = NULL;
-    webkit_watcher_ = NULL;
+    db_watcher_ = NULL;
     io_thread_.reset();
-    webkit_thread_.reset();
+    db_thread_.reset();
     watchdog_thread_.reset();
     thread_watcher_list_ = NULL;
   }
@@ -311,7 +315,7 @@ class ThreadWatcherTest : public ::testing::Test {
   base::Lock lock_;
   base::ConditionVariable setup_complete_;
   bool initialized_;
-  scoped_ptr<content::TestBrowserThread> webkit_thread_;
+  scoped_ptr<content::TestBrowserThread> db_thread_;
   scoped_ptr<content::TestBrowserThread> io_thread_;
   scoped_ptr<WatchDogThread> watchdog_thread_;
 };
@@ -323,50 +327,108 @@ const TimeDelta ThreadWatcherTest::kUnresponsiveTime =
     TimeDelta::FromMilliseconds(500);
 const BrowserThread::ID ThreadWatcherTest::io_thread_id = BrowserThread::IO;
 const std::string ThreadWatcherTest::io_thread_name = "IO";
-const BrowserThread::ID ThreadWatcherTest::webkit_thread_id =
-    BrowserThread::WEBKIT_DEPRECATED;
-const std::string ThreadWatcherTest::webkit_thread_name = "WEBKIT";
-const std::string ThreadWatcherTest::crash_on_hang_seconds = "24";
-const std::string ThreadWatcherTest::crash_on_hang_thread_names = "IO:3,UI:3";
+const BrowserThread::ID ThreadWatcherTest::db_thread_id = BrowserThread::DB;
+const std::string ThreadWatcherTest::db_thread_name = "DB";
+const std::string ThreadWatcherTest::crash_on_hang_thread_names = "UI,IO";
+const std::string ThreadWatcherTest::thread_names_and_live_threshold =
+    "UI:4,IO:4";
+const std::string ThreadWatcherTest::crash_on_hang_thread_data =
+    "UI:5:12,IO:5:12,FILE:5:12";
 
-TEST_F(ThreadWatcherTest, CommandLineArgs) {
+TEST_F(ThreadWatcherTest, ThreadNamesOnlyArgs) {
   // Setup command_line arguments.
   CommandLine command_line(CommandLine::NO_PROGRAM);
-  command_line.AppendSwitchASCII(switches::kCrashOnHangSeconds,
-                                 crash_on_hang_seconds);
   command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
                                  crash_on_hang_thread_names);
 
   // Parse command_line arguments.
-  uint32 unresponsive_threshold;
   ThreadWatcherList::CrashOnHangThreadMap crash_on_hang_threads;
+  uint32 unresponsive_threshold;
   ThreadWatcherList::ParseCommandLine(command_line,
                                       &unresponsive_threshold,
                                       &crash_on_hang_threads);
 
   // Verify the data.
-  uint32 crash_on_unresponsive_seconds =
-      ThreadWatcherList::kUnresponsiveSeconds * unresponsive_threshold;
-  EXPECT_EQ(static_cast<int>(crash_on_unresponsive_seconds),
-            atoi(crash_on_hang_seconds.c_str()));
-
-  // Check ThreadWatcherTestList has the right crash_on_hang_thread_names.
-  StringTokenizer tokens(crash_on_hang_thread_names, ",");
+  base::StringTokenizer tokens(crash_on_hang_thread_names, ",");
   std::vector<std::string> values;
   while (tokens.GetNext()) {
     const std::string& token = tokens.token();
     base::SplitString(token, ':', &values);
-    if (values.size() != 2)
-      continue;
     std::string thread_name = values[0];
-    uint32 live_threads_threshold;
-    if (!base::StringToUint(values[1], &live_threads_threshold))
-      continue;
+
     ThreadWatcherList::CrashOnHangThreadMap::iterator it =
         crash_on_hang_threads.find(thread_name);
     bool crash_on_hang = (it != crash_on_hang_threads.end());
     EXPECT_TRUE(crash_on_hang);
-    EXPECT_EQ(it->second, live_threads_threshold);
+    EXPECT_LT(0u, it->second.live_threads_threshold);
+    EXPECT_LT(0u, it->second.unresponsive_threshold);
+  }
+}
+
+TEST_F(ThreadWatcherTest, ThreadNamesAndLiveThresholdArgs) {
+  // Setup command_line arguments.
+  CommandLine command_line(CommandLine::NO_PROGRAM);
+  command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
+                                 thread_names_and_live_threshold);
+
+  // Parse command_line arguments.
+  ThreadWatcherList::CrashOnHangThreadMap crash_on_hang_threads;
+  uint32 unresponsive_threshold;
+  ThreadWatcherList::ParseCommandLine(command_line,
+                                      &unresponsive_threshold,
+                                      &crash_on_hang_threads);
+
+  // Verify the data.
+  base::StringTokenizer tokens(thread_names_and_live_threshold, ",");
+  std::vector<std::string> values;
+  while (tokens.GetNext()) {
+    const std::string& token = tokens.token();
+    base::SplitString(token, ':', &values);
+    std::string thread_name = values[0];
+
+    ThreadWatcherList::CrashOnHangThreadMap::iterator it =
+        crash_on_hang_threads.find(thread_name);
+    bool crash_on_hang = (it != crash_on_hang_threads.end());
+    EXPECT_TRUE(crash_on_hang);
+    EXPECT_EQ(4u, it->second.live_threads_threshold);
+    EXPECT_LT(0u, it->second.unresponsive_threshold);
+  }
+}
+
+TEST_F(ThreadWatcherTest, CrashOnHangThreadsAllArgs) {
+  // Setup command_line arguments.
+  CommandLine command_line(CommandLine::NO_PROGRAM);
+  command_line.AppendSwitchASCII(switches::kCrashOnHangThreads,
+                                 crash_on_hang_thread_data);
+
+  // Parse command_line arguments.
+  ThreadWatcherList::CrashOnHangThreadMap crash_on_hang_threads;
+  uint32 unresponsive_threshold;
+  ThreadWatcherList::ParseCommandLine(command_line,
+                                      &unresponsive_threshold,
+                                      &crash_on_hang_threads);
+
+  // Verify the data.
+  base::StringTokenizer tokens(crash_on_hang_thread_data, ",");
+  std::vector<std::string> values;
+  while (tokens.GetNext()) {
+    const std::string& token = tokens.token();
+    base::SplitString(token, ':', &values);
+    std::string thread_name = values[0];
+
+    ThreadWatcherList::CrashOnHangThreadMap::iterator it =
+        crash_on_hang_threads.find(thread_name);
+
+    bool crash_on_hang = (it != crash_on_hang_threads.end());
+    EXPECT_TRUE(crash_on_hang);
+
+    uint32 crash_live_threads_threshold = it->second.live_threads_threshold;
+    EXPECT_EQ(5u, crash_live_threads_threshold);
+
+    uint32 crash_unresponsive_threshold = it->second.unresponsive_threshold;
+    uint32 crash_on_unresponsive_seconds =
+        ThreadWatcherList::kUnresponsiveSeconds * crash_unresponsive_threshold;
+    EXPECT_EQ(12u, crash_on_unresponsive_seconds);
   }
 }
 
@@ -380,12 +442,12 @@ TEST_F(ThreadWatcherTest, Registration) {
   EXPECT_EQ(kUnresponsiveTime, io_watcher_->unresponsive_time());
   EXPECT_FALSE(io_watcher_->active());
 
-  // Check ThreadWatcher object of watched WEBKIT thread has correct data.
-  EXPECT_EQ(webkit_thread_id, webkit_watcher_->thread_id());
-  EXPECT_EQ(webkit_thread_name, webkit_watcher_->thread_name());
-  EXPECT_EQ(kSleepTime, webkit_watcher_->sleep_time());
-  EXPECT_EQ(kUnresponsiveTime, webkit_watcher_->unresponsive_time());
-  EXPECT_FALSE(webkit_watcher_->active());
+  // Check ThreadWatcher object of watched DB thread has correct data.
+  EXPECT_EQ(db_thread_id, db_watcher_->thread_id());
+  EXPECT_EQ(db_thread_name, db_watcher_->thread_name());
+  EXPECT_EQ(kSleepTime, db_watcher_->sleep_time());
+  EXPECT_EQ(kUnresponsiveTime, db_watcher_->unresponsive_time());
+  EXPECT_FALSE(db_watcher_->active());
 }
 
 // Test ActivateThreadWatching and DeActivateThreadWatching of IO thread. This
@@ -414,8 +476,10 @@ TEST_F(ThreadWatcherTest, ThreadResponding) {
   // Verify watched thread is responding with ping/pong messaging.
   io_watcher_->WaitForCheckResponse(
       kUnresponsiveTime + TimeDelta::FromMinutes(1), SUCCESSFUL);
-  EXPECT_GT(io_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_EQ(io_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(io_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(io_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // DeActivate thread watching for shutdown.
   WatchDogThread::PostTask(
@@ -449,8 +513,10 @@ TEST_F(ThreadWatcherTest, ThreadNotResponding) {
   // Verify watched thread is not responding for ping messages.
   io_watcher_->WaitForCheckResponse(
       kUnresponsiveTime + TimeDelta::FromMinutes(1), FAILED);
-  EXPECT_EQ(io_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_GT(io_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(io_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(io_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // DeActivate thread watching for shutdown.
   WatchDogThread::PostTask(
@@ -464,11 +530,11 @@ TEST_F(ThreadWatcherTest, ThreadNotResponding) {
 
 // Test watching of multiple threads with all threads not responding.
 TEST_F(ThreadWatcherTest, MultipleThreadsResponding) {
-  // Check for WEBKIT thread to perform ping/pong messaging.
+  // Check for DB thread to perform ping/pong messaging.
   WatchDogThread::PostTask(
       FROM_HERE,
       base::Bind(&ThreadWatcher::ActivateThreadWatching,
-                 base::Unretained(webkit_watcher_)));
+                 base::Unretained(db_watcher_)));
 
   // Check for IO thread to perform ping/pong messaging.
   WatchDogThread::PostTask(
@@ -476,14 +542,16 @@ TEST_F(ThreadWatcherTest, MultipleThreadsResponding) {
       base::Bind(&ThreadWatcher::ActivateThreadWatching,
                  base::Unretained(io_watcher_)));
 
-  // Verify WEBKIT thread is responding with ping/pong messaging.
-  webkit_watcher_->WaitForCheckResponse(
+  // Verify DB thread is responding with ping/pong messaging.
+  db_watcher_->WaitForCheckResponse(
       kUnresponsiveTime + TimeDelta::FromMinutes(1), SUCCESSFUL);
-  EXPECT_GT(webkit_watcher_->ping_sent_, static_cast<uint64>(0));
-  EXPECT_GT(webkit_watcher_->pong_received_, static_cast<uint64>(0));
-  EXPECT_GE(webkit_watcher_->ping_sequence_number_, static_cast<uint64>(0));
-  EXPECT_GT(webkit_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_EQ(webkit_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_GT(db_watcher_->ping_sent_, static_cast<uint64>(0));
+  EXPECT_GT(db_watcher_->pong_received_, static_cast<uint64>(0));
+  EXPECT_GE(db_watcher_->ping_sequence_number_, static_cast<uint64>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(db_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(db_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // Verify IO thread is responding with ping/pong messaging.
   io_watcher_->WaitForCheckResponse(
@@ -491,8 +559,10 @@ TEST_F(ThreadWatcherTest, MultipleThreadsResponding) {
   EXPECT_GT(io_watcher_->ping_sent_, static_cast<uint64>(0));
   EXPECT_GT(io_watcher_->pong_received_, static_cast<uint64>(0));
   EXPECT_GE(io_watcher_->ping_sequence_number_, static_cast<uint64>(0));
-  EXPECT_GT(io_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_EQ(io_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(io_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(io_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // DeActivate thread watching for shutdown.
   WatchDogThread::PostTask(
@@ -503,7 +573,7 @@ TEST_F(ThreadWatcherTest, MultipleThreadsResponding) {
   WatchDogThread::PostTask(
       FROM_HERE,
       base::Bind(&ThreadWatcher::DeActivateThreadWatching,
-                 base::Unretained(webkit_watcher_)));
+                 base::Unretained(db_watcher_)));
 }
 
 // Test watching of multiple threads with one of the threads not responding.
@@ -519,11 +589,11 @@ TEST_F(ThreadWatcherTest, MultipleThreadsNotResponding) {
                  base::Unretained(io_watcher_),
                  kUnresponsiveTime * 10));
 
-  // Activate watching of WEBKIT thread.
+  // Activate watching of DB thread.
   WatchDogThread::PostTask(
       FROM_HERE,
       base::Bind(&ThreadWatcher::ActivateThreadWatching,
-                 base::Unretained(webkit_watcher_)));
+                 base::Unretained(db_watcher_)));
 
   // Activate watching of IO thread.
   WatchDogThread::PostTask(
@@ -531,17 +601,21 @@ TEST_F(ThreadWatcherTest, MultipleThreadsNotResponding) {
       base::Bind(&ThreadWatcher::ActivateThreadWatching,
                  base::Unretained(io_watcher_)));
 
-  // Verify WEBKIT thread is responding with ping/pong messaging.
-  webkit_watcher_->WaitForCheckResponse(
+  // Verify DB thread is responding with ping/pong messaging.
+  db_watcher_->WaitForCheckResponse(
       kUnresponsiveTime + TimeDelta::FromMinutes(1), SUCCESSFUL);
-  EXPECT_GT(webkit_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_EQ(webkit_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(db_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(db_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // Verify IO thread is not responding for ping messages.
   io_watcher_->WaitForCheckResponse(
       kUnresponsiveTime + TimeDelta::FromMinutes(1), FAILED);
-  EXPECT_EQ(io_watcher_->success_response_, static_cast<uint64>(0));
-  EXPECT_GT(io_watcher_->failed_response_, static_cast<uint64>(0));
+  EXPECT_EQ(base::subtle::NoBarrier_Load(&(io_watcher_->success_response_)),
+      static_cast<base::subtle::Atomic32>(0));
+  EXPECT_GT(base::subtle::NoBarrier_Load(&(io_watcher_->failed_response_)),
+      static_cast<base::subtle::Atomic32>(0));
 
   // DeActivate thread watching for shutdown.
   WatchDogThread::PostTask(
@@ -551,8 +625,114 @@ TEST_F(ThreadWatcherTest, MultipleThreadsNotResponding) {
   WatchDogThread::PostTask(
       FROM_HERE,
       base::Bind(&ThreadWatcher::DeActivateThreadWatching,
-                 base::Unretained(webkit_watcher_)));
+                 base::Unretained(db_watcher_)));
 
   // Wait for the io_watcher_'s VeryLongMethod to finish.
   io_watcher_->WaitForWaitStateChange(kUnresponsiveTime * 10, ALL_DONE);
+}
+
+class ThreadWatcherListTest : public ::testing::Test {
+ protected:
+  ThreadWatcherListTest()
+      : done_(&lock_),
+        state_available_(false),
+        has_thread_watcher_list_(false),
+        stopped_(false) {
+  }
+
+  void ReadStateOnWatchDogThread() {
+    CHECK(WatchDogThread::CurrentlyOnWatchDogThread());
+    {
+      base::AutoLock auto_lock(lock_);
+      has_thread_watcher_list_ =
+          ThreadWatcherList::g_thread_watcher_list_ != NULL;
+      stopped_ = ThreadWatcherList::g_stopped_;
+      state_available_ = true;
+    }
+    done_.Signal();
+  }
+
+  void CheckState(bool has_thread_watcher_list,
+                  bool stopped,
+                  const char* const msg) {
+    CHECK(!WatchDogThread::CurrentlyOnWatchDogThread());
+    {
+      base::AutoLock auto_lock(lock_);
+      state_available_ = false;
+    }
+
+    WatchDogThread::PostTask(
+        FROM_HERE,
+        base::Bind(&ThreadWatcherListTest::ReadStateOnWatchDogThread,
+                   base::Unretained(this)));
+    {
+      base::AutoLock auto_lock(lock_);
+      while (!state_available_)
+        done_.Wait();
+
+      EXPECT_EQ(has_thread_watcher_list, has_thread_watcher_list_) << msg;
+      EXPECT_EQ(stopped, stopped_) << msg;
+    }
+  }
+
+  base::Lock lock_;
+  base::ConditionVariable done_;
+
+  bool state_available_;
+  bool has_thread_watcher_list_;
+  bool stopped_;
+};
+
+TEST_F(ThreadWatcherListTest, Restart) {
+  ThreadWatcherList::g_initialize_delay_seconds = 1;
+
+  base::MessageLoopForUI message_loop_for_ui;
+  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop_for_ui);
+
+  scoped_ptr<WatchDogThread> watchdog_thread_(new WatchDogThread());
+  watchdog_thread_->Start();
+
+  // See http://crbug.com/347887.
+  // StartWatchingAll() will PostDelayedTask to create g_thread_watcher_list_,
+  // whilst StopWatchingAll() will just PostTask to destroy it.
+  // Ensure that when Stop is called, Start will NOT create
+  // g_thread_watcher_list_ later on.
+  ThreadWatcherList::StartWatchingAll(*CommandLine::ForCurrentProcess());
+  ThreadWatcherList::StopWatchingAll();
+  message_loop_for_ui.PostDelayedTask(
+      FROM_HERE,
+      message_loop_for_ui.QuitClosure(),
+      base::TimeDelta::FromSeconds(
+          ThreadWatcherList::g_initialize_delay_seconds));
+  message_loop_for_ui.Run();
+
+  CheckState(false /* has_thread_watcher_list */,
+             true /* stopped */,
+             "Start / Stopped");
+
+  // Proceed with just |StartWatchingAll| and ensure it'll be started.
+  ThreadWatcherList::StartWatchingAll(*CommandLine::ForCurrentProcess());
+  message_loop_for_ui.PostDelayedTask(
+      FROM_HERE,
+      message_loop_for_ui.QuitClosure(),
+      base::TimeDelta::FromSeconds(
+          ThreadWatcherList::g_initialize_delay_seconds + 1));
+  message_loop_for_ui.Run();
+
+  CheckState(true /* has_thread_watcher_list */,
+             false /* stopped */,
+             "Started");
+
+  // Finally, StopWatchingAll() must stop.
+  ThreadWatcherList::StopWatchingAll();
+  message_loop_for_ui.PostDelayedTask(
+      FROM_HERE,
+      message_loop_for_ui.QuitClosure(),
+      base::TimeDelta::FromSeconds(
+          ThreadWatcherList::g_initialize_delay_seconds));
+  message_loop_for_ui.Run();
+
+  CheckState(false /* has_thread_watcher_list */,
+             true /* stopped */,
+             "Stopped");
 }

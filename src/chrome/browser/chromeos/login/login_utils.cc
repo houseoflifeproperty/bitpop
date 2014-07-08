@@ -5,93 +5,86 @@
 #include "chrome/browser/chromeos/login/login_utils.h"
 
 #include <algorithm>
+#include <set>
 #include <vector>
 
-#include "ash/ash_switches.h"
-#include "base/chromeos/chromeos_version.h"
+#include "base/bind.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
+#include "base/memory/weak_ptr.h"
 #include "base/path_service.h"
-#include "base/prefs/public/pref_member.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/prefs/pref_member.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
+#include "base/sys_info.h"
 #include "base/task_runner_util.h"
 #include "base/threading/worker_pool.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
-#include "cc/switches.h"
+#include "base/time/time.h"
+#include "chrome/browser/about_flags.h"
+#include "chrome/browser/app_mode/app_mode_utils.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/browser_shutdown.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/boot_times_loader.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/cros/cryptohome_library.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
 #include "chrome/browser/chromeos/input_method/input_method_util.h"
-#include "chrome/browser/chromeos/login/language_switch_menu.h"
+#include "chrome/browser/chromeos/login/chrome_restart_request.h"
+#include "chrome/browser/chromeos/login/demo_mode/demo_app_launcher.h"
+#include "chrome/browser/chromeos/login/input_events_blocker.h"
 #include "chrome/browser/chromeos/login/login_display_host.h"
-#include "chrome/browser/chromeos/login/oauth_login_manager.h"
+#include "chrome/browser/chromeos/login/oauth2_login_manager.h"
+#include "chrome/browser/chromeos/login/oauth2_login_manager_factory.h"
 #include "chrome/browser/chromeos/login/parallel_authenticator.h"
 #include "chrome/browser/chromeos/login/profile_auth_data.h"
+#include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter.h"
+#include "chrome/browser/chromeos/login/saml/saml_offline_signin_limiter_factory.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
+#include "chrome/browser/chromeos/login/startup_utils.h"
+#include "chrome/browser/chromeos/login/supervised_user_manager.h"
+#include "chrome/browser/chromeos/login/user.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/google/google_util_chromeos.h"
-#include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/net/preconnect.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud_policy_client.h"
-#include "chrome/browser/policy/cloud_policy_service.h"
-#include "chrome/browser/policy/network_configuration_updater.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/pref_service_flags_storage.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/rlz/rlz.h"
-#include "chrome/browser/signin/signin_manager.h"
 #include "chrome/browser/signin/signin_manager_factory.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/ui/app_list/start_page_service.h"
 #include "chrome/browser/ui/startup/startup_browser_creator.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/logging_chrome.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/common/url_constants.h"
 #include "chromeos/chromeos_switches.h"
+#include "chromeos/cryptohome/cryptohome_util.h"
+#include "chromeos/dbus/cryptohome_client.h"
+#include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #include "chromeos/dbus/session_manager_client.h"
+#include "chromeos/ime/input_method_manager.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/common/content_switches.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
-#include "google_apis/gaia/gaia_constants.h"
-#include "google_apis/gaia/gaia_urls.h"
-#include "googleurl/src/gurl.h"
-#include "media/base/media_switches.h"
 #include "net/base/network_change_notifier.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "ui/base/ui_base_switches.h"
-#include "ui/compositor/compositor_switches.h"
-#include "ui/gfx/switches.h"
-#include "ui/gl/gl_switches.h"
-#include "ui/views/corewm/corewm_switches.h"
-#include "webkit/plugins/plugin_switches.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -99,106 +92,33 @@ namespace chromeos {
 
 namespace {
 
-// Affixes for Auth token received from ClientLogin request.
-const char kAuthPrefix[] = "Auth=";
-const char kAuthSuffix[] = "\n";
-
-// Increase logging level for Guest mode to avoid LOG(INFO) messages in logs.
-const char kGuestModeLoggingLevel[] = "1";
-
-// Format of command line switch.
-const char kSwitchFormatString[] = " --%s=\"%s\"";
-
-// User name which is used in the Guest session.
-const char kGuestUserName[] = "";
-
-
 #if defined(ENABLE_RLZ)
 // Flag file that disables RLZ tracking, when present.
-const char kRLZDisabledFlagName[] = FILE_PATH_LITERAL(".rlz_disabled");
+const base::FilePath::CharType kRLZDisabledFlagName[] =
+    FILE_PATH_LITERAL(".rlz_disabled");
 
-FilePath GetRlzDisabledFlagPath() {
-  return file_util::GetHomeDir().Append(kRLZDisabledFlagName);
+base::FilePath GetRlzDisabledFlagPath() {
+  return base::GetHomeDir().Append(kRLZDisabledFlagName);
 }
 #endif
 
 }  // namespace
 
-// Used to request a restart to switch to the guest mode.
-class JobRestartRequest
-    : public base::RefCountedThreadSafe<JobRestartRequest> {
- public:
-  JobRestartRequest(int pid, const std::string& command_line)
-      : pid_(pid),
-        command_line_(command_line),
-        local_state_(g_browser_process->local_state()) {
-    AddRef();
-    if (local_state_) {
-      // XXX: normally this call must not be needed, however RestartJob
-      // just kills us so settings may be lost. See http://crosbug.com/13102
-      local_state_->CommitPendingWrite();
-      timer_.Start(
-          FROM_HERE, base::TimeDelta::FromSeconds(3), this,
-          &JobRestartRequest::RestartJob);
-      // Post task on FILE thread thus it occurs last on task queue, so it
-      // would be executed after committing pending write on file thread.
-      BrowserThread::PostTask(
-          BrowserThread::FILE, FROM_HERE,
-          base::Bind(&JobRestartRequest::RestartJob, this));
-    } else {
-      RestartJob();
-    }
-  }
-
- private:
-  friend class base::RefCountedThreadSafe<JobRestartRequest>;
-
-  ~JobRestartRequest() {}
-
-  void RestartJob() {
-    if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-      DBusThreadManager::Get()->GetSessionManagerClient()->RestartJob(
-          pid_, command_line_);
-    } else {
-      // This function can be called on FILE thread. See PostTask in the
-      // constructor.
-      BrowserThread::PostTask(
-          BrowserThread::UI, FROM_HERE,
-          base::Bind(&JobRestartRequest::RestartJob, this));
-      MessageLoop::current()->AssertIdle();
-    }
-  }
-
-  int pid_;
-  std::string command_line_;
-  PrefService* local_state_;
-  base::OneShotTimer<JobRestartRequest> timer_;
-};
+struct DoBrowserLaunchOnLocaleLoadedData;
 
 class LoginUtilsImpl
     : public LoginUtils,
-      public OAuthLoginManager::Delegate,
+      public OAuth2LoginManager::Observer,
       public net::NetworkChangeNotifier::ConnectionTypeObserver,
-      public content::NotificationObserver,
       public base::SupportsWeakPtr<LoginUtilsImpl> {
  public:
   LoginUtilsImpl()
-      : using_oauth_(false),
-        has_web_auth_cookies_(false),
-        login_manager_(OAuthLoginManager::Create(this)),
+      : has_web_auth_cookies_(false),
         delegate_(NULL),
-        job_restart_request_(NULL),
-        should_restore_auth_session_(false),
-        url_request_context_getter_(NULL) {
+        exit_after_session_restore_(false),
+        session_restore_strategy_(
+            OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN) {
     net::NetworkChangeNotifier::AddConnectionTypeObserver(this);
-    // During tests, the browser_process may not be initialized yet causing
-    // this to fail.
-    if (g_browser_process) {
-      registrar_.Add(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(ProfileManager::GetDefaultProfile()));
-    }
   }
 
   virtual ~LoginUtilsImpl() {
@@ -209,93 +129,116 @@ class LoginUtilsImpl
   virtual void DoBrowserLaunch(Profile* profile,
                                LoginDisplayHost* login_host) OVERRIDE;
   virtual void PrepareProfile(
-      const std::string& username,
+      const UserContext& user_context,
       const std::string& display_email,
-      const std::string& password,
-      bool using_oauth,
       bool has_cookies,
+      bool has_active_session,
       LoginUtils::Delegate* delegate) OVERRIDE;
   virtual void DelegateDeleted(LoginUtils::Delegate* delegate) OVERRIDE;
   virtual void CompleteOffTheRecordLogin(const GURL& start_url) OVERRIDE;
   virtual void SetFirstLoginPrefs(PrefService* prefs) OVERRIDE;
   virtual scoped_refptr<Authenticator> CreateAuthenticator(
       LoginStatusConsumer* consumer) OVERRIDE;
-  virtual void PrewarmAuthentication() OVERRIDE;
   virtual void RestoreAuthenticationSession(Profile* profile) OVERRIDE;
-  virtual void StopBackgroundFetchers() OVERRIDE;
   virtual void InitRlzDelayed(Profile* user_profile) OVERRIDE;
-  virtual void CompleteProfileCreate(Profile* user_profile) OVERRIDE;
 
-  // OAuthLoginManager::Delegate overrides.
-  virtual void OnCompletedAuthentication(Profile* user_profile) OVERRIDE;
-  virtual void OnFoundStoredTokens() OVERRIDE;
+  // OAuth2LoginManager::Observer overrides.
+  virtual void OnSessionRestoreStateChanged(
+      Profile* user_profile,
+      OAuth2LoginManager::SessionRestoreState state) OVERRIDE;
+  virtual void OnNewRefreshTokenAvaiable(Profile* user_profile) OVERRIDE;
 
   // net::NetworkChangeNotifier::ConnectionTypeObserver overrides.
   virtual void OnConnectionTypeChanged(
       net::NetworkChangeNotifier::ConnectionType type) OVERRIDE;
 
-  // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
-
- protected:
-  virtual std::string GetOffTheRecordCommandLine(
-      const GURL& start_url,
-      const CommandLine& base_command_line,
-      CommandLine *command_line);
-
  private:
+  typedef std::set<std::string> SessionRestoreStateSet;
+
+  // DoBrowserLaunch is split into two parts.
+  // This one is called after anynchronous locale switch.
+  void DoBrowserLaunchOnLocaleLoadedImpl(Profile* profile,
+                                         LoginDisplayHost* login_host);
+
+  // Callback for locale_util::SwitchLanguage().
+  static void DoBrowserLaunchOnLocaleLoaded(
+      scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> context,
+      const std::string& locale,
+      const std::string& loaded_locale,
+      const bool success);
+
   // Restarts OAuth session authentication check.
   void KickStartAuthentication(Profile* profile);
 
-  // Check user's profile for kApplicationLocale setting.
-  void RespectLocalePreference(Profile* pref);
-
-  // Initializes basic preferences for newly created profile.
-  void InitProfilePreferences(Profile* user_profile);
+  // Callback for Profile::CREATE_STATUS_CREATED profile state.
+  // Initializes basic preferences for newly created profile. Any other
+  // early profile initialization that needs to happen before
+  // ProfileManager::DoFinalInit() gets called is done here.
+  void InitProfilePreferences(Profile* user_profile,
+                              const std::string& email);
 
   // Callback for asynchronous profile creation.
-  void OnProfileCreated(Profile* profile,
+  void OnProfileCreated(const std::string& email,
+                        Profile* profile,
                         Profile::CreateStatus status);
+
+  // Callback for asynchronous off the record profile creation.
+  void OnOTRProfileCreated(const std::string& email,
+                        Profile* profile,
+                        Profile::CreateStatus status);
+
+  // Callback for Profile::CREATE_STATUS_INITIALIZED profile state.
+  // Profile is created, extensions and promo resources are initialized.
+  void UserProfileInitialized(Profile* user_profile);
+
+  // Callback for Profile::CREATE_STATUS_INITIALIZED profile state for an OTR
+  // login.
+  void OTRProfileInitialized(Profile* user_profile);
+
+  // Callback to resume profile creation after transferring auth data from
+  // the authentication profile.
+  void CompleteProfileCreate(Profile* user_profile);
 
   // Finalized profile preparation.
   void FinalizePrepareProfile(Profile* user_profile);
+
+  // Initializes member variables needed for session restore process via
+  // OAuthLoginManager.
+  void InitSessionRestoreStrategy();
 
   // Restores GAIA auth cookies for the created user profile from OAuth2 token.
   void RestoreAuthSession(Profile* user_profile,
                           bool restore_from_auth_cookies);
 
-  // Initializes RLZ. If |disabled| is true, financial pings are turned off.
+  // Initializes RLZ. If |disabled| is true, RLZ pings are disabled.
   void InitRlz(Profile* user_profile, bool disabled);
 
-  // Starts signing related services. Initiates TokenService token retrieval.
-  void StartSignedInServices(Profile* profile);
+  // Attempts restarting the browser process and esures that this does
+  // not happen while we are still fetching new OAuth refresh tokens.
+  void AttemptRestart(Profile* profile);
 
-  std::string password_;
-  bool using_oauth_;
-  // True if the authenrication profile's cookie jar should contain
+  UserContext user_context_;
+
+  // True if the authentication profile's cookie jar should contain
   // authentication cookies from the authentication extension log in flow.
   bool has_web_auth_cookies_;
   // Has to be scoped_refptr, see comment for CreateAuthenticator(...).
   scoped_refptr<Authenticator> authenticator_;
-  scoped_ptr<OAuthLoginManager> login_manager_;
 
   // Delegate to be fired when the profile will be prepared.
   LoginUtils::Delegate* delegate_;
 
-  // Used to restart Chrome to switch to the guest mode.
-  JobRestartRequest* job_restart_request_;
+  // Set of user_id for those users that we should restore authentication
+  // session when notified about online state change.
+  SessionRestoreStateSet pending_restore_sessions_;
 
-  // True if should restore authentication session when notified about
-  // online state change.
-  bool should_restore_auth_session_;
+  // True if we should restart chrome right after session restore.
+  bool exit_after_session_restore_;
 
-  content::NotificationRegistrar registrar_;
-
-  // This is set via a notification after the profile has initialized the
-  // getter.
-  net::URLRequestContextGetter* url_request_context_getter_;
+  // Sesion restore strategy.
+  OAuth2LoginManager::SessionRestoreStrategy session_restore_strategy_;
+  // OAuth2 refresh token for session restore.
+  std::string oauth2_refresh_token_;
 
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsImpl);
 };
@@ -328,10 +271,62 @@ class LoginUtilsWrapper {
   DISALLOW_COPY_AND_ASSIGN(LoginUtilsWrapper);
 };
 
-void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
-                                     LoginDisplayHost* login_host) {
-  if (browser_shutdown::IsTryingToQuit())
+struct DoBrowserLaunchOnLocaleLoadedData {
+  DoBrowserLaunchOnLocaleLoadedData(LoginUtilsImpl* login_utils_impl,
+                                    Profile* profile,
+                                    LoginDisplayHost* display_host)
+      : login_utils_impl(login_utils_impl),
+        profile(profile),
+        display_host(display_host) {}
+
+  LoginUtilsImpl* login_utils_impl;
+  Profile* profile;
+  chromeos::LoginDisplayHost* display_host;
+
+  // Block UI events untill ResourceBundle is reloaded.
+  InputEventsBlocker input_events_blocker;
+};
+
+// static
+void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoaded(
+    scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> context,
+    const std::string& /* locale */,
+    const std::string& /* loaded_locale */,
+    const bool /* success */) {
+  context->login_utils_impl->DoBrowserLaunchOnLocaleLoadedImpl(
+      context->profile, context->display_host);
+}
+
+// Called from DoBrowserLaunch() or from
+// DoBrowserLaunchOnLocaleLoaded() depending on
+// if locale switch was needed.
+void LoginUtilsImpl::DoBrowserLaunchOnLocaleLoadedImpl(
+    Profile* profile,
+    LoginDisplayHost* login_host) {
+  if (!UserManager::Get()->GetCurrentUserFlow()->ShouldLaunchBrowser()) {
+    UserManager::Get()->GetCurrentUserFlow()->LaunchExtraSteps(profile);
     return;
+  }
+
+  CommandLine user_flags(CommandLine::NO_PROGRAM);
+  about_flags::PrefServiceFlagsStorage flags_storage_(profile->GetPrefs());
+  about_flags::ConvertFlagsToSwitches(&flags_storage_, &user_flags,
+                                      about_flags::kAddSentinels);
+  // Only restart if needed and if not going into managed mode.
+  // Don't restart browser if it is not first profile in session.
+  if (UserManager::Get()->GetLoggedInUsers().size() == 1 &&
+      !UserManager::Get()->IsLoggedInAsLocallyManagedUser() &&
+      !about_flags::AreSwitchesIdenticalToCurrentCommandLine(
+          user_flags, *CommandLine::ForCurrentProcess())) {
+    CommandLine::StringVector flags;
+    // argv[0] is the program name |CommandLine::NO_PROGRAM|.
+    flags.assign(user_flags.argv().begin() + 1, user_flags.argv().end());
+    VLOG(1) << "Restarting to apply per-session flags...";
+    DBusThreadManager::Get()->GetSessionManagerClient()->SetFlagsForUser(
+        UserManager::Get()->GetActiveUser()->email(), flags);
+    AttemptRestart(profile);
+    return;
+  }
 
   if (login_host) {
     login_host->SetStatusAreaVisible(true);
@@ -345,96 +340,98 @@ void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
   int return_code;
   chrome::startup::IsFirstRun first_run = first_run::IsChromeFirstRun() ?
       chrome::startup::IS_FIRST_RUN : chrome::startup::IS_NOT_FIRST_RUN;
+
   browser_creator.LaunchBrowser(*CommandLine::ForCurrentProcess(),
                                 profile,
-                                FilePath(),
+                                base::FilePath(),
                                 chrome::startup::IS_PROCESS_STARTUP,
                                 first_run,
                                 &return_code);
+
+  // Triggers app launcher start page service to load start page web contents.
+  app_list::StartPageService::Get(profile);
 
   // Mark login host for deletion after browser starts.  This
   // guarantees that the message loop will be referenced by the
   // browser before it is dereferenced by the login host.
   if (login_host)
-    login_host->OnSessionStart();
+    login_host->Finalize();
   UserManager::Get()->SessionStarted();
+  chromeos::BootTimesLoader::Get()->LoginDone(
+      chromeos::UserManager::Get()->IsCurrentUserNew());
+}
+
+void LoginUtilsImpl::DoBrowserLaunch(Profile* profile,
+                                     LoginDisplayHost* login_host) {
+  if (browser_shutdown::IsTryingToQuit())
+    return;
+
+  User* const user = UserManager::Get()->GetUserByProfile(profile);
+  scoped_ptr<DoBrowserLaunchOnLocaleLoadedData> data(
+      new DoBrowserLaunchOnLocaleLoadedData(this, profile, login_host));
+
+  scoped_ptr<locale_util::SwitchLanguageCallback> callback(
+      new locale_util::SwitchLanguageCallback(
+          base::Bind(&LoginUtilsImpl::DoBrowserLaunchOnLocaleLoaded,
+                     base::Passed(data.Pass()))));
+  if (!UserManager::Get()->
+      RespectLocalePreference(profile, user, callback.Pass())) {
+    DoBrowserLaunchOnLocaleLoadedImpl(profile, login_host);
+  }
 }
 
 void LoginUtilsImpl::PrepareProfile(
-    const std::string& username,
+    const UserContext& user_context,
     const std::string& display_email,
-    const std::string& password,
-    bool using_oauth,
     bool has_cookies,
+    bool has_active_session,
     LoginUtils::Delegate* delegate) {
   BootTimesLoader* btl = BootTimesLoader::Get();
 
-  VLOG(1) << "Completing login for " << username;
+  VLOG(1) << "Completing login for " << user_context.username;
 
-  btl->AddLoginTimeMarker("StartSession-Start", false);
-  DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
-      username);
-  btl->AddLoginTimeMarker("StartSession-End", false);
+  if (!has_active_session) {
+    btl->AddLoginTimeMarker("StartSession-Start", false);
+    DBusThreadManager::Get()->GetSessionManagerClient()->StartSession(
+        user_context.username);
+    btl->AddLoginTimeMarker("StartSession-End", false);
+  }
 
   btl->AddLoginTimeMarker("UserLoggedIn-Start", false);
   UserManager* user_manager = UserManager::Get();
-  user_manager->UserLoggedIn(username, false);
+  user_manager->UserLoggedIn(user_context.username,
+                             user_context.username_hash,
+                             false);
   btl->AddLoginTimeMarker("UserLoggedIn-End", false);
 
   // Switch log file as soon as possible.
-  if (base::chromeos::IsRunningOnChromeOS())
+  if (base::SysInfo::IsRunningOnChromeOS())
     logging::RedirectChromeLogging(*(CommandLine::ForCurrentProcess()));
 
   // Update user's displayed email.
   if (!display_email.empty())
-    user_manager->SaveUserDisplayEmail(username, display_email);
+    user_manager->SaveUserDisplayEmail(user_context.username, display_email);
 
-  password_ = password;
+  user_context_ = user_context;
 
-  using_oauth_ = using_oauth;
   has_web_auth_cookies_ = has_cookies;
   delegate_ = delegate;
+  InitSessionRestoreStrategy();
 
-  policy::BrowserPolicyConnector* connector =
-      g_browser_process->browser_policy_connector();
-
-  // If this is an enterprise device and the user belongs to the enterprise
-  // domain, then wait for a policy fetch before logging the user in. This
-  // will delay Profile creation until the policy is fetched, so that features
-  // controlled by policy (e.g. Sync, Startup tabs) only start after the
-  // PrefService has the right values.
-  // Profile creation is also resumed if the fetch attempt fails.
-  bool wait_for_policy_fetch =
-      using_oauth_ &&
-      authenticator_.get() &&
-      (connector->GetUserAffiliation(username) ==
-           policy::USER_AFFILIATION_MANAGED);
-
-  // Initialize user policy before the profile is created so the profile
-  // initialization code sees the cached policy settings.
-  connector->InitializeUserPolicy(username,
-                                  user_manager->IsLoggedInAsPublicAccount(),
-                                  wait_for_policy_fetch);
-
-  // The default profile will have been changed because the ProfileManager
-  // will process the notification that the UserManager sends out.
-  ProfileManager::CreateDefaultProfileAsync(
-      base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr()));
-
-  if (wait_for_policy_fetch) {
-    // Profile creation will block until user policy is fetched, which
-    // requires the DeviceManagement token. Try to fetch it now.
-    // TODO(atwilson): This is somewhat racy, as we are trying to fetch a
-    // DMToken in parallel with loading the cached policy blob (there could
-    // already be a DMToken in the cached policy). Once the legacy policy
-    // framework is removed, this code can register a
-    // CloudPolicyService::Observer to check whether the CloudPolicyClient was
-    // able to register itself using the cached policy data, and then only
-    // create a PolicyOAuthFetcher if the client is still unregistered
-    // (http://crbug.com/143187).
-    VLOG(1) << "Profile creation requires policy token, fetching now";
-    login_manager_->RestorePolicyTokens(
-        authenticator_->authentication_profile()->GetRequestContext());
+  if (DemoAppLauncher::IsDemoAppSession(user_context.username)) {
+    g_browser_process->profile_manager()->CreateProfileAsync(
+        user_manager->GetUserProfileDir(user_context.username),
+        base::Bind(&LoginUtilsImpl::OnOTRProfileCreated, AsWeakPtr(),
+                   user_context.username),
+        base::string16(), base::string16(), std::string());
+  } else {
+    // Can't use display_email because it is empty when existing user logs in
+    // using sing-in pod on login screen (i.e. user didn't type email).
+    g_browser_process->profile_manager()->CreateProfileAsync(
+        user_manager->GetUserProfileDir(user_context.username),
+        base::Bind(&LoginUtilsImpl::OnProfileCreated, AsWeakPtr(),
+                   user_context.username),
+        base::string16(), base::string16(), std::string());
   }
 }
 
@@ -443,56 +440,123 @@ void LoginUtilsImpl::DelegateDeleted(LoginUtils::Delegate* delegate) {
     delegate_ = NULL;
 }
 
-void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile) {
+void LoginUtilsImpl::InitProfilePreferences(Profile* user_profile,
+                                            const std::string& user_id) {
   if (UserManager::Get()->IsCurrentUserNew())
     SetFirstLoginPrefs(user_profile->GetPrefs());
-  // Make sure that the google service username is properly set (we do this
-  // on every sign in, not just the first login, to deal with existing
-  // profiles that might not have it set yet).
-  StringPrefMember google_services_username;
-  google_services_username.Init(prefs::kGoogleServicesUsername,
-                                user_profile->GetPrefs());
-  google_services_username.SetValue(
-      UserManager::Get()->GetLoggedInUser()->display_email());
-  // Make sure we flip every profile to not share proxies if the user hasn't
-  // specified so explicitly.
-  const PrefService::Preference* use_shared_proxies_pref =
-      user_profile->GetPrefs()->FindPreference(prefs::kUseSharedProxies);
-  if (use_shared_proxies_pref->IsDefaultValue())
-    user_profile->GetPrefs()->SetBoolean(prefs::kUseSharedProxies, false);
-  policy::NetworkConfigurationUpdater* network_configuration_updater =
-      g_browser_process->browser_policy_connector()->
-      GetNetworkConfigurationUpdater();
-  if (network_configuration_updater)
-    network_configuration_updater->OnUserPolicyInitialized();
-  RespectLocalePreference(user_profile);
+
+  if (UserManager::Get()->IsLoggedInAsLocallyManagedUser()) {
+    User* active_user = UserManager::Get()->GetActiveUser();
+    std::string managed_user_sync_id =
+        UserManager::Get()->GetSupervisedUserManager()->
+            GetUserSyncId(active_user->email());
+
+    // TODO(ibraaaa): Remove that when 97% of our users are using M31.
+    // http://crbug.com/276163
+    if (managed_user_sync_id.empty())
+      managed_user_sync_id = "DUMMY_ID";
+
+    user_profile->GetPrefs()->SetString(prefs::kManagedUserId,
+                                        managed_user_sync_id);
+  } else if (UserManager::Get()->IsLoggedInAsRegularUser()) {
+    // Make sure that the google service username is properly set (we do this
+    // on every sign in, not just the first login, to deal with existing
+    // profiles that might not have it set yet).
+    SigninManagerBase* signin_manager =
+        SigninManagerFactory::GetForProfile(user_profile);
+    signin_manager->SetAuthenticatedUsername(user_id);
+  }
 }
 
+void LoginUtilsImpl::InitSessionRestoreStrategy() {
+  CommandLine* command_line = CommandLine::ForCurrentProcess();
+  bool in_app_mode = chrome::IsRunningInForcedAppMode();
+
+  // Are we in kiosk app mode?
+  if (in_app_mode) {
+    if (command_line->HasSwitch(::switches::kAppModeOAuth2Token)) {
+      oauth2_refresh_token_ = command_line->GetSwitchValueASCII(
+          ::switches::kAppModeOAuth2Token);
+    }
+
+    if (command_line->HasSwitch(::switches::kAppModeAuthCode)) {
+      user_context_.auth_code = command_line->GetSwitchValueASCII(
+          ::switches::kAppModeAuthCode);
+    }
+
+    DCHECK(!has_web_auth_cookies_);
+    if (!user_context_.auth_code.empty()) {
+      session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_AUTH_CODE;
+    } else if (!oauth2_refresh_token_.empty()) {
+      session_restore_strategy_ =
+          OAuth2LoginManager::RESTORE_FROM_PASSED_OAUTH2_REFRESH_TOKEN;
+    } else {
+      session_restore_strategy_ =
+          OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN;
+    }
+    return;
+  }
+
+  if (has_web_auth_cookies_) {
+    session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_COOKIE_JAR;
+  } else if (!user_context_.auth_code.empty()) {
+    session_restore_strategy_ = OAuth2LoginManager::RESTORE_FROM_AUTH_CODE;
+  } else {
+    session_restore_strategy_ =
+        OAuth2LoginManager::RESTORE_FROM_SAVED_OAUTH2_REFRESH_TOKEN;
+  }
+}
+
+
 void LoginUtilsImpl::OnProfileCreated(
+    const std::string& user_id,
     Profile* user_profile,
     Profile::CreateStatus status) {
   CHECK(user_profile);
 
-  if (delegate_)
-    delegate_->OnProfileCreated(user_profile);
+  switch (status) {
+    case Profile::CREATE_STATUS_CREATED:
+      InitProfilePreferences(user_profile, user_id);
+      break;
+    case Profile::CREATE_STATUS_INITIALIZED:
+      UserProfileInitialized(user_profile);
+      break;
+    case Profile::CREATE_STATUS_LOCAL_FAIL:
+    case Profile::CREATE_STATUS_REMOTE_FAIL:
+    case Profile::CREATE_STATUS_CANCELED:
+    case Profile::MAX_CREATE_STATUS:
+      NOTREACHED();
+      break;
+  }
+}
+
+void LoginUtilsImpl::OnOTRProfileCreated(
+    const std::string& user_id,
+    Profile* user_profile,
+    Profile::CreateStatus status) {
+  CHECK(user_profile);
 
   switch (status) {
-    case Profile::CREATE_STATUS_INITIALIZED:
+    case Profile::CREATE_STATUS_CREATED:
+      InitProfilePreferences(user_profile, user_id);
       break;
-    case Profile::CREATE_STATUS_CREATED: {
-      InitProfilePreferences(user_profile);
-      return;
-    }
-    case Profile::CREATE_STATUS_FAIL:
-    default:
+    case Profile::CREATE_STATUS_INITIALIZED:
+      OTRProfileInitialized(user_profile);
+      break;
+    case Profile::CREATE_STATUS_LOCAL_FAIL:
+    case Profile::CREATE_STATUS_REMOTE_FAIL:
+    case Profile::CREATE_STATUS_CANCELED:
+    case Profile::MAX_CREATE_STATUS:
       NOTREACHED();
-      return;
+      break;
   }
+}
 
+void LoginUtilsImpl::UserProfileInitialized(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   btl->AddLoginTimeMarker("UserProfileGotten", false);
 
-  if (using_oauth_) {
+  if (user_context_.using_oauth) {
     // Transfer proxy authentication cache, cookies (optionally) and server
     // bound certs from the profile that was used for authentication.  This
     // profile contains cookies that auth extension should have already put in
@@ -511,6 +575,19 @@ void LoginUtilsImpl::OnProfileCreated(
   FinalizePrepareProfile(user_profile);
 }
 
+void LoginUtilsImpl::OTRProfileInitialized(Profile* user_profile) {
+  user_profile->OnLogin();
+  // Send the notification before creating the browser so additional objects
+  // that need the profile (e.g. the launcher) can be created first.
+  content::NotificationService::current()->Notify(
+      chrome::NOTIFICATION_LOGIN_USER_PROFILE_PREPARED,
+      content::NotificationService::AllSources(),
+      content::Details<Profile>(user_profile));
+
+  if (delegate_)
+    delegate_->OnProfilePrepared(user_profile);
+}
+
 void LoginUtilsImpl::CompleteProfileCreate(Profile* user_profile) {
   RestoreAuthSession(user_profile, has_web_auth_cookies_);
   FinalizePrepareProfile(user_profile);
@@ -518,32 +595,52 @@ void LoginUtilsImpl::CompleteProfileCreate(Profile* user_profile) {
 
 void LoginUtilsImpl::RestoreAuthSession(Profile* user_profile,
                                         bool restore_from_auth_cookies) {
-  DCHECK(authenticator_ || !restore_from_auth_cookies);
+  CHECK((authenticator_.get() && authenticator_->authentication_profile()) ||
+        !restore_from_auth_cookies);
+
+  if (chrome::IsRunningInForcedAppMode() ||
+      CommandLine::ForCurrentProcess()->HasSwitch(
+          chromeos::switches::kOobeSkipPostLogin)) {
+    return;
+  }
+
+  exit_after_session_restore_ = false;
   // Remove legacy OAuth1 token if we have one. If it's valid, we should already
-  // have OAuth2 refresh token in TokenService that could be used to retrieve
-  // all other tokens and credentials.
-  login_manager_->RestoreSession(
-      user_profile,
-      authenticator_ ?
-          authenticator_->authentication_profile()->GetRequestContext() :
-          NULL,
-      restore_from_auth_cookies);
+  // have OAuth2 refresh token in OAuth2TokenService that could be used to
+  // retrieve all other tokens and user_context.
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+  login_manager->AddObserver(this);
+  login_manager->RestoreSession(
+      authenticator_.get() && authenticator_->authentication_profile()
+          ? authenticator_->authentication_profile()->GetRequestContext()
+          : NULL,
+      session_restore_strategy_,
+      oauth2_refresh_token_,
+      user_context_.auth_code);
 }
 
 void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
   BootTimesLoader* btl = BootTimesLoader::Get();
   // Own TPM device if, for any reason, it has not been done in EULA
   // wizard screen.
-  CryptohomeLibrary* cryptohome = CrosLibrary::Get()->GetCryptohomeLibrary();
+  CryptohomeClient* client = DBusThreadManager::Get()->GetCryptohomeClient();
   btl->AddLoginTimeMarker("TPMOwn-Start", false);
-  if (cryptohome->TpmIsEnabled() && !cryptohome->TpmIsBeingOwned()) {
-    if (cryptohome->TpmIsOwned()) {
-      cryptohome->TpmClearStoredPassword();
+  if (cryptohome_util::TpmIsEnabled() && !cryptohome_util::TpmIsBeingOwned()) {
+    if (cryptohome_util::TpmIsOwned()) {
+      client->CallTpmClearStoredPasswordAndBlock();
     } else {
-      cryptohome->TpmCanAttemptOwnership();
+      client->TpmCanAttemptOwnership(EmptyVoidDBusMethodCallback());
     }
   }
   btl->AddLoginTimeMarker("TPMOwn-End", false);
+
+  if (UserManager::Get()->IsLoggedInAsRegularUser()) {
+    SAMLOfflineSigninLimiter* saml_offline_signin_limiter =
+        SAMLOfflineSigninLimiterFactory::GetForProfile(user_profile);
+    if (saml_offline_signin_limiter)
+      saml_offline_signin_limiter->SignedIn(user_context_.auth_flow);
+  }
 
   user_profile->OnLogin();
 
@@ -554,8 +651,11 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
       content::NotificationService::AllSources(),
       content::Details<Profile>(user_profile));
 
-  InitRlzDelayed(user_profile);
-
+  // Initialize RLZ only for primary user.
+  if (UserManager::Get()->GetPrimaryUser() ==
+      UserManager::Get()->GetUserByProfile(user_profile)) {
+    InitRlzDelayed(user_profile);
+  }
   // TODO(altimofeev): This pointer should probably never be NULL, but it looks
   // like LoginUtilsImpl::OnProfileCreated() may be getting called before
   // LoginUtilsImpl::PrepareProfile() has set |delegate_| when Chrome is killed
@@ -569,15 +669,15 @@ void LoginUtilsImpl::FinalizePrepareProfile(Profile* user_profile) {
 void LoginUtilsImpl::InitRlzDelayed(Profile* user_profile) {
 #if defined(ENABLE_RLZ)
   if (!g_browser_process->local_state()->HasPrefPath(prefs::kRLZBrand)) {
-    // Read brand code asynchronously from an OEM file and repost ourselves.
-    google_util::chromeos::SetBrandFromFile(
+    // Read brand code asynchronously from an OEM data and repost ourselves.
+    google_util::chromeos::InitBrand(
         base::Bind(&LoginUtilsImpl::InitRlzDelayed, AsWeakPtr(), user_profile));
     return;
   }
   base::PostTaskAndReplyWithResult(
-      base::WorkerPool::GetTaskRunner(false /* task_is_slow */),
+      base::WorkerPool::GetTaskRunner(false),
       FROM_HERE,
-      base::Bind(&file_util::PathExists, GetRlzDisabledFlagPath()),
+      base::Bind(&base::PathExists, GetRlzDisabledFlagPath()),
       base::Bind(&LoginUtilsImpl::InitRlz, AsWeakPtr(), user_profile));
 #endif
 }
@@ -586,7 +686,7 @@ void LoginUtilsImpl::InitRlz(Profile* user_profile, bool disabled) {
 #if defined(ENABLE_RLZ)
   PrefService* local_state = g_browser_process->local_state();
   if (disabled) {
-    // Empty brand code turns financial pings off.
+    // Empty brand code means an organic install (no RLZ pings are sent).
     google_util::chromeos::ClearBrandForCurrentSession();
   }
   if (disabled != local_state->GetBoolean(prefs::kRLZDisabled)) {
@@ -597,78 +697,18 @@ void LoginUtilsImpl::InitRlz(Profile* user_profile, bool disabled) {
   // Init the RLZ library.
   int ping_delay = user_profile->GetPrefs()->GetInteger(
       first_run::GetPingDelayPrefName().c_str());
+  // Negative ping delay means to send ping immediately after a first search is
+  // recorded.
   RLZTracker::InitRlzFromProfileDelayed(
-      user_profile, UserManager::Get()->IsCurrentUserNew(), ping_delay);
+      user_profile, UserManager::Get()->IsCurrentUserNew(),
+      ping_delay < 0, base::TimeDelta::FromMilliseconds(abs(ping_delay)));
   if (delegate_)
     delegate_->OnRlzInitialized(user_profile);
 #endif
 }
 
-void LoginUtilsImpl::StartSignedInServices(Profile* user_profile) {
-  // Fetch/Create the SigninManager - this will cause the TokenService to load
-  // tokens for the currently signed-in user if the SigninManager hasn't already
-  // been initialized.
-  SigninManager* signin = SigninManagerFactory::GetForProfile(user_profile);
-  DCHECK(signin);
-  // Make sure SigninManager is connected to our current user (this should
-  // happen automatically because we set kGoogleServicesUsername in
-  // OnProfileCreated()).
-  DCHECK_EQ(UserManager::Get()->GetLoggedInUser()->display_email(),
-            signin->GetAuthenticatedUsername());
-  static bool initialized = false;
-  if (!initialized) {
-    initialized = true;
-    // Notify the sync service that signin was successful. Note: Since the sync
-    // service is lazy-initialized, we need to make sure it has been created.
-    ProfileSyncService* sync_service =
-        ProfileSyncServiceFactory::GetInstance()->GetForProfile(user_profile);
-    // We may not always have a passphrase (for example, on a restart after a
-    // browser crash). Only notify the sync service if we have a passphrase,
-    // so it can do any required re-encryption.
-    if (!password_.empty() && sync_service) {
-      GoogleServiceSigninSuccessDetails details(
-          signin->GetAuthenticatedUsername(),
-          password_);
-      content::NotificationService::current()->Notify(
-          chrome::NOTIFICATION_GOOGLE_SIGNIN_SUCCESSFUL,
-          content::Source<Profile>(user_profile),
-          content::Details<const GoogleServiceSigninSuccessDetails>(&details));
-    }
-  }
-  password_.clear();
-}
-
-void LoginUtilsImpl::RespectLocalePreference(Profile* profile) {
-  DCHECK(profile != NULL);
-  PrefService* prefs = profile->GetPrefs();
-  DCHECK(prefs != NULL);
-  if (g_browser_process == NULL)
-    return;
-
-  std::string pref_locale = prefs->GetString(prefs::kApplicationLocale);
-  if (pref_locale.empty())
-    pref_locale = prefs->GetString(prefs::kApplicationLocaleBackup);
-  if (pref_locale.empty())
-    pref_locale = g_browser_process->GetApplicationLocale();
-  DCHECK(!pref_locale.empty());
-  profile->ChangeAppLocale(pref_locale, Profile::APP_LOCALE_CHANGED_VIA_LOGIN);
-  // Here we don't enable keyboard layouts. Input methods are set up when
-  // the user first logs in. Then the user may customize the input methods.
-  // Hence changing input methods here, just because the user's UI language
-  // is different from the login screen UI language, is not desirable. Note
-  // that input method preferences are synced, so users can use their
-  // farovite input methods as soon as the preferences are synced.
-  LanguageSwitchMenu::SwitchLanguage(pref_locale);
-}
-
 void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
   VLOG(1) << "Completing incognito login";
-
-  UserManager::Get()->GuestUserLoggedIn();
-
-  // Session Manager may kill the chrome anytime after this point.
-  // Write exit_cleanly and other stuff to the disk here.
-  g_browser_process->EndSession();
 
   // For guest session we ask session manager to restart Chrome with --bwsi
   // flag. We keep only some of the arguments of this process.
@@ -676,116 +716,11 @@ void LoginUtilsImpl::CompleteOffTheRecordLogin(const GURL& start_url) {
   CommandLine command_line(browser_command_line.GetProgram());
   std::string cmd_line_str =
       GetOffTheRecordCommandLine(start_url,
+                                 StartupUtils::IsOobeCompleted(),
                                  browser_command_line,
                                  &command_line);
 
-  if (job_restart_request_) {
-    NOTREACHED();
-  }
-  VLOG(1) << "Requesting a restart with PID " << getpid()
-          << " and command line: " << cmd_line_str;
-  job_restart_request_ = new JobRestartRequest(getpid(), cmd_line_str);
-}
-
-std::string LoginUtilsImpl::GetOffTheRecordCommandLine(
-    const GURL& start_url,
-    const CommandLine& base_command_line,
-    CommandLine* command_line) {
-  static const char* kForwardSwitches[] = {
-      ::switches::kAllowWebUICompositing,
-      ::switches::kDeviceManagementUrl,
-      ::switches::kForceDeviceScaleFactor,
-      ::switches::kDisableAccelerated2dCanvas,
-      ::switches::kDisableAcceleratedPlugins,
-      ::switches::kDisableAcceleratedVideoDecode,
-      ::switches::kDisableGpuWatchdog,
-      ::switches::kDisableLoginAnimations,
-      ::switches::kDisableOobeAnimation,
-      ::switches::kDisableSeccompFilterSandbox,
-      ::switches::kDisableSeccompSandbox,
-      ::switches::kEnableAcceleratedOverflowScroll,
-      ::switches::kEnableCompositingForFixedPosition,
-      ::switches::kEnableEncryptedMedia,
-      ::switches::kEnableLogging,
-      ::switches::kEnableUIReleaseFrontSurface,
-      ::switches::kEnablePinch,
-      ::switches::kEnableGestureTapHighlight,
-      ::switches::kEnableSmoothScrolling,
-      ::switches::kEnableThreadedCompositing,
-      ::switches::kEnableViewport,
-      ::switches::kDisableThreadedCompositing,
-      ::switches::kForceCompositingMode,
-      ::switches::kGpuStartupDialog,
-      ::switches::kHasChromeOSKeyboard,
-      ::switches::kLoginProfile,
-      ::switches::kNaturalScrollDefault,
-      ::switches::kNoSandbox,
-      ::switches::kPpapiFlashArgs,
-      ::switches::kPpapiFlashInProcess,
-      ::switches::kPpapiFlashPath,
-      ::switches::kPpapiFlashVersion,
-      ::switches::kPpapiOutOfProcess,
-      ::switches::kRendererStartupDialog,
-      ::switches::kFlingTapSuppressMaxDown,
-      ::switches::kFlingTapSuppressMaxGap,
-#if defined(USE_XI2_MT)
-      ::switches::kTouchCalibration,
-#endif
-      ::switches::kTouchDevices,
-      ::switches::kTouchEvents,
-      ::switches::kTouchOptimizedUI,
-      ::switches::kOldCheckboxStyle,
-      ::switches::kUIEnablePartialSwap,
-      ::switches::kUIEnableThreadedCompositing,
-      ::switches::kUIPrioritizeInGpuProcess,
-#if defined(USE_CRAS)
-      ::switches::kUseCras,
-#endif
-      ::switches::kUseGL,
-      ::switches::kUserDataDir,
-      ash::switches::kAshTouchHud,
-      ash::switches::kAuraLegacyPowerButton,
-      ash::switches::kAuraNoShadows,
-      ash::switches::kAshDisablePanelFitting,
-      cc::switches::kDisableThreadedAnimation,
-      cc::switches::kEnablePartialSwap,
-      chromeos::switches::kDbusStub,
-      chromeos::switches::kEnableNewNetworkHandlers,
-      gfx::switches::kEnableBrowserTextSubpixelPositioning,
-      gfx::switches::kEnableWebkitTextSubpixelPositioning,
-      views::corewm::switches::kWindowAnimationsDisabled,
-  };
-  command_line->CopySwitchesFrom(base_command_line,
-                                 kForwardSwitches,
-                                 arraysize(kForwardSwitches));
-  command_line->AppendSwitch(::switches::kGuestSession);
-  command_line->AppendSwitch(::switches::kIncognito);
-  command_line->AppendSwitchASCII(::switches::kLoggingLevel,
-                                 kGuestModeLoggingLevel);
-
-  command_line->AppendSwitchASCII(::switches::kLoginUser, kGuestUserName);
-
-  if (start_url.is_valid())
-    command_line->AppendArg(start_url.spec());
-
-  // Override the home page.
-  command_line->AppendSwitchASCII(
-      ::switches::kHomePage,
-      GURL(chrome::kChromeUINewTabURL).spec());
-
-  std::string cmd_line_str = command_line->GetCommandLineString();
-  // Special workaround for the arguments that should be quoted.
-  // Copying switches won't be needed when Guest mode won't need restart
-  // http://crosbug.com/6924
-  if (base_command_line.HasSwitch(::switches::kRegisterPepperPlugins)) {
-    cmd_line_str += base::StringPrintf(
-        kSwitchFormatString,
-        ::switches::kRegisterPepperPlugins,
-        base_command_line.GetSwitchValueNative(
-            ::switches::kRegisterPepperPlugins).c_str());
-  }
-
-  return cmd_line_str;
+  RestartChrome(cmd_line_str);
 }
 
 void LoginUtilsImpl::SetFirstLoginPrefs(PrefService* prefs) {
@@ -795,7 +730,7 @@ void LoginUtilsImpl::SetFirstLoginPrefs(PrefService* prefs) {
 
   // First, we'll set kLanguagePreloadEngines.
   input_method::InputMethodManager* manager =
-      input_method::GetInputMethodManager();
+      input_method::InputMethodManager::Get();
   std::vector<std::string> input_method_ids;
   manager->GetInputMethodUtil()->GetFirstLoginInputMethodIds(
       locale, manager->GetCurrentInputMethod(), &input_method_ids);
@@ -838,12 +773,12 @@ scoped_refptr<Authenticator> LoginUtilsImpl::CreateAuthenticator(
     LoginStatusConsumer* consumer) {
   // Screen locker needs new Authenticator instance each time.
   if (ScreenLocker::default_screen_locker()) {
-    if (authenticator_)
+    if (authenticator_.get())
       authenticator_->SetConsumer(NULL);
     authenticator_ = NULL;
   }
 
-  if (authenticator_ == NULL) {
+  if (authenticator_.get() == NULL) {
     authenticator_ = new ParallelAuthenticator(consumer);
   } else {
     // TODO(nkostylev): Fix this hack by improving Authenticator dependencies.
@@ -852,151 +787,145 @@ scoped_refptr<Authenticator> LoginUtilsImpl::CreateAuthenticator(
   return authenticator_;
 }
 
-// We use a special class for this so that it can be safely leaked if we
-// never connect. At shutdown the order is not well defined, and it's possible
-// for the infrastructure needed to unregister might be unstable and crash.
-class WarmingObserver : public NetworkLibrary::NetworkManagerObserver,
-                        public content::NotificationObserver {
- public:
-  WarmingObserver()
-      : url_request_context_getter_(NULL) {
-    NetworkLibrary *netlib = CrosLibrary::Get()->GetNetworkLibrary();
-    netlib->AddNetworkManagerObserver(this);
-    // During tests, the browser_process may not be initialized yet causing
-    // this to fail.
-    if (g_browser_process) {
-      registrar_.Add(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(ProfileManager::GetDefaultProfile()));
-    }
-  }
-
-  virtual ~WarmingObserver() {}
-
-  // If we're now connected, prewarm the auth url.
-  virtual void OnNetworkManagerChanged(NetworkLibrary* netlib) {
-    if (netlib->Connected()) {
-      const int kConnectionsNeeded = 1;
-      chrome_browser_net::PreconnectOnUIThread(
-          GURL(GaiaUrls::GetInstance()->client_login_url()),
-          chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
-          kConnectionsNeeded,
-          url_request_context_getter_);
-      netlib->RemoveNetworkManagerObserver(this);
-      delete this;
-    }
-  }
-
-  // content::NotificationObserver overrides.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      url_request_context_getter_ = profile->GetRequestContext();
-      registrar_.Remove(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(profile));
-
-      break;
-    }
-    default:
-      NOTREACHED();
-  }
-}
- private:
-  net::URLRequestContextGetter* url_request_context_getter_;
-  content::NotificationRegistrar registrar_;
-};
-
-void LoginUtilsImpl::PrewarmAuthentication() {
-  NetworkLibrary *network = CrosLibrary::Get()->GetNetworkLibrary();
-  if (network->Connected()) {
-    const int kConnectionsNeeded = 1;
-    chrome_browser_net::PreconnectOnUIThread(
-        GURL(GaiaUrls::GetInstance()->client_login_url()),
-        chrome_browser_net::UrlInfo::EARLY_LOAD_MOTIVATED,
-        kConnectionsNeeded,
-        url_request_context_getter_);
-  } else {
-    new WarmingObserver();
-  }
-}
-
 void LoginUtilsImpl::RestoreAuthenticationSession(Profile* user_profile) {
-  // We don't need to restore session for demo/guest users.
-  if (!UserManager::Get()->IsUserLoggedIn() ||
-      UserManager::Get()->IsLoggedInAsGuest() ||
-      UserManager::Get()->IsLoggedInAsDemoUser()) {
+  UserManager* user_manager = UserManager::Get();
+  // We don't need to restore session for demo/guest/stub/public account users.
+  if (!user_manager->IsUserLoggedIn() ||
+      user_manager->IsLoggedInAsGuest() ||
+      user_manager->IsLoggedInAsPublicAccount() ||
+      user_manager->IsLoggedInAsDemoUser() ||
+      user_manager->IsLoggedInAsStub()) {
     return;
   }
 
+  User* user = user_manager->GetUserByProfile(user_profile);
+  DCHECK(user);
   if (!net::NetworkChangeNotifier::IsOffline()) {
-    should_restore_auth_session_ = false;
+    pending_restore_sessions_.erase(user->email());
     RestoreAuthSession(user_profile, false);
   } else {
     // Even if we're online we should wait till initial
     // OnConnectionTypeChanged() call. Otherwise starting fetchers too early may
-    // end up cancelling all request when initial network connection type is
+    // end up canceling all request when initial network connection type is
     // processed. See http://crbug.com/121643.
-    should_restore_auth_session_ = true;
+    pending_restore_sessions_.insert(user->email());
   }
 }
 
-void LoginUtilsImpl::StopBackgroundFetchers() {
-  login_manager_.reset();
+void LoginUtilsImpl::OnSessionRestoreStateChanged(
+    Profile* user_profile,
+    OAuth2LoginManager::SessionRestoreState state) {
+  User::OAuthTokenStatus user_status = User::OAUTH_TOKEN_STATUS_UNKNOWN;
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+
+  bool connection_error = false;
+  switch (state) {
+    case OAuth2LoginManager::SESSION_RESTORE_DONE:
+      user_status = User::OAUTH2_TOKEN_STATUS_VALID;
+      break;
+    case OAuth2LoginManager::SESSION_RESTORE_FAILED:
+      user_status = User::OAUTH2_TOKEN_STATUS_INVALID;
+      break;
+    case OAuth2LoginManager::SESSION_RESTORE_CONNECTION_FAILED:
+      connection_error = true;
+      break;
+    case OAuth2LoginManager::SESSION_RESTORE_NOT_STARTED:
+    case OAuth2LoginManager::SESSION_RESTORE_PREPARING:
+    case OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS:
+      return;
+  }
+
+  // We should not be clearing existing token state if that was a connection
+  // error. http://crbug.com/295245
+  if (!connection_error) {
+    // We are in one of "done" states here.
+    UserManager::Get()->SaveUserOAuthStatus(
+        UserManager::Get()->GetLoggedInUser()->email(),
+        user_status);
+  }
+
+  login_manager->RemoveObserver(this);
 }
 
-void LoginUtilsImpl::OnCompletedAuthentication(Profile* user_profile) {
-  StartSignedInServices(user_profile);
-}
+void LoginUtilsImpl::OnNewRefreshTokenAvaiable(Profile* user_profile) {
+  // Check if we were waiting to restart chrome.
+  if (!exit_after_session_restore_)
+    return;
 
-void LoginUtilsImpl::OnFoundStoredTokens() {
-  // We don't need authenticator instance any more since its cookie jar
-  // is not going to needed to mint OAuth tokens. Reset it so that
-  // ScreenLocker would create a separate instance.
-  authenticator_ = NULL;
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+  login_manager->RemoveObserver(this);
+
+  // Mark user auth token status as valid.
+  UserManager::Get()->SaveUserOAuthStatus(
+      UserManager::Get()->GetLoggedInUser()->email(),
+      User::OAUTH2_TOKEN_STATUS_VALID);
+
+  LOG(WARNING) << "Exiting after new refresh token fetched";
+  // We need to restart cleanly in this case to make sure OAuth2 RT is actually
+  // saved.
+  chrome::AttemptRestart();
 }
 
 void LoginUtilsImpl::OnConnectionTypeChanged(
     net::NetworkChangeNotifier::ConnectionType type) {
-  if (!login_manager_.get())
+  UserManager* user_manager = UserManager::Get();
+  if (type == net::NetworkChangeNotifier::CONNECTION_NONE ||
+      user_manager->IsLoggedInAsGuest() || !user_manager->IsUserLoggedIn()) {
     return;
+  }
 
-  if (type != net::NetworkChangeNotifier::CONNECTION_NONE &&
-      UserManager::Get()->IsUserLoggedIn()) {
-    if (login_manager_->state() ==
-            OAuthLoginManager::SESSION_RESTORE_IN_PROGRESS) {
+  // Need to iterate over all users and their OAuth2 session state.
+  const UserList& users = user_manager->GetLoggedInUsers();
+  for (UserList::const_iterator it = users.begin(); it != users.end(); ++it) {
+    Profile* user_profile = user_manager->GetProfileByUser(*it);
+    bool should_restore_session =
+        pending_restore_sessions_.find((*it)->email()) !=
+            pending_restore_sessions_.end();
+    OAuth2LoginManager* login_manager =
+        OAuth2LoginManagerFactory::GetInstance()->GetForProfile(user_profile);
+    if (login_manager->state() ==
+            OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS) {
       // If we come online for the first time after successful offline login,
       // we need to kick off OAuth token verification process again.
-      login_manager_->ContinueSessionRestore();
-    } else if (should_restore_auth_session_) {
-      should_restore_auth_session_ = false;
-      Profile* user_profile = ProfileManager::GetDefaultProfile();
+      login_manager->ContinueSessionRestore();
+    } else if (should_restore_session) {
+      pending_restore_sessions_.erase((*it)->email());
       RestoreAuthSession(user_profile, has_web_auth_cookies_);
     }
   }
 }
 
-void LoginUtilsImpl::Observe(int type,
-                             const content::NotificationSource& source,
-                             const content::NotificationDetails& details) {
-  switch (type) {
-    case chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED: {
-      Profile* profile = content::Source<Profile>(source).ptr();
-      url_request_context_getter_ = profile->GetRequestContext();
-      registrar_.Remove(
-          this,
-          chrome::NOTIFICATION_PROFILE_URL_REQUEST_CONTEXT_GETTER_INITIALIZED,
-          content::Source<Profile>(profile));
-      break;
-    }
-    default:
-      NOTREACHED();
+void LoginUtilsImpl::AttemptRestart(Profile* profile) {
+  if (session_restore_strategy_ !=
+      OAuth2LoginManager::RESTORE_FROM_COOKIE_JAR) {
+    chrome::AttemptRestart();
+    return;
   }
+
+  // We can't really quit if the session restore process that mints new
+  // refresh token is still in progress.
+  OAuth2LoginManager* login_manager =
+      OAuth2LoginManagerFactory::GetInstance()->GetForProfile(profile);
+  if (login_manager->state() !=
+          OAuth2LoginManager::SESSION_RESTORE_PREPARING &&
+      login_manager->state() !=
+          OAuth2LoginManager::SESSION_RESTORE_IN_PROGRESS) {
+    chrome::AttemptRestart();
+    return;
+  }
+
+  LOG(WARNING) << "Attempting browser restart during session restore.";
+  exit_after_session_restore_ = true;
+}
+
+// static
+void LoginUtils::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kFactoryResetRequested, false);
+  registry->RegisterBooleanPref(prefs::kRollbackRequested, false);
+  registry->RegisterStringPref(prefs::kRLZBrand, std::string());
+  registry->RegisterBooleanPref(prefs::kRLZDisabled, false);
 }
 
 // static
@@ -1010,13 +939,21 @@ void LoginUtils::Set(LoginUtils* mock) {
 }
 
 // static
-bool LoginUtils::IsWhitelisted(const std::string& username) {
+bool LoginUtils::IsWhitelisted(const std::string& username,
+                               bool* wildcard_match) {
+  // Skip whitelist check for tests.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+      chromeos::switches::kOobeSkipPostLogin)) {
+    return true;
+  }
+
   CrosSettings* cros_settings = CrosSettings::Get();
   bool allow_new_user = false;
   cros_settings->GetBoolean(kAccountsPrefAllowNewUser, &allow_new_user);
   if (allow_new_user)
     return true;
-  return cros_settings->FindEmailInList(kAccountsPrefUsers, username);
+  return cros_settings->FindEmailInList(
+      kAccountsPrefUsers, username, wildcard_match);
 }
 
 }  // namespace chromeos

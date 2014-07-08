@@ -1,15 +1,18 @@
-<p>The Font Settings API allows you to manage Chrome's font settings.</p>
-
 <h2 id="manifest">Manifest</h2>
 <p>To use the Font Settings API, you must declare the "fontSettings" permission
 in the <a href="manifest.html">extension manifest</a>.
 For example:</p>
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My Font Settings Extension",
   "description": "Customize your fonts",
   "version": "0.2",
-  "permissions": ["fontSettings"]
-}</pre>
+  <b>"permissions": [
+    "fontSettings"
+  ]</b>,
+  ...
+}
+</pre>
 
 <h2 id="scripts">Generic Font Families and Scripts</h2>
 <p>Chrome allows for some font settings to depend on certain generic font

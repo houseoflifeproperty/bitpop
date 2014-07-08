@@ -5,38 +5,26 @@
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 
 #include "base/bind.h"
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/intents/web_intents_util.h"
+#include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings.h"
 #include "chrome/common/content_settings_types.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/manifest_handlers/app_isolation_info.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/common/url_constants.h"
 #include "extensions/common/constants.h"
-#include "webkit/glue/web_intent_service_data.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
 
 using content::BrowserThread;
 using extensions::APIPermission;
-
-namespace {
-
-// Does the specified extension support the passed Web Intent, |action|?
-bool ExtensionSupportsIntentAction(
-    const extensions::Extension* extension,
-    const std::string& action) {
-  for (std::vector<webkit_glue::WebIntentServiceData>::const_iterator i =
-          extension->intents_services().begin();
-       i != extension->intents_services().end(); ++i) {
-    if (UTF16ToUTF8(i->action) == action)
-      return true;
-  }
-  return false;
-}
-
-}  // namespace
+using extensions::Extension;
+using quota::SpecialStoragePolicy;
 
 ExtensionSpecialStoragePolicy::ExtensionSpecialStoragePolicy(
     CookieSettings* cookie_settings)
@@ -52,22 +40,29 @@ bool ExtensionSpecialStoragePolicy::IsStorageProtected(const GURL& origin) {
 }
 
 bool ExtensionSpecialStoragePolicy::IsStorageUnlimited(const GURL& origin) {
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kUnlimitedStorage))
+    return true;
+
+  if (origin.SchemeIs(content::kChromeDevToolsScheme) &&
+      origin.host() == chrome::kChromeUIDevToolsHost)
+    return true;
+
   base::AutoLock locker(lock_);
   return unlimited_extensions_.Contains(origin);
 }
 
 bool ExtensionSpecialStoragePolicy::IsStorageSessionOnly(const GURL& origin) {
-  if (cookie_settings_ == NULL)
+  if (cookie_settings_.get() == NULL)
     return false;
   return cookie_settings_->IsCookieSessionOnly(origin);
 }
 
-bool ExtensionSpecialStoragePolicy::IsInstalledApp(const GURL& origin) {
+bool ExtensionSpecialStoragePolicy::CanQueryDiskSize(const GURL& origin) {
   return installed_apps_.Contains(origin);
 }
 
 bool ExtensionSpecialStoragePolicy::HasSessionOnlyOrigins() {
-  if (cookie_settings_ == NULL)
+  if (cookie_settings_.get() == NULL)
     return false;
   if (cookie_settings_->GetDefaultCookieSetting(NULL) ==
       CONTENT_SETTING_SESSION_ONLY)
@@ -84,8 +79,12 @@ bool ExtensionSpecialStoragePolicy::HasSessionOnlyOrigins() {
 bool ExtensionSpecialStoragePolicy::IsFileHandler(
     const std::string& extension_id) {
   base::AutoLock locker(lock_);
-  return web_intent_extensions_.ContainsExtension(extension_id) ||
-      file_handler_extensions_.ContainsExtension(extension_id);
+  return file_handler_extensions_.ContainsExtension(extension_id);
+}
+
+bool ExtensionSpecialStoragePolicy::HasIsolatedStorage(const GURL& origin) {
+  base::AutoLock locker(lock_);
+  return isolated_extensions_.Contains(origin);
 }
 
 bool ExtensionSpecialStoragePolicy::NeedsProtection(
@@ -93,7 +92,8 @@ bool ExtensionSpecialStoragePolicy::NeedsProtection(
   return extension->is_hosted_app() && !extension->from_bookmark();
 }
 
-const ExtensionSet* ExtensionSpecialStoragePolicy::ExtensionsProtectingOrigin(
+const extensions::ExtensionSet*
+ExtensionSpecialStoragePolicy::ExtensionsProtectingOrigin(
     const GURL& origin) {
   base::AutoLock locker(lock_);
   return protected_apps_.ExtensionsContaining(origin);
@@ -102,61 +102,74 @@ const ExtensionSet* ExtensionSpecialStoragePolicy::ExtensionsProtectingOrigin(
 void ExtensionSpecialStoragePolicy::GrantRightsForExtension(
     const extensions::Extension* extension) {
   DCHECK(extension);
-  const bool supports_intent_view = ExtensionSupportsIntentAction(
-      extension, web_intents::kActionView);
-  if (!NeedsProtection(extension) &&
-      !extension->HasAPIPermission(
-          APIPermission::kUnlimitedStorage) &&
-      !extension->HasAPIPermission(
-          APIPermission::kFileBrowserHandler) &&
-      !supports_intent_view) {
+  if (!(NeedsProtection(extension) ||
+        extension->HasAPIPermission(APIPermission::kUnlimitedStorage) ||
+        extension->HasAPIPermission(APIPermission::kFileBrowserHandler) ||
+        extensions::AppIsolationInfo::HasIsolatedStorage(extension) ||
+        extension->is_app())) {
     return;
   }
+
+  int change_flags = 0;
   {
     base::AutoLock locker(lock_);
-    if (NeedsProtection(extension))
-      protected_apps_.Add(extension);
+    if (NeedsProtection(extension) && protected_apps_.Add(extension))
+      change_flags |= SpecialStoragePolicy::STORAGE_PROTECTED;
     // FIXME: Does GrantRightsForExtension imply |extension| is installed?
     if (extension->is_app())
       installed_apps_.Add(extension);
-    if (extension->HasAPIPermission(APIPermission::kUnlimitedStorage))
-      unlimited_extensions_.Add(extension);
-    if (extension->HasAPIPermission(
-            APIPermission::kFileBrowserHandler))
+
+    if (extension->HasAPIPermission(APIPermission::kUnlimitedStorage) &&
+        unlimited_extensions_.Add(extension))
+      change_flags |= SpecialStoragePolicy::STORAGE_UNLIMITED;
+
+    if (extension->HasAPIPermission(APIPermission::kFileBrowserHandler))
       file_handler_extensions_.Add(extension);
-    if (supports_intent_view)
-      web_intent_extensions_.Add(extension);
+
+    if (extensions::AppIsolationInfo::HasIsolatedStorage(extension))
+      isolated_extensions_.Add(extension);
   }
-  NotifyChanged();
+
+  if (change_flags) {
+    NotifyGranted(Extension::GetBaseURLFromExtensionId(extension->id()),
+                  change_flags);
+  }
 }
 
 void ExtensionSpecialStoragePolicy::RevokeRightsForExtension(
     const extensions::Extension* extension) {
   DCHECK(extension);
-  const bool supports_intent_view = ExtensionSupportsIntentAction(
-      extension, web_intents::kActionView);
-  if (!NeedsProtection(extension) &&
-      !extension->HasAPIPermission(
-          APIPermission::kUnlimitedStorage) &&
-      !extension->HasAPIPermission(
-          APIPermission::kFileBrowserHandler) &&
-      !supports_intent_view) {
+  if (!(NeedsProtection(extension) ||
+        extension->HasAPIPermission(APIPermission::kUnlimitedStorage) ||
+        extension->HasAPIPermission(APIPermission::kFileBrowserHandler) ||
+        extensions::AppIsolationInfo::HasIsolatedStorage(extension) ||
+        extension->is_app())) {
     return;
   }
+  int change_flags = 0;
   {
     base::AutoLock locker(lock_);
-    if (NeedsProtection(extension))
-      protected_apps_.Remove(extension);
+    if (NeedsProtection(extension) && protected_apps_.Remove(extension))
+      change_flags |= SpecialStoragePolicy::STORAGE_PROTECTED;
+
     if (extension->is_app())
       installed_apps_.Remove(extension);
-    if (extension->HasAPIPermission(APIPermission::kUnlimitedStorage))
-      unlimited_extensions_.Remove(extension);
+
+    if (extension->HasAPIPermission(APIPermission::kUnlimitedStorage) &&
+        unlimited_extensions_.Remove(extension))
+      change_flags |= SpecialStoragePolicy::STORAGE_UNLIMITED;
+
     if (extension->HasAPIPermission(APIPermission::kFileBrowserHandler))
       file_handler_extensions_.Remove(extension);
-    if (supports_intent_view)
-      web_intent_extensions_.Remove(extension);
+
+    if (extensions::AppIsolationInfo::HasIsolatedStorage(extension))
+      isolated_extensions_.Remove(extension);
   }
-  NotifyChanged();
+
+  if (change_flags) {
+    NotifyRevoked(Extension::GetBaseURLFromExtensionId(extension->id()),
+                  change_flags);
+  }
 }
 
 void ExtensionSpecialStoragePolicy::RevokeRightsForAllExtensions() {
@@ -166,18 +179,46 @@ void ExtensionSpecialStoragePolicy::RevokeRightsForAllExtensions() {
     installed_apps_.Clear();
     unlimited_extensions_.Clear();
     file_handler_extensions_.Clear();
-    web_intent_extensions_.Clear();
+    isolated_extensions_.Clear();
   }
-  NotifyChanged();
+
+  NotifyCleared();
 }
 
-void ExtensionSpecialStoragePolicy::NotifyChanged() {
+void ExtensionSpecialStoragePolicy::NotifyGranted(
+    const GURL& origin,
+    int change_flags) {
   if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
-        base::Bind(&ExtensionSpecialStoragePolicy::NotifyChanged, this));
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ExtensionSpecialStoragePolicy::NotifyGranted, this,
+                   origin, change_flags));
     return;
   }
-  SpecialStoragePolicy::NotifyObservers();
+  SpecialStoragePolicy::NotifyGranted(origin, change_flags);
+}
+
+void ExtensionSpecialStoragePolicy::NotifyRevoked(
+    const GURL& origin,
+    int change_flags) {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ExtensionSpecialStoragePolicy::NotifyRevoked, this,
+                   origin, change_flags));
+    return;
+  }
+  SpecialStoragePolicy::NotifyRevoked(origin, change_flags);
+}
+
+void ExtensionSpecialStoragePolicy::NotifyCleared() {
+  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    BrowserThread::PostTask(
+        BrowserThread::IO, FROM_HERE,
+        base::Bind(&ExtensionSpecialStoragePolicy::NotifyCleared, this));
+    return;
+  }
+  SpecialStoragePolicy::NotifyCleared();
 }
 
 //-----------------------------------------------------------------------------
@@ -195,15 +236,15 @@ bool ExtensionSpecialStoragePolicy::SpecialCollection::Contains(
   return !ExtensionsContaining(origin)->is_empty();
 }
 
-const ExtensionSet*
+const extensions::ExtensionSet*
 ExtensionSpecialStoragePolicy::SpecialCollection::ExtensionsContaining(
     const GURL& origin) {
   CachedResults::const_iterator found = cached_results_.find(origin);
   if (found != cached_results_.end())
     return found->second;
 
-  ExtensionSet* result = new ExtensionSet();
-  for (ExtensionSet::const_iterator iter = extensions_.begin();
+  extensions::ExtensionSet* result = new extensions::ExtensionSet();
+  for (extensions::ExtensionSet::const_iterator iter = extensions_.begin();
        iter != extensions_.end(); ++iter) {
     if ((*iter)->OverlapsWithOrigin(origin))
       result->Insert(*iter);
@@ -217,16 +258,16 @@ bool ExtensionSpecialStoragePolicy::SpecialCollection::ContainsExtension(
   return extensions_.Contains(extension_id);
 }
 
-void ExtensionSpecialStoragePolicy::SpecialCollection::Add(
+bool ExtensionSpecialStoragePolicy::SpecialCollection::Add(
     const extensions::Extension* extension) {
   ClearCache();
-  extensions_.Insert(extension);
+  return extensions_.Insert(extension);
 }
 
-void ExtensionSpecialStoragePolicy::SpecialCollection::Remove(
+bool ExtensionSpecialStoragePolicy::SpecialCollection::Remove(
     const extensions::Extension* extension) {
   ClearCache();
-  extensions_.Remove(extension->id());
+  return extensions_.Remove(extension->id());
 }
 
 void ExtensionSpecialStoragePolicy::SpecialCollection::Clear() {

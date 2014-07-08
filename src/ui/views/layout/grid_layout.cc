@@ -11,6 +11,7 @@
 #include "ui/gfx/insets.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/view.h"
+#include "ui/views/window/dialog_delegate.h"
 
 namespace views {
 
@@ -56,7 +57,8 @@ class LayoutElement {
     for (typename std::vector<T*>::iterator i = elements->begin();
          i != elements->end(); ++i) {
       total_percent += (*i)->ResizePercent();
-      resize_count++;
+      if ((*i)->ResizePercent() > 0)
+        resize_count++;
     }
     if (total_percent == 0) {
       // None of the elements are resizable, return.
@@ -160,7 +162,6 @@ class Column : public LayoutElement {
          GridLayout::SizeType size_type,
          int fixed_width,
          int min_width,
-         size_t index,
          bool is_padding)
     : LayoutElement(resize_percent),
       h_align_(h_align),
@@ -169,7 +170,6 @@ class Column : public LayoutElement {
       same_size_column_(-1),
       fixed_width_(fixed_width),
       min_width_(min_width),
-      index_(index),
       is_padding_(is_padding),
       master_column_(NULL) {}
 
@@ -178,7 +178,7 @@ class Column : public LayoutElement {
   GridLayout::Alignment h_align() { return h_align_; }
   GridLayout::Alignment v_align() { return v_align_; }
 
-  virtual void ResetSize();
+  virtual void ResetSize() OVERRIDE;
 
  private:
   friend class ColumnSet;
@@ -190,7 +190,7 @@ class Column : public LayoutElement {
   // to that size. This should only be used for the master column.
   void UnifySameSizedColumnSizes();
 
-  virtual void AdjustSize(int size);
+  virtual void AdjustSize(int size) OVERRIDE;
 
   const GridLayout::Alignment h_align_;
   const GridLayout::Alignment v_align_;
@@ -198,9 +198,6 @@ class Column : public LayoutElement {
   int same_size_column_;
   const int fixed_width_;
   const int min_width_;
-
-  // Index of this column in the ColumnSet.
-  const size_t index_;
 
   const bool is_padding_;
 
@@ -262,10 +259,8 @@ void Column::AdjustSize(int size) {
 
 class Row : public LayoutElement {
  public:
-  Row(bool fixed_height, int height, float resize_percent,
-      ColumnSet* column_set)
+  Row(int height, float resize_percent, ColumnSet* column_set)
     : LayoutElement(resize_percent),
-      fixed_height_(fixed_height),
       height_(height),
       column_set_(column_set),
       max_ascent_(0),
@@ -274,7 +269,7 @@ class Row : public LayoutElement {
 
   virtual ~Row() {}
 
-  virtual void ResetSize() {
+  virtual void ResetSize() OVERRIDE {
     max_ascent_ = max_descent_ = 0;
     SetSize(height_);
   }
@@ -299,7 +294,6 @@ class Row : public LayoutElement {
   }
 
  private:
-  const bool fixed_height_;
   const int height_;
   // The column set used for this row; null for padding rows.
   ColumnSet* column_set_;
@@ -420,17 +414,16 @@ void ColumnSet::AddColumn(GridLayout::Alignment h_align,
                           int min_width,
                           bool is_padding) {
   Column* column = new Column(h_align, v_align, resize_percent, size_type,
-                              fixed_width, min_width, columns_.size(),
-                              is_padding);
+                              fixed_width, min_width, is_padding);
   columns_.push_back(column);
 }
 
 void ColumnSet::AddViewState(ViewState* view_state) {
   // view_states are ordered by column_span (in ascending order).
-  std::vector<ViewState*>::iterator i = lower_bound(view_states_.begin(),
-                                                    view_states_.end(),
-                                                    view_state,
-                                                    CompareByColumnSpan);
+  std::vector<ViewState*>::iterator i = std::lower_bound(view_states_.begin(),
+                                                         view_states_.end(),
+                                                         view_state,
+                                                         CompareByColumnSpan);
   view_states_.insert(i, view_state);
 }
 
@@ -502,8 +495,8 @@ void ColumnSet::AccumulateMasterColumns() {
     Column* column = *i;
     Column* master_column = column->GetLastMasterColumn();
     if (master_column &&
-        find(master_columns_.begin(), master_columns_.end(),
-             master_column) == master_columns_.end()) {
+        std::find(master_columns_.begin(), master_columns_.end(),
+                  master_column) == master_columns_.end()) {
       master_columns_.push_back(master_column);
     }
     // At this point, GetLastMasterColumn may not == master_column
@@ -521,7 +514,9 @@ void ColumnSet::UnifySameSizedColumnSizes() {
 }
 
 void ColumnSet::UpdateRemainingWidth(ViewState* view_state) {
-  for (int i = view_state->start_col; i < view_state->col_span; ++i) {
+  for (int i = view_state->start_col,
+       max_col = view_state->start_col + view_state->col_span;
+       i < max_col; ++i) {
     view_state->remaining_width -= columns_[i]->Size();
   }
 }
@@ -675,8 +670,8 @@ GridLayout::~GridLayout() {
 // static
 GridLayout* GridLayout::CreatePanel(View* host) {
   GridLayout* layout = new GridLayout(host);
-  layout->SetInsets(kPanelVertMargin, kPanelHorizMargin,
-                    kPanelVertMargin, kPanelHorizMargin);
+  layout->SetInsets(kPanelVertMargin, kButtonHEdgeMarginNew,
+                    kPanelVertMargin, kButtonHEdgeMarginNew);
   return layout;
 }
 
@@ -714,11 +709,11 @@ void GridLayout::StartRowWithPadding(float vertical_resize, int column_set_id,
 void GridLayout::StartRow(float vertical_resize, int column_set_id) {
   ColumnSet* column_set = GetColumnSet(column_set_id);
   DCHECK(column_set);
-  AddRow(new Row(false, 0, vertical_resize, column_set));
+  AddRow(new Row(0, vertical_resize, column_set));
 }
 
 void GridLayout::AddPaddingRow(float vertical_resize, int pixel_count) {
-  AddRow(new Row(true, pixel_count, vertical_resize, NULL));
+  AddRow(new Row(pixel_count, vertical_resize, NULL));
 }
 
 void GridLayout::SkipColumns(int col_count) {
@@ -977,10 +972,10 @@ void GridLayout::AddViewState(ViewState* view_state) {
   next_column_ += view_state->col_span;
   current_row_col_set_->AddViewState(view_state);
   // view_states are ordered by row_span (in ascending order).
-  std::vector<ViewState*>::iterator i = lower_bound(view_states_.begin(),
-                                                    view_states_.end(),
-                                                    view_state,
-                                                    CompareByRowSpan);
+  std::vector<ViewState*>::iterator i = std::lower_bound(view_states_.begin(),
+                                                         view_states_.end(),
+                                                         view_state,
+                                                         CompareByRowSpan);
   view_states_.insert(i, view_state);
   SkipPaddingColumns();
 }
@@ -988,6 +983,9 @@ void GridLayout::AddViewState(ViewState* view_state) {
 void GridLayout::AddRow(Row* row) {
   current_row_++;
   remaining_row_span_--;
+  // GridLayout requires that if you add a View with a row span you use the same
+  // column set for each of the rows the view lands it. This DCHECK verifies
+  // that.
   DCHECK(remaining_row_span_ <= 0 ||
          row->column_set() == NULL ||
          row->column_set() == GetLastValidColumnSet());

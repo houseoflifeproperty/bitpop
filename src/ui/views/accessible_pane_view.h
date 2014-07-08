@@ -5,7 +5,7 @@
 #ifndef UI_VIEWS_ACCESSIBLE_PANE_VIEW_H_
 #define UI_VIEWS_ACCESSIBLE_PANE_VIEW_H_
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "ui/base/accelerators/accelerator.h"
@@ -44,7 +44,8 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator)
       OVERRIDE;
   virtual void SetVisible(bool flag) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
+  virtual void RequestFocus() OVERRIDE;
 
   // Overridden from FocusChangeListener:
   virtual void OnWillChangeFocus(View* focused_before,
@@ -81,15 +82,24 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   // Remove pane focus.
   virtual void RemovePaneFocus();
 
-  void RestoreLastFocusedView();
-
   View* GetFirstFocusableChild();
   View* GetLastFocusableChild();
 
   FocusManager* focus_manager() const { return focus_manager_; }
 
+  // When finishing navigation by pressing ESC, it is allowed to surrender the
+  // focus to another window if if |allow| is set and no previous view can be
+  // found.
+  void set_allow_deactivate_on_esc(bool allow) {
+    allow_deactivate_on_esc_ = allow;
+  }
+
  private:
   bool pane_has_focus_;
+
+  // If true, the panel should be de-activated upon escape when no active view
+  // is known where to return to.
+  bool allow_deactivate_on_esc_;
 
   base::WeakPtrFactory<AccessiblePaneView> method_factory_;
 
@@ -108,6 +118,9 @@ class VIEWS_EXPORT AccessiblePaneView : public View,
   ui::Accelerator escape_key_;
   ui::Accelerator left_key_;
   ui::Accelerator right_key_;
+
+  // View storage id for the last focused view that's not within this pane.
+  int last_focused_view_storage_id_;
 
   friend class AccessiblePaneViewFocusSearch;
 

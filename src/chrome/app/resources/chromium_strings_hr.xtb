@@ -1,216 +1,249 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="hr">
 <translation id="6676384891291319759">Pristup Internetu</translation>
+<translation id="8586442755830160949">Autorska prava <ph name="YEAR"/>. Autori Chromiuma. Sva prava pridržana.</translation>
 <translation id="8447784615389818621">Jeste li sigurni da želite deinstalirati BitPop?</translation>
+<translation id="1928147301259050372">Želite li da BitPop spremi podatke o toj kreditnoj kartici za dovršavanje web-obrazaca?</translation>
 <translation id="100741878661450640">Deinstaliranje BitPopa</translation>
+<translation id="7015513946685052865">Ovo će računalo uskoro prestati primati ažuriranja BitPopa jer njegov hardver više nije podržan.</translation>
 <translation id="4301276314211054820">BitPop je ažuriran, ali vi ga niste upotrebljavali najmanje 30 dana.</translation>
 <translation id="8935261719622405725">Pokreni aplikacije sustava BitPop</translation>
-<translation id="2556535128417126306">Pokretač aplikacija sustava BitPop samostalna je platforma za aplikacije sustava BitPop.</translation>
+<translation id="2787245396912783582">Pokretač aplikacija sustava BitPop samostalna je platforma za aplikacije sustava BitPop.</translation>
 <translation id="2770231113462710648">Promijeni zadani preglednik na:</translation>
 <translation id="6870152852581894991">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete BitPop.</translation>
+<translation id="7725527658463487664">BitPop je zastario</translation>
+<translation id="302025056100997516">Pojedinosti iz vaših kontakata mogu vam pomoći brže ispuniti obrasce na BitPopu.</translation>
 <translation id="3588014340702790340">Gledate sigurnu stranicu preglednika BitPop.</translation>
-<translation id="6789998774111513164">BitPop Frame</translation>
+<translation id="2077129598763517140">Upotrijebi hardversko ubrzanje kada je dostupno</translation>
 <translation id="1065672644894730302">Vaše postavke nije moguće čitati. Neke značajke možda nisu dostupne i promjene postavki neće biti spremljene.</translation>
-<translation id="4901429675189043920">Ažuriranje aplikacije BitPop Frame.</translation>
-<translation id="1132852132282742543">BitPop Renderer</translation>
-<translation id="7155774694068736041">BitPop Frame već je instaliran i dostupan svim korisnicima ovog računala. Ako želite instalirati BitPop Frame na razini korisnika, prvo morate deinstalirati verziju na razini sustava koju je instalirao administrator.</translation>
-<translation id="731644333568559921">Ažuriranje OS-a &amp;Chromium</translation>
+<translation id="4795239855223923830">Prilagodite BitPop i upravljajte njime</translation>
+<translation id="98449668525928921">Prijavljujete se upravljanim računom i dajete administratoru kontrolu nad svojim profilom u sustavu BitPop. Vaši podaci u sustavu BitPop, primjerice, aplikacije, oznake, povijest, zaporke i ostale postavke, trajno će se povezati s korisnikom <ph name="USER_NAME"/>. Moći ćete izbrisati te podatke putem Nadzorne ploče Google računa, ali ih nećete moći povezati s nekim drugim računom. Ako želite, možete izraditi novi profil kako biste zadržali postojeće podatke u sustavu BitPop zasebno. <ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">Hvala vam što isprobavate novi BitPop. BitPop se mora ponovo pokrenuti, pa spremite sav nespremljeni rad kako biste nastavili.</translation>
+<translation id="731644333568559921">Ažuriranje OS-a &amp;BitPop</translation>
 <translation id="5284421695473942517">BitPop zahtijeva Windows XP ili noviju verziju. Neke značajke možda neće raditi.</translation>
-<translation id="3549345495227188780">Počnite s upotrebom OS-a Chromium</translation>
-<translation id="8363397932717822970">U sustavu je pronađena sukobljena instalacija preglednika BitPop ili aplikacije BitPop Frame. Deinstalirajte je i pokušajte ponovo.</translation>
+<translation id="4534284284800306880">Da biste upotrebljavali Google novčanik, morate nadograditi BitPop [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1258942147733482141">Licence otvorenog izvornog koda BitPopa</translation>
+<translation id="2001441118695834744">Ako želite da vaši postojeći podaci BitPopa budu zasebni, možete izraditi novog korisnika BitPopa za korisnika <ph name="USER_NAME"/>.</translation>
+<translation id="3207916442629104800">Postavite Chrome kao zadani preglednik</translation>
+<translation id="2346981135360001626">Ažuriranje vašeg uređaja na kanal <ph name="CHANNEL_NAME"/>...</translation>
+<translation id="3549345495227188780">Počnite s upotrebom OS-a BitPop</translation>
+<translation id="7593639489233822734">Nakon uklanjanja računa s BitPopa možda ćete morati ponovo učitati otvorene kartice kako bi nastupile promjene.</translation>
 <translation id="8235603028098851915">Alatna traka preglednika BitPop</translation>
-<translation id="5953515305183787825">BitPop se više ne ažurira jer je vaš operativni sustav zastario.</translation>
-<translation id="7230682351542979557">Detektor tehnike Captive Portal u sustavu BitPop</translation>
 <translation id="325440606879482824">Instalacija nije uspjela zbog nepoznate pogreške. Ako je BitPop trenutačno otvoren, zatvorite ga i pokušajte ponovo.</translation>
-<translation id="7224939653007212692">Postavke automatske ispune za BitPop</translation>
-<translation id="3078552028547324322">Upotrijebite pokretač aplikacija sustava BitPop da biste pokrenuli svoje aplikacije.</translation>
-<translation id="3555616473548901994">Deinstalacija dovršena.</translation>
-<translation id="5814137742095860156">Host aplikacije BitPop</translation>
+<translation id="2681187513058372590">BitPop pokušava prikazati zaporke.</translation>
 <translation id="9205983754412543288">Dodatno: pomognite nam da poboljšamo BitPop automatskim slanjem statistike o upotrebi i izvješća o padu programa Googleu.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> – BitPop</translation>
-<translation id="6259082392093297310">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali certifikat koji je poslužitelj ponudio sadrži pogreške. BitPop ne može upotrebljavati certifikat s pogreškama i ne može ovjeriti identitet web-lokacije s kojom ste se pokušali povezati.</translation>
-<translation id="3801183610358973379">Program za instalaciju nije dekomprimirao arhivu. Ponovo preuzmite BitPop.</translation>
-<translation id="4450789702440326676">Neka BitPop radi u pozadini</translation>
-<translation id="2963590958538393837">Da, napusti BitPop</translation>
-<translation id="8031724302809093115">BitPopova stranica Nova kartica dobila je novi izgled. Izmjenjujte odjeljke klikom na ove oznake. Chromium će zapamtiti vaše postavke za sljedeći put.</translation>
-<translation id="1480489203462860648">Pokušajte, već je instaliran</translation>
-<translation id="7098153548331126805">Dodavanje u preglednik BitPop...</translation>
-<translation id="5928487969163300899">Deinstaliraj pokretač aplikacija sustava BitPop</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Upozorenje:<ph name="END_BOLD"/> BitPop ne može spriječiti proširenja da evidentiraju vašu povijest pregledavanja. Da biste onemogućili proširenje u anonimnom načinu, isključite tu opciju.</translation>
-<translation id="3941397373453695568">BitPop ne uključuje pregledač PDF-a koji je potreban da bi pregled ispisa funkcionirao.</translation>
-<translation id="8155571637339134666">BitPop može upotrebljavati web-usluge za poboljšanje vašeg doživljaja pregledavanja.</translation>
-<translation id="5383732173730790693">Sada ste prijavljeni u BitPop! Vaše oznake, povijest i druge postavke bit će sinkronizirane s vašim Google računom.</translation>
-<translation id="6866316083935040427">Zatvori BitPop</translation>
-<translation id="4759775690587852534">Na žalost, vaše postavke preglednika Mozilla Firefox nisu dostupne dok je taj preglednik aktivan. Da biste uvezli te postavke u BitPop, spremite svoj rad i zatvorite sve prozore Firefoxa. Zatim kliknite "Nastavak".</translation>
-<translation id="2411757162791070146">U ovom slučaju, adresa navedena u certifikatu ne odgovara adresi web-lokacije kojoj je vaš preglednik pokušao pristupiti. Moguće je da vaše komunikacije presreće napadač koji nudi certifikat neke druge web-lokacije, što uzrokuje nepodudaranje. Drugi je mogući razlog taj da je poslužitelj postavljen da vraća isti certifikat za više web-lokacija, uključujući onu koju pokušavate posjetiti, iako taj certifikat nije valjan za sve te web-lokacije. BitPop može sa sigurnošću ustvrditi da ste stigli na web-lokaciju &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ali ne može potvrditi da je to web-lokacija &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; koju ste namjeravali posjetiti. Ako nastavite, BitPop više neće provjeravati nepodudaranja imena.</translation>
-<translation id="2423180989259159758">Idite na
-          <ph name="BEGIN_BOLD"/>
+<translation id="3898160962923474892">Idite na
           izbornik BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          &gt;
-          postavke LAN-a
-          <ph name="END_BOLD"/>
-          i poništite odabir potvrdnog okvira "Upotrijebi proxy poslužitelj za LAN".</translation>
+          i provjerite je li konfiguracija postavljena na "bez proxyja" ili "izravno".</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> – BitPop</translation>
+<translation id="3334080844010912902">BitPop nije mogao sinkronizirati vaše podatke jer sinkronizacija nije dostupna za vašu domenu.</translation>
+<translation id="2030214613468936763">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali certifikat koji je poslužitelj ponudio sadrži pogreške. BitPop ne može upotrebljavati certifikat s pogreškama i ne može ovjeriti identitet web-lokacije s kojom ste se pokušali povezati.</translation>
+<translation id="3801183610358973379">Program za instalaciju nije dekomprimirao arhivu. Ponovo preuzmite BitPop.</translation>
+<translation id="4138697454314244697">Nije pronađena nijedna instalacija BitPopa za ažuriranje.</translation>
+<translation id="4450789702440326676">Neka BitPop radi u pozadini</translation>
+<translation id="8743840534367614002">Aplikacije sustava BitPop</translation>
+<translation id="2963590958538393837">Da, napusti BitPop</translation>
+<translation id="1480489203462860648">Pokušajte, već je instaliran</translation>
+<translation id="7098153548331126805">Dodavanje u preglednik BitPop...</translation>
+<translation id="4831257561365056138">Deinstaliraj pokretač aplikacija sustava BitPop</translation>
+<translation id="7680117738450774222">Sada ste prijavljeni na BitPop! Administrator je onemogućio sinkronizaciju.</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>Upozorenje:<ph name="END_BOLD"/> BitPop ne može spriječiti proširenja da evidentiraju vašu povijest pregledavanja. Da biste onemogućili proširenje u anonimnom načinu, isključite tu opciju.</translation>
+<translation id="9123740998411173947">Sada kad ste prijavljeni, možete imati svoje kartice, oznake i druge sadržaje u BitPopu na svojem prijenosnom računalu, telefonu i tabletu. Također ćete dobivati relevantnije prijedloge i značajke na Googleovim uslugama.</translation>
+<translation id="985602178874221306">Autori Chromiuma</translation>
+<translation id="3941397373453695568">BitPop ne uključuje pregledač PDF-a koji je potreban da bi pregled ispisa funkcionirao.</translation>
+<translation id="8155571637339134666">BitPop može upotrebljavati web-usluge za poboljšanje vašeg doživljaja pregledavanja.</translation>
+<translation id="6157791660174418859">Isprobajte novi način upotrebe BitPopa putem Google računa i na dijeljenim računalima.</translation>
+<translation id="4759775690587852534">Na žalost, vaše postavke preglednika Mozilla Firefox nisu dostupne dok je taj preglednik aktivan. Da biste uvezli te postavke u BitPop, spremite svoj rad i zatvorite sve prozore Firefoxa. Zatim kliknite "Nastavak".</translation>
+<translation id="5769857394054687534">U ovom slučaju, adresa navedena u certifikatu ne odgovara adresi web-lokacije kojoj je vaš preglednik pokušao pristupiti. Moguće je da vaše komunikacije presreće napadač koji nudi certifikat neke druge web-lokacije, što uzrokuje nepodudaranje. Drugi je mogući razlog taj da je poslužitelj postavljen da vraća isti certifikat za više web-lokacija, uključujući onu koju pokušavate posjetiti, iako taj certifikat nije valjan za sve te web-lokacije. BitPop može sa sigurnošću ustvrditi da ste stigli na web-lokaciju &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, ali ne može potvrditi da je to web-lokacija &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; koju ste namjeravali posjetiti. Ako nastavite, BitPop više neće provjeravati nepodudaranja imena.</translation>
+<translation id="2224367722165014156">BitPop se nije uspio ažurirati na najnoviju verziju, tako da se nisu instalirale sjajne nove značajke i sigurnosni popravci. Ponovo instalirajte BitPop ručno.</translation>
+<translation id="8897323336392112261">Upravlja i time koja se stranica prikazuje prilikom pokretanja Chromiuma ili kada se klikne gumb Početna.</translation>
 <translation id="2886079192271351730">Za taj se modul već zna da je u konfliktu s BitPopom.</translation>
 <translation id="8324687802311409372">Hopa! BitPop je pao. Pokrenuti ponovo sada?</translation>
-<translation id="606385048658239900">Nije pronađena nijedna instalacija preglednika BitPop ili aplikacije BitPop Frame za ažuriranje.</translation>
+<translation id="5689811886832352959">Pomognite nam poboljšati BitPop šaljući izvješća o rušenju programa i <ph name="UMA_LINK"/> Googleu</translation>
+<translation id="5101127815285864538">Ovdje se nalaze vaš web, oznake i ostali sadržaji u BitPopu.</translation>
 <translation id="3197823471738295152">Uređaj je ažuran.</translation>
 <translation id="8551886023433311834">Gotovo ažurno! Ponovo pokrenite uređaj da biste dovršili ažuriranje.</translation>
 <translation id="9090519209458031409">Želite li da BitPop spremi vašu zaporku za ovu web-lokaciju?</translation>
 <translation id="7339898014177206373">Novi prozor</translation>
-<translation id="3026202950002788510">Idite na
-          <ph name="BEGIN_BOLD"/>
-          Aplikacije &gt; Postavke sustava &gt; Mreža &gt; Napredno &gt; Proxy poslužitelji
-          <ph name="END_BOLD"/>
-          i isključite oznake uz odabrane proxy poslužitelje.</translation>
-<translation id="85540521058185027">Čini se da se instalacijski direktorij preglednika BitPop upotrebljava. Ponovo pokrenite računalo i pokušajte još jednom.</translation>
-<translation id="5710380450759072582">BitPop trenutačno uvozi favorite/oznake.</translation>
-<translation id="225614027745146050">Dobro došli</translation>
-<translation id="3421246989510066651">Administrator je instalirao BitPop u ovom sustavu i on je dostupan svim korisnicima. BitPop na razini sustava sada će zamijeniti vašu instalaciju na razini korisnika.</translation>
-<translation id="1563133725769368154">Zatvorite sve prozore preglednika BitPop i pokušajte ponovo.</translation>
-<translation id="6948146312619379712">Zatvorite sve prozore preglednika BitPop i ponovo pokrenite BitPop da bi ta promjena postala aktivna.</translation>
-<translation id="5845248948746043578">Moduli učitani u BitPop</translation>
-<translation id="4718546117684412327">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat koji je izdao entitet kojemu operativni sustav vašeg računala ne vjeruje. To može značiti da je poslužitelj generirao vlastite sigurnosne vjerodajnice, na koje se BitPop ne može osloniti za informacije o identitetu, ili da napadač pokušava presresti vaše komunikacije.</translation>
-<translation id="2585492770508769131">Nastavi izvršavati ​​pozadinske aplikacije po zatvaranju preglednika BitPop</translation>
-<translation id="473775607612524610">Ažuriraj</translation>
-<translation id="1141543168124987471">Dostupna je nova verzija preglednika BitPop, brža no ikad.</translation>
-<translation id="6560811749587757293">O aplikaciji BitPop Frame...</translation>
-<translation id="5971960158340115871">Uklanjanje iz BitPopa</translation>
-<translation id="7747138024166251722">Program za instalaciju nije izradio privremeni direktorij. Provjerite ima li slobodnog prostora na disku i postoji li dopuštenje za instalaciju softvera.</translation>
-<translation id="6494656531179085521">BitPop ne može čitati iz svojeg podatkovnog direktorija niti u njega pisati:
-
-<ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop ne podržava sustav <ph name="OS_NAME"/>.</translation>
-<translation id="8738921060445980047">Nepoznata verzija.</translation>
-<translation id="6970811910055250180">Ažuriranje uređaja...</translation>
-<translation id="2485422356828889247">Deinstaliraj</translation>
-<translation id="8450502629618876351">Pomoć za upotrebu BitPopa</translation>
-<translation id="4742066939161073105">Pokreni BitPop</translation>
-<translation id="736882515641604854">BitPop ne može stvoriti prečac aplikacije jer ne može odrediti trenutačno računalno okruženje.</translation>
-<translation id="7209647769822542891">Ovo računalo već ima noviju verziju aplikacije BitPop Frame. Ako softver ne funkcionira, deinstalirajte BitPop Frame i pokušajte ponovo.</translation>
-<translation id="911206726377975832">Izbrisati i podatke o pregledavanju?</translation>
-<translation id="4501582071990606935">Zatvorite sve prozore u BitPopu (uključujući i one u načinu sustava Windows 8) i pokušajte ponovo.</translation>
-<translation id="2318017154298876822">Ažuriranje &amp;BitPopa</translation>
-<translation id="8862326446509486874">Nemate odgovarajuća prava za instaliranje na razini sustava. Pokušajte ponovno pokrenuti program za instalaciju kao administrator.</translation>
-<translation id="8308846639737830860">Neka BitPop radi u pozadini</translation>
-<translation id="8251642411216619957">Prijava na BitPop</translation>
-<translation id="4365115785552740256">Chromium omogućuju projekt utemeljen na otvorenom kôdu <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> i drugi <ph name="BEGIN_LINK_OSS"/>softveri utemeljeni na otvorenom kôdu<ph name="END_LINK_OSS"/>.</translation>
-<translation id="6321973207566602686">Neka BitPop bude zadani preglednik</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">BitPop Worker</translation>
-<translation id="5820394555380036790">OS Chromium</translation>
-<translation id="6757767188268205357">Ne ometaj me</translation>
-<translation id="6312770669638222416">Pokušajte onemogućiti mrežno predviđanje prema ovim uputama:
-        Idite na
-        <ph name="BEGIN_BOLD"/>
+<translation id="6188910816550019957">Idite na
         izbornik BitPop &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
-        pa odaberite "<ph name="NO_PREFETCH_DESCRIPTION"/>."
-        Ako se time ne riješi problem, preporučujemo da ponovo odaberete
-        tu opciju radi bolje izvedbe.</translation>
+        pa poništite odabir stavke "<ph name="NO_PREFETCH_DESCRIPTION"/>".
+        Ako se time ne riješi problem, preporučujemo da ponovo odaberete tu opciju
+        radi bolje izvedbe.</translation>
+<translation id="2397909649953118924">BitPop – obavijesti (nepročitane: <ph name="QUANTITY"/>)</translation>
+<translation id="225614027745146050">Dobro došli</translation>
+<translation id="1823899440832622134">BitPop se nije uspio ažurirati na najnoviju verziju, tako da se nisu instalirale sjajne nove značajke i sigurnosni popravci. Trebate ažurirati BitPop.</translation>
+<translation id="3421246989510066651">Administrator je instalirao BitPop u ovom sustavu i on je dostupan svim korisnicima. BitPop na razini sustava sada će zamijeniti vašu instalaciju na razini korisnika.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">Zatvorite sve prozore preglednika BitPop i pokušajte ponovo.</translation>
+<translation id="6948146312619379712">Zatvorite sve prozore preglednika BitPop i ponovo pokrenite BitPop da bi ta promjena postala aktivna.</translation>
+<translation id="6475912303565314141">Upravlja i time koja se stranica prikazuje prilikom pokretanja Chromiuma.</translation>
+<translation id="158578066452246627">Ta je datoteka zlonamjerna i BitPop ju je blokirao.</translation>
+<translation id="5845248948746043578">Moduli učitani u BitPop</translation>
+<translation id="3494861236236958082">Na Mac računalima zaporke se spremaju u vaš Keychain, a drugi korisnici BitPopa koji dijele ovaj OS X račun mogu im pristupiti ili ih sinkronizirati.</translation>
+<translation id="6497704981133944775">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat koji je izdao entitet kojemu operativni sustav vašeg računala ne vjeruje. To može značiti da je poslužitelj generirao vlastite sigurnosne vjerodajnice, na koje se BitPop ne može osloniti za informacije o identitetu, ili da napadač pokušava presresti vaše komunikacije.</translation>
+<translation id="963040405972220509">Morate se prijaviti na BitPop da biste upotrebljavali aplikacije. To omogućuje BitPopu sinkronizaciju vaših aplikacija, oznaka, povijesti, zaporki i ostalih postavki na različitim uređajima.</translation>
+<translation id="2585492770508769131">Nastavi izvršavati ​​pozadinske aplikacije po zatvaranju preglednika BitPop</translation>
+<translation id="473775607612524610">Ažuriraj</translation>
+<translation id="1053737967432347853">Ova web-lokacija upotrebljava dodatak BitPop Frame koji se uskoro više neće podržavati. Deinstalirajte ga i nadogradite na moderan preglednik.</translation>
+<translation id="8237944200818342704">Pokrenite Chrome automatski prilikom pokretanja računala</translation>
+<translation id="5904788103100750653">Ako dijelite računalo, prijatelji i članovi obitelji mogu zasebno pregledavati i postaviti BitPop prema svojim željama.</translation>
+<translation id="1141543168124987471">Dostupna je nova verzija preglednika BitPop, brža no ikad.</translation>
+<translation id="3089560314597734657">BitPop nije mogao sinkronizirati podatke vašeg računa jer su pojedinosti prijave na račun zastarjele.</translation>
+<translation id="5107343520309227066">Izgleda da neki drugi proces BitPopa (<ph name="PROCESS_ID"/>) na nekom drugom računalu (<ph name="HOST_NAME"/>) upotrebljava taj profil. BitPop je zaključao profil da se profil ne bi promijenio. Ako ste sigurni da nijedan drugi proces ne upotrebljava taj profil, možete ga otključati i ponovo pokrenuti BitPop.</translation>
+<translation id="5971960158340115871">Uklanjanje iz BitPopa</translation>
+<translation id="4817923018536741011">Dodajte sebe kao korisnika BitPopa</translation>
+<translation id="7066436765290594559">OS BitPop nije mogao sinkronizirati vaše podatke. Ažurirajte svoju zaporku za sinkronizaciju.</translation>
+<translation id="7747138024166251722">Program za instalaciju nije izradio privremeni direktorij. Provjerite ima li slobodnog prostora na disku i postoji li dopuštenje za instalaciju softvera.</translation>
+<translation id="1657309500244281883">BitPop ne može čitati iz svojeg podatkovnog direktorija niti u njega pisati:
+
+<ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">Ažuriranje uređaja...</translation>
+<translation id="2485422356828889247">Deinstaliraj</translation>
+<translation id="8450502629618876351">Pomoć za upotrebu BitPopa</translation>
+<translation id="7974150821733212325">Prijavljujete se upravljanim računom i dajete administratoru kontrolu nad svojim profilom u sustavu BitPop. Vaši podaci u sustavu BitPop, primjerice, aplikacije, oznake, povijest, zaporke i ostale postavke, trajno će se povezati s korisnikom <ph name="USER_NAME"/>. Moći ćete izbrisati te podatke putem Nadzorne ploče Google računa, ali ih nećete moći povezati s nekim drugim računom. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">Pokretač aplikacija sustava BitPop</translation>
+<translation id="8643500805082769156">BitPop je zastario</translation>
+<translation id="911206726377975832">Izbrisati i podatke o pregledavanju?</translation>
+<translation id="7531302439507262213"><ph name="DOMAIN"/> zahtijeva da pročitate i prihvatite sljedeće Uvjete pružanja usluge prije upotrebe ovog uređaja. Ti uvjeti ne predstavljaju proširenje, izmjenu ili ograničenje Uvjeta OS-a BitPop.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">Zatvorite sve prozore u BitPopu (uključujući i one u načinu sustava Windows 8) i pokušajte ponovo.</translation>
+<translation id="2318017154298876822">Ažuriranje &amp;BitPopa</translation>
+<translation id="8862326446509486874">Nemate odgovarajuća prava za instaliranje na razini sustava. Pokušajte ponovno pokrenuti program za instalaciju kao administrator.</translation>
+<translation id="2535480412977113886">OS BitPop nije mogao sinkronizirati podatke vašeg računa jer su pojedinosti prijave na račun zastarjele.</translation>
+<translation id="8697124171261953979">Upravlja i time koja se stranica prikazuje prilikom pokretanja Chromiuma ili pretraživanja putem višenamjenskog okvira.</translation>
+<translation id="8106224471637848707">Softver koji se izvodi na vašem računalu nije kompatibilan s BitPopom.</translation>
+<translation id="8308846639737830860">Neka BitPop radi u pozadini</translation>
+<translation id="8251642411216619957">Prijava na BitPop</translation>
+<translation id="4365115785552740256">Chromium omogućuju projekt utemeljen na otvorenom kôdu <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> i drugi <ph name="BEGIN_LINK_OSS"/>softveri utemeljeni na otvorenom kôdu<ph name="END_LINK_OSS"/>.</translation>
+<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
+<translation id="5819325063060806784">Gosti mogu upotrebljavati BitPop bez ostavljanja tragova o upotrebi.</translation>
+<translation id="1526986572493888898">Ova web-lokacija upotrebljava dodatak BitPop Frame koji se uskoro više neće podržavati. Deinstalirajte ga i preuzmite kompatibilan preglednik.</translation>
+<translation id="7131892997749364444">Proširenje je promijenilo stranicu koja se prikazuje prilikom pokretanja BitPopa.</translation>
+<translation id="5877064549588274448">Kanal je promijenjen. Ponovo pokrenite uređaj za primjenu promjena.</translation>
+<translation id="6321973207566602686">Neka BitPop bude zadani preglednik</translation>
+<translation id="6899689707951760367">BitPop upotrebljava vašu kameru.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">OS BitPop</translation>
+<translation id="6757767188268205357">Ne ometaj me</translation>
+<translation id="690823546498424823">BitPop će pohraniti vaše podatke na siguran način tako da ih ne morate ponovo unositi, ali ćete prilikom budućih plaćanja i dalje morati potvrđivati sigurnosni kôd kartice.</translation>
 <translation id="6220055452245182274">Prijavljivanje padova nije dostupno u pregledniku BitPop.</translation>
 <translation id="924450301557116466">Ne upotrebljava se u BitPopu. Rezervirano mjesto za održavanje sinkronizacije karata resursa. Očekuje se jedan argument: $1.</translation>
+<translation id="843167022919259875">BitPop radi u pozadini.</translation>
+<translation id="2171549355847332070">Bili ste prijavljeni na BitPop kao <ph name="USER_EMAIL_ADDRESS"/>. Prijavite se ponovo istim računom.</translation>
+<translation id="6165323383832829057">BitPop se prestao ažurirati i više ne podržava ovu verziju vašeg operativnog sustava.</translation>
+<translation id="2645729404591158594">Pregledajte novi BitPop</translation>
 <translation id="1984238998837921833">Ažuriranje BitPopa...</translation>
 <translation id="9102885271730191378">Upravitelj zadataka – BitPop</translation>
-<translation id="3916917357864849352">BitPop iz značajke <ph name="BROWSER_COMPONENT"/> uvozi sljedeće stavke:</translation>
+<translation id="1608739712349494181">Kako bismo BitPop učinili sigurnijim, onemogućili smo neka proširenja koja nisu navedena u trgovini <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> i možda su dodana bez vašeg znanja.</translation>
 <translation id="5243897687251941678">Pronađite oznake u izborniku BitPop ili na traci oznaka.</translation>
 <translation id="5925519479755588070">Još malo i ažuran! Ponovo pokrenite BitPop da biste završili ažuriranje.</translation>
+<translation id="5866485601389562653">U nastavku možete dodati druge Google račune i zaključati Chrome.</translation>
+<translation id="8072646586465991214">U sustavu je pronađena konfliktna instalacija BitPopa. Deinstalirajte je i pokušajte ponovo.</translation>
 <translation id="4352003675682958984">Dostupna je nova verzija preglednika BitPop.</translation>
 <translation id="8972540218839637401">Došlo je do pogreške operativnog sustava tijekom instalacije. Ponovo preuzmite BitPop.</translation>
-<translation id="8935838934328341225">Proširenje <ph name="EXTENSION_NAME"/> dodano je u BitPop.</translation>
-<translation id="8871841738132225233">Upotrijebiti ovaj Google račun za sinkronizaciju svih vaših stvari na pregledniku BitPop?</translation>
-<translation id="8988481325911971852">Instalacija nije uspjela zbog nepoznate pogreške. Ponovo preuzmite BitPop.</translation>
-<translation id="660036136456272595">Vaš se profil ne može upotrebljavati jer je iz novije verzije BitPopa.
-
-Neke su značajke možda nedostupne. Navedite neki drugi direktorij profila ili upotrijebite noviju verziju BitPopa.</translation>
-<translation id="2712549016134575851">Otkriven je sukob s drugom instaliranom aplikacijom.</translation>
-<translation id="1095023322915848441">Prethodno ste bili prijavljeni s drugim računom; prijavom će se spojiti vaši podaci. Razmislite o otvaranju novog korisnika sustava BitPop na <ph name="BEGIN_LINK"/>stranici s postavkama<ph name="END_LINK"/> za svoje aktivnosti u sustavu BitPop.</translation>
-<translation id="7862155441175671173">Dodajte u BitPop</translation>
-<translation id="5594704848342987755">Ovo računalo već ima noviju verziju BitPopa. Ako softver ne funkcionira, deinstalirajte BitPop i pokušajte ponovo.</translation>
-<translation id="3422131153907641068">BitPop Utility</translation>
-<translation id="1298199220304005244">Pomoć za upotrebu OS-a Chromium</translation>
-<translation id="8854394556488040390">Ažuriran je BitPop Frame. Ponovo pokrenite preglednik. Verzija preglednika BitPop: <ph name="TODO_0001"/>, verzija aplikacije Chromium Frame: <ph name="TODO_0002"/></translation>
-<translation id="130631256467250065">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete uređaj.</translation>
-<translation id="2901348058800597589">BitPop se nije ispravno isključio. Da biste ponovo otvorili stranice koje su bile otvorene, kliknite "Vraćanje".</translation>
-<translation id="5653921603290474550">BitPop ne reagira. Ponovo pokrenuti sada?</translation>
-<translation id="6089587093203430357">Instant</translation>
-<translation id="2410206016513008786">BitPop mora pokrenuti vanjsku aplikaciju za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
-<translation id="8046283042877435986">Ova web-lokacija preporučuje Chromium Frame (već instaliran).</translation>
-<translation id="5523374683005655880">Ne možete instalirati istu verziju aplikacije BitPop Frame koja se trenutačno izvršava. Zatvorite BitPop Frame i pokušajte ponovo.</translation>
-<translation id="5574763173398621221">Želite li da BitPop spremi zaporku?</translation>
-<translation id="7730150800475367955">Idite na
-          <ph name="BEGIN_BOLD"/>
-          izbornik BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          "<ph name="OPTIONS_BUTTON"/>"
-          <ph name="END_BOLD"/>
-          (za trenutačnu mrežu). Ako je prisutan gumb
-          <ph name="BEGIN_BOLD"/>
-          "<ph name="PROXY_BUTTON"/>"
-          <ph name="END_BOLD"/> (na kartici 
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>
-          ), kliknite ga i provjerite je li konfiguracija
-          postavljena na "Izravno".</translation>
-<translation id="5387335700352644169">Prikaz izbornika BitPop</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
-<translation id="8865765905101981392">Internetski preglednik</translation>
-<translation id="6424492062988593837">Chromium je postao još bolji! Dostupna je nova verzija.</translation>
-<translation id="6385431739515246076">O pregledniku &amp;BitPop</translation>
-<translation id="7521125380721653484">Arhiva programa za instalaciju oštećena je ili nevažeća. Ponovo preuzmite BitPop.</translation>
-<translation id="6836892784612884953">Idite na
-          <ph name="BEGIN_BOLD"/>
+<translation id="2581134012974124523">Proširenje <ph name="EXTENSION_NAME"/> dodano je u BitPop.</translation>
+<translation id="6452045500174243632">Idite na
           izbornik BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          i provjerite je li konfiguracija postavljena na "bez proxyja" ili "izravno".</translation>
-<translation id="457806999714267838">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat kojemu je istekao rok. Nisu dostupne informacije o tome je li taj certifikat ugrožen nakon isteka. To znači da BitPop ne može jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, ispravite pogrešku i osvježite stranicu.</translation>
+          &gt;
+          Postavke LAN-a
+          i poništite odabir potvrdnog okvira "Upotrijebi proxy poslužitelj za LAN".</translation>
+<translation id="8988481325911971852">Instalacija nije uspjela zbog nepoznate pogreške. Ponovo preuzmite BitPop.</translation>
+<translation id="660036136456272595">Vaš se profil ne može upotrebljavati jer je iz novije verzije BitPopa.
+
+Neke su značajke možda nedostupne. Navedite neki drugi direktorij profila ili upotrijebite noviju verziju BitPopa.</translation>
+<translation id="3787192530015965250">BitPop pokušava prikazati zaporke. Upišite svoju zaporku za Windows da biste to dopustili.</translation>
+<translation id="7862155441175671173">Dodajte u BitPop</translation>
+<translation id="1211470790061593728">Upotreba BitPopa s vašim Google računom te na dijeljenim računalima sada je još jednostavnija.</translation>
+<translation id="5594704848342987755">Ovo računalo već ima noviju verziju BitPopa. Ako softver ne funkcionira, deinstalirajte BitPop i pokušajte ponovo.</translation>
+<translation id="3528119622127530876">BitPop nije mogao sinkronizirati vaše podatke. Ažurirajte svoju zaporku za sinkronizaciju.</translation>
+<translation id="1298199220304005244">Pomoć za upotrebu OS-a BitPop</translation>
+<translation id="331951419404882060">OS BitPop nije mogao sinkronizirati vaše podatke zbog pogreške prilikom prijave.</translation>
+<translation id="8187289872471304532">Idite na
+          Aplikacije &gt; Postavke sustava &gt; Mreža &gt; Napredno &gt; Proxy poslužitelji
+          i poništite odabir proxy poslužitelja.</translation>
+<translation id="4634257184917711644">Datoteka <ph name="FILE_NAME"/> zlonamjerna je i BitPop ju je blokirao.</translation>
+<translation id="454930334682314382">Vaše pojedinosti o naplati spremljene su u BitPop.</translation>
+<translation id="130631256467250065">Promjene će početi vrijediti sljedeći put kad ponovo pokrenete uređaj.</translation>
+<translation id="8810991521775422988">Centar za obavijesti sustava BitPop</translation>
+<translation id="2901348058800597589">BitPop se nije ispravno isključio. Da biste ponovo otvorili stranice koje su bile otvorene, kliknite "Vrati".</translation>
+<translation id="838316505303362561">Predložio BitPop</translation>
+<translation id="5653921603290474550">BitPop ne reagira. Ponovo pokrenuti sada?</translation>
+<translation id="3306752603341080445">Prijavljeni ste na BitPop!</translation>
+<translation id="2158734852934720349">Licence otvorenog izvornog koda OS-a BitPop</translation>
+<translation id="2239725456669400190">BitPop mora pokrenuti vanjsku aplikaciju za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
+<translation id="5574763173398621221">Želite li da BitPop spremi zaporku?</translation>
+<translation id="5387335700352644169">Prikaz izbornika BitPop</translation>
+<translation id="1981756165552484777">Upotrebljavate <ph name="PROFILE_EMAIL"/> za sinkronizaciju sadržaja u BitPopu. Za ažuriranje postavki sinkroniziranja ili upotrebu BitPopa bez Google računa posjetite <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="1681324505975197559">(potrebno je <ph name="BEGIN_BUTTON"/>ponovo pokrenuti<ph name="END_BUTTON"/> BitPop)</translation>
+<translation id="6863452815496188645">Postavite sinkronizaciju da biste spremili svoje prilagođene značajke preglednika na web i pristupali im s preglednika BitPop na bilo kojem računalu.</translation>
+<translation id="8865765905101981392">Internetski preglednik</translation>
+<translation id="3099708656176429608">U postavkama vatrozida ili antivirusnog programa omogućite BitPopu da pristupa mreži.</translation>
+<translation id="8098179324031720100">BitPop je postao još bolji! Dostupna je nova verzija.</translation>
+<translation id="4320683788245444425">Ovo računalo više neće primati ažuriranja BitPopa jer njegov hardver više nije podržan.</translation>
+<translation id="6385431739515246076">O pregledniku &amp;BitPop</translation>
+<translation id="7521125380721653484">Arhiva programa za instalaciju oštećena je ili nevažeća. Ponovo preuzmite BitPop.</translation>
+<translation id="8457938350903919620">Kliknite svoje ime da biste otvorili BitPop i počeli s pregledavanjem.</translation>
+<translation id="8410648211590980711">BitPop upotrebljava vaš mikrofon.</translation>
+<translation id="3298525902784604502">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat kojemu je istekao rok. Nisu dostupne informacije o tome je li taj certifikat ugrožen nakon isteka. To znači da BitPop ne može jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, ispravite pogrešku i osvježite stranicu.</translation>
 <translation id="7196020411877309443">Zašto vidim ovo?</translation>
+<translation id="6809805128084420516">Važne informacije o vašim podacima u sustavu BitPop</translation>
+<translation id="5312973105258198185">Prijavljeni ste kao <ph name="USER_EMAIL_ADDRESS"/>. Sada možete pristupiti svojim oznakama, povijesti i drugim postavkama na svim uređajima na kojima se prijavljujete.</translation>
 <translation id="473359818469623008">Ne možete instalirati istu verziju BitPopa koja se trenutačno izvršava. Zatvorite BitPop i pokušajte ponovo.</translation>
 <translation id="2595850371931815386">BitPop nije vaš zadani preglednik.</translation>
-<translation id="1857156280997837230">Pokretač aplikacija sustava BitPop</translation>
 <translation id="4458285410772214805">Odjavite se i prijavite se ponovo da bi ta promjena postala aktivna.</translation>
-<translation id="6523007289492675308">Prikazuje prečac na pokretač aplikacija sustava BitPop na traci zadataka sustava Windows.</translation>
-<translation id="2119636228670142020">O OS-u &amp;Chromium</translation>
+<translation id="6627720938086825017">BitPop upotrebljava vašu kameru i mikrofon.</translation>
+<translation id="6382607600997384001">Ovdje možete vidjeti sve svoje obavijesti s BitPopovih aplikacija, proširenja i web-lokacija.</translation>
+<translation id="2119636228670142020">O OS-u &amp;BitPop</translation>
 <translation id="4196382931981526364">Dostupna je nova, sigurnija verzija preglednika BitPop.</translation>
-<translation id="1077424736315176936">Prikaži pokretač za aplikacije sustava BitPop.</translation>
-<translation id="5330935702921516708">Pogledajte <ph name="BEGIN_LINK"/>još prednosti<ph name="END_LINK"/> prijavljivanja na BitPop.</translation>
 <translation id="862266784641000464">BitPop omogućuje da kliknete telefonski broj na webu i nazovete ga koristeći se Skypeom!</translation>
 <translation id="8072591166076742072">Preuzimanje je u tijeku. Želite li napustiti BitPop i otkazati to preuzimanje?</translation>
-<translation id="932207424499184915">Binarne datoteke BitPop</translation>
-<translation id="3223104112377435850">BitPop Plug-In Host</translation>
+<translation id="8650443074479376435">BitPop nije mogao sinkronizirati vaše podatke zbog pogreške prilikom prijave.</translation>
+<translation id="7561209000218748370">Ulazno pravilo kako bi BitPop dopustio mDNS promet.</translation>
+<translation id="151962892725702025">OS BitPop nije mogao sinkronizirati vaše podatke jer sinkronizacija nije dostupna za vašu domenu.</translation>
+<translation id="3360567213983886831">Binarne datoteke BitPop</translation>
+<translation id="108010966668726733">Netko se prethodno prijavio na BitPop na ovom računalu kao <ph name="ACCOUNT_EMAIL_LAST"/>. Ako to nije vaš račun, izradite novog korisnika BitPopa kako bi vaši podaci bili odvojeni.
+
+Ako se ipak prijavite, podaci sustava BitPop kao što su oznake, povijest i ostale postavke spojit će se s korisnikom <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
 <translation id="7826309952950470209">Preuzimanja su u tijeku. Želite li napustiti BitPop i otkazati ta preuzimanja?</translation>
 <translation id="380873736468525691">BitPop zahtijeva sustav Windows Vista ili Windows XP sa servisnim paketom SP2 ili novijim.</translation>
 <translation id="2762974284703971745">Modul s tim nazivom već je bio u konfliktu s preglednikom BitPop.</translation>
+<translation id="5213128101330439346">To je vaš BitPop</translation>
 <translation id="5443433498537176573">BitPop je ažuran.</translation>
 <translation id="5637727561937246825">Ovo računalo već ima noviju verziju komponenti BitPopa. Upotrijebite noviji instalacijski program.</translation>
-<translation id="5082591353921977637">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali je poslužitelj ponudio certifikat koji još ne vrijedi. Nema dostupnih informacija o tome može li se taj certifikat smatrati pouzdanim. BitPop ne može pouzdano jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, podesite sat sustava i osvježite ovu stranicu.</translation>
-<translation id="1138135211676039883">BitPop upotrebljava vašu zadanu tražilicu koja je trenutačno postavljena na <ph name="PAGE_TITLE"/>. Želite li zadržati zadanu tražilicu?</translation>
+<translation id="4547797007790555015">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali je poslužitelj ponudio certifikat koji još ne vrijedi. Nema dostupnih informacija o tome može li se taj certifikat smatrati pouzdanim. BitPop ne može pouzdano jamčiti da komunicirate s web-lokacijom &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, a ne s napadačem. Sat vašeg računala trenutačno je postavljen na <ph name="CURRENT_TIME"/>. Je li to točno? Ako nije, podesite sat sustava i osvježite ovu stranicu.</translation>
 <translation id="185658551912723674">Dobro došli u BitPop</translation>
-<translation id="6808688532552992663">Ovo računalo već ima noviju verziju preglednika BitPop i aplikacije BitPop Frame. Ako softver ne funkcionira, deinstalirajte BitPop i BitPop Frame i pokušajte ponovo.</translation>
 <translation id="1909867102505992367">Datoteka vaših postavki oštećena je ili nevažeća.
 
 BitPop ne može oporaviti vaše postavke.</translation>
+<translation id="6239286721842301381">Pregledavate novi BitPop.</translation>
+<translation id="7591092481995851856">Prekidanjem veze s računom <ph name="USERNAME"/> izbrisat ćete svoju povijest, oznake, postavke i ostale BitPopove podatke pohranjene na ovom uređaju. Podaci pohranjeni na vašem Google računu neće se izbrisati. Tim podacima možete upravljati na <ph name="GOOGLE_DASHBOARD_LINK"/>Google nadzornoj ploči<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
 <translation id="4933902704814222889">BitPop je web-preglednik koji munjevitom brzinom prikazuje web-stranice i aplikacije. Brz je, stabilan i jednostavan za upotrebu. Pregledavajte web sigurnije jer je zaštita od zlonamjernog softvera i krađe identiteta ugrađena u BitPop.</translation>
-<translation id="7673336527696184948">Nevažeći argumenti. BitPop Frame ne može se instalirati u načinu spremnom za rad, a da se također ne instalira BitPop.</translation>
+<translation id="5806792281256987775">Pokušali ste pristupiti web-lokaciji &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, ali poslužitelj je ponudio certifikat koji je izdao entitet koji BitPop ne smatra pouzdanim. To može značiti da je poslužitelj generirao vlastite sigurnosne vjerodajnice u koje se BitPop ne može pouzdati u vezi s podacima o identitetu ili napadač možda pokušava presresti vaše komunikacije.</translation>
+<translation id="26317130586606191">Želite li povezati svoje podatke sustava BitPop s tim računom?</translation>
 <translation id="5583217122091744450">BitPop Helper</translation>
+<translation id="3089741509794563091">BitPop je upravo postao bolji</translation>
 <translation id="6404599307042403560">BitPop je konfiguriran za automatsko pokretanje kod pokretanja računala.</translation>
-<translation id="8974095189086268230">OS Chromium omogućuje dodatni <ph name="BEGIN_LINK_CROS_OSS"/>softver utemeljen na otvorenom kôdu<ph name="END_LINK_CROS_OSS"/>.</translation>
-<translation id="1221340462641866827">OS Chromium ne podržava pokretanje vanjske aplikacije za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
+<translation id="554833011526807667">OS BitPop omogućuje dodatni <ph name="BEGIN_LINK_CROS_OSS"/>softver utemeljen na otvorenom kôdu<ph name="END_LINK_CROS_OSS"/>.</translation>
+<translation id="8166042339699941380">Prijavljujete se upravljanim računom i dajete administratoru kontrolu nad svojim profilom u sustavu BitPop. Vaši podaci u sustavu BitPop, primjerice, aplikacije, oznake, povijest, zaporke i ostale postavke, trajno će se povezati s korisnikom <ph name="USER_NAME"/>. Moći ćete izbrisati te podatke putem Nadzorne ploče Google računa, ali ih nećete moći povezati s nekim drugim računom.</translation>
+<translation id="2032763513380168750">Poveži moje podatke sustava BitPop s ovim računom</translation>
+<translation id="2477235356415090659">Ponovo instaliraj BitPop</translation>
+<translation id="807350504213044844">OS BitPop ne podržava pokretanje vanjske aplikacije za obradu veza <ph name="SCHEME"/>. Zatražena je veza <ph name="PROTOLINK"/>.</translation>
+<translation id="3484768020161794310">Nedostaju ključevi Google API-ja. Neke funkcije BitPopa bit će onemogućene.</translation>
+<translation id="531363935678210182">BitPop – obavijesti</translation>
+<translation id="3151848949510984428">Spremi pojedinosti u sustavu BitPop</translation>
 </translationbundle>

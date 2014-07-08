@@ -13,8 +13,6 @@ namespace content {
 class RendererPpapiHost;
 }
 
-namespace chrome {
-
 class PepperFlashFullscreenHost : public ppapi::host::ResourceHost {
  public:
   PepperFlashFullscreenHost(content::RendererPpapiHost* host,
@@ -27,15 +25,13 @@ class PepperFlashFullscreenHost : public ppapi::host::ResourceHost {
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
  private:
-  int32_t OnMsgSetFullscreen(ppapi::host::HostMessageContext* context,
-                             bool fullscreen);
+  int32_t OnSetFullscreen(ppapi::host::HostMessageContext* context,
+                          bool fullscreen);
 
   // Non-owning pointer.
   content::RendererPpapiHost* renderer_ppapi_host_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperFlashFullscreenHost);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_RENDERER_PEPPER_PEPPER_FLASH_FULLSCREEN_HOST_H_

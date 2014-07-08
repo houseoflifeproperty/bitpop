@@ -1,20 +1,20 @@
 /*
  * Copyright (c) 2012 Justin Ruggles <justin.ruggles@gmail.com>
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -26,10 +26,29 @@
 #include "libavutil/opt.h"
 #include "libavutil/samplefmt.h"
 #include "avresample.h"
-#include "audio_convert.h"
-#include "audio_data.h"
-#include "audio_mix.h"
-#include "resample.h"
+
+typedef struct AudioData AudioData;
+typedef struct AudioConvert AudioConvert;
+typedef struct AudioMix AudioMix;
+typedef struct ResampleContext ResampleContext;
+
+enum RemapPoint {
+    REMAP_NONE,
+    REMAP_IN_COPY,
+    REMAP_IN_CONVERT,
+    REMAP_OUT_COPY,
+    REMAP_OUT_CONVERT,
+};
+
+typedef struct ChannelMapInfo {
+    int channel_map[AVRESAMPLE_MAX_CHANNELS];   /**< source index of each output channel, -1 if not remapped */
+    int do_remap;                               /**< remap needed */
+    int channel_copy[AVRESAMPLE_MAX_CHANNELS];  /**< dest index to copy from */
+    int do_copy;                                /**< copy needed */
+    int channel_zero[AVRESAMPLE_MAX_CHANNELS];  /**< dest index to zero */
+    int do_zero;                                /**< zeroing needed */
+    int input_map[AVRESAMPLE_MAX_CHANNELS];     /**< dest index of each input channel */
+} ChannelMapInfo;
 
 struct AVAudioResampleContext {
     const AVClass *av_class;        /**< AVClass for logging and AVOptions  */
@@ -53,6 +72,7 @@ struct AVAudioResampleContext {
     double cutoff;                              /**< resampling cutoff frequency. 1.0 corresponds to half the output sample rate */
     enum AVResampleFilterType filter_type;      /**< resampling filter type */
     int kaiser_beta;                            /**< beta value for Kaiser window (only applicable if filter_type == AV_FILTER_TYPE_KAISER) */
+    enum AVResampleDitherMethod dither_method;  /**< dither method          */
 
     int in_channels;        /**< number of input channels                   */
     int out_channels;       /**< number of output channels                  */
@@ -63,6 +83,7 @@ struct AVAudioResampleContext {
     int resample_needed;    /**< resampling is needed                       */
     int in_convert_needed;  /**< input sample format conversion is needed   */
     int out_convert_needed; /**< output sample format conversion is needed  */
+    int in_copy_needed;     /**< input data copy is needed                  */
 
     AudioData *in_buffer;           /**< buffer for converted input         */
     AudioData *resample_out_buffer; /**< buffer for output from resampler   */
@@ -74,6 +95,16 @@ struct AVAudioResampleContext {
     ResampleContext *resample;  /**< resampling context                      */
     AudioMix *am;               /**< channel mixing context                  */
     enum AVMatrixEncoding matrix_encoding;      /**< matrixed stereo encoding */
+
+    /**
+     * mix matrix
+     * only used if avresample_set_matrix() is called before avresample_open()
+     */
+    double *mix_matrix;
+
+    int use_channel_map;
+    enum RemapPoint remap_point;
+    ChannelMapInfo ch_map_info;
 };
 
 #endif /* AVRESAMPLE_INTERNAL_H */

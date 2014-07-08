@@ -25,9 +25,10 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#include <cstdio>
-#include <cstring>
+#include <stdio.h>
+#include <string.h>
 #include <time.h>
+
 #include <iomanip>
 #include <iostream>
 #include <vector>
@@ -44,16 +45,13 @@
 #include "talk/examples/call/callclient.h"
 #include "talk/examples/call/console.h"
 #include "talk/examples/call/mediaenginefactory.h"
-#include "talk/examples/login/xmppauth.h"
-#include "talk/examples/login/xmpppump.h"
-#include "talk/examples/login/xmppthread.h"
 #include "talk/p2p/base/constants.h"
-#ifdef ANDROID
-#include "talk/media/other/androidmediaengine.h"
-#endif
 #include "talk/session/media/mediasessionclient.h"
 #include "talk/session/media/srtpfilter.h"
+#include "talk/xmpp/xmppauth.h"
 #include "talk/xmpp/xmppclientsettings.h"
+#include "talk/xmpp/xmpppump.h"
+#include "talk/xmpp/xmppsocket.h"
 
 class DebugLog : public sigslot::has_slots<> {
  public:
@@ -185,7 +183,7 @@ static const int DEFAULT_PORT = 5222;
 static std::vector<cricket::AudioCodec> codecs;
 static const cricket::AudioCodec ISAC(103, "ISAC", 40000, 16000, 1, 0);
 
-cricket::MediaEngine *AndroidMediaEngineFactory() {
+cricket::MediaEngineInterface *CreateAndroidMediaEngine() {
     cricket::FakeMediaEngine *engine = new cricket::FakeMediaEngine();
 
     codecs.push_back(ISAC);
@@ -247,13 +245,16 @@ int main(int argc, char **argv) {
   DEFINE_string(videoinput, NULL, "RTP dump file for video input.");
   DEFINE_string(videooutput, NULL, "RTP dump file for video output.");
   DEFINE_bool(render, true, "Renders the video.");
-  DEFINE_bool(datachannel, false, "Enable an RTP data channel.");
+  DEFINE_string(datachannel, "",
+                "Enable a data channel, and choose the type: rtp or sctp.");
   DEFINE_bool(d, false, "Turn on debugging.");
   DEFINE_string(log, "", "Turn on debugging to a file.");
   DEFINE_bool(debugsrtp, false, "Enable debugging for srtp.");
   DEFINE_bool(help, false, "Prints this message");
   DEFINE_bool(multisession, false,
               "Enable support for multiple sessions in calls.");
+  DEFINE_bool(roster, false,
+      "Enable roster messages printed in console.");
 
   // parse options
   FlagList::SetFlagsFromCommandLine(&argc, argv, true);
@@ -280,9 +281,10 @@ int main(int argc, char **argv) {
   std::string caps_ver = FLAG_capsver;
   bool debugsrtp = FLAG_debugsrtp;
   bool render = FLAG_render;
-  bool data_channel_enabled = FLAG_datachannel;
+  std::string data_channel = FLAG_datachannel;
   bool multisession_enabled = FLAG_multisession;
   talk_base::SSLIdentity* ssl_identity = NULL;
+  bool show_roster_messages = FLAG_roster;
 
   // Set up debugging.
   if (debug) {
@@ -406,6 +408,16 @@ int main(int argc, char **argv) {
     return 1;
   }
 
+  cricket::DataChannelType data_channel_type = cricket::DCT_NONE;
+  if (data_channel == "rtp") {
+    data_channel_type = cricket::DCT_RTP;
+  } else if (data_channel == "sctp") {
+    data_channel_type = cricket::DCT_SCTP;
+  } else if (!data_channel.empty()) {
+    Print("Invalid data channel type.  Must be rtp or sctp.\n");
+    return 1;
+  }
+
   cricket::SecurePolicy sdes_policy, dtls_policy;
   if (!GetSecurePolicy(sdes, &sdes_policy)) {
     Print("Invalid SDES policy. Must be enable, disable, or require.\n");
@@ -424,7 +436,7 @@ int main(int argc, char **argv) {
   }
 
 #ifdef ANDROID
-  InitAndroidMediaEngineFactory(AndroidMediaEngineFactory);
+  MediaEngineFactory::SetCreateFunction(&CreateAndroidMediaEngine);
 #endif
 
 #if WIN32
@@ -438,7 +450,7 @@ int main(int argc, char **argv) {
   talk_base::SocketServerScope ss_scope(&ss);
 #endif
 
-  XmppPump pump;
+  buzz::XmppPump pump;
   CallClient *client = new CallClient(pump.client(), caps_node, caps_ver);
 
   if (FLAG_voiceinput || FLAG_voiceoutput ||
@@ -462,8 +474,9 @@ int main(int argc, char **argv) {
   client->SetSecurePolicy(sdes_policy, dtls_policy);
   client->SetSslIdentity(ssl_identity);
   client->SetRender(render);
-  client->SetDataChannelEnabled(data_channel_enabled);
+  client->SetDataChannelType(data_channel_type);
   client->SetMultiSessionEnabled(multisession_enabled);
+  client->SetShowRosterMessages(show_roster_messages);
   console->Start();
 
   if (debug) {
@@ -472,7 +485,7 @@ int main(int argc, char **argv) {
   }
 
   Print(("Logging in to " + server + " as " + jid.Str() + "\n").c_str());
-  pump.DoLogin(xcs, new XmppSocket(buzz::TLS_REQUIRED), new XmppAuth());
+  pump.DoLogin(xcs, new buzz::XmppSocket(buzz::TLS_REQUIRED), new XmppAuth());
   main_thread->Run();
   pump.DoDisconnect();
 

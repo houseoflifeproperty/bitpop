@@ -12,8 +12,8 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 
 namespace content {
 MockLocationProvider* MockLocationProvider::instance_ = NULL;
@@ -38,7 +38,7 @@ void MockLocationProvider::HandlePositionChanged(const Geoposition& position) {
     // The location arbitrator unit tests rely on this method running
     // synchronously.
     position_ = position;
-    UpdateListeners();
+    NotifyCallback(position_);
   } else {
     provider_loop_->PostTask(
         FROM_HERE,
@@ -72,7 +72,7 @@ class AutoMockLocationProvider : public MockLocationProvider {
   AutoMockLocationProvider(bool has_valid_location,
                            bool requires_permission_to_start)
       : MockLocationProvider(&instance_),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+        weak_factory_(this),
         requires_permission_to_start_(requires_permission_to_start),
         listeners_updated_(false) {
     if (has_valid_location) {
@@ -86,7 +86,7 @@ class AutoMockLocationProvider : public MockLocationProvider {
       position_.error_code = Geoposition::ERROR_CODE_POSITION_UNAVAILABLE;
     }
   }
-  virtual bool StartProvider(bool high_accuracy) {
+  virtual bool StartProvider(bool high_accuracy) OVERRIDE {
     MockLocationProvider::StartProvider(high_accuracy);
     if (!requires_permission_to_start_) {
       UpdateListenersIfNeeded();
@@ -94,7 +94,7 @@ class AutoMockLocationProvider : public MockLocationProvider {
     return true;
   }
 
-  void OnPermissionGranted() {
+  virtual void OnPermissionGranted() OVERRIDE {
     MockLocationProvider::OnPermissionGranted();
     if (requires_permission_to_start_) {
       UpdateListenersIfNeeded();
@@ -104,10 +104,11 @@ class AutoMockLocationProvider : public MockLocationProvider {
   void UpdateListenersIfNeeded() {
     if (!listeners_updated_) {
       listeners_updated_ = true;
-      MessageLoop::current()->PostTask(
+      base::MessageLoop::current()->PostTask(
           FROM_HERE,
           base::Bind(&MockLocationProvider::HandlePositionChanged,
-                     weak_factory_.GetWeakPtr(), position_));
+                     weak_factory_.GetWeakPtr(),
+                     position_));
     }
   }
 
@@ -116,19 +117,19 @@ class AutoMockLocationProvider : public MockLocationProvider {
   bool listeners_updated_;
 };
 
-LocationProviderBase* NewMockLocationProvider() {
+LocationProvider* NewMockLocationProvider() {
   return new MockLocationProvider(&MockLocationProvider::instance_);
 }
 
-LocationProviderBase* NewAutoSuccessMockLocationProvider() {
+LocationProvider* NewAutoSuccessMockLocationProvider() {
   return new AutoMockLocationProvider(true, false);
 }
 
-LocationProviderBase* NewAutoFailMockLocationProvider() {
+LocationProvider* NewAutoFailMockLocationProvider() {
   return new AutoMockLocationProvider(false, false);
 }
 
-LocationProviderBase* NewAutoSuccessMockNetworkLocationProvider() {
+LocationProvider* NewAutoSuccessMockNetworkLocationProvider() {
   return new AutoMockLocationProvider(true, true);
 }
 

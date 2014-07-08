@@ -34,23 +34,24 @@ class CommandBufferServiceTest : public testing::Test {
   }
 
   int32 GetGetOffset() {
-    return command_buffer_->GetState().get_offset;
+    return command_buffer_->GetLastState().get_offset;
   }
 
   int32 GetPutOffset() {
-    return command_buffer_->GetState().put_offset;
+    return command_buffer_->GetLastState().put_offset;
   }
 
   int32 GetToken() {
-    return command_buffer_->GetState().token;
+    return command_buffer_->GetLastState().token;
   }
 
   int32 GetError() {
-    return command_buffer_->GetState().error;
+    return command_buffer_->GetLastState().error;
   }
 
   bool Initialize(size_t size) {
-    int32 id = command_buffer_->CreateTransferBuffer(size, -1);
+    int32 id;
+    command_buffer_->CreateTransferBuffer(size, &id);
     EXPECT_GT(id, 0);
     command_buffer_->SetGetBuffer(id);
     return true;
@@ -62,7 +63,7 @@ class CommandBufferServiceTest : public testing::Test {
 
 TEST_F(CommandBufferServiceTest, InitializesCommandBuffer) {
   EXPECT_TRUE(Initialize(1024));
-  CommandBuffer::State state = command_buffer_->GetState();
+  CommandBuffer::State state = command_buffer_->GetLastState();
   EXPECT_EQ(0, state.get_offset);
   EXPECT_EQ(0, state.put_offset);
   EXPECT_EQ(0, state.token);
@@ -117,7 +118,8 @@ TEST_F(CommandBufferServiceTest, CanSyncGetAndPutOffset) {
 }
 
 TEST_F(CommandBufferServiceTest, SetGetBuffer) {
-  int32 ring_buffer_id = command_buffer_->CreateTransferBuffer(1024, -1);
+  int32 ring_buffer_id;
+  command_buffer_->CreateTransferBuffer(1024, &ring_buffer_id);
   EXPECT_GT(ring_buffer_id, 0);
 
   scoped_ptr<StrictMock<MockCallbackTest> > change_callback(

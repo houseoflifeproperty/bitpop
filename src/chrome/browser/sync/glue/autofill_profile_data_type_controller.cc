@@ -6,20 +6,19 @@
 
 #include "base/bind.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/autofill/personal_data_manager.h"
 #include "chrome/browser/autofill/personal_data_manager_factory.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/sync/glue/chrome_report_unrecoverable_error.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
-#include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "components/autofill/core/browser/personal_data_manager.h"
+#include "components/autofill/core/browser/webdata/autofill_webdata_service.h"
 #include "content/public/browser/browser_thread.h"
-#include "content/public/browser/notification_service.h"
-#include "content/public/browser/notification_source.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
 
+using autofill::AutofillWebDataService;
 using content::BrowserThread;
 
 namespace browser_sync {
@@ -28,11 +27,14 @@ AutofillProfileDataTypeController::AutofillProfileDataTypeController(
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : NonUIDataTypeController(profile_sync_factory,
-                              profile,
-                              sync_service),
-      personal_data_(NULL) {
-}
+    : NonUIDataTypeController(
+          BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
+          base::Bind(&ChromeReportUnrecoverableError),
+          profile_sync_factory,
+          profile,
+          sync_service),
+      personal_data_(NULL),
+      callback_registered_(false) {}
 
 syncer::ModelType AutofillProfileDataTypeController::type() const {
   return syncer::AUTOFILL_PROFILE;
@@ -43,25 +45,29 @@ syncer::ModelSafeGroup
   return syncer::GROUP_DB;
 }
 
-void AutofillProfileDataTypeController::Observe(
-    int notification_type,
-    const content::NotificationSource& source,
-    const content::NotificationDetails& details) {
-  notification_registrar_.RemoveAll();
+void AutofillProfileDataTypeController::WebDatabaseLoaded() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   OnModelLoaded();
 }
 
 void AutofillProfileDataTypeController::OnPersonalDataChanged() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK_EQ(state(), MODEL_STARTING);
+
   personal_data_->RemoveObserver(this);
-  web_data_service_ = WebDataServiceFactory::GetForProfile(
-      profile(), Profile::IMPLICIT_ACCESS);
-  if (web_data_service_.get() && web_data_service_->IsDatabaseLoaded()) {
+  autofill::AutofillWebDataService* web_data_service =
+      WebDataServiceFactory::GetAutofillWebDataForProfile(
+          profile(), Profile::EXPLICIT_ACCESS).get();
+
+  if (!web_data_service)
+    return;
+
+  if (web_data_service->IsDatabaseLoaded()) {
     OnModelLoaded();
-  } else {
-    notification_registrar_.Add(this, chrome::NOTIFICATION_WEB_DATABASE_LOADED,
-                                content::NotificationService::AllSources());
+  } else  if (!callback_registered_) {
+     web_data_service->RegisterDBLoadedCallback(base::Bind(
+        &AutofillProfileDataTypeController::WebDatabaseLoaded, this));
+     callback_registered_ = true;
   }
 }
 
@@ -80,28 +86,35 @@ bool AutofillProfileDataTypeController::StartModels() {
   // Waiting for the personal data is subtle:  we do this as the PDM resets
   // its cache of unique IDs once it gets loaded. If we were to proceed with
   // association, the local ids in the mappings would wind up colliding.
-  personal_data_ = PersonalDataManagerFactory::GetForProfile(profile());
+  personal_data_ =
+      autofill::PersonalDataManagerFactory::GetForProfile(profile());
   if (!personal_data_->IsDataLoaded()) {
-    personal_data_->SetObserver(this);
+    personal_data_->AddObserver(this);
     return false;
   }
 
-  web_data_service_ = WebDataServiceFactory::GetForProfile(
-      profile(), Profile::IMPLICIT_ACCESS);
-  if (web_data_service_.get() && web_data_service_->IsDatabaseLoaded()) {
-    return true;
-  } else {
-    notification_registrar_.Add(this, chrome::NOTIFICATION_WEB_DATABASE_LOADED,
-                                content::NotificationService::AllSources());
+  autofill::AutofillWebDataService* web_data_service =
+      WebDataServiceFactory::GetAutofillWebDataForProfile(
+          profile(), Profile::EXPLICIT_ACCESS).get();
+
+  if (!web_data_service)
     return false;
+
+  if (web_data_service->IsDatabaseLoaded())
+    return true;
+
+  if (!callback_registered_) {
+     web_data_service->RegisterDBLoadedCallback(base::Bind(
+        &AutofillProfileDataTypeController::WebDatabaseLoaded, this));
+     callback_registered_ = true;
   }
+
+  return false;
 }
 
 void AutofillProfileDataTypeController::StopModels() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  DCHECK(state() == STOPPING || state() == NOT_RUNNING);
-  notification_registrar_.RemoveAll();
   personal_data_->RemoveObserver(this);
 }
 
-}  // namepsace browser_sync
+}  // namespace browser_sync

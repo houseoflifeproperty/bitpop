@@ -23,21 +23,21 @@ setup_gitgit
   test_expect_success "git-cl upload wants a server" \
     "$GIT_CL upload 2>&1 | grep -q 'You must configure'"
 
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
   test_expect_success "git-cl status has no issue" \
-    "$GIT_CL status | grep -q 'no issue'"
+    "$GIT_CL_STATUS | grep -q 'no issue'"
 
   # Prevent the editor from coming up when you upload.
-  export EDITOR=$(which true)
+  export GIT_EDITOR=$(which true)
   test_expect_success "upload succeeds (needs a server running on localhost)" \
     "$GIT_CL upload -m test master | grep -q 'Issue created'"
 
   test_expect_success "git-cl status now knows the issue" \
-    "$GIT_CL status | grep -q 'Issue number'"
+    "$GIT_CL_STATUS | grep -q 'Issue number'"
 
   # Push a description to this URL.
-  URL=$($GIT_CL status | sed -ne '/Issue number/s/[^(]*(\(.*\))/\1/p')
+  URL=$($GIT_CL_STATUS | sed -ne '/Issue number/s/[^(]*(\(.*\))/\1/p')
   curl --cookie dev_appserver_login="test@example.com:False" \
        --data-urlencode subject="test" \
        --data-urlencode description="foo-quux" \
@@ -45,7 +45,7 @@ setup_gitgit
        $URL/edit
 
   test_expect_success "Base URL contains branch name" \
-      "curl -s $($GIT_CL status --field=url) | grep 'URL:' | grep -q '@master'"
+      "curl -s $($GIT_CL_STATUS --field=url) | grep 'URL:[[:space:]]*[^<]' | grep -q '@master'"
 
   test_expect_success "git-cl push ok" \
     "$GIT_CL push -f"
@@ -57,7 +57,7 @@ setup_gitgit
       "git show | grep -q 'foo-quux'"
 
   test_expect_success "issue no longer has a branch" \
-      "git cl status | grep -q 'work: None'"
+      "$GIT_CL_STATUS | grep -q 'work : None'"
 
   cd $GITREPO_PATH
   test_expect_success "upstream repo has our commit" \

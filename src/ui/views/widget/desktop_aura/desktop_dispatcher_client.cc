@@ -4,31 +4,45 @@
 
 #include "ui/views/widget/desktop_aura/desktop_dispatcher_client.h"
 
+#include "base/auto_reset.h"
 #include "base/run_loop.h"
 
 namespace views {
 
-DesktopDispatcherClient::DesktopDispatcherClient() {}
+DesktopDispatcherClient::DesktopDispatcherClient()
+    : weak_ptr_factory_(this) {}
 
-DesktopDispatcherClient::~DesktopDispatcherClient() {}
+DesktopDispatcherClient::~DesktopDispatcherClient() {
+}
 
 void DesktopDispatcherClient::RunWithDispatcher(
-    MessageLoop::Dispatcher* nested_dispatcher,
-    aura::Window* associated_window,
-    bool nestable_tasks_allowed) {
+    base::MessagePumpDispatcher* nested_dispatcher) {
   // TODO(erg): This class has been copypastad from
   // ash/accelerators/nested_dispatcher_controller.cc. I have left my changes
   // commented out because I don't entirely understand the implications of the
   // change.
-  MessageLoopForUI* loop = MessageLoopForUI::current();
-  bool did_allow_task_nesting = loop->NestableTasksAllowed();
-  loop->SetNestableTasksAllowed(nestable_tasks_allowed);
+  base::MessageLoopForUI* loop = base::MessageLoopForUI::current();
+  base::MessageLoopForUI::ScopedNestableTaskAllower allow_nested(loop);
 
-  // DefaultAcceleratorDispatcher dispatcher(nested_dispatcher,
-  //                                         associated_window);
+  base::Closure old_quit_closure = quit_closure_;
+#if defined(OS_WIN)
   base::RunLoop run_loop(nested_dispatcher);
+#else
+  base::RunLoop run_loop;
+#endif
+
+  quit_closure_ = run_loop.QuitClosure();
+  base::WeakPtr<DesktopDispatcherClient> alive(weak_ptr_factory_.GetWeakPtr());
   run_loop.Run();
-  loop->SetNestableTasksAllowed(did_allow_task_nesting);
+  if (alive) {
+    weak_ptr_factory_.InvalidateWeakPtrs();
+    quit_closure_ = old_quit_closure;
+  }
+}
+
+void DesktopDispatcherClient::QuitNestedMessageLoop() {
+  CHECK(!quit_closure_.is_null());
+  quit_closure_.Run();
 }
 
 }  // namespace views

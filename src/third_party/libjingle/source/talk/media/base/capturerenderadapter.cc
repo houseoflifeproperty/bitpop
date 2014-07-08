@@ -39,11 +39,17 @@ CaptureRenderAdapter::CaptureRenderAdapter(VideoCapturer* video_capturer)
 }
 
 CaptureRenderAdapter::~CaptureRenderAdapter() {
-  // Have to disconnect here since |video_capturer_| lives on past the
-  // destruction of this object.
-  if (video_capturer_) {
-    video_capturer_->SignalVideoFrame.disconnect(this);
-  }
+  // Since the signal we're connecting to is multi-threaded,
+  // disconnect_all() will block until all calls are serviced, meaning any
+  // outstanding calls to OnVideoFrame will be done when this is done, and no
+  // more calls will be serviced by this.
+  // We do this explicitly instead of just letting the has_slots<> destructor
+  // take care of it because we need to do this *before* video_renderers_ is
+  // cleared by the destructor; otherwise we could mess with it while
+  // OnVideoFrame is running.
+  // We *don't* take capture_crit_ here since it could deadlock with the lock
+  // taken by the video frame signal.
+  disconnect_all();
 }
 
 CaptureRenderAdapter* CaptureRenderAdapter::Create(
@@ -111,7 +117,8 @@ void CaptureRenderAdapter::MaybeSetRenderingSize(const VideoFrame* frame) {
     const bool new_resolution = iter->render_width != frame->GetWidth() ||
         iter->render_height != frame->GetHeight();
     if (new_resolution) {
-      if (iter->renderer->SetSize(frame->GetWidth(), frame->GetHeight(), 0)) {
+      if (iter->renderer->SetSize(static_cast<int>(frame->GetWidth()),
+                                  static_cast<int>(frame->GetHeight()), 0)) {
         iter->render_width = frame->GetWidth();
         iter->render_height = frame->GetHeight();
       } else {

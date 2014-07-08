@@ -7,11 +7,11 @@
 #include <urlmon.h>
 #pragma comment(lib, "urlmon.lib")
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_comptr.h"
-#include "googleurl/src/gurl.h"
 #include "net/http/http_auth_filter.h"
+#include "url/gurl.h"
 
 // The Windows implementation of URLSecurityManager uses WinINet/IE's
 // URL security zone manager.  See the MSDN page "URL Security Zones" at
@@ -53,7 +53,7 @@ bool URLSecurityManagerWin::CanUseDefaultCredentials(
   if (!const_cast<URLSecurityManagerWin*>(this)->EnsureSystemSecurityManager())
     return false;
 
-  std::wstring url_w = ASCIIToWide(auth_origin.spec());
+  std::wstring url_w = base::ASCIIToWide(auth_origin.spec());
   DWORD policy = 0;
   HRESULT hr;
   hr = security_manager_->ProcessUrlAction(url_w.c_str(),

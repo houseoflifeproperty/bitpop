@@ -30,9 +30,8 @@ import re
 
 from common import archive_utils
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
-
-import config
 
 
 # TODO(mmoss): tests should be added to FILES.cfg, then TESTS can go away.
@@ -51,16 +50,43 @@ def _GetXMLChangeLogByModule(module_name, module_src_dir,
   """Get the change log information for specified module and start/end
   revision.
   """
-  if (last_revision and current_revision > last_revision):
-    command = [slave_utils.SubversionExe(), 'log', module_src_dir,
-                '--xml', '-r', '%d:%d' % (last_revision + 1, current_revision)]
-    changelog = chromium_utils.GetCommandOutput(command)
-    changelog_description = '%s changeLogs from ]%d to %d]' % (
-        module_name, last_revision, current_revision)
-  else:
-    changelog = ''
-    changelog_description = 'No new ChangeLogs on %s' % (module_name)
+  changelog = ''
+  changelog_description = 'No new ChangeLogs on %s' % (module_name)
+  try:
+    last_revision = int(last_revision)
+    current_revision = int(current_revision)
+    if (last_revision and current_revision > last_revision):
+      command = [slave_utils.SubversionExe(), 'log', module_src_dir, '--xml',
+                 '-r', '%d:%d' % (last_revision + 1, current_revision)]
+      changelog = chromium_utils.GetCommandOutput(command)
+      changelog_description = '%s changeLogs from ]%d to %d]' % (
+          module_name, last_revision, current_revision)
+  except ValueError, e:
+    print >> os.stderr, e
   return (changelog, changelog_description)
+
+
+def _GetGitChangeLogByModule(module_name, module_src_dir,
+                             last_revision, current_revision):
+  """Get the git log output for the specified module and revisions."""
+  #TODO(agable): Actually implement this. This needs to work for the full git
+  # changeover, but will require a bunch of code archaeology.
+  changelog = ''
+  changelog_description = 'Unable to create Git ChangeLog on %s' % module_name
+  return (changelog, changelog_description)
+
+
+def _GetChangeLog(module_name, module_src_dir,
+                  last_revision, current_revision):
+  """Get the Git or SVN ChangeLog."""
+  vcs = slave_utils.GitOrSubversion(module_src_dir)
+  if vcs == 'svn':
+    return _GetXMLChangeLogByModule(module_name, module_src_dir,
+                                    last_revision, current_revision)
+  elif vcs == 'git':
+    return _GetGitChangeLogByModule(module_name, module_src_dir,
+                                    last_revision, current_revision)
+  raise slave_utils.NotAnyWorkingCopy(module_src_dir)
 
 
 def Write(file_path, data):
@@ -103,27 +129,27 @@ class StagerBase(object):
     #       Worse, this code ends up looking at top-of-tree WebKit
     #       instead of the revision in DEPS.
     self._webkit_dir = os.path.join(self._src_dir, 'third_party', 'WebKit',
-                                    'Source', 'WebCore')
+                                    'Source')
     self._v8_dir = os.path.join(self._src_dir, 'v8')
-    # TODO: need to get the build *output* directory passed in instead so Linux
-    # and Mac don't have to walk up a directory to get to the right directory.
+
+    build_dir = build_directory.GetBuildOutputDirectory()
+    self._build_dir = os.path.join(build_dir, options.target)
     if chromium_utils.IsWindows():
-      self._build_dir = os.path.join(options.build_dir, options.target)
       self._tool_dir = os.path.join(self._chrome_dir, 'tools', 'build', 'win')
     elif chromium_utils.IsLinux():
-      self._build_dir = os.path.join(os.path.dirname(options.build_dir),
-                                     'out', options.target)
       # On Linux, we might have built for chromeos.  Archive the same.
       if (options.factory_properties.get('chromeos', None) or
           slave_utils.GypFlagIsOn(options, 'chromeos')):
         self._tool_dir = os.path.join(self._chrome_dir, 'tools', 'build',
                                       'chromeos')
+      # Or, we might have built for Android.
+      elif options.factory_properties.get('target_os') == 'android':
+        self._tool_dir = os.path.join(self._chrome_dir, 'tools', 'build',
+                                      'android')
       else:
         self._tool_dir = os.path.join(self._chrome_dir, 'tools', 'build',
                                       'linux')
     elif chromium_utils.IsMac():
-      self._build_dir = os.path.join(os.path.dirname(options.build_dir),
-                                     'xcodebuild', options.target)
       self._tool_dir = os.path.join(self._chrome_dir, 'tools', 'build', 'mac')
     else:
       raise NotImplementedError(
@@ -132,7 +158,12 @@ class StagerBase(object):
 
     self._symbol_dir_base = options.dirs['symbol_dir_base']
     self._www_dir_base = options.dirs['www_dir_base']
-    self._build_name = slave_utils.SlaveBuildName(self._src_dir)
+
+    if options.build_name:
+      self._build_name = options.build_name
+    else:
+      self._build_name = slave_utils.SlaveBuildName(self._src_dir)
+
     self._symbol_dir_base = os.path.join(self._symbol_dir_base,
                                          self._build_name)
     self._www_dir_base = os.path.join(self._www_dir_base, self._build_name)
@@ -142,15 +173,17 @@ class StagerBase(object):
     if options.default_chromium_revision:
       self._chromium_revision = options.default_chromium_revision
     else:
-      self._chromium_revision = slave_utils.SubversionRevision(self._chrome_dir)
+      self._chromium_revision = slave_utils.GetHashOrRevision(
+          os.path.dirname(self._chrome_dir)) # src/ instead of src/chrome
     if options.default_webkit_revision:
       self._webkit_revision = options.default_webkit_revision
     else:
-      self._webkit_revision = slave_utils.SubversionRevision(self._webkit_dir)
+      self._webkit_revision = slave_utils.GetHashOrRevision(
+          os.path.dirname(self._webkit_dir)) # WebKit/ instead of WebKit/Source
     if options.default_v8_revision:
       self._v8_revision = options.default_v8_revision
     else:
-      self._v8_revision = slave_utils.SubversionRevision(self._v8_dir)
+      self._v8_revision = slave_utils.GetHashOrRevision(self._v8_dir)
     self.last_change_file = os.path.join(self._staging_dir, 'LAST_CHANGE')
     # The REVISIONS file will record the revisions information of the main
     # components Chromium/WebKit/V8.
@@ -167,6 +200,10 @@ class StagerBase(object):
 
     self._dual_upload = options.factory_properties.get('dual_upload', False)
     self._archive_files = None
+
+  def TargetPlatformName(self):
+    return self.options.factory_properties.get('target_os',
+                                               chromium_utils.PlatformName())
 
   def BuildOldFilesList(self, source_file_name):
     """Build list of files from the old "file of paths" style input.
@@ -209,7 +246,7 @@ class StagerBase(object):
       chromium_utils.SshMakeDirectory(host, destination)
 
   def MySshCopyFiles(self, filename, host, destination, gs_base,
-                     gs_subdir=None, mimetype=None, gs_acl=None):
+                     gs_subdir='', mimetype=None, gs_acl=None):
     if gs_base:
       MyCopyFileToGS(filename, gs_base, gs_subdir, mimetype=mimetype,
                      gs_acl=gs_acl)
@@ -252,8 +289,8 @@ class StagerBase(object):
     print 'Saving revision to %s' % self.revisions_path
     Write(
         self.revisions_path,
-        ('{"chromium_revision":%d, "webkit_revision":%d, '
-         '"v8_revision":%d}') % (self._chromium_revision,
+        ('{"chromium_revision":%s, "webkit_revision":%s, '
+         '"v8_revision":%s}') % (self._chromium_revision,
                                  self._webkit_revision,
                                  self._v8_revision))
 
@@ -266,7 +303,7 @@ class StagerBase(object):
     """
     last_build_revision = None
     if os.path.exists(self.last_change_file):
-      last_build_revision = int(open(self.last_change_file).read())
+      last_build_revision = open(self.last_change_file).read()
 
     if os.path.exists(self.revisions_path):
       fp = open(self.revisions_path)
@@ -293,7 +330,7 @@ class StagerBase(object):
     """Save build revision in the specified file"""
 
     print 'Saving revision to %s' % file_path
-    Write(file_path, '%d' % self._build_revision)
+    Write(file_path, '%s' % self._build_revision)
 
   def CreateArchiveFile(self, zip_name, zip_file_list):
     return archive_utils.CreateArchive(self._build_dir, self._staging_dir,
@@ -357,7 +394,7 @@ class StagerBase(object):
 
     # Make test_file_list contain absolute paths.
     test_file_list = [os.path.join(self._build_dir, f) for f in test_file_list]
-    UPLOAD_DIR = 'chrome-%s.test' % chromium_utils.PlatformName()
+    UPLOAD_DIR = 'chrome-%s.test' % self.TargetPlatformName()
 
     # Filter out those files that don't exist.
     base_src_dir = os.path.join(self._build_dir, '')
@@ -423,7 +460,7 @@ class StagerBase(object):
       changelog = 'Unknown previous build number: no change log produced.'
     else:
       # Generate Chromium changelogs
-      (chromium_cl, chromium_cl_description) = _GetXMLChangeLogByModule(
+      (chromium_cl, chromium_cl_description) = _GetChangeLog(
           'Chromium', self._src_dir, self.last_chromium_revision,
           self._chromium_revision)
       # Remove the xml declaration since we need to combine  the changelogs
@@ -432,7 +469,7 @@ class StagerBase(object):
         chromium_cl = regex.sub('', chromium_cl)
 
       # Generate WebKit changelogs
-      (webkit_cl, webkit_cl_description) = _GetXMLChangeLogByModule(
+      (webkit_cl, webkit_cl_description) = _GetChangeLog(
           'WebKit', self._webkit_dir, self.last_webkit_revision,
           self._webkit_revision)
       # Remove the xml declaration since we need to combine  the changelogs
@@ -441,7 +478,7 @@ class StagerBase(object):
         webkit_cl = regex.sub('', webkit_cl)
 
       # Generate V8 changelogs
-      (v8_cl, v8_cl_description) = _GetXMLChangeLogByModule(
+      (v8_cl, v8_cl_description) = _GetChangeLog(
           'V8', self._v8_dir, self.last_v8_revision, self._v8_revision)
       # Remove the xml declaration since we need to combine the changelogs
       # of both chromium and webkit.
@@ -490,18 +527,21 @@ class StagerBase(object):
     # we only allow not_found_optional, and fail on any leftover not_found
     # files?
 
-    print 'last change: %d' % self._build_revision
+    print 'last change: %s' % self._build_revision
     previous_revision = self.GetLastBuildRevision()
-    if self._build_revision <= previous_revision:
+    # TODO(agable): This conditional only works for svn because git can't easily
+    # compare revisions.
+    if (slave_utils.GitOrSubversion(self._src_dir) == 'svn' and
+        self._build_revision <= previous_revision):
       # If there have been no changes, report it but don't raise an exception.
       # Someone might have pushed the "force build" button.
-      print 'No changes since last build (r%d <= r%d)' % (self._build_revision,
+      print 'No changes since last build (r%s <= r%s)' % (self._build_revision,
                                                           previous_revision)
       return 0
 
     print 'build name: %s' % self._build_name
 
-    archive_name = 'chrome-%s.zip' % chromium_utils.PlatformName()
+    archive_name = 'chrome-%s.zip' % self.TargetPlatformName()
     archive_file = self.CreateArchiveFile(archive_name,
                                           self._archive_files)[1]
 
@@ -510,6 +550,9 @@ class StagerBase(object):
     # this into archive_utils.py.
     archive_files = [archive_file]
     for archive_name in archives_list:
+      # The list might be empty if it was all 'not_found' optional files.
+      if not archives_list[archive_name]:
+        continue
       if fparser.IsDirectArchive(archives_list[archive_name]):
         fileobj = archives_list[archive_name][0]
         # Copy the file to the path specified in archive_name, which might be
@@ -648,9 +691,7 @@ def main(argv):
       help='specify that target architecure of the build')
   option_parser.add_option('--src-dir', default='src',
                            help='path to the top-level sources directory')
-  option_parser.add_option('--build-dir', default='chrome',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
+  option_parser.add_option('--build-dir', help='ignored')
   option_parser.add_option('--extra-archive-paths', default='',
                            help='comma-separated lists of paths containing '
                                 'files named FILES, SYMBOLS and TESTS. These '
@@ -678,7 +719,11 @@ def main(argv):
   option_parser.add_option('--ignore', default=[], action='append',
                            help='Files to ignore')
   option_parser.add_option('--archive_host',
-                           default=config.Archive.archive_host)
+                           default=archive_utils.Config.archive_host)
+  option_parser.add_option('--build-name',
+                           default=None,
+                           help="Name to use for build directory instead of "
+                                "the slave build name")
   chromium_utils.AddPropertiesOptions(option_parser)
   options, args = option_parser.parse_args()
   if args:
@@ -689,17 +734,17 @@ def main(argv):
     # derived from them (i.e., any filename starting with these strings) will
     # not be archived or uploaded, typically because they're not built for the
     # current distributon.
-    options.ignore = config.Archive.exes_to_skip_entirely
+    options.ignore = archive_utils.Config.exes_to_skip_entirely
 
   if options.mode == 'official':
     option_parser.error('Official mode is not supported here')
   elif options.mode == 'dev':
     options.dirs = {
       # Built files are stored here, in a subdir. named for the build version.
-      'www_dir_base': config.Archive.www_dir_base + 'snapshots',
+      'www_dir_base': archive_utils.Config.www_dir_base + 'snapshots',
 
       # Symbols are stored here, in a subdirectory named for the build version.
-      'symbol_dir_base': config.Archive.www_dir_base + 'snapshots',
+      'symbol_dir_base': archive_utils.Config.www_dir_base + 'snapshots',
     }
   else:
     option_parser.error('Invalid options mode %s' % options.mode)

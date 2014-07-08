@@ -12,13 +12,15 @@
 #include "base/compiler_specific.h"
 #include "chrome/browser/browsing_data/browsing_data_indexed_db_helper.h"
 
+class Profile;
+
 // Mock for BrowsingDataIndexedDBHelper.
 // Use AddIndexedDBSamples() or add directly to response_ list, then
 // call Notify().
 class MockBrowsingDataIndexedDBHelper
     : public BrowsingDataIndexedDBHelper {
  public:
-  MockBrowsingDataIndexedDBHelper();
+  explicit MockBrowsingDataIndexedDBHelper(Profile* profile);
 
   // Adds some IndexedDBInfo samples.
   void AddIndexedDBSamples();
@@ -35,16 +37,16 @@ class MockBrowsingDataIndexedDBHelper
 
   // BrowsingDataIndexedDBHelper.
   virtual void StartFetching(
-      const base::Callback<void(const std::list<IndexedDBInfo>&)>&
+      const base::Callback<void(const std::list<content::IndexedDBInfo>&)>&
           callback) OVERRIDE;
   virtual void DeleteIndexedDB(const GURL& origin) OVERRIDE;
 
  private:
   virtual ~MockBrowsingDataIndexedDBHelper();
 
-  base::Callback<void(const std::list<IndexedDBInfo>&)> callback_;
+  base::Callback<void(const std::list<content::IndexedDBInfo>&)> callback_;
   std::map<GURL, bool> origins_;
-  std::list<IndexedDBInfo> response_;
+  std::list<content::IndexedDBInfo> response_;
 };
 
 #endif  // CHROME_BROWSER_BROWSING_DATA_MOCK_BROWSING_DATA_INDEXED_DB_HELPER_H_

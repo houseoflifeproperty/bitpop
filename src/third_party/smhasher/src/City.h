@@ -43,10 +43,17 @@
 #ifndef CITY_HASH_H_
 #define CITY_HASH_H_
 
-#include "Platform.h"
 #include <stdlib.h>  // for size_t.
-//#include <stdint.h>
 #include <utility>
+
+// Microsoft Visual Studio may not have stdint.h.
+#if defined(_MSC_VER) && (_MSC_VER < 1600)
+typedef unsigned char uint8_t;
+typedef unsigned int uint32_t;
+typedef unsigned __int64 uint64_t;
+#else  // defined(_MSC_VER)
+#include <stdint.h>
+#endif // !defined(_MSC_VER)
 
 typedef uint8_t uint8;
 typedef uint32_t uint32;
@@ -90,7 +97,7 @@ inline uint64 Hash128to64(const uint128& x) {
 
 // Conditionally include declarations for versions of City that require SSE4.2
 // instructions to be available.
-#ifdef __SSE4_2__
+#if defined(__SSE4_2__) && defined(__x86_64__)
 
 // Hash function for a byte array.
 uint128 CityHashCrc128(const char *s, size_t len);

@@ -11,10 +11,10 @@
 #include "ui/views/controls/link_listener.h"
 
 class ConfirmInfoBarDelegate;
+class ElevationIconSetter;
 
 namespace views {
 class Label;
-class TextButton;
 }
 
 // An infobar that shows a message, up to two optional buttons, and an optional,
@@ -23,35 +23,33 @@ class TextButton;
 class ConfirmInfoBar : public InfoBarView,
                        public views::LinkListener {
  public:
-  ConfirmInfoBar(InfoBarTabHelper* owner, ConfirmInfoBarDelegate* delegate);
+  explicit ConfirmInfoBar(scoped_ptr<ConfirmInfoBarDelegate> delegate);
 
- protected:
-  // TODO(rogerta): These only need to be protected due to the
-  // OneClickLoginInfoBar experiment and can be made private once that's
-  // removed.
+ private:
   virtual ~ConfirmInfoBar();
-
-  views::TextButton* ok_button() { return ok_button_; }
 
   // InfoBarView:
   virtual void Layout() OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    View* parent,
-                                    View* child) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
-  virtual int ContentMinimumWidth() const OVERRIDE;
+  virtual int ContentMinimumWidth() OVERRIDE;
 
   // views::LinkListener:
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
- private:
   ConfirmInfoBarDelegate* GetDelegate();
 
+  // Returns the width of all content other than the label and link.  Layout()
+  // uses this to determine how much space the label and link can take.
+  int NonLabelWidth() const;
+
   views::Label* label_;
-  views::TextButton* ok_button_;
-  views::TextButton* cancel_button_;
+  views::LabelButton* ok_button_;
+  views::LabelButton* cancel_button_;
   views::Link* link_;
+  scoped_ptr<ElevationIconSetter> elevation_icon_setter_;
 
   DISALLOW_COPY_AND_ASSIGN(ConfirmInfoBar);
 };

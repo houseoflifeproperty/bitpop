@@ -63,7 +63,7 @@ class SkiaCommands(commands.FactoryCommands):
     # block progress for now.
     slave_script_dir = self.PathJoin('..', '..', '..', '..', 'scripts', 'slave')
     path_to_upload_script = self.PathJoin(
-        slave_script_dir, 'skia', 'upload_to_bucket.py')
+        slave_script_dir, 'upload_to_bucket.py')
     cmd = 'python %s --source_filepath=%s --dest_gsbase=%s' % (
         path_to_upload_script, source_filepath, dest_gsbase)
     if not timeout:

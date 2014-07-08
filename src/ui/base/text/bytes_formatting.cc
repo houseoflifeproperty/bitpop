@@ -6,8 +6,8 @@
 
 #include "base/i18n/number_formatting.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -34,14 +34,14 @@ const int kSpeedStrings[] = {
   IDS_APP_PEBIBYTES_PER_SECOND
 };
 
-string16 FormatBytesInternal(int64 bytes,
-                             DataUnits units,
-                             bool show_units,
-                             const int* const suffix) {
+base::string16 FormatBytesInternal(int64 bytes,
+                                   DataUnits units,
+                                   bool show_units,
+                                   const int* const suffix) {
   DCHECK(units >= DATA_UNITS_BYTE && units <= DATA_UNITS_PEBIBYTE);
   if (bytes < 0) {
     NOTREACHED() << "Negative bytes value";
-    return string16();
+    return base::string16();
   }
 
   // Put the quantity in the right units.
@@ -53,7 +53,7 @@ string16 FormatBytesInternal(int64 bytes,
   if (bytes != 0 && units != DATA_UNITS_BYTE && unit_amount < 100)
     fractional_digits = 1;
 
-  string16 result = base::FormatDouble(unit_amount, fractional_digits);
+  base::string16 result = base::FormatDouble(unit_amount, fractional_digits);
 
   if (show_units)
     result = l10n_util::GetStringFUTF16(suffix[units], result);
@@ -91,19 +91,23 @@ DataUnits GetByteDisplayUnits(int64 bytes) {
   return DataUnits(unit_index);
 }
 
-string16 FormatBytesWithUnits(int64 bytes, DataUnits units, bool show_units) {
+base::string16 FormatBytesWithUnits(int64 bytes,
+                                    DataUnits units,
+                                    bool show_units) {
   return FormatBytesInternal(bytes, units, show_units, kByteStrings);
 }
 
-string16 FormatSpeedWithUnits(int64 bytes, DataUnits units, bool show_units) {
+base::string16 FormatSpeedWithUnits(int64 bytes,
+                                    DataUnits units,
+                                    bool show_units) {
   return FormatBytesInternal(bytes, units, show_units, kSpeedStrings);
 }
 
-string16 FormatBytes(int64 bytes) {
+base::string16 FormatBytes(int64 bytes) {
   return FormatBytesWithUnits(bytes, GetByteDisplayUnits(bytes), true);
 }
 
-string16 FormatSpeed(int64 bytes) {
+base::string16 FormatSpeed(int64 bytes) {
   return FormatSpeedWithUnits(bytes, GetByteDisplayUnits(bytes), true);
 }
 

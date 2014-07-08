@@ -1,5 +1,5 @@
 include_rules = [
   "+base",
-  "+skia",
-  "+third_party/angle",
+  "+skia/ext",
+  "+third_party/skia",
 ]

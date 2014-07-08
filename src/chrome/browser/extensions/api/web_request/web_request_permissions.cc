@@ -4,16 +4,18 @@
 
 #include "chrome/browser/extensions/api/web_request/web_request_permissions.h"
 
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "chrome/browser/extensions/extension_renderer_state.h"
 #include "chrome/common/extensions/extension_constants.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/resource_request_info.h"
+#include "extensions/browser/info_map.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/permissions/permissions_data.h"
 #include "net/url_request/url_request.h"
+#include "url/gurl.h"
 
 using content::ResourceRequestInfo;
 
@@ -24,7 +26,7 @@ namespace {
 // to check for updates, extension blacklisting, etc.
 bool IsSensitiveURL(const GURL& url) {
   // TODO(battre) Merge this, CanExtensionAccessURL and
-  // Extension::CanExecuteScriptOnPage into one function.
+  // PermissionsData::CanExecuteScriptOnPage into one function.
   bool sensitive_chrome_url = false;
   const std::string host = url.host();
   const char kGoogleCom[] = ".google.com";
@@ -38,8 +40,10 @@ bool IsSensitiveURL(const GURL& url) {
       bool match = true;
       for (std::string::const_iterator i = host.begin() + strlen(kClient),
                end = host.end() - strlen(kGoogleCom); i != end; ++i) {
-        if (!isdigit(*i))
+        if (!isdigit(*i)) {
           match = false;
+          break;
+        }
       }
       sensitive_chrome_url = sensitive_chrome_url || match;
     }
@@ -47,7 +51,9 @@ bool IsSensitiveURL(const GURL& url) {
     // others.
     sensitive_chrome_url = sensitive_chrome_url ||
         EndsWith(url.host(), ".clients.google.com", true) ||
-        url.host() == "sb-ssl.google.com";
+        url.host() == "sb-ssl.google.com" ||
+        (url.host() ==  "chrome.google.com" &&
+             StartsWithASCII(url.path(), "/webstore", true));
   }
   GURL::Replacements replacements;
   replacements.ClearQuery();
@@ -62,12 +68,12 @@ bool IsSensitiveURL(const GURL& url) {
 // to. Extensions still need specific permissions for a given URL, which is
 // covered by CanExtensionAccessURL.
 bool HasWebRequestScheme(const GURL& url) {
-  return (url.SchemeIs(chrome::kAboutScheme) ||
-          url.SchemeIs(chrome::kFileScheme) ||
-          url.SchemeIs(chrome::kFileSystemScheme) ||
-          url.SchemeIs(chrome::kFtpScheme) ||
-          url.SchemeIs(chrome::kHttpScheme) ||
-          url.SchemeIs(chrome::kHttpsScheme) ||
+  return (url.SchemeIs(content::kAboutScheme) ||
+          url.SchemeIs(content::kFileScheme) ||
+          url.SchemeIs(content::kFileSystemScheme) ||
+          url.SchemeIs(content::kFtpScheme) ||
+          url.SchemeIs(url::kHttpScheme) ||
+          url.SchemeIs(url::kHttpsScheme) ||
           url.SchemeIs(extensions::kExtensionScheme));
 }
 
@@ -75,16 +81,25 @@ bool HasWebRequestScheme(const GURL& url) {
 
 // static
 bool WebRequestPermissions::HideRequest(
-    const ExtensionInfoMap* extension_info_map,
+    const extensions::InfoMap* extension_info_map,
     const net::URLRequest* request) {
-  // Hide requests from the Chrome WebStore App.
+  // Hide requests from the Chrome WebStore App or signin process.
   const ResourceRequestInfo* info = ResourceRequestInfo::ForRequest(request);
-  if (info && extension_info_map) {
+  if (info) {
     int process_id = info->GetChildID();
-    const extensions::ProcessMap& process_map =
-        extension_info_map->process_map();
-    if (process_map.Contains(extension_misc::kWebStoreAppId, process_id))
+    int route_id = info->GetRouteID();
+    ExtensionRendererState::WebViewInfo webview_info;
+    // Never hide requests from guest processes.
+    if (ExtensionRendererState::GetInstance()->GetWebViewInfo(
+        process_id, route_id, &webview_info)) {
+      return false;
+    }
+    if (extension_info_map && (
+        extension_info_map->IsSigninProcess(process_id) ||
+        extension_info_map->process_map().Contains(
+            extension_misc::kWebStoreAppId, process_id))) {
       return true;
+    }
   }
 
   const GURL& url = request->url();
@@ -93,11 +108,11 @@ bool WebRequestPermissions::HideRequest(
 
 // static
 bool WebRequestPermissions::CanExtensionAccessURL(
-    const ExtensionInfoMap* extension_info_map,
+    const extensions::InfoMap* extension_info_map,
     const std::string& extension_id,
     const GURL& url,
     bool crosses_incognito,
-    bool enforce_host_permissions) {
+    HostPermissionsCheck host_permissions_check) {
   // extension_info_map can be NULL in testing.
   if (!extension_info_map)
     return true;
@@ -111,13 +126,22 @@ bool WebRequestPermissions::CanExtensionAccessURL(
   if (crosses_incognito && !extension_info_map->CanCrossIncognito(extension))
     return false;
 
-  if (enforce_host_permissions) {
-    // about: URLs are not covered in host permissions, but are allowed anyway.
-    bool host_permissions_ok = (url.SchemeIs(chrome::kAboutScheme) ||
-                                extension->HasHostPermission(url) ||
-                                url.GetOrigin() == extension->url());
-    if (!host_permissions_ok)
-      return false;
+  switch (host_permissions_check) {
+    case DO_NOT_CHECK_HOST:
+      break;
+    case REQUIRE_HOST_PERMISSION:
+      // about: URLs are not covered in host permissions, but are allowed
+      // anyway.
+      if (!((url.SchemeIs(content::kAboutScheme) ||
+             extensions::PermissionsData::HasHostPermission(extension, url) ||
+             url.GetOrigin() == extension->url()))) {
+        return false;
+      }
+      break;
+    case REQUIRE_ALL_URLS:
+      if (!extensions::PermissionsData::HasEffectiveAccessToAllHosts(extension))
+        return false;
+      break;
   }
 
   return true;

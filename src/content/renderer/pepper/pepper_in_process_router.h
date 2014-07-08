@@ -6,6 +6,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/resource_message_params.h"
 
@@ -62,23 +63,22 @@ class PepperInProcessRouter {
   // Returns a connection pair for use by a resource proxy. This includes
   // the plugin->renderer sender as well as a dummy sender to the browser
   // process. See the class comment above about the dummy sender.
-  ppapi::proxy::Connection GetPluginConnection();
-
- private:
-  bool SendToHost(IPC::Message *msg);
-  bool SendToPlugin(IPC::Message *msg);
-  void DispatchPluginMsg(IPC::Message* msg);
-  bool DummySendTo(IPC::Message *msg);
+  ppapi::proxy::Connection GetPluginConnection(PP_Instance instance);
 
   // Handles resource reply messages from the host.
-  void OnMsgResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
+  static bool OnPluginMsgReceived(const IPC::Message& msg);
+
+ private:
+  bool SendToHost(IPC::Message* msg);
+  bool SendToPlugin(IPC::Message* msg);
+  void DispatchHostMsg(IPC::Message* msg);
+  void DispatchPluginMsg(IPC::Message* msg);
+  bool SendToBrowser(IPC::Message* msg);
 
   RendererPpapiHostImpl* host_impl_;
 
   class Channel;
-  scoped_ptr<Channel> dummy_browser_channel_;
+  scoped_ptr<Channel> browser_channel_;
 
   // Renderer -> plugin channel.
   scoped_ptr<Channel> host_to_plugin_router_;

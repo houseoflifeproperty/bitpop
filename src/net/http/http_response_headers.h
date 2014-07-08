@@ -9,11 +9,16 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/http/http_version.h"
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+#include "net/proxy/proxy_service.h"
+#endif
 
 class Pickle;
 class PickleIterator;
@@ -24,6 +29,8 @@ class TimeDelta;
 }
 
 namespace net {
+
+class HttpByteRange;
 
 // HttpResponseHeaders: parses and holds HTTP response headers.
 class NET_EXPORT HttpResponseHeaders
@@ -39,6 +46,8 @@ class NET_EXPORT HttpResponseHeaders
   static const PersistOptions PERSIST_SANS_NON_CACHEABLE = 1 << 3;
   static const PersistOptions PERSIST_SANS_RANGES = 1 << 4;
   static const PersistOptions PERSIST_SANS_SECURITY_STATE = 1 << 5;
+
+  static const char kContentRange[];
 
   // Parses the given raw_headers.  raw_headers should be formatted thus:
   // includes the http status response line, each line is \0-terminated, and
@@ -79,6 +88,15 @@ class NET_EXPORT HttpResponseHeaders
   // Replaces the current status line with the provided one (|new_status| should
   // not have any EOL).
   void ReplaceStatusLine(const std::string& new_status);
+
+  // Updates headers (Content-Length and Content-Range) in the |headers| to
+  // include the right content length and range for |byte_range|.  This also
+  // updates HTTP status line if |replace_status_line| is true.
+  // |byte_range| must have a valid, bounded range (i.e. coming from a valid
+  // response or should be usable for a response).
+  void UpdateWithNewRange(const HttpByteRange& byte_range,
+                          int64 resource_size,
+                          bool replace_status_line);
 
   // Creates a normalized header string.  The output will be formatted exactly
   // like so:
@@ -154,16 +172,17 @@ class NET_EXPORT HttpResponseHeaders
   // EnumerateHeader. Note that a header might have an empty value. Call
   // EnumerateHeader repeatedly until it returns false.
   bool EnumerateHeader(void** iter,
-                       const std::string& name,
+                       const base::StringPiece& name,
                        std::string* value) const;
 
   // Returns true if the response contains the specified header-value pair.
   // Both name and value are compared case insensitively.
-  bool HasHeaderValue(const std::string& name, const std::string& value) const;
+  bool HasHeaderValue(const base::StringPiece& name,
+                      const base::StringPiece& value) const;
 
   // Returns true if the response contains the specified header.
   // The name is compared case insensitively.
-  bool HasHeader(const std::string& name) const;
+  bool HasHeader(const base::StringPiece& name) const;
 
   // Get the mime type and charset values in lower case form from the headers.
   // Empty strings are returned if the values are not present.
@@ -248,6 +267,39 @@ class NET_EXPORT HttpResponseHeaders
   // Returns true if the response is chunk-encoded.
   bool IsChunkEncoded() const;
 
+#if defined (SPDY_PROXY_AUTH_ORIGIN)
+  // Contains instructions contained in the Chrome-Proxy header.
+  struct DataReductionProxyInfo {
+    DataReductionProxyInfo() : bypass_all(false) {}
+
+    // True if Chrome should bypass all available data reduction proxies. False
+    // if only the currently connected data reduction proxy should be bypassed.
+    bool bypass_all;
+
+    // Amount of time to bypass the data reduction proxy or proxies.
+    base::TimeDelta bypass_duration;
+  };
+
+  // Returns true if the Chrome-Proxy header is present and contains a bypass
+  // delay. Sets |proxy_info->bypass_duration| to the specified delay if greater
+  // than 0, and to 0 otherwise to indicate that the default proxy delay
+  // (as specified in |ProxyList::UpdateRetryInfoOnFallback|) should be used.
+  // If all available data reduction proxies should by bypassed, |bypass_all| is
+  // set to true. |proxy_info| must be non-NULL.
+  bool GetDataReductionProxyInfo(DataReductionProxyInfo* proxy_info) const;
+
+  // Returns the reason why the Chrome proxy should be bypassed or not, and
+  // populates |proxy_info| with information on how long to bypass if
+  // applicable.
+  ProxyService::DataReductionProxyBypassEventType
+  GetDataReductionProxyBypassEventType(
+      DataReductionProxyInfo* proxy_info) const;
+#endif
+
+  // Returns true if response headers contain the data reduction proxy Via
+  // header value.
+  bool IsDataReductionProxyResponse() const;
+
   // Creates a Value for use with the NetLog containing the response headers.
   base::Value* NetLogCallback(NetLog::LogLevel log_level) const;
 
@@ -303,7 +355,7 @@ class NET_EXPORT HttpResponseHeaders
 
   // Find the header in our list (case-insensitive) starting with parsed_ at
   // index |from|.  Returns string::npos if not found.
-  size_t FindHeader(size_t from, const std::string& name) const;
+  size_t FindHeader(size_t from, const base::StringPiece& name) const;
 
   // Add a header->value pair to our list.  If we already have header in our
   // list, append the value to it.
@@ -345,6 +397,13 @@ class NET_EXPORT HttpResponseHeaders
 
   // Adds the set of transport security state headers.
   static void AddSecurityStateHeaders(HeaderSet* header_names);
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+  // Searches for the specified Chrome-Proxy action, and if present interprets
+  // its value as a duration in seconds.
+  bool GetDataReductionProxyBypassDuration(const std::string& action_prefix,
+                                           base::TimeDelta* duration) const;
+#endif
 
   // We keep a list of ParsedHeader objects.  These tell us where to locate the
   // header-value pairs within raw_headers_.

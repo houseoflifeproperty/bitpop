@@ -8,10 +8,10 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G722_1C_H_
-#define WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G722_1C_H_
+#ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G7221C_H_
+#define WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G7221C_H_
 
-#include "acm_generic_codec.h"
+#include "webrtc/modules/audio_coding/main/source/acm_generic_codec.h"
 
 // forward declaration
 struct G722_1C_24_encinst_t_;
@@ -24,67 +24,71 @@ struct G722_1_Inst_t_;
 
 namespace webrtc {
 
-class ACMG722_1C : public ACMGenericCodec
-{
-public:
-    ACMG722_1C(WebRtc_Word16 codecID);
-    ~ACMG722_1C();
-    // for FEC
-    ACMGenericCodec* CreateInstance(void);
+namespace acm1 {
 
-    WebRtc_Word16 InternalEncode(
-        WebRtc_UWord8* bitstream,
-        WebRtc_Word16* bitStreamLenByte);
+class ACMG722_1C : public ACMGenericCodec {
+ public:
+  explicit ACMG722_1C(int16_t codec_id);
+  ~ACMG722_1C();
 
-    WebRtc_Word16 InternalInitEncoder(
-        WebRtcACMCodecParams *codecParams);
+  // for FEC
+  ACMGenericCodec* CreateInstance(void);
 
-    WebRtc_Word16 InternalInitDecoder(
-        WebRtcACMCodecParams *codecParams);
+  int16_t InternalEncode(
+      uint8_t* bitstream,
+      int16_t* bitstream_len_byte);
 
-protected:
-    WebRtc_Word16 DecodeSafe(
-        WebRtc_UWord8* bitStream,
-        WebRtc_Word16  bitStreamLenByte,
-        WebRtc_Word16* audio,
-        WebRtc_Word16* audioSamples,
-        WebRtc_Word8*  speechType);
+  int16_t InternalInitEncoder(
+      WebRtcACMCodecParams *codec_params);
 
-    WebRtc_Word32 CodecDef(
-        WebRtcNetEQ_CodecDef& codecDef,
-        const CodecInst&      codecInst);
+  int16_t InternalInitDecoder(
+      WebRtcACMCodecParams *codec_params);
 
-    void DestructEncoderSafe();
+ protected:
+  int16_t DecodeSafe(
+      uint8_t* bitstream,
+      int16_t bitstream_len_byte,
+      int16_t* audio,
+      int16_t* audio_samples,
+      int8_t* speech_type);
 
-    void DestructDecoderSafe();
+  int32_t CodecDef(
+      WebRtcNetEQ_CodecDef& codec_def,
+      const CodecInst& codec_inst);
 
-    WebRtc_Word16 InternalCreateEncoder();
+  void DestructEncoderSafe();
 
-    WebRtc_Word16 InternalCreateDecoder();
+  void DestructDecoderSafe();
 
-    void InternalDestructEncoderInst(
-        void* ptrInst);
+  int16_t InternalCreateEncoder();
 
-    WebRtc_Word32    _operationalRate;
+  int16_t InternalCreateDecoder();
 
-    G722_1_Inst_t_*  _encoderInstPtr;
-    G722_1_Inst_t_*  _encoderInstPtrRight; //Used in stereo mode
-    G722_1_Inst_t_*  _decoderInstPtr;
+  void InternalDestructEncoderInst(
+      void* ptr_inst);
 
-    // Only one set of these pointer is valid at any instance
-    G722_1C_24_encinst_t_* _encoderInst24Ptr;
-    G722_1C_24_encinst_t_* _encoderInst24PtrR;
-    G722_1C_32_encinst_t_* _encoderInst32Ptr;
-    G722_1C_32_encinst_t_* _encoderInst32PtrR;
-    G722_1C_48_encinst_t_* _encoderInst48Ptr;
-    G722_1C_48_encinst_t_* _encoderInst48PtrR;
+  int32_t operational_rate_;
 
-    // Only one of these pointer is valid at any instance
-    G722_1C_24_decinst_t_* _decoderInst24Ptr;
-    G722_1C_32_decinst_t_* _decoderInst32Ptr;
-    G722_1C_48_decinst_t_* _decoderInst48Ptr;
+  G722_1_Inst_t_* encoder_inst_ptr_;
+  G722_1_Inst_t_* encoder_inst_ptr_right_;  // Used in stereo mode
+  G722_1_Inst_t_* decoder_inst_ptr_;
+
+  // Only one set of these pointer is valid at any instance
+  G722_1C_24_encinst_t_* encoder_inst24_ptr_;
+  G722_1C_24_encinst_t_* encoder_inst24_ptr_right_;
+  G722_1C_32_encinst_t_* encoder_inst32_ptr_;
+  G722_1C_32_encinst_t_* encoder_inst32_ptr_right_;
+  G722_1C_48_encinst_t_* encoder_inst48_ptr_;
+  G722_1C_48_encinst_t_* encoder_inst48_ptr_right_;
+
+  // Only one of these pointer is valid at any instance
+  G722_1C_24_decinst_t_* decoder_inst24_ptr_;
+  G722_1C_32_decinst_t_* decoder_inst32_ptr_;
+  G722_1C_48_decinst_t_* decoder_inst48_ptr_;
 };
 
-} // namespace webrtc;
+}  // namespace acm1
 
-#endif  // WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G722_1C_H_
+}  // namespace webrtc;
+
+#endif  // WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_G7221C_H_

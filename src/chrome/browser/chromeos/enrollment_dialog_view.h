@@ -6,20 +6,21 @@
 #define CHROME_BROWSER_CHROMEOS_ENROLLMENT_DIALOG_VIEW_H_
 
 #include <string>
+#include <vector>
 
+#include "base/callback_forward.h"
 #include "ui/gfx/native_widget_types.h"
-#include "ui/views/window/dialog_delegate.h"
 
 class Profile;
 
 namespace chromeos {
+namespace enrollment {
 
-class EnrollmentDelegate;
+// Returns true if a dialog was successfully created.
+bool CreateDialog(const std::string& service_path,
+                  gfx::NativeWindow owning_window);
 
-EnrollmentDelegate* CreateEnrollmentDelegate(gfx::NativeWindow owning_window,
-                                             const std::string& network_name,
-                                             Profile* profile);
-
+}  // namespace enrollment
 }  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_ENROLLMENT_DIALOG_VIEW_H_

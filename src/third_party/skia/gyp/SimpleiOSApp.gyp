@@ -11,26 +11,20 @@
       'mac_bundle' : 1,
       'include_dirs' : [
         '../experimental/iOSSampleApp/Shared',
+        '../src/views/mac',
       ],
       'sources': [
         '../src/views/ios/SkOSWindow_iOS.mm',
-        '../src/views/mac/SkEventNotifier.h',
         '../src/views/mac/SkEventNotifier.mm',
-        '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.h',
         '../experimental/iOSSampleApp/iPad/AppDelegate_iPad.mm',
-        '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.h',
         '../experimental/iOSSampleApp/iPhone/AppDelegate_iPhone.mm',
-        '../experimental/iOSSampleApp/Shared/SkUIView.h',
         '../experimental/iOSSampleApp/Shared/SkUIView.mm',
         '../experimental/iOSSampleApp/Shared/skia_ios.mm',
-        '../experimental/SimpleiOSApp/SimpleApp.h',
         '../experimental/SimpleiOSApp/SimpleApp.mm',
         '../experimental/SimpleiOSApp/SimpleiOSApp-Info.plist',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
         'views.gyp:views',
         'xml.gyp:xml',
       ],
@@ -63,9 +57,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

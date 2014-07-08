@@ -12,7 +12,7 @@
 
 namespace views {
 class MenuRunner;
-class NativeTextButton;
+class LabelButton;
 }
 
 namespace ash {
@@ -20,15 +20,10 @@ namespace shell {
 
 // The contents view/delegate of a window that shows some buttons that create
 // various window types.
-#if defined(OS_MACOSX)
-class WindowTypeLauncher : public views::WidgetDelegateView,
-                           public views::ButtonListener {
-#else
 class WindowTypeLauncher : public views::WidgetDelegateView,
                            public views::ButtonListener,
                            public views::MenuDelegate,
                            public views::ContextMenuController {
-#endif  // defined(OS_MACOSX)
  public:
   WindowTypeLauncher();
   virtual ~WindowTypeLauncher();
@@ -48,40 +43,37 @@ class WindowTypeLauncher : public views::WidgetDelegateView,
   // Overridden from views::WidgetDelegate:
   virtual views::View* GetContentsView() OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool CanMaximize() const OVERRIDE;
 
   // Overridden from views::ButtonListener:
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
-#if !defined(OS_MACOSX)
   // Overridden from views::MenuDelegate:
-  virtual void ExecuteCommand(int id) OVERRIDE;
+  virtual void ExecuteCommand(int id, int event_flags) OVERRIDE;
 
   // Override from views::ContextMenuController:
   virtual void ShowContextMenuForView(views::View* source,
-                                      const gfx::Point& point) OVERRIDE;
-#endif  // !defined(OS_MACOSX)
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
 
-  views::NativeTextButton* create_button_;
-  views::NativeTextButton* create_persistant_button_;
-  views::NativeTextButton* panel_button_;
-  views::NativeTextButton* create_nonresizable_button_;
-  views::NativeTextButton* bubble_button_;
-  views::NativeTextButton* lock_button_;
-  views::NativeTextButton* widgets_button_;
-  views::NativeTextButton* system_modal_button_;
-  views::NativeTextButton* window_modal_button_;
-  views::NativeTextButton* child_modal_button_;
-  views::NativeTextButton* transient_button_;
-  views::NativeTextButton* examples_button_;
-  views::NativeTextButton* show_hide_window_button_;
-  views::NativeTextButton* show_screensaver_;
-  views::NativeTextButton* show_web_notification_;
-#if !defined(OS_MACOSX)
+  views::LabelButton* create_button_;
+  views::LabelButton* create_persistant_button_;
+  views::LabelButton* panel_button_;
+  views::LabelButton* create_nonresizable_button_;
+  views::LabelButton* bubble_button_;
+  views::LabelButton* lock_button_;
+  views::LabelButton* widgets_button_;
+  views::LabelButton* system_modal_button_;
+  views::LabelButton* window_modal_button_;
+  views::LabelButton* child_modal_button_;
+  views::LabelButton* transient_button_;
+  views::LabelButton* examples_button_;
+  views::LabelButton* show_hide_window_button_;
+  views::LabelButton* show_screensaver_;
+  views::LabelButton* show_web_notification_;
   scoped_ptr<views::MenuRunner> menu_runner_;
-#endif
 
   DISALLOW_COPY_AND_ASSIGN(WindowTypeLauncher);
 };

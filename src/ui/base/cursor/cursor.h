@@ -6,7 +6,7 @@
 #define UI_BASE_CURSOR_CURSOR_H_
 
 #include "build/build_config.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class Point;
@@ -82,8 +82,13 @@ const int kCursorGrab = 42;
 const int kCursorGrabbing = 43;
 const int kCursorCustom = 44;
 
+enum CursorSetType {
+  CURSOR_SET_NORMAL,
+  CURSOR_SET_LARGE
+};
+
 // Ref-counted cursor that supports both default and custom cursors.
-class UI_EXPORT Cursor {
+class UI_BASE_EXPORT Cursor {
  public:
   Cursor();
 

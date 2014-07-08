@@ -11,13 +11,6 @@ from common import chromium_utils
 START_WITH_LETTER, NUMBER_ONLY = range(2)
 
 
-def EntryToSlaveName(entry):
-  """Extracts the buildbot slave name from the slaves list entry.
-
-  The slave list entry is a dict."""
-  return entry.get('slavename', None) or entry.get('hostname', None)
-
-
 def EntryToHostName(entry):
   """Extracts the buildbot host name from the slaves list entry.
 
@@ -82,7 +75,8 @@ class BaseSlavesList(object):
   def __init__(self, slaves, default_master=None):
     self.slaves = slaves
     self.default_master = default_master
-    _CheckDupes([EntryToSlaveName(x).lower() for x in self.slaves])
+    _CheckDupes(
+        [chromium_utils.EntryToSlaveName(x).lower() for x in self.slaves])
 
   def GetSlaves(self, master=None, builder=None, os=None, tester=None,
                 bits=None, version=None):
@@ -112,14 +106,14 @@ class BaseSlavesList(object):
                     bits=None, version=None):
     """Similar to GetSlaves() except that it only returns the slave names."""
     return [
-        EntryToSlaveName(e)
+        chromium_utils.EntryToSlaveName(e)
         for e in self.GetSlaves(master, builder, os, tester, bits, version)
     ]
 
   def GetSlaveName(self, master=None, builder=None, os=None, tester=None,
                    bits=None, version=None):
     """Similar to GetSlave() except that it only returns the slave name."""
-    return EntryToSlaveName(
+    return chromium_utils.EntryToSlaveName(
         self.GetSlave(master, builder, os, tester, bits, version))
 
   def GetHostName(self, master=None, builder=None, os=None, tester=None,

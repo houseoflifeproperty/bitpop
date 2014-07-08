@@ -26,177 +26,194 @@
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
-import sys
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.checkout.baselineoptimizer import BaselineOptimizer
-from webkitpy.common.system.filesystem_mock import MockFileSystem
+from webkitpy.common.checkout.scm.scm_mock import MockSCM
 from webkitpy.common.host_mock import MockHost
+from webkitpy.common.webkit_finder import WebKitFinder
 
 
-class TestBaselineOptimizer(BaselineOptimizer):
-    def __init__(self, mock_results_by_directory):
-        host = MockHost()
-        BaselineOptimizer.__init__(self, host, host.port_factory.all_port_names())
-        self._mock_results_by_directory = mock_results_by_directory
+class ExcludingMockSCM(MockSCM):
+    def __init__(self, exclusion_list, filesystem=None, executive=None):
+        MockSCM.__init__(self, filesystem, executive)
+        self._exclusion_list = exclusion_list
 
-    # We override this method for testing so we don't have to construct an
-    # elaborate mock file system.
-    def read_results_by_directory(self, baseline_name):
-        return self._mock_results_by_directory
+    def exists(self, path):
+        if path in self._exclusion_list:
+            return False
+        return MockSCM.exists(self, path)
 
-    def _move_baselines(self, baseline_name, results_by_directory, new_results_by_directory):
-        self.new_results_by_directory = new_results_by_directory
+    def delete(self, path):
+        return self.delete_list([path])
+
+    def delete_list(self, paths):
+        for path in paths:
+            if path in self._exclusion_list:
+                raise Exception("File is not SCM managed: " + path)
+        return MockSCM.delete_list(self, paths)
+
+    def move(self, origin, destination):
+        if origin in self._exclusion_list:
+            raise Exception("File is not SCM managed: " + origin)
+        return MockSCM.move(self, origin, destination)
 
 
 class BaselineOptimizerTest(unittest.TestCase):
-    def _assertOptimization(self, results_by_directory, expected_new_results_by_directory):
-        baseline_optimizer = TestBaselineOptimizer(results_by_directory)
-        self.assertTrue(baseline_optimizer.optimize('mock-baseline.png'))
-        self.assertEqual(baseline_optimizer.new_results_by_directory, expected_new_results_by_directory)
-
-    def _assertOptimizationFailed(self, results_by_directory):
-        baseline_optimizer = TestBaselineOptimizer(results_by_directory)
-        self.assertFalse(baseline_optimizer.optimize('mock-baseline.png'))
-
     def test_move_baselines(self):
-        host = MockHost()
-        host.filesystem.write_binary_file('/mock-checkout/LayoutTests/platform/chromium-win/another/test-expected.txt', 'result A')
-        host.filesystem.write_binary_file('/mock-checkout/LayoutTests/platform/chromium-mac/another/test-expected.txt', 'result A')
-        host.filesystem.write_binary_file('/mock-checkout/LayoutTests/platform/chromium/another/test-expected.txt', 'result B')
+        host = MockHost(scm=ExcludingMockSCM(['/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt']))
+        host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/win/another/test-expected.txt', 'result A')
+        host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/platform/mac/another/test-expected.txt', 'result A')
+        host.filesystem.write_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/another/test-expected.txt', 'result B')
         baseline_optimizer = BaselineOptimizer(host, host.port_factory.all_port_names())
         baseline_optimizer._move_baselines('another/test-expected.txt', {
-            'LayoutTests/platform/chromium-win': 'aaa',
-            'LayoutTests/platform/chromium-mac': 'aaa',
-            'LayoutTests/platform/chromium': 'bbb',
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/win': 'aaa',
+            '/mock-checkout/third_party/WebKit/LayoutTests/platform/mac': 'aaa',
+            '/mock-checkout/third_party/WebKit/LayoutTests': 'bbb',
         }, {
-            'LayoutTests/platform/chromium': 'aaa',
+            '/mock-checkout/third_party/WebKit/LayoutTests': 'aaa',
         })
-        self.assertEqual(host.filesystem.read_binary_file('/mock-checkout/LayoutTests/platform/chromium/another/test-expected.txt'), 'result A')
+        self.assertEqual(host.filesystem.read_binary_file('/mock-checkout/third_party/WebKit/LayoutTests/another/test-expected.txt'), 'result A')
 
-    def test_chromium_linux_redundant_with_win(self):
+    def _assertOptimization(self, results_by_directory, expected_new_results_by_directory, baseline_dirname=''):
+        host = MockHost()
+        fs = host.filesystem
+        webkit_base = WebKitFinder(fs).webkit_base()
+        baseline_name = 'mock-baseline-expected.txt'
+
+        for dirname, contents in results_by_directory.items():
+            path = fs.join(webkit_base, 'LayoutTests', dirname, baseline_name)
+            fs.write_binary_file(path, contents)
+
+        baseline_optimizer = BaselineOptimizer(host, host.port_factory.all_port_names())
+        self.assertTrue(baseline_optimizer.optimize(fs.join(baseline_dirname, baseline_name)))
+
+        for dirname, contents in expected_new_results_by_directory.items():
+            path = fs.join(webkit_base, 'LayoutTests', dirname, baseline_name)
+            if contents is None:
+                self.assertFalse(fs.exists(path))
+            else:
+                self.assertEqual(fs.read_binary_file(path), contents)
+
+        # Check that the files that were in the original set have been deleted where necessary.
+        for dirname in results_by_directory:
+            path = fs.join(webkit_base, 'LayoutTests', dirname, baseline_name)
+            if not dirname in expected_new_results_by_directory:
+                self.assertFalse(fs.exists(path))
+
+    def test_linux_redundant_with_win(self):
         self._assertOptimization({
-            'LayoutTests/platform/chromium-win': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/chromium-linux': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/win': '1',
+            'platform/linux': '1',
         }, {
-            'LayoutTests/platform/chromium-win': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/win': '1',
         })
 
-    def test_efl(self):
+    def test_covers_mac_win_linux(self):
         self._assertOptimization({
-            'LayoutTests/platform/efl': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac': '1',
+            'platform/win': '1',
+            'platform/linux': '1',
+            '': None,
         }, {
-            'LayoutTests/platform/efl': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            '': '1',
         })
 
-
-    def test_no_add_mac_future(self):
+    def test_overwrites_root(self):
         self._assertOptimization({
-            'LayoutTests/platform/mac': '29a1715a6470d5dd9486a142f609708de84cdac8',
-            'LayoutTests/platform/win-xp': '453e67177a75b2e79905154ece0efba6e5bfb65d',
-            'LayoutTests/platform/mac-lion': 'c43eaeb358f49d5e835236ae23b7e49d7f2b089f',
-            'LayoutTests/platform/chromium-mac': 'a9ba153c700a94ae1b206d8e4a75a621a89b4554',
+            'platform/mac': '1',
+            'platform/win': '1',
+            'platform/linux': '1',
+            '': '2',
         }, {
-            'LayoutTests/platform/mac': '29a1715a6470d5dd9486a142f609708de84cdac8',
-            'LayoutTests/platform/win-xp': '453e67177a75b2e79905154ece0efba6e5bfb65d',
-            'LayoutTests/platform/mac-lion': 'c43eaeb358f49d5e835236ae23b7e49d7f2b089f',
-            'LayoutTests/platform/chromium-mac': 'a9ba153c700a94ae1b206d8e4a75a621a89b4554',
+            '': '1',
         })
 
-    def test_chromium_covers_mac_win_linux(self):
+    def test_no_new_common_directory(self):
         self._assertOptimization({
-            'LayoutTests/platform/chromium-mac': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/chromium-win': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/chromium-linux': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac': '1',
+            'platform/linux': '1',
+            '': '2',
         }, {
-            'LayoutTests/platform/chromium': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac': '1',
+            'platform/linux': '1',
+            '': '2',
         })
 
-    def test_mac_future(self):
+
+    def test_local_optimization(self):
         self._assertOptimization({
-            'LayoutTests/platform/mac-lion': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac': '1',
+            'platform/linux': '1',
+            'platform/linux-x86': '1',
         }, {
-            'LayoutTests/platform/mac-lion': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac': '1',
+            'platform/linux': '1',
         })
 
-    def test_qt_unknown(self):
+    def test_local_optimization_skipping_a_port_in_the_middle(self):
         self._assertOptimization({
-            'LayoutTests/platform/qt': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac-snowleopard': '1',
+            'platform/win': '1',
+            'platform/linux-x86': '1',
         }, {
-            'LayoutTests/platform/qt': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
+            'platform/mac-snowleopard': '1',
+            'platform/win': '1',
         })
 
-    def test_win_does_not_drop_to_win_7sp0(self):
+    def test_baseline_redundant_with_root(self):
         self._assertOptimization({
-            'LayoutTests/platform/win': '1',
-            'LayoutTests/platform/mac': '2',
-            'LayoutTests/platform/gtk': '3',
-            'LayoutTests/platform/qt': '4',
-            'LayoutTests/platform/chromium': '5',
+            'platform/mac': '1',
+            'platform/win': '2',
+            '': '2',
         }, {
-            'LayoutTests/platform/win': '1',
-            'LayoutTests/platform/mac': '2',
-            'LayoutTests/platform/gtk': '3',
-            'LayoutTests/platform/qt': '4',
-            'LayoutTests/platform/chromium': '5',
+            'platform/mac': '1',
+            '': '2',
         })
 
-    def test_common_directory_includes_root(self):
-        # This test case checks that we don't throw an exception when we fail
-        # to optimize.
-        self._assertOptimizationFailed({
-            'LayoutTests/platform/gtk': 'e8608763f6241ddacdd5c1ef1973ba27177d0846',
-            'LayoutTests/platform/qt': 'bcbd457d545986b7abf1221655d722363079ac87',
-            'LayoutTests/platform/chromium-win': '3764ac11e1f9fbadd87a90a2e40278319190a0d3',
-            'LayoutTests/platform/mac': 'e8608763f6241ddacdd5c1ef1973ba27177d0846',
-        })
-
+    def test_root_baseline_unused(self):
         self._assertOptimization({
-            'LayoutTests/platform/chromium-win': '23a30302a6910f8a48b1007fa36f3e3158341834',
-            'LayoutTests': '9c876f8c3e4cc2aef9519a6c1174eb3432591127',
-            'LayoutTests/platform/chromium-mac': '23a30302a6910f8a48b1007fa36f3e3158341834',
-            'LayoutTests/platform/chromium': '1',
+            'platform/mac': '1',
+            'platform/win': '2',
+            '': '3',
         }, {
-            'LayoutTests/platform/chromium': '23a30302a6910f8a48b1007fa36f3e3158341834',
-            'LayoutTests': '9c876f8c3e4cc2aef9519a6c1174eb3432591127',
+            'platform/mac': '1',
+            'platform/win': '2',
         })
 
-    def test_complex_shadowing(self):
-        # This test relies on OS specific functionality, so it doesn't work on Windows.
-        # FIXME: What functionality does this rely on?  When can we remove this if?
-        if sys.platform == 'win32':
-            return
+    def test_root_baseline_unused_and_non_existant(self):
         self._assertOptimization({
-            'LayoutTests/platform/chromium-win': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/mac': '5daa78e55f05d9f0d1bb1f32b0cd1bc3a01e9364',
-            'LayoutTests/platform/chromium-win-xp': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/mac-lion': '7ad045ece7c030e2283c5d21d9587be22bcba56e',
-            'LayoutTests/platform/chromium-win': 'f83af9732ce74f702b8c9c4a3d9a4c6636b8d3bd',
-            'LayoutTests/platform/win-xp': '5b1253ef4d5094530d5f1bc6cdb95c90b446bec7',
-            'LayoutTests/platform/chromium-linux': 'f52fcdde9e4be8bd5142171cd859230bd4471036',
+            'platform/mac': '1',
+            'platform/win': '2',
         }, {
-            'LayoutTests/platform/chromium-win': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/mac': '5daa78e55f05d9f0d1bb1f32b0cd1bc3a01e9364',
-            'LayoutTests/platform/chromium-win-xp': '462d03b9c025db1b0392d7453310dbee5f9a9e74',
-            'LayoutTests/platform/mac-lion': '7ad045ece7c030e2283c5d21d9587be22bcba56e',
-            'LayoutTests/platform/chromium-win': 'f83af9732ce74f702b8c9c4a3d9a4c6636b8d3bd',
-            'LayoutTests/platform/win-xp': '5b1253ef4d5094530d5f1bc6cdb95c90b446bec7',
-            'LayoutTests/platform/chromium-linux': 'f52fcdde9e4be8bd5142171cd859230bd4471036'
+            'platform/mac': '1',
+            'platform/win': '2',
         })
 
-    def test_virtual_ports_filtered(self):
+    def test_virtual_root_redundant_with_actual_root(self):
         self._assertOptimization({
-            'LayoutTests/platform/chromium-mac': '1',
-            'LayoutTests/platform/chromium-mac-snowleopard': '1',
-            'LayoutTests/platform/chromium-win': '2',
-            'LayoutTests/platform/gtk': '3',
-            'LayoutTests/platform/efl': '3',
-            'LayoutTests/platform/qt': '4',
-            'LayoutTests/platform/mac': '5',
+            'virtual/softwarecompositing': '2',
+            'compositing': '2',
         }, {
-            'LayoutTests/platform/chromium-mac': '1',
-            'LayoutTests/platform/chromium-win': '2',
-            'LayoutTests': '3',
-            'LayoutTests/platform/qt': '4',
-            'LayoutTests/platform/mac': '5',
-        })
+            'virtual/softwarecompositing': None,
+            'compositing': '2',
+        }, baseline_dirname='virtual/softwarecompositing')
+
+    def test_virtual_root_redundant_with_ancestors(self):
+        self._assertOptimization({
+            'virtual/softwarecompositing': '2',
+            'platform/mac/compositing': '2',
+            'platform/win/compositing': '2',
+        }, {
+            'virtual/softwarecompositing': None,
+            'compositing': '2',
+        }, baseline_dirname='virtual/softwarecompositing')
+
+    def test_virtual_root_not_redundant_with_ancestors(self):
+        self._assertOptimization({
+            'virtual/softwarecompositing': '2',
+            'platform/mac/compositing': '1',
+        }, {
+            'virtual/softwarecompositing': '2',
+            'platform/mac/compositing': '1',
+        }, baseline_dirname='virtual/softwarecompositing')

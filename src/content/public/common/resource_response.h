@@ -12,9 +12,9 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
 #include "net/url_request/url_request_status.h"
-#include "webkit/glue/resource_loader_bridge.h"
+#include "url/gurl.h"
+#include "webkit/common/resource_response_info.h"
 
 namespace content {
 

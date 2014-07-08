@@ -69,7 +69,7 @@ static SkColor HSV_to_RGB(SkColor color, HSV_Choice choice, SkScalar hsv) {
         red = green = blue = value;
     else {
         //SkScalar fraction = SkScalarMod(hue, 60 * SK_Scalar1);
-        int sextant = SkScalarFloor(hue / 60);
+        int sextant = SkScalarFloorToInt(hue / 60);
         SkScalar fraction = hue / 60 - SkIntToScalar(sextant);
         SkScalar p = SkScalarMul(value , SK_Scalar1 - saturation);
         SkScalar q = SkScalarMul(value, SK_Scalar1 - SkScalarMul(saturation, fraction));
@@ -85,8 +85,8 @@ static SkColor HSV_to_RGB(SkColor color, HSV_Choice choice, SkScalar hsv) {
         }
     }
     //used to say SkToU8((U8CPU) red) etc
-    return SkColorSetARGB(SkColorGetA(color), SkScalarRound(red),
-        SkScalarRound(green), SkScalarRound(blue));
+    return SkColorSetARGB(SkColorGetA(color), SkScalarRoundToInt(red),
+                          SkScalarRoundToInt(green), SkScalarRoundToInt(blue));
 }
 
 #if defined _WIN32 && _MSC_VER >= 1300
@@ -133,7 +133,7 @@ bool SkDrawColor::add() {
     return false;
 }
 
-SkDisplayable* SkDrawColor::deepCopy(SkAnimateMaker* maker) {
+SkDisplayable* SkDrawColor::deepCopy(SkAnimateMaker*) {
     SkDrawColor* copy = new SkDrawColor();
     copy->color = color;
     copy->fHue = fHue;
@@ -206,7 +206,7 @@ bool SkDrawColor::getProperty(int index, SkScriptValue* value) const {
     return true;
 }
 
-void SkDrawColor::onEndElement(SkAnimateMaker& maker){
+void SkDrawColor::onEndElement(SkAnimateMaker&) {
     fDirty = true;
 }
 
@@ -226,11 +226,7 @@ bool SkDrawColor::setProperty(int index, SkScriptValue& value) {
     switch (index) {
         case SK_PROPERTY(alpha):
             uint8_t alpha;
-        #ifdef SK_SCALAR_IS_FLOAT
             alpha = scalar == SK_Scalar1 ? 255 : SkToU8((U8CPU) (scalar * 256));
-        #else
-            alpha = SkToU8((scalar - (scalar >= SK_ScalarHalf)) >> 8);
-        #endif
             color = SkColorSetARGB(alpha, SkColorGetR(color),
                 SkColorGetG(color), SkColorGetB(color));
             break;
@@ -267,4 +263,3 @@ bool SkDrawColor::setProperty(int index, SkScriptValue& value) {
     }
     return true;
 }
-

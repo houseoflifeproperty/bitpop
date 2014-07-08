@@ -6,19 +6,19 @@
 
 #include "content/common/geolocation_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPermissionRequest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPermissionRequestManager.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationPosition.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebGeolocationError.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSecurityOrigin.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/web/WebGeolocationPermissionRequest.h"
+#include "third_party/WebKit/public/web/WebGeolocationPermissionRequestManager.h"
+#include "third_party/WebKit/public/web/WebGeolocationClient.h"
+#include "third_party/WebKit/public/web/WebGeolocationPosition.h"
+#include "third_party/WebKit/public/web/WebGeolocationError.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
 
-using WebKit::WebGeolocationController;
-using WebKit::WebGeolocationError;
-using WebKit::WebGeolocationPermissionRequest;
-using WebKit::WebGeolocationPermissionRequestManager;
-using WebKit::WebGeolocationPosition;
+using blink::WebGeolocationController;
+using blink::WebGeolocationError;
+using blink::WebGeolocationPermissionRequest;
+using blink::WebGeolocationPermissionRequestManager;
+using blink::WebGeolocationPosition;
 
 namespace content {
 
@@ -88,9 +88,10 @@ bool GeolocationDispatcher::lastPosition(WebGeolocationPosition&) {
 void GeolocationDispatcher::requestPermission(
     const WebGeolocationPermissionRequest& permissionRequest) {
   int bridge_id = pending_permissions_->add(permissionRequest);
-  string16 origin = permissionRequest.securityOrigin().toString();
+  base::string16 origin = permissionRequest.securityOrigin().toString();
   Send(new GeolocationHostMsg_RequestPermission(
-      routing_id(), bridge_id, GURL(origin)));
+      routing_id(), bridge_id, GURL(origin),
+      blink::WebUserGestureIndicator::isProcessingUserGesture()));
 }
 
 // TODO(jknotten): Change the messages to use a security origin, so no
@@ -100,7 +101,7 @@ void GeolocationDispatcher::cancelPermissionRequest(
   int bridge_id;
   if (!pending_permissions_->remove(permissionRequest, bridge_id))
     return;
-  string16 origin = permissionRequest.securityOrigin().toString();
+  base::string16 origin = permissionRequest.securityOrigin().toString();
   Send(new GeolocationHostMsg_CancelPermissionRequest(
       routing_id(), bridge_id, GURL(origin)));
 }
@@ -151,7 +152,7 @@ void GeolocationDispatcher::OnPositionUpdated(
     }
     controller_->errorOccurred(
         WebGeolocationError(
-            code, WebKit::WebString::fromUTF8(geoposition.error_message)));
+            code, blink::WebString::fromUTF8(geoposition.error_message)));
   }
 }
 

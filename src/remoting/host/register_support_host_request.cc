@@ -6,9 +6,9 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/time/time.h"
 #include "remoting/base/constants.h"
 #include "remoting/host/host_config.h"
 #include "remoting/jingle_glue/iq_sender.h"
@@ -36,13 +36,15 @@ const char kSupportIdLifetimeTag[] = "support-id-lifetime";
 
 RegisterSupportHostRequest::RegisterSupportHostRequest(
     SignalStrategy* signal_strategy,
-    HostKeyPair* key_pair,
+    scoped_refptr<RsaKeyPair> key_pair,
+    const std::string& directory_bot_jid,
     const RegisterCallback& callback)
     : signal_strategy_(signal_strategy),
       key_pair_(key_pair),
+      directory_bot_jid_(directory_bot_jid),
       callback_(callback) {
   DCHECK(signal_strategy_);
-  DCHECK(key_pair_);
+  DCHECK(key_pair_.get());
   signal_strategy_->AddListener(this);
   iq_sender_.reset(new IqSender(signal_strategy_));
 }
@@ -58,7 +60,7 @@ void RegisterSupportHostRequest::OnSignalStrategyStateChange(
     DCHECK(!callback_.is_null());
 
     request_ = iq_sender_->SendIq(
-        buzz::STR_SET, kChromotingBotJid,
+        buzz::STR_SET, directory_bot_jid_,
         CreateRegistrationRequest(signal_strategy_->GetLocalJid()).Pass(),
         base::Bind(&RegisterSupportHostRequest::ProcessResponse,
                    base::Unretained(this)));
@@ -96,7 +98,7 @@ scoped_ptr<XmlElement> RegisterSupportHostRequest::CreateSignature(
       QName(kChromotingXmlNamespace, kSignatureTimeAttr), time_str);
 
   std::string message = jid + ' ' + time_str;
-  std::string signature(key_pair_->GetSignature(message));
+  std::string signature(key_pair_->SignMessage(message));
   signature_tag->AddText(signature);
 
   return signature_tag.Pass();

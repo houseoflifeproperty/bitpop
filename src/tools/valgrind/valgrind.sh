@@ -17,16 +17,21 @@ export THISDIR=`dirname $0`
 
 setup_memcheck() {
   RUN_COMMAND="valgrind"
-  # Prefer a 32-bit gdb if it's available.
-  GDB="/usr/bin/gdb32";
-  if [ ! -x $GDB ]; then
-    GDB="gdb"
+  GDB=gdb
+  EXE_INFO=$(file $1)
+  if [[ $? -eq 0 ]]; then
+    # Prefer a gdb that matches the executable if it's available.
+    if [[ "$EXE_INFO" == *32-bit* && -x /usr/bin/gdb32 ]]; then
+      GDB="/usr/bin/gdb32";
+    elif [[ "$EXE_INFO" == *64-bit* && -x /usr/bin/gdb64 ]]; then
+      GDB="/usr/bin/gdb64";
+    fi
   fi
 
   # Prompt to attach gdb when there was an error detected.
   DEFAULT_TOOL_FLAGS=("--db-command=$GDB -nw %f %p" "--db-attach=yes" \
                       # Keep the registers in gdb in sync with the code.
-                      "--vex-iropt-precise-memory-exns=yes" \
+                      "--vex-iropt-register-updates=allregs-at-mem-access" \
                       # Overwrite newly allocated or freed objects
                       # with 0x41 to catch inproper use.
                       "--malloc-fill=41" "--free-fill=41" \
@@ -69,7 +74,7 @@ if echo "$@" | grep "\-\-tool" ; then
 fi
 
 case $TOOL_NAME in
-  memcheck*)  setup_memcheck;;
+  memcheck*)  setup_memcheck "$1";;
   tsan*)      setup_tsan;;
   *)          setup_unknown;;
 esac
@@ -113,6 +118,7 @@ G_DEBUG=fatal_warnings \
 GTEST_DEATH_TEST_USE_FORK=1 \
 $RUN_COMMAND \
   --trace-children=yes \
+  --leak-check=yes \
   --suppressions="$SUPPRESSIONS" \
   "${DEFAULT_TOOL_FLAGS[@]}" \
   "$@"

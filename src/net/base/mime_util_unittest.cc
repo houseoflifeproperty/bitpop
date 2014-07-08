@@ -3,8 +3,8 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/mime_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -12,7 +12,7 @@ namespace net {
 
 TEST(MimeUtilTest, ExtensionTest) {
   const struct {
-    const FilePath::CharType* extension;
+    const base::FilePath::CharType* extension;
     const char* mime_type;
     bool valid;
   } tests[] = {
@@ -36,7 +36,7 @@ TEST(MimeUtilTest, ExtensionTest) {
 
 TEST(MimeUtilTest, FileTest) {
   const struct {
-    const FilePath::CharType* file_path;
+    const base::FilePath::CharType* file_path;
     const char* mime_type;
     bool valid;
   } tests[] = {
@@ -52,7 +52,7 @@ TEST(MimeUtilTest, FileTest) {
   bool rv;
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    rv = GetMimeTypeFromFile(FilePath(tests[i].file_path),
+    rv = GetMimeTypeFromFile(base::FilePath(tests[i].file_path),
                                   &mime_type);
     EXPECT_EQ(tests[i].valid, rv);
     if (rv)
@@ -67,13 +67,21 @@ TEST(MimeUtilTest, LookupTypes) {
   EXPECT_TRUE(IsSupportedImageMimeType("image/jpeg"));
   EXPECT_FALSE(IsSupportedImageMimeType("image/lolcat"));
   EXPECT_TRUE(IsSupportedNonImageMimeType("text/html"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("text/css"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("text/"));
   EXPECT_TRUE(IsSupportedNonImageMimeType("text/banana"));
   EXPECT_FALSE(IsSupportedNonImageMimeType("text/vcard"));
   EXPECT_FALSE(IsSupportedNonImageMimeType("application/virus"));
   EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-x509-user-cert"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/json"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/+json"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-suggestions+json"));
+  EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-s+json;x=2"));
 #if defined(OS_ANDROID)
   EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-x509-ca-cert"));
   EXPECT_TRUE(IsSupportedNonImageMimeType("application/x-pkcs12"));
+  EXPECT_TRUE(IsSupportedMediaMimeType("application/vnd.apple.mpegurl"));
+  EXPECT_TRUE(IsSupportedMediaMimeType("application/x-mpegurl"));
 #endif
 
   EXPECT_TRUE(IsSupportedMimeType("image/jpeg"));
@@ -82,6 +90,39 @@ TEST(MimeUtilTest, LookupTypes) {
   EXPECT_TRUE(IsSupportedMimeType("text/banana"));
   EXPECT_FALSE(IsSupportedMimeType("text/vcard"));
   EXPECT_FALSE(IsSupportedMimeType("application/virus"));
+  EXPECT_FALSE(IsSupportedMimeType("application/x-json"));
+  EXPECT_FALSE(IsSupportedNonImageMimeType("application/vnd.doc;x=y+json"));
+}
+
+TEST(MimeUtilTest, StrictMediaMimeType) {
+  EXPECT_TRUE(IsStrictMediaMimeType("video/webm"));
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/webm"));
+
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/wav"));
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/x-wav"));
+
+  EXPECT_TRUE(IsStrictMediaMimeType("video/ogg"));
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/ogg"));
+  EXPECT_TRUE(IsStrictMediaMimeType("application/ogg"));
+
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/mpeg"));
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/mp3"));
+  EXPECT_TRUE(IsStrictMediaMimeType("audio/x-mp3"));
+
+  // TODO(amogh.bihani): These will be fixed http://crbug.com/53193
+  EXPECT_FALSE(IsStrictMediaMimeType("video/mp4"));
+  EXPECT_FALSE(IsStrictMediaMimeType("video/x-m4v"));
+  EXPECT_FALSE(IsStrictMediaMimeType("audio/mp4"));
+  EXPECT_FALSE(IsStrictMediaMimeType("audio/x-m4a"));
+
+  EXPECT_FALSE(IsStrictMediaMimeType("application/x-mpegurl"));
+  EXPECT_FALSE(IsStrictMediaMimeType("application/vnd.apple.mpegurl"));
+  // ---------------------------------------------------------------------------
+
+  EXPECT_FALSE(IsStrictMediaMimeType("video/unknown"));
+  EXPECT_FALSE(IsStrictMediaMimeType("audio/unknown"));
+  EXPECT_FALSE(IsStrictMediaMimeType("application/unknown"));
+  EXPECT_FALSE(IsStrictMediaMimeType("unknown/unknown"));
 }
 
 TEST(MimeUtilTest, MatchesMimeType) {
@@ -92,12 +133,14 @@ TEST(MimeUtilTest, MatchesMimeType) {
   EXPECT_TRUE(MatchesMimeType("application/*+xml",
                                    "application/html+xml"));
   EXPECT_TRUE(MatchesMimeType("application/*+xml", "application/+xml"));
+  EXPECT_TRUE(MatchesMimeType("application/*+json",
+                                   "application/x-myformat+json"));
   EXPECT_TRUE(MatchesMimeType("aaa*aaa", "aaaaaa"));
-  EXPECT_TRUE(MatchesMimeType("*", ""));
+  EXPECT_TRUE(MatchesMimeType("*", std::string()));
   EXPECT_FALSE(MatchesMimeType("video/", "video/x-mpeg"));
-  EXPECT_FALSE(MatchesMimeType("", "video/x-mpeg"));
-  EXPECT_FALSE(MatchesMimeType("", ""));
-  EXPECT_FALSE(MatchesMimeType("video/x-mpeg", ""));
+  EXPECT_FALSE(MatchesMimeType(std::string(), "video/x-mpeg"));
+  EXPECT_FALSE(MatchesMimeType(std::string(), std::string()));
+  EXPECT_FALSE(MatchesMimeType("video/x-mpeg", std::string()));
   EXPECT_FALSE(MatchesMimeType("application/*+xml", "application/xml"));
   EXPECT_FALSE(MatchesMimeType("application/*+xml",
                                     "application/html+xmlz"));
@@ -186,13 +229,16 @@ TEST(MimeUtilTest, TestIsMimeType) {
   std::string nonAscii("application/nonutf8");
   EXPECT_TRUE(IsMimeType(nonAscii));
 #if defined(OS_WIN)
-  nonAscii.append(WideToUTF8(std::wstring(L"\u2603")));
+  nonAscii.append(base::WideToUTF8(std::wstring(L"\u2603")));
 #else
   nonAscii.append("\u2603");  // unicode snowman
 #endif
   EXPECT_FALSE(IsMimeType(nonAscii));
 
   EXPECT_TRUE(IsMimeType("application/mime"));
+  EXPECT_TRUE(IsMimeType("application/json"));
+  EXPECT_TRUE(IsMimeType("application/x-suggestions+json"));
+  EXPECT_TRUE(IsMimeType("application/+json"));
   EXPECT_TRUE(IsMimeType("audio/mime"));
   EXPECT_TRUE(IsMimeType("example/mime"));
   EXPECT_TRUE(IsMimeType("image/mime"));
@@ -219,7 +265,7 @@ TEST(MimeUtilTest, TestIsMimeType) {
 TEST(MimeUtilTest, TestToIANAMediaType) {
   EXPECT_EQ("", GetIANAMediaType("texting/driving"));
   EXPECT_EQ("", GetIANAMediaType("ham/sandwich"));
-  EXPECT_EQ("", GetIANAMediaType(""));
+  EXPECT_EQ("", GetIANAMediaType(std::string()));
   EXPECT_EQ("", GetIANAMediaType("/application/hamsandwich"));
 
   EXPECT_EQ("application", GetIANAMediaType("application/poodle-wrestler"));
@@ -255,7 +301,7 @@ TEST(MimeUtilTest, TestGetExtensionsForMimeType) {
   };
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    std::vector<FilePath::StringType> extensions;
+    std::vector<base::FilePath::StringType> extensions;
     GetExtensionsForMimeType(tests[i].mime_type, &extensions);
     ASSERT_TRUE(tests[i].min_expected_size <= extensions.size());
 
@@ -265,7 +311,7 @@ TEST(MimeUtilTest, TestGetExtensionsForMimeType) {
     bool found = false;
     for (size_t j = 0; !found && j < extensions.size(); ++j) {
 #if defined(OS_WIN)
-      if (extensions[j] == UTF8ToWide(tests[i].contained_result))
+      if (extensions[j] == base::UTF8ToWide(tests[i].contained_result))
         found = true;
 #else
       if (extensions[j] == tests[i].contained_result)
@@ -294,6 +340,22 @@ TEST(MimeUtilTest, TestGetCertificateMimeTypeForMimeType) {
 #endif
   EXPECT_EQ(CERTIFICATE_MIME_TYPE_UNKNOWN,
             GetCertificateMimeTypeForMimeType("text/plain"));
+}
+
+TEST(MimeUtilTest, TestAddMultipartValueForUpload) {
+  const char* ref_output = "--boundary\r\nContent-Disposition: form-data;"
+                           " name=\"value name\"\r\nContent-Type: content type"
+                           "\r\n\r\nvalue\r\n"
+                           "--boundary\r\nContent-Disposition: form-data;"
+                           " name=\"value name\"\r\n\r\nvalue\r\n"
+                           "--boundary--\r\n";
+  std::string post_data;
+  AddMultipartValueForUpload("value name", "value", "boundary",
+                             "content type", &post_data);
+  AddMultipartValueForUpload("value name", "value", "boundary",
+                             "", &post_data);
+  AddMultipartFinalDelimiterForUpload("boundary", &post_data);
+  EXPECT_STREQ(ref_output, post_data.c_str());
 }
 
 }  // namespace net

@@ -7,11 +7,14 @@
 
 #include <string>
 
+#include "base/atomicops.h"
 #include "base/basictypes.h"
 #include "base/callback_forward.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/observer_list.h"
+#include "base/strings/string16.h"
+#include "base/synchronization/lock.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 
 namespace base {
@@ -30,7 +33,9 @@ namespace net {
 // is usually accessed through a BoundNetLog, which will always pass in a
 // specific source ID.
 //
-// All NetLog methods must be thread-safe.
+// All methods are thread safe, with the exception that no NetLog or
+// NetLog::ThreadSafeObserver functions may be called by an observer's
+// OnAddEntry() method.  Doing so will result in a deadlock.
 //
 // For a broader introduction see the design document:
 // https://sites.google.com/a/chromium.org/dev/developers/design-documents/network-stack/netlog
@@ -60,6 +65,10 @@ class NET_EXPORT NetLog {
   };
 
   // Specifies the granularity of events that should be emitted to the log.
+  //
+  // Since the LogLevel may be read and set on any thread without locking, it
+  // may be possible for an Observer to receive an event or parameters that
+  // normally wouldn't be logged at the currently active log level.
   enum LogLevel {
     // Log everything possible, even if it is slow and memory expensive.
     // Includes logging of transferred bytes.
@@ -69,8 +78,12 @@ class NET_EXPORT NetLog {
     // parameters for bytes sent/received events.
     LOG_ALL_BUT_BYTES,
 
-    // Only log events which are cheap, and don't consume much memory.
-    LOG_BASIC,
+    // Log all events, but do not include the actual transferred bytes and
+    // remove cookies and HTTP credentials.
+    LOG_STRIP_PRIVATE_DATA,
+
+    // Don't log any events.
+    LOG_NONE,
   };
 
   // A callback function that return a Value representation of the parameters
@@ -107,19 +120,32 @@ class NET_EXPORT NetLog {
     uint32 id;
   };
 
+  struct NET_EXPORT EntryData {
+    EntryData(EventType type,
+              Source source,
+              EventPhase phase,
+              base::TimeTicks time,
+              const ParametersCallback* parameters_callback);
+    ~EntryData();
+
+    const EventType type;
+    const Source source;
+    const EventPhase phase;
+    const base::TimeTicks time;
+    const ParametersCallback* const parameters_callback;
+  };
+
+  // An Entry pre-binds EntryData to a LogLevel, so observers will observe the
+  // output of ToValue() and ParametersToValue() at their log level rather than
+  // current maximum.
   class NET_EXPORT Entry {
    public:
-    Entry(EventType type,
-          Source source,
-          EventPhase phase,
-          base::TimeTicks time,
-          const ParametersCallback* parameters_callback,
-          LogLevel log_level);
+    Entry(const EntryData* data, LogLevel log_level);
     ~Entry();
 
-    EventType type() const { return type_; }
-    Source source() const { return source_; }
-    EventPhase phase() const { return phase_; }
+    EventType type() const { return data_->type; }
+    Source source() const { return data_->source; }
+    EventPhase phase() const { return data_->phase; }
 
     // Serializes the specified event to a Value.  The Value also includes the
     // current time.  Caller takes ownership of returned Value.  Takes in a time
@@ -131,11 +157,7 @@ class NET_EXPORT NetLog {
     base::Value* ParametersToValue() const;
 
    private:
-    const EventType type_;
-    const Source source_;
-    const EventPhase phase_;
-    const base::TimeTicks time_;
-    const ParametersCallback* parameters_callback_;
+    const EntryData* const data_;
 
     // Log level when the event occurred.
     const LogLevel log_level_;
@@ -183,6 +205,8 @@ class NET_EXPORT NetLog {
    private:
     friend class NetLog;
 
+    void OnAddEntryData(const EntryData& entry_data);
+
     // Both of these values are only modified by the NetLog.
     LogLevel log_level_;
     NetLog* net_log_;
@@ -190,8 +214,8 @@ class NET_EXPORT NetLog {
     DISALLOW_COPY_AND_ASSIGN(ThreadSafeObserver);
   };
 
-  NetLog() {}
-  virtual ~NetLog() {}
+  NetLog();
+  virtual ~NetLog();
 
   // Emits a global event to the log stream, with its own unique source ID.
   void AddGlobalEntry(EventType type);
@@ -200,37 +224,30 @@ class NET_EXPORT NetLog {
 
   // Returns a unique ID which can be used as a source ID.  All returned IDs
   // will be unique and greater than 0.
-  virtual uint32 NextID() = 0;
+  uint32 NextID();
 
   // Returns the logging level for this NetLog. This is used to avoid computing
   // and saving expensive log entries.
-  virtual LogLevel GetLogLevel() const = 0;
+  LogLevel GetLogLevel() const;
 
   // Adds an observer and sets its log level.  The observer must not be
   // watching any NetLog, including this one, when this is called.
   //
-  // Typical observers should specify LOG_BASIC.
-  //
-  // Observers that need to see the full granularity of events can specify
-  // LOG_ALL_BUT_BYTES. However, doing so will have performance consequences.
-  //
   // NetLog implementations must call NetLog::OnAddObserver to update the
   // observer's internal state.
-  virtual void AddThreadSafeObserver(ThreadSafeObserver* observer,
-                                     LogLevel log_level) = 0;
+  void AddThreadSafeObserver(ThreadSafeObserver* observer, LogLevel log_level);
 
   // Sets the log level of |observer| to |log_level|.  |observer| must be
   // watching |this|.  NetLog implementations must call
   // NetLog::OnSetObserverLogLevel to update the observer's internal state.
-  virtual void SetObserverLogLevel(ThreadSafeObserver* observer,
-                                   LogLevel log_level) = 0;
+  void SetObserverLogLevel(ThreadSafeObserver* observer, LogLevel log_level);
 
   // Removes an observer.  NetLog implementations must call
   // NetLog::OnAddObserver to update the observer's internal state.
   //
   // For thread safety reasons, it is recommended that this not be called in
   // an object's destructor.
-  virtual void RemoveThreadSafeObserver(ThreadSafeObserver* observer) = 0;
+  void RemoveThreadSafeObserver(ThreadSafeObserver* observer);
 
   // Converts a time to the string format that the NetLog uses to represent
   // times.  Strings are used since integers may overflow.
@@ -257,10 +274,9 @@ class NET_EXPORT NetLog {
   // be logged.  This is only the case when |log_level| is LOG_ALL.
   static bool IsLoggingBytes(LogLevel log_level);
 
-  // Returns true if |log_level| indicates that all events should be logged,
-  // including frequently occuring ones that may impact performances.
-  // This is the case when |log_level| is LOG_ALL or LOG_ALL_BUT_BYTES.
-  static bool IsLoggingAllEvents(LogLevel log_level);
+  // Returns true if |log_level| indicates that events should be logged. This is
+  // the case when |log_level| is anything other than LOG_NONE.
+  static bool IsLogging(LogLevel log_level);
 
   // Creates a ParametersCallback that encapsulates a single integer.
   // Warning: |name| must remain valid for the life of the callback.
@@ -282,19 +298,11 @@ class NET_EXPORT NetLog {
 
   // Same as above, but takes in a UTF16 string.
   static ParametersCallback StringCallback(const char* name,
-                                           const string16* value);
+                                           const base::string16* value);
 
  protected:
-  // Child classes should respond to the new entry here.  This includes
-  // creating the Entry object and alerting their observers.
-  virtual void OnAddEntry(const Entry& entry) = 0;
-
-  // Subclasses must call these in the corresponding functions to set an
-  // observer's |net_log_| and |log_level_| values.
-  void OnAddObserver(ThreadSafeObserver* observer, LogLevel log_level);
-  void OnSetObserverLogLevel(ThreadSafeObserver* observer,
-                             LogLevel log_level);
-  void OnRemoveObserver(ThreadSafeObserver* observer);
+  // Set the lowest allowed log level, regardless of any Observers.
+  void SetBaseLogLevel(LogLevel log_level);
 
  private:
   friend class BoundNetLog;
@@ -303,6 +311,26 @@ class NET_EXPORT NetLog {
                 const Source& source,
                 EventPhase phase,
                 const NetLog::ParametersCallback* parameters_callback);
+
+  // Called whenever an observer is added or removed, or has its log level
+  // changed.  Must have acquired |lock_| prior to calling.
+  void UpdateLogLevel();
+
+  // |lock_| protects access to |observers_|.
+  base::Lock lock_;
+
+  // Last assigned source ID.  Incremented to get the next one.
+  base::subtle::Atomic32 last_id_;
+
+  // The lowest allowed log level, regardless of any Observers.
+  // Normally defaults to LOG_NONE, but can be changed with SetBaseLogLevel
+  LogLevel base_log_level_;
+
+  // The current log level.
+  base::subtle::Atomic32 effective_log_level_;
+
+  // |lock_| must be acquired whenever reading or writing to this.
+  ObserverList<ThreadSafeObserver, true> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(NetLog);
 };
@@ -357,8 +385,8 @@ class NET_EXPORT BoundNetLog {
   // Shortcut for NetLog::IsLoggingBytes(this->GetLogLevel()).
   bool IsLoggingBytes() const;
 
-  // Shortcut for NetLog::IsLoggingAllEvents(this->GetLogLevel()).
-  bool IsLoggingAllEvents() const;
+  // Shortcut for NetLog::IsLogging(this->GetLogLevel()).
+  bool IsLogging() const;
 
   // Helper to create a BoundNetLog given a NetLog and a SourceType. Takes care
   // of creating a unique source ID, and handles the case of NULL net_log.

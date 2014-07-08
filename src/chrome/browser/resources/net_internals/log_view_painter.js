@@ -4,8 +4,7 @@
 
 // TODO(eroman): put these methods into a namespace.
 
-var printLogEntriesAsText;
-var searchLogEntriesForText;
+var createLogEntryTablePrinter;
 var proxySettingsToString;
 var stripCookiesAndLoginInfo;
 
@@ -22,38 +21,11 @@ function canCollapseBeginWithEnd(beginEntry) {
 }
 
 /**
- * Adds a child pre element to the end of |parent|, and writes the
- * formatted contents of |logEntries| to it.
+ * Creates a TablePrinter for use by the above two functions.  baseTime is
+ * the time relative to which other times are displayed.
  */
-printLogEntriesAsText = function(logEntries, parent, privacyStripping,
-                                 logCreationTime) {
-  var tablePrinter = createTablePrinter(logEntries, privacyStripping,
-                                        logCreationTime);
-
-  // Format the table for fixed-width text.
-  tablePrinter.toText(0, parent);
-}
-
-/**
- * Searches the table that would be output by printLogEntriesAsText for
- * |searchString|.  Returns true if |searchString| would appear entirely within
- * any field in the table.  |searchString| must be lowercase.
- *
- * Seperate function from printLogEntriesAsText since TablePrinter.toText
- * modifies the DOM.
- */
-searchLogEntriesForText = function(searchString, logEntries, privacyStripping) {
-  var tablePrinter =
-      createTablePrinter(logEntries, privacyStripping, undefined);
-
-  // Format the table for fixed-width text.
-  return tablePrinter.search(searchString);
-}
-
-/**
- * Creates a TablePrinter for use by the above two functions.
- */
-function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
+createLogEntryTablePrinter = function(logEntries, privacyStripping,
+                                      baseTime, logCreationTime) {
   var entries = LogGroupEntry.createArrayFrom(logEntries);
   var tablePrinter = new TablePrinter();
   var parameterOutputter = new ParameterOutputter(tablePrinter);
@@ -70,7 +42,7 @@ function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
     // both have extra parameters.
     if (!entry.isEnd() || !canCollapseBeginWithEnd(entry.begin)) {
       var entryTime = timeutil.convertTimeTicksToTime(entry.orig.time);
-      addRowWithTime(tablePrinter, entryTime, startTime);
+      addRowWithTime(tablePrinter, entryTime - baseTime, startTime - baseTime);
 
       for (var j = entry.getDepth(); j > 0; --j)
         tablePrinter.addCell('  ');
@@ -104,9 +76,14 @@ function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
 
   // If viewing a saved log file, add row with just the time the log was
   // created, if the event never completed.
-  if (logCreationTime != undefined &&
-      entries[entries.length - 1].getDepth() > 0) {
-    addRowWithTime(tablePrinter, logCreationTime, startTime);
+  var lastEntry = entries[entries.length - 1];
+  // If the last entry has a non-zero depth or is a begin event, the source is
+  // still active.
+  var isSourceActive = lastEntry.getDepth() != 0 || lastEntry.isBegin();
+  if (logCreationTime != undefined && isSourceActive) {
+    addRowWithTime(tablePrinter,
+                   logCreationTime - baseTime,
+                   startTime - baseTime);
   }
 
   return tablePrinter;
@@ -115,12 +92,12 @@ function createTablePrinter(logEntries, privacyStripping, logCreationTime) {
 /**
  * Adds a new row to the given TablePrinter, and adds five cells containing
  * information about the time an event occured.
- * Format is '[t=<UTC time in ms>] [st=<ms since the source started>]'.
+ * Format is '[t=<time of the event in ms>] [st=<ms since the source started>]'.
  * @param {TablePrinter} tablePrinter The table printer to add the cells to.
- * @param {number} eventTime The time the event occured, as a UTC time in
- *     milliseconds.
+ * @param {number} eventTime The time the event occured, in milliseconds,
+ *     relative to some base time.
  * @param {number} startTime The time the first event for the source occured,
- *     as a UTC time in milliseconds.
+ *     relative to the same base time as eventTime.
  */
 function addRowWithTime(tablePrinter, eventTime, startTime) {
   tablePrinter.addRow();
@@ -343,6 +320,24 @@ function defaultWriteParameter(key, value, out) {
     return;
   }
 
+  if (key == 'quic_error' && typeof value == 'number') {
+    var valueStr = value + ' (' + quicErrorToString(value) + ')';
+    out.writeArrowKeyValue(key, valueStr);
+    return;
+  }
+
+  if (key == 'quic_crypto_handshake_message' && typeof value == 'string') {
+    var lines = value.split('\n');
+    out.writeArrowIndentedLines(lines);
+    return;
+  }
+
+  if (key == 'quic_rst_stream_error' && typeof value == 'number') {
+    var valueStr = value + ' (' + quicRstStreamErrorToString(value) + ')';
+    out.writeArrowKeyValue(key, valueStr);
+    return;
+  }
+
   if (key == 'load_flags' && typeof value == 'number') {
     var valueStr = value + ' (' + getLoadFlagSymbolicString(value) + ')';
     out.writeArrowKeyValue(key, valueStr);
@@ -527,6 +522,9 @@ function stripCookieOrLoginInfo(line) {
  * unencrypted login text removed.  Otherwise, returns original |entry| object.
  * This is needed so that JSON log dumps can be made without affecting the
  * source data.  Converts headers stored in objects to arrays.
+ *
+ * Note: this logic should be kept in sync with
+ * net::ElideHeaderForNetLog in net/http/http_log_util.cc.
  */
 stripCookiesAndLoginInfo = function(entry) {
   if (!entry.params || entry.params.headers === undefined ||
@@ -654,6 +652,23 @@ proxySettingsToString = function(config) {
   if (!config)
     return '';
 
+  // TODO(eroman): if |config| has unexpected properties, print it as JSON
+  //               rather than hide them.
+
+  function getProxyListString(proxies) {
+    // Older versions of Chrome would set these values as strings, whereas newer
+    // logs use arrays.
+    // TODO(eroman): This behavior changed in M27. Support for older logs can
+    //               safely be removed circa M29.
+    if (Array.isArray(proxies)) {
+      var listString = proxies.join(', ');
+      if (proxies.length > 1)
+        return '[' + listString + ']';
+      return listString;
+    }
+    return proxies;
+  }
+
   // The proxy settings specify up to three major fallback choices
   // (auto-detect, custom pac url, or manual settings).
   // We enumerate these to a list so we can later number them.
@@ -670,17 +685,17 @@ proxySettingsToString = function(config) {
     var lines = [];
 
     if (config.single_proxy) {
-      lines.push('Proxy server: ' + config.single_proxy);
+      lines.push('Proxy server: ' + getProxyListString(config.single_proxy));
     } else if (config.proxy_per_scheme) {
       for (var urlScheme in config.proxy_per_scheme) {
         if (urlScheme != 'fallback') {
           lines.push('Proxy server for ' + urlScheme.toUpperCase() + ': ' +
-                     config.proxy_per_scheme[urlScheme]);
+                     getProxyListString(config.proxy_per_scheme[urlScheme]));
         }
       }
       if (config.proxy_per_scheme.fallback) {
         lines.push('Proxy server for everything else: ' +
-                   config.proxy_per_scheme.fallback);
+                   getProxyListString(config.proxy_per_scheme.fallback));
       }
     }
 

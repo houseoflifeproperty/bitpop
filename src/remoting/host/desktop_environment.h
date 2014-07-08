@@ -5,44 +5,81 @@
 #ifndef REMOTING_HOST_DESKTOP_ENVIRONMENT_H_
 #define REMOTING_HOST_DESKTOP_ENVIRONMENT_H_
 
+#include <string>
+
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}  // namespace base
+
+namespace webrtc {
+class ScreenCapturer;
+}  // namespace webrtc
 
 namespace remoting {
 
-class AudioCapturer;
-class EventExecutor;
-class VideoFrameCapturer;
-
 namespace protocol {
-class ClipboardStub;
-}
+class ClientStub;
+}  // namespace protocol
 
+class AudioCapturer;
+class ClientSessionControl;
+class GnubbyAuthHandler;
+class InputInjector;
+class ScreenControls;
+
+// Provides factory methods for creation of audio/video capturers and event
+// executor for a given desktop environment.
 class DesktopEnvironment {
  public:
-  DesktopEnvironment(scoped_ptr<AudioCapturer> audio_capturer,
-                     scoped_ptr<EventExecutor> event_executor,
-                     scoped_ptr<VideoFrameCapturer> video_capturer);
-  virtual ~DesktopEnvironment();
+  virtual ~DesktopEnvironment() {}
 
-  AudioCapturer* audio_capturer() const { return audio_capturer_.get(); }
-  EventExecutor* event_executor() const { return event_executor_.get(); }
-  VideoFrameCapturer* video_capturer() const { return video_capturer_.get(); }
+  // Factory methods used to create audio/video capturers, event executor, and
+  // screen controls object for a particular desktop environment.
+  virtual scoped_ptr<AudioCapturer> CreateAudioCapturer() = 0;
+  virtual scoped_ptr<InputInjector> CreateInputInjector() = 0;
+  virtual scoped_ptr<ScreenControls> CreateScreenControls() = 0;
+  virtual scoped_ptr<webrtc::ScreenCapturer> CreateVideoCapturer() = 0;
 
-  virtual void Start(
-      scoped_ptr<protocol::ClipboardStub> client_clipboard);
+  // Returns the set of all capabilities supported by |this|.
+  virtual std::string GetCapabilities() const = 0;
 
- private:
-  // Used to capture audio to deliver to clients.
-  scoped_ptr<AudioCapturer> audio_capturer_;
+  // Passes the final set of capabilities negotiated between the client and host
+  // to |this|.
+  virtual void SetCapabilities(const std::string& capabilities) = 0;
 
-  // Executes input and clipboard events received from the client.
-  scoped_ptr<EventExecutor> event_executor_;
+  // Factory method to create a gnubby auth handler suitable for the particular
+  // desktop environment.
+  virtual scoped_ptr<GnubbyAuthHandler> CreateGnubbyAuthHandler(
+      protocol::ClientStub* client_stub) = 0;
+};
 
-  // Used to capture video to deliver to clients.
-  scoped_ptr<VideoFrameCapturer> video_capturer_;
+// Used to create |DesktopEnvironment| instances.
+class DesktopEnvironmentFactory {
+ public:
+  virtual ~DesktopEnvironmentFactory() {}
 
-  DISALLOW_COPY_AND_ASSIGN(DesktopEnvironment);
+  // Creates an instance of |DesktopEnvironment|. Returns a NULL pointer if
+  // the desktop environment could not be created for any reason (if the curtain
+  // failed to active for instance). |client_session_control| must outlive
+  // the created desktop environment.
+  virtual scoped_ptr<DesktopEnvironment> Create(
+      base::WeakPtr<ClientSessionControl> client_session_control) = 0;
+
+  // Enables or disables the curtain mode.
+  virtual void SetEnableCurtaining(bool enable) {}
+
+  // Returns |true| if created |DesktopEnvironment| instances support audio
+  // capture.
+  virtual bool SupportsAudioCapture() const = 0;
+
+  // Enables or disables gnubby authentication.
+  virtual void SetEnableGnubbyAuth(bool enable) {}
 };
 
 }  // namespace remoting

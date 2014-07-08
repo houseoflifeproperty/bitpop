@@ -7,25 +7,32 @@
 
 #include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/native_widget_types.h"
 
-class FilePath;
 class GURL;
+class Profile;
+
+namespace base {
+class FilePath;
+}
 
 namespace platform_util {
 
 // Show the given file in a file manager. If possible, select the file.
+// The |profile| is used to determine the running profile of file manager app
+// in Chrome OS only. Not used in other platforms.
 // Must be called from the UI thread.
-void ShowItemInFolder(const FilePath& full_path);
+void ShowItemInFolder(Profile* profile, const base::FilePath& full_path);
 
 // Open the given file in the desktop's default manner.
 // Must be called from the UI thread.
-void OpenItem(const FilePath& full_path);
+void OpenItem(Profile* profile, const base::FilePath& full_path);
 
 // Open the given external protocol URL in the desktop's default manner.
 // (For example, mailto: URLs in the default mail user agent.)
-void OpenExternal(const GURL& url);
+// Must be called from the UI thread.
+void OpenExternal(Profile* profile, const GURL& url);
 
 // Get the top level window for the native view. This can return NULL.
 gfx::NativeWindow GetTopLevel(gfx::NativeView view);
@@ -54,6 +61,6 @@ bool IsSwipeTrackingFromScrollEventsEnabled();
 void setUseAutomaticUpdates(bool useAutomaticUpdates);
 bool getUseAutomaticUpdates();
 
-}  // platform_util
+}  // namespace platform_util
 
 #endif  // CHROME_BROWSER_PLATFORM_UTIL_H_

@@ -4,6 +4,8 @@
 
 #include "ui/views/focus/focus_manager_test.h"
 
+#include <algorithm>
+
 #include "ui/views/focus/focus_manager.h"
 #include "ui/views/widget/widget.h"
 
@@ -70,6 +72,11 @@ const Widget* FocusManagerTest::GetWidget() const {
   return contents_view_->GetWidget();
 }
 
+void FocusManagerTest::GetAccessiblePanes(std::vector<View*>* panes) {
+  std::copy(accessible_panes_.begin(), accessible_panes_.end(),
+            std::back_inserter(*panes));
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // FocusManagerTest, protected:
 
@@ -89,23 +96,9 @@ void FocusManagerTest::AddWidgetFocusChangeListener(
   WidgetFocusManager::GetInstance()->AddFocusChangeListener(listener);
 }
 
-#if defined(OS_WIN) && !defined(USE_AURA)
-void FocusManagerTest::SimulateActivateWindow() {
-  SendMessage(GetWidget()->GetNativeWindow(), WM_ACTIVATE, WA_ACTIVE, NULL);
+void FocusManagerTest::SetAccessiblePanes(const std::vector<View*>& panes) {
+  accessible_panes_ = panes;
 }
-
-void FocusManagerTest::SimulateDeactivateWindow() {
-  SendMessage(GetWidget()->GetNativeWindow(), WM_ACTIVATE, WA_INACTIVE, NULL);
-}
-
-void FocusManagerTest::PostKeyDown(ui::KeyboardCode key_code) {
-  PostMessage(GetWidget()->GetNativeView(), WM_KEYDOWN, key_code, 0);
-}
-
-void FocusManagerTest::PostKeyUp(ui::KeyboardCode key_code) {
-  PostMessage(GetWidget()->GetNativeView(), WM_KEYUP, key_code, 0);
-}
-#endif
 
 ////////////////////////////////////////////////////////////////////////////////
 // TestFocusChangeListener

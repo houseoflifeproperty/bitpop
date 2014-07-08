@@ -33,8 +33,9 @@ cr.define('options', function() {
       OptionsPage.prototype.initializePage.call(this);
       this.createDeviceList_();
 
+      BluetoothOptions.updateDiscoveryState(true);
+
       $('bluetooth-add-device-cancel-button').onclick = function(event) {
-        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
       };
 
@@ -42,25 +43,34 @@ cr.define('options', function() {
       $('bluetooth-add-device-apply-button').onclick = function(event) {
         var device = self.deviceList_.selectedItem;
         var address = device.address;
-        chrome.send('stopBluetoothDeviceDiscovery');
         OptionsPage.closeOverlay();
         device.pairing = 'bluetoothStartConnecting';
         options.BluetoothPairing.showDialog(device);
         chrome.send('updateBluetoothDevice', [address, 'connect']);
       };
 
-      $('bluetooth-add-device-apply-button').onmousedown = function(event) {
-        // Prevent 'blur' event, which would reset the list selection,
-        // thereby disabling the apply button.
-        event.preventDefault();
-      };
-
       $('bluetooth-unpaired-devices-list').addEventListener('change',
                                                             function() {
         var item = $('bluetooth-unpaired-devices-list').selectedItem;
-        var disabled = !item || item.paired || item.connected;
+        // The "bluetooth-add-device-apply-button" should be enabled for devices
+        // that can be paired or remembered. Devices not supporting pairing will
+        // be just remembered and later reported as "item.paired" = true. The
+        // button should be disabled in any other case:
+        // * No item is selected (item is undefined).
+        // * Paired devices (item.paired is true) are already paired and a new
+        //   pairing attempt will fail. Paired devices could appear in this list
+        //   shortly after the pairing initiated in another window finishes.
+        // * "Connecting" devices (item.connecting is true) are in the process
+        //   of a pairing or connection. Another attempt to pair before the
+        //   ongoing pair finishes will fail, so the button should be disabled.
+        var disabled = !item || item.paired || item.connecting;
         $('bluetooth-add-device-apply-button').disabled = disabled;
       });
+    },
+
+    /** @override */
+    didClosePage: function() {
+      chrome.send('stopBluetoothDeviceDiscovery');
     },
 
     /**
@@ -70,7 +80,6 @@ cr.define('options', function() {
     createDeviceList_: function() {
       this.deviceList_ = $('bluetooth-unpaired-devices-list');
       options.system.bluetooth.BluetoothDeviceList.decorate(this.deviceList_);
-      this.deviceList_.autoExpands = true;
     }
   };
 
@@ -78,11 +87,30 @@ cr.define('options', function() {
    * Automatically start the device discovery process if the
    * "Add device" dialog is visible.
    */
-  BluetoothOptions.updateDiscovery = function() {
+  BluetoothOptions.startDeviceDiscovery = function() {
     var page = BluetoothOptions.getInstance();
     if (page && page.visible)
       chrome.send('findBluetoothDevices');
-  }
+  };
+
+  /**
+   * Updates the dialog to show that device discovery has stopped. Updates the
+   * label text and hides/unhides the spinner. based on discovery state.
+   */
+  BluetoothOptions.updateDiscoveryState = function(discovering) {
+    $('bluetooth-scanning-label').hidden = !discovering;
+    $('bluetooth-scanning-icon').hidden = !discovering;
+    $('bluetooth-scan-stopped-label').hidden = discovering;
+  };
+
+  /**
+   * If the "Add device" dialog is visible, dismiss it.
+   */
+  BluetoothOptions.dismissOverlay = function() {
+    var page = BluetoothOptions.getInstance();
+    if (page && page.visible)
+      OptionsPage.closeOverlay();
+  };
 
   // Export
   return {

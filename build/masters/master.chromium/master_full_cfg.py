@@ -5,6 +5,10 @@
 from master import master_config
 from master.factory import chromium_factory
 
+import master_site_config
+
+ActiveMaster = master_site_config.Chromium
+
 defaults = {}
 
 helper = master_config.Helper(defaults)
@@ -15,10 +19,11 @@ S = helper.Scheduler
 T = helper.Triggerable
 
 def win(): return chromium_factory.ChromiumFactory('src/build', 'win32')
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
-def mac(): return chromium_factory.ChromiumFactory('src/build', 'darwin')
+def linux(): return chromium_factory.ChromiumFactory(
+    'src/out', 'linux2', pull_internal=False)
+def mac(): return chromium_factory.ChromiumFactory('src/xcodebuild', 'darwin')
 def linux_android(): return chromium_factory.ChromiumFactory(
-    'src/build', 'linux2', nohooks_on_update=True, target_os='android')
+    'src/out', 'linux2', nohooks_on_update=True, target_os='android')
 
 defaults['category'] = '1clobber'
 
@@ -39,8 +44,9 @@ F('win_clobber', win().ChromiumFactory(
       'check_deps2git',
       'sizes',
     ],
+    options=['--compiler=goma'],
     factory_properties={
-      'archive_build': True,
+      'archive_build': ActiveMaster.is_production_host,
       'gs_bucket': 'gs://chromium-browser-snapshots',
       'gs_acl': 'public-read',
       'show_perf_results': True,
@@ -48,9 +54,10 @@ F('win_clobber', win().ChromiumFactory(
       'expectations': True,
       'process_dumps': True,
       'start_crash_handler': True,
-      'generate_gtest_json': True,
+      'generate_gtest_json': ActiveMaster.is_production_host,
       'gclient_env': {
         'GYP_DEFINES': 'test_isolation_mode=noop',
+        'GYP_USE_SEPARATE_MSPDBSRV': '1',
       },
     }))
 
@@ -68,15 +75,15 @@ F('mac_clobber', mac().ChromiumFactory(
     ],
     options=['--compiler=goma-clang'],
     factory_properties={
-      'archive_build': True,
+      'archive_build': ActiveMaster.is_production_host,
       'gs_bucket': 'gs://chromium-browser-snapshots',
       'gs_acl': 'public-read',
       'show_perf_results': True,
       'perf_id': 'chromium-rel-mac',
       'expectations': True,
-      'generate_gtest_json': True,
+      'generate_gtest_json': ActiveMaster.is_production_host,
       'gclient_env': {
-        'GYP_DEFINES': 'test_isolation_mode=noop',
+        'GYP_DEFINES': 'test_isolation_mode=noop mac_strip_release=1',
       },
     }))
 
@@ -94,17 +101,18 @@ F('linux_clobber', linux().ChromiumFactory(
       'check_perms',
       'sizes',
     ],
-    options=['--compiler=goma'],
+    options=['--compiler=goma', '--', 'all'],
     factory_properties={
-      'archive_build': True,
+      'archive_build': ActiveMaster.is_production_host,
       'gs_bucket': 'gs://chromium-browser-snapshots',
       'gs_acl': 'public-read',
       'show_perf_results': True,
       'perf_id': 'chromium-rel-linux',
       'expectations': True,
-      'generate_gtest_json': True,
+      'generate_gtest_json': ActiveMaster.is_production_host,
       'gclient_env': {
-        'GYP_DEFINES': 'target_arch=ia32 test_isolation_mode=noop',
+        'GYP_DEFINES':
+            'target_arch=ia32 test_isolation_mode=noop linux_dump_symbols=0',
       },
     }))
 
@@ -116,18 +124,18 @@ F('linux64_clobber', linux().ChromiumFactory(
       'check_deps2git',
       'sizes',
     ],
-    options=['--compiler=goma', '--build-tool=ninja', 'all'],
+    options=['--compiler=goma', '--', 'all'],
     factory_properties={
-      'archive_build': True,
+      'archive_build': ActiveMaster.is_production_host,
       'gs_bucket': 'gs://chromium-browser-snapshots',
       'gs_acl': 'public-read',
       'show_perf_results': True,
-      'generate_gtest_json': True,
+      'generate_gtest_json': ActiveMaster.is_production_host,
       'perf_id': 'chromium-rel-linux-64',
       'expectations': True,
       'gclient_env': {
-        'GYP_DEFINES': 'target_arch=x64 test_isolation_mode=noop',
-        'GYP_GENERATORS': 'ninja',
+        'GYP_DEFINES':
+            'target_arch=x64 test_isolation_mode=noop linux_dump_symbols=0',
       },
     }))
 
@@ -144,12 +152,16 @@ F('f_android_clobber', linux_android().ChromiumAnnotationFactory(
       'sizes',
     ],
     factory_properties={
-      'show_perf_results': True,
+      'android_bot_id': 'main-clobber-rel',
+      'archive_build': ActiveMaster.is_production_host,
+      'gs_acl': 'public-read',
+      'gs_bucket': 'gs://chromium-browser-snapshots',
       'perf_id': 'android-release',
+      'show_perf_results': True,
     },
-    annotation_script='src/build/android/buildbot/bb_main_clobber.sh',
+    annotation_script='src/build/android/buildbot/bb_run_bot.py',
     ))
 
 
-def Update(config, active_master, c):
+def Update(_config, active_master, c):
   return helper.Update(c)

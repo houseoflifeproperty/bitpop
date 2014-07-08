@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,9 +17,26 @@ public abstract class ContentViewUtil {
      * @return pointer to native WebContents instance, suitable for using with a
      *         (java) ContentViewCore instance.
      */
-    public static int createNativeWebContents(boolean incognito) {
-        return nativeCreateNativeWebContents(incognito);
+    public static long createNativeWebContents(boolean incognito) {
+        return nativeCreateNativeWebContents(incognito, false);
     }
 
-    private static native int nativeCreateNativeWebContents(boolean incognito);
+    /**
+     * @return pointer to native WebContents instance, suitable for using with a
+     *         (java) ContentViewCore instance.
+     */
+    public static long createNativeWebContents(boolean incognito, boolean initiallyHidden) {
+        return nativeCreateNativeWebContents(incognito, initiallyHidden);
+    }
+
+    /**
+     * @param webContentsPtr The WebContents reference to be deleted.
+     */
+    public static void destroyNativeWebContents(long webContentsPtr) {
+        nativeDestroyNativeWebContents(webContentsPtr);
+    }
+
+    private static native long nativeCreateNativeWebContents(boolean incognito,
+            boolean initiallyHidden);
+    private static native void nativeDestroyNativeWebContents(long webContentsPtr);
 }

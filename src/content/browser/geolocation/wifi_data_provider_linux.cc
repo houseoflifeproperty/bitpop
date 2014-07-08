@@ -9,8 +9,8 @@
 #include "content/browser/geolocation/wifi_data_provider_linux.h"
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "dbus/bus.h"
 #include "dbus/message.h"
 #include "dbus/object_path.h"
@@ -39,7 +39,7 @@ enum { NM_DEVICE_TYPE_WIFI = 2 };
 class NetworkManagerWlanApi : public WifiDataProviderCommon::WlanApiInterface {
  public:
   NetworkManagerWlanApi();
-  ~NetworkManagerWlanApi();
+  virtual ~NetworkManagerWlanApi();
 
   // Must be called before any other interface method. Will return false if the
   // NetworkManager session cannot be created (e.g. not present on this distro),
@@ -53,7 +53,7 @@ class NetworkManagerWlanApi : public WifiDataProviderCommon::WlanApiInterface {
   //
   // This function makes blocking D-Bus calls, but it's totally fine as
   // the code runs in "Geolocation" thread, not the browser's UI thread.
-  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data);
+  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data) OVERRIDE;
 
  private:
   // Enumerates the list of available network adapter devices known to
@@ -67,10 +67,11 @@ class NetworkManagerWlanApi : public WifiDataProviderCommon::WlanApiInterface {
                                  WifiData::AccessPointDataSet* data);
 
   // Internal method used by |GetAccessPointsForAdapter|, given a wifi access
-  // point proxy retrieves the named property and returns it. Returns NULL if
-  // the property could not be read.
-  dbus::Response* GetAccessPointProperty(dbus::ObjectProxy* proxy,
-                                         const std::string& property_name);
+  // point proxy retrieves the named property and returns it. Returns NULL in
+  // a scoped_ptr if the property could not be read.
+  scoped_ptr<dbus::Response> GetAccessPointProperty(
+      dbus::ObjectProxy* proxy,
+      const std::string& property_name);
 
   scoped_refptr<dbus::Bus> system_bus_;
   dbus::ObjectProxy* network_manager_proxy_;
@@ -147,7 +148,7 @@ bool NetworkManagerWlanApi::GetAccessPointData(
         device_proxy->CallMethodAndBlock(
             &method_call,
             dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
-    if (!response.get()) {
+    if (!response) {
       LOG(WARNING) << "Failed to get the device type for "
                    << device_path.value();
       continue;  // Check the next device.
@@ -179,7 +180,7 @@ bool NetworkManagerWlanApi::GetAdapterDeviceList(
       network_manager_proxy_->CallMethodAndBlock(
           &method_call,
           dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
-  if (!response.get()) {
+  if (!response) {
     LOG(WARNING) << "Failed to get the device list";
     return false;
   }
@@ -207,7 +208,7 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
       device_proxy->CallMethodAndBlock(
           &method_call,
           dbus::ObjectProxy::TIMEOUT_USE_DEFAULT));
-  if (!response.get()) {
+  if (!response) {
     LOG(WARNING) << "Failed to get access points data for "
                  << adapter_path.value();
     return false;
@@ -235,7 +236,7 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
     {
       scoped_ptr<dbus::Response> response(
           GetAccessPointProperty(access_point_proxy, "Ssid"));
-      if (!response.get())
+      if (!response)
         continue;
       // The response should contain a variant that contains an array of bytes.
       dbus::MessageReader reader(response.get());
@@ -245,7 +246,7 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
                      << ": " << response->ToString();
         continue;
       }
-      uint8* ssid_bytes = NULL;
+      const uint8* ssid_bytes = NULL;
       size_t ssid_length = 0;
       if (!variant_reader.PopArrayOfBytes(&ssid_bytes, &ssid_length)) {
         LOG(WARNING) << "Unexpected response for " << access_point_path.value()
@@ -253,13 +254,13 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
         continue;
       }
       std::string ssid(ssid_bytes, ssid_bytes + ssid_length);
-      access_point_data.ssid = UTF8ToUTF16(ssid);
+      access_point_data.ssid = base::UTF8ToUTF16(ssid);
     }
 
     { // Read the mac address
       scoped_ptr<dbus::Response> response(
           GetAccessPointProperty(access_point_proxy, "HwAddress"));
-      if (!response.get())
+      if (!response)
         continue;
       dbus::MessageReader reader(response.get());
       std::string mac;
@@ -269,12 +270,12 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
         continue;
       }
 
-      ReplaceSubstringsAfterOffset(&mac, 0U, ":", "");
+      ReplaceSubstringsAfterOffset(&mac, 0U, ":", std::string());
       std::vector<uint8> mac_bytes;
       if (!base::HexStringToBytes(mac, &mac_bytes) || mac_bytes.size() != 6) {
         LOG(WARNING) << "Can't parse mac address (found " << mac_bytes.size()
                      << " bytes) so using raw string: " << mac;
-        access_point_data.mac_address = UTF8ToUTF16(mac);
+        access_point_data.mac_address = base::UTF8ToUTF16(mac);
       } else {
         access_point_data.mac_address = MacAddressAsString16(&mac_bytes[0]);
       }
@@ -283,7 +284,7 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
     {  // Read signal strength.
       scoped_ptr<dbus::Response> response(
           GetAccessPointProperty(access_point_proxy, "Strength"));
-      if (!response.get())
+      if (!response)
         continue;
       dbus::MessageReader reader(response.get());
       uint8 strength = 0;
@@ -299,7 +300,7 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
     { // Read the channel
       scoped_ptr<dbus::Response> response(
           GetAccessPointProperty(access_point_proxy, "Frequency"));
-      if (!response.get())
+      if (!response)
         continue;
       dbus::MessageReader reader(response.get());
       uint32 frequency = 0;
@@ -324,26 +325,25 @@ bool NetworkManagerWlanApi::GetAccessPointsForAdapter(
   return true;
 }
 
-dbus::Response* NetworkManagerWlanApi::GetAccessPointProperty(
+scoped_ptr<dbus::Response> NetworkManagerWlanApi::GetAccessPointProperty(
     dbus::ObjectProxy* access_point_proxy,
     const std::string& property_name) {
   dbus::MethodCall method_call(DBUS_INTERFACE_PROPERTIES, "Get");
   dbus::MessageWriter builder(&method_call);
   builder.AppendString("org.freedesktop.NetworkManager.AccessPoint");
   builder.AppendString(property_name);
-  dbus::Response* response = access_point_proxy->CallMethodAndBlock(
+  scoped_ptr<dbus::Response> response = access_point_proxy->CallMethodAndBlock(
       &method_call,
       dbus::ObjectProxy::TIMEOUT_USE_DEFAULT);
   if (!response) {
     LOG(WARNING) << "Failed to get property for " << property_name;
   }
-  return response;
+  return response.Pass();
 }
 
 }  // namespace
 
 // static
-template<>
 WifiDataProviderImplBase* WifiDataProvider::DefaultFactoryFunction() {
   return new WifiDataProviderLinux();
 }
@@ -362,11 +362,11 @@ WifiDataProviderLinux::NewWlanApi() {
   return NULL;
 }
 
-PollingPolicyInterface* WifiDataProviderLinux::NewPollingPolicy() {
-  return new GenericPollingPolicy<kDefaultPollingIntervalMilliseconds,
-                                  kNoChangePollingIntervalMilliseconds,
-                                  kTwoNoChangePollingIntervalMilliseconds,
-                                  kNoWifiPollingIntervalMilliseconds>;
+WifiPollingPolicy* WifiDataProviderLinux::NewPollingPolicy() {
+  return new GenericWifiPollingPolicy<kDefaultPollingIntervalMilliseconds,
+                                      kNoChangePollingIntervalMilliseconds,
+                                      kTwoNoChangePollingIntervalMilliseconds,
+                                      kNoWifiPollingIntervalMilliseconds>;
 }
 
 WifiDataProviderCommon::WlanApiInterface*

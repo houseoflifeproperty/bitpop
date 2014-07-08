@@ -4,8 +4,6 @@
 
 #include "chrome/browser/ui/views/panels/panel_frame_view.h"
 
-#include "chrome/browser/themes/theme_service.h"
-#include "chrome/browser/themes/theme_service_factory.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/views/panels/panel_view.h"
@@ -14,18 +12,24 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
+#include "ui/aura/window.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/path.h"
+#include "ui/gfx/screen.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
-#if defined(OS_WIN) && !defined(USE_AURA)
+#if defined(OS_WIN)
+#include "base/win/scoped_gdi_object.h"
 #include "ui/base/win/shell.h"
+#include "ui/gfx/path_win.h"
+#include "ui/views/win/hwnd_util.h"
 #endif
 
 namespace {
@@ -35,108 +39,117 @@ namespace {
 // paint a frame in order to differentiate the client area from the background.
 const int kNonAeroBorderThickness = 1;
 
-// In the window corners, the resize areas don't actually expand bigger, but the
-// 16 px at the end of each edge triggers diagonal resizing.
-const int kResizeAreaCornerSize = 16;
-
-// The spacing in pixels between the icon and the left border.
-const int kIconAndBorderSpacing = 4;
-
 // The height and width in pixels of the icon.
 const int kIconSize = 16;
 
-// The font to use to draw the title.
-const char* kTitleFontName = "Arial Bold";
-const int kTitleFontSize = 14;
-
-// The spacing in pixels between the title and the icon on the left, or the
-// button on the right.
-const int kTitleSpacing = 11;
-
-// The spacing in pixels between the close button and the right border.
-const int kCloseButtonAndBorderSpacing = 11;
-
-// The spacing in pixels between the close button and the minimize/restore
-// button.
-const int kMinimizeButtonAndCloseButtonSpacing = 5;
+// The extra padding between the button and the top edge.
+const int kExtraPaddingBetweenButtonAndTop = 1;
 
 // Colors used to draw titlebar background under default theme.
 const SkColor kActiveBackgroundDefaultColor = SkColorSetRGB(0x3a, 0x3d, 0x3d);
 const SkColor kInactiveBackgroundDefaultColor = SkColorSetRGB(0x7a, 0x7c, 0x7c);
 const SkColor kAttentionBackgroundDefaultColor =
-    SkColorSetRGB(0xff, 0xab, 0x57);
+    SkColorSetRGB(0x53, 0xa9, 0x3f);
 
 // Color used to draw the minimized panel.
 const SkColor kMinimizeBackgroundDefaultColor = SkColorSetRGB(0xf5, 0xf4, 0xf0);
-const SkColor kMinimizeBorderDefaultColor = SkColorSetRGB(0xc9, 0xc9, 0xc9);
 
 // Color used to draw the title text under default theme.
 const SkColor kTitleTextDefaultColor = SkColorSetRGB(0xf9, 0xf9, 0xf9);
 
-// Color used to draw the divider line between the titlebar and the client area.
-#if defined(USE_AURA)
-const SkColor kDividerColor = SkColorSetRGB(0xb5, 0xb5, 0xb5);
-#else
-const SkColor kDividerColor = SkColorSetRGB(0x2a, 0x2c, 0x2c);
-#endif
-
-struct EdgeResources {
-  gfx::ImageSkia* top_left;
-  gfx::ImageSkia* top;
-  gfx::ImageSkia* top_right;
-  gfx::ImageSkia* right;
-  gfx::ImageSkia* bottom_right;
-  gfx::ImageSkia* bottom;
-  gfx::ImageSkia* bottom_left;
-  gfx::ImageSkia* left;
-
-  EdgeResources(int top_left_id, int top_id, int top_right_id, int right_id,
-                int bottom_right_id, int bottom_id, int bottom_left_id,
-                int left_id)
-      : top_left(NULL),
-        top(NULL),
-        top_right(NULL),
-        right(NULL),
-        bottom_right(NULL),
-        bottom(NULL),
-        bottom_left(NULL),
-        left(NULL) {
-    ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-    top_left = rb.GetImageSkiaNamed(top_left_id);
-    top = rb.GetImageSkiaNamed(top_id);
-    top_right = rb.GetImageSkiaNamed(top_right_id);
-    right = rb.GetImageSkiaNamed(right_id);
-    bottom_right = rb.GetImageSkiaNamed(bottom_right_id);
-    bottom = rb.GetImageSkiaNamed(bottom_id);
-    bottom_left = rb.GetImageSkiaNamed(bottom_left_id);
-    left = rb.GetImageSkiaNamed(left_id);
-  }
-};
-
 gfx::ImageSkia* CreateImageForColor(SkColor color) {
-  gfx::Canvas canvas(gfx::Size(1, 1), ui::SCALE_FACTOR_100P, true);
+  gfx::Canvas canvas(gfx::Size(1, 1), 1.0f, true);
   canvas.DrawColor(color);
   return new gfx::ImageSkia(canvas.ExtractImageRep());
 }
 
-const EdgeResources& GetFrameEdges() {
-  static EdgeResources* edges = NULL;
-  if (!edges) {
-    edges = new EdgeResources(
-        IDR_WINDOW_TOP_LEFT_CORNER, IDR_WINDOW_TOP_CENTER,
-        IDR_WINDOW_TOP_RIGHT_CORNER, IDR_WINDOW_RIGHT_SIDE,
-        IDR_PANEL_BOTTOM_RIGHT_CORNER, IDR_WINDOW_BOTTOM_CENTER,
-        IDR_PANEL_BOTTOM_LEFT_CORNER, IDR_WINDOW_LEFT_SIDE);
+#if defined(OS_WIN)
+const gfx::ImageSkia& GetTopLeftCornerImage(panel::CornerStyle corner_style) {
+  static gfx::ImageSkia* rounded_image = NULL;
+  static gfx::ImageSkia* non_rounded_image = NULL;
+  if (!rounded_image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    rounded_image = rb.GetImageSkiaNamed(IDR_WINDOW_TOP_LEFT_CORNER);
+    non_rounded_image = rb.GetImageSkiaNamed(IDR_PANEL_TOP_LEFT_CORNER);
   }
-  return *edges;
+  return (corner_style & panel::TOP_ROUNDED) ? *rounded_image
+                                             : *non_rounded_image;
 }
 
-const gfx::Font& GetTitleFont() {
-  static gfx::Font* font = NULL;
-  if (!font)
-    font = new gfx::Font(kTitleFontName, kTitleFontSize);
-  return *font;
+const gfx::ImageSkia& GetTopRightCornerImage(panel::CornerStyle corner_style) {
+  static gfx::ImageSkia* rounded_image = NULL;
+  static gfx::ImageSkia* non_rounded_image = NULL;
+  if (!rounded_image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    rounded_image = rb.GetImageSkiaNamed(IDR_WINDOW_TOP_RIGHT_CORNER);
+    non_rounded_image = rb.GetImageSkiaNamed(IDR_PANEL_TOP_RIGHT_CORNER);
+  }
+  return (corner_style & panel::TOP_ROUNDED) ? *rounded_image
+                                             : *non_rounded_image;
 }
+
+const gfx::ImageSkia& GetBottomLeftCornerImage(
+    panel::CornerStyle corner_style) {
+  static gfx::ImageSkia* rounded_image = NULL;
+  static gfx::ImageSkia* non_rounded_image = NULL;
+  if (!rounded_image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    rounded_image = rb.GetImageSkiaNamed(IDR_WINDOW_BOTTOM_LEFT_CORNER);
+    non_rounded_image = rb.GetImageSkiaNamed(IDR_PANEL_BOTTOM_LEFT_CORNER);
+  }
+  return (corner_style & panel::BOTTOM_ROUNDED) ? *rounded_image
+                                                : *non_rounded_image;
+}
+
+const gfx::ImageSkia& GetBottomRightCornerImage(
+    panel::CornerStyle corner_style) {
+  static gfx::ImageSkia* rounded_image = NULL;
+  static gfx::ImageSkia* non_rounded_image = NULL;
+  if (!rounded_image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    rounded_image = rb.GetImageSkiaNamed(IDR_WINDOW_BOTTOM_RIGHT_CORNER);
+    non_rounded_image = rb.GetImageSkiaNamed(IDR_PANEL_BOTTOM_RIGHT_CORNER);
+  }
+  return (corner_style & panel::BOTTOM_ROUNDED) ? *rounded_image
+                                                : *non_rounded_image;
+}
+
+const gfx::ImageSkia& GetTopEdgeImage() {
+  static gfx::ImageSkia* image = NULL;
+  if (!image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    image = rb.GetImageSkiaNamed(IDR_WINDOW_TOP_CENTER);
+  }
+  return *image;
+}
+
+const gfx::ImageSkia& GetBottomEdgeImage() {
+  static gfx::ImageSkia* image = NULL;
+  if (!image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    image = rb.GetImageSkiaNamed(IDR_WINDOW_BOTTOM_CENTER);
+  }
+  return *image;
+}
+
+const gfx::ImageSkia& GetLeftEdgeImage() {
+  static gfx::ImageSkia* image = NULL;
+  if (!image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    image = rb.GetImageSkiaNamed(IDR_WINDOW_LEFT_SIDE);
+  }
+  return *image;
+}
+
+const gfx::ImageSkia& GetRightEdgeImage() {
+  static gfx::ImageSkia* image = NULL;
+  if (!image) {
+    ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
+    image = rb.GetImageSkiaNamed(IDR_WINDOW_RIGHT_SIDE);
+  }
+  return *image;
+}
+#endif  // defined(OS_WIN)
 
 const gfx::ImageSkia* GetActiveBackgroundDefaultImage() {
   static gfx::ImageSkia* image = NULL;
@@ -166,27 +179,82 @@ const gfx::ImageSkia* GetMinimizeBackgroundDefaultImage() {
   return image;
 }
 
+int GetFrameEdgeHitTest(const gfx::Point& point,
+                        const gfx::Size& frame_size,
+                        int resize_area_size,
+                        panel::Resizability resizability) {
+  int x = point.x();
+  int y = point.y();
+  int width = frame_size.width();
+  int height = frame_size.height();
+  if (x < resize_area_size) {
+    if (y < resize_area_size && (resizability & panel::RESIZABLE_TOP_LEFT)) {
+      return HTTOPLEFT;
+    } else if (y >= height - resize_area_size &&
+              (resizability & panel::RESIZABLE_BOTTOM_LEFT)) {
+      return HTBOTTOMLEFT;
+    } else if (resizability & panel::RESIZABLE_LEFT) {
+      return HTLEFT;
+    }
+  } else if (x >= width - resize_area_size) {
+    if (y < resize_area_size && (resizability & panel::RESIZABLE_TOP_RIGHT)) {
+      return HTTOPRIGHT;
+    } else if (y >= height - resize_area_size &&
+              (resizability & panel::RESIZABLE_BOTTOM_RIGHT)) {
+      return HTBOTTOMRIGHT;
+    } else if (resizability & panel::RESIZABLE_RIGHT) {
+      return HTRIGHT;
+    }
+  }
+
+  if (y < resize_area_size && (resizability & panel::RESIZABLE_TOP)) {
+    return HTTOP;
+  } else if (y >= height - resize_area_size &&
+            (resizability & panel::RESIZABLE_BOTTOM)) {
+    return HTBOTTOM;
+  }
+
+  return HTNOWHERE;
+}
+
+// Frameless is only supported when Aero is enabled and shadow effect is
+// present.
+bool ShouldRenderAsFrameless() {
+#if defined(OS_WIN)
+  bool is_frameless = ui::win::IsAeroGlassEnabled();
+  if (is_frameless) {
+    BOOL shadow_enabled = FALSE;
+    if (::SystemParametersInfo(SPI_GETDROPSHADOW, 0, &shadow_enabled, 0) &&
+        !shadow_enabled)
+      is_frameless = false;
+  }
+  return is_frameless;
+#else
+  return false;
+#endif
+}
+
 }  // namespace
 
-const char PanelFrameView::kViewClassName[] =
-    "browser/ui/panels/PanelFrameView";
+// static
+const char PanelFrameView::kViewClassName[] = "PanelFrameView";
 
 PanelFrameView::PanelFrameView(PanelView* panel_view)
-    : is_frameless_(false),
+    : is_frameless_(ShouldRenderAsFrameless()),
       panel_view_(panel_view),
-      paint_state_(NOT_PAINTED),
       close_button_(NULL),
       minimize_button_(NULL),
       restore_button_(NULL),
       title_icon_(NULL),
-      title_label_(NULL) {
+      title_label_(NULL),
+      corner_style_(panel::ALL_ROUNDED) {
 }
 
 PanelFrameView::~PanelFrameView() {
 }
 
 void PanelFrameView::Init() {
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
 
   close_button_ = new views::ImageButton(this);
   close_button_->SetImage(views::CustomButton::STATE_NORMAL,
@@ -195,9 +263,11 @@ void PanelFrameView::Init() {
                           rb.GetImageSkiaNamed(IDR_PANEL_CLOSE_H));
   close_button_->SetImage(views::CustomButton::STATE_PRESSED,
                           rb.GetImageSkiaNamed(IDR_PANEL_CLOSE_C));
-  string16 tooltip_text = l10n_util::GetStringUTF16(IDS_PANEL_CLOSE_TOOLTIP);
+  close_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                   views::ImageButton::ALIGN_MIDDLE);
+  base::string16 tooltip_text =
+      l10n_util::GetStringUTF16(IDS_PANEL_CLOSE_TOOLTIP);
   close_button_->SetTooltipText(tooltip_text);
-  close_button_->SetAccessibleName(tooltip_text);
   AddChildView(close_button_);
 
   minimize_button_ = new views::ImageButton(this);
@@ -209,7 +279,8 @@ void PanelFrameView::Init() {
                              rb.GetImageSkiaNamed(IDR_PANEL_MINIMIZE_C));
   tooltip_text = l10n_util::GetStringUTF16(IDS_PANEL_MINIMIZE_TOOLTIP);
   minimize_button_->SetTooltipText(tooltip_text);
-  minimize_button_->SetAccessibleName(tooltip_text);
+  minimize_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                      views::ImageButton::ALIGN_MIDDLE);
   AddChildView(minimize_button_);
 
   restore_button_ = new views::ImageButton(this);
@@ -219,21 +290,34 @@ void PanelFrameView::Init() {
                             rb.GetImageSkiaNamed(IDR_PANEL_RESTORE_H));
   restore_button_->SetImage(views::CustomButton::STATE_PRESSED,
                             rb.GetImageSkiaNamed(IDR_PANEL_RESTORE_C));
+  restore_button_->SetImageAlignment(views::ImageButton::ALIGN_CENTER,
+                                     views::ImageButton::ALIGN_MIDDLE);
   tooltip_text = l10n_util::GetStringUTF16(IDS_PANEL_RESTORE_TOOLTIP);
   restore_button_->SetTooltipText(tooltip_text);
-  restore_button_->SetAccessibleName(tooltip_text);
   restore_button_->SetVisible(false);  // only visible when panel is minimized
   AddChildView(restore_button_);
 
-  title_icon_ = new TabIconView(this);
+  title_icon_ = new TabIconView(this, NULL);
   title_icon_->set_is_light(true);
   AddChildView(title_icon_);
   title_icon_->Update();
 
-  title_label_ = new views::Label(panel_view_->panel()->GetWindowTitle());
+  title_label_ = new views::Label(
+      panel_view_->panel()->GetWindowTitle(),
+      rb.GetFontList(ui::ResourceBundle::BoldFont));
   title_label_->SetHorizontalAlignment(gfx::ALIGN_LEFT);
   title_label_->SetAutoColorReadabilityEnabled(false);
   AddChildView(title_label_);
+
+  // Compute the thickness of the client area that needs to be counted towards
+  // mouse resizing.
+  // TODO(tdanderson): Remove this if possible (crbug.com/344924).
+  int thickness_for_mouse_resizing =
+      PanelView::kResizeInsideBoundsSize - BorderThickness();
+  aura::Window* window = panel_view_->GetNativePanelWindow();
+  window->set_hit_test_bounds_override_inner(
+      gfx::Insets(thickness_for_mouse_resizing, thickness_for_mouse_resizing,
+                  thickness_for_mouse_resizing, thickness_for_mouse_resizing));
 }
 
 void PanelFrameView::UpdateTitle() {
@@ -250,13 +334,35 @@ void PanelFrameView::UpdateThrobber() {
 
 void PanelFrameView::UpdateTitlebarMinimizeRestoreButtonVisibility() {
   Panel* panel = panel_view_->panel();
-  minimize_button_->SetVisible(panel->CanMinimize());
-  restore_button_->SetVisible(panel->CanRestore());
+  minimize_button_->SetVisible(panel->CanShowMinimizeButton());
+  restore_button_->SetVisible(panel->CanShowRestoreButton());
 
   // Reset the button states in case that the hover states are not cleared when
   // mouse is clicked but not moved.
   minimize_button_->SetState(views::CustomButton::STATE_NORMAL);
   restore_button_->SetState(views::CustomButton::STATE_NORMAL);
+}
+
+void PanelFrameView::SetWindowCornerStyle(panel::CornerStyle corner_style) {
+  corner_style_ = corner_style;
+
+#if defined(OS_WIN)
+  // Changing the window region is going to force a paint. Only change the
+  // window region if the region really differs.
+  HWND native_window = views::HWNDForWidget(panel_view_->window());
+  base::win::ScopedRegion current_region(::CreateRectRgn(0, 0, 0, 0));
+  int current_region_result = ::GetWindowRgn(native_window, current_region);
+
+  gfx::Path window_mask;
+  GetWindowMask(size(), &window_mask);
+  base::win::ScopedRegion new_region(gfx::CreateHRGNFromSkPath(window_mask));
+
+  if (current_region_result == ERROR ||
+      !::EqualRgn(current_region, new_region)) {
+    // SetWindowRgn takes ownership of the new_region.
+    ::SetWindowRgn(native_window, new_region.release(), TRUE);
+  }
+#endif
 }
 
 gfx::Rect PanelFrameView::GetBoundsForClientView() const {
@@ -305,21 +411,8 @@ int PanelFrameView::NonClientHitTest(const gfx::Point& point) {
 
   // Check the frame first, as we allow a small area overlapping the contents
   // to be used for resize handles.
-  int frame_component = GetHTComponentForFrame(
-      point,
-      PanelView::kResizeInsideBoundsSize,
-      PanelView::kResizeInsideBoundsSize,
-      kResizeAreaCornerSize,
-      kResizeAreaCornerSize,
-      resizability != panel::NOT_RESIZABLE);
-
-  // The bottom edge and corners cannot be used to resize in some scenarios,
-  // i.e docked panels.
-  if (resizability == panel::RESIZABLE_ALL_SIDES_EXCEPT_BOTTOM &&
-      (frame_component == HTBOTTOM ||
-       frame_component == HTBOTTOMLEFT ||
-       frame_component == HTBOTTOMRIGHT))
-    frame_component = HTNOWHERE;
+  int frame_component = GetFrameEdgeHitTest(
+      point, size(), PanelView::kResizeInsideBoundsSize, resizability);
 
   if (frame_component != HTNOWHERE)
     return frame_component;
@@ -346,19 +439,41 @@ int PanelFrameView::NonClientHitTest(const gfx::Point& point) {
 
 void PanelFrameView::GetWindowMask(const gfx::Size& size,
                                    gfx::Path* window_mask) {
-  window_mask->moveTo(0, 3);
-  window_mask->lineTo(1, 2);
-  window_mask->lineTo(1, 1);
-  window_mask->lineTo(2, 1);
-  window_mask->lineTo(3, 0);
-  window_mask->lineTo(SkIntToScalar(size.width() - 3), 0);
-  window_mask->lineTo(SkIntToScalar(size.width() - 2), 1);
-  window_mask->lineTo(SkIntToScalar(size.width() - 1), 1);
-  window_mask->lineTo(SkIntToScalar(size.width() - 1), 2);
-  window_mask->lineTo(SkIntToScalar(size.width() - 1), 3);
-  window_mask->lineTo(SkIntToScalar(size.width()),
-                      SkIntToScalar(size.height()));
-  window_mask->lineTo(0, SkIntToScalar(size.height()));
+  int width = size.width();
+  int height = size.height();
+
+  if (corner_style_ & panel::TOP_ROUNDED) {
+    window_mask->moveTo(0, 3);
+    window_mask->lineTo(1, 2);
+    window_mask->lineTo(1, 1);
+    window_mask->lineTo(2, 1);
+    window_mask->lineTo(3, 0);
+    window_mask->lineTo(SkIntToScalar(width - 3), 0);
+    window_mask->lineTo(SkIntToScalar(width - 2), 1);
+    window_mask->lineTo(SkIntToScalar(width - 1), 1);
+    window_mask->lineTo(SkIntToScalar(width - 1), 2);
+    window_mask->lineTo(SkIntToScalar(width - 1), 3);
+  } else {
+    window_mask->moveTo(0, 0);
+    window_mask->lineTo(width, 0);
+  }
+
+  if (corner_style_ & panel::BOTTOM_ROUNDED) {
+    window_mask->lineTo(SkIntToScalar(width - 1), SkIntToScalar(height - 4));
+    window_mask->lineTo(SkIntToScalar(width - 2), SkIntToScalar(height - 3));
+    window_mask->lineTo(SkIntToScalar(width - 2), SkIntToScalar(height - 2));
+    window_mask->lineTo(SkIntToScalar(width - 3), SkIntToScalar(height - 2));
+    window_mask->lineTo(SkIntToScalar(width - 4), SkIntToScalar(height - 1));
+    window_mask->lineTo(3, SkIntToScalar(height - 1));
+    window_mask->lineTo(2, SkIntToScalar(height - 2));
+    window_mask->lineTo(1, SkIntToScalar(height - 2));
+    window_mask->lineTo(1, SkIntToScalar(height - 3));
+    window_mask->lineTo(0, SkIntToScalar(height - 4));
+  } else {
+    window_mask->lineTo(SkIntToScalar(width), SkIntToScalar(height));
+    window_mask->lineTo(0, SkIntToScalar(height));
+  }
+
   window_mask->close();
 }
 
@@ -382,91 +497,62 @@ gfx::Size PanelFrameView::GetPreferredSize() {
       GetWindowBoundsForClientBounds(bounds).size();
 }
 
-std::string PanelFrameView::GetClassName() const {
+const char* PanelFrameView::GetClassName() const {
   return kViewClassName;
 }
 
 gfx::Size PanelFrameView::GetMinimumSize() {
-  // This makes the panel be able to shrink to very small, like minimized panel.
-  return gfx::Size();
+  return panel_view_->GetMinimumSize();
 }
 
 gfx::Size PanelFrameView::GetMaximumSize() {
-  // When the user resizes the panel, there is no max size limit.
-  return gfx::Size();
-}
-
-ui::ThemeProvider* PanelFrameView::GetThemeProvider() const {
-  return ThemeServiceFactory::GetForProfile(panel_view_->panel()->profile());
+  return panel_view_->GetMaximumSize();
 }
 
 void PanelFrameView::Layout() {
-  // Frameless is only supported when Aero is enabled and shadow effect is
-  // present.
-#if defined(OS_WIN) && !defined(USE_AURA)
-  is_frameless_ = ui::win::IsAeroGlassEnabled();
-
-  if (is_frameless_) {
-    BOOL shadow_enabled = FALSE;
-    if (::SystemParametersInfo(SPI_GETDROPSHADOW, 0, &shadow_enabled, 0) &&
-        !shadow_enabled)
-      is_frameless_ = false;
-  }
-#endif
+  is_frameless_ = ShouldRenderAsFrameless();
 
   // Layout the close button.
   int right = width();
-  gfx::Size close_button_size = close_button_->GetPreferredSize();
   close_button_->SetBounds(
-      width() - kCloseButtonAndBorderSpacing - close_button_size.width(),
-      (TitlebarHeight() - close_button_size.height()) / 2,
-      close_button_size.width(),
-      close_button_size.height());
+      width() - panel::kTitlebarRightPadding - panel::kPanelButtonSize,
+      (TitlebarHeight() - panel::kPanelButtonSize) / 2 +
+          kExtraPaddingBetweenButtonAndTop,
+      panel::kPanelButtonSize,
+      panel::kPanelButtonSize);
   right = close_button_->x();
 
   // Layout the minimize and restore button. Both occupy the same space,
   // but at most one is visible at any time.
-  gfx::Size button_size = minimize_button_->GetPreferredSize();
   minimize_button_->SetBounds(
-      right - kMinimizeButtonAndCloseButtonSpacing - button_size.width(),
-      (TitlebarHeight() - button_size.height()) / 2,
-      button_size.width(),
-      button_size.height());
+      right - panel::kButtonPadding - panel::kPanelButtonSize,
+      (TitlebarHeight() - panel::kPanelButtonSize) / 2 +
+          kExtraPaddingBetweenButtonAndTop,
+      panel::kPanelButtonSize,
+      panel::kPanelButtonSize);
   restore_button_->SetBoundsRect(minimize_button_->bounds());
   right = minimize_button_->x();
 
   // Layout the icon.
   int icon_y = (TitlebarHeight() - kIconSize) / 2;
   title_icon_->SetBounds(
-      kIconAndBorderSpacing,
+      panel::kTitlebarLeftPadding,
       icon_y,
       kIconSize,
       kIconSize);
 
   // Layout the title.
-  int title_x = title_icon_->bounds().right() + kTitleSpacing;
-  int title_height = GetTitleFont().GetHeight();
+  int title_x = title_icon_->bounds().right() + panel::kIconAndTitlePadding;
+  int title_height = title_label_->font_list().GetHeight();
   title_label_->SetBounds(
       title_x,
       icon_y + ((kIconSize - title_height - 1) / 2),
-      std::max(0, right - kTitleSpacing - title_x),
+      std::max(0, right - panel::kTitleAndButtonPadding - title_x),
       title_height);
 }
 
 void PanelFrameView::OnPaint(gfx::Canvas* canvas) {
-  // The font and color need to be updated depending on the panel's state.
-  PaintState paint_state;
-  if (panel_view_->panel()->IsDrawingAttention())
-    paint_state = PAINT_FOR_ATTENTION;
-  else if (bounds().height() <= panel::kMinimizedPanelHeight)
-    paint_state = PAINT_AS_MINIMIZED;
-  else if (panel_view_->IsPanelActive() &&
-           !panel_view_->force_to_paint_as_inactive())
-    paint_state = PAINT_AS_ACTIVE;
-  else
-    paint_state = PAINT_AS_INACTIVE;
-
-  UpdateControlStyles(paint_state);
+  UpdateControlStyles(GetPaintState());
   PaintFrameBackground(canvas);
   PaintFrameEdge(canvas);
 }
@@ -488,10 +574,18 @@ bool PanelFrameView::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 bool PanelFrameView::OnMouseDragged(const ui::MouseEvent& event) {
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+  // Converting the mouse location to screen coordinates returns an incorrect
+  // location while the panel is moving. See crbug.com/353393 for more details.
+  // TODO(pkotwicz): Fix conversion to screen coordinates
+  gfx::Screen* screen = gfx::Screen::GetNativeScreen();
+  gfx::Point mouse_location = screen->GetCursorScreenPoint();
+#else
   // |event.location| is in the view's coordinate system. Convert it to the
   // screen coordinate system.
   gfx::Point mouse_location = event.location();
   views::View::ConvertPointToScreen(this, &mouse_location);
+#endif
 
   if (panel_view_->OnTitlebarMouseDragged(mouse_location))
     return true;
@@ -555,41 +649,22 @@ int PanelFrameView::BorderThickness() const {
   return is_frameless_ ? 0 : kNonAeroBorderThickness;
 }
 
-bool PanelFrameView::UsingDefaultTheme(PaintState paint_state) const {
-  // No theme is provided for attention painting.
-  if (paint_state == PAINT_FOR_ATTENTION)
-    return true;
-
-  ThemeService* theme_service = ThemeServiceFactory::GetForProfile(
-      panel_view_->panel()->profile());
-  return theme_service->UsingDefaultTheme();
+PanelFrameView::PaintState PanelFrameView::GetPaintState() const {
+  if (panel_view_->panel()->IsDrawingAttention())
+    return PAINT_FOR_ATTENTION;
+  if (bounds().height() <= panel::kMinimizedPanelHeight)
+    return PAINT_AS_MINIMIZED;
+  if (panel_view_->IsPanelActive() &&
+           !panel_view_->force_to_paint_as_inactive())
+    return PAINT_AS_ACTIVE;
+  return PAINT_AS_INACTIVE;
 }
 
 SkColor PanelFrameView::GetTitleColor(PaintState paint_state) const {
-  return UsingDefaultTheme(paint_state) ?
-      GetDefaultTitleColor(paint_state) :
-      GetThemedTitleColor(paint_state);
-}
-
-SkColor PanelFrameView::GetDefaultTitleColor(
-    PaintState paint_state) const {
   return kTitleTextDefaultColor;
 }
 
-SkColor PanelFrameView::GetThemedTitleColor(
-    PaintState paint_state) const {
-  return GetThemeProvider()->GetColor(paint_state == PAINT_AS_ACTIVE ?
-      ThemeService::COLOR_TAB_TEXT : ThemeService::COLOR_BACKGROUND_TAB_TEXT);
-}
-
 const gfx::ImageSkia* PanelFrameView::GetFrameBackground(
-    PaintState paint_state) const {
-  return UsingDefaultTheme(paint_state) ?
-      GetDefaultFrameBackground(paint_state) :
-      GetThemedFrameBackground(paint_state);
-}
-
-const gfx::ImageSkia* PanelFrameView::GetDefaultFrameBackground(
     PaintState paint_state) const {
   switch (paint_state) {
     case PAINT_AS_INACTIVE:
@@ -606,22 +681,8 @@ const gfx::ImageSkia* PanelFrameView::GetDefaultFrameBackground(
   }
 }
 
-const gfx::ImageSkia* PanelFrameView::GetThemedFrameBackground(
-    PaintState paint_state) const {
-  return GetThemeProvider()->GetImageSkiaNamed(paint_state == PAINT_AS_ACTIVE ?
-      IDR_THEME_TOOLBAR : IDR_THEME_TAB_BACKGROUND);
-}
-
 void PanelFrameView::UpdateControlStyles(PaintState paint_state) {
-  DCHECK(paint_state != NOT_PAINTED);
-
-  if (paint_state == paint_state_)
-    return;
-  paint_state_ = paint_state;
-
-  SkColor title_color = GetTitleColor(paint_state_);
-  title_label_->SetEnabledColor(title_color);
-  title_label_->SetFont(GetTitleFont());
+  title_label_->SetEnabledColor(GetTitleColor(paint_state));
 }
 
 void PanelFrameView::PaintFrameBackground(gfx::Canvas* canvas) {
@@ -629,81 +690,79 @@ void PanelFrameView::PaintFrameBackground(gfx::Canvas* canvas) {
   // Instead, we allow part of the inner content area be used to trigger the
   // mouse resizing.
   int titlebar_height = TitlebarHeight();
-  const gfx::ImageSkia* image = GetFrameBackground(paint_state_);
+  const gfx::ImageSkia* image = GetFrameBackground(GetPaintState());
   canvas->TileImageInt(*image, 0, 0, width(), titlebar_height);
 
   if (is_frameless_)
     return;
 
-  // For all the non-client area below titlebar, we paint it by using the last
-  // line from the theme image, instead of using the frame color provided
-  // in the theme because the frame color in some themes is very different from
-  // the tab colors we use to render the titlebar and it can produce abrupt
-  // transition which looks bad.
-
   // Left border, below title-bar.
-  canvas->DrawImageInt(
-      *image, 0, titlebar_height - 1, kNonAeroBorderThickness, 1,
-      0, titlebar_height, kNonAeroBorderThickness, height() - titlebar_height,
-      false);
+  canvas->TileImageInt(*image, 0, titlebar_height, kNonAeroBorderThickness,
+      height() - titlebar_height);
 
   // Right border, below title-bar.
-  canvas->DrawImageInt(
-      *image, (width() % image->width()) - kNonAeroBorderThickness,
-      titlebar_height - 1, kNonAeroBorderThickness, 1,
-      width() - kNonAeroBorderThickness, titlebar_height,
-      kNonAeroBorderThickness, height() - titlebar_height, false);
+  canvas->TileImageInt(*image, width() - kNonAeroBorderThickness,
+      titlebar_height, kNonAeroBorderThickness, height() - titlebar_height);
 
   // Bottom border.
-  canvas->DrawImageInt(
-      *image, 0, titlebar_height - 1, image->width(), 1,
-      0, height() - kNonAeroBorderThickness, width(), kNonAeroBorderThickness,
-      false);
+  canvas->TileImageInt(*image, 0, height() - kNonAeroBorderThickness, width(),
+      kNonAeroBorderThickness);
 }
 
 void PanelFrameView::PaintFrameEdge(gfx::Canvas* canvas) {
-#if !defined(USE_AURA)
+#if defined(OS_WIN)
   // Border is not needed when panel is not shown as minimized.
-  if (paint_state_ != PAINT_AS_MINIMIZED)
+  if (GetPaintState() != PAINT_AS_MINIMIZED)
     return;
 
+  const gfx::ImageSkia& top_left_image = GetTopLeftCornerImage(corner_style_);
+  const gfx::ImageSkia& top_right_image = GetTopRightCornerImage(corner_style_);
+  const gfx::ImageSkia& bottom_left_image =
+      GetBottomLeftCornerImage(corner_style_);
+  const gfx::ImageSkia& bottom_right_image =
+      GetBottomRightCornerImage(corner_style_);
+  const gfx::ImageSkia& top_image = GetTopEdgeImage();
+  const gfx::ImageSkia& bottom_image = GetBottomEdgeImage();
+  const gfx::ImageSkia& left_image = GetLeftEdgeImage();
+  const gfx::ImageSkia& right_image = GetRightEdgeImage();
+
   // Draw the top border.
-  const EdgeResources& frame_edges = GetFrameEdges();
-  canvas->DrawImageInt(*(frame_edges.top_left), 0, 0);
-  canvas->TileImageInt(
-      *(frame_edges.top), frame_edges.top_left->width(), 0,
-      width() - frame_edges.top_right->width(), frame_edges.top->height());
-  canvas->DrawImageInt(
-      *(frame_edges.top_right),
-      width() - frame_edges.top_right->width(), 0);
+  canvas->DrawImageInt(top_left_image, 0, 0);
+  canvas->TileImageInt(top_image,
+                       top_left_image.width(),
+                       0,
+                       width() - top_right_image.width(),
+                       top_image.height());
+  canvas->DrawImageInt(top_right_image, width() - top_right_image.width(), 0);
 
   // Draw the right border.
-  canvas->TileImageInt(
-      *(frame_edges.right), width() - frame_edges.right->width(),
-      frame_edges.top_right->height(), frame_edges.right->width(),
-      height() - frame_edges.top_right->height() -
-          frame_edges.bottom_right->height());
+  canvas->TileImageInt(right_image,
+                       width() - right_image.width(),
+                       top_right_image.height(),
+                       right_image.width(),
+                       height() - top_right_image.height() -
+                           bottom_right_image.height());
 
   // Draw the bottom border.
-  canvas->DrawImageInt(
-      *(frame_edges.bottom_right),
-      width() - frame_edges.bottom_right->width(),
-      height() - frame_edges.bottom_right->height());
-  canvas->TileImageInt(
-      *(frame_edges.bottom), frame_edges.bottom_left->width(),
-      height() - frame_edges.bottom->height(),
-      width() - frame_edges.bottom_left->width() -
-          frame_edges.bottom_right->width(),
-      frame_edges.bottom->height());
-  canvas->DrawImageInt(
-      *(frame_edges.bottom_left), 0,
-      height() - frame_edges.bottom_left->height());
+  canvas->DrawImageInt(bottom_right_image,
+                       width() - bottom_right_image.width(),
+                       height() - bottom_right_image.height());
+  canvas->TileImageInt(bottom_image,
+                       bottom_left_image.width(),
+                       height() - bottom_image.height(),
+                       width() - bottom_left_image.width() -
+                           bottom_right_image.width(),
+                       bottom_image.height());
+  canvas->DrawImageInt(bottom_left_image,
+                       0,
+                       height() - bottom_left_image.height());
 
   // Draw the left border.
-  canvas->TileImageInt(
-      *(frame_edges.left), 0, frame_edges.top_left->height(),
-      frame_edges.left->width(),
-      height() - frame_edges.top_left->height() -
-          frame_edges.bottom_left->height());
+  canvas->TileImageInt(left_image,
+                       0,
+                       top_left_image.height(),
+                       left_image.width(),
+                       height() - top_left_image.height() -
+                           bottom_left_image.height());
 #endif
 }

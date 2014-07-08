@@ -1,0 +1,9 @@
+include_rules = [
+  "+cc",
+  "+ui/aura",
+  "+ui/compositor",
+  "+ui/events",
+  "+ui/gfx",
+  "+ui/gl",
+  "+webkit/common/gpu",
+]

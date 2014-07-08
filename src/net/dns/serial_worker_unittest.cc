@@ -5,7 +5,7 @@
 #include "net/dns/serial_worker.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -55,7 +55,7 @@ class SerialWorkerTest : public testing::Test {
   }
 
   void OnWorkFinished() {
-    EXPECT_TRUE(message_loop_ == MessageLoop::current());
+    EXPECT_TRUE(message_loop_ == base::MessageLoop::current());
     EXPECT_EQ(output_value_, input_value_);
     BreakNow("OnWorkFinished");
   }
@@ -63,7 +63,7 @@ class SerialWorkerTest : public testing::Test {
  protected:
   void BreakCallback(std::string breakpoint) {
     breakpoint_ = breakpoint;
-    MessageLoop::current()->QuitNow();
+    base::MessageLoop::current()->QuitNow();
   }
 
   void BreakNow(std::string b) {
@@ -97,7 +97,7 @@ class SerialWorkerTest : public testing::Test {
 
   // test::Test methods
   virtual void SetUp() OVERRIDE {
-    message_loop_ = MessageLoop::current();
+    message_loop_ = base::MessageLoop::current();
     worker_ = new TestSerialWorker(this);
   }
 
@@ -126,7 +126,7 @@ class SerialWorkerTest : public testing::Test {
   base::Lock work_lock_;
 
   // Loop for this thread.
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
 
   // WatcherDelegate under test.
   scoped_refptr<TestSerialWorker> worker_;
@@ -141,7 +141,7 @@ TEST_F(SerialWorkerTest, ExecuteAndSerializeReads) {
     WaitForWork();
     RunUntilBreak("OnWorkFinished");
 
-    message_loop_->AssertIdle();
+    EXPECT_TRUE(message_loop_->IsIdleForTesting());
   }
 
   // Schedule two calls. OnWork checks if it is called serially.
@@ -154,7 +154,7 @@ TEST_F(SerialWorkerTest, ExecuteAndSerializeReads) {
   RunUntilBreak("OnWorkFinished");
 
   // No more tasks should remain.
-  message_loop_->AssertIdle();
+  EXPECT_TRUE(message_loop_->IsIdleForTesting());
 }
 
 }  // namespace

@@ -14,28 +14,28 @@
 #include "content/public/test/browser_test_base.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#endif  // defined(OS_CHROMEOS)
+namespace base {
+
+class CommandLine;
 
 #if defined(OS_MACOSX)
-namespace base {
 namespace mac {
 class ScopedNSAutoreleasePool;
 }  // namespace mac
+#endif  // defined(OS_MACOSX)
+
+#if defined(OS_WIN)
+namespace win {
+class ScopedCOMInitializer;
+}
+#endif  // defined(OS_WIN)
 }  // namespace base
-#endif  // OS_MACOSX
 
 class Browser;
-class CommandLine;
 class Profile;
 
 namespace content {
 class ContentRendererClient;
-}
-
-namespace net {
-class RuleBasedHostResolverProc;
 }
 
 // Base class for tests wanting to bring up a browser in the unit test process.
@@ -157,14 +157,8 @@ class InProcessBrowserTest : public content::BrowserTestBase {
   // the command line isn't a concept that we support on the Mac; AppleEvents
   // are the Mac solution for the same need. Any test based on these functions
   // doesn't apply to the Mac.
-  CommandLine GetCommandLineForRelaunch();
+  base::CommandLine GetCommandLineForRelaunch();
 #endif
-
-  // Returns the host resolver being used for the tests. Subclasses might want
-  // to configure it inside tests.
-  net::RuleBasedHostResolverProc* host_resolver() {
-    return host_resolver_.get();
-  }
 
 #if defined(OS_MACOSX)
   // Returns the autorelease pool in use inside RunTestOnMainThreadLoop().
@@ -172,6 +166,15 @@ class InProcessBrowserTest : public content::BrowserTestBase {
     return autorelease_pool_;
   }
 #endif  // OS_MACOSX
+
+  void set_exit_when_last_browser_closes(bool value) {
+    exit_when_last_browser_closes_ = value;
+  }
+
+  // This must be called before RunTestOnMainThreadLoop() to have any effect.
+  void set_multi_desktop_test(bool multi_desktop_test) {
+    multi_desktop_test_ = multi_desktop_test;
+  }
 
  private:
   // Creates a user data directory for the test if one is needed. Returns true
@@ -183,25 +186,29 @@ class InProcessBrowserTest : public content::BrowserTestBase {
 
   // Prepare command line that will be used to launch the child browser process
   // with an in-process test.
-  void PrepareTestCommandLine(CommandLine* command_line);
+  void PrepareTestCommandLine(base::CommandLine* command_line);
 
   // Browser created from CreateBrowser.
   Browser* browser_;
-
-  // Host resolver to use during the test.
-  scoped_refptr<net::RuleBasedHostResolverProc> host_resolver_;
 
   // Temporary user data directory. Used only when a user data directory is not
   // specified in the command line.
   base::ScopedTempDir temp_user_data_dir_;
 
-#if defined(OS_CHROMEOS)
-  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
-#endif  // defined(OS_CHROMEOS)
+  // True if we should exit the tests after the last browser instance closes.
+  bool exit_when_last_browser_closes_;
+
+  // True if this is a multi-desktop test (in which case this browser test will
+  // not ensure that Browsers are only created on the tested desktop).
+  bool multi_desktop_test_;
 
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool* autorelease_pool_;
 #endif  // OS_MACOSX
+
+#if defined(OS_WIN)
+  scoped_ptr<base::win::ScopedCOMInitializer> com_initializer_;
+#endif
 };
 
 #endif  // CHROME_TEST_BASE_IN_PROCESS_BROWSER_TEST_H_

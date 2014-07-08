@@ -8,15 +8,19 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/geolocation/geolocation_infobar_queue_controller.h"
+#include "chrome/browser/content_settings/permission_queue_controller.h"
 #include "content/public/browser/geolocation_permission_context.h"
 
-class GeolocationPermissionRequestID;
+namespace content {
+class WebContents;
+}
+
+class PermissionRequestID;
 class Profile;
 
 // Chrome specific implementation of GeolocationPermissionContext; manages
 // Geolocation permissions flow, and delegates UI handling via
-// GeolocationInfoBarQueueController.
+// PermissionQueueController.
 class ChromeGeolocationPermissionContext
     : public content::GeolocationPermissionContext {
  public:
@@ -28,12 +32,25 @@ class ChromeGeolocationPermissionContext
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame,
+      bool user_gesture,
       base::Callback<void(bool)> callback) OVERRIDE;
   virtual void CancelGeolocationPermissionRequest(
       int render_process_id,
       int render_view_id,
       int bridge_id,
       const GURL& requesting_frame) OVERRIDE;
+
+  // Called on the UI thread when the profile is about to be destroyed.
+  void ShutdownOnUIThread();
+
+  // Notifies whether or not the corresponding bridge is allowed to use
+  // geolocation via
+  // GeolocationPermissionContext::SetGeolocationPermissionResponse().
+  // Called on the UI thread.
+  void NotifyPermissionSet(const PermissionRequestID& id,
+                           const GURL& requesting_frame,
+                           base::Callback<void(bool)> callback,
+                           bool allowed);
 
  protected:
   virtual ~ChromeGeolocationPermissionContext();
@@ -42,50 +59,50 @@ class ChromeGeolocationPermissionContext
 
   // Return an instance of the infobar queue controller, creating it
   // if necessary.
-  GeolocationInfoBarQueueController* QueueController();
-
-  // Notifies whether or not the corresponding bridge is allowed to use
-  // geolocation via
-  // GeolocationPermissionContext::SetGeolocationPermissionResponse().
-  // Called on the UI thread.
-  void NotifyPermissionSet(const GeolocationPermissionRequestID& id,
-                           const GURL& requesting_frame,
-                           base::Callback<void(bool)> callback,
-                           bool allowed);
+  PermissionQueueController* QueueController();
 
   // ChromeGeolocationPermissionContext implementation:
   // Decide whether the geolocation permission should be granted.
   // Calls PermissionDecided if permission can be decided non-interactively,
   // or NotifyPermissionSet if permission decided by presenting an
   // infobar to the user. Called on the UI thread.
-  virtual void DecidePermission(const GeolocationPermissionRequestID& id,
+  virtual void DecidePermission(content::WebContents* web_contents,
+                                const PermissionRequestID& id,
                                 const GURL& requesting_frame,
+                                bool user_gesture,
                                 const GURL& embedder,
+                                const std::string& accept_button_label,
                                 base::Callback<void(bool)> callback);
 
   // Called when permission is granted without interactively asking
   // the user. Can be overridden to introduce additional UI flow.
   // Should ultimately ensure that NotifyPermissionSet is called.
   // Called on the UI thread.
-  virtual void PermissionDecided(const GeolocationPermissionRequestID& id,
+  virtual void PermissionDecided(const PermissionRequestID& id,
                                  const GURL& requesting_frame,
                                  const GURL& embedder,
                                  base::Callback<void(bool)> callback,
                                  bool allowed);
 
-  // Create an InfoBarQueueController. overriden in derived classes to provide
-  // additional UI flow.  Called on the UI thread.
-  virtual GeolocationInfoBarQueueController* CreateQueueController();
+  // Create an PermissionQueueController. overriden in derived classes to
+  // provide additional UI flow.  Called on the UI thread.
+  virtual PermissionQueueController* CreateQueueController();
 
  private:
   // Removes any pending InfoBar request.
-  void CancelPendingInfoBarRequest(const GeolocationPermissionRequestID& id);
+  void CancelPendingInfobarRequest(const PermissionRequestID& id);
 
-  // This must only be accessed from the UI thread.
+  // Creates and show an info bar.
+  void CreateInfoBarRequest(const PermissionRequestID& id,
+                            const GURL& requesting_frame,
+                            const GURL& embedder,
+                            const std::string accept_button_label,
+                            base::Callback<void(bool)> callback);
+
+  // These must only be accessed from the UI thread.
   Profile* const profile_;
-
-  scoped_ptr<GeolocationInfoBarQueueController>
-      geolocation_infobar_queue_controller_;
+  bool shutting_down_;
+  scoped_ptr<PermissionQueueController> permission_queue_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeGeolocationPermissionContext);
 };

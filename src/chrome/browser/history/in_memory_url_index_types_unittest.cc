@@ -4,10 +4,12 @@
 
 #include <algorithm>
 
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/in_memory_url_index_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+using base::UTF8ToUTF16;
 
 namespace history {
 
@@ -30,7 +32,8 @@ class InMemoryURLIndexTypesTest : public testing::Test {
 
 TEST_F(InMemoryURLIndexTypesTest, StaticFunctions) {
   // Test String16VectorFromString16
-  string16 string_a(ASCIIToUTF16("http://www.google.com/ frammy  the brammy"));
+  base::string16 string_a(
+      base::UTF8ToUTF16("http://www.google.com/ frammy  the brammy"));
   WordStarts actual_starts_a;
   String16Vector string_vec =
       String16VectorFromString16(string_a, false, &actual_starts_a);
@@ -60,7 +63,7 @@ TEST_F(InMemoryURLIndexTypesTest, StaticFunctions) {
   EXPECT_TRUE(IntArraysEqual(expected_starts_b, arraysize(expected_starts_b),
                              actual_starts_b));
 
-  string16 string_c(ASCIIToUTF16(
+  base::string16 string_c(base::ASCIIToUTF16(
       " funky%20string-with=@strange   sequences, intended(to exceed)"));
   WordStarts actual_starts_c;
   string_vec = String16VectorFromString16(string_c, false, &actual_starts_c);
@@ -71,7 +74,7 @@ TEST_F(InMemoryURLIndexTypesTest, StaticFunctions) {
                              actual_starts_c));
 
   // Test String16SetFromString16
-  string16 string_d(ASCIIToUTF16(
+  base::string16 string_d(base::ASCIIToUTF16(
       "http://web.google.com/search Google Web Search"));
   WordStarts actual_starts_d;
   String16Set string_set = String16SetFromString16(string_d, &actual_starts_d);
@@ -129,13 +132,13 @@ TEST_F(InMemoryURLIndexTypesTest, OffsetsAndTermMatches) {
   matches_a.push_back(history::TermMatch(3, 10, 1));
   matches_a.push_back(history::TermMatch(4, 14, 5));
   std::vector<size_t> offsets = OffsetsFromTermMatches(matches_a);
-  const size_t expected_offsets_a[] = {1, 4, 9, 10, 14};
+  const size_t expected_offsets_a[] = {1, 3, 4, 7, 9, 10, 10, 11, 14, 19};
   ASSERT_EQ(offsets.size(), arraysize(expected_offsets_a));
   for (size_t i = 0; i < offsets.size(); ++i)
     EXPECT_EQ(expected_offsets_a[i], offsets[i]);
 
   // Test ReplaceOffsetsInTermMatches
-  offsets[2] = string16::npos;
+  offsets[4] = base::string16::npos;  // offset of third term
   history::TermMatches matches_b =
       ReplaceOffsetsInTermMatches(matches_a, offsets);
   const size_t expected_offsets_b[] = {1, 4, 10, 14};

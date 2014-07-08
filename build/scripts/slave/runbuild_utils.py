@@ -12,6 +12,7 @@ import os
 import sys
 
 from common import chromium_utils
+from slave import slave_utils
 
 
 class LogClass(chromium_utils.RunCommandFilter):
@@ -55,12 +56,18 @@ def FilterCommands(commands, step_regex, step_reject):
 
   Returns (skip, command) for each command.
   """
-  return list((step_skip_filter(cmd['name'], step_regex, step_reject) or
-               not cmd['doStep'], cmd)
-              for cmd in commands)
+  def filter_func(cmd):
+    skip = (step_skip_filter(cmd['name'], step_regex, step_reject) or
+            not cmd['doStep'])
+
+    if skip and (cmd['doStep'] is None):
+      skip = None
+    return skip
+
+  return list((filter_func(cmd), cmd) for cmd in commands)
 
 
-def Execute(commands, annotate, log):
+def Execute(commands, annotate, log, fail_fast=False):
   """Given a list of (skip, command) pairs, execute commands sequentially.
 
   A command is specified as a hash with name, command, workdir, quoted_workdir,
@@ -76,13 +83,21 @@ def Execute(commands, annotate, log):
   aborted early or not.
   """
   for skip, command in commands:
-    if not skip:
-      print '@@@SEED_STEP %s@@@' % command['name']
+    # Don't execute non-buildrunner steps.
+    if skip is None:
+      continue
+    print '@@@SEED_STEP %s@@@' % command['name']
+    if skip:
+      print '@@@SEED_STEP_TEXT@%s@skipped@@@' % command['name']
 
   commands_executed = 0
+  err = False
   for skip, command in commands:
+    if skip is None:
+      continue
     if skip:
-      print >>sys.stderr, 'skipping step: ' + command['name']
+      if not annotate:
+        print >>sys.stderr, 'skipping step: ' + command['name']
       continue
 
     if not annotate:
@@ -94,26 +109,34 @@ def Execute(commands, annotate, log):
     print >>log, '(in %s): %s' % (command['quoted_workdir'],
                                   command['quoted_command'])
 
-    mydir = os.getcwd()
-    myenv = os.environ
-    os.chdir(command['workdir'])
 
-    # python docs says this might cause leaks on FreeBSD/OSX
-    for envar in command['env']:
-      os.environ[envar] = command['env'][envar]
+    env = os.environ.copy()
+    env.update(command['env'])
+    env['PYTHONUNBUFFERED'] = '1'
 
     mylogger = LogClass(log)
 
     ret = chromium_utils.RunCommand(command['command'],
+                                    cwd=command['workdir'],
+                                    env=env,
                                     filter_obj=mylogger,
-                                    print_cmd=False)
-    os.chdir(mydir)
-    os.environ = myenv
+                                    print_cmd=False,
+                                    timeout=command.get('timeout'),
+                                    max_time=command.get('maxTime'))
     commands_executed += 1
     if ret != 0:
-      return commands_executed, True
+      if ret == slave_utils.WARNING_EXIT_CODE:
+        if annotate:
+          print '@@@STEP_WARNINGS@@@'
+        continue
+      else:
+        if annotate:
+          print '@@@STEP_FAILURE@@@'
+        err = True
     print '@@@STEP_CLOSED@@@'
-  return commands_executed, False
+    if (fail_fast or command['haltOnFailure']) and err:
+      break
+  return commands_executed, err
 
 
 def PropertiesToJSON(props):

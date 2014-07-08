@@ -7,22 +7,23 @@
 #include <limits.h>
 #include <string>
 
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/idle/idle_api_constants.h"
 #include "chrome/browser/extensions/api/idle/idle_manager.h"
 #include "chrome/browser/extensions/api/idle/idle_manager_factory.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/test/base/browser_with_test_window_test.h"
+#include "chrome/browser/extensions/extension_api_unittest.h"
+#include "chrome/common/extensions/api/idle.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/common/extension.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
 
-namespace utils = extension_function_test_utils;
+namespace idle = extensions::api::idle;
 
 namespace extensions {
 
@@ -105,46 +106,41 @@ ScopedListen::ScopedListen(IdleManager* idle_manager,
                            const std::string& extension_id)
     : idle_manager_(idle_manager),
       extension_id_(extension_id) {
-  const EventListenerInfo details(idle_api_constants::kOnStateChanged,
-                                  extension_id_);
+  const EventListenerInfo details(idle::OnStateChanged::kEventName,
+                                  extension_id_,
+                                  NULL);
   idle_manager_->OnListenerAdded(details);
 }
 
 ScopedListen::~ScopedListen() {
-  const EventListenerInfo details(idle_api_constants::kOnStateChanged,
-                                  extension_id_);
+  const EventListenerInfo details(idle::OnStateChanged::kEventName,
+                                  extension_id_,
+                                  NULL);
   idle_manager_->OnListenerRemoved(details);
 }
 
-ProfileKeyedService* IdleManagerTestFactory(Profile* profile) {
-  return new IdleManager(profile);
+KeyedService* IdleManagerTestFactory(content::BrowserContext* profile) {
+  return new IdleManager(static_cast<Profile*>(profile));
 }
 
 }  // namespace
 
-class IdleTest : public BrowserWithTestWindowTest {
+class IdleTest : public ExtensionApiUnittest {
  public:
   virtual void SetUp() OVERRIDE;
 
  protected:
-  base::Value* RunFunctionWithExtension(
-      UIThreadExtensionFunction* function, const std::string& args);
-
   IdleManager* idle_manager_;
   TestIdleProvider* idle_provider_;
   testing::StrictMock<MockEventDelegate>* event_delegate_;
-  scoped_refptr<extensions::Extension> extension_;
 };
 
 void IdleTest::SetUp() {
-  BrowserWithTestWindowTest::SetUp();
+  ExtensionApiUnittest::SetUp();
 
   IdleManagerFactory::GetInstance()->SetTestingFactory(browser()->profile(),
                                                        &IdleManagerTestFactory);
   idle_manager_ = IdleManagerFactory::GetForProfile(browser()->profile());
-
-  extension_ = utils::CreateEmptyExtensionWithLocation(
-      extensions::Extension::LOAD);
 
   idle_provider_ = new TestIdleProvider();
   idle_manager_->SetIdleTimeProviderForTest(
@@ -155,18 +151,12 @@ void IdleTest::SetUp() {
   idle_manager_->Init();
 }
 
-base::Value* IdleTest::RunFunctionWithExtension(
-    UIThreadExtensionFunction* function, const std::string& args) {
-  function->set_extension(extension_.get());
-  return utils::RunFunctionAndReturnSingleResult(function, args, browser());
-}
-
 // Verifies that "locked" takes priority over "active".
 TEST_F(IdleTest, QueryLockedActive) {
   idle_provider_->set_locked(true);
   idle_provider_->set_idle_time(0);
 
-  scoped_ptr<base::Value> result(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
       new IdleQueryStateFunction(),
       "[60]"));
 
@@ -180,7 +170,7 @@ TEST_F(IdleTest, QueryLockedIdle) {
   idle_provider_->set_locked(true);
   idle_provider_->set_idle_time(INT_MAX);
 
-  scoped_ptr<base::Value> result(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
       new IdleQueryStateFunction(),
       "[60]"));
 
@@ -198,7 +188,7 @@ TEST_F(IdleTest, QueryActive) {
     SCOPED_TRACE(time);
     idle_provider_->set_idle_time(time);
 
-    scoped_ptr<base::Value> result(RunFunctionWithExtension(
+    scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
         new IdleQueryStateFunction(),
         "[60]"));
 
@@ -217,7 +207,7 @@ TEST_F(IdleTest, QueryIdle) {
     SCOPED_TRACE(time);
     idle_provider_->set_idle_time(time);
 
-    scoped_ptr<base::Value> result(RunFunctionWithExtension(
+    scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
         new IdleQueryStateFunction(),
         "[60]"));
 
@@ -239,7 +229,7 @@ TEST_F(IdleTest, QueryMinThreshold) {
       idle_provider_->set_idle_time(time);
 
       std::string args = "[" + base::IntToString(threshold) + "]";
-      scoped_ptr<base::Value> result(RunFunctionWithExtension(
+      scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
           new IdleQueryStateFunction(), args));
 
       std::string idle_state;
@@ -268,7 +258,7 @@ TEST_F(IdleTest, QueryMaxThreshold) {
       idle_provider_->set_idle_time(time);
 
       std::string args = "[" + base::IntToString(threshold) + "]";
-      scoped_ptr<base::Value> result(RunFunctionWithExtension(
+      scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
           new IdleQueryStateFunction(), args));
 
       std::string idle_state;
@@ -417,9 +407,9 @@ TEST_F(IdleTest, MultipleExtensions) {
 // IdleMonitor.
 TEST_F(IdleTest, SetDetectionInterval) {
   ScopedListen listen_default(idle_manager_, "default");
-  ScopedListen listen_extension(idle_manager_, extension_->id());
+  ScopedListen listen_extension(idle_manager_, extension()->id());
 
-  scoped_ptr<base::Value> result45(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result45(RunFunctionAndReturnValue(
       new IdleSetDetectionIntervalFunction(),
       "[45]"));
 
@@ -429,7 +419,7 @@ TEST_F(IdleTest, SetDetectionInterval) {
 
   idle_provider_->set_idle_time(45);
   EXPECT_CALL(*event_delegate_,
-              OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+              OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
   idle_manager_->UpdateIdleState();
   // Verify that the expectation has been fulfilled before incrementing the
   // time again.
@@ -443,11 +433,11 @@ TEST_F(IdleTest, SetDetectionInterval) {
 // Verifies that setting the detection interval before creating the listener
 // works correctly.
 TEST_F(IdleTest, SetDetectionIntervalBeforeListener) {
-  scoped_ptr<base::Value> result45(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result45(RunFunctionAndReturnValue(
       new IdleSetDetectionIntervalFunction(),
       "[45]"));
 
-  ScopedListen listen_extension(idle_manager_, extension_->id());
+  ScopedListen listen_extension(idle_manager_, extension()->id());
 
   idle_provider_->set_locked(false);
   idle_provider_->set_idle_time(44);
@@ -455,16 +445,16 @@ TEST_F(IdleTest, SetDetectionIntervalBeforeListener) {
 
   idle_provider_->set_idle_time(45);
   EXPECT_CALL(*event_delegate_,
-              OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+              OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
   idle_manager_->UpdateIdleState();
 }
 
 // Verifies that setting a detection interval above the maximum value results
 // in an interval of 4 hours.
 TEST_F(IdleTest, SetDetectionIntervalMaximum) {
-  ScopedListen listen_extension(idle_manager_, extension_->id());
+  ScopedListen listen_extension(idle_manager_, extension()->id());
 
-  scoped_ptr<base::Value> result(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
       new IdleSetDetectionIntervalFunction(),
       "[18000]"));  // five hours in seconds
 
@@ -474,16 +464,16 @@ TEST_F(IdleTest, SetDetectionIntervalMaximum) {
 
   idle_provider_->set_idle_time(4*60*60);
   EXPECT_CALL(*event_delegate_,
-              OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+              OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
   idle_manager_->UpdateIdleState();
 }
 
 // Verifies that setting a detection interval below the minimum value results
 // in an interval of 15 seconds.
 TEST_F(IdleTest, SetDetectionIntervalMinimum) {
-  ScopedListen listen_extension(idle_manager_, extension_->id());
+  ScopedListen listen_extension(idle_manager_, extension()->id());
 
-  scoped_ptr<base::Value> result(RunFunctionWithExtension(
+  scoped_ptr<base::Value> result(RunFunctionAndReturnValue(
       new IdleSetDetectionIntervalFunction(),
       "[10]"));
 
@@ -493,16 +483,16 @@ TEST_F(IdleTest, SetDetectionIntervalMinimum) {
 
   idle_provider_->set_idle_time(15);
   EXPECT_CALL(*event_delegate_,
-              OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+              OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
   idle_manager_->UpdateIdleState();
 }
 
 // Verifies that an extension's detection interval is discarded when it unloads.
 TEST_F(IdleTest, UnloadCleanup) {
   {
-    ScopedListen listen(idle_manager_, extension_->id());
+    ScopedListen listen(idle_manager_, extension()->id());
 
-    scoped_ptr<base::Value> result45(RunFunctionWithExtension(
+    scoped_ptr<base::Value> result45(RunFunctionAndReturnValue(
         new IdleSetDetectionIntervalFunction(),
         "[15]"));
   }
@@ -510,40 +500,40 @@ TEST_F(IdleTest, UnloadCleanup) {
   // Listener count dropping to zero does not reset threshold.
 
   {
-    ScopedListen listen(idle_manager_, extension_->id());
+    ScopedListen listen(idle_manager_, extension()->id());
     idle_provider_->set_idle_time(16);
     EXPECT_CALL(*event_delegate_,
-                OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+                OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
     idle_manager_->UpdateIdleState();
     testing::Mock::VerifyAndClearExpectations(event_delegate_);
   }
 
   // Threshold will reset after unload (and listen count == 0)
-  UnloadedExtensionInfo details(extension_,
-                                extension_misc::UNLOAD_REASON_UNINSTALL);
+  UnloadedExtensionInfo details(extension(),
+                                UnloadedExtensionInfo::REASON_UNINSTALL);
   idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(browser()->profile()),
       content::Details<UnloadedExtensionInfo>(&details));
 
   {
-    ScopedListen listen(idle_manager_, extension_->id());
+    ScopedListen listen(idle_manager_, extension()->id());
     idle_manager_->UpdateIdleState();
     testing::Mock::VerifyAndClearExpectations(event_delegate_);
 
     idle_provider_->set_idle_time(61);
     EXPECT_CALL(*event_delegate_,
-                OnStateChanged(extension_->id(), IDLE_STATE_IDLE));
+                OnStateChanged(extension()->id(), IDLE_STATE_IDLE));
     idle_manager_->UpdateIdleState();
   }
 }
 
 // Verifies that unloading an extension with no listeners or threshold works.
 TEST_F(IdleTest, UnloadOnly) {
-  UnloadedExtensionInfo details(extension_,
-                                extension_misc::UNLOAD_REASON_UNINSTALL);
+  UnloadedExtensionInfo details(extension(),
+                                UnloadedExtensionInfo::REASON_UNINSTALL);
   idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(browser()->profile()),
       content::Details<UnloadedExtensionInfo>(&details));
 }
@@ -551,13 +541,39 @@ TEST_F(IdleTest, UnloadOnly) {
 // Verifies that its ok for the unload notification to happen before all the
 // listener removals.
 TEST_F(IdleTest, UnloadWhileListening) {
-  ScopedListen listen(idle_manager_, extension_->id());
-  UnloadedExtensionInfo details(extension_,
-                                extension_misc::UNLOAD_REASON_UNINSTALL);
+  ScopedListen listen(idle_manager_, extension()->id());
+  UnloadedExtensionInfo details(extension(),
+                                UnloadedExtensionInfo::REASON_UNINSTALL);
   idle_manager_->Observe(
-      chrome::NOTIFICATION_EXTENSION_UNLOADED,
+      chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
       content::Source<Profile>(browser()->profile()),
       content::Details<UnloadedExtensionInfo>(&details));
 }
 
-}  // extensions
+// Verifies that re-adding a listener after a state change doesn't immediately
+// fire a change event. Regression test for http://crbug.com/366580.
+TEST_F(IdleTest, ReAddListener) {
+  idle_provider_->set_locked(false);
+
+  {
+    // Fire idle event.
+    ScopedListen listen(idle_manager_, "test");
+    idle_provider_->set_idle_time(60);
+    EXPECT_CALL(*event_delegate_, OnStateChanged("test", IDLE_STATE_IDLE));
+    idle_manager_->UpdateIdleState();
+    testing::Mock::VerifyAndClearExpectations(event_delegate_);
+  }
+
+  // Trigger active.
+  idle_provider_->set_idle_time(0);
+  idle_manager_->UpdateIdleState();
+
+  {
+    // Nothing should have fired, the listener wasn't added until afterward.
+    ScopedListen listen(idle_manager_, "test");
+    idle_manager_->UpdateIdleState();
+    testing::Mock::VerifyAndClearExpectations(event_delegate_);
+  }
+}
+
+}  // namespace extensions

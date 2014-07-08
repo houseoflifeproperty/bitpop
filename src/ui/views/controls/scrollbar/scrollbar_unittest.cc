@@ -48,11 +48,7 @@ namespace views {
 
 class NativeScrollBarTest : public ViewsTestBase {
  public:
-  NativeScrollBarTest()
-    : widget_(NULL),
-      scrollbar_(NULL),
-      controller_(NULL) {
-  }
+  NativeScrollBarTest() : widget_(NULL), scrollbar_(NULL) {}
 
   virtual void SetUp() {
     ViewsTestBase::SetUp();
@@ -103,10 +99,14 @@ class NativeScrollBarTest : public ViewsTestBase {
 // TODO(dnicoara) Can't run the test on Windows since the scrollbar |Part|
 // isn't handled in NativeTheme.
 #if defined(OS_WIN)
-TEST_F(NativeScrollBarTest, DISABLED_Scrolling) {
+#define MAYBE_Scrolling DISABLED_Scrolling
+#define MAYBE_ScrollBarFitsToBottom DISABLED_ScrollBarFitsToBottom
 #else
-TEST_F(NativeScrollBarTest, Scrolling) {
+#define MAYBE_Scrolling Scrolling
+#define MAYBE_ScrollBarFitsToBottom ScrollBarFitsToBottom
 #endif
+
+TEST_F(NativeScrollBarTest, MAYBE_Scrolling) {
   EXPECT_EQ(scrollbar_->GetPosition(), 0);
   EXPECT_EQ(scrollbar_->GetMaxPosition(), 100);
   EXPECT_EQ(scrollbar_->GetMinPosition(), 0);
@@ -142,6 +142,29 @@ TEST_F(NativeScrollBarTest, Scrolling) {
 
   scrollbar_->ScrollByAmount(BaseScrollBar::SCROLL_PREV_PAGE);
   EXPECT_EQ(controller_->last_position, 0);
+}
+
+TEST_F(NativeScrollBarTest, MAYBE_ScrollBarFitsToBottom) {
+  scrollbar_->Update(100, 199, 0);
+  EXPECT_EQ(0, scrollbar_->GetPosition());
+  EXPECT_EQ(99, scrollbar_->GetMaxPosition());
+  EXPECT_EQ(0, scrollbar_->GetMinPosition());
+
+  scrollbar_->Update(100, 199, 99);
+  EXPECT_EQ(
+      scrollbar_->GetTrackBounds().width() - scrollbar_->GetThumbSizeForTest(),
+      scrollbar_->GetPosition());
+}
+
+TEST_F(NativeScrollBarTest, ScrollToEndAfterShrinkAndExpand) {
+  // Scroll to the end of the content.
+  scrollbar_->Update(100, 101, 0);
+  EXPECT_TRUE(scrollbar_->ScrollByContentsOffset(-1));
+  // Shrink and then re-exapnd the content.
+  scrollbar_->Update(100, 100, 0);
+  scrollbar_->Update(100, 101, 0);
+  // Ensure the scrollbar allows scrolling to the end.
+  EXPECT_TRUE(scrollbar_->ScrollByContentsOffset(-1));
 }
 
 }  // namespace views

@@ -32,10 +32,8 @@ public:
 
     const SkBitmap& getBitmap() const { return fBitmap; }
 
-    void    setConfig(SkBitmap::Config);
-    void    resize(int width, int height, SkBitmap::Config config = SkBitmap::kNo_Config);
-    void    eraseARGB(U8CPU a, U8CPU r, U8CPU g, U8CPU b);
-    void    eraseRGB(U8CPU r, U8CPU g, U8CPU b);
+    void    setColorType(SkColorType);
+    void    resize(int width, int height, SkColorType = kUnknown_SkColorType);
 
     bool    isDirty() const { return !fDirtyRgn.isEmpty(); }
     bool    update(SkIRect* updateArea);
@@ -45,7 +43,7 @@ public:
     // return the bounds of the dirty/inval rgn, or [0,0,0,0] if none
     const SkIRect& getDirtyBounds() const { return fDirtyRgn.getBounds(); }
 
-    bool    handleClick(int x, int y, Click::State, void* owner = NULL);
+    bool    handleClick(int x, int y, Click::State, void* owner, unsigned modi = 0);
     bool    handleChar(SkUnichar);
     bool    handleKey(SkKey);
     bool    handleKeyUp(SkKey);
@@ -67,7 +65,7 @@ public:
         const char path[]) {}
 protected:
     virtual bool onEvent(const SkEvent&);
-    virtual bool onDispatchClick(int x, int y, Click::State, void* owner);
+    virtual bool onDispatchClick(int x, int y, Click::State, void* owner, unsigned modi);
     // called if part of our bitmap is invalidated
     virtual void onHandleInval(const SkIRect&);
     virtual bool onHandleChar(SkUnichar);
@@ -83,7 +81,7 @@ protected:
     virtual bool onSetFocusView(SkView* focus);
 
 private:
-    SkBitmap::Config    fConfig;
+    SkColorType fColorType;
     SkBitmap    fBitmap;
     SkRegion    fDirtyRgn;
 

@@ -1,25 +1,90 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2014 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEXTURE_DEFINITION_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEXTURE_DEFINITION_H_
 
+#include <list>
 #include <vector>
 
 #include "base/callback.h"
+#include "base/memory/linked_ptr.h"
+#include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/synchronization/lock.h"
 #include "gpu/command_buffer/service/gl_utils.h"
-#include "gpu/gpu_export.h"
+#include "ui/gl/gl_fence.h"
+
+namespace gfx {
+class GLFence;
+class GLImage;
+}
 
 namespace gpu {
 namespace gles2 {
 
-// A saved definition of a texture that still exists in the underlying
-// GLShareGroup and can be used to redefine a client visible texture in any
-// context using the same GLShareGroup with the corresponding service ID.
-class GPU_EXPORT TextureDefinition {
+class Texture;
+
+class NativeImageBuffer : public base::RefCountedThreadSafe<NativeImageBuffer> {
  public:
-  struct GPU_EXPORT LevelInfo {
+  static scoped_refptr<NativeImageBuffer> Create(GLuint texture_id);
+  virtual void BindToTexture(GLenum target) = 0;
+
+  void AddClient(gfx::GLImage* client);
+  void RemoveClient(gfx::GLImage* client);
+  bool IsClient(gfx::GLImage* client);
+
+  void WillRead(gfx::GLImage* client);
+  void WillWrite(gfx::GLImage* client);
+  void DidRead(gfx::GLImage* client);
+  void DidWrite(gfx::GLImage* client);
+
+ protected:
+  friend class base::RefCountedThreadSafe<NativeImageBuffer>;
+  explicit NativeImageBuffer(scoped_ptr<gfx::GLFence> write_fence);
+  virtual ~NativeImageBuffer();
+
+  base::Lock lock_;
+
+  struct ClientInfo {
+    ClientInfo(gfx::GLImage* client);
+    ~ClientInfo();
+
+    gfx::GLImage* client;
+    bool needs_wait_before_read;
+    linked_ptr<gfx::GLFence> read_fence;
+  };
+  std::list<ClientInfo> client_infos_;
+  scoped_ptr<gfx::GLFence> write_fence_;
+  gfx::GLImage* write_client_;
+
+  DISALLOW_COPY_AND_ASSIGN(NativeImageBuffer);
+};
+
+// An immutable description that can be used to create a texture that shares
+// the underlying image buffer(s).
+class TextureDefinition {
+ public:
+  TextureDefinition(GLenum target,
+                    Texture* texture,
+                    unsigned int version,
+                    const scoped_refptr<NativeImageBuffer>& image);
+  virtual ~TextureDefinition();
+
+  Texture* CreateTexture() const;
+  void UpdateTexture(Texture* texture) const;
+
+  unsigned int version() const { return version_; }
+  bool IsOlderThan(unsigned int version) const {
+    return (version - version_) < 0x80000000;
+  }
+  bool Matches(const Texture* texture) const;
+
+  scoped_refptr<NativeImageBuffer> image() { return image_buffer_; }
+
+ private:
+  struct LevelInfo {
     LevelInfo(GLenum target,
               GLenum internal_format,
               GLsizei width,
@@ -29,7 +94,7 @@ class GPU_EXPORT TextureDefinition {
               GLenum format,
               GLenum type,
               bool cleared);
-    LevelInfo();
+    ~LevelInfo();
 
     GLenum target;
     GLenum internal_format;
@@ -44,48 +109,16 @@ class GPU_EXPORT TextureDefinition {
 
   typedef std::vector<std::vector<LevelInfo> > LevelInfos;
 
-  typedef base::Callback<void(TextureDefinition*)> DestroyCallback;
-
-  TextureDefinition(GLenum target,
-                    GLuint service_id,
-                    GLenum min_filter,
-                    GLenum mag_filter,
-                    GLenum wrap_s,
-                    GLenum wrap_t,
-                    GLenum usage,
-                    bool immutable,
-                    const LevelInfos& level_infos);
-  ~TextureDefinition();
-
-  GLenum target() const {
-    return target_;
-  }
-
-  GLuint ReleaseServiceId();
-  GLenum min_filter() const { return min_filter_; }
-  GLenum mag_filter() const { return mag_filter_; }
-  GLenum wrap_s() const { return wrap_s_; }
-  GLenum wrap_t() const { return wrap_t_; }
-  GLenum usage() const { return usage_; }
-
-  bool immutable() const { return immutable_; }
-
-  const LevelInfos& level_infos() const {
-    return level_infos_;
-  }
-
- private:
+  unsigned int version_;
   GLenum target_;
-  GLuint service_id_;
+  scoped_refptr<NativeImageBuffer> image_buffer_;
   GLenum min_filter_;
   GLenum mag_filter_;
   GLenum wrap_s_;
   GLenum wrap_t_;
   GLenum usage_;
   bool immutable_;
-  std::vector<std::vector<LevelInfo> > level_infos_;
-
-  DISALLOW_COPY_AND_ASSIGN(TextureDefinition);
+  LevelInfos level_infos_;
 };
 
 }  // namespage gles2

@@ -6,19 +6,17 @@
 
 #if defined(OS_WIN)
 #include <windows.h>
-#elif defined(TOOLKIT_GTK)
-#include <gdk/gdk.h>
 #endif
 
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ui_strings.h"
 #include "ui/base/l10n/l10n_util.h"
 
 #if !defined(OS_WIN) && (defined(USE_AURA) || defined(OS_MACOSX))
-#include "ui/base/keycodes/keyboard_code_conversion.h"
+#include "ui/events/keycodes/keyboard_code_conversion.h"
 #endif
 
 namespace ui {
@@ -68,14 +66,15 @@ bool Accelerator::operator <(const Accelerator& rhs) const {
 }
 
 bool Accelerator::operator ==(const Accelerator& rhs) const {
-  if (platform_accelerator_.get() != rhs.platform_accelerator_.get() &&
-      ((!platform_accelerator_.get() || !rhs.platform_accelerator_.get()) ||
-       !platform_accelerator_->Equals(*rhs.platform_accelerator_))) {
-    return false;
-  }
+  if ((key_code_ == rhs.key_code_) && (type_ == rhs.type_) &&
+      (modifiers_ == rhs.modifiers_))
+    return true;
 
-  return (key_code_ == rhs.key_code_) && (type_ == rhs.type_) &&
-      (modifiers_ == rhs.modifiers_);
+  bool platform_equal =
+      platform_accelerator_.get() && rhs.platform_accelerator_.get() &&
+      platform_accelerator_.get() == rhs.platform_accelerator_.get();
+
+  return platform_equal;
 }
 
 bool Accelerator::operator !=(const Accelerator& rhs) const {
@@ -98,9 +97,9 @@ bool Accelerator::IsCmdDown() const {
   return (modifiers_ & EF_COMMAND_DOWN) != 0;
 }
 
-string16 Accelerator::GetShortcutText() const {
+base::string16 Accelerator::GetShortcutText() const {
   int string_id = 0;
-  switch(key_code_) {
+  switch (key_code_) {
     case ui::VKEY_TAB:
       string_id = IDS_APP_TAB_KEY;
       break;
@@ -134,6 +133,12 @@ string16 Accelerator::GetShortcutText() const {
     case ui::VKEY_RIGHT:
       string_id = IDS_APP_RIGHT_ARROW_KEY;
       break;
+    case ui::VKEY_UP:
+      string_id = IDS_APP_UP_ARROW_KEY;
+      break;
+    case ui::VKEY_DOWN:
+      string_id = IDS_APP_DOWN_ARROW_KEY;
+      break;
     case ui::VKEY_BACK:
       string_id = IDS_APP_BACKSPACE_KEY;
       break;
@@ -143,11 +148,29 @@ string16 Accelerator::GetShortcutText() const {
     case ui::VKEY_F11:
       string_id = IDS_APP_F11_KEY;
       break;
+    case ui::VKEY_OEM_COMMA:
+      string_id = IDS_APP_COMMA_KEY;
+      break;
+    case ui::VKEY_OEM_PERIOD:
+      string_id = IDS_APP_PERIOD_KEY;
+      break;
+    case ui::VKEY_MEDIA_NEXT_TRACK:
+      string_id = IDS_APP_MEDIA_NEXT_TRACK_KEY;
+      break;
+    case ui::VKEY_MEDIA_PLAY_PAUSE:
+      string_id = IDS_APP_MEDIA_PLAY_PAUSE_KEY;
+      break;
+    case ui::VKEY_MEDIA_PREV_TRACK:
+      string_id = IDS_APP_MEDIA_PREV_TRACK_KEY;
+      break;
+    case ui::VKEY_MEDIA_STOP:
+      string_id = IDS_APP_MEDIA_STOP_KEY;
+      break;
     default:
       break;
   }
 
-  string16 shortcut;
+  base::string16 shortcut;
   if (!string_id) {
 #if defined(OS_WIN)
     // Our fallback is to try translate the key code to a regular character
@@ -165,23 +188,8 @@ string16 Accelerator::GetShortcutText() const {
 #elif defined(USE_AURA) || defined(OS_MACOSX)
     const uint16 c = GetCharacterFromKeyCode(key_code_, false);
     if (c != 0)
-      shortcut += static_cast<string16::value_type>(base::ToUpperASCII(c));
-#elif defined(TOOLKIT_GTK)
-    const gchar* name = NULL;
-    switch (key_code_) {
-      case ui::VKEY_OEM_2:
-        name = static_cast<const gchar*>("/");
-        break;
-      default:
-        name = gdk_keyval_name(gdk_keyval_to_lower(key_code_));
-        break;
-    }
-    if (name) {
-      if (name[0] != 0 && name[1] == 0)
-        shortcut += static_cast<string16::value_type>(g_ascii_toupper(name[0]));
-      else
-        shortcut += UTF8ToUTF16(name);
-    }
+      shortcut +=
+          static_cast<base::string16::value_type>(base::ToUpperASCII(c));
 #endif
   } else {
     shortcut = l10n_util::GetStringUTF16(string_id);
@@ -191,7 +199,7 @@ string16 Accelerator::GetShortcutText() const {
   // If it is not, then we need to adjust the string later on if the locale is
   // right-to-left. See below for more information of why such adjustment is
   // required.
-  string16 shortcut_rtl;
+  base::string16 shortcut_rtl;
   bool adjust_shortcut_for_rtl = false;
   if (base::i18n::IsRTL() && shortcut.length() == 1 &&
       !IsAsciiAlpha(shortcut[0]) && !IsAsciiDigit(shortcut[0])) {
@@ -236,7 +244,7 @@ string16 Accelerator::GetShortcutText() const {
   if (adjust_shortcut_for_rtl) {
     int key_length = static_cast<int>(shortcut_rtl.length());
     DCHECK_GT(key_length, 0);
-    shortcut_rtl.append(ASCIIToUTF16("+"));
+    shortcut_rtl.append(base::ASCIIToUTF16("+"));
 
     // Subtracting the size of the shortcut key and 1 for the '+' sign.
     shortcut_rtl.append(shortcut, 0, shortcut.length() - key_length - 1);

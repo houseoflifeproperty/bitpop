@@ -10,42 +10,39 @@
 #import "chrome/browser/ui/cocoa/panels/panel_utils_cocoa.h"
 #import "chrome/browser/ui/cocoa/panels/panel_window_controller_cocoa.h"
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 
 using content::NativeWebKeyboardEvent;
 using content::WebContents;
-
-namespace {
-
-// Use this instead of 0 for minimum size of a window when doing opening and
-// closing animations, since OSX window manager does not like 0-sized windows
-// (according to avi@).
-const int kMinimumWindowSize = 1;
-
-}  // namespace
 
 // This creates a shim window class, which in turn creates a Cocoa window
 // controller which in turn creates actual NSWindow by loading a nib.
 // Overall chain of ownership is:
 // PanelWindowControllerCocoa -> PanelCocoa -> Panel.
 // static
-NativePanel* Panel::CreateNativePanel(Panel* panel, const gfx::Rect& bounds) {
-  return new PanelCocoa(panel, bounds);
+NativePanel* Panel::CreateNativePanel(Panel* panel,
+                                      const gfx::Rect& bounds,
+                                      bool always_on_top) {
+  return new PanelCocoa(panel, bounds, always_on_top);
 }
 
-PanelCocoa::PanelCocoa(Panel* panel, const gfx::Rect& bounds)
+PanelCocoa::PanelCocoa(Panel* panel,
+                       const gfx::Rect& bounds,
+                       bool always_on_top)
     : panel_(panel),
       bounds_(bounds),
-      always_on_top_(false),
+      always_on_top_(always_on_top),
       is_shown_(false),
-      attention_request_id_(0) {
+      attention_request_id_(0),
+      corner_style_(panel::ALL_ROUNDED) {
   controller_ = [[PanelWindowControllerCocoa alloc] initWithPanel:this];
 }
 
 PanelCocoa::~PanelCocoa() {
 }
 
-bool PanelCocoa::isClosed() {
+bool PanelCocoa::IsClosed() const {
   return !controller_;
 }
 
@@ -61,7 +58,7 @@ void PanelCocoa::ShowPanel() {
 }
 
 void PanelCocoa::ShowPanelInactive() {
-  if (isClosed())
+  if (IsClosed())
     return;
 
   // This method may be called several times, meaning 'ensure it's shown'.
@@ -110,11 +107,26 @@ void PanelCocoa::setBoundsInternal(const gfx::Rect& bounds, bool animate) {
 }
 
 void PanelCocoa::ClosePanel() {
-  if (isClosed())
+  if (IsClosed())
       return;
 
   NSWindow* window = [controller_ window];
-  [window performClose:controller_];
+  // performClose: contains a nested message loop which can cause reentrancy
+  // if the browser is terminating and closing all the windows.
+  // Use this version that corresponds to protocol of performClose: but does not
+  // spin a nested loop.
+  // TODO(dimich): refactor similar method from BWC and reuse here.
+  if ([controller_ windowShouldClose:window]) {
+    // Make sure that the panel window is not associated with the underlying
+    // stack window because otherwise hiding the panel window could cause all
+    // other panel windows in the same stack to disappear.
+    NSWindow* stackWindow = [window parentWindow];
+    if (stackWindow)
+      [stackWindow removeChildWindow:window];
+
+    [window orderOut:nil];
+    [window close];
+  }
 }
 
 void PanelCocoa::ActivatePanel() {
@@ -143,7 +155,7 @@ void PanelCocoa::PreventActivationByOS(bool prevent_activation) {
   return;
 }
 
-gfx::NativeWindow PanelCocoa::GetNativePanelHandle() {
+gfx::NativeWindow PanelCocoa::GetNativePanelWindow() {
   return [controller_ window];
 }
 
@@ -155,10 +167,6 @@ void PanelCocoa::UpdatePanelTitleBar() {
 
 void PanelCocoa::UpdatePanelLoadingAnimations(bool should_animate) {
   [controller_ updateThrobber:should_animate];
-}
-
-void PanelCocoa::NotifyPanelOnUserChangedTheme() {
-  NOTIMPLEMENTED();
 }
 
 void PanelCocoa::PanelWebContentsFocused(content::WebContents* contents) {
@@ -213,8 +221,22 @@ void PanelCocoa::HandlePanelKeyboardEvent(
   [event_window redispatchKeyEvent:event.os_event];
 }
 
-void PanelCocoa::FullScreenModeChanged(
-    bool is_full_screen) {
+void PanelCocoa::FullScreenModeChanged(bool is_full_screen) {
+  if (!is_shown_) {
+    // If the panel window is not shown due to that a Chrome tab window is in
+    // fullscreen mode when the panel is being created, we need to show the
+    // panel window now. In addition, its titlebar needs to be updated since it
+    // is not done at the panel creation time.
+    if (!is_full_screen) {
+      ShowPanelInactive();
+      UpdatePanelTitleBar();
+    }
+
+    // No need to proceed when the panel window was not shown previously.
+    // We either show the panel window or do not show it depending on current
+    // full screen state.
+    return;
+  }
   [controller_ fullScreenModeChanged:is_full_screen];
 }
 
@@ -227,14 +249,33 @@ void PanelCocoa::SetPanelAlwaysOnTop(bool on_top) {
     return;
   always_on_top_ = on_top;
   [controller_ updateWindowLevel];
-}
-
-void PanelCocoa::EnableResizeByMouse(bool enable) {
-  [controller_ enableResizeByMouse:enable];
+  [controller_ updateWindowCollectionBehavior];
 }
 
 void PanelCocoa::UpdatePanelMinimizeRestoreButtonVisibility() {
   [controller_ updateTitleBarMinimizeRestoreButtonVisibility];
+}
+
+void PanelCocoa::SetWindowCornerStyle(panel::CornerStyle corner_style) {
+  corner_style_ = corner_style;
+
+  // TODO(dimich): investigate how to support it on Mac.
+}
+
+void PanelCocoa::MinimizePanelBySystem() {
+  [controller_ miniaturize];
+}
+
+bool PanelCocoa::IsPanelMinimizedBySystem() const {
+  return [controller_ isMiniaturized];
+}
+
+bool PanelCocoa::IsPanelShownOnActiveDesktop() const {
+  return [[controller_ window] isOnActiveSpace];
+}
+
+void PanelCocoa::ShowShadow(bool show) {
+  [controller_ showShadow:show];
 }
 
 void PanelCocoa::PanelExpansionStateChanging(
@@ -274,9 +315,9 @@ Panel* PanelCocoa::panel() const {
 }
 
 void PanelCocoa::DidCloseNativeWindow() {
-  DCHECK(!isClosed());
-  panel_->OnNativePanelClosed();
+  DCHECK(!IsClosed());
   controller_ = NULL;
+  panel_->OnNativePanelClosed();
 }
 
 // NativePanelTesting implementation.
@@ -295,10 +336,14 @@ class CocoaNativePanelTesting : public NativePanelTesting {
   virtual bool VerifyDrawingAttention() const OVERRIDE;
   virtual bool VerifyActiveState(bool is_active) OVERRIDE;
   virtual bool VerifyAppIcon() const OVERRIDE;
+  virtual bool VerifySystemMinimizeState() const OVERRIDE;
+  virtual bool IsWindowVisible() const OVERRIDE;
   virtual bool IsWindowSizeKnown() const OVERRIDE;
   virtual bool IsAnimatingBounds() const OVERRIDE;
   virtual bool IsButtonVisible(
       panel::TitlebarButtonType button_type) const OVERRIDE;
+  virtual panel::CornerStyle GetWindowCornerStyle() const OVERRIDE;
+  virtual bool EnsureApplicationRunOnForeground() OVERRIDE;
 
  private:
   PanelTitlebarViewCocoa* titlebar() const;
@@ -363,8 +408,17 @@ bool CocoaNativePanelTesting::VerifyActiveState(bool is_active) {
 }
 
 bool CocoaNativePanelTesting::VerifyAppIcon() const {
-// Nothing to do since panel does not show dock icon.
+  // Nothing to do since panel does not show dock icon.
   return true;
+}
+
+bool CocoaNativePanelTesting::VerifySystemMinimizeState() const {
+  // TODO(jianli): to be implemented.
+  return true;
+}
+
+bool CocoaNativePanelTesting::IsWindowVisible() const {
+  return [[native_panel_window_->controller_ window] isVisible];
 }
 
 bool CocoaNativePanelTesting::IsWindowSizeKnown() const {
@@ -372,7 +426,12 @@ bool CocoaNativePanelTesting::IsWindowSizeKnown() const {
 }
 
 bool CocoaNativePanelTesting::IsAnimatingBounds() const {
-  return [native_panel_window_->controller_ isAnimatingBounds];
+  if ([native_panel_window_->controller_ isAnimatingBounds])
+    return true;
+  StackedPanelCollection* stack = native_panel_window_->panel()->stack();
+  if (!stack)
+    return false;
+  return stack->IsAnimatingPanelBounds(native_panel_window_->panel());
 }
 
 bool CocoaNativePanelTesting::IsButtonVisible(
@@ -388,4 +447,15 @@ bool CocoaNativePanelTesting::IsButtonVisible(
       NOTREACHED();
   }
   return false;
+}
+
+panel::CornerStyle CocoaNativePanelTesting::GetWindowCornerStyle() const {
+  return native_panel_window_->corner_style_;
+}
+
+bool CocoaNativePanelTesting::EnsureApplicationRunOnForeground() {
+  if ([NSApp isActive])
+    return true;
+  [NSApp activateIgnoringOtherApps:YES];
+  return [NSApp isActive];
 }

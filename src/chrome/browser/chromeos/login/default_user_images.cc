@@ -6,14 +6,15 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_piece.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/sys_info.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
 
 namespace chromeos {
@@ -73,10 +74,10 @@ const int kDefaultImageDescriptions[] = {
 // image if its valid.
 std::string GetDefaultImageString(int index, const std::string& prefix) {
   if (index < 0 || index >= kDefaultImagesCount) {
-    NOTREACHED();
+    DCHECK(!base::SysInfo::IsRunningOnChromeOS());
     return std::string();
   }
-  return StringPrintf("%s%d", prefix.c_str(), index);
+  return base::StringPrintf("%s%d", prefix.c_str(), index);
 }
 
 // Returns true if the string specified consists of the prefix and one of
@@ -127,7 +128,7 @@ std::string GetDefaultImageUrl(int index) {
   return GetDefaultImageString(index, kDefaultUrlPrefix);
 }
 
-bool IsDefaultImageUrl(const std::string url, int* image_id) {
+bool IsDefaultImageUrl(const std::string& url, int* image_id) {
   if (url == kZeroDefaultUrl) {
     *image_id = 0;
     return true;
@@ -141,13 +142,13 @@ const gfx::ImageSkia& GetDefaultImage(int index) {
       GetImageSkiaNamed(kDefaultImageResourceIDs[index]);
 }
 
-string16 GetDefaultImageDescription(int index) {
+base::string16 GetDefaultImageDescription(int index) {
   DCHECK(index >= 0 && index < kDefaultImagesCount);
   int string_id = kDefaultImageDescriptions[index];
   if (string_id)
     return l10n_util::GetStringUTF16(string_id);
   else
-    return string16();
+    return base::string16();
 }
 
 // Resource IDs of default user images.

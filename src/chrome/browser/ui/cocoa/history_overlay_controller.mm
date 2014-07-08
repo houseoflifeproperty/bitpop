@@ -5,6 +5,7 @@
 #import "chrome/browser/ui/cocoa/history_overlay_controller.h"
 
 #include "base/logging.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -27,10 +28,6 @@ const CGFloat kShieldHeight = 140;
 // Additional height that is added to kShieldHeight when the gesture is
 // considered complete.
 const CGFloat kShieldHeightCompletionAdjust = 10;
-
-// The amount of |gestureAmount| at which AppKit considers the gesture
-// completed. This was derived more via art than science.
-const CGFloat kGestureCompleteProgress = 0.3;
 
 // HistoryOverlayView //////////////////////////////////////////////////////////
 
@@ -61,7 +58,7 @@ const CGFloat kGestureCompleteProgress = 0.3;
     NSRect arrowRect = NSMakeRect(offset, 0, kShieldRadius, kShieldHeight);
     arrowRect = NSInsetRect(arrowRect, 10, 0);  // Give a little padding.
 
-    scoped_nsobject<NSImageView> imageView(
+    base::scoped_nsobject<NSImageView> imageView(
         [[NSImageView alloc] initWithFrame:arrowRect]);
     [imageView setImage:image];
     [imageView setAutoresizingMask:NSViewMinYMargin | NSViewMaxYMargin];
@@ -92,11 +89,6 @@ const CGFloat kGestureCompleteProgress = 0.3;
   return self;
 }
 
-- (void)dealloc {
-  [self.view removeFromSuperview];
-  [super dealloc];
-}
-
 - (void)loadView {
   const gfx::Image& image =
       ui::ResourceBundle::GetSharedInstance().GetNativeImageNamed(
@@ -108,12 +100,8 @@ const CGFloat kGestureCompleteProgress = 0.3;
   self.view = contentView_;
 }
 
-- (void)setProgress:(CGFloat)gestureAmount {
+- (void)setProgress:(CGFloat)gestureAmount finished:(BOOL)finished {
   NSRect parentFrame = [parent_ frame];
-  // Scale the gesture amount so that the progress is indicative of the gesture
-  // being completed.
-  gestureAmount = std::abs(gestureAmount) / kGestureCompleteProgress;
-
   // When tracking the gesture, the height is constant and the alpha value
   // changes from [0.25, 0.65].
   CGFloat height = kShieldHeight;
@@ -123,7 +111,7 @@ const CGFloat kGestureCompleteProgress = 0.3;
 
   // When the gesture is very likely to be completed (90% in this case), grow
   // the semicircle's height and lock the alpha to 0.75.
-  if (gestureAmount > 0.9) {
+  if (finished) {
     height += kShieldHeightCompletionAdjust;
     shieldAlpha = 0.75;
   }
@@ -146,18 +134,20 @@ const CGFloat kGestureCompleteProgress = 0.3;
 
 - (void)showPanelForView:(NSView*)view {
   parent_.reset([view retain]);
-  [self setProgress:0];  // Set initial view position.
-  [[parent_ superview] addSubview:self.view
-                       positioned:NSWindowAbove
-                       relativeTo:parent_];
+  [self setProgress:0 finished:NO];  // Set initial view position.
+  [parent_  addSubview:self.view];
+  [[BrowserWindowController
+      browserWindowControllerForView:[self view]] onOverlappedViewShown];
 }
 
 - (void)dismiss {
   const CGFloat kFadeOutDurationSeconds = 0.4;
 
+  [NSAnimationContext beginGrouping];
+  [NSAnimationContext currentContext].duration = kFadeOutDurationSeconds;
   NSView* overlay = self.view;
 
-  scoped_nsobject<CAAnimation> animation(
+  base::scoped_nsobject<CAAnimation> animation(
       [[overlay animationForKey:@"alphaValue"] copy]);
   [animation setDelegate:self];
   [animation setDuration:kFadeOutDurationSeconds];
@@ -166,9 +156,13 @@ const CGFloat kGestureCompleteProgress = 0.3;
   [dictionary setObject:animation forKey:@"alphaValue"];
   [overlay setAnimations:dictionary];
   [[overlay animator] setAlphaValue:0.0];
+  [NSAnimationContext endGrouping];
 }
 
 - (void)animationDidStop:(CAAnimation*)theAnimation finished:(BOOL)finished {
+  [[BrowserWindowController
+      browserWindowControllerForView:[self view]] onOverlappedViewHidden];
+  [self.view removeFromSuperview];
   // Destroy the CAAnimation and its strong reference to its delegate (this
   // class).
   [self.view setAnimations:nil];

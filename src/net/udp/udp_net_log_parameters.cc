@@ -5,7 +5,7 @@
 #include "net/udp/udp_net_log_parameters.h"
 
 #include "base/bind.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "net/base/ip_endpoint.h"
 
@@ -13,11 +13,11 @@ namespace net {
 
 namespace {
 
-Value* NetLogUDPDataTranferCallback(int byte_count,
-                                    const char* bytes,
-                                    const IPEndPoint* address,
-                                    NetLog::LogLevel log_level) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogUDPDataTranferCallback(int byte_count,
+                                          const char* bytes,
+                                          const IPEndPoint* address,
+                                          NetLog::LogLevel log_level) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetInteger("byte_count", byte_count);
   if (NetLog::IsLoggingBytes(log_level))
     dict->SetString("hex_encoded_bytes", base::HexEncode(bytes, byte_count));
@@ -26,9 +26,9 @@ Value* NetLogUDPDataTranferCallback(int byte_count,
   return dict;
 }
 
-Value* NetLogUDPConnectCallback(const IPEndPoint* address,
-                                NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue();
+base::Value* NetLogUDPConnectCallback(const IPEndPoint* address,
+                                      NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue();
   dict->SetString("address", address->ToString());
   return dict;
 }

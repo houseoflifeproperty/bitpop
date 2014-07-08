@@ -9,9 +9,7 @@
 #ifndef NET_QUIC_QUIC_FEC_GROUP_H_
 #define NET_QUIC_QUIC_FEC_GROUP_H_
 
-#include <set>
-
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
@@ -21,15 +19,19 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
   QuicFecGroup();
   ~QuicFecGroup();
 
-  // Updates the FEC group based on the delivery of a data packet.
-  // Returns false if this packet has already been seen, true otherwise.
-  bool Update(const QuicPacketHeader& header,
+  // Updates the FEC group based on the delivery of a data packet decrypted at
+  // |encryption_level|. Returns false if this packet has already been seen,
+  // true otherwise.
+  bool Update(EncryptionLevel encryption_level,
+              const QuicPacketHeader& header,
               base::StringPiece decrypted_payload);
 
-  // Updates the FEC group based on the delivery of an FEC packet.
-  // Returns false if this packet has already been seen or if it does
-  // not claim to protect all the packets previously seen in this group.
-  bool UpdateFec(QuicPacketSequenceNumber fec_packet_sequence_number,
+  // Updates the FEC group based on the delivery of an FEC packet decrypted at
+  // |encryption_level|. Returns false if this packet has already been seen or
+  // if it does not claim to protect all the packets previously seen in this
+  // group.
+  bool UpdateFec(EncryptionLevel encryption_level,
+                 QuicPacketSequenceNumber fec_packet_sequence_number,
                  const QuicFecData& fec);
 
   // Returns true if a packet can be revived from this FEC group.
@@ -51,8 +53,21 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
   // numbers less than |num|.
   bool ProtectsPacketsBefore(QuicPacketSequenceNumber num) const;
 
-  const base::StringPiece parity() const {
-    return base::StringPiece(parity_, parity_len_);
+  const base::StringPiece payload_parity() const {
+    return base::StringPiece(payload_parity_, payload_parity_len_);
+  }
+
+  QuicPacketSequenceNumber min_protected_packet() const {
+    return min_protected_packet_;
+  }
+
+  size_t NumReceivedPackets() const {
+    return received_packets_.size();
+  }
+
+  // Returns the effective encryption level of the FEC group.
+  EncryptionLevel effective_encryption_level() const {
+    return effective_encryption_level_;
   }
 
  private:
@@ -62,7 +77,7 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
   size_t NumMissingPackets() const;
 
   // Set of packets that we have recevied.
-  std::set<QuicPacketSequenceNumber> received_packets_;
+  SequenceNumberSet received_packets_;
   // Sequence number of the first protected packet in this group (the one
   // with the lowest packet sequence number).  Will only be set once the FEC
   // packet has been seen.
@@ -72,8 +87,13 @@ class NET_EXPORT_PRIVATE QuicFecGroup {
   // packet has been seen.
   QuicPacketSequenceNumber max_protected_packet_;
   // The cumulative parity calculation of all received packets.
-  char parity_[kMaxPacketSize];
-  size_t parity_len_;
+  char payload_parity_[kMaxPacketSize];
+  size_t payload_parity_len_;
+  // The effective encryption level, which is the lowest encryption level of
+  // the data and FEC in the group.
+  EncryptionLevel effective_encryption_level_;
+
+  DISALLOW_COPY_AND_ASSIGN(QuicFecGroup);
 };
 
 }  // namespace net

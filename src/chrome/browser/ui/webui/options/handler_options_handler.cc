@@ -8,16 +8,25 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/custom_handlers/protocol_handler_registry_factory.h"
+#include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 namespace options {
+
+namespace {
+
+const char kHandlersLearnMoreUrl[] =
+    "https://support.google.com/chromebook/answer/1382847";
+
+}  // namespace
 
 HandlerOptionsHandler::HandlerOptionsHandler() {
 }
@@ -26,7 +35,7 @@ HandlerOptionsHandler::~HandlerOptionsHandler() {
 }
 
 void HandlerOptionsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -40,18 +49,13 @@ void HandlerOptionsHandler::GetLocalizedValues(
       { "handlers_active_heading", IDS_HANDLERS_ACTIVE_HEADING },
       { "handlers_ignored_heading", IDS_HANDLERS_IGNORED_HEADING },
   };
-#if defined(ENABLE_SETTINGS_APP)
-  static OptionsStringResource app_resources[] = {
-    { "handlers_allow", IDS_SETTINGS_APP_HANDLERS_ALLOW_RADIO },
-    { "handlers_block", IDS_SETTINGS_APP_HANDLERS_DONOTALLOW_RADIO },
-  };
-  DictionaryValue* app_values = NULL;
-  CHECK(localized_strings->GetDictionary(kSettingsAppKey, &app_values));
-  RegisterStrings(app_values, app_resources, arraysize(app_resources));
-#endif
   RegisterTitle(localized_strings, "handlersPage",
                 IDS_HANDLER_OPTIONS_WINDOW_TITLE);
   RegisterStrings(localized_strings, resources, arraysize(resources));
+
+  localized_strings->SetString(
+      "handlers_learn_more_url",
+      google_util::StringAppendGoogleLocaleParam(kHandlersLearnMoreUrl));
 }
 
 void HandlerOptionsHandler::InitializeHandler() {
@@ -83,15 +87,16 @@ void HandlerOptionsHandler::RegisterMessages() {
 }
 
 ProtocolHandlerRegistry* HandlerOptionsHandler::GetProtocolHandlerRegistry() {
-  return Profile::FromWebUI(web_ui())->GetProtocolHandlerRegistry();
+  return ProtocolHandlerRegistryFactory::GetForProfile(
+      Profile::FromWebUI(web_ui()));
 }
 
 static void GetHandlersAsListValue(
     const ProtocolHandlerRegistry::ProtocolHandlerList& handlers,
-    ListValue* handler_list) {
+    base::ListValue* handler_list) {
   ProtocolHandlerRegistry::ProtocolHandlerList::const_iterator handler;
   for (handler = handlers.begin(); handler != handlers.end(); ++handler) {
-    ListValue* handlerValue = new ListValue();
+    base::ListValue* handlerValue = new base::ListValue();
     handlerValue->Append(new base::StringValue(handler->protocol()));
     handlerValue->Append(new base::StringValue(handler->url().spec()));
     handlerValue->Append(new base::StringValue(handler->title()));
@@ -101,18 +106,18 @@ static void GetHandlersAsListValue(
 
 void HandlerOptionsHandler::GetHandlersForProtocol(
     const std::string& protocol,
-    DictionaryValue* handlers_value) {
+    base::DictionaryValue* handlers_value) {
   ProtocolHandlerRegistry* registry = GetProtocolHandlerRegistry();
   handlers_value->SetString("protocol", protocol);
   handlers_value->SetInteger("default_handler",
       registry->GetHandlerIndex(protocol));
 
-  ListValue* handlers_list = new ListValue();
+  base::ListValue* handlers_list = new base::ListValue();
   GetHandlersAsListValue(registry->GetHandlersFor(protocol), handlers_list);
   handlers_value->Set("handlers", handlers_list);
 }
 
-void HandlerOptionsHandler::GetIgnoredHandlers(ListValue* handlers) {
+void HandlerOptionsHandler::GetIgnoredHandlers(base::ListValue* handlers) {
   ProtocolHandlerRegistry* registry = GetProtocolHandlerRegistry();
   ProtocolHandlerRegistry::ProtocolHandlerList ignored_handlers =
       registry->GetIgnoredHandlers();
@@ -124,23 +129,23 @@ void HandlerOptionsHandler::UpdateHandlerList() {
   std::vector<std::string> protocols;
   registry->GetRegisteredProtocols(&protocols);
 
-  ListValue handlers;
+  base::ListValue handlers;
   for (std::vector<std::string>::iterator protocol = protocols.begin();
        protocol != protocols.end(); protocol++) {
-    DictionaryValue* handler_value = new DictionaryValue();
+    base::DictionaryValue* handler_value = new base::DictionaryValue();
     GetHandlersForProtocol(*protocol, handler_value);
     handlers.Append(handler_value);
   }
 
-  scoped_ptr<ListValue> ignored_handlers(new ListValue());
+  scoped_ptr<base::ListValue> ignored_handlers(new base::ListValue());
   GetIgnoredHandlers(ignored_handlers.get());
   web_ui()->CallJavascriptFunction("HandlerOptions.setHandlers", handlers);
   web_ui()->CallJavascriptFunction("HandlerOptions.setIgnoredHandlers",
                                    *ignored_handlers);
 }
 
-void HandlerOptionsHandler::RemoveHandler(const ListValue* args) {
-  const ListValue* list;
+void HandlerOptionsHandler::RemoveHandler(const base::ListValue* args) {
+  const base::ListValue* list;
   if (!args->GetList(0, &list)) {
     NOTREACHED();
     return;
@@ -154,8 +159,8 @@ void HandlerOptionsHandler::RemoveHandler(const ListValue* args) {
   // then.
 }
 
-void HandlerOptionsHandler::RemoveIgnoredHandler(const ListValue* args) {
-  const ListValue* list;
+void HandlerOptionsHandler::RemoveIgnoredHandler(const base::ListValue* args) {
+  const base::ListValue* list;
   if (!args->GetList(0, &list)) {
     NOTREACHED();
     return;
@@ -165,7 +170,7 @@ void HandlerOptionsHandler::RemoveIgnoredHandler(const ListValue* args) {
   GetProtocolHandlerRegistry()->RemoveIgnoredHandler(handler);
 }
 
-void HandlerOptionsHandler::SetHandlersEnabled(const ListValue* args) {
+void HandlerOptionsHandler::SetHandlersEnabled(const base::ListValue* args) {
   bool enabled = true;
   CHECK(args->GetBoolean(0, &enabled));
   if (enabled)
@@ -174,16 +179,16 @@ void HandlerOptionsHandler::SetHandlersEnabled(const ListValue* args) {
     GetProtocolHandlerRegistry()->Disable();
 }
 
-void HandlerOptionsHandler::ClearDefault(const ListValue* args) {
-  const Value* value;
+void HandlerOptionsHandler::ClearDefault(const base::ListValue* args) {
+  const base::Value* value;
   CHECK(args->Get(0, &value));
   std::string protocol_to_clear;
   CHECK(value->GetAsString(&protocol_to_clear));
   GetProtocolHandlerRegistry()->ClearDefault(protocol_to_clear);
 }
 
-void HandlerOptionsHandler::SetDefault(const ListValue* args) {
-  const ListValue* list;
+void HandlerOptionsHandler::SetDefault(const base::ListValue* args) {
+  const base::ListValue* list;
   CHECK(args->GetList(0, &list));
   const ProtocolHandler& handler(ParseHandlerFromArgs(list));
   CHECK(!handler.IsEmpty());
@@ -191,16 +196,16 @@ void HandlerOptionsHandler::SetDefault(const ListValue* args) {
 }
 
 ProtocolHandler HandlerOptionsHandler::ParseHandlerFromArgs(
-    const ListValue* args) const {
-  string16 protocol;
-  string16 url;
-  string16 title;
+    const base::ListValue* args) const {
+  base::string16 protocol;
+  base::string16 url;
+  base::string16 title;
   bool ok = args->GetString(0, &protocol) && args->GetString(1, &url) &&
     args->GetString(2, &title);
   if (!ok)
     return ProtocolHandler::EmptyProtocolHandler();
-  return ProtocolHandler::CreateProtocolHandler(UTF16ToUTF8(protocol),
-                                                GURL(UTF16ToUTF8(url)),
+  return ProtocolHandler::CreateProtocolHandler(base::UTF16ToUTF8(protocol),
+                                                GURL(base::UTF16ToUTF8(url)),
                                                 title);
 }
 

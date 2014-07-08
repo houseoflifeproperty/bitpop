@@ -6,9 +6,11 @@
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_bridge.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
 #include "testing/platform_test.h"
+#include "url/gurl.h"
 
 // TODO(jrg): use OCMock.
 
@@ -26,7 +28,7 @@ typedef std::pair<GURL,WindowOpenDisposition> OpenInfo;
 // Oddly, we are our own delegate.
 @interface FakeBookmarkBarController : BookmarkBarController {
  @public
-  scoped_nsobject<NSMutableArray> callbacks_;
+  base::scoped_nsobject<NSMutableArray> callbacks_;
   std::vector<OpenInfo> opens_;
 }
 @end
@@ -98,28 +100,29 @@ class BookmarkBarBridgeTest : public CocoaProfileTest {
 TEST_F(BookmarkBarBridgeTest, TestRedirect) {
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile());
 
-  scoped_nsobject<NSView> parentView([[NSView alloc]
-                                       initWithFrame:NSMakeRect(0,0,100,100)]);
-  scoped_nsobject<NSView> webView([[NSView alloc]
-                                       initWithFrame:NSMakeRect(0,0,100,100)]);
-  scoped_nsobject<NSView> infoBarsView(
-      [[NSView alloc] initWithFrame:NSMakeRect(0,0,100,100)]);
+  base::scoped_nsobject<NSView> parentView(
+      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]);
+  base::scoped_nsobject<NSView> webView(
+      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]);
+  base::scoped_nsobject<NSView> infoBarsView(
+      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]);
 
-  scoped_nsobject<FakeBookmarkBarController>
-      controller([[FakeBookmarkBarController alloc] initWithBrowser:browser()]);
+  base::scoped_nsobject<FakeBookmarkBarController> controller(
+      [[FakeBookmarkBarController alloc] initWithBrowser:browser()]);
   EXPECT_TRUE(controller.get());
-  scoped_ptr<BookmarkBarBridge> bridge(new BookmarkBarBridge(controller.get(),
+  scoped_ptr<BookmarkBarBridge> bridge(new BookmarkBarBridge(profile(),
+                                                             controller.get(),
                                                              model));
   EXPECT_TRUE(bridge.get());
 
-  bridge->Loaded(NULL, false);
+  bridge->BookmarkModelLoaded(NULL, false);
   bridge->BookmarkModelBeingDeleted(NULL);
   bridge->BookmarkNodeMoved(NULL, NULL, 0, NULL, 0);
   bridge->BookmarkNodeAdded(NULL, NULL, 0);
   bridge->BookmarkNodeChanged(NULL, NULL);
   bridge->BookmarkNodeFaviconChanged(NULL, NULL);
   bridge->BookmarkNodeChildrenReordered(NULL, NULL);
-  bridge->BookmarkNodeRemoved(NULL, NULL, 0, NULL);
+  bridge->BookmarkNodeRemoved(NULL, NULL, 0, NULL, std::set<GURL>());
 
   // 8 calls above plus an initial Loaded() in init routine makes 9
   EXPECT_TRUE([controller.get()->callbacks_ count] == 9);

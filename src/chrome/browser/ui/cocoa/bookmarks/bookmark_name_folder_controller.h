@@ -7,11 +7,12 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 
 class BookmarkModelObserverForCocoa;
+class BookmarkNode;
+class Profile;
 
 // A controller for dialog to let the user create a new folder or
 // rename an existing folder.  Accessible from a context menu on a
@@ -31,7 +32,7 @@ class BookmarkModelObserverForCocoa;
   const BookmarkNode* parent_;
   int newIndex_;
 
-  scoped_nsobject<NSString> initialName_;
+  base::scoped_nsobject<NSString> initialName_;
 
   // Ping me when things change out from under us.
   scoped_ptr<BookmarkModelObserverForCocoa> observer_;

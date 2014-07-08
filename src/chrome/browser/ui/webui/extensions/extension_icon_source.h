@@ -9,11 +9,12 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/memory/weak_ptr.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/favicon/favicon_service.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/common/cancelable_task_tracker.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_resource.h"
+#include "content/public/browser/url_data_source.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/extension_resource.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class ExtensionIconSet;
@@ -21,7 +22,6 @@ class Profile;
 
 namespace extensions {
 class Extension;
-}
 
 // ExtensionIconSource serves extension icons through network level chrome:
 // requests. Icons can be retrieved for any installed extension or app.
@@ -49,7 +49,8 @@ class Extension;
 //  2) If a 16px icon was requested, the favicon for extension's launch URL.
 //  3) The default extension / application icon if there are still no matches.
 //
-class ExtensionIconSource : public ChromeURLDataManager::DataSource {
+class ExtensionIconSource : public content::URLDataSource,
+                            public base::SupportsWeakPtr<ExtensionIconSource> {
  public:
   explicit ExtensionIconSource(Profile* profile);
 
@@ -58,7 +59,7 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
   // desaturated version of the icon. |exists|, if non-NULL, will be set to true
   // if the icon exists; false if it will lead to a default or not-present
   // image.
-  static GURL GetIconURL(const extensions::Extension* extension,
+  static GURL GetIconURL(const Extension* extension,
                          int icon_size,
                          ExtensionIconSet::MatchType match,
                          bool grayscale,
@@ -68,13 +69,14 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
   // by |resource_id|.
   static SkBitmap* LoadImageByResourceId(int resource_id);
 
-  // ChromeURLDataManager::DataSource
-
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() const OVERRIDE;
   virtual std::string GetMimeType(const std::string&) const OVERRIDE;
-
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id) OVERRIDE;
+  virtual void StartDataRequest(
+      const std::string& path,
+      int render_process_id,
+      int render_frame_id,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
 
  private:
   // Encapsulates the request parameters for |request_id|.
@@ -98,7 +100,8 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
 
   // Loads the extension's |icon| for the given |request_id| and returns the
   // image to the client.
-  void LoadExtensionImage(const ExtensionResource& icon, int request_id);
+  void LoadExtensionImage(const ExtensionResource& icon,
+                          int request_id);
 
   // Loads the favicon image for the app associated with the |request_id|. If
   // the image does not exist, we fall back to the default image.
@@ -107,7 +110,7 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
   // FaviconService callback
   void OnFaviconDataAvailable(
       int request_id,
-      const history::FaviconBitmapResult& bitmap_result);
+      const favicon_base::FaviconBitmapResult& bitmap_result);
 
   // ImageLoader callback
   void OnImageLoaded(int request_id, const gfx::Image& image);
@@ -122,15 +125,15 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
 
   // Parses and savse an ExtensionIconRequest for the URL |path| for the
   // specified |request_id|.
-  bool ParseData(const std::string& path, int request_id);
-
-  // Sends the default response to |request_id|, used for invalid requests.
-  void SendDefaultResponse(int request_id);
+  bool ParseData(const std::string& path,
+                 int request_id,
+                 const content::URLDataSource::GotDataCallback& callback);
 
   // Stores the parameters associated with the |request_id|, making them
   // as an ExtensionIconRequest via GetData.
   void SetData(int request_id,
-               const extensions::Extension* extension,
+               const content::URLDataSource::GotDataCallback& callback,
+               const Extension* extension,
                bool grayscale,
                int size,
                ExtensionIconSet::MatchType match);
@@ -153,9 +156,11 @@ class ExtensionIconSource : public ChromeURLDataManager::DataSource {
 
   scoped_ptr<SkBitmap> default_extension_data_;
 
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionIconSource);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_UI_WEBUI_EXTENSIONS_EXTENSION_ICON_SOURCE_H_

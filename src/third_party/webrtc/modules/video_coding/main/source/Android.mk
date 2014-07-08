@@ -23,9 +23,7 @@ LOCAL_SRC_FILES := \
     content_metrics_processing.cc \
     decoding_state.cc \
     encoded_frame.cc \
-    exp_filter.cc \
     frame_buffer.cc \
-    frame_dropper.cc \
     generic_decoder.cc \
     generic_encoder.cc \
     inter_frame_delay.cc \
@@ -39,7 +37,6 @@ LOCAL_SRC_FILES := \
     receiver.cc \
     rtt_filter.cc \
     session_info.cc \
-    timestamp_extrapolator.cc \
     timestamp_map.cc \
     timing.cc \
     video_coding_impl.cc
@@ -57,7 +54,8 @@ LOCAL_C_INCLUDES := \
     $(LOCAL_PATH)/../../../.. \
     $(LOCAL_PATH)/../../../../common_video/vplib/main/interface \
     $(LOCAL_PATH)/../../../../common_video/interface \
-    $(LOCAL_PATH)/../../../../system_wrappers/interface 
+    $(LOCAL_PATH)/../../utility/include \
+    $(LOCAL_PATH)/../../../../system_wrappers/interface
 
 LOCAL_SHARED_LIBRARIES := \
     libcutils \

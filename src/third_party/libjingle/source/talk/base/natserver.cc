@@ -107,7 +107,7 @@ NATServer::~NATServer() {
 
 void NATServer::OnInternalPacket(
     AsyncPacketSocket* socket, const char* buf, size_t size,
-    const SocketAddress& addr) {
+    const SocketAddress& addr, const PacketTime& packet_time) {
 
   // Read the intended destination from the wire.
   SocketAddress dest_addr;
@@ -123,15 +123,16 @@ void NATServer::OnInternalPacket(
   ASSERT(iter != int_map_->end());
 
   // Allow the destination to send packets back to the source.
-  iter->second->whitelist->insert(dest_addr);
+  iter->second->WhitelistInsert(dest_addr);
 
   // Send the packet to its intended destination.
-  iter->second->socket->SendTo(buf + length, size - length, dest_addr);
+  talk_base::PacketOptions options;
+  iter->second->socket->SendTo(buf + length, size - length, dest_addr, options);
 }
 
 void NATServer::OnExternalPacket(
     AsyncPacketSocket* socket, const char* buf, size_t size,
-    const SocketAddress& remote_addr) {
+    const SocketAddress& remote_addr, const PacketTime& packet_time) {
 
   SocketAddress local_addr = socket->GetLocalAddress();
 
@@ -140,22 +141,23 @@ void NATServer::OnExternalPacket(
   ASSERT(iter != ext_map_->end());
 
   // Allow the NAT to reject this packet.
-  if (Filter(iter->second, remote_addr)) {
-    LOG(LS_INFO) << "Packet from " << remote_addr.ToString()
+  if (ShouldFilterOut(iter->second, remote_addr)) {
+    LOG(LS_INFO) << "Packet from " << remote_addr.ToSensitiveString()
                  << " was filtered out by the NAT.";
     return;
   }
 
   // Forward this packet to the internal address.
   // First prepend the address in a quasi-STUN format.
-  scoped_array<char> real_buf(new char[size + kNATEncodedIPv6AddressSize]);
+  scoped_ptr<char[]> real_buf(new char[size + kNATEncodedIPv6AddressSize]);
   size_t addrlength = PackAddressForNAT(real_buf.get(),
                                         size + kNATEncodedIPv6AddressSize,
                                         remote_addr);
   // Copy the data part after the address.
-  std::memcpy(real_buf.get() + addrlength, buf, size);
+  talk_base::PacketOptions options;
+  memcpy(real_buf.get() + addrlength, buf, size);
   server_socket_->SendTo(real_buf.get(), size + addrlength,
-                         iter->second->route.source());
+                         iter->second->route.source(), options);
 }
 
 void NATServer::Translate(const SocketAddressPair& route) {
@@ -172,8 +174,9 @@ void NATServer::Translate(const SocketAddressPair& route) {
   socket->SignalReadPacket.connect(this, &NATServer::OnExternalPacket);
 }
 
-bool NATServer::Filter(TransEntry* entry, const SocketAddress& ext_addr) {
-  return entry->whitelist->find(ext_addr) == entry->whitelist->end();
+bool NATServer::ShouldFilterOut(TransEntry* entry,
+                                const SocketAddress& ext_addr) {
+  return entry->WhitelistContains(ext_addr);
 }
 
 NATServer::TransEntry::TransEntry(
@@ -185,6 +188,16 @@ NATServer::TransEntry::TransEntry(
 NATServer::TransEntry::~TransEntry() {
   delete whitelist;
   delete socket;
+}
+
+void NATServer::TransEntry::WhitelistInsert(const SocketAddress& addr) {
+  CritScope cs(&crit_);
+  whitelist->insert(addr);
+}
+
+bool NATServer::TransEntry::WhitelistContains(const SocketAddress& ext_addr) {
+  CritScope cs(&crit_);
+  return whitelist->find(ext_addr) == whitelist->end();
 }
 
 }  // namespace talk_base

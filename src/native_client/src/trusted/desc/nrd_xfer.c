@@ -16,6 +16,8 @@
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/nacl_macros.h"
 
+#include "native_client/src/public/imc_types.h"
+
 #include "native_client/src/trusted/desc/nacl_desc_base.h"
 #include "native_client/src/trusted/desc/nacl_desc_cond.h"
 #include "native_client/src/trusted/desc/nacl_desc_conn_cap.h"
@@ -34,7 +36,6 @@
 
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
 #include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_imc_api.h"
 #include "native_client/src/trusted/service_runtime/include/sys/stat.h"
 
 
@@ -44,12 +45,6 @@
  * This allows fast, SSE-based memcpy routines to work, giving us
  * 16-bytes-per-cycle memory copies for in-cache data.
  */
-
-static INLINE nacl_abi_size_t min_abi_size(nacl_abi_size_t  a,
-                                           nacl_abi_size_t  b) {
-  if (a < b) return a;
-  return b;
-}
 
 static INLINE size_t min_size(size_t  a,
                               size_t  b) {
@@ -232,7 +227,7 @@ ssize_t NaClImcSendTypedMessage(struct NaClDesc                 *channel,
   hdr_buf = NULL;
 
   /*
-   * NOTE: type punning w/ NaclImcMsgIoVec and NaClIOVec.
+   * NOTE: type punning w/ NaClImcMsgIoVec and NaClIOVec.
    * This breaks ansi type aliasing rules and hence we may use
    * soemthing like '-fno-strict-aliasing'
    */
@@ -361,7 +356,7 @@ ssize_t NaClImcSendTypedMessage(struct NaClDesc                 *channel,
     }
 
     kern_msg_hdr.handles = kern_handle;
-    kern_msg_hdr.handle_count = sys_handles;
+    kern_msg_hdr.handle_count = (uint32_t) sys_handles;
   }
 
   NaClLog(4, "Invoking LowLevelSendMsg, flags 0x%x\n", flags);

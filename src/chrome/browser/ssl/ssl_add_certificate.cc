@@ -5,7 +5,7 @@
 #include "chrome/browser/ssl/ssl_add_certificate.h"
 
 #include "chrome/browser/ssl/ssl_add_cert_handler.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 
 namespace chrome {
 
@@ -31,7 +31,7 @@ void SSLAddCertificate(
   // intentional here.
 
   // The handler will run the UI and delete itself when it's finished.
-  new SSLAddCertHandler(request, cert, render_process_id, render_view_id);
+  new SSLAddCertHandler(request, cert.get(), render_process_id, render_view_id);
 }
 
 }  // namespace chrome

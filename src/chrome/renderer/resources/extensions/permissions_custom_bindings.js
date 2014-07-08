@@ -2,24 +2,25 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the Permissions API.
+// Custom binding for the Permissions API.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
-var sendRequest = require('sendRequest').sendRequest;
-var lastError = require('lastError');
+var binding = require('binding').Binding.create('permissions');
 
-// These custom bindings are only necessary because it is not currently
+var Event = require('event_bindings').Event;
+
+// These custom binding are only necessary because it is not currently
 // possible to have a union of types as the type of the items in an array.
 // Once that is fixed, this entire file should go away.
 // See,
 // https://code.google.com/p/chromium/issues/detail?id=162044
 // https://code.google.com/p/chromium/issues/detail?id=162042
 // TODO(bryeung): delete this file.
-chromeHidden.registerCustomHook('permissions', function(api) {
+binding.registerCustomHook(function(api) {
   var apiFunctions = api.apiFunctions;
+  var permissions = api.compiledApi;
 
   function maybeConvertToObject(str) {
-    var parts = str.split('|');
+    var parts = $String.split(str, '|');
     if (parts.length != 2)
       return str;
 
@@ -39,7 +40,7 @@ chromeHidden.registerCustomHook('permissions', function(api) {
     for (var i = 0; i < args.length; i += 1) {
       if (typeof(args[i]) == 'object') {
         var a = args[i];
-        var keys = Object.keys(a);
+        var keys = $Object.keys(a);
         if (keys.length != 1) {
           throw new Error("Too many keys in object-style permission.");
         }
@@ -71,21 +72,26 @@ chromeHidden.registerCustomHook('permissions', function(api) {
         // not objects, validation will fail after the for-loop above.  This
         // skips validation and calls the callback directly, then clears it so
         // that handleResponse doesn't call it again.
-        if (request.callback)
-          request.callback.apply(request, [response]);
-        delete request.callback;
+        try {
+          if (request.callback)
+            $Function.apply(request.callback, request, [response]);
+        } finally {
+          delete request.callback;
+        }
       });
 
   // Also convert complex permissions back to objects for events.  The
   // dispatchToListener call happens after argument validation, which works
   // around the problem that Permissions.permissions is supposed to be a list
   // of strings.
-  chrome.permissions.onAdded.dispatchToListener = function(callback, args) {
+  permissions.onAdded.dispatchToListener = function(callback, args) {
     for (var i = 0; i < args[0].permissions.length; i += 1) {
       args[0].permissions[i] = maybeConvertToObject(args[0].permissions[i]);
     }
-    chrome.Event.prototype.dispatchToListener(callback, args);
+    $Function.call(Event.prototype.dispatchToListener, this, callback, args);
   };
-  chrome.permissions.onRemoved.dispatchToListener =
-      chrome.permissions.onAdded.dispatchToListener;
+  permissions.onRemoved.dispatchToListener =
+      permissions.onAdded.dispatchToListener;
 });
+
+exports.binding = binding.generate();

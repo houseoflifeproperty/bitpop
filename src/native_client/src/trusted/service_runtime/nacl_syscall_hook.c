@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <time.h>
 
+#include "native_client/src/include/nacl_compiler_annotations.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/service_runtime/nacl_globals.h"
@@ -41,7 +42,7 @@
  * NACL_APP_THREAD_UNTRUSTED, which has two consequences:
  *
  *  1) We may read untrusted address space without calling
- *     NaClCopyInTakeLock() first, because this function's execution
+ *     NaClCopyTakeLock() first, because this function's execution
  *     will be suspended while any mmap hole is opened up on Windows.
  *
  *  2) We may not claim any locks.  This means we may not call
@@ -49,12 +50,12 @@
  *     should be okay for internal errors.)
  */
 static void HandleStackContext(struct NaClAppThread *natp,
-                               uintptr_t            *tramp_ret_out,
+                               uint32_t             *tramp_ret_out,
                                uintptr_t            *sp_user_out) {
   struct NaClApp *nap = natp->nap;
   uintptr_t      sp_user;
   uintptr_t      sp_sys;
-  uintptr_t      tramp_ret;
+  uint32_t       tramp_ret;
   nacl_reg_t     user_ret;
 
   /*
@@ -73,14 +74,13 @@ static void HandleStackContext(struct NaClAppThread *natp,
    * trampoline was called (and hence the syscall number); we never
    * return to the trampoline.
    */
-  tramp_ret = *(uintptr_t *) (sp_sys + NACL_TRAMPRET_FIX);
-  tramp_ret = NaClUserToSysStackAddr(nap, tramp_ret);
+  tramp_ret = *(volatile uint32_t *) (sp_sys + NACL_TRAMPRET_FIX);
   /*
    * Get the user return address (where we return to after the system
    * call).  We must ensure the address is properly sandboxed before
    * switching back to untrusted code.
    */
-  user_ret = *(uintptr_t *) (sp_sys + NACL_USERRET_FIX);
+  user_ret = *(volatile uintptr_t *) (sp_sys + NACL_USERRET_FIX);
   user_ret = (nacl_reg_t) NaClSandboxCodeAddr(nap, (uintptr_t) user_ret);
   natp->user.new_prog_ctr = user_ret;
 
@@ -88,10 +88,10 @@ static void HandleStackContext(struct NaClAppThread *natp,
   *sp_user_out = sp_user;
 }
 
-NORETURN void NaClSyscallCSegHook(int32_t tls_idx) {
-  struct NaClAppThread      *natp;
+struct NaClThreadContext *NaClSyscallCSegHook(struct NaClThreadContext *ntcp) {
+  struct NaClAppThread      *natp = NaClAppThreadFromThreadContext(ntcp);
   struct NaClApp            *nap;
-  uintptr_t                 tramp_ret;
+  uint32_t                  tramp_ret;
   size_t                    sysnum;
   uintptr_t                 sp_user;
   uint32_t                  sysret;
@@ -101,8 +101,6 @@ NORETURN void NaClSyscallCSegHook(int32_t tls_idx) {
    * so that we can report any crashes that occur after this point.
    */
   NaClStackSafetyNowOnTrustedStack();
-
-  natp = nacl_thread[tls_idx];
 
   HandleStackContext(natp, &tramp_ret, &sp_user);
 
@@ -116,19 +114,17 @@ NORETURN void NaClSyscallCSegHook(int32_t tls_idx) {
 
   nap = natp->nap;
 
-  NaClLog(4, "Entered NaClSyscallCSegHook\n");
-  NaClLog(4, "user sp %"NACL_PRIxPTR"\n", sp_user);
-
-  NaClCopyInTakeLock(nap);
+  NaClCopyTakeLock(nap);
   /*
    * held until syscall args are copied, which occurs in the generated
    * code.
    */
 
-  sysnum = (tramp_ret - (nap->mem_start + NACL_SYSCALL_START_ADDR))
-      >> NACL_SYSCALL_BLOCK_SHIFT;
+  sysnum = (tramp_ret - NACL_SYSCALL_START_ADDR) >> NACL_SYSCALL_BLOCK_SHIFT;
 
-  NaClLog(4, "system call %"NACL_PRIuS"\n", sysnum);
+  NaClLog(4, "Entering syscall %"NACL_PRIuS
+          ": return address 0x%08"NACL_PRIxNACL_REG"\n",
+          sysnum, natp->user.new_prog_ctr);
 
   /*
    * usr_syscall_args is used by Decoder functions in
@@ -145,40 +141,30 @@ NORETURN void NaClSyscallCSegHook(int32_t tls_idx) {
   natp->usr_syscall_args = NaClRawUserStackAddrNormalize(sp_user +
                                                          NACL_SYSARGS_FIX);
 
-  if (sysnum >= NACL_MAX_SYSCALLS) {
+  if (NACL_UNLIKELY(sysnum >= NACL_MAX_SYSCALLS)) {
     NaClLog(2, "INVALID system call %"NACL_PRIdS"\n", sysnum);
     sysret = -NACL_ABI_EINVAL;
-    NaClCopyInDropLock(nap);
+    NaClCopyDropLock(nap);
   } else {
-    NaClLog(4, "making system call %"NACL_PRIdS", "
-            "handler 0x%08"NACL_PRIxPTR"\n",
-            sysnum, (uintptr_t) nap->syscall_table[sysnum].handler);
     sysret = (*(nap->syscall_table[sysnum].handler))(natp);
     /* Implicitly drops lock */
   }
   NaClLog(4,
-          ("returning from system call %"NACL_PRIdS", return value %"NACL_PRId32
+          ("Returning from syscall %"NACL_PRIdS": return value %"NACL_PRId32
            " (0x%"NACL_PRIx32")\n"),
           sysnum, sysret, sysret);
   natp->user.sysret = sysret;
 
-  NaClLog(4, "return target 0x%08"NACL_PRIxNACL_REG"\n",
-          natp->user.new_prog_ctr);
-  NaClLog(4, "user sp %"NACL_PRIxPTR"\n", sp_user);
-
   /*
    * After this NaClAppThreadSetSuspendState() call, we should not
-   * claim any mutexes, otherwise we risk deadlock.  Note that if
-   * NACLVERBOSITY is set high enough to enable the NaClLog() calls in
-   * NaClSwitchToApp(), these calls could deadlock.
+   * claim any mutexes, otherwise we risk deadlock.
    */
   NaClAppThreadSetSuspendState(natp, NACL_APP_THREAD_TRUSTED,
                                NACL_APP_THREAD_UNTRUSTED);
   NaClStackSafetyNowOnUntrustedStack();
 
-  NaClSwitchToApp(natp);
-  /* NOTREACHED */
-
-  fprintf(stderr, "NORETURN NaClSwitchToApp returned!?!\n");
-  NaClAbort();
+  /*
+   * The caller switches back to untrusted code after this return.
+   */
+  return ntcp;
 }

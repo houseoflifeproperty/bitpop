@@ -4,21 +4,24 @@
 
 #include "base/i18n/number_formatting.h"
 #include "base/memory/scoped_vector.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/sessions/session_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/bookmarks_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/browser/sync/test/integration/typed_urls_helper.h"
 
+using base::ASCIIToUTF16;
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 using typed_urls_helper::AddUrlToHistory;
 using typed_urls_helper::AddUrlToHistoryWithTimestamp;
 using typed_urls_helper::AddUrlToHistoryWithTransition;
 using typed_urls_helper::AreVisitsEqual;
 using typed_urls_helper::AreVisitsUnique;
-using typed_urls_helper::AssertAllProfilesHaveSameURLsAsVerifier;
-using typed_urls_helper::AssertURLRowVectorsAreEqual;
+using typed_urls_helper::AwaitCheckAllProfilesHaveSameURLsAsVerifier;
+using typed_urls_helper::CheckURLRowVectorsAreEqual;
 using typed_urls_helper::DeleteUrlFromHistory;
 using typed_urls_helper::GetTypedUrlsFromClient;
 using typed_urls_helper::GetUrlFromClient;
@@ -30,18 +33,19 @@ class TwoClientTypedUrlsSyncTest : public SyncTest {
   TwoClientTypedUrlsSyncTest() : SyncTest(TWO_CLIENT) {}
   virtual ~TwoClientTypedUrlsSyncTest() {}
 
-  bool CheckClientsEqual() {
+  ::testing::AssertionResult CheckClientsEqual() {
     history::URLRows urls = GetTypedUrlsFromClient(0);
     history::URLRows urls2 = GetTypedUrlsFromClient(1);
-    AssertURLRowVectorsAreEqual(urls, urls2);
+    if (!CheckURLRowVectorsAreEqual(urls, urls2))
+      return ::testing::AssertionFailure() << "URLVectors are not equal";
     // Now check the visits.
     for (size_t i = 0; i < urls.size() && i < urls2.size(); i++) {
       history::VisitVector visit1 = GetVisitsFromClient(0, urls[i].id());
       history::VisitVector visit2 = GetVisitsFromClient(1, urls2[i].id());
       if (!AreVisitsEqual(visit1, visit2))
-        return false;
+        return ::testing::AssertionFailure() << "Visits are not equal";
     }
-    return true;
+    return ::testing::AssertionSuccess();
   }
 
   bool CheckNoDuplicateVisits() {
@@ -70,7 +74,7 @@ class TwoClientTypedUrlsSyncTest : public SyncTest {
 
 // TCM: 3728323
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, Add) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -81,15 +85,12 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, Add) {
   ASSERT_EQ(1U, urls.size());
   ASSERT_EQ(new_url, urls[0].url());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 }
 
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, AddExpired) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -121,7 +122,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, AddExpired) {
 #define MAYBE_AddExpiredThenUpdate AddExpiredThenUpdate
 #endif
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, MAYBE_AddExpiredThenUpdate) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -159,7 +160,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, MAYBE_AddExpiredThenUpdate) {
 // TCM: 3705291
 // flaky, see crbug.com/108511
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DISABLED_AddThenDelete) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -170,26 +171,20 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DISABLED_AddThenDelete) {
   ASSERT_EQ(1U, urls.size());
   ASSERT_EQ(new_url, urls[0].url());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 
   // Delete from first client, should delete from second.
   DeleteUrlFromHistory(0, new_url);
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Neither client should have this URL.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 }
 
 // TCM: 3643277
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DisableEnableSync) {
-  const string16 kUrl1(ASCIIToUTF16("http://history1.google.com/"));
-  const string16 kUrl2(ASCIIToUTF16("http://history2.google.com/"));
+  const base::string16 kUrl1(ASCIIToUTF16("http://history1.google.com/"));
+  const base::string16 kUrl2(ASCIIToUTF16("http://history2.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   // Disable typed url sync for one client, leave it active for the other.
@@ -201,7 +196,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DisableEnableSync) {
   GURL url2(kUrl2);
   AddUrlToHistory(0, url1);
   AddUrlToHistory(1, url2);
-  ASSERT_TRUE(GetClient(1)->AwaitFullSyncCompletion("Added a typed url."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((1))));
 
   // Make sure that no data was exchanged.
   history::URLRows post_sync_urls = GetTypedUrlsFromClient(0);
@@ -213,14 +208,13 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DisableEnableSync) {
 
   // Enable typed url sync, make both URLs are synced to each client.
   GetClient(0)->EnableSyncForDatatype(syncer::TYPED_URLS);
-  ASSERT_TRUE(AwaitQuiescence());
 
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 }
 
 // flaky, see crbug.com/108511
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DISABLED_AddOneDeleteOther) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-one-delete-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -231,28 +225,22 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, DISABLED_AddOneDeleteOther) {
   ASSERT_EQ(1U, urls.size());
   ASSERT_EQ(new_url, urls[0].url());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 
   // Now, delete the URL from the second client.
   DeleteUrlFromHistory(1, new_url);
   urls = GetTypedUrlsFromClient(0);
   ASSERT_EQ(1U, urls.size());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL removed.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 }
 
 // flaky, see crbug.com/108511
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest,
                        DISABLED_AddOneDeleteOtherAddAgain) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-delete-add-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -263,32 +251,23 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest,
   ASSERT_EQ(1U, urls.size());
   ASSERT_EQ(new_url, urls[0].url());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 
   // Now, delete the URL from the second client.
   DeleteUrlFromHistory(1, new_url);
   urls = GetTypedUrlsFromClient(0);
   ASSERT_EQ(1U, urls.size());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL removed.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 
   // Add it to the first client again, should succeed (tests that the deletion
   // properly disassociates that URL).
   AddUrlToHistory(0, new_url);
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have this URL added again.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
 }
 
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest,
@@ -312,7 +291,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest,
   // before syncing client 0, so we have both of client 1's URLs in the sync DB
   // at the time that client 0 does model association.
   ASSERT_TRUE(GetClient(1)->SetupSync()) << "SetupSync() failed";
-  GetClient(1)->AwaitFullSyncCompletion("Initial client sync");
+  AwaitCommitActivityCompletion(GetSyncService((1)));
   ASSERT_TRUE(GetClient(0)->SetupSync()) << "SetupSync() failed";
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
@@ -367,7 +346,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest,
 // Tests transitioning a URL from non-typed to typed when one of the clients
 // has never seen that URL before (so no merge is necessary).
 IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, UpdateToNonTypedURL) {
-  const string16 kHistoryUrl(
+  const base::string16 kHistoryUrl(
       ASCIIToUTF16("http://www.add-delete-add-history.google.com/"));
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
@@ -378,11 +357,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, UpdateToNonTypedURL) {
   history::URLRows urls = GetTypedUrlsFromClient(0);
   ASSERT_EQ(0U, urls.size());
 
-  // Let sync finish.
-  ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-
   // Both clients should have 0 typed URLs.
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
   urls = GetTypedUrlsFromClient(0);
   ASSERT_EQ(0U, urls.size());
 
@@ -449,7 +425,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, BookmarksWithTypedVisit) {
   const BookmarkNode* node = bookmarks_helper::AddURL(
       0, bookmarks_helper::IndexedURLTitle(0), bookmark_url);
   bookmarks_helper::SetFavicon(0, node, bookmark_icon_url,
-      bookmarks_helper::CreateFavicon(SK_ColorWHITE));
+      bookmarks_helper::CreateFavicon(SK_ColorWHITE),
+      bookmarks_helper::FROM_UI);
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
@@ -463,7 +440,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientTypedUrlsSyncTest, BookmarksWithTypedVisit) {
   AddUrlToHistory(0, bookmark_url);
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
-  AssertAllProfilesHaveSameURLsAsVerifier();
+  ASSERT_TRUE(AwaitCheckAllProfilesHaveSameURLsAsVerifier());
   history::URLRows urls = GetTypedUrlsFromClient(0);
   ASSERT_EQ(1U, urls.size());
   ASSERT_EQ(bookmark_url, urls[0].url());

@@ -140,8 +140,7 @@ int vp8_denoiser_allocate(VP8_DENOISER *denoiser, int width, int height)
     int i;
     assert(denoiser);
 
-    /* don't need one for intra start at 1 */
-    for (i = 1; i < MAX_REF_FRAMES; i++)
+    for (i = 0; i < MAX_REF_FRAMES; i++)
     {
         denoiser->yv12_running_avg[i].flags = 0;
 
@@ -175,8 +174,7 @@ void vp8_denoiser_free(VP8_DENOISER *denoiser)
     int i;
     assert(denoiser);
 
-    /* we don't have one for intra ref frame */
-    for (i = 1; i < MAX_REF_FRAMES ; i++)
+    for (i = 0; i < MAX_REF_FRAMES ; i++)
     {
         vp8_yv12_de_alloc_frame_buffer(&denoiser->yv12_running_avg[i]);
     }
@@ -208,8 +206,6 @@ void vp8_denoiser_denoise_mb(VP8_DENOISER *denoiser,
         MB_MODE_INFO saved_mbmi;
         MACROBLOCKD *filter_xd = &x->e_mbd;
         MB_MODE_INFO *mbmi = &filter_xd->mode_info_context->mbmi;
-        int mv_col;
-        int mv_row;
         int sse_diff = zero_mv_sse - best_sse;
 
         saved_mbmi = *mbmi;
@@ -291,7 +287,7 @@ void vp8_denoiser_denoise_mb(VP8_DENOISER *denoiser,
     {
         /* Filter. */
         decision = vp8_denoiser_filter(&denoiser->yv12_mc_running_avg,
-                                       &denoiser->yv12_running_avg[LAST_FRAME],
+                                       &denoiser->yv12_running_avg[INTRA_FRAME],
                                        x,
                                        motion_magnitude2,
                                        recon_yoffset, recon_uvoffset);
@@ -303,7 +299,7 @@ void vp8_denoiser_denoise_mb(VP8_DENOISER *denoiser,
          */
         vp8_copy_mem16x16(
                 x->thismb, 16,
-                denoiser->yv12_running_avg[LAST_FRAME].y_buffer + recon_yoffset,
-                denoiser->yv12_running_avg[LAST_FRAME].y_stride);
+                denoiser->yv12_running_avg[INTRA_FRAME].y_buffer + recon_yoffset,
+                denoiser->yv12_running_avg[INTRA_FRAME].y_stride);
     }
 }

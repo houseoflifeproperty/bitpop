@@ -8,7 +8,8 @@
 
 #include "base/file_util.h"
 #include "base/md5.h"
-#include "base/string_number_conversions.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "printing/metafile.h"
 #include "printing/metafile_impl.h"
 #include "third_party/skia/include/core/SkColor.h"
@@ -16,11 +17,11 @@
 
 namespace printing {
 
-Image::Image(const FilePath& path)
+Image::Image(const base::FilePath& path)
     : row_length_(0),
       ignore_alpha_(true) {
   std::string data;
-  file_util::ReadFileToString(path, &data);
+  base::ReadFileToString(path, &data);
   bool success = false;
   if (path.MatchesExtension(FILE_PATH_LITERAL(".png"))) {
     success = LoadPng(data);
@@ -57,7 +58,7 @@ std::string Image::checksum() const {
   return base::HexEncode(&digest, sizeof(digest));
 }
 
-bool Image::SaveToPng(const FilePath& filepath) const {
+bool Image::SaveToPng(const base::FilePath& filepath) const {
   DCHECK(!data_.empty());
   std::vector<unsigned char> compressed;
   bool success = gfx::PNGCodec::Encode(&*data_.begin(),
@@ -69,9 +70,10 @@ bool Image::SaveToPng(const FilePath& filepath) const {
                                        &compressed);
   DCHECK(success && compressed.size());
   if (success) {
-    int write_bytes = file_util::WriteFile(
+    int write_bytes = base::WriteFile(
         filepath,
-        reinterpret_cast<char*>(&*compressed.begin()), compressed.size());
+        reinterpret_cast<char*>(&*compressed.begin()),
+        base::checked_cast<int>(compressed.size()));
     success = (write_bytes == static_cast<int>(compressed.size()));
     DCHECK(success);
   }
@@ -149,7 +151,8 @@ bool Image::LoadPng(const std::string& compressed) {
 bool Image::LoadMetafile(const std::string& data) {
   DCHECK(!data.empty());
   NativeMetafile metafile;
-  if (!metafile.InitFromData(data.data(), data.size()))
+  if (!metafile.InitFromData(data.data(),
+                             base::checked_cast<uint32>(data.size())))
     return false;
   return LoadMetafile(metafile);
 }

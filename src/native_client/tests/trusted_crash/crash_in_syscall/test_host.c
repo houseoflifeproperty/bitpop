@@ -7,14 +7,18 @@
 #include <string.h>
 
 #include "native_client/src/include/nacl_macros.h"
-#include "native_client/src/shared/gio/gio.h"
 #include "native_client/src/shared/platform/nacl_check.h"
+#include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
+#include "native_client/src/trusted/service_runtime/include/bits/nacl_syscalls.h"
+#include "native_client/src/trusted/service_runtime/load_file.h"
 #include "native_client/src/trusted/service_runtime/nacl_all_modules.h"
 #include "native_client/src/trusted/service_runtime/nacl_app.h"
+#include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
-#include "native_client/src/trusted/service_runtime/nacl_valgrind_hooks.h"
+#include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
+#include "native_client/src/trusted/service_runtime/win/debug_exception_handler.h"
 
 #if NACL_WINDOWS
 # include <windows.h>
@@ -34,6 +38,12 @@
 
 
 static const char *g_crash_type;
+
+
+static int TestWithUntrustedExceptionHandling(void) {
+  return strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_TO_ZERO") == 0 ||
+         strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_INTO_SANDBOX") == 0;
+}
 
 
 #if NACL_WINDOWS
@@ -174,7 +184,9 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *exc_info) {
   Backtrace(exc_info->ContextRecord);
   printf("Stack backtrace passed sanity checks\n");
 
-  if (strcmp(g_crash_type, "NACL_TEST_CRASH_MEMORY") == 0) {
+  if (strcmp(g_crash_type, "NACL_TEST_CRASH_MEMORY") == 0 ||
+      strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_TO_ZERO") == 0 ||
+      strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_INTO_SANDBOX") == 0) {
     /*
      * STATUS_ACCESS_VIOLATION is 0xc0000005 but we deliberately
      * convert this to a signed number since Python's wrapper for
@@ -185,7 +197,7 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *exc_info) {
     fprintf(stderr, "** intended_exit_status=%i\n", STATUS_ACCESS_VIOLATION);
   } else if (strcmp(g_crash_type, "NACL_TEST_CRASH_LOG_FATAL") == 0 ||
              strcmp(g_crash_type, "NACL_TEST_CRASH_CHECK_FAILURE") == 0) {
-    fprintf(stderr, "** intended_exit_status=sigabrt\n");
+    fprintf(stderr, "** intended_exit_status=trusted_sigabrt\n");
   } else {
     NaClLog(LOG_FATAL, "Unknown crash type: \"%s\"\n", g_crash_type);
   }
@@ -200,7 +212,16 @@ static LONG WINAPI ExceptionHandler(EXCEPTION_POINTERS *exc_info) {
 }
 
 static void RegisterHandlers(void) {
-  SetUnhandledExceptionFilter(ExceptionHandler);
+  /*
+   * The UnhandledExceptionFilter does not get run if a debugger
+   * process is attached, so use vectored exception handling instead
+   * in that case.
+   */
+  if (TestWithUntrustedExceptionHandling()) {
+    CHECK(AddVectoredExceptionHandler(1, ExceptionHandler) != NULL);
+  } else {
+    SetUnhandledExceptionFilter(ExceptionHandler);
+  }
 }
 
 #else
@@ -208,7 +229,9 @@ static void RegisterHandlers(void) {
 static const char exit_message[] = "** intended_exit_status=0\n";
 
 static void SignalHandler(int sig) {
-  if (strcmp(g_crash_type, "NACL_TEST_CRASH_MEMORY") == 0) {
+  if (strcmp(g_crash_type, "NACL_TEST_CRASH_MEMORY") == 0 ||
+      strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_TO_ZERO") == 0 ||
+      strcmp(g_crash_type, "NACL_TEST_CRASH_JUMP_INTO_SANDBOX") == 0) {
     CHECK(sig == SIGSEGV);
   } else if (strcmp(g_crash_type, "NACL_TEST_CRASH_LOG_FATAL") == 0 ||
              strcmp(g_crash_type, "NACL_TEST_CRASH_CHECK_FAILURE") == 0) {
@@ -234,11 +257,30 @@ static void RegisterHandlers(void) {
 
 #endif
 
+int32_t JumpToZeroCrashSyscall(struct NaClAppThread *natp) {
+  void (*null_func_ptr)(void) = NULL;
+
+  UNREFERENCED_PARAMETER(natp);
+
+  null_func_ptr();
+
+  NaClLog(LOG_FATAL, "JumpToZeroCrashSyscall: Should not reach here\n");
+  return 1;
+}
+
+int32_t JumpIntoSandboxCrashSyscall(struct NaClAppThread *natp) {
+  void (*bad_func_ptr)(void) = (void (*)(void)) natp->nap->mem_start;
+  bad_func_ptr();
+
+  NaClLog(LOG_FATAL, "JumpIntoSandboxCrashSyscall: Should not reach here\n");
+  return 1;
+}
+
 int main(int argc, char **argv) {
   struct NaClApp app;
-  struct GioMemoryFileSnapshot gio_file;
 
   NaClHandleBootstrapArgs(&argc, &argv);
+  NaClDebugExceptionHandlerStandaloneHandleArgs(argc, argv);
 
   /* Turn off buffering to aid debugging. */
   setvbuf(stdout, NULL, _IONBF, 0);
@@ -253,12 +295,20 @@ int main(int argc, char **argv) {
 
   g_crash_type = argv[2];
 
-  NaClFileNameForValgrind(argv[1]);
-  CHECK(GioMemoryFileSnapshotCtor(&gio_file, argv[1]));
   CHECK(NaClAppCtor(&app));
-  CHECK(NaClAppLoadFile((struct Gio *) &gio_file, &app) == LOAD_OK);
+  CHECK(NaClAppLoadFileFromFilename(&app, argv[1]) == LOAD_OK);
   NaClAppInitialDescriptorHookup(&app);
-  CHECK(NaClAppPrepareToLaunch(&app) == LOAD_OK);
+
+  if (TestWithUntrustedExceptionHandling()) {
+    app.enable_exception_handling = 1;
+#if NACL_WINDOWS
+    app.attach_debug_exception_handler_func =
+        NaClDebugExceptionHandlerStandaloneAttach;
+#endif
+  }
+
+  NaClAddSyscall(NACL_sys_test_syscall_1, JumpToZeroCrashSyscall);
+  NaClAddSyscall(NACL_sys_test_syscall_2, JumpIntoSandboxCrashSyscall);
 
   RegisterHandlers();
 

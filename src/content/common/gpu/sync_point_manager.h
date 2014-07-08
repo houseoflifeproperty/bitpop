@@ -8,7 +8,7 @@
 #include <vector>
 
 #include "base/callback.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
 #include "base/threading/thread_checker.h"
@@ -34,6 +34,8 @@ class SyncPointManager : public base::RefCountedThreadSafe<SyncPointManager> {
   // sync point was already retired (or not created yet). This can only be
   // called on the main thread.
   void AddSyncPointCallback(uint32 sync_point, const base::Closure& callback);
+
+  bool IsSyncPointRetired(uint32 sync_point);
 
  private:
   friend class base::RefCountedThreadSafe<SyncPointManager>;

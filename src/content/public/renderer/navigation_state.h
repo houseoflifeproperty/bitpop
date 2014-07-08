@@ -5,6 +5,9 @@
 #ifndef CONTENT_PUBLIC_RENDERER_NAVIGATION_STATE_H_
 #define CONTENT_PUBLIC_RENDERER_NAVIGATION_STATE_H_
 
+#include <string>
+
+#include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
 
 namespace content {
@@ -12,20 +15,25 @@ namespace content {
 // NavigationState is the portion of DocumentState that is affected by
 // in-document navigation.
 // TODO(simonjam): Move this to HistoryItem's ExtraData.
-class NavigationState {
+class CONTENT_EXPORT NavigationState {
  public:
   virtual ~NavigationState();
 
   static NavigationState* CreateBrowserInitiated(
       int32 pending_page_id,
       int pending_history_list_offset,
+      bool history_list_was_cleared,
       content::PageTransition transition_type) {
-    return new NavigationState(transition_type, false, pending_page_id,
-                               pending_history_list_offset);
+    return new NavigationState(transition_type,
+                               false,
+                               pending_page_id,
+                               pending_history_list_offset,
+                               history_list_was_cleared);
   }
 
   static NavigationState* CreateContentInitiated() {
-    return new NavigationState(content::PAGE_TRANSITION_LINK, true, -1, -1);
+    return new NavigationState(
+        content::PAGE_TRANSITION_LINK, true, -1, -1, false);
   }
 
   // Contains the page_id for this navigation or -1 if there is none yet.
@@ -35,6 +43,29 @@ class NavigationState {
   // offset of the page in the back/forward history list.
   int pending_history_list_offset() const {
     return pending_history_list_offset_;
+  }
+
+  // If pending_page_id() is not -1, then this returns true if the session
+  // history was cleared during this navigation.
+  bool history_list_was_cleared() const {
+    return history_list_was_cleared_;
+  }
+
+  // If is_content_initiated() is false, whether this navigation should replace
+  // the current entry in the back/forward history list. Otherwise, use
+  // replacesCurrentHistoryItem() on the WebDataSource.
+  //
+  // TODO(davidben): It would be good to unify these and have only one source
+  // for the two cases. We can plumb this through WebFrame::loadRequest to set
+  // lockBackForwardList on the FrameLoadRequest. However, this breaks process
+  // swaps because FrameLoader::loadWithNavigationAction treats loads before a
+  // FrameLoader has committedFirstRealDocumentLoad as a replacement. (Added for
+  // http://crbug.com/178380).
+  bool should_replace_current_entry() const {
+    return should_replace_current_entry_;
+  }
+  void set_should_replace_current_entry(bool value) {
+    should_replace_current_entry_ = value;
   }
 
   // Contains the transition type that the browser specified when it
@@ -79,22 +110,31 @@ class NavigationState {
     return allow_download_;
   }
 
+  void set_extra_headers(const std::string& extra_headers) {
+    extra_headers_ = extra_headers;
+  }
+  const std::string& extra_headers() { return extra_headers_; }
+
  private:
   NavigationState(content::PageTransition transition_type,
                   bool is_content_initiated,
                   int32 pending_page_id,
-                  int pending_history_list_offset);
+                  int pending_history_list_offset,
+                  bool history_list_was_cleared);
 
   content::PageTransition transition_type_;
   bool request_committed_;
   bool is_content_initiated_;
   int32 pending_page_id_;
   int pending_history_list_offset_;
+  bool history_list_was_cleared_;
+  bool should_replace_current_entry_;
 
   bool was_within_same_page_;
   int transferred_request_child_id_;
   int transferred_request_request_id_;
   bool allow_download_;
+  std::string extra_headers_;
 
   DISALLOW_COPY_AND_ASSIGN(NavigationState);
 };

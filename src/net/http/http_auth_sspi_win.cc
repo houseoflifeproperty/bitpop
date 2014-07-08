@@ -9,10 +9,11 @@
 
 #include "base/base64.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_auth.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 
 namespace net {
 
@@ -48,9 +49,9 @@ int MapAcquireCredentialsStatusToError(SECURITY_STATUS status,
 
 int AcquireExplicitCredentials(SSPILibrary* library,
                                const SEC_WCHAR* package,
-                               const string16& domain,
-                               const string16& user,
-                               const string16& password,
+                               const base::string16& domain,
+                               const base::string16& user,
+                               const base::string16& password,
                                CredHandle* cred) {
   SEC_WINNT_AUTH_IDENTITY identity;
   identity.Flags = SEC_WINNT_AUTH_IDENTITY_UNICODE;
@@ -186,7 +187,7 @@ int MapFreeContextBufferStatusToError(SECURITY_STATUS status) {
 
 HttpAuthSSPI::HttpAuthSSPI(SSPILibrary* library,
                            const std::string& scheme,
-                           SEC_WCHAR* security_package,
+                           const SEC_WCHAR* security_package,
                            ULONG max_token_length)
     : library_(library),
       scheme_(scheme),
@@ -226,7 +227,7 @@ void HttpAuthSSPI::ResetSecurityContext() {
 }
 
 HttpAuth::AuthorizationResult HttpAuthSSPI::ParseChallenge(
-    HttpAuth::ChallengeTokenizer* tok) {
+    HttpAuthChallengeTokenizer* tok) {
   // Verify the challenge's auth-scheme.
   if (!LowerCaseEqualsASCII(tok->scheme(), StringToLowerASCII(scheme_).c_str()))
     return HttpAuth::AUTHORIZATION_RESULT_INVALID;
@@ -255,7 +256,7 @@ HttpAuth::AuthorizationResult HttpAuthSSPI::ParseChallenge(
 }
 
 int HttpAuthSSPI::GenerateAuthToken(const AuthCredentials* credentials,
-                                    const std::wstring& spn,
+                                    const std::string& spn,
                                     std::string* auth_token) {
   // Initial challenge.
   if (!SecIsValidHandle(&cred_)) {
@@ -280,13 +281,9 @@ int HttpAuthSSPI::GenerateAuthToken(const AuthCredentials* credentials,
   // Base64 encode data in output buffer and prepend the scheme.
   std::string encode_input(static_cast<char*>(out_buf), out_buf_len);
   std::string encode_output;
-  bool base64_rv = base::Base64Encode(encode_input, &encode_output);
+  base::Base64Encode(encode_input, &encode_output);
   // OK, we are done with |out_buf|
   free(out_buf);
-  if (!base64_rv) {
-    LOG(ERROR) << "Base64 encoding of auth token failed.";
-    return ERR_ENCODING_CONVERSION_FAILED;
-  }
   *auth_token = scheme_ + " " + encode_output;
   return OK;
 }
@@ -295,8 +292,8 @@ int HttpAuthSSPI::OnFirstRound(const AuthCredentials* credentials) {
   DCHECK(!SecIsValidHandle(&cred_));
   int rv = OK;
   if (credentials) {
-    string16 domain;
-    string16 user;
+    base::string16 domain;
+    base::string16 user;
     SplitDomainAndUser(credentials->username(), &domain, &user);
     rv = AcquireExplicitCredentials(library_, security_package_, domain,
                                     user, credentials->password(), &cred_);
@@ -312,7 +309,7 @@ int HttpAuthSSPI::OnFirstRound(const AuthCredentials* credentials) {
 }
 
 int HttpAuthSSPI::GetNextSecurityToken(
-    const std::wstring& spn,
+    const std::string& spn,
     const void* in_token,
     int in_token_len,
     void** out_token,
@@ -362,10 +359,11 @@ int HttpAuthSSPI::GetNextSecurityToken(
 
   // This returns a token that is passed to the remote server.
   DWORD context_attribute;
+  std::wstring spn_wide = base::ASCIIToWide(spn);
   SECURITY_STATUS status = library_->InitializeSecurityContext(
       &cred_,  // phCredential
       ctxt_ptr,  // phContext
-      const_cast<wchar_t *>(spn.c_str()),  // pszTargetName
+      const_cast<wchar_t *>(spn_wide.c_str()),  // pszTargetName
       context_flags,  // fContextReq
       0,  // Reserved1 (must be 0)
       SECURITY_NATIVE_DREP,  // TargetDataRep
@@ -390,14 +388,14 @@ int HttpAuthSSPI::GetNextSecurityToken(
   return OK;
 }
 
-void SplitDomainAndUser(const string16& combined,
-                        string16* domain,
-                        string16* user) {
+void SplitDomainAndUser(const base::string16& combined,
+                        base::string16* domain,
+                        base::string16* user) {
   // |combined| may be in the form "user" or "DOMAIN\user".
   // Separate the two parts if they exist.
   // TODO(cbentzel): I believe user@domain is also a valid form.
   size_t backslash_idx = combined.find(L'\\');
-  if (backslash_idx == string16::npos) {
+  if (backslash_idx == base::string16::npos) {
     domain->clear();
     *user = combined;
   } else {

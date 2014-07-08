@@ -14,9 +14,9 @@
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
+#include "native_client/src/trusted/service_runtime/nacl_exception.h"
 #include "native_client/src/trusted/service_runtime/nacl_globals.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
-#include "native_client/src/trusted/service_runtime/nacl_tls.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 
 #if NACL_WINDOWS
@@ -26,18 +26,6 @@
 #include <unistd.h>
 #endif
 
-#define MAX_NACL_HANDLERS 16
-
-struct NaClSignalNode {
-  struct NaClSignalNode *next;
-  NaClSignalHandler func;
-  int id;
-};
-
-
-static struct NaClSignalNode *s_FirstHandler = NULL;
-static struct NaClSignalNode *s_FreeList = NULL;
-static struct NaClSignalNode s_SignalNodes[MAX_NACL_HANDLERS];
 
 ssize_t NaClSignalErrorMessage(const char *msg) {
   /*
@@ -59,176 +47,105 @@ ssize_t NaClSignalErrorMessage(const char *msg) {
 }
 
 /*
- * Returns, via is_untrusted, whether the signal happened while
- * executing untrusted code.
- *
- * Returns, via result_thread, the NaClAppThread that untrusted code
- * was running in.
- *
- * Note that this should only be called from the thread in which the
- * signal occurred, because on x86-64 it reads a thread-local variable
- * (nacl_thread_index).
+ * This function takes the register state (sig_ctx) for a thread
+ * (natp) that has been suspended and returns whether the thread was
+ * suspended while executing untrusted code.
  */
-void NaClSignalContextGetCurrentThread(const struct NaClSignalContext *sig_ctx,
-                                       int *is_untrusted,
-                                       struct NaClAppThread **result_thread) {
+int NaClSignalContextIsUntrusted(struct NaClAppThread *natp,
+                                 const struct NaClSignalContext *sig_ctx) {
+  uint32_t prog_ctr;
+
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
-  /* For x86-32, if %cs does not match, it is untrusted code. */
-  *is_untrusted = (NaClGetGlobalCs() != sig_ctx->cs);
-  *result_thread = nacl_thread[sig_ctx->gs >> 3];
+  /*
+   * Note that we do not check "sig_ctx != NaClGetGlobalCs()".  On Mac
+   * OS X, if a thread is suspended while in a syscall,
+   * thread_get_state() returns cs=0x7 rather than cs=0x17 (the normal
+   * cs value for trusted code).
+   */
+  if (sig_ctx->cs != natp->user.cs)
+    return 0;
 #elif (NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64) || \
       NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm || \
       NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
-  uint32_t current_thread_index = NaClTlsGetIdx();
-  if (NACL_TLS_INDEX_INVALID == current_thread_index) {
-    *is_untrusted = 0;
-    *result_thread = NULL;
-  } else {
-    struct NaClAppThread *thread = nacl_thread[current_thread_index];
-    /*
-     * Get the address of an arbitrary local, stack-allocated variable,
-     * just for the purpose of doing a sanity check.
-     */
-    void *pointer_into_stack = &thread;
-    /*
-     * Sanity check: Make sure the stack we are running on is not
-     * allocated in untrusted memory.  This checks that the alternate
-     * signal stack is correctly set up, because otherwise, if it is
-     * not set up, the test case would not detect that.
-     *
-     * There is little point in doing a CHECK instead of a DCHECK,
-     * because if we are running off an untrusted stack, we have already
-     * lost.
-     *
-     * We do not do the check on Windows because Windows does not have
-     * an equivalent of sigaltstack() and this signal handler is
-     * insecure there.
-     */
-    if (!NACL_WINDOWS) {
-      DCHECK(!NaClIsUserAddr(thread->nap, (uintptr_t) pointer_into_stack));
-    }
-    *is_untrusted = NaClIsUserAddr(thread->nap, sig_ctx->prog_ctr);
-    *result_thread = thread;
+  if (!NaClIsUserAddr(natp->nap, sig_ctx->prog_ctr))
+    return 0;
+#else
+# error Unsupported architecture
+#endif
+
+  prog_ctr = (uint32_t) sig_ctx->prog_ctr;
+  return (prog_ctr < NACL_TRAMPOLINE_START ||
+          prog_ctr >= NACL_TRAMPOLINE_END);
+}
+
+/*
+ * Sanity checks: Reject unsafe register state that untrusted code
+ * should not be able to set unless there is a sandbox hole.  We do
+ * this in an attempt to prevent such a hole from being exploitable.
+ */
+int NaClSignalCheckSandboxInvariants(const struct NaClSignalContext *regs,
+                                     struct NaClAppThread *natp) {
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
+  if (regs->cs != natp->user.cs ||
+      regs->ds != natp->user.ds ||
+      regs->es != natp->user.es ||
+      regs->fs != natp->user.fs ||
+      regs->gs != natp->user.gs ||
+      regs->ss != natp->user.ss) {
+    return 0;
+  }
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
+  /*
+   * Untrusted code can temporarily set %rsp/%rbp to be in the 0..4GB
+   * range but it should not be able to generate a fault while in that
+   * state.
+   */
+  if (regs->r15 != natp->user.r15 ||
+      !NaClIsUserAddr(natp->nap, regs->stack_ptr) ||
+      !NaClIsUserAddr(natp->nap, regs->rbp)) {
+    return 0;
+  }
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+  if (!NaClIsUserAddr(natp->nap, regs->stack_ptr) ||
+      regs->r9 != (uintptr_t) &natp->user.tls_value1) {
+    return 0;
+  }
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  if (!NaClIsUserAddr(natp->nap, regs->stack_ptr) ||
+      regs->t6 != NACL_CONTROL_FLOW_MASK ||
+      regs->t7 != NACL_DATA_FLOW_MASK) {
+    return 0;
   }
 #else
 # error Unsupported architecture
 #endif
+  return 1;
 }
 
-/*
- * Returns whether the signal happened while executing untrusted code.
- *
- * Like NaClSignalContextGetCurrentThread(), this should only be
- * called from the thread in which the signal occurred.
- */
-int NaClSignalContextIsUntrusted(const struct NaClSignalContext *sig_ctx) {
-  struct NaClAppThread *thread_unused;
-  int is_untrusted;
-  NaClSignalContextGetCurrentThread(sig_ctx, &is_untrusted, &thread_unused);
-  return is_untrusted;
-}
-
-enum NaClSignalResult NaClSignalHandleNone(int signal, void *ctx) {
-  UNREFERENCED_PARAMETER(signal);
-  UNREFERENCED_PARAMETER(ctx);
-
-  /* Don't do anything, just pass it to the OS. */
-  return NACL_SIGNAL_SKIP;
-}
-
-enum NaClSignalResult NaClSignalHandleUntrusted(int signal, void *ctx) {
-  struct NaClSignalContext sig_ctx;
+void NaClSignalHandleUntrusted(int signal,
+                               const struct NaClSignalContext *regs,
+                               int is_untrusted) {
   char tmp[128];
   /*
    * Return an 8 bit error code which is -signal to
    * simulate normal OS behavior
    */
-  NaClSignalContextFromHandler(&sig_ctx, ctx);
-  if (NaClSignalContextIsUntrusted(&sig_ctx)) {
+  if (is_untrusted) {
     SNPRINTF(tmp, sizeof(tmp), "\n** Signal %d from untrusted code: "
-             "pc=%" NACL_PRIxNACL_REG "\n", signal, sig_ctx.prog_ctr);
+             "pc=%" NACL_PRIxNACL_REG "\n", signal, regs->prog_ctr);
     NaClSignalErrorMessage(tmp);
     NaClExit((-signal) & 0xFF);
-  }
-  else {
+  } else {
     SNPRINTF(tmp, sizeof(tmp), "\n** Signal %d from trusted code: "
-             "pc=%" NACL_PRIxNACL_REG "\n", signal, sig_ctx.prog_ctr);
+             "pc=%" NACL_PRIxNACL_REG "\n", signal, regs->prog_ctr);
     NaClSignalErrorMessage(tmp);
     /*
      * Continue the search for another handler so that trusted crashes
      * can be handled by the Breakpad crash reporter.
      */
   }
-  return NACL_SIGNAL_SEARCH;
 }
 
-
-int NaClSignalHandlerAdd(NaClSignalHandler func) {
-  int id = 0;
-
-  CHECK(func != NULL);
-
-  /* If we have room... */
-  if (s_FreeList) {
-    /* Update the free list. */
-    struct NaClSignalNode *add = s_FreeList;
-    s_FreeList = add->next;
-
-    /* Construct the node. */
-    add->func = func;
-    add->next = s_FirstHandler;
-
-    /* Add node to the head. */
-    s_FirstHandler = add;
-    id = add->id;
-  }
-
-  return id;
-}
-
-
-int NaClSignalHandlerRemove(int id) {
-  /* The first node pointer is the first "next" pointer. */
-  struct NaClSignalNode **ppNode = &s_FirstHandler;
-
-  /* While the "next" pointer is valid, process what it points to. */
-  while (*ppNode) {
-    /* If the next item has a matching ID */
-    if ((*ppNode)->id == id) {
-      /* then we will free that item. */
-      struct NaClSignalNode *freeNode = *ppNode;
-
-      /* First, skip past it. */
-      *ppNode = (*ppNode)->next;
-
-      /* Then add this node to the head of the free list. */
-      freeNode->next = s_FreeList;
-      s_FreeList = freeNode;
-      return 1;
-    }
-    ppNode = &(*ppNode)->next;
-  }
-
-  return 0;
-}
-
-enum NaClSignalResult NaClSignalHandlerFind(int signal, void *ctx) {
-  enum NaClSignalResult result = NACL_SIGNAL_SEARCH;
-  struct NaClSignalNode *pNode;
-
-  /* Iterate through handlers */
-  pNode = s_FirstHandler;
-  while (pNode) {
-    result = pNode->func(signal, ctx);
-
-    /* If we are not asking for the search to continue... */
-    if (NACL_SIGNAL_SEARCH != result) break;
-
-    pNode = pNode->next;
-  }
-
-  return result;
-}
 
 /*
  * This is a separate function to make it obvious from the crash
@@ -249,21 +166,154 @@ void NaClSignalTestCrashOnStartup(void) {
   }
 }
 
-void NaClSignalHandlerInit(void) {
-  int a;
-
-  /* Build the free list */
-  for (a = 0; a < MAX_NACL_HANDLERS; a++) {
-    s_SignalNodes[a].next = s_FreeList;
-    s_SignalNodes[a].id = a + 1;
-    s_FreeList = &s_SignalNodes[a];
-  }
-
-  NaClSignalHandlerInitPlatform();
-  NaClSignalHandlerAdd(NaClSignalHandleUntrusted);
+static void NaClUserRegisterStateFromSignalContext(
+    volatile NaClUserRegisterState *dest,
+    const struct NaClSignalContext *src) {
+#define COPY_REG(reg) dest->reg = src->reg
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
+  COPY_REG(eax);
+  COPY_REG(ecx);
+  COPY_REG(edx);
+  COPY_REG(ebx);
+  COPY_REG(stack_ptr);
+  COPY_REG(ebp);
+  COPY_REG(esi);
+  COPY_REG(edi);
+  COPY_REG(prog_ctr);
+  COPY_REG(flags);
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
+  COPY_REG(rax);
+  COPY_REG(rcx);
+  COPY_REG(rdx);
+  COPY_REG(rbx);
+  COPY_REG(stack_ptr);
+  COPY_REG(rbp);
+  COPY_REG(rsi);
+  COPY_REG(rdi);
+  COPY_REG(r8);
+  COPY_REG(r9);
+  COPY_REG(r10);
+  COPY_REG(r11);
+  COPY_REG(r12);
+  COPY_REG(r13);
+  COPY_REG(r14);
+  COPY_REG(r15);
+  COPY_REG(prog_ctr);
+  COPY_REG(flags);
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+  COPY_REG(r0);
+  COPY_REG(r1);
+  COPY_REG(r2);
+  COPY_REG(r3);
+  COPY_REG(r4);
+  COPY_REG(r5);
+  COPY_REG(r6);
+  COPY_REG(r7);
+  COPY_REG(r8);
+  /* Don't leak the address of NaClAppThread by reporting r9's value here. */
+  dest->r9 = -1;
+  COPY_REG(r10);
+  COPY_REG(r11);
+  COPY_REG(r12);
+  COPY_REG(stack_ptr);
+  COPY_REG(lr);
+  COPY_REG(prog_ctr);
+  COPY_REG(cpsr);
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  COPY_REG(zero);
+  COPY_REG(at);
+  COPY_REG(v0);
+  COPY_REG(v1);
+  COPY_REG(a0);
+  COPY_REG(a1);
+  COPY_REG(a2);
+  COPY_REG(a3);
+  COPY_REG(t0);
+  COPY_REG(t1);
+  COPY_REG(t2);
+  COPY_REG(t3);
+  COPY_REG(t4);
+  COPY_REG(t5);
+  COPY_REG(t6);
+  COPY_REG(t7);
+  COPY_REG(s0);
+  COPY_REG(s1);
+  COPY_REG(s2);
+  COPY_REG(s3);
+  COPY_REG(s4);
+  COPY_REG(s5);
+  COPY_REG(s6);
+  COPY_REG(s7);
+  COPY_REG(t8);
+  COPY_REG(t9);
+  COPY_REG(k0);
+  COPY_REG(k1);
+  COPY_REG(global_ptr);
+  COPY_REG(stack_ptr);
+  COPY_REG(frame_ptr);
+  COPY_REG(return_addr);
+  COPY_REG(prog_ctr);
+#else
+# error Unsupported architecture
+#endif
+#undef COPY_REG
 }
 
-void NaClSignalHandlerFini(void) {
-  /* We try to lock, but since we are shutting down, we ignore failures. */
-  NaClSignalHandlerFiniPlatform();
+/*
+ * The |frame| argument is volatile because this function writes
+ * directly into untrusted address space on Linux.
+ */
+void NaClSignalSetUpExceptionFrame(volatile struct NaClExceptionFrame *frame,
+                                   const struct NaClSignalContext *regs,
+                                   uint32_t context_user_addr) {
+  unsigned i;
+
+  /*
+   * Use the end of frame->portable for the size, avoiding padding
+   * added after it within NaClExceptionFrame.
+   */
+  frame->context.size =
+      (uint32_t) ((uintptr_t) (&frame->portable + 1) -
+                  (uintptr_t) &frame->context);
+  frame->context.portable_context_offset =
+      (uint32_t) ((uintptr_t) &frame->portable -
+                  (uintptr_t) &frame->context);
+  frame->context.portable_context_size = sizeof(frame->portable);
+  frame->context.arch = NACL_ELF_E_MACHINE;
+  frame->context.regs_size = sizeof(frame->context.regs);
+
+  /* Avoid memset() here because |frame| is volatile. */
+  for (i = 0; i < NACL_ARRAY_SIZE(frame->context.reserved); i++) {
+    frame->context.reserved[i] = 0;
+  }
+
+  NaClUserRegisterStateFromSignalContext(&frame->context.regs, regs);
+
+  frame->portable.prog_ctr = (uint32_t) regs->prog_ctr;
+  frame->portable.stack_ptr = (uint32_t) regs->stack_ptr;
+
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
+  frame->context_ptr = context_user_addr;
+  frame->portable.frame_ptr = (uint32_t) regs->ebp;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
+  UNREFERENCED_PARAMETER(context_user_addr);
+  frame->portable.frame_ptr = (uint32_t) regs->rbp;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+  UNREFERENCED_PARAMETER(context_user_addr);
+  frame->portable.frame_ptr = regs->r11;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  UNREFERENCED_PARAMETER(context_user_addr);
+  frame->portable.frame_ptr = regs->frame_ptr;
+#else
+# error Unsupported architecture
+#endif
+
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86
+  /*
+   * Returning from the exception handler is not possible, so to avoid
+   * any confusion that might arise from jumping to an uninitialised
+   * address, we set the return address to zero.
+   */
+  frame->return_addr = 0;
+#endif
 }

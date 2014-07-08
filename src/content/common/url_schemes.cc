@@ -11,16 +11,16 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/common/savable_url_schemes.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/url_util.h"
+#include "url/url_util.h"
 
 namespace {
 
 void AddStandardSchemeHelper(const std::string& scheme) {
-  url_util::AddStandardScheme(scheme.c_str());
+  url::AddStandardScheme(scheme.c_str());
 }
 
 }  // namespace
@@ -30,16 +30,13 @@ namespace content {
 void RegisterContentSchemes(bool lock_standard_schemes) {
   std::vector<std::string> additional_standard_schemes;
   std::vector<std::string> additional_savable_schemes;
-  GetContentClient()->AddAdditionalSchemes(
-       &additional_standard_schemes,
-       &additional_savable_schemes);
+  GetContentClient()->AddAdditionalSchemes(&additional_standard_schemes,
+                                           &additional_savable_schemes);
 
-  // Don't need "chrome-internal" which was used in old versions of Chrome for
-  // the new tab page.
-  url_util::AddStandardScheme(chrome::kChromeDevToolsScheme);
-  url_util::AddStandardScheme(chrome::kChromeUIScheme);
-  url_util::AddStandardScheme(chrome::kMetadataScheme);
-  url_util::AddStandardScheme(chrome::kGuestScheme);
+  url::AddStandardScheme(kChromeDevToolsScheme);
+  url::AddStandardScheme(kChromeUIScheme);
+  url::AddStandardScheme(kGuestScheme);
+  url::AddStandardScheme(kMetadataScheme);
   std::for_each(additional_standard_schemes.begin(),
                 additional_standard_schemes.end(),
                 AddStandardSchemeHelper);
@@ -50,7 +47,7 @@ void RegisterContentSchemes(bool lock_standard_schemes) {
   // thread. This is really easy to mess up, so we say that all calls to
   // AddStandardScheme in Chrome must be inside this function.
   if (lock_standard_schemes)
-    url_util::LockStandardSchemes();
+    url::LockStandardSchemes();
 
   // We rely on the above lock to protect this part from being invoked twice.
   if (!additional_savable_schemes.empty()) {

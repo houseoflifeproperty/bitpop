@@ -14,28 +14,41 @@ option retain_unknown_fields = true;
 
 package sync_pb;
 
+import "app_list_specifics.proto";
 import "app_notification_specifics.proto";
 import "app_setting_specifics.proto";
 import "app_specifics.proto";
+import "article_specifics.proto";
+import "attachments.proto";
 import "autofill_specifics.proto";
 import "bookmark_specifics.proto";
 import "client_commands.proto";
 import "client_debug_info.proto";
 import "device_info_specifics.proto";
+import "dictionary_specifics.proto";
 import "encryption.proto";
 import "experiments_specifics.proto";
 import "extension_setting_specifics.proto";
 import "extension_specifics.proto";
+import "favicon_image_specifics.proto";
+import "favicon_tracking_specifics.proto";
 import "get_updates_caller_info.proto";
 import "history_delete_directive_specifics.proto";
 import "nigori_specifics.proto";
+import "managed_user_setting_specifics.proto";
+import "managed_user_shared_setting_specifics.proto";
+import "managed_user_specifics.proto";
 import "password_specifics.proto";
 import "preference_specifics.proto";
+import "priority_preference_specifics.proto";
 import "search_engine_specifics.proto";
 import "session_specifics.proto";
 import "sync_enums.proto";
+import "synced_notification_app_info_specifics.proto";
+import "synced_notification_specifics.proto";
 import "theme_specifics.proto";
 import "typed_url_specifics.proto";
+import "unique_position.proto";
 
 // Used for inspecting how long we spent performing operations in different
 // backends. All times must be in millis.
@@ -101,8 +114,21 @@ message EntitySpecifics {
   optional ExtensionSettingSpecifics extension_setting = 96159;
   optional AppSettingSpecifics app_setting = 103656;
   optional HistoryDeleteDirectiveSpecifics history_delete_directive = 150251;
+  optional SyncedNotificationSpecifics synced_notification = 153108;
+  optional SyncedNotificationAppInfoSpecifics synced_notification_app_info =
+      235816;
   optional DeviceInfoSpecifics device_info = 154522;
   optional ExperimentsSpecifics experiments = 161496;
+  optional PriorityPreferenceSpecifics priority_preference = 163425;
+  optional DictionarySpecifics dictionary = 170540;
+  optional FaviconTrackingSpecifics favicon_tracking = 181534;
+  optional FaviconImageSpecifics favicon_image = 182019;
+  optional ManagedUserSettingSpecifics managed_user_setting = 186662;
+  optional ManagedUserSpecifics managed_user = 194582;
+  optional ManagedUserSharedSettingSpecifics managed_user_shared_setting =
+      202026;
+  optional ArticleSpecifics article = 223759;
+  optional AppListSpecifics app_list = 229170;
 }
 
 message SyncEntity {
@@ -212,34 +238,32 @@ message SyncEntity {
     optional bytes bookmark_favicon = 14;
   }
 
-  // Supplies a numeric position for this item, relative to other items with
-  // the same parent.
+  // Supplies a numeric position for this item, relative to other items with the
+  // same parent.  Deprecated in M26, though clients are still required to set
+  // it.
   //
   // Present in both GetUpdatesResponse and CommitMessage.
   //
-  // In a CommitMessage context, server implementations may choose whether
-  // to compute a position based on this field or based on
-  // |insert_after_item_id|.  Clients should set both values so that they
-  // result in a consistent ordering regardless of which choice the server
-  // makes.
+  // At one point this was used as an alternative / supplement to
+  // the deprecated |insert_after_item_id|, but now it, too, has been
+  // deprecated.
   //
-  // This is deprecated: clients should set |ordinal_in_parent|
-  // instead.  But until the production servers fully support
-  // |ordinal_in_parent|, clients should set all three position fields
-  // (|position_in_parent|, |insert_after_item_id|, and
-  // |ordinal_in_parent| in commits) and continue to respect any
-  // |position_in_parent| values returned by CommitResponses.
+  // In order to maintain compatibility with older clients, newer clients should
+  // still set this field.  Its value should be based on the first 8 bytes of
+  // this item's |unique_position|.
   //
-  // Similarly, when |ordinal_in_parent| is absent in a GetUpdates and
-  // |position_in_parent| is present, clients should continue to honor
-  // the |position_in_parent| value (after transforming it as
-  // described below).
+  // Nerwer clients must also support the receipt of items that contain
+  // |position_in_parent| but no |unique_position|.  They should locally convert
+  // the given int64 position to a UniquePosition.
   //
-  // When both |ordinal_in_parent| and |position_in_parent| are set,
-  // the first 8 bytes of |ordinal_in_parent| must be equal to the
-  // bytes of flip-sign-bit(|position_in_parent|) in big-endian order
-  // (MSB first), and if those bytes are all zero, a 9th byte equal to
-  // 128 must be added.
+  // The conversion from int64 to UniquePosition is as follows:
+  // The int64 value will have its sign bit flipped then placed in big endian
+  // order as the first 8 bytes of the UniquePosition.  The subsequent bytes of
+  // the UniquePosition will consist of the item's unique suffix.
+  //
+  // Conversion from UniquePosition to int64 reverses this process: the first 8
+  // bytes of the position are to be interpreted as a big endian int64 value
+  // with its sign bit flipped.
   optional int64 position_in_parent = 15;
 
   // Contains the ID of the element (under the same parent) after which this
@@ -250,7 +274,9 @@ message SyncEntity {
   // communicate position.
   //
   // Present only in CommitMessage.
-  // This is deprecated: see comment for |position_in_parent| above.
+  //
+  // This is deprecated.  Clients are allowed to omit this as long as they
+  // include |position_in_parent| instead.
   optional string insert_after_item_id = 16;
 
   // Arbitrary key/value pairs associated with this item.
@@ -268,12 +294,19 @@ message SyncEntity {
   // reunite the original with its official committed version in the case
   // where a client does not receive or process the commit response for
   // some reason.
+  //
   // Present only in GetUpdatesResponse.
+  //
+  // This field is also used in determining the unique identifier used in
+  // bookmarks' unique_position field.
   optional string originator_cache_guid = 19;
 
   // The local item id of this entry from the client that initially
   // committed this entity. Typically a negative integer.
   // Present only in GetUpdatesResponse.
+  //
+  // This field is also used in determinging the unique identifier used in
+  // bookmarks' unique_position field.
   optional string originator_client_item_id = 20;
 
   // Extensible container for datatype-specific data.
@@ -312,30 +345,31 @@ message SyncEntity {
   //
   optional string client_defined_unique_tag = 23;
 
-  // Supplies an ordinal for this item, relative to other items with the
-  // same parent.  Ordinals are ordered lexicographically bytewise.
-  // Ordinals must be at least 8 bytes (for backwards compatibility), and
-  // must not be all zeroes.
+  // This positioning system had a relatively short life.  It was made obsolete
+  // by |unique_position| before either the client or server made much of an
+  // attempt to support it.  In fact, no client ever read or set this field.
   //
-  // Clients should not make sure that each item they know of has a
-  // unique ordinal-in-parent.  However, updates from the server might
-  // break this invariant.  In that case, among the items with the
-  // same ordinal-in-parent, a client should randomly pick one, and
-  // then perturb the ordinal-in-parents of all the other ones (within
-  // the bounds of the preceding and succeeding ordinal-in-parent)
-  // until they're unique; a byte of randomness per item should be
-  // more than enough.
-  //
-  // Available in version 31+.
-  //
-  // Present in both GetUpdatesResponse and CommitMessage.
-  //
-  // In a CommitMessage context, server implementations may choose whether
-  // to compute a position based on this field, |position_in_parent|, or
-  // |insert_after_item_id|.  Clients should set all values so that they
-  // result in a consistent ordering regardless of which choice the server
-  // makes.
+  // Deprecated in M26.
   optional bytes ordinal_in_parent = 24;
+
+  // This is the fourth attempt at positioning.
+  //
+  // This field is present in both GetUpdatesResponse and CommitMessage, if the
+  // item's type requires it and the client that wrote the item supports it (M26
+  // or higher).  Clients must also be prepared to handle updates from clients
+  // that do not set this field.  See the comments on
+  // |server_position_in_parent| for more information on how this is handled.
+  //
+  // This field will not be set for items whose type ignores positioning.
+  // Clients should not attempt to read this field on the receipt of an item of
+  // a type that ignores positioning.
+  //
+  // Refer to its definition in unique_position.proto for more information about
+  // its internal representation.
+  optional UniquePosition unique_position = 25;
+
+  // Attachment ids of attachments associated with this SyncEntity.
+  repeated AttachmentIdProto attachment_id = 26;
 };
 
 // This message contains diagnostic information used to correlate
@@ -352,6 +386,17 @@ message ChromiumExtensionsActivity {
   optional uint32 bookmark_writes_since_last_commit = 2;
 };
 
+// Client specific configuration information.
+message ClientConfigParams {
+  // The set of data types this client has enabled. Note that this does not
+  // include proxy types, as they do not have protocol field numbers and are
+  // placeholder types that implicitly enable protocol types.
+ repeated int32 enabled_type_ids = 1;
+
+ // Whether the PROXY_TABS proxy datatype is enabled on this client.
+ optional bool tabs_datatype_enabled = 2;
+};
+
 message CommitMessage {
   repeated SyncEntity entries = 1;
 
@@ -360,7 +405,105 @@ message CommitMessage {
   optional string cache_guid = 2;
 
   repeated ChromiumExtensionsActivity extensions_activity = 3;
+
+  // The configuration of this client at commit time. Used by the server to
+  // make commit-time decisions about how to process datatypes that might
+  // involve server-side interaction, and e.g require explicit user intent for
+  // syncing a particular data type regardless of whether a commit for that
+  // datatype is currently being sent up.
+  optional ClientConfigParams config_params = 4;
+
+  // Set of optional per-client datatype contexts.
+  repeated DataTypeContext client_contexts = 5;
 };
+
+// This message communicates additional per-type information related to
+// requests with origin GU_TRIGGER.  This message is not relevant when any
+// other origin value is used.
+// Introduced in M29.
+message GetUpdateTriggers {
+  // An opaque-to-the-client string of bytes, received through a notification,
+  // that the server may interpret as a hint about the location of the latest
+  // version of the data for this type.
+  //
+  // Note that this will eventually replace the 'optional' field of the same
+  // name defined in the progress marker, but the client and server should
+  // support both until it's safe to deprecate the old one.
+  //
+  // This field was introduced in M29.
+  repeated string notification_hint = 1;
+
+  // This flag is set if the client was forced to drop hints because the number
+  // of queued hints exceeded its limit.  The oldest hints will be discarded
+  // first.  Introduced in M29.
+  optional bool client_dropped_hints = 2;
+
+  // This flag is set when the client suspects that its list of invalidation
+  // hints may be incomplete.  This may be the case if:
+  // - The client is syncing for the first time.
+  // - The client has just restarted and it was unable to keep track of
+  //   invalidations that were received prior to the restart.
+  // - The client's connection to the invalidation server is currently or
+  //   was recently broken.
+  //
+  // It's difficult to provide more details here.  This is implemented by
+  // setting the flag to false whenever anything that might adversely affect
+  // notifications happens (eg. a crash, restart on a platform that doesn't
+  // support invalidation ack-tracking, transient invalidation error) and is
+  // unset only after we've experienced one successful sync cycle while
+  // notifications were enabled.
+  //
+  // This flag was introduced in M29.
+  optional bool invalidations_out_of_sync = 3;
+
+  // This counts the number of times the syncer has been asked to commit
+  // changes for this type since the last successful sync cycle.  The number of
+  // nudges may not be related to the actual number of items modified.  It
+  // often correlates with the number of user actions, but that's not always
+  // the case.
+  // Introduced in M29.
+  optional int64 local_modification_nudges = 4;
+
+  // This counts the number of times the syncer has been explicitly asked to
+  // fetch updates for this type since the last successful sync cycle.  These
+  // explicit refresh requests should be relatively rare on most platforms, and
+  // associated with user actions.  For example, at the time of this writing
+  // the most common (only?) source of refresh requests is when a user opens
+  // the new tab page on a platform that does not support sessions
+  // invalidations.
+  // Introduced in M29.
+  optional int64 datatype_refresh_nudges = 5;
+
+  // This flag is set if the invalidation server reports that it may have
+  // dropped some invalidations at some point.  Introduced in M33.
+  optional bool server_dropped_hints = 6;
+}
+
+message GarbageCollectionDirective {
+  enum Type {
+    UNKNOWN = 0;
+    VERSION_WATERMARK = 1;
+    AGE_WATERMARK = 2;
+    MAX_ITEM_COUNT = 3;
+  }
+
+  optional Type type = 1 [default = UNKNOWN];
+
+  // This field specifies the watermark for the versions which should get
+  // garbage collected.  The client should purge all sync entities with a
+  // version smaller than version_watermark locally.
+  optional int64 version_watermark = 2;
+
+  // This field specifies the watermark in terms of age in days.  The client
+  // should purge all sync entities which are older than this specific value
+  // based on last modified time.
+  optional int32 age_watermark_in_days = 3;
+
+  // This field specifies the max number of items that the client should keep
+  // for a specific datatype.  If the number of items exceeds this limit, the
+  // client should purge the extra sync entities based on the LRU rule.
+  optional int32 max_number_of_items = 4;
+}
 
 message DataTypeProgressMarker {
   // An integer identifying the data type whose progress is tracked by this
@@ -402,7 +545,19 @@ message DataTypeProgressMarker {
   // An opaque-to-the-client string of bytes, received through a notification,
   // that the server may interpret as a hint about the location of the latest
   // version of the data for this type.
+  //
+  // Deprecated in M29.  We should use the repeated field version in the
+  // PerClientTypeState instead.
   optional string notification_hint = 4;
+
+  // This field will be included only in GetUpdates with origin GU_TRIGGER.
+  optional GetUpdateTriggers get_update_triggers = 5;
+
+  // The garbage collection directive for this data type.  The client should
+  // purge items locally based on this directive.  Since this directive is
+  // designed to be sent from server only, the client should persist it locally
+  // as needed and avoid sending it to the server.
+  optional GarbageCollectionDirective gc_directive = 6;
 }
 
 message GetUpdatesMessage {
@@ -416,6 +571,8 @@ message GetUpdatesMessage {
   optional int64 from_timestamp = 1;
 
   // Indicates the reason for the GetUpdatesMessage.
+  // Deprecated in M29.  We should eventually rely on GetUpdatesOrigin instead.
+  // Newer clients will support both systems during the transition period.
   optional GetUpdatesCallerInfo caller_info = 2;
 
   // Indicates whether related folders should be fetched.
@@ -442,6 +599,10 @@ message GetUpdatesMessage {
 
   // Per-datatype progress marker.  If present, the server will ignore
   // the values of requested_types and from_timestamp, using this instead.
+  //
+  // With the exception of certain configuration or initial sync requests, the
+  // client should include one instance of this field for each enabled data
+  // type.
   repeated DataTypeProgressMarker from_progress_marker = 6;
 
   // Indicates whether the response should be sent in chunks.  This may be
@@ -463,10 +624,28 @@ message GetUpdatesMessage {
   // Whether to create the mobile bookmarks folder if it's not
   // already created.  Should be set to true only by mobile clients.
   optional bool create_mobile_bookmarks_folder = 1000 [default = false];
+
+  // This value is an updated version of the GetUpdatesCallerInfo's
+  // GetUpdatesSource.  It describes the reason for the GetUpdate request.
+  // Introduced in M29.
+  optional SyncEnums.GetUpdatesOrigin get_updates_origin = 9;
+
+  // Whether this GU also serves as a retry GU. Any GU that happens after
+  // retry timer timeout is a retry GU effectively.
+  optional bool is_retry = 10 [default = false];
+
+  // Set of optional per-client datatype contexts.
+  repeated DataTypeContext client_contexts = 11;
 };
 
 message AuthenticateMessage {
   required string auth_token = 1;
+};
+
+message ClearUserDataMessage {
+};
+
+message ClearUserDataResponse {
 };
 
 // The client must preserve, store, and resend the chip bag with
@@ -500,9 +679,20 @@ message ClientStatus {
   optional bool hierarchy_conflict_detected = 1;
 }
 
+// A single datatype's sync context. Allows the datatype to pass along
+// datatype specific information with its own server backend.
+message DataTypeContext {
+  // The type this context is associated with.
+  optional int32 data_type_id = 1;
+  // The context for the datatype.
+  optional bytes context = 2;
+  // The version of the context.
+  optional int64 version = 3;
+}
+
 message ClientToServerMessage {
   required string share = 1;
-  optional int32 protocol_version = 2 [default = 31];
+  optional int32 protocol_version = 2 [default = 32];
   enum Contents {
     COMMIT = 1;
     GET_UPDATES = 2;
@@ -516,8 +706,7 @@ message ClientToServerMessage {
   optional AuthenticateMessage authenticate = 6;
 
   // Request to clear all Chromium data from the server.
-  // DEPRECATED - this field was never used in production.
-  // optional ClearUserDataMessage clear_user_data = 9;
+  optional ClearUserDataMessage clear_user_data = 9;
 
   optional string store_birthday = 7; // Opaque store ID; if it changes, duck!
   // The client sets this if it detects a sync issue. The server will tell it
@@ -540,7 +729,33 @@ message ClientToServerMessage {
   // The client should set this on every message sent to the server, though its
   // member fields may often be unset.
   optional ClientStatus client_status = 13;
+
+  // The ID that our invalidation client used to identify itself to the server.
+  // Sending the ID here allows the server to not send notifications of our own
+  // changes to our invalidator.
+  optional string invalidator_client_id = 14;
 };
+
+// This request allows the client to convert a specific crash identifier
+// into more general information (e.g. hash of the crashing call stack)
+// suitable for upload in an (authenticated) DebugInfo event.
+message GetCrashInfoRequest {
+  // Id of the uploaded crash.
+  optional string crash_id = 1;
+
+  // Time that the crash occurred.
+  optional int64 crash_time_millis = 2;
+}
+
+// Proto to be written in its entirety to the debug info log.
+message GetCrashInfoResponse {
+  // Hash of the crashing call stack.
+  optional string stack_id = 1;
+
+  // Time of the crash, potentially rounded to remove
+  // significant bits.
+  optional int64 crash_time_millis = 2;
+}
 
 message CommitResponse {
   enum ResponseType {
@@ -564,7 +779,10 @@ message CommitResponse {
     optional string parent_id_string = 4;
 
     // This value is the same as the position_in_parent value returned within
-    // the SyncEntity message in GetUpdatesResponse.
+    // the SyncEntity message in GetUpdatesResponse.  There was a time when the
+    // client would attempt to honor this position, but nowadays the server
+    // should ensure it is no different from the position_in_parent sent up in
+    // the commit request and the client should not read it.
     optional int64 position_in_parent = 5;
 
     // The item's current version.
@@ -630,9 +848,14 @@ message GetUpdatesResponse {
   // |timestamp_token_for_migration| field set.
   repeated DataTypeProgressMarker new_progress_marker = 5;
 
-  // The current encryption key associated with this account. Only set if the
-  // GetUpdatesMessage in the request had need_encryption_key == true.
-  optional bytes encryption_key = 6;
+  // The current encryption keys associated with this account. Will be set if
+  // the GetUpdatesMessage in the request had need_encryption_key == true or
+  // the server has updated the set of encryption keys (e.g. due to a key
+  // rotation).
+  repeated bytes encryption_keys = 6;
+
+  // Set of optional datatype contexts server mutations.
+  repeated DataTypeContext context_mutations = 7;
 };
 
 // The metadata response for GetUpdatesMessage.  This response is sent when
@@ -705,8 +928,7 @@ message ClientToServerResponse {
 
   optional ClientCommand client_command = 7;
   optional ProfilingData profiling_data = 8;
-  // DEPRECATED - this field was never used in production.
-  // optional ClearUserDataResponse clear_user_data = 9;
+  optional ClearUserDataResponse clear_user_data = 9;
   optional GetUpdatesMetadataResponse stream_metadata = 10;
   // If GetUpdatesStreamingResponse is contained in the ClientToServerResponse,
   // none of the other fields (error_code and etc) will be set.
@@ -732,4 +954,3 @@ message ClientToServerResponse {
   // sent with any subsequent ClientToServerMessages.
   optional ChipBag new_bag_of_chips = 14;
 };
-

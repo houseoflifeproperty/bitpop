@@ -7,7 +7,7 @@
 #include <math.h>
 
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/history/history_types.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -28,8 +28,8 @@ class VisitFilterTest : public testing::Test {
   VisitFilterTest();
 
  protected:
-  void SetUp();
-  void TearDown();
+  virtual void SetUp();
+  virtual void TearDown();
 };
 
 VisitFilterTest::VisitFilterTest() {

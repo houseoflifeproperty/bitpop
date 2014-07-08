@@ -11,9 +11,9 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "printing/image.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebPrintScalingOption.h"
+#include "third_party/WebKit/public/web/WebPrintScalingOption.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 
@@ -42,7 +42,7 @@ class MockPrinterPage : public base::RefCounted<MockPrinterPage> {
   virtual ~MockPrinterPage();
 
   uint32 source_size_;
-  scoped_array<uint8> source_data_;
+  scoped_ptr<uint8[]> source_data_;
   printing::Image image_;
 
   DISALLOW_COPY_AND_ASSIGN(MockPrinterPage);
@@ -99,8 +99,8 @@ class MockPrinter {
   bool GetBitmapChecksum(unsigned int page, std::string* checksum) const;
   bool GetSource(unsigned int page, const void** data, uint32* size) const;
   bool GetBitmap(unsigned int page, const void** data, uint32* size) const;
-  bool SaveSource(unsigned int page, const FilePath& filepath) const;
-  bool SaveBitmap(unsigned int page, const FilePath& filepath) const;
+  bool SaveSource(unsigned int page, const base::FilePath& filepath) const;
+  bool SaveBitmap(unsigned int page, const base::FilePath& filepath) const;
 
  protected:
   int CreateDocumentCookie();
@@ -127,6 +127,9 @@ class MockPrinter {
   // Print selection.
   bool selection_only_;
 
+  // Print css backgrounds.
+  bool should_print_backgrounds_;
+
   // Cookie for the document to ensure correctness.
   int document_cookie_;
   int current_document_cookie_;
@@ -145,13 +148,12 @@ class MockPrinter {
 
   // Specifies whether to retain/crop/scale source page size to fit the
   // given printable area.
-  WebKit::WebPrintScalingOption print_scaling_option_;
+  blink::WebPrintScalingOption print_scaling_option_;
 
   // Used for displaying headers and footers.
   bool display_header_footer_;
-  string16 date_;
-  string16 title_;
-  string16 url_;
+  base::string16 title_;
+  base::string16 url_;
 
   // Used for generating invalid settings.
   bool use_invalid_settings_;

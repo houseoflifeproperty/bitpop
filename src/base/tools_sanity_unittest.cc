@@ -7,7 +7,7 @@
 // errors to verify the sanity of the tools.
 
 #include "base/atomicops.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/third_party/dynamic_annotations/dynamic_annotations.h"
 #include "base/threading/thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -20,7 +20,7 @@ const base::subtle::Atomic32 kMagicValue = 42;
 
 // Helper for memory accesses that can potentially corrupt memory or cause a
 // crash during a native run.
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 #if defined(OS_IOS)
 // EXPECT_DEATH is not supported on IOS.
 #define HARMFUL_ACCESS(action,error_regexp) do { action; } while (0)
@@ -32,15 +32,24 @@ const base::subtle::Atomic32 kMagicValue = 42;
 do { if (RunningOnValgrind()) { action; } } while (0)
 #endif
 
-void ReadUninitializedValue(char *ptr) {
+void DoReadUninitializedValue(char *ptr) {
   // Comparison with 64 is to prevent clang from optimizing away the
   // jump -- valgrind only catches jumps and conditional moves, but clang uses
   // the borrow flag if the condition is just `*ptr == '\0'`.
   if (*ptr == 64) {
-    (*ptr)++;
+    VLOG(1) << "Uninit condition is true";
   } else {
-    (*ptr)--;
+    VLOG(1) << "Uninit condition is false";
   }
+}
+
+void ReadUninitializedValue(char *ptr) {
+#if defined(MEMORY_SANITIZER)
+  EXPECT_DEATH(DoReadUninitializedValue(ptr),
+               "use-of-uninitialized-value");
+#else
+  DoReadUninitializedValue(ptr);
+#endif
 }
 
 void ReadValueOutOfArrayBoundsLeft(char *ptr) {
@@ -65,14 +74,15 @@ void WriteValueOutOfArrayBoundsRight(char *ptr, size_t size) {
 
 void MakeSomeErrors(char *ptr, size_t size) {
   ReadUninitializedValue(ptr);
+
   HARMFUL_ACCESS(ReadValueOutOfArrayBoundsLeft(ptr),
-                 "heap-buffer-overflow.*2 bytes to the left");
+                 "2 bytes to the left");
   HARMFUL_ACCESS(ReadValueOutOfArrayBoundsRight(ptr, size),
-                 "heap-buffer-overflow.*1 bytes to the right");
+                 "1 bytes to the right");
   HARMFUL_ACCESS(WriteValueOutOfArrayBoundsLeft(ptr),
-                 "heap-buffer-overflow.*1 bytes to the left");
+                 "1 bytes to the left");
   HARMFUL_ACCESS(WriteValueOutOfArrayBoundsRight(ptr, size),
-                 "heap-buffer-overflow.*0 bytes to the right");
+                 "0 bytes to the right");
 }
 
 }  // namespace
@@ -84,19 +94,29 @@ TEST(ToolsSanityTest, MemoryLeak) {
   leak[4] = 1;  // Make sure the allocated memory is used.
 }
 
-#if defined(ADDRESS_SANITIZER) && defined(OS_IOS)
+#if (defined(ADDRESS_SANITIZER) && defined(OS_IOS)) || defined(SYZYASAN)
 // Because iOS doesn't support death tests, each of the following tests will
-// crash the whole program under ASan.
+// crash the whole program under Asan. On Windows Asan is based on SyzyAsan; the
+// error report mechanism is different than with Asan so these tests will fail.
 #define MAYBE_AccessesToNewMemory DISABLED_AccessesToNewMemory
 #define MAYBE_AccessesToMallocMemory DISABLED_AccessesToMallocMemory
-#define MAYBE_ArrayDeletedWithoutBraces DISABLED_ArrayDeletedWithoutBraces
-#define MAYBE_SingleElementDeletedWithBraces \
-    DISABLED_SingleElementDeletedWithBraces
 #else
 #define MAYBE_AccessesToNewMemory AccessesToNewMemory
 #define MAYBE_AccessesToMallocMemory AccessesToMallocMemory
 #define MAYBE_ArrayDeletedWithoutBraces ArrayDeletedWithoutBraces
 #define MAYBE_SingleElementDeletedWithBraces SingleElementDeletedWithBraces
+#endif
+
+// The following tests pass with Clang r170392, but not r172454, which
+// makes AddressSanitizer detect errors in them. We disable these tests under
+// AddressSanitizer until we fully switch to Clang r172454. After that the
+// tests should be put back under the (defined(OS_IOS) || defined(OS_WIN))
+// clause above.
+// See also http://crbug.com/172614.
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
+#define MAYBE_SingleElementDeletedWithBraces \
+    DISABLED_SingleElementDeletedWithBraces
+#define MAYBE_ArrayDeletedWithoutBraces DISABLED_ArrayDeletedWithoutBraces
 #endif
 TEST(ToolsSanityTest, MAYBE_AccessesToNewMemory) {
   char *foo = new char[10];
@@ -115,7 +135,7 @@ TEST(ToolsSanityTest, MAYBE_AccessesToMallocMemory) {
 }
 
 TEST(ToolsSanityTest, MAYBE_ArrayDeletedWithoutBraces) {
-#if !defined(ADDRESS_SANITIZER)
+#if !defined(ADDRESS_SANITIZER) && !defined(SYZYASAN)
   // This test may corrupt memory if not run under Valgrind or compiled with
   // AddressSanitizer.
   if (!RunningOnValgrind())
@@ -141,7 +161,7 @@ TEST(ToolsSanityTest, MAYBE_SingleElementDeletedWithBraces) {
   delete [] foo;
 }
 
-#if defined(ADDRESS_SANITIZER)
+#if defined(ADDRESS_SANITIZER) || defined(SYZYASAN)
 TEST(ToolsSanityTest, DISABLED_AddressSanitizerNullDerefCrashTest) {
   // Intentionally crash to make sure AddressSanitizer is running.
   // This test should not be ran on bots.
@@ -237,10 +257,11 @@ void RunInParallel(PlatformThread::Delegate *d1, PlatformThread::Delegate *d2) {
 
 // A data race detector should report an error in this test.
 TEST(ToolsSanityTest, DataRace) {
-  bool shared = false;
-  TOOLS_SANITY_TEST_CONCURRENT_THREAD thread1(&shared), thread2(&shared);
+  bool *shared = new bool(false);
+  TOOLS_SANITY_TEST_CONCURRENT_THREAD thread1(shared), thread2(shared);
   RunInParallel(&thread1, &thread2);
-  EXPECT_TRUE(shared);
+  EXPECT_TRUE(*shared);
+  delete shared;
 }
 
 TEST(ToolsSanityTest, AnnotateBenignRace) {

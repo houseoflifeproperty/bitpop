@@ -22,6 +22,10 @@ cr.define('uber', function() {
     headerElements = document.getElementsByTagName('header');
     document.addEventListener('scroll', handleScroll);
 
+    // Prevent the navigation from being stuck in a disabled state when a
+    // content page is reloaded while an overlay is visible (crbug.com/246939).
+    invokeMethodOnParent('stopInterceptingEvents');
+
     // Trigger the scroll handler to tell the navigation if our page started
     // with some scroll (happens when you use tab restore).
     handleScroll();
@@ -35,11 +39,16 @@ cr.define('uber', function() {
    * @private
    */
   function handleScroll() {
-    var offset = document.body.scrollLeft * -1;
-    for (var i = 0; i < headerElements.length; i++)
-      headerElements[i].style.webkitTransform = 'translateX(' + offset + 'px)';
+    var scrollLeft = scrollLeftForDocument(document);
+    var offset = scrollLeft * -1;
+    for (var i = 0; i < headerElements.length; i++) {
+      // As a workaround for http://crbug.com/231830, set the transform to
+      // 'none' rather than 0px.
+      headerElements[i].style.webkitTransform = offset ?
+          'translateX(' + offset + 'px)' : 'none';
+    }
 
-    invokeMethodOnParent('adjustToScroll', document.body.scrollLeft);
+    invokeMethodOnParent('adjustToScroll', scrollLeft);
   };
 
   /**
@@ -59,7 +68,7 @@ cr.define('uber', function() {
    * @private
    */
   function handleFrameSelected() {
-    document.body.scrollLeft = 0;
+    setScrollTopForDocument(document, 0);
   }
 
   /**
@@ -72,14 +81,13 @@ cr.define('uber', function() {
    * @param {Object} params A structure that holds wheel deltas in X and Y.
    */
   function handleMouseWheel(params) {
-    document.body.scrollTop -= params.deltaY * 49 / 120;
-    document.body.scrollLeft -= params.deltaX * 49 / 120;
+    window.scrollBy(-params.deltaX * 49 / 120, -params.deltaY * 49 / 120);
   }
 
   /**
    * Invokes a method on the parent window (UberPage). This is a convenience
    * method for API calls into the uber page.
-   * @param {String} method The name of the method to invoke.
+   * @param {string} method The name of the method to invoke.
    * @param {Object=} opt_params Optional property bag of parameters to pass to
    *     the invoked method.
    * @private
@@ -93,10 +101,10 @@ cr.define('uber', function() {
 
   /**
    * Invokes a method on the target window.
-   * @param {String} method The name of the method to invoke.
+   * @param {string} method The name of the method to invoke.
    * @param {Object=} opt_params Optional property bag of parameters to pass to
    *     the invoked method.
-   * @param {String=} opt_url The origin of the target window.
+   * @param {string=} opt_url The origin of the target window.
    * @private
    */
   function invokeMethodOnWindow(targetWindow, method, opt_params, opt_url) {

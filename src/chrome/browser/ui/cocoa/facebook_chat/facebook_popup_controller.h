@@ -19,11 +19,10 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/base_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/info_bubble_view.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 
 class Browser;
@@ -31,7 +30,7 @@ class FacebookExtensionPopupContainer;
 class FacebookExtensionObserverBridge;
 
 namespace extensions {
-class ExtensionHost;
+class ExtensionViewHost;
 }
 
 // This controller manages a single browser action popup that can appear once a
@@ -53,16 +52,20 @@ class ExtensionHost;
   scoped_ptr<FacebookExtensionObserverBridge> fbObserverBridge_;
 
   // The extension host object.
-  scoped_ptr<extensions::ExtensionHost> host_;
+  scoped_ptr<extensions::ExtensionViewHost> host_;
 
   scoped_ptr<FacebookExtensionPopupContainer> container_;
+
+  // There's an extra windowDidResignKey: notification right after a
+  // ConstrainedWindow closes that should be ignored.
+  BOOL ignoreWindowDidResignKey_;
 
   // The size once the ExtensionView has loaded.
   NSSize pendingSize_;
 }
 
 // Returns the ExtensionHost object associated with this popup.
-- (extensions::ExtensionHost*)extensionHost;
+- (extensions::ExtensionViewHost*)extensionViewHost;
 
 // Starts the process of showing the given popup URL. Instantiates an
 // ExtensionPopupController with the parent window retrieved from |browser|, a

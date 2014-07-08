@@ -13,40 +13,43 @@
 #include "base/i18n/case_conversion.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
+#include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/autocomplete/history_provider.h"
+#include "chrome/browser/autocomplete/shortcuts_backend_factory.h"
+#include "chrome/browser/autocomplete/url_prefix.h"
 #include "chrome/browser/history/history_notifications.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/shortcuts_backend_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/omnibox/omnibox_field_trial.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/url_parse.h"
+#include "url/url_parse.h"
 
 namespace {
 
-class RemoveMatchPredicate {
+class DestinationURLEqualsURL {
  public:
-  explicit RemoveMatchPredicate(const std::set<GURL>& urls)
-      : urls_(urls) {
-  }
-  bool operator()(const AutocompleteMatch& match) {
-    return urls_.find(match.destination_url) != urls_.end();
+  explicit DestinationURLEqualsURL(const GURL& url) : url_(url) {}
+  bool operator()(const AutocompleteMatch& match) const {
+    return match.destination_url == url_;
   }
  private:
-  // Lifetime of the object is less than the lifetime of passed |urls|, so
-  // it is safe to store reference.
-  const std::set<GURL>& urls_;
+  const GURL url_;
 };
 
 }  // namespace
+
+const int ShortcutsProvider::kShortcutsProviderDefaultMaxRelevance = 1199;
 
 ShortcutsProvider::ShortcutsProvider(AutocompleteProviderListener* listener,
                                      Profile* profile)
@@ -54,9 +57,9 @@ ShortcutsProvider::ShortcutsProvider(AutocompleteProviderListener* listener,
           AutocompleteProvider::TYPE_SHORTCUTS),
       languages_(profile_->GetPrefs()->GetString(prefs::kAcceptLanguages)),
       initialized_(false) {
-  scoped_refptr<history::ShortcutsBackend> backend =
+  scoped_refptr<ShortcutsBackend> backend =
       ShortcutsBackendFactory::GetForProfile(profile_);
-  if (backend) {
+  if (backend.get()) {
     backend->AddObserver(this);
     if (backend->initialized())
       initialized_ = true;
@@ -71,10 +74,6 @@ void ShortcutsProvider::Start(const AutocompleteInput& input,
       (input.type() == AutocompleteInput::FORCED_QUERY))
     return;
 
-  // None of our results are applicable for best match.
-  if (input.matches_requested() == AutocompleteInput::BEST_MATCH)
-    return;
-
   if (input.text().empty())
     return;
 
@@ -87,7 +86,7 @@ void ShortcutsProvider::Start(const AutocompleteInput& input,
     base::TimeTicks end_time = base::TimeTicks::Now();
     std::string name = "ShortcutsProvider.QueryIndexTime." +
         base::IntToString(input.text().size());
-    base::Histogram* counter = base::Histogram::FactoryGet(
+    base::HistogramBase* counter = base::Histogram::FactoryGet(
         name, 1, 1000, 50, base::Histogram::kUmaTargetedHistogramFlag);
     counter->Add(static_cast<int>((end_time - start_time).InMilliseconds()));
   }
@@ -95,31 +94,34 @@ void ShortcutsProvider::Start(const AutocompleteInput& input,
 }
 
 void ShortcutsProvider::DeleteMatch(const AutocompleteMatch& match) {
-  // Copy the URL since DeleteMatchesWithURLs() will invalidate |match|.
+  // Copy the URL since deleting from |matches_| will invalidate |match|.
   GURL url(match.destination_url);
+  DCHECK(url.is_valid());
 
   // When a user deletes a match, he probably means for the URL to disappear out
   // of history entirely. So nuke all shortcuts that map to this URL.
-  std::set<GURL> urls;
-  urls.insert(url);
-  // Immediately delete matches and shortcuts with the URL, so we can update the
-  // controller synchronously.
-  DeleteShortcutsWithURLs(urls);
-  DeleteMatchesWithURLs(urls);  // NOTE: |match| is now dead!
+  scoped_refptr<ShortcutsBackend> backend =
+      ShortcutsBackendFactory::GetForProfileIfExists(profile_);
+  if (backend) // Can be NULL in Incognito.
+    backend->DeleteShortcutsWithURL(url);
+
+  matches_.erase(std::remove_if(matches_.begin(), matches_.end(),
+                                DestinationURLEqualsURL(url)),
+                 matches_.end());
+  // NOTE: |match| is now dead!
 
   // Delete the match from the history DB. This will eventually result in a
-  // second call to DeleteShortcutsWithURLs(), which is harmless.
+  // second call to DeleteShortcutsWithURL(), which is harmless.
   HistoryService* const history_service =
       HistoryServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-
-  DCHECK(history_service && url.is_valid());
+  DCHECK(history_service);
   history_service->DeleteURL(url);
 }
 
 ShortcutsProvider::~ShortcutsProvider() {
-  scoped_refptr<history::ShortcutsBackend> backend =
+  scoped_refptr<ShortcutsBackend> backend =
       ShortcutsBackendFactory::GetForProfileIfExists(profile_);
-  if (backend)
+  if (backend.get())
     backend->RemoveObserver(this);
 }
 
@@ -127,40 +129,44 @@ void ShortcutsProvider::OnShortcutsLoaded() {
   initialized_ = true;
 }
 
-void ShortcutsProvider::DeleteMatchesWithURLs(const std::set<GURL>& urls) {
-  std::remove_if(matches_.begin(), matches_.end(), RemoveMatchPredicate(urls));
-  listener_->OnProviderUpdate(true);
-}
-
-void ShortcutsProvider::DeleteShortcutsWithURLs(const std::set<GURL>& urls) {
-  scoped_refptr<history::ShortcutsBackend> backend =
-      ShortcutsBackendFactory::GetForProfileIfExists(profile_);
-  if (!backend)
-    return;  // We are off the record.
-  for (std::set<GURL>::const_iterator url = urls.begin(); url != urls.end();
-       ++url)
-    backend->DeleteShortcutsWithUrl(*url);
-}
-
 void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
-  scoped_refptr<history::ShortcutsBackend> backend =
+  scoped_refptr<ShortcutsBackend> backend =
       ShortcutsBackendFactory::GetForProfileIfExists(profile_);
-  if (!backend)
+  if (!backend.get())
     return;
   // Get the URLs from the shortcuts database with keys that partially or
   // completely match the search term.
-  string16 term_string(base::i18n::ToLower(input.text()));
+  base::string16 term_string(base::i18n::ToLower(input.text()));
   DCHECK(!term_string.empty());
 
-  for (history::ShortcutsBackend::ShortcutMap::const_iterator it =
+  AutocompleteInput fixed_up_input(input);
+  FixupUserInput(&fixed_up_input);
+  const GURL& input_as_gurl = URLFixerUpper::FixupURL(
+      base::UTF16ToUTF8(input.text()), std::string());
+
+  int max_relevance;
+  if (!OmniboxFieldTrial::ShortcutsScoringMaxRelevance(
+      input.current_page_classification(), &max_relevance))
+    max_relevance = kShortcutsProviderDefaultMaxRelevance;
+
+  for (ShortcutsBackend::ShortcutMap::const_iterator it =
            FindFirstMatch(term_string, backend.get());
        it != backend->shortcuts_map().end() &&
            StartsWith(it->first, term_string, true); ++it) {
     // Don't return shortcuts with zero relevance.
-    int relevance = CalculateScore(term_string, it->second);
-    if (relevance)
-      matches_.push_back(ShortcutToACMatch(relevance, term_string, it->second));
+    int relevance = CalculateScore(term_string, it->second, max_relevance);
+    if (relevance) {
+      matches_.push_back(ShortcutToACMatch(
+          it->second, relevance, input, fixed_up_input, input_as_gurl));
+      matches_.back().ComputeStrippedDestinationURL(profile_);
+    }
   }
+  // Remove duplicates.  Duplicates don't need to be preserved in the matches
+  // because they are only used for deletions, and shortcuts deletes matches
+  // based on the URL.
+  AutocompleteResult::DedupMatchesByDestination(
+      input.current_page_classification(), false, &matches_);
+  // Find best matches.
   std::partial_sort(matches_.begin(),
       matches_.begin() +
           std::min(AutocompleteProvider::kMaxMatches, matches_.size()),
@@ -169,25 +175,85 @@ void ShortcutsProvider::GetMatches(const AutocompleteInput& input) {
     matches_.erase(matches_.begin() + AutocompleteProvider::kMaxMatches,
                    matches_.end());
   }
+  // Guarantee that all scores are decreasing (but do not assign any scores
+  // below 1).
+  for (ACMatches::iterator it = matches_.begin(); it != matches_.end(); ++it) {
+    max_relevance = std::min(max_relevance, it->relevance);
+    it->relevance = max_relevance;
+    if (max_relevance > 1)
+      --max_relevance;
+  }
 }
 
 AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
+    const history::ShortcutsDatabase::Shortcut& shortcut,
     int relevance,
-    const string16& term_string,
-    const history::ShortcutsBackend::Shortcut& shortcut) {
-  DCHECK(!term_string.empty());
-  AutocompleteMatch match(this, relevance, true,
-                          AutocompleteMatch::HISTORY_TITLE);
-  match.destination_url = shortcut.url;
+    const AutocompleteInput& input,
+    const AutocompleteInput& fixed_up_input,
+    const GURL& input_as_gurl) {
+  DCHECK(!input.text().empty());
+  AutocompleteMatch match;
+  match.provider = this;
+  match.relevance = relevance;
+  match.deletable = true;
+  match.fill_into_edit = shortcut.match_core.fill_into_edit;
+  match.destination_url = shortcut.match_core.destination_url;
   DCHECK(match.destination_url.is_valid());
-  match.fill_into_edit = UTF8ToUTF16(shortcut.url.spec());
-  match.contents = shortcut.contents;
-  match.contents_class = shortcut.contents_class;
-  match.description = shortcut.description;
-  match.description_class = shortcut.description_class;
+  match.contents = shortcut.match_core.contents;
+  match.contents_class = AutocompleteMatch::ClassificationsFromString(
+      shortcut.match_core.contents_class);
+  match.description = shortcut.match_core.description;
+  match.description_class = AutocompleteMatch::ClassificationsFromString(
+      shortcut.match_core.description_class);
+  match.transition =
+      static_cast<content::PageTransition>(shortcut.match_core.transition);
+  match.type = static_cast<AutocompleteMatch::Type>(shortcut.match_core.type);
+  match.keyword = shortcut.match_core.keyword;
+  match.RecordAdditionalInfo("number of hits", shortcut.number_of_hits);
+  match.RecordAdditionalInfo("last access time", shortcut.last_access_time);
+  match.RecordAdditionalInfo("original input text",
+                             base::UTF16ToUTF8(shortcut.text));
+
+  // Set |inline_autocompletion| and |allowed_to_be_default_match| if possible.
+  // If the match is a search query this is easy: simply check whether the
+  // user text is a prefix of the query.  If the match is a navigation, we
+  // assume the fill_into_edit looks something like a URL, so we use
+  // URLPrefix::GetInlineAutocompleteOffset() to try and strip off any prefixes
+  // that the user might not think would change the meaning, but would
+  // otherwise prevent inline autocompletion.  This allows, for example, the
+  // input of "foo.c" to autocomplete to "foo.com" for a fill_into_edit of
+  // "http://foo.com".
+  if (AutocompleteMatch::IsSearchType(match.type)) {
+    if (StartsWith(match.fill_into_edit, input.text(), false)) {
+      match.inline_autocompletion =
+          match.fill_into_edit.substr(input.text().length());
+      match.allowed_to_be_default_match =
+          !input.prevent_inline_autocomplete() ||
+          match.inline_autocompletion.empty();
+    }
+  } else {
+    const size_t inline_autocomplete_offset =
+        URLPrefix::GetInlineAutocompleteOffset(
+            input, fixed_up_input, true, match.fill_into_edit);
+    if (inline_autocomplete_offset != base::string16::npos) {
+      match.inline_autocompletion =
+          match.fill_into_edit.substr(inline_autocomplete_offset);
+      match.allowed_to_be_default_match =
+          !HistoryProvider::PreventInlineAutocomplete(input) ||
+          match.inline_autocompletion.empty();
+    } else {
+      // Also allow a user's input to be marked as default if it would be fixed
+      // up to the same thing as the fill_into_edit.  This handles cases like
+      // the user input containing a trailing slash absent in fill_into_edit.
+      match.allowed_to_be_default_match = (input_as_gurl ==
+          URLFixerUpper::FixupURL(base::UTF16ToUTF8(match.fill_into_edit),
+                                  std::string()));
+    }
+  }
 
   // Try to mark pieces of the contents and description as matches if they
-  // appear in |term_string|.
+  // appear in |input.text()|.
+  const base::string16 term_string = base::i18n::ToLower(input.text());
   WordMap terms_map(CreateWordMapForString(term_string));
   if (!terms_map.empty()) {
     match.contents_class = ClassifyAllMatchesInString(term_string, terms_map,
@@ -200,14 +266,14 @@ AutocompleteMatch ShortcutsProvider::ShortcutToACMatch(
 
 // static
 ShortcutsProvider::WordMap ShortcutsProvider::CreateWordMapForString(
-    const string16& text) {
+    const base::string16& text) {
   // First, convert |text| to a vector of the unique words in it.
   WordMap word_map;
   base::i18n::BreakIterator word_iter(text,
                                       base::i18n::BreakIterator::BREAK_WORD);
   if (!word_iter.Init())
     return word_map;
-  std::vector<string16> words;
+  std::vector<base::string16> words;
   while (word_iter.Advance()) {
     if (word_iter.IsWord())
       words.push_back(word_iter.GetString());
@@ -223,17 +289,17 @@ ShortcutsProvider::WordMap ShortcutsProvider::CreateWordMapForString(
   // is mandated in C++11, and part of that decision was based on a survey of
   // existing implementations that found that it was already true everywhere.)
   std::reverse(words.begin(), words.end());
-  for (std::vector<string16>::const_iterator i(words.begin()); i != words.end();
-       ++i)
+  for (std::vector<base::string16>::const_iterator i(words.begin());
+       i != words.end(); ++i)
     word_map.insert(std::make_pair((*i)[0], *i));
   return word_map;
 }
 
 // static
 ACMatchClassifications ShortcutsProvider::ClassifyAllMatchesInString(
-    const string16& find_text,
+    const base::string16& find_text,
     const WordMap& find_words,
-    const string16& text,
+    const base::string16& text,
     const ACMatchClassifications& original_class) {
   DCHECK(!find_text.empty());
   DCHECK(!find_words.empty());
@@ -247,7 +313,7 @@ ACMatchClassifications ShortcutsProvider::ClassifyAllMatchesInString(
 
   // First check whether |text| begins with |find_text| and mark that whole
   // section as a match if so.
-  string16 text_lowercase(base::i18n::ToLower(text));
+  base::string16 text_lowercase(base::i18n::ToLower(text));
   ACMatchClassifications match_class;
   size_t last_position = 0;
   if (StartsWith(text_lowercase, find_text, true)) {
@@ -281,7 +347,7 @@ ACMatchClassifications ShortcutsProvider::ClassifyAllMatchesInString(
         find_words.equal_range(text_lowercase[last_position]));
     size_t next_character = last_position + 1;
     for (WordMap::const_iterator i(range.first); i != range.second; ++i) {
-      const string16& word = i->second;
+      const base::string16& word = i->second;
       size_t word_end = last_position + word.length();
       if ((word_end <= text_lowercase.length()) &&
           !text_lowercase.compare(last_position, word.length(), word)) {
@@ -305,11 +371,11 @@ ACMatchClassifications ShortcutsProvider::ClassifyAllMatchesInString(
   return AutocompleteMatch::MergeClassifications(original_class, match_class);
 }
 
-history::ShortcutsBackend::ShortcutMap::const_iterator
-    ShortcutsProvider::FindFirstMatch(const string16& keyword,
-                                      history::ShortcutsBackend* backend) {
+ShortcutsBackend::ShortcutMap::const_iterator
+    ShortcutsProvider::FindFirstMatch(const base::string16& keyword,
+                                      ShortcutsBackend* backend) {
   DCHECK(backend);
-  history::ShortcutsBackend::ShortcutMap::const_iterator it =
+  ShortcutsBackend::ShortcutMap::const_iterator it =
       backend->shortcuts_map().lower_bound(keyword);
   // Lower bound not necessarily matches the keyword, check for item pointed by
   // the lower bound iterator to at least start with keyword.
@@ -318,10 +384,10 @@ history::ShortcutsBackend::ShortcutMap::const_iterator
     backend->shortcuts_map().end();
 }
 
-// static
 int ShortcutsProvider::CalculateScore(
-    const string16& terms,
-    const history::ShortcutsBackend::Shortcut& shortcut) {
+    const base::string16& terms,
+    const history::ShortcutsDatabase::Shortcut& shortcut,
+    int max_relevance) {
   DCHECK(!terms.empty());
   DCHECK_LE(terms.length(), shortcut.text.length());
 
@@ -331,7 +397,7 @@ int ShortcutsProvider::CalculateScore(
   // directly. This makes sense since the first characters typed are much more
   // important for determining how likely it is a user wants a particular
   // shortcut than are the remaining continued characters.
-  double base_score = (AutocompleteResult::kLowestDefaultScore - 1) *
+  double base_score = max_relevance *
       sqrt(static_cast<double>(terms.length()) / shortcut.text.length());
 
   // Then we decay this by half each week.

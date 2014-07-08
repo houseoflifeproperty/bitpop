@@ -16,17 +16,18 @@
 
 package com.google.ipc.invalidation.util;
 
+import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
 
 import java.lang.reflect.Field;
+import java.lang.reflect.Modifier;
 
 /**
- * A {@link TextBuilder} is an abstraction that allows classes to efficiently
- * append their string representations and then use them later for human
- * consumption, e.g., for debugging or logging. It is currently a wrapper
- * around {@link StringBuilder} and {@link Formatter} to give us format and
- * append capabilities together. All append methods return this TextBuilder
- * so that the method calls can be chained.
+ * A {@link TextBuilder} is an abstraction that allows classes to efficiently append their string
+ * representations and then use them later for human consumption, e.g., for debugging or logging. It
+ * is currently a wrapper around {@link StringBuilder} and {@link Formatter} to give us format and
+ * append capabilities together. All append methods return this TextBuilder so that the method calls
+ * can be chained.
  *
  */
 public class TextBuilder {
@@ -35,14 +36,30 @@ public class TextBuilder {
   private final UtilFormatter formatter;
 
   /**
-   * Given an object, outputs all its fields with names to builder
+   * Given an {@code object} that is an instance of {@code clazz}, outputs names and values of all
+   * member fields declared on {@code clazz}. This method should be used carefully:
+   * <ol>
+   * <li>This method is expensive. For frequently logged types, an ad hoc
+   *     {@link InternalBase#toCompactString} implementation is preferred.</li>
+   * <li>May overflow the stack if there is a cycle in an object graph.</li>
+   * <li>Custom formatters have been implemented for many protos. They will not be used by this
+   *     method.</li>
+   * </ol>
    */
-  public static void outputFieldsToBuilder(TextBuilder builder, Object object) {
+  public static void outputFieldsToBuilder(TextBuilder builder, Object object, Class<?> clazz) {
+    Preconditions.checkArgument(clazz.isAssignableFrom(object.getClass()));
+
     // Get all the fields and print them using toCompactString if possible;
     // otherwise, via toString
-    Field[] fields = object.getClass().getDeclaredFields();
+    Field[] fields = clazz.getDeclaredFields();
     for (Field field : fields) {
       try {
+        // Ignore static final fields, as they're uninteresting.
+        int modifiers = field.getModifiers();
+        if (Modifier.isStatic(modifiers) && Modifier.isFinal(modifiers)) {
+          continue;
+        }
+
         field.setAccessible(true);
         builder.append(field.getName() + " = ");
         Object fieldValue = field.get(object);
@@ -94,6 +111,38 @@ public class TextBuilder {
    */
   public TextBuilder append(Object object) {
     builder.append(object);
+    return this;
+  }
+
+  /**
+   * Appends the {@code InternalBase#toCompactString} representation of {@code object} to this
+   * builder.
+   */
+  public TextBuilder append(InternalBase object) {
+    if (object == null) {
+      return append("null");
+    }
+    object.toCompactString(this);
+    return this;
+  }
+
+  /**
+   * Appends the comma-separated {@code InternalBase#toCompactString} representations of
+   * {@code objects} to this builder.
+   */
+  public TextBuilder append(Iterable<InternalBase> objects) {
+    if (objects == null) {
+      return this;
+    }
+    boolean first = true;
+    for (InternalBase object : objects) {
+      if (first) {
+        first = false;
+      } else {
+        builder.append(", ");
+      }
+      append(object);
+    }
     return this;
   }
 

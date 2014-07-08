@@ -1,43 +1,52 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef DEVICE_BLUETOOTH_BLUETOOTH_SOCKET_CHROMEOS_H_
 #define DEVICE_BLUETOOTH_BLUETOOTH_SOCKET_CHROMEOS_H_
 
-#include <string>
-
-#include "base/memory/ref_counted.h"
+#include "chromeos/chromeos_export.h"
 #include "device/bluetooth/bluetooth_socket.h"
+#include "device/bluetooth/bluetooth_socket_net.h"
 
-namespace device {
+namespace dbus {
+class FileDescriptor;
+}  // namespace dbus
 
-class BluetoothServiceRecord;
-
-}  // namespace device
 
 namespace chromeos {
 
-// This class is an implementation of BluetoothSocket class for Chrome OS
-// platform.
-class BluetoothSocketChromeOs : public device::BluetoothSocket {
+// The BluetoothSocketChromeOS class implements BluetoothSocket for the
+// Chrome OS platform.
+class CHROMEOS_EXPORT BluetoothSocketChromeOS
+    : public device::BluetoothSocketNet {
  public:
-  static scoped_refptr<device::BluetoothSocket> CreateBluetoothSocket(
-      const device::BluetoothServiceRecord& service_record);
+  static scoped_refptr<BluetoothSocketChromeOS> CreateBluetoothSocket(
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<device::BluetoothSocketThread> socket_thread,
+      net::NetLog* net_log,
+      const net::NetLog::Source& source);
 
-  // BluetoothSocket override
-  virtual int fd() const OVERRIDE;
+  virtual void Connect(scoped_ptr<dbus::FileDescriptor> fd,
+                       const base::Closure& success_callback,
+                       const ErrorCompletionCallback& error_callback);
 
  protected:
-  virtual ~BluetoothSocketChromeOs();
+  virtual ~BluetoothSocketChromeOS();
 
  private:
-  BluetoothSocketChromeOs(const std::string& address, int fd);
+  BluetoothSocketChromeOS(
+      scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+      scoped_refptr<device::BluetoothSocketThread> socket_thread,
+      net::NetLog* net_log,
+      const net::NetLog::Source& source);
 
-  const std::string address_;
-  const int fd_;
+  void DoConnect(scoped_ptr<dbus::FileDescriptor> fd,
+                 const base::Closure& success_callback,
+                 const ErrorCompletionCallback& error_callback);
 
-  DISALLOW_COPY_AND_ASSIGN(BluetoothSocketChromeOs);
+
+  DISALLOW_COPY_AND_ASSIGN(BluetoothSocketChromeOS);
 };
 
 }  // namespace chromeos

@@ -39,25 +39,6 @@ from webkitpy.common.system.filesystem import FileSystem
 _log = logging.getLogger(__name__)
 
 
-class CheckoutNeedsUpdate(ScriptError):
-    def __init__(self, script_args, exit_code, output, cwd):
-        ScriptError.__init__(self, script_args=script_args, exit_code=exit_code, output=output, cwd=cwd)
-
-
-# FIXME: Should be moved onto SCM
-def commit_error_handler(error):
-    if re.search("resource out of date", error.output):
-        raise CheckoutNeedsUpdate(script_args=error.script_args, exit_code=error.exit_code, output=error.output, cwd=error.cwd)
-    Executive.default_error_handler(error)
-
-
-class AuthenticationError(Exception):
-    def __init__(self, server_host, prompt_for_password=False):
-        self.server_host = server_host
-        self.prompt_for_password = prompt_for_password
-
-
-
 # SCM methods are expected to return paths relative to self.checkout_root.
 class SCM:
     def __init__(self, cwd, executive=None, filesystem=None):
@@ -67,7 +48,7 @@ class SCM:
         self.checkout_root = self.find_checkout_root(self.cwd)
 
     # A wrapper used by subclasses to create processes.
-    def run(self, args, cwd=None, input=None, error_handler=None, return_exit_code=False, return_stderr=True, decode_output=True):
+    def _run(self, args, cwd=None, input=None, error_handler=None, return_exit_code=False, return_stderr=True, decode_output=True):
         # FIXME: We should set cwd appropriately.
         return self._executive.run_command(args,
                            cwd=cwd,
@@ -82,38 +63,10 @@ class SCM:
     def absolute_path(self, repository_relative_path):
         return self._filesystem.join(self.checkout_root, repository_relative_path)
 
-    # FIXME: This belongs in Checkout, not SCM.
-    def scripts_directory(self):
-        return self._filesystem.join(self.checkout_root, "Tools", "Scripts")
-
-    # FIXME: This belongs in Checkout, not SCM.
-    def script_path(self, script_name):
-        return self._filesystem.join(self.scripts_directory(), script_name)
-
-    def ensure_clean_working_directory(self, force_clean):
-        if self.working_directory_is_clean():
-            return
-        if not force_clean:
-            print self.run(self.status_command(), error_handler=Executive.ignore_error, cwd=self.checkout_root)
-            raise ScriptError(message="Working directory has modifications, pass --force-clean or --no-clean to continue.")
-        _log.info("Cleaning working directory")
-        self.clean_working_directory()
-
-    def ensure_no_local_commits(self, force):
-        if not self.supports_local_commits():
-            return
-        commits = self.local_commits()
-        if not len(commits):
-            return
-        if not force:
-            _log.error("Working directory has local commits, pass --force-clean to continue.")
-            sys.exit(1)
-        self.discard_local_commits()
-
-    def run_status_and_extract_filenames(self, status_command, status_regexp):
+    def _run_status_and_extract_filenames(self, status_command, status_regexp):
         filenames = []
         # We run with cwd=self.checkout_root so that returned-paths are root-relative.
-        for line in self.run(status_command, cwd=self.checkout_root).splitlines():
+        for line in self._run(status_command, cwd=self.checkout_root).splitlines():
             match = re.search(status_regexp, line)
             if not match:
                 continue
@@ -121,16 +74,6 @@ class SCM:
             filename = match.group('filename')
             filenames.append(filename)
         return filenames
-
-    def strip_r_from_svn_revision(self, svn_revision):
-        match = re.match("^r(?P<svn_revision>\d+)", unicode(svn_revision))
-        if (match):
-            return match.group('svn_revision')
-        return svn_revision
-
-    def svn_revision_from_commit_text(self, commit_text):
-        match = re.search(self.commit_success_regexp(), commit_text, re.MULTILINE)
-        return match.group('svn_revision')
 
     @staticmethod
     def _subclass_must_implement():
@@ -142,19 +85,6 @@ class SCM:
 
     def find_checkout_root(self, path):
         SCM._subclass_must_implement()
-
-    @staticmethod
-    def commit_success_regexp():
-        SCM._subclass_must_implement()
-
-    def working_directory_is_clean(self):
-        self._subclass_must_implement()
-
-    def clean_working_directory(self):
-        self._subclass_must_implement()
-
-    def status_command(self):
-        self._subclass_must_implement()
 
     def add(self, path, return_exit_code=False):
         self.add_list([path], return_exit_code)
@@ -168,84 +98,47 @@ class SCM:
     def delete_list(self, paths):
         self._subclass_must_implement()
 
+    def move(self, origin, destination):
+        self._subclass_must_implement()
+
     def exists(self, path):
         self._subclass_must_implement()
 
     def changed_files(self, git_commit=None):
         self._subclass_must_implement()
 
-    def changed_files_for_revision(self, revision):
+    def _added_files(self):
         self._subclass_must_implement()
 
-    def revisions_changing_file(self, path, limit=5):
-        self._subclass_must_implement()
-
-    def added_files(self):
-        self._subclass_must_implement()
-
-    def conflicted_files(self):
+    def _deleted_files(self):
         self._subclass_must_implement()
 
     def display_name(self):
         self._subclass_must_implement()
 
-    def head_svn_revision(self):
+    def _head_svn_revision(self):
         return self.svn_revision(self.checkout_root)
 
     def svn_revision(self, path):
+        """Returns the latest svn revision found in the checkout."""
         self._subclass_must_implement()
 
-    def create_patch(self, git_commit=None, changed_files=None):
+    def timestamp_of_revision(self, path, revision):
         self._subclass_must_implement()
 
-    def committer_email_for_revision(self, revision):
+    def blame(self, path):
         self._subclass_must_implement()
 
-    def contents_at_revision(self, path, revision):
+    def has_working_directory_changes(self):
         self._subclass_must_implement()
 
-    def diff_for_revision(self, revision):
-        self._subclass_must_implement()
-
-    def diff_for_file(self, path, log=None):
-        self._subclass_must_implement()
-
-    def show_head(self, path):
-        self._subclass_must_implement()
-
-    def apply_reverse_diff(self, revision):
-        self._subclass_must_implement()
-
-    def revert_files(self, file_paths):
-        self._subclass_must_implement()
-
-    def commit_with_message(self, message, username=None, password=None, git_commit=None, force_squash=False, changed_files=None):
-        self._subclass_must_implement()
-
-    def svn_commit_log(self, svn_revision):
-        self._subclass_must_implement()
-
-    def last_svn_commit_log(self):
-        self._subclass_must_implement()
-
-    def svn_blame(self, path):
-        self._subclass_must_implement()
-
+    #--------------------------------------------------------------------------
     # Subclasses must indicate if they support local commits,
     # but the SCM baseclass will only call local_commits methods when this is true.
     @staticmethod
     def supports_local_commits():
         SCM._subclass_must_implement()
 
-    def remote_merge_base(self):
-        SCM._subclass_must_implement()
-
-    def commit_locally_with_message(self, message):
+    def commit_locally_with_message(self, message, commit_all_working_directory_changes=True):
         _log.error("Your source control manager does not support local commits.")
         sys.exit(1)
-
-    def discard_local_commits(self):
-        pass
-
-    def local_commits(self):
-        return []

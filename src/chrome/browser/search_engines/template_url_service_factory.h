@@ -6,21 +6,20 @@
 #define CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_FACTORY_H_
 
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
-class PrefService;
 class Profile;
 class TemplateURLService;
 
 // Singleton that owns all TemplateURLService and associates them with
 // Profiles.
-class TemplateURLServiceFactory : public ProfileKeyedServiceFactory {
+class TemplateURLServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static TemplateURLService* GetForProfile(Profile* profile);
 
   static TemplateURLServiceFactory* GetInstance();
 
-  static ProfileKeyedService* BuildInstanceFor(Profile* profile);
+  static KeyedService* BuildInstanceFor(content::BrowserContext* profile);
 
  private:
   friend struct DefaultSingletonTraits<TemplateURLServiceFactory>;
@@ -28,14 +27,14 @@ class TemplateURLServiceFactory : public ProfileKeyedServiceFactory {
   TemplateURLServiceFactory();
   virtual ~TemplateURLServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
-  virtual void RegisterUserPrefs(PrefService* user_prefs) OVERRIDE;
-  virtual bool ServiceRedirectedInIncognito() const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
+  virtual void RegisterProfilePrefs(
+      user_prefs::PrefRegistrySyncable* registry) OVERRIDE;
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
-  virtual void ProfileShutdown(Profile* profile) OVERRIDE;
-  virtual void ProfileDestroyed(Profile* profile) OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_SEARCH_ENGINES_TEMPLATE_URL_SERVICE_FACTORY_H_

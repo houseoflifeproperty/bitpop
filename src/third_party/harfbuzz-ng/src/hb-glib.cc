@@ -77,7 +77,7 @@ glib_script_to_script[] =
   HB_SCRIPT_THAANA,
   HB_SCRIPT_THAI,
   HB_SCRIPT_TIBETAN,
-  HB_SCRIPT_CANADIAN_ABORIGINAL,
+  HB_SCRIPT_CANADIAN_SYLLABICS,
   HB_SCRIPT_YI,
   HB_SCRIPT_TAGALOG,
   HB_SCRIPT_HANUNOO,
@@ -334,7 +334,7 @@ hb_glib_unicode_decompose (hb_unicode_funcs_t *ufuncs HB_UNUSED,
 }
 
 static unsigned int
-hb_glib_unicode_decompose_compatibility (hb_unicode_funcs_t *ufuncs,
+hb_glib_unicode_decompose_compatibility (hb_unicode_funcs_t *ufuncs HB_UNUSED,
 					 hb_codepoint_t      u,
 					 hb_codepoint_t     *decomposed,
 					 void               *user_data HB_UNUSED)

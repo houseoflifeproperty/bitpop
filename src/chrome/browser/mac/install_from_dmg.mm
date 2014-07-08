@@ -4,8 +4,8 @@
 
 #include "chrome/browser/mac/install_from_dmg.h"
 
-#include <ApplicationServices/ApplicationServices.h>
 #import <AppKit/AppKit.h>
+#include <ApplicationServices/ApplicationServices.h>
 #include <CoreFoundation/CoreFoundation.h>
 #include <CoreServices/CoreServices.h>
 #include <DiskArbitration/DiskArbitration.h>
@@ -19,7 +19,7 @@
 #include "base/auto_reset.h"
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/mac/authorization_util.h"
 #include "base/mac/bundle_locations.h"
@@ -29,8 +29,8 @@
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_ioobject.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/mac/dock.h"
 #import "chrome/browser/mac/keystone_glue.h"
 #include "chrome/browser/mac/relauncher.h"
@@ -121,17 +121,15 @@ bool MediaResidesOnDiskImage(io_service_t media, std::string* image_path) {
   }
 
   if (image_path) {
-    base::mac::ScopedCFTypeRef<CFTypeRef> image_path_cftyperef(
-        IORegistryEntryCreateCFProperty(hdix_drive,
-                                        CFSTR("image-path"),
-                                        NULL,
-                                        0));
+    base::ScopedCFTypeRef<CFTypeRef> image_path_cftyperef(
+        IORegistryEntryCreateCFProperty(
+            hdix_drive, CFSTR("image-path"), NULL, 0));
     if (!image_path_cftyperef) {
       LOG(ERROR) << "IORegistryEntryCreateCFProperty";
       return true;
     }
     if (CFGetTypeID(image_path_cftyperef) != CFDataGetTypeID()) {
-      base::mac::ScopedCFTypeRef<CFStringRef> observed_type_cf(
+      base::ScopedCFTypeRef<CFStringRef> observed_type_cf(
           CFCopyTypeIDDescription(CFGetTypeID(image_path_cftyperef)));
       std::string observed_type;
       if (observed_type_cf) {
@@ -359,9 +357,9 @@ bool InstallFromDiskImage(AuthorizationRef authorization_arg,
 // call EjectAndTrashDiskImage on dmg_bsd_device_name.
 bool LaunchInstalledApp(NSString* installed_path,
                         const std::string& dmg_bsd_device_name) {
-  FilePath browser_path([installed_path fileSystemRepresentation]);
+  base::FilePath browser_path([installed_path fileSystemRepresentation]);
 
-  FilePath helper_path = browser_path.Append("Contents/Versions");
+  base::FilePath helper_path = browser_path.Append("Contents/Versions");
   helper_path = helper_path.Append(chrome::kChromeVersion);
   helper_path = helper_path.Append(chrome::kHelperProcessExecutablePath);
 
@@ -516,7 +514,7 @@ struct SynchronousDACallbackData {
         run_loop_running(false) {
   }
 
-  base::mac::ScopedCFTypeRef<DADissenterRef> dissenter;
+  base::ScopedCFTypeRef<DADissenterRef> dissenter;
   bool callback_called;
   bool run_loop_running;
 
@@ -605,13 +603,13 @@ bool SynchronousDADiskEject(DADiskRef disk, DADiskEjectOptions options) {
 }  // namespace
 
 void EjectAndTrashDiskImage(const std::string& dmg_bsd_device_name) {
-  base::mac::ScopedCFTypeRef<DASessionRef> session(DASessionCreate(NULL));
+  base::ScopedCFTypeRef<DASessionRef> session(DASessionCreate(NULL));
   if (!session.get()) {
     LOG(ERROR) << "DASessionCreate";
     return;
   }
 
-  base::mac::ScopedCFTypeRef<DADiskRef> disk(
+  base::ScopedCFTypeRef<DADiskRef> disk(
       DADiskCreateFromBSDName(NULL, session, dmg_bsd_device_name.c_str()));
   if (!disk.get()) {
     LOG(ERROR) << "DADiskCreateFromBSDName";
@@ -672,10 +670,10 @@ void EjectAndTrashDiskImage(const std::string& dmg_bsd_device_name) {
   // Dock indicating that any garbage has been placed within it. Using the
   // trash path that FSPathMoveObjectToTrashSync claims to have used, call
   // FNNotifyByPath to fatten up the icon.
-  FilePath disk_image_path_in_trash(disk_image_path_in_trash_c);
+  base::FilePath disk_image_path_in_trash(disk_image_path_in_trash_c);
   free(disk_image_path_in_trash_c);
 
-  FilePath trash_path = disk_image_path_in_trash.DirName();
+  base::FilePath trash_path = disk_image_path_in_trash.DirName();
   const UInt8* trash_path_u8 = reinterpret_cast<const UInt8*>(
       trash_path.value().c_str());
   status = FNNotifyByPath(trash_path_u8,

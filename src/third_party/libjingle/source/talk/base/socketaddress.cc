@@ -34,7 +34,9 @@
 #if defined(OPENBSD)
 #include <netinet/in_systm.h>
 #endif
+#if !defined(__native_client__)
 #include <netinet/ip.h>
+#endif
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <unistd.h>
@@ -163,6 +165,18 @@ std::string SocketAddress::HostAsURIString() const {
   }
 }
 
+std::string SocketAddress::HostAsSensitiveURIString() const {
+  // If the hostname was a literal IP string, it may need to have square
+  // brackets added (for SocketAddress::ToString()).
+  if (!literal_ && !hostname_.empty())
+    return hostname_;
+  if (ip_.family() == AF_INET6) {
+    return "[" + ip_.ToSensitiveString() + "]";
+  } else {
+    return ip_.ToSensitiveString();
+  }
+}
+
 std::string SocketAddress::PortAsString() const {
   std::ostringstream ost;
   ost << port_;
@@ -172,6 +186,12 @@ std::string SocketAddress::PortAsString() const {
 std::string SocketAddress::ToString() const {
   std::ostringstream ost;
   ost << *this;
+  return ost.str();
+}
+
+std::string SocketAddress::ToSensitiveString() const {
+  std::ostringstream ost;
+  ost << HostAsSensitiveURIString() << ":" << port();
   return ost.str();
 }
 
@@ -308,15 +328,11 @@ size_t SocketAddress::ToSockAddrStorage(sockaddr_storage* addr) const {
 }
 
 std::string SocketAddress::IPToString(uint32 ip_as_host_order_integer) {
-  std::ostringstream ost;
-  ost << ((ip_as_host_order_integer >> 24) & 0xff);
-  ost << '.';
-  ost << ((ip_as_host_order_integer >> 16) & 0xff);
-  ost << '.';
-  ost << ((ip_as_host_order_integer >> 8) & 0xff);
-  ost << '.';
-  ost << ((ip_as_host_order_integer >> 0) & 0xff);
-  return ost.str();
+  return IPAddress(ip_as_host_order_integer).ToString();
+}
+
+std::string IPToSensitiveString(uint32 ip_as_host_order_integer) {
+  return IPAddress(ip_as_host_order_integer).ToSensitiveString();
 }
 
 bool SocketAddress::StringToIP(const std::string& hostname, uint32* ip) {

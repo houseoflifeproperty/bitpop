@@ -8,33 +8,37 @@
 #include <set>
 #include <string>
 
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/password_manager/password_store.h"
 #include "chrome/browser/password_manager/password_store_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
-#include "chrome/browser/webdata/web_data_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/webdata/web_data_service.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "chrome/common/importer/imported_favicon_usage.h"
 #include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 namespace {
 
 // Generates a unique folder name. If |folder_name| is not unique, then this
 // repeatedly tests for '|folder_name| + (i)' until a unique name is found.
-string16 GenerateUniqueFolderName(BookmarkModel* model,
-                                  const string16& folder_name) {
+base::string16 GenerateUniqueFolderName(BookmarkModel* model,
+                                        const base::string16& folder_name) {
   // Build a set containing the bookmark bar folder names.
-  std::set<string16> existing_folder_names;
+  std::set<base::string16> existing_folder_names;
   const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
   for (int i = 0; i < bookmark_bar->child_count(); ++i) {
     const BookmarkNode* node = bookmark_bar->GetChild(i);
@@ -48,8 +52,8 @@ string16 GenerateUniqueFolderName(BookmarkModel* model,
 
   // Otherwise iterate until we find a unique name.
   for (size_t i = 1; i <= existing_folder_names.size(); ++i) {
-    string16 name = folder_name + ASCIIToUTF16(" (") + base::IntToString16(i) +
-        ASCIIToUTF16(")");
+    base::string16 name = folder_name + base::ASCIIToUTF16(" (") +
+        base::IntToString16(i) + base::ASCIIToUTF16(")");
     if (existing_folder_names.find(name) == existing_folder_names.end())
       return name;
   }
@@ -65,41 +69,24 @@ void ShowBookmarkBar(Profile* profile) {
 
 }  // namespace
 
-ProfileWriter::BookmarkEntry::BookmarkEntry()
-    : in_toolbar(false),
-      is_folder(false) {}
-
-ProfileWriter::BookmarkEntry::~BookmarkEntry() {}
-
-bool ProfileWriter::BookmarkEntry::operator==(
-    const ProfileWriter::BookmarkEntry& other) const {
-  return (in_toolbar == other.in_toolbar &&
-          is_folder == other.is_folder &&
-          url == other.url &&
-          path == other.path &&
-          title == other.title &&
-          creation_time == other.creation_time);
-}
-
 ProfileWriter::ProfileWriter(Profile* profile) : profile_(profile) {}
 
 bool ProfileWriter::BookmarkModelIsLoaded() const {
-  return BookmarkModelFactory::GetForProfile(profile_)->IsLoaded();
+  return BookmarkModelFactory::GetForProfile(profile_)->loaded();
 }
 
 bool ProfileWriter::TemplateURLServiceIsLoaded() const {
   return TemplateURLServiceFactory::GetForProfile(profile_)->loaded();
 }
 
-void ProfileWriter::AddPasswordForm(const content::PasswordForm& form) {
+void ProfileWriter::AddPasswordForm(const autofill::PasswordForm& form) {
   PasswordStoreFactory::GetForProfile(
       profile_, Profile::EXPLICIT_ACCESS)->AddLogin(form);
 }
 
 #if defined(OS_WIN)
 void ProfileWriter::AddIE7PasswordInfo(const IE7PasswordInfo& info) {
-  WebDataServiceFactory::GetForProfile(
-      profile_, Profile::EXPLICIT_ACCESS)->AddIE7Login(info);
+  WebDataService::FromBrowserContext(profile_)->AddIE7Login(info);
 }
 #endif
 
@@ -120,13 +107,14 @@ void ProfileWriter::AddHomepage(const GURL& home_page) {
   }
 }
 
-void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
-                                 const string16& top_level_folder_name) {
+void ProfileWriter::AddBookmarks(
+    const std::vector<ImportedBookmarkEntry>& bookmarks,
+    const base::string16& top_level_folder_name) {
   if (bookmarks.empty())
     return;
 
   BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile_);
-  DCHECK(model->IsLoaded());
+  DCHECK(model->loaded());
 
   // If the bookmark bar is currently empty, we should import directly to it.
   // Otherwise, we should import everything to a subfolder.
@@ -134,9 +122,10 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
   bool import_to_top_level = bookmark_bar->empty();
 
   // Reorder bookmarks so that the toolbar entries come first.
-  std::vector<BookmarkEntry> toolbar_bookmarks;
-  std::vector<BookmarkEntry> reordered_bookmarks;
-  for (std::vector<BookmarkEntry>::const_iterator it = bookmarks.begin();
+  std::vector<ImportedBookmarkEntry> toolbar_bookmarks;
+  std::vector<ImportedBookmarkEntry> reordered_bookmarks;
+  for (std::vector<ImportedBookmarkEntry>::const_iterator it =
+           bookmarks.begin();
        it != bookmarks.end(); ++it) {
     if (it->in_toolbar)
       toolbar_bookmarks.push_back(*it);
@@ -157,8 +146,8 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
 
   std::set<const BookmarkNode*> folders_added_to;
   const BookmarkNode* top_level_folder = NULL;
-  for (std::vector<BookmarkEntry>::const_iterator bookmark =
-         reordered_bookmarks.begin();
+  for (std::vector<ImportedBookmarkEntry>::const_iterator bookmark =
+           reordered_bookmarks.begin();
        bookmark != reordered_bookmarks.end(); ++bookmark) {
     // Disregard any bookmarks with invalid urls.
     if (!bookmark->is_folder && !bookmark->url.is_valid())
@@ -172,7 +161,8 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
       // Add to a folder that will contain all the imported bookmarks not added
       // to the bar.  The first time we do so, create the folder.
       if (!top_level_folder) {
-        string16 name = GenerateUniqueFolderName(model, top_level_folder_name);
+        base::string16 name =
+            GenerateUniqueFolderName(model,top_level_folder_name);
         top_level_folder = model->AddFolder(bookmark_bar,
                                             bookmark_bar->child_count(),
                                             name);
@@ -183,7 +173,7 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
     // Ensure any enclosing folders are present in the model.  The bookmark's
     // enclosing folder structure should be
     //   path[0] > path[1] > ... > path[size() - 1]
-    for (std::vector<string16>::const_iterator folder_name =
+    for (std::vector<base::string16>::const_iterator folder_name =
              bookmark->path.begin();
          folder_name != bookmark->path.end(); ++folder_name) {
       if (bookmark->in_toolbar && parent == bookmark_bar &&
@@ -210,9 +200,12 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
     if (bookmark->is_folder) {
       model->AddFolder(parent, parent->child_count(), bookmark->title);
     } else {
-      model->AddURLWithCreationTime(parent, parent->child_count(),
-                                    bookmark->title, bookmark->url,
-                                    bookmark->creation_time);
+      model->AddURLWithCreationTimeAndMetaInfo(parent,
+                                               parent->child_count(),
+                                               bookmark->title,
+                                               bookmark->url,
+                                               bookmark->creation_time,
+                                               NULL);
     }
   }
 
@@ -232,7 +225,7 @@ void ProfileWriter::AddBookmarks(const std::vector<BookmarkEntry>& bookmarks,
 }
 
 void ProfileWriter::AddFavicons(
-    const std::vector<history::ImportedFaviconUsage>& favicons) {
+    const std::vector<ImportedFaviconUsage>& favicons) {
   FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS)->
       SetImportedFavicons(favicons);
 }
@@ -266,7 +259,7 @@ static std::string BuildHostPathKey(const TemplateURL* t_url,
   if (t_url->url_ref().SupportsReplacement()) {
     return HostPathKeyForURL(GURL(
         t_url->url_ref().ReplaceSearchTerms(
-            TemplateURLRef::SearchTermsArgs(ASCIIToUTF16("x")))));
+            TemplateURLRef::SearchTermsArgs(base::ASCIIToUTF16("x")))));
   }
   return std::string();
 }

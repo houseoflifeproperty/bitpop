@@ -8,14 +8,17 @@
 #include "base/basictypes.h"
 #include "content/common/content_export.h"
 #include "content/common/indexed_db/indexed_db_key.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIDBKeyRange.h"
 
 namespace content {
 
 class CONTENT_EXPORT IndexedDBKeyRange {
  public:
   IndexedDBKeyRange();
-  explicit IndexedDBKeyRange(const WebKit::WebIDBKeyRange& key_range);
+  explicit IndexedDBKeyRange(const IndexedDBKey& onlyKey);
+  IndexedDBKeyRange(const IndexedDBKey& lower,
+                    const IndexedDBKey& upper,
+                    bool lower_open,
+                    bool upper_open);
   ~IndexedDBKeyRange();
 
   const IndexedDBKey& lower() const { return lower_; }
@@ -23,10 +26,7 @@ class CONTENT_EXPORT IndexedDBKeyRange {
   bool lowerOpen() const { return lower_open_; }
   bool upperOpen() const { return upper_open_; }
 
-  void Set(const IndexedDBKey& lower, const IndexedDBKey& upper,
-           bool lower_open, bool upper_open);
-
-  operator WebKit::WebIDBKeyRange() const;
+  bool IsOnlyKey() const;
 
  private:
   IndexedDBKey lower_;

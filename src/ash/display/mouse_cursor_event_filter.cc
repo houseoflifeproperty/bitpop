@@ -4,23 +4,24 @@
 
 #include "ash/display/mouse_cursor_event_filter.h"
 
+#include "ash/display/cursor_window_controller.h"
 #include "ash/display/display_controller.h"
+#include "ash/display/display_manager.h"
 #include "ash/display/shared_display_edge_indicator.h"
-#include "ash/screen_ash.h"
+#include "ash/root_window_controller.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/cursor_manager.h"
 #include "ash/wm/window_util.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/layout.h"
 #include "ui/compositor/dip_util.h"
+#include "ui/events/event.h"
 #include "ui/gfx/screen.h"
 
 namespace ash {
-namespace internal {
 namespace {
 
 // Maximum size on the display edge that initiate snapping phantom window,
@@ -37,7 +38,9 @@ const int kIndicatorThickness = 1;
 
 MouseCursorEventFilter::MouseCursorEventFilter()
     : mouse_warp_mode_(WARP_ALWAYS),
+      was_mouse_warped_(false),
       drag_source_root_(NULL),
+      scale_when_drag_started_(1.0f),
       shared_display_edge_indicator_(new SharedDisplayEdgeIndicator) {
 }
 
@@ -46,7 +49,7 @@ MouseCursorEventFilter::~MouseCursorEventFilter() {
 }
 
 void MouseCursorEventFilter::ShowSharedEdgeIndicator(
-    const aura::RootWindow* from) {
+    const aura::Window* from) {
   HideSharedEdgeIndicator();
   if (Shell::GetScreen()->GetNumDisplays() <= 1 || from == NULL) {
     src_indicator_bounds_.SetRect(0, 0, 0, 0);
@@ -57,7 +60,7 @@ void MouseCursorEventFilter::ShowSharedEdgeIndicator(
   drag_source_root_ = from;
 
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
   if (position == DisplayLayout::TOP || position == DisplayLayout::BOTTOM)
     UpdateHorizontalIndicatorWindowBounds();
   else
@@ -72,6 +75,21 @@ void MouseCursorEventFilter::HideSharedEdgeIndicator() {
 }
 
 void MouseCursorEventFilter::OnMouseEvent(ui::MouseEvent* event) {
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  RootWindowController* rwc = GetRootWindowController(target->GetRootWindow());
+  // The root window controller is removed during the shutting down
+  // RootWindow, so don't process events futher.
+  if (!rwc) {
+    event->StopPropagation();
+    return;
+  }
+
+  if (event->type() == ui::ET_MOUSE_PRESSED) {
+    scale_when_drag_started_ = ui::GetDeviceScaleFactor(target->layer());
+  } else if (event->type() == ui::ET_MOUSE_RELEASED) {
+    scale_when_drag_started_ = 1.0f;
+  }
+
   // Handle both MOVED and DRAGGED events here because when the mouse pointer
   // enters the other root window while dragging, the underlying window system
   // (at least X11) stops generating a ui::ET_MOUSE_MOVED event.
@@ -80,61 +98,72 @@ void MouseCursorEventFilter::OnMouseEvent(ui::MouseEvent* event) {
       return;
   }
 
+  Shell::GetInstance()->display_controller()->
+      cursor_window_controller()->UpdateLocation();
+
   gfx::Point point_in_screen(event->location());
-  aura::Window* target = static_cast<aura::Window*>(event->target());
   wm::ConvertPointToScreen(target, &point_in_screen);
   if (WarpMouseCursorIfNecessary(target->GetRootWindow(), point_in_screen))
     event->StopPropagation();
 }
 
 bool MouseCursorEventFilter::WarpMouseCursorIfNecessary(
-    aura::RootWindow* target_root,
+    aura::Window* target_root,
     const gfx::Point& point_in_screen) {
   if (Shell::GetScreen()->GetNumDisplays() <= 1 ||
       mouse_warp_mode_ == WARP_NONE)
     return false;
-  const float scale_at_target = ui::GetDeviceScaleFactor(target_root->layer());
 
-  aura::RootWindow* root_at_point = wm::GetRootWindowAt(point_in_screen);
+  // Do not warp again right after the cursor was warped. Sometimes the offset
+  // is not long enough and the cursor moves at the edge of the destination
+  // display. See crbug.com/278885
+  // TODO(mukai): simplify the offset calculation below, it would not be
+  // necessary anymore with this flag.
+  if (was_mouse_warped_) {
+    was_mouse_warped_ = false;
+    return false;
+  }
+
+  aura::Window* root_at_point = wm::GetRootWindowAt(point_in_screen);
   gfx::Point point_in_root = point_in_screen;
   wm::ConvertPointFromScreen(root_at_point, &point_in_root);
   gfx::Rect root_bounds = root_at_point->bounds();
   int offset_x = 0;
   int offset_y = 0;
 
-  const float scale_at_point = ui::GetDeviceScaleFactor(root_at_point->layer());
-  // If the window is dragged from 2x display to 1x display, the
-  // pointer location is rounded by the source scale factor (2x) so
-  // it will never reach the edge (which is odd). Shrink by scale
-  // factor instead.  Only integral scale factor is supported.
-  int shrink =
-      target_root != root_at_point && scale_at_target != scale_at_point ?
-      static_cast<int>(scale_at_target) : 1;
+  // If the window is dragged between 2x display and 1x display,
+  // staring from 2x display, pointer location is rounded by the
+  // source scale factor (2x) so it will never reach the edge (which
+  // is odd). Shrink by scale factor of the display where the dragging
+  // started instead.  Only integral scale factor is supported for now.
+  int shrink = scale_when_drag_started_;
   // Make the bounds inclusive to detect the edge.
   root_bounds.Inset(0, 0, shrink, shrink);
+  gfx::Rect src_indicator_bounds = src_indicator_bounds_;
+  src_indicator_bounds.Inset(-shrink, -shrink, -shrink, -shrink);
 
   if (point_in_root.x() <= root_bounds.x()) {
     // Use -2, not -1, to avoid infinite loop of pointer warp.
-    offset_x = -2 * scale_at_target;
+    offset_x = -2 * scale_when_drag_started_;
   } else if (point_in_root.x() >= root_bounds.right()) {
-    offset_x = 2 * scale_at_target;
+    offset_x = 2 * scale_when_drag_started_;
   } else if (point_in_root.y() <= root_bounds.y()) {
-    offset_y = -2 * scale_at_target;
+    offset_y = -2 * scale_when_drag_started_;
   } else if (point_in_root.y() >= root_bounds.bottom()) {
-    offset_y = 2 * scale_at_target;
+    offset_y = 2 * scale_when_drag_started_;
   } else {
     return false;
   }
 
   gfx::Point point_in_dst_screen(point_in_screen);
   point_in_dst_screen.Offset(offset_x, offset_y);
-  aura::RootWindow* dst_root = wm::GetRootWindowAt(point_in_dst_screen);
+  aura::Window* dst_root = wm::GetRootWindowAt(point_in_dst_screen);
 
   // Warp the mouse cursor only if the location is in the indicator bounds
   // or the mouse pointer is in the destination root.
   if (mouse_warp_mode_ == WARP_DRAG &&
       dst_root != drag_source_root_ &&
-      !src_indicator_bounds_.Contains(point_in_screen)) {
+      !src_indicator_bounds.Contains(point_in_screen)) {
     return false;
   }
 
@@ -142,6 +171,7 @@ bool MouseCursorEventFilter::WarpMouseCursorIfNecessary(
 
   if (dst_root->bounds().Contains(point_in_dst_screen)) {
     DCHECK_NE(dst_root, root_at_point);
+    was_mouse_warped_ = true;
     dst_root->MoveCursorTo(point_in_dst_screen);
     return true;
   }
@@ -150,12 +180,13 @@ bool MouseCursorEventFilter::WarpMouseCursorIfNecessary(
 
 void MouseCursorEventFilter::UpdateHorizontalIndicatorWindowBounds() {
   bool from_primary = Shell::GetPrimaryRootWindow() == drag_source_root_;
-
-  const gfx::Rect& primary_bounds =
+  // GetPrimaryDisplay returns an object on stack, so copy the bounds
+  // instead of using reference.
+  const gfx::Rect primary_bounds =
       Shell::GetScreen()->GetPrimaryDisplay().bounds();
-  const gfx::Rect& secondary_bounds = ScreenAsh::GetSecondaryDisplay().bounds();
+  const gfx::Rect secondary_bounds = ScreenUtil::GetSecondaryDisplay().bounds();
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
 
   src_indicator_bounds_.set_x(
       std::max(primary_bounds.x(), secondary_bounds.x()));
@@ -178,12 +209,13 @@ void MouseCursorEventFilter::UpdateHorizontalIndicatorWindowBounds() {
 
 void MouseCursorEventFilter::UpdateVerticalIndicatorWindowBounds() {
   bool in_primary = Shell::GetPrimaryRootWindow() == drag_source_root_;
-
-  const gfx::Rect& primary_bounds =
+  // GetPrimaryDisplay returns an object on stack, so copy the bounds
+  // instead of using reference.
+  const gfx::Rect primary_bounds =
       Shell::GetScreen()->GetPrimaryDisplay().bounds();
-  const gfx::Rect& secondary_bounds = ScreenAsh::GetSecondaryDisplay().bounds();
+  const gfx::Rect secondary_bounds = ScreenUtil::GetSecondaryDisplay().bounds();
   DisplayLayout::Position position = Shell::GetInstance()->
-      display_controller()->GetCurrentDisplayLayout().position;
+      display_manager()->GetCurrentDisplayLayout().position;
 
   int upper_shared_y = std::max(primary_bounds.y(), secondary_bounds.y());
   int lower_shared_y = std::min(primary_bounds.bottom(),
@@ -227,5 +259,4 @@ void MouseCursorEventFilter::UpdateVerticalIndicatorWindowBounds() {
   src_indicator_bounds_.set_height(lower_indicator_y - upper_indicator_y);
 }
 
-}  // namespace internal
 }  // namespace ash

@@ -4,19 +4,21 @@
 
 #include "base/file_util.h"
 #include "base/json/json_file_value_serializer.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/extensions/user_script_listener.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension_file_util.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/resource_controller.h"
 #include "content/public/browser/resource_throttle.h"
+#include "extensions/browser/extension_registry.h"
+#include "net/base/request_priority.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_filter.h"
 #include "net/url_request/url_request_test_job.h"
 #include "net/url_request/url_request_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -42,16 +44,16 @@ class ThrottleController : public base::SupportsUserData::Data,
   }
 
   // ResourceController implementation:
-  virtual void Resume() {
+  virtual void Resume() OVERRIDE {
     request_->Start();
   }
-  virtual void Cancel() {
+  virtual void Cancel() OVERRIDE {
     NOTREACHED();
   }
-  virtual void CancelAndIgnore() {
+  virtual void CancelAndIgnore() OVERRIDE {
     NOTREACHED();
   }
-  virtual void CancelWithError(int error_code) {
+  virtual void CancelWithError(int error_code) OVERRIDE {
     NOTREACHED();
   }
 
@@ -72,64 +74,86 @@ class SimpleTestJob : public net::URLRequestTestJob {
                                kTestData,
                                true) {}
  private:
-  ~SimpleTestJob() {}
+  virtual ~SimpleTestJob() {}
 };
 
 // Yoinked from extension_manifest_unittest.cc.
-DictionaryValue* LoadManifestFile(const FilePath path, std::string* error) {
-  EXPECT_TRUE(file_util::PathExists(path));
+base::DictionaryValue* LoadManifestFile(const base::FilePath path,
+                                        std::string* error) {
+  EXPECT_TRUE(base::PathExists(path));
   JSONFileValueSerializer serializer(path);
-  return static_cast<DictionaryValue*>(serializer.Deserialize(NULL, error));
+  return static_cast<base::DictionaryValue*>(
+      serializer.Deserialize(NULL, error));
 }
 
 scoped_refptr<Extension> LoadExtension(const std::string& filename,
                                        std::string* error) {
-  FilePath path;
+  base::FilePath path;
   PathService::Get(chrome::DIR_TEST_DATA, &path);
   path = path.
       AppendASCII("extensions").
       AppendASCII("manifest_tests").
       AppendASCII(filename.c_str());
-  scoped_ptr<DictionaryValue> value(LoadManifestFile(path, error));
-  if (!value.get())
+  scoped_ptr<base::DictionaryValue> value(LoadManifestFile(path, error));
+  if (!value)
     return NULL;
-  return Extension::Create(path.DirName(), Extension::LOAD, *value,
+  return Extension::Create(path.DirName(), Manifest::UNPACKED, *value,
                            Extension::NO_FLAGS, error);
 }
 
+class SimpleTestJobProtocolHandler
+    : public net::URLRequestJobFactory::ProtocolHandler {
+ public:
+  SimpleTestJobProtocolHandler() {}
+  virtual ~SimpleTestJobProtocolHandler() {}
+
+  // net::URLRequestJobFactory::ProtocolHandler
+  virtual net::URLRequestJob* MaybeCreateJob(
+      net::URLRequest* request,
+      net::NetworkDelegate* network_delegate) const OVERRIDE {
+    return new SimpleTestJob(request, network_delegate);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(SimpleTestJobProtocolHandler);
+};
+
 }  // namespace
 
-class UserScriptListenerTest
-    : public ExtensionServiceTestBase,
-      public net::URLRequest::Interceptor {
+class UserScriptListenerTest : public ExtensionServiceTestBase {
  public:
   UserScriptListenerTest() {
-    net::URLRequest::Deprecated::RegisterRequestInterceptor(this);
+    net::URLRequestFilter::GetInstance()->AddHostnameProtocolHandler(
+        "http", "google.com",
+        scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+            new SimpleTestJobProtocolHandler()));
+    net::URLRequestFilter::GetInstance()->AddHostnameProtocolHandler(
+        "http", "example.com",
+        scoped_ptr<net::URLRequestJobFactory::ProtocolHandler>(
+            new SimpleTestJobProtocolHandler()));
   }
 
-  ~UserScriptListenerTest() {
-    net::URLRequest::Deprecated::UnregisterRequestInterceptor(this);
+  virtual ~UserScriptListenerTest() {
+    net::URLRequestFilter::GetInstance()->RemoveHostnameHandler("http",
+                                                                "google.com");
+    net::URLRequestFilter::GetInstance()->RemoveHostnameHandler("http",
+                                                                "example.com");
   }
 
-  virtual void SetUp() {
+  virtual void SetUp() OVERRIDE {
     ExtensionServiceTestBase::SetUp();
 
     InitializeEmptyExtensionService();
     service_->Init();
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
 
     listener_ = new UserScriptListener();
   }
 
-  virtual void TearDown() {
+  virtual void TearDown() OVERRIDE {
     listener_ = NULL;
-    MessageLoop::current()->RunUntilIdle();
-  }
-
-  // net::URLRequest::Interceptor
-  virtual net::URLRequestJob* MaybeIntercept(
-      net::URLRequest* request, net::NetworkDelegate* network_delegate) {
-    return new SimpleTestJob(request, network_delegate);
+    base::MessageLoop::current()->RunUntilIdle();
+    ExtensionServiceTestBase::TearDown();
   }
 
  protected:
@@ -138,7 +162,7 @@ class UserScriptListenerTest
                                         net::TestURLRequestContext* context) {
     GURL url(url_string);
     net::TestURLRequest* request =
-        new net::TestURLRequest(url, delegate, context);
+        new net::TestURLRequest(url, net::DEFAULT_PRIORITY, delegate, context);
 
     ResourceThrottle* throttle =
         listener_->CreateResourceThrottle(url, ResourceType::MAIN_FRAME);
@@ -157,9 +181,9 @@ class UserScriptListenerTest
   }
 
   void LoadTestExtension() {
-    FilePath test_dir;
+    base::FilePath test_dir;
     ASSERT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_dir));
-    FilePath extension_path = test_dir
+    base::FilePath extension_path = test_dir
         .AppendASCII("extensions")
         .AppendASCII("good")
         .AppendASCII("Extensions")
@@ -171,7 +195,7 @@ class UserScriptListenerTest
   void UnloadTestExtension() {
     ASSERT_FALSE(service_->extensions()->is_empty());
     service_->UnloadExtension((*service_->extensions()->begin())->id(),
-                              extension_misc::UNLOAD_REASON_DISABLE);
+                              UnloadedExtensionInfo::REASON_DISABLE);
   }
 
   scoped_refptr<UserScriptListener> listener_;
@@ -181,7 +205,7 @@ namespace {
 
 TEST_F(UserScriptListenerTest, DelayAndUpdate) {
   LoadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   net::TestDelegate delegate;
   net::TestURLRequestContext context;
@@ -193,13 +217,13 @@ TEST_F(UserScriptListenerTest, DelayAndUpdate) {
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
 
 TEST_F(UserScriptListenerTest, DelayAndUnload) {
   LoadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   net::TestDelegate delegate;
   net::TestURLRequestContext context;
@@ -208,7 +232,7 @@ TEST_F(UserScriptListenerTest, DelayAndUnload) {
   ASSERT_FALSE(request->is_pending());
 
   UnloadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   // This is still not enough to start delayed requests. We have to notify the
   // listener that the user scripts have been updated.
@@ -218,7 +242,7 @@ TEST_F(UserScriptListenerTest, DelayAndUnload) {
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
 
@@ -231,13 +255,13 @@ TEST_F(UserScriptListenerTest, NoDelayNoExtension) {
   // The request should be started immediately.
   ASSERT_TRUE(request->is_pending());
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
 
 TEST_F(UserScriptListenerTest, NoDelayNotMatching) {
   LoadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   net::TestDelegate delegate;
   net::TestURLRequestContext context;
@@ -248,15 +272,15 @@ TEST_F(UserScriptListenerTest, NoDelayNotMatching) {
   // The request should be started immediately.
   ASSERT_TRUE(request->is_pending());
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
 
 TEST_F(UserScriptListenerTest, MultiProfile) {
   LoadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
-  // Fire up a second profile and have it load and extension with a content
+  // Fire up a second profile and have it load an extension with a content
   // script.
   TestingProfile profile2;
   std::string error;
@@ -264,8 +288,10 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
       "content_script_yahoo.json", &error);
   ASSERT_TRUE(extension.get());
 
+  extensions::ExtensionRegistry::Get(&profile2)->AddEnabled(extension);
+
   content::NotificationService::current()->Notify(
-      chrome::NOTIFICATION_EXTENSION_LOADED,
+      chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
       content::Source<Profile>(&profile2),
       content::Details<Extension>(extension.get()));
 
@@ -281,7 +307,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   ASSERT_FALSE(request->is_pending());
   EXPECT_TRUE(delegate.data_received().empty());
 
@@ -290,7 +316,7 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(&profile2),
       content::NotificationService::NoDetails());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   EXPECT_EQ(kTestData, delegate.data_received());
 }
 
@@ -299,12 +325,12 @@ TEST_F(UserScriptListenerTest, MultiProfile) {
 // throttles.
 TEST_F(UserScriptListenerTest, ResumeBeforeStart) {
   LoadTestExtension();
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
   net::TestDelegate delegate;
   net::TestURLRequestContext context;
   GURL url(kMatchingUrl);
   scoped_ptr<net::TestURLRequest> request(
-      new net::TestURLRequest(url, &delegate, &context));
+      new net::TestURLRequest(url, net::DEFAULT_PRIORITY, &delegate, &context));
 
   ResourceThrottle* throttle =
       listener_->CreateResourceThrottle(url, ResourceType::MAIN_FRAME);
@@ -317,7 +343,7 @@ TEST_F(UserScriptListenerTest, ResumeBeforeStart) {
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
       content::Source<Profile>(profile_.get()),
       content::NotificationService::NoDetails());
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   bool defer = false;
   throttle->WillStartRequest(&defer);

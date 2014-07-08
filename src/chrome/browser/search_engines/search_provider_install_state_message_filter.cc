@@ -12,19 +12,19 @@
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
 SearchProviderInstallStateMessageFilter::
-    SearchProviderInstallStateMessageFilter(
+SearchProviderInstallStateMessageFilter(
     int render_process_id,
     Profile* profile)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-      provider_data_(profile, content::NOTIFICATION_RENDERER_PROCESS_TERMINATED,
-          content::Source<content::RenderProcessHost>(
-              content::RenderProcessHost::FromID(render_process_id))),
-      is_off_the_record_(profile->IsOffTheRecord()) {
+    : BrowserMessageFilter(ChromeMsgStart),
+      provider_data_(profile,
+                     content::RenderProcessHost::FromID(render_process_id)),
+      is_off_the_record_(profile->IsOffTheRecord()),
+      weak_factory_(this) {
   // This is initialized by RenderProcessHostImpl. Do not add any non-trivial
   // initialization here. Instead do it lazily when required.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
@@ -39,7 +39,7 @@ bool SearchProviderInstallStateMessageFilter::OnMessageReceived(
                            *message_was_ok)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(
         ChromeViewHostMsg_GetSearchProviderInstallState,
-        OnMsgGetSearchProviderInstallState)
+        OnGetSearchProviderInstallState)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP()
   return handled;
@@ -82,7 +82,7 @@ SearchProviderInstallStateMessageFilter::GetSearchProviderInstallState(
 }
 
 void
-SearchProviderInstallStateMessageFilter::OnMsgGetSearchProviderInstallState(
+SearchProviderInstallStateMessageFilter::OnGetSearchProviderInstallState(
     const GURL& page_location,
     const GURL& requested_host,
     IPC::Message* reply_msg) {

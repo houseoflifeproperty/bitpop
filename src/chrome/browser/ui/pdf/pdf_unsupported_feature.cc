@@ -6,28 +6,28 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/version.h"
-#include "chrome/browser/chrome_plugin_service_filter.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_finder.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/tab_contents/tab_util.h"
 #include "chrome/browser/ui/pdf/open_pdf_in_reader_prompt_delegate.h"
 #include "chrome/browser/ui/pdf/pdf_tab_helper.h"
 #include "chrome/common/chrome_content_client.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/interstitial_page.h"
 #include "content/public/browser/interstitial_page_delegate.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/plugin_service.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
@@ -38,25 +38,28 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/jstemplate_builder.h"
 #include "ui/gfx/image/image.h"
 
 #if defined(OS_WIN)
 #include "base/win/metro.h"
 #endif
 
+using base::UserMetricsAction;
 using content::InterstitialPage;
 using content::OpenURLParams;
 using content::PluginService;
 using content::Referrer;
-using content::UserMetricsAction;
 using content::WebContents;
-using webkit::WebPluginInfo;
+using content::WebPluginInfo;
 
 namespace {
 
-static const char kAdobeReaderIdentifier[] = "adobe-reader";
-static const char kAdobeReaderUpdateUrl[] =
-    "http://www.adobe.com/go/getreader_chrome";
+const char kAdobeReaderUpdateUrl[] = "http://www.adobe.com/go/getreader_chrome";
+
+#if defined(OS_WIN) && defined(ENABLE_PLUGIN_INSTALLATION)
+const char kAdobeReaderIdentifier[] = "adobe-reader";
+#endif
 
 // The prompt delegate used to ask the user if they want to use Adobe Reader
 // by default.
@@ -67,9 +70,9 @@ class PDFEnableAdobeReaderPromptDelegate
   virtual ~PDFEnableAdobeReaderPromptDelegate();
 
   // OpenPDFInReaderPromptDelegate
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;
@@ -104,26 +107,26 @@ bool PDFEnableAdobeReaderPromptDelegate::ShouldExpire(
 
 void PDFEnableAdobeReaderPromptDelegate::Accept() {
   content::RecordAction(UserMetricsAction("PDF_EnableReaderInfoBarOK"));
-  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile_);
+  PluginPrefs* plugin_prefs = PluginPrefs::GetForProfile(profile_).get();
   plugin_prefs->EnablePluginGroup(
-      true, ASCIIToUTF16(PluginMetadata::kAdobeReaderGroupName));
+      true, base::ASCIIToUTF16(PluginMetadata::kAdobeReaderGroupName));
   plugin_prefs->EnablePluginGroup(
-      false, ASCIIToUTF16(chrome::ChromeContentClient::kPDFPluginName));
+      false, base::ASCIIToUTF16(ChromeContentClient::kPDFPluginName));
 }
 
 void PDFEnableAdobeReaderPromptDelegate::Cancel() {
   content::RecordAction(UserMetricsAction("PDF_EnableReaderInfoBarCancel"));
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetAcceptButtonText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetAcceptButtonText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_INFOBAR_ALWAYS_USE_READER_BUTTON);
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetCancelButtonText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetCancelButtonText() const {
   return l10n_util::GetStringUTF16(IDS_DONE);
 }
 
-string16 PDFEnableAdobeReaderPromptDelegate::GetMessageText() const {
+base::string16 PDFEnableAdobeReaderPromptDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_INFOBAR_QUESTION_ALWAYS_USE_READER);
 }
 
@@ -139,12 +142,12 @@ void OpenReaderUpdateURL(WebContents* web_contents) {
 void OpenUsingReader(WebContents* web_contents,
                      const WebPluginInfo& reader_plugin,
                      OpenPDFInReaderPromptDelegate* delegate) {
-  ChromePluginServiceFilter::GetInstance()->OverridePluginForTab(
+  ChromePluginServiceFilter::GetInstance()->OverridePluginForFrame(
       web_contents->GetRenderProcessHost()->GetID(),
-      web_contents->GetRenderViewHost()->GetRoutingID(),
+      web_contents->GetMainFrame()->GetRoutingID(),
       web_contents->GetURL(),
       reader_plugin);
-  web_contents->GetRenderViewHost()->ReloadFrame();
+  web_contents->ReloadFocusedFrame(false);
 
   PDFTabHelper* pdf_tab_helper = PDFTabHelper::FromWebContents(web_contents);
   if (delegate)
@@ -170,7 +173,7 @@ class PDFUnsupportedFeatureInterstitial
  protected:
   // InterstitialPageDelegate implementation.
   virtual std::string GetHTMLContents() OVERRIDE {
-    DictionaryValue strings;
+    base::DictionaryValue strings;
     strings.SetString(
         "title",
         l10n_util::GetStringUTF16(IDS_READER_OUT_OF_DATE_BLOCKING_PAGE_TITLE));
@@ -194,7 +197,7 @@ class PDFUnsupportedFeatureInterstitial
     base::StringPiece html(ResourceBundle::GetSharedInstance().
                            GetRawDataResource(IDR_READER_OUT_OF_DATE_HTML));
 
-    return jstemplate_builder::GetI18nTemplateHtml(html, &strings);
+    return webui::GetI18nTemplateHtml(html, &strings);
   }
 
   virtual void CommandReceived(const std::string& command) OVERRIDE {
@@ -213,7 +216,7 @@ class PDFUnsupportedFeatureInterstitial
       content::RecordAction(
           UserMetricsAction("PDF_ReaderInterstitialIgnore"));
       // Pretend that the plug-in is up-to-date so that we don't block it.
-      reader_webplugininfo_.version = ASCIIToUTF16("11.0.0.0");
+      reader_webplugininfo_.version = base::ASCIIToUTF16("11.0.0.0");
       OpenUsingReader(web_contents_, reader_webplugininfo_, NULL);
     } else {
       NOTREACHED();
@@ -243,14 +246,14 @@ class PDFUnsupportedFeaturePromptDelegate
  public:
   // |reader| is NULL if Adobe Reader isn't installed.
   PDFUnsupportedFeaturePromptDelegate(WebContents* web_contents,
-                                      const webkit::WebPluginInfo* reader,
+                                      const content::WebPluginInfo* reader,
                                       PluginFinder* plugin_finder);
   virtual ~PDFUnsupportedFeaturePromptDelegate();
 
   // OpenPDFInReaderPromptDelegate:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual string16 GetAcceptButtonText() const OVERRIDE;
-  virtual string16 GetCancelButtonText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetAcceptButtonText() const OVERRIDE;
+  virtual base::string16 GetCancelButtonText() const OVERRIDE;
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const OVERRIDE;
   virtual void Accept() OVERRIDE;
@@ -267,7 +270,7 @@ class PDFUnsupportedFeaturePromptDelegate
 
 PDFUnsupportedFeaturePromptDelegate::PDFUnsupportedFeaturePromptDelegate(
     WebContents* web_contents,
-    const webkit::WebPluginInfo* reader,
+    const content::WebPluginInfo* reader,
     PluginFinder* plugin_finder)
     : web_contents_(web_contents),
       reader_installed_(!!reader),
@@ -295,11 +298,12 @@ PDFUnsupportedFeaturePromptDelegate::PDFUnsupportedFeaturePromptDelegate(
 PDFUnsupportedFeaturePromptDelegate::~PDFUnsupportedFeaturePromptDelegate() {
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetMessageText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetMessageText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_MESSAGE);
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText()
+    const {
 #if defined(OS_WIN)
   if (base::win::IsMetroProcess())
     return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_METRO_MODE_LINK);
@@ -311,7 +315,8 @@ string16 PDFUnsupportedFeaturePromptDelegate::GetAcceptButtonText() const {
   return l10n_util::GetStringUTF16(IDS_PDF_BUBBLE_INSTALL_READER_LINK);
 }
 
-string16 PDFUnsupportedFeaturePromptDelegate::GetCancelButtonText() const {
+base::string16 PDFUnsupportedFeaturePromptDelegate::GetCancelButtonText()
+    const {
   return l10n_util::GetStringUTF16(IDS_DONE);
 }
 
@@ -323,7 +328,7 @@ bool PDFUnsupportedFeaturePromptDelegate::ShouldExpire(
 void PDFUnsupportedFeaturePromptDelegate::Accept() {
 #if defined(OS_WIN)
   if (base::win::IsMetroProcess()) {
-    browser::AttemptRestartWithModeSwitch();
+    chrome::AttemptRestartWithModeSwitch();
     return;
   }
 #endif
@@ -358,13 +363,13 @@ void PDFUnsupportedFeaturePromptDelegate::Cancel() {
 #if defined(OS_WIN) && defined(ENABLE_PLUGIN_INSTALLATION)
 void GotPluginsCallback(int process_id,
                         int routing_id,
-                        const std::vector<webkit::WebPluginInfo>& plugins) {
+                        const std::vector<content::WebPluginInfo>& plugins) {
   WebContents* web_contents =
       tab_util::GetWebContentsByID(process_id, routing_id);
   if (!web_contents)
     return;
 
-  const webkit::WebPluginInfo* reader = NULL;
+  const content::WebPluginInfo* reader = NULL;
   PluginFinder* plugin_finder = PluginFinder::GetInstance();
   for (size_t i = 0; i < plugins.size(); ++i) {
     scoped_ptr<PluginMetadata> plugin_metadata(

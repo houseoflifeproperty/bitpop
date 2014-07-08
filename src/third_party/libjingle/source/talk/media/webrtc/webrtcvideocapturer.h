@@ -31,6 +31,7 @@
 #include <string>
 #include <vector>
 
+#include "talk/base/criticalsection.h"
 #include "talk/base/messagehandler.h"
 #include "talk/media/base/videocapturer.h"
 #include "talk/media/webrtc/webrtcvideoframe.h"
@@ -68,7 +69,7 @@ class WebRtcVideoCapturer : public VideoCapturer,
   virtual CaptureState Start(const VideoFormat& capture_format);
   virtual void Stop();
   virtual bool IsRunning();
-  virtual bool IsScreencast() { return false; }
+  virtual bool IsScreencast() const { return false; }
 
  protected:
   // Override virtual methods of the parent class VideoCapturer.
@@ -76,18 +77,22 @@ class WebRtcVideoCapturer : public VideoCapturer,
 
  private:
   // Callback when a frame is captured by camera.
-  virtual void OnIncomingCapturedFrame(const WebRtc_Word32 id,
+  virtual void OnIncomingCapturedFrame(const int32_t id,
                                        webrtc::I420VideoFrame& frame);
-  virtual void OnIncomingCapturedEncodedFrame(const WebRtc_Word32 id,
-      webrtc::VideoFrame& frame, webrtc::VideoCodecType codec_type) {
+  virtual void OnIncomingCapturedEncodedFrame(const int32_t id,
+      webrtc::VideoFrame& frame,
+      webrtc::VideoCodecType codec_type) {
   }
-  virtual void OnCaptureDelayChanged(const WebRtc_Word32 id,
-                                     const WebRtc_Word32 delay);
+  virtual void OnCaptureDelayChanged(const int32_t id,
+                                     const int32_t delay);
 
   talk_base::scoped_ptr<WebRtcVcmFactoryInterface> factory_;
   webrtc::VideoCaptureModule* module_;
   int captured_frames_;
-  talk_base::scoped_ptr<FrameBuffer> captured_frame_;
+  std::vector<uint8_t> capture_buffer_;
+
+  // Critical section to avoid Stop during an OnIncomingCapturedFrame callback.
+  talk_base::CriticalSection critical_section_stopping_;
 };
 
 struct WebRtcCapturedFrame : public CapturedFrame {

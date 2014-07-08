@@ -7,8 +7,8 @@
 #include "base/guid.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/browser_thread.h"
 #include "sql/statement.h"
 
@@ -55,7 +55,7 @@ AutocompleteActionPredictorTable::Row::Row()
 }
 
 AutocompleteActionPredictorTable::Row::Row(const Row::Id& id,
-                                           const string16& user_text,
+                                           const base::string16& user_text,
                                            const GURL& url,
                                            int number_of_hits,
                                            int number_of_misses)

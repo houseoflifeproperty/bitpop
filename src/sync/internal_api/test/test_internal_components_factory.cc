@@ -22,7 +22,9 @@ TestInternalComponentsFactory::TestInternalComponentsFactory(
 TestInternalComponentsFactory::~TestInternalComponentsFactory() { }
 
 scoped_ptr<SyncScheduler> TestInternalComponentsFactory::BuildScheduler(
-    const std::string& name, sessions::SyncSessionContext* context) {
+    const std::string& name,
+    sessions::SyncSessionContext* context,
+    syncer::CancelationSignal* cancelation_signal) {
   return scoped_ptr<SyncScheduler>(new FakeSyncScheduler());
 }
 
@@ -30,27 +32,29 @@ scoped_ptr<sessions::SyncSessionContext>
 TestInternalComponentsFactory::BuildContext(
     ServerConnectionManager* connection_manager,
     syncable::Directory* directory,
-    const std::vector<ModelSafeWorker*> workers,
-    ExtensionsActivityMonitor* monitor,
-    ThrottledDataTypeTracker* throttled_data_type_tracker,
+    ExtensionsActivity* monitor,
     const std::vector<SyncEngineEventListener*>& listeners,
     sessions::DebugInfoGetter* debug_info_getter,
-    TrafficRecorder* traffic_recorder) {
+    ModelTypeRegistry* model_type_registry,
+    const std::string& invalidator_client_id) {
 
   // Tests don't wire up listeners.
   std::vector<SyncEngineEventListener*> empty_listeners;
   return scoped_ptr<sessions::SyncSessionContext>(
       new sessions::SyncSessionContext(
-          connection_manager, directory, workers, monitor,
-          throttled_data_type_tracker, empty_listeners, debug_info_getter,
-          traffic_recorder,
-          switches_.encryption_method == ENCRYPTION_KEYSTORE));
+          connection_manager, directory, monitor,
+          empty_listeners, debug_info_getter,
+          model_type_registry,
+          switches_.encryption_method == ENCRYPTION_KEYSTORE,
+          switches_.pre_commit_updates_policy ==
+              FORCE_ENABLE_PRE_COMMIT_UPDATE_AVOIDANCE,
+          invalidator_client_id));
 
 }
 
 scoped_ptr<syncable::DirectoryBackingStore>
 TestInternalComponentsFactory::BuildDirectoryBackingStore(
-      const std::string& dir_name, const FilePath& backing_filepath) {
+      const std::string& dir_name, const base::FilePath& backing_filepath) {
   switch (storage_option_) {
     case STORAGE_IN_MEMORY:
       return scoped_ptr<syncable::DirectoryBackingStore>(

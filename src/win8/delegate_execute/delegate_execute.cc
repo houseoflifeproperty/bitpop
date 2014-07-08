@@ -2,6 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "build/intsafe_workaround.h"
+
 #include <atlbase.h>
 #include <atlcom.h>
 #include <atlctl.h>
@@ -12,49 +14,77 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
-#include "base/string16.h"
+#include "base/process/kill.h"
+#include "base/strings/string16.h"
 #include "base/win/scoped_com_initializer.h"
+#include "base/win/scoped_comptr.h"
 #include "base/win/scoped_handle.h"
 #include "breakpad/src/client/windows/handler/exception_handler.h"
 #include "chrome/common/chrome_switches.h"
-#include "command_execute_impl.h"
+#include "chrome/installer/util/browser_distribution.h"
+#include "win8/delegate_execute/command_execute_impl.h"
 #include "win8/delegate_execute/crash_server_init.h"
 #include "win8/delegate_execute/delegate_execute_operation.h"
 #include "win8/delegate_execute/resource.h"
 
 using namespace ATL;
 
+// Usually classes derived from CAtlExeModuleT, or other types of ATL
+// COM module classes statically define their CLSID at compile time through
+// the use of various macros, and ATL internals takes care of creating the
+// class objects and registering them.  However, we need to register the same
+// object with different CLSIDs depending on a runtime setting, so we handle
+// that logic here, before the main ATL message loop runs.
 class DelegateExecuteModule
     : public ATL::CAtlExeModuleT< DelegateExecuteModule > {
  public :
   typedef ATL::CAtlExeModuleT<DelegateExecuteModule> ParentClass;
+  typedef CComObject<CommandExecuteImpl> ImplType;
 
-  DECLARE_REGISTRY_APPID_RESOURCEID(IDR_DELEGATEEXECUTE,
-                                    "{B1935DA1-112F-479A-975B-AB8588ABA636}")
-
-  HRESULT RegisterServer(BOOL reg_type_lib) {
-    return ParentClass::RegisterServer(FALSE);
+  DelegateExecuteModule()
+      : registration_token_(0) {
   }
 
-  virtual HRESULT AddCommonRGSReplacements(IRegistrarBase* registrar) throw() {
-    AtlTrace(L"In %hs\n", __FUNCTION__);
-    HRESULT hr = ParentClass::AddCommonRGSReplacements(registrar);
+  HRESULT PreMessageLoop(int nShowCmd) {
+    HRESULT hr = S_OK;
+    base::string16 clsid_string;
+    GUID clsid;
+    BrowserDistribution* dist = BrowserDistribution::GetDistribution();
+    if (!dist->GetCommandExecuteImplClsid(&clsid_string))
+      return E_FAIL;
+    hr = ::CLSIDFromString(clsid_string.c_str(), &clsid);
     if (FAILED(hr))
       return hr;
 
-    wchar_t delegate_execute_clsid[MAX_PATH] = {0};
-    if (!StringFromGUID2(__uuidof(CommandExecuteImpl), delegate_execute_clsid,
-                         ARRAYSIZE(delegate_execute_clsid))) {
-      ATLASSERT(false);
-      return E_FAIL;
+    // We use the same class creation logic as ATL itself.  See
+    // _ATL_OBJMAP_ENTRY::RegisterClassObject() in atlbase.h
+    hr = ImplType::_ClassFactoryCreatorClass::CreateInstance(
+        ImplType::_CreatorClass::CreateInstance, IID_IUnknown,
+        instance_.ReceiveVoid());
+    if (FAILED(hr))
+      return hr;
+    hr = ::CoRegisterClassObject(clsid, instance_, CLSCTX_LOCAL_SERVER,
+        REGCLS_MULTIPLEUSE | REGCLS_SUSPENDED, &registration_token_);
+    if (FAILED(hr))
+      return hr;
+
+    return ParentClass::PreMessageLoop(nShowCmd);
+  }
+
+  HRESULT PostMessageLoop() {
+    if (registration_token_ != 0) {
+      ::CoRevokeClassObject(registration_token_);
+      registration_token_ = 0;
     }
 
-    hr = registrar->AddReplacement(L"DELEGATE_EXECUTE_CLSID",
-                                   delegate_execute_clsid);
-    ATLASSERT(SUCCEEDED(hr));
-    return hr;
+    instance_.Release();
+
+    return ParentClass::PostMessageLoop();
   }
+
+ private:
+  base::win::ScopedComPtr<IUnknown> instance_;
+  DWORD registration_token_;
 };
 
 DelegateExecuteModule _AtlModule;
@@ -91,7 +121,7 @@ int RelaunchChrome(const DelegateExecuteOperation& operation) {
 
   base::win::ScopedCOMInitializer com_initializer;
 
-  string16 relaunch_flags(operation.relaunch_flags());
+  base::string16 relaunch_flags(operation.relaunch_flags());
   SHELLEXECUTEINFO sei = { sizeof(sei) };
   sei.fMask = SEE_MASK_FLAG_LOG_USAGE;
   sei.nShow = SW_SHOWNORMAL;

@@ -6,9 +6,9 @@
 #define CHROME_BROWSER_UI_WEBUI_CONSTRAINED_WEB_DIALOG_UI_H_
 
 #include "base/compiler_specific.h"
+#include "components/web_modal/native_web_contents_modal_dialog.h"
 #include "content/public/browser/web_ui_controller.h"
-
-class ConstrainedWindow;
+#include "ui/gfx/native_widget_types.h"
 
 namespace content {
 class BrowserContext;
@@ -26,7 +26,7 @@ class ConstrainedWebDialogDelegate {
   virtual const ui::WebDialogDelegate* GetWebDialogDelegate() const = 0;
   virtual ui::WebDialogDelegate* GetWebDialogDelegate() = 0;
 
-  // Called when the dialog is being closed in response to a "DialogClose"
+  // Called when the dialog is being closed in response to a "dialogClose"
   // message from WebUI.
   virtual void OnDialogCloseFromWebUI() = 0;
 
@@ -35,11 +35,11 @@ class ConstrainedWebDialogDelegate {
   // released WebContents.
   virtual void ReleaseWebContentsOnDialogClose() = 0;
 
-  // Returns the ConstrainedWindow.
-  virtual ConstrainedWindow* GetWindow() = 0;
-
   // Returns the WebContents owned by the constrained window.
   virtual content::WebContents* GetWebContents() = 0;
+
+  // Returns the native type used to display the dialog.
+  virtual web_modal::NativeWebContentsModalDialog GetNativeDialog() = 0;
 
  protected:
   virtual ~ConstrainedWebDialogDelegate() {}
@@ -47,14 +47,11 @@ class ConstrainedWebDialogDelegate {
 
 // ConstrainedWebDialogUI is a facility to show HTML WebUI content
 // in a tab-modal constrained dialog.  It is implemented as an adapter
-// between an WebDialogUI object and a ConstrainedWindow object.
+// between an WebDialogUI object and a web contents modal dialog.
 //
-// Since ConstrainedWindow requires platform-specific delegate
+// Since the web contents modal dialog requires platform-specific delegate
 // implementations, this class is just a factory stub.
-// TODO(thestig): Refactor the platform-independent code out of the
-// platform-specific implementations.
-class ConstrainedWebDialogUI
-    : public content::WebUIController {
+class ConstrainedWebDialogUI : public content::WebUIController {
  public:
   explicit ConstrainedWebDialogUI(content::WebUI* web_ui);
   virtual ~ConstrainedWebDialogUI();

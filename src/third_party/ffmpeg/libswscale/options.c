@@ -33,8 +33,8 @@ static const char *sws_context_to_name(void *ptr)
 #define DEFAULT 0
 #define VE AV_OPT_FLAG_VIDEO_PARAM | AV_OPT_FLAG_ENCODING_PARAM
 
-static const AVOption options[] = {
-    { "sws_flags",       "scaler flags",                  OFFSET(flags),     AV_OPT_TYPE_FLAGS,  { .i64 = DEFAULT            }, 0,       UINT_MAX,       VE, "sws_flags" },
+static const AVOption swscale_options[] = {
+    { "sws_flags",       "scaler flags",                  OFFSET(flags),     AV_OPT_TYPE_FLAGS,  { .i64  = SWS_BICUBIC        }, 0,      UINT_MAX,        VE, "sws_flags" },
     { "fast_bilinear",   "fast bilinear",                 0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_FAST_BILINEAR  }, INT_MIN, INT_MAX,        VE, "sws_flags" },
     { "bilinear",        "bilinear",                      0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BILINEAR       }, INT_MIN, INT_MAX,        VE, "sws_flags" },
     { "bicubic",         "bicubic",                       0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BICUBIC        }, INT_MIN, INT_MAX,        VE, "sws_flags" },
@@ -51,17 +51,28 @@ static const AVOption options[] = {
     { "full_chroma_int", "full chroma interpolation",     0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_FULL_CHR_H_INT }, INT_MIN, INT_MAX,        VE, "sws_flags" },
     { "full_chroma_inp", "full chroma input",             0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_FULL_CHR_H_INP }, INT_MIN, INT_MAX,        VE, "sws_flags" },
     { "bitexact",        "",                              0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_BITEXACT       }, INT_MIN, INT_MAX,        VE, "sws_flags" },
+    { "error_diffusion", "error diffusion dither",        0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_ERROR_DIFFUSION}, INT_MIN, INT_MAX,        VE, "sws_flags" },
 
     { "srcw",            "source width",                  OFFSET(srcW),      AV_OPT_TYPE_INT,    { .i64 = 16                 }, 1,       INT_MAX,        VE },
     { "srch",            "source height",                 OFFSET(srcH),      AV_OPT_TYPE_INT,    { .i64 = 16                 }, 1,       INT_MAX,        VE },
     { "dstw",            "destination width",             OFFSET(dstW),      AV_OPT_TYPE_INT,    { .i64 = 16                 }, 1,       INT_MAX,        VE },
     { "dsth",            "destination height",            OFFSET(dstH),      AV_OPT_TYPE_INT,    { .i64 = 16                 }, 1,       INT_MAX,        VE },
-    { "src_format",      "source format",                 OFFSET(srcFormat), AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       PIX_FMT_NB - 1, VE },
-    { "dst_format",      "destination format",            OFFSET(dstFormat), AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       PIX_FMT_NB - 1, VE },
+    { "src_format",      "source format",                 OFFSET(srcFormat), AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       AV_PIX_FMT_NB - 1, VE },
+    { "dst_format",      "destination format",            OFFSET(dstFormat), AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       AV_PIX_FMT_NB - 1, VE },
     { "src_range",       "source range",                  OFFSET(srcRange),  AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       1,              VE },
     { "dst_range",       "destination range",             OFFSET(dstRange),  AV_OPT_TYPE_INT,    { .i64 = DEFAULT            }, 0,       1,              VE },
     { "param0",          "scaler param 0",                OFFSET(param[0]),  AV_OPT_TYPE_DOUBLE, { .dbl = SWS_PARAM_DEFAULT  }, INT_MIN, INT_MAX,        VE },
     { "param1",          "scaler param 1",                OFFSET(param[1]),  AV_OPT_TYPE_DOUBLE, { .dbl = SWS_PARAM_DEFAULT  }, INT_MIN, INT_MAX,        VE },
+
+    { "src_v_chr_pos",   "source vertical chroma position in luma grid/256"  , OFFSET(src_v_chr_pos), AV_OPT_TYPE_INT, { .i64 = -1            }, -1,      512,             VE },
+    { "src_h_chr_pos",   "source horizontal chroma position in luma grid/256", OFFSET(src_h_chr_pos), AV_OPT_TYPE_INT, { .i64 = -1            }, -1,      512,             VE },
+    { "dst_v_chr_pos",   "destination vertical chroma position in luma grid/256"  , OFFSET(dst_v_chr_pos), AV_OPT_TYPE_INT, { .i64 = -1            }, -1,      512,             VE },
+    { "dst_h_chr_pos",   "destination horizontal chroma position in luma grid/256", OFFSET(dst_h_chr_pos), AV_OPT_TYPE_INT, { .i64 = -1            }, -1,      512,             VE },
+
+    { "sws_dither",      "set dithering algorithm",       OFFSET(dither),    AV_OPT_TYPE_INT,    { .i64  = SWS_DITHER_AUTO   }, 0,       NB_SWS_DITHER,  VE, "sws_dither" },
+    { "auto",            "leave choice to sws",           0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_AUTO   }, INT_MIN, INT_MAX,        VE, "sws_dither" },
+    { "bayer",           "bayer dither",                  0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_BAYER  }, INT_MIN, INT_MAX,        VE, "sws_dither" },
+    { "ed",              "error diffusion",               0,                 AV_OPT_TYPE_CONST,  { .i64  = SWS_DITHER_ED     }, INT_MIN, INT_MAX,        VE, "sws_dither" },
 
     { NULL }
 };
@@ -69,8 +80,9 @@ static const AVOption options[] = {
 const AVClass sws_context_class = {
     .class_name = "SWScaler",
     .item_name  = sws_context_to_name,
-    .option     = options,
+    .option     = swscale_options,
     .category   = AV_CLASS_CATEGORY_SWSCALER,
+    .version    = LIBAVUTIL_VERSION_INT,
 };
 
 const AVClass *sws_get_class(void)

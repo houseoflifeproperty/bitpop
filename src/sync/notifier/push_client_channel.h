@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,13 @@
 #define SYNC_NOTIFIER_PUSH_CLIENT_CHANNEL_H_
 
 #include <string>
-#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "google/cacheinvalidation/include/system-resources.h"
 #include "jingle/notifier/listener/push_client_observer.h"
+#include "sync/base/sync_export.h"
+#include "sync/notifier/sync_system_resources.h"
 
 namespace notifier {
 class PushClient;
@@ -22,9 +22,9 @@ namespace syncer {
 
 // A PushClientChannel is an implementation of NetworkChannel that
 // routes messages through a PushClient.
-class PushClientChannel
-    : public invalidation::NetworkChannel,
-      public notifier::PushClientObserver {
+class SYNC_EXPORT_PRIVATE PushClientChannel
+    : public SyncNetworkChannel,
+      public NON_EXPORTED_BASE(notifier::PushClientObserver) {
  public:
   // |push_client| is guaranteed to be destroyed only when this object
   // is destroyed.
@@ -32,19 +32,18 @@ class PushClientChannel
 
   virtual ~PushClientChannel();
 
+  // invalidation::NetworkChannel implementation.
+  virtual void SendMessage(const std::string& message) OVERRIDE;
+  virtual void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) OVERRIDE;
+
+  // SyncNetworkChannel implementation.
   // If not connected, connects with the given credentials.  If
   // already connected, the next connection attempt will use the given
   // credentials.
-  void UpdateCredentials(const std::string& email, const std::string& token);
-
-  // invalidation::NetworkChannel implementation.
-  virtual void SendMessage(const std::string& outgoing_message) OVERRIDE;
-  virtual void SetMessageReceiver(
-      invalidation::MessageCallback* incoming_receiver) OVERRIDE;
-  virtual void AddNetworkStatusReceiver(
-      invalidation::NetworkStatusCallback* network_status_receiver) OVERRIDE;
-  virtual void SetSystemResources(
-      invalidation::SystemResources* resources) OVERRIDE;
+  virtual void UpdateCredentials(const std::string& email,
+      const std::string& token) OVERRIDE;
+  virtual int GetInvalidationClientType() OVERRIDE;
 
   // notifier::PushClient::Observer implementation.
   virtual void OnNotificationsEnabled() OVERRIDE;
@@ -57,43 +56,32 @@ class PushClientChannel
 
   int64 GetSchedulingHashForTest() const;
 
-  static notifier::Notification EncodeMessageForTest(
-      const std::string& message,
-      const std::string& service_context,
-      int64 scheduling_hash);
+  static std::string EncodeMessageForTest(const std::string& message,
+                                          const std::string& service_context,
+                                          int64 scheduling_hash);
 
-  static bool DecodeMessageForTest(
-      const notifier::Notification& notification,
-      std::string* message,
-      std::string* service_context,
-      int64* scheduling_hash);
+  static bool DecodeMessageForTest(const std::string& notification,
+                                   std::string* message,
+                                   std::string* service_context,
+                                   int64* scheduling_hash);
 
  private:
-  typedef std::vector<invalidation::NetworkStatusCallback*>
-      NetworkStatusReceiverList;
-
-  static notifier::Notification EncodeMessage(
-      const std::string& message,
-      const std::string& service_context,
-      int64 scheduling_hash);
-
-  static bool DecodeMessage(
-      const notifier::Notification& notification,
-      std::string* message,
-      std::string* service_context,
-      int64* scheduling_hash);
+  static void EncodeMessage(std::string* encoded_message,
+                            const std::string& message,
+                            const std::string& service_context,
+                            int64 scheduling_hash);
+  static bool DecodeMessage(const std::string& data,
+                            std::string* message,
+                            std::string* service_context,
+                            int64* scheduling_hash);
+  scoped_ptr<base::DictionaryValue> CollectDebugData() const;
 
   scoped_ptr<notifier::PushClient> push_client_;
-  scoped_ptr<invalidation::MessageCallback> incoming_receiver_;
-  NetworkStatusReceiverList network_status_receivers_;
-
-  bool notifications_enabled_;
-
-  // Service context.
   std::string service_context_;
-
-  // Scheduling hash.
   int64 scheduling_hash_;
+
+  // This count is saved for displaying statatistics.
+  int sent_messages_count_;
 
   DISALLOW_COPY_AND_ASSIGN(PushClientChannel);
 };

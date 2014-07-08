@@ -9,7 +9,7 @@
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/singleton.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 // When writing crypto code for Mac OS X, you may find the following
 // documentation useful:
@@ -184,7 +184,7 @@ void CSSMFree(void* ptr) {
 void LogCSSMError(const char* fn_name, CSSM_RETURN err) {
   if (!err)
     return;
-  base::mac::ScopedCFTypeRef<CFStringRef> cfstr(
+  base::ScopedCFTypeRef<CFStringRef> cfstr(
       SecCopyErrorMessageString(err, NULL));
   LOG(ERROR) << fn_name << " returned " << err
              << " (" << base::SysCFStringRefToUTF8(cfstr) << ")";

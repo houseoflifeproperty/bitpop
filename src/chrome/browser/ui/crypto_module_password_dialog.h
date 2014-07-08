@@ -6,20 +6,9 @@
 #define CHROME_BROWSER_UI_CRYPTO_MODULE_PASSWORD_DIALOG_H_
 
 #include <string>
-#include <vector>
 
 #include "base/callback.h"
-#include "base/memory/ref_counted.h"
-
-namespace crypto {
-class CryptoModuleBlockingPasswordDelegate;
-}
-
-namespace net {
-class CryptoModule;
-typedef std::vector<scoped_refptr<CryptoModule> > CryptoModuleList;
-class X509Certificate;
-}
+#include "ui/gfx/native_widget_types.h"
 
 namespace chrome {
 
@@ -33,40 +22,19 @@ enum CryptoModulePasswordReason {
   kCryptoModulePasswordCertExport,
 };
 
-typedef base::Callback<void(const char*)> CryptoModulePasswordCallback;
+typedef base::Callback<void(const std::string&)> CryptoModulePasswordCallback;
 
 // Display a dialog, prompting the user to authenticate to unlock
 // |module|. |reason| describes the purpose of the authentication and
-// affects the message displayed in the dialog. |server| is the name
+// affects the message displayed in the dialog. |hostname| is the hostname
 // of the server which requested the access.
 void ShowCryptoModulePasswordDialog(
     const std::string& module_name,
     bool retry,
     CryptoModulePasswordReason reason,
-    const std::string& server,
+    const std::string& hostname,
+    gfx::NativeWindow parent,
     const CryptoModulePasswordCallback& callback);
-
-// Returns a CryptoModuleBlockingPasswordDelegate to open a dialog and block
-// until returning. Should only be used on a worker thread.
-crypto::CryptoModuleBlockingPasswordDelegate*
-    NewCryptoModuleBlockingDialogDelegate(CryptoModulePasswordReason reason,
-                                          const std::string& server);
-
-// Asynchronously unlock |modules|, if necessary.  |callback| is called when
-// done (regardless if any modules were successfully unlocked or not).  Should
-// only be called on UI thread.
-void UnlockSlotsIfNecessary(const net::CryptoModuleList& modules,
-                            CryptoModulePasswordReason reason,
-                            const std::string& server,
-                            const base::Closure& callback);
-
-// Asynchronously unlock the |cert|'s module, if necessary.  |callback| is
-// called when done (regardless if module was successfully unlocked or not).
-// Should only be called on UI thread.
-void UnlockCertSlotIfNecessary(net::X509Certificate* cert,
-                               CryptoModulePasswordReason reason,
-                               const std::string& server,
-                               const base::Closure& callback);
 
 }  // namespace chrome
 

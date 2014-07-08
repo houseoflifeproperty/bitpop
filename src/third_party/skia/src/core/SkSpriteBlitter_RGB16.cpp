@@ -58,8 +58,8 @@ public:
         uint16_t* SK_RESTRICT dst = fDevice->getAddr16(x, y);
         const uint16_t* SK_RESTRICT src = fSource->getAddr16(x - fLeft,
                                                              y - fTop);
-        unsigned dstRB = fDevice->rowBytes();
-        unsigned srcRB = fSource->rowBytes();
+        size_t dstRB = fDevice->rowBytes();
+        size_t srcRB = fSource->rowBytes();
 
         while (--height >= 0) {
             memcpy(dst, src, width << 1);
@@ -145,7 +145,7 @@ public:
 #define SkSPRITE_PREAMBLE(srcBM, x, y)      const SkPMColor* ctable = srcBM.getColorTable()->lockColors()
 #define SkSPRITE_BLIT_PIXEL(dst, src)       D16_S32A_Opaque_Pixel(dst, ctable[src])
 #define SkSPRITE_NEXT_ROW
-#define SkSPRITE_POSTAMBLE(srcBM)           srcBM.getColorTable()->unlockColors(false)
+#define SkSPRITE_POSTAMBLE(srcBM)           srcBM.getColorTable()->unlockColors()
 #include "SkSpriteBlitterTemplate.h"
 
 #define SkSPRITE_CLASSNAME                  Sprite_D16_SIndex8A_Blend
@@ -159,7 +159,7 @@ public:
 #define SkSPRITE_PREAMBLE(srcBM, x, y)      const SkPMColor* ctable = srcBM.getColorTable()->lockColors(); unsigned src_scale = SkAlpha255To256(fSrcAlpha);
 #define SkSPRITE_BLIT_PIXEL(dst, src)       D16_S32A_Blend_Pixel(dst, ctable[src], src_scale)
 #define SkSPRITE_NEXT_ROW
-#define SkSPRITE_POSTAMBLE(srcBM)           srcBM.getColorTable()->unlockColors(false);
+#define SkSPRITE_POSTAMBLE(srcBM)           srcBM.getColorTable()->unlockColors();
 #include "SkSpriteBlitterTemplate.h"
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -285,8 +285,8 @@ public:
         uint16_t* SK_RESTRICT dst = fDevice->getAddr16(x, y);
         const SkPMColor* SK_RESTRICT src = fSource->getAddr32(x - fLeft,
                                                               y - fTop);
-        unsigned dstRB = fDevice->rowBytes();
-        unsigned srcRB = fSource->rowBytes();
+        size_t dstRB = fDevice->rowBytes();
+        size_t srcRB = fSource->rowBytes();
         SkBlitRow::Proc proc = fProc;
         U8CPU alpha = fPaint->getAlpha();
 
@@ -306,11 +306,11 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-#include "SkTemplatesPriv.h"
+SkSpriteBlitter* SkSpriteBlitter::ChooseD16(const SkBitmap& source, const SkPaint& paint,
+        SkTBlitterAllocator* allocator) {
 
-SkSpriteBlitter* SkSpriteBlitter::ChooseD16(const SkBitmap& source,
-                                            const SkPaint& paint,
-                                            void* storage, size_t storageSize) {
+    SkASSERT(allocator != NULL);
+
     if (paint.getMaskFilter() != NULL) { // may add cases for this
         return NULL;
     }
@@ -324,49 +324,41 @@ SkSpriteBlitter* SkSpriteBlitter::ChooseD16(const SkBitmap& source,
     SkSpriteBlitter* blitter = NULL;
     unsigned alpha = paint.getAlpha();
 
-    switch (source.getConfig()) {
-        case SkBitmap::kARGB_8888_Config:
-            SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_S32_BlitRowProc,
-                                  storage, storageSize, (source));
+    switch (source.colorType()) {
+        case kN32_SkColorType: {
+            blitter = allocator->createT<Sprite_D16_S32_BlitRowProc>(source);
             break;
-        case SkBitmap::kARGB_4444_Config:
+        }
+        case kARGB_4444_SkColorType:
             if (255 == alpha) {
-                SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_S4444_Opaque,
-                                      storage, storageSize, (source));
+                blitter = allocator->createT<Sprite_D16_S4444_Opaque>(source);
             } else {
-                SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_S4444_Blend,
-                                    storage, storageSize, (source, alpha >> 4));
+                blitter = allocator->createT<Sprite_D16_S4444_Blend>(source, alpha >> 4);
             }
             break;
-        case SkBitmap::kRGB_565_Config:
+        case kRGB_565_SkColorType:
             if (255 == alpha) {
-                SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_S16_Opaque,
-                                      storage, storageSize, (source));
+                blitter = allocator->createT<Sprite_D16_S16_Opaque>(source);
             } else {
-                SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_S16_Blend,
-                                      storage, storageSize, (source, alpha));
+                blitter = allocator->createT<Sprite_D16_S16_Blend>(source, alpha);
             }
             break;
-        case SkBitmap::kIndex8_Config:
+        case kIndex_8_SkColorType:
             if (paint.isDither()) {
                 // we don't support dither yet in these special cases
                 break;
             }
             if (source.isOpaque()) {
                 if (255 == alpha) {
-                    SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_SIndex8_Opaque,
-                                          storage, storageSize, (source));
+                    blitter = allocator->createT<Sprite_D16_SIndex8_Opaque>(source);
                 } else {
-                    SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_SIndex8_Blend,
-                                         storage, storageSize, (source, alpha));
+                    blitter = allocator->createT<Sprite_D16_SIndex8_Blend>(source, alpha);
                 }
             } else {
                 if (255 == alpha) {
-                    SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_SIndex8A_Opaque,
-                                          storage, storageSize, (source));
+                    blitter = allocator->createT<Sprite_D16_SIndex8A_Opaque>(source);
                 } else {
-                    SK_PLACEMENT_NEW_ARGS(blitter, Sprite_D16_SIndex8A_Blend,
-                                         storage, storageSize, (source, alpha));
+                    blitter = allocator->createT<Sprite_D16_SIndex8A_Blend>(source, alpha);
                 }
             }
             break;

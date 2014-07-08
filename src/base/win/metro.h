@@ -10,8 +10,8 @@
 
 #include "base/base_export.h"
 #include "base/callback.h"
-#include "base/file_path.h"
-#include "base/string16.h"
+#include "base/files/file_path.h"
+#include "base/strings/string16.h"
 
 namespace base {
 namespace win {
@@ -76,23 +76,9 @@ BASE_EXPORT bool IsMetroProcess();
 // immersive (Metro) process.
 BASE_EXPORT bool IsProcessImmersive(HANDLE process);
 
-// Returns true if this process is running under Text Services Framework (TSF)
-// and browser must be TSF-aware.
-BASE_EXPORT bool IsTSFAwareRequired();
-
-// Sets browser to use Text Services Framework (TSF) regardless of process
-// status. On Windows 8, this function also disables CUAS (Cicero Unaware
-// Application Support) to emulate Windows Metro mode in terms of IME
-// functionality. This should be beneficial in QA process because on can test
-// IME functionality in Windows 8 desktop mode.
-BASE_EXPORT void SetForceToUseTSF();
-
 // Allocates and returns the destination string via the LocalAlloc API after
 // copying the src to it.
 BASE_EXPORT wchar_t* LocalAllocAndCopyString(const string16& src);
-
-// Returns true if the screen supports touch.
-BASE_EXPORT bool IsTouchEnabled();
 
 // Returns true if Windows Parental control activity logging is enabled. This
 // feature is available on Windows Vista and beyond.
@@ -118,6 +104,9 @@ typedef void (*MetroNotification)(const char* origin_url,
                                   const char* notification_id,
                                   MetroNotificationClickedHandler handler,
                                   const wchar_t* handler_context);
+
+// Function to cancel displayed notification.
+typedef bool (*MetroCancelNotification)(const char* notification_id);
 
 // Callback for UMA invoked by Metro Pin and UnPin functions after user gesture.
 typedef base::Callback<void(MetroSecondaryTilePinUmaResult)>

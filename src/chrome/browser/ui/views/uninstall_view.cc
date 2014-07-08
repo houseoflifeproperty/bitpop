@@ -4,9 +4,10 @@
 
 #include "chrome/browser/ui/views/uninstall_view.h"
 
-#include "base/message_loop.h"
-#include "base/process_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/launch.h"
 #include "base/run_loop.h"
+#include "chrome/browser/browser_process.h"
 #include "chrome/browser/shell_integration.h"
 #include "chrome/browser/ui/uninstall_browser_prompt.h"
 #include "chrome/common/chrome_result_codes.h"
@@ -17,7 +18,6 @@
 #include "ui/views/controls/button/checkbox.h"
 #include "ui/views/controls/combobox/combobox.h"
 #include "ui/views/controls/label.h"
-#include "ui/views/focus/accelerator_handler.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/layout/layout_constants.h"
 #include "ui/views/widget/widget.h"
@@ -38,6 +38,9 @@ UninstallView::UninstallView(int* user_selection,
 UninstallView::~UninstallView() {
   // Exit the message loop we were started with so that uninstall can continue.
   quit_closure_.Run();
+
+  // Delete Combobox as it holds a reference to us.
+  delete browsers_combo_;
 }
 
 void UninstallView::SetupControls() {
@@ -78,7 +81,8 @@ void UninstallView::SetupControls() {
   // be set programatically as default, neither can any other browser (for
   // instance because the OS doesn't permit that).
   BrowserDistribution* dist = BrowserDistribution::GetDistribution();
-  if (dist->CanSetAsDefault() &&
+  if (dist->GetDefaultBrowserControlPolicy() !=
+          BrowserDistribution::DEFAULT_BROWSER_UNSUPPORTED &&
       ShellIntegration::GetDefaultBrowser() == ShellIntegration::IS_DEFAULT &&
       (ShellIntegration::CanSetAsDefaultBrowser() !=
           ShellIntegration::SET_DEFAULT_INTERACTIVE)) {
@@ -128,12 +132,12 @@ bool UninstallView::Cancel() {
   return true;
 }
 
-string16 UninstallView::GetDialogButtonLabel(ui::DialogButton button) const {
-  // We only want to give custom name to OK button - 'Uninstall'. Cancel
-  // button remains same.
+base::string16 UninstallView::GetDialogButtonLabel(
+    ui::DialogButton button) const {
+  // Label the OK button 'Uninstall'; Cancel remains the same.
   if (button == ui::DIALOG_BUTTON_OK)
     return l10n_util::GetStringUTF16(IDS_UNINSTALL_BUTTON_TEXT);
-  return string16();
+  return views::DialogDelegateView::GetDialogButtonLabel(button);
 }
 
 void UninstallView::ButtonPressed(views::Button* sender,
@@ -145,12 +149,8 @@ void UninstallView::ButtonPressed(views::Button* sender,
   }
 }
 
-string16 UninstallView::GetWindowTitle() const {
+base::string16 UninstallView::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_UNINSTALL_CHROME);
-}
-
-views::View* UninstallView::GetContentsView() {
-  return this;
 }
 
 int UninstallView::GetItemCount() const {
@@ -158,7 +158,7 @@ int UninstallView::GetItemCount() const {
   return browsers_->size();
 }
 
-string16 UninstallView::GetItemAt(int index) {
+base::string16 UninstallView::GetItemAt(int index) {
   DCHECK_LT(index, static_cast<int>(browsers_->size()));
   BrowsersMap::const_iterator i = browsers_->begin();
   std::advance(i, index);
@@ -168,14 +168,23 @@ string16 UninstallView::GetItemAt(int index) {
 namespace chrome {
 
 int ShowUninstallBrowserPrompt(bool show_delete_profile) {
-  DCHECK_EQ(MessageLoop::TYPE_UI, MessageLoop::current()->type());
+  DCHECK(base::MessageLoopForUI::IsCurrent());
   int result = content::RESULT_CODE_NORMAL_EXIT;
-  views::AcceleratorHandler accelerator_handler;
-  base::RunLoop run_loop(&accelerator_handler);
+
+  // Take a reference on g_browser_process while showing the dialog. This is
+  // done because the dialog uses the views framework which may increment
+  // and decrement the module ref count during the course of displaying UI and
+  // this code can be called while the module refcount is still at 0.
+  // Note that this reference is never released, as this code is shown on a path
+  // that immediately exits Chrome anyway.
+  // See http://crbug.com/241366 for details.
+  g_browser_process->AddRefModule();
+
+  base::RunLoop run_loop;
   UninstallView* view = new UninstallView(&result,
                                           run_loop.QuitClosure(),
                                           show_delete_profile);
-  views::Widget::CreateWindow(view)->Show();
+  views::DialogDelegate::CreateDialogWidget(view, NULL, NULL)->Show();
   run_loop.Run();
   return result;
 }

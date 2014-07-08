@@ -8,10 +8,10 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_export.h"
-#include "net/base/request_priority.h"
+#include "net/base/privacy_mode.h"
 #include "net/http/http_request_headers.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -46,15 +46,12 @@ struct NET_EXPORT HttpRequestInfo {
   // Any load flags (see load_flags.h).
   int load_flags;
 
-  // The priority level for this request.
-  RequestPriority priority;
-
   // The motivation behind this request.
   RequestMotivation motivation;
 
-  // An optional globally unique identifier for this request for use by the
-  // consumer. 0 is invalid.
-  uint64 request_id;
+  // If enabled, then request must be sent over connection that cannot be
+  // tracked by the server (e.g. without channel id).
+  PrivacyMode privacy_mode;
 };
 
 }  // namespace net

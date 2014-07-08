@@ -27,10 +27,10 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -170,7 +170,7 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
    private:
     friend class base::RefCounted<Dictionary>;
     friend class SdchManager;  // Only manager can construct an instance.
-    FRIEND_TEST_ALL_PREFIXES(SdchFilterTest, PathMatch);
+    FRIEND_TEST_ALL_PREFIXES(SdchManagerTest, PathMatch);
 
     // Construct a vc-diff usable dictionary from the dictionary_text starting
     // at the given offset.  The supplied client_hash should be used to
@@ -250,6 +250,11 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
   static void EnableSdchSupport(bool enabled);
 
   static bool sdch_enabled() { return g_sdch_enabled_; }
+
+  // Enables or disables SDCH compression over secure connection.
+  static void EnableSecureSchemeSupport(bool enabled);
+
+  static bool secure_scheme_supported() { return g_secure_scheme_supported_; }
 
   // Briefly prevent further advertising of SDCH on this domain (if SDCH is
   // enabled). After enough calls to IsInSupportedDomain() the blacklisting
@@ -343,6 +348,10 @@ class NET_EXPORT SdchManager : public NON_EXPORTED_BASE(base::NonThreadSafe) {
 
   // Support SDCH compression, by advertising in headers.
   static bool g_sdch_enabled_;
+
+  // Support SDCH compression for HTTPS requests and responses. When supported,
+  // HTTPS applicable dictionaries MUST have been acquired securely via HTTPS.
+  static bool g_secure_scheme_supported_;
 
   // A simple implementation of a RFC 3548 "URL safe" base64 encoder.
   static void UrlSafeBase64Encode(const std::string& input,

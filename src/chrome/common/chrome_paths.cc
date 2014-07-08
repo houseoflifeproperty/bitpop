@@ -5,14 +5,17 @@
 #include "chrome/common/chrome_paths.h"
 
 #include "base/file_util.h"
+#include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
 #include "base/path_service.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/sys_info.h"
+#include "base/threading/thread_restrictions.h"
 #include "base/version.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/widevine_cdm_constants.h"
 #include "ui/base/ui_base_paths.h"
 
 #if defined(OS_ANDROID)
@@ -28,7 +31,7 @@
 namespace {
 
 // File name of the internal Flash plugin on different platforms.
-const FilePath::CharType kInternalFlashPluginFileName[] =
+const base::FilePath::CharType kInternalFlashPluginFileName[] =
 #if defined(OS_MACOSX)
     FILE_PATH_LITERAL("Flash Player Plugin for Chrome.plugin");
 #elif defined(OS_WIN)
@@ -38,11 +41,16 @@ const FilePath::CharType kInternalFlashPluginFileName[] =
 #endif
 
 // The Pepper Flash plugins are in a directory with this name.
-const FilePath::CharType kPepperFlashBaseDirectory[] =
+const base::FilePath::CharType kPepperFlashBaseDirectory[] =
     FILE_PATH_LITERAL("PepperFlash");
 
+#if defined(OS_WIN)
+const base::FilePath::CharType kPepperFlashDebuggerBaseDirectory[] =
+    FILE_PATH_LITERAL("Macromed\\Flash");
+#endif
+
 // File name of the internal PDF plugin on different platforms.
-const FilePath::CharType kInternalPDFPluginFileName[] =
+const base::FilePath::CharType kInternalPDFPluginFileName[] =
 #if defined(OS_WIN)
     FILE_PATH_LITERAL("pdf.dll");
 #elif defined(OS_MACOSX)
@@ -52,7 +60,7 @@ const FilePath::CharType kInternalPDFPluginFileName[] =
 #endif
 
 // File name of the internal NaCl plugin on different platforms.
-const FilePath::CharType kInternalNaClPluginFileName[] =
+const base::FilePath::CharType kInternalNaClPluginFileName[] =
 #if defined(OS_WIN)
     FILE_PATH_LITERAL("ppGoogleNaClPluginChrome.dll");
 #elif defined(OS_MACOSX)
@@ -62,21 +70,21 @@ const FilePath::CharType kInternalNaClPluginFileName[] =
     FILE_PATH_LITERAL("libppGoogleNaClPluginChrome.so");
 #endif
 
-#if defined(OS_POSIX) && !defined(OS_MACOSX)
-// File name of the nacl_helper and nacl_helper_bootstrap, Linux only.
-const FilePath::CharType kInternalNaClHelperFileName[] =
-    FILE_PATH_LITERAL("nacl_helper");
-const FilePath::CharType kInternalNaClHelperBootstrapFileName[] =
-    FILE_PATH_LITERAL("nacl_helper_bootstrap");
+const base::FilePath::CharType kEffectsPluginFileName[] =
+#if defined(OS_WIN)
+    FILE_PATH_LITERAL("pepper/libppeffects.dll");
+#elif defined(OS_MACOSX)
+    FILE_PATH_LITERAL("pepper/libppeffects.plugin");
+#else  // Linux and Chrome OS
+    FILE_PATH_LITERAL("pepper/libppeffects.so");
 #endif
 
-
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
 
-const FilePath::CharType kO3DPluginFileName[] =
-    FILE_PATH_LITERAL("pepper/libppo3dautoplugin.so");
+const base::FilePath::CharType kO1DPluginFileName[] =
+    FILE_PATH_LITERAL("pepper/libppo1d.so");
 
-const FilePath::CharType kGTalkPluginFileName[] =
+const base::FilePath::CharType kGTalkPluginFileName[] =
     FILE_PATH_LITERAL("pepper/libppgoogletalk.so");
 
 #endif  // defined(OS_POSIX) && !defined(OS_MACOSX)
@@ -84,7 +92,7 @@ const FilePath::CharType kGTalkPluginFileName[] =
 #if defined(OS_LINUX)
 // The path to the external extension <id>.json files.
 // /usr/share seems like a good choice, see: http://www.pathname.com/fhs/
-const char kFilepathSinglePrefExtensions[] =
+const base::FilePath::CharType kFilepathSinglePrefExtensions[] =
 #if defined(GOOGLE_CHROME_BUILD)
     FILE_PATH_LITERAL("/usr/share/google-chrome/extensions");
 #else
@@ -92,21 +100,11 @@ const char kFilepathSinglePrefExtensions[] =
 #endif  // defined(GOOGLE_CHROME_BUILD)
 #endif  // defined(OS_LINUX)
 
-#if defined(OS_CHROMEOS)
-const char kDefaultAppOrderFileName[] =
-#if defined(GOOGLE_CHROME_BUILD)
-    FILE_PATH_LITERAL("/usr/share/google-chrome/default_app_order.json");
-#else
-    FILE_PATH_LITERAL("/usr/share/chromium/default_app_order.json");
-#endif  // defined(GOOGLE_CHROME_BUILD)
-#endif  // defined(OS_CHROMEOS)
-
-}  // namespace
-
-namespace chrome {
+static base::LazyInstance<base::FilePath>
+    g_invalid_specified_user_data_dir = LAZY_INSTANCE_INITIALIZER;
 
 // Gets the path for internal plugins.
-bool GetInternalPluginsDirectory(FilePath* result) {
+bool GetInternalPluginsDirectory(base::FilePath* result) {
 #if defined(OS_MACOSX) && !defined(OS_IOS)
   // If called from Chrome, get internal plugins from a subdirectory of the
   // framework.
@@ -123,7 +121,11 @@ bool GetInternalPluginsDirectory(FilePath* result) {
   return PathService::Get(base::DIR_MODULE, result);
 }
 
-bool PathProvider(int key, FilePath* result) {
+}  // namespace
+
+namespace chrome {
+
+bool PathProvider(int key, base::FilePath* result) {
   // Some keys are just aliases...
   switch (key) {
     case chrome::DIR_APP:
@@ -159,7 +161,7 @@ bool PathProvider(int key, FilePath* result) {
   // This flag can be set to true for the cases where we want to create it.
   bool create_dir = false;
 
-  FilePath cur;
+  base::FilePath cur;
   switch (key) {
     case chrome::DIR_USER_DATA:
       if (!GetDefaultUserDataDirectory(&cur)) {
@@ -207,7 +209,7 @@ bool PathProvider(int key, FilePath* result) {
     case chrome::DIR_CRASH_DUMPS:
 #if defined(OS_CHROMEOS)
       // ChromeOS uses a separate directory. See http://crosbug.com/25089
-      cur = FilePath("/var/log/chrome");
+      cur = base::FilePath("/var/log/chrome");
 #elif defined(OS_ANDROID)
       if (!base::android::GetCacheDirectory(&cur))
         return false;
@@ -266,6 +268,19 @@ bool PathProvider(int key, FilePath* result) {
         return false;
       cur = cur.Append(kPepperFlashBaseDirectory);
       break;
+    case chrome::DIR_PEPPER_FLASH_DEBUGGER_PLUGIN:
+#if defined(OS_WIN)
+      if (!PathService::Get(base::DIR_SYSTEM, &cur))
+        return false;
+      cur = cur.Append(kPepperFlashDebuggerBaseDirectory);
+#elif defined(OS_MACOSX)
+      // TODO(luken): finalize Mac OS directory paths, current consensus is
+      // around /Library/Internet Plug-Ins/PepperFlashPlayer/
+      return false;
+#else
+      return false;
+#endif
+      break;
     case chrome::FILE_LOCAL_STATE:
       if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
@@ -277,13 +292,9 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("script.log"));
       break;
     case chrome::FILE_FLASH_PLUGIN:
-    case chrome::FILE_FLASH_PLUGIN_EXISTING:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
       cur = cur.Append(kInternalFlashPluginFileName);
-      if (key == chrome::FILE_FLASH_PLUGIN_EXISTING &&
-          !file_util::PathExists(cur))
-        return false;
       break;
     case chrome::FILE_PEPPER_FLASH_PLUGIN:
       if (!PathService::Get(chrome::DIR_PEPPER_FLASH_PLUGIN, &cur))
@@ -295,16 +306,29 @@ bool PathProvider(int key, FilePath* result) {
         return false;
       cur = cur.Append(kInternalPDFPluginFileName);
       break;
+    case chrome::FILE_EFFECTS_PLUGIN:
+      if (!GetInternalPluginsDirectory(&cur))
+        return false;
+      cur = cur.Append(kEffectsPluginFileName);
+      break;
     case chrome::FILE_NACL_PLUGIN:
       if (!GetInternalPluginsDirectory(&cur))
         return false;
       cur = cur.Append(kInternalNaClPluginFileName);
       break;
     // PNaCl is currenly installable via the component updater or by being
-    // simply built-in, but only the builtin path is currently enabled.
-    // If PNaCl ends up using the component updater, it will need the version
-    // encoded in the path, and these will need to be split.
+    // simply built-in.  DIR_PNACL_BASE is used as the base directory for
+    // installation via component updater.  DIR_PNACL_COMPONENT will be
+    // the final location of pnacl, which is a subdir of DIR_PNACL_BASE.
     case chrome::DIR_PNACL_BASE:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("pnacl"));
+      break;
+    // Where PNaCl files are ultimately located.  The default finds the files
+    // inside the InternalPluginsDirectory / build directory, as if it
+    // was shipped along with chrome.  The value can be overridden
+    // if it is installed via component updater.
     case chrome::DIR_PNACL_COMPONENT:
 #if defined(OS_MACOSX)
       // PNaCl really belongs in the InternalPluginsDirectory but actually
@@ -328,21 +352,17 @@ bool PathProvider(int key, FilePath* result) {
 #endif
       cur = cur.Append(FILE_PATH_LITERAL("pnacl"));
       break;
+    case chrome::DIR_RECOVERY_BASE:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("recovery"));
+      create_dir = true;
+      break;
 #if defined(OS_POSIX) && !defined(OS_MACOSX)
-    case chrome::FILE_NACL_HELPER:
+    case chrome::FILE_O1D_PLUGIN:
       if (!PathService::Get(base::DIR_MODULE, &cur))
         return false;
-      cur = cur.Append(kInternalNaClHelperFileName);
-      break;
-    case chrome::FILE_NACL_HELPER_BOOTSTRAP:
-      if (!PathService::Get(base::DIR_MODULE, &cur))
-        return false;
-      cur = cur.Append(kInternalNaClHelperBootstrapFileName);
-      break;
-    case chrome::FILE_O3D_PLUGIN:
-      if (!PathService::Get(base::DIR_MODULE, &cur))
-        return false;
-      cur = cur.Append(kO3DPluginFileName);
+      cur = cur.Append(kO1DPluginFileName);
       break;
     case chrome::FILE_GTALK_PLUGIN:
       if (!PathService::Get(base::DIR_MODULE, &cur))
@@ -350,13 +370,30 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(kGTalkPluginFileName);
       break;
 #endif
-#if defined(WIDEVINE_CDM_AVAILABLE)
-    case chrome::FILE_WIDEVINE_CDM_PLUGIN:
-      if (!PathService::Get(base::DIR_MODULE, &cur))
+#if defined(CLD2_IS_COMPONENT)
+    case chrome::DIR_COMPONENT_CLD2:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
         return false;
-      cur = cur.Append(kWidevineCdmPluginFileName);
+      cur = cur.Append(FILE_PATH_LITERAL("CLD"));
       break;
-#endif
+#endif  // defined(CLD2_IS_COMPONENT)
+#if defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
+#if defined(WIDEVINE_CDM_IS_COMPONENT)
+    case chrome::DIR_COMPONENT_WIDEVINE_CDM:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(kWidevineCdmBaseDirectory);
+      break;
+#endif  // defined(WIDEVINE_CDM_IS_COMPONENT)
+    // TODO(xhwang): FILE_WIDEVINE_CDM_ADAPTER has different meanings.
+    // In the component case, this is the source adapter. Otherwise, it is the
+    // actual Pepper module that gets loaded.
+    case chrome::FILE_WIDEVINE_CDM_ADAPTER:
+      if (!GetInternalPluginsDirectory(&cur))
+        return false;
+      cur = cur.AppendASCII(kWidevineCdmAdapterFileName);
+      break;
+#endif  // defined(WIDEVINE_CDM_AVAILABLE) && defined(ENABLE_PEPPER_CDMS)
     case chrome::FILE_RESOURCES_PACK:
 #if defined(OS_MACOSX) && !defined(OS_IOS)
       if (base::mac::AmIBundled()) {
@@ -393,8 +430,17 @@ bool PathProvider(int key, FilePath* result) {
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("wallpaper_thumbnails"));
       break;
-    case chrome::FILE_DEFAULT_APP_ORDER:
-      cur = FilePath(FILE_PATH_LITERAL(kDefaultAppOrderFileName));
+    case chrome::DIR_CHROMEOS_CUSTOM_WALLPAPERS:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("custom_wallpapers"));
+      break;
+#endif
+#if defined(OS_LINUX) && defined(ENABLE_MANAGED_USERS)
+    case chrome::DIR_MANAGED_USERS_DEFAULT_APPS:
+      if (!PathService::Get(chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("managed_users"));
       break;
 #endif
     // The following are only valid in the development environment, and
@@ -404,7 +450,7 @@ bool PathProvider(int key, FilePath* result) {
       if (!PathService::Get(base::DIR_MODULE, &cur))
         return false;
       cur = cur.Append(FILE_PATH_LITERAL("test_data"));
-      if (!file_util::PathExists(cur))  // We don't want to create this.
+      if (!base::PathExists(cur))  // We don't want to create this.
         return false;
       break;
     case chrome::DIR_TEST_DATA:
@@ -413,7 +459,7 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("chrome"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
       cur = cur.Append(FILE_PATH_LITERAL("data"));
-      if (!file_util::PathExists(cur))  // We don't want to create this.
+      if (!base::PathExists(cur))  // We don't want to create this.
         return false;
       break;
     case chrome::DIR_TEST_TOOLS:
@@ -422,15 +468,15 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("chrome"));
       cur = cur.Append(FILE_PATH_LITERAL("tools"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
-      if (!file_util::PathExists(cur))  // We don't want to create this
+      if (!base::PathExists(cur))  // We don't want to create this
         return false;
       break;
 #if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_OPENBSD)
     case chrome::DIR_POLICY_FILES: {
 #if defined(GOOGLE_CHROME_BUILD)
-      cur = FilePath(FILE_PATH_LITERAL("/etc/opt/chrome/policies"));
+      cur = base::FilePath(FILE_PATH_LITERAL("/etc/opt/chrome/policies"));
 #else
-      cur = FilePath(FILE_PATH_LITERAL("/etc/chromium/policies"));
+      cur = base::FilePath(FILE_PATH_LITERAL("/etc/chromium/policies"));
 #endif
       break;
     }
@@ -444,7 +490,21 @@ bool PathProvider(int key, FilePath* result) {
       if (!login)
         return false;
       cur = cur.AppendASCII(login);
-      if (!file_util::PathExists(cur))  // We don't want to create this.
+      if (!base::PathExists(cur))  // We don't want to create this.
+        return false;
+      break;
+    }
+    case chrome::DIR_USER_LIBRARY: {
+      if (!GetUserLibraryDirectory(&cur))
+        return false;
+      if (!base::PathExists(cur))  // We don't want to create this.
+        return false;
+      break;
+    }
+    case chrome::DIR_USER_APPLICATIONS: {
+      if (!GetUserApplicationsDirectory(&cur))
+        return false;
+      if (!base::PathExists(cur))  // We don't want to create this.
         return false;
       break;
     }
@@ -459,7 +519,7 @@ bool PathProvider(int key, FilePath* result) {
 #endif
 #if defined(OS_LINUX)
     case chrome::DIR_STANDALONE_EXTERNAL_EXTENSIONS: {
-      cur = FilePath(FILE_PATH_LITERAL(kFilepathSinglePrefExtensions));
+      cur = base::FilePath(kFilepathSinglePrefExtensions);
       break;
     }
 #endif
@@ -507,12 +567,42 @@ bool PathProvider(int key, FilePath* result) {
 #endif
       break;
 
+#if defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
+    case chrome::DIR_NATIVE_MESSAGING:
+#if defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD)
+      cur = base::FilePath(FILE_PATH_LITERAL(
+           "/Library/Google/Chrome/NativeMessagingHosts"));
+#else
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/Library/Application Support/Chromium/NativeMessagingHosts"));
+#endif
+#else  // defined(OS_MACOSX)
+#if defined(GOOGLE_CHROME_BUILD)
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/etc/opt/chrome/native-messaging-hosts"));
+#else
+      cur = base::FilePath(FILE_PATH_LITERAL(
+          "/etc/chromium/native-messaging-hosts"));
+#endif
+#endif  // !defined(OS_MACOSX)
+      break;
+
+    case chrome::DIR_USER_NATIVE_MESSAGING:
+      if (!PathService::Get(chrome::DIR_USER_DATA, &cur))
+        return false;
+      cur = cur.Append(FILE_PATH_LITERAL("NativeMessagingHosts"));
+      break;
+#endif  // defined(OS_LINUX) || (defined(OS_MACOSX) && !defined(OS_IOS))
+
     default:
       return false;
   }
 
-  if (create_dir && !file_util::PathExists(cur) &&
-      !file_util::CreateDirectory(cur))
+  // TODO(bauerb): http://crbug.com/259796
+  base::ThreadRestrictions::ScopedAllowIO allow_io;
+  if (create_dir && !base::PathExists(cur) &&
+      !base::CreateDirectory(cur))
     return false;
 
   *result = cur;
@@ -523,6 +613,14 @@ bool PathProvider(int key, FilePath* result) {
 // eliminate this object file if there is no direct entry point into it.
 void RegisterPathProvider() {
   PathService::RegisterProvider(PathProvider, PATH_START, PATH_END);
+}
+
+void SetInvalidSpecifiedUserDataDir(const base::FilePath& user_data_dir) {
+  g_invalid_specified_user_data_dir.Get() = user_data_dir;
+}
+
+const base::FilePath& GetInvalidSpecifiedUserDataDir() {
+  return g_invalid_specified_user_data_dir.Get();
 }
 
 }  // namespace chrome

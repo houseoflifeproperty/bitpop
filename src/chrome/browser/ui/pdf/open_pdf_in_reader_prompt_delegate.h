@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_PDF_OPEN_PDF_IN_READER_PROMPT_DELEGATE_H_
 #define CHROME_BROWSER_UI_PDF_OPEN_PDF_IN_READER_PROMPT_DELEGATE_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace content {
 struct LoadCommittedDetails;
@@ -15,11 +15,11 @@ class OpenPDFInReaderPromptDelegate {
  public:
   virtual ~OpenPDFInReaderPromptDelegate() {}
 
-  virtual string16 GetMessageText() const = 0;
+  virtual base::string16 GetMessageText() const = 0;
 
-  virtual string16 GetAcceptButtonText() const = 0;
+  virtual base::string16 GetAcceptButtonText() const = 0;
 
-  virtual string16 GetCancelButtonText() const = 0;
+  virtual base::string16 GetCancelButtonText() const = 0;
 
   virtual bool ShouldExpire(
       const content::LoadCommittedDetails& details) const = 0;

@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/bookmarks/base_bookmark_model_observer.h"
+#include "components/bookmarks/core/browser/base_bookmark_model_observer.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/gfx/native_widget_types.h"
 
@@ -30,10 +30,12 @@ class BookmarkContextMenuControllerDelegate {
   virtual void CloseMenu() = 0;
 
   // Sent before any command from the menu is executed.
-  virtual void WillExecuteCommand() {}
+  virtual void WillExecuteCommand(
+      int command_id,
+      const std::vector<const BookmarkNode*>& bookmarks) {}
 
   // Sent after any command from the menu is executed.
-  virtual void DidExecuteCommand() {}
+  virtual void DidExecuteCommand(int command_id) {}
 };
 
 // BookmarkContextMenuController creates and manages state for the context menu
@@ -57,8 +59,6 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
       const std::vector<const BookmarkNode*>& selection);
   virtual ~BookmarkContextMenuController();
 
-  void BuildMenu();
-
   ui::SimpleMenuModel* menu_model() { return menu_model_.get(); }
 
   // ui::SimpleMenuModel::Delegate implementation:
@@ -67,9 +67,17 @@ class BookmarkContextMenuController : public BaseBookmarkModelObserver,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
+  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
+  virtual base::string16 GetLabelForCommandId(int command_id) const OVERRIDE;
+
+  void set_navigator(content::PageNavigator* navigator) {
+    navigator_ = navigator;
+  }
 
  private:
+  void BuildMenu();
+
   // Adds a IDC_* style command to the menu with a localized string.
   void AddItem(int id, int localization_id);
   // Adds a separator to the menu.

@@ -25,7 +25,7 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 // An invisible overlay window placed on top of the sheet's parent view.
 // This window blocks interaction with the underlying view.
 @interface CWSheetOverlayWindow : NSWindow {
-  scoped_nsobject<ConstrainedWindowSheetController> controller_;
+  base::scoped_nsobject<ConstrainedWindowSheetController> controller_;
 }
 @end
 
@@ -78,7 +78,7 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
   if (controller)
     return controller;
 
-  scoped_nsobject<ConstrainedWindowSheetController> new_controller(
+  base::scoped_nsobject<ConstrainedWindowSheetController> new_controller(
       [[ConstrainedWindowSheetController alloc]
           initWithParentWindow:parentWindow]);
   if (!g_sheetControllers)
@@ -140,14 +140,13 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 
   // Create an invisible overlay window.
   NSRect rect = [self overlayWindowFrameForParentView:parentView];
-  scoped_nsobject<NSWindow> overlayWindow(
-      [[CWSheetOverlayWindow alloc] initWithContentRect:rect
-                                             controller:self]);
+  base::scoped_nsobject<NSWindow> overlayWindow(
+      [[CWSheetOverlayWindow alloc] initWithContentRect:rect controller:self]);
   [parentWindow_ addChildWindow:overlayWindow
                         ordered:NSWindowAbove];
 
   // Add an entry for the sheet.
-  scoped_nsobject<ConstrainedWindowSheetInfo> info(
+  base::scoped_nsobject<ConstrainedWindowSheetInfo> info(
       [[ConstrainedWindowSheetInfo alloc] initWithSheet:sheet
                                              parentView:parentView
                                           overlayWindow:overlayWindow]);
@@ -249,6 +248,21 @@ NSValue* GetKeyForParentWindow(NSWindow* parent_window) {
 
 - (NSRect)overlayWindowFrameForParentView:(NSView*)parentView {
   NSRect viewFrame = [parentView convertRect:[parentView bounds] toView:nil];
+
+  id<NSWindowDelegate> delegate = [[parentView window] delegate];
+  if ([delegate respondsToSelector:@selector(window:
+                                  willPositionSheet:
+                                          usingRect:)]) {
+    NSRect sheetFrame = NSZeroRect;
+    // This API needs Y to be the distance from the bottom of the overlay to
+    // the top of the sheet. X, width, and height are ignored.
+    sheetFrame.origin.y = NSMaxY(viewFrame);
+    NSRect customSheetFrame = [delegate window:[parentView window]
+                             willPositionSheet:nil
+                                     usingRect:sheetFrame];
+    viewFrame.size.height += NSMinY(customSheetFrame) - NSMinY(sheetFrame);
+  }
+
   viewFrame.origin = [[parentView window] convertBaseToScreen:viewFrame.origin];
   return viewFrame;
 }

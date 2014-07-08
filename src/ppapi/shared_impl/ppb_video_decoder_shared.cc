@@ -16,20 +16,21 @@ namespace ppapi {
 PPB_VideoDecoder_Shared::PPB_VideoDecoder_Shared(PP_Instance instance)
     : Resource(OBJECT_IS_IMPL, instance),
       graphics_context_(0),
-      gles2_impl_(NULL) {
-}
+      gles2_impl_(NULL) {}
 
 PPB_VideoDecoder_Shared::PPB_VideoDecoder_Shared(
     const HostResource& host_resource)
     : Resource(OBJECT_IS_PROXY, host_resource),
       graphics_context_(0),
-      gles2_impl_(NULL) {
-}
+      gles2_impl_(NULL) {}
 
 PPB_VideoDecoder_Shared::~PPB_VideoDecoder_Shared() {
+  // Destroy() must be called before the object is destroyed.
+  DCHECK(graphics_context_ == 0);
 }
 
-thunk::PPB_VideoDecoder_API* PPB_VideoDecoder_Shared::AsPPB_VideoDecoder_API() {
+thunk::PPB_VideoDecoder_Dev_API*
+PPB_VideoDecoder_Shared::AsPPB_VideoDecoder_Dev_API() {
   return this;
 }
 
@@ -44,9 +45,12 @@ void PPB_VideoDecoder_Shared::InitCommon(
 }
 
 void PPB_VideoDecoder_Shared::Destroy() {
-  graphics_context_ = 0;
+  if (graphics_context_) {
+    PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(
+        graphics_context_);
+    graphics_context_ = 0;
+  }
   gles2_impl_ = NULL;
-  PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(graphics_context_);
 }
 
 bool PPB_VideoDecoder_Shared::SetFlushCallback(
@@ -68,8 +72,8 @@ bool PPB_VideoDecoder_Shared::SetResetCallback(
 bool PPB_VideoDecoder_Shared::SetBitstreamBufferCallback(
     int32 bitstream_buffer_id,
     scoped_refptr<TrackedCallback> callback) {
-  return bitstream_buffer_callbacks_.insert(
-      std::make_pair(bitstream_buffer_id, callback)).second;
+  return bitstream_buffer_callbacks_.insert(std::make_pair(bitstream_buffer_id,
+                                                           callback)).second;
 }
 
 void PPB_VideoDecoder_Shared::RunFlushCallback(int32 result) {
@@ -81,7 +85,8 @@ void PPB_VideoDecoder_Shared::RunResetCallback(int32 result) {
 }
 
 void PPB_VideoDecoder_Shared::RunBitstreamBufferCallback(
-    int32 bitstream_buffer_id, int32 result) {
+    int32 bitstream_buffer_id,
+    int32 result) {
   CallbackById::iterator it =
       bitstream_buffer_callbacks_.find(bitstream_buffer_id);
   DCHECK(it != bitstream_buffer_callbacks_.end());
@@ -91,15 +96,13 @@ void PPB_VideoDecoder_Shared::RunBitstreamBufferCallback(
 }
 
 void PPB_VideoDecoder_Shared::FlushCommandBuffer() {
-  if (gles2_impl_) {
-    // To call Flush() we have to tell Graphics3D that we hold the proxy lock.
-    thunk::EnterResource<thunk::PPB_Graphics3D_API, false> enter_g3d(
-        graphics_context_, false);
-    DCHECK(enter_g3d.succeeded());
-    PPB_Graphics3D_Shared* graphics3d =
-        static_cast<PPB_Graphics3D_Shared*>(enter_g3d.object());
-    PPB_Graphics3D_Shared::ScopedNoLocking dont_lock(graphics3d);
-    gles2_impl_->Flush();
+  // Ensure that graphics_context is still live before using gles2_impl_.
+  // Our "plugin reference" is not enough to keep graphics_context alive if
+  // DidDeleteInstance() has been called.
+  if (PpapiGlobals::Get()->GetResourceTracker()->GetResource(
+          graphics_context_)) {
+    if (gles2_impl_)
+      gles2_impl_->Flush();
   }
 }
 

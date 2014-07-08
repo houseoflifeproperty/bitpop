@@ -5,16 +5,18 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_ASH_H_
 #define CHROME_BROWSER_UI_VIEWS_FRAME_BROWSER_NON_CLIENT_FRAME_VIEW_ASH_H_
 
+#include "ash/shell_observer.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/ui/views/frame/browser_non_client_frame_view.h"
 #include "chrome/browser/ui/views/tab_icon_view_model.h"
-#include "ui/views/controls/button/button.h"  // ButtonListener
 
 class TabIconView;
 
 namespace ash {
-class FramePainter;
+class FrameBorderHitTestController;
+class FrameCaptionButtonContainerView;
+class HeaderPainter;
 }
 namespace views {
 class ImageButton;
@@ -23,7 +25,7 @@ class ToggleImageButton;
 
 class BrowserNonClientFrameViewAsh
     : public BrowserNonClientFrameView,
-      public views::ButtonListener,
+      public ash::ShellObserver,
       public chrome::TabIconViewModel {
  public:
   static const char kViewClassName[];
@@ -35,7 +37,7 @@ class BrowserNonClientFrameViewAsh
 
   // BrowserNonClientFrameView overrides:
   virtual gfx::Rect GetBoundsForTabStrip(views::View* tabstrip) const OVERRIDE;
-  virtual TabStripInsets GetTabStripInsets(bool force_restored) const OVERRIDE;
+  virtual int GetTopInset() const OVERRIDE;
   virtual int GetThemeBackgroundXInset() const OVERRIDE;
   virtual void UpdateThrobber(bool running) OVERRIDE;
 
@@ -53,14 +55,14 @@ class BrowserNonClientFrameViewAsh
   // views::View overrides:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
   virtual bool HitTestRect(const gfx::Rect& rect) const OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
 
-  // views::ButtonListener overrides:
-  virtual void ButtonPressed(views::Button* sender,
-                             const ui::Event& event) OVERRIDE;
+  // ash::ShellObserver:
+  virtual void OnMaximizeModeStarted() OVERRIDE;
+  virtual void OnMaximizeModeEnded() OVERRIDE;
 
   // Overridden from chrome::TabIconViewModel:
   virtual bool ShouldTabIconViewAnimate() const OVERRIDE;
@@ -68,45 +70,59 @@ class BrowserNonClientFrameViewAsh
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest, WindowHeader);
+  FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest,
+                           NonImmersiveFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest,
+                           ImmersiveFullscreen);
+  FRIEND_TEST_ALL_PREFIXES(BrowserNonClientFrameViewAshTest,
+                           ToggleMaximizeModeRelayout);
 
-  // Distance between top of window and client area.
-  int NonClientTopBorderHeight(bool force_restored) const;
+  // Distance between the left edge of the NonClientFrameView and the tab strip.
+  int GetTabStripLeftInset() const;
 
-  // Returns true if we should use a short header, such as for popup windows.
-  bool UseShortHeader() const;
+  // Distance between the right edge of the NonClientFrameView and the tab
+  // strip.
+  int GetTabStripRightInset() const;
+
+  // Returns true if we should use a super short header with light bars instead
+  // of regular tabs. This header is used in immersive fullscreen when the
+  // top-of-window views are not revealed.
+  bool UseImmersiveLightbarHeaderStyle() const;
+
+  // Returns true if the header should be painted so that it looks the same as
+  // the header used for packaged apps. Packaged apps use a different color
+  // scheme than browser windows.
+  bool UsePackagedAppHeaderStyle() const;
 
   // Layout the incognito icon.
   void LayoutAvatar();
 
-  void PaintTitleBar(gfx::Canvas* canvas);
+  // Returns true if there is anything to paint. Some fullscreen windows do not
+  // need their frames painted.
+  bool ShouldPaint() const;
+
+  // Paints the header background when the frame is in immersive fullscreen and
+  // tab light bar is visible.
+  void PaintImmersiveLightbarStyleHeader(gfx::Canvas* canvas);
+
   void PaintToolbarBackground(gfx::Canvas* canvas);
 
-  // Windows without a toolbar need to draw their own line under the header,
-  // above the content area.
+  // Draws the line under the header for windows without a toolbar and not using
+  // the packaged app header style.
   void PaintContentEdge(gfx::Canvas* canvas);
 
-  // Returns the correct image id for the frame header based on activation
-  // state and incognito mode.
-  int GetThemeFrameImageId() const;
-  const gfx::ImageSkia* GetThemeFrameOverlayImage() const;
-
-  // Window controls. The |size_button_| either toggles maximized or toggles
-  // minimized. The exact behavior is determined by |size_button_minimizes_|.
-  views::ImageButton* size_button_;
-  views::ImageButton* close_button_;
-
-  // Optional button to toggle immersive UI. May be NULL.
-  views::ToggleImageButton* immersive_button_;
+  // View which contains the window controls.
+  ash::FrameCaptionButtonContainerView* caption_button_container_;
 
   // For popups, the window icon.
   TabIconView* window_icon_;
 
-  // Painter for the frame header.
-  scoped_ptr<ash::FramePainter> frame_painter_;
+  // Helper class for painting the header.
+  scoped_ptr<ash::HeaderPainter> header_painter_;
 
-  // If true the |size_button_| minimizes, otherwise it toggles between
-  // maximized and restored.
-  bool size_button_minimizes_;
+  // Updates the hittest bounds overrides based on the window show type.
+  scoped_ptr<ash::FrameBorderHitTestController>
+      frame_border_hit_test_controller_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserNonClientFrameViewAsh);
 };

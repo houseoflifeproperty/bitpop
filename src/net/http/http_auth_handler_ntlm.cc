@@ -8,19 +8,20 @@
 #include "base/base64.h"
 #endif
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
+#include "net/http/http_auth_challenge_tokenizer.h"
 
 namespace net {
 
 HttpAuth::AuthorizationResult HttpAuthHandlerNTLM::HandleAnotherChallenge(
-    HttpAuth::ChallengeTokenizer* challenge) {
+    HttpAuthChallengeTokenizer* challenge) {
   return ParseChallenge(challenge, false);
 }
 
-bool HttpAuthHandlerNTLM::Init(HttpAuth::ChallengeTokenizer* tok) {
+bool HttpAuthHandlerNTLM::Init(HttpAuthChallengeTokenizer* tok) {
   auth_scheme_ = HttpAuth::AUTH_SCHEME_NTLM;
   score_ = 3;
   properties_ = ENCRYPTS_IDENTITY | IS_CONNECTION_BASED;
@@ -52,12 +53,12 @@ int HttpAuthHandlerNTLM::GenerateAuthTokenImpl(
 
   // The username may be in the form "DOMAIN\user".  Parse it into the two
   // components.
-  string16 domain;
-  string16 user;
-  const string16& username = credentials->username();
-  const char16 backslash_character = '\\';
+  base::string16 domain;
+  base::string16 user;
+  const base::string16& username = credentials->username();
+  const base::char16 backslash_character = '\\';
   size_t backslash_idx = username.find(backslash_character);
-  if (backslash_idx == string16::npos) {
+  if (backslash_idx == base::string16::npos) {
     user = username;
   } else {
     domain = username.substr(0, backslash_idx);
@@ -89,13 +90,9 @@ int HttpAuthHandlerNTLM::GenerateAuthTokenImpl(
   // Base64 encode data in output buffer and prepend "NTLM ".
   std::string encode_input(static_cast<char*>(out_buf), out_buf_len);
   std::string encode_output;
-  bool base64_rv = base::Base64Encode(encode_input, &encode_output);
+  base::Base64Encode(encode_input, &encode_output);
   // OK, we are done with |out_buf|
   free(out_buf);
-  if (!base64_rv) {
-    LOG(ERROR) << "Unexpected problem Base64 encoding.";
-    return ERR_UNEXPECTED;
-  }
   *auth_token = std::string("NTLM ") + encode_output;
   return OK;
 #endif
@@ -104,7 +101,7 @@ int HttpAuthHandlerNTLM::GenerateAuthTokenImpl(
 // The NTLM challenge header looks like:
 //   WWW-Authenticate: NTLM auth-data
 HttpAuth::AuthorizationResult HttpAuthHandlerNTLM::ParseChallenge(
-    HttpAuth::ChallengeTokenizer* tok, bool initial_challenge) {
+    HttpAuthChallengeTokenizer* tok, bool initial_challenge) {
 #if defined(NTLM_SSPI)
   // auth_sspi_ contains state for whether or not this is the initial challenge.
   return auth_sspi_.ParseChallenge(tok);
@@ -136,11 +133,11 @@ HttpAuth::AuthorizationResult HttpAuthHandlerNTLM::ParseChallenge(
 }
 
 // static
-std::wstring HttpAuthHandlerNTLM::CreateSPN(const GURL& origin) {
+std::string HttpAuthHandlerNTLM::CreateSPN(const GURL& origin) {
   // The service principal name of the destination server.  See
   // http://msdn.microsoft.com/en-us/library/ms677949%28VS.85%29.aspx
-  std::wstring target(L"HTTP/");
-  target.append(ASCIIToWide(GetHostAndPort(origin)));
+  std::string target("HTTP/");
+  target.append(GetHostAndPort(origin));
   return target;
 }
 

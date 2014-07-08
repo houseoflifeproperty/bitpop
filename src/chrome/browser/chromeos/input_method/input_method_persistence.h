@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/chromeos/input_method/input_method_manager.h"
+#include "chromeos/ime/input_method_manager.h"
 
 namespace chromeos {
 namespace input_method {
@@ -31,7 +31,6 @@ class InputMethodPersistence : public InputMethodManager::Observer {
   // InputMethodManager::Observer overrides.
   virtual void InputMethodChanged(InputMethodManager* manager,
                                   bool show_message) OVERRIDE;
-  virtual void InputMethodPropertyChanged(InputMethodManager* manager) OVERRIDE;
 
  private:
   InputMethodManager* input_method_manager_;

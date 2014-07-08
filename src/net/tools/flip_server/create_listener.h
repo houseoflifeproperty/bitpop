@@ -10,7 +10,7 @@
 
 namespace net {
 
-void SetNonBlocking(int fd);
+void FlipSetNonBlocking(int fd);
 
 // Summary:
 //   creates a socket for listening, and bind()s and listen()s it.
@@ -44,9 +44,9 @@ int CreateListeningSocket(const std::string& host,
                           bool reuseport,
                           bool wait_for_iface,
                           bool disable_nagle,
-                          int * listen_fd);
+                          int* listen_fd);
 
-int CreateConnectedSocket(int *connect_fd,
+int CreateConnectedSocket(int* connect_fd,
                           const std::string& host,
                           const std::string& port,
                           bool is_numeric_host_address,
@@ -54,4 +54,3 @@ int CreateConnectedSocket(int *connect_fd,
 }  // namespace net
 
 #endif  // NET_TOOLS_FLIP_SERVER_CREATE_LISTENER_H__
-

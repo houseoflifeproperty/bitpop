@@ -6,125 +6,107 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/net_errors.h"
+#include "base/compiler_specific.h"
 #include "net/base/io_buffer.h"
+#include "net/base/net_errors.h"
 #include "net/spdy/spdy_framer.h"
 #include "net/spdy/spdy_protocol.h"
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_stream.h"
+#include "url/gurl.h"
 
 namespace net {
 
 SpdyWebSocketStream::SpdyWebSocketStream(
-    SpdySession* spdy_session, Delegate* delegate)
-    : stream_(NULL),
+    const base::WeakPtr<SpdySession>& spdy_session, Delegate* delegate)
+    : weak_ptr_factory_(this),
       spdy_session_(spdy_session),
+      pending_send_data_length_(0),
       delegate_(delegate) {
-  DCHECK(spdy_session_);
+  DCHECK(spdy_session_.get());
   DCHECK(delegate_);
 }
 
 SpdyWebSocketStream::~SpdyWebSocketStream() {
-  if (stream_) {
-    // If Close() has not already been called, DetachDelegate() will send a
-    // SPDY RST_STREAM. Deleting SpdyWebSocketStream is good enough to initiate
-    // graceful shutdown, so we call Close() to avoid sending a RST_STREAM.
-    // For safe, we should eliminate |delegate_| for OnClose() calback.
-    delegate_ = NULL;
-    stream_->Close();
-  }
+  delegate_ = NULL;
+  Close();
 }
 
 int SpdyWebSocketStream::InitializeStream(const GURL& url,
                                           RequestPriority request_priority,
                                           const BoundNetLog& net_log) {
-  if (spdy_session_->IsClosed())
+  if (!spdy_session_)
     return ERR_SOCKET_NOT_CONNECTED;
 
-  int result = spdy_session_->CreateStream(
-      url, request_priority, &stream_, net_log,
+  int rv = stream_request_.StartRequest(
+      SPDY_BIDIRECTIONAL_STREAM, spdy_session_, url, request_priority, net_log,
       base::Bind(&SpdyWebSocketStream::OnSpdyStreamCreated,
-                 base::Unretained(this)));
+                 weak_ptr_factory_.GetWeakPtr()));
 
-  if (result == OK) {
-    DCHECK(stream_);
+  if (rv == OK) {
+    stream_ = stream_request_.ReleaseStream();
+    DCHECK(stream_.get());
     stream_->SetDelegate(this);
   }
-  return result;
+  return rv;
 }
 
 int SpdyWebSocketStream::SendRequest(scoped_ptr<SpdyHeaderBlock> headers) {
-  if (!stream_) {
+  if (!stream_.get()) {
     NOTREACHED();
     return ERR_UNEXPECTED;
   }
-  stream_->set_spdy_headers(headers.Pass());
-  int result = stream_->SendRequest(true);
+  int result = stream_->SendRequestHeaders(headers.Pass(), MORE_DATA_TO_SEND);
   if (result < OK && result != ERR_IO_PENDING)
     Close();
   return result;
 }
 
 int SpdyWebSocketStream::SendData(const char* data, int length) {
-  if (!stream_) {
+  if (!stream_.get()) {
     NOTREACHED();
     return ERR_UNEXPECTED;
   }
+  DCHECK_GE(length, 0);
+  pending_send_data_length_ = static_cast<size_t>(length);
   scoped_refptr<IOBuffer> buf(new IOBuffer(length));
   memcpy(buf->data(), data, length);
-  return stream_->WriteStreamData(buf.get(), length, DATA_FLAG_NONE);
+  stream_->SendData(buf.get(), length, MORE_DATA_TO_SEND);
+  return ERR_IO_PENDING;
 }
 
 void SpdyWebSocketStream::Close() {
-  if (spdy_session_)
-    spdy_session_->CancelPendingCreateStreams(&stream_);
-  if (stream_)
+  if (stream_.get()) {
     stream_->Close();
+    DCHECK(!stream_.get());
+  }
 }
 
-bool SpdyWebSocketStream::OnSendHeadersComplete(int status) {
+void SpdyWebSocketStream::OnRequestHeadersSent() {
   DCHECK(delegate_);
-  delegate_->OnSentSpdyHeaders(status);
-  return true;
+  delegate_->OnSentSpdyHeaders();
 }
 
-int SpdyWebSocketStream::OnSendBody() {
-  NOTREACHED();
-  return ERR_UNEXPECTED;
-}
-
-int SpdyWebSocketStream::OnSendBodyComplete(int status, bool* eof) {
-  NOTREACHED();
-  *eof = true;
-  return ERR_UNEXPECTED;
-}
-
-int SpdyWebSocketStream::OnResponseReceived(
-    const SpdyHeaderBlock& response,
-    base::Time response_time, int status) {
+SpdyResponseHeadersStatus SpdyWebSocketStream::OnResponseHeadersUpdated(
+    const SpdyHeaderBlock& response_headers) {
   DCHECK(delegate_);
-  return delegate_->OnReceivedSpdyResponseHeader(response, status);
+  delegate_->OnSpdyResponseHeadersUpdated(response_headers);
+  return RESPONSE_HEADERS_ARE_COMPLETE;
 }
 
-void SpdyWebSocketStream::OnHeadersSent() {
-  // This will be called when WebSocket over SPDY supports new framing.
-  NOTREACHED();
-}
-
-int SpdyWebSocketStream::OnDataReceived(const char* data, int length) {
+void SpdyWebSocketStream::OnDataReceived(scoped_ptr<SpdyBuffer> buffer) {
   DCHECK(delegate_);
-  delegate_->OnReceivedSpdyData(data, length);
-  return OK;
+  delegate_->OnReceivedSpdyData(buffer.Pass());
 }
 
-void SpdyWebSocketStream::OnDataSent(int length) {
+void SpdyWebSocketStream::OnDataSent() {
   DCHECK(delegate_);
-  delegate_->OnSentSpdyData(length);
+  delegate_->OnSentSpdyData(pending_send_data_length_);
+  pending_send_data_length_ = 0;
 }
 
 void SpdyWebSocketStream::OnClose(int status) {
-  stream_ = NULL;
+  stream_.reset();
 
   // Destruction without Close() call OnClose() with delegate_ being NULL.
   if (!delegate_)
@@ -137,7 +119,8 @@ void SpdyWebSocketStream::OnClose(int status) {
 void SpdyWebSocketStream::OnSpdyStreamCreated(int result) {
   DCHECK_NE(ERR_IO_PENDING, result);
   if (result == OK) {
-    DCHECK(stream_);
+    stream_ = stream_request_.ReleaseStream();
+    DCHECK(stream_.get());
     stream_->SetDelegate(this);
   }
   DCHECK(delegate_);

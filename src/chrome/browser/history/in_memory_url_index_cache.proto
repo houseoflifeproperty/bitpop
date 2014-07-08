@@ -55,12 +55,18 @@ message InMemoryURLIndexCacheItem {
 
   message HistoryInfoMapItem {
     message HistoryInfoMapEntry {
+      message VisitInfo {
+        required int64 visit_time = 1;
+        // Corresponds to content::PageTransition.
+        required uint64 transition_type = 2;
+      }
       required int64 history_id = 1;
       required int32 visit_count = 2;
       required int32 typed_count = 3;
       required int64 last_visit = 4;
       required string url = 5;
       optional string title = 6;
+      repeated VisitInfo visits = 7;
     }
 
     required uint32 item_count = 1;
@@ -78,7 +84,12 @@ message InMemoryURLIndexCacheItem {
     repeated WordStartsMapEntry word_starts_map_entry = 2;
   }
 
-  required int64 timestamp = 1;
+  // The date that the cache was last rebuilt from history.  Note that
+  // this cache may include items that were visited after this date if
+  // the InMemoryURLIndex was updated on the fly.  This timestamp is meant
+  // to indicate the last date the index was rebuilt from the ground truth:
+  // the history database on disk.
+  required int64 last_rebuild_timestamp = 1;
   // If there is no version we'll assume version 0.
   optional int32 version = 2;
   required int32 history_item_count = 3;

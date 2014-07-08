@@ -5,6 +5,7 @@
 #include "chrome/browser/history/android/sqlite_cursor.h"
 
 #include "base/android/jni_android.h"
+#include "base/android/jni_array.h"
 #include "base/android/jni_string.h"
 #include "base/bind.h"
 #include "base/logging.h"
@@ -14,9 +15,6 @@
 #include "sql/statement.h"
 
 using base::android::ConvertUTF8ToJavaString;
-using base::android::GetClass;
-using base::android::HasClass;
-using base::android::MethodID;
 using base::android::ScopedJavaLocalRef;
 using content::BrowserThread;
 
@@ -55,24 +53,9 @@ ScopedJavaLocalRef<jobject> SQLiteCursor::NewJavaSqliteCursor(
     history::AndroidStatement* statement,
     AndroidHistoryProviderService* service,
     FaviconService* favicon_service) {
-  if (!HasClass(env, kSQLiteCursorClassPath)) {
-    LOG(ERROR) << "Can not find " << kSQLiteCursorClassPath;
-    return ScopedJavaLocalRef<jobject>();
-  }
-
-  ScopedJavaLocalRef<jclass> sclass = GetClass(env, kSQLiteCursorClassPath);
-  jmethodID method_id = MethodID::Get<MethodID::TYPE_INSTANCE>(
-      env, sclass.obj(), "<init>", "(I)V");
-
   SQLiteCursor* cursor = new SQLiteCursor(column_names, statement, service,
                                           favicon_service);
-  ScopedJavaLocalRef<jobject> obj(env,
-      env->NewObject(sclass.obj(), method_id, reinterpret_cast<jint>(cursor)));
-  if (obj.is_null()) {
-    delete cursor;
-    return ScopedJavaLocalRef<jobject>();
-  }
-  return obj;
+  return Java_SQLiteCursor_create(env, reinterpret_cast<intptr_t>(cursor));
 }
 
 bool SQLiteCursor::RegisterSqliteCursor(JNIEnv* env) {
@@ -91,22 +74,13 @@ jint SQLiteCursor::GetCount(JNIEnv* env, jobject obj) {
 
 ScopedJavaLocalRef<jobjectArray> SQLiteCursor::GetColumnNames(JNIEnv* env,
                                                               jobject obj) {
-  size_t count = column_names_.size();
-  ScopedJavaLocalRef<jclass> sclass = GetClass(env, "java/lang/String");
-  ScopedJavaLocalRef<jobjectArray> arr(env,
-      env->NewObjectArray(count, sclass.obj(), NULL));
-  for (size_t i = 0; i < count; i++) {
-    ScopedJavaLocalRef<jstring> str =
-        ConvertUTF8ToJavaString(env, column_names_[i].c_str());
-    env->SetObjectArrayElement(arr.obj(), i, str.obj());
-  }
-  return arr;
+  return base::android::ToJavaArrayOfStrings(env, column_names_);
 }
 
 ScopedJavaLocalRef<jstring> SQLiteCursor::GetString(JNIEnv* env,
                                                     jobject obj,
                                                     jint column) {
-  string16 value = statement_->statement()->ColumnString16(column);
+  base::string16 value = statement_->statement()->ColumnString16(column);
   return ScopedJavaLocalRef<jstring>(env,
       env->NewString(value.data(), value.size()));
 }
@@ -135,13 +109,7 @@ ScopedJavaLocalRef<jbyteArray> SQLiteCursor::GetBlob(JNIEnv* env,
   } else {
     statement_->statement()->ColumnBlobAsVector(column, &blob);
   }
-  ScopedJavaLocalRef<jbyteArray> jb(env, env->NewByteArray(blob.size()));
-  int count = 0;
-  for (std::vector<unsigned char>::const_iterator i = blob.begin();
-      i != blob.end(); ++i) {
-    env->SetByteArrayRegion(jb.obj(), count++, 1, (jbyte *)i);
-  }
-  return jb;
+  return base::android::ToJavaByteArray(env, &blob[0], blob.size());
 }
 
 jboolean SQLiteCursor::IsNull(JNIEnv* env, jobject obj, jint column) {
@@ -164,7 +132,17 @@ jint SQLiteCursor::GetColumnType(JNIEnv* env, jobject obj, jint column) {
 }
 
 void SQLiteCursor::Destroy(JNIEnv* env, jobject obj) {
-  delete this;
+  // We do our best to cleanup when Destroy() is called from Java's finalize()
+  // where the UI message loop might stop running or in the process of shutting
+  // down, as the whole process will be destroyed soon, it's fine to leave some
+  // objects out there.
+  if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
+    DestroyOnUIThread();
+  } else if (!BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
+                 base::Bind(&SQLiteCursor::DestroyOnUIThread,
+                     base::Unretained(this)))) {
+    delete this;
+  }
 }
 
 SQLiteCursor::SQLiteCursor(const std::vector<std::string>& column_names,
@@ -182,28 +160,19 @@ SQLiteCursor::SQLiteCursor(const std::vector<std::string>& column_names,
 }
 
 SQLiteCursor::~SQLiteCursor() {
-  // Consumer requests were set in the UI thread. They must be cancelled
-  // using the same thread.
-  if (BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    CancelAllRequests(NULL);
-  } else {
-    base::WaitableEvent event(false, false);
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&SQLiteCursor::CancelAllRequests, base::Unretained(this),
-                   &event));
-    event.Wait();
-  }
-
-  BrowserThread::PostTask(
-      BrowserThread::UI,
-      FROM_HERE,
-      base::Bind(&AndroidHistoryProviderService::CloseStatement,
-                 base::Unretained(service_), statement_));
 }
 
-bool SQLiteCursor::GetFavicon(history::FaviconID id,
+void SQLiteCursor::DestroyOnUIThread() {
+  // Consumer requests were set in the UI thread. They must be cancelled
+  // using the same thread.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  consumer_.reset();
+  tracker_.reset();
+  service_->CloseStatement(statement_);
+  delete this;
+}
+
+bool SQLiteCursor::GetFavicon(favicon_base::FaviconID id,
                               std::vector<unsigned char>* image_data) {
   if (id) {
     BrowserThread::PostTask(
@@ -232,17 +201,16 @@ bool SQLiteCursor::GetFavicon(history::FaviconID id,
 }
 
 void SQLiteCursor::GetFaviconForIDInUIThread(
-    history::FaviconID id,
+    favicon_base::FaviconID id,
     const FaviconService::FaviconRawCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (!tracker_.get())
-    tracker_.reset(new CancelableTaskTracker());
+    tracker_.reset(new base::CancelableTaskTracker());
   favicon_service_->GetLargestRawFaviconForID(id, callback, tracker_.get());
 }
 
-
 void SQLiteCursor::OnFaviconData(
-    const history::FaviconBitmapResult& bitmap_result) {
+    const favicon_base::FaviconBitmapResult& bitmap_result) {
   favicon_bitmap_result_ = bitmap_result;
   event_.Signal();
   if (test_observer_)
@@ -256,17 +224,6 @@ void SQLiteCursor::OnMoved(AndroidHistoryProviderService::Handle handle,
   if (test_observer_)
     // Notified test_observer on UI thread instead of the one it will wait.
     test_observer_->OnGetMoveToResult();
-}
-
-void SQLiteCursor::CancelAllRequests(base::WaitableEvent* finished) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-
-  // Destruction will cancel all pending tasks.
-  consumer_.reset();
-  tracker_.reset();
-
-  if (finished)
-    finished->Signal();
 }
 
 SQLiteCursor::JavaColumnType SQLiteCursor::GetColumnTypeInternal(int column) {

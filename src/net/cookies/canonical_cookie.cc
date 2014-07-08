@@ -47,11 +47,11 @@
 #include "base/basictypes.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_canon.h"
+#include "base/strings/stringprintf.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -112,21 +112,20 @@ CanonicalCookie::CanonicalCookie()
 CanonicalCookie::CanonicalCookie(
     const GURL& url, const std::string& name, const std::string& value,
     const std::string& domain, const std::string& path,
-    const std::string& mac_key, const std::string& mac_algorithm,
     const base::Time& creation, const base::Time& expiration,
-    const base::Time& last_access, bool secure, bool httponly)
+    const base::Time& last_access, bool secure, bool httponly,
+    CookiePriority priority)
     : source_(GetCookieSourceFromURL(url)),
       name_(name),
       value_(value),
       domain_(domain),
       path_(path),
-      mac_key_(mac_key),
-      mac_algorithm_(mac_algorithm),
       creation_date_(creation),
       expiry_date_(expiration),
       last_access_date_(last_access),
       secure_(secure),
-      httponly_(httponly) {
+      httponly_(httponly),
+      priority_(priority) {
 }
 
 CanonicalCookie::CanonicalCookie(const GURL& url, const ParsedCookie& pc)
@@ -134,12 +133,11 @@ CanonicalCookie::CanonicalCookie(const GURL& url, const ParsedCookie& pc)
       name_(pc.Name()),
       value_(pc.Value()),
       path_(CanonPath(url, pc)),
-      mac_key_(pc.MACKey()),
-      mac_algorithm_(pc.MACAlgorithm()),
       creation_date_(Time::Now()),
       last_access_date_(Time()),
       secure_(pc.IsSecure()),
-      httponly_(pc.IsHttpOnly()) {
+      httponly_(pc.IsHttpOnly()),
+      priority_(pc.Priority()) {
   if (pc.HasExpires())
     expiry_date_ = CanonExpiration(pc, creation_date_, creation_date_);
 
@@ -164,10 +162,10 @@ std::string CanonicalCookie::GetCookieSourceFromURL(const GURL& url) {
   if (url.SchemeIsFile())
     return url.spec();
 
-  url_canon::Replacements<char> replacements;
+  url::Replacements<char> replacements;
   replacements.ClearPort();
   if (url.SchemeIsSecure())
-    replacements.SetScheme("http", url_parse::Component(0, 4));
+    replacements.SetScheme("http", url::Component(0, 4));
 
   return url.GetOrigin().ReplaceComponents(replacements).spec();
 }
@@ -198,9 +196,11 @@ Time CanonicalCookie::CanonExpiration(const ParsedCookie& pc,
   }
 
   // Try the Expires attribute.
-  if (pc.HasExpires()) {
+  if (pc.HasExpires() && !pc.Expires().empty()) {
     // Adjust for clock skew between server and host.
-    return current + (cookie_util::ParseCookieTime(pc.Expires()) - server_time);
+    base::Time parsed_expiry = cookie_util::ParseCookieTime(pc.Expires());
+    if (!parsed_expiry.is_null())
+      return parsed_expiry + (current - server_time);
   }
 
   // Invalid or no expiration, persistent cookie.
@@ -230,12 +230,6 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
   }
 
   std::string cookie_path = CanonicalCookie::CanonPath(url, parsed_cookie);
-  std::string mac_key;
-  if (parsed_cookie.HasMACKey())
-    mac_key = parsed_cookie.MACKey();
-  std::string mac_algorithm;
-  if (parsed_cookie.HasMACAlgorithm())
-    mac_algorithm = parsed_cookie.MACAlgorithm();
   Time server_time(creation_time);
   if (options.has_server_time())
     server_time = options.server_time();
@@ -245,10 +239,11 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
                                                          server_time);
 
   return new CanonicalCookie(url, parsed_cookie.Name(), parsed_cookie.Value(),
-                             cookie_domain, cookie_path, mac_key, mac_algorithm,
-                             creation_time, cookie_expires, creation_time,
+                             cookie_domain, cookie_path, creation_time,
+                             cookie_expires, creation_time,
                              parsed_cookie.IsSecure(),
-                             parsed_cookie.IsHttpOnly());
+                             parsed_cookie.IsHttpOnly(),
+                             parsed_cookie.Priority());
 }
 
 CanonicalCookie* CanonicalCookie::Create(const GURL& url,
@@ -256,12 +251,11 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
                                          const std::string& value,
                                          const std::string& domain,
                                          const std::string& path,
-                                         const std::string& mac_key,
-                                         const std::string& mac_algorithm,
                                          const base::Time& creation,
                                          const base::Time& expiration,
                                          bool secure,
-                                         bool http_only) {
+                                         bool http_only,
+                                         CookiePriority priority) {
   // Expect valid attribute tokens and values, as defined by the ParsedCookie
   // logic, otherwise don't create the cookie.
   std::string parsed_name = ParsedCookie::ParseTokenString(name);
@@ -289,17 +283,17 @@ CanonicalCookie* CanonicalCookie::Create(const GURL& url,
   if (!parsed_path.empty() && cookie_path != parsed_path)
     return NULL;
   // Canonicalize path again to make sure it escapes characters as needed.
-  url_parse::Component path_component(0, cookie_path.length());
-  url_canon::RawCanonOutputT<char> canon_path;
-  url_parse::Component canon_path_component;
-  url_canon::CanonicalizePath(cookie_path.data(), path_component,
-                              &canon_path, &canon_path_component);
+  url::Component path_component(0, cookie_path.length());
+  url::RawCanonOutputT<char> canon_path;
+  url::Component canon_path_component;
+  url::CanonicalizePath(cookie_path.data(), path_component, &canon_path,
+                        &canon_path_component);
   cookie_path = std::string(canon_path.data() + canon_path_component.begin,
                             canon_path_component.len);
 
   return new CanonicalCookie(url, parsed_name, parsed_value, cookie_domain,
-                             cookie_path, mac_key, mac_algorithm, creation,
-                             expiration, creation, secure, http_only);
+                             cookie_path, creation, expiration, creation,
+                             secure, http_only, priority);
 }
 
 bool CanonicalCookie::IsOnPath(const std::string& url_path) const {

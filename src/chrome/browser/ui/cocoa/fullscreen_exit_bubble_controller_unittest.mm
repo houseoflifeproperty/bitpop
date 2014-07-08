@@ -5,12 +5,13 @@
 #import "chrome/browser/ui/cocoa/fullscreen_exit_bubble_controller.h"
 
 #include "base/mac/mac_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/site_instance.h"
 #include "content/public/browser/web_contents.h"
@@ -66,13 +67,13 @@ class FullscreenExitBubbleControllerTest : public CocoaProfileTest {
 
   void AppendTabToStrip() {
     WebContents* web_contents = WebContents::Create(
-        content::WebContents::CreateParams(profile(), site_instance_));
+        content::WebContents::CreateParams(profile(), site_instance_.get()));
     browser()->tab_strip_model()->AppendWebContents(
         web_contents, /*foreground=*/true);
   }
 
   scoped_refptr<SiteInstance> site_instance_;
-  scoped_nsobject<FullscreenExitBubbleController> controller_;
+  base::scoped_nsobject<FullscreenExitBubbleController> controller_;
 };
 
 // http://crbug.com/103912

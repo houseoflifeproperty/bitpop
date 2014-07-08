@@ -11,17 +11,25 @@
 
 #include <algorithm>
 
+#include "base/format_macros.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/pickle.h"
-#include "base/stringprintf.h"
-#include "base/string_number_conversions.h"
-#include "base/string_piece.h"
-#include "base/string_util.h"
-#include "base/time.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/escape.h"
+#include "net/http/http_byte_range.h"
+#include "net/http/http_log_util.h"
 #include "net/http/http_util.h"
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+#include "net/http/http_status_code.h"
+#include "net/proxy/proxy_service.h"
+#endif
 
 using base::StringPiece;
 using base::Time;
@@ -78,22 +86,29 @@ const char* const kNonUpdatedHeaders[] = {
   "trailer",
   "transfer-encoding",
   "upgrade",
-  // these should never change:
-  "content-location",
-  "content-md5",
   "etag",
-  // assume cache-control: no-transform
-  "content-encoding",
-  "content-range",
-  "content-type",
-  // some broken microsoft servers send 'content-length: 0' with 304s
-  "content-length"
+  "x-frame-options",
+  "x-xss-protection",
+};
+
+// Some header prefixes mean "Don't copy this header from a 304 response.".
+// Rather than listing all the relevant headers, we can consolidate them into
+// this list:
+const char* const kNonUpdatedHeaderPrefixes[] = {
+  "content-",
+  "x-content-",
+  "x-webkit-"
 };
 
 bool ShouldUpdateHeader(const std::string::const_iterator& name_begin,
                         const std::string::const_iterator& name_end) {
   for (size_t i = 0; i < arraysize(kNonUpdatedHeaders); ++i) {
     if (LowerCaseEqualsASCII(name_begin, name_end, kNonUpdatedHeaders[i]))
+      return false;
+  }
+  for (size_t i = 0; i < arraysize(kNonUpdatedHeaderPrefixes); ++i) {
+    if (StartsWithASCII(std::string(name_begin, name_end),
+                        kNonUpdatedHeaderPrefixes[i], false))
       return false;
   }
   return true;
@@ -107,6 +122,8 @@ void CheckDoesNotHaveEmbededNulls(const std::string& str) {
 }
 
 }  // namespace
+
+const char HttpResponseHeaders::kContentRange[] = "Content-Range";
 
 struct HttpResponseHeaders::ParsedHeader {
   // A header "continuation" contains only a subsequent value for the
@@ -357,6 +374,32 @@ void HttpResponseHeaders::ReplaceStatusLine(const std::string& new_status) {
   MergeWithHeaders(new_raw_headers, empty_to_remove);
 }
 
+void HttpResponseHeaders::UpdateWithNewRange(
+    const HttpByteRange& byte_range,
+    int64 resource_size,
+    bool replace_status_line) {
+  DCHECK(byte_range.IsValid());
+  DCHECK(byte_range.HasFirstBytePosition());
+  DCHECK(byte_range.HasLastBytePosition());
+
+  const char kLengthHeader[] = "Content-Length";
+  const char kRangeHeader[] = "Content-Range";
+
+  RemoveHeader(kLengthHeader);
+  RemoveHeader(kRangeHeader);
+
+  int64 start = byte_range.first_byte_position();
+  int64 end = byte_range.last_byte_position();
+  int64 range_len = end - start + 1;
+
+  if (replace_status_line)
+    ReplaceStatusLine("HTTP/1.1 206 Partial Content");
+
+  AddHeader(base::StringPrintf("%s: bytes %" PRId64 "-%" PRId64 "/%" PRId64,
+                               kRangeHeader, start, end, resource_size));
+  AddHeader(base::StringPrintf("%s: %" PRId64, kLengthHeader, range_len));
+}
+
 void HttpResponseHeaders::Parse(const std::string& raw_input) {
   raw_headers_.reserve(raw_input.size());
 
@@ -531,7 +574,8 @@ bool HttpResponseHeaders::EnumerateHeaderLines(void** iter,
   return true;
 }
 
-bool HttpResponseHeaders::EnumerateHeader(void** iter, const std::string& name,
+bool HttpResponseHeaders::EnumerateHeader(void** iter,
+                                          const base::StringPiece& name,
                                           std::string* value) const {
   size_t i;
   if (!iter || !*iter) {
@@ -556,8 +600,8 @@ bool HttpResponseHeaders::EnumerateHeader(void** iter, const std::string& name,
   return true;
 }
 
-bool HttpResponseHeaders::HasHeaderValue(const std::string& name,
-                                         const std::string& value) const {
+bool HttpResponseHeaders::HasHeaderValue(const base::StringPiece& name,
+                                         const base::StringPiece& value) const {
   // The value has to be an exact match.  This is important since
   // 'cache-control: no-cache' != 'cache-control: no-cache="foo"'
   void* iter = NULL;
@@ -571,7 +615,7 @@ bool HttpResponseHeaders::HasHeaderValue(const std::string& name,
   return false;
 }
 
-bool HttpResponseHeaders::HasHeader(const std::string& name) const {
+bool HttpResponseHeaders::HasHeader(const base::StringPiece& name) const {
   return FindHeader(0, name) != std::string::npos;
 }
 
@@ -699,7 +743,7 @@ void HttpResponseHeaders::ParseStatusLine(
 }
 
 size_t HttpResponseHeaders::FindHeader(size_t from,
-                                       const std::string& search) const {
+                                       const base::StringPiece& search) const {
   for (size_t i = from; i < parsed_.size(); ++i) {
     if (parsed_[i].is_continuation())
       continue;
@@ -748,45 +792,49 @@ void HttpResponseHeaders::AddNonCacheableHeaders(HeaderSet* result) const {
   // Add server specified transients.  Any 'cache-control: no-cache="foo,bar"'
   // headers present in the response specify additional headers that we should
   // not store in the cache.
-  const std::string kCacheControl = "cache-control";
-  const std::string kPrefix = "no-cache=\"";
+  const char kCacheControl[] = "cache-control";
+  const char kPrefix[] = "no-cache=\"";
+  const size_t kPrefixLen = sizeof(kPrefix) - 1;
+
   std::string value;
   void* iter = NULL;
   while (EnumerateHeader(&iter, kCacheControl, &value)) {
-    if (value.size() > kPrefix.size() &&
-        value.compare(0, kPrefix.size(), kPrefix) == 0) {
-      // if it doesn't end with a quote, then treat as malformed
-      if (value[value.size()-1] != '\"')
-        continue;
+    // If the value is smaller than the prefix and a terminal quote, skip
+    // it.
+    if (value.size() <= kPrefixLen ||
+        value.compare(0, kPrefixLen, kPrefix) != 0) {
+      continue;
+    }
+    // if it doesn't end with a quote, then treat as malformed
+    if (value[value.size()-1] != '\"')
+      continue;
 
-      // trim off leading and trailing bits
-      size_t len = value.size() - kPrefix.size() - 1;
-      TrimString(value.substr(kPrefix.size(), len), HTTP_LWS, &value);
-
-      size_t begin_pos = 0;
-      for (;;) {
-        // find the end of this header name
-        size_t comma_pos = value.find(',', begin_pos);
-        if (comma_pos == std::string::npos)
-          comma_pos = value.size();
-        size_t end = comma_pos;
-        while (end > begin_pos && strchr(HTTP_LWS, value[end - 1]))
-          end--;
-
-        // assuming the header is not emtpy, lowercase and insert into set
-        if (end > begin_pos) {
-          std::string name = value.substr(begin_pos, end - begin_pos);
-          StringToLowerASCII(&name);
-          result->insert(name);
-        }
-
-        // repeat
-        begin_pos = comma_pos + 1;
-        while (begin_pos < value.size() && strchr(HTTP_LWS, value[begin_pos]))
-          begin_pos++;
-        if (begin_pos >= value.size())
-          break;
+    // process the value as a comma-separated list of items. Each
+    // item can be wrapped by linear white space.
+    std::string::const_iterator item = value.begin() + kPrefixLen;
+    std::string::const_iterator end = value.end() - 1;
+    while (item != end) {
+      // Find the comma to compute the length of the current item,
+      // and the position of the next one.
+      std::string::const_iterator item_next = std::find(item, end, ',');
+      std::string::const_iterator item_end = end;
+      if (item_next != end) {
+        // Skip over comma for next position.
+        item_end = item_next;
+        item_next++;
       }
+      // trim off leading and trailing whitespace in this item.
+      HttpUtil::TrimLWS(&item, &item_end);
+
+      // assuming the header is not empty, lowercase and insert into set
+      if (item_end > item) {
+        std::string name(&*item, item_end - item);
+        StringToLowerASCII(&name);
+        result->insert(name);
+      }
+
+      // Continue to next item.
+      item = item_next;
     }
   }
 }
@@ -807,7 +855,7 @@ void HttpResponseHeaders::AddChallengeHeaders(HeaderSet* result) {
 }
 
 void HttpResponseHeaders::AddHopContentRangeHeaders(HeaderSet* result) {
-  result->insert("content-range");
+  result->insert(kContentRange);
 }
 
 void HttpResponseHeaders::AddSecurityStateHeaders(HeaderSet* result) {
@@ -874,7 +922,8 @@ bool HttpResponseHeaders::IsRedirectResponseCode(int response_code) {
   return (response_code == 301 ||
           response_code == 302 ||
           response_code == 303 ||
-          response_code == 307);
+          response_code == 307 ||
+          response_code == 308);
 }
 
 // From RFC 2616 section 13.2.4:
@@ -973,6 +1022,9 @@ TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
   //   time, if, based solely on the origin server's Expires or max-age value,
   //   the cached response is stale.)
   //
+  // https://datatracker.ietf.org/doc/draft-reschke-http-status-308/ is an
+  // experimental RFC that adds 308 permanent redirect as well, for which "any
+  // future references ... SHOULD use one of the returned URIs."
   if ((response_code_ == 200 || response_code_ == 203 ||
        response_code_ == 206) &&
       !HasHeaderValue("cache-control", "must-revalidate")) {
@@ -986,8 +1038,10 @@ TimeDelta HttpResponseHeaders::GetFreshnessLifetime(
   }
 
   // These responses are implicitly fresh (unless otherwise overruled):
-  if (response_code_ == 300 || response_code_ == 301 || response_code_ == 410)
-    return TimeDelta::FromMicroseconds(kint64max);
+  if (response_code_ == 300 || response_code_ == 301 || response_code_ == 308 ||
+      response_code_ == 410) {
+    return TimeDelta::Max();
+  }
 
   return TimeDelta();  // not fresh
 }
@@ -1187,7 +1241,7 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
   void* iter = NULL;
   std::string content_range_spec;
   *first_byte_position = *last_byte_position = *instance_length = -1;
-  if (!EnumerateHeader(&iter, "content-range", &content_range_spec))
+  if (!EnumerateHeader(&iter, kContentRange, &content_range_spec))
     return false;
 
   // If the header value is empty, we have an invalid header.
@@ -1287,19 +1341,19 @@ bool HttpResponseHeaders::GetContentRange(int64* first_byte_position,
   return true;
 }
 
-Value* HttpResponseHeaders::NetLogCallback(
-    NetLog::LogLevel /* log_level */) const {
-  DictionaryValue* dict = new DictionaryValue();
-  ListValue* headers = new ListValue();
-  headers->Append(new StringValue(GetStatusLine()));
+base::Value* HttpResponseHeaders::NetLogCallback(
+    NetLog::LogLevel log_level) const {
+  base::DictionaryValue* dict = new base::DictionaryValue();
+  base::ListValue* headers = new base::ListValue();
+  headers->Append(new base::StringValue(GetStatusLine()));
   void* iterator = NULL;
   std::string name;
   std::string value;
   while (EnumerateHeaderLines(&iterator, &name, &value)) {
+    std::string log_value = ElideHeaderValueForNetLog(log_level, name, value);
     headers->Append(
-      new StringValue(base::StringPrintf("%s: %s",
-                                         name.c_str(),
-                                         value.c_str())));
+      new base::StringValue(
+          base::StringPrintf("%s: %s", name.c_str(), log_value.c_str())));
   }
   dict->Set("headers", headers);
   return dict;
@@ -1341,5 +1395,127 @@ bool HttpResponseHeaders::IsChunkEncoded() const {
   return GetHttpVersion() >= HttpVersion(1, 1) &&
       HasHeaderValue("Transfer-Encoding", "chunked");
 }
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+bool HttpResponseHeaders::GetDataReductionProxyBypassDuration(
+    const std::string& action_prefix,
+    base::TimeDelta* duration) const {
+  void* iter = NULL;
+  std::string value;
+  std::string name = "chrome-proxy";
+
+  while (EnumerateHeader(&iter, name, &value)) {
+    if (value.size() > action_prefix.size()) {
+      if (LowerCaseEqualsASCII(value.begin(),
+                               value.begin() + action_prefix.size(),
+                               action_prefix.c_str())) {
+        int64 seconds;
+        if (!base::StringToInt64(
+                StringPiece(value.begin() + action_prefix.size(), value.end()),
+                &seconds) || seconds < 0) {
+          continue;  // In case there is a well formed instruction.
+        }
+        *duration = TimeDelta::FromSeconds(seconds);
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+bool HttpResponseHeaders::GetDataReductionProxyInfo(
+    DataReductionProxyInfo* proxy_info) const {
+  DCHECK(proxy_info);
+  proxy_info->bypass_all = false;
+  proxy_info->bypass_duration = base::TimeDelta();
+  // Support header of the form Chrome-Proxy: bypass|block=<duration>, where
+  // <duration> is the number of seconds to wait before retrying
+  // the proxy. If the duration is 0, then the default proxy retry delay
+  // (specified in |ProxyList::UpdateRetryInfoOnFallback|) will be used.
+  // 'bypass' instructs Chrome to bypass the currently connected data reduction
+  // proxy, whereas 'block' instructs Chrome to bypass all available data
+  // reduction proxies.
+
+  // 'block' takes precedence over 'bypass', so look for it first.
+  // TODO(bengr): Reduce checks for 'block' and 'bypass' to a single loop.
+  if (GetDataReductionProxyBypassDuration(
+      "block=", &proxy_info->bypass_duration)) {
+    proxy_info->bypass_all = true;
+    return true;
+  }
+
+  // Next, look for 'bypass'.
+  if (GetDataReductionProxyBypassDuration(
+      "bypass=", &proxy_info->bypass_duration)) {
+    return true;
+  }
+  return false;
+}
+#endif  // SPDY_PROXY_AUTH_ORIGIN
+
+bool HttpResponseHeaders::IsDataReductionProxyResponse() const {
+  const size_t kVersionSize = 4;
+  const char kDataReductionProxyViaValue[] = "Chrome-Compression-Proxy";
+  size_t value_len = strlen(kDataReductionProxyViaValue);
+  void* iter = NULL;
+  std::string value;
+
+  // Case-sensitive comparison of |value|. Assumes the received protocol and the
+  // space following it are always |kVersionSize| characters. E.g.,
+  // 'Via: 1.1 Chrome-Compression-Proxy'
+  while (EnumerateHeader(&iter, "via", &value)) {
+    if (value.size() >= kVersionSize + value_len &&
+        !value.compare(kVersionSize, value_len, kDataReductionProxyViaValue))
+      return true;
+  }
+
+  // TODO(bengr): Remove deprecated header value.
+  const char kDeprecatedDataReductionProxyViaValue[] =
+      "1.1 Chrome Compression Proxy";
+  iter = NULL;
+  while (EnumerateHeader(&iter, "via", &value))
+    if (value == kDeprecatedDataReductionProxyViaValue)
+      return true;
+
+  return false;
+}
+
+#if defined(SPDY_PROXY_AUTH_ORIGIN)
+ProxyService::DataReductionProxyBypassEventType
+HttpResponseHeaders::GetDataReductionProxyBypassEventType(
+    DataReductionProxyInfo* data_reduction_proxy_info) const {
+  DCHECK(data_reduction_proxy_info);
+  if (GetDataReductionProxyInfo(data_reduction_proxy_info)) {
+    // A chrome-proxy response header is only present in a 502. For proper
+    // reporting, this check must come before the 5xx checks below.
+    if (data_reduction_proxy_info->bypass_duration < TimeDelta::FromMinutes(30))
+      return ProxyService::SHORT_BYPASS;
+    return ProxyService::LONG_BYPASS;
+  }
+  if (response_code() == HTTP_INTERNAL_SERVER_ERROR ||
+      response_code() == HTTP_BAD_GATEWAY ||
+      response_code() == HTTP_SERVICE_UNAVAILABLE) {
+    // Fall back if a 500, 502 or 503 is returned.
+    return ProxyService::INTERNAL_SERVER_ERROR_BYPASS;
+  }
+  if (!IsDataReductionProxyResponse() &&
+      (response_code() != HTTP_NOT_MODIFIED)) {
+    // A Via header might not be present in a 304. Since the goal of a 304
+    // response is to minimize information transfer, a sender in general
+    // should not generate representation metadata other than Cache-Control,
+    // Content-Location, Date, ETag, Expires, and Vary.
+
+    // The proxy Via header might also not be present in a 4xx response.
+    // Separate this case from other responses that are missing the header.
+    if (response_code() >= HTTP_BAD_REQUEST &&
+        response_code() < HTTP_INTERNAL_SERVER_ERROR) {
+      return ProxyService::PROXY_4XX_BYPASS;
+    }
+    return ProxyService::MISSING_VIA_HEADER;
+  }
+  // There is no bypass event.
+  return ProxyService::BYPASS_EVENT_TYPE_MAX;
+}
+#endif  // defined(SPDY_PROXY_AUTH_ORIGIN)
 
 }  // namespace net

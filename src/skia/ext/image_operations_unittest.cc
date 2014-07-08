@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include <algorithm>
+#include <cmath>
 #include <iomanip>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "skia/ext/image_operations.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -201,9 +202,9 @@ void SaveBitmapToPNG(const SkBitmap& bmp, const char* path) {
     FAIL() << "Failed to encode image";
   }
 
-  const FilePath fpath(path);
+  const base::FilePath fpath(path);
   const int num_written =
-      file_util::WriteFile(fpath, reinterpret_cast<const char*>(&png[0]),
+      base::WriteFile(fpath, reinterpret_cast<const char*>(&png[0]),
                            png.size());
   if (num_written != static_cast<int>(png.size())) {
     FAIL() << "Failed to write dest \"" << path << '"';
@@ -460,6 +461,17 @@ TEST(ImageOperations, HalveSubset) {
   }
 }
 
+TEST(ImageOperations, InvalidParams) {
+  // Make our source bitmap.
+  SkBitmap src;
+  src.setConfig(SkBitmap::kA8_Config, 16, 34);
+  src.allocPixels();
+
+  // Scale it, don't die.
+  SkBitmap full_results = skia::ImageOperations::Resize(
+      src, skia::ImageOperations::RESIZE_BOX, 10, 20);
+}
+
 // Resamples an image to the same image, it should give the same result.
 TEST(ImageOperations, ResampleToSameHamming1) {
   CheckResampleToSame(skia::ImageOperations::RESIZE_HAMMING1);
@@ -630,5 +642,90 @@ TEST(ImageOperations, CompareLanczosMethods) {
     SaveBitmapToPNG(dest_l2, "/tmp/CompareLanczosMethods_lanczos2.png");
     SaveBitmapToPNG(dest_l3, "/tmp/CompareLanczosMethods_lanczos3.png");
 #endif  // #if DEBUG_BITMAP_GENERATION
+  }
+}
+
+#ifndef M_PI
+// No M_PI in math.h on windows? No problem.
+#define M_PI 3.14159265358979323846
+#endif
+
+static double sinc(double x) {
+  if (x == 0.0) return 1.0;
+  x *= M_PI;
+  return sin(x) / x;
+}
+
+static double lanczos3(double offset) {
+  if (fabs(offset) >= 3) return 0.0;
+  return sinc(offset) * sinc(offset / 3.0);
+}
+
+TEST(ImageOperations, ScaleUp) {
+  const int src_w = 3;
+  const int src_h = 3;
+  const int dst_w = 9;
+  const int dst_h = 9;
+  SkBitmap src;
+  src.setConfig(SkBitmap::kARGB_8888_Config, src_w, src_h);
+  src.allocPixels();
+
+  for (int src_y = 0; src_y < src_h; ++src_y) {
+    for (int src_x = 0; src_x < src_w; ++src_x) {
+      *src.getAddr32(src_x, src_y) = SkColorSetARGBInline(255,
+                                                          10 + src_x * 100,
+                                                          10 + src_y * 100,
+                                                          0);
+    }
+  }
+
+  SkBitmap dst = skia::ImageOperations::Resize(
+      src,
+      skia::ImageOperations::RESIZE_LANCZOS3,
+      dst_w, dst_h);
+  SkAutoLockPixels dst_lock(dst);
+  for (int dst_y = 0; dst_y < dst_h; ++dst_y) {
+    for (int dst_x = 0; dst_x < dst_w; ++dst_x) {
+      float dst_x_in_src = (dst_x + 0.5) * src_w / dst_w;
+      float dst_y_in_src = (dst_y + 0.5) * src_h / dst_h;
+      float a = 0.0f;
+      float r = 0.0f;
+      float g = 0.0f;
+      float b = 0.0f;
+      float sum = 0.0f;
+      for (int src_y = 0; src_y < src_h; ++src_y) {
+        for (int src_x = 0; src_x < src_w; ++src_x) {
+          double coeff =
+              lanczos3(src_x + 0.5 - dst_x_in_src) *
+              lanczos3(src_y + 0.5 - dst_y_in_src);
+          sum += coeff;
+          SkColor tmp = *src.getAddr32(src_x, src_y);
+          a += coeff * SkColorGetA(tmp);
+          r += coeff * SkColorGetR(tmp);
+          g += coeff * SkColorGetG(tmp);
+          b += coeff * SkColorGetB(tmp);
+        }
+      }
+      a /= sum;
+      r /= sum;
+      g /= sum;
+      b /= sum;
+      if (a < 0.0f) a = 0.0f;
+      if (r < 0.0f) r = 0.0f;
+      if (g < 0.0f) g = 0.0f;
+      if (b < 0.0f) b = 0.0f;
+      if (a > 255.0f) a = 255.0f;
+      if (r > 255.0f) r = 255.0f;
+      if (g > 255.0f) g = 255.0f;
+      if (b > 255.0f) b = 255.0f;
+      SkColor dst_color = *dst.getAddr32(dst_x, dst_y);
+      EXPECT_LE(fabs(SkColorGetA(dst_color) - a), 1.5f);
+      EXPECT_LE(fabs(SkColorGetR(dst_color) - r), 1.5f);
+      EXPECT_LE(fabs(SkColorGetG(dst_color) - g), 1.5f);
+      EXPECT_LE(fabs(SkColorGetB(dst_color) - b), 1.5f);
+      if (HasFailure()) {
+        return;
+      }
+    }
   }
 }

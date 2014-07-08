@@ -5,8 +5,8 @@
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "googleurl/src/gurl.h"
-#include "net/test/test_server.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "url/gurl.h"
 
 // Tests that we throw errors when you try using extension APIs that aren't
 // supported in content scripts.
@@ -17,13 +17,13 @@
 #define MAYBE_Stubs Stubs
 #endif
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_Stubs) {
-  ASSERT_TRUE(test_server()->Start());
+  ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
 
   ASSERT_TRUE(RunExtensionTest("stubs")) << message_;
 
   // Navigate to a simple http:// page, which should get the content script
   // injected and run the rest of the test.
-  GURL url(test_server()->GetURL("file/extensions/test_file.html"));
+  GURL url(embedded_test_server()->GetURL("/extensions/test_file.html"));
   ui_test_utils::NavigateToURL(browser(), url);
 
   ResultCatcher catcher;

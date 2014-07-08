@@ -6,7 +6,6 @@
 
 #include "base/logging.h"
 #include "content/public/browser/browser_thread.h"
-#include "net/base/file_stream.h"
 
 namespace content {
 
@@ -15,13 +14,13 @@ namespace content {
 //               Unfortunately, as it is, constructors of SaveFile don't always
 //               have access to the SavePackage at this point.
 SaveFile::SaveFile(const SaveFileCreateInfo* info, bool calculate_hash)
-    : file_(FilePath(),
+    : file_(base::FilePath(),
             info->url,
             GURL(),
             0,
             calculate_hash,
-            "",
-            scoped_ptr<net::FileStream>(),
+            std::string(),
+            base::File(),
             net::BoundNetLog()),
       info_(info) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
@@ -35,7 +34,7 @@ SaveFile::~SaveFile() {
 }
 
 DownloadInterruptReason SaveFile::Initialize() {
-  return file_.Initialize(FilePath());
+  return file_.Initialize(base::FilePath());
 }
 
 DownloadInterruptReason SaveFile::AppendDataToFile(const char* data,
@@ -43,7 +42,7 @@ DownloadInterruptReason SaveFile::AppendDataToFile(const char* data,
   return file_.AppendDataToFile(data, data_len);
 }
 
-DownloadInterruptReason SaveFile::Rename(const FilePath& full_path) {
+DownloadInterruptReason SaveFile::Rename(const base::FilePath& full_path) {
   return file_.Rename(full_path);
 }
 
@@ -60,10 +59,12 @@ void SaveFile::Finish() {
 }
 
 void SaveFile::AnnotateWithSourceInformation() {
+  // TODO(gbillock): If this method is called, it should set the
+  // file_.SetClientGuid() method first.
   file_.AnnotateWithSourceInformation();
 }
 
-FilePath SaveFile::FullPath() const {
+base::FilePath SaveFile::FullPath() const {
   return file_.full_path();
 }
 

@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkColor.h"
 #include "ui/base/layout.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 #if defined(OS_MACOSX)
 #ifdef __OBJC__
@@ -20,9 +20,6 @@ class NSColor;
 class NSGradient;
 class NSImage;
 #endif  // __OBJC__
-#elif !defined(OS_WIN)
-typedef struct _GdkColor GdkColor;
-typedef struct _GdkPixbuf GdkPixbuf;
 #endif  // OS_*
 
 class SkBitmap;
@@ -46,9 +43,13 @@ namespace ui {
 //
 ////////////////////////////////////////////////////////////////////////////////
 
-class UI_EXPORT ThemeProvider {
+class UI_BASE_EXPORT ThemeProvider {
  public:
   virtual ~ThemeProvider();
+
+  // Whether we're using the native theme (which may or may not be the
+  // same as the default theme).
+  virtual bool UsingNativeTheme() const = 0;
 
   // Get the image specified by |id|. An implementation of ThemeProvider should
   // have its own source of ids (e.g. an enum, or external resource bundle).
@@ -59,7 +60,7 @@ class UI_EXPORT ThemeProvider {
 
   // Get the property (e.g. an alignment expressed in an enum, or a width or
   // height) specified by |id|.
-  virtual bool GetDisplayProperty(int id, int* result) const = 0;
+  virtual int GetDisplayProperty(int id) const = 0;
 
   // Whether we should use the native system frame (typically Aero glass) or
   // a custom frame.
@@ -78,44 +79,20 @@ class UI_EXPORT ThemeProvider {
 
 #if defined(OS_MACOSX) && !defined(TOOLKIT_VIEWS)
   // Gets the NSImage with the specified |id|.
-  //
-  // The bitmap is not assumed to exist. If a theme does not provide an image,
-  // if |allow_default| is true, then the default image will be returned, else
-  // this function will return nil.
-  virtual NSImage* GetNSImageNamed(int id, bool allow_default) const = 0;
+  virtual NSImage* GetNSImageNamed(int id) const = 0;
 
   // Gets the NSImage that GetNSImageNamed (above) would return, but returns it
   // as a pattern color.
-  virtual NSColor* GetNSImageColorNamed(int id, bool allow_default) const = 0;
+  virtual NSColor* GetNSImageColorNamed(int id) const = 0;
 
   // Gets the NSColor with the specified |id|.
-  //
-  // The color is not assumed to exist. If a theme does not provide an color, if
-  // |allow_default| is true, then the default color will be returned, else this
-  // function will return nil.
-  virtual NSColor* GetNSColor(int id, bool allow_default) const = 0;
+  virtual NSColor* GetNSColor(int id) const = 0;
 
   // Gets the NSColor for tinting with the specified |id|.
-  //
-  // The tint is not assumed to exist. If a theme does not provide a tint with
-  // that id, if |allow_default| is true, then the default tint will be
-  // returned, else this function will return nil.
-  virtual NSColor* GetNSColorTint(int id, bool allow_default) const = 0;
+  virtual NSColor* GetNSColorTint(int id) const = 0;
 
   // Gets the NSGradient with the specified |id|.
   virtual NSGradient* GetNSGradient(int id) const = 0;
-#elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
-  // Gets the GdkPixbuf with the specified |id|.  Returns a pointer to a shared
-  // instance of the GdkPixbuf.  This shared GdkPixbuf is owned by the theme
-  // provider and should not be freed.
-  //
-  // The bitmap is assumed to exist. This function will log in release, and
-  // assert in debug mode if it does not. On failure, this will return a
-  // pointer to a shared empty placeholder bitmap so it will be visible what
-  // is missing.
-
-  // As above, but flips it in RTL locales.
-  virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const = 0;
 #endif
 };
 

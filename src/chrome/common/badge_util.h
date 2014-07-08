@@ -7,8 +7,8 @@
 
 #include <string>
 
-#include "base/string16.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/strings/string16.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 
 class SkPaint;
@@ -31,13 +31,13 @@ SkPaint* GetBadgeTextPaintSingleton();
 // rendered instead (or nothing, if |fallback| is empty).
 SkBitmap DrawBadgeIconOverlay(const SkBitmap& icon,
                               float font_size_in_pixels,
-                              const string16& text,
-                              const string16& fallback);
+                              const base::string16& text,
+                              const base::string16& fallback);
 
 // Get badge rect
 gfx::Rect BadgeRect(const gfx::Rect& bounds,
-						  		  const std::string& text,
-							 			int icon_width);
+                    const std::string& text,
+                    int icon_width);
 
 // Paints badge with specified parameters to |canvas|.
 void PaintBadge(gfx::Canvas* canvas,
@@ -46,8 +46,8 @@ void PaintBadge(gfx::Canvas* canvas,
                 const SkColor& text_color_in,
                 const SkColor& background_color_in,
                 int icon_width,
-                extensions::Extension::ActionInfo::Type action_type);
+                extensions::ActionInfo::Type action_type);
 
-}  // namespace badge_util;
+}  // namespace badge_util
 
 #endif  // CHROME_COMMON_BADGE_UTIL_H_

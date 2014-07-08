@@ -8,16 +8,17 @@
 #include <set>
 #include <string>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/history/in_memory_url_index_types.h"
+#include "chrome/browser/common/cancelable_request.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/in_memory_url_index_cache.pb.h"
+#include "chrome/browser/history/in_memory_url_index_types.h"
 #include "chrome/browser/history/scored_history_match.h"
-#include "content/public/browser/notification_details.h"
 
-class HistoryQuickProviderTest;
 class BookmarkService;
+class HistoryQuickProviderTest;
 
 namespace in_memory_url_index {
 class InMemoryURLIndexCacheItem;
@@ -32,7 +33,7 @@ class InMemoryURLIndex;
 class RefCountedBool;
 
 // Current version of the cache file.
-static const int kCurrentCacheFileVersion = 1;
+static const int kCurrentCacheFileVersion = 4;
 
 // A structure private to InMemoryURLIndex describing its internal data and
 // providing for restoring, rebuilding and updating that internal data. As
@@ -46,23 +47,28 @@ class URLIndexPrivateData
  public:
   URLIndexPrivateData();
 
-  // Given a string16 in |term_string|, scans the history index and returns a
-  // vector with all scored, matching history items. The |term_string| is
-  // broken down into individual terms (words), each of which must occur in the
-  // candidate history item's URL or page title for the item to qualify;
-  // however, the terms do not necessarily have to be adjacent. Once we have
-  // a set of candidates, they are filtered to insure that all |term_string|
-  // terms, as separated by whitespace, occur within the candidate's URL
-  // or page title. Scores are then calculated on no more than
-  // |kItemsToScoreLimit| candidates, as the scoring of such a large number of
-  // candidates may cause perceptible typing response delays in the omnibox.
-  // This is likely to occur for short omnibox terms such as 'h' and 'w' which
+  // Given a base::string16 in |term_string|, scans the history index and
+  // returns a vector with all scored, matching history items. The
+  // |term_string| is broken down into individual terms (words), each of which
+  // must occur in the candidate history item's URL or page title for the item
+  // to qualify; however, the terms do not necessarily have to be adjacent. We
+  // also allow breaking |term_string| at |cursor_position| (if
+  // set). Once we have a set of candidates, they are filtered to ensure
+  // that all |term_string| terms, as separated by whitespace and the
+  // cursor (if set), occur within the candidate's URL or page title.
+  // Scores are then calculated on no more than |kItemsToScoreLimit|
+  // candidates, as the scoring of such a large number of candidates may
+  // cause perceptible typing response delays in the omnibox. This is
+  // likely to occur for short omnibox terms such as 'h' and 'w' which
   // will be found in nearly all history candidates. Results are sorted by
   // descending score. The full results set (i.e. beyond the
   // |kItemsToScoreLimit| limit) will be retained and used for subsequent calls
   // to this function. |bookmark_service| is used to boost a result's score if
-  // its URL is referenced by one or more of the user's bookmarks.
-  ScoredHistoryMatches HistoryItemsForTerms(const string16& term_string,
+  // its URL is referenced by one or more of the user's bookmarks.  |languages|
+  // is used to help parse/format the URLs in the history index.
+  ScoredHistoryMatches HistoryItemsForTerms(base::string16 term_string,
+                                            size_t cursor_position,
+                                            const std::string& languages,
                                             BookmarkService* bookmark_service);
 
   // Adds the history item in |row| to the index if it does not already already
@@ -72,9 +78,25 @@ class URLIndexPrivateData
   // if the index was actually updated. |languages| gives a list of language
   // encodings by which the URLs and page titles are broken down into words and
   // characters. |scheme_whitelist| is used to filter non-qualifying schemes.
-  bool UpdateURL(const URLRow& row,
+  // |history_service| is used to schedule an update to the recent visits
+  // component of this URL's entry in the index.
+  bool UpdateURL(HistoryService* history_service,
+                 const URLRow& row,
                  const std::string& languages,
                  const std::set<std::string>& scheme_whitelist);
+
+  // Updates the entry for |url_id| in the index, replacing its
+  // recent visits information with |recent_visits|.  If |url_id|
+  // is not in the index, does nothing.
+  void UpdateRecentVisits(URLID url_id,
+                          const VisitVector& recent_visits);
+
+  // Using |history_service| schedules an update (using the historyDB
+  // thread) for the recent visits information for |url_id|.  Unless
+  // something unexpectedly goes wrong, UdpateRecentVisits() should
+  // eventually be called from a callback.
+  void ScheduleUpdateRecentVisits(HistoryService* history_service,
+                                  URLID url_id);
 
   // Deletes index data for the history item with the given |url|.
   // The item may not have actually been indexed, which is the case if it did
@@ -82,12 +104,13 @@ class URLIndexPrivateData
   // was actually updated.
   bool DeleteURL(const GURL& url);
 
-  // Creates a new URLIndexPrivateData object, populates it from the contents
-  // of the cache file stored in |file_path|, and assigns it to |private_data|.
-  // |languages| will be used to break URLs and page titles into words.
-  static void RestoreFromFileTask(
-      const FilePath& file_path,
-      scoped_refptr<URLIndexPrivateData> private_data,
+  // Constructs a new object by restoring its contents from the cache file
+  // at |path|. Returns the new URLIndexPrivateData which on success will
+  // contain the restored data but upon failure will be empty.  |languages|
+  // is used to break URLs and page titles into words.  This function
+  // should be run on the the file thread.
+  static scoped_refptr<URLIndexPrivateData> RestoreFromFile(
+      const base::FilePath& path,
       const std::string& languages);
 
   // Constructs a new object by rebuilding its contents from the history
@@ -103,7 +126,11 @@ class URLIndexPrivateData
   // Writes |private_data| as a cache file to |file_path| and returns success.
   static bool WritePrivateDataToCacheFileTask(
       scoped_refptr<URLIndexPrivateData> private_data,
-      const FilePath& file_path);
+      const base::FilePath& file_path);
+
+  // Stops all pending updates to recent visits fields.  This should be
+  // called during shutdown.
+  void CancelPendingUpdates();
 
   // Creates a copy of ourself.
   scoped_refptr<URLIndexPrivateData> Duplicate() const;
@@ -124,6 +151,8 @@ class URLIndexPrivateData
   friend class InMemoryURLIndexTest;
   FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, CacheSaveRestore);
   FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, HugeResultSet);
+  FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, ReadVisitsFromHistory);
+  FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, RebuildFromHistoryIfCacheOld);
   FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, Scoring);
   FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, TitleSearch);
   FRIEND_TEST_ALL_PREFIXES(InMemoryURLIndexTest, TypedCharacterCaching);
@@ -159,15 +188,16 @@ class URLIndexPrivateData
     HistoryIDSet history_id_set_;
     bool used_;  // True if this item has been used for the current term search.
   };
-  typedef std::map<string16, SearchTermCacheItem> SearchTermCacheMap;
+  typedef std::map<base::string16, SearchTermCacheItem> SearchTermCacheMap;
 
   // A helper class which performs the final filter on each candidate
   // history URL match, inserting accepted matches into |scored_matches_|.
   class AddHistoryMatch : public std::unary_function<HistoryID, void> {
    public:
     AddHistoryMatch(const URLIndexPrivateData& private_data,
+                    const std::string& languages,
                     BookmarkService* bookmark_service,
-                    const string16& lower_string,
+                    const base::string16& lower_string,
                     const String16Vector& lower_terms,
                     const base::Time now);
     ~AddHistoryMatch();
@@ -178,10 +208,12 @@ class URLIndexPrivateData
 
    private:
     const URLIndexPrivateData& private_data_;
+    const std::string& languages_;
     BookmarkService* bookmark_service_;
     ScoredHistoryMatches scored_matches_;
-    const string16& lower_string_;
+    const base::string16& lower_string_;
     const String16Vector& lower_terms_;
+    WordStarts lower_terms_to_word_starts_offsets_;
     const base::Time now_;
   };
 
@@ -207,7 +239,7 @@ class URLIndexPrivateData
 
   // Helper function to HistoryIDSetFromWords which composes a set of history
   // ids for the given term given in |term|.
-  HistoryIDSet HistoryIDsForTerm(const string16& term);
+  HistoryIDSet HistoryIDsForTerm(const base::string16& term);
 
   // Given a set of Char16s, finds words containing those characters.
   WordIDSet WordIDSetForTermChars(const Char16Set& term_chars);
@@ -215,8 +247,16 @@ class URLIndexPrivateData
   // Indexes one URL history item as described by |row|. Returns true if the
   // row was actually indexed. |languages| gives a list of language encodings by
   // which the URLs and page titles are broken down into words and characters.
-  // |scheme_whitelist| is used to filter non-qualifying schemes.
-  bool IndexRow(const URLRow& row,
+  // |scheme_whitelist| is used to filter non-qualifying schemes.  If
+  // |history_db| is not NULL then this function uses the history database
+  // synchronously to get the URL's recent visits information.  This mode should
+  // only be used on the historyDB thread.  If |history_db| is NULL, then
+  // this function uses |history_service| to schedule a task on the
+  // historyDB thread to fetch and update the recent visits
+  // information.
+  bool IndexRow(HistoryDatabase* history_db,
+                HistoryService* history_service,
+                const URLRow& row,
                 const std::string& languages,
                 const std::set<std::string>& scheme_whitelist);
 
@@ -230,11 +270,11 @@ class URLIndexPrivateData
 
   // Given a single word in |uni_word|, adds a reference for the containing
   // history item identified by |history_id| to the index.
-  void AddWordToIndex(const string16& uni_word, HistoryID history_id);
+  void AddWordToIndex(const base::string16& uni_word, HistoryID history_id);
 
   // Creates a new entry in the word/history map for |word_id| and add
   // |history_id| as the initial element of the word's set.
-  void AddWordHistory(const string16& uni_word, HistoryID history_id);
+  void AddWordHistory(const base::string16& uni_word, HistoryID history_id);
 
   // Updates an existing entry in the word/history index by adding the
   // |history_id| to set for |word_id| in the word_id_history_map_.
@@ -255,7 +295,7 @@ class URLIndexPrivateData
 
   // Caches the index private data and writes the cache file to the profile
   // directory.  Called by WritePrivateDataToCacheFileTask.
-  bool SaveToFile(const FilePath& file_path);
+  bool SaveToFile(const base::FilePath& file_path);
 
   // Encode a data structure into the protobuf |cache|.
   void SavePrivateData(imui::InMemoryURLIndexCacheItem* cache) const;
@@ -265,14 +305,6 @@ class URLIndexPrivateData
   void SaveWordIDHistoryMap(imui::InMemoryURLIndexCacheItem* cache) const;
   void SaveHistoryInfoMap(imui::InMemoryURLIndexCacheItem* cache) const;
   void SaveWordStartsMap(imui::InMemoryURLIndexCacheItem* cache) const;
-
-  // Constructs a new object by restoring its contents from the file at |path|.
-  // Returns the new URLIndexPrivateData which on success will contain the
-  // restored data but upon failure will be empty.  |languages| will be used to
-  // break URLs and page titles into words
-  static scoped_refptr<URLIndexPrivateData> RestoreFromFile(
-      const FilePath& path,
-      const std::string& languages);
 
   // Decode a data structure from the protobuf |cache|. Return false if there
   // is any kind of failure. |languages| will be used to break URLs and page
@@ -294,12 +326,18 @@ class URLIndexPrivateData
   // Cache of search terms.
   SearchTermCacheMap search_term_cache_;
 
+  // Allows canceling pending requests to update recent visits information.
+  CancelableRequestConsumer recent_visits_consumer_;
+
   // Start of data members that are cached -------------------------------------
 
   // The version of the cache file most recently used to restore this instance
   // of the private data. If the private data was rebuilt from the history
   // database this will be 0.
   int restored_cache_version_;
+
+  // The last time the data was rebuilt from the history database.
+  base::Time last_time_rebuilt_from_history_;
 
   // A list of all of indexed words. The index of a word in this list is the
   // ID of the word in the word_map_. It reduces the memory overhead by

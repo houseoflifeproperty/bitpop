@@ -4,7 +4,7 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/test/thread_test_helper.h"
 #include "content/browser/web_contents/web_contents_impl.h"
@@ -13,11 +13,10 @@
 #include "content/public/browser/storage_partition.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/test/browser_test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
-#include "net/test/test_server.h"
-#include "webkit/quota/quota_manager.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
+#include "content/shell/browser/shell.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using quota::QuotaManager;
 
@@ -34,15 +33,17 @@ class FileSystemBrowserTest : public ContentBrowserTest {
     // a #pass or #fail ref.
     Shell* the_browser = incognito ? CreateOffTheRecordBrowser() : shell();
 
-    LOG(INFO) << "Navigating to URL and blocking.";
+    VLOG(0) << "Navigating to URL and blocking.";
     NavigateToURLBlockUntilNavigationsComplete(the_browser, test_url, 2);
-    LOG(INFO) << "Navigation done.";
-    std::string result = the_browser->web_contents()->GetURL().ref();
+    VLOG(0) << "Navigation done.";
+    std::string result =
+        the_browser->web_contents()->GetLastCommittedURL().ref();
     if (result != "pass") {
       std::string js_result;
-      ASSERT_TRUE(ExecuteJavaScriptAndExtractString(
-          the_browser->web_contents()->GetRenderViewHost(), L"",
-          L"window.domAutomationController.send(getLog())", &js_result));
+      ASSERT_TRUE(ExecuteScriptAndExtractString(
+          the_browser->web_contents(),
+          "window.domAutomationController.send(getLog())",
+          &js_result));
       FAIL() << "Failed: " << js_result;
     }
   }
@@ -50,7 +51,7 @@ class FileSystemBrowserTest : public ContentBrowserTest {
 
 class FileSystemBrowserTestWithLowQuota : public FileSystemBrowserTest {
  public:
-  virtual void SetUpOnMainThread() {
+  virtual void SetUpOnMainThread() OVERRIDE {
     const int kInitialQuotaKilobytes = 5000;
     const int kTemporaryStorageQuotaMaxSize =
         kInitialQuotaKilobytes * 1024 * QuotaManager::kPerHostTemporaryPortion;
@@ -71,9 +72,8 @@ class FileSystemBrowserTestWithLowQuota : public FileSystemBrowserTest {
     DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
     qm->SetTemporaryGlobalOverrideQuota(bytes, quota::QuotaCallback());
     // Don't return until the quota has been set.
-    scoped_refptr<base::ThreadTestHelper> helper(
-        new base::ThreadTestHelper(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB)));
+    scoped_refptr<base::ThreadTestHelper> helper(new base::ThreadTestHelper(
+        BrowserThread::GetMessageLoopProxyForThread(BrowserThread::DB).get()));
     ASSERT_TRUE(helper->Run());
   }
 };

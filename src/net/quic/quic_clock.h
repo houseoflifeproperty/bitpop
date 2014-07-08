@@ -21,7 +21,18 @@ class NET_EXPORT_PRIVATE QuicClock {
   virtual ~QuicClock();
 
   // Returns the approximate current time as a QuicTime object.
+  virtual QuicTime ApproximateNow() const;
+
+  // Returns the current time as a QuicTime object.
+  // Note: this use significant resources please use only if needed.
   virtual QuicTime Now() const;
+
+  // WallNow returns the current wall-time - a time that is consistent across
+  // different clocks.
+  virtual QuicWallTime WallNow() const;
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(QuicClock);
 };
 
 }  // namespace net

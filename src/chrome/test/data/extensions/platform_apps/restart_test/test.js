@@ -5,5 +5,3 @@
 chrome.app.runtime.onRestarted.addListener(function (e) {
   chrome.test.sendMessage("onRestarted");
 });
-
-chrome.test.succeed();

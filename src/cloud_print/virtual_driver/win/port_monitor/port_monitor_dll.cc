@@ -17,13 +17,13 @@
 #include "base/file_util.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/process.h"
-#include "base/process_util.h"
-#include "base/string16.h"
+#include "base/process/process.h"
+#include "base/strings/string16.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/windows_version.h"
-#include "cloud_print/virtual_driver/virtual_driver_switches.h"
+#include "chrome/common/chrome_switches.h"
+#include "cloud_print/common/win/cloud_print_utils.h"
 #include "cloud_print/virtual_driver/win/port_monitor/spooler_win.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_consts.h"
 #include "cloud_print/virtual_driver/win/virtual_driver_helpers.h"
@@ -39,12 +39,12 @@ namespace {
 
 // Returns true if Xps support is installed.
 bool XpsIsInstalled() {
-  FilePath xps_path;
+  base::FilePath xps_path;
   if (!SUCCEEDED(GetPrinterDriverDir(&xps_path))) {
     return false;
   }
   xps_path = xps_path.Append(L"mxdwdrv.dll");
-  if (!file_util::PathExists(xps_path)) {
+  if (!base::PathExists(xps_path)) {
     return false;
   }
   return true;
@@ -80,7 +80,7 @@ HRESULT WINAPI DllRegisterServer(void) {
   MONITOR_INFO_2 monitor_info = {0};
   // YUCK!!!  I can either copy the constant, const_cast, or define my own
   // MONITOR_INFO_2 that will take const strings.
-  FilePath dll_path(cloud_print::GetPortMonitorDllName());
+  base::FilePath dll_path(cloud_print::GetPortMonitorDllName());
   monitor_info.pDLLName = const_cast<LPWSTR>(dll_path.value().c_str());
   monitor_info.pName = const_cast<LPWSTR>(dll_path.value().c_str());
   if (AddMonitor(NULL, 2, reinterpret_cast<BYTE*>(&monitor_info))) {
@@ -94,7 +94,7 @@ HRESULT WINAPI DllUnregisterServer(void) {
   if (!cloud_print::CanRegister()) {
     return E_ACCESSDENIED;
   }
-  FilePath dll_path(cloud_print::GetPortMonitorDllName());
+  base::FilePath dll_path(cloud_print::GetPortMonitorDllName());
   if (DeleteMonitor(NULL,
                     NULL,
                     const_cast<LPWSTR>(dll_path.value().c_str()))) {

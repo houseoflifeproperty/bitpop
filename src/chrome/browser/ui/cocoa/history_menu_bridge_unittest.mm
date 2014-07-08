@@ -7,15 +7,17 @@
 
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/common/cancelable_request.h"
 #include "chrome/browser/sessions/persistent_tab_restore_service.h"
-#include "chrome/browser/sessions/session_types_test_helper.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/history_menu_bridge.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/favicon_base/favicon_types.h"
+#include "components/sessions/serialized_navigation_entry_test_helper.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #import "testing/gtest_mac.h"
@@ -36,12 +38,12 @@ class MockBridge : public HistoryMenuBridge {
       : HistoryMenuBridge(profile),
         menu_([[NSMenu alloc] initWithTitle:@"History"]) {}
 
-  virtual NSMenu* HistoryMenu() {
+  virtual NSMenu* HistoryMenu() OVERRIDE {
     return menu_.get();
   }
 
  private:
-  scoped_nsobject<NSMenu> menu_;
+  base::scoped_nsobject<NSMenu> menu_;
 };
 
 class HistoryMenuBridgeTest : public CocoaProfileTest {
@@ -83,7 +85,7 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     return item;
   }
 
-  HistoryMenuBridge::HistoryItem* CreateItem(const string16& title) {
+  HistoryMenuBridge::HistoryItem* CreateItem(const base::string16& title) {
     HistoryMenuBridge::HistoryItem* item =
         new HistoryMenuBridge::HistoryItem();
     item->title = title;
@@ -96,7 +98,8 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     MockTRS::Tab tab;
     tab.current_navigation_index = 0;
     tab.navigations.push_back(
-        SessionTypesTestHelper::CreateNavigation(url, title));
+        sessions::SerializedNavigationEntryTestHelper::CreateNavigation(
+            url, title));
     return tab;
   }
 
@@ -104,9 +107,8 @@ class HistoryMenuBridgeTest : public CocoaProfileTest {
     bridge_->GetFaviconForHistoryItem(item);
   }
 
-  void GotFaviconData(
-      HistoryMenuBridge::HistoryItem* item,
-      const history::FaviconImageResult& image_result) {
+  void GotFaviconData(HistoryMenuBridge::HistoryItem* item,
+                      const favicon_base::FaviconImageResult& image_result) {
     bridge_->GotFaviconData(item, image_result);
   }
 
@@ -172,8 +174,9 @@ TEST_F(HistoryMenuBridgeTest, ClearHistoryMenuEmpty) {
 TEST_F(HistoryMenuBridgeTest, AddItemToMenu) {
   NSMenu* menu = [[[NSMenu alloc] initWithTitle:@"history foo"] autorelease];
 
-  const string16 short_url = ASCIIToUTF16("http://foo/");
-  const string16 long_url = ASCIIToUTF16("http://super-duper-long-url--."
+  const base::string16 short_url = base::ASCIIToUTF16("http://foo/");
+  const base::string16 long_url = base::ASCIIToUTF16(
+      "http://super-duper-long-url--."
       "that.cannot.possibly.fit.even-in-80-columns"
       "or.be.reasonably-displayed-in-a-menu"
       "without.looking-ridiculous.com/"); // 140 chars total
@@ -326,7 +329,7 @@ TEST_F(HistoryMenuBridgeTest, RecentlyClosedTabsAndWindows) {
 TEST_F(HistoryMenuBridgeTest, GetFaviconForHistoryItem) {
   // Create a fake item.
   HistoryMenuBridge::HistoryItem item;
-  item.title = ASCIIToUTF16("Title");
+  item.title = base::ASCIIToUTF16("Title");
   item.url = GURL("http://google.com");
 
   // Request the icon.
@@ -334,7 +337,7 @@ TEST_F(HistoryMenuBridgeTest, GetFaviconForHistoryItem) {
 
   // Make sure the item was modified properly.
   EXPECT_TRUE(item.icon_requested);
-  EXPECT_NE(CancelableTaskTracker::kBadTaskId, item.icon_task_id);
+  EXPECT_NE(base::CancelableTaskTracker::kBadTaskId, item.icon_task_id);
 }
 
 TEST_F(HistoryMenuBridgeTest, GotFaviconData) {
@@ -350,8 +353,8 @@ TEST_F(HistoryMenuBridgeTest, GotFaviconData) {
   GetFaviconForHistoryItem(&item);
 
   // Pretend to be called back.
-  history::FaviconImageResult image_result;
-  image_result.image = gfx::Image(bitmap);
+  favicon_base::FaviconImageResult image_result;
+  image_result.image = gfx::Image::CreateFrom1xBitmap(bitmap);
   GotFaviconData(&item, image_result);
 
   // Make sure the callback works.

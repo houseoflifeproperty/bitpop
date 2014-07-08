@@ -5,7 +5,7 @@
 #ifndef REMOTING_HOST_DESKTOP_SESSION_AGENT_H_
 #define REMOTING_HOST_DESKTOP_SESSION_AGENT_H_
 
-#include <list>
+#include <map>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
@@ -15,11 +15,10 @@
 #include "base/memory/weak_ptr.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_platform_file.h"
-#include "remoting/base/shared_buffer.h"
-#include "remoting/base/shared_buffer_factory.h"
-#include "remoting/host/video_frame_capturer.h"
+#include "remoting/host/client_session_control.h"
 #include "remoting/protocol/clipboard_stub.h"
-#include "third_party/skia/include/core/SkRect.h"
+#include "third_party/webrtc/modules/desktop_capture/desktop_geometry.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace IPC {
 class ChannelProxy;
@@ -28,30 +27,43 @@ class Message;
 
 namespace remoting {
 
+class AudioCapturer;
+class AudioPacket;
 class AutoThreadTaskRunner;
-class EventExecutor;
+class DesktopEnvironment;
+class DesktopEnvironmentFactory;
+class InputInjector;
+class RemoteInputFilter;
+class ScreenControls;
+class ScreenResolution;
+
+namespace protocol {
+class InputEventTracker;
+}  // namespace protocol
 
 // Provides screen/audio capturing and input injection services for
 // the network process.
 class DesktopSessionAgent
     : public base::RefCountedThreadSafe<DesktopSessionAgent>,
       public IPC::Listener,
-      public SharedBufferFactory,
-      public VideoFrameCapturer::Delegate {
+      public webrtc::DesktopCapturer::Callback,
+      public webrtc::ScreenCapturer::MouseShapeObserver,
+      public ClientSessionControl {
  public:
   class Delegate {
    public:
     virtual ~Delegate();
 
+    // Returns an instance of desktop environment factory used.
+    virtual DesktopEnvironmentFactory& desktop_environment_factory() = 0;
+
     // Notifies the delegate that the network-to-desktop channel has been
     // disconnected.
     virtual void OnNetworkProcessDisconnected() = 0;
-
-    // Request the delegate to inject Secure Attention Sequence.
-    virtual void InjectSas() = 0;
   };
 
-  static scoped_refptr<DesktopSessionAgent> Create(
+  DesktopSessionAgent(
+      scoped_refptr<AutoThreadTaskRunner> audio_capture_task_runner,
       scoped_refptr<AutoThreadTaskRunner> caller_task_runner,
       scoped_refptr<AutoThreadTaskRunner> input_task_runner,
       scoped_refptr<AutoThreadTaskRunner> io_task_runner,
@@ -62,19 +74,20 @@ class DesktopSessionAgent
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
 
-  // SharedBufferFactory implementation.
-  virtual scoped_refptr<SharedBuffer> CreateSharedBuffer(uint32 size) OVERRIDE;
-  virtual void ReleaseSharedBuffer(scoped_refptr<SharedBuffer> buffer) OVERRIDE;
+  // webrtc::DesktopCapturer::Callback implementation.
+  virtual webrtc::SharedMemory* CreateSharedMemory(size_t size) OVERRIDE;
+  virtual void OnCaptureCompleted(webrtc::DesktopFrame* frame) OVERRIDE;
 
-  // VideoFrameCapturer::Delegate implementation.
-  virtual void OnCaptureCompleted(
-      scoped_refptr<CaptureData> capture_data) OVERRIDE;
+  // webrtc::ScreenCapturer::MouseShapeObserver implementation.
   virtual void OnCursorShapeChanged(
-      scoped_ptr<protocol::CursorShapeInfo> cursor_shape) OVERRIDE;
+      webrtc::MouseCursorShape* cursor_shape) OVERRIDE;
 
   // Forwards a local clipboard event though the IPC channel to the network
   // process.
   void InjectClipboardEvent(const protocol::ClipboardEvent& event);
+
+  // Forwards an audio packet though the IPC channel to the network process.
+  void ProcessAudioPacket(scoped_ptr<AudioPacket> packet);
 
   // Creates desktop integration components and a connected IPC channel to be
   // used to access them. The client end of the channel is returned in
@@ -86,29 +99,24 @@ class DesktopSessionAgent
   void Stop();
 
  protected:
-  DesktopSessionAgent(
-      scoped_refptr<AutoThreadTaskRunner> caller_task_runner,
-      scoped_refptr<AutoThreadTaskRunner> input_task_runner,
-      scoped_refptr<AutoThreadTaskRunner> io_task_runner,
-      scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner);
-
   friend class base::RefCountedThreadSafe<DesktopSessionAgent>;
+
   virtual ~DesktopSessionAgent();
 
-  // Creates a connected IPC channel to be used to access the screen/audio
-  // recorders and input stubs.
-  virtual bool CreateChannelForNetworkProcess(
-      IPC::PlatformFileForTransit* client_out,
-      scoped_ptr<IPC::ChannelProxy>* server_out) = 0;
+  // ClientSessionControl interface.
+  virtual const std::string& client_jid() const OVERRIDE;
+  virtual void DisconnectSession() OVERRIDE;
+  virtual void OnLocalMouseMoved(
+    const webrtc::DesktopVector& position) OVERRIDE;
+  virtual void SetDisableInputs(bool disable_inputs) OVERRIDE;
 
-  // Creates an event executor specific to the platform.
-  virtual scoped_ptr<EventExecutor> CreateEventExecutor() = 0;
+  // Handles StartSessionAgent request from the client.
+  void OnStartSessionAgent(const std::string& authenticated_jid,
+                           const ScreenResolution& resolution,
+                           bool virtual_terminal);
 
   // Handles CaptureFrame requests from the client.
   void OnCaptureFrame();
-
-  // Handles InvalidateRegion requests from the client.
-  void OnInvalidateRegion(const std::vector<SkIRect>& invalid_rects);
 
   // Handles SharedBufferCreated notification from the client.
   void OnSharedBufferCreated(int id);
@@ -116,10 +124,21 @@ class DesktopSessionAgent
   // Handles event executor requests from the client.
   void OnInjectClipboardEvent(const std::string& serialized_event);
   void OnInjectKeyEvent(const std::string& serialized_event);
+  void OnInjectTextEvent(const std::string& serialized_event);
   void OnInjectMouseEvent(const std::string& serialized_event);
+
+  // Handles ChromotingNetworkDesktopMsg_SetScreenResolution request from
+  // the client.
+  void SetScreenResolution(const ScreenResolution& resolution);
 
   // Sends a message to the network process.
   void SendToNetwork(IPC::Message* message);
+
+  // Posted to |audio_capture_task_runner_| to start the audio capturer.
+  void StartAudioCapturer();
+
+  // Posted to |audio_capture_task_runner_| to stop the audio capturer.
+  void StopAudioCapturer();
 
   // Posted to |video_capture_task_runner_| to start the video capturer.
   void StartVideoCapturer();
@@ -127,29 +146,19 @@ class DesktopSessionAgent
   // Posted to |video_capture_task_runner_| to stop the video capturer.
   void StopVideoCapturer();
 
-  // Getters providing access to the task runners for platform-specific derived
-  // classes.
-  scoped_refptr<AutoThreadTaskRunner> caller_task_runner() const {
-    return caller_task_runner_;
-  }
-
-  scoped_refptr<AutoThreadTaskRunner> input_task_runner() const {
-    return input_task_runner_;
-  }
-
-  scoped_refptr<AutoThreadTaskRunner> io_task_runner() const {
-    return io_task_runner_;
-  }
-
-  scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner() const {
-    return video_capture_task_runner_;
-  }
-
-  const base::WeakPtr<Delegate>& delegate() const {
-    return delegate_;
-  }
-
  private:
+  class SharedBuffer;
+  friend class SharedBuffer;
+
+  // Called by SharedBuffer when it's destroyed.
+  void OnSharedBufferDeleted(int id);
+
+  // Closes |desktop_pipe_| if it is open.
+  void CloseDesktopPipeHandle();
+
+  // Task runner dedicated to running methods of |audio_capturer_|.
+  scoped_refptr<AutoThreadTaskRunner> audio_capture_task_runner_;
+
   // Task runner on which public methods of this class should be called.
   scoped_refptr<AutoThreadTaskRunner> caller_task_runner_;
 
@@ -162,23 +171,56 @@ class DesktopSessionAgent
   // Task runner dedicated to running methods of |video_capturer_|.
   scoped_refptr<AutoThreadTaskRunner> video_capture_task_runner_;
 
+  // Captures audio output.
+  scoped_ptr<AudioCapturer> audio_capturer_;
+
+  std::string client_jid_;
+
+  // Used to disable callbacks to |this|.
+  base::WeakPtrFactory<ClientSessionControl> control_factory_;
+
   base::WeakPtr<Delegate> delegate_;
 
+  // The DesktopEnvironment instance used by this agent.
+  scoped_ptr<DesktopEnvironment> desktop_environment_;
+
   // Executes keyboard, mouse and clipboard events.
-  scoped_ptr<EventExecutor> event_executor_;
+  scoped_ptr<InputInjector> input_injector_;
+
+  // Tracker used to release pressed keys and buttons when disconnecting.
+  scoped_ptr<protocol::InputEventTracker> input_tracker_;
+
+  // Filter used to disable remote inputs during local input activity.
+  scoped_ptr<RemoteInputFilter> remote_input_filter_;
+
+  // Used to apply client-requested changes in screen resolution.
+  scoped_ptr<ScreenControls> screen_controls_;
 
   // IPC channel connecting the desktop process with the network process.
   scoped_ptr<IPC::ChannelProxy> network_channel_;
 
+  // The client end of the network-to-desktop pipe. It is kept alive until
+  // the network process connects to the pipe.
+  IPC::PlatformFileForTransit desktop_pipe_;
+
+  // Size of the most recent captured video frame.
+  webrtc::DesktopSize current_size_;
+
   // Next shared buffer ID to be used.
   int next_shared_buffer_id_;
 
-  // List of the shared buffers registered via |SharedBufferFactory| interface.
-  typedef std::list<scoped_refptr<SharedBuffer> > SharedBuffers;
-  SharedBuffers shared_buffers_;
+  // The number of currently allocated shared buffers.
+  int shared_buffers_;
+
+  // True if the desktop session agent has been started.
+  bool started_;
 
   // Captures the screen.
-  scoped_ptr<VideoFrameCapturer> video_capturer_;
+  scoped_ptr<webrtc::ScreenCapturer> video_capturer_;
+
+  // Keep reference to the last frame sent to make sure shared buffer is alive
+  // before it's received.
+  scoped_ptr<webrtc::DesktopFrame> last_frame_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopSessionAgent);
 };

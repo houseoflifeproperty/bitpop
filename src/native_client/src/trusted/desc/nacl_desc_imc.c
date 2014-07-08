@@ -41,15 +41,11 @@ static struct NaClDescVtbl const kNaClDescImcConnectedDescVtbl;
 static struct NaClDescVtbl const kNaClDescImcDescVtbl;
 static struct NaClDescVtbl const kNaClDescXferableDataDescVtbl;
 
-int NaClDescImcConnectedDescCtor(struct NaClDescImcConnectedDesc  *self,
-                                 NaClHandle                       h) {
+static int NaClDescImcConnectedDescSubclassCtor(
+    struct NaClDescImcConnectedDesc  *self,
+    NaClHandle                       h) {
   struct NaClDesc *basep = (struct NaClDesc *) self;
 
-  basep->base.vtbl = (struct NaClRefCountVtbl const *) NULL;
-
-  if (!NaClDescCtor(basep)) {
-    return 0;
-  }
   self->h = h;
   basep->base.vtbl = (struct NaClRefCountVtbl const *)
       &kNaClDescImcConnectedDescVtbl;
@@ -57,10 +53,30 @@ int NaClDescImcConnectedDescCtor(struct NaClDescImcConnectedDesc  *self,
   return 1;
 }
 
+int NaClDescImcConnectedDescCtor(struct NaClDescImcConnectedDesc  *self,
+                                 NaClHandle                       h) {
+  struct NaClDesc *basep = (struct NaClDesc *) self;
+  int rv;
+
+  basep->base.vtbl = (struct NaClRefCountVtbl const *) NULL;
+
+  if (!NaClDescCtor(basep)) {
+    return 0;
+  }
+  rv = NaClDescImcConnectedDescSubclassCtor(self, h);
+  if (!rv) {
+    (*NACL_VTBL(NaClRefCount, basep)->Dtor)((struct NaClRefCount *) basep);
+  }
+
+  return rv;
+}
+
 static void NaClDescImcConnectedDescDtor(struct NaClRefCount *vself) {
   struct NaClDescImcConnectedDesc *self = ((struct NaClDescImcConnectedDesc *)
                                            vself);
-  (void) NaClClose(self->h);
+  if (self->h != NACL_INVALID_HANDLE) {
+    (void) NaClClose(self->h);
+  }
   self->h = NACL_INVALID_HANDLE;
   vself->vtbl = (struct NaClRefCountVtbl const *) &kNaClDescVtbl;
   (*vself->vtbl->Dtor)(vself);
@@ -100,9 +116,29 @@ static void NaClDescImcDescDtor(struct NaClRefCount *vself) {
   (*vself->vtbl->Dtor)(vself);
 }
 
+/*
+ * Construct NaclDescImcConnectedDesc then NaClDescXferableDataDesc,
+ * assuming NaClDesc construction in |*self| has already occurred.
+ */
+static int NaClDescXferableDataDescSubclassesCtor(
+    struct NaClDescXferableDataDesc  *self,
+    NaClHandle                       h) {
+  int retval;
+
+  retval = NaClDescImcConnectedDescSubclassCtor(&self->base, h);
+  if (!retval) {
+    return 0;
+  }
+  self->base.base.base.vtbl = (struct NaClRefCountVtbl const *)
+      &kNaClDescXferableDataDescVtbl;
+
+  return retval;
+}
+
 int NaClDescXferableDataDescCtor(struct NaClDescXferableDataDesc  *self,
                                  NaClHandle                       h) {
   int retval;
+
   retval = NaClDescImcConnectedDescCtor(&self->base, h);
   if (!retval) {
     return 0;
@@ -142,11 +178,15 @@ static int NaClDescXferableDataDescFstat(struct NaClDesc          *vself,
 static int NaClDescXferableDataDescExternalizeSize(struct NaClDesc  *vself,
                                                    size_t           *nbytes,
                                                    size_t           *nhandles) {
+  int rv;
+
   UNREFERENCED_PARAMETER(vself);
   NaClLog(4, "Entered NaClDescXferableDataDescExternalizeSize\n");
-  *nbytes = 0;
-  *nhandles = 1;
-
+  rv = NaClDescExternalizeSize(vself, nbytes, nhandles);
+  if (0 != rv) {
+    return rv;
+  }
+  *nhandles += 1;
   return 0;
 }
 
@@ -154,8 +194,13 @@ static int NaClDescXferableDataDescExternalize(struct NaClDesc          *vself,
                                                struct NaClDescXferState *xfer) {
   struct NaClDescXferableDataDesc *self = ((struct NaClDescXferableDataDesc *)
                                            vself);
+  int rv;
 
   NaClLog(4, "Entered NaClDescXferableDataDescExternalize\n");
+  rv = NaClDescExternalize(vself, xfer);
+  if (0 != rv) {
+    return rv;
+  }
   *xfer->next_handle++ = self->base.h;
   return 0;
 }
@@ -339,10 +384,10 @@ static struct NaClDescVtbl const kNaClDescImcConnectedDescVtbl = {
   NaClDescReadNotImplemented,
   NaClDescWriteNotImplemented,
   NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescPReadNotImplemented,
+  NaClDescPWriteNotImplemented,
   NaClDescFstatNotImplemented,
   NaClDescGetdentsNotImplemented,
-  NACL_DESC_CONNECTED_SOCKET,
   NaClDescExternalizeSizeNotImplemented,
   NaClDescExternalizeNotImplemented,
   NaClDescLockNotImplemented,
@@ -361,6 +406,12 @@ static struct NaClDescVtbl const kNaClDescImcConnectedDescVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_CONNECTED_SOCKET,
 };
 
 
@@ -373,10 +424,10 @@ static struct NaClDescVtbl const kNaClDescImcDescVtbl = {
   NaClDescReadNotImplemented,
   NaClDescWriteNotImplemented,
   NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescPReadNotImplemented,
+  NaClDescPWriteNotImplemented,
   NaClDescImcDescFstat,  /* diff */
   NaClDescGetdentsNotImplemented,
-  NACL_DESC_IMC_SOCKET,  /* diff */
   NaClDescExternalizeSizeNotImplemented,
   NaClDescExternalizeNotImplemented,
   NaClDescLockNotImplemented,
@@ -395,6 +446,12 @@ static struct NaClDescVtbl const kNaClDescImcDescVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_IMC_SOCKET,  /* diff */
 };
 
 
@@ -407,10 +464,10 @@ static struct NaClDescVtbl const kNaClDescXferableDataDescVtbl = {
   NaClDescReadNotImplemented,
   NaClDescWriteNotImplemented,
   NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescPReadNotImplemented,
+  NaClDescPWriteNotImplemented,
   NaClDescXferableDataDescFstat,  /* diff */
   NaClDescGetdentsNotImplemented,
-  NACL_DESC_TRANSFERABLE_DATA_SOCKET,  /* diff */
   NaClDescXferableDataDescExternalizeSize,  /* diff */
   NaClDescXferableDataDescExternalize,  /* diff */
   NaClDescLockNotImplemented,
@@ -429,6 +486,12 @@ static struct NaClDescVtbl const kNaClDescXferableDataDescVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_TRANSFERABLE_DATA_SOCKET,  /* diff */
 };
 
 
@@ -441,8 +504,20 @@ int NaClDescXferableDataDescInternalize(
 
   UNREFERENCED_PARAMETER(quota_interface);
   NaClLog(4, "Entered NaClDescXferableDataDescInternalize\n");
-  rv = -NACL_ABI_EIO;
-  ndxdp = NULL;
+
+  ndxdp = malloc(sizeof *ndxdp);
+  if (NULL == ndxdp) {
+    NaClLog(LOG_ERROR,
+            "NaClXferableDataDescInternalize: no memory\n");
+    rv = -NACL_ABI_ENOMEM;
+    goto cleanup;
+  }
+  rv = NaClDescInternalizeCtor((struct NaClDesc *) ndxdp, xfer);
+  if (!rv) {
+    free(ndxdp);
+    ndxdp = NULL;
+    goto cleanup;
+  }
 
   if (xfer->next_handle == xfer->handle_buffer_end) {
     NaClLog(LOG_ERROR,
@@ -451,15 +526,8 @@ int NaClDescXferableDataDescInternalize(
     rv = -NACL_ABI_EIO;
     goto cleanup;
   }
-  ndxdp = malloc(sizeof *ndxdp);
-  if (NULL == ndxdp) {
-    NaClLog(LOG_ERROR,
-            "NaClXferableDataDescInternalize: no memory\n");
-    rv = -NACL_ABI_ENOMEM;
-    goto cleanup;
-  }
-  if (!NaClDescXferableDataDescCtor(ndxdp,
-                                    *xfer->next_handle)) {
+  if (!NaClDescXferableDataDescSubclassesCtor(ndxdp,
+                                              *xfer->next_handle)) {
     NaClLog(LOG_ERROR,
             "NaClXferableDataDescInternalize: descriptor ctor error\n");
     rv = -NACL_ABI_EIO;
@@ -471,7 +539,7 @@ int NaClDescXferableDataDescInternalize(
 
 cleanup:
   if (rv < 0) {
-    free(ndxdp);
+    NaClDescSafeUnref((struct NaClDesc *) ndxdp);
   }
   return rv;
 }

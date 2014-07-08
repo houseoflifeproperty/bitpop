@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "third_party/skia/include/core/SkColor.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/point.h"
 
 namespace gfx {
@@ -21,7 +21,7 @@ typedef std::vector<ShadowValue> ShadowValues;
 
 // ShadowValue encapsulates parameters needed to define a shadow, including the
 // shadow's offset, blur amount and color.
-class UI_EXPORT ShadowValue {
+class GFX_EXPORT ShadowValue {
  public:
   ShadowValue();
   ShadowValue(const gfx::Point& offset, double blur, SkColor color);

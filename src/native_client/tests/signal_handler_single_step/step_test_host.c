@@ -4,13 +4,14 @@
  * found in the LICENSE file.
  */
 
+#include <stdarg.h>
 #include <signal.h>
 
-#include "native_client/src/shared/gio/gio.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/trusted/service_runtime/include/bits/nacl_syscalls.h"
+#include "native_client/src/trusted/service_runtime/load_file.h"
 #include "native_client/src/trusted/service_runtime/nacl_all_modules.h"
 #include "native_client/src/trusted/service_runtime/nacl_app.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
@@ -18,7 +19,6 @@
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
 #include "native_client/src/trusted/service_runtime/nacl_syscall_handlers.h"
-#include "native_client/src/trusted/service_runtime/nacl_valgrind_hooks.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/tests/signal_handler_single_step/step_test_common.h"
 #include "native_client/tests/signal_handler_single_step/step_test_syscalls.h"
@@ -45,6 +45,21 @@ static int g_call_count = 0;
 static int g_in_untrusted_code = 0;
 static int g_context_switch_count = 0;
 
+static int g_instruction_count = 0;
+static int g_instruction_byte_count = 0;
+static int g_jump_count = 0;
+static nacl_reg_t g_last_prog_ctr = 0;
+
+
+static void SignalSafePrintf(const char *format, ...) {
+  va_list args;
+  char buf[200];
+  int len;
+  va_start(args, format);
+  len = vsnprintf(buf, sizeof(buf), format, args);
+  va_end(args);
+  SignalSafeWrite(buf, len);
+}
 
 /*
  * We use a custom NaCl syscall here partly because we need to avoid
@@ -55,7 +70,7 @@ static int g_context_switch_count = 0;
  * problem.
  */
 static int32_t TestSyscall(struct NaClAppThread *natp) {
-  NaClCopyInDropLock(natp->nap);
+  NaClCopyDropLock(natp->nap);
 
   /* Check that the trap flag has not been unset by anything unexpected. */
   CHECK(GetTrapFlag());
@@ -68,18 +83,46 @@ static int32_t TestSyscall(struct NaClAppThread *natp) {
   return 0;
 }
 
-static enum NaClSignalResult TrapSignalHandler(int signal, void *ucontext) {
+static void TrapSignalHandler(int signal,
+                              const struct NaClSignalContext *context,
+                              int is_untrusted) {
   if (signal == SIGTRAP) {
-    struct NaClSignalContext context;
-    int is_untrusted;
+    g_instruction_count++;
+    /*
+     * This is a heuristic for detecting jumps, based on the maximum
+     * length of an x86 instruction being 15 bytes.  We would miss
+     * short forward jumps.
+     */
+    if (context->prog_ctr - g_last_prog_ctr > 15) {
+      g_jump_count++;
+    } else {
+      /* Measure total size of instructions, except for taken branches. */
+      g_instruction_byte_count += context->prog_ctr - g_last_prog_ctr;
+    }
+    g_last_prog_ctr = context->prog_ctr;
 
-    NaClSignalContextFromHandler(&context, ucontext);
-    is_untrusted = NaClSignalContextIsUntrusted(&context);
     if (g_in_untrusted_code != is_untrusted) {
       g_context_switch_count++;
       g_in_untrusted_code = is_untrusted;
+
+      SignalSafePrintf("Switching to %s: since previous switch: "
+                       "%i instructions, %i instruction bytes, %i jumps\n",
+                       is_untrusted ? "untrusted" : "trusted",
+                       g_instruction_count,
+                       g_instruction_byte_count,
+                       g_jump_count);
+      if (is_untrusted && g_call_count == kNumberOfCallsToTest - 1) {
+        SignalSafePrintf("RESULT InstructionsPerSyscall: value= "
+                         "%i count\n", g_instruction_count);
+        SignalSafePrintf("RESULT InstructionBytesPerSyscall: value= "
+                         "%i count\n", g_instruction_byte_count);
+        SignalSafePrintf("RESULT JumpsPerSyscall: value= "
+                         "%i count\n", g_jump_count);
+      }
+      g_instruction_count = 0;
+      g_instruction_byte_count = 0;
+      g_jump_count = 0;
     }
-    return NACL_SIGNAL_RETURN;
   } else {
     SignalSafeLogStringLiteral("Error: Received unexpected signal\n");
     _exit(1);
@@ -107,7 +150,6 @@ static const struct NaClDebugCallbacks debug_callbacks = {
 
 int main(int argc, char **argv) {
   struct NaClApp app;
-  struct GioMemoryFileSnapshot gio_file;
   struct NaClSyscallTableEntry syscall_table[NACL_MAX_SYSCALLS] = {{0}};
   int index;
   for (index = 0; index < NACL_MAX_SYSCALLS; index++) {
@@ -121,16 +163,13 @@ int main(int argc, char **argv) {
     NaClLog(LOG_FATAL, "Expected 1 argument: executable filename\n");
   }
 
-  NaClFileNameForValgrind(argv[1]);
-  CHECK(GioMemoryFileSnapshotCtor(&gio_file, argv[1]));
   CHECK(NaClAppWithSyscallTableCtor(&app, syscall_table));
 
   app.debug_stub_callbacks = &debug_callbacks;
   NaClSignalHandlerInit();
-  NaClSignalHandlerAdd(TrapSignalHandler);
+  NaClSignalHandlerSet(TrapSignalHandler);
 
-  CHECK(NaClAppLoadFile((struct Gio *) &gio_file, &app) == LOAD_OK);
-  CHECK(NaClAppPrepareToLaunch(&app) == LOAD_OK);
+  CHECK(NaClAppLoadFileFromFilename(&app, argv[1]) == LOAD_OK);
   CHECK(NaClCreateMainThread(&app, 0, NULL, NULL));
   CHECK(NaClWaitForMainThreadToExit(&app) == 0);
 

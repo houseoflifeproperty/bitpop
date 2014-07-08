@@ -2,10 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the omnibox API. Only injected into the v8 contexts
+// Custom binding for the omnibox API. Only injected into the v8 contexts
 // for extensions which have permission for the omnibox API.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var binding = require('binding').Binding.create('omnibox');
+
+var eventBindings = require('event_bindings');
 var sendRequest = require('sendRequest').sendRequest;
 
 // Remove invalid characters from |text| so that it is suitable to use
@@ -46,7 +48,7 @@ function parseOmniboxDescription(input) {
   };
 
   // Recursively walk the tree.
-  (function(node) {
+  function walk(node) {
     for (var i = 0, child; child = node.childNodes[i]; i++) {
       // Append text nodes to our description.
       if (child.nodeType == Node.TEXT_NODE) {
@@ -63,23 +65,33 @@ function parseOmniboxDescription(input) {
           'type': child.nodeName,
           'offset': result.description.length
         };
-        result.descriptionStyles.push(style);
-        arguments.callee(child);
+        $Array.push(result.descriptionStyles, style);
+        walk(child);
         style.length = result.description.length - style.offset;
         continue;
       }
 
       // Descend into all other nodes, even if they are unrecognized, for
       // forward compat.
-      arguments.callee(child);
+      walk(child);
     }
-  })(root);
+  };
+  walk(root);
 
   return result;
 }
 
-chromeHidden.registerCustomHook('omnibox', function(bindingsAPI) {
+binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
+
+  apiFunctions.setUpdateArgumentsPreValidate('setDefaultSuggestion',
+                                             function(suggestResult) {
+    if (suggestResult.content != undefined) {  // null, etc.
+      throw new Error(
+          'setDefaultSuggestion cannot contain the "content" field');
+    }
+    return [suggestResult];
+  });
 
   apiFunctions.setHandleRequest('setDefaultSuggestion', function(details) {
     var parseResult = parseOmniboxDescription(details.description);
@@ -93,13 +105,13 @@ chromeHidden.registerCustomHook('omnibox', function(bindingsAPI) {
       var parseResult = parseOmniboxDescription(
           userSuggestions[i].description);
       parseResult.content = userSuggestions[i].content;
-      suggestions.push(parseResult);
+      $Array.push(suggestions, parseResult);
     }
     return [requestId, suggestions];
   });
 });
 
-chromeHidden.Event.registerArgumentMassager('omnibox.onInputChanged',
+eventBindings.registerArgumentMassager('omnibox.onInputChanged',
     function(args, dispatch) {
   var text = args[0];
   var requestId = args[1];
@@ -108,3 +120,5 @@ chromeHidden.Event.registerArgumentMassager('omnibox.onInputChanged',
   };
   dispatch([text, suggestCallback]);
 });
+
+exports.binding = binding.generate();

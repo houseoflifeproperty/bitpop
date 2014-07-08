@@ -10,7 +10,7 @@ var callbackPass = chrome.test.callbackPass;
 
 chrome.test.getConfig(function(config) {
 
-  var TEST_FILE_URL = "http://localhost:PORT/files/extensions/test_file.html"
+  var TEST_FILE_URL = "http://localhost:PORT/extensions/test_file.html"
       .replace(/PORT/, config.testServer.port);
 
   chrome.test.runTests([
@@ -53,6 +53,10 @@ chrome.test.getConfig(function(config) {
       chrome.tabs.create({
         url: TEST_FILE_URL
       });
+      chrome.test.succeed();
+    },
+    function getUILanguage() {
+      chrome.test.assertEq('en-US', chrome.i18n.getUILanguage());
       chrome.test.succeed();
     }
   ]);

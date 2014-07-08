@@ -44,6 +44,8 @@ cr.define('uber', function() {
         params.path.indexOf('search') != 0) {
       backgroundNavigation();
     }
+
+    ensureNonSelectedFrameContainersAreHidden();
   }
 
   /**
@@ -124,24 +126,27 @@ cr.define('uber', function() {
    * @param {Event} e The posted object.
    */
   function handleWindowMessage(e) {
-    if (e.data.method === 'beginInterceptingEvents')
+    if (e.data.method === 'beginInterceptingEvents') {
       backgroundNavigation();
-    else if (e.data.method === 'stopInterceptingEvents')
+    } else if (e.data.method === 'stopInterceptingEvents') {
       foregroundNavigation();
-    else if (e.data.method === 'setPath')
+    } else if (e.data.method === 'setPath') {
       setPath(e.origin, e.data.params.path);
-    else if (e.data.method === 'setTitle')
+    } else if (e.data.method === 'setTitle') {
       setTitle(e.origin, e.data.params.title);
-    else if (e.data.method === 'showPage')
-      showPage(e.data.params.pageId, HISTORY_STATE_OPTION.PUSH);
-    else if (e.data.method === 'navigationControlsLoaded')
+    } else if (e.data.method === 'showPage') {
+      showPage(e.data.params.pageId,
+               HISTORY_STATE_OPTION.PUSH,
+               e.data.params.path);
+    } else if (e.data.method === 'navigationControlsLoaded') {
       onNavigationControlsLoaded();
-    else if (e.data.method === 'adjustToScroll')
+    } else if (e.data.method === 'adjustToScroll') {
       adjustToScroll(e.data.params);
-    else if (e.data.method === 'mouseWheel')
+    } else if (e.data.method === 'mouseWheel') {
       forwardMouseWheel(e.data.params);
-    else
+    } else {
       console.error('Received unexpected message', e.data);
+    }
   }
 
   /**
@@ -240,10 +245,10 @@ cr.define('uber', function() {
 
   /**
    * Selects a subpage. This is called from uber-frame.
-   * @param {String} pageId Should matche an id of one of the iframe containers.
+   * @param {string} pageId Should match an id of one of the iframe containers.
    * @param {integer} historyOption Indicates whether we should push or replace
    *     browser history.
-   * @param {String} path A sub-page path.
+   * @param {string} path A sub-page path.
    */
   function showPage(pageId, historyOption, path) {
     var container = $(pageId);
@@ -254,6 +259,7 @@ cr.define('uber', function() {
     var frame = container.querySelector('iframe');
     if (!frame) {
       frame = container.ownerDocument.createElement('iframe');
+      frame.name = pageId;
       container.appendChild(frame);
       frame.src = sourceUrl;
     } else {
@@ -267,8 +273,23 @@ cr.define('uber', function() {
     if (lastSelected === container)
       return;
 
-    if (lastSelected)
+    if (lastSelected) {
       lastSelected.classList.remove('selected');
+      // Setting aria-hidden hides the container from assistive technology
+      // immediately. The 'hidden' attribute is set after the transition
+      // finishes - that ensures it's not possible to accidentally focus
+      // an element in an unselected container.
+      lastSelected.setAttribute('aria-hidden', 'true');
+    }
+
+    // Containers that aren't selected have to be hidden so that their
+    // content isn't focusable.
+    container.hidden = false;
+    container.setAttribute('aria-hidden', 'false');
+
+    // Trigger a layout after making it visible and before setting
+    // the class to 'selected', so that it animates in.
+    container.offsetTop;
     container.classList.add('selected');
 
     setContentChanging(true);
@@ -331,6 +352,29 @@ cr.define('uber', function() {
   function forwardMouseWheel(params) {
     var iframe = getSelectedIframe().querySelector('iframe');
     uber.invokeMethodOnWindow(iframe.contentWindow, 'mouseWheel', params);
+  }
+
+  /**
+   * Make sure that iframe containers that are not selected are
+   * hidden, so that elements in those frames aren't part of the
+   * focus order. Containers that are unselected later get hidden
+   * when the transition ends. We also set the aria-hidden attribute
+   * because that hides the container from assistive technology
+   * immediately, rather than only after the transition ends.
+   */
+  function ensureNonSelectedFrameContainersAreHidden() {
+    var containers = document.querySelectorAll('.iframe-container');
+    for (var i = 0; i < containers.length; i++) {
+      var container = containers[i];
+      if (!container.classList.contains('selected')) {
+        container.hidden = true;
+        container.setAttribute('aria-hidden', 'true');
+      }
+      container.addEventListener('webkitTransitionEnd', function(event) {
+        if (!event.target.classList.contains('selected'))
+          event.target.hidden = true;
+      });
+    }
   }
 
   return {

@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_STANDARD_MANAGEMENT_POLICY_PROVIDER_H_
 #define CHROME_BROWSER_EXTENSIONS_STANDARD_MANAGEMENT_POLICY_PROVIDER_H_
 
-#include "chrome/browser/extensions/management_policy.h"
+#include "extensions/browser/management_policy.h"
 
 namespace extensions {
 
@@ -25,11 +25,11 @@ class StandardManagementPolicyProvider : public ManagementPolicy::Provider {
   // ManagementPolicy::Provider implementation.
   virtual std::string GetDebugPolicyProviderName() const OVERRIDE;
   virtual bool UserMayLoad(const Extension* extension,
-                           string16* error) const OVERRIDE;
+                           base::string16* error) const OVERRIDE;
   virtual bool UserMayModifySettings(const Extension* extension,
-                                     string16* error) const OVERRIDE;
+                                     base::string16* error) const OVERRIDE;
   virtual bool MustRemainEnabled(const Extension* extension,
-                                 string16* error) const OVERRIDE;
+                                 base::string16* error) const OVERRIDE;
 
  private:
   ExtensionPrefs* const prefs_;

@@ -16,7 +16,7 @@
 #include <utility>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "win8/metro_driver/chrome_url_launch_handler.h"
 #include "win8/metro_driver/devices_handler.h"
@@ -74,6 +74,8 @@ class ChromeAppView
   // Returns the current view state of the chrome window.
   winui::ViewManagement::ApplicationViewState GetViewState();
 
+  HWND core_window_hwnd() { return core_window_hwnd_; }
+
  private:
   HRESULT OnActivate(winapp::Core::ICoreApplicationView* view,
                      winapp::Activation::IActivatedEventArgs* args);
@@ -115,6 +117,9 @@ class ChromeAppView
   EventRegistrationToken input_pane_hiding_token_;
   EventRegistrationToken app_exit_token_;
 
+  // The actual window behind the view surface.
+  HWND core_window_hwnd_;
+
   ChromeUrlLaunchHandler url_launch_handler_;
   metro_driver::DevicesHandler devices_handler_;
   SettingsHandler settings_handler_;
@@ -143,17 +148,15 @@ class ChromeAppView
 struct Globals {
   LPTHREAD_START_ROUTINE host_main;
   void* host_context;
-  HWND core_window;
   // The pair below contains the HWND and a bool which indicates whether the
   // window was displaced to ensure that the focused region is visible when
   // the OSK is displayed.
   std::list<std::pair<HWND, bool> > host_windows;
   HANDLE host_thread;
-  DWORD main_thread_id;
   ChromeAppView* view;
   WNDPROC g_core_proc;
-  string16 navigation_url;
-  string16 search_string;
+  base::string16 navigation_url;
+  base::string16 search_string;
   winapp::Activation::ApplicationExecutionState previous_state;
   winapp::Activation::ActivationKind initial_activation_kind;
   bool is_initial_activation;
@@ -161,7 +164,7 @@ struct Globals {
   // to be initiated from that thread, notably spawning file pickers.
   base::MessageLoopProxy* appview_msg_loop;
   winapp::Core::ICoreApplicationExit* app_exit;
-  string16 metro_command_line_switches;
+  base::string16 metro_command_line_switches;
 };
 
 extern Globals globals;

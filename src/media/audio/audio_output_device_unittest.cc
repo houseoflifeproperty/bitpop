@@ -5,14 +5,13 @@
 #include <vector>
 
 #include "base/at_exit.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/process_handle.h"
 #include "base/sync_socket.h"
 #include "base/test/test_timeouts.h"
 #include "media/audio/audio_output_device.h"
 #include "media/audio/sample_rates.h"
-#include "media/audio/shared_memory_util.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gmock_mutant.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -49,16 +48,13 @@ class MockAudioOutputIPC : public AudioOutputIPC {
   MockAudioOutputIPC() {}
   virtual ~MockAudioOutputIPC() {}
 
-  MOCK_METHOD1(AddDelegate, int(AudioOutputIPCDelegate* delegate));
-  MOCK_METHOD1(RemoveDelegate, void(int stream_id));
-
-  MOCK_METHOD3(CreateStream,
-      void(int stream_id, const AudioParameters& params, int input_channels));
-  MOCK_METHOD1(PlayStream, void(int stream_id));
-  MOCK_METHOD1(CloseStream, void(int stream_id));
-  MOCK_METHOD2(SetVolume, void(int stream_id, double volume));
-  MOCK_METHOD1(PauseStream, void(int stream_id));
-  MOCK_METHOD1(FlushStream, void(int stream_id));
+  MOCK_METHOD3(CreateStream, void(AudioOutputIPCDelegate* delegate,
+                                  const AudioParameters& params,
+                                  int session_id));
+  MOCK_METHOD0(PlayStream, void());
+  MOCK_METHOD0(PauseStream, void());
+  MOCK_METHOD0(CloseStream, void());
+  MOCK_METHOD1(SetVolume, void(double volume));
 };
 
 // Creates a copy of a SyncSocket handle that we can give to AudioOutputDevice.
@@ -87,7 +83,7 @@ ACTION_P2(SendPendingBytes, socket, pending_bytes) {
 // Used to terminate a loop from a different thread than the loop belongs to.
 // |loop| should be a MessageLoopProxy.
 ACTION_P(QuitLoop, loop) {
-  loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
 
 }  // namespace.
@@ -109,10 +105,10 @@ class AudioOutputDeviceTest
   // Used to clean up TLS pointers that the test(s) will initialize.
   // Must remain the first member of this class.
   base::ShadowingAtExitManager at_exit_manager_;
-  MessageLoopForIO io_loop_;
-  const AudioParameters default_audio_parameters_;
+  base::MessageLoopForIO io_loop_;
+  AudioParameters default_audio_parameters_;
   StrictMock<MockRenderCallback> callback_;
-  StrictMock<MockAudioOutputIPC> audio_output_ipc_;
+  MockAudioOutputIPC* audio_output_ipc_;  // owned by audio_device_
   scoped_refptr<AudioOutputDevice> audio_device_;
 
  private:
@@ -127,8 +123,6 @@ class AudioOutputDeviceTest
   DISALLOW_COPY_AND_ASSIGN(AudioOutputDeviceTest);
 };
 
-static const int kStreamId = 123;
-
 int AudioOutputDeviceTest::CalculateMemorySize() {
   // Calculate output and input memory size.
   int output_memory_size =
@@ -138,48 +132,36 @@ int AudioOutputDeviceTest::CalculateMemorySize() {
   int input_memory_size =
       AudioBus::CalculateMemorySize(input_channels_, frames);
 
-  int io_buffer_size = output_memory_size + input_memory_size;
-
-  // This is where it gets a bit hacky.  The shared memory contract between
-  // AudioOutputDevice and its browser side counter part includes a bit more
-  // than just the audio data, so we must call TotalSharedMemorySizeInBytes()
-  // to get the actual size needed to fit the audio data plus the extra data.
-  return TotalSharedMemorySizeInBytes(io_buffer_size);
+  return output_memory_size + input_memory_size;
 }
 
 AudioOutputDeviceTest::AudioOutputDeviceTest()
-    : default_audio_parameters_(AudioParameters::AUDIO_PCM_LINEAR,
-                                CHANNEL_LAYOUT_STEREO,
-                                48000, 16, 1024),
-      synchronized_io_(GetParam()),
+    : synchronized_io_(GetParam()),
       input_channels_(synchronized_io_ ? 2 : 0) {
-  EXPECT_CALL(audio_output_ipc_, AddDelegate(_))
-      .WillOnce(Return(kStreamId));
+  default_audio_parameters_.Reset(
+      AudioParameters::AUDIO_PCM_LINEAR,
+      CHANNEL_LAYOUT_STEREO, 2, input_channels_,
+      48000, 16, 1024);
 
+  audio_output_ipc_ = new MockAudioOutputIPC();
   audio_device_ = new AudioOutputDevice(
-      &audio_output_ipc_, io_loop_.message_loop_proxy());
+      scoped_ptr<AudioOutputIPC>(audio_output_ipc_),
+      io_loop_.message_loop_proxy());
 
-  if (synchronized_io_) {
-    audio_device_->InitializeIO(default_audio_parameters_,
-                                input_channels_,
-                                &callback_);
-  } else {
-    audio_device_->Initialize(default_audio_parameters_,
-                              &callback_);
-  }
+  audio_device_->Initialize(default_audio_parameters_,
+                            &callback_);
+
   io_loop_.RunUntilIdle();
 }
 
 AudioOutputDeviceTest::~AudioOutputDeviceTest() {
-  EXPECT_CALL(audio_output_ipc_, RemoveDelegate(kStreamId));
-
   audio_device_ = NULL;
 }
 
 void AudioOutputDeviceTest::StartAudioDevice() {
   audio_device_->Start();
 
-  EXPECT_CALL(audio_output_ipc_, CreateStream(kStreamId, _, _));
+  EXPECT_CALL(*audio_output_ipc_, CreateStream(audio_device_.get(), _, 0));
 
   io_loop_.RunUntilIdle();
 }
@@ -204,7 +186,7 @@ void AudioOutputDeviceTest::CreateStream() {
                                             &duplicated_memory_handle));
 
   audio_device_->OnStreamCreated(duplicated_memory_handle, audio_device_socket,
-                                 PacketSizeInBytes(kMemorySize));
+                                 kMemorySize);
   io_loop_.RunUntilIdle();
 }
 
@@ -215,7 +197,7 @@ void AudioOutputDeviceTest::ExpectRenderCallback() {
   // shared memory section.
   const int kMemorySize = CalculateMemorySize();
 
-  EXPECT_CALL(audio_output_ipc_, PlayStream(kStreamId))
+  EXPECT_CALL(*audio_output_ipc_, PlayStream())
       .WillOnce(SendPendingBytes(&browser_socket_, kMemorySize));
 
   // We expect calls to our audio renderer callback, which returns the number
@@ -241,7 +223,7 @@ void AudioOutputDeviceTest::ExpectRenderCallback() {
 
 void AudioOutputDeviceTest::WaitUntilRenderCallback() {
   // Don't hang the test if we never get the Render() callback.
-  io_loop_.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
+  io_loop_.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitClosure(),
                            TestTimeouts::action_timeout());
   io_loop_.Run();
 }
@@ -249,7 +231,7 @@ void AudioOutputDeviceTest::WaitUntilRenderCallback() {
 void AudioOutputDeviceTest::StopAudioDevice() {
   audio_device_->Stop();
 
-  EXPECT_CALL(audio_output_ipc_, CloseStream(kStreamId));
+  EXPECT_CALL(*audio_output_ipc_, CloseStream());
 
   io_loop_.RunUntilIdle();
 }
@@ -284,7 +266,7 @@ TEST_P(AudioOutputDeviceTest, StopBeforeRender) {
 
   // Expect us to shutdown IPC but not to render anything despite the stream
   // getting created.
-  EXPECT_CALL(audio_output_ipc_, CloseStream(kStreamId));
+  EXPECT_CALL(*audio_output_ipc_, CloseStream());
   CreateStream();
 }
 

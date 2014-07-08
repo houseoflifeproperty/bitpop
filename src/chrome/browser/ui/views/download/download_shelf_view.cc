@@ -8,10 +8,10 @@
 #include <vector>
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_util.h"
-#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/download/download_stats.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/chrome_pages.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -23,9 +23,10 @@
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
-#include "ui/base/animation/slide_animation.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/theme_provider.h"
+#include "ui/gfx/animation/slide_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
@@ -92,11 +93,12 @@ int CenterPosition(int size, int target_size) {
 
 DownloadShelfView::DownloadShelfView(Browser* browser, BrowserView* parent)
     : browser_(browser),
+      arrow_image_(NULL),
+      show_all_view_(NULL),
+      close_button_(NULL),
       parent_(parent),
-      auto_closed_(true),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          mouse_watcher_(new views::MouseWatcherViewHost(this, gfx::Insets()),
-                         this)) {
+      mouse_watcher_(new views::MouseWatcherViewHost(this, gfx::Insets()),
+                     this) {
   mouse_watcher_.set_notify_on_exit_time(
       base::TimeDelta::FromMilliseconds(kNotifyOnExitTimeMS));
   set_id(VIEW_ID_DOWNLOAD_SHELF);
@@ -120,25 +122,13 @@ void DownloadShelfView::AddDownloadView(DownloadItemView* view) {
   new_item_animation_->Show();
 }
 
-void DownloadShelfView::DoAddDownload(DownloadItemModel* download_model) {
-  DownloadItemView* view = new DownloadItemView(
-      download_model->download(), this, download_model);
+void DownloadShelfView::DoAddDownload(DownloadItem* download) {
+  DownloadItemView* view = new DownloadItemView(download, this);
   AddDownloadView(view);
 }
 
 void DownloadShelfView::MouseMovedOutOfHost() {
-  Close();
-}
-
-void DownloadShelfView::OnWillChangeFocus(views::View* focused_before,
-                                          views::View* focused_now) {
-  SchedulePaintForDownloadItem(focused_before);
-  SchedulePaintForDownloadItem(focused_now);
-}
-
-void DownloadShelfView::OnDidChangeFocus(views::View* focused_before,
-                                         views::View* focused_now) {
-  AccessiblePaneView::OnDidChangeFocus(focused_before, focused_now);
+  Close(AUTOMATIC);
 }
 
 void DownloadShelfView::RemoveDownloadView(View* view) {
@@ -150,7 +140,7 @@ void DownloadShelfView::RemoveDownloadView(View* view) {
   RemoveChildView(view);
   delete view;
   if (download_views_.empty())
-    Close();
+    Close(AUTOMATIC);
   else if (CanAutoClose())
     mouse_watcher_.Start();
   Layout();
@@ -160,21 +150,6 @@ void DownloadShelfView::RemoveDownloadView(View* view) {
 views::View* DownloadShelfView::GetDefaultFocusableChild() {
   return download_views_.empty() ?
       static_cast<View*>(show_all_view_) : download_views_[0];
-}
-
-void DownloadShelfView::OnPaint(gfx::Canvas* canvas) {
-  OnPaintBackground(canvas);
-  OnPaintBorder(canvas);
-
-  // Draw the focus rect here, since it's outside the bounds of the item.
-  for (size_t i = 0; i < download_views_.size(); ++i) {
-    if (download_views_[i]->HasFocus()) {
-      gfx::Rect r = GetFocusRectBounds(download_views_[i]);
-      r.Inset(0, 0, 0, 1);
-      canvas->DrawFocusRect(r);
-      break;
-    }
-  }
 }
 
 void DownloadShelfView::OnPaintBorder(gfx::Canvas* canvas) {
@@ -208,7 +183,7 @@ gfx::Size DownloadShelfView::GetPreferredSize() {
   return prefsize;
 }
 
-void DownloadShelfView::AnimationProgressed(const ui::Animation *animation) {
+void DownloadShelfView::AnimationProgressed(const gfx::Animation *animation) {
   if (animation == new_item_animation_.get()) {
     Layout();
     SchedulePaint();
@@ -223,7 +198,7 @@ void DownloadShelfView::AnimationProgressed(const ui::Animation *animation) {
   }
 }
 
-void DownloadShelfView::AnimationEnded(const ui::Animation *animation) {
+void DownloadShelfView::AnimationEnded(const gfx::Animation *animation) {
   if (animation == shelf_animation_.get()) {
     parent_->SetDownloadShelfVisible(shelf_animation_->IsShowing());
     if (!shelf_animation_->IsShowing())
@@ -252,7 +227,7 @@ void DownloadShelfView::Layout() {
                                 max_download_x + kDownloadPadding;
   // Align vertically with show_all_view_.
   arrow_image_->SetBounds(next_x,
-                          CenterPosition(show_all_size.height(), height()),
+                          CenterPosition(image_size.height(), height()),
                           image_size.width(), image_size.height());
   next_x += image_size.width() + kDownloadsTitlePadding;
   show_all_view_->SetBounds(next_x,
@@ -302,12 +277,11 @@ void DownloadShelfView::Layout() {
   }
 }
 
-void DownloadShelfView::ViewHierarchyChanged(bool is_add,
-                                             View* parent,
-                                             View* child) {
-  View::ViewHierarchyChanged(is_add, parent, child);
+void DownloadShelfView::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  View::ViewHierarchyChanged(details);
 
-  if (is_add && (child == this)) {
+  if (details.is_add && (details.child == this)) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     arrow_image_ = new views::ImageView();
     arrow_image_->SetImage(rb.GetImageSkiaNamed(IDR_DOWNLOADS_FAVICON));
@@ -320,21 +294,21 @@ void DownloadShelfView::ViewHierarchyChanged(bool is_add,
 
     close_button_ = new views::ImageButton(this);
     close_button_->SetImage(views::CustomButton::STATE_NORMAL,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1));
     close_button_->SetImage(views::CustomButton::STATE_HOVERED,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_H));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1_H));
     close_button_->SetImage(views::CustomButton::STATE_PRESSED,
-                            rb.GetImageSkiaNamed(IDR_CLOSE_BAR_P));
+                            rb.GetImageSkiaNamed(IDR_CLOSE_1_P));
     close_button_->SetAccessibleName(
         l10n_util::GetStringUTF16(IDS_ACCNAME_CLOSE));
     AddChildView(close_button_);
 
     UpdateColorsFromTheme();
 
-    new_item_animation_.reset(new ui::SlideAnimation(this));
+    new_item_animation_.reset(new gfx::SlideAnimation(this));
     new_item_animation_->SetSlideDuration(kNewItemAnimationDurationMs);
 
-    shelf_animation_.reset(new ui::SlideAnimation(this));
+    shelf_animation_.reset(new gfx::SlideAnimation(this));
     shelf_animation_->SetSlideDuration(kShelfAnimationDurationMs);
   }
 }
@@ -364,14 +338,14 @@ void DownloadShelfView::UpdateColorsFromTheme() {
   if (show_all_view_ && close_button_ && GetThemeProvider()) {
     ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
     set_background(views::Background::CreateSolidBackground(
-        GetThemeProvider()->GetColor(ThemeService::COLOR_TOOLBAR)));
+        GetThemeProvider()->GetColor(ThemeProperties::COLOR_TOOLBAR)));
     show_all_view_->SetBackgroundColor(background()->get_color());
     show_all_view_->SetEnabledColor(
-        GetThemeProvider()->GetColor(ThemeService::COLOR_BOOKMARK_TEXT));
+        GetThemeProvider()->GetColor(ThemeProperties::COLOR_BOOKMARK_TEXT));
     close_button_->SetBackground(
-        GetThemeProvider()->GetColor(ThemeService::COLOR_TAB_TEXT),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR),
-        rb.GetImageSkiaNamed(IDR_CLOSE_BAR_MASK));
+        GetThemeProvider()->GetColor(ThemeProperties::COLOR_TAB_TEXT),
+        rb.GetImageSkiaNamed(IDR_CLOSE_1),
+        rb.GetImageSkiaNamed(IDR_CLOSE_1_MASK));
   }
 }
 
@@ -385,8 +359,7 @@ void DownloadShelfView::LinkClicked(views::Link* source, int event_flags) {
 
 void DownloadShelfView::ButtonPressed(
     views::Button* button, const ui::Event& event) {
-  auto_closed_ = false;
-  Close();
+  Close(USER_ACTION);
 }
 
 bool DownloadShelfView::IsShowing() const {
@@ -401,17 +374,16 @@ void DownloadShelfView::DoShow() {
   shelf_animation_->Show();
 }
 
-void DownloadShelfView::DoClose() {
+void DownloadShelfView::DoClose(CloseReason reason) {
   int num_in_progress = 0;
   for (size_t i = 0; i < download_views_.size(); ++i) {
-    if (download_views_[i]->download()->IsInProgress())
+    if (download_views_[i]->download()->GetState() == DownloadItem::IN_PROGRESS)
       ++num_in_progress;
   }
-  download_util::RecordShelfClose(
-      download_views_.size(), num_in_progress, auto_closed_);
+  RecordDownloadShelfClose(
+      download_views_.size(), num_in_progress, reason == AUTOMATIC);
   parent_->SetDownloadShelfVisible(false);
   shelf_animation_->Hide();
-  auto_closed_ = true;
 }
 
 Browser* DownloadShelfView::browser() const {
@@ -427,11 +399,11 @@ void DownloadShelfView::Closed() {
   size_t i = 0;
   while (i < download_views_.size()) {
     DownloadItem* download = download_views_[i]->download();
-    bool is_transfer_done = download->IsComplete() ||
-                            download->IsCancelled() ||
-                            download->IsInterrupted();
-    if (is_transfer_done &&
-        download->GetSafetyState() != DownloadItem::DANGEROUS) {
+    DownloadItem::DownloadState state = download->GetState();
+    bool is_transfer_done = state == DownloadItem::COMPLETE ||
+                            state == DownloadItem::CANCELLED ||
+                            state == DownloadItem::INTERRUPTED;
+    if (is_transfer_done && !download->IsDangerous()) {
       RemoveDownloadView(download_views_[i]);
     } else {
       // Treat the item as opened when we close. This way if we get shown again
@@ -448,36 +420,4 @@ bool DownloadShelfView::CanAutoClose() {
       return false;
   }
   return true;
-}
-
-void DownloadShelfView::SchedulePaintForDownloadItem(views::View* view) {
-  // Make sure it's not NULL.  (Focus sometimes changes to or from NULL.)
-  if (!view)
-    return;
-
-  // Make sure it's one of our DownloadItemViews.
-  bool found = false;
-  for (size_t i = 0; i < download_views_.size(); ++i) {
-    if (download_views_[i] == view)
-      found = true;
-  }
-  if (!found)
-    return;
-
-  // Invalidate it
-  gfx::Rect invalid_rect =
-      GetFocusRectBounds(static_cast<DownloadItemView*>(view));
-  SchedulePaintInRect(invalid_rect);
-}
-
-gfx::Rect DownloadShelfView::GetFocusRectBounds(
-    const DownloadItemView* download_item_view) {
-  gfx::Rect bounds = download_item_view->bounds();
-
-#if defined(TOOLKIT_VIEWS)
-  bounds.set_height(bounds.height() - 1);
-  bounds.Offset(0, 3);
-#endif
-
-  return bounds;
 }

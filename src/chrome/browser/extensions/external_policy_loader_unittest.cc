@@ -6,17 +6,19 @@
 #include <string>
 
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "base/version.h"
 #include "chrome/browser/extensions/external_policy_loader.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
-#include "chrome/browser/extensions/external_provider_interface.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
+#include "extensions/browser/external_provider_interface.h"
+#include "extensions/browser/pref_names.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
@@ -25,9 +27,7 @@ namespace extensions {
 
 class ExternalPolicyLoaderTest : public testing::Test {
  public:
-  ExternalPolicyLoaderTest()
-      : loop_(MessageLoop::TYPE_IO),
-        ui_thread_(BrowserThread::UI, &loop_) {
+  ExternalPolicyLoaderTest() : ui_thread_(BrowserThread::UI, &loop_) {
   }
 
   virtual ~ExternalPolicyLoaderTest() {}
@@ -35,7 +35,7 @@ class ExternalPolicyLoaderTest : public testing::Test {
  private:
   // We need these to satisfy BrowserThread::CurrentlyOn(BrowserThread::UI)
   // checks in ExternalProviderImpl.
-  MessageLoop loop_;
+  base::MessageLoopForIO loop_;
   content::TestBrowserThread ui_thread_;
 };
 
@@ -51,13 +51,13 @@ class MockExternalPolicyProviderVisitor
              const std::set<std::string>& expected_extensions) {
     profile_.reset(new TestingProfile);
     profile_->GetTestingPrefService()->SetManagedPref(
-        prefs::kExtensionInstallForceList,
-        policy_forcelist.DeepCopy());
+        pref_names::kInstallForceList, policy_forcelist.DeepCopy());
     provider_.reset(new ExternalProviderImpl(
         this,
         new ExternalPolicyLoader(profile_.get()),
-        Extension::INVALID,
-        Extension::EXTERNAL_POLICY_DOWNLOAD,
+        profile_.get(),
+        Manifest::INVALID_LOCATION,
+        Manifest::EXTERNAL_POLICY_DOWNLOAD,
         Extension::NO_FLAGS));
 
     // Extensions will be removed from this list as they visited,
@@ -69,25 +69,29 @@ class MockExternalPolicyProviderVisitor
 
   virtual bool OnExternalExtensionFileFound(const std::string& id,
                                             const Version* version,
-                                            const FilePath& path,
-                                            Extension::Location unused,
+                                            const base::FilePath& path,
+                                            Manifest::Location unused,
                                             int unused2,
-                                            bool unused3) {
+                                            bool unused3) OVERRIDE {
     ADD_FAILURE() << "There should be no external extensions from files.";
     return false;
   }
 
   virtual bool OnExternalExtensionUpdateUrlFound(
-      const std::string& id, const GURL& update_url,
-      Extension::Location location) {
+      const std::string& id,
+      const std::string& install_parameter,
+      const GURL& update_url,
+      Manifest::Location location,
+      int unused1,
+      bool unused2) OVERRIDE {
     // Extension has the correct location.
-    EXPECT_EQ(Extension::EXTERNAL_POLICY_DOWNLOAD, location);
+    EXPECT_EQ(Manifest::EXTERNAL_POLICY_DOWNLOAD, location);
 
     // Provider returns the correct location when asked.
-    Extension::Location location1;
+    Manifest::Location location1;
     scoped_ptr<Version> version1;
     provider_->GetExtensionDetails(id, &location1, &version1);
-    EXPECT_EQ(Extension::EXTERNAL_POLICY_DOWNLOAD, location1);
+    EXPECT_EQ(Manifest::EXTERNAL_POLICY_DOWNLOAD, location1);
     EXPECT_FALSE(version1.get());
 
     // Remove the extension from our list.
@@ -96,7 +100,7 @@ class MockExternalPolicyProviderVisitor
   }
 
   virtual void OnExternalProviderReady(
-      const ExternalProviderInterface* provider) {
+      const ExternalProviderInterface* provider) OVERRIDE {
     EXPECT_EQ(provider, provider_.get());
     EXPECT_TRUE(provider->IsReady());
   }
@@ -138,7 +142,8 @@ TEST_F(ExternalPolicyLoaderTest, InvalidEntriesIgnored) {
 
   // Add invalid entries.
   forced_extensions.SetString("invalid", "http://www.example.com/crx");
-  forced_extensions.SetString("dddddddddddddddddddddddddddddddd", "");
+  forced_extensions.SetString("dddddddddddddddddddddddddddddddd",
+                              std::string());
   forced_extensions.SetString("invalid", "bad");
 
   MockExternalPolicyProviderVisitor mv;

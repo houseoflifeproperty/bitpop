@@ -7,15 +7,13 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/task/cancelable_task_tracker.h"
+#include "chrome/browser/download/download_item_model.h"
 #include "chrome/browser/icon_manager.h"
-#include "chrome/common/cancelable_task_tracker.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 
 @class DownloadItemController;
-class DownloadItemModel;
 
 namespace gfx{
 class Image;
@@ -27,8 +25,7 @@ class Image;
 
 class DownloadItemMac : content::DownloadItem::Observer {
  public:
-  // DownloadItemMac takes ownership of |download_model|.
-  DownloadItemMac(DownloadItemModel* download_model,
+  DownloadItemMac(content::DownloadItem* download,
                   DownloadItemController* controller);
 
   // Destructor.
@@ -39,7 +36,7 @@ class DownloadItemMac : content::DownloadItem::Observer {
   virtual void OnDownloadOpened(content::DownloadItem* download) OVERRIDE;
   virtual void OnDownloadDestroyed(content::DownloadItem* download) OVERRIDE;
 
-  DownloadItemModel* download_model() { return download_model_.get(); }
+  DownloadItemModel* download_model() { return &download_model_; }
 
   // Asynchronous icon loading support.
   void LoadIcon();
@@ -49,16 +46,16 @@ class DownloadItemMac : content::DownloadItem::Observer {
   void OnExtractIconComplete(gfx::Image* icon_bitmap);
 
   // The download item model we represent.
-  scoped_ptr<DownloadItemModel> download_model_;
+  DownloadItemModel download_model_;
 
   // The objective-c controller object.
   DownloadItemController* item_controller_;  // weak, owns us.
 
   // For canceling an in progress icon request.
-  CancelableTaskTracker cancelable_task_tracker_;
+  base::CancelableTaskTracker cancelable_task_tracker_;
 
   // Stores the last known path where the file will be saved.
-  FilePath lastFilePath_;
+  base::FilePath lastFilePath_;
 
   DISALLOW_COPY_AND_ASSIGN(DownloadItemMac);
 };

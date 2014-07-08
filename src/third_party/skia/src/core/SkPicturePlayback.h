@@ -14,14 +14,13 @@
 #include "SkBitmap.h"
 #include "SkData.h"
 #include "SkMatrix.h"
-#include "SkOrderedReadBuffer.h"
+#include "SkReadBuffer.h"
 #include "SkPaint.h"
 #include "SkPath.h"
 #include "SkPathHeap.h"
 #include "SkRegion.h"
 #include "SkRRect.h"
 #include "SkPictureFlat.h"
-#include "SkSerializationHelpers.h"
 
 #ifdef SK_BUILD_FOR_ANDROID
 #include "SkThread.h"
@@ -40,11 +39,27 @@ struct SkPictInfo {
         kPtrIs64Bit_Flag        = 1 << 2,
     };
 
+    char        fMagic[8];
     uint32_t    fVersion;
     uint32_t    fWidth;
     uint32_t    fHeight;
     uint32_t    fFlags;
 };
+
+#define SK_PICT_READER_TAG     SkSetFourByteTag('r', 'e', 'a', 'd')
+#define SK_PICT_FACTORY_TAG    SkSetFourByteTag('f', 'a', 'c', 't')
+#define SK_PICT_TYPEFACE_TAG   SkSetFourByteTag('t', 'p', 'f', 'c')
+#define SK_PICT_PICTURE_TAG    SkSetFourByteTag('p', 'c', 't', 'r')
+
+// This tag specifies the size of the ReadBuffer, needed for the following tags
+#define SK_PICT_BUFFER_SIZE_TAG     SkSetFourByteTag('a', 'r', 'a', 'y')
+// these are all inside the ARRAYS tag
+#define SK_PICT_BITMAP_BUFFER_TAG  SkSetFourByteTag('b', 't', 'm', 'p')
+#define SK_PICT_PAINT_BUFFER_TAG   SkSetFourByteTag('p', 'n', 't', ' ')
+#define SK_PICT_PATH_BUFFER_TAG    SkSetFourByteTag('p', 't', 'h', ' ')
+
+// Always write this guy last (with no length field afterwards)
+#define SK_PICT_EOF_TAG     SkSetFourByteTag('e', 'o', 'f', ' ')
 
 /**
  * Container for data that is needed to deep copy a SkPicture. The container
@@ -60,28 +75,48 @@ struct SkPictCopyInfo {
 
 class SkPicturePlayback {
 public:
-    SkPicturePlayback();
-    SkPicturePlayback(const SkPicturePlayback& src, SkPictCopyInfo* deepCopyInfo = NULL);
-    explicit SkPicturePlayback(const SkPictureRecord& record, bool deepCopy = false);
-    SkPicturePlayback(SkStream*, const SkPictInfo&, bool* isValid,
-                      SkSerializationHelpers::DecodeBitmap decoder);
+    SkPicturePlayback(const SkPicture* picture, const SkPicturePlayback& src,
+                      SkPictCopyInfo* deepCopyInfo = NULL);
+    SkPicturePlayback(const SkPicture* picture, const SkPictureRecord& record, const SkPictInfo&,
+                      bool deepCopy = false);
+    static SkPicturePlayback* CreateFromStream(SkPicture* picture,
+                                               SkStream*,
+                                               const SkPictInfo&,
+                                               SkPicture::InstallPixelRefProc);
+    static SkPicturePlayback* CreateFromBuffer(SkPicture* picture,
+                                               SkReadBuffer&,
+                                               const SkPictInfo&);
 
     virtual ~SkPicturePlayback();
 
-    void draw(SkCanvas& canvas);
+    const SkPicture::OperationList& getActiveOps(const SkIRect& queryRect);
 
-    void serialize(SkWStream*, SkSerializationHelpers::EncodeBitmap) const;
+    void draw(SkCanvas& canvas, SkDrawPictureCallback*);
+
+    void serialize(SkWStream*, SkPicture::EncodeBitmap) const;
+    void flatten(SkWriteBuffer&) const;
 
     void dumpSize() const;
 
+    bool containsBitmaps() const;
+
+#ifdef SK_BUILD_FOR_ANDROID
     // Can be called in the middle of playback (the draw() call). WIll abort the
     // drawing and return from draw() after the "current" op code is done
-    void abort();
+    void abort() { fAbortCurrentPlayback = true; }
+#endif
+
+    size_t curOpID() const { return fCurOffset; }
+    void resetOpID() { fCurOffset = 0; }
 
 protected:
-#ifdef SK_PICTURE_PROFILING_STUBS
-    virtual size_t preDraw(size_t offset, int type);
-    virtual void postDraw(size_t offset);
+    explicit SkPicturePlayback(const SkPicture* picture, const SkPictInfo& info);
+
+    bool parseStream(SkPicture* picture, SkStream*, SkPicture::InstallPixelRefProc);
+    bool parseBuffer(SkPicture* picture, SkReadBuffer& buffer);
+#ifdef SK_DEVELOPER
+    virtual bool preDraw(int opIndex, int type);
+    virtual void postDraw(int opIndex);
 #endif
 
 private:
@@ -96,22 +131,20 @@ private:
     const SkBitmap& getBitmap(SkReader32& reader) {
         const int index = reader.readInt();
         if (SkBitmapHeap::INVALID_SLOT == index) {
+#ifdef SK_DEBUG
             SkDebugf("An invalid bitmap was recorded!\n");
+#endif
             return fBadBitmap;
         }
         return (*fBitmaps)[index];
     }
 
-    const SkMatrix* getMatrix(SkReader32& reader) {
-        int index = reader.readInt();
-        if (index == 0) {
-            return NULL;
-        }
-        return &(*fMatrices)[index - 1];
+    void getMatrix(SkReader32& reader, SkMatrix* matrix) {
+        reader.readMatrix(matrix);
     }
 
     const SkPath& getPath(SkReader32& reader) {
-        return (*fPathHeap)[reader.readInt() - 1];
+        return fPicture->getPath(reader.readInt() - 1);
     }
 
     SkPicture& getPicture(SkReader32& reader) {
@@ -144,9 +177,8 @@ private:
         }
     }
 
-    const SkRegion& getRegion(SkReader32& reader) {
-        int index = reader.readInt();
-        return (*fRegions)[index - 1];
+    void getRegion(SkReader32& reader, SkRegion* region) {
+        reader.readRegion(region);
     }
 
     void getText(SkReader32& reader, TextContainer* text) {
@@ -162,7 +194,6 @@ public:
     int bitmaps(size_t* size);
     int paints(size_t* size);
     int paths(size_t* size);
-    int regions(size_t* size);
 #endif
 
 #ifdef SK_DEBUG_DUMP
@@ -189,23 +220,25 @@ public:
 #endif
 
 private:    // these help us with reading/writing
-    bool parseStreamTag(SkStream*, const SkPictInfo&, uint32_t tag, size_t size,
-                        SkSerializationHelpers::DecodeBitmap decoder);
-    bool parseBufferTag(SkOrderedReadBuffer&, uint32_t tag, size_t size);
-    void flattenToBuffer(SkOrderedWriteBuffer&) const;
+    bool parseStreamTag(SkPicture* picture, SkStream*, uint32_t tag, uint32_t size,
+                        SkPicture::InstallPixelRefProc);
+    bool parseBufferTag(SkPicture* picture, SkReadBuffer&, uint32_t tag, uint32_t size);
+    void flattenToBuffer(SkWriteBuffer&) const;
 
 private:
+    friend class SkPicture;
+
+    // The picture that owns this SkPicturePlayback object
+    const SkPicture* fPicture;
+
     // Only used by getBitmap() if the passed in index is SkBitmapHeap::INVALID_SLOT. This empty
     // bitmap allows playback to draw nothing and move on.
     SkBitmap fBadBitmap;
 
     SkAutoTUnref<SkBitmapHeap> fBitmapHeap;
-    SkAutoTUnref<SkPathHeap> fPathHeap;
 
     SkTRefArray<SkBitmap>* fBitmaps;
-    SkTRefArray<SkMatrix>* fMatrices;
     SkTRefArray<SkPaint>* fPaints;
-    SkTRefArray<SkRegion>* fRegions;
 
     SkData* fOpData;    // opcodes and parameters
 
@@ -215,10 +248,43 @@ private:
     SkBBoxHierarchy* fBoundingHierarchy;
     SkPictureStateTree* fStateTree;
 
+    class CachedOperationList : public SkPicture::OperationList {
+    public:
+        CachedOperationList() {
+            fCacheQueryRect.setEmpty();
+        }
+
+        virtual bool valid() const { return true; }
+        virtual int numOps() const SK_OVERRIDE { return fOps.count(); }
+        virtual uint32_t offset(int index) const SK_OVERRIDE;
+        virtual const SkMatrix& matrix(int index) const SK_OVERRIDE;
+
+        // The query rect for which the cached active ops are valid
+        SkIRect          fCacheQueryRect;
+
+        // The operations which are active within 'fCachedQueryRect'
+        SkTDArray<void*> fOps;
+
+    private:
+        typedef SkPicture::OperationList INHERITED;
+    };
+
+    CachedOperationList* fCachedActiveOps;
+
     SkTypefacePlayback fTFPlayback;
     SkFactoryPlayback* fFactoryPlayback;
+
+    // The offset of the current operation when within the draw method
+    size_t fCurOffset;
+
+    const SkPictInfo fInfo;
+
+    static void WriteFactories(SkWStream* stream, const SkFactorySet& rec);
+    static void WriteTypefaces(SkWStream* stream, const SkRefCntSet& rec);
+
 #ifdef SK_BUILD_FOR_ANDROID
     SkMutex fDrawMutex;
+    bool fAbortCurrentPlayback;
 #endif
 };
 

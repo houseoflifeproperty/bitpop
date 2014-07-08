@@ -21,7 +21,7 @@
 #import <Foundation/Foundation.h>
 
 #import "base/mac/cocoa_protocols.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
 
@@ -45,14 +45,14 @@ class FacebookChatItem;
   CGFloat maxBarHeight_;
 
   // The download items we have added to our shelf.
-  scoped_nsobject<NSMutableArray> chatItemControllers_;
+  base::scoped_nsobject<NSMutableArray> chatItemControllers_;
 
   // Delegate that handles resizing our view.
   id<ViewResizer> resizeDelegate_;
 
-  scoped_nsobject<NSAnimation> addAnimation_;
-  scoped_nsobject<NSAnimation> removeAnimation_;
-  scoped_nsobject<NSAnimation> placeFirstAnimation_;
+  base::scoped_nsobject<NSAnimation> addAnimation_;
+  base::scoped_nsobject<NSAnimation> removeAnimation_;
+  base::scoped_nsobject<NSAnimation> placeFirstAnimation_;
 
   FacebookChatItemController *lastAddedItem_;
 

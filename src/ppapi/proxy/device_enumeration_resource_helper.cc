@@ -30,29 +30,10 @@ DeviceEnumerationResourceHelper::DeviceEnumerationResourceHelper(
     : owner_(owner),
       pending_enumerate_devices_(false),
       monitor_callback_id_(0),
-      monitor_callback_(NULL),
       monitor_user_data_(NULL) {
 }
 
 DeviceEnumerationResourceHelper::~DeviceEnumerationResourceHelper() {
-}
-
-int32_t DeviceEnumerationResourceHelper::EnumerateDevices0_2(
-    PP_Resource* devices,
-    scoped_refptr<TrackedCallback> callback) {
-  if (pending_enumerate_devices_)
-    return PP_ERROR_INPROGRESS;
-  if (!devices)
-    return PP_ERROR_BADARGUMENT;
-
-  pending_enumerate_devices_ = true;
-  PpapiHostMsg_DeviceEnumeration_EnumerateDevices msg;
-  owner_->Call<PpapiPluginMsg_DeviceEnumeration_EnumerateDevicesReply>(
-      PluginResource::RENDERER, msg,
-      base::Bind(
-          &DeviceEnumerationResourceHelper::OnPluginMsgEnumerateDevicesReply0_2,
-          AsWeakPtr(), devices, callback));
-  return PP_OK_COMPLETIONPENDING;
 }
 
 int32_t DeviceEnumerationResourceHelper::EnumerateDevices(
@@ -90,14 +71,19 @@ int32_t DeviceEnumerationResourceHelper::MonitorDeviceChange(
     PP_MonitorDeviceChangeCallback callback,
     void* user_data) {
   monitor_callback_id_++;
-  monitor_callback_ = callback;
   monitor_user_data_ = user_data;
-
   if (callback) {
+    monitor_callback_.reset(
+        ThreadAwareCallback<PP_MonitorDeviceChangeCallback>::Create(callback));
+    if (!monitor_callback_.get())
+      return PP_ERROR_NO_MESSAGE_LOOP;
+
     owner_->Post(PluginResource::RENDERER,
                  PpapiHostMsg_DeviceEnumeration_MonitorDeviceChange(
                      monitor_callback_id_));
   } else {
+    monitor_callback_.reset(NULL);
+
     owner_->Post(PluginResource::RENDERER,
                  PpapiHostMsg_DeviceEnumeration_StopMonitoringDeviceChange());
   }
@@ -120,33 +106,12 @@ bool DeviceEnumerationResourceHelper::HandleReply(
 void DeviceEnumerationResourceHelper::LastPluginRefWasDeleted() {
   // Make sure that no further notifications are sent to the plugin.
   monitor_callback_id_++;
-  monitor_callback_ = NULL;
+  monitor_callback_.reset(NULL);
   monitor_user_data_ = NULL;
 
   // There is no need to do anything with pending callback of
   // EnumerateDevices(), because OnPluginMsgEnumerateDevicesReply*() will handle
   // that properly.
-}
-
-void DeviceEnumerationResourceHelper::OnPluginMsgEnumerateDevicesReply0_2(
-    PP_Resource* devices_resource,
-    scoped_refptr<TrackedCallback> callback,
-    const ResourceMessageReplyParams& params,
-    const std::vector<DeviceRefData>& devices) {
-  pending_enumerate_devices_ = false;
-
-  // We shouldn't access |devices_resource| if the callback has been called,
-  // which is possible if the last plugin reference to the corresponding
-  // resource has gone away, and the callback has been aborted.
-  if (!TrackedCallback::IsPending(callback))
-    return;
-
-  if (params.result() == PP_OK) {
-    *devices_resource = PPB_DeviceRef_Shared::CreateResourceArray(
-        OBJECT_IS_PROXY, owner_->pp_instance(), devices);
-  }
-
-  callback->Run(params.result());
 }
 
 void DeviceEnumerationResourceHelper::OnPluginMsgEnumerateDevicesReply(
@@ -178,9 +143,9 @@ void DeviceEnumerationResourceHelper::OnPluginMsgNotifyDeviceChange(
     return;
   }
 
-  CHECK(monitor_callback_);
+  CHECK(monitor_callback_.get());
 
-  scoped_array<PP_Resource> elements;
+  scoped_ptr<PP_Resource[]> elements;
   uint32_t size = devices.size();
   if (size > 0) {
     elements.reset(new PP_Resource[size]);
@@ -191,10 +156,8 @@ void DeviceEnumerationResourceHelper::OnPluginMsgNotifyDeviceChange(
     }
   }
 
-  // TODO(yzshen): make sure |monitor_callback_| is called on the same thread as
-  // the one on which MonitorDeviceChange() is called.
-  CallWhileUnlocked(base::Bind(monitor_callback_, monitor_user_data_, size,
-                               elements.get()));
+  monitor_callback_->RunOnTargetThread(monitor_user_data_, size,
+                                       elements.get());
   for (size_t index = 0; index < size; ++index)
     PpapiGlobals::Get()->GetResourceTracker()->ReleaseResource(elements[index]);
 }

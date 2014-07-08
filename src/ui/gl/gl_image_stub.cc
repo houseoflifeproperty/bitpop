@@ -6,20 +6,12 @@
 
 namespace gfx {
 
-void GLImageStub::Destroy() {
-}
+GLImageStub::GLImageStub() {}
 
-gfx::Size GLImageStub::GetSize() {
-  return gfx::Size(1, 1);
-}
+GLImageStub::~GLImageStub() { Destroy(); }
 
-bool GLImageStub::BindTexImage() {
-  return true;
-}
+gfx::Size GLImageStub::GetSize() { return gfx::Size(1, 1); }
 
-void GLImageStub::ReleaseTexImage() {
-}
-
-GLImageStub::~GLImageStub() {}
+bool GLImageStub::BindTexImage(unsigned target) { return true; }
 
 }  // namespace gfx

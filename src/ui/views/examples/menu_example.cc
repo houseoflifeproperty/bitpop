@@ -6,15 +6,16 @@
 
 #include <set>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/base/models/simple_menu_model.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/view.h"
 #include "ui/views/widget/widget.h"
+
+using base::ASCIIToUTF16;
 
 namespace views {
 namespace examples {
@@ -26,13 +27,13 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
  public:
   ExampleMenuModel();
 
-  // Overridden from ui::SimpleMenuModel::Delegate:
+  // ui::SimpleMenuModel::Delegate:
   virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
   virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   enum GroupID {
@@ -59,11 +60,11 @@ class ExampleMenuModel : public ui::SimpleMenuModel,
 
 class ExampleMenuButton : public MenuButton, public MenuButtonListener {
  public:
-  explicit ExampleMenuButton(const string16& test);
+  explicit ExampleMenuButton(const base::string16& test);
   virtual ~ExampleMenuButton();
 
  private:
-  // Overridden from MenuButtonListener:
+  // MenuButtonListener:
   virtual void OnMenuButtonClicked(View* source,
                                    const gfx::Point& point) OVERRIDE;
 
@@ -78,7 +79,7 @@ class ExampleMenuButton : public MenuButton, public MenuButtonListener {
 // ExampleMenuModel ---------------------------------------------------------
 
 ExampleMenuModel::ExampleMenuModel()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       current_encoding_command_id_(COMMAND_SELECT_ASCII) {
   AddItem(COMMAND_DO_SOMETHING, ASCIIToUTF16("Do Something"));
   AddSeparator(ui::NORMAL_SEPARATOR);
@@ -124,27 +125,27 @@ bool ExampleMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void ExampleMenuModel::ExecuteCommand(int command_id) {
+void ExampleMenuModel::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     case COMMAND_DO_SOMETHING: {
-      LOG(INFO) << "Done something";
+      VLOG(0) << "Done something";
       break;
     }
 
     // Radio items.
     case COMMAND_SELECT_ASCII: {
       current_encoding_command_id_ = COMMAND_SELECT_ASCII;
-      LOG(INFO) << "Selected ASCII";
+      VLOG(0) << "Selected ASCII";
       break;
     }
     case COMMAND_SELECT_UTF8: {
       current_encoding_command_id_ = COMMAND_SELECT_UTF8;
-      LOG(INFO) << "Selected UTF-8";
+      VLOG(0) << "Selected UTF-8";
       break;
     }
     case COMMAND_SELECT_UTF16: {
       current_encoding_command_id_ = COMMAND_SELECT_UTF16;
-      LOG(INFO) << "Selected UTF-16";
+      VLOG(0) << "Selected UTF-16";
       break;
     }
 
@@ -177,8 +178,8 @@ void ExampleMenuModel::ExecuteCommand(int command_id) {
 
 // ExampleMenuButton -----------------------------------------------------------
 
-ExampleMenuButton::ExampleMenuButton(const string16& test)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(MenuButton(NULL, test, this, true)) {
+ExampleMenuButton::ExampleMenuButton(const base::string16& test)
+    : MenuButton(NULL, test, this, true) {
 }
 
 ExampleMenuButton::~ExampleMenuButton() {
@@ -186,13 +187,17 @@ ExampleMenuButton::~ExampleMenuButton() {
 
 void ExampleMenuButton::OnMenuButtonClicked(View* source,
                                             const gfx::Point& point) {
-  MenuModelAdapter menu_model_adapter(GetMenuModel());
-  menu_runner_.reset(new MenuRunner(menu_model_adapter.CreateMenu()));
+  menu_runner_.reset(new MenuRunner(GetMenuModel()));
 
-  if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(), this,
-        gfx::Rect(point, gfx::Size()), MenuItemView::TOPRIGHT,
-        MenuRunner::HAS_MNEMONICS) == MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(source->GetWidget()->GetTopLevelWidget(),
+                              this,
+                              gfx::Rect(point, gfx::Size()),
+                              MENU_ANCHOR_TOPRIGHT,
+                              ui::MENU_SOURCE_NONE,
+                              MenuRunner::HAS_MNEMONICS) ==
+      MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 ui::SimpleMenuModel* ExampleMenuButton::GetMenuModel() {

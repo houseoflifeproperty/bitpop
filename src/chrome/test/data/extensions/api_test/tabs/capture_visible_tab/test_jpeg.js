@@ -15,7 +15,7 @@ var kWindowRect = {
   'height': 400
 };
 
-var kTestDir = '/files/extensions/api_test/tabs/capture_visible_tab/common/';
+var kTestDir = '/extensions/api_test/tabs/capture_visible_tab/common/';
 var kURLBaseA = 'http://a.com:PORT' + kTestDir;
 var kURLBaseB = 'http://b.com:PORT' + kTestDir;
 
@@ -108,7 +108,32 @@ chrome.test.getConfig(function(config) {
           }));
         }));
       }));
-    }
+    },
+
+    // Passing options with no format should default to jpeg.
+    function captureVisibleTabNoFormat() {
+      // Keep the resulting image small by making the window small.
+      createWindow([fixPort(kURLBaseA + 'white.html')],
+                   kWindowRect,
+                   pass(function(winId, tabIds) {
+        waitForAllTabs(pass(function() {
+          chrome.tabs.getSelected(winId, pass(function(tab) {
+            assertEq('complete', tab.status);  // waitForAllTabs ensures this.
+            chrome.tabs.captureVisibleTab(winId,
+                                          {quality: 100},
+                                          pass(function(imgDataUrl) {
+              // The URL should be a data URL with has a JPEG mime type.
+              assertIsStringWithPrefix('data:image/jpeg;base64,', imgDataUrl);
+              whiteImageUrl = imgDataUrl;
+
+              testPixelsAreExpectedColor(whiteImageUrl,
+                                         kWindowRect,
+                                         '255,255,255,255');  // White.
+            }));
+          }));
+        }));
+      }));
+    },
 
   ]);
 });

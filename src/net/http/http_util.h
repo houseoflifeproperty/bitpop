@@ -9,11 +9,11 @@
 #include <vector>
 
 #include "base/memory/ref_counted.h"
-#include "base/string_tokenizer.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string_tokenizer.h"
 #include "net/base/net_export.h"
 #include "net/http/http_byte_range.h"
 #include "net/http/http_version.h"
+#include "url/gurl.h"
 
 // This is a macro to support extending this string literal at compile time.
 // Please excuse me polluting your global namespace!
@@ -176,11 +176,6 @@ class NET_EXPORT HttpUtil {
   static std::string GenerateAcceptLanguageHeader(
       const std::string& raw_language_list);
 
-  // Given a charset, return the list with a qvalue. If charset is utf-8,
-  // it will return 'utf-8,*;q=0.5'. Otherwise (e.g. 'euc-jp'), it'll return
-  // 'euc-jp,utf-8;q=0.7,*;q=0.3'.
-  static std::string GenerateAcceptCharsetHeader(const std::string& charset);
-
   // Helper. If |*headers| already contains |header_name| do nothing,
   // otherwise add <header_name> ": " <header_value> to the end of the list.
   static void AppendHeaderIfMissing(const char* header_name,
@@ -252,7 +247,7 @@ class NET_EXPORT HttpUtil {
     }
 
    private:
-    StringTokenizer lines_;
+    base::StringTokenizer lines_;
     std::string::const_iterator name_begin_;
     std::string::const_iterator name_end_;
     std::string::const_iterator values_begin_;
@@ -292,7 +287,7 @@ class NET_EXPORT HttpUtil {
     }
 
    private:
-    StringTokenizer values_;
+    base::StringTokenizer values_;
     std::string::const_iterator value_begin_;
     std::string::const_iterator value_end_;
   };

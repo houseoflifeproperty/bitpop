@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -14,7 +14,7 @@ import org.chromium.base.test.util.Feature;
 /**
  * Tests for the ContentViewClient.addMessageToConsole() method.
  */
-public class ClientAddMessageToConsoleTest extends AndroidWebViewTestBase {
+public class ClientAddMessageToConsoleTest extends AwTestBase {
 
     // Line number at which the console message is logged in the page returned by the
     // getLogMessageJavaScriptData method.
@@ -37,7 +37,7 @@ public class ClientAddMessageToConsoleTest extends AndroidWebViewTestBase {
         getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {
-                mAwContents.getContentViewCore().getContentSettings().setJavaScriptEnabled(true);
+                mAwContents.getSettings().setJavaScriptEnabled(true);
             }
         });
     }

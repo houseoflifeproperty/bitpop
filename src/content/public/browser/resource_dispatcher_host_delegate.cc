@@ -4,6 +4,8 @@
 
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
+#include "content/public/browser/stream_handle.h"
+
 namespace content {
 
 bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
@@ -12,8 +14,7 @@ bool ResourceDispatcherHostDelegate::ShouldBeginRequest(
     const std::string& method,
     const GURL& url,
     ResourceType::Type resource_type,
-    ResourceContext* resource_context,
-    const Referrer& referrer) {
+    ResourceContext* resource_context) {
   return true;
 }
 
@@ -24,7 +25,6 @@ void ResourceDispatcherHostDelegate::RequestBeginning(
     ResourceType::Type resource_type,
     int child_id,
     int route_id,
-    bool is_continuation_of_transferred_request,
     ScopedVector<ResourceThrottle>* throttles) {
 }
 
@@ -35,19 +35,8 @@ void ResourceDispatcherHostDelegate::DownloadStarting(
     int route_id,
     int request_id,
     bool is_content_initiated,
+    bool must_download,
     ScopedVector<ResourceThrottle>* throttles) {
-}
-
-bool ResourceDispatcherHostDelegate::AcceptSSLClientCertificateRequest(
-    net::URLRequest* request,
-    net::SSLCertRequestInfo* cert_request_info) {
-  return false;
-}
-
-bool ResourceDispatcherHostDelegate::AcceptAuthRequest(
-    net::URLRequest* request,
-    net::AuthChallengeInfo* auth_info) {
-  return false;
 }
 
 ResourceDispatcherHostLoginDelegate*
@@ -57,9 +46,11 @@ ResourceDispatcherHostLoginDelegate*
   return NULL;
 }
 
-bool ResourceDispatcherHostDelegate::HandleExternalProtocol(const GURL& url,
-                                                            int child_id,
-                                                            int route_id) {
+bool ResourceDispatcherHostDelegate::HandleExternalProtocol(
+    const GURL& url,
+    int child_id,
+    int route_id,
+    bool initiated_by_user_gesture) {
   return true;
 }
 
@@ -67,6 +58,24 @@ bool ResourceDispatcherHostDelegate::ShouldForceDownloadResource(
     const GURL& url,
     const std::string& mime_type) {
   return false;
+}
+
+bool ResourceDispatcherHostDelegate::ShouldInterceptResourceAsStream(
+    content::ResourceContext* resource_context,
+    const GURL& url,
+    const std::string& mime_type,
+    GURL* origin,
+    std::string* target_id) {
+  return false;
+}
+
+void ResourceDispatcherHostDelegate::OnStreamCreated(
+    content::ResourceContext* resource_context,
+    int render_process_id,
+    int render_view_id,
+    const std::string& target_id,
+    scoped_ptr<StreamHandle> stream,
+    int64 expected_content_size) {
 }
 
 void ResourceDispatcherHostDelegate::OnResponseStarted(
@@ -81,6 +90,10 @@ void ResourceDispatcherHostDelegate::OnRequestRedirected(
     net::URLRequest* request,
     ResourceContext* resource_context,
     ResourceResponse* response) {
+}
+
+void ResourceDispatcherHostDelegate::RequestComplete(
+    net::URLRequest* url_request) {
 }
 
 ResourceDispatcherHostDelegate::ResourceDispatcherHostDelegate() {

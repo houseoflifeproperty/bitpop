@@ -4,19 +4,22 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_view.h"
 
-#include "chrome/browser/bookmarks/bookmark_pasteboard_helper_mac.h"
 #include "chrome/browser/profiles/profile.h"
+#import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button.h"
+#import "chrome/browser/ui/cocoa/bookmarks/bookmark_context_menu_cocoa_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_folder_target.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
+#include "components/bookmarks/core/browser/bookmark_pasteboard_helper_mac.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "content/public/browser/user_metrics.h"
 #import "third_party/mozilla/NSPasteboard+Utils.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 
 @interface BookmarkBarView (Private)
 - (void)themeDidChangeNotification:(NSNotification*)aNotification;
@@ -67,6 +70,7 @@ using content::UserMetricsAction;
   ui::ThemeProvider* themeProvider = [window themeProvider];
   [self updateTheme:themeProvider];
   [controller_ updateTheme:themeProvider];
+  [super viewWillMoveToWindow:window];
 }
 
 - (void)viewDidMoveToWindow {
@@ -85,8 +89,7 @@ using content::UserMetricsAction;
     return;
 
   NSColor* color =
-      themeProvider->GetNSColor(ThemeService::COLOR_BOOKMARK_TEXT,
-                                true);
+      themeProvider->GetNSColor(ThemeProperties::COLOR_BOOKMARK_TEXT);
   [noItemTextfield_ setTextColor:color];
 }
 
@@ -96,11 +99,11 @@ using content::UserMetricsAction;
   return NO;
 }
 
--(NSTextField*)noItemTextfield {
+- (BookmarkBarTextField*)noItemTextfield {
   return noItemTextfield_;
 }
 
--(NSButton*)importBookmarksButton {
+- (NSButton*)importBookmarksButton {
   return importBookmarksButton_;
 }
 
@@ -111,21 +114,11 @@ using content::UserMetricsAction;
 // Internal method, needs to be called whenever a change has been made to
 // dropIndicatorShown_ or dropIndicatorPosition_ so it can get the controller
 // to reflect the change by moving buttons around.
--(void)dropIndicatorChanged {
+- (void)dropIndicatorChanged {
   if (dropIndicatorShown_)
     [controller_ setDropInsertionPos:dropIndicatorPosition_];
   else
     [controller_ clearDropInsertionPos];
-}
-
--(void)drawRect:(NSRect)dirtyRect {
-  [super drawRect:dirtyRect];
-}
-
-// Shim function to assist in unit testing.
-- (BOOL)dragClipboardContainsBookmarks {
-  return bookmark_pasteboard_helper_mac::PasteboardContainsBookmarks(
-      bookmark_pasteboard_helper_mac::kDragPasteboard);
 }
 
 // NSDraggingDestination methods
@@ -134,7 +127,7 @@ using content::UserMetricsAction;
   if (![controller_ draggingAllowed:info])
     return NSDragOperationNone;
   if ([[info draggingPasteboard] dataForType:kBookmarkButtonDragType] ||
-      [self dragClipboardContainsBookmarks] ||
+      PasteboardContainsBookmarks(ui::CLIPBOARD_TYPE_DRAG) ||
       [[info draggingPasteboard] containsURLData]) {
     // We only show the drop indicator if we're not in a position to
     // perform a hover-open since it doesn't make sense to do both.
@@ -234,7 +227,7 @@ using content::UserMetricsAction;
     const BookmarkModel* const model = [[self controller] bookmarkModel];
     const BookmarkNode* const source_node = [button bookmarkNode];
     const BookmarkNode* const target_node =
-        model->GetNodeByID(source_node->id());
+        GetBookmarkNodeByID(model, source_node->id());
 
     BOOL copy =
         !([info draggingSourceOperationMask] & NSDragOperationMove) ||
@@ -263,6 +256,10 @@ using content::UserMetricsAction;
   return NO;
 }
 
+- (NSMenu*)menu {
+  return [[controller_ menuController] menuForBookmarkBar];
+}
+
 - (void)setController:(id)controller {
   controller_ = controller;
 }
@@ -272,3 +269,19 @@ using content::UserMetricsAction;
 }
 
 @end  // @implementation BookmarkBarView
+
+@implementation BookmarkBarTextField
+
+- (NSMenu*)menu {
+  return [barView_ menu];
+}
+
+@end  // @implementation BookmarkBarTextField
+
+@implementation BookmarkBarItemContainer
+
+- (NSMenu*)menu {
+  return [barView_ menu];
+}
+
+@end  // @implementation BookmarkBarItemContainer

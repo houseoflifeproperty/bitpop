@@ -8,15 +8,14 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_bubble.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
 #include "ui/compositor/layer.h"
+#include "ui/events/event.h"
 #include "ui/gfx/transform.h"
 #include "ui/views/widget/widget.h"
 
 const int kMinBubbleHeight = 13;
 
 namespace ash {
-namespace internal {
 
 TrayGestureHandler::TrayGestureHandler()
     : widget_(NULL),
@@ -100,10 +99,9 @@ void TrayGestureHandler::CompleteGestureDrag(const ui::GestureEvent& event) {
   }
 }
 
-void TrayGestureHandler::OnWidgetClosing(views::Widget* widget) {
+void TrayGestureHandler::OnWidgetDestroying(views::Widget* widget) {
   CHECK_EQ(widget_, widget);
   widget_ = NULL;
 }
 
-}  // namespace internal
 }  // namespace ash

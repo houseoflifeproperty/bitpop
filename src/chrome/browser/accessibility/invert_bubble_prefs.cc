@@ -4,15 +4,16 @@
 
 #include "chrome/browser/accessibility/invert_bubble_prefs.h"
 
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 namespace chrome {
 
-void RegisterInvertBubbleUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kInvertNotificationShown,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+void RegisterInvertBubbleUserPrefs(user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kInvertNotificationShown,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 }  // namespace chrome

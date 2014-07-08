@@ -8,110 +8,106 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-
 #ifndef VP9_COMMON_VP9_ENTROPYMODE_H_
 #define VP9_COMMON_VP9_ENTROPYMODE_H_
 
 #include "vp9/common/vp9_blockd.h"
-#include "vp9/common/vp9_treecoder.h"
+#include "vp9/common/vp9_entropy.h"
+#include "vp9/common/vp9_entropymv.h"
 
-#define SUBMVREF_COUNT 5
-#define VP9_NUMMBSPLITS 4
-#if CONFIG_COMP_INTRA_PRED
-#define DEFAULT_COMP_INTRA_PROB  32
+#ifdef __cplusplus
+extern "C" {
 #endif
 
-#if CONFIG_COMP_INTERINTRA_PRED
-#define VP9_DEF_INTERINTRA_PROB 248
-#define VP9_UPD_INTERINTRA_PROB 192
-// whether to use a separate uv mode (1) or use the same as the y mode (0)
-#define SEPARATE_INTERINTRA_UV  0
-#endif
-
-typedef const int vp9_mbsplit[16];
-
-extern vp9_mbsplit vp9_mbsplits[VP9_NUMMBSPLITS];
-
-extern const int vp9_mbsplit_count[VP9_NUMMBSPLITS];    /* # of subsets */
-
-extern const vp9_prob vp9_mbsplit_probs[VP9_NUMMBSPLITS - 1];
-
-extern int vp9_mv_cont(const int_mv *l, const int_mv *a);
-
-extern const vp9_prob vp9_sub_mv_ref_prob[VP9_SUBMVREFS - 1];
-
-extern const vp9_prob vp9_sub_mv_ref_prob2[SUBMVREF_COUNT][VP9_SUBMVREFS - 1];
-
-extern const unsigned int vp9_kf_default_bmode_counts[VP9_KF_BINTRAMODES]
-                                                     [VP9_KF_BINTRAMODES]
-                                                     [VP9_KF_BINTRAMODES];
-
-extern const vp9_tree_index vp9_bmode_tree[];
-extern const vp9_tree_index vp9_kf_bmode_tree[];
-
-extern const vp9_tree_index  vp9_ymode_tree[];
-extern const vp9_tree_index  vp9_kf_ymode_tree[];
-extern const vp9_tree_index  vp9_uv_mode_tree[];
-#define vp9_sb_ymode_tree vp9_uv_mode_tree
-#define vp9_sb_kf_ymode_tree vp9_uv_mode_tree
-extern const vp9_tree_index  vp9_i8x8_mode_tree[];
-extern const vp9_tree_index  vp9_mbsplit_tree[];
-extern const vp9_tree_index  vp9_mv_ref_tree[];
-extern const vp9_tree_index  vp9_sb_mv_ref_tree[];
-extern const vp9_tree_index  vp9_sub_mv_ref_tree[];
-
-extern struct vp9_token_struct vp9_bmode_encodings[VP9_NKF_BINTRAMODES];
-extern struct vp9_token_struct vp9_kf_bmode_encodings[VP9_KF_BINTRAMODES];
-extern struct vp9_token_struct vp9_ymode_encodings[VP9_YMODES];
-extern struct vp9_token_struct vp9_sb_ymode_encodings[VP9_I32X32_MODES];
-extern struct vp9_token_struct vp9_sb_kf_ymode_encodings[VP9_I32X32_MODES];
-extern struct vp9_token_struct vp9_kf_ymode_encodings[VP9_YMODES];
-extern struct vp9_token_struct vp9_i8x8_mode_encodings[VP9_I8X8_MODES];
-extern struct vp9_token_struct vp9_uv_mode_encodings[VP9_UV_MODES];
-extern struct vp9_token_struct vp9_mbsplit_encodings[VP9_NUMMBSPLITS];
-
-/* Inter mode values do not start at zero */
-
-extern struct vp9_token_struct vp9_mv_ref_encoding_array[VP9_MVREFS];
-extern struct vp9_token_struct vp9_sb_mv_ref_encoding_array[VP9_MVREFS];
-extern struct vp9_token_struct vp9_sub_mv_ref_encoding_array[VP9_SUBMVREFS];
-
-void vp9_entropy_mode_init(void);
+#define TX_SIZE_CONTEXTS 2
+#define SWITCHABLE_FILTERS 3   // number of switchable filters
+#define SWITCHABLE_FILTER_CONTEXTS (SWITCHABLE_FILTERS + 1)
 
 struct VP9Common;
 
-void vp9_init_mbmode_probs(struct VP9Common *x);
+struct tx_probs {
+  vp9_prob p32x32[TX_SIZE_CONTEXTS][TX_SIZES - 1];
+  vp9_prob p16x16[TX_SIZE_CONTEXTS][TX_SIZES - 2];
+  vp9_prob p8x8[TX_SIZE_CONTEXTS][TX_SIZES - 3];
+};
 
-extern void vp9_init_mode_contexts(struct VP9Common *pc);
+struct tx_counts {
+  unsigned int p32x32[TX_SIZE_CONTEXTS][TX_SIZES];
+  unsigned int p16x16[TX_SIZE_CONTEXTS][TX_SIZES - 1];
+  unsigned int p8x8[TX_SIZE_CONTEXTS][TX_SIZES - 2];
+};
 
-extern void vp9_update_mode_context(struct VP9Common *pc);
+typedef struct frame_contexts {
+  vp9_prob y_mode_prob[BLOCK_SIZE_GROUPS][INTRA_MODES - 1];
+  vp9_prob uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
+  vp9_prob partition_prob[PARTITION_CONTEXTS][PARTITION_TYPES - 1];
+  vp9_coeff_probs_model coef_probs[TX_SIZES][PLANE_TYPES];
+  vp9_prob switchable_interp_prob[SWITCHABLE_FILTER_CONTEXTS]
+                                 [SWITCHABLE_FILTERS - 1];
+  vp9_prob inter_mode_probs[INTER_MODE_CONTEXTS][INTER_MODES - 1];
+  vp9_prob intra_inter_prob[INTRA_INTER_CONTEXTS];
+  vp9_prob comp_inter_prob[COMP_INTER_CONTEXTS];
+  vp9_prob single_ref_prob[REF_CONTEXTS][2];
+  vp9_prob comp_ref_prob[REF_CONTEXTS];
+  struct tx_probs tx_probs;
+  vp9_prob skip_probs[SKIP_CONTEXTS];
+  nmv_context nmvc;
+} FRAME_CONTEXT;
 
-extern void vp9_accum_mv_refs(struct VP9Common *pc,
-                              MB_PREDICTION_MODE m,
-                              const int context);
+typedef struct {
+  unsigned int y_mode[BLOCK_SIZE_GROUPS][INTRA_MODES];
+  unsigned int uv_mode[INTRA_MODES][INTRA_MODES];
+  unsigned int partition[PARTITION_CONTEXTS][PARTITION_TYPES];
+  vp9_coeff_count_model coef[TX_SIZES][PLANE_TYPES];
+  unsigned int eob_branch[TX_SIZES][PLANE_TYPES][REF_TYPES]
+                         [COEF_BANDS][COEFF_CONTEXTS];
+  unsigned int switchable_interp[SWITCHABLE_FILTER_CONTEXTS]
+                                [SWITCHABLE_FILTERS];
+  unsigned int inter_mode[INTER_MODE_CONTEXTS][INTER_MODES];
+  unsigned int intra_inter[INTRA_INTER_CONTEXTS][2];
+  unsigned int comp_inter[COMP_INTER_CONTEXTS][2];
+  unsigned int single_ref[REF_CONTEXTS][2][2];
+  unsigned int comp_ref[REF_CONTEXTS][2];
+  struct tx_counts tx;
+  unsigned int skip[SKIP_CONTEXTS][2];
+  nmv_context_counts mv;
+} FRAME_COUNTS;
 
-void vp9_default_bmode_probs(vp9_prob dest[VP9_NKF_BINTRAMODES - 1]);
+extern const vp9_prob vp9_kf_uv_mode_prob[INTRA_MODES][INTRA_MODES - 1];
+extern const vp9_prob vp9_kf_y_mode_prob[INTRA_MODES][INTRA_MODES]
+                                        [INTRA_MODES - 1];
+extern const vp9_prob vp9_kf_partition_probs[PARTITION_CONTEXTS]
+                                            [PARTITION_TYPES - 1];
+extern const vp9_tree_index vp9_intra_mode_tree[TREE_SIZE(INTRA_MODES)];
+extern const vp9_tree_index vp9_inter_mode_tree[TREE_SIZE(INTER_MODES)];
+extern const vp9_tree_index vp9_partition_tree[TREE_SIZE(PARTITION_TYPES)];
+extern const vp9_tree_index vp9_switchable_interp_tree
+                                [TREE_SIZE(SWITCHABLE_FILTERS)];
 
-void vp9_kf_default_bmode_probs(vp9_prob dest[VP9_KF_BINTRAMODES]
-                                             [VP9_KF_BINTRAMODES]
-                                             [VP9_KF_BINTRAMODES - 1]);
+void vp9_setup_past_independence(struct VP9Common *cm);
 
-void vp9_adapt_mode_probs(struct VP9Common *);
+void vp9_init_mode_probs(FRAME_CONTEXT *fc);
 
-#define VP9_SWITCHABLE_FILTERS 2 /* number of switchable filters */
+void vp9_adapt_mode_probs(struct VP9Common *cm);
 
-extern const  INTERPOLATIONFILTERTYPE vp9_switchable_interp
-                  [VP9_SWITCHABLE_FILTERS];
+void tx_counts_to_branch_counts_32x32(const unsigned int *tx_count_32x32p,
+                                      unsigned int (*ct_32x32p)[2]);
+void tx_counts_to_branch_counts_16x16(const unsigned int *tx_count_16x16p,
+                                      unsigned int (*ct_16x16p)[2]);
+void tx_counts_to_branch_counts_8x8(const unsigned int *tx_count_8x8p,
+                                    unsigned int (*ct_8x8p)[2]);
 
-extern const  int vp9_switchable_interp_map[SWITCHABLE + 1];
+static INLINE const vp9_prob *get_y_mode_probs(const MODE_INFO *mi,
+                                               const MODE_INFO *above_mi,
+                                               const MODE_INFO *left_mi,
+                                               int block) {
+  const PREDICTION_MODE above = vp9_above_block_mode(mi, above_mi, block);
+  const PREDICTION_MODE left = vp9_left_block_mode(mi, left_mi, block);
+  return vp9_kf_y_mode_prob[above][left];
+}
 
-extern const  vp9_tree_index vp9_switchable_interp_tree
-                  [2 * (VP9_SWITCHABLE_FILTERS - 1)];
-
-extern struct vp9_token_struct vp9_switchable_interp_encodings
-                  [VP9_SWITCHABLE_FILTERS];
-
-extern const  vp9_prob vp9_switchable_interp_prob[VP9_SWITCHABLE_FILTERS + 1]
-                                                 [VP9_SWITCHABLE_FILTERS - 1];
-
+#ifdef __cplusplus
+}  // extern "C"
 #endif
+
+#endif  // VP9_COMMON_VP9_ENTROPYMODE_H_

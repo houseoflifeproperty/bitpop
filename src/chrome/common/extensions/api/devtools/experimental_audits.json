@@ -5,6 +5,7 @@
 [
   {
     "namespace": "experimental.devtools.audits",
+    "description": "Use the <code>chrome.experimental.devtools.audits</code> API to add new audit categories to the Developer Tools' Audit panel.",
     "nocompile": true,
     "functions": [
       {
@@ -40,7 +41,7 @@
         "id": "FormattedValue",
         "type": "object",
         "additionalProperties": { "type": "any" },
-        "description": "A value returned from one of the formatters (a URL, code snippet etc), to be passed to <code>createResult()</code> or <code>addChild()</code>. See $ref:AuditResults.createSnippet and $ref:AuditResults.createURL."
+        "description": "A value returned from one of the formatters (a URL, code snippet etc), to be passed to <code>createResult()</code> or <code>addChild()</code>. See $(ref:AuditResults.createSnippet) and $(ref:AuditResults.createURL)."
       },
       {
         "id": "AuditResults",
@@ -80,7 +81,7 @@
             "description": "Creates a result node that may be used as the <code>details</code> parameters to the <code>addResult()</code> method.",
             "parameters": [
               {
-                "name": "content ...",
+                "name": "content",
                 "choices": [
                   { "type": "string" },
                   { "$ref": "FormattedValue" }
@@ -133,7 +134,7 @@
             "description": "Children of this node."
           },
           "expanded": {
-            "optional": "true",
+            "optional": true,
             "type": "boolean",
             "description": "Whether the node is expanded by default."
           }
@@ -149,7 +150,7 @@
             "description": "Adds a child node to this node.",
             "parameters": [
               {
-                "name": "content ...",
+                "name": "content",
                 "choices": [
                   { "type": "string" },
                   { "$ref": "FormattedValue" }

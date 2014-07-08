@@ -4,7 +4,6 @@
 
 {
   'variables': {
-    'jemalloc_dir': '../../third_party/jemalloc/chromium',
     'tcmalloc_dir': '../../third_party/tcmalloc/chromium',
     'use_vtable_verify%': 0,
   },
@@ -51,6 +50,7 @@
         # Generated for our configuration from tcmalloc's build
         # and checked in.
         '<(tcmalloc_dir)/src/config.h',
+        '<(tcmalloc_dir)/src/config_android.h',
         '<(tcmalloc_dir)/src/config_linux.h',
         '<(tcmalloc_dir)/src/config_win.h',
 
@@ -197,13 +197,6 @@
         '<(tcmalloc_dir)/src/windows/preamble_patcher.h',
         '<(tcmalloc_dir)/src/windows/preamble_patcher_with_stub.cc',
 
-        # jemalloc files
-        '<(jemalloc_dir)/jemalloc.c',
-        '<(jemalloc_dir)/jemalloc.h',
-        '<(jemalloc_dir)/ql.h',
-        '<(jemalloc_dir)/qr.h',
-        '<(jemalloc_dir)/rb.h',
-
         'allocator_shim.cc',
         'allocator_shim.h',
         'debugallocation_shim.cc',
@@ -252,6 +245,8 @@
         '<(tcmalloc_dir)/src/gperftools/profiler.h',
         '<(tcmalloc_dir)/src/gperftools/stacktrace.h',
         '<(tcmalloc_dir)/src/gperftools/tcmalloc.h',
+        '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
+        '<(tcmalloc_dir)/src/heap-checker.cc',
         '<(tcmalloc_dir)/src/libc_override.h',
         '<(tcmalloc_dir)/src/libc_override_gcc_and_weak.h',
         '<(tcmalloc_dir)/src/libc_override_glibc.h',
@@ -294,8 +289,6 @@
         # TODO(sgk):  merge this with build/common.gypi settings
         'VCLibrarianTool': {
           'AdditionalOptions': ['/ignore:4006,4221'],
-          'AdditionalLibraryDirectories':
-            ['<(DEPTH)/third_party/platformsdk_win7/files/Lib'],
         },
         'VCLinkerTool': {
           'AdditionalOptions': ['/ignore:4006'],
@@ -312,10 +305,11 @@
             # Provide a way to force disable debugallocation in Debug builds,
             # e.g. for profiling (it's more rare to profile Debug builds,
             # but people sometimes need to do that).
-            'disable_debugallocation%': 1,
+            'disable_debugallocation%': 0,
           },
           'conditions': [
-            ['disable_debugallocation==0', {
+            # TODO(phajdan.jr): Also enable on Windows.
+            ['disable_debugallocation==0 and OS!="win"', {
               'defines': [
                 # Use debugallocation for Debug builds to catch problems early
                 # and cleanly, http://crbug.com/30715 .
@@ -325,6 +319,10 @@
           ],
         },
       },
+      # Disable the heap checker in tcmalloc.
+      'defines': [
+        'NO_HEAP_CHECK',
+      ],
       'conditions': [
         ['OS=="linux" and clang_type_profiler==1', {
           'dependencies': [
@@ -352,7 +350,6 @@
             'libcmt',
           ],
           'include_dirs': [
-            '<(jemalloc_dir)',
             '<(tcmalloc_dir)/src/windows',
           ],
           'sources!': [
@@ -371,18 +368,9 @@
             # included by allocator_shim.cc
             'debugallocation_shim.cc',
 
-            # heap-profiler/checker/cpuprofiler
+            # cpuprofiler
             '<(tcmalloc_dir)/src/base/thread_lister.c',
             '<(tcmalloc_dir)/src/base/thread_lister.h',
-            '<(tcmalloc_dir)/src/deep-heap-profile.cc',
-            '<(tcmalloc_dir)/src/deep-heap-profile.h',
-            '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
-            '<(tcmalloc_dir)/src/heap-checker.cc',
-            '<(tcmalloc_dir)/src/heap-profiler.cc',
-            '<(tcmalloc_dir)/src/heap-profile-table.cc',
-            '<(tcmalloc_dir)/src/heap-profile-table.h',
-            '<(tcmalloc_dir)/src/memory_region_map.cc',
-            '<(tcmalloc_dir)/src/memory_region_map.h',
             '<(tcmalloc_dir)/src/profiledata.cc',
             '<(tcmalloc_dir)/src/profiledata.h',
             '<(tcmalloc_dir)/src/profile-handler.cc',
@@ -390,7 +378,7 @@
             '<(tcmalloc_dir)/src/profiler.cc',
           ],
         }],
-        ['OS=="linux" or OS=="freebsd" or OS=="solaris"', {
+        ['OS=="linux" or OS=="freebsd" or OS=="solaris" or OS=="android"', {
           'sources!': [
             '<(tcmalloc_dir)/src/system-alloc.h',
             '<(tcmalloc_dir)/src/windows/port.cc',
@@ -398,15 +386,6 @@
 
             # TODO(willchan): Support allocator shim later on.
             'allocator_shim.cc',
-
-            # TODO(willchan): support jemalloc on other platforms
-            # jemalloc files
-            '<(jemalloc_dir)/jemalloc.c',
-            '<(jemalloc_dir)/jemalloc.h',
-            '<(jemalloc_dir)/ql.h',
-            '<(jemalloc_dir)/qr.h',
-            '<(jemalloc_dir)/rb.h',
-
           ],
           # We enable all warnings by default, but upstream disables a few.
           # Keep "-Wno-*" flags in sync with upstream by comparing against:
@@ -432,35 +411,6 @@
         [ 'use_vtable_verify==1', {
           'cflags': [
             '-fvtable-verify=preinit',
-          ],
-        }],
-        [ 'linux_keep_shadow_stacks==1', {
-          'sources': [
-            '<(tcmalloc_dir)/src/linux_shadow_stacks.cc',
-            '<(tcmalloc_dir)/src/linux_shadow_stacks.h',
-            '<(tcmalloc_dir)/src/stacktrace_shadow-inl.h',
-          ],
-          'cflags': [
-            '-finstrument-functions',
-          ],
-          'defines': [
-            'KEEP_SHADOW_STACKS',
-          ],
-        }],
-        [ 'linux_use_heapchecker==0', {
-          # Do not compile and link the heapchecker source.
-          'sources!': [
-            '<(tcmalloc_dir)/src/heap-checker-bcad.cc',
-            '<(tcmalloc_dir)/src/heap-checker.cc',
-          ],
-          # Disable the heap checker in tcmalloc.
-          'defines': [
-            'NO_HEAP_CHECK',
-           ],
-        }],
-        [ 'clang==1', {
-          'cflags': [
-            '-Wno-non-literal-null-conversion',
           ],
         }],
         ['order_profiling != 0', {
@@ -520,6 +470,7 @@
                 'prep_libc.py',
                 '$(VCInstallDir)lib',
                 '<(SHARED_INTERMEDIATE_DIR)/allocator',
+                '<(target_arch)',
               ],
             },
           ],
@@ -539,11 +490,32 @@
             '../..',
           ],
           'sources': [
-            'allocator_unittests.cc',
+            'allocator_unittest.cc',
             '../profiler/alternate_timer.cc',
             '../profiler/alternate_timer.h',
           ],
         },
+        {
+          'target_name': 'tcmalloc_unittest',
+          'type': 'executable',
+          'sources': [
+            'tcmalloc_unittest.cc',
+          ],
+          'include_dirs': [
+            '../..',
+            # For constants of TCMalloc.
+            '<(tcmalloc_dir)/src',
+          ],
+          'dependencies': [
+            '../../testing/gtest.gyp:gtest',
+            '../base.gyp:base',
+            'allocator',
+          ],
+        },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
         {
           'target_name': 'allocator_extension_thunks_win64',
           'type': 'static_library',
@@ -561,23 +533,6 @@
             },
           },
         },
-      {
-        'target_name': 'tcmalloc_unittest',
-        'type': 'executable',
-        'sources': [
-          'tcmalloc_unittest.cc',
-        ],
-        'include_dirs': [
-          '../..',
-          # For constants of TCMalloc.
-          '<(tcmalloc_dir)/src',
-        ],
-        'dependencies': [
-          '../../testing/gtest.gyp:gtest',
-          '../base.gyp:base',
-          'allocator',
-        ],
-      },
       ],
     }],
     ['OS=="linux" and clang_type_profiler==1', {
@@ -638,7 +593,7 @@
           'sources': [
             'type_profiler_control.cc',
             'type_profiler_control.h',
-            'type_profiler_unittests.cc',
+            'type_profiler_unittest.cc',
           ],
         },
         {
@@ -660,7 +615,7 @@
             '../..',
           ],
           'sources': [
-            'type_profiler_map_unittests.cc',
+            'type_profiler_map_unittest.cc',
             '<(tcmalloc_dir)/src/gperftools/type_profiler_map.h',
             '<(tcmalloc_dir)/src/type_profiler_map.cc',
           ],

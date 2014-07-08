@@ -6,7 +6,6 @@
 
 #include "base/metrics/histogram.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #include "chrome/common/url_constants.h"
@@ -24,32 +23,43 @@ using content::WebContents;
 
 OptionsMenuModel::OptionsMenuModel(
     TranslateInfoBarDelegate* translate_delegate)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::SimpleMenuModel(this)),
+    : ui::SimpleMenuModel(this),
       translate_infobar_delegate_(translate_delegate) {
-  string16 original_language = translate_delegate->language_name_at(
+  // |translate_delegate| must already be owned.
+  DCHECK(translate_infobar_delegate_->GetWebContents());
+
+  base::string16 original_language = translate_delegate->language_name_at(
       translate_delegate->original_language_index());
-  string16 target_language = translate_delegate->language_name_at(
+  base::string16 target_language = translate_delegate->language_name_at(
       translate_delegate->target_language_index());
+
+  bool autodetermined_source_language =
+      translate_delegate->original_language_index() ==
+      TranslateInfoBarDelegate::kNoIndex;
 
   // Populate the menu.
   // Incognito mode does not get any preferences related items.
-  if (!translate_delegate->owner()->GetWebContents()->
-      GetBrowserContext()->IsOffTheRecord()) {
-    AddCheckItem(IDC_TRANSLATE_OPTIONS_ALWAYS,
-        l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS_ALWAYS,
-            original_language, target_language));
-    AddCheckItem(IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG,
-        l10n_util::GetStringFUTF16(
-            IDS_TRANSLATE_INFOBAR_OPTIONS_NEVER_TRANSLATE_LANG,
-            original_language));
+  if (!translate_delegate->GetWebContents()->GetBrowserContext()->
+      IsOffTheRecord()) {
+    if (!autodetermined_source_language) {
+      AddCheckItem(IDC_TRANSLATE_OPTIONS_ALWAYS,
+          l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS_ALWAYS,
+                                     original_language, target_language));
+      AddCheckItem(IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG,
+          l10n_util::GetStringFUTF16(
+              IDS_TRANSLATE_INFOBAR_OPTIONS_NEVER_TRANSLATE_LANG,
+              original_language));
+    }
     AddCheckItem(IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_SITE,
         l10n_util::GetStringUTF16(
             IDS_TRANSLATE_INFOBAR_OPTIONS_NEVER_TRANSLATE_SITE));
     AddSeparator(ui::NORMAL_SEPARATOR);
   }
-  AddItem(IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION,
-          l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS_REPORT_ERROR,
-                                     original_language));
+  if (!autodetermined_source_language) {
+    AddItem(IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION,
+        l10n_util::GetStringFUTF16(IDS_TRANSLATE_INFOBAR_OPTIONS_REPORT_ERROR,
+                                   original_language));
+  }
   AddItemWithStringId(IDC_TRANSLATE_OPTIONS_ABOUT,
       IDS_TRANSLATE_INFOBAR_OPTIONS_ABOUT);
 }
@@ -60,7 +70,7 @@ OptionsMenuModel::~OptionsMenuModel() {
 bool OptionsMenuModel::IsCommandIdChecked(int command_id) const {
   switch (command_id) {
     case IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG:
-      return translate_infobar_delegate_->IsLanguageBlacklisted();
+      return !translate_infobar_delegate_->IsTranslatableLanguageByPrefs();
 
     case IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_SITE:
       return translate_infobar_delegate_->IsSiteBlacklisted();
@@ -82,21 +92,9 @@ bool OptionsMenuModel::IsCommandIdEnabled(int command_id) const {
       return !translate_infobar_delegate_->ShouldAlwaysTranslate();
 
     case IDC_TRANSLATE_OPTIONS_ALWAYS :
-      return (!translate_infobar_delegate_->IsLanguageBlacklisted() &&
+      return (translate_infobar_delegate_->IsTranslatableLanguageByPrefs() &&
           !translate_infobar_delegate_->IsSiteBlacklisted());
 
-    case IDC_TRANSLATE_REPORT_BAD_LANGUAGE_DETECTION : {
-      // Until we have a secure URL for reporting language detection errors,
-      // we don't report errors that happened on secure URLs.
-      DCHECK(translate_infobar_delegate_ != NULL);
-      DCHECK(translate_infobar_delegate_->owner() != NULL);
-      DCHECK(translate_infobar_delegate_->owner()->GetWebContents() != NULL);
-      NavigationEntry* entry = translate_infobar_delegate_->owner()->
-          GetWebContents()->GetController().GetActiveEntry();
-      // Delegate and tab contents should never be NULL, but active entry
-      // can be NULL when running tests. We want to return false if NULL.
-      return (entry != NULL) && !entry->GetURL().SchemeIsSecure();
-    }
     default:
       break;
   }
@@ -108,20 +106,17 @@ bool OptionsMenuModel::GetAcceleratorForCommandId(
   return false;
 }
 
-void OptionsMenuModel::ExecuteCommand(int command_id) {
+void OptionsMenuModel::ExecuteCommand(int command_id, int event_flags) {
   switch (command_id) {
     case IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_LANG:
-      UMA_HISTOGRAM_COUNTS("Translate.NeverTranslateLang", 1);
-      translate_infobar_delegate_->ToggleLanguageBlacklist();
+      translate_infobar_delegate_->ToggleTranslatableLanguageByPrefs();
       break;
 
     case IDC_TRANSLATE_OPTIONS_NEVER_TRANSLATE_SITE:
-      UMA_HISTOGRAM_COUNTS("Translate.NeverTranslateSite", 1);
       translate_infobar_delegate_->ToggleSiteBlacklist();
       break;
 
     case IDC_TRANSLATE_OPTIONS_ALWAYS:
-      UMA_HISTOGRAM_COUNTS("Translate.AlwaysTranslateLang", 1);
       translate_infobar_delegate_->ToggleAlwaysTranslate();
       break;
 
@@ -130,8 +125,7 @@ void OptionsMenuModel::ExecuteCommand(int command_id) {
       break;
 
     case IDC_TRANSLATE_OPTIONS_ABOUT: {
-      WebContents* web_contents =
-          translate_infobar_delegate_->owner()->GetWebContents();
+      WebContents* web_contents = translate_infobar_delegate_->GetWebContents();
       if (web_contents) {
         OpenURLParams params(
             GURL(chrome::kAboutGoogleTranslateURL), Referrer(),

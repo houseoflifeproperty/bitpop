@@ -10,12 +10,17 @@
 #include "base/bind.h"
 #include "gpu/command_buffer/client/gles2_implementation.h"
 #include "gpu/command_buffer/client/gles2_lib.h"
+#include "gpu/command_buffer/client/gpu_memory_buffer_factory.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/constants.h"
+#include "gpu/command_buffer/common/gles2_cmd_utils.h"
 #include "gpu/command_buffer/service/command_buffer_service.h"
 #include "gpu/command_buffer/service/context_group.h"
 #include "gpu/command_buffer/service/gl_context_virtual.h"
+#include "gpu/command_buffer/service/gles2_cmd_decoder.h"
+#include "gpu/command_buffer/service/gpu_control_service.h"
 #include "gpu/command_buffer/service/gpu_scheduler.h"
+#include "gpu/command_buffer/service/image_manager.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gl/gl_context.h"
@@ -24,20 +29,42 @@
 
 namespace gpu {
 
+int GLManager::use_count_;
+scoped_refptr<gfx::GLShareGroup>* GLManager::base_share_group_;
+scoped_refptr<gfx::GLSurface>* GLManager::base_surface_;
+scoped_refptr<gfx::GLContext>* GLManager::base_context_;
+
 GLManager::Options::Options()
     : size(4, 4),
       share_group_manager(NULL),
       share_mailbox_manager(NULL),
       virtual_manager(NULL),
       bind_generates_resource(false),
-      context_lost_allowed(false) {
-}
+      lose_context_when_out_of_memory(false),
+      context_lost_allowed(false),
+      image_manager(NULL) {}
 
 GLManager::GLManager()
-    : context_lost_allowed_(false) {
+    : context_lost_allowed_(false), gpu_memory_buffer_factory_(NULL) {
+  SetupBaseContext();
 }
 
 GLManager::~GLManager() {
+  --use_count_;
+  if (!use_count_) {
+    if (base_share_group_) {
+      delete base_context_;
+      base_context_ = NULL;
+    }
+    if (base_surface_) {
+      delete base_surface_;
+      base_surface_ = NULL;
+    }
+    if (base_context_) {
+      delete base_context_;
+      base_context_ = NULL;
+    }
+  }
 }
 
 void GLManager::Initialize(const GLManager::Options& options) {
@@ -45,7 +72,6 @@ void GLManager::Initialize(const GLManager::Options& options) {
   const size_t kStartTransferBufferSize = 4 * 1024 * 1024;
   const size_t kMinTransferBufferSize = 1 * 256 * 1024;
   const size_t kMaxTransferBufferSize = 16 * 1024 * 1024;
-  const bool kShareResources = true;
 
   context_lost_allowed_ = options.context_lost_allowed;
 
@@ -73,16 +99,8 @@ void GLManager::Initialize(const GLManager::Options& options) {
 
   gfx::GLContext* real_gl_context = NULL;
   if (options.virtual_manager) {
-    options.virtual_manager->context();
+    real_gl_context = options.virtual_manager->context();
   }
-
-  // From <EGL/egl.h>.
-  const int32 EGL_ALPHA_SIZE = 0x3021;
-  const int32 EGL_BLUE_SIZE = 0x3022;
-  const int32 EGL_GREEN_SIZE = 0x3023;
-  const int32 EGL_RED_SIZE = 0x3024;
-  const int32 EGL_DEPTH_SIZE = 0x3025;
-  const int32 EGL_NONE = 0x3038;
 
   mailbox_manager_ =
       mailbox_manager ? mailbox_manager : new gles2::MailboxManager;
@@ -90,25 +108,23 @@ void GLManager::Initialize(const GLManager::Options& options) {
       share_group ? share_group : new gfx::GLShareGroup;
 
   gfx::GpuPreference gpu_preference(gfx::PreferDiscreteGpu);
-  const char* allowed_extensions = "*";
   std::vector<int32> attribs;
-  attribs.push_back(EGL_RED_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_GREEN_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_BLUE_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_ALPHA_SIZE);
-  attribs.push_back(8);
-  attribs.push_back(EGL_DEPTH_SIZE);
-  attribs.push_back(16);
-  attribs.push_back(EGL_NONE);
+  gles2::ContextCreationAttribHelper attrib_helper;
+  attrib_helper.red_size_ = 8;
+  attrib_helper.green_size_ = 8;
+  attrib_helper.blue_size_ = 8;
+  attrib_helper.alpha_size_ = 8;
+  attrib_helper.depth_size_ = 16;
+  attrib_helper.Serialize(&attribs);
 
   if (!context_group) {
-    context_group = new gles2::ContextGroup(mailbox_manager_.get(),
-                                            NULL,
-                                            NULL,
-                                            options.bind_generates_resource);
+    context_group =
+        new gles2::ContextGroup(mailbox_manager_.get(),
+                                options.image_manager,
+                                NULL,
+                                new gpu::gles2::ShaderTranslatorCache,
+                                NULL,
+                                options.bind_generates_resource);
   }
 
   decoder_.reset(::gpu::gles2::GLES2Decoder::Create(context_group));
@@ -124,18 +140,25 @@ void GLManager::Initialize(const GLManager::Options& options) {
 
   decoder_->set_engine(gpu_scheduler_.get());
 
-  surface_ = gfx::GLSurface::CreateOffscreenGLSurface(false, options.size);
+  surface_ = gfx::GLSurface::CreateOffscreenGLSurface(options.size);
   ASSERT_TRUE(surface_.get() != NULL) << "could not create offscreen surface";
 
-  if (real_gl_context) {
+  if (base_context_) {
     context_ = scoped_refptr<gfx::GLContext>(new gpu::GLContextVirtual(
-        share_group_.get(), real_gl_context, decoder_->AsWeakPtr()));
+        share_group_.get(), base_context_->get(), decoder_->AsWeakPtr()));
     ASSERT_TRUE(context_->Initialize(
         surface_.get(), gfx::PreferIntegratedGpu));
   } else {
-    context_ = gfx::GLContext::CreateGLContext(share_group_.get(),
-                                               surface_.get(),
-                                               gpu_preference);
+    if (real_gl_context) {
+      context_ = scoped_refptr<gfx::GLContext>(new gpu::GLContextVirtual(
+          share_group_.get(), real_gl_context, decoder_->AsWeakPtr()));
+      ASSERT_TRUE(context_->Initialize(
+          surface_.get(), gfx::PreferIntegratedGpu));
+    } else {
+      context_ = gfx::GLContext::CreateGLContext(share_group_.get(),
+                                                 surface_.get(),
+                                                 gpu_preference);
+    }
   }
   ASSERT_TRUE(context_.get() != NULL) << "could not create GL context";
 
@@ -147,8 +170,12 @@ void GLManager::Initialize(const GLManager::Options& options) {
       true,
       options.size,
       ::gpu::gles2::DisallowedFeatures(),
-      allowed_extensions,
       attribs)) << "could not initialize decoder";
+
+  gpu_control_service_.reset(
+      new GpuControlService(decoder_->GetContextGroup()->image_manager(),
+                            decoder_->GetQueryManager()));
+  gpu_memory_buffer_factory_ = options.gpu_memory_buffer_factory;
 
   command_buffer_->SetPutOffsetChangeCallback(
       base::Bind(&GLManager::PumpCommands, base::Unretained(this)));
@@ -163,23 +190,48 @@ void GLManager::Initialize(const GLManager::Options& options) {
   transfer_buffer_.reset(new TransferBuffer(gles2_helper_.get()));
 
   // Create the object exposing the OpenGL API.
-  gles2_implementation_.reset(new gles2::GLES2Implementation(
-      gles2_helper_.get(),
-      client_share_group,
-      transfer_buffer_.get(),
-      kShareResources,
-      options.bind_generates_resource));
+  gles2_implementation_.reset(
+      new gles2::GLES2Implementation(gles2_helper_.get(),
+                                     client_share_group,
+                                     transfer_buffer_.get(),
+                                     options.bind_generates_resource,
+                                     options.lose_context_when_out_of_memory,
+                                     this));
 
   ASSERT_TRUE(gles2_implementation_->Initialize(
       kStartTransferBufferSize,
       kMinTransferBufferSize,
-      kMaxTransferBufferSize)) << "Could not init GLES2Implementation";
+      kMaxTransferBufferSize,
+      gpu::gles2::GLES2Implementation::kNoLimit))
+          << "Could not init GLES2Implementation";
 
   MakeCurrent();
 }
 
+void GLManager::SetupBaseContext() {
+  if (use_count_) {
+    #if defined(OS_ANDROID)
+      base_share_group_ = new scoped_refptr<gfx::GLShareGroup>(
+          new gfx::GLShareGroup);
+      gfx::Size size(4, 4);
+      base_surface_ = new scoped_refptr<gfx::GLSurface>(
+          gfx::GLSurface::CreateOffscreenGLSurface(size));
+      gfx::GpuPreference gpu_preference(gfx::PreferDiscreteGpu);
+      base_context_ = new scoped_refptr<gfx::GLContext>(
+          gfx::GLContext::CreateGLContext(base_share_group_->get(),
+                                          base_surface_->get(),
+                                          gpu_preference));
+    #endif
+  }
+  ++use_count_;
+}
+
 void GLManager::MakeCurrent() {
   ::gles2::SetGLContext(gles2_implementation_.get());
+}
+
+void GLManager::SetSurface(gfx::GLSurface* surface) {
+  decoder_->SetSurface(surface);
 }
 
 void GLManager::Destroy() {
@@ -195,13 +247,18 @@ void GLManager::Destroy() {
   if (decoder_.get()) {
     decoder_->MakeCurrent();
     decoder_->Destroy(true);
+    decoder_.reset();
   }
+}
+
+const gpu::gles2::FeatureInfo::Workarounds& GLManager::workarounds() const {
+  return decoder_->GetContextGroup()->feature_info()->workarounds();
 }
 
 void GLManager::PumpCommands() {
   decoder_->MakeCurrent();
   gpu_scheduler_->PutChanged();
-  ::gpu::CommandBuffer::State state = command_buffer_->GetState();
+  ::gpu::CommandBuffer::State state = command_buffer_->GetLastState();
   if (!context_lost_allowed_) {
     ASSERT_EQ(::gpu::error::kNoError, state.error);
   }
@@ -209,6 +266,68 @@ void GLManager::PumpCommands() {
 
 bool GLManager::GetBufferChanged(int32 transfer_buffer_id) {
   return gpu_scheduler_->SetGetBuffer(transfer_buffer_id);
+}
+
+Capabilities GLManager::GetCapabilities() {
+  return decoder_->GetCapabilities();
+}
+
+gfx::GpuMemoryBuffer* GLManager::CreateGpuMemoryBuffer(
+    size_t width,
+    size_t height,
+    unsigned internalformat,
+    unsigned usage,
+    int32* id) {
+  *id = -1;
+  scoped_ptr<gfx::GpuMemoryBuffer> buffer(
+      gpu_memory_buffer_factory_->CreateGpuMemoryBuffer(
+          width, height, internalformat, usage));
+  if (!buffer.get())
+    return NULL;
+
+  static int32 next_id = 1;
+  *id = next_id++;
+  gpu_control_service_->RegisterGpuMemoryBuffer(
+      *id, buffer->GetHandle(), width, height, internalformat);
+  gfx::GpuMemoryBuffer* raw_buffer = buffer.get();
+  memory_buffers_.add(*id, buffer.Pass());
+  return raw_buffer;
+}
+
+void GLManager::DestroyGpuMemoryBuffer(int32 id) {
+  memory_buffers_.erase(id);
+  gpu_control_service_->UnregisterGpuMemoryBuffer(id);
+}
+
+uint32 GLManager::InsertSyncPoint() {
+  NOTIMPLEMENTED();
+  return 0u;
+}
+
+void GLManager::SignalSyncPoint(uint32 sync_point,
+                             const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::SignalQuery(uint32 query, const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::SetSurfaceVisible(bool visible) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::SendManagedMemoryStats(const ManagedMemoryStats& stats) {
+  NOTIMPLEMENTED();
+}
+
+void GLManager::Echo(const base::Closure& callback) {
+  NOTIMPLEMENTED();
+}
+
+uint32 GLManager::CreateStreamTexture(uint32 texture_id) {
+  NOTIMPLEMENTED();
+  return 0;
 }
 
 }  // namespace gpu

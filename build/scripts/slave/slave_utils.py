@@ -15,9 +15,7 @@ import time
 
 from common import chromium_utils
 from slave.bootstrap import ImportMasterConfigs # pylint: disable=W0611
-from slave.bootstrap import GetActiveMaster # pylint: disable=W0611
-import config
-from slave import xvfb
+from common.chromium_utils import GetActiveMaster # pylint: disable=W0611
 
 # These codes used to distinguish true errors from script warnings.
 ERROR_EXIT_CODE = 1
@@ -44,6 +42,10 @@ def SubversionExe():
         'Platform "%s" is not currently supported.' % sys.platform)
 
 
+def GitExe():
+  return 'git.bat' if chromium_utils.IsWindows() else 'git'
+
+
 def SubversionCat(wc_dir):
   """Output the content of specified files or URLs in SVN.
   """
@@ -54,46 +56,122 @@ def SubversionCat(wc_dir):
     return None
 
 
+class NotGitWorkingCopy(Exception): pass
+class NotSVNWorkingCopy(Exception): pass
+class NotAnyWorkingCopy(Exception): pass
+class InvalidSVNRevision(Exception): pass
+
+
+def ScrapeSVNInfoRevision(wc_dir, regexp):
+  """Runs 'svn info' on a working copy and applies the supplied regex and
+  returns the matched group as an int.
+  regexp can be either a compiled regex or a string regex.
+  throws NotSVNWorkingCopy if wc_dir is not in a working copy.
+  throws InvalidSVNRevision if matched group is not alphanumeric.
+  """
+  if isinstance(regexp, (str, unicode)):
+    regexp = re.compile(regexp)
+  retval, svn_info = chromium_utils.GetStatusOutput([SubversionExe(), 'info',
+                                                    wc_dir])
+  if retval or 'is not a working copy' in svn_info:
+    raise NotSVNWorkingCopy(wc_dir)
+  match = regexp.search(svn_info)
+  if not match or not match.groups():
+    raise InvalidSVNRevision(
+        '%s did not match in svn info %s.' % (regexp.pattern, svn_info))
+  text = match.group(1)
+  if text.isalnum():
+    return int(text)
+  else:
+    raise InvalidSVNRevision(text)
+
+
 def SubversionRevision(wc_dir):
-  """Finds the last svn revision of a working copy by running 'svn info',
-  and returns it as an integer.
-  """
-  svn_regexp = re.compile(r'.*Revision: (\d+).*', re.DOTALL)
+  """Finds the last svn revision of a working copy and returns it as an int."""
+  return ScrapeSVNInfoRevision(wc_dir, r'(?s).*Revision: (\d+).*')
+
+
+def SubversionLastChangedRevision(wc_dir_or_file):
+  """Finds the last changed svn revision of a fs path returns it as an int."""
+  return ScrapeSVNInfoRevision(wc_dir_or_file,
+                               r'(?s).*Last Changed Rev: (\d+).*')
+
+
+def GitHash(wc_dir):
+  """Finds the current commit hash of the wc_dir."""
+  retval, text = chromium_utils.GetStatusOutput(
+      [GitExe(), 'rev-parse', 'HEAD'], cwd=wc_dir)
+  if retval or 'fatal: Not a git repository' in text:
+    raise NotGitWorkingCopy(wc_dir)
+  return text.strip()
+
+
+def GetHashOrRevision(wc_dir):
+  """Gets the svn revision or git hash of wc_dir as a string. Throws
+  NotAnyWorkingCopy if neither are appropriate."""
   try:
-    svn_info = chromium_utils.GetCommandOutput([SubversionExe(), 'info',
-                                                wc_dir])
-    return_value = re.sub(svn_regexp, r'\1', svn_info)
-    if return_value.isalnum():
-      return int(return_value)
-    else:
-      return 0
-  except chromium_utils.ExternalError:
-    return 0
-
-
-def SubversionLastChangedRevision(wc_dir):
-  """Finds the svn revision where this file/dir was last edited by running
-  'svn info', and returns it as an integer.
-  """
-  svn_regexp = re.compile(r'.*Last Changed Rev: (\d+).*', re.DOTALL)
+    return str(SubversionRevision(wc_dir))
+  except NotSVNWorkingCopy:
+    pass
   try:
-    svn_info = chromium_utils.GetCommandOutput([SubversionExe(), 'info',
-                                                wc_dir])
-    return_value = re.sub(svn_regexp, r'\1', svn_info)
-    if return_value.isalnum():
-      return int(return_value)
-    else:
-      return 0
-  except chromium_utils.ExternalError:
-    return 0
+    return GitHash(wc_dir)
+  except NotGitWorkingCopy:
+    pass
+  raise NotAnyWorkingCopy(wc_dir)
 
 
-def GetZipFileNames(build_properties, build_dir, webkit_dir=None,
-                    extract=False):
+def GitOrSubversion(wc_dir):
+  """Returns the VCS for the given directory.
+
+  Returns:
+    'svn' if the directory is a valid svn repo
+    'git' if the directory is a valid git repo root
+    None otherwise
+  """
+  ret, out = chromium_utils.GetStatusOutput([SubversionExe(), 'info', wc_dir])
+  if not ret and 'is not a working copy' not in out:
+    return 'svn'
+
+  ret, out = chromium_utils.GetStatusOutput(
+      [GitExe(), 'rev-parse', '--is-inside-work-tree'], cwd=wc_dir)
+  if not ret and 'fatal: Not a git repository' not in out:
+    return 'git'
+
+  return None
+
+
+def GetBuildRevisions(src_dir, webkit_dir=None, revision_dir=None):
+  """Parses build revisions out of the provided directories.
+
+  Args:
+    src_dir: The source directory to be used to check the revision in.
+    webkit_dir: Optional WebKit directory, relative to src_dir.
+    revision_dir: If provided, this dir will be used for the build revision
+      instead of the mandatory src_dir.
+
+  Returns a tuple of the build revision and (optional) WebKit revision.
+  NOTICE: These revisions are strings, since they can be both Subversion numbers
+  and Git hashes.
+  """
+  abs_src_dir = os.path.abspath(src_dir)
+  webkit_revision = None
+  if webkit_dir:
+    webkit_dir = os.path.join(abs_src_dir, webkit_dir)
+    webkit_revision = GetHashOrRevision(webkit_dir)
+
+  if revision_dir:
+    revision_dir = os.path.join(abs_src_dir, revision_dir)
+    build_revision = GetHashOrRevision(revision_dir)
+  else:
+    build_revision = GetHashOrRevision(src_dir)
+  return (build_revision, webkit_revision)
+
+
+def GetZipFileNames(build_properties, build_revision, webkit_revision=None,
+                    extract=False, use_try_buildnumber=True):
   base_name = 'full-build-%s' % chromium_utils.PlatformName()
 
-  chromium_revision = SubversionRevision(os.path.dirname(build_dir))
-  if 'try' in build_properties.get('mastername'):
+  if 'try' in build_properties.get('mastername', '') and use_try_buildnumber:
     if extract:
       if not build_properties.get('parent_buildnumber'):
         raise Exception('build_props does not have parent data: %s' %
@@ -101,11 +179,10 @@ def GetZipFileNames(build_properties, build_dir, webkit_dir=None,
       version_suffix = '_%(parent_buildnumber)s' % build_properties
     else:
       version_suffix = '_%(buildnumber)s' % build_properties
-  elif webkit_dir:
-    webkit_revision = SubversionRevision(webkit_dir)
-    version_suffix = '_wk%d_%d' % (webkit_revision, chromium_revision)
+  elif webkit_revision:
+    version_suffix = '_wk%s_%s' % (webkit_revision, build_revision)
   else:
-    version_suffix = '_%d' % chromium_revision
+    version_suffix = '_%s' % build_revision
 
   return base_name, version_suffix
 
@@ -147,6 +224,7 @@ def GetStagingDir(start_dir):
   """Creates a chrome_staging dir in the starting directory. and returns its
   full path.
   """
+  start_dir = os.path.abspath(start_dir)
   staging_dir = os.path.join(SlaveBaseDir(start_dir), 'chrome_staging')
   chromium_utils.MaybeMakeDirectory(staging_dir)
   return staging_dir
@@ -210,36 +288,14 @@ def RunPythonCommandInBuildDir(build_dir, target, command_line_args,
                                server_dir=None, filter_obj=None):
   if sys.platform == 'win32':
     python_exe = 'python.exe'
-
-    setup_mount = chromium_utils.FindUpward(build_dir,
-                                            'third_party',
-                                            'cygwin',
-                                            'setup_mount.bat')
-
-    chromium_utils.RunCommand([setup_mount])
   else:
     os.environ['PYTHONPATH'] = (chromium_utils.FindUpward(build_dir, 'tools',
                                                           'python')
                                 + ':' +os.environ.get('PYTHONPATH', ''))
     python_exe = 'python'
 
-  if chromium_utils.IsLinux():
-    slave_name = SlaveBuildName(build_dir)
-    xvfb.StartVirtualX(slave_name,
-                       os.path.join(build_dir, '..', 'out', target),
-                       server_dir=server_dir)
-
-  command = [python_exe]
-
-  # The list of tests is given as arguments.
-  command.extend(command_line_args)
-
-  result = chromium_utils.RunCommand(command, filter_obj=filter_obj)
-
-  if chromium_utils.IsLinux():
-    xvfb.StopVirtualX(slave_name)
-
-  return result
+  command = [python_exe] + command_line_args
+  return chromium_utils.RunCommand(command, filter_obj=filter_obj)
 
 
 class RunCommandCaptureFilter(object):
@@ -272,49 +328,6 @@ def GetGypFlag(options, flag, default=None):
   return gypflags[flag]
 
 
-
-def CopyFileToArchiveHost(src, dest_dir):
-  """A wrapper method to copy files to the archive host.
-  It calls CopyFileToDir on Windows and SshCopyFiles on Linux/Mac.
-  TODO: we will eventually want to change the code to upload the
-  data to appengine.
-
-  Args:
-      src: full path to the src file.
-      dest_dir: destination directory on the host.
-  """
-  host = config.Archive.archive_host
-  if not os.path.exists(src):
-    raise chromium_utils.ExternalError('Source path "%s" does not exist' % src)
-  chromium_utils.MakeWorldReadable(src)
-  if chromium_utils.IsWindows():
-    chromium_utils.CopyFileToDir(src, dest_dir)
-  elif chromium_utils.IsLinux() or chromium_utils.IsMac():
-    chromium_utils.SshCopyFiles(src, host, dest_dir)
-  else:
-    raise NotImplementedError(
-        'Platform "%s" is not currently supported.' % sys.platform)
-
-
-def MaybeMakeDirectoryOnArchiveHost(dest_dir):
-  """A wrapper method to create a directory on the archive host.
-  It calls MaybeMakeDirectory on Windows and SshMakeDirectory on Linux/Mac.
-
-  Args:
-      dest_dir: destination directory on the host.
-  """
-  host = config.Archive.archive_host
-  if chromium_utils.IsWindows():
-    chromium_utils.MaybeMakeDirectory(dest_dir)
-    print 'saving results to %s' % dest_dir
-  elif chromium_utils.IsLinux() or chromium_utils.IsMac():
-    chromium_utils.SshMakeDirectory(host, dest_dir)
-    print 'saving results to "%s" on "%s"' % (dest_dir, host)
-  else:
-    raise NotImplementedError(
-        'Platform "%s" is not currently supported.' % sys.platform)
-
-
 def GSUtilSetup():
   # Get the path to the gsutil script.
   gsutil = os.path.join(os.path.dirname(__file__), 'gsutil')
@@ -332,11 +345,12 @@ def GSUtilSetup():
   return gsutil
 
 
-def GSUtilCopy(source, dest, mimetype=None, gs_acl=None):
+def GSUtilCopy(source, dest, mimetype=None, gs_acl=None, cache_control=None):
   """Copy a file to Google Storage.
 
   Runs the following command:
     gsutil -h Content-Type:<mimetype> \
+           -h Cache-Control:<cache_control> \
         cp -a <gs_acl> file://<filename> <gs_base>/<subdir>/<filename w/o path>
 
   Args:
@@ -344,6 +358,7 @@ def GSUtilCopy(source, dest, mimetype=None, gs_acl=None):
     dest: the destination URI
     mimetype: optional value to add as a Content-Type header
     gs_acl: optional value to add as a canned-acl
+    cache_control: optional value to set Cache-Control header
   Returns:
     The status code returned from running the generated gsutil command.
   """
@@ -358,6 +373,8 @@ def GSUtilCopy(source, dest, mimetype=None, gs_acl=None):
   command = [gsutil]
   if mimetype:
     command.extend(['-h', 'Content-Type:%s' % mimetype])
+  if cache_control:
+    command.extend(['-h', 'Cache-Control:%s' % cache_control])
   command.extend(['cp'])
   if gs_acl:
     command.extend(['-a', gs_acl])
@@ -365,11 +382,13 @@ def GSUtilCopy(source, dest, mimetype=None, gs_acl=None):
   return chromium_utils.RunCommand(command)
 
 
-def GSUtilCopyFile(filename, gs_base, subdir=None, mimetype=None, gs_acl=None):
+def GSUtilCopyFile(filename, gs_base, subdir=None, mimetype=None, gs_acl=None,
+                   cache_control=None):
   """Copy a file to Google Storage.
 
   Runs the following command:
     gsutil -h Content-Type:<mimetype> \
+        -h Cache-Control:<cache_control> \
         cp -a <gs_acl> file://<filename> <gs_base>/<subdir>/<filename w/o path>
 
   Args:
@@ -392,49 +411,28 @@ def GSUtilCopyFile(filename, gs_base, subdir=None, mimetype=None, gs_acl=None):
     else:
       dest = '/'.join([gs_base, subdir])
   dest = '/'.join([dest, os.path.basename(filename)])
-  return GSUtilCopy(source, dest, mimetype, gs_acl)
+  return GSUtilCopy(source, dest, mimetype, gs_acl, cache_control)
 
 
-def GSUtilCopyDir(src_dir, gs_base, dest_dir=None, gs_acl=None):
-  """Create a list of files in a directory and pass each to GSUtilCopyFile."""
+def GSUtilCopyDir(src_dir, gs_base, dest_dir=None, gs_acl=None,
+                  cache_control=None):
+  """Upload the directory and its contents to Google Storage."""
 
-  # Walk the source directory and find all the files.
-  # Alert if passed a file rather than a directory.
   if os.path.isfile(src_dir):
     assert os.path.isdir(src_dir), '%s must be a directory' % src_dir
 
-  # Get the list of all files in the source directory.
-  file_list = []
-  for root, _, files in os.walk(src_dir):
-    file_list.extend((os.path.join(root, name) for name in files))
-
-  # Find the absolute path of the source directory so we can use it below.
-  base = os.path.abspath(src_dir) + os.sep
-
-  for filename in file_list:
-    # Strip the base path off so we just have the relative file path.
-    path = filename.partition(base)[2]
-
-    # If we have been given a destination directory, add that to the path.
-    if dest_dir:
-      path = os.path.join(dest_dir, path)
-
-    # Trim the filename and last slash off to create a destination path.
-    path = path.rpartition(os.sep + os.path.basename(path))[0]
-
-    # If we're on windows, we need to reverse slashes, gsutil wants posix paths.
-    if chromium_utils.IsWindows():
-      path = path.replace('\\', '/')
-
-    # Pass the file off to copy.
-    status = GSUtilCopyFile(filename, gs_base, path, gs_acl=gs_acl)
-
-    # Bail out on any failure.
-    if status:
-      return status
-
-  return 0
-
+  gsutil = GSUtilSetup()
+  command = [gsutil, '-m']
+  if cache_control:
+    command.extend(['-h', 'Cache-Control:%s' % cache_control])
+  command.extend(['cp', '-R'])
+  if gs_acl:
+    command.extend(['-a', gs_acl])
+  if dest_dir:
+    command.extend([src_dir, gs_base + '/' + dest_dir])
+  else:
+    command.extend([src_dir, gs_base])
+  return chromium_utils.RunCommand(command)
 
 def GSUtilDownloadFile(src, dst):
   """Copy a file from Google Storage."""
@@ -589,9 +587,7 @@ def RemoveChromeTemporaryFiles():
     RemoveChromeDesktopFiles()
     RemoveJumpListFiles()
   elif chromium_utils.IsLinux():
-    kLogRegexHeapcheck = '\.(sym|heap)$'
     LogAndRemoveFiles(tempfile.gettempdir(), kLogRegex)
-    LogAndRemoveFiles(tempfile.gettempdir(), kLogRegexHeapcheck)
     LogAndRemoveFiles('/dev/shm', kLogRegex)
   elif chromium_utils.IsMac():
     nstempdir_path = '/usr/local/libexec/nstempdir'
@@ -610,9 +606,12 @@ def RemoveChromeTemporaryFiles():
 
 
 def WriteLogLines(logname, lines, perf=None):
+  logname = logname.rstrip()
+  lines = [line.rstrip() for line in lines]
   for line in lines:
     print '@@@STEP_LOG_LINE@%s@%s@@@' % (logname, line)
   if perf:
+    perf = perf.rstrip()
     print '@@@STEP_LOG_END_PERF@%s@%s@@@' % (logname, perf)
   else:
     print '@@@STEP_LOG_END@%s@@@' % logname

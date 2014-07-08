@@ -6,15 +6,22 @@
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_UNITTEST_H_
 
 #include "base/at_exit.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/common/extensions/feature_switch.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
+#include "content/public/test/test_utils.h"
+#include "extensions/common/feature_switch.h"
 #include "testing/gtest/include/gtest/gtest.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 class TestingProfile;
 
@@ -24,53 +31,81 @@ class ManagementPolicy;
 
 class ExtensionServiceTestBase : public testing::Test {
  public:
+  struct ExtensionServiceInitParams {
+    base::FilePath profile_path;
+    base::FilePath pref_file;
+    base::FilePath extensions_install_dir;
+    bool autoupdate_enabled;
+    bool is_first_run;
+    bool profile_is_managed;
+
+    ExtensionServiceInitParams();
+  };
+
   ExtensionServiceTestBase();
   virtual ~ExtensionServiceTestBase();
 
-  void InitializeExtensionService(const FilePath& profile_path,
-                                  const FilePath& pref_file,
-                                  const FilePath& extensions_install_dir,
-                                  bool autoupdate_enabled);
+  void InitializeExtensionService(const ExtensionServiceInitParams& params);
 
-  void InitializeInstalledExtensionService(const FilePath& prefs_file,
-                                           const FilePath& source_install_dir);
+  static scoped_ptr<TestingProfile> CreateTestingProfile(
+      const ExtensionServiceInitParams& params);
+
+  static ExtensionService* InitializeExtensionServiceForProfile(
+      const ExtensionServiceInitParams& params,
+      Profile* profile);
+
+  void InitializeInstalledExtensionService(
+      const base::FilePath& prefs_file,
+      const base::FilePath& source_install_dir);
+
+  void InitializeGoodInstalledExtensionService();
 
   void InitializeEmptyExtensionService();
 
-  void InitializeExtensionProcessManager();
+  void InitializeProcessManager();
 
   void InitializeExtensionServiceWithUpdater();
 
-  void InitializeRequestContext();
+  void InitializeExtensionSyncService();
 
   static void SetUpTestCase();
 
   virtual void SetUp() OVERRIDE;
+  virtual void TearDown() OVERRIDE;
 
   void set_extensions_enabled(bool enabled) {
     service_->set_extensions_enabled(enabled);
   }
 
  protected:
-  void InitializeExtensionServiceHelper(bool autoupdate_enabled);
+  ExtensionServiceInitParams CreateDefaultInitParams();
+  static ExtensionServiceInitParams CreateDefaultInitParamsInTempDir(
+      base::ScopedTempDir* temp_dir);
 
-  MessageLoop loop_;
-  base::ShadowingAtExitManager at_exit_manager_;
+  // Destroy temp_dir_ after thread_bundle_ so clean-up tasks can still use the
+  // directory.
   base::ScopedTempDir temp_dir_;
+  // Destroying at_exit_manager_ will delete all LazyInstances, so it must come
+  // after thread_bundle_ in the destruction order.
+  base::ShadowingAtExitManager at_exit_manager_;
+  content::TestBrowserThreadBundle thread_bundle_;
   scoped_ptr<TestingProfile> profile_;
-  FilePath extensions_install_dir_;
-  FilePath data_dir_;
+  base::FilePath extensions_install_dir_;
+  base::FilePath data_dir_;
   // Managed by extensions::ExtensionSystemFactory.
   ExtensionService* service_;
   extensions::ManagementPolicy* management_policy_;
+  scoped_ptr<ExtensionSyncService> extension_sync_service_;
   size_t expected_extensions_count_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread db_thread_;
-  content::TestBrowserThread webkit_thread_;
-  content::TestBrowserThread file_thread_;
-  content::TestBrowserThread file_user_blocking_thread_;
-  content::TestBrowserThread io_thread_;
-  extensions::FeatureSwitch::ScopedOverride override_sideload_wipeout_;
+  content::InProcessUtilityThreadHelper in_process_utility_thread_helper_;
+
+  extensions::ExtensionRegistry* registry_;
+
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  chromeos::ScopedTestUserManager test_user_manager_;
+#endif
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_SERVICE_UNITTEST_H_

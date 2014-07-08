@@ -6,12 +6,18 @@
 #define NET_BASE_UPLOAD_FILE_ELEMENT_READER_H_
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/upload_element_reader.h"
+
+namespace base {
+class TaskRunner;
+}
 
 namespace net {
 
@@ -20,22 +26,15 @@ class FileStream;
 // An UploadElementReader implementation for file.
 class NET_EXPORT UploadFileElementReader : public UploadElementReader {
  public:
-  // Deletes FileStream on the worker pool to avoid blocking the IO thread.
-  // This class is used as a template argument of scoped_ptr_malloc.
-  class FileStreamDeleter {
-   public:
-    void operator() (FileStream* file_stream) const;
-  };
-
-  typedef scoped_ptr_malloc<FileStream, FileStreamDeleter> ScopedFileStreamPtr;
-
-  UploadFileElementReader(const FilePath& path,
+  // |task_runner| is used to perform file operations. It must not be NULL.
+  UploadFileElementReader(base::TaskRunner* task_runner,
+                          const base::FilePath& path,
                           uint64 range_offset,
                           uint64 range_length,
                           const base::Time& expected_modification_time);
   virtual ~UploadFileElementReader();
 
-  const FilePath& path() const { return path_; }
+  const base::FilePath& path() const { return path_; }
   uint64 range_offset() const { return range_offset_; }
   uint64 range_length() const { return range_length_; }
   const base::Time& expected_modification_time() const {
@@ -45,13 +44,11 @@ class NET_EXPORT UploadFileElementReader : public UploadElementReader {
   // UploadElementReader overrides:
   virtual const UploadFileElementReader* AsFileReader() const OVERRIDE;
   virtual int Init(const CompletionCallback& callback) OVERRIDE;
-  virtual int InitSync() OVERRIDE;
   virtual uint64 GetContentLength() const OVERRIDE;
   virtual uint64 BytesRemaining() const OVERRIDE;
   virtual int Read(IOBuffer* buf,
                    int buf_length,
                    const CompletionCallback& callback) OVERRIDE;
-  virtual int ReadSync(IOBuffer* buf, int buf_length) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(UploadDataStreamTest, FileSmallerThanLength);
@@ -65,16 +62,15 @@ class NET_EXPORT UploadFileElementReader : public UploadElementReader {
   // Resets this instance to the uninitialized state.
   void Reset();
 
-  // This method is used to implement Init().
-  void OnInitCompleted(ScopedFileStreamPtr* file_stream,
-                       uint64* content_length,
-                       const CompletionCallback& callback,
-                       int result);
+  // These methods are used to implement Init().
+  void OnOpenCompleted(const CompletionCallback& callback, int result);
+  void OnSeekCompleted(const CompletionCallback& callback, int64 result);
+  void OnGetFileInfoCompleted(const CompletionCallback& callback,
+                              base::File::Info* file_info,
+                              bool result);
 
   // This method is used to implement Read().
-  void OnReadCompleted(ScopedFileStreamPtr file_stream,
-                       const CompletionCallback& callback,
-                       int result);
+  int OnReadCompleted(const CompletionCallback& callback, int result);
 
   // Sets an value to override the result for GetContentLength().
   // Used for tests.
@@ -83,11 +79,12 @@ class NET_EXPORT UploadFileElementReader : public UploadElementReader {
     ~ScopedOverridingContentLengthForTests();
   };
 
-  const FilePath path_;
+  scoped_refptr<base::TaskRunner> task_runner_;
+  const base::FilePath path_;
   const uint64 range_offset_;
   const uint64 range_length_;
   const base::Time expected_modification_time_;
-  ScopedFileStreamPtr file_stream_;
+  scoped_ptr<FileStream> file_stream_;
   uint64 content_length_;
   uint64 bytes_remaining_;
   base::WeakPtrFactory<UploadFileElementReader> weak_ptr_factory_;

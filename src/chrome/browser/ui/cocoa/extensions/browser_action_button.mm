@@ -8,28 +8,27 @@
 #include <cmath>
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_icon_factory.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu.h"
+#include "chrome/browser/ui/cocoa/extensions/extension_action_context_menu_controller.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_resource.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/theme_resources.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/canvas_skia_paint.h"
 #include "ui/gfx/image/image.h"
@@ -44,8 +43,9 @@ NSString* const kBrowserActionButtonDraggingNotification =
 NSString* const kBrowserActionButtonDragEndNotification =
     @"BrowserActionButtonDragEndNotification";
 
-const CGFloat kBrowserActionBadgeOriginYOffset = 5;
-const CGFloat kAnimationDuration = 0.2;
+static const CGFloat kBrowserActionBadgeOriginYOffset = 5;
+static const CGFloat kAnimationDuration = 0.2;
+static const CGFloat kMinimumDragDistance = 5;
 
 // A helper class to bridge the asynchronous Skia bitmap loading mechanism to
 // the extension's button.
@@ -54,11 +54,11 @@ class ExtensionActionIconFactoryBridge
       public ExtensionActionIconFactory::Observer {
  public:
   ExtensionActionIconFactoryBridge(BrowserActionButton* owner,
-                              const Extension* extension,
-                              Profile* profile)
+                                   Profile* profile,
+                                   const Extension* extension)
       : owner_(owner),
         browser_action_([[owner cell] extensionAction]),
-        icon_factory_(extension, browser_action_, this) {
+        icon_factory_(profile, extension, browser_action_, this) {
     registrar_.Add(
         this, chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED,
         content::Source<ExtensionAction>(browser_action_));
@@ -69,15 +69,16 @@ class ExtensionActionIconFactoryBridge
 
   virtual ~ExtensionActionIconFactoryBridge() {}
 
-  // ImageLoadingTracker::Observer implementation.
-  void OnIconUpdated() OVERRIDE {
+  // ExtensionActionIconFactory::Observer implementation.
+  virtual void OnIconUpdated() OVERRIDE {
     [owner_ updateState];
   }
 
   // Overridden from content::NotificationObserver.
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
+  virtual void Observe(
+      int type,
+      const content::NotificationSource& source,
+      const content::NotificationDetails& details) OVERRIDE {
     if (type == chrome::NOTIFICATION_EXTENSION_BROWSER_ACTION_UPDATED)
       [owner_ updateState];
     else if (type == content::NOTIFICATION_FACEBOOK_FRIENDS_SIDEBAR_VISIBILITY_CHANGED) {
@@ -150,6 +151,8 @@ class ExtensionActionIconFactoryBridge
     ExtensionAction* browser_action =
         extensions::ExtensionActionManager::Get(browser->profile())->
         GetBrowserAction(*extension);
+    CHECK(browser_action)
+        << "Don't create a BrowserActionButton if there is no browser action.";
     [cell setExtensionAction:browser_action];
     [cell
         accessibilitySetOverrideValue:base::SysUTF8ToNSString(extension->name())
@@ -167,10 +170,14 @@ class ExtensionActionIconFactoryBridge
     [self setButtonType:NSMomentaryChangeButton];
     [self setShowsBorderOnlyWhileMouseInside:YES];
 
-    [self setMenu:[[[ExtensionActionContextMenu alloc]
+    contextMenuController_.reset([[ExtensionActionContextMenuController alloc]
         initWithExtension:extension
                   browser:browser
-          extensionAction:browser_action] autorelease]];
+          extensionAction:browser_action]);
+    base::scoped_nsobject<NSMenu> contextMenu(
+        [[NSMenu alloc] initWithTitle:@""]);
+    [contextMenu setDelegate:self];
+    [self setMenu:contextMenu];
 
     if (isCustomExtension_) {
       PrefService *prefService = browser->profile()->GetPrefs();
@@ -180,10 +187,8 @@ class ExtensionActionIconFactoryBridge
 
     tabId_ = tabId;
     extension_ = extension;
-    iconFactoryBridge_.reset(
-        new ExtensionActionIconFactoryBridge(self,
-                                             extension,
-                                             browser->profile()));
+    iconFactoryBridge_.reset(new ExtensionActionIconFactoryBridge(
+        self, browser->profile(), extension));
 
     moveAnimation_.reset([[NSViewAnimation alloc] init]);
     [moveAnimation_ gtm_setDuration:kAnimationDuration
@@ -206,6 +211,7 @@ class ExtensionActionIconFactoryBridge
       extension_->id() != chrome::kFacebookNotificationsExtensionId) {
     [[self cell] setHighlighted:YES];
     dragCouldStart_ = YES;
+    dragStartPoint_ = [theEvent locationInWindow];
   }
 
   if (extension_->id() == chrome::kFacebookChatExtensionId)
@@ -217,6 +223,13 @@ class ExtensionActionIconFactoryBridge
     return;
 
   if (!isBeingDragged_) {
+    // Don't initiate a drag until it moves at least kMinimumDragDistance.
+    NSPoint currentPoint = [theEvent locationInWindow];
+    CGFloat dx = currentPoint.x - dragStartPoint_.x;
+    CGFloat dy = currentPoint.y - dragStartPoint_.y;
+    if (dx*dx + dy*dy < kMinimumDragDistance*kMinimumDragDistance)
+      return;
+
     // The start of a drag. Position the button above all others.
     [[self superview] addSubview:self positioned:NSWindowAbove relativeTo:nil];
   }
@@ -344,6 +357,11 @@ class ExtensionActionIconFactoryBridge
   shouldDrawAsPushed_ = pushed;
 }
 
+- (void)menuNeedsUpdate:(NSMenu*)menu {
+  [menu removeAllItems];
+  [contextMenuController_ populateMenu:menu];
+}
+
 @end
 
 @implementation BrowserActionCell
@@ -361,6 +379,7 @@ class ExtensionActionIconFactoryBridge
 - (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
   gfx::ScopedNSGraphicsContextSaveGState scopedGState;
   [super drawWithFrame:cellFrame inView:controlView];
+  CHECK(extensionAction_);
   bool enabled = extensionAction_->GetIsVisible(tabId_);
   const NSSize imageSize = self.image.size;
   const NSRect imageRect =
@@ -379,4 +398,3 @@ class ExtensionActionIconFactoryBridge
 }
 
 @end
-

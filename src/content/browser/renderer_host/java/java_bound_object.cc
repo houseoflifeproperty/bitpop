@@ -7,20 +7,23 @@
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
 #include "base/memory/singleton.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "content/browser/renderer_host/java/java_bridge_dispatcher_host_manager.h"
 #include "content/browser/renderer_host/java/java_type.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebBindings.h"
+#include "content/browser/renderer_host/java/jni_helper.h"
+#include "content/public/browser/browser_thread.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
 
 using base::StringPrintf;
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF8ToJavaString;
 using base::android::GetClass;
-using base::android::GetMethodIDFromClassName;
 using base::android::JavaRef;
 using base::android::ScopedJavaGlobalRef;
 using base::android::ScopedJavaLocalRef;
-using WebKit::WebBindings;
+using blink::WebBindings;
 
 // The conversion between JavaScript and Java types is based on the Live
 // Connect 2 spec. See
@@ -36,6 +39,7 @@ namespace {
 const char kJavaLangClass[] = "java/lang/Class";
 const char kJavaLangObject[] = "java/lang/Object";
 const char kJavaLangReflectMethod[] = "java/lang/reflect/Method";
+const char kJavaLangSecurityExceptionClass[] = "java/lang/SecurityException";
 const char kGetClass[] = "getClass";
 const char kGetMethods[] = "getMethods";
 const char kIsAnnotationPresent[] = "isAnnotationPresent";
@@ -43,6 +47,9 @@ const char kReturningJavaLangClass[] = "()Ljava/lang/Class;";
 const char kReturningJavaLangReflectMethodArray[] =
     "()[Ljava/lang/reflect/Method;";
 const char kTakesJavaLangClassReturningBoolean[] = "(Ljava/lang/Class;)Z";
+// This is an exception message, so no need to localize.
+const char kAccessToObjectGetClassIsBlocked[] =
+    "Access to java.lang.Object.getClass is blocked";
 
 // Our special NPObject type.  We extend an NPObject with a pointer to a
 // JavaBoundObject.  We also add static methods for each of the NPObject
@@ -62,6 +69,8 @@ struct JavaNPObject : public NPObject {
   static bool HasProperty(NPObject* np_object, NPIdentifier np_identifier);
   static bool GetProperty(NPObject* np_object, NPIdentifier np_identifier,
                           NPVariant *result);
+  static bool Enumerate(NPObject* object, NPIdentifier** values,
+                        uint32_t* count);
 };
 
 const NPClass JavaNPObject::kNPClass = {
@@ -76,6 +85,8 @@ const NPClass JavaNPObject::kNPClass = {
   JavaNPObject::GetProperty,
   NULL,  // NPSetProperty,
   NULL,  // NPRemoveProperty
+  JavaNPObject::Enumerate,
+  NULL,
 };
 
 NPObject* JavaNPObject::Allocate(NPP npp, NPClass* np_class) {
@@ -118,14 +129,33 @@ bool JavaNPObject::GetProperty(NPObject* np_object,
   return false;
 }
 
+bool JavaNPObject::Enumerate(NPObject* np_object, NPIdentifier** values,
+                             uint32_t* count) {
+  JavaNPObject* obj = reinterpret_cast<JavaNPObject*>(np_object);
+  if (!obj->bound_object->CanEnumerateMethods()) return false;
+  std::vector<std::string> method_names = obj->bound_object->GetMethodNames();
+  *count = base::saturated_cast<uint32_t>(method_names.size());
+  *values = static_cast<NPIdentifier*>(calloc(*count, sizeof(NPIdentifier)));
+  for (uint32_t i = 0; i < *count; ++i) {
+    (*values)[i] = WebBindings::getStringIdentifier(method_names[i].c_str());
+  }
+  return true;
+}
+
 // Calls a Java method through JNI. If the Java method raises an uncaught
 // exception, it is cleared and this method returns false. Otherwise, this
 // method returns true and the Java method's return value is provided as an
 // NPVariant. Note that this method does not do any type coercion. The Java
 // return value is simply converted to the corresponding NPAPI type.
-bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
-                   jvalue* parameters, NPVariant* result,
-                   base::android::JavaRef<jclass>& safe_annotation_clazz) {
+bool CallJNIMethod(
+    jobject object,
+    const JavaType& return_type,
+    jmethodID id,
+    jvalue* parameters,
+    NPVariant* result,
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods) {
   JNIEnv* env = AttachCurrentThread();
   switch (return_type.type) {
     case JavaType::TypeBoolean:
@@ -185,12 +215,10 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
       }
       std::string str =
           base::android::ConvertJavaStringToUTF8(scoped_java_string);
-      // Take a copy and pass ownership to the variant. We must allocate using
-      // NPN_MemAlloc, to match NPN_ReleaseVariant, which uses NPN_MemFree.
       size_t length = str.length();
-      // TODO(thakis): This causes linker errors in a components build. Figure
-      // out what to do.
-      char* buffer = static_cast<char*>(NPN_MemAlloc(length));
+      // This pointer is freed in _NPN_ReleaseVariantValue in
+      // third_party/WebKit/Source/WebCore/bindings/v8/npruntime.cpp.
+      char* buffer = static_cast<char*>(malloc(length));
       str.copy(buffer, length, 0);
       STRINGN_TO_NPVARIANT(buffer, length, *result);
       break;
@@ -209,7 +237,9 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
         break;
       }
       OBJECT_TO_NPVARIANT(JavaBoundObject::Create(scoped_java_object,
-                                                  safe_annotation_clazz),
+                                                  safe_annotation_clazz,
+                                                  manager,
+                                                  can_enumerate_methods),
                           *result);
       break;
     }
@@ -217,35 +247,79 @@ bool CallJNIMethod(jobject object, const JavaType& return_type, jmethodID id,
   return !base::android::ClearException(env);
 }
 
+double RoundDoubleTowardsZero(const double& x) {
+  if (std::isnan(x)) {
+    return 0.0;
+  }
+  return x > 0.0 ? floor(x) : ceil(x);
+}
+
+// Rounds to jlong using Java's type conversion rules.
+jlong RoundDoubleToLong(const double& x) {
+  double intermediate = RoundDoubleTowardsZero(x);
+  // The int64 limits can not be converted exactly to double values, so we
+  // compare to custom constants. kint64max is 2^63 - 1, but the spacing
+  // between double values in the the range 2^62 to 2^63 is 2^10. The cast is
+  // required to silence a spurious gcc warning for integer overflow.
+  const int64 limit = (GG_INT64_C(1) << 63) - static_cast<uint64>(1 << 10);
+  DCHECK(limit > 0);
+  const double kLargestDoubleLessThanInt64Max = limit;
+  const double kSmallestDoubleGreaterThanInt64Min = -limit;
+  if (intermediate > kLargestDoubleLessThanInt64Max) {
+    return kint64max;
+  }
+  if (intermediate < kSmallestDoubleGreaterThanInt64Min) {
+    return kint64min;
+  }
+  return static_cast<jlong>(intermediate);
+}
+
+// Rounds to jint using Java's type conversion rules.
+jint RoundDoubleToInt(const double& x) {
+  double intermediate = RoundDoubleTowardsZero(x);
+  // The int32 limits cast exactly to double values.
+  intermediate = std::min(intermediate, static_cast<double>(kint32max));
+  intermediate = std::max(intermediate, static_cast<double>(kint32min));
+  return static_cast<jint>(intermediate);
+}
+
 jvalue CoerceJavaScriptNumberToJavaValue(const NPVariant& variant,
                                          const JavaType& target_type,
                                          bool coerce_to_string) {
   // See http://jdk6.java.net/plugin2/liveconnect/#JS_NUMBER_VALUES.
+
+  // For conversion to numeric types, we need to replicate Java's type
+  // conversion rules. This requires that for integer values, we simply discard
+  // all but the lowest n buts, where n is the number of bits in the target
+  // type. For double values, the logic is more involved.
   jvalue result;
   DCHECK(variant.type == NPVariantType_Int32 ||
          variant.type == NPVariantType_Double);
   bool is_double = variant.type == NPVariantType_Double;
   switch (target_type.type) {
     case JavaType::TypeByte:
-      result.b = is_double ? static_cast<jbyte>(NPVARIANT_TO_DOUBLE(variant)) :
-                             static_cast<jbyte>(NPVARIANT_TO_INT32(variant));
+      result.b = is_double ?
+          static_cast<jbyte>(RoundDoubleToInt(NPVARIANT_TO_DOUBLE(variant))) :
+          static_cast<jbyte>(NPVARIANT_TO_INT32(variant));
       break;
     case JavaType::TypeChar:
       // LIVECONNECT_COMPLIANCE: Existing behavior is to convert double to 0.
-      // Spec requires converting doubles the same as int32.
+      // Spec requires converting doubles similarly to how we convert doubles to
+      // other numeric types.
       result.c = is_double ? 0 :
                              static_cast<jchar>(NPVARIANT_TO_INT32(variant));
       break;
     case JavaType::TypeShort:
-      result.s = is_double ? static_cast<jshort>(NPVARIANT_TO_DOUBLE(variant)) :
-                             static_cast<jshort>(NPVARIANT_TO_INT32(variant));
+      result.s = is_double ?
+          static_cast<jshort>(RoundDoubleToInt(NPVARIANT_TO_DOUBLE(variant))) :
+          static_cast<jshort>(NPVARIANT_TO_INT32(variant));
       break;
     case JavaType::TypeInt:
-      result.i = is_double ? static_cast<jint>(NPVARIANT_TO_DOUBLE(variant)) :
+      result.i = is_double ? RoundDoubleToInt(NPVARIANT_TO_DOUBLE(variant)) :
                              NPVARIANT_TO_INT32(variant);
       break;
     case JavaType::TypeLong:
-      result.j = is_double ? static_cast<jlong>(NPVARIANT_TO_DOUBLE(variant)) :
+      result.j = is_double ? RoundDoubleToLong(NPVARIANT_TO_DOUBLE(variant)) :
                              NPVARIANT_TO_INT32(variant);
       break;
     case JavaType::TypeFloat:
@@ -265,9 +339,9 @@ jvalue CoerceJavaScriptNumberToJavaValue(const NPVariant& variant,
       result.l = coerce_to_string ?
           ConvertUTF8ToJavaString(
               AttachCurrentThread(),
-              is_double ? StringPrintf("%.6lg", NPVARIANT_TO_DOUBLE(variant)) :
-                          base::Int64ToString(NPVARIANT_TO_INT32(variant))).
-                              Release() :
+              is_double ?
+                  base::StringPrintf("%.6lg", NPVARIANT_TO_DOUBLE(variant)) :
+                  base::Int64ToString(NPVARIANT_TO_INT32(variant))).Release() :
           NULL;
       break;
     case JavaType::TypeBoolean:
@@ -589,7 +663,7 @@ jvalue CoerceJavaScriptObjectToJavaValue(const NPVariant& variant,
         // objects. Spec requires passing only Java objects which are
         // assignment-compatibile.
         result.l = AttachCurrentThread()->NewLocalRef(
-            JavaBoundObject::GetJavaObject(object));
+            JavaBoundObject::GetJavaObject(object).obj());
       } else {
         // LIVECONNECT_COMPLIANCE: Existing behavior is to pass null. Spec
         // requires converting if the target type is
@@ -727,7 +801,9 @@ jvalue CoerceJavaScriptValueToJavaValue(const NPVariant& variant,
 
 NPObject* JavaBoundObject::Create(
     const JavaRef<jobject>& object,
-    base::android::JavaRef<jclass>& safe_annotation_clazz) {
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods) {
   // The first argument (a plugin's instance handle) is passed through to the
   // allocate function directly, and we don't use it, so it's ok to be 0.
   // The object is created with a ref count of one.
@@ -735,27 +811,57 @@ NPObject* JavaBoundObject::Create(
       &JavaNPObject::kNPClass));
   // The NPObject takes ownership of the JavaBoundObject.
   reinterpret_cast<JavaNPObject*>(np_object)->bound_object =
-      new JavaBoundObject(object, safe_annotation_clazz);
+      new JavaBoundObject(
+          object, safe_annotation_clazz, manager, can_enumerate_methods);
   return np_object;
 }
 
 JavaBoundObject::JavaBoundObject(
     const JavaRef<jobject>& object,
-    base::android::JavaRef<jclass>& safe_annotation_clazz)
-    : java_object_(object),
+    const JavaRef<jclass>& safe_annotation_clazz,
+    const base::WeakPtr<JavaBridgeDispatcherHostManager>& manager,
+    bool can_enumerate_methods)
+    : java_object_(AttachCurrentThread(), object.obj()),
+      manager_(manager),
       are_methods_set_up_(false),
+      object_get_class_method_id_(NULL),
+      can_enumerate_methods_(can_enumerate_methods),
       safe_annotation_clazz_(safe_annotation_clazz) {
-  // We don't do anything with our Java object when first created. We do it all
-  // lazily when a method is first invoked.
+  BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&JavaBridgeDispatcherHostManager::JavaBoundObjectCreated,
+                   manager_,
+                   base::android::ScopedJavaGlobalRef<jobject>(object)));
+  // Other than informing the JavaBridgeDispatcherHostManager that a java bound
+  // object has been created (above), we don't do anything else with our Java
+  // object when first created. We do it all lazily when a method is first
+  // invoked.
 }
 
 JavaBoundObject::~JavaBoundObject() {
+  BrowserThread::PostTask(
+      BrowserThread::UI, FROM_HERE,
+      base::Bind(&JavaBridgeDispatcherHostManager::JavaBoundObjectDestroyed,
+                 manager_,
+                 base::android::ScopedJavaGlobalRef<jobject>(
+                     java_object_.get(AttachCurrentThread()))));
 }
 
-jobject JavaBoundObject::GetJavaObject(NPObject* object) {
+ScopedJavaLocalRef<jobject> JavaBoundObject::GetJavaObject(NPObject* object) {
   DCHECK_EQ(&JavaNPObject::kNPClass, object->_class);
   JavaBoundObject* jbo = reinterpret_cast<JavaNPObject*>(object)->bound_object;
-  return jbo->java_object_.obj();
+  return jbo->java_object_.get(AttachCurrentThread());
+}
+
+std::vector<std::string> JavaBoundObject::GetMethodNames() const {
+  EnsureMethodsAreSetUp();
+  std::vector<std::string> result;
+  for (JavaMethodMap::const_iterator it = methods_.begin();
+       it != methods_.end();
+       it = methods_.upper_bound(it->first)) {
+    result.push_back(it->first);
+  }
+  return result;
 }
 
 bool JavaBoundObject::HasMethod(const std::string& name) const {
@@ -795,14 +901,31 @@ bool JavaBoundObject::Invoke(const std::string& name, const NPVariant* args,
                                                      true);
   }
 
-  // Call
-  bool ok = CallJNIMethod(java_object_.obj(), method->return_type(),
-                          method->id(), &parameters[0], result,
-                          safe_annotation_clazz_);
+  JNIEnv* env = AttachCurrentThread();
+  ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
+
+  // Block access to java.lang.Object.getClass.
+  // As it is declared to be final, it is sufficient to compare methodIDs.
+  if (method->id() == object_get_class_method_id_) {
+    BrowserThread::PostTask(
+        BrowserThread::UI, FROM_HERE,
+        base::Bind(&JavaBoundObject::ThrowSecurityException,
+                   kAccessToObjectGetClassIsBlocked));
+    return false;
+  }
+
+  bool ok = false;
+  if (!obj.is_null()) {
+    // Call
+    ok = CallJNIMethod(obj.obj(), method->return_type(),
+                       method->id(), &parameters[0], result,
+                       safe_annotation_clazz_,
+                       manager_,
+                       can_enumerate_methods_);
+  }
 
   // Now that we're done with the jvalue, release any local references created
   // by CoerceJavaScriptValueToJavaValue().
-  JNIEnv* env = AttachCurrentThread();
   for (size_t i = 0; i < arg_count; ++i) {
     ReleaseJavaValueIfRequired(env, &parameters[i], method->parameter_type(i));
   }
@@ -816,12 +939,21 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
   are_methods_set_up_ = true;
 
   JNIEnv* env = AttachCurrentThread();
+
+  object_get_class_method_id_ = GetMethodIDFromClassName(
+      env,
+      kJavaLangObject,
+      kGetClass,
+      kReturningJavaLangClass);
+
+  ScopedJavaLocalRef<jobject> obj = java_object_.get(env);
+
+  if (obj.is_null()) {
+    return;
+  }
+
   ScopedJavaLocalRef<jclass> clazz(env, static_cast<jclass>(
-      env->CallObjectMethod(java_object_.obj(),  GetMethodIDFromClassName(
-          env,
-          kJavaLangObject,
-          kGetClass,
-          kReturningJavaLangClass))));
+      env->CallObjectMethod(obj.obj(), object_get_class_method_id_)));
 
   ScopedJavaLocalRef<jobjectArray> methods(env, static_cast<jobjectArray>(
       env->CallObjectMethod(clazz.obj(), GetMethodIDFromClassName(
@@ -855,6 +987,15 @@ void JavaBoundObject::EnsureMethodsAreSetUp() const {
     JavaMethod* method = new JavaMethod(java_method);
     methods_.insert(std::make_pair(method->name(), method));
   }
+}
+
+// static
+void JavaBoundObject::ThrowSecurityException(const char* message) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  JNIEnv* env = AttachCurrentThread();
+  base::android::ScopedJavaLocalRef<jclass> clazz(
+      env, env->FindClass(kJavaLangSecurityExceptionClass));
+  env->ThrowNew(clazz.obj(), message);
 }
 
 }  // namespace content

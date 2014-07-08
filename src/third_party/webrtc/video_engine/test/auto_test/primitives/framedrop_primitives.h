@@ -14,12 +14,13 @@
 #include <map>
 #include <vector>
 
-#include "video_engine/include/vie_codec.h"
-#include "video_engine/include/vie_image_process.h"
-#include "video_engine/test/auto_test/interface/vie_autotest_defines.h"
-#include "video_engine/test/libvietest/include/vie_to_file_renderer.h"
+#include "webrtc/video_engine/include/vie_codec.h"
+#include "webrtc/video_engine/include/vie_image_process.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_autotest_defines.h"
+#include "webrtc/video_engine/test/libvietest/include/vie_to_file_renderer.h"
 
 class FrameDropDetector;
+struct NetworkParameters;
 class TbInterfaces;
 
 // Initializes the Video engine and its components, runs video playback using
@@ -33,8 +34,7 @@ void TestFullStack(const TbInterfaces& interfaces,
                    int width,
                    int height,
                    int bit_rate_kbps,
-                   int packet_loss_percent,
-                   int network_delay_ms,
+                   const NetworkParameters& network,
                    FrameDropDetector* frame_drop_detector,
                    ViEToFileRenderer* remote_file_renderer,
                    ViEToFileRenderer* local_file_renderer);
@@ -148,7 +148,8 @@ class FrameDropDetector {
         timestamp_diff_(0) {}
 
   // Reports a frame has reached a state in the frame life cycle.
-  void ReportFrameState(State state, unsigned int timestamp);
+  void ReportFrameState(State state, unsigned int timestamp,
+                        int64_t report_time_us);
 
   // Uses all the gathered timestamp information to calculate which frames have
   // been dropped during the test and where they were dropped. Not until
@@ -222,10 +223,12 @@ class FrameDropMonitoringRemoteFileRenderer : public ViEToFileRenderer {
 
   // Implementation of ExternalRenderer:
   int FrameSizeChange(unsigned int width, unsigned int height,
-                      unsigned int number_of_streams);
+                      unsigned int number_of_streams) OVERRIDE;
   int DeliverFrame(unsigned char* buffer, int buffer_size,
                    uint32_t time_stamp,
-                   int64_t render_time);
+                   int64_t ntp_time_ms,
+                   int64_t render_time,
+                   void* handle) OVERRIDE;
  private:
   FrameDropDetector* frame_drop_detector_;
 };

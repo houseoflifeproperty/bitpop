@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -17,14 +17,14 @@ package org.chromium.net;
 import android.test.InstrumentationTestCase;
 import android.test.suitebuilder.annotation.SmallTest;
 
+import org.chromium.base.test.util.Feature;
+
 import java.net.Proxy;
 import java.net.ProxySelector;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.List;
 import java.util.Properties;
-
-import org.chromium.base.test.util.Feature;
 
 public class AndroidProxySelectorTest extends InstrumentationTestCase {
     Properties mProperties;
@@ -45,13 +45,16 @@ public class AndroidProxySelectorTest extends InstrumentationTestCase {
         // java.net.Proxy only knows about http and socks proxies.
         Proxy.Type type = proxy.type();
         switch (type) {
-        case HTTP: return "PROXY " + proxy.address().toString();
-        case SOCKS: return "SOCKS5 " + proxy.address().toString();
-        case DIRECT: return "DIRECT";
-        default:
-            // If a new proxy type is supported in future, add a case to match it.
-            fail("Unknown proxy type" + type);
-            return "unknown://";
+            case HTTP:
+                return "PROXY " + proxy.address().toString();
+            case SOCKS:
+                return "SOCKS5 " + proxy.address().toString();
+            case DIRECT:
+                return "DIRECT";
+            default:
+                // If a new proxy type is supported in future, add a case to match it.
+                fail("Unknown proxy type" + type);
+                return "unknown://";
         }
     }
 
@@ -63,7 +66,7 @@ public class AndroidProxySelectorTest extends InstrumentationTestCase {
             builder.append(toString(proxy));
         }
         return builder.toString();
-   }
+    }
 
     static void checkMapping(String url, String expected) throws URISyntaxException {
         URI uri = new URI(url);

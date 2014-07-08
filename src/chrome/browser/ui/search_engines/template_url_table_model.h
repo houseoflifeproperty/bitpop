@@ -9,7 +9,8 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/search_engines/template_url_service_observer.h"
 #include "ui/base/models/table_model.h"
 
@@ -46,7 +47,7 @@ class TemplateURLTableModel : public ui::TableModel,
 
   // ui::TableModel overrides.
   virtual int RowCount() OVERRIDE;
-  virtual string16 GetText(int row, int column) OVERRIDE;
+  virtual base::string16 GetText(int row, int column) OVERRIDE;
   virtual gfx::ImageSkia GetIcon(int row) OVERRIDE;
   virtual void SetObserver(ui::TableModelObserver* observer) OVERRIDE;
   virtual bool HasGroups() OVERRIDE;
@@ -58,14 +59,14 @@ class TemplateURLTableModel : public ui::TableModel,
 
   // Adds a new entry at the specified index.
   void Add(int index,
-           const string16& short_name,
-           const string16& keyword,
+           const base::string16& short_name,
+           const base::string16& keyword,
            const std::string& url);
 
   // Update the entry at the specified index.
   void ModifyTemplateURL(int index,
-                         const string16& title,
-                         const string16& keyword,
+                         const base::string16& title,
+                         const base::string16& keyword,
                          const std::string& url);
 
   // Reloads the icon at the specified index.
@@ -97,6 +98,10 @@ class TemplateURLTableModel : public ui::TableModel,
   // Returns the index of the last entry shown in the search engines group.
   int last_search_engine_index() const { return last_search_engine_index_; }
 
+  // Returns the index of the last entry shown in the other search engines
+  // group.
+  int last_other_engine_index() const { return last_other_engine_index_; }
+
  private:
   friend class ModelEntry;
 
@@ -105,6 +110,12 @@ class TemplateURLTableModel : public ui::TableModel,
 
   // TemplateURLServiceObserver notification.
   virtual void OnTemplateURLServiceChanged() OVERRIDE;
+
+  // Removes the entry at |index| from |entries_| and returns the removed item.
+  scoped_ptr<ModelEntry> RemoveEntry(int index);
+
+  // Adds |entry| to |entries_| at |index| and takes ownership.
+  void AddEntry(int index, scoped_ptr<ModelEntry> entry);
 
   ui::TableModelObserver* observer_;
 
@@ -117,6 +128,10 @@ class TemplateURLTableModel : public ui::TableModel,
   // Index of the last search engine in entries_. This is used to determine the
   // group boundaries.
   int last_search_engine_index_;
+
+  // Index of the last other engine in entries_. This is used to determine the
+  // group boundaries.
+  int last_other_engine_index_;
 
   DISALLOW_COPY_AND_ASSIGN(TemplateURLTableModel);
 };

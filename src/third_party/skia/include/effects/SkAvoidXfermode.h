@@ -37,23 +37,29 @@ public:
                 Tolerance near 0: draw only on colors that are nearly identical to the op-color
                 Tolerance near 255: draw on any colors even remotely similar to the op-color
      */
-    SkAvoidXfermode(SkColor opColor, U8CPU tolerance, Mode mode);
+    static SkAvoidXfermode* Create(SkColor opColor, U8CPU tolerance, Mode mode) {
+        return SkNEW_ARGS(SkAvoidXfermode, (opColor, tolerance, mode));
+    }
 
     // overrides from SkXfermode
     virtual void xfer32(SkPMColor dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) SK_OVERRIDE;
+                        const SkAlpha aa[]) const SK_OVERRIDE;
     virtual void xfer16(uint16_t dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) SK_OVERRIDE;
-    virtual void xfer4444(uint16_t dst[], const SkPMColor src[], int count,
-                          const SkAlpha aa[]) SK_OVERRIDE;
+                        const SkAlpha aa[]) const SK_OVERRIDE;
     virtual void xferA8(SkAlpha dst[], const SkPMColor src[], int count,
-                        const SkAlpha aa[]) SK_OVERRIDE;
+                        const SkAlpha aa[]) const SK_OVERRIDE;
 
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkAvoidXfermode)
 
 protected:
-    SkAvoidXfermode(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkAvoidXfermode(SkReadBuffer&);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+
+#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
+public:
+#endif
+    SkAvoidXfermode(SkColor opColor, U8CPU tolerance, Mode mode);
 
 private:
     SkColor     fOpColor;

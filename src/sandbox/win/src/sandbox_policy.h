@@ -8,6 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
+#include "base/strings/string16.h"
 #include "sandbox/win/src/sandbox_types.h"
 #include "sandbox/win/src/security_level.h"
 
@@ -129,7 +130,7 @@ class TargetPolicy {
   // Returns the name of the alternate desktop used. If an alternate window
   // station is specified, the name is prepended by the window station name,
   // followed by a backslash.
-  virtual std::wstring GetAlternateDesktop() const = 0;
+  virtual base::string16 GetAlternateDesktop() const = 0;
 
   // Precreates the desktop and window station, if any.
   virtual ResultCode CreateAlternateDesktop(bool alternate_winstation) = 0;
@@ -186,6 +187,14 @@ class TargetPolicy {
   // to strict mode means that when we detect that the function is patched we'll
   // refuse to perform the interception.
   virtual void SetStrictInterceptions() = 0;
+
+  // Set the handles the target process should inherit for stdout and
+  // stderr.  The handles the caller passes must remain valid for the
+  // lifetime of the policy object.  This only has an effect on
+  // Windows Vista and later versions.  These methods accept pipe and
+  // file handles, but not console handles.
+  virtual ResultCode SetStdoutHandle(HANDLE handle) = 0;
+  virtual ResultCode SetStderrHandle(HANDLE handle) = 0;
 
   // Adds a policy rule effective for processes spawned using this policy.
   // subsystem: One of the above enumerated windows subsystems.

@@ -43,16 +43,21 @@ extern const char program_name[];
  */
 extern const int program_birth_year;
 
-/**
- * this year, defined by the program for show_banner()
- */
-extern const int this_year;
-
 extern AVCodecContext *avcodec_opts[AVMEDIA_TYPE_NB];
 extern AVFormatContext *avformat_opts;
 extern struct SwsContext *sws_opts;
-extern struct SwrContext *swr_opts;
-extern AVDictionary *format_opts, *codec_opts;
+extern AVDictionary *swr_opts;
+extern AVDictionary *format_opts, *codec_opts, *resample_opts;
+
+/**
+ * Register a program-specific cleanup routine.
+ */
+void register_exit(void (*cb)(int ret));
+
+/**
+ * Wraps exit with a program-specific cleanup routine.
+ */
+void exit_program(int ret);
 
 /**
  * Initialize the cmdutils option system, in particular
@@ -72,6 +77,11 @@ void uninit_opts(void);
 void log_callback_help(void* ptr, int level, const char* fmt, va_list vl);
 
 /**
+ * Override the cpuflags.
+ */
+int opt_cpuflags(void *optctx, const char *opt, const char *arg);
+
+/**
  * Fallback for options that are not explicitly handled, these will be
  * parsed through AVOptions.
  */
@@ -86,9 +96,13 @@ int opt_report(const char *opt);
 
 int opt_max_alloc(void *optctx, const char *opt, const char *arg);
 
-int opt_cpuflags(void *optctx, const char *opt, const char *arg);
-
 int opt_codec_debug(void *optctx, const char *opt, const char *arg);
+
+#if CONFIG_OPENCL
+int opt_opencl(void *optctx, const char *opt, const char *arg);
+
+int opt_opencl_bench(void *optctx, const char *opt, const char *arg);
+#endif
 
 /**
  * Limit the execution time.
@@ -123,7 +137,7 @@ double parse_number_or_die(const char *context, const char *numstr, int type,
  * not zero timestr is interpreted as a duration, otherwise as a
  * date
  *
- * @see parse_date()
+ * @see av_parse_time()
  */
 int64_t parse_time_or_die(const char *context, const char *timestr,
                           int is_duration);
@@ -139,7 +153,7 @@ typedef struct SpecifierOpt {
     } u;
 } SpecifierOpt;
 
-typedef struct {
+typedef struct OptionDef {
     const char *name;
     int flags;
 #define HAS_ARG    0x0001
@@ -162,6 +176,8 @@ typedef struct {
                                    an int containing element count in the array. */
 #define OPT_TIME  0x10000
 #define OPT_DOUBLE 0x20000
+#define OPT_INPUT  0x40000
+#define OPT_OUTPUT 0x80000
      union {
         void *dst_ptr;
         int (*func_arg)(void *, const char *, const char *);
@@ -190,13 +206,13 @@ void show_help_options(const OptionDef *options, const char *msg, int req_flags,
 void show_help_children(const AVClass *class, int flags);
 
 /**
- * Per-avtool specific help handler. Implemented in each
- * avtool, called by show_help().
+ * Per-fftool specific help handler. Implemented in each
+ * fftool, called by show_help().
  */
 void show_help_default(const char *opt, const char *arg);
 
 /**
- * Generic -h handler common to all avtools.
+ * Generic -h handler common to all fftools.
  */
 int show_help(void *optctx, const char *opt, const char *arg);
 
@@ -204,6 +220,8 @@ int show_help(void *optctx, const char *opt, const char *arg);
  * Parse the command line arguments.
  *
  * @param optctx an opaque options context
+ * @param argc   number of command line arguments
+ * @param argv   values of command line arguments
  * @param options Array with the definitions required to interpret every
  * option of the form: -option_name [argument]
  * @param parse_arg_function Name of the function called to process every
@@ -220,6 +238,101 @@ void parse_options(void *optctx, int argc, char **argv, const OptionDef *options
  */
 int parse_option(void *optctx, const char *opt, const char *arg,
                  const OptionDef *options);
+
+/**
+ * An option extracted from the commandline.
+ * Cannot use AVDictionary because of options like -map which can be
+ * used multiple times.
+ */
+typedef struct Option {
+    const OptionDef  *opt;
+    const char       *key;
+    const char       *val;
+} Option;
+
+typedef struct OptionGroupDef {
+    /**< group name */
+    const char *name;
+    /**
+     * Option to be used as group separator. Can be NULL for groups which
+     * are terminated by a non-option argument (e.g. ffmpeg output files)
+     */
+    const char *sep;
+    /**
+     * Option flags that must be set on each option that is
+     * applied to this group
+     */
+    int flags;
+} OptionGroupDef;
+
+typedef struct OptionGroup {
+    const OptionGroupDef *group_def;
+    const char *arg;
+
+    Option *opts;
+    int  nb_opts;
+
+    AVDictionary *codec_opts;
+    AVDictionary *format_opts;
+    AVDictionary *resample_opts;
+    struct SwsContext *sws_opts;
+    AVDictionary *swr_opts;
+} OptionGroup;
+
+/**
+ * A list of option groups that all have the same group type
+ * (e.g. input files or output files)
+ */
+typedef struct OptionGroupList {
+    const OptionGroupDef *group_def;
+
+    OptionGroup *groups;
+    int       nb_groups;
+} OptionGroupList;
+
+typedef struct OptionParseContext {
+    OptionGroup global_opts;
+
+    OptionGroupList *groups;
+    int           nb_groups;
+
+    /* parsing state */
+    OptionGroup cur_group;
+} OptionParseContext;
+
+/**
+ * Parse an options group and write results into optctx.
+ *
+ * @param optctx an app-specific options context. NULL for global options group
+ */
+int parse_optgroup(void *optctx, OptionGroup *g);
+
+/**
+ * Split the commandline into an intermediate form convenient for further
+ * processing.
+ *
+ * The commandline is assumed to be composed of options which either belong to a
+ * group (those with OPT_SPEC, OPT_OFFSET or OPT_PERFILE) or are global
+ * (everything else).
+ *
+ * A group (defined by an OptionGroupDef struct) is a sequence of options
+ * terminated by either a group separator option (e.g. -i) or a parameter that
+ * is not an option (doesn't start with -). A group without a separator option
+ * must always be first in the supplied groups list.
+ *
+ * All options within the same group are stored in one OptionGroup struct in an
+ * OptionGroupList, all groups with the same group definition are stored in one
+ * OptionGroupList in OptionParseContext.groups. The order of group lists is the
+ * same as the order of group definitions.
+ */
+int split_commandline(OptionParseContext *octx, int argc, char *argv[],
+                      const OptionDef *options,
+                      const OptionGroupDef *groups, int nb_groups);
+
+/**
+ * Free all allocated memory in an OptionParseContext.
+ */
+void uninit_parse_context(OptionParseContext *octx);
 
 /**
  * Find the '-loglevel' option in the command line args and apply it.
@@ -249,6 +362,8 @@ int check_stream_specifier(AVFormatContext *s, AVStream *st, const char *spec);
  * Create a new options dictionary containing only the options from
  * opts which apply to the codec with ID codec_id.
  *
+ * @param opts     dictionary to place options in
+ * @param codec_id ID of the codec that should be filtered for
  * @param s Corresponding format context.
  * @param st A stream from s for which the options should be filtered.
  * @param codec The particular codec for which the options should be filtered.
@@ -297,6 +412,13 @@ void show_banner(int argc, char **argv, const OptionDef *options);
  * This option processing function does not utilize the arguments.
  */
 int show_version(void *optctx, const char *opt, const char *arg);
+
+/**
+ * Print the build configuration of the program to stdout. The contents
+ * depend on the definition of FFMPEG_CONFIGURATION.
+ * This option processing function does not utilize the arguments.
+ */
+int show_buildconf(void *optctx, const char *opt, const char *arg);
 
 /**
  * Print the license of the program to stdout. The license depends on
@@ -373,6 +495,12 @@ int show_layouts(void *optctx, const char *opt, const char *arg);
 int show_sample_fmts(void *optctx, const char *opt, const char *arg);
 
 /**
+ * Print a listing containing all the color names and values recognized
+ * by the program.
+ */
+int show_colors(void *optctx, const char *opt, const char *arg);
+
+/**
  * Return a positive value if a line read from standard input
  * starts with [yY], otherwise return 0.
  */
@@ -382,9 +510,10 @@ int read_yesno(void);
  * Read the file with name filename, and put its content in a newly
  * allocated 0-terminated buffer.
  *
+ * @param filename file to read from
  * @param bufptr location where pointer to buffer is returned
  * @param size   location where size of buffer is returned
- * @return 0 in case of success, a negative value corresponding to an
+ * @return >= 0 in case of success, a negative value corresponding to an
  * AVERROR error code in case of failure.
  */
 int cmdutils_read_file(const char *filename, char **bufptr, size_t *size);
@@ -411,63 +540,21 @@ FILE *get_preset_file(char *filename, size_t filename_size,
                       const char *preset_name, int is_path, const char *codec_name);
 
 /**
- * Do all the necessary cleanup and abort.
- * This function is implemented in the avtools, not cmdutils.
- */
-av_noreturn void exit_program(int ret);
-
-/**
  * Realloc array to hold new_size elements of elem_size.
- * Calls exit_program() on failure.
+ * Calls exit() on failure.
  *
+ * @param array array to reallocate
  * @param elem_size size in bytes of each element
  * @param size new element count will be written here
+ * @param new_size number of elements to place in reallocated array
  * @return reallocated array
  */
 void *grow_array(void *array, int elem_size, int *size, int new_size);
 
-typedef struct FrameBuffer {
-    uint8_t *base[4];
-    uint8_t *data[4];
-    int  linesize[4];
+#define media_type_string av_get_media_type_string
 
-    int h, w;
-    enum PixelFormat pix_fmt;
-
-    int refcount;
-    struct FrameBuffer **pool;  ///< head of the buffer pool
-    struct FrameBuffer *next;
-} FrameBuffer;
-
-/**
- * Get a frame from the pool. This is intended to be used as a callback for
- * AVCodecContext.get_buffer.
- *
- * @param s codec context. s->opaque must be a pointer to the head of the
- *          buffer pool.
- * @param frame frame->opaque will be set to point to the FrameBuffer
- *              containing the frame data.
- */
-int codec_get_buffer(AVCodecContext *s, AVFrame *frame);
-
-/**
- * A callback to be used for AVCodecContext.release_buffer along with
- * codec_get_buffer().
- */
-void codec_release_buffer(AVCodecContext *s, AVFrame *frame);
-
-/**
- * A callback to be used for AVFilterBuffer.free.
- * @param fb buffer to free. fb->priv must be a pointer to the FrameBuffer
- *           containing the buffer data.
- */
-void filter_release_buffer(AVFilterBuffer *fb);
-
-/**
- * Free all the buffers in the pool. This must be called after all the
- * buffers have been released.
- */
-void free_buffer_pool(FrameBuffer **pool);
+#define GROW_ARRAY(array, nb_elems)\
+    array = grow_array(array, sizeof(*array), &nb_elems, nb_elems + 1)
 
 #define GET_PIX_FMT_NAME(pix_fmt)\
     const char *name = av_get_pix_fmt_name(pix_fmt);

@@ -49,6 +49,7 @@ Examples for all of these combinations can be found in tests/owners_unittest.py.
 """
 
 import collections
+import random
 import re
 
 
@@ -77,7 +78,7 @@ class SyntaxErrorInOwnersFile(Exception):
     self.msg = msg
 
   def __str__(self):
-    return "%s:%d syntax error: %s" % (self.path, self.lineno, self.msg)
+    return '%s:%d syntax error: %s' % (self.path, self.lineno, self.msg)
 
 
 class Database(object):
@@ -110,25 +111,31 @@ class Database(object):
     # Mapping of paths to authorized owners.
     self.owners_for = {}
 
+    # Mapping reviewers to the preceding comment per file in the OWNERS files.
+    self.comments = {}
+
     # Set of paths that stop us from looking above them for owners.
     # (This is implicitly true for the root directory).
     self.stop_looking = set([''])
 
-  def reviewers_for(self, files):
+  def reviewers_for(self, files, author):
     """Returns a suggested set of reviewers that will cover the files.
 
-    files is a sequence of paths relative to (and under) self.root."""
+    files is a sequence of paths relative to (and under) self.root.
+    If author is nonempty, we ensure it is not included in the set returned
+    in order avoid suggesting the author as a reviewer for their own changes."""
     self._check_paths(files)
-    self._load_data_needed_for(files)
-    return self._covering_set_of_owners_for(files)
+    self.load_data_needed_for(files)
+    suggested_owners = self._covering_set_of_owners_for(files, author)
+    if EVERYONE in suggested_owners:
+      if len(suggested_owners) > 1:
+        suggested_owners.remove(EVERYONE)
+      else:
+        suggested_owners = set(['<anyone>'])
+    return suggested_owners
 
-  # TODO(dpranke): rename to objects_not_covered_by
-  def directories_not_covered_by(self, files, reviewers):
-    """Returns the set of directories that are not owned by a reviewer.
-
-    Determines which of the given files are not owned by at least one of the
-    reviewers, then returns a set containing the applicable enclosing
-    directories, i.e. the ones upward from the files that have OWNERS files.
+  def files_not_covered_by(self, files, reviewers):
+    """Returns the files not owned by one of the reviewers.
 
     Args:
         files is a sequence of paths relative to (and under) self.root.
@@ -136,22 +143,13 @@ class Database(object):
     """
     self._check_paths(files)
     self._check_reviewers(reviewers)
-    self._load_data_needed_for(files)
-
-    objs = set()
-    for f in files:
-      if f in self.owners_for:
-        objs.add(f)
-      else:
-        objs.add(self.os_path.dirname(f))
+    self.load_data_needed_for(files)
 
     covered_objs = self._objs_covered_by(reviewers)
-    uncovered_objs = [self._enclosing_obj_with_owners(o) for o in objs
-                      if not self._is_obj_covered_by(o, covered_objs)]
+    uncovered_files = [f for f in files
+                       if not self._is_obj_covered_by(f, covered_objs)]
 
-    return set(uncovered_objs)
-
-  objects_not_covered_by = directories_not_covered_by
+    return set(uncovered_files)
 
   def _check_paths(self, files):
     def _is_under(f, pfx):
@@ -164,39 +162,30 @@ class Database(object):
     _assert_is_collection(reviewers)
     assert all(self.email_regexp.match(r) for r in reviewers)
 
-  # TODO(dpranke): Rename to _objs_covered_by and update_callers
-  def _dirs_covered_by(self, reviewers):
-    dirs = self.owned_by[EVERYONE]
+  def _objs_covered_by(self, reviewers):
+    objs = self.owned_by[EVERYONE]
     for r in reviewers:
-      dirs = dirs | self.owned_by.get(r, set())
-    return dirs
+      objs = objs | self.owned_by.get(r, set())
+    return objs
 
-  _objs_covered_by = _dirs_covered_by
+  def _stop_looking(self, objname):
+    return objname in self.stop_looking
 
-  def _stop_looking(self, dirname):
-    return dirname in self.stop_looking
+  def _is_obj_covered_by(self, objname, covered_objs):
+    while not objname in covered_objs and not self._stop_looking(objname):
+      objname = self.os_path.dirname(objname)
+    return objname in covered_objs
 
-  # TODO(dpranke): Rename to _is_dir_covered_by and update callers.
-  def _is_dir_covered_by(self, dirname, covered_dirs):
-    while not dirname in covered_dirs and not self._stop_looking(dirname):
-      dirname = self.os_path.dirname(dirname)
-    return dirname in covered_dirs
-
-  _is_obj_covered_by = _is_dir_covered_by
-
-  # TODO(dpranke): Rename to _enclosing_obj_with_owners and update callers.
-  def _enclosing_dir_with_owners(self, directory):
+  def _enclosing_dir_with_owners(self, objname):
     """Returns the innermost enclosing directory that has an OWNERS file."""
-    dirpath = directory
+    dirpath = objname
     while not dirpath in self.owners_for:
       if self._stop_looking(dirpath):
         break
       dirpath = self.os_path.dirname(dirpath)
     return dirpath
 
-  _enclosing_obj_with_owners = _enclosing_dir_with_owners
-
-  def _load_data_needed_for(self, files):
+  def load_data_needed_for(self, files):
     for f in files:
       dirpath = self.os_path.dirname(f)
       while not dirpath in self.owners_for:
@@ -209,18 +198,27 @@ class Database(object):
     owners_path = self.os_path.join(self.root, dirpath, 'OWNERS')
     if not self.os_path.exists(owners_path):
       return
-
+    comment = []
+    in_comment = False
     lineno = 0
     for line in self.fopen(owners_path):
       lineno += 1
       line = line.strip()
-      if line.startswith('#') or line == '':
+      if line.startswith('#'):
+        if not in_comment:
+          comment = []
+        comment.append(line[1:].strip())
+        in_comment = True
         continue
+      if line == '':
+        continue
+      in_comment = False
+
       if line == 'set noparent':
         self.stop_looking.add(dirpath)
         continue
 
-      m = re.match("per-file (.+)=(.+)", line)
+      m = re.match('per-file (.+)=(.+)', line)
       if m:
         glob_string = m.group(1).strip()
         directive = m.group(2).strip()
@@ -231,20 +229,24 @@ class Database(object):
               line)
         baselines = self.glob(full_glob_string)
         for baseline in (self.os_path.relpath(b, self.root) for b in baselines):
-          self._add_entry(baseline, directive, "per-file line",
-                          owners_path, lineno)
+          self._add_entry(baseline, directive, 'per-file line',
+                          owners_path, lineno, '\n'.join(comment))
         continue
 
       if line.startswith('set '):
         raise SyntaxErrorInOwnersFile(owners_path, lineno,
             'unknown option: "%s"' % line[4:].strip())
 
-      self._add_entry(dirpath, line, "line", owners_path, lineno)
+      self._add_entry(dirpath, line, 'line', owners_path, lineno,
+                      ' '.join(comment))
 
-  def _add_entry(self, path, directive, line_type, owners_path, lineno):
-    if directive == "set noparent":
+  def _add_entry(self, path, directive,
+                 line_type, owners_path, lineno, comment):
+    if directive == 'set noparent':
       self.stop_looking.add(path)
     elif self.email_regexp.match(directive) or directive == EVERYONE:
+      self.comments.setdefault(directive, {})
+      self.comments[directive][path] = comment
       self.owned_by.setdefault(directive, set()).add(path)
       self.owners_for.setdefault(path, set()).add(directive)
     else:
@@ -252,60 +254,67 @@ class Database(object):
           ('%s is not a "set" directive, "*", '
            'or an email address: "%s"' % (line_type, directive)))
 
+  def _covering_set_of_owners_for(self, files, author):
+    dirs_remaining = set(self._enclosing_dir_with_owners(f) for f in files)
+    all_possible_owners = self.all_possible_owners(dirs_remaining, author)
+    suggested_owners = set()
+    while dirs_remaining:
+      owner = self.lowest_cost_owner(all_possible_owners, dirs_remaining)
+      suggested_owners.add(owner)
+      dirs_to_remove = set(el[0] for el in all_possible_owners[owner])
+      dirs_remaining -= dirs_to_remove
+    return suggested_owners
 
-  def _covering_set_of_owners_for(self, files):
-    # Get the set of directories from the files.
-    dirs = set()
-    for f in files:
-      dirs.add(self._enclosing_dir_with_owners(f))
-
-
-    owned_dirs = {}
-    dir_owners = {}
-
+  def all_possible_owners(self, dirs, author):
+    """Returns a list of (potential owner, distance-from-dir) tuples; a
+    distance of 1 is the lowest/closest possible distance (which makes the
+    subsequent math easier)."""
+    all_possible_owners = {}
     for current_dir in dirs:
-      # Get the list of owners for each directory.
-      current_owners = set()
       dirname = current_dir
-      while dirname in self.owners_for:
-        current_owners |= self.owners_for[dirname]
+      distance = 1
+      while True:
+        for owner in self.owners_for.get(dirname, []):
+          if author and owner == author:
+            continue
+          all_possible_owners.setdefault(owner, [])
+          # If the same person is in multiple OWNERS files above a given
+          # directory, only count the closest one.
+          if not any(current_dir == el[0] for el in all_possible_owners[owner]):
+            all_possible_owners[owner].append((current_dir, distance))
         if self._stop_looking(dirname):
           break
-        prev_parent = dirname
         dirname = self.os_path.dirname(dirname)
-        if prev_parent == dirname:
-          break
+        distance += 1
+    return all_possible_owners
 
-      # Map each directory to a list of its owners.
-      dir_owners[current_dir] = current_owners
+  @staticmethod
+  def total_costs_by_owner(all_possible_owners, dirs):
+    # We want to minimize both the number of reviewers and the distance
+    # from the files/dirs needing reviews. The "pow(X, 1.75)" below is
+    # an arbitrarily-selected scaling factor that seems to work well - it
+    # will select one reviewer in the parent directory over three reviewers
+    # in subdirs, but not one reviewer over just two.
+    result = {}
+    for owner in all_possible_owners:
+      total_distance = 0
+      num_directories_owned = 0
+      for dirname, distance in all_possible_owners[owner]:
+        if dirname in dirs:
+          total_distance += distance
+          num_directories_owned += 1
+      if num_directories_owned:
+        result[owner] = (total_distance /
+                         pow(num_directories_owned, 1.75))
+    return result
 
-      # Add the directory to the list of each owner.
-      for owner in current_owners:
-        owned_dirs.setdefault(owner, set()).add(current_dir)
-
-    final_owners = set()
-    while dirs:
-      # Find the owner that has the most directories.
-      max_count = 0
-      max_owner = None
-      owner_count = {}
-      for dirname in dirs:
-        for owner in dir_owners[dirname]:
-          count = owner_count.get(owner, 0) + 1
-          owner_count[owner] = count
-          if count >= max_count:
-            max_owner = owner
-            max_count = count
-
-      # If no more directories have OWNERS, we're done.
-      if not max_owner:
-        break
-
-      final_owners.add(max_owner)
-
-      # Remove all directories owned by the current owner from the remaining
-      # list.
-      for dirname in owned_dirs[max_owner]:
-        dirs.discard(dirname)
-
-    return final_owners
+  @staticmethod
+  def lowest_cost_owner(all_possible_owners, dirs):
+    total_costs_by_owner = Database.total_costs_by_owner(all_possible_owners,
+                                                         dirs)
+    # Return the lowest cost owner. In the case of a tie, pick one randomly.
+    lowest_cost = min(total_costs_by_owner.itervalues())
+    lowest_cost_owners = filter(
+        lambda owner: total_costs_by_owner[owner] == lowest_cost,
+        total_costs_by_owner)
+    return random.Random().choice(lowest_cost_owners)

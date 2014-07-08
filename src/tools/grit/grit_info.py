@@ -18,10 +18,10 @@ class WrongNumberOfArguments(Exception):
   pass
 
 
-def Outputs(filename, defines, ids_file):
+def Outputs(filename, defines, ids_file, target_platform=None):
   grd = grd_reader.Parse(
       filename, defines=defines, tags_to_ignore=set(['messages']),
-      first_ids_file=ids_file)
+      first_ids_file=ids_file, target_platform=target_platform)
 
   target = []
   lang_folders = {}
@@ -57,15 +57,15 @@ def GritSourceFiles():
   grit_root_dir = os.path.relpath(os.path.dirname(__file__), os.getcwd())
   for root, dirs, filenames in os.walk(grit_root_dir):
     grit_src = [os.path.join(root, f) for f in filenames
-                if f.endswith('.py')]
+                if f.endswith('.py') and not f.endswith('_unittest.py')]
     files.extend(grit_src)
-  return files
+  return sorted(files)
 
 
-def Inputs(filename, defines, ids_file):
+def Inputs(filename, defines, ids_file, target_platform=None):
   grd = grd_reader.Parse(
       filename, debug=False, defines=defines, tags_to_ignore=set(['message']),
-      first_ids_file=ids_file)
+      first_ids_file=ids_file, target_platform=target_platform)
   files = set()
   for lang, ctx in grd.GetConfigurations():
     grd.SetOutputLanguage(lang or grd.GetSourceLanguage())
@@ -114,6 +114,7 @@ def DoMain(argv):
   parser.add_option("-w", action="append", dest="whitelist_files", default=[])
   parser.add_option("-f", dest="ids_file",
                     default="GRIT_DIR/../gritsettings/resource_ids")
+  parser.add_option("-t", dest="target_platform", default=None)
 
   options, args = parser.parse_args(argv)
 
@@ -133,7 +134,8 @@ def DoMain(argv):
     inputs = []
     if len(args) == 1:
       filename = args[0]
-      inputs = Inputs(filename, defines, options.ids_file)
+      inputs = Inputs(filename, defines, options.ids_file,
+                      options.target_platform)
 
     # Add in the grit source files.  If one of these change, we want to re-run
     # grit.
@@ -153,7 +155,8 @@ def DoMain(argv):
 
     prefix, filename = args
     outputs = [posixpath.join(prefix, f)
-               for f in Outputs(filename, defines, options.ids_file)]
+               for f in Outputs(filename, defines,
+                                options.ids_file, options.target_platform)]
     return '\n'.join(outputs)
   else:
     raise WrongNumberOfArguments("Expected --inputs or --outputs.")

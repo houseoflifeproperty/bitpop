@@ -13,26 +13,22 @@
 #include "ui/views/widget/widget_observer.h"
 
 namespace ash {
-namespace internal {
+class RootWindowController;
 
-// This class hides difference between two possible background implementations:
-// effective Layer-based for solid color, and Widget-based for images.
-// DesktopBackgroundWidgetController is installed as an owned property on the
-// RootWindow. To avoid a white flash during wallpaper changes the old
-// DesktopBackgroundWidgetController is moved to a secondary property
-// (kComponentWrapper). When the animation completes the old
-// DesktopBackgroundWidgetController is destroyed. Exported for tests.
+// This class implements a widget-based wallpaper.
+// DesktopBackgroundWidgetController is owned by RootWindowController.
+// When the animation completes the old DesktopBackgroundWidgetController is
+// destroyed. Exported for tests.
 class ASH_EXPORT DesktopBackgroundWidgetController
     : public views::WidgetObserver {
  public:
   // Create
   explicit DesktopBackgroundWidgetController(views::Widget* widget);
-  explicit DesktopBackgroundWidgetController(ui::Layer* layer);
 
   virtual ~DesktopBackgroundWidgetController();
 
   // Overridden from views::WidgetObserver.
-  virtual void OnWidgetClosing(views::Widget* widget) OVERRIDE;
+  virtual void OnWidgetDestroying(views::Widget* widget) OVERRIDE;
 
   // Set bounds of component that draws background.
   void SetBounds(gfx::Rect bounds);
@@ -40,25 +36,27 @@ class ASH_EXPORT DesktopBackgroundWidgetController
   // Move component from |src_container| in |root_window| to |dest_container|.
   // It is required for lock screen, when we need to move background so that
   // it hides user's windows. Returns true if there was something to reparent.
-  bool Reparent(aura::RootWindow* root_window,
+  bool Reparent(aura::Window* root_window,
                 int src_container,
                 int dest_container);
 
+  // Starts wallpaper fade in animation. |root_window_controller| is
+  // the root window where the animation will happen. (This is
+  // necessary this as |layer_| doesn't have access to the root window).
+  void StartAnimating(RootWindowController* root_window_controller);
+
   views::Widget* widget() { return widget_; }
-  ui::Layer* layer() { return layer_.get(); }
 
  private:
   views::Widget* widget_;
-  scoped_ptr<ui::Layer> layer_;
 
   DISALLOW_COPY_AND_ASSIGN(DesktopBackgroundWidgetController);
 };
 
-// This class wraps a DesktopBackgroundWidgetController pointer. It is installed
-// as an owned property on the RootWindow. DesktopBackgroundWidgetController is
-// moved to this property before animation completes. After animation completes,
-// the kDesktopController property on RootWindow is set to the
-// DesktopBackgroundWidgetController in this class. Exported for tests.
+// This class wraps a DesktopBackgroundWidgetController pointer. It is owned
+// by RootWindowController. The instance of DesktopBackgroundWidgetController is
+// moved to this RootWindowController when the animation completes.
+// Exported for tests.
 class ASH_EXPORT AnimatingDesktopController {
  public:
   explicit AnimatingDesktopController(
@@ -90,18 +88,6 @@ class ASH_EXPORT AnimatingDesktopController {
   DISALLOW_COPY_AND_ASSIGN(AnimatingDesktopController);
 };
 
-// Window property key, that binds instance of DesktopBackgroundWidgetController
-// to root windows.  Owned property.
-ASH_EXPORT extern
-    const aura::WindowProperty<DesktopBackgroundWidgetController*>* const
-        kDesktopController;
-
-// Wrapper for the DesktopBackgroundWidgetController for a desktop background
-// that is animating in.  Owned property.
-ASH_EXPORT extern const aura::WindowProperty<AnimatingDesktopController*>* const
-    kAnimatingDesktopController;
-
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DESKTOP_BACKGROUND_DESKTOP_BACKGROUND_WIDGET_CONTROLLER_H_

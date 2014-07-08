@@ -20,3 +20,11 @@ class Password(object):
     self.password = password_file.read().strip()
     password_file.close()
     return self.password
+
+  def MaybeGetPassword(self, default=None):
+    try:
+      self.password = self.ForceGetPassword()
+    except Exception as e:
+      print e
+      self.password = default
+    return self.password

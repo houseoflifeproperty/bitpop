@@ -1,4 +1,4 @@
-# Copyright (C) 2007, 2008, 2009 Apple Inc.  All rights reserved.
+# Copyright (C) 2007, 2008, 2009, 2010, 2011, 2012, 2013 Apple Inc.  All rights reserved.
 # Copyright (C) 2009, 2010 Chris Jerdonek (chris.jerdonek@gmail.com)
 # Copyright (C) 2010, 2011 Research In Motion Limited. All rights reserved.
 # Copyright (C) 2012 Daniel Bates (dbates@intudata.com)
@@ -8,13 +8,13 @@
 # are met:
 #
 # 1.  Redistributions of source code must retain the above copyright
-#     notice, this list of conditions and the following disclaimer. 
+#     notice, this list of conditions and the following disclaimer.
 # 2.  Redistributions in binary form must reproduce the above copyright
 #     notice, this list of conditions and the following disclaimer in the
-#     documentation and/or other materials provided with the distribution. 
+#     documentation and/or other materials provided with the distribution.
 # 3.  Neither the name of Apple Computer, Inc. ("Apple") nor the names of
 #     its contributors may be used to endorse or promote products derived
-#     from this software without specific prior written permission. 
+#     from this software without specific prior written permission.
 #
 # THIS SOFTWARE IS PROVIDED BY APPLE AND ITS CONTRIBUTORS "AS IS" AND ANY
 # EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED
@@ -456,16 +456,16 @@ sub possiblyColored($$)
     }
 }
 
-sub adjustPathForRecentRenamings($) 
-{ 
-    my ($fullPath) = @_; 
- 
+sub adjustPathForRecentRenamings($)
+{
+    my ($fullPath) = @_;
+
     $fullPath =~ s|WebCore/webaudio|WebCore/Modules/webaudio|g;
     $fullPath =~ s|JavaScriptCore/wtf|WTF/wtf|g;
     $fullPath =~ s|test_expectations.txt|TestExpectations|g;
 
-    return $fullPath; 
-} 
+    return $fullPath;
+}
 
 sub canonicalizePath($)
 {
@@ -1005,13 +1005,23 @@ sub parseDiff($$;$)
             # Then we are in the body of the diff.
             my $isChunkRange = defined(parseChunkRange($line));
             $numTextChunks += 1 if $isChunkRange;
+            my $nextLine = <$fileHandle>;
+            my $willAddNewLineAtEndOfFile = defined($nextLine) && $nextLine =~ /^\\ No newline at end of file$/;
+            if ($willAddNewLineAtEndOfFile) {
+                # Diff(1) always emits a LF character preceeding the line "\ No newline at end of file".
+                # We must preserve both the added LF character and the line ending of this sentinel line
+                # or patch(1) will complain.
+                $svnText .= $line . $nextLine;
+                $line = <$fileHandle>;
+                next;
+            }
             if ($indexPathEOL && !$isChunkRange) {
                 # The chunk range is part of the body of the diff, but its line endings should't be
                 # modified or patch(1) will complain. So, we only modify non-chunk range lines.
                 $line =~ s/\r\n|\r|\n/$indexPathEOL/g;
             }
             $svnText .= $line;
-            $line = <$fileHandle>;
+            $line = $nextLine;
             next;
         } # Otherwise, we found a diff header.
 
@@ -1023,6 +1033,10 @@ sub parseDiff($$;$)
 
         ($headerHashRef, $line) = parseDiffHeader($fileHandle, $line);
         if (!$optionsHashRef || !$optionsHashRef->{shouldNotUseIndexPathEOL}) {
+            # FIXME: We shouldn't query the file system (via firstEOLInFile()) to determine the
+            #        line endings of the file indexPath. Instead, either the caller to parseDiff()
+            #        should provide this information or parseDiff() should take a delegate that it
+            #        can use to query for this information.
             $indexPathEOL = firstEOLInFile($headerHashRef->{indexPath}) if !$headerHashRef->{isNew} && !$headerHashRef->{isBinary};
         }
 
@@ -1163,7 +1177,7 @@ sub parseSvnDiffProperties($$)
         if ($propertyHashRef->{name} eq "svn:executable") {
             # Notice, for SVN properties, propertyChangeDelta is always non-zero
             # because a property can only be added or removed.
-            $footer{executableBitDelta} = $propertyHashRef->{propertyChangeDelta};   
+            $footer{executableBitDelta} = $propertyHashRef->{propertyChangeDelta};
         }
     }
 
@@ -1502,7 +1516,7 @@ sub setChangeLogDateAndReviewer($$$)
 # Returns $changeLogHashRef:
 #   $changeLogHashRef: a hash reference representing a change log patch.
 #     patch: a ChangeLog patch equivalent to the given one, but with the
-#            newest ChangeLog entry inserted at the top of the file, if possible.              
+#            newest ChangeLog entry inserted at the top of the file, if possible.
 sub fixChangeLogPatch($)
 {
     my $patch = shift; # $patch will only contain patch fragments for ChangeLog.
@@ -1646,10 +1660,10 @@ sub generatePatchCommand($)
         shouldReverse => 0,
         options => []
     };
-    
+
     # Merges hash references. It's okay here if passed hash reference is undefined.
     @{$argsHashRef}{keys %{$passedArgsHashRef}} = values %{$passedArgsHashRef};
-    
+
     my $ensureForce = $argsHashRef->{ensureForce};
     my $shouldReverse = $argsHashRef->{shouldReverse};
     my $options = $argsHashRef->{options};
@@ -1815,9 +1829,6 @@ sub gitConfig($)
     my ($config) = @_;
 
     my $result = `git config $config`;
-    if (($? >> 8)) {
-        $result = `git repo-config $config`;
-    }
     chomp $result;
     return $result;
 }
@@ -1978,8 +1989,8 @@ sub decodeGitBinaryPatch($$)
 sub readByte($$)
 {
     my ($data, $location) = @_;
-    
-    # Return the byte at $location in $data as a numeric value. 
+
+    # Return the byte at $location in $data as a numeric value.
     return ord(substr($data, $location, 1));
 }
 
@@ -1991,7 +2002,7 @@ sub readByte($$)
 sub decodeGitBinaryPatchDeltaSize($)
 {
     my ($binaryChunk) = @_;
-    
+
     # Source and destination buffer sizes are stored in 7-bit chunks at the
     # start of the binary delta patch data.  The highest bit in each byte
     # except the last is set; the remaining 7 bits provide the next
@@ -2013,7 +2024,7 @@ sub decodeGitBinaryPatchDeltaSize($)
 sub applyGitBinaryPatchDelta($$)
 {
     my ($binaryChunk, $originalContents) = @_;
-    
+
     # Git delta format consists of two headers indicating source buffer size
     # and result size, then a series of commands.  Each command is either
     # a copy-from-old-version (the 0x80 bit is set) or a copy-from-delta

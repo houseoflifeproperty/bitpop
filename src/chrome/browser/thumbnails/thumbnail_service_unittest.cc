@@ -5,22 +5,27 @@
 #include "chrome/browser/thumbnails/thumbnail_service_impl.h"
 
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/history/top_sites_impl.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 typedef testing::Test ThumbnailServiceTest;
 
-// A mock version of TopSites, used for testing ShouldAcquirePageThumbnail().
-class MockTopSites : public history::TopSites {
+// A mock version of TopSitesImpl, used for testing
+// ShouldAcquirePageThumbnail().
+class MockTopSites : public history::TopSitesImpl {
  public:
   explicit MockTopSites(Profile* profile)
-      : history::TopSites(profile),
+      : history::TopSitesImpl(profile),
         capacity_(1) {
   }
 
-  // history::TopSites overrides.
-  virtual bool IsFull() OVERRIDE {
+  // history::TopSitesImpl overrides.
+  virtual bool IsNonForcedFull() OVERRIDE {
     return known_url_map_.size() >= capacity_;
+  }
+  virtual bool IsForcedFull() OVERRIDE {
+    return false;
   }
   virtual bool IsKnownURL(const GURL& url) OVERRIDE {
     return known_url_map_.find(url.spec()) != known_url_map_.end();
@@ -58,7 +63,7 @@ class MockProfile : public TestingProfile {
   }
 
   virtual history::TopSites* GetTopSites() OVERRIDE {
-    return mock_top_sites_;
+    return mock_top_sites_.get();
   }
 
   void AddKnownURL(const GURL& url, const ThumbnailScore& score) {
@@ -96,7 +101,7 @@ TEST_F(ThumbnailServiceTest, ShouldUpdateThumbnail) {
   ThumbnailScore bad_score;
   bad_score.time_at_snapshot = base::Time::UnixEpoch();  // Ancient time stamp.
   profile.AddKnownURL(kGoodURL, bad_score);
-  ASSERT_TRUE(profile.GetTopSites()->IsFull());
+  ASSERT_TRUE(profile.GetTopSites()->IsNonForcedFull());
 
   // Should be false, as the top sites data is full, and the new URL is
   // not known.

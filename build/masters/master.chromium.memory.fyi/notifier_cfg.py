@@ -15,18 +15,25 @@ categories_steps = {
   'memory_tester': [
     'start_crash_handler',
     # Please keep the list below sorted.
-    'memory test: base',
+    'memory test: app_list',
+    'memory test: ash_unittests',
+    'memory test: aura',
+    'memory test: base_unittests',
     'memory test: chromeos_unittests',
+    'memory test: components',
     'memory test: compositor',
     'memory test: content',
     'memory test: courgette',
     'memory test: crypto',
     'memory test: device_unittests',
-    'memory test: googleurl',
-    'memory test: ipc',
+    'memory test: gpu',
+    'memory test: jingle',
+    'memory test: ipc_tests',
     'memory test: media',
+    'memory test: message_center',
     'memory test: net',
     'memory test: printing',
+    'memory test: ppapi_unittests',
     'memory test: remoting',
     'memory test: reliability',
     # Running two times with different tools on the same bot, hence _1 version.
@@ -38,31 +45,9 @@ categories_steps = {
     'memory test: ui_unittests',
     'memory test: unit',
     'memory test: unit_1',  # it's sharded on Mac Valgrind and TSan Linux
+    'memory test: url',
     'memory test: views',
    ],
-  'heapcheck_tester': [
-    # Please keep this list sorted.
-    'heapcheck test: base',
-    'heapcheck test: chromeos_unittests',
-    'heapcheck test: compositor',
-    'heapcheck test: content',
-    'heapcheck test: courgette',
-    'heapcheck test: crypto',
-    'heapcheck test: device_unittests',
-    'heapcheck test: googleurl',
-    'heapcheck test: ipc',
-    'heapcheck test: media',
-    'heapcheck test: net',
-    'heapcheck test: printing',
-    'heapcheck test: remoting',
-    'heapcheck test: sql',
-    'heapcheck test: sync',
-    'heapcheck test: sync_unit_tests',
-    'heapcheck test: test_shell',
-    'heapcheck test: ui_unittests',
-    'heapcheck test: unit',
-    'heapcheck test: views',
-  ],
   'windows': ['svnkill', 'taskkill'],
   'compile': ['check_deps', 'compile', 'archive_build']
 }
@@ -95,7 +80,6 @@ def Update(config, active_master, c):
           'http://dev.chromium.org/developers/tree-sheriffs/sheriff-details-chromium/memory-sheriff\n'
           'http://dev.chromium.org/developers/how-tos/using-valgrind\n'
           'http://dev.chromium.org/developers/how-tos/using-valgrind/threadsanitizer\n'
-          'http://dev.chromium.org/developers/how-tos/using-the-heap-leak-checker\n'
           '\nBy the way, the current memory sheriff is on the CC list.'
       ))
 
@@ -105,11 +89,11 @@ def Update(config, active_master, c):
   drm_categories_steps = {
     'drmemory_tester': [
       # Please keep this list sorted.
-      'memory test: base',
+      'memory test: base_unittests',
+      'memory test: components',
       'memory test: content',
       'memory test: crypto',
-      'memory test: googleurl',
-      'memory test: ipc',
+      'memory test: ipc_tests',
       'memory test: media',
       'memory test: net',
       'memory test: printing',
@@ -121,6 +105,7 @@ def Update(config, active_master, c):
       'memory test: unit',  # unit_tests might be sharded
       'memory test: unit_1',
       'memory test: unit_2',
+      'memory test: url',
    ],
   }
   c['status'].append(failures_notifier.FailuresNotifier(

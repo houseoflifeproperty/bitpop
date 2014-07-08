@@ -9,6 +9,7 @@
 
 #include "base/basictypes.h"
 #include "content/public/browser/media_observer.h"
+#include "media/audio/audio_parameters.h"
 #include "media/base/media_log_event.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -19,28 +20,9 @@ class MockMediaObserver : public MediaObserver {
   MockMediaObserver();
   virtual ~MockMediaObserver();
 
-  MOCK_METHOD2(OnDeleteAudioStream,
-               void(void* host, int stream_id));
-  MOCK_METHOD3(OnSetAudioStreamPlaying,
-               void(void* host, int stream_id, bool playing));
-  MOCK_METHOD3(OnSetAudioStreamStatus,
-               void(void* host, int stream_id, const std::string& status));
-  MOCK_METHOD3(OnSetAudioStreamVolume,
-               void(void* host, int stream_id, double volume));
-  MOCK_METHOD2(OnMediaEvent,
-               void(int source, const media::MediaLogEvent& event));
-  MOCK_METHOD3(OnCaptureDevicesOpened,
+  MOCK_METHOD6(OnMediaRequestStateChanged,
                void(int render_process_id, int render_view_id,
-                    const MediaStreamDevices& devices));
-  MOCK_METHOD3(OnCaptureDevicesClosed,
-               void(int render_process_id, int render_view_id,
-                    const MediaStreamDevices& devices));
-  MOCK_METHOD1(OnAudioCaptureDevicesChanged,
-               void(const MediaStreamDevices& devices));
-  MOCK_METHOD1(OnVideoCaptureDevicesChanged,
-                 void(const MediaStreamDevices& devices));
-  MOCK_METHOD4(OnMediaRequestStateChanged,
-               void(int render_process_id, int render_view_id,
+                    int page_request_id, const GURL& security_origin,
                     const MediaStreamDevice& device,
                     const MediaRequestState state));
 };

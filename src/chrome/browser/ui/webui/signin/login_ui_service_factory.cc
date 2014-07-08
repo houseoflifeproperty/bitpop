@@ -4,15 +4,17 @@
 
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
 
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/signin/signin_manager.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 #include "chrome/common/pref_names.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
 
 LoginUIServiceFactory::LoginUIServiceFactory()
-    : ProfileKeyedServiceFactory("LoginUIServiceFactory",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "LoginUIServiceFactory",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 LoginUIServiceFactory::~LoginUIServiceFactory() {}
@@ -20,7 +22,7 @@ LoginUIServiceFactory::~LoginUIServiceFactory() {}
 // static
 LoginUIService* LoginUIServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<LoginUIService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -28,7 +30,7 @@ LoginUIServiceFactory* LoginUIServiceFactory::GetInstance() {
   return Singleton<LoginUIServiceFactory>::get();
 }
 
-ProfileKeyedService* LoginUIServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new LoginUIService(profile);
+KeyedService* LoginUIServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new LoginUIService(static_cast<Profile*>(profile));
 }

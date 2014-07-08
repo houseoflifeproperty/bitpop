@@ -8,13 +8,13 @@
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/ui/webui/ntp/new_tab_ui.h"
 #include "chrome/browser/web_resource/notification_promo.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
 #include "grit/chromium_strings.h"
@@ -76,54 +76,53 @@ void NewTabPageHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void NewTabPageHandler::HandleNotificationPromoClosed(const ListValue* args) {
+void NewTabPageHandler::HandleNotificationPromoClosed(
+    const base::ListValue* args) {
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Notification",
                             PROMO_CLOSED, PROMO_ACTION_MAX);
-  NotificationPromo::HandleClosed(Profile::FromWebUI(web_ui()),
-                                  NotificationPromo::NTP_NOTIFICATION_PROMO);
+  NotificationPromo::HandleClosed(NotificationPromo::NTP_NOTIFICATION_PROMO);
   Notify(chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED);
 }
 
-void NewTabPageHandler::HandleNotificationPromoViewed(const ListValue* args) {
+void NewTabPageHandler::HandleNotificationPromoViewed(
+    const base::ListValue* args) {
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Notification",
                             PROMO_VIEWED, PROMO_ACTION_MAX);
-  if (NotificationPromo::HandleViewed(Profile::FromWebUI(web_ui()),
+  if (NotificationPromo::HandleViewed(
           NotificationPromo::NTP_NOTIFICATION_PROMO)) {
     Notify(chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED);
   }
 }
 
 void NewTabPageHandler::HandleNotificationPromoLinkClicked(
-    const ListValue* args) {
+    const base::ListValue* args) {
   DVLOG(1) << "HandleNotificationPromoLinkClicked";
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Notification",
                             PROMO_LINK_CLICKED, PROMO_ACTION_MAX);
 }
 
-void NewTabPageHandler::HandleBubblePromoClosed(const ListValue* args) {
+void NewTabPageHandler::HandleBubblePromoClosed(const base::ListValue* args) {
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Bubble",
                             PROMO_CLOSED, PROMO_ACTION_MAX);
-  NotificationPromo::HandleClosed(Profile::FromWebUI(web_ui()),
-                                  NotificationPromo::NTP_BUBBLE_PROMO);
+  NotificationPromo::HandleClosed(NotificationPromo::NTP_BUBBLE_PROMO);
   Notify(chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED);
 }
 
-void NewTabPageHandler::HandleBubblePromoViewed(const ListValue* args) {
+void NewTabPageHandler::HandleBubblePromoViewed(const base::ListValue* args) {
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Bubble",
                             PROMO_VIEWED, PROMO_ACTION_MAX);
-  if (NotificationPromo::HandleViewed(Profile::FromWebUI(web_ui()),
-                                      NotificationPromo::NTP_BUBBLE_PROMO)) {
+  if (NotificationPromo::HandleViewed(NotificationPromo::NTP_BUBBLE_PROMO))
     Notify(chrome::NOTIFICATION_PROMO_RESOURCE_STATE_CHANGED);
-  }
 }
 
-void NewTabPageHandler::HandleBubblePromoLinkClicked(const ListValue* args) {
+void NewTabPageHandler::HandleBubblePromoLinkClicked(
+    const base::ListValue* args) {
   DVLOG(1) << "HandleBubblePromoLinkClicked";
   UMA_HISTOGRAM_ENUMERATION("NewTabPage.Promo.Bubble",
                             PROMO_LINK_CLICKED, PROMO_ACTION_MAX);
 }
 
-void NewTabPageHandler::HandlePageSelected(const ListValue* args) {
+void NewTabPageHandler::HandlePageSelected(const base::ListValue* args) {
   page_switch_count_++;
 
   double page_id_double;
@@ -147,7 +146,7 @@ void NewTabPageHandler::HandlePageSelected(const ListValue* args) {
                             shown_page_type, kHistogramEnumerationMax);
 }
 
-void NewTabPageHandler::HandleLogTimeToClick(const ListValue* args) {
+void NewTabPageHandler::HandleLogTimeToClick(const base::ListValue* args) {
   std::string histogram_name;
   double duration;
   if (!args->GetString(0, &histogram_name) || !args->GetDouble(1, &duration)) {
@@ -173,22 +172,21 @@ void NewTabPageHandler::HandleLogTimeToClick(const ListValue* args) {
 }
 
 // static
-void NewTabPageHandler::RegisterUserPrefs(PrefService* prefs) {
+void NewTabPageHandler::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
   // TODO(estade): should be syncable.
-  prefs->RegisterIntegerPref(prefs::kNtpShownPage, APPS_PAGE_ID,
-                             PrefService::UNSYNCABLE_PREF);
+  registry->RegisterIntegerPref(
+      prefs::kNtpShownPage,
+      APPS_PAGE_ID,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 // static
 void NewTabPageHandler::GetLocalizedValues(Profile* profile,
-                                           DictionaryValue* values) {
+                                           base::DictionaryValue* values) {
   values->SetInteger("most_visited_page_id", MOST_VISITED_PAGE_ID);
   values->SetInteger("apps_page_id", APPS_PAGE_ID);
   values->SetInteger("suggestions_page_id", SUGGESTIONS_PAGE_ID);
-  // TODO(jeremycho): Add this to histograms.xml (see issue 144067).
-  values->SetInteger("recently_closed_page_id", RECENTLY_CLOSED_PAGE_ID);
-  // TODO(vadimt): Add this to histograms.xml (see issue 148871).
-  values->SetInteger("other_devices_page_id", OTHER_DEVICES_PAGE_ID);
 
   PrefService* prefs = profile->GetPrefs();
   int shown_page = prefs->GetInteger(prefs::kNtpShownPage);

@@ -1,86 +1,10 @@
 <div id="sync-setup-overlay" class="page" hidden>
   <div class="close-button"></div>
-  <div id="sync-setup-login" hidden>
-    <div id="promo-title-container" hidden>
-      <h1 i18n-content="promoTitle"></h1>
-      <h2>
-        <span i18n-content="promoTitleShort"></span>
-        <a id="promo-learn-more" i18n-content="promoLearnMore"
-            i18n-values="href:promoLearnMoreURL">
-        </a>
-      </h2>
-    </div>
-    <div class="sync-main-content">
-      <div id="sync-setup-login-content-column">
-        <h1 id="sync-setup-overlay-title" i18n-content="syncSetupOverlay"></h1>
-        <div class="sign-in">
-          <div id="top-blurb-error" class="reset-hidden" hidden>
-            <span id="error-signing-in" i18n-content="errorSigningIn"></span>
-            <span id="error-custom" hidden></span>
-          </div>
-          <div class="signin-box">
-            <div id="signin-header">
-              <h2 i18n-content="signinHeader"></h2>
-              <div id="signin-header-logo"></div>
-            </div>
-            <form id="gaia-login-form">
-              <div id="errormsg-1-password" class="errormsg reset-hidden"
-                  hidden>
-                <span i18n-content="invalidCredentials"></span>
-                <a i18n-values="href:invalidPasswordHelpURL" class="help-link"
-                    target="_blank">?</a>
-              </div>
-              <div id="errormsg-different-email" class="errormsg reset-hidden"
-                  hidden>
-                <span id="different-email"></span>
-              </div>
-              <div id="errormsg-fatal" class="errormsg reset-hidden" hidden>
-                <span i18n-content="unrecoverableError"></span>
-                <a i18n-values="href:unrecoverableErrorHelpURL"
-                    i18n-content="errorLearnMore" target="_blank"></a>
-              </div>
-              <div id="errormsg-0-access-code" class="errormsg reset-hidden"
-                  i18n-content="invalidAccessCode" hidden>
-              </div>
-              <div id="errormsg-0-otp" class="errormsg reset-hidden"
-                  i18n-content="invalidOtp" hidden>
-              </div>
-              <div id="asp-warning-div" class="errormsg reset-hidden" hidden>
-                <span i18n-values=".innerHTML:aspWarningText"></span>
-              </div>
-              <div id="errormsg-0-connection" class="errormsg reset-hidden"
-                  i18n-content="couldNotConnect" hidden>
-              </div>
-              <div id="action-area">
-                <input id="sign-in" type="submit" class="custom-appearance"
-                    i18n-content="signin">
-                <div id="logging-in-throbber" class="throbber"></div>
-              </div>
-            </form>
-          </div>
-        </div> <!-- sign-in -->
-        <div id="cancel-space-no-captcha"></div>
-        <div class="action-area">
-          <div class="button-strip">
-            <button id="sync-setup-cancel" type="reset" i18n-content="cancel">
-            </button>
-          </div>
-        </div>
-        <div id="promo-skip" hidden>
-          <button id="promo-skip-button" type="reset"
-              i18n-content="promoSkipButton" class="link-button"></button>
-          <button id="promo-advanced" i18n-content="promoAdvanced"
-              class="link-button"></button>
-        </div>
-      </div>
-    </div>
-  </div>
   <div id="sync-setup-configure" hidden>
     <div id="confirm-sync-preferences">
       <h1 i18n-content="confirmSyncPreferences"></h1>
       <div id="sync-instructions-container" class="content-area">
         <span i18n-content="chooseDataTypesInstructions"></span>
-        <span i18n-values=".innerHTML:encryptionDisabledMessage"></span>
         <a id="encryption-help-link" target="_blank"
             i18n-values="href:syncEverythingHelpURL" i18n-content="learnMore">
         </a>
@@ -88,9 +12,10 @@
       <div>
         <div class="action-area">
           <div class="action-area-link-container">
-            <a id="customize-link" href="#" i18n-content="customizeLinkLabel"
-                class="reset-opaque reset-shown">
-            </a>
+            <button id="customize-link" type="button"
+                i18n-content="customizeLinkLabel"
+                class="link-button">
+            </button>
           </div>
           <div id="confirm-everything-throbber" class="throbber"></div>
           <div class="button-strip">
@@ -110,6 +35,10 @@
             <select id="sync-select-datatypes">
               <option i18n-content="syncAllDataTypes" selected></option>
               <option i18n-content="chooseDataTypes"></option>
+              <!-- The syncNothing element is to be removed for M29.
+                   TODO(rsimha): Revisit this for M30.
+                   See http://crbug.com/252049.
+              -->
             </select>
             <div id="choose-data-types-body">
               <div id="apps-item" class="sync-type-checkbox checkbox">
@@ -167,103 +96,66 @@
                   </span>
                 </label>
               </div>
-              <div id="sessions-item" class="sync-type-checkbox checkbox">
+              <div id="tabs-item" class="sync-type-checkbox checkbox">
                 <label>
-                  <input id="sessions-checkbox" type="checkbox">
+                  <input id="tabs-checkbox" type="checkbox">
                   <span i18n-content="openTabs" il8n-values="title:tabs">
                   </span>
                 </label>
               </div>
             </div>
           </div>
-          <div class="sync-configuration-errors">
-            <div id="error-text" i18n-content="syncZeroDataTypesError"
-                class="sync-configuration-error reset-hidden" hidden></div>
-          </div>
-          <div id="customize-sync-encryption">
-            <hr>
-            <h4 i18n-content="encryptedDataTypesTitle"></h4>
-            <div class="sync-customize-section-container">
-              <div id="passphrase-encryption-message"
-                  i18n-content="passphraseEncryptionMessage"></div>
-              <div class="radio">
-                <label>
-                  <input id="do-not-encrypt-option" name="encrypt"
-                      type="radio" value="none">
-                  <span i18n-content="doNotEncryptPasswordsNotSynced"></span>
-                </label>
-              </div>
-              <div class="radio">
-                <label>
-                  <input id="encrypt-sensitive-option" name="encrypt"
-                      type="radio" value="sensitive">
-                  <span i18n-content="encryptSensitiveOption"></span>
-                </label>
-              </div>
-              <div class="radio">
-                <label>
-                  <input id="encrypt-all-option" name="encrypt" type="radio"
-                      value="all">
-                  <span i18n-content="encryptAllOption"></span>
-                </label>
-              </div>
-            </div>
-          </div>
           <div id="customize-sync-encryption-new">
-              <hr>
-              <h4 i18n-content="encryptionSectionTitle"></h4>
-              <div id="encryption-section-message"
-                  i18n-content="encryptionSectionMessage"></div>
-              <div id="sync-new-encryption-section-container">
-                <div class="radio">
-                  <label>
-                    <input id="basic-encryption-option" name="encrypt-new"
-                        type="radio" value="full">
-                    <span i18n-content="basicEncryptionOption"></span>
-                  </label>
-                </div>
-                <div class="radio">
-                  <label>
-                    <input id="full-encryption-option" name="encrypt-new"
-                        type="radio" value="full">
-                    <span id="full-encryption-body"
-                        i18n-content="fullEncryptionOption"></span>
-                  </label>
-                  <a i18n-values="href:encryptionHelpURL" target="_blank"
-                      i18n-content="learnMore"></a>
-                </div>
+            <hr>
+            <h4 i18n-content="encryptionSectionTitle"></h4>
+            <div id="encryption-section-message"
+                i18n-content="encryptionSectionMessage"></div>
+            <div id="sync-new-encryption-section-container">
+              <div class="radio">
+                <label>
+                  <input id="basic-encryption-option" name="encrypt-new"
+                      type="radio" value="full">
+                  <span id="basic-encryption-body"
+                      i18n-content="basicEncryptionOption"></span>
+                </label>
+              </div>
+              <div class="radio">
+                <label>
+                  <input id="full-encryption-option" name="encrypt-new"
+                      type="radio" value="full">
+                  <span id="full-encryption-body"
+                      i18n-content="fullEncryptionOption"></span>
+                </label>
+                <a i18n-values="href:encryptionHelpURL" target="_blank"
+                    i18n-content="learnMore"></a>
               </div>
             </div>
-          <div id="sync-passphrase-ui-toggler" hidden>
-            <hr>
-            <h4 i18n-content="passphraseSectionTitle"></h4>
-
-            <div id="sync-custom-passphrase-container"
-                class="sync-customize-section-container">
-              <div id="sync-custom-passphrase"
-                    class="reset-hidden">
-                <div id="sync-passphrase-message">
-                  <span i18n-content="sectionExplicitMessagePrefix"></span>
-                  <a href="https://sync.bitpop.com/reset_sync_data/"
-                      target="_blank"
-                      i18n-content="sectionExplicitMessagePostfix"></a>
-                  <span>.</span>
-                </div>
-                <div class="sync-custom-passphrase-input">
-                  <input id="custom-passphrase" type="password"
-                      class="reset-value"
-                      i18n-values="placeholder:passphraseLabel">
-                </div>
-                <div class="sync-custom-passphrase-input">
-                  <input id="confirm-passphrase" type="password"
-                      class="reset-value"
-                      i18n-values="placeholder:confirmLabel">
-                </div>
-                <div id="empty-error" class="error"
-                    i18n-content="emptyErrorMessage" hidden></div>
-                <div id="mismatch-error" class="error"
-                    i18n-content="mismatchErrorMessage" hidden></div>
+          </div>
+          <div id="sync-custom-passphrase-container"
+              class="sync-customize-section-container">
+            <div id="sync-custom-passphrase"
+                class="reset-hidden" hidden>
+              <div id="sync-passphrase-message">
+                <span i18n-content="sectionExplicitMessagePrefix"></span>
+                <a href="https://www.google.com/settings/chrome/sync/"
+                    target="_blank"
+                    i18n-content="sectionExplicitMessagePostfix"></a>
+                <span>.</span>
               </div>
+              <div class="sync-custom-passphrase-input">
+                <input id="custom-passphrase" type="password"
+                    class="reset-value"
+                    i18n-values="placeholder:passphraseLabel">
+              </div>
+              <div class="sync-custom-passphrase-input">
+                <input id="confirm-passphrase" type="password"
+                    class="reset-value"
+                    i18n-values="placeholder:confirmLabel">
+              </div>
+              <div id="empty-error" class="error"
+                  i18n-content="emptyErrorMessage" hidden></div>
+              <div id="mismatch-error" class="error"
+                  i18n-content="mismatchErrorMessage" hidden></div>
             </div>
           </div>
           <div id="sync-existing-passphrase-container" hidden>
@@ -293,9 +185,10 @@
         </div>
         <div class="action-area">
           <div class="action-area-link-container">
-            <a id="use-default-link" href="#" i18n-content="useDefaultSettings"
-                class="reset-opaque reset-shown">
-            </a>
+            <button id="use-default-link" type="button"
+                i18n-content="useDefaultSettings"
+                class="link-button">
+            </button>
           </div>
           <div id="choose-datatypes-throbber" class="throbber"></div>
           <div class="button-strip">
@@ -327,12 +220,14 @@
     <h1 i18n-content="stopSyncingTitle"></h1>
     <div class="content-area">
       <span i18n-values=".innerHTML:stopSyncingExplanation"></span>
-      <div class="checkbox logout-facebook-checkbox-wrap">
+<if expr="(not chromeos and is_posix) or is_win or is_macosx">
+      <div id="sync-setup-delete-profile" class="checkbox">
         <label>
-          <input id="logout-facebook" type="checkbox">
-          <span i18n-content="stopSyncingLogoutFacebook"></span>
+          <input id="delete-profile" type="checkbox">
+          <span i18n-content="deleteProfileLabel"></span>
         </label>
       </div>
+</if>
     </div>
     <div class="action-area button-strip">
       <input id="stop-syncing-cancel" type="button"

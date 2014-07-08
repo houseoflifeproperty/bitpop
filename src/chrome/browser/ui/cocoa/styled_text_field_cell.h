@@ -7,13 +7,10 @@
 
 #import <Cocoa/Cocoa.h>
 
-typedef enum {
-  StyledTextFieldCellRoundedAll = 0,
-  StyledTextFieldCellRoundedLeft = 1
-} StyledTextFieldCellRoundedFlags;
+#import "chrome/browser/ui/cocoa/rect_path_utils.h"
 
 // StyledTextFieldCell customizes the look of the standard Cocoa text field.
-// The border and focus ring are modified, as is the font baseline.  Subclasses
+// The border and focus ring are modified, as is the drawing rect.  Subclasses
 // can override |drawInteriorWithFrame:inView:| to provide custom drawing for
 // decorations, but they must make sure to call the superclass' implementation
 // with a modified frame after performing any custom drawing.
@@ -38,15 +35,19 @@ typedef enum {
 // Subclasses should override this method if they add any decorations.
 - (NSRect)textFrameForFrame:(NSRect)cellFrame;
 
-// Baseline adjust for the text in this cell.  Defaults to 0.  Subclasses should
-// override as needed.
-- (CGFloat)baselineAdjust;
+// Offset from the top of the cell frame to the text frame. Defaults to 0.
+// Subclasses should
+- (CGFloat)topTextFrameOffset;
+
+// Offset from the bottom of the cell frame to the text frame. Defaults to 0.
+// Subclasses should
+- (CGFloat)bottomTextFrameOffset;
 
 // Radius of the corners of the field.  Defaults to square corners (0.0).
 - (CGFloat)cornerRadius;
 
 // Which corners of the field to round.  Defaults to RoundedAll.
-- (StyledTextFieldCellRoundedFlags)roundedFlags;
+- (rect_path_utils::RoundedCornerFlags)roundedFlags;
 
 // Returns YES if a light themed bezel should be drawn under the text field.
 // Default implementation returns NO.

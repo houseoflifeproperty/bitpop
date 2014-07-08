@@ -6,15 +6,13 @@
 #define ASH_SYSTEM_STATUS_AREA_WIDGET_DELEGATE_H_
 
 #include "ash/ash_export.h"
-#include "ash/shelf_types.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/wm/gestures/shelf_gesture_handler.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/accessible_pane_view.h"
 #include "ui/views/widget/widget_delegate.h"
 
 namespace ash {
-namespace internal {
-
 class FocusCycler;
 
 class ASH_EXPORT StatusAreaWidgetDelegate : public views::AccessiblePaneView,
@@ -38,7 +36,6 @@ class ASH_EXPORT StatusAreaWidgetDelegate : public views::AccessiblePaneView,
   virtual View* GetDefaultFocusableChild() OVERRIDE;
 
   // Overridden from views::View:
-  virtual bool AcceleratorPressed(const ui::Accelerator& accelerator) OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
 
@@ -51,7 +48,8 @@ class ASH_EXPORT StatusAreaWidgetDelegate : public views::AccessiblePaneView,
 
  protected:
   // Overridden from views::View:
-  virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
+  virtual void ChildPreferredSizeChanged(views::View* child) OVERRIDE;
+  virtual void ChildVisibilityChanged(views::View* child) OVERRIDE;
 
  private:
   void UpdateWidgetSize();
@@ -64,7 +62,6 @@ class ASH_EXPORT StatusAreaWidgetDelegate : public views::AccessiblePaneView,
   DISALLOW_COPY_AND_ASSIGN(StatusAreaWidgetDelegate);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_STATUS_AREA_WIDGET_DELEGATE_H_

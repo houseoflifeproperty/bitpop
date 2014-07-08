@@ -25,6 +25,12 @@
         'nacl_reserve_top': '0x40002000',
       }
     }],
+    ['target_arch=="mipsel"', {
+      'variables': {
+        # 1G address space, plus 32K guard area above.
+        'nacl_reserve_top': '0x40008000',
+      }
+    }],
   ],
   'targets': [
     {
@@ -49,10 +55,23 @@
       # compilation lines, getting the command close to what they
       # would be if gyp were to really build properly for the host.
       # TODO(bradnelson): Clean up with proper cross support.
-      'cflags/': [['exclude', '-m.*'],
-                  ['exclude', '--sysroot=.*']],
-      'ldflags/': [['exclude', '-m.*'],
-                   ['exclude', '--sysroot=.*']],
+      'cflags/': [['exclude', '^-m.*'],
+                  ['exclude', '^--sysroot=.*']],
+      'ldflags/': [['exclude', '^-m.*'],
+                   ['exclude', '^--sysroot=.*']],
+      'cflags!': [
+        # MemorySanitizer reports an error in this binary unless instrumented
+        # libelf is supplied. Because libelf source code uses gcc extensions,
+        # building it with MemorySanitizer (which implies clang) is challenging,
+        # and it's much simpler to just disable MSan for this target.
+        '-fsanitize=memory',
+        '-fsanitize-memory-track-origins',
+        # This causes an "unused argument" warning in C targets.
+        '-stdlib=libc++',
+      ],
+      'ldflags!': [
+        '-fsanitize=memory',
+      ],
     },
     {
       'target_name': 'nacl_bootstrap_lib',
@@ -84,6 +103,7 @@
       ],
       'cflags!': [
         '-fsanitize=address',
+        '-fsanitize=memory',
         '-w',
         # We filter these out because release_extra_cflags or another
         # such thing might be adding them in, and those options wind up
@@ -92,6 +112,9 @@
         '-fstack-protector-all',
         '-fprofile-generate',
         '-finstrument-functions',
+        '-funwind-tables',
+        # This causes an "unused argument" warning in C targets.
+        '-stdlib=libc++',
       ],
       'conditions': [
         ['clang==1', {
@@ -154,6 +177,11 @@
                 'linker_emulation': 'armelf_linux_eabi',
               }
             }],
+            ['target_arch=="mipsel"', {
+              'variables': {
+                'linker_emulation': 'elf32ltsmip',
+              },
+            }],
           ],
           'action': ['python', 'ld_bfd.py',
                      # ld_bfd.py needs to know the target compiler used for the
@@ -164,7 +192,7 @@
                      # for accessing the name of the configured compiler, or
                      # even a better way to access gyp time environment
                      # variables from within a gyp file.
-                     '--compiler', '<!(echo $CXX)',
+                     '--compiler', '<!(echo ${CXX:=g++})',
                      '-m', '<(linker_emulation)',
                      '--build-id',
                      # This program is (almost) entirely

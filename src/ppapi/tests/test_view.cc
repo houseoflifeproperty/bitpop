@@ -7,14 +7,19 @@
 #include <sstream>
 
 #include "ppapi/c/pp_time.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/cpp/completion_callback.h"
 #include "ppapi/tests/testing_instance.h"
 
 REGISTER_TEST_CASE(View);
 
 // When waiting for view changed events, wait no longer than this.
+#if !defined(THREAD_SANITIZER)
 static int kViewChangeTimeoutSec = 5;
+#else
+// ThreadSanitizer may slow the interaction down significantly.
+static int kViewChangeTimeoutSec = 30;
+#endif
 
 TestView::TestView(TestingInstance* instance)
     : TestCase(instance),

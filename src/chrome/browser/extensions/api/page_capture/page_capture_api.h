@@ -8,11 +8,13 @@
 #include <string>
 
 #include "base/memory/ref_counted.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/common/extensions/api/page_capture.h"
-#include "webkit/blob/shareable_file_reference.h"
+#include "webkit/common/blob/shareable_file_reference.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace content {
 class WebContents;
@@ -20,7 +22,7 @@ class WebContents;
 
 namespace extensions {
 
-class PageCaptureSaveAsMHTMLFunction : public AsyncExtensionFunction {
+class PageCaptureSaveAsMHTMLFunction : public ChromeAsyncExtensionFunction {
  public:
   PageCaptureSaveAsMHTMLFunction();
 
@@ -29,15 +31,14 @@ class PageCaptureSaveAsMHTMLFunction : public AsyncExtensionFunction {
    public:
     // Called on the UI thread when the temporary file that contains the
     // generated data has been created.
-    virtual void OnTemporaryFileCreated(const FilePath& temp_file) = 0;
+    virtual void OnTemporaryFileCreated(const base::FilePath& temp_file) = 0;
   };
   static void SetTestDelegate(TestDelegate* delegate);
 
  private:
   virtual ~PageCaptureSaveAsMHTMLFunction();
-  virtual bool RunImpl() OVERRIDE;
-  virtual bool OnMessageReceivedFromRenderView(
-      const IPC::Message& message) OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
   // Called on the file thread.
   void CreateTemporaryFile();
@@ -48,7 +49,7 @@ class PageCaptureSaveAsMHTMLFunction : public AsyncExtensionFunction {
   void ReturnSuccess(int64 file_size);
 
   // Callback called once the MHTML generation is done.
-  void MHTMLGenerated(const FilePath& file_path, int64 mhtml_file_size);
+  void MHTMLGenerated(int64 mhtml_file_size);
 
   // Returns the WebContents we are associated with, NULL if it's been closed.
   content::WebContents* GetWebContents();
@@ -56,12 +57,12 @@ class PageCaptureSaveAsMHTMLFunction : public AsyncExtensionFunction {
   scoped_ptr<extensions::api::page_capture::SaveAsMHTML::Params> params_;
 
   // The path to the temporary file containing the MHTML data.
-  FilePath mhtml_path_;
+  base::FilePath mhtml_path_;
 
   // The file containing the MHTML.
   scoped_refptr<webkit_blob::ShareableFileReference> mhtml_file_;
 
-  DECLARE_EXTENSION_FUNCTION_NAME("pageCapture.saveAsMHTML")
+  DECLARE_EXTENSION_FUNCTION("pageCapture.saveAsMHTML", PAGECAPTURE_SAVEASMHTML)
 };
 
 }  // namespace extensions

@@ -8,7 +8,6 @@
 #include <string.h>
 #include <string>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/ppb_fullscreen.h"
 #include "ppapi/cpp/image_data.h"
 #include "ppapi/cpp/input_event.h"
@@ -22,8 +21,6 @@ REGISTER_TEST_CASE(Fullscreen);
 
 namespace {
 
-const ColorPremul kOpaqueWhite = { 0xFF, 0xFF, 0xFF, 0xFF };
-const ColorPremul kSheerRed = { 0x88, 0x88, 0x00, 0x00 };
 const ColorPremul kSheerBlue = { 0x88, 0x00, 0x00, 0x88 };
 const ColorPremul kOpaqueYellow = { 0xFF, 0xFF, 0xFF, 0x00 };
 const int kBytesPerPixel = sizeof(uint32_t);  // 4 bytes for BGRA or RGBA.

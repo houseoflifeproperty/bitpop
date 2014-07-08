@@ -100,6 +100,9 @@ PAGE_TRANSITION(CORE_MASK, 0xFF)
 // Any of the core values above can be augmented by one or more qualifiers.
 // These qualifiers further define the transition.
 
+// A managed user attempted to visit a URL but was blocked.
+PAGE_TRANSITION(BLOCKED, 0x00800000)
+
 // User used the Forward or Back button to navigate among browsing history.
 PAGE_TRANSITION(FORWARD_BACK, 0x01000000)
 
@@ -109,8 +112,9 @@ PAGE_TRANSITION(FROM_ADDRESS_BAR, 0x02000000)
 // User is navigating to the home page.
 PAGE_TRANSITION(HOME_PAGE, 0x04000000)
 
-// The transition originated from an incoming intent. (Android only)
-PAGE_TRANSITION(FROM_INTENT, 0x08000000)
+// The transition originated from an external application; the exact definition
+// of this is embedder dependent.
+PAGE_TRANSITION(FROM_API, 0x08000000)
 
 // The beginning of a navigation chain.
 PAGE_TRANSITION(CHAIN_START, 0x10000000)

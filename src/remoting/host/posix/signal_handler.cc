@@ -13,8 +13,8 @@
 #include <utility>
 
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/message_pump_libevent.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_pump_libevent.h"
 #include "base/posix/eintr_wrapper.h"
 #include "base/threading/platform_thread.h"
 
@@ -91,10 +91,13 @@ bool RegisterSignalHandler(int signal_number, const SignalHandler& handler) {
       LOG(ERROR) << "Could not create signal pipe: " << errno;
       return false;
     }
-    MessageLoopForIO* message_loop = MessageLoopForIO::current();
-    result = message_loop->WatchFileDescriptor(
-        pipe_fd[0], true, MessageLoopForIO::WATCH_READ,
-        &g_signal_listener->controller, g_signal_listener);
+    base::MessageLoopForIO* message_loop = base::MessageLoopForIO::current();
+    result =
+        message_loop->WatchFileDescriptor(pipe_fd[0],
+                                          true,
+                                          base::MessageLoopForIO::WATCH_READ,
+                                          &g_signal_listener->controller,
+                                          g_signal_listener);
     if (!result) {
       LOG(ERROR) << "Failed to create signal detector task.";
       close(pipe_fd[0]);

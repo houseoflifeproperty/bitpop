@@ -1,10 +1,10 @@
-AXWebArea title=''
-    AXMenuBar title=''
-        AXMenuItem title='File'
-        AXMenuItem title='Edit'
-        AXMenuItem title='View'
-    AXMenu title='' description='File'
-        AXMenuItem title='New'
-        AXMenuItem title='Open'
-        AXMenuItem title='Save'
-        AXMenuItem title='Quit'
+AXWebArea
+    AXMenuBar
+        AXMenuItem AXTitle='File' AXLinkedUIElements=["AXMenu"]
+        AXMenuItem AXTitle='Edit'
+        AXMenuItem AXTitle='View'
+    AXMenu AXDescription='File'
+        AXMenuItem AXTitle='New'
+        AXMenuItem AXTitle='Open'
+        AXMenuItem AXTitle='Save'
+        AXMenuItem AXTitle='Quit'

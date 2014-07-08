@@ -49,3 +49,37 @@ TemplateURLFetcherTest.*
 GAIAInfoUpdateServiceTest.*
 ProfileManagerTest.*
 ProfileInfoCacheTest.*
+
+# Failing on the bot. http://crbug.com/167014
+BrowserCommandControllerTest.AvatarMenuDisabledWhenOnlyOneProfile
+
+# Failing on the bot. http://crbug.com/168882
+UserCloudPolicyStoreTest.LoadWithInvalidFile
+UserCloudPolicyStoreTest.LoadWithNoFile
+UserCloudPolicyStoreTest.Store
+UserCloudPolicyStoreTest.StoreThenClear
+UserCloudPolicyStoreTest.StoreThenLoad
+UserCloudPolicyStoreTest.StoreTwoTimes
+UserCloudPolicyStoreTest.StoreValidationError
+
+# Failing on the bot. crbug.com/266972
+OneClickSigninBubbleViewTest.ShowBubble
+
+# http://crbug.com/292960
+SyncBackendHostTest.DownloadControlTypes
+SyncBackendHostTest.SilentlyFailToDownloadControlTypes
+
+# DrM-i#1339: https://code.google.com/p/drmemory/issues/detail?id=1339
+ExtensionServiceTest.InstallTheme
+
+# http://crbug.com/302156
+TabStripModelTest.FastShutdown
+
+# http://crbug.com/336349
+NTPUserDataLoggerTest.TestLogging
+
+# http://crbug.com/340837
+ChromeBlacklistTrialTest.*
+
+# http://crbug.com/349778
+TranslateManagerRenderViewHostTest.*

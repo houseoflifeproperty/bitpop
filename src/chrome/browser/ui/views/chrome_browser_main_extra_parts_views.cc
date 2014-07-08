@@ -5,10 +5,15 @@
 #include "chrome/browser/ui/views/chrome_browser_main_extra_parts_views.h"
 
 #include "chrome/browser/chrome_browser_main.h"
-#include "chrome/browser/toolkit_extra_parts.h"
 #include "chrome/browser/ui/views/chrome_views_delegate.h"
+#include "chrome/common/chrome_switches.h"
+#include "ui/base/ui_base_switches.h"
+#include "ui/wm/core/wm_state.h"
 
 ChromeBrowserMainExtraPartsViews::ChromeBrowserMainExtraPartsViews() {
+}
+
+ChromeBrowserMainExtraPartsViews::~ChromeBrowserMainExtraPartsViews() {
 }
 
 void ChromeBrowserMainExtraPartsViews::ToolkitInitialized() {
@@ -16,12 +21,6 @@ void ChromeBrowserMainExtraPartsViews::ToolkitInitialized() {
   // display the correct icon.
   if (!views::ViewsDelegate::views_delegate)
     views::ViewsDelegate::views_delegate = new ChromeViewsDelegate;
+
+  wm_state_.reset(new wm::WMState);
 }
-
-namespace chrome {
-
-void AddViewsToolkitExtraParts(ChromeBrowserMainParts* main_parts) {
-  main_parts->AddParts(new ChromeBrowserMainExtraPartsViews());
-}
-
-}  // namespace chrome

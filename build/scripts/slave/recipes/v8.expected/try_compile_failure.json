@@ -1,0 +1,234 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\kill_processes.py"
+    ],
+    "name": "taskkill"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]\\gclient.bat"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\apply_issue.py",
+      "-r",
+      "[SLAVE_BUILD]\\v8",
+      "-i",
+      "12853011",
+      "-p",
+      "1",
+      "-s",
+      "https://codereview.chromium.org",
+      "--no-auth"
+    ],
+    "name": "apply_issue"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_target_arch=ia32"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]\\v8",
+      "--build-tool",
+      "vs",
+      "--"
+    ],
+    "name": "compile (with patch)",
+    "~followup_annotations": [
+      "step returned non-zero exit code: 1",
+      "@@@STEP_FAILURE@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'safesync_url': 'https://v8-status.appspot.com/lkgr', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup (2)"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]\\gclient.bat"
+    ],
+    "name": "gclient revert (2)"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync (2)",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\apply_issue.py",
+      "-r",
+      "[SLAVE_BUILD]\\v8",
+      "-i",
+      "12853011",
+      "-p",
+      "1",
+      "-s",
+      "https://codereview.chromium.org",
+      "--no-auth"
+    ],
+    "name": "apply_issue (2)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]\\gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=ia32 v8_target_arch=ia32"
+    },
+    "name": "gclient runhooks (2)",
+    "seed_steps": [
+      "gclient runhooks (2)",
+      "compile (with patch, lkgr, clobber)"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]\\v8",
+      "--build-tool",
+      "vs",
+      "--clobber",
+      "--"
+    ],
+    "name": "compile (with patch, lkgr, clobber)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]\\scripts\\slave\\v8\\v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "ia32",
+      "--testname",
+      "mjsunit fuzz-natives cctest message preparser",
+      "--quickcheck"
+    ],
+    "cwd": "[SLAVE_BUILD]\\v8",
+    "name": "Check"
+  }
+]

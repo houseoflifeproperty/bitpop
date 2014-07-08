@@ -11,9 +11,6 @@ first."""
 import os
 import re
 
-from buildbot.process.properties import WithProperties
-from buildbot.steps import trigger
-
 from master.factory.build_factory import BuildFactory
 from master.factory import commands
 
@@ -134,19 +131,14 @@ class GClientSolution(object):
 class GClientFactory(object):
   """Encapsulates data and methods common to both (all) master.cfg files."""
 
-  def __init__(self, build_dir, solutions, project=None, target_platform=None,
-               nohooks_on_update=False, target_os=None):
+  def __init__(self, build_dir, solutions, target_platform=None,
+               nohooks_on_update=False, target_os=None, revision_mapping=None):
     self._build_dir = build_dir
     self._solutions = solutions
     self._target_platform = target_platform or 'win32'
     self._target_os = target_os
     self._nohooks_on_update = nohooks_on_update
-
-    if self._target_platform == 'win32':
-      # Look for a solution named for its enclosing directory.
-      self._project = project or os.path.basename(self._build_dir) + '.sln'
-    else:
-      self._project = project
+    self._revision_mapping = revision_mapping
 
   def BuildGClientSpec(self, tests=None):
     spec = 'solutions = ['
@@ -162,7 +154,7 @@ class GClientFactory(object):
   def BaseFactory(self, gclient_spec=None, official_release=False,
                   factory_properties=None, build_properties=None,
                   delay_compile_step=False, sudo_for_remove=False,
-                  gclient_deps=None, slave_type=None):
+                  gclient_deps=None, slave_type=None, options=None):
     if gclient_spec is None:
       gclient_spec = self.BuildGClientSpec()
     factory_properties = factory_properties or {}
@@ -191,20 +183,38 @@ class GClientFactory(object):
     if (self._target_platform == 'win32' and
         not factory_properties.get('no_kill')):
       factory_cmd_obj.AddTaskkillStep()
+
     env = factory_properties.get('gclient_env', {})
     # Allow gclient_deps to also come from the factory_properties.
     if gclient_deps == None:
       gclient_deps = factory_properties.get('gclient_deps', None)
+
+    if gclient_deps == 'ios':
+      gclient_spec += ';target_os = [\'ios\'];target_os_only = True'
+
+    # Force the build checkout to be at some revision.  This may or may not
+    # activate depending on its own criteria, but the expectation is that if
+    # this does activate, it will emit a BOT_UPDATED file in the build/
+    # directory to signal to the other gclient update steps to no-op.
+    code_review_site = config.Master.Master4.code_review_site
+    factory_cmd_obj.AddBotUpdateStep(env, gclient_spec, self._revision_mapping,
+                                     server=code_review_site)
+
+
     # svn timeout is 2 min; we allow 5
     timeout = factory_properties.get('gclient_timeout')
     if official_release or factory_properties.get('nuke_and_pave'):
       no_gclient_branch = factory_properties.get('no_gclient_branch', False)
       factory_cmd_obj.AddClobberTreeStep(gclient_spec, env, timeout,
           gclient_deps=gclient_deps, gclient_nohooks=self._nohooks_on_update,
-          no_gclient_branch=no_gclient_branch)
-    elif not delay_compile_step:
-      self.AddUpdateStep(gclient_spec, factory_properties, factory,
-                         slave_type, sudo_for_remove, gclient_deps=gclient_deps)
+          no_gclient_branch=no_gclient_branch, options=options)
+    else:
+      # Revert the tree to a clean (unmodified) state.
+      factory_cmd_obj.AddGClientRevertStep()
+      if not delay_compile_step:
+        self.AddUpdateStep(gclient_spec, factory_properties, factory,
+                           slave_type, sudo_for_remove,
+                           gclient_deps=gclient_deps, options=options)
     return factory
 
   def BuildFactory(self, target='Release', clobber=False, tests=None, mode=None,
@@ -212,13 +222,12 @@ class GClientFactory(object):
                    compile_timeout=1200, build_url=None, project=None,
                    factory_properties=None, gclient_deps=None,
                    target_arch=None, skip_archive_steps=False):
-    factory_properties = factory_properties or {}
+    if factory_properties is None:
+      factory_properties = {}
+    factory_properties.setdefault('gclient_env', {})
+    gclient_env = factory_properties['gclient_env']
     if options and '--build-tool=ninja' in options:
-      factory_properties['gclient_env']['GYP_GENERATORS'] = 'ninja'
-      if '--compiler=goma-clang' in options:
-        # Ninja needs CC and CXX set at gyp time.
-        factory_properties['gclient_env']['CC'] = 'clang'
-        factory_properties['gclient_env']['CXX'] = 'clang++'
+      gclient_env['GYP_GENERATORS'] = 'ninja'
 
     # Create the spec for the solutions
     gclient_spec = self.BuildGClientSpec(tests)
@@ -227,16 +236,19 @@ class GClientFactory(object):
     factory = self.BaseFactory(gclient_spec,
                                factory_properties=factory_properties,
                                slave_type=slave_type,
-                               gclient_deps=gclient_deps)
+                               gclient_deps=gclient_deps, options=options)
+
+    # Optional repository root (default: 'src').
+    repository_root = factory_properties.get('repository_root', 'src')
 
     # Get the factory command object to create new steps to the factory.
     factory_cmd_obj = commands.FactoryCommands(factory, target,
                                                self._build_dir,
                                                self._target_platform,
-                                               target_arch)
+                                               target_arch,
+                                               repository_root)
 
     # Update clang if necessary.
-    gclient_env = factory_properties.get('gclient_env', {})
     if ('clang=1' in gclient_env.get('GYP_DEFINES', '') or
         (self._target_platform != 'win32' and
          factory_properties.get('asan'))):
@@ -246,24 +258,39 @@ class GClientFactory(object):
     # to prevent the drives from becoming full over time.
     factory_cmd_obj.AddTempCleanupStep()
 
+    # Update the NaCl SDK if needed
+    if factory_properties.get('update_nacl_sdk'):
+      factory_cmd_obj.AddUpdateNaClSDKStep(
+          factory_properties['update_nacl_sdk'])
+
     # Add the compile step if needed.
-    if slave_type in ['BuilderTester', 'Builder', 'Trybot', 'Indexer']:
+    if slave_type in ['BuilderTester', 'Builder', 'Trybot', 'Indexer',
+                      'TrybotBuilder']:
+      if self._target_platform == 'win32':
+        # Look for a solution named for its enclosing directory.
+        project = project or os.path.basename(self._build_dir) + '.sln'
+
       factory_cmd_obj.AddCompileStep(
-          project or self._project,
+          project,
           clobber,
           mode=mode,
           options=options,
           timeout=compile_timeout,
           env=factory_properties.get('compile_env'))
 
+    # Generate synthetic user profiles. Must run before AddZipBuild().
+    if factory_properties.get('create_profiles'):
+      # pylint: disable=W0212
+      factory_cmd_obj.AddProfileCreationStep('small_profile')
+
     if not skip_archive_steps:
       # Archive the full output directory if the machine is a builder.
-      if slave_type == 'Builder':
+      if slave_type in ['Builder', 'TrybotBuilder']:
         factory_cmd_obj.AddZipBuild(halt_on_failure=True,
                                     factory_properties=factory_properties)
 
       # Download the full output directory if the machine is a tester.
-      if slave_type == 'Tester':
+      if slave_type in ['Tester', 'TrybotTester']:
         factory_cmd_obj.AddExtractBuild(build_url,
                                         factory_properties=factory_properties)
 
@@ -278,40 +305,20 @@ class GClientFactory(object):
       return
 
     trigger_name = factory_properties.get('trigger')
-    # Propagate properties to the children if this is set in the factory.
-    trigger_properties = factory_properties.get('trigger_properties', [])
-    factory.addStep(trigger.Trigger(
-        schedulerNames=[trigger_name],
-        updateSourceStamp=False,
-        waitForFinish=False,
-        set_properties={
-            # Here are the standard names of the parent build properties.
-            'parent_buildername': WithProperties('%(buildername:-)s'),
-            'parent_buildnumber': WithProperties('%(buildnumber:-)s'),
-            'parent_branch': WithProperties('%(branch:-)s'),
-            'parent_got_revision': WithProperties('%(got_revision:-)s'),
-            'parent_got_webkit_revision':
-                WithProperties('%(got_webkit_revision:-)s'),
-            'parent_got_nacl_revision':
-                WithProperties('%(got_nacl_revision:-)s'),
-            'parent_revision': WithProperties('%(revision:-)s'),
-            'parent_scheduler': WithProperties('%(scheduler:-)s'),
-            'parent_slavename': WithProperties('%(slavename:-)s'),
-            'parent_builddir': WithProperties('%(builddir:-)s'),
-            'parent_try_job_key': WithProperties('%(try_job_key:-)s'),
-            'issue': WithProperties('%(issue:-)s'),
-            'patchset': WithProperties('%(patchset:-)s'),
 
-            # And some scripts were written to use non-standard names.
-            'parent_cr_revision': WithProperties('%(got_revision:-)s'),
-            'parent_wk_revision': WithProperties('%(got_webkit_revision:-)s'),
-            'parentname': WithProperties('%(buildername)s'),
-            'parentslavename': WithProperties('%(slavename:-)s'),
-            },
-        copy_properties=trigger_properties + ['testfilter']))
+    # Allow overwriting default values for specified properties.
+    set_properties = factory_properties.get('trigger_set_properties', {})
+
+    # Propagate properties to the children if this is set in the factory.
+    copy_properties = factory_properties.get('trigger_properties', [])
+    factory.addStep(commands.CreateTriggerStep(
+        trigger_name=trigger_name,
+        trigger_copy_properties=copy_properties,
+        trigger_set_properties=set_properties))
 
   def AddUpdateStep(self, gclient_spec, factory_properties, factory,
-                    slave_type, sudo_for_remove=False, gclient_deps=None):
+                    slave_type, sudo_for_remove=False, gclient_deps=None,
+                    options=None):
     if gclient_spec is None:
       gclient_spec = self.BuildGClientSpec()
     factory_properties = factory_properties or {}
@@ -330,6 +337,11 @@ class GClientFactory(object):
     gclient_transitive = factory_properties.get('gclient_transitive', False)
     primary_repo = factory_properties.get('primary_repo', '')
     gclient_jobs = factory_properties.get('gclient_jobs')
+    blink_config = factory_properties.get('blink_config')
+
+    # Do not run gyp_chromium on testers.
+    if slave_type in ('Tester',):
+      env.update({'GYP_CHROMIUM_NO_ACTION': '1'})
 
     # Add the update step.
     factory_cmd_obj.AddUpdateStep(
@@ -343,12 +355,15 @@ class GClientFactory(object):
         no_gclient_revision=no_gclient_revision,
         gclient_transitive=gclient_transitive,
         primary_repo=primary_repo,
-        gclient_jobs=gclient_jobs)
+        gclient_jobs=gclient_jobs,
+        blink_config=blink_config)
 
-    if slave_type in ('AnnotatedTrybot', 'CrosTrybot', 'Trybot'):
+    if slave_type in ('AnnotatedTrybot', 'CrosTrybot', 'Trybot', 'Bisect',
+                      'TrybotTester', 'TrybotBuilder'):
       factory_cmd_obj.AddApplyIssueStep(
           timeout=timeout,
-          server=config.Master.TryServer.code_review_site)
+          server=config.Master.Master4.code_review_site,
+          revision_mapping=self._revision_mapping)
 
     if not self._nohooks_on_update:
-      factory_cmd_obj.AddRunHooksStep(env=env, timeout=timeout)
+      factory_cmd_obj.AddRunHooksStep(env=env, timeout=timeout, options=options)

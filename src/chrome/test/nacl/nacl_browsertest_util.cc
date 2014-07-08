@@ -4,25 +4,27 @@
 
 #include "chrome/test/nacl/nacl_browsertest_util.h"
 
+#include <stdlib.h>
 #include "base/command_line.h"
 #include "base/json/json_reader.h"
 #include "base/path_service.h"
 #include "base/values.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_paths.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/nacl/common/nacl_switches.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/common/webplugininfo.h"
 #include "net/base/net_util.h"
-#include "webkit/plugins/webplugininfo.h"
-
 
 typedef TestMessageHandler::MessageResponse MessageResponse;
 
 MessageResponse StructuredMessageHandler::HandleMessage(
     const std::string& json) {
-  scoped_ptr<Value> value;
+  scoped_ptr<base::Value> value;
   base::JSONReader reader(base::JSON_ALLOW_TRAILING_COMMAS);
   // Automation messages are stringified before they are sent because the
   // automation channel cannot handle arbitrary objects.  This means we
@@ -41,7 +43,7 @@ MessageResponse StructuredMessageHandler::HandleMessage(
     return InternalError("Could not parse message JSON: " + temp +
                          " because " + reader.GetErrorMessage());
 
-  DictionaryValue* msg;
+  base::DictionaryValue* msg;
   if (!value->GetAsDictionary(&msg))
     return InternalError("Message was not an object: " + temp);
 
@@ -76,7 +78,7 @@ void LoadTestMessageHandler::Log(const std::string& type,
 
 MessageResponse LoadTestMessageHandler::HandleStructuredMessage(
    const std::string& type,
-   DictionaryValue* msg) {
+   base::DictionaryValue* msg) {
   if (type == "Log") {
     std::string message;
     if (!msg->GetString("message", &message))
@@ -132,7 +134,7 @@ void NaClIntegrationMessageHandler::Log(const std::string& message) {
 
 MessageResponse NaClIntegrationMessageHandler::HandleStructuredMessage(
     const std::string& type,
-    DictionaryValue* msg) {
+    base::DictionaryValue* msg) {
   if (type == "TestLog") {
     std::string message;
     if (!msg->GetString("message", &message))
@@ -167,13 +169,31 @@ MessageResponse NaClIntegrationMessageHandler::HandleStructuredMessage(
 //             nacl_test_data/
 //                            newlib/
 //                            glibc/
-static bool GetNaClVariantRoot(const FilePath::StringType& variant,
-                               FilePath* document_root) {
+static bool GetNaClVariantRoot(const base::FilePath::StringType& variant,
+                               base::FilePath* document_root) {
   if (!ui_test_utils::GetRelativeBuildDirectory(document_root))
     return false;
   *document_root = document_root->Append(FILE_PATH_LITERAL("nacl_test_data"));
   *document_root = document_root->Append(variant);
   return true;
+}
+
+static void AddPnaclParm(const base::FilePath::StringType& url,
+                         base::FilePath::StringType* url_with_parm) {
+  if (url.find(FILE_PATH_LITERAL("?")) == base::FilePath::StringType::npos) {
+    *url_with_parm = url + FILE_PATH_LITERAL("?pnacl=1");
+  } else {
+    *url_with_parm = url + FILE_PATH_LITERAL("&pnacl=1");
+  }
+}
+
+static void AddPnaclDisabledParm(const base::FilePath::StringType& url,
+                                 base::FilePath::StringType* url_with_parm) {
+  if (url.find(FILE_PATH_LITERAL("?")) == base::FilePath::StringType::npos) {
+    *url_with_parm = url + FILE_PATH_LITERAL("?pnacl_disabled=1");
+  } else {
+    *url_with_parm = url + FILE_PATH_LITERAL("&pnacl_disabled=1");
+  }
 }
 
 NaClBrowserTestBase::NaClBrowserTestBase() {
@@ -182,22 +202,34 @@ NaClBrowserTestBase::NaClBrowserTestBase() {
 NaClBrowserTestBase::~NaClBrowserTestBase() {
 }
 
-void NaClBrowserTestBase::SetUpCommandLine(CommandLine* command_line) {
-  command_line->AppendSwitch(switches::kNoFirstRun);
+void NaClBrowserTestBase::SetUpCommandLine(base::CommandLine* command_line) {
   command_line->AppendSwitch(switches::kEnableNaCl);
 }
 
-void NaClBrowserTestBase::SetUpInProcessBrowserTestFixture() {
+void NaClBrowserTestBase::SetUpOnMainThread() {
   // Sanity check.
-  FilePath plugin_lib;
+  base::FilePath plugin_lib;
   ASSERT_TRUE(PathService::Get(chrome::FILE_NACL_PLUGIN, &plugin_lib));
-  ASSERT_TRUE(file_util::PathExists(plugin_lib)) << plugin_lib.value();
+  ASSERT_TRUE(base::PathExists(plugin_lib)) << plugin_lib.value();
 
   ASSERT_TRUE(StartTestServer()) << "Cannot start test server.";
 }
 
-GURL NaClBrowserTestBase::TestURL(const FilePath::StringType& url_fragment) {
-  FilePath expanded_url = FilePath(FILE_PATH_LITERAL("files"));
+bool NaClBrowserTestBase::GetDocumentRoot(base::FilePath* document_root) {
+  return GetNaClVariantRoot(Variant(), document_root);
+}
+
+bool NaClBrowserTestBase::IsAPnaclTest() {
+  return false;
+}
+
+bool NaClBrowserTestBase::IsPnaclDisabled() {
+  return false;
+}
+
+GURL NaClBrowserTestBase::TestURL(
+    const base::FilePath::StringType& url_fragment) {
+  base::FilePath expanded_url = base::FilePath(FILE_PATH_LITERAL("files"));
   expanded_url = expanded_url.Append(url_fragment);
   return test_server_->GetURL(expanded_url.MaybeAsASCII());
 }
@@ -205,42 +237,114 @@ GURL NaClBrowserTestBase::TestURL(const FilePath::StringType& url_fragment) {
 bool NaClBrowserTestBase::RunJavascriptTest(const GURL& url,
                                             TestMessageHandler* handler) {
   JavascriptTestObserver observer(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(),
+      browser()->tab_strip_model()->GetActiveWebContents(),
       handler);
   ui_test_utils::NavigateToURL(browser(), url);
   return observer.Run();
 }
 
-void NaClBrowserTestBase::RunLoadTest(const FilePath::StringType& test_file) {
+void NaClBrowserTestBase::RunLoadTest(
+    const base::FilePath::StringType& test_file) {
   LoadTestMessageHandler handler;
-  bool ok = RunJavascriptTest(TestURL(test_file), &handler);
+  base::FilePath::StringType test_file_with_pnacl = test_file;
+  if (IsAPnaclTest()) {
+    AddPnaclParm(test_file, &test_file_with_pnacl);
+  }
+  base::FilePath::StringType test_file_with_both = test_file_with_pnacl;
+  if (IsPnaclDisabled()) {
+    AddPnaclDisabledParm(test_file_with_pnacl, &test_file_with_both);
+  }
+  bool ok = RunJavascriptTest(TestURL(test_file_with_both), &handler);
   ASSERT_TRUE(ok) << handler.error_message();
   ASSERT_TRUE(handler.test_passed()) << "Test failed.";
 }
 
 void NaClBrowserTestBase::RunNaClIntegrationTest(
-    const FilePath::StringType& url_fragment) {
+    const base::FilePath::StringType& url_fragment) {
   NaClIntegrationMessageHandler handler;
-  bool ok = RunJavascriptTest(TestURL(url_fragment), &handler);
+  base::FilePath::StringType url_fragment_with_pnacl = url_fragment;
+  if (IsAPnaclTest()) {
+    AddPnaclParm(url_fragment, &url_fragment_with_pnacl);
+  }
+  base::FilePath::StringType url_fragment_with_both = url_fragment_with_pnacl;
+  if (IsPnaclDisabled()) {
+    AddPnaclDisabledParm(url_fragment_with_pnacl, &url_fragment_with_both);
+  }
+  bool ok = RunJavascriptTest(TestURL(url_fragment_with_both), &handler);
   ASSERT_TRUE(ok) << handler.error_message();
   ASSERT_TRUE(handler.test_passed()) << "Test failed.";
 }
 
 bool NaClBrowserTestBase::StartTestServer() {
   // Launch the web server.
-  FilePath document_root;
-  if (!GetNaClVariantRoot(Variant(), &document_root))
+  base::FilePath document_root;
+  if (!GetDocumentRoot(&document_root))
     return false;
-  test_server_.reset(new net::TestServer(net::TestServer::TYPE_HTTP,
-                                         net::TestServer::kLocalhost,
-                                         document_root));
+  test_server_.reset(new net::SpawnedTestServer(
+                         net::SpawnedTestServer::TYPE_HTTP,
+                         net::SpawnedTestServer::kLocalhost,
+                         document_root));
   return test_server_->Start();
 }
 
-FilePath::StringType NaClBrowserTestNewlib::Variant() {
+base::FilePath::StringType NaClBrowserTestNewlib::Variant() {
   return FILE_PATH_LITERAL("newlib");
 }
 
-FilePath::StringType NaClBrowserTestGLibc::Variant() {
+base::FilePath::StringType NaClBrowserTestGLibc::Variant() {
   return FILE_PATH_LITERAL("glibc");
+}
+
+base::FilePath::StringType NaClBrowserTestPnacl::Variant() {
+  return FILE_PATH_LITERAL("pnacl");
+}
+
+bool NaClBrowserTestPnacl::IsAPnaclTest() {
+  return true;
+}
+
+base::FilePath::StringType NaClBrowserTestPnaclDisabled::Variant() {
+  return FILE_PATH_LITERAL("pnacl");
+}
+
+bool NaClBrowserTestPnaclDisabled::IsAPnaclTest() {
+  return true;
+}
+
+bool NaClBrowserTestPnaclDisabled::IsPnaclDisabled() {
+  return true;
+}
+void NaClBrowserTestPnaclDisabled::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kDisablePnacl);
+}
+
+base::FilePath::StringType NaClBrowserTestNonSfiMode::Variant() {
+  return FILE_PATH_LITERAL("libc-free");
+}
+
+void NaClBrowserTestNonSfiMode::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
+}
+
+base::FilePath::StringType NaClBrowserTestStatic::Variant() {
+  return FILE_PATH_LITERAL("static");
+}
+
+bool NaClBrowserTestStatic::GetDocumentRoot(base::FilePath* document_root) {
+  *document_root = base::FilePath(FILE_PATH_LITERAL("chrome/test/data/nacl"));
+  return true;
+}
+
+base::FilePath::StringType NaClBrowserTestPnaclNonSfi::Variant() {
+  return FILE_PATH_LITERAL("nonsfi");
+}
+
+void NaClBrowserTestPnaclNonSfi::SetUpCommandLine(
+    base::CommandLine* command_line) {
+  NaClBrowserTestBase::SetUpCommandLine(command_line);
+  command_line->AppendSwitch(switches::kEnableNaClNonSfiMode);
 }

@@ -23,18 +23,20 @@ public:
         bool      fPacked;
     };
 
-    GrGLStencilBuffer(GrGpu* gpu, GrGLint rbid,
+    GrGLStencilBuffer(GrGpu* gpu,
+                      bool isWrapped,
+                      GrGLint rbid,
                       int width, int height,
                       int sampleCnt,
                       const Format& format)
-        : GrStencilBuffer(gpu, width, height, format.fStencilBits, sampleCnt)
+        : GrStencilBuffer(gpu, isWrapped, width, height, format.fStencilBits, sampleCnt)
         , fFormat(format)
         , fRenderbufferID(rbid) {
     }
 
     virtual ~GrGLStencilBuffer();
 
-    virtual size_t sizeInBytes() const SK_OVERRIDE;
+    virtual size_t gpuMemorySize() const SK_OVERRIDE;
 
     GrGLuint renderbufferID() const {
         return fRenderbufferID;

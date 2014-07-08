@@ -5,17 +5,17 @@
 #ifndef CONTENT_BROWSER_WEB_CONTENTS_WEB_DRAG_UTILS_WIN_H_
 #define CONTENT_BROWSER_WEB_CONTENTS_WEB_DRAG_UTILS_WIN_H_
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDragOperation.h"
+#include "third_party/WebKit/public/web/WebDragOperation.h"
 
 #include <windows.h>
 
 namespace content {
 
-WebKit::WebDragOperation WinDragOpToWebDragOp(DWORD effect);
-WebKit::WebDragOperationsMask WinDragOpMaskToWebDragOpMask(DWORD effects);
+blink::WebDragOperation WinDragOpToWebDragOp(DWORD effect);
+blink::WebDragOperationsMask WinDragOpMaskToWebDragOpMask(DWORD effects);
 
-DWORD WebDragOpToWinDragOp(WebKit::WebDragOperation op);
-DWORD WebDragOpMaskToWinDragOpMask(WebKit::WebDragOperationsMask ops);
+DWORD WebDragOpToWinDragOp(blink::WebDragOperation op);
+DWORD WebDragOpMaskToWinDragOpMask(blink::WebDragOperationsMask ops);
 
 }  // namespace content
 

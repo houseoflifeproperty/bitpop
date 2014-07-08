@@ -24,11 +24,11 @@
 ;* Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
 ;******************************************************************************
 
-%include "libavutil/x86/x86inc.asm"
 %include "libavutil/x86/x86util.asm"
 
 SECTION_RODATA
 
+pb_A1: times 16 db 0xA1
 pb_3_1: times 4 db 3, 1
 
 SECTION .text
@@ -36,7 +36,6 @@ SECTION .text
 cextern pb_0
 cextern pb_1
 cextern pb_3
-cextern pb_A1
 
 ; expands to [base],...,[base+7*stride]
 %define PASS8ROWS(base, base3, stride, stride3) \
@@ -332,16 +331,14 @@ cglobal deblock_v_luma_8, 5,5,10
 ; void deblock_h_luma( uint8_t *pix, int stride, int alpha, int beta, int8_t *tc0 )
 ;-----------------------------------------------------------------------------
 INIT_MMX cpuname
-cglobal deblock_h_luma_8, 5,9
+cglobal deblock_h_luma_8, 5,9,0,0x60+16*WIN64
     movsxd r7,  r1d
     lea    r8,  [r7+r7*2]
     lea    r6,  [r0-4]
     lea    r5,  [r0-4+r8]
 %if WIN64
-    sub    rsp, 0x98
-    %define pix_tmp rsp+0x30
+    %define pix_tmp rsp+0x30 ; shadow space + r4
 %else
-    sub    rsp, 0x68
     %define pix_tmp rsp
 %endif
 
@@ -380,11 +377,6 @@ cglobal deblock_h_luma_8, 5,9
     movq   m3, [pix_tmp+0x40]
     TRANSPOSE8x4B_STORE  PASS8ROWS(r6, r5, r7, r8)
 
-%if WIN64
-    add    rsp, 0x98
-%else
-    add    rsp, 0x68
-%endif
     RET
 %endmacro
 
@@ -401,7 +393,7 @@ DEBLOCK_LUMA
 ;-----------------------------------------------------------------------------
 ; void deblock_v8_luma( uint8_t *pix, int stride, int alpha, int beta, int8_t *tc0 )
 ;-----------------------------------------------------------------------------
-cglobal deblock_%1_luma_8, 5, 6 - HAVE_ALIGNED_STACK, 0, 2 * %2
+cglobal deblock_%1_luma_8, 5,5,8,2*%2
     lea     r4, [r1*3]
     dec     r2     ; alpha-1
     neg     r4
@@ -450,24 +442,22 @@ cglobal deblock_%1_luma_8, 5, 6 - HAVE_ALIGNED_STACK, 0, 2 * %2
 ; void deblock_h_luma( uint8_t *pix, int stride, int alpha, int beta, int8_t *tc0 )
 ;-----------------------------------------------------------------------------
 INIT_MMX cpuname
-cglobal deblock_h_luma_8, 0,6 - HAVE_ALIGNED_STACK, 0, 0x60
+cglobal deblock_h_luma_8, 0,5,8,0x60+HAVE_ALIGNED_STACK*12
     mov    r0, r0mp
     mov    r3, r1m
     lea    r4, [r3*3]
     sub    r0, 4
     lea    r1, [r0+r4]
+%define pix_tmp esp+12*HAVE_ALIGNED_STACK
 
     ; transpose 6x16 -> tmp space
-    TRANSPOSE6x8_MEM  PASS8ROWS(r0, r1, r3, r4), esp
+    TRANSPOSE6x8_MEM  PASS8ROWS(r0, r1, r3, r4), pix_tmp
     lea    r0, [r0+r3*8]
     lea    r1, [r1+r3*8]
-    TRANSPOSE6x8_MEM  PASS8ROWS(r0, r1, r3, r4), esp+8
+    TRANSPOSE6x8_MEM  PASS8ROWS(r0, r1, r3, r4), pix_tmp+8
 
     ; vertical filter
-    lea    r0, [esp+0x30]
-%if HAVE_ALIGNED_STACK
-    SUB    esp, 12
-%endif
+    lea    r0, [pix_tmp+0x30]
     PUSH   dword r4m
     PUSH   dword r3m
     PUSH   dword r2m
@@ -475,35 +465,35 @@ cglobal deblock_h_luma_8, 0,6 - HAVE_ALIGNED_STACK, 0, 0x60
     PUSH   dword r0
     call   deblock_%1_luma_8
 %ifidn %1, v8
-    add    dword [esp   ], 8 ; esp+0x38
+    add    dword [esp   ], 8 ; pix_tmp+0x38
     add    dword [esp+16], 2 ; tc0+2
     call   deblock_%1_luma_8
 %endif
-    ADD    esp, 20 + HAVE_ALIGNED_STACK * 12
+    ADD    esp, 20
 
     ; transpose 16x4 -> original space  (only the middle 4 rows were changed by the filter)
     mov    r0, r0mp
     sub    r0, 2
 
-    movq   m0, [esp+0x10]
-    movq   m1, [esp+0x20]
+    movq   m0, [pix_tmp+0x10]
+    movq   m1, [pix_tmp+0x20]
     lea    r1, [r0+r4]
-    movq   m2, [esp+0x30]
-    movq   m3, [esp+0x40]
+    movq   m2, [pix_tmp+0x30]
+    movq   m3, [pix_tmp+0x40]
     TRANSPOSE8x4B_STORE  PASS8ROWS(r0, r1, r3, r4)
 
     lea    r0, [r0+r3*8]
     lea    r1, [r1+r3*8]
-    movq   m0, [esp+0x18]
-    movq   m1, [esp+0x28]
-    movq   m2, [esp+0x38]
-    movq   m3, [esp+0x48]
+    movq   m0, [pix_tmp+0x18]
+    movq   m1, [pix_tmp+0x28]
+    movq   m2, [pix_tmp+0x38]
+    movq   m3, [pix_tmp+0x48]
     TRANSPOSE8x4B_STORE  PASS8ROWS(r0, r1, r3, r4)
 
     RET
 %endmacro ; DEBLOCK_LUMA
 
-INIT_MMX mmx2
+INIT_MMX mmxext
 DEBLOCK_LUMA v8, 8
 INIT_XMM sse2
 DEBLOCK_LUMA v, 16
@@ -628,7 +618,11 @@ DEBLOCK_LUMA v, 16
     %define t5 m11
     %define mask0 m12
     %define mask1p m13
+%if WIN64
+    %define mask1q [rsp]
+%else
     %define mask1q [rsp-24]
+%endif
     %define mpb_0 m14
     %define mpb_1 m15
 %else
@@ -647,7 +641,11 @@ DEBLOCK_LUMA v, 16
 ;-----------------------------------------------------------------------------
 ; void deblock_v_luma_intra( uint8_t *pix, int stride, int alpha, int beta )
 ;-----------------------------------------------------------------------------
-cglobal deblock_%1_luma_intra_8, 4, 6, 16, ARCH_X86_32 * 0x50
+%if WIN64
+cglobal deblock_%1_luma_intra_8, 4,6,16,0x10
+%else
+cglobal deblock_%1_luma_intra_8, 4,6,16,ARCH_X86_64*0x50-0x50
+%endif
     lea     r4, [r1*4]
     lea     r5, [r1*3] ; 3*stride
     dec     r2d        ; alpha-1
@@ -703,13 +701,16 @@ INIT_MMX cpuname
 ;-----------------------------------------------------------------------------
 ; void deblock_h_luma_intra( uint8_t *pix, int stride, int alpha, int beta )
 ;-----------------------------------------------------------------------------
-cglobal deblock_h_luma_intra_8, 4,9
+cglobal deblock_h_luma_intra_8, 4,9,0,0x80
     movsxd r7,  r1d
     lea    r8,  [r7*3]
     lea    r6,  [r0-4]
     lea    r5,  [r0-4+r8]
-    sub    rsp, 0x88
+%if WIN64
+    %define pix_tmp rsp+0x20 ; shadow space
+%else
     %define pix_tmp rsp
+%endif
 
     ; transpose 8x16 -> tmp space
     TRANSPOSE8x8_MEM  PASS8ROWS(r6, r5, r7, r8), PASS8ROWS(pix_tmp, pix_tmp+0x30, 0x10, 0x30)
@@ -729,10 +730,9 @@ cglobal deblock_h_luma_intra_8, 4,9
     sub    r5,  r7
     shr    r7,  3
     TRANSPOSE8x8_MEM  PASS8ROWS(pix_tmp, pix_tmp+0x30, 0x10, 0x30), PASS8ROWS(r6, r5, r7, r8)
-    add    rsp, 0x88
     RET
 %else
-cglobal deblock_h_luma_intra_8, 2, 5 - HAVE_ALIGNED_STACK, 0, 0x80
+cglobal deblock_h_luma_intra_8, 2,4,8,0x80
     lea    r3,  [r1*3]
     sub    r0,  4
     lea    r2,  [r0+r3]
@@ -777,11 +777,11 @@ INIT_XMM avx
 DEBLOCK_LUMA_INTRA v
 %endif
 %if ARCH_X86_64 == 0
-INIT_MMX mmx2
+INIT_MMX mmxext
 DEBLOCK_LUMA_INTRA v8
 %endif
 
-INIT_MMX mmx2
+INIT_MMX mmxext
 
 %macro CHROMA_V_START 0
     dec    r2d      ; alpha-1
@@ -812,7 +812,7 @@ cglobal deblock_v_chroma_8, 5,6
     movq  m1, [t5+r1]
     movq  m2, [r0]
     movq  m3, [r0+r1]
-    call ff_chroma_inter_body_mmx2
+    call ff_chroma_inter_body_mmxext
     movq  [t5+r1], m1
     movq  [r0], m2
     RET
@@ -850,7 +850,7 @@ cglobal deblock_h_chroma_8, 5,7
     RET
 
 ALIGN 16
-ff_chroma_inter_body_mmx2:
+ff_chroma_inter_body_mmxext:
     LOAD_MASK  r2d, r3d
     movd       m6, [r4] ; tc0
     punpcklbw  m6, m6
@@ -883,7 +883,7 @@ cglobal deblock_v_chroma_intra_8, 4,5
     movq  m1, [t5+r1]
     movq  m2, [r0]
     movq  m3, [r0+r1]
-    call ff_chroma_intra_body_mmx2
+    call ff_chroma_intra_body_mmxext
     movq  [t5+r1], m1
     movq  [r0], m2
     RET
@@ -894,12 +894,12 @@ cglobal deblock_v_chroma_intra_8, 4,5
 cglobal deblock_h_chroma_intra_8, 4,6
     CHROMA_H_START
     TRANSPOSE4x8_LOAD  bw, wd, dq, PASS8ROWS(t5, r0, r1, t6)
-    call ff_chroma_intra_body_mmx2
+    call ff_chroma_intra_body_mmxext
     TRANSPOSE8x4B_STORE PASS8ROWS(t5, r0, r1, t6)
     RET
 
 ALIGN 16
-ff_chroma_intra_body_mmx2:
+ff_chroma_intra_body_mmxext:
     LOAD_MASK r2d, r3d
     movq   m5, m1
     movq   m6, m2
@@ -1023,7 +1023,7 @@ ff_chroma_intra_body_mmx2:
     jl %%.b_idx_loop
 %endmacro
 
-INIT_MMX mmx2
+INIT_MMX mmxext
 cglobal h264_loop_filter_strength, 9, 9, 0, bs, nnz, ref, mv, bidir, edges, \
                                             step, mask_mv0, mask_mv1, field
 %define b_idxq bidirq

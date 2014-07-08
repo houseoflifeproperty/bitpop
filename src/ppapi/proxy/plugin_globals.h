@@ -9,28 +9,37 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/synchronization/lock.h"
 #include "base/threading/thread_local_storage.h"
+#include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_resource_tracker.h"
 #include "ppapi/proxy/plugin_var_tracker.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
 
+namespace base {
+class Thread;
+}
 namespace IPC {
 class Sender;
 }
 
+struct PP_BrowserFont_Trusted_Description;
+
 namespace ppapi {
+
+struct Preferences;
+
 namespace proxy {
 
 class MessageLoopResource;
 class PluginProxyDelegate;
+class ResourceReplyThreadRegistrar;
 
 class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
  public:
   PluginGlobals();
-  PluginGlobals(PpapiGlobals::ForTest);
+  explicit PluginGlobals(PpapiGlobals::PerThreadForTest);
   virtual ~PluginGlobals();
 
   // Getter for the global singleton. Generally, you should use
@@ -55,7 +64,6 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   virtual PP_Module GetModuleForInstance(PP_Instance instance) OVERRIDE;
   virtual std::string GetCmdLine() OVERRIDE;
   virtual void PreCacheFontForFlash(const void* logfontw) OVERRIDE;
-  virtual base::Lock* GetProxyLock() OVERRIDE;
   virtual void LogWithSource(PP_Instance instance,
                              PP_LogLevel level,
                              const std::string& source,
@@ -65,6 +73,8 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
                                       const std::string& source,
                                       const std::string& value) OVERRIDE;
   virtual MessageLoopShared* GetCurrentMessageLoop() OVERRIDE;
+  base::TaskRunner* GetFileTaskRunner() OVERRIDE;
+  virtual void MarkPluginIsActive() OVERRIDE;
 
   // Returns the channel for sending to the browser.
   IPC::Sender* GetBrowserSender();
@@ -74,6 +84,12 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
 
   // Sets the active url which is reported by breakpad.
   void SetActiveURL(const std::string& url);
+
+  PP_Resource CreateBrowserFont(
+      Connection connection,
+      PP_Instance instance,
+      const PP_BrowserFont_Trusted_Description& desc,
+      const Preferences& prefs);
 
   // Getters for the plugin-specific versions.
   PluginResourceTracker* plugin_resource_tracker() {
@@ -114,9 +130,14 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   // The embedder should call this function when the command line is known.
   void set_command_line(const std::string& c) { command_line_ = c; }
 
-  // Sets whether threadsafety is supported. Defaults to whether the
-  // ENABLE_PEPPER_THREADING build flag is set.
-  void set_enable_threading(bool enable) { enable_threading_ = enable; }
+  ResourceReplyThreadRegistrar* resource_reply_thread_registrar() {
+    return resource_reply_thread_registrar_.get();
+  }
+
+  // Interval to limit how many IPC messages are sent indicating that the plugin
+  // is active and should be kept alive. The value must be smaller than any
+  // threshold used to kill inactive plugins by the embedder host.
+  void set_keepalive_throttle_interval_milliseconds(unsigned i);
 
  private:
   class BrowserSender;
@@ -124,15 +145,15 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   // PpapiGlobals overrides.
   virtual bool IsPluginGlobals() const OVERRIDE;
 
+  // Locks the proxy lock and releases the throttle on keepalive IPC messages.
+  void OnReleaseKeepaliveThrottle();
+
   static PluginGlobals* plugin_globals_;
 
   PluginProxyDelegate* plugin_proxy_delegate_;
   PluginResourceTracker plugin_resource_tracker_;
   PluginVarTracker plugin_var_tracker_;
   scoped_refptr<CallbackTracker> callback_tracker_;
-
-  bool enable_threading_;  // Indicates whether we'll use the lock.
-  base::Lock proxy_lock_;
 
   scoped_ptr<base::ThreadLocalStorage::Slot> msg_loop_slot_;
   // Note that loop_for_main_thread's constructor sets msg_loop_slot_, so it
@@ -148,6 +169,23 @@ class PPAPI_PROXY_EXPORT PluginGlobals : public PpapiGlobals {
   std::string command_line_;
 
   scoped_ptr<BrowserSender> browser_sender_;
+
+  // Thread for performing potentially blocking file operations. It's created
+  // lazily, since it might not be needed.
+  scoped_ptr<base::Thread> file_thread_;
+
+  scoped_refptr<ResourceReplyThreadRegistrar> resource_reply_thread_registrar_;
+
+  // Indicates activity by the plugin. Used to monitor when a plugin can be
+  // shutdown due to idleness. Current needs do not require differentiating
+  // between idle state between multiple instances, if any are active they are
+  // all considered active.
+  bool plugin_recently_active_;
+
+  unsigned keepalive_throttle_interval_milliseconds_;
+
+  // Member variables should appear before the WeakPtrFactory, see weak_ptr.h.
+  base::WeakPtrFactory<PluginGlobals> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginGlobals);
 };

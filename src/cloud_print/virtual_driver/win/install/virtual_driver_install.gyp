@@ -22,12 +22,13 @@
       'dependencies': [
         '../virtual_driver.gyp:virtual_driver_lib',
         '<(DEPTH)/base/base.gyp:base',
-        '<(DEPTH)/chrome/chrome.gyp:chrome_version_header',
+        '<(DEPTH)/cloud_print/common/common.gyp:cloud_print_install_lib',
+        '<(DEPTH)/cloud_print/cloud_print_resources.gyp:cloud_print_version_resources',
         'virtual_driver_setup_resources',
       ],
       'sources': [
         'setup.cc',
-        '../virtual_driver_common_resources.rc',
+        '<(SHARED_INTERMEDIATE_DIR)/cloud_print/virtual_driver_setup_exe_version.rc',
         '<(SHARED_INTERMEDIATE_DIR)/virtual_driver_setup_resources/virtual_driver_setup_resources_ar.rc',
         '<(SHARED_INTERMEDIATE_DIR)/virtual_driver_setup_resources/virtual_driver_setup_resources_bg.rc',
         '<(SHARED_INTERMEDIATE_DIR)/virtual_driver_setup_resources/virtual_driver_setup_resources_bn.rc',
@@ -95,7 +96,7 @@
         {
           'destination': '<(PRODUCT_DIR)',
           'files': [
-            '../../GCP-driver.ppd',
+            '../../gcp_driver.gpd',
           ],
         },
       ], 

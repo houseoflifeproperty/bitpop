@@ -9,9 +9,10 @@
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "ui/views/widget/widget_delegate.h"
+#include "ui/aura/window.h"
+#include "ui/gfx/native_widget_types.h"
+#include "ui/views/window/dialog_delegate.h"
 
-class BaseWindow;
 class ExtensionDialogObserver;
 class GURL;
 class Profile;
@@ -21,76 +22,59 @@ class WebContents;
 }
 
 namespace extensions {
-class ExtensionHost;
+class ExtensionViewHost;
 }
 
 // Modal dialog containing contents provided by an extension.
 // Dialog is automatically centered in the owning window and has fixed size.
 // For example, used by the Chrome OS file browser.
-class ExtensionDialog : public views::WidgetDelegate,
+class ExtensionDialog : public views::DialogDelegate,
                         public content::NotificationObserver,
                         public base::RefCounted<ExtensionDialog> {
  public:
   // Create and show a dialog with |url| centered over the provided window.
-  // |base_window| is the window to which the pop-up will be attached.
+  // |parent_window| is the parent window to which the pop-up will be attached.
   // |profile| is the profile that the extension is registered with.
   // |web_contents| is the tab that spawned the dialog.
   // |width| and |height| are the size of the dialog in pixels.
   static ExtensionDialog* Show(const GURL& url,
-                               BaseWindow* base_window,
+                               aura::Window* parent_window,
                                Profile* profile,
                                content::WebContents* web_contents,
                                int width,
                                int height,
-                               const string16& title,
+                               int min_width,
+                               int min_height,
+                               const base::string16& title,
                                ExtensionDialogObserver* observer);
-
-#if defined(USE_AURA)
-  // Create and show a fullscreen dialog with |url|.
-  // |profile| is the profile that the extension is registered with.
-  // |web_contents| is the tab that spawned the dialog.
-  static ExtensionDialog* ShowFullscreen(const GURL& url,
-                                         Profile* profile,
-                                         const string16& title,
-                                         ExtensionDialogObserver* observer);
-#else
-  static ExtensionDialog* ShowFullscreen(const GURL& url,
-                                         Profile* profile,
-                                         const string16& title,
-                                         ExtensionDialogObserver* observer) {
-    NOTIMPLEMENTED();
-    return NULL;
-  }
-#endif
 
   // Notifies the dialog that the observer has been destroyed and should not
   // be sent notifications.
   void ObserverDestroyed();
 
-  // Closes the ExtensionDialog.
-  void Close();
-
   // Focus to the render view if possible.
   void MaybeFocusRenderView();
 
   // Sets the window title.
-  void set_title(const string16& title) { window_title_ = title; }
+  void set_title(const base::string16& title) { window_title_ = title; }
 
   // Sets minimum contents size in pixels and makes the window resizable.
   void SetMinimumContentsSize(int width, int height);
 
-  extensions::ExtensionHost* host() const { return extension_host_.get(); }
+  extensions::ExtensionViewHost* host() const { return host_.get(); }
 
-  // views::WidgetDelegate overrides.
+  // views::DialogDelegate override.
+  virtual int GetDialogButtons() const OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual bool ShouldShowWindowTitle() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
+  virtual bool UseNewStyleForThisDialog() const OVERRIDE;
 
   // content::NotificationObserver overrides.
   virtual void Observe(int type,
@@ -104,32 +88,16 @@ class ExtensionDialog : public views::WidgetDelegate,
   friend class base::RefCounted<ExtensionDialog>;
 
   // Use Show() to create instances.
-  ExtensionDialog(extensions::ExtensionHost* host,
+  ExtensionDialog(extensions::ExtensionViewHost* host,
                   ExtensionDialogObserver* observer);
 
-  static ExtensionDialog* ShowInternal(const GURL& url,
-                                       BaseWindow* base_window,
-                                       extensions::ExtensionHost* host,
-                                       int width,
-                                       int height,
-                                       bool fullscreen,
-                                       const string16& title,
-                                       ExtensionDialogObserver* observer);
-
-  static extensions::ExtensionHost* CreateExtensionHost(const GURL& url,
-                                                        Profile* profile);
-
-  void InitWindow(BaseWindow* base_window, int width, int height);
-  void InitWindowFullscreen();
-
-  // Window that holds the extension host view.
-  views::Widget* window_;
+  void InitWindow(aura::Window* parent_window, int width, int height);
 
   // Window Title
-  string16 window_title_;
+  base::string16 window_title_;
 
   // The contained host for the view.
-  scoped_ptr<extensions::ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionViewHost> host_;
 
   content::NotificationRegistrar registrar_;
 

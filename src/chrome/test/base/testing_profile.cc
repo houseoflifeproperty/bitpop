@@ -9,56 +9,67 @@
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/file_util.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
 #include "base/prefs/testing_pref_store.h"
 #include "base/run_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
+#include "chrome/browser/bookmarks/chrome_bookmark_client.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/extension_system_factory.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/favicon/favicon_service.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context.h"
 #include "chrome/browser/geolocation/chrome_geolocation_permission_context_factory.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/guest_view/guest_view_manager.h"
 #include "chrome/browser/history/history_backend.h"
+#include "chrome/browser/history/history_db_task.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/history/shortcuts_backend.h"
-#include "chrome/browser/history/shortcuts_backend_factory.h"
 #include "chrome/browser/history/top_sites.h"
+#include "chrome/browser/history/web_history_service_factory.h"
+#include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/net/proxy_service_factory.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
 #include "chrome/browser/notifications/desktop_notification_service_factory.h"
+#include "chrome/browser/policy/profile_policy_connector.h"
+#include "chrome/browser/policy/profile_policy_connector_factory.h"
 #include "chrome/browser/prefs/browser_prefs.h"
+#include "chrome/browser/prefs/pref_service_syncable.h"
 #include "chrome/browser/prerender/prerender_manager.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/chrome_browser_main_extra_parts_profiles.h"
+#include "chrome/browser/profiles/profile_manager.h"
 #include "chrome/browser/profiles/storage_partition_descriptor.h"
 #include "chrome/browser/search_engines/template_url_fetcher_factory.h"
-#include "chrome/browser/speech/chrome_speech_recognition_preferences.h"
 #include "chrome/browser/webdata/web_data_service.h"
 #include "chrome/browser/webdata/web_data_service_factory.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/bookmark_load_observer.h"
 #include "chrome/test/base/history_index_restore_observer.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/common/bookmark_constants.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/policy/core/common/policy_service.h"
+#include "components/user_prefs/user_prefs.h"
 #include "content/public/browser/browser_thread.h"
+#include "content/public/browser/cookie_store_factory.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/storage_partition.h"
 #include "content/public/test/mock_resource_context.h"
 #include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_system.h"
 #include "extensions/common/constants.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/url_request/url_request_context.h"
@@ -67,14 +78,19 @@
 #include "testing/gmock/include/gmock/gmock.h"
 
 #if defined(ENABLE_CONFIGURATION_POLICY)
-#include "chrome/browser/policy/policy_service_impl.h"
+#include "chrome/browser/policy/schema_registry_service.h"
+#include "chrome/browser/policy/schema_registry_service_factory.h"
+#include "components/policy/core/common/configuration_policy_provider.h"
+#include "components/policy/core/common/policy_service_impl.h"
+#include "components/policy/core/common/schema.h"
 #else
-#include "chrome/browser/policy/policy_service_stub.h"
+#include "components/policy/core/common/policy_service_stub.h"
 #endif  // defined(ENABLE_CONFIGURATION_POLICY)
 
-#if defined(OS_CHROMEOS)
-#include "chrome/browser/chromeos/proxy_config_service_impl.h"
-#endif  // defined(OS_CHROMEOS)
+#if defined(ENABLE_MANAGED_USERS)
+#include "chrome/browser/managed_mode/managed_user_settings_service.h"
+#include "chrome/browser/managed_mode/managed_user_settings_service_factory.h"
+#endif
 
 using base::Time;
 using content::BrowserThread;
@@ -87,21 +103,21 @@ namespace {
 // Task used to make sure history has finished processing a request. Intended
 // for use with BlockUntilHistoryProcessesPendingRequests.
 
-class QuittingHistoryDBTask : public HistoryDBTask {
+class QuittingHistoryDBTask : public history::HistoryDBTask {
  public:
   QuittingHistoryDBTask() {}
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) {
+                             history::HistoryDatabase* db) OVERRIDE {
     return true;
   }
 
-  virtual void DoneRunOnMainThread() {
-    MessageLoop::current()->Quit();
+  virtual void DoneRunOnMainThread() OVERRIDE {
+    base::MessageLoop::current()->Quit();
   }
 
  private:
-  ~QuittingHistoryDBTask() {}
+  virtual ~QuittingHistoryDBTask() {}
 
   DISALLOW_COPY_AND_ASSIGN(QuittingHistoryDBTask);
 };
@@ -109,7 +125,9 @@ class QuittingHistoryDBTask : public HistoryDBTask {
 class TestExtensionURLRequestContext : public net::URLRequestContext {
  public:
   TestExtensionURLRequestContext() {
-    net::CookieMonster* cookie_monster = new net::CookieMonster(NULL, NULL);
+    net::CookieMonster* cookie_monster =
+        content::CreateCookieStore(content::CookieStoreConfig())->
+            GetCookieMonster();
     const char* schemes[] = {extensions::kExtensionScheme};
     cookie_monster->SetCookieableSchemes(schemes, 1);
     set_cookie_store(cookie_monster);
@@ -121,7 +139,7 @@ class TestExtensionURLRequestContext : public net::URLRequestContext {
 class TestExtensionURLRequestContextGetter
     : public net::URLRequestContextGetter {
  public:
-  virtual net::URLRequestContext* GetURLRequestContext() {
+  virtual net::URLRequestContext* GetURLRequestContext() OVERRIDE {
     if (!context_.get())
       context_.reset(new TestExtensionURLRequestContext());
     return context_.get();
@@ -138,13 +156,12 @@ class TestExtensionURLRequestContextGetter
   scoped_ptr<net::URLRequestContext> context_;
 };
 
-ProfileKeyedService* CreateTestDesktopNotificationService(Profile* profile) {
 #if defined(ENABLE_NOTIFICATIONS)
-  return new DesktopNotificationService(profile, NULL);
-#else
-  return NULL;
-#endif
+KeyedService* CreateTestDesktopNotificationService(
+    content::BrowserContext* profile) {
+  return new DesktopNotificationService(static_cast<Profile*>(profile), NULL);
 }
+#endif
 
 }  // namespace
 
@@ -161,8 +178,13 @@ TestingProfile::TestingProfile()
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
+      original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
-      profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
+      browser_context_dependency_manager_(
+          BrowserContextDependencyManager::GetInstance()),
+      resource_context_(NULL),
       delegate_(NULL) {
   CreateTempProfileDir();
   profile_path_ = temp_dir_.path();
@@ -171,56 +193,84 @@ TestingProfile::TestingProfile()
   FinishInit();
 }
 
-TestingProfile::TestingProfile(const FilePath& path)
+TestingProfile::TestingProfile(const base::FilePath& path)
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
+      original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
-      profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
+      browser_context_dependency_manager_(
+          BrowserContextDependencyManager::GetInstance()),
+      resource_context_(NULL),
       delegate_(NULL) {
   Init();
   FinishInit();
 }
 
-TestingProfile::TestingProfile(const FilePath& path,
+TestingProfile::TestingProfile(const base::FilePath& path,
                                Delegate* delegate)
     : start_time_(Time::Now()),
       testing_prefs_(NULL),
       incognito_(false),
+      force_incognito_(false),
+      original_profile_(NULL),
+      guest_session_(false),
       last_session_exited_cleanly_(true),
       profile_path_(path),
-      profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
+      browser_context_dependency_manager_(
+          BrowserContextDependencyManager::GetInstance()),
+      resource_context_(NULL),
       delegate_(delegate) {
   Init();
   if (delegate_) {
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(&TestingProfile::FinishInit,
-                                                base::Unretained(this)));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&TestingProfile::FinishInit, base::Unretained(this)));
   } else {
     FinishInit();
   }
 }
 
 TestingProfile::TestingProfile(
-    const FilePath& path,
+    const base::FilePath& path,
     Delegate* delegate,
     scoped_refptr<ExtensionSpecialStoragePolicy> extension_policy,
-    scoped_ptr<PrefService> prefs)
+    scoped_ptr<PrefServiceSyncable> prefs,
+    bool incognito,
+    bool guest_session,
+    const std::string& managed_user_id,
+    scoped_ptr<policy::PolicyService> policy_service,
+    const TestingFactories& factories)
     : start_time_(Time::Now()),
       prefs_(prefs.release()),
       testing_prefs_(NULL),
-      incognito_(false),
+      incognito_(incognito),
+      force_incognito_(false),
+      original_profile_(NULL),
+      guest_session_(guest_session),
+      managed_user_id_(managed_user_id),
       last_session_exited_cleanly_(true),
       extension_special_storage_policy_(extension_policy),
       profile_path_(path),
-      profile_dependency_manager_(ProfileDependencyManager::GetInstance()),
-      delegate_(delegate) {
+      browser_context_dependency_manager_(
+          BrowserContextDependencyManager::GetInstance()),
+      resource_context_(NULL),
+      delegate_(delegate),
+      policy_service_(policy_service.release()) {
 
   // If no profile path was supplied, create one.
   if (profile_path_.empty()) {
     CreateTempProfileDir();
     profile_path_ = temp_dir_.path();
+  }
+
+  // Set any testing factories prior to initializing the services.
+  for (TestingFactories::const_iterator it = factories.begin();
+       it != factories.end(); ++it) {
+    it->first->SetTestingFactory(this, it->second);
   }
 
   Init();
@@ -229,9 +279,9 @@ TestingProfile::TestingProfile(
   // TODO(atwilson): See if this is still required once we convert the current
   // users of the constructor that takes a Delegate* param.
   if (delegate_) {
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(&TestingProfile::FinishInit,
-                                                base::Unretained(this)));
+    base::MessageLoop::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&TestingProfile::FinishInit, base::Unretained(this)));
   } else {
     FinishInit();
   }
@@ -242,7 +292,7 @@ void TestingProfile::CreateTempProfileDir() {
     LOG(ERROR) << "Failed to create unique temporary directory.";
 
     // Fallback logic in case we fail to create unique temporary directory.
-    FilePath system_tmp_dir;
+    base::FilePath system_tmp_dir;
     bool success = PathService::Get(base::DIR_TEMP, &system_tmp_dir);
 
     // We're severly screwed if we can't get the system temporary
@@ -250,9 +300,10 @@ void TestingProfile::CreateTempProfileDir() {
     // or other bad places.
     CHECK(success);
 
-    FilePath fallback_dir(system_tmp_dir.AppendASCII("TestingProfilePath"));
-    file_util::Delete(fallback_dir, true);
-    file_util::CreateDirectory(fallback_dir);
+    base::FilePath fallback_dir(
+        system_tmp_dir.AppendASCII("TestingProfilePath"));
+    base::DeleteFile(fallback_dir, true);
+    base::CreateDirectory(fallback_dir);
     if (!temp_dir_.Set(fallback_dir)) {
       // That shouldn't happen, but if it does, try to recover.
       LOG(ERROR) << "Failed to use a fallback temporary directory.";
@@ -264,19 +315,62 @@ void TestingProfile::CreateTempProfileDir() {
 }
 
 void TestingProfile::Init() {
-  if (!file_util::PathExists(profile_path_))
-    file_util::CreateDirectory(profile_path_);
+  // If threads have been initialized, we should be on the UI thread.
+  DCHECK(!content::BrowserThread::IsThreadInitialized(
+             content::BrowserThread::UI) ||
+         content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+
+  // Normally this would happen during browser startup, but for tests
+  // we need to trigger creation of Profile-related services.
+  ChromeBrowserMainExtraPartsProfiles::
+      EnsureBrowserContextKeyedServiceFactoriesBuilt();
+
+  if (prefs_.get())
+    user_prefs::UserPrefs::Set(this, prefs_.get());
+  else
+    CreateTestingPrefService();
+
+  if (!base::PathExists(profile_path_))
+    base::CreateDirectory(profile_path_);
+
+  // TODO(joaodasilva): remove this once this PKS isn't created in ProfileImpl
+  // anymore, after converting the PrefService to a PKS. Until then it must
+  // be associated with a TestingProfile too.
+  if (!IsOffTheRecord())
+    CreateProfilePolicyConnector();
 
   extensions::ExtensionSystemFactory::GetInstance()->SetTestingFactory(
       this, extensions::TestExtensionSystem::Build);
 
-  profile_dependency_manager_->CreateProfileServices(this, true);
+  // If no original profile was specified for this profile: register preferences
+  // even if this is an incognito profile - this allows tests to create a
+  // standalone incognito profile while still having prefs registered.
+  if (!IsOffTheRecord() || !original_profile_) {
+    user_prefs::PrefRegistrySyncable* pref_registry =
+        static_cast<user_prefs::PrefRegistrySyncable*>(
+            prefs_->DeprecatedGetPrefRegistry());
+    browser_context_dependency_manager_->
+        RegisterProfilePrefsForServices(this, pref_registry);
+  }
+
+  browser_context_dependency_manager_->CreateBrowserContextServicesForTest(
+      this);
 
 #if defined(ENABLE_NOTIFICATIONS)
   // Install profile keyed service factory hooks for dummy/test services
   DesktopNotificationServiceFactory::GetInstance()->SetTestingFactory(
       this, CreateTestDesktopNotificationService);
 #endif
+
+#if defined(ENABLE_MANAGED_USERS)
+  ManagedUserSettingsService* settings_service =
+      ManagedUserSettingsServiceFactory::GetForProfile(this);
+  TestingPrefStore* store = new TestingPrefStore();
+  settings_service->Init(store);
+  store->SetInitializationCompleted();
+#endif
+
+  profile_name_ = "testing_profile";
 }
 
 void TestingProfile::FinishInit() {
@@ -286,27 +380,44 @@ void TestingProfile::FinishInit() {
       content::Source<Profile>(static_cast<Profile*>(this)),
       content::NotificationService::NoDetails());
 
+  ProfileManager* profile_manager = g_browser_process->profile_manager();
+  if (profile_manager)
+    profile_manager->InitProfileUserPrefs(this);
+
   if (delegate_)
     delegate_->OnProfileCreated(this, true, false);
 }
 
 TestingProfile::~TestingProfile() {
+  // Revert to non-incognito mode before shutdown.
+  force_incognito_ = false;
+
+  // Any objects holding live URLFetchers should be deleted before teardown.
+  TemplateURLFetcherFactory::ShutdownForProfile(this);
+
   MaybeSendDestroyedNotification();
 
-  profile_dependency_manager_->DestroyProfileServices(this);
+  browser_context_dependency_manager_->DestroyBrowserContextServices(this);
 
-  if (host_content_settings_map_)
+  if (host_content_settings_map_.get())
     host_content_settings_map_->ShutdownOnUIThread();
 
   DestroyTopSites();
 
   if (pref_proxy_config_tracker_.get())
     pref_proxy_config_tracker_->DetachFromPrefService();
+  // Failing a post == leaks == heapcheck failure. Make that an immediate test
+  // failure.
+  if (resource_context_) {
+    CHECK(BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE,
+                                    resource_context_));
+    resource_context_ = NULL;
+    content::RunAllPendingInMessageLoop(BrowserThread::IO);
+  }
 }
 
-static ProfileKeyedService* BuildFaviconService(Profile* profile) {
-  return new FaviconService(
-      HistoryServiceFactory::GetForProfileWithoutCreating(profile));
+static KeyedService* BuildFaviconService(content::BrowserContext* profile) {
+  return new FaviconService(static_cast<Profile*>(profile));
 }
 
 void TestingProfile::CreateFaviconService() {
@@ -315,16 +426,17 @@ void TestingProfile::CreateFaviconService() {
       this, BuildFaviconService);
 }
 
-static ProfileKeyedService* BuildHistoryService(Profile* profile) {
-  return new HistoryService(profile);
+static KeyedService* BuildHistoryService(content::BrowserContext* profile) {
+  return new HistoryService(static_cast<Profile*>(profile));
 }
 
-void TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
+bool TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
   DestroyHistoryService();
   if (delete_file) {
-    FilePath path = GetPath();
+    base::FilePath path = GetPath();
     path = path.Append(chrome::kHistoryFilename);
-    file_util::Delete(path, false);
+    if (!base::DeleteFile(path, false) || base::PathExists(path))
+      return false;
   }
   // This will create and init the history service.
   HistoryService* history_service = static_cast<HistoryService*>(
@@ -335,6 +447,9 @@ void TestingProfile::CreateHistoryService(bool delete_file, bool no_db) {
                              no_db)) {
     HistoryServiceFactory::GetInstance()->SetTestingFactoryAndUse(this, NULL);
   }
+  // Disable WebHistoryService by default, since it makes network requests.
+  WebHistoryServiceFactory::GetInstance()->SetTestingFactory(this, NULL);
+  return true;
 }
 
 void TestingProfile::DestroyHistoryService() {
@@ -344,7 +459,7 @@ void TestingProfile::DestroyHistoryService() {
     return;
 
   history_service->NotifyRenderProcessHostDestruction(0);
-  history_service->SetOnBackendDestroyTask(MessageLoop::QuitClosure());
+  history_service->SetOnBackendDestroyTask(base::MessageLoop::QuitClosure());
   history_service->Cleanup();
   HistoryServiceFactory::ShutdownForProfile(this);
 
@@ -352,90 +467,74 @@ void TestingProfile::DestroyHistoryService() {
   // moving to the next test. Note: if this never terminates, somebody is
   // probably leaking a reference to the history backend, so it never calls
   // our destroy task.
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Make sure we don't have any event pending that could disrupt the next
   // test.
-  MessageLoop::current()->PostTask(FROM_HERE, MessageLoop::QuitClosure());
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->PostTask(FROM_HERE,
+                                         base::MessageLoop::QuitClosure());
+  base::MessageLoop::current()->Run();
 }
 
 void TestingProfile::CreateTopSites() {
   DestroyTopSites();
-  top_sites_ = new history::TopSites(this);
-  FilePath file_name = GetPath().Append(chrome::kTopSitesFilename);
-  top_sites_->Init(file_name);
+  top_sites_ = history::TopSites::Create(
+      this, GetPath().Append(chrome::kTopSitesFilename));
 }
 
 void TestingProfile::DestroyTopSites() {
   if (top_sites_.get()) {
     top_sites_->Shutdown();
     top_sites_ = NULL;
-    // TopSites::Shutdown schedules some tasks (from TopSitesBackend) that need
-    // to be run to properly shutdown. Run all pending tasks now. This is
+    // TopSitesImpl::Shutdown schedules some tasks (from TopSitesBackend) that
+    // need to be run to properly shutdown. Run all pending tasks now. This is
     // normally handled by browser_process shutdown.
-    if (MessageLoop::current())
-      MessageLoop::current()->RunUntilIdle();
+    if (base::MessageLoop::current())
+      base::MessageLoop::current()->RunUntilIdle();
   }
 }
 
-static ProfileKeyedService* BuildBookmarkModel(Profile* profile) {
-  BookmarkModel* bookmark_model = new BookmarkModel(profile);
-  bookmark_model->Load();
-  return bookmark_model;
+static KeyedService* BuildBookmarkModel(content::BrowserContext* context) {
+  Profile* profile = static_cast<Profile*>(context);
+  ChromeBookmarkClient* bookmark_client =
+      new ChromeBookmarkClient(profile, false);
+  bookmark_client->model()->Load(
+      profile->GetPrefs(),
+      profile->GetPrefs()->GetString(prefs::kAcceptLanguages),
+      profile->GetPath(),
+      profile->GetIOTaskRunner(),
+      content::BrowserThread::GetMessageLoopProxyForThread(
+          content::BrowserThread::UI));
+  return bookmark_client;
 }
 
-
 void TestingProfile::CreateBookmarkModel(bool delete_file) {
-
   if (delete_file) {
-    FilePath path = GetPath();
-    path = path.Append(chrome::kBookmarksFileName);
-    file_util::Delete(path, false);
+    base::FilePath path = GetPath().Append(bookmarks::kBookmarksFileName);
+    base::DeleteFile(path, false);
   }
   // This will create a bookmark model.
   BookmarkModel* bookmark_service =
-      static_cast<BookmarkModel*>(
+      static_cast<ChromeBookmarkClient*>(
           BookmarkModelFactory::GetInstance()->SetTestingFactoryAndUse(
-              this, BuildBookmarkModel));
+              this, BuildBookmarkModel))->model();
 
   HistoryService* history_service =
       HistoryServiceFactory::GetForProfileWithoutCreating(this);
   if (history_service) {
-    history_service->history_backend_->bookmark_service_ =
-        bookmark_service;
+    history_service->history_backend_->bookmark_service_ = bookmark_service;
     history_service->history_backend_->expirer_.bookmark_service_ =
         bookmark_service;
   }
 }
 
-static scoped_refptr<RefcountedProfileKeyedService> BuildWebDataService(
-    Profile* profile) {
-  WebDataService* web_data_service = new WebDataService();
-  if (web_data_service)
-    web_data_service->Init(profile->GetPath());
-  return web_data_service;
+static KeyedService* BuildWebDataService(content::BrowserContext* profile) {
+  return new WebDataServiceWrapper(static_cast<Profile*>(profile));
 }
 
 void TestingProfile::CreateWebDataService() {
   WebDataServiceFactory::GetInstance()->SetTestingFactory(
       this, BuildWebDataService);
-}
-
-void TestingProfile::BlockUntilBookmarkModelLoaded() {
-  // Only get the bookmark model if it actually exists since the caller of the
-  // test should explicitly call CreateBookmarkModel to build it.
-  BookmarkModel* bookmark_model =
-      BookmarkModelFactory::GetForProfileIfExists(this);
-  DCHECK(bookmark_model);
-  if (bookmark_model->IsLoaded())
-    return;
-  base::RunLoop run_loop;
-  BookmarkLoadObserver observer(content::GetQuitTaskForRunLoop(&run_loop));
-  bookmark_model->AddObserver(&observer);
-  run_loop.Run();
-  bookmark_model->RemoveObserver(&observer);
-  DCHECK(bookmark_model->IsLoaded());
 }
 
 void TestingProfile::BlockUntilHistoryIndexIsRefreshed() {
@@ -461,20 +560,22 @@ void TestingProfile::BlockUntilTopSitesLoaded() {
   content::WindowedNotificationObserver top_sites_loaded_observer(
       chrome::NOTIFICATION_TOP_SITES_LOADED,
       content::NotificationService::AllSources());
-  if (!HistoryServiceFactory::GetForProfile(this, Profile::EXPLICIT_ACCESS))
-    GetTopSites()->HistoryLoaded();
   top_sites_loaded_observer.Wait();
 }
 
-FilePath TestingProfile::GetPath() {
+void TestingProfile::SetGuestSession(bool guest) {
+  guest_session_ = guest;
+}
+
+base::FilePath TestingProfile::GetPath() const {
   return profile_path_;
 }
 
 scoped_refptr<base::SequencedTaskRunner> TestingProfile::GetIOTaskRunner() {
-  return MessageLoop::current()->message_loop_proxy();
+  return base::MessageLoop::current()->message_loop_proxy();
 }
 
-TestingPrefService* TestingProfile::GetTestingPrefService() {
+TestingPrefServiceSyncable* TestingProfile::GetTestingPrefService() {
   if (!prefs_.get())
     CreateTestingPrefService();
   DCHECK(testing_prefs_);
@@ -486,23 +587,42 @@ TestingProfile* TestingProfile::AsTestingProfile() {
 }
 
 std::string TestingProfile::GetProfileName() {
-  return std::string("testing_profile");
+  return profile_name_;
+}
+
+Profile::ProfileType TestingProfile::GetProfileType() const {
+  if (guest_session_)
+    return GUEST_PROFILE;
+  if (force_incognito_ || incognito_)
+    return INCOGNITO_PROFILE;
+  return REGULAR_PROFILE;
 }
 
 bool TestingProfile::IsOffTheRecord() const {
-  return incognito_;
+  return force_incognito_ || incognito_;
 }
 
-void TestingProfile::SetOffTheRecordProfile(Profile* profile) {
-  incognito_profile_.reset(profile);
+void TestingProfile::SetOffTheRecordProfile(scoped_ptr<Profile> profile) {
+  DCHECK(!IsOffTheRecord());
+  incognito_profile_ = profile.Pass();
+}
+
+void TestingProfile::SetOriginalProfile(Profile* profile) {
+  DCHECK(IsOffTheRecord());
+  original_profile_ = profile;
 }
 
 Profile* TestingProfile::GetOffTheRecordProfile() {
+  if (IsOffTheRecord())
+    return this;
+  if (!incognito_profile_) {
+    TestingProfile::Builder builder;
+    builder.SetIncognito();
+    scoped_ptr<TestingProfile> incognito_test_profile(builder.Build());
+    incognito_test_profile->SetOriginalProfile(this);
+    SetOffTheRecordProfile(incognito_test_profile.PassAs<Profile>());
+  }
   return incognito_profile_.get();
-}
-
-GAIAInfoUpdateService* TestingProfile::GetGAIAInfoUpdateService() {
-  return NULL;
 }
 
 bool TestingProfile::HasOffTheRecordProfile() {
@@ -510,7 +630,13 @@ bool TestingProfile::HasOffTheRecordProfile() {
 }
 
 Profile* TestingProfile::GetOriginalProfile() {
+  if (original_profile_)
+    return original_profile_;
   return this;
+}
+
+bool TestingProfile::IsManaged() {
+  return !managed_user_id_.empty();
 }
 
 ExtensionService* TestingProfile::GetExtensionService() {
@@ -536,33 +662,37 @@ net::CookieMonster* TestingProfile::GetCookieMonster() {
       GetCookieMonster();
 }
 
-policy::ManagedModePolicyProvider*
-TestingProfile::GetManagedModePolicyProvider() {
-  return NULL;
+void TestingProfile::CreateTestingPrefService() {
+  DCHECK(!prefs_.get());
+  testing_prefs_ = new TestingPrefServiceSyncable();
+  prefs_.reset(testing_prefs_);
+  user_prefs::UserPrefs::Set(this, prefs_.get());
+  chrome::RegisterUserProfilePrefs(testing_prefs_->registry());
 }
 
-policy::PolicyService* TestingProfile::GetPolicyService() {
-  if (!policy_service_.get()) {
+void TestingProfile::CreateProfilePolicyConnector() {
 #if defined(ENABLE_CONFIGURATION_POLICY)
-    policy::PolicyServiceImpl::Providers providers;
+  schema_registry_service_ =
+      policy::SchemaRegistryServiceFactory::CreateForContext(
+          this, policy::Schema(), NULL);
+  CHECK_EQ(schema_registry_service_.get(),
+           policy::SchemaRegistryServiceFactory::GetForContext(this));
+#endif  // defined(ENABLE_CONFIGURATION_POLICY)
+
+if (!policy_service_) {
+#if defined(ENABLE_CONFIGURATION_POLICY)
+    std::vector<policy::ConfigurationPolicyProvider*> providers;
     policy_service_.reset(new policy::PolicyServiceImpl(providers));
 #else
     policy_service_.reset(new policy::PolicyServiceStub());
 #endif
   }
-  return policy_service_.get();
-}
-
-void TestingProfile::SetPrefService(PrefService* prefs) {
-  prefs_.reset(prefs);
-}
-
-void TestingProfile::CreateTestingPrefService() {
-  DCHECK(!prefs_.get());
-  testing_prefs_ = new TestingPrefService();
-  prefs_.reset(testing_prefs_);
-  Profile::RegisterUserPrefs(prefs_.get());
-  chrome::RegisterUserPrefs(prefs_.get());
+  profile_policy_connector_.reset(new policy::ProfilePolicyConnector());
+  profile_policy_connector_->InitForTesting(policy_service_.Pass());
+  policy::ProfilePolicyConnectorFactory::GetInstance()->SetServiceForTesting(
+      this, profile_policy_connector_.get());
+  CHECK_EQ(profile_policy_connector_.get(),
+           policy::ProfilePolicyConnectorFactory::GetForProfile(this));
 }
 
 PrefService* TestingProfile::GetPrefs() {
@@ -585,7 +715,14 @@ DownloadManagerDelegate* TestingProfile::GetDownloadManagerDelegate() {
 }
 
 net::URLRequestContextGetter* TestingProfile::GetRequestContext() {
-  return request_context_.get();
+  return GetDefaultStoragePartition(this)->GetURLRequestContext();
+}
+
+net::URLRequestContextGetter* TestingProfile::CreateRequestContext(
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
+  return new net::TestURLRequestContextGetter(
+            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
 }
 
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForRenderProcess(
@@ -593,21 +730,6 @@ net::URLRequestContextGetter* TestingProfile::GetRequestContextForRenderProcess(
   content::RenderProcessHost* rph = content::RenderProcessHost::FromID(
       renderer_child_id);
   return rph->GetStoragePartition()->GetURLRequestContext();
-}
-
-void TestingProfile::CreateRequestContext() {
-  if (!request_context_)
-    request_context_ =
-        new net::TestURLRequestContextGetter(
-            BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO));
-}
-
-void TestingProfile::ResetRequestContext() {
-  // Any objects holding live URLFetchers should be deleted before the request
-  // context is shut down.
-  TemplateURLFetcherFactory::ShutdownForProfile(this);
-
-  request_context_ = NULL;
 }
 
 net::URLRequestContextGetter* TestingProfile::GetMediaRequestContext() {
@@ -622,13 +744,46 @@ TestingProfile::GetMediaRequestContextForRenderProcess(
 
 net::URLRequestContextGetter*
 TestingProfile::GetMediaRequestContextForStoragePartition(
-    const FilePath& partition_path,
+    const base::FilePath& partition_path,
     bool in_memory) {
   return NULL;
 }
 
+void TestingProfile::RequestMidiSysExPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const MidiSysExPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestingProfile::CancelMidiSysExPermissionRequest(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    const GURL& requesting_frame) {
+}
+
+void TestingProfile::RequestProtectedMediaIdentifierPermission(
+    int render_process_id,
+    int render_view_id,
+    int bridge_id,
+    int group_id,
+    const GURL& requesting_frame,
+    const ProtectedMediaIdentifierPermissionCallback& callback) {
+  // Always reject requests for testing.
+  callback.Run(false);
+}
+
+void TestingProfile::CancelProtectedMediaIdentifierPermissionRequests(
+    int group_id) {
+}
+
 net::URLRequestContextGetter* TestingProfile::GetRequestContextForExtensions() {
-  if (!extensions_request_context_)
+  if (!extensions_request_context_.get())
     extensions_request_context_ = new TestExtensionURLRequestContextGetter();
   return extensions_request_context_.get();
 }
@@ -640,18 +795,20 @@ net::SSLConfigService* TestingProfile::GetSSLConfigService() {
 }
 
 net::URLRequestContextGetter*
-TestingProfile::GetRequestContextForStoragePartition(
-    const FilePath& partition_path,
-    bool in_memory) {
+TestingProfile::CreateRequestContextForStoragePartition(
+    const base::FilePath& partition_path,
+    bool in_memory,
+    content::ProtocolHandlerMap* protocol_handlers,
+    content::ProtocolHandlerScopedVector protocol_interceptors) {
   // We don't test storage partitions here yet, so returning the same dummy
   // context is sufficient for now.
   return GetRequestContext();
 }
 
 content::ResourceContext* TestingProfile::GetResourceContext() {
-  if (!resource_context_.get())
-    resource_context_.reset(new content::MockResourceContext());
-  return resource_context_.get();
+  if (!resource_context_)
+    resource_context_ = new content::MockResourceContext();
+  return resource_context_;
 }
 
 HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
@@ -668,20 +825,12 @@ HostContentSettingsMap* TestingProfile::GetHostContentSettingsMap() {
 
 content::GeolocationPermissionContext*
 TestingProfile::GetGeolocationPermissionContext() {
-  if (!geolocation_permission_context_.get()) {
-    geolocation_permission_context_ =
-        ChromeGeolocationPermissionContextFactory::Create(this);
-  }
-  return geolocation_permission_context_.get();
+  return ChromeGeolocationPermissionContextFactory::GetForProfile(this);
 }
 
-content::SpeechRecognitionPreferences*
-    TestingProfile::GetSpeechRecognitionPreferences() {
-#if defined(ENABLE_INPUT_SPEECH)
-  return ChromeSpeechRecognitionPreferences::GetForProfile(this);
-#else
-  return NULL;
-#endif
+content::BrowserPluginGuestManagerDelegate*
+    TestingProfile::GetGuestManagerDelegate() {
+  return GuestViewManager::FromBrowserContext(this);
 }
 
 std::wstring TestingProfile::GetName() {
@@ -704,22 +853,20 @@ base::Time TestingProfile::GetStartTime() const {
   return start_time_;
 }
 
-ProtocolHandlerRegistry* TestingProfile::GetProtocolHandlerRegistry() {
-  return NULL;
-}
-
-FilePath TestingProfile::last_selected_directory() {
+base::FilePath TestingProfile::last_selected_directory() {
   return last_selected_directory_;
 }
 
-void TestingProfile::set_last_selected_directory(const FilePath& path) {
+void TestingProfile::set_last_selected_directory(const base::FilePath& path) {
   last_selected_directory_ = path;
 }
 
 PrefProxyConfigTracker* TestingProfile::GetProxyConfigTracker() {
   if (!pref_proxy_config_tracker_.get()) {
+    // TestingProfile is used in unit tests, where local state is not available.
     pref_proxy_config_tracker_.reset(
-        ProxyServiceFactory::CreatePrefProxyConfigTracker(GetPrefs()));
+        ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(GetPrefs(),
+                                                                   NULL));
   }
   return pref_proxy_config_tracker_.get();
 }
@@ -728,11 +875,11 @@ void TestingProfile::BlockUntilHistoryProcessesPendingRequests() {
   HistoryService* history_service =
       HistoryServiceFactory::GetForProfile(this, Profile::EXPLICIT_ACCESS);
   DCHECK(history_service);
-  DCHECK(MessageLoop::current());
+  DCHECK(base::MessageLoop::current());
 
   CancelableRequestConsumer consumer;
   history_service->ScheduleDBTask(new QuittingHistoryDBTask(), &consumer);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 }
 
 chrome_browser_net::Predictor* TestingProfile::GetNetworkPredictor() {
@@ -763,24 +910,25 @@ bool TestingProfile::WasCreatedByVersionOrLater(const std::string& version) {
   return true;
 }
 
+bool TestingProfile::IsGuestSession() const {
+  return guest_session_;
+}
+
 Profile::ExitType TestingProfile::GetLastSessionExitType() {
   return last_session_exited_cleanly_ ? EXIT_NORMAL : EXIT_CRASHED;
 }
 
-base::Callback<ChromeURLDataManagerBackend*(void)>
-    TestingProfile::GetChromeURLDataManagerBackendGetter() const {
-  return base::Callback<ChromeURLDataManagerBackend*(void)>();
-}
-
 TestingProfile::Builder::Builder()
     : build_called_(false),
-      delegate_(NULL) {
+      delegate_(NULL),
+      incognito_(false),
+      guest_session_(false) {
 }
 
 TestingProfile::Builder::~Builder() {
 }
 
-void TestingProfile::Builder::SetPath(const FilePath& path) {
+void TestingProfile::Builder::SetPath(const base::FilePath& path) {
   path_ = path;
 }
 
@@ -793,16 +941,47 @@ void TestingProfile::Builder::SetExtensionSpecialStoragePolicy(
   extension_policy_ = policy;
 }
 
-void TestingProfile::Builder::SetPrefService(scoped_ptr<PrefService> prefs) {
+void TestingProfile::Builder::SetPrefService(
+    scoped_ptr<PrefServiceSyncable> prefs) {
   pref_service_ = prefs.Pass();
+}
+
+void TestingProfile::Builder::SetIncognito() {
+  incognito_ = true;
+}
+
+void TestingProfile::Builder::SetGuestSession() {
+  guest_session_ = true;
+}
+
+void TestingProfile::Builder::SetManagedUserId(
+    const std::string& managed_user_id) {
+  managed_user_id_ = managed_user_id;
+}
+
+void TestingProfile::Builder::SetPolicyService(
+    scoped_ptr<policy::PolicyService> policy_service) {
+  policy_service_ = policy_service.Pass();
+}
+
+void TestingProfile::Builder::AddTestingFactory(
+    BrowserContextKeyedServiceFactory* service_factory,
+    BrowserContextKeyedServiceFactory::TestingFactoryFunction callback) {
+  testing_factories_.push_back(std::make_pair(service_factory, callback));
 }
 
 scoped_ptr<TestingProfile> TestingProfile::Builder::Build() {
   DCHECK(!build_called_);
   build_called_ = true;
+
   return scoped_ptr<TestingProfile>(new TestingProfile(
       path_,
       delegate_,
       extension_policy_,
-      pref_service_.Pass()));
+      pref_service_.Pass(),
+      incognito_,
+      guest_session_,
+      managed_user_id_,
+      policy_service_.Pass(),
+      testing_factories_));
 }

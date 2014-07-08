@@ -13,31 +13,33 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string16.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
-#include "googleurl/src/url_util.h"
-#include "net/base/cert_verifier.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "net/base/io_buffer.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_errors.h"
 #include "net/base/network_delegate.h"
-#include "net/base/ssl_config_service_defaults.h"
+#include "net/base/request_priority.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
 #include "net/disk_cache/disk_cache.h"
 #include "net/ftp/ftp_network_layer.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_layer.h"
+#include "net/http/http_request_headers.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_context_storage.h"
 #include "net/url_request/url_request_job_factory.h"
+#include "url/url_util.h"
 
 using base::TimeDelta;
 
@@ -57,8 +59,18 @@ class TestURLRequestContext : public URLRequestContext {
 
   void Init();
 
+  ClientSocketFactory* client_socket_factory() {
+    return client_socket_factory_;
+  }
+  void set_client_socket_factory(ClientSocketFactory* factory) {
+    client_socket_factory_ = factory;
+  }
+
  private:
   bool initialized_;
+
+  // Not owned:
+  ClientSocketFactory* client_socket_factory_;
 
  protected:
   URLRequestContextStorage context_storage_;
@@ -96,8 +108,10 @@ class TestURLRequestContextGetter : public URLRequestContextGetter {
 
 class TestURLRequest : public URLRequest {
  public:
-  TestURLRequest(
-      const GURL& url, Delegate* delegate, TestURLRequestContext* context);
+  TestURLRequest(const GURL& url,
+                 RequestPriority priority,
+                 Delegate* delegate,
+                 TestURLRequestContext* context);
   virtual ~TestURLRequest();
 };
 
@@ -116,6 +130,9 @@ class TestDelegate : public URLRequest::Delegate {
   }
   void set_quit_on_complete(bool val) { quit_on_complete_ = val; }
   void set_quit_on_redirect(bool val) { quit_on_redirect_ = val; }
+  void set_quit_on_network_start(bool val) {
+    quit_on_before_network_start_ = val;
+  }
   void set_allow_certificate_errors(bool val) {
     allow_certificate_errors_ = val;
   }
@@ -128,6 +145,9 @@ class TestDelegate : public URLRequest::Delegate {
   int bytes_received() const { return static_cast<int>(data_received_.size()); }
   int response_started_count() const { return response_started_count_; }
   int received_redirect_count() const { return received_redirect_count_; }
+  int received_before_network_start_count() const {
+    return received_before_network_start_count_;
+  }
   bool received_data_before_response() const {
     return received_data_before_response_;
   }
@@ -137,10 +157,16 @@ class TestDelegate : public URLRequest::Delegate {
     return certificate_errors_are_fatal_;
   }
   bool auth_required_called() const { return auth_required_; }
+  bool have_full_request_headers() const { return have_full_request_headers_; }
+  const HttpRequestHeaders& full_request_headers() const {
+    return full_request_headers_;
+  }
+  void ClearFullRequestHeaders();
 
   // URLRequest::Delegate:
   virtual void OnReceivedRedirect(URLRequest* request, const GURL& new_url,
                                   bool* defer_redirect) OVERRIDE;
+  virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer) OVERRIDE;
   virtual void OnAuthRequired(URLRequest* request,
                               AuthChallengeInfo* auth_info) OVERRIDE;
   // NOTE: |fatal| causes |certificate_errors_are_fatal_| to be set to true.
@@ -165,6 +191,7 @@ class TestDelegate : public URLRequest::Delegate {
   bool cancel_in_rd_pending_;
   bool quit_on_complete_;
   bool quit_on_redirect_;
+  bool quit_on_before_network_start_;
   bool allow_certificate_errors_;
   AuthCredentials credentials_;
 
@@ -172,12 +199,15 @@ class TestDelegate : public URLRequest::Delegate {
   int response_started_count_;
   int received_bytes_count_;
   int received_redirect_count_;
+  int received_before_network_start_count_;
   bool received_data_before_response_;
   bool request_failed_;
   bool have_certificate_errors_;
   bool certificate_errors_are_fatal_;
   bool auth_required_;
   std::string data_received_;
+  bool have_full_request_headers_;
+  HttpRequestHeaders full_request_headers_;
 
   // our read buffer
   scoped_refptr<IOBuffer> buf_;
@@ -195,6 +225,26 @@ class TestNetworkDelegate : public NetworkDelegate {
   TestNetworkDelegate();
   virtual ~TestNetworkDelegate();
 
+  // Writes the LoadTimingInfo during the most recent call to OnBeforeRedirect.
+  bool GetLoadTimingInfoBeforeRedirect(
+      LoadTimingInfo* load_timing_info_before_redirect) const;
+
+  // Same as GetLoadTimingInfoBeforeRedirect, except for calls to
+  // AuthRequiredResponse.
+  bool GetLoadTimingInfoBeforeAuth(
+      LoadTimingInfo* load_timing_info_before_auth) const;
+
+  // Will redirect once to the given URL when the next set of headers are
+  // received.
+  void set_redirect_on_headers_received_url(
+      GURL redirect_on_headers_received_url) {
+    redirect_on_headers_received_url_ = redirect_on_headers_received_url;
+  }
+
+  void set_allowed_unsafe_redirect_url(GURL allowed_unsafe_redirect_url) {
+    allowed_unsafe_redirect_url_ = allowed_unsafe_redirect_url;
+  }
+
   void set_cookie_options(int o) {cookie_options_bit_mask_ = o; }
 
   int last_error() const { return last_error_; }
@@ -202,9 +252,16 @@ class TestNetworkDelegate : public NetworkDelegate {
   int created_requests() const { return created_requests_; }
   int destroyed_requests() const { return destroyed_requests_; }
   int completed_requests() const { return completed_requests_; }
+  int canceled_requests() const { return canceled_requests_; }
   int blocked_get_cookies_count() const { return blocked_get_cookies_count_; }
   int blocked_set_cookie_count() const { return blocked_set_cookie_count_; }
   int set_cookie_count() const { return set_cookie_count_; }
+
+  void set_can_access_files(bool val) { can_access_files_ = val; }
+  bool can_access_files() const { return can_access_files_; }
+
+  void set_can_throttle_requests(bool val) { can_throttle_requests_ = val; }
+  bool can_throttle_requests() const { return can_throttle_requests_; }
 
  protected:
   // NetworkDelegate:
@@ -220,7 +277,8 @@ class TestNetworkDelegate : public NetworkDelegate {
       URLRequest* request,
       const CompletionCallback& callback,
       const HttpResponseHeaders* original_response_headers,
-      scoped_refptr<HttpResponseHeaders>* override_response_headers) OVERRIDE;
+      scoped_refptr<HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
   virtual void OnBeforeRedirect(URLRequest* request,
                                 const GURL& new_location) OVERRIDE;
   virtual void OnResponseStarted(URLRequest* request) OVERRIDE;
@@ -229,7 +287,7 @@ class TestNetworkDelegate : public NetworkDelegate {
   virtual void OnCompleted(URLRequest* request, bool started) OVERRIDE;
   virtual void OnURLRequestDestroyed(URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE;
+                                const base::string16& error) OVERRIDE;
   virtual NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       URLRequest* request,
       const AuthChallengeInfo& auth_info,
@@ -241,22 +299,25 @@ class TestNetworkDelegate : public NetworkDelegate {
                               const std::string& cookie_line,
                               CookieOptions* options) OVERRIDE;
   virtual bool OnCanAccessFile(const URLRequest& request,
-                               const FilePath& path) const OVERRIDE;
+                               const base::FilePath& path) const OVERRIDE;
   virtual bool OnCanThrottleRequest(
       const URLRequest& request) const OVERRIDE;
   virtual int OnBeforeSocketStreamConnect(
       SocketStream* stream,
       const CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const URLRequest& request,
-                                        RequestWaitState state) OVERRIDE;
 
   void InitRequestStatesIfNew(int request_id);
+
+  GURL redirect_on_headers_received_url_;
+  // URL marked as safe for redirection at the onHeadersReceived stage.
+  GURL allowed_unsafe_redirect_url_;
 
   int last_error_;
   int error_count_;
   int created_requests_;
   int destroyed_requests_;
   int completed_requests_;
+  int canceled_requests_;
   int cookie_options_bit_mask_;
   int blocked_get_cookies_count_;
   int blocked_set_cookie_count_;
@@ -271,6 +332,15 @@ class TestNetworkDelegate : public NetworkDelegate {
   // A log that records for each request id (key) the order in which On...
   // functions were called.
   std::map<int, std::string> event_order_;
+
+  LoadTimingInfo load_timing_info_before_redirect_;
+  bool has_load_timing_info_before_redirect_;
+
+  LoadTimingInfo load_timing_info_before_auth_;
+  bool has_load_timing_info_before_auth_;
+
+  bool can_access_files_;  // true by default
+  bool can_throttle_requests_;  // true by default
 };
 
 // Overrides the host used by the LocalHttpTestServer in
@@ -300,19 +370,12 @@ class ScopedCustomUrlRequestTestHttpHost {
 
 //-----------------------------------------------------------------------------
 
-// A simple Interceptor that returns a pre-built URLRequestJob only once.
-class TestJobInterceptor : public URLRequestJobFactory::Interceptor {
+// A simple ProtocolHandler that returns a pre-built URLRequestJob only once.
+class TestJobInterceptor : public URLRequestJobFactory::ProtocolHandler {
  public:
   TestJobInterceptor();
 
-  virtual URLRequestJob* MaybeIntercept(
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual URLRequestJob* MaybeInterceptRedirect(
-      const GURL& location,
-      URLRequest* request,
-      NetworkDelegate* network_delegate) const OVERRIDE;
-  virtual URLRequestJob* MaybeInterceptResponse(
+  virtual URLRequestJob* MaybeCreateJob(
       URLRequest* request,
       NetworkDelegate* network_delegate) const OVERRIDE;
   void set_main_intercept_job(URLRequestJob* job);

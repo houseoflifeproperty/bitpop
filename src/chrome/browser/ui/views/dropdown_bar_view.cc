@@ -58,7 +58,7 @@ void DropdownBackground::Paint(gfx::Canvas* canvas, views::View* view) const {
   // First, get the origin with respect to the screen.
   gfx::Point origin = view->GetWidget()->GetWindowBoundsInScreen().origin();
   // Now convert from screen to parent coordinates.
-  views::View::ConvertPointToTarget(NULL, browser_view_, &origin);
+  views::View::ConvertPointFromScreen(browser_view_, &origin);
   // Finally, calculate the background image tiling offset.
   origin = browser_view_->OffsetPointForToolbarBackgroundImage(origin);
 
@@ -112,7 +112,7 @@ void DropdownBarView::OnPaint(gfx::Canvas* canvas) {
   if (animation_offset() > 0) {
      gfx::Canvas animating_edges(
          gfx::Size(bounds().width(), kAnimatingEdgeHeight),
-         canvas->scale_factor(),
+         canvas->image_scale(),
          false);
      canvas->Translate(bounds().OffsetFromOrigin());
      OnPaintBackground(&animating_edges);
@@ -131,11 +131,11 @@ void DropdownBarView::SetBackground(const gfx::ImageSkia* left_alpha_mask,
       right_alpha_mask));
 }
 
-void DropdownBarView::SetBorder(int left_border_image_id,
-                                int middle_border_image_id,
-                                int right_border_image_id) {
+void DropdownBarView::SetBorderFromIds(int left_border_image_id,
+                                       int middle_border_image_id,
+                                       int right_border_image_id) {
   int border_image_ids[3] = {left_border_image_id, middle_border_image_id,
       right_border_image_id};
-  set_border(views::Border::CreateBorderPainter(
+  SetBorder(views::Border::CreateBorderPainter(
       new views::HorizontalPainter(border_image_ids), gfx::Insets()));
 }

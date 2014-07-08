@@ -27,7 +27,7 @@ function addAnimation(code) {
  */
 function getFadeInAnimationCode(targetHeight) {
   return '0% { opacity: 0; height: 0; } ' +
-      '80% { height: ' + (targetHeight + 4) + 'px; }' +
+      '80% { opacity: 0.5; height: ' + (targetHeight + 4) + 'px; }' +
       '100% { opacity: 1; height: ' + targetHeight + 'px; }';
 }
 
@@ -64,10 +64,10 @@ function fadeOutElement(el) {
   el.style.height = 'auto';
   var height = el.offsetHeight;
   el.style.height = height + 'px';
-  var animName = addAnimation('');
+  el.offsetHeight;  // Should force an update of the computed style.
   var eventTracker = new EventTracker();
   eventTracker.add(el, 'webkitTransitionEnd',
-                   onFadeOutTransitionEnd.bind(el, animName, eventTracker),
+                   onFadeOutTransitionEnd.bind(el, eventTracker),
                    false);
   el.classList.add('closing');
   el.classList.remove('visible');
@@ -75,16 +75,14 @@ function fadeOutElement(el) {
 
 /**
  * Executes when a fade out animation ends.
- * @param {string} animationName The name of the animation to be removed.
  * @param {EventTracker} eventTracker The |EventTracker| object that was used
  *     for adding this listener.
  * @param {WebkitTransitionEvent} event The event that triggered this listener.
  * @this {HTMLElement} The element where the transition occurred.
  */
-function onFadeOutTransitionEnd(animationName, eventTracker, event) {
+function onFadeOutTransitionEnd(eventTracker, event) {
   if (event.propertyName != 'height')
     return;
-  fadeInOutCleanup(animationName);
   eventTracker.remove(this, 'webkitTransitionEnd');
   this.hidden = true;
 }
@@ -120,6 +118,8 @@ function fadeInOutCleanup(animationName) {
 function fadeInOption(el) {
   if (el.classList.contains('visible'))
     return;
+  // To make the option visible during the first fade in.
+  el.hidden = false;
 
   wrapContentsInDiv(el.querySelector('h1'), ['invisible']);
   var rightColumn = el.querySelector('.right-column');
@@ -134,8 +134,10 @@ function fadeInOption(el) {
 /**
  * Fades out a printing option existing under |el|.
  * @param {HTMLElement} el The element to hide.
+ * @param {boolean=} opt_justHide Whether {@code el} should be hidden with no
+ *     animation.
  */
-function fadeOutOption(el) {
+function fadeOutOption(el, opt_justHide) {
   if (!el.classList.contains('visible'))
     return;
 
@@ -144,8 +146,13 @@ function fadeOutOption(el) {
   wrapContentsInDiv(rightColumn, ['visible']);
 
   var toAnimate = el.querySelectorAll('.collapsible');
-  for (var i = 0; i < toAnimate.length; i++)
-    fadeOutElement(toAnimate[i]);
+  for (var i = 0; i < toAnimate.length; i++) {
+    if (opt_justHide) {
+      toAnimate[i].hidden = true;
+    } else {
+      fadeOutElement(toAnimate[i]);
+    }
+  }
   el.classList.remove('visible');
 }
 

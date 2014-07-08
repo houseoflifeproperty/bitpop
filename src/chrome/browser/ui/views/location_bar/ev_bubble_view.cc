@@ -3,17 +3,33 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/ui/views/location_bar/ev_bubble_view.h"
+#include "grit/theme_resources.h"
+#include "ui/views/painter.h"
 
-EVBubbleView::EVBubbleView(const int background_images[],
-                           int contained_image,
-                           SkColor color,
+
+namespace {
+const int kBackgroundImages[] = IMAGE_GRID(IDR_OMNIBOX_EV_BUBBLE);
+}
+
+
+EVBubbleView::EVBubbleView(const gfx::FontList& font_list,
+                           SkColor text_color,
+                           SkColor parent_background_color,
                            LocationBarView* location_bar)
-    : IconLabelBubbleView(background_images, contained_image, color),
-      ALLOW_THIS_IN_INITIALIZER_LIST(page_info_helper_(this, location_bar)) {
-  SetElideInMiddle(true);
+    : IconLabelBubbleView(kBackgroundImages, NULL, IDR_OMNIBOX_HTTPS_VALID,
+                          font_list, text_color, parent_background_color, true),
+      page_info_helper_(this, location_bar) {
 }
 
 EVBubbleView::~EVBubbleView() {
+}
+
+gfx::Size EVBubbleView::GetMinimumSize() {
+  // Height will be ignored by the LocationBarView.
+  gfx::Size minimum(GetPreferredSize());
+  static const int kMinBubbleWidth = 150;
+  minimum.SetToMax(gfx::Size(kMinBubbleWidth, 0));
+  return minimum;
 }
 
 bool EVBubbleView::OnMousePressed(const ui::MouseEvent& event) {

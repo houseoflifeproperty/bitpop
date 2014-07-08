@@ -12,12 +12,13 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/memory/ref_counted.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
+#include "base/process/kill.h"
+#include "base/process/launch.h"
+#include "base/process/process_iterator.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/test/test_timeouts.h"
 #include "base/threading/thread.h"
@@ -35,7 +36,7 @@ namespace {
 // base::Bind to run the StartChrome methods in many threads.
 class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
  public:
-  ChromeStarter(base::TimeDelta timeout, const FilePath& user_data_dir)
+  ChromeStarter(base::TimeDelta timeout, const base::FilePath& user_data_dir)
       : ready_event_(false /* manual */, false /* signaled */),
         done_event_(false /* manual */, false /* signaled */),
         process_handle_(base::kNullProcessHandle),
@@ -58,13 +59,13 @@ class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
   void StartChrome(base::WaitableEvent* start_event, bool first_run) {
     // TODO(mattm): maybe stuff should be refactored to use
     // UITest::LaunchBrowserHelper somehow?
-    FilePath program;
+    base::FilePath program;
     ASSERT_TRUE(PathService::Get(base::FILE_EXE, &program));
     CommandLine command_line(program);
     command_line.AppendSwitchPath(switches::kUserDataDir, user_data_dir_);
 
     if (first_run)
-      command_line.AppendSwitch(switches::kFirstRun);
+      command_line.AppendSwitch(switches::kForceFirstRun);
     else
       command_line.AppendSwitch(switches::kNoFirstRun);
 
@@ -77,7 +78,7 @@ class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
          i != switch_map.end(); ++i) {
       const std::string& switch_name = i->first;
       if (switch_name == switches::kUserDataDir ||
-          switch_name == switches::kFirstRun ||
+          switch_name == switches::kForceFirstRun ||
           switch_name == switches::kNoFirstRun)
         continue;
 
@@ -121,7 +122,7 @@ class ChromeStarter : public base::RefCountedThreadSafe<ChromeStarter> {
   }
 
   base::TimeDelta timeout_;
-  FilePath user_data_dir_;
+  base::FilePath user_data_dir_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeStarter);
 };
@@ -138,7 +139,7 @@ class ProcessSingletonTest : public InProcessBrowserTest {
     EXPECT_TRUE(temp_profile_dir_.CreateUniqueTempDir());
   }
 
-  void SetUp() {
+  virtual void SetUp() {
     // Start the threads and create the starters.
     for (size_t i = 0; i < kNbThreads; ++i) {
       chrome_starter_threads_[i].reset(new base::Thread("ChromeStarter"));
@@ -148,7 +149,7 @@ class ProcessSingletonTest : public InProcessBrowserTest {
     }
   }
 
-  void TearDown() {
+  virtual void TearDown() {
     // Stop the threads.
     for (size_t i = 0; i < kNbThreads; ++i)
       chrome_starter_threads_[i]->Stop();
@@ -168,7 +169,7 @@ class ProcessSingletonTest : public InProcessBrowserTest {
       explicit ProcessTreeFilter(base::ProcessId parent_pid) {
         ancestor_pids_.insert(parent_pid);
       }
-      virtual bool Includes(const base::ProcessEntry & entry) const {
+      virtual bool Includes(const base::ProcessEntry & entry) const OVERRIDE {
         if (ancestor_pids_.find(entry.parent_pid()) != ancestor_pids_.end()) {
           ancestor_pids_.insert(entry.pid());
           return true;
@@ -188,9 +189,9 @@ class ProcessSingletonTest : public InProcessBrowserTest {
     // But don't try more than kNbTries times...
     static const int kNbTries = 10;
     int num_tries = 0;
-    FilePath program;
+    base::FilePath program;
     ASSERT_TRUE(PathService::Get(base::FILE_EXE, &program));
-    FilePath::StringType exe_name = program.BaseName().value();
+    base::FilePath::StringType exe_name = program.BaseName().value();
     while (base::GetProcessCount(exe_name, &process_tree_filter) > 0 &&
            num_tries++ < kNbTries) {
       base::KillProcesses(exe_name, kExitCode, &process_tree_filter);
@@ -253,7 +254,7 @@ IN_PROC_BROWSER_TEST_F(ProcessSingletonTest, MAYBE_StartupRaceCondition) {
       chrome_starters_[i]->Reset();
 
       ASSERT_TRUE(chrome_starter_threads_[i]->IsRunning());
-      ASSERT_NE(static_cast<MessageLoop*>(NULL),
+      ASSERT_NE(static_cast<base::MessageLoop*>(NULL),
                 chrome_starter_threads_[i]->message_loop());
 
       chrome_starter_threads_[i]->message_loop()->PostTask(

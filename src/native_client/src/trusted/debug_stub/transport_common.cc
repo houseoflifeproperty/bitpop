@@ -17,13 +17,16 @@
 #include "native_client/src/trusted/debug_stub/platform.h"
 #include "native_client/src/trusted/debug_stub/transport.h"
 #include "native_client/src/trusted/debug_stub/util.h"
+#include "native_client/src/trusted/service_runtime/sel_ldr.h"
 
 using gdb_rsp::stringvec;
 using gdb_rsp::StringSplit;
 
-namespace port {
-
+#if NACL_WINDOWS
 typedef int socklen_t;
+#endif
+
+namespace port {
 
 class Transport : public ITransport {
  public:
@@ -32,6 +35,9 @@ class Transport : public ITransport {
       pos_(0),
       size_(0) {
     handle_ = ::socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+#if NACL_WINDOWS
+    CreateSocketEvent();
+#endif
   }
 
   explicit Transport(NaClSocketHandle s)
@@ -39,11 +45,39 @@ class Transport : public ITransport {
       pos_(0),
       size_(0),
       handle_(s) {
+#if NACL_WINDOWS
+    CreateSocketEvent();
+#endif
   }
 
   ~Transport() {
     if (handle_ != NACL_INVALID_SOCKET) NaClCloseSocket(handle_);
+#if NACL_WINDOWS
+    if (!WSACloseEvent(socket_event_)) {
+      NaClLog(LOG_FATAL,
+              "Transport::~Transport: Failed to close socket event\n");
+    }
+#endif
   }
+
+#if NACL_WINDOWS
+  void CreateSocketEvent() {
+    socket_event_ = WSACreateEvent();
+    if (socket_event_ == WSA_INVALID_EVENT) {
+      NaClLog(LOG_FATAL,
+              "Transport::CreateSocketEvent: Failed to create socket event\n");
+    }
+    // Listen for close events in order to handle them correctly.
+    // Additionally listen for read readiness as WSAEventSelect sets the socket
+    // to non-blocking mode.
+    // http://msdn.microsoft.com/en-us/library/windows/desktop/ms738547(v=vs.85).aspx
+    if (WSAEventSelect(
+          handle_, socket_event_, FD_CLOSE | FD_READ) == SOCKET_ERROR) {
+      NaClLog(LOG_FATAL,
+              "Transport::CreateSocketEvent: Failed to bind event to socket\n");
+    }
+  }
+#endif
 
   // Read from this transport, return true on success.
   virtual bool Read(void *ptr, int32_t len);
@@ -76,6 +110,9 @@ class Transport : public ITransport {
     return false;
   }
 
+  virtual void WaitForDebugStubEvent(struct NaClApp *nap,
+                                     bool ignore_input_from_gdb);
+
 // On windows, the header that defines this has other definition
 // colitions, so we define it outselves just in case
 #ifndef SD_BOTH
@@ -92,11 +129,17 @@ class Transport : public ITransport {
   // Copy buffered data to *dst up to len bytes and update dst and len.
   void CopyFromBuffer(char **dst, int32_t *len);
 
+  // Read available data from the socket. Return false on EOF or error.
+  bool ReadSomeData();
+
   static const int kBufSize = 4096;
   nacl::scoped_array<char> buf_;
   int32_t pos_;
   int32_t size_;
   NaClSocketHandle handle_;
+#if NACL_WINDOWS
+  HANDLE socket_event_;
+#endif
 };
 
 void Transport::CopyFromBuffer(char **dst, int32_t *len) {
@@ -107,25 +150,49 @@ void Transport::CopyFromBuffer(char **dst, int32_t *len) {
   *dst += copy_bytes;
 }
 
+bool Transport::ReadSomeData() {
+  while (true) {
+    int result = ::recv(handle_, buf_.get() + size_, kBufSize - size_, 0);
+    if (result > 0) {
+      size_ += result;
+      return true;
+    }
+    if (result == 0)
+      return false;
+#if NACL_WINDOWS
+    // WSAEventSelect sets socket to non-blocking mode. This is essential
+    // for socket event notification to work, there is no workaround.
+    // See remarks section at the page
+    // http://msdn.microsoft.com/en-us/library/windows/desktop/ms741576(v=vs.85).aspx
+    if (NaClSocketGetLastError() == WSAEWOULDBLOCK) {
+      if (WaitForSingleObject(socket_event_, INFINITE) == WAIT_FAILED) {
+        NaClLog(LOG_FATAL,
+                "Transport::ReadSomeData: Failed to wait on socket event\n");
+      }
+      if (!ResetEvent(socket_event_)) {
+        NaClLog(LOG_FATAL,
+                "Transport::ReadSomeData: Failed to reset socket event\n");
+      }
+      continue;
+    }
+#endif
+    if (NaClSocketGetLastError() != EINTR)
+      return false;
+  }
+}
+
 bool Transport::Read(void *ptr, int32_t len) {
   char *dst = static_cast<char *>(ptr);
   if (pos_ < size_) {
     CopyFromBuffer(&dst, &len);
   }
   while (len > 0) {
-    int result = ::recv(handle_, buf_.get(), kBufSize, 0);
-    if (result > 0) {
-      pos_ = 0;
-      size_ = result;
-      CopyFromBuffer(&dst, &len);
-      continue;
-    }
-    if (result == 0) {
+    pos_ = 0;
+    size_ = 0;
+    if (!ReadSomeData()) {
       return false;
     }
-    if (NaClSocketGetLastError() != EINTR) {
-      return false;
-    }
+    CopyFromBuffer(&dst, &len);
   }
   return true;
 }
@@ -147,6 +214,78 @@ bool Transport::Write(const void *ptr, int32_t len) {
     }
   }
   return true;
+}
+
+void Transport::WaitForDebugStubEvent(struct NaClApp *nap,
+                                      bool ignore_input_from_gdb) {
+  bool wait = true;
+  // If we are told to ignore messages from gdb, we will exit from this
+  // function only if new data is sent by gdb.
+  if ((pos_ < size_ && !ignore_input_from_gdb) ||
+      nap->faulted_thread_count > 0) {
+    // Clear faulted thread events to save debug stub loop iterations.
+    wait = false;
+  }
+#if NACL_WINDOWS
+  HANDLE handles[2];
+  handles[0] = nap->faulted_thread_event;
+  handles[1] = socket_event_;
+  int count = size_ < kBufSize ? 2 : 1;
+  int result = WaitForMultipleObjects(count, handles, FALSE,
+                                      wait ? INFINITE : 0);
+  if (result == WAIT_OBJECT_0 + 1) {
+    if (!ResetEvent(socket_event_)) {
+      NaClLog(LOG_FATAL,
+              "Transport::WaitForDebugStubEvent: "
+              "Failed to reset socket event\n");
+    }
+    return;
+  }
+  if (result == WAIT_TIMEOUT || result == WAIT_OBJECT_0)
+    return;
+  NaClLog(LOG_FATAL,
+          "Transport::WaitForDebugStubEvent: Wait for events failed\n");
+#else
+  fd_set fds;
+
+  FD_ZERO(&fds);
+  FD_SET(nap->faulted_thread_fd_read, &fds);
+  int max_fd = nap->faulted_thread_fd_read;
+  if (size_ < kBufSize) {
+    FD_SET(handle_, &fds);
+    max_fd = std::max(max_fd, handle_);
+  }
+
+  int ret;
+  // We don't need sleep-polling on Linux now, so we set either zero or infinite
+  // timeout.
+  if (wait) {
+    ret = select(max_fd + 1, &fds, NULL, NULL, NULL);
+  } else {
+    struct timeval timeout;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = 0;
+    ret = select(max_fd + 1, &fds, NULL, NULL, &timeout);
+  }
+  if (ret < 0) {
+    NaClLog(LOG_FATAL,
+            "Transport::WaitForDebugStubEvent: Failed to wait for "
+            "debug stub event\n");
+  }
+
+  if (ret > 0) {
+    if (FD_ISSET(nap->faulted_thread_fd_read, &fds)) {
+      char buf[16];
+      if (read(nap->faulted_thread_fd_read, &buf, sizeof(buf)) < 0) {
+        NaClLog(LOG_FATAL,
+                "Transport::WaitForDebugStubEvent: Failed to read from "
+                "debug stub event pipe fd\n");
+      }
+    }
+    if (FD_ISSET(handle_, &fds))
+      ReadSomeData();
+  }
+#endif
 }
 
 // Convert string in the form of [addr][:port] where addr is a
@@ -255,15 +394,6 @@ SocketBinding *SocketBinding::Bind(const char *addr) {
                  sizeof(reuse_address))) {
     NaClLog(LOG_WARNING, "Failed to set SO_REUSEADDR option.\n");
   }
-  // Do not delay sending small packets.  This significantly speeds up
-  // remote debugging.  Debug stub uses buffering to send outgoing packets so
-  // they are not split into more TCP packets than necessary.
-  int nodelay = 1;
-  if (setsockopt(socket_handle, IPPROTO_TCP, TCP_NODELAY,
-                 reinterpret_cast<char *>(&nodelay),
-                 sizeof(nodelay))) {
-    NaClLog(LOG_WARNING, "Failed to set TCP_NODELAY option.\n");
-  }
 
   struct sockaddr *psaddr = reinterpret_cast<struct sockaddr *>(&saddr);
   if (bind(socket_handle, psaddr, addrlen)) {
@@ -280,9 +410,32 @@ SocketBinding *SocketBinding::Bind(const char *addr) {
 
 ITransport *SocketBinding::AcceptConnection() {
   NaClSocketHandle socket = ::accept(socket_handle_, NULL, 0);
-  if (socket != NACL_INVALID_SOCKET)
+  if (socket != NACL_INVALID_SOCKET) {
+    // Do not delay sending small packets.  This significantly speeds up
+    // remote debugging.  Debug stub uses buffering to send outgoing packets so
+    // they are not split into more TCP packets than necessary.
+    int nodelay = 1;
+    if (setsockopt(socket, IPPROTO_TCP, TCP_NODELAY,
+                   reinterpret_cast<char *>(&nodelay),
+                   sizeof(nodelay))) {
+      NaClLog(LOG_WARNING, "Failed to set TCP_NODELAY option.\n");
+    }
     return new Transport(socket);
+  }
   return NULL;
+}
+
+uint16_t SocketBinding::GetBoundPort() {
+  struct sockaddr_in saddr;
+  struct sockaddr *psaddr = reinterpret_cast<struct sockaddr *>(&saddr);
+  // Clearing sockaddr_in first appears to be necessary on Mac OS X.
+  memset(&saddr, 0, sizeof(saddr));
+  socklen_t addrlen = static_cast<socklen_t>(sizeof(saddr));
+  if (::getsockname(socket_handle_, psaddr, &addrlen)) {
+    NaClLog(LOG_ERROR, "Failed to retrieve bound address.\n");
+    return 0;
+  }
+  return ntohs(saddr.sin_port);
 }
 
 }  // namespace port

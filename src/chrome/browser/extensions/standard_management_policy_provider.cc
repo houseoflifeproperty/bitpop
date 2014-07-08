@@ -4,12 +4,13 @@
 
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 
-#include "chrome/browser/extensions/admin_policy.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/blacklist.h"
-#include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
+#include "extensions/browser/admin_policy.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/pref_names.h"
+#include "extensions/common/extension.h"
 
 namespace extensions {
 
@@ -33,18 +34,18 @@ std::string
 
 bool StandardManagementPolicyProvider::UserMayLoad(
     const Extension* extension,
-    string16* error) const {
+    base::string16* error) const {
   PrefService* pref_service = prefs_->pref_service();
 
   const base::ListValue* blacklist =
-      pref_service->GetList(prefs::kExtensionInstallDenyList);
+      pref_service->GetList(pref_names::kInstallDenyList);
   const base::ListValue* whitelist =
-      pref_service->GetList(prefs::kExtensionInstallAllowList);
+      pref_service->GetList(pref_names::kInstallAllowList);
   const base::DictionaryValue* forcelist =
-      pref_service->GetDictionary(prefs::kExtensionInstallForceList);
+      pref_service->GetDictionary(pref_names::kInstallForceList);
   const base::ListValue* allowed_types = NULL;
-  if (pref_service->HasPrefPath(prefs::kExtensionAllowedTypes))
-    allowed_types = pref_service->GetList(prefs::kExtensionAllowedTypes);
+  if (pref_service->HasPrefPath(pref_names::kAllowedTypes))
+    allowed_types = pref_service->GetList(pref_names::kAllowedTypes);
 
   return admin_policy::UserMayLoad(
       blacklist, whitelist, forcelist, allowed_types, extension, error);
@@ -52,13 +53,13 @@ bool StandardManagementPolicyProvider::UserMayLoad(
 
 bool StandardManagementPolicyProvider::UserMayModifySettings(
     const Extension* extension,
-    string16* error) const {
+    base::string16* error) const {
   return admin_policy::UserMayModifySettings(extension, error);
 }
 
 bool StandardManagementPolicyProvider::MustRemainEnabled(
     const Extension* extension,
-    string16* error) const {
+    base::string16* error) const {
   return admin_policy::MustRemainEnabled(extension, error);
 }
 

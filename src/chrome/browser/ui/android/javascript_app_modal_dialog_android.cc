@@ -6,7 +6,7 @@
 
 #include "base/android/jni_android.h"
 #include "base/android/jni_string.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/ui/app_modal_dialogs/app_modal_dialog_queue.h"
@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/javascript_message_type.h"
 #include "jni/JavascriptAppModalDialog_jni.h"
-#include "ui/gfx/android/window_android.h"
+#include "ui/base/android/window_android.h"
 
 using base::android::AttachCurrentThread;
 using base::android::ConvertUTF16ToJavaString;
@@ -45,7 +45,7 @@ int JavascriptAppModalDialogAndroid::GetAppModalDialogButtons() const {
 }
 
 void JavascriptAppModalDialogAndroid::ShowAppModalDialog() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   JNIEnv* env = AttachCurrentThread();
   // Keep a strong ref to the parent window while we make the call to java to
@@ -98,7 +98,7 @@ void JavascriptAppModalDialogAndroid::ShowAppModalDialog() {
 
   Java_JavascriptAppModalDialog_showJavascriptAppModalDialog(env,
       dialog_object.obj(), parent_jobj.obj(),
-      reinterpret_cast<jint>(this));
+      reinterpret_cast<intptr_t>(this));
 }
 
 void JavascriptAppModalDialogAndroid::ActivateAppModalDialog() {
@@ -110,14 +110,15 @@ void JavascriptAppModalDialogAndroid::CloseAppModalDialog() {
 }
 
 void JavascriptAppModalDialogAndroid::AcceptAppModalDialog() {
-  string16 prompt_text;
+  base::string16 prompt_text;
   dialog_->OnAccept(prompt_text, false);
   delete this;
 }
 
 void JavascriptAppModalDialogAndroid::DidAcceptAppModalDialog(
     JNIEnv* env, jobject, jstring prompt, bool should_suppress_js_dialogs) {
-  string16 prompt_text = base::android::ConvertJavaStringToUTF16(env, prompt);
+  base::string16 prompt_text =
+      base::android::ConvertJavaStringToUTF16(env, prompt);
   dialog_->OnAccept(prompt_text, should_suppress_js_dialogs);
   delete this;
 }
@@ -156,10 +157,11 @@ bool JavascriptAppModalDialogAndroid::RegisterJavascriptAppModalDialog(
 }
 
 JavascriptAppModalDialogAndroid::~JavascriptAppModalDialogAndroid() {
-  JNIEnv* env = AttachCurrentThread();
   // In case the dialog is still displaying, tell it to close itself.
   // This can happen if you trigger a dialog but close the Tab before it's
   // shown, and then accept the dialog.
-  if (!dialog_jobject_.is_null())
+  if (!dialog_jobject_.is_null()) {
+    JNIEnv* env = AttachCurrentThread();
     Java_JavascriptAppModalDialog_dismiss(env, dialog_jobject_.obj());
+  }
 }

@@ -14,28 +14,6 @@
 //
 // AudioInputHostMsg_CloseStream -> OnCloseStream -> AIC::Close ->
 //
-// For the OnStartDevice() request, AudioInputRendererHost starts the device
-// referenced by the session id, and an OnDeviceStarted() callback with the
-// id of the opened device will be received later. Then it will send a
-// IPC message to notify the renderer that the device is ready, so that
-// renderer can continue with the OnCreateStream() request.
-//
-// OnDeviceStopped() is called when the user closes the device through
-// AudioInputDeviceManager without calling Stop() before. What
-// AudioInputRenderHost::OnDeviceStopped() does is to send a IPC mesaage to
-// notify the renderer in order to stop the stream.
-//
-// Start device sequence:
-//
-// OnStartDevice -> AudioInputDeviceManager::Start ->
-// AudioInputDeviceManagerEventHandler::OnDeviceStarted ->
-// AudioInputMsg_NotifyDeviceStarted
-//
-// Shutdown device sequence:
-//
-// OnDeviceStopped -> CloseAndDeleteStream
-//                    AudioInputMsg_NotifyStreamStateChanged
-//
 // This class is owned by BrowserRenderProcessHost and instantiated on UI
 // thread. All other operations and method calls happen on IO thread, so we
 // need to be extra careful about the lifetime of this object.
@@ -53,33 +31,80 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/memory/shared_memory.h"
+#include "base/process/process.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/shared_memory.h"
-#include "content/browser/renderer_host/media/audio_input_device_manager_event_handler.h"
+#include "content/common/media/audio_messages.h"
 #include "content/public/browser/browser_message_filter.h"
 #include "content/public/browser/browser_thread.h"
 #include "media/audio/audio_input_controller.h"
 #include "media/audio/audio_io.h"
+#include "media/audio/audio_logging.h"
 #include "media/audio/simple_sources.h"
 
 namespace media {
 class AudioManager;
 class AudioParameters;
+class UserInputMonitor;
 }
 
 namespace content {
+class AudioMirroringManager;
 class MediaStreamManager;
 
 class CONTENT_EXPORT AudioInputRendererHost
     : public BrowserMessageFilter,
-      public media::AudioInputController::EventHandler,
-      public AudioInputDeviceManagerEventHandler {
+      public media::AudioInputController::EventHandler {
  public:
+
+  // Error codes to make native loggin more clear. These error codes are added
+  // to generic error strings to provide a higher degree of details.
+  // Changing these values can lead to problems when matching native debug
+  // logs with the actual cause of error.
+  enum ErrorCode {
+    // An unspecified error occured.
+    UNKNOWN_ERROR = 0,
+
+    // Failed to look up audio intry for the provided stream id.
+    INVALID_AUDIO_ENTRY,  // = 1
+
+    // A stream with the specified stream id already exists.
+    STREAM_ALREADY_EXISTS,  // = 2
+
+    // The page does not have permission to open the specified capture device.
+    PERMISSION_DENIED,  // = 3
+
+    // Failed to create shared memory.
+    SHARED_MEMORY_CREATE_FAILED,  // = 4
+
+    // Failed to initialize the AudioInputSyncWriter instance.
+    SYNC_WRITER_INIT_FAILED,  // = 5
+
+    // Failed to create native audio input stream.
+    STREAM_CREATE_ERROR,  // = 6
+
+    // Renderer process handle is invalid.
+    INVALID_PEER_HANDLE,  // = 7
+
+    // Only low-latency mode is supported.
+    INVALID_LATENCY_MODE,  // = 8
+
+    // Failed to map and share the shared memory.
+    MEMORY_SHARING_FAILED,  // = 9
+
+    // Unable to prepare the foreign socket handle.
+    SYNC_SOCKET_ERROR,  // = 10
+
+    // This error message comes from the AudioInputController instance.
+    AUDIO_INPUT_CONTROLLER_ERROR,  // = 11
+  };
+
   // Called from UI thread from the owner of this object.
-  AudioInputRendererHost(
-      media::AudioManager* audio_manager,
-      MediaStreamManager* media_stream_manager);
+  // |user_input_monitor| is used for typing detection and can be NULL.
+  AudioInputRendererHost(media::AudioManager* audio_manager,
+                         MediaStreamManager* media_stream_manager,
+                         AudioMirroringManager* audio_mirroring_manager,
+                         media::UserInputMonitor* user_input_monitor);
 
   // BrowserMessageFilter implementation.
   virtual void OnChannelClosing() OVERRIDE;
@@ -91,45 +116,37 @@ class CONTENT_EXPORT AudioInputRendererHost
   virtual void OnCreated(media::AudioInputController* controller) OVERRIDE;
   virtual void OnRecording(media::AudioInputController* controller) OVERRIDE;
   virtual void OnError(media::AudioInputController* controller,
-                       int error_code) OVERRIDE;
+      media::AudioInputController::ErrorCode error_code) OVERRIDE;
   virtual void OnData(media::AudioInputController* controller,
                       const uint8* data,
                       uint32 size) OVERRIDE;
-
-  // AudioInputDeviceManagerEventHandler implementation.
-  virtual void OnDeviceStarted(int session_id,
-                               const std::string& device_id) OVERRIDE;
-  virtual void OnDeviceStopped(int session_id) OVERRIDE;
+  virtual void OnLog(media::AudioInputController* controller,
+                     const std::string& message) OVERRIDE;
 
  private:
   // TODO(henrika): extend test suite (compare AudioRenderHost)
   friend class BrowserThread;
+  friend class TestAudioInputRendererHost;
   friend class base::DeleteHelper<AudioInputRendererHost>;
 
   struct AudioEntry;
   typedef std::map<int, AudioEntry*> AudioEntryMap;
-  typedef std::map<int, int> SessionEntryMap;
 
   virtual ~AudioInputRendererHost();
 
   // Methods called on IO thread ----------------------------------------------
 
-  // Start the audio input device with the session id. If the device
-  // starts successfully, it will trigger OnDeviceStarted() callback.
-  void OnStartDevice(int stream_id, int session_id);
-
   // Audio related IPC message handlers.
-  // Creates an audio input stream with the specified format. If this call is
-  // successful this object would keep an internal entry of the stream for the
-  // required properties.
-  void OnCreateStream(int stream_id,
-                      const media::AudioParameters& params,
-                      const std::string& device_id,
-                      bool automatic_gain_control);
 
-  // Track that the data for the audio stream referenced by |stream_id| is
+  // Creates an audio input stream with the specified format whose data is
   // consumed by an entity in the render view referenced by |render_view_id|.
-  void OnAssociateStreamWithConsumer(int stream_id, int render_view_id);
+  // |session_id| is used to find out which device to be used for the stream.
+  // Upon success/failure, the peer is notified via the
+  // NotifyStreamCreated message.
+  void OnCreateStream(int stream_id,
+                      int render_view_id,
+                      int session_id,
+                      const AudioInputHostMsg_CreateStream_Config& config);
 
   // Record the audio input stream referenced by |stream_id|.
   void OnRecordStream(int stream_id);
@@ -141,17 +158,23 @@ class CONTENT_EXPORT AudioInputRendererHost
   void OnSetVolume(int stream_id, double volume);
 
   // Complete the process of creating an audio input stream. This will set up
-  // the shared memory or shared socket in low latency mode.
+  // the shared memory or shared socket in low latency mode and send the
+  // NotifyStreamCreated message to the peer.
   void DoCompleteCreation(media::AudioInputController* controller);
 
   // Send a state change message to the renderer.
   void DoSendRecordingMessage(media::AudioInputController* controller);
 
   // Handle error coming from audio stream.
-  void DoHandleError(media::AudioInputController* controller, int error_code);
+  void DoHandleError(media::AudioInputController* controller,
+      media::AudioInputController::ErrorCode error_code);
+
+  // Log audio level of captured audio stream.
+  void DoLog(media::AudioInputController* controller,
+             const std::string& message);
 
   // Send an error message to the renderer.
-  void SendErrorMessage(int stream_id);
+  void SendErrorMessage(int stream_id, ErrorCode error_code);
 
   // Delete all audio entry and all audio streams
   void DeleteEntries();
@@ -164,10 +187,7 @@ class CONTENT_EXPORT AudioInputRendererHost
   void DeleteEntry(AudioEntry* entry);
 
   // Delete audio entry and close the related audio input stream.
-  void DeleteEntryOnError(AudioEntry* entry);
-
-  // Stop the device and delete its audio session entry.
-  void StopAndDeleteDevice(int stream_id);
+  void DeleteEntryOnError(AudioEntry* entry, ErrorCode error_code);
 
   // A helper method to look up a AudioEntry identified by |stream_id|.
   // Returns NULL if not found.
@@ -178,21 +198,21 @@ class CONTENT_EXPORT AudioInputRendererHost
   // event is received.
   AudioEntry* LookupByController(media::AudioInputController* controller);
 
-  // A helper method to look up a session identified by |stream_id|.
-  // Returns 0 if not found.
-  int LookupSessionById(int stream_id);
-
   // Used to create an AudioInputController.
   media::AudioManager* audio_manager_;
 
   // Used to access to AudioInputDeviceManager.
   MediaStreamManager* media_stream_manager_;
 
+  AudioMirroringManager* audio_mirroring_manager_;
+
   // A map of stream IDs to audio sources.
   AudioEntryMap audio_entries_;
 
-  // A map of session IDs to audio session sources.
-  SessionEntryMap session_entries_;
+  // Raw pointer of the UserInputMonitor.
+  media::UserInputMonitor* user_input_monitor_;
+
+  scoped_ptr<media::AudioLog> audio_log_;
 
   DISALLOW_COPY_AND_ASSIGN(AudioInputRendererHost);
 };

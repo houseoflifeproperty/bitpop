@@ -11,11 +11,13 @@
 #include "chrome/browser/profiles/off_the_record_profile_io_data.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/content_browser_client.h"
+#include "content/public/browser/host_zoom_map.h"
 
 using base::Time;
 using base::TimeDelta;
+
+class PrefServiceSyncable;
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -26,8 +28,7 @@ using base::TimeDelta;
 // Providing this header file is for unit testing.
 //
 ////////////////////////////////////////////////////////////////////////////////
-class OffTheRecordProfileImpl : public Profile,
-                                public content::NotificationObserver {
+class OffTheRecordProfileImpl : public Profile {
  public:
   explicit OffTheRecordProfileImpl(Profile* real_profile);
   virtual ~OffTheRecordProfileImpl();
@@ -35,45 +36,44 @@ class OffTheRecordProfileImpl : public Profile,
 
   // Profile implementation.
   virtual std::string GetProfileName() OVERRIDE;
+  virtual ProfileType GetProfileType() const OVERRIDE;
   virtual Profile* GetOffTheRecordProfile() OVERRIDE;
   virtual void DestroyOffTheRecordProfile() OVERRIDE;
   virtual bool HasOffTheRecordProfile() OVERRIDE;
   virtual Profile* GetOriginalProfile() OVERRIDE;
+  virtual bool IsManaged() OVERRIDE;
   virtual ExtensionService* GetExtensionService() OVERRIDE;
   virtual ExtensionSpecialStoragePolicy*
       GetExtensionSpecialStoragePolicy() OVERRIDE;
-  virtual GAIAInfoUpdateService* GetGAIAInfoUpdateService() OVERRIDE;
-  virtual policy::ManagedModePolicyProvider*
-      GetManagedModePolicyProvider() OVERRIDE;
-  virtual policy::PolicyService* GetPolicyService() OVERRIDE;
   virtual PrefService* GetPrefs() OVERRIDE;
   virtual PrefService* GetOffTheRecordPrefs() OVERRIDE;
   virtual net::URLRequestContextGetter*
       GetRequestContextForExtensions() OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
-      const FilePath& partition_path,
-      bool in_memory) OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContext(
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
+  virtual net::URLRequestContextGetter* CreateRequestContextForStoragePartition(
+      const base::FilePath& partition_path,
+      bool in_memory,
+      content::ProtocolHandlerMap* protocol_handlers,
+      content::ProtocolHandlerScopedVector protocol_interceptors) OVERRIDE;
   virtual net::SSLConfigService* GetSSLConfigService() OVERRIDE;
   virtual HostContentSettingsMap* GetHostContentSettingsMap() OVERRIDE;
-  virtual ProtocolHandlerRegistry* GetProtocolHandlerRegistry() OVERRIDE;
   virtual bool IsSameProfile(Profile* profile) OVERRIDE;
   virtual Time GetStartTime() const OVERRIDE;
   virtual history::TopSites* GetTopSitesWithoutCreating() OVERRIDE;
   virtual history::TopSites* GetTopSites() OVERRIDE;
-  virtual void InitPromoResources() OVERRIDE;
-  virtual FilePath last_selected_directory() OVERRIDE;
-  virtual void set_last_selected_directory(const FilePath& path) OVERRIDE;
+  virtual base::FilePath last_selected_directory() OVERRIDE;
+  virtual void set_last_selected_directory(const base::FilePath& path) OVERRIDE;
   virtual bool WasCreatedByVersionOrLater(const std::string& version) OVERRIDE;
   virtual void SetExitType(ExitType exit_type) OVERRIDE;
   virtual ExitType GetLastSessionExitType() OVERRIDE;
 
 #if defined(OS_CHROMEOS)
-  virtual void SetupChromeOSEnterpriseExtensionObserver() OVERRIDE;
-  virtual void InitChromeOSPreferences() OVERRIDE;
-
   virtual void ChangeAppLocale(const std::string& locale,
                                AppLocaleChangedVia) OVERRIDE;
   virtual void OnLogin() OVERRIDE;
+  virtual void InitChromeOSPreferences() OVERRIDE;
 #endif  // defined(OS_CHROMEOS)
 
   virtual PrefProxyConfigTracker* GetProxyConfigTracker() OVERRIDE;
@@ -85,7 +85,7 @@ class OffTheRecordProfileImpl : public Profile,
   virtual GURL GetHomePage() OVERRIDE;
 
   // content::BrowserContext implementation:
-  virtual FilePath GetPath() OVERRIDE;
+  virtual base::FilePath GetPath() const OVERRIDE;
   virtual scoped_refptr<base::SequencedTaskRunner> GetIOTaskRunner() OVERRIDE;
   virtual bool IsOffTheRecord() const OVERRIDE;
   virtual content::DownloadManagerDelegate*
@@ -98,40 +98,55 @@ class OffTheRecordProfileImpl : public Profile,
       int renderer_child_id) OVERRIDE;
   virtual net::URLRequestContextGetter*
       GetMediaRequestContextForStoragePartition(
-          const FilePath& partition_path,
+          const base::FilePath& partition_path,
           bool in_memory) OVERRIDE;
+  virtual void RequestMidiSysExPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const MidiSysExPermissionCallback& callback) OVERRIDE;
+  virtual void CancelMidiSysExPermissionRequest(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      int group_id,
+      const GURL& requesting_frame,
+      const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      int group_id) OVERRIDE;
   virtual content::ResourceContext* GetResourceContext() OVERRIDE;
   virtual content::GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual content::SpeechRecognitionPreferences*
-      GetSpeechRecognitionPreferences() OVERRIDE;
+  virtual content::BrowserPluginGuestManagerDelegate*
+      GetGuestManagerDelegate() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(OffTheRecordProfileImplTest, GetHostZoomMap);
+  void InitIoData();
   void InitHostZoomMap();
 
-#if defined(OS_ANDROID)
+#if defined(OS_ANDROID) || defined(OS_IOS)
   void UseSystemProxy();
-#endif
+#endif  // defined(OS_ANDROID) || defined(OS_IOS)
 
-  virtual base::Callback<ChromeURLDataManagerBackend*(void)>
-      GetChromeURLDataManagerBackendGetter() const OVERRIDE;
-
-  content::NotificationRegistrar registrar_;
+  void OnZoomLevelChanged(const content::HostZoomMap::ZoomLevelChange& change);
+  PrefProxyConfigTracker* CreateProxyConfigTracker();
 
   // The real underlying profile.
   Profile* profile_;
 
   // Weak pointer owned by |profile_|.
-  PrefService* prefs_;
+  PrefServiceSyncable* prefs_;
 
-  OffTheRecordProfileIOData::Handle io_data_;
+  scoped_ptr<OffTheRecordProfileIOData::Handle> io_data_;
 
   // We use a non-persistent content settings map for OTR.
   scoped_refptr<HostContentSettingsMap> host_content_settings_map_;
@@ -139,9 +154,11 @@ class OffTheRecordProfileImpl : public Profile,
   // Time we were started.
   Time start_time_;
 
-  FilePath last_selected_directory_;
+  base::FilePath last_selected_directory_;
 
   scoped_ptr<PrefProxyConfigTracker> pref_proxy_config_tracker_;
+
+  scoped_ptr<content::HostZoomMap::Subscription> zoom_subscription_;
 
   DISALLOW_COPY_AND_ASSIGN(OffTheRecordProfileImpl);
 };

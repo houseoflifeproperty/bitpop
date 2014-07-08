@@ -3,75 +3,235 @@
 # found in the LICENSE file.
 
 import json
-
-import object_store
+import logging
 import operator
 
+from appengine_url_fetcher import AppEngineUrlFetcher
+import url_constants
+
+
+class ChannelInfo(object):
+  '''Represents a Chrome channel with three pieces of information. |channel| is
+  one of 'stable', 'beta', 'dev', or 'trunk'. |branch| and |version| correspond
+  with each other, and represent different releases of Chrome. Note that
+  |branch| and |version| can occasionally be the same for separate channels
+  (i.e. 'beta' and 'dev'), so all three fields are required to uniquely
+  identify a channel.
+  '''
+
+  def __init__(self, channel, branch, version):
+    assert isinstance(channel, basestring), channel
+    assert isinstance(branch, basestring), branch
+    # TODO(kalman): Assert that this is a string. One day Chromium will probably
+    # be served out of a git repository and the versions will no longer be ints.
+    assert isinstance(version, int) or version == 'trunk', version
+    self.channel = channel
+    self.branch = branch
+    self.version = version
+
+  def __eq__(self, other):
+    return self.__dict__ == other.__dict__
+
+  def __ne__(self, other):
+    return not (self == other)
+
+  def __repr__(self):
+    return '%s%s' % (type(self).__name__, repr(self.__dict__))
+
+  def __str__(self):
+    return repr(self)
+
+
 class BranchUtility(object):
-  def __init__(self, base_path, default_branches, fetcher, object_store):
-    self._base_path = base_path
-    self._default_branches = default_branches
+  '''Provides methods for working with Chrome channel, branch, and version
+  data served from OmahaProxy.
+  '''
+
+  def __init__(self, fetch_url, history_url, fetcher, object_store_creator):
     self._fetcher = fetcher
-    self._object_store = object_store
+    def create_object_store(category):
+      return object_store_creator.Create(BranchUtility, category=category)
+    self._branch_object_store = create_object_store('branch')
+    self._version_object_store = create_object_store('version')
+    self._fetch_result = self._fetcher.FetchAsync(fetch_url)
+    self._history_result = self._fetcher.FetchAsync(history_url)
 
-  def GetAllBranchNames(self):
-    # TODO(aa): Do we need to include 'local'?
-    return ['dev', 'beta', 'stable', 'trunk', 'local']
+  @staticmethod
+  def Create(object_store_creator):
+    return BranchUtility(url_constants.OMAHA_PROXY_URL,
+                         url_constants.OMAHA_DEV_HISTORY,
+                         AppEngineUrlFetcher(),
+                         object_store_creator)
 
-  def GetAllBranchNumbers(self):
-    return [(branch, self.GetBranchNumberForChannelName(branch))
-            for branch in self.GetAllBranchNames()]
+  @staticmethod
+  def GetAllChannelNames():
+    return ('stable', 'beta', 'dev', 'trunk')
 
-  def SplitChannelNameFromPath(self, path):
-    try:
+  @staticmethod
+  def NewestChannel(channels):
+    channels = set(channels)
+    for channel in reversed(BranchUtility.GetAllChannelNames()):
+      if channel in channels:
+        return channel
+
+  def Newer(self, channel_info):
+    '''Given a ChannelInfo object, returns a new ChannelInfo object
+    representing the next most recent Chrome version/branch combination.
+    '''
+    if channel_info.channel == 'trunk':
+      return None
+    if channel_info.channel == 'stable':
+      stable_info = self.GetChannelInfo('stable')
+      if channel_info.version < stable_info.version:
+        return self.GetStableChannelInfo(channel_info.version + 1)
+    names = self.GetAllChannelNames()
+    return self.GetAllChannelInfo()[names.index(channel_info.channel) + 1]
+
+  def Older(self, channel_info):
+    '''Given a ChannelInfo object, returns a new ChannelInfo object
+    representing the previous Chrome version/branch combination.
+    '''
+    if channel_info.channel == 'stable':
+      if channel_info.version <= 5:
+        # BranchUtility can't access branch data from before Chrome version 5.
+        return None
+      return self.GetStableChannelInfo(channel_info.version - 1)
+    names = self.GetAllChannelNames()
+    return self.GetAllChannelInfo()[names.index(channel_info.channel) - 1]
+
+  @staticmethod
+  def SplitChannelNameFromPath(path):
+    '''Splits the channel name out of |path|, returning the tuple
+    (channel_name, real_path). If the channel cannot be determined then returns
+    (None, path).
+    '''
+    if '/' in path:
       first, second = path.split('/', 1)
-    except ValueError:
-      first = path
-      second = ''
-    if first in ['trunk', 'dev', 'beta', 'stable']:
-      return (first, second, False)
     else:
-      doc_type = path.split('/')[0]
-      if doc_type in self._default_branches:
-        return (self._default_branches[doc_type], path, False)
-      return (self._default_branches['extensions'], path, True)
+      first, second = (path, '')
+    if first in BranchUtility.GetAllChannelNames():
+      return (first, second)
+    return (None, path)
 
-  def GetBranchNumberForChannelName(self, channel_name):
-    """Returns the branch number for a channel name. If the |channel_name| is
-    'trunk' or 'local', then |channel_name| will be returned unchanged. These
-    are returned unchanged because 'trunk' has a separate URL from the other
-    branches and should be handled differently. 'local' is also a special branch
-    for development that should be handled differently.
-    """
-    if channel_name in ['trunk', 'local']:
-      return channel_name
+  def GetAllBranches(self):
+    return tuple((channel, self.GetChannelInfo(channel).branch)
+            for channel in BranchUtility.GetAllChannelNames())
 
-    branch_number = self._object_store.Get(channel_name + '.' + self._base_path,
-                                           object_store.BRANCH_UTILITY).Get()
-    if branch_number is not None:
-      return branch_number
+  def GetAllVersions(self):
+    return tuple(self.GetChannelInfo(channel).version
+            for channel in BranchUtility.GetAllChannelNames())
 
-    fetch_data = self._fetcher.Fetch(self._base_path).content
-    version_json = json.loads(fetch_data)
-    branch_numbers = {}
+  def GetAllChannelInfo(self):
+    return tuple(self.GetChannelInfo(channel)
+            for channel in BranchUtility.GetAllChannelNames())
+
+
+  def GetChannelInfo(self, channel):
+    version = self._ExtractFromVersionJson(channel, 'version')
+    if version != 'trunk':
+      version = int(version)
+    return ChannelInfo(channel,
+                       self._ExtractFromVersionJson(channel, 'branch'),
+                       version)
+
+  def GetStableChannelInfo(self, version):
+    '''Given a |version| corresponding to a 'stable' version of Chrome, returns
+    a ChannelInfo object representing that version.
+    '''
+    return ChannelInfo('stable', self.GetBranchForVersion(version), version)
+
+  def _ExtractFromVersionJson(self, channel_name, data_type):
+    '''Returns the branch or version number for a channel name.
+    '''
+    if channel_name == 'trunk':
+      return 'trunk'
+
+    if data_type == 'branch':
+      object_store = self._branch_object_store
+    elif data_type == 'version':
+      object_store = self._version_object_store
+
+    data = object_store.Get(channel_name).Get()
+    if data is not None:
+      return data
+
+    try:
+      version_json = json.loads(self._fetch_result.Get().content)
+    except Exception as e:
+      # This can happen if omahaproxy is misbehaving, which we've seen before.
+      # Quick hack fix: just serve from trunk until it's fixed.
+      logging.error('Failed to fetch or parse branch from omahaproxy: %s! '
+                    'Falling back to "trunk".' % e)
+      return 'trunk'
+
+    numbers = {}
     for entry in version_json:
       if entry['os'] not in ['win', 'linux', 'mac', 'cros']:
         continue
       for version in entry['versions']:
         if version['channel'] != channel_name:
           continue
-        branch = version['version'].split('.')[2]
-        if branch not in branch_numbers:
-          branch_numbers[branch] = 0
+        if data_type == 'branch':
+          number = version['version'].split('.')[2]
+        elif data_type == 'version':
+          number = version['version'].split('.')[0]
+        if number not in numbers:
+          numbers[number] = 0
         else:
-          branch_numbers[branch] += 1
+          numbers[number] += 1
 
-    sorted_branches = sorted(branch_numbers.iteritems(),
-                             None,
-                             operator.itemgetter(1),
-                             True)
-    self._object_store.Set(channel_name + '.' + self._base_path,
-                           sorted_branches[0][0],
-                           object_store.BRANCH_UTILITY)
+    sorted_numbers = sorted(numbers.iteritems(),
+                            key=operator.itemgetter(1),
+                            reverse=True)
+    object_store.Set(channel_name, sorted_numbers[0][0])
+    return sorted_numbers[0][0]
 
-    return sorted_branches[0][0]
+  def GetBranchForVersion(self, version):
+    '''Returns the most recent branch for a given chrome version number using
+    data stored on omahaproxy (see url_constants).
+    '''
+    if version == 'trunk':
+      return 'trunk'
+
+    branch = self._branch_object_store.Get(str(version)).Get()
+    if branch is not None:
+      return branch
+
+    version_json = json.loads(self._history_result.Get().content)
+    for entry in version_json['events']:
+      # Here, entry['title'] looks like: '<title> - <version>.##.<branch>.##'
+      version_title = entry['title'].split(' - ')[1].split('.')
+      if version_title[0] == str(version):
+        self._branch_object_store.Set(str(version), version_title[2])
+        return version_title[2]
+
+    raise ValueError('The branch for %s could not be found.' % version)
+
+  def GetChannelForVersion(self, version):
+    '''Returns the name of the development channel corresponding to a given
+    version number.
+    '''
+    for channel_info in self.GetAllChannelInfo():
+      if channel_info.channel == 'stable' and version <= channel_info.version:
+        return channel_info.channel
+      if version == channel_info.version:
+        return channel_info.channel
+
+  def GetLatestVersionNumber(self):
+    '''Returns the most recent version number found using data stored on
+    omahaproxy.
+    '''
+    latest_version = self._version_object_store.Get('latest').Get()
+    if latest_version is not None:
+      return latest_version
+
+    version_json = json.loads(self._history_result.Get().content)
+    latest_version = 0
+    for entry in version_json['events']:
+      version_title = entry['title'].split(' - ')[1].split('.')
+      version = int(version_title[0])
+      if version > latest_version:
+        latest_version = version
+
+    self._version_object_store.Set('latest', latest_version)
+    return latest_version

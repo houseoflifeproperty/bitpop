@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "content/public/common/content_switches.h"
@@ -45,11 +45,9 @@ bool ExamplesMainDelegate::BasicStartupComplete(int* exit_code) {
 
   content::SetContentClient(&content_client_);
 
-  bool success = logging::InitLogging(NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  bool success = logging::InitLogging(settings);
   CHECK(success);
 #if defined(OS_WIN)
   logging::LogEventProvider::Initialize(kViewsExamplesProviderName);
@@ -69,7 +67,13 @@ content::ContentBrowserClient*
 }
 
 void ExamplesMainDelegate::InitializeResourceBundle() {
-  ui::ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+  base::FilePath pak_dir;
+  PathService::Get(base::DIR_MODULE, &pak_dir);
+
+  base::FilePath pak_file;
+  pak_file = pak_dir.Append(FILE_PATH_LITERAL("ui_test.pak"));
+
+  ui::ResourceBundle::InitSharedInstanceWithPakPath(pak_file);
 }
 
 }  // namespace examples

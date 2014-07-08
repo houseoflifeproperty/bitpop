@@ -8,19 +8,18 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "noise_suppression_impl.h"
+#include "webrtc/modules/audio_processing/noise_suppression_impl.h"
 
-#include <cassert>
+#include <assert.h>
 
-#include "critical_section_wrapper.h"
+#include "webrtc/modules/audio_processing/audio_buffer.h"
 #if defined(WEBRTC_NS_FLOAT)
-#include "noise_suppression.h"
+#include "webrtc/modules/audio_processing/ns/include/noise_suppression.h"
 #elif defined(WEBRTC_NS_FIXED)
-#include "noise_suppression_x.h"
+#include "webrtc/modules/audio_processing/ns/include/noise_suppression_x.h"
 #endif
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
 
-#include "audio_processing_impl.h"
-#include "audio_buffer.h"
 
 namespace webrtc {
 
@@ -47,9 +46,11 @@ int MapSetting(NoiseSuppression::Level level) {
 }
 }  // namespace
 
-NoiseSuppressionImpl::NoiseSuppressionImpl(const AudioProcessingImpl* apm)
-  : ProcessingComponent(apm),
+NoiseSuppressionImpl::NoiseSuppressionImpl(const AudioProcessing* apm,
+                                           CriticalSectionWrapper* crit)
+  : ProcessingComponent(),
     apm_(apm),
+    crit_(crit),
     level_(kModerate) {}
 
 NoiseSuppressionImpl::~NoiseSuppressionImpl() {}
@@ -88,7 +89,7 @@ int NoiseSuppressionImpl::ProcessCaptureAudio(AudioBuffer* audio) {
 }
 
 int NoiseSuppressionImpl::Enable(bool enable) {
-  CriticalSectionScoped crit_scoped(apm_->crit());
+  CriticalSectionScoped crit_scoped(crit_);
   return EnableComponent(enable);
 }
 
@@ -97,7 +98,7 @@ bool NoiseSuppressionImpl::is_enabled() const {
 }
 
 int NoiseSuppressionImpl::set_level(Level level) {
-  CriticalSectionScoped crit_scoped(apm_->crit());
+  CriticalSectionScoped crit_scoped(crit_);
   if (MapSetting(level) == -1) {
     return apm_->kBadParameterError;
   }
@@ -140,19 +141,21 @@ void* NoiseSuppressionImpl::CreateHandle() const {
   return handle;
 }
 
-int NoiseSuppressionImpl::DestroyHandle(void* handle) const {
+void NoiseSuppressionImpl::DestroyHandle(void* handle) const {
 #if defined(WEBRTC_NS_FLOAT)
-  return WebRtcNs_Free(static_cast<Handle*>(handle));
+  WebRtcNs_Free(static_cast<Handle*>(handle));
 #elif defined(WEBRTC_NS_FIXED)
-  return WebRtcNsx_Free(static_cast<Handle*>(handle));
+  WebRtcNsx_Free(static_cast<Handle*>(handle));
 #endif
 }
 
 int NoiseSuppressionImpl::InitializeHandle(void* handle) const {
 #if defined(WEBRTC_NS_FLOAT)
-  return WebRtcNs_Init(static_cast<Handle*>(handle), apm_->sample_rate_hz());
+  return WebRtcNs_Init(static_cast<Handle*>(handle),
+                       apm_->proc_sample_rate_hz());
 #elif defined(WEBRTC_NS_FIXED)
-  return WebRtcNsx_Init(static_cast<Handle*>(handle), apm_->sample_rate_hz());
+  return WebRtcNsx_Init(static_cast<Handle*>(handle),
+                        apm_->proc_sample_rate_hz());
 #endif
 }
 
@@ -176,4 +179,3 @@ int NoiseSuppressionImpl::GetHandleError(void* handle) const {
   return apm_->kUnspecifiedError;
 }
 }  // namespace webrtc
-

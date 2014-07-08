@@ -4,128 +4,266 @@
 
 #include "chrome/browser/themes/theme_service.h"
 
-#include "base/json/json_reader.h"
+#include "base/file_util.h"
+#include "base/path_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service_unittest.h"
+#include "chrome/browser/extensions/unpacked_installer.h"
+#include "chrome/browser/managed_mode/managed_user_service.h"
+#include "chrome/browser/managed_mode/managed_user_service_factory.h"
+#include "chrome/browser/themes/custom_theme_supplier.h"
 #include "chrome/browser/themes/theme_service_factory.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
+#include "chrome/common/chrome_paths.h"
+#include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_browser_process.h"
 #include "chrome/test/base/testing_profile.h"
+#include "chrome/test/base/testing_profile_manager.h"
+#include "content/public/test/test_utils.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-namespace {
+using extensions::ExtensionRegistry;
+
+namespace theme_service_internal {
 
 class ThemeServiceTest : public ExtensionServiceTestBase {
  public:
-  ThemeServiceTest() {}
+  ThemeServiceTest() : is_managed_(false),
+                       registry_(NULL) {}
   virtual ~ThemeServiceTest() {}
 
-  scoped_refptr<extensions::Extension> MakeThemeExtension(FilePath path) {
-    DictionaryValue source;
-    source.SetString(extension_manifest_keys::kName, "theme");
-    source.Set(extension_manifest_keys::kTheme, new DictionaryValue());
-    source.SetString(extension_manifest_keys::kUpdateURL, "http://foo.com");
-    source.SetString(extension_manifest_keys::kVersion, "0.0.0.0");
-    std::string error;
-    scoped_refptr<extensions::Extension> extension =
-        extensions::Extension::Create(
-            path, extensions::Extension::EXTERNAL_PREF_DOWNLOAD,
-            source, extensions::Extension::NO_FLAGS, &error);
-    EXPECT_TRUE(extension);
-    EXPECT_EQ("", error);
-    return extension;
+  // Moves a minimal theme to |temp_dir_path| and unpacks it from that
+  // directory.
+  std::string LoadUnpackedThemeAt(const base::FilePath& temp_dir) {
+    base::FilePath dst_manifest_path = temp_dir.AppendASCII("manifest.json");
+    base::FilePath test_data_dir;
+    EXPECT_TRUE(PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir));
+    base::FilePath src_manifest_path =
+        test_data_dir.AppendASCII("extensions/theme_minimal/manifest.json");
+    EXPECT_TRUE(base::CopyFile(src_manifest_path, dst_manifest_path));
+
+    scoped_refptr<extensions::UnpackedInstaller> installer(
+        extensions::UnpackedInstaller::Create(service_));
+    content::WindowedNotificationObserver observer(
+        chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+        content::Source<Profile>(profile_.get()));
+    installer->Load(temp_dir);
+    observer.Wait();
+
+    std::string extension_id =
+        content::Details<extensions::Extension>(observer.details())->id();
+
+    // Let the ThemeService finish creating the theme pack.
+    base::MessageLoop::current()->RunUntilIdle();
+
+    return extension_id;
   }
 
-  void SetUp() {
-    InitializeEmptyExtensionService();
+  // Update the theme with |extension_id|.
+  void UpdateUnpackedTheme(const std::string& extension_id) {
+    int updated_notification =
+        service_->IsExtensionEnabled(extension_id)
+            ? chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED
+            : chrome::NOTIFICATION_EXTENSION_UPDATE_DISABLED;
+
+    const base::FilePath& path =
+        service_->GetInstalledExtension(extension_id)->path();
+
+    scoped_refptr<extensions::UnpackedInstaller> installer(
+        extensions::UnpackedInstaller::Create(service_));
+    content::WindowedNotificationObserver observer(updated_notification,
+        content::Source<Profile>(profile_.get()));
+    installer->Load(path);
+    observer.Wait();
+
+    // Let the ThemeService finish creating the theme pack.
+    base::MessageLoop::current()->RunUntilIdle();
   }
+
+  virtual void SetUp() {
+    ExtensionServiceTestBase::SetUp();
+    ExtensionServiceTestBase::ExtensionServiceInitParams params =
+        CreateDefaultInitParams();
+    params.profile_is_managed = is_managed_;
+    InitializeExtensionService(params);
+    service_->Init();
+    registry_ = ExtensionRegistry::Get(profile_.get());
+    ASSERT_TRUE(registry_);
+  }
+
+  const CustomThemeSupplier* get_theme_supplier(ThemeService* theme_service) {
+    return theme_service->get_theme_supplier();
+  }
+
+ protected:
+  bool is_managed_;
+  ExtensionRegistry* registry_;
+
 };
-
-TEST_F(ThemeServiceTest, AlignmentConversion) {
-  // Verify that we get out what we put in.
-  std::string top_left = "left top";
-  int alignment = ThemeService::StringToAlignment(top_left);
-  EXPECT_EQ(ThemeService::ALIGN_TOP | ThemeService::ALIGN_LEFT,
-            alignment);
-  EXPECT_EQ(top_left, ThemeService::AlignmentToString(alignment));
-
-  // We get back a normalized version of what we put in.
-  alignment = ThemeService::StringToAlignment("top");
-  EXPECT_EQ(ThemeService::ALIGN_TOP, alignment);
-  EXPECT_EQ("center top", ThemeService::AlignmentToString(alignment));
-
-  alignment = ThemeService::StringToAlignment("left");
-  EXPECT_EQ(ThemeService::ALIGN_LEFT, alignment);
-  EXPECT_EQ("left center", ThemeService::AlignmentToString(alignment));
-
-  alignment = ThemeService::StringToAlignment("right");
-  EXPECT_EQ(ThemeService::ALIGN_RIGHT, alignment);
-  EXPECT_EQ("right center", ThemeService::AlignmentToString(alignment));
-
-  alignment = ThemeService::StringToAlignment("righttopbottom");
-  EXPECT_EQ(ThemeService::ALIGN_CENTER, alignment);
-  EXPECT_EQ("center center", ThemeService::AlignmentToString(alignment));
-}
-
-TEST_F(ThemeServiceTest, AlignmentConversionInput) {
-  // Verify that we output in an expected format.
-  int alignment = ThemeService::StringToAlignment("bottom right");
-  EXPECT_EQ("right bottom", ThemeService::AlignmentToString(alignment));
-
-  // Verify that bad strings don't cause explosions.
-  alignment = ThemeService::StringToAlignment("new zealand");
-  EXPECT_EQ("center center", ThemeService::AlignmentToString(alignment));
-
-  // Verify that bad strings don't cause explosions.
-  alignment = ThemeService::StringToAlignment("new zealand top");
-  EXPECT_EQ("center top", ThemeService::AlignmentToString(alignment));
-
-  // Verify that bad strings don't cause explosions.
-  alignment = ThemeService::StringToAlignment("new zealandtop");
-  EXPECT_EQ("center center", ThemeService::AlignmentToString(alignment));
-}
 
 // Installs then uninstalls a theme and makes sure that the ThemeService
 // reverts to the default theme after the uninstall.
 TEST_F(ThemeServiceTest, ThemeInstallUninstall) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
   ThemeService* theme_service =
       ThemeServiceFactory::GetForProfile(profile_.get());
   theme_service->UseDefaultTheme();
-  scoped_refptr<extensions::Extension> extension =
-      MakeThemeExtension(temp_dir.path());
-  service_->FinishInstallationForTest(extension);
-  // Let ThemeService finish creating the theme pack.
-  MessageLoop::current()->RunUntilIdle();
-  EXPECT_FALSE(theme_service->UsingDefaultTheme());
-  EXPECT_EQ(extension->id(), theme_service->GetThemeID());
+  // Let the ThemeService uninstall unused themes.
+  base::MessageLoop::current()->RunUntilIdle();
 
-  // Now unload the extension, should revert to the default theme.
-  service_->UnloadExtension(extension->id(),
-                            extension_misc::UNLOAD_REASON_UNINSTALL);
+  base::ScopedTempDir temp_dir;
+  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+  const std::string& extension_id = LoadUnpackedThemeAt(temp_dir.path());
+  EXPECT_FALSE(theme_service->UsingDefaultTheme());
+  EXPECT_EQ(extension_id, theme_service->GetThemeID());
+
+  // Now uninstall the extension, should revert to the default theme.
+  service_->UninstallExtension(extension_id, false, NULL);
   EXPECT_TRUE(theme_service->UsingDefaultTheme());
 }
 
-// Upgrades a theme and ensures that the ThemeService does not revert to the
-// default theme.
-TEST_F(ThemeServiceTest, ThemeUpgrade) {
-  base::ScopedTempDir temp_dir;
-  ASSERT_TRUE(temp_dir.CreateUniqueTempDir());
+// Test that a theme extension is disabled when not in use. A theme may be
+// installed but not in use if it there is an infobar to revert to the previous
+// theme.
+TEST_F(ThemeServiceTest, DisableUnusedTheme) {
   ThemeService* theme_service =
       ThemeServiceFactory::GetForProfile(profile_.get());
   theme_service->UseDefaultTheme();
-  scoped_refptr<extensions::Extension> extension =
-      MakeThemeExtension(temp_dir.path());
-  service_->FinishInstallationForTest(extension);
-  // Let ThemeService finish creating the theme pack.
-  MessageLoop::current()->RunUntilIdle();
-  EXPECT_FALSE(theme_service->UsingDefaultTheme());
-  EXPECT_EQ(extension->id(), theme_service->GetThemeID());
+  // Let the ThemeService uninstall unused themes.
+  base::MessageLoop::current()->RunUntilIdle();
 
-  // Now unload the extension, should revert to the default theme.
-  service_->UnloadExtension(extension->id(),
-                            extension_misc::UNLOAD_REASON_UPDATE);
+  base::ScopedTempDir temp_dir1;
+  ASSERT_TRUE(temp_dir1.CreateUniqueTempDir());
+  base::ScopedTempDir temp_dir2;
+  ASSERT_TRUE(temp_dir2.CreateUniqueTempDir());
+
+  // 1) Installing a theme should disable the previously active theme.
+  const std::string& extension1_id = LoadUnpackedThemeAt(temp_dir1.path());
   EXPECT_FALSE(theme_service->UsingDefaultTheme());
+  EXPECT_EQ(extension1_id, theme_service->GetThemeID());
+  EXPECT_TRUE(service_->IsExtensionEnabled(extension1_id));
+
+  // Show an infobar to prevent the current theme from being uninstalled.
+  theme_service->OnInfobarDisplayed();
+
+  const std::string& extension2_id = LoadUnpackedThemeAt(temp_dir2.path());
+  EXPECT_EQ(extension2_id, theme_service->GetThemeID());
+  EXPECT_TRUE(service_->IsExtensionEnabled(extension2_id));
+  EXPECT_TRUE(registry_->GetExtensionById(extension1_id,
+                                          ExtensionRegistry::DISABLED));
+
+  // 2) Enabling a disabled theme extension should swap the current theme.
+  service_->EnableExtension(extension1_id);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(extension1_id, theme_service->GetThemeID());
+  EXPECT_TRUE(service_->IsExtensionEnabled(extension1_id));
+  EXPECT_TRUE(registry_->GetExtensionById(extension2_id,
+                                          ExtensionRegistry::DISABLED));
+
+  // 3) Using SetTheme() with a disabled theme should enable and set the
+  // theme. This is the case when the user reverts to the previous theme
+  // via an infobar.
+  const extensions::Extension* extension2 =
+      service_->GetInstalledExtension(extension2_id);
+  theme_service->SetTheme(extension2);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_EQ(extension2_id, theme_service->GetThemeID());
+  EXPECT_TRUE(service_->IsExtensionEnabled(extension2_id));
+  EXPECT_TRUE(registry_->GetExtensionById(extension1_id,
+                                          ExtensionRegistry::DISABLED));
+
+  // 4) Disabling the current theme extension should revert to the default theme
+  // and uninstall any installed theme extensions.
+  theme_service->OnInfobarDestroyed();
+  EXPECT_FALSE(theme_service->UsingDefaultTheme());
+  service_->DisableExtension(extension2_id,
+      extensions::Extension::DISABLE_USER_ACTION);
+  base::MessageLoop::current()->RunUntilIdle();
+  EXPECT_TRUE(theme_service->UsingDefaultTheme());
+  EXPECT_FALSE(service_->GetInstalledExtension(extension1_id));
+  EXPECT_FALSE(service_->GetInstalledExtension(extension2_id));
 }
 
-}; // namespace
+// Test the ThemeService's behavior when a theme is upgraded.
+TEST_F(ThemeServiceTest, ThemeUpgrade) {
+  // Setup.
+  ThemeService* theme_service =
+      ThemeServiceFactory::GetForProfile(profile_.get());
+  theme_service->UseDefaultTheme();
+  // Let the ThemeService uninstall unused themes.
+  base::MessageLoop::current()->RunUntilIdle();
+
+  theme_service->OnInfobarDisplayed();
+
+  base::ScopedTempDir temp_dir1;
+  ASSERT_TRUE(temp_dir1.CreateUniqueTempDir());
+  base::ScopedTempDir temp_dir2;
+  ASSERT_TRUE(temp_dir2.CreateUniqueTempDir());
+
+  const std::string& extension1_id = LoadUnpackedThemeAt(temp_dir1.path());
+  const std::string& extension2_id = LoadUnpackedThemeAt(temp_dir2.path());
+
+  // Test the initial state.
+  EXPECT_TRUE(registry_->GetExtensionById(extension1_id,
+                                          ExtensionRegistry::DISABLED));
+  EXPECT_EQ(extension2_id, theme_service->GetThemeID());
+
+  // 1) Upgrading the current theme should not revert to the default theme.
+  content::WindowedNotificationObserver theme_change_observer(
+      chrome::NOTIFICATION_BROWSER_THEME_CHANGED,
+      content::Source<ThemeService>(theme_service));
+  UpdateUnpackedTheme(extension2_id);
+
+  // The ThemeService should have sent an theme change notification even though
+  // the id of the current theme did not change.
+  theme_change_observer.Wait();
+
+  EXPECT_EQ(extension2_id, theme_service->GetThemeID());
+  EXPECT_TRUE(registry_->GetExtensionById(extension1_id,
+                                          ExtensionRegistry::DISABLED));
+
+  // 2) Upgrading a disabled theme should not change the current theme.
+  UpdateUnpackedTheme(extension1_id);
+  EXPECT_EQ(extension2_id, theme_service->GetThemeID());
+  EXPECT_TRUE(registry_->GetExtensionById(extension1_id,
+                                          ExtensionRegistry::DISABLED));
+}
+
+class ThemeServiceManagedUserTest : public ThemeServiceTest {
+ public:
+  ThemeServiceManagedUserTest() {}
+  virtual ~ThemeServiceManagedUserTest() {}
+
+  virtual void SetUp() OVERRIDE {
+    is_managed_ = true;
+    ThemeServiceTest::SetUp();
+  }
+};
+
+// Checks that managed users have their own default theme.
+TEST_F(ThemeServiceManagedUserTest, ManagedUserThemeReplacesDefaultTheme) {
+  ThemeService* theme_service =
+      ThemeServiceFactory::GetForProfile(profile_.get());
+  theme_service->UseDefaultTheme();
+  EXPECT_TRUE(theme_service->UsingDefaultTheme());
+  EXPECT_TRUE(get_theme_supplier(theme_service));
+  EXPECT_EQ(get_theme_supplier(theme_service)->get_theme_type(),
+            CustomThemeSupplier::MANAGED_USER_THEME);
+}
+
+#if defined(OS_LINUX) && !defined(OS_CHROMEOS)
+// Checks that managed users don't use the system theme even if it is the
+// default. The system theme is only available on Linux.
+TEST_F(ThemeServiceManagedUserTest, ManagedUserThemeReplacesNativeTheme) {
+  profile_->GetPrefs()->SetBoolean(prefs::kUsesSystemTheme, true);
+  ThemeService* theme_service =
+      ThemeServiceFactory::GetForProfile(profile_.get());
+  theme_service->UseDefaultTheme();
+  EXPECT_TRUE(theme_service->UsingDefaultTheme());
+  EXPECT_TRUE(get_theme_supplier(theme_service));
+  EXPECT_EQ(get_theme_supplier(theme_service)->get_theme_type(),
+            CustomThemeSupplier::MANAGED_USER_THEME);
+}
+#endif
+
+}; // namespace theme_service_internal

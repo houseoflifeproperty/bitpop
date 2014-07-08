@@ -13,8 +13,10 @@ namespace chromeos {
 
 class PassphraseTextfield : public views::Textfield {
  public:
-  // If show_already_set is true, then the text field will show a fake password.
-  explicit PassphraseTextfield(bool show_fake);
+  PassphraseTextfield();
+
+  // If show_fake is true, then the text field will show a fake password.
+  void SetShowFake(bool show_fake);
 
   // Override views::Textfield so that when focus is gained, then clear out the
   // fake password if appropriate. Replace it when focus is lost if the user has
@@ -24,6 +26,8 @@ class PassphraseTextfield : public views::Textfield {
 
   // Returns the passphrase. If it's unchanged, then returns an empty string.
   std::string GetPassphrase();
+
+  bool show_fake() const { return show_fake_; }
 
  private:
   void SetFakePassphrase();

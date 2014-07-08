@@ -5,15 +5,15 @@
 #ifndef UI_AURA_TEST_AURA_TEST_BASE_H_
 #define UI_AURA_TEST_AURA_TEST_BASE_H_
 
-#include "base/compiler_specific.h"
 #include "base/basictypes.h"
-#include "base/message_loop.h"
+#include "base/compiler_specific.h"
+#include "base/message_loop/message_loop.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/aura/test/aura_test_helper.h"
 
 namespace aura {
-class RootWindow;
 class Window;
+class WindowDelegate;
 namespace test {
 
 // A base class for aura unit tests.
@@ -27,19 +27,28 @@ class AuraTestBase : public testing::Test {
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
-  // Creates a transient window that is transient to |parent|.
-  aura::Window* CreateTransientChild(int id, aura::Window* parent);
-
-  // Attach |window| to the current shell's root window.
-  void SetDefaultParentByPrimaryRootWindow(aura::Window* window);
+  // Creates a normal window parented to |parent|.
+  aura::Window* CreateNormalWindow(int id, Window* parent,
+                                   aura::WindowDelegate* delegate);
 
  protected:
   void RunAllPendingInMessageLoop();
 
-  RootWindow* root_window() { return helper_->root_window(); }
+  void ParentWindow(Window* window);
+
+  // A convenience function for dispatching an event to |dispatcher()|.
+  // Returns whether |event| was handled.
+  bool DispatchEventUsingWindowDispatcher(ui::Event* event);
+
+  Window* root_window() { return helper_->root_window(); }
+  WindowTreeHost* host() { return helper_->host(); }
+  ui::EventProcessor* event_processor() { return helper_->event_processor(); }
+  TestScreen* test_screen() { return helper_->test_screen(); }
 
  private:
-  MessageLoopForUI message_loop_;
+  bool setup_called_;
+  bool teardown_called_;
+  base::MessageLoopForUI message_loop_;
   scoped_ptr<AuraTestHelper> helper_;
 
   DISALLOW_COPY_AND_ASSIGN(AuraTestBase);

@@ -12,14 +12,18 @@
         'win/sandbox_win.gypi',
       ],
     }],
-    [ 'OS=="linux"', {
+    [ 'OS=="linux" or OS=="android"', {
       'includes': [
         'linux/sandbox_linux.gypi',
       ],
     }],
-    [ 'OS!="win" and OS!="mac" and OS!="linux"', {
-      # We need a 'default' to accomodate the "sandbox" target, for instance
-      # on Android.
+    [ 'OS=="mac" and OS!="ios"', {
+      'includes': [
+        'mac/sandbox_mac.gypi',
+      ],
+    }],
+    [ 'OS!="win" and OS!="mac" and OS!="linux" and OS!="android"', {
+      # A 'default' to accomodate the "sandbox" target.
       'targets': [
         {
           'target_name': 'sandbox',

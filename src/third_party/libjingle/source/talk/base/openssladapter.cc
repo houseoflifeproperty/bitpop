@@ -41,7 +41,6 @@
 #include <openssl/err.h>
 #include <openssl/opensslv.h>
 #include <openssl/rand.h>
-#include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
 #if HAVE_CONFIG_H
@@ -50,6 +49,7 @@
 
 #include "talk/base/common.h"
 #include "talk/base/logging.h"
+#include "talk/base/openssl.h"
 #include "talk/base/sslroots.h"
 #include "talk/base/stringutils.h"
 
@@ -62,9 +62,7 @@
   #define MUTEX_LOCK(x) WaitForSingleObject((x), INFINITE)
   #define MUTEX_UNLOCK(x) ReleaseMutex(x)
   #define THREAD_ID GetCurrentThreadId()
-#elif defined(_POSIX_THREADS)
-  // _POSIX_THREADS is normally defined in unistd.h if pthreads are available
-  // on your platform.
+#elif defined(POSIX)
   #define MUTEX_TYPE pthread_mutex_t
   #define MUTEX_SETUP(x) pthread_mutex_init(&(x), NULL)
   #define MUTEX_CLEANUP(x) pthread_mutex_destroy(&(x))
@@ -233,7 +231,10 @@ VerificationCallback OpenSSLAdapter::custom_verify_callback_ = NULL;
 bool OpenSSLAdapter::InitializeSSL(VerificationCallback callback) {
   if (!InitializeSSLThread() || !SSL_library_init())
       return false;
+#if !defined(ADDRESS_SANITIZER) || !defined(OSX)
+  // Loading the error strings crashes mac_asan.  Omit this debugging aid there.
   SSL_load_error_strings();
+#endif
   ERR_load_BIO_strings();
   OpenSSL_add_all_algorithms();
   RAND_poll();
@@ -661,7 +662,8 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
   if (!certificate)
     return false;
 
-#ifdef _DEBUG
+  // Logging certificates is extremely verbose. So it is disabled by default.
+#ifdef LOG_CERTIFICATES
   {
     LOG(LS_INFO) << "Certificate from server:";
     BIO* mem = BIO_new(BIO_s_mem());
@@ -686,11 +688,7 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
     int extension_nid = OBJ_obj2nid(X509_EXTENSION_get_object(extension));
 
     if (extension_nid == NID_subject_alt_name) {
-#if OPENSSL_VERSION_NUMBER >= 0x10000000L
       const X509V3_EXT_METHOD* meth = X509V3_EXT_get(extension);
-#else
-      X509V3_EXT_METHOD* meth = X509V3_EXT_get(extension);
-#endif
       if (!meth)
         break;
 
@@ -701,12 +699,8 @@ bool OpenSSLAdapter::VerifyServerName(SSL* ssl, const char* host,
       // See http://readlist.com/lists/openssl.org/openssl-users/0/4761.html.
       unsigned char* ext_value_data = extension->value->data;
 
-#if OPENSSL_VERSION_NUMBER >= 0x0090800fL
       const unsigned char **ext_value_data_ptr =
           (const_cast<const unsigned char **>(&ext_value_data));
-#else
-      unsigned char **ext_value_data_ptr = &ext_value_data;
-#endif
 
       if (meth->it) {
         ext_str = ASN1_item_d2i(NULL, ext_value_data_ptr,
@@ -879,9 +873,13 @@ bool OpenSSLAdapter::ConfigureTrustedRootCertificates(SSL_CTX* ctx) {
 SSL_CTX*
 OpenSSLAdapter::SetupSSLContext() {
   SSL_CTX* ctx = SSL_CTX_new(TLSv1_client_method());
-  if (ctx == NULL)
+  if (ctx == NULL) {
+    unsigned long error = ERR_get_error();  // NOLINT: type used by OpenSSL.
+    LOG(LS_WARNING) << "SSL_CTX creation failed: "
+                    << '"' << ERR_reason_error_string(error) << "\" "
+                    << "(error=" << error << ')';
     return NULL;
-
+  }
   if (!ConfigureTrustedRootCertificates(ctx)) {
     SSL_CTX_free(ctx);
     return NULL;

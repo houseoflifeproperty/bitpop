@@ -8,7 +8,7 @@
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/printing/print_job_worker_owner.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -27,14 +27,14 @@ class PrintJobWorker;
 class PrinterQuery;
 
 // Manages the print work for a specific document. Talks to the printer through
-// PrintingContext though PrintJob::Worker. Hides access to PrintingContext in a
+// PrintingContext through PrintJobWorker. Hides access to PrintingContext in a
 // worker thread so the caller never blocks. PrintJob will send notifications on
 // any state change. While printing, the PrintJobManager instance keeps a
 // reference to the job to be sure it is kept alive. All the code in this class
 // runs in the UI thread.
 class PrintJob : public PrintJobWorkerOwner,
                  public content::NotificationObserver,
-                 public MessageLoop::DestructionObserver {
+                 public base::MessageLoop::DestructionObserver {
  public:
   // Create a empty PrintJob. When initializing with this constructor,
   // post-constructor initialization must be done with Initialize().
@@ -54,7 +54,7 @@ class PrintJob : public PrintJobWorkerOwner,
   virtual void GetSettingsDone(const PrintSettings& new_settings,
                                PrintingContext::Result result) OVERRIDE;
   virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) OVERRIDE;
-  virtual MessageLoop* message_loop() OVERRIDE;
+  virtual base::MessageLoop* message_loop() OVERRIDE;
   virtual const PrintSettings& settings() const OVERRIDE;
   virtual int cookie() const OVERRIDE;
 
@@ -65,10 +65,11 @@ class PrintJob : public PrintJobWorkerOwner,
   // spool as soon as data is available.
   void StartPrinting();
 
-  // Waits for the worker thread to finish its queued tasks and disconnects the
-  // delegate object. The PrintJobManager will remove it reference. This may
+  // Asks for the worker thread to finish its queued tasks and disconnects the
+  // delegate object. The PrintJobManager will remove its reference. This may
   // have the side-effect of destroying the object if the caller doesn't have a
-  // handle to the object.
+  // handle to the object. Use PrintJob::is_stopped() to check whether the
+  // worker thread has actually stopped.
   void Stop();
 
   // Cancels printing job and stops the worker thread. Takes effect immediately.
@@ -111,11 +112,13 @@ class PrintJob : public PrintJobWorkerOwner,
   // Called at shutdown when running a nested message loop.
   void Quit();
 
+  void HoldUntilStopIsCalled();
+
   content::NotificationRegistrar registrar_;
 
   // Main message loop reference. Used to send notifications in the right
   // thread.
-  MessageLoop* const ui_message_loop_;
+  base::MessageLoop* const ui_message_loop_;
 
   // Source that generates the PrintedPage's (i.e. a WebContents). It will be
   // set back to NULL if the source is deleted before this object.

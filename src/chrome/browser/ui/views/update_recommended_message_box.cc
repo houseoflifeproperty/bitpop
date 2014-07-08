@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/views/update_recommended_message_box.h"
 
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/ui/views/constrained_window_views.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -22,8 +23,8 @@
 // static
 void UpdateRecommendedMessageBox::Show(gfx::NativeWindow parent_window) {
   // When the window closes, it will delete itself.
-  views::Widget::CreateWindowWithParent(new UpdateRecommendedMessageBox(),
-                                        parent_window)->Show();
+  CreateBrowserModalDialogViews(new UpdateRecommendedMessageBox(),
+                                parent_window)->Show();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -36,7 +37,7 @@ UpdateRecommendedMessageBox::UpdateRecommendedMessageBox() {
 #else
   const int kProductNameID = IDS_PRODUCT_NAME;
 #endif
-  const string16 product_name = l10n_util::GetStringUTF16(kProductNameID);
+  const base::string16 product_name = l10n_util::GetStringUTF16(kProductNameID);
   views::MessageBoxView::InitParams params(
       l10n_util::GetStringFUTF16(IDS_UPDATE_RECOMMENDED, product_name));
   params.message_width = kDialogWidth;
@@ -52,11 +53,11 @@ bool UpdateRecommendedMessageBox::Accept() {
   chromeos::DBusThreadManager::Get()->GetPowerManagerClient()->RequestRestart();
   // If running the Chrome OS build, but we're not on the device, fall through
 #endif
-  browser::AttemptRestart();
+  chrome::AttemptRestart();
   return true;
 }
 
-string16 UpdateRecommendedMessageBox::GetDialogButtonLabel(
+base::string16 UpdateRecommendedMessageBox::GetDialogButtonLabel(
     ui::DialogButton button) const {
   return l10n_util::GetStringUTF16((button == ui::DIALOG_BUTTON_OK) ?
       IDS_RELAUNCH_AND_UPDATE : IDS_NOT_NOW);
@@ -70,7 +71,7 @@ bool UpdateRecommendedMessageBox::ShouldShowWindowTitle() const {
 #endif
 }
 
-string16 UpdateRecommendedMessageBox::GetWindowTitle() const {
+base::string16 UpdateRecommendedMessageBox::GetWindowTitle() const {
   return l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
 }
 

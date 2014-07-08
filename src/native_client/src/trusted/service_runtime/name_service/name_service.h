@@ -10,10 +10,10 @@
 #include "native_client/src/include/nacl_base.h"
 #include "native_client/src/include/portability.h"
 
-#include "native_client/src/trusted/desc/nacl_desc_base.h"
+/* Get NACL_NAME_SERVICE_CONNECTION_MAX. */
+#include "native_client/src/public/name_service.h"
 
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_name_service.h"
-/* get NACL_NAME_SERVICE_CONNECTION_MAX */
+#include "native_client/src/trusted/desc/nacl_desc_base.h"
 
 #include "native_client/src/trusted/simple_service/nacl_simple_service.h"
 #include "native_client/src/trusted/simple_service/nacl_simple_ltd_service.h"
@@ -95,7 +95,7 @@ struct NaClNameServiceVtbl {
   /*
    * The following functions return 0 for success, and non-zero to
    * indicate the reason for failure.  The set of possible failures is
-   * in src/trusted/service_runtime/include/sys/nacl_name_service.h.
+   * in src/public/name_service.h.
    *
    * They don't really have to be virtual, but this makes it easier to
    * subclass and modify later, should the need occur.
@@ -118,21 +118,6 @@ struct NaClNameServiceVtbl {
   int                           (*DeleteName)(
       struct NaClNameService  *self,
       char const              *name);
-
-  /*
-   * Enumerate always succeeds and returns the number of bytes
-   * written.  To see if the buffer was large enough, check that the
-   * number of bytes written is less than the supplied buffer size.
-   * NB: if the number of bytes is equal to the buffer size, even if
-   * the last byte is a NUL we cannot know that there aren't more
-   * entries.  (A partially written entry is only one possibility; it
-   * could happen that the initial entries exactly fit the buffer, but
-   * there are more.)
-   */
-  size_t                        (*Enumerate)(
-      struct NaClNameService  *self,
-      char                    *dest,
-      size_t                  nbytes);
 };
 
 extern struct NaClNameServiceVtbl kNaClNameServiceVtbl;

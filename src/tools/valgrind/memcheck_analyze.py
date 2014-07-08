@@ -60,7 +60,7 @@ def getCDATAOf(top_node, name):
 def shortenFilePath(source_dir, directory):
   '''Returns a string with the string prefix |source_dir| removed from
   |directory|.'''
-  prefixes_to_cut = ["build/src/", "valgrind/coregrind/"]
+  prefixes_to_cut = ["build/src/", "valgrind/coregrind/", "out/Release/../../"]
 
   if source_dir:
     prefixes_to_cut.append(source_dir)
@@ -597,8 +597,9 @@ class MemcheckAnalyzer:
     if check_sanity:
       remaining_sanity_supp = MemcheckAnalyzer.SANITY_TEST_SUPPRESSIONS
       for (name, count) in suppcounts.iteritems():
+        # Workaround for http://crbug.com/334074
         if (name in remaining_sanity_supp and
-            remaining_sanity_supp[name] == count):
+            remaining_sanity_supp[name] <= count):
           del remaining_sanity_supp[name]
       if remaining_sanity_supp:
         logging.error("FAIL! Sanity check failed!")
@@ -617,7 +618,7 @@ class MemcheckAnalyzer:
 def _main():
   '''For testing only. The MemcheckAnalyzer class should be imported instead.'''
   parser = optparse.OptionParser("usage: %prog [options] <files to analyze>")
-  parser.add_option("", "--source_dir",
+  parser.add_option("", "--source-dir",
                     help="path to top of source tree for this build"
                     "(used to normalize source paths in baseline)")
 

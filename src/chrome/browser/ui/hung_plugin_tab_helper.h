@@ -7,18 +7,22 @@
 
 #include <map>
 
-#include "base/file_path.h"
 #include "base/memory/linked_ptr.h"
-#include "base/string16.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
+namespace base {
 class FilePath;
-class InfoBarTabHelper;
+}
+
+namespace infobars {
+class InfoBarDelegate;
+}
 
 // Manages per-tab state with regard to hung plugins. This only handles
 // Pepper plugins which we know are windowless. Hung NPAPI plugins (which
@@ -39,55 +43,28 @@ class HungPluginTabHelper
  public:
   virtual ~HungPluginTabHelper();
 
-  // content::WebContentsObserver overrides:
-  virtual void PluginCrashed(const FilePath& plugin_path) OVERRIDE;
+  // content::WebContentsObserver:
+  virtual void PluginCrashed(const base::FilePath& plugin_path,
+                             base::ProcessId plugin_pid) OVERRIDE;
   virtual void PluginHungStatusChanged(int plugin_child_id,
-                                       const FilePath& plugin_path,
+                                       const base::FilePath& plugin_path,
                                        bool is_hung) OVERRIDE;
 
-  // NotificationObserver overrides.
+  // content::NotificationObserver:
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
- private:
-  explicit HungPluginTabHelper(content::WebContents* contents);
-  friend class content::WebContentsUserData<HungPluginTabHelper>;
-
-  class InfoBarDelegate;
-  friend class InfoBarDelegate;
-
-  // Per-plugin state (since there could be more than one plugin hung). The
-  // integer key is the child process ID of the plugin process. This maintains
-  // the state for all plugins on this page that are currently hung, whether or
-  // not we're currently showing the infobar.
-  struct PluginState {
-    // Initializes the plugin state to be a hung plugin.
-    PluginState(const FilePath& p, const string16& n);
-    ~PluginState();
-
-    FilePath path;
-    string16 name;
-
-    // Possibly-null if we're not showing an infobar right now.
-    InfoBarDelegate* info_bar;
-
-    // Time to delay before re-showing the infobar for a hung plugin. This is
-    // increased each time the user cancels it.
-    base::TimeDelta next_reshow_delay;
-
-    // Handles calling the helper when the infobar should be re-shown.
-    base::Timer timer;
-
-   private:
-    // Since the scope of the timer manages our callback, this struct should
-    // not be copied.
-    DISALLOW_COPY_AND_ASSIGN(PluginState);
-  };
-  typedef std::map<int, linked_ptr<PluginState> > PluginStateMap;
-
   // Called by an infobar when the user selects to kill the plugin.
   void KillPlugin(int child_id);
+
+ private:
+  friend class content::WebContentsUserData<HungPluginTabHelper>;
+
+  struct PluginState;
+  typedef std::map<int, linked_ptr<PluginState> > PluginStateMap;
+
+  explicit HungPluginTabHelper(content::WebContents* contents);
 
   // Called on a timer for a hung plugin to re-show the bar.
   void OnReshowTimer(int child_id);

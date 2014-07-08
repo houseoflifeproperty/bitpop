@@ -11,23 +11,26 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/scoped_native_library.h"
 #include "build/build_config.h"
-#include "content/common/child_thread.h"
+#include "content/child/child_thread.h"
+#include "content/public/common/pepper_plugin_info.h"
 #include "ppapi/c/pp_module.h"
 #include "ppapi/c/trusted/ppp_broker.h"
+#include "ppapi/proxy/connection.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
 
 #if defined(OS_WIN)
 #include "base/win/scoped_handle.h"
 #endif
 
+namespace base {
 class CommandLine;
 class FilePath;
+}
 
 namespace IPC {
 struct ChannelHandle;
@@ -41,13 +44,25 @@ class PpapiThread : public ChildThread,
                     public ppapi::proxy::PluginDispatcher::PluginDelegate,
                     public ppapi::proxy::PluginProxyDelegate {
  public:
-  PpapiThread(const CommandLine& command_line, bool is_broker);
+  PpapiThread(const base::CommandLine& command_line, bool is_broker);
   virtual ~PpapiThread();
+  virtual void Shutdown() OVERRIDE;
 
  private:
+  // Make sure the enum list in tools/histogram/histograms.xml is updated with
+  // any change in this list.
+  enum LoadResult {
+    LOAD_SUCCESS,
+    LOAD_FAILED,
+    ENTRY_POINT_MISSING,
+    INIT_FAILED,
+    // NOTE: Add new values only immediately above this line.
+    LOAD_RESULT_MAX  // Boundary value for UMA_HISTOGRAM_ENUMERATION.
+  };
+
   // ChildThread overrides.
   virtual bool Send(IPC::Message* msg) OVERRIDE;
-  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
+  virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
 
   // PluginDispatcher::PluginDelegate implementation.
@@ -69,18 +84,21 @@ class PpapiThread : public ChildThread,
   virtual std::string GetUILanguage() OVERRIDE;
   virtual void PreCacheFont(const void* logfontw) OVERRIDE;
   virtual void SetActiveURL(const std::string& url) OVERRIDE;
+  virtual PP_Resource CreateBrowserFont(
+      ppapi::proxy::Connection connection,
+      PP_Instance instance,
+      const PP_BrowserFont_Trusted_Description& desc,
+      const ppapi::Preferences& prefs) OVERRIDE;
 
   // Message handlers.
-  void OnMsgLoadPlugin(const FilePath& path,
-                       const ppapi::PpapiPermissions& permissions);
-  void OnMsgCreateChannel(base::ProcessId renderer_pid,
-                          int renderer_child_id,
-                          bool incognito);
-  void OnMsgResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
-  void OnMsgSetNetworkState(bool online);
-  void OnPluginDispatcherMessageReceived(const IPC::Message& msg);
+  void OnLoadPlugin(const base::FilePath& path,
+                    const ppapi::PpapiPermissions& permissions);
+  void OnCreateChannel(base::ProcessId renderer_pid,
+                       int renderer_child_id,
+                       bool incognito);
+  void OnSetNetworkState(bool online);
+  void OnCrash();
+  void OnHang();
 
   // Sets up the channel to the given renderer. On success, returns true and
   // fills the given ChannelHandle with the information from the new channel.
@@ -90,7 +108,13 @@ class PpapiThread : public ChildThread,
                             IPC::ChannelHandle* handle);
 
   // Sets up the name of the plugin for logging using the given path.
-  void SavePluginName(const FilePath& path);
+  void SavePluginName(const base::FilePath& path);
+
+  void ReportLoadResult(const base::FilePath& path, LoadResult result);
+
+  // Reports |error| to UMA when plugin load fails.
+  void ReportLoadErrorCode(const base::FilePath& path,
+                           const base::NativeLibraryLoadError& error);
 
   // True if running in a broker process rather than a normal plugin process.
   bool is_broker_;
@@ -103,7 +127,7 @@ class PpapiThread : public ChildThread,
   ppapi::proxy::PluginGlobals plugin_globals_;
 
   // Storage for plugin entry points.
-  webkit::ppapi::PluginModule::EntryPoints plugin_entry_points_;
+  PepperPluginInfo::EntryPoints plugin_entry_points_;
 
   // Callback to call when a new instance connects to the broker.
   // Used only when is_broker_.

@@ -11,50 +11,68 @@
 #ifndef WEBRTC_MODULES_RTP_RTCP_SOURCE_BITRATE_H_
 #define WEBRTC_MODULES_RTP_RTCP_SOURCE_BITRATE_H_
 
-#include "typedefs.h"
-#include "rtp_rtcp_config.h"     // misc. defines (e.g. MAX_PACKET_LENGTH)
-#include "common_types.h"            // Transport
 #include <stdio.h>
+
 #include <list>
 
+#include "webrtc/common_types.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_rtcp_config.h"
+#include "webrtc/system_wrappers/interface/scoped_ptr.h"
+#include "webrtc/typedefs.h"
+
 namespace webrtc {
-class RtpRtcpClock;
 
-class Bitrate
-{
-public:
-    Bitrate(RtpRtcpClock* clock);
+class Clock;
+class CriticalSectionWrapper;
 
-    // calculate rates
-    void Process();
+class Bitrate {
+ public:
+  class Observer;
+  Bitrate(Clock* clock, Observer* observer);
+  virtual ~Bitrate();
 
-    // update with a packet
-    void Update(const WebRtc_Word32 bytes);
+  // Calculates rates.
+  void Process();
 
-    // packet rate last second, updated roughly every 100 ms
-    WebRtc_UWord32 PacketRate() const;
+  // Update with a packet.
+  void Update(const int32_t bytes);
 
-    // bitrate last second, updated roughly every 100 ms
-    WebRtc_UWord32 BitrateLast() const;
+  // Packet rate last second, updated roughly every 100 ms.
+  uint32_t PacketRate() const;
 
-    // bitrate last second, updated now
-    WebRtc_UWord32 BitrateNow() const;
+  // Bitrate last second, updated roughly every 100 ms.
+  uint32_t BitrateLast() const;
 
-protected:
-  RtpRtcpClock& _clock;
+  // Bitrate last second, updated now.
+  uint32_t BitrateNow() const;
 
-private:
-  WebRtc_UWord32 _packetRate;
-  WebRtc_UWord32 _bitrate;
-  WebRtc_UWord8 _bitrateNextIdx;
-  WebRtc_Word64 _packetRateArray[10];
-  WebRtc_Word64 _bitrateArray[10];
-  WebRtc_Word64 _bitrateDiffMS[10];
-  WebRtc_Word64 _timeLastRateUpdate;
-  WebRtc_UWord32 _bytesCount;
-  WebRtc_UWord32 _packetCount;
+  int64_t time_last_rate_update() const;
+
+  class Observer {
+   public:
+    Observer() {}
+    virtual ~Observer() {}
+
+    virtual void BitrateUpdated(const BitrateStatistics& stats) = 0;
+  };
+
+ protected:
+  Clock* clock_;
+
+ private:
+  scoped_ptr<CriticalSectionWrapper> crit_;
+  uint32_t packet_rate_;
+  uint32_t bitrate_;
+  uint8_t bitrate_next_idx_;
+  int64_t packet_rate_array_[10];
+  int64_t bitrate_array_[10];
+  int64_t bitrate_diff_ms_[10];
+  int64_t time_last_rate_update_;
+  uint32_t bytes_count_;
+  uint32_t packet_count_;
+  Observer* const observer_;
 };
 
 }  // namespace webrtc
 
-#endif // WEBRTC_MODULES_RTP_RTCP_SOURCE_BITRATE_H_
+#endif  // WEBRTC_MODULES_RTP_RTCP_SOURCE_BITRATE_H_

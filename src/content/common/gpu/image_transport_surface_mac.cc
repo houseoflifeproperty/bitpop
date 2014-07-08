@@ -2,19 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#if defined(ENABLE_GPU)
-
 #include "content/common/gpu/image_transport_surface.h"
 
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/common/gpu/gpu_command_buffer_stub.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_context.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_cgl.h"
-#include "ui/surface/io_surface_support_mac.h"
+#include "ui/gl/gl_surface_osmesa.h"
+#include "ui/gl/io_surface_support_mac.h"
 
 namespace content {
 namespace {
@@ -34,8 +34,10 @@ int RoundUpSurfaceDimension(int number) {
 
 // We are backed by an offscreen surface for the purposes of creating
 // a context, but use FBOs to render to texture backed IOSurface
-class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
-                                       public ImageTransportSurface {
+class IOSurfaceImageTransportSurface
+    : public gfx::NoOpGLSurfaceCGL,
+      public ImageTransportSurface,
+      public GpuCommandBufferStub::DestructionObserver {
  public:
   IOSurfaceImageTransportSurface(GpuChannelManager* manager,
                                  GpuCommandBufferStub* stub,
@@ -48,19 +50,24 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
   virtual bool IsOffscreen() OVERRIDE;
   virtual bool SwapBuffers() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual bool OnMakeCurrent(gfx::GLContext* context) OVERRIDE;
   virtual unsigned int GetBackingFrameBufferObject() OVERRIDE;
-  virtual void SetBackbufferAllocation(bool allocated) OVERRIDE;
+  virtual bool SetBackbufferAllocation(bool allocated) OVERRIDE;
   virtual void SetFrontbufferAllocation(bool allocated) OVERRIDE;
 
  protected:
   // ImageTransportSurface implementation
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResizeViewACK() OVERRIDE;
-  virtual void OnResize(gfx::Size size) OVERRIDE;
+  virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
+  virtual void SetLatencyInfo(
+      const std::vector<ui::LatencyInfo>&) OVERRIDE;
+  virtual void WakeUpGpu() OVERRIDE;
+
+  // GpuCommandBufferStub::DestructionObserver implementation.
+  virtual void OnWillDestroyStub() OVERRIDE;
 
  private:
   virtual ~IOSurfaceImageTransportSurface() OVERRIDE;
@@ -75,8 +82,9 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
 
   uint32 fbo_id_;
   GLuint texture_id_;
+  GLuint depth_stencil_renderbuffer_id_;
 
-  base::mac::ScopedCFTypeRef<CFTypeRef> io_surface_;
+  base::ScopedCFTypeRef<CFTypeRef> io_surface_;
 
   // The id of |io_surface_| or 0 if that's NULL.
   uint64 io_surface_handle_;
@@ -86,6 +94,7 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
 
   gfx::Size size_;
   gfx::Size rounded_size_;
+  float scale_factor_;
 
   // Whether or not we've successfully made the surface current once.
   bool made_current_;
@@ -95,6 +104,8 @@ class IOSurfaceImageTransportSurface : public gfx::NoOpGLSurfaceCGL,
 
   // Whether we unscheduled command buffer because of pending SwapBuffers.
   bool did_unschedule_;
+
+  std::vector<ui::LatencyInfo> latency_info_;
 
   scoped_ptr<ImageTransportHelper> helper_;
 
@@ -111,7 +122,7 @@ void AddBooleanValue(CFMutableDictionaryRef dictionary,
 void AddIntegerValue(CFMutableDictionaryRef dictionary,
                      const CFStringRef key,
                      int32 value) {
-  base::mac::ScopedCFTypeRef<CFNumberRef> number(
+  base::ScopedCFTypeRef<CFNumberRef> number(
       CFNumberCreate(NULL, kCFNumberSInt32Type, &value));
   CFDictionaryAddValue(dictionary, key, number.get());
 }
@@ -125,8 +136,10 @@ IOSurfaceImageTransportSurface::IOSurfaceImageTransportSurface(
       frontbuffer_suggested_allocation_(true),
       fbo_id_(0),
       texture_id_(0),
+      depth_stencil_renderbuffer_id_(0),
       io_surface_handle_(0),
       context_(NULL),
+      scale_factor_(1.f),
       made_current_(false),
       is_swap_buffers_pending_(false),
       did_unschedule_(false) {
@@ -134,7 +147,6 @@ IOSurfaceImageTransportSurface::IOSurfaceImageTransportSurface(
 }
 
 IOSurfaceImageTransportSurface::~IOSurfaceImageTransportSurface() {
-  Destroy();
 }
 
 bool IOSurfaceImageTransportSurface::Initialize() {
@@ -147,7 +159,14 @@ bool IOSurfaceImageTransportSurface::Initialize() {
 
   if (!helper_->Initialize())
     return false;
-  return NoOpGLSurfaceCGL::Initialize();
+
+  if (!NoOpGLSurfaceCGL::Initialize()) {
+    helper_->Destroy();
+    return false;
+  }
+
+  helper_->stub()->AddDestructionObserver(this);
+  return true;
 }
 
 void IOSurfaceImageTransportSurface::Destroy() {
@@ -182,7 +201,7 @@ bool IOSurfaceImageTransportSurface::OnMakeCurrent(gfx::GLContext* context) {
   if (made_current_)
     return true;
 
-  OnResize(gfx::Size(1, 1));
+  OnResize(gfx::Size(1, 1), 1.f);
 
   made_current_ = true;
   return true;
@@ -192,11 +211,12 @@ unsigned int IOSurfaceImageTransportSurface::GetBackingFrameBufferObject() {
   return fbo_id_;
 }
 
-void IOSurfaceImageTransportSurface::SetBackbufferAllocation(bool allocation) {
+bool IOSurfaceImageTransportSurface::SetBackbufferAllocation(bool allocation) {
   if (backbuffer_suggested_allocation_ == allocation)
-    return;
+    return true;
   backbuffer_suggested_allocation_ = allocation;
   AdjustBufferAllocation();
+  return true;
 }
 
 void IOSurfaceImageTransportSurface::SetFrontbufferAllocation(bool allocation) {
@@ -214,7 +234,7 @@ void IOSurfaceImageTransportSurface::AdjustBufferAllocation() {
       io_surface_.get()) {
     UnrefIOSurface();
     helper_->Suspend();
-  } else if (backbuffer_suggested_allocation_ && !io_surface_.get()) {
+  } else if (backbuffer_suggested_allocation_ && !io_surface_) {
     CreateIOSurface();
   }
 }
@@ -228,6 +248,8 @@ bool IOSurfaceImageTransportSurface::SwapBuffers() {
   GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params;
   params.surface_handle = io_surface_handle_;
   params.size = GetSize();
+  params.scale_factor = scale_factor_;
+  params.latency_info.swap(latency_info_);
   helper_->SendAcceleratedSurfaceBuffersSwapped(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -249,6 +271,8 @@ bool IOSurfaceImageTransportSurface::PostSubBuffer(
   params.width = width;
   params.height = height;
   params.surface_size = GetSize();
+  params.surface_scale_factor = scale_factor_;
+  params.latency_info.swap(latency_info_);
   helper_->SendAcceleratedSurfacePostSubBuffer(params);
 
   DCHECK(!is_swap_buffers_pending_);
@@ -256,12 +280,8 @@ bool IOSurfaceImageTransportSurface::PostSubBuffer(
   return true;
 }
 
-std::string IOSurfaceImageTransportSurface::GetExtensions() {
-  std::string extensions = gfx::GLSurface::GetExtensions();
-  extensions += extensions.empty() ? "" : " ";
-  extensions += "GL_CHROMIUM_front_buffer_cached ";
-  extensions += "GL_CHROMIUM_post_sub_buffer";
-  return extensions;
+bool IOSurfaceImageTransportSurface::SupportsPostSubBuffer() {
+  return true;
 }
 
 gfx::Size IOSurfaceImageTransportSurface::GetSize() {
@@ -269,8 +289,10 @@ gfx::Size IOSurfaceImageTransportSurface::GetSize() {
 }
 
 void IOSurfaceImageTransportSurface::OnBufferPresented(
-    const AcceleratedSurfaceMsg_BufferPresented_Params& /* params */) {
+    const AcceleratedSurfaceMsg_BufferPresented_Params& params) {
   DCHECK(is_swap_buffers_pending_);
+
+  context_->share_group()->SetRendererID(params.renderer_id);
   is_swap_buffers_pending_ = false;
   if (did_unschedule_) {
     did_unschedule_ = false;
@@ -278,11 +300,8 @@ void IOSurfaceImageTransportSurface::OnBufferPresented(
   }
 }
 
-void IOSurfaceImageTransportSurface::OnResizeViewACK() {
-  NOTREACHED();
-}
-
-void IOSurfaceImageTransportSurface::OnResize(gfx::Size size) {
+void IOSurfaceImageTransportSurface::OnResize(gfx::Size size,
+                                              float scale_factor) {
   // This trace event is used in gpu_feature_browsertest.cc - the test will need
   // to be updated if this event is changed or moved.
   TRACE_EVENT2("gpu", "IOSurfaceImageTransportSurface::OnResize",
@@ -291,14 +310,30 @@ void IOSurfaceImageTransportSurface::OnResize(gfx::Size size) {
   DCHECK(context_->IsCurrent(this));
 
   size_ = size;
+  scale_factor_ = scale_factor;
 
   CreateIOSurface();
+}
+
+void IOSurfaceImageTransportSurface::SetLatencyInfo(
+    const std::vector<ui::LatencyInfo>& latency_info) {
+  for (size_t i = 0; i < latency_info.size(); i++)
+    latency_info_.push_back(latency_info[i]);
+}
+
+void IOSurfaceImageTransportSurface::WakeUpGpu() {
+  NOTIMPLEMENTED();
+}
+
+void IOSurfaceImageTransportSurface::OnWillDestroyStub() {
+  helper_->stub()->RemoveDestructionObserver(this);
+  Destroy();
 }
 
 void IOSurfaceImageTransportSurface::UnrefIOSurface() {
   // If we have resources to destroy, then make sure that we have a current
   // context which we can use to delete the resources.
-  if (context_ || fbo_id_ || texture_id_) {
+  if (context_ || fbo_id_ || texture_id_ || depth_stencil_renderbuffer_id_) {
     DCHECK(gfx::GLContext::GetCurrent() == context_);
     DCHECK(context_->IsCurrent(this));
     DCHECK(CGLGetCurrentContext());
@@ -312,6 +347,11 @@ void IOSurfaceImageTransportSurface::UnrefIOSurface() {
   if (texture_id_) {
     glDeleteTextures(1, &texture_id_);
     texture_id_ = 0;
+  }
+
+  if (depth_stencil_renderbuffer_id_) {
+    glDeleteRenderbuffersEXT(1, &depth_stencil_renderbuffer_id_);
+    depth_stencil_renderbuffer_id_ = 0;
   }
 
   io_surface_.reset();
@@ -362,9 +402,40 @@ void IOSurfaceImageTransportSurface::CreateIOSurface() {
                             texture_id_,
                             0);
 
+
+  // Search through the provided attributes; if the caller has
+  // requested a stencil buffer, try to get one.
+
+  int32 stencil_bits =
+      helper_->stub()->GetRequestedAttribute(EGL_STENCIL_SIZE);
+  if (stencil_bits > 0) {
+    // Create and bind the stencil buffer
+    bool has_packed_depth_stencil =
+         GLSurface::ExtensionsContain(
+             reinterpret_cast<const char *>(glGetString(GL_EXTENSIONS)),
+                                            "GL_EXT_packed_depth_stencil");
+
+    if (has_packed_depth_stencil) {
+      glGenRenderbuffersEXT(1, &depth_stencil_renderbuffer_id_);
+      glBindRenderbufferEXT(GL_RENDERBUFFER_EXT,
+                            depth_stencil_renderbuffer_id_);
+      glRenderbufferStorageEXT(GL_RENDERBUFFER_EXT, GL_DEPTH24_STENCIL8_EXT,
+                              rounded_size_.width(), rounded_size_.height());
+      glFramebufferRenderbufferEXT(GL_FRAMEBUFFER_EXT,
+                                  GL_STENCIL_ATTACHMENT_EXT,
+                                  GL_RENDERBUFFER_EXT,
+                                  depth_stencil_renderbuffer_id_);
+    }
+
+    // If we asked for stencil but the extension isn't present,
+    // it's OK to silently fail; subsequent code will/must check
+    // for the presence of a stencil buffer before attempting to
+    // do stencil-based operations.
+  }
+
   // Allocate a new IOSurface, which is the GPU resource that can be
   // shared across processes.
-  base::mac::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> properties;
   properties.reset(CFDictionaryCreateMutable(kCFAllocatorDefault,
                                              0,
                                              &kCFTypeDictionaryKeyCallBacks,
@@ -399,25 +470,52 @@ void IOSurfaceImageTransportSurface::CreateIOSurface() {
           io_surface_.get(),
           plane);
   if (cglerror != kCGLNoError) {
-    DLOG(ERROR) << "CGLTexImageIOSurface2D: " << cglerror;
     UnrefIOSurface();
     return;
   }
 
   glFlush();
 
+  GLenum status = glCheckFramebufferStatusEXT(GL_FRAMEBUFFER_EXT);
+  if (status != GL_FRAMEBUFFER_COMPLETE_EXT) {
+    DLOG(ERROR) << "Framebuffer was incomplete: " << status;
+    UnrefIOSurface();
+    return;
+  }
+
   glBindTexture(target, previous_texture_id);
   // The FBO remains bound for this GL context.
 }
 
+// A subclass of GLSurfaceOSMesa that doesn't print an error message when
+// SwapBuffers() is called.
+class DRTSurfaceOSMesa : public gfx::GLSurfaceOSMesa {
+ public:
+  // Size doesn't matter, the surface is resized to the right size later.
+  DRTSurfaceOSMesa() : GLSurfaceOSMesa(GL_RGBA, gfx::Size(1, 1)) {}
+
+  // Implement a subset of GLSurface.
+  virtual bool SwapBuffers() OVERRIDE;
+
+ private:
+  virtual ~DRTSurfaceOSMesa() {}
+  DISALLOW_COPY_AND_ASSIGN(DRTSurfaceOSMesa);
+};
+
+bool DRTSurfaceOSMesa::SwapBuffers() {
+  return true;
+}
+
+bool g_allow_os_mesa = false;
+
 }  // namespace
 
 // static
-scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
+scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateNativeSurface(
     GpuChannelManager* manager,
     GpuCommandBufferStub* stub,
     const gfx::GLSurfaceHandle& surface_handle) {
-  scoped_refptr<gfx::GLSurface> surface;
+  DCHECK(surface_handle.transport_type == gfx::NATIVE_TRANSPORT);
   IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
 
   switch (gfx::GetGLImplementation()) {
@@ -425,22 +523,30 @@ scoped_refptr<gfx::GLSurface> ImageTransportSurface::CreateSurface(
     case gfx::kGLImplementationAppleGL:
       if (!io_surface_support) {
         DLOG(WARNING) << "No IOSurface support";
-        return NULL;
-      } else {
-        surface = new IOSurfaceImageTransportSurface(
-            manager, stub, surface_handle.handle);
+        return scoped_refptr<gfx::GLSurface>();
       }
-      break;
+      return scoped_refptr<gfx::GLSurface>(new IOSurfaceImageTransportSurface(
+          manager, stub, surface_handle.handle));
+
     default:
-      NOTREACHED();
-      return NULL;
+      // Content shell in DRT mode spins up a gpu process which needs an
+      // image transport surface, but that surface isn't used to read pixel
+      // baselines. So this is mostly a dummy surface.
+      if (!g_allow_os_mesa) {
+        NOTREACHED();
+        return scoped_refptr<gfx::GLSurface>();
+      }
+      scoped_refptr<gfx::GLSurface> surface(new DRTSurfaceOSMesa());
+      if (!surface.get() || !surface->Initialize())
+        return surface;
+      return scoped_refptr<gfx::GLSurface>(new PassThroughImageTransportSurface(
+          manager, stub, surface.get()));
   }
-  if (surface->Initialize())
-    return surface;
-  else
-    return NULL;
+}
+
+// static
+void ImageTransportSurface::SetAllowOSMesaForTesting(bool allow) {
+  g_allow_os_mesa = allow;
 }
 
 }  // namespace content
-
-#endif  // defined(USE_GPU)

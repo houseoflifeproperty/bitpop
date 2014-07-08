@@ -173,6 +173,10 @@ class Message(BaseMessage):
 
     return super(Message, self).GetId()
 
+  def HasAssignedId(self):
+    '''Returns True if this message has an assigned id.'''
+    return bool(self.assigned_id)
+
 
 class Translation(BaseMessage):
   '''A translation.'''

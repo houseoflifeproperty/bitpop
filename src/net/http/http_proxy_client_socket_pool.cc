@@ -6,12 +6,11 @@
 
 #include <algorithm>
 
-#include "base/time.h"
+#include "base/compiler_specific.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_cert_request_info.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_proxy_client_socket.h"
 #include "net/socket/client_socket_factory.h"
@@ -24,6 +23,8 @@
 #include "net/spdy/spdy_session.h"
 #include "net/spdy/spdy_session_pool.h"
 #include "net/spdy/spdy_stream.h"
+#include "net/ssl/ssl_cert_request_info.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -46,9 +47,9 @@ HttpProxySocketParams::HttpProxySocketParams(
       http_auth_cache_(tunnel ? http_auth_cache : NULL),
       http_auth_handler_factory_(tunnel ? http_auth_handler_factory : NULL),
       tunnel_(tunnel) {
-  DCHECK((transport_params == NULL && ssl_params != NULL) ||
-         (transport_params != NULL && ssl_params == NULL));
-  if (transport_params_) {
+  DCHECK((transport_params.get() == NULL && ssl_params.get() != NULL) ||
+         (transport_params.get() != NULL && ssl_params.get() == NULL));
+  if (transport_params_.get()) {
     ignore_limits_ = transport_params->ignore_limits();
   } else {
     ignore_limits_ = ssl_params->ignore_limits();
@@ -56,8 +57,8 @@ HttpProxySocketParams::HttpProxySocketParams(
 }
 
 const HostResolver::RequestInfo& HttpProxySocketParams::destination() const {
-  if (transport_params_ == NULL) {
-    return ssl_params_->transport_params()->destination();
+  if (transport_params_.get() == NULL) {
+    return ssl_params_->GetDirectConnectionParams()->destination();
   } else {
     return transport_params_->destination();
   }
@@ -67,10 +68,16 @@ HttpProxySocketParams::~HttpProxySocketParams() {}
 
 // HttpProxyConnectJobs will time out after this many seconds.  Note this is on
 // top of the timeout for the transport socket.
+#if (defined(OS_ANDROID) || defined(OS_IOS)) && defined(SPDY_PROXY_AUTH_ORIGIN)
+static const int kHttpProxyConnectJobTimeoutInSeconds = 10;
+#else
 static const int kHttpProxyConnectJobTimeoutInSeconds = 30;
+#endif
+
 
 HttpProxyConnectJob::HttpProxyConnectJob(
     const std::string& group_name,
+    RequestPriority priority,
     const scoped_refptr<HttpProxySocketParams>& params,
     const base::TimeDelta& timeout_duration,
     TransportClientSocketPool* transport_pool,
@@ -78,15 +85,15 @@ HttpProxyConnectJob::HttpProxyConnectJob(
     HostResolver* host_resolver,
     Delegate* delegate,
     NetLog* net_log)
-    : ConnectJob(group_name, timeout_duration, delegate,
+    : ConnectJob(group_name, timeout_duration, priority, delegate,
                  BoundNetLog::Make(net_log, NetLog::SOURCE_CONNECT_JOB)),
+      weak_ptr_factory_(this),
       params_(params),
       transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
       resolver_(host_resolver),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          callback_(base::Bind(&HttpProxyConnectJob::OnIOComplete,
-                               base::Unretained(this)))),
+      callback_(base::Bind(&HttpProxyConnectJob::OnIOComplete,
+                           weak_ptr_factory_.GetWeakPtr())),
       using_spdy_(false),
       protocol_negotiated_(kProtoUnknown) {
 }
@@ -112,7 +119,7 @@ LoadState HttpProxyConnectJob::GetLoadState() const {
 }
 
 void HttpProxyConnectJob::GetAdditionalErrorState(ClientSocketHandle * handle) {
-  if (error_response_info_.cert_request_info) {
+  if (error_response_info_.cert_request_info.get()) {
     handle->set_ssl_error_response_info(error_response_info_);
     handle->set_is_ssl_error(true);
   }
@@ -173,10 +180,12 @@ int HttpProxyConnectJob::DoLoop(int result) {
 int HttpProxyConnectJob::DoTransportConnect() {
   next_state_ = STATE_TCP_CONNECT_COMPLETE;
   transport_socket_handle_.reset(new ClientSocketHandle());
-  return transport_socket_handle_->Init(
-      group_name(), params_->transport_params(),
-      params_->transport_params()->destination().priority(), callback_,
-      transport_pool_, net_log());
+  return transport_socket_handle_->Init(group_name(),
+                                        params_->transport_params(),
+                                        priority(),
+                                        callback_,
+                                        transport_pool_,
+                                        net_log());
 }
 
 int HttpProxyConnectJob::DoTransportConnectComplete(int result) {
@@ -195,9 +204,10 @@ int HttpProxyConnectJob::DoTransportConnectComplete(int result) {
 
 int HttpProxyConnectJob::DoSSLConnect() {
   if (params_->tunnel()) {
-    HostPortProxyPair pair(params_->destination().host_port_pair(),
-                           ProxyServer::Direct());
-    if (params_->spdy_session_pool()->HasSession(pair)) {
+    SpdySessionKey key(params_->destination().host_port_pair(),
+                       ProxyServer::Direct(),
+                       PRIVACY_MODE_DISABLED);
+    if (params_->spdy_session_pool()->FindAvailableSession(key, net_log())) {
       using_spdy_ = true;
       next_state_ = STATE_SPDY_PROXY_CREATE_STREAM;
       return OK;
@@ -206,9 +216,8 @@ int HttpProxyConnectJob::DoSSLConnect() {
   next_state_ = STATE_SSL_CONNECT_COMPLETE;
   transport_socket_handle_.reset(new ClientSocketHandle());
   return transport_socket_handle_->Init(
-      group_name(), params_->ssl_params(),
-      params_->ssl_params()->transport_params()->destination().priority(),
-      callback_, ssl_pool_, net_log());
+      group_name(), params_->ssl_params(), priority(), callback_,
+      ssl_pool_, net_log());
 }
 
 int HttpProxyConnectJob::DoSSLConnectComplete(int result) {
@@ -275,14 +284,14 @@ int HttpProxyConnectJob::DoHttpProxyConnect() {
                                 params_->tunnel(),
                                 using_spdy_,
                                 protocol_negotiated_,
-                                params_->ssl_params() != NULL));
+                                params_->ssl_params().get() != NULL));
   return transport_socket_->Connect(callback_);
 }
 
 int HttpProxyConnectJob::DoHttpProxyConnectComplete(int result) {
   if (result == OK || result == ERR_PROXY_AUTH_REQUESTED ||
       result == ERR_HTTPS_PROXY_TUNNEL_RESPONSE) {
-      set_socket(transport_socket_.release());
+    SetSocket(transport_socket_.PassAs<StreamSocket>());
   }
 
   return result;
@@ -291,32 +300,35 @@ int HttpProxyConnectJob::DoHttpProxyConnectComplete(int result) {
 int HttpProxyConnectJob::DoSpdyProxyCreateStream() {
   DCHECK(using_spdy_);
   DCHECK(params_->tunnel());
-
-  HostPortProxyPair pair(params_->destination().host_port_pair(),
-                         ProxyServer::Direct());
+  SpdySessionKey key(params_->destination().host_port_pair(),
+                     ProxyServer::Direct(),
+                     PRIVACY_MODE_DISABLED);
   SpdySessionPool* spdy_pool = params_->spdy_session_pool();
-  scoped_refptr<SpdySession> spdy_session;
+  base::WeakPtr<SpdySession> spdy_session =
+      spdy_pool->FindAvailableSession(key, net_log());
   // It's possible that a session to the proxy has recently been created
-  if (spdy_pool->HasSession(pair)) {
+  if (spdy_session) {
     if (transport_socket_handle_.get()) {
       if (transport_socket_handle_->socket())
         transport_socket_handle_->socket()->Disconnect();
       transport_socket_handle_->Reset();
     }
-    spdy_session = spdy_pool->Get(pair, net_log());
   } else {
     // Create a session direct to the proxy itself
-    int rv = spdy_pool->GetSpdySessionFromSocket(
-        pair, transport_socket_handle_.release(),
-        net_log(), OK, &spdy_session, /*using_ssl_*/ true);
-    if (rv < 0)
-      return rv;
+    spdy_session =
+        spdy_pool->CreateAvailableSessionFromSocket(
+            key, transport_socket_handle_.Pass(),
+            net_log(), OK, /*using_ssl_*/ true);
+    DCHECK(spdy_session);
   }
 
   next_state_ = STATE_SPDY_PROXY_CREATE_STREAM_COMPLETE;
-  return spdy_session->CreateStream(
-      params_->request_url(), params_->destination().priority(),
-      &spdy_stream_, spdy_session->net_log(), callback_);
+  return spdy_stream_request_.StartRequest(SPDY_BIDIRECTIONAL_STREAM,
+                                           spdy_session,
+                                           params_->request_url(),
+                                           priority(),
+                                           spdy_session->net_log(),
+                                           callback_);
 }
 
 int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
@@ -324,19 +336,23 @@ int HttpProxyConnectJob::DoSpdyProxyCreateStreamComplete(int result) {
     return result;
 
   next_state_ = STATE_HTTP_PROXY_CONNECT_COMPLETE;
+  base::WeakPtr<SpdyStream> stream = spdy_stream_request_.ReleaseStream();
+  DCHECK(stream.get());
+  // |transport_socket_| will set itself as |stream|'s delegate.
   transport_socket_.reset(
-      new SpdyProxyClientSocket(spdy_stream_,
+      new SpdyProxyClientSocket(stream,
                                 params_->user_agent(),
                                 params_->endpoint(),
                                 params_->request_url(),
                                 params_->destination().host_port_pair(),
+                                net_log(),
                                 params_->http_auth_cache(),
                                 params_->http_auth_handler_factory()));
   return transport_socket_->Connect(callback_);
 }
 
 int HttpProxyConnectJob::ConnectInternal() {
-  if (params_->transport_params()) {
+  if (params_->transport_params().get()) {
     next_state_ = STATE_TCP_CONNECT;
   } else {
     next_state_ = STATE_SSL_CONNECT;
@@ -355,29 +371,34 @@ HttpProxyConnectJobFactory::HttpProxyConnectJobFactory(
       host_resolver_(host_resolver),
       net_log_(net_log) {
   base::TimeDelta max_pool_timeout = base::TimeDelta();
+
+#if (defined(OS_ANDROID) || defined(OS_IOS)) && defined(SPDY_PROXY_AUTH_ORIGIN)
+#else
   if (transport_pool_)
     max_pool_timeout = transport_pool_->ConnectionTimeout();
   if (ssl_pool_)
     max_pool_timeout = std::max(max_pool_timeout,
                                 ssl_pool_->ConnectionTimeout());
+#endif
   timeout_ = max_pool_timeout +
     base::TimeDelta::FromSeconds(kHttpProxyConnectJobTimeoutInSeconds);
 }
 
 
-ConnectJob*
+scoped_ptr<ConnectJob>
 HttpProxyClientSocketPool::HttpProxyConnectJobFactory::NewConnectJob(
     const std::string& group_name,
     const PoolBase::Request& request,
     ConnectJob::Delegate* delegate) const {
-  return new HttpProxyConnectJob(group_name,
-                                 request.params(),
-                                 ConnectionTimeout(),
-                                 transport_pool_,
-                                 ssl_pool_,
-                                 host_resolver_,
-                                 delegate,
-                                 net_log_);
+  return scoped_ptr<ConnectJob>(new HttpProxyConnectJob(group_name,
+                                                        request.priority(),
+                                                        request.params(),
+                                                        ConnectionTimeout(),
+                                                        transport_pool_,
+                                                        ssl_pool_,
+                                                        host_resolver_,
+                                                        delegate,
+                                                        net_log_));
 }
 
 base::TimeDelta
@@ -396,7 +417,7 @@ HttpProxyClientSocketPool::HttpProxyClientSocketPool(
     NetLog* net_log)
     : transport_pool_(transport_pool),
       ssl_pool_(ssl_pool),
-      base_(max_sockets, max_sockets_per_group, histograms,
+      base_(this, max_sockets, max_sockets_per_group, histograms,
             ClientSocketPool::unused_idle_socket_timeout(),
             ClientSocketPool::used_idle_socket_timeout(),
             new HttpProxyConnectJobFactory(transport_pool,
@@ -405,17 +426,12 @@ HttpProxyClientSocketPool::HttpProxyClientSocketPool(
                                            net_log)) {
   // We should always have a |transport_pool_| except in unit tests.
   if (transport_pool_)
-    transport_pool_->AddLayeredPool(this);
+    base_.AddLowerLayeredPool(transport_pool_);
   if (ssl_pool_)
-    ssl_pool_->AddLayeredPool(this);
+    base_.AddLowerLayeredPool(ssl_pool_);
 }
 
 HttpProxyClientSocketPool::~HttpProxyClientSocketPool() {
-  if (ssl_pool_)
-    ssl_pool_->RemoveLayeredPool(this);
-  // We should always have a |transport_pool_| except in unit tests.
-  if (transport_pool_)
-    transport_pool_->RemoveLayeredPool(this);
 }
 
 int HttpProxyClientSocketPool::RequestSocket(
@@ -447,18 +463,13 @@ void HttpProxyClientSocketPool::CancelRequest(
 }
 
 void HttpProxyClientSocketPool::ReleaseSocket(const std::string& group_name,
-                                              StreamSocket* socket, int id) {
-  base_.ReleaseSocket(group_name, socket, id);
+                                              scoped_ptr<StreamSocket> socket,
+                                              int id) {
+  base_.ReleaseSocket(group_name, socket.Pass(), id);
 }
 
 void HttpProxyClientSocketPool::FlushWithError(int error) {
   base_.FlushWithError(error);
-}
-
-bool HttpProxyClientSocketPool::IsStalled() const {
-  return base_.IsStalled() ||
-      (transport_pool_ && transport_pool_->IsStalled()) ||
-      (ssl_pool_ && ssl_pool_->IsStalled());
 }
 
 void HttpProxyClientSocketPool::CloseIdleSockets() {
@@ -479,21 +490,13 @@ LoadState HttpProxyClientSocketPool::GetLoadState(
   return base_.GetLoadState(group_name, handle);
 }
 
-void HttpProxyClientSocketPool::AddLayeredPool(LayeredPool* layered_pool) {
-  base_.AddLayeredPool(layered_pool);
-}
-
-void HttpProxyClientSocketPool::RemoveLayeredPool(LayeredPool* layered_pool) {
-  base_.RemoveLayeredPool(layered_pool);
-}
-
-DictionaryValue* HttpProxyClientSocketPool::GetInfoAsValue(
+base::DictionaryValue* HttpProxyClientSocketPool::GetInfoAsValue(
     const std::string& name,
     const std::string& type,
     bool include_nested_pools) const {
-  DictionaryValue* dict = base_.GetInfoAsValue(name, type);
+  base::DictionaryValue* dict = base_.GetInfoAsValue(name, type);
   if (include_nested_pools) {
-    ListValue* list = new ListValue();
+    base::ListValue* list = new base::ListValue();
     if (transport_pool_) {
       list->Append(transport_pool_->GetInfoAsValue("transport_socket_pool",
                                                    "transport_socket_pool",
@@ -517,10 +520,24 @@ ClientSocketPoolHistograms* HttpProxyClientSocketPool::histograms() const {
   return base_.histograms();
 }
 
+bool HttpProxyClientSocketPool::IsStalled() const {
+  return base_.IsStalled();
+}
+
+void HttpProxyClientSocketPool::AddHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  base_.AddHigherLayeredPool(higher_pool);
+}
+
+void HttpProxyClientSocketPool::RemoveHigherLayeredPool(
+    HigherLayeredPool* higher_pool) {
+  base_.RemoveHigherLayeredPool(higher_pool);
+}
+
 bool HttpProxyClientSocketPool::CloseOneIdleConnection() {
   if (base_.CloseOneIdleSocket())
     return true;
-  return base_.CloseOneIdleConnectionInLayeredPool();
+  return base_.CloseOneIdleConnectionInHigherLayeredPool();
 }
 
 }  // namespace net

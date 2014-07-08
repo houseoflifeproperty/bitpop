@@ -18,14 +18,14 @@
 
 #include "base/logging.h"
 #include "base/mac/mac_util.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_notification_view.h"
-#import "chrome/browser/ui/cocoa/hover_image_button.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
 #include "skia/ext/skia_utils_mac.h"
+#import "ui/base/cocoa/hover_image_button.h"
 #include "ui/base/cocoa/window_size_constants.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
@@ -69,23 +69,19 @@ const CGFloat kCloseButtonTopYOffset = 7.0;
 
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
 
-  NSImage* defaultImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR).ToNSImage();
-  NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_H).ToNSImage();
-  NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_BAR_P).ToNSImage();
+  NSImage* defaultImage = rb.GetNativeImageNamed(IDR_CLOSE_DIALOG).ToNSImage();
+  NSImage* hoverImage = rb.GetNativeImageNamed(IDR_CLOSE_DIALOG_H).ToNSImage();
+  NSImage* pressedImage = rb.GetNativeImageNamed(IDR_CLOSE_DIALOG_P).ToNSImage();
 
   [(HoverImageButton*)hoverCloseButton_ setDefaultImage:defaultImage];
   [(HoverImageButton*)hoverCloseButton_ setHoverImage:hoverImage];
   [(HoverImageButton*)hoverCloseButton_ setPressedImage:pressedImage];
 
-  [(HoverImageButton*)hoverCloseButton_ setDefaultOpacity:1.0];
-  [(HoverImageButton*)hoverCloseButton_ setHoverOpacity:1.0];
-  [(HoverImageButton*)hoverCloseButton_ setPressedOpacity:1.0];
-
   [(HoverImageButton*)hoverCloseButton_ setBordered:NO];
 
   [bubble_ addSubview:hoverCloseButton_];
 
-  scoped_nsobject<InfoBubbleWindow> window(
+  base::scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc]
           initWithContentRect:(ui::kWindowSizeDeterminedLater)
                     styleMask:NSBorderlessWindowMask

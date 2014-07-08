@@ -8,9 +8,9 @@
 
 #include <string>
 
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/common/extensions/extension.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
@@ -26,7 +26,10 @@ namespace {
 // so there's no way for the dialog to outlive its delegate.
 class ExtensionUninstallDialogCocoa : public ExtensionUninstallDialog {
  public:
-  ExtensionUninstallDialogCocoa(Browser* browser, Delegate* delegate);
+  ExtensionUninstallDialogCocoa(
+      Profile* profile,
+      Browser* browser,
+      Delegate* delegate);
   virtual ~ExtensionUninstallDialogCocoa() OVERRIDE;
 
  private:
@@ -34,8 +37,10 @@ class ExtensionUninstallDialogCocoa : public ExtensionUninstallDialog {
 };
 
 ExtensionUninstallDialogCocoa::ExtensionUninstallDialogCocoa(
-    Browser* browser, ExtensionUninstallDialog::Delegate* delegate)
-    : ExtensionUninstallDialog(browser, delegate) {}
+    Profile* profile,
+    Browser* browser,
+    ExtensionUninstallDialog::Delegate* delegate)
+    : ExtensionUninstallDialog(profile, browser, delegate) {}
 
 ExtensionUninstallDialogCocoa::~ExtensionUninstallDialogCocoa() {}
 
@@ -44,17 +49,15 @@ void ExtensionUninstallDialogCocoa::Show() {
 
   NSButton* continueButton = [alert addButtonWithTitle:l10n_util::GetNSString(
       IDS_EXTENSION_PROMPT_UNINSTALL_BUTTON)];
-  // Clear the key equivalent (currently 'Return') because cancel is the default
-  // button.
-  [continueButton setKeyEquivalent:@""];
-
   NSButton* cancelButton = [alert addButtonWithTitle:l10n_util::GetNSString(
       IDS_CANCEL)];
-  [cancelButton setKeyEquivalent:@"\r"];
+  // Default to accept when triggered via chrome://extensions page.
+  if (triggering_extension_) {
+    [continueButton setKeyEquivalent:@""];
+    [cancelButton setKeyEquivalent:@"\r"];
+  }
 
-  [alert setMessageText:l10n_util::GetNSStringF(
-       IDS_EXTENSION_UNINSTALL_PROMPT_HEADING,
-       UTF8ToUTF16(extension_->name()))];
+  [alert setMessageText:base::SysUTF8ToNSString(GetHeadingText())];
   [alert setAlertStyle:NSWarningAlertStyle];
   [alert setIcon:gfx::NSImageFromImageSkia(icon_)];
 
@@ -68,6 +71,8 @@ void ExtensionUninstallDialogCocoa::Show() {
 
 // static
 ExtensionUninstallDialog* ExtensionUninstallDialog::Create(
-    Browser* browser, Delegate* delegate) {
-  return new ExtensionUninstallDialogCocoa(browser, delegate);
+    Profile* profile,
+    Browser* browser,
+    Delegate* delegate) {
+  return new ExtensionUninstallDialogCocoa(profile, browser, delegate);
 }

@@ -16,7 +16,7 @@ namespace dbus {
 // D-Bus calls.
 class MockBus : public Bus {
  public:
-  MockBus(Bus::Options& options);
+  MockBus(const Bus::Options& options);
 
   MOCK_METHOD2(GetObjectProxy, ObjectProxy*(const std::string& service_name,
                                             const ObjectPath& object_path));
@@ -26,13 +26,17 @@ class MockBus : public Bus {
                             int options));
   MOCK_METHOD1(GetExportedObject, ExportedObject*(
       const ObjectPath& object_path));
+  MOCK_METHOD2(GetObjectManager, ObjectManager*(const std::string&,
+                                                const ObjectPath&));
   MOCK_METHOD0(ShutdownAndBlock, void());
   MOCK_METHOD0(ShutdownOnDBusThreadAndBlock, void());
   MOCK_METHOD0(Connect, bool());
-  MOCK_METHOD2(RequestOwnership, void(
+  MOCK_METHOD3(RequestOwnership, void(
       const std::string& service_name,
+      ServiceOwnershipOptions options,
       OnOwnershipCallback on_ownership_callback));
-  MOCK_METHOD1(RequestOwnershipAndBlock, bool(const std::string& service_name));
+  MOCK_METHOD2(RequestOwnershipAndBlock, bool(const std::string& service_name,
+                                              ServiceOwnershipOptions options));
   MOCK_METHOD1(ReleaseOwnership, bool(const std::string& service_name));
   MOCK_METHOD0(SetUpAsyncOperations, bool());
   MOCK_METHOD3(SendWithReplyAndBlock, DBusMessage*(DBusMessage* request,
@@ -49,23 +53,15 @@ class MockBus : public Bus {
                                   void* user_data));
   MOCK_METHOD2(AddMatch, void(const std::string& match_rule,
                               DBusError* error));
-  MOCK_METHOD2(RemoveMatch, void(const std::string& match_rule,
+  MOCK_METHOD2(RemoveMatch, bool(const std::string& match_rule,
                                  DBusError* error));
   MOCK_METHOD4(TryRegisterObjectPath, bool(const ObjectPath& object_path,
                                            const DBusObjectPathVTable* vtable,
                                            void* user_data,
                                            DBusError* error));
   MOCK_METHOD1(UnregisterObjectPath, void(const ObjectPath& object_path));
-  MOCK_METHOD2(PostTaskToOriginThread, void(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task));
-  MOCK_METHOD2(PostTaskToDBusThread, void(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task));
-  MOCK_METHOD3(PostDelayedTaskToDBusThread, void(
-      const tracked_objects::Location& from_here,
-      const base::Closure& task,
-      base::TimeDelta delay));
+  MOCK_METHOD0(GetDBusTaskRunner, base::TaskRunner*());
+  MOCK_METHOD0(GetOriginTaskRunner, base::TaskRunner*());
   MOCK_METHOD0(HasDBusThread, bool());
   MOCK_METHOD0(AssertOnOriginThread, void());
   MOCK_METHOD0(AssertOnDBusThread, void());

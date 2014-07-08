@@ -61,6 +61,12 @@ cr.define('options', function() {
       this.searchField_.onsearch = function(e) {
         this.wordList_.search(e.currentTarget.value);
       }.bind(this);
+      this.searchField_.onkeydown = function(e) {
+        // Don't propagate enter key events. Otherwise the default button will
+        // activate.
+        if (e.keyIdentifier == 'Enter')
+          e.stopPropagation();
+      };
 
       this.noMatchesLabel_ = getRequiredElement(
           'language-dictionary-overlay-no-matches');
@@ -95,6 +101,11 @@ cr.define('options', function() {
 
   EditDictionaryOverlay.setWordList = function(entries) {
     EditDictionaryOverlay.getInstance().wordList_.setWordList(entries);
+  };
+
+  EditDictionaryOverlay.updateWords = function(add_words, remove_words) {
+    EditDictionaryOverlay.getInstance().wordList_.addWords(add_words);
+    EditDictionaryOverlay.getInstance().wordList_.removeWords(remove_words);
   };
 
   EditDictionaryOverlay.getWordListForTesting = function() {

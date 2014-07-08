@@ -25,6 +25,7 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include "talk/base/dscp.h"
 #include "talk/base/fakenetwork.h"
 #include "talk/base/firewallsocketserver.h"
 #include "talk/base/gunit.h"
@@ -35,6 +36,7 @@
 #include "talk/base/physicalsocketserver.h"
 #include "talk/base/proxyserver.h"
 #include "talk/base/socketaddress.h"
+#include "talk/base/ssladapter.h"
 #include "talk/base/thread.h"
 #include "talk/base/virtualsocketserver.h"
 #include "talk/p2p/base/p2ptransportchannel.h"
@@ -43,6 +45,8 @@
 #include "talk/p2p/client/basicportallocator.h"
 
 using cricket::kDefaultPortAllocatorFlags;
+using cricket::kMinimumStepDelay;
+using cricket::kDefaultStepDelay;
 using cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG;
 using cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET;
 using talk_base::SocketAddress;
@@ -54,6 +58,11 @@ static const int kOnlyLocalPorts = cricket::PORTALLOCATOR_DISABLE_STUN |
 // Addresses on the public internet.
 static const SocketAddress kPublicAddrs[2] =
     { SocketAddress("11.11.11.11", 0), SocketAddress("22.22.22.22", 0) };
+// IPv6 Addresses on the public internet.
+static const SocketAddress kIPv6PublicAddrs[2] = {
+    SocketAddress("2400:4030:1:2c00:be30:abcd:efab:cdef", 0),
+    SocketAddress("2620:0:1000:1b03:2e41:38ff:fea6:f2a4", 0)
+};
 // For configuring multihomed clients.
 static const SocketAddress kAlternateAddrs[2] =
     { SocketAddress("11.11.11.101", 0), SocketAddress("22.22.22.202", 0) };
@@ -87,7 +96,7 @@ static const SocketAddress kRelaySslTcpExtAddr("99.99.99.3", 5005);
 
 // Based on ICE_UFRAG_LENGTH
 static const char* kIceUfrag[4] = {"TESTICEUFRAG0000", "TESTICEUFRAG0001",
-                                    "TESTICEUFRAG0002", "TESTICEUFRAG0003"};
+                                   "TESTICEUFRAG0002", "TESTICEUFRAG0003"};
 // Based on ICE_PWD_LENGTH
 static const char* kIcePwd[4] = {"TESTICEPWD00000000000000",
                                  "TESTICEPWD00000000000001",
@@ -130,9 +139,10 @@ class P2PTransportChannelTestBase : public testing::Test,
         socks_server1_(ss_.get(), kSocksProxyAddrs[0],
                        ss_.get(), kSocksProxyAddrs[0]),
         socks_server2_(ss_.get(), kSocksProxyAddrs[1],
-                       ss_.get(), kSocksProxyAddrs[1]) {
-    ep1_.role_ = cricket::ROLE_CONTROLLING;
-    ep2_.role_ = cricket::ROLE_CONTROLLED;
+                       ss_.get(), kSocksProxyAddrs[1]),
+        clear_remote_candidates_ufrag_pwd_(false) {
+    ep1_.role_ = cricket::ICEROLE_CONTROLLING;
+    ep2_.role_ = cricket::ICEROLE_CONTROLLED;
     ep1_.allocator_.reset(new cricket::BasicPortAllocator(
         &ep1_.network_manager_, kStunAddr, kRelayUdpIntAddr,
         kRelayTcpIntAddr, kRelaySslTcpIntAddr));
@@ -195,8 +205,9 @@ class P2PTransportChannelTestBase : public testing::Test,
   };
 
   struct Endpoint {
-    Endpoint() : signaling_delay_(0), tiebreaker_(0),
-        role_conflict_(false), protocol_type_(cricket::ICEPROTO_GOOGLE) {}
+    Endpoint() : signaling_delay_(0), role_(cricket::ICEROLE_UNKNOWN),
+        tiebreaker_(0), role_conflict_(false),
+        protocol_type_(cricket::ICEPROTO_GOOGLE) {}
     bool HasChannel(cricket::TransportChannel* ch) {
       return (ch == cd1_.ch_.get() || ch == cd2_.ch_.get());
     }
@@ -209,23 +220,29 @@ class P2PTransportChannelTestBase : public testing::Test,
     }
     void SetSignalingDelay(int delay) { signaling_delay_ = delay; }
 
-    void SetRole(cricket::TransportRole role) { role_ = role; }
-    cricket::TransportRole role() { return role_; }
+    void SetIceRole(cricket::IceRole role) { role_ = role; }
+    cricket::IceRole ice_role() { return role_; }
     void SetIceProtocolType(cricket::IceProtocolType type) {
       protocol_type_ = type;
     }
     cricket::IceProtocolType protocol_type() { return protocol_type_; }
-    void SetTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
-    uint64 GetTiebreaker() { return tiebreaker_; }
+    void SetIceTiebreaker(uint64 tiebreaker) { tiebreaker_ = tiebreaker; }
+    uint64 GetIceTiebreaker() { return tiebreaker_; }
     void OnRoleConflict(bool role_conflict) { role_conflict_ = role_conflict; }
     bool role_conflict() { return role_conflict_; }
+    void SetAllocationStepDelay(uint32 delay) {
+      allocator_->set_step_delay(delay);
+    }
+    void SetAllowTcpListen(bool allow_tcp_listen) {
+      allocator_->set_allow_tcp_listen(allow_tcp_listen);
+    }
 
     talk_base::FakeNetworkManager network_manager_;
     talk_base::scoped_ptr<cricket::PortAllocator> allocator_;
     ChannelData cd1_;
     ChannelData cd2_;
     int signaling_delay_;
-    cricket::TransportRole role_;
+    cricket::IceRole role_;
     uint64 tiebreaker_;
     bool role_conflict_;
     cricket::IceProtocolType protocol_type_;
@@ -247,25 +264,49 @@ class P2PTransportChannelTestBase : public testing::Test,
   }
 
   void CreateChannels(int num) {
+    std::string ice_ufrag_ep1_cd1_ch = kIceUfrag[0];
+    std::string ice_pwd_ep1_cd1_ch = kIcePwd[0];
+    std::string ice_ufrag_ep2_cd1_ch = kIceUfrag[1];
+    std::string ice_pwd_ep2_cd1_ch = kIcePwd[1];
     ep1_.cd1_.ch_.reset(CreateChannel(
         0, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
-        kIceUfrag[0], kIcePwd[0]));
+        ice_ufrag_ep1_cd1_ch, ice_pwd_ep1_cd1_ch,
+        ice_ufrag_ep2_cd1_ch, ice_pwd_ep2_cd1_ch));
     ep2_.cd1_.ch_.reset(CreateChannel(
         1, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
-        kIceUfrag[1], kIcePwd[1]));
+        ice_ufrag_ep2_cd1_ch, ice_pwd_ep2_cd1_ch,
+        ice_ufrag_ep1_cd1_ch, ice_pwd_ep1_cd1_ch));
     if (num == 2) {
+      std::string ice_ufrag_ep1_cd2_ch = kIceUfrag[2];
+      std::string ice_pwd_ep1_cd2_ch = kIcePwd[2];
+      std::string ice_ufrag_ep2_cd2_ch = kIceUfrag[3];
+      std::string ice_pwd_ep2_cd2_ch = kIcePwd[3];
+      // In BUNDLE each endpoint must share common ICE credentials.
+      if (ep1_.allocator_->flags() & cricket::PORTALLOCATOR_ENABLE_BUNDLE) {
+        ice_ufrag_ep1_cd2_ch = ice_ufrag_ep1_cd1_ch;
+        ice_pwd_ep1_cd2_ch = ice_pwd_ep1_cd1_ch;
+      }
+      if (ep2_.allocator_->flags() & cricket::PORTALLOCATOR_ENABLE_BUNDLE) {
+        ice_ufrag_ep2_cd2_ch = ice_ufrag_ep2_cd1_ch;
+        ice_pwd_ep2_cd2_ch = ice_pwd_ep2_cd1_ch;
+      }
       ep1_.cd2_.ch_.reset(CreateChannel(
           0, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
-          kIceUfrag[2], kIcePwd[2]));
+          ice_ufrag_ep1_cd2_ch, ice_pwd_ep1_cd2_ch,
+          ice_ufrag_ep2_cd2_ch, ice_pwd_ep2_cd2_ch));
       ep2_.cd2_.ch_.reset(CreateChannel(
           1, cricket::ICE_CANDIDATE_COMPONENT_DEFAULT,
-          kIceUfrag[3], kIcePwd[3]));
+          ice_ufrag_ep2_cd2_ch, ice_pwd_ep2_cd2_ch,
+          ice_ufrag_ep1_cd2_ch, ice_pwd_ep1_cd2_ch));
     }
   }
-  cricket::P2PTransportChannel* CreateChannel(int endpoint,
-                                              int component,
-                                              const std::string& ice_ufrag,
-                                              const std::string& ice_pwd) {
+  cricket::P2PTransportChannel* CreateChannel(
+      int endpoint,
+      int component,
+      const std::string& local_ice_ufrag,
+      const std::string& local_ice_pwd,
+      const std::string& remote_ice_ufrag,
+      const std::string& remote_ice_pwd) {
     cricket::P2PTransportChannel* channel = new cricket::P2PTransportChannel(
         "test content name", component, NULL, GetAllocator(endpoint));
     channel->SignalRequestSignaling.connect(
@@ -277,10 +318,14 @@ class P2PTransportChannelTestBase : public testing::Test,
     channel->SignalRoleConflict.connect(
         this, &P2PTransportChannelTestBase::OnRoleConflict);
     channel->SetIceProtocolType(GetEndpoint(endpoint)->protocol_type());
-    channel->SetIceUfrag(ice_ufrag);
-    channel->SetIcePwd(ice_pwd);
-    channel->SetRole(GetEndpoint(endpoint)->role());
-    channel->SetTiebreaker(GetEndpoint(endpoint)->GetTiebreaker());
+    channel->SetIceCredentials(local_ice_ufrag, local_ice_pwd);
+    if (clear_remote_candidates_ufrag_pwd_) {
+      // This only needs to be set if we're clearing them from the
+      // candidates.  Some unit tests rely on this not being set.
+      channel->SetRemoteIceCredentials(remote_ice_ufrag, remote_ice_pwd);
+    }
+    channel->SetIceRole(GetEndpoint(endpoint)->ice_role());
+    channel->SetIceTiebreaker(GetEndpoint(endpoint)->GetIceTiebreaker());
     channel->Connect();
     return channel;
   }
@@ -298,14 +343,23 @@ class P2PTransportChannelTestBase : public testing::Test,
   // Common results.
   static const Result kLocalUdpToLocalUdp;
   static const Result kLocalUdpToStunUdp;
+  static const Result kLocalUdpToPrflxUdp;
+  static const Result kPrflxUdpToLocalUdp;
   static const Result kStunUdpToLocalUdp;
   static const Result kStunUdpToStunUdp;
+  static const Result kPrflxUdpToStunUdp;
   static const Result kLocalUdpToRelayUdp;
+  static const Result kPrflxUdpToRelayUdp;
   static const Result kLocalTcpToLocalTcp;
+  static const Result kLocalTcpToPrflxTcp;
+  static const Result kPrflxTcpToLocalTcp;
 
   static void SetUpTestCase() {
-    // Ensure the RNG is inited.
-    talk_base::InitRandom(NULL, 0);
+    talk_base::InitializeSSL();
+  }
+
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
   }
 
   talk_base::NATSocketServer* nat() { return nss_.get(); }
@@ -345,14 +399,20 @@ class P2PTransportChannelTestBase : public testing::Test,
   void SetIceProtocol(int endpoint, cricket::IceProtocolType type) {
     GetEndpoint(endpoint)->SetIceProtocolType(type);
   }
-  void SetIceRole(int endpoint, cricket::TransportRole role) {
-    GetEndpoint(endpoint)->SetRole(role);
+  void SetIceRole(int endpoint, cricket::IceRole role) {
+    GetEndpoint(endpoint)->SetIceRole(role);
   }
-  void SetTiebreaker(int endpoint, uint64 tiebreaker) {
-    GetEndpoint(endpoint)->SetTiebreaker(tiebreaker);
+  void SetIceTiebreaker(int endpoint, uint64 tiebreaker) {
+    GetEndpoint(endpoint)->SetIceTiebreaker(tiebreaker);
   }
   bool GetRoleConflict(int endpoint) {
     return GetEndpoint(endpoint)->role_conflict();
+  }
+  void SetAllocationStepDelay(int endpoint, uint32 delay) {
+    return GetEndpoint(endpoint)->SetAllocationStepDelay(delay);
+  }
+  void SetAllowTcpListen(int endpoint, bool allow_tcp_listen) {
+    return GetEndpoint(endpoint)->SetAllowTcpListen(allow_tcp_listen);
   }
 
   void Test(const Result& expected) {
@@ -396,24 +456,40 @@ class P2PTransportChannelTestBase : public testing::Test,
       EXPECT_EQ(expected.remote_type, RemoteCandidate(ep1_ch1())->type());
       EXPECT_EQ(expected.remote_proto, RemoteCandidate(ep1_ch1())->protocol());
 
-      // TODO: Enable below check when USE-CANDIDATE is ready.
-      /*if (ep2_.protocol_type_ == cricket::ICEPROTO_RFC5245) {
+      // Verifying remote channel best connection information. This is done
+      // only for the RFC 5245 as controlled agent will use USE-CANDIDATE
+      // from controlling (ep1) agent. We can easily predict from EP1 result
+      // matrix.
+      if (ep2_.protocol_type_ == cricket::ICEPROTO_RFC5245) {
         // Checking for best connection candidates information at remote.
-        EXPECT_TRUE_WAIT_MARGIN(
+        EXPECT_TRUE_WAIT(
             LocalCandidate(ep2_ch1())->type() == expected.local_type2 &&
             LocalCandidate(ep2_ch1())->protocol() == expected.local_proto2 &&
-            RemoteCandidate(ep2_ch1())->type() == expected.remote_type2 &&
             RemoteCandidate(ep2_ch1())->protocol() == expected.remote_proto2,
-            converge_wait - talk_base::TimeSince(converge_start),
-            converge_wait - talk_base::TimeSince(converge_start));
-      
+            kDefaultTimeout);
+
         // For verbose
         EXPECT_EQ(expected.local_type2, LocalCandidate(ep2_ch1())->type());
         EXPECT_EQ(expected.local_proto2, LocalCandidate(ep2_ch1())->protocol());
-        EXPECT_EQ(expected.remote_type2, RemoteCandidate(ep2_ch1())->type());
         EXPECT_EQ(expected.remote_proto2,
                   RemoteCandidate(ep2_ch1())->protocol());
-      }*/
+        // Removed remote_type comparision aginst best connection remote
+        // candidate. This is done to handle remote type discrepancy from
+        // local to stun based on the test type.
+        // For example in case of Open -> NAT, ep2 channels will have LULU
+        // and in other cases like NAT -> NAT it will be LUSU. To avoid these
+        // mismatches and we are doing comparision in different way.
+        // i.e. when don't match its remote type is either local or stun.
+        // TODO(ronghuawu): Refine the test criteria.
+        // https://code.google.com/p/webrtc/issues/detail?id=1953
+        if (expected.remote_type2 != RemoteCandidate(ep2_ch1())->type())
+          EXPECT_TRUE(expected.remote_type2 == cricket::LOCAL_PORT_TYPE ||
+                      expected.remote_type2 == cricket::STUN_PORT_TYPE);
+          EXPECT_TRUE(
+              RemoteCandidate(ep2_ch1())->type() == cricket::LOCAL_PORT_TYPE ||
+              RemoteCandidate(ep2_ch1())->type() == cricket::STUN_PORT_TYPE ||
+              RemoteCandidate(ep2_ch1())->type() == cricket::PRFLX_PORT_TYPE);
+      }
 
       converge_time = talk_base::TimeSince(converge_start);
       if (converge_time < converge_wait) {
@@ -449,6 +525,113 @@ class P2PTransportChannelTestBase : public testing::Test,
     }
   }
 
+  // This test waits for the transport to become readable and writable on both
+  // end points. Once they are, the end points set new local ice credentials to
+  // restart the ice gathering. Finally it waits for the transport to select a
+  // new connection using the newly generated ice candidates.
+  // Before calling this function the end points must be configured.
+  void TestHandleIceUfragPasswordChanged() {
+    ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[1], kIcePwd[1]);
+    ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[0], kIcePwd[0]);
+    EXPECT_TRUE_WAIT_MARGIN(ep1_ch1()->readable() && ep1_ch1()->writable() &&
+                            ep2_ch1()->readable() && ep2_ch1()->writable(),
+                            1000, 1000);
+
+    const cricket::Candidate* old_local_candidate1 = LocalCandidate(ep1_ch1());
+    const cricket::Candidate* old_local_candidate2 = LocalCandidate(ep2_ch1());
+    const cricket::Candidate* old_remote_candidate1 =
+        RemoteCandidate(ep1_ch1());
+    const cricket::Candidate* old_remote_candidate2 =
+        RemoteCandidate(ep2_ch1());
+
+    ep1_ch1()->SetIceCredentials(kIceUfrag[2], kIcePwd[2]);
+    ep1_ch1()->SetRemoteIceCredentials(kIceUfrag[3], kIcePwd[3]);
+    ep2_ch1()->SetIceCredentials(kIceUfrag[3], kIcePwd[3]);
+    ep2_ch1()->SetRemoteIceCredentials(kIceUfrag[2], kIcePwd[2]);
+
+    EXPECT_TRUE_WAIT_MARGIN(LocalCandidate(ep1_ch1())->generation() !=
+                            old_local_candidate1->generation(),
+                            1000, 1000);
+    EXPECT_TRUE_WAIT_MARGIN(LocalCandidate(ep2_ch1())->generation() !=
+                            old_local_candidate2->generation(),
+                            1000, 1000);
+    EXPECT_TRUE_WAIT_MARGIN(RemoteCandidate(ep1_ch1())->generation() !=
+                            old_remote_candidate1->generation(),
+                            1000, 1000);
+    EXPECT_TRUE_WAIT_MARGIN(RemoteCandidate(ep2_ch1())->generation() !=
+                            old_remote_candidate2->generation(),
+                            1000, 1000);
+    EXPECT_EQ(1u, RemoteCandidate(ep2_ch1())->generation());
+    EXPECT_EQ(1u, RemoteCandidate(ep1_ch1())->generation());
+  }
+
+  void TestSignalRoleConflict() {
+    SetIceProtocol(0, cricket::ICEPROTO_RFC5245);
+    SetIceTiebreaker(0, kTiebreaker1);  // Default EP1 is in controlling state.
+
+    SetIceProtocol(1, cricket::ICEPROTO_RFC5245);
+    SetIceRole(1, cricket::ICEROLE_CONTROLLING);
+    SetIceTiebreaker(1, kTiebreaker2);
+
+    // Creating channels with both channels role set to CONTROLLING.
+    CreateChannels(1);
+    // Since both the channels initiated with controlling state and channel2
+    // has higher tiebreaker value, channel1 should receive SignalRoleConflict.
+    EXPECT_TRUE_WAIT(GetRoleConflict(0), 1000);
+    EXPECT_FALSE(GetRoleConflict(1));
+
+    EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
+                     ep1_ch1()->writable() &&
+                     ep2_ch1()->readable() &&
+                     ep2_ch1()->writable(),
+                     1000);
+
+    EXPECT_TRUE(ep1_ch1()->best_connection() &&
+                ep2_ch1()->best_connection());
+
+    TestSendRecv(1);
+  }
+
+  void TestHybridConnectivity(cricket::IceProtocolType proto) {
+    AddAddress(0, kPublicAddrs[0]);
+    AddAddress(1, kPublicAddrs[1]);
+
+    SetAllocationStepDelay(0, kMinimumStepDelay);
+    SetAllocationStepDelay(1, kMinimumStepDelay);
+
+    SetIceRole(0, cricket::ICEROLE_CONTROLLING);
+    SetIceProtocol(0, cricket::ICEPROTO_HYBRID);
+    SetIceTiebreaker(0, kTiebreaker1);
+    SetIceRole(1, cricket::ICEROLE_CONTROLLED);
+    SetIceProtocol(1, proto);
+    SetIceTiebreaker(1, kTiebreaker2);
+
+    CreateChannels(1);
+    // When channel is in hybrid and it's controlling agent, channel will
+    // receive ping request from the remote. Hence connection is readable.
+    // Since channel is in hybrid, it will not send any pings, so no writable
+    // connection. Since channel2 is in controlled state, it will not have
+    // any connections which are readable or writable, as it didn't received
+    // pings (or none) with USE-CANDIDATE attribute.
+    EXPECT_TRUE_WAIT(ep1_ch1()->readable(), 1000);
+
+    // Set real protocol type.
+    ep1_ch1()->SetIceProtocolType(proto);
+
+    // Channel should able to send ping requests and connections become writable
+    // in both directions.
+    EXPECT_TRUE_WAIT(ep1_ch1()->readable() && ep1_ch1()->writable() &&
+                     ep2_ch1()->readable() && ep2_ch1()->writable(),
+                     1000);
+    EXPECT_TRUE(
+        ep1_ch1()->best_connection() && ep2_ch1()->best_connection() &&
+        LocalCandidate(ep1_ch1())->address().EqualIPs(kPublicAddrs[0]) &&
+        RemoteCandidate(ep1_ch1())->address().EqualIPs(kPublicAddrs[1]));
+
+    TestSendRecv(1);
+    DestroyChannels();
+  }
+
   void OnChannelRequestSignaling(cricket::TransportChannelImpl* channel) {
     channel->OnSignalingReady();
   }
@@ -462,7 +645,11 @@ class P2PTransportChannelTestBase : public testing::Test,
     talk_base::scoped_ptr<CandidateData> data(
         static_cast<CandidateData*>(msg->pdata));
     cricket::P2PTransportChannel* rch = GetRemoteChannel(data->channel);
-    const cricket::Candidate& c = data->candidate;
+    cricket::Candidate c = data->candidate;
+    if (clear_remote_candidates_ufrag_pwd_) {
+      c.set_username("");
+      c.set_password("");
+    }
     LOG(LS_INFO) << "Candidate(" << data->channel->component() << "->"
                  << rch->component() << "): " << c.type() << ", " << c.protocol()
                  << ", " << c.address().ToString() << ", " << c.username()
@@ -470,20 +657,22 @@ class P2PTransportChannelTestBase : public testing::Test,
     rch->OnCandidate(c);
   }
   void OnReadPacket(cricket::TransportChannel* channel, const char* data,
-                    size_t len, int flags) {
+                    size_t len, const talk_base::PacketTime& packet_time,
+                    int flags) {
     std::list<std::string>& packets = GetPacketList(channel);
     packets.push_front(std::string(data, len));
   }
   void OnRoleConflict(cricket::TransportChannelImpl* channel) {
     GetEndpoint(channel)->OnRoleConflict(true);
-    cricket::TransportRole new_role =
-        GetEndpoint(channel)->role() == cricket::ROLE_CONTROLLING ?
-            cricket::ROLE_CONTROLLED : cricket::ROLE_CONTROLLING;
-    channel->SetRole(new_role);
+    cricket::IceRole new_role =
+        GetEndpoint(channel)->ice_role() == cricket::ICEROLE_CONTROLLING ?
+            cricket::ICEROLE_CONTROLLED : cricket::ICEROLE_CONTROLLING;
+    channel->SetIceRole(new_role);
   }
   int SendData(cricket::TransportChannel* channel,
                const char* data, size_t len) {
-    return channel->SendPacket(data, len, 0);
+    talk_base::PacketOptions options;
+    return channel->SendPacket(data, len, options, 0);
   }
   bool CheckDataOnChannel(cricket::TransportChannel* channel,
                           const char* data, int len) {
@@ -525,6 +714,10 @@ class P2PTransportChannelTestBase : public testing::Test,
     return GetChannelData(ch)->ch_packets_;
   }
 
+  void set_clear_remote_candidates_ufrag_pwd(bool clear) {
+    clear_remote_candidates_ufrag_pwd_ = clear;
+  }
+
  private:
   talk_base::Thread* main_;
   talk_base::scoped_ptr<talk_base::PhysicalSocketServer> pss_;
@@ -538,6 +731,7 @@ class P2PTransportChannelTestBase : public testing::Test,
   talk_base::SocksProxyServer socks_server2_;
   Endpoint ep1_;
   Endpoint ep2_;
+  bool clear_remote_candidates_ufrag_pwd_;
 };
 
 // The tests have only a few outcomes, which we predefine.
@@ -546,7 +740,13 @@ const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
                         "local", "udp", "local", "udp", 1000);
 const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
     kLocalUdpToStunUdp("local", "udp", "stun", "udp",
-                       "stun", "udp", "local", "udp", 1000);
+                       "local", "udp", "stun", "udp", 1000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kLocalUdpToPrflxUdp("local", "udp", "prflx", "udp",
+                        "prflx", "udp", "local", "udp", 1000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kPrflxUdpToLocalUdp("prflx", "udp", "local", "udp",
+                        "local", "udp", "prflx", "udp", 1000);
 const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
     kStunUdpToLocalUdp("stun", "udp", "local", "udp",
                        "local", "udp", "stun", "udp", 1000);
@@ -554,11 +754,23 @@ const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
     kStunUdpToStunUdp("stun", "udp", "stun", "udp",
                       "stun", "udp", "stun", "udp", 1000);
 const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kPrflxUdpToStunUdp("prflx", "udp", "stun", "udp",
+                       "local", "udp", "prflx", "udp", 1000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
     kLocalUdpToRelayUdp("local", "udp", "relay", "udp",
-                        "local", "udp", "relay", "udp", 2000);
+                        "relay", "udp", "local", "udp", 2000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kPrflxUdpToRelayUdp("prflx", "udp", "relay", "udp",
+                        "relay", "udp", "prflx", "udp", 2000);
 const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
     kLocalTcpToLocalTcp("local", "tcp", "local", "tcp",
                         "local", "tcp", "local", "tcp", 3000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kLocalTcpToPrflxTcp("local", "tcp", "prflx", "tcp",
+                        "prflx", "tcp", "local", "tcp", 3000);
+const P2PTransportChannelTestBase::Result P2PTransportChannelTestBase::
+    kPrflxTcpToLocalTcp("prflx", "tcp", "local", "tcp",
+                        "local", "tcp", "prflx", "tcp", 3000);
 
 // Test the matrix of all the connectivity types we expect to see in the wild.
 // Just test every combination of the configs in the Config enum.
@@ -566,16 +778,20 @@ class P2PTransportChannelTest : public P2PTransportChannelTestBase {
  protected:
   static const Result* kMatrix[NUM_CONFIGS][NUM_CONFIGS];
   static const Result* kMatrixSharedUfrag[NUM_CONFIGS][NUM_CONFIGS];
-  static const Result* kMatrixSharedSocket[NUM_CONFIGS][NUM_CONFIGS];
+  static const Result* kMatrixSharedSocketAsGice[NUM_CONFIGS][NUM_CONFIGS];
+  static const Result* kMatrixSharedSocketAsIce[NUM_CONFIGS][NUM_CONFIGS];
   void ConfigureEndpoints(Config config1, Config config2,
       int allocator_flags1, int allocator_flags2,
+      int delay1, int delay2,
       cricket::IceProtocolType type) {
     ConfigureEndpoint(0, config1);
     SetIceProtocol(0, type);
+    SetAllocatorFlags(0, allocator_flags1);
+    SetAllocationStepDelay(0, delay1);
     ConfigureEndpoint(1, config2);
     SetIceProtocol(1, type);
-    SetAllocatorFlags(0, allocator_flags1);
     SetAllocatorFlags(1, allocator_flags2);
+    SetAllocationStepDelay(1, delay2);
   }
   void ConfigureEndpoint(int endpoint, Config config) {
     switch (config) {
@@ -649,10 +865,16 @@ class P2PTransportChannelTest : public P2PTransportChannelTestBase {
 // Shorthands for use in the test matrix.
 #define LULU &kLocalUdpToLocalUdp
 #define LUSU &kLocalUdpToStunUdp
+#define LUPU &kLocalUdpToPrflxUdp
+#define PULU &kPrflxUdpToLocalUdp
 #define SULU &kStunUdpToLocalUdp
 #define SUSU &kStunUdpToStunUdp
+#define PUSU &kPrflxUdpToStunUdp
 #define LURU &kLocalUdpToRelayUdp
+#define PURU &kPrflxUdpToRelayUdp
 #define LTLT &kLocalTcpToLocalTcp
+#define LTPT &kLocalTcpToPrflxTcp
+#define PTLT &kPrflxTcpToLocalTcp
 // TODO: Enable these once TestRelayServer can accept external TCP.
 #define LTRT NULL
 #define LSRS NULL
@@ -698,10 +920,10 @@ const P2PTransportChannelTest::Result*
 /*OP*/ {LULU, LULU, LULU, LULU, LULU, LULU, LULU, LTLT, LTLT, LSRS, NULL, LTLT},
 /*CO*/ {LULU, LULU, LULU, SULU, SULU, LULU, SULU, NULL, NULL, LSRS, NULL, LTRT},
 /*AD*/ {LULU, LULU, LULU, SUSU, SUSU, LULU, SUSU, NULL, NULL, LSRS, NULL, LTRT},
-/*PO*/ {LULU, LUSU, SUSU, SUSU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
-/*SY*/ {LULU, LUSU, SUSU, LURU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
+/*PO*/ {LULU, LUSU, LUSU, SUSU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
+/*SY*/ {LULU, LUSU, LUSU, LURU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
 /*2C*/ {LULU, LULU, LULU, SULU, SULU, LULU, SULU, NULL, NULL, LSRS, NULL, LTRT},
-/*SC*/ {LULU, LUSU, SUSU, LURU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
+/*SC*/ {LULU, LUSU, LUSU, LURU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
 /*!U*/ {LTLT, NULL, NULL, NULL, NULL, NULL, NULL, LTLT, LTLT, LSRS, NULL, LTRT},
 /*!T*/ {LTRT, NULL, NULL, NULL, NULL, NULL, NULL, LTLT, LTRT, LSRS, NULL, LTRT},
 /*HT*/ {LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, NULL, LSRS},
@@ -725,7 +947,8 @@ const P2PTransportChannelTest::Result*
 /*PR*/ {LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LSRS, NULL, LTRT},
 };
 const P2PTransportChannelTest::Result*
-    P2PTransportChannelTest::kMatrixSharedSocket[NUM_CONFIGS][NUM_CONFIGS] = {
+    P2PTransportChannelTest::kMatrixSharedSocketAsGice
+        [NUM_CONFIGS][NUM_CONFIGS] = {
 //      OPEN  CONE  ADDR  PORT  SYMM  2CON  SCON  !UDP  !TCP  HTTP  PRXH  PRXS
 /*OP*/ {LULU, LUSU, LUSU, LUSU, LUSU, LUSU, LUSU, LTLT, LTLT, LSRS, NULL, LTLT},
 /*CO*/ {LULU, LUSU, LUSU, LUSU, LUSU, LUSU, LUSU, NULL, NULL, LSRS, NULL, LTRT},
@@ -740,14 +963,39 @@ const P2PTransportChannelTest::Result*
 /*PR*/ {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
 /*PR*/ {LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LSRS, NULL, LTRT},
 };
+const P2PTransportChannelTest::Result*
+    P2PTransportChannelTest::kMatrixSharedSocketAsIce
+        [NUM_CONFIGS][NUM_CONFIGS] = {
+//      OPEN  CONE  ADDR  PORT  SYMM  2CON  SCON  !UDP  !TCP  HTTP  PRXH  PRXS
+/*OP*/ {LULU, LUSU, LUSU, LUSU, LUPU, LUSU, LUPU, PTLT, LTPT, LSRS, NULL, PTLT},
+/*CO*/ {LULU, LUSU, LUSU, LUSU, LUPU, LUSU, LUPU, NULL, NULL, LSRS, NULL, LTRT},
+/*AD*/ {LULU, LUSU, LUSU, LUSU, LUPU, LUSU, LUPU, NULL, NULL, LSRS, NULL, LTRT},
+/*PO*/ {LULU, LUSU, LUSU, LUSU, LURU, LUSU, LURU, NULL, NULL, LSRS, NULL, LTRT},
+/*SY*/ {PULU, PUSU, PUSU, PURU, PURU, PUSU, PURU, NULL, NULL, LSRS, NULL, LTRT},
+/*2C*/ {LULU, LUSU, LUSU, LUSU, LUPU, LUSU, LUPU, NULL, NULL, LSRS, NULL, LTRT},
+/*SC*/ {PULU, PUSU, PUSU, PURU, PURU, PUSU, PURU, NULL, NULL, LSRS, NULL, LTRT},
+/*!U*/ {PTLT, NULL, NULL, NULL, NULL, NULL, NULL, PTLT, LTPT, LSRS, NULL, LTRT},
+/*!T*/ {LTRT, NULL, NULL, NULL, NULL, NULL, NULL, PTLT, LTRT, LSRS, NULL, LTRT},
+/*HT*/ {LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, LSRS, NULL, LSRS},
+/*PR*/ {NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL},
+/*PR*/ {LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LTRT, LSRS, NULL, LTRT},
+};
 
 // The actual tests that exercise all the various configurations.
 // Test names are of the form P2PTransportChannelTest_TestOPENToNAT_FULL_CONE
 // Same test case is run in both GICE and ICE mode.
+// kDefaultStepDelay - is used for all Gice cases.
+// kMinimumStepDelay - is used when both end points have
+//                     PORTALLOCATOR_ENABLE_SHARED_UFRAG flag enabled.
+// Technically we should be able to use kMinimumStepDelay irrespective of
+// protocol type. But which might need modifications to current result matrices
+// for tests in this file.
 #define P2P_TEST_DECLARATION(x, y, z) \
   TEST_F(P2PTransportChannelTest, z##Test##x##To##y##AsGiceNoneSharedUfrag) { \
     ConfigureEndpoints(x, y, kDefaultPortAllocatorFlags, \
-                       kDefaultPortAllocatorFlags, cricket::ICEPROTO_GOOGLE); \
+                       kDefaultPortAllocatorFlags, \
+                       kDefaultStepDelay, kDefaultStepDelay, \
+                       cricket::ICEPROTO_GOOGLE); \
     if (kMatrix[x][y] != NULL) \
       Test(*kMatrix[x][y]); \
     else \
@@ -755,17 +1003,18 @@ const P2PTransportChannelTest::Result*
   } \
   TEST_F(P2PTransportChannelTest, z##Test##x##To##y##AsGiceP0SharedUfrag) { \
     ConfigureEndpoints(x, y, PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
-                       kDefaultPortAllocatorFlags, cricket::ICEPROTO_GOOGLE); \
+                       kDefaultPortAllocatorFlags, \
+                       kDefaultStepDelay, kDefaultStepDelay, \
+                       cricket::ICEPROTO_GOOGLE); \
     if (kMatrix[x][y] != NULL) \
       Test(*kMatrix[x][y]); \
     else \
       LOG(LS_WARNING) << "Not yet implemented"; \
-  }
-
-#define P2P_TEST_DECLARATION_SHARED_UFRAG(x, y, z) \
+  } \
   TEST_F(P2PTransportChannelTest, z##Test##x##To##y##AsGiceP1SharedUfrag) { \
     ConfigureEndpoints(x, y, kDefaultPortAllocatorFlags, \
                        PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
+                       kDefaultStepDelay, kDefaultStepDelay, \
                        cricket::ICEPROTO_GOOGLE); \
     if (kMatrixSharedUfrag[x][y] != NULL) \
       Test(*kMatrixSharedUfrag[x][y]); \
@@ -775,6 +1024,18 @@ const P2PTransportChannelTest::Result*
   TEST_F(P2PTransportChannelTest, z##Test##x##To##y##AsGiceBothSharedUfrag) { \
     ConfigureEndpoints(x, y, PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
                        PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
+                       kDefaultStepDelay, kDefaultStepDelay, \
+                       cricket::ICEPROTO_GOOGLE); \
+    if (kMatrixSharedUfrag[x][y] != NULL) \
+      Test(*kMatrixSharedUfrag[x][y]); \
+    else \
+      LOG(LS_WARNING) << "Not yet implemented"; \
+  } \
+  TEST_F(P2PTransportChannelTest, \
+         z##Test##x##To##y##AsGiceBothSharedUfragWithMinimumStepDelay) { \
+    ConfigureEndpoints(x, y, PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
+                       PORTALLOCATOR_ENABLE_SHARED_UFRAG, \
+                       kMinimumStepDelay, kMinimumStepDelay, \
                        cricket::ICEPROTO_GOOGLE); \
     if (kMatrixSharedUfrag[x][y] != NULL) \
       Test(*kMatrixSharedUfrag[x][y]); \
@@ -787,9 +1048,10 @@ const P2PTransportChannelTest::Result*
                        PORTALLOCATOR_ENABLE_SHARED_SOCKET, \
                        PORTALLOCATOR_ENABLE_SHARED_UFRAG | \
                        PORTALLOCATOR_ENABLE_SHARED_SOCKET, \
+                       kMinimumStepDelay, kMinimumStepDelay, \
                        cricket::ICEPROTO_GOOGLE); \
-    if (kMatrixSharedSocket[x][y] != NULL) \
-      Test(*kMatrixSharedSocket[x][y]); \
+    if (kMatrixSharedSocketAsGice[x][y] != NULL) \
+      Test(*kMatrixSharedSocketAsGice[x][y]); \
     else \
     LOG(LS_WARNING) << "Not yet implemented"; \
   } \
@@ -798,9 +1060,10 @@ const P2PTransportChannelTest::Result*
                        PORTALLOCATOR_ENABLE_SHARED_SOCKET, \
                        PORTALLOCATOR_ENABLE_SHARED_UFRAG | \
                        PORTALLOCATOR_ENABLE_SHARED_SOCKET, \
+                       kMinimumStepDelay, kMinimumStepDelay, \
                        cricket::ICEPROTO_RFC5245); \
-    if (kMatrixSharedSocket[x][y] != NULL) \
-      Test(*kMatrixSharedSocket[x][y]); \
+    if (kMatrixSharedSocketAsIce[x][y] != NULL) \
+      Test(*kMatrixSharedSocketAsIce[x][y]); \
     else \
     LOG(LS_WARNING) << "Not yet implemented"; \
   }
@@ -808,14 +1071,26 @@ const P2PTransportChannelTest::Result*
 #define P2P_TEST(x, y) \
   P2P_TEST_DECLARATION(x, y,)
 
-// TODO(ronghuawu): Figure out why those tests are flaky.
 #define FLAKY_P2P_TEST(x, y) \
   P2P_TEST_DECLARATION(x, y, DISABLED_)
 
-#define P2P_TEST_SHARED_UFRAG(x, y) \
-  P2P_TEST_DECLARATION_SHARED_UFRAG(x, y,)
-
+// TODO(holmer): Disabled due to randomly failing on webrtc buildbots.
+// Issue: webrtc/2383
 #define P2P_TEST_SET(x) \
+  P2P_TEST(x, OPEN) \
+  FLAKY_P2P_TEST(x, NAT_FULL_CONE) \
+  FLAKY_P2P_TEST(x, NAT_ADDR_RESTRICTED) \
+  FLAKY_P2P_TEST(x, NAT_PORT_RESTRICTED) \
+  P2P_TEST(x, NAT_SYMMETRIC) \
+  FLAKY_P2P_TEST(x, NAT_DOUBLE_CONE) \
+  P2P_TEST(x, NAT_SYMMETRIC_THEN_CONE) \
+  P2P_TEST(x, BLOCK_UDP) \
+  P2P_TEST(x, BLOCK_UDP_AND_INCOMING_TCP) \
+  P2P_TEST(x, BLOCK_ALL_BUT_OUTGOING_HTTP) \
+  P2P_TEST(x, PROXY_HTTPS) \
+  P2P_TEST(x, PROXY_SOCKS)
+
+#define FLAKY_P2P_TEST_SET(x) \
   P2P_TEST(x, OPEN) \
   P2P_TEST(x, NAT_FULL_CONE) \
   P2P_TEST(x, NAT_ADDR_RESTRICTED) \
@@ -829,65 +1104,83 @@ const P2PTransportChannelTest::Result*
   P2P_TEST(x, PROXY_HTTPS) \
   P2P_TEST(x, PROXY_SOCKS)
 
-#define FLAKY_P2P_TEST_SET(x) \
-  P2P_TEST(x, OPEN) \
-  P2P_TEST(x, NAT_FULL_CONE) \
-  FLAKY_P2P_TEST(x, NAT_ADDR_RESTRICTED) \
-  P2P_TEST(x, NAT_PORT_RESTRICTED) \
-  P2P_TEST(x, NAT_SYMMETRIC) \
-  P2P_TEST(x, NAT_DOUBLE_CONE) \
-  P2P_TEST(x, NAT_SYMMETRIC_THEN_CONE) \
-  P2P_TEST(x, BLOCK_UDP) \
-  P2P_TEST(x, BLOCK_UDP_AND_INCOMING_TCP) \
-  P2P_TEST(x, BLOCK_ALL_BUT_OUTGOING_HTTP) \
-  P2P_TEST(x, PROXY_HTTPS) \
-  P2P_TEST(x, PROXY_SOCKS)
-
-#define P2P_TEST_SET_SHARED_UFRAG(x) \
-  P2P_TEST_SHARED_UFRAG(x, OPEN) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_FULL_CONE) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_ADDR_RESTRICTED) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_PORT_RESTRICTED) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_SYMMETRIC) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_DOUBLE_CONE) \
-  P2P_TEST_SHARED_UFRAG(x, NAT_SYMMETRIC_THEN_CONE) \
-  P2P_TEST_SHARED_UFRAG(x, BLOCK_UDP) \
-  P2P_TEST_SHARED_UFRAG(x, BLOCK_UDP_AND_INCOMING_TCP) \
-  P2P_TEST_SHARED_UFRAG(x, BLOCK_ALL_BUT_OUTGOING_HTTP) \
-  P2P_TEST_SHARED_UFRAG(x, PROXY_HTTPS) \
-  P2P_TEST_SHARED_UFRAG(x, PROXY_SOCKS)
-
 P2P_TEST_SET(OPEN)
 P2P_TEST_SET(NAT_FULL_CONE)
-FLAKY_P2P_TEST_SET(NAT_ADDR_RESTRICTED)
-FLAKY_P2P_TEST_SET(NAT_PORT_RESTRICTED)
-FLAKY_P2P_TEST_SET(NAT_SYMMETRIC)
+P2P_TEST_SET(NAT_ADDR_RESTRICTED)
+P2P_TEST_SET(NAT_PORT_RESTRICTED)
+P2P_TEST_SET(NAT_SYMMETRIC)
 P2P_TEST_SET(NAT_DOUBLE_CONE)
-FLAKY_P2P_TEST_SET(NAT_SYMMETRIC_THEN_CONE)
+P2P_TEST_SET(NAT_SYMMETRIC_THEN_CONE)
 P2P_TEST_SET(BLOCK_UDP)
 P2P_TEST_SET(BLOCK_UDP_AND_INCOMING_TCP)
 P2P_TEST_SET(BLOCK_ALL_BUT_OUTGOING_HTTP)
 P2P_TEST_SET(PROXY_HTTPS)
 P2P_TEST_SET(PROXY_SOCKS)
 
-P2P_TEST_SET_SHARED_UFRAG(OPEN)
-P2P_TEST_SET_SHARED_UFRAG(NAT_FULL_CONE)
-P2P_TEST_SET_SHARED_UFRAG(NAT_ADDR_RESTRICTED)
-P2P_TEST_SET_SHARED_UFRAG(NAT_PORT_RESTRICTED)
-P2P_TEST_SET_SHARED_UFRAG(NAT_SYMMETRIC)
-P2P_TEST_SET_SHARED_UFRAG(NAT_DOUBLE_CONE)
-P2P_TEST_SET_SHARED_UFRAG(NAT_SYMMETRIC_THEN_CONE)
-P2P_TEST_SET_SHARED_UFRAG(BLOCK_UDP)
-P2P_TEST_SET_SHARED_UFRAG(BLOCK_UDP_AND_INCOMING_TCP)
-P2P_TEST_SET_SHARED_UFRAG(BLOCK_ALL_BUT_OUTGOING_HTTP)
-P2P_TEST_SET_SHARED_UFRAG(PROXY_HTTPS)
-P2P_TEST_SET_SHARED_UFRAG(PROXY_SOCKS)
+// Test that we restart candidate allocation when local ufrag&pwd changed.
+// Standard Ice protocol is used.
+TEST_F(P2PTransportChannelTest, HandleUfragPwdChangeAsIce) {
+  ConfigureEndpoints(OPEN, OPEN,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     kMinimumStepDelay, kMinimumStepDelay,
+                     cricket::ICEPROTO_RFC5245);
+  CreateChannels(1);
+  TestHandleIceUfragPasswordChanged();
+  DestroyChannels();
+}
+
+// Test that we restart candidate allocation when local ufrag&pwd changed.
+// Standard Ice protocol is used.
+TEST_F(P2PTransportChannelTest, HandleUfragPwdChangeBundleAsIce) {
+  ConfigureEndpoints(OPEN, OPEN,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     kMinimumStepDelay, kMinimumStepDelay,
+                     cricket::ICEPROTO_RFC5245);
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+
+  CreateChannels(2);
+  TestHandleIceUfragPasswordChanged();
+  DestroyChannels();
+}
+
+// Test that we restart candidate allocation when local ufrag&pwd changed.
+// Google Ice protocol is used.
+TEST_F(P2PTransportChannelTest, HandleUfragPwdChangeAsGice) {
+  ConfigureEndpoints(OPEN, OPEN,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     kDefaultStepDelay, kDefaultStepDelay,
+                     cricket::ICEPROTO_GOOGLE);
+  CreateChannels(1);
+  TestHandleIceUfragPasswordChanged();
+  DestroyChannels();
+}
+
+// Test that ICE restart works when bundle is enabled.
+// Google Ice protocol is used.
+TEST_F(P2PTransportChannelTest, HandleUfragPwdChangeBundleAsGice) {
+  ConfigureEndpoints(OPEN, OPEN,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     kDefaultStepDelay, kDefaultStepDelay,
+                     cricket::ICEPROTO_GOOGLE);
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+
+  CreateChannels(2);
+  TestHandleIceUfragPasswordChanged();
+  DestroyChannels();
+}
 
 // Test the operation of GetStats.
 TEST_F(P2PTransportChannelTest, GetStats) {
   ConfigureEndpoints(OPEN, OPEN,
                      kDefaultPortAllocatorFlags,
                      kDefaultPortAllocatorFlags,
+                     kDefaultStepDelay, kDefaultStepDelay,
                      cricket::ICEPROTO_GOOGLE);
   CreateChannels(1);
   EXPECT_TRUE_WAIT_MARGIN(ep1_ch1()->readable() && ep1_ch1()->writable() &&
@@ -909,10 +1202,11 @@ TEST_F(P2PTransportChannelTest, GetStats) {
 }
 
 // Test that we properly handle getting a STUN error due to slow signaling.
-TEST_F(P2PTransportChannelTest, SlowSignaling) {
+TEST_F(P2PTransportChannelTest, DISABLED_SlowSignaling) {
   ConfigureEndpoints(OPEN, NAT_SYMMETRIC,
                      kDefaultPortAllocatorFlags,
                      kDefaultPortAllocatorFlags,
+                     kDefaultStepDelay, kDefaultStepDelay,
                      cricket::ICEPROTO_GOOGLE);
   // Make signaling from the callee take 500ms, so that the initial STUN pings
   // from the callee beat the signaling, and so the caller responds with a
@@ -929,12 +1223,31 @@ TEST_F(P2PTransportChannelTest, SlowSignaling) {
   DestroyChannels();
 }
 
+// Test that if remote candidates don't have ufrag and pwd, we still work.
+TEST_F(P2PTransportChannelTest, RemoteCandidatesWithoutUfragPwd) {
+  set_clear_remote_candidates_ufrag_pwd(true);
+  ConfigureEndpoints(OPEN, OPEN,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     PORTALLOCATOR_ENABLE_SHARED_UFRAG,
+                     kMinimumStepDelay, kMinimumStepDelay,
+                     cricket::ICEPROTO_GOOGLE);
+  CreateChannels(1);
+  const cricket::Connection* best_connection = NULL;
+  // Wait until the callee's connections are created.
+  WAIT((best_connection = ep2_ch1()->best_connection()) != NULL, 1000);
+  // Wait to see if they get culled; they shouldn't.
+  WAIT(ep2_ch1()->best_connection() != best_connection, 1000);
+  EXPECT_TRUE(ep2_ch1()->best_connection() == best_connection);
+  DestroyChannels();
+}
+
 // Test that a host behind NAT cannot be reached when incoming_only
 // is set to true.
 TEST_F(P2PTransportChannelTest, IncomingOnlyBlocked) {
   ConfigureEndpoints(NAT_FULL_CONE, OPEN,
                      kDefaultPortAllocatorFlags,
                      kDefaultPortAllocatorFlags,
+                     kDefaultStepDelay, kDefaultStepDelay,
                      cricket::ICEPROTO_GOOGLE);
 
   SetAllocatorFlags(0, kOnlyLocalPorts);
@@ -958,6 +1271,7 @@ TEST_F(P2PTransportChannelTest, IncomingOnlyOpen) {
   ConfigureEndpoints(OPEN, NAT_FULL_CONE,
                      kDefaultPortAllocatorFlags,
                      kDefaultPortAllocatorFlags,
+                     kDefaultStepDelay, kDefaultStepDelay,
                      cricket::ICEPROTO_GOOGLE);
 
   SetAllocatorFlags(0, kOnlyLocalPorts);
@@ -969,6 +1283,266 @@ TEST_F(P2PTransportChannelTest, IncomingOnlyOpen) {
                           ep2_ch1()->readable() && ep2_ch1()->writable(),
                           1000, 1000);
 
+  DestroyChannels();
+}
+
+TEST_F(P2PTransportChannelTest, TestTcpConnectionsFromActiveToPassive) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+
+  SetAllocationStepDelay(0, kMinimumStepDelay);
+  SetAllocationStepDelay(1, kMinimumStepDelay);
+
+  int kOnlyLocalTcpPorts = cricket::PORTALLOCATOR_DISABLE_UDP |
+                           cricket::PORTALLOCATOR_DISABLE_STUN |
+                           cricket::PORTALLOCATOR_DISABLE_RELAY |
+                           cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG;
+  // Disable all protocols except TCP.
+  SetAllocatorFlags(0, kOnlyLocalTcpPorts);
+  SetAllocatorFlags(1, kOnlyLocalTcpPorts);
+
+  SetAllowTcpListen(0, true);   // actpass.
+  SetAllowTcpListen(1, false);  // active.
+
+  CreateChannels(1);
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() && ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() && ep2_ch1()->writable(),
+                   1000);
+  EXPECT_TRUE(
+      ep1_ch1()->best_connection() && ep2_ch1()->best_connection() &&
+      LocalCandidate(ep1_ch1())->address().EqualIPs(kPublicAddrs[0]) &&
+      RemoteCandidate(ep1_ch1())->address().EqualIPs(kPublicAddrs[1]));
+
+  std::string kTcpProtocol = "tcp";
+  EXPECT_EQ(kTcpProtocol, RemoteCandidate(ep1_ch1())->protocol());
+  EXPECT_EQ(kTcpProtocol, LocalCandidate(ep1_ch1())->protocol());
+  EXPECT_EQ(kTcpProtocol, RemoteCandidate(ep2_ch1())->protocol());
+  EXPECT_EQ(kTcpProtocol, LocalCandidate(ep2_ch1())->protocol());
+
+  TestSendRecv(1);
+  DestroyChannels();
+}
+
+TEST_F(P2PTransportChannelTest, TestBundleAllocatorToBundleAllocator) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+
+  CreateChannels(2);
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
+                   ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() &&
+                   ep2_ch1()->writable(),
+                   1000);
+  EXPECT_TRUE(ep1_ch1()->best_connection() &&
+              ep2_ch1()->best_connection());
+
+  EXPECT_FALSE(ep1_ch2()->readable());
+  EXPECT_FALSE(ep1_ch2()->writable());
+  EXPECT_FALSE(ep2_ch2()->readable());
+  EXPECT_FALSE(ep2_ch2()->writable());
+
+  TestSendRecv(1);  // Only 1 channel is writable per Endpoint.
+  DestroyChannels();
+}
+
+TEST_F(P2PTransportChannelTest, TestBundleAllocatorToNonBundleAllocator) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+  // Enable BUNDLE flag at one side.
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+
+  CreateChannels(2);
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
+                   ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() &&
+                   ep2_ch1()->writable(),
+                   1000);
+  EXPECT_TRUE_WAIT(ep1_ch2()->readable() &&
+                   ep1_ch2()->writable() &&
+                   ep2_ch2()->readable() &&
+                   ep2_ch2()->writable(),
+                   1000);
+
+  EXPECT_TRUE(ep1_ch1()->best_connection() &&
+              ep2_ch1()->best_connection());
+  EXPECT_TRUE(ep1_ch2()->best_connection() &&
+              ep2_ch2()->best_connection());
+
+  TestSendRecv(2);
+  DestroyChannels();
+}
+
+TEST_F(P2PTransportChannelTest, TestIceRoleConflictWithoutBundle) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+  TestSignalRoleConflict();
+}
+
+TEST_F(P2PTransportChannelTest, TestIceRoleConflictWithBundle) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
+  TestSignalRoleConflict();
+}
+
+// Tests that the ice configs (protocol, tiebreaker and role) can be passed
+// down to ports.
+TEST_F(P2PTransportChannelTest, TestIceConfigWillPassDownToPort) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+
+  SetIceRole(0, cricket::ICEROLE_CONTROLLING);
+  SetIceProtocol(0, cricket::ICEPROTO_GOOGLE);
+  SetIceTiebreaker(0, kTiebreaker1);
+  SetIceRole(1, cricket::ICEROLE_CONTROLLING);
+  SetIceProtocol(1, cricket::ICEPROTO_RFC5245);
+  SetIceTiebreaker(1, kTiebreaker2);
+
+  CreateChannels(1);
+
+  EXPECT_EQ_WAIT(2u, ep1_ch1()->ports().size(), 1000);
+
+  const std::vector<cricket::PortInterface *> ports_before = ep1_ch1()->ports();
+  for (size_t i = 0; i < ports_before.size(); ++i) {
+    EXPECT_EQ(cricket::ICEROLE_CONTROLLING, ports_before[i]->GetIceRole());
+    EXPECT_EQ(cricket::ICEPROTO_GOOGLE, ports_before[i]->IceProtocol());
+    EXPECT_EQ(kTiebreaker1, ports_before[i]->IceTiebreaker());
+  }
+
+  ep1_ch1()->SetIceRole(cricket::ICEROLE_CONTROLLED);
+  ep1_ch1()->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
+  ep1_ch1()->SetIceTiebreaker(kTiebreaker2);
+
+  const std::vector<cricket::PortInterface *> ports_after = ep1_ch1()->ports();
+  for (size_t i = 0; i < ports_after.size(); ++i) {
+    EXPECT_EQ(cricket::ICEROLE_CONTROLLED, ports_before[i]->GetIceRole());
+    EXPECT_EQ(cricket::ICEPROTO_RFC5245, ports_before[i]->IceProtocol());
+    // SetIceTiebreaker after Connect() has been called will fail. So expect the
+    // original value.
+    EXPECT_EQ(kTiebreaker1, ports_before[i]->IceTiebreaker());
+  }
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
+                   ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() &&
+                   ep2_ch1()->writable(),
+                   1000);
+
+  EXPECT_TRUE(ep1_ch1()->best_connection() &&
+              ep2_ch1()->best_connection());
+
+  TestSendRecv(1);
+  DestroyChannels();
+}
+
+// This test verifies channel can handle ice messages when channel is in
+// hybrid mode.
+TEST_F(P2PTransportChannelTest, TestConnectivityBetweenHybridandIce) {
+  TestHybridConnectivity(cricket::ICEPROTO_RFC5245);
+}
+
+// This test verifies channel can handle Gice messages when channel is in
+// hybrid mode.
+TEST_F(P2PTransportChannelTest, TestConnectivityBetweenHybridandGice) {
+  TestHybridConnectivity(cricket::ICEPROTO_GOOGLE);
+}
+
+// Verify that we can set DSCP value and retrieve properly from P2PTC.
+TEST_F(P2PTransportChannelTest, TestDefaultDscpValue) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+
+  CreateChannels(1);
+  EXPECT_EQ(talk_base::DSCP_NO_CHANGE,
+            GetEndpoint(0)->cd1_.ch_->DefaultDscpValue());
+  EXPECT_EQ(talk_base::DSCP_NO_CHANGE,
+            GetEndpoint(1)->cd1_.ch_->DefaultDscpValue());
+  GetEndpoint(0)->cd1_.ch_->SetOption(
+      talk_base::Socket::OPT_DSCP, talk_base::DSCP_CS6);
+  GetEndpoint(1)->cd1_.ch_->SetOption(
+      talk_base::Socket::OPT_DSCP, talk_base::DSCP_CS6);
+  EXPECT_EQ(talk_base::DSCP_CS6,
+            GetEndpoint(0)->cd1_.ch_->DefaultDscpValue());
+  EXPECT_EQ(talk_base::DSCP_CS6,
+            GetEndpoint(1)->cd1_.ch_->DefaultDscpValue());
+  GetEndpoint(0)->cd1_.ch_->SetOption(
+      talk_base::Socket::OPT_DSCP, talk_base::DSCP_AF41);
+  GetEndpoint(1)->cd1_.ch_->SetOption(
+      talk_base::Socket::OPT_DSCP, talk_base::DSCP_AF41);
+  EXPECT_EQ(talk_base::DSCP_AF41,
+            GetEndpoint(0)->cd1_.ch_->DefaultDscpValue());
+  EXPECT_EQ(talk_base::DSCP_AF41,
+            GetEndpoint(1)->cd1_.ch_->DefaultDscpValue());
+}
+
+// Verify IPv6 connection is preferred over IPv4.
+TEST_F(P2PTransportChannelTest, TestIPv6Connections) {
+  AddAddress(0, kIPv6PublicAddrs[0]);
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kIPv6PublicAddrs[1]);
+  AddAddress(1, kPublicAddrs[1]);
+
+  SetAllocationStepDelay(0, kMinimumStepDelay);
+  SetAllocationStepDelay(1, kMinimumStepDelay);
+
+  // Enable IPv6
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_IPV6);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_IPV6);
+
+  CreateChannels(1);
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() && ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() && ep2_ch1()->writable(),
+                   1000);
+  EXPECT_TRUE(
+      ep1_ch1()->best_connection() && ep2_ch1()->best_connection() &&
+      LocalCandidate(ep1_ch1())->address().EqualIPs(kIPv6PublicAddrs[0]) &&
+      RemoteCandidate(ep1_ch1())->address().EqualIPs(kIPv6PublicAddrs[1]));
+
+  TestSendRecv(1);
+  DestroyChannels();
+}
+
+// Simple test without any stun or turn server addresses. Making sure ports
+// can receive and send data.
+TEST_F(P2PTransportChannelTest, TestSharedSocketModeWithStunTurnAddress) {
+  AddAddress(0, kPublicAddrs[0]);
+  AddAddress(1, kPublicAddrs[1]);
+
+  const talk_base::SocketAddress null_addr;
+  GetEndpoint(0)->allocator_.reset(new cricket::BasicPortAllocator(
+        &(GetEndpoint(0)->network_manager_), null_addr, null_addr,
+        null_addr, null_addr));
+  GetEndpoint(1)->allocator_.reset(new cricket::BasicPortAllocator(
+        &(GetEndpoint(1)->network_manager_), null_addr, null_addr,
+        null_addr, null_addr));
+
+  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
+                       cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG);
+  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_SHARED_SOCKET |
+                       cricket::PORTALLOCATOR_ENABLE_SHARED_UFRAG);
+
+  SetAllocationStepDelay(0, kMinimumStepDelay);
+  SetAllocationStepDelay(1, kMinimumStepDelay);
+
+  CreateChannels(1);
+
+  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
+                   ep1_ch1()->writable() &&
+                   ep2_ch1()->readable() &&
+                   ep2_ch1()->writable(),
+                   1000);
+
+  EXPECT_TRUE(ep1_ch1()->best_connection() &&
+              ep2_ch1()->best_connection());
+
+  TestSendRecv(1);
   DestroyChannels();
 }
 
@@ -1012,7 +1586,7 @@ class P2PTransportChannelMultihomedTest : public P2PTransportChannelTestBase {
 };
 
 // Test that we can establish connectivity when both peers are multihomed.
-TEST_F(P2PTransportChannelMultihomedTest, TestBasic) {
+TEST_F(P2PTransportChannelMultihomedTest, DISABLED_TestBasic) {
   AddAddress(0, kPublicAddrs[0]);
   AddAddress(0, kAlternateAddrs[0]);
   AddAddress(1, kPublicAddrs[1]);
@@ -1023,8 +1597,11 @@ TEST_F(P2PTransportChannelMultihomedTest, TestBasic) {
 // Test that we can quickly switch links if an interface goes down.
 TEST_F(P2PTransportChannelMultihomedTest, TestFailover) {
   AddAddress(0, kPublicAddrs[0]);
-  AddAddress(1, kPublicAddrs[1]);
+  // Adding alternate address will make sure |kPublicAddrs| has the higher
+  // priority than others. This is due to FakeNetwork::AddInterface method.
   AddAddress(1, kAlternateAddrs[1]);
+  AddAddress(1, kPublicAddrs[1]);
+
   // Use only local ports for simplicity.
   SetAllocatorFlags(0, kOnlyLocalPorts);
   SetAllocatorFlags(1, kOnlyLocalPorts);
@@ -1092,134 +1669,4 @@ TEST_F(P2PTransportChannelMultihomedTest, TestDrain) {
       3000);
 
   DestroyChannels();
-}
-
-TEST_F(P2PTransportChannelTest, TestBundleAllocatorToBundleAllocator) {
-  AddAddress(0, kPublicAddrs[0]);
-  AddAddress(1, kPublicAddrs[1]);
-  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
-  SetAllocatorFlags(1, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
-
-  CreateChannels(2);
-
-  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
-                   ep1_ch1()->writable() &&
-                   ep2_ch1()->readable() &&
-                   ep2_ch1()->writable(),
-                   1000);
-  EXPECT_TRUE(ep1_ch1()->best_connection() &&
-              ep2_ch1()->best_connection());
-
-  EXPECT_FALSE(ep1_ch2()->readable());
-  EXPECT_FALSE(ep1_ch2()->writable());
-  EXPECT_FALSE(ep2_ch2()->readable());
-  EXPECT_FALSE(ep2_ch2()->writable());
-
-  TestSendRecv(1);  // Only 1 channel is writable per Endpoint.
-  DestroyChannels();
-}
-
-TEST_F(P2PTransportChannelTest, TestBundleAllocatorToNonBundleAllocator) {
-  AddAddress(0, kPublicAddrs[0]);
-  AddAddress(1, kPublicAddrs[1]);
-  // Enable BUNDLE flag at one side.
-  SetAllocatorFlags(0, cricket::PORTALLOCATOR_ENABLE_BUNDLE);
-
-  CreateChannels(2);
-
-  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
-                   ep1_ch1()->writable() &&
-                   ep2_ch1()->readable() &&
-                   ep2_ch1()->writable(),
-                   1000);
-  EXPECT_TRUE_WAIT(ep1_ch2()->readable() &&
-                   ep1_ch2()->writable() &&
-                   ep2_ch2()->readable() &&
-                   ep2_ch2()->writable(),
-                   1000);
-
-  EXPECT_TRUE(ep1_ch1()->best_connection() &&
-              ep2_ch1()->best_connection());
-  EXPECT_TRUE(ep1_ch2()->best_connection() &&
-              ep2_ch2()->best_connection());
-
-  TestSendRecv(2);
-  DestroyChannels();
-}
-
-TEST_F(P2PTransportChannelTest, TestIceRoleConflict) {
-  AddAddress(0, kPublicAddrs[0]);
-  AddAddress(1, kPublicAddrs[1]);
-
-  SetIceProtocol(0, cricket::ICEPROTO_RFC5245);
-  SetTiebreaker(0, kTiebreaker1);  // Default EP1 is in controlling state.
-  SetIceProtocol(1, cricket::ICEPROTO_RFC5245);
-  SetIceRole(1, cricket::ROLE_CONTROLLING);
-  SetTiebreaker(1, kTiebreaker2);
-
-  // Creating channels with both channels role set to CONTROLLING.
-  CreateChannels(1);
-  // Since both the channels initiated with controlling state and channel2
-  // has higher tiebreaker value, channel1 should receive SignalRoleConflict.
-  EXPECT_TRUE_WAIT(GetRoleConflict(0), 1000);
-
-  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
-                   ep1_ch1()->writable() &&
-                   ep2_ch1()->readable() &&
-                   ep2_ch1()->writable(),
-                   1000);
-
-  EXPECT_TRUE(ep1_ch1()->best_connection() &&
-              ep2_ch1()->best_connection());
-
-  TestSendRecv(1);
-}
-
-// Tests that the ice configs (protocol, tiebreaker and role can be passed down
-// to ports.
-TEST_F(P2PTransportChannelTest, TestIceConfigWillPassDownToPort) {
-  AddAddress(0, kPublicAddrs[0]);
-  AddAddress(1, kPublicAddrs[1]);
-
-  SetIceRole(0, cricket::ROLE_CONTROLLING);
-  SetIceProtocol(0, cricket::ICEPROTO_GOOGLE);
-  SetTiebreaker(0, kTiebreaker1);
-  SetIceRole(1, cricket::ROLE_CONTROLLING);
-  SetIceProtocol(1, cricket::ICEPROTO_RFC5245);
-  SetTiebreaker(1, kTiebreaker2);
-
-  CreateChannels(1);
-
-  EXPECT_EQ_WAIT(2u, ep1_ch1()->ports().size(), 1000);
-
-  const std::vector<cricket::PortInterface *> ports_before = ep1_ch1()->ports();
-  for (size_t i = 0; i < ports_before.size(); ++i) {
-    EXPECT_EQ(cricket::ROLE_CONTROLLING, ports_before[i]->Role());
-    EXPECT_EQ(cricket::ICEPROTO_GOOGLE, ports_before[i]->IceProtocol());
-    EXPECT_EQ(kTiebreaker1, ports_before[i]->Tiebreaker());
-  }
-
-  ep1_ch1()->SetRole(cricket::ROLE_CONTROLLED);
-  ep1_ch1()->SetIceProtocolType(cricket::ICEPROTO_RFC5245);
-  ep1_ch1()->SetTiebreaker(kTiebreaker2);
-
-  const std::vector<cricket::PortInterface *> ports_after = ep1_ch1()->ports();
-  for (size_t i = 0; i < ports_after.size(); ++i) {
-    EXPECT_EQ(cricket::ROLE_CONTROLLED, ports_before[i]->Role());
-    EXPECT_EQ(cricket::ICEPROTO_RFC5245, ports_before[i]->IceProtocol());
-    // SetTiebreaker after Connect() has been called will fail. So expect the
-    // original value.
-    EXPECT_EQ(kTiebreaker1, ports_before[i]->Tiebreaker());
-  }
-
-  EXPECT_TRUE_WAIT(ep1_ch1()->readable() &&
-                   ep1_ch1()->writable() &&
-                   ep2_ch1()->readable() &&
-                   ep2_ch1()->writable(),
-                   1000);
-
-  EXPECT_TRUE(ep1_ch1()->best_connection() &&
-              ep2_ch1()->best_connection());
-
-  TestSendRecv(1);
 }

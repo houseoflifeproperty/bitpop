@@ -8,10 +8,10 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "googleurl/src/url_parse.h"
 #include "ppapi/c/dev/ppb_url_util_dev.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/ppapi_shared_export.h"
+#include "url/url_parse.h"
 
 class GURL;
 
@@ -22,8 +22,7 @@ namespace ppapi {
 class PPAPI_SHARED_EXPORT PPB_URLUtil_Shared {
  public:
   // PPB_URLUtil shared functions.
-  static PP_Var Canonicalize(PP_Var url,
-                             PP_URLComponents_Dev* components);
+  static PP_Var Canonicalize(PP_Var url, PP_URLComponents_Dev* components);
   static PP_Var ResolveRelativeToURL(PP_Var base_url,
                                      PP_Var relative,
                                      PP_URLComponents_Dev* components);

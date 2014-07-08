@@ -7,10 +7,9 @@
 #include <map>
 
 #include "base/memory/singleton.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/threading/thread_restrictions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "ui/gfx/font.h"
 
@@ -25,8 +24,9 @@ void QueryFontsFromRegistry(std::map<std::string, std::string>* map) {
 
   base::win::RegistryValueIterator it(HKEY_LOCAL_MACHINE, kFonts);
   for (; it.Valid(); ++it) {
-    const std::string filename = StringToLowerASCII(WideToUTF8(it.Value()));
-    (*map)[filename] = WideToUTF8(it.Name());
+    const std::string filename =
+        StringToLowerASCII(base::WideToUTF8(it.Value()));
+    (*map)[filename] = base::WideToUTF8(it.Name());
   }
 }
 
@@ -49,7 +49,7 @@ void GetFontNamesFromFilename(const std::string& filename,
 
 // Returns true if |text| contains only ASCII digits.
 bool ContainsOnlyDigits(const std::string& text) {
-  return text.find_first_not_of("0123456789") == string16::npos;
+  return text.find_first_not_of("0123456789") == base::string16::npos;
 }
 
 // Appends a Font with the given |name| and |size| to |fonts| unless the last
@@ -63,8 +63,6 @@ void AppendFont(const std::string& name, int size, std::vector<Font>* fonts) {
 void QueryLinkedFontsFromRegistry(const Font& font,
                                   std::map<std::string, std::string>* font_map,
                                   std::vector<Font>* linked_fonts) {
-  // TODO(asvitkine): Find a way to do this on a non-UI thread.
-  base::ThreadRestrictions::ScopedAllowIO allow_io;
   const wchar_t* kSystemLink =
       L"Software\\Microsoft\\Windows NT\\CurrentVersion\\FontLink\\SystemLink";
 
@@ -72,7 +70,7 @@ void QueryLinkedFontsFromRegistry(const Font& font,
   if (FAILED(key.Open(HKEY_LOCAL_MACHINE, kSystemLink, KEY_READ)))
     return;
 
-  const std::wstring original_font_name = UTF8ToWide(font.GetFontName());
+  const std::wstring original_font_name = base::UTF8ToWide(font.GetFontName());
   std::vector<std::wstring> values;
   if (FAILED(key.ReadValues(original_font_name.c_str(), &values))) {
     key.Close();
@@ -82,7 +80,8 @@ void QueryLinkedFontsFromRegistry(const Font& font,
   std::string filename;
   std::string font_name;
   for (size_t i = 0; i < values.size(); ++i) {
-    internal::ParseFontLinkEntry(WideToUTF8(values[i]), &filename, &font_name);
+    internal::ParseFontLinkEntry(
+        base::WideToUTF8(values[i]), &filename, &font_name);
     // If the font name is present, add that directly, otherwise add the
     // font names corresponding to the filename.
     if (!font_name.empty()) {
@@ -181,7 +180,8 @@ void ParseFontFamilyString(const std::string& family,
     const size_t index = font_names->back().find('(');
     if (index != std::string::npos) {
       font_names->back().resize(index);
-      TrimWhitespace(font_names->back(), TRIM_TRAILING, &font_names->back());
+      base::TrimWhitespace(font_names->back(), base::TRIM_TRAILING,
+                           &font_names->back());
     }
   }
 }

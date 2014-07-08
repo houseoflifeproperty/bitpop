@@ -18,21 +18,22 @@
 
 #include <algorithm>
 
-#include "chrome/browser/debugger/devtools_window.h"
-#include "chrome/browser/extensions/extension_host.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "base/callback.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_view_host.h"
+#include "chrome/browser/extensions/extension_view_host_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/extensions/extension_view_mac.h"
 #import "chrome/browser/ui/cocoa/info_bubble_window.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "ui/base/cocoa/window_size_constants.h"
 
+using content::BrowserContext;
 using content::RenderViewHost;
 
 namespace {
@@ -56,7 +57,7 @@ CGFloat Clamp(CGFloat value, CGFloat min, CGFloat max) {
 @interface FacebookPopupController(Private)
 // Callers should be using the public static method for initialization.
 // NOTE: This takes ownership of |host|.
-- (id)initWithHost:(extensions::ExtensionHost*)host
+- (id)initWithHost:(extensions::ExtensionViewHost*)host
       parentWindow:(NSWindow*)parentWindow
         anchoredAt:(NSPoint)anchoredAt
      arrowLocation:(info_bubble::BubbleArrowLocation)arrowLocation;
@@ -99,18 +100,18 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
   FacebookExtensionObserverBridge(FacebookPopupController* owner)
     : owner_(owner) {
     registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE,
-                   content::Source<Profile>([owner_ extensionHost]->profile()));
+                   content::Source<BrowserContext>([owner_ extensionViewHost]->browser_context()));
   }
 
   // Overridden from content::NotificationObserver.
-  void Observe(int type,
+  virtual void Observe(int type,
                const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
+               const content::NotificationDetails& details) OVERRIDE {
     switch (type) {
       case chrome::NOTIFICATION_EXTENSION_HOST_VIEW_SHOULD_CLOSE: {
         extensions::ExtensionHost* host =
             content::Details<extensions::ExtensionHost>(details).ptr();
-        if (host == [owner_ extensionHost]) {
+        if (host == [owner_ extensionViewHost]) {
           FacebookPopupController* popup = [FacebookPopupController popup];
           if (popup && ![popup isClosing])
             [popup close];
@@ -133,14 +134,14 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
 
 @implementation FacebookPopupController
 
-- (id)initWithHost:(extensions::ExtensionHost*)host
+- (id)initWithHost:(extensions::ExtensionViewHost*)host
       parentWindow:(NSWindow*)parentWindow
         anchoredAt:(NSPoint)anchoredAt
      arrowLocation:(info_bubble::BubbleArrowLocation)arrowLocation {
   if (arrowLocation != info_bubble::kBottomCenter)
     return nil;
 
-  scoped_nsobject<InfoBubbleWindow> window(
+  base::scoped_nsobject<InfoBubbleWindow> window(
       [[InfoBubbleWindow alloc]
           initWithContentRect:ui::kWindowSizeDeterminedLater
                     styleMask:NSBorderlessWindowMask
@@ -154,6 +155,7 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
                        parentWindow:parentWindow
                          anchoredAt:anchoredAt])) {
     host_.reset(host);
+    ignoreWindowDidResignKey_ = NO;
 
     InfoBubbleView* view = self.bubble;
     [view setArrowLocation:arrowLocation];
@@ -185,15 +187,51 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
   [super dealloc];
 }
 
+- (void)close {
+  // |windowWillClose:| could have already been called. http://crbug.com/279505
+  if (host_) {
+    web_modal::WebContentsModalDialogManager* modalDialogManager =
+        web_modal::WebContentsModalDialogManager::FromWebContents(
+            host_->host_contents());
+    if (modalDialogManager &&
+        modalDialogManager->IsDialogActive()) {
+      return;
+    }
+  }
+  [super close];
+}
+
 - (void)windowWillClose:(NSNotification *)notification {
   [super windowWillClose:notification];
-  gPopup = nil;
+  if (gPopup == self)
+    gPopup = nil;
   if (host_->view())
     host_->view()->set_container(NULL);
+  host_.reset();
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
-//  [super windowDidResignKey:notification];
+// |windowWillClose:| could have already been called. http://crbug.com/279505
+  if (host_) {
+    // When a modal dialog is opened on top of the popup and when it's closed,
+    // it steals key-ness from the popup. Don't close the popup when this
+    // happens. There's an extra windowDidResignKey: notification after the
+    // modal dialog closes that should also be ignored.
+    web_modal::WebContentsModalDialogManager* modalDialogManager =
+        web_modal::WebContentsModalDialogManager::FromWebContents(
+            host_->host_contents());
+    if (modalDialogManager &&
+        modalDialogManager->IsDialogActive()) {
+      ignoreWindowDidResignKey_ = YES;
+      return;
+    }
+    if (ignoreWindowDidResignKey_) {
+      ignoreWindowDidResignKey_ = NO;
+      return;
+    }
+  }
+  
+  [super windowDidResignKey:notification];
 }
 
 - (void)parentWindowDidBecomeKey:(NSNotification*)notification {
@@ -207,7 +245,7 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
   return [static_cast<InfoBubbleWindow*>([self window]) isClosing];
 }
 
-- (extensions::ExtensionHost*)extensionHost {
+- (extensions::ExtensionViewHost*)extensionViewHost {
   return host_.get();
 }
 
@@ -221,26 +259,13 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
   if (!browser)
     return nil;
 
-  ExtensionProcessManager* manager =
-      extensions::ExtensionSystem::Get(browser->profile())->process_manager();
-  DCHECK(manager);
-  if (!manager)
-    return nil;
-
-  extensions::ExtensionHost* host = manager->CreatePopupHost(url, browser);
+  extensions::ExtensionViewHost* host =
+      extensions::ExtensionViewHostFactory::CreatePopupHost(url, browser);
   DCHECK(host);
   if (!host)
     return nil;
 
-  // Make absolutely sure that no popups are leaked.
-  if (gPopup) {
-    if ([[gPopup window] isVisible])
-      [gPopup close];
-
-    [gPopup autorelease];
-    gPopup = nil;
-  }
-  DCHECK(!gPopup);
+  [gPopup close];
 
   // Takes ownership of |host|. Also will autorelease itself when the popup is
   // closed, so no need to do that here.
@@ -347,16 +372,6 @@ class FacebookExtensionObserverBridge : public content::NotificationObserver {
   if (host_->view())
     host_->view()->WindowFrameChanged();
 }
-
-/*
-- (void)setAnchor:(NSPoint)anchorPoint {
-  NSWindow* window = [self window];
-  if ([[window animator] alphaValue] == 1.0) {
-    anchor_ = [parentWindow_ convertBaseToScreen:anchorPoint];
-    [self extensionViewFrameChanged];
-  }
-}
-*/
 
 @end
 

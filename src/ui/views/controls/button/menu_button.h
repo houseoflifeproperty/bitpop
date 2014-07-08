@@ -7,17 +7,14 @@
 
 #include <string>
 
-#include "base/string16.h"
-#include "base/time.h"
-#include "ui/gfx/font.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "ui/views/background.h"
 #include "ui/views/controls/button/text_button.h"
 
 namespace views {
 
-class MouseEvent;
 class MenuButtonListener;
-
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -36,7 +33,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
 
   // Create a Button.
   MenuButton(ButtonListener* listener,
-             const string16& text,
+             const base::string16& text,
              MenuButtonListener* menu_button_listener,
              bool show_menu_marker);
   virtual ~MenuButton();
@@ -58,16 +55,19 @@ class VIEWS_EXPORT MenuButton : public TextButton {
 
   // Overridden from View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
   virtual bool OnMousePressed(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseReleased(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnKeyReleased(const ui::KeyEvent& event) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
  protected:
+  // Paint the menu marker image.
+  void PaintMenuMarker(gfx::Canvas* canvas);
+
   // True if the menu is currently visible.
   bool menu_visible_;
 
@@ -87,7 +87,7 @@ class VIEWS_EXPORT MenuButton : public TextButton {
   // menu. There is no clean way to get the second click event because the
   // menu is displayed using a modal loop and, unlike regular menus in Windows,
   // the button is not part of the displayed menu.
-  base::Time menu_closed_time_;
+  base::TimeTicks menu_closed_time_;
 
   // Our listener. Not owned.
   MenuButtonListener* listener_;

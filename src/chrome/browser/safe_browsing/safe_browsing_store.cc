@@ -6,23 +6,32 @@
 
 #include <algorithm>
 
+#include "base/logging.h"
 #include "base/metrics/histogram.h"
 
 namespace {
 
-// Find items matching between |subs| and |adds|, and remove them,
-// recording the item from |adds| in |adds_removed|.  To minimize
-// copies, the inputs are processing in parallel, so |subs| and |adds|
-// should be compatibly ordered (either by SBAddPrefixLess or
-// SBAddPrefixHashLess).
+// Return |true| if the range is sorted by the given comparator.
+template <typename CTI, typename LESS>
+bool sorted(CTI beg, CTI end, LESS less) {
+  while ((end - beg) > 2) {
+    CTI n = beg++;
+    if (less(*beg, *n))
+      return false;
+  }
+  return true;
+}
+
+// Find items matching between |subs| and |adds|, and remove them.  To minimize
+// copies, the inputs are processing in parallel, so |subs| and |adds| should be
+// compatibly ordered (either by SBAddPrefixLess or SBAddPrefixHashLess).
 //
-// |predAddSub| provides add < sub, |predSubAdd| provides sub < add,
-// for the tightest compare appropriate (see calls in SBProcessSubs).
+// |predAddSub| provides add < sub, |predSubAdd| provides sub < add, for the
+// tightest compare appropriate (see calls in SBProcessSubs).
 template <typename SubsT, typename AddsT,
           typename PredAddSubT, typename PredSubAddT>
 void KnockoutSubs(SubsT* subs, AddsT* adds,
-                  PredAddSubT predAddSub, PredSubAddT predSubAdd,
-                  AddsT* adds_removed) {
+                  PredAddSubT predAddSub, PredSubAddT predSubAdd) {
   // Keep a pair of output iterators for writing kept items.  Due to
   // deletions, these may lag the main iterators.  Using erase() on
   // individual items would result in O(N^2) copies.  Using std::list
@@ -51,9 +60,8 @@ void KnockoutSubs(SubsT* subs, AddsT* adds,
       ++add_out;
       ++add_iter;
 
-      // Record equal items and drop them.
+      // Drop equal items.
     } else {
-      adds_removed->push_back(*add_iter);
       ++add_iter;
       ++sub_iter;
     }
@@ -62,45 +70,6 @@ void KnockoutSubs(SubsT* subs, AddsT* adds,
   // Erase any leftover gap.
   adds->erase(add_out, add_iter);
   subs->erase(sub_out, sub_iter);
-}
-
-// Remove items in |removes| from |full_hashes|.  |full_hashes| and
-// |removes| should be ordered by SBAddPrefix component.
-template <typename HashesT, typename AddsT>
-void RemoveMatchingPrefixes(const AddsT& removes, HashesT* full_hashes) {
-  // This is basically an inline of std::set_difference().
-  // Unfortunately, that algorithm requires that the two iterator
-  // pairs use the same value types.
-
-  // Where to store kept items.
-  typename HashesT::iterator out = full_hashes->begin();
-
-  typename HashesT::iterator hash_iter = full_hashes->begin();
-  typename AddsT::const_iterator remove_iter = removes.begin();
-
-  while (hash_iter != full_hashes->end() && remove_iter != removes.end()) {
-    // Keep items less than |*remove_iter|.
-    if (SBAddPrefixLess(*hash_iter, *remove_iter)) {
-      *out = *hash_iter;
-      ++out;
-      ++hash_iter;
-
-      // No hit for |*remove_iter|, bump it forward.
-    } else if (SBAddPrefixLess(*remove_iter, *hash_iter)) {
-      ++remove_iter;
-
-      // Drop equal items, there may be multiple hits.
-    } else {
-      do {
-        ++hash_iter;
-      } while (hash_iter != full_hashes->end() &&
-               !SBAddPrefixLess(*remove_iter, *hash_iter));
-      ++remove_iter;
-    }
-  }
-
-  // Erase any leftover gap.
-  full_hashes->erase(out, hash_iter);
 }
 
 // Remove deleted items (|chunk_id| in |del_set|) from the container.
@@ -120,52 +89,52 @@ void RemoveDeleted(ItemsT* items, const base::hash_set<int32>& del_set) {
   items->erase(end_iter, items->end());
 }
 
-enum MissTypes {
-  MISS_TYPE_ALL,
-  MISS_TYPE_FALSE,
+// Remove prefixes which are in the same chunk as their fullhash.  This was a
+// mistake in earlier implementations.
+template <typename HashesT, typename PrefixesT>
+size_t KnockoutPrefixVolunteers(const HashesT& full_hashes,
+                                PrefixesT* prefixes) {
+  typename PrefixesT::iterator prefixes_process = prefixes->begin();
+  typename PrefixesT::iterator prefixes_out = prefixes->begin();
+  typename HashesT::const_iterator hashes_process = full_hashes.begin();
 
-  // Always at the end.
-  MISS_TYPE_MAX
-};
+  size_t skipped_count = 0;
+
+  while (hashes_process != full_hashes.end()) {
+    // Scan prefixes forward until an item is not less than the current hash.
+    while (prefixes_process != prefixes->end() &&
+           SBAddPrefixLess(*prefixes_process, *hashes_process)) {
+      if (prefixes_process != prefixes_out) {
+        *prefixes_out = *prefixes_process;
+      }
+      prefixes_out++;
+      prefixes_process++;
+    }
+
+    // If the current hash is also not less than the prefix, that implies they
+    // are equal.  Skip the prefix.
+    if (prefixes_process != prefixes->end() &&
+        !SBAddPrefixLess(*hashes_process, *prefixes_process)) {
+      skipped_count++;
+      prefixes_process++;
+    }
+
+    hashes_process++;
+  }
+
+  // If any prefixes were skipped, copy over the tail and erase the excess.
+  if (prefixes_process != prefixes_out) {
+    prefixes_out = std::copy(prefixes_process, prefixes->end(), prefixes_out);
+    prefixes->erase(prefixes_out, prefixes->end());
+  }
+
+  return skipped_count;
+}
 
 }  // namespace
 
-void SBCheckPrefixMisses(const SBAddPrefixes& add_prefixes,
-                         const std::set<SBPrefix>& prefix_misses) {
-  if (prefix_misses.empty())
-    return;
-
-  // Record a hit for all prefixes which missed when sent to the
-  // server.
-  for (size_t i = 0; i < prefix_misses.size(); ++i) {
-    UMA_HISTOGRAM_ENUMERATION("SB2.BloomFilterFalsePositives",
-                              MISS_TYPE_ALL, MISS_TYPE_MAX);
-  }
-
-  // Collect the misses which are not present in |add_prefixes|.
-  // Since |add_prefixes| can contain multiple copies of the same
-  // prefix, it is not sufficient to count the number of elements
-  // present in both collections.
-  std::set<SBPrefix> false_misses(prefix_misses.begin(), prefix_misses.end());
-  for (SBAddPrefixes::const_iterator iter = add_prefixes.begin();
-       iter != add_prefixes.end(); ++iter) {
-    // |erase()| on an absent element should cost like |find()|.
-    false_misses.erase(iter->prefix);
-  }
-
-  // Record a hit for prefixes which we shouldn't have sent in the
-  // first place.
-  for (size_t i = 0; i < false_misses.size(); ++i) {
-    UMA_HISTOGRAM_ENUMERATION("SB2.BloomFilterFalsePositives",
-                              MISS_TYPE_FALSE, MISS_TYPE_MAX);
-  }
-
-  // Divide |MISS_TYPE_FALSE| by |MISS_TYPE_ALL| to get the
-  // bloom-filter false-positive rate.
-}
-
 void SBProcessSubs(SBAddPrefixes* add_prefixes,
-                   std::vector<SBSubPrefix>* sub_prefixes,
+                   SBSubPrefixes* sub_prefixes,
                    std::vector<SBAddFullHash>* add_full_hashes,
                    std::vector<SBSubFullHash>* sub_full_hashes,
                    const base::hash_set<int32>& add_chunks_deleted,
@@ -175,36 +144,36 @@ void SBProcessSubs(SBAddPrefixes* add_prefixes,
   // to qualify things.  It becomes very arbitrary, though, and less
   // clear how things are working.
 
-  // Sort the inputs by the SBAddPrefix bits.
-  std::sort(add_prefixes->begin(), add_prefixes->end(),
-            SBAddPrefixLess<SBAddPrefix,SBAddPrefix>);
-  std::sort(sub_prefixes->begin(), sub_prefixes->end(),
-            SBAddPrefixLess<SBSubPrefix,SBSubPrefix>);
-  std::sort(add_full_hashes->begin(), add_full_hashes->end(),
-            SBAddPrefixHashLess<SBAddFullHash,SBAddFullHash>);
-  std::sort(sub_full_hashes->begin(), sub_full_hashes->end(),
-            SBAddPrefixHashLess<SBSubFullHash,SBSubFullHash>);
+  // Make sure things are sorted appropriately.
+  DCHECK(sorted(add_prefixes->begin(), add_prefixes->end(),
+                SBAddPrefixLess<SBAddPrefix,SBAddPrefix>));
+  DCHECK(sorted(sub_prefixes->begin(), sub_prefixes->end(),
+                SBAddPrefixLess<SBSubPrefix,SBSubPrefix>));
+  DCHECK(sorted(add_full_hashes->begin(), add_full_hashes->end(),
+                SBAddPrefixHashLess<SBAddFullHash,SBAddFullHash>));
+  DCHECK(sorted(sub_full_hashes->begin(), sub_full_hashes->end(),
+                SBAddPrefixHashLess<SBSubFullHash,SBSubFullHash>));
+
+  // Earlier database code added prefixes when it saw fullhashes.  The protocol
+  // should never send a chunk of mixed prefixes and fullhashes, the following
+  // removes any such cases which are seen.
+  // TODO(shess): Remove this code once most databases have been processed.
+  // Chunk churn should clean up anyone left over.  This only takes a few ms to
+  // run through my current database, so it doesn't seem worthwhile to do much
+  // more than that.
+  size_t skipped = KnockoutPrefixVolunteers(*add_full_hashes, add_prefixes);
+  skipped += KnockoutPrefixVolunteers(*sub_full_hashes, sub_prefixes);
+  UMA_HISTOGRAM_COUNTS("SB2.VolunteerPrefixesRemoved", skipped);
 
   // Factor out the prefix subs.
-  SBAddPrefixes removed_adds;
   KnockoutSubs(sub_prefixes, add_prefixes,
                SBAddPrefixLess<SBAddPrefix,SBSubPrefix>,
-               SBAddPrefixLess<SBSubPrefix,SBAddPrefix>,
-               &removed_adds);
-
-  // Remove the full-hashes corrosponding to the adds which
-  // KnockoutSubs() removed.  Processing these w/in KnockoutSubs()
-  // would make the code more complicated, and they are very small
-  // relative to the prefix lists so the gain would be modest.
-  RemoveMatchingPrefixes(removed_adds, add_full_hashes);
-  RemoveMatchingPrefixes(removed_adds, sub_full_hashes);
+               SBAddPrefixLess<SBSubPrefix,SBAddPrefix>);
 
   // Factor out the full-hash subs.
-  std::vector<SBAddFullHash> removed_full_adds;
   KnockoutSubs(sub_full_hashes, add_full_hashes,
                SBAddPrefixHashLess<SBAddFullHash,SBSubFullHash>,
-               SBAddPrefixHashLess<SBSubFullHash,SBAddFullHash>,
-               &removed_full_adds);
+               SBAddPrefixHashLess<SBSubFullHash,SBAddFullHash>);
 
   // Remove items from the deleted chunks.  This is done after other
   // processing to allow subs to knock out adds (and be removed) even

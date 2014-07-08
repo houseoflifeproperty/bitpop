@@ -25,8 +25,8 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
-#ifndef TALK_BASE_OPENSSLIDENTITY_H__
-#define TALK_BASE_OPENSSLIDENTITY_H__
+#ifndef TALK_BASE_OPENSSLIDENTITY_H_
+#define TALK_BASE_OPENSSLIDENTITY_H_
 
 #include <openssl/evp.h>
 #include <openssl/x509.h>
@@ -45,6 +45,10 @@ namespace talk_base {
 // which is reference counted inside the OpenSSL library.
 class OpenSSLKeyPair {
  public:
+  explicit OpenSSLKeyPair(EVP_PKEY* pkey) : pkey_(pkey) {
+    ASSERT(pkey_ != NULL);
+  }
+
   static OpenSSLKeyPair* Generate();
 
   virtual ~OpenSSLKeyPair();
@@ -57,9 +61,6 @@ class OpenSSLKeyPair {
   EVP_PKEY* pkey() const { return pkey_; }
 
  private:
-  explicit OpenSSLKeyPair(EVP_PKEY* pkey) : pkey_(pkey) {
-    ASSERT(pkey_ != NULL);
-  }
   void AddReference();
 
   EVP_PKEY* pkey_;
@@ -71,15 +72,18 @@ class OpenSSLKeyPair {
 // which is also reference counted inside the OpenSSL library.
 class OpenSSLCertificate : public SSLCertificate {
  public:
+  // Caller retains ownership of the X509 object.
+  explicit OpenSSLCertificate(X509* x509) : x509_(x509) {
+    AddReference();
+  }
+
   static OpenSSLCertificate* Generate(OpenSSLKeyPair* key_pair,
-                                      const std::string& common_name);
-  static OpenSSLCertificate* FromPEMString(const std::string& pem_string,
-                                           int* pem_length);
+                                      const SSLIdentityParams& params);
+  static OpenSSLCertificate* FromPEMString(const std::string& pem_string);
 
   virtual ~OpenSSLCertificate();
 
   virtual OpenSSLCertificate* GetReference() const {
-    AddReference();
     return new OpenSSLCertificate(x509_);
   }
 
@@ -87,22 +91,31 @@ class OpenSSLCertificate : public SSLCertificate {
 
   virtual std::string ToPEMString() const;
 
+  virtual void ToDER(Buffer* der_buffer) const;
+
   // Compute the digest of the certificate given algorithm
-  virtual bool ComputeDigest(const std::string &algorithm,
-                             unsigned char *digest, std::size_t size,
-                             std::size_t *length) const;
+  virtual bool ComputeDigest(const std::string& algorithm,
+                             unsigned char* digest,
+                             size_t size,
+                             size_t* length) const;
 
   // Compute the digest of a certificate as an X509 *
-  static bool ComputeDigest(const X509 *x509,
-                            const std::string &algorithm,
-                            unsigned char *digest,
-                            std::size_t size,
-                            std::size_t *length);
+  static bool ComputeDigest(const X509* x509,
+                            const std::string& algorithm,
+                            unsigned char* digest,
+                            size_t size,
+                            size_t* length);
+
+  virtual bool GetSignatureDigestAlgorithm(std::string* algorithm) const;
+
+  virtual bool GetChain(SSLCertChain** chain) const {
+    // Chains are not yet supported when using OpenSSL.
+    // OpenSSLStreamAdapter::SSLVerifyCallback currently requires the remote
+    // certificate to be self-signed.
+    return false;
+  }
 
  private:
-  explicit OpenSSLCertificate(X509* x509) : x509_(x509) {
-    ASSERT(x509_ != NULL);
-  }
   void AddReference() const;
 
   X509* x509_;
@@ -115,7 +128,9 @@ class OpenSSLCertificate : public SSLCertificate {
 class OpenSSLIdentity : public SSLIdentity {
  public:
   static OpenSSLIdentity* Generate(const std::string& common_name);
-
+  static OpenSSLIdentity* GenerateForTest(const SSLIdentityParams& params);
+  static SSLIdentity* FromPEMStrings(const std::string& private_key,
+                                     const std::string& certificate);
   virtual ~OpenSSLIdentity() { }
 
   virtual const OpenSSLCertificate& certificate() const {
@@ -138,6 +153,8 @@ class OpenSSLIdentity : public SSLIdentity {
     ASSERT(certificate != NULL);
   }
 
+  static OpenSSLIdentity* GenerateInternal(const SSLIdentityParams& params);
+
   scoped_ptr<OpenSSLKeyPair> key_pair_;
   scoped_ptr<OpenSSLCertificate> certificate_;
 
@@ -147,4 +164,4 @@ class OpenSSLIdentity : public SSLIdentity {
 
 }  // namespace talk_base
 
-#endif  // TALK_BASE_OPENSSLIDENTITY_H__
+#endif  // TALK_BASE_OPENSSLIDENTITY_H_

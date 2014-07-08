@@ -42,7 +42,7 @@ void LionBadgeImageSource::Draw(gfx::Canvas* canvas) {
                          SkColor(), SkColor(), // these params are ignored
                          icon_size_.width(),
                          // next param affects only icon bottom padding
-                         extensions::Extension::ActionInfo::TYPE_PAGE);
+                         extensions::ActionInfo::TYPE_PAGE);
   canvas->Restore();
 }
 

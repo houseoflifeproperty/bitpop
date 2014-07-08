@@ -42,7 +42,7 @@ import os
 import sys
 
 if len(sys.argv) != 3:
-    print 'USAGE: %s path_to_webperf_checkout_root path_to_webkit_checkout_root'
+    print 'USAGE: %s path_to_webperf_checkout_root path_to_webkit_checkout_root' % sys.argv[0]
     sys.exit(1)
 
 source_directory = os.path.join(sys.argv[1], 'tests')
@@ -53,16 +53,18 @@ if os.path.exists(destination_directory):
     sys.exit(1)
 os.makedirs(destination_directory)
 
-directories_to_copy = ['approved', 'resources']
+directories_to_copy = ['approved', 'resources', 'submission']
 directories_to_ignore = ['html5']                 # These are just duplicates of the sibling directory 'html'.
 replacements = [
         ('www.w3c-test.org', 'localhost:8000'),   # This is the alternate host for cross-server requests.
         ('w3c-test.org', '127.0.0.1:8000'),       # This is the primary test server.
         ('webperf/tests', 'w3c/webperf'),         # We prepend /w3c to all of our paths.
-        ('/resources/testharness', '/w3c/resources/testharness'),
+        ('"/resources/', '"/w3c/resources/'),
         ('+ "(" + reloadTime[time] + ")"', ''),   # Remove dynamic values from the output. We'll still see PASS.
         ('+ "(" + startingTime[time] + ")"', ''),
-        ('\r\n', '\n'),                           # Convert to *NIX format.
+        ('+ expectedStartTime', ''),
+        ('+ expectedDuration', ''),
+        ('\t', '        '),                       # Convert tabs to spaces.
 ]
 
 for directory_to_copy in directories_to_copy:
@@ -78,7 +80,8 @@ for directory_to_copy in directories_to_copy:
             with open(os.path.join(source_directory, root, filename), 'r') as in_file:
                 with open(os.path.join(destination_directory, root, filename), 'w') as out_file:
                     for line in in_file:
-                        for to_find, replace_with in replacements:
-                            line = line.replace(to_find, replace_with)
-                        assert 'w3c-test.org' not in line, 'Imported test must not depend on live site. Bad line: "%s"' % line
+                        if filename.endswith(('.htm', '.html', '.css', '.js', '.php')):
+                            for to_find, replace_with in replacements:
+                                line = line.replace(to_find, replace_with).rstrip() + '\n'
+                            assert 'w3c-test.org' not in line, 'Imported test must not depend on live site. Bad line: "%s"' % line
                         out_file.write(line)

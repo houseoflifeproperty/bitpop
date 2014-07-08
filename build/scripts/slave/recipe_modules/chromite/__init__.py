@@ -1,0 +1,6 @@
+DEPS = [
+  'path',
+  'python',
+  'repo',
+]
+

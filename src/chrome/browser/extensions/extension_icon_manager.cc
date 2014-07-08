@@ -4,12 +4,15 @@
 
 #include "chrome/browser/extensions/extension_icon_manager.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_constants.h"
-#include "chrome/common/extensions/extension_icon_set.h"
-#include "chrome/common/extensions/extension_resource.h"
+#include "chrome/browser/extensions/image_loader.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_icon_set.h"
+#include "extensions/common/extension_resource.h"
+#include "extensions/common/manifest_handlers/icons_handler.h"
 #include "grit/theme_resources.h"
 #include "skia/ext/image_operations.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -29,10 +32,10 @@ static SkBitmap ApplyPadding(const SkBitmap& source,
   scoped_ptr<gfx::Canvas> result(
       new gfx::Canvas(gfx::Size(source.width() + padding.width(),
                                 source.height() + padding.height()),
-                      ui::SCALE_FACTOR_100P,
+                      1.0f,
                       false));
   result->DrawImageInt(
-      gfx::ImageSkia(source),
+      gfx::ImageSkia::CreateFrom1xBitmap(source),
       0, 0, source.width(), source.height(),
       padding.left(), padding.top(), source.width(), source.height(),
       false);
@@ -42,24 +45,31 @@ static SkBitmap ApplyPadding(const SkBitmap& source,
 }  // namespace
 
 ExtensionIconManager::ExtensionIconManager()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(image_tracker_(this)),
-      monochrome_(false) {
+    : monochrome_(false),
+      weak_ptr_factory_(this)  {
 }
 
 ExtensionIconManager::~ExtensionIconManager() {
 }
 
-void ExtensionIconManager::LoadIcon(const extensions::Extension* extension) {
-  ExtensionResource icon_resource = extension->GetIconResource(
-      extension_misc::EXTENSION_ICON_BITTY, ExtensionIconSet::MATCH_BIGGER);
+void ExtensionIconManager::LoadIcon(content::BrowserContext* context,
+                                    const extensions::Extension* extension) {
+  extensions::ExtensionResource icon_resource =
+      extensions::IconsInfo::GetIconResource(
+          extension,
+          extension_misc::EXTENSION_ICON_BITTY,
+          ExtensionIconSet::MATCH_BIGGER);
   if (!icon_resource.extension_root().empty()) {
     // Insert into pending_icons_ first because LoadImage can call us back
     // synchronously if the image is already cached.
     pending_icons_.insert(extension->id());
-    image_tracker_.LoadImage(extension,
-                             icon_resource,
-                             gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize),
-                             ImageLoadingTracker::CACHE);
+    extensions::ImageLoader* loader = extensions::ImageLoader::Get(context);
+    loader->LoadImageAsync(extension, icon_resource,
+                           gfx::Size(gfx::kFaviconSize, gfx::kFaviconSize),
+                           base::Bind(
+                               &ExtensionIconManager::OnImageLoaded,
+                               weak_ptr_factory_.GetWeakPtr(),
+                               extension->id()));
   }
 }
 
@@ -82,9 +92,8 @@ void ExtensionIconManager::RemoveIcon(const std::string& extension_id) {
   pending_icons_.erase(extension_id);
 }
 
-void ExtensionIconManager::OnImageLoaded(const gfx::Image& image,
-                                         const std::string& extension_id,
-                                         int index) {
+void ExtensionIconManager::OnImageLoaded(const std::string& extension_id,
+                                         const gfx::Image& image) {
   if (image.IsEmpty())
     return;
 

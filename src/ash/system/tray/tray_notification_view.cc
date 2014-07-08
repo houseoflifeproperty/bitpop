@@ -10,18 +10,12 @@
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image_skia.h"
+#include "ui/views/background.h"
 #include "ui/views/controls/button/image_button.h"
 #include "ui/views/controls/image_view.h"
 #include "ui/views/layout/grid_layout.h"
 
-namespace {
-
-const int kNotificationButtonWidth = 32;
-
-}  // namespace
-
 namespace ash {
-namespace internal {
 
 TrayNotificationView::TrayNotificationView(SystemTrayItem* owner, int icon_id)
     : owner_(owner),
@@ -114,6 +108,25 @@ void TrayNotificationView::UpdateViewAndImage(views::View* new_contents,
   SchedulePaint();
 }
 
+void TrayNotificationView::StartAutoCloseTimer(int seconds) {
+  autoclose_.Stop();
+  autoclose_delay_ = seconds;
+  if (autoclose_delay_) {
+    autoclose_.Start(FROM_HERE,
+                     base::TimeDelta::FromSeconds(autoclose_delay_),
+                     this, &TrayNotificationView::HandleClose);
+  }
+}
+
+void TrayNotificationView::StopAutoCloseTimer() {
+  autoclose_.Stop();
+}
+
+void TrayNotificationView::RestartAutoCloseTimer() {
+  if (autoclose_delay_)
+    StartAutoCloseTimer(autoclose_delay_);
+}
+
 void TrayNotificationView::ButtonPressed(views::Button* sender,
                                          const ui::Event& event) {
   HandleClose();
@@ -154,5 +167,4 @@ void TrayNotificationView::HandleClickAction() {
   OnClickAction();
 }
 
-}  // namespace internal
 }  // namespace ash

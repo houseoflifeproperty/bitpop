@@ -9,18 +9,16 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/common/main_function_params.h"
-#include "content/public/renderer/content_renderer_client.h"
 #include "content/public/test/mock_render_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "third_party/WebKit/public/platform/Platform.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
-namespace WebKit {
-class WebHistoryItem;
-class WebKitPlatformSupport;
+namespace blink {
 class WebWidget;
 }
 
@@ -29,9 +27,14 @@ class Rect;
 }
 
 namespace content {
+class ContentBrowserClient;
+class ContentClient;
+class ContentRendererClient;
 class MockRenderProcess;
+class PageState;
 class RendererMainPlatformDelegate;
 class RendererWebKitPlatformSupportImplNoSandboxImpl;
+class RenderView;
 
 class RenderViewTest : public testing::Test {
  public:
@@ -41,7 +44,7 @@ class RenderViewTest : public testing::Test {
    public:
     RendererWebKitPlatformSupportImplNoSandbox();
     ~RendererWebKitPlatformSupportImplNoSandbox();
-    WebKit::WebKitPlatformSupport* Get();
+    blink::Platform* Get();
 
    private:
     scoped_ptr<RendererWebKitPlatformSupportImplNoSandboxImpl>
@@ -56,7 +59,7 @@ class RenderViewTest : public testing::Test {
   void ProcessPendingMessages();
 
   // Returns a pointer to the main frame.
-  WebKit::WebFrame* GetMainFrame();
+  blink::WebLocalFrame* GetMainFrame();
 
   // Executes the given JavaScript in the context of the main frame. The input
   // is a NULL-terminated UTF-8 string.
@@ -66,26 +69,30 @@ class RenderViewTest : public testing::Test {
   // |result|.
   // Returns true if the JavaScript was evaluated correctly to an int value,
   // false otherwise.
-  bool ExecuteJavaScriptAndReturnIntValue(const string16& script, int* result);
+  bool ExecuteJavaScriptAndReturnIntValue(const base::string16& script,
+                                          int* result);
 
   // Loads the given HTML into the main frame as a data: URL and blocks until
   // the navigation is committed.
   void LoadHTML(const char* html);
 
   // Navigates the main frame back or forward in session history and commits.
-  // The caller must capture a WebHistoryItem for the target page. This is
-  // available from the WebFrame.
-  void GoBack(const WebKit::WebHistoryItem& item);
-  void GoForward(const WebKit::WebHistoryItem& item);
+  // The caller must capture a PageState for the target page.
+  void GoBack(const PageState& state);
+  void GoForward(const PageState& state);
+
+  // Navigates the main frame back to whatever is considered the previous
+  // history entry internally.
+  void GoBackToPrevious();
 
   // Sends one native key event over IPC.
   void SendNativeKeyEvent(const NativeWebKeyboardEvent& key_event);
 
   // Send a raw keyboard event to the renderer.
-  void SendWebKeyboardEvent(const WebKit::WebKeyboardEvent& key_event);
+  void SendWebKeyboardEvent(const blink::WebKeyboardEvent& key_event);
 
   // Send a raw mouse event to the renderer.
-  void SendWebMouseEvent(const WebKit::WebMouseEvent& key_event);
+  void SendWebMouseEvent(const blink::WebMouseEvent& key_event);
 
   // Returns the bounds (coordinates and size) of the element with id
   // |element_id|.  Returns an empty rect if such an element was not found.
@@ -97,7 +104,7 @@ class RenderViewTest : public testing::Test {
   bool SimulateElementClick(const std::string& element_id);
 
   // Simulates |node| being focused.
-  void SetFocused(const WebKit::WebNode& node);
+  void SetFocused(const blink::WebNode& node);
 
   // Clears anything associated with the browsing history.
   void ClearHistory();
@@ -115,31 +122,43 @@ class RenderViewTest : public testing::Test {
 
   // These are all methods from RenderViewImpl that we expose to testing code.
   bool OnMessageReceived(const IPC::Message& msg);
-  void DidNavigateWithinPage(WebKit::WebFrame* frame, bool is_new_navigation);
+  void DidNavigateWithinPage(blink::WebLocalFrame* frame,
+                             bool is_new_navigation);
   void SendContentStateImmediately();
-  WebKit::WebWidget* GetWebWidget();
+  blink::WebWidget* GetWebWidget();
+
+  // Allows a subclass to override the various content client implementations.
+  virtual ContentClient* CreateContentClient();
+  virtual ContentBrowserClient* CreateContentBrowserClient();
+  virtual ContentRendererClient* CreateContentRendererClient();
 
   // testing::Test
   virtual void SetUp() OVERRIDE;
 
   virtual void TearDown() OVERRIDE;
 
-  MessageLoop msg_loop_;
+  base::MessageLoop msg_loop_;
   scoped_ptr<MockRenderProcess> mock_process_;
   // We use a naked pointer because we don't want to expose RenderViewImpl in
   // the embedder's namespace.
   RenderView* view_;
   RendererWebKitPlatformSupportImplNoSandbox webkit_platform_support_;
-  ContentRendererClient content_renderer_client_;
+  scoped_ptr<ContentClient> content_client_;
+  scoped_ptr<ContentBrowserClient> content_browser_client_;
+  scoped_ptr<ContentRendererClient> content_renderer_client_;
   scoped_ptr<MockRenderThread> render_thread_;
 
   // Used to setup the process so renderers can run.
   scoped_ptr<RendererMainPlatformDelegate> platform_;
   scoped_ptr<MainFunctionParams> params_;
-  scoped_ptr<CommandLine> command_line_;
+  scoped_ptr<base::CommandLine> command_line_;
+
+#if defined(OS_MACOSX)
+  scoped_ptr<base::mac::ScopedNSAutoreleasePool> autorelease_pool_;
+#endif
 
  private:
-  void GoToOffset(int offset, const WebKit::WebHistoryItem& history_item);
+  void GoToOffset(int offset, const PageState& state);
 };
 
 }  // namespace content

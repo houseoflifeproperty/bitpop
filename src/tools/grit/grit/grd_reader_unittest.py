@@ -16,6 +16,7 @@ import StringIO
 from grit import exception
 from grit import grd_reader
 from grit import util
+from grit.node import base
 from grit.node import empty
 
 
@@ -181,6 +182,34 @@ class GrdReaderUnittest(unittest.TestCase):
     hello = root.GetNodeById('IDS_HELLO')
     self.failUnless(hello.GetCliques()[0].GetId() == 'IDS_HELLO')
 
+  def testUseNameForIdWithIfElse(self):
+    input = u'''<?xml version="1.0" encoding="UTF-8"?>
+<grit latest_public_release="2" source_lang_id="en-US" current_release="3" base_dir=".">
+  <release seq="3">
+    <messages>
+      <if expr="pp_ifdef('hello')">
+        <then>
+          <message name="IDS_HELLO" use_name_for_id="true">
+            Hello!
+          </message>
+        </then>
+        <else>
+          <message name="IDS_HELLO" use_name_for_id="true">
+            Yellow!
+          </message>
+        </else>
+      </if>
+    </messages>
+  </release>
+</grit>'''
+    pseudo_file = StringIO.StringIO(input)
+    root = grd_reader.Parse(pseudo_file, '.', defines={'hello': '1'})
+
+    # Check if the ID is set to the name. In the past, there was a bug
+    # that caused the ID to be a generated number.
+    hello = root.GetNodeById('IDS_HELLO')
+    self.failUnless(hello.GetCliques()[0].GetId() == 'IDS_HELLO')
+
   def testPartInclusion(self):
     top_grd = u'''\
         <grit latest_public_release="2" current_release="3">
@@ -256,6 +285,29 @@ class GrdReaderUnittest(unittest.TestCase):
       top_grd = StringIO.StringIO(template % u'<part file="bad.grp" />')
       with util.TempDir({'bad.grp': data}) as temp_dir:
         self.assertRaises(raises, grd_reader.Parse, top_grd, temp_dir.GetPath())
+
+  def testEarlyEnoughPlatformSpecification(self):
+    # This is a regression test for issue
+    # https://code.google.com/p/grit-i18n/issues/detail?id=23
+    grd_text = u'''<?xml version="1.0" encoding="UTF-8"?>
+      <grit latest_public_release="1" current_release="1">
+        <release seq="1">
+          <messages>
+            <if expr="not pp_ifdef('use_titlecase')">
+              <message name="IDS_XYZ">foo</message>
+            </if>
+            <!-- The assumption is that use_titlecase is never true for
+                 this platform. When the platform isn't set to 'android'
+                 early enough, we get a duplicate message name. -->
+            <if expr="os == '%s'">
+              <message name="IDS_XYZ">boo</message>
+            </if>
+          </messages>
+        </release>
+      </grit>''' % sys.platform
+    with util.TempDir({}) as temp_dir:
+      grd_reader.Parse(StringIO.StringIO(grd_text), temp_dir.GetPath(),
+                       target_platform='android')
 
 
 if __name__ == '__main__':

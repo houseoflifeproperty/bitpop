@@ -4,32 +4,35 @@
 
 #include "cc/test/fake_layer_tree_host_client.h"
 
+#include "cc/output/context_provider.h"
+#include "cc/test/fake_output_surface.h"
+#include "cc/test/test_web_graphics_context_3d.h"
+
 namespace cc {
 
-scoped_ptr<OutputSurface> FakeLayerImplTreeHostClient::createOutputSurface()
-{
-    if (m_useSoftwareRendering) {
-        if (m_useDelegatingRenderer)
-            return FakeOutputSurface::CreateDelegatingSoftware(make_scoped_ptr(new FakeSoftwareOutputDevice).PassAs<SoftwareOutputDevice>()).PassAs<OutputSurface>();
+FakeLayerTreeHostClient::FakeLayerTreeHostClient(RendererOptions options)
+    : use_software_rendering_(options == DIRECT_SOFTWARE ||
+                              options == DELEGATED_SOFTWARE),
+      use_delegating_renderer_(options == DELEGATED_3D ||
+                               options == DELEGATED_SOFTWARE) {}
 
-        return FakeOutputSurface::CreateSoftware(make_scoped_ptr(new FakeSoftwareOutputDevice).PassAs<SoftwareOutputDevice>()).PassAs<OutputSurface>();
+FakeLayerTreeHostClient::~FakeLayerTreeHostClient() {}
+
+scoped_ptr<OutputSurface> FakeLayerTreeHostClient::CreateOutputSurface(
+    bool fallback) {
+  if (use_software_rendering_) {
+    if (use_delegating_renderer_) {
+      return FakeOutputSurface::CreateDelegatingSoftware(
+          make_scoped_ptr(new SoftwareOutputDevice)).PassAs<OutputSurface>();
     }
 
-    WebKit::WebGraphicsContext3D::Attributes attrs;
-    if (m_useDelegatingRenderer)
-        return FakeOutputSurface::CreateDelegating3d(CompositorFakeWebGraphicsContext3D::create(attrs).PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
+    return FakeOutputSurface::CreateSoftware(
+        make_scoped_ptr(new SoftwareOutputDevice)).PassAs<OutputSurface>();
+  }
 
-    return FakeOutputSurface::Create3d(CompositorFakeWebGraphicsContext3D::create(attrs).PassAs<WebKit::WebGraphicsContext3D>()).PassAs<OutputSurface>();
-}
-
-scoped_ptr<InputHandler> FakeLayerImplTreeHostClient::createInputHandler()
-{
-    return scoped_ptr<InputHandler>();
-}
-
-scoped_ptr<FontAtlas> FakeLayerImplTreeHostClient::createFontAtlas()
-{
-    return scoped_ptr<FontAtlas>();
+  if (use_delegating_renderer_)
+    return FakeOutputSurface::CreateDelegating3d().PassAs<OutputSurface>();
+  return FakeOutputSurface::Create3d().PassAs<OutputSurface>();
 }
 
 }  // namespace cc

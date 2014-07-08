@@ -7,7 +7,9 @@
 
 #include <string>
 
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
+#include "base/compiler_specific.h"
+#include "base/memory/ref_counted.h"
+#include "content/public/browser/url_data_source.h"
 #include "ui/base/layout.h"
 
 class Profile;
@@ -16,31 +18,31 @@ namespace base {
 class RefCountedMemory;
 }
 
-class ThemeSource : public ChromeURLDataManager::DataSource {
+class ThemeSource : public content::URLDataSource {
  public:
   explicit ThemeSource(Profile* profile);
-
-  // Called when the network layer has requested a resource underneath
-  // the path we registered.
-  virtual void StartDataRequest(const std::string& path,
-                                bool is_incognito,
-                                int request_id) OVERRIDE;
-  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
-
-  // Used to tell ChromeURLDataManager which thread to handle the request on.
-  virtual MessageLoop* MessageLoopForRequestPath(
-      const std::string& path) const OVERRIDE;
-
-  virtual bool ShouldReplaceExistingSource() const OVERRIDE;
-
- protected:
   virtual ~ThemeSource();
+
+  // content::URLDataSource implementation.
+  virtual std::string GetSource() const OVERRIDE;
+  virtual void StartDataRequest(
+      const std::string& path,
+      int render_process_id,
+      int render_frame_id,
+      const content::URLDataSource::GotDataCallback& callback) OVERRIDE;
+  virtual std::string GetMimeType(const std::string& path) const OVERRIDE;
+  virtual base::MessageLoop* MessageLoopForRequestPath(
+      const std::string& path) const OVERRIDE;
+  virtual bool ShouldReplaceExistingSource() const OVERRIDE;
+  virtual bool ShouldServiceRequest(
+      const net::URLRequest* request) const OVERRIDE;
 
  private:
   // Fetch and send the theme bitmap.
-  void SendThemeBitmap(int request_id,
-                       int resource_id,
-                       ui::ScaleFactor scale_factor);
+  void SendThemeBitmap(
+      const content::URLDataSource::GotDataCallback& callback,
+      int resource_id,
+      ui::ScaleFactor scale_factor);
 
   // The original profile (never an OTR profile).
   Profile* profile_;

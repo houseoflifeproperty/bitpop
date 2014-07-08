@@ -26,6 +26,11 @@ struct NaClAppThreadSuspendedRegisters {
 #endif
 };
 
+static mach_port_t GetHostThreadPort(struct NaClAppThread *natp) {
+  CHECK(natp->host_thread_is_defined);
+  return pthread_mach_thread_np(natp->host_thread.tid);
+}
+
 void NaClAppThreadSetSuspendState(struct NaClAppThread *natp,
                                   enum NaClSuspendState old_state,
                                   enum NaClSuspendState new_state) {
@@ -54,7 +59,7 @@ void NaClUntrustedThreadSuspend(struct NaClAppThread *natp,
   if (natp->suspend_state == NACL_APP_THREAD_UNTRUSTED) {
     kern_return_t result;
     mach_msg_type_number_t size;
-    mach_port_t thread_port = pthread_mach_thread_np(natp->thread.tid);
+    mach_port_t thread_port = GetHostThreadPort(natp);
 
     result = thread_suspend(thread_port);
     if (result != KERN_SUCCESS) {
@@ -88,8 +93,7 @@ void NaClUntrustedThreadSuspend(struct NaClAppThread *natp,
 
 void NaClUntrustedThreadResume(struct NaClAppThread *natp) {
   if (natp->suspend_state == NACL_APP_THREAD_UNTRUSTED) {
-    mach_port_t thread_port = pthread_mach_thread_np(natp->thread.tid);
-    kern_return_t result = thread_resume(thread_port);
+    kern_return_t result = thread_resume(GetHostThreadPort(natp));
     if (result != KERN_SUCCESS) {
       NaClLog(LOG_FATAL, "NaClUntrustedThreadResume: "
               "thread_resume() call failed: error %d\n", (int) result);
@@ -103,19 +107,23 @@ void NaClAppThreadGetSuspendedRegistersInternal(
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
   /*
    * We might have suspended the thread while it is returning to
-   * untrusted code via NaClSwitchRemainingRegsViaECX().  This is
-   * particularly likely for a faulted thread that has been resumed
-   * and suspended again without ever being unblocked by
-   * NaClAppThreadUnblockIfFaulted().
+   * untrusted code via NaClSwitchRemainingRegsViaECX() and
+   * NaCl_springboard_all_regs.  This is particularly likely for a
+   * faulted thread that has been resumed and suspended again without
+   * ever being unblocked by NaClAppThreadUnblockIfFaulted().
    *
    * In this situation, we must undo the register state modifications
    * made by NaClAppThreadSetSuspendedRegistersInternal().
    */
   struct NaClAppThreadSuspendedRegisters *state = natp->suspended_registers;
+  struct NaClApp *nap = natp->nap;
   uint32_t eip = state->context.uts.ts32.__eip;
-  if (state->context.uts.ts32.__cs == NaClGetGlobalCs() &&
-      eip >= (uintptr_t) NaClSwitchRemainingRegsViaECX &&
-      eip < (uintptr_t) NaClSwitchRemainingRegsAsmEnd) {
+  if ((state->context.uts.ts32.__cs == NaClGetGlobalCs() &&
+       eip >= (uintptr_t) NaClSwitchRemainingRegsViaECX &&
+       eip < (uintptr_t) NaClSwitchRemainingRegsAsmEnd) ||
+      (state->context.uts.ts32.__cs == natp->user.cs &&
+       eip >= nap->all_regs_springboard.start_addr &&
+       eip < nap->all_regs_springboard.end_addr)) {
     state->context.uts.ts32.__eip = natp->user.gs_segment.new_prog_ctr;
     state->context.uts.ts32.__ecx = natp->user.gs_segment.new_ecx;
     /*
@@ -138,7 +146,6 @@ void NaClAppThreadGetSuspendedRegistersInternal(
 
 void NaClAppThreadSetSuspendedRegistersInternal(
     struct NaClAppThread *natp, const struct NaClSignalContext *regs) {
-  mach_port_t thread_port = pthread_mach_thread_np(natp->thread.tid);
   kern_return_t result;
   mach_msg_type_number_t size;
   struct NaClAppThreadSuspendedRegisters *state = natp->suspended_registers;
@@ -168,7 +175,7 @@ void NaClAppThreadSetSuspendedRegistersInternal(
 #endif
 
   size = sizeof(context_copy) / sizeof(natural_t);
-  result = thread_set_state(thread_port, x86_THREAD_STATE,
+  result = thread_set_state(GetHostThreadPort(natp), x86_THREAD_STATE,
                             (void *) &context_copy, size);
   if (result != KERN_SUCCESS) {
     NaClLog(LOG_FATAL, "NaClAppThreadSetSuspendedRegistersInternal: "
@@ -177,7 +184,6 @@ void NaClAppThreadSetSuspendedRegistersInternal(
 }
 
 int NaClAppThreadUnblockIfFaulted(struct NaClAppThread *natp, int *signal) {
-  mach_port_t thread_port;
   kern_return_t result;
   if (natp->fault_signal == 0) {
     return 0;
@@ -190,8 +196,7 @@ int NaClAppThreadUnblockIfFaulted(struct NaClAppThread *natp, int *signal) {
    * undoes the effect of mach_exception_handler.c's thread_suspend()
    * call.
    */
-  thread_port = pthread_mach_thread_np(natp->thread.tid);
-  result = thread_resume(thread_port);
+  result = thread_resume(GetHostThreadPort(natp));
   if (result != KERN_SUCCESS) {
     NaClLog(LOG_FATAL, "NaClAppThreadUnblockIfFaulted: "
             "thread_resume() call failed: error %d\n", (int) result);

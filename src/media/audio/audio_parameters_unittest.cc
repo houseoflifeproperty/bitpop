@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "media/audio/audio_parameters.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -63,6 +63,10 @@ TEST(AudioParameters, GetBytesPerBuffer) {
   EXPECT_EQ(800, AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
                                  CHANNEL_LAYOUT_STEREO, 1000,  16, 200)
                                  .GetBytesPerBuffer());
+  EXPECT_EQ(300, AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                                 CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC,
+                                 1000, 8, 100)
+                                 .GetBytesPerBuffer());
 }
 
 TEST(AudioParameters, GetBytesPerSecond) {
@@ -119,6 +123,23 @@ TEST(AudioParameters, Compare) {
     AudioParameters(AudioParameters::AUDIO_PCM_LINEAR, CHANNEL_LAYOUT_STEREO,
                     2000, 16, 200),
 
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000,  8, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000,  8, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000, 16, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000, 16, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000,  8, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000,  8, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000, 16, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LINEAR,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000, 16, 200),
+
     AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_MONO,
                     1000,  8, 100),
     AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY, CHANNEL_LAYOUT_MONO,
@@ -152,6 +173,23 @@ TEST(AudioParameters, Compare) {
                     CHANNEL_LAYOUT_STEREO, 2000, 16, 100),
     AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
                     CHANNEL_LAYOUT_STEREO, 2000, 16, 200),
+
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000,  8, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000,  8, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000, 16, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 1000, 16, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000,  8, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000,  8, 200),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000, 16, 100),
+    AudioParameters(AudioParameters::AUDIO_PCM_LOW_LATENCY,
+                    CHANNEL_LAYOUT_STEREO_AND_KEYBOARD_MIC, 2000, 16, 200),
   };
 
   for (size_t i = 0; i < arraysize(values); ++i) {

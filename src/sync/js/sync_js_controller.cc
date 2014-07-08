@@ -10,13 +10,6 @@
 
 namespace syncer {
 
-SyncJsController::PendingJsMessage::PendingJsMessage(
-    const std::string& name, const JsArgList& args,
-    const WeakHandle<JsReplyHandler>& reply_handler)
-    : name(name), args(args), reply_handler(reply_handler) {}
-
-SyncJsController::PendingJsMessage::~PendingJsMessage() {}
-
 SyncJsController::SyncJsController() {}
 
 SyncJsController::~SyncJsController() {
@@ -37,28 +30,6 @@ void SyncJsController::AttachJsBackend(
     const WeakHandle<JsBackend>& js_backend) {
   js_backend_ = js_backend;
   UpdateBackendEventHandler();
-
-  if (js_backend_.IsInitialized()) {
-    // Process any queued messages.
-    for (PendingJsMessageList::const_iterator it =
-             pending_js_messages_.begin();
-         it != pending_js_messages_.end(); ++it) {
-      js_backend_.Call(FROM_HERE, &JsBackend::ProcessJsMessage,
-                       it->name, it->args, it->reply_handler);
-    }
-  }
-}
-
-void SyncJsController::ProcessJsMessage(
-    const std::string& name, const JsArgList& args,
-    const WeakHandle<JsReplyHandler>& reply_handler) {
-  if (js_backend_.IsInitialized()) {
-    js_backend_.Call(FROM_HERE, &JsBackend::ProcessJsMessage,
-                     name, args, reply_handler);
-  } else {
-    pending_js_messages_.push_back(
-        PendingJsMessage(name, args, reply_handler));
-  }
 }
 
 void SyncJsController::HandleJsEvent(const std::string& name,
@@ -73,7 +44,7 @@ void SyncJsController::UpdateBackendEventHandler() {
     // event handler we pass to it if we don't have any event
     // handlers.
     WeakHandle<JsEventHandler> backend_event_handler =
-        (js_event_handlers_.size() > 0) ?
+        js_event_handlers_.might_have_observers() ?
         MakeWeakHandle(AsWeakPtr()) : WeakHandle<SyncJsController>();
     js_backend_.Call(FROM_HERE, &JsBackend::SetJsEventHandler,
                      backend_event_handler);

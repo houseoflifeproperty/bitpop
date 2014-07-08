@@ -1,13 +1,22 @@
-Current Status as of Oct 2, 2012
+Current Status as of Aug 22, 2013
 
 
 Upstream cherry-picks:
-3c2101f Shared library support for MSVC build.
-8993d03 mp3demux: Rewrite xing TOC based seeking
-a9dbb83 mp3dec: propagate error code correctly.
-67c5aee mpegaudiodec: Fix buffer handling on random access
 
 Current patches:
+
+to_upstream/
+unblock_windows_build.patch
+  wolenetz: MSVC fails to detect that abort() in av_assert0(0) occurs in
+  all code paths in lavc/utils.c avcodec_default_reget_buffer().  This patch
+  includes an explicit return AVERROR_BUG after the assert to unblock
+  the build when MSVC is configured to treat all warnings as errors.
+
+w32pthreads_xp_fixes_and_vp8_workaround.patch
+  dalecurtis: pthreads emulation incorrectly assumed Vista+.  Additionally due
+  to use of static variables in header file, duplicate initialization is needed.
+  reported upstream which is working on a proper fix.
+
 
 ugly/
 01_enable_checked_bitstream.patch
@@ -18,8 +27,30 @@ ugly/
   dalecurtis: Add CONFIG_* checks to compile out code which we don't use which
   might be a security risk.  Discuss with cevans before removing.  Upstream does
   not want this patch.
+  wolenetz: In M27 merge, added call to matroska_read_close(s) in to this patch
+  in matroska_read_header() to mitigate memory leak caught by valgrind.
+  Confirmed with rbultje that this conforms to API (on error in
+  matroska_read_header(), resulting state should be same as prior to call; and
+  no double-free is expected to result from this either.)
 
-07_remove_av_gettime_symlink.patch
-  dalecurtis: In order to preserve ABI compatibility after av_gettime() was
-  moved inside the FFmpeg code base, they added a "symbolic link" version which
-  our build chain doesn't like.  Remove it until the next major version bump.
+compile_with_no_iconv.patch
+  wolenetz: When CONFIG_ICONV is 0, the original code path did not return a
+  value, causing compile failure on Windows.  It also aborted via an assert.
+  This patch enables compiling by returning an appropriate error code and also
+  removes the assert and abort.
+
+undeprecate_destruct_packet_api.patch
+  wolenetz: Until upstream fully deprecates usage of FF_API_DESTRUCT_PACKET and
+  we switch to using refcounted AVBuffer API, this patch is necessary.
+  See http://crbug.com/236611
+
+preserve_m27_avcodecids.patch
+  wolenetz: Insert a deprecated placeholder into AVCodecID enum such that
+  the resulting IDs are either new IDs since M27 or have same enumeration as
+  M27.  This is specific to the M29 roll.
+  See https://ffmpeg.org/trac/ffmpeg/ticket/2575
+  See also http://crbug.com/241212
+
+disable_pix_fmt_desc_api.patch
+  dalecurtis: Disable unused API to avoid deprecatation warnings.  Remove once
+  libavutil version > 52.

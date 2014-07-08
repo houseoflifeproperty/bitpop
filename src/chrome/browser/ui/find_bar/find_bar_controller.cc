@@ -9,12 +9,12 @@
 #include "base/i18n/rtl.h"
 #include "base/logging.h"
 #include "build/build_config.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/find_bar/find_bar.h"
 #include "chrome/browser/ui/find_bar/find_bar_state.h"
 #include "chrome/browser/ui/find_bar/find_bar_state_factory.h"
 #include "chrome/browser/ui/find_bar/find_tab_helper.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/notification_details.h"
@@ -80,6 +80,11 @@ void FindBarController::ChangeWebContents(WebContents* contents) {
   if (web_contents_) {
     registrar_.RemoveAll();
     find_bar_->StopAnimation();
+
+    FindTabHelper* find_tab_helper =
+        FindTabHelper::FromWebContents(web_contents_);
+    if (find_tab_helper)
+      find_tab_helper->set_selected_range(find_bar_->GetSelectedRange());
   }
 
   web_contents_ = contents;
@@ -117,6 +122,7 @@ void FindBarController::ChangeWebContents(WebContents* contents) {
   }
 
   UpdateFindBarForCurrentResult();
+  find_bar_->UpdateFindBarForChangedWebContents();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -134,8 +140,9 @@ void FindBarController::Observe(int type,
       UpdateFindBarForCurrentResult();
       if (find_tab_helper->find_result().final_update() &&
           find_tab_helper->find_result().number_of_matches() == 0) {
-        const string16& last_search = find_tab_helper->previous_find_text();
-        const string16& current_search = find_tab_helper->find_text();
+        const base::string16& last_search =
+            find_tab_helper->previous_find_text();
+        const base::string16& current_search = find_tab_helper->find_text();
         if (last_search.find(current_search) != 0)
           find_bar_->AudibleAlert();
       }
@@ -232,13 +239,18 @@ void FindBarController::UpdateFindBarForCurrentResult() {
 }
 
 void FindBarController::MaybeSetPrepopulateText() {
-#if !defined(OS_MACOSX)
+  // Having a per-tab find_string is not compatible with a global find
+  // pasteboard, so we always have the same find text in all find bars. This is
+  // done through the find pasteboard mechanism, so don't set the text here.
+  if (find_bar_->HasGlobalFindPasteboard())
+    return;
+
   // Find out what we should show in the find text box. Usually, this will be
   // the last search in this tab, but if no search has been issued in this tab
   // we use the last search string (from any tab).
   FindTabHelper* find_tab_helper =
       FindTabHelper::FromWebContents(web_contents_);
-  string16 find_string = find_tab_helper->find_text();
+  base::string16 find_string = find_tab_helper->find_text();
   if (find_string.empty())
     find_string = find_tab_helper->previous_find_text();
   if (find_string.empty()) {
@@ -252,10 +264,6 @@ void FindBarController::MaybeSetPrepopulateText() {
   // shown it is showing the right state for this tab. We update the find text
   // _first_ since the FindBarView checks its emptiness to see if it should
   // clear the result count display when there's nothing in the box.
-  find_bar_->SetFindText(find_string);
-#else
-  // Having a per-tab find_string is not compatible with OS X's find pasteboard,
-  // so we always have the same find text in all find bars. This is done through
-  // the find pasteboard mechanism, so don't set the text here.
-#endif
+  find_bar_->SetFindTextAndSelectedRange(find_string,
+                                         find_tab_helper->selected_range());
 }

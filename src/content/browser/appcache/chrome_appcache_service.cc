@@ -4,14 +4,14 @@
 
 #include "content/browser/appcache/chrome_appcache_service.h"
 
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/resource_context.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request_context_getter.h"
-#include "webkit/appcache/appcache_storage_impl.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/appcache/appcache_storage_impl.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 namespace content {
 
@@ -22,7 +22,7 @@ ChromeAppCacheService::ChromeAppCacheService(
 }
 
 void ChromeAppCacheService::InitializeOnIOThread(
-    const FilePath& cache_path,
+    const base::FilePath& cache_path,
     ResourceContext* resource_context,
     net::URLRequestContextGetter* request_context_getter,
     scoped_refptr<quota::SpecialStoragePolicy> special_storage_policy) {
@@ -43,10 +43,11 @@ void ChromeAppCacheService::InitializeOnIOThread(
   Initialize(
       cache_path_,
       BrowserThread::GetMessageLoopProxyForThread(
-          BrowserThread::FILE_USER_BLOCKING),
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE));
+          BrowserThread::FILE_USER_BLOCKING)
+          .get(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::CACHE).get());
   set_appcache_policy(this);
-  set_special_storage_policy(special_storage_policy);
+  set_special_storage_policy(special_storage_policy.get());
 }
 
 bool ChromeAppCacheService::CanLoadAppCache(const GURL& manifest_url,
@@ -67,12 +68,15 @@ bool ChromeAppCacheService::CanCreateAppCache(
 ChromeAppCacheService::~ChromeAppCacheService() {}
 
 void ChromeAppCacheService::DeleteOnCorrectThread() const {
-  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO) &&
-      !BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+  if (BrowserThread::CurrentlyOn(BrowserThread::IO)) {
+    delete this;
+    return;
+  }
+  if (BrowserThread::IsMessageLoopValid(BrowserThread::IO)) {
     BrowserThread::DeleteSoon(BrowserThread::IO, FROM_HERE, this);
     return;
   }
-  delete this;
+  // Better to leak than crash on shutdown.
 }
 
 }  // namespace content

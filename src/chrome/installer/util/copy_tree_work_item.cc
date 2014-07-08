@@ -13,11 +13,11 @@
 CopyTreeWorkItem::~CopyTreeWorkItem() {
 }
 
-CopyTreeWorkItem::CopyTreeWorkItem(const FilePath& source_path,
-                                   const FilePath& dest_path,
-                                   const FilePath& temp_dir,
+CopyTreeWorkItem::CopyTreeWorkItem(const base::FilePath& source_path,
+                                   const base::FilePath& dest_path,
+                                   const base::FilePath& temp_dir,
                                    CopyOverWriteOption overwrite_option,
-                                   const FilePath& alternative_path)
+                                   const base::FilePath& alternative_path)
     : source_path_(source_path),
       dest_path_(dest_path),
       temp_dir_(temp_dir),
@@ -29,31 +29,31 @@ CopyTreeWorkItem::CopyTreeWorkItem(const FilePath& source_path,
 }
 
 bool CopyTreeWorkItem::Do() {
-  if (!file_util::PathExists(source_path_)) {
+  if (!base::PathExists(source_path_)) {
     LOG(ERROR) << source_path_.value() << " does not exist";
     return false;
   }
 
-  bool dest_exist = file_util::PathExists(dest_path_);
+  bool dest_exist = base::PathExists(dest_path_);
   // handle overwrite_option_ = IF_DIFFERENT case.
   if ((dest_exist) &&
       (overwrite_option_ == WorkItem::IF_DIFFERENT) &&  // only for single file
-      (!file_util::DirectoryExists(source_path_)) &&
-      (!file_util::DirectoryExists(dest_path_)) &&
-      (file_util::ContentsEqual(source_path_, dest_path_))) {
+      (!base::DirectoryExists(source_path_)) &&
+      (!base::DirectoryExists(dest_path_)) &&
+      (base::ContentsEqual(source_path_, dest_path_))) {
     VLOG(1) << "Source file " << source_path_.value()
             << " and destination file " << dest_path_.value()
             << " are exactly same. Returning true.";
     return true;
   } else if ((dest_exist) &&
              (overwrite_option_ == WorkItem::NEW_NAME_IF_IN_USE) &&
-             (!file_util::DirectoryExists(source_path_)) &&
-             (!file_util::DirectoryExists(dest_path_)) &&
+             (!base::DirectoryExists(source_path_)) &&
+             (!base::DirectoryExists(dest_path_)) &&
              (IsFileInUse(dest_path_))) {
     // handle overwrite_option_ = NEW_NAME_IF_IN_USE case.
     if (alternative_path_.empty() ||
-        file_util::PathExists(alternative_path_) ||
-        !file_util::CopyFile(source_path_, alternative_path_)) {
+        base::PathExists(alternative_path_) ||
+        !base::CopyFile(source_path_, alternative_path_)) {
       LOG(ERROR) << "failed to copy " << source_path_.value()
                  << " to " << alternative_path_.value();
       return false;
@@ -77,8 +77,8 @@ bool CopyTreeWorkItem::Do() {
       return false;
     }
 
-    FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
-    if (file_util::Move(dest_path_, backup)) {
+    base::FilePath backup = backup_path_.path().Append(dest_path_.BaseName());
+    if (base::Move(dest_path_, backup)) {
       moved_to_backup_ = true;
       VLOG(1) << "Moved destination " << dest_path_.value() <<
                  " to backup path " << backup.value();
@@ -90,7 +90,7 @@ bool CopyTreeWorkItem::Do() {
   }
 
   // In all cases that reach here, copy source to destination.
-  if (file_util::CopyDirectory(source_path_, dest_path_, true)) {
+  if (base::CopyDirectory(source_path_, dest_path_, true)) {
     copied_to_dest_path_ = true;
     VLOG(1) << "Copied source " << source_path_.value()
             << " to destination " << dest_path_.value();
@@ -109,24 +109,24 @@ void CopyTreeWorkItem::Rollback() {
   // If this does happen sometimes, we may consider using Move instead of
   // Delete here. For now we just log the error and continue with the
   // rest of rollback operation.
-  if (copied_to_dest_path_ && !file_util::Delete(dest_path_, true)) {
+  if (copied_to_dest_path_ && !base::DeleteFile(dest_path_, true)) {
     LOG(ERROR) << "Can not delete " << dest_path_.value();
   }
   if (moved_to_backup_) {
-    FilePath backup(backup_path_.path().Append(dest_path_.BaseName()));
-    if (!file_util::Move(backup, dest_path_)) {
+    base::FilePath backup(backup_path_.path().Append(dest_path_.BaseName()));
+    if (!base::Move(backup, dest_path_)) {
       LOG(ERROR) << "failed move " << backup.value()
                  << " to " << dest_path_.value();
     }
   }
   if (copied_to_alternate_path_ &&
-      !file_util::Delete(alternative_path_, true)) {
+      !base::DeleteFile(alternative_path_, true)) {
     LOG(ERROR) << "Can not delete " << alternative_path_.value();
   }
 }
 
-bool CopyTreeWorkItem::IsFileInUse(const FilePath& path) {
-  if (!file_util::PathExists(path))
+bool CopyTreeWorkItem::IsFileInUse(const base::FilePath& path) {
+  if (!base::PathExists(path))
     return false;
 
   HANDLE handle = ::CreateFile(path.value().c_str(), FILE_ALL_ACCESS,

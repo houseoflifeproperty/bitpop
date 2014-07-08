@@ -7,6 +7,7 @@
 
 #include <set>
 
+#include "base/callback.h"
 #include "base/memory/weak_ptr.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
 #include "content/public/browser/notification_observer.h"
@@ -17,7 +18,7 @@ class TabStripModel;
 
 namespace content {
 class NotificationSource;
-class NotifictaionDetails;
+class NotificationDetails;
 class WebContents;
 }
 
@@ -35,6 +36,13 @@ class UnloadController : public content::NotificationObserver,
   // renderer.
   bool CanCloseContents(content::WebContents* contents);
 
+  // Returns true if we need to run unload events for the |contents|.
+  static bool ShouldRunUnloadEventsHelper(content::WebContents* contents);
+
+  // Helper function to run beforeunload listeners on a WebContents.
+  // Returns true if |contents| beforeunload listeners were invoked.
+  static bool RunUnloadEventsHelper(content::WebContents* contents);
+
   // Called when a BeforeUnload handler is fired for |contents|. |proceed|
   // indicates the user's response to the Y/N BeforeUnload handler dialog. If
   // this parameter is false, any pending attempt to close the whole browser
@@ -49,8 +57,17 @@ class UnloadController : public content::NotificationObserver,
   }
 
   // Called in response to a request to close |browser_|'s window. Returns true
-  // when there are no remaining unload handlers to be run.
+  // when there are no remaining beforeunload handlers to be run.
   bool ShouldCloseWindow();
+
+  // Begins the process of confirming whether the associated browser can be
+  // closed.
+  bool CallBeforeUnloadHandlers(
+      const base::Callback<void(bool)>& on_close_confirmed);
+
+  // Clears the results of any beforeunload confirmation dialogs triggered by a
+  // CallBeforeUnloadHandlers call.
+  void ResetBeforeUnloadHandlers();
 
   // Returns true if |browser_| has any tabs that have BeforeUnload handlers
   // that have not been fired. This method is non-const because it builds a list
@@ -60,6 +77,10 @@ class UnloadController : public content::NotificationObserver,
   //             very similar to ShouldCloseWindow() and some consolidation
   //             could be pursued.
   bool TabsNeedBeforeUnloadFired();
+
+  // Clears all the state associated with processing tabs' beforeunload/unload
+  // events since the user cancelled closing the window.
+  void CancelWindowClose();
 
  private:
   typedef std::set<content::WebContents*> UnloadListenerSet;
@@ -90,10 +111,6 @@ class UnloadController : public content::NotificationObserver,
   // Whether we've completed firing all the tabs' beforeunload/unload events.
   bool HasCompletedUnloadProcessing() const;
 
-  // Clears all the state associated with processing tabs' beforeunload/unload
-  // events since the user cancelled closing the window.
-  void CancelWindowClose();
-
   // Removes |web_contents| from the passed |set|.
   // Returns whether the tab was in the set in the first place.
   bool RemoveFromSet(UnloadListenerSet* set,
@@ -109,6 +126,10 @@ class UnloadController : public content::NotificationObserver,
   // may result in deleting |tab|. If you know that shouldn't happen (because of
   // the state of the stack), pass in false.
   void ClearUnloadState(content::WebContents* web_contents, bool process_now);
+
+  bool is_calling_before_unload_handlers() {
+    return !on_close_confirmed_.is_null();
+  }
 
   Browser* browser_;
 
@@ -127,6 +148,11 @@ class UnloadController : public content::NotificationObserver,
   // rather than Browser because unload handlers are the only reason that a
   // Browser window isn't just immediately closed.
   bool is_attempting_to_close_browser_;
+
+  // A callback to call to report whether the user chose to close all tabs of
+  // |browser_| that have beforeunload event handlers. This is set only if we
+  // are currently confirming that the browser is closable.
+  base::Callback<void(bool)> on_close_confirmed_;
 
   base::WeakPtrFactory<UnloadController> weak_factory_;
 

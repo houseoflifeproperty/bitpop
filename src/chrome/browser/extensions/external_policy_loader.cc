@@ -4,27 +4,28 @@
 
 #include "chrome/browser/extensions/external_policy_loader.h"
 
+#include "base/bind.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/external_provider_impl.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/browser/pref_names.h"
 
 namespace extensions {
 
 ExternalPolicyLoader::ExternalPolicyLoader(Profile* profile)
     : profile_(profile) {
   pref_change_registrar_.Init(profile_->GetPrefs());
-  pref_change_registrar_.Add(prefs::kExtensionInstallForceList,
+  pref_change_registrar_.Add(pref_names::kInstallForceList,
                              base::Bind(&ExternalPolicyLoader::StartLoading,
                                         base::Unretained(this)));
-  pref_change_registrar_.Add(prefs::kExtensionAllowedTypes,
+  pref_change_registrar_.Add(pref_names::kAllowedTypes,
                              base::Bind(&ExternalPolicyLoader::StartLoading,
                                         base::Unretained(this)));
   notification_registrar_.Add(this,
@@ -56,8 +57,8 @@ void ExternalPolicyLoader::Observe(
 }
 
 void ExternalPolicyLoader::StartLoading() {
-  const DictionaryValue* forcelist =
-      profile_->GetPrefs()->GetDictionary(prefs::kExtensionInstallForceList);
+  const base::DictionaryValue* forcelist =
+      profile_->GetPrefs()->GetDictionary(pref_names::kInstallForceList);
   prefs_.reset(forcelist ? forcelist->DeepCopy() : NULL);
   LoadFinished();
 }

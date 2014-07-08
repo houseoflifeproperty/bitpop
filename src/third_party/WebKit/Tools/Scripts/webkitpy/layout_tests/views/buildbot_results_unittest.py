@@ -28,7 +28,7 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import StringIO
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.host_mock import MockHost
 
@@ -87,13 +87,16 @@ class BuildBotPrinterTests(unittest.TestCase):
         printer, out = self.get_printer()
         summary = test_run_results_unittest.summarized_results(port, expected=False, passing=True, flaky=False)
         printer.print_unexpected_results(summary)
-        self.assertNotEmpty(out)
+        output = out.getvalue()
+        self.assertTrue(output)
+        self.assertTrue(output.find('Skip') == -1)
 
     def test_print_results(self):
         port = MockHost().port_factory.get('test')
         printer, out = self.get_printer()
         initial_results = test_run_results_unittest.run_results(port)
-        summary = test_run_results_unittest.summarized_results(port, expected=False, passing=True, flaky=False)
-        details = test_run_results.RunDetails(summary['num_regressions'], summary, initial_results, None)
+        full_summary = test_run_results_unittest.summarized_results(port, expected=False, passing=True, flaky=False)
+        failing_summary = test_run_results_unittest.summarized_results(port, expected=False, passing=True, flaky=False, only_include_failing=True)
+        details = test_run_results.RunDetails(failing_summary['num_regressions'], full_summary, failing_summary, initial_results, None)
         printer.print_results(details)
-        self.assertNotEmpty(out)
+        self.assertTrue(out.getvalue().find('but passed') != -1)

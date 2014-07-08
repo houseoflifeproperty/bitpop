@@ -69,11 +69,13 @@ typedef enum {
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_HOVER = 41,
   PP_RESOURCEIMAGE_PDF_BUTTON_ZOOMIN_END_PRESSED = 42,
   PP_RESOURCEIMAGE_PDF_PAN_SCROLL_ICON = 43,
-  PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND = 44
+  PP_RESOURCEIMAGE_PDF_PAGE_INDICATOR_BACKGROUND = 44,
+  PP_RESOURCEIMAGE_PDF_BUTTON_PRINT_DISABLED = 45
 } PP_ResourceImage;
 
 typedef enum {
-  PP_PDFFEATURE_HIDPI = 0
+  PP_PDFFEATURE_HIDPI = 0,
+  PP_PDFFEATURE_PRINTING = 1
 } PP_PDFFeature;
 
 struct PP_PrivateFontFileDescription {
@@ -102,7 +104,7 @@ struct PPB_PDF {
   // Currently Linux-only.
   PP_Resource (*GetFontFileWithFallback)(
       PP_Instance instance,
-      const struct PP_FontDescription_Dev* description,
+      const struct PP_BrowserFont_Trusted_Description* description,
       PP_PrivateFontCharset charset);
 
   // Given a resource previously returned by GetFontFileWithFallback, returns
@@ -133,10 +135,10 @@ struct PPB_PDF {
   void (*SetContentRestriction)(PP_Instance instance, int restrictions);
 
   // Use UMA so we know average pdf page count.
-  void (*HistogramPDFPageCount)(int count);
+  void (*HistogramPDFPageCount)(PP_Instance instance, int count);
 
   // Notifies the browser that the given action has been performed.
-  void (*UserMetricsRecordAction)(struct PP_Var action);
+  void (*UserMetricsRecordAction)(PP_Instance instance, struct PP_Var action);
 
   // Notifies the browser that the PDF has an unsupported feature.
   void (*HasUnsupportedFeature)(PP_Instance instance);
@@ -147,13 +149,26 @@ struct PPB_PDF {
   // Invoke Print dialog for plugin.
   void (*Print)(PP_Instance instance);
 
-  PP_Bool(*IsFeatureEnabled)(PP_PDFFeature feature);
+  PP_Bool(*IsFeatureEnabled)(PP_Instance instance, PP_PDFFeature feature);
 
   // Returns a resource image appropriate for a device with |scale| density.
   // Returns 0 (NULL resource) if there is no resource at that scale
   PP_Resource (*GetResourceImageForScale)(PP_Instance instance,
                                           PP_ResourceImage image_id,
                                           float scale);
+
+  // Invoke password dialog for plugin.
+ struct PP_Var (*ModalPromptForPassword)(PP_Instance instance,
+                                         struct PP_Var message);
+
+ // Returns PP_TRUE if the plugin is out of process.
+ PP_Bool(*IsOutOfProcess)(PP_Instance instance);
+
+  // Sets the selected text of the plugin.
+  void(*SetSelectedText)(PP_Instance instance, const char* selected_text);
+
+  // Sets the link currently under the cursor.
+  void (*SetLinkUnderCursor)(PP_Instance instance, const char* url);
 };
 
 #endif  // PPAPI_C_PRIVATE_PPB_PDF_H_

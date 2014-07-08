@@ -2,26 +2,26 @@
  * libjingle
  * Copyright 2004--2008, Google Inc.
  *
- * Redistribution and use in source and binary forms, with or without 
+ * Redistribution and use in source and binary forms, with or without
  * modification, are permitted provided that the following conditions are met:
  *
- *  1. Redistributions of source code must retain the above copyright notice, 
+ *  1. Redistributions of source code must retain the above copyright notice,
  *     this list of conditions and the following disclaimer.
  *  2. Redistributions in binary form must reproduce the above copyright notice,
  *     this list of conditions and the following disclaimer in the documentation
  *     and/or other materials provided with the distribution.
- *  3. The name of the author may not be used to endorse or promote products 
+ *  3. The name of the author may not be used to endorse or promote products
  *     derived from this software without specific prior written permission.
  *
  * THIS SOFTWARE IS PROVIDED BY THE AUTHOR ``AS IS'' AND ANY EXPRESS OR IMPLIED
- * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
+ * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF
  * MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO
- * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, 
+ * EVENT SHALL THE AUTHOR BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
  * SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO,
  * PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS;
  * OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY,
- * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR 
- * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF 
+ * WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR
+ * OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
@@ -44,6 +44,8 @@ namespace talk_base {
 
 class NSSKeyPair {
  public:
+  NSSKeyPair(SECKEYPrivateKey* privkey, SECKEYPublicKey* pubkey) :
+      privkey_(privkey), pubkey_(pubkey) {}
   ~NSSKeyPair();
 
   // Generate a 1024-bit RSA key pair.
@@ -54,9 +56,6 @@ class NSSKeyPair {
   SECKEYPublicKey * pubkey() const { return pubkey_; }
 
  private:
-  NSSKeyPair(SECKEYPrivateKey* privkey, SECKEYPublicKey* pubkey) :
-      privkey_(privkey), pubkey_(pubkey) {}
-
   SECKEYPrivateKey* privkey_;
   SECKEYPublicKey* pubkey_;
 
@@ -66,9 +65,11 @@ class NSSKeyPair {
 
 class NSSCertificate : public SSLCertificate {
  public:
-  static NSSCertificate* FromPEMString(const std::string& pem_string,
-                                       int* pem_length);
-  explicit NSSCertificate(CERTCertificate* cert) : certificate_(cert) {}
+  static NSSCertificate* FromPEMString(const std::string& pem_string);
+  // The caller retains ownership of the argument to all the constructors,
+  // and the constructor makes a copy.
+  explicit NSSCertificate(CERTCertificate* cert);
+  explicit NSSCertificate(CERTCertList* cert_list);
   virtual ~NSSCertificate() {
     if (certificate_)
       CERT_DestroyCertificate(certificate_);
@@ -78,24 +79,37 @@ class NSSCertificate : public SSLCertificate {
 
   virtual std::string ToPEMString() const;
 
+  virtual void ToDER(Buffer* der_buffer) const;
+
+  virtual bool GetSignatureDigestAlgorithm(std::string* algorithm) const;
+
   virtual bool ComputeDigest(const std::string& algorithm,
-                             unsigned char* digest, std::size_t size,
-                             std::size_t* length) const;
+                             unsigned char* digest,
+                             size_t size,
+                             size_t* length) const;
+
+  virtual bool GetChain(SSLCertChain** chain) const;
 
   CERTCertificate* certificate() { return certificate_; }
 
-  // Helper function to get the length of a digest
-  static bool GetDigestLength(const std::string& algorithm,
-                              std::size_t* length);
+  // Performs minimal checks to determine if the list is a valid chain.  This
+  // only checks that each certificate certifies the preceding certificate,
+  // and ignores many other certificate features such as expiration dates.
+  static bool IsValidChain(const CERTCertList* cert_list);
 
-  // Comparison
+  // Helper function to get the length of a digest
+  static bool GetDigestLength(const std::string& algorithm, size_t* length);
+
+  // Comparison.  Only the certificate itself is considered, not the chain.
   bool Equals(const NSSCertificate* tocompare) const;
 
  private:
+  NSSCertificate(CERTCertificate* cert, SSLCertChain* chain);
   static bool GetDigestObject(const std::string& algorithm,
                               const SECHashObject** hash_object);
 
   CERTCertificate* certificate_;
+  scoped_ptr<SSLCertChain> chain_;
 
   DISALLOW_EVIL_CONSTRUCTORS(NSSCertificate);
 };
@@ -104,10 +118,12 @@ class NSSCertificate : public SSLCertificate {
 class NSSIdentity : public SSLIdentity {
  public:
   static NSSIdentity* Generate(const std::string& common_name);
+  static NSSIdentity* GenerateForTest(const SSLIdentityParams& params);
+  static SSLIdentity* FromPEMStrings(const std::string& private_key,
+                                     const std::string& certificate);
   virtual ~NSSIdentity() {
     LOG(LS_INFO) << "Destroying NSS identity";
   }
-
 
   virtual NSSIdentity* GetReference() const;
   virtual NSSCertificate& certificate() const;
@@ -117,6 +133,8 @@ class NSSIdentity : public SSLIdentity {
  private:
   NSSIdentity(NSSKeyPair* keypair, NSSCertificate* cert) :
       keypair_(keypair), certificate_(cert) {}
+
+  static NSSIdentity* GenerateInternal(const SSLIdentityParams& params);
 
   talk_base::scoped_ptr<NSSKeyPair> keypair_;
   talk_base::scoped_ptr<NSSCertificate> certificate_;

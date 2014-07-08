@@ -1,0 +1,272 @@
+diff --git a/nss/lib/freebl/ctr.c b/nss/lib/freebl/ctr.c
+index 3a2f1a6..4d26daa 100644
+--- a/nss/lib/freebl/ctr.c
++++ b/nss/lib/freebl/ctr.c
+@@ -12,6 +12,11 @@
+ #include "pkcs11t.h"
+ #include "secerr.h"
+ 
++#ifdef USE_HW_AES
++#include "intel-aes.h"
++#include "rijndael.h"
++#endif
++
+ SECStatus
+ CTR_InitContext(CTRContext *ctr, void *context, freeblCipherFunc cipher,
+ 		const unsigned char *param, unsigned int blocksize)
+@@ -165,3 +170,60 @@ CTR_Update(CTRContext *ctr, unsigned char *outbuf,
+     *outlen += inlen;
+     return SECSuccess;
+ }
++
++#if defined(USE_HW_AES) && defined(_MSC_VER)
++SECStatus
++CTR_Update_HW_AES(CTRContext *ctr, unsigned char *outbuf,
++		  unsigned int *outlen, unsigned int maxout,
++		  const unsigned char *inbuf, unsigned int inlen,
++		  unsigned int blocksize)
++{
++    unsigned int fullblocks;
++    unsigned int tmp;
++    SECStatus rv;
++
++    if (maxout < inlen) {
++	*outlen = inlen;
++	PORT_SetError(SEC_ERROR_OUTPUT_LEN);
++	return SECFailure;
++    }
++    *outlen = 0;
++    if (ctr->bufPtr != blocksize) {
++	unsigned int needed = PR_MIN(blocksize-ctr->bufPtr, inlen);
++	ctr_xor(outbuf, inbuf, ctr->buffer+ctr->bufPtr, needed);
++	ctr->bufPtr += needed;
++	outbuf += needed;
++	inbuf += needed;
++	*outlen += needed;
++	inlen -= needed;
++	if (inlen == 0) {
++	    return SECSuccess;
++	}
++	PORT_Assert(ctr->bufPtr == blocksize);
++    }
++
++    intel_aes_ctr_worker(((AESContext*)(ctr->context))->Nr)(
++	ctr, outbuf, outlen, maxout, inbuf, inlen, blocksize);
++    /* XXX intel_aes_ctr_worker should set *outlen. */
++    PORT_Assert(*outlen == 0);
++    fullblocks = (inlen/blocksize)*blocksize;
++    *outlen += fullblocks;
++    outbuf += fullblocks;
++    inbuf += fullblocks;
++    inlen -= fullblocks;
++
++    if (inlen == 0) {
++	return SECSuccess;
++    }
++    rv = (*ctr->cipher)(ctr->context, ctr->buffer, &tmp, blocksize,
++			ctr->counter, blocksize, blocksize);
++    ctr_GetNextCtr(ctr->counter, ctr->counterBits, blocksize);
++    if (rv != SECSuccess) {
++	return SECFailure;
++    }
++    ctr_xor(outbuf, inbuf, ctr->buffer, inlen);
++    ctr->bufPtr = inlen;
++    *outlen += inlen;
++    return SECSuccess;
++}
++#endif
+diff --git a/nss/lib/freebl/ctr.h b/nss/lib/freebl/ctr.h
+index 69ef150..e7645a2 100644
+--- a/nss/lib/freebl/ctr.h
++++ b/nss/lib/freebl/ctr.h
+@@ -41,4 +41,11 @@ SECStatus CTR_Update(CTRContext *ctr, unsigned char *outbuf,
+ 			const unsigned char *inbuf, unsigned int inlen,
+ 			unsigned int blocksize);
+ 
++#ifdef USE_HW_AES
++SECStatus CTR_Update_HW_AES(CTRContext *ctr, unsigned char *outbuf,
++			unsigned int *outlen, unsigned int maxout,
++			const unsigned char *inbuf, unsigned int inlen,
++			unsigned int blocksize);
++#endif
++
+ #endif
+diff --git a/nss/lib/freebl/intel-aes.h b/nss/lib/freebl/intel-aes.h
+index 1e18007..3b71e5f 100644
+--- a/nss/lib/freebl/intel-aes.h
++++ b/nss/lib/freebl/intel-aes.h
+@@ -33,6 +33,12 @@ SECStatus intel_aes_decrypt_cbc_128(AESContext *cx, unsigned char *output,
+ 				    const unsigned char *input,
+ 				    unsigned int inputLen,
+ 				    unsigned int blocksize);
++SECStatus intel_aes_encrypt_ctr_128(CTRContext *cx, unsigned char *output,
++				    unsigned int *outputLen,
++				    unsigned int maxOutputLen,
++				    const unsigned char *input,
++				    unsigned int inputLen,
++				    unsigned int blocksize);
+ SECStatus intel_aes_encrypt_ecb_192(AESContext *cx, unsigned char *output,
+ 				    unsigned int *outputLen,
+ 				    unsigned int maxOutputLen,
+@@ -57,6 +63,12 @@ SECStatus intel_aes_decrypt_cbc_192(AESContext *cx, unsigned char *output,
+ 				    const unsigned char *input,
+ 				    unsigned int inputLen,
+ 				    unsigned int blocksize);
++SECStatus intel_aes_encrypt_ctr_192(CTRContext *cx, unsigned char *output,
++				    unsigned int *outputLen,
++				    unsigned int maxOutputLen,
++				    const unsigned char *input,
++				    unsigned int inputLen,
++				    unsigned int blocksize);
+ SECStatus intel_aes_encrypt_ecb_256(AESContext *cx, unsigned char *output,
+ 				    unsigned int *outputLen,
+ 				    unsigned int maxOutputLen,
+@@ -81,6 +93,12 @@ SECStatus intel_aes_decrypt_cbc_256(AESContext *cx, unsigned char *output,
+ 				    const unsigned char *input,
+ 				    unsigned int inputLen,
+ 				    unsigned int blocksize);
++SECStatus intel_aes_encrypt_ctr_256(CTRContext *cx, unsigned char *output,
++				    unsigned int *outputLen,
++				    unsigned int maxOutputLen,
++				    const unsigned char *input,
++				    unsigned int inputLen,
++				    unsigned int blocksize);
+ 
+ 
+ #define intel_aes_ecb_worker(encrypt, keysize) \
+@@ -102,6 +120,11 @@ SECStatus intel_aes_decrypt_cbc_256(AESContext *cx, unsigned char *output,
+       (keysize) == 24 ? intel_aes_decrypt_cbc_192 :	\
+       intel_aes_decrypt_cbc_256))
+ 
++#define intel_aes_ctr_worker(nr) \
++   ((nr) == 10 ? intel_aes_encrypt_ctr_128 :	\
++    (nr) == 12 ? intel_aes_encrypt_ctr_192 :	\
++    intel_aes_encrypt_ctr_256)
++
+ 
+ #define intel_aes_init(encrypt, keysize) \
+   do {					 			\
+diff --git a/nss/lib/freebl/intel-gcm-wrap.c b/nss/lib/freebl/intel-gcm-wrap.c
+index b2f6f5e..afd3029 100644
+--- a/nss/lib/freebl/intel-gcm-wrap.c
++++ b/nss/lib/freebl/intel-gcm-wrap.c
+@@ -3,7 +3,7 @@
+  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
+ /* Copyright(c) 2013, Intel Corp. */
+ 
+-/* Wrapper funcions for Intel optimized implementation of AES-GCM */
++/* Wrapper functions for Intel optimized implementation of AES-GCM */
+ 
+ #ifdef USE_HW_AES
+ 
+@@ -24,12 +24,8 @@
+ #include "intel-gcm.h"
+ #include "rijndael.h"
+ 
+-#if defined(__INTEL_COMPILER)
+-#include <ia32intrin.h> 
+-#elif defined(__GNUC__)
+ #include <emmintrin.h>
+ #include <tmmintrin.h>
+-#endif
+ 
+ 
+ struct intel_AES_GCMContextStr{
+@@ -143,9 +139,9 @@ void intel_AES_GCM_DestroyContext(intel_AES_GCMContext *gcm, PRBool freeit)
+ 
+ SECStatus intel_AES_GCM_EncryptUpdate(intel_AES_GCMContext *gcm, 
+             unsigned char *outbuf,
+-			unsigned int *outlen, unsigned int maxout,
+-			const unsigned char *inbuf, unsigned int inlen,
+-			unsigned int blocksize)
++            unsigned int *outlen, unsigned int maxout,
++            const unsigned char *inbuf, unsigned int inlen,
++            unsigned int blocksize)
+ {
+     unsigned int tagBytes;
+     unsigned char T[AES_BLOCK_SIZE];
+@@ -189,9 +185,9 @@ SECStatus intel_AES_GCM_EncryptUpdate(intel_AES_GCMContext *gcm,
+ 
+ SECStatus intel_AES_GCM_DecryptUpdate(intel_AES_GCMContext *gcm, 
+             unsigned char *outbuf,
+-			unsigned int *outlen, unsigned int maxout,
+-			const unsigned char *inbuf, unsigned int inlen,
+-			unsigned int blocksize)
++            unsigned int *outlen, unsigned int maxout,
++            const unsigned char *inbuf, unsigned int inlen,
++            unsigned int blocksize)
+ {
+     unsigned int tagBytes;
+     unsigned char T[AES_BLOCK_SIZE];
+@@ -201,13 +197,19 @@ SECStatus intel_AES_GCM_DecryptUpdate(intel_AES_GCMContext *gcm,
+  
+     /* get the authentication block */
+     if (inlen < tagBytes) {
+-        PORT_SetError(SEC_ERROR_INVALID_ARGS);
++        PORT_SetError(SEC_ERROR_INPUT_LEN);
+         return SECFailure;
+     }
+ 
+     inlen -= tagBytes;
+     intag = inbuf + inlen;
+ 
++    if (maxout < inlen) {
++        *outlen = inlen;
++        PORT_SetError(SEC_ERROR_OUTPUT_LEN);
++        return SECFailure;
++    }
++
+     intel_aes_gcmDEC(
+          inbuf,
+          outbuf,
+@@ -224,6 +226,8 @@ SECStatus intel_AES_GCM_DecryptUpdate(intel_AES_GCMContext *gcm,
+          T);
+ 
+     if (NSS_SecureMemcmp(T, intag, tagBytes) != 0) {
++        memset(outbuf, 0, inlen);
++        *outlen = 0;
+         /* force a CKR_ENCRYPTED_DATA_INVALID error at in softoken */
+         PORT_SetError(SEC_ERROR_BAD_DATA);
+         return SECFailure;
+diff --git a/nss/lib/freebl/rijndael.c b/nss/lib/freebl/rijndael.c
+index 8bb8905..9703867 100644
+--- a/nss/lib/freebl/rijndael.c
++++ b/nss/lib/freebl/rijndael.c
+@@ -1063,8 +1063,10 @@ aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
+ 				intel_aes_cbc_worker(encrypt, keysize);
+ 	} else
+ #endif
++	{
+ 	    cx->worker = (freeblCipherFunc) (encrypt
+ 			  ? &rijndael_encryptCBC : &rijndael_decryptCBC);
++	}
+     } else {
+ #if  USE_HW_AES
+ 	if (use_hw_aes) {
+@@ -1072,8 +1074,10 @@ aes_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
+ 				intel_aes_ecb_worker(encrypt, keysize);
+ 	} else
+ #endif
++	{
+ 	    cx->worker = (freeblCipherFunc) (encrypt
+ 			  ? &rijndael_encryptECB : &rijndael_decryptECB);
++	}
+     }
+     PORT_Assert((cx->Nb * (cx->Nr + 1)) <= RIJNDAEL_MAX_EXP_KEY_SIZE);
+     if ((cx->Nb * (cx->Nr + 1)) > RIJNDAEL_MAX_EXP_KEY_SIZE) {
+@@ -1171,7 +1175,14 @@ AES_InitContext(AESContext *cx, const unsigned char *key, unsigned int keysize,
+ 	break;
+     case NSS_AES_CTR:
+ 	cx->worker_cx = CTR_CreateContext(cx, cx->worker, iv, blocksize);
+-	cx->worker = (freeblCipherFunc) CTR_Update ;
++#if defined(USE_HW_AES) && defined(_MSC_VER)
++	if (use_hw_aes) {
++	    cx->worker = (freeblCipherFunc) CTR_Update_HW_AES;
++	} else
++#endif
++	{
++	    cx->worker = (freeblCipherFunc) CTR_Update;
++	}
+ 	cx->destroy = (freeblDestroyFunc) CTR_DestroyContext;
+ 	cx->isBlock = PR_FALSE;
+ 	break;

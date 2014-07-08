@@ -86,10 +86,16 @@ WebsiteSettingsUI::IdentityInfo::IdentityInfo()
       connection_status(WebsiteSettings::SITE_CONNECTION_STATUS_UNKNOWN) {
 }
 
-string16 WebsiteSettingsUI::IdentityInfo::GetIdentityStatusText() const {
+WebsiteSettingsUI::IdentityInfo::~IdentityInfo() {}
+
+base::string16 WebsiteSettingsUI::IdentityInfo::GetIdentityStatusText() const {
   if (identity_status == WebsiteSettings::SITE_IDENTITY_STATUS_CERT ||
       identity_status ==  WebsiteSettings::SITE_IDENTITY_STATUS_EV_CERT) {
     return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_IDENTITY_VERIFIED);
+  }
+  if (identity_status ==
+          WebsiteSettings::SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT) {
+    return l10n_util::GetStringUTF16(IDS_CERT_POLICY_PROVIDED_CERT_HEADER);
   }
   return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_IDENTITY_NOT_VERIFIED);
 }
@@ -98,7 +104,7 @@ WebsiteSettingsUI::~WebsiteSettingsUI() {
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionTypeToUIString(
+base::string16 WebsiteSettingsUI::PermissionTypeToUIString(
       ContentSettingsType type) {
   switch (type) {
     case CONTENT_SETTINGS_TYPE_IMAGES:
@@ -120,14 +126,19 @@ string16 WebsiteSettingsUI::PermissionTypeToUIString(
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TYPE_MOUSELOCK);
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TYPE_MEDIASTREAM);
+    case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
+      return l10n_util::GetStringUTF16(IDS_AUTOMATIC_DOWNLOADS_TAB_LABEL);
+    case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
+      return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_TYPE_MIDI_SYSEX);
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionValueToUIString(ContentSetting value) {
+base::string16 WebsiteSettingsUI::PermissionValueToUIString(
+    ContentSetting value) {
   switch (value) {
     case CONTENT_SETTING_ALLOW:
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_PERMISSION_ALLOW);
@@ -137,12 +148,12 @@ string16 WebsiteSettingsUI::PermissionValueToUIString(ContentSetting value) {
       return l10n_util::GetStringUTF16(IDS_WEBSITE_SETTINGS_PERMISSION_ASK);
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
 }
 
 // static
-string16 WebsiteSettingsUI::PermissionActionToUIString(
+base::string16 WebsiteSettingsUI::PermissionActionToUIString(
       ContentSetting setting,
       ContentSetting default_setting,
       content_settings::SettingSource source) {
@@ -168,7 +179,7 @@ string16 WebsiteSettingsUI::PermissionActionToUIString(
     case content_settings::SETTING_SOURCE_NONE:
     default:
       NOTREACHED();
-      return string16();
+      return base::string16();
   }
   int button_text_id = button_text_ids[effective_setting];
   DCHECK_NE(button_text_id, kInvalidResourceID);
@@ -176,61 +187,71 @@ string16 WebsiteSettingsUI::PermissionActionToUIString(
 }
 
 // static
-const gfx::Image& WebsiteSettingsUI::GetPermissionIcon(
-    ContentSettingsType type,
-    ContentSetting setting) {
+int WebsiteSettingsUI::GetPermissionIconID(ContentSettingsType type,
+                                           ContentSetting setting) {
   bool use_blocked = (setting == CONTENT_SETTING_BLOCK);
   int resource_id = IDR_INFO;
   switch (type) {
     case CONTENT_SETTINGS_TYPE_IMAGES:
-      resource_id = use_blocked ? IDR_BLOCKED_IMAGES
-                                : IDR_ALLOWED_IMAGES;
+      resource_id = use_blocked ? IDR_BLOCKED_IMAGES : IDR_ALLOWED_IMAGES;
       break;
     case CONTENT_SETTINGS_TYPE_JAVASCRIPT:
-      resource_id = use_blocked ? IDR_BLOCKED_JAVASCRIPT
-                                : IDR_ALLOWED_JAVASCRIPT;
+      resource_id =
+          use_blocked ? IDR_BLOCKED_JAVASCRIPT : IDR_ALLOWED_JAVASCRIPT;
       break;
     case CONTENT_SETTINGS_TYPE_COOKIES:
-      resource_id = use_blocked ? IDR_BLOCKED_COOKIES
-                                : IDR_ACCESSED_COOKIES;
+      resource_id = use_blocked ? IDR_BLOCKED_COOKIES : IDR_ACCESSED_COOKIES;
       break;
     case CONTENT_SETTINGS_TYPE_POPUPS:
-      resource_id = use_blocked ? IDR_BLOCKED_POPUPS
-                                : IDR_ALLOWED_POPUPS;
+      resource_id = use_blocked ? IDR_BLOCKED_POPUPS : IDR_ALLOWED_POPUPS;
       break;
     case CONTENT_SETTINGS_TYPE_PLUGINS:
-      resource_id = use_blocked ? IDR_BLOCKED_PLUGINS
-                                : IDR_ALLOWED_PLUGINS;
+      resource_id = use_blocked ? IDR_BLOCKED_PLUGINS : IDR_ALLOWED_PLUGINS;
       break;
     case CONTENT_SETTINGS_TYPE_GEOLOCATION:
-      resource_id = use_blocked ? IDR_GEOLOCATION_DENIED_LOCATIONBAR_ICON
-                                : IDR_GEOLOCATION_ALLOWED_LOCATIONBAR_ICON;
+      resource_id = use_blocked ? IDR_BLOCKED_LOCATION : IDR_ALLOWED_LOCATION;
       break;
     case CONTENT_SETTINGS_TYPE_NOTIFICATIONS:
-      resource_id = use_blocked ? IDR_BLOCKED_NOTIFICATION
-                                : IDR_ALLOWED_NOTIFICATION;
+      resource_id =
+          use_blocked ? IDR_BLOCKED_NOTIFICATION : IDR_ALLOWED_NOTIFICATION;
       break;
     case CONTENT_SETTINGS_TYPE_FULLSCREEN:
       resource_id = IDR_ALLOWED_FULLSCREEN;
       break;
     case CONTENT_SETTINGS_TYPE_MOUSELOCK:
-      resource_id = use_blocked ? IDR_BLOCKED_MOUSE_CURSOR
-                                : IDR_ALLOWED_MOUSE_CURSOR;
+      resource_id =
+          use_blocked ? IDR_BLOCKED_MOUSE_CURSOR : IDR_ALLOWED_MOUSE_CURSOR;
       break;
     case CONTENT_SETTINGS_TYPE_MEDIASTREAM:
-      resource_id = use_blocked ? IDR_BLOCKED_MEDIA
-                                : IDR_ASK_MEDIA;
+      resource_id = use_blocked ? IDR_BLOCKED_MEDIA : IDR_ASK_MEDIA;
+      break;
+    case CONTENT_SETTINGS_TYPE_AUTOMATIC_DOWNLOADS:
+      resource_id = use_blocked ? IDR_BLOCKED_DOWNLOADS
+                                : IDR_ALLOWED_DOWNLOADS;
+      break;
+    case CONTENT_SETTINGS_TYPE_MIDI_SYSEX:
+      resource_id = use_blocked ? IDR_BLOCKED_MIDI_SYSEX
+                                : IDR_ALLOWED_MIDI_SYSEX;
       break;
     default:
       NOTREACHED();
       break;
   }
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetNativeImageNamed(resource_id);
+  return resource_id;
 }
 
 // static
-const gfx::Image& WebsiteSettingsUI::GetIdentityIcon(
+const gfx::Image& WebsiteSettingsUI::GetPermissionIcon(
+    const PermissionInfo& info) {
+  ContentSetting setting = info.setting;
+  if (setting == CONTENT_SETTING_DEFAULT)
+    setting = info.default_setting;
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  return rb.GetNativeImageNamed(GetPermissionIconID(info.type, setting));
+}
+
+// static
+int WebsiteSettingsUI::GetIdentityIconID(
     WebsiteSettings::SiteIdentityStatus status) {
   int resource_id = IDR_PAGEINFO_INFO;
   switch (status) {
@@ -249,16 +270,25 @@ const gfx::Image& WebsiteSettingsUI::GetIdentityIcon(
     case WebsiteSettings::SITE_IDENTITY_STATUS_ERROR:
       resource_id = IDR_PAGEINFO_BAD;
       break;
+    case WebsiteSettings::SITE_IDENTITY_STATUS_ADMIN_PROVIDED_CERT:
+      resource_id = IDR_PAGEINFO_ENTERPRISE_MANAGED;
+      break;
     default:
       NOTREACHED();
       break;
   }
-  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetNativeImageNamed(resource_id);
+  return resource_id;
 }
 
 // static
-const gfx::Image& WebsiteSettingsUI::GetConnectionIcon(
+const gfx::Image& WebsiteSettingsUI::GetIdentityIcon(
+    WebsiteSettings::SiteIdentityStatus status) {
+  ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+  return rb.GetNativeImageNamed(GetIdentityIconID(status));
+}
+
+// static
+int WebsiteSettingsUI::GetConnectionIconID(
     WebsiteSettings::SiteConnectionStatus status) {
   int resource_id = IDR_PAGEINFO_INFO;
   switch (status) {
@@ -280,15 +310,26 @@ const gfx::Image& WebsiteSettingsUI::GetConnectionIcon(
       NOTREACHED();
       break;
   }
+  return resource_id;
+}
+
+// static
+const gfx::Image& WebsiteSettingsUI::GetConnectionIcon(
+    WebsiteSettings::SiteConnectionStatus status) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetNativeImageNamed(resource_id);
+  return rb.GetNativeImageNamed(GetConnectionIconID(status));
+}
+
+// static
+int WebsiteSettingsUI::GetFirstVisitIconID(const base::string16& first_visit) {
+  // FIXME(markusheintz): Display a minor warning icon if the page is visited
+  // the first time.
+  return IDR_PAGEINFO_INFO;
 }
 
 // static
 const gfx::Image& WebsiteSettingsUI::GetFirstVisitIcon(
-    const string16& first_visit) {
-  // FIXME(markusheintz): Display a minor warning icon if the page is visited
-  // the first time.
+    const base::string16& first_visit) {
   ResourceBundle& rb = ResourceBundle::GetSharedInstance();
-  return rb.GetNativeImageNamed(IDR_PAGEINFO_INFO);
+  return rb.GetNativeImageNamed(GetFirstVisitIconID(first_visit));
 }

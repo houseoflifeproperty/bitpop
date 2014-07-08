@@ -5,119 +5,45 @@
 #ifndef CC_TEST_SCHEDULER_TEST_COMMON_H_
 #define CC_TEST_SCHEDULER_TEST_COMMON_H_
 
+#include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "cc/delay_based_time_source.h"
-#include "cc/frame_rate_controller.h"
-#include "cc/thread.h"
+#include "base/time/time.h"
+#include "cc/scheduler/delay_based_time_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace cc {
 
-class FakeTimeSourceClient : public cc::TimeSourceClient {
-public:
-    FakeTimeSourceClient() { reset(); }
-    void reset() { m_tickCalled = false; }
-    bool tickCalled() const { return m_tickCalled; }
+class FakeTimeSourceClient : public TimeSourceClient {
+ public:
+  FakeTimeSourceClient() { Reset(); }
+  void Reset() { tick_called_ = false; }
+  bool TickCalled() const { return tick_called_; }
 
-    virtual void onTimerTick() OVERRIDE;
+  // TimeSourceClient implementation.
+  virtual void OnTimerTick() OVERRIDE;
 
-protected:
-    bool m_tickCalled;
+ protected:
+  bool tick_called_;
 };
 
-class FakeThread : public cc::Thread {
-public:
-    FakeThread();
-    virtual ~FakeThread();
+class FakeDelayBasedTimeSource : public DelayBasedTimeSource {
+ public:
+  static scoped_refptr<FakeDelayBasedTimeSource> Create(
+      base::TimeDelta interval, base::SingleThreadTaskRunner* task_runner) {
+    return make_scoped_refptr(new FakeDelayBasedTimeSource(interval,
+                                                           task_runner));
+  }
 
-    void reset()
-    {
-        m_pendingTaskDelay = 0;
-        m_pendingTask.reset();
-        m_runPendingTaskOnOverwrite = false;
-    }
+  void SetNow(base::TimeTicks time) { now_ = time; }
+  virtual base::TimeTicks Now() const OVERRIDE;
 
-    void runPendingTaskOnOverwrite(bool enable)
-    {
-        m_runPendingTaskOnOverwrite = enable;
-    }
+ protected:
+  FakeDelayBasedTimeSource(base::TimeDelta interval,
+                           base::SingleThreadTaskRunner* task_runner)
+      : DelayBasedTimeSource(interval, task_runner) {}
+  virtual ~FakeDelayBasedTimeSource() {}
 
-    bool hasPendingTask() const { return m_pendingTask; }
-    void runPendingTask();
-
-    long long pendingDelayMs() const
-    {
-        EXPECT_TRUE(hasPendingTask());
-        return m_pendingTaskDelay;
-    }
-
-    virtual void postTask(base::Closure cb) OVERRIDE;
-    virtual void postDelayedTask(base::Closure cb, long long delay) OVERRIDE;
-    virtual bool belongsToCurrentThread() const OVERRIDE;
-
-protected:
-    scoped_ptr<base::Closure> m_pendingTask;
-    long long m_pendingTaskDelay;
-    bool m_runPendingTaskOnOverwrite;
-};
-
-class FakeTimeSource : public cc::TimeSource {
-public:
-    FakeTimeSource()
-        : m_active(false)
-        , m_client(0)
-    {
-    }
-
-    virtual void setClient(cc::TimeSourceClient* client) OVERRIDE;
-    virtual void setActive(bool b) OVERRIDE;
-    virtual bool active() const OVERRIDE;
-    virtual void setTimebaseAndInterval(base::TimeTicks timebase, base::TimeDelta interval) OVERRIDE { }
-    virtual base::TimeTicks lastTickTime() OVERRIDE;
-    virtual base::TimeTicks nextTickTime() OVERRIDE;
-
-    void tick()
-    {
-        ASSERT_TRUE(m_active);
-        if (m_client)
-            m_client->onTimerTick();
-    }
-
-    void setNextTickTime(base::TimeTicks nextTickTime) { m_nextTickTime = nextTickTime; }
-
-protected:
-    virtual ~FakeTimeSource() { }
-
-    bool m_active;
-    base::TimeTicks m_nextTickTime;
-    cc::TimeSourceClient* m_client;
-};
-
-class FakeDelayBasedTimeSource : public cc::DelayBasedTimeSource {
-public:
-    static scoped_refptr<FakeDelayBasedTimeSource> create(base::TimeDelta interval, cc::Thread* thread)
-    {
-        return make_scoped_refptr(new FakeDelayBasedTimeSource(interval, thread));
-    }
-
-    void setNow(base::TimeTicks time) { m_now = time; }
-    virtual base::TimeTicks now() const OVERRIDE;
-
-protected:
-    FakeDelayBasedTimeSource(base::TimeDelta interval, cc::Thread* thread)
-        : DelayBasedTimeSource(interval, thread)
-    {
-    }
-    virtual ~FakeDelayBasedTimeSource() { }
-
-    base::TimeTicks m_now;
-};
-
-class FakeFrameRateController : public cc::FrameRateController {
-public:
-    FakeFrameRateController(scoped_refptr<cc::TimeSource> timer) : cc::FrameRateController(timer) { }
-
-    int numFramesPending() const { return m_numFramesPending; }
+  base::TimeTicks now_;
 };
 
 }  // namespace cc

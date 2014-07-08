@@ -2,45 +2,101 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api.h"
 #include "chrome/browser/extensions/extension_apitest.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
-#include "googleurl/src/gurl.h"
-#include "net/base/mock_host_resolver.h"
+#include "extensions/common/extension.h"
+#include "net/dns/mock_host_resolver.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "url/gurl.h"
+
+namespace extensions {
+
+namespace {
+
+// A fake webstore domain.
+const char kWebstoreDomain[] = "cws.com";
+
+// Check whether or not style was injected, with |expected_injection| indicating
+// the expected result. Also ensure that no CSS was added to the
+// document.styleSheets array.
+testing::AssertionResult CheckStyleInjection(Browser* browser,
+                                             const GURL& url,
+                                             bool expected_injection) {
+  ui_test_utils::NavigateToURL(browser, url);
+
+  bool css_injected = false;
+  if (!content::ExecuteScriptAndExtractBool(
+          browser->tab_strip_model()->GetActiveWebContents(),
+          "window.domAutomationController.send("
+          "    document.defaultView.getComputedStyle(document.body, null)."
+          "        getPropertyValue('display') == 'none');",
+          &css_injected)) {
+    return testing::AssertionFailure()
+        << "Failed to execute script and extract bool for injection status.";
+  }
+
+  if (css_injected != expected_injection) {
+    std::string message;
+    if (css_injected)
+      message = "CSS injected when no injection was expected.";
+    else
+      message = "CSS not injected when injection was expected.";
+    return testing::AssertionFailure() << message;
+  }
+
+  bool css_doesnt_add_to_list = false;
+  if (!content::ExecuteScriptAndExtractBool(
+          browser->tab_strip_model()->GetActiveWebContents(),
+          "window.domAutomationController.send("
+          "    document.styleSheets.length == 0);",
+          &css_doesnt_add_to_list)) {
+    return testing::AssertionFailure()
+        << "Failed to execute script and extract bool for stylesheets length.";
+  }
+  if (!css_doesnt_add_to_list) {
+    return testing::AssertionFailure()
+        << "CSS injection added to number of stylesheets.";
+  }
+
+  return testing::AssertionSuccess();
+}
+
+}  // namespace
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptAllFrames) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/all_frames")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptAboutBlankIframes) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(
       RunExtensionTest("content_scripts/about_blank_iframes")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptExtensionIframe) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/extension_iframe")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptExtensionProcess) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(
       RunExtensionTest("content_scripts/extension_process")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptFragmentNavigation) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   const char* extension_name = "content_scripts/fragment";
   ASSERT_TRUE(RunExtensionTest(extension_name)) << message_;
 }
@@ -54,7 +110,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptFragmentNavigation) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ContentScriptIsolatedWorlds) {
   // This extension runs various bits of script and tests that they all run in
   // the same isolated world.
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/isolated_world1")) << message_;
 
   // Now load a different extension, inject into same page, verify worlds aren't
@@ -65,27 +121,14 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ContentScriptIsolatedWorlds) {
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptIgnoreHostPermissions) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
   host_resolver()->AddRule("b.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest(
       "content_scripts/dont_match_host_permissions")) << message_;
 }
 
-IN_PROC_BROWSER_TEST_F(
-    ExtensionApiTest, ContentScriptInjectedIntoMultipartPage) {
-  ASSERT_TRUE(StartTestServer());
-
-  // Start with a renderer already open at a URL.
-  GURL url(test_server()->GetURL("multipart-slow"));
-  ui_test_utils::NavigateToURL(browser(), url);
-
-  string16 title;
-  ui_test_utils::GetCurrentTabTitle(browser(), &title);
-  EXPECT_EQ(std::string("PASS"), UTF16ToUTF8(title));
-}
-
 // crbug.com/39249 -- content scripts js should not run on view source.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptViewSource) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/view_source")) << message_;
 }
 
@@ -93,7 +136,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptViewSource) {
 // extensions.
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptOtherExtensions) {
   host_resolver()->AddRule("a.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   // First, load extension that sets up content script.
   ASSERT_TRUE(RunExtensionTest("content_scripts/other_extensions/injector"))
       << message_;
@@ -102,11 +145,56 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptOtherExtensions) {
       << message_;
 }
 
+class ContentScriptCssInjectionTest : public ExtensionApiTest {
+ protected:
+  // TODO(rdevlin.cronin): Make a testing switch that looks like FeatureSwitch,
+  // but takes in an optional value so that we don't have to do this.
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE {
+    ExtensionApiTest::SetUpCommandLine(command_line);
+    // We change the Webstore URL to be http://cws.com. We need to do this so
+    // we can check that css injection is not allowed on the webstore (which
+    // could lead to spoofing). Unfortunately, host_resolver seems to have
+    // problems with redirecting "chrome.google.com" to the test server, so we
+    // can't use the real Webstore's URL. If this changes, we could clean this
+    // up.
+    command_line->AppendSwitchASCII(
+        switches::kAppsGalleryURL,
+        base::StringPrintf("http://%s", kWebstoreDomain));
+  }
+};
+
+IN_PROC_BROWSER_TEST_F(ContentScriptCssInjectionTest,
+                       ContentScriptInjectsStyles) {
+  ASSERT_TRUE(StartEmbeddedTestServer());
+  host_resolver()->AddRule(kWebstoreDomain, "127.0.0.1");
+
+  ASSERT_TRUE(LoadExtension(test_data_dir_.AppendASCII("content_scripts")
+                                          .AppendASCII("css_injection")));
+
+  // CSS injection should be allowed on an aribitrary web page.
+  GURL url =
+      embedded_test_server()->GetURL("/extensions/test_file_with_body.html");
+  EXPECT_TRUE(CheckStyleInjection(browser(), url, true));
+
+  // The loaded extension has an exclude match for "extensions/test_file.html",
+  // so no CSS should be injected.
+  url = embedded_test_server()->GetURL("/extensions/test_file.html");
+  EXPECT_TRUE(CheckStyleInjection(browser(), url, false));
+
+  // We disallow all injection on the webstore.
+  GURL::Replacements replacements;
+  std::string host(kWebstoreDomain);
+  replacements.SetHostStr(host);
+  url = embedded_test_server()->GetURL("/extensions/test_file_with_body.html")
+            .ReplaceComponents(replacements);
+  EXPECT_TRUE(CheckStyleInjection(browser(), url, false));
+}
+
 // crbug.com/120762
 IN_PROC_BROWSER_TEST_F(
     ExtensionApiTest,
     DISABLED_ContentScriptStylesInjectedIntoExistingRenderers) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   content::WindowedNotificationObserver signal(
       chrome::NOTIFICATION_USER_SCRIPTS_UPDATED,
@@ -123,36 +211,40 @@ IN_PROC_BROWSER_TEST_F(
 
   // And check that its styles were affected by the styles that just got loaded.
   bool styles_injected;
-  ASSERT_TRUE(content::ExecuteJavaScriptAndExtractBool(
-      chrome::GetActiveWebContents(browser())->GetRenderViewHost(), L"",
-      L"window.domAutomationController.send("
-      L"document.defaultView.getComputedStyle(document.body, null)."
-      L"getPropertyValue('background-color') == 'rgb(255, 0, 0)')",
+  ASSERT_TRUE(content::ExecuteScriptAndExtractBool(
+      browser()->tab_strip_model()->GetActiveWebContents(),
+      "window.domAutomationController.send("
+      "    document.defaultView.getComputedStyle(document.body, null)."
+      "        getPropertyValue('background-color') == 'rgb(255, 0, 0)')",
       &styles_injected));
   ASSERT_TRUE(styles_injected);
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest,
                        ContentScriptCSSLocalization) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/css_l10n")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptExtensionAPIs) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
 
   const extensions::Extension* extension = LoadExtension(
       test_data_dir_.AppendASCII("content_scripts/extension_api"));
 
   ResultCatcher catcher;
   ui_test_utils::NavigateToURL(
-      browser(), test_server()->GetURL("functions.html"));
+      browser(),
+      embedded_test_server()->GetURL(
+          "/extensions/api_test/content_scripts/extension_api/functions.html"));
   EXPECT_TRUE(catcher.GetNextResult());
 
   // Navigate to a page that will cause a content script to run that starts
   // listening for an extension event.
   ui_test_utils::NavigateToURL(
-      browser(), test_server()->GetURL("events.html"));
+      browser(),
+      embedded_test_server()->GetURL(
+          "/extensions/api_test/content_scripts/extension_api/events.html"));
 
   // Navigate to an extension page that will fire the event events.js is
   // listening for.
@@ -162,15 +254,23 @@ IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptExtensionAPIs) {
   EXPECT_TRUE(catcher.GetNextResult());
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptPermissionsApi) {
-  RequestPermissionsFunction::SetIgnoreUserGestureForTests(true);
-  RequestPermissionsFunction::SetAutoConfirmForTests(true);
+// Flaky on Windows. http://crbug.com/248418
+#if defined(OS_WIN)
+#define MAYBE_ContentScriptPermissionsApi DISABLED_ContentScriptPermissionsApi
+#else
+#define MAYBE_ContentScriptPermissionsApi ContentScriptPermissionsApi
+#endif
+IN_PROC_BROWSER_TEST_F(ExtensionApiTest, MAYBE_ContentScriptPermissionsApi) {
+  extensions::PermissionsRequestFunction::SetIgnoreUserGestureForTests(true);
+  extensions::PermissionsRequestFunction::SetAutoConfirmForTests(true);
   host_resolver()->AddRule("*.com", "127.0.0.1");
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/permissions")) << message_;
 }
 
 IN_PROC_BROWSER_TEST_F(ExtensionApiTest, ContentScriptBypassPageCSP) {
-  ASSERT_TRUE(StartTestServer());
+  ASSERT_TRUE(StartEmbeddedTestServer());
   ASSERT_TRUE(RunExtensionTest("content_scripts/bypass_page_csp")) << message_;
 }
+
+}  // namespace extensions

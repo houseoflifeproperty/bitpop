@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_WEBUI_NET_INTERNALS_NET_INTERNALS_UI_BROWSERTEST_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/webui/web_ui_browsertest.h"
+#include "chrome/test/base/web_ui_browsertest.h"
 
 class GURL;
 
@@ -23,7 +23,7 @@ class NetInternalsTest : public WebUIBrowserTest {
   class MessageHandler;
 
   // InProcessBrowserTest overrides.
-  virtual void SetUpCommandLine(CommandLine* command_line) OVERRIDE;
+  virtual void SetUpCommandLine(base::CommandLine* command_line) OVERRIDE;
   virtual void SetUpOnMainThread() OVERRIDE;
 
   // WebUIBrowserTest implementation.

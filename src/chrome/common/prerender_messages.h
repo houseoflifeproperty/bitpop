@@ -5,12 +5,12 @@
 // Multiply-included message file, no traditional include guard.
 #include "content/public/common/common_param_traits.h"
 #include "content/public/common/referrer.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebReferrerPolicy.h"
+#include "third_party/WebKit/public/platform/WebReferrerPolicy.h"
 #include "ui/gfx/size.h"
+#include "url/gurl.h"
 
 #define IPC_MESSAGE_START PrerenderMsgStart
 
@@ -18,11 +18,16 @@
 // These are messages sent from the renderer to the browser in
 // relation to <link rel=prerender> elements.
 
+IPC_STRUCT_BEGIN(PrerenderAttributes)
+  IPC_STRUCT_MEMBER(GURL, url)
+  IPC_STRUCT_MEMBER(uint32, rel_types)
+IPC_STRUCT_END()
+
 // Notifies of the insertion of a <link rel=prerender> element in the
 // document.
 IPC_MESSAGE_CONTROL5(PrerenderHostMsg_AddLinkRelPrerender,
                      int /* prerender_id, assigned by WebPrerendererClient */,
-                     GURL /* url */,
+                     PrerenderAttributes,
                      content::Referrer,
                      gfx::Size,
                      int /* render_view_route_id of launcher */)
@@ -53,10 +58,17 @@ IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderStart,
 IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderStopLoading,
                      int /* prerender_id */)
 
+// Signals to launcher that a prerender has had it's 'domcontentloaded' event.
+IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderDomContentLoaded,
+                     int /* prerender_id */)
+
 // Signals to a launcher that a new alias has been added to a prerender.
-IPC_MESSAGE_CONTROL2(PrerenderMsg_OnPrerenderAddAlias,
-                     int /* prerender_id */,
+IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderAddAlias,
                      GURL /* url */)
+
+// Signals to a launcher that a new alias has been added to a prerender.
+IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderRemoveAliases,
+                     std::vector<GURL> /* urls */)
 
 // Signals to a launcher that a prerender is no longer running.
 IPC_MESSAGE_CONTROL1(PrerenderMsg_OnPrerenderStop,

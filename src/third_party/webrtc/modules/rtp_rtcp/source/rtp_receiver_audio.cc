@@ -8,360 +8,387 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "rtp_receiver_audio.h"
+#include "webrtc/modules/rtp_rtcp/source/rtp_receiver_audio.h"
 
-#include <cassert> //assert
-#include <cstring> // memcpy()
-#include <math.h>    // pow()
+#include <assert.h>  // assert
+#include <math.h>   // pow()
+#include <string.h>  // memcpy()
 
-#include "critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/critical_section_wrapper.h"
+#include "webrtc/system_wrappers/interface/logging.h"
+#include "webrtc/system_wrappers/interface/trace_event.h"
 
 namespace webrtc {
-RTPReceiverAudio::RTPReceiverAudio(const WebRtc_Word32 id):
-    _id(id),
-    _lastReceivedFrequency(8000),
-    _telephoneEvent(false),
-    _telephoneEventForwardToDecoder(false),
-    _telephoneEventDetectEndOfTone(false),
-    _telephoneEventPayloadType(-1),
-    _cngNBPayloadType(-1),
-    _cngWBPayloadType(-1),
-    _cngSWBPayloadType(-1),
-    _cngFBPayloadType(-1),
-    _cngPayloadType(-1),
-    _G722PayloadType(-1),
-    _lastReceivedG722(false),
-    _criticalSectionFeedback(CriticalSectionWrapper::CreateCriticalSection()),
-    _cbAudioFeedback(NULL)
-{
+RTPReceiverStrategy* RTPReceiverStrategy::CreateAudioStrategy(
+    int32_t id, RtpData* data_callback,
+    RtpAudioFeedback* incoming_messages_callback) {
+  return new RTPReceiverAudio(id, data_callback, incoming_messages_callback);
 }
 
-RTPReceiverAudio::~RTPReceiverAudio()
-{
-    delete _criticalSectionFeedback;
-}
-
-WebRtc_Word32
-RTPReceiverAudio::RegisterIncomingAudioCallback(RtpAudioFeedback* incomingMessagesCallback)
-{
-    CriticalSectionScoped lock(_criticalSectionFeedback);
-    _cbAudioFeedback = incomingMessagesCallback;
-    return 0;
-}
-
-WebRtc_UWord32
-RTPReceiverAudio::AudioFrequency() const
-{
-    if(_lastReceivedG722)
-    {
-        return 8000;
-    }
-    return _lastReceivedFrequency;
+RTPReceiverAudio::RTPReceiverAudio(const int32_t id,
+                                   RtpData* data_callback,
+                                   RtpAudioFeedback* incoming_messages_callback)
+    : RTPReceiverStrategy(data_callback),
+      TelephoneEventHandler(),
+      id_(id),
+      last_received_frequency_(8000),
+      telephone_event_forward_to_decoder_(false),
+      telephone_event_payload_type_(-1),
+      cng_nb_payload_type_(-1),
+      cng_wb_payload_type_(-1),
+      cng_swb_payload_type_(-1),
+      cng_fb_payload_type_(-1),
+      cng_payload_type_(-1),
+      g722_payload_type_(-1),
+      last_received_g722_(false),
+      num_energy_(0),
+      current_remote_energy_(),
+      cb_audio_feedback_(incoming_messages_callback) {
+  last_payload_.Audio.channels = 1;
+  memset(current_remote_energy_, 0, sizeof(current_remote_energy_));
 }
 
 // Outband TelephoneEvent(DTMF) detection
-WebRtc_Word32
-RTPReceiverAudio::SetTelephoneEventStatus(const bool enable,
-                                          const bool forwardToDecoder,
-                                          const bool detectEndOfTone)
-{
-    _telephoneEvent= enable;
-    _telephoneEventDetectEndOfTone = detectEndOfTone;
-    _telephoneEventForwardToDecoder = forwardToDecoder;
-    return 0;
-}
-
- // Is outband TelephoneEvent(DTMF) turned on/off?
-bool
-RTPReceiverAudio::TelephoneEvent() const
-{
-    return _telephoneEvent;
+void RTPReceiverAudio::SetTelephoneEventForwardToDecoder(
+    bool forward_to_decoder) {
+  CriticalSectionScoped lock(crit_sect_.get());
+  telephone_event_forward_to_decoder_ = forward_to_decoder;
 }
 
 // Is forwarding of outband telephone events turned on/off?
-bool
-RTPReceiverAudio::TelephoneEventForwardToDecoder() const
-{
-    return _telephoneEventForwardToDecoder;
+bool RTPReceiverAudio::TelephoneEventForwardToDecoder() const {
+  CriticalSectionScoped lock(crit_sect_.get());
+  return telephone_event_forward_to_decoder_;
 }
 
-bool
-RTPReceiverAudio::TelephoneEventPayloadType(const WebRtc_Word8 payloadType) const
-{
-    return (_telephoneEventPayloadType == payloadType)?true:false;
+bool RTPReceiverAudio::TelephoneEventPayloadType(
+    int8_t payload_type) const {
+  CriticalSectionScoped lock(crit_sect_.get());
+  return (telephone_event_payload_type_ == payload_type) ? true : false;
 }
 
-bool
-RTPReceiverAudio::CNGPayloadType(const WebRtc_Word8 payloadType,
-                                 WebRtc_UWord32& frequency)
-{
-    //  We can have four CNG on 8000Hz, 16000Hz, 32000Hz and 48000Hz.
-    if(_cngNBPayloadType == payloadType)
-    {
-        frequency = 8000;
-        if ((_cngPayloadType != -1) &&(_cngPayloadType !=_cngNBPayloadType))
-        {
-            ResetStatistics();
-        }
-        _cngPayloadType = _cngNBPayloadType;
-        return true;
-    } else if(_cngWBPayloadType == payloadType)
-    {
-        // if last received codec is G.722 we must use frequency 8000
-        if(_lastReceivedG722)
-        {
-            frequency = 8000;
-        } else
-        {
-            frequency = 16000;
-        }
-        if ((_cngPayloadType != -1) &&(_cngPayloadType !=_cngWBPayloadType))
-        {
-            ResetStatistics();
-        }
-        _cngPayloadType = _cngWBPayloadType;
-        return true;
-    }else if(_cngSWBPayloadType == payloadType)
-    {
-        frequency = 32000;
-        if ((_cngPayloadType != -1) &&(_cngPayloadType !=_cngSWBPayloadType))
-        {
-            ResetStatistics();
-        }
-        _cngPayloadType = _cngSWBPayloadType;
-        return true;
-    }else if(_cngFBPayloadType == payloadType)
-    {
-        frequency = 48000;
-        if ((_cngPayloadType != -1) &&(_cngPayloadType !=_cngFBPayloadType))
-        {
-            ResetStatistics();
-        }
-        _cngPayloadType = _cngFBPayloadType;
-        return true;
-    }else
-    {
-        //  not CNG
-        if(_G722PayloadType == payloadType)
-        {
-            _lastReceivedG722 = true;
-        }else
-        {
-            _lastReceivedG722 = false;
-        }
+bool RTPReceiverAudio::CNGPayloadType(int8_t payload_type,
+                                      uint32_t* frequency,
+                                      bool* cng_payload_type_has_changed) {
+  CriticalSectionScoped lock(crit_sect_.get());
+  *cng_payload_type_has_changed = false;
+
+  //  We can have four CNG on 8000Hz, 16000Hz, 32000Hz and 48000Hz.
+  if (cng_nb_payload_type_ == payload_type) {
+    *frequency = 8000;
+    if (cng_payload_type_ != -1 && cng_payload_type_ != cng_nb_payload_type_)
+      *cng_payload_type_has_changed = true;
+
+    cng_payload_type_ = cng_nb_payload_type_;
+    return true;
+  } else if (cng_wb_payload_type_ == payload_type) {
+    // if last received codec is G.722 we must use frequency 8000
+    if (last_received_g722_) {
+      *frequency = 8000;
+    } else {
+      *frequency = 16000;
     }
-    return false;
+    if (cng_payload_type_ != -1 && cng_payload_type_ != cng_wb_payload_type_)
+      *cng_payload_type_has_changed = true;
+    cng_payload_type_ = cng_wb_payload_type_;
+    return true;
+  } else if (cng_swb_payload_type_ == payload_type) {
+    *frequency = 32000;
+    if ((cng_payload_type_ != -1) &&
+        (cng_payload_type_ != cng_swb_payload_type_))
+      *cng_payload_type_has_changed = true;
+    cng_payload_type_ = cng_swb_payload_type_;
+    return true;
+  } else if (cng_fb_payload_type_ == payload_type) {
+    *frequency = 48000;
+    if (cng_payload_type_ != -1 && cng_payload_type_ != cng_fb_payload_type_)
+      *cng_payload_type_has_changed = true;
+    cng_payload_type_ = cng_fb_payload_type_;
+    return true;
+  } else {
+    //  not CNG
+    if (g722_payload_type_ == payload_type) {
+      last_received_g722_ = true;
+    } else {
+      last_received_g722_ = false;
+    }
+  }
+  return false;
 }
 
-/*
-   Sample based or frame based codecs based on RFC 3551
+bool RTPReceiverAudio::ShouldReportCsrcChanges(uint8_t payload_type) const {
+  // Don't do this for DTMF packets, otherwise it's fine.
+  return !TelephoneEventPayloadType(payload_type);
+}
 
-   NOTE! There is one error in the RFC, stating G.722 uses 8 bits/samples.
-   The correct rate is 4 bits/sample.
+// -   Sample based or frame based codecs based on RFC 3551
+// -
+// -   NOTE! There is one error in the RFC, stating G.722 uses 8 bits/samples.
+// -   The correct rate is 4 bits/sample.
+// -
+// -   name of                              sampling              default
+// -   encoding  sample/frame  bits/sample      rate  ms/frame  ms/packet
+// -
+// -   Sample based audio codecs
+// -   DVI4      sample        4                var.                   20
+// -   G722      sample        4              16,000                   20
+// -   G726-40   sample        5               8,000                   20
+// -   G726-32   sample        4               8,000                   20
+// -   G726-24   sample        3               8,000                   20
+// -   G726-16   sample        2               8,000                   20
+// -   L8        sample        8                var.                   20
+// -   L16       sample        16               var.                   20
+// -   PCMA      sample        8                var.                   20
+// -   PCMU      sample        8                var.                   20
+// -
+// -   Frame based audio codecs
+// -   G723      frame         N/A             8,000        30         30
+// -   G728      frame         N/A             8,000       2.5         20
+// -   G729      frame         N/A             8,000        10         20
+// -   G729D     frame         N/A             8,000        10         20
+// -   G729E     frame         N/A             8,000        10         20
+// -   GSM       frame         N/A             8,000        20         20
+// -   GSM-EFR   frame         N/A             8,000        20         20
+// -   LPC       frame         N/A             8,000        20         20
+// -   MPA       frame         N/A              var.      var.
+// -
+// -   G7221     frame         N/A
+int32_t RTPReceiverAudio::OnNewPayloadTypeCreated(
+    const char payload_name[RTP_PAYLOAD_NAME_SIZE],
+    int8_t payload_type,
+    uint32_t frequency) {
+  CriticalSectionScoped lock(crit_sect_.get());
 
-   name of                              sampling              default
-   encoding  sample/frame  bits/sample      rate  ms/frame  ms/packet
-
-   Sample based audio codecs
-   DVI4      sample        4                var.                   20
-   G722      sample        4              16,000                   20
-   G726-40   sample        5               8,000                   20
-   G726-32   sample        4               8,000                   20
-   G726-24   sample        3               8,000                   20
-   G726-16   sample        2               8,000                   20
-   L8        sample        8                var.                   20
-   L16       sample        16               var.                   20
-   PCMA      sample        8                var.                   20
-   PCMU      sample        8                var.                   20
-
-   Frame based audio codecs
-   G723      frame         N/A             8,000        30         30
-   G728      frame         N/A             8,000       2.5         20
-   G729      frame         N/A             8,000        10         20
-   G729D     frame         N/A             8,000        10         20
-   G729E     frame         N/A             8,000        10         20
-   GSM       frame         N/A             8,000        20         20
-   GSM-EFR   frame         N/A             8,000        20         20
-   LPC       frame         N/A             8,000        20         20
-   MPA       frame         N/A              var.      var.
-
-   G7221     frame         N/A
-*/
-
-ModuleRTPUtility::Payload* RTPReceiverAudio::RegisterReceiveAudioPayload(
-    const char payloadName[RTP_PAYLOAD_NAME_SIZE],
-    const WebRtc_Word8 payloadType,
-    const WebRtc_UWord32 frequency,
-    const WebRtc_UWord8 channels,
-    const WebRtc_UWord32 rate) {
-  if (ModuleRTPUtility::StringCompare(payloadName, "telephone-event", 15)) {
-    _telephoneEventPayloadType = payloadType;
+  if (ModuleRTPUtility::StringCompare(payload_name, "telephone-event", 15)) {
+    telephone_event_payload_type_ = payload_type;
   }
-  if (ModuleRTPUtility::StringCompare(payloadName, "cn", 2)) {
+  if (ModuleRTPUtility::StringCompare(payload_name, "cn", 2)) {
     //  we can have three CNG on 8000Hz, 16000Hz and 32000Hz
-    if(frequency == 8000){
-      _cngNBPayloadType = payloadType;
-    } else if(frequency == 16000) {
-      _cngWBPayloadType = payloadType;
-    } else if(frequency == 32000) {
-      _cngSWBPayloadType = payloadType;
-    } else if(frequency == 48000) {
-      _cngFBPayloadType = payloadType;
+    if (frequency == 8000) {
+      cng_nb_payload_type_ = payload_type;
+    } else if (frequency == 16000) {
+      cng_wb_payload_type_ = payload_type;
+    } else if (frequency == 32000) {
+      cng_swb_payload_type_ = payload_type;
+    } else if (frequency == 48000) {
+      cng_fb_payload_type_ = payload_type;
     } else {
       assert(false);
-      return NULL;
+      return -1;
     }
   }
-
-  ModuleRTPUtility::Payload* payload = new ModuleRTPUtility::Payload;
-  payload->name[RTP_PAYLOAD_NAME_SIZE - 1] = 0;
-  strncpy(payload->name, payloadName, RTP_PAYLOAD_NAME_SIZE - 1);
-  payload->typeSpecific.Audio.frequency = frequency;
-  payload->typeSpecific.Audio.channels = channels;
-  payload->typeSpecific.Audio.rate = rate;
-  payload->audio = true;
-  return payload;
+  return 0;
 }
 
-// we are not allowed to have any critsects when calling CallbackOfReceivedPayloadData
-WebRtc_Word32
-RTPReceiverAudio::ParseAudioCodecSpecific(WebRtcRTPHeader* rtpHeader,
-                                          const WebRtc_UWord8* payloadData,
-                                          const WebRtc_UWord16 payloadLength,
-                                          const ModuleRTPUtility::AudioPayload& audioSpecific,
-                                          const bool isRED)
-{
-    WebRtc_UWord8 newEvents[MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS];
-    WebRtc_UWord8 removedEvents[MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS];
-    WebRtc_UWord8 numberOfNewEvents = 0;
-    WebRtc_UWord8 numberOfRemovedEvents = 0;
-    bool telephoneEventPacket = TelephoneEventPayloadType(rtpHeader->header.payloadType);
+int32_t RTPReceiverAudio::ParseRtpPacket(WebRtcRTPHeader* rtp_header,
+                                         const PayloadUnion& specific_payload,
+                                         bool is_red,
+                                         const uint8_t* payload,
+                                         uint16_t payload_length,
+                                         int64_t timestamp_ms,
+                                         bool is_first_packet) {
+  TRACE_EVENT2("webrtc_rtp", "Audio::ParseRtp",
+               "seqnum", rtp_header->header.sequenceNumber,
+               "timestamp", rtp_header->header.timestamp);
+  rtp_header->type.Audio.numEnergy = rtp_header->header.numCSRCs;
+  num_energy_ = rtp_header->type.Audio.numEnergy;
+  if (rtp_header->type.Audio.numEnergy > 0 &&
+      rtp_header->type.Audio.numEnergy <= kRtpCsrcSize) {
+    memcpy(current_remote_energy_,
+           rtp_header->type.Audio.arrOfEnergy,
+           rtp_header->type.Audio.numEnergy);
+  }
 
-    if(payloadLength == 0)
-    {
-        return 0;
+  return ParseAudioCodecSpecific(rtp_header,
+                                 payload,
+                                 payload_length,
+                                 specific_payload.Audio,
+                                 is_red);
+}
+
+int RTPReceiverAudio::GetPayloadTypeFrequency() const {
+  CriticalSectionScoped lock(crit_sect_.get());
+  if (last_received_g722_) {
+    return 8000;
+  }
+  return last_received_frequency_;
+}
+
+RTPAliveType RTPReceiverAudio::ProcessDeadOrAlive(
+    uint16_t last_payload_length) const {
+
+  // Our CNG is 9 bytes; if it's a likely CNG the receiver needs to check
+  // kRtpNoRtp against NetEq speech_type kOutputPLCtoCNG.
+  if (last_payload_length < 10) {  // our CNG is 9 bytes
+    return kRtpNoRtp;
+  } else {
+    return kRtpDead;
+  }
+}
+
+void RTPReceiverAudio::CheckPayloadChanged(int8_t payload_type,
+                                           PayloadUnion* specific_payload,
+                                           bool* should_reset_statistics,
+                                           bool* should_discard_changes) {
+  *should_discard_changes = false;
+  *should_reset_statistics = false;
+
+  if (TelephoneEventPayloadType(payload_type)) {
+    // Don't do callbacks for DTMF packets.
+    *should_discard_changes = true;
+    return;
+  }
+  // frequency is updated for CNG
+  bool cng_payload_type_has_changed = false;
+  bool is_cng_payload_type = CNGPayloadType(payload_type,
+                                            &specific_payload->Audio.frequency,
+                                            &cng_payload_type_has_changed);
+
+  *should_reset_statistics = cng_payload_type_has_changed;
+
+  if (is_cng_payload_type) {
+    // Don't do callbacks for DTMF packets.
+    *should_discard_changes = true;
+    return;
+  }
+}
+
+int RTPReceiverAudio::Energy(uint8_t array_of_energy[kRtpCsrcSize]) const {
+  CriticalSectionScoped cs(crit_sect_.get());
+
+  assert(num_energy_ <= kRtpCsrcSize);
+
+  if (num_energy_ > 0) {
+    memcpy(array_of_energy, current_remote_energy_,
+           sizeof(uint8_t) * num_energy_);
+  }
+  return num_energy_;
+}
+
+int32_t RTPReceiverAudio::InvokeOnInitializeDecoder(
+    RtpFeedback* callback,
+    int32_t id,
+    int8_t payload_type,
+    const char payload_name[RTP_PAYLOAD_NAME_SIZE],
+    const PayloadUnion& specific_payload) const {
+  if (-1 == callback->OnInitializeDecoder(id,
+                                          payload_type,
+                                          payload_name,
+                                          specific_payload.Audio.frequency,
+                                          specific_payload.Audio.channels,
+                                          specific_payload.Audio.rate)) {
+    LOG(LS_ERROR) << "Failed to create decoder for payload type: "
+                  << payload_name << "/" << payload_type;
+    return -1;
+  }
+  return 0;
+}
+
+// We are not allowed to have any critsects when calling data_callback.
+int32_t RTPReceiverAudio::ParseAudioCodecSpecific(
+    WebRtcRTPHeader* rtp_header,
+    const uint8_t* payload_data,
+    uint16_t payload_length,
+    const AudioPayload& audio_specific,
+    bool is_red) {
+
+  if (payload_length == 0) {
+    return 0;
+  }
+
+  bool telephone_event_packet =
+      TelephoneEventPayloadType(rtp_header->header.payloadType);
+  if (telephone_event_packet) {
+    CriticalSectionScoped lock(crit_sect_.get());
+
+    // RFC 4733 2.3
+    // 0                   1                   2                   3
+    // 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
+    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    // |     event     |E|R| volume    |          duration             |
+    // +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
+    //
+    if (payload_length % 4 != 0) {
+      return -1;
+    }
+    uint8_t number_of_events = payload_length / 4;
+
+    // sanity
+    if (number_of_events >= MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS) {
+      number_of_events = MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS;
+    }
+    for (int n = 0; n < number_of_events; ++n) {
+      bool end = (payload_data[(4 * n) + 1] & 0x80) ? true : false;
+
+      std::set<uint8_t>::iterator event =
+          telephone_event_reported_.find(payload_data[4 * n]);
+
+      if (event != telephone_event_reported_.end()) {
+        // we have already seen this event
+        if (end) {
+          telephone_event_reported_.erase(payload_data[4 * n]);
+        }
+      } else {
+        if (end) {
+          // don't add if it's a end of a tone
+        } else {
+          telephone_event_reported_.insert(payload_data[4 * n]);
+        }
+      }
     }
 
-    {
-        CriticalSectionScoped lock(_criticalSectionFeedback);
+    // RFC 4733 2.5.1.3 & 2.5.2.3 Long-Duration Events
+    // should not be a problem since we don't care about the duration
 
-        if(telephoneEventPacket)
-        {
-            // RFC 4733 2.3
-            /*
-                0                   1                   2                   3
-                0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
-                +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-                |     event     |E|R| volume    |          duration             |
-                +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
-            */
-            if(payloadLength % 4 != 0)
-            {
-                return -1;
-            }
-            WebRtc_UWord8 numberOfEvents = payloadLength / 4;
+    // RFC 4733 See 2.5.1.5. & 2.5.2.4.  Multiple Events in a Packet
+  }
 
-            // sanity
-            if(numberOfEvents >= MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS)
-            {
-                numberOfEvents = MAX_NUMBER_OF_PARALLEL_TELEPHONE_EVENTS;
-            }
-            for (int n = 0; n < numberOfEvents; n++)
-            {
-                bool end = (payloadData[(4*n)+1] & 0x80)? true:false;
+  {
+    CriticalSectionScoped lock(crit_sect_.get());
 
-                std::set<WebRtc_UWord8>::iterator event =
-                    _telephoneEventReported.find(payloadData[4*n]);
-
-                if(event != _telephoneEventReported.end())
-                {
-                    // we have already seen this event
-                    if(end)
-                    {
-                        removedEvents[numberOfRemovedEvents]= payloadData[4*n];
-                        numberOfRemovedEvents++;
-                        _telephoneEventReported.erase(payloadData[4*n]);
-                    }
-                }else
-                {
-                    if(end)
-                    {
-                        // don't add if it's a end of a tone
-                    }else
-                    {
-                        newEvents[numberOfNewEvents] = payloadData[4*n];
-                        numberOfNewEvents++;
-                        _telephoneEventReported.insert(payloadData[4*n]);
-                    }
-                }
-            }
-
-            // RFC 4733 2.5.1.3 & 2.5.2.3 Long-Duration Events
-            // should not be a problem since we don't care about the duration
-
-            // RFC 4733 See 2.5.1.5. & 2.5.2.4.  Multiple Events in a Packet
-        }
-
-        if(_telephoneEvent && _cbAudioFeedback)
-        {
-            for (int n = 0; n < numberOfNewEvents; n++)
-            {
-                _cbAudioFeedback->OnReceivedTelephoneEvent(_id, newEvents[n], false);
-            }
-            if(_telephoneEventDetectEndOfTone)
-            {
-                for (int n = 0; n < numberOfRemovedEvents; n++)
-                {
-                    _cbAudioFeedback->OnReceivedTelephoneEvent(_id, removedEvents[n], true);
-                }
-            }
-        }
-    }
-    if(! telephoneEventPacket )
-    {
-        _lastReceivedFrequency = audioSpecific.frequency;
+    if (!telephone_event_packet) {
+      last_received_frequency_ = audio_specific.frequency;
     }
 
     // Check if this is a CNG packet, receiver might want to know
-    WebRtc_UWord32 dummy;
-    if(CNGPayloadType(rtpHeader->header.payloadType, dummy))
-    {
-        rtpHeader->type.Audio.isCNG=true;
-        rtpHeader->frameType = kAudioFrameCN;
-    }else
-    {
-        rtpHeader->frameType = kAudioFrameSpeech;
-        rtpHeader->type.Audio.isCNG=false;
+    uint32_t ignored;
+    bool also_ignored;
+    if (CNGPayloadType(rtp_header->header.payloadType,
+                       &ignored,
+                       &also_ignored)) {
+      rtp_header->type.Audio.isCNG = true;
+      rtp_header->frameType = kAudioFrameCN;
+    } else {
+      rtp_header->frameType = kAudioFrameSpeech;
+      rtp_header->type.Audio.isCNG = false;
     }
 
     // check if it's a DTMF event, hence something we can playout
-    if(telephoneEventPacket)
-    {
-        if(!_telephoneEventForwardToDecoder)
-        {
-            // don't forward event to decoder
-            return 0;
-        }
-        std::set<WebRtc_UWord8>::iterator first =
-            _telephoneEventReported.begin();
-        if(first != _telephoneEventReported.end() && *first > 15)
-        {
-            // don't forward non DTMF events
-            return 0;
-        }
+    if (telephone_event_packet) {
+      if (!telephone_event_forward_to_decoder_) {
+        // don't forward event to decoder
+        return 0;
+      }
+      std::set<uint8_t>::iterator first =
+          telephone_event_reported_.begin();
+      if (first != telephone_event_reported_.end() && *first > 15) {
+        // don't forward non DTMF events
+        return 0;
+      }
     }
-    if(isRED && !(payloadData[0] & 0x80))
-    {
-        // we recive only one frame packed in a RED packet remove the RED wrapper
-        rtpHeader->header.payloadType = payloadData[0];
+  }
+  // TODO(holmer): Break this out to have RED parsing handled generically.
+  if (is_red && !(payload_data[0] & 0x80)) {
+    // we recive only one frame packed in a RED packet remove the RED wrapper
+    rtp_header->header.payloadType = payload_data[0];
 
-        // only one frame in the RED strip the one byte to help NetEq
-        return CallbackOfReceivedPayloadData(payloadData+1,
-                                             payloadLength-1,
-                                             rtpHeader);
-    }
+    // only one frame in the RED strip the one byte to help NetEq
+    return data_callback_->OnReceivedPayloadData(
+        payload_data + 1, payload_length - 1, rtp_header);
+  }
 
-    rtpHeader->type.Audio.channel = audioSpecific.channels;
-    return CallbackOfReceivedPayloadData(payloadData, payloadLength, rtpHeader);
+  rtp_header->type.Audio.channel = audio_specific.channels;
+  return data_callback_->OnReceivedPayloadData(
+      payload_data, payload_length, rtp_header);
 }
-} // namespace webrtc
+}  // namespace webrtc

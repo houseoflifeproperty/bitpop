@@ -28,9 +28,10 @@ namespace views {
 
 class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
  public:
-  static const char* const kViewClassName;
+  static const char kViewClassName[];
 
   ScrollView();
+
   virtual ~ScrollView();
 
   // Creates a ScrollView with a theme specific border.
@@ -48,6 +49,17 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   // Returns the visible region of the content View.
   gfx::Rect GetVisibleRect() const;
 
+  void set_hide_horizontal_scrollbar(bool visible) {
+    hide_horizontal_scrollbar_ = visible;
+  }
+
+  // Turns this scroll view into a bounded scroll view, with a fixed height.
+  // By default, a ScrollView will stretch to fill its outer container.
+  void ClipHeightTo(int min_height, int max_height);
+
+  // Returns whether or not the ScrollView is bounded (as set by ClipHeightTo).
+  bool is_bounded() { return max_height_ >= 0 && min_height_ >= 0; }
+
   // Retrieves the width/height of scrollbars. These return 0 if the scrollbar
   // has not yet been created.
   int GetScrollBarWidth() const;
@@ -57,12 +69,21 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
   const ScrollBar* horizontal_scroll_bar() const { return horiz_sb_; }
   const ScrollBar* vertical_scroll_bar() const { return vert_sb_; }
 
+  // Customize the scrollbar design. ScrollView takes the ownership of the
+  // specified ScrollBar. |horiz_sb| and |vert_sb| cannot be NULL.
+  void SetHorizontalScrollBar(ScrollBar* horiz_sb);
+  void SetVerticalScrollBar(ScrollBar* vert_sb);
+
   // View overrides:
+  virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual int GetHeightForWidth(int width) OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual bool OnKeyPressed(const ui::KeyEvent& event) OVERRIDE;
   virtual bool OnMouseWheel(const ui::MouseWheelEvent& e) OVERRIDE;
+  virtual void OnMouseEntered(const ui::MouseEvent& event) OVERRIDE;
+  virtual void OnMouseExited(const ui::MouseEvent& event) OVERRIDE;
   virtual void OnGestureEvent(ui::GestureEvent* event) OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
 
   // ScrollBarController overrides:
   virtual void ScrollToPosition(ScrollBar* source, int position) OVERRIDE;
@@ -115,6 +136,15 @@ class VIEWS_EXPORT ScrollView : public View, public ScrollBarController {
 
   // Resize corner.
   View* resize_corner_;
+
+  // The min and max height for the bounded scroll view. These are negative
+  // values if the view is not bounded.
+  int min_height_;
+  int max_height_;
+
+  // If true, never show the horizontal scrollbar (even if the contents is wider
+  // than the viewport).
+  bool hide_horizontal_scrollbar_;
 
   DISALLOW_COPY_AND_ASSIGN(ScrollView);
 };

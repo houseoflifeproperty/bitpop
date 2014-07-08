@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -10,32 +10,37 @@ import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.test.UiThreadTest;
+import android.test.suitebuilder.annotation.LargeTest;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.util.Pair;
 
+import org.apache.http.Header;
+import org.apache.http.HttpRequest;
+
 import org.chromium.android_webview.AwContents;
+import org.chromium.android_webview.AwSettings;
+import org.chromium.android_webview.test.TestAwContentsClient.OnDownloadStartHelper;
 import org.chromium.android_webview.test.util.CommonResources;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.test.util.CallbackHelper;
-import org.chromium.content.browser.test.util.Criteria;
-import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.net.test.util.TestWebServer;
 
 import java.io.InputStream;
 import java.net.URL;
 import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicInteger;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.Callable;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
-import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 
 /**
  * AwContents tests.
  */
-public class AwContentsTest extends AndroidWebViewTestBase {
+public class AwContentsTest extends AwTestBase {
+
     private TestAwContentsClient mContentsClient = new TestAwContentsClient();
 
     @SmallTest
@@ -43,7 +48,111 @@ public class AwContentsTest extends AndroidWebViewTestBase {
     @UiThreadTest
     public void testCreateDestroy() throws Throwable {
         // NOTE this test runs on UI thread, so we cannot call any async methods.
-        createAwTestContainerView(false, mContentsClient).getAwContents().destroy();
+        createAwTestContainerView(mContentsClient).getAwContents().destroy();
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView"})
+    public void testCreateLoadPageDestroy() throws Throwable {
+        AwTestContainerView awTestContainerView =
+                createAwTestContainerViewOnMainSync(mContentsClient);
+        loadUrlSync(awTestContainerView.getAwContents(),
+                mContentsClient.getOnPageFinishedHelper(), CommonResources.ABOUT_HTML);
+        destroyAwContentsOnMainSync(awTestContainerView.getAwContents());
+        // It should be safe to call destroy multiple times.
+        destroyAwContentsOnMainSync(awTestContainerView.getAwContents());
+    }
+
+    @LargeTest
+    @Feature({"AndroidWebView"})
+    public void testCreateLoadDestroyManyTimes() throws Throwable {
+        final int CREATE_AND_DESTROY_REPEAT_COUNT = 10;
+        for (int i = 0; i < CREATE_AND_DESTROY_REPEAT_COUNT; ++i) {
+            AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
+            AwContents awContents = testView.getAwContents();
+
+            loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), "about:blank");
+            destroyAwContentsOnMainSync(awContents);
+        }
+    }
+
+    @LargeTest
+    @Feature({"AndroidWebView"})
+    public void testCreateLoadDestroyManyAtOnce() throws Throwable {
+        final int CREATE_AND_DESTROY_REPEAT_COUNT = 10;
+        AwTestContainerView views[] = new AwTestContainerView[CREATE_AND_DESTROY_REPEAT_COUNT];
+
+        for (int i = 0; i < views.length; ++i) {
+            views[i] = createAwTestContainerViewOnMainSync(mContentsClient);
+            loadUrlSync(views[i].getAwContents(), mContentsClient.getOnPageFinishedHelper(),
+                    "about:blank");
+        }
+
+        for (int i = 0; i < views.length; ++i) {
+            destroyAwContentsOnMainSync(views[i].getAwContents());
+            views[i] = null;
+        }
+    }
+
+    @LargeTest
+    @Feature({"AndroidWebView"})
+    public void testCreateAndGcManyTimes() throws Throwable {
+        final int CONCURRENT_INSTANCES = 4;
+        final int REPETITIONS = 16;
+        // The system retains a strong ref to the last focused view (in InputMethodManager)
+        // so allow for 1 'leaked' instance.
+        final int MAX_IDLE_INSTANCES = 1;
+
+        System.gc();
+
+        pollOnUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                return AwContents.getNativeInstanceCount() <= MAX_IDLE_INSTANCES;
+            }
+        });
+        for (int i = 0; i < REPETITIONS; ++i) {
+            for (int j = 0; j < CONCURRENT_INSTANCES; ++j) {
+                AwTestContainerView view = createAwTestContainerViewOnMainSync(mContentsClient);
+                loadUrlAsync(view.getAwContents(), "about:blank");
+            }
+            assertTrue(AwContents.getNativeInstanceCount() >= CONCURRENT_INSTANCES);
+            assertTrue(AwContents.getNativeInstanceCount() <= (i + 1) * CONCURRENT_INSTANCES);
+            runTestOnUiThread(new Runnable() {
+                @Override
+                public void run() {
+                    getActivity().removeAllViews();
+                }
+            });
+        }
+
+        System.gc();
+
+        pollOnUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                return AwContents.getNativeInstanceCount() <= MAX_IDLE_INSTANCES;
+            }
+        });
+    }
+
+    @SmallTest
+    @Feature({"AndroidWebView"})
+    public void testUseAwSettingsAfterDestroy() throws Throwable {
+        AwTestContainerView awTestContainerView =
+                createAwTestContainerViewOnMainSync(mContentsClient);
+        AwSettings awSettings = getAwSettingsOnUiThread(awTestContainerView.getAwContents());
+        loadUrlSync(awTestContainerView.getAwContents(),
+                mContentsClient.getOnPageFinishedHelper(), CommonResources.ABOUT_HTML);
+        destroyAwContentsOnMainSync(awTestContainerView.getAwContents());
+
+        // AwSettings should still be usable even after native side is destroyed.
+        String newFontFamily = "serif";
+        awSettings.setStandardFontFamily(newFontFamily);
+        assertEquals(newFontFamily, awSettings.getStandardFontFamily());
+        boolean newBlockNetworkLoads = !awSettings.getBlockNetworkLoads();
+        awSettings.setBlockNetworkLoads(newBlockNetworkLoads);
+        assertEquals(newBlockNetworkLoads, awSettings.getBlockNetworkLoads());
     }
 
     private int callDocumentHasImagesSync(final AwContents awContents)
@@ -65,7 +174,7 @@ public class AwContentsTest extends AndroidWebViewTestBase {
               awContents.documentHasImages(msg);
             }
         });
-        assertTrue(s.tryAcquire(WAIT_TIMEOUT_SECONDS, TimeUnit.SECONDS));
+        assertTrue(s.tryAcquire(WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS));
         int result = val.get();
         return result;
     }
@@ -96,9 +205,8 @@ public class AwContentsTest extends AndroidWebViewTestBase {
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testClearCacheMemoryAndDisk() throws Throwable {
-        final TestAwContentsClient contentClient = new TestAwContentsClient();
         final AwTestContainerView testContainer =
-                createAwTestContainerViewOnMainSync(false, contentClient);
+                createAwTestContainerViewOnMainSync(mContentsClient);
         final AwContents awContents = testContainer.getAwContents();
 
         TestWebServer webServer = null;
@@ -115,31 +223,31 @@ public class AwContentsTest extends AndroidWebViewTestBase {
             // First load to populate cache.
             clearCacheOnUiThread(awContents, true);
             loadUrlSync(awContents,
-                        contentClient.getOnPageFinishedHelper(),
+                        mContentsClient.getOnPageFinishedHelper(),
                         pageUrl);
             assertEquals(1, webServer.getRequestCount(pagePath));
 
             // Load about:blank so next load is not treated as reload by webkit and force
             // revalidate with the server.
             loadUrlSync(awContents,
-                        contentClient.getOnPageFinishedHelper(),
+                        mContentsClient.getOnPageFinishedHelper(),
                         "about:blank");
 
             // No clearCache call, so should be loaded from cache.
             loadUrlSync(awContents,
-                        contentClient.getOnPageFinishedHelper(),
+                        mContentsClient.getOnPageFinishedHelper(),
                         pageUrl);
             assertEquals(1, webServer.getRequestCount(pagePath));
 
             // Same as above.
             loadUrlSync(awContents,
-                        contentClient.getOnPageFinishedHelper(),
+                        mContentsClient.getOnPageFinishedHelper(),
                         "about:blank");
 
             // Clear cache, so should hit server again.
             clearCacheOnUiThread(awContents, true);
             loadUrlSync(awContents,
-                        contentClient.getOnPageFinishedHelper(),
+                        mContentsClient.getOnPageFinishedHelper(),
                         pageUrl);
             assertEquals(2, webServer.getRequestCount(pagePath));
         } finally {
@@ -151,29 +259,23 @@ public class AwContentsTest extends AndroidWebViewTestBase {
     @Feature({"AndroidWebView"})
     public void testClearCacheInQuickSuccession() throws Throwable {
         final AwTestContainerView testContainer =
-                createAwTestContainerViewOnMainSync(false, new TestAwContentsClient());
+                createAwTestContainerViewOnMainSync(new TestAwContentsClient());
         final AwContents awContents = testContainer.getAwContents();
 
         runTestOnUiThread(new Runnable() {
             @Override
             public void run() {
-              for (int i = 0; i < 10; ++i) {
-                  awContents.clearCache(true);
-              }
+                for (int i = 0; i < 10; ++i) {
+                    awContents.clearCache(true);
+                }
             }
         });
     }
 
-    private static final long TEST_TIMEOUT = 20000L;
-    private static final int CHECK_INTERVAL = 100;
-
-    /**
-     * @SmallTest
-     * @Feature({"AndroidWebView"})
-     * BUG 6094807
-     */
-    @DisabledTest
+    @SmallTest
+    @Feature({"AndroidWebView"})
     public void testGetFavicon() throws Throwable {
+        AwContents.setShouldDownloadFavicons();
         final AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         final AwContents awContents = testView.getAwContents();
 
@@ -191,20 +293,20 @@ public class AwContentsTest extends AndroidWebViewTestBase {
             // the page load completes which makes it slightly hard to test.
             final Bitmap defaultFavicon = awContents.getFavicon();
 
-            getContentSettingsOnUiThread(awContents).setImagesEnabled(true);
+            getAwSettingsOnUiThread(awContents).setImagesEnabled(true);
             loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
 
-            assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
+            pollOnUiThread(new Callable<Boolean>() {
                 @Override
-                public boolean isSatisfied() {
+                public Boolean call() {
                     return awContents.getFavicon() != null &&
                         !awContents.getFavicon().sameAs(defaultFavicon);
                 }
-            }, TEST_TIMEOUT, CHECK_INTERVAL));
+            });
 
             final Object originalFaviconSource = (new URL(faviconUrl)).getContent();
             final Bitmap originalFavicon =
-                BitmapFactory.decodeStream((InputStream)originalFaviconSource);
+                BitmapFactory.decodeStream((InputStream) originalFaviconSource);
             assertNotNull(originalFavicon);
 
             assertTrue(awContents.getFavicon().sameAs(originalFavicon));
@@ -220,17 +322,13 @@ public class AwContentsTest extends AndroidWebViewTestBase {
         AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         AwContents awContents = testView.getAwContents();
 
-        // TODO(boliu): This is to work around disk cache corruption bug on
-        // unclean shutdown (crbug.com/154805).
-        clearCacheOnUiThread(awContents, true);
-
         final String data = "download data";
         final String contentDisposition = "attachment;filename=\"download.txt\"";
         final String mimeType = "text/plain";
 
         List<Pair<String, String>> downloadHeaders = new ArrayList<Pair<String, String>>();
         downloadHeaders.add(Pair.create("Content-Disposition", contentDisposition));
-        downloadHeaders.add(Pair.create("Mime-Type", mimeType));
+        downloadHeaders.add(Pair.create("Content-Type", mimeType));
         downloadHeaders.add(Pair.create("Content-Length", Integer.toString(data.length())));
 
         TestWebServer webServer = null;
@@ -238,55 +336,134 @@ public class AwContentsTest extends AndroidWebViewTestBase {
             webServer = new TestWebServer(false);
             final String pageUrl = webServer.setResponse(
                     "/download.txt", data, downloadHeaders);
-            loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
+            final OnDownloadStartHelper downloadStartHelper =
+                mContentsClient.getOnDownloadStartHelper();
+            final int callCount = downloadStartHelper.getCallCount();
+            loadUrlAsync(awContents, pageUrl);
+            downloadStartHelper.waitForCallback(callCount);
 
-            assertTrue(pollOnUiThread(new Callable<Boolean>() {
-                @Override
-                public Boolean call() {
-                    // Assert failures are treated as return false.
-                    assertEquals(pageUrl, mContentsClient.mLastDownloadUrl);
-                    assertEquals(contentDisposition,
-                                 mContentsClient.mLastDownloadContentDisposition);
-                    assertEquals(mimeType,
-                                 mContentsClient.mLastDownloadMimeType);
-                    assertEquals(data.length(),
-                                 mContentsClient.mLastDownloadContentLength);
-                    return true;
-                }
-            }));
+            assertEquals(pageUrl, downloadStartHelper.getUrl());
+            assertEquals(contentDisposition, downloadStartHelper.getContentDisposition());
+            assertEquals(mimeType, downloadStartHelper.getMimeType());
+            assertEquals(data.length(), downloadStartHelper.getContentLength());
         } finally {
             if (webServer != null) webServer.shutdown();
         }
+    }
+
+    @Feature({"AndroidWebView", "setNetworkAvailable"})
+    @SmallTest
+    public void testSetNetworkAvailable() throws Throwable {
+        AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
+        AwContents awContents = testView.getAwContents();
+        String SCRIPT = "navigator.onLine";
+
+        enableJavaScriptOnUiThread(awContents);
+        loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), "about:blank");
+
+        // Default to "online".
+        assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+
+        // Forcing "offline".
+        setNetworkAvailableOnUiThread(awContents, false);
+        assertEquals("false", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+
+        // Forcing "online".
+        setNetworkAvailableOnUiThread(awContents, true);
+        assertEquals("true", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+              SCRIPT));
+    }
+
+
+    static class JavaScriptObject {
+        private CallbackHelper mCallbackHelper;
+        public JavaScriptObject(CallbackHelper callbackHelper) {
+            mCallbackHelper = callbackHelper;
+        }
+
+        public void run() {
+            mCallbackHelper.notifyCalled();
+        }
+    }
+
+    @Feature({"AndroidWebView", "JavaBridge"})
+    @SmallTest
+    public void testJavaBridge() throws Throwable {
+        final AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
+        final CallbackHelper callback = new CallbackHelper();
+
+        runTestOnUiThread(new Runnable() {
+            @Override
+            public void run() {
+                AwContents awContents = testView.getAwContents();
+                AwSettings awSettings = awContents.getSettings();
+                awSettings.setJavaScriptEnabled(true);
+                awContents.addPossiblyUnsafeJavascriptInterface(
+                        new JavaScriptObject(callback), "bridge", null);
+                awContents.evaluateJavaScriptEvenIfNotYetNavigated(
+                        "javascript:window.bridge.run();");
+            }
+        });
+        callback.waitForCallback(0, 1, WAIT_TIMEOUT_MS, TimeUnit.MILLISECONDS);
     }
 
     @Feature({"AndroidWebView"})
     @SmallTest
-    public void testUpdateVisitedHistoryCallback() throws Throwable {
+    public void testEscapingOfErrorPage() throws Throwable {
         AwTestContainerView testView = createAwTestContainerViewOnMainSync(mContentsClient);
         AwContents awContents = testView.getAwContents();
+        String SCRIPT = "window.failed == true";
 
-        // TODO(boliu): This is to work around disk cache corruption bug on
-        // unclean shutdown (crbug.com/154805).
-        clearCacheOnUiThread(awContents, true);
+        enableJavaScriptOnUiThread(awContents);
+        CallbackHelper onPageFinishedHelper = mContentsClient.getOnPageFinishedHelper();
+        int currentCallCount = onPageFinishedHelper.getCallCount();
+        loadUrlAsync(awContents,
+                "file:///file-that-does-not-exist#<script>window.failed = true;</script>");
+        // We must wait for two onPageFinished callbacks. One for the original failing URL, and
+        // one for the error page that we then display to the user.
+        onPageFinishedHelper.waitForCallback(currentCallCount, 2, WAIT_TIMEOUT_MS,
+                                             TimeUnit.MILLISECONDS);
 
-        final String path = "/testUpdateVisitedHistoryCallback.html";
-        final String html = "testUpdateVisitedHistoryCallback";
+        assertEquals("false", executeJavaScriptAndWaitForResult(awContents, mContentsClient,
+                SCRIPT));
+    }
+
+    @Feature({"AndroidWebView"})
+    @SmallTest
+    public void testCanInjectHeaders() throws Throwable {
+        final AwTestContainerView testContainer =
+                createAwTestContainerViewOnMainSync(mContentsClient);
+        final AwContents awContents = testContainer.getAwContents();
 
         TestWebServer webServer = null;
         try {
             webServer = new TestWebServer(false);
-            final String pageUrl = webServer.setResponse(path, html, null);
+            final String pagePath = "/test_can_inject_headers.html";
+            final String pageUrl = webServer.setResponse(
+                    pagePath, "<html><body>foo</body></html>", null);
 
-            loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
-            assertEquals(pageUrl, mContentsClient.mLastVisitedUrl);
-            assertEquals(false, mContentsClient.mLastVisitIsReload);
+            final Map<String, String> extraHeaders = new HashMap<String, String>();
+            extraHeaders.put("Referer", "foo");
+            extraHeaders.put("X-foo", "bar");
+            loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(),
+                    webServer.getResponseUrl(pagePath), extraHeaders);
 
-            // Reload
-            loadUrlSync(awContents, mContentsClient.getOnPageFinishedHelper(), pageUrl);
-            assertEquals(pageUrl, mContentsClient.mLastVisitedUrl);
-            assertEquals(true, mContentsClient.mLastVisitIsReload);
+            assertEquals(1, webServer.getRequestCount(pagePath));
+
+            HttpRequest request = webServer.getLastRequest(pagePath);
+            assertNotNull(request);
+
+            for (Map.Entry<String, String> value : extraHeaders.entrySet()) {
+                String header = value.getKey();
+                Header[] matchingHeaders = request.getHeaders(header);
+                assertEquals("header " + header + " not found", 1, matchingHeaders.length);
+                assertEquals(value.getValue(), matchingHeaders[0].getValue());
+            }
         } finally {
             if (webServer != null) webServer.shutdown();
         }
     }
+
 }

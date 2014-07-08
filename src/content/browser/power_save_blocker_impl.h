@@ -7,6 +7,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/power_save_blocker.h"
+#include "ui/gfx/native_widget_types.h"
 
 namespace content {
 
@@ -14,6 +15,13 @@ class PowerSaveBlockerImpl : public PowerSaveBlocker {
  public:
   PowerSaveBlockerImpl(PowerSaveBlockerType type, const std::string& reason);
   virtual ~PowerSaveBlockerImpl();
+
+#if defined(OS_ANDROID)
+  // In Android platform, the kPowerSaveBlockPreventDisplaySleep type of
+  // PowerSaveBlocker should associated with the ViewAndroid,
+  // so the blocker could be removed by platform if the view isn't visble
+  void InitDisplaySleepBlocker(gfx::NativeView view_android);
+#endif
 
  private:
   class Delegate;

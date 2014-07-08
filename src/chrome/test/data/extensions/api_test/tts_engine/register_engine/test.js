@@ -148,14 +148,15 @@ chrome.test.runTests([
     chrome.tts.getVoices(function(voices) {
       chrome.test.assertEq(3, voices.length);
 
-      chrome.test.assertEq('native', voices[0].voiceName);
+      chrome.test.assertEq('Alice', voices[0].voiceName);
+      chrome.test.assertEq('en-US', voices[0].lang);
+      chrome.test.assertEq('female', voices[0].gender);
 
-      chrome.test.assertEq('Alice', voices[1].voiceName);
+      chrome.test.assertEq('Pat', voices[1].voiceName);
       chrome.test.assertEq('en-US', voices[1].lang);
-      chrome.test.assertEq('female', voices[1].gender);
 
-      chrome.test.assertEq('Pat', voices[2].voiceName);
-      chrome.test.assertEq('en-US', voices[2].lang);
+      chrome.test.assertEq('TestNativeVoice', voices[2].voiceName);
+      chrome.test.assertEq('en-GB', voices[2].lang);
       chrome.test.succeed();
     });
   }

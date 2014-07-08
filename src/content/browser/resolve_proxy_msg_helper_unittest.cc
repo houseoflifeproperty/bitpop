@@ -18,12 +18,32 @@ namespace content {
 // This ProxyConfigService always returns "http://pac" as the PAC url to use.
 class MockProxyConfigService : public net::ProxyConfigService {
  public:
-  virtual void AddObserver(Observer* observer) {}
-  virtual void RemoveObserver(Observer* observer) {}
-  virtual ConfigAvailability GetLatestProxyConfig(net::ProxyConfig* results) {
+  virtual void AddObserver(Observer* observer) OVERRIDE {}
+  virtual void RemoveObserver(Observer* observer) OVERRIDE {}
+  virtual ConfigAvailability GetLatestProxyConfig(
+      net::ProxyConfig* results) OVERRIDE {
     *results = net::ProxyConfig::CreateFromCustomPacURL(GURL("http://pac"));
     return CONFIG_VALID;
   }
+};
+
+class TestResolveProxyMsgHelper : public ResolveProxyMsgHelper {
+ public:
+  TestResolveProxyMsgHelper(
+      net::ProxyService* proxy_service,
+      IPC::Listener* listener)
+      : ResolveProxyMsgHelper(proxy_service),
+        listener_(listener) {}
+  virtual bool Send(IPC::Message* message) OVERRIDE {
+    listener_->OnMessageReceived(*message);
+    delete message;
+    return true;
+  }
+
+ protected:
+  virtual ~TestResolveProxyMsgHelper() {}
+
+  IPC::Listener* listener_;
 };
 
 class ResolveProxyMsgHelperTest : public testing::Test, public IPC::Listener {
@@ -40,13 +60,11 @@ class ResolveProxyMsgHelperTest : public testing::Test, public IPC::Listener {
 
   ResolveProxyMsgHelperTest()
       : resolver_(new net::MockAsyncProxyResolver),
-        service_(new net::ProxyService(
-            new MockProxyConfigService, resolver_, NULL)),
-        helper_(new ResolveProxyMsgHelper(service_.get())),
-        message_loop_(MessageLoop::TYPE_IO),
+        service_(
+            new net::ProxyService(new MockProxyConfigService, resolver_, NULL)),
+        helper_(new TestResolveProxyMsgHelper(service_.get(), this)),
         io_thread_(BrowserThread::IO, &message_loop_) {
     test_sink_.AddFilter(this);
-    helper_->OnFilterAdded(&test_sink_);
   }
 
  protected:
@@ -69,7 +87,7 @@ class ResolveProxyMsgHelperTest : public testing::Test, public IPC::Listener {
   scoped_ptr<PendingResult> pending_result_;
 
  private:
-  virtual bool OnMessageReceived(const IPC::Message& msg) {
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE {
     TupleTypes<ViewHostMsg_ResolveProxy::ReplyParam>::ValueTuple reply_data;
     EXPECT_TRUE(ViewHostMsg_ResolveProxy::ReadReplyParam(&msg, &reply_data));
     DCHECK(!pending_result_.get());
@@ -78,7 +96,7 @@ class ResolveProxyMsgHelperTest : public testing::Test, public IPC::Listener {
     return true;
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoopForIO message_loop_;
   BrowserThreadImpl io_thread_;
   IPC::TestSink test_sink_;
 };

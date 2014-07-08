@@ -7,10 +7,10 @@
 #include "base/metrics/histogram.h"
 #include "base/metrics/statistics_recorder.h"
 #include "content/browser/histogram_synchronizer.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
 #include "net/base/net_errors.h"
 #include "net/url_request/url_request.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -18,22 +18,15 @@ HistogramInternalsRequestJob::HistogramInternalsRequestJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate)
     : net::URLRequestSimpleJob(request, network_delegate) {
   const std::string& spec = request->url().possibly_invalid_spec();
-  const url_parse::Parsed& parsed =
-      request->url().parsed_for_possibly_invalid_spec();
+  const url::Parsed& parsed = request->url().parsed_for_possibly_invalid_spec();
   // + 1 to skip the slash at the beginning of the path.
-  int offset = parsed.CountCharactersBefore(url_parse::Parsed::PATH, false) + 1;
+  int offset = parsed.CountCharactersBefore(url::Parsed::PATH, false) + 1;
 
   if (offset < static_cast<int>(spec.size()))
     path_.assign(spec.substr(offset));
 }
 
 void AboutHistogram(std::string* data, const std::string& path) {
-#ifndef NDEBUG
-  // We only rush the acquisition of Histogram meta-data (meta-histograms) in
-  // Debug mode, so that developers don't damage our data that we upload to UMA
-  // (in official builds).
-  base::StatisticsRecorder::CollectHistogramStats("Browser");
-#endif
   HistogramSynchronizer::FetchHistograms();
 
   std::string unescaped_query;
@@ -47,7 +40,7 @@ void AboutHistogram(std::string* data, const std::string& path) {
   data->append("<!DOCTYPE html>\n<html>\n<head>\n");
   data->append(
       "<meta http-equiv=\"Content-Security-Policy\" "
-      "content=\"object-src 'none'; script-src 'none' 'unsafe-eval'\">");
+      "content=\"object-src 'none'; script-src 'none'\">");
   data->append("<title>");
   data->append(net::EscapeForHTML(unescaped_title));
   data->append("</title>\n");

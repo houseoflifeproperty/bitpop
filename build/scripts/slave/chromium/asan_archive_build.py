@@ -24,6 +24,7 @@ import stat
 import sys
 
 from common import chromium_utils
+from slave import build_directory
 from slave import slave_utils
 from slave import zip_build
 
@@ -51,14 +52,10 @@ def ShouldPackageFile(filename, target):
 
 
 def archive(options, args):
+  build_dir = build_directory.GetBuildOutputDirectory()
+  build_dir = os.path.join(build_dir, options.target)
   src_dir = os.path.abspath(os.path.dirname(options.build_dir))
 
-  if chromium_utils.IsMac():
-    build_dir = os.path.join(src_dir, 'xcodebuild', options.target)
-  elif chromium_utils.IsLinux():
-    build_dir = os.path.join(src_dir, 'out', options.target)
-  else:
-    raise NotImplementedError('%s is not supported.' % sys.platform)
   staging_dir = slave_utils.GetStagingDir(src_dir)
   build_revision = slave_utils.SubversionRevision(src_dir)
   chromium_utils.MakeParentDirectoriesWorldReadable(staging_dir)
@@ -114,11 +111,9 @@ def archive(options, args):
 
 def main(argv):
   option_parser = optparse.OptionParser()
-  option_parser.add_option('', '--target', default='Release',
+  option_parser.add_option('--target', default='Release',
                            help='build target to archive (Debug or Release)')
-  option_parser.add_option('', '--build-dir',
-                           help='path to main build directory (the parent of '
-                                'the Release or Debug directory)')
+  option_parser.add_option('--build-dir', help='ignored')
   chromium_utils.AddPropertiesOptions(option_parser)
 
   options, args = option_parser.parse_args(argv)

@@ -53,6 +53,33 @@ static ssize_t NaClDescNullWrite(struct NaClDesc *vself,
   return len;
 }
 
+static ssize_t NaClDescNullPRead(struct NaClDesc *vself,
+                                 void *buf,
+                                 size_t len,
+                                 nacl_off64_t offset) {
+  UNREFERENCED_PARAMETER(vself);
+  UNREFERENCED_PARAMETER(buf);
+  UNREFERENCED_PARAMETER(len);
+  if (offset < 0) {
+    return -NACL_ABI_EINVAL;
+  }
+
+  return 0;
+}
+
+static ssize_t NaClDescNullPWrite(struct NaClDesc *vself,
+                                  void const *buf,
+                                  size_t len,
+                                  nacl_off64_t offset) {
+  UNREFERENCED_PARAMETER(vself);
+  UNREFERENCED_PARAMETER(buf);
+  if (offset < 0) {
+    return -NACL_ABI_EINVAL;
+  }
+
+  return len;
+}
+
 static int NaClDescNullFstat(struct NaClDesc *vself,
                             struct nacl_abi_stat *statbuf) {
   UNREFERENCED_PARAMETER(vself);
@@ -84,7 +111,10 @@ static int NaClDescNullFstat(struct NaClDesc *vself,
 
 /*
  * We allow descriptor "transfer", where in reality we create a
- * separate null device locally at the recipient end.
+ * separate null device locally at the recipient end.  Read/write
+ * operations on /dev/null are allowed, but does not make use of flags
+ * nor are there opportunity to use metadata, so like the invalid
+ * descriptor, we don't bother to transfer that data.
  */
 static int NaClDescNullExternalizeSize(struct NaClDesc *vself,
                                        size_t *nbytes,
@@ -113,10 +143,10 @@ static struct NaClDescVtbl const kNaClDescNullVtbl = {
   NaClDescNullRead,
   NaClDescNullWrite,
   NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescNullPRead,
+  NaClDescNullPWrite,
   NaClDescNullFstat,
   NaClDescGetdentsNotImplemented,
-  NACL_DESC_NULL,
   NaClDescNullExternalizeSize,
   NaClDescNullExternalize,
   NaClDescLockNotImplemented,
@@ -135,6 +165,12 @@ static struct NaClDescVtbl const kNaClDescNullVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_NULL,
 };
 
 int NaClDescNullInternalize(struct NaClDesc **out_desc,

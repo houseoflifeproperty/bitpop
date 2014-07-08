@@ -9,11 +9,12 @@
 #include <vector>
 
 #include "ppapi/c/ppb_input_event.h"
-#include "ppapi/c/dev/ppb_testing_dev.h"
+#include "ppapi/c/private/ppb_testing_private.h"
 #include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/point.h"
 #include "ppapi/cpp/rect.h"
 #include "ppapi/tests/test_case.h"
+#include "ppapi/tests/test_utils.h"
 
 class TestInputEvent : public TestCase {
  public:
@@ -33,11 +34,12 @@ class TestInputEvent : public TestCase {
                                   PP_InputEvent_MouseButton buttons);
   pp::InputEvent CreateWheelEvent();
   pp::InputEvent CreateKeyEvent(PP_InputEvent_Type type,
-                                uint32_t key_code);
+                                uint32_t key_code, const std::string& code);
   pp::InputEvent CreateCharEvent(const std::string& text);
   pp::InputEvent CreateTouchEvent(PP_InputEvent_Type type,
                                   const pp::FloatPoint& location);
 
+  void PostMessageBarrier();
   bool SimulateInputEvent(const pp::InputEvent& input_event);
   bool AreEquivalentEvents(PP_Resource first, PP_Resource second);
 
@@ -52,6 +54,8 @@ class TestInputEvent : public TestCase {
   const PPB_WheelInputEvent* wheel_input_event_interface_;
   const PPB_KeyboardInputEvent* keyboard_input_event_interface_;
   const PPB_TouchInputEvent* touch_input_event_interface_;
+
+  NestedEvent nested_event_;
 
   pp::Rect view_rect_;
   pp::InputEvent expected_input_event_;

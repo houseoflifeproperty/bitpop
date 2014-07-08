@@ -5,13 +5,17 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFS_UNITTEST_H_
 #define CHROME_BROWSER_EXTENSIONS_EXTENSION_PREFS_UNITTEST_H_
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/test_extension_prefs.h"
 #include "content/public/test/test_browser_thread.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace base {
 class Value;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 namespace extensions {
@@ -33,7 +37,7 @@ class ExtensionPrefsTest : public testing::Test {
   virtual void Verify() = 0;
 
   // This function is called to Register preference default values.
-  virtual void RegisterPreferences();
+  virtual void RegisterPreferences(user_prefs::PrefRegistrySyncable* registry);
 
   virtual void SetUp() OVERRIDE;
 
@@ -42,7 +46,7 @@ class ExtensionPrefsTest : public testing::Test {
  protected:
   ExtensionPrefs* prefs() { return prefs_.prefs(); }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
 
   TestExtensionPrefs prefs_;
@@ -51,48 +55,29 @@ class ExtensionPrefsTest : public testing::Test {
   DISALLOW_COPY_AND_ASSIGN(ExtensionPrefsTest);
 };
 
-class ExtensionPrefsPrepopulatedTest : public ExtensionPrefsTest {
+
+class PrefsPrepopulatedTestBase : public ExtensionPrefsTest {
  public:
-  ExtensionPrefsPrepopulatedTest();
-  virtual ~ExtensionPrefsPrepopulatedTest();
+  static const size_t kNumInstalledExtensions = 4;
 
-  virtual void RegisterPreferences() OVERRIDE;
+  PrefsPrepopulatedTestBase();
+  virtual ~PrefsPrepopulatedTestBase();
 
-  void InstallExtControlledPref(Extension* ext,
-                                const std::string& key,
-                                base::Value* val);
+  Extension* extension1() { return extension1_.get(); }
+  Extension* extension2() { return extension2_.get(); }
+  Extension* extension3() { return extension3_.get(); }
+  Extension* extension4() { return extension4_.get(); }
 
-  void InstallExtControlledPrefIncognito(Extension* ext,
-                                         const std::string& key,
-                                         base::Value* val);
+ protected:
+  bool installed_[kNumInstalledExtensions];
 
-  void InstallExtControlledPrefIncognitoSessionOnly(
-      Extension* ext,
-      const std::string& key,
-      base::Value* val);
-
-  void InstallExtension(Extension* ext);
-
-  void UninstallExtension(const std::string& extension_id);
-
-  // Weak references, for convenience.
-  Extension* ext1_;
-  Extension* ext2_;
-  Extension* ext3_;
-  Extension* ext4_;
-
-  // Flags indicating whether each of the extensions has been installed, yet.
-  bool installed[4];
+  scoped_refptr<Extension> extension1_;
+  scoped_refptr<Extension> extension2_;
+  scoped_refptr<Extension> extension3_;
+  scoped_refptr<Extension> extension4_;
 
  private:
-  void EnsureExtensionInstalled(Extension *ext);
-
-  void EnsureExtensionUninstalled(const std::string& extension_id);
-
-  scoped_refptr<Extension> ext1_scoped_;
-  scoped_refptr<Extension> ext2_scoped_;
-  scoped_refptr<Extension> ext3_scoped_;
-  scoped_refptr<Extension> ext4_scoped_;
+  DISALLOW_COPY_AND_ASSIGN(PrefsPrepopulatedTestBase);
 };
 
 }  // namespace extensions

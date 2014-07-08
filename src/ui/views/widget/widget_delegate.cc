@@ -4,7 +4,7 @@
 
 #include "ui/views/widget/widget_delegate.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/view.h"
@@ -57,24 +57,32 @@ ui::ModalType WidgetDelegate::GetModalType() const {
   return ui::MODAL_TYPE_NONE;
 }
 
-ui::AccessibilityTypes::Role WidgetDelegate::GetAccessibleWindowRole() const {
-  return ui::AccessibilityTypes::ROLE_WINDOW;
+ui::AXRole WidgetDelegate::GetAccessibleWindowRole() const {
+  return ui::AX_ROLE_WINDOW;
 }
 
-ui::AccessibilityTypes::State WidgetDelegate::GetAccessibleWindowState() const {
-  return 0;
-}
-
-string16 WidgetDelegate::GetAccessibleWindowTitle() const {
+base::string16 WidgetDelegate::GetAccessibleWindowTitle() const {
   return GetWindowTitle();
 }
 
-string16 WidgetDelegate::GetWindowTitle() const {
-  return string16();
+base::string16 WidgetDelegate::GetWindowTitle() const {
+  return base::string16();
 }
 
 bool WidgetDelegate::ShouldShowWindowTitle() const {
   return true;
+}
+
+bool WidgetDelegate::ShouldShowCloseButton() const {
+  return true;
+}
+
+bool WidgetDelegate::ShouldHandleSystemCommands() const {
+  const Widget* widget = GetWidget();
+  if (!widget)
+    return false;
+
+  return widget->non_client_view() != NULL;
 }
 
 gfx::ImageSkia WidgetDelegate::GetWindowAppIcon() {
@@ -110,6 +118,7 @@ void WidgetDelegate::SaveWindowPlacement(const gfx::Rect& bounds,
 }
 
 bool WidgetDelegate::GetSavedWindowPlacement(
+    const Widget* widget,
     gfx::Rect* bounds,
     ui::WindowShowState* show_state) const {
   std::string window_name = GetWindowName();
@@ -117,7 +126,7 @@ bool WidgetDelegate::GetSavedWindowPlacement(
     return false;
 
   return ViewsDelegate::views_delegate->GetSavedWindowPlacement(
-      window_name, bounds, show_state);
+      widget, window_name, bounds, show_state);
 }
 
 bool WidgetDelegate::ShouldRestoreWindowSize() const {
@@ -138,6 +147,10 @@ NonClientFrameView* WidgetDelegate::CreateNonClientFrameView(Widget* widget) {
   return NULL;
 }
 
+View* WidgetDelegate::CreateOverlayView() {
+  return NULL;
+}
+
 bool WidgetDelegate::WillProcessWorkAreaChange() const {
   return false;
 }
@@ -150,6 +163,10 @@ void WidgetDelegate::GetWidgetHitTestMask(gfx::Path* mask) const {
   DCHECK(mask);
 }
 
+bool WidgetDelegate::ShouldAdvanceFocusToTopLevelWidget() const {
+  return false;
+}
+
 bool WidgetDelegate::ShouldDescendIntoChildForEventHandling(
     gfx::NativeView child,
     const gfx::Point& location) {
@@ -160,9 +177,15 @@ bool WidgetDelegate::ShouldDescendIntoChildForEventHandling(
 // WidgetDelegateView:
 
 WidgetDelegateView::WidgetDelegateView() {
+  // A WidgetDelegate should be deleted on DeleteDelegate.
+  set_owned_by_client();
 }
 
 WidgetDelegateView::~WidgetDelegateView() {
+}
+
+void WidgetDelegateView::DeleteDelegate() {
+  delete this;
 }
 
 Widget* WidgetDelegateView::GetWidget() {

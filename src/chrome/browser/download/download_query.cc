@@ -10,22 +10,26 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/i18n/case_conversion.h"
 #include "base/i18n/string_search.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string16.h"
-#include "base/string_split.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/download_item.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_util.h"
-#include "unicode/regex.h"
+#include "third_party/re2/re2/re2.h"
+#include "url/gurl.h"
 
 using content::DownloadDangerType;
 using content::DownloadItem;
@@ -43,64 +47,99 @@ template<> bool GetAs(const base::Value& in, int* out) {
 template<> bool GetAs(const base::Value& in, std::string* out) {
   return in.GetAsString(out);
 }
-template<> bool GetAs(const base::Value& in, string16* out) {
+template<> bool GetAs(const base::Value& in, base::string16* out) {
   return in.GetAsString(out);
+}
+template<> bool GetAs(const base::Value& in, std::vector<base::string16>* out) {
+  out->clear();
+  const base::ListValue* list = NULL;
+  if (!in.GetAsList(&list))
+    return false;
+  for (size_t i = 0; i < list->GetSize(); ++i) {
+    base::string16 element;
+    if (!list->GetString(i, &element)) {
+      out->clear();
+      return false;
+    }
+    out->push_back(element);
+  }
+  return true;
 }
 
 // The next several functions are helpers for making Callbacks that access
 // DownloadItem fields.
 
-static bool MatchesQuery(const string16& query, const DownloadItem& item) {
-  if (query.empty())
-    return true;
-
-  DCHECK_EQ(query, base::i18n::ToLower(query));
-
-  string16 url_raw(UTF8ToUTF16(item.GetOriginalUrl().spec()));
-  if (base::i18n::StringSearchIgnoringCaseAndAccents(
-          query, url_raw, NULL, NULL)) {
-    return true;
-  }
-
-  string16 url_formatted = url_raw;
+static bool MatchesQuery(
+    const std::vector<base::string16>& query_terms,
+    const DownloadItem& item) {
+  DCHECK(!query_terms.empty());
+  base::string16 url_raw(base::UTF8ToUTF16(item.GetOriginalUrl().spec()));
+  base::string16 url_formatted = url_raw;
   if (item.GetBrowserContext()) {
+    Profile* profile = Profile::FromBrowserContext(item.GetBrowserContext());
     url_formatted = net::FormatUrl(
         item.GetOriginalUrl(),
-        content::GetContentClient()->browser()->GetAcceptLangs(
-            item.GetBrowserContext()));
+        profile->GetPrefs()->GetString(prefs::kAcceptLanguages));
   }
-  if (base::i18n::StringSearchIgnoringCaseAndAccents(
-        query, url_formatted, NULL, NULL)) {
-    return true;
-  }
+  base::string16 path(item.GetTargetFilePath().LossyDisplayName());
 
-  string16 path(item.GetTargetFilePath().LossyDisplayName());
-  return base::i18n::StringSearchIgnoringCaseAndAccents(
-      query, path, NULL, NULL);
+  for (std::vector<base::string16>::const_iterator it = query_terms.begin();
+       it != query_terms.end(); ++it) {
+    base::string16 term = base::i18n::ToLower(*it);
+    if (!base::i18n::StringSearchIgnoringCaseAndAccents(
+            term, url_raw, NULL, NULL) &&
+        !base::i18n::StringSearchIgnoringCaseAndAccents(
+            term, url_formatted, NULL, NULL) &&
+        !base::i18n::StringSearchIgnoringCaseAndAccents(
+            term, path, NULL, NULL)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 static int64 GetStartTimeMsEpoch(const DownloadItem& item) {
   return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
 }
 
-// TODO(benjhayden) These timestamps don't fit in int32, and base::Value doesn't
-// support int64. Use ISO 8601 date-time strings instead.
-static int GetStartTime(const DownloadItem& item) {
-  return (item.GetStartTime() - base::Time::UnixEpoch()).InMilliseconds();
+static int64 GetEndTimeMsEpoch(const DownloadItem& item) {
+  return (item.GetEndTime() - base::Time::UnixEpoch()).InMilliseconds();
+}
+
+std::string TimeToISO8601(const base::Time& t) {
+  base::Time::Exploded exploded;
+  t.UTCExplode(&exploded);
+  return base::StringPrintf(
+      "%04d-%02d-%02dT%02d:%02d:%02d.%03dZ", exploded.year, exploded.month,
+      exploded.day_of_month, exploded.hour, exploded.minute, exploded.second,
+      exploded.millisecond);
+}
+
+static std::string GetStartTime(const DownloadItem& item) {
+  return TimeToISO8601(item.GetStartTime());
+}
+
+static std::string GetEndTime(const DownloadItem& item) {
+  return TimeToISO8601(item.GetEndTime());
 }
 
 static bool GetDangerAccepted(const DownloadItem& item) {
-  return (item.GetSafetyState() == DownloadItem::DANGEROUS_BUT_VALIDATED);
+  return (item.GetDangerType() ==
+          content::DOWNLOAD_DANGER_TYPE_USER_VALIDATED);
 }
 
-static string16 GetFilename(const DownloadItem& item) {
+static bool GetExists(const DownloadItem& item) {
+  return !item.GetFileExternallyRemoved();
+}
+
+static base::string16 GetFilename(const DownloadItem& item) {
   // This filename will be compared with strings that could be passed in by the
   // user, who only sees LossyDisplayNames.
   return item.GetTargetFilePath().LossyDisplayName();
 }
 
 static std::string GetFilenameUTF8(const DownloadItem& item) {
-  return UTF16ToUTF8(GetFilename(item));
+  return base::UTF16ToUTF8(GetFilename(item));
 }
 
 static std::string GetUrl(const DownloadItem& item) {
@@ -164,13 +203,10 @@ template <typename ValueType> DownloadQuery::FilterCallback BuildFilter(
 
 // Returns true if |accessor.Run(item)| matches |pattern|.
 static bool FindRegex(
-    icu::RegexPattern* pattern,
+    RE2* pattern,
     const base::Callback<std::string(const DownloadItem&)>& accessor,
     const DownloadItem& item) {
-  icu::UnicodeString input(accessor.Run(item).c_str());
-  UErrorCode status = U_ZERO_ERROR;
-  scoped_ptr<icu::RegexMatcher> matcher(pattern->matcher(input, status));
-  return matcher->find() == TRUE;  // Ugh, VS complains bool != UBool.
+  return RE2::PartialMatch(accessor.Run(item), *pattern);
 }
 
 // Helper for building a Callback to FindRegex().
@@ -179,11 +215,8 @@ DownloadQuery::FilterCallback BuildRegexFilter(
     std::string (*accessor)(const DownloadItem&)) {
   std::string regex_str;
   if (!GetAs(regex_value, &regex_str)) return DownloadQuery::FilterCallback();
-  UParseError re_err;
-  UErrorCode re_status = U_ZERO_ERROR;
-  scoped_ptr<icu::RegexPattern> pattern(icu::RegexPattern::compile(
-      icu::UnicodeString::fromUTF8(regex_str.c_str()), re_err, re_status));
-  if (!U_SUCCESS(re_status)) return DownloadQuery::FilterCallback();
+  scoped_ptr<RE2> pattern(new RE2(regex_str));
+  if (!pattern->ok()) return DownloadQuery::FilterCallback();
   return base::Bind(&FindRegex, base::Owned(pattern.release()),
                     base::Bind(accessor));
 }
@@ -239,8 +272,10 @@ bool DownloadQuery::AddFilter(DownloadQuery::FilterType type,
       return AddFilter(BuildFilter<int>(value, EQ, &GetReceivedBytes));
     case FILTER_DANGER_ACCEPTED:
       return AddFilter(BuildFilter<bool>(value, EQ, &GetDangerAccepted));
+    case FILTER_EXISTS:
+      return AddFilter(BuildFilter<bool>(value, EQ, &GetExists));
     case FILTER_FILENAME:
-      return AddFilter(BuildFilter<string16>(value, EQ, &GetFilename));
+      return AddFilter(BuildFilter<base::string16>(value, EQ, &GetFilename));
     case FILTER_FILENAME_REGEX:
       return AddFilter(BuildRegexFilter(value, &GetFilenameUTF8));
     case FILTER_MIME:
@@ -248,16 +283,23 @@ bool DownloadQuery::AddFilter(DownloadQuery::FilterType type,
     case FILTER_PAUSED:
       return AddFilter(BuildFilter<bool>(value, EQ, &IsPaused));
     case FILTER_QUERY: {
-      string16 query;
-      return GetAs(value, &query) &&
-             AddFilter(base::Bind(&MatchesQuery, query));
+      std::vector<base::string16> query_terms;
+      return GetAs(value, &query_terms) &&
+             (query_terms.empty() ||
+              AddFilter(base::Bind(&MatchesQuery, query_terms)));
     }
+    case FILTER_ENDED_AFTER:
+      return AddFilter(BuildFilter<std::string>(value, GT, &GetEndTime));
+    case FILTER_ENDED_BEFORE:
+      return AddFilter(BuildFilter<std::string>(value, LT, &GetEndTime));
+    case FILTER_END_TIME:
+      return AddFilter(BuildFilter<std::string>(value, EQ, &GetEndTime));
     case FILTER_STARTED_AFTER:
-      return AddFilter(BuildFilter<int>(value, GT, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, GT, &GetStartTime));
     case FILTER_STARTED_BEFORE:
-      return AddFilter(BuildFilter<int>(value, LT, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, LT, &GetStartTime));
     case FILTER_START_TIME:
-      return AddFilter(BuildFilter<int>(value, EQ, &GetStartTime));
+      return AddFilter(BuildFilter<std::string>(value, EQ, &GetStartTime));
     case FILTER_TOTAL_BYTES:
       return AddFilter(BuildFilter<int>(value, EQ, &GetTotalBytes));
     case FILTER_TOTAL_BYTES_GREATER:
@@ -347,6 +389,9 @@ bool DownloadQuery::DownloadComparator::operator() (
 void DownloadQuery::AddSorter(DownloadQuery::SortType type,
                               DownloadQuery::SortDirection direction) {
   switch (type) {
+    case SORT_END_TIME:
+      sorters_.push_back(Sorter::Build<int64>(direction, &GetEndTimeMsEpoch));
+      break;
     case SORT_START_TIME:
       sorters_.push_back(Sorter::Build<int64>(direction, &GetStartTimeMsEpoch));
       break;
@@ -354,7 +399,8 @@ void DownloadQuery::AddSorter(DownloadQuery::SortType type,
       sorters_.push_back(Sorter::Build<std::string>(direction, &GetUrl));
       break;
     case SORT_FILENAME:
-      sorters_.push_back(Sorter::Build<string16>(direction, &GetFilename));
+      sorters_.push_back(
+          Sorter::Build<base::string16>(direction, &GetFilename));
       break;
     case SORT_DANGER:
       sorters_.push_back(Sorter::Build<DownloadDangerType>(
@@ -362,6 +408,9 @@ void DownloadQuery::AddSorter(DownloadQuery::SortType type,
       break;
     case SORT_DANGER_ACCEPTED:
       sorters_.push_back(Sorter::Build<bool>(direction, &GetDangerAccepted));
+      break;
+    case SORT_EXISTS:
+      sorters_.push_back(Sorter::Build<bool>(direction, &GetExists));
       break;
     case SORT_STATE:
       sorters_.push_back(Sorter::Build<DownloadItem::DownloadState>(

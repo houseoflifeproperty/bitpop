@@ -21,7 +21,7 @@ import getopt
 import re
 import sys
 
-AUTOGEN_COMMENT = """\
+AUTOGEN_HEADER = """\
 /*
  * WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING WARNING
  *
@@ -29,6 +29,16 @@ AUTOGEN_COMMENT = """\
  *
  * NaCl Server Runtime Service Call abstractions
  */
+
+#include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
+#include "native_client/src/trusted/service_runtime/sys_exception.h"
+#include "native_client/src/trusted/service_runtime/sys_fdio.h"
+#include "native_client/src/trusted/service_runtime/sys_filename.h"
+#include "native_client/src/trusted/service_runtime/sys_imc.h"
+#include "native_client/src/trusted/service_runtime/sys_list_mappings.h"
+#include "native_client/src/trusted/service_runtime/sys_memory.h"
+#include "native_client/src/trusted/service_runtime/sys_parallel_io.h"
+
 """
 
 
@@ -66,27 +76,6 @@ static INLINE void AssertSameType_%(name)s(void) {
 }
 """
 
-# Integer/pointer registers used in x86-64 calling convention.  NB:
-# the untrusted code is compiled using gcc, and follows the AMD64
-# calling covention, not the Windows x64 convention.  The service
-# runtime may be compiled with either compiler, so our assembly code
-# for context switch must take care to handle the differences.
-ARG_REGISTERS = {
-    'x86-32': [],
-    'x86-64': [],
-    # 'x86-64': ['rdi', 'rsi', 'rdx', 'rcx', 'r8', 'r9'],
-    'arm-32': [],
-    # 'arm-32': [ 'r0',  'r1',  'r2',  'r3'],
-    # while the arm calling convention passes arguments in registers,
-    # the arm trampoline code pushes them onto the untrusted stack first
-    # before transferring control to trusted code.  this uses up some
-    # more untrusted stack space / memory/cache bandwidth, but we had
-    # to save these arguments somewhere, either in a processor context
-    # or on-stack, anyway.
-    'mips-32': [],
-    # 'mips-32': [ 'a0',  'a1',  'a2',  'a3'],
-    }
-
 # Our syscall handling code, in nacl_syscall.S, always pushes the
 # syscall arguments onto the untrusted user stack.  The syscall
 # arguments get snapshotted from there into a per-syscall structure,
@@ -97,104 +86,135 @@ ARG_REGISTERS = {
 
 SYSCALL_LIST = [
     ('NACL_sys_null', 'NaClSysNull', []),
-    ('NACL_sys_nameservice', 'NaClCommonSysNameService', ['int *desc_in_out']),
-    ('NACL_sys_dup', 'NaClCommonSysDup', ['int oldfd']),
-    ('NACL_sys_dup2', 'NaClCommonSysDup2', ['int oldfd', 'int newfd']),
-    ('NACL_sys_open', 'NaClCommonSysOpen',
-     ['char *pathname', 'int flags', 'int mode']),
-    ('NACL_sys_close', 'NaClCommonSysClose', ['int d']),
-    ('NACL_sys_read', 'NaClCommonSysRead',
+    ('NACL_sys_nameservice', 'NaClSysNameService', ['int *desc_in_out']),
+    ('NACL_sys_dup', 'NaClSysDup', ['int oldfd']),
+    ('NACL_sys_dup2', 'NaClSysDup2', ['int oldfd', 'int newfd']),
+    ('NACL_sys_open', 'NaClSysOpen',
+     ['uint32_t path', 'int flags', 'int mode']),
+    ('NACL_sys_close', 'NaClSysClose', ['int d']),
+    ('NACL_sys_read', 'NaClSysRead',
      ['int d', 'void *buf', 'size_t count']),
-    ('NACL_sys_write', 'NaClCommonSysWrite',
+    ('NACL_sys_write', 'NaClSysWrite',
      ['int d', 'void *buf', 'size_t count']),
-    ('NACL_sys_lseek', 'NaClCommonSysLseek',
+    ('NACL_sys_lseek', 'NaClSysLseek',
      ['int d', 'nacl_abi_off_t *offp', 'int whence']),
-    ('NACL_sys_ioctl', 'NaClCommonSysIoctl',
-     ['int d', 'int request', 'void *arg']),
-    ('NACL_sys_fstat', 'NaClCommonSysFstat',
+    ('NACL_sys_fstat', 'NaClSysFstat',
      ['int d', 'struct nacl_abi_stat *nasp']),
-    ('NACL_sys_stat', 'NaClCommonSysStat',
-     ['const char *path', 'struct nacl_abi_stat *nasp']),
-    ('NACL_sys_getdents', 'NaClCommonSysGetdents',
+    ('NACL_sys_stat', 'NaClSysStat', ['uint32_t path', 'uint32_t nasp']),
+    ('NACL_sys_getdents', 'NaClSysGetdents',
      ['int d', 'void *buf', 'size_t count']),
-    ('NACL_sys_sysbrk', 'NaClSetBreak', ['uintptr_t new_break']),
-    ('NACL_sys_mmap', 'NaClCommonSysMmap',
+    ('NACL_sys_isatty', 'NaClSysIsatty', ['int d']),
+    ('NACL_sys_brk', 'NaClSysBrk', ['uintptr_t new_break']),
+    ('NACL_sys_mmap', 'NaClSysMmap',
      ['void *start', 'size_t length', 'int prot',
       'int flags', 'int d', 'nacl_abi_off_t *offp']),
     ('NACL_sys_mprotect', 'NaClSysMprotect',
      ['uint32_t start', 'size_t length', 'int prot']),
+    ('NACL_sys_list_mappings', 'NaClSysListMappings',
+     ['uint32_t regions', 'uint32_t count']),
     ('NACL_sys_munmap', 'NaClSysMunmap', ['void *start', 'size_t length']),
-    ('NACL_sys_exit', 'NaClCommonSysExit', ['int status']),
+    ('NACL_sys_exit', 'NaClSysExit', ['int status']),
     ('NACL_sys_getpid', 'NaClSysGetpid', []),
-    ('NACL_sys_thread_exit', 'NaClCommonSysThreadExit',
+    ('NACL_sys_thread_exit', 'NaClSysThreadExit',
      ['int32_t *stack_flag']),
     ('NACL_sys_gettimeofday', 'NaClSysGetTimeOfDay',
      ['struct nacl_abi_timeval *tv', 'struct nacl_abi_timezone *tz']),
     ('NACL_sys_clock', 'NaClSysClock', []),
     ('NACL_sys_nanosleep', 'NaClSysNanosleep',
      ['struct nacl_abi_timespec *req', 'struct nacl_abi_timespec *rem']),
-    ('NACL_sys_clock_getres', 'NaClCommonSysClockGetRes',
+    ('NACL_sys_clock_getres', 'NaClSysClockGetRes',
      ['int clk_id', 'uint32_t tsp']),
-    ('NACL_sys_clock_gettime', 'NaClCommonSysClockGetTime',
+    ('NACL_sys_clock_gettime', 'NaClSysClockGetTime',
      ['int clk_id', 'uint32_t tsp']),
-    ('NACL_sys_imc_makeboundsock', 'NaClCommonSysImc_MakeBoundSock',
+    ('NACL_sys_mkdir', 'NaClSysMkdir', ['uint32_t path', 'int mode']),
+    ('NACL_sys_rmdir', 'NaClSysRmdir', ['uint32_t path']),
+    ('NACL_sys_chdir', 'NaClSysChdir', ['uint32_t path']),
+    ('NACL_sys_getcwd', 'NaClSysGetcwd', ['uint32_t buffer', 'int len']),
+    ('NACL_sys_unlink', 'NaClSysUnlink', ['uint32_t path']),
+    ('NACL_sys_truncate', 'NaClSysTruncate',
+     ['uint32_t path', 'uint32_t length_addr']),
+    ('NACL_sys_lstat', 'NaClSysLstat', ['uint32_t path', 'uint32_t nasp']),
+    ('NACL_sys_link', 'NaClSysLink',
+     ['uint32_t oldname', 'uint32_t newname']),
+    ('NACL_sys_rename', 'NaClSysRename',
+     ['uint32_t oldname', 'uint32_t newname']),
+    ('NACL_sys_symlink', 'NaClSysSymlink',
+     ['uint32_t oldname', 'uint32_t newname']),
+    ('NACL_sys_chmod', 'NaClSysChmod',
+     ['uint32_t path', 'nacl_abi_mode_t mode']),
+    ('NACL_sys_access', 'NaClSysAccess', ['uint32_t path', 'int amode']),
+    ('NACL_sys_readlink', 'NaClSysReadlink',
+     ['uint32_t path', 'uint32_t buf', 'size_t count']),
+    ('NACL_sys_utimes', 'NaClSysUtimes',
+     ['uint32_t filename', 'uint32_t times']),
+    ('NACL_sys_pread', 'NaClSysPRead',
+     ['int32_t d', 'uint32_t usr_addr', 'uint32_t buffer_bytes',
+      'uint32_t offset_addr']),
+    ('NACL_sys_pwrite', 'NaClSysPWrite',
+     ['int32_t d', 'uint32_t usr_addr', 'uint32_t buffer_bytes',
+      'uint32_t offset_addr']),
+    ('NACL_sys_imc_makeboundsock', 'NaClSysImcMakeBoundSock',
      ['int32_t *sap']),
-    ('NACL_sys_imc_accept', 'NaClCommonSysImc_Accept', ['int d']),
-    ('NACL_sys_imc_connect', 'NaClCommonSysImc_Connect', ['int d']),
-    ('NACL_sys_imc_sendmsg', 'NaClCommonSysImc_Sendmsg',
+    ('NACL_sys_imc_accept', 'NaClSysImcAccept', ['int d']),
+    ('NACL_sys_imc_connect', 'NaClSysImcConnect', ['int d']),
+    ('NACL_sys_imc_sendmsg', 'NaClSysImcSendmsg',
      ['int d', 'struct NaClAbiNaClImcMsgHdr *nanimhp', 'int flags']),
-    ('NACL_sys_imc_recvmsg', 'NaClCommonSysImc_Recvmsg',
+    ('NACL_sys_imc_recvmsg', 'NaClSysImcRecvmsg',
      ['int d', 'struct NaClAbiNaClImcMsgHdr *nanimhp', 'int flags']),
-    ('NACL_sys_imc_mem_obj_create', 'NaClCommonSysImc_Mem_Obj_Create',
+    ('NACL_sys_imc_mem_obj_create', 'NaClSysImcMemObjCreate',
      ['size_t size']),
-    ('NACL_sys_tls_init', 'NaClCommonSysTls_Init', ['uint32_t thread_ptr']),
-    ('NACL_sys_thread_create', 'NaClCommonSysThread_Create',
+    ('NACL_sys_tls_init', 'NaClSysTlsInit', ['uint32_t thread_ptr']),
+    ('NACL_sys_thread_create', 'NaClSysThreadCreate',
      ['void *prog_ctr', 'uint32_t stack_ptr',
       'uint32_t thread_ptr', 'uint32_t second_thread_ptr']),
-    ('NACL_sys_tls_get', 'NaClCommonSysTlsGet', []),
-    ('NACL_sys_thread_nice', 'NaClCommonSysThread_Nice', ['const int nice']),
-    ('NACL_sys_mutex_create', 'NaClCommonSysMutex_Create', []),
-    ('NACL_sys_mutex_lock', 'NaClCommonSysMutex_Lock',
+    ('NACL_sys_tls_get', 'NaClSysTlsGet', []),
+    ('NACL_sys_thread_nice', 'NaClSysThreadNice', ['const int nice']),
+    ('NACL_sys_mutex_create', 'NaClSysMutexCreate', []),
+    ('NACL_sys_mutex_lock', 'NaClSysMutexLock',
      ['int32_t mutex_handle']),
-    ('NACL_sys_mutex_unlock', 'NaClCommonSysMutex_Unlock',
+    ('NACL_sys_mutex_unlock', 'NaClSysMutexUnlock',
      ['int32_t mutex_handle']),
-    ('NACL_sys_mutex_trylock', 'NaClCommonSysMutex_Trylock',
+    ('NACL_sys_mutex_trylock', 'NaClSysMutexTrylock',
      ['int32_t mutex_handle']),
-    ('NACL_sys_cond_create', 'NaClCommonSysCond_Create', []),
-    ('NACL_sys_cond_wait', 'NaClCommonSysCond_Wait',
+    ('NACL_sys_cond_create', 'NaClSysCondCreate', []),
+    ('NACL_sys_cond_wait', 'NaClSysCondWait',
      ['int32_t cond_handle', 'int32_t mutex_handle']),
-    ('NACL_sys_cond_signal', 'NaClCommonSysCond_Signal',
+    ('NACL_sys_cond_signal', 'NaClSysCondSignal',
      ['int32_t cond_handle']),
-    ('NACL_sys_cond_broadcast', 'NaClCommonSysCond_Broadcast',
+    ('NACL_sys_cond_broadcast', 'NaClSysCondBroadcast',
      ['int32_t cond_handle']),
-    ('NACL_sys_cond_timed_wait_abs', 'NaClCommonSysCond_Timed_Wait_Abs',
+    ('NACL_sys_cond_timed_wait_abs', 'NaClSysCondTimedWaitAbs',
      ['int32_t cond_handle', 'int32_t mutex_handle',
       'struct nacl_abi_timespec *ts']),
-    ('NACL_sys_imc_socketpair', 'NaClCommonSysImc_SocketPair',
+    ('NACL_sys_imc_socketpair', 'NaClSysImcSocketPair',
      ['uint32_t descs_out']),
-    ('NACL_sys_sem_create', 'NaClCommonSysSem_Create', ['int32_t init_value']),
-    ('NACL_sys_sem_wait', 'NaClCommonSysSem_Wait', ['int32_t sem_handle']),
-    ('NACL_sys_sem_post', 'NaClCommonSysSem_Post', ['int32_t sem_handle']),
-    ('NACL_sys_sem_get_value', 'NaClCommonSysSem_Get_Value',
+    ('NACL_sys_sem_create', 'NaClSysSemCreate', ['int32_t init_value']),
+    ('NACL_sys_sem_wait', 'NaClSysSemWait', ['int32_t sem_handle']),
+    ('NACL_sys_sem_post', 'NaClSysSemPost', ['int32_t sem_handle']),
+    ('NACL_sys_sem_get_value', 'NaClSysSemGetValue',
      ['int32_t sem_handle']),
-    ('NACL_sys_sched_yield', 'NaClSysSched_Yield', []),
+    ('NACL_sys_sched_yield', 'NaClSysSchedYield', []),
     ('NACL_sys_sysconf', 'NaClSysSysconf', ['int32_t name', 'int32_t *result']),
-    ('NACL_sys_dyncode_create', 'NaClTextSysDyncode_Create',
+    ('NACL_sys_dyncode_create', 'NaClSysDyncodeCreate',
      ['uint32_t dest', 'uint32_t src', 'uint32_t size']),
-    ('NACL_sys_dyncode_modify', 'NaClTextSysDyncode_Modify',
+    ('NACL_sys_dyncode_modify', 'NaClSysDyncodeModify',
      ['uint32_t dest', 'uint32_t src', 'uint32_t size']),
-    ('NACL_sys_dyncode_delete', 'NaClTextSysDyncode_Delete',
+    ('NACL_sys_dyncode_delete', 'NaClSysDyncodeDelete',
      ['uint32_t dest', 'uint32_t size']),
-    ('NACL_sys_second_tls_set', 'NaClSysSecond_Tls_Set',
+    ('NACL_sys_second_tls_set', 'NaClSysSecondTlsSet',
      ['uint32_t new_value']),
-    ('NACL_sys_second_tls_get', 'NaClSysSecond_Tls_Get', []),
-    ('NACL_sys_exception_handler', 'NaClCommonSysException_Handler',
+    ('NACL_sys_second_tls_get', 'NaClSysSecondTlsGet', []),
+    ('NACL_sys_exception_handler', 'NaClSysExceptionHandler',
      ['uint32_t handler_addr', 'uint32_t old_handler']),
-    ('NACL_sys_exception_stack', 'NaClCommonSysException_Stack',
+    ('NACL_sys_exception_stack', 'NaClSysExceptionStack',
      ['uint32_t stack_addr', 'uint32_t stack_size']),
-    ('NACL_sys_exception_clear_flag', 'NaClCommonSysException_Clear_Flag', []),
-    ('NACL_sys_test_infoleak', 'NaClCommonSysTest_InfoLeak', []),
+    ('NACL_sys_exception_clear_flag', 'NaClSysExceptionClearFlag', []),
+    ('NACL_sys_test_infoleak', 'NaClSysTestInfoLeak', []),
     ('NACL_sys_test_crash', 'NaClSysTestCrash', ['int crash_type']),
+    ('NACL_sys_futex_wait_abs', 'NaClSysFutexWaitAbs',
+     ['uint32_t addr', 'uint32_t value', 'uint32_t abstime_ptr']),
+    ('NACL_sys_futex_wake', 'NaClSysFutexWake',
+     ['uint32_t addr', 'uint32_t nwake']),
     ]
 
 
@@ -230,34 +250,24 @@ def ArgList(architecture, alist):
     return ''
 
   extractedargs = []
-  for argnum, arg in enumerate(alist):
+  for arg in alist:
     t = ExtractType(arg)
     extra_cast = ''
     # avoid cast to pointer from integer of different size
     if TypeIsPointer(t):
       extra_cast = '(uintptr_t)'
-    if argnum >= len(ARG_REGISTERS[architecture]):
-      extractedargs += ['(' + t + ') ' + extra_cast
-                        + ' p.' + ExtractVariable(arg)]
-    else:
-      extractedargs += ['(' + t + ') ' + extra_cast
-                        +' natp->user.' +
-                        ARG_REGISTERS[architecture][argnum]]
+    extractedargs += ['(' + t + ') ' + extra_cast
+                      + ' p.' + ExtractVariable(arg)]
 
   return ', ' + ', '.join(extractedargs)
 
 
 def MemoryArgStruct(architecture, name, alist):
   if not alist:
-    return '  NaClCopyInDropLock(natp->nap);'
+    return '  NaClCopyDropLock(natp->nap);'
 
-  # Note: although this return value might be computed more
-  # concisely with a list comprehension, we instead use a
-  # for statement to maintain python 2.3 compatibility.
-  margs = []
-  for argnum, arg in enumerate(alist):
-    if argnum >= len(ARG_REGISTERS[architecture]):
-      margs += ['    uint32_t %s' % ExtractVariable(arg)]
+  margs = ['    uint32_t %s' % ExtractVariable(arg)
+           for arg in alist]
   values = {
       'name': name,
       'members' : ';\n'.join(margs) + ';'
@@ -283,11 +293,14 @@ def PrintSyscallTableInitializer(protos, ostr):
   for syscall_number, func_name, alist in protos:
     assign.append("  NaClAddSyscall(%s, &%sDecoder);" %
                   (syscall_number, func_name))
+    # These inlines are no-ops that should be optimized away.
+    # Emit the call just so that they are not reported as unused.
+    assign.append("  AssertSameType_%s();" % func_name)
   print >>ostr, TABLE_INITIALIZER % "\n".join(assign)
 
 
 def PrintImplSkel(architecture, protos, ostr):
-  print >>ostr, AUTOGEN_COMMENT
+  print >>ostr, AUTOGEN_HEADER
   for syscall_number, func_name, alist in protos:
     values = { 'name' : func_name,
                'arglist' : ArgList(architecture, alist),
@@ -326,8 +339,13 @@ def main(argv):
   if subarch != '':
     arch = arch + '-' + subarch
 
-  if not ARG_REGISTERS.has_key(arch):
-    raise Exception()
+  # Check naming consistency.
+  for syscall_number, func_name, alist in SYSCALL_LIST:
+    assert syscall_number.startswith('NACL_sys_'), syscall_number
+    name1 = syscall_number[len('NACL_sys_'):].replace('_', '')
+    assert func_name.startswith('NaClSys'), func_name
+    name2 = func_name[len('NaClSys'):].lower()
+    assert name1 == name2, '%r != %r' % (name1, name2)
 
   data = input_src.read()
   protos = SYSCALL_LIST

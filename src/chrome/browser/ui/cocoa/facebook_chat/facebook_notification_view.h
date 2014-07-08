@@ -18,6 +18,7 @@
 #define CHROME_BROWSER_UI_COCOA_FACEBOOK_CHAT_FACEBOOK_NOTIFICATION_VIEW_H_
 #pragma once
 
+#import "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_bubble_view.h"
 
 // Content view for a bubble with an arrow showing arbitrary content.
@@ -26,11 +27,11 @@
  @private
 //   CGFloat defaultWidth_;
 
-   scoped_nsobject<NSTextStorage> textStorage_;
+   base::scoped_nsobject<NSTextStorage> textStorage_;
    NSLayoutManager *layoutManager_;
    NSTextContainer *textContainer_;
 
-   scoped_nsobject<NSMutableArray> contentMessages_;
+   base::scoped_nsobject<NSMutableArray> contentMessages_;
 }
 
 // The font used to display the content string

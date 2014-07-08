@@ -5,6 +5,7 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_PUSH_MESSAGING_PUSH_MESSAGING_INVALIDATION_HANDLER_H_
 #define CHROME_BROWSER_EXTENSIONS_API_PUSH_MESSAGING_PUSH_MESSAGING_INVALIDATION_HANDLER_H_
 
+#include <map>
 #include <set>
 #include <string>
 
@@ -13,8 +14,11 @@
 #include "base/threading/thread_checker.h"
 #include "chrome/browser/extensions/api/push_messaging/push_messaging_invalidation_mapper.h"
 #include "sync/notifier/invalidation_handler.h"
+#include "sync/notifier/invalidation_util.h"
 
-class InvalidationFrontend;
+namespace invalidation {
+class InvalidationService;
+}
 
 namespace extensions {
 
@@ -30,12 +34,13 @@ class PushMessagingInvalidationHandler : public PushMessagingInvalidationMapper,
   // |extension_ids| is the set of extension IDs for which push messaging is
   // enabled.
   PushMessagingInvalidationHandler(
-      InvalidationFrontend* service,
-      PushMessagingInvalidationHandlerDelegate* delegate,
-      const std::set<std::string>& extension_ids);
+      invalidation::InvalidationService* service,
+      PushMessagingInvalidationHandlerDelegate* delegate);
   virtual ~PushMessagingInvalidationHandler();
 
   // PushMessagingInvalidationMapper implementation.
+  virtual void SuppressInitialInvalidationsForExtension(
+      const std::string& extension_id) OVERRIDE;
   virtual void RegisterExtension(const std::string& extension_id) OVERRIDE;
   virtual void UnregisterExtension(const std::string& extension_id) OVERRIDE;
 
@@ -43,8 +48,8 @@ class PushMessagingInvalidationHandler : public PushMessagingInvalidationMapper,
   virtual void OnInvalidatorStateChange(
       syncer::InvalidatorState state) OVERRIDE;
   virtual void OnIncomingInvalidation(
-      const syncer::ObjectIdInvalidationMap& invalidation_map,
-      syncer::IncomingInvalidationSource source) OVERRIDE;
+      const syncer::ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
+  virtual std::string GetOwnerName() const OVERRIDE;
 
   const std::set<std::string>& GetRegisteredExtensionsForTest() const {
     return registered_extensions_;
@@ -54,9 +59,13 @@ class PushMessagingInvalidationHandler : public PushMessagingInvalidationMapper,
   void UpdateRegistrations();
 
   base::ThreadChecker thread_checker_;
-  InvalidationFrontend* const service_;
+  invalidation::InvalidationService* const service_;
   std::set<std::string> registered_extensions_;
+  syncer::ObjectIdSet suppressed_ids_;
   PushMessagingInvalidationHandlerDelegate* const delegate_;
+  std::map<invalidation::ObjectId,
+           int64,
+           syncer::ObjectIdLessThan> max_object_version_map_;
 
   DISALLOW_COPY_AND_ASSIGN(PushMessagingInvalidationHandler);
 };

@@ -160,7 +160,7 @@ HRESULT RegKey::GetValue(const wchar_t* full_key_name,
   ASSERT(full_key_name != NULL);
 
   DWORD byte_count = 0;
-  scoped_array<byte> buffer;
+  scoped_ptr<byte[]> buffer;
   HRESULT hr = GetValueStaticHelper(full_key_name, value_name,
                                     REG_BINARY, buffer.accept(), &byte_count);
   if (SUCCEEDED(hr)) {
@@ -179,7 +179,7 @@ HRESULT RegKey::GetValue(const wchar_t* full_key_name,
   ASSERT(full_key_name != NULL);
 
   DWORD byte_count = 0;
-  scoped_array<byte> buffer;
+  scoped_ptr<byte[]> buffer;
   HRESULT hr = GetValueStaticHelper(full_key_name, value_name,
                                     REG_BINARY, buffer.accept(), &byte_count);
   if (SUCCEEDED(hr)) {
@@ -206,7 +206,7 @@ HRESULT RegKey::GetValue(const wchar_t* full_key_name,
   ASSERT(full_key_name != NULL);
   ASSERT(value != NULL);
 
-  scoped_array<wchar_t> buffer;
+  scoped_ptr<wchar_t[]> buffer;
   HRESULT hr = RegKey::GetValue(full_key_name, value_name, buffer.accept());
   if (SUCCEEDED(hr)) {
     value->assign(buffer.get());
@@ -984,21 +984,21 @@ std::wstring RegKey::GetParentKeyInfo(std::wstring* key_name) {
 uint32 RegKey::GetValueCount() {
   DWORD num_values = 0;
 
-  LONG res = ::RegQueryInfoKey(
-        h_key_,                  // key handle
-        NULL,                    // buffer for class name
-        NULL,                    // size of class string
-        NULL,                    // reserved
-        NULL,                    // number of subkeys
-        NULL,                    // longest subkey size
-        NULL,                    // longest class string
-        &num_values,             // number of values for this key
-        NULL,                    // longest value name
-        NULL,                    // longest value data
-        NULL,                    // security descriptor
-        NULL);                   // last write time
-
-  ASSERT(res == ERROR_SUCCESS);
+  if (ERROR_SUCCESS != ::RegQueryInfoKey(
+        h_key_,  // key handle
+        NULL,  // buffer for class name
+        NULL,  // size of class string
+        NULL,  // reserved
+        NULL,  // number of subkeys
+        NULL,  // longest subkey size
+        NULL,  // longest class string
+        &num_values,  // number of values for this key
+        NULL,  // longest value name
+        NULL,  // longest value data
+        NULL,  // security descriptor
+        NULL)) {  // last write time
+    ASSERT(false);
+  }
   return num_values;
 }
 
@@ -1028,21 +1028,21 @@ uint32 RegKey::GetSubkeyCount() {
   // number of values for key
   DWORD num_subkeys = 0;
 
-  LONG res = ::RegQueryInfoKey(
-    h_key_,                  // key handle
-    NULL,                    // buffer for class name
-    NULL,                    // size of class string
-    NULL,                    // reserved
-    &num_subkeys,            // number of subkeys
-    NULL,                    // longest subkey size
-    NULL,                    // longest class string
-    NULL,                    // number of values for this key
-    NULL,                    // longest value name
-    NULL,                    // longest value data
-    NULL,                    // security descriptor
-    NULL);                   // last write time
-
-  ASSERT(res == ERROR_SUCCESS);
+  if (ERROR_SUCCESS != ::RegQueryInfoKey(
+          h_key_,  // key handle
+          NULL,  // buffer for class name
+          NULL,  // size of class string
+          NULL,  // reserved
+          &num_subkeys,  // number of subkeys
+          NULL,  // longest subkey size
+          NULL,  // longest class string
+          NULL,  // number of values for this key
+          NULL,  // longest value name
+          NULL,  // longest value data
+          NULL,  // security descriptor
+          NULL)) { // last write time
+    ASSERT(false);
+  }
   return num_subkeys;
 }
 

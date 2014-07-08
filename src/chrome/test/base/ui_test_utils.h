@@ -13,27 +13,30 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
-#include "chrome/browser/history/history.h"
+#include "base/strings/string16.h"
+#include "chrome/browser/history/history_service.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/base/window_open_disposition.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/native_widget_types.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "url/gurl.h"
 
 class AppModalDialog;
-class BookmarkModel;
 class Browser;
-class FilePath;
+class DevToolsWindow;
 class LocationBar;
 class Profile;
 class SkBitmap;
 class TemplateURLService;
+
+namespace base {
+class FilePath;
+}
 
 namespace chrome {
 struct NavigateParams;
@@ -72,11 +75,7 @@ enum BrowserTestWaitFlags {
 };
 
 // Puts the current tab title in |title|. Returns true on success.
-bool GetCurrentTabTitle(const Browser* browser, string16* title);
-
-// Waits for a new tab to be added to |browser|. TODO(gbillock): remove this
-// race hazard. Use WindowedNotificationObserver instead.
-void WaitForNewTab(Browser* browser);
+bool GetCurrentTabTitle(const Browser* browser, base::string16* title);
 
 // Opens |url| in an incognito browser window with the incognito profile of
 // |profile|, blocking until the navigation finishes. This will create a new
@@ -88,6 +87,10 @@ Browser* OpenURLOffTheRecord(Profile* profile, const GURL& url);
 // finishes. May change the params in some cases (i.e. if the navigation
 // opens a new browser window). Uses chrome::Navigate.
 void NavigateToURL(chrome::NavigateParams* params);
+
+// Navigates the selected tab of |browser| to |url|, blocking until the
+// navigation finishes. Simulates a POST and uses chrome::Navigate.
+void NavigateToURLWithPost(Browser* browser, const GURL& url);
 
 // Navigates the selected tab of |browser| to |url|, blocking until the
 // navigation finishes. Uses Browser::OpenURL --> chrome::Navigate.
@@ -108,20 +111,24 @@ void NavigateToURLBlockUntilNavigationsComplete(Browser* browser,
                                                 const GURL& url,
                                                 int number_of_navigations);
 
+// Blocks until DevTools window is loaded.
+void WaitUntilDevToolsWindowLoaded(DevToolsWindow* window);
+
 // Generate the file path for testing a particular test.
 // The file for the tests is all located in
 // test_root_directory/dir/<file>
-// The returned path is FilePath format.
-FilePath GetTestFilePath(const FilePath& dir, const FilePath& file);
+// The returned path is base::FilePath format.
+base::FilePath GetTestFilePath(const base::FilePath& dir,
+                               const base::FilePath& file);
 
 // Generate the URL for testing a particular test.
 // HTML for the tests is all located in
 // test_root_directory/dir/<file>
 // The returned path is GURL format.
-GURL GetTestUrl(const FilePath& dir, const FilePath& file);
+GURL GetTestUrl(const base::FilePath& dir, const base::FilePath& file);
 
 // Generate the path of the build directory, relative to the source root.
-bool GetRelativeBuildDirectory(FilePath* build_dir);
+bool GetRelativeBuildDirectory(base::FilePath* build_dir);
 
 // Blocks until an application modal dialog is showns and returns it.
 AppModalDialog* WaitForAppModalDialog();
@@ -131,20 +138,11 @@ AppModalDialog* WaitForAppModalDialog();
 // of the current match. |selection_rect| is an optional parameter which is set
 // to the location of the current match.
 int FindInPage(content::WebContents* tab,
-               const string16& search_string,
+               const base::string16& search_string,
                bool forward,
                bool case_sensitive,
                int* ordinal,
                gfx::Rect* selection_rect);
-
-// Register |observer| for the given |type| and |source| and run
-// the message loop until the observer posts a quit task.
-void RegisterAndWait(content::NotificationObserver* observer,
-                     int type,
-                     const content::NotificationSource& source);
-
-// Blocks until |model| finishes loading.
-void WaitForBookmarkModelToLoad(BookmarkModel* model);
 
 // Blocks until |service| finishes loading.
 void WaitForTemplateURLServiceToLoad(TemplateURLService* service);
@@ -161,6 +159,13 @@ void SendToOmniboxAndSubmit(LocationBar* location_bar,
 
 // Gets the first browser that is not in the specified set.
 Browser* GetBrowserNotInSet(std::set<Browser*> excluded_browsers);
+
+// Gets the size and value of the cookie string for |url| in the given tab.
+// Can be called from any thread.
+void GetCookies(const GURL& url,
+                content::WebContents* contents,
+                int* value_size,
+                std::string* value);
 
 // A WindowedNotificationObserver hard-wired to observe
 // chrome::NOTIFICATION_TAB_ADDED.
@@ -263,12 +268,6 @@ class BrowserAddedObserver {
   DISALLOW_COPY_AND_ASSIGN(BrowserAddedObserver);
 };
 
-// Takes a snapshot of the given render widget, rendered at |page_size|. The
-// snapshot is set to |bitmap|. Returns true on success.
-bool TakeRenderWidgetSnapshot(content::RenderWidgetHost* rwh,
-                              const gfx::Size& page_size,
-                              SkBitmap* bitmap) WARN_UNUSED_RESULT;
-
 // Takes a snapshot of the entire page, according to the width and height
 // properties of the DOM's document. Returns true on success. DOMAutomation
 // must be enabled.
@@ -279,12 +278,12 @@ bool TakeEntirePageSnapshot(content::RenderViewHost* rvh,
 // Saves a snapshot of the entire screen to a file named
 // ChromiumSnapshotYYYYMMDDHHMMSS.png to |directory|, returning true on success.
 // The path to the file produced is returned in |screenshot_path| if non-NULL.
-bool SaveScreenSnapshotToDirectory(const FilePath& directory,
-                                   FilePath* screenshot_path);
+bool SaveScreenSnapshotToDirectory(const base::FilePath& directory,
+                                   base::FilePath* screenshot_path);
 
 // Saves a snapshot of the entire screen as above to the current user's desktop.
 // The Chrome path provider must be registered prior to calling this function.
-bool SaveScreenSnapshotToDesktop(FilePath* screenshot_path);
+bool SaveScreenSnapshotToDesktop(base::FilePath* screenshot_path);
 #endif
 
 // Configures the geolocation provider to always return the given position.

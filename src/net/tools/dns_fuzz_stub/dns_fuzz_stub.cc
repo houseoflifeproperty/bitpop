@@ -8,11 +8,11 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "net/base/address_list.h"
 #include "net/base/dns_util.h"
@@ -50,21 +50,21 @@ bool ReadTestCase(const char* filename,
                   uint16* id, std::string* qname, uint16* qtype,
                   std::vector<char>* resp_buf,
                   bool* crash_test) {
-  FilePath filepath = FilePath::FromUTF8Unsafe(filename);
+  base::FilePath filepath = base::FilePath::FromUTF8Unsafe(filename);
 
   std::string json;
-  if (!file_util::ReadFileToString(filepath, &json)) {
+  if (!base::ReadFileToString(filepath, &json)) {
     LOG(ERROR) << filename << ": couldn't read file.";
     return false;
   }
 
-  scoped_ptr<Value> value(base::JSONReader::Read(json));
+  scoped_ptr<base::Value> value(base::JSONReader::Read(json));
   if (!value.get()) {
     LOG(ERROR) << filename << ": couldn't parse JSON.";
     return false;
   }
 
-  DictionaryValue* dict;
+  base::DictionaryValue* dict;
   if (!value->GetAsDictionary(&dict)) {
     LOG(ERROR) << filename << ": test case is not a dictionary.";
     return false;
@@ -103,7 +103,7 @@ bool ReadTestCase(const char* filename,
   }
   *qtype = static_cast<uint16>(qtype_int);
 
-  ListValue* resp_list;
+  base::ListValue* resp_list;
   if (!dict->GetList("response", &resp_list)) {
     LOG(ERROR) << filename << ": response is missing or not a list.";
     return false;

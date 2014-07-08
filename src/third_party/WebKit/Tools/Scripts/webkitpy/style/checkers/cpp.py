@@ -36,7 +36,6 @@
 
 """Support for check-webkit-style."""
 
-import codecs
 import math  # for log
 import os
 import os.path
@@ -47,9 +46,7 @@ import sys
 import unicodedata
 
 from webkitpy.common.memoized import memoized
-
-# The key to use to provide a class to fake loading a header file.
-INCLUDE_IO_INJECTION_KEY = 'include_header_io'
+from webkitpy.common.system.filesystem import FileSystem
 
 # Headers that we consider STL headers.
 _STL_HEADERS = frozenset([
@@ -121,12 +118,6 @@ _OTHER_HEADER = 2
 _MOC_HEADER = 3
 
 
-# A dictionary of items customize behavior for unit test. For example,
-# INCLUDE_IO_INJECTION_KEY allows providing a custom io class which allows
-# for faking a header file.
-_unit_test_config = {}
-
-
 # The regexp compilation caching is inlined in all regexp functions for
 # performance reasons; factoring it out into a separate function turns out
 # to be noticeably expensive.
@@ -192,6 +183,29 @@ def iteratively_replace_matches_with_char(pattern, char_replacement, s):
         match_length = end_match_index - start_match_index
         s = s[:start_match_index] + char_replacement * match_length + s[end_match_index:]
 
+
+def _find_in_lines(regex, lines, start_position, not_found_position):
+    """Does a find starting at start position and going forward until
+    a match is found.
+
+    Returns the position where the regex started.
+    """
+    current_row = start_position.row
+
+    # Start with the given row and trim off everything before what should be matched.
+    current_line = lines[start_position.row][start_position.column:]
+    starting_offset = start_position.column
+    while True:
+        found_match = search(regex, current_line)
+        if found_match:
+            return Position(current_row, starting_offset + found_match.start())
+
+        # A match was not found so continue forward.
+        current_row += 1
+        starting_offset = 0
+        if current_row >= len(lines):
+            return not_found_position
+        current_line = lines[current_row]
 
 def _rfind_in_lines(regex, lines, start_position, not_found_position):
     """Does a reverse find starting at start position and going backwards until
@@ -903,7 +917,11 @@ def check_for_copyright(lines, error):
               'You should have a line: "Copyright [year] <Copyright Owner>"')
 
 
-def get_header_guard_cpp_variable(filename):
+# TODO(jww) After the transition of Blink into the Chromium repo, this function
+# should be removed. This will strictly enforce Chromium-style header guards,
+# rather than allowing traditional WebKit header guards and Chromium-style
+# simultaneously.
+def get_legacy_header_guard_cpp_variable(filename):
     """Returns the CPP variable that should be used as a header guard.
 
     Args:
@@ -929,6 +947,31 @@ def get_header_guard_cpp_variable(filename):
     return (special_name, standard_name)
 
 
+def get_header_guard_cpp_variable(filename):
+    """Returns the CPP variable that should be used as a header guard in Chromium-style.
+
+    Args:
+      filename: The name of a C++ header file.
+
+    Returns:
+      The CPP variable that should be used as a header guard in the
+      named file in Chromium-style.
+
+    """
+
+    # Restores original filename in case that style checker is invoked from Emacs's
+    # flymake.
+    filename = re.sub(r'_flymake\.h$', '.h', filename)
+
+    # If it's a full path and starts with Source/, replace Source with blink
+    # since that will be the new style directory.
+    filename = sub(r'^Source\/', 'blink/', filename)
+
+    standard_name = sub(r'[-.\s\/]', '_', filename).upper() + '_'
+
+    return standard_name
+
+
 def check_for_header_guard(filename, lines, error):
     """Checks that the file contains a header guard.
 
@@ -941,7 +984,8 @@ def check_for_header_guard(filename, lines, error):
       error: The function to call with any errors found.
     """
 
-    cppvar = get_header_guard_cpp_variable(filename)
+    legacy_cpp_var = get_legacy_header_guard_cpp_variable(filename)
+    cpp_var = get_header_guard_cpp_variable(filename)
 
     ifndef = None
     ifndef_line_number = 0
@@ -962,13 +1006,13 @@ def check_for_header_guard(filename, lines, error):
     if not ifndef or not define or ifndef != define:
         error(0, 'build/header_guard', 5,
               'No #ifndef header guard found, suggested CPP variable is: %s' %
-              cppvar[0])
+              legacy_cpp_var[0])
         return
 
-    # The guard should be File_h.
-    if ifndef not in cppvar:
+    # The guard should be File_h or, for Chromium style, BLINK_PATH_TO_FILE_H_.
+    if ifndef not in legacy_cpp_var and ifndef != cpp_var:
         error(ifndef_line_number, 'build/header_guard', 5,
-              '#ifndef header guard has wrong style, please use: %s' % cppvar[0])
+              '#ifndef header guard has wrong style, please use: %s' % legacy_cpp_var[0])
 
 
 def check_for_unicode_replacement_characters(lines, error):
@@ -1124,6 +1168,8 @@ class _ClassInfo(object):
         self.virtual_method_line_number = None
         self.has_virtual_destructor = False
         self.brace_depth = 0
+        self.unsigned_bitfields = []
+        self.bool_bitfields = []
 
 
 class _ClassState(object):
@@ -1216,6 +1262,7 @@ class _EnumState(object):
 
     def __init__(self):
         self.in_enum_decl = False
+        self.is_webidl_enum = False
 
     def process_clean_line(self, line):
         # FIXME: The regular expressions for expr_all_uppercase and expr_enum_end only accept integers
@@ -1228,21 +1275,27 @@ class _EnumState(object):
         if self.in_enum_decl:
             if match(r'\s*' + expr_enum_end + r'$', line):
                 self.in_enum_decl = False
+                self.is_webidl_enum = False
             elif match(expr_all_uppercase, line):
-                return False
+                return self.is_webidl_enum
             elif match(expr_starts_lowercase, line):
                 return False
         else:
-            if match(expr_enum_start + r'$', line):
+            matched = match(expr_enum_start + r'$', line)
+            if matched:
                 self.in_enum_decl = True
             else:
                 matched = match(expr_enum_start + r'(?P<members>.*)' + expr_enum_end + r'$', line)
                 if matched:
                     members = matched.group('members').split(',')
+                    found_invalid_member = False
                     for member in members:
                         if match(expr_all_uppercase, member):
-                            return False
+                            found_invalid_member = not self.is_webidl_enum
                         if match(expr_starts_lowercase, member):
+                            found_invalid_member = True
+                        if found_invalid_member:
+                            self.is_webidl_enum = False
                             return False
                     return True
         return True
@@ -1393,9 +1446,42 @@ def check_for_non_standard_constructs(clean_lines, line_number,
                   'The class %s probably needs a virtual destructor due to '
                   'having virtual method(s), one declared at line %d.'
                   % (classinfo.name, classinfo.virtual_method_line_number))
+        # Look for mixed bool and unsigned bitfields.
+        if (classinfo.bool_bitfields and classinfo.unsigned_bitfields):
+            bool_list = ', '.join(classinfo.bool_bitfields)
+            unsigned_list = ', '.join(classinfo.unsigned_bitfields)
+            error(classinfo.line_number, 'runtime/bitfields', 5,
+                  'The class %s contains mixed unsigned and bool bitfields, '
+                  'which will pack into separate words on the MSVC compiler.\n'
+                  'Bool bitfields are [%s].\nUnsigned bitfields are [%s].\n'
+                  'Consider converting bool bitfields to unsigned.'
+                  % (classinfo.name, bool_list, unsigned_list))
     else:
         classinfo.brace_depth = brace_depth
 
+    well_typed_bitfield = False;
+    # Look for bool <name> : 1 declarations.
+    args = search(r'\bbool\s+(\S*)\s*:\s*\d+\s*;', line)
+    if args:
+        classinfo.bool_bitfields.append('%d: %s' % (line_number, args.group(1)))
+        well_typed_bitfield = True;
+
+    # Look for unsigned <name> : n declarations.
+    args = search(r'\bunsigned\s+(?:int\s+)?(\S+)\s*:\s*\d+\s*;', line)
+    if args:
+        classinfo.unsigned_bitfields.append('%d: %s' % (line_number, args.group(1)))
+        well_typed_bitfield = True;
+
+    # Look for other bitfield declarations. We don't care about those in
+    # size-matching structs.
+    if not (well_typed_bitfield or classinfo.name.startswith('SameSizeAs') or
+            classinfo.name.startswith('Expected')):
+        args = match(r'\s*(\S+)\s+(\S+)\s*:\s*\d+\s*;', line)
+        if args:
+            error(line_number, 'runtime/bitfields', 4,
+                  'Member %s of class %s defined as a bitfield of type %s. '
+                  'Please declare all bitfields as unsigned.'
+                  % (args.group(2), classinfo.name, args.group(1)))
 
 def check_spacing_for_function_call(line, line_number, error):
     """Checks for the correctness of various spacing around function calls.
@@ -1630,8 +1716,10 @@ def check_function_definition_and_pass_ptr(type_text, row, location_description,
        error: The function to call with any errors found.
     """
     match_ref_or_own_ptr = '(?=\W|^)(Ref|Own)Ptr(?=\W)'
+    exceptions = '(?:&|\*|\*\s*=\s*0)$'
     bad_type_usage = search(match_ref_or_own_ptr, type_text)
-    if not bad_type_usage or type_text.endswith('&') or type_text.endswith('*'):
+    exception_usage = search(exceptions, type_text)
+    if not bad_type_usage or exception_usage:
         return
     type_name = bad_type_usage.group(0)
     error(row, 'readability/pass_ptr', 5,
@@ -2087,6 +2175,8 @@ def check_enum_casing(clean_lines, line_number, enum_state, error):
       error: The function to call with any errors found.
     """
 
+    enum_state.is_webidl_enum |= bool(match(r'\s*// Web(?:Kit)?IDL enum\s*$', clean_lines.raw_lines[line_number]))
+
     line = clean_lines.elided[line_number]  # Get rid of comments and strings.
     if not enum_state.process_clean_line(line):
         error(line_number, 'readability/enum_casing', 4,
@@ -2159,6 +2249,9 @@ def check_using_std(clean_lines, line_number, file_state, error):
         return
 
     method_name = using_std_match.group('method_name')
+    # Exception for the established idiom for swapping objects in generic code.
+    if method_name == 'swap':
+        return
     error(line_number, 'build/using_std', 4,
           "Use 'using namespace std;' instead of 'using std::%s;'." % method_name)
 
@@ -2316,16 +2409,6 @@ def check_braces(clean_lines, line_number, error):
           and not match(r'\s+[A-Z_][A-Z_0-9]+\b', line)):
         error(line_number, 'whitespace/braces', 4,
               'Place brace on its own line for function definitions.')
-
-    if (match(r'\s*}\s*(else\s*({\s*)?)?$', line) and line_number > 1):
-        # We check if a closed brace has started a line to see if a
-        # one line control statement was previous.
-        previous_line = clean_lines.elided[line_number - 2]
-        last_open_brace = previous_line.rfind('{')
-        if (last_open_brace != -1 and previous_line.find('}', last_open_brace) == -1
-            and search(r'\b(if|for|foreach|while|else)\b', previous_line)):
-            error(line_number, 'whitespace/braces', 4,
-                  'One line control clauses should not use braces.')
 
     # An else clause should be on the same line as the preceding closing brace.
     if match(r'\s*else\s*', line):
@@ -2517,15 +2600,16 @@ def check_check(clean_lines, line_number, error):
             break
 
 
-def check_for_comparisons_to_zero(clean_lines, line_number, error):
+def check_for_comparisons_to_boolean(clean_lines, line_number, error):
     # Get the line without comments and strings.
     line = clean_lines.elided[line_number]
 
-    # Include NULL here so that users don't have to convert NULL to 0 first and then get this error.
-    if search(r'[=!]=\s*(NULL|0|true|false)[^\w.]', line) or search(r'[^\w.](NULL|0|true|false)\s*[=!]=', line):
+    # Must include NULL here, as otherwise users will convert NULL to 0 and
+    # then we can't catch it, since it looks like a valid integer comparison.
+    if search(r'[=!]=\s*(NULL|nullptr|true|false)[^\w.]', line) or search(r'[^\w.](NULL|nullptr|true|false)\s*[=!]=', line):
         if not search('LIKELY', line) and not search('UNLIKELY', line):
-            error(line_number, 'readability/comparison_to_zero', 5,
-                  'Tests for true/false, null/non-null, and zero/non-zero should all be done without equality comparisons.')
+            error(line_number, 'readability/comparison_to_boolean', 5,
+                  'Tests for true/false and null/non-null should be done without equality comparisons.')
 
 
 def check_for_null(clean_lines, line_number, file_state, error):
@@ -2586,6 +2670,128 @@ def get_line_width(line):
         return width
     return len(line)
 
+
+def check_conditional_and_loop_bodies_for_brace_violations(clean_lines, line_number, error):
+    """Scans the bodies of conditionals and loops, and in particular
+    all the arms of conditionals, for violations in the use of braces.
+
+    Specifically:
+
+    (1) If an arm omits braces, then the following statement must be on one
+    physical line.
+    (2) If any arm uses braces, all arms must use them.
+
+    These checks are only done here if we find the start of an
+    'if/for/foreach/while' statement, because this function fails fast
+    if it encounters constructs it doesn't understand. Checks
+    elsewhere validate other constraints, such as requiring '}' and
+    'else' to be on the same line.
+
+    Args:
+      clean_lines: A CleansedLines instance containing the file.
+      line_number: The number of the line to check.
+      error: The function to call with any errors found.
+    """
+
+    # We work with the elided lines. Comments have been removed, but line
+    # numbers are preserved, so we can still find situations where
+    # single-expression control clauses span multiple lines, or when a
+    # comment preceded the expression.
+    lines = clean_lines.elided
+    line = lines[line_number]
+
+    # Match control structures.
+    control_match = match(r'\s*(if|foreach|for|while)\s*\(', line)
+    if not control_match:
+        return
+
+    # Found the start of a conditional or loop.
+
+    # The following loop handles all potential arms of the control clause.
+    # The initial conditions are the following:
+    #   - We start on the opening paren '(' of the condition, *unless* we are
+    #     handling an 'else' block, in which case there is no condition.
+    #   - In the latter case, we start at the position just beyond the 'else'
+    #     token.
+    expect_conditional_expression = True
+    know_whether_using_braces = False
+    using_braces = False
+    search_for_else_clause = control_match.group(1) == "if"
+    current_pos = Position(line_number, control_match.end() - 1)
+
+    while True:
+        if expect_conditional_expression:
+            # Try to find the end of the conditional expression,
+            # potentially spanning multiple lines.
+            open_paren_pos = current_pos
+            close_paren_pos = close_expression(lines, open_paren_pos)
+            if close_paren_pos.column < 0:
+                return
+            current_pos = close_paren_pos
+
+        end_line_of_conditional = current_pos.row
+
+        # Find the start of the body.
+        current_pos = _find_in_lines(r'\S', lines, current_pos, None)
+        if not current_pos:
+            return
+
+        current_arm_uses_brace = False
+        if lines[current_pos.row][current_pos.column] == '{':
+            current_arm_uses_brace = True
+        if know_whether_using_braces:
+            if using_braces != current_arm_uses_brace:
+                error(current_pos.row, 'whitespace/braces', 4,
+                      'If one part of an if-else statement uses curly braces, the other part must too.')
+                return
+        know_whether_using_braces = True
+        using_braces = current_arm_uses_brace
+
+        if using_braces:
+            # Skip over the entire arm.
+            current_pos = close_expression(lines, current_pos)
+            if current_pos.column < 0:
+                return
+        else:
+            # Skip over the current expression.
+            current_line_number = current_pos.row
+            current_pos = _find_in_lines(r';', lines, current_pos, None)
+            if not current_pos:
+                return
+            # If the end of the expression is beyond the line just after
+            # the close parenthesis or control clause, we've found a
+            # single-expression arm that spans multiple lines. (We don't
+            # fire this error for expressions ending on the same line; that
+            # is a different error, handled elsewhere.)
+            if current_pos.row > 1 + end_line_of_conditional:
+                error(current_pos.row, 'whitespace/braces', 4,
+                      'A conditional or loop body must use braces if the statement is more than one line long.')
+                return
+            current_pos = Position(current_pos.row, 1 + current_pos.column)
+
+        # At this point current_pos points just past the end of the last
+        # arm. If we just handled the last control clause, we're done.
+        if not search_for_else_clause:
+            return
+
+        # Scan forward for the next non-whitespace character, and see
+        # whether we are continuing a conditional (with an 'else' or
+        # 'else if'), or are done.
+        current_pos = _find_in_lines(r'\S', lines, current_pos, None)
+        if not current_pos:
+            return
+        next_nonspace_string = lines[current_pos.row][current_pos.column:]
+        next_conditional = match(r'(else\s*if|else)', next_nonspace_string)
+        if not next_conditional:
+            # Done processing this 'if' and all arms.
+            return
+        if next_conditional.group(1) == "else if":
+            current_pos = _find_in_lines(r'\(', lines, current_pos, None)
+        else:
+            current_pos.column += 4  # skip 'else'
+            expect_conditional_expression = False
+            search_for_else_clause = False
+    # End while loop
 
 def check_style(clean_lines, line_number, file_extension, class_state, file_state, enum_state, error):
     """Checks rules from the 'C++ style rules' section of cppguide.html.
@@ -2654,7 +2860,7 @@ def check_style(clean_lines, line_number, file_extension, class_state, file_stat
     check_exit_statement_simplifications(clean_lines, line_number, error)
     check_spacing(file_extension, clean_lines, line_number, error)
     check_check(clean_lines, line_number, error)
-    check_for_comparisons_to_zero(clean_lines, line_number, error)
+    check_for_comparisons_to_boolean(clean_lines, line_number, error)
     check_for_null(clean_lines, line_number, file_state, error)
     check_indentation_amount(clean_lines, line_number, error)
     check_enum_casing(clean_lines, line_number, enum_state, error)
@@ -2813,9 +3019,9 @@ def check_include_line(filename, file_extension, clean_lines, line_number, inclu
               'Streams are highly discouraged.')
 
     # Look for specific includes to fix.
-    if include.startswith('wtf/') and not is_system:
+    if include.startswith('wtf/') and is_system:
         error(line_number, 'build/include', 4,
-              'wtf includes should be <wtf/file.h> instead of "wtf/file.h".')
+              'wtf includes should be "wtf/file.h" instead of <wtf/file.h>.')
 
     if filename.find('/chromium/') != -1 and include.startswith('cc/CC'):
         error(line_number, 'build/include', 4,
@@ -3103,11 +3309,9 @@ def check_language(filename, clean_lines, line_number, file_extension, include_s
         error(line_number, 'runtime/unsigned', 1,
               'Omit int when using unsigned')
 
-    # Check that we're not using static_cast<Text*>.
-    if search(r'\bstatic_cast<Text\*>', line):
-        error(line_number, 'readability/check', 4,
-              'Consider using toText helper function in WebCore/dom/Text.h '
-              'instead of static_cast<Text*>')
+    # Check for usage of static_cast<Classname*>.
+    check_for_object_static_cast(filename, line_number, line, error)
+
 
 def check_identifier_name_in_declaration(filename, line_number, line, file_state, error):
     """Checks if identifier names contain any underscores.
@@ -3124,8 +3328,8 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
                   the state of things in the file.
       error: The function to call with any errors found.
     """
-    # We don't check a return statement.
-    if match(r'\s*(return|delete)\b', line):
+    # We don't check return and delete statements and conversion operator declarations.
+    if match(r'\s*(return|delete|operator)\b', line):
         return
 
     # Basically, a declaration is a type name followed by whitespaces
@@ -3168,10 +3372,11 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
 
     # Detect variable and functions.
     type_regexp = r'\w([\w]|\s*[*&]\s*|::)+'
-    identifier_regexp = r'(?P<identifier>[\w:]+)'
+    attribute_regexp = r'ALLOW_UNUSED'
+    identifier_regexp = r'(?!' + attribute_regexp + r')(?P<identifier>[\w:]+)'
     maybe_bitfield_regexp = r'(:\s*\d+\s*)?'
     character_after_identifier_regexp = r'(?P<character_after_identifier>[[;()=,])(?!=)'
-    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
+    declaration_without_type_regexp = r'\s*' + identifier_regexp + r'\s*(' + attribute_regexp + r')?\s*' + maybe_bitfield_regexp + character_after_identifier_regexp
     declaration_with_type_regexp = r'\s*' + type_regexp + r'\s' + declaration_without_type_regexp
     is_function_arguments = False
     number_of_identifiers = 0
@@ -3239,6 +3444,144 @@ def check_identifier_name_in_declaration(filename, line_number, line, file_state
 
         number_of_identifiers += 1
         line = line[matched.end():]
+
+
+def check_for_toFoo_definition(filename, pattern, error):
+    """ Reports for using static_cast instead of toFoo convenience function.
+
+    This function will output warnings to make sure you are actually using
+    the added toFoo conversion functions rather than directly hard coding
+    the static_cast<Classname*> call. For example, you should toHTMLELement(Node*)
+    to convert Node* to HTMLElement*, instead of static_cast<HTMLElement*>(Node*)
+
+    Args:
+      filename: The name of the header file in which to check for toFoo definition.
+      pattern: The conversion function pattern to grep for.
+      error: The function to call with any errors found.
+    """
+    def get_abs_filepath(filename):
+        fileSystem = FileSystem()
+        base_dir = fileSystem.path_to_module(FileSystem.__module__).split('WebKit', 1)[0]
+        base_dir = ''.join((base_dir, 'WebKit/Source'))
+        for root, dirs, names in os.walk(base_dir):
+            if filename in names:
+                return os.path.join(root, filename)
+        return None
+
+    def grep(lines, pattern, error):
+        matches = []
+        function_state = None
+        for line_number in xrange(lines.num_lines()):
+            line = (lines.elided[line_number]).rstrip()
+            try:
+                if pattern in line:
+                    if not function_state:
+                        function_state = _FunctionState(1)
+                    detect_functions(lines, line_number, function_state, error)
+                    # Exclude the match of dummy conversion function. Dummy function is just to
+                    # catch invalid conversions and shouldn't be part of possible alternatives.
+                    result = re.search(r'%s(\s+)%s' % ("void", pattern), line)
+                    if not result:
+                        matches.append([line, function_state.body_start_position.row, function_state.end_position.row + 1])
+                        function_state = None
+            except UnicodeDecodeError:
+                # There would be no non-ascii characters in the codebase ever. The only exception
+                # would be comments/copyright text which might have non-ascii characters. Hence,
+                # it is prefectly safe to catch the UnicodeDecodeError and just pass the line.
+                pass
+
+        return matches
+
+    def check_in_mock_header(filename, matches=None):
+        if not filename == 'Foo.h':
+            return False
+
+        header_file = None
+        try:
+            header_file = CppChecker.fs.read_text_file(filename)
+        except IOError:
+            return False
+        line_number = 0
+        for line in header_file:
+            line_number += 1
+            matched = re.search(r'\btoFoo\b', line)
+            if matched:
+                matches.append(['toFoo', line_number, line_number + 3])
+        return True
+
+    # For unit testing only, avoid header search and lookup locally.
+    matches = []
+    mock_def_found = check_in_mock_header(filename, matches)
+    if mock_def_found:
+        return matches
+
+    # Regular style check flow. Search for actual header file & defs.
+    file_path = get_abs_filepath(filename)
+    if not file_path:
+        return None
+    try:
+        f = open(file_path)
+        clean_lines = CleansedLines(f.readlines())
+    finally:
+        f.close()
+
+    # Make a list of all genuine alternatives to static_cast.
+    matches = grep(clean_lines, pattern, error)
+    return matches
+
+
+def check_for_object_static_cast(processing_file, line_number, line, error):
+    """Checks for a Cpp-style static cast on objects by looking for the pattern.
+
+    Args:
+      processing_file: The name of the processing file.
+      line_number: The number of the line to check.
+      line: The line of code to check.
+      error: The function to call with any errors found.
+    """
+    matched = search(r'\bstatic_cast<(\s*\w*:?:?\w+\s*\*+\s*)>', line)
+    if not matched:
+        return
+
+    class_name = re.sub('[\*]', '', matched.group(1))
+    class_name = class_name.strip()
+    # Ignore (for now) when the casting is to void*,
+    if class_name == 'void':
+        return
+
+    namespace_pos = class_name.find(':')
+    if not namespace_pos == -1:
+        class_name = class_name[namespace_pos + 2:]
+
+    header_file = ''.join((class_name, '.h'))
+    matches = check_for_toFoo_definition(header_file, ''.join(('to', class_name)), error)
+    # Ignore (for now) if not able to find the header where toFoo might be defined.
+    # TODO: Handle cases where Classname might be defined in some other header or cpp file.
+    if matches is None:
+        return
+
+    report_error = True
+    # Ensure found static_cast instance is not from within toFoo definition itself.
+    if (os.path.basename(processing_file) == header_file):
+        for item in matches:
+            if line_number in range(item[1], item[2]):
+                report_error = False
+                break
+
+    if report_error:
+        if len(matches):
+            # toFoo is defined - enforce using it.
+            # TODO: Suggest an appropriate toFoo from the alternatives present in matches.
+            error(line_number, 'runtime/casting', 4,
+                  'static_cast of class objects is not allowed. Use to%s defined in %s.' %
+                  (class_name, header_file))
+        else:
+            # No toFoo defined - enforce definition & usage.
+            # TODO: Automate the generation of toFoo() to avoid any slippages ever.
+            error(line_number, 'runtime/casting', 4,
+                  'static_cast of class objects is not allowed. Add to%s in %s and use it instead.' %
+                  (class_name, header_file))
+
 
 def check_c_style_cast(line_number, line, raw_line, cast_type, pattern,
                        error):
@@ -3412,7 +3755,7 @@ def files_belong_to_same_module(filename_cpp, filename_h):
     return files_belong_to_same_module, common_path
 
 
-def update_include_state(filename, include_state, io=codecs):
+def update_include_state(filename, include_state):
     """Fill up the include_state with new includes found from the file.
 
     Args:
@@ -3423,10 +3766,9 @@ def update_include_state(filename, include_state, io=codecs):
     Returns:
       True if a header was succesfully added. False otherwise.
     """
-    io = _unit_test_config.get(INCLUDE_IO_INJECTION_KEY, codecs)
     header_file = None
     try:
-        header_file = io.open(filename, 'r', 'utf8', 'replace')
+        header_file = CppChecker.fs.read_text_file(filename)
     except IOError:
         return False
     line_number = 0
@@ -3570,7 +3912,7 @@ def process_line(filename, file_extension,
     check_for_non_standard_constructs(clean_lines, line, class_state, error)
     check_posix_threading(clean_lines, line, error)
     check_invalid_increment(clean_lines, line, error)
-
+    check_conditional_and_loop_bodies_for_brace_violations(clean_lines, line, error)
 
 def _process_lines(filename, file_extension, lines, error, min_confidence):
     """Performs lint checks and reports any errors to the given error function.
@@ -3640,7 +3982,7 @@ class CppChecker(object):
         'readability/braces',
         'readability/casting',
         'readability/check',
-        'readability/comparison_to_zero',
+        'readability/comparison_to_boolean',
         'readability/constructors',
         'readability/control_flow',
         'readability/enum_casing',
@@ -3694,8 +4036,10 @@ class CppChecker(object):
         'whitespace/todo',
         ])
 
+    fs = None
+
     def __init__(self, file_path, file_extension, handle_style_error,
-                 min_confidence):
+                 min_confidence, fs=None):
         """Create a CppChecker instance.
 
         Args:
@@ -3707,6 +4051,7 @@ class CppChecker(object):
         self.file_path = file_path
         self.handle_style_error = handle_style_error
         self.min_confidence = min_confidence
+        CppChecker.fs = fs or FileSystem()
 
     # Useful for unit testing.
     def __eq__(self, other):
@@ -3733,9 +4078,6 @@ class CppChecker(object):
 
 
 # FIXME: Remove this function (requires refactoring unit tests).
-def process_file_data(filename, file_extension, lines, error, min_confidence, unit_test_config):
-    global _unit_test_config
-    _unit_test_config = unit_test_config
-    checker = CppChecker(filename, file_extension, error, min_confidence)
+def process_file_data(filename, file_extension, lines, error, min_confidence, fs=None):
+    checker = CppChecker(filename, file_extension, error, min_confidence, fs)
     checker.check(lines)
-    _unit_test_config = {}

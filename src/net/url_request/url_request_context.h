@@ -19,18 +19,18 @@
 #include "base/threading/non_thread_safe.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
-#include "net/base/transport_security_state.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties.h"
-#include "net/ftp/ftp_auth_cache.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request.h"
 
 namespace net {
 class CertVerifier;
 class CookieStore;
+class CTVerifier;
 class FraudulentCertificateReporter;
-class FtpTransactionFactory;
 class HostResolver;
 class HttpAuthHandlerFactory;
 class HttpTransactionFactory;
@@ -58,8 +58,13 @@ class NET_EXPORT URLRequestContext
   // May return NULL if this context doesn't have an associated network session.
   const HttpNetworkSession::Params* GetNetworkSessionParams() const;
 
-  URLRequest* CreateRequest(
-      const GURL& url, URLRequest::Delegate* delegate) const;
+  // Creates a URLRequest. |cookie_store| optionally specifies a cookie store
+  // to be used rather than the one represented by the context, or NULL
+  // otherwise.
+  scoped_ptr<URLRequest> CreateRequest(const GURL& url,
+                                       RequestPriority priority,
+                                       URLRequest::Delegate* delegate,
+                                       CookieStore* cookie_store) const;
 
   NetLog* net_log() const {
     return net_log_;
@@ -109,7 +114,9 @@ class NET_EXPORT URLRequestContext
   }
 
   // Get the ssl config service for this context.
-  SSLConfigService* ssl_config_service() const { return ssl_config_service_; }
+  SSLConfigService* ssl_config_service() const {
+    return ssl_config_service_.get();
+  }
   void set_ssl_config_service(SSLConfigService* service) {
     ssl_config_service_ = service;
   }
@@ -131,24 +138,16 @@ class NET_EXPORT URLRequestContext
     http_transaction_factory_ = factory;
   }
 
-  // Gets the ftp transaction factory for this context.
-  FtpTransactionFactory* ftp_transaction_factory() const {
-    return ftp_transaction_factory_;
-  }
-  void set_ftp_transaction_factory(FtpTransactionFactory* factory) {
-    ftp_transaction_factory_ = factory;
-  }
-
   void set_network_delegate(NetworkDelegate* network_delegate) {
     network_delegate_ = network_delegate;
   }
   NetworkDelegate* network_delegate() const { return network_delegate_; }
 
   void set_http_server_properties(
-      HttpServerProperties* http_server_properties) {
+      const base::WeakPtr<HttpServerProperties>& http_server_properties) {
     http_server_properties_ = http_server_properties;
   }
-  HttpServerProperties* http_server_properties() const {
+  base::WeakPtr<HttpServerProperties> http_server_properties() const {
     return http_server_properties_;
   }
 
@@ -158,34 +157,19 @@ class NET_EXPORT URLRequestContext
   void set_cookie_store(CookieStore* cookie_store);
 
   TransportSecurityState* transport_security_state() const {
-      return transport_security_state_;
+    return transport_security_state_;
   }
   void set_transport_security_state(
       TransportSecurityState* state) {
     transport_security_state_ = state;
   }
 
-  // Gets the FTP authentication cache for this context.
-  FtpAuthCache* ftp_auth_cache() const {
-#if !defined(DISABLE_FTP_SUPPORT)
-    return ftp_auth_cache_.get();
-#else
-    return NULL;
-#endif
+  CTVerifier* cert_transparency_verifier() const {
+    return cert_transparency_verifier_;
   }
-
-  // ---------------------------------------------------------------------------
-  // Legacy accessors that delegate to http_user_agent_settings_.
-  // TODO(pauljensen): Remove after all clients are updated to directly access
-  // http_user_agent_settings_.
-  // Gets the value of 'Accept-Charset' header field.
-  std::string GetAcceptCharset() const;
-  // Gets the value of 'Accept-Language' header field.
-  std::string GetAcceptLanguage() const;
-  // Gets the UA string to use for the given URL.  Pass an invalid URL (such as
-  // GURL()) to get the default UA string.
-  std::string GetUserAgent(const GURL& url) const;
-  // ---------------------------------------------------------------------------
+  void set_cert_transparency_verifier(CTVerifier* verifier) {
+    cert_transparency_verifier_ = verifier;
+  }
 
   const URLRequestJobFactory* job_factory() const { return job_factory_; }
   void set_job_factory(const URLRequestJobFactory* job_factory) {
@@ -209,7 +193,7 @@ class NET_EXPORT URLRequestContext
   void AssertNoURLRequests() const;
 
   // Get the underlying |HttpUserAgentSettings| implementation that provides
-  // the HTTP Accept-Language, Accept-Charset and User-Agent header values.
+  // the HTTP Accept-Language and User-Agent header values.
   const HttpUserAgentSettings* http_user_agent_settings() const {
     return http_user_agent_settings_;
   }
@@ -235,18 +219,12 @@ class NET_EXPORT URLRequestContext
   ProxyService* proxy_service_;
   scoped_refptr<SSLConfigService> ssl_config_service_;
   NetworkDelegate* network_delegate_;
-  HttpServerProperties* http_server_properties_;
+  base::WeakPtr<HttpServerProperties> http_server_properties_;
   HttpUserAgentSettings* http_user_agent_settings_;
   scoped_refptr<CookieStore> cookie_store_;
   TransportSecurityState* transport_security_state_;
-#if !defined(DISABLE_FTP_SUPPORT)
-  scoped_ptr<FtpAuthCache> ftp_auth_cache_;
-#endif
-  // The charset of the referrer where this request comes from. It's not
-  // used in communication with a server but is used to construct a suggested
-  // filename for file download.
+  CTVerifier* cert_transparency_verifier_;
   HttpTransactionFactory* http_transaction_factory_;
-  FtpTransactionFactory* ftp_transaction_factory_;
   const URLRequestJobFactory* job_factory_;
   URLRequestThrottlerManager* throttler_manager_;
 

@@ -12,4 +12,26 @@ bool RenderWidgetHostDelegate::PreHandleKeyboardEvent(
   return false;
 }
 
+bool RenderWidgetHostDelegate::HandleWheelEvent(
+    const blink::WebMouseWheelEvent& event) {
+  return false;
+}
+
+bool RenderWidgetHostDelegate::PreHandleGestureEvent(
+    const blink::WebGestureEvent& event) {
+  return false;
+}
+
+bool RenderWidgetHostDelegate::HandleGestureEvent(
+    const blink::WebGestureEvent& event) {
+  return false;
+}
+
+#if defined(OS_WIN)
+gfx::NativeViewAccessible
+RenderWidgetHostDelegate::GetParentNativeViewAccessible() {
+  return NULL;
+}
+#endif
+
 }  // namespace content

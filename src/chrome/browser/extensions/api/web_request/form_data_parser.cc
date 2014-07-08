@@ -7,7 +7,7 @@
 #include <vector>
 
 #include "base/lazy_instance.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "net/base/escape.h"
 #include "net/url_request/url_request.h"
@@ -359,7 +359,7 @@ FormDataParserUrlEncoded::FormDataParserUrlEncoded()
       source_malformed_(false),
       arg_name_(&name_),
       arg_value_(&value_),
-      patterns_(&(g_patterns.Get())) {
+      patterns_(g_patterns.Pointer()) {
   args_[0] = &arg_name_;
   args_[1] = &arg_value_;
 }
@@ -444,7 +444,7 @@ FormDataParserMultipart::FormDataParserMultipart(
     : dash_boundary_pattern_(
           CreateBoundaryPatternFromLiteral(boundary_separator)),
       state_(dash_boundary_pattern_.ok() ? STATE_INIT : STATE_ERROR),
-      patterns_(&(g_patterns.Get())) {}
+      patterns_(g_patterns.Pointer()) {}
 
 FormDataParserMultipart::~FormDataParserMultipart() {}
 

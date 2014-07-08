@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 
@@ -26,11 +26,12 @@ class BuiltinProvider : public AutocompleteProvider {
  private:
   virtual ~BuiltinProvider();
 
-  typedef std::vector<string16> Builtins;
+  typedef std::vector<base::string16> Builtins;
 
   static const int kRelevance;
 
-  void AddMatch(const string16& match_string,
+  void AddMatch(const base::string16& match_string,
+                const base::string16& inline_completion,
                 const ACMatchClassifications& styles);
 
   Builtins builtins_;

@@ -5,11 +5,13 @@
 #include "ui/views/color_chooser/color_chooser_view.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "skia/ext/refptr.h"
+#include "third_party/skia/include/effects/SkGradientShader.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
 #include "ui/views/border.h"
@@ -30,18 +32,19 @@ const int kHueIndicatorSize = 5;
 const int kBorderWidth = 1;
 const int kTextfieldLengthInChars = 14;
 
-string16 GetColorText(SkColor color) {
-  return ASCIIToUTF16(base::StringPrintf("#%02x%02x%02x",
-                                         SkColorGetR(color),
-                                         SkColorGetG(color),
-                                         SkColorGetB(color)));
+base::string16 GetColorText(SkColor color) {
+  return base::ASCIIToUTF16(base::StringPrintf("#%02x%02x%02x",
+                                               SkColorGetR(color),
+                                               SkColorGetG(color),
+                                               SkColorGetB(color)));
 }
 
-bool GetColorFromText(const string16& text, SkColor* result) {
+bool GetColorFromText(const base::string16& text, SkColor* result) {
   if (text.size() != 6 && !(text.size() == 7 && text[0] == '#'))
     return false;
 
-  std::string input = UTF16ToUTF8((text.size() == 6) ? text : text.substr(1));
+  std::string input =
+      base::UTF16ToUTF8((text.size() == 6) ? text : text.substr(1));
   std::vector<uint8> hex;
   if (!base::HexStringToBytes(input, &hex))
     return false;
@@ -85,6 +88,24 @@ class LocatedEventHandlerView : public views::View {
   DISALLOW_COPY_AND_ASSIGN(LocatedEventHandlerView);
 };
 
+void DrawGradientRect(const gfx::Rect& rect, SkColor start_color,
+                      SkColor end_color, bool is_horizontal,
+                      gfx::Canvas* canvas) {
+  SkColor colors[2] = { start_color, end_color };
+  SkPoint points[2];
+  points[0].iset(0, 0);
+  if (is_horizontal)
+    points[1].iset(rect.width() + 1, 0);
+  else
+    points[1].iset(0, rect.height() + 1);
+  skia::RefPtr<SkShader> shader(skia::AdoptRef(
+      SkGradientShader::CreateLinear(points, colors, NULL, 2,
+                                     SkShader::kClamp_TileMode)));
+  SkPaint paint;
+  paint.setShader(shader.get());
+  canvas->DrawRect(rect, paint);
+}
+
 }  // namespace
 
 namespace views {
@@ -117,7 +138,7 @@ class ColorChooserView::HueView : public LocatedEventHandlerView {
 ColorChooserView::HueView::HueView(ColorChooserView* chooser_view)
     : chooser_view_(chooser_view),
       level_(0) {
-  set_focusable(false);
+  SetFocusable(false);
 }
 
 void ColorChooserView::HueView::OnHueChanged(SkScalar hue) {
@@ -231,8 +252,8 @@ ColorChooserView::SaturationValueView::SaturationValueView(
     ColorChooserView* chooser_view)
     : chooser_view_(chooser_view),
       hue_(0) {
-  set_focusable(false);
-  set_border(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
+  SetFocusable(false);
+  SetBorder(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
 }
 
 void ColorChooserView::SaturationValueView::OnHueChanged(SkScalar hue) {
@@ -256,7 +277,6 @@ void ColorChooserView::SaturationValueView::OnSaturationValueChanged(
   marker_position_.set_x(x);
   marker_position_.set_y(y);
   SchedulePaint();
-  chooser_view_->OnSaturationValueChosen(saturation, value);
 }
 
 void ColorChooserView::SaturationValueView::ProcessEventAtLocation(
@@ -269,6 +289,7 @@ void ColorChooserView::SaturationValueView::ProcessEventAtLocation(
   saturation = SkScalarPin(saturation, 0, SK_Scalar1);
   value = SkScalarPin(value, 0, SK_Scalar1);
   OnSaturationValueChanged(saturation, value);
+  chooser_view_->OnSaturationValueChosen(saturation, value);
 }
 
 gfx::Size ColorChooserView::SaturationValueView::GetPreferredSize() {
@@ -277,17 +298,22 @@ gfx::Size ColorChooserView::SaturationValueView::GetPreferredSize() {
 }
 
 void ColorChooserView::SaturationValueView::OnPaint(gfx::Canvas* canvas) {
-  SkScalar hsv[3];
-  hsv[0] = hue_;
-  SkScalar scalar_size = SkIntToScalar(kSaturationValueSize - 1);
-  for (int x = kBorderWidth; x < width() - kBorderWidth; ++x) {
-    hsv[1] = SkScalarDiv(SkIntToScalar(x), scalar_size);
-    for (int y = kBorderWidth; y < height() - kBorderWidth; ++y) {
-      hsv[2] = SK_Scalar1 - SkScalarDiv(SkIntToScalar(y), scalar_size);
-      canvas->FillRect(gfx::Rect(x, y, 1, 1), SkHSVToColor(255, hsv));
-    }
-  }
+  gfx::Rect color_bounds = bounds();
+  color_bounds.Inset(GetInsets());
 
+  // Paints horizontal gradient first for saturation.
+  SkScalar hsv[3] = { hue_, SK_Scalar1, SK_Scalar1 };
+  SkScalar left_hsv[3] = { hue_, 0, SK_Scalar1 };
+  DrawGradientRect(color_bounds, SkHSVToColor(255, left_hsv),
+                   SkHSVToColor(255, hsv), true /* is_horizontal */, canvas);
+
+  // Overlays vertical gradient for value.
+  SkScalar hsv_bottom[3] = { 0, SK_Scalar1, 0 };
+  DrawGradientRect(color_bounds, SK_ColorTRANSPARENT,
+                   SkHSVToColor(255, hsv_bottom), false /* is_horizontal */,
+                   canvas);
+
+  // Draw the crosshair marker.
   // The background is very dark at the bottom of the view.  Use a white
   // marker in that case.
   SkColor indicator_color =
@@ -302,6 +328,7 @@ void ColorChooserView::SaturationValueView::OnPaint(gfx::Canvas* canvas) {
                 marker_position_.y(),
                 kSaturationValueIndicatorSize * 2 + 1, 1),
       indicator_color);
+
   OnPaintBorder(canvas);
 }
 
@@ -320,9 +347,9 @@ class ColorChooserView::SelectedColorPatchView : public views::View {
 };
 
 ColorChooserView::SelectedColorPatchView::SelectedColorPatchView() {
-  set_focusable(false);
+  SetFocusable(false);
   SetVisible(true);
-  set_border(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
+  SetBorder(Border::CreateSolidBorder(kBorderWidth, SK_ColorGRAY));
 }
 
 void ColorChooserView::SelectedColorPatchView::SetColor(SkColor color) {
@@ -342,7 +369,7 @@ ColorChooserView::ColorChooserView(ColorChooserListener* listener,
     : listener_(listener) {
   DCHECK(listener_);
 
-  set_focusable(false);
+  SetFocusable(false);
   set_background(Background::CreateSolidBackground(SK_ColorLTGRAY));
   SetLayoutManager(new BoxLayout(BoxLayout::kVertical, kMarginWidth,
                                  kMarginWidth, kMarginWidth));
@@ -367,7 +394,7 @@ ColorChooserView::ColorChooserView(ColorChooserListener* listener,
       GridLayout::FILL, GridLayout::FILL, 1, GridLayout::USE_PREF, 0, 0);
   layout->StartRow(0, 0);
   textfield_ = new Textfield();
-  textfield_->SetController(this);
+  textfield_->set_controller(this);
   textfield_->set_default_width_in_chars(kTextfieldLengthInChars);
   layout->AddView(textfield_);
   selected_color_patch_ = new SelectedColorPatchView();
@@ -428,7 +455,7 @@ View* ColorChooserView::GetContentsView() {
 }
 
 void ColorChooserView::ContentsChanged(Textfield* sender,
-                                       const string16& new_contents) {
+                                       const base::string16& new_contents) {
   SkColor color = SK_ColorBLACK;
   if (GetColorFromText(new_contents, &color)) {
     SkColorToHSV(color, hsv_);

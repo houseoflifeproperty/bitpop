@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# Wrap "timeout" program from GNU coreutils.
+exec /usr/bin/timeout -s KILL 3m svn "$@"

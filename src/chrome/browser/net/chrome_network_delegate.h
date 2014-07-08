@@ -9,12 +9,15 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/values.h"
+#include "components/data_reduction_proxy/browser/data_reduction_proxy_metrics.h"
 #include "net/base/network_delegate.h"
 
+class ClientHints;
 class CookieSettings;
-class ExtensionInfoMap;
 class PrefService;
 template<class T> class PrefMember;
 
@@ -25,11 +28,17 @@ class Value;
 }
 
 namespace chrome_browser_net {
-class LoadTimeStats;
+class ConnectInterceptor;
+class Predictor;
 }
+
+namespace domain_reliability {
+class DomainReliabilityMonitor;
+}  // namespace domain_reliability
 
 namespace extensions {
 class EventRouterForwarder;
+class InfoMap;
 }
 
 namespace net {
@@ -53,7 +62,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
 
   // Not inlined because we assign a scoped_refptr, which requires us to include
   // the header file.
-  void set_extension_info_map(ExtensionInfoMap* extension_info_map);
+  void set_extension_info_map(extensions::InfoMap* extension_info_map);
 
   void set_url_blacklist_manager(
       const policy::URLBlacklistManager* url_blacklist_manager) {
@@ -66,15 +75,21 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
     profile_ = profile;
   }
 
+  // |profile_path| is used to locate the "Downloads" folder on Chrome OS. If it
+  // is set, the location of the Downloads folder for the profile is added to
+  // the whitelist for accesses via file: scheme.
+  void set_profile_path(const base::FilePath& profile_path) {
+    profile_path_ = profile_path;
+  }
+
   // If |cookie_settings| is NULL or not set, all cookies are enabled,
   // otherwise the settings are enforced on all observed network requests.
   // Not inlined because we assign a scoped_refptr, which requires us to include
   // the header file. Here we just forward-declare it.
   void set_cookie_settings(CookieSettings* cookie_settings);
 
-  void set_load_time_stats(chrome_browser_net::LoadTimeStats* load_time_stats) {
-    load_time_stats_ = load_time_stats;
-  }
+  // Causes requested URLs to be fed to |predictor| via ConnectInterceptor.
+  void set_predictor(chrome_browser_net::Predictor* predictor);
 
   void set_enable_do_not_track(BooleanPrefMember* enable_do_not_track) {
     enable_do_not_track_ = enable_do_not_track;
@@ -84,6 +99,15 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
       BooleanPrefMember* force_google_safe_search) {
     force_google_safe_search_ = force_google_safe_search;
   }
+
+  void set_domain_reliability_monitor(
+      domain_reliability::DomainReliabilityMonitor*
+          domain_reliability_monitor) {
+    domain_reliability_monitor_ = domain_reliability_monitor;
+  }
+
+  // Adds the Client Hints header to HTTP requests.
+  void SetEnableClientHints();
 
   // Causes |OnCanThrottleRequest| to always return false, for all
   // instances of this object.
@@ -105,11 +129,11 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // Creates a Value summary of the persistent state of the network session.
   // The caller is responsible for deleting the returned value.
   // Must be called on the UI thread.
-  static Value* HistoricNetworkStatsInfoToValue();
+  static base::Value* HistoricNetworkStatsInfoToValue();
 
   // Creates a Value summary of the state of the network session. The caller is
   // responsible for deleting the returned value.
-  Value* SessionNetworkStatsInfoToValue() const;
+  base::Value* SessionNetworkStatsInfoToValue() const;
 
  private:
   friend class ChromeNetworkDelegateTest;
@@ -127,8 +151,8 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
       net::URLRequest* request,
       const net::CompletionCallback& callback,
       const net::HttpResponseHeaders* original_response_headers,
-      scoped_refptr<net::HttpResponseHeaders>* override_response_headers)
-      OVERRIDE;
+      scoped_refptr<net::HttpResponseHeaders>* override_response_headers,
+      GURL* allowed_unsafe_redirect_url) OVERRIDE;
   virtual void OnBeforeRedirect(net::URLRequest* request,
                                 const GURL& new_location) OVERRIDE;
   virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE;
@@ -137,7 +161,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   virtual void OnCompleted(net::URLRequest* request, bool started) OVERRIDE;
   virtual void OnURLRequestDestroyed(net::URLRequest* request) OVERRIDE;
   virtual void OnPACScriptError(int line_number,
-                                const string16& error) OVERRIDE;
+                                const base::string16& error) OVERRIDE;
   virtual net::NetworkDelegate::AuthRequiredResponse OnAuthRequired(
       net::URLRequest* request,
       const net::AuthChallengeInfo& auth_info,
@@ -149,23 +173,29 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
                               const std::string& cookie_line,
                               net::CookieOptions* options) OVERRIDE;
   virtual bool OnCanAccessFile(const net::URLRequest& request,
-                               const FilePath& path) const OVERRIDE;
+                               const base::FilePath& path) const OVERRIDE;
   virtual bool OnCanThrottleRequest(
       const net::URLRequest& request) const OVERRIDE;
+  virtual bool OnCanEnablePrivacyMode(
+      const GURL& url,
+      const GURL& first_party_for_cookies) const OVERRIDE;
   virtual int OnBeforeSocketStreamConnect(
       net::SocketStream* stream,
       const net::CompletionCallback& callback) OVERRIDE;
-  virtual void OnRequestWaitStateChange(const net::URLRequest& request,
-                                        RequestWaitState state) OVERRIDE;
 
   void AccumulateContentLength(
-      int64 received_payload_byte_count, int64 original_payload_byte_count);
+      int64 received_payload_byte_count,
+      int64 original_payload_byte_count,
+      data_reduction_proxy::DataReductionProxyRequestType request_type);
 
   scoped_refptr<extensions::EventRouterForwarder> event_router_;
   void* profile_;
+  base::FilePath profile_path_;
   scoped_refptr<CookieSettings> cookie_settings_;
 
-  scoped_refptr<ExtensionInfoMap> extension_info_map_;
+  scoped_refptr<extensions::InfoMap> extension_info_map_;
+
+  scoped_ptr<chrome_browser_net::ConnectInterceptor> connect_interceptor_;
 
   // Weak, owned by our owner.
   BooleanPrefMember* enable_referrers_;
@@ -174,6 +204,7 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
 
   // Weak, owned by our owner.
   const policy::URLBlacklistManager* url_blacklist_manager_;
+  domain_reliability::DomainReliabilityMonitor* domain_reliability_monitor_;
 
   // When true, allow access to all file:// URLs.
   static bool g_allow_file_access_;
@@ -186,15 +217,16 @@ class ChromeNetworkDelegate : public net::NetworkDelegate {
   // static anyway since it is based on a command-line flag.
   static bool g_never_throttle_requests_;
 
-  // Pointer to IOThread global, should outlive ChromeNetworkDelegate.
-  chrome_browser_net::LoadTimeStats* load_time_stats_;
-
   // Total size of all content (excluding headers) that has been received
   // over the network.
   int64 received_content_length_;
 
   // Total original size of all content before it was transferred.
   int64 original_content_length_;
+
+  scoped_ptr<ClientHints> client_hints_;
+
+  bool first_request_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeNetworkDelegate);
 };

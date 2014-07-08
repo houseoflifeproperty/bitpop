@@ -43,9 +43,6 @@ namespace thunk {
 
 namespace subtle {
 
-// Assert that we are holding the proxy lock.
-PPAPI_THUNK_EXPORT void AssertLockHeld();
-
 // This helps us define our RAII Enter classes easily. To make an RAII class
 // which locks the proxy lock on construction and unlocks on destruction,
 // inherit from |LockOnEntry<true>| before all other base classes. This ensures
@@ -63,12 +60,12 @@ struct LockOnEntry<false> {
 #if (!NDEBUG)
   LockOnEntry() {
     // You must already hold the lock to use Enter*NoLock.
-    AssertLockHeld();
+    ProxyLock::AssertAcquired();
   }
   ~LockOnEntry() {
     // You must not release the lock before leaving the scope of the
     // Enter*NoLock.
-    AssertLockHeld();
+    ProxyLock::AssertAcquired();
   }
 #endif
 };
@@ -88,7 +85,10 @@ class PPAPI_THUNK_EXPORT EnterBase {
  public:
   EnterBase();
   explicit EnterBase(PP_Resource resource);
+  EnterBase(PP_Instance instance, SingletonResourceID resource_id);
   EnterBase(PP_Resource resource, const PP_CompletionCallback& callback);
+  EnterBase(PP_Instance instance, SingletonResourceID resource_id,
+            const PP_CompletionCallback& callback);
   virtual ~EnterBase();
 
   // Sets the result for calls that use a completion callback. It handles making
@@ -117,6 +117,11 @@ class PPAPI_THUNK_EXPORT EnterBase {
   // code be in the non-templatized base keeps us from having to instantiate
   // it in every template.
   static Resource* GetResource(PP_Resource resource);
+
+  // Helper function to return a Resource from a PP_Instance and singleton
+  // resource identifier.
+  static Resource* GetSingletonResource(PP_Instance instance,
+                                        SingletonResourceID resource_id);
 
   void ClearCallback();
 
@@ -258,17 +263,18 @@ class EnterInstanceAPI
       public subtle::EnterBase {
  public:
   explicit EnterInstanceAPI(PP_Instance instance)
-      : EnterBase(),
+      : EnterBase(instance, ApiT::kSingletonResourceID),
         functions_(NULL) {
-    PPB_Instance_API* ppb_instance =
-        PpapiGlobals::Get()->GetInstanceAPI(instance);
-    if (ppb_instance) {
-      Resource* resource =
-          ppb_instance->GetSingletonResource(instance,
-                                             ApiT::kSingletonResourceID);
-      if (resource)
-        functions_ = resource->GetAs<ApiT>();
-    }
+    if (resource_)
+      functions_ = resource_->GetAs<ApiT>();
+    SetStateForFunctionError(instance, functions_, true);
+  }
+  EnterInstanceAPI(PP_Instance instance,
+                   const PP_CompletionCallback& callback)
+      : EnterBase(instance, ApiT::kSingletonResourceID, callback),
+        functions_(NULL) {
+    if (resource_)
+      functions_ = resource_->GetAs<ApiT>();
     SetStateForFunctionError(instance, functions_, true);
   }
   ~EnterInstanceAPI() {}

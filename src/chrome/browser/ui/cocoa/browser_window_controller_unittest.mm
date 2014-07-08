@@ -5,23 +5,40 @@
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
 
 #include "base/mac/mac_util.h"
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/sync/sync_ui_util.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/signin/fake_signin_manager.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
+#include "chrome/browser/signin/signin_manager_factory.h"
+#include "chrome/browser/sync/profile_sync_service.h"
+#include "chrome/browser/sync/profile_sync_service_factory.h"
+#include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/browser/ui/browser_list.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #include "chrome/browser/ui/cocoa/find_bar/find_bar_bridge.h"
 #include "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
-#include "chrome/common/chrome_notification_types.h"
+#import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_error_controller.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
+#include "testing/gmock/include/gmock/gmock.h"
+#include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+
+using ::testing::Return;
 
 @interface BrowserWindowController (JustForTesting)
 // Already defined in BWC.
@@ -54,10 +71,6 @@
   return [findBarCocoaController_ view];
 }
 
-- (NSSplitView*)devToolsView {
-  return static_cast<NSSplitView*>([devToolsController_ view]);
-}
-
 - (BOOL)bookmarkBarVisible {
   return [bookmarkBarController_ isVisible];
 }
@@ -87,7 +100,7 @@ TEST_F(BrowserWindowControllerTest, TestSaveWindowPosition) {
   ASSERT_TRUE(prefs != NULL);
 
   // Check to make sure there is no existing pref for window placement.
-  const DictionaryValue* browser_window_placement =
+  const base::DictionaryValue* browser_window_placement =
       prefs->GetDictionary(prefs::kBrowserWindowPlacement);
   ASSERT_TRUE(browser_window_placement);
   EXPECT_TRUE(browser_window_placement->empty());
@@ -110,8 +123,7 @@ TEST_F(BrowserWindowControllerTest, TestFullScreenWindow) {
 
 TEST_F(BrowserWindowControllerTest, TestNormal) {
   // Force the bookmark bar to be shown.
-  profile()->GetPrefs()->
-      SetBoolean(prefs::kShowBookmarkBar, true);
+  profile()->GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
   [controller_ browserWindow]->BookmarkBarStateChanged(
       BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
 
@@ -124,7 +136,8 @@ TEST_F(BrowserWindowControllerTest, TestNormal) {
   // And make sure a controller for a pop-up window is not normal.
   // popup_browser will be owned by its window.
   Browser* popup_browser(new Browser(
-      Browser::CreateParams(Browser::TYPE_POPUP, profile())));
+      Browser::CreateParams(Browser::TYPE_POPUP, profile(),
+                            chrome::GetActiveDesktop())));
   NSWindow *cocoaWindow = popup_browser->window()->GetNativeWindow();
   BrowserWindowController* controller =
       static_cast<BrowserWindowController*>([cocoaWindow windowController]);
@@ -138,7 +151,8 @@ TEST_F(BrowserWindowControllerTest, TestNormal) {
 
 TEST_F(BrowserWindowControllerTest, TestSetBounds) {
   // Create a normal browser with bounds smaller than the minimum.
-  Browser::CreateParams params(Browser::TYPE_TABBED, profile());
+  Browser::CreateParams params(Browser::TYPE_TABBED, profile(),
+                               chrome::GetActiveDesktop());
   params.initial_bounds = gfx::Rect(0, 0, 50, 50);
   Browser* browser = new Browser(params);
   NSWindow *cocoaWindow = browser->window()->GetNativeWindow();
@@ -163,7 +177,8 @@ TEST_F(BrowserWindowControllerTest, TestSetBounds) {
 
 TEST_F(BrowserWindowControllerTest, TestSetBoundsPopup) {
   // Create a popup with bounds smaller than the minimum.
-  Browser::CreateParams params(Browser::TYPE_POPUP, profile());
+  Browser::CreateParams params(Browser::TYPE_POPUP, profile(),
+                               chrome::GetActiveDesktop());
   params.initial_bounds = gfx::Rect(0, 0, 50, 50);
   Browser* browser = new Browser(params);
   NSWindow *cocoaWindow = browser->window()->GetNativeWindow();
@@ -209,7 +224,8 @@ TEST_F(BrowserWindowControllerTest, TestIncognitoWidthSpace) {
   scoped_ptr<TestingProfile> incognito_profile(new TestingProfile());
   incognito_profile->set_off_the_record(true);
   scoped_ptr<Browser> browser(
-      new Browser(Browser::CreateParams(incognito_profile.get()));
+      new Browser(Browser::CreateParams(incognito_profile.get(),
+                                        chrome::GetActiveDesktop()));
   controller_.reset([[BrowserWindowController alloc]
                               initWithBrowser:browser.get()
                                 takeOwnership:NO]);
@@ -224,6 +240,7 @@ TEST_F(BrowserWindowControllerTest, TestIncognitoWidthSpace) {
 #endif
 
 namespace {
+
 // Verifies that the toolbar, infobar, tab content area, and download shelf
 // completely fill the area under the tabstrip.
 void CheckViewPositions(BrowserWindowController* controller) {
@@ -253,6 +270,7 @@ void CheckViewPositions(BrowserWindowController* controller) {
   // not necessarily fixed with respect to the content view.
   EXPECT_EQ(NSMinY(tabstrip), NSMaxY(toolbar));
 }
+
 }  // end namespace
 
 TEST_F(BrowserWindowControllerTest, TestAdjustWindowHeight) {
@@ -427,8 +445,7 @@ TEST_F(BrowserWindowControllerTest, TestResizeViews) {
 
 TEST_F(BrowserWindowControllerTest, TestResizeViewsWithBookmarkBar) {
   // Force a display of the bookmark bar.
-  profile()->GetPrefs()->
-      SetBoolean(prefs::kShowBookmarkBar, true);
+  profile()->GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
   [controller_ browserWindow]->BookmarkBarStateChanged(
       BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
 
@@ -474,8 +491,7 @@ TEST_F(BrowserWindowControllerTest, TestResizeViewsWithBookmarkBar) {
   CheckViewPositions(controller_);
 
   // Remove the bookmark bar and recheck
-  profile()->GetPrefs()->
-      SetBoolean(prefs::kShowBookmarkBar, false);
+  profile()->GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, false);
   [controller_ resizeView:bookmark newHeight:0];
   CheckViewPositions(controller_);
 
@@ -595,7 +611,7 @@ TEST_F(BrowserWindowControllerTest, TestZoomFrame) {
 }
 
 TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
-  FindBarBridge bridge;
+  FindBarBridge bridge(NULL);
   [controller_ addFindBar:bridge.find_bar_cocoa_controller()];
 
   // Test that the Z-order of the find bar is on top of everything.
@@ -614,29 +630,166 @@ TEST_F(BrowserWindowControllerTest, TestFindBarOnTop) {
   EXPECT_GT(findBar_index, bookmark_index);
 }
 
-// Tests that status bubble's base frame does move when devTools are docked.
-TEST_F(BrowserWindowControllerTest, TestStatusBubblePositioning) {
-  ASSERT_EQ(1U, [[[controller_ devToolsView] subviews] count]);
+TEST_F(BrowserWindowControllerTest, TestSigninMenuItemNoErrors) {
+  base::scoped_nsobject<NSMenuItem> syncMenuItem(
+      [[NSMenuItem alloc] initWithTitle:@""
+                                 action:@selector(commandDispatch)
+                          keyEquivalent:@""]);
+  [syncMenuItem setTag:IDC_SHOW_SYNC_SETUP];
 
-  NSPoint bubbleOrigin = [controller_ statusBubbleBaseFrame].origin;
+  NSString* startSignin =
+    l10n_util::GetNSStringFWithFixup(
+        IDS_SYNC_MENU_PRE_SYNCED_LABEL,
+        l10n_util::GetStringUTF16(IDS_SHORT_PRODUCT_NAME));
 
-  // Add a fake subview to devToolsView to emulate docked devTools.
-  scoped_nsobject<NSView> view(
-      [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 10, 10)]);
-  [[controller_ devToolsView] addSubview:view];
-  [[controller_ devToolsView] adjustSubviews];
+  // Make sure shouldShow parameter is obeyed, and we get the default
+  // label if not signed in.
+  [BrowserWindowController updateSigninItem:syncMenuItem
+                                 shouldShow:YES
+                             currentProfile:profile()];
 
-  NSPoint bubbleOriginWithDevTools = [controller_ statusBubbleBaseFrame].origin;
+  EXPECT_TRUE([[syncMenuItem title] isEqualTo:startSignin]);
+  EXPECT_FALSE([syncMenuItem isHidden]);
 
-  // Make sure that status bubble frame is moved.
-  EXPECT_FALSE(NSEqualPoints(bubbleOrigin, bubbleOriginWithDevTools));
+  [BrowserWindowController updateSigninItem:syncMenuItem
+                                 shouldShow:NO
+                             currentProfile:profile()];
+  EXPECT_TRUE([[syncMenuItem title] isEqualTo:startSignin]);
+  EXPECT_TRUE([syncMenuItem isHidden]);
+
+  // Now sign in.
+  std::string username = "foo@example.com";
+  NSString* alreadySignedIn =
+    l10n_util::GetNSStringFWithFixup(IDS_SYNC_MENU_SYNCED_LABEL,
+                                     base::UTF8ToUTF16(username));
+  SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
+  signin->SetAuthenticatedUsername(username);
+  ProfileSyncService* sync =
+    ProfileSyncServiceFactory::GetForProfile(profile());
+  sync->SetSyncSetupCompleted();
+  [BrowserWindowController updateSigninItem:syncMenuItem
+                                 shouldShow:YES
+                             currentProfile:profile()];
+  EXPECT_TRUE([[syncMenuItem title] isEqualTo:alreadySignedIn]);
+  EXPECT_FALSE([syncMenuItem isHidden]);
+}
+
+TEST_F(BrowserWindowControllerTest, TestSigninMenuItemAuthError) {
+  base::scoped_nsobject<NSMenuItem> syncMenuItem(
+      [[NSMenuItem alloc] initWithTitle:@""
+                                 action:@selector(commandDispatch)
+                          keyEquivalent:@""]);
+  [syncMenuItem setTag:IDC_SHOW_SYNC_SETUP];
+
+  // Now sign in.
+  std::string username = "foo@example.com";
+  SigninManager* signin = SigninManagerFactory::GetForProfile(profile());
+  signin->SetAuthenticatedUsername(username);
+  ProfileSyncService* sync =
+      ProfileSyncServiceFactory::GetForProfile(profile());
+  sync->SetSyncSetupCompleted();
+  // Force an auth error.
+  FakeAuthStatusProvider provider(
+      ProfileOAuth2TokenServiceFactory::GetForProfile(profile())->
+          signin_error_controller());
+  GoogleServiceAuthError error(
+      GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
+  provider.SetAuthError("user@gmail.com", error);
+  [BrowserWindowController updateSigninItem:syncMenuItem
+                                 shouldShow:YES
+                             currentProfile:profile()];
+  NSString* authError =
+    l10n_util::GetNSStringWithFixup(IDS_SYNC_SIGN_IN_ERROR_WRENCH_MENU_ITEM);
+  EXPECT_TRUE([[syncMenuItem title] isEqualTo:authError]);
+  EXPECT_FALSE([syncMenuItem isHidden]);
+
+}
+
+// If there's a separator after the signin menu item, make sure it is hidden/
+// shown when the signin menu item is.
+TEST_F(BrowserWindowControllerTest, TestSigninMenuItemWithSeparator) {
+  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
+  NSMenuItem* signinMenuItem =
+      [menu addItemWithTitle:@""
+                      action:@selector(commandDispatch)
+               keyEquivalent:@""];
+  [signinMenuItem setTag:IDC_SHOW_SYNC_SETUP];
+  NSMenuItem* followingSeparator = [NSMenuItem separatorItem];
+  [menu addItem:followingSeparator];
+  [signinMenuItem setHidden:NO];
+  [followingSeparator setHidden:NO];
+
+  [BrowserWindowController updateSigninItem:signinMenuItem
+                                 shouldShow:NO
+                             currentProfile:profile()];
+
+  EXPECT_FALSE([followingSeparator isEnabled]);
+  EXPECT_TRUE([signinMenuItem isHidden]);
+  EXPECT_TRUE([followingSeparator isHidden]);
+
+  [BrowserWindowController updateSigninItem:signinMenuItem
+                                 shouldShow:YES
+                             currentProfile:profile()];
+
+  EXPECT_FALSE([followingSeparator isEnabled]);
+  EXPECT_FALSE([signinMenuItem isHidden]);
+  EXPECT_FALSE([followingSeparator isHidden]);
+}
+
+// If there's a non-separator item after the signin menu item, it should not
+// change state when the signin menu item is hidden/shown.
+TEST_F(BrowserWindowControllerTest, TestSigninMenuItemWithNonSeparator) {
+  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
+  NSMenuItem* signinMenuItem =
+      [menu addItemWithTitle:@""
+                      action:@selector(commandDispatch)
+               keyEquivalent:@""];
+  [signinMenuItem setTag:IDC_SHOW_SYNC_SETUP];
+  NSMenuItem* followingNonSeparator =
+      [menu addItemWithTitle:@""
+                      action:@selector(commandDispatch)
+               keyEquivalent:@""];
+  [signinMenuItem setHidden:NO];
+  [followingNonSeparator setHidden:NO];
+
+  [BrowserWindowController updateSigninItem:signinMenuItem
+                                 shouldShow:NO
+                             currentProfile:profile()];
+
+  EXPECT_TRUE([followingNonSeparator isEnabled]);
+  EXPECT_TRUE([signinMenuItem isHidden]);
+  EXPECT_FALSE([followingNonSeparator isHidden]);
+
+  [followingNonSeparator setHidden:YES];
+  [BrowserWindowController updateSigninItem:signinMenuItem
+                                 shouldShow:YES
+                             currentProfile:profile()];
+
+  EXPECT_TRUE([followingNonSeparator isEnabled]);
+  EXPECT_FALSE([signinMenuItem isHidden]);
+  EXPECT_TRUE([followingNonSeparator isHidden]);
+}
+
+// Verify that hit testing works correctly when the bookmark bar overlaps
+// web contents.
+TEST_F(BrowserWindowControllerTest, BookmarkBarHitTest) {
+  profile()->GetPrefs()->SetBoolean(prefs::kShowBookmarkBar, true);
+  [controller_ browserWindow]->BookmarkBarStateChanged(
+      BookmarkBar::DONT_ANIMATE_STATE_CHANGE);
+
+  NSView* bookmarkView = [controller_ bookmarkView];
+  NSView* contentView = [[controller_ window] contentView];
+  NSPoint point = [bookmarkView convertPoint:NSMakePoint(1, 1)
+                                      toView:[contentView superview]];
+
+  EXPECT_TRUE([[contentView hitTest:point] isDescendantOf:bookmarkView]);
 }
 
 @interface BrowserWindowControllerFakeFullscreen : BrowserWindowController {
  @private
   // We release the window ourselves, so we don't have to rely on the unittest
   // doing it for us.
-  scoped_nsobject<NSWindow> testFullscreenWindow_;
+  base::scoped_nsobject<NSWindow> testFullscreenWindow_;
 }
 @end
 
@@ -679,8 +832,7 @@ TEST_F(BrowserWindowFullScreenControllerTest, TestFullscreen) {
   [controller_ showWindow:nil];
   EXPECT_FALSE([controller_ isFullscreen]);
 
-  [controller_ enterFullscreenForURL:GURL()
-                       bubbleType:FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION];
+  [controller_ enterFullscreen];
   WaitForFullScreenTransition();
   EXPECT_TRUE([controller_ isFullscreen]);
 
@@ -701,8 +853,7 @@ TEST_F(BrowserWindowFullScreenControllerTest, TestActivate) {
   [controller_ activate];
   EXPECT_TRUE(IsFrontWindow([controller_ window]));
 
-  [controller_ enterFullscreenForURL:GURL()
-                       bubbleType:FEB_TYPE_BROWSER_FULLSCREEN_EXIT_INSTRUCTION];
+  [controller_ enterFullscreen];
   WaitForFullScreenTransition();
   [controller_ activate];
 

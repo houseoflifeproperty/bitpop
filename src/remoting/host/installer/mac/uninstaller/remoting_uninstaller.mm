@@ -95,7 +95,8 @@ const char kKeystonePID[] = "com.google.chrome_remote_desktop";
   if (status == errAuthorizationToolExecuteFailure) {
     NSLog(@"Error errAuthorizationToolExecuteFailure");
   } else if (status != errAuthorizationSuccess) {
-    NSLog(@"Error while executing %s. Status=%lx", cmd, status);
+    NSLog(@"Error while executing %s. Status=%d",
+          cmd, static_cast<int>(status));
   } else {
     logOutput(pipe);
   }
@@ -140,6 +141,9 @@ const char kKeystonePID[] = "com.google.chrome_remote_desktop";
   [self sudoDelete:remoting::kHostHelperScriptPath usingAuth:authRef];
   [self sudoDelete:remoting::kHostConfigFilePath usingAuth:authRef];
   [self sudoDelete:remoting::kPrefPaneFilePath usingAuth:authRef];
+  [self sudoDelete:remoting::kLogFilePath usingAuth:authRef];
+  [self sudoDelete:remoting::kLogFileConfigPath usingAuth:authRef];
+  [self sudoDelete:remoting::kNativeMessagingManifestPath usingAuth:authRef];
   [self sudoDelete:remoting::kBrandedUninstallerPath usingAuth:authRef];
   [self sudoDelete:remoting::kUnbrandedUninstallerPath usingAuth:authRef];
 
@@ -152,7 +156,8 @@ const char kKeystonePID[] = "com.google.chrome_remote_desktop";
                                         kAuthorizationFlagDefaults, &authRef);
   if (status != errAuthorizationSuccess) {
     [NSException raise:@"AuthorizationCreate Failure"
-                format:@"Error during AuthorizationCreate status=%ld", status];
+                format:@"Error during AuthorizationCreate status=%d",
+                           static_cast<int>(status)];
   }
 
   AuthorizationItem right = {kAuthorizationRightExecute, 0, NULL, 0};

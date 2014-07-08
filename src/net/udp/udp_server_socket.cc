@@ -37,11 +37,11 @@ int UDPServerSocket::SendTo(IOBuffer* buf,
   return socket_.SendTo(buf, buf_len, address, callback);
 }
 
-bool UDPServerSocket::SetReceiveBufferSize(int32 size) {
+int UDPServerSocket::SetReceiveBufferSize(int32 size) {
   return socket_.SetReceiveBufferSize(size);
 }
 
-bool UDPServerSocket::SetSendBufferSize(int32 size) {
+int UDPServerSocket::SetSendBufferSize(int32 size) {
   return socket_.SetSendBufferSize(size);
 }
 
@@ -67,6 +67,34 @@ void UDPServerSocket::AllowAddressReuse() {
 
 void UDPServerSocket::AllowBroadcast() {
   socket_.AllowBroadcast();
+}
+
+int UDPServerSocket::JoinGroup(const IPAddressNumber& group_address) const {
+  return socket_.JoinGroup(group_address);
+}
+
+int UDPServerSocket::LeaveGroup(const IPAddressNumber& group_address) const {
+  return socket_.LeaveGroup(group_address);
+}
+
+int UDPServerSocket::SetMulticastInterface(uint32 interface_index) {
+  return socket_.SetMulticastInterface(interface_index);
+}
+
+int UDPServerSocket::SetMulticastTimeToLive(int time_to_live) {
+  return socket_.SetMulticastTimeToLive(time_to_live);
+}
+
+int UDPServerSocket::SetMulticastLoopbackMode(bool loopback) {
+  return socket_.SetMulticastLoopbackMode(loopback);
+}
+
+int UDPServerSocket::SetDiffServCodePoint(DiffServCodePoint dscp) {
+  return socket_.SetDiffServCodePoint(dscp);
+}
+
+void UDPServerSocket::DetachFromThread() {
+  socket_.DetachFromThread();
 }
 
 }  // namespace net

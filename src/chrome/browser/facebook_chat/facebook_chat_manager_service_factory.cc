@@ -17,12 +17,13 @@
 #include "chrome/browser/facebook_chat/facebook_chat_manager_service_factory.h"
 
 #include "chrome/browser/facebook_chat/facebook_chat_manager.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 FacebookChatManager* FacebookChatManagerServiceFactory::GetForProfile(Profile* profile) {
   return static_cast<FacebookChatManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -31,14 +32,15 @@ FacebookChatManagerServiceFactory* FacebookChatManagerServiceFactory::GetInstanc
 }
 
 FacebookChatManagerServiceFactory::FacebookChatManagerServiceFactory()
-    : ProfileKeyedServiceFactory("facebook_chat_manager", ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory("facebook_chat_manager",
+    							 BrowserContextDependencyManager::GetInstance()) {
 }
 
 FacebookChatManagerServiceFactory::~FacebookChatManagerServiceFactory() {
 }
 
-ProfileKeyedService* FacebookChatManagerServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* FacebookChatManagerServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
   return new FacebookChatManager();
 }
 

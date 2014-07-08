@@ -12,12 +12,12 @@ import re
 import sys
 import time
 
-BASE_DIR = os.path.dirname(__file__)
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(BASE_DIR, '..'))
 sys.path.append(os.path.join(BASE_DIR, '..', '..', '..', 'commit-queue'))
 
-# pylint: disable=F0401
-import buildbot_json
-import slaves
+import buildbot_json  # pylint: disable=F0401
+from tools import slaves
 
 
 def format_time(value):

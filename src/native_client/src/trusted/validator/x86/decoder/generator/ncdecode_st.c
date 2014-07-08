@@ -33,13 +33,20 @@
 #include "native_client/src/shared/utils/debugging.h"
 
 const char* NaClStValueKindName(NaClStValueKind kind) {
-  static const char* name[] = {
-    "nacl_byte",
-    "nacl_text",
-    "nacl_int",
-    "nacl_defop",
-  };
-  return kind < NACL_ARRAY_SIZE(name) ? name[kind] : "???";
+  /*
+   * See https://code.google.com/p/nativeclient/issues/detail?id=3750
+   */
+  switch (kind) {
+    case nacl_byte:
+      return "nacl_byte";
+    case nacl_text:
+      return "nacl_text";
+    case nacl_int:
+      return "nacl_int";
+    case nacl_defop:
+      return "nacl_defop";
+  }
+  return "???";  /* better not be DCE'd */
 }
 
 void NaClStValueAssign(
@@ -99,7 +106,7 @@ NaClSymbolTable* NaClSymbolTableCreate(
   st->size = 0;
   st->capacity = capacity;
   st->values = (NaClSymbolTablePair*)
-      calloc(sizeof(NaClSymbolTablePair), capacity);
+      calloc(capacity, sizeof(NaClSymbolTablePair));
   assert(NULL != st->values);
   DEBUG(NaClLog(LOG_INFO,
                 "NaClSymbolTableCreate(%"NACL_PRIdS") = %p\n",

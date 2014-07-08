@@ -14,8 +14,7 @@ using content::BrowserThread;
 namespace extensions {
 
 ExternalLoader::ExternalLoader()
-    : owner_(NULL),
-      running_(false) {
+    : owner_(NULL) {
 }
 
 void ExternalLoader::Init(ExternalProviderImpl* owner) {
@@ -23,12 +22,12 @@ void ExternalLoader::Init(ExternalProviderImpl* owner) {
   owner_ = owner;
 }
 
-const FilePath ExternalLoader::GetBaseCrxFilePath() {
+const base::FilePath ExternalLoader::GetBaseCrxFilePath() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
   // By default, relative paths are not supported.
   // Subclasses that wish to support them should override this method.
-  return FilePath();
+  return base::FilePath();
 }
 
 void ExternalLoader::OwnerShutdown() {
@@ -40,7 +39,6 @@ ExternalLoader::~ExternalLoader() {}
 
 void ExternalLoader::LoadFinished() {
   CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  running_ = false;
   if (owner_) {
     owner_->SetPrefs(prefs_.release());
   }

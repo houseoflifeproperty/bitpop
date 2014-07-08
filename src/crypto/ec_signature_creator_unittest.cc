@@ -12,17 +12,9 @@
 #include "crypto/signature_verifier.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-#if defined(USE_OPENSSL)
-// Once ECSignatureCreator is implemented for OpenSSL, remove this #if block.
-// TODO(rch): When that happens, also add some exported keys from each to
+// TODO(rch): Add some exported keys from each to
 // test interop between NSS and OpenSSL.
-TEST(ECSignatureCreatorTest, OpenSSLStub) {
-  scoped_ptr<crypto::ECSignatureCreator> signer(
-      crypto::ECSignatureCreator::Create(NULL));
-  ASSERT_TRUE(signer.get());
-  EXPECT_FALSE(signer->Sign(NULL, 0, NULL));
-}
-#else
+
 TEST(ECSignatureCreatorTest, BasicTest) {
   // Do a verify round trip.
   scoped_ptr<crypto::ECPrivateKey> key_original(
@@ -30,13 +22,14 @@ TEST(ECSignatureCreatorTest, BasicTest) {
   ASSERT_TRUE(key_original.get());
 
   std::vector<uint8> key_info;
-  ASSERT_TRUE(key_original->ExportEncryptedPrivateKey("", 1000, &key_info));
+  ASSERT_TRUE(
+      key_original->ExportEncryptedPrivateKey(std::string(), 1000, &key_info));
   std::vector<uint8> pubkey_info;
   ASSERT_TRUE(key_original->ExportPublicKey(&pubkey_info));
 
   scoped_ptr<crypto::ECPrivateKey> key(
-      crypto::ECPrivateKey::CreateFromEncryptedPrivateKeyInfo("", key_info,
-                                                              pubkey_info));
+      crypto::ECPrivateKey::CreateFromEncryptedPrivateKeyInfo(
+          std::string(), key_info, pubkey_info));
   ASSERT_TRUE(key.get());
   ASSERT_TRUE(key->key() != NULL);
 
@@ -53,12 +46,22 @@ TEST(ECSignatureCreatorTest, BasicTest) {
   std::vector<uint8> public_key_info;
   ASSERT_TRUE(key_original->ExportPublicKey(&public_key_info));
 
-  // This is the algorithm ID for SHA-256 with EC encryption.
+  // This is the algorithm ID for ECDSA with SHA-256. Parameters are ABSENT.
+  // RFC 5758:
+  //   ecdsa-with-SHA256 OBJECT IDENTIFIER ::= { iso(1) member-body(2)
+  //        us(840) ansi-X9-62(10045) signatures(4) ecdsa-with-SHA2(3) 2 }
+  //   ...
+  //   When the ecdsa-with-SHA224, ecdsa-with-SHA256, ecdsa-with-SHA384, or
+  //   ecdsa-with-SHA512 algorithm identifier appears in the algorithm field
+  //   as an AlgorithmIdentifier, the encoding MUST omit the parameters
+  //   field.  That is, the AlgorithmIdentifier SHALL be a SEQUENCE of one
+  //   component, the OID ecdsa-with-SHA224, ecdsa-with-SHA256, ecdsa-with-
+  //   SHA384, or ecdsa-with-SHA512.
+  // See also RFC 5480, Appendix A.
   const uint8 kECDSAWithSHA256AlgorithmID[] = {
-    0x30, 0x0c,
+    0x30, 0x0a,
       0x06, 0x08,
         0x2a, 0x86, 0x48, 0xce, 0x3d, 0x04, 0x03, 0x02,
-      0x05, 0x00
   };
   crypto::SignatureVerifier verifier;
   ASSERT_TRUE(verifier.VerifyInit(
@@ -70,4 +73,3 @@ TEST(ECSignatureCreatorTest, BasicTest) {
                         data.size());
   ASSERT_TRUE(verifier.VerifyFinal());
 }
-#endif  // !defined(USE_OPENSSL)

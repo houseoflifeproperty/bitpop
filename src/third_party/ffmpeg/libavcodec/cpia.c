@@ -24,6 +24,7 @@
 
 #include "avcodec.h"
 #include "get_bits.h"
+#include "internal.h"
 
 
 #define FRAME_HEADER_SIZE 64
@@ -42,12 +43,12 @@
 
 
 typedef struct {
-    AVFrame frame;
+    AVFrame *frame;
 } CpiaContext;
 
 
-static int cpia_decode_frame(AVCodecContext* avctx,
-        void* data, int* data_size, AVPacket* avpkt)
+static int cpia_decode_frame(AVCodecContext *avctx,
+                             void *data, int *got_frame, AVPacket* avpkt)
 {
     CpiaContext* const cpia = avctx->priv_data;
     int i,j,ret;
@@ -58,7 +59,7 @@ static int cpia_decode_frame(AVCodecContext* avctx,
     uint16_t linelength;
     uint8_t skip;
 
-    AVFrame* const frame = &cpia->frame;
+    AVFrame *frame = cpia->frame;
     uint8_t *y, *u, *v, *y_end, *u_end, *v_end;
 
     // Check header
@@ -99,10 +100,8 @@ static int cpia_decode_frame(AVCodecContext* avctx,
     }
 
     // Get buffer filled with previous frame
-    if ((ret = avctx->reget_buffer(avctx, frame)) < 0) {
-        av_log(avctx, AV_LOG_ERROR, "reget_buffer() failed!\n");
+    if ((ret = ff_reget_buffer(avctx, frame)) < 0)
         return ret;
-    }
 
 
     for ( i = 0;
@@ -114,12 +113,12 @@ static int cpia_decode_frame(AVCodecContext* avctx,
         src += 2;
 
         if (src_size < linelength) {
-            frame->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
+            av_frame_set_decode_error_flags(frame, FF_DECODE_ERROR_INVALID_BITSTREAM);
             av_log(avctx, AV_LOG_WARNING, "Frame ended enexpectedly!\n");
             break;
         }
         if (src[linelength - 1] != EOL) {
-            frame->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
+            av_frame_set_decode_error_flags(frame, FF_DECODE_ERROR_INVALID_BITSTREAM);
             av_log(avctx, AV_LOG_WARNING, "Wrong line length %d or line not terminated properly (found 0x%02x)!\n", linelength, src[linelength - 1]);
             break;
         }
@@ -140,7 +139,7 @@ static int cpia_decode_frame(AVCodecContext* avctx,
              */
             for (j = 0; j < linelength - 1; j++) {
                 if (y > y_end) {
-                    frame->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
+                    av_frame_set_decode_error_flags(frame, FF_DECODE_ERROR_INVALID_BITSTREAM);
                     av_log(avctx, AV_LOG_WARNING, "Decoded data exceeded linesize!\n");
                     break;
                 }
@@ -160,7 +159,7 @@ static int cpia_decode_frame(AVCodecContext* avctx,
              */
             for (j = 0; j < linelength - 4; ) {
                 if (y + 1 > y_end || u > u_end || v > v_end) {
-                    frame->decode_error_flags = FF_DECODE_ERROR_INVALID_BITSTREAM;
+                    av_frame_set_decode_error_flags(frame, FF_DECODE_ERROR_INVALID_BITSTREAM);
                     av_log(avctx, AV_LOG_WARNING, "Decoded data exceeded linesize!\n");
                     break;
                 }
@@ -183,16 +182,19 @@ static int cpia_decode_frame(AVCodecContext* avctx,
         }
     }
 
-    *data_size = sizeof(AVFrame);
-    *(AVFrame*) data = *frame;
+    *got_frame = 1;
+    if ((ret = av_frame_ref(data, cpia->frame)) < 0)
+        return ret;
 
     return avpkt->size;
 }
 
 static av_cold int cpia_decode_init(AVCodecContext *avctx)
 {
+    CpiaContext *s = avctx->priv_data;
+
     // output pixel format
-    avctx->pix_fmt = PIX_FMT_YUV420P;
+    avctx->pix_fmt = AV_PIX_FMT_YUV420P;
 
     /* The default timebase set by the v4l2 demuxer leads to probing which is buggy.
      * Set some reasonable time_base to skip this.
@@ -202,17 +204,30 @@ static av_cold int cpia_decode_init(AVCodecContext *avctx)
         avctx->time_base.den = 60;
     }
 
+    s->frame = av_frame_alloc();
+    if (!s->frame)
+        return AVERROR(ENOMEM);
+
     return 0;
 }
 
+static av_cold int cpia_decode_end(AVCodecContext *avctx)
+{
+    CpiaContext *s = avctx->priv_data;
+
+    av_frame_free(&s->frame);
+
+    return 0;
+}
 
 AVCodec ff_cpia_decoder = {
     .name           = "cpia",
+    .long_name      = NULL_IF_CONFIG_SMALL("CPiA video format"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_CPIA,
     .priv_data_size = sizeof(CpiaContext),
     .init           = cpia_decode_init,
+    .close          = cpia_decode_end,
     .decode         = cpia_decode_frame,
     .capabilities   = CODEC_CAP_DR1,
-    .long_name      = NULL_IF_CONFIG_SMALL("CPiA video format"),
 };

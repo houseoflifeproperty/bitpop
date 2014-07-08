@@ -18,7 +18,8 @@
 #ifndef WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_CAPTURE_H_
 #define WEBRTC_VIDEO_ENGINE_INCLUDE_VIE_CAPTURE_H_
 
-#include "common_types.h"
+#include "webrtc/common_types.h"
+#include "webrtc/common_video/interface/i420_video_frame.h"
 
 namespace webrtc {
 
@@ -103,6 +104,7 @@ class WEBRTC_DLLEXPORT ViEExternalCapture {
 
   // This method is called by the user to deliver a new captured frame to
   // VideoEngine.
+  // |capture_time| must be specified in the NTP time format in milliseconds.
   virtual int IncomingFrame(unsigned char* video_frame,
                             unsigned int video_frame_length,
                             unsigned short width,
@@ -112,9 +114,12 @@ class WEBRTC_DLLEXPORT ViEExternalCapture {
 
   // This method is specifically for delivering a new captured I420 frame to
   // VideoEngine.
+  // |capture_time| must be specified in the NTP time format in milliseconds.
   virtual int IncomingFrameI420(
       const ViEVideoFrameI420& video_frame,
       unsigned long long capture_time = 0) = 0;
+
+  virtual void SwapFrame(I420VideoFrame* frame) {}
 };
 
 // This class declares an abstract interface for a user defined observer. It is

@@ -95,10 +95,9 @@ def Clobber(options):
   path_dbg = '/cygdrive/e/b/build/slave/*/build/src/*/Debug'
   path_rel = '/cygdrive/e/b/build/slave/*/build/src/*/Release'
   options.win_cmd = 'rm -rf %s %s' % (path_dbg, path_rel)
-  path_scons = '/b/build/slave/*/build/src/sconsbuild'
-  path_make = '/b/build/slave/*/build/src/out'
-  options.linux_cmd = 'rm -rf %s %s' % (path_scons, path_make)
-  path = '/b/build/slave/*/build/src/xcodebuild'
+  path_ninja = '/b/build/slave/*/build/src/out'
+  options.linux_cmd = 'rm -rf %s' % path_ninja
+  path = '/b/build/slave/*/build/src/{xcodebuild,out}'
   options.mac_cmd = 'rm -rf %s' % path
   # We don't want to stop if one slave failed.
   options.ignore_failure = True

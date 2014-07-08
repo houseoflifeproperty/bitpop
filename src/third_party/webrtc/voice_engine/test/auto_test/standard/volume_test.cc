@@ -8,7 +8,21 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "after_streaming_fixture.h"
+#include "webrtc/voice_engine/test/auto_test/fixtures/after_streaming_fixture.h"
+
+namespace {
+
+void ExpectVolumeNear(int expected, int actual) {
+  // The hardware volume may be more coarsely quantized than [0, 255], so
+  // it is not always reasonable to expect to get exactly what we set. This
+  // allows for some error.
+  const int kMaxVolumeError = 10;
+  EXPECT_NEAR(expected, actual, kMaxVolumeError);
+  EXPECT_GE(actual, 0);
+  EXPECT_LE(actual, 255);
+}
+
+}  // namespace
 
 class VolumeTest : public AfterStreamingFixture {
 };
@@ -33,20 +47,20 @@ TEST_F(VolumeTest, SetVolumeBeforePlayoutWorks) {
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(200));
   unsigned int volume;
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
-  EXPECT_EQ(200u, volume);
+  ExpectVolumeNear(200u, volume);
 
   PausePlaying();
   ResumePlaying();
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
   // Ensure the volume has not changed after resuming playout.
-  EXPECT_EQ(200u, volume);
+  ExpectVolumeNear(200u, volume);
 
   PausePlaying();
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(100));
   ResumePlaying();
   // Ensure the volume set while paused is retained.
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
-  EXPECT_EQ(100u, volume);
+  ExpectVolumeNear(100u, volume);
 
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(original_volume));
 }
@@ -60,28 +74,26 @@ TEST_F(VolumeTest, ManualSetVolumeWorks) {
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(0));
   unsigned int volume;
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
-  EXPECT_EQ(0u, volume);
+  ExpectVolumeNear(0u, volume);
   Sleep(1000);
 
   TEST_LOG("Setting speaker volume to 100 out of 255.\n");
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(100));
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
-  EXPECT_EQ(100u, volume);
+  ExpectVolumeNear(100u, volume);
   Sleep(1000);
 
   // Set the volume to 255 very briefly so we don't blast the poor user
   // listening to this. This is just to test the call succeeds.
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(255));
   EXPECT_EQ(0, voe_volume_control_->GetSpeakerVolume(volume));
-  EXPECT_EQ(255u, volume);
+  ExpectVolumeNear(255u, volume);
 
   TEST_LOG("Setting speaker volume to the original %d out of 255.\n",
       original_volume);
   EXPECT_EQ(0, voe_volume_control_->SetSpeakerVolume(original_volume));
   Sleep(1000);
 }
-
-#if !defined(WEBRTC_IOS)
 
 TEST_F(VolumeTest, DISABLED_ON_LINUX(DefaultMicrophoneVolumeIsAtMost255)) {
   unsigned int volume = 1000;
@@ -129,10 +141,6 @@ TEST_F(VolumeTest, ManualCanSetChannelScaling) {
   TEST_LOG("Channel scaling set to 0.1: audio should be barely audible.\n");
   Sleep(2000);
 }
-
-#endif  // !WEBRTC_IOS
-
-#if !defined(WEBRTC_ANDROID) && !defined(WEBRTC_IOS)
 
 TEST_F(VolumeTest, InputMutingIsNotEnabledByDefault) {
   bool is_muted = true;
@@ -188,7 +196,7 @@ TEST_F(VolumeTest, DISABLED_ON_LINUX(ManualSystemInputMutingMutesMicrophone)) {
   Sleep(2000);
 }
 
-TEST_F(VolumeTest, SystemOutputMutingIsNotEnabledByDefault) {
+TEST_F(VolumeTest, DISABLED_ON_LINUX(SystemOutputMutingIsNotEnabledByDefault)) {
   bool is_muted = true;
   EXPECT_EQ(0, voe_volume_control_->GetSystemOutputMute(is_muted));
   EXPECT_FALSE(is_muted);
@@ -270,5 +278,3 @@ TEST_F(VolumeTest, ManualTestChannelPanning) {
   EXPECT_FLOAT_EQ(0.1f, left);
   EXPECT_FLOAT_EQ(0.8f, right);
 }
-
-#endif  // !WEBRTC_ANDROID && !WEBRTC_IOS

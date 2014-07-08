@@ -5,41 +5,35 @@
 #include "content/common/indexed_db/indexed_db_key_range.h"
 
 #include "base/logging.h"
+#include "third_party/WebKit/public/platform/WebIDBTypes.h"
 
 namespace content {
 
-using WebKit::WebIDBKeyRange;
-using WebKit::WebIDBKey;
-
 IndexedDBKeyRange::IndexedDBKeyRange()
-    : lower_open_(false),
-      upper_open_(false) {
-  lower_.SetNull();
-  upper_.SetNull();
-}
+    : lower_(blink::WebIDBKeyTypeNull),
+      upper_(blink::WebIDBKeyTypeNull),
+      lower_open_(false),
+      upper_open_(false) {}
 
-IndexedDBKeyRange::IndexedDBKeyRange(const WebIDBKeyRange& key_range) {
-  lower_.Set(key_range.lower());
-  upper_.Set(key_range.upper());
-  lower_open_ = key_range.lowerOpen();
-  upper_open_ = key_range.upperOpen();
-}
+IndexedDBKeyRange::IndexedDBKeyRange(const IndexedDBKey& lower,
+                                     const IndexedDBKey& upper,
+                                     bool lower_open,
+                                     bool upper_open)
+    : lower_(lower),
+      upper_(upper),
+      lower_open_(lower_open),
+      upper_open_(upper_open) {}
 
-IndexedDBKeyRange::~IndexedDBKeyRange() {
-}
+IndexedDBKeyRange::IndexedDBKeyRange(const IndexedDBKey& key)
+    : lower_(key), upper_(key), lower_open_(false), upper_open_(false) {}
 
+IndexedDBKeyRange::~IndexedDBKeyRange() {}
 
-void IndexedDBKeyRange::Set(const IndexedDBKey& lower,
-                            const IndexedDBKey& upper,
-                            bool lower_open, bool upper_open) {
-  lower_.Set(lower);
-  upper_.Set(upper);
-  lower_open_ = lower_open;
-  upper_open_ = upper_open;
-}
+bool IndexedDBKeyRange::IsOnlyKey() const {
+  if (lower_open_ || upper_open_)
+    return false;
 
-IndexedDBKeyRange::operator WebIDBKeyRange() const {
-  return WebIDBKeyRange(lower_, upper_, lower_open_, upper_open_);
+  return lower_.Equals(upper_);
 }
 
 }  // namespace content

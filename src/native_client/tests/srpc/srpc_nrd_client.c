@@ -19,9 +19,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
-#include <sys/nacl_syscalls.h>
 #include <unistd.h>
 
+#include "native_client/src/public/imc_syscalls.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
 
 /* Flag used to record errors. */

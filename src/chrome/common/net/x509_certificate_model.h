@@ -5,8 +5,8 @@
 #ifndef CHROME_COMMON_NET_X509_CERTIFICATE_MODEL_H_
 #define CHROME_COMMON_NET_X509_CERTIFICATE_MODEL_H_
 
-#include "net/base/cert_type.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/cert_type.h"
+#include "net/cert/x509_certificate.h"
 
 // This namespace defines a set of functions to be used in UI-related bits of
 // X509 certificates. It decouples the UI from the underlying crypto library
@@ -76,10 +76,6 @@ void GetNicknameStringsFromCertList(const net::CertificateList& certs,
                                     const std::string& cert_expired,
                                     const std::string& cert_not_yet_valid,
                                     std::vector<std::string>* nick_names);
-
-// Returns the PKCS#11 attribute CKA_ID for a certificate as an upper-case
-// hex string, or the empty string if none is found.
-std::string GetPkcs11Id(net::X509Certificate::OSCertHandle cert_handle);
 
 struct Extension {
   std::string name;

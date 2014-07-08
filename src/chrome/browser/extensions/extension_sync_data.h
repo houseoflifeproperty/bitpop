@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/version.h"
-#include "googleurl/src/gurl.h"
 #include "sync/api/sync_change.h"
+#include "url/gurl.h"
 
 namespace syncer {
 class SyncData;
@@ -72,6 +72,7 @@ class ExtensionSyncData {
   bool uninstalled_;
   bool enabled_;
   bool incognito_enabled_;
+  bool remote_install_;
   Version version_;
   GURL update_url_;
   std::string name_;

@@ -5,18 +5,27 @@
 #ifndef REMOTING_CLIENT_FRAME_CONSUMER_H_
 #define REMOTING_CLIENT_FRAME_CONSUMER_H_
 
-#include "third_party/skia/include/core/SkRect.h"
-#include "third_party/skia/include/core/SkRegion.h"
-#include "third_party/skia/include/core/SkSize.h"
+#include "base/basictypes.h"
 
-namespace pp {
-class ImageData;
-} // namespace pp
+namespace webrtc {
+class DesktopFrame;
+class DesktopRect;
+class DesktopRegion;
+class DesktopSize;
+class DesktopVector;
+}  // namespace webrtc
 
 namespace remoting {
 
 class FrameConsumer {
  public:
+
+  // List of supported pixel formats needed by various platforms.
+  enum PixelFormat {
+    FORMAT_BGRA,  // Used by the Pepper plugin.
+    FORMAT_RGBA,  // Used for Android's Bitmap class.
+  };
+
   // Accepts a buffer to be painted to the screen. The buffer's dimensions and
   // relative position within the frame are specified by |clip_area|. Only
   // pixels falling within |region| and the current clipping area are painted.
@@ -25,19 +34,23 @@ class FrameConsumer {
   //
   // N.B. Both |clip_area| and |region| are in output coordinates relative to
   // the frame.
-  virtual void ApplyBuffer(const SkISize& view_size,
-                           const SkIRect& clip_area,
-                           pp::ImageData* buffer,
-                           const SkRegion& region) = 0;
+  virtual void ApplyBuffer(const webrtc::DesktopSize& view_size,
+                           const webrtc::DesktopRect& clip_area,
+                           webrtc::DesktopFrame* buffer,
+                           const webrtc::DesktopRegion& region,
+                           const webrtc::DesktopRegion& shape) = 0;
 
   // Accepts a buffer that couldn't be used for drawing for any reason (shutdown
   // is in progress, the view area has changed, etc.). The accepted buffer can
   // be freed or reused for another drawing operation.
-  virtual void ReturnBuffer(pp::ImageData* buffer) = 0;
+  virtual void ReturnBuffer(webrtc::DesktopFrame* buffer) = 0;
 
   // Set the dimension of the entire host screen.
-  virtual void SetSourceSize(const SkISize& source_size,
-                             const SkIPoint& dpi) = 0;
+  virtual void SetSourceSize(const webrtc::DesktopSize& source_size,
+                             const webrtc::DesktopVector& dpi) = 0;
+
+  // Returns the preferred pixel encoding for the platform.
+  virtual PixelFormat GetPixelFormat() = 0;
 
  protected:
   FrameConsumer() {}

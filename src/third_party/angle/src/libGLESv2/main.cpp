@@ -1,3 +1,4 @@
+#include "precompiled.h"
 //
 // Copyright (c) 2002-2012 The ANGLE Project Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
@@ -7,14 +8,44 @@
 // main.cpp: DLL entry point and management of thread-local data.
 
 #include "libGLESv2/main.h"
-#include "libGLESv2/utilities.h"
 
-#include "common/debug.h"
-#include "libEGL/Surface.h"
-
-#include "libGLESv2/Framebuffer.h"
+#include "libGLESv2/Context.h"
 
 static DWORD currentTLS = TLS_OUT_OF_INDEXES;
+
+namespace gl
+{
+
+Current *AllocateCurrent()
+{
+    Current *current = (Current*)LocalAlloc(LPTR, sizeof(Current));
+
+    if (!current)
+    {
+        ERR("Could not allocate thread local storage.");
+        return NULL;
+    }
+
+    ASSERT(currentTLS != TLS_OUT_OF_INDEXES);
+    TlsSetValue(currentTLS, current);
+
+    current->context = NULL;
+    current->display = NULL;
+
+    return current;
+}
+
+void DeallocateCurrent()
+{
+    void *current = TlsGetValue(currentTLS);
+
+    if (current)
+    {
+        LocalFree((HLOCAL)current);
+    }
+}
+
+}
 
 extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved)
 {
@@ -32,36 +63,17 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
         // Fall throught to initialize index
       case DLL_THREAD_ATTACH:
         {
-            gl::Current *current = (gl::Current*)LocalAlloc(LPTR, sizeof(gl::Current));
-
-            if (current)
-            {
-                TlsSetValue(currentTLS, current);
-
-                current->context = NULL;
-                current->display = NULL;
-            }
+            gl::AllocateCurrent();
         }
         break;
       case DLL_THREAD_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
-
-            if (current)
-            {
-                LocalFree((HLOCAL)current);
-            }
+            gl::DeallocateCurrent();
         }
         break;
       case DLL_PROCESS_DETACH:
         {
-            void *current = TlsGetValue(currentTLS);
-
-            if (current)
-            {
-                LocalFree((HLOCAL)current);
-            }
-
+            gl::DeallocateCurrent();
             TlsFree(currentTLS);
         }
         break;
@@ -74,22 +86,32 @@ extern "C" BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, LPVOID reserved
 
 namespace gl
 {
-void makeCurrent(Context *context, egl::Display *display, egl::Surface *surface)
+
+Current *GetCurrentData()
 {
     Current *current = (Current*)TlsGetValue(currentTLS);
+
+    // ANGLE issue 488: when the dll is loaded after thread initialization,
+    // thread local storage (current) might not exist yet.
+    return (current ? current : AllocateCurrent());
+}
+
+void makeCurrent(Context *context, egl::Display *display, egl::Surface *surface)
+{
+    Current *current = GetCurrentData();
 
     current->context = context;
     current->display = display;
 
     if (context && display && surface)
     {
-        context->makeCurrent(display, surface);
+        context->makeCurrent(surface);
     }
 }
 
 Context *getContext()
 {
-    Current *current = (Current*)TlsGetValue(currentTLS);
+    Current *current = GetCurrentData();
 
     return current->context;
 }
@@ -102,7 +124,7 @@ Context *getNonLostContext()
     {
         if (context->isContextLost())
         {
-            error(GL_OUT_OF_MEMORY);
+            gl::error(GL_OUT_OF_MEMORY);
             return NULL;
         }
         else
@@ -115,30 +137,9 @@ Context *getNonLostContext()
 
 egl::Display *getDisplay()
 {
-    Current *current = (Current*)TlsGetValue(currentTLS);
+    Current *current = GetCurrentData();
 
     return current->display;
-}
-
-IDirect3DDevice9 *getDevice()
-{
-    egl::Display *display = getDisplay();
-
-    return display->getDevice();
-}
-
-bool checkDeviceLost(HRESULT errorCode)
-{
-    egl::Display *display = NULL;
-
-    if (isDeviceLostError(errorCode))
-    {
-        display = gl::getDisplay();
-        display->notifyDeviceLost();
-        return true;
-    }
-    return false;
-}
 }
 
 // Records an error code
@@ -174,3 +175,6 @@ void error(GLenum errorCode)
         }
     }
 }
+
+}
+

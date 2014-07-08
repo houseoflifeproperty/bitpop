@@ -11,8 +11,8 @@
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#import "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #include "third_party/mach_override/mach_override.h"
 
 extern "C" {
@@ -156,8 +156,8 @@ Boolean ChromeCFBundleLoadExecutableAndReturnError(CFBundleRef bundle,
 
   DCHECK(g_original_underscore_cfbundle_load_executable_and_return_error);
 
-  base::mac::ScopedCFTypeRef<CFURLRef> url_cf(CFBundleCopyBundleURL(bundle));
-  scoped_nsobject<NSString> path(base::mac::CFToNSCast(
+  base::ScopedCFTypeRef<CFURLRef> url_cf(CFBundleCopyBundleURL(bundle));
+  base::scoped_nsobject<NSString> path(base::mac::CFToNSCast(
       CFURLCopyFileSystemPath(url_cf, kCFURLPOSIXPathStyle)));
 
   NSString* bundle_id = base::mac::CFToNSCast(CFBundleGetIdentifier(bundle));
@@ -185,7 +185,7 @@ Boolean ChromeCFBundleLoadExecutableAndReturnError(CFBundleRef bundle,
               << [path fileSystemRepresentation];
 
     if (error) {
-      base::mac::ScopedCFTypeRef<CFStringRef> app_bundle_id(
+      base::ScopedCFTypeRef<CFStringRef> app_bundle_id(
           base::SysUTF8ToCFStringRef(base::mac::BaseBundleID()));
 
       // 0xb10c10ad = "block load"
@@ -263,7 +263,7 @@ bool IsBundleAllowed(NSString* bundle_id, NSString* version) {
   // newer. Products added to the list must not cause crashes. Entries should
   // include the name of the product, URL, and the name and e-mail address of
   // someone responsible for the product's engineering. To add items to this
-  // list, file a bug at http://new.crbug.com/ using the "Defect on Mac OS"
+  // list, file a bug at http://crbug.com/new using the "Defect on Mac OS"
   // template, and provide the bundle ID (or IDs) and minimum CFBundleVersion
   // that's safe for Chrome to load, along with the necessary product and
   // contact information. Whitelisted bundles in this list may be removed if

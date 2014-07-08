@@ -5,20 +5,20 @@
 #import "chrome/browser/ui/cocoa/infobars/translate_infobar_base.h"
 
 #include "base/logging.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/translate/translate_infobar_delegate.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 #include "chrome/browser/ui/cocoa/infobars/after_translate_infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/before_translate_infobar_controller.h"
-#include "chrome/browser/ui/cocoa/infobars/infobar.h"
+#include "chrome/browser/ui/cocoa/infobars/infobar_cocoa.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_container_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_controller.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_gradient_view.h"
 #import "chrome/browser/ui/cocoa/infobars/infobar_utilities.h"
 #include "chrome/browser/ui/cocoa/infobars/translate_message_infobar_controller.h"
 #include "grit/generated_resources.h"
-#include "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#include "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using InfoBarUtilities::MoveControl;
@@ -27,30 +27,31 @@ using InfoBarUtilities::VerifyControlOrderAndSpacing;
 using InfoBarUtilities::CreateLabel;
 using InfoBarUtilities::AddMenuItem;
 
-// TranslateInfoBarDelegate views specific method:
-InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
-  TranslateInfoBarControllerBase* infobar_controller = NULL;
-  switch (type_) {
-    case BEFORE_TRANSLATE:
-      infobar_controller =
-          [[BeforeTranslateInfobarController alloc] initWithDelegate:this
-                                                               owner:owner];
+// static
+scoped_ptr<infobars::InfoBar> TranslateInfoBarDelegate::CreateInfoBar(
+    scoped_ptr<TranslateInfoBarDelegate> delegate) {
+  scoped_ptr<InfoBarCocoa> infobar(
+      new InfoBarCocoa(delegate.PassAs<infobars::InfoBarDelegate>()));
+  base::scoped_nsobject<TranslateInfoBarControllerBase> infobar_controller;
+  switch (infobar->delegate()->AsTranslateInfoBarDelegate()->translate_step()) {
+    case translate::TRANSLATE_STEP_BEFORE_TRANSLATE:
+      infobar_controller.reset([[BeforeTranslateInfobarController alloc]
+          initWithInfoBar:infobar.get()]);
       break;
-    case AFTER_TRANSLATE:
-      infobar_controller =
-          [[AfterTranslateInfobarController alloc] initWithDelegate:this
-                                                              owner:owner];
+    case translate::TRANSLATE_STEP_AFTER_TRANSLATE:
+      infobar_controller.reset([[AfterTranslateInfobarController alloc]
+          initWithInfoBar:infobar.get()]);
       break;
-    case TRANSLATING:
-    case TRANSLATION_ERROR:
-      infobar_controller =
-          [[TranslateMessageInfobarController alloc] initWithDelegate:this
-                                                                owner:owner];
+    case translate::TRANSLATE_STEP_TRANSLATING:
+    case translate::TRANSLATE_STEP_TRANSLATE_ERROR:
+      infobar_controller.reset([[TranslateMessageInfobarController alloc]
+          initWithInfoBar:infobar.get()]);
       break;
     default:
       NOTREACHED();
   }
-  return new InfoBar(infobar_controller, this);
+  infobar->set_controller(infobar_controller);
+  return infobar.PassAs<infobars::InfoBar>();
 }
 
 @implementation TranslateInfoBarControllerBase (FrameChangeObserver)
@@ -99,7 +100,7 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
 @implementation TranslateInfoBarControllerBase
 
 - (TranslateInfoBarDelegate*)delegate {
-  return reinterpret_cast<TranslateInfoBarDelegate*>(delegate_);
+  return reinterpret_cast<TranslateInfoBarDelegate*>([super delegate]);
 }
 
 - (void)constructViews {
@@ -126,8 +127,9 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   DCHECK_NE(TranslateInfoBarDelegate::kNoIndex, newLanguageIdxSizeT);
   if (newLanguageIdxSizeT == [self delegate]->original_language_index())
     return;
-  [self delegate]->set_original_language_index(newLanguageIdxSizeT);
-  if ([self delegate]->type() == TranslateInfoBarDelegate::AFTER_TRANSLATE)
+  [self delegate]->UpdateOriginalLanguageIndex(newLanguageIdxSizeT);
+  if ([self delegate]->translate_step() ==
+      translate::TRANSLATE_STEP_AFTER_TRANSLATE)
     [self delegate]->Translate();
   int commandId = IDC_TRANSLATE_ORIGINAL_LANGUAGE_BASE + newLanguageIdx;
   int newMenuIdx = [fromLanguagePopUp_ indexOfItemWithTag:commandId];
@@ -139,8 +141,9 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   DCHECK_NE(TranslateInfoBarDelegate::kNoIndex, newLanguageIdxSizeT);
   if (newLanguageIdxSizeT == [self delegate]->target_language_index())
     return;
-  [self delegate]->set_target_language_index(newLanguageIdxSizeT);
-  if ([self delegate]->type() == TranslateInfoBarDelegate::AFTER_TRANSLATE)
+  [self delegate]->UpdateTargetLanguageIndex(newLanguageIdxSizeT);
+  if ([self delegate]->translate_step() ==
+      translate::TRANSLATE_STEP_AFTER_TRANSLATE)
     [self delegate]->Translate();
   int commandId = IDC_TRANSLATE_TARGET_LANGUAGE_BASE + newLanguageIdx;
   int newMenuIdx = [toLanguagePopUp_ indexOfItemWithTag:commandId];
@@ -267,8 +270,11 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
                 i != [self delegate]->original_language_index(),
                 i == [self delegate]->target_language_index());
   }
-  [fromLanguagePopUp_
-      selectItemAtIndex:([self delegate]->original_language_index())];
+  if ([self delegate]->original_language_index() !=
+      TranslateInfoBarDelegate::kNoIndex) {
+    [fromLanguagePopUp_
+        selectItemAtIndex:([self delegate]->original_language_index())];
+  }
   [toLanguagePopUp_
       selectItemAtIndex:([self delegate]->target_language_index())];
 }
@@ -355,12 +361,17 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   [self updateState];
 }
 
+- (void)infobarWillHide {
+  [[fromLanguagePopUp_ menu] cancelTracking];
+  [[toLanguagePopUp_ menu] cancelTracking];
+  [[optionsPopUp_ menu] cancelTracking];
+  [super infobarWillHide];
+}
+
 - (void)infobarWillClose {
   [self disablePopUpMenu:[fromLanguagePopUp_ menu]];
   [self disablePopUpMenu:[toLanguagePopUp_ menu]];
   [self disablePopUpMenu:[optionsPopUp_ menu]];
-  // [super infobarWillClose] clears the owner field which is relied on by the
-  // notification handler, so remove the handler first.
   [[NSNotificationCenter defaultCenter] removeObserver:self];
   [super infobarWillClose];
 }
@@ -390,9 +401,9 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   if (![self isOwned])
     return;
   TranslateInfoBarDelegate* delegate = [self delegate];
-  TranslateInfoBarDelegate::Type state = delegate->type();
-  DCHECK(state == TranslateInfoBarDelegate::BEFORE_TRANSLATE ||
-         state == TranslateInfoBarDelegate::TRANSLATION_ERROR);
+  translate::TranslateStep state = delegate->translate_step();
+  DCHECK(state == translate::TRANSLATE_STEP_BEFORE_TRANSLATE ||
+         state == translate::TRANSLATE_STEP_TRANSLATE_ERROR);
   delegate->Translate();
 }
 
@@ -401,7 +412,8 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
   if (![self isOwned])
     return;
   TranslateInfoBarDelegate* delegate = [self delegate];
-  DCHECK(delegate->type() == TranslateInfoBarDelegate::BEFORE_TRANSLATE);
+  DCHECK_EQ(translate::TRANSLATE_STEP_BEFORE_TRANSLATE,
+            delegate->translate_step());
   delegate->TranslationDeclined();
   [super removeSelf];
 }
@@ -446,16 +458,13 @@ InfoBar* TranslateInfoBarDelegate::CreateInfoBar(InfoBarService* owner) {
     // Danger Will Robinson! : This call can release the infobar (e.g. invoking
     // "About Translate" can open a new tab).
     // Do not access member variables after this line!
-    optionsMenuModel_->ExecuteCommand(cmd);
+    optionsMenuModel_->ExecuteCommand(cmd, 0);
   } else {
     NOTREACHED();
   }
 }
 
 - (void)dealloc {
-  // Perhaps this was removed as an observer in -infobarWillClose, but there's
-  // no guarantee that that was the case.
-  [[NSNotificationCenter defaultCenter] removeObserver:self];
   [showOriginalButton_ setTarget:nil];
   [translateMessageButton_ setTarget:nil];
   [super dealloc];

@@ -1,5 +1,6 @@
 %insert(runtime) %{
 /* Python.h has to appear first */
+
 // Resolve conflicting use of _DEBUG across projects.
 // #defining _DEBUG causes Python.h to require pythonXX_d.lib (instead
 // of pythonXX.lib).
@@ -7,17 +8,29 @@
 // Make sure our project, which uses the latter, doesn't trigger the
 // former since we don't want to debug python itself.
 // (http://old.nabble.com/problems-with-python24_d.lib-td4760095.html#a4760095)
-// Also, disable a check in MSVC when building for Multi-threaded Debug DLL
+
+// Disable a check in MSVC when building for Multi-threaded Debug DLL
 // that complains about mix of headers with and without _DEBUG.
+
+// On the Mac, use <Python/Python.h> because that is required as of 10.9.
+// https://sourceforge.net/p/swig/bugs/1346/
 #ifdef _DEBUG
-#if defined(_MSC_VER) && _MSC_VER >= 1400
-#define _CRT_NOFORCE_MANIFEST 1
-#endif
-#undef _DEBUG
-#include <Python.h>
-#define _DEBUG
+# if defined(_MSC_VER) && _MSC_VER >= 1400
+#   define _CRT_NOFORCE_MANIFEST 1
+# endif
+# undef _DEBUG
+# if defined(__APPLE__)
+#   include <Python/Python.h>
+# else
+#   include <Python.h>
+# endif
+# define _DEBUG
 #else
-#include <Python.h>
+# if defined(__APPLE__)
+#   include <Python/Python.h>
+# else
+#   include <Python.h>
+# endif
 #endif
 %}
 

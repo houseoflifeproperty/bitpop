@@ -19,8 +19,8 @@ package com.google.ipc.invalidation.common;
 import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
 import com.google.protos.ipc.invalidation.AndroidChannel;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId;
-import com.google.protos.ipc.invalidation.Channel.NetworkEndpointId.NetworkAddress;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId;
+import com.google.protos.ipc.invalidation.ChannelCommon.NetworkEndpointId.NetworkAddress;
 import com.google.protos.ipc.invalidation.Client.AckHandleP;
 import com.google.protos.ipc.invalidation.Client.PersistentStateBlob;
 import com.google.protos.ipc.invalidation.Client.PersistentTiclState;
@@ -36,6 +36,7 @@ import com.google.protos.ipc.invalidation.ClientProtocol.InvalidationP;
 import com.google.protos.ipc.invalidation.ClientProtocol.ObjectIdP;
 import com.google.protos.ipc.invalidation.ClientProtocol.PropertyRecord;
 import com.google.protos.ipc.invalidation.ClientProtocol.RateLimitP;
+import com.google.protos.ipc.invalidation.ClientProtocol.RegistrationMessage;
 import com.google.protos.ipc.invalidation.ClientProtocol.RegistrationP;
 import com.google.protos.ipc.invalidation.ClientProtocol.RegistrationStatus;
 import com.google.protos.ipc.invalidation.ClientProtocol.RegistrationStatusMessage;
@@ -49,6 +50,7 @@ import com.google.protos.ipc.invalidation.ClientProtocol.StatusP;
 import com.google.protos.ipc.invalidation.ClientProtocol.TokenControlMessage;
 import com.google.protos.ipc.invalidation.ClientProtocol.Version;
 
+import java.util.Collection;
 import java.util.List;
 
 
@@ -125,16 +127,11 @@ public class CommonProtos2 {
 
   public static InvalidationP newInvalidationP(ObjectIdP oid, long version,
       TrickleState trickleState) {
-    return newInvalidationP(oid, version, trickleState, null, null);
+    return newInvalidationP(oid, version, trickleState, null);
   }
 
   public static InvalidationP newInvalidationP(ObjectIdP oid, long version,
       TrickleState trickleState, ByteString payload) {
-    return newInvalidationP(oid, version, trickleState, payload, null);
-  }
-
-  public static InvalidationP newInvalidationP(ObjectIdP oid, long version,
-      TrickleState trickleState, ByteString payload, Long bridgeArrivalTimeMs) {
     InvalidationP.Builder builder = InvalidationP.newBuilder()
         .setObjectId(oid)
         .setIsKnownVersion(true)
@@ -142,9 +139,6 @@ public class CommonProtos2 {
         .setIsTrickleRestart(trickleState == TrickleState.RESTART);
     if (payload != null) {
       builder.setPayload(payload);
-    }
-    if (bridgeArrivalTimeMs != null) {
-      builder.setBridgeArrivalTimeMs(bridgeArrivalTimeMs);
     }
     return builder.build();
   }
@@ -230,6 +224,14 @@ public class CommonProtos2 {
     return RegistrationStatus.newBuilder()
             .setRegistration(registration)
             .setStatus(newSuccessStatus())
+            .build();
+  }
+
+  public static RegistrationStatus newTransientFailureRegistrationStatus(
+      RegistrationP registration, String description) {
+    return RegistrationStatus.newBuilder()
+            .setRegistration(registration)
+            .setStatus(newFailureStatus(true, description))
             .build();
   }
 
@@ -407,6 +409,47 @@ public class CommonProtos2 {
         .setNetworkAddress(networkAddr)
         .setClientAddress(clientAddr)
         .build();
+  }
+
+  /**
+   * Returns an endpoint id that is identical to the given {@code endpointId} except with
+   * {@link NetworkEndpointId#getIsOffline} set to {@code true}.
+   */
+  public static NetworkEndpointId endpointIdToOfflineEndpointId(NetworkEndpointId endpointId) {
+    // If the endpoint is already marked offline, there's no need to build a new one.
+    return isOnline(endpointId) ? endpointId.toBuilder().setIsOffline(true).build() : endpointId;
+  }
+
+  /**
+   * Indicates whether the optional {@code endpointId} is for an online client. If the id is
+   * {@code null}, it means the client has no endpoint associated with it and it is considered
+   * offline. If the endpoint is known, it is considered online if the {@code is_offline} field is
+   * not defined or if the field is {@code false}.
+   */
+  public static boolean isOnline(NetworkEndpointId endpointId) {
+    // NetworkEndpointId has an optional is_offline field. The client is online if the field's value
+    // is either undefined or false.
+    return (endpointId != null) && (!endpointId.hasIsOffline() || !endpointId.getIsOffline());
+  }
+
+  public static TokenControlMessage newTokenControlMessage(ByteString newToken) {
+    TokenControlMessage.Builder builder = TokenControlMessage.newBuilder();
+    if (newToken != null) {
+      builder.setNewToken(newToken);
+    }
+    return builder.build();
+  }
+
+  public static RegistrationStatusMessage newRegistrationStatusMessage(
+      Collection<RegistrationStatus> statuses) {
+    Preconditions.checkArgument(!statuses.isEmpty(), "Empty statuses");
+    return RegistrationStatusMessage.newBuilder().addAllRegistrationStatus(statuses).build();
+  }
+
+  public static RegistrationMessage newRegistrationMessage(
+      Collection<RegistrationP> registrations) {
+    Preconditions.checkArgument(!registrations.isEmpty(), "Empty registrations");
+    return RegistrationMessage.newBuilder().addAllRegistration(registrations).build();
   }
 
   private CommonProtos2() { // To prevent instantiation

@@ -23,25 +23,28 @@ class ThumbnailServiceImpl : public ThumbnailService {
   explicit ThumbnailServiceImpl(Profile* profile);
 
   // Implementation of ThumbnailService.
-  virtual bool SetPageThumbnail(const GURL& url,
-                                const gfx::Image& thumbnail,
-                                const ThumbnailScore& score) OVERRIDE;
+  virtual bool SetPageThumbnail(const ThumbnailingContext& context,
+                                const gfx::Image& thumbnail) OVERRIDE;
+  virtual ThumbnailingAlgorithm* GetThumbnailingAlgorithm() const OVERRIDE;
   virtual bool GetPageThumbnail(
       const GURL& url,
+      bool prefix_match,
       scoped_refptr<base::RefCountedMemory>* bytes) OVERRIDE;
+  virtual void AddForcedURL(const GURL& url) OVERRIDE;
   virtual bool ShouldAcquirePageThumbnail(const GURL& url) OVERRIDE;
 
-  // Implementation of RefcountedProfileKeyedService.
+  // Implementation of RefcountedBrowserContextKeyedService.
   virtual void ShutdownOnUIThread() OVERRIDE;
 
  private:
   virtual ~ThumbnailServiceImpl();
 
   scoped_refptr<history::TopSites> top_sites_;
+  bool use_thumbnail_retargeting_;
 
   DISALLOW_COPY_AND_ASSIGN(ThumbnailServiceImpl);
 };
 
-}
+}  // namespace thumbnails
 
 #endif  // CHROME_BROWSER_THUMBNAILS_THUMBNAIL_SERVICE_IMPL_H_

@@ -13,8 +13,6 @@
 #include "GrGpu.h"
 #include "GrStencilBuffer.h"
 
-SK_DEFINE_INST_COUNT(GrRenderTarget)
-
 bool GrRenderTarget::readPixels(int left, int top, int width, int height,
                                 GrPixelConfig config,
                                 void* buffer,
@@ -56,8 +54,17 @@ void GrRenderTarget::resolve() {
     context->resolveRenderTarget(this);
 }
 
-size_t GrRenderTarget::sizeInBytes() const {
-    int colorBits;
+void GrRenderTarget::discard() {
+    // go through context so that all necessary flushing occurs
+    GrContext* context = this->getContext();
+    if (NULL == context) {
+        return;
+    }
+    context->discardRenderTarget(this);
+}
+
+size_t GrRenderTarget::gpuMemorySize() const {
+    size_t colorBits;
     if (kUnknown_GrPixelConfig == fDesc.fConfig) {
         colorBits = 32; // don't know, make a guess
     } else {
@@ -66,11 +73,11 @@ size_t GrRenderTarget::sizeInBytes() const {
     uint64_t size = fDesc.fWidth;
     size *= fDesc.fHeight;
     size *= colorBits;
-    size *= GrMax(1, fDesc.fSampleCnt);
+    size *= SkTMax(1, fDesc.fSampleCnt);
     return (size_t)(size / 8);
 }
 
-void GrRenderTarget::flagAsNeedingResolve(const GrIRect* rect) {
+void GrRenderTarget::flagAsNeedingResolve(const SkIRect* rect) {
     if (kCanResolve_ResolveType == getResolveType()) {
         if (NULL != rect) {
             fResolveRect.join(*rect);
@@ -83,7 +90,7 @@ void GrRenderTarget::flagAsNeedingResolve(const GrIRect* rect) {
     }
 }
 
-void GrRenderTarget::overrideResolveRect(const GrIRect rect) {
+void GrRenderTarget::overrideResolveRect(const SkIRect rect) {
     fResolveRect = rect;
     if (fResolveRect.isEmpty()) {
         fResolveRect.setLargestInverted();
@@ -95,28 +102,7 @@ void GrRenderTarget::overrideResolveRect(const GrIRect rect) {
 }
 
 void GrRenderTarget::setStencilBuffer(GrStencilBuffer* stencilBuffer) {
-    if (stencilBuffer == fStencilBuffer) {
-        return;
-    }
-
-    if (NULL != fStencilBuffer) {
-        fStencilBuffer->unref();
-
-        GrContext* context = this->getContext();
-        if (NULL != context) {
-            context->purgeCache();
-        }
-
-        if (NULL != context) {
-            context->purgeCache();
-        }
-    }
-
-    fStencilBuffer = stencilBuffer;
-
-    if (NULL != fStencilBuffer) {
-        fStencilBuffer->ref();
-    }
+    SkRefCnt_SafeAssign(fStencilBuffer, stencilBuffer);
 }
 
 void GrRenderTarget::onRelease() {

@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 // A single tuple of (protocol, url, title) that indicates how URLs of the
 // given protocol should be rewritten to be handled.
@@ -17,15 +17,16 @@ class ProtocolHandler {
  public:
   static ProtocolHandler CreateProtocolHandler(const std::string& protocol,
                                                const GURL& url,
-                                               const string16& title);
+                                               const base::string16& title);
 
   // Creates a ProtocolHandler with fields from the dictionary. Returns an
   // empty ProtocolHandler if the input is invalid.
-  static ProtocolHandler CreateProtocolHandler(const DictionaryValue* value);
+  static ProtocolHandler CreateProtocolHandler(
+      const base::DictionaryValue* value);
 
   // Returns true if the dictionary value has all the necessary fields to
   // define a ProtocolHandler.
-  static bool IsValidDict(const DictionaryValue* value);
+  static bool IsValidDict(const base::DictionaryValue* value);
 
   // Returns true if this handler's url has the same origin as the given one.
   bool IsSameOrigin(const ProtocolHandler& handler) const;
@@ -43,11 +44,11 @@ class ProtocolHandler {
 
   // Encodes this protocol handler as a DictionaryValue. The caller is
   // responsible for deleting the returned value.
-  DictionaryValue* Encode() const;
+  base::DictionaryValue* Encode() const;
 
   const std::string& protocol() const { return protocol_; }
   const GURL& url() const { return url_;}
-  const string16& title() const { return title_; }
+  const base::string16& title() const { return title_; }
 
   bool IsEmpty() const {
     return protocol_.empty();
@@ -65,12 +66,12 @@ class ProtocolHandler {
  private:
   ProtocolHandler(const std::string& protocol,
                   const GURL& url,
-                  const string16& title);
+                  const base::string16& title);
   ProtocolHandler();
 
   std::string protocol_;
   GURL url_;
-  string16 title_;
+  base::string16 title_;
 };
 
 #endif  // CHROME_COMMON_CUSTOM_HANDLERS_PROTOCOL_HANDLER_H_

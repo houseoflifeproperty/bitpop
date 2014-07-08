@@ -10,25 +10,21 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "content/renderer/pepper/pepper_device_enumeration_host_helper.h"
 #include "ipc/ipc_platform_file.h"
 #include "ppapi/c/ppb_audio_config.h"
 #include "ppapi/host/host_message_context.h"
 #include "ppapi/host/resource_host.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
 
 namespace content {
+class PepperPlatformAudioInput;
+class RendererPpapiHostImpl;
 
-class RendererPpapiHost;
-
-class PepperAudioInputHost
-    : public ppapi::host::ResourceHost,
-      public webkit::ppapi::PluginDelegate::PlatformAudioInputClient,
-      public PepperDeviceEnumerationHostHelper::Delegate {
+class PepperAudioInputHost : public ppapi::host::ResourceHost {
  public:
-  PepperAudioInputHost(RendererPpapiHost* host,
+  PepperAudioInputHost(RendererPpapiHostImpl* host,
                        PP_Instance instance,
                        PP_Resource resource);
   virtual ~PepperAudioInputHost();
@@ -37,23 +33,19 @@ class PepperAudioInputHost
       const IPC::Message& msg,
       ppapi::host::HostMessageContext* context) OVERRIDE;
 
-  // PluginDelegate::PlatformAudioInputClient implementation.
-  virtual void StreamCreated(base::SharedMemoryHandle shared_memory_handle,
-                             size_t shared_memory_size,
-                             base::SyncSocket::Handle socket) OVERRIDE;
-  virtual void StreamCreationFailed() OVERRIDE;
-
-  // PepperDeviceEnumerationHostHelper::Delegate implementation.
-  virtual webkit::ppapi::PluginDelegate* GetPluginDelegate() OVERRIDE;
+  // Called when the stream is created.
+  void StreamCreated(base::SharedMemoryHandle shared_memory_handle,
+                     size_t shared_memory_size,
+                     base::SyncSocket::Handle socket);
+  void StreamCreationFailed();
 
  private:
-  int32_t OnMsgOpen(ppapi::host::HostMessageContext* context,
-                    const std::string& device_id,
-                    PP_AudioSampleRate sample_rate,
-                    uint32_t sample_frame_count);
-  int32_t OnMsgStartOrStop(ppapi::host::HostMessageContext* context,
-                           bool capture);
-  int32_t OnMsgClose(ppapi::host::HostMessageContext* context);
+  int32_t OnOpen(ppapi::host::HostMessageContext* context,
+                 const std::string& device_id,
+                 PP_AudioSampleRate sample_rate,
+                 uint32_t sample_frame_count);
+  int32_t OnStartOrStop(ppapi::host::HostMessageContext* context, bool capture);
+  int32_t OnClose(ppapi::host::HostMessageContext* context);
 
   void OnOpenComplete(int32_t result,
                       base::SharedMemoryHandle shared_memory_handle,
@@ -68,14 +60,16 @@ class PepperAudioInputHost
 
   void Close();
 
+  void SendOpenReply(int32_t result);
+
   // Non-owning pointer.
-  RendererPpapiHost* renderer_ppapi_host_;
+  RendererPpapiHostImpl* renderer_ppapi_host_;
 
-  scoped_ptr<ppapi::host::ReplyMessageContext> open_context_;
+  ppapi::host::ReplyMessageContext open_context_;
 
-  // PluginDelegate audio input object that we delegate audio IPC through.
+  // Audio input object that we delegate audio IPC through.
   // We don't own this pointer but are responsible for calling Shutdown on it.
-  webkit::ppapi::PluginDelegate::PlatformAudioInput* audio_input_;
+  PepperPlatformAudioInput* audio_input_;
 
   PepperDeviceEnumerationHostHelper enumeration_helper_;
 

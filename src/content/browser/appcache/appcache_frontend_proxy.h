@@ -9,7 +9,7 @@
 #include <vector>
 
 #include "ipc/ipc_sender.h"
-#include "webkit/appcache/appcache_interfaces.h"
+#include "webkit/common/appcache/appcache_interfaces.h"
 
 namespace content {
 
@@ -29,7 +29,8 @@ class AppCacheFrontendProxy : public appcache::AppCacheFrontend {
                                      const GURL& url,
                                      int num_total, int num_complete) OVERRIDE;
   virtual void OnErrorEventRaised(const std::vector<int>& host_ids,
-                                  const std::string& message) OVERRIDE;
+                                  const appcache::ErrorDetails& details)
+      OVERRIDE;
   virtual void OnLogMessage(int host_id, appcache::LogLevel log_level,
                             const std::string& message) OVERRIDE;
   virtual void OnContentBlocked(int host_id,

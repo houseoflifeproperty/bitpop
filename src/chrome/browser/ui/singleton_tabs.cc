@@ -5,6 +5,7 @@
 #include "chrome/browser/ui/singleton_tabs.h"
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
@@ -16,10 +17,9 @@ namespace chrome {
 namespace {
 
 // Returns true if two URLs are equal after taking |replacements| into account.
-bool CompareURLsWithReplacements(
-    const GURL& url,
-    const GURL& other,
-    const url_canon::Replacements<char>& replacements) {
+bool CompareURLsWithReplacements(const GURL& url,
+                                 const GURL& other,
+                                 const url::Replacements<char>& replacements) {
   if (url == other)
     return true;
 
@@ -43,13 +43,14 @@ void ShowSingletonTabRespectRef(Browser* browser, const GURL& url) {
 
 void ShowSingletonTabOverwritingNTP(Browser* browser,
                                     const NavigateParams& params) {
+  DCHECK(browser);
   NavigateParams local_params(params);
   content::WebContents* contents =
       browser->tab_strip_model()->GetActiveWebContents();
   if (contents) {
     const GURL& contents_url = contents->GetURL();
-    if ((contents_url == GURL(kChromeUINewTabURL) ||
-         contents_url == GURL(kAboutBlankURL)) &&
+    if ((contents_url == GURL(kChromeUINewTabURL) || IsInstantNTP(contents) ||
+         contents_url == GURL(content::kAboutBlankURL)) &&
         GetIndexOfSingletonTab(&local_params) < 0) {
       local_params.disposition = CURRENT_TAB;
     }
@@ -64,6 +65,7 @@ NavigateParams GetSingletonTabNavigateParams(Browser* browser,
   params.disposition = SINGLETON_TAB;
   params.window_action = NavigateParams::SHOW_WINDOW;
   params.user_gesture = true;
+  params.tabstrip_add_types |= TabStripModel::ADD_INHERIT_OPENER;
   return params;
 }
 
@@ -84,14 +86,28 @@ int GetIndexOfSingletonTab(NavigateParams* params) {
       &reverse_on_redirect);
 
   // If there are several matches: prefer the active tab by starting there.
-  int start_index = std::max(0, params->browser->active_index());
-  int tab_count = params->browser->tab_count();
+  int start_index =
+      std::max(0, params->browser->tab_strip_model()->active_index());
+  int tab_count = params->browser->tab_strip_model()->count();
   for (int i = 0; i < tab_count; ++i) {
     int tab_index = (start_index + i) % tab_count;
     content::WebContents* tab =
         params->browser->tab_strip_model()->GetWebContentsAt(tab_index);
 
-    url_canon::Replacements<char> replacements;
+    GURL tab_url = tab->GetURL();
+
+    // Skip view-source tabs. This is needed because RewriteURLIfNecessary
+    // removes the "view-source:" scheme which leads to incorrect matching.
+    if (tab_url.SchemeIs(content::kViewSourceScheme))
+      continue;
+
+    GURL rewritten_tab_url = tab_url;
+    content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
+      &rewritten_tab_url,
+      params->browser->profile(),
+      &reverse_on_redirect);
+
+    url::Replacements<char> replacements;
     if (params->ref_behavior == NavigateParams::IGNORE_REF)
       replacements.ClearRef();
     if (params->path_behavior == NavigateParams::IGNORE_AND_NAVIGATE ||
@@ -99,13 +115,6 @@ int GetIndexOfSingletonTab(NavigateParams* params) {
       replacements.ClearPath();
       replacements.ClearQuery();
     }
-
-    GURL tab_url = tab->GetURL();
-    GURL rewritten_tab_url = tab_url;
-    content::BrowserURLHandler::GetInstance()->RewriteURLIfNecessary(
-        &rewritten_tab_url,
-        params->browser->profile(),
-        &reverse_on_redirect);
 
     if (CompareURLsWithReplacements(tab_url, params->url, replacements) ||
         CompareURLsWithReplacements(rewritten_tab_url,

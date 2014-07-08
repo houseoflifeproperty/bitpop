@@ -19,47 +19,57 @@
 #ifndef AVFILTER_YADIF_H
 #define AVFILTER_YADIF_H
 
-#include "libavutil/pixdesc.h"
 #include "avfilter.h"
 
-typedef struct {
-    /**
-     * 0: send 1 frame for each frame
-     * 1: send 1 frame for each field
-     * 2: like 0 but skips spatial interlacing check
-     * 3: like 1 but skips spatial interlacing check
-     */
-    int mode;
+enum YADIFMode {
+    YADIF_MODE_SEND_FRAME           = 0, ///< send 1 frame for each frame
+    YADIF_MODE_SEND_FIELD           = 1, ///< send 1 frame for each field
+    YADIF_MODE_SEND_FRAME_NOSPATIAL = 2, ///< send 1 frame for each frame but skips spatial interlacing check
+    YADIF_MODE_SEND_FIELD_NOSPATIAL = 3, ///< send 1 frame for each field but skips spatial interlacing check
+};
 
-    /**
-     *  0: top field first
-     *  1: bottom field first
-     * -1: auto-detection
-     */
-    int parity;
+enum YADIFParity {
+    YADIF_PARITY_TFF  =  0, ///< top field first
+    YADIF_PARITY_BFF  =  1, ///< bottom field first
+    YADIF_PARITY_AUTO = -1, ///< auto detection
+};
 
-    int frame_pending;
+enum YADIFDeint {
+    YADIF_DEINT_ALL        = 0, ///< deinterlace all frames
+    YADIF_DEINT_INTERLACED = 1, ///< only deinterlace frames marked as interlaced
+};
 
-    /**
-     *  0: deinterlace all frames
-     *  1: only deinterlace frames marked as interlaced
-     */
-    int auto_enable;
+void ff_yadif_filter_line_mmxext(void *dst, void *prev, void *cur,
+                                 void *next, int w, int prefs,
+                                 int mrefs, int parity, int mode);
+void ff_yadif_filter_line_sse2(void *dst, void *prev, void *cur,
+                               void *next, int w, int prefs,
+                               int mrefs, int parity, int mode);
+void ff_yadif_filter_line_ssse3(void *dst, void *prev, void *cur,
+                                void *next, int w, int prefs,
+                                int mrefs, int parity, int mode);
 
-    AVFilterBufferRef *cur;
-    AVFilterBufferRef *next;
-    AVFilterBufferRef *prev;
-    AVFilterBufferRef *out;
-    void (*filter_line)(uint8_t *dst,
-                        uint8_t *prev, uint8_t *cur, uint8_t *next,
-                        int w, int prefs, int mrefs, int parity, int mode);
+void ff_yadif_filter_line_16bit_mmxext(void *dst, void *prev, void *cur,
+                                       void *next, int w, int prefs,
+                                       int mrefs, int parity, int mode);
+void ff_yadif_filter_line_16bit_sse2(void *dst, void *prev, void *cur,
+                                     void *next, int w, int prefs,
+                                     int mrefs, int parity, int mode);
+void ff_yadif_filter_line_16bit_ssse3(void *dst, void *prev, void *cur,
+                                      void *next, int w, int prefs,
+                                      int mrefs, int parity, int mode);
+void ff_yadif_filter_line_16bit_sse4(void *dst, void *prev, void *cur,
+                                     void *next, int w, int prefs,
+                                     int mrefs, int parity, int mode);
 
-    const AVPixFmtDescriptor *csp;
-    int eof;
-    uint8_t *temp_line;
-    int temp_line_size;
-} YADIFContext;
-
-void ff_yadif_init_x86(YADIFContext *yadif);
+void ff_yadif_filter_line_10bit_mmxext(void *dst, void *prev, void *cur,
+                                       void *next, int w, int prefs,
+                                       int mrefs, int parity, int mode);
+void ff_yadif_filter_line_10bit_sse2(void *dst, void *prev, void *cur,
+                                     void *next, int w, int prefs,
+                                     int mrefs, int parity, int mode);
+void ff_yadif_filter_line_10bit_ssse3(void *dst, void *prev, void *cur,
+                                      void *next, int w, int prefs,
+                                      int mrefs, int parity, int mode);
 
 #endif /* AVFILTER_YADIF_H */

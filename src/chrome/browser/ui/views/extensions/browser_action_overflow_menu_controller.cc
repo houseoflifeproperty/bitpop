@@ -4,24 +4,60 @@
 
 #include "chrome/browser/ui/views/extensions/browser_action_overflow_menu_controller.h"
 
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_context_menu_model.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/views/browser_action_view.h"
-#include "chrome/browser/ui/views/browser_actions_container.h"
 #include "chrome/browser/ui/views/extensions/browser_action_drag_data.h"
+#include "chrome/browser/ui/views/toolbar/browser_action_view.h"
+#include "chrome/browser/ui/views/toolbar/browser_actions_container.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/controls/menu/menu_item_view.h"
-#include "ui/views/controls/menu/menu_model_adapter.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/menu/submenu_view.h"
 #include "ui/views/widget/widget.h"
+
+// In the browser actions container's chevron menu, a menu item view's icon
+// comes from BrowserActionView::GetIconWithBadge() (which comes from the
+// browser action button's icon) when the menu item view is created. But, the
+// browser action button's icon may not be loaded in time because it is read
+// from file system in another thread.
+// The IconUpdater will update the menu item view's icon when the browser
+// action button's icon has been updated.
+class IconUpdater : public BrowserActionButton::IconObserver {
+ public:
+  IconUpdater(views::MenuItemView* menu_item_view,
+              BrowserActionButton* button)
+      : menu_item_view_(menu_item_view),
+        button_(button) {
+    DCHECK(menu_item_view);
+    DCHECK(button);
+    button->set_icon_observer(this);
+  }
+  virtual ~IconUpdater() {
+    button_->set_icon_observer(NULL);
+  }
+
+  // Overridden from BrowserActionButton::IconObserver:
+  virtual void OnIconUpdated(const gfx::ImageSkia& icon) OVERRIDE {
+    menu_item_view_->SetIcon(icon);
+  }
+
+ private:
+  // The menu item view whose icon might be updated.
+  views::MenuItemView* menu_item_view_;
+
+  // The button to be observed. When its icon changes, update the corresponding
+  // menu item view's icon.
+  BrowserActionButton* button_;
+
+  DISALLOW_COPY_AND_ASSIGN(IconUpdater);
+};
 
 BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
     BrowserActionsContainer* owner,
@@ -44,13 +80,13 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
   size_t command_id = 1;  // Menu id 0 is reserved, start with 1.
   for (size_t i = start_index; i < views_->size(); ++i) {
     BrowserActionView* view = (*views_)[i];
-    menu_->AppendMenuItemWithIcon(
+    views::MenuItemView* menu_item = menu_->AppendMenuItemWithIcon(
         command_id,
-        UTF8ToUTF16(view->button()->extension()->name()),
+        base::UTF8ToUTF16(view->button()->extension()->name()),
         view->GetIconWithBadge());
 
     // Set the tooltip for this item.
-    string16 tooltip = UTF8ToUTF16(
+    base::string16 tooltip = base::UTF8ToUTF16(
         extensions::ExtensionActionManager::Get(owner_->profile())->
         GetBrowserAction(*view->button()->extension())->
         GetTitle(owner_->GetCurrentTabId()));
@@ -62,6 +98,8 @@ BrowserActionOverflowMenuController::BrowserActionOverflowMenuController(
       facebook_messages_item_id_ = command_id;
     else if (view->button()->extension()->id() == chrome::kFacebookNotificationsExtensionId)
       facebook_notifications_item_id_ = command_id;
+
+    icon_updaters_.push_back(new IconUpdater(menu_item, view->button()));
 
     ++command_id;
   }
@@ -92,14 +130,14 @@ bool BrowserActionOverflowMenuController::RunMenu(views::Widget* window,
   bounds.set_x(screen_loc.x());
   bounds.set_y(screen_loc.y());
 
-  views::MenuItemView::AnchorPosition anchor = views::MenuItemView::TOPRIGHT;
+  views::MenuAnchorPosition anchor = views::MENU_ANCHOR_TOPRIGHT;
   // As we maintain our own lifetime we can safely ignore the result.
   ignore_result(menu_runner_->RunMenuAt(window, menu_button_, bounds, anchor,
-      for_drop_ ? views::MenuRunner::FOR_DROP : 0));
+      ui::MENU_SOURCE_NONE, for_drop_ ? views::MenuRunner::FOR_DROP : 0));
   if (!for_drop_) {
     // Give the context menu (if any) a chance to execute the user-selected
     // command.
-    MessageLoop::current()->DeleteSoon(FROM_HERE, this);
+    base::MessageLoop::current()->DeleteSoon(FROM_HERE, this);
   }
   return true;
 }
@@ -122,7 +160,7 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
     views::MenuItemView* source,
     int id,
     const gfx::Point& p,
-    bool is_mouse_gesture) {
+    ui::MenuSourceType source_type) {
   const extensions::Extension* extension =
       (*views_)[start_index_ + id - 1]->button()->extension();
   if (!extension->ShowConfigureContextMenus())
@@ -130,17 +168,18 @@ bool BrowserActionOverflowMenuController::ShowContextMenu(
 
   scoped_refptr<ExtensionContextMenuModel> context_menu_contents =
       new ExtensionContextMenuModel(extension, browser_, owner_);
-  views::MenuModelAdapter context_menu_model_adapter(
-      context_menu_contents.get());
-  views::MenuRunner context_menu_runner(
-      context_menu_model_adapter.CreateMenu());
+  views::MenuRunner context_menu_runner(context_menu_contents.get());
 
   // We can ignore the result as we delete ourself.
   // This blocks until the user choses something or dismisses the menu.
-  ignore_result(context_menu_runner.RunMenuAt(menu_button_->GetWidget(),
-      NULL, gfx::Rect(p, gfx::Size()), views::MenuItemView::TOPLEFT,
+  ignore_result(context_menu_runner.RunMenuAt(
+      menu_button_->GetWidget(),
+      NULL,
+      gfx::Rect(p, gfx::Size()),
+      views::MENU_ANCHOR_TOPLEFT,
+      source_type,
       views::MenuRunner::HAS_MNEMONICS | views::MenuRunner::IS_NESTED |
-      views::MenuRunner::CONTEXT_MENU));
+          views::MenuRunner::CONTEXT_MENU));
 
   // The user is done with the context menu, so we can close the underlying
   // menu.

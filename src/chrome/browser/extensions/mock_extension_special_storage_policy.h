@@ -9,10 +9,10 @@
 #include <string>
 
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 // This class is the same as MockSpecialStoragePolicy (in
-// webkit/quota/mock_special_storage_policy.h), but it inherits
+// content/public/test/mock_special_storage_policy.h), but it inherits
 // ExtensionSpecialStoragePolicy instead of quota::SpecialStoragePolicy.
 class MockExtensionSpecialStoragePolicy : public ExtensionSpecialStoragePolicy {
  public:
@@ -22,7 +22,7 @@ class MockExtensionSpecialStoragePolicy : public ExtensionSpecialStoragePolicy {
   virtual bool IsStorageProtected(const GURL& origin) OVERRIDE;
   virtual bool IsStorageUnlimited(const GURL& origin) OVERRIDE;
   virtual bool IsStorageSessionOnly(const GURL& origin) OVERRIDE;
-  virtual bool IsInstalledApp(const GURL& origin) OVERRIDE;
+  virtual bool CanQueryDiskSize(const GURL& origin) OVERRIDE;
   virtual bool IsFileHandler(const std::string& extension_id) OVERRIDE;
   virtual bool HasSessionOnlyOrigins() OVERRIDE;
 

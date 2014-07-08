@@ -6,8 +6,11 @@
 
 #include <vector>
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
+#include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -15,14 +18,13 @@
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_item_more.h"
 #include "ash/system/tray/tray_item_view.h"
-#include "ash/system/tray/tray_notification_view.h"
-#include "ash/system/tray/tray_views.h"
-#include "ash/wm/shelf_layout_manager.h"
+#include "ash/system/tray/tray_utils.h"
 #include "base/logging.h"
-#include "base/timer.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
+#include "ui/accessibility/ax_enums.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/font.h"
@@ -32,9 +34,37 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace tray {
+
+// A |HoverHighlightView| that uses bold or normal font depending on whetehr
+// it is selected.  This view exposes itself as a checkbox to the accessibility
+// framework.
+class SelectableHoverHighlightView : public HoverHighlightView {
+ public:
+  SelectableHoverHighlightView(ViewClickListener* listener,
+                               const base::string16& label,
+                               bool selected)
+      : HoverHighlightView(listener), selected_(selected) {
+    AddLabel(
+        label, gfx::ALIGN_LEFT, selected ? gfx::Font::BOLD : gfx::Font::NORMAL);
+  }
+
+  virtual ~SelectableHoverHighlightView() {}
+
+ protected:
+  // Overridden from views::View.
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE {
+    HoverHighlightView::GetAccessibleState(state);
+    state->role = ui::AX_ROLE_CHECK_BOX;
+    if (selected_)
+      state->AddStateFlag(ui::AX_STATE_CHECKED);
+  }
+
+ private:
+  bool selected_;
+
+  DISALLOW_COPY_AND_ASSIGN(SelectableHoverHighlightView);
+};
 
 class IMEDefaultView : public TrayItemMore {
  public:
@@ -101,9 +131,8 @@ class IMEDetailedView : public TrayDetailsView,
     ime_map_.clear();
     CreateScrollableList();
     for (size_t i = 0; i < list.size(); i++) {
-      HoverHighlightView* container = new HoverHighlightView(this);
-      container->AddLabel(list[i].name,
-          list[i].selected ? gfx::Font::BOLD : gfx::Font::NORMAL);
+      HoverHighlightView* container = new SelectableHoverHighlightView(
+          this, list[i].name, list[i].selected);
       scroll_content()->AddChildView(container);
       ime_map_[container] = list[i].id;
     }
@@ -112,13 +141,11 @@ class IMEDetailedView : public TrayDetailsView,
   void AppendIMEProperties(const IMEPropertyInfoList& property_list) {
     property_map_.clear();
     for (size_t i = 0; i < property_list.size(); i++) {
-      HoverHighlightView* container = new HoverHighlightView(this);
-      container->AddLabel(
-          property_list[i].name,
-          property_list[i].selected ? gfx::Font::BOLD : gfx::Font::NORMAL);
+      HoverHighlightView* container = new SelectableHoverHighlightView(
+          this, property_list[i].name, property_list[i].selected);
       if (i == 0)
-        container->set_border(views::Border::CreateSolidSidedBorder(1, 0, 0, 0,
-        kBorderLightColor));
+        container->SetBorder(views::Border::CreateSolidSidedBorder(
+            1, 0, 0, 0, kBorderLightColor));
       scroll_content()->AddChildView(container);
       property_map_[container] = property_list[i].key;
     }
@@ -126,24 +153,30 @@ class IMEDetailedView : public TrayDetailsView,
 
   void AppendSettings() {
     HoverHighlightView* container = new HoverHighlightView(this);
-    container->AddLabel(ui::ResourceBundle::GetSharedInstance().
-        GetLocalizedString(IDS_ASH_STATUS_TRAY_IME_SETTINGS),
+    container->AddLabel(
+        ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_IME_SETTINGS),
+        gfx::ALIGN_LEFT,
         gfx::Font::NORMAL);
     AddChildView(container);
     settings_ = container;
   }
 
   // Overridden from ViewClickListener.
-  virtual void ClickedOn(views::View* sender) OVERRIDE {
+  virtual void OnViewClicked(views::View* sender) OVERRIDE {
     SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
     if (sender == footer()->content()) {
-      owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+      TransitionToDefaultView();
     } else if (sender == settings_) {
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          ash::UMA_STATUS_AREA_IME_SHOW_DETAILED);
       delegate->ShowIMESettings();
     } else {
       std::map<views::View*, std::string>::const_iterator ime_find;
       ime_find = ime_map_.find(sender);
       if (ime_find != ime_map_.end()) {
+        Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+            ash::UMA_STATUS_AREA_IME_SWITCH_MODE);
         std::string ime_id = ime_find->second;
         delegate->SwitchIME(ime_id);
         GetWidget()->Close();
@@ -168,80 +201,13 @@ class IMEDetailedView : public TrayDetailsView,
   DISALLOW_COPY_AND_ASSIGN(IMEDetailedView);
 };
 
-class IMENotificationView : public TrayNotificationView {
- public:
-  explicit IMENotificationView(TrayIME* owner)
-      : TrayNotificationView(owner, IDR_AURA_UBER_TRAY_IME) {
-    InitView(GetLabel());
-  }
-
-  void UpdateLabel() {
-    RestartAutoCloseTimer();
-    UpdateView(GetLabel());
-  }
-
-  void StartAutoCloseTimer(int seconds) {
-    autoclose_.Stop();
-    autoclose_delay_ = seconds;
-    if (autoclose_delay_) {
-      autoclose_.Start(FROM_HERE,
-                       base::TimeDelta::FromSeconds(autoclose_delay_),
-                       this, &IMENotificationView::Close);
-    }
-  }
-
-  void StopAutoCloseTimer() {
-    autoclose_.Stop();
-  }
-
-  void RestartAutoCloseTimer() {
-    if (autoclose_delay_)
-      StartAutoCloseTimer(autoclose_delay_);
-  }
-
-  // Overridden from TrayNotificationView.
-  virtual void OnClickAction() OVERRIDE {
-    owner()->PopupDetailedView(0, true);
-  }
-
- private:
-  void Close() {
-    owner()->HideNotificationView();
-  }
-
-  views::Label* GetLabel() {
-    SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
-    IMEInfo current;
-    delegate->GetCurrentIME(&current);
-
-    // TODO(zork): Use IDS_ASH_STATUS_TRAY_THIRD_PARTY_IME_TURNED_ON_BUBBLE for
-    // third party IMEs
-    views::Label* label = new views::Label(
-        l10n_util::GetStringFUTF16(
-            IDS_ASH_STATUS_TRAY_IME_TURNED_ON_BUBBLE,
-            current.medium_name));
-    label->SetMultiLine(true);
-    label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
-    return label;
-  }
-
-
-  int autoclose_delay_;
-  base::OneShotTimer<IMENotificationView> autoclose_;
-
-  DISALLOW_COPY_AND_ASSIGN(IMENotificationView);
-};
-
-
 }  // namespace tray
 
 TrayIME::TrayIME(SystemTray* system_tray)
     : SystemTrayItem(system_tray),
       tray_label_(NULL),
       default_(NULL),
-      detailed_(NULL),
-      notification_(NULL),
-      message_shown_(false) {
+      detailed_(NULL) {
   Shell::GetInstance()->system_tray_notifier()->AddIMEObserver(this);
 }
 
@@ -251,12 +217,17 @@ TrayIME::~TrayIME() {
 
 void TrayIME::UpdateTrayLabel(const IMEInfo& current, size_t count) {
   if (tray_label_) {
+    bool visible = count > 1;
+    tray_label_->SetVisible(visible);
+    // Do not change label before hiding because this change is noticeable.
+    if (!visible)
+      return;
     if (current.third_party) {
-      tray_label_->label()->SetText(current.short_name + UTF8ToUTF16("*"));
+      tray_label_->label()->SetText(
+          current.short_name + base::UTF8ToUTF16("*"));
     } else {
       tray_label_->label()->SetText(current.short_name);
     }
-    tray_label_->SetVisible(count > 1);
     SetTrayLabelItemBorder(tray_label_, system_tray()->shelf_alignment());
     tray_label_->Layout();
   }
@@ -267,6 +238,9 @@ views::View* TrayIME::CreateTrayView(user::LoginStatus status) {
   tray_label_ = new TrayItemView(this);
   tray_label_->CreateLabel();
   SetupLabelForTray(tray_label_->label());
+  // Hide IME tray when it is created, it will be updated when it is notified
+  // for IME refresh event.
+  tray_label_->SetVisible(false);
   return tray_label_;
 }
 
@@ -289,13 +263,6 @@ views::View* TrayIME::CreateDetailedView(user::LoginStatus status) {
   return detailed_;
 }
 
-views::View* TrayIME::CreateNotificationView(user::LoginStatus status) {
-  DCHECK(notification_ == NULL);
-  notification_ = new tray::IMENotificationView(this);
-  notification_->StartAutoCloseTimer(kTrayPopupAutoCloseDelayForTextInSeconds);
-  return notification_;
-}
-
 void TrayIME::DestroyTrayView() {
   tray_label_ = NULL;
 }
@@ -308,18 +275,15 @@ void TrayIME::DestroyDetailedView() {
   detailed_ = NULL;
 }
 
-void TrayIME::DestroyNotificationView() {
-  notification_ = NULL;
-}
-
 void TrayIME::UpdateAfterLoginStatusChange(user::LoginStatus status) {
 }
 
 void TrayIME::UpdateAfterShelfAlignmentChange(ShelfAlignment alignment) {
   SetTrayLabelItemBorder(tray_label_, alignment);
+  tray_label_->Layout();
 }
 
-void TrayIME::OnIMERefresh(bool show_message) {
+void TrayIME::OnIMERefresh() {
   SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
   IMEInfoList list;
   IMEInfo current;
@@ -334,19 +298,6 @@ void TrayIME::OnIMERefresh(bool show_message) {
     default_->UpdateLabel(current);
   if (detailed_)
     detailed_->Update(list, property_list);
-
-  if (list.size() > 1 && show_message) {
-    // If the notification is still visible, hide it and clear the flag so it is
-    // refreshed.
-    if (notification_) {
-      notification_->UpdateLabel();
-    } else if (!Shell::GetPrimaryRootWindowController()->shelf()->IsVisible() ||
-               !message_shown_) {
-      ShowNotificationView();
-      message_shown_ = true;
-    }
-  }
 }
 
-}  // namespace internal
 }  // namespace ash

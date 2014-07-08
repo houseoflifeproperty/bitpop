@@ -10,10 +10,24 @@
 
 {
   'variables': {
-    'shim_headers_path': '<(INTERMEDIATE_DIR)/shim_headers',
+    'shim_headers_path': '<(SHARED_INTERMEDIATE_DIR)/shim_headers/<(_target_name)/<(_toolset)',
+    'shim_generator_additional_args%': [],
   },
-  'direct_dependent_settings': {
-    'include_dirs+': [
+  'include_dirs++': [
+    '<(shim_headers_path)',
+  ],
+  'all_dependent_settings': {
+    # Repeating this with different numbers of plusses is unfortunately required
+    # to make sure that even if this include is inside nested conditions/etc, it
+    # still gets inserted at the beginning of the include_dirs list. See
+    # http://crbug.com/263818 for details.
+    'include_dirs+++': [
+      '<(shim_headers_path)',
+    ],
+    'include_dirs++++': [
+      '<(shim_headers_path)',
+    ],
+    'include_dirs+++++': [
       '<(shim_headers_path)',
     ],
   },
@@ -24,6 +38,7 @@
         'generator_args': [
           '--headers-root', '<(headers_root_path)',
           '--output-directory', '<(shim_headers_path)',
+          '<@(shim_generator_additional_args)',
           '<@(header_filenames)',
         ],
       },
@@ -39,7 +54,7 @@
                  '<@(generator_args)',
                  '--generate',
       ],
-      'message': 'Generating <(_target_name) shim headers.',
+      'message': 'Generating <(_target_name) shim headers',
     },
   ],
 }

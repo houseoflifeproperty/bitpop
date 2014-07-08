@@ -2,23 +2,22 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "build/build_config.h"
-
 #include "chrome/browser/ui/toolbar/back_forward_menu_model.h"
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_number_conversions.h"
-#include "chrome/browser/event_disposition.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "build/build_config.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/singleton_tabs.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/favicon_status.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
@@ -29,12 +28,13 @@
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/base/window_open_disposition.h"
 #include "ui/gfx/favicon_size.h"
+#include "ui/gfx/text_elider.h"
 
+using base::UserMetricsAction;
 using content::NavigationController;
 using content::NavigationEntry;
-using content::UserMetricsAction;
 using content::WebContents;
 
 const int BackForwardMenuModel::kMaxHistoryItems = 12;
@@ -90,27 +90,27 @@ int BackForwardMenuModel::GetCommandIdAt(int index) const {
   return index;
 }
 
-string16 BackForwardMenuModel::GetLabelAt(int index) const {
+base::string16 BackForwardMenuModel::GetLabelAt(int index) const {
   // Return label "Show Full History" for the last item of the menu.
   if (index == GetItemCount() - 1)
     return l10n_util::GetStringUTF16(IDS_SHOWFULLHISTORY_LINK);
 
   // Return an empty string for a separator.
   if (IsSeparator(index))
-    return string16();
+    return base::string16();
 
   // Return the entry title, escaping any '&' characters and eliding it if it's
   // super long.
   NavigationEntry* entry = GetNavigationEntry(index);
   Profile* profile =
       Profile::FromBrowserContext(GetWebContents()->GetBrowserContext());
-  string16 menu_text(entry->GetTitleForDisplay(
+  base::string16 menu_text(entry->GetTitleForDisplay(
       profile->GetPrefs()->GetString(prefs::kAcceptLanguages)));
   menu_text =
-      ui::ElideText(menu_text, gfx::Font(), kMaxWidth, ui::ELIDE_AT_END);
+      gfx::ElideText(menu_text, gfx::FontList(), kMaxWidth, gfx::ELIDE_AT_END);
 
 #if !defined(OS_MACOSX)
-  for (size_t i = menu_text.find('&'); i != string16::npos;
+  for (size_t i = menu_text.find('&'); i != base::string16::npos;
        i = menu_text.find('&', i + 2)) {
     menu_text.insert(i, 1, '&');
   }
@@ -199,7 +199,7 @@ void BackForwardMenuModel::ActivatedAt(int index, int event_flags) {
 
   int controller_index = MenuIndexToNavEntryIndex(index);
   WindowOpenDisposition disposition =
-      chrome::DispositionFromEventFlags(event_flags);
+      ui::DispositionFromEventFlags(event_flags);
   if (!chrome::NavigateToIndexWithDisposition(browser_,
                                               controller_index,
                                               disposition)) {
@@ -255,10 +255,8 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
     return;
 
   favicon_service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(browser_->profile(),
-                                          entry->GetURL(),
-                                          history::FAVICON,
-                                          gfx::kFaviconSize),
+      FaviconService::FaviconForURLParams(
+          entry->GetURL(), favicon_base::FAVICON, gfx::kFaviconSize),
       base::Bind(&BackForwardMenuModel::OnFavIconDataAvailable,
                  base::Unretained(this),
                  entry->GetUniqueID()),
@@ -267,7 +265,7 @@ void BackForwardMenuModel::FetchFavicon(NavigationEntry* entry) {
 
 void BackForwardMenuModel::OnFavIconDataAvailable(
     int navigation_entry_unique_id,
-    const history::FaviconImageResult& image_result) {
+    const favicon_base::FaviconImageResult& image_result) {
   if (!image_result.image.IsEmpty()) {
     // Find the current model_index for the unique id.
     NavigationEntry* entry = NULL;
@@ -370,8 +368,9 @@ int BackForwardMenuModel::GetIndexOfNextChapterStop(int start_from,
     // When going backwards we return the first entry we find that has a
     // different domain.
     for (int i = start_from - 1; i >= 0; --i) {
-      if (!net::RegistryControlledDomainService::SameDomainOrHost(url,
-              controller.GetEntryAtIndex(i)->GetURL()))
+      if (!net::registry_controlled_domains::SameDomainOrHost(url,
+              controller.GetEntryAtIndex(i)->GetURL(),
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES))
         return i;
     }
     // We have reached the beginning without finding a chapter stop.
@@ -380,8 +379,9 @@ int BackForwardMenuModel::GetIndexOfNextChapterStop(int start_from,
     // When going forwards we return the entry before the entry that has a
     // different domain.
     for (int i = start_from + 1; i < max_count; ++i) {
-      if (!net::RegistryControlledDomainService::SameDomainOrHost(url,
-              controller.GetEntryAtIndex(i)->GetURL()))
+      if (!net::registry_controlled_domains::SameDomainOrHost(url,
+              controller.GetEntryAtIndex(i)->GetURL(),
+              net::registry_controlled_domains::EXCLUDE_PRIVATE_REGISTRIES))
         return i - 1;
     }
     // Last entry is always considered a chapter stop.
@@ -414,7 +414,7 @@ bool BackForwardMenuModel::ItemHasIcon(int index) const {
   return index < GetItemCount() && !IsSeparator(index);
 }
 
-string16 BackForwardMenuModel::GetShowFullHistoryLabel() const {
+base::string16 BackForwardMenuModel::GetShowFullHistoryLabel() const {
   return l10n_util::GetStringUTF16(IDS_SHOWFULLHISTORY_LINK);
 }
 
@@ -422,7 +422,7 @@ WebContents* BackForwardMenuModel::GetWebContents() const {
   // We use the test web contents if the unit test has specified it.
   return test_web_contents_ ?
       test_web_contents_ :
-      chrome::GetActiveWebContents(browser_);
+      browser_->tab_strip_model()->GetActiveWebContents();
 }
 
 int BackForwardMenuModel::MenuIndexToNavEntryIndex(int index) const {

@@ -7,7 +7,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace predictors {
 
@@ -16,7 +18,8 @@ class AutocompleteActionPredictor;
 // Singleton that owns all AutocompleteActionPredictors and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated AutocompleteActionPredictor.
-class AutocompleteActionPredictorFactory : public ProfileKeyedServiceFactory {
+class AutocompleteActionPredictorFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static AutocompleteActionPredictor* GetForProfile(Profile* profile);
 
@@ -28,10 +31,11 @@ class AutocompleteActionPredictorFactory : public ProfileKeyedServiceFactory {
   AutocompleteActionPredictorFactory();
   virtual ~AutocompleteActionPredictorFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual bool ServiceHasOwnInstanceInIncognito() const OVERRIDE;
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual content::BrowserContext* GetBrowserContextToUse(
+      content::BrowserContext* context) const OVERRIDE;
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(AutocompleteActionPredictorFactory);
 };

@@ -17,6 +17,7 @@
 import weakref
 import gc
 import os, re, itertools
+import random
 from cPickle import load, dump
 
 from zope.interface import implements
@@ -323,16 +324,57 @@ class BuilderStatus(styles.Versioned):
     def getCategory(self):
         return self.category
 
-    def getBuild(self, number):
+    def _resolveBuildNumber(self, number):
         if number < 0:
             number = self.nextBuildNumber + number
         if number < 0 or number >= self.nextBuildNumber:
             return None
+        return number
 
+    def _safeGetBuild(self, build_number):
         try:
-            return self.getBuildByNumber(number)
+            return self.getBuildByNumber(build_number)
         except IndexError:
             return None
+
+    def getBuild(self, number):
+        number = self._resolveBuildNumber(number)
+
+        if number is None:
+            return None
+
+        return self._safeGetBuild(number)
+
+    def getBuilds(self, numbers):
+        """Cache-aware method to get multiple builds.
+
+        Prevents cascading evict/load when multiple builds are requested in
+        succession: requesting build 1 evicts build 2, requesting build 2 evicts
+        build 3, etc.
+
+        We query the buildCache and load hits first, then misses.  When loading,
+        we randomize the load order to alleviate the problem when external web
+        requests load builds sequentially (they don't have access to this
+        function).
+        """
+
+        numbers = list(enumerate(self._resolveBuildNumber(x) for x in numbers))
+        random.shuffle(numbers)
+
+        builds = [None] * len(numbers)
+        misses = []
+        for idx, build_number in numbers:
+            if build_number is None:
+                continue
+            if build_number in self.buildCache.cache:
+                builds[idx] = self._safeGetBuild(build_number)
+            else:
+                misses.append((idx, build_number))
+
+        for idx, build_number in misses:
+            builds[idx] = self._safeGetBuild(build_number)
+
+        return builds
 
     def getEvent(self, number):
         try:
@@ -616,6 +658,11 @@ class BuilderStatus(styles.Versioned):
         # Collect build numbers.
         # Important: Only grab the *cached* builds numbers to reduce I/O.
         current_builds = [b.getNumber() for b in self.currentBuilds]
+
+        # Populates buildCache with last N builds.
+        buildnums = range(-1, -(self.buildCacheSize - 1), -1)
+        self.getBuilds(buildnums)
+
         cached_builds = list(set(self.buildCache.cache.keys() + current_builds))
         cached_builds.sort()
         result['cachedBuilds'] = cached_builds

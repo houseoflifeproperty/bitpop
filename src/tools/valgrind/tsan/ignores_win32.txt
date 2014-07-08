@@ -38,3 +38,35 @@ fun:_updatetlocinfoEx_nolock
 # a debug exception by PlatformThread
 # TODO(timurrrr): investigate
 fun_r:*PlatformThread*SetName*
+
+# Recursively ignore Histrogram::Add and friends, see http://crbug.com/62694.
+fun_r:base::Histogram::Add
+fun_r:base::HistogramSamples::Add
+fun_r:base::HistogramBase::AddTime
+
+# ffmpegsumo.dll appears to read a few bytes beyond the end of the buffer.
+fun:_ff_prefetch_mmxext
+
+# Shows up as a race in SHELL32.dll when deleting a directory while opening an
+# unrelated file in another thread. Revealed by DiskCacheBackendTest.DeleteOld.
+# See: https://code.google.com/p/data-race-test/issues/detail?id=114
+fun_r:SHFileOperationW
+
+# Ignore internal file I/O synchronization: crbug.com/146724
+fun_r:_lock_file
+fun_r:_lock_file2
+fun_r:_lock
+fun_r:_flsbuf
+fun_r:_unlock_file
+fun_r:_getstream
+fun_r:_open_osfhandle
+
+# http://crbug.com/272065
+obj:*NLAapi.dll
+
+# Presumably atomic-based optimization in the system allocator.
+fun_r:_heap_alloc_dbg_impl
+
+# http://crbug.com/348908 - looks like TSan doesn't
+# intercept memset() from VS2013 CRT.
+fun_r:memset

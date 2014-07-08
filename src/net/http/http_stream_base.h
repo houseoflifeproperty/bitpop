@@ -5,7 +5,7 @@
 // HttpStreamBase is an interface for reading and writing data to an
 // HTTP-like stream that keeps the client agnostic of the actual underlying
 // transport layer.  This provides an abstraction for HttpStream and
-// WebSocketStream.
+// WebSocketHandshakeStreamBase.
 
 #ifndef NET_HTTP_HTTP_STREAM_BASE_H_
 #define NET_HTTP_HTTP_STREAM_BASE_H_
@@ -16,6 +16,7 @@
 #include "base/memory/scoped_ptr.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 
 namespace net {
@@ -26,6 +27,7 @@ class HttpRequestHeaders;
 struct HttpRequestInfo;
 class HttpResponseInfo;
 class IOBuffer;
+struct LoadTimingInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
 
@@ -38,6 +40,7 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // |request_info| must outlive the HttpStreamBase.
   // Returns a net error code, possibly ERR_IO_PENDING.
   virtual int InitializeStream(const HttpRequestInfo* request_info,
+                               RequestPriority priority,
                                const BoundNetLog& net_log,
                                const CompletionCallback& callback) = 0;
 
@@ -107,6 +110,20 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // allows it to be reused.
   virtual bool IsConnectionReusable() const = 0;
 
+  // Get the total number of bytes received from network for this stream.
+  virtual int64 GetTotalReceivedBytes() const = 0;
+
+  // Populates the connection establishment part of |load_timing_info|, and
+  // socket ID.  |load_timing_info| must have all null times when called.
+  // Returns false and does nothing if there is no underlying connection, either
+  // because one has yet to be assigned to the stream, or because the underlying
+  // socket has been closed.
+  //
+  // In practice, this means that this function will always succeed any time
+  // between when the full headers have been received and the stream has been
+  // closed.
+  virtual bool GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const = 0;
+
   // Get the SSLInfo associated with this stream's connection.  This should
   // only be called for streams over SSL sockets, otherwise the behavior is
   // undefined.
@@ -126,6 +143,9 @@ class NET_EXPORT_PRIVATE HttpStreamBase {
   // underlying connection. This stream is responsible for deleting itself when
   // draining is complete.
   virtual void Drain(HttpNetworkSession* session) = 0;
+
+  // Called when the priority of the parent transaction changes.
+  virtual void SetPriority(RequestPriority priority) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(HttpStreamBase);

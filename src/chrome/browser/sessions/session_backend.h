@@ -9,12 +9,12 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/task/cancelable_task_tracker.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_command.h"
-#include "chrome/common/cancelable_task_tracker.h"
 
-namespace net {
-class FileStream;
+namespace base {
+class File;
 }
 
 // SessionBackend -------------------------------------------------------------
@@ -47,7 +47,7 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // indicates which service is using this backend. |type| is used to determine
   // the name of the files to use as well as for logging.
   SessionBackend(BaseSessionService::SessionType type,
-                 const FilePath& path_to_dir);
+                 const base::FilePath& path_to_dir);
 
   // Moves the current file to the last file, and recreates the current file.
   //
@@ -67,7 +67,7 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
   // Invoked from the service to read the commands that make up the last
   // session, invokes ReadLastSessionCommandsImpl to do the work.
   void ReadLastSessionCommands(
-      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
       const BaseSessionService::InternalGetCommandsCallback& callback);
 
   // Reads the commands from the last file.
@@ -105,28 +105,28 @@ class SessionBackend : public base::RefCountedThreadSafe<SessionBackend> {
 
   // Opens the current file and writes the header. On success a handle to
   // the file is returned.
-  net::FileStream* OpenAndWriteHeader(const FilePath& path);
+  base::File* OpenAndWriteHeader(const base::FilePath& path);
 
   // Appends the specified commands to the specified file.
-  bool AppendCommandsToFile(net::FileStream* file,
+  bool AppendCommandsToFile(base::File* file,
                             const std::vector<SessionCommand*>& commands);
 
   const BaseSessionService::SessionType type_;
 
   // Returns the path to the last file.
-  FilePath GetLastSessionPath();
+  base::FilePath GetLastSessionPath();
 
   // Returns the path to the current file.
-  FilePath GetCurrentSessionPath();
+  base::FilePath GetCurrentSessionPath();
 
   // Directory files are relative to.
-  const FilePath path_to_dir_;
+  const base::FilePath path_to_dir_;
 
   // Whether the previous target file is valid.
   bool last_session_valid_;
 
   // Handle to the target file.
-  scoped_ptr<net::FileStream> current_session_file_;
+  scoped_ptr<base::File> current_session_file_;
 
   // Whether we've inited. Remember, the constructor is run on the
   // Main thread, all others on the IO thread, hence lazy initialization.

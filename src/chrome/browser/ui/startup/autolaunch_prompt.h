@@ -5,8 +5,11 @@
 #ifndef CHROME_BROWSER_UI_STARTUP_AUTOLAUNCH_PROMPT_H_
 #define CHROME_BROWSER_UI_STARTUP_AUTOLAUNCH_PROMPT_H_
 
-class PrefService;
 class Browser;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 namespace chrome {
 
@@ -15,7 +18,7 @@ namespace chrome {
 bool ShowAutolaunchPrompt(Browser* browser);
 
 // Registers auto-launch specific prefs.
-void RegisterAutolaunchPrefs(PrefService* prefs);
+void RegisterAutolaunchUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
 }  // namespace chrome
 

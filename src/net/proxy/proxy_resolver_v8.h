@@ -10,9 +10,16 @@
 #include "net/base/net_export.h"
 #include "net/proxy/proxy_resolver.h"
 
-namespace net {
+namespace gin {
+class IsolateHolder;
+}  // namespace gin
 
-class ProxyResolverJSBindings;
+namespace v8 {
+class HeapStatistics;
+class Isolate;
+}  // namespace v8
+
+namespace net {
 
 // Implementation of ProxyResolver that uses V8 to evaluate PAC scripts.
 //
@@ -34,14 +41,45 @@ class ProxyResolverJSBindings;
 // and does not use locking since it expects to be alone.
 class NET_EXPORT_PRIVATE ProxyResolverV8 : public ProxyResolver {
  public:
-  // Constructs a ProxyResolverV8 with custom bindings. ProxyResolverV8 takes
-  // ownership of |custom_js_bindings| and deletes it when ProxyResolverV8
-  // is destroyed.
-  explicit ProxyResolverV8(ProxyResolverJSBindings* custom_js_bindings);
+  // Interface for the javascript bindings.
+  class NET_EXPORT_PRIVATE JSBindings {
+   public:
+    enum ResolveDnsOperation {
+      DNS_RESOLVE,
+      DNS_RESOLVE_EX,
+      MY_IP_ADDRESS,
+      MY_IP_ADDRESS_EX,
+    };
+
+    JSBindings() {}
+
+    // Handler for "dnsResolve()", "dnsResolveEx()", "myIpAddress()",
+    // "myIpAddressEx()". Returns true on success and fills |*output| with the
+    // result. If |*terminate| is set to true, then the script execution will
+    // be aborted. Note that termination may not happen right away.
+    virtual bool ResolveDns(const std::string& host,
+                            ResolveDnsOperation op,
+                            std::string* output,
+                            bool* terminate) = 0;
+
+    // Handler for "alert(message)"
+    virtual void Alert(const base::string16& message) = 0;
+
+    // Handler for when an error is encountered. |line_number| may be -1
+    // if a line number is not applicable to this error.
+    virtual void OnError(int line_number, const base::string16& error) = 0;
+
+   protected:
+    virtual ~JSBindings() {}
+  };
+
+  // Constructs a ProxyResolverV8.
+  ProxyResolverV8();
 
   virtual ~ProxyResolverV8();
 
-  ProxyResolverJSBindings* js_bindings() const { return js_bindings_.get(); }
+  JSBindings* js_bindings() const { return js_bindings_; }
+  void set_js_bindings(JSBindings* js_bindings) { js_bindings_ = js_bindings; }
 
   // ProxyResolver implementation:
   virtual int GetProxyForURL(const GURL& url,
@@ -51,23 +89,34 @@ class NET_EXPORT_PRIVATE ProxyResolverV8 : public ProxyResolver {
                              const BoundNetLog& net_log) OVERRIDE;
   virtual void CancelRequest(RequestHandle request) OVERRIDE;
   virtual LoadState GetLoadState(RequestHandle request) const OVERRIDE;
-  virtual LoadState GetLoadStateThreadSafe(
-      RequestHandle request) const OVERRIDE;
   virtual void CancelSetPacScript() OVERRIDE;
-  virtual void PurgeMemory() OVERRIDE;
-  virtual void Shutdown() OVERRIDE;
   virtual int SetPacScript(
       const scoped_refptr<ProxyResolverScriptData>& script_data,
       const net::CompletionCallback& /*callback*/) OVERRIDE;
 
+  // Create an isolate to use for the proxy resolver. If the embedder invokes
+  // this method multiple times, it must be invoked in a thread safe manner,
+  // e.g. always from the same thread.
+  static void EnsureIsolateCreated();
+
+  static v8::Isolate* GetDefaultIsolate();
+
+  // Get total/ued heap memory usage of all v8 instances used by the proxy
+  // resolver.
+  static size_t GetTotalHeapSize();
+  static size_t GetUsedHeapSize();
+
  private:
+  static gin::IsolateHolder* g_proxy_resolver_isolate_;
+
   // Context holds the Javascript state for the most recently loaded PAC
   // script. It corresponds with the data from the last call to
   // SetPacScript().
   class Context;
+
   scoped_ptr<Context> context_;
 
-  scoped_ptr<ProxyResolverJSBindings> js_bindings_;
+  JSBindings* js_bindings_;
 
   DISALLOW_COPY_AND_ASSIGN(ProxyResolverV8);
 };

@@ -46,26 +46,26 @@ _log = logging.getLogger(__name__)
 
 class ScriptError(Exception):
 
-    # This is a custom List.__str__ implementation to allow size limiting.
-    def _string_from_args(self, args, limit=100):
-        args_string = unicode(args)
-        # We could make this much fancier, but for now this is OK.
-        if len(args_string) > limit:
-            return args_string[:limit - 3] + "..."
-        return args_string
-
     def __init__(self,
                  message=None,
                  script_args=None,
                  exit_code=None,
                  output=None,
-                 cwd=None):
+                 cwd=None,
+                 output_limit=500):
+        shortened_output = output
+        if output and output_limit and len(output) > output_limit:
+            shortened_output = "Last %s characters of output:\n%s" % (output_limit, output[-output_limit:])
+
         if not message:
-            message = 'Failed to run "%s"' % self._string_from_args(script_args)
+            message = 'Failed to run "%s"' % repr(script_args)
             if exit_code:
                 message += " exit_code: %d" % exit_code
             if cwd:
                 message += " cwd: %s" % cwd
+
+        if shortened_output:
+            message += "\n\noutput: %s" % shortened_output
 
         Exception.__init__(self, message)
         self.script_args = script_args # 'args' is already used by Exception
@@ -73,12 +73,7 @@ class ScriptError(Exception):
         self.output = output
         self.cwd = cwd
 
-    def message_with_output(self, output_limit=500):
-        if self.output:
-            if output_limit and len(self.output) > output_limit:
-                return u"%s\n\nLast %s characters of output:\n%s" % \
-                    (self, output_limit, self.output[-output_limit:])
-            return u"%s\n\n%s" % (self, self.output)
+    def message_with_output(self):
         return unicode(self)
 
     def command_name(self):
@@ -186,7 +181,7 @@ class Executive(object):
             # We only use taskkill.exe on windows (not cygwin) because subprocess.pid
             # is a CYGWIN pid and taskkill.exe expects a windows pid.
             # Thankfully os.kill on CYGWIN handles either pid type.
-            command = ["taskkill.exe", "/f", "/pid", pid]
+            command = ["taskkill.exe", "/f", "/t", "/pid", pid]
             # taskkill will exit 128 if the process is not found.  We should log.
             self.run_command(command, error_handler=self.ignore_error)
             return
@@ -330,26 +325,6 @@ class Executive(object):
             # It's impossible for callers to avoid race conditions with process shutdown.
             pass
 
-    def kill_all(self, process_name):
-        """Attempts to kill processes matching process_name.
-        Will fail silently if no process are found."""
-        if sys.platform in ("win32", "cygwin"):
-            image_name = self._windows_image_name(process_name)
-            command = ["taskkill.exe", "/f", "/im", image_name]
-            # taskkill will exit 128 if the process is not found.  We should log.
-            self.run_command(command, error_handler=self.ignore_error)
-            return
-
-        # FIXME: This is inconsistent that kill_all uses TERM and kill_process
-        # uses KILL.  Windows is always using /f (which seems like -KILL).
-        # We should pick one mode, or add support for switching between them.
-        # Note: Mac OS X 10.6 requires -SIGNALNAME before -u USER
-        command = ["killall", "-TERM", "-u", os.getenv("USER"), process_name]
-        # killall returns 1 if no process can be found and 2 on command error.
-        # FIXME: We should pass a custom error_handler to allow only exit_code 1.
-        # We should log in exit_code == 1
-        self.run_command(command, error_handler=self.ignore_error)
-
     # Error handlers do not need to be static methods once all callers are
     # updated to use an Executive object.
 
@@ -380,9 +355,10 @@ class Executive(object):
             input = input.encode(self._child_process_encoding())
         return (self.PIPE, input)
 
-    def _command_for_printing(self, args):
+    def command_for_printing(self, args):
         """Returns a print-ready string representing command args.
         The string should be copy/paste ready for execution in a shell."""
+        args = self._stringify_args(args)
         escaped_args = []
         for arg in args:
             if isinstance(arg, unicode):
@@ -401,11 +377,10 @@ class Executive(object):
                     error_handler=None,
                     return_exit_code=False,
                     return_stderr=True,
-                    decode_output=True):
+                    decode_output=True, debug_logging=True):
         """Popen wrapper for convenience and to work around python bugs."""
         assert(isinstance(args, list) or isinstance(args, tuple))
         start_time = time.time()
-        args = self._stringify_args(args)
 
         stdin, string_to_communicate = self._compute_stdin(input)
         stderr = self.STDOUT if return_stderr else None
@@ -427,7 +402,8 @@ class Executive(object):
         # http://bugs.python.org/issue1731717
         exit_code = process.wait()
 
-        _log.debug('"%s" took %.2fs' % (self._command_for_printing(args), time.time() - start_time))
+        if debug_logging:
+            _log.debug('"%s" took %.2fs' % (self.command_for_printing(args), time.time() - start_time))
 
         if return_exit_code:
             return exit_code
@@ -488,6 +464,9 @@ class Executive(object):
         else:
             string_args = self._stringify_args(args)
         return subprocess.Popen(string_args, **kwargs)
+
+    def call(self, args, **kwargs):
+        return subprocess.call(self._stringify_args(args), **kwargs)
 
     def run_in_parallel(self, command_lines_and_cwds, processes=None):
         """Runs a list of (cmd_line list, cwd string) tuples in parallel and returns a list of (retcode, stdout, stderr) tuples."""

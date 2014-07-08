@@ -7,13 +7,11 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/view.h"
 
-namespace chrome {
 class BookmarkBarInstructionsDelegate;
-}
 
 namespace views {
 class Label;
@@ -26,27 +24,31 @@ class Link;
 // with a link to import bookmarks. Clicking the link results in notifying the
 // delegate.
 class BookmarkBarInstructionsView : public views::View,
-                                    public views::LinkListener {
+                                    public views::LinkListener,
+                                    public views::ContextMenuController {
  public:
   explicit BookmarkBarInstructionsView(
-      chrome::BookmarkBarInstructionsDelegate* delegate);
+      BookmarkBarInstructionsDelegate* delegate);
 
   // views::View overrides.
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual void Layout() OVERRIDE;
   virtual void OnThemeChanged() OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    views::View* parent,
-                                    views::View* child) OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // views::LinkListener overrides.
   virtual void LinkClicked(views::Link* source, int event_flags) OVERRIDE;
 
  private:
+  virtual void ShowContextMenuForView(views::View* source,
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
+
   void UpdateColors();
 
-  chrome::BookmarkBarInstructionsDelegate* delegate_;
+  BookmarkBarInstructionsDelegate* delegate_;
 
   views::Label* instructions_;
   views::Link* import_link_;

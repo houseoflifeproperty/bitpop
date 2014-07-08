@@ -2,11 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef ASH_WM_SHELL_CONTEXT_MENU_H_
-#define ASH_WM_SHELL_CONTEXT_MENU_H_
+#ifndef ASH_SHELL_CONTEXT_MENU_H_
+#define ASH_SHELL_CONTEXT_MENU_H_
 
-#include "ash/launcher/launcher_alignment_menu.h"
-#include "ash/shelf_types.h"
+#include "ash/shelf/shelf_alignment_menu.h"
+#include "ash/shelf/shelf_types.h"
 #include "base/basictypes.h"
 #include "ui/base/models/simple_menu_model.h"
 
@@ -21,7 +21,7 @@ namespace shell {
 class ContextMenu : public ui::SimpleMenuModel,
                     public ui::SimpleMenuModel::Delegate {
  public:
-  explicit ContextMenu(aura::RootWindow* root);
+  explicit ContextMenu(aura::Window* root);
   virtual ~ContextMenu();
 
   // ui::SimpleMenuModel::Delegate overrides:
@@ -30,7 +30,7 @@ class ContextMenu : public ui::SimpleMenuModel,
   virtual bool GetAcceleratorForCommandId(
       int command_id,
       ui::Accelerator* accelerator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  virtual void ExecuteCommand(int command_id, int event_flags) OVERRIDE;
 
  private:
   enum MenuItem {
@@ -38,9 +38,9 @@ class ContextMenu : public ui::SimpleMenuModel,
     MENU_ALIGNMENT_MENU,
   };
 
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
-  LauncherAlignmentMenu alignment_menu_;
+  ShelfAlignmentMenu alignment_menu_;
 
   DISALLOW_COPY_AND_ASSIGN(ContextMenu);
 };
@@ -48,4 +48,4 @@ class ContextMenu : public ui::SimpleMenuModel,
 }  // namespace shell
 }  // namespace ash
 
-#endif  // ASH_WM_SHELL_CONTEXT_MENU_H_
+#endif  // ASH_SHELL_CONTEXT_MENU_H_

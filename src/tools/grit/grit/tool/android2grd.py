@@ -64,24 +64,28 @@ OPTIONS may be any of the following:
                              files that will be declared by the output grd file.
 
     --grd-dir    GRD_DIR     Specify where the resultant grd file
-                             (FILENAME.grd) shoud be output. By default this
+                             (FILENAME.grd) should be output. By default this
                              will be the present working directory.
 
     --header-dir HEADER_DIR  Specify the location of the directory where grit
                              generated C++ headers (whose name will be
-                             FILENAME.h) will be placed. By default no
-                             directory is specified.
+                             FILENAME.h) will be placed. Use an empty string to
+                             disable rc generation. Default: empty.
 
     --rc-dir     RC_DIR      Specify the directory where resource files will
-                             be located. By default this is empty.
+                             be located relative to grit build's output
+                             directory. Use an empty string to disable rc
+                             generation. Default: empty.
 
-    --xml-dir    XML_DIR     Specify the location of the Android app's resource
-                             directory. Internationalized strings.xml files will
-                             be placed under this directory. For each langauge
-                             xx a values-xx/strings.xml file will be generated.
+    --xml-dir    XML_DIR     Specify where to place localized strings.xml files
+                             relative to grit build's output directory. For each
+                             language xx a values-xx/strings.xml file will be
+                             generated. Use an empty string to disable
+                             strings.xml generation. Default: '.'.
 
-    --xtb-dir    XTB_DIR     Specify where the output translation files will be
-                             located.
+    --xtb-dir    XTB_DIR     Specify where the xtb files containing translations
+                             will be located relative to the grd file. Default:
+                             '.'.
 """
 
   _NAME_FLAG = 'name'
@@ -98,8 +102,8 @@ OPTIONS may be any of the following:
     self.grd_dir = '.'
     self.rc_dir = None
     self.xtb_dir = '.'
-    self.xml_res_dir = None
-    self.header_dir = ''
+    self.xml_res_dir = '.'
+    self.header_dir = None
 
   def ShortDescription(self):
     """Returns a short description of the Android2Grd tool.
@@ -190,15 +194,15 @@ OPTIONS may be any of the following:
       '''<?xml version="1.0" encoding="UTF-8"?>
          <grit base_dir="." latest_public_release="0"
              current_release="1" source_lang_id="en">
+           <outputs />
+           <translations />
            <release allow_pseudo="false" seq="1">
              <messages fallback_to_english="true" />
            </release>
-           <translations />
-           <outputs />
          </grit>'''), dir='.')
-    messages = root.children[0].children[0]
+    outputs = root.children[0]
     translations = root.children[1]
-    outputs = root.children[2]
+    messages = root.children[2].children[0]
     assert (isinstance(messages, grit.node.empty.MessagesNode) and
             isinstance(translations, grit.node.empty.TranslationsNode) and
             isinstance(outputs, grit.node.empty.OutputsNode))
@@ -211,7 +215,8 @@ OPTIONS may be any of the following:
         self.__CreateRcOutputNode(outputs, lang, self.rc_dir)
       if self.xml_res_dir:
         self.__CreateAndroidXmlOutputNode(outputs, lang, self.xml_res_dir)
-      self.__CreateFileNode(translations, lang)
+      if lang != 'en':
+        self.__CreateFileNode(translations, lang)
     # Convert all the strings.xml strings into grd messages.
     self.__CreateMessageNodes(messages, android_dom.documentElement)
 
@@ -235,7 +240,8 @@ OPTIONS may be any of the following:
       elif child.nodeType == Node.ELEMENT_NODE:
         if child.tagName != 'string':
           print 'Warning: ignoring unknown tag <%s>' % child.tagName
-        elif self.IsTranslatable(child):
+        else:
+          translatable = self.IsTranslatable(child)
           raw_name = child.getAttribute('name')
           product = child.getAttribute('product') or None
           grd_name = self.__FormatName(raw_name, product)
@@ -244,7 +250,7 @@ OPTIONS may be any of the following:
           # and coverting <xliff:g> placeholders into <ph> placeholders.
           msg = self.CreateTclibMessage(child)
           msg_node = self.__CreateMessageNode(messages, grd_name, description,
-              msg)
+              msg, translatable)
           messages.AddChild(msg_node)
           # Reset the description once a message has been parsed.
           description = ''
@@ -382,7 +388,8 @@ OPTIONS may be any of the following:
         assert False, 'Unknown node type in ' + placeholder_node.toxml()
     return self.__FormatAndroidString(''.join(text), inside_placeholder=True)
 
-  def __CreateMessageNode(self, messages_node, grd_name, description, msg):
+  def __CreateMessageNode(self, messages_node, grd_name, description, msg,
+                          translatable):
     """Creates and initializes a <message> element.
 
     Message elements correspond to Android <string> elements in that they
@@ -402,7 +409,7 @@ OPTIONS may be any of the following:
                                          name=grd_name,
                                          message=msg,
                                          desc=description,
-                                         translateable=True)
+                                         translateable=translatable)
 
   def __CreateFileNode(self, translations_node, lang):
     """Creates and initializes the <file> elements.
@@ -410,7 +417,8 @@ OPTIONS may be any of the following:
     File elements provide information on the location of translation files
     (xtbs)
     """
-    xtb_file = self.name + '_' + lang + '.xtb'
+    xtb_file = os.path.normpath(os.path.join(
+        self.xtb_dir, '%s_%s.xtb' % (self.name, lang)))
     fnode = io.FileNode()
     fnode.StartParsing(u'file', translations_node)
     fnode.HandleAttribute('path', xtb_file)
@@ -463,9 +471,9 @@ OPTIONS may be any of the following:
       lang_map = {'no': 'nb', 'fil': 'tl', 'id': 'in', 'he': 'iw', 'yi': 'ji'}
       android_lang = lang_map.get(android_lang, android_lang)
       android_locale = android_lang + ('-r' + region if region else '')
-    xml_file_name = "strings.xml"
-    xml_locale_path = os.path.join(xml_res_dir, 'values-%s' % android_locale)
-    xml_path = os.path.join(xml_locale_path, "strings.xml")
+    values = 'values-' + android_locale if android_locale != 'en' else 'values'
+    xml_path = os.path.normpath(os.path.join(
+        xml_res_dir, values, 'strings.xml'))
 
     node = io.OutputNode()
     node.StartParsing(u'output', outputs_node)

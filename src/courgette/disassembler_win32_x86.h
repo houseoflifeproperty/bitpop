@@ -10,6 +10,10 @@
 #include "courgette/memory_allocator.h"
 #include "courgette/types_win_pe.h"
 
+#ifdef COURGETTE_HISTOGRAM_TARGETS
+#include <map>
+#endif
+
 namespace courgette {
 
 class AssemblyProgram;

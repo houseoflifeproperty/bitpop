@@ -60,7 +60,7 @@ static void RegisterSetterThread(struct SuspendTestShm *test_shm) {
   struct NaClSignalContext *regs = &test_shm->expected_regs;
   char stack[0x10000];
 
-  RegsFillTestValues(regs);
+  RegsFillTestValues(regs, /* seed= */ 0);
   regs->stack_ptr = (uintptr_t) stack + sizeof(stack);
   regs->prog_ctr = (uintptr_t) spin_instruction;
   RegsApplySandboxConstraints(regs);
@@ -105,6 +105,19 @@ static void RegisterSetterThread(struct SuspendTestShm *test_shm) {
       "str r0, [r0]\n"
       "spin_instruction:\n"
       "b spin_instruction\n");
+#elif defined(__mips__)
+  regs->a0 = (uintptr_t) test_shm;
+  ASM_WITH_REGS(
+      regs,
+      /* Align to ensure no NOPs are inserted in the code that follows. */
+      ".p2align 4\n"
+      /* Set "test_shm->var = test_shm" to indicate that we are ready. */
+      "and $a0, $a0, $t7\n"
+      "sw $a0, 0($a0)\n"
+      ".global spin_instruction\n"
+      "spin_instruction:\n"
+      "b spin_instruction\n"
+      "nop\n");
 #else
 # error Unsupported architecture
 #endif
@@ -120,7 +133,7 @@ static void SyscallRegisterSetterThread(struct SuspendTestShm *test_shm) {
   struct NaClSignalContext call_regs;
   char stack[0x10000];
 
-  RegsFillTestValues(&call_regs);
+  RegsFillTestValues(&call_regs, /* seed= */ 0);
   call_regs.stack_ptr = (uintptr_t) stack + sizeof(stack);
   call_regs.prog_ctr = (uintptr_t) ContinueAfterSyscall;
   RegsApplySandboxConstraints(&call_regs);
@@ -161,11 +174,91 @@ static void SyscallRegisterSetterThread(struct SuspendTestShm *test_shm) {
         &call_regs,
         "bic r1, r1, #0xf000000f\n"
         "bx r1\n");
+#elif defined(__mips__)
+    call_regs.a0 = (uintptr_t) test_shm;  /* Set syscall argument */
+    call_regs.t9 = syscall_addr;  /* Scratch register */
+    call_regs.return_addr = (uintptr_t) ContinueAfterSyscall;
+    ASM_WITH_REGS(
+        &call_regs,
+        "and $t9, $t9, $t6\n"
+        "jr $t9\n"
+        "nop\n");
 #else
 # error Unsupported architecture
 #endif
     assert(!"Should not reach here");
   }
+}
+
+void SyscallReturnAddress(void);
+#if defined(__i386__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        "SyscallLoop:"
+        "naclcall %esi\n"
+        "SyscallReturnAddress:\n"
+        "jmp SyscallLoop\n"
+        ".popsection\n");
+#elif defined(__x86_64__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        "SyscallLoop:\n"
+        /* Call via a temporary register so as not to modify %r12. */
+        "mov %r12d, %eax\n"
+        "naclcall %eax, %r15\n"
+        "SyscallReturnAddress:\n"
+        "jmp SyscallLoop\n"
+        ".popsection\n");
+#elif defined(__arm__)
+__asm__(".pushsection .text, \"ax\", %progbits\n"
+        ".p2align 4\n"
+        "SyscallReturnAddress:\n"
+        "adr lr, SyscallReturnAddress\n"
+        "bic r4, r4, #0xc000000f\n"
+        "bx r4\n"
+        ".popsection\n");
+#elif defined(__mips__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        ".p2align 4\n"
+        ".global SyscallReturnAddress\n"
+        "SyscallReturnAddress:\n"
+        "lui   $ra, %hi(SyscallReturnAddress)\n"
+        "addiu $ra, $ra, %lo(SyscallReturnAddress)\n"
+        "and $s0, $s0, $t6\n"
+        "jr $s0\n"
+        "nop\n"
+        ".popsection\n");
+#else
+# error Unsupported architecture
+#endif
+
+/*
+ * Set registers to known values and call a NaCl syscall in an
+ * infinite loop.  This is used for testing that the same register
+ * state is reported while the thread is in untrusted code or inside
+ * the syscall.
+ */
+static void SyscallRegisterSetterLoopThread(struct SuspendTestShm *test_shm) {
+  struct NaClSignalContext *regs = &test_shm->expected_regs;
+  char stack[0x10000];
+
+  RegsFillTestValues(regs, /* seed= */ 0);
+  regs->stack_ptr = (uintptr_t) stack + sizeof(stack);
+  regs->prog_ctr = (uintptr_t) SyscallReturnAddress;
+  RegsApplySandboxConstraints(regs);
+  RegsUnsetNonCalleeSavedRegisters(regs);
+
+  uintptr_t syscall_addr = NACL_SYSCALL_ADDR(NACL_sys_test_syscall_2);
+#if defined(__i386__)
+  regs->esi = syscall_addr;
+#elif defined(__x86_64__)
+  regs->r12 = syscall_addr;
+#elif defined(__arm__)
+  regs->r4 = syscall_addr;
+#elif defined(__mips__)
+  regs->s0 = syscall_addr;
+#else
+# error Unsupported architecture
+#endif
+  JUMP_WITH_REGS(regs, SyscallReturnAddress);
 }
 
 int main(int argc, char **argv) {
@@ -190,6 +283,8 @@ int main(int argc, char **argv) {
     RegisterSetterThread(test_shm);
   } else if (strcmp(test_type, "SyscallRegisterSetterThread") == 0) {
     SyscallRegisterSetterThread(test_shm);
+  } else if (strcmp(test_type, "SyscallRegisterSetterLoopThread") == 0) {
+    SyscallRegisterSetterLoopThread(test_shm);
   } else {
     fprintf(stderr, "Unknown test type: %s\n", test_type);
     return 1;

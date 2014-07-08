@@ -143,8 +143,8 @@
 /* Payload data will contain the SID frame if there is one*/
 
 #define DSP_INSTR_DTMF_GENERATE                  0x6000
-/* Payload data will be one WebRtc_Word16 with the current DTMF value and one
- * WebRtc_Word16 with the current volume value
+/* Payload data will be one int16_t with the current DTMF value and one
+ * int16_t with the current volume value
  */
 #define DSP_INSTR_NORMAL_ONE_DESC                0x7000
 /* No encoded frames */
@@ -344,7 +344,7 @@
     /* Super wideband 48kHz codecs */
     #define NETEQ_48KHZ_WIDEBAND
     #define NETEQ_OPUS_CODEC
-    #define NETEQ_ISAC_FB
+    #define NETEQ_ISAC_FB_CODEC
 #endif
 
 /* Max output size from decoding one frame */

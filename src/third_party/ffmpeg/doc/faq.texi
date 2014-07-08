@@ -79,6 +79,17 @@ not a bug they should fix:
 Then again, some of them do not know the difference between an undecidable
 problem and an NP-hard problem...
 
+@section I have installed this library with my distro's package manager. Why does @command{configure} not see it?
+
+Distributions usually split libraries in several packages. The main package
+contains the files necessary to run programs using the library. The
+development package contains the files necessary to build programs using the
+library. Sometimes, docs and/or data are in a separate package too.
+
+To build FFmpeg, you need to install the development package. It is usually
+called @file{libfoo-dev} or @file{libfoo-devel}. You can remove it after the
+build is finished, but be sure to keep the main package.
+
 @chapter Usage
 
 @section ffmpeg does not work; what is wrong?
@@ -94,12 +105,21 @@ For example, img1.jpg, img2.jpg, img3.jpg,...
 Then you may run:
 
 @example
-  ffmpeg -f image2 -i img%d.jpg /tmp/a.mpg
+ffmpeg -f image2 -i img%d.jpg /tmp/a.mpg
 @end example
 
 Notice that @samp{%d} is replaced by the image number.
 
-@file{img%03d.jpg} means the sequence @file{img001.jpg}, @file{img002.jpg}, etc...
+@file{img%03d.jpg} means the sequence @file{img001.jpg}, @file{img002.jpg}, etc.
+
+Use the @option{-start_number} option to declare a starting number for
+the sequence. This is useful if your sequence does not start with
+@file{img001.jpg} but is still in a numerical order. The following
+example will start with @file{img100.jpg}:
+
+@example
+ffmpeg -f image2 -start_number 100 -i img%d.jpg /tmp/a.mpg
+@end example
 
 If you have large number of pictures to rename, you can use the
 following command to ease the burden. The command, using the bourne
@@ -108,7 +128,7 @@ that match @code{*jpg} to the @file{/tmp} directory in the sequence of
 @file{img001.jpg}, @file{img002.jpg} and so on.
 
 @example
-  x=1; for i in *jpg; do counter=$(printf %03d $x); ln -s "$i" /tmp/img"$counter".jpg; x=$(($x+1)); done
+x=1; for i in *jpg; do counter=$(printf %03d $x); ln -s "$i" /tmp/img"$counter".jpg; x=$(($x+1)); done
 @end example
 
 If you want to sequence them by oldest modified first, substitute
@@ -117,17 +137,23 @@ If you want to sequence them by oldest modified first, substitute
 Then run:
 
 @example
-  ffmpeg -f image2 -i /tmp/img%03d.jpg /tmp/a.mpg
+ffmpeg -f image2 -i /tmp/img%03d.jpg /tmp/a.mpg
 @end example
 
 The same logic is used for any image format that ffmpeg reads.
+
+You can also use @command{cat} to pipe images to ffmpeg:
+
+@example
+cat *.jpg | ffmpeg -f image2pipe -c:v mjpeg -i - output.mpg
+@end example
 
 @section How do I encode movie to single pictures?
 
 Use:
 
 @example
-  ffmpeg -i movie.mpg movie%d.jpg
+ffmpeg -i movie.mpg movie%d.jpg
 @end example
 
 The @file{movie.mpg} used as input will be converted to
@@ -143,7 +169,7 @@ to force the encoding.
 
 Applying that to the previous example:
 @example
-  ffmpeg -i movie.mpg -f image2 -c:v mjpeg menu%d.jpg
+ffmpeg -i movie.mpg -f image2 -c:v mjpeg menu%d.jpg
 @end example
 
 Beware that there is no "jpeg" codec. Use "mjpeg" instead.
@@ -201,15 +227,15 @@ then you may use any file that DirectShow can read as input.
 
 Just create an "input.avs" text file with this single line ...
 @example
-  DirectShowSource("C:\path to your file\yourfile.asf")
+DirectShowSource("C:\path to your file\yourfile.asf")
 @end example
 ... and then feed that text file to ffmpeg:
 @example
-  ffmpeg -i input.avs
+ffmpeg -i input.avs
 @end example
 
-For ANY other help on Avisynth, please visit the
-@uref{http://www.avisynth.org/, Avisynth homepage}.
+For ANY other help on AviSynth, please visit the
+@uref{http://www.avisynth.org/, AviSynth homepage}.
 
 @section How can I join video files?
 
@@ -234,18 +260,18 @@ invoking ffmpeg with several @option{-i} options.
 For audio, to put all channels together in a single stream (example: two
 mono streams into one stereo stream): this is sometimes called to
 @emph{merge} them, and can be done using the
-@url{http://ffmpeg.org/ffmpeg.html#amerge, @code{amerge}} filter.
+@url{http://ffmpeg.org/ffmpeg-filters.html#amerge, @code{amerge}} filter.
 
 @item
 For audio, to play one on top of the other: this is called to @emph{mix}
 them, and can be done by first merging them into a single stream and then
-using the @url{http://ffmpeg.org/ffmpeg.html#pan, @code{pan}} filter to mix
+using the @url{http://ffmpeg.org/ffmpeg-filters.html#pan, @code{pan}} filter to mix
 the channels at will.
 
 @item
 For video, to display both together, side by side or one on top of a part of
 the other; it can be done using the
-@url{http://ffmpeg.org/ffmpeg.html#overlay, @code{overlay}} video filter.
+@url{http://ffmpeg.org/ffmpeg-filters.html#overlay, @code{overlay}} video filter.
 
 @end itemize
 
@@ -254,15 +280,26 @@ the other; it can be done using the
 
 There are several solutions, depending on the exact circumstances.
 
-@subsection Concatenating using filters
+@subsection Concatenating using the concat @emph{filter}
 
-FFmpeg has a @url{http://ffmpeg.org/ffmpeg.html#concat-1, @code{concat}}
-filter designed specifically for that, with examples in the documentation.
+FFmpeg has a @url{http://ffmpeg.org/ffmpeg-filters.html#concat,
+@code{concat}} filter designed specifically for that, with examples in the
+documentation. This operation is recommended if you need to re-encode.
 
-@subsection Concatenating at the file level
+@subsection Concatenating using the concat @emph{demuxer}
+
+FFmpeg has a @url{http://www.ffmpeg.org/ffmpeg-formats.html#concat,
+@code{concat}} demuxer which you can use when you want to avoid a re-encode and
+your format doesn't support file level concatenation.
+
+@subsection Concatenating using the concat @emph{protocol} (file level)
+
+FFmpeg has a @url{http://ffmpeg.org/ffmpeg-protocols.html#concat,
+@code{concat}} protocol designed specifically for that, with examples in the
+documentation.
 
 A few multimedia containers (MPEG-1, MPEG-2 PS, DV) allow to concatenate
-video by merely concatenating the files them.
+video by merely concatenating the files containing them.
 
 Hence you may concatenate your multimedia files by first transcoding them to
 these privileged formats, then using the humble @code{cat} command (or the
@@ -297,7 +334,7 @@ mkfifo intermediate2.mpg
 ffmpeg -i input1.avi -qscale:v 1 -y intermediate1.mpg < /dev/null &
 ffmpeg -i input2.avi -qscale:v 1 -y intermediate2.mpg < /dev/null &
 cat intermediate1.mpg intermediate2.mpg |\
-ffmpeg -f mpeg -i - -qscale:v 2 -c:v mpeg4 -acodec libmp3lame -q:a 4 output.avi
+ffmpeg -f mpeg -i - -c:v mpeg4 -acodec libmp3lame output.avi
 @end example
 
 @subsection Concatenating using raw audio and video
@@ -327,7 +364,7 @@ cat temp1.a temp2.a > all.a &
 cat temp1.v temp2.v > all.v &
 ffmpeg -f u16le -acodec pcm_s16le -ac 2 -ar 44100 -i all.a \
        -f yuv4mpegpipe -i all.v \
-       -qscale:v 2 -y output.flv
+       -y output.flv
 rm temp[12].[av] all.[av]
 @end example
 
@@ -356,17 +393,17 @@ Appending @code{:v} to it will do exactly that.
 Use @option{-dumpgraph -} to find out exactly where the channel layout is
 lost.
 
-Most likely, it is through @code{auto-inserted aconvert}. Try to understand
+Most likely, it is through @code{auto-inserted aresample}. Try to understand
 why the converting filter was needed at that place.
 
 Just before the output is a likely place, as @option{-f lavfi} currently
 only support packed S16.
 
-Then insert the correct @code{aconvert} explicitly in the filter graph,
+Then insert the correct @code{aformat} explicitly in the filtergraph,
 specifying the exact format.
 
 @example
-aconvert=s16:stereo:packed
+aformat=sample_fmts=s16:channel_layouts=stereo
 @end example
 
 @section Why does FFmpeg not see the subtitles in my VOB file?
@@ -384,6 +421,20 @@ are detected later are ignored.
 The size of the initial scan is controlled by two options: @code{probesize}
 (default ~5 Mo) and @code{analyzeduration} (default 5,000,000 µs = 5 s). For
 the subtitle stream to be detected, both values must be large enough.
+
+@section Why was the @command{ffmpeg} @option{-sameq} option removed? What to use instead?
+
+The @option{-sameq} option meant "same quantizer", and made sense only in a
+very limited set of cases. Unfortunately, a lot of people mistook it for
+"same quality" and used it in places where it did not make sense: it had
+roughly the expected visible effect, but achieved it in a very inefficient
+way.
+
+Each encoder has its own set of options to set the quality-vs-size balance,
+use the options for the encoder you are using to set the quality level to a
+point acceptable for your tastes. The most common options to do that are
+@option{-qscale} and @option{-qmax}, but you should peruse the documentation
+of the encoder you chose.
 
 @chapter Development
 
@@ -424,9 +475,10 @@ read @uref{http://www.tux.org/lkml/#s15, "Programming Religion"}.
 
 @section Why are the ffmpeg programs devoid of debugging symbols?
 
-The build process creates ffmpeg_g, ffplay_g, etc. which contain full debug
-information. Those binaries are stripped to create ffmpeg, ffplay, etc. If
-you need the debug information, use the *_g versions.
+The build process creates @command{ffmpeg_g}, @command{ffplay_g}, etc. which
+contain full debug information. Those binaries are stripped to create
+@command{ffmpeg}, @command{ffplay}, etc. If you need the debug information, use
+the *_g versions.
 
 @section I do not like the LGPL, can I contribute code under the GPL instead?
 
@@ -446,7 +498,7 @@ An easy way to get the full list of required libraries in dependency order
 is to use @code{pkg-config}.
 
 @example
-  c99 -o program program.c $(pkg-config --cflags --libs libavformat libavcodec)
+c99 -o program program.c $(pkg-config --cflags --libs libavformat libavcodec)
 @end example
 
 See @file{doc/example/Makefile} and @file{doc/example/pc-uninstalled} for
@@ -467,12 +519,8 @@ to use them you have to append -D__STDC_CONSTANT_MACROS to your CXXFLAGS
 
 @section I have a file in memory / a API different from *open/*read/ libc how do I use it with libavformat?
 
-You have to implement a URLProtocol, see @file{libavformat/file.c} in
-FFmpeg and @file{libmpdemux/demux_lavf.c} in MPlayer sources.
-
-@section Where can I find libav* headers for Pascal/Delphi?
-
-see @url{http://www.iversenit.dk/dev/ffmpeg-headers/}
+You have to create a custom AVIOContext using @code{avio_alloc_context},
+see @file{libavformat/aviobuf.c} in FFmpeg and @file{libmpdemux/demux_lavf.c} in MPlayer or MPlayer2 sources.
 
 @section Where is the documentation about ffv1, msmpeg4, asv1, 4xm?
 
@@ -486,11 +534,12 @@ In this specific case please look at RFC 4629 to see how it should be done.
 
 @section AVStream.r_frame_rate is wrong, it is much larger than the frame rate.
 
-r_frame_rate is NOT the average frame rate, it is the smallest frame rate
+@code{r_frame_rate} is NOT the average frame rate, it is the smallest frame rate
 that can accurately represent all timestamps. So no, it is not
 wrong if it is larger than the average!
-For example, if you have mixed 25 and 30 fps content, then r_frame_rate
-will be 150.
+For example, if you have mixed 25 and 30 fps content, then @code{r_frame_rate}
+will be 150 (it is the least common multiple).
+If you are looking for the average frame rate, see @code{AVStream.avg_frame_rate}.
 
 @section Why is @code{make fate} not running all tests?
 

@@ -9,22 +9,21 @@
 #endif
 
 #include "base/compiler_specific.h"
-#include "base/message_loop_proxy.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/service/service_process.h"
-#include "net/base/cert_verifier.h"
-#include "net/base/host_resolver.h"
-#include "net/base/ssl_config_service_defaults.h"
+#include "net/cert/cert_verifier.h"
 #include "net/cookies/cookie_monster.h"
-#include "net/ftp/ftp_network_layer.h"
+#include "net/dns/host_resolver.h"
 #include "net/http/http_auth_handler_factory.h"
 #include "net/http/http_cache.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_server_properties_impl.h"
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
+#include "net/ssl/ssl_config_service_defaults.h"
 #include "net/url_request/static_http_user_agent_settings.h"
 #include "net/url_request/url_request_throttler_manager.h"
 
@@ -109,37 +108,36 @@ std::string MakeUserAgentForServiceProcess() {
 ServiceURLRequestContext::ServiceURLRequestContext(
     const std::string& user_agent,
     net::ProxyConfigService* net_proxy_config_service)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(storage_(this)) {
+    : storage_(this) {
   storage_.set_host_resolver(net::HostResolver::CreateDefaultResolver(NULL));
   storage_.set_proxy_service(net::ProxyService::CreateUsingSystemProxyResolver(
       net_proxy_config_service, 0u, NULL));
   storage_.set_cert_verifier(net::CertVerifier::CreateDefault());
-  storage_.set_ftp_transaction_factory(
-      new net::FtpNetworkLayer(host_resolver()));
   storage_.set_ssl_config_service(new net::SSLConfigServiceDefaults);
   storage_.set_http_auth_handler_factory(
       net::HttpAuthHandlerFactory::CreateDefault(host_resolver()));
-  storage_.set_http_server_properties(new net::HttpServerPropertiesImpl);
+  storage_.set_http_server_properties(
+      scoped_ptr<net::HttpServerProperties>(
+          new net::HttpServerPropertiesImpl()));
   storage_.set_transport_security_state(new net::TransportSecurityState);
   storage_.set_throttler_manager(new net::URLRequestThrottlerManager);
 
   net::HttpNetworkSession::Params session_params;
   session_params.host_resolver = host_resolver();
   session_params.cert_verifier = cert_verifier();
+  session_params.transport_security_state = transport_security_state();
   session_params.proxy_service = proxy_service();
   session_params.ssl_config_service = ssl_config_service();
   session_params.http_auth_handler_factory = http_auth_handler_factory();
   session_params.http_server_properties = http_server_properties();
   scoped_refptr<net::HttpNetworkSession> network_session(
       new net::HttpNetworkSession(session_params));
-  storage_.set_http_transaction_factory(
-      new net::HttpCache(
-          network_session,
-          net::HttpCache::DefaultBackend::InMemory(0)));
+  storage_.set_http_transaction_factory(new net::HttpCache(
+      network_session.get(), net::HttpCache::DefaultBackend::InMemory(0)));
   // In-memory cookie store.
   storage_.set_cookie_store(new net::CookieMonster(NULL, NULL));
   storage_.set_http_user_agent_settings(new net::StaticHttpUserAgentSettings(
-      "en-us,fr", "iso-8859-1,*,utf-8", user_agent));
+      "en-us,fr", user_agent));
 }
 
 ServiceURLRequestContext::~ServiceURLRequestContext() {
@@ -154,10 +152,9 @@ ServiceURLRequestContextGetter::ServiceURLRequestContextGetter()
   // TODO(sanjeevr): Change CreateSystemProxyConfigService to accept a
   // MessageLoopProxy* instead of MessageLoop*.
   DCHECK(g_service_process);
-  proxy_config_service_.reset(
-      net::ProxyService::CreateSystemProxyConfigService(
-          g_service_process->io_thread()->message_loop_proxy(),
-          g_service_process->file_thread()->message_loop()));
+  proxy_config_service_.reset(net::ProxyService::CreateSystemProxyConfigService(
+      g_service_process->io_thread()->message_loop_proxy().get(),
+      g_service_process->file_thread()->message_loop()));
 }
 
 net::URLRequestContext*

@@ -5,10 +5,14 @@
 #ifndef CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_INPUT_SYNC_WRITER_H_
 #define CONTENT_BROWSER_RENDERER_HOST_MEDIA_AUDIO_INPUT_SYNC_WRITER_H_
 
-#include "base/file_descriptor_posix.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "base/sync_socket.h"
+#include "base/time/time.h"
 #include "media/audio/audio_input_controller.h"
+
+#if defined(OS_POSIX)
+#include "base/file_descriptor_posix.h"
+#endif
 
 namespace base {
 class SharedMemory;
@@ -21,13 +25,17 @@ namespace content {
 // process.
 class AudioInputSyncWriter : public media::AudioInputController::SyncWriter {
  public:
-  explicit AudioInputSyncWriter(base::SharedMemory* shared_memory);
+  explicit AudioInputSyncWriter(base::SharedMemory* shared_memory,
+                                int shared_memory_segment_count);
 
   virtual ~AudioInputSyncWriter();
 
   // media::AudioOutputController::SyncWriter implementation.
   virtual void UpdateRecordedBytes(uint32 bytes) OVERRIDE;
-  virtual uint32 Write(const void* data, uint32 size, double volume) OVERRIDE;
+  virtual uint32 Write(const void* data,
+                       uint32 size,
+                       double volume,
+                       bool key_pressed) OVERRIDE;
   virtual void Close() OVERRIDE;
 
   bool Init();
@@ -40,6 +48,9 @@ class AudioInputSyncWriter : public media::AudioInputController::SyncWriter {
 
  private:
   base::SharedMemory* shared_memory_;
+  uint32 shared_memory_segment_size_;
+  uint32 shared_memory_segment_count_;
+  uint32 current_segment_id_;
 
   // Socket for transmitting audio data.
   scoped_ptr<base::CancelableSyncSocket> socket_;
@@ -47,6 +58,12 @@ class AudioInputSyncWriter : public media::AudioInputController::SyncWriter {
   // Socket to be used by the renderer. The reference is released after
   // PrepareForeignSocketHandle() is called and ran successfully.
   scoped_ptr<base::CancelableSyncSocket> foreign_socket_;
+
+  // The time of the creation of this object.
+  base::Time creation_time_;
+
+  // The time of the last Write call.
+  base::Time last_write_time_;
 
   DISALLOW_IMPLICIT_CONSTRUCTORS(AudioInputSyncWriter);
 };

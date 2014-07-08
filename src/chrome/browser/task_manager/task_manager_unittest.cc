@@ -6,14 +6,16 @@
 
 #include <string>
 
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/task_manager/resource_provider.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/image/image_skia.h"
+
+using base::ASCIIToUTF16;
 
 namespace {
 
@@ -26,18 +28,18 @@ const char* kZeroCPUUsage = "0.0";
 const char* kZeroCPUUsage = "0";
 #endif
 
-class TestResource : public TaskManager::Resource {
+class TestResource : public task_manager::Resource {
  public:
   TestResource() : refresh_called_(false) {}
 
-  virtual string16 GetTitle() const OVERRIDE {
+  virtual base::string16 GetTitle() const OVERRIDE {
     return ASCIIToUTF16("test title");
   }
-  virtual string16 GetProfileName() const OVERRIDE {
+  virtual base::string16 GetProfileName() const OVERRIDE {
     return ASCIIToUTF16("test profile");
   }
-  virtual gfx::ImageSkia GetIcon() const { return gfx::ImageSkia(); }
-  virtual base::ProcessHandle GetProcess() const {
+  virtual gfx::ImageSkia GetIcon() const OVERRIDE { return gfx::ImageSkia(); }
+  virtual base::ProcessHandle GetProcess() const OVERRIDE {
     return base::GetCurrentProcessHandle();
   }
   virtual int GetUniqueChildProcessId() const OVERRIDE {
@@ -45,10 +47,10 @@ class TestResource : public TaskManager::Resource {
     // but for testing purposes it shouldn't make difference.
     return static_cast<int>(base::GetCurrentProcId());
   }
-  virtual Type GetType() const { return RENDERER; }
-  virtual bool SupportNetworkUsage() const { return false; }
-  virtual void SetSupportNetworkUsage() { NOTREACHED(); }
-  virtual void Refresh() { refresh_called_ = true; }
+  virtual Type GetType() const OVERRIDE { return RENDERER; }
+  virtual bool SupportNetworkUsage() const OVERRIDE { return false; }
+  virtual void SetSupportNetworkUsage() OVERRIDE { NOTREACHED(); }
+  virtual void Refresh() OVERRIDE { refresh_called_ = true; }
   bool refresh_called() const { return refresh_called_; }
   void set_refresh_called(bool refresh_called) {
     refresh_called_ = refresh_called;
@@ -65,13 +67,13 @@ class TaskManagerTest : public testing::Test {
 
 TEST_F(TaskManagerTest, Basic) {
   TaskManager task_manager;
-  TaskManagerModel* model = task_manager.model_;
+  TaskManagerModel* model = task_manager.model_.get();
   EXPECT_EQ(0, model->ResourceCount());
 }
 
 TEST_F(TaskManagerTest, Resources) {
   TaskManager task_manager;
-  TaskManagerModel* model = task_manager.model_;
+  TaskManagerModel* model = task_manager.model_.get();
 
   TestResource resource1, resource2;
 
@@ -110,9 +112,9 @@ TEST_F(TaskManagerTest, Resources) {
 
 // Tests that the model is calling Refresh() on its resources.
 TEST_F(TaskManagerTest, RefreshCalled) {
-  MessageLoop loop;
+  base::MessageLoop loop;
   TaskManager task_manager;
-  TaskManagerModel* model = task_manager.model_;
+  TaskManagerModel* model = task_manager.model_.get();
   TestResource resource;
 
   task_manager.AddResource(&resource);

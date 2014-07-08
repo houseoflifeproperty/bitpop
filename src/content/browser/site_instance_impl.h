@@ -7,21 +7,20 @@
 
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/browser/render_process_host_observer.h"
 #include "content/public/browser/site_instance.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 class RenderProcessHostFactory;
 
 class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
-                                        public NotificationObserver {
+                                        public RenderProcessHostObserver {
  public:
   // SiteInstance interface overrides.
   virtual int32 GetId() OVERRIDE;
   virtual bool HasProcess() const OVERRIDE;
-  virtual  RenderProcessHost* GetProcess() OVERRIDE;
+  virtual RenderProcessHost* GetProcess() OVERRIDE;
   virtual const GURL& GetSiteURL() const OVERRIDE;
   virtual SiteInstance* GetRelatedSiteInstance(const GURL& url) OVERRIDE;
   virtual bool IsRelatedSiteInstance(const SiteInstance* instance) OVERRIDE;
@@ -44,14 +43,37 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // navigating to the URL.
   bool HasWrongProcessForURL(const GURL& url);
 
-  // Sets the factory used to create new RenderProcessHosts. This will also be
-  // passed on to SiteInstances spawned by this one.
-  // The factory must outlive the SiteInstance; ownership is not transferred. It
-  // may be NULL, in which case the default BrowserRenderProcessHost will be
-  // created (this is the behavior if you don't call this function).
-  void set_render_process_host_factory(RenderProcessHostFactory* rph_factory) {
-    render_process_host_factory_ = rph_factory;
-  }
+  // Increase the number of active views in this SiteInstance. This is
+  // increased when a view is created, or a currently swapped out view
+  // is swapped in.
+  void increment_active_view_count() { active_view_count_++; }
+
+  // Decrease the number of active views in this SiteInstance. This is
+  // decreased when a view is destroyed, or a currently active view is
+  // swapped out.
+  void decrement_active_view_count() { active_view_count_--; }
+
+  // Get the number of active views which belong to this
+  // SiteInstance. If there is no active view left in this
+  // SiteInstance, all view in this SiteInstance can be safely
+  // discarded to save memory.
+  size_t active_view_count() { return active_view_count_; }
+
+  // Sets the global factory used to create new RenderProcessHosts.  It may be
+  // NULL, in which case the default BrowserRenderProcessHost will be created
+  // (this is the behavior if you don't call this function).  The factory must
+  // be set back to NULL before it's destroyed; ownership is not transferred.
+  static void set_render_process_host_factory(
+      const RenderProcessHostFactory* rph_factory);
+
+  // Get the effective URL for the given actual URL.  This allows the
+  // ContentBrowserClient to override the SiteInstance's site for certain URLs.
+  // For example, Chrome uses this to replace hosted app URLs with extension
+  // hosts.
+  // Only public so that we can make a consistent process swap decision in
+  // RenderFrameHostManager.
+  static GURL GetEffectiveURL(BrowserContext* browser_context,
+                              const GURL& url);
 
  protected:
   friend class BrowsingInstance;
@@ -66,17 +88,14 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   explicit SiteInstanceImpl(BrowsingInstance* browsing_instance);
 
  private:
-  // Get the effective URL for the given actual URL.
-  static GURL GetEffectiveURL(BrowserContext* browser_context,
-                              const GURL& url);
-
-  // NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  // RenderProcessHostObserver implementation.
+  virtual void RenderProcessHostDestroyed(RenderProcessHost* host) OVERRIDE;
 
   // Used to restrict a process' origin access rights.
   void LockToOrigin();
+
+  // An object used to construct RenderProcessHosts.
+  static const RenderProcessHostFactory* g_render_process_host_factory_;
 
   // The next available SiteInstance ID.
   static int32 next_site_instance_id_;
@@ -84,14 +103,11 @@ class CONTENT_EXPORT SiteInstanceImpl : public SiteInstance,
   // A unique ID for this SiteInstance.
   int32 id_;
 
-  NotificationRegistrar registrar_;
+  // The number of active views under this SiteInstance.
+  size_t active_view_count_;
 
   // BrowsingInstance to which this SiteInstance belongs.
   scoped_refptr<BrowsingInstance> browsing_instance_;
-
-  // Factory for new RenderProcessHosts, not owned by this class. NULL indiactes
-  // that the default BrowserRenderProcessHost should be created.
-  const RenderProcessHostFactory* render_process_host_factory_;
 
   // Current RenderProcessHost that is rendering pages for this SiteInstance.
   // This pointer will only change once the RenderProcessHost is destructed.  It

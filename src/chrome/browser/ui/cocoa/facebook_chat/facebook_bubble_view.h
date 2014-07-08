@@ -20,7 +20,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 
 namespace fb_bubble {
 
@@ -41,7 +41,7 @@ enum BubbleArrowLocation {
 @interface FacebookBubbleView : NSView {
  @private
    fb_bubble::BubbleArrowLocation arrowLocation_;
-   scoped_nsobject<NSColor> backgroundColor_;
+   base::scoped_nsobject<NSColor> backgroundColor_;
 }
 
 @property(assign, nonatomic) fb_bubble::BubbleArrowLocation arrowLocation;

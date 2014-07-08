@@ -8,43 +8,45 @@
 #include <map>
 
 #include "base/compiler_specific.h"
-#include "chrome/browser/media_gallery/media_galleries_dialog_controller.h"
+#include "chrome/browser/media_galleries/media_galleries_dialog_controller.h"
+#include "ui/views/context_menu_controller.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/window/dialog_delegate.h"
 
-class ConstrainedWindowViews;
-
 namespace views {
 class Checkbox;
+class LabelButton;
+class MenuRunner;
+class Widget;
 }
 
-namespace chrome {
+class MediaGalleryCheckboxView;
 
 // The media galleries configuration view for Views. It will immediately show
 // upon construction.
 class MediaGalleriesDialogViews : public MediaGalleriesDialog,
-                                  public views::DialogDelegate,
-                                  public views::ButtonListener {
+                                  public views::ButtonListener,
+                                  public views::ContextMenuController,
+                                  public views::DialogDelegate {
  public:
   explicit MediaGalleriesDialogViews(
       MediaGalleriesDialogController* controller);
   virtual ~MediaGalleriesDialogViews();
 
   // MediaGalleriesDialog implementation:
-  virtual void UpdateGallery(const MediaGalleryPrefInfo* gallery,
-                             bool permitted) OVERRIDE;
+  virtual void UpdateGalleries() OVERRIDE;
 
   // views::DialogDelegate implementation:
-  virtual string16 GetWindowTitle() const OVERRIDE;
-  virtual bool ShouldShowWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual bool IsDialogButtonEnabled(ui::DialogButton button) const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual views::View* GetExtraView() OVERRIDE;
+  virtual views::View* CreateExtraView() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
@@ -52,28 +54,50 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
+  // views::ContextMenuController implementation:
+  virtual void ShowContextMenuForView(views::View* source,
+                                      const gfx::Point& point,
+                                      ui::MenuSourceType source_type) OVERRIDE;
+
  private:
-  typedef std::map<const MediaGalleryPrefInfo*, views::Checkbox*> CheckboxMap;
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, InitializeCheckboxes);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ToggleCheckboxes);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, UpdateAdds);
+  FRIEND_TEST_ALL_PREFIXES(MediaGalleriesDialogTest, ForgetDeletes);
+
+  typedef std::map<GalleryDialogId, MediaGalleryCheckboxView*> CheckboxMap;
 
   void InitChildViews();
 
   // Adds a checkbox or updates an existing checkbox. Returns true if a new one
   // was added.
-  bool AddOrUpdateGallery(const MediaGalleryPrefInfo* gallery, bool permitted);
+  bool AddOrUpdateGallery(
+      const MediaGalleriesDialogController::GalleryPermission& gallery,
+      views::View* container,
+      int trailing_vertical_space);
+
+  void ShowContextMenu(const gfx::Point& point,
+                       ui::MenuSourceType source_type,
+                       GalleryDialogId id);
+
+  // Whether |controller_| has a valid WebContents or not.
+  // In unit tests, it may not.
+  bool ControllerHasWebContents() const;
 
   MediaGalleriesDialogController* controller_;
 
-  // The constrained window (a weak pointer).
-  ConstrainedWindowViews* window_;
+  // The containing window (a weak pointer).
+  views::Widget* window_;
 
-  // The contents of the dialog. Owned by |window_|'s RootView.
+  // The contents of the dialog. Owned by |window_|'s RootView except for tests.
   views::View* contents_;
 
-  // A map from media gallery to views::Checkbox view.
+  // A map from gallery ID to views::Checkbox view.
   CheckboxMap checkbox_map_;
 
-  views::View* checkbox_container_;
-  views::View* add_gallery_container_;
+  // Pointer to the button to add a new gallery. Owned by parent in
+  // the dialog views tree.
+  views::LabelButton* add_gallery_button_;
 
   // This tracks whether the confirm button can be clicked. It starts as false
   // if no checkboxes are ticked. After there is any interaction, or some
@@ -83,9 +107,9 @@ class MediaGalleriesDialogViews : public MediaGalleriesDialog,
   // True if the user has pressed accept.
   bool accepted_;
 
+  scoped_ptr<views::MenuRunner> context_menu_runner_;
+
   DISALLOW_COPY_AND_ASSIGN(MediaGalleriesDialogViews);
 };
-
-}  // namespace chrome
 
 #endif  // CHROME_BROWSER_UI_VIEWS_EXTENSIONS_MEDIA_GALLERIES_DIALOG_VIEWS_H_

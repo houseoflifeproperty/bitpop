@@ -8,14 +8,15 @@
   },
   'targets': [
     {
-      'target_name': 'tld_cleanup',
-      'type': 'executable',
+      'target_name': 'tld_cleanup_util',
+      'type': 'static_library',
       'dependencies': [
         '../../../base/base.gyp:base',
-        '../../../build/temp_gyp/googleurl.gyp:googleurl',
+        '../../../url/url.gyp:url_lib',
       ],
       'sources': [
-        'tld_cleanup.cc',
+        'tld_cleanup_util.h',
+        'tld_cleanup_util.cc',
       ],
     },
   ],

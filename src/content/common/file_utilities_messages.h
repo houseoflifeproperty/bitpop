@@ -14,12 +14,6 @@
 // File utilities messages sent from the renderer to the browser.
 
 IPC_SYNC_MESSAGE_CONTROL1_2(FileUtilitiesMsg_GetFileInfo,
-                            FilePath /* path */,
-                            base::PlatformFileInfo /* result */,
-                            base::PlatformFileError /* status */)
-
-// Open the file.
-IPC_SYNC_MESSAGE_CONTROL2_1(FileUtilitiesMsg_OpenFile,
-                            FilePath /* path */,
-                            int /* mode */,
-                            IPC::PlatformFileForTransit /* result */)
+                            base::FilePath /* path */,
+                            base::File::Info /* result */,
+                            base::File::Error /* status */)

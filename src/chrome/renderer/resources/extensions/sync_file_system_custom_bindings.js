@@ -2,12 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the syncFileSystem API.
+// Custom binding for the syncFileSystem API.
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var binding = require('binding').Binding.create('syncFileSystem');
+
+var eventBindings = require('event_bindings');
+var fileSystemNatives = requireNative('file_system_natives');
 var syncFileSystemNatives = requireNative('sync_file_system');
 
-chromeHidden.registerCustomHook('syncFileSystem', function(bindingsAPI) {
+binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   // Functions which take in an [instanceOf=FileEntry].
@@ -18,8 +21,20 @@ chromeHidden.registerCustomHook('syncFileSystem', function(bindingsAPI) {
       return [fileSystemUrl, callback];
     });
   }
-  ['getFileSyncStatus']
-      .forEach(bindFileEntryFunction);
+  $Array.forEach(['getFileStatus'], bindFileEntryFunction);
+
+  // Functions which take in a FileEntry array.
+  function bindFileEntryArrayFunction(functionName) {
+    apiFunctions.setUpdateArgumentsPostValidate(
+        functionName, function(entries, callback) {
+      var fileSystemUrlArray = [];
+      for (var i=0; i < entries.length; i++) {
+        $Array.push(fileSystemUrlArray, entries[i].toURL());
+      }
+      return [fileSystemUrlArray, callback];
+    });
+  }
+  $Array.forEach(['getFileStatuses'], bindFileEntryArrayFunction);
 
   // Functions which take in an [instanceOf=DOMFileSystem].
   function bindFileSystemFunction(functionName) {
@@ -29,8 +44,7 @@ chromeHidden.registerCustomHook('syncFileSystem', function(bindingsAPI) {
       return [fileSystemUrl, callback];
     });
   }
-  ['deleteFileSystem', 'getUsageAndQuota']
-      .forEach(bindFileSystemFunction);
+  $Array.forEach(['getUsageAndQuota'], bindFileSystemFunction);
 
   // Functions which return an [instanceOf=DOMFileSystem].
   apiFunctions.setCustomCallback('requestFileSystem',
@@ -44,4 +58,52 @@ chromeHidden.registerCustomHook('syncFileSystem', function(bindingsAPI) {
       request.callback(result);
     request.callback = null;
   });
+
+  // Functions which return an array of FileStatusInfo object
+  // which has [instanceOf=FileEntry].
+  apiFunctions.setCustomCallback('getFileStatuses',
+                                 function(name, request, response) {
+    var results = [];
+    if (response) {
+      for (var i = 0; i < response.length; i++) {
+        var result = {};
+        var entry = response[i].entry;
+        result.fileEntry = fileSystemNatives.GetFileEntry(
+            entry.fileSystemType,
+            entry.fileSystemName,
+            entry.rootUrl,
+            entry.filePath,
+            entry.isDirectory);
+        result.status = response[i].status;
+        result.error = response[i].error;
+        $Array.push(results, result);
+      }
+    }
+    if (request.callback)
+      request.callback(results);
+    request.callback = null;
+  });
 });
+
+eventBindings.registerArgumentMassager(
+    'syncFileSystem.onFileStatusChanged', function(args, dispatch) {
+  // Make FileEntry object using all the base string fields.
+  var fileEntry = fileSystemNatives.GetFileEntry(
+      args[0].fileSystemType,
+      args[0].fileSystemName,
+      args[0].rootUrl,
+      args[0].filePath,
+      args[0].isDirectory);
+
+  // Combine into a single dictionary.
+  var fileInfo = new Object();
+  fileInfo.fileEntry = fileEntry;
+  fileInfo.status = args[1];
+  if (fileInfo.status == "synced") {
+    fileInfo.action = args[2];
+    fileInfo.direction = args[3];
+  }
+  dispatch([fileInfo]);
+});
+
+exports.binding = binding.generate();

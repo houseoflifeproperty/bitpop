@@ -7,22 +7,18 @@
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
 #include "base/threading/thread.h"
 #include "google/cacheinvalidation/types.pb.h"
 #include "jingle/notifier/base/fake_base_task.h"
 #include "net/url_request/url_request_test_util.h"
-#include "sync/internal_api/public/util/weak_handle.h"
 #include "sync/notifier/fake_invalidation_handler.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidator_test_template.h"
-#include "sync/notifier/object_id_invalidation_map_test_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
-
-namespace {
 
 class NonBlockingInvalidatorTestDelegate {
  public:
@@ -33,24 +29,29 @@ class NonBlockingInvalidatorTestDelegate {
   }
 
   void CreateInvalidator(
+      const std::string& invalidator_client_id,
       const std::string& initial_state,
       const base::WeakPtr<InvalidationStateTracker>&
           invalidation_state_tracker) {
     DCHECK(!invalidator_.get());
     base::Thread::Options options;
-    options.message_loop_type = MessageLoop::TYPE_IO;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
     io_thread_.StartWithOptions(options);
     request_context_getter_ =
         new net::TestURLRequestContextGetter(io_thread_.message_loop_proxy());
-    notifier::NotifierOptions invalidator_options;
-    invalidator_options.request_context_getter = request_context_getter_;
+    notifier::NotifierOptions notifier_options;
+    notifier_options.request_context_getter = request_context_getter_;
+    NetworkChannelCreator network_channel_creator =
+        NonBlockingInvalidator::MakePushClientChannelCreator(notifier_options);
     invalidator_.reset(
         new NonBlockingInvalidator(
-            invalidator_options,
-            InvalidationStateMap(),
+            network_channel_creator,
+            invalidator_client_id,
+            UnackedInvalidationsMap(),
             initial_state,
-            MakeWeakHandle(invalidation_state_tracker),
-            "fake_client_info"));
+            invalidation_state_tracker.get(),
+            "fake_client_info",
+            request_context_getter_));
   }
 
   Invalidator* GetInvalidator() {
@@ -79,17 +80,12 @@ class NonBlockingInvalidatorTestDelegate {
   }
 
   void TriggerOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source) {
-    invalidator_->OnIncomingInvalidation(invalidation_map, source);
-  }
-
-  static bool InvalidatorHandlesDeprecatedState() {
-    return true;
+      const ObjectIdInvalidationMap& invalidation_map) {
+    invalidator_->OnIncomingInvalidation(invalidation_map);
   }
 
  private:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   base::Thread io_thread_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   scoped_ptr<NonBlockingInvalidator> invalidator_;
@@ -98,7 +94,5 @@ class NonBlockingInvalidatorTestDelegate {
 INSTANTIATE_TYPED_TEST_CASE_P(
     NonBlockingInvalidatorTest, InvalidatorTest,
     NonBlockingInvalidatorTestDelegate);
-
-}  // namespace
 
 }  // namespace syncer

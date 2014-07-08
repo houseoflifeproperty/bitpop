@@ -5,6 +5,7 @@
  */
 
 #include <errno.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -14,7 +15,18 @@
 #if !defined(__pnacl__) && (defined(__x86_64__) || defined(__i386__))
 
 typedef struct { char b[10]; } st_reg;
-static st_reg st_zero;
+static const st_reg st_zero;
+
+typedef struct {
+  uint32_t cwd;
+  uint32_t swd;
+  uint32_t twd;
+  uint32_t fip;
+  uint32_t fcs;
+  uint32_t foo;
+  uint32_t fos;
+  st_reg st[8];
+} fsave_block;
 
 /*
  * Not every x86-32 CPU supports SSE registers, but we're willing
@@ -24,28 +36,46 @@ typedef struct { uint64_t b[2]; } xmm_reg __attribute__((aligned(16)));
 static const xmm_reg xmm_zero;
 
 static void infoleak_clear_state(void) {
-  __asm__ volatile("fninit; fstpt %0" : "=m" (st_zero));
+  const uint32_t zero = 0;
+  fsave_block fsave;
+  __asm__ volatile("fninit; fsave %0" : "=m" (fsave));
+  memset(fsave.st, 0, sizeof(fsave.st));
+  __asm__ volatile("frstor %0" :: "m" (fsave));
   __asm__ volatile("movaps %0, %%xmm7" :: "m" (xmm_zero));
+  __asm__ volatile("ldmxcsr %0" :: "m" (zero));
 }
 
-__attribute__((noinline)) static int infoleak_check_state(void) {
-  int ok = 1;
-  st_reg st0;
+__attribute__((noinline)) static bool infoleak_check_state(void) {
+  bool ok = true;
+  fsave_block fsave;
+  uint64_t mm7;
   xmm_reg xmm7;
-  __asm__("fstpt %0" : "=m" (st0));
+  uint32_t mxcsr;
+  int i;
+  __asm__("fsave %0" : "=m" (fsave));
+  __asm__("movq %%mm7, %0" : "=m" (mm7));
   __asm__("movaps %%xmm7, %0" : "=m" (xmm7));
-  if (memcmp(&st0, &st_zero, sizeof(st0)) != 0) {
-    printf("x87 state leaked information!\n");
-    ok = 0;
+  __asm__("stmxcsr %0" : "=m" (mxcsr));
+  for (i = 0; i < 8; ++i) {
+    if (memcmp(&fsave.st[i], &st_zero, sizeof(st_zero)) != 0) {
+      printf("x87 %%st(%d) leaked information!\n", i);
+      ok = false;
+    }
+  }
+  if (mm7 != 0) {
+    printf("MMX state leaked information!\n");
+    ok = false;
   }
   if (memcmp(&xmm7, &xmm_zero, sizeof(xmm7)) != 0) {
     printf("SSE state leaked information!\n");
-    ok = 0;
+    ok = false;
+  }
+  if (mxcsr != 0) {
+    printf("MXCSR state leaked information!\n");
+    ok = false;
   }
   return ok;
 }
-
-#define EXPECT_OK 1
 
 #elif defined(__arm__)
 
@@ -66,40 +96,61 @@ static void infoleak_clear_state(void) {
   infoleak_store_state(&vfp_zero, 0);
 }
 
-static int infoleak_check_state(void) {
-  int ok = 1;
+static bool infoleak_check_state(void) {
+  bool ok = true;
   union vfp_regs vfp_now;
   uint32_t fpscr = infoleak_fetch_state(&vfp_now);
   if (memcmp(&vfp_now, &vfp_zero, sizeof(vfp_now)) != 0) {
     printf("VFP registers leaked information!\n\t%.*s",
            sizeof(vfp_now), vfp_now.s);
-    ok = 0;
+    ok = false;
   }
   if (fpscr != 0) {
     printf("VFP FPSCR leaked information! %#x\n", fpscr);
-    ok = 0;
+    ok = false;
   }
   return ok;
 }
 
-#define EXPECT_OK 1
+#elif defined(__mips__)
+
+typedef union {
+  double  f_regs[16];
+  char s[sizeof(double) * 16];
+} float_regs;
+
+float_regs regs_zero, regs_fetched;
+
+void infoleak_fetch_regs(float_regs *ptr);
+void infoleak_clear_state(void);
+
+static bool infoleak_check_state(void) {
+  memset(&regs_zero, 0, sizeof(regs_zero));
+
+  infoleak_fetch_regs(&regs_fetched);
+
+  if (memcmp(&regs_fetched, &regs_zero, sizeof(regs_fetched)) != 0) {
+    printf("Floating point information leakage!\n\t%.*s\n",
+           sizeof(regs_fetched), regs_fetched.s);
+    return false;
+  }
+  return true;
+}
 
 #else
 
 static void infoleak_clear_state(void) {
 }
 
-static int infoleak_check_state(void) {
-  return 1;
+static bool infoleak_check_state(void) {
+  return true;
 }
-
-#define EXPECT_OK 1
 
 #endif
 
 int main(void) {
   int result;
-  int ok;
+  bool ok = false;
 
   infoleak_clear_state();
 
@@ -111,5 +162,5 @@ int main(void) {
 
   ok = infoleak_check_state();
 
-  return ok == EXPECT_OK ? 0 : 1;
+  return ok ? 0 : 1;
 }

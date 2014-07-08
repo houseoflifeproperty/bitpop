@@ -15,8 +15,8 @@ DownloadShelfMac::DownloadShelfMac(Browser* browser,
       shelf_controller_(controller) {
 }
 
-void DownloadShelfMac::DoAddDownload(DownloadItemModel* download_model) {
-  [shelf_controller_ addDownloadItem:download_model];
+void DownloadShelfMac::DoAddDownload(content::DownloadItem* download) {
+  [shelf_controller_ addDownloadItem:download];
 }
 
 bool DownloadShelfMac::IsShowing() const {
@@ -29,12 +29,14 @@ bool DownloadShelfMac::IsClosing() const {
 }
 
 void DownloadShelfMac::DoShow() {
-  [shelf_controller_ show:nil];
+  [shelf_controller_ showDownloadShelf:YES
+                          isUserAction:NO];
   browser_->UpdateDownloadShelfVisibility(true);
 }
 
-void DownloadShelfMac::DoClose() {
-  [shelf_controller_ hide:nil];
+void DownloadShelfMac::DoClose(CloseReason reason) {
+  [shelf_controller_ showDownloadShelf:NO
+                          isUserAction:reason == USER_ACTION];
   browser_->UpdateDownloadShelfVisibility(false);
 }
 

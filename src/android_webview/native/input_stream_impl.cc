@@ -18,6 +18,7 @@ using base::android::AttachCurrentThread;
 using base::android::ClearException;
 using base::android::JavaRef;
 using JNI_InputStream::Java_InputStream_available;
+using JNI_InputStream::Java_InputStream_close;
 using JNI_InputStream::Java_InputStream_skip;
 using JNI_InputStream::Java_InputStream_readI_AB_I_I;
 
@@ -36,6 +37,9 @@ const InputStreamImpl* InputStreamImpl::FromInputStream(
     return static_cast<const InputStreamImpl*>(input_stream);
 }
 
+// TODO: Use unsafe version for all Java_InputStream methods in this file
+// once BUG 157880 is fixed and implement graceful exception handling.
+
 InputStreamImpl::InputStreamImpl() {
 }
 
@@ -45,12 +49,12 @@ InputStreamImpl::InputStreamImpl(const JavaRef<jobject>& stream)
 }
 
 InputStreamImpl::~InputStreamImpl() {
+  JNIEnv* env = AttachCurrentThread();
+  Java_InputStream_close(env, jobject_.obj());
 }
 
 bool InputStreamImpl::BytesAvailable(int* bytes_available) const {
   JNIEnv* env = AttachCurrentThread();
-  // TODO: Use unsafe version for all Java_InputStream methods in this file
-  // once BUG 157880 is fixed.
   int bytes = Java_InputStream_available(env, jobject_.obj());
   if (ClearException(env))
     return false;
@@ -73,51 +77,55 @@ bool InputStreamImpl::Read(net::IOBuffer* dest, int length, int* bytes_read) {
   JNIEnv* env = AttachCurrentThread();
   if (!buffer_.obj()) {
     // Allocate transfer buffer.
-    buffer_.Reset(env, env->NewByteArray(kBufferSize));
+    base::android::ScopedJavaLocalRef<jbyteArray> temp(
+        env, env->NewByteArray(kBufferSize));
+    buffer_.Reset(temp);
     if (ClearException(env))
       return false;
   }
 
+  int remaining_length = length;
+  char* dest_write_ptr = dest->data();
   jbyteArray buffer = buffer_.obj();
   *bytes_read = 0;
 
-  const int read_size = std::min(length, kBufferSize);
-  int32_t byte_count;
-  do {
-    // Unfortunately it is valid for the Java InputStream to read 0 bytes some
-    // number of times before returning any more data. Because this method
-    // signals EOF by setting |bytes_read| to 0 and returning true necessary to
-    // call the Java-side read method until it returns something other than 0.
-    byte_count = Java_InputStream_readI_AB_I_I(
-        env, jobject_.obj(), buffer, 0, read_size);
+  while (remaining_length > 0) {
+    const int max_transfer_length = std::min(remaining_length, kBufferSize);
+    const int transfer_length = Java_InputStream_readI_AB_I_I(
+        env, jobject_.obj(), buffer, 0, max_transfer_length);
     if (ClearException(env))
       return false;
-  } while (byte_count == 0);
 
-  // We've reached the end of the stream.
-  if (byte_count < 0)
-    return true;
+    if (transfer_length < 0)  // EOF
+      break;
 
-#ifndef NDEBUG
-  int32_t buffer_length = env->GetArrayLength(buffer);
-  DCHECK_GE(read_size, byte_count);
-  DCHECK_GE(buffer_length, byte_count);
-#endif // NDEBUG
+    // Note: it is possible, yet unlikely, that the Java InputStream returns
+    // a transfer_length == 0 from time to time. In such cases we just continue
+    // the read until we get either valid data or reach EOF.
+    if (transfer_length == 0)
+      continue;
 
-  // The DCHECKs are in place to help Chromium developers in case of bugs,
-  // this check is to prevent a malicious InputStream implementation from
-  // overrunning the |dest| buffer.
-  if (byte_count > read_size)
-    return false;
+    DCHECK_GE(max_transfer_length, transfer_length);
+    DCHECK_GE(env->GetArrayLength(buffer), transfer_length);
 
-  // Copy the data over to the provided C++ side buffer.
-  DCHECK_GE(length, byte_count);
-  env->GetByteArrayRegion(buffer, 0, byte_count,
-      reinterpret_cast<jbyte*>(dest->data() + *bytes_read));
-  if (ClearException(env))
-    return false;
+    // This check is to prevent a malicious InputStream implementation from
+    // overrunning the |dest| buffer.
+    if (transfer_length > max_transfer_length)
+      return false;
 
-  *bytes_read = byte_count;
+    // Copy the data over to the provided C++ IOBuffer.
+    DCHECK_GE(remaining_length, transfer_length);
+    env->GetByteArrayRegion(buffer, 0, transfer_length,
+        reinterpret_cast<jbyte*>(dest_write_ptr));
+    if (ClearException(env))
+      return false;
+
+    remaining_length -= transfer_length;
+    dest_write_ptr += transfer_length;
+  }
+  // bytes_read can be strictly less than the req. length if EOF is encountered.
+  DCHECK(remaining_length >= 0 && remaining_length <= length);
+  *bytes_read = length - remaining_length;
   return true;
 }
 

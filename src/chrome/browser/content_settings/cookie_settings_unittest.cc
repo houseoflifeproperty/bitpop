@@ -4,17 +4,17 @@
 
 #include "base/auto_reset.h"
 #include "base/command_line.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/content_settings/cookie_settings.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/content_settings_pattern.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/static_cookie_policy.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -22,20 +22,21 @@ namespace {
 
 class CookieSettingsTest : public testing::Test {
  public:
-  CookieSettingsTest() :
-      ui_thread_(BrowserThread::UI, &message_loop_),
-      cookie_settings_(CookieSettings::Factory::GetForProfile(&profile_)),
-      kBlockedSite("http://ads.thirdparty.com"),
-      kAllowedSite("http://good.allays.com"),
-      kFirstPartySite("http://cool.things.com"),
-      kBlockedFirstPartySite("http://no.thirdparties.com"),
-      kExtensionURL("chrome-extension://deadbeef"),
-      kHttpsSite("https://example.com"),
-      kAllHttpsSitesPattern(ContentSettingsPattern::FromString("https://*")) {
-}
+  CookieSettingsTest()
+      : ui_thread_(BrowserThread::UI, &message_loop_),
+        cookie_settings_(CookieSettings::Factory::GetForProfile(&profile_)
+                             .get()),
+        kBlockedSite("http://ads.thirdparty.com"),
+        kAllowedSite("http://good.allays.com"),
+        kFirstPartySite("http://cool.things.com"),
+        kBlockedFirstPartySite("http://no.thirdparties.com"),
+        kExtensionURL("chrome-extension://deadbeef"),
+        kHttpsSite("https://example.com"),
+        kAllHttpsSitesPattern(ContentSettingsPattern::FromString("https://*")) {
+  }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   TestingProfile profile_;
   CookieSettings* cookie_settings_;
@@ -62,15 +63,6 @@ TEST_F(CookieSettingsTest, CookiesBlockThirdParty) {
   EXPECT_FALSE(cookie_settings_->IsReadingCookieAllowed(
       kBlockedSite, kFirstPartySite));
   EXPECT_FALSE(cookie_settings_->IsCookieSessionOnly(kBlockedSite));
-  EXPECT_FALSE(cookie_settings_->IsSettingCookieAllowed(
-      kBlockedSite, kFirstPartySite));
-
-  CommandLine* cmd = CommandLine::ForCurrentProcess();
-  base::AutoReset<CommandLine> auto_reset(cmd, *cmd);
-  cmd->AppendSwitch(switches::kOnlyBlockSettingThirdPartyCookies);
-
-  EXPECT_TRUE(cookie_settings_->IsReadingCookieAllowed(
-      kBlockedSite, kFirstPartySite));
   EXPECT_FALSE(cookie_settings_->IsSettingCookieAllowed(
       kBlockedSite, kFirstPartySite));
 }

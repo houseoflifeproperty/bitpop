@@ -165,7 +165,7 @@ bool SkAnimatorScript::EvalID(const char* token, size_t len, void* user, SkScrip
         displayable = engine->fWorking;
         if (SK_LITERAL_STR_EQUAL("parent", token, len)) {
             SkDisplayable* parent = displayable->getParent();
-            if (parent == false)
+            if (parent == NULL)
                 parent = engine->fParent;
             if (parent) {
                 value->fOperand.fDisplayable = parent;
@@ -466,7 +466,7 @@ bool SkAnimatorScript::Unbox(void* m, SkScriptValue* scriptValue) {
             } break;
         default: {
             const char* id = NULL;
-            bool success = maker->findKey(displayable, &id);
+            SkDEBUGCODE(bool success = ) maker->findKey(displayable, &id);
             SkASSERT(success);
             scriptValue->fOperand.fString = SkNEW_ARGS(SkString, (id));
             type = SkType_String;
@@ -592,5 +592,3 @@ void SkAnimatorScript::UnitTest() {
 }
 
 #endif
-
-

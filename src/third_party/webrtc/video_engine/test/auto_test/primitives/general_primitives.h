@@ -13,7 +13,7 @@
 
 class ViEToFileRenderer;
 
-#include "common_types.h"
+#include "webrtc/common_types.h"
 
 namespace webrtc {
 class VideoCaptureModule;
@@ -24,6 +24,11 @@ class ViERender;
 class ViERTP_RTCP;
 struct VideoCodec;
 }
+
+enum ProtectionMethod {
+  kNack,
+  kHybridNackFec,
+};
 
 // This constant can be used as input to various functions to not force the
 // codec resolution.
@@ -57,6 +62,7 @@ void RenderToFile(webrtc::ViERender* renderer_interface,
 
 // Configures RTP-RTCP.
 void ConfigureRtpRtcp(webrtc::ViERTP_RTCP* rtcp_interface,
+                      ProtectionMethod protection_method,
                       int video_channel);
 
 // Finds a codec in the codec list. Returns true on success, false otherwise.

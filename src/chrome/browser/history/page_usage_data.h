@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_HISTORY_PAGE_USAGE_DATA_H__
 #define CHROME_BROWSER_HISTORY_PAGE_USAGE_DATA_H__
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/history/history_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class SkBitmap;
 
@@ -23,12 +23,12 @@ class SkBitmap;
 /////////////////////////////////////////////////////////////////////////////
 class PageUsageData {
  public:
-  explicit PageUsageData(history::URLID id);
+  explicit PageUsageData(history::SegmentID id);
 
   virtual ~PageUsageData();
 
   // Return the url ID
-  history::URLID GetID() const {
+  history::SegmentID GetID() const {
     return id_;
   }
 
@@ -40,11 +40,11 @@ class PageUsageData {
     return url_;
   }
 
-  void SetTitle(const string16& s) {
+  void SetTitle(const base::string16& s) {
     title_ = s;
   }
 
-  const string16& GetTitle() const {
+  const base::string16& GetTitle() const {
     return title_;
   }
 
@@ -57,13 +57,12 @@ class PageUsageData {
   }
 
   // Sort predicate to sort instances by score (high to low)
-  static bool Predicate(const PageUsageData* dud1,
-                        const PageUsageData* dud2);
+  static bool Predicate(const PageUsageData* dud1, const PageUsageData* dud2);
 
  private:
-  history::URLID id_;
+  history::SegmentID id_;
   GURL url_;
-  string16 title_;
+  base::string16 title_;
 
   double score_;
 };

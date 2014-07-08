@@ -7,35 +7,30 @@
 
 #include <string>
 
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #if defined(OS_MACOSX)
 #include "base/mac/scoped_cftyperef.h"
 #endif
 #include "base/memory/scoped_handle.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
 #include "base/memory/weak_ptr.h"
-#include "base/shared_memory.h"
-#include "base/timer.h"
-#include "googleurl/src/gurl.h"
+#include "base/timer/timer.h"
+#include "content/child/npapi/webplugin.h"
 #include "ipc/ipc_message.h"
+#include "ipc/ipc_sender.h"
 #include "skia/ext/refptr.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#if defined(USE_X11)
-#include "ui/base/x/x11_util.h"
-#endif
+#include "url/gurl.h"
 #include "ui/gl/gpu_preference.h"
 #include "ui/surface/transport_dib.h"
-#include "webkit/plugins/npapi/webplugin.h"
 
-namespace webkit {
-namespace npapi {
-class WebPluginDelegateImpl;
-}
-}
+struct PluginMsg_FetchURL_Params;
 
 namespace content {
 class PluginChannel;
+class WebPluginDelegateImpl;
 
 #if defined(OS_MACOSX)
 class WebPluginAcceleratedSurfaceProxy;
@@ -43,7 +38,8 @@ class WebPluginAcceleratedSurfaceProxy;
 
 // This is an implementation of WebPlugin that proxies all calls to the
 // renderer.
-class WebPluginProxy : public webkit::npapi::WebPlugin {
+class WebPluginProxy : public WebPlugin,
+                       public IPC::Sender {
  public:
   // Creates a new proxy for WebPlugin, using the given sender to send the
   // marshalled WebPlugin calls.
@@ -53,20 +49,12 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
                  int host_render_view_routing_id);
   virtual ~WebPluginProxy();
 
-  void set_delegate(webkit::npapi::WebPluginDelegateImpl* d) { delegate_ = d; }
+  void set_delegate(WebPluginDelegateImpl* d) { delegate_ = d; }
 
   // WebPlugin overrides
   virtual void SetWindow(gfx::PluginWindowHandle window) OVERRIDE;
-
-  // Whether input events should be sent to the delegate.
   virtual void SetAcceptsInputEvents(bool accepts) OVERRIDE;
-
   virtual void WillDestroyWindow(gfx::PluginWindowHandle window) OVERRIDE;
-#if defined(OS_WIN)
-  void SetWindowlessData(HANDLE pump_messages_event,
-                         gfx::NativeViewId dummy_activation_window);
-#endif
-
   virtual void CancelResource(unsigned long id) OVERRIDE;
   virtual void Invalidate() OVERRIDE;
   virtual void InvalidateRect(const gfx::Rect& rect) OVERRIDE;
@@ -79,31 +67,6 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
                          const std::string& cookie) OVERRIDE;
   virtual std::string GetCookies(const GURL& url,
                                  const GURL& first_party_for_cookies) OVERRIDE;
-
-  // class-specific methods
-
-  // Returns a WebPluginResourceClient object given its id, or NULL if no
-  // object with that id exists.
-  webkit::npapi::WebPluginResourceClient* GetResourceClient(int id);
-
-  // Returns the id of the renderer that contains this plugin.
-  int GetRendererId();
-
-  // Returns the id of the associated render view.
-  int host_render_view_routing_id() const {
-    return host_render_view_routing_id_;
-  }
-
-  // For windowless plugins, paints the given rectangle into the local buffer.
-  void Paint(const gfx::Rect& rect);
-
-  // Callback from the renderer to let us know that a paint occurred.
-  void DidPaint();
-
-  // Notification received on a plugin issued resource request creation.
-  void OnResourceCreated(int resource_id,
-                         webkit::npapi::WebPluginResourceClient* client);
-
   virtual void HandleURLRequest(const char* url,
                                 const char* method,
                                 const char* target,
@@ -120,69 +83,56 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   virtual void CancelDocumentLoad() OVERRIDE;
   virtual void InitiateHTTPRangeRequest(
       const char* url, const char* range_info, int range_request_id) OVERRIDE;
+  virtual void DidStartLoading() OVERRIDE;
+  virtual void DidStopLoading() OVERRIDE;
   virtual void SetDeferResourceLoading(unsigned long resource_id,
                                        bool defer) OVERRIDE;
   virtual bool IsOffTheRecord() OVERRIDE;
   virtual void ResourceClientDeleted(
-      webkit::npapi::WebPluginResourceClient* resource_client) OVERRIDE;
-
+      WebPluginResourceClient* resource_client) OVERRIDE;
+  virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
+  virtual bool CheckIfRunInsecureContent(const GURL& url) OVERRIDE;
+#if defined(OS_WIN)
+  void SetWindowlessData(HANDLE pump_messages_event,
+                         gfx::NativeViewId dummy_activation_window);
+#endif
 #if defined(OS_MACOSX)
   virtual void FocusChanged(bool focused) OVERRIDE;
-
   virtual void StartIme() OVERRIDE;
-
-  virtual webkit::npapi::WebPluginAcceleratedSurface*
+  virtual WebPluginAcceleratedSurface*
       GetAcceleratedSurface(gfx::GpuPreference gpu_preference) OVERRIDE;
-
-  //----------------------------------------------------------------------
-  // Legacy Core Animation plugin implementation rendering directly to screen.
-
-  virtual void BindFakePluginWindowHandle(bool opaque) OVERRIDE;
-
-  // Tell the browser (via the renderer) to invalidate because the
-  // accelerated buffers have changed.
-  virtual void AcceleratedFrameBuffersDidSwap(
-      gfx::PluginWindowHandle window, uint64 surface_id);
-
-  // Tell the renderer and browser to associate the given plugin handle with
-  // |accelerated_surface_identifier|. The geometry is used to resize any
-  // native "window" (which on the Mac is a just a view).
-  // This method is used when IOSurface support is available.
-  virtual void SetAcceleratedSurface(gfx::PluginWindowHandle window,
-                                     const gfx::Size& size,
-                                     uint64 accelerated_surface_identifier);
-
-  // Tell the renderer and browser to associate the given plugin handle with
-  // |dib_handle|. The geometry is used to resize any native "window" (which
-  // on the Mac is just a view).
-  // This method is used when IOSurface support is not available.
-  virtual void SetAcceleratedDIB(
-      gfx::PluginWindowHandle window,
-      const gfx::Size& size,
-      const TransportDIB::Handle& dib_handle);
-
-  // Create/destroy TranportDIBs via messages to the browser process.
-  // These are only used when IOSurface support is not available.
-  virtual void AllocSurfaceDIB(const size_t size,
-                               TransportDIB::Handle* dib_handle);
-  virtual void FreeSurfaceDIB(TransportDIB::Id dib_id);
-
-  //----------------------------------------------------------------------
-  // New accelerated plugin implementation which renders via the compositor.
-
-  // Tells the renderer, and from there the GPU process, that the plugin
-  // is using accelerated rather than software rendering.
   virtual void AcceleratedPluginEnabledRendering() OVERRIDE;
-
-  // Tells the renderer, and from there the GPU process, that the plugin
-  // allocated the given IOSurface to be used as its backing store.
   virtual void AcceleratedPluginAllocatedIOSurface(int32 width,
                                                    int32 height,
                                                    uint32 surface_id) OVERRIDE;
   virtual void AcceleratedPluginSwappedIOSurface() OVERRIDE;
 #endif
 
-  virtual void URLRedirectResponse(bool allow, int resource_id) OVERRIDE;
+  // IPC::Sender implementation.
+  virtual bool Send(IPC::Message* msg) OVERRIDE;
+
+  // class-specific methods
+
+  // Returns a WebPluginResourceClient object given its id, or NULL if no
+  // object with that id exists.
+  WebPluginResourceClient* GetResourceClient(int id);
+
+  // Returns the id of the renderer that contains this plugin.
+  int GetRendererId();
+
+  // Returns the id of the associated render view.
+  int host_render_view_routing_id() const {
+    return host_render_view_routing_id_;
+  }
+
+  // For windowless plugins, paints the given rectangle into the local buffer.
+  void Paint(const gfx::Rect& rect);
+
+  // Callback from the renderer to let us know that a paint occurred.
+  void DidPaint();
+
+  // Notification received on a plugin issued resource request creation.
+  void OnResourceCreated(int resource_id, WebPluginResourceClient* client);
 
 #if defined(OS_WIN) && !defined(USE_AURA)
   // Retrieves the IME status from a windowless plug-in and sends it to a
@@ -204,8 +154,6 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
     scoped_ptr<TransportDIB> dib_;
   };
 
-  bool Send(IPC::Message* msg);
-
   // Handler for sending over the paint event to the plugin.
   void OnPaint(const gfx::Rect& damaged_rect);
 
@@ -218,18 +166,7 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
       const TransportDIB::Handle& dib_handle,
       const gfx::Rect& window_rect,
       scoped_ptr<TransportDIB>* dib_out,
-      base::mac::ScopedCFTypeRef<CGContextRef>* cg_context_out);
-#elif defined(USE_X11)
-  static void CreateDIBAndCanvasFromHandle(
-      const TransportDIB::Handle& dib_handle,
-      const gfx::Rect& window_rect,
-      scoped_refptr<SharedTransportDIB>* dib_out,
-      skia::RefPtr<SkCanvas>* canvas);
-
-  static void CreateShmPixmapFromDIB(
-      TransportDIB* dib,
-      const gfx::Rect& window_rect,
-      XID* pixmap_out);
+      base::ScopedCFTypeRef<CGContextRef>* cg_context_out);
 #endif
 
   // Updates the shared memory sections where windowless plugins paint.
@@ -245,24 +182,16 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   skia::RefPtr<SkCanvas> windowless_canvas() const {
     return windowless_canvases_[windowless_buffer_index_];
   }
-
-#if defined(USE_X11)
-  XID windowless_shm_pixmap() const {
-    return windowless_shm_pixmaps_[windowless_buffer_index_];
-  }
 #endif
 
-#endif
-
-  typedef base::hash_map<int, webkit::npapi::WebPluginResourceClient*>
-      ResourceClientMap;
+  typedef base::hash_map<int, WebPluginResourceClient*> ResourceClientMap;
   ResourceClientMap resource_clients_;
 
   scoped_refptr<PluginChannel> channel_;
   int route_id_;
   NPObject* window_npobject_;
   NPObject* plugin_element_;
-  webkit::npapi::WebPluginDelegateImpl* delegate_;
+  WebPluginDelegateImpl* delegate_;
   gfx::Rect damaged_rect_;
   bool waiting_for_paint_;
   // The url of the main frame hosting the plugin.
@@ -276,20 +205,10 @@ class WebPluginProxy : public webkit::npapi::WebPlugin {
   int windowless_buffer_index_;
 #if defined(OS_MACOSX)
   scoped_ptr<TransportDIB> windowless_dibs_[2];
-  base::mac::ScopedCFTypeRef<CGContextRef> windowless_contexts_[2];
+  base::ScopedCFTypeRef<CGContextRef> windowless_contexts_[2];
   scoped_ptr<WebPluginAcceleratedSurfaceProxy> accelerated_surface_;
 #else
   skia::RefPtr<SkCanvas> windowless_canvases_[2];
-  skia::RefPtr<SkCanvas> background_canvas_;
-
-#if defined(USE_X11)
-  scoped_refptr<SharedTransportDIB> windowless_dibs_[2];
-  // If we can use SHM pixmaps for windowless plugin painting or not.
-  bool use_shm_pixmap_;
-  // The SHM pixmaps for windowless plugin painting.
-  XID windowless_shm_pixmaps_[2];
-#endif
-
 #endif
 
   // Contains the routing id of the host render view.

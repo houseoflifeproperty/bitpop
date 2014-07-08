@@ -6,8 +6,8 @@
 #define BASE_I18N_CASE_CONVERSION_H_
 
 #include "base/i18n/base_i18n_export.h"
-#include "base/string16.h"
-#include "base/string_piece.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
 
 namespace base {
 namespace i18n {

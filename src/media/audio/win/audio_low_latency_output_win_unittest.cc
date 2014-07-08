@@ -9,25 +9,26 @@
 #include "base/environment.h"
 #include "base/file_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/test/test_timeouts.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
 #include "base/path_service.h"
+#include "base/test/test_timeouts.h"
+#include "base/time/time.h"
 #include "base/win/scoped_com_initializer.h"
 #include "media/audio/audio_io.h"
 #include "media/audio/audio_manager.h"
-#include "media/audio/audio_util.h"
+#include "media/audio/mock_audio_source_callback.h"
 #include "media/audio/win/audio_low_latency_output_win.h"
 #include "media/audio/win/core_audio_util_win.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/seekable_buffer.h"
 #include "media/base/test_data_util.h"
-#include "testing/gmock_mutant.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gmock_mutant.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 using ::testing::_;
 using ::testing::AnyNumber;
+using ::testing::AtLeast;
 using ::testing::Between;
 using ::testing::CreateFunctor;
 using ::testing::DoAll;
@@ -44,32 +45,21 @@ static const char kSpeechFile_16b_s_44k[] = "speech_16b_stereo_44kHz.raw";
 static const size_t kFileDurationMs = 20000;
 static const size_t kNumFileSegments = 2;
 static const int kBitsPerSample = 16;
-static const ChannelLayout kChannelLayout = CHANNEL_LAYOUT_STEREO;
 static const size_t kMaxDeltaSamples = 1000;
-static const char* kDeltaTimeMsFileName = "delta_times_ms.txt";
+static const char kDeltaTimeMsFileName[] = "delta_times_ms.txt";
 
 MATCHER_P(HasValidDelay, value, "") {
   // It is difficult to come up with a perfect test condition for the delay
   // estimation. For now, verify that the produced output delay is always
   // larger than the selected buffer size.
-  return arg.hardware_delay_bytes > value.hardware_delay_bytes;
+  return arg.hardware_delay_bytes >= value.hardware_delay_bytes;
 }
 
 // Used to terminate a loop from a different thread than the loop belongs to.
 // |loop| should be a MessageLoopProxy.
 ACTION_P(QuitLoop, loop) {
-  loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+  loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
 }
-
-class MockAudioSourceCallback : public AudioOutputStream::AudioSourceCallback {
- public:
-  MOCK_METHOD2(OnMoreData, int(AudioBus* audio_bus,
-                               AudioBuffersState buffers_state));
-  MOCK_METHOD3(OnMoreIOData, int(AudioBus* source,
-                                 AudioBus* dest,
-                                 AudioBuffersState buffers_state));
-  MOCK_METHOD2(OnError, void(AudioOutputStream* stream, int code));
-};
 
 // This audio source implementation should be used for manual tests only since
 // it takes about 20 seconds to play out a file.
@@ -77,7 +67,7 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
  public:
   explicit ReadFromFileAudioSource(const std::string& name)
     : pos_(0),
-      previous_call_time_(base::Time::Now()),
+      previous_call_time_(base::TimeTicks::Now()),
       text_file_(NULL),
       elements_to_write_(0) {
     // Reads a test file from media/test/data directory.
@@ -93,12 +83,12 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
   virtual ~ReadFromFileAudioSource() {
     // Get complete file path to output file in directory containing
     // media_unittests.exe.
-    FilePath file_name;
+    base::FilePath file_name;
     EXPECT_TRUE(PathService::Get(base::DIR_EXE, &file_name));
     file_name = file_name.AppendASCII(kDeltaTimeMsFileName);
 
     EXPECT_TRUE(!text_file_);
-    text_file_ = file_util::OpenFile(file_name, "wt");
+    text_file_ = base::OpenFile(file_name, "wt");
     DLOG_IF(ERROR, !text_file_) << "Failed to open log file.";
 
     // Write the array which contains delta times to a text file.
@@ -108,7 +98,7 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
       ++elements_written;
     }
 
-    file_util::CloseFile(text_file_);
+    base::CloseFile(text_file_);
   }
 
   // AudioOutputStream::AudioSourceCallback implementation.
@@ -116,8 +106,9 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
                          AudioBuffersState buffers_state) {
     // Store time difference between two successive callbacks in an array.
     // These values will be written to a file in the destructor.
-    int diff = (base::Time::Now() - previous_call_time_).InMilliseconds();
-    previous_call_time_ = base::Time::Now();
+    const base::TimeTicks now_time = base::TimeTicks::Now();
+    const int diff = (now_time - previous_call_time_).InMilliseconds();
+    previous_call_time_ = now_time;
     if (elements_to_write_ < kMaxDeltaSamples) {
       delta_times_[elements_to_write_] = diff;
       ++elements_to_write_;
@@ -133,7 +124,7 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
     int frames = max_size / (audio_bus->channels() * kBitsPerSample / 8);
     if (max_size) {
       audio_bus->FromInterleaved(
-          file_->GetData() + pos_, frames, kBitsPerSample / 8);
+          file_->data() + pos_, frames, kBitsPerSample / 8);
       pos_ += max_size;
     }
     return frames;
@@ -146,15 +137,15 @@ class ReadFromFileAudioSource : public AudioOutputStream::AudioSourceCallback {
     return 0;
   }
 
-  virtual void OnError(AudioOutputStream* stream, int code) {}
+  virtual void OnError(AudioOutputStream* stream) {}
 
-  int file_size() { return file_->GetDataSize(); }
+  int file_size() { return file_->data_size(); }
 
  private:
   scoped_refptr<DecoderBuffer> file_;
-  scoped_array<int> delta_times_;
+  scoped_ptr<int[]> delta_times_;
   int pos_;
-  base::Time previous_call_time_;
+  base::TimeTicks previous_call_time_;
   FILE* text_file_;
   size_t elements_to_write_;
 };
@@ -181,11 +172,6 @@ static bool CanRunAudioTests(AudioManager* audio_man) {
     return false;
   }
 
-  if (WASAPIAudioOutputStream::HardwareChannelLayout() != kChannelLayout) {
-    LOG(WARNING) << "This test requires stereo audio output.";
-    return false;
-  }
-
   return true;
 }
 
@@ -194,16 +180,15 @@ static bool CanRunAudioTests(AudioManager* audio_man) {
 class AudioOutputStreamWrapper {
  public:
   explicit AudioOutputStreamWrapper(AudioManager* audio_manager)
-      : com_init_(ScopedCOMInitializer::kMTA),
-        audio_man_(audio_manager),
+      : audio_man_(audio_manager),
         format_(AudioParameters::AUDIO_PCM_LOW_LATENCY),
-        channel_layout_(kChannelLayout),
         bits_per_sample_(kBitsPerSample) {
-    // Use native/mixing sample rate and 10ms frame size as default.
-    sample_rate_ = static_cast<int>(
-        WASAPIAudioOutputStream::HardwareSampleRate(eConsole));
-    samples_per_packet_ = sample_rate_ / 100;
-    DCHECK(sample_rate_);
+    AudioParameters preferred_params;
+    EXPECT_TRUE(SUCCEEDED(CoreAudioUtil::GetPreferredAudioParameters(
+        eRender, eConsole, &preferred_params)));
+    channel_layout_ = preferred_params.channel_layout();
+    sample_rate_ = preferred_params.sample_rate();
+    samples_per_packet_ = preferred_params.frames_per_buffer();
   }
 
   ~AudioOutputStreamWrapper() {}
@@ -238,12 +223,12 @@ class AudioOutputStreamWrapper {
   AudioOutputStream* CreateOutputStream() {
     AudioOutputStream* aos = audio_man_->MakeAudioOutputStream(
         AudioParameters(format_, channel_layout_, sample_rate_,
-                        bits_per_sample_, samples_per_packet_));
+                        bits_per_sample_, samples_per_packet_),
+        std::string());
     EXPECT_TRUE(aos);
     return aos;
   }
 
-  ScopedCOMInitializer com_init_;
   AudioManager* audio_man_;
   AudioParameters::Format format_;
   ChannelLayout channel_layout_;
@@ -261,71 +246,34 @@ static AudioOutputStream* CreateDefaultAudioOutputStream(
 }
 
 // Verify that we can retrieve the current hardware/mixing sample rate
-// for all supported device roles. The ERole enumeration defines constants
-// that indicate the role that the system/user has assigned to an audio
-// endpoint device.
+// for the default audio device.
 // TODO(henrika): modify this test when we support full device enumeration.
 TEST(WASAPIAudioOutputStreamTest, HardwareSampleRate) {
   // Skip this test in exclusive mode since the resulting rate is only utilized
   // for shared mode streams.
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()) || ExclusiveModeIsEnabled())
     return;
-
-  ScopedCOMInitializer com_init(ScopedCOMInitializer::kMTA);
 
   // Default device intended for games, system notification sounds,
   // and voice commands.
   int fs = static_cast<int>(
-      WASAPIAudioOutputStream::HardwareSampleRate(eConsole));
-  EXPECT_GE(fs, 0);
-
-  // Default communication device intended for e.g. VoIP communication.
-  fs = static_cast<int>(
-      WASAPIAudioOutputStream::HardwareSampleRate(eCommunications));
-  EXPECT_GE(fs, 0);
-
-  // Multimedia device for music, movies and live music recording.
-  fs = static_cast<int>(
-      WASAPIAudioOutputStream::HardwareSampleRate(eMultimedia));
+      WASAPIAudioOutputStream::HardwareSampleRate(std::string()));
   EXPECT_GE(fs, 0);
 }
 
 // Test Create(), Close() calling sequence.
 TEST(WASAPIAudioOutputStreamTest, CreateAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
   AudioOutputStream* aos = CreateDefaultAudioOutputStream(audio_manager.get());
   aos->Close();
 }
 
-// Verify that the created object is configured to use the same number of
-// audio channels as is reported by the static HardwareChannelCount() method.
-TEST(WASAPIAudioOutputStreamTest, HardwareChannelCount) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
-  if (!CanRunAudioTests(audio_manager.get()))
-    return;
-
-  ScopedCOMInitializer com_init(ScopedCOMInitializer::kMTA);
-
-  // First, verify that we can read a valid native/hardware channel-count.
-  int hardware_channel_count = WASAPIAudioOutputStream::HardwareChannelCount();
-  EXPECT_GE(hardware_channel_count, 1);
-
-  AudioOutputStreamWrapper aosw(audio_manager.get());
-  WASAPIAudioOutputStream* aos =
-      static_cast<WASAPIAudioOutputStream*>(aosw.Create());
-
-  // Next, ensure that the created output stream object is really using the
-  // hardware channel-count.
-  EXPECT_EQ(hardware_channel_count, aos->GetEndpointChannelCountForTesting());
-  aos->Close();
-}
-
 // Test Open(), Close() calling sequence.
 TEST(WASAPIAudioOutputStreamTest, OpenAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
   AudioOutputStream* aos = CreateDefaultAudioOutputStream(audio_manager.get());
@@ -335,13 +283,13 @@ TEST(WASAPIAudioOutputStreamTest, OpenAndClose) {
 
 // Test Open(), Start(), Close() calling sequence.
 TEST(WASAPIAudioOutputStreamTest, OpenStartAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
   AudioOutputStream* aos = CreateDefaultAudioOutputStream(audio_manager.get());
   EXPECT_TRUE(aos->Open());
   MockAudioSourceCallback source;
-  EXPECT_CALL(source, OnError(aos, _))
+  EXPECT_CALL(source, OnError(aos))
       .Times(0);
   aos->Start(&source);
   aos->Close();
@@ -349,13 +297,13 @@ TEST(WASAPIAudioOutputStreamTest, OpenStartAndClose) {
 
 // Test Open(), Start(), Stop(), Close() calling sequence.
 TEST(WASAPIAudioOutputStreamTest, OpenStartStopAndClose) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
   AudioOutputStream* aos = CreateDefaultAudioOutputStream(audio_manager.get());
   EXPECT_TRUE(aos->Open());
   MockAudioSourceCallback source;
-  EXPECT_CALL(source, OnError(aos, _))
+  EXPECT_CALL(source, OnError(aos))
       .Times(0);
   aos->Start(&source);
   aos->Stop();
@@ -364,7 +312,7 @@ TEST(WASAPIAudioOutputStreamTest, OpenStartStopAndClose) {
 
 // Test SetVolume(), GetVolume()
 TEST(WASAPIAudioOutputStreamTest, Volume) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
   AudioOutputStream* aos = CreateDefaultAudioOutputStream(audio_manager.get());
@@ -401,7 +349,7 @@ TEST(WASAPIAudioOutputStreamTest, Volume) {
 
 // Test some additional calling sequences.
 TEST(WASAPIAudioOutputStreamTest, MiscCallingSequences) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
@@ -439,13 +387,13 @@ TEST(WASAPIAudioOutputStreamTest, MiscCallingSequences) {
   aos->Close();
 }
 
-// Use default packet size (10ms) and verify that rendering starts.
-TEST(WASAPIAudioOutputStreamTest, PacketSizeInMilliseconds) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+// Use preferred packet size and verify that rendering starts.
+TEST(WASAPIAudioOutputStreamTest, ValidPacketSize) {
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
-  MessageLoopForUI loop;
+  base::MessageLoopForUI loop;
   MockAudioSourceCallback source;
 
   // Create default WASAPI output stream which plays out in stereo using
@@ -468,46 +416,7 @@ TEST(WASAPIAudioOutputStreamTest, PacketSizeInMilliseconds) {
           Return(aosw.samples_per_packet())));
 
   aos->Start(&source);
-  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
-                       TestTimeouts::action_timeout());
-  loop.Run();
-  aos->Stop();
-  aos->Close();
-}
-
-// Use a fixed packets size (independent of sample rate) and verify
-// that rendering starts.
-TEST(WASAPIAudioOutputStreamTest, PacketSizeInSamples) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
-  if (!CanRunAudioTests(audio_manager.get()))
-    return;
-
-  MessageLoopForUI loop;
-  MockAudioSourceCallback source;
-
-  // Create default WASAPI output stream which reads data in stereo using
-  // the native mixing rate and channel count. The buffer size is set to
-  // 1024 samples.
-  AudioOutputStreamWrapper aosw(audio_manager.get());
-  AudioOutputStream* aos = aosw.Create(1024);
-  EXPECT_TRUE(aos->Open());
-
-  // Derive the expected size in bytes of each packet.
-  uint32 bytes_per_packet = aosw.channels() * aosw.samples_per_packet() *
-                           (aosw.bits_per_sample() / 8);
-
-  // Set up expected minimum delay estimation.
-  AudioBuffersState state(0, bytes_per_packet);
-
-  // Ensure that callbacks start correctly.
-  EXPECT_CALL(source, OnMoreData(NotNull(), HasValidDelay(state)))
-      .WillOnce(DoAll(
-          QuitLoop(loop.message_loop_proxy()),
-          Return(aosw.samples_per_packet())))
-      .WillRepeatedly(Return(aosw.samples_per_packet()));
-
-  aos->Start(&source);
-  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
+  loop.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitClosure(),
                        TestTimeouts::action_timeout());
   loop.Run();
   aos->Stop();
@@ -522,7 +431,7 @@ TEST(WASAPIAudioOutputStreamTest, PacketSizeInSamples) {
 // environment variable to a value greater than 0.
 // The test files are approximately 20 seconds long.
 TEST(WASAPIAudioOutputStreamTest, DISABLED_ReadFromStereoFile) {
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
@@ -544,13 +453,13 @@ TEST(WASAPIAudioOutputStreamTest, DISABLED_ReadFromStereoFile) {
   }
   ReadFromFileAudioSource file_source(file_name);
 
-  LOG(INFO) << "File name      : " << file_name.c_str();
-  LOG(INFO) << "Sample rate    : " << aosw.sample_rate();
-  LOG(INFO) << "Bits per sample: " << aosw.bits_per_sample();
-  LOG(INFO) << "#channels      : " << aosw.channels();
-  LOG(INFO) << "File size      : " << file_source.file_size();
-  LOG(INFO) << "#file segments : " << kNumFileSegments;
-  LOG(INFO) << ">> Listen to the stereo file while playing...";
+  VLOG(0) << "File name      : " << file_name.c_str();
+  VLOG(0) << "Sample rate    : " << aosw.sample_rate();
+  VLOG(0) << "Bits per sample: " << aosw.bits_per_sample();
+  VLOG(0) << "#channels      : " << aosw.channels();
+  VLOG(0) << "File size      : " << file_source.file_size();
+  VLOG(0) << "#file segments : " << kNumFileSegments;
+  VLOG(0) << ">> Listen to the stereo file while playing...";
 
   for (int i = 0; i < kNumFileSegments; i++) {
     // Each segment will start with a short (~20ms) block of zeros, hence
@@ -563,7 +472,7 @@ TEST(WASAPIAudioOutputStreamTest, DISABLED_ReadFromStereoFile) {
     aos->Stop();
   }
 
-  LOG(INFO) << ">> Stereo file playout has stopped.";
+  VLOG(0) << ">> Stereo file playout has stopped.";
   aos->Close();
 }
 
@@ -575,7 +484,7 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeBufferSizesAt48kHz) {
   if (!ExclusiveModeIsEnabled())
     return;
 
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
@@ -626,7 +535,7 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeBufferSizesAt44kHz) {
   if (!ExclusiveModeIsEnabled())
     return;
 
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
@@ -684,11 +593,11 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeMinBufferSizeAt48kHz) {
   if (!ExclusiveModeIsEnabled())
     return;
 
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
-  MessageLoopForUI loop;
+  base::MessageLoopForUI loop;
   MockAudioSourceCallback source;
 
   // Create exclusive-mode WASAPI output stream which plays out in stereo
@@ -704,7 +613,7 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeMinBufferSizeAt48kHz) {
   // Set up expected minimum delay estimation.
   AudioBuffersState state(0, bytes_per_packet);
 
-  // Wait for the first callback and verify its parameters.
+ // Wait for the first callback and verify its parameters.
   EXPECT_CALL(source, OnMoreData(NotNull(), HasValidDelay(state)))
       .WillOnce(DoAll(
           QuitLoop(loop.message_loop_proxy()),
@@ -712,7 +621,7 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeMinBufferSizeAt48kHz) {
       .WillRepeatedly(Return(aosw.samples_per_packet()));
 
   aos->Start(&source);
-  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
+  loop.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitClosure(),
                        TestTimeouts::action_timeout());
   loop.Run();
   aos->Stop();
@@ -725,11 +634,11 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeMinBufferSizeAt44kHz) {
   if (!ExclusiveModeIsEnabled())
     return;
 
-  scoped_ptr<AudioManager> audio_manager(AudioManager::Create());
+  scoped_ptr<AudioManager> audio_manager(AudioManager::CreateForTesting());
   if (!CanRunAudioTests(audio_manager.get()))
     return;
 
-  MessageLoopForUI loop;
+  base::MessageLoopForUI loop;
   MockAudioSourceCallback source;
 
   // Create exclusive-mode WASAPI output stream which plays out in stereo
@@ -753,7 +662,7 @@ TEST(WASAPIAudioOutputStreamTest, ExclusiveModeMinBufferSizeAt44kHz) {
     .WillRepeatedly(Return(aosw.samples_per_packet()));
 
   aos->Start(&source);
-  loop.PostDelayedTask(FROM_HERE, MessageLoop::QuitClosure(),
+  loop.PostDelayedTask(FROM_HERE, base::MessageLoop::QuitClosure(),
                         TestTimeouts::action_timeout());
   loop.Run();
   aos->Stop();

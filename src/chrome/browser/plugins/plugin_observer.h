@@ -15,7 +15,6 @@
 #endif
 
 class GURL;
-class InfoBarDelegate;
 class PluginFinder;
 class PluginMetadata;
 
@@ -28,13 +27,20 @@ namespace content {
 class WebContents;
 }
 
+namespace infobars {
+class InfoBarDelegate;
+}
+
 class PluginObserver : public content::WebContentsObserver,
                        public content::WebContentsUserData<PluginObserver> {
  public:
   virtual ~PluginObserver();
 
   // content::WebContentsObserver implementation.
-  virtual void PluginCrashed(const FilePath& plugin_path) OVERRIDE;
+  virtual void RenderFrameCreated(
+      content::RenderFrameHost* render_frame_host) OVERRIDE;
+  virtual void PluginCrashed(const base::FilePath& plugin_path,
+                             base::ProcessId plugin_pid) OVERRIDE;
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
  private:
@@ -49,7 +55,7 @@ class PluginObserver : public content::WebContentsObserver,
 #endif
 
   // Message handlers:
-  void OnBlockedUnauthorizedPlugin(const string16& name,
+  void OnBlockedUnauthorizedPlugin(const base::string16& name,
                                    const std::string& identifier);
   void OnBlockedOutdatedPlugin(int placeholder_id,
                                const std::string& identifier);
@@ -59,15 +65,15 @@ class PluginObserver : public content::WebContentsObserver,
   void OnRemovePluginPlaceholderHost(int placeholder_id);
 #endif
   void OnOpenAboutPlugins();
-  void OnCouldNotLoadPlugin(const FilePath& plugin_path);
+  void OnCouldNotLoadPlugin(const base::FilePath& plugin_path);
   void OnNPAPINotSupported(const std::string& identifier);
-
-  base::WeakPtrFactory<PluginObserver> weak_ptr_factory_;
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
   // Stores all PluginPlaceholderHosts, keyed by their routing ID.
   std::map<int, PluginPlaceholderHost*> plugin_placeholders_;
 #endif
+
+  base::WeakPtrFactory<PluginObserver> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginObserver);
 };

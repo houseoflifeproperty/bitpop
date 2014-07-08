@@ -5,57 +5,89 @@
 #include "ui/base/dragdrop/os_exchange_data_provider_aura.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_util.h"
 #include "ui/base/clipboard/clipboard.h"
 #include "ui/base/clipboard/scoped_clipboard_writer.h"
+#include "ui/base/dragdrop/file_info.h"
 
 namespace ui {
 
-OSExchangeDataProviderAura::OSExchangeDataProviderAura() : formats_(0) {}
+OSExchangeDataProviderAura::OSExchangeDataProviderAura()
+    : formats_(0) {
+}
 
 OSExchangeDataProviderAura::~OSExchangeDataProviderAura() {}
 
-void OSExchangeDataProviderAura::SetString(const string16& data) {
+OSExchangeData::Provider* OSExchangeDataProviderAura::Clone() const {
+  OSExchangeDataProviderAura* ret = new OSExchangeDataProviderAura();
+  ret->formats_ = formats_;
+  ret->string_ = string_;
+  ret->url_ = url_;
+  ret->title_ = title_;
+  ret->filenames_ = filenames_;
+  ret->pickle_data_ = pickle_data_;
+  // We skip copying the drag images.
+  ret->html_ = html_;
+  ret->base_url_ = base_url_;
+
+  return ret;
+}
+
+void OSExchangeDataProviderAura::MarkOriginatedFromRenderer() {
+  // TODO(dcheng): Currently unneeded because ChromeOS Aura correctly separates
+  // URL and filename metadata, and does not implement the DownloadURL protocol.
+}
+
+bool OSExchangeDataProviderAura::DidOriginateFromRenderer() const {
+  return false;
+}
+
+void OSExchangeDataProviderAura::SetString(const base::string16& data) {
   string_ = data;
   formats_ |= OSExchangeData::STRING;
 }
 
 void OSExchangeDataProviderAura::SetURL(const GURL& url,
-                                        const string16& title) {
+                                        const base::string16& title) {
   url_ = url;
   title_ = title;
   formats_ |= OSExchangeData::URL;
+
+  SetString(base::UTF8ToUTF16(url.spec()));
 }
 
-void OSExchangeDataProviderAura::SetFilename(const FilePath& path) {
+void OSExchangeDataProviderAura::SetFilename(const base::FilePath& path) {
   filenames_.clear();
-  filenames_.push_back(OSExchangeData::FileInfo(path, FilePath()));
+  filenames_.push_back(FileInfo(path, base::FilePath()));
   formats_ |= OSExchangeData::FILE_NAME;
 }
 
 void OSExchangeDataProviderAura::SetFilenames(
-    const std::vector<OSExchangeData::FileInfo>& filenames) {
+    const std::vector<FileInfo>& filenames) {
   filenames_ = filenames;
   formats_ |= OSExchangeData::FILE_NAME;
 }
 
 void OSExchangeDataProviderAura::SetPickledData(
-    OSExchangeData::CustomFormat format,
+    const OSExchangeData::CustomFormat& format,
     const Pickle& data) {
   pickle_data_[format] = data;
   formats_ |= OSExchangeData::PICKLED_DATA;
 }
 
-bool OSExchangeDataProviderAura::GetString(string16* data) const {
+bool OSExchangeDataProviderAura::GetString(base::string16* data) const {
   if ((formats_ & OSExchangeData::STRING) == 0)
     return false;
   *data = string_;
   return true;
 }
 
-bool OSExchangeDataProviderAura::GetURLAndTitle(GURL* url,
-                                                string16* title) const {
+bool OSExchangeDataProviderAura::GetURLAndTitle(
+    OSExchangeData::FilenameToURLPolicy policy,
+    GURL* url,
+    base::string16* title) const {
+  // TODO(dcheng): implement filename conversion.
   if ((formats_ & OSExchangeData::URL) == 0) {
     title->clear();
     return GetPlainTextURL(url);
@@ -69,7 +101,7 @@ bool OSExchangeDataProviderAura::GetURLAndTitle(GURL* url,
   return true;
 }
 
-bool OSExchangeDataProviderAura::GetFilename(FilePath* path) const {
+bool OSExchangeDataProviderAura::GetFilename(base::FilePath* path) const {
   if ((formats_ & OSExchangeData::FILE_NAME) == 0)
     return false;
   DCHECK(!filenames_.empty());
@@ -78,7 +110,7 @@ bool OSExchangeDataProviderAura::GetFilename(FilePath* path) const {
 }
 
 bool OSExchangeDataProviderAura::GetFilenames(
-    std::vector<OSExchangeData::FileInfo>* filenames) const {
+    std::vector<FileInfo>* filenames) const {
   if ((formats_ & OSExchangeData::FILE_NAME) == 0)
     return false;
   *filenames = filenames_;
@@ -86,7 +118,7 @@ bool OSExchangeDataProviderAura::GetFilenames(
 }
 
 bool OSExchangeDataProviderAura::GetPickledData(
-    OSExchangeData::CustomFormat format,
+    const OSExchangeData::CustomFormat& format,
     Pickle* data) const {
   PickleData::const_iterator i = pickle_data_.find(format);
   if (i == pickle_data_.end())
@@ -100,7 +132,9 @@ bool OSExchangeDataProviderAura::HasString() const {
   return (formats_ & OSExchangeData::STRING) != 0;
 }
 
-bool OSExchangeDataProviderAura::HasURL() const {
+bool OSExchangeDataProviderAura::HasURL(
+    OSExchangeData::FilenameToURLPolicy policy) const {
+  // TODO(dcheng): implement filename conversion.
   if ((formats_ & OSExchangeData::URL) != 0) {
     return true;
   }
@@ -113,43 +147,18 @@ bool OSExchangeDataProviderAura::HasFile() const {
 }
 
 bool OSExchangeDataProviderAura::HasCustomFormat(
-    OSExchangeData::CustomFormat format) const {
+    const OSExchangeData::CustomFormat& format) const {
   return pickle_data_.find(format) != pickle_data_.end();
 }
 
-#if defined(OS_WIN)
-  void OSExchangeDataProviderAura::SetFileContents(
-      const FilePath& filename,
-      const std::string& file_contents) {
-    NOTIMPLEMENTED();
-  }
-
-  bool OSExchangeDataProviderAura::GetFileContents(
-      FilePath* filename,
-      std::string* file_contents) const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  bool OSExchangeDataProviderAura::HasFileContents() const {
-    NOTIMPLEMENTED();
-    return false;
-  }
-
-  void OSExchangeDataProviderAura::SetDownloadFileInfo(
-      const OSExchangeData::DownloadFileInfo& download) {
-    NOTIMPLEMENTED();
-  }
-#endif
-
-void OSExchangeDataProviderAura::SetHtml(const string16& html,
+void OSExchangeDataProviderAura::SetHtml(const base::string16& html,
                                          const GURL& base_url) {
   formats_ |= OSExchangeData::HTML;
   html_ = html;
   base_url_ = base_url;
 }
 
-bool OSExchangeDataProviderAura::GetHtml(string16* html,
+bool OSExchangeDataProviderAura::GetHtml(base::string16* html,
                                          GURL* base_url) const {
   if ((formats_ & OSExchangeData::HTML) == 0)
     return false;
@@ -160,6 +169,22 @@ bool OSExchangeDataProviderAura::GetHtml(string16* html,
 
 bool OSExchangeDataProviderAura::HasHtml() const {
   return ((formats_ & OSExchangeData::HTML) != 0);
+}
+
+void OSExchangeDataProviderAura::SetDragImage(
+    const gfx::ImageSkia& image,
+    const gfx::Vector2d& cursor_offset) {
+  drag_image_ = image;
+  drag_image_offset_ = cursor_offset;
+}
+
+const gfx::ImageSkia& OSExchangeDataProviderAura::GetDragImage() const {
+  return drag_image_;
+}
+
+const gfx::Vector2d&
+OSExchangeDataProviderAura::GetDragImageOffset() const {
+  return drag_image_offset_;
 }
 
 bool OSExchangeDataProviderAura::GetPlainTextURL(GURL* url) const {
@@ -182,15 +207,5 @@ bool OSExchangeDataProviderAura::GetPlainTextURL(GURL* url) const {
 OSExchangeData::Provider* OSExchangeData::CreateProvider() {
   return new OSExchangeDataProviderAura();
 }
-
-// static
-OSExchangeData::CustomFormat
-OSExchangeData::RegisterCustomFormat(const std::string& type) {
-  // On Aura you probably want to just use the Clipboard::Get*FormatType APIs
-  // instead.  But we can also dynamically generate new CustomFormat objects
-  // here too if really necessary.
-  return Clipboard::FormatType::Deserialize(type);
-}
-
 
 }  // namespace ui

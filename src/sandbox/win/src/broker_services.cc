@@ -309,18 +309,20 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
 
   HANDLE job_temp;
   result = policy_base->MakeJobObject(&job_temp);
-  base::win::ScopedHandle job(job_temp);
   if (SBOX_ALL_OK != result)
     return result;
 
+  base::win::ScopedHandle job(job_temp);
+
   // Initialize the startup information from the policy.
   base::win::StartupInformation startup_info;
-  string16 desktop = policy_base->GetAlternateDesktop();
+  base::string16 desktop = policy_base->GetAlternateDesktop();
   if (!desktop.empty()) {
     startup_info.startup_info()->lpDesktop =
         const_cast<wchar_t*>(desktop.c_str());
   }
 
+  bool inherit_handles = false;
   if (base::win::GetVersion() >= base::win::VERSION_VISTA) {
     int attribute_count = 0;
     const AppContainerAttributes* app_container =
@@ -333,6 +335,18 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
     ConvertProcessMitigationsToPolicy(policy->GetProcessMitigations(),
                                       &mitigations, &mitigations_size);
     if (mitigations)
+      ++attribute_count;
+
+    HANDLE stdout_handle = policy_base->GetStdoutHandle();
+    HANDLE stderr_handle = policy_base->GetStderrHandle();
+    HANDLE inherit_handle_list[2];
+    int inherit_handle_count = 0;
+    if (stdout_handle != INVALID_HANDLE_VALUE)
+      inherit_handle_list[inherit_handle_count++] = stdout_handle;
+    // Handles in the list must be unique.
+    if (stderr_handle != stdout_handle && stderr_handle != INVALID_HANDLE_VALUE)
+      inherit_handle_list[inherit_handle_count++] = stderr_handle;
+    if (inherit_handle_count)
       ++attribute_count;
 
     if (!startup_info.InitializeProcThreadAttributeList(attribute_count))
@@ -351,6 +365,22 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
         return SBOX_ERROR_PROC_THREAD_ATTRIBUTES;
       }
     }
+
+    if (inherit_handle_count) {
+      if (!startup_info.UpdateProcThreadAttribute(
+              PROC_THREAD_ATTRIBUTE_HANDLE_LIST,
+              inherit_handle_list,
+              sizeof(inherit_handle_list[0]) * inherit_handle_count)) {
+        return SBOX_ERROR_PROC_THREAD_ATTRIBUTES;
+      }
+      startup_info.startup_info()->dwFlags |= STARTF_USESTDHANDLES;
+      startup_info.startup_info()->hStdInput = INVALID_HANDLE_VALUE;
+      startup_info.startup_info()->hStdOutput = stdout_handle;
+      startup_info.startup_info()->hStdError = stderr_handle;
+      // Allowing inheritance of handles is only secure now that we
+      // have limited which handles will be inherited.
+      inherit_handles = true;
+    }
   }
 
   // Construct the thread pool here in case it is expensive.
@@ -366,8 +396,8 @@ ResultCode BrokerServicesBase::SpawnTarget(const wchar_t* exe_path,
                                             job,
                                             thread_pool_);
 
-  DWORD win_result = target->Create(exe_path, command_line, startup_info,
-                                    &process_info);
+  DWORD win_result = target->Create(exe_path, command_line, inherit_handles,
+                                    startup_info, &process_info);
   if (ERROR_SUCCESS != win_result)
     return SpawnCleanup(target, win_result);
 
@@ -456,7 +486,7 @@ ResultCode BrokerServicesBase::InstallAppContainer(const wchar_t* sid,
   if (base::win::OSInfo::GetInstance()->version() < base::win::VERSION_WIN8)
     return SBOX_ERROR_UNSUPPORTED;
 
-  string16 old_name = LookupAppContainer(sid);
+  base::string16 old_name = LookupAppContainer(sid);
   if (old_name.empty())
     return CreateAppContainer(sid, name);
 
@@ -470,7 +500,7 @@ ResultCode BrokerServicesBase::UninstallAppContainer(const wchar_t* sid) {
   if (base::win::OSInfo::GetInstance()->version() < base::win::VERSION_WIN8)
     return SBOX_ERROR_UNSUPPORTED;
 
-  string16 name =  LookupAppContainer(sid);
+  base::string16 name = LookupAppContainer(sid);
   if (name.empty())
     return SBOX_ERROR_INVALID_APP_CONTAINER;
 

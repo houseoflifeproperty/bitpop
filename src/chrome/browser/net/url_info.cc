@@ -14,7 +14,7 @@
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 
 using base::Time;
 using base::TimeDelta;
@@ -139,11 +139,11 @@ void UrlInfo::RemoveFromQueue() {
   }
   // Make a custom linear histogram for the region from 0 to boundary.
   static const size_t kBucketCount = 52;
-  static base::Histogram* histogram(NULL);
+  static base::HistogramBase* histogram(NULL);
   if (!histogram)
     histogram = base::LinearHistogram::FactoryTimeGet(
         "DNS.QueueRecycledUnder2", TimeDelta(), kBoundary, kBucketCount,
-        base::Histogram::kUmaTargetedHistogramFlag);
+        base::HistogramBase::kUmaTargetedHistogramFlag);
   histogram->AddTime(queue_duration_);
 }
 
@@ -361,7 +361,7 @@ std::string UrlInfo::GetAsciiMotivation() const {
       return RemoveJs(referring_url_.spec());
 
     default:
-      return "";
+      return std::string();
   }
 }
 

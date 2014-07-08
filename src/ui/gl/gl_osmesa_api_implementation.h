@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef UI_GL_OSMESA_API_IMPLEMENTATION_H_
-#define UI_GL_OSMESA_API_IMPLEMENTATION_H_
+#ifndef UI_GL_GL_OSMESA_API_IMPLEMENTATION_H_
+#define UI_GL_GL_OSMESA_API_IMPLEMENTATION_H_
 
 #include "base/compiler_specific.h"
 #include "ui/gl/gl_bindings.h"
@@ -13,8 +13,8 @@ namespace gfx {
 
 class GLContext;
 
-void InitializeGLBindingsOSMESA();
-void InitializeGLExtensionBindingsOSMESA(GLContext* context);
+void InitializeStaticGLBindingsOSMESA();
+void InitializeDynamicGLBindingsOSMESA(GLContext* context);
 void InitializeDebugGLBindingsOSMESA();
 void ClearGLBindingsOSMESA();
 
@@ -40,9 +40,24 @@ class GL_EXPORT RealOSMESAApi : public OSMESAApiBase {
   void Initialize(DriverOSMESA* driver);
 };
 
+// Inserts a TRACE for every OSMESA call.
+class GL_EXPORT TraceOSMESAApi : public OSMESAApi {
+ public:
+  TraceOSMESAApi(OSMESAApi* osmesa_api) : osmesa_api_(osmesa_api) { }
+  virtual ~TraceOSMESAApi();
+
+  // Include the auto-generated part of this class. We split this because
+  // it means we can easily edit the non-auto generated parts right here in
+  // this file instead of having to edit some template or the code generator.
+  #include "gl_bindings_api_autogen_osmesa.h"
+
+ private:
+  OSMESAApi* osmesa_api_;
+};
+
 }  // namespace gfx
 
-#endif  // UI_GL_OSMESA_API_IMPLEMENTATION_H_
+#endif  // UI_GL_GL_OSMESA_API_IMPLEMENTATION_H_
 
 
 

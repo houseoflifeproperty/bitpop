@@ -1,0 +1,57 @@
+From nobody Wed Dec 31 16:00:01 1969
+Content-Type: multipart/mixed; boundary="===============7454617213454723890=="
+MIME-Version: 1.0
+Date: Wed, 31 Dec 1969 16:00:01 -0800
+Subject: try success for 11879010-3014: Rebase on TestBuilder @ r1337
+From: from@example.org
+
+--===============7454617213454723890==
+Content-Type: text/html; charset="iso-8859-1"
+MIME-Version: 1.0
+Content-Transfer-Encoding: quoted-printable
+
+<!DOCTYPE HTML PUBLIC "-//W3C//DTD HTML 4.01 Transitional//EN">
+<html xmlns=3D"http://www.w3.org/1999/xhtml">
+<head>
+  <title>try success for 11879010-3014: Rebase on TestBuilder @ r1337</titl=
+e>
+</head>
+<body style=3D"font-family: Verdana, Cursor; font-size: 10px;">
+  try success for 11879010-3014: Rebase on TestBuilder @ r1337<p>
+  <a href=3D"http://buildbot_url">http://buildbot_url</a><p>
+  You are awesome! Try succeeded!<p> <br>Parent build: <a href=3D"http://bu=
+ildbot_url/builders/ParentBuilder/builds/1337">1337</a> on <a href=3D"http:=
+//buildbot_url/builders/ParentBuilder">ParentBuilder</a><br>
+  Build: <a href=3D"http://buildbot_urlbuilders/TestBuilder/builds/100">100=
+</a> on
+         <a href=3D"http://buildbot_urlbuilders/TestBuilder">TestBuilder</a=
+><br>
+  slave: <a href=3D"http://buildbot_url/buildslaves/SuperSlave1">SuperSlave=
+1</a><br>
+    <table style=3D"border-spacing: 1px 1px; font-weight: bold; padding: 3p=
+x 0px 3px 0px; text-align: center; font-size: 10px; font-family: Verdana, C=
+ursor; ">
+<tr><td style=3D"color: #FFFFFF; background-color: #8fdf5f; border-color: #=
+4F8530;"><a title=3D"Reason: 11879010-3014: Rebase" href=3D"http://buildbot=
+_urlbuilders/TestBuilder/builds/100">Build 100</a></td></tr><tr><td style=
+=3D"color: #FFFFFF; background-color: #8fdf5f; border-color: #4F8530;">Upda=
+te<br/>Some Text<br/><a href=3D"http://buildbot_urlbuilders/TestBuilder/bui=
+lds/100/steps/Update/logs/stdio">stdio</a></td></tr><tr><td style=3D"color:=
+ #FFFFFF; background-color: #ffc343; border-color: #C29D46;">Compile<br/>So=
+me Text<br/><a href=3D"http://buildbot_urlbuilders/TestBuilder/builds/100/s=
+teps/Compile/logs/stdio">stdio</a></td></tr><tr><td style=3D"color: #FFFFFF=
+; background-color: #8fdf5f; border-color: #4F8530;">Test<br/>Some Text<br/=
+><a href=3D"http://buildbot_urlbuilders/TestBuilder/builds/100/steps/Test/l=
+ogs/stdio">stdio</a></td></tr><tr><td style=3D"color: #FFFFFF; background-c=
+olor: #8fdf5f; border-color: #4F8530;">Archive<br/>Some Text<br/><a href=3D=
+"http://buildbot_urlbuilders/TestBuilder/builds/100/steps/Archive/logs/stdi=
+o">stdio</a></td></tr></table>
+<br>
+FAQ: <a href=3D"https://sites.google.com/a/chromium.org/dev/developers/test=
+ing/try-server-usage">
+https://sites.google.com/a/chromium.org/dev/developers/testing/try-server-u=
+sage</a><br>
+</body>
+</html>
+
+--===============7454617213454723890==--

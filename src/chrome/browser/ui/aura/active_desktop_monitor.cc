@@ -5,19 +5,20 @@
 #include "chrome/browser/ui/aura/active_desktop_monitor.h"
 
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_tree_host.h"
 
-#if defined(OS_LINUX)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_linux.h"
+#if defined(USE_X11)
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_x11.h"
 #elif defined(OS_WIN)
-#include "ui/views/widget/desktop_aura/desktop_root_window_host_win.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host_win.h"
 #endif
 
 // static
 ActiveDesktopMonitor* ActiveDesktopMonitor::g_instance_ = NULL;
 
-ActiveDesktopMonitor::ActiveDesktopMonitor()
-    : last_activated_desktop_(chrome::HOST_DESKTOP_TYPE_NATIVE) {
+ActiveDesktopMonitor::ActiveDesktopMonitor(
+    chrome::HostDesktopType initial_desktop)
+    : last_activated_desktop_(initial_desktop) {
   DCHECK(!g_instance_);
   g_instance_ = this;
   aura::Env::GetInstance()->AddObserver(this);
@@ -37,16 +38,16 @@ chrome::HostDesktopType ActiveDesktopMonitor::GetLastActivatedDesktopType() {
 }
 
 // static
-bool ActiveDesktopMonitor::IsDesktopWindow(aura::RootWindow* root_window) {
-  // Only windows hosted by a DesktopRootWindowHost implementation can be mapped
+bool ActiveDesktopMonitor::IsDesktopWindow(aura::WindowTreeHost* host) {
+  // Only windows hosted by a DesktopWindowTreeHost implementation can be mapped
   // back to a content Window. All others, therefore, must be the root window
   // for an Ash display.
 #if defined(OS_WIN)
-  return views::DesktopRootWindowHostWin::GetContentWindowForHWND(
-      root_window->GetAcceleratedWidget()) != NULL;
-#elif defined(OS_LINUX)
-  return views::DesktopRootWindowHostLinux::GetContentWindowForXID(
-      root_window->GetAcceleratedWidget()) != NULL;
+  return views::DesktopWindowTreeHostWin::GetContentWindowForHWND(
+      host->GetAcceleratedWidget()) != NULL;
+#elif defined(USE_X11)
+  return views::DesktopWindowTreeHostX11::GetContentWindowForXID(
+      host->GetAcceleratedWidget()) != NULL;
 #else
   NOTREACHED();
   return true;
@@ -55,9 +56,8 @@ bool ActiveDesktopMonitor::IsDesktopWindow(aura::RootWindow* root_window) {
 
 void ActiveDesktopMonitor::OnWindowInitialized(aura::Window* window) {}
 
-void ActiveDesktopMonitor::OnRootWindowActivated(
-    aura::RootWindow* root_window) {
-  if (IsDesktopWindow(root_window))
+void ActiveDesktopMonitor::OnHostActivated(aura::WindowTreeHost* host) {
+  if (IsDesktopWindow(host))
     last_activated_desktop_ = chrome::HOST_DESKTOP_TYPE_NATIVE;
   else
     last_activated_desktop_ = chrome::HOST_DESKTOP_TYPE_ASH;

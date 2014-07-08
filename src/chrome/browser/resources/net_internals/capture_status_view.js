@@ -14,18 +14,8 @@ var CaptureStatusView = (function() {
   function CaptureStatusView() {
     superClass.call(this, CaptureStatusView.MAIN_BOX_ID);
 
-    $(CaptureStatusView.STOP_BUTTON_ID).onclick = switchToViewOnlyMode_;
-
-    $(CaptureStatusView.RESET_BUTTON_ID).onclick =
-        EventsTracker.getInstance().deleteAllLogEntries.bind(
-            EventsTracker.getInstance());
-    $(CaptureStatusView.CLEAR_CACHE_BUTTON_ID).onclick =
-        g_browser.sendClearAllCache.bind(g_browser);
-    $(CaptureStatusView.FLUSH_SOCKETS_BUTTON_ID).onclick =
-        g_browser.sendFlushSocketPools.bind(g_browser);
-
-    $(CaptureStatusView.TOGGLE_EXTRAS_ID).onclick =
-        this.toggleExtras_.bind(this);
+    this.getDropdown_().onchange = this.onSelectAction_.bind(this);
+    this.getDropdown_().selectedIndex = -1;
 
     this.capturedEventsCountBox_ =
         $(CaptureStatusView.CAPTURED_EVENTS_COUNT_ID);
@@ -36,15 +26,9 @@ var CaptureStatusView = (function() {
 
   // IDs for special HTML elements in status_view.html
   CaptureStatusView.MAIN_BOX_ID = 'capture-status-view';
-  CaptureStatusView.STOP_BUTTON_ID = 'capture-status-view-stop';
-  CaptureStatusView.RESET_BUTTON_ID = 'capture-status-view-reset';
-  CaptureStatusView.CLEAR_CACHE_BUTTON_ID = 'capture-status-view-clear-cache';
-  CaptureStatusView.FLUSH_SOCKETS_BUTTON_ID =
-      'capture-status-view-flush-sockets';
+  CaptureStatusView.ACTIONS_DROPDOWN_ID = 'capture-status-view-actions';
   CaptureStatusView.CAPTURED_EVENTS_COUNT_ID =
       'capture-status-view-captured-events-count';
-  CaptureStatusView.TOGGLE_EXTRAS_ID = 'capture-status-view-toggle-extras';
-  CaptureStatusView.EXTRAS_ID = 'capture-status-view-extras';
 
   CaptureStatusView.prototype = {
     // Inherit the superclass's methods.
@@ -72,30 +56,31 @@ var CaptureStatusView = (function() {
           EventsTracker.getInstance().getNumCapturedEvents();
     },
 
-    /**
-     * Toggles the visibility of the "extras" action bar.
-     */
-    toggleExtras_: function() {
-      var toggle = $(CaptureStatusView.TOGGLE_EXTRAS_ID);
-      var extras = $(CaptureStatusView.EXTRAS_ID);
+    getDropdown_: function() {
+      return $(CaptureStatusView.ACTIONS_DROPDOWN_ID);
+    },
 
-      var isVisible = extras.style.display == '';
+    onSelectAction_: function() {
+      var dropdown = this.getDropdown_();
+      var action = dropdown.value;
+      dropdown.selectedIndex = -1;
 
-      // Toggle between the left-facing triangle and right-facing triange.
-      toggle.className = isVisible ?
-          'capture-status-view-rotateleft' : 'capture-status-view-rotateright';
-      setNodeDisplay(extras, !isVisible);
-    }
+      if (action == 'stop') {
+        $(CaptureView.STOP_BUTTON_ID).click();
+      } else if (action == 'reset') {
+        $(CaptureView.RESET_BUTTON_ID).click();
+      } else if (action == 'clear-cache') {
+        g_browser.sendClearAllCache();
+      } else if (action == 'flush-sockets') {
+        g_browser.sendFlushSocketPools();
+      } else if (action == 'switch-time-format') {
+        var tracker = SourceTracker.getInstance();
+        tracker.setUseRelativeTimes(!tracker.getUseRelativeTimes());
+      } else {
+        throw Error('Unrecognized action: ' + action);
+      }
+    },
   };
-
-  /**
-   * Calls the corresponding function of MainView.  This is needed because we
-   * can't call MainView.getInstance() in the constructor, as it hasn't been
-   * created yet.
-   */
-  function switchToViewOnlyMode_() {
-    MainView.getInstance().switchToViewOnlyMode();
-  }
 
   return CaptureStatusView;
 })();

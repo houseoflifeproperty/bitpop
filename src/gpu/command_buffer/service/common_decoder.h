@@ -89,7 +89,7 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
     }
 
     size_t size_;
-    scoped_array<int8> data_;
+    ::scoped_ptr<int8[]> data_;
 
     DISALLOW_COPY_AND_ASSIGN(Bucket);
   };
@@ -102,6 +102,7 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
   void set_engine(CommandBufferEngine* engine) {
     engine_ = engine;
   }
+  CommandBufferEngine* engine() const { return engine_; }
 
   // Creates a bucket. If the bucket already exists returns that bucket.
   Bucket* CreateBucket(uint32 bucket_id);
@@ -131,7 +132,7 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
   }
 
   // Get the actual shared memory buffer.
-  Buffer GetSharedMemoryBuffer(unsigned int shm_id);
+  scoped_refptr<gpu::Buffer> GetSharedMemoryBuffer(unsigned int shm_id);
 
  protected:
   // Executes a common command.
@@ -162,23 +163,10 @@ class GPU_EXPORT CommonDecoder : NON_EXPORTED_BASE(public AsyncAPIInterface) {
 
   #undef COMMON_COMMAND_BUFFER_CMD_OP
 
-  // Pushes an address on the call stack.
-  bool PushAddress(uint32 offset);
-
   CommandBufferEngine* engine_;
 
   typedef std::map<uint32, linked_ptr<Bucket> > BucketMap;
   BucketMap buckets_;
-
-  // The value put on the call stack.
-  struct CommandAddress {
-    explicit CommandAddress(uint32 _offset)
-        : offset(_offset) {
-    }
-
-    uint32 offset;
-  };
-  std::stack<CommandAddress> call_stack_;
 };
 
 }  // namespace gpu

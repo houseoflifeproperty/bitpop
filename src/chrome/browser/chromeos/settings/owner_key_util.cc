@@ -8,7 +8,9 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
+#include "base/path_service.h"
 #include "base/stl_util.h"
+#include "chromeos/chromeos_paths.h"
 #include "crypto/rsa_private_key.h"
 
 namespace chromeos {
@@ -17,7 +19,9 @@ namespace chromeos {
 // OwnerKeyUtil
 
 OwnerKeyUtil* OwnerKeyUtil::Create() {
-  return new OwnerKeyUtilImpl(FilePath(OwnerKeyUtilImpl::kOwnerKeyFile));
+  base::FilePath owner_key_path;
+  CHECK(PathService::Get(chromeos::FILE_OWNER_KEY, &owner_key_path));
+  return new OwnerKeyUtilImpl(owner_key_path);
 }
 
 OwnerKeyUtil::OwnerKeyUtil() {}
@@ -27,10 +31,7 @@ OwnerKeyUtil::~OwnerKeyUtil() {}
 ///////////////////////////////////////////////////////////////////////////
 // OwnerKeyUtilImpl
 
-// static
-const char OwnerKeyUtilImpl::kOwnerKeyFile[] = "/var/lib/whitelist/owner.key";
-
-OwnerKeyUtilImpl::OwnerKeyUtilImpl(const FilePath& key_file)
+OwnerKeyUtilImpl::OwnerKeyUtilImpl(const base::FilePath& key_file)
     : key_file_(key_file) {}
 
 OwnerKeyUtilImpl::~OwnerKeyUtilImpl() {}
@@ -38,7 +39,7 @@ OwnerKeyUtilImpl::~OwnerKeyUtilImpl() {}
 bool OwnerKeyUtilImpl::ImportPublicKey(std::vector<uint8>* output) {
   // Get the file size (must fit in a 32 bit int for NSS).
   int64 file_size;
-  if (!file_util::GetFileSize(key_file_, &file_size)) {
+  if (!base::GetFileSize(key_file_, &file_size)) {
     LOG(ERROR) << "Could not get size of " << key_file_.value();
     return false;
   }
@@ -57,7 +58,7 @@ bool OwnerKeyUtilImpl::ImportPublicKey(std::vector<uint8>* output) {
   }
 
   // Get the key data off of disk
-  int data_read = file_util::ReadFile(
+  int data_read = base::ReadFile(
       key_file_,
       reinterpret_cast<char*>(vector_as_array(output)),
       safe_file_size);
@@ -70,7 +71,7 @@ crypto::RSAPrivateKey* OwnerKeyUtilImpl::FindPrivateKey(
 }
 
 bool OwnerKeyUtilImpl::IsPublicKeyPresent() {
-  return file_util::PathExists(key_file_);
+  return base::PathExists(key_file_);
 }
 
 }  // namespace chromeos

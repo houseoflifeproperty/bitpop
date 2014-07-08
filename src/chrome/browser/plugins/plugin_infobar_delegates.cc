@@ -4,15 +4,21 @@
 
 #include "chrome/browser/plugins/plugin_infobar_delegates.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/api/infobars/infobar_service.h"
+#include "base/bind.h"
+#include "base/path_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/content_settings/host_content_settings_map.h"
 #include "chrome/browser/google/google_util.h"
+#include "chrome/browser/infobars/infobar_service.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/plugins/chrome_plugin_service_filter.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/render_messages.h"
+#include "chrome/browser/shell_integration.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/common/url_constants.h"
+#include "components/infobars/core/infobar.h"
+#include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
@@ -20,26 +26,30 @@
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
+
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+#if defined(OS_WIN)
+#include "base/win/metro.h"
+#endif
+#include "chrome/browser/plugins/plugin_installer.h"
+#endif
 
 #if defined(OS_WIN)
 #include <shellapi.h>
 #include "ui/base/win/shell.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/remote_window_tree_host_win.h"
+#endif
 #endif
 
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-#include "chrome/browser/plugins/plugin_installer.h"
-#endif  // defined(ENABLE_PLUGIN_INSTALLATION)
+using base::UserMetricsAction;
 
-using content::OpenURLParams;
-using content::Referrer;
-using content::UserMetricsAction;
 
-PluginInfoBarDelegate::PluginInfoBarDelegate(InfoBarService* infobar_service,
-                                             const string16& name,
-                                             const std::string& identifier)
-    : ConfirmInfoBarDelegate(infobar_service),
-      name_(name),
+// PluginInfoBarDelegate ------------------------------------------------------
+
+PluginInfoBarDelegate::PluginInfoBarDelegate(const std::string& identifier)
+    : ConfirmInfoBarDelegate(),
       identifier_(identifier) {
 }
 
@@ -47,58 +57,68 @@ PluginInfoBarDelegate::~PluginInfoBarDelegate() {
 }
 
 bool PluginInfoBarDelegate::LinkClicked(WindowOpenDisposition disposition) {
-  OpenURLParams params(
-      GURL(GetLearnMoreURL()), Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK,
-      false);
-  owner()->GetWebContents()->OpenURL(params);
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL(GetLearnMoreURL()), content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 
 void PluginInfoBarDelegate::LoadBlockedPlugins() {
-  content::WebContents* web_contents = owner()->GetWebContents();
-  if (web_contents) {
-    web_contents->Send(new ChromeViewMsg_LoadBlockedPlugins(
-        web_contents->GetRoutingID(), identifier_));
-  }
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  ChromePluginServiceFilter::GetInstance()->AuthorizeAllPlugins(
+      web_contents, true, identifier_);
 }
 
-gfx::Image* PluginInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_PLUGIN_INSTALL);
+int PluginInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_PLUGIN_INSTALL;
 }
 
-string16 PluginInfoBarDelegate::GetLinkText() const {
+base::string16 PluginInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
+
 // UnauthorizedPluginInfoBarDelegate ------------------------------------------
 
-UnauthorizedPluginInfoBarDelegate::UnauthorizedPluginInfoBarDelegate(
+// static
+void UnauthorizedPluginInfoBarDelegate::Create(
     InfoBarService* infobar_service,
     HostContentSettingsMap* content_settings,
-    const string16& utf16_name,
-    const std::string& identifier)
-    : PluginInfoBarDelegate(infobar_service, utf16_name, identifier),
-      content_settings_(content_settings) {
+    const base::string16& name,
+    const std::string& identifier) {
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new UnauthorizedPluginInfoBarDelegate(
+          content_settings, name, identifier))));
+
   content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Shown"));
-  std::string name = UTF16ToUTF8(utf16_name);
-  if (name == PluginMetadata::kJavaGroupName)
-    content::RecordAction(
-        UserMetricsAction("BlockedPluginInfobar.Shown.Java"));
-  else if (name == PluginMetadata::kQuickTimeGroupName)
+  std::string utf8_name(base::UTF16ToUTF8(name));
+  if (utf8_name == PluginMetadata::kJavaGroupName) {
+    content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Shown.Java"));
+  } else if (utf8_name == PluginMetadata::kQuickTimeGroupName) {
     content::RecordAction(
         UserMetricsAction("BlockedPluginInfobar.Shown.QuickTime"));
-  else if (name == PluginMetadata::kShockwaveGroupName)
+  } else if (utf8_name == PluginMetadata::kShockwaveGroupName) {
     content::RecordAction(
         UserMetricsAction("BlockedPluginInfobar.Shown.Shockwave"));
-  else if (name == PluginMetadata::kRealPlayerGroupName)
+  } else if (utf8_name == PluginMetadata::kRealPlayerGroupName) {
     content::RecordAction(
         UserMetricsAction("BlockedPluginInfobar.Shown.RealPlayer"));
-  else if (name == PluginMetadata::kWindowsMediaPlayerGroupName)
+  } else if (utf8_name == PluginMetadata::kWindowsMediaPlayerGroupName) {
     content::RecordAction(
         UserMetricsAction("BlockedPluginInfobar.Shown.WindowsMediaPlayer"));
+  }
+}
+
+UnauthorizedPluginInfoBarDelegate::UnauthorizedPluginInfoBarDelegate(
+    HostContentSettingsMap* content_settings,
+    const base::string16& name,
+    const std::string& identifier)
+    : PluginInfoBarDelegate(identifier),
+      content_settings_(content_settings),
+      name_(name) {
 }
 
 UnauthorizedPluginInfoBarDelegate::~UnauthorizedPluginInfoBarDelegate() {
@@ -109,11 +129,11 @@ std::string UnauthorizedPluginInfoBarDelegate::GetLearnMoreURL() const {
   return chrome::kBlockedPluginLearnMoreURL;
 }
 
-string16 UnauthorizedPluginInfoBarDelegate::GetMessageText() const {
+base::string16 UnauthorizedPluginInfoBarDelegate::GetMessageText() const {
   return l10n_util::GetStringFUTF16(IDS_PLUGIN_NOT_AUTHORIZED, name_);
 }
 
-string16 UnauthorizedPluginInfoBarDelegate::GetButtonLabel(
+base::string16 UnauthorizedPluginInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PLUGIN_ENABLE_TEMPORARILY : IDS_PLUGIN_ENABLE_ALWAYS);
@@ -127,83 +147,73 @@ bool UnauthorizedPluginInfoBarDelegate::Accept() {
 }
 
 bool UnauthorizedPluginInfoBarDelegate::Cancel() {
-  content::RecordAction(
-      UserMetricsAction("BlockedPluginInfobar.AlwaysAllow"));
-  content_settings_->AddExceptionForURL(owner()->GetWebContents()->GetURL(),
-                                        owner()->GetWebContents()->GetURL(),
-                                        CONTENT_SETTINGS_TYPE_PLUGINS,
-                                        std::string(),
+  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.AlwaysAllow"));
+  const GURL& url = InfoBarService::WebContentsFromInfoBar(infobar())->GetURL();
+  content_settings_->AddExceptionForURL(url, url, CONTENT_SETTINGS_TYPE_PLUGINS,
                                         CONTENT_SETTING_ALLOW);
   LoadBlockedPlugins();
   return true;
 }
 
 void UnauthorizedPluginInfoBarDelegate::InfoBarDismissed() {
-  content::RecordAction(
-      UserMetricsAction("BlockedPluginInfobar.Dismissed"));
+  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.Dismissed"));
 }
 
 bool UnauthorizedPluginInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  content::RecordAction(
-      UserMetricsAction("BlockedPluginInfobar.LearnMore"));
+  content::RecordAction(UserMetricsAction("BlockedPluginInfobar.LearnMore"));
   return PluginInfoBarDelegate::LinkClicked(disposition);
 }
 
+
 #if defined(ENABLE_PLUGIN_INSTALLATION)
+
 // OutdatedPluginInfoBarDelegate ----------------------------------------------
 
-InfoBarDelegate* OutdatedPluginInfoBarDelegate::Create(
-    content::WebContents* web_contents,
+void OutdatedPluginInfoBarDelegate::Create(
+    InfoBarService* infobar_service,
     PluginInstaller* installer,
     scoped_ptr<PluginMetadata> plugin_metadata) {
-  string16 message;
-  switch (installer->state()) {
-    case PluginInstaller::INSTALLER_STATE_IDLE:
-      message = l10n_util::GetStringFUTF16(IDS_PLUGIN_OUTDATED_PROMPT,
-                                           plugin_metadata->name());
-      break;
-    case PluginInstaller::INSTALLER_STATE_DOWNLOADING:
-      message = l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOADING,
-                                           plugin_metadata->name());
-      break;
-  }
-  return new OutdatedPluginInfoBarDelegate(
-      web_contents, installer, plugin_metadata.Pass(), message);
+  // Copy the name out of |plugin_metadata| now, since the Pass() call below
+  // will make it impossible to get at.
+  base::string16 name(plugin_metadata->name());
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new OutdatedPluginInfoBarDelegate(
+          installer, plugin_metadata.Pass(), l10n_util::GetStringFUTF16(
+              (installer->state() == PluginInstaller::INSTALLER_STATE_IDLE) ?
+                  IDS_PLUGIN_OUTDATED_PROMPT : IDS_PLUGIN_DOWNLOADING,
+              name)))));
 }
 
 OutdatedPluginInfoBarDelegate::OutdatedPluginInfoBarDelegate(
-    content::WebContents* web_contents,
     PluginInstaller* installer,
     scoped_ptr<PluginMetadata> plugin_metadata,
-    const string16& message)
-    : PluginInfoBarDelegate(
-          InfoBarService::FromWebContents(web_contents),
-          plugin_metadata->name(),
-          plugin_metadata->identifier()),
+    const base::string16& message)
+    : PluginInfoBarDelegate(plugin_metadata->identifier()),
       WeakPluginInstallerObserver(installer),
       plugin_metadata_(plugin_metadata.Pass()),
       message_(message) {
   content::RecordAction(UserMetricsAction("OutdatedPluginInfobar.Shown"));
-  std::string name = UTF16ToUTF8(plugin_metadata_->name());
-  if (name == PluginMetadata::kJavaGroupName)
+  std::string name = base::UTF16ToUTF8(plugin_metadata_->name());
+  if (name == PluginMetadata::kJavaGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.Java"));
-  else if (name == PluginMetadata::kQuickTimeGroupName)
+  } else if (name == PluginMetadata::kQuickTimeGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.QuickTime"));
-  else if (name == PluginMetadata::kShockwaveGroupName)
+  } else if (name == PluginMetadata::kShockwaveGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.Shockwave"));
-  else if (name == PluginMetadata::kRealPlayerGroupName)
+  } else if (name == PluginMetadata::kRealPlayerGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.RealPlayer"));
-  else if (name == PluginMetadata::kSilverlightGroupName)
+  } else if (name == PluginMetadata::kSilverlightGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.Silverlight"));
-  else if (name == PluginMetadata::kAdobeReaderGroupName)
+  } else if (name == PluginMetadata::kAdobeReaderGroupName) {
     content::RecordAction(
         UserMetricsAction("OutdatedPluginInfobar.Shown.Reader"));
+  }
 }
 
 OutdatedPluginInfoBarDelegate::~OutdatedPluginInfoBarDelegate() {
@@ -214,34 +224,29 @@ std::string OutdatedPluginInfoBarDelegate::GetLearnMoreURL() const {
   return chrome::kOutdatedPluginLearnMoreURL;
 }
 
-string16 OutdatedPluginInfoBarDelegate::GetMessageText() const {
+base::string16 OutdatedPluginInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 
-string16 OutdatedPluginInfoBarDelegate::GetButtonLabel(
+base::string16 OutdatedPluginInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   return l10n_util::GetStringUTF16((button == BUTTON_OK) ?
       IDS_PLUGIN_UPDATE : IDS_PLUGIN_ENABLE_TEMPORARILY);
 }
 
 bool OutdatedPluginInfoBarDelegate::Accept() {
+  DCHECK_EQ(PluginInstaller::INSTALLER_STATE_IDLE, installer()->state());
   content::RecordAction(UserMetricsAction("OutdatedPluginInfobar.Update"));
-  if (installer()->state() != PluginInstaller::INSTALLER_STATE_IDLE) {
-    NOTREACHED();
-    return false;
-  }
-
-  content::WebContents* web_contents = owner()->GetWebContents();
   // A call to any of |OpenDownloadURL()| or |StartInstalling()| will
   // result in deleting ourselves. Accordingly, we make sure to
   // not pass a reference to an object that can go away.
-  // http://crbug.com/54167
   GURL plugin_url(plugin_metadata_->plugin_url());
-  if (plugin_metadata_->url_for_display()) {
+  content::WebContents* web_contents =
+      InfoBarService::WebContentsFromInfoBar(infobar());
+  if (plugin_metadata_->url_for_display())
     installer()->OpenDownloadURL(plugin_url, web_contents);
-  } else {
+  else
     installer()->StartInstalling(plugin_url, web_contents);
-  }
   return false;
 }
 
@@ -253,14 +258,12 @@ bool OutdatedPluginInfoBarDelegate::Cancel() {
 }
 
 void OutdatedPluginInfoBarDelegate::InfoBarDismissed() {
-  content::RecordAction(
-      UserMetricsAction("OutdatedPluginInfobar.Dismissed"));
+  content::RecordAction(UserMetricsAction("OutdatedPluginInfobar.Dismissed"));
 }
 
 bool OutdatedPluginInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  content::RecordAction(
-      UserMetricsAction("OutdatedPluginInfobar.LearnMore"));
+  content::RecordAction(UserMetricsAction("OutdatedPluginInfobar.LearnMore"));
   return PluginInfoBarDelegate::LinkClicked(disposition);
 }
 
@@ -270,9 +273,8 @@ void OutdatedPluginInfoBarDelegate::DownloadStarted() {
 }
 
 void OutdatedPluginInfoBarDelegate::DownloadError(const std::string& message) {
-  ReplaceWithInfoBar(
-      l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOAD_ERROR_SHORT,
-                                 plugin_metadata_->name()));
+  ReplaceWithInfoBar(l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOAD_ERROR_SHORT,
+                                                plugin_metadata_->name()));
 }
 
 void OutdatedPluginInfoBarDelegate::DownloadCancelled() {
@@ -286,35 +288,68 @@ void OutdatedPluginInfoBarDelegate::DownloadFinished() {
 }
 
 void OutdatedPluginInfoBarDelegate::OnlyWeakObserversLeft() {
-  if (owner())
-    owner()->RemoveInfoBar(this);
+  infobar()->RemoveSelf();
 }
 
 void OutdatedPluginInfoBarDelegate::ReplaceWithInfoBar(
-    const string16& message) {
+    const base::string16& message) {
   // Return early if the message doesn't change. This is important in case the
   // PluginInstaller is still iterating over its observers (otherwise we would
   // keep replacing infobar delegates infinitely).
-  if (message_ == message)
+  if ((message_ == message) || !infobar()->owner())
     return;
-  if (!owner())
-    return;
-  InfoBarDelegate* delegate = new PluginInstallerInfoBarDelegate(
-      owner(), installer(), plugin_metadata_->Clone(),
-      PluginInstallerInfoBarDelegate::InstallCallback(), false, message);
-  owner()->ReplaceInfoBar(this, delegate);
+  PluginInstallerInfoBarDelegate::Replace(
+      infobar(), installer(), plugin_metadata_->Clone(), false, message);
 }
+
 
 // PluginInstallerInfoBarDelegate ---------------------------------------------
 
-PluginInstallerInfoBarDelegate::PluginInstallerInfoBarDelegate(
+void PluginInstallerInfoBarDelegate::Create(
     InfoBarService* infobar_service,
+    PluginInstaller* installer,
+    scoped_ptr<PluginMetadata> plugin_metadata,
+    const InstallCallback& callback) {
+  base::string16 name(plugin_metadata->name());
+#if defined(OS_WIN)
+  if (base::win::IsMetroProcess()) {
+    PluginMetroModeInfoBarDelegate::Create(
+        infobar_service, PluginMetroModeInfoBarDelegate::MISSING_PLUGIN, name);
+    return;
+  }
+#endif
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(new PluginInstallerInfoBarDelegate(
+          installer, plugin_metadata.Pass(), callback, true,
+          l10n_util::GetStringFUTF16(
+              (installer->state() == PluginInstaller::INSTALLER_STATE_IDLE) ?
+                  IDS_PLUGININSTALLER_INSTALLPLUGIN_PROMPT :
+                  IDS_PLUGIN_DOWNLOADING,
+              name)))));
+}
+
+void PluginInstallerInfoBarDelegate::Replace(
+    infobars::InfoBar* infobar,
+    PluginInstaller* installer,
+    scoped_ptr<PluginMetadata> plugin_metadata,
+    bool new_install,
+    const base::string16& message) {
+  DCHECK(infobar->owner());
+  infobar->owner()->ReplaceInfoBar(infobar,
+      ConfirmInfoBarDelegate::CreateInfoBar(scoped_ptr<ConfirmInfoBarDelegate>(
+          new PluginInstallerInfoBarDelegate(
+              installer, plugin_metadata.Pass(),
+              PluginInstallerInfoBarDelegate::InstallCallback(), new_install,
+              message))));
+}
+
+PluginInstallerInfoBarDelegate::PluginInstallerInfoBarDelegate(
     PluginInstaller* installer,
     scoped_ptr<PluginMetadata> plugin_metadata,
     const InstallCallback& callback,
     bool new_install,
-    const string16& message)
-    : ConfirmInfoBarDelegate(infobar_service),
+    const base::string16& message)
+    : ConfirmInfoBarDelegate(),
       WeakPluginInstallerObserver(installer),
       plugin_metadata_(plugin_metadata.Pass()),
       callback_(callback),
@@ -325,33 +360,11 @@ PluginInstallerInfoBarDelegate::PluginInstallerInfoBarDelegate(
 PluginInstallerInfoBarDelegate::~PluginInstallerInfoBarDelegate() {
 }
 
-InfoBarDelegate* PluginInstallerInfoBarDelegate::Create(
-    InfoBarService* infobar_service,
-    PluginInstaller* installer,
-    scoped_ptr<PluginMetadata> plugin_metadata,
-    const InstallCallback& callback) {
-  string16 message;
-  switch (installer->state()) {
-    case PluginInstaller::INSTALLER_STATE_IDLE:
-      message = l10n_util::GetStringFUTF16(
-          IDS_PLUGININSTALLER_INSTALLPLUGIN_PROMPT, plugin_metadata->name());
-      break;
-    case PluginInstaller::INSTALLER_STATE_DOWNLOADING:
-      message = l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOADING,
-                                           plugin_metadata->name());
-      break;
-  }
-  return new PluginInstallerInfoBarDelegate(
-      infobar_service, installer, plugin_metadata.Pass(),
-      callback, true, message);
+int PluginInstallerInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_PLUGIN_INSTALL;
 }
 
-gfx::Image* PluginInstallerInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_PLUGIN_INSTALL);
-}
-
-string16 PluginInstallerInfoBarDelegate::GetMessageText() const {
+base::string16 PluginInstallerInfoBarDelegate::GetMessageText() const {
   return message_;
 }
 
@@ -359,7 +372,7 @@ int PluginInstallerInfoBarDelegate::GetButtons() const {
   return callback_.is_null() ? BUTTON_NONE : BUTTON_OK;
 }
 
-string16 PluginInstallerInfoBarDelegate::GetButtonLabel(
+base::string16 PluginInstallerInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
   DCHECK_EQ(BUTTON_OK, button);
   return l10n_util::GetStringUTF16(IDS_PLUGININSTALLER_INSTALLPLUGIN_BUTTON);
@@ -370,10 +383,10 @@ bool PluginInstallerInfoBarDelegate::Accept() {
   return false;
 }
 
-string16 PluginInstallerInfoBarDelegate::GetLinkText() const {
-  return l10n_util::GetStringUTF16(
-      new_install_ ? IDS_PLUGININSTALLER_PROBLEMSINSTALLING
-                   : IDS_PLUGININSTALLER_PROBLEMSUPDATING);
+base::string16 PluginInstallerInfoBarDelegate::GetLinkText() const {
+  return l10n_util::GetStringUTF16(new_install_ ?
+      IDS_PLUGININSTALLER_PROBLEMSINSTALLING :
+      IDS_PLUGININSTALLER_PROBLEMSUPDATING);
 }
 
 bool PluginInstallerInfoBarDelegate::LinkClicked(
@@ -381,14 +394,13 @@ bool PluginInstallerInfoBarDelegate::LinkClicked(
   GURL url(plugin_metadata_->help_url());
   if (url.is_empty()) {
     url = google_util::AppendGoogleLocaleParam(GURL(
-      "https://www.google.com/support/chrome/bin/answer.py?answer=142064"));
+        "https://www.google.com/support/chrome/bin/answer.py?answer=142064"));
   }
-
-  OpenURLParams params(
-      url, Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          url, content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
 
@@ -403,117 +415,122 @@ void PluginInstallerInfoBarDelegate::DownloadCancelled() {
 }
 
 void PluginInstallerInfoBarDelegate::DownloadError(const std::string& message) {
-  ReplaceWithInfoBar(
-      l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOAD_ERROR_SHORT,
-                                 plugin_metadata_->name()));
+  ReplaceWithInfoBar(l10n_util::GetStringFUTF16(IDS_PLUGIN_DOWNLOAD_ERROR_SHORT,
+                                                plugin_metadata_->name()));
 }
 
 void PluginInstallerInfoBarDelegate::DownloadFinished() {
-  ReplaceWithInfoBar(l10n_util::GetStringFUTF16(
-      new_install_ ? IDS_PLUGIN_INSTALLING : IDS_PLUGIN_UPDATING,
+  ReplaceWithInfoBar(
+      l10n_util::GetStringFUTF16(
+          new_install_ ? IDS_PLUGIN_INSTALLING : IDS_PLUGIN_UPDATING,
           plugin_metadata_->name()));
 }
 
 void PluginInstallerInfoBarDelegate::OnlyWeakObserversLeft() {
-  if (owner())
-    owner()->RemoveInfoBar(this);
+  infobar()->RemoveSelf();
 }
 
 void PluginInstallerInfoBarDelegate::ReplaceWithInfoBar(
-    const string16& message) {
+    const base::string16& message) {
   // Return early if the message doesn't change. This is important in case the
   // PluginInstaller is still iterating over its observers (otherwise we would
   // keep replacing infobar delegates infinitely).
-  if (message_ == message)
+  if ((message_ == message) || !infobar()->owner())
     return;
-  if (!owner())
-    return;
-  InfoBarDelegate* delegate = new PluginInstallerInfoBarDelegate(
-      owner(), installer(), plugin_metadata_->Clone(),
-      InstallCallback(), new_install_, message);
-  owner()->ReplaceInfoBar(this, delegate);
+  Replace(infobar(), installer(), plugin_metadata_->Clone(), new_install_,
+          message);
 }
 
-// PluginMetroModeInfoBarDelegate ---------------------------------------------
+
 #if defined(OS_WIN)
-PluginMetroModeInfoBarDelegate::PluginMetroModeInfoBarDelegate(
+
+// PluginMetroModeInfoBarDelegate ---------------------------------------------
+
+// static
+void PluginMetroModeInfoBarDelegate::Create(
     InfoBarService* infobar_service,
-    const string16& message,
-    const string16& ok_label,
-    const GURL& learn_more_url,
-    bool show_dont_ask_again_button)
-    : ConfirmInfoBarDelegate(infobar_service),
-      message_(message),
-      ok_label_(ok_label),
-      learn_more_url_(learn_more_url),
-      show_dont_ask_again_button_(show_dont_ask_again_button) {
+    PluginMetroModeInfoBarDelegate::Mode mode,
+    const base::string16& name) {
+  infobar_service->AddInfoBar(ConfirmInfoBarDelegate::CreateInfoBar(
+      scoped_ptr<ConfirmInfoBarDelegate>(
+          new PluginMetroModeInfoBarDelegate(mode, name))));
+}
+
+PluginMetroModeInfoBarDelegate::PluginMetroModeInfoBarDelegate(
+    PluginMetroModeInfoBarDelegate::Mode mode,
+    const base::string16& name)
+    : ConfirmInfoBarDelegate(),
+      mode_(mode),
+      name_(name) {
 }
 
 PluginMetroModeInfoBarDelegate::~PluginMetroModeInfoBarDelegate() {
 }
 
-gfx::Image* PluginMetroModeInfoBarDelegate::GetIcon() const {
-  return &ResourceBundle::GetSharedInstance().GetNativeImageNamed(
-      IDR_INFOBAR_PLUGIN_INSTALL);
+int PluginMetroModeInfoBarDelegate::GetIconID() const {
+  return IDR_INFOBAR_PLUGIN_INSTALL;
 }
 
-string16 PluginMetroModeInfoBarDelegate::GetMessageText() const {
-  return message_;
+base::string16 PluginMetroModeInfoBarDelegate::GetMessageText() const {
+  return l10n_util::GetStringFUTF16((mode_ == MISSING_PLUGIN) ?
+      IDS_METRO_MISSING_PLUGIN_PROMPT : IDS_METRO_NPAPI_PLUGIN_PROMPT, name_);
 }
 
 int PluginMetroModeInfoBarDelegate::GetButtons() const {
-  int buttons = BUTTON_OK;
-  if (show_dont_ask_again_button_)
-    buttons |= BUTTON_CANCEL;
-  return buttons;
+  return BUTTON_OK;
 }
 
-string16 PluginMetroModeInfoBarDelegate::GetButtonLabel(
+base::string16 PluginMetroModeInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
-  if (button == BUTTON_OK)
-    return ok_label_;
-  if (button == BUTTON_CANCEL) {
-    DCHECK(show_dont_ask_again_button_);
-    return l10n_util::GetStringUTF16(IDS_DONT_ASK_AGAIN_INFOBAR_BUTTON_LABEL);
-  }
-  NOTREACHED();
-  return string16();
+#if defined(USE_AURA) && defined(USE_ASH)
+  return l10n_util::GetStringUTF16(IDS_WIN8_DESKTOP_RESTART);
+#else
+  return l10n_util::GetStringUTF16((mode_ == MISSING_PLUGIN) ?
+      IDS_WIN8_DESKTOP_RESTART : IDS_WIN8_DESKTOP_OPEN);
+#endif
 }
+
+#if defined(USE_AURA) && defined(USE_ASH)
+void LaunchDesktopInstanceHelper(const base::string16& url) {
+  base::FilePath exe_path;
+  if (!PathService::Get(base::FILE_EXE, &exe_path))
+    return;
+  base::FilePath shortcut_path(
+      ShellIntegration::GetStartMenuShortcut(exe_path));
+
+  // Actually launching the process needs to happen in the metro viewer,
+  // otherwise it won't automatically transition to desktop.  So we have
+  // to send an IPC to the viewer to do the ShellExecute.
+  aura::RemoteWindowTreeHostWin::Instance()->HandleOpenURLOnDesktop(
+      shortcut_path, url);
+}
+#endif
 
 bool PluginMetroModeInfoBarDelegate::Accept() {
-  browser::AttemptRestartWithModeSwitch();
+  chrome::AttemptRestartToDesktopMode();
   return true;
 }
 
-bool PluginMetroModeInfoBarDelegate::Cancel() {
-  DCHECK(show_dont_ask_again_button_);
-  content::WebContents* web_contents = owner()->GetWebContents();
-  Profile* profile =
-      Profile::FromBrowserContext(web_contents->GetBrowserContext());
-  HostContentSettingsMap* content_settings =
-      profile->GetHostContentSettingsMap();
-  GURL url = web_contents->GetURL();
-  content_settings->SetContentSetting(
-      ContentSettingsPattern::FromURL(url),
-      ContentSettingsPattern::Wildcard(),
-      CONTENT_SETTINGS_TYPE_METRO_SWITCH_TO_DESKTOP,
-      std::string(),
-      CONTENT_SETTING_BLOCK);
-  return true;
-}
-
-string16 PluginMetroModeInfoBarDelegate::GetLinkText() const {
+base::string16 PluginMetroModeInfoBarDelegate::GetLinkText() const {
   return l10n_util::GetStringUTF16(IDS_LEARN_MORE);
 }
 
 bool PluginMetroModeInfoBarDelegate::LinkClicked(
     WindowOpenDisposition disposition) {
-  OpenURLParams params(
-      learn_more_url_, Referrer(),
-      (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
-      content::PAGE_TRANSITION_LINK, false);
-  owner()->GetWebContents()->OpenURL(params);
+  // TODO(shrikant): We may need to change language a little at following
+  // support URLs. With new approach we will just restart for both missing
+  // and not missing mode.
+  InfoBarService::WebContentsFromInfoBar(infobar())->OpenURL(
+      content::OpenURLParams(
+          GURL((mode_ == MISSING_PLUGIN) ?
+              "https://support.google.com/chrome/?p=ib_display_in_desktop" :
+              "https://support.google.com/chrome/?p=ib_redirect_to_desktop"),
+          content::Referrer(),
+          (disposition == CURRENT_TAB) ? NEW_FOREGROUND_TAB : disposition,
+          content::PAGE_TRANSITION_LINK, false));
   return false;
 }
+
 #endif  // defined(OS_WIN)
+
 #endif  // defined(ENABLE_PLUGIN_INSTALLATION)

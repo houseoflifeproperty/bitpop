@@ -15,21 +15,45 @@
 #include "native_client/src/include/nacl_scoped_ptr.h"
 #include "native_client/src/include/nacl_string.h"
 
+#include "native_client/src/public/name_service.h"
 #include "native_client/src/shared/platform/refcount_base.h"
 #include "native_client/src/shared/platform/nacl_sync.h"
 #include "native_client/src/trusted/desc/nacl_desc_wrapper.h"
 #include "native_client/src/trusted/reverse_service/reverse_service_c.h"
 #include "native_client/src/trusted/service_runtime/include/sys/errno.h"
-#include "native_client/src/trusted/service_runtime/include/sys/nacl_name_service.h"
+
+struct NaClFileInfo;
 
 namespace nacl {
+
+// The CreateProcessFunctorInterface allows delivery of results to an
+// RPC handler via the Results arguments.  This is so that RPC
+// handlers can invoke their done closure to send the output arguments
+// -- when the functor returns, the code that invoked the
+// CreateProcessFunctorInterface can unlock mutex locks, deallocate
+// memory, or finalize storage as needed.  (See the 2-phase comment in
+// src/trusted/sel_universal/reverse_emulate.cc,
+// ReverseEmulate::CreateProcessFunctorResult.)
+//
+// The out_pid_or_errno contains an identifier for informing the
+// embedding interface that it is okay to free the resources
+// associated with the child process once it has exited, or a negative
+// ABI error value otherwise (see
+// service_runtime/include/sys/errno.h).
+class CreateProcessFunctorInterface {
+ public:
+  CreateProcessFunctorInterface() {}
+  virtual ~CreateProcessFunctorInterface() {}
+
+  virtual void Results(nacl::DescWrapper* out_sock_addr,
+                       nacl::DescWrapper* out_app_addr,
+                       int32_t out_pid_or_errno) = 0;
+};
+
 
 class ReverseInterface : public RefCountBase {
  public:
   virtual ~ReverseInterface() {}
-
-  // For debugging, messaging.  |message| goes to JavaScript console.
-  virtual void Log(nacl::string message) = 0;
 
   // Startup handshake
   virtual void StartupInitializationComplete() = 0;
@@ -50,9 +74,8 @@ class ReverseInterface : public RefCountBase {
   // the WeakRefAnchor or by bombing their CompletionCallbackFactory).
   // Since shutdown/surfaway is the only admissible error, we use bool
   // as the return type.
-  virtual bool EnumerateManifestKeys(std::set<nacl::string>* keys) = 0;
-  virtual bool OpenManifestEntry(nacl::string url_key, int32_t* out_desc) = 0;
-  virtual bool CloseManifestEntry(int32_t desc) = 0;
+  virtual bool OpenManifestEntry(nacl::string url_key,
+                                 struct NaClFileInfo* info) = 0;
   virtual void ReportCrash() = 0;
 
   // The low-order 8 bits of the |exit_status| should be reported to
@@ -77,6 +100,23 @@ class ReverseInterface : public RefCountBase {
     UNREFERENCED_PARAMETER(out_sock_addr);
     UNREFERENCED_PARAMETER(out_app_addr);
     return -NACL_ABI_EAGAIN;
+  }
+
+  // Create new service runtime process and return, via the functor,
+  // the secure command channel and untrusted application channel
+  // socket addresses and a non-negative pid or negated errno value.
+  // See CreateProcessFunctorInterface above.
+
+  // TODO(bsy): remove the stub interface once the plugin provides
+  // one.
+  virtual void CreateProcessFunctorResult(
+      CreateProcessFunctorInterface* functor) {
+    UNREFERENCED_PARAMETER(functor);
+  }
+
+  virtual void FinalizeProcess(int32_t pid) {
+    UNREFERENCED_PARAMETER(pid);
+    return;
   }
 
   // Quota checking for files that were sent to the untrusted module.

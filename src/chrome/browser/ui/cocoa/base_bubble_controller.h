@@ -24,6 +24,11 @@ class TabStripModelObserverBridge;
  @private
   NSWindow* parentWindow_;  // weak
   NSPoint anchor_;
+  // Offset of the anchor point relative to the parent window's upper-left-hand
+  // corner. Used to ensure that if the parent window is resized with the bubble
+  // remaining visible, the bubble continues to be anchored correctly.
+  NSPoint anchorOffset_;
+
   IBOutlet InfoBubbleView* bubble_;  // to set arrow position
   // Bridge for tab change notifications.
   scoped_ptr<TabStripModelObserverBridge> tabStripObserverBridge_;
@@ -35,6 +40,11 @@ class TabStripModelObserverBridge;
   id eventTap_;
   // A notification observer that gets triggered when any window resigns key.
   id resignationObserver_;
+  // The controlled window should be the key window when it's opened. True by
+  // default.
+  BOOL shouldOpenAsKeyWindow_;
+  // The bubble window should close if it (or its parent) resigns key status.
+  BOOL shouldCloseOnResignKey_;
 }
 
 @property(nonatomic, readonly) NSWindow* parentWindow;
@@ -42,6 +52,9 @@ class TabStripModelObserverBridge;
 // arrow tip points.
 @property(nonatomic, assign) NSPoint anchorPoint;
 @property(nonatomic, readonly) InfoBubbleView* bubble;
+@property(nonatomic, assign) BOOL shouldOpenAsKeyWindow;
+// Controls if the bubble auto-closes if the user clicks outside the bubble.
+@property(nonatomic, assign) BOOL shouldCloseOnResignKey;
 
 // Creates a bubble. |nibPath| is just the basename, e.g. @"FirstRunBubble".
 // |anchoredAt| is in screen space. You need to call -showWindow: to make the

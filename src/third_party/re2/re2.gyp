@@ -1,10 +1,8 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2014 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
 {
-  'variables': {
-  },
   'targets': [
     {
       'target_name': 're2',
@@ -78,7 +76,7 @@
           'include_dirs': [
             'mswin'
           ],
-          'msvs_disabled_warnings': [ 4018, 4722 ],
+          'msvs_disabled_warnings': [ 4018, 4722, 4267 ],
         }]
       ]
     },

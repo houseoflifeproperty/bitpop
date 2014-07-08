@@ -7,19 +7,16 @@
 #include <algorithm>
 #include <string>
 
-#include "base/message_loop.h"
-#include "ui/base/events/event.h"
+#include "base/message_loop/message_loop.h"
+#include "ui/events/event.h"
+#include "ui/views/controls/scrollbar/native_scroll_bar_views.h"
 #include "ui/views/controls/scrollbar/native_scroll_bar_wrapper.h"
 #include "ui/views/widget/widget.h"
-
-#if defined(USE_AURA)
-#include "ui/views/controls/scrollbar/native_scroll_bar_views.h"
-#endif
 
 namespace views {
 
 // static
-const char NativeScrollBar::kViewClassName[] = "views/NativeScrollBar";
+const char NativeScrollBar::kViewClassName[] = "NativeScrollBar";
 
 ////////////////////////////////////////////////////////////////////////////////
 // NativeScrollBar, public:
@@ -58,16 +55,16 @@ void NativeScrollBar::Layout() {
   }
 }
 
-void NativeScrollBar::ViewHierarchyChanged(bool is_add, View *parent,
-                                           View *child) {
+void NativeScrollBar::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
   Widget* widget;
-  if (is_add && !native_wrapper_ && (widget = GetWidget())) {
+  if (details.is_add && !native_wrapper_ && (widget = GetWidget())) {
     native_wrapper_ = NativeScrollBarWrapper::CreateWrapper(this);
     AddChildView(native_wrapper_->GetView());
   }
 }
 
-std::string NativeScrollBar::GetClassName() const {
+const char* NativeScrollBar::GetClassName() const {
   return kViewClassName;
 }
 

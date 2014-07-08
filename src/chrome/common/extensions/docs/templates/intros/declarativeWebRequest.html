@@ -1,46 +1,51 @@
-<h2 id="notes">Notes</h2>
-
-<p>
-Use the <code>chrome.declarativeWebRequest</code> module to intercept, block, or
-modify requests in-flight. It is significantly faster than the <a
-  href="webRequest.html"><code>chrome.webRequest</code> API</a> because you can
-register rules that are evaluated in the browser rather than the
-JavaScript engine which reduces roundtrip latencies and allows very high
-efficiency.
-</p>
-
 <h2 id="manifest">Manifest</h2>
 
 <p>
 You must declare the "declarativeWebRequest" permission in the
 <a href="manifest.html">extension manifest</a> to use this API,
-along with <a href="manifest.html#permissions">host permissions</a> for any
-hosts whose network requests you want to access.
+along with <a href="declare_permissions.html">host permissions</a>.
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
 <b>  "permissions": [
     "declarativeWebRequest",
-    "*://*.google.com"
+    "*://*/*"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <p>
-Note that certain types of non-sensitive requests do not require host
+Note that certain types of non-sensitive actions do not require host
 permissions:
 <ul>
   <li><code>CancelRequest</code>
   <li><code>IgnoreRules</code>
   <li><code>RedirectToEmptyDocument</code>
   <li><code>RedirectToTransparentImage</code>
-  <li><code>RedirectByRegEx</code> when the redirect destination has
-    the same domain as the original request
-  <li><code>RedirectRequest</code> when the redirect destination has
-    the same domain as the original request
 </ul>
+</p>
+<p>
+The <code>SendMessageToExtension</code> action requires host permissions
+for any hosts whose network requests you want to trigger a message.
+</p>
+<p>
+All other actions require host permissions to all URLs.
+</p>
+<p>
+As an example, if <code>"*://*.google.com/*"</code> is the only host permission
+an extension has, than such an extension may set up a rule to
+<ul>
+  <li> cancel a request to "http://www.google.com" or "http://anything.else.com"
+  <li> send a message when navigating to "http://www.google.com" but not to
+"http://something.else.com"
+</ul>
+The extension cannot set up a rule to redirect "http://www.google.com" to
+"http://mail.google.com".
+</p>
 
 <h2 id="rules">Rules</h2>
 
@@ -120,7 +125,9 @@ chrome.declarativeWebRequest.onRequest.addRules([rule2]);
 <strong>Note:</strong> You should always register or unregister rules in bulk rather than
 individually because each of these operations recreates internal data
 structures.  This re-creation is computationally expensive but facilitates a
-very fast URL matching algorithm for hundreds of thousands of URLs.
+very fast URL matching algorithm for hundreds of thousands of URLs. The
+<a href="events.html#performance">Performance section</a> of the
+$(ref:events Events) API provides further performance tips.
 </p>
 
 
@@ -173,14 +180,15 @@ request stages that are compatible with conditions and actions.
   <tr><td>EditRequestCookie<td><td>✓<td><td>
   <tr><td>EditResponseCookie<td><td><td>✓<td>
   <tr><td>IgnoreRules<td>✓<td>✓<td>✓<td>✓
-  <tr><td>RedirectByRegEx<td>✓<td><td><td>
-  <tr><td>RedirectRequest<td>✓<td><td><td>
-  <tr><td>RedirectToEmptyDocument<td>✓<td><td><td>
-  <tr><td>RedirectToTransparentImage<td>✓<td><td><td>
+  <tr><td>RedirectByRegEx<td>✓<td><td>✓<td>
+  <tr><td>RedirectRequest<td>✓<td><td>✓<td>
+  <tr><td>RedirectToEmptyDocument<td>✓<td><td>✓<td>
+  <tr><td>RedirectToTransparentImage<td>✓<td><td>✓<td>
   <tr><td>RemoveRequestCookie<td><td>✓<td><td>
   <tr><td>RemoveRequestHeader<td><td>✓<td><td>
   <tr><td>RemoveResponseCookie<td><td><td>✓<td>
   <tr><td>RemoveResponseHeader<td><td><td>✓<td>
+  <tr><td>SendMessageToExtension<td>✓<td>✓<td>✓<td>✓
   <tr><td>SetRequestHeader<td><td>✓<td><td>
 </table>
 </p>
@@ -190,14 +198,19 @@ request stages that are compatible with conditions and actions.
 "stages" attribute.
 </p>
 <p>
+<strong>Note:</strong> Redirects initiated by a redirect action use the original
+request method for the redirect, with one exception: If the redirect is
+initiated at the onHeadersReceived stage, then the redirect will be issued using
+the GET method.
+</p>
+<p>
 <strong>Example:</strong> It is possible to combine a
 <code>new chrome.declarativeWebRequest.RequestMatcher({contentType: ["image/jpeg"]})</code>
 condition with a <code>new chrome.declarativeWebRequest.CancelRequest()</code>
 action because both of them can be evaluated in the onHeadersReceived stage.
 It is, however, impossible to combine the request matcher with a
-<code>new chrome.declarativeWebRequest.RedirectToTransparentImage()</code>
-because redirects cannot be executed any more by the time the content
-type has been determined.
+<code>new chrome.declarativeWebRequest.SetRequestHeader()</code>
+because request headers cannot be set any more by the time the content type has been terminated.
 </p>
 
 <h2 id="precedences">Using priorities to override rules</h2>

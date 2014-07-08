@@ -8,6 +8,7 @@
 
 #include <assert.h>
 #include <stddef.h>
+#include <string.h>
 
 #include "native_client/src/include/nacl_assert.h"
 
@@ -20,13 +21,17 @@ struct RegInfo {
   const char *reg_name;
   int reg_offset;
   int reg_size;
+  int user_register_state_reg_offset;
+  int user_register_state_reg_size;
 };
 
 #define DEFINE_REG(regname) \
     { \
       #regname, \
       offsetof(struct NaClSignalContext, regname), \
-      sizeof(((struct NaClSignalContext *) NULL)->regname) \
+      sizeof(((struct NaClSignalContext *) NULL)->regname), \
+      offsetof(NaClUserRegisterState, regname), \
+      sizeof(((NaClUserRegisterState *) NULL)->regname) \
     }
 
 const struct RegInfo kRegs[] = {
@@ -82,6 +87,40 @@ const struct RegInfo kRegs[] = {
   DEFINE_REG(lr),
   DEFINE_REG(prog_ctr),
   DEFINE_REG(cpsr)
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  DEFINE_REG(zero),
+  DEFINE_REG(at),
+  DEFINE_REG(v0),
+  DEFINE_REG(v1),
+  DEFINE_REG(a0),
+  DEFINE_REG(a1),
+  DEFINE_REG(a2),
+  DEFINE_REG(a3),
+  DEFINE_REG(t0),
+  DEFINE_REG(t1),
+  DEFINE_REG(t2),
+  DEFINE_REG(t3),
+  DEFINE_REG(t4),
+  DEFINE_REG(t5),
+  DEFINE_REG(t6),
+  DEFINE_REG(t7),
+  DEFINE_REG(s0),
+  DEFINE_REG(s1),
+  DEFINE_REG(s2),
+  DEFINE_REG(s3),
+  DEFINE_REG(s4),
+  DEFINE_REG(s5),
+  DEFINE_REG(s6),
+  DEFINE_REG(s7),
+  DEFINE_REG(t8),
+  DEFINE_REG(t9),
+  DEFINE_REG(k0),
+  DEFINE_REG(k1),
+  DEFINE_REG(global_ptr),
+  DEFINE_REG(stack_ptr),
+  DEFINE_REG(frame_ptr),
+  DEFINE_REG(return_addr),
+  DEFINE_REG(prog_ctr)
 #else
 # error Unsupported architecture
 #endif
@@ -89,6 +128,7 @@ const struct RegInfo kRegs[] = {
 
 #undef DEFINE_REG
 
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86
 /* Flags readable and writable by untrusted code. */
 const uint8_t kX86FlagBits[5] = { 0, 2, 6, 7, 11 };
 /*
@@ -99,11 +139,12 @@ const uint8_t kX86FlagBits[5] = { 0, 2, 6, 7, 11 };
 static const uint32_t kX86KnownFlagsMask =
     (1<<0) | (1<<2) | (1<<6) | (1<<7) | (1<<11) |
     (1<<8); /* Trap flag */
+#endif
 
-void RegsFillTestValues(struct NaClSignalContext *regs) {
+void RegsFillTestValues(struct NaClSignalContext *regs, int seed) {
   unsigned int index;
   for (index = 0; index < sizeof(*regs); index++) {
-    ((char *) regs)[index] = index + 1;
+    ((char *) regs)[index] = index + seed + 1;
   }
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86
   /* Set x86 flags to a value that we know will work. */
@@ -154,6 +195,9 @@ static void RegsNormalizeFlags(struct NaClSignalContext *regs) {
   regs->flags &= kX86KnownFlagsMask;
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
   regs->cpsr &= REGS_ARM_USER_CPSR_FLAGS_MASK;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  /* No flags field on MIPS. */
+  UNREFERENCED_PARAMETER(regs);
 #endif
 }
 
@@ -176,6 +220,23 @@ void RegsAssertEqual(const struct NaClSignalContext *actual,
    * RegsDump(), so r9 remains listed in kRegs[].
    */
   copy_expected.r9 = copy_actual.r9;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  /*
+   * The registers below are all read-only, so we skip their comparison. We
+   * expect t6 and t7 to hold control flow masks. For t8, which holds TLS
+   * index, we skip comparison. Zero register holds zero always. All of the
+   * above named registers are not settable by untrusted code. We also skip
+   * comparison for k0 and k1 registers because those are registers reserved for
+   * use by interrupt/trap handler and therefore volatile.
+   * However, for debugging purposes we still include those in register dumps
+   * printed by RegsDump(), so they remain listed in kRegs[].
+   */
+  copy_expected.zero = 0;
+  copy_expected.t6 = NACL_CONTROL_FLOW_MASK;
+  copy_expected.t7 = NACL_DATA_FLOW_MASK;
+  copy_expected.t8 = copy_actual.t8;
+  copy_expected.k0 = copy_actual.k0;
+  copy_expected.k1 = copy_actual.k1;
 #endif
 
   for (regnum = 0; regnum < NACL_ARRAY_SIZE(kRegs); regnum++) {
@@ -191,6 +252,22 @@ void RegsAssertEqual(const struct NaClSignalContext *actual,
     fprintf(stderr, "Actual register state:\n");
     RegsDump(actual);
     _exit(1);
+  }
+}
+
+void RegsCopyFromUserRegisterState(struct NaClSignalContext *dest,
+                                   const NaClUserRegisterState *src) {
+  unsigned int regnum;
+
+  /* Fill out trusted registers with dummy values. */
+  memset(dest, 0xff, sizeof(*dest));
+
+  for (regnum = 0; regnum < NACL_ARRAY_SIZE(kRegs); regnum++) {
+    ASSERT_EQ(kRegs[regnum].reg_size,
+              kRegs[regnum].user_register_state_reg_size);
+    memcpy((char *) dest + kRegs[regnum].reg_offset,
+           (char *) src + kRegs[regnum].user_register_state_reg_offset,
+           kRegs[regnum].reg_size);
   }
 }
 
@@ -219,7 +296,57 @@ void RegsUnsetNonCalleeSavedRegisters(struct NaClSignalContext *regs) {
   regs->r12 = 0;
   regs->lr = 0;
   regs->cpsr = 0;
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  regs->zero = 0;
+  regs->at = 0;
+  regs->v0 = 0;
+  regs->v1 = 0;
+  regs->a0 = 0;
+  regs->a1 = 0;
+  regs->a2 = 0;
+  regs->a3 = 0;
+  regs->t0 = 0;
+  regs->t1 = 0;
+  regs->t2 = 0;
+  regs->t3 = 0;
+  regs->t4 = 0;
+  regs->t5 = 0;
+  regs->t9 = 0;
+  regs->k0 = 0;
+  regs->k1 = 0;
+  regs->global_ptr  = 0;
+  regs->return_addr = 0;
 #else
 # error Unsupported architecture
 #endif
 }
+
+#if defined(__native_client__)
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
+
+uintptr_t RegsGetArg1(const struct NaClSignalContext *regs) {
+  return ((uint32_t *) regs->stack_ptr)[1];
+}
+
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
+
+uintptr_t RegsGetArg1(const struct NaClSignalContext *regs) {
+  return regs->rdi;
+}
+
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+
+uintptr_t RegsGetArg1(const struct NaClSignalContext *regs) {
+  return regs->r0;
+}
+
+#elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+
+uintptr_t RegsGetArg1(const struct NaClSignalContext *regs) {
+  return regs->a0;
+}
+
+#else
+# error Unsupported architecture
+#endif
+#endif

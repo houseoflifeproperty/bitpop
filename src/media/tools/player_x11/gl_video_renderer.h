@@ -11,8 +11,6 @@
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_bindings.h"
 
-class MessageLoop;
-
 namespace media {
 class VideoFrame;
 }
@@ -21,13 +19,12 @@ class GlVideoRenderer : public base::RefCountedThreadSafe<GlVideoRenderer> {
  public:
   GlVideoRenderer(Display* display, Window window);
 
-  void Paint(media::VideoFrame* video_frame);
+  void Paint(const scoped_refptr<media::VideoFrame>& video_frame);
 
- protected:
+ private:
   friend class base::RefCountedThreadSafe<GlVideoRenderer>;
   ~GlVideoRenderer();
 
- private:
   // Initializes GL rendering for the given dimensions.
   void Initialize(gfx::Size coded_size, gfx::Rect visible_rect);
 

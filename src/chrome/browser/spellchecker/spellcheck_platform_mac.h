@@ -12,13 +12,19 @@
 #include <vector>
 
 #include "base/callback_forward.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
+
+struct SpellCheckResult;
 
 namespace content {
 class BrowserMessageFilter;
 }  // namespace content
 
 namespace spellcheck_mac {
+
+typedef base::Callback<void(
+        const std::vector<SpellCheckResult>& /* results */)>
+            TextCheckCompleteCallback;
 
 // Get the languages supported by the platform spellchecker and store them in
 // |spellcheck_languages|. Note that they must be converted to
@@ -39,7 +45,7 @@ void ShowSpellingPanel(bool show);
 
 // Changes the word show in the spelling panel to be |word|. Note that the
 // spelling panel need not be displayed for this to work.
-void UpdateSpellingPanelWithMisspelledWord(const string16& word);
+void UpdateSpellingPanelWithMisspelledWord(const base::string16& word);
 
 // Translates the codes used by chrome to the language codes used by os x
 // and checks the given language agains the languages that the current system
@@ -52,19 +58,19 @@ void SetLanguage(const std::string& lang_to_set);
 
 // Checks the spelling of the given string, using the platform-specific
 // spellchecker. Returns true if the word is spelled correctly.
-bool CheckSpelling(const string16& word_to_check, int tag);
+bool CheckSpelling(const base::string16& word_to_check, int tag);
 
 // Fills the given vector |optional_suggestions| with a number (up to
 // kMaxSuggestions, which is defined in spellchecker_common.h) of suggestions
 // for the string |wrong_word|.
-void FillSuggestionList(const string16& wrong_word,
-                        std::vector<string16>* optional_suggestions);
+void FillSuggestionList(const base::string16& wrong_word,
+                        std::vector<base::string16>* optional_suggestions);
 
 // Adds the given word to the platform dictionary.
-void AddWord(const string16& word);
+void AddWord(const base::string16& word);
 
 // Remove a given word from the platform dictionary.
-void RemoveWord(const string16& word);
+void RemoveWord(const base::string16& word);
 
 // Gets a unique tag to identify a document. Used in ignoring words.
 int GetDocumentTag();
@@ -74,7 +80,7 @@ int GetDocumentTag();
 // the tag for sure is to ask the renderer, which would mean blocking in the
 // browser, so (on the mac, anyway) we remember the most recent tag and use
 // it, since it should always be from the same document.
-void IgnoreWord(const string16& word);
+void IgnoreWord(const base::string16& word);
 
 // Tells the platform spellchecker that a document associated with a tag has
 // closed. Generally, this means that any ignored words associated with that
@@ -84,11 +90,22 @@ void CloseDocumentWithTag(int tag);
 // Requests an asyncronous spell and grammar checking.
 // The result is returned to an IPC message to |destination| thus it should
 // not be null.
-void RequestTextCheck(int route_id,
-                      int identifier,
-                      int document_tag,
-                      const string16& text,
-                      content::BrowserMessageFilter* destination);
+void RequestTextCheck(int document_tag,
+                      const base::string16& text,
+                      TextCheckCompleteCallback callback);
+
+// Internal state, to restore system state after testing.
+// Not public since it contains Cocoa data types.
+class SpellcheckerStateInternal;
+
+// Test helper, forces the system spellchecker to en-US for its lifetime.
+class ScopedEnglishLanguageForTest {
+ public:
+  ScopedEnglishLanguageForTest();
+  ~ScopedEnglishLanguageForTest();
+ private:
+  SpellcheckerStateInternal* state_;
+};
 
 }  // namespace spellcheck_mac
 

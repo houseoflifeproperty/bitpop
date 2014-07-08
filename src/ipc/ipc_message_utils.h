@@ -11,12 +11,13 @@
 #include <string>
 #include <vector>
 
+#include "base/containers/small_map.h"
+#include "base/files/file.h"
 #include "base/format_macros.h"
 #include "base/memory/scoped_vector.h"
-#include "base/platform_file.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/tuple.h"
 #include "ipc/ipc_message_start.h"
 #include "ipc/ipc_param_traits.h"
@@ -45,12 +46,11 @@
 #error "Please add the noinline property for your new compiler here."
 #endif
 
-class FilePath;
-class NullableString16;
-
 namespace base {
 class DictionaryValue;
+class FilePath;
 class ListValue;
+class NullableString16;
 class Time;
 class TimeDelta;
 class TimeTicks;
@@ -119,6 +119,22 @@ struct ParamTraits<bool> {
     return m->ReadBool(iter, r);
   }
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct IPC_EXPORT ParamTraits<unsigned char> {
+  typedef unsigned char param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
+};
+
+template <>
+struct IPC_EXPORT ParamTraits<unsigned short> {
+  typedef unsigned short param_type;
+  static void Write(Message* m, const param_type& p);
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Log(const param_type& p, std::string* l);
 };
 
 template <>
@@ -195,22 +211,18 @@ struct ParamTraits<unsigned long long> {
   IPC_EXPORT static void Log(const param_type& p, std::string* l);
 };
 
-template <>
-struct IPC_EXPORT ParamTraits<unsigned short> {
-  typedef unsigned short param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
-  static void Log(const param_type& p, std::string* l);
-};
-
 // Note that the IPC layer doesn't sanitize NaNs and +/- INF values.  Clients
 // should be sure to check the sanity of these values after receiving them over
 // IPC.
 template <>
 struct IPC_EXPORT ParamTraits<float> {
   typedef float param_type;
-  static void Write(Message* m, const param_type& p);
-  static bool Read(const Message* m, PickleIterator* iter, param_type* r);
+  static void Write(Message* m, const param_type& p) {
+    m->WriteFloat(p);
+  }
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
+    return m->ReadFloat(iter, r);
+  }
   static void Log(const param_type& p, std::string* l);
 };
 
@@ -254,8 +266,8 @@ struct ParamTraits<std::wstring> {
 // need this trait.
 #if !defined(WCHAR_T_IS_UTF16)
 template <>
-struct ParamTraits<string16> {
-  typedef string16 param_type;
+struct ParamTraits<base::string16> {
+  typedef base::string16 param_type;
   static void Write(Message* m, const param_type& p) {
     m->WriteString16(p);
   }
@@ -438,8 +450,8 @@ struct IPC_EXPORT ParamTraits<base::FileDescriptor> {
 #endif  // defined(OS_POSIX)
 
 template <>
-struct IPC_EXPORT ParamTraits<FilePath> {
-  typedef FilePath param_type;
+struct IPC_EXPORT ParamTraits<base::FilePath> {
+  typedef base::FilePath param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
@@ -454,8 +466,8 @@ struct IPC_EXPORT ParamTraits<base::ListValue> {
 };
 
 template <>
-struct IPC_EXPORT ParamTraits<NullableString16> {
-  typedef NullableString16 param_type;
+struct IPC_EXPORT ParamTraits<base::NullableString16> {
+  typedef base::NullableString16 param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter,
                    param_type* r);
@@ -463,17 +475,24 @@ struct IPC_EXPORT ParamTraits<NullableString16> {
 };
 
 template <>
-struct IPC_EXPORT ParamTraits<base::PlatformFileInfo> {
-  typedef base::PlatformFileInfo param_type;
+struct IPC_EXPORT ParamTraits<base::File::Info> {
+  typedef base::File::Info param_type;
   static void Write(Message* m, const param_type& p);
   static bool Read(const Message* m, PickleIterator* iter, param_type* r);
   static void Log(const param_type& p, std::string* l);
 };
 
 template <>
-struct SimilarTypeTraits<base::PlatformFileError> {
+struct SimilarTypeTraits<base::File::Error> {
   typedef int Type;
 };
+
+#if defined(OS_WIN)
+template <>
+struct SimilarTypeTraits<HWND> {
+  typedef HANDLE Type;
+};
+#endif  // defined(OS_WIN)
 
 template <>
 struct IPC_EXPORT ParamTraits<base::Time> {
@@ -649,6 +668,41 @@ struct ParamTraits<ScopedVector<P> > {
         l->append(" ");
       LogParam(*p[i], l);
     }
+  }
+};
+
+template <typename NormalMap,
+          int kArraySize,
+          typename EqualKey,
+          typename MapInit>
+struct ParamTraits<base::SmallMap<NormalMap, kArraySize, EqualKey, MapInit> > {
+  typedef base::SmallMap<NormalMap, kArraySize, EqualKey, MapInit> param_type;
+  typedef typename param_type::key_type K;
+  typedef typename param_type::data_type V;
+  static void Write(Message* m, const param_type& p) {
+    WriteParam(m, static_cast<int>(p.size()));
+    typename param_type::const_iterator iter;
+    for (iter = p.begin(); iter != p.end(); ++iter) {
+      WriteParam(m, iter->first);
+      WriteParam(m, iter->second);
+    }
+  }
+  static bool Read(const Message* m, PickleIterator* iter, param_type* r) {
+    int size;
+    if (!m->ReadLength(iter, &size))
+      return false;
+    for (int i = 0; i < size; ++i) {
+      K key;
+      if (!ReadParam(m, iter, &key))
+        return false;
+      V& value = (*r)[key];
+      if (!ReadParam(m, iter, &value))
+        return false;
+    }
+    return true;
+  }
+  static void Log(const param_type& p, std::string* l) {
+    l->append("<base::SmallMap>");
   }
 };
 

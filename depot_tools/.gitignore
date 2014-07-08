@@ -20,9 +20,22 @@
 /.subversion
 
 # Ignore locations where third-party tools are placed during bootstrapping.
-/python_bin
+/python*_bin
 /git_bin
+/git-*_bin
 /svn_bin
+/win_toolchain/vs2013_files
+/win_toolchain/.timestamps
+/win_toolchain/.vspro
+/win_toolchain/data.json
+
+# Ignore ctags/cscope index files
+/TAGS
+/cscope.files
+/cscope.in.out
+/cscope.out
+/cscope.po.out
+/tags
 
 # Ignore unittest related files.
 /testing_support/_rietveld

@@ -29,11 +29,8 @@
 #include "talk/base/httpcommon.h"
 #include "talk/base/httpcommon-inl.h"
 #include "talk/base/nethelpers.h"
-#include "talk/base/proxydetect.h"
 
 namespace talk_base {
-
-enum { MSG_TIMEOUT = SignalThread::ST_MSG_FIRST_AVAILABLE };
 
 static const ProxyType TEST_ORDER[] = {
   PROXY_HTTPS, PROXY_SOCKS5, PROXY_UNKNOWN
@@ -62,7 +59,7 @@ void AutoDetectProxy::DoWork() {
   // TODO: Try connecting to server_url without proxy first here?
   if (!server_url_.empty()) {
     LOG(LS_INFO) << "GetProxySettingsForUrl(" << server_url_ << ") - start";
-    GetProxySettingsForUrl(agent_.c_str(), server_url_.c_str(), proxy_, true);
+    GetProxyForUrl(agent_.c_str(), server_url_.c_str(), &proxy_);
     LOG(LS_INFO) << "GetProxySettingsForUrl - stop";
   }
   Url<char> url(proxy_.address.HostAsURIString());
@@ -85,7 +82,10 @@ void AutoDetectProxy::DoWork() {
 }
 
 void AutoDetectProxy::OnMessage(Message *msg) {
-  if (MSG_TIMEOUT == msg->message_id) {
+  if (MSG_UNRESOLVABLE == msg->message_id) {
+    // If we can't resolve the proxy, skip straight to failure.
+    Complete(PROXY_UNKNOWN);
+  } else if (MSG_TIMEOUT == msg->message_id) {
     OnCloseEvent(socket_, ETIMEDOUT);
   } else {
     // This must be the ST_MSG_WORKER_DONE message that deletes the
@@ -139,22 +139,24 @@ void AutoDetectProxy::OnMessage(Message *msg) {
   }
 }
 
-void AutoDetectProxy::OnResolveResult(SignalThread* thread) {
-  if (thread != resolver_) {
+void AutoDetectProxy::OnResolveResult(AsyncResolverInterface* resolver) {
+  if (resolver != resolver_) {
     return;
   }
-  int error = resolver_->error();
+  int error = resolver_->GetError();
   if (error == 0) {
     LOG(LS_VERBOSE) << "Resolved " << proxy_.address << " to "
                     << resolver_->address();
     proxy_.address = resolver_->address();
-    DoConnect();
+    if (!DoConnect()) {
+      Thread::Current()->Post(this, MSG_TIMEOUT);
+    }
   } else {
     LOG(LS_INFO) << "Failed to resolve " << resolver_->address();
     resolver_->Destroy(false);
     resolver_ = NULL;
     proxy_.address = SocketAddress();
-    Thread::Current()->Post(this, MSG_TIMEOUT);
+    Thread::Current()->Post(this, MSG_UNRESOLVABLE);
   }
 }
 
@@ -165,10 +167,11 @@ void AutoDetectProxy::Next() {
   }
 
   LOG(LS_VERBOSE) << "AutoDetectProxy connecting to "
-                  << proxy_.address.ToString();
+                  << proxy_.address.ToSensitiveString();
 
   if (socket_) {
     Thread::Current()->Clear(this, MSG_TIMEOUT);
+    Thread::Current()->Clear(this, MSG_UNRESOLVABLE);
     socket_->Close();
     Thread::Current()->Dispose(socket_);
     socket_ = NULL;
@@ -180,17 +183,18 @@ void AutoDetectProxy::Next() {
     if (!resolver_) {
       resolver_ = new AsyncResolver();
     }
-    resolver_->set_address(proxy_.address);
-    resolver_->SignalWorkDone.connect(this,
-                                      &AutoDetectProxy::OnResolveResult);
-    resolver_->Start();
+    resolver_->SignalDone.connect(this, &AutoDetectProxy::OnResolveResult);
+    resolver_->Start(proxy_.address);
   } else {
-    DoConnect();
+    if (!DoConnect()) {
+      Thread::Current()->Post(this, MSG_TIMEOUT);
+      return;
+    }
   }
   Thread::Current()->PostDelayed(timeout, this, MSG_TIMEOUT);
 }
 
-void AutoDetectProxy::DoConnect() {
+bool AutoDetectProxy::DoConnect() {
   if (resolver_) {
     resolver_->Destroy(false);
     resolver_ = NULL;
@@ -200,23 +204,26 @@ void AutoDetectProxy::DoConnect() {
           proxy_.address.family(), SOCK_STREAM);
   if (!socket_) {
     LOG(LS_VERBOSE) << "Unable to create socket for " << proxy_.address;
-    return;
+    return false;
   }
   socket_->SignalConnectEvent.connect(this, &AutoDetectProxy::OnConnectEvent);
   socket_->SignalReadEvent.connect(this, &AutoDetectProxy::OnReadEvent);
   socket_->SignalCloseEvent.connect(this, &AutoDetectProxy::OnCloseEvent);
   socket_->Connect(proxy_.address);
+  return true;
 }
 
 void AutoDetectProxy::Complete(ProxyType type) {
   Thread::Current()->Clear(this, MSG_TIMEOUT);
+  Thread::Current()->Clear(this, MSG_UNRESOLVABLE);
   if (socket_) {
     socket_->Close();
   }
 
   proxy_.type = type;
   LoggingSeverity sev = (proxy_.type == PROXY_UNKNOWN) ? LS_ERROR : LS_INFO;
-  LOG_V(sev) << "AutoDetectProxy detected " << proxy_.address.ToString()
+  LOG_V(sev) << "AutoDetectProxy detected "
+             << proxy_.address.ToSensitiveString()
              << " as type " << proxy_.type;
 
   Thread::Current()->Quit();

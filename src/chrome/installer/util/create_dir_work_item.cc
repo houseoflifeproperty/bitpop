@@ -10,22 +10,22 @@
 CreateDirWorkItem::~CreateDirWorkItem() {
 }
 
-CreateDirWorkItem::CreateDirWorkItem(const FilePath& path)
+CreateDirWorkItem::CreateDirWorkItem(const base::FilePath& path)
     : path_(path),
       rollback_needed_(false) {
 }
 
 void CreateDirWorkItem::GetTopDirToCreate() {
-  if (file_util::PathExists(path_)) {
-    top_path_ = FilePath();
+  if (base::PathExists(path_)) {
+    top_path_ = base::FilePath();
     return;
   }
 
-  FilePath parent_dir(path_);
+  base::FilePath parent_dir(path_);
   do {
     top_path_ = parent_dir;
     parent_dir = parent_dir.DirName();
-  } while ((parent_dir != top_path_) && !file_util::PathExists(parent_dir));
+  } while ((parent_dir != top_path_) && !base::PathExists(parent_dir));
   return;
 }
 
@@ -36,7 +36,7 @@ bool CreateDirWorkItem::Do() {
     return true;
 
   VLOG(1) << "top directory that needs to be created: " << top_path_.value();
-  bool result = file_util::CreateDirectory(path_);
+  bool result = base::CreateDirectory(path_);
   VLOG(1) << "directory creation result: " << result;
 
   rollback_needed_ = true;
@@ -53,10 +53,10 @@ void CreateDirWorkItem::Rollback() {
   // delete non-empty directory. (We may have created a shared directory).
   // Instead we walk through path_ to top_path_ and delete directories
   // along the way.
-  FilePath path_to_delete(path_);
+  base::FilePath path_to_delete(path_);
 
   while (1) {
-    if (file_util::PathExists(path_to_delete)) {
+    if (base::PathExists(path_to_delete)) {
       if (!RemoveDirectory(path_to_delete.value().c_str()))
         break;
     }

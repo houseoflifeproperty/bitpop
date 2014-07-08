@@ -7,27 +7,6 @@
 #include "base/mac/foundation_util.h"
 #include "base/mac/mac_logging.h"
 
-#if !defined(MAC_OS_X_VERSION_10_5) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED <= MAC_OS_X_VERSION_10_5
-
-enum {
-  // New Security.framework code uses errSecSuccess instead of noErr, but the
-  // constant is new in 10.6.
-  errSecSuccess = 0
-};
-
-// This exists on 10.5 for linking, but but because
-// <Security/SecRequirement.h> did not ship in the SDK in that version, no
-// declaration is present. This declaration is correct on 10.5, see
-// 10.5.0 libsecurity_codesigning-32568/lib/SecRequirement.h.
-extern "C" {
-OSStatus SecRequirementCopyString(SecRequirementRef requirement,
-                                  SecCSFlags flags,
-                                  CFStringRef* text);
-}  // extern "C"
-
-#endif
-
 extern "C" {
 OSStatus SecTrustedApplicationCopyRequirement(
     SecTrustedApplicationRef application,
@@ -35,8 +14,6 @@ OSStatus SecTrustedApplicationCopyRequirement(
 }  // extern "C"
 
 namespace chrome {
-namespace browser {
-namespace mac {
 
 ScopedSecKeychainSetUserInteractionAllowed::
     ScopedSecKeychainSetUserInteractionAllowed(Boolean allowed) {
@@ -363,7 +340,14 @@ CrSKeychainItemAttributesAndData* CrSKeychainItemCopyAttributesAndData(
     case kSecGenericPasswordItemClass:
       item_id = CSSM_DL_DB_RECORD_GENERIC_PASSWORD;
       break;
+    // kSecInternetPasswordItemClass is marked as deprecated in the 10.9 sdk,
+    // but the files in libsecurity_keychain from 10.7 referenced above still
+    // use it. Also see rdar://14281375 /
+    // http://openradar.appspot.com/radar?id=3143412 .
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wdeprecated-declarations"
     case kSecAppleSharePasswordItemClass:
+#pragma clang diagnostic pop
       item_id = CSSM_DL_DB_RECORD_APPLESHARE_PASSWORD;
       break;
     default:
@@ -423,6 +407,4 @@ SecKeychainItemRef CrSKeychainItemCreateFromContent(
   return item;
 }
 
-}  // namespace mac
-}  // namespace browser
 }  // namespace chrome

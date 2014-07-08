@@ -9,7 +9,6 @@ import errno
 import json
 import logging
 import os
-import re
 import time
 
 from twisted.python import log
@@ -20,8 +19,8 @@ from buildbot.process.properties import WithProperties
 from buildbot.status import builder
 from buildbot.steps import shell
 from buildbot.steps import source
-from buildbot.process.buildstep import LoggingBuildStep
 
+from common import annotator
 from common import chromium_utils
 import config
 
@@ -66,7 +65,9 @@ class GClient(source.Source):
                sudo_for_remove=False, gclient_deps=None, gclient_nohooks=False,
                no_gclient_branch=False, no_gclient_revision=False,
                gclient_transitive=False, primary_repo=None,
-               gclient_jobs=None, **kwargs):
+               gclient_jobs=None, blink_config=None, **kwargs):
+    # TODO: We shouldn't need to hard-code blink-specific info here. We
+    # should figure out how to generalize this to sub-repos somehow.
     source.Source.__init__(self, **kwargs)
     if env:
       self.args['env'] = env.copy()
@@ -83,6 +84,7 @@ class GClient(source.Source):
     self.args['gclient_transitive'] = gclient_transitive
     self.args['primary_repo'] = primary_repo or ''
     self.args['gclient_jobs'] = gclient_jobs
+    self.args['blink_config'] = blink_config
 
   def computeSourceRevision(self, changes):
     """Finds the latest revision number from the changeset that have
@@ -101,20 +103,13 @@ class GClient(source.Source):
   def startVC(self, branch, revision, patch):
     warnings = []
     args = copy.copy(self.args)
-    wk_revision = revision
-    try:
-      # parent_wk_revision might be set, but empty.
-      if self.getProperty('parent_wk_revision'):
-        wk_revision = self.getProperty('parent_wk_revision')
-    except KeyError:
-      pass
-    nacl_revision = revision
-    try:
-      # parent_nacl_revision might be set, but empty.
-      if self.getProperty('parent_got_nacl_revision'):
-        nacl_revision = self.getProperty('parent_got_nacl_revision')
-    except KeyError:
-      pass
+
+    if args.get('gclient_spec'):
+      self.adjustGclientSpecForBlink(branch, revision, args)
+      self.adjustGclientSpecForNaCl(branch, revision, patch, args)
+      self.adjustGclientSpecForV8(branch, revision, patch, args)
+      self.adjustGclientSpecForWebRTC(branch, revision, patch, args)
+
     try:
       # parent_cr_revision might be set, but empty.
       if self.getProperty('parent_cr_revision'):
@@ -124,17 +119,73 @@ class GClient(source.Source):
     self.setProperty('primary_repo', args['primary_repo'], 'Source')
     args['revision'] = revision
     args['branch'] = branch
-    if args.get('gclient_spec'):
-      args['gclient_spec'] = args['gclient_spec'].replace(
-          '$$WK_REV$$', str(wk_revision or ''))
-      args['gclient_spec'] = args['gclient_spec'].replace(
-          '$$NACL_REV$$', str(nacl_revision or ''))
+
     if patch:
       args['patch'] = patch
     elif args.get('patch') is None:
       del args['patch']
+
+    args['project'] = self.build.getSourceStamp().project
     cmd = buildstep.LoggedRemoteCommand('gclient', args)
     self.startCommand(cmd, warnings)
+
+  def adjustGclientSpecForBlink(self, branch, revision, args):
+    # If the bot in question is a dedicated bot for Blink changes (either
+    # on a waterfall, or a blink-specific trybot), we want to set a custom
+    # version of Blink, otherwise we leave the gclient spec alone.
+    if args['blink_config'] != 'blink':
+      return
+
+    # branch == 'trunk' means the change came from the blink poller, and the
+    # revision is a blink revision; otherwise, we use '', or HEAD.
+    wk_revision = ''
+    if branch == 'trunk':
+      wk_revision = revision
+
+    try:
+      # parent_wk_revision might be set, but empty.
+      if self.getProperty('parent_wk_revision'):
+        wk_revision = self.getProperty('parent_wk_revision')
+    except KeyError:
+      pass
+
+    # TODO: Make this be something less fragile.
+    args['gclient_spec'] = args['gclient_spec'].replace(
+        '"webkit_trunk"',
+        '"webkit_revision":"%s","webkit_trunk"' % wk_revision)
+
+  def adjustGclientSpecForNaCl(self, branch, revision, patch, args):
+    nacl_revision = revision
+    try:
+      # parent_nacl_revision might be set, but empty.
+      if self.getProperty('parent_got_nacl_revision'):
+        nacl_revision = self.getProperty('parent_got_nacl_revision')
+    except KeyError:
+      pass
+    args['gclient_spec'] = args['gclient_spec'].replace(
+        '$$NACL_REV$$', str(nacl_revision or ''))
+
+  def adjustGclientSpecForV8(self, branch, revision, patch, args):
+    v8_revision = revision
+    try:
+      # parent_v8_revision might be set, but empty.
+      if self.getProperty('parent_got_v8_revision'):
+        v8_revision = self.getProperty('parent_got_v8_revision')
+    except KeyError:
+      pass
+    args['gclient_spec'] = args['gclient_spec'].replace(
+        '$$V8_REV$$', str(v8_revision or ''))
+
+  def adjustGclientSpecForWebRTC(self, branch, revision, patch, args):
+    webrtc_revision = revision
+    try:
+      # parent_webrtc_revision might be set, but empty.
+      if self.getProperty('parent_got_webrtc_revision'):
+        webrtc_revision = self.getProperty('parent_got_webrtc_revision')
+    except KeyError:
+      pass
+    args['gclient_spec'] = args['gclient_spec'].replace(
+        '$$WEBRTC_REV$$', str(webrtc_revision or ''))
 
   def describe(self, done=False):
     """Tries to append the revision number to the description."""
@@ -143,6 +194,7 @@ class GClient(source.Source):
     self.appendWebKitRevision(description)
     self.appendNaClRevision(description)
     self.appendV8Revision(description)
+    self.appendWebRTCRevision(description)
     return description
 
   def appendChromeRevision(self, description):
@@ -204,58 +256,41 @@ class GClient(source.Source):
       if not v8_revision in description:
         description.append(v8_revision)
 
+  def appendWebRTCRevision(self, description):
+    """Tries to append the WebRTC revision to the given description."""
+    webrtc_revision = None
+    try:
+      webrtc_revision = self.getProperty('got_webrtc_revision')
+    except KeyError:
+      pass
+    if webrtc_revision:
+      webrtc_revision = 'webrtc r%s' % webrtc_revision
+      # Only append revision if it's not already there.
+      if not webrtc_revision in description:
+        description.append(webrtc_revision)
+
   def commandComplete(self, cmd):
     """Handles status updates from buildbot slave when the step is done.
 
-    As a result 'got_revision', 'got_webkit_revision', 'got_nacl_revision' as
-    well as 'got_v8_revision' properties will be set, though either may be None
-    if it couldn't be found.
+    Update the relevant got_XX_revision build properties if available.
     """
     source.Source.commandComplete(self, cmd)
     primary_repo = self.args.get('primary_repo', '')
     primary_revision_key = 'got_' + primary_repo + 'revision'
-    if cmd.updates.has_key(primary_revision_key):
-      got_revision = cmd.updates[primary_revision_key][-1]
-      if got_revision:
-        self.setProperty('got_revision', str(got_revision), 'Source')
-    if cmd.updates.has_key('got_webkit_revision'):
-      got_webkit_revision = cmd.updates['got_webkit_revision'][-1]
-      if got_webkit_revision:
-        self.setProperty('got_webkit_revision', str(got_webkit_revision),
-                         'Source')
-    if cmd.updates.has_key('got_nacl_revision'):
-      got_nacl_revision = cmd.updates['got_nacl_revision'][-1]
-      if got_nacl_revision:
-        self.setProperty('got_nacl_revision', str(got_nacl_revision),
-                         'Source')
-    if cmd.updates.has_key('got_v8_revision'):
-      got_v8_revision = cmd.updates['got_v8_revision'][-1]
-      if got_v8_revision:
-        self.setProperty('got_v8_revision', str(got_v8_revision),
-                         'Source')
-
-
-class ApplyIssue(LoggingBuildStep):
-  """Runs the apply_issue.py script on the slave."""
-
-  def __init__(self, root, issue, patchset, email, password, workdir, timeout,
-               server, **kwargs):
-    LoggingBuildStep.__init__(self, **kwargs)
-    self.args = {'root': root,
-                 'issue': issue,
-                 'patchset': patchset,
-                 'email': email,
-                 'password': password,
-                 'workdir': workdir,
-                 'timeout': timeout,
-                 'server': server,
-                 }
-
-  def start(self):
-    args = dict((name, self.build.render(value))
-                for name, value in self.args.iteritems())
-    cmd = buildstep.LoggedRemoteCommand('apply_issue', args)
-    self.startCommand(cmd)
+    properties = (
+      ('got_revision', primary_revision_key),
+      ('got_nacl_revision', 'got_nacl_revision'),
+      ('got_swarm_client_revision', 'got_swarm_client_revision'),
+      ('got_swarming_client_revision', 'got_swarming_client_revision'),
+      ('got_v8_revision', 'got_v8_revision'),
+      ('got_webkit_revision', 'got_webkit_revision'),
+      ('got_webrtc_revision', 'got_webrtc_revision'),
+    )
+    for prop_name, cmd_arg in properties:
+      if cmd_arg in cmd.updates:
+        got_revision = cmd.updates[cmd_arg][-1]
+        if got_revision:
+          self.setProperty(prop_name, str(got_revision), 'Source')
 
 
 class BuilderStatus(object):
@@ -408,11 +443,13 @@ def Prepend(filename, data, output_dir, perf_output_dir):
   READABLE_FILE_PERMISSIONS = int('644', 8)
 
   fullfn = chromium_utils.AbsoluteCanonicalPath(output_dir, filename)
+  dir_path = os.path.dirname(fullfn)
+  MakeOutputDirectory(dir_path)
 
   # This whitelists writing to files only directly under output_dir
   # or perf_expectations_dir for security reasons.
-  if os.path.dirname(fullfn) != output_dir and (
-      os.path.dirname(fullfn) != perf_output_dir):
+  if not (dir_path.startswith(output_dir) or
+          dir_path.startswith(perf_output_dir)):
     raise Exception('Attempted to write to log file outside of \'%s\' or '
                     '\'%s\': \'%s\'' % (output_dir,
                                         perf_output_dir,
@@ -484,6 +521,9 @@ class AnnotationObserver(buildstep.LogLineObserver):
   @@@STEP_TEXT@<msg>@@@
   Append <msg> to the current step text.
 
+  @@@SEED_STEP_TEXT@step@<msg>@@@
+  Append <msg> to the specified seeded step.
+
   @@@STEP_SUMMARY_TEXT@<msg>@@@
   Append <msg> to the step summary (appears on top of the waterfall).
 
@@ -538,15 +578,12 @@ class AnnotationObserver(buildstep.LogLineObserver):
       'chrome-win-stable': 'win-stable',
       'chromium-linux-targets': 'linux-targets',
       'chromium-mac-targets': 'mac-targets',
-      'chromium-rel-frame': 'win-release-chrome-frame',
       'chromium-rel-linux': 'linux-release',
       'chromium-rel-linux-64': 'linux-release-64',
       'chromium-rel-linux-hardy': 'linux-release-hardy',
       'chromium-rel-linux-hardy-lowmem': 'linux-release-lowmem',
-      'chromium-rel-linux-memory': 'linux-release-memory',
       'chromium-rel-linux-webkit': 'linux-release-webkit-latest',
       'chromium-rel-mac': 'mac-release',
-      'chromium-rel-mac-memory': 'mac-release-memory',
       'chromium-rel-mac5': 'mac-release-10.5',
       'chromium-rel-mac6': 'mac-release-10.6',
       'chromium-rel-mac5-v8': 'mac-release-10.5-v8-latest',
@@ -555,28 +592,26 @@ class AnnotationObserver(buildstep.LogLineObserver):
       'chromium-rel-old-mac6': 'mac-release-old-10.6',
       'chromium-rel-vista-dual': 'vista-release-dual-core',
       'chromium-rel-vista-dual-v8': 'vista-release-v8-latest',
-      'chromium-rel-vista-memory': 'vista-release-memory',
       'chromium-rel-vista-single': 'vista-release-single-core',
       'chromium-rel-vista-webkit': 'vista-release-webkit-latest',
       'chromium-rel-xp': 'xp-release',
       'chromium-rel-xp-dual': 'xp-release-dual-core',
       'chromium-rel-xp-single': 'xp-release-single-core',
       'chromium-win-targets': 'win-targets',
-      'o3d-mac-experimental': 'o3d-mac-experimental',
-      'o3d-win-experimental': 'o3d-win-experimental',
       'nacl-lucid64-spec-x86': 'nacl-lucid64-spec-x86',
       'nacl-lucid64-spec-arm': 'nacl-lucid64-spec-arm',
       'nacl-lucid64-spec-trans': 'nacl-lucid64-spec-trans',
     },
     'Debug': {
       'chromium-dbg-linux': 'linux-debug',
+      'chromium-dbg-win': 'win-debug',
       'chromium-dbg-mac': 'mac-debug',
       'chromium-dbg-xp': 'xp-debug',
       'chromium-dbg-linux-try': 'linux-try-debug',
     },
   }
   def __init__(self, command=None, show_perf=False, perf_id=None,
-               target=None, *args, **kwargs):
+               perf_report_url_suffix=None, target=None, *args, **kwargs):
     buildstep.LogLineObserver.__init__(self, *args, **kwargs)
     self.command = command
     self.sections = []
@@ -587,6 +622,7 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
     self.show_perf = show_perf
     self.perf_id = perf_id
+    self.perf_report_url_suffix = perf_report_url_suffix
     self.target = target
 
   def initialSection(self):
@@ -618,17 +654,36 @@ class AnnotationObserver(buildstep.LogLineObserver):
     """Mark any unfinished steps as failure (except for parent step)."""
     for section in self.sections[1:]:
       if section['step'].isStarted() and not section['step'].isFinished():
-        self.finishStep(section, status=builder.FAILURE)
+        reason = 'step was unfinished at finalization.'
+        self.finishStep(section, status=builder.FAILURE, reason=reason)
 
   def ensureStepIsStarted(self, section):
     if not section['step'].isStarted():
       self.startStep(section)
 
-  def finishStep(self, section, status=None):
+  def finishStep(self, section, status=None, reason=None):
     """Mark the specified step as 'finished.'"""
+
+    status_map = {
+        builder.SUCCESS: 'SUCCESS',
+        builder.WARNINGS: 'WARNINGS',
+        builder.FAILURE: 'FAILURE',
+        builder.EXCEPTION: 'EXCEPTION',
+        builder.RETRY: 'RETRY',
+        builder.SKIPPED: 'SKIPPED',
+    }
+
     # Update status if set as an argument.
     if status is not None:
       section['status'] = status
+    else:
+      # Wasn't set as an argument, so we know it came from annotations.
+      if not reason:
+        if section['status'] == builder.SUCCESS:
+          reason = 'step finished normally.'
+        else:
+          reason = 'parsed annotations marked step as %s.' % status_map[
+              section['status']]
 
     self.ensureStepIsStarted(section)
     # Final update of text.
@@ -643,6 +698,8 @@ class AnnotationObserver(buildstep.LogLineObserver):
         'started: %s' % time.ctime(started),
         'ended: %s' % time.ctime(ended),
         'duration: %s' % util.formatInterval(ended - started),
+        'status: %s' % status_map[section['status']],
+        'status reason: %s' % reason,
         '',  # So we get a final \n
     ])
     section['log'].addHeader(msg)
@@ -652,13 +709,13 @@ class AnnotationObserver(buildstep.LogLineObserver):
     # Finish log.
     section['log'].finish()
 
-  def finishCursor(self, status=None):
+  def finishCursor(self, status=None, reason=None):
     """Mark the step at the current cursor as finished."""
     # Potentially start initial section here, as initial section might have
     # no output at all.
     self.initialSection()
 
-    self.finishStep(self.cursor, status)
+    self.finishStep(self.cursor, status=status, reason=reason)
 
   def errLineReceived(self, line):
     self.handleOutputLine(line)
@@ -692,15 +749,17 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
   def headerReceived(self, data):
     if self.sections:
-      self.ensureStepIsStarted(self.cursor)
-      if self.cursor['log'].finished:
+      preamble = self.sections[0]
+      self.ensureStepIsStarted(preamble)
+      if preamble['log'].finished:
         # Silently discard message when a log is marked as finished.
         # TODO(maruel): Fix race condition?
         log.msg(
             'Received data unexpectedly on a finished build step log: %r' %
             data)
       else:
-        self.cursor['log'].addHeader(data)
+        preamble['log'].addHeader(data)
+
 
   def updateStepStatus(self, status):
     """Update current step status and annotation status based on a new event."""
@@ -755,7 +814,7 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
     return self.sections[-1]
 
-  def _PerfStepMappings(self, show_results, perf_id, test_name):
+  def _PerfStepMappings(self, show_results, perf_id, test_name, suffix=None):
     """Looks up test IDs in PERF_TEST_MAPPINGS and returns test info."""
     report_link = None
     output_dir = None
@@ -766,8 +825,10 @@ class AnnotationObserver(buildstep.LogLineObserver):
       if (self.target in self.PERF_TEST_MAPPINGS and
           perf_id in self.PERF_TEST_MAPPINGS[self.target]):
         perf_name = self.PERF_TEST_MAPPINGS[self.target][perf_id]
+      if not suffix:
+        suffix = self.PERF_REPORT_URL_SUFFIX
       report_link = '%s/%s/%s/%s' % (self.PERF_BASE_URL, perf_name, test_name,
-                                     self.PERF_REPORT_URL_SUFFIX)
+                                     suffix)
       output_dir = '%s/%s/%s' % (self.PERF_OUTPUT_DIR, perf_name, test_name)
 
     return report_link, output_dir, perf_name
@@ -809,9 +870,8 @@ class AnnotationObserver(buildstep.LogLineObserver):
     for graph_name, graph in newgraphs.iteritems():
       if graph_name in graph_names:
         continue
-      new_graph_list.append({'name': graph_name,
-                             'important': graph['important'],
-                             'units': graph['units']})
+      new_graph_list.append(graph)
+      new_graph_list[-1]['name'] = graph_name
 
     # sort them by not-'important', since True > False, and by graph_name, ...
     new_graph_list.sort(lambda x, y: cmp((not x['important'], x['name']),
@@ -832,147 +892,146 @@ class AnnotationObserver(buildstep.LogLineObserver):
 
   def handleOutputLine(self, line):
     """This is called once with each line of the test log."""
-    # Add \n if not there, which seems to be the case for log lines from
-    # windows agents, but not others.
-    if not line.endswith('\n'):
-      line += '\n'
     # Handle initial setup here, as step_status might not exist yet at init.
     self.initialSection()
 
+    annotator.MatchAnnotation(line.rstrip(), self)
 
+  def SET_BUILD_PROPERTY(self, name, value):
+    # Support: @@@SET_BUILD_PROPERTY@<name>@<json>@@@
+    # Sets the property and indicates that it came from an annoation on the
+    # current step.
+    self.command.build.setProperty(name, json.loads(value), 'Annotation(%s)'
+                                   % self.cursor['name'])
+
+  def STEP_LOG_LINE(self, log_label, log_line):
     # Support: @@@STEP_LOG_LINE@<label>@<line>@@@ (add log to step)
     # Appends a line to the log's array. When STEP_LOG_END is called,
     # that will finalize the log and call addCompleteLog().
-    m = re.match('^@@@STEP_LOG_LINE@(.*)@(.*)@@@', line)
-    if m:
-      log_label = m.group(1)
-      log_line = m.group(2)
-      current_logs = self.cursor['annotated_logs']
-      current_logs[log_label] = current_logs.get(log_label, []) + [log_line]
+    current_logs = self.cursor['annotated_logs']
+    current_logs[log_label] = current_logs.get(log_label, []) + [log_line]
 
-    # Support: @@@STEP_LOG_END@<label>@<line>@@@ (finalizes log to step)
-    m = re.match('^@@@STEP_LOG_END@(.*)@@@', line)
-    if m:
-      log_label = m.group(1)
-      current_logs = self.cursor['annotated_logs']
-      log_text = '\n'.join(current_logs.get(log_label, []))
-      addLogToStep(self.cursor['step'], log_label, log_text)
+  def STEP_LOG_END(self, log_label):
+    # Support: @@@STEP_LOG_END@<label>@@@ (finalizes log to step)
+    current_logs = self.cursor['annotated_logs']
+    log_text = '\n'.join(current_logs.get(log_label, []))
+    addLogToStep(self.cursor['step'], log_label, log_text)
 
+  def STEP_LOG_END_PERF(self, log_label, perf_dashboard_name):
     # Support: @@@STEP_LOG_END_PERF@<label>@<line>@@@
     # (finalizes log to step, marks it as being a perf step
     # requiring logs to be stored on the master)
-    m = re.match('^@@@STEP_LOG_END_PERF@(.*)@(.*)@@@', line)
-    if m:
-      log_label = m.group(1)
-      perf_dashboard_name = m.group(2)
-      current_logs = self.cursor['annotated_logs']
-      log_text = '\n'.join(current_logs.get(log_label, [])) + '\n'
+    current_logs = self.cursor['annotated_logs']
+    log_text = '\n'.join(current_logs.get(log_label, [])) + '\n'
 
-      report_link = None
-      output_dir = None
-      if self.perf_id:
-        report_link, output_dir, _ = self._PerfStepMappings(self.show_perf,
-                                                            self.perf_id,
-                                                            perf_dashboard_name)
-        if report_link:
-          # It's harmless to send the results URL more than once, but it
-          # clutters up the logs.
-          if 'results' not in (x for x, _ in self.cursor['links']):
-            self.addLinkToCursor('results', report_link)
+    report_link = None
+    output_dir = None
+    if self.perf_id:
+      report_link, output_dir, _ = self._PerfStepMappings(
+          self.show_perf, self.perf_id, perf_dashboard_name,
+          self.perf_report_url_suffix)
 
-      PERF_EXPECTATIONS_PATH = ('../../scripts/master/log_parser/'
-                                'perf_expectations/')
-      perf_output_dir = None
-      if output_dir:
-        output_dir = chromium_utils.AbsoluteCanonicalPath(output_dir)
-        perf_output_dir = chromium_utils.AbsoluteCanonicalPath(output_dir,
-            PERF_EXPECTATIONS_PATH)
+    PERF_EXPECTATIONS_PATH = ('../../scripts/master/log_parser/'
+                              'perf_expectations/')
+    perf_output_dir = None
+    if output_dir:
+      output_dir = chromium_utils.AbsoluteCanonicalPath(output_dir)
+      perf_output_dir = chromium_utils.AbsoluteCanonicalPath(output_dir,
+          PERF_EXPECTATIONS_PATH)
 
-      if report_link and output_dir:
-        MakeOutputDirectory(output_dir)
-        if log_label == self.GRAPH_LIST:
-          self._SaveGraphInfo(log_text, output_dir)
-        else:
-          Prepend(log_label, log_text, output_dir, perf_output_dir)
+    if report_link and output_dir:
+      MakeOutputDirectory(output_dir)
+      if log_label == self.GRAPH_LIST:
+        self._SaveGraphInfo(log_text, output_dir)
+      else:
+        Prepend(log_label, log_text, output_dir, perf_output_dir)
 
+  def STEP_LINK(self, link_label, link_url):
     # Support: @@@STEP_LINK@<name>@<url>@@@ (emit link)
     # Also support depreceated @@@link@<name>@<url>@@@
-    m = re.match('^@@@STEP_LINK@(.*)@(.*)@@@', line)
-    if not m:
-      m = re.match('^@@@link@(.*)@(.*)@@@', line)
-    if m:
-      link_label = m.group(1)
-      link_url = m.group(2)
-      self.addLinkToCursor(link_label, link_url)
+    self.addLinkToCursor(link_label, link_url)
+
+  def STEP_STARTED(self):
     # Support: @@@STEP_STARTED@@@ (start a step at cursor)
-    if line.startswith('@@@STEP_STARTED@@@'):
-      self.startStep(self.cursor)
+    self.startStep(self.cursor)
+
+  def STEP_CLOSED(self):
     # Support: @@@STEP_CLOSED@@@
-    if line.startswith('@@@STEP_CLOSED@@@'):
-      self.finishCursor()
-      self.cursor = self.sections[0]
+    self.finishCursor()
+    self.cursor = self.sections[0]
+
+  def STEP_WARNINGS(self):
     # Support: @@@STEP_WARNINGS@@@ (warn on a stage)
     # Also support deprecated @@@BUILD_WARNINGS@@@
-    if (line.startswith('@@@STEP_WARNINGS@@@') or
-        line.startswith('@@@BUILD_WARNINGS@@@')):
-      self.updateStepStatus(builder.WARNINGS)
+    self.updateStepStatus(builder.WARNINGS)
+
+  def STEP_FAILURE(self):
     # Support: @@@STEP_FAILURE@@@ (fail a stage)
     # Also support deprecated @@@BUILD_FAILED@@@
-    if (line.startswith('@@@STEP_FAILURE@@@') or
-        line.startswith('@@@BUILD_FAILED@@@')):
-      self.updateStepStatus(builder.FAILURE)
+    self.updateStepStatus(builder.FAILURE)
+
+  def STEP_EXCEPTION(self):
     # Support: @@@STEP_EXCEPTION@@@ (exception on a stage)
     # Also support deprecated @@@BUILD_FAILED@@@
-    if (line.startswith('@@@STEP_EXCEPTION@@@') or
-        line.startswith('@@@BUILD_EXCEPTION@@@')):
-      self.updateStepStatus(builder.EXCEPTION)
+    self.updateStepStatus(builder.EXCEPTION)
+
+  def HALT_ON_FAILURE(self):
     # Support: @@@HALT_ON_FAILURE@@@ (halt if a step fails immediately)
-    if line.startswith('@@@HALT_ON_FAILURE@@@'):
-      self.halt_on_failure = True
+    self.halt_on_failure = True
+
+  def HONOR_ZERO_RETURN_CODE(self):
     # Support: @@@HONOR_ZERO_RETURN_CODE@@@ (succeed on 0 return, even if some
     #     steps have failed)
-    if line.startswith('@@@HONOR_ZERO_RETURN_CODE@@@'):
-      self.honor_zero_return_code = True
+    self.honor_zero_return_code = True
+
+  def STEP_CLEAR(self):
     # Support: @@@STEP_CLEAR@@@ (reset step description)
-    if line.startswith('@@@STEP_CLEAR@@@'):
-      self.cursor['step_text'] = []
-      self.updateCursorText()
+    self.cursor['step_text'] = []
+    self.updateCursorText()
+
+  def STEP_SUMMARY_CLEAR(self):
     # Support: @@@STEP_SUMMARY_CLEAR@@@ (reset step summary)
-    if line.startswith('@@@STEP_SUMMARY_CLEAR@@@'):
-      self.cursor['step_summary_text'] = []
-      self.updateCursorText()
+    self.cursor['step_summary_text'] = []
+    self.updateCursorText()
+
+  def STEP_TEXT(self, msg):
     # Support: @@@STEP_TEXT@<msg>@@@
-    m = re.match('^@@@STEP_TEXT@(.*)@@@', line)
-    if m:
-      self.cursor['step_text'].append(m.group(1))
-      self.updateCursorText()
+    self.cursor['step_text'].append(msg)
+    self.updateCursorText()
+
+  def STEP_SUMMARY_TEXT(self, msg):
     # Support: @@@STEP_SUMMARY_TEXT@<msg>@@@
-    m = re.match('^@@@STEP_SUMMARY_TEXT@(.*)@@@', line)
-    if m:
-      self.cursor['step_summary_text'].append(m.group(1))
-      self.updateCursorText()
+    self.cursor['step_summary_text'].append(msg)
+    self.updateCursorText()
+
+  def SEED_STEP(self, step_name):
     # Support: @@@SEED_STEP <stepname>@@@ (seed a new section)
-    m = re.match('^@@@SEED_STEP (.*)@@@', line)
-    if m:
-      step_name = m.group(1)
-      # Add new one.
-      self.addSection(step_name)
+    self.addSection(step_name)
+
+  def SEED_STEP_TEXT(self, step_name, step_text):
+    # Support: @@@SEED_STEP_TEXT@<stepname>@<step text@@@ (change step text of a
+    # seeded step)
+    target = self.lookupCursor(step_name)
+    target['step_text'].append(step_text)
+    updateText(target)
+
+  def STEP_CURSOR(self, step_name):
     # Support: @@@STEP_CURSOR <stepname>@@@ (set cursor to specified section)
-    m = re.match('^@@@STEP_CURSOR (.*)@@@', line)
-    if m:
-      step_name = m.group(1)
-      self.cursor = self.lookupCursor(step_name)
+    self.cursor = self.lookupCursor(step_name)
+
+  def BUILD_STEP(self, step_name):
     # Support: @@@BUILD_STEP <step_name>@@@ (start a new section)
-    m = re.match('^@@@BUILD_STEP (.*)@@@', line)
-    if m:
-      step_name = m.group(1)
-      # Ignore duplicate consecutive step labels (for robustness).
-      if step_name != self.sections[-1]['name']:
+    # Ignore duplicate consecutive step labels (for robustness).
+    if step_name != self.sections[-1]['name']:
+      # Don't close already closed steps or the initial step
+      # when using BUILD_STEP.
+      if not (self.cursor['step'].isFinished() or
+              self.cursor == self.sections[0]):
         # Finish up last section.
         self.finishCursor()
-        section = self.addSection(step_name)
-        self.startStep(section)
-        self.cursor = section
+      section = self.addSection(step_name)
+      self.startStep(section)
+      self.cursor = section
 
   def handleReturnCode(self, return_code):
     # Treat all non-zero return codes as failure.
@@ -986,7 +1045,8 @@ class AnnotationObserver(buildstep.LogLineObserver):
         self.annotate_status = builder.SUCCESS
     else:
       self.annotate_status = builder.FAILURE
-      self.finishCursor(builder.FAILURE)
+      self.finishCursor(builder.FAILURE,
+                        reason='return code was %d.' % return_code)
     self.cleanupSteps()
 
 
@@ -996,11 +1056,14 @@ class AnnotatedCommand(ProcessLogShellStep):
   def __init__(self, target=None, *args, **kwargs):
     clobber = ''
     perf_id = None
+    perf_report_url_suffix = None
     show_perf = None
     if 'factory_properties' in kwargs:
       if kwargs['factory_properties'].get('clobber'):
         clobber = '1'
       perf_id = kwargs['factory_properties'].get('perf_id')
+      perf_report_url_suffix = kwargs['factory_properties'].get(
+          'perf_report_url_suffix')
       show_perf = kwargs['factory_properties'].get('show_perf_results')
       # kwargs is passed eventually to RemoteShellCommand(**kwargs).
       # This constructor (in buildbot/process/buildstep.py) does not
@@ -1026,9 +1089,9 @@ class AnnotatedCommand(ProcessLogShellStep):
     kwargs['env'] = env
 
     ProcessLogShellStep.__init__(self, *args, **kwargs)
-    self.script_observer = AnnotationObserver(self, show_perf=show_perf,
-                                              perf_id=perf_id,
-                                              target=target)
+    self.script_observer = AnnotationObserver(
+        self, show_perf=show_perf, perf_id=perf_id,
+        perf_report_url_suffix=perf_report_url_suffix, target=target)
     self.addLogObserver('stdio', self.script_observer)
 
   def describe(self, done=False):
@@ -1052,7 +1115,8 @@ class AnnotatedCommand(ProcessLogShellStep):
                                x.name != 'preamble']
 
   def interrupt(self, reason):
-    self.script_observer.finishCursor(builder.EXCEPTION)
+    self.script_observer.finishCursor(builder.EXCEPTION,
+                                      reason='step was interrupted.')
     self.script_observer.cleanupSteps()
     self._removePreamble()
     return ProcessLogShellStep.interrupt(self, reason)

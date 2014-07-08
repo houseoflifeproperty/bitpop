@@ -7,6 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/weak_ptr.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/speech_recognition_session_context.h"
 #include "content/public/common/speech_recognition_grammar.h"
@@ -21,7 +22,9 @@ struct CONTENT_EXPORT SpeechRecognitionSessionConfig {
   SpeechRecognitionSessionConfig();
   ~SpeechRecognitionSessionConfig();
 
+  // TODO(hans): The legacy API is dead; remove this flag (crbug.com/223198).
   bool is_legacy_api;
+
   std::string language;
   SpeechRecognitionGrammarArray grammars;
   std::string origin_url;
@@ -31,7 +34,7 @@ struct CONTENT_EXPORT SpeechRecognitionSessionConfig {
   uint32 max_hypotheses;
   SpeechRecognitionSessionContext initial_context;
   scoped_refptr<net::URLRequestContextGetter> url_request_context_getter;
-  SpeechRecognitionEventListener* event_listener;
+  base::WeakPtr<SpeechRecognitionEventListener> event_listener;
 };
 
 }  // namespace content

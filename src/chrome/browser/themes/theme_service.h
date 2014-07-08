@@ -13,15 +13,21 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "content/public/browser/notification_observer.h"
+#include "content/public/browser/notification_registrar.h"
 #include "ui/base/theme_provider.h"
 
+class CustomThemeSupplier;
 class BrowserThemePack;
-class ThemeServiceTest;
 class ThemeSyncableService;
-class FilePath;
 class Profile;
+
+namespace base {
+class FilePath;
+}
 
 namespace color_utils {
 struct HSL;
@@ -33,6 +39,10 @@ class Extension;
 
 namespace gfx {
 class Image;
+}
+
+namespace theme_service_internal {
+class ThemeServiceTest;
 }
 
 namespace ui {
@@ -47,105 +57,15 @@ extern "C" NSString* const kBrowserThemeDidChangeNotification;
 #endif  // __OBJC__
 
 class ThemeService : public base::NonThreadSafe,
-                     public ProfileKeyedService,
+                     public content::NotificationObserver,
+                     public KeyedService,
                      public ui::ThemeProvider {
  public:
   // Public constants used in ThemeService and its subclasses:
-
-  // Strings used in alignment properties.
-  static const char* kAlignmentCenter;
-  static const char* kAlignmentTop;
-  static const char* kAlignmentBottom;
-  static const char* kAlignmentLeft;
-  static const char* kAlignmentRight;
-
-  // Strings used in tiling properties.
-  static const char* kTilingNoRepeat;
-  static const char* kTilingRepeatX;
-  static const char* kTilingRepeatY;
-  static const char* kTilingRepeat;
-
   static const char* kDefaultThemeID;
-
-  // Returns true if the image is themeable.  Safe to call on any thread.
-  static bool IsThemeableImage(int resource_id);
 
   ThemeService();
   virtual ~ThemeService();
-
-  enum {
-    COLOR_FRAME,
-    COLOR_FRAME_INACTIVE,
-    COLOR_FRAME_INCOGNITO,
-    COLOR_FRAME_INCOGNITO_INACTIVE,
-    COLOR_TOOLBAR,
-    COLOR_TOOLBAR_SEPARATOR,
-    COLOR_TAB_TEXT,
-    COLOR_BACKGROUND_TAB_TEXT,
-    COLOR_BOOKMARK_TEXT,
-    COLOR_NTP_BACKGROUND,
-    COLOR_NTP_TEXT,
-    COLOR_NTP_LINK,
-    COLOR_NTP_LINK_UNDERLINE,
-    COLOR_NTP_HEADER,
-    COLOR_NTP_SECTION,
-    COLOR_NTP_SECTION_TEXT,
-    COLOR_NTP_SECTION_LINK,
-    COLOR_NTP_SECTION_LINK_UNDERLINE,
-    COLOR_CONTROL_BACKGROUND,
-    COLOR_BUTTON_BACKGROUND,
-
-    // These colors don't have constant default values. They are derived from
-    // the runtime value of other colors.
-    COLOR_NTP_SECTION_HEADER_TEXT,
-    COLOR_NTP_SECTION_HEADER_TEXT_HOVER,
-    COLOR_NTP_SECTION_HEADER_RULE,
-    COLOR_NTP_SECTION_HEADER_RULE_LIGHT,
-    COLOR_NTP_TEXT_LIGHT,
-
-    TINT_BUTTONS,
-    TINT_FRAME,
-    TINT_FRAME_INACTIVE,
-    TINT_FRAME_INCOGNITO,
-    TINT_FRAME_INCOGNITO_INACTIVE,
-    TINT_BACKGROUND_TAB,
-    NTP_BACKGROUND_ALIGNMENT,
-    NTP_BACKGROUND_TILING,
-    NTP_LOGO_ALTERNATE
-#if defined(OS_MACOSX)
-    ,
-    COLOR_TOOLBAR_BEZEL = 1000,
-    COLOR_TOOLBAR_STROKE,
-    COLOR_TOOLBAR_STROKE_INACTIVE,
-    COLOR_TOOLBAR_BUTTON_STROKE,
-    COLOR_TOOLBAR_BUTTON_STROKE_INACTIVE,
-    GRADIENT_FRAME_INCOGNITO,
-    GRADIENT_FRAME_INCOGNITO_INACTIVE,
-    GRADIENT_TOOLBAR,
-    GRADIENT_TOOLBAR_INACTIVE,
-    GRADIENT_TOOLBAR_BUTTON,
-    GRADIENT_TOOLBAR_BUTTON_INACTIVE,
-    GRADIENT_TOOLBAR_BUTTON_PRESSED,
-    GRADIENT_TOOLBAR_BUTTON_PRESSED_INACTIVE
-#endif  // OS_MACOSX
-  };
-
-  // A bitfield mask for alignments.
-  enum Alignment {
-    ALIGN_CENTER = 0,
-    ALIGN_LEFT   = 1 << 0,
-    ALIGN_TOP    = 1 << 1,
-    ALIGN_RIGHT  = 1 << 2,
-    ALIGN_BOTTOM = 1 << 3,
-  };
-
-  // Background tiling choices.
-  enum Tiling {
-    NO_REPEAT = 0,
-    REPEAT_X = 1,
-    REPEAT_Y = 2,
-    REPEAT = 3
-  };
 
   virtual void Init(Profile* profile);
 
@@ -156,28 +76,27 @@ class ThemeService : public base::NonThreadSafe,
   virtual gfx::Image GetImageNamed(int id) const;
 
   // Overridden from ui::ThemeProvider:
+  virtual bool UsingNativeTheme() const OVERRIDE;
   virtual gfx::ImageSkia* GetImageSkiaNamed(int id) const OVERRIDE;
   virtual SkColor GetColor(int id) const OVERRIDE;
-  virtual bool GetDisplayProperty(int id, int* result) const OVERRIDE;
+  virtual int GetDisplayProperty(int id) const OVERRIDE;
   virtual bool ShouldUseNativeFrame() const OVERRIDE;
   virtual bool HasCustomImage(int id) const OVERRIDE;
   virtual base::RefCountedMemory* GetRawData(
       int id,
       ui::ScaleFactor scale_factor) const OVERRIDE;
 #if defined(OS_MACOSX)
-  virtual NSImage* GetNSImageNamed(int id, bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSImageColorNamed(int id,
-                                        bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSColor(int id, bool allow_default) const OVERRIDE;
-  virtual NSColor* GetNSColorTint(int id, bool allow_default) const OVERRIDE;
+  virtual NSImage* GetNSImageNamed(int id) const OVERRIDE;
+  virtual NSColor* GetNSImageColorNamed(int id) const OVERRIDE;
+  virtual NSColor* GetNSColor(int id) const OVERRIDE;
+  virtual NSColor* GetNSColorTint(int id) const OVERRIDE;
   virtual NSGradient* GetNSGradient(int id) const OVERRIDE;
-#elif defined(OS_POSIX) && !defined(TOOLKIT_VIEWS) && !defined(OS_ANDROID)
-  // This mismatch between what this class defines and whether or not it
-  // overrides ui::ThemeProvider is http://crbug.com/105040 .
-  // GdkPixbufs returned by GetPixbufNamed and GetRTLEnabledPixbufNamed are
-  // shared instances owned by the theme provider and should not be freed.
-  virtual GdkPixbuf* GetRTLEnabledPixbufNamed(int id) const OVERRIDE;
 #endif
+
+  // Overridden from content::NotificationObserver:
+  virtual void Observe(int type,
+                       const content::NotificationSource& source,
+                       const content::NotificationDetails& details) OVERRIDE;
 
   // Set the current theme to the theme defined in |extension|.
   // |extension| must already be added to this profile's
@@ -195,10 +114,6 @@ class ThemeService : public base::NonThreadSafe,
   // if we're using the GTK theme.
   virtual bool UsingDefaultTheme() const;
 
-  // Whether we're using the native theme (which may or may not be the
-  // same as the default theme).
-  virtual bool UsingNativeTheme() const;
-
   // Gets the id of the last installed theme. (The theme may have been further
   // locally customized.)
   virtual std::string GetThemeID() const;
@@ -211,45 +126,26 @@ class ThemeService : public base::NonThreadSafe,
   // destroyed, uninstalls all themes that aren't the currently selected.
   void OnInfobarDestroyed();
 
-  // Convert a bitfield alignment into a string like "top left". Public so that
-  // it can be used to generate CSS values. Takes a bitmask of Alignment.
-  static std::string AlignmentToString(int alignment);
-
-  // Parse alignments from something like "top left" into a bitmask of
-  // Alignment.
-  static int StringToAlignment(const std::string& alignment);
-
-  // Convert a tiling value into a string like "no-repeat". Public
-  // so that it can be used to generate CSS values. Takes a Tiling.
-  static std::string TilingToString(int tiling);
-
-  // Parse tiling values from something like "no-repeat" into a Tiling value.
-  static int StringToTiling(const std::string& tiling);
-
-  // Returns the default tint for the given tint |id| TINT_* enum value.
-  static color_utils::HSL GetDefaultTint(int id);
-
-  // Returns the default color for the given color |id| COLOR_* enum value.
-  static SkColor GetDefaultColor(int id);
-
-  // Returns true and sets |result| to the requested default property, if |id|
-  // is valid.
-  static bool GetDefaultDisplayProperty(int id, int* result);
-
-  // Returns the set of IDR_* resources that should be tinted.
-  static const std::set<int>& GetTintableToolbarButtons();
-
-  // Remove preference values for themes that are no longer in use.
-  void RemoveUnusedThemes();
+  // Uninstall theme extensions which are no longer in use. |ignore_infobars| is
+  // whether unused themes should be removed despite a theme infobar being
+  // visible.
+  void RemoveUnusedThemes(bool ignore_infobars);
 
   // Returns the syncable service for syncing theme. The returned service is
   // owned by |this| object.
   virtual ThemeSyncableService* GetThemeSyncableService() const;
 
   // Save the images to be written to disk, mapping file path to id.
-  typedef std::map<FilePath, int> ImagesDiskCache;
+  typedef std::map<base::FilePath, int> ImagesDiskCache;
 
  protected:
+  // Set a custom default theme instead of the normal default theme.
+  virtual void SetCustomDefaultTheme(
+      scoped_refptr<CustomThemeSupplier> theme_supplier);
+
+  // Returns true if the ThemeService should use the native theme on startup.
+  virtual bool ShouldInitWithNativeTheme() const;
+
   // Get the specified tint - |id| is one of the TINT_* enum values.
   color_utils::HSL GetTint(int id) const;
 
@@ -268,16 +164,38 @@ class ThemeService : public base::NonThreadSafe,
 #endif  // OS_MACOSX
 
   // Clears the platform-specific caches. Do not call directly; it's called
-  // from ClearCaches().
+  // from ClearAllThemeData().
   virtual void FreePlatformCaches();
 
-  Profile* profile() { return profile_; }
+  Profile* profile() const { return profile_; }
+
+  void set_ready() { ready_ = true; }
+
+  const CustomThemeSupplier* get_theme_supplier() const {
+    return theme_supplier_.get();
+  }
+
+  // True if the theme service is ready to be used.
+  // TODO(pkotwicz): Add DCHECKS to the theme service's getters once
+  // ThemeSource no longer uses the ThemeService when it is not ready.
+  bool ready_;
 
  private:
-  friend class ThemeServiceTest;
+  friend class theme_service_internal::ThemeServiceTest;
+
+  // Called when the extension service is ready.
+  void OnExtensionServiceReady();
+
+  // Migrate the theme to the new theme pack schema by recreating the data pack
+  // from the extension.
+  void MigrateTheme();
+
+  // Replaces the current theme supplier with a new one and calls
+  // StopUsingTheme() or StartUsingTheme() as appropriate.
+  void SwapThemeSupplier(scoped_refptr<CustomThemeSupplier> theme_supplier);
 
   // Saves the filename of the cached theme pack.
-  void SavePackName(const FilePath& pack_path);
+  void SavePackName(const base::FilePath& pack_path);
 
   // Save the id of the last theme installed.
   void SaveThemeID(const std::string& id);
@@ -286,20 +204,23 @@ class ThemeService : public base::NonThreadSafe,
   // case we don't have a theme pack).
   void BuildFromExtension(const extensions::Extension* extension);
 
-#if defined(TOOLKIT_GTK)
-  // Loads an image and flips it horizontally if |rtl_enabled| is true.
-  GdkPixbuf* GetPixbufImpl(int id, bool rtl_enabled) const;
-#endif
+  // Returns true if the profile belongs to a managed user.
+  bool IsManagedUser() const;
 
-#if defined(TOOLKIT_GTK)
-  typedef std::map<int, GdkPixbuf*> GdkPixbufMap;
-  mutable GdkPixbufMap gdk_pixbufs_;
-#elif defined(OS_MACOSX)
+  // Sets the current theme to the managed user theme. Should only be used for
+  // managed user profiles.
+  void SetManagedUserTheme();
+
+  // Sets the managed user theme if the user has no custom theme yet.
+  void OnManagedUserInitialized();
+
+#if defined(OS_MACOSX)
+  // |nsimage_cache_| retains the images it has cached.
   typedef std::map<int, NSImage*> NSImageMap;
   mutable NSImageMap nsimage_cache_;
 
-  // The bool member of the pair is whether the color is a default color.
-  typedef std::map<int, std::pair<NSColor*, bool> > NSColorMap;
+  // |nscolor_cache_| retains the colors it has cached.
+  typedef std::map<int, NSColor*> NSColorMap;
   mutable NSColorMap nscolor_cache_;
 
   typedef std::map<int, NSGradient*> NSGradientMap;
@@ -309,12 +230,23 @@ class ThemeService : public base::NonThreadSafe,
   ui::ResourceBundle& rb_;
   Profile* profile_;
 
-  scoped_refptr<BrowserThemePack> theme_pack_;
+  scoped_refptr<CustomThemeSupplier> theme_supplier_;
+
+  // The id of the theme extension which has just been installed but has not
+  // been loaded yet. The theme extension with |installed_pending_load_id_| may
+  // never be loaded if the install is due to updating a disabled theme.
+  // |pending_install_id_| should be set to |kDefaultThemeID| if there are no
+  // recently installed theme extensions
+  std::string installed_pending_load_id_;
 
   // The number of infobars currently displayed.
   int number_of_infobars_;
 
+  content::NotificationRegistrar registrar_;
+
   scoped_ptr<ThemeSyncableService> theme_syncable_service_;
+
+  base::WeakPtrFactory<ThemeService> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ThemeService);
 };

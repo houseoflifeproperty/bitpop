@@ -9,6 +9,8 @@
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "gtest/gtest.h"
 
+#include "native_client/src/trusted/service_runtime/include/bits/mman.h"
+
 class SelMemTest : public testing::Test {
  protected:
   virtual void SetUp();
@@ -35,9 +37,11 @@ TEST_F(SelMemTest, AddTest) {
     NaClVmmapAdd(&mem_map,
                  start_page_num*i,
                  i,
-                 PROT_READ | PROT_EXEC,
-                 PROT_READ | PROT_EXEC,
-                 NACL_VMMAP_ENTRY_ANONYMOUS);
+                 NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                 NACL_ABI_MAP_PRIVATE,
+                 NULL,
+                 0,
+                 0);
     EXPECT_EQ(i, static_cast<int>(mem_map.nvalid));
     EXPECT_EQ(5, static_cast<int>(mem_map.size));
   }
@@ -46,9 +50,11 @@ TEST_F(SelMemTest, AddTest) {
   NaClVmmapAdd(&mem_map,
                start_page_num,
                2,
-               PROT_READ,
-               PROT_READ,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
   EXPECT_EQ(6, static_cast<int>(mem_map.nvalid));
   EXPECT_EQ(10, static_cast<int>(mem_map.size));
 
@@ -64,18 +70,22 @@ TEST_F(SelMemTest, UpdateTest) {
   NaClVmmapAddWithOverwrite(&mem_map,
                             32,
                             12,
-                            PROT_READ | PROT_EXEC,
-                            PROT_READ | PROT_EXEC,
-                            NACL_VMMAP_ENTRY_ANONYMOUS);
+                            NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                            NACL_ABI_MAP_PRIVATE,
+                            NULL,
+                            0,
+                            0);
   EXPECT_EQ(1, static_cast<int>(mem_map.nvalid));
 
   // no overlap
   NaClVmmapAddWithOverwrite(&mem_map,
                             64,
                             10,
-                            PROT_READ,
-                            PROT_READ,
-                            NACL_VMMAP_ENTRY_ANONYMOUS);
+                            NACL_ABI_PROT_READ,
+                            NACL_ABI_MAP_PRIVATE,
+                            NULL,
+                            0,
+                            0);
   // vmmap is [32, 44], [64, 74]
   EXPECT_EQ(2, static_cast<int>(mem_map.nvalid));
 
@@ -83,9 +93,11 @@ TEST_F(SelMemTest, UpdateTest) {
   NaClVmmapAddWithOverwrite(&mem_map,
                             42,
                             24,
-                            PROT_READ,
-                            PROT_READ,
-                            NACL_VMMAP_ENTRY_ANONYMOUS);
+                            NACL_ABI_PROT_READ,
+                            NACL_ABI_MAP_PRIVATE,
+                            NULL,
+                            0,
+                            0);
   // vmmap is [32, 41], [42, 66], [67, 74]
   EXPECT_EQ(3, static_cast<int>(mem_map.nvalid));
 
@@ -93,9 +105,11 @@ TEST_F(SelMemTest, UpdateTest) {
   NaClVmmapAddWithOverwrite(&mem_map,
                             36,
                             2,
-                            PROT_READ | PROT_EXEC,
-                            PROT_READ | PROT_EXEC,
-                            NACL_VMMAP_ENTRY_ANONYMOUS);
+                            NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                            NACL_ABI_MAP_PRIVATE,
+                            NULL,
+                            0,
+                            0);
   // vmmap is [32, 35], [34, 36], [37, 41], [42, 66], [67, 74]
   EXPECT_EQ(5, static_cast<int>(mem_map.nvalid));
 
@@ -103,17 +117,18 @@ TEST_F(SelMemTest, UpdateTest) {
   NaClVmmapAddWithOverwrite(&mem_map,
                             32,
                             6,
-                            PROT_READ | PROT_EXEC,
-                            PROT_READ | PROT_EXEC,
-                            NACL_VMMAP_ENTRY_ANONYMOUS);
+                            NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                            NACL_ABI_MAP_PRIVATE,
+                            NULL,
+                            0,
+                            0);
   // vmmap is [32, 36], [37, 41], [42, 66], [67, 74]
   EXPECT_EQ(4, static_cast<int>(mem_map.nvalid));
 
   // remove existing mappings
   NaClVmmapRemove(&mem_map,
                   40,
-                  30,
-                  NACL_VMMAP_ENTRY_ANONYMOUS);
+                  30);
   // vmmap is [32, 36], [37, 39], [71, 74]
   EXPECT_EQ(3, static_cast<int>(mem_map.nvalid));
 
@@ -136,9 +151,11 @@ TEST_F(SelMemTest, FindPageTest) {
     NaClVmmapAdd(&mem_map,
                  start_page_num*i,
                  2*i,
-                 PROT_READ | PROT_EXEC,
-                 PROT_READ | PROT_EXEC,
-                 NACL_VMMAP_ENTRY_ANONYMOUS);
+                 NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+                 NACL_ABI_MAP_PRIVATE,
+                 NULL,
+                 0,
+                 0);
     EXPECT_EQ(i, static_cast<int>(mem_map.nvalid));
   }
   // vmmap is [32, 34], [64, 68], [96, 102], [128, 136],
@@ -173,9 +190,11 @@ TEST_F(SelMemTest, FindSpaceTest) {
   NaClVmmapAdd(&mem_map,
                32,
                10,
-               PROT_READ | PROT_EXEC,
-               PROT_READ | PROT_EXEC,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
   EXPECT_EQ(1, static_cast<int>(mem_map.nvalid));
   // one entry only
   ret_code = NaClVmmapFindSpace(&mem_map, 2);
@@ -184,9 +203,11 @@ TEST_F(SelMemTest, FindSpaceTest) {
   NaClVmmapAdd(&mem_map,
                64,
                10,
-               PROT_READ | PROT_EXEC,
-               PROT_READ | PROT_EXEC,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
   EXPECT_EQ(2U, mem_map.nvalid);
 
   // the space is [32, 42], [64, 74]
@@ -199,9 +220,11 @@ TEST_F(SelMemTest, FindSpaceTest) {
   NaClVmmapAdd(&mem_map,
                96,
                10,
-               PROT_READ | PROT_EXEC,
-               PROT_READ | PROT_EXEC,
-               NACL_VMMAP_ENTRY_ANONYMOUS);
+               NACL_ABI_PROT_READ | NACL_ABI_PROT_EXEC,
+               NACL_ABI_MAP_PRIVATE,
+               NULL,
+               0,
+               0);
   EXPECT_EQ(3U, mem_map.nvalid);
 
   // vmmap is [32, 42], [64, 74], [96, 106]

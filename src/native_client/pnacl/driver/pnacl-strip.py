@@ -10,6 +10,8 @@
 #
 
 import driver_tools
+import filetype
+import shutil
 import pathtools
 from driver_env import env
 from driver_log import Log
@@ -18,7 +20,6 @@ EXTRA_ENV = {
   'INPUTS'             : '',
   'OUTPUT'             : '',
   'MODE'               : 'all',
-  'DO_WRAP'            : '1',
 
   'OPT_FLAGS_all'      : '-disable-opt --strip',
   'OPT_FLAGS_debug'    : '-disable-opt --strip-debug',
@@ -35,8 +36,6 @@ EXTRA_ENV = {
 StripPatterns = [
     ( ('-o','(.*)'),     "env.set('OUTPUT', pathtools.normalize($0))"),
     ( ('-o','(.*)'),     "env.set('OUTPUT', pathtools.normalize($0))"),
-
-    ( '--do-not-wrap',   "env.set('DO_WRAP', '0')"),
 
     ( '--strip-all',     "env.set('MODE', 'all')"),
     ( '-s',              "env.set('MODE', 'all')"),
@@ -72,14 +71,22 @@ def main(argv):
       f_output = output
     else:
       f_output = f
-    if driver_tools.IsBitcode(f):
+    if filetype.IsPNaClBitcode(f):
+      # PNaCl-format bitcode has no symbols, i.e. it is already stripped.
+      if f != f_output:
+        shutil.copyfile(f, f_output)
+    elif filetype.IsLLVMBitcode(f):
       driver_tools.RunWithEnv('${RUN_OPT}', input=f, output=f_output)
-      if env.getbool('DO_WRAP'):
-        driver_tools.WrapBitcode(f_output)
-    elif driver_tools.IsELF(f):
+    elif filetype.IsELF(f) or filetype.IsNativeArchive(f):
       driver_tools.RunWithEnv('${RUN_STRIP}', input=f, output=f_output)
+    elif filetype.IsBitcodeArchive(f):
+      # The strip tool supports native archives, but it does not support the
+      # LLVM gold plugin so cannot handle bitcode.  There is also no bitcode
+      # tool like opt that support archives.
+      Log.Fatal('%s: strip does not support bitcode archives',
+                pathtools.touser(f))
     else:
-      Log.Fatal('%s: File is neither ELF nor bitcode', pathtools.touser(f))
+      Log.Fatal('%s: File is neither ELF, nor bitcode', pathtools.touser(f))
   return 0
 
 

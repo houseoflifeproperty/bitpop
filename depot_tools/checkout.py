@@ -22,6 +22,18 @@ import scm
 import subprocess2
 
 
+if sys.platform in ('cygwin', 'win32'):
+  # Disable timeouts on Windows since we can't have shells with timeouts.
+  GLOBAL_TIMEOUT = None
+  FETCH_TIMEOUT = None
+else:
+  # Default timeout of 15 minutes.
+  GLOBAL_TIMEOUT = 15*60
+  # Use a larger timeout for checkout since it can be a genuinely slower
+  # operation.
+  FETCH_TIMEOUT = 30*60
+
+
 def get_code_review_setting(path, key,
     codereview_settings_file='codereview.settings'):
   """Parses codereview.settings and return the value for the key if present.
@@ -192,12 +204,19 @@ class RawCheckout(CheckoutBase):
               cmd = ['patch', '-u', '--binary', '-p%s' % p.patchlevel]
               if verbose:
                 cmd.append('--verbose')
-              stdout.append(
-                  subprocess2.check_output(
-                      cmd,
-                      stdin=p.get(False),
-                      stderr=subprocess2.STDOUT,
-                      cwd=self.project_path))
+              env = os.environ.copy()
+              env['TMPDIR'] = tempfile.mkdtemp(prefix='crpatch')
+              try:
+                stdout.append(
+                    subprocess2.check_output(
+                        cmd,
+                        stdin=p.get(False),
+                        stderr=subprocess2.STDOUT,
+                        cwd=self.project_path,
+                        timeout=GLOBAL_TIMEOUT,
+                        env=env))
+              finally:
+                shutil.rmtree(env['TMPDIR'])
             elif p.is_new and not os.path.exists(filepath):
               # There is only a header. Just create the file.
               open(filepath, 'w').close()
@@ -276,6 +295,7 @@ class SvnMixIn(object):
     """Runs svn and throws an exception if the command failed."""
     kwargs.setdefault('cwd', self.project_path)
     kwargs.setdefault('stdout', self.VOID)
+    kwargs.setdefault('timeout', GLOBAL_TIMEOUT)
     return subprocess2.check_call_out(
         self._add_svn_flags(args, False), **kwargs)
 
@@ -288,6 +308,7 @@ class SvnMixIn(object):
     return subprocess2.check_output(
         self._add_svn_flags(args, True, credentials),
         stderr=subprocess2.STDOUT,
+        timeout=GLOBAL_TIMEOUT,
         **kwargs)
 
   @staticmethod
@@ -385,9 +406,19 @@ class SvnCheckout(CheckoutBase, SvnMixIn):
                 '--force',
                 '--no-backup-if-mismatch',
               ]
-              stdout.append(
-                  subprocess2.check_output(
-                    cmd, stdin=p.get(False), cwd=self.project_path))
+              env = os.environ.copy()
+              env['TMPDIR'] = tempfile.mkdtemp(prefix='crpatch')
+              try:
+                stdout.append(
+                    subprocess2.check_output(
+                      cmd,
+                      stdin=p.get(False),
+                      cwd=self.project_path,
+                      timeout=GLOBAL_TIMEOUT,
+                      env=env))
+              finally:
+                shutil.rmtree(env['TMPDIR'])
+
             elif p.is_new and not os.path.exists(filepath):
               # There is only a header. Just create the file if it doesn't
               # exist.
@@ -479,15 +510,20 @@ class SvnCheckout(CheckoutBase, SvnMixIn):
     flags = ['--ignore-externals']
     if revision:
       flags.extend(['--revision', str(revision)])
-    if not os.path.isdir(self.project_path):
+    if os.path.isdir(self.project_path):
+      # This may remove any part (or all) of the checkout.
+      scm.SVN.Revert(self.project_path, no_ignore=True)
+
+    if os.path.isdir(self.project_path):
+      # Revive files that were deleted in scm.SVN.Revert().
+      self._check_call_svn(['update', '--force'] + flags,
+                           timeout=FETCH_TIMEOUT)
+    else:
       logging.info(
           'Directory %s is not present, checking it out.' % self.project_path)
       self._check_call_svn(
-          ['checkout', self.svn_url, self.project_path] + flags, cwd=None)
-    else:
-      scm.SVN.Revert(self.project_path, no_ignore=True)
-      # Revive files that were deleted in scm.SVN.Revert().
-      self._check_call_svn(['update', '--force'] + flags)
+          ['checkout', self.svn_url, self.project_path] + flags, cwd=None,
+          timeout=FETCH_TIMEOUT)
     return self._get_revision()
 
   def _get_revision(self):
@@ -514,16 +550,21 @@ class SvnCheckout(CheckoutBase, SvnMixIn):
     return len([l for l in out.splitlines() if l.startswith('r')]) - 1
 
 
-class GitCheckoutBase(CheckoutBase):
-  """Base class for git checkout. Not to be used as-is."""
-  def __init__(self, root_dir, project_name, remote_branch,
-      post_processors=None):
-    super(GitCheckoutBase, self).__init__(
-        root_dir, project_name, post_processors)
-    # There is no reason to not hardcode it.
-    self.remote = 'origin'
+class GitCheckout(CheckoutBase):
+  """Manages a git checkout."""
+  def __init__(self, root_dir, project_name, remote_branch, git_url,
+      commit_user, post_processors=None):
+    super(GitCheckout, self).__init__(root_dir, project_name, post_processors)
+    self.git_url = git_url
+    self.commit_user = commit_user
     self.remote_branch = remote_branch
+    # The working branch where patches will be applied. It will track the
+    # remote branch.
     self.working_branch = 'working_branch'
+    # There is no reason to not hardcode origin.
+    self.remote = 'origin'
+    # There is no reason to not hardcode master.
+    self.master_branch = 'master'
 
   def prepare(self, revision):
     """Resets the git repository in a clean state.
@@ -531,10 +572,26 @@ class GitCheckoutBase(CheckoutBase):
     Checks it out if not present and deletes the working branch.
     """
     assert self.remote_branch
-    assert os.path.isdir(self.project_path)
-    self._check_call_git(['reset', '--hard', '--quiet'])
+    assert self.git_url
+
+    if not os.path.isdir(self.project_path):
+      # Clone the repo if the directory is not present.
+      logging.info(
+          'Checking out %s in %s', self.project_name, self.project_path)
+      self._check_call_git(
+          ['clone', self.git_url, '-b', self.remote_branch, self.project_path],
+          cwd=None, timeout=FETCH_TIMEOUT)
+    else:
+      # Throw away all uncommitted changes in the existing checkout.
+      self._check_call_git(['checkout', self.remote_branch])
+      self._check_call_git(
+          ['reset', '--hard', '--quiet',
+           '%s/%s' % (self.remote, self.remote_branch)])
+
     if revision:
       try:
+        # Look if the commit hash already exist. If so, we can skip a
+        # 'git fetch' call.
         revision = self._check_output_git(['rev-parse', revision])
       except subprocess.CalledProcessError:
         self._check_call_git(
@@ -543,16 +600,37 @@ class GitCheckoutBase(CheckoutBase):
       self._check_call_git(['checkout', '--force', '--quiet', revision])
     else:
       branches, active = self._branches()
-      if active != 'master':
-        self._check_call_git(['checkout', '--force', '--quiet', 'master'])
-      self._check_call_git(['pull', self.remote, self.remote_branch, '--quiet'])
+      if active != self.master_branch:
+        self._check_call_git(
+            ['checkout', '--force', '--quiet', self.master_branch])
+      self._sync_remote_branch()
+
       if self.working_branch in branches:
         self._call_git(['branch', '-D', self.working_branch])
+    return self._get_head_commit_hash()
+
+  def _sync_remote_branch(self):
+    """Syncs the remote branch."""
+    # We do a 'git pull origin master:refs/remotes/origin/master' instead of
+    # 'git pull origin master' because from the manpage for git-pull:
+    #   A parameter <ref> without a colon is equivalent to <ref>: when
+    #   pulling/fetching, so it merges <ref> into the current branch without
+    #   storing the remote branch anywhere locally.
+    remote_tracked_path = 'refs/remotes/%s/%s' % (
+        self.remote, self.remote_branch)
+    self._check_call_git(
+        ['pull', self.remote,
+         '%s:%s' % (self.remote_branch, remote_tracked_path),
+         '--quiet'])
+
+  def _get_head_commit_hash(self):
+    """Gets the current revision (in unicode) from the local branch."""
+    return unicode(self._check_output_git(['rev-parse', 'HEAD']).strip())
 
   def apply_patch(self, patches, post_processors=None, verbose=False):
-    """Applies a patch on 'working_branch' and switch to it.
+    """Applies a patch on 'working_branch' and switches to it.
 
-    Also commits the changes on the local branch.
+    The changes remain staged on the current branch.
 
     Ignores svn properties and raise an exception on unexpected ones.
     """
@@ -561,8 +639,9 @@ class GitCheckoutBase(CheckoutBase):
     # trying again?
     if self.remote_branch:
       self._check_call_git(
-          ['checkout', '-b', self.working_branch,
-            '%s/%s' % (self.remote, self.remote_branch), '--quiet'])
+          ['checkout', '-b', self.working_branch, '-t', self.remote_branch,
+           '--quiet'])
+
     for index, p in enumerate(patches):
       stdout = []
       try:
@@ -598,19 +677,19 @@ class GitCheckoutBase(CheckoutBase):
             if verbose:
               cmd.append('--verbose')
             stdout.append(self._check_output_git(cmd, stdin=p.get(True)))
-          for name, value in p.svn_properties:
+          for key, value in p.svn_properties:
             # Ignore some known auto-props flags through .subversion/config,
             # bails out on the other ones.
             # TODO(maruel): Read ~/.subversion/config and detect the rules that
             # applies here to figure out if the property will be correctly
             # handled.
-            stdout.append('Property %s=%s' % (name, value))
-            if not name in (
+            stdout.append('Property %s=%s' % (key, value))
+            if not key in (
                 'svn:eol-style', 'svn:executable', 'svn:mime-type'):
               raise patch.UnsupportedPatchFormat(
                   p.filename,
                   'Cannot apply svn property %s to file %s.' % (
-                        name, p.filename))
+                        key, p.filename))
         for post in post_processors:
           post(self, p)
         if verbose:
@@ -625,40 +704,64 @@ class GitCheckoutBase(CheckoutBase):
               ' '.join(e.cmd),
               align_stdout(stdout),
               align_stdout([getattr(e, 'stdout', '')])))
-    # Once all the patches are processed and added to the index, commit the
-    # index.
-    cmd = ['commit', '-m', 'Committed patch']
-    if verbose:
-      cmd.append('--verbose')
-    self._check_call_git(cmd)
-    # TODO(maruel): Weirdly enough they don't match, need to investigate.
-    #found_files = self._check_output_git(
-    #    ['diff', 'master', '--name-only']).splitlines(False)
-    #assert sorted(patches.filenames) == sorted(found_files), (
-    #    sorted(out), sorted(found_files))
+    found_files = self._check_output_git(
+        ['diff', '--ignore-submodules',
+         '--name-only', '--staged']).splitlines(False)
+    assert sorted(patches.filenames) == sorted(found_files), (
+        'Found extra %s locally, %s not patched' % (
+            sorted(set(found_files) - set(patches.filenames)),
+            sorted(set(patches.filenames) - set(found_files))))
 
   def commit(self, commit_message, user):
-    """Updates the commit message.
-
-    Subclass needs to dcommit or push.
-    """
+    """Commits, updates the commit message and pushes."""
+    # TODO(hinoka): CQ no longer uses this, I think its deprecated.
+    #               Delete this.
+    assert self.commit_user
     assert isinstance(commit_message, unicode)
-    self._check_call_git(['commit', '--amend', '-m', commit_message])
-    return self._check_output_git(['rev-parse', 'HEAD']).strip()
+    current_branch = self._check_output_git(
+        ['rev-parse', '--abbrev-ref', 'HEAD']).strip()
+    assert current_branch == self.working_branch
+
+    commit_cmd = ['commit', '-m', commit_message]
+    if user and user != self.commit_user:
+      # We do not have the first or last name of the user, grab the username
+      # from the email and call it the original author's name.
+      # TODO(rmistry): Do not need the below if user is already in
+      #                "Name <email>" format.
+      name = user.split('@')[0]
+      commit_cmd.extend(['--author', '%s <%s>' % (name, user)])
+    self._check_call_git(commit_cmd)
+
+    # Push to the remote repository.
+    self._check_call_git(
+        ['push', 'origin', '%s:%s' % (self.working_branch, self.remote_branch),
+         '--quiet'])
+    # Get the revision after the push.
+    revision = self._get_head_commit_hash()
+    # Switch back to the remote_branch and sync it.
+    self._check_call_git(['checkout', self.remote_branch])
+    self._sync_remote_branch()
+    # Delete the working branch since we are done with it.
+    self._check_call_git(['branch', '-D', self.working_branch])
+
+    return revision
 
   def _check_call_git(self, args, **kwargs):
     kwargs.setdefault('cwd', self.project_path)
     kwargs.setdefault('stdout', self.VOID)
+    kwargs.setdefault('timeout', GLOBAL_TIMEOUT)
     return subprocess2.check_call_out(['git'] + args, **kwargs)
 
   def _call_git(self, args, **kwargs):
     """Like check_call but doesn't throw on failure."""
     kwargs.setdefault('cwd', self.project_path)
     kwargs.setdefault('stdout', self.VOID)
+    kwargs.setdefault('timeout', GLOBAL_TIMEOUT)
     return subprocess2.call(['git'] + args, **kwargs)
 
   def _check_output_git(self, args, **kwargs):
     kwargs.setdefault('cwd', self.project_path)
+    kwargs.setdefault('timeout', GLOBAL_TIMEOUT)
     return subprocess2.check_output(
         ['git'] + args, stderr=subprocess2.STDOUT, **kwargs)
 
@@ -688,14 +791,9 @@ class GitCheckoutBase(CheckoutBase):
 
   def _fetch_remote(self):
     """Fetches the remote without rebasing."""
-    raise NotImplementedError()
-
-
-class GitCheckout(GitCheckoutBase):
-  """Git checkout implementation."""
-  def _fetch_remote(self):
-    # git fetch is always verbose even with -q -q so redirect its output.
-    self._check_output_git(['fetch', self.remote, self.remote_branch])
+    # git fetch is always verbose even with -q, so redirect its output.
+    self._check_output_git(['fetch', self.remote, self.remote_branch],
+                           timeout=FETCH_TIMEOUT)
 
 
 class ReadOnlyCheckout(object):

@@ -8,6 +8,7 @@
 
 #include "base/logging.h"
 #include "chrome/browser/prerender/prerender_contents.h"
+#include "content/public/browser/web_contents.h"
 
 namespace prerender {
 
@@ -18,7 +19,7 @@ PrerenderHandle::Observer::~Observer() {
 }
 
 PrerenderHandle::~PrerenderHandle() {
-  if (prerender_data_) {
+  if (prerender_data_.get()) {
     prerender_data_->contents()->RemoveObserver(this);
   }
 }
@@ -30,26 +31,45 @@ void PrerenderHandle::SetObserver(Observer* observer) {
 
 void PrerenderHandle::OnNavigateAway() {
   DCHECK(CalledOnValidThread());
-  if (prerender_data_)
+  if (prerender_data_.get())
     prerender_data_->OnHandleNavigatedAway(this);
 }
 
 void PrerenderHandle::OnCancel() {
   DCHECK(CalledOnValidThread());
-  if (prerender_data_)
+  if (prerender_data_.get())
     prerender_data_->OnHandleCanceled(this);
 }
 
 bool PrerenderHandle::IsPrerendering() const {
   DCHECK(CalledOnValidThread());
-  return prerender_data_ != NULL;
+  return prerender_data_.get() != NULL;
 }
 
 bool PrerenderHandle::IsFinishedLoading() const {
   DCHECK(CalledOnValidThread());
-  if (!prerender_data_)
+  if (!prerender_data_.get())
     return false;
   return prerender_data_->contents()->has_finished_loading();
+}
+
+bool PrerenderHandle::IsAbandoned() const {
+  DCHECK(CalledOnValidThread());
+  return prerender_data_ && !prerender_data_->abandon_time().is_null();
+}
+
+PrerenderContents* PrerenderHandle::contents() const {
+  DCHECK(CalledOnValidThread());
+  return prerender_data_ ? prerender_data_->contents() : NULL;
+}
+
+bool PrerenderHandle::Matches(
+    const GURL& url,
+    const content::SessionStorageNamespace* session_storage_namespace) const {
+  DCHECK(CalledOnValidThread());
+  if (!prerender_data_.get())
+    return false;
+  return prerender_data_->contents()->Matches(url, session_storage_namespace);
 }
 
 PrerenderHandle::PrerenderHandle(
@@ -62,30 +82,9 @@ PrerenderHandle::PrerenderHandle(
   }
 }
 
-void PrerenderHandle::AdoptPrerenderDataFrom(PrerenderHandle* other_handle) {
-  DCHECK_EQ(static_cast<PrerenderManager::PrerenderData*>(NULL),
-            prerender_data_);
-  if (other_handle->prerender_data_ &&
-      other_handle->prerender_data_->contents()) {
-    other_handle->prerender_data_->contents()->RemoveObserver(other_handle);
-  }
-
-  prerender_data_ = other_handle->prerender_data_;
-  other_handle->prerender_data_.reset();
-
-  if (prerender_data_) {
-    DCHECK_NE(static_cast<PrerenderContents*>(NULL),
-              prerender_data_->contents());
-    prerender_data_->contents()->AddObserver(this);
-    // We are joining a prerender that has already started so we fire off an
-    // extra start event at ourselves.
-    OnPrerenderStart(prerender_data_->contents());
-  }
-}
-
 void PrerenderHandle::OnPrerenderStart(PrerenderContents* prerender_contents) {
   DCHECK(CalledOnValidThread());
-  DCHECK(prerender_data_);
+  DCHECK(prerender_data_.get());
   DCHECK_EQ(prerender_data_->contents(), prerender_contents);
   if (observer_)
     observer_->OnPrerenderStart(this);
@@ -94,25 +93,25 @@ void PrerenderHandle::OnPrerenderStart(PrerenderContents* prerender_contents) {
 void PrerenderHandle::OnPrerenderStopLoading(
     PrerenderContents* prerender_contents) {
   DCHECK(CalledOnValidThread());
-  DCHECK(prerender_data_);
+  DCHECK(prerender_data_.get());
   DCHECK_EQ(prerender_data_->contents(), prerender_contents);
   if (observer_)
     observer_->OnPrerenderStopLoading(this);
+}
+
+void PrerenderHandle::OnPrerenderDomContentLoaded(
+    PrerenderContents* prerender_contents) {
+  DCHECK(CalledOnValidThread());
+  DCHECK(prerender_data_.get());
+  DCHECK_EQ(prerender_data_->contents(), prerender_contents);
+  if (observer_)
+    observer_->OnPrerenderDomContentLoaded(this);
 }
 
 void PrerenderHandle::OnPrerenderStop(PrerenderContents* prerender_contents) {
   DCHECK(CalledOnValidThread());
   if (observer_)
     observer_->OnPrerenderStop(this);
-}
-
-void PrerenderHandle::OnPrerenderAddAlias(PrerenderContents* prerender_contents,
-                                          const GURL& alias_url) {
-  DCHECK(CalledOnValidThread());
-  DCHECK(prerender_data_);
-  DCHECK_EQ(prerender_data_->contents(), prerender_contents);
-  if (observer_)
-    observer_->OnPrerenderAddAlias(this, alias_url);
 }
 
 void PrerenderHandle::OnPrerenderCreatedMatchCompleteReplacement(
@@ -127,6 +126,27 @@ void PrerenderHandle::OnPrerenderCreatedMatchCompleteReplacement(
 
   contents->RemoveObserver(this);
   replacement->AddObserver(this);
+  if (observer_)
+    observer_->OnPrerenderCreatedMatchCompleteReplacement(this);
+}
+
+bool PrerenderHandle::RepresentingSamePrerenderAs(
+    PrerenderHandle* other) const {
+  return other && other->prerender_data_.get() && prerender_data_.get()
+      && prerender_data_.get() == other->prerender_data_.get();
+}
+
+content::SessionStorageNamespace*
+PrerenderHandle::GetSessionStorageNamespace() const {
+  if (!prerender_data_.get())
+    return NULL;
+  return prerender_data_->contents()->GetSessionStorageNamespace();
+}
+
+int PrerenderHandle::GetChildId() const {
+  if (!prerender_data_.get())
+    return -1;
+  return prerender_data_->contents()->child_id();
 }
 
 }  // namespace prerender

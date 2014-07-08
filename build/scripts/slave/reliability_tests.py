@@ -42,8 +42,6 @@ KNOWN_CRASHES_FILE_NAME = 'known_crashes.txt'
 HOWTO_LINK = ('http://sites.google.com/a/chromium.org/dev/developers'
               '/how-tos/reliability-tests')
 
-CHROMEBOT_DASHBOARD = 'http://localhost/chromebot'
-
 
 class KnownCrash(object):
   """Representation of a known crash.
@@ -426,7 +424,7 @@ def DisplayRevisionRange(last_revision, prev_revision):
          '&range=%s:%s' % (prev_chromium_rev, last_revision.chromium_rev))
 
 
-def QueryReliabilityResults(build_type, platform, build_id):
+def QueryReliabilityResults(dashboard, build_type, platform, build_id):
   """Query test results for a given reliability test run.
 
   Args:
@@ -439,7 +437,7 @@ def QueryReliabilityResults(build_type, platform, build_id):
   raw_data = ''
   results_url = ('%s/?action=buildsummary&format=json&build_type=%s'
                  '&platform=%s&build_id=%s' %
-                 (CHROMEBOT_DASHBOARD, build_type, platform, build_id))
+                 (dashboard, build_type, platform, build_id))
   for _ in xrange(3):
     try:
       response = urllib2.urlopen(results_url)
@@ -485,7 +483,7 @@ def QueryReliabilityResults(build_type, platform, build_id):
 
   dashboard_url = ('%s/?action=buildsummary&build_type=%s&platform=%s'
                    '&build_id=%s' %
-                   (CHROMEBOT_DASHBOARD, build_type, platform, build_id))
+                   (dashboard, build_type, platform, build_id))
 
   print 'Detailed report: %s' % dashboard_url
 
@@ -499,8 +497,8 @@ def reliability_tests(options):
   build_type = options.build_type
 
   print '\nResults for extended list of web sites:'
-  total, crash_num, crashes = QueryReliabilityResults(build_type, platform,
-                                                      build_id)
+  total, crash_num, crashes = QueryReliabilityResults(
+      options.dashboard, build_type, platform, build_id)
 
   print '\nChecking new crashes...'
   known_crashes = list(GetKnownCrashes(options.data_dir))
@@ -520,8 +518,12 @@ def reliability_tests(options):
     print '\nREGRESSION: Significant increase on crash rate.'
     regression = True
   elif total == 0:
-    print '\nRELIABILITY TEST FAILURE: No results found.'
-    return slave_utils.WARNING_EXIT_CODE
+    if options.ignore_no_result:
+      print '\nWARNING: No results found.'
+      return 0
+    else:
+      print '\nRELIABILITY TEST FAILURE: No results found.'
+      return slave_utils.WARNING_EXIT_CODE
   else:
     print '\nSuccess'
 
@@ -553,6 +555,13 @@ def main():
                     help='path to the directory containing the reliability '
                          'data, such as the known crashes, use the script '
                          'directory if not specified')
+  CHROMEBOT_DASHBOARD = 'http://localhost/chromebot'
+  parser.add_option('', '--dashboard', type='string',
+                    default=CHROMEBOT_DASHBOARD,
+                    help='Specify URL to Chromebot dashboard.')
+  parser.add_option('', '--ignore-no-result', action='store_true',
+                    default=False,
+                    help='Ignore failure on no results.')
 
   options, args = parser.parse_args()
   if args:

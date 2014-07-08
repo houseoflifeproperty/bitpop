@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,35 +7,48 @@ package org.chromium.android_webview.test;
 import android.test.suitebuilder.annotation.SmallTest;
 import android.webkit.ValueCallback;
 
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.ThreadUtils;
 import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.UrlUtils;
 
 import java.io.File;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-public class ArchiveTest extends AndroidWebViewTestBase {
+/**
+ * Test suite for the WebView.saveWebArchive feature.
+ */
+public class ArchiveTest extends AwTestBase {
 
-    private static final long TEST_TIMEOUT = 20000L;
+    private static final long TEST_TIMEOUT = scaleTimeout(20000L);
 
-    private static final String TEST_PAGE =
-            "data:text/html;utf-8,<html><head></head><body>test</body></html>";
+    private static final String TEST_PAGE = UrlUtils.encodeHtmlDataUri(
+            "<html><head></head><body>test</body></html>");
 
     private TestAwContentsClient mContentsClient = new TestAwContentsClient();
     private AwTestContainerView mTestContainerView;
 
     @Override
     protected void setUp() throws Exception {
+        super.setUp();
         mTestContainerView = createAwTestContainerViewOnMainSync(mContentsClient);
+    }
+
+    private void deleteFile(String path) {
+        File file = new File(path);
+        if (file.exists())
+            assertTrue(file.delete());
+        assertFalse(file.exists());
     }
 
     private void doArchiveTest(final AwContents contents, final String path,
             final boolean autoName, String expectedPath) throws InterruptedException {
         if (expectedPath != null) {
-            File file = new File(expectedPath);
-            file.delete();
+            deleteFile(expectedPath);
         }
 
         // Set up a handler to handle the completion callback
@@ -76,9 +89,7 @@ public class ArchiveTest extends AndroidWebViewTestBase {
     @Feature({"AndroidWebView"})
     public void testExplicitGoodPath() throws Throwable {
         final String path = new File(getActivity().getFilesDir(), "test.mht").getAbsolutePath();
-        File file = new File(path);
-        file.delete();
-        assertFalse(file.exists());
+        deleteFile(path);
 
         loadUrlSync(mTestContainerView.getAwContents(),
                 mContentsClient.getOnPageFinishedHelper(), TEST_PAGE);
@@ -111,9 +122,7 @@ public class ArchiveTest extends AndroidWebViewTestBase {
     @Feature({"AndroidWebView"})
     public void testExplicitBadPath() throws Throwable {
         final String path = new File("/foo/bar/baz.mht").getAbsolutePath();
-        File file = new File(path);
-        file.delete();
-        assertFalse(file.exists());
+        deleteFile(path);
 
         loadUrlSync(mTestContainerView.getAwContents(),
                 mContentsClient.getOnPageFinishedHelper(), TEST_PAGE);
@@ -125,9 +134,7 @@ public class ArchiveTest extends AndroidWebViewTestBase {
     @Feature({"AndroidWebView"})
     public void testAutoBadPath() throws Throwable {
         final String path = new File("/foo/bar/").getAbsolutePath();
-        File file = new File(path);
-        file.delete();
-        assertFalse(file.exists());
+        deleteFile(path);
 
         loadUrlSync(mTestContainerView.getAwContents(),
                 mContentsClient.getOnPageFinishedHelper(), TEST_PAGE);

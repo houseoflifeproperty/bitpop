@@ -12,11 +12,13 @@ NavigationController::LoadURLParams::LoadURLParams(const GURL& url)
     : url(url),
       load_type(LOAD_TYPE_DEFAULT),
       transition_type(PAGE_TRANSITION_LINK),
+      frame_tree_node_id(-1),
       is_renderer_initiated(false),
       override_user_agent(UA_OVERRIDE_INHERIT),
       browser_initiated_post_data(NULL),
       can_load_local_resources(false),
-      is_cross_site_redirect(false) {
+      should_replace_current_entry(false),
+      should_clear_history_list(false)  {
 }
 
 NavigationController::LoadURLParams::~LoadURLParams() {
@@ -27,6 +29,7 @@ NavigationController::LoadURLParams::LoadURLParams(
     : url(other.url),
       load_type(other.load_type),
       transition_type(other.transition_type),
+      frame_tree_node_id(other.frame_tree_node_id),
       referrer(other.referrer),
       extra_headers(other.extra_headers),
       is_renderer_initiated(other.is_renderer_initiated),
@@ -35,7 +38,8 @@ NavigationController::LoadURLParams::LoadURLParams(
       base_url_for_data_url(other.base_url_for_data_url),
       virtual_url_for_data_url(other.virtual_url_for_data_url),
       browser_initiated_post_data(other.browser_initiated_post_data),
-      is_cross_site_redirect(false) {
+      should_replace_current_entry(false),
+      should_clear_history_list(false) {
 }
 
 NavigationController::LoadURLParams&
@@ -44,7 +48,9 @@ NavigationController::LoadURLParams::operator=(
   url = other.url;
   load_type = other.load_type;
   transition_type = other.transition_type;
+  frame_tree_node_id = other.frame_tree_node_id;
   referrer = other.referrer;
+  redirect_chain = other.redirect_chain;
   extra_headers = other.extra_headers;
   is_renderer_initiated = other.is_renderer_initiated;
   override_user_agent = other.override_user_agent;
@@ -52,7 +58,8 @@ NavigationController::LoadURLParams::operator=(
   base_url_for_data_url = other.base_url_for_data_url;
   virtual_url_for_data_url = other.virtual_url_for_data_url;
   browser_initiated_post_data = other.browser_initiated_post_data;
-  is_cross_site_redirect = other.is_cross_site_redirect;
+  should_replace_current_entry = other.should_replace_current_entry;
+  should_clear_history_list = other.should_clear_history_list;
 
   return *this;
 }

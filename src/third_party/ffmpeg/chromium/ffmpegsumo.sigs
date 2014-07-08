@@ -6,13 +6,13 @@
 # Functions from avcodec used in chromium code.
 #------------------------------------------------
 AVCodecContext *avcodec_alloc_context3(const AVCodec *codec);
-AVCodec *avcodec_find_decoder(enum CodecID id);
-AVFrame *avcodec_alloc_frame(void);
+AVCodec *avcodec_find_decoder(enum AVCodecID id);
 int av_new_packet(AVPacket *pkt, int size);
 int avcodec_decode_audio4(AVCodecContext *avctx, AVFrame *frame, int *got_frame_ptr, const AVPacket *avpkt);
 int avcodec_decode_video2(AVCodecContext *avctx, AVFrame *picture, int *got_picture_ptr, const AVPacket *avpkt);
 int avcodec_open2(AVCodecContext *avctx, const AVCodec *codec, AVDictionary **options);
 int avcodec_close(AVCodecContext *avctx);
+const char *avcodec_get_name(enum AVCodecID id);
 void av_free_packet(AVPacket *pkt);
 void av_init_packet(AVPacket *pkt);
 int av_dup_packet(AVPacket *pkt);
@@ -25,6 +25,12 @@ void av_destruct_packet(AVPacket *pkt);
 int av_lockmgr_register(AVLockMgrOperation cb);
 void avcodec_get_frame_defaults(AVFrame *pic);
 void avcodec_align_dimensions(AVCodecContext *s, int *width, int *height);
+int av_packet_split_side_data(AVPacket *pkt);
+uint8_t *av_packet_get_side_data(AVPacket *pkt, enum AVPacketSideDataType type, int *size);
+void av_frame_unref(AVFrame *frame);
+void av_frame_free(AVFrame **frame);
+void avcodec_free_frame(AVFrame **frame);
+AVFrame* av_frame_alloc();
 
 # RDFT functions.
 RDFTContext *av_rdft_init(int nbits, enum RDFTransformType trans);
@@ -61,3 +67,6 @@ AVDictionaryEntry *av_dict_get(AVDictionary *m, const char *key, const AVDiction
 int av_samples_get_buffer_size(int *linesize, int nb_channels, int nb_samples, enum AVSampleFormat sample_fmt, int align);
 int av_image_check_size(unsigned int w, unsigned int h, int log_offset, void *log_ctx);
 int av_image_fill_linesizes(int *linesizes, enum PixelFormat pix_fmt, int width);
+AVBufferRef *av_buffer_create(uint8_t *data, int size, AVFreeOperation free, void *opaque, int flags);
+int avcodec_fill_audio_frame(AVFrame *frame, int nb_channels, enum AVSampleFormat sample_fmt, const uint8_t *buf, int buf_size, int align);
+void *av_buffer_get_opaque(const AVBufferRef *buf);

@@ -47,16 +47,25 @@ class AwContentsIoThreadClient {
 
   virtual ~AwContentsIoThreadClient() {}
 
+  // Returns whether this is a new pop up that is still waiting for association
+  // with the java counter part.
+  virtual bool PendingAssociation() const = 0;
+
   // Retrieve CacheMode setting value of this AwContents.
   // This method is called on the IO thread only.
   virtual CacheMode GetCacheMode() const = 0;
 
   // This will attempt to fetch the AwContentsIoThreadClient for the given
-  // |render_process_id|, |render_view_id| pair.
+  // |render_process_id|, |render_frame_id| pair.
   // This method can be called from any thread.
   // An empty scoped_ptr is a valid return value.
   static scoped_ptr<AwContentsIoThreadClient> FromID(int render_process_id,
-                                                     int render_view_id);
+                                                     int render_frame_id);
+
+  // Called on the IO thread when a subframe is created.
+  static void SubFrameCreated(int render_process_id,
+                              int parent_render_frame_id,
+                              int child_render_frame_id);
 
   // This method is called on the IO thread only.
   virtual scoped_ptr<InterceptedRequestData> ShouldInterceptRequest(
@@ -83,6 +92,13 @@ class AwContentsIoThreadClient {
                            const std::string& content_disposition,
                            const std::string& mime_type,
                            int64 content_length) = 0;
+
+  // Called when a new login request is detected. See the documentation for
+  // WebViewClient.onReceivedLoginRequest for arguments. Note that |account|
+  // may be empty.
+  virtual void NewLoginRequest(const std::string& realm,
+                               const std::string& account,
+                               const std::string& args) = 0;
 };
 
 } // namespace android_webview

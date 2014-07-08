@@ -27,7 +27,6 @@
 #include "libavutil/md5.h"
 #include "urldecode.h"
 #include "avformat.h"
-#include <ctype.h>
 
 static void handle_basic_params(HTTPAuthState *state, const char *key,
                                 int key_len, char **dest, int *dest_len)
@@ -80,8 +79,8 @@ static void choose_qop(char *qop, int size)
     char *ptr = strstr(qop, "auth");
     char *end = ptr + strlen("auth");
 
-    if (ptr && (!*end || isspace(*end) || *end == ',') &&
-        (ptr == qop || isspace(ptr[-1]) || ptr[-1] == ',')) {
+    if (ptr && (!*end || av_isspace(*end) || *end == ',') &&
+        (ptr == qop || av_isspace(ptr[-1]) || ptr[-1] == ',')) {
         av_strlcpy(qop, "auth", size);
     } else {
         qop[0] = 0;
@@ -159,7 +158,7 @@ static char *make_digest_auth(HTTPAuthState *state, const char *username,
     ff_data_to_hex(cnonce, (const uint8_t*) cnonce_buf, sizeof(cnonce_buf), 1);
     cnonce[2*sizeof(cnonce_buf)] = 0;
 
-    md5ctx = av_malloc(av_md5_size);
+    md5ctx = av_md5_alloc();
     if (!md5ctx)
         return NULL;
 

@@ -22,7 +22,7 @@
 #import <Cocoa/Cocoa.h>
 
 #import "base/mac/cocoa_protocols.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 
 @class FacebookNotificationView;
 @class HoverButton;
@@ -32,8 +32,8 @@
   NSPoint anchor_;
   NSPoint oldAnchor_;
 
-  scoped_nsobject<FacebookNotificationView> bubble_;
-  scoped_nsobject<HoverButton> hoverCloseButton_;
+  base::scoped_nsobject<FacebookNotificationView> bubble_;
+  base::scoped_nsobject<HoverButton> hoverCloseButton_;
 }
 
 @property (nonatomic, assign) NSPoint anchor;

@@ -11,6 +11,10 @@
 
 class JavaScriptAppModalDialog;
 
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+class JavascriptAppModalEventBlockerX11;
+#endif
+
 namespace views {
 class MessageBoxView;
 }
@@ -32,18 +36,19 @@ class JavaScriptAppModalDialogViews : public NativeAppModalDialog,
   // Overridden from views::DialogDelegate:
   virtual int GetDefaultDialogButton() const OVERRIDE;
   virtual int GetDialogButtons() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
 
   // Overridden from views::WidgetDelegate:
   virtual ui::ModalType GetModalType() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
   virtual views::View* GetInitiallyFocusedView() OVERRIDE;
-  virtual void OnClose() OVERRIDE;
+  virtual void OnClosed() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
 
@@ -53,6 +58,11 @@ class JavaScriptAppModalDialogViews : public NativeAppModalDialog,
 
   // The message box view whose commands we handle.
   views::MessageBoxView* message_box_view_;
+
+#if defined(USE_X11) && !defined(OS_CHROMEOS)
+  // Blocks events to other browser windows while the dialog is open.
+  scoped_ptr<JavascriptAppModalEventBlockerX11> event_blocker_x11_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(JavaScriptAppModalDialogViews);
 };

@@ -19,7 +19,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 class MultiWindowResizeControllerTest : public test::AshTestBase {
  public:
@@ -40,9 +39,9 @@ class MultiWindowResizeControllerTest : public test::AshTestBase {
   aura::Window* CreateTestWindow(aura::WindowDelegate* delegate,
                                  const gfx::Rect& bounds) {
     aura::Window* window = new aura::Window(delegate);
-    window->SetType(aura::client::WINDOW_TYPE_NORMAL);
-    window->Init(ui::LAYER_TEXTURED);
-    SetDefaultParentByPrimaryRootWindow(window);
+    window->SetType(ui::wm::WINDOW_TYPE_NORMAL);
+    window->Init(aura::WINDOW_LAYER_TEXTURED);
+    ParentWindowInPrimaryRootWindow(window);
     window->SetBounds(bounds);
     window->Show();
     return window;
@@ -107,7 +106,7 @@ TEST_F(MultiWindowResizeControllerTest, BasicTests) {
       CreateTestWindow(&delegate2, gfx::Rect(100, 0, 100, 100)));
   delegate2.set_window_component(HTRIGHT);
   aura::test::EventGenerator generator(w1->GetRootWindow());
-  generator.MoveMouseTo(99, 50);
+  generator.MoveMouseTo(w1->bounds().CenterPoint());
   EXPECT_TRUE(HasPendingShow());
   EXPECT_TRUE(IsShowing());
   EXPECT_FALSE(HasPendingHide());
@@ -138,7 +137,7 @@ TEST_F(MultiWindowResizeControllerTest, DeleteWindow) {
       CreateTestWindow(&delegate2, gfx::Rect(100, 0, 100, 100)));
   delegate2.set_window_component(HTRIGHT);
   aura::test::EventGenerator generator(w1->GetRootWindow());
-  generator.MoveMouseTo(99, 50);
+  generator.MoveMouseTo(w1->bounds().CenterPoint());
   EXPECT_TRUE(HasPendingShow());
   EXPECT_TRUE(IsShowing());
   EXPECT_FALSE(HasPendingHide());
@@ -181,7 +180,7 @@ TEST_F(MultiWindowResizeControllerTest, Drag) {
       CreateTestWindow(&delegate2, gfx::Rect(100, 0, 100, 100)));
   delegate2.set_window_component(HTRIGHT);
   aura::test::EventGenerator generator(w1->GetRootWindow());
-  generator.MoveMouseTo(99, 50);
+  generator.MoveMouseTo(w1->bounds().CenterPoint());
   EXPECT_TRUE(HasPendingShow());
   EXPECT_TRUE(IsShowing());
   EXPECT_FALSE(HasPendingHide());
@@ -225,11 +224,11 @@ TEST_F(MultiWindowResizeControllerTest, Three) {
   delegate2.set_window_component(HTRIGHT);
   aura::test::TestWindowDelegate delegate3;
   scoped_ptr<aura::Window> w3(
-      CreateTestWindow(&delegate2, gfx::Rect(200, 0, 100, 100)));
+      CreateTestWindow(&delegate3, gfx::Rect(200, 0, 100, 100)));
   delegate3.set_window_component(HTRIGHT);
 
   aura::test::EventGenerator generator(w1->GetRootWindow());
-  generator.MoveMouseTo(99, 50);
+  generator.MoveMouseTo(w1->bounds().CenterPoint());
   EXPECT_TRUE(HasPendingShow());
   EXPECT_TRUE(IsShowing());
   EXPECT_FALSE(HasPendingHide());
@@ -254,5 +253,5 @@ TEST_F(MultiWindowResizeControllerTest, Three) {
   EXPECT_TRUE(IsShowing());
   generator.PressLeftButton();
 }
-}  // namespace internal
+
 }  // namespace ash

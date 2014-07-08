@@ -5,24 +5,23 @@
 #include "chrome/browser/chromeos/system/syslogs_provider.h"
 
 #include "ash/shell.h"
-#include "ash/touch/touch_observer_hud.h"
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/singleton.h"
-#include "base/message_loop_proxy.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/feedback/feedback_util.h"
 #include "chrome/browser/memory_details.h"
 #include "chrome/common/chrome_switches.h"
 #include "chromeos/network/network_event_log.h"
+#include "components/feedback/feedback_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "dbus/dbus_statistics.h"
 
@@ -52,17 +51,17 @@ const char kContextNetwork[] = "network";
 // Reads a key from the input string erasing the read values + delimiters read
 // from the initial string
 std::string ReadKey(std::string* data) {
+  std::string key;
   size_t equal_sign = data->find("=");
   if (equal_sign == std::string::npos)
-    return std::string("");
-  std::string key = data->substr(0, equal_sign);
-  data->erase(0, equal_sign);
-  if (data->size() > 0) {
-    // erase the equal to sign also
-    data->erase(0,1);
     return key;
-  }
-  return std::string();
+  key = data->substr(0, equal_sign);
+  data->erase(0, equal_sign);
+  if (data->empty())
+    return key;
+  // erase the equal to sign also
+  data->erase(0, 1);
+  return key;
 }
 
 // Reads a value from the input string; erasing the read values from
@@ -80,7 +79,7 @@ std::string ReadValue(std::string* data) {
   //
   // If we use TrimWhitespace, we will incorrectly trim the new line
   // and assume that KEY1's value is "KEY2=VALUE" rather than empty.
-  TrimString(*data, " \t", data);
+  base::TrimString(*data, " \t", data);
 
   // If multiline value
   if (StartsWithASCII(*data, std::string(kMultilineQuote), false)) {
@@ -94,7 +93,8 @@ std::string ReadValue(std::string* data) {
     std::string value = data->substr(0, next_multi);
     data->erase(0, next_multi + 3);
     return value;
-  } else { // single line value
+  } else {
+    // single line value
     size_t endl_pos = data->find_first_of(kNewLineChars);
     // if we don't find a new line, we just return the rest of the data
     std::string value = data->substr(0, endl_pos);
@@ -118,12 +118,12 @@ std::string ReadValue(std::string* data) {
 //                values are "sysinfo" or "feedback"; in case of an invalid
 //                value, the script will currently default to "sysinfo"
 
-LogDictionaryType* GetSystemLogs(FilePath* zip_file_name,
+LogDictionaryType* GetSystemLogs(base::FilePath* zip_file_name,
                                  const std::string& context) {
   // Create the temp file, logs will go here
-  FilePath temp_filename;
+  base::FilePath temp_filename;
 
-  if (!file_util::CreateTemporaryFile(&temp_filename))
+  if (!base::CreateTemporaryFile(&temp_filename))
     return NULL;
 
   std::string cmd = std::string(kSysLogsScript) + " " + context + " >> " +
@@ -143,11 +143,10 @@ LogDictionaryType* GetSystemLogs(FilePath* zip_file_name,
   }
   // Read logs from the temp file
   std::string data;
-  bool read_success = file_util::ReadFileToString(temp_filename,
-                                                  &data);
+  bool read_success = base::ReadFileToString(temp_filename, &data);
   // if we were using an internal temp file, the user does not need the
   // logs to stay past the ReadFile call - delete the file
-  file_util::Delete(temp_filename, false);
+  base::DeleteFile(temp_filename, false);
 
   if (!read_success)
     return NULL;
@@ -156,11 +155,11 @@ LogDictionaryType* GetSystemLogs(FilePath* zip_file_name,
   LogDictionaryType* logs = new LogDictionaryType();
   while (data.length() > 0) {
     std::string key = ReadKey(&data);
-    TrimWhitespaceASCII(key, TRIM_ALL, &key);
+    base::TrimWhitespaceASCII(key, base::TRIM_ALL, &key);
     if (!key.empty()) {
       std::string value = ReadValue(&data);
-      if (IsStringUTF8(value)) {
-        TrimWhitespaceASCII(value, TRIM_ALL, &value);
+      if (base::IsStringUTF8(value)) {
+        base::TrimWhitespaceASCII(value, base::TRIM_ALL, &value);
         if (value.empty())
           (*logs)[key] = kEmptyLogEntry;
         else
@@ -183,11 +182,11 @@ LogDictionaryType* GetSystemLogs(FilePath* zip_file_name,
 class SyslogsProviderImpl : public SyslogsProvider {
  public:
   // SyslogsProvider implementation:
-  virtual CancelableTaskTracker::TaskId RequestSyslogs(
+  virtual base::CancelableTaskTracker::TaskId RequestSyslogs(
       bool compress_logs,
       SyslogsContext context,
       const ReadCompleteCallback& callback,
-      CancelableTaskTracker* tracker) OVERRIDE;
+      base::CancelableTaskTracker* tracker) OVERRIDE;
 
   static SyslogsProviderImpl* GetInstance();
 
@@ -197,13 +196,13 @@ class SyslogsProviderImpl : public SyslogsProvider {
   // Reads system logs, compresses content if requested.
   // Called from blocking pool thread.
   void ReadSyslogs(
-      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
       bool compress_logs,
       SyslogsContext context,
       const ReadCompleteCallback& callback);
 
   // Loads compressed logs and writes into |zip_content|.
-  void LoadCompressedLogs(const FilePath& zip_file,
+  void LoadCompressedLogs(const base::FilePath& zip_file,
                           std::string* zip_content);
 
   SyslogsProviderImpl();
@@ -214,7 +213,7 @@ class SyslogsProviderImpl : public SyslogsProvider {
   // If not canceled, run callback on originating thread (the thread on which
   // ReadSyslogs was run).
   static void RunCallbackIfNotCanceled(
-      const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+      const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
       base::TaskRunner* origin_runner,
       const ReadCompleteCallback& callback,
       LogDictionaryType* logs,
@@ -226,13 +225,14 @@ class SyslogsProviderImpl : public SyslogsProvider {
 SyslogsProviderImpl::SyslogsProviderImpl() {
 }
 
-CancelableTaskTracker::TaskId SyslogsProviderImpl::RequestSyslogs(
+base::CancelableTaskTracker::TaskId SyslogsProviderImpl::RequestSyslogs(
     bool compress_logs,
     SyslogsContext context,
     const ReadCompleteCallback& callback,
-    CancelableTaskTracker* tracker) {
-  CancelableTaskTracker::IsCanceledCallback is_canceled;
-  CancelableTaskTracker::TaskId id = tracker->NewTrackedTaskId(&is_canceled);
+    base::CancelableTaskTracker* tracker) {
+  base::CancelableTaskTracker::IsCanceledCallback is_canceled;
+  base::CancelableTaskTracker::TaskId id =
+      tracker->NewTrackedTaskId(&is_canceled);
 
   ReadCompleteCallback callback_runner =
       base::Bind(&SyslogsProviderImpl::RunCallbackIfNotCanceled,
@@ -296,7 +296,7 @@ SyslogsMemoryHandler::~SyslogsMemoryHandler() {}
 
 // Called from blocking pool thread.
 void SyslogsProviderImpl::ReadSyslogs(
-    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
     bool compress_logs,
     SyslogsContext context,
     const ReadCompleteCallback& callback) {
@@ -306,8 +306,8 @@ void SyslogsProviderImpl::ReadSyslogs(
     return;
 
   // Create temp file.
-  FilePath zip_file;
-  if (compress_logs && !file_util::CreateTemporaryFile(&zip_file)) {
+  base::FilePath zip_file;
+  if (compress_logs && !base::CreateTemporaryFile(&zip_file)) {
     LOG(ERROR) << "Cannot create temp file";
     compress_logs = false;
   }
@@ -322,7 +322,7 @@ void SyslogsProviderImpl::ReadSyslogs(
     // Load compressed logs.
     zip_content = new std::string();
     LoadCompressedLogs(zip_file, zip_content);
-    file_util::Delete(zip_file, false);
+    base::DeleteFile(zip_file, false);
   }
 
   // Include dbus statistics summary
@@ -331,14 +331,11 @@ void SyslogsProviderImpl::ReadSyslogs(
       dbus::statistics::FORMAT_ALL);
 
   // Include recent network log events
-  (*logs)["network_event_log"] = chromeos::network_event_log::GetAsString(
-      chromeos::network_event_log::OLDEST_FIRST,
-      chromeos::system::kFeedbackMaxLineCount);
-
-  if (ash::Shell::GetInstance()->touch_observer_hud()) {
-    (*logs)[kHUDLogDataKey] =
-        ash::Shell::GetInstance()->touch_observer_hud()->GetLogAsString();
-  }
+  (*logs)["network_event_log"] = network_event_log::GetAsString(
+      network_event_log::OLDEST_FIRST,
+      "time,file,desc",
+      network_event_log::kDefaultLogLevel,
+      system::kFeedbackMaxLineCount);
 
   // SyslogsMemoryHandler will clean itself up.
   // SyslogsMemoryHandler::OnDetailsAvailable() will modify |logs| and call
@@ -349,10 +346,10 @@ void SyslogsProviderImpl::ReadSyslogs(
   handler->StartFetch(MemoryDetails::UPDATE_USER_METRICS);
 }
 
-void SyslogsProviderImpl::LoadCompressedLogs(const FilePath& zip_file,
+void SyslogsProviderImpl::LoadCompressedLogs(const base::FilePath& zip_file,
                                             std::string* zip_content) {
   DCHECK(zip_content);
-  if (!file_util::ReadFileToString(zip_file, zip_content)) {
+  if (!base::ReadFileToString(zip_file, zip_content)) {
     LOG(ERROR) << "Cannot read compressed logs file from " <<
         zip_file.value().c_str();
   }
@@ -377,7 +374,7 @@ const char* SyslogsProviderImpl::GetSyslogsContextString(
 
 // static
 void SyslogsProviderImpl::RunCallbackIfNotCanceled(
-    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
     base::TaskRunner* origin_runner,
     const ReadCompleteCallback& callback,
     LogDictionaryType* logs,

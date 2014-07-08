@@ -15,14 +15,6 @@ readonly PNACL_BUILDBOT=${PNACL_BUILDBOT:-false}
 # Dump all build output to stdout
 readonly PNACL_VERBOSE=${PNACL_VERBOSE:-false}
 
-# Mercurial Retry settings
-HG_MAX_RETRIES=${HG_MAX_RETRIES:-3}
-if ${PNACL_BUILDBOT} ; then
-  HG_RETRY_DELAY_SEC=${HG_RETRY_DELAY_SEC:-60}
-else
-  HG_RETRY_DELAY_SEC=${HG_RETRY_DELAY_SEC:-1}
-fi
-
 readonly TIME_AT_STARTUP=$(date '+%s')
 
 SetScriptPath() {
@@ -48,7 +40,6 @@ if [ "${BUILD_PLATFORM}" == "linux" ] ; then
   SCONS_BUILD_PLATFORM=linux
   BUILD_ARCH=${BUILD_ARCH:-$(uname -m)}
   EXEC_EXT=
-  SO_PREFIX=lib
   SO_EXT=.so
   SO_DIR=lib
 elif [[ "${BUILD_PLATFORM}" =~ cygwin_nt ]]; then
@@ -59,7 +50,6 @@ elif [[ "${BUILD_PLATFORM}" =~ cygwin_nt ]]; then
   HOST_ARCH=${HOST_ARCH:-x86_32}
   BUILD_ARCH=${BUILD_ARCH:-x86_32}
   EXEC_EXT=.exe
-  SO_PREFIX=cyg
   SO_EXT=.dll
   SO_DIR=bin  # On Windows, DLLs are placed in bin/
               # because the dynamic loader searches %PATH%
@@ -72,7 +62,6 @@ elif [ "${BUILD_PLATFORM}" == "darwin" ] ; then
   HOST_ARCH=${HOST_ARCH:-x86_64}
   BUILD_ARCH=${BUILD_ARCH:-x86_64}
   EXEC_EXT=
-  SO_PREFIX=lib
   SO_EXT=.dylib
   SO_DIR=lib
 else
@@ -85,10 +74,10 @@ readonly BUILD_PLATFORM_LINUX
 readonly BUILD_PLATFORM_MAC
 readonly BUILD_PLATFORM_WIN
 readonly SCONS_BUILD_PLATFORM
-readonly SO_PREFIX
 readonly SO_EXT
 readonly SO_DIR
 
+BUILD_ARCH_SHORT=${BUILD_ARCH}
 BUILD_ARCH_X8632=false
 BUILD_ARCH_X8664=false
 BUILD_ARCH_ARM=false
@@ -98,18 +87,23 @@ if [ "${BUILD_ARCH}" == "x86_32" ] ||
    [ "${BUILD_ARCH}" == "i686" ] ; then
   BUILD_ARCH=x86_32
   BUILD_ARCH_X8632=true
+  BUILD_ARCH_SHORT=x86
 elif [ "${BUILD_ARCH}" == "x86_64" ] ; then
   BUILD_ARCH_X8664=true
+  BUILD_ARCH_SHORT=x86
 elif [ "${BUILD_ARCH}" == "armv7l" ] ; then
   BUILD_ARCH_ARM=true
+  BUILD_ARCH_SHORT=arm
 elif [ "${BUILD_ARCH}" == "mips32" ] ||
      [ "${BUILD_ARCH}" == "mips" ] ; then
   BUILD_ARCH_MIPS=true
+  BUILD_ARCH_SHORT=mips
 else
   echo "Unknown build arch '${BUILD_ARCH}'"
   exit -1
 fi
 readonly BUILD_ARCH
+readonly BUILD_ARCH_SHORT
 readonly BUILD_ARCH_X8632
 readonly BUILD_ARCH_X8664
 readonly BUILD_ARCH_ARM
@@ -151,11 +145,10 @@ if [ "${BUILD_ARCH}" != "${HOST_ARCH}" ]; then
 fi
 
 if ${BUILD_PLATFORM_WIN}; then
-   # TODO(robertm): switch this to svn.bat, hg.bat, git.bat,  gclient.bat
-   readonly GCLIENT="gclient"
-   readonly GIT="git"
-   readonly HG="hg"
-   readonly SVN="svn"
+   readonly GCLIENT="gclient.bat"
+   readonly GIT="git.bat"
+   readonly HG="hg.bat"
+   readonly SVN="svn.bat"
 else
    readonly GCLIENT="gclient"
    readonly GIT="git"
@@ -175,250 +168,6 @@ PosixToSysPath() {
   fi
 }
 
-######################################################################
-# Mercurial repository tools
-######################################################################
-
-#+ hg-pull <dir>
-hg-pull() {
-  local dir="$1"
-
-  assert-dir "$dir" \
-    "Repository $(basename "${dir}") doesn't exist. First do 'hg-checkout'"
-
-  RunWithRetry ${HG_MAX_RETRIES} ${HG_RETRY_DELAY_SEC} \
-    hg-pull-try "${dir}"
-}
-
-hg-pull-try() {
-  local dir="$1"
-  local retcode=0
-
-  spushd "${dir}"
-  RunWithLog "hg-pull" ${HG} pull || retcode=$?
-  spopd
-  return ${retcode}
-}
-
-#+ hg-revert <dir>
-hg-revert() {
-  local dir="$1"
-  ${HG} revert "${dir}"
-}
-
-#+ hg-clone <url> <dir>
-hg-clone() {
-  local url="$1"
-  local dir="$2"
-  RunWithRetry ${HG_MAX_RETRIES} ${HG_RETRY_DELAY_SEC} \
-    hg-clone-try "${url}" "${dir}"
-}
-
-hg-clone-try() {
-  local url="$1"
-  local dir="$2"
-  local retcode=0
-
-  rm -rf "${dir}"
-  ${HG} clone "${url}" "${dir}" || retcode=$?
-
-  if [ ${retcode} -ne 0 ] ; then
-   # Clean up directory after failure
-   rm -rf "${dir}"
-  fi
-  return ${retcode}
-}
-
-hg-checkout() {
-  local repo=$1
-  local dest=$2
-  local rev=$3
-
-  if [ ! -d ${dest} ] ; then
-    local repobasedir=$(dirname "${dest}")
-    mkdir -p "${repobasedir}"
-    StepBanner "HG-CHECKOUT" "Checking out new repository for ${repo} @ ${rev}"
-    # Use a temporary directory just in case HG has problems
-    # with long filenames during checkout, and to make sure the
-    # repo directory only exists if the checkout was successful.
-    local TMPDIR="/tmp/hg-${rev}-$RANDOM"
-    hg-clone "https://code.google.com/p/${repo}" "${TMPDIR}"
-    hg-update "${TMPDIR}" -C ${rev}
-    mv "${TMPDIR}" "${dest}"
-  else
-    StepBanner "HG-CHECKOUT" "Using existing source for ${repo} in ${dest}"
-  fi
-}
-
-#+ hg-update <dir> [extra_flags] [rev]
-hg-update() {
-  local dir="$1"
-  shift 1
-
-  assert-dir "${dir}" \
-    "HG repository $(basename "${dir}") doesn't exist. First do 'hg-checkout'"
-
-  RunWithRetry ${HG_MAX_RETRIES} ${HG_RETRY_DELAY_SEC} \
-    hg-update-try "${dir}" "$@"
-}
-
-hg-update-try() {
-  local dir="$1"
-  shift 1
-  local retcode=0
-  spushd "${dir}"
-  RunWithLog "hg-update" ${HG} update "$@" || retcode=$?
-  spopd
-  return ${retcode}
-}
-
-#+ hg-push <dir>
-hg-push() {
-  local dir="$1"
-  spushd "${dir}"
-  ${HG} push
-  spopd
-}
-
-hg-info() {
-  local dir="$1"
-  local rev="$2"
-
-  spushd "$dir"
-  local hg_status=$(${HG} status -mard)
-  if [ ${#hg_status} -gt 0 ]; then
-    LOCAL_CHANGES="YES"
-  else
-    LOCAL_CHANGES="NO"
-  fi
-
-  echo ""
-  echo "Directory: hg/$(basename ${dir})"
-  echo "  Branch         : $(${HG} branch)"
-  echo "  Revision       : $(${HG} identify)"
-  echo "  Local changes  : ${LOCAL_CHANGES}"
-  echo "  Stable Revision: ${rev}"
-  echo ""
-  spopd
-}
-
-svn-at-revision() {
-  local dir="$1"
-  local rev="$2"
-  local repo_rev=$(svn-get-revision "${dir}")
-  [ "${repo_rev}" == "${rev}" ]
-  return $?
-}
-
-hg-at-revision() {
-  local dir="$1"
-  local rev="$2"
-  local repo_rev=$(hg-get-revision "${dir}")
-  [ "${repo_rev}" == "${rev}" ]
-  return $?
-}
-
-#+ hg-assert-is-merge <dir> - Assert an working directory contains a merge
-hg-assert-is-merge() {
-  local dir=$1
-  spushd "${dir}"
-
-  # When the working directory is a merge, hg identify -i
-  # emits "changesetid1+changesetid2+"
-  if ${HG} identify -i | egrep -q '^[0-9a-f]+\+[0-9a-f]+\+$'; then
-    spopd
-    return
-  fi
-  local REPONAME=$(basename "${dir}")
-  spopd
-  Banner "ERROR: Working directory of '${REPONAME}' does not have a merge."
-  exit -1
-}
-
-hg-on-branch() {
-  local dir=$1
-  local branch=$2
-  spushd "${dir}"
-  if ${HG} branch | grep -q "^${branch}\$"; then
-    spopd
-    return 0
-  else
-    spopd
-    return 1
-  fi
-}
-
-#+ hg-assert-branch <dir> <branch> - Assert hg repo in <dir> is on <branch>
-hg-assert-branch() {
-  local dir=$1
-  local branch=$2
-
-  if ! hg-on-branch "${dir}" "${branch}" ; then
-    local REPONAME=$(basename "${dir}")
-    Banner "ERROR: ${REPONAME} is not on branch '${branch}'."
-    exit -1
-  fi
-}
-
-hg-has-changes() {
-  local dir=$1
-  spushd "${dir}"
-  local PLUS=$(${HG} status . | grep -v '^?')
-  spopd
-
-  [ "${PLUS}" != "" ]
-  return $?
-}
-
-#+ hg-assert-no-changes <dir> - Assert an hg repo has no local changes
-hg-assert-no-changes() {
-  local dir="$1"
-  if hg-has-changes "${dir}" ; then
-    local REPONAME=$(basename "${dir}")
-    Banner "ERROR: Repository ${REPONAME} has local changes"
-    exit -1
-  fi
-}
-
-hg-has-untracked() {
-  local dir=$1
-  spushd "${dir}"
-  local STATUS=$(${HG} status . | grep '^?')
-  spopd
-
-  [ "${STATUS}" != "" ]
-  return $?
-}
-
-hg-assert-no-untracked() {
-  local dir=$1
-  if hg-has-untracked "${dir}"; then
-    local REPONAME=$(basename "${dir}")
-    Banner "ERROR: Repository ${REPONAME} has untracked files"
-    exit -1
-  fi
-}
-
-hg-has-outgoing() {
-  local dir=$1
-  spushd "${dir}"
-  if ${HG} outgoing | grep -q "^no changes found$" ; then
-    spopd
-    return 1
-  fi
-  spopd
-  return 0
-}
-
-hg-assert-no-outgoing() {
-  local dir=$1
-  if hg-has-outgoing "${dir}" ; then
-    local REPONAME=$(basename "${dir}")
-    msg="ERROR: Repository ${REPONAME} has outgoing commits. Clean first."
-    Banner "${msg}"
-    exit -1
-  fi
-}
 
 ######################################################################
 # Git repository tools
@@ -445,6 +194,14 @@ git-assert-no-changes() {
 # Subversion repository tools
 ######################################################################
 
+svn-at-revision() {
+  local dir="$1"
+  local rev="$2"
+  local repo_rev=$(svn-get-revision "${dir}")
+  [ "${repo_rev}" == "${rev}" ]
+  return $?
+}
+
 #+ svn-get-revision <dir>
 svn-get-revision() {
   local dir="$1"
@@ -456,15 +213,6 @@ svn-get-revision() {
   fi
   spopd
   echo "${rev}"
-}
-
-#+ hg-get-revision <dir>
-hg-get-revision() {
-  local dir="$1"
-  spushd "${dir}"
-  local HGREV=($(${HG} identify | tr -d '+'))
-  spopd
-  echo "${HGREV[0]}"
 }
 
 #+ svn-checkout <url> <repodir> - Checkout an SVN repository
@@ -538,20 +286,11 @@ svn-one-line-rev-info() {
     echo "[SVN] ${url}: ${rev}"
 }
 
-hg-one-line-rev-info() {
-    local num=$(${HG} identify -n)
-    local id=$(${HG} identify -i)
-    local url=$(grep default .hg/hgrc | get-field 3)
-    echo "[HG]  ${url}: ${id} (${num})"
-}
-
 #+ one-line-rev-info <dir> - show one line summmary for
 one-line-rev-info() {
   spushd $1
   if [ -d .svn ]; then
     svn-one-line-rev-info
-  elif [ -d .hg ]; then
-    hg-one-line-rev-info
   elif [ -d .git ]; then
     # we currently only
     git-one-line-rev-info
@@ -616,12 +355,12 @@ RunWithLog() {
   shift 1
   local ret=1
   if ${PNACL_VERBOSE}; then
-    echo "RUNNING: " "$@" | tee -a "${log}" "${TC_LOG_ALL}"
-    "$@" 2>&1 | tee -a "${log}" "${TC_LOG_ALL}"
+    echo "RUNNING: " "$@" | tee "${log}" | tee -a "${TC_LOG_ALL}"
+    "$@" 2>&1 | tee "${log}" | tee -a "${TC_LOG_ALL}"
     ret=${PIPESTATUS[0]}
   else
-    echo "RUNNING: " "$@" | tee -a "${log}" "${TC_LOG_ALL}" &> /dev/null
-    "$@" 2>&1 | tee -a "${log}" "${TC_LOG_ALL}" &> /dev/null
+    echo "RUNNING: " "$@" | tee -a "${TC_LOG_ALL}" &> "${log}"
+    "$@" 2>&1 | tee -a "${TC_LOG_ALL}" &> "${log}"
     ret=${PIPESTATUS[0]}
   fi
   if [ ${ret} -ne 0 ]; then
@@ -756,23 +495,6 @@ Fatal() {
   exit -1
 }
 
-PackageCheck() {
-  assert-bin "makeinfo" "makeinfo not found. Please install 'texinfo' package."
-  assert-bin "bison"    "bison not found. Please install 'bison' package."
-  assert-bin "flex"     "flex not found. Please install 'flex' package."
-  assert-bin "gclient"  "gclient not found in PATH. Please install depot_tools."
-}
-
-assert-bin() {
-  local exe="$1"
-  local msg="$2"
-
-  if ! which "$exe" > /dev/null; then
-    Banner "ERROR: $msg"
-    exit -1
-  fi
-}
-
 is-ELF() {
   local F=$(file -b "$1")
   [[ "${F}" =~ "ELF" ]]
@@ -883,31 +605,4 @@ QueueKill() {
 
 QueueEmpty() {
   [ "${CT_WAIT_QUEUE}" == "" ]
-}
-
-#+ RunWithRetry <max_retries> <delay_sec> cmd [args]
-RunWithRetry() {
-  local max_retries="$1"
-  local delay_sec="$2"
-  local cmdname=$(basename "$3")
-  shift 2
-
-  local retries=0
-  while true; do
-    if "$@" ; then
-      return 0
-    fi
-
-    StepBanner "RUN-WITH-RETRY" "Execution of '${cmdname}' failed."
-    retries=$[retries+1]
-    if [ ${retries} -lt ${max_retries} ]; then
-      StepBanner "RUN-WITH-RETRY" "Retrying in ${delay_sec} seconds."
-      sleep ${delay_sec}
-    else
-      StepBanner "RUN-WITH-RETRY" \
-        "'${cmdname}' failed ${max_retries} times. Aborting."
-      return 1
-    fi
-  done
-
 }

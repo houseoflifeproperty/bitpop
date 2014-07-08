@@ -4,13 +4,17 @@
 
 #include <set>
 #include "base/basictypes.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/signin_manager_fake.h"
+#include "chrome/browser/signin/fake_signin_manager.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
 #include "chrome/browser/sync/sync_ui_util.h"
+#include "components/signin/core/browser/fake_auth_status_provider.h"
+#include "components/signin/core/browser/profile_oauth2_token_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 #include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "grit/generated_resources.h"
 #include "testing/gmock/include/gmock/gmock-actions.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -35,21 +39,18 @@ enum DistinctState {
   STATUS_CASE_PROTOCOL_ERROR,
   STATUS_CASE_PASSPHRASE_ERROR,
   STATUS_CASE_SYNCED,
+  STATUS_CASE_SYNC_DISABLED_BY_POLICY,
   NUMBER_OF_STATUS_CASES
 };
 
 namespace {
 
-// Mock that allows us to mock a SigninManager that is authenticating.
-class SigninManagerMock : public SigninManager {
- public:
-  MOCK_CONST_METHOD0(AuthInProgress, bool());
-};
+const char kTestUser[] = "test_user@test.com";
 
+#if !defined(OS_CHROMEOS)
 // Utility function to test that GetStatusLabelsForSyncGlobalError returns
 // the correct results for the given states.
 void VerifySyncGlobalErrorResult(NiceMock<ProfileSyncServiceMock>* service,
-                                 const SigninManager& signin,
                                  GoogleServiceAuthError::State error_state,
                                  bool is_signed_in,
                                  bool is_error) {
@@ -59,47 +60,50 @@ void VerifySyncGlobalErrorResult(NiceMock<ProfileSyncServiceMock>* service,
   GoogleServiceAuthError auth_error(error_state);
   EXPECT_CALL(*service, GetAuthError()).WillRepeatedly(ReturnRef(auth_error));
 
-  string16 label1, label2, label3;
+  base::string16 label1, label2, label3;
   sync_ui_util::GetStatusLabelsForSyncGlobalError(
-      service, signin, &label1, &label2, &label3);
+      service, &label1, &label2, &label3);
   EXPECT_EQ(label1.empty(), !is_error);
   EXPECT_EQ(label2.empty(), !is_error);
   EXPECT_EQ(label3.empty(), !is_error);
 }
+#endif
 
 } // namespace
 
 
+class SyncUIUtilTest : public testing::Test {
+ private:
+  content::TestBrowserThreadBundle thread_bundle_;
+};
+
+#if !defined(OS_CHROMEOS)
 // Test that GetStatusLabelsForSyncGlobalError returns an error if a
 // passphrase is required.
-TEST(SyncUIUtilTest, PassphraseGlobalError) {
-  MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+TEST_F(SyncUIUtilTest, PassphraseGlobalError) {
   scoped_ptr<Profile> profile(
       ProfileSyncServiceMock::MakeSignedInTestingProfile());
   NiceMock<ProfileSyncServiceMock> service(profile.get());
-  FakeSigninManager signin(profile.get());
   browser_sync::SyncBackendHost::Status status;
   EXPECT_CALL(service, QueryDetailedSyncStatus(_))
               .WillRepeatedly(Return(false));
-
   EXPECT_CALL(service, IsPassphraseRequired())
               .WillRepeatedly(Return(true));
   EXPECT_CALL(service, IsPassphraseRequiredForDecryption())
               .WillRepeatedly(Return(true));
-  VerifySyncGlobalErrorResult(
-      &service, signin, GoogleServiceAuthError::NONE, true, true);
+
+  VerifySyncGlobalErrorResult(&service,
+                              GoogleServiceAuthError::NONE,
+                              true /* signed in */,
+                              true /* error */);
 }
 
 // Test that GetStatusLabelsForSyncGlobalError returns an error if a
-// passphrase is required.
-TEST(SyncUIUtilTest, AuthAndPassphraseGlobalError) {
-  MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+// passphrase is required and not for auth errors.
+TEST_F(SyncUIUtilTest, AuthAndPassphraseGlobalError) {
   scoped_ptr<Profile> profile(
       ProfileSyncServiceMock::MakeSignedInTestingProfile());
   NiceMock<ProfileSyncServiceMock> service(profile.get());
-  FakeSigninManager signin(profile.get());
   browser_sync::SyncBackendHost::Status status;
   EXPECT_CALL(service, QueryDetailedSyncStatus(_))
               .WillRepeatedly(Return(false));
@@ -114,20 +118,18 @@ TEST(SyncUIUtilTest, AuthAndPassphraseGlobalError) {
   GoogleServiceAuthError auth_error(
       GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS);
   EXPECT_CALL(service, GetAuthError()).WillRepeatedly(ReturnRef(auth_error));
-  string16 menu_label, label2, label3;
+  base::string16 menu_label, label2, label3;
   sync_ui_util::GetStatusLabelsForSyncGlobalError(
-      &service, signin, &menu_label, &label2, &label3);
-  // Make sure we aren't displaying the passphrase error badge.
-  EXPECT_NE(menu_label, l10n_util::GetStringUTF16(
+      &service, &menu_label, &label2, &label3);
+  // Make sure we are still displaying the passphrase error badge (don't show
+  // auth errors through SyncUIUtil).
+  EXPECT_EQ(menu_label, l10n_util::GetStringUTF16(
       IDS_SYNC_PASSPHRASE_ERROR_WRENCH_MENU_ITEM));
 }
 
-// Test that GetStatusLabelsForSyncGlobalError indicates errors for conditions
-// that can be resolved by the user and suppresses errors for conditions that
-// cannot be resolved by the user.
-TEST(SyncUIUtilTest, AuthStateGlobalError) {
-  MessageLoopForUI message_loop;
-  content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
+// Test that GetStatusLabelsForSyncGlobalError does not indicate errors for
+// auth errors (these are reported through SigninGlobalError).
+TEST_F(SyncUIUtilTest, AuthStateGlobalError) {
   scoped_ptr<Profile> profile(
       ProfileSyncServiceMock::MakeSignedInTestingProfile());
   NiceMock<ProfileSyncServiceMock> service(profile.get());
@@ -136,36 +138,69 @@ TEST(SyncUIUtilTest, AuthStateGlobalError) {
   EXPECT_CALL(service, QueryDetailedSyncStatus(_))
               .WillRepeatedly(Return(false));
 
-  struct {
-    GoogleServiceAuthError::State error_state;
-    bool is_error;
-  } table[] = {
-    { GoogleServiceAuthError::NONE, false },
-    { GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS, true },
-    { GoogleServiceAuthError::USER_NOT_SIGNED_UP, true },
-    { GoogleServiceAuthError::CONNECTION_FAILED, false },
-    { GoogleServiceAuthError::CAPTCHA_REQUIRED, true },
-    { GoogleServiceAuthError::ACCOUNT_DELETED, true },
-    { GoogleServiceAuthError::ACCOUNT_DISABLED, true },
-    { GoogleServiceAuthError::SERVICE_UNAVAILABLE, true },
-    { GoogleServiceAuthError::TWO_FACTOR, true },
-    { GoogleServiceAuthError::REQUEST_CANCELED, true },
-    { GoogleServiceAuthError::HOSTED_NOT_ALLOWED, true },
+  GoogleServiceAuthError::State table[] = {
+    GoogleServiceAuthError::NONE,
+    GoogleServiceAuthError::INVALID_GAIA_CREDENTIALS,
+    GoogleServiceAuthError::USER_NOT_SIGNED_UP,
+    GoogleServiceAuthError::CONNECTION_FAILED,
+    GoogleServiceAuthError::CAPTCHA_REQUIRED,
+    GoogleServiceAuthError::ACCOUNT_DELETED,
+    GoogleServiceAuthError::ACCOUNT_DISABLED,
+    GoogleServiceAuthError::SERVICE_UNAVAILABLE,
+    GoogleServiceAuthError::TWO_FACTOR,
+    GoogleServiceAuthError::REQUEST_CANCELED,
+    GoogleServiceAuthError::HOSTED_NOT_ALLOWED
   };
 
-  FakeSigninManager signin(profile.get());
-  for (size_t i = 0; i < sizeof(table)/sizeof(*table); ++i) {
-    VerifySyncGlobalErrorResult(
-        &service, signin, table[i].error_state, true, table[i].is_error);
-    VerifySyncGlobalErrorResult(
-        &service, signin, table[i].error_state, false, false);
+  FakeSigninManagerBase signin(profile.get());
+  for (size_t i = 0; i < arraysize(table); ++i) {
+    VerifySyncGlobalErrorResult(&service,
+                                table[i],
+                                true /* signed in */,
+                                false /* no error */);
+    VerifySyncGlobalErrorResult(&service,
+                                table[i],
+                                false /* not signed in */,
+                                false /* no error */);
   }
 }
+#endif
+
+// TODO(tim): This shouldn't be required. r194857 removed the
+// AuthInProgress override from FakeSigninManager, which meant this test started
+// using the "real" SigninManager AuthInProgress logic. Without that override,
+// it's no longer possible to test both chrome os + desktop flows as part of the
+// same test, because AuthInProgress is always false on chrome os. Most of the
+// tests are unaffected, but STATUS_CASE_AUTHENTICATING can't exist in both
+// versions, so it we will require two separate tests, one using SigninManager
+// and one using SigninManagerBase (which require different setup procedures.
+class FakeSigninManagerForSyncUIUtilTest : public FakeSigninManagerBase {
+ public:
+  explicit FakeSigninManagerForSyncUIUtilTest(Profile* profile)
+      : FakeSigninManagerBase(profile), auth_in_progress_(false) {
+    Initialize(NULL);
+  }
+
+  virtual ~FakeSigninManagerForSyncUIUtilTest() {
+  }
+
+  virtual bool AuthInProgress() const OVERRIDE {
+    return auth_in_progress_;
+  }
+
+  void set_auth_in_progress() {
+    auth_in_progress_ = true;
+  }
+
+ private:
+  bool auth_in_progress_;
+};
+
 // Loads a ProfileSyncServiceMock to emulate one of a number of distinct cases
 // in order to perform tests on the generated messages.
 void GetDistinctCase(ProfileSyncServiceMock& service,
-                     SigninManagerMock& signin,
-                     GoogleServiceAuthError** auth_error,
+                     FakeSigninManagerForSyncUIUtilTest* signin,
+                     FakeAuthStatusProvider* provider,
                      int caseNumber) {
   // Auth Error object is returned by reference in mock and needs to stay in
   // scope throughout test, so it is owned by calling method. However it is
@@ -173,116 +208,122 @@ void GetDistinctCase(ProfileSyncServiceMock& service,
   switch (caseNumber) {
     case STATUS_CASE_SETUP_IN_PROGRESS: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
       EXPECT_CALL(service, FirstSetupInProgress())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
-      *auth_error = new GoogleServiceAuthError(GoogleServiceAuthError::NONE);
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
       return;
     }
    case STATUS_CASE_SETUP_ERROR: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
       EXPECT_CALL(service, FirstSetupInProgress())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(true));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
+                  .WillRepeatedly(Return(true));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
       return;
     }
     case STATUS_CASE_AUTHENTICATING: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(true));
+      EXPECT_CALL(service, IsPassphraseRequired())
+                  .WillRepeatedly(Return(false));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(false));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(true));
-      *auth_error = new GoogleServiceAuthError(GoogleServiceAuthError::NONE);
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
+                  .WillRepeatedly(Return(false));
+      signin->set_auth_in_progress();
       return;
     }
     case STATUS_CASE_AUTH_ERROR: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(true));
+      EXPECT_CALL(service, IsPassphraseRequired())
+                  .WillRepeatedly(Return(false));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
-      *auth_error = new GoogleServiceAuthError(
-         GoogleServiceAuthError::SERVICE_UNAVAILABLE);
+      provider->SetAuthError(
+          kTestUser,
+          GoogleServiceAuthError(GoogleServiceAuthError::SERVICE_UNAVAILABLE));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(false));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
+                  .WillRepeatedly(Return(false));
       return;
     }
     case STATUS_CASE_PROTOCOL_ERROR: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(true));
+      EXPECT_CALL(service, IsPassphraseRequired())
+                  .WillRepeatedly(Return(false));
       syncer::SyncProtocolError protocolError;
       protocolError.action = syncer::STOP_AND_RESTART_SYNC;
       browser_sync::SyncBackendHost::Status status;
       status.sync_protocol_error = protocolError;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
-      *auth_error = new GoogleServiceAuthError(GoogleServiceAuthError::NONE);
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
       return;
     }
     case STATUS_CASE_PASSPHRASE_ERROR: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(true));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
-      *auth_error = new GoogleServiceAuthError(GoogleServiceAuthError::NONE);
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(false));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
+                  .WillRepeatedly(Return(false));
       EXPECT_CALL(service, IsPassphraseRequired())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
       EXPECT_CALL(service, IsPassphraseRequiredForDecryption())
-                  .WillOnce(Return(true));
+                  .WillRepeatedly(Return(true));
       return;
     }
     case STATUS_CASE_SYNCED: {
       EXPECT_CALL(service, HasSyncSetupCompleted())
-              .WillOnce(Return(true));
+              .WillRepeatedly(Return(true));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(true));
+      EXPECT_CALL(service, IsPassphraseRequired())
+                  .WillRepeatedly(Return(false));
       browser_sync::SyncBackendHost::Status status;
       EXPECT_CALL(service, QueryDetailedSyncStatus(_))
-                  .WillOnce(DoAll(SetArgPointee<0>(status),
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
                                   Return(false)));
-      *auth_error = new GoogleServiceAuthError(GoogleServiceAuthError::NONE);
-      EXPECT_CALL(service, GetAuthError())
-                  .WillOnce(ReturnRef(**auth_error));
-      EXPECT_CALL(signin, AuthInProgress()).WillRepeatedly(Return(false));
       EXPECT_CALL(service, HasUnrecoverableError())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
       EXPECT_CALL(service, IsPassphraseRequired())
-                  .WillOnce(Return(false));
+                  .WillRepeatedly(Return(false));
+      return;
+    }
+    case STATUS_CASE_SYNC_DISABLED_BY_POLICY: {
+      EXPECT_CALL(service, IsManaged()).WillRepeatedly(Return(true));
+      EXPECT_CALL(service, HasSyncSetupCompleted())
+          .WillRepeatedly(Return(false));
+      EXPECT_CALL(service, sync_initialized()).WillRepeatedly(Return(false));
+      EXPECT_CALL(service, IsPassphraseRequired())
+                  .WillRepeatedly(Return(false));
+      browser_sync::SyncBackendHost::Status status;
+      EXPECT_CALL(service, QueryDetailedSyncStatus(_))
+                  .WillRepeatedly(DoAll(SetArgPointee<0>(status),
+                                  Return(false)));
+      EXPECT_CALL(service, HasUnrecoverableError())
+                  .WillRepeatedly(Return(false));
       return;
     }
     default:
@@ -293,17 +334,21 @@ void GetDistinctCase(ProfileSyncServiceMock& service,
 // This test ensures that a each distinctive ProfileSyncService statuses
 // will return a unique combination of status and link messages from
 // GetStatusLabels().
-TEST(SyncUIUtilTest, DistinctCasesReportUniqueMessageSets) {
-  std::set<string16> messages;
+TEST_F(SyncUIUtilTest, DistinctCasesReportUniqueMessageSets) {
+  std::set<base::string16> messages;
   for (int idx = 0; idx != NUMBER_OF_STATUS_CASES; idx++) {
-    scoped_ptr<Profile> profile(
-        ProfileSyncServiceMock::MakeSignedInTestingProfile());
+    scoped_ptr<Profile> profile(new TestingProfile());
     ProfileSyncServiceMock service(profile.get());
-    NiceMock<SigninManagerMock> signin;
-    GoogleServiceAuthError* auth_error = NULL;
-    GetDistinctCase(service, signin, &auth_error, idx);
-    string16 status_label;
-    string16 link_label;
+    GoogleServiceAuthError error = GoogleServiceAuthError::AuthErrorNone();
+    EXPECT_CALL(service, GetAuthError()).WillRepeatedly(ReturnRef(error));
+    FakeSigninManagerForSyncUIUtilTest signin(profile.get());
+    signin.SetAuthenticatedUsername(kTestUser);
+    scoped_ptr<FakeAuthStatusProvider> provider(new FakeAuthStatusProvider(
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile.get())->
+            signin_error_controller()));
+    GetDistinctCase(service, &signin, provider.get(), idx);
+    base::string16 status_label;
+    base::string16 link_label;
     sync_ui_util::GetStatusLabels(&service,
                                   signin,
                                   sync_ui_util::WITH_HTML,
@@ -312,39 +357,54 @@ TEST(SyncUIUtilTest, DistinctCasesReportUniqueMessageSets) {
     // If the status and link message combination is already present in the set
     // of messages already seen, this is a duplicate rather than a unique
     // message, and the test has failed.
-    string16 combined_label =
-        status_label + string16(ASCIIToUTF16("#")) + link_label;
-    EXPECT_TRUE(messages.find(combined_label) == messages.end());
+    EXPECT_FALSE(status_label.empty()) <<
+        "Empty status label returned for case #" << idx;
+    base::string16 combined_label =
+        status_label + base::ASCIIToUTF16("#") + link_label;
+    EXPECT_TRUE(messages.find(combined_label) == messages.end()) <<
+        "Duplicate message for case #" << idx << ": " << combined_label;
     messages.insert(combined_label);
-    if (auth_error)
-      delete auth_error;
+    testing::Mock::VerifyAndClearExpectations(&service);
+    testing::Mock::VerifyAndClearExpectations(&signin);
+    EXPECT_CALL(service, GetAuthError()).WillRepeatedly(ReturnRef(error));
+    provider.reset();
+    signin.Shutdown();
   }
 }
 
 // This test ensures that the html_links parameter on GetStatusLabels() is
 // honored.
-TEST(SyncUIUtilTest, HtmlNotIncludedInStatusIfNotRequested) {
+TEST_F(SyncUIUtilTest, HtmlNotIncludedInStatusIfNotRequested) {
   for (int idx = 0; idx != NUMBER_OF_STATUS_CASES; idx++) {
     scoped_ptr<Profile> profile(
         ProfileSyncServiceMock::MakeSignedInTestingProfile());
     ProfileSyncServiceMock service(profile.get());
-    NiceMock<SigninManagerMock> signin;
-    GoogleServiceAuthError* auth_error = NULL;
-    GetDistinctCase(service, signin, &auth_error, idx);
-    string16 status_label;
-    string16 link_label;
+    GoogleServiceAuthError error = GoogleServiceAuthError::AuthErrorNone();
+    EXPECT_CALL(service, GetAuthError()).WillRepeatedly(ReturnRef(error));
+    FakeSigninManagerForSyncUIUtilTest signin(profile.get());
+    signin.SetAuthenticatedUsername(kTestUser);
+    scoped_ptr<FakeAuthStatusProvider> provider(new FakeAuthStatusProvider(
+        ProfileOAuth2TokenServiceFactory::GetForProfile(profile.get())->
+            signin_error_controller()));
+    GetDistinctCase(service, &signin, provider.get(), idx);
+    base::string16 status_label;
+    base::string16 link_label;
     sync_ui_util::GetStatusLabels(&service,
                                   signin,
                                   sync_ui_util::PLAIN_TEXT,
                                   &status_label,
                                   &link_label);
+
     // Ensures a search for string 'href' (found in links, not a string to be
     // found in an English language message) fails when links are excluded from
     // the status label.
-    EXPECT_EQ(status_label.find(string16(ASCIIToUTF16("href"))),
-              string16::npos);
-    if (auth_error) {
-      delete auth_error;
-    }
+    EXPECT_FALSE(status_label.empty());
+    EXPECT_EQ(status_label.find(base::ASCIIToUTF16("href")),
+              base::string16::npos);
+    testing::Mock::VerifyAndClearExpectations(&service);
+    testing::Mock::VerifyAndClearExpectations(&signin);
+    EXPECT_CALL(service, GetAuthError()).WillRepeatedly(ReturnRef(error));
+    provider.reset();
+    signin.Shutdown();
   }
 }

@@ -8,15 +8,16 @@
 #include "base/bind_helpers.h"
 #include "base/callback.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 #include "grit/ui_strings.h"
-#include "ui/base/events/event.h"
-#include "ui/base/keycodes/keyboard_codes.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/events/event.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/canvas.h"
+#include "ui/gfx/geometry/safe_integer_conversions.h"
 #include "ui/views/controls/menu/menu_item_view.h"
 #include "ui/views/controls/menu/menu_runner.h"
 #include "ui/views/controls/scroll_view.h"
@@ -40,10 +41,11 @@ BaseScrollBar::BaseScrollBar(bool horizontal, BaseScrollBarThumb* thumb)
       thumb_(thumb),
       contents_size_(0),
       contents_scroll_offset_(0),
+      viewport_size_(0),
       thumb_track_state_(CustomButton::STATE_NORMAL),
       last_scroll_amount_(SCROLL_NONE),
-      ALLOW_THIS_IN_INITIALIZER_LIST(repeater_(
-          base::Bind(&BaseScrollBar::TrackClicked, base::Unretained(this)))),
+      repeater_(base::Bind(&BaseScrollBar::TrackClicked,
+                           base::Unretained(this))),
       context_menu_mouse_position_(0) {
   AddChildView(thumb_);
 
@@ -114,6 +116,15 @@ bool BaseScrollBar::ScrollByContentsOffset(int contents_offset) {
   return true;
 }
 
+void BaseScrollBar::OnThumbStateChanged(CustomButton::ButtonState old_state,
+                                        CustomButton::ButtonState new_state) {
+  if (old_state == CustomButton::STATE_PRESSED &&
+      new_state == CustomButton::STATE_NORMAL &&
+      GetThumbTrackState() == CustomButton::STATE_HOVERED) {
+    SetThumbTrackState(CustomButton::STATE_NORMAL);
+  }
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, View implementation:
 
@@ -124,11 +135,21 @@ bool BaseScrollBar::OnMousePressed(const ui::MouseEvent& event) {
 }
 
 void BaseScrollBar::OnMouseReleased(const ui::MouseEvent& event) {
-  OnMouseCaptureLost();
+  SetState(HitTestPoint(event.location()) ?
+           CustomButton::STATE_HOVERED : CustomButton::STATE_NORMAL);
 }
 
 void BaseScrollBar::OnMouseCaptureLost() {
-  ResetState();
+  SetState(CustomButton::STATE_NORMAL);
+}
+
+void BaseScrollBar::OnMouseEntered(const ui::MouseEvent& event) {
+  SetThumbTrackState(CustomButton::STATE_HOVERED);
+}
+
+void BaseScrollBar::OnMouseExited(const ui::MouseEvent& event) {
+  if (GetThumbTrackState() == CustomButton::STATE_HOVERED)
+    SetState(CustomButton::STATE_NORMAL);
 }
 
 bool BaseScrollBar::OnKeyPressed(const ui::KeyEvent& event) {
@@ -173,7 +194,7 @@ bool BaseScrollBar::OnKeyPressed(const ui::KeyEvent& event) {
 }
 
 bool BaseScrollBar::OnMouseWheel(const ui::MouseWheelEvent& event) {
-  ScrollByContentsOffset(event.offset());
+  ScrollByContentsOffset(event.y_offset());
   return true;
 }
 
@@ -199,7 +220,7 @@ void BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
     return;
   }
 
-  ResetState();
+  SetState(CustomButton::STATE_NORMAL);
 
   if (event->type() == ui::ET_GESTURE_TAP) {
     // TAP_DOWN would have already scrolled some amount. So scrolling again on
@@ -215,10 +236,19 @@ void BaseScrollBar::OnGestureEvent(ui::GestureEvent* event) {
   }
 
   if (event->type() == ui::ET_GESTURE_SCROLL_UPDATE) {
-    if (ScrollByContentsOffset(IsHorizontal() ? event->details().scroll_x() :
-                                                event->details().scroll_y())) {
-      event->SetHandled();
+    float scroll_amount_f;
+    int scroll_amount;
+    if (IsHorizontal()) {
+      scroll_amount_f = event->details().scroll_x() - roundoff_error_.x();
+      scroll_amount = gfx::ToRoundedInt(scroll_amount_f);
+      roundoff_error_.set_x(scroll_amount - scroll_amount_f);
+    } else {
+      scroll_amount_f = event->details().scroll_y() - roundoff_error_.y();
+      scroll_amount = gfx::ToRoundedInt(scroll_amount_f);
+      roundoff_error_.set_y(scroll_amount - scroll_amount_f);
     }
+    if (ScrollByContentsOffset(scroll_amount))
+      event->SetHandled();
     return;
   }
 
@@ -253,7 +283,9 @@ enum ScrollBarContextMenuCommands {
   ScrollBarContextMenuCommand_ScrollNext
 };
 
-void BaseScrollBar::ShowContextMenuForView(View* source, const gfx::Point& p) {
+void BaseScrollBar::ShowContextMenuForView(View* source,
+                                           const gfx::Point& p,
+                                           ui::MenuSourceType source_type) {
   Widget* widget = GetWidget();
   gfx::Rect widget_bounds = widget->GetWindowBoundsInScreen();
   gfx::Point temp_pt(p.x() - widget_bounds.x(), p.y() - widget_bounds.y());
@@ -273,17 +305,22 @@ void BaseScrollBar::ShowContextMenuForView(View* source, const gfx::Point& p) {
   menu->AppendSeparator();
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollPrev);
   menu->AppendDelegateMenuItem(ScrollBarContextMenuCommand_ScrollNext);
-  if (menu_runner_->RunMenuAt(GetWidget(), NULL, gfx::Rect(p, gfx::Size()),
-          MenuItemView::TOPLEFT, MenuRunner::HAS_MNEMONICS |
-          views::MenuRunner::CONTEXT_MENU) ==
-      MenuRunner::MENU_DELETED)
+  if (menu_runner_->RunMenuAt(
+          GetWidget(),
+          NULL,
+          gfx::Rect(p, gfx::Size()),
+          MENU_ANCHOR_TOPLEFT,
+          source_type,
+          MenuRunner::HAS_MNEMONICS | views::MenuRunner::CONTEXT_MENU) ==
+      MenuRunner::MENU_DELETED) {
     return;
+  }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, Menu::Delegate implementation:
 
-string16 BaseScrollBar::GetLabel(int id) const {
+base::string16 BaseScrollBar::GetLabel(int id) const {
   int ids_value = 0;
   switch (id) {
     case ScrollBarContextMenuCommand_ScrollHere:
@@ -315,7 +352,7 @@ string16 BaseScrollBar::GetLabel(int id) const {
       NOTREACHED() << "Invalid BaseScrollBar Context Menu command!";
   }
 
-  return ids_value ? l10n_util::GetStringUTF16(ids_value) : string16();
+  return ids_value ? l10n_util::GetStringUTF16(ids_value) : base::string16();
 }
 
 bool BaseScrollBar::IsCommandEnabled(int id) const {
@@ -356,7 +393,8 @@ void BaseScrollBar::ExecuteCommand(int id) {
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, ScrollBar implementation:
 
-void BaseScrollBar::Update(int viewport_size, int content_size,
+void BaseScrollBar::Update(int viewport_size,
+                           int content_size,
                            int contents_scroll_offset) {
   ScrollBar::Update(viewport_size, content_size, contents_scroll_offset);
 
@@ -364,12 +402,15 @@ void BaseScrollBar::Update(int viewport_size, int content_size,
   // calculations throughout this code.
   contents_size_ = std::max(1, content_size);
 
+  viewport_size_ = std::max(1, viewport_size);
+
   if (content_size < 0)
     content_size = 0;
   if (contents_scroll_offset < 0)
     contents_scroll_offset = 0;
   if (contents_scroll_offset > content_size)
     contents_scroll_offset = content_size;
+  contents_scroll_offset_ = contents_scroll_offset;
 
   // Thumb Height and Thumb Pos.
   // The height of the thumb is the ratio of the Viewport height to the
@@ -405,17 +446,20 @@ int BaseScrollBar::GetScrollIncrement(bool is_page, bool is_positive) {
   return controller()->GetScrollIncrement(this, is_page, is_positive);
 }
 
-
 ///////////////////////////////////////////////////////////////////////////////
 // BaseScrollBar, private:
+
+int BaseScrollBar::GetThumbSizeForTest() {
+  return thumb_->GetSize();
+}
 
 void BaseScrollBar::ProcessPressEvent(const ui::LocatedEvent& event) {
   SetThumbTrackState(CustomButton::STATE_PRESSED);
   gfx::Rect thumb_bounds = thumb_->bounds();
   if (IsHorizontal()) {
-    if (event.x() < thumb_bounds.x()) {
+    if (GetMirroredXInView(event.x()) < thumb_bounds.x()) {
       last_scroll_amount_ = SCROLL_PREV_PAGE;
-    } else if (event.x() > thumb_bounds.right()) {
+    } else if (GetMirroredXInView(event.x()) > thumb_bounds.right()) {
       last_scroll_amount_ = SCROLL_NEXT_PAGE;
     }
   } else {
@@ -429,8 +473,8 @@ void BaseScrollBar::ProcessPressEvent(const ui::LocatedEvent& event) {
   repeater_.Start();
 }
 
-void BaseScrollBar::ResetState() {
-  SetThumbTrackState(CustomButton::STATE_NORMAL);
+void BaseScrollBar::SetState(CustomButton::ButtonState state) {
+  SetThumbTrackState(state);
   repeater_.Stop();
 }
 
@@ -450,11 +494,18 @@ int BaseScrollBar::GetTrackSize() const {
 }
 
 int BaseScrollBar::CalculateThumbPosition(int contents_scroll_offset) const {
+  // In some combination of viewport_size and contents_size_, the result of
+  // simple division can be rounded and there could be 1 pixel gap even when the
+  // contents scroll down to the bottom. See crbug.com/244671
+  if (contents_scroll_offset + viewport_size_ == contents_size_) {
+    int track_size = GetTrackSize();
+    return track_size - (viewport_size_ * GetTrackSize() / contents_size_);
+  }
   return (contents_scroll_offset * GetTrackSize()) / contents_size_;
 }
 
 int BaseScrollBar::CalculateContentsOffset(int thumb_position,
-                                             bool scroll_to_middle) const {
+                                           bool scroll_to_middle) const {
   if (scroll_to_middle)
     thumb_position = thumb_position - (thumb_->GetSize() / 2);
   return (thumb_position * contents_size_) / GetTrackSize();

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/time.h"
-#include "base/threading/thread_checker.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/observer_list.h"
+#include "base/threading/thread_checker.h"
+#include "base/time/time.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
 #include "sync/syncable/nigori_handler.h"
 #include "sync/util/cryptographer.h"
@@ -41,7 +42,7 @@ class WriteTransaction;
 // sync methods.
 // All methods are non-thread-safe and should only be called from the sync
 // thread unless explicitly noted otherwise.
-class SyncEncryptionHandlerImpl
+class SYNC_EXPORT_PRIVATE SyncEncryptionHandlerImpl
     : public SyncEncryptionHandler,
       public syncable::NigoriHandler {
  public:
@@ -73,8 +74,8 @@ class SyncEncryptionHandlerImpl
       syncable::BaseTransaction* const trans) const OVERRIDE;
   virtual bool NeedKeystoreKey(
       syncable::BaseTransaction* const trans) const OVERRIDE;
-  virtual bool SetKeystoreKey(
-      const std::string& key,
+  virtual bool SetKeystoreKeys(
+      const google::protobuf::RepeatedPtrField<google::protobuf::string>& keys,
       syncable::BaseTransaction* const trans) OVERRIDE;
   // Can be called from any thread.
   virtual ModelTypeSet GetEncryptedTypes(
@@ -90,6 +91,7 @@ class SyncEncryptionHandlerImpl
   base::Time custom_passphrase_time() const;
 
  private:
+  friend class SyncEncryptionHandlerImplTest;
   FRIEND_TEST_ALL_PREFIXES(SyncEncryptionHandlerImplTest,
                            NigoriEncryptionTypes);
   FRIEND_TEST_ALL_PREFIXES(SyncEncryptionHandlerImplTest,
@@ -216,8 +218,8 @@ class SyncEncryptionHandlerImpl
   // triggered or not.
   // Conditions for triggering migration:
   // 1. Cryptographer has no pending keys
-  // 2. Nigori node isn't already properly migrated.
-  // 3. Keystore key is available (if we are not migrated yet).
+  // 2. Nigori node isn't already properly migrated or we need to rotate keys.
+  // 3. Keystore key is available.
   // Note: if the nigori node is migrated but has an invalid state, will return
   // true (e.g. node has KEYSTORE_PASSPHRASE, local is CUSTOM_PASSPHRASE).
   bool ShouldTriggerMigration(const sync_pb::NigoriSpecifics& nigori,
@@ -263,8 +265,6 @@ class SyncEncryptionHandlerImpl
 
   base::ThreadChecker thread_checker_;
 
-  base::WeakPtrFactory<SyncEncryptionHandlerImpl> weak_ptr_factory_;
-
   ObserverList<SyncEncryptionHandler::Observer> observers_;
 
   // The current user share (for creating transactions).
@@ -283,8 +283,14 @@ class SyncEncryptionHandlerImpl
   // keys stored in the nigori node.
   PassphraseType passphrase_type_;
 
-  // The keystore key provided by the server.
+  // The current keystore key provided by the server.
   std::string keystore_key_;
+
+  // The set of old keystore keys. Every time a key rotation occurs, the server
+  // sends down all previous keystore keys as well as the new key. We preserve
+  // the old keys so that when we re-encrypt we can ensure they're all added to
+  // the keybag (and to detect that a key rotation has occurred).
+  std::vector<std::string> old_keystore_keys_;
 
   // The number of times we've automatically (i.e. not via SetPassphrase or
   // conflict resolver) updated the nigori's encryption keys in this chrome
@@ -298,6 +304,8 @@ class SyncEncryptionHandlerImpl
   // if there is no custom passphrase or the custom passphrase was set
   // before support for this field was added.
   base::Time custom_passphrase_time_;
+
+  base::WeakPtrFactory<SyncEncryptionHandlerImpl> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncEncryptionHandlerImpl);
 };

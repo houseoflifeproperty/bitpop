@@ -13,18 +13,22 @@
 #include <CoreFoundation/CoreFoundation.h>
 #import <Foundation/Foundation.h>
 
-#include "base/file_path.h"
+#include "base/command_line.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
+#include "base/mac/launch_services_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/common/mac/app_mode_chrome_locator.h"
 #include "chrome/common/mac/app_mode_common.h"
 
 namespace {
 
-void LoadFramework(void** cr_dylib, app_mode::ChromeAppModeInfo* info) {
+typedef int (*StartFun)(const app_mode::ChromeAppModeInfo*);
+
+int LoadFrameworkAndStart(app_mode::ChromeAppModeInfo* info) {
   using base::SysNSStringToUTF8;
   using base::SysNSStringToUTF16;
   using base::mac::CFToNSCast;
@@ -44,14 +48,14 @@ void LoadFramework(void** cr_dylib, app_mode::ChromeAppModeInfo* info) {
   CHECK(cr_bundle_id) << "couldn't get browser bundle ID";
 
   // First check if Chrome exists at the last known location.
-  FilePath cr_bundle_path;
+  base::FilePath cr_bundle_path;
   NSString* cr_bundle_path_ns =
       [CFToNSCast(CFCastStrict<CFStringRef>(CFPreferencesCopyAppValue(
           NSToCFCast(app_mode::kLastRunAppBundlePathPrefsKey),
           NSToCFCast(cr_bundle_id)))) autorelease];
   cr_bundle_path = base::mac::NSStringToFilePath(cr_bundle_path_ns);
   bool found_bundle =
-      !cr_bundle_path.empty() && file_util::DirectoryExists(cr_bundle_path);
+      !cr_bundle_path.empty() && base::DirectoryExists(cr_bundle_path);
 
   if (!found_bundle) {
     // If no such bundle path exists, try to search by bundle ID.
@@ -63,19 +67,20 @@ void LoadFramework(void** cr_dylib, app_mode::ChromeAppModeInfo* info) {
   }
 
   // ** 2: Read information from the Chrome bundle.
-  string16 raw_version_str;
-  FilePath version_path;
-  FilePath framework_shlib_path;
+  base::string16 raw_version_str;
+  base::FilePath version_path;
+  base::FilePath framework_shlib_path;
   if (!app_mode::GetChromeBundleInfo(cr_bundle_path, &raw_version_str,
           &version_path, &framework_shlib_path)) {
     LOG(FATAL) << "Couldn't ready Chrome bundle info";
   }
+  base::FilePath app_mode_bundle_path =
+      base::mac::NSStringToFilePath([app_bundle bundlePath]);
 
   // ** 3: Fill in ChromeAppModeInfo.
   info->chrome_outer_bundle_path = cr_bundle_path;
   info->chrome_versioned_path = version_path;
-  info->app_mode_bundle_path =
-      base::mac::NSStringToFilePath([app_bundle bundlePath]);
+  info->app_mode_bundle_path = app_mode_bundle_path;
 
   // Read information about the this app shortcut from the Info.plist.
   // Don't check for null-ness on optional items.
@@ -95,12 +100,37 @@ void LoadFramework(void** cr_dylib, app_mode::ChromeAppModeInfo* info) {
   info->user_data_dir = base::mac::NSStringToFilePath(
       [info_plist objectForKey:app_mode::kCrAppModeUserDataDirKey]);
 
-  info->extension_path = base::mac::NSStringToFilePath(
-      [info_plist objectForKey:app_mode::kCrAppModeExtensionPathKey]);
+  info->profile_dir = base::mac::NSStringToFilePath(
+      [info_plist objectForKey:app_mode::kCrAppModeProfileDirKey]);
 
   // Open the framework.
-  *cr_dylib = dlopen(framework_shlib_path.value().c_str(), RTLD_LAZY);
-  CHECK(cr_dylib) << "couldn't load framework: " << dlerror();
+  StartFun ChromeAppModeStart = NULL;
+  void* cr_dylib = dlopen(framework_shlib_path.value().c_str(), RTLD_LAZY);
+  if (cr_dylib) {
+    // Find the entry point.
+    ChromeAppModeStart = (StartFun)dlsym(cr_dylib, "ChromeAppModeStart");
+    if (!ChromeAppModeStart)
+      LOG(ERROR) << "Couldn't get entry point: " << dlerror();
+  } else {
+    LOG(ERROR) << "Couldn't load framework: " << dlerror();
+  }
+
+  if (ChromeAppModeStart) {
+    return ChromeAppModeStart(info);
+  } else {
+    LOG(ERROR) << "Loading Chrome failed, launching with command line.";
+    // Launch Chrome instead and have it update this app_mode_loader bundle.
+    CommandLine command_line(CommandLine::NO_PROGRAM);
+    command_line.AppendSwitchPath(app_mode::kAppShimError,
+                                  app_mode_bundle_path);
+    if (!base::mac::OpenApplicationWithPath(
+            cr_bundle_path, command_line, kLSLaunchDefaults, NULL)) {
+      LOG(ERROR) << "Could not launch Chrome from: " << cr_bundle_path.value();
+      return 1;
+    }
+
+    return 0;
+  }
 }
 
 } // namespace
@@ -110,21 +140,12 @@ int main(int argc, char** argv) {
   app_mode::ChromeAppModeInfo info;
 
   // Hard coded info parameters.
-  info.major_version = 1;  // v1.0
-  info.minor_version = 0;
+  info.major_version = app_mode::kCurrentChromeAppModeInfoMajorVersion;
+  info.minor_version = app_mode::kCurrentChromeAppModeInfoMinorVersion;
   info.argc = argc;
   info.argv = argv;
 
-  // Load the Chrome framework.
-  void *cr_dylib;
-  LoadFramework(&cr_dylib, &info);
-
-  typedef int (*StartFun)(const app_mode::ChromeAppModeInfo*);
-  StartFun ChromeAppModeStart = (StartFun)dlsym(cr_dylib, "ChromeAppModeStart");
-  CHECK(ChromeAppModeStart) << "couldn't get entry point";
-
   // Exit instead of returning to avoid the the removal of |main()| from stack
   // backtraces under tail call optimization.
-  int rv = ChromeAppModeStart(&info);
-  exit(rv);
+  exit(LoadFrameworkAndStart(&info));
 }

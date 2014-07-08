@@ -4,8 +4,8 @@
 
 #include "win8/delegate_execute/delegate_execute_util.h"
 
-#include "base/file_path.h"
-#include "base/string_util.h"
+#include "base/files/file_path.h"
+#include "base/strings/string_util.h"
 
 namespace delegate_execute {
 
@@ -13,18 +13,18 @@ CommandLine CommandLineFromParameters(const wchar_t* params) {
   CommandLine command_line(CommandLine::NO_PROGRAM);
 
   if (params) {
-    string16 command_string(L"noprogram.exe ");
+    base::string16 command_string(L"noprogram.exe ");
     command_string.append(params);
     command_line.ParseFromString(command_string);
-    command_line.SetProgram(FilePath());
+    command_line.SetProgram(base::FilePath());
   }
 
   return command_line;
 }
 
-CommandLine MakeChromeCommandLine(const FilePath& chrome_exe,
+CommandLine MakeChromeCommandLine(const base::FilePath& chrome_exe,
                                   const CommandLine& params,
-                                  const string16& argument) {
+                                  const base::string16& argument) {
   CommandLine chrome_cmd(params);
   chrome_cmd.SetProgram(chrome_exe);
 
@@ -34,16 +34,16 @@ CommandLine MakeChromeCommandLine(const FilePath& chrome_exe,
   return chrome_cmd;
 }
 
-string16 ParametersFromSwitch(const char* a_switch) {
+base::string16 ParametersFromSwitch(const char* a_switch) {
   if (!a_switch)
-    return string16();
+    return base::string16();
 
   CommandLine cmd_line(CommandLine::NO_PROGRAM);
 
   cmd_line.AppendSwitch(a_switch);
 
-  string16 command_string(cmd_line.GetCommandLineString());
-  TrimWhitespace(command_string, TRIM_ALL, &command_string);
+  base::string16 command_string(cmd_line.GetCommandLineString());
+  base::TrimWhitespace(command_string, base::TRIM_ALL, &command_string);
   return command_string;
 }
 

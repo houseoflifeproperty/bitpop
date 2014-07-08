@@ -5,9 +5,9 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "webkit/glue/webdropdata.h"
-
+#include "base/strings/string16.h"
+#include "content/common/content_export.h"
+#include "content/public/common/drop_data.h"
 
 namespace content {
 class RenderViewHost;
@@ -21,7 +21,7 @@ typedef content::RenderViewHost* RenderViewHostIdentifier;
 // A class that handles tracking and event processing for a drag and drop
 // over the content area. Assumes something else initiates the drag, this is
 // only for processing during a drag.
-
+CONTENT_EXPORT
 @interface WebDragDest : NSObject {
  @private
   // Our associated WebContentsImpl. Weak reference.
@@ -39,7 +39,10 @@ typedef content::RenderViewHost* RenderViewHostIdentifier;
   RenderViewHostIdentifier currentRVH_;
 
   // The data for the current drag, or NULL if none is in progress.
-  scoped_ptr<WebDropData> dropData_;
+  scoped_ptr<content::DropData> dropData_;
+
+  // True if the drag has been canceled.
+  bool canceled_;
 }
 
 // |contents| is the WebContentsImpl representing this tab, used to communicate
@@ -47,7 +50,7 @@ typedef content::RenderViewHost* RenderViewHostIdentifier;
 // (if necessary).
 - (id)initWithWebContentsImpl:(content::WebContentsImpl*)contents;
 
-- (WebDropData*)currentDropData;
+- (content::DropData*)currentDropData;
 
 - (void)setDragDelegate:(content::WebDragDestDelegate*)delegate;
 
@@ -72,7 +75,7 @@ typedef content::RenderViewHost* RenderViewHostIdentifier;
 @interface WebDragDest(Testing)
 // Given |data|, which should not be nil, fill it in using the contents of the
 // given pasteboard.
-- (void)populateWebDropData:(WebDropData*)data
+- (void)populateDropData:(content::DropData*)data
              fromPasteboard:(NSPasteboard*)pboard;
 // Given a point in window coordinates and a view in that window, return a
 // flipped point in the coordinate system of |view|.

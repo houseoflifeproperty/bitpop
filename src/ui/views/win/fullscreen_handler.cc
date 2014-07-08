@@ -5,6 +5,7 @@
 #include "ui/views/win/fullscreen_handler.h"
 
 #include "base/logging.h"
+#include "base/win/win_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/views/win/scoped_fullscreen_visibility.h"
 

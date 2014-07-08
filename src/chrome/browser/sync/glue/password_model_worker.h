@@ -12,10 +12,12 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 
-class PasswordStore;
-
 namespace base {
 class WaitableEvent;
+}
+
+namespace password_manager {
+class PasswordStore;
 }
 
 namespace browser_sync {
@@ -25,13 +27,18 @@ namespace browser_sync {
 // which is the DB thread on Linux and Windows.
 class PasswordModelWorker : public syncer::ModelSafeWorker {
  public:
-  explicit PasswordModelWorker(
-      const scoped_refptr<PasswordStore>& password_store);
+  PasswordModelWorker(
+      const scoped_refptr<password_manager::PasswordStore>& password_store,
+      syncer::WorkerLoopDestructionObserver* observer);
 
   // syncer::ModelSafeWorker implementation. Called on syncapi SyncerThread.
-  virtual syncer::SyncerError DoWorkAndWaitUntilDone(
-      const syncer::WorkCallback& work) OVERRIDE;
+  virtual void RegisterForLoopDestruction() OVERRIDE;
   virtual syncer::ModelSafeGroup GetModelSafeGroup() OVERRIDE;
+  virtual void RequestStop() OVERRIDE;
+
+ protected:
+  virtual syncer::SyncerError DoWorkAndWaitUntilDoneImpl(
+      const syncer::WorkCallback& work) OVERRIDE;
 
  private:
   virtual ~PasswordModelWorker();
@@ -41,7 +48,14 @@ class PasswordModelWorker : public syncer::ModelSafeWorker {
     base::WaitableEvent* done,
     syncer::SyncerError* error);
 
-  scoped_refptr<PasswordStore> password_store_;
+  // Called on password thread to add PasswordModelWorker as destruction
+  // observer.
+  void RegisterForPasswordLoopDestruction();
+
+  // |password_store_| is used on password thread but released on UI thread.
+  // Protected by |password_store_lock_|.
+  base::Lock password_store_lock_;
+  scoped_refptr<password_manager::PasswordStore> password_store_;
   DISALLOW_COPY_AND_ASSIGN(PasswordModelWorker);
 };
 

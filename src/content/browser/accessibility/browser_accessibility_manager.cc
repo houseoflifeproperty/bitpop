@@ -6,179 +6,193 @@
 
 #include "base/logging.h"
 #include "content/browser/accessibility/browser_accessibility.h"
-#include "content/browser/accessibility/browser_accessibility_state_impl.h"
 #include "content/common/accessibility_messages.h"
 
 namespace content {
+
+ui::AXTreeUpdate MakeAXTreeUpdate(
+    const ui::AXNodeData& node1,
+    const ui::AXNodeData& node2 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node3 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node4 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node5 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node6 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node7 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node8 /* = ui::AXNodeData() */,
+    const ui::AXNodeData& node9 /* = ui::AXNodeData() */) {
+  CR_DEFINE_STATIC_LOCAL(ui::AXNodeData, empty_data, ());
+  int32 no_id = empty_data.id;
+
+  ui::AXTreeUpdate update;
+  update.nodes.push_back(node1);
+  if (node2.id != no_id)
+    update.nodes.push_back(node2);
+  if (node3.id != no_id)
+    update.nodes.push_back(node3);
+  if (node4.id != no_id)
+    update.nodes.push_back(node4);
+  if (node5.id != no_id)
+    update.nodes.push_back(node5);
+  if (node6.id != no_id)
+    update.nodes.push_back(node6);
+  if (node7.id != no_id)
+    update.nodes.push_back(node7);
+  if (node8.id != no_id)
+    update.nodes.push_back(node8);
+  if (node9.id != no_id)
+    update.nodes.push_back(node9);
+  return update;
+}
 
 BrowserAccessibility* BrowserAccessibilityFactory::Create() {
   return BrowserAccessibility::Create();
 }
 
-// Start child IDs at -1 and decrement each time, because clients use
-// child IDs of 1, 2, 3, ... to access the children of an object by
-// index, so we use negative IDs to clearly distinguish between indices
-// and unique IDs.
-// static
-int32 BrowserAccessibilityManager::next_child_id_ = -1;
-
 #if !defined(OS_MACOSX) && \
-    !(defined(OS_WIN) && !defined(USE_AURA)) && \
-    !defined(TOOLKIT_GTK)
-// We have subclassess of BrowserAccessibilityManager on Mac, Linux/GTK,
-// and non-Aura Win. For any other platform, instantiate the base class.
+    !defined(OS_WIN) && \
+    !defined(OS_ANDROID) \
+// We have subclassess of BrowserAccessibilityManager on Mac, and Win. For any
+// other platform, instantiate the base class.
 // static
 BrowserAccessibilityManager* BrowserAccessibilityManager::Create(
-    gfx::NativeView parent_view,
-    const AccessibilityNodeData& src,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory) {
-  return new BrowserAccessibilityManager(
-      parent_view, src, delegate, factory);
+  return new BrowserAccessibilityManager(initial_tree, delegate, factory);
 }
 #endif
 
-// static
-BrowserAccessibilityManager* BrowserAccessibilityManager::CreateEmptyDocument(
-    gfx::NativeView parent_view,
-    AccessibilityNodeData::State state,
+BrowserAccessibilityManager::BrowserAccessibilityManager(
     BrowserAccessibilityDelegate* delegate,
-    BrowserAccessibilityFactory* factory) {
-  // Use empty document to process notifications
-  AccessibilityNodeData empty_document;
-  empty_document.id = 0;
-  empty_document.role = AccessibilityNodeData::ROLE_ROOT_WEB_AREA;
-  empty_document.state = state | (1 << AccessibilityNodeData::STATE_READONLY);
-  return BrowserAccessibilityManager::Create(
-      parent_view, empty_document, delegate, factory);
+    BrowserAccessibilityFactory* factory)
+    : delegate_(delegate),
+      factory_(factory),
+      tree_(new ui::AXTree()),
+      focus_(NULL),
+      osk_state_(OSK_ALLOWED) {
+  tree_->SetDelegate(this);
 }
 
 BrowserAccessibilityManager::BrowserAccessibilityManager(
-    gfx::NativeView parent_view,
-    const AccessibilityNodeData& src,
+    const ui::AXTreeUpdate& initial_tree,
     BrowserAccessibilityDelegate* delegate,
     BrowserAccessibilityFactory* factory)
-    : parent_view_(parent_view),
-      delegate_(delegate),
+    : delegate_(delegate),
       factory_(factory),
+      tree_(new ui::AXTree()),
       focus_(NULL),
       osk_state_(OSK_ALLOWED) {
-  root_ = CreateAccessibilityTree(NULL, src, 0, false);
-  if (!focus_)
-    SetFocus(root_, false);
-}
-
-// static
-int32 BrowserAccessibilityManager::GetNextChildID() {
-  // Get the next child ID, and wrap around when we get near the end
-  // of a 32-bit integer range. It's okay to wrap around; we just want
-  // to avoid it as long as possible because clients may cache the ID of
-  // an object for a while to determine if they've seen it before.
-  next_child_id_--;
-  if (next_child_id_ == -2000000000)
-    next_child_id_ = -1;
-
-  return next_child_id_;
+  tree_->SetDelegate(this);
+  Initialize(initial_tree);
 }
 
 BrowserAccessibilityManager::~BrowserAccessibilityManager() {
-  // Clients could still hold references to some nodes of the tree, so
-  // calling InternalReleaseReference will make sure that as many nodes
-  // as possible are released now, and remaining nodes are marked as
-  // inactive so that calls to any methods on them will fail gracefully.
-  focus_->InternalReleaseReference(false);
-  root_->InternalReleaseReference(true);
+  tree_.reset(NULL);
+}
+
+void BrowserAccessibilityManager::Initialize(
+    const ui::AXTreeUpdate& initial_tree) {
+  if (!tree_->Unserialize(initial_tree)) {
+    if (delegate_) {
+      LOG(ERROR) << tree_->error();
+      delegate_->AccessibilityFatalError();
+    } else {
+      LOG(FATAL) << tree_->error();
+    }
+  }
+
+  if (!focus_)
+    SetFocus(tree_->GetRoot(), false);
+}
+
+// static
+ui::AXTreeUpdate BrowserAccessibilityManager::GetEmptyDocument() {
+  ui::AXNodeData empty_document;
+  empty_document.id = 0;
+  empty_document.role = ui::AX_ROLE_ROOT_WEB_AREA;
+  ui::AXTreeUpdate update;
+  update.nodes.push_back(empty_document);
+  return update;
 }
 
 BrowserAccessibility* BrowserAccessibilityManager::GetRoot() {
-  return root_;
+  return GetFromAXNode(tree_->GetRoot());
 }
 
-BrowserAccessibility* BrowserAccessibilityManager::GetFromChildID(
-    int32 child_id) {
+BrowserAccessibility* BrowserAccessibilityManager::GetFromAXNode(
+    ui::AXNode* node) {
+  return GetFromID(node->id());
+}
+
+BrowserAccessibility* BrowserAccessibilityManager::GetFromID(int32 id) {
   base::hash_map<int32, BrowserAccessibility*>::iterator iter =
-      child_id_map_.find(child_id);
-  if (iter != child_id_map_.end()) {
+      id_wrapper_map_.find(id);
+  if (iter != id_wrapper_map_.end())
     return iter->second;
-  } else {
-    return NULL;
-  }
+  return NULL;
 }
 
-BrowserAccessibility* BrowserAccessibilityManager::GetFromRendererID(
-    int32 renderer_id) {
-  base::hash_map<int32, int32>::iterator iter =
-      renderer_id_to_child_id_map_.find(renderer_id);
-  if (iter == renderer_id_to_child_id_map_.end())
-    return NULL;
-
-  int32 child_id = iter->second;
-  return GetFromChildID(child_id);
+void BrowserAccessibilityManager::OnWindowFocused() {
+  if (focus_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetFromAXNode(focus_));
 }
 
-void BrowserAccessibilityManager::GotFocus(bool touch_event_context) {
-  if (!touch_event_context)
-    osk_state_ = OSK_DISALLOWED_BECAUSE_TAB_JUST_APPEARED;
-
-  if (!focus_)
-    return;
-
-  NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
-}
-
-void BrowserAccessibilityManager::WasHidden() {
-  osk_state_ = OSK_DISALLOWED_BECAUSE_TAB_HIDDEN;
+void BrowserAccessibilityManager::OnWindowBlurred() {
+  if (focus_)
+    NotifyAccessibilityEvent(ui::AX_EVENT_BLUR, GetFromAXNode(focus_));
 }
 
 void BrowserAccessibilityManager::GotMouseDown() {
   osk_state_ = OSK_ALLOWED_WITHIN_FOCUSED_OBJECT;
-  NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
+  NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetFromAXNode(focus_));
 }
 
-bool BrowserAccessibilityManager::IsOSKAllowed(const gfx::Rect& bounds) {
-  if (!delegate_ || !delegate_->HasFocus())
-    return false;
-
-  gfx::Point touch_point = delegate_->GetLastTouchEventLocation();
-  return bounds.Contains(touch_point);
+bool BrowserAccessibilityManager::UseRootScrollOffsetsWhenComputingBounds() {
+  return true;
 }
 
-void BrowserAccessibilityManager::Remove(int32 child_id, int32 renderer_id) {
-  child_id_map_.erase(child_id);
+void BrowserAccessibilityManager::OnAccessibilityEvents(
+    const std::vector<AccessibilityHostMsg_EventParams>& params) {
+  bool should_send_initial_focus = false;
 
-  // TODO(ctguil): Investigate if hit. We should never have a newer entry.
-  DCHECK(renderer_id_to_child_id_map_[renderer_id] == child_id);
-  // Make sure we don't overwrite a newer entry (see UpdateNode for a possible
-  // corner case).
-  if (renderer_id_to_child_id_map_[renderer_id] == child_id)
-    renderer_id_to_child_id_map_.erase(renderer_id);
-}
-
-void BrowserAccessibilityManager::OnAccessibilityNotifications(
-    const std::vector<AccessibilityHostMsg_NotificationParams>& params) {
+  // Process all changes to the accessibility tree first.
   for (uint32 index = 0; index < params.size(); index++) {
-    const AccessibilityHostMsg_NotificationParams& param = params[index];
+    const AccessibilityHostMsg_EventParams& param = params[index];
+    if (!tree_->Unserialize(param.update)) {
+      if (delegate_) {
+        LOG(ERROR) << tree_->error();
+        delegate_->AccessibilityFatalError();
+      } else {
+        CHECK(false) << tree_->error();
+      }
+      return;
+    }
 
-    // Update the tree.
-    UpdateNode(param.acc_tree, param.includes_children);
+    // Set focus to the root if it's not anywhere else.
+    if (!focus_) {
+      SetFocus(tree_->GetRoot(), false);
+      should_send_initial_focus = true;
+    }
+  }
+
+  if (should_send_initial_focus &&
+      (!delegate_ || delegate_->AccessibilityViewHasFocus())) {
+    NotifyAccessibilityEvent(ui::AX_EVENT_FOCUS, GetFromAXNode(focus_));
+  }
+
+  // Now iterate over the events again and fire the events.
+  for (uint32 index = 0; index < params.size(); index++) {
+    const AccessibilityHostMsg_EventParams& param = params[index];
 
     // Find the node corresponding to the id that's the target of the
-    // notification (which may not be the root of the update tree).
-    base::hash_map<int32, int32>::iterator iter =
-        renderer_id_to_child_id_map_.find(param.id);
-    if (iter == renderer_id_to_child_id_map_.end()) {
+    // event (which may not be the root of the update tree).
+    ui::AXNode* node = tree_->GetFromId(param.id);
+    if (!node)
       continue;
-    }
-    int32 child_id = iter->second;
-    BrowserAccessibility* node = GetFromChildID(child_id);
-    if (!node) {
-      NOTREACHED();
-      continue;
-    }
 
-    int notification_type = param.notification_type;
-    if (notification_type == AccessibilityNotificationFocusChanged ||
-        notification_type == AccessibilityNotificationBlur) {
+    ui::AXEvent event_type = param.event_type;
+    if (event_type == ui::AX_EVENT_FOCUS ||
+        event_type == ui::AX_EVENT_BLUR) {
       SetFocus(node, false);
 
       if (osk_state_ != OSK_DISALLOWED_BECAUSE_TAB_HIDDEN &&
@@ -187,66 +201,83 @@ void BrowserAccessibilityManager::OnAccessibilityNotifications(
 
       // Don't send a native focus event if the window itself doesn't
       // have focus.
-      if (delegate_ && !delegate_->HasFocus())
+      if (delegate_ && !delegate_->AccessibilityViewHasFocus())
         continue;
     }
 
-    // Send the notification event to the operating system.
-    NotifyAccessibilityEvent(notification_type, node);
-
-    // Set initial focus when a page is loaded.
-    if (notification_type == AccessibilityNotificationLoadComplete) {
-      if (!focus_)
-        SetFocus(root_, false);
-      if (!delegate_ || delegate_->HasFocus())
-        NotifyAccessibilityEvent(AccessibilityNotificationFocusChanged, focus_);
-    }
+    // Send the event event to the operating system.
+    NotifyAccessibilityEvent(event_type, GetFromAXNode(node));
   }
 }
 
-gfx::NativeView BrowserAccessibilityManager::GetParentView() {
-  return parent_view_;
+void BrowserAccessibilityManager::OnLocationChanges(
+    const std::vector<AccessibilityHostMsg_LocationChangeParams>& params) {
+  for (size_t i = 0; i < params.size(); ++i) {
+    BrowserAccessibility* obj = GetFromID(params[i].id);
+    if (!obj)
+      continue;
+    ui::AXNode* node = obj->node();
+    node->SetLocation(params[i].new_location);
+    obj->OnLocationChanged();
+  }
+}
+
+BrowserAccessibility* BrowserAccessibilityManager::GetActiveDescendantFocus(
+    BrowserAccessibility* root) {
+  BrowserAccessibility* node = BrowserAccessibilityManager::GetFocus(root);
+  if (!node)
+    return NULL;
+
+  int active_descendant_id;
+  if (node->GetIntAttribute(ui::AX_ATTR_ACTIVEDESCENDANT_ID,
+                            &active_descendant_id)) {
+    BrowserAccessibility* active_descendant =
+        node->manager()->GetFromID(active_descendant_id);
+    if (active_descendant)
+      return active_descendant;
+  }
+  return node;
 }
 
 BrowserAccessibility* BrowserAccessibilityManager::GetFocus(
     BrowserAccessibility* root) {
-  if (focus_ && (!root || focus_->IsDescendantOf(root)))
-    return focus_;
+  if (focus_ && (!root || focus_->IsDescendantOf(root->node())))
+    return GetFromAXNode(focus_);
 
   return NULL;
 }
 
-void BrowserAccessibilityManager::SetFocus(
-    BrowserAccessibility* node, bool notify) {
-  if (focus_ != node) {
-    if (focus_)
-      focus_->InternalReleaseReference(false);
+void BrowserAccessibilityManager::SetFocus(ui::AXNode* node, bool notify) {
+  if (focus_ != node)
     focus_ = node;
-    if (focus_)
-      focus_->InternalAddReference();
-  }
 
   if (notify && node && delegate_)
-    delegate_->SetAccessibilityFocus(node->renderer_id());
+    delegate_->AccessibilitySetFocus(node->id());
+}
+
+void BrowserAccessibilityManager::SetFocus(
+    BrowserAccessibility* obj, bool notify) {
+  if (obj->node())
+    SetFocus(obj->node(), notify);
 }
 
 void BrowserAccessibilityManager::DoDefaultAction(
     const BrowserAccessibility& node) {
   if (delegate_)
-    delegate_->AccessibilityDoDefaultAction(node.renderer_id());
+    delegate_->AccessibilityDoDefaultAction(node.GetId());
 }
 
 void BrowserAccessibilityManager::ScrollToMakeVisible(
     const BrowserAccessibility& node, gfx::Rect subfocus) {
   if (delegate_) {
-    delegate_->AccessibilityScrollToMakeVisible(node.renderer_id(), subfocus);
+    delegate_->AccessibilityScrollToMakeVisible(node.GetId(), subfocus);
   }
 }
 
 void BrowserAccessibilityManager::ScrollToPoint(
     const BrowserAccessibility& node, gfx::Point point) {
   if (delegate_) {
-    delegate_->AccessibilityScrollToPoint(node.renderer_id(), point);
+    delegate_->AccessibilityScrollToPoint(node.GetId(), point);
   }
 }
 
@@ -254,151 +285,80 @@ void BrowserAccessibilityManager::SetTextSelection(
     const BrowserAccessibility& node, int start_offset, int end_offset) {
   if (delegate_) {
     delegate_->AccessibilitySetTextSelection(
-        node.renderer_id(), start_offset, end_offset);
+        node.GetId(), start_offset, end_offset);
   }
 }
 
 gfx::Rect BrowserAccessibilityManager::GetViewBounds() {
   if (delegate_)
-    return delegate_->GetViewBounds();
+    return delegate_->AccessibilityGetViewBounds();
   return gfx::Rect();
 }
 
-void BrowserAccessibilityManager::UpdateNode(
-    const AccessibilityNodeData& src,
-    bool include_children) {
-  BrowserAccessibility* current = NULL;
+BrowserAccessibility* BrowserAccessibilityManager::NextInTreeOrder(
+    BrowserAccessibility* node) {
+  if (!node)
+    return NULL;
 
-  // Look for the node to replace. Either we're replacing the whole tree
-  // (role is ROOT_WEB_AREA) or we look it up based on its renderer ID.
-  if (src.role == AccessibilityNodeData::ROLE_ROOT_WEB_AREA) {
-    current = root_;
-  } else {
-    base::hash_map<int32, int32>::iterator iter =
-        renderer_id_to_child_id_map_.find(src.id);
-    if (iter != renderer_id_to_child_id_map_.end()) {
-      int32 child_id = iter->second;
-      current = GetFromChildID(child_id);
+  if (node->PlatformChildCount() > 0)
+    return node->PlatformGetChild(0);
+  while (node) {
+    if (node->GetParent() &&
+        node->GetIndexInParent() <
+            static_cast<int>(node->GetParent()->PlatformChildCount()) - 1) {
+      return node->GetParent()->PlatformGetChild(node->GetIndexInParent() + 1);
     }
+    node = node->GetParent();
   }
 
-  // If we can't find the node to replace, we're out of sync with the
-  // renderer (this would be a bug).
-  DCHECK(current);
-  if (!current)
-    return;
-
-  // If this update is just for a single node (|include_children| is false),
-  // modify |current| directly and return - no tree changes are needed.
-  if (!include_children) {
-    DCHECK_EQ(0U, src.children.size());
-    current->PreInitialize(
-        this,
-        current->parent(),
-        current->child_id(),
-        current->index_in_parent(),
-        src);
-    current->PostInitialize();
-    return;
-  }
-
-  BrowserAccessibility* current_parent = current->parent();
-  int current_index_in_parent = current->index_in_parent();
-
-  // Detach all of the nodes in the old tree and get a single flat vector
-  // of all node pointers.
-  std::vector<BrowserAccessibility*> old_tree_nodes;
-  current->DetachTree(&old_tree_nodes);
-
-  // Build a new tree, reusing old nodes if possible. Each node that's
-  // reused will have its reference count incremented by one.
-  CreateAccessibilityTree(current_parent, src, current_index_in_parent, true);
-
-  // Decrement the reference count of all nodes in the old tree, which will
-  // delete any nodes no longer needed.
-  for (int i = 0; i < static_cast<int>(old_tree_nodes.size()); i++)
-    old_tree_nodes[i]->InternalReleaseReference(false);
-
-  // If the only reference to the focused node is focus_ itself, then the
-  // focused node is no longer in the tree, so set the focus to the root.
-  if (focus_ && focus_->ref_count() == 1) {
-    SetFocus(root_, false);
-
-    if (delegate_ && delegate_->HasFocus())
-      NotifyAccessibilityEvent(AccessibilityNotificationBlur, focus_);
-  }
+  return NULL;
 }
 
-BrowserAccessibility* BrowserAccessibilityManager::CreateAccessibilityTree(
-    BrowserAccessibility* parent,
-    const AccessibilityNodeData& src,
-    int index_in_parent,
-    bool send_show_events) {
-  BrowserAccessibility* instance = NULL;
-  int32 child_id = 0;
-  bool children_can_send_show_events = send_show_events;
-  base::hash_map<int32, int32>::iterator iter =
-      renderer_id_to_child_id_map_.find(src.id);
+BrowserAccessibility* BrowserAccessibilityManager::PreviousInTreeOrder(
+    BrowserAccessibility* node) {
+  if (!node)
+    return NULL;
 
-  // If a BrowserAccessibility instance for this ID already exists, add a
-  // new reference to it and retrieve its children vector.
-  if (iter != renderer_id_to_child_id_map_.end()) {
-    child_id = iter->second;
-    instance = GetFromChildID(child_id);
+  if (node->GetParent() && node->GetIndexInParent() > 0) {
+    node = node->GetParent()->PlatformGetChild(node->GetIndexInParent() - 1);
+    while (node->PlatformChildCount() > 0)
+      node = node->PlatformGetChild(node->PlatformChildCount() - 1);
+    return node;
   }
 
-  // If the node has changed roles, don't reuse a BrowserAccessibility
-  // object, that could confuse a screen reader.
-  // TODO(dtseng): Investigate when this gets hit; See crbug.com/93095.
-  DCHECK(!instance || instance->role() == src.role);
+  return node->GetParent();
+}
 
-  // If we're reusing a node, it should already be detached from a parent
-  // and any children. If not, that means we have a serious bug somewhere,
-  // like the same child is reachable from two places in the same tree.
-  if (instance && (instance->parent() != NULL || instance->child_count() > 0)) {
-    NOTREACHED();
-    instance = NULL;
+void BrowserAccessibilityManager::OnNodeWillBeDeleted(ui::AXNode* node) {
+  if (node == focus_ && tree_) {
+    if (node != tree_->GetRoot())
+      SetFocus(tree_->GetRoot(), false);
+    else
+      focus_ = NULL;
   }
+  if (id_wrapper_map_.find(node->id()) == id_wrapper_map_.end())
+    return;
+  GetFromAXNode(node)->Destroy();
+  id_wrapper_map_.erase(node->id());
+}
 
-  if (instance) {
-    // If we're reusing a node, update its parent and increment its
-    // reference count.
-    instance->UpdateParent(parent, index_in_parent);
-    instance->InternalAddReference();
-    send_show_events = false;
-  } else {
-    // Otherwise, create a new instance.
-    instance = factory_->Create();
-    child_id = GetNextChildID();
-    children_can_send_show_events = false;
-  }
+void BrowserAccessibilityManager::OnNodeCreated(ui::AXNode* node) {
+  BrowserAccessibility* wrapper = factory_->Create();
+  wrapper->Init(this, node);
+  id_wrapper_map_[node->id()] = wrapper;
+  wrapper->OnDataChanged();
+}
 
-  instance->PreInitialize(this, parent, child_id, index_in_parent, src);
-  child_id_map_[child_id] = instance;
-  renderer_id_to_child_id_map_[src.id] = child_id;
+void BrowserAccessibilityManager::OnNodeChanged(ui::AXNode* node) {
+  GetFromAXNode(node)->OnDataChanged();
+}
 
-  if ((src.state >> AccessibilityNodeData::STATE_FOCUSED) & 1)
-    SetFocus(instance, false);
+void BrowserAccessibilityManager::OnNodeCreationFinished(ui::AXNode* node) {
+  GetFromAXNode(node)->OnUpdateFinished();
+}
 
-  for (int i = 0; i < static_cast<int>(src.children.size()); ++i) {
-    BrowserAccessibility* child = CreateAccessibilityTree(
-        instance, src.children[i], i, children_can_send_show_events);
-    instance->AddChild(child);
-  }
-
-  if (src.role == AccessibilityNodeData::ROLE_ROOT_WEB_AREA)
-    root_ = instance;
-
-  // Note: the purpose of send_show_events and children_can_send_show_events
-  // is so that we send a single ObjectShow event for the root of a subtree
-  // that just appeared for the first time, but not on any descendant of
-  // that subtree.
-  if (send_show_events)
-    NotifyAccessibilityEvent(AccessibilityNotificationObjectShow, instance);
-
-  instance->PostInitialize();
-
-  return instance;
+void BrowserAccessibilityManager::OnNodeChangeFinished(ui::AXNode* node) {
+  GetFromAXNode(node)->OnUpdateFinished();
 }
 
 }  // namespace content

@@ -1,51 +1,157 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ms">
 <translation id="6676384891291319759">Akses Internet</translation>
+<translation id="8586442755830160949">Hak Cipta <ph name="YEAR"/> Pengarang Chromium. Hak cipta terpelihara.</translation>
 <translation id="8447784615389818621">Adakah anda pasti mahu menyahpasang BitPop?</translation>
+<translation id="1928147301259050372">Adakah anda mahu BitPop menyimpan maklumat kad kredit ini untuk melengkapkan borang web?</translation>
 <translation id="100741878661450640">Nyahpasang BitPop</translation>
+<translation id="7015513946685052865">Komputer ini akan berhenti menerima kemas kini BitPop kerana perkakasan komputer ini tidak lagi disokong.</translation>
 <translation id="4301276314211054820">BitPop telah dikemas kini, tetapi anda belum menggunakannya untuk sekurang-kurangnya 30 hari.</translation>
 <translation id="8935261719622405725">Lancarkan apl BitPop</translation>
-<translation id="2556535128417126306">Pelancar Apl BitPop ialah platform tersendiri untuk apl BitPop.</translation>
+<translation id="2787245396912783582">Pelancar Apl BitPop ialah platform tersendiri untuk apl BitPop.</translation>
 <translation id="2770231113462710648">Tukar penyemak imbas lalai kepada:</translation>
 <translation id="6870152852581894991">Perubahan anda akan dilaksanakan apabila anda melancarkan semula BitPop pada masa hadapan.</translation>
+<translation id="7725527658463487664">BitPop sudah usang</translation>
+<translation id="302025056100997516">Butiran daripada kenalan anda dapat membantu anda mengisi borang dengan lebih cepat di BitPop.</translation>
 <translation id="3588014340702790340">Anda melihat halaman BitPop yang selamat.</translation>
-<translation id="6789998774111513164">BitPop Frame</translation>
+<translation id="2077129598763517140">Gunakan pecutan perkakasan apabila tersedia</translation>
 <translation id="1065672644894730302">Pilihan anda tidak dapat dibaca. Beberapa ciri mungkin tidak tersedia dan perubahan terhadap pilihan tidak akan disimpan.</translation>
-<translation id="4901429675189043920">Kemas Kini BitPop Frame.</translation>
-<translation id="1132852132282742543">Pemapar BitPop</translation>
-<translation id="7155774694068736041">BitPop Frame telah dipasang dan tersedia untuk semua pengguna komputer ini. Jika anda ingin memasang BitPop Frame pada tahap pengguna, mula-mula anda mesti menyahpasang versi tahap sistem yang dipasang oleh pihak pentadbir.</translation>
+<translation id="4795239855223923830">Sesuaikan dan kawal BitPop</translation>
+<translation id="98449668525928921">Anda log masuk menggunakan akaun yang terurus dan memberikan pentadbirnya kawalan ke atas profil BitPop anda. Data BitPop anda, seperti apl, penanda halaman, sejarah, kata laluan dan tetapan anda yang lain akan terikat kepada <ph name="USER_NAME"/> secara kekal. Anda akan dapat memadamkan data ini melalui Papan Pemuka Akaun Google, tetapi anda tidak akan dapat mengaitkan data ini dengan akaun lain. Anda boleh memilih untuk membuat profil baharu untuk mengasingkan data BitPop anda yang sedia ada. <ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">Terima kasih kerana menggunakan BitPop baharu. BitPop perlu bermula semula untuk memastikan anda telah menyimpan sebarang kerja yang terbuka sebelum meneruskan.</translation>
 <translation id="731644333568559921">Kemas kini &amp;Chromium OS</translation>
 <translation id="5284421695473942517">BitPop memerlukan Windows XP atau yang lebih baharu. Beberapa ciri mungkin tidak berfungsi.</translation>
-<translation id="3549345495227188780">Bermula dengan OS Chromium</translation>
-<translation id="8363397932717822970">Pemasangan BitPop atau BitPop Frame yang bercanggah telah dijumpai pada sistem. Sila nyahpasang dan cuba lagi.</translation>
+<translation id="4534284284800306880">Anda mesti menaik taraf BitPop untuk menggunakan Google Wallet [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1258942147733482141">Lesen sumber terbuka BitPop</translation>
+<translation id="2001441118695834744">Jika anda memilih untuk menyimpan data BitPop yang sedia ada secara berasingan, anda boleh membuat pengguna BitPop baharu untuk <ph name="USER_NAME"/>.</translation>
+<translation id="3207916442629104800">Tetapkan BitPop sebagai penyemak imbas lalai anda</translation>
+<translation id="2346981135360001626">Mengemas kini peranti anda kepada saluran <ph name="CHANNEL_NAME"/>...</translation>
+<translation id="3549345495227188780">Bermula dengan OS BitPop</translation>
+<translation id="7593639489233822734">Selepas mengalih keluar akaun anda daripada BitPop, anda mungkin perlu memuatkan semula tab yang dibuka untuk memberi kesan.</translation>
 <translation id="8235603028098851915">Bar Alat BitPop</translation>
-<translation id="5953515305183787825">BitPop tidak lagi dikemas kini kerana sistem pengendalian anda usang.</translation>
-<translation id="7230682351542979557">Pengesan Portal Tawanan BitPop</translation>
 <translation id="325440606879482824">Pemasangan gagal disebabkan ralat yang tidak dinyatakan. Jika BitPop sedang dijalankan, sila tutup dan cuba semula.</translation>
-<translation id="7224939653007212692">Tetapan Autoisi BitPop</translation>
-<translation id="3078552028547324322">Gunakan Pelancar Apl BitPop untuk melancarkan apl anda.</translation>
-<translation id="3555616473548901994">Selesai nyahpasang.</translation>
-<translation id="5814137742095860156">Hos Apl BitPop</translation>
+<translation id="2681187513058372590">BitPop sedang cuba memaparkan kata laluan.</translation>
 <translation id="9205983754412543288">Pilihan: Bantu jadikan BitPop lebih baik dengan menghantar statistik penggunaan dan laporan ranap kepada Google secara automatik.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="6259082392093297310">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi sijil yang diberikan pelayan mengandungi ralat. BitPop tidak boleh menggunakan sijil yang mengandungi ralat dan tidak dapat mengesahkan identiti tapak yang anda cuba untuk bersambung.</translation>
+<translation id="3898160962923474892">Pergi ke
+          menu BitPop &gt;
+          <ph name="SETTINGS_TITLE"/>
+          &gt;
+          <ph name="ADVANCED_TITLE"/>
+          &gt;
+          <ph name="PROXIES_TITLE"/>
+          dan pastikan konfigurasi anda ditetapkan kepada "tiada proksi" atau "terus".</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="3334080844010912902">BitPop tidak dapat menyegerakkan data anda kerana Segerak tidak tersedia untuk domain anda.</translation>
+<translation id="2030214613468936763">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi sijil yang diberikan pelayan mengandungi ralat. BitPop tidak boleh menggunakan sijil yang mengandungi ralat dan tidak dapat mengesahkan identiti tapak yang anda cuba untuk bersambung.</translation>
 <translation id="3801183610358973379">Pemasang gagal untuk menyahmampat arkib. Sila muat turun BitPop sekali lagi.</translation>
+<translation id="4138697454314244697">Pemasangan BitPop tidak ditemui untuk dikemas kini.</translation>
 <translation id="4450789702440326676">Benarkan BitPop Dijalankan dalam Latar Belakang</translation>
+<translation id="8743840534367614002">Apl BitPop</translation>
 <translation id="2963590958538393837">Ya, keluar dari BitPop</translation>
-<translation id="8031724302809093115">Halaman Tab Baharu kromium telah diubah suai. Saling bertukar antara bahagian dengan mengklik label ini. BitPop akan ingat pilihan anda pada masa akan datang.</translation>
 <translation id="1480489203462860648">Cubalah, ia sudah dipasang</translation>
 <translation id="7098153548331126805">Menambah ke BitPop...</translation>
-<translation id="5928487969163300899">Nyahpasang Pelancar Apl BitPop</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Amaran:<ph name="END_BOLD"/> BitPop tidak dapat menghalang pelanjutan daripada merakamkan sejarah penyemakan imbas anda. Untuk melumpuhkan pelanjutan ini dalam mod inkognito, nyahpilih pilihan ini.</translation>
+<translation id="4831257561365056138">Nyahpasang Pelancar Apl BitPop</translation>
+<translation id="7680117738450774222">Anda kini sedang log masuk ke BitPop! Penyegerakan dilumpuhkan oleh pentadbir anda.</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>Amaran:<ph name="END_BOLD"/> BitPop tidak dapat menghalang sambungan daripada merakamkan sejarah penyemakan imbas anda. Untuk melumpuhkan sambungan ini dalam mod inkognito, nyahpilih pilihan ini.</translation>
+<translation id="9123740998411173947">Memandangkan anda kini telah log masuk, anda boleh mendapatkan tab, penanda halaman dan barangan BitPop anda yang lain merentas komputer riba, telefon dan tablet anda. Anda turut akan menerima cadangan dan ciri yang lebih berkaitan tentang perkhidmatan Google.</translation>
+<translation id="985602178874221306">Pengarang Chromium</translation>
 <translation id="3941397373453695568">BitPop tidak menyertakan pemapar PDF yang diperlukan oleh Pratonton Cetakan untuk berfungsi.</translation>
 <translation id="8155571637339134666">BitPop boleh menggunakan perkhidmatan web untuk meningkatkan pengalaman penyemakan imbas anda.</translation>
-<translation id="5383732173730790693">Anda kini telah log masuk ke BitPop! Penanda halaman, sejarah dan tetapan anda yang lain akan disegerakkan ke Akaun Google anda.</translation>
-<translation id="6866316083935040427">Keluar dari BitPop</translation>
+<translation id="6157791660174418859">Cuba cara baharu untuk menggunakan BitPop dengan Akaun Google anda dan pada komputer yang dikongsi.</translation>
 <translation id="4759775690587852534">Malangnya, tetapan Mozilla Firefox anda tidak tersedia semasa penyemak imbas tersebut dijalankan. Untuk mengimport tetapan tersebut ke BitPop, simpan kerja anda dan tutup semua tetingkap Firefox. Kemudian klik Teruskan.</translation>
-<translation id="2411757162791070146">Dalam keadaan ini, alamat yang disenarai dalam sijil tidak sepadan dengan alamat tapak web yang cuba dicapai oleh penyemak imbas anda. Satu sebab mungkin berlakunya keadaan ini ialah komunikasi anda sedang dipintas oleh penyerang yang menyampaikan sijil untuk tapak web yang berlainan, yang akan mengakibatkan tiada padanan. Sebab lain yang mungkin ialah pelayan disediakan untuk mengembalikan sijil yang sama untuk berbilang tapak web, termasuk tapak yang anda cuba lawati, walaupun sijil tersebut tidak sah untuk semua tapak web itu. BitPop boleh menyatakan dengan yakin bahawa anda telah mancapai &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, tetapi tidak dapat mengesahkan bahawa tapak itu tapak yang sama seperti &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; yang anda ingin capai. Jika anda teruskan, BitPop tidak akan menyemak untuk mengesan sebarang nama tidak sepadan yang selanjutnya.</translation>
-<translation id="2423180989259159758">Pergi ke
-          <ph name="BEGIN_BOLD"/>
+<translation id="5769857394054687534">Dalam keadaan ini, alamat yang disenarai dalam sijil tidak sepadan dengan alamat tapak web yang cuba dicapai oleh penyemak imbas anda. Satu sebab mungkin berlakunya keadaan ini ialah komunikasi anda sedang dipintas oleh penyerang yang menyampaikan sijil untuk tapak web yang berlainan, yang akan mengakibatkan tiada padanan. Sebab lain yang mungkin ialah pelayan disediakan untuk mengembalikan sijil yang sama untuk berbilang tapak web, termasuk tapak yang anda cuba lawati, walaupun sijil tersebut tidak sah untuk semua tapak web itu. BitPop boleh menyatakan dengan yakin bahawa anda telah mancapai &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, tetapi tidak dapat mengesahkan bahawa tapak itu tapak yang sama seperti &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; yang anda ingin capai. Jika anda teruskan, BitPop tidak akan menyemak untuk mengesan sebarang nama tidak sepadan yang selanjutnya.</translation>
+<translation id="2224367722165014156">BitPop tidak dapat dikemas kini kepada versi yang terbaharu, jadi anda terlepas ciri baharu yang hebat dan pembetulan keselamatan. Anda perlu memasang semula BitPop secara manual.</translation>
+<translation id="8897323336392112261">Sambungan turut mengawal halaman yang ditunjukkan apabila anda memulakan Chromium atau mengklik butang Laman Utama.</translation>
+<translation id="2886079192271351730">Modul ini diketahui bercanggah dengan BitPop.</translation>
+<translation id="8324687802311409372">Alamak! BitPop mengalami ranap sistem. Lancarkan semula sekarang?</translation>
+<translation id="5689811886832352959">Bantu jadikan BitPop lebih baik dengan menghantar laporan ranap dan <ph name="UMA_LINK"/> kepada Google.</translation>
+<translation id="5101127815285864538">Web, penanda halaman dan barangan BitPop anda yang lain tinggal di sini.</translation>
+<translation id="3197823471738295152">Peranti anda telah dikemas kini.</translation>
+<translation id="8551886023433311834">Hampir terkini! Mulakan semula peranti anda untuk melengkapkan pengemaskinian.</translation>
+<translation id="9090519209458031409">Adakah anda mahu BitPop menyimpan kata laluan anda untuk tapak ini?</translation>
+<translation id="7339898014177206373">Tetingkap baharu</translation>
+<translation id="6188910816550019957">Pergi ke
+        menu BitPop &gt;
+        <ph name="SETTINGS_TITLE"/>
+        &gt;
+        <ph name="ADVANCED_TITLE"/>
+        dan nyahpilih "<ph name="NO_PREFETCH_DESCRIPTION"/>".
+        Jika tindakan ini tidak menyelesaikan isu ini, kami cadangkan agar memilih pilihan ini sekali lagi untuk prestasi yang dipertingkatkan.</translation>
+<translation id="2397909649953118924">BitPop - Pemberitahuan (<ph name="QUANTITY"/> belum dibaca)</translation>
+<translation id="225614027745146050">Selamat datang</translation>
+<translation id="1823899440832622134">BitPop tidak dapat dikemas kini kepada versi yang terbaharu, jadi anda terlepas ciri baharu yang hebat dan pembetulan keselamatan. Anda perlu mengemas kini BitPop.</translation>
+<translation id="3421246989510066651">Pentadbir telah memasang BitPop pada sistem ini dan tersedia untuk semua pengguna. BitPop tahap sistem kini akan menggantikan pemasangan tahap pengguna anda.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">Sila tutup semua tetingkap BitPop dan cuba lagi.</translation>
+<translation id="6948146312619379712">Sila tutup semua tetingkap BitPop dan lancarkan semula BitPop agar perubahan ini boleh dilaksanakan.</translation>
+<translation id="6475912303565314141">Sambungan turut mengawal halaman yang ditunjukkan apabila anda memulakan Chromium.</translation>
+<translation id="158578066452246627">Fail ini bersifat hasad dan BitPop telah menyekatnya.</translation>
+<translation id="5845248948746043578">Modul yang dimuatkan dalam BitPop</translation>
+<translation id="3494861236236958082">Pada Mac, kata laluan disimpan pada Keychain anda dan boleh diakses atau disegerakkan oleh pengguna BitPop lain yang berkongsi akaun OS X ini.</translation>
+<translation id="6497704981133944775">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan mengemukakan sijil yang dikeluarkan oleh entiti yang tidak dipercayai oleh sistem pengendalian komputer anda. Ini mungkin bermakna pelayan tersebut telah menghasilkan bukti kelayakannya sendiri yang tidak dipercayai oleh BitPop untuk mendapatkan maklumat identiti atau penyerang mungkin cuba memintas komunikasi anda.</translation>
+<translation id="963040405972220509">Anda perlu log masuk ke BitPop untuk menggunakan apl. Tindakan ini membolehkan BitPop menyegerakkan apl, penanda halaman, sejarah, kata laluan dan tetapan anda yang lain pada semua peranti.</translation>
+<translation id="2585492770508769131">Terus menjalankan apl latar belakang apabila BitPop ditutup</translation>
+<translation id="473775607612524610">Kemas kini</translation>
+<translation id="1053737967432347853">Tapak ini menggunakan pemalam BitPop Frame yang tidak akan disokong tidak lama lagi. Sila nyahpasangnya dan naik taraf kepada penyemak imbas moden.</translation>
+<translation id="8237944200818342704">Lancarkan BitPop secara automatik apabila komputer anda bermula</translation>
+<translation id="5904788103100750653">Jika anda berkongsi komputer, rakan dan keluarga boleh menyemak imbas secara berasingan dan menyediakan BitPop sebagaimana yang mereka mahukan.</translation>
+<translation id="1141543168124987471">Terdapat versi baharu BitPop yang lebih pantas daripada biasa tersedia.</translation>
+<translation id="3089560314597734657">BitPop tidak dapat menyegerakkan data anda kerana butiran log masuk akaun anda sudah lapuk.</translation>
+<translation id="5107343520309227066">Nampaknya profil digunakan oleh proses BitPop lain (<ph name="PROCESS_ID"/>) pada komputer lain (<ph name="HOST_NAME"/>). BitPop telah mengunci profil supaya profil tidak rosak. Jika anda pasti tiada proses lain yang menggunakan profil ini, anda boleh membuka profil dan melancarkan semula BitPop.</translation>
+<translation id="5971960158340115871">Alih keluar daripada BitPop</translation>
+<translation id="4817923018536741011">Tambahkan diri anda kepada BitPop</translation>
+<translation id="7066436765290594559">OS BitPop tidak dapat menyegerakkan data anda. Sila kemas kini frasa laluan Segerak anda.</translation>
+<translation id="7747138024166251722">Pemasang tidak dapat mencipta direktori sementara. Sila semak ruang cakera kosong dan kebenaran untuk memasang perisian.</translation>
+<translation id="1657309500244281883">BitPop tidak dapat membaca atau menulis pada direktori datanya:
+
+<ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">Mengemas kini peranti anda...</translation>
+<translation id="2485422356828889247">Nyahpasang</translation>
+<translation id="8450502629618876351">Dapatkan bantuan untuk menggunakan BitPop</translation>
+<translation id="7974150821733212325">Anda log masuk menggunakan akaun yang terurus dan memberikan pentadbirnya kawalan ke atas profil BitPop anda. Data BitPop anda, seperti apl, penanda halaman, sejarah, kata laluan dan tetapan anda yang lain akan terikat kepada <ph name="USER_NAME"/> secara kekal. Anda akan dapat memadamkan data ini melalui Papan Pemuka Akaun Google, tetapi anda tidak akan dapat mengaitkan data ini dengan akaun lain. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">Pelancar Apl BitPop</translation>
+<translation id="8643500805082769156">BitPop sudah usang</translation>
+<translation id="911206726377975832">Padamkan juga data menyemak imbas anda?</translation>
+<translation id="7531302439507262213"><ph name="DOMAIN"/> menghendaki anda membaca dan menerima Syarat Perkhidmatan berikut sebelum menggunakan peranti ini. Syarat ini tidak meluaskan, mengubah suai atau mengehadkan Syarat OS BitPop.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">Sila tutup semua tetingkap BitPop (termasuk yang di dalam mod Windows 8) dan cuba lagi.</translation>
+<translation id="2318017154298876822">Kemas kini &amp;BitPop</translation>
+<translation id="8862326446509486874">Anda tidak mempunyai hak wajar untuk pemasangan peringkat sistem. Cuba jalankan pemasang semula sebagai Pentadbir.</translation>
+<translation id="2535480412977113886">OS BitPop tidak dapat menyegerakkan data anda kerana butiran log masuk akaun anda sudah lapuk.</translation>
+<translation id="8697124171261953979">Sambungan turut mengawal halaman yang ditunjukkan apabila anda memulakan Chromium atau membuat carian dari Kotak Omni.</translation>
+<translation id="8106224471637848707">Perisian yang dijalankan pada komputer anda tidak serasi dengan BitPop.</translation>
+<translation id="8308846639737830860">Benarkan BitPop dijalankan dalam latar belakang</translation>
+<translation id="8251642411216619957">Log masuk ke BitPop</translation>
+<translation id="4365115785552740256">Chromium berjaya dilaksanakan melalui projek sumber terbuka <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> dan <ph name="BEGIN_LINK_OSS"/>perisian sumber terbuka<ph name="END_LINK_OSS"/> yang lain.</translation>
+<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
+<translation id="5819325063060806784">Tetamu boleh menggunakan BitPop tanpa meninggalkan apa-apa.</translation>
+<translation id="1526986572493888898">Tapak ini menggunakan pemalam BitPop Frame yang tidak akan disokong tidak lama lagi. Sila nyahpasangnya dan muat turun penyemak imbas yang serasi.</translation>
+<translation id="7131892997749364444">Satu sambungan telah menukar halaman yang ditunjukkan apabila anda memulakan BitPop.</translation>
+<translation id="5877064549588274448">Saluran berubah. Mulakan semula peranti anda untuk menggunakan perubahan.</translation>
+<translation id="6321973207566602686">Jadikan BitPop penyemak imbas lalai</translation>
+<translation id="6899689707951760367">BitPop menggunakan kamera anda.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">Chromium OS</translation>
+<translation id="6757767188268205357">Jangan ganggu saya</translation>
+<translation id="690823546498424823">BitPop akan menyimpan maklumat anda dengan selamat supaya anda tidak perlu menaipkannya semula, tetapi anda masih perlu mengesahkan kod keselamatan kad anda untuk pembayaran pada masa hadapan.</translation>
+<translation id="6220055452245182274">Laporan keranapan tidak tersedia dalam BitPop.</translation>
+<translation id="924450301557116466">Tidak digunakan dalam BitPop. Placeholder untuk mengekalkan penyegerakan peta sumber. Satu hujah dijangkakan: $1.</translation>
+<translation id="843167022919259875">BitPop sedang berjalan di latar belakang.</translation>
+<translation id="2171549355847332070">Anda telah log masuk ke BitPop sebagai <ph name="USER_EMAIL_ADDRESS"/>. Sila gunakan akaun yang sama untuk log masuk lagi.</translation>
+<translation id="6165323383832829057">BitPop telah berhenti mengemas kini dan tidak lagi menyokong versi sistem pengendalian anda ini.</translation>
+<translation id="2645729404591158594">Pratonton BitPop baharu</translation>
+<translation id="1984238998837921833">Mengemas kini BitPop...</translation>
+<translation id="9102885271730191378">Pengurus Tugas - BitPop</translation>
+<translation id="1608739712349494181">Untuk menjadikan BitPop lebih selamat, kami melumpuhkan beberapa sambungan yang tidak disenaraikan dalam <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> dan mungkin telah ditambahkan tanpa pengetahuan anda.</translation>
+<translation id="5243897687251941678">Cari penanda halaman anda dalam menu BitPop atau pada bar penanda halaman.</translation>
+<translation id="5925519479755588070">Hampir terkini! Lancarkan semula BitPop untuk selesai mengemas kini.</translation>
+<translation id="5866485601389562653">Anda boleh menambahkan Akaun Google yang lain dan mengunci BitPop anda di bawah.</translation>
+<translation id="8072646586465991214">Pemasangan BitPop yang bercanggah telah dijumpai pada sistem. Sila nyahpasang dan cuba lagi.</translation>
+<translation id="4352003675682958984">Terdapat versi baharu BitPop tersedia.</translation>
+<translation id="8972540218839637401">Ralat sistem pengendalian berlaku semasa pemasangan. Sila muat turun BitPop semula.</translation>
+<translation id="2581134012974124523"><ph name="EXTENSION_NAME"/> telah ditambahkan pada BitPop.</translation>
+<translation id="6452045500174243632">Pergi ke
           menu BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
@@ -54,163 +160,90 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Tetapan LAN
-          <ph name="END_BOLD"/>
           dan nyahpilih kotak pilihan "Gunakan pelayan proksi untuk LAN anda".</translation>
-<translation id="2886079192271351730">Modul ini diketahui bercanggah dengan BitPop.</translation>
-<translation id="8324687802311409372">Alamak! BitPop telah ranap. Lancarkan semula sekarang?</translation>
-<translation id="606385048658239900">Tiada pemasangan BitPop atau BitPop Frame dijumpai untuk dikemas kini.</translation>
-<translation id="3197823471738295152">Peranti anda telah dikemas kini.</translation>
-<translation id="8551886023433311834">Hampir terkini! Mulakan semula peranti anda untuk melengkapkan pengemaskinian.</translation>
-<translation id="9090519209458031409">Adakah anda mahu BitPop menyimpan kata laluan anda untuk tapak ini?</translation>
-<translation id="7339898014177206373">Tetingkap baharu</translation>
-<translation id="3026202950002788510">Pergi ke
-          <ph name="BEGIN_BOLD"/>
-          Applications &gt; System Preferences &gt; Network &gt; Advanced &gt; Proxies
-          <ph name="END_BOLD"/>
-          dan nyahpilih mana-mana proksi yang telah dipilih.</translation>
-<translation id="85540521058185027">Direktori pemasangan BitPop nampaknya sedang digunakan. Sila but semula komputer anda dan cuba lagi.</translation>
-<translation id="5710380450759072582">BitPop kini mengimport Kegemaran/Penanda Halaman.</translation>
-<translation id="225614027745146050">Selamat datang</translation>
-<translation id="3421246989510066651">Pentadbir telah memasang BitPop pada sistem ini dan tersedia untuk semua pengguna. BitPop tahap sistem kini akan menggantikan pemasangan tahap pengguna anda.</translation>
-<translation id="1563133725769368154">Sila tutup semua tetingkap BitPop dan cuba lagi.</translation>
-<translation id="6948146312619379712">Sila tutup semua tetingkap BitPop dan lancarkan semula BitPop agar perubahan ini boleh dilaksanakan.</translation>
-<translation id="5845248948746043578">Modul yang dimuatkan dalam BitPop</translation>
-<translation id="4718546117684412327">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang dikeluarkan oleh entiti yang tidak dipercayai oleh sistem pengendalian komputer anda. Ini mungkin bermakna pelayan tersebut telah menghasilkan bukti kelayakannya sendiri yang tidak dipercayai oleh BitPop untuk mendapatkan maklumat identiti atau penyerang mungkin cuba memintas komunikasi anda.</translation>
-<translation id="2585492770508769131">Terus menjalankan apl latar belakang apabila BitPop ditutup</translation>
-<translation id="473775607612524610">Kemas kini</translation>
-<translation id="1141543168124987471">Terdapat versi baharu BitPop yang lebih pantas daripada biasa tersedia.</translation>
-<translation id="6560811749587757293">Mengenai BitPop Frame...</translation>
-<translation id="5971960158340115871">Alih keluar daripada BitPop</translation>
-<translation id="7747138024166251722">Pemasang tidak dapat mencipta direktori sementara. Sila semak ruang cakera kosong dan kebenaran untuk memasang perisian.</translation>
-<translation id="6494656531179085521">BitPop tidak dapat membaca atau menulis pada direktori datanya:
-
-<ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop tidak menyokong <ph name="OS_NAME"/>.</translation>
-<translation id="8738921060445980047">Versi tidak diketahui.</translation>
-<translation id="6970811910055250180">Mengemas kini peranti anda...</translation>
-<translation id="2485422356828889247">Nyahpasang</translation>
-<translation id="8450502629618876351">Dapatkan bantuan untuk menggunakan BitPop</translation>
-<translation id="4742066939161073105">Mulakan BitPop</translation>
-<translation id="736882515641604854">BitPop tidak dapat membuat pintasan aplikasi kerana ia tidak dapat menentukan persekitaran semasa desktop. </translation>
-<translation id="7209647769822542891">Komputer ini telah mempunyai versi BitPop Frame yang lebih baharu. Jika perisian tidak berfungsi, sila nyahpasang BitPop Frame dan cuba lagi.</translation>
-<translation id="911206726377975832">Padamkan juga data menyemak imbas anda?</translation>
-<translation id="4501582071990606935">Sila tutup semua tetingkap BitPop (termasuk yang di dalam mod Windows 8) dan cuba lagi.</translation>
-<translation id="2318017154298876822">Kemas kini &amp;BitPop</translation>
-<translation id="8862326446509486874">Anda tidak mempunyai hak wajar untuk pemasangan peringkat sistem. Cuba jalankan pemasang semula sebagai Pentadbir.</translation>
-<translation id="8308846639737830860">Benarkan BitPop dijalankan dalam latar belakang</translation>
-<translation id="8251642411216619957">Log masuk ke BitPop</translation>
-<translation id="4365115785552740256">Chromium berjaya dilaksanakan melalui projek sumber terbuka <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> dan <ph name="BEGIN_LINK_OSS"/>perisian sumber terbuka<ph name="END_LINK_OSS"/> yang lain.</translation>
-<translation id="6321973207566602686">Jadikan BitPop penyemak imbas lalai</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">Pekerja BitPop</translation>
-<translation id="5820394555380036790">Chromium OS</translation>
-<translation id="6757767188268205357">Jangan ganggu saya</translation>
-<translation id="6312770669638222416">Cuba lumpuhkan ramalan rangkaian dengan mengikut langkah ini:
-        Pergi ke
-        <ph name="BEGIN_BOLD"/>
-        menu BitPop &gt;
-        <ph name="SETTINGS_TITLE"/>
-        &gt;
-        <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
-        dan nyahpilih "<ph name="NO_PREFETCH_DESCRIPTION"/>."
-        Jika tindakan ini tidak menyelesaikan isu, kami cadangkan memilih pilihan ini
-        sekali lagi untuk prestasi yang dipertingkatkan.</translation>
-<translation id="6220055452245182274">Laporan keranapan tidak tersedia dalam BitPop.</translation>
-<translation id="924450301557116466">Tidak digunakan dalam BitPop. Placeholder untuk mengekalkan penyegerakan peta sumber. Satu hujah dijangkakan: $1.</translation>
-<translation id="1984238998837921833">Mengemas kini BitPop...</translation>
-<translation id="9102885271730191378">Pengurus Tugas - BitPop</translation>
-<translation id="3916917357864849352">BitPop kini mengimport item berikut daripada <ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="5243897687251941678">Cari penanda halaman anda dalam menu BitPop atau pada bar penanda halaman.</translation>
-<translation id="5925519479755588070">Hampir terkini! Lancarkan semula BitPop untuk selesai mengemas kini.</translation>
-<translation id="4352003675682958984">Terdapat versi baharu BitPop tersedia.</translation>
-<translation id="8972540218839637401">Ralat sistem pengendalian berlaku semasa pemasangan. Sila muat turun BitPop semula.</translation>
-<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> telah ditambahkan pada BitPop.</translation>
-<translation id="8871841738132225233">Gunakan Akaun Google ini untuk menyegerakkan semua bahan Chomium anda?</translation>
 <translation id="8988481325911971852">Pemasangan gagal disebabkan ralat yang tidak dinyatakan. Sila muat turun semula BitPop.</translation>
 <translation id="660036136456272595">Profil anda tidak boleh digunakan kerana profil anda dihasilkan dari versi BitPop yang lebih baharu.
 
 Beberapa ciri mungkin tidak tersedia. Sila nyatakan direktori profil yang berbeza atau gunakan versi BitPop yang lebih baharu.</translation>
-<translation id="2712549016134575851">Percanggahan dengan aplikasi lain yang dipasang telah dikesan.</translation>
-<translation id="1095023322915848441">Sebelum ini, anda telah log masuk menggunakan akaun yang berbeza, log masuk akan menggabungkan data anda. Pertimbangkan untuk membuat pengguna BitPop baharu melalui <ph name="BEGIN_LINK"/>halaman tetapan<ph name="END_LINK"/> untuk bahan BitPop anda.</translation>
+<translation id="3787192530015965250">BitPop cuba menunjukkan kata laluan. Taip kata laluan Windows anda untuk membenarkannya.</translation>
 <translation id="7862155441175671173">Tambah ke BitPop</translation>
+<translation id="1211470790061593728">Kini lebih mudah menggunakan BitPop dengan Akaun Google anda dan pada komputer yang dikongsi.</translation>
 <translation id="5594704848342987755">Komputer ini telah mempunyai versi BitPop yang lebih baharu. Jika perisian tidak berfungsi, sila nyahpasang BitPop dan cuba lagi.</translation>
-<translation id="3422131153907641068">Utiliti BitPop</translation>
+<translation id="3528119622127530876">BitPop tidak dapat menyegerakkan data anda. Sila kemas kini frasa laluan Segerak anda.</translation>
 <translation id="1298199220304005244">Dapatkan bantuan untuk menggunakan Chromium OS</translation>
-<translation id="8854394556488040390">BitPop Frame telah dikemas kini. Sila lancarkan semula penyemak imbas anda. BitPop versi: <ph name="TODO_0001"/>, Chromium Frame versi: <ph name="TODO_0002"/></translation>
+<translation id="331951419404882060">OS BitPop tidak dapat menyegerakkan data anda disebabkan oleh ralat melog masuk.</translation>
+<translation id="8187289872471304532">Pergi ke
+          Apikasi &gt; Pilihan Sistem &gt; Rangkaian &gt; Terperinci &gt; Proksi
+          dan nyahpilih mana-mana proksi yang telah dipilih.</translation>
+<translation id="4634257184917711644"><ph name="FILE_NAME"/> bersifat hasad dan BitPop telah menyekatnya.</translation>
+<translation id="454930334682314382">Butiran pengebilan anda telah disimpan dalam BitPop.</translation>
 <translation id="130631256467250065">Perubahan anda akan dilaksanakan apabila anda memulakan semula peranti anda pada masa akan datang.</translation>
+<translation id="8810991521775422988">Pusat Pemberitahuan BitPop</translation>
 <translation id="2901348058800597589">BitPop tidak ditutup dengan betul. Untuk membuka semula halaman yang anda telah buka, klik Pulihkan.</translation>
+<translation id="838316505303362561">Dicadangkan oleh BitPop</translation>
 <translation id="5653921603290474550">BitPop tidak responsif. Lancarkan semula sekarang?</translation>
-<translation id="6089587093203430357">Semerta</translation>
-<translation id="2410206016513008786">BitPop perlu melancarkan aplikasi luaran untuk mengendalikan pautan <ph name="SCHEME"/>. Pautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
-<translation id="8046283042877435986">Tapak ini mencadangkan Chromium Frame (telah dipasang).</translation>
-<translation id="5523374683005655880">Tidak boleh memasang versi BitPop Frame yang sama dengan yang sedang dijalankan. Sila tutup BitPop Frame dan cuba lagi.</translation>
+<translation id="3306752603341080445">Anda log masuk ke BitPop!</translation>
+<translation id="2158734852934720349">Lesen sumber terbuka Chromium OS</translation>
+<translation id="2239725456669400190">BitPop perlu melancarkan aplikasi luaran untuk mengendalikan pautan <ph name="SCHEME"/>. Pautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
 <translation id="5574763173398621221">Adakah anda mahu BitPop menyimpan kata laluan anda?</translation>
-<translation id="7730150800475367955">Pergi ke
-          <ph name="BEGIN_BOLD"/>
-          menu BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          "<ph name="OPTIONS_BUTTON"/>"
-          <ph name="END_BOLD"/>
-          (untuk Rangkaian semasa). Jika butang
-          <ph name="BEGIN_BOLD"/>
-          "<ph name="PROXY_BUTTON"/>"
-          <ph name="END_BOLD"/>(dalam tab
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>
-          ) ada, klik pada butang tersebut dan pastikan konfigurasi anda
-          ditetapkan kepada "Langsung".</translation>
 <translation id="5387335700352644169">Paparkan menu BitPop</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
+<translation id="1981756165552484777">Anda menggunakan <ph name="PROFILE_EMAIL"/> untuk menyegerakkan bahan digital chromium anda. Untuk mengemas kini pilihan penyegerakan anda atau menggunakan BitPop tanpa akaun Google, lawati <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="1681324505975197559">(memerlukan BitPop <ph name="BEGIN_BUTTON"/>dimulakan semula<ph name="END_BUTTON"/>)</translation>
+<translation id="6863452815496188645">Sediakan Penyegerakan untuk menyimpan ciri penyemak imbas yang diperibadikan di web dan aksesnya dari BitPop pada mana-mana komputer.</translation>
 <translation id="8865765905101981392">Penyemak Imbas Internet</translation>
-<translation id="6424492062988593837">Chromium telah dipertingkatkan! Versi baharu kini boleh didapati.</translation>
+<translation id="3099708656176429608">Benarkan BitPop mengakses rangkaian dalam tetapan firewall atau antivirus
+        anda.</translation>
+<translation id="8098179324031720100">BitPop telah dipertingkatkan! Versi baharu kini boleh didapati.</translation>
+<translation id="4320683788245444425">Komputer ini akan menerima kemas kini BitPop lagi kerana perkakasan komputer ini tidak lagi disokong.</translation>
 <translation id="6385431739515246076">Mengenai &amp;BitPop</translation>
 <translation id="7521125380721653484">Arkib pemasang rosak atau tidak sah. Sila muat turun BitPop sekali lagi.</translation>
-<translation id="6836892784612884953">Pergi ke
-          <ph name="BEGIN_BOLD"/>
-          menu BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="ADVANCED_TITLE"/>
-          &gt;
-          <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          dan pastikan konfigurasi anda ditetapkan kepada "tiada proksi" atau "langsung".</translation>
-<translation id="457806999714267838">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang telah tamat tempoh. Tiada maklumat tersedia yang menunjukkan sama ada sijil tersebut telah terjejas sejak tamat tempoh itu. Ini bermakna BitPop tidak dapat menjamin bahawa anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer anda pada masa ini ditetapkan pada <ph name="CURRENT_TIME"/>. Adakah itu betul? Jika tidak, anda harus membetulkan kesilapan tersebut dan memuatkan semula halaman ini.</translation>
+<translation id="8457938350903919620">Klik nama anda untuk membuka BitPop dan mula menyemak imbas.</translation>
+<translation id="8410648211590980711">BitPop menggunakan mikrofon anda.</translation>
+<translation id="3298525902784604502">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang telah tamat tempoh. Tiada maklumat tersedia yang menunjukkan sama ada sijil tersebut telah terjejas sejak tamat tempoh itu. Ini bermakna BitPop tidak dapat menjamin bahawa anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer anda pada masa ini ditetapkan pada <ph name="CURRENT_TIME"/>. Adakah itu betul? Jika tidak, anda harus membetulkan kesilapan tersebut dan memuatkan semula halaman ini.</translation>
 <translation id="7196020411877309443">Mengapakah halaman ini yang saya lihat?</translation>
+<translation id="6809805128084420516">Maklumat penting mengenai data BitPop anda</translation>
+<translation id="5312973105258198185">Anda telah log masuk sebagai <ph name="USER_EMAIL_ADDRESS"/>. Sekarang anda boleh mengakses penanda halaman, sejarah dan tetapan anda yang lain pada semua peranti yang anda gunakan untuk log masuk.</translation>
 <translation id="473359818469623008">Tidak boleh memasang versi BitPop yang sama dengan yang sedang dijalankan. Sila tutup BitPop dan cuba lagi.</translation>
 <translation id="2595850371931815386">BitPop bukan penyemak imbas lalai anda.</translation>
-<translation id="1857156280997837230">Pelancar Apl BitPop</translation>
 <translation id="4458285410772214805">Sila log keluar dan log masuk semula supaya perubahan ini boleh dilaksanakan.</translation>
-<translation id="6523007289492675308">Tunjukkan pintasan ke Pelancar Apl BitPop dalam Windows Taskbar.</translation>
+<translation id="6627720938086825017">BitPop menggunakan kamera dan mikrofon anda.</translation>
+<translation id="6382607600997384001">Anda boleh melihat semua pemberitahuan anda dari apl, sambungan dan tapak web BitPop di sini.</translation>
 <translation id="2119636228670142020">Mengenai &amp;Chromium OS</translation>
 <translation id="4196382931981526364">Terdapat versi BitPop baharu yang lebih selamat tersedia.</translation>
-<translation id="1077424736315176936">Paparkan Pelancar Apl BitPop.</translation>
-<translation id="5330935702921516708">Lihat <ph name="BEGIN_LINK"/>lagi faedah<ph name="END_LINK"/> apabila log masuk ke BitPop.</translation>
 <translation id="862266784641000464">BitPop membolehkan anda mengklik nombor telefon pada web dan menghubunginya dengan Skype!</translation>
 <translation id="8072591166076742072">Muat turun sedang dijalankan. Adakah anda ingin keluar dari BitPop dan membatalkan muat turun?</translation>
-<translation id="932207424499184915">Perduaan BitPop</translation>
-<translation id="3223104112377435850">Hos Pemalam BitPop</translation>
+<translation id="8650443074479376435">BitPop tidak dapat menyegerakkan data anda disebabkan ralat melog masuk.</translation>
+<translation id="7561209000218748370">Peraturan masuk bagi BitPop untuk membolehkan trafik mDNS.</translation>
+<translation id="151962892725702025">OS BitPop tidak dapat menyegerakkan data anda kerana Segerak tidak tersedia untuk domain anda.</translation>
+<translation id="3360567213983886831">Perduaan BitPop</translation>
+<translation id="108010966668726733">Seseorang telah log masuk ke BitPop pada komputer ini sebagai <ph name="ACCOUNT_EMAIL_LAST"/> sebelum ini. Jika itu bukan akaun anda, buat pengguna BitPop baharu untuk mengasingkan maklumat anda.
+
+Meneruskan juga log masuk akan menggabungkan maklumat BitPop seperti penanda halaman, sejarah dan tetapan lain ke <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
 <translation id="7826309952950470209">Muat turun sedang dijalankan. Adakah anda ingin keluar dari BitPop dan membatalkan muat turun?</translation>
 <translation id="380873736468525691">BitPop memerlukan Windows Vista atau Windows XP dengan SP2 atau lebih tinggi.</translation>
 <translation id="2762974284703971745">Modul dengan nama yang sama telah diketahui bercanggah dengan BitPop.</translation>
+<translation id="5213128101330439346">Ini BitPop anda</translation>
 <translation id="5443433498537176573">BitPop telah dikemas kini</translation>
 <translation id="5637727561937246825">Komputer ini sudah mempunyai versi komponen BitPop yang lebih baharu. Sila gunakan pemasang yang lebih baharu.</translation>
-<translation id="5082591353921977637">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang belum lagi sah. Tiada maklumat tersedia yang menunjukkan sama ada sijil tersebut boleh dipercayai. BitPop tidak dapat menjamin bahawa anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer anda pada masa ini ditetapkan kepada <ph name="CURRENT_TIME"/>. Adakah itu betul? Jika tidak, anda harus membetulkan jam sistem anda dan kemudian, muatkan semula halaman ini.</translation>
-<translation id="1138135211676039883">BitPop menggunakan enjin carian lalai anda, yang kini ditetapkan kepada <ph name="PAGE_TITLE"/>. Adakah anda ingin mengekalkan enjin carian lalai anda?</translation>
+<translation id="4547797007790555015">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang belum lagi sah. Tiada maklumat tersedia yang menunjukkan sama ada sijil tersebut boleh dipercayai. BitPop tidak dapat menjamin bahawa anda berkomunikasi dengan &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; dan bukan penyerang. Jam komputer anda pada masa ini ditetapkan kepada <ph name="CURRENT_TIME"/>. Adakah itu betul? Jika tidak, anda harus membetulkan jam sistem anda dan kemudian, muatkan semula halaman ini.</translation>
 <translation id="185658551912723674">Selamat datang ke BitPop</translation>
-<translation id="6808688532552992663">Komputer ini telah mempunyai versi BitPop dan BitPop Frame yang lebih baharu. Jika perisian tidak berfungsi, sila nyahpasang BitPop dan BitPop Frame dan cuba lagi.</translation>
 <translation id="1909867102505992367">Fail pilihan anda rosak atau tidak sah.
 
 BitPop tidak dapat mengembalikan tetapan anda.</translation>
-<translation id="4933902704814222889">BitPop merupakan penyemak imbas yang mengendalikan laman web dan aplikasi dengan kelajuan sepantas kilat. BitPop cepat, stabil dan mudah digunakan. Semak imbas web lebih selamat dengan perlindungan perisian hasad dan pancingan data terbina dalam Chromium.</translation>
-<translation id="7673336527696184948">Hujah tidak sah. BitPop Frame tidak boleh dipasang dalam mod sedia tanpa memasang BitPop juga.</translation>
+<translation id="6239286721842301381">Anda sedang mempratonton BitPop baharu.</translation>
+<translation id="7591092481995851856">Memutuskan sambungan <ph name="USERNAME"/> akan mengosongkan sejarah anda, penanda halaman, tetapan dan data BitPop lain yang disimpan pada peranti ini. Data yang disimpan dalam Akaun Google anda tidak akan dikosongkan dan boleh diuruskan pada <ph name="GOOGLE_DASHBOARD_LINK"/>Papan Pemuka Google<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
+<translation id="4933902704814222889">BitPop merupakan penyemak imbas yang mengendalikan laman web dan aplikasi dengan kelajuan sepantas kilat. BitPop cepat, stabil dan mudah digunakan. Semak imbas web lebih selamat dengan perlindungan perisian hasad dan pancingan data terbina dalam BitPop.</translation>
+<translation id="5806792281256987775">Anda cuba mencapai &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, tetapi pelayan menyampaikan sijil yang dikeluarkan oleh entiti yang tidak dipercayai oleh BitPop. Ini berkemungkinan disebabkan oleh pelayan telah menghasilkan bukti kelayakan keselamatan miliknya sendiri dan tidak dipercayai oleh BitPop dari segi maklumat identitinya atau ada penceroboh yang mungkin cuba hendak memintas komunikasi anda.</translation>
+<translation id="26317130586606191">Paut data BitPop anda ke akaun ini?</translation>
 <translation id="5583217122091744450">Pembantu BitPop</translation>
+<translation id="3089741509794563091">BitPop kini lebih baik</translation>
 <translation id="6404599307042403560">BitPop dikonfigurasi untuk dilancarkan secara automatik apabila anda memulakan komputer anda.</translation>
-<translation id="8974095189086268230">Chromium OS berjaya dilaksanakan dengan adanya <ph name="BEGIN_LINK_CROS_OSS"/>perisian sumber terbuka<ph name="END_LINK_CROS_OSS"/> tambahan.</translation>
-<translation id="1221340462641866827">Chromium OS tidak menyokong pelancaran aplikasi luaran untuk mengendalikan pautan <ph name="SCHEME"/>. Pautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
+<translation id="554833011526807667">Chromium OS berjaya dilaksanakan dengan adanya <ph name="BEGIN_LINK_CROS_OSS"/>perisian sumber terbuka<ph name="END_LINK_CROS_OSS"/> tambahan.</translation>
+<translation id="8166042339699941380">Anda log masuk menggunakan akaun terurus dan memberikan kawalan atas profil BitPop anda kepada pentadbirnya. Data BitPop anda, seperti apl, penanda halaman, sejarah, kata laluan dan tetapan anda yang lain akan terikat kepada <ph name="USER_NAME"/> secara kekal. Anda akan dapat memadamkan data ini melalui Papan Pemuka Akaun Google, tetapi anda tidak akan dapat mengaitkan data ini dengan akaun lain.</translation>
+<translation id="2032763513380168750">Pautkan data BitPop saya ke akaun ini</translation>
+<translation id="2477235356415090659">Pasang semula BitPop</translation>
+<translation id="807350504213044844">Chromium OS tidak menyokong pelancaran aplikasi luaran untuk mengendalikan pautan <ph name="SCHEME"/>. Pautan yang diminta adalah <ph name="PROTOLINK"/>.</translation>
+<translation id="3484768020161794310">Kunci API Google tiada. Sesetengah fungsi BitPop akan dilumpuhkan.</translation>
+<translation id="531363935678210182">BitPop - Pemberitahuan</translation>
+<translation id="3151848949510984428">Simpan butiran di BitPop</translation>
 </translationbundle>

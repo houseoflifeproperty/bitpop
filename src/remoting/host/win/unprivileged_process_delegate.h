@@ -7,18 +7,21 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/threading/non_thread_safe.h"
 #include "base/win/scoped_handle.h"
+#include "ipc/ipc_listener.h"
 #include "remoting/host/win/worker_process_launcher.h"
 
 namespace base {
+class CommandLine;
 class SingleThreadTaskRunner;
 } // namespace base
 
 namespace IPC {
 class ChannelProxy;
-class Listener;
 class Message;
 } // namespace IPC
 
@@ -26,38 +29,42 @@ namespace remoting {
 
 // Implements logic for launching and monitoring a worker process under a less
 // privileged user account.
-class UnprivilegedProcessDelegate : public WorkerProcessLauncher::Delegate {
+class UnprivilegedProcessDelegate
+    : public base::NonThreadSafe,
+      public IPC::Listener,
+      public WorkerProcessLauncher::Delegate {
  public:
   UnprivilegedProcessDelegate(
-      scoped_refptr<base::SingleThreadTaskRunner> main_task_runner,
       scoped_refptr<base::SingleThreadTaskRunner> io_task_runner,
-      const FilePath& binary_path);
+      scoped_ptr<base::CommandLine> target_command);
   virtual ~UnprivilegedProcessDelegate();
 
-  // IPC::Sender implementation.
-  virtual bool Send(IPC::Message* message) OVERRIDE;
-
   // WorkerProcessLauncher::Delegate implementation.
-  virtual DWORD GetProcessId() const OVERRIDE;
-  virtual bool IsPermanentError(int failure_count) const OVERRIDE;
-  virtual void KillProcess(DWORD exit_code) OVERRIDE;
-  virtual bool LaunchProcess(
-      IPC::Listener* delegate,
-      base::win::ScopedHandle* process_exit_event_out) OVERRIDE;
+  virtual void LaunchProcess(WorkerProcessLauncher* event_handler) OVERRIDE;
+  virtual void Send(IPC::Message* message) OVERRIDE;
+  virtual void CloseChannel() OVERRIDE;
+  virtual void KillProcess() OVERRIDE;
 
  private:
-  // The task runner all public methods of this class should be called on.
-  scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
+  // IPC::Listener implementation.
+  virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
+  virtual void OnChannelConnected(int32 peer_pid) OVERRIDE;
+  virtual void OnChannelError() OVERRIDE;
+
+  void ReportFatalError();
+  void ReportProcessLaunched(base::win::ScopedHandle worker_process);
 
   // The task runner serving job object notifications.
   scoped_refptr<base::SingleThreadTaskRunner> io_task_runner_;
 
-  // Path to the worker process binary.
-  FilePath binary_path_;
+  // Command line of the launched process.
+  scoped_ptr<base::CommandLine> target_command_;
 
   // The server end of the IPC channel used to communicate to the worker
   // process.
   scoped_ptr<IPC::ChannelProxy> channel_;
+
+  WorkerProcessLauncher* event_handler_;
 
   // The handle of the worker process, if launched.
   base::win::ScopedHandle worker_process_;

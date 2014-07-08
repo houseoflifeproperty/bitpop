@@ -29,11 +29,11 @@ class FakeAudioPlayer : public AudioPlayer {
   FakeAudioPlayer() {
   }
 
-  bool ResetAudioPlayer(AudioPacket::SamplingRate) OVERRIDE {
+  virtual bool ResetAudioPlayer(AudioPacket::SamplingRate) OVERRIDE {
     return true;
   }
 
-  uint32 GetSamplesPerFrame() OVERRIDE {
+  virtual uint32 GetSamplesPerFrame() OVERRIDE {
     return kAudioSamplesPerFrame;
   }
 };
@@ -73,12 +73,8 @@ class AudioPlayerTest : public ::testing::Test {
     }
   }
 
-  void SetQueuedSamples(int num_samples) {
-    audio_->queued_samples_ = num_samples;
-  }
-
   int GetNumQueuedSamples() {
-    return audio_->queued_samples_;
+    return audio_->queued_bytes_ / kAudioSampleBytes;
   }
 
   int GetNumQueuedPackets() {
@@ -90,7 +86,7 @@ class AudioPlayerTest : public ::testing::Test {
   }
 
   scoped_ptr<AudioPlayer> audio_;
-  scoped_array<char> buffer_;
+  scoped_ptr<char[]> buffer_;
 };
 
 scoped_ptr<AudioPacket> CreatePacketWithSamplingRate(
@@ -154,20 +150,14 @@ TEST_F(AudioPlayerTest, ChangeSampleRate) {
 }
 
 TEST_F(AudioPlayerTest, ExceedLatency) {
-  scoped_ptr<AudioPacket> packet1(CreatePacket44100Hz(10));
-  audio_->ProcessAudioPacket(packet1.Pass());
-  ASSERT_EQ(10, GetNumQueuedSamples());
-  ASSERT_EQ(1, GetNumQueuedPackets());
+  // Push about 4 seconds worth of samples.
+  for (int i = 0; i < 100; ++i) {
+    scoped_ptr<AudioPacket> packet1(CreatePacket48000Hz(2000));
+    audio_->ProcessAudioPacket(packet1.Pass());
+  }
 
-  // Fake lots of queued samples.
-  SetQueuedSamples(20000);
-
-  // Previous sample should have been deleted because of latency (too many
-  // unprocessed samples).
-  scoped_ptr<AudioPacket> packet2(CreatePacket44100Hz(20));
-  audio_->ProcessAudioPacket(packet2.Pass());
-  ASSERT_EQ(20, GetNumQueuedSamples());
-  ASSERT_EQ(1, GetNumQueuedPackets());
+  // Verify that we don't have more than 0.5s.
+  EXPECT_LT(GetNumQueuedSamples(), 24000);
 }
 
 // Incoming packets: 100

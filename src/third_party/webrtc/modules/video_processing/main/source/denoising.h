@@ -8,39 +8,35 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-/*
- * denoising.h
- */
-#ifndef VPM_DENOISING_H
-#define VPM_DENOISING_H
+#ifndef WEBRTC_MODULES_VIDEO_PROCESSING_MAIN_SOURCE_DENOISING_H_
+#define WEBRTC_MODULES_VIDEO_PROCESSING_MAIN_SOURCE_DENOISING_H_
 
-#include "typedefs.h"
-#include "video_processing.h"
+#include "webrtc/modules/video_processing/main/interface/video_processing.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
 
-class VPMDenoising
-{
-public:
-    VPMDenoising();
-    ~VPMDenoising();
+class VPMDenoising {
+ public:
+  VPMDenoising();
+  ~VPMDenoising();
 
-    WebRtc_Word32 ChangeUniqueId(WebRtc_Word32 id);
+  int32_t ChangeUniqueId(int32_t id);
 
-    void Reset();
+  void Reset();
 
-    WebRtc_Word32 ProcessFrame(I420VideoFrame* frame);
+  int32_t ProcessFrame(I420VideoFrame* frame);
 
-private:
-    WebRtc_Word32 _id;
+ private:
+  int32_t id_;
 
-    WebRtc_UWord32*   _moment1;           // (Q8) First order moment (mean)
-    WebRtc_UWord32*   _moment2;           // (Q8) Second order moment
-    WebRtc_UWord32    _frameSize;         // Size (# of pixels) of frame
-    int               _denoiseFrameCnt;   // Counter for subsampling in time
+  uint32_t* moment1_;  // (Q8) First order moment (mean).
+  uint32_t* moment2_;  // (Q8) Second order moment.
+  uint32_t  frame_size_;  // Size (# of pixels) of frame.
+  int denoise_frame_cnt_;  // Counter for subsampling in time.
 };
 
-} //namespace
+}  // namespace webrtc
 
-#endif // VPM_DENOISING_H
-  
+#endif // WEBRTC_MODULES_VIDEO_PROCESSING_MAIN_SOURCE_DENOISING_H_
+

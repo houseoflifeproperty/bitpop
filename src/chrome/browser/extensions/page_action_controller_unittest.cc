@@ -6,7 +6,7 @@
 
 #include "base/command_line.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
 #include "chrome/browser/extensions/extension_service.h"
@@ -14,27 +14,28 @@
 #include "chrome/browser/extensions/tab_helper.h"
 #include "chrome/browser/extensions/test_extension_system.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_builder.h"
-#include "chrome/common/extensions/value_builder.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/browser_thread.h"
-#include "content/public/test/test_browser_thread.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_builder.h"
+#include "extensions/common/value_builder.h"
 
-using content::BrowserThread;
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/settings/cros_settings.h"
+#include "chrome/browser/chromeos/settings/device_settings_service.h"
+#endif
 
 namespace extensions {
 namespace {
 
 class PageActionControllerTest : public ChromeRenderViewHostTestHarness {
- public:
-  PageActionControllerTest()
-      : ui_thread_(BrowserThread::UI, MessageLoop::current()),
-        file_thread_(BrowserThread::FILE, MessageLoop::current()) {}
-
+ protected:
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
+#if defined OS_CHROMEOS
+  test_user_manager_.reset(new chromeos::ScopedTestUserManager());
+#endif
     TabHelper::CreateForWebContents(web_contents());
     // Create an ExtensionService so the PageActionController can find its
     // extensions.
@@ -43,10 +44,16 @@ class PageActionControllerTest : public ChromeRenderViewHostTestHarness {
         Profile::FromBrowserContext(web_contents()->GetBrowserContext());
     extension_service_ = static_cast<TestExtensionSystem*>(
         ExtensionSystem::Get(profile))->CreateExtensionService(
-            &command_line, FilePath(), false);
+            &command_line, base::FilePath(), false);
   }
 
- protected:
+  virtual void TearDown() OVERRIDE {
+#if defined OS_CHROMEOS
+    test_user_manager_.reset();
+#endif
+    ChromeRenderViewHostTestHarness::TearDown();
+  }
+
   int tab_id() {
     return SessionID::IdForTab(web_contents());
   }
@@ -54,8 +61,11 @@ class PageActionControllerTest : public ChromeRenderViewHostTestHarness {
   ExtensionService* extension_service_;
 
  private:
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
+#if defined OS_CHROMEOS
+  chromeos::ScopedTestDeviceSettingsService test_device_settings_service_;
+  chromeos::ScopedTestCrosSettings test_cros_settings_;
+  scoped_ptr<chromeos::ScopedTestUserManager> test_user_manager_;
+#endif
 };
 
 TEST_F(PageActionControllerTest, NavigationClearsState) {
@@ -70,12 +80,12 @@ TEST_F(PageActionControllerTest, NavigationClearsState) {
                    .Set("page_action", DictionaryBuilder()
                         .Set("default_title", "Hello")))
       .Build();
-  extension_service_->AddExtension(extension);
+  extension_service_->AddExtension(extension.get());
 
   NavigateAndCommit(GURL("http://www.google.com"));
 
-  ExtensionAction& page_action = *ExtensionActionManager::Get(profile())->
-      GetPageAction(*extension);
+  ExtensionAction& page_action =
+      *ExtensionActionManager::Get(profile())->GetPageAction(*extension.get());
   page_action.SetTitle(tab_id(), "Goodbye");
   page_action.SetPopupUrl(
       tab_id(), extension->GetResourceURL("popup.html"));

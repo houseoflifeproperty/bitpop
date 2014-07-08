@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "ppapi/shared_impl/callback_tracker.h"
 #include "ppapi/shared_impl/id_assignment.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
@@ -15,17 +15,23 @@
 
 namespace ppapi {
 
-ResourceTracker::ResourceTracker()
-    : last_resource_value_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+ResourceTracker::ResourceTracker(ThreadMode thread_mode)
+    : last_resource_value_(0), weak_ptr_factory_(this) {
+  if (thread_mode == SINGLE_THREADED)
+    thread_checker_.reset(new base::ThreadChecker);
 }
 
-ResourceTracker::~ResourceTracker() {
+ResourceTracker::~ResourceTracker() {}
+
+void ResourceTracker::CheckThreadingPreconditions() const {
+  DCHECK(!thread_checker_ || thread_checker_->CalledOnValidThread());
+#ifndef NDEBUG
+  ProxyLock::AssertAcquired();
+#endif
 }
 
 Resource* ResourceTracker::GetResource(PP_Resource res) const {
-  CHECK(thread_checker_.CalledOnValidThread());
-  ProxyLock::AssertAcquired();
+  CheckThreadingPreconditions();
   ResourceMap::const_iterator i = live_resources_.find(res);
   if (i == live_resources_.end())
     return NULL;
@@ -33,9 +39,12 @@ Resource* ResourceTracker::GetResource(PP_Resource res) const {
 }
 
 void ResourceTracker::AddRefResource(PP_Resource res) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   DLOG_IF(ERROR, !CheckIdType(res, PP_ID_TYPE_RESOURCE))
       << res << " is not a PP_Resource.";
+
+  DCHECK(CanOperateOnResource(res));
+
   ResourceMap::iterator i = live_resources_.find(res);
   if (i == live_resources_.end())
     return;
@@ -55,9 +64,12 @@ void ResourceTracker::AddRefResource(PP_Resource res) {
 }
 
 void ResourceTracker::ReleaseResource(PP_Resource res) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   DLOG_IF(ERROR, !CheckIdType(res, PP_ID_TYPE_RESOURCE))
       << res << " is not a PP_Resource.";
+
+  DCHECK(CanOperateOnResource(res));
+
   ResourceMap::iterator i = live_resources_.find(res);
   if (i == live_resources_.end())
     return;
@@ -78,15 +90,15 @@ void ResourceTracker::ReleaseResource(PP_Resource res) {
 }
 
 void ResourceTracker::ReleaseResourceSoon(PP_Resource res) {
-  MessageLoop::current()->PostNonNestableTask(
+  base::MessageLoop::current()->PostNonNestableTask(
       FROM_HERE,
-      base::Bind(&ResourceTracker::ReleaseResource,
-             weak_ptr_factory_.GetWeakPtr(),
-             res));
+      RunWhileLocked(base::Bind(&ResourceTracker::ReleaseResource,
+                                weak_ptr_factory_.GetWeakPtr(),
+                                res)));
 }
 
 void ResourceTracker::DidCreateInstance(PP_Instance instance) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   // Due to the infrastructure of some tests, the instance is registered
   // twice in a few cases. It would be nice not to do that and assert here
   // instead.
@@ -96,7 +108,7 @@ void ResourceTracker::DidCreateInstance(PP_Instance instance) {
 }
 
 void ResourceTracker::DidDeleteInstance(PP_Instance instance) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   InstanceMap::iterator found_instance = instance_map_.find(instance);
 
   // Due to the infrastructure of some tests, the instance is unregistered
@@ -151,22 +163,30 @@ void ResourceTracker::DidDeleteInstance(PP_Instance instance) {
 }
 
 int ResourceTracker::GetLiveObjectsForInstance(PP_Instance instance) const {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   InstanceMap::const_iterator found = instance_map_.find(instance);
   if (found == instance_map_.end())
     return 0;
   return static_cast<int>(found->second->resources.size());
 }
 
+void ResourceTracker::UseOddResourceValueInDebugMode() {
+#if !defined(NDEBUG)
+  DCHECK_EQ(0, last_resource_value_);
+
+  ++last_resource_value_;
+#endif
+}
+
 PP_Resource ResourceTracker::AddResource(Resource* object) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   // If the plugin manages to create too many resources, don't do crazy stuff.
-  if (last_resource_value_ == kMaxPPId)
+  if (last_resource_value_ >= kMaxPPId)
     return 0;
 
   // Allocate an ID. Note there's a rare error condition below that means we
   // could end up not using |new_id|, but that's harmless.
-  PP_Resource new_id = MakeTypedId(++last_resource_value_, PP_ID_TYPE_RESOURCE);
+  PP_Resource new_id = MakeTypedId(GetNextResourceValue(), PP_ID_TYPE_RESOURCE);
 
   // Some objects have a 0 instance, meaning they aren't associated with any
   // instance, so they won't be in |instance_map_|. This is (as of this writing)
@@ -180,7 +200,7 @@ PP_Resource ResourceTracker::AddResource(Resource* object) {
       // could happen for OOP plugins where due to reentrancies in context of
       // outgoing sync calls the renderer can send events after a plugin has
       // exited.
-      DLOG(INFO) << "Failed to find plugin instance in instance map";
+      VLOG(1) << "Failed to find plugin instance in instance map";
       return 0;
     }
     found->second->resources.insert(new_id);
@@ -191,7 +211,7 @@ PP_Resource ResourceTracker::AddResource(Resource* object) {
 }
 
 void ResourceTracker::RemoveResource(Resource* object) {
-  CHECK(thread_checker_.CalledOnValidThread());
+  CheckThreadingPreconditions();
   PP_Resource pp_resource = object->pp_resource();
   InstanceMap::iterator found = instance_map_.find(object->pp_instance());
   if (found != instance_map_.end())
@@ -219,6 +239,32 @@ void ResourceTracker::LastPluginRefWasDeleted(Resource* object) {
   if (callback_tracker)
     callback_tracker->PostAbortForResource(object->pp_resource());
   object->NotifyLastPluginRefWasDeleted();
+}
+
+int32 ResourceTracker::GetNextResourceValue() {
+#if defined(NDEBUG)
+  return ++last_resource_value_;
+#else
+  // In debug mode, the least significant bit indicates which side (renderer
+  // or plugin process) created the resource. Increment by 2 so it's always the
+  // same.
+  last_resource_value_ += 2;
+  return last_resource_value_;
+#endif
+}
+
+bool ResourceTracker::CanOperateOnResource(PP_Resource res) {
+#if defined(NDEBUG)
+  return true;
+#else
+  // The invalid PP_Resource value could appear at both sides.
+  if (res == 0)
+    return true;
+
+  // Skipping the type bits, the least significant bit of |res| should be the
+  // same as that of |last_resource_value_|.
+  return ((res >> kPPIdTypeBits) & 1) == (last_resource_value_ & 1);
+#endif
 }
 
 }  // namespace ppapi

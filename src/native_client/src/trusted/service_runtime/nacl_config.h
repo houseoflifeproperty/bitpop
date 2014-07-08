@@ -72,19 +72,11 @@
 /*
  * Macro for the start address of the trampolines.
  */
-#if defined(NACL_TARGET_ARM_THUMB2_MODE)
-/*
- * Defining the start of the trampolines to something less than 64k allows
- * better representation with thumb2 immediates.
- */
-#define NACL_SYSCALL_START_ADDR       0x8000
-#else
 /*
  * The first 64KB (16 pages) are inaccessible.  On x86, this is to prevent
  * addr16/data16 attacks.
  */
 #define NACL_SYSCALL_START_ADDR       (16 << NACL_PAGESHIFT)
-#endif
 /* Macro for the start address of a specific trampoline.  */
 #define NACL_SYSCALL_ADDR(syscall_number) \
     (NACL_SYSCALL_START_ADDR + (syscall_number << NACL_SYSCALL_BLOCK_SHIFT))
@@ -114,15 +106,10 @@
  * NACL_TRAMPOLINE_END gives the address of the first byte after the
  * trampolines.
  */
-#if defined(NACL_TARGET_ARM_THUMB2_MODE)
-#define NACL_TRAMPOLINE_START 0x8000
-#define NACL_TRAMPOLINE_SIZE 0x8000
-#else
 #define NACL_NULL_REGION_SHIFT  16
 #define NACL_TRAMPOLINE_START   (1 << NACL_NULL_REGION_SHIFT)
 #define NACL_TRAMPOLINE_SHIFT   16
 #define NACL_TRAMPOLINE_SIZE    (1 << NACL_TRAMPOLINE_SHIFT)
-#endif  /* defined(NACL_TARGET_ARM_THUMB2_MODE) */
 #define NACL_TRAMPOLINE_END     (NACL_TRAMPOLINE_START + NACL_TRAMPOLINE_SIZE)
 
 /*
@@ -162,11 +149,24 @@
 # define NACL_FAKE_INODE_NUM     0x6c43614e
 #endif
 
+/*
+ * Block sizes, op-codes that are used in NaCl, and trampoline related
+ * constants that simplify making the C code architecture independent.
+ */
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86
 
 # define NACL_BLOCK_SHIFT         (5)
 
+# define NACL_NOOP_OPCODE    0x90
+# define NACL_HALT_OPCODE    0xf4
+# define NACL_HALT_LEN       1           /* length of halt instruction */
+# define NACL_HALT_WORD      0xf4f4f4f4U
+
+# define NACL_X86_TRAP_FLAG      (1 << 8)
+# define NACL_X86_DIRECTION_FLAG (1 << 10)
+
 # if NACL_BUILD_SUBARCH == 32
+#  define NACL_ELF_E_MACHINE      EM_386
 /*
  * The untrusted stack looks like this on x86-32:
  *   esp-0x0: syscall args pushed by untrusted code before calling trampoline
@@ -184,15 +184,17 @@
  * must do so here as well.
  */
 #  define NACL_STACK_ALIGN_MASK   (0xf)
+#  define NACL_STACK_ARGS_SIZE    (0)
 #  define NACL_STACK_GETS_ARG     (1)
 #  define NACL_STACK_PAD_BELOW_ALIGN (4)
 #  define NACL_STACK_RED_ZONE     (0)
 
 # elif NACL_BUILD_SUBARCH == 64
+#  define NACL_ELF_E_MACHINE      EM_X86_64
 /*
  * The untrusted stack looks like this on x86-64:
  *   rsp-0x08: 8 byte return address pushed by untrusted code's call
- *   rsp-0x10: 8 byte return address pushed by the trampoline's call
+ *   rsp-0x10: 4 byte pseudo return address saved by the trampoline
  *   rsp-0x28: 0x18 bytes of syscall arguments saved by NaClSyscallSeg
  */
 #  define NACL_TRAMPRET_FIX       (-0x10)
@@ -204,6 +206,7 @@
  * 3.2.2 discusses stack alignment.
  */
 #  define NACL_STACK_ALIGN_MASK   (0xf)
+#  define NACL_STACK_ARGS_SIZE    (0)
 #  define NACL_STACK_GETS_ARG     (0)
 #  define NACL_STACK_PAD_BELOW_ALIGN (8)
 #  define NACL_STACK_RED_ZONE     (128)
@@ -212,14 +215,15 @@
 # endif /* NACL_BUILD_SUBARCH */
 
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+# include "native_client/src/include/arm_sandbox.h"
 
+# define NACL_ELF_E_MACHINE       EM_ARM
 # define NACL_BLOCK_SHIFT         (4)
 
-# if defined(NACL_TARGET_ARM_THUMB2_MODE)
-#  define NACL_HALT         bkpt
-# else
-#  define NACL_HALT         mov pc, #0
-# endif  /* defined(NACL_TARGET_ARM_THUMB2_MODE) */
+# define NACL_NOOP_OPCODE         0xe1a00000  /* mov r0, r0 */
+# define NACL_HALT_OPCODE         NACL_INSTR_ARM_HALT_FILL
+# define NACL_HALT_LEN            4           /* length of halt instruction */
+# define NACL_HALT_WORD           NACL_HALT_OPCODE
 
 /* 16-byte bundles, 1G address space */
 # define NACL_CONTROL_FLOW_MASK      0xC000000F
@@ -229,9 +233,9 @@
 /*
  * The untrusted stack looks like this on ARM:
  *   sp-0x00: 0-8 bytes for 0-2 syscall arguments pushed by untrusted code
- *   sp-0x10: 16 bytes for 4 syscall arguments pushed by the trampoline
- *   sp-0x14: 4 byte return address (value of lr) pushed by the trampoline
- *   sp-0x18: 4 byte return address (value of lr) pushed by NaClSyscallSeg
+ *   sp-0x10: 16 bytes for 4 syscall arguments saved by the trampoline
+ *   sp-0x14: 4 byte return address (value of lr) saved by the trampoline
+ *   sp-0x18: 4 byte return address (value of lr) saved by NaClSyscallSeg
  */
 # define NACL_TRAMPRET_FIX        (-0x18)
 # define NACL_USERRET_FIX         (-0x14)
@@ -245,6 +249,7 @@
  * performance of vector instructions, we increase this to 16.
  */
 # define NACL_STACK_ALIGN_MASK    (0xf)
+# define NACL_STACK_ARGS_SIZE     (0)
 # define NACL_STACK_GETS_ARG      (0)
 # define NACL_STACK_PAD_BELOW_ALIGN (0)
 # define NACL_STACK_RED_ZONE      (0)
@@ -257,10 +262,16 @@
 
 #elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
 
-#undef  NACL_KERN_STACK_SIZE        // Mips needs 128k pthread stack size
-#define NACL_KERN_STACK_SIZE        (128 << 10)
+# undef  NACL_KERN_STACK_SIZE        // Mips needs 128k pthread stack size
+# define NACL_KERN_STACK_SIZE        (128 << 10)
 
-#define NACL_BLOCK_SHIFT            4
+# define NACL_ELF_E_MACHINE          EM_MIPS
+# define NACL_BLOCK_SHIFT            4
+
+# define NACL_NOOP_OPCODE        0x00000000  /* nop */
+# define NACL_HALT_OPCODE        0x0000000D  /* break */
+# define NACL_HALT_LEN           4           /* length of halt instruction */
+# define NACL_HALT_WORD          NACL_HALT_OPCODE
 
 /* 16-byte bundles, 256MB code segment*/
 # define NACL_CONTROL_FLOW_MASK     0x0FFFFFF0
@@ -276,10 +287,14 @@
 # define NACL_USERRET_FIX           (-0x4)
 # define NACL_SYSARGS_FIX           (0)
 # define NACL_STACK_ALIGN_MASK      (0x7)
+/*
+ * The MIPS o32 ABI requires callers to reserve 16 bytes above the stack
+ * pointer, which the callee can spill arguments to.
+ */
+# define NACL_STACK_ARGS_SIZE       (0x10)
 # define NACL_STACK_GETS_ARG        (0)
 # define NACL_STACK_PAD_BELOW_ALIGN (0)
 # define NACL_STACK_RED_ZONE        (0)
-# define NACL_HALT                  break
 /* 16 byte bundles */
 
 #else /* NACL_ARCH(NACL_BUILD_ARCH) */
@@ -288,14 +303,14 @@
 
 #endif /* NACL_ARCH(NACL_BUILD_ARCH) */
 
-/*
- * Android linker doesn't support __thread variables - for development purposes
- * one could enable using unsafe pthread API for TLS, before real fix based on
- * trusted R9-based TLS pool appears.
- * TODO(olonho): remove when issue
- * http://code.google.com/p/nativeclient/issues/detail?id=2933
- * gets fixed.
- */
-#define NACL_DANGEROUS_USE_PTHREAD_GETSPECIFIC_ON_ANDROID NACL_ANDROID
+#ifdef __ASSEMBLER__
+# if NACL_WINDOWS
+#  define NACL_RODATA           .section .rdata, "dr"
+# elif NACL_OSX
+#  define NACL_RODATA           .section __TEXT, __const
+# else
+#  define NACL_RODATA           .section .rodata, "a"
+# endif
+#endif
 
 #endif  /* NATIVE_CLIENT_SRC_TRUSTED_SERVICE_RUNTIME_NACL_CONFIG_H_ */

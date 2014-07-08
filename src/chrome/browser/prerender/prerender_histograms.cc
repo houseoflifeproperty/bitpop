@@ -7,11 +7,9 @@
 #include <string>
 
 #include "base/format_macros.h"
-#include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "chrome/browser/predictors/autocomplete_action_predictor.h"
-#include "chrome/browser/prerender/prerender_field_trial.h"
 #include "chrome/browser/prerender/prerender_manager.h"
 #include "chrome/browser/prerender/prerender_util.h"
 
@@ -58,6 +56,14 @@ std::string GetHistogramName(Origin origin, uint8 experiment_id,
       return ComposeHistogramName("websame", name);
     case ORIGIN_LINK_REL_PRERENDER_CROSSDOMAIN:
       return ComposeHistogramName("webcross", name);
+    case ORIGIN_LOCAL_PREDICTOR:
+      return ComposeHistogramName("localpredictor", name);
+    case ORIGIN_EXTERNAL_REQUEST:
+        return ComposeHistogramName("externalrequest", name);
+    case ORIGIN_INSTANT:
+      return ComposeHistogramName("Instant", name);
+    case ORIGIN_LINK_REL_NEXT:
+      return ComposeHistogramName("webnext", name);
     case ORIGIN_GWS_PRERENDER:  // Handled above.
     default:
       NOTREACHED();
@@ -90,15 +96,21 @@ bool OriginIsOmnibox(Origin origin) {
                               histogram_name)
 
 #define PREFIXED_HISTOGRAM_INTERNAL(origin, experiment, wash, HISTOGRAM, \
-                                    histogram_name) { \
+                                    histogram_name) do { \
   { \
-    /* Do not rename.  HISTOGRAM expects a local variable "name". */ \
-    std::string name = ComposeHistogramName("", histogram_name); \
-    HISTOGRAM; \
+    /* Do not rename.  HISTOGRAM expects a local variable "name". */           \
+    std::string name = ComposeHistogramName(std::string(), histogram_name);    \
+    HISTOGRAM;                                                                 \
   } \
   /* Do not rename.  HISTOGRAM expects a local variable "name". */ \
   std::string name = GetHistogramName(origin, experiment, wash, \
                                       histogram_name); \
+  /* Usually, a browsing session should only have a single experiment. */ \
+  /* Therefore, when there is a second experiment ID other than the one */ \
+  /* being recorded, don't record anything. */ \
+  /* Furthermore, experiments only apply if the origin is GWS. Should there */ \
+  /* somehow be an experiment ID if the origin is not GWS, ignore the */ \
+  /* experiment ID. */ \
   static uint8 recording_experiment = kNoExperiment; \
   if (recording_experiment == kNoExperiment && experiment != kNoExperiment) \
     recording_experiment = experiment; \
@@ -115,12 +127,20 @@ bool OriginIsOmnibox(Origin origin) {
     HISTOGRAM; \
   } else if (origin == ORIGIN_LINK_REL_PRERENDER_CROSSDOMAIN) { \
     HISTOGRAM; \
+  } else if (origin == ORIGIN_LOCAL_PREDICTOR) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_EXTERNAL_REQUEST) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_INSTANT) { \
+    HISTOGRAM; \
+  } else if (origin == ORIGIN_LINK_REL_NEXT) { \
+    HISTOGRAM; \
   } else if (experiment != kNoExperiment) { \
     HISTOGRAM; \
   } else { \
     HISTOGRAM; \
   } \
-}
+} while (0)
 
 PrerenderHistograms::PrerenderHistograms()
     : last_experiment_id_(kNoExperiment),
@@ -162,8 +182,8 @@ void PrerenderHistograms::RecordPrerender(Origin origin, const GURL& url) {
 void PrerenderHistograms::RecordPrerenderStarted(Origin origin) const {
   if (OriginIsOmnibox(origin)) {
     UMA_HISTOGRAM_ENUMERATION(
-        StringPrintf("Prerender.OmniboxPrerenderCount%s",
-                     PrerenderManager::GetModeString()), 1, 2);
+        base::StringPrintf("Prerender.OmniboxPrerenderCount%s",
+                           PrerenderManager::GetModeString()), 1, 2);
   }
 }
 
@@ -171,16 +191,16 @@ void PrerenderHistograms::RecordConcurrency(size_t prerender_count) const {
   static const size_t kMaxRecordableConcurrency = 20;
   DCHECK_GE(kMaxRecordableConcurrency, Config().max_link_concurrency);
   UMA_HISTOGRAM_ENUMERATION(
-      StringPrintf("Prerender.PrerenderCountOf%" PRIuS "Max",
-                   kMaxRecordableConcurrency),
+      base::StringPrintf("Prerender.PrerenderCountOf%" PRIuS "Max",
+                         kMaxRecordableConcurrency),
       prerender_count, kMaxRecordableConcurrency + 1);
 }
 
 void PrerenderHistograms::RecordUsedPrerender(Origin origin) const {
   if (OriginIsOmnibox(origin)) {
     UMA_HISTOGRAM_ENUMERATION(
-        StringPrintf("Prerender.OmniboxNavigationsUsedPrerenderCount%s",
-                     PrerenderManager::GetModeString()), 1, 2);
+        base::StringPrintf("Prerender.OmniboxNavigationsUsedPrerenderCount%s",
+                           PrerenderManager::GetModeString()), 1, 2);
   }
 }
 
@@ -192,34 +212,20 @@ void PrerenderHistograms::RecordTimeSinceLastRecentVisit(
       UMA_HISTOGRAM_TIMES(name, delta));
 }
 
-void PrerenderHistograms::RecordFractionPixelsFinalAtSwapin(
-    Origin origin,
-    double fraction) const {
-  if (fraction < 0.0 || fraction > 1.0)
-    return;
-  int percentage = static_cast<int>(fraction * 100);
-  if (percentage < 0 || percentage > 100)
-    return;
-  PREFIXED_HISTOGRAM(
-      base::FieldTrial::MakeName("FractionPixelsFinalAtSwapin", "Prerender"),
-      origin, UMA_HISTOGRAM_PERCENTAGE(name, percentage));
-}
-
 base::TimeTicks PrerenderHistograms::GetCurrentTimeTicks() const {
   return base::TimeTicks::Now();
 }
 
 // Helper macro for histograms.
-#define RECORD_PLT(tag, perceived_page_load_time) { \
+#define RECORD_PLT(tag, perceived_page_load_time) \
   PREFIXED_HISTOGRAM( \
-      base::FieldTrial::MakeName(tag, "Prerender"), origin, \
+      tag, origin, \
       UMA_HISTOGRAM_CUSTOM_TIMES( \
         name, \
         perceived_page_load_time, \
         base::TimeDelta::FromMilliseconds(10), \
         base::TimeDelta::FromSeconds(60), \
-        100)); \
-}
+        100))
 
 // Summary of all histograms Perceived PLT histograms:
 // (all prefixed PerceivedPLT)
@@ -247,20 +253,21 @@ base::TimeTicks PrerenderHistograms::GetCurrentTimeTicks() const {
 void PrerenderHistograms::RecordPerceivedPageLoadTime(
     Origin origin,
     base::TimeDelta perceived_page_load_time,
-    bool was_prerender,
-    bool was_complete_prerender, const GURL& url) {
-  if (!IsWebURL(url))
+    NavigationType navigation_type,
+    const GURL& url) {
+  if (!url.SchemeIsHTTPOrHTTPS())
     return;
   bool within_window = WithinWindow();
   bool is_google_url = IsGoogleDomain(url);
   RECORD_PLT("PerceivedPLT", perceived_page_load_time);
   if (within_window)
     RECORD_PLT("PerceivedPLTWindowed", perceived_page_load_time);
-  if (was_prerender || was_complete_prerender) {
-    if (was_prerender)
+  if (navigation_type != NAVIGATION_TYPE_NORMAL) {
+    DCHECK(navigation_type == NAVIGATION_TYPE_WOULD_HAVE_BEEN_PRERENDERED ||
+           navigation_type == NAVIGATION_TYPE_PRERENDERED);
+    RECORD_PLT("PerceivedPLTMatchedComplete", perceived_page_load_time);
+    if (navigation_type == NAVIGATION_TYPE_PRERENDERED)
       RECORD_PLT("PerceivedPLTMatched", perceived_page_load_time);
-    if (was_complete_prerender)
-      RECORD_PLT("PerceivedPLTMatchedComplete", perceived_page_load_time);
     seen_any_pageload_ = true;
     seen_pageload_started_after_prerender_ = true;
   } else if (within_window) {
@@ -302,7 +309,7 @@ void PrerenderHistograms::RecordPageLoadTimeNotSwappedIn(
     const GURL& url) const {
   // If the URL to be prerendered is not a http[s] URL, or is a Google URL,
   // do not record.
-  if (!IsWebURL(url) || IsGoogleDomain(url))
+  if (!url.SchemeIsHTTPOrHTTPS() || IsGoogleDomain(url))
     return;
   RECORD_PLT("PrerenderNotSwappedInPLT", page_load_time);
 }
@@ -314,9 +321,8 @@ void PrerenderHistograms::RecordPercentLoadDoneAtSwapin(Origin origin,
   int percentage = static_cast<int>(fraction * 100);
   if (percentage < 0 || percentage > 100)
     return;
-  PREFIXED_HISTOGRAM(
-      base::FieldTrial::MakeName("PercentLoadDoneAtSwapin", "Prerender"),
-      origin, UMA_HISTOGRAM_PERCENTAGE(name, percentage));
+  PREFIXED_HISTOGRAM("PercentLoadDoneAtSwapin",
+                     origin, UMA_HISTOGRAM_PERCENTAGE(name, percentage));
 }
 
 base::TimeDelta PrerenderHistograms::GetTimeSinceLastPrerender() const {
@@ -340,6 +346,19 @@ void PrerenderHistograms::RecordTimeUntilUsed(
           time_until_used,
           base::TimeDelta::FromMilliseconds(10),
           base::TimeDelta::FromMinutes(30),
+          50));
+}
+
+void PrerenderHistograms::RecordAbandonTimeUntilUsed(
+    Origin origin,
+    base::TimeDelta time_until_used) const {
+  PREFIXED_HISTOGRAM(
+      "AbandonTimeUntilUsed", origin,
+      UMA_HISTOGRAM_CUSTOM_TIMES(
+          name,
+          time_until_used,
+          base::TimeDelta::FromMilliseconds(10),
+          base::TimeDelta::FromSeconds(30),
           50));
 }
 
@@ -367,18 +386,83 @@ void PrerenderHistograms::RecordFinalStatus(
   if (mc_status == PrerenderContents::MATCH_COMPLETE_DEFAULT ||
       mc_status == PrerenderContents::MATCH_COMPLETE_REPLACED) {
     PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
-        base::FieldTrial::MakeName("FinalStatus", "Prerender"),
-        origin, experiment_id,
+        "FinalStatus", origin, experiment_id,
         UMA_HISTOGRAM_ENUMERATION(name, final_status, FINAL_STATUS_MAX));
   }
   if (mc_status == PrerenderContents::MATCH_COMPLETE_DEFAULT ||
       mc_status == PrerenderContents::MATCH_COMPLETE_REPLACEMENT ||
       mc_status == PrerenderContents::MATCH_COMPLETE_REPLACEMENT_PENDING) {
     PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
-        base::FieldTrial::MakeName("FinalStatusMatchComplete", "Prerender"),
-        origin, experiment_id,
+        "FinalStatusMatchComplete", origin, experiment_id,
         UMA_HISTOGRAM_ENUMERATION(name, final_status, FINAL_STATUS_MAX));
   }
+}
+
+void PrerenderHistograms::RecordEvent(Origin origin, uint8 experiment_id,
+                                      PrerenderEvent event) const {
+  DCHECK_LT(event, PRERENDER_EVENT_MAX);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "Event", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, event, PRERENDER_EVENT_MAX));
+}
+
+void PrerenderHistograms::RecordCookieStatus(Origin origin,
+                                             uint8 experiment_id,
+                                             int cookie_status) const {
+  DCHECK_GE(cookie_status, 0);
+  DCHECK_LT(cookie_status, PrerenderContents::kNumCookieStatuses);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "CookieStatus", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, cookie_status,
+                                PrerenderContents::kNumCookieStatuses));
+}
+
+void PrerenderHistograms::RecordCookieSendType(
+    Origin origin,
+    uint8 experiment_id,
+    int cookie_send_type) const {
+  DCHECK_GE(cookie_send_type, 0);
+  DCHECK_LT(cookie_send_type, PrerenderContents::kNumCookieSendTypes);
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "CookieSendType", origin, experiment_id,
+      UMA_HISTOGRAM_ENUMERATION(name, cookie_send_type,
+                                PrerenderContents::kNumCookieSendTypes));
+}
+
+void PrerenderHistograms::RecordPrerenderPageVisitedStatus(
+    Origin origin,
+    uint8 experiment_id,
+    bool visited_before) const {
+  PREFIXED_HISTOGRAM_ORIGIN_EXPERIMENT(
+      "PageVisitedStatus", origin, experiment_id,
+      UMA_HISTOGRAM_BOOLEAN(name, visited_before));
+}
+
+void PrerenderHistograms::RecordNetworkBytes(bool used,
+                                             int64 prerender_bytes,
+                                             int64 profile_bytes) {
+  const int kHistogramMin = 1;
+  const int kHistogramMax = 100000000;  // 100M.
+  const int kBucketCount = 50;
+
+  if (used) {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.Used",
+                                prerender_bytes,
+                                kHistogramMin,
+                                kHistogramMax,
+                                kBucketCount);
+  } else {
+    UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.Wasted",
+                                prerender_bytes,
+                                kHistogramMin,
+                                kHistogramMax,
+                                kBucketCount);
+  }
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Prerender.NetworkBytes.TotalForProfile",
+                              profile_bytes,
+                              kHistogramMin,
+                              1000000000,  // 1G
+                              kBucketCount);
 }
 
 uint8 PrerenderHistograms::GetCurrentExperimentId() const {

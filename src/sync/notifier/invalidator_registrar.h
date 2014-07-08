@@ -13,13 +13,14 @@
 #include "sync/base/sync_export.h"
 #include "sync/notifier/invalidation_handler.h"
 #include "sync/notifier/invalidation_util.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 
 namespace invalidation {
 class ObjectId;
 }  // namespace invalidation
 
 namespace syncer {
+
+class ObjectIdInvalidationMap;
 
 // A helper class for implementations of the Invalidator interface.  It helps
 // keep track of registered handlers and which object ID registrations are
@@ -58,8 +59,7 @@ class SYNC_EXPORT InvalidatorRegistrar {
   // Invalidations for IDs with no corresponding handler are dropped, as are
   // invalidations for handlers that are not added.
   void DispatchInvalidationsToHandlers(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source);
+      const ObjectIdInvalidationMap& invalidation_map);
 
   // Updates the invalidator state to the given one and then notifies
   // all handlers.  Note that the order is important; handlers that
@@ -71,21 +71,22 @@ class SYNC_EXPORT InvalidatorRegistrar {
   // updated state.
   InvalidatorState GetInvalidatorState() const;
 
+  // Gets a new map for the name of invalidator handlers and their
+  // objects id. This is used by the InvalidatorLogger to be able
+  // to display every registered handlers and its objectsIds.
+  std::map<std::string, ObjectIdSet> GetSanitizedHandlersIdsMap();
+
   bool IsHandlerRegisteredForTest(InvalidationHandler* handler) const;
 
   // Needed for death tests.
   void DetachFromThreadForTest();
 
  private:
-  typedef std::map<invalidation::ObjectId, InvalidationHandler*,
-                   ObjectIdLessThan>
-      IdHandlerMap;
-
-  InvalidationHandler* ObjectIdToHandler(const invalidation::ObjectId& id);
+  typedef std::map<InvalidationHandler*, ObjectIdSet> HandlerIdsMap;
 
   base::ThreadChecker thread_checker_;
   ObserverList<InvalidationHandler> handlers_;
-  IdHandlerMap id_to_handler_map_;
+  HandlerIdsMap handler_to_ids_map_;
   InvalidatorState state_;
 
   DISALLOW_COPY_AND_ASSIGN(InvalidatorRegistrar);

@@ -9,21 +9,27 @@
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "chrome/browser/extensions/image_loading_tracker.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/gfx/image/image_skia.h"
 
 class Browser;
+class Profile;
+
+namespace base {
 class MessageLoop;
+}
 
 namespace extensions {
 class Extension;
 }
 
+namespace gfx {
+class Image;
+}
+
 class ExtensionUninstallDialog
-    : public ImageLoadingTracker::Observer,
-      public content::NotificationObserver,
+    : public content::NotificationObserver,
       public base::SupportsWeakPtr<ExtensionUninstallDialog> {
  public:
   class Delegate {
@@ -39,9 +45,12 @@ class ExtensionUninstallDialog
   };
 
   // Creates a platform specific implementation of ExtensionUninstallDialog.
+  // |profile| and |delegate| can never be NULL.
   // |browser| can be NULL only for Ash when this is used with the applist
   // window.
-  static ExtensionUninstallDialog* Create(Browser* browser, Delegate* delegate);
+  static ExtensionUninstallDialog* Create(Profile* profile,
+                                          Browser* browser,
+                                          Delegate* delegate);
 
   virtual ~ExtensionUninstallDialog();
 
@@ -51,9 +60,21 @@ class ExtensionUninstallDialog
   // 2) Handle the load icon response and show the UI (OnImageLoaded).
   void ConfirmUninstall(const extensions::Extension* extension);
 
+  // This shows the same dialog as above, except it also shows which extension
+  // triggered the dialog by calling chrome.management.uninstall API.
+  void ConfirmProgrammaticUninstall(
+      const extensions::Extension* extension,
+      const extensions::Extension* triggering_extension);
+
+  std::string GetHeadingText();
+
  protected:
   // Constructor used by the derived classes.
-  ExtensionUninstallDialog(Browser* browser, Delegate* delegate);
+  ExtensionUninstallDialog(Profile* profile,
+                           Browser* browser,
+                           Delegate* delegate);
+
+  Profile* const profile_;
 
   Browser* browser_;
 
@@ -63,6 +84,10 @@ class ExtensionUninstallDialog
   // The extension we are showing the dialog for.
   const extensions::Extension* extension_;
 
+  // The extension triggering the dialog if the dialog was shown by
+  // chrome.management.uninstall.
+  const extensions::Extension* triggering_extension_;
+
   // The extensions icon.
   gfx::ImageSkia icon_;
 
@@ -71,10 +96,7 @@ class ExtensionUninstallDialog
   // image, then we use a default icon instead.
   void SetIcon(const gfx::Image& image);
 
-  // ImageLoadingTracker::Observer:
-  virtual void OnImageLoaded(const gfx::Image& image,
-                             const std::string& extension_id,
-                             int index) OVERRIDE;
+  void OnImageLoaded(const gfx::Image& image);
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
@@ -85,11 +107,16 @@ class ExtensionUninstallDialog
   // The implementations of this method are platform-specific.
   virtual void Show() = 0;
 
-  MessageLoop* ui_loop_;
+  // Keeps track of whether we're still waiting for an image to load before
+  // we show the dialog.
+  enum State {
+    kImageIsLoading,  // Image is loading asynchronously.
+    kDialogIsShowing, // Dialog is shown after image is loaded.
+    kBrowserIsClosing // Browser is closed while image is still loading.
+  };
+  State state_;
 
-  // Keeps track of extension images being loaded on the File thread for the
-  // purpose of showing the dialog.
-  scoped_ptr<ImageLoadingTracker> tracker_;
+  base::MessageLoop* ui_loop_;
 
   content::NotificationRegistrar registrar_;
 

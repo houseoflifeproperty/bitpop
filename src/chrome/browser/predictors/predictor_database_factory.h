@@ -7,7 +7,9 @@
 
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
+
+class Profile;
 
 namespace predictors {
 
@@ -15,7 +17,7 @@ class PredictorDatabase;
 
 // Singleton that owns the PredictorDatabases and associates them with
 // Profiles.
-class PredictorDatabaseFactory : public ProfileKeyedServiceFactory {
+class PredictorDatabaseFactory : public BrowserContextKeyedServiceFactory {
  public:
   static PredictorDatabase* GetForProfile(Profile* profile);
 
@@ -27,9 +29,9 @@ class PredictorDatabaseFactory : public ProfileKeyedServiceFactory {
   PredictorDatabaseFactory();
   virtual ~PredictorDatabaseFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(PredictorDatabaseFactory);
 };

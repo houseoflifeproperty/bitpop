@@ -5,7 +5,42 @@
 [
   {
     "namespace": "cloudPrintPrivate",
-    "nodoc": "true",
+    "description": "none",
+    "types": [
+      {
+        "id": "PrinterSettings",
+        "type": "object",
+        "description": "Settings per printer.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Unique printer id."
+          },
+          "connect": {
+            "type": "boolean",
+            "description": "Whether printer is selected."
+          }
+        }
+      },
+      {
+        "id": "UserSettings",
+        "type": "object",
+        "description": "Settings set by user.",
+        "properties": {
+          "printers": {
+            "description": "Printer settings.",
+            "type": "array",
+            "items": {
+              "$ref": "PrinterSettings"
+            }
+          },
+          "connectNewPrinters": {
+            "type": "boolean",
+            "description": "Whether should printer be connected."
+          }
+        }
+      }
+    ],
     "functions": [
       {
         "name": "setupConnector",
@@ -28,15 +63,9 @@
             "description": "The login credentials(OAuth2 Auth code)."
           },
           {
-            "name": "connectNewPrinters",
-            "type": "boolean",
-            "description": "True if new printers should be connected."
-          },
-          {
-            "name": "printerBlacklist",
-            "description": "Printers that should not be connected.",
-            "type": "array",
-            "items": {"type": "string"}
+            "name": "userSettings",
+            "$ref": "UserSettings",
+            "description": "Options configured by user."
           }
         ]
       },
@@ -74,6 +103,25 @@
                 "type": "array",
                 "items": {"type": "string"},
                 "description": "List of printer names."
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "getClientId",
+        "description": "Gets the Client ID used to access Google service APIs.",
+        "type": "function",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Called to return the client ID.",
+            "parameters": [
+              {
+                "name": "result",
+                "type": "string",
+                "description": "Client ID."
               }
             ]
           }

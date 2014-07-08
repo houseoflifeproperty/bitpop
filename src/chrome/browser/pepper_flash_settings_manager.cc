@@ -10,23 +10,25 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
+#include "base/file_util.h"
+#include "base/prefs/pref_service.h"
 #include "base/sequenced_task_runner_helpers.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_host/pepper/device_id_fetcher.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/pepper_flash_settings_helper.h"
 #include "content/public/browser/plugin_service.h"
 #include "content/public/common/content_constants.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/common/webplugininfo.h"
 #include "ipc/ipc_channel.h"
 #include "ipc/ipc_listener.h"
 #include "ppapi/proxy/ppapi_messages.h"
-#include "webkit/plugins/plugin_constants.h"
-#include "webkit/plugins/webplugininfo.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -123,6 +125,10 @@ class PepperFlashSettingsManager::Core
 
   void InitializeOnIOThread();
   void DeauthorizeContentLicensesOnIOThread(uint32 request_id);
+  void DeauthorizeContentLicensesOnBlockingPool(
+      uint32 request_id,
+      const base::FilePath& profile_path);
+  void DeauthorizeContentLicensesInPlugin(uint32 request_id, bool success);
   void GetPermissionSettingsOnIOThread(
       uint32 request_id,
       PP_Flash_BrowserOperations_SettingType setting_type);
@@ -177,7 +183,7 @@ class PepperFlashSettingsManager::Core
   base::WeakPtr<PepperFlashSettingsManager> manager_;
 
   // Used only on the I/O thread.
-  FilePath plugin_data_path_;
+  base::FilePath plugin_data_path_;
 
   // The channel is NULL until we have opened a connection to the broker
   // process. Used only on the I/O thread.
@@ -198,7 +204,7 @@ class PepperFlashSettingsManager::Core
 
   // Path for the current profile. Must be retrieved on the UI thread from the
   // browser context when we start so we can use it later on the I/O thread.
-  FilePath browser_context_path_;
+  base::FilePath browser_context_path_;
 
   scoped_refptr<PluginPrefs> plugin_prefs_;
 };
@@ -394,19 +400,19 @@ void PepperFlashSettingsManager::Core::InitializeOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   DCHECK_EQ(STATE_UNINITIALIZED, state_);
 
-  webkit::WebPluginInfo plugin_info;
+  content::WebPluginInfo plugin_info;
   if (!PepperFlashSettingsManager::IsPepperFlashInUse(plugin_prefs_.get(),
                                                       &plugin_info)) {
     NotifyErrorFromIOThread();
     return;
   }
 
-  FilePath profile_path =
+  base::FilePath profile_path =
       browser_context_path_.Append(content::kPepperDataDirname);
 #if defined(OS_WIN)
   plugin_data_path_ = profile_path.Append(plugin_info.name);
 #else
-  plugin_data_path_ = profile_path.Append(UTF16ToUTF8(plugin_info.name));
+  plugin_data_path_ = profile_path.Append(base::UTF16ToUTF8(plugin_info.name));
 #endif
 
   helper_ = content::PepperFlashSettingsHelper::Create();
@@ -435,6 +441,41 @@ void PepperFlashSettingsManager::Core::DeauthorizeContentLicensesOnIOThread(
     return;
   }
 
+#if defined(OS_CHROMEOS)
+  BrowserThread::PostBlockingPoolTask(FROM_HERE,
+      base::Bind(&Core::DeauthorizeContentLicensesOnBlockingPool, this,
+                 request_id, browser_context_path_));
+#else
+  DeauthorizeContentLicensesInPlugin(request_id, true);
+#endif
+}
+
+// TODO(raymes): This is temporary code to migrate ChromeOS devices to the new
+// scheme for generating device IDs. Delete this once we are sure most ChromeOS
+// devices have been migrated.
+void PepperFlashSettingsManager::Core::DeauthorizeContentLicensesOnBlockingPool(
+    uint32 request_id,
+    const base::FilePath& profile_path) {
+  // ChromeOS used to store the device ID in a file but this is no longer used.
+  // Wipe that file.
+  const base::FilePath& device_id_path =
+      chrome::DeviceIDFetcher::GetLegacyDeviceIDPath(profile_path);
+  bool success = base::DeleteFile(device_id_path, false);
+
+  BrowserThread::PostTask(
+      BrowserThread::IO, FROM_HERE,
+      base::Bind(&Core::DeauthorizeContentLicensesInPlugin, this, request_id,
+                 success));
+}
+
+void PepperFlashSettingsManager::Core::DeauthorizeContentLicensesInPlugin(
+    uint32 request_id,
+    bool success) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  if (!success) {
+    NotifyErrorFromIOThread();
+    return;
+  }
   IPC::Message* msg =
       new PpapiMsg_DeauthorizeContentLicenses(request_id, plugin_data_path_);
   if (!channel_->Send(msg)) {
@@ -889,10 +930,10 @@ void PepperFlashSettingsManager::Core::OnClearSiteDataResult(
 PepperFlashSettingsManager::PepperFlashSettingsManager(
     Client* client,
     content::BrowserContext* browser_context)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)),
-      client_(client),
+    : client_(client),
       browser_context_(browser_context),
-      next_request_id_(1) {
+      next_request_id_(1),
+      weak_ptr_factory_(this) {
   DCHECK(client);
   DCHECK(browser_context);
 }
@@ -905,19 +946,19 @@ PepperFlashSettingsManager::~PepperFlashSettingsManager() {
 // static
 bool PepperFlashSettingsManager::IsPepperFlashInUse(
     PluginPrefs* plugin_prefs,
-    webkit::WebPluginInfo* plugin_info) {
+    content::WebPluginInfo* plugin_info) {
   if (!plugin_prefs)
     return false;
 
   content::PluginService* plugin_service =
       content::PluginService::GetInstance();
-  std::vector<webkit::WebPluginInfo> plugins;
+  std::vector<content::WebPluginInfo> plugins;
   plugin_service->GetPluginInfoArray(
-      GURL(), kFlashPluginSwfMimeType, false, &plugins, NULL);
+      GURL(), content::kFlashPluginSwfMimeType, false, &plugins, NULL);
 
-  for (std::vector<webkit::WebPluginInfo>::iterator iter = plugins.begin();
+  for (std::vector<content::WebPluginInfo>::iterator iter = plugins.begin();
        iter != plugins.end(); ++iter) {
-    if (webkit::IsPepperPlugin(*iter) && plugin_prefs->IsPluginEnabled(*iter)) {
+    if (iter->is_pepper_plugin() && plugin_prefs->IsPluginEnabled(*iter)) {
       if (plugin_info)
         *plugin_info = *iter;
       return true;
@@ -927,18 +968,27 @@ bool PepperFlashSettingsManager::IsPepperFlashInUse(
 }
 
 // static
-void PepperFlashSettingsManager::RegisterUserPrefs(PrefService* prefs) {
-  prefs->RegisterBooleanPref(prefs::kDeauthorizeContentLicenses,
-                             false,
-                             PrefService::UNSYNCABLE_PREF);
+void PepperFlashSettingsManager::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterBooleanPref(
+      prefs::kDeauthorizeContentLicenses,
+      false,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 
-  prefs->RegisterBooleanPref(prefs::kPepperFlashSettingsEnabled,
-                             true,
-                             PrefService::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kPepperFlashSettingsEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
-uint32 PepperFlashSettingsManager::DeauthorizeContentLicenses() {
+uint32 PepperFlashSettingsManager::DeauthorizeContentLicenses(
+    PrefService* prefs) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  // Clear the device ID salt which has the effect of regenerating a device
+  // ID. Since this happens synchronously (and on the UI thread), we don't have
+  // to add it to a pending request.
+  prefs->ClearPref(prefs::kDRMSalt);
 
   EnsureCoreExists();
   uint32 id = GetNextRequestId();

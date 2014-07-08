@@ -11,7 +11,7 @@
 #include <string>
 
 #include "base/memory/singleton.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/extensions/api/preference/preference_api.h"
 #include "chrome/browser/prefs/proxy_prefs.h"
 
@@ -55,7 +55,7 @@ class ProxyEventRouter {
   void OnPACScriptError(EventRouterForwarder* event_router,
                         void* profile,
                         int line_number,
-                        const string16& error);
+                        const base::string16& error);
 
  private:
   friend struct DefaultSingletonTraits<ProxyEventRouter>;

@@ -1,216 +1,224 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="zh-CN">
 <translation id="6676384891291319759">访问互联网</translation>
+<translation id="8586442755830160949">版权所有<ph name="YEAR"/> The Chromium Authors。保留所有权利。</translation>
 <translation id="8447784615389818621">确定要卸载 BitPop 吗？</translation>
+<translation id="1928147301259050372">您希望 BitPop 保存该信用卡信息以便填写网络表单吗？</translation>
 <translation id="100741878661450640">卸载 BitPop</translation>
+<translation id="7015513946685052865">此计算机很快将停止接收BitPop更新，因为其硬件不再受支持。</translation>
 <translation id="4301276314211054820">BitPop 已更新，但您已经至少 30 天未使用它了。</translation>
 <translation id="8935261719622405725">启动 BitPop 应用</translation>
-<translation id="2556535128417126306">BitPop 应用启动器是 BitPop 应用的独立平台。</translation>
+<translation id="2787245396912783582">BitPop 应用启动器是 BitPop 应用的独立平台。</translation>
 <translation id="2770231113462710648">将默认浏览器更改为：</translation>
 <translation id="6870152852581894991">您所做的更改会在下次重新启动 BitPop 时生效。</translation>
+<translation id="7725527658463487664">BitPop版本太旧</translation>
+<translation id="302025056100997516">通讯录中的详细信息有助于您在BitPop中更快速地填写表单。</translation>
 <translation id="3588014340702790340">您正在查看的是安全的 BitPop 网页。</translation>
-<translation id="6789998774111513164">BitPop 内嵌框架</translation>
+<translation id="2077129598763517140">使用硬件加速模式（如果可用）</translation>
 <translation id="1065672644894730302">系统无法读取您的偏好设置。某些功能可能无法使用，并且对偏好设置所做的更改不会保存。</translation>
-<translation id="4901429675189043920">BitPop 内嵌框架更新。</translation>
-<translation id="1132852132282742543">BitPop 呈现器</translation>
-<translation id="7155774694068736041">此计算机已安装了 BitPop 内嵌框架以供所有用户使用。如果您要安装用户级 BitPop 内嵌框架，就必须先卸载由管理员安装的系统级版本。</translation>
-<translation id="731644333568559921">更新 Chromium 操作系统(&amp;C)</translation>
+<translation id="4795239855223923830">自定义及控制 BitPop</translation>
+<translation id="98449668525928921">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。您可以选择创建新的个人资料来单独存储您现有的 BitPop 数据。<ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">感谢您试用新版BitPop。BitPop需要重新启动。继续之前，请务必先保存所有未保存的工作。</translation>
+<translation id="731644333568559921">更新 BitPop 操作系统(&amp;C)</translation>
 <translation id="5284421695473942517">您需要在 Windows XP 或更高版本的操作系统中运行 BitPop，否则可能无法正常使用某些功能。</translation>
-<translation id="3549345495227188780">Chromium 操作系统使用入门</translation>
-<translation id="8363397932717822970">在系统中安装 BitPop 或 BitPop 内嵌框架时发现已存在冲突的版本，请先卸载然后重试。</translation>
+<translation id="4534284284800306880">您必须升级 BitPop 才能使用 Google 电子钱包 [<ph name="ERROR_CODE"/>]。</translation>
+<translation id="1258942147733482141">BitPop开放源代码许可</translation>
+<translation id="2001441118695834744">如果您更倾向于单独保存您现有的 BitPop 数据，可以为 <ph name="USER_NAME"/> 创建一个新的 BitPop 用户。</translation>
+<translation id="3207916442629104800">将BitPop设为默认浏览器</translation>
+<translation id="2346981135360001626">正在将您的设备更新至“<ph name="CHANNEL_NAME"/>”版…</translation>
+<translation id="3549345495227188780">BitPop 操作系统使用入门</translation>
+<translation id="7593639489233822734">从BitPop移除您的帐户后，您可能需要重新加载已打开的标签页才能使其正常显示。</translation>
 <translation id="8235603028098851915">BitPop 工具栏</translation>
-<translation id="5953515305183787825">您的操作系统已过期，因此 BitPop 将不再更新。</translation>
-<translation id="7230682351542979557">BitPop 强制门户检测器</translation>
 <translation id="325440606879482824">未知错误导致安装失败。如果 BitPop 正在运行，请将其关闭，然后重试。</translation>
-<translation id="7224939653007212692">BitPop 自动填充设置</translation>
-<translation id="3078552028547324322">使用 BitPop 应用启动器启动您的应用。</translation>
-<translation id="3555616473548901994">卸载已完成。</translation>
-<translation id="5814137742095860156">BitPop App Host</translation>
+<translation id="2681187513058372590">BitPop 正尝试显示密码。</translation>
 <translation id="9205983754412543288">可选：将使用情况统计信息和崩溃报告自动发送给 Google，帮助我们完善 BitPop。</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="6259082392093297310">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书包含错误。BitPop 无法使用有错误的证书，也无法验证所尝试连接的网站的身份。</translation>
+<translation id="3898160962923474892">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”，并确保您已将配置设为“无代理”或“直接连接”。</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="3334080844010912902">由于您的网域停用了同步功能，BitPop无法同步您的数据。</translation>
+<translation id="2030214613468936763">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书包含错误。BitPop 无法使用有错误的证书，也无法验证所尝试连接的网站的身份。</translation>
 <translation id="3801183610358973379">安装程序解压缩归档失败。请重新下载 BitPop。</translation>
+<translation id="4138697454314244697">未找到要更新的BitPop安装实例。</translation>
 <translation id="4450789702440326676">让 BitPop 在后台运行</translation>
+<translation id="8743840534367614002">BitPop 应用</translation>
 <translation id="2963590958538393837">是的，退出 BitPop</translation>
-<translation id="8031724302809093115">BitPop 的新标签页已经过重新设计。点击这些标签可在各部分之间进行切换。Chromium 会记住您的偏好设置，并在下次打开时应用。</translation>
 <translation id="1480489203462860648">它已经安装完毕了，试试看吧。</translation>
 <translation id="7098153548331126805">正在添加到 BitPop...</translation>
-<translation id="5928487969163300899">卸载 BitPop 应用启动器</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>警告<ph name="END_BOLD"/>：BitPop 无法阻止扩展程序记录您的浏览历史记录。要在隐身模式下停用此扩展程序，请取消选中此选项。</translation>
+<translation id="4831257561365056138">卸载 BitPop 应用启动器</translation>
+<translation id="7680117738450774222">您现在已登录 BitPop！不过，管理员已停用同步功能。</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>警告<ph name="END_BOLD"/>：BitPop 无法阻止扩展程序记录您的浏览记录。要在隐身模式下停用此扩展程序，请取消选中此选项。</translation>
+<translation id="9123740998411173947">您已登录，现在您除了可以获取您的笔记本电脑、手机和平板电脑上的标签页、书签和其他 BitPop 内容外，还将获得 Google 服务方面的更多相关建议和功能。</translation>
+<translation id="985602178874221306">The Chromium Authors</translation>
 <translation id="3941397373453695568">BitPop 未包含运行打印预览所需的 PDF 查看器。</translation>
 <translation id="8155571637339134666">BitPop 可能会使用网络服务改善您的浏览体验。</translation>
-<translation id="5383732173730790693">您现已登录 BitPop！您的书签、历史记录和其他设置都会同步到您的 Google 帐户。</translation>
-<translation id="6866316083935040427">退出 BitPop</translation>
+<translation id="6157791660174418859">赶快通过您的Google帐户以及共用的计算机试试BitPop的新界面吧！</translation>
 <translation id="4759775690587852534">抱歉，无法在 Mozilla Firefox 浏览器运行时获取其设置。要将其设置导入 BitPop，请保存您手头的工作并关闭所有 Firefox 窗口，然后点击“继续”。</translation>
-<translation id="2411757162791070146">在此例中，证书中所列的地址与浏览器尝试访问的网站网址不一致。一种可能的原因是某个攻击者拦截了您的通信内容，并向其他网站出示某个证书，这就会导致出现不一致的情况。另一种可能的原因是服务器已设置为对多个网站（包括您尝试访问的网站）返回同一证书，即使该证书并非对所有网站都有效。BitPop 可以确定您已转到 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;，但无法确认这与您要访问的 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; 是不是同一网站。如果您继续操作，BitPop 就不会再检查其他任何名称不一致的情况了。</translation>
-<translation id="2423180989259159758">依次转到
-          <ph name="BEGIN_BOLD"/>
-          BitPop 菜单 &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="ADVANCED_TITLE"/>
-          &gt;
-          <ph name="PROXIES_TITLE"/>
-          &gt;
-          LAN 设置
-          <ph name="END_BOLD"/>
-          然后取消选中“为 LAN 使用代理服务器”复选框。</translation>
+<translation id="5769857394054687534">在此例中，证书中所列的地址与浏览器尝试访问的网站网址不一致。一种可能的原因是某个攻击者拦截了您的通信内容，并向其他网站出示某个证书，这就会导致出现不一致的情况。另一种可能的原因是服务器已设置为对多个网站（包括您尝试访问的网站）返回同一证书，即使该证书并非对所有网站都有效。BitPop 可以确定您已转到 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;，但无法确认这与您要访问的 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; 是不是同一网站。如果您继续操作，BitPop 就不会再检查其他任何名称不一致的情况了。</translation>
+<translation id="2224367722165014156">BitPop无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要手动重新安装BitPop。</translation>
+<translation id="8897323336392112261">它还能够控制您启动Chromium或点击“主页”按钮后系统显示的页面。</translation>
 <translation id="2886079192271351730">已知此模块与 BitPop 存在冲突。</translation>
 <translation id="8324687802311409372">哎呀！BitPop 崩溃了。要立即重新启动吗？</translation>
-<translation id="606385048658239900">未发现所安装的 BitPop 或 BitPop 内嵌框架有任何更新。</translation>
+<translation id="5689811886832352959">将崩溃报告和<ph name="UMA_LINK"/>发送给Google，帮助我们完善BitPop。</translation>
+<translation id="5101127815285864538">您的上网记录、书签和其他BitPop内容都保存在此处。</translation>
 <translation id="3197823471738295152">您的设备已更新到最新版本。</translation>
 <translation id="8551886023433311834">即将更新到最新版本！请重新启动您的设备，以完成更新。</translation>
 <translation id="9090519209458031409">您希望 BitPop 保存您在此网站上使用的密码吗？</translation>
-<translation id="7339898014177206373">新建窗口</translation>
-<translation id="3026202950002788510">转到
-          <ph name="BEGIN_BOLD"/>
-          应用 &gt; 系统偏好设置 &gt; 网络 &gt; 高级 &gt; 代理
-          <ph name="END_BOLD"/>
-          然后取消选中所有已选定的代理。</translation>
-<translation id="85540521058185027">BitPop 的安装目录似乎正在使用中。请重新启动计算机并重试。</translation>
-<translation id="5710380450759072582">BitPop 正在导入收藏夹/书签。</translation>
+<translation id="7339898014177206373">打开新的窗口</translation>
+<translation id="6188910816550019957">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”，然后取消选中“<ph name="NO_PREFETCH_DESCRIPTION"/>”。如果这样仍无法解决问题，建议您重新选中此选项以提高性能。</translation>
+<translation id="2397909649953118924">BitPop - 通知（<ph name="QUANTITY"/>条未读）</translation>
 <translation id="225614027745146050">欢迎</translation>
+<translation id="1823899440832622134">BitPop无法自动更新到最新版本，因此其中缺少一些非常棒的新功能和安全修复程序。要获得这些内容，您需要更新BitPop。</translation>
 <translation id="3421246989510066651">管理员已在此系统上安装了 BitPop 以供所有用户使用。系统级 BitPop 将替换您安装的用户级版本。</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
 <translation id="1563133725769368154">请关闭所有 BitPop 窗口并重试。</translation>
 <translation id="6948146312619379712">请关闭所有 BitPop 窗口，然后重新启动 BitPop，以便让此更改生效。</translation>
+<translation id="6475912303565314141">它还能够控制Chromium启动后显示的页面。</translation>
+<translation id="158578066452246627">这是恶意文件，BitPop 已将其拦截。</translation>
 <translation id="5845248948746043578">模块已加载到 BitPop 中</translation>
-<translation id="4718546117684412327">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书是由您计算机操作系统不信任的实体发布的。这可能意味着该服务器自行生成了安全凭据，BitPop 无法依据这些凭据确定身份信息，也可能是某个攻击者尝试拦截您的通信内容。</translation>
+<translation id="3494861236236958082">在 Mac 上，密码会保存到您的钥匙串 (Keychain) 中，可供其他共用此 OS X 帐户的 BitPop 用户访问或同步。</translation>
+<translation id="6497704981133944775">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书是由您计算机操作系统不信任的实体发布的。这可能意味着该服务器自行生成了安全凭据，BitPop 无法依据这些凭据确定身份信息，也可能是某个攻击者尝试拦截您的通信内容。</translation>
+<translation id="963040405972220509">您需要先登录BitPop，再使用各项应用。这样，BitPop就可以在各个设备上同步您的应用、书签、历史记录、密码和其他设置。</translation>
 <translation id="2585492770508769131">关闭 BitPop 后继续运行后台应用</translation>
 <translation id="473775607612524610">更新</translation>
+<translation id="1053737967432347853">此网站使用的 BitPop 内嵌框架插件很快将不受支持。请卸载该插件，然后升级到新型浏览器。</translation>
+<translation id="8237944200818342704">启动计算机时自动启动BitPop</translation>
+<translation id="5904788103100750653">如果您与亲朋好友共用计算机，他们将能够使用单独的帐户进行浏览，并可随心所欲地设置BitPop。</translation>
 <translation id="1141543168124987471">BitPop 现已推出速度更快的新版本。</translation>
-<translation id="6560811749587757293">关于 BitPop 内嵌框架...</translation>
-<translation id="5971960158340115871">从 BitPop 中删除</translation>
+<translation id="3089560314597734657">由于您的帐户登录详细信息已过期，BitPop无法同步您的数据。</translation>
+<translation id="5107343520309227066">其他计算机 (<ph name="HOST_NAME"/>) 的另一个 BitPop 进程 (<ph name="PROCESS_ID"/>) 好像正在使用此个人资料。BitPop 已锁定此个人资料以防止其受损。如果您确定其他进程目前未使用此个人资料，请为其解锁并重新启动 BitPop。</translation>
+<translation id="5971960158340115871">从BitPop中移除</translation>
+<translation id="4817923018536741011">将您自己添加到BitPop</translation>
+<translation id="7066436765290594559">BitPop操作系统无法同步您的数据。请更新您的同步密码。</translation>
 <translation id="7747138024166251722">安装程序无法创建临时目录。请检查您是否有足够的磁盘空间和权限来安装该软件。</translation>
-<translation id="6494656531179085521">BitPop 无法读写其数据目录：
+<translation id="1657309500244281883">BitPop 无法读写其数据目录：
 
 <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop 不支持 <ph name="OS_NAME"/>。</translation>
-<translation id="8738921060445980047">版本未知。</translation>
 <translation id="6970811910055250180">正在更新设备...</translation>
 <translation id="2485422356828889247">卸载</translation>
 <translation id="8450502629618876351">获取 BitPop 使用帮助</translation>
-<translation id="4742066939161073105">启动 BitPop</translation>
-<translation id="736882515641604854">BitPop 无法确定当前的桌面环境，因此无法创建应用快捷方式。</translation>
-<translation id="7209647769822542891">此计算机已安装了更高版本的 BitPop 内嵌框架。如果软件无法正常运行，请卸载 BitPop 内嵌框架并重试。</translation>
+<translation id="7974150821733212325">您目前登录的帐户是一个托管帐户，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永远与 <ph name="USER_NAME"/> 相关联。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据与其他帐户相关联。<ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">BitPop 应用启动器</translation>
+<translation id="8643500805082769156">BitPop版本太旧</translation>
 <translation id="911206726377975832">同时删除您的浏览数据吗？</translation>
+<translation id="7531302439507262213"><ph name="DOMAIN"/> 要求您必须先阅读并接受以下服务条款，才能使用此设备。这些条款不会扩大、修改或限制 BitPop 操作系统条款。</translation>
+<translation id="5603085937604338780">Chromium</translation>
 <translation id="4501582071990606935">请关闭所有 BitPop 窗口（包括 Windows 8 模式下的窗口），然后重试。</translation>
 <translation id="2318017154298876822">更新 BitPop(&amp;C)</translation>
 <translation id="8862326446509486874">您的权限不足，无法进行系统级安装。请尝试以管理员身份再次运行安装程序。</translation>
+<translation id="2535480412977113886">您的帐户登录详细信息已过期，BitPop操作系统无法同步您的数据。</translation>
+<translation id="8697124171261953979">它还能够控制您启动Chromium后或通过多功能框进行搜索时系统显示的页面。</translation>
+<translation id="8106224471637848707">您计算机上运行的软件与 BitPop 不兼容。</translation>
 <translation id="8308846639737830860">让 BitPop 在后台运行</translation>
 <translation id="8251642411216619957">登录 BitPop</translation>
 <translation id="4365115785552740256">Chromium 的诞生离不开 <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> 开放源代码项目以及其他<ph name="BEGIN_LINK_OSS"/>开放源代码软件<ph name="END_LINK_OSS"/>。</translation>
+<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
+<translation id="5819325063060806784">访客使用BitPop不会留下任何痕迹。</translation>
+<translation id="1526986572493888898">此网站使用的 BitPop 内嵌框架插件很快将不受支持。请卸载该插件，然后下载兼容的浏览器。</translation>
+<translation id="7131892997749364444">某个扩展程序更改了BitPop启动后显示的页面。</translation>
+<translation id="5877064549588274448">版本已更改。请重新启动设备来应用这些变更。</translation>
 <translation id="6321973207566602686">将 BitPop 设置为默认浏览器</translation>
+<translation id="6899689707951760367">BitPop 正在使用您的摄像头。</translation>
 <translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">BitPop 工作应用</translation>
-<translation id="5820394555380036790">Chromium 操作系统</translation>
+<translation id="5820394555380036790">BitPop 操作系统</translation>
 <translation id="6757767188268205357">谢绝打扰</translation>
-<translation id="6312770669638222416">要停用网络预测，请按照以下步骤操作：
-        依次转到
-        <ph name="BEGIN_BOLD"/>
-        BitPop 菜单 &gt;
-        <ph name="SETTINGS_TITLE"/>
-        &gt;
-        <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
-        然后取消选中“<ph name="NO_PREFETCH_DESCRIPTION"/>”。
-        如果该问题仍未解决，建议您重新选中此选项
-        以提高性能。</translation>
+<translation id="690823546498424823">BitPop 会妥善地存储您的信息，这样您日后就不必重新输入了。不过，您将来付款时仍需验证信用卡的安全码。</translation>
 <translation id="6220055452245182274">BitPop 未提供崩溃报告。</translation>
 <translation id="924450301557116466">未在 BitPop 中使用。该占位符用于在同步中保留资源映射。要求使用一个参数：$1。</translation>
+<translation id="843167022919259875">BitPop正在后台运行。</translation>
+<translation id="2171549355847332070">您之前登录 BitPop 时使用的帐户为 <ph name="USER_EMAIL_ADDRESS"/>，请使用同一帐户再次登录。</translation>
+<translation id="6165323383832829057">BitPop 已停止更新，并且不再支持您的操作系统版本。</translation>
+<translation id="2645729404591158594">预览一下新版BitPop吧</translation>
 <translation id="1984238998837921833">正在更新 BitPop...</translation>
 <translation id="9102885271730191378">任务管理器 - BitPop</translation>
-<translation id="3916917357864849352">BitPop 正在从<ph name="BROWSER_COMPONENT"/>中导入以下内容：</translation>
+<translation id="1608739712349494181">为了提高 BitPop 的安全性，系统停用了一些未列在 <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/>中、可能是在您不知情的情况下添加的扩展程序。</translation>
 <translation id="5243897687251941678">在 BitPop 菜单或书签栏中查找您的书签。</translation>
 <translation id="5925519479755588070">即将更新到最新版本！重新启动 BitPop 以完成更新。</translation>
+<translation id="5866485601389562653">您可以添加其他Google帐户，并在下方锁定您的BitPop。</translation>
+<translation id="8072646586465991214">系统上已安装存在冲突的BitPop。请先将其卸载，然后重试。</translation>
 <translation id="4352003675682958984">BitPop 现已推出新版本。</translation>
 <translation id="8972540218839637401">安装过程中出现操作系统错误。请重新下载 BitPop。</translation>
-<translation id="8935838934328341225">“<ph name="EXTENSION_NAME"/>”已添加到 BitPop。</translation>
-<translation id="8871841738132225233">要使用此 Google 帐户同步您的所有 BitPop 资料吗？</translation>
+<translation id="2581134012974124523">“<ph name="EXTENSION_NAME"/>”已添加到 BitPop。</translation>
+<translation id="6452045500174243632">依次转到 BitPop 菜单 &gt;“<ph name="SETTINGS_TITLE"/>”&gt;“<ph name="ADVANCED_TITLE"/>”&gt;“<ph name="PROXIES_TITLE"/>”&gt;“LAN 设置”，然后取消选中“为 LAN 使用代理服务器”复选框。</translation>
 <translation id="8988481325911971852">未指定的错误导致安装失败。请重新下载 BitPop。</translation>
-<translation id="660036136456272595">无法使用您的配置文件，因为该文件来自更高版本的 BitPop。
+<translation id="660036136456272595">您的个人资料来自更高版本的 BitPop，因此无法使用。
 
-某些功能可能会无法使用。请指定其他配置文件目录或使用更高版本的 BitPop。</translation>
-<translation id="2712549016134575851">检测到与另一个已安装的应用存在冲突。</translation>
-<translation id="1095023322915848441">您之前使用其他帐户登录过，如果继续使用目前这个帐户登录，您的数据将会合并到目前登录的帐户中。请考虑通过<ph name="BEGIN_LINK"/>设置<ph name="END_LINK"/>页为您的 BitPop 数据创建一个新的 BitPop 用户。</translation>
+某些功能可能会无法使用。请指定其他个人资料目录或使用更高版本的 BitPop。</translation>
+<translation id="3787192530015965250">BitPop正在尝试显示密码，请输入您的Windows密码以允许此操作。</translation>
 <translation id="7862155441175671173">添加到 BitPop</translation>
+<translation id="1211470790061593728">现在，无论是通过Google帐户还是在共用的计算机上，您都可以更轻松地使用BitPop。</translation>
 <translation id="5594704848342987755">此计算机已安装了更高版本的 BitPop。如果软件无法正常运行，请卸载 BitPop 并重试。</translation>
-<translation id="3422131153907641068">BitPop 实用工具</translation>
-<translation id="1298199220304005244">获取 Chromium 操作系统使用帮助</translation>
-<translation id="8854394556488040390">BitPop 内嵌框架已更新。请重新启动浏览器。BitPop 版本：<ph name="TODO_0001"/>，Chromium 内嵌框架版本：<ph name="TODO_0002"/></translation>
+<translation id="3528119622127530876">BitPop无法同步您的数据。请更新您的同步密码。</translation>
+<translation id="1298199220304005244">获取 BitPop 操作系统使用帮助</translation>
+<translation id="331951419404882060">登录时出现错误，BitPop操作系统无法同步您的数据。</translation>
+<translation id="8187289872471304532">依次转到“应用”&gt;“系统偏好设置”&gt;“网络”&gt;“高级”&gt;“代理”，然后取消选中所有已选的代理。</translation>
+<translation id="4634257184917711644"><ph name="FILE_NAME"/> 是恶意文件，BitPop 已将其拦截。</translation>
+<translation id="454930334682314382">您的帐单明细已保存在 BitPop 中。</translation>
 <translation id="130631256467250065">您所做的更改会在下次重新启动设备时生效。</translation>
-<translation id="2901348058800597589">BitPop 未正确关闭。要重新打开曾经打开过的网页，请点击“恢复”。</translation>
+<translation id="8810991521775422988">BitPop 通知中心</translation>
+<translation id="2901348058800597589">BitPop 未正确关闭。要重新打开您之前浏览的网页，请点击“恢复”。</translation>
+<translation id="838316505303362561">BitPop建议使用</translation>
 <translation id="5653921603290474550">BitPop 未响应。要立即重新启动吗？</translation>
-<translation id="6089587093203430357">即搜即得</translation>
-<translation id="2410206016513008786">BitPop 必须启动外部应用才能处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
-<translation id="8046283042877435986">此网站建议使用 Chromium 内嵌框架（已安装）。</translation>
-<translation id="5523374683005655880">无法安装与当前运行的版本相同的 BitPop 内嵌框架。请关闭 BitPop 内嵌框架并重试。</translation>
+<translation id="3306752603341080445">您已登录 BitPop！</translation>
+<translation id="2158734852934720349">BitPop操作系统开放源代码许可</translation>
+<translation id="2239725456669400190">BitPop 必须启动外部应用才能处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
 <translation id="5574763173398621221">要让 BitPop 保存您的密码吗？</translation>
-<translation id="7730150800475367955">依次转到
-          <ph name="BEGIN_BOLD"/>
-          BitPop 菜单 &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          “<ph name="OPTIONS_BUTTON"/>”
-          <ph name="END_BOLD"/>
-          （适用于当前网络）。如果系统显示了
-          <ph name="BEGIN_BOLD"/>
-          “<ph name="PROXY_BUTTON"/>”
-          <ph name="END_BOLD"/>按钮（位于
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>
-          标签中），请点击该按钮并确保已将您的配置
-          设置为“直接”。</translation>
 <translation id="5387335700352644169">显示 BitPop 菜单</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
+<translation id="1981756165552484777">您在使用<ph name="PROFILE_EMAIL"/>同步自己的BitPop资料和数据。要更新您的同步偏好设置或在不登录Google帐户的情况下使用BitPop，请前往<ph name="SETTINGS_LINK"/>部分。</translation>
+<translation id="1681324505975197559">（需要<ph name="BEGIN_BUTTON"/>重新启动<ph name="END_BUTTON"/> BitPop）</translation>
+<translation id="6863452815496188645">您可以设置同步以将个性化浏览器功能保存到网上，以便在任意计算机上的 BitPop 中使用这些功能。</translation>
 <translation id="8865765905101981392">互联网浏览器</translation>
-<translation id="6424492062988593837">Chromium 刚刚经过了改进！新版本已推出。</translation>
+<translation id="3099708656176429608">对防火墙或防病毒软件进行设置，以允许 BitPop 访问该网络。</translation>
+<translation id="8098179324031720100">BitPop 刚刚经过了改进！新版本已推出。</translation>
+<translation id="4320683788245444425">此计算机将不再接收BitPop更新，因为其硬件不再受支持。</translation>
 <translation id="6385431739515246076">关于 BitPop(&amp;C)</translation>
 <translation id="7521125380721653484">安装程序归档损坏或无效。请重新下载 BitPop。</translation>
-<translation id="6836892784612884953">依次转到
-          <ph name="BEGIN_BOLD"/>
-          BitPop 菜单 &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="ADVANCED_TITLE"/>
-          &gt;
-          <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          然后确保已将您的配置设置为“无代理”或“直接”。</translation>
-<translation id="457806999714267838">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书已过期。由于该证书已过期，因此没有任何信息可表明它是否已被盗用。这意味着 BitPop 无法保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 还是攻击者。您计算机时钟的当前设置为 <ph name="CURRENT_TIME"/>。该设置是否正确？如果不正确，您应更正错误并刷新此页面。</translation>
+<translation id="8457938350903919620">点击您的姓名即可打开BitPop并开始浏览。</translation>
+<translation id="8410648211590980711">BitPop 正在使用您的麦克风。</translation>
+<translation id="3298525902784604502">您尝试访问的是 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书已过期。由于该证书已过期，因此没有任何信息可表明它是否已被盗用。这意味着 BitPop 无法保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 还是攻击者。您计算机时钟的当前设置为 <ph name="CURRENT_TIME"/>。该设置是否正确？如果不正确，您应更正错误并刷新此页面。</translation>
 <translation id="7196020411877309443">为何会出现这个窗口？</translation>
+<translation id="6809805128084420516">与您的 BitPop 数据相关的重要信息</translation>
+<translation id="5312973105258198185">您已使用 <ph name="USER_EMAIL_ADDRESS"/> 的身份登录。现在您可在已登录的所有设备上访问您的书签、历史记录和其他设置。</translation>
 <translation id="473359818469623008">无法安装与当前运行的版本相同的 BitPop。请关闭 BitPop 并重试。</translation>
 <translation id="2595850371931815386">BitPop 不是您的默认浏览器。</translation>
-<translation id="1857156280997837230">BitPop 应用启动器</translation>
 <translation id="4458285410772214805">请先退出，然后重新登录，以便此更改生效。</translation>
-<translation id="6523007289492675308">在 Windows 任务栏中显示 BitPop 应用启动器的快捷方式。</translation>
-<translation id="2119636228670142020">关于 Chromium 操作系统(&amp;C)</translation>
+<translation id="6627720938086825017">BitPop 正在使用您的摄像头和麦克风。</translation>
+<translation id="6382607600997384001">您可以在此处查看来自 BitPop 应用、扩展程序和网站的所有通知。</translation>
+<translation id="2119636228670142020">关于 BitPop 操作系统(&amp;C)</translation>
 <translation id="4196382931981526364">BitPop 现已推出更安全的新版本。</translation>
-<translation id="1077424736315176936">显示 BitPop 应用启动器。</translation>
-<translation id="5330935702921516708">了解登录 BitPop 的<ph name="BEGIN_LINK"/>更多优势<ph name="END_LINK"/>。</translation>
 <translation id="862266784641000464">您可以在 BitPop 中点击网上的电话号码，然后通过 Skype 拨打！</translation>
 <translation id="8072591166076742072">正在进行一项下载。您希望退出 BitPop 并取消该下载吗？</translation>
-<translation id="932207424499184915">BitPop 二进制文件</translation>
-<translation id="3223104112377435850">BitPop 插件主程序</translation>
+<translation id="8650443074479376435">由于在登录时出现错误，BitPop无法同步您的数据。</translation>
+<translation id="7561209000218748370">BitPop的入站规则，允许mDNS流量。</translation>
+<translation id="151962892725702025">由于您的网域停用了同步功能，BitPop操作系统无法同步您的数据。</translation>
+<translation id="3360567213983886831">BitPop 二进制文件</translation>
+<translation id="108010966668726733">之前有人在此计算机上以 <ph name="ACCOUNT_EMAIL_LAST"/> 帐户登录 BitPop。如果这不是您的帐户，请新建一个 BitPop 用户来单独保存您的信息。
+
+如果您仍然登录，BitPop 信息（例如书签、历史记录和其他设置）将合并到 <ph name="ACCOUNT_EMAIL_NEW"/>。</translation>
 <translation id="7826309952950470209">正在进行多项下载。您希望退出 BitPop 并取消这些下载吗？</translation>
 <translation id="380873736468525691">BitPop 要求操作系统为 Windows Vista，或者 Windows XP SP2 或更高版本。</translation>
 <translation id="2762974284703971745">已发现一个同名的模块与 BitPop 存在冲突。</translation>
+<translation id="5213128101330439346">这是您的专属BitPop</translation>
 <translation id="5443433498537176573">BitPop 已是最新版本。</translation>
 <translation id="5637727561937246825">该计算机已经安装了更高版本的 BitPop 组件。请使用更高版本的安装程序。</translation>
-<translation id="5082591353921977637">您尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书尚未生效。没有任何信息可表明该证书是否可信。BitPop 无法准确保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 而不是攻击者。您计算机时钟的当前时间为 <ph name="CURRENT_TIME"/>。该时间是否准确？如果不准确，您可以更正系统上的时钟并刷新此网页。</translation>
-<translation id="1138135211676039883">BitPop 会使用您的默认搜索引擎（目前设置为<ph name="PAGE_TITLE"/>）。要保留默认搜索引擎吗？</translation>
+<translation id="4547797007790555015">您尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书尚未生效。没有任何信息可表明该证书是否可信。BitPop 无法准确保证与您通信的是 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; 而不是攻击者。您计算机时钟的当前时间为 <ph name="CURRENT_TIME"/>。该时间是否准确？如果不准确，您可以更正系统上的时钟并刷新此网页。</translation>
 <translation id="185658551912723674">欢迎使用 BitPop</translation>
-<translation id="6808688532552992663">此计算机已安装了更高版本的 BitPop 和 BitPop 内嵌框架。如果软件无法正常运行，请卸载 BitPop 和 BitPop 内嵌框架并重试。</translation>
 <translation id="1909867102505992367">您的偏好设置文件已损坏或无效。
 
 BitPop 无法恢复您的设置。</translation>
+<translation id="6239286721842301381">您正在预览新版BitPop。</translation>
+<translation id="7591092481995851856">取消与<ph name="USERNAME"/>的关联将会清除您的历史记录、书签、设置以及存储在此设备上的其他BitPop数据。您的Google帐户中存储的数据将不会被清除，并且您可以通过<ph name="GOOGLE_DASHBOARD_LINK"/>Google信息中心<ph name="END_GOOGLE_DASHBOARD_LINK"/>管理这些数据。</translation>
 <translation id="4933902704814222889">BitPop 是一款可高速运行网页和应用的网络浏览器。它快捷、稳定且易于使用。BitPop 内置的防护恶意软件和网上诱骗的功能可让您更安全地浏览网页。</translation>
-<translation id="7673336527696184948">参数无效。在准备模式下，BitPop 内嵌框架必须与 BitPop 同时安装。</translation>
+<translation id="5806792281256987775">您曾尝试访问 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;，但服务器出示的证书却不是由 BitPop 信任的实体颁发的。这可能意味着该服务器已生成自己的安全凭据（BitPop 无法依据这些凭据确定身份信息），或者有攻击者尝试拦截您的通信。</translation>
+<translation id="26317130586606191">是否将您的 BitPop 数据与此帐户相关联？</translation>
 <translation id="5583217122091744450">BitPop 帮助程序</translation>
+<translation id="3089741509794563091">BitPop现在更好用了</translation>
 <translation id="6404599307042403560">BitPop 已配置为在计算机启动时自动启动。</translation>
-<translation id="8974095189086268230">Chromium 操作系统的问世还有其他<ph name="BEGIN_LINK_CROS_OSS"/>开放源代码软件<ph name="END_LINK_CROS_OSS"/>的一份功能。</translation>
-<translation id="1221340462641866827">Chromium 操作系统不支持启动外部应用处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
+<translation id="554833011526807667">BitPop 操作系统的问世还有其他<ph name="BEGIN_LINK_CROS_OSS"/>开放源代码软件<ph name="END_LINK_CROS_OSS"/>的一份功能。</translation>
+<translation id="8166042339699941380">您目前是以托管帐户登录，该帐户的管理员将能够控制您的 BitPop 个人资料。您的 BitPop 数据（例如您的应用、书签、历史记录、密码和其他设置）将永久绑定到 <ph name="USER_NAME"/>。您可以通过 Google 帐户信息中心删除这些数据，但无法将这些数据关联到其他帐户。</translation>
+<translation id="2032763513380168750">将我的 BitPop 数据与此帐户关联</translation>
+<translation id="2477235356415090659">重新安装BitPop</translation>
+<translation id="807350504213044844">BitPop 操作系统不支持启动外部应用处理 <ph name="SCHEME"/> 链接。请求的链接是 <ph name="PROTOLINK"/>。</translation>
+<translation id="3484768020161794310">缺少 Google API 密钥，因此 BitPop 的部分功能将无法使用。</translation>
+<translation id="531363935678210182">BitPop - 通知</translation>
+<translation id="3151848949510984428">在 BitPop 中保存详细信息</translation>
 </translationbundle>

@@ -6,12 +6,12 @@
 
 #include "base/callback.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/path_service.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/object_watcher.h"
 #include "base/win/scoped_handle.h"
 #include "base/win/win_util.h"
@@ -22,13 +22,13 @@ namespace {
 
 const char* kTerminateEventSuffix = "_service_terminate_evt";
 
-string16 GetServiceProcessReadyEventName() {
-  return UTF8ToWide(
+base::string16 GetServiceProcessReadyEventName() {
+  return base::UTF8ToWide(
       GetServiceProcessScopedVersionedName("_service_ready"));
 }
 
-string16 GetServiceProcessTerminateEventName() {
-  return UTF8ToWide(
+base::string16 GetServiceProcessTerminateEventName() {
+  return base::UTF8ToWide(
       GetServiceProcessScopedVersionedName(kTerminateEventSuffix));
 }
 
@@ -39,9 +39,9 @@ std::string GetServiceProcessAutoRunKey() {
 // Returns the name of the autotun reg value that we used to use for older
 // versions of Chrome.
 std::string GetObsoleteServiceProcessAutoRunKey() {
-  FilePath user_data_dir;
+  base::FilePath user_data_dir;
   PathService::Get(chrome::DIR_USER_DATA, &user_data_dir);
-  std::string scoped_name = WideToUTF8(user_data_dir.value());
+  std::string scoped_name = base::WideToUTF8(user_data_dir.value());
   std::replace(scoped_name.begin(), scoped_name.end(), '\\', '!');
   std::replace(scoped_name.begin(), scoped_name.end(), '/', '!');
   scoped_name.append("_service_run");
@@ -55,7 +55,7 @@ class ServiceProcessTerminateMonitor
       : terminate_task_(terminate_task) {
   }
   void Start() {
-    string16 event_name = GetServiceProcessTerminateEventName();
+    base::string16 event_name = GetServiceProcessTerminateEventName();
     DCHECK(event_name.length() <= MAX_PATH);
     terminate_event_.Set(CreateEvent(NULL, TRUE, FALSE, event_name.c_str()));
     watcher_.StartWatching(terminate_event_.Get(), this);
@@ -87,8 +87,8 @@ bool ForceServiceProcessShutdown(const std::string& version,
   base::win::ScopedHandle terminate_event;
   std::string versioned_name = version;
   versioned_name.append(kTerminateEventSuffix);
-  string16 event_name =
-      UTF8ToWide(GetServiceProcessScopedName(versioned_name));
+  base::string16 event_name =
+      base::UTF8ToWide(GetServiceProcessScopedName(versioned_name));
   terminate_event.Set(OpenEvent(EVENT_MODIFY_STATE, FALSE, event_name.c_str()));
   if (!terminate_event.IsValid())
     return false;
@@ -97,7 +97,7 @@ bool ForceServiceProcessShutdown(const std::string& version,
 }
 
 bool CheckServiceProcessReady() {
-  string16 event_name = GetServiceProcessReadyEventName();
+  base::string16 event_name = GetServiceProcessReadyEventName();
   base::win::ScopedHandle event(
       OpenEvent(SYNCHRONIZE | READ_CONTROL, false, event_name.c_str()));
   if (!event.IsValid())
@@ -119,7 +119,7 @@ void ServiceProcessState::CreateState() {
 
 bool ServiceProcessState::TakeSingletonLock() {
   DCHECK(state_);
-  string16 event_name = GetServiceProcessReadyEventName();
+  base::string16 event_name = GetServiceProcessReadyEventName();
   DCHECK(event_name.length() <= MAX_PATH);
   base::win::ScopedHandle service_process_ready_event;
   service_process_ready_event.Set(
@@ -153,10 +153,11 @@ bool ServiceProcessState::AddToAutoRun() {
   // Remove the old autorun value first because we changed the naming scheme
   // for the autorun value name.
   base::win::RemoveCommandFromAutoRun(
-      HKEY_CURRENT_USER, UTF8ToWide(GetObsoleteServiceProcessAutoRunKey()));
+      HKEY_CURRENT_USER,
+      base::UTF8ToWide(GetObsoleteServiceProcessAutoRunKey()));
   return base::win::AddCommandToAutoRun(
       HKEY_CURRENT_USER,
-      UTF8ToWide(GetServiceProcessAutoRunKey()),
+      base::UTF8ToWide(GetServiceProcessAutoRunKey()),
       autorun_command_line_->GetCommandLineString());
 }
 
@@ -164,9 +165,10 @@ bool ServiceProcessState::RemoveFromAutoRun() {
   // Remove the old autorun value first because we changed the naming scheme
   // for the autorun value name.
   base::win::RemoveCommandFromAutoRun(
-      HKEY_CURRENT_USER, UTF8ToWide(GetObsoleteServiceProcessAutoRunKey()));
+      HKEY_CURRENT_USER,
+      base::UTF8ToWide(GetObsoleteServiceProcessAutoRunKey()));
   return base::win::RemoveCommandFromAutoRun(
-      HKEY_CURRENT_USER, UTF8ToWide(GetServiceProcessAutoRunKey()));
+      HKEY_CURRENT_USER, base::UTF8ToWide(GetServiceProcessAutoRunKey()));
 }
 
 void ServiceProcessState::TearDownState() {

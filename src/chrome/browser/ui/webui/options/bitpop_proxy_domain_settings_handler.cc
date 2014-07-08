@@ -18,18 +18,18 @@
 
 #include "base/bind.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/event_router_forwarder.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/extensions/extension_sync_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/chrome_constants.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -120,13 +120,11 @@ void BitpopProxyDomainSettingsHandler::ChangeSiteList(
   if (pref_service->IsUserModifiablePreference(prefs::kBlockedSitesList))
     pref_service->SetString(prefs::kBlockedSitesList, strValue);
   else {
-    extensions::ExtensionPrefs* prefs =
-        profile->GetExtensionService()->extension_prefs();
-    prefs->SetExtensionControlledPref(
+    extensions::ExtensionPrefs* prefs = extensions::ExtensionPrefs::Get(profile);
+    prefs->UpdateExtensionPref(
         chrome::kUncensorISPExtensionId,
         prefs::kBlockedSitesList,
-        extensions::kExtensionPrefsScopeRegular,
-        Value::CreateStringValue(strValue));
+        base::Value::CreateStringValue(strValue));
   }
 }
 

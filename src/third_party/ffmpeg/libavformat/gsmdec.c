@@ -2,23 +2,24 @@
  * RAW GSM demuxer
  * Copyright (c) 2011 Justin Ruggles
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/opt.h"
 #include "avformat.h"
@@ -63,6 +64,7 @@ static int gsm_read_header(AVFormatContext *s)
     st->codec->codec_type  = AVMEDIA_TYPE_AUDIO;
     st->codec->codec_id    = s->iformat->raw_codec_id;
     st->codec->channels    = 1;
+    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->sample_rate = c->sample_rate;
     st->codec->bit_rate    = GSM_BLOCK_SIZE * 8 * c->sample_rate / GSM_BLOCK_SAMPLES;
 
@@ -78,7 +80,7 @@ static const AVOption options[] = {
     { NULL },
 };
 
-static const AVClass class = {
+static const AVClass gsm_class = {
     .class_name = "gsm demuxer",
     .item_name  = av_default_item_name,
     .option     = options,
@@ -94,5 +96,5 @@ AVInputFormat ff_gsm_demuxer = {
     .flags          = AVFMT_GENERIC_INDEX,
     .extensions     = "gsm",
     .raw_codec_id   = AV_CODEC_ID_GSM,
-    .priv_class     = &class,
+    .priv_class     = &gsm_class,
 };

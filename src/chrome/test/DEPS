@@ -1,6 +1,10 @@
 include_rules = [
-  # The test directory can do whatever it wants in chrome.
+  # The test directory can do whatever it wants in chrome, and may
+  # rely on components.
+  "+ash",
   "+chrome",
+  "+chromeos",
+  "+components",
   "+extensions",
 
   # Tests under chrome/ shouldn't need to access the internals of content/ and
@@ -12,8 +16,9 @@ include_rules = [
 
   "+grit",  # For generated headers
   "+media/audio",
+  "+media/base",
   "+sandbox/win/src",
   "+sandbox/win/tests",
   "+webkit/glue",
-  "+webkit/plugins",
+  "+win8/test",
 ]

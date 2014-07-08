@@ -6,7 +6,7 @@
 #define ASH_SYSTEM_TRAY_SYSTEM_TRAY_ITEM_H_
 
 #include "ash/ash_export.h"
-#include "ash/shelf_types.h"
+#include "ash/shelf/shelf_types.h"
 #include "ash/system/user/login_status.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -16,12 +16,8 @@ class View;
 }
 
 namespace ash {
-
 class SystemTray;
-
-namespace internal {
 class TrayItemView;
-}
 
 class ASH_EXPORT SystemTrayItem {
  public:
@@ -36,7 +32,7 @@ class ASH_EXPORT SystemTrayItem {
   // NOTE: The returned view should almost always be a TrayItemView, which
   // automatically resizes the widget when the size of the view changes, and
   // adds animation when the visibility of the view changes. If a view wants to
-  // avoid these behaviour, then it should not be a TrayItemView.
+  // avoid this behavior, then it should not be a TrayItemView.
   virtual views::View* CreateTrayView(user::LoginStatus status);
 
   // Returns a view for the item to be displayed in the list. This view can be
@@ -98,15 +94,24 @@ class ASH_EXPORT SystemTrayItem {
   // Hides the notification for this item.
   void HideNotificationView();
 
-  // Returns true if this item needs to force the launcher to be visible when
-  // the launcher is in the auto-hide state. Default is true.
-  virtual bool ShouldShowLauncher() const;
+  // Returns true if item should hide the arrow.
+  virtual bool ShouldHideArrow() const;
+
+  // Returns true if this item needs to force the shelf to be visible when
+  // the shelf is in the auto-hide state. Default is true.
+  virtual bool ShouldShowShelf() const;
 
   // Returns the system tray that this item belongs to.
   SystemTray* system_tray() const { return system_tray_; }
 
+  bool restore_focus() const { return restore_focus_; }
+  void set_restore_focus(bool restore_focus) {
+    restore_focus_ = restore_focus;
+  }
+
  private:
   SystemTray* system_tray_;
+  bool restore_focus_;
 
   DISALLOW_COPY_AND_ASSIGN(SystemTrayItem);
 };

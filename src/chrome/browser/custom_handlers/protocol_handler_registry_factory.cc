@@ -6,9 +6,9 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/custom_handlers/protocol_handler_registry.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 ProtocolHandlerRegistryFactory* ProtocolHandlerRegistryFactory::GetInstance() {
@@ -19,12 +19,13 @@ ProtocolHandlerRegistryFactory* ProtocolHandlerRegistryFactory::GetInstance() {
 ProtocolHandlerRegistry* ProtocolHandlerRegistryFactory::GetForProfile(
     Profile* profile) {
   return static_cast<ProtocolHandlerRegistry*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 ProtocolHandlerRegistryFactory::ProtocolHandlerRegistryFactory()
-    : ProfileKeyedServiceFactory("ProtocolHandlerRegistry",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ProtocolHandlerRegistry",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 ProtocolHandlerRegistryFactory::~ProtocolHandlerRegistryFactory() {
@@ -33,13 +34,15 @@ ProtocolHandlerRegistryFactory::~ProtocolHandlerRegistryFactory() {
 // Will be created when initializing profile_io_data, so we might
 // as well have the framework create this along with other
 // PKSs to preserve orderly civic conduct :)
-bool ProtocolHandlerRegistryFactory::ServiceIsCreatedWithProfile() const {
+bool
+ProtocolHandlerRegistryFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 
 // Allows the produced registry to be used in incognito mode.
-bool ProtocolHandlerRegistryFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* ProtocolHandlerRegistryFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextRedirectedInIncognito(context);
 }
 
 // Do not create this service for tests. MANY tests will fail
@@ -49,10 +52,10 @@ bool ProtocolHandlerRegistryFactory::ServiceIsNULLWhileTesting() const {
   return true;
 }
 
-ProfileKeyedService* ProtocolHandlerRegistryFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* ProtocolHandlerRegistryFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
   ProtocolHandlerRegistry* registry = new ProtocolHandlerRegistry(
-      profile, new ProtocolHandlerRegistry::Delegate());
+      static_cast<Profile*>(profile), new ProtocolHandlerRegistry::Delegate());
 
 #if defined(OS_CHROMEOS)
   // If installing defaults, they must be installed prior calling

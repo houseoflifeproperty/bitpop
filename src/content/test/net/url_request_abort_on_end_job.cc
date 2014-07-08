@@ -7,7 +7,7 @@
 #include <cstring>
 
 #include "base/compiler_specific.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/test/net/url_request_abort_on_end_job.h"
 #include "net/base/io_buffer.h"
@@ -19,26 +19,33 @@
 
 namespace content {
 namespace {
+
 const char kPageContent[] = "some data\r\n";
+
+net::URLRequestJob* JobFactory(
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate,
+    const std::string& scheme) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return new URLRequestAbortOnEndJob(request, network_delegate);
 }
+
+void AddUrlHandlerOnIOThread() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
+  filter->AddUrlHandler(GURL(URLRequestAbortOnEndJob::k400AbortOnEndUrl),
+                        &JobFactory);
+}
+
+}  // anonymous namespace
 
 const char URLRequestAbortOnEndJob::k400AbortOnEndUrl[] =
     "http://url.handled.by.abort.on.end/400";
 
 // static
 void URLRequestAbortOnEndJob::AddUrlHandler() {
-  net::URLRequestFilter* filter = net::URLRequestFilter::GetInstance();
-  filter->AddUrlHandler(GURL(k400AbortOnEndUrl),
-                        &URLRequestAbortOnEndJob::Factory);
-}
-
-// static
-net::URLRequestJob* URLRequestAbortOnEndJob::Factory(
-    net::URLRequest* request,
-    net::NetworkDelegate* network_delegate,
-    const std::string& scheme) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  return new URLRequestAbortOnEndJob(request, network_delegate);
+  BrowserThread::PostTask(BrowserThread::IO, FROM_HERE,
+                          base::Bind(AddUrlHandlerOnIOThread));
 }
 
 // Private const version.
@@ -63,7 +70,7 @@ URLRequestAbortOnEndJob::URLRequestAbortOnEndJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate)
     : URLRequestJob(request, network_delegate),
       sent_data_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestAbortOnEndJob::~URLRequestAbortOnEndJob() {
@@ -76,7 +83,7 @@ void URLRequestAbortOnEndJob::GetResponseInfo(net::HttpResponseInfo* info) {
 bool URLRequestAbortOnEndJob::GetMimeType(std::string* mime_type) const {
   net::HttpResponseInfo info;
   GetResponseInfoConst(&info);
-  return info.headers && info.headers->GetMimeType(mime_type);
+  return info.headers.get() && info.headers->GetMimeType(mime_type);
 }
 
 void URLRequestAbortOnEndJob::StartAsync() {
@@ -84,7 +91,7 @@ void URLRequestAbortOnEndJob::StartAsync() {
 }
 
 void URLRequestAbortOnEndJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&URLRequestAbortOnEndJob::StartAsync,
                  weak_factory_.GetWeakPtr()));

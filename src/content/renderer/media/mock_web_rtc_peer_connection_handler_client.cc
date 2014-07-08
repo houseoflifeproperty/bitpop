@@ -4,33 +4,37 @@
 #include "content/renderer/media/mock_web_rtc_peer_connection_handler_client.h"
 
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamDescriptor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "base/strings/utf_string_conversions.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+
+using testing::_;
 
 namespace content {
 
 MockWebRTCPeerConnectionHandlerClient::
 MockWebRTCPeerConnectionHandlerClient()
-    : renegotiate_(false),
-      ready_state_(ReadyStateNew),
-      ice_state_(ICEStateNew),
-      candidate_mline_index_(-1) {
+    : candidate_mline_index_(-1) {
+  ON_CALL(*this, didGenerateICECandidate(_)).WillByDefault(testing::Invoke(
+      this,
+      &MockWebRTCPeerConnectionHandlerClient::didGenerateICECandidateWorker));
+  ON_CALL(*this, didAddRemoteStream(_)).WillByDefault(testing::Invoke(
+      this,
+      &MockWebRTCPeerConnectionHandlerClient::didAddRemoteStreamWorker));
+  ON_CALL(*this, didRemoveRemoteStream(_)).WillByDefault(testing::Invoke(
+      this,
+      &MockWebRTCPeerConnectionHandlerClient::didRemoveRemoteStreamWorker));
 }
 
 MockWebRTCPeerConnectionHandlerClient::
 ~MockWebRTCPeerConnectionHandlerClient() {}
 
-void MockWebRTCPeerConnectionHandlerClient::negotiationNeeded() {
-  renegotiate_ = true;
-}
-
-void MockWebRTCPeerConnectionHandlerClient::didGenerateICECandidate(
-    const WebKit::WebRTCICECandidate& candidate) {
+void MockWebRTCPeerConnectionHandlerClient::didGenerateICECandidateWorker(
+    const blink::WebRTCICECandidate& candidate) {
   if (!candidate.isNull()) {
-    candidate_sdp_ = UTF16ToUTF8(candidate.candidate());
+    candidate_sdp_ = base::UTF16ToUTF8(candidate.candidate());
     candidate_mline_index_ = candidate.sdpMLineIndex();
-    candidate_mid_ = UTF16ToUTF8(candidate.sdpMid());
+    candidate_mid_ = base::UTF16ToUTF8(candidate.sdpMid());
   } else {
     candidate_sdp_ = "";
     candidate_mline_index_ = -1;
@@ -38,24 +42,14 @@ void MockWebRTCPeerConnectionHandlerClient::didGenerateICECandidate(
   }
 }
 
-void MockWebRTCPeerConnectionHandlerClient::didChangeReadyState(
-    ReadyState state) {
-  ready_state_ = state;
+void MockWebRTCPeerConnectionHandlerClient::didAddRemoteStreamWorker(
+    const blink::WebMediaStream& stream_descriptor) {
+  remote_steam_ = stream_descriptor;
 }
 
-void MockWebRTCPeerConnectionHandlerClient::didChangeICEState(ICEState state) {
-  ice_state_ = state;
-}
-
-void MockWebRTCPeerConnectionHandlerClient::didAddRemoteStream(
-    const WebKit::WebMediaStreamDescriptor& stream_descriptor) {
-  stream_label_ = UTF16ToUTF8(stream_descriptor.label());
-}
-
-void MockWebRTCPeerConnectionHandlerClient::didRemoveRemoteStream(
-    const WebKit::WebMediaStreamDescriptor& stream_descriptor) {
-  DCHECK(stream_label_ == UTF16ToUTF8(stream_descriptor.label()));
-  stream_label_.clear();
+void MockWebRTCPeerConnectionHandlerClient::didRemoveRemoteStreamWorker(
+    const blink::WebMediaStream& stream_descriptor) {
+  remote_steam_.reset();
 }
 
 }  // namespace content

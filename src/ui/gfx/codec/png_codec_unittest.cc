@@ -14,6 +14,7 @@
 #include "third_party/zlib/zlib.h"
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/skia_util.h"
 
 namespace gfx {
 
@@ -154,31 +155,7 @@ bool EncodeImage(const std::vector<unsigned char>& input,
                  const int interlace_type = PNG_INTERLACE_NONE,
                  std::vector<png_color>* palette = 0,
                  std::vector<unsigned char>* palette_alpha = 0) {
-  struct ScopedPNGStructs {
-    ScopedPNGStructs(png_struct** s, png_info** i) : s_(s), i_(i) {}
-    ~ScopedPNGStructs() { png_destroy_write_struct(s_, i_); }
-    png_struct** s_;
-    png_info** i_;
-  };
-
   DCHECK(output);
-  png_struct* png_ptr = png_create_write_struct(PNG_LIBPNG_VER_STRING,
-                                                NULL, NULL, NULL);
-  if (!png_ptr)
-    return false;
-
-  png_infop info_ptr = png_create_info_struct(png_ptr);
-  if (!info_ptr) {
-    png_destroy_write_struct(&png_ptr, NULL);
-    return false;
-  }
-
-  ScopedPNGStructs scoped_png_structs(&png_ptr, &info_ptr);
-
-  if (setjmp(png_jmpbuf(png_ptr)))
-    return false;
-
-  png_set_error_fn(png_ptr, NULL, LogLibPNGError, LogLibPNGWarning);
 
   int input_rowbytes = 0;
   int transforms = PNG_TRANSFORM_IDENTITY;
@@ -213,10 +190,27 @@ bool EncodeImage(const std::vector<unsigned char>& input,
       break;
   };
 
+  png_struct* png_ptr =
+      png_create_write_struct(PNG_LIBPNG_VER_STRING, NULL, NULL, NULL);
+  if (!png_ptr)
+    return false;
+  png_infop info_ptr = png_create_info_struct(png_ptr);
+  if (!info_ptr) {
+    png_destroy_write_struct(&png_ptr, NULL);
+    return false;
+  }
+
   std::vector<png_bytep> row_pointers(height);
-  for (int y = 0 ; y < height; y++) {
+  for (int y = 0 ; y < height; ++y) {
     row_pointers[y] = const_cast<unsigned char*>(&input[y * input_rowbytes]);
   }
+
+  if (setjmp(png_jmpbuf(png_ptr))) {
+    png_destroy_write_struct(&png_ptr, &info_ptr);
+    return false;
+  }
+
+  png_set_error_fn(png_ptr, NULL, LogLibPNGError, LogLibPNGWarning);
   png_set_rows(png_ptr, info_ptr, &row_pointers[0]);
   png_set_write_fn(png_ptr, output, WriteImageData, FlushImageData);
   png_set_IHDR(png_ptr, info_ptr, width, height, 8, output_color_type,
@@ -225,16 +219,15 @@ bool EncodeImage(const std::vector<unsigned char>& input,
   if (output_color_type == COLOR_TYPE_PALETTE) {
     png_set_PLTE(png_ptr, info_ptr, &palette->front(), palette->size());
     if (palette_alpha) {
-      png_set_tRNS(png_ptr,
-                   info_ptr,
-                   &palette_alpha->front(),
-                   palette_alpha->size(),
-                   NULL);
+      unsigned char* alpha_data = &palette_alpha->front();
+      size_t alpha_size = palette_alpha->size();
+      png_set_tRNS(png_ptr, info_ptr, alpha_data, alpha_size, NULL);
     }
   }
 
   png_write_png(png_ptr, info_ptr, transforms, NULL);
 
+  png_destroy_write_struct(&png_ptr, &info_ptr);
   return true;
 }
 
@@ -256,14 +249,29 @@ bool NonAlphaColorsClose(uint32_t a, uint32_t b) {
          abs(static_cast<int>(SkColorGetR(a) - SkColorGetR(b))) < 2;
 }
 
-void MakeTestSkBitmap(int w, int h, SkBitmap* bmp) {
+// Returns true if the BGRA 32-bit SkColor specified by |a| is equivalent to the
+// 8-bit Gray color specified by |b|.
+bool BGRAGrayEqualsA8Gray(uint32_t a, uint8_t b) {
+  return SkColorGetB(a) == b && SkColorGetG(a) ==  b &&
+         SkColorGetR(a) == b && SkColorGetA(a) == 255;
+}
+
+void MakeTestBGRASkBitmap(int w, int h, SkBitmap* bmp) {
   bmp->setConfig(SkBitmap::kARGB_8888_Config, w, h);
   bmp->allocPixels();
 
   uint32_t* src_data = bmp->getAddr32(0, 0);
-  for (int i = 0; i < w * h; i++) {
+  for (int i = 0; i < w * h; i++)
     src_data[i] = SkPreMultiplyARGB(i % 255, i % 250, i % 245, i % 240);
-  }
+}
+
+void MakeTestA8SkBitmap(int w, int h, SkBitmap* bmp) {
+  bmp->setConfig(SkBitmap::kA8_Config, w, h);
+  bmp->allocPixels();
+
+  uint8_t* src_data = bmp->getAddr8(0, 0);
+  for (int i = 0; i < w * h; i++)
+    src_data[i] = i % 255;
 }
 
 TEST(PNGCodec, EncodeDecodeRGB) {
@@ -978,11 +986,53 @@ TEST(PNGCodec, StripAddAlpha) {
   ASSERT_EQ(original_rgb, decoded);
 }
 
+TEST(PNGCodec, EncodeBGRASkBitmapStridePadded) {
+  const int kWidth = 20;
+  const int kHeight = 20;
+  const int kPaddedWidth = 32;
+  const int kBytesPerPixel = 4;
+  const int kPaddedSize = kPaddedWidth * kHeight;
+  const int kRowBytes = kPaddedWidth * kBytesPerPixel;
+
+  SkBitmap original_bitmap;
+  original_bitmap.setConfig(SkBitmap::kARGB_8888_Config,
+                            kWidth, kHeight, kRowBytes);
+  original_bitmap.allocPixels();
+
+  // Write data over the source bitmap.
+  // We write on the pad area here too.
+  // The encoder should ignore the pad area.
+  uint32_t* src_data = original_bitmap.getAddr32(0, 0);
+  for (int i = 0; i < kPaddedSize; i++) {
+    src_data[i] = SkPreMultiplyARGB(i % 255, i % 250, i % 245, i % 240);
+  }
+
+  // Encode the bitmap.
+  std::vector<unsigned char> encoded;
+  PNGCodec::EncodeBGRASkBitmap(original_bitmap, false, &encoded);
+
+  // Decode the encoded string.
+  SkBitmap decoded_bitmap;
+  EXPECT_TRUE(PNGCodec::Decode(&encoded.front(), encoded.size(),
+                               &decoded_bitmap));
+
+  // Compare the original bitmap and the output bitmap. We use ColorsClose
+  // as SkBitmaps are considered to be pre-multiplied, the unpremultiplication
+  // (in Encode) and repremultiplication (in Decode) can be lossy.
+  for (int x = 0; x < kWidth; x++) {
+    for (int y = 0; y < kHeight; y++) {
+      uint32_t original_pixel = original_bitmap.getAddr32(0, y)[x];
+      uint32_t decoded_pixel = decoded_bitmap.getAddr32(0, y)[x];
+      EXPECT_TRUE(ColorsClose(original_pixel, decoded_pixel));
+    }
+  }
+}
+
 TEST(PNGCodec, EncodeBGRASkBitmap) {
   const int w = 20, h = 20;
 
   SkBitmap original_bitmap;
-  MakeTestSkBitmap(w, h, &original_bitmap);
+  MakeTestBGRASkBitmap(w, h, &original_bitmap);
 
   // Encode the bitmap.
   std::vector<unsigned char> encoded;
@@ -1005,11 +1055,35 @@ TEST(PNGCodec, EncodeBGRASkBitmap) {
   }
 }
 
+TEST(PNGCodec, EncodeA8SkBitmap) {
+  const int w = 20, h = 20;
+
+  SkBitmap original_bitmap;
+  MakeTestA8SkBitmap(w, h, &original_bitmap);
+
+  // Encode the bitmap.
+  std::vector<unsigned char> encoded;
+  EXPECT_TRUE(PNGCodec::EncodeA8SkBitmap(original_bitmap, &encoded));
+
+  // Decode the encoded string.
+  SkBitmap decoded_bitmap;
+  EXPECT_TRUE(PNGCodec::Decode(&encoded.front(), encoded.size(),
+                               &decoded_bitmap));
+
+  for (int x = 0; x < w; x++) {
+    for (int y = 0; y < h; y++) {
+      uint8_t original_pixel = *original_bitmap.getAddr8(x, y);
+      uint32_t decoded_pixel = *decoded_bitmap.getAddr32(x, y);
+      EXPECT_TRUE(BGRAGrayEqualsA8Gray(decoded_pixel, original_pixel));
+    }
+  }
+}
+
 TEST(PNGCodec, EncodeBGRASkBitmapDiscardTransparency) {
   const int w = 20, h = 20;
 
   SkBitmap original_bitmap;
-  MakeTestSkBitmap(w, h, &original_bitmap);
+  MakeTestBGRASkBitmap(w, h, &original_bitmap);
 
   // Encode the bitmap.
   std::vector<unsigned char> encoded;
@@ -1085,43 +1159,31 @@ TEST(PNGCodec, EncodeDecodeWithVaryingCompressionLevels) {
 
   // create an image with known values, a must be opaque because it will be
   // lost during encoding
-  std::vector<unsigned char> original;
-  MakeRGBAImage(w, h, true, &original);
+  SkBitmap original_bitmap;
+  MakeTestBGRASkBitmap(w, h, &original_bitmap);
 
   // encode
-  std::vector<unsigned char> encoded_fast;
-  EXPECT_TRUE(PNGCodec::EncodeWithCompressionLevel(
-        &original[0], PNGCodec::FORMAT_RGBA, Size(w, h), w * 4, false,
-        std::vector<PNGCodec::Comment>(), Z_BEST_SPEED, &encoded_fast));
+  std::vector<unsigned char> encoded_normal;
+  EXPECT_TRUE(
+      PNGCodec::EncodeBGRASkBitmap(original_bitmap, false, &encoded_normal));
 
-  std::vector<unsigned char> encoded_best;
-  EXPECT_TRUE(PNGCodec::EncodeWithCompressionLevel(
-        &original[0], PNGCodec::FORMAT_RGBA, Size(w, h), w * 4, false,
-        std::vector<PNGCodec::Comment>(), Z_BEST_COMPRESSION, &encoded_best));
+  std::vector<unsigned char> encoded_fast;
+  EXPECT_TRUE(
+      PNGCodec::FastEncodeBGRASkBitmap(original_bitmap, false, &encoded_fast));
 
   // Make sure the different compression settings actually do something; the
   // sizes should be different.
-  EXPECT_NE(encoded_fast.size(), encoded_best.size());
+  EXPECT_NE(encoded_normal.size(), encoded_fast.size());
 
-  // decode, it should have the same size as the original
-  std::vector<unsigned char> decoded;
-  int outw, outh;
-  EXPECT_TRUE(PNGCodec::Decode(&encoded_fast[0], encoded_fast.size(),
-                               PNGCodec::FORMAT_RGBA, &decoded,
-                               &outw, &outh));
-  ASSERT_EQ(w, outw);
-  ASSERT_EQ(h, outh);
-  ASSERT_EQ(original.size(), decoded.size());
+  // decode, they should be identical to the original.
+  SkBitmap decoded;
+  EXPECT_TRUE(
+      PNGCodec::Decode(&encoded_normal[0], encoded_normal.size(), &decoded));
+  EXPECT_TRUE(BitmapsAreEqual(decoded, original_bitmap));
 
-  EXPECT_TRUE(PNGCodec::Decode(&encoded_best[0], encoded_best.size(),
-                               PNGCodec::FORMAT_RGBA, &decoded,
-                               &outw, &outh));
-  ASSERT_EQ(w, outw);
-  ASSERT_EQ(h, outh);
-  ASSERT_EQ(original.size(), decoded.size());
-
-  // Images must be exactly equal
-  ASSERT_TRUE(original == decoded);
+  EXPECT_TRUE(
+      PNGCodec::Decode(&encoded_fast[0], encoded_fast.size(), &decoded));
+  EXPECT_TRUE(BitmapsAreEqual(decoded, original_bitmap));
 }
 
 

@@ -5,7 +5,7 @@
 #include "content/renderer/mouse_lock_dispatcher.h"
 
 #include "base/logging.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebInputEvent.h"
+#include "third_party/WebKit/public/web/WebInputEvent.h"
 
 namespace content {
 
@@ -58,7 +58,7 @@ bool MouseLockDispatcher::IsMouseLockedTo(LockTarget* target) {
 }
 
 bool MouseLockDispatcher::WillHandleMouseEvent(
-    const WebKit::WebMouseEvent& event) {
+    const blink::WebMouseEvent& event) {
   if (mouse_locked_ && target_)
     return target_->HandleMouseLockedInputEvent(event);
   return false;

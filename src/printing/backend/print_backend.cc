@@ -4,18 +4,6 @@
 
 #include "printing/backend/print_backend.h"
 
-#include <algorithm>
-
-#include "ui/base/text/text_elider.h"
-#include "unicode/uchar.h"
-
-namespace {
-
-const wchar_t kDefaultDocumentTitle[] = L"Untitled Document";
-const int kMaxDocumentTitleLength = 50;
-
-}  // namespace
-
 namespace printing {
 
 PrinterBasicInfo::PrinterBasicInfo()
@@ -25,10 +13,16 @@ PrinterBasicInfo::PrinterBasicInfo()
 PrinterBasicInfo::~PrinterBasicInfo() {}
 
 PrinterSemanticCapsAndDefaults::PrinterSemanticCapsAndDefaults()
-    : color_capable(false),
-      duplex_capable(false),
+    : color_changeable(false),
       color_default(false),
-      duplex_default(UNKNOWN_DUPLEX_MODE) {}
+#if defined (OS_WIN)
+      collate_capable(false),
+      collate_default(false),
+      copies_capable(false),
+#endif
+      duplex_capable(false),
+      duplex_default(UNKNOWN_DUPLEX_MODE) {
+}
 
 PrinterSemanticCapsAndDefaults::~PrinterSemanticCapsAndDefaults() {}
 
@@ -37,15 +31,5 @@ PrinterCapsAndDefaults::PrinterCapsAndDefaults() {}
 PrinterCapsAndDefaults::~PrinterCapsAndDefaults() {}
 
 PrintBackend::~PrintBackend() {}
-
-string16 PrintBackend::SimplifyDocumentTitle(const string16& title) {
-  string16 no_controls(title);
-  no_controls.erase(
-    std::remove_if(no_controls.begin(), no_controls.end(), &u_iscntrl),
-    no_controls.end());
-  string16 result;
-  ui::ElideString(no_controls, kMaxDocumentTitleLength, &result);
-  return result;
-}
 
 }  // namespace printing

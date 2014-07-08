@@ -7,8 +7,8 @@
 #import <UIKit/UIKit.h>
 
 #include "base/basictypes.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/gfx/font.h"
 
 namespace gfx {
@@ -51,13 +51,8 @@ int PlatformFontIOS::GetBaseline() const {
   return ascent_;
 }
 
-int PlatformFontIOS::GetAverageCharacterWidth() const {
-  return average_width_;
-}
-
-int PlatformFontIOS::GetStringWidth(const string16& text) const {
-  NSString* ns_text = base::SysUTF16ToNSString(text);
-  return [ns_text sizeWithFont:GetNativeFont()].width;
+int PlatformFontIOS::GetCapHeight() const {
+  return cap_height_;
 }
 
 int PlatformFontIOS::GetExpectedTextWidth(int length) const {
@@ -70,6 +65,10 @@ int PlatformFontIOS::GetStyle() const {
 
 std::string PlatformFontIOS::GetFontName() const {
   return font_name_;
+}
+
+std::string PlatformFontIOS::GetActualFontNameForTesting() const {
+  return base::SysNSStringToUTF8([GetNativeFont() familyName]);
 }
 
 int PlatformFontIOS::GetFontSize() const {
@@ -103,6 +102,7 @@ void PlatformFontIOS::CalculateMetrics() {
   UIFont* font = GetNativeFont();
   height_ = font.lineHeight;
   ascent_ = font.ascender;
+  cap_height_ = font.capHeight;
   average_width_ = [@"x" sizeWithFont:font].width;
 }
 

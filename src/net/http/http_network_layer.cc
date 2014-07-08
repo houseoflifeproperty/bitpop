@@ -5,9 +5,10 @@
 #include "net/http/http_network_layer.h"
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/power_monitor/power_monitor.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_network_transaction.h"
 #include "net/http/http_server_properties_impl.h"
@@ -23,9 +24,19 @@ HttpNetworkLayer::HttpNetworkLayer(HttpNetworkSession* session)
     : session_(session),
       suspended_(false) {
   DCHECK(session_.get());
+#if defined(OS_WIN)
+ base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+ if (power_monitor)
+   power_monitor->AddObserver(this);
+#endif
 }
 
 HttpNetworkLayer::~HttpNetworkLayer() {
+#if defined(OS_WIN)
+  base::PowerMonitor* power_monitor = base::PowerMonitor::Get();
+  if (power_monitor)
+    power_monitor->RemoveObserver(this);
+#endif
 }
 
 //-----------------------------------------------------------------------------
@@ -42,18 +53,18 @@ HttpTransactionFactory* HttpNetworkLayer::CreateFactory(
 void HttpNetworkLayer::ForceAlternateProtocol() {
   PortAlternateProtocolPair pair;
   pair.port = 443;
-  pair.protocol = NPN_SPDY_2;
+  pair.protocol = NPN_SPDY_3;
   HttpServerPropertiesImpl::ForceAlternateProtocol(pair);
 }
 
 //-----------------------------------------------------------------------------
 
-int HttpNetworkLayer::CreateTransaction(scoped_ptr<HttpTransaction>* trans,
-                                        HttpTransactionDelegate* delegate) {
+int HttpNetworkLayer::CreateTransaction(RequestPriority priority,
+                                        scoped_ptr<HttpTransaction>* trans) {
   if (suspended_)
     return ERR_NETWORK_IO_SUSPENDED;
 
-  trans->reset(new HttpNetworkTransaction(GetSession()));
+  trans->reset(new HttpNetworkTransaction(priority, GetSession()));
   return OK;
 }
 
@@ -61,14 +72,12 @@ HttpCache* HttpNetworkLayer::GetCache() {
   return NULL;
 }
 
-HttpNetworkSession* HttpNetworkLayer::GetSession() {
-  return session_;
-}
+HttpNetworkSession* HttpNetworkLayer::GetSession() { return session_.get(); }
 
 void HttpNetworkLayer::OnSuspend() {
   suspended_ = true;
 
-  if (session_)
+  if (session_.get())
     session_->CloseIdleConnections();
 }
 

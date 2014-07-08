@@ -4,49 +4,48 @@
 
 #include "chrome/browser/ui/webui/constrained_web_dialog_delegate_base.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/ui/views/constrained_window_views.h"
-#include "chrome/browser/ui/views/unhandled_keyboard_event_handler.h"
+#include "base/strings/utf_string_conversions.h"
+#include "components/web_modal/web_contents_modal_dialog_host.h"
+#include "components/web_modal/web_contents_modal_dialog_manager.h"
+#include "components/web_modal/web_contents_modal_dialog_manager_delegate.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "ui/gfx/size.h"
+#include "ui/views/controls/webview/unhandled_keyboard_event_handler.h"
 #include "ui/views/controls/webview/webview.h"
 #include "ui/views/view.h"
+#include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/views/window/dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_ui.h"
 
 using content::WebContents;
 using ui::WebDialogDelegate;
 using ui::WebDialogWebContentsDelegate;
+using web_modal::NativeWebContentsModalDialog;
+using web_modal::WebContentsModalDialogManager;
+using web_modal::WebContentsModalDialogManagerDelegate;
 
 namespace {
 
 class ConstrainedWebDialogDelegateViews
     : public ConstrainedWebDialogDelegateBase {
  public:
-  ConstrainedWebDialogDelegateViews(
-      content::BrowserContext* browser_context,
-      WebDialogDelegate* delegate,
-      WebDialogWebContentsDelegate* tab_delegate,
-      views::WebView* view)
+  ConstrainedWebDialogDelegateViews(content::BrowserContext* browser_context,
+                                    WebDialogDelegate* delegate,
+                                    WebDialogWebContentsDelegate* tab_delegate,
+                                    views::WebView* view)
       : ConstrainedWebDialogDelegateBase(
             browser_context, delegate, tab_delegate),
-        view_(view) {
-    WebContents* web_contents = GetWebContents();
-    if (tab_delegate) {
-      set_override_tab_delegate(tab_delegate);
-      web_contents->SetDelegate(tab_delegate);
-    } else {
-      web_contents->SetDelegate(this);
-    }
-  }
+        view_(view),
+        window_(NULL) {}
 
   virtual ~ConstrainedWebDialogDelegateViews() {}
 
   // WebDialogWebContentsDelegate interface.
   virtual void CloseContents(WebContents* source) OVERRIDE {
-    GetWindow()->CloseConstrainedWindow();
+    window_->Close();
   }
 
   // contents::WebContentsDelegate
@@ -57,11 +56,20 @@ class ConstrainedWebDialogDelegateViews
         event, view_->GetFocusManager());
   }
 
+  // ConstrainedWebDialogDelegate
+  virtual NativeWebContentsModalDialog GetNativeDialog() OVERRIDE {
+    return window_->GetNativeView();
+  }
+
+  void set_window(views::Widget* window) { window_ = window; }
+  views::Widget* window() const { return window_; }
+
  private:
   // Converts keyboard events on the WebContents to accelerators.
-  UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
+  views::UnhandledKeyboardEventHandler unhandled_keyboard_event_handler_;
 
   views::WebView* view_;
+  views::Widget* window_;
 
   DISALLOW_COPY_AND_ASSIGN(ConstrainedWebDialogDelegateViews);
 };
@@ -79,13 +87,8 @@ class ConstrainedWebDialogDelegateViewViews
       WebDialogWebContentsDelegate* tab_delegate);
   virtual ~ConstrainedWebDialogDelegateViewViews();
 
-  void set_window(ConstrainedWindow* window) {
-    return impl_->set_window(window);
-  }
-
   // ConstrainedWebDialogDelegate interface
-  virtual const WebDialogDelegate*
-      GetWebDialogDelegate() const OVERRIDE {
+  virtual const WebDialogDelegate* GetWebDialogDelegate() const OVERRIDE {
     return impl_->GetWebDialogDelegate();
   }
   virtual WebDialogDelegate* GetWebDialogDelegate() OVERRIDE {
@@ -97,8 +100,8 @@ class ConstrainedWebDialogDelegateViewViews
   virtual void ReleaseWebContentsOnDialogClose() OVERRIDE {
     return impl_->ReleaseWebContentsOnDialogClose();
   }
-  virtual ConstrainedWindow* GetWindow() OVERRIDE {
-    return impl_->GetWindow();
+  virtual NativeWebContentsModalDialog GetNativeDialog() OVERRIDE {
+    return impl_->window()->GetNativeView();
   }
   virtual WebContents* GetWebContents() OVERRIDE {
     return impl_->GetWebContents();
@@ -108,7 +111,6 @@ class ConstrainedWebDialogDelegateViewViews
   virtual views::View* GetInitiallyFocusedView() OVERRIDE {
     return this;
   }
-  virtual bool CanResize() const OVERRIDE { return true; }
   virtual void WindowClosing() OVERRIDE {
     if (!impl_->closed_via_webui())
       GetWebDialogDelegate()->OnDialogClosed(std::string());
@@ -119,12 +121,20 @@ class ConstrainedWebDialogDelegateViewViews
   virtual const views::Widget* GetWidget() const OVERRIDE {
     return View::GetWidget();
   }
-  virtual string16 GetWindowTitle() const OVERRIDE {
-    return impl_->closed_via_webui() ? string16() :
+  virtual base::string16 GetWindowTitle() const OVERRIDE {
+    return impl_->closed_via_webui() ? base::string16() :
         GetWebDialogDelegate()->GetDialogTitle();
   }
   virtual views::View* GetContentsView() OVERRIDE {
     return this;
+  }
+  virtual views::NonClientFrameView* CreateNonClientFrameView(
+      views::Widget* widget) OVERRIDE {
+    return views::DialogDelegate::CreateDialogFrameView(widget);
+  }
+  virtual bool ShouldShowCloseButton() const OVERRIDE {
+    // No close button if the dialog doesn't want a title bar.
+    return impl_->GetWebDialogDelegate()->ShouldShowDialogTitle();
   }
 
   virtual ui::ModalType GetModalType() const OVERRIDE {
@@ -135,23 +145,12 @@ class ConstrainedWebDialogDelegateViewViews
 #endif
   }
 
-  virtual void OnWidgetMove() OVERRIDE {
-    // We need to check the existence of the widget because when running on
-    // WinXP this could get executed before the widget is entirely created.
-    if (!GetWidget())
-      return;
-
-    GetWidget()->CenterWindow(
-        GetWidget()->non_client_view()->GetPreferredSize());
-    views::WidgetDelegate::OnWidgetMove();
-  }
-
   // views::WebView overrides.
   virtual bool AcceleratorPressed(
       const ui::Accelerator& accelerator) OVERRIDE {
     // Pressing ESC closes the dialog.
     DCHECK_EQ(ui::VKEY_ESCAPE, accelerator.key_code());
-    GetWindow()->CloseConstrainedWindow();
+    impl_->window()->Close();
     return true;
   }
   virtual gfx::Size GetPreferredSize() OVERRIDE {
@@ -163,6 +162,14 @@ class ConstrainedWebDialogDelegateViewViews
   virtual gfx::Size GetMinimumSize() OVERRIDE {
     // Return an empty size so that we can be made smaller.
     return gfx::Size();
+  }
+
+  void SetWindow(views::Widget* window) {
+    impl_->set_window(window);
+  }
+
+  views::Widget* GetWindow() {
+    return impl_->window();
   }
 
  private:
@@ -183,11 +190,11 @@ ConstrainedWebDialogDelegateViewViews::ConstrainedWebDialogDelegateViewViews(
   SetWebContents(GetWebContents());
 
   // Pressing ESC closes the dialog.
-  set_allow_accelerators(true);
   AddAccelerator(ui::Accelerator(ui::VKEY_ESCAPE, ui::EF_NONE));
 }
 
-ConstrainedWebDialogDelegateViewViews::~ConstrainedWebDialogDelegateViewViews() {
+ConstrainedWebDialogDelegateViewViews::
+~ConstrainedWebDialogDelegateViewViews() {
 }
 
 ConstrainedWebDialogDelegate* CreateConstrainedWebDialog(
@@ -198,8 +205,16 @@ ConstrainedWebDialogDelegate* CreateConstrainedWebDialog(
   ConstrainedWebDialogDelegateViewViews* constrained_delegate =
       new ConstrainedWebDialogDelegateViewViews(
           browser_context, delegate, tab_delegate);
-  ConstrainedWindow* constrained_window =
-      new ConstrainedWindowViews(web_contents, constrained_delegate);
-  constrained_delegate->set_window(constrained_window);
+  WebContentsModalDialogManager* web_contents_modal_dialog_manager =
+      WebContentsModalDialogManager::FromWebContents(web_contents);
+  WebContentsModalDialogManagerDelegate* modal_delegate =
+      web_contents_modal_dialog_manager->delegate();
+  DCHECK(modal_delegate);
+  views::Widget* window = views::Widget::CreateWindowAsFramelessChild(
+      constrained_delegate,
+      modal_delegate->GetWebContentsModalDialogHost()->GetHostView());
+  web_contents_modal_dialog_manager->ShowModalDialog(
+      window->GetNativeView());
+  constrained_delegate->SetWindow(window);
   return constrained_delegate;
 }

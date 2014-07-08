@@ -5,12 +5,11 @@
 #include "chrome/browser/importer/importer_list.h"
 
 #include "base/bind.h"
-#include "chrome/browser/first_run/first_run.h"
-#include "chrome/browser/importer/firefox_importer_utils.h"
-#include "chrome/browser/importer/importer_bridge.h"
-#include "chrome/browser/importer/importer_data_types.h"
-#include "chrome/browser/importer/importer_list_observer.h"
 #include "chrome/browser/shell_integration.h"
+#include "chrome/common/importer/firefox_importer_utils.h"
+#include "chrome/common/importer/importer_bridge.h"
+#include "chrome/common/importer/importer_data_types.h"
+#include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -18,7 +17,7 @@
 #include <CoreFoundation/CoreFoundation.h>
 
 #include "base/mac/foundation_util.h"
-#include "chrome/browser/importer/safari_importer.h"
+#include "chrome/common/importer/safari_importer_utils.h"
 #endif
 
 using content::BrowserThread;
@@ -27,7 +26,8 @@ namespace {
 
 #if defined(OS_WIN)
 void DetectIEProfiles(std::vector<importer::SourceProfile*>* profiles) {
-    // IE always exists and doesn't have multiple profiles.
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  // IE always exists and doesn't have multiple profiles.
   importer::SourceProfile* ie = new importer::SourceProfile;
   ie->importer_name = l10n_util::GetStringUTF16(IDS_IMPORT_FROM_IE);
   ie->importer_type = importer::TYPE_IE;
@@ -41,8 +41,9 @@ void DetectIEProfiles(std::vector<importer::SourceProfile*>* profiles) {
 
 #if defined(OS_MACOSX)
 void DetectSafariProfiles(std::vector<importer::SourceProfile*>* profiles) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
   uint16 items = importer::NONE;
-  if (!SafariImporter::CanImport(base::mac::GetUserLibraryPath(), &items))
+  if (!SafariImporterCanImport(base::mac::GetUserLibraryPath(), &items))
     return;
 
   importer::SourceProfile* safari = new importer::SourceProfile;
@@ -55,14 +56,19 @@ void DetectSafariProfiles(std::vector<importer::SourceProfile*>* profiles) {
 }
 #endif  // defined(OS_MACOSX)
 
-void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
-  FilePath profile_path = GetFirefoxProfilePath();
+// |locale|: The application locale used for lookups in Firefox's
+// locale-specific search engines feature (see firefox_importer.cc for
+// details).
+void DetectFirefoxProfiles(const std::string locale,
+                           std::vector<importer::SourceProfile*>* profiles) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
+  base::FilePath profile_path = GetFirefoxProfilePath();
   if (profile_path.empty())
     return;
 
   // Detects which version of Firefox is installed.
   importer::ImporterType firefox_type;
-  FilePath app_path;
+  base::FilePath app_path;
   int version = 0;
 #if defined(OS_WIN)
   version = GetCurrentFirefoxMajorVersionFromRegistry();
@@ -70,12 +76,10 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
   if (version < 2)
     GetFirefoxVersionAndPathFromProfile(profile_path, &version, &app_path);
 
-  if (version == 2) {
-    firefox_type = importer::TYPE_FIREFOX2;
-  } else if (version >= 3) {
-    firefox_type = importer::TYPE_FIREFOX3;
+  if (version >= 3) {
+    firefox_type = importer::TYPE_FIREFOX;
   } else {
-    // Ignores other versions of firefox.
+    // Ignores old versions of firefox.
     return;
   }
 
@@ -90,89 +94,14 @@ void DetectFirefoxProfiles(std::vector<importer::SourceProfile*>* profiles) {
     firefox->app_path = app_path;
   firefox->services_supported = importer::HISTORY | importer::FAVORITES |
       importer::PASSWORDS | importer::SEARCH_ENGINES;
+  firefox->locale = locale;
   profiles->push_back(firefox);
 }
 
-#if defined(OS_WIN)
-void DetectGoogleToolbarProfiles(
-    std::vector<importer::SourceProfile*>* profiles,
-    scoped_refptr<net::URLRequestContextGetter> request_context_getter) {
-  if (first_run::IsChromeFirstRun())
-    return;
-
-  importer::SourceProfile* google_toolbar = new importer::SourceProfile;
-  google_toolbar->importer_name =
-      l10n_util::GetStringUTF16(IDS_IMPORT_FROM_GOOGLE_TOOLBAR);
-  google_toolbar->importer_type = importer::TYPE_GOOGLE_TOOLBAR5;
-  google_toolbar->source_path.clear();
-  google_toolbar->app_path.clear();
-  google_toolbar->services_supported = importer::FAVORITES;
-  google_toolbar->request_context_getter = request_context_getter;
-  profiles->push_back(google_toolbar);
-}
-#endif
-
-}  // namespace
-
-ImporterList::ImporterList(
-    net::URLRequestContextGetter* request_context_getter)
-    : source_thread_id_(BrowserThread::UI),
-      observer_(NULL),
-      is_observed_(false),
-      source_profiles_loaded_(false) {
- request_context_getter_ = make_scoped_refptr(request_context_getter);
-}
-
-void ImporterList::DetectSourceProfiles(
-    importer::ImporterListObserver* observer) {
-  DCHECK(observer);
-  observer_ = observer;
-  is_observed_ = true;
-
-  bool res = BrowserThread::GetCurrentThreadIdentifier(&source_thread_id_);
-  DCHECK(res);
-
-  BrowserThread::PostTask(
-      BrowserThread::FILE,
-      FROM_HERE,
-      base::Bind(&ImporterList::DetectSourceProfilesWorker, this));
-}
-
-void ImporterList::SetObserver(importer::ImporterListObserver* observer) {
-  observer_ = observer;
-}
-
-void ImporterList::DetectSourceProfilesHack() {
-  DetectSourceProfilesWorker();
-}
-
-const importer::SourceProfile& ImporterList::GetSourceProfileAt(
-    size_t index) const {
-  DCHECK(source_profiles_loaded_);
-  DCHECK_LT(index, count());
-  return *source_profiles_[index];
-}
-
-const importer::SourceProfile& ImporterList::GetSourceProfileForImporterType(
-    int importer_type) const {
-  DCHECK(source_profiles_loaded_);
-
-  for (size_t i = 0; i < count(); ++i) {
-    if (source_profiles_[i]->importer_type == importer_type)
-      return *source_profiles_[i];
-  }
-  NOTREACHED();
-  return *(new importer::SourceProfile);
-}
-
-ImporterList::~ImporterList() {
-}
-
-void ImporterList::DetectSourceProfilesWorker() {
-  // TODO(jhawkins): Remove this condition once DetectSourceProfilesHack is
-  // removed.
-  if (is_observed_)
-    DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
+std::vector<importer::SourceProfile*> DetectSourceProfilesWorker(
+    const std::string& locale,
+    bool include_interactive_profiles) {
+  DCHECK_CURRENTLY_ON(BrowserThread::FILE);
 
   std::vector<importer::SourceProfile*> profiles;
 
@@ -180,56 +109,73 @@ void ImporterList::DetectSourceProfilesWorker() {
   // profile detected, which should be the user's current default.
 #if defined(OS_WIN)
   if (ShellIntegration::IsFirefoxDefaultBrowser()) {
-    DetectFirefoxProfiles(&profiles);
+    DetectFirefoxProfiles(locale, &profiles);
     DetectIEProfiles(&profiles);
   } else {
     DetectIEProfiles(&profiles);
-    DetectFirefoxProfiles(&profiles);
+    DetectFirefoxProfiles(locale, &profiles);
   }
-  // TODO(brg) : Current UI requires win_util.
-  DetectGoogleToolbarProfiles(&profiles, request_context_getter_);
 #elif defined(OS_MACOSX)
   if (ShellIntegration::IsFirefoxDefaultBrowser()) {
-    DetectFirefoxProfiles(&profiles);
+    DetectFirefoxProfiles(locale, &profiles);
     DetectSafariProfiles(&profiles);
   } else {
     DetectSafariProfiles(&profiles);
-    DetectFirefoxProfiles(&profiles);
+    DetectFirefoxProfiles(locale, &profiles);
   }
 #else
-  DetectFirefoxProfiles(&profiles);
+  DetectFirefoxProfiles(locale, &profiles);
 #endif
-
-  // TODO(jhawkins): Remove this condition once DetectSourceProfilesHack is
-  // removed.
-  if (is_observed_) {
-    BrowserThread::PostTask(
-        source_thread_id_,
-        FROM_HERE,
-        base::Bind(&ImporterList::SourceProfilesLoaded, this, profiles));
-  } else {
-    source_profiles_.assign(profiles.begin(), profiles.end());
-    source_profiles_loaded_ = true;
+  if (include_interactive_profiles) {
+    importer::SourceProfile* bookmarks_profile = new importer::SourceProfile;
+    bookmarks_profile->importer_name =
+        l10n_util::GetStringUTF16(IDS_IMPORT_FROM_BOOKMARKS_HTML_FILE);
+    bookmarks_profile->importer_type = importer::TYPE_BOOKMARKS_FILE;
+    bookmarks_profile->services_supported = importer::FAVORITES;
+    profiles.push_back(bookmarks_profile);
   }
+
+  return profiles;
+}
+
+}  // namespace
+
+ImporterList::ImporterList()
+    : weak_ptr_factory_(this) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+}
+
+ImporterList::~ImporterList() {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+}
+
+void ImporterList::DetectSourceProfiles(
+    const std::string& locale,
+    bool include_interactive_profiles,
+    const base::Closure& profiles_loaded_callback) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
+  BrowserThread::PostTaskAndReplyWithResult(
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&DetectSourceProfilesWorker,
+                 locale,
+                 include_interactive_profiles),
+      base::Bind(&ImporterList::SourceProfilesLoaded,
+                 weak_ptr_factory_.GetWeakPtr(),
+                 profiles_loaded_callback));
+}
+
+const importer::SourceProfile& ImporterList::GetSourceProfileAt(
+    size_t index) const {
+  DCHECK_LT(index, count());
+  return *source_profiles_[index];
 }
 
 void ImporterList::SourceProfilesLoaded(
+    const base::Closure& profiles_loaded_callback,
     const std::vector<importer::SourceProfile*>& profiles) {
-  // |observer_| may be NULL if it removed itself before being notified.
-  if (!observer_)
-    return;
-
-  BrowserThread::ID current_thread_id;
-  BrowserThread::GetCurrentThreadIdentifier(&current_thread_id);
-  DCHECK_EQ(current_thread_id, source_thread_id_);
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   source_profiles_.assign(profiles.begin(), profiles.end());
-  source_profiles_loaded_ = true;
-  source_thread_id_ = BrowserThread::UI;
-
-  observer_->OnSourceProfilesLoaded();
-  observer_ = NULL;
-
-  // TODO(jhawkins): Remove once DetectSourceProfilesHack is removed.
-  is_observed_ = false;
+  profiles_loaded_callback.Run();
 }

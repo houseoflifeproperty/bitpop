@@ -6,19 +6,19 @@
 #include "chrome/installer/util/duplicate_tree_detector.h"
 
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 
 namespace installer {
 
-bool IsIdenticalFileHierarchy(const FilePath& src_path,
-                              const FilePath& dest_path) {
-  using file_util::FileEnumerator;
-  base::PlatformFileInfo src_info;
-  base::PlatformFileInfo dest_info;
+bool IsIdenticalFileHierarchy(const base::FilePath& src_path,
+                              const base::FilePath& dest_path) {
+  base::File::Info src_info;
+  base::File::Info dest_info;
 
   bool is_identical = false;
-  if (file_util::GetFileInfo(src_path, &src_info) &&
-      file_util::GetFileInfo(dest_path, &dest_info)) {
+  if (base::GetFileInfo(src_path, &src_info) &&
+      base::GetFileInfo(dest_path, &dest_info)) {
     // Both paths exist, check the types:
     if (!src_info.is_directory && !dest_info.is_directory) {
       // Two files are "identical" if the file sizes are equivalent.
@@ -35,9 +35,10 @@ bool IsIdenticalFileHierarchy(const FilePath& src_path,
       // "identical" to all the entries in src_path.
       is_identical = true;
 
-      FileEnumerator path_enum(src_path, false /* not recursive */,
-          FileEnumerator::FILES | FileEnumerator::DIRECTORIES);
-      for (FilePath path = path_enum.Next(); is_identical && !path.empty();
+      base::FileEnumerator path_enum(src_path, false /* not recursive */,
+          base::FileEnumerator::FILES | base::FileEnumerator::DIRECTORIES);
+      for (base::FilePath path = path_enum.Next();
+           is_identical && !path.empty();
            path = path_enum.Next()) {
         is_identical =
             IsIdenticalFileHierarchy(path, dest_path.Append(path.BaseName()));

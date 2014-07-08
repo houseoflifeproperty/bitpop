@@ -13,9 +13,8 @@ SpellingEngine* CreateNativeSpellingEngine() {
   return new CocoaSpellingEngine();
 }
 
-void CocoaSpellingEngine::Init(base::PlatformFile bdict_file,
-                               const std::vector<std::string>&) {
-  DCHECK(bdict_file == base::kInvalidPlatformFileValue);
+void CocoaSpellingEngine::Init(base::File bdict_file) {
+  DCHECK(!bdict_file.IsValid());
 }
 
 bool CocoaSpellingEngine::InitializeIfNeeded() {
@@ -26,31 +25,23 @@ bool CocoaSpellingEngine::IsEnabled() {
   return true;  // OSX is always enabled.
 }
 
-// Synchronously query against CocoaSpellinger.
+// Synchronously query against NSSpellCheck.
 // TODO(groby): We might want async support here, too. Ideally,
 // all engines share a similar path for async requests.
-bool CocoaSpellingEngine::CheckSpelling(const string16& word_to_check,
-                                           int tag) {
+bool CocoaSpellingEngine::CheckSpelling(const base::string16& word_to_check,
+                                        int tag) {
   bool word_correct = false;
   RenderThread::Get()->Send(new SpellCheckHostMsg_CheckSpelling(
       word_to_check, tag, &word_correct));
   return word_correct;
 }
 
-// Synchronously query against CocoaSpellinger.
+// Synchronously query against NSSpellCheck.
 // TODO(groby): We might want async support here, too. Ideally,
 // all engines share a similar path for async requests.
 void CocoaSpellingEngine::FillSuggestionList(
-    const string16& wrong_word,
-    std::vector<string16>* optional_suggestions) {
+    const base::string16& wrong_word,
+    std::vector<base::string16>* optional_suggestions) {
     RenderThread::Get()->Send(new SpellCheckHostMsg_FillSuggestionList(
         wrong_word, optional_suggestions));
-}
-
-void CocoaSpellingEngine::OnWordAdded(const std::string&) {
-  // OSX doesn't support the custom dictionary yet.
-}
-
-void CocoaSpellingEngine::OnWordRemoved(const std::string&) {
-  // OSX doesn't support the custom dictionary yet.
 }

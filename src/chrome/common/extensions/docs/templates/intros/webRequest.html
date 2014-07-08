@@ -1,25 +1,22 @@
-<p id="classSummary">
-Use the <code>chrome.webRequest</code> module to intercept, block,
-or modify requests in-flight and to observe and analyze traffic.
-</p>
-
 <h2 id="manifest">Manifest</h2>
 <p>You must declare the "webRequest" permission in the <a
   href="manifest.html">extension manifest</a> to use the web request
-API, along with <a href="manifest.html#permissions">host permissions</a>
+API, along with <a href="declare_permissions.html">host permissions</a>
 for any hosts whose network requests you want to access. If you want to
 use the web request API in a blocking fashion, you need to request
 the "webRequestBlocking" permission in addition.
 For example:</p>
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"permissions": [
     "webRequest",
-    "*://*.google.com"
+    "*://*.google.com/"
   ]</b>,
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="life_cycle">Life cycle of requests</h2>
 
@@ -61,7 +58,8 @@ event definitions:<br/>
   <dd>Fires each time that an HTTP(S) response header is received. Due
   to redirects and authentication requests this can happen multiple times per
   request. This event is intended to allow extensions to add, modify, and delete
-  response headers, such as incoming Set-Cookie headers.</dd>
+  response headers, such as incoming Set-Cookie headers. It also allows you to
+  redirect the request.</dd>
   <dt><code>onAuthRequired</code> (optionally synchronous)</dt>
   <dd>Fires when a request requires authentication of the user. This event can
   be handled synchronously to provide authentication credentials. Note that
@@ -119,7 +117,7 @@ complete nor stable.
 <p>
 The webRequest API only exposes requests that the extension has
 permission to see, given its
-<a href="manifest.html#permissions">host permissions</a>.
+<a href="declare_permissions.html">host permissions</a>.
 Moreover, only the following schemes are accessible:
 <code>http://</code>,
 <code>https://</code>,
@@ -135,6 +133,11 @@ the request,
 and others (this list is not complete). Also synchronous XMLHttpRequests from
 your extension are hidden from blocking event handlers in order to prevent
 deadlocks.
+Note that for some of the supported schemes the set of available events might be
+limited due to the nature of the corresponding protocol.
+For example, for the <q>file:</q> scheme, only <code>onBeforeRequest</code>,
+<code>onResponseStarted</code>, <code>onCompleted</code>, and
+<code>onErrorOccurred</code> may be dispatched.
 </p>
 
 <h2 id="concepts">Concepts</h2>
@@ -183,15 +186,15 @@ depends on the specific event type as well as the content of
 <p>If the optional <code>opt_extraInfoSpec</code> array contains the string
 <code>'blocking'</code> (only allowed for specific events), the callback
 function is handled synchronously. That means that the request is blocked until
-the callback function returns. In this case, the callback can return a 
-  $ref:webRequest.BlockingResponse that determines the further
+the callback function returns. In this case, the callback can return a
+  $(ref:webRequest.BlockingResponse) that determines the further
 life cycle of the request. Depending on the context, this response allows
 cancelling or redirecting a request (<code>onBeforeRequest</code>), cancelling a
 request or modifying headers (<code>onBeforeSendHeaders</code>,
 <code>onHeadersReceived</code>), or providing authentication credentials
 (<code>onAuthRequired</code>).</p>
 
-<p>The $ref:webRequest.RequestFilter
+<p>The $(ref:webRequest.RequestFilter)
 <code>filter</code> allows limiting the requests for which events are
 triggered in various dimensions:
 <dl>
@@ -202,7 +205,7 @@ triggered in various dimensions:
   <dd>Request types such as <code>main_frame</code> (a document that is loaded
   for a top-level frame), <code>sub_frame</code> (a document that is loaded for
   an embedded frame), and <code>image</code> (an image on a web site).
-  See $ref:webRequest.RequestFilter.</dd>
+  See $(ref:webRequest.RequestFilter).</dd>
   <dt>Tab ID</dt>
   <dd>The identifier for one tab.</dd>
   <dt>Window ID</dt>

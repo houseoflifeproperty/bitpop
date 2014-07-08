@@ -4,16 +4,16 @@
 
 #include "ui/views/test/child_modal_window.h"
 
-#include "base/utf_string_conversions.h"  // ASCIIToUTF16
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/canvas.h"
 #include "ui/views/background.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/controls/textfield/textfield.h"
-#include "ui/views/corewm/window_modality_controller.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
+#include "ui/wm/core/window_modality_controller.h"
 
 namespace views {
 namespace test {
@@ -45,9 +45,10 @@ const SkColor kChildColor = SK_ColorWHITE;
 
 }  // namespace
 
-void CreateChildModalParent() {
-  Widget::CreateWindowWithBounds(
-      new ChildModalParent,
+void CreateChildModalParent(gfx::NativeView context) {
+  Widget::CreateWindowWithContextAndBounds(
+      new ChildModalParent(context),
+      context,
       gfx::Rect(kWindowLeft, kWindowTop, kWindowWidth, kWindowHeight))->Show();
 }
 
@@ -64,7 +65,7 @@ class ChildModalWindow : public WidgetDelegateView {
 
   // Overridden from WidgetDelegate:
   virtual View* GetContentsView() OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual bool CanResize() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
 
@@ -94,8 +95,8 @@ View* ChildModalWindow::GetContentsView() {
   return this;
 }
 
-string16 ChildModalWindow::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Child Modal Window");
+base::string16 ChildModalWindow::GetWindowTitle() const {
+  return base::ASCIIToUTF16("Examples: Child Modal Window");
 }
 
 bool ChildModalWindow::CanResize() const {
@@ -106,15 +107,18 @@ ui::ModalType ChildModalWindow::GetModalType() const {
   return ui::MODAL_TYPE_CHILD;
 }
 
-ChildModalParent::ChildModalParent()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(button_(new NativeTextButton(
-          this, ASCIIToUTF16("Show/Hide Child Modal Window")))),
+ChildModalParent::ChildModalParent(gfx::NativeView context)
+    : button_(new LabelButton(this,
+                              base::ASCIIToUTF16(
+                                  "Show/Hide Child Modal Window"))),
       textfield_(new Textfield),
       host_(new NativeViewHost),
       modal_parent_(NULL),
       child_(NULL) {
   Widget* widget = new Widget;
-  widget->Init(Widget::InitParams(Widget::InitParams::TYPE_CONTROL));
+  Widget::InitParams params(Widget::InitParams::TYPE_CONTROL);
+  params.context = context;
+  widget->Init(params);
   widget->GetRootView()->set_background(
       Background::CreateSolidBackground(kModalParentColor));
   modal_parent_ = widget->GetNativeView();
@@ -146,7 +150,7 @@ gfx::NativeWindow ChildModalParent::GetChild() const {
 Widget* ChildModalParent::CreateChild() {
   Widget* child = Widget::CreateWindowWithParent(
       new ChildModalWindow, GetWidget()->GetNativeView());
-  corewm::SetModalParent(child->GetNativeView(), GetModalParent());
+  wm::SetModalParent(child->GetNativeView(), GetModalParent());
   child->AddObserver(this);
   child->GetNativeView()->SetName("ChildModalWindow");
   return child;
@@ -156,8 +160,8 @@ View* ChildModalParent::GetContentsView() {
   return this;
 }
 
-string16 ChildModalParent::GetWindowTitle() const {
-  return ASCIIToUTF16("Examples: Child Modal Parent");
+base::string16 ChildModalParent::GetWindowTitle() const {
+  return base::ASCIIToUTF16("Examples: Child Modal Parent");
 }
 
 bool ChildModalParent::CanResize() const {
@@ -170,6 +174,8 @@ void ChildModalParent::DeleteDelegate() {
     child_->Close();
     child_ = NULL;
   }
+
+  delete this;
 }
 
 void ChildModalParent::Layout() {
@@ -181,10 +187,9 @@ void ChildModalParent::Layout() {
   host_->SetBounds(x(), running_y, width(), height() - running_y);
 }
 
-void ChildModalParent::ViewHierarchyChanged(bool is_add,
-                                            View* parent,
-                                            View* child) {
-  if (is_add && child == this) {
+void ChildModalParent::ViewHierarchyChanged(
+    const ViewHierarchyChangedDetails& details) {
+  if (details.is_add && details.child == this) {
     host_->Attach(modal_parent_);
     GetWidget()->GetNativeView()->SetName("Parent");
   }
@@ -202,7 +207,7 @@ void ChildModalParent::ButtonPressed(Button* sender,
   }
 }
 
-void ChildModalParent::OnWidgetClosing(Widget* widget) {
+void ChildModalParent::OnWidgetDestroying(Widget* widget) {
   if (child_) {
     DCHECK_EQ(child_, widget);
     child_ = NULL;

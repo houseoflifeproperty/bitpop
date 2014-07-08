@@ -8,17 +8,20 @@
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_member.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/profiles/profile_downloader.h"
 #include "chrome/browser/profiles/profile_downloader_delegate.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "components/signin/core/browser/signin_manager.h"
 
 class Profile;
 class ProfileDownloader;
 
 // This service kicks off a download of the user's name and profile picture.
 // The results are saved in the profile info cache.
-class GAIAInfoUpdateService : public ProfileDownloaderDelegate {
+class GAIAInfoUpdateService : public KeyedService,
+                              public ProfileDownloaderDelegate,
+                              public SigninManagerBase::Observer {
  public:
   explicit GAIAInfoUpdateService(Profile* profile);
   virtual ~GAIAInfoUpdateService();
@@ -28,9 +31,6 @@ class GAIAInfoUpdateService : public ProfileDownloaderDelegate {
 
   // Checks if downloading GAIA info for the given profile is allowed.
   static bool ShouldUseGAIAProfileInfo(Profile* profile);
-
-  // Register prefs for a profile.
-  static void RegisterUserPrefs(PrefServiceBase* prefs);
 
   // ProfileDownloaderDelegate:
   virtual bool NeedsProfilePicture() const OVERRIDE;
@@ -42,15 +42,22 @@ class GAIAInfoUpdateService : public ProfileDownloaderDelegate {
       ProfileDownloader* downloader,
       ProfileDownloaderDelegate::FailureReason reason) OVERRIDE;
 
+  // Overridden from KeyedService:
+  virtual void Shutdown() OVERRIDE;
+
  private:
   FRIEND_TEST_ALL_PREFIXES(GAIAInfoUpdateServiceTest, ScheduleUpdate);
 
-  void OnUsernameChanged();
+  void OnUsernameChanged(const std::string& username);
   void ScheduleNextUpdate();
+
+  // Overridden from SigninManagerBase::Observer:
+  virtual void GoogleSigninSucceeded(const std::string& username,
+                                     const std::string& password) OVERRIDE;
+  virtual void GoogleSignedOut(const std::string& username) OVERRIDE;
 
   Profile* profile_;
   scoped_ptr<ProfileDownloader> profile_image_downloader_;
-  StringPrefMember username_pref_;
   base::Time last_updated_;
   base::OneShotTimer<GAIAInfoUpdateService> timer_;
 

@@ -8,18 +8,26 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
-#include "base/threading/non_thread_safe.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/memory/shared_memory.h"
+#include "base/threading/thread_checker.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/c/pp_module.h"
+#include "ppapi/c/pp_resource.h"
 #include "ppapi/c/pp_var.h"
+#include "ppapi/shared_impl/host_resource.h"
 #include "ppapi/shared_impl/ppapi_shared_export.h"
+#include "ppapi/shared_impl/var.h"
+
+namespace IPC {
+class Message;
+}  // namespace IPC
 
 namespace ppapi {
 
 class ArrayBufferVar;
-class Var;
 
 // Tracks non-POD (refcounted) var objects held by a plugin.
 //
@@ -33,16 +41,14 @@ class Var;
 // This class maintains the "track_with_no_reference_count" but doesn't do
 // anything with it other than call virtual functions. The interesting parts
 // are added by the PluginObjectVar derived from this class.
-class PPAPI_SHARED_EXPORT VarTracker
-#ifdef ENABLE_PEPPER_THREADING
-    : NON_EXPORTED_BASE(public base::NonThreadSafeDoNothing) {
-#else
-    // TODO(dmichael): Remove the thread checking when calls are allowed off the
-    // main thread (crbug.com/92909).
-    : NON_EXPORTED_BASE(public base::NonThreadSafe) {
-#endif
+class PPAPI_SHARED_EXPORT VarTracker {
  public:
-  VarTracker();
+  // A SINGLE_THREADED VarTracker will use a thread-checker to make sure it's
+  // always invoked on the same thread on which it was constructed. A
+  // THREAD_SAFE VarTracker will check that the ProxyLock is held. See
+  // CheckThreadingPreconditions() for more details.
+  enum ThreadMode { SINGLE_THREADED, THREAD_SAFE };
+  explicit VarTracker(ThreadMode thread_mode);
   virtual ~VarTracker();
 
   // Called by the Var object to add a new var to the tracker.
@@ -72,9 +78,43 @@ class PPAPI_SHARED_EXPORT VarTracker
   PP_Var MakeArrayBufferPPVar(uint32 size_in_bytes);
   // Same as above, but copy the contents of |data| in to the new array buffer.
   PP_Var MakeArrayBufferPPVar(uint32 size_in_bytes, const void* data);
+  // Same as above, but copy the contents of the shared memory in |h|
+  // into the new array buffer.
+  PP_Var MakeArrayBufferPPVar(uint32 size_in_bytes, base::SharedMemoryHandle h);
 
-  // Return a vector containing all PP_Vars that are in the tracker. This is
-  // to help implement PPB_Testing_Dev.GetLiveVars and should generally not be
+  // Create an ArrayBuffer and copy the contents of |data| in to it. The
+  // returned object has 0 reference count in the tracker, and like all
+  // RefCounted objects, has a 0 initial internal reference count. (You should
+  // usually immediately put this in a scoped_refptr).
+  ArrayBufferVar* MakeArrayBufferVar(uint32 size_in_bytes, const void* data);
+
+  // Creates a new resource var from a resource creation message. Returns a
+  // PP_Var that references a new PP_Resource, both with an initial reference
+  // count of 1. On the host side, |creation_message| is ignored, and an empty
+  // resource var is always returned.
+  virtual PP_Var MakeResourcePPVarFromMessage(
+      PP_Instance instance,
+      const IPC::Message& creation_message,
+      int pending_renderer_id,
+      int pending_browser_id) = 0;
+
+  // Creates a new resource var that points to a given resource ID. Returns a
+  // PP_Var that references it and has an initial reference count of 1.
+  // If |pp_resource| is 0, returns a valid, empty resource var. On the plugin
+  // side (where it is possible to tell which resources exist), if |pp_resource|
+  // does not exist, returns a null var.
+  PP_Var MakeResourcePPVar(PP_Resource pp_resource);
+
+  // Creates a new resource var that points to a given resource ID. This is
+  // implemented by the host and plugin tracker separately, because the plugin
+  // keeps a reference to the resource, and the host does not.
+  // If |pp_resource| is 0, returns a valid, empty resource var. On the plugin
+  // side (where it is possible to tell which resources exist), if |pp_resource|
+  // does not exist, returns NULL.
+  virtual ResourceVar* MakeResourceVar(PP_Resource pp_resource) = 0;
+
+  // Return a vector containing all PP_Vars that are in the tracker. This is to
+  // help implement PPB_Testing_Private.GetLiveVars and should generally not be
   // used in production code. The PP_Vars are returned in no particular order,
   // and their reference counts are unaffected.
   std::vector<PP_Var> GetLiveVars();
@@ -85,11 +125,30 @@ class PPAPI_SHARED_EXPORT VarTracker
   int GetRefCountForObject(const PP_Var& object);
   int GetTrackedWithNoReferenceCountForObject(const PP_Var& object);
 
+  // Returns true if the given vartype is refcounted and has associated objects
+  // (it's not POD).
+  static bool IsVarTypeRefcounted(PP_VarType type);
+
   // Called after an instance is deleted to do var cleanup.
   virtual void DidDeleteInstance(PP_Instance instance) = 0;
 
+  // Returns an "id" for a shared memory handle that can be safely sent between
+  // the host and plugin, and resolved back into the original handle on the
+  // host. Not implemented on the plugin side.
+  virtual int TrackSharedMemoryHandle(PP_Instance instance,
+                                      base::SharedMemoryHandle handle,
+                                      uint32 size_in_bytes) = 0;
+
+  // Resolves an "id" generated by TrackSharedMemoryHandle back into
+  // a SharedMemory handle and its size on the host.
+  // Not implemented on the plugin side.
+  virtual bool StopTrackingSharedMemoryHandle(int id,
+                                              PP_Instance instance,
+                                              base::SharedMemoryHandle* handle,
+                                              uint32* size_in_bytes) = 0;
+
  protected:
-  struct VarInfo {
+  struct PPAPI_SHARED_EXPORT VarInfo {
     VarInfo();
     VarInfo(Var* v, int input_ref_count);
 
@@ -119,6 +178,10 @@ class PPAPI_SHARED_EXPORT VarTracker
     ADD_VAR_CREATE_WITH_NO_REFERENCE
   };
 
+  // On the host-side, make sure we are called on the right thread. On the
+  // plugin side, make sure we have the proxy lock.
+  void CheckThreadingPreconditions() const;
+
   // Implementation of AddVar that allows the caller to specify whether the
   // initial refcount of the added object will be 0 or 1.
   //
@@ -129,10 +192,6 @@ class PPAPI_SHARED_EXPORT VarTracker
   VarMap::iterator GetLiveVar(int32 id);
   VarMap::iterator GetLiveVar(const PP_Var& var);
   VarMap::const_iterator GetLiveVar(const PP_Var& var) const;
-
-  // Returns true if the given vartype is refcounted and has associated objects
-  // (it's not POD).
-  bool IsVarTypeRefcounted(PP_VarType type) const;
 
   // Called when AddRefVar increases a "tracked" ProxyObject's refcount from
   // zero to one. In the plugin side of the proxy, we need to send some
@@ -165,6 +224,15 @@ class PPAPI_SHARED_EXPORT VarTracker
   // implemented by the Host and Plugin tracker separately, so that it can be
   // a real WebKit ArrayBuffer on the host side.
   virtual ArrayBufferVar* CreateArrayBuffer(uint32 size_in_bytes) = 0;
+  virtual ArrayBufferVar* CreateShmArrayBuffer(
+      uint32 size_in_bytes,
+      base::SharedMemoryHandle handle) = 0;
+
+  // On the host side, we want to check that we are only called on the main
+  // thread. This is to protect us from accidentally using the tracker from
+  // other threads (especially the IO thread). On the plugin side, the tracker
+  // is protected by the proxy lock and is thread-safe, so this will be NULL.
+  scoped_ptr<base::ThreadChecker> thread_checker_;
 
   DISALLOW_COPY_AND_ASSIGN(VarTracker);
 };

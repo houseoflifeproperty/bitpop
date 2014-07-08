@@ -25,7 +25,9 @@ Write and read amr data according to RFC3267, http://www.ietf.org/rfc/rfc3267.tx
 Only mono files are supported.
 
 */
+
 #include "libavutil/avassert.h"
+#include "libavutil/channel_layout.h"
 #include "avformat.h"
 #include "internal.h"
 
@@ -54,7 +56,6 @@ static int amr_write_header(AVFormatContext *s)
 static int amr_write_packet(AVFormatContext *s, AVPacket *pkt)
 {
     avio_write(s->pb, pkt->data, pkt->size);
-    avio_flush(s->pb);
     return 0;
 }
 #endif /* CONFIG_AMR_MUXER */
@@ -98,6 +99,7 @@ static int amr_read_header(AVFormatContext *s)
         st->codec->sample_rate = 8000;
     }
     st->codec->channels   = 1;
+    st->codec->channel_layout = AV_CH_LAYOUT_MONO;
     st->codec->codec_type = AVMEDIA_TYPE_AUDIO;
     avpriv_set_pts_info(st, 64, 1, st->codec->sample_rate);
 
@@ -130,8 +132,6 @@ static int amr_read_packet(AVFormatContext *s, AVPacket *pkt)
         };
 
         size = packed_size[mode];
-    } else {
-        av_assert0(0);
     }
 
     if (!size || av_new_packet(pkt, size))

@@ -2,14 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-namespace pushMessaging{
+// Use <code>chrome.pushMessaging</code> to enable apps and extensions to
+// receive message data sent through
+// <a href="cloudMessaging.html">Google Cloud Messaging</a>.
+namespace pushMessaging {
 
   dictionary Message {
     // The subchannel the message was sent on;
     // only values 0-3 are valid.
     long subchannelId;
 
-    // The payload associated with the message, if any.
+    // The payload associated with the message, if any. This should not contain
+    // any personally identifiable information.
     DOMString payload;
   };
 

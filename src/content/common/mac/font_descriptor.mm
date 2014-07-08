@@ -6,14 +6,14 @@
 
 #include <Cocoa/Cocoa.h>
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 FontDescriptor::FontDescriptor(NSFont* font) {
   font_name = base::SysNSStringToUTF16([font fontName]);
   font_point_size = [font pointSize];
 }
 
-FontDescriptor::FontDescriptor(string16 name, float size) {
+FontDescriptor::FontDescriptor(base::string16 name, float size) {
   font_name = name;
   font_point_size = size;
 }

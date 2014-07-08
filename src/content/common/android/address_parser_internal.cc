@@ -7,7 +7,7 @@
 #include <bitset>
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 
 namespace {
 
@@ -20,23 +20,23 @@ const size_t kZipPlus4Digits = 9;
 // Maximum number of digits of a house number, including possible hyphens.
 const size_t kMaxHouseDigits = 5;
 
-char16 SafePreviousChar(const string16::const_iterator& it,
-    const string16::const_iterator& begin) {
+base::char16 SafePreviousChar(const base::string16::const_iterator& it,
+    const base::string16::const_iterator& begin) {
   if (it == begin)
     return ' ';
   return *(it - 1);
 }
 
-char16 SafeNextChar(const string16::const_iterator& it,
-    const string16::const_iterator& end) {
+base::char16 SafeNextChar(const base::string16::const_iterator& it,
+    const base::string16::const_iterator& end) {
   if (it == end)
     return ' ';
   return *(it + 1);
 }
 
-bool WordLowerCaseEqualsASCII(string16::const_iterator word_begin,
-    string16::const_iterator word_end, const char* ascii_to_match) {
-  for (string16::const_iterator it = word_begin; it != word_end;
+bool WordLowerCaseEqualsASCII(base::string16::const_iterator word_begin,
+    base::string16::const_iterator word_end, const char* ascii_to_match) {
+  for (base::string16::const_iterator it = word_begin; it != word_end;
       ++it, ++ascii_to_match) {
     if (!*ascii_to_match || base::ToLowerASCII(*it) != *ascii_to_match)
       return false;
@@ -44,10 +44,10 @@ bool WordLowerCaseEqualsASCII(string16::const_iterator word_begin,
   return *ascii_to_match == 0 || *ascii_to_match == ' ';
 }
 
-bool LowerCaseEqualsASCIIWithPlural(string16::const_iterator word_begin,
-    string16::const_iterator word_end, const char* ascii_to_match,
+bool LowerCaseEqualsASCIIWithPlural(base::string16::const_iterator word_begin,
+    base::string16::const_iterator word_end, const char* ascii_to_match,
     bool allow_plural) {
-  for (string16::const_iterator it = word_begin; it != word_end;
+  for (base::string16::const_iterator it = word_begin; it != word_end;
       ++it, ++ascii_to_match) {
     if (!*ascii_to_match && allow_plural && *it == 's' && it + 1 == word_end)
       return true;
@@ -66,18 +66,18 @@ namespace address_parser {
 
 namespace internal {
 
-Word::Word(const string16::const_iterator& begin,
-           const string16::const_iterator& end)
+Word::Word(const base::string16::const_iterator& begin,
+           const base::string16::const_iterator& end)
     : begin(begin),
       end(end) {
   DCHECK(begin <= end);
 }
 
-bool HouseNumberParser::IsPreDelimiter(char16 character) {
+bool HouseNumberParser::IsPreDelimiter(base::char16 character) {
   return character == ':' || IsPostDelimiter(character);
 }
 
-bool HouseNumberParser::IsPostDelimiter(char16 character) {
+bool HouseNumberParser::IsPostDelimiter(base::char16 character) {
   return IsWhitespace(character) || strchr(",\"'", character);
 }
 
@@ -115,8 +115,8 @@ bool HouseNumberParser::CheckFinished(Word* word) const {
 }
 
 bool HouseNumberParser::Parse(
-    const string16::const_iterator& begin,
-    const string16::const_iterator& end, Word* word) {
+    const base::string16::const_iterator& begin,
+    const base::string16::const_iterator& end, Word* word) {
   it_ = begin_ = begin;
   end_ = end;
   ResetState();
@@ -161,10 +161,10 @@ bool HouseNumberParser::Parse(
       // There should be more than 1 character because of result_chars.
       DCHECK_GT(result_chars_, 0U);
       DCHECK(it_ != begin_);
-      char16 previous = SafePreviousChar(it_, begin_);
+      base::char16 previous = SafePreviousChar(it_, begin_);
       if (IsAsciiDigit(previous)) {
         // Check cases like '12A'.
-        char16 next = SafeNextChar(it_, end_);
+        base::char16 next = SafeNextChar(it_, end_);
         if (IsPostDelimiter(next)) {
           AcceptChars(1);
           continue;
@@ -172,9 +172,9 @@ bool HouseNumberParser::Parse(
 
         // Handle cases like 12a, 1st, 2nd, 3rd, 7th.
         if (IsAsciiAlpha(next)) {
-          char16 last_digit = previous;
-          char16 first_letter = base::ToLowerASCII(*it_);
-          char16 second_letter = base::ToLowerASCII(next);
+          base::char16 last_digit = previous;
+          base::char16 first_letter = base::ToLowerASCII(*it_);
+          base::char16 second_letter = base::ToLowerASCII(next);
           bool is_teen = SafePreviousChar(it_ - 1, begin_) == '1' &&
               num_digits_ == 2;
 
@@ -348,7 +348,7 @@ bool FindStateStartingInWord(WordList* words,
     return false;
 
   // No state names start with x, y, z.
-  char16 first_letter = base::ToLowerASCII(*first_word.begin);
+  base::char16 first_letter = base::ToLowerASCII(*first_word.begin);
   if (first_letter > 'w')
     return false;
 
@@ -357,7 +357,7 @@ bool FindStateStartingInWord(WordList* words,
 
   // Look for two-letter state names.
   if (length == 2 && IsAsciiAlpha(*(first_word.begin + 1))) {
-    char16 second_letter = base::ToLowerASCII(*(first_word.begin + 1));
+    base::char16 second_letter = base::ToLowerASCII(*(first_word.begin + 1));
     DCHECK(second_letter >= 'a');
 
     int second_index = second_letter - 'a';
@@ -417,7 +417,7 @@ bool IsZipValid(const Word& word, size_t state_index) {
   if (length != kZipDigits && length != kZipPlus4Digits + 1)
     return false;
 
-  for (string16::const_iterator it = word.begin; it != word.end; ++it) {
+  for (base::string16::const_iterator it = word.begin; it != word.end; ++it) {
     size_t pos = it - word.begin;
     if (IsAsciiDigit(*it) || (*it == '-' && pos == kZipDigits))
       continue;
@@ -596,7 +596,7 @@ bool IsValidLocationName(const Word& word) {
     return false;
 
   // No location names start with y, z.
-  char16 first_letter = base::ToLowerASCII(*word.begin);
+  base::char16 first_letter = base::ToLowerASCII(*word.begin);
   if (first_letter > 'x')
     return false;
 

@@ -19,20 +19,20 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/time/time.h"
 #include "net/base/cache_type.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_network_session.h"
 #include "net/http/http_transaction_factory.h"
-#include "net/http/infinite_cache.h"
 
 class GURL;
 
@@ -60,7 +60,6 @@ class ViewCacheHelper;
 struct HttpRequestInfo;
 
 class NET_EXPORT HttpCache : public HttpTransactionFactory,
-                             public base::SupportsWeakPtr<HttpCache>,
                              NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // The cache mode of operation.
@@ -89,7 +88,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // The implementation must not access the factory object after invoking the
     // |callback| because the object can be deleted from within the callback.
     virtual int CreateBackend(NetLog* net_log,
-                              disk_cache::Backend** backend,
+                              scoped_ptr<disk_cache::Backend>* backend,
                               const CompletionCallback& callback) = 0;
   };
 
@@ -99,7 +98,8 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // |path| is the destination for any files used by the backend, and
     // |cache_thread| is the thread where disk operations should take place. If
     // |max_bytes| is  zero, a default value will be calculated automatically.
-    DefaultBackend(CacheType type, const FilePath& path, int max_bytes,
+    DefaultBackend(CacheType type, BackendType backend_type,
+                   const base::FilePath& path, int max_bytes,
                    base::MessageLoopProxy* thread);
     virtual ~DefaultBackend();
 
@@ -108,12 +108,13 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
     // BackendFactory implementation.
     virtual int CreateBackend(NetLog* net_log,
-                              disk_cache::Backend** backend,
+                              scoped_ptr<disk_cache::Backend>* backend,
                               const CompletionCallback& callback) OVERRIDE;
 
    private:
     CacheType type_;
-    const FilePath path_;
+    BackendType backend_type_;
+    const base::FilePath path_;
     int max_bytes_;
     scoped_refptr<base::MessageLoopProxy> thread_;
   };
@@ -162,8 +163,11 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // referenced by |url|, as long as the entry's |expected_response_time| has
   // not changed. This method returns without blocking, and the operation will
   // be performed asynchronously without any completion notification.
-  void WriteMetadata(const GURL& url, base::Time expected_response_time,
-                     IOBuffer* buf, int buf_len);
+  void WriteMetadata(const GURL& url,
+                     RequestPriority priority,
+                     base::Time expected_response_time,
+                     IOBuffer* buf,
+                     int buf_len);
 
   // Get/Set the cache's mode.
   void set_mode(Mode value) { mode_ = value; }
@@ -182,18 +186,27 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   void OnExternalCacheHit(const GURL& url, const std::string& http_method);
 
   // Initializes the Infinite Cache, if selected by the field trial.
-  void InitializeInfiniteCache(const FilePath& path);
-
-  // Returns a pointer to the Infinite Cache.
-  InfiniteCache* infinite_cache() { return &infinite_cache_; }
+  void InitializeInfiniteCache(const base::FilePath& path);
 
   // HttpTransactionFactory implementation:
-  virtual int CreateTransaction(scoped_ptr<HttpTransaction>* trans,
-                                HttpTransactionDelegate* delegate) OVERRIDE;
+  virtual int CreateTransaction(RequestPriority priority,
+                                scoped_ptr<HttpTransaction>* trans) OVERRIDE;
   virtual HttpCache* GetCache() OVERRIDE;
   virtual HttpNetworkSession* GetSession() OVERRIDE;
 
- protected:
+  base::WeakPtr<HttpCache> GetWeakPtr() { return weak_factory_.GetWeakPtr(); }
+
+  // Resets the network layer to allow for tests that probe
+  // network changes (e.g. host unreachable).  The old network layer is
+  // returned to allow for filter patterns that only intercept
+  // some creation requests.  Note ownership exchange.
+  scoped_ptr<HttpTransactionFactory>
+      SetHttpNetworkTransactionFactoryForTesting(
+          scoped_ptr<HttpTransactionFactory> new_network_layer);
+
+ private:
+  // Types --------------------------------------------------------------------
+
   // Disk cache entry data indices.
   enum {
     kResponseInfoIndex = 0,
@@ -203,16 +216,13 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
     // Must remain at the end of the enum.
     kNumCacheEntryDataIndices
   };
-  friend class ViewCacheHelper;
-
- private:
-  // Types --------------------------------------------------------------------
 
   class MetadataWriter;
+  class QuicServerInfoFactoryAdaptor;
   class Transaction;
   class WorkItem;
   friend class Transaction;
-  friend class InfiniteCache;
+  friend class ViewCacheHelper;
   struct PendingOp;  // Info for an entry under construction.
 
   typedef std::list<Transaction*> TransactionList;
@@ -265,6 +275,9 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
   // callback if this method returns ERR_IO_PENDING. The entry should not
   // be currently in use.
   int AsyncDoomEntry(const std::string& key, Transaction* trans);
+
+  // Dooms the entry associated with a GET for a given |url|.
+  void DoomMainEntryForUrl(const GURL& url);
 
   // Closes a previously doomed entry.
   void FinalizeDoomedEntry(ActiveEntry* entry);
@@ -377,7 +390,10 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   Mode mode_;
 
-  const scoped_ptr<HttpTransactionFactory> network_layer_;
+  const scoped_ptr<QuicServerInfoFactoryAdaptor> quic_server_info_factory_;
+
+  scoped_ptr<HttpTransactionFactory> network_layer_;
+
   scoped_ptr<disk_cache::Backend> disk_cache_;
 
   // The set of active entries indexed by cache key.
@@ -391,7 +407,7 @@ class NET_EXPORT HttpCache : public HttpTransactionFactory,
 
   scoped_ptr<PlaybackCacheMap> playback_cache_map_;
 
-  InfiniteCache infinite_cache_;
+  base::WeakPtrFactory<HttpCache> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HttpCache);
 };

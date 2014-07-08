@@ -7,8 +7,6 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_button_cell.h"
 
-class BookmarkNode;
-
 // A button cell that handles drawing/highlighting of buttons in the
 // bookmark bar.  This cell forwards mouseEntered/mouseExited events
 // to its control view so that pseudo-menu operations
@@ -18,9 +16,9 @@ class BookmarkNode;
 // Create a button cell which draws without a theme and with a frame
 // color provided by the ThemeService defaults.
 + (id)buttonCellForNode:(const BookmarkNode*)node
-            contextMenu:(NSMenu*)contextMenu
-               cellText:(NSString*)cellText
-              cellImage:(NSImage*)cellImage;
+                   text:(NSString*)text
+                  image:(NSImage*)image
+         menuController:(BookmarkContextMenuCocoaController*)menuController;
 
 @end
 

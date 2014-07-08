@@ -7,10 +7,12 @@
 
 #include <string>
 
-class PrefService;
-
 namespace base {
 class DictionaryValue;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 namespace ash {
@@ -27,8 +29,10 @@ extern const char kShelfAutoHideBehaviorNever[];
 extern const char kShelfAlignmentBottom[];
 extern const char kShelfAlignmentLeft[];
 extern const char kShelfAlignmentRight[];
+extern const char kShelfAlignmentTop[];
 
-void RegisterChromeLauncherUserPrefs(PrefService* user_prefs);
+void RegisterChromeLauncherUserPrefs(
+    user_prefs::PrefRegistrySyncable* registry);
 
 base::DictionaryValue* CreateAppDict(const std::string& app_id);
 

@@ -2,8 +2,9 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/snapshot/snapshot.h"
+#include "ui/snapshot/snapshot_win.h"
 
+#include "base/callback.h"
 #include "base/win/scoped_gdi_object.h"
 #include "base/win/scoped_hdc.h"
 #include "base/win/scoped_select_object.h"
@@ -11,10 +12,11 @@
 #include "ui/gfx/gdi_util.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
+#include "ui/snapshot/snapshot.h"
 
 namespace {
 
-gfx::Rect GetWindowBounds(gfx::NativeWindow window_handle) {
+gfx::Rect GetWindowBounds(HWND window_handle) {
   RECT content_rect = {0, 0, 0, 0};
   if (window_handle) {
     ::GetWindowRect(window_handle, &content_rect);
@@ -36,15 +38,11 @@ gfx::Rect GetWindowBounds(gfx::NativeWindow window_handle) {
 
 namespace ui {
 
-bool GrabViewSnapshot(gfx::NativeView view_handle,
-                      std::vector<unsigned char>* png_representation,
-                      const gfx::Rect& snapshot_bounds) {
-  return GrabWindowSnapshot(view_handle, png_representation, snapshot_bounds);
-}
+namespace internal {
 
-bool GrabWindowSnapshot(gfx::NativeWindow window_handle,
-                        std::vector<unsigned char>* png_representation,
-                        const gfx::Rect& snapshot_bounds) {
+bool GrabHwndSnapshot(HWND window_handle,
+                      const gfx::Rect& snapshot_bounds,
+                      std::vector<unsigned char>* png_representation) {
   DCHECK(snapshot_bounds.right() <= GetWindowBounds(window_handle).right());
   DCHECK(snapshot_bounds.bottom() <= GetWindowBounds(window_handle).bottom());
 
@@ -102,5 +100,51 @@ bool GrabWindowSnapshot(gfx::NativeWindow window_handle,
 
   return true;
 }
+
+}  // namespace internal
+
+#if !defined(USE_AURA)
+
+bool GrabViewSnapshot(gfx::NativeView view_handle,
+                      std::vector<unsigned char>* png_representation,
+                      const gfx::Rect& snapshot_bounds) {
+  return GrabWindowSnapshot(view_handle, png_representation, snapshot_bounds);
+}
+
+bool GrabWindowSnapshot(gfx::NativeWindow window_handle,
+                        std::vector<unsigned char>* png_representation,
+                        const gfx::Rect& snapshot_bounds) {
+  DCHECK(window_handle);
+  return internal::GrabHwndSnapshot(window_handle, snapshot_bounds,
+                                    png_representation);
+}
+
+void GrapWindowSnapshotAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& snapshot_bounds,
+    const gfx::Size& target_size,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    GrabWindowSnapshotAsyncCallback callback) {
+  callback.Run(gfx::Image());
+}
+
+void GrabViewSnapshotAsync(
+    gfx::NativeView view,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  callback.Run(scoped_refptr<base::RefCountedBytes>());
+}
+
+
+void GrabWindowSnapshotAsync(
+    gfx::NativeWindow window,
+    const gfx::Rect& source_rect,
+    scoped_refptr<base::TaskRunner> background_task_runner,
+    const GrabWindowSnapshotAsyncPNGCallback& callback) {
+  callback.Run(scoped_refptr<base::RefCountedBytes>());
+}
+
+#endif  // !defined(USE_AURA)
 
 }  // namespace ui

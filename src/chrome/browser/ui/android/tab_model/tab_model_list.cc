@@ -4,8 +4,11 @@
 
 #include "chrome/browser/ui/android/tab_model/tab_model_list.h"
 
+#include "chrome/browser/android/tab_android.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/android/tab_model/tab_model.h"
+#include "chrome/browser/ui/browser_navigator.h"
+#include "content/public/browser/web_contents.h"
 
 namespace {
 
@@ -32,15 +35,27 @@ void TabModelList::RemoveTabModel(TabModel* tab_model) {
     tab_models().erase(remove_tab_model);
 }
 
-TabModel* TabModelList::GetTabModelWithProfile(
-    Profile* profile) {
-  if (!profile)
+void TabModelList::HandlePopupNavigation(chrome::NavigateParams* params) {
+  TabAndroid* tab = TabAndroid::FromWebContents(params->source_contents);
+
+  // NOTE: If this fails contact dtrainor@.
+  DCHECK(tab);
+  tab->HandlePopupNavigation(params);
+}
+
+TabModel* TabModelList::GetTabModelForWebContents(
+    content::WebContents* web_contents) {
+  if (!web_contents)
     return NULL;
 
   for (TabModelList::const_iterator i = TabModelList::begin();
       i != TabModelList::end(); ++i) {
-    if (profile->IsSameProfile((*i)->GetProfile()))
-      return *i;
+    TabModel* model = *i;
+    for (int index = 0; index < model->GetTabCount(); index++) {
+      TabAndroid* tab = model->GetTabAt(index);
+      if (web_contents == tab->web_contents())
+        return model;
+    }
   }
 
   return NULL;
@@ -81,4 +96,9 @@ bool TabModelList::empty() {
 
 size_t TabModelList::size() {
   return tab_models().size();
+}
+
+TabModel* TabModelList::get(size_t index) {
+  DCHECK_LT(index, size());
+  return tab_models()[index];
 }

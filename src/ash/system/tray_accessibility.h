@@ -5,12 +5,15 @@
 #ifndef ASH_SYSTEM_TRAY_ACCESSIBILITY_H_
 #define ASH_SYSTEM_TRAY_ACCESSIBILITY_H_
 
-#include "ash/shell_delegate.h"
+#include "ash/accessibility_delegate.h"
 #include "ash/shell_observer.h"
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_image_item.h"
-#include "ash/system/tray/tray_views.h"
+#include "ash/system/tray/tray_notification_view.h"
+#include "ash/system/tray/view_click_listener.h"
 #include "base/gtest_prod_util.h"
+#include "ui/gfx/font.h"
+#include "ui/views/controls/button/button.h"
 
 namespace chromeos {
 class TrayAccessibilityTest;
@@ -19,11 +22,12 @@ class TrayAccessibilityTest;
 namespace views {
 class Button;
 class ImageView;
+class Label;
 class View;
 }
 
 namespace ash {
-
+class HoverHighlightView;
 class SystemTrayItem;
 
 class ASH_EXPORT AccessibilityObserver {
@@ -35,10 +39,22 @@ class ASH_EXPORT AccessibilityObserver {
       AccessibilityNotificationVisibility notify) = 0;
 };
 
-namespace internal {
+
 namespace tray {
 
-class AccessibilityPopupView;
+class AccessibilityPopupView : public TrayNotificationView {
+ public:
+  AccessibilityPopupView(SystemTrayItem* owner, uint32 enabled_state_bits);
+
+  const views::Label* label_for_test() const { return label_; }
+
+ private:
+  views::Label* CreateLabel(uint32 enabled_state_bits);
+
+  views::Label* label_;
+
+  DISALLOW_COPY_AND_ASSIGN(AccessibilityPopupView);
+};
 
 class AccessibilityDetailedView : public TrayDetailsView,
                                   public ViewClickListener,
@@ -56,23 +72,30 @@ class AccessibilityDetailedView : public TrayDetailsView,
   // Add help entries.
   void AppendHelpEntries();
 
-  HoverHighlightView* AddScrollListItem(const string16& text,
+  HoverHighlightView* AddScrollListItem(const base::string16& text,
                                         gfx::Font::FontStyle style,
                                         bool checked);
   // Overridden from ViewClickListener.
-  virtual void ClickedOn(views::View* sender) OVERRIDE;
+  virtual void OnViewClicked(views::View* sender) OVERRIDE;
   // Overridden from ButtonListener.
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
 
   views::View* spoken_feedback_view_;
   views::View* high_contrast_view_;
-  views::View* screen_magnifier_view_;;
+  views::View* screen_magnifier_view_;
+  views::View* large_cursor_view_;
   views::View* help_view_;
+  views::View* settings_view_;
+  views::View* autoclick_view_;
+  views::View* virtual_keyboard_view_;
 
   bool spoken_feedback_enabled_;
   bool high_contrast_enabled_;
   bool screen_magnifier_enabled_;
+  bool large_cursor_enabled_;
+  bool autoclick_enabled_;
+  bool virtual_keyboard_enabled_;
   user::LoginStatus login_;
 
   friend class chromeos::TrayAccessibilityTest;
@@ -107,18 +130,23 @@ class TrayAccessibility : public TrayImageItem,
   tray::AccessibilityPopupView* detailed_popup_;
   tray::AccessibilityDetailedView* detailed_menu_;
 
-  bool request_popup_view_;
+  // Bitmap of fvalues from AccessibilityState.  Can contain any or
+  // both of A11Y_SPOKEN_FEEDBACK A11Y_BRAILLE_DISPLAY_CONNECTED.
+  uint32 request_popup_view_state_;
+
   bool tray_icon_visible_;
   user::LoginStatus login_;
 
   // Bitmap of values from AccessibilityState enum.
   uint32 previous_accessibility_state_;
 
+  // A11y feature status on just entering the lock screen.
+  bool show_a11y_menu_on_lock_screen_;
+
   friend class chromeos::TrayAccessibilityTest;
   DISALLOW_COPY_AND_ASSIGN(TrayAccessibility);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_ACCESSIBILITY_H_

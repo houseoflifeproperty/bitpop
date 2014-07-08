@@ -3,22 +3,35 @@
 // found in the LICENSE file.
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
-#include "content/renderer/media/media_stream_extra_data.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
+#include "content/child/child_process.h"
+#include "content/renderer/media/media_stream.h"
 #include "content/renderer/media/media_stream_impl.h"
+#include "content/renderer/media/media_stream_track.h"
 #include "content/renderer/media/mock_media_stream_dependency_factory.h"
 #include "content/renderer/media/mock_media_stream_dispatcher.h"
-#include "content/renderer/media/video_capture_impl_manager.h"
-#include "media/base/video_decoder.h"
+#include "content/renderer/media/mock_media_stream_video_source.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamComponent.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamDescriptor.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebMediaStreamSource.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/public/platform/WebMediaStream.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamSource.h"
+#include "third_party/WebKit/public/platform/WebMediaStreamTrack.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
 
 namespace content {
+
+class MockMediaStreamVideoCapturerSource : public MockMediaStreamVideoSource {
+ public:
+  MockMediaStreamVideoCapturerSource(
+      const StreamDeviceInfo& device,
+      const SourceStoppedCallback& stop_callback,
+      MediaStreamDependencyFactory* factory)
+  : MockMediaStreamVideoSource(false) {
+    SetDeviceInfo(device);
+    SetStopCallback(stop_callback);
+  }
+};
 
 class MediaStreamImplUnderTest : public MediaStreamImpl {
  public:
@@ -30,94 +43,104 @@ class MediaStreamImplUnderTest : public MediaStreamImpl {
   };
 
   MediaStreamImplUnderTest(MediaStreamDispatcher* media_stream_dispatcher,
-                           VideoCaptureImplManager* vc_manager,
                            MediaStreamDependencyFactory* dependency_factory)
-      : MediaStreamImpl(NULL, media_stream_dispatcher, vc_manager,
-                        dependency_factory),
-        state_(REQUEST_NOT_STARTED) {
+      : MediaStreamImpl(NULL, media_stream_dispatcher, dependency_factory),
+        state_(REQUEST_NOT_STARTED),
+        result_(NUM_MEDIA_REQUEST_RESULTS),
+        factory_(dependency_factory),
+        video_source_(NULL) {
   }
 
-  void RequestUserMedia(bool audio, bool video) {
-    WebKit::WebUserMediaRequest user_media_request;
-    WebKit::WebVector<WebKit::WebMediaStreamSource> audio_sources(
-        audio ? static_cast<size_t>(1) : 0);
-    WebKit::WebVector<WebKit::WebMediaStreamSource> video_sources(
-        video ? static_cast<size_t>(1) : 0);
+  void RequestUserMedia() {
+    blink::WebUserMediaRequest user_media_request;
     state_ = REQUEST_NOT_COMPLETE;
-    requestUserMedia(user_media_request, audio_sources,
-                     video_sources);
+    requestUserMedia(user_media_request);
   }
 
-  virtual void CompleteGetUserMediaRequest(
-      const WebKit::WebMediaStreamDescriptor& stream,
-      WebKit::WebUserMediaRequest* request_info,
-      bool request_succeeded) OVERRIDE {
+  virtual void GetUserMediaRequestSucceeded(
+      const blink::WebMediaStream& stream,
+      blink::WebUserMediaRequest* request_info) OVERRIDE {
     last_generated_stream_ = stream;
-    state_ = request_succeeded ? REQUEST_SUCCEEDED : REQUEST_FAILED;
+    state_ = REQUEST_SUCCEEDED;
   }
 
-  virtual WebKit::WebMediaStreamDescriptor GetMediaStream(
-      const GURL& url) OVERRIDE {
+  virtual void GetUserMediaRequestFailed(
+      blink::WebUserMediaRequest* request_info,
+      content::MediaStreamRequestResult result) OVERRIDE {
+    last_generated_stream_.reset();
+    state_ = REQUEST_FAILED;
+    result_ = result;
+  }
+
+  virtual MediaStreamVideoSource* CreateVideoSource(
+      const StreamDeviceInfo& device,
+      const MediaStreamSource::SourceStoppedCallback& stop_callback) OVERRIDE {
+    video_source_ = new MockMediaStreamVideoCapturerSource(device,
+                                                           stop_callback,
+                                                           factory_);
+    return video_source_;
+  }
+
+  const blink::WebMediaStream& last_generated_stream() {
     return last_generated_stream_;
   }
 
-  using MediaStreamImpl::OnLocalMediaStreamStop;
+  void ClearLastGeneratedStream() {
+    last_generated_stream_.reset();
+  }
 
-  const WebKit::WebMediaStreamDescriptor& last_generated_stream() {
-    return last_generated_stream_;
+  MockMediaStreamVideoCapturerSource* last_created_video_source() const {
+    return video_source_;
   }
 
   RequestState request_state() const { return state_; }
+  content::MediaStreamRequestResult error_reason() const { return result_; }
 
  private:
-  WebKit::WebMediaStreamDescriptor last_generated_stream_;
+  blink::WebMediaStream last_generated_stream_;
   RequestState state_;
+  content::MediaStreamRequestResult result_;
+  MediaStreamDependencyFactory* factory_;
+  MockMediaStreamVideoCapturerSource* video_source_;
 };
 
 class MediaStreamImplTest : public ::testing::Test {
  public:
-  void SetUp() {
+  virtual void SetUp() {
     // Create our test object.
+    child_process_.reset(new ChildProcess());
     ms_dispatcher_.reset(new MockMediaStreamDispatcher());
-    scoped_refptr<VideoCaptureImplManager> vc_manager(
-        new VideoCaptureImplManager());
     dependency_factory_.reset(new MockMediaStreamDependencyFactory());
     ms_impl_.reset(new MediaStreamImplUnderTest(ms_dispatcher_.get(),
-                                                vc_manager.get(),
                                                 dependency_factory_.get()));
   }
 
-  WebKit::WebMediaStreamDescriptor RequestLocalMediaStream(bool audio,
-                                                           bool video) {
-    ms_impl_->RequestUserMedia(audio, video);
+  blink::WebMediaStream RequestLocalMediaStream() {
+    ms_impl_->RequestUserMedia();
     FakeMediaStreamDispatcherComplete();
-    if (video) {
-      // TODO(perkj): Only change the video source at the moment since audio
-      // sources are not implemented.
-      ChangeSourceStateToLive();
-    }
+    StartMockedVideoSource();
+
     EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_SUCCEEDED,
               ms_impl_->request_state());
 
-    WebKit::WebMediaStreamDescriptor desc = ms_impl_->last_generated_stream();
-    content::MediaStreamExtraData* extra_data =
-        static_cast<content::MediaStreamExtraData*>(desc.extraData());
-    if (!extra_data || !extra_data->local_stream()) {
+    blink::WebMediaStream desc = ms_impl_->last_generated_stream();
+    content::MediaStream* native_stream =
+        content::MediaStream::GetMediaStream(desc);
+    if (!native_stream) {
       ADD_FAILURE();
       return desc;
     }
 
-    if (audio)
-      EXPECT_EQ(1u, extra_data->local_stream()->audio_tracks()->count());
-    if (video)
-      EXPECT_EQ(1u, extra_data->local_stream()->video_tracks()->count());
-    if (audio && video) {
-      EXPECT_NE(extra_data->local_stream()->audio_tracks()->at(0)->label(),
-                extra_data->local_stream()->video_tracks()->at(0)->label());
-    }
+    blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+    desc.audioTracks(audio_tracks);
+    blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
+    desc.videoTracks(video_tracks);
+
+    EXPECT_EQ(1u, audio_tracks.size());
+    EXPECT_EQ(1u, video_tracks.size());
+    EXPECT_NE(audio_tracks[0].id(), video_tracks[0].id());
     return desc;
   }
-
 
   void FakeMediaStreamDispatcherComplete() {
     ms_impl_->OnStreamGenerated(ms_dispatcher_->request_id(),
@@ -126,119 +149,256 @@ class MediaStreamImplTest : public ::testing::Test {
                                 ms_dispatcher_->video_array());
   }
 
-  void ChangeSourceStateToLive() {
-    if (dependency_factory_->last_video_source() != NULL) {
-      dependency_factory_->last_video_source()->SetLive();
-    }
+  void StartMockedVideoSource() {
+    MockMediaStreamVideoCapturerSource* video_source =
+        ms_impl_->last_created_video_source();
+    if (video_source->SourceHasAttemptedToStart())
+      video_source->StartMockedSource();
   }
 
-  void ChangeSourceStateToEnded() {
-    if (dependency_factory_->last_video_source() != NULL) {
-      dependency_factory_->last_video_source()->SetEnded();
-    }
+  void FailToStartMockedVideoSource() {
+    MockMediaStreamVideoCapturerSource* video_source =
+        ms_impl_->last_created_video_source();
+    if (video_source->SourceHasAttemptedToStart())
+      video_source->FailToStartMockedSource();
+  }
+
+  void FailToCreateNextAudioCapturer() {
+    dependency_factory_->FailToCreateNextAudioCapturer();
   }
 
  protected:
+  base::MessageLoop message_loop_;
+  scoped_ptr<ChildProcess> child_process_;
   scoped_ptr<MockMediaStreamDispatcher> ms_dispatcher_;
   scoped_ptr<MediaStreamImplUnderTest> ms_impl_;
   scoped_ptr<MockMediaStreamDependencyFactory> dependency_factory_;
 };
 
-TEST_F(MediaStreamImplTest, LocalMediaStream) {
+TEST_F(MediaStreamImplTest, GenerateMediaStream) {
+  // Generate a stream with both audio and video.
+  blink::WebMediaStream mixed_desc = RequestLocalMediaStream();
+}
+
+// Test that the same source object is used if two MediaStreams are generated
+// using the same source.
+TEST_F(MediaStreamImplTest, GenerateTwoMediaStreamsWithSameSource) {
+  blink::WebMediaStream desc1 = RequestLocalMediaStream();
+  blink::WebMediaStream desc2 = RequestLocalMediaStream();
+
+  blink::WebVector<blink::WebMediaStreamTrack> desc1_video_tracks;
+  desc1.videoTracks(desc1_video_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> desc2_video_tracks;
+  desc2.videoTracks(desc2_video_tracks);
+  EXPECT_EQ(desc1_video_tracks[0].source().id(),
+            desc2_video_tracks[0].source().id());
+
+  EXPECT_EQ(desc1_video_tracks[0].source().extraData(),
+            desc2_video_tracks[0].source().extraData());
+
+  blink::WebVector<blink::WebMediaStreamTrack> desc1_audio_tracks;
+  desc1.audioTracks(desc1_audio_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> desc2_audio_tracks;
+  desc2.audioTracks(desc2_audio_tracks);
+  EXPECT_EQ(desc1_audio_tracks[0].source().id(),
+            desc2_audio_tracks[0].source().id());
+
+  EXPECT_EQ(desc1_audio_tracks[0].source().extraData(),
+            desc2_audio_tracks[0].source().extraData());
+}
+
+// Test that the same source object is not used if two MediaStreams are
+// generated using different sources.
+TEST_F(MediaStreamImplTest, GenerateTwoMediaStreamsWithDifferentSources) {
+  blink::WebMediaStream desc1 = RequestLocalMediaStream();
+  // Make sure another device is selected (another |session_id|) in  the next
+  // gUM request.
+  ms_dispatcher_->IncrementSessionId();
+  blink::WebMediaStream desc2 = RequestLocalMediaStream();
+
+  blink::WebVector<blink::WebMediaStreamTrack> desc1_video_tracks;
+  desc1.videoTracks(desc1_video_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> desc2_video_tracks;
+  desc2.videoTracks(desc2_video_tracks);
+  EXPECT_NE(desc1_video_tracks[0].source().id(),
+            desc2_video_tracks[0].source().id());
+
+  EXPECT_NE(desc1_video_tracks[0].source().extraData(),
+            desc2_video_tracks[0].source().extraData());
+
+  blink::WebVector<blink::WebMediaStreamTrack> desc1_audio_tracks;
+  desc1.audioTracks(desc1_audio_tracks);
+  blink::WebVector<blink::WebMediaStreamTrack> desc2_audio_tracks;
+  desc2.audioTracks(desc2_audio_tracks);
+  EXPECT_NE(desc1_audio_tracks[0].source().id(),
+            desc2_audio_tracks[0].source().id());
+
+  EXPECT_NE(desc1_audio_tracks[0].source().extraData(),
+            desc2_audio_tracks[0].source().extraData());
+}
+
+TEST_F(MediaStreamImplTest, StopLocalTracks) {
+  // Generate a stream with both audio and video.
+  blink::WebMediaStream mixed_desc = RequestLocalMediaStream();
+
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+  mixed_desc.audioTracks(audio_tracks);
+  MediaStreamTrack* audio_track = MediaStreamTrack::GetTrack(audio_tracks[0]);
+  audio_track->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
+  mixed_desc.videoTracks(video_tracks);
+  MediaStreamTrack* video_track = MediaStreamTrack::GetTrack(video_tracks[0]);
+  video_track->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+}
+
+// This test that a source is not stopped even if the tracks in a
+// MediaStream is stopped if there are two MediaStreams with tracks using the
+// same device. The source is stopped
+// if there are no more MediaStream tracks using the device.
+TEST_F(MediaStreamImplTest, StopLocalTracksWhenTwoStreamUseSameDevices) {
+  // Generate a stream with both audio and video.
+  blink::WebMediaStream desc1 = RequestLocalMediaStream();
+  blink::WebMediaStream desc2 = RequestLocalMediaStream();
+
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks1;
+  desc1.audioTracks(audio_tracks1);
+  MediaStreamTrack* audio_track1 = MediaStreamTrack::GetTrack(audio_tracks1[0]);
+  audio_track1->Stop();
+  EXPECT_EQ(0, ms_dispatcher_->stop_audio_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks2;
+  desc2.audioTracks(audio_tracks2);
+  MediaStreamTrack* audio_track2 = MediaStreamTrack::GetTrack(audio_tracks2[0]);
+  audio_track2->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks1;
+  desc1.videoTracks(video_tracks1);
+  MediaStreamTrack* video_track1 = MediaStreamTrack::GetTrack(video_tracks1[0]);
+  video_track1->Stop();
+  EXPECT_EQ(0, ms_dispatcher_->stop_video_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks2;
+  desc2.videoTracks(video_tracks2);
+  MediaStreamTrack* video_track2 = MediaStreamTrack::GetTrack(video_tracks2[0]);
+  video_track2->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+}
+
+TEST_F(MediaStreamImplTest, StopSourceWhenMediaStreamGoesOutOfScope) {
+  // Generate a stream with both audio and video.
+  RequestLocalMediaStream();
+  // Makes sure the test itself don't hold a reference to the created
+  // MediaStream.
+  ms_impl_->ClearLastGeneratedStream();
+
+  // Expect the sources to be stopped when the MediaStream goes out of scope.
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+}
+
+// Test that the MediaStreams are deleted if the owning WebFrame is deleted.
+// In the unit test the owning frame is NULL.
+TEST_F(MediaStreamImplTest, FrameWillClose) {
   // Test a stream with both audio and video.
-  WebKit::WebMediaStreamDescriptor mixed_desc = RequestLocalMediaStream(true,
-                                                                        true);
-  // Create a renderer for the stream.
-  scoped_refptr<media::VideoDecoder> mixed_decoder(
-      ms_impl_->GetVideoDecoder(GURL(), base::MessageLoopProxy::current()));
-  EXPECT_TRUE(mixed_decoder.get() != NULL);
-
-  // Test a stream with audio only.
-  WebKit::WebMediaStreamDescriptor audio_desc = RequestLocalMediaStream(true,
-                                                                        false);
-  scoped_refptr<media::VideoDecoder> audio_decoder(
-      ms_impl_->GetVideoDecoder(GURL(), base::MessageLoopProxy::current()));
-  EXPECT_TRUE(audio_decoder.get() == NULL);
-
-  // Test a stream with video only.
-  WebKit::WebMediaStreamDescriptor video_desc = RequestLocalMediaStream(false,
-                                                                        true);
-  scoped_refptr<media::VideoDecoder> video_decoder(
-      ms_impl_->GetVideoDecoder(GURL(), base::MessageLoopProxy::current()));
-  EXPECT_TRUE(video_decoder.get() != NULL);
-
-  // Stop generated local streams.
-  ms_impl_->OnLocalMediaStreamStop(mixed_desc.label().utf8());
-  EXPECT_EQ(1, ms_dispatcher_->stop_stream_counter());
-  ms_impl_->OnLocalMediaStreamStop(audio_desc.label().utf8());
-  EXPECT_EQ(2, ms_dispatcher_->stop_stream_counter());
+  blink::WebMediaStream mixed_desc = RequestLocalMediaStream();
+  blink::WebMediaStream desc2 = RequestLocalMediaStream();
 
   // Test that the MediaStreams are deleted if the owning WebFrame is deleted.
   // In the unit test the owning frame is NULL.
   ms_impl_->FrameWillClose(NULL);
-  EXPECT_EQ(3, ms_dispatcher_->stop_stream_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
 }
 
-// This test what happens if a source to a MediaSteam fails to start.
-TEST_F(MediaStreamImplTest, MediaSourceFailToStart) {
-  ms_impl_->RequestUserMedia(true, true);
+// This test what happens if a video source to a MediaSteam fails to start.
+TEST_F(MediaStreamImplTest, MediaVideoSourceFailToStart) {
+  ms_impl_->RequestUserMedia();
   FakeMediaStreamDispatcherComplete();
-  ChangeSourceStateToEnded();
+  FailToStartMockedVideoSource();
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_FAILED,
             ms_impl_->request_state());
+  EXPECT_EQ(MEDIA_DEVICE_TRACK_START_FAILURE,
+            ms_impl_->error_reason());
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
-  EXPECT_EQ(1, ms_dispatcher_->stop_stream_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
 }
 
-// This test what happens if MediaStreamImpl is deleted while the sources of a
-// MediaStream is being started.
+// This test what happens if an audio source fail to initialize.
+TEST_F(MediaStreamImplTest, MediaAudioSourceFailToInitialize) {
+  FailToCreateNextAudioCapturer();
+  ms_impl_->RequestUserMedia();
+  FakeMediaStreamDispatcherComplete();
+  StartMockedVideoSource();
+  EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_FAILED,
+            ms_impl_->request_state());
+  EXPECT_EQ(MEDIA_DEVICE_TRACK_START_FAILURE,
+            ms_impl_->error_reason());
+  EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+}
+
+// This test what happens if MediaStreamImpl is deleted before a source has
+// started.
 TEST_F(MediaStreamImplTest, MediaStreamImplShutDown) {
-  ms_impl_->RequestUserMedia(true, true);
+  ms_impl_->RequestUserMedia();
   FakeMediaStreamDispatcherComplete();
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_NOT_COMPLETE,
             ms_impl_->request_state());
   ms_impl_.reset();
-  ChangeSourceStateToLive();
 }
 
 // This test what happens if the WebFrame is closed while the MediaStream is
 // being generated by the MediaStreamDispatcher.
 TEST_F(MediaStreamImplTest, ReloadFrameWhileGeneratingStream) {
-  ms_impl_->RequestUserMedia(true, true);
+  ms_impl_->RequestUserMedia();
   ms_impl_->FrameWillClose(NULL);
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
-  EXPECT_EQ(0, ms_dispatcher_->stop_stream_counter());
-  ChangeSourceStateToLive();
+  EXPECT_EQ(0, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(0, ms_dispatcher_->stop_video_device_counter());
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_NOT_COMPLETE,
             ms_impl_->request_state());
 }
 
 // This test what happens if the WebFrame is closed while the sources are being
-// started by MediaStreamDependencyFactory.
+// started.
 TEST_F(MediaStreamImplTest, ReloadFrameWhileGeneratingSources) {
-  ms_impl_->RequestUserMedia(true, true);
+  ms_impl_->RequestUserMedia();
   FakeMediaStreamDispatcherComplete();
-  EXPECT_EQ(0, ms_dispatcher_->stop_stream_counter());
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
   ms_impl_->FrameWillClose(NULL);
-  EXPECT_EQ(1, ms_dispatcher_->stop_stream_counter());
-  ChangeSourceStateToLive();
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
   EXPECT_EQ(MediaStreamImplUnderTest::REQUEST_NOT_COMPLETE,
             ms_impl_->request_state());
 }
 
-// This test what happens if stop is called on a stream after the frame has
+// This test what happens if stop is called on a track after the frame has
 // been reloaded.
-TEST_F(MediaStreamImplTest, StopStreamAfterReload) {
-  WebKit::WebMediaStreamDescriptor mixed_desc = RequestLocalMediaStream(true,
-                                                                        true);
-  EXPECT_EQ(0, ms_dispatcher_->stop_stream_counter());
+TEST_F(MediaStreamImplTest, StopTrackAfterReload) {
+  blink::WebMediaStream mixed_desc = RequestLocalMediaStream();
   EXPECT_EQ(1, ms_dispatcher_->request_stream_counter());
   ms_impl_->FrameWillClose(NULL);
-  EXPECT_EQ(1, ms_dispatcher_->stop_stream_counter());
-  ms_impl_->OnLocalMediaStreamStop(mixed_desc.label().utf8());
-  EXPECT_EQ(1, ms_dispatcher_->stop_stream_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> audio_tracks;
+  mixed_desc.audioTracks(audio_tracks);
+  MediaStreamTrack* audio_track = MediaStreamTrack::GetTrack(audio_tracks[0]);
+  audio_track->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_audio_device_counter());
+
+  blink::WebVector<blink::WebMediaStreamTrack> video_tracks;
+  mixed_desc.videoTracks(video_tracks);
+  MediaStreamTrack* video_track = MediaStreamTrack::GetTrack(video_tracks[0]);
+  video_track->Stop();
+  EXPECT_EQ(1, ms_dispatcher_->stop_video_device_counter());
 }
 
 }  // namespace content

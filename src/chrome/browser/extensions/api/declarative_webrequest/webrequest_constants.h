@@ -10,8 +10,10 @@
 namespace extensions {
 namespace declarative_webrequest_constants {
 
-// Signals to which WebRequestRulesRegistries are registered.
+// Signals to which WebRequestRulesRegistries are registered or listeners can
+// be registered.
 extern const char kOnRequest[];
+extern const char kOnMessage[];
 
 // Keys of dictionaries.
 extern const char kAgeLowerBoundKey[];
@@ -24,11 +26,14 @@ extern const char kExcludeRequestHeadersKey[];
 extern const char kExcludeResponseHeadersKey[];
 extern const char kExpiresKey[];
 extern const char kFilterKey[];
+extern const char kFirstPartyForCookiesUrlKey[];
 extern const char kFromKey[];
 extern const char kHttpOnlyKey[];
+extern const char kHasTagKey[];
 extern const char kInstanceTypeKey[];
 extern const char kLowerPriorityThanKey[];
 extern const char kMaxAgeKey[];
+extern const char kMessageKey[];
 extern const char kModificationKey[];
 extern const char kNameContainsKey[];
 extern const char kNameEqualsKey[];
@@ -75,6 +80,7 @@ extern const char kRemoveRequestHeaderType[];
 extern const char kRemoveResponseCookieType[];
 extern const char kRemoveResponseHeaderType[];
 extern const char kRequestMatcherType[];
+extern const char kSendMessageToExtensionType[];
 extern const char kSetRequestHeaderType[];
 
 }  // namespace declarative_webrequest_constants

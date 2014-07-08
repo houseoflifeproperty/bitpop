@@ -4,8 +4,8 @@
 
 #include "chrome/common/content_settings_pattern.h"
 
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -158,7 +158,7 @@ TEST(ContentSettingsPatternTest, FromURLNoWildcard) {
   EXPECT_TRUE(pattern.Matches(GURL("https://www.example.com")));
   EXPECT_FALSE(pattern.Matches(GURL("http://foo.www.example.com")));
 
-   // Pattern for filesystem URLs
+  // Pattern for filesystem URLs
   pattern =
       ContentSettingsPattern::FromURLNoWildcard(
           GURL("filesystem:http://www.google.com/temporary/"));
@@ -206,6 +206,9 @@ TEST(ContentSettingsPatternTest, TrimEndingDotFromHost) {
                Pattern("www.example.com.").ToString().c_str());
 
   EXPECT_TRUE(Pattern("www.example.com.") == Pattern("www.example.com"));
+
+  EXPECT_TRUE(Pattern(".").IsValid());
+  EXPECT_STREQ(".", Pattern(".").ToString().c_str());
 }
 
 TEST(ContentSettingsPatternTest, FromString_WithNoWildcards) {
@@ -417,8 +420,8 @@ TEST(ContentSettingsPatternTest, InvalidPatterns) {
   EXPECT_STREQ("", ContentSettingsPattern().ToString().c_str());
 
   // Empty pattern string
-  EXPECT_FALSE(Pattern("").IsValid());
-  EXPECT_STREQ("", Pattern("").ToString().c_str());
+  EXPECT_FALSE(Pattern(std::string()).IsValid());
+  EXPECT_STREQ("", Pattern(std::string()).ToString().c_str());
 
   // Pattern strings with invalid scheme part.
   EXPECT_FALSE(Pattern("ftp://myhost.org").IsValid());
@@ -443,6 +446,10 @@ TEST(ContentSettingsPatternTest, InvalidPatterns) {
   EXPECT_STREQ("", Pattern("file://").ToString().c_str());
   EXPECT_FALSE(Pattern("file:///foo/bar.html:8080").IsValid());
   EXPECT_STREQ("", Pattern("file:///foo/bar.html:8080").ToString().c_str());
+
+  // Host having multiple ending dots.
+  EXPECT_FALSE(Pattern("www.example.com..").IsValid());
+  EXPECT_STREQ("", Pattern("www.example.com..").ToString().c_str());
 }
 
 TEST(ContentSettingsPatternTest, UnequalOperator) {
@@ -623,8 +630,7 @@ TEST(ContentSettingsPatternTest, PatternSupport_Legacy) {
   EXPECT_TRUE(
       Pattern("file:///tmp/test.html").Matches(
               GURL("file:///tmp/test.html")));
-  EXPECT_FALSE(Pattern("").Matches(
-               GURL("http://www.example.com/")));
+  EXPECT_FALSE(Pattern(std::string()).Matches(GURL("http://www.example.com/")));
   EXPECT_FALSE(Pattern("[*.]example.com").Matches(
                GURL("http://example.org/")));
   EXPECT_FALSE(Pattern("example.com").Matches(

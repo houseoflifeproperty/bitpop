@@ -23,10 +23,13 @@
 <include src="capture_status_view.js"/>
 <include src="loaded_status_view.js"/>
 <include src="halted_status_view.js"/>
-<include src="status_view.js"/>
+<include src="top_bar_view.js"/>
 <include src="dns_view.js"/>
+<include src="source_filter_parser.js"/>
 <include src="source_row.js"/>
 <include src="events_view.js"/>
+<include src="waterfall_view.js"/>
+<include src="waterfall_row.js"/>
 <include src="details_view.js"/>
 <include src="source_entry.js"/>
 <include src="horizontal_scrollbar_view.js"/>
@@ -37,15 +40,20 @@
 <include src="log_view_painter.js"/>
 <include src="log_grouper.js"/>
 <include src="proxy_view.js"/>
+<include src="quic_view.js"/>
 <include src="socket_pool_wrapper.js"/>
 <include src="sockets_view.js"/>
 <include src="spdy_view.js"/>
-<include src="service_providers_view.js"/>
+<include src="modules_view.js"/>
 <include src="logs_view.js"/>
 <include src="prerender_view.js"/>
 <include src="chromeos_view.js"/>
 <include src="http_pipeline_view.js"/>
 <include src="bandwidth_view.js"/>
+<include src="cros_log_visualizer_view.js"/>
+<include src="cros_log_entry.js"/>
+<include src="cros_log_visualizer.js" />
+<include src="cros_log_marker.js" />
 
 document.addEventListener('DOMContentLoaded', function() {
   MainView.getInstance();  // from main.js

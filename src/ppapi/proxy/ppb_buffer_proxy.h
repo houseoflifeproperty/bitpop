@@ -5,10 +5,9 @@
 #ifndef PPAPI_PROXY_PPB_BUFFER_PROXY_H_
 #define PPAPI_PROXY_PPB_BUFFER_PROXY_H_
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "ppapi/c/pp_instance.h"
 #include "ppapi/proxy/interface_proxy.h"
-#include "ppapi/proxy/serialized_structs.h"
 #include "ppapi/shared_impl/resource.h"
 #include "ppapi/thunk/ppb_buffer_api.h"
 
@@ -17,6 +16,8 @@ namespace ppapi {
 class HostResource;
 
 namespace proxy {
+
+class SerializedHandle;
 
 class Buffer : public thunk::PPB_Buffer_API, public Resource {
  public:
@@ -33,6 +34,9 @@ class Buffer : public thunk::PPB_Buffer_API, public Resource {
   virtual PP_Bool IsMapped() OVERRIDE;
   virtual void* Map() OVERRIDE;
   virtual void Unmap() OVERRIDE;
+
+  // Trusted
+  virtual int32_t GetSharedMemory(int* handle) OVERRIDE;
 
  private:
   base::SharedMemory shm_;

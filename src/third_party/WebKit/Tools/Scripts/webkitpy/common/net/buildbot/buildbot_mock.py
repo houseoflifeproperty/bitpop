@@ -28,6 +28,9 @@
 
 import logging
 
+from webkitpy.common.net.layouttestresults import LayoutTestResults
+from webkitpy.common.net import layouttestresults_unittest
+
 _log = logging.getLogger(__name__)
 
 
@@ -56,33 +59,8 @@ class MockBuilder(object):
     def latest_layout_test_results_url(self):
         return self.accumulated_results_url()
 
-    def force_build(self, username, comments):
-        _log.info("MOCK: force_build: name=%s, username=%s, comments=%s" % (
-            self._name, username, comments))
-
-
-class MockFailureMap(object):
-    def __init__(self, buildbot):
-        self._buildbot = buildbot
-
-    def is_empty(self):
-        return False
-
-    def filter_out_old_failures(self, is_old_revision):
-        pass
-
-    def failing_revisions(self):
-        return [29837]
-
-    def builders_failing_for(self, revision):
-        return [self._buildbot.builder_with_name("Builder1")]
-
-    def tests_failing_for(self, revision):
-        return ["mock-test-1"]
-
-    def failing_tests(self):
-        return set(["mock-test-1"])
-
+    def latest_layout_test_results(self):
+        return LayoutTestResults.results_from_string(layouttestresults_unittest.LayoutTestResultsTest.example_full_results_json)
 
 class MockBuildBot(object):
     def __init__(self):
@@ -108,6 +86,3 @@ class MockBuildBot(object):
 
     def light_tree_on_fire(self):
         self._mock_builder2_status["is_green"] = False
-
-    def failure_map(self):
-        return MockFailureMap(self)

@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_UI_FULLSCREEN_FULLSCREEN_CONTROLLER_TEST_H_
 #define CHROME_BROWSER_UI_FULLSCREEN_FULLSCREEN_CONTROLLER_TEST_H_
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble_type.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/test/test_utils.h"
@@ -43,7 +43,7 @@ class FullscreenControllerTest : public InProcessBrowserTest {
   void LostMouseLock();
   bool SendEscapeToFullscreenController();
   bool IsFullscreenForBrowser();
-  bool IsFullscreenForTabOrPending();
+  bool IsWindowFullscreenForTabOrPending();
   bool IsMouseLockPermissionRequested();
   bool IsFullscreenPermissionRequested();
   FullscreenExitBubbleType GetFullscreenExitBubbleType();
@@ -53,6 +53,7 @@ class FullscreenControllerTest : public InProcessBrowserTest {
   void DenyCurrentFullscreenOrMouseLockRequest();
   void GoBack();
   void Reload();
+  void SetPrivilegedFullscreen(bool is_privileged);
   static const char kFullscreenMouseLockHTML[];
  private:
   void ToggleTabFullscreen_Internal(bool enter_fullscreen,

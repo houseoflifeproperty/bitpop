@@ -30,6 +30,7 @@ chromium_utils.AddThirdPartyLibToPath('sqlalchemy_0_7_1', override=True)
 chromium_utils.AddThirdPartyLibToPath('sqlalchemy_migrate_0_7_1', override=True)
 chromium_utils.AddThirdPartyLibToPath('jinja2', override=True)
 chromium_utils.AddThirdPartyLibToPath('decorator_3_3_1', override=True)
+chromium_utils.AddThirdPartyLibToPath('requests_1_2_3', override=True)
 
 from buildbot.process import base
 from buildbot.process import builder as real_builder
@@ -104,14 +105,14 @@ class FakeSlave(util.LocalAsRemote):
   SlaveBuilder-class.html and http://buildbot.net/buildbot/docs/0.8.3/
   reference/buildbot.buildslave.BuildSlave-class.html for reference."""
 
-  def __init__(self, builddir, slavename):
+  def __init__(self, builddir, slavebuilddir, slavename):
     self.slave = self
     self.properties = Properties()
     self.slave_basedir = '.'
     self.basedir = '.'  # this must be '.' since I combine slavebuilder
                         # and buildslave
     self.path_module = namedModule('posixpath')
-    self.slavebuilddir = builddir
+    self.slavebuilddir = slavebuilddir or builddir
     self.builddir = builddir
     self.slavename = slavename
     self.usePTY = True
@@ -238,6 +239,10 @@ def ListSteps(my_factory):
       stepnames[name] = 0
     step.name = name
 
+    # workdir is often silently passed through
+    if 'workdir' in cmdargs:
+      step.workdir = cmdargs['workdir']
+
     #TODO: is this a bug in FileUpload?
     if not hasattr(step, 'description') or not step.description:
       step.description = [step.name]
@@ -271,10 +276,17 @@ def process_steps(steplist, build, buildslave, build_status, basedir):
     step.setBuildSlave(buildslave)
     step.setStepStatus(build_status.addStepWithName(step.name))
     step.setDefaultWorkdir(os.path.join(basedir, 'build'))
-    step.workdir = os.path.join(basedir, 'build')
+    if not hasattr(step, 'workdir') or not step.workdir:
+      step.workdir = os.path.join(basedir, 'build')
+
+    if not os.path.isabs(step.workdir):
+      step.workdir = os.path.join(basedir, step.workdir)
 
 
 def StripBuildrunnerIgnore(step):
+  assert not step.name.endswith('_buildrunner_ignore_1'), (
+      'Duplicate buildrunner step %s not allowed in %s' % (
+          step.name.rstrip('_buildrunner_ignore_1'), step.build.builder.name))
   step.name = re.sub('_buildrunner_ignore$', '', step.name)
 
 
@@ -287,8 +299,22 @@ def GetCommands(steplist):
   """
   commands = []
   for step in steplist:
+    cmdhash = {}
+    StripBuildrunnerIgnore(step)
+    cmdhash['name'] = step.name
+    cmdhash['doStep'] = None
+    cmdhash['stepclass'] = '%s.%s' % (step.__class__.__module__,
+                                      step.__class__.__name__)
     if hasattr(step, 'command'):
-      cmdhash = {}
+      # None signifies this is not a buildrunner-added step.
+      if step.brDoStepIf is None:
+        doStep = step.brDoStepIf
+      # doStep may modify build properties, so it must run before rendering.
+      elif isinstance(step.brDoStepIf, bool):
+        doStep = step.brDoStepIf
+      else:
+        doStep = step.brDoStepIf(step)
+
       renderables = []
       accumulateClassList(step.__class__, 'renderables', renderables)
 
@@ -296,29 +322,24 @@ def GetCommands(steplist):
         setattr(step, renderable, step.build.render(getattr(step,
                 renderable)))
 
-      if isinstance(step.brDoStepIf, bool):
-        doStep = step.brDoStepIf
-      else:
-        doStep = step.brDoStepIf()
-
-      StripBuildrunnerIgnore(step)
-
-      cmdhash['name'] = step.name
       cmdhash['doStep'] = doStep
       cmdhash['command'] = step.command
       cmdhash['quoted_command'] = shell_quote(step.command)
       cmdhash['workdir'] = step.workdir
       cmdhash['quoted_workdir'] = shell_quote([step.workdir])
+      cmdhash['haltOnFailure'] = step.haltOnFailure
       if hasattr(step, 'env'):
         cmdhash['env'] = step.env
       else:
         cmdhash['env'] = {}
       if hasattr(step, 'timeout'):
         cmdhash['timeout'] = step.timeout
+      if hasattr(step, 'maxTime'):
+        cmdhash['maxTime'] = step.maxTime
 
       cmdhash['description'] = step.description
       cmdhash['descriptionDone'] = step.descriptionDone
-      commands.append(cmdhash)
+    commands.append(cmdhash)
   return commands
 
 
@@ -349,24 +370,39 @@ def MockBuild(my_builder, buildsetup, mastername, slavename, basepath=None,
 
   build = base.Build([FakeRequest(buildsetup)])
   safename = buildbot.util.safeTranslate(my_builder['name'])
+
+  my_builder.setdefault('builddir', safename)
+  my_builder.setdefault('slavebuilddir', my_builder['builddir'])
+
+
+  workdir_root = None
+  if not slavedir:
+    workdir_root = os.path.join(SCRIPT_DIR, '..', '..', 'slave',
+                                my_builder['slavebuilddir'])
+
   if not basepath: basepath = safename
   if not slavedir: slavedir = os.path.join(SCRIPT_DIR,
                                            '..', '..', 'slave')
   basedir = os.path.join(slavedir, basepath)
   build.basedir = basedir
+  if not workdir_root:
+    workdir_root = basedir
+
   builderstatus = builder.BuilderStatus('test')
-  builderstatus.nextBuildNumber = 2
   builderstatus.basedir = basedir
-  my_builder['builddir'] = safename
-  my_builder['slavebuilddir'] = safename
+  buildnumber = build_properties.get('buildnumber', 1)
+  builderstatus.nextBuildNumber = buildnumber + 1
+
   mybuilder = real_builder.Builder(my_builder, builderstatus)
   build.setBuilder(mybuilder)
-  build_status = build_module.BuildStatus(builderstatus, 1)
+  build_status = build_module.BuildStatus(builderstatus, buildnumber)
 
   build_status.setProperty('blamelist', [], 'Build')
   build_status.setProperty('mastername', mastername, 'Build')
   build_status.setProperty('slavename', slavename, 'Build')
   build_status.setProperty('gtest_filter', [], 'Build')
+  build_status.setProperty('extra_args', [], 'Build')
+  build_status.setProperty('build_id', buildnumber, 'Build')
 
   # if build_properties are passed in, overwrite the defaults above:
   buildprops = Properties()
@@ -374,10 +410,10 @@ def MockBuild(my_builder, buildsetup, mastername, slavename, basepath=None,
     buildprops.update(build_properties, 'Botmaster')
   mybuilder.setBotmaster(FakeBotmaster(mastername, buildprops))
 
-  buildslave = FakeSlave(safename, slavename)
+  buildslave = FakeSlave(safename, my_builder.get('slavebuilddir'), slavename)
   build.build_status = build_status
   build.setupSlaveBuilder(buildslave)
   build.setupProperties()
-  process_steps(steplist, build, buildslave, build_status, basedir)
+  process_steps(steplist, build, buildslave, build_status, workdir_root)
 
   return steplist, build

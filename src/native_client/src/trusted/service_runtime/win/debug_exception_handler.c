@@ -24,17 +24,18 @@
 /*
  * This struct is passed in a message from the main sel_ldr process to
  * the debug exception handler process to communicate the address of
- * service_runtime's global arrays, nacl_thread and nacl_thread_ids.
+ * service_runtime's global arrays, nacl_user and nacl_thread_ids.
  */
 struct StartupInfo {
-  struct NaClAppThread **nacl_thread;
+  struct NaClThreadContext **nacl_user;
   uint32_t *nacl_thread_ids;
 };
 
 
 static int HandleException(const struct StartupInfo *startup_info,
                            HANDLE process_handle, DWORD windows_thread_id,
-                           HANDLE thread_handle, DWORD exception_code);
+                           HANDLE thread_handle, DWORD exception_code,
+                           HANDLE *exception_event);
 
 
 static BOOL GetAddrProtection(HANDLE process_handle, uintptr_t addr,
@@ -131,6 +132,8 @@ void NaClDebugExceptionHandlerRun(HANDLE process_handle,
   ThreadHandleMap *map;
   HANDLE thread_handle;
   DWORD exception_code;
+  HANDLE exception_event = INVALID_HANDLE_VALUE;
+  int seen_breakin_breakpoint = 0;
 
   if (info_size != sizeof(struct StartupInfo)) {
     return;
@@ -179,9 +182,10 @@ void NaClDebugExceptionHandlerRun(HANDLE process_handle,
               debug_event.u.Exception.ExceptionRecord.ExceptionCode;
           if (HandleException(startup_info, process_handle,
                               debug_event.dwThreadId, thread_handle,
-                              exception_code)) {
+                              exception_code, &exception_event)) {
             continue_status = DBG_CONTINUE;
-          } else if (exception_code == EXCEPTION_BREAKPOINT) {
+          } else if (exception_code == EXCEPTION_BREAKPOINT &&
+                     !seen_breakin_breakpoint) {
             /*
              * When we attach to a process, the Windows debug API
              * triggers a breakpoint in the process by injecting a
@@ -199,6 +203,13 @@ void NaClDebugExceptionHandlerRun(HANDLE process_handle,
              * http://code.google.com/p/nativeclient/issues/detail?id=2726).
              */
             continue_status = DBG_CONTINUE;
+            /*
+             * Allow resuming from a breakpoint only once, because
+             * Chromium code uses int3 (via _debugbreak()) as a way to
+             * exit the process via a crash.  See:
+             * https://code.google.com/p/nativeclient/issues/detail?id=2772
+             */
+            seen_breakin_breakpoint = 1;
           }
         }
         break;
@@ -214,6 +225,9 @@ void NaClDebugExceptionHandlerRun(HANDLE process_handle,
     }
   }
   DestroyThreadHandleMap(map);
+  if (exception_event != INVALID_HANDLE_VALUE) {
+    CloseHandle(exception_event);
+  }
   if (error) {
     TerminateProcess(process_handle, -1);
   }
@@ -303,7 +317,8 @@ static BOOL QueueFaultedThread(HANDLE process_handle, HANDLE thread_handle,
                                struct NaClApp *nap_remote,
                                struct NaClApp *app_copy,
                                struct NaClAppThread *natp_remote,
-                               int exception_code) {
+                               int exception_code,
+                               HANDLE *exception_event) {
   /*
    * Increment faulted_thread_count.  This needs to be atomic.  It
    * will be atomic because the target process is suspended.
@@ -314,6 +329,21 @@ static BOOL QueueFaultedThread(HANDLE process_handle, HANDLE thread_handle,
     return FALSE;
   }
   if (!WRITE_MEM(process_handle, &natp_remote->fault_signal, &exception_code)) {
+    return FALSE;
+  }
+  if (app_copy->faulted_thread_event == INVALID_HANDLE_VALUE) {
+    return FALSE;
+  }
+  if (*exception_event == INVALID_HANDLE_VALUE) {
+    if (!DuplicateHandle(process_handle, app_copy->faulted_thread_event,
+                         GetCurrentProcess(), exception_event,
+                         /* dwDesiredAccess, ignored */ 0,
+                         /* bInheritHandle= */ FALSE,
+                         DUPLICATE_SAME_ACCESS)) {
+      return FALSE;
+    }
+  }
+  if (!SetEvent(*exception_event)) {
     return FALSE;
   }
   /*
@@ -329,7 +359,8 @@ static BOOL QueueFaultedThread(HANDLE process_handle, HANDLE thread_handle,
 
 static BOOL HandleException(const struct StartupInfo *startup_info,
                             HANDLE process_handle, DWORD windows_thread_id,
-                            HANDLE thread_handle, DWORD exception_code) {
+                            HANDLE thread_handle, DWORD exception_code,
+                            HANDLE *exception_event) {
   CONTEXT context;
   uint32_t nacl_thread_index;
   uintptr_t addr_space_size;
@@ -342,10 +373,12 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
    * cannot be dereferenced directly.  We use a pointer type for the
    * convenience of calculating field offsets and sizes.
    */
+  struct NaClThreadContext *ntcp_remote;
   struct NaClAppThread *natp_remote;
   struct NaClAppThread appthread_copy;
   struct NaClApp app_copy;
   uint32_t context_user_addr;
+  struct NaClSignalContext sig_context;
 
   context.ContextFlags = CONTEXT_SEGMENTS | CONTEXT_INTEGER | CONTEXT_CONTROL;
   if (!GetThreadContext(thread_handle, &context)) {
@@ -361,18 +394,19 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
     return FALSE;
   }
 
-  if (!READ_MEM(process_handle, startup_info->nacl_thread + nacl_thread_index,
-                &natp_remote)) {
+  if (!READ_MEM(process_handle, startup_info->nacl_user + nacl_thread_index,
+                &ntcp_remote)) {
     return FALSE;
   }
-  if (natp_remote == NULL) {
+  if (ntcp_remote == NULL) {
     /*
-     * This means the nacl_thread and nacl_thread_ids arrays do not
+     * This means the nacl_user and nacl_thread_ids arrays do not
      * match up.  TODO(mseaborn): Complain more noisily about such
      * unexpected cases and terminate the NaCl process.
      */
     return FALSE;
   }
+  natp_remote = NaClAppThreadFromThreadContext(ntcp_remote);
   /*
    * We make copies of the debuggee process's NaClApp and
    * NaClAppThread structs.  We avoid passing these copies to
@@ -405,7 +439,21 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
   if (app_copy.enable_faulted_thread_queue) {
     return QueueFaultedThread(process_handle, thread_handle,
                               appthread_copy.nap, &app_copy, natp_remote,
-                              exception_code);
+                              exception_code, exception_event);
+  }
+
+  NaClSignalContextFromHandler(&sig_context, &context);
+  appthread_copy.nap = &app_copy;
+  if (!NaClSignalCheckSandboxInvariants(&sig_context, &appthread_copy)) {
+    return FALSE;
+  }
+
+  /*
+   * If trusted code accidentally jumped to untrusted code, don't let
+   * the untrusted exception handler take over.
+   */
+  if ((appthread_copy.suspend_state & NACL_APP_THREAD_UNTRUSTED) == 0) {
+    return FALSE;
   }
 
   exception_stack = appthread_copy.exception_stack;
@@ -457,23 +505,9 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
     return FALSE;
   }
 
-  new_stack.return_addr = 0;
   context_user_addr = exception_stack +
       offsetof(struct NaClExceptionFrame, context);
-#if NACL_BUILD_SUBARCH == 32
-  new_stack.context_ptr = context_user_addr;
-  new_stack.context.prog_ctr = context.Eip;
-  new_stack.context.stack_ptr = context.Esp;
-  new_stack.context.frame_ptr = context.Ebp;
-#else
-  /*
-   * Explicit downcast of %rip, %rsp, and %rbp required as we're truncating
-   * values for portability.
-   */
-  new_stack.context.prog_ctr = (uint32_t) context.Rip;
-  new_stack.context.stack_ptr = (uint32_t) context.Rsp;
-  new_stack.context.frame_ptr = (uint32_t) context.Rbp;
-#endif
+  NaClSignalSetUpExceptionFrame(&new_stack, &sig_context, context_user_addr);
   if (!WRITE_MEM(process_handle,
                  (struct NaClExceptionFrame *) (app_copy.mem_start
                                                 + exception_stack),
@@ -488,15 +522,6 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
   context.Rdi = context_user_addr;  /* Argument 1 */
   context.Rip = app_copy.mem_start + app_copy.exception_handler;
   context.Rsp = app_copy.mem_start + exception_stack;
-  /*
-   * The x86-64 sandbox allows %rsp/%rbp to point temporarily to the
-   * lower 4GB of address space.  It should not be possible to fault
-   * while %rsp/%rbp is in this state; otherwise, we have safety
-   * problems when the debug stub is not enabled.  For portability,
-   * and to be on the safe side, we reset %rbp to zero in untrusted
-   * address space.
-   */
-  context.Rbp = app_copy.mem_start;
 #endif
 
   context.EFlags &= ~NACL_X86_DIRECTION_FLAG;
@@ -505,16 +530,13 @@ static BOOL HandleException(const struct StartupInfo *startup_info,
 
 int NaClDebugExceptionHandlerEnsureAttached(struct NaClApp *nap) {
   if (nap->attach_debug_exception_handler_func == NULL) {
-    /*
-     * No callback was provided, so we assume that the debug exception
-     * handler was attached during process startup.
-     */
-    return 1;
+    /* Error: Debug exception handler not available. */
+    return 0;
   }
   if (nap->debug_exception_handler_state
       == NACL_DEBUG_EXCEPTION_HANDLER_NOT_STARTED) {
     struct StartupInfo info;
-    info.nacl_thread = nacl_thread;
+    info.nacl_user = nacl_user;
     info.nacl_thread_ids = nacl_thread_ids;
     if (nap->attach_debug_exception_handler_func(&info, sizeof(info))) {
       nap->debug_exception_handler_state = NACL_DEBUG_EXCEPTION_HANDLER_STARTED;

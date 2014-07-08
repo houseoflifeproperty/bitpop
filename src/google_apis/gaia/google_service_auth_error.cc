@@ -8,8 +8,8 @@
 
 #include "base/json/json_reader.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
 
@@ -35,7 +35,6 @@ bool GoogleServiceAuthError::Captcha::operator==(const Captcha& b) const {
           image_height == b.image_height);
 }
 
-
 GoogleServiceAuthError::SecondFactor::SecondFactor() : field_length(0) {
 }
 
@@ -57,7 +56,6 @@ bool GoogleServiceAuthError::SecondFactor::operator==(
           field_length == b.field_length);
 }
 
-
 bool GoogleServiceAuthError::operator==(
     const GoogleServiceAuthError& b) const {
   return (state_ == b.state_ &&
@@ -75,8 +73,10 @@ GoogleServiceAuthError::GoogleServiceAuthError(State s)
   }
 }
 
-GoogleServiceAuthError::GoogleServiceAuthError(const std::string& error_message)
-    : state_(INVALID_GAIA_CREDENTIALS),
+GoogleServiceAuthError::GoogleServiceAuthError(
+    State state,
+    const std::string& error_message)
+    : state_(state),
       network_error_(0),
       error_message_(error_message) {
 }
@@ -97,49 +97,19 @@ GoogleServiceAuthError GoogleServiceAuthError::FromClientLoginCaptchaChallenge(
 }
 
 // static
-GoogleServiceAuthError GoogleServiceAuthError::FromCaptchaChallenge(
-    const std::string& captcha_token,
-    const GURL& captcha_audio_url,
-    const GURL& captcha_image_url,
-    int image_width,
-    int image_height) {
- return GoogleServiceAuthError(CAPTCHA_REQUIRED, captcha_token,
-                               captcha_audio_url, captcha_image_url,
-                               GURL(), image_width, image_height);
+GoogleServiceAuthError GoogleServiceAuthError::FromServiceError(
+    const std::string& error_message) {
+  return GoogleServiceAuthError(SERVICE_ERROR, error_message);
 }
 
 // static
-GoogleServiceAuthError GoogleServiceAuthError::FromSecondFactorChallenge(
-    const std::string& captcha_token,
-    const std::string& prompt_text,
-    const std::string& alternate_text,
-    int field_length) {
- return GoogleServiceAuthError(TWO_FACTOR, captcha_token, prompt_text,
-                               alternate_text, field_length);
+GoogleServiceAuthError GoogleServiceAuthError::FromUnexpectedServiceResponse(
+    const std::string& error_message) {
+  return GoogleServiceAuthError(UNEXPECTED_SERVICE_RESPONSE, error_message);
 }
 
 // static
-GoogleServiceAuthError GoogleServiceAuthError::FromClientOAuthError(
-    const std::string& data) {
-  scoped_ptr<base::Value> value(base::JSONReader::Read(data));
-  if (!value.get() || value->GetType() != base::Value::TYPE_DICTIONARY)
-    return GoogleServiceAuthError(CONNECTION_FAILED, 0);
-
-  DictionaryValue* dict = static_cast<DictionaryValue*>(value.get());
-
-  std::string cause;
-  if (!dict->GetStringWithoutPathExpansion("cause", &cause))
-    return GoogleServiceAuthError(CONNECTION_FAILED, 0);
-
-  // The explanation field is optional.
-  std::string explanation;
-  if (!dict->GetStringWithoutPathExpansion("explanation", &explanation))
-    explanation.clear();
-
- return GoogleServiceAuthError(explanation);
-}
-
-GoogleServiceAuthError GoogleServiceAuthError::None() {
+GoogleServiceAuthError GoogleServiceAuthError::AuthErrorNone() {
   return GoogleServiceAuthError(NONE);
 }
 
@@ -171,15 +141,15 @@ const std::string& GoogleServiceAuthError::token() const {
     default:
       NOTREACHED();
   }
-  return EmptyString();
+  return base::EmptyString();
 }
 
 const std::string& GoogleServiceAuthError::error_message() const {
   return error_message_;
 }
 
-DictionaryValue* GoogleServiceAuthError::ToValue() const {
-  DictionaryValue* value = new DictionaryValue();
+base::DictionaryValue* GoogleServiceAuthError::ToValue() const {
+  base::DictionaryValue* value = new base::DictionaryValue();
   std::string state_str;
   switch (state_) {
 #define STATE_CASE(x) case x: state_str = #x; break
@@ -194,14 +164,19 @@ DictionaryValue* GoogleServiceAuthError::ToValue() const {
     STATE_CASE(TWO_FACTOR);
     STATE_CASE(REQUEST_CANCELED);
     STATE_CASE(HOSTED_NOT_ALLOWED);
+    STATE_CASE(UNEXPECTED_SERVICE_RESPONSE);
+    STATE_CASE(SERVICE_ERROR);
 #undef STATE_CASE
     default:
       NOTREACHED();
       break;
   }
   value->SetString("state", state_str);
+  if (!error_message_.empty()) {
+    value->SetString("errorMessage", error_message_);
+  }
   if (state_ == CAPTCHA_REQUIRED) {
-    DictionaryValue* captcha_value = new DictionaryValue();
+    base::DictionaryValue* captcha_value = new base::DictionaryValue();
     value->Set("captcha", captcha_value);
     captcha_value->SetString("token", captcha_.token);
     captcha_value->SetString("audioUrl", captcha_.audio_url.spec());
@@ -212,7 +187,7 @@ DictionaryValue* GoogleServiceAuthError::ToValue() const {
   } else if (state_ == CONNECTION_FAILED) {
     value->SetString("networkError", net::ErrorToString(network_error_));
   } else if (state_ == TWO_FACTOR) {
-    DictionaryValue* two_factor_value = new DictionaryValue();
+    base::DictionaryValue* two_factor_value = new base::DictionaryValue();
     value->Set("two_factor", two_factor_value);
     two_factor_value->SetString("token", second_factor_.token);
     two_factor_value->SetString("promptText", second_factor_.prompt_text);
@@ -225,7 +200,7 @@ DictionaryValue* GoogleServiceAuthError::ToValue() const {
 std::string GoogleServiceAuthError::ToString() const {
   switch (state_) {
     case NONE:
-      return "";
+      return std::string();
     case INVALID_GAIA_CREDENTIALS:
       return "Invalid credentials.";
     case USER_NOT_SIGNED_UP:
@@ -248,6 +223,12 @@ std::string GoogleServiceAuthError::ToString() const {
       return "Request canceled.";
     case HOSTED_NOT_ALLOWED:
       return "Google account required.";
+    case UNEXPECTED_SERVICE_RESPONSE:
+      return base::StringPrintf("Unexpected service response (%s)",
+                                error_message_.c_str());
+    case SERVICE_ERROR:
+      return base::StringPrintf("Service responded with error: '%s'",
+                                error_message_.c_str());
     default:
       NOTREACHED();
       return std::string();
@@ -270,16 +251,5 @@ GoogleServiceAuthError::GoogleServiceAuthError(
     : state_(s),
       captcha_(captcha_token, captcha_audio_url, captcha_image_url,
                captcha_unlock_url, image_width, image_height),
-      network_error_(0) {
-}
-
-GoogleServiceAuthError::GoogleServiceAuthError(
-    State s,
-    const std::string& captcha_token,
-    const std::string& prompt_text,
-    const std::string& alternate_text,
-    int field_length)
-    : state_(s),
-      second_factor_(captcha_token, prompt_text, alternate_text, field_length),
       network_error_(0) {
 }

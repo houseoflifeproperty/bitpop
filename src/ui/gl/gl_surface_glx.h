@@ -8,9 +8,10 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "ui/base/x/x11_util.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/size.h"
+#include "ui/gfx/vsync_provider.h"
+#include "ui/gfx/x/x11_types.h"
 #include "ui/gl/gl_export.h"
 #include "ui/gl/gl_surface.h"
 
@@ -59,26 +60,22 @@ class GL_EXPORT NativeViewGLSurfaceGLX : public GLSurfaceGLX {
   virtual bool SwapBuffers() OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
   virtual void* GetHandle() OVERRIDE;
-  virtual std::string GetExtensions() OVERRIDE;
+  virtual bool SupportsPostSubBuffer() OVERRIDE;
   virtual void* GetConfig() OVERRIDE;
   virtual bool PostSubBuffer(int x, int y, int width, int height) OVERRIDE;
-  virtual void GetVSyncParameters(const UpdateVSyncCallback& callback) OVERRIDE;
-
-  class VSyncProvider {
-   public:
-    virtual ~VSyncProvider() { }
-
-    virtual void GetVSyncParameters(
-        const GLSurface::UpdateVSyncCallback& callback) = 0;
-  };
+  virtual VSyncProvider* GetVSyncProvider() OVERRIDE;
 
  protected:
   NativeViewGLSurfaceGLX();
   virtual ~NativeViewGLSurfaceGLX();
 
-  gfx::AcceleratedWidget window_;
-
  private:
+  // The handle for the drawable to make current or swap.
+  gfx::AcceleratedWidget GetDrawableHandle() const;
+
+  // Window passed in at creation. Always valid.
+  gfx::AcceleratedWidget parent_window_;
+
   void* config_;
   gfx::Size size_;
 

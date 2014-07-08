@@ -140,6 +140,7 @@
 #undef small
 
 using STL_NAMESPACE::max;
+using STL_NAMESPACE::min;
 using STL_NAMESPACE::numeric_limits;
 using STL_NAMESPACE::vector;
 
@@ -267,6 +268,9 @@ extern "C" {
   //    glibc: malloc_usable_size()
   //    Windows: _msize()
   size_t tc_malloc_size(void* p) __THROW
+      ATTRIBUTE_SECTION(google_malloc);
+
+  void* tc_malloc_skip_new_handler(size_t size)
       ATTRIBUTE_SECTION(google_malloc);
 }  // extern "C"
 
@@ -1012,7 +1016,7 @@ static void ReportLargeAlloc(Length num_pages, void* result) {
   static const int N = 1000;
   char buffer[N];
   TCMalloc_Printer printer(buffer, N);
-  printer.printf("tcmalloc: large alloc %"PRIu64" bytes == %p @ ",
+  printer.printf("tcmalloc: large alloc %" PRIu64 " bytes == %p @ ",
                  static_cast<uint64>(num_pages) << kPageShift,
                  result);
   for (int i = 0; i < stack.depth; i++) {
@@ -1061,7 +1065,10 @@ inline void* do_malloc_pages(ThreadCache* heap, size_t size) {
   Length num_pages = tcmalloc::pages(size);
   size = num_pages << kPageShift;
 
-  heap->AddToByteAllocatedTotal(size);  // Chromium profiling.
+  // Chromium profiling.  Measurements in March 2013 suggest this
+  // imposes a small enough runtime cost that there's no reason to
+  // try to optimize it.
+  heap->AddToByteAllocatedTotal(size);
 
   if ((FLAGS_tcmalloc_sample_parameter > 0) && heap->SampleAllocation(size)) {
     result = DoSampledAllocation(size);
@@ -1088,33 +1095,30 @@ inline void* do_malloc(size_t size) {
 
   // The following call forces module initialization
   ThreadCache* heap = ThreadCache::GetCache();
-  // First, check if our security policy allows this size.
-  if (IsAllocSizePermitted(size)) {
-    if (size <= kMaxSize) {
-      size_t cl = Static::sizemap()->SizeClass(size);
-      size = Static::sizemap()->class_to_size(cl);
+  if (size <= kMaxSize && IsAllocSizePermitted(size)) {
+    size_t cl = Static::sizemap()->SizeClass(size);
+    size = Static::sizemap()->class_to_size(cl);
 
-      // TODO(jar): If this has any detectable performance impact, it can be
-      // optimized by only tallying sizes if the profiler was activated to
-      // recall these tallies.  I don't think this is performance critical, but
-      // we really should measure it.
-      heap->AddToByteAllocatedTotal(size);  // Chromium profiling.
+    // Chromium profiling.  Measurements in March 2013 suggest this
+    // imposes a small enough runtime cost that there's no reason to
+    // try to optimize it.
+    heap->AddToByteAllocatedTotal(size);
 
-      if ((FLAGS_tcmalloc_sample_parameter > 0) &&
-          heap->SampleAllocation(size)) {
-        ret = DoSampledAllocation(size);
-        MarkAllocatedRegion(ret);
-      } else {
-        // The common case, and also the simplest.  This just pops the
-        // size-appropriate freelist, after replenishing it if it's empty.
-        ret = CheckMallocResult(heap->Allocate(size, cl));
-      }
-    } else {
-      ret = do_malloc_pages(heap, size);
+    if ((FLAGS_tcmalloc_sample_parameter > 0) &&
+        heap->SampleAllocation(size)) {
+      ret = DoSampledAllocation(size);
       MarkAllocatedRegion(ret);
+    } else {
+      // The common case, and also the simplest.  This just pops the
+      // size-appropriate freelist, after replenishing it if it's empty.
+      ret = CheckMallocResult(heap->Allocate(size, cl));
     }
+  } else if (IsAllocSizePermitted(size)) {
+    ret = do_malloc_pages(heap, size);
+    MarkAllocatedRegion(ret);
   }
   if (ret == NULL) errno = ENOMEM;
+  ASSERT(IsAllocSizePermitted(size) || ret == NULL);
   return ret;
 }
 
@@ -1247,7 +1251,9 @@ inline void* do_realloc_with_callback(
   //    . If we need to grow, grow to max(new_size, old_size * 1.X)
   //    . Don't shrink unless new_size < old_size * 0.Y
   // X and Y trade-off time for wasted space.  For now we do 1.25 and 0.5.
-  const size_t lower_bound_to_grow = old_size + old_size / 4;
+  const size_t min_growth = min(old_size / 4,
+      (std::numeric_limits<size_t>::max)() - old_size);  // Avoid overflow.
+  const size_t lower_bound_to_grow = old_size + min_growth;
   const size_t upper_bound_to_shrink = old_size / 2;
   if ((new_size > old_size) || (new_size < upper_bound_to_shrink)) {
     // Need to reallocate.
@@ -1716,7 +1722,21 @@ extern "C" PERFTOOLS_DLL_DECL size_t tc_malloc_size(void* ptr) __THROW {
   return MallocExtension::instance()->GetAllocatedSize(ptr);
 }
 
+#if defined(OS_LINUX)
+extern "C" void* PERFTOOLS_DLL_DECL tc_malloc_skip_new_handler(size_t size) {
+  void* result = do_malloc(size);
+  MallocHook::InvokeNewHook(result, size);
+  return result;
+}
+#endif
+
 #endif  // TCMALLOC_USING_DEBUGALLOCATION
+
+#if defined(OS_LINUX)
+// Alias the weak symbol in chromium to our implementation.
+extern "C" __attribute__((visibility("default"), alias("tc_malloc_skip_new_handler")))
+void* tc_malloc_skip_new_handler_weak(size_t size);
+#endif
 
 // --- Validation implementation with an extra mark ----------------------------
 // We will put a mark at the extreme end of each allocation block.  We make

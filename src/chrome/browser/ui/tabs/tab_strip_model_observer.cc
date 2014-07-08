@@ -26,12 +26,12 @@ void TabStripModelObserver::TabDeactivated(WebContents* contents) {
 void TabStripModelObserver::ActiveTabChanged(WebContents* old_contents,
                                              WebContents* new_contents,
                                              int index,
-                                             bool user_gesture) {
+                                             int reason) {
 }
 
 void TabStripModelObserver::TabSelectionChanged(
     TabStripModel* tab_strip_model,
-    const TabStripSelectionModel& model) {
+    const ui::ListSelectionModel& model) {
 }
 
 void TabStripModelObserver::TabMoved(WebContents* contents,
@@ -62,6 +62,14 @@ void TabStripModelObserver::TabBlockedStateChanged(WebContents* contents,
                                                    int index) {
 }
 
-void TabStripModelObserver::TabStripEmpty() {}
+void TabStripModelObserver::TabStripEmpty() {
+}
 
-void TabStripModelObserver::TabStripModelDeleted() {}
+void TabStripModelObserver::WillCloseAllTabs() {
+}
+
+void TabStripModelObserver::CloseAllTabsCanceled() {
+}
+
+void TabStripModelObserver::TabStripModelDeleted() {
+}

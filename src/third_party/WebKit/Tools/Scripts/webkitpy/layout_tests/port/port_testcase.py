@@ -34,15 +34,15 @@ import os
 import socket
 import sys
 import time
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
-from webkitpy.common.system.executive_mock import MockExecutive
+from webkitpy.common.system.executive_mock import MockExecutive, MockExecutive2
 from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.common.system.systemhost_mock import MockSystemHost
-from webkitpy.layout_tests.port.base import Port
+from webkitpy.layout_tests.models import test_run_results
+from webkitpy.layout_tests.port.base import Port, TestConfiguration
 from webkitpy.layout_tests.port.server_process_mock import MockServerProcess
-from webkitpy.layout_tests.servers import http_server_base
 from webkitpy.tool.mocktool import MockOptions
 
 
@@ -50,12 +50,13 @@ from webkitpy.tool.mocktool import MockOptions
 class TestWebKitPort(Port):
     port_name = "testwebkitport"
 
-    def __init__(self, symbols_string=None,
+    def __init__(self, port_name=None, symbols_string=None,
                  expectations_file=None, skips_file=None, host=None, config=None,
                  **kwargs):
+        port_name = port_name or TestWebKitPort.port_name
         self.symbols_string = symbols_string  # Passing "" disables all staticly-detectable features.
         host = host or MockSystemHost()
-        super(TestWebKitPort, self).__init__(host, TestWebKitPort.port_name, **kwargs)
+        super(TestWebKitPort, self).__init__(host, port_name=port_name, **kwargs)
 
     def all_test_configurations(self):
         return [self.test_configuration()]
@@ -63,11 +64,17 @@ class TestWebKitPort(Port):
     def _symbols_string(self):
         return self.symbols_string
 
-    def _tests_for_other_platforms(self):
-        return ["media", ]
-
     def _tests_for_disabled_features(self):
         return ["accessibility", ]
+
+
+class FakePrinter(object):
+    def write_update(self, msg):
+        pass
+
+    def write_throttled_update(self, msg):
+        pass
+
 
 
 class PortTestCase(unittest.TestCase):
@@ -90,19 +97,51 @@ class PortTestCase(unittest.TestCase):
         port._config.build_directory = lambda configuration: '/mock-build'
         return port
 
+    def make_wdiff_available(self, port):
+        port._wdiff_available = True
+
+    def test_check_build(self):
+        port = self.make_port()
+        port._check_file_exists = lambda path, desc: True
+        if port._dump_reader:
+            port._dump_reader.check_is_functional = lambda: True
+        port._options.build = True
+        port._check_driver_build_up_to_date = lambda config: True
+        port.check_httpd = lambda: True
+        oc = OutputCapture()
+        try:
+            oc.capture_output()
+            self.assertEqual(port.check_build(needs_http=True, printer=FakePrinter()),
+                             test_run_results.OK_EXIT_STATUS)
+        finally:
+            out, err, logs = oc.restore_output()
+            self.assertIn('pretty patches', logs)         # We should get a warning about PrettyPatch being missing,
+            self.assertNotIn('build requirements', logs)  # but not the driver itself.
+
+        port._check_file_exists = lambda path, desc: False
+        port._check_driver_build_up_to_date = lambda config: False
+        try:
+            oc.capture_output()
+            self.assertEqual(port.check_build(needs_http=True, printer=FakePrinter()),
+                            test_run_results.UNEXPECTED_ERROR_EXIT_STATUS)
+        finally:
+            out, err, logs = oc.restore_output()
+            self.assertIn('pretty patches', logs)        # And, hereere we should get warnings about both.
+            self.assertIn('build requirements', logs)
+
     def test_default_max_locked_shards(self):
         port = self.make_port()
         port.default_child_processes = lambda: 16
-        self.assertEqual(port.default_max_locked_shards(), 1)
+        self.assertEqual(port.default_max_locked_shards(), 4)
         port.default_child_processes = lambda: 2
         self.assertEqual(port.default_max_locked_shards(), 1)
 
     def test_default_timeout_ms(self):
-        self.assertEqual(self.make_port(options=MockOptions(configuration='Release')).default_timeout_ms(), 35000)
-        self.assertEqual(self.make_port(options=MockOptions(configuration='Debug')).default_timeout_ms(), 35000)
+        self.assertEqual(self.make_port(options=MockOptions(configuration='Release')).default_timeout_ms(), 6000)
+        self.assertEqual(self.make_port(options=MockOptions(configuration='Debug')).default_timeout_ms(), 18000)
 
     def test_default_pixel_tests(self):
-        self.assertEqual(self.make_port().default_pixel_tests(), False)
+        self.assertEqual(self.make_port().default_pixel_tests(), True)
 
     def test_driver_cmd_line(self):
         port = self.make_port()
@@ -115,7 +154,7 @@ class PortTestCase(unittest.TestCase):
         self.assertTrue('--foo=baz' in cmd_line)
 
     def test_uses_apache(self):
-        self.assertTrue(self.make_port()._uses_apache())
+        self.assertTrue(self.make_port().uses_apache())
 
     def assert_servers_are_down(self, host, ports):
         for port in ports:
@@ -138,252 +177,116 @@ class PortTestCase(unittest.TestCase):
             finally:
                 test_socket.close()
 
-    def integration_test_http_lock(self):
-        port = self.make_port()
-        # Only checking that no exception is raised.
-        port.acquire_http_lock()
-        port.release_http_lock()
-
-    def integration_test_check_sys_deps(self):
-        port = self.make_port()
-        # Only checking that no exception is raised.
-        port.check_sys_deps(True)
-
-    def integration_test_helper(self):
-        port = self.make_port()
-        # Only checking that no exception is raised.
-        port.start_helper()
-        port.stop_helper()
-
-    def integration_test_http_server__normal(self):
-        port = self.make_port()
-        self.assert_servers_are_down('localhost', self.HTTP_PORTS)
-        port.start_http_server()
-        self.assert_servers_are_up('localhost', self.HTTP_PORTS)
-        port.stop_http_server()
-        self.assert_servers_are_down('localhost', self.HTTP_PORTS)
-
-    def integration_test_http_server__fails(self):
-        port = self.make_port()
-        # Test that if a port isn't available, the call fails.
-        for port_number in self.HTTP_PORTS:
-            test_socket = socket.socket()
-            try:
-                try:
-                    test_socket.bind(('localhost', port_number))
-                except socket.error, e:
-                    if e.errno in (errno.EADDRINUSE, errno.EALREADY):
-                        self.fail('could not bind to port %d' % port_number)
-                    raise
-                try:
-                    port.start_http_server()
-                    self.fail('should not have been able to start the server while bound to %d' % port_number)
-                except http_server_base.ServerError, e:
-                    pass
-            finally:
-                port.stop_http_server()
-                test_socket.close()
-
-        # Test that calling start() twice fails.
-        try:
-            port.start_http_server()
-            self.assertRaises(AssertionError, port.start_http_server)
-        finally:
-            port.stop_http_server()
-
-    def integration_test_http_server__two_servers(self):
-        # Test that calling start() on two different ports causes the
-        # first port to be treated as stale and killed.
-        port = self.make_port()
-        # Test that if a port isn't available, the call fails.
-        port.start_http_server()
-        new_port = self.make_port()
-        try:
-            new_port.start_http_server()
-
-            # Check that the first server was killed.
-            self.assertFalse(port._executive.check_running_pid(port._http_server._pid))
-
-            # Check that there is something running.
-            self.assert_servers_are_up('localhost', self.HTTP_PORTS)
-
-            # Test that calling stop() on a killed server is harmless.
-            port.stop_http_server()
-        finally:
-            port.stop_http_server()
-            new_port.stop_http_server()
-
-            # Test that calling stop() twice is harmless.
-            new_port.stop_http_server()
-
-    def integration_test_image_diff(self):
-        port = self.make_port()
-        # FIXME: This test will never run since we are using a MockFilesystem for these tests!?!?
-        if not port.check_image_diff():
-            # The port hasn't been built - don't run the tests.
-            return
-
-        dir = port.layout_tests_dir()
-        file1 = port._filesystem.join(dir, 'fast', 'css', 'button_center.png')
-        contents1 = port._filesystem.read_binary_file(file1)
-        file2 = port._filesystem.join(dir, 'fast', 'css',
-                                      'remove-shorthand-expected.png')
-        contents2 = port._filesystem.read_binary_file(file2)
-        tmpfd, tmpfile = port._filesystem.open_binary_tempfile('')
-        tmpfd.close()
-
-        self.assertFalse(port.diff_image(contents1, contents1)[0])
-        self.assertTrue(port.diff_image(contents1, contents2)[0])
-
-        self.assertTrue(port.diff_image(contents1, contents2, tmpfile)[0])
-
-        port._filesystem.remove(tmpfile)
-
     def test_diff_image__missing_both(self):
         port = self.make_port()
-        self.assertFalse(port.diff_image(None, None)[0])
-        self.assertFalse(port.diff_image(None, '')[0])
-        self.assertFalse(port.diff_image('', None)[0])
+        self.assertEqual(port.diff_image(None, None), (None, None))
+        self.assertEqual(port.diff_image(None, ''), (None, None))
+        self.assertEqual(port.diff_image('', None), (None, None))
 
-        self.assertFalse(port.diff_image('', '')[0])
+        self.assertEqual(port.diff_image('', ''), (None, None))
 
     def test_diff_image__missing_actual(self):
         port = self.make_port()
-        self.assertTrue(port.diff_image(None, 'foo')[0])
-        self.assertTrue(port.diff_image('', 'foo')[0])
+        self.assertEqual(port.diff_image(None, 'foo'), ('foo', None))
+        self.assertEqual(port.diff_image('', 'foo'), ('foo', None))
 
     def test_diff_image__missing_expected(self):
         port = self.make_port()
-        self.assertTrue(port.diff_image('foo', None)[0])
-        self.assertTrue(port.diff_image('foo', '')[0])
+        self.assertEqual(port.diff_image('foo', None), ('foo', None))
+        self.assertEqual(port.diff_image('foo', ''), ('foo', None))
 
     def test_diff_image(self):
+        def _path_to_image_diff():
+            return "/path/to/image_diff"
+
         port = self.make_port()
-        self.proc = None
+        port._path_to_image_diff = _path_to_image_diff
 
-        def make_proc(port, nm, cmd, env):
-            self.proc = MockServerProcess(port, nm, cmd, env, lines=['diff: 100% failed\n', 'diff: 100% failed\n'])
-            return self.proc
+        mock_image_diff = "MOCK Image Diff"
 
-        port._server_process_constructor = make_proc
-        port.setup_test_run()
-        self.assertEqual(port.diff_image('foo', 'bar'), ('', 100.0, None))
-        self.assertEqual(self.proc.cmd[1:3], ["--tolerance", "0.1"])
+        def mock_run_command(args):
+            port._filesystem.write_binary_file(args[4], mock_image_diff)
+            return 1
 
-        self.assertEqual(port.diff_image('foo', 'bar', None), ('', 100.0, None))
-        self.assertEqual(self.proc.cmd[1:3], ["--tolerance", "0.1"])
+        # Images are different.
+        port._executive = MockExecutive2(run_command_fn=mock_run_command)
+        self.assertEqual(mock_image_diff, port.diff_image("EXPECTED", "ACTUAL")[0])
 
-        self.assertEqual(port.diff_image('foo', 'bar', 0), ('', 100.0, None))
-        self.assertEqual(self.proc.cmd[1:3], ["--tolerance", "0"])
+        # Images are the same.
+        port._executive = MockExecutive2(exit_code=0)
+        self.assertEqual(None, port.diff_image("EXPECTED", "ACTUAL")[0])
 
-        port.clean_up_test_run()
-        self.assertTrue(self.proc.stopped)
-        self.assertEqual(port._image_differ, None)
+        # There was some error running image_diff.
+        port._executive = MockExecutive2(exit_code=2)
+        exception_raised = False
+        try:
+            port.diff_image("EXPECTED", "ACTUAL")
+        except ValueError, e:
+            exception_raised = True
+        self.assertFalse(exception_raised)
 
     def test_diff_image_crashed(self):
         port = self.make_port()
-        self.proc = None
-
-        def make_proc(port, nm, cmd, env):
-            self.proc = MockServerProcess(port, nm, cmd, env, crashed=True)
-            return self.proc
-
-        port._server_process_constructor = make_proc
-        port.setup_test_run()
-        self.assertEqual(port.diff_image('foo', 'bar'), ('', 0, 'ImageDiff crashed\n'))
-        port.clean_up_test_run()
+        port._executive = MockExecutive2(exit_code=2)
+        self.assertEqual(port.diff_image("EXPECTED", "ACTUAL"), (None, 'Image diff returned an exit code of 2. See http://crbug.com/278596'))
 
     def test_check_wdiff(self):
         port = self.make_port()
         port.check_wdiff()
 
-    def integration_test_websocket_server__normal(self):
+    def test_wdiff_text_fails(self):
+        host = MockSystemHost(os_name=self.os_name, os_version=self.os_version)
+        host.executive = MockExecutive(should_throw=True)
+        port = self.make_port(host=host)
+        port._executive = host.executive  # AndroidPortTest.make_port sets its own executive, so reset that as well.
+
+        # This should raise a ScriptError that gets caught and turned into the
+        # error text, and also mark wdiff as not available.
+        self.make_wdiff_available(port)
+        self.assertTrue(port.wdiff_available())
+        diff_txt = port.wdiff_text("/tmp/foo.html", "/tmp/bar.html")
+        self.assertEqual(diff_txt, port._wdiff_error_html)
+        self.assertFalse(port.wdiff_available())
+
+    def test_missing_symbol_to_skipped_tests(self):
+        # Test that we get the chromium skips and not the webkit default skips
         port = self.make_port()
-        self.assert_servers_are_down('localhost', self.WEBSOCKET_PORTS)
-        port.start_websocket_server()
-        self.assert_servers_are_up('localhost', self.WEBSOCKET_PORTS)
-        port.stop_websocket_server()
-        self.assert_servers_are_down('localhost', self.WEBSOCKET_PORTS)
-
-    def integration_test_websocket_server__fails(self):
-        port = self.make_port()
-
-        # Test that start() fails if a port isn't available.
-        for port_number in self.WEBSOCKET_PORTS:
-            test_socket = socket.socket()
-            try:
-                test_socket.bind(('localhost', port_number))
-                try:
-                    port.start_websocket_server()
-                    self.fail('should not have been able to start the server while bound to %d' % port_number)
-                except http_server_base.ServerError, e:
-                    pass
-            finally:
-                port.stop_websocket_server()
-                test_socket.close()
-
-        # Test that calling start() twice fails.
-        try:
-            port.start_websocket_server()
-            self.assertRaises(AssertionError, port.start_websocket_server)
-        finally:
-            port.stop_websocket_server()
-
-    def integration_test_websocket_server__two_servers(self):
-        port = self.make_port()
-
-        # Test that calling start() on two different ports causes the
-        # first port to be treated as stale and killed.
-        port.start_websocket_server()
-        new_port = self.make_port()
-        try:
-            new_port.start_websocket_server()
-
-            # Check that the first server was killed.
-            self.assertFalse(port._executive.check_running_pid(port._websocket_server._pid))
-
-            # Check that there is something running.
-            self.assert_servers_are_up('localhost', self.WEBSOCKET_PORTS)
-
-            # Test that calling stop() on a killed server is harmless.
-            port.stop_websocket_server()
-        finally:
-            port.stop_websocket_server()
-            new_port.stop_websocket_server()
-
-            # Test that calling stop() twice is harmless.
-            new_port.stop_websocket_server()
+        skip_dict = port._missing_symbol_to_skipped_tests()
+        if port.PORT_HAS_AUDIO_CODECS_BUILT_IN:
+            self.assertEqual(skip_dict, {})
+        else:
+            self.assertTrue('ff_mp3_decoder' in skip_dict)
+        self.assertFalse('WebGLShader' in skip_dict)
 
     def test_test_configuration(self):
         port = self.make_port()
         self.assertTrue(port.test_configuration())
 
     def test_all_test_configurations(self):
+        """Validate the complete set of configurations this port knows about."""
         port = self.make_port()
-        self.assertTrue(len(port.all_test_configurations()) > 0)
-        self.assertTrue(port.test_configuration() in port.all_test_configurations(), "%s not in %s" % (port.test_configuration(), port.all_test_configurations()))
-
-    def integration_test_http_server__loop(self):
-        port = self.make_port()
-
-        i = 0
-        while i < 10:
-            self.assert_servers_are_down('localhost', self.HTTP_PORTS)
-            port.start_http_server()
-
-            # We sleep in between alternating runs to ensure that this
-            # test handles both back-to-back starts and stops and
-            # starts and stops separated by a delay.
-            if i % 2:
-                time.sleep(0.1)
-
-            self.assert_servers_are_up('localhost', self.HTTP_PORTS)
-            port.stop_http_server()
-            if i % 2:
-                time.sleep(0.1)
-
-            i += 1
-
+        self.assertEqual(set(port.all_test_configurations()), set([
+            TestConfiguration('snowleopard', 'x86', 'debug'),
+            TestConfiguration('snowleopard', 'x86', 'release'),
+            TestConfiguration('lion', 'x86', 'debug'),
+            TestConfiguration('lion', 'x86', 'release'),
+            TestConfiguration('retina', 'x86', 'debug'),
+            TestConfiguration('retina', 'x86', 'release'),
+            TestConfiguration('mountainlion', 'x86', 'debug'),
+            TestConfiguration('mountainlion', 'x86', 'release'),
+            TestConfiguration('mavericks', 'x86', 'debug'),
+            TestConfiguration('mavericks', 'x86', 'release'),
+            TestConfiguration('xp', 'x86', 'debug'),
+            TestConfiguration('xp', 'x86', 'release'),
+            TestConfiguration('win7', 'x86', 'debug'),
+            TestConfiguration('win7', 'x86', 'release'),
+            TestConfiguration('lucid', 'x86', 'debug'),
+            TestConfiguration('lucid', 'x86', 'release'),
+            TestConfiguration('lucid', 'x86_64', 'debug'),
+            TestConfiguration('lucid', 'x86_64', 'release'),
+            TestConfiguration('icecreamsandwich', 'x86', 'debug'),
+            TestConfiguration('icecreamsandwich', 'x86', 'release'),
+        ]))
     def test_get_crash_log(self):
         port = self.make_port()
         self.assertEqual(port._get_crash_log(None, None, None, None, newer_than=None),
@@ -418,12 +321,56 @@ class PortTestCase(unittest.TestCase):
             port.host.filesystem.maybe_make_directory(directory)
         self.assertEqual(port._build_path(), expected_path)
 
+    def test_expectations_files(self):
+        port = self.make_port()
+
+        generic_path = port.path_to_generic_test_expectations_file()
+        chromium_overrides_path = port.path_from_chromium_base(
+            'webkit', 'tools', 'layout_tests', 'test_expectations.txt')
+        never_fix_tests_path = port._filesystem.join(port.layout_tests_dir(), 'NeverFixTests')
+        stale_tests_path = port._filesystem.join(port.layout_tests_dir(), 'StaleTestExpectations')
+        slow_tests_path = port._filesystem.join(port.layout_tests_dir(), 'SlowTests')
+        skia_overrides_path = port.path_from_chromium_base(
+            'skia', 'skia_test_expectations.txt')
+
+        port._filesystem.write_text_file(skia_overrides_path, 'dummy text')
+
+        w3c_overrides_path = port.path_from_chromium_base(
+            'webkit', 'tools', 'layout_tests', 'test_expectations_w3c.txt')
+        port._filesystem.write_text_file(w3c_overrides_path, 'dummy text')
+
+        port._options.builder_name = 'DUMMY_BUILDER_NAME'
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path,
+                          chromium_overrides_path])
+
+        port._options.builder_name = 'builder (deps)'
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path,
+                          chromium_overrides_path])
+
+        # A builder which does NOT observe the Chromium test_expectations,
+        # but still observes the Skia test_expectations...
+        port._options.builder_name = 'builder'
+        self.assertEqual(port.expectations_files(),
+                         [generic_path, skia_overrides_path, w3c_overrides_path,
+                          never_fix_tests_path, stale_tests_path, slow_tests_path])
+
+    def test_check_sys_deps(self):
+        port = self.make_port()
+        port._executive = MockExecutive2(exit_code=0)
+        self.assertEqual(port.check_sys_deps(needs_http=False), test_run_results.OK_EXIT_STATUS)
+        port._executive = MockExecutive2(exit_code=1, output='testing output failure')
+        self.assertEqual(port.check_sys_deps(needs_http=False), test_run_results.SYS_DEPS_EXIT_STATUS)
+
     def test_expectations_ordering(self):
         port = self.make_port()
         for path in port.expectations_files():
             port._filesystem.write_text_file(path, '')
         ordered_dict = port.expectations_dict()
-        self.assertEqual(port.path_to_test_expectations_file(), ordered_dict.keys()[0])
+        self.assertEqual(port.path_to_generic_test_expectations_file(), ordered_dict.keys()[0])
 
         options = MockOptions(additional_expectations=['/tmp/foo', '/tmp/bar'])
         port = self.make_port(options=options)
@@ -432,136 +379,32 @@ class PortTestCase(unittest.TestCase):
         port._filesystem.write_text_file('/tmp/foo', 'foo')
         port._filesystem.write_text_file('/tmp/bar', 'bar')
         ordered_dict = port.expectations_dict()
-        self.assertEqual(ordered_dict.keys()[-2:], options.additional_expectations)  # pylint: disable-msg=E1101
+        self.assertEqual(ordered_dict.keys()[-2:], options.additional_expectations)  # pylint: disable=E1101
         self.assertEqual(ordered_dict.values()[-2:], ['foo', 'bar'])
-
-    def test_path_to_test_expectations_file(self):
-        port = TestWebKitPort()
-        port._options = MockOptions(webkit_test_runner=False)
-        self.assertEqual(port.path_to_test_expectations_file(), '/mock-checkout/LayoutTests/platform/testwebkitport/TestExpectations')
-
-        port = TestWebKitPort()
-        port._options = MockOptions(webkit_test_runner=True)
-        self.assertEqual(port.path_to_test_expectations_file(), '/mock-checkout/LayoutTests/platform/testwebkitport/TestExpectations')
-
-        port = TestWebKitPort()
-        port.host.filesystem.files['/mock-checkout/LayoutTests/platform/testwebkitport/TestExpectations'] = 'some content'
-        port._options = MockOptions(webkit_test_runner=False)
-        self.assertEqual(port.path_to_test_expectations_file(), '/mock-checkout/LayoutTests/platform/testwebkitport/TestExpectations')
 
     def test_skipped_directories_for_symbols(self):
         # This first test confirms that the commonly found symbols result in the expected skipped directories.
-        symbols_string = " ".join(["GraphicsLayer", "WebCoreHas3DRendering", "isXHTMLMPDocument", "fooSymbol"])
+        symbols_string = " ".join(["fooSymbol"])
         expected_directories = set([
-            "mathml",  # Requires MathMLElement
-            "fast/canvas/webgl",  # Requires WebGLShader
-            "compositing/webgl",  # Requires WebGLShader
-            "http/tests/canvas/webgl",  # Requires WebGLShader
-            "mhtml",  # Requires MHTMLArchive
-            "fast/css/variables",  # Requires CSS Variables
-            "inspector/styles/variables",  # Requires CSS Variables
+            "webaudio/codec-tests/mp3",
+            "webaudio/codec-tests/aac",
         ])
 
-        result_directories = set(TestWebKitPort(symbols_string, None)._skipped_tests_for_unsupported_features(test_list=['mathml/foo.html']))
+        result_directories = set(TestWebKitPort(symbols_string=symbols_string)._skipped_tests_for_unsupported_features(test_list=['webaudio/codec-tests/mp3/foo.html']))
         self.assertEqual(result_directories, expected_directories)
 
         # Test that the nm string parsing actually works:
         symbols_string = """
-000000000124f498 s __ZZN7WebCore13GraphicsLayer12replaceChildEPS0_S1_E19__PRETTY_FUNCTION__
-000000000124f500 s __ZZN7WebCore13GraphicsLayer13addChildAboveEPS0_S1_E19__PRETTY_FUNCTION__
-000000000124f670 s __ZZN7WebCore13GraphicsLayer13addChildBelowEPS0_S1_E19__PRETTY_FUNCTION__
+000000000124f498 s __ZZN7WebCore13ff_mp3_decoder12replaceChildEPS0_S1_E19__PRETTY_FUNCTION__
+000000000124f500 s __ZZN7WebCore13ff_mp3_decoder13addChildAboveEPS0_S1_E19__PRETTY_FUNCTION__
+000000000124f670 s __ZZN7WebCore13ff_mp3_decoder13addChildBelowEPS0_S1_E19__PRETTY_FUNCTION__
 """
         # Note 'compositing' is not in the list of skipped directories (hence the parsing of GraphicsLayer worked):
-        expected_directories = set(['mathml', 'transforms/3d', 'compositing/webgl', 'fast/canvas/webgl', 'animations/3d', 'mhtml', 'http/tests/canvas/webgl', 'fast/css/variables', 'inspector/styles/variables'])
-        result_directories = set(TestWebKitPort(symbols_string, None)._skipped_tests_for_unsupported_features(test_list=['mathml/foo.html']))
+        expected_directories = set([
+            "webaudio/codec-tests/aac",
+        ])
+        result_directories = set(TestWebKitPort(symbols_string=symbols_string)._skipped_tests_for_unsupported_features(test_list=['webaudio/codec-tests/mp3/foo.html']))
         self.assertEqual(result_directories, expected_directories)
-
-    def test_skipped_directories_for_features(self):
-        supported_features = ["Accelerated Compositing", "Foo Feature"]
-        expected_directories = set(["animations/3d", "transforms/3d"])
-        port = TestWebKitPort(None, supported_features)
-        port._runtime_feature_list = lambda: supported_features
-        result_directories = set(port._skipped_tests_for_unsupported_features(test_list=["animations/3d/foo.html"]))
-        self.assertEqual(result_directories, expected_directories)
-
-    def test_skipped_directories_for_features_no_matching_tests_in_test_list(self):
-        supported_features = ["Accelerated Compositing", "Foo Feature"]
-        expected_directories = set([])
-        result_directories = set(TestWebKitPort(None, supported_features)._skipped_tests_for_unsupported_features(test_list=['foo.html']))
-        self.assertEqual(result_directories, expected_directories)
-
-    def test_skipped_tests_for_unsupported_features_empty_test_list(self):
-        supported_features = ["Accelerated Compositing", "Foo Feature"]
-        expected_directories = set([])
-        result_directories = set(TestWebKitPort(None, supported_features)._skipped_tests_for_unsupported_features(test_list=None))
-        self.assertEqual(result_directories, expected_directories)
-
-    def test_skipped_layout_tests(self):
-        self.assertEqual(TestWebKitPort(None, None).skipped_layout_tests(test_list=[]), set(['media']))
-
-    def test_expectations_files(self):
-        port = TestWebKitPort()
-
-        def platform_dirs(port):
-            return [port.host.filesystem.basename(port.host.filesystem.dirname(f)) for f in port.expectations_files()]
-
-        self.assertEqual(platform_dirs(port), ['testwebkitport'])
-
-        port._name = "testwebkitport-version"
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version'])
-
-        port._options = MockOptions(webkit_test_runner=True)
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version', 'testwebkitport-wk2', 'wk2'])
-
-        port._options = MockOptions(additional_platform_directory=["internal-testwebkitport"])
-        self.assertEqual(platform_dirs(port), ['testwebkitport', 'testwebkitport-version', 'internal-testwebkitport'])
-
-    def test_root_option(self):
-        port = TestWebKitPort()
-        port._options = MockOptions(root='/foo')
-        self.assertEqual(port._path_to_driver(), "/foo/DumpRenderTree")
-
-    def test_test_expectations(self):
-        # Check that we read the expectations file
-        host = MockSystemHost()
-        host.filesystem.write_text_file('/mock-checkout/LayoutTests/platform/testwebkitport/TestExpectations',
-            'BUG_TESTEXPECTATIONS SKIP : fast/html/article-element.html = FAIL\n')
-        port = TestWebKitPort(host=host)
-        self.assertEqual(''.join(port.expectations_dict().values()), 'BUG_TESTEXPECTATIONS SKIP : fast/html/article-element.html = FAIL\n')
-
-    def test_build_driver(self):
-        output = OutputCapture()
-        port = TestWebKitPort()
-        # Delay setting _executive to avoid logging during construction
-        port._executive = MockExecutive(should_log=True)
-        port._options = MockOptions(configuration="Release")  # This should not be necessary, but I think TestWebKitPort is actually reading from disk (and thus detects the current configuration).
-        expected_logs = "MOCK run_command: ['Tools/Scripts/build-dumprendertree', '--release'], cwd=/mock-checkout, env={'LC_ALL': 'C', 'MOCK_ENVIRON_COPY': '1'}\n"
-        self.assertTrue(output.assert_outputs(self, port._build_driver, expected_logs=expected_logs))
-
-        # Make sure when passed --webkit-test-runner we build the right tool.
-        port._options = MockOptions(webkit_test_runner=True, configuration="Release")
-        expected_logs = "MOCK run_command: ['Tools/Scripts/build-dumprendertree', '--release'], cwd=/mock-checkout, env={'LC_ALL': 'C', 'MOCK_ENVIRON_COPY': '1'}\nMOCK run_command: ['Tools/Scripts/build-webkittestrunner', '--release'], cwd=/mock-checkout, env={'LC_ALL': 'C', 'MOCK_ENVIRON_COPY': '1'}\n"
-        self.assertTrue(output.assert_outputs(self, port._build_driver, expected_logs=expected_logs))
-
-        # Make sure we show the build log when --verbose is passed, which we simulate by setting the logging level to DEBUG.
-        output.set_log_level(logging.DEBUG)
-        port._options = MockOptions(configuration="Release")
-        expected_logs = """MOCK run_command: ['Tools/Scripts/build-dumprendertree', '--release'], cwd=/mock-checkout, env={'LC_ALL': 'C', 'MOCK_ENVIRON_COPY': '1'}
-Output of ['Tools/Scripts/build-dumprendertree', '--release']:
-MOCK output of child process
-"""
-        self.assertTrue(output.assert_outputs(self, port._build_driver, expected_logs=expected_logs))
-        output.set_log_level(logging.INFO)
-
-        # Make sure that failure to build returns False.
-        port._executive = MockExecutive(should_log=True, should_throw=True)
-        # Because WK2 currently has to build both webkittestrunner and DRT, if DRT fails, that's the only one it tries.
-        expected_logs = """MOCK run_command: ['Tools/Scripts/build-dumprendertree', '--release'], cwd=/mock-checkout, env={'LC_ALL': 'C', 'MOCK_ENVIRON_COPY': '1'}
-MOCK ScriptError
-
-MOCK output of child process
-"""
-        self.assertFalse(output.assert_outputs(self, port._build_driver, expected_logs=expected_logs))
 
     def _assert_config_file_for_platform(self, port, platform, config_file):
         self.assertEqual(port._apache_config_file_name_for_platform(platform), config_file)
@@ -587,11 +430,13 @@ MOCK output of child process
         self._assert_config_file_for_platform(port, 'linux3', 'apache2-httpd.conf')
 
         port._is_redhat_based = lambda: True
-        self._assert_config_file_for_platform(port, 'linux2', 'fedora-httpd.conf')
+        port._apache_version = lambda: '2.2'
+        self._assert_config_file_for_platform(port, 'linux2', 'fedora-httpd-2.2.conf')
 
         port = TestWebKitPort()
         port._is_debian_based = lambda: True
-        self._assert_config_file_for_platform(port, 'linux2', 'apache2-debian-httpd.conf')
+        port._apache_version = lambda: '2.2'
+        self._assert_config_file_for_platform(port, 'linux2', 'debian-httpd-2.2.conf')
 
         self._assert_config_file_for_platform(port, 'mac', 'apache2-httpd.conf')
         self._assert_config_file_for_platform(port, 'win32', 'apache2-httpd.conf')  # win32 isn't a supported sys.platform.  AppleWin/WinCairo/WinCE ports all use cygwin.
@@ -603,48 +448,24 @@ MOCK output of child process
         saved_environ = os.environ.copy()
         try:
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/path/to/httpd.conf'
-            self.assertRaises(IOError, port._path_to_apache_config_file)
+            self.assertRaises(IOError, port.path_to_apache_config_file)
             port._filesystem.write_text_file('/existing/httpd.conf', 'Hello, world!')
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/existing/httpd.conf'
-            self.assertEqual(port._path_to_apache_config_file(), '/existing/httpd.conf')
+            self.assertEqual(port.path_to_apache_config_file(), '/existing/httpd.conf')
         finally:
             os.environ = saved_environ.copy()
 
         # Mock out _apache_config_file_name_for_platform to ignore the passed sys.platform value.
         port._apache_config_file_name_for_platform = lambda platform: 'httpd.conf'
-        self.assertEqual(port._path_to_apache_config_file(), '/mock-checkout/LayoutTests/http/conf/httpd.conf')
+        self.assertEqual(port.path_to_apache_config_file(), '/mock-checkout/third_party/WebKit/LayoutTests/http/conf/httpd.conf')
 
         # Check that even if we mock out _apache_config_file_name, the environment variable takes precedence.
         saved_environ = os.environ.copy()
         try:
             os.environ['WEBKIT_HTTP_SERVER_CONF_PATH'] = '/existing/httpd.conf'
-            self.assertEqual(port._path_to_apache_config_file(), '/existing/httpd.conf')
+            self.assertEqual(port.path_to_apache_config_file(), '/existing/httpd.conf')
         finally:
             os.environ = saved_environ.copy()
-
-    def test_check_build(self):
-        port = self.make_port(options=MockOptions(build=True))
-        self.build_called = False
-
-        def build_driver_called():
-            self.build_called = True
-            return True
-
-        port._build_driver = build_driver_called
-        port.check_build(False)
-        self.assertTrue(self.build_called)
-
-        port = self.make_port(options=MockOptions(root='/tmp', build=True))
-        self.build_called = False
-        port._build_driver = build_driver_called
-        port.check_build(False)
-        self.assertFalse(self.build_called, None)
-
-        port = self.make_port(options=MockOptions(build=False))
-        self.build_called = False
-        port._build_driver = build_driver_called
-        port.check_build(False)
-        self.assertFalse(self.build_called, None)
 
     def test_additional_platform_directory(self):
         port = self.make_port(options=MockOptions(additional_platform_directory=['/tmp/foo']))

@@ -9,8 +9,9 @@
 #include <vector>
 
 #include "base/bind.h"
-#include "base/process_util.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/process/process_iterator.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/common/chrome_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/common/process_type.h"
@@ -54,9 +55,9 @@ void GetProcessDataMemoryInformation(
     pmi.num_processes = 1;
 
     if (pmi.pid == base::GetCurrentProcId())
-      pmi.type = content::PROCESS_TYPE_BROWSER;
+      pmi.process_type = content::PROCESS_TYPE_BROWSER;
     else
-      pmi.type = content::PROCESS_TYPE_UNKNOWN;
+      pmi.process_type = content::PROCESS_TYPE_UNKNOWN;
 
     scoped_ptr<base::ProcessMetrics> metrics(
         base::ProcessMetrics::CreateProcessMetrics(*i));
@@ -130,7 +131,7 @@ void MemoryDetails::CollectProcessData(
   GetProcessDataMemoryInformation(current_browser_processes, &current_browser);
   current_browser.name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
   current_browser.process_name =
-      reinterpret_cast<unsigned int>(chrome::kBrowserProcessExecutableName);
+      base::ASCIIToUTF16(chrome::kBrowserProcessExecutableName);
   process_data_.push_back(current_browser);
 
   // Finally return to the browser thread.

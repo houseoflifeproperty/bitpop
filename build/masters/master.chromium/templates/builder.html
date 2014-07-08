@@ -20,41 +20,44 @@
     {% if b.when %}
       ETA: {{ b.when_time }} [{{ b.when }}]
     {% endif %}
+    {% if b.delay %}
+      [Running for {{ b.delay }}]
+    {% endif %}
 
     {{ b.current_step }}
 
     {% if authz.advertiseAction('stopBuild') %}
       {{ forms.stop_build(b.stop_url, authz, on_all=False, short=True, label='Build') }}
-    {% endif %}    
+    {% endif %}
     </li>
   {% endfor %}
   </ul>
 {% else %}
   <h2>No current builds</h2>
-{% endif %}    
- 
+{% endif %}
+
 {% if pending %}
   <h2>Pending Build Requests:</h2>
   <ul>
   {% for b in pending %}
-    <li><small>({{ b.when }}, waiting {{ b.delay }})</small> 
-    
+    <li><small>({{ b.when }}, waiting {{ b.delay }})</small>
+
     {% if authz.advertiseAction('cancelPendingBuild') %}
       {{ forms.cancel_pending_build(builder_url+"/cancelbuild", authz, short=True, id=b.id) }}
-    {% endif %}    
-    
+    {% endif %}
+
     {% if b.num_changes < 4 %}
         {% for c in b.changes %}{{ c.revision|longrev(c.repo) }}
         (<a href="{{ c.url }}">{{ c.who }}</a>){% if not loop.last %},{% endif %}
         {% endfor %}
     {% else %}
         ({{ b.num_changes }} changes)
-    {% endif %}    
+    {% endif %}
 
     </li>
   {% endfor %}
-  </ul>  
-  
+  </ul>
+
 {% else %}
   <h2>No Pending Build Requests</h2>
 {% endif %}
@@ -62,6 +65,10 @@
 <h2>Recent Builds:</h2>
 
 {{ build_table(recent) }}
+( Show: <a href="{{ builder_url }}">default</a>
+{% for count in [25, 50, 100, 200] %}
+<a href="{{ builder_url }}?numbuilds={{ count }}">{{ count }}</a>
+{% endfor %})
 
 </div>
 <div class="column">
@@ -82,7 +89,7 @@
     <td class="success">connected</td>
     <td class="admin">{{ s.admin|email if s.admin else ""}}</td>
   {% else %}
-    <td class="offline">offline</td> 
+    <td class="offline">offline</td>
     <td/>
   {% endif %}
   </tr>

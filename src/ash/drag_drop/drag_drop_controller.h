@@ -8,38 +8,31 @@
 #include "ash/ash_export.h"
 #include "base/callback.h"
 #include "base/memory/weak_ptr.h"
-#include "ui/aura/client/drag_drop_client.h"
 #include "ui/aura/window_observer.h"
-#include "ui/base/animation/animation_delegate.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/events/event_constants.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/gfx/rect.h"
+#include "ui/wm/public/drag_drop_client.h"
 
-namespace aura {
-class RootWindow;
-class Window;
-}
-
-namespace ui {
+namespace gfx {
 class LinearAnimation;
 }
 
 namespace ash {
+class DragDropTracker;
+class DragDropTrackerDelegate;
+class DragImageView;
 
 namespace test {
 class DragDropControllerTest;
 }
 
-namespace internal {
-
-class DragDropTracker;
-class DragImageView;
-
 class ASH_EXPORT DragDropController
     : public aura::client::DragDropClient,
       public ui::EventHandler,
-      public ui::AnimationDelegate,
+      public gfx::AnimationDelegate,
       public aura::WindowObserver {
  public:
   DragDropController();
@@ -52,7 +45,7 @@ class ASH_EXPORT DragDropController
   // Overridden from aura::client::DragDropClient:
   virtual int StartDragAndDrop(
       const ui::OSExchangeData& data,
-      aura::RootWindow* root_window,
+      aura::Window* root_window,
       aura::Window* source_window,
       const gfx::Point& root_location,
       int operation,
@@ -77,10 +70,10 @@ class ASH_EXPORT DragDropController
   // Helper method to create a LinearAnimation object that will run the drag
   // cancel animation. Caller take ownership of the returned object. Protected
   // for testing.
-  virtual ui::LinearAnimation* CreateCancelAnimation(
+  virtual gfx::LinearAnimation* CreateCancelAnimation(
       int duration,
       int frame_rate,
-      ui::AnimationDelegate* delegate);
+      gfx::AnimationDelegate* delegate);
 
   // Actual implementation of |DragCancel()|. protected for testing.
   virtual void DoDragCancel(int drag_cancel_animation_duration_ms);
@@ -88,10 +81,10 @@ class ASH_EXPORT DragDropController
  private:
   friend class ash::test::DragDropControllerTest;
 
-  // Overridden from ui::AnimationDelegate:
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
+  // Overridden from gfx::AnimationDelegate:
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
 
   // Helper method to start drag widget flying back animation.
   void StartCanceledAnimation(int animation_duration_ms);
@@ -114,7 +107,7 @@ class ASH_EXPORT DragDropController
   gfx::Rect drag_image_initial_bounds_for_cancel_animation_;
   gfx::Rect drag_image_final_bounds_for_cancel_animation_;
 
-  scoped_ptr<ui::LinearAnimation> cancel_animation_;
+  scoped_ptr<gfx::LinearAnimation> cancel_animation_;
 
   // Window that started the drag.
   aura::Window* drag_source_window_;
@@ -126,7 +119,8 @@ class ASH_EXPORT DragDropController
   // Closure for quitting nested message loop.
   base::Closure quit_closure_;
 
-  scoped_ptr<ash::internal::DragDropTracker> drag_drop_tracker_;
+  scoped_ptr<ash::DragDropTracker> drag_drop_tracker_;
+  scoped_ptr<DragDropTrackerDelegate> drag_drop_window_delegate_;
 
   ui::DragDropTypes::DragEventSource current_drag_event_source_;
 
@@ -139,7 +133,6 @@ class ASH_EXPORT DragDropController
   DISALLOW_COPY_AND_ASSIGN(DragDropController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_DRAG_DROP_DRAG_DROP_CONTROLLER_H_

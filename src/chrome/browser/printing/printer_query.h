@@ -10,18 +10,18 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/printing/print_job_worker_owner.h"
 #include "printing/print_job_constants.h"
-#include "ui/gfx/native_widget_types.h"
 
-class MessageLoop;
+class PrintingUIWebContentsObserver;
 
 namespace base {
 class DictionaryValue;
+class MessageLoop;
 }
 
 namespace printing {
 
-  class PrintDestinationInterface;
-  class PrintJobWorker;
+class PrintDestinationInterface;
+class PrintJobWorker;
 
 // Query the printer for settings.
 class PrinterQuery : public PrintJobWorkerOwner {
@@ -38,20 +38,21 @@ class PrinterQuery : public PrintJobWorkerOwner {
   virtual void GetSettingsDone(const PrintSettings& new_settings,
                                PrintingContext::Result result) OVERRIDE;
   virtual PrintJobWorker* DetachWorker(PrintJobWorkerOwner* new_owner) OVERRIDE;
-  virtual MessageLoop* message_loop() OVERRIDE;
+  virtual base::MessageLoop* message_loop() OVERRIDE;
   virtual const PrintSettings& settings() const OVERRIDE;
   virtual int cookie() const OVERRIDE;
 
   // Initializes the printing context. It is fine to call this function multiple
-  // times to reinitialize the settings. |parent_view| parameter's window will
-  // be the owner of the print setting dialog box. It is unused when
+  // times to reinitialize the settings. |web_contents_observer| can be queried
+  // to find the owner of the print setting dialog box. It is unused when
   // |ask_for_user_settings| is DEFAULTS.
-  void GetSettings(GetSettingsAskParam ask_user_for_settings,
-                   gfx::NativeView parent_view,
-                   int expected_page_count,
-                   bool has_selection,
-                   MarginType margin_type,
-                   const base::Closure& callback);
+  void GetSettings(
+      GetSettingsAskParam ask_user_for_settings,
+      scoped_ptr<PrintingUIWebContentsObserver> web_contents_observer,
+      int expected_page_count,
+      bool has_selection,
+      MarginType margin_type,
+      const base::Closure& callback);
 
   // Updates the current settings with |new_settings| dictionary values.
   void SetSettings(const base::DictionaryValue& new_settings,
@@ -79,7 +80,7 @@ class PrinterQuery : public PrintJobWorkerOwner {
 
   // Main message loop reference. Used to send notifications in the right
   // thread.
-  MessageLoop* const io_message_loop_;
+  base::MessageLoop* const io_message_loop_;
 
   // All the UI is done in a worker thread because many Win32 print functions
   // are blocking and enters a message loop without your consent. There is one

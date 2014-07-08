@@ -6,8 +6,9 @@
 #define UI_VIEWS_WIDGET_WIDGET_DELEGATE_H_
 
 #include <string>
+#include <vector>
 
-#include "ui/base/accessibility/accessibility_types.h"
+#include "ui/accessibility/ax_enums.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/views/view.h"
 
@@ -59,18 +60,23 @@ class VIEWS_EXPORT WidgetDelegate {
   // ui::MODAL_TYPE_NONE (not modal).
   virtual ui::ModalType GetModalType() const;
 
-  virtual ui::AccessibilityTypes::Role GetAccessibleWindowRole() const;
-
-  virtual ui::AccessibilityTypes::State GetAccessibleWindowState() const;
+  virtual ui::AXRole GetAccessibleWindowRole() const;
 
   // Returns the title to be read with screen readers.
-  virtual string16 GetAccessibleWindowTitle() const;
+  virtual base::string16 GetAccessibleWindowTitle() const;
 
   // Returns the text to be displayed in the window title.
-  virtual string16 GetWindowTitle() const;
+  virtual base::string16 GetWindowTitle() const;
 
   // Returns true if the window should show a title in the title bar.
   virtual bool ShouldShowWindowTitle() const;
+
+  // Returns true if the window should show a close button in the title bar.
+  virtual bool ShouldShowCloseButton() const;
+
+  // Returns true if the window should handle standard system commands, such as
+  // close, minimize, maximize.
+  virtual bool ShouldHandleSystemCommands() const;
 
   // Returns the app icon for the window. On Windows, this is the ICON_BIG used
   // in Alt-Tab list and Win7's taskbar.
@@ -98,7 +104,8 @@ class VIEWS_EXPORT WidgetDelegate {
 
   // Retrieves the window's bounds and "show" states.
   // This behavior can be overridden to provide additional functionality.
-  virtual bool GetSavedWindowPlacement(gfx::Rect* bounds,
+  virtual bool GetSavedWindowPlacement(const Widget* widget,
+                                       gfx::Rect* bounds,
                                        ui::WindowShowState* show_state) const;
 
   // Returns true if the window's size should be restored. If this is false,
@@ -135,6 +142,12 @@ class VIEWS_EXPORT WidgetDelegate {
   // Return NULL to use the default one.
   virtual NonClientFrameView* CreateNonClientFrameView(Widget* widget);
 
+  // Called by the Widget to create the overlay View for this widget. Return
+  // NULL for no overlay. The overlay View will fill the Widget and sit on top
+  // of the ClientView and NonClientFrameView (both visually and wrt click
+  // targeting).
+  virtual View* CreateOverlayView();
+
   // Returns true if the window can be notified with the work area change.
   // Otherwise, the work area change for the top window will be processed by
   // the default window manager. In some cases, like panel, we would like to
@@ -147,11 +160,20 @@ class VIEWS_EXPORT WidgetDelegate {
   // Provides the hit-test mask if HasHitTestMask above returns true.
   virtual void GetWidgetHitTestMask(gfx::Path* mask) const;
 
+  // Returns true if focus should advance to the top level widget when
+  // tab/shift-tab is hit and on the last/first focusable view. Default returns
+  // false, which means tab/shift-tab never advance to the top level Widget.
+  virtual bool ShouldAdvanceFocusToTopLevelWidget() const;
+
   // Returns true if event handling should descend into |child|.
   // |location| is in terms of the Window.
   virtual bool ShouldDescendIntoChildForEventHandling(
       gfx::NativeView child,
       const gfx::Point& location);
+
+  // Populates |panes| with accessible panes in this window that can
+  // be cycled through with keyboard focus.
+  virtual void GetAccessiblePanes(std::vector<View*>* panes) {}
 
  protected:
   virtual ~WidgetDelegate() {}
@@ -164,13 +186,15 @@ class VIEWS_EXPORT WidgetDelegate {
 
 // A WidgetDelegate implementation that is-a View. Used to override GetWidget()
 // to call View's GetWidget() for the common case where a WidgetDelegate
-// implementation is-a View.
+// implementation is-a View. Note that WidgetDelegateView is not owned by
+// view's hierarchy and is expected to be deleted on DeleteDelegate call.
 class VIEWS_EXPORT WidgetDelegateView : public WidgetDelegate, public View {
  public:
   WidgetDelegateView();
   virtual ~WidgetDelegateView();
 
   // Overridden from WidgetDelegate:
+  virtual void DeleteDelegate() OVERRIDE;
   virtual Widget* GetWidget() OVERRIDE;
   virtual const Widget* GetWidget() const OVERRIDE;
 

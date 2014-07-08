@@ -74,14 +74,16 @@ RawTransportChannel::~RawTransportChannel() {
   delete allocator_session_;
 }
 
-int RawTransportChannel::SendPacket(const char *data, size_t size, int flags) {
+int RawTransportChannel::SendPacket(const char *data, size_t size,
+                                    const talk_base::PacketOptions& options,
+                                    int flags) {
   if (port_ == NULL)
     return -1;
   if (remote_address_.IsNil())
     return -1;
   if (flags != 0)
     return -1;
-  return port_->SendTo(data, size, remote_address_, true);
+  return port_->SendTo(data, size, remote_address_, options, true);
 }
 
 int RawTransportChannel::SetOption(talk_base::Socket::Option opt, int value) {
@@ -115,7 +117,7 @@ void RawTransportChannel::Connect() {
       this, &RawTransportChannel::OnCandidatesReady);
 
   // The initial ports will include stun.
-  allocator_session_->GetInitialPorts();
+  allocator_session_->StartGettingPorts();
 }
 
 void RawTransportChannel::Reset() {
@@ -199,12 +201,6 @@ void RawTransportChannel::OnCandidatesReady(
     // We will need to use relay.
     use_relay_ = true;
 
-    // If we weren't given a relay port, we'll need to request it.
-    if (relay_port_ == NULL) {
-      allocator_session_->StartGetAllPorts();
-      return;
-    }
-
     // If we already have a relay address, we're good.  Otherwise, we will need
     // to wait until one arrives.
     if (relay_port_->candidates().size() > 0)
@@ -227,7 +223,7 @@ void RawTransportChannel::SetPort(PortInterface* port) {
   port_ = port;
 
   // We don't need any ports other than the one we picked.
-  allocator_session_->StopGetAllPorts();
+  allocator_session_->StopGettingPorts();
   worker_thread_->Post(
       this, MSG_DESTROY_UNUSED_PORTS, NULL);
 
@@ -261,7 +257,7 @@ void RawTransportChannel::OnReadPacket(
     PortInterface* port, const char* data, size_t size,
     const talk_base::SocketAddress& addr) {
   ASSERT(port_ == port);
-  SignalReadPacket(this, data, size, 0);
+  SignalReadPacket(this, data, size, talk_base::CreatePacketTime(0), 0);
 }
 
 void RawTransportChannel::OnMessage(talk_base::Message* msg) {

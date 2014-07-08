@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/callback.h"
 #include "base/logging.h"
-#include "chrome/browser/api/infobars/simple_alert_infobar_delegate.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/infobars/infobar_tab_helper.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/infobars/infobar_service.h"
+#include "chrome/browser/infobars/simple_alert_infobar_delegate.h"
 #include "chrome/common/pref_names.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -29,14 +29,10 @@ bool ChromeSelectFilePolicy::CanOpenSelectFileDialog() {
 void ChromeSelectFilePolicy::SelectFileDenied() {
   // Show the InfoBar saying that file-selection dialogs are disabled.
   if (source_contents_) {
-    InfoBarTabHelper* infobar_helper =
-        InfoBarTabHelper::FromWebContents(source_contents_);
-    DCHECK(infobar_helper);
-    infobar_helper->AddInfoBar(new SimpleAlertInfoBarDelegate(
-        infobar_helper,
-        NULL,
-        l10n_util::GetStringUTF16(IDS_FILE_SELECTION_DIALOG_INFOBAR),
-        true));
+    SimpleAlertInfoBarDelegate::Create(
+        InfoBarService::FromWebContents(source_contents_),
+        infobars::InfoBarDelegate::kNoIconID,
+        l10n_util::GetStringUTF16(IDS_FILE_SELECTION_DIALOG_INFOBAR), true);
   } else {
     LOG(WARNING) << "File-selection dialogs are disabled but no WebContents "
                  << "is given to display the InfoBar.";

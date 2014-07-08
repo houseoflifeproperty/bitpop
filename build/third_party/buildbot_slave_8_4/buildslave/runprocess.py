@@ -32,6 +32,7 @@ from twisted.internet import reactor, defer, protocol, task, error
 
 from buildslave import util
 from buildslave.exceptions import AbandonChain
+import slave.reboot_tools
 
 if runtime.platformType == 'posix':
     from twisted.internet.process import Process
@@ -725,6 +726,15 @@ class RunProcess:
             self.buftimer.cancel()
             self.buftimer = None
         msg += ", attempting to kill"
+
+        if self.deferred:
+            # finished ought to be called momentarily. Just in case it
+            # doesn't, set a timer which will abandon the command. Do
+            # this before anything else has a chance to throw an
+            # exception.
+            self.timer = self._reactor.callLater(
+                self.BACKUP_TIMEOUT, self.doBackupTimeout)
+
         log.msg(msg)
         self.sendStatus({'header': "\n" + msg + "\n"})
 
@@ -764,10 +774,14 @@ class RunProcess:
             if self.KILL == None:
                 log.msg("self.KILL==None, only pretending to kill child")
             else:
-                log.msg("using TASKKILL /F PID /T to kill pid %s" % self.process.pid)
-                subprocess.check_call("TASKKILL /F /PID %s /T" % self.process.pid)
-                log.msg("taskkill'd pid %s" % self.process.pid)
-                hit = 1
+                cmd = "TASKKILL /F /PID %s /T" % self.process.pid
+                log.msg("using %s" % cmd)
+                try:
+                    subprocess.check_call(cmd)
+                    log.msg("taskkill'd pid %s" % self.process.pid)
+                    hit = 1
+                except (subprocess.CalledProcessError, OSError) as e:
+                    log.msg("%s failed: %s" % (cmd, e))
 
         # try signalling the process itself (works on Windows too, sorta)
         if not hit:
@@ -795,18 +809,18 @@ class RunProcess:
             # stderr. This is weird.
             self.pp.transport.loseConnection()
 
-        if self.deferred:
-            # finished ought to be called momentarily. Just in case it doesn't,
-            # set a timer which will abandon the command.
-            self.timer = self._reactor.callLater(self.BACKUP_TIMEOUT,
-                                       self.doBackupTimeout)
-
     def doBackupTimeout(self):
-        log.msg("we tried to kill the process, and it wouldn't die.."
-                " finish anyway")
+        # Check if the process is already dead
+        if not self.deferred:
+            return
+        log.msg("we tried to kill the process, and it wouldn't die..")
         self.timer = None
         self.sendStatus({'header': "SIGKILL failed to kill process\n"})
         if self.sendRC:
             self.sendStatus({'header': "using fake rc=-1\n"})
             self.sendStatus({'rc': -1})
+        slave.reboot_tools.Reboot()
+        # In production, Reboot() does not return, and failed() is
+        # never called. In testing mode, Reboot() returns immediately
+        # with no effect, and we need to recover.
         self.failed(RuntimeError("SIGKILL failed to kill process"))

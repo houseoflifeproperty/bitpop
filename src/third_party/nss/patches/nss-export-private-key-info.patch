@@ -1,0 +1,213 @@
+diff --git a/lib/pk11wrap/pk11akey.c b/lib/pk11wrap/pk11akey.c
+--- a/lib/pk11wrap/pk11akey.c
++++ b/lib/pk11wrap/pk11akey.c
+@@ -1708,17 +1708,23 @@ done:
+     }
+ 
+     return rv;
+ }
+ 
+ SECKEYPrivateKeyInfo *
+ PK11_ExportPrivateKeyInfo(CERTCertificate *cert, void *wincx)
+ {
+-    return NULL;
++    SECKEYPrivateKeyInfo *pki = NULL;
++    SECKEYPrivateKey     *pk  = PK11_FindKeyByAnyCert(cert, wincx);
++    if (pk != NULL) {
++	pki = PK11_ExportPrivKeyInfo(pk, wincx);
++	SECKEY_DestroyPrivateKey(pk);
++    }
++    return pki;
+ }
+ 
+ SECKEYEncryptedPrivateKeyInfo * 
+ PK11_ExportEncryptedPrivKeyInfo(
+    PK11SlotInfo     *slot,      /* optional, encrypt key in this slot */
+    SECOidTag         algTag,    /* encrypt key with this algorithm */
+    SECItem          *pwitem,    /* password for PBE encryption */
+    SECKEYPrivateKey *pk,        /* encrypt this private key */
+diff --git a/lib/pk11wrap/pk11obj.c b/lib/pk11wrap/pk11obj.c
+--- a/lib/pk11wrap/pk11obj.c
++++ b/lib/pk11wrap/pk11obj.c
+@@ -76,16 +76,19 @@ PK11_DestroyTokenObject(PK11SlotInfo *sl
+     PK11_RestoreROSession(slot,rwsession);
+     return rv;
+ }
+ 
+ /*
+  * Read in a single attribute into a SECItem. Allocate space for it with 
+  * PORT_Alloc unless an arena is supplied. In the latter case use the arena
+  * to allocate the space.
++ *
++ * PK11_ReadAttribute sets the 'data' and 'len' fields of the SECItem but
++ * does not modify its 'type' field.
+  */
+ SECStatus
+ PK11_ReadAttribute(PK11SlotInfo *slot, CK_OBJECT_HANDLE id,
+ 	 CK_ATTRIBUTE_TYPE type, PLArenaPool *arena, SECItem *result) {
+     CK_ATTRIBUTE attr = { 0, NULL, 0 };
+     CK_RV crv;
+ 
+     attr.type = type;
+diff --git a/lib/pk11wrap/pk11pk12.c b/lib/pk11wrap/pk11pk12.c
+--- a/lib/pk11wrap/pk11pk12.c
++++ b/lib/pk11wrap/pk11pk12.c
+@@ -13,16 +13,17 @@
+ #include "secmodi.h"
+ #include "pkcs11.h"
+ #include "pk11func.h"
+ #include "secitem.h"
+ #include "key.h"
+ #include "secoid.h"
+ #include "secasn1.h"
+ #include "secerr.h"
++#include "prerror.h"
+ 
+ 
+ 
+ /* These data structures should move to a common .h file shared between the
+  * wrappers and the pkcs 12 code. */
+ 
+ /*
+ ** RSA Raw Private Key structures
+@@ -511,8 +512,117 @@ PK11_ImportPrivateKeyInfo(PK11SlotInfo *
+ 	SECItem *nickname, SECItem *publicValue, PRBool isPerm, 
+ 	PRBool isPrivate, unsigned int keyUsage, void *wincx) 
+ {
+     return PK11_ImportPrivateKeyInfoAndReturnKey(slot, pki, nickname,
+ 	publicValue, isPerm, isPrivate, keyUsage, NULL, wincx);
+ 
+ }
+ 
++SECItem *
++PK11_ExportDERPrivateKeyInfo(SECKEYPrivateKey *pk, void *wincx)
++{
++    SECKEYPrivateKeyInfo *pki = PK11_ExportPrivKeyInfo(pk, wincx);
++    SECItem *derPKI;
++
++    if (!pki) {
++        return NULL;
++    }
++    derPKI = SEC_ASN1EncodeItem(NULL, NULL, pki,
++                                SECKEY_PrivateKeyInfoTemplate);
++    SECKEY_DestroyPrivateKeyInfo(pki, PR_TRUE);
++    return derPKI;
++}
++
++static PRBool
++ReadAttribute(SECKEYPrivateKey *key, CK_ATTRIBUTE_TYPE type,
++              PLArenaPool *arena, SECItem *output)
++{
++    SECStatus rv = PK11_ReadAttribute(key->pkcs11Slot, key->pkcs11ID, type,
++                                      arena, output);
++    return rv == SECSuccess;
++}
++
++/*
++ * The caller is responsible for freeing the return value by passing it to
++ * SECKEY_DestroyPrivateKeyInfo(..., PR_TRUE).
++ */
++SECKEYPrivateKeyInfo *
++PK11_ExportPrivKeyInfo(SECKEYPrivateKey *pk, void *wincx)
++{
++    /* PrivateKeyInfo version (always zero) */
++    const unsigned char pkiVersion = 0;
++    /* RSAPrivateKey version (always zero) */
++    const unsigned char rsaVersion = 0;
++    PLArenaPool *arena = NULL;
++    SECKEYRawPrivateKey rawKey;
++    SECKEYPrivateKeyInfo *pki;
++    SECItem *encoded;
++    SECStatus rv;
++
++    if (pk->keyType != rsaKey) {
++        PORT_SetError(PR_NOT_IMPLEMENTED_ERROR);
++        goto loser;
++    }
++
++    arena = PORT_NewArena(DER_DEFAULT_CHUNKSIZE);
++    if (!arena) {
++        goto loser;
++    }
++    memset(&rawKey, 0, sizeof(rawKey));
++    rawKey.keyType = pk->keyType;
++    rawKey.u.rsa.version.type = siUnsignedInteger;
++    rawKey.u.rsa.version.data = (unsigned char *)PORT_ArenaAlloc(arena, 1);
++    if (!rawKey.u.rsa.version.data) {
++        goto loser;
++    }
++    rawKey.u.rsa.version.data[0] = rsaVersion;
++    rawKey.u.rsa.version.len = 1;
++
++    /* Read the component attributes of the private key */
++    prepare_rsa_priv_key_export_for_asn1(&rawKey);
++    if (!ReadAttribute(pk, CKA_MODULUS, arena, &rawKey.u.rsa.modulus) ||
++        !ReadAttribute(pk, CKA_PUBLIC_EXPONENT, arena,
++                       &rawKey.u.rsa.publicExponent) ||
++        !ReadAttribute(pk, CKA_PRIVATE_EXPONENT, arena,
++                       &rawKey.u.rsa.privateExponent) ||
++        !ReadAttribute(pk, CKA_PRIME_1, arena, &rawKey.u.rsa.prime1) ||
++        !ReadAttribute(pk, CKA_PRIME_2, arena, &rawKey.u.rsa.prime2) ||
++        !ReadAttribute(pk, CKA_EXPONENT_1, arena,
++                       &rawKey.u.rsa.exponent1) ||
++        !ReadAttribute(pk, CKA_EXPONENT_2, arena,
++                       &rawKey.u.rsa.exponent2) ||
++        !ReadAttribute(pk, CKA_COEFFICIENT, arena,
++                       &rawKey.u.rsa.coefficient)) {
++        goto loser;
++    }
++
++    pki = PORT_ArenaZNew(arena, SECKEYPrivateKeyInfo);
++    if (!pki) {
++        goto loser;
++    }
++    encoded = SEC_ASN1EncodeItem(arena, &pki->privateKey, &rawKey,
++                                 SECKEY_RSAPrivateKeyExportTemplate);
++    if (!encoded) {
++        goto loser;
++    }
++    rv = SECOID_SetAlgorithmID(arena, &pki->algorithm,
++                               SEC_OID_PKCS1_RSA_ENCRYPTION, NULL);
++    if (rv != SECSuccess) {
++        goto loser;
++    }
++    pki->version.type = siUnsignedInteger;
++    pki->version.data = (unsigned char *)PORT_ArenaAlloc(arena, 1);
++    if (!pki->version.data) {
++        goto loser;
++    }
++    pki->version.data[0] = pkiVersion;
++    pki->version.len = 1;
++    pki->arena = arena;
++
++    return pki;
++
++loser:
++    if (arena) {
++        PORT_FreeArena(arena, PR_TRUE);
++    }
++    return NULL;
++}
+diff --git a/lib/pk11wrap/pk11pub.h b/lib/pk11wrap/pk11pub.h
+--- a/lib/pk11wrap/pk11pub.h
++++ b/lib/pk11wrap/pk11pub.h
+@@ -554,16 +554,19 @@ SECStatus PK11_ImportEncryptedPrivateKey
+ 		SECItem *nickname, SECItem *publicValue, PRBool isPerm,
+ 		PRBool isPrivate, KeyType type, 
+ 		unsigned int usage, void *wincx);
+ SECStatus PK11_ImportEncryptedPrivateKeyInfoAndReturnKey(PK11SlotInfo *slot, 
+ 		SECKEYEncryptedPrivateKeyInfo *epki, SECItem *pwitem, 
+ 		SECItem *nickname, SECItem *publicValue, PRBool isPerm,
+ 		PRBool isPrivate, KeyType type, 
+ 		unsigned int usage, SECKEYPrivateKey** privk, void *wincx);
++SECItem *PK11_ExportDERPrivateKeyInfo(SECKEYPrivateKey *pk, void *wincx);
++SECKEYPrivateKeyInfo *PK11_ExportPrivKeyInfo(
++		SECKEYPrivateKey *pk, void *wincx);
+ SECKEYPrivateKeyInfo *PK11_ExportPrivateKeyInfo(
+ 		CERTCertificate *cert, void *wincx);
+ SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivKeyInfo(
+ 		PK11SlotInfo *slot, SECOidTag algTag, SECItem *pwitem,
+ 		SECKEYPrivateKey *pk, int iteration, void *wincx);
+ SECKEYEncryptedPrivateKeyInfo *PK11_ExportEncryptedPrivateKeyInfo(
+ 		PK11SlotInfo *slot, SECOidTag algTag, SECItem *pwitem,
+ 		CERTCertificate *cert, int iteration, void *wincx);

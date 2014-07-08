@@ -9,16 +9,17 @@
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
 #include "chrome/browser/chromeos/settings/mock_owner_key_util.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
-#include "chrome/browser/policy/cloud_policy_validator.h"
-#include "chrome/browser/policy/policy_builder.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
+#include "components/policy/core/common/cloud/cloud_policy_validator.h"
+#include "components/policy/core/common/cloud/policy_builder.h"
 #include "content/public/test/test_browser_thread.h"
 #include "crypto/rsa_private_key.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -58,7 +59,7 @@ class SessionManagerOperationTest : public testing::Test {
     ASSERT_TRUE(op->owner_key().get());
     ASSERT_TRUE(op->owner_key()->public_key());
     std::vector<uint8> public_key;
-    ASSERT_TRUE(policy_.signing_key()->ExportPublicKey(&public_key));
+    ASSERT_TRUE(policy_.GetSigningKey()->ExportPublicKey(&public_key));
     EXPECT_EQ(public_key, *op->owner_key()->public_key());
   }
 
@@ -66,14 +67,14 @@ class SessionManagerOperationTest : public testing::Test {
     ASSERT_TRUE(op->owner_key().get());
     ASSERT_TRUE(op->owner_key()->private_key());
     std::vector<uint8> expected_key;
-    ASSERT_TRUE(policy_.signing_key()->ExportPrivateKey(&expected_key));
+    ASSERT_TRUE(policy_.GetSigningKey()->ExportPrivateKey(&expected_key));
     std::vector<uint8> actual_key;
     ASSERT_TRUE(op->owner_key()->private_key()->ExportPrivateKey(&actual_key));
     EXPECT_EQ(expected_key, actual_key);
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 
@@ -107,7 +108,7 @@ TEST_F(SessionManagerOperationTest, LoadNoPolicyNoKey) {
 }
 
 TEST_F(SessionManagerOperationTest, LoadOwnerKey) {
-  owner_key_util_->SetPublicKeyFromPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*policy_.GetSigningKey());
   LoadSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
                  base::Unretained(this)));
@@ -123,7 +124,7 @@ TEST_F(SessionManagerOperationTest, LoadOwnerKey) {
 }
 
 TEST_F(SessionManagerOperationTest, LoadPolicy) {
-  owner_key_util_->SetPublicKeyFromPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*policy_.GetSigningKey());
   device_settings_test_helper_.set_policy_blob(policy_.GetBlob());
   LoadSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
@@ -145,7 +146,7 @@ TEST_F(SessionManagerOperationTest, LoadPolicy) {
 }
 
 TEST_F(SessionManagerOperationTest, LoadPrivateOwnerKey) {
-  owner_key_util_->SetPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPrivateKey(policy_.GetSigningKey());
   LoadSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
                  base::Unretained(this)));
@@ -162,7 +163,7 @@ TEST_F(SessionManagerOperationTest, LoadPrivateOwnerKey) {
 }
 
 TEST_F(SessionManagerOperationTest, RestartLoad) {
-  owner_key_util_->SetPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPrivateKey(policy_.GetSigningKey());
   device_settings_test_helper_.set_policy_blob(policy_.GetBlob());
   LoadSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
@@ -172,16 +173,16 @@ TEST_F(SessionManagerOperationTest, RestartLoad) {
   op.Start(&device_settings_test_helper_, owner_key_util_, NULL);
   device_settings_test_helper_.FlushLoops();
   device_settings_test_helper_.FlushRetrieve();
-  EXPECT_TRUE(op.owner_key());
+  EXPECT_TRUE(op.owner_key().get());
   EXPECT_TRUE(op.owner_key()->public_key());
   Mock::VerifyAndClearExpectations(this);
 
   // Now install a different key and policy and restart the operation.
-  policy_.set_signing_key(policy::PolicyBuilder::CreateTestNewSigningKey());
+  policy_.SetSigningKey(*policy::PolicyBuilder::CreateTestOtherSigningKey());
   policy_.payload().mutable_metrics_enabled()->set_metrics_enabled(true);
   policy_.Build();
   device_settings_test_helper_.set_policy_blob(policy_.GetBlob());
-  owner_key_util_->SetPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPrivateKey(policy_.GetSigningKey());
 
   EXPECT_CALL(*this,
               OnOperationCompleted(
@@ -204,7 +205,7 @@ TEST_F(SessionManagerOperationTest, RestartLoad) {
 }
 
 TEST_F(SessionManagerOperationTest, StoreSettings) {
-  owner_key_util_->SetPublicKeyFromPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*policy_.GetSigningKey());
   StoreSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
                  base::Unretained(this)),
@@ -228,14 +229,12 @@ TEST_F(SessionManagerOperationTest, StoreSettings) {
 }
 
 TEST_F(SessionManagerOperationTest, SignAndStoreSettings) {
-  base::Time before(base::Time::NowFromSystemTime());
-  owner_key_util_->SetPrivateKey(policy_.signing_key());
+  owner_key_util_->SetPrivateKey(policy_.GetSigningKey());
+  scoped_ptr<em::PolicyData> policy(new em::PolicyData(policy_.policy_data()));
   SignAndStoreSettingsOperation op(
       base::Bind(&SessionManagerOperationTest::OnOperationCompleted,
                  base::Unretained(this)),
-      scoped_ptr<em::ChromeDeviceSettingsProto>(
-          new em::ChromeDeviceSettingsProto(policy_.payload())),
-      policy_.policy_data().username());
+      policy.Pass());
 
   EXPECT_CALL(*this,
               OnOperationCompleted(
@@ -243,7 +242,6 @@ TEST_F(SessionManagerOperationTest, SignAndStoreSettings) {
   op.Start(&device_settings_test_helper_, owner_key_util_, NULL);
   device_settings_test_helper_.Flush();
   Mock::VerifyAndClearExpectations(this);
-  base::Time after(base::Time::NowFromSystemTime());
 
   // The blob should validate.
   scoped_ptr<em::PolicyFetchResponse> policy_response(
@@ -252,30 +250,35 @@ TEST_F(SessionManagerOperationTest, SignAndStoreSettings) {
       policy_response->ParseFromString(
           device_settings_test_helper_.policy_blob()));
   policy::DeviceCloudPolicyValidator* validator =
-      policy::DeviceCloudPolicyValidator::Create(policy_response.Pass());
-  validator->ValidateUsername(policy_.policy_data().username());
-  validator->ValidateTimestamp(before, after, false);
+      policy::DeviceCloudPolicyValidator::Create(
+          policy_response.Pass(), message_loop_.message_loop_proxy());
+  validator->ValidateUsername(policy_.policy_data().username(), true);
+  const base::Time expected_time = base::Time::UnixEpoch() +
+      base::TimeDelta::FromMilliseconds(policy::PolicyBuilder::kFakeTimestamp);
+  validator->ValidateTimestamp(
+      expected_time,
+      expected_time,
+      policy::CloudPolicyValidatorBase::TIMESTAMP_REQUIRED);
   validator->ValidatePolicyType(policy::dm_protocol::kChromeDevicePolicyType);
   validator->ValidatePayload();
   std::vector<uint8> public_key;
-  policy_.signing_key()->ExportPublicKey(&public_key);
-  validator->ValidateSignature(public_key, false);
+  policy_.GetSigningKey()->ExportPublicKey(&public_key);
+  // Convert from bytes to string format (which is what ValidateSignature()
+  // takes).
+  std::string public_key_as_string = std::string(
+      reinterpret_cast<const char*>(vector_as_array(&public_key)),
+      public_key.size());
+  validator->ValidateSignature(
+      public_key_as_string,
+      policy::GetPolicyVerificationKey(),
+      policy::PolicyBuilder::kFakeDomain,
+      false);
   validator->StartValidation(
       base::Bind(&SessionManagerOperationTest::CheckSuccessfulValidation,
                  base::Unretained(this)));
 
   message_loop_.RunUntilIdle();
   EXPECT_TRUE(validated_);
-
-  // Check that the loaded policy_data contains the expected values.
-  EXPECT_EQ(policy::dm_protocol::kChromeDevicePolicyType,
-            op.policy_data()->policy_type());
-  EXPECT_LE((before - base::Time::UnixEpoch()).InMilliseconds(),
-            op.policy_data()->timestamp());
-  EXPECT_GE((after - base::Time::UnixEpoch()).InMilliseconds(),
-            op.policy_data()->timestamp());
-  EXPECT_FALSE(op.policy_data()->has_request_token());
-  EXPECT_EQ(policy_.policy_data().username(), op.policy_data()->username());
 
   // Loaded device settings should match what the operation received.
   ASSERT_TRUE(op.device_settings().get());

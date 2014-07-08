@@ -3,14 +3,14 @@
 // found in the LICENSE file.
 
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/icon_manager.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/webui/fileicon_source.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_browser_thread.h"
-#include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
 using content::BrowserThread;
 
@@ -20,35 +20,34 @@ class TestFileIconSource : public FileIconSource {
  public:
   explicit TestFileIconSource() {}
 
-  MOCK_METHOD4(FetchFileIcon, void(const FilePath& path,
-                                   ui::ScaleFactor scale_factor,
-                                   IconLoader::IconSize icon_size,
-                                   int request_id));
+  MOCK_METHOD4(FetchFileIcon,
+               void(const base::FilePath& path,
+                    ui::ScaleFactor scale_factor,
+                    IconLoader::IconSize icon_size,
+                    const content::URLDataSource::GotDataCallback& callback));
 
- private:
   virtual ~TestFileIconSource() {}
 };
 
 class FileIconSourceTest : public testing::Test {
  public:
   FileIconSourceTest()
-      : loop_(MessageLoop::TYPE_UI),
-        ui_thread_(BrowserThread::UI, MessageLoop::current()),
-        file_thread_(BrowserThread::FILE, MessageLoop::current()) {}
+      : ui_thread_(BrowserThread::UI, base::MessageLoop::current()),
+        file_thread_(BrowserThread::FILE, base::MessageLoop::current()) {}
 
   static TestFileIconSource* CreateFileIconSource() {
     return new TestFileIconSource();
   }
 
  private:
-  MessageLoop loop_;
+  base::MessageLoopForUI loop_;
   content::TestBrowserThread ui_thread_;
   content::TestBrowserThread file_thread_;
 };
 
 const struct FetchFileIconExpectation {
   const char* request_path;
-  const FilePath::CharType* unescaped_path;
+  const base::FilePath::CharType* unescaped_path;
   ui::ScaleFactor scale_factor;
   IconLoader::IconSize size;
 } kBasicExpectations[] = {
@@ -110,15 +109,29 @@ const struct FetchFileIconExpectation {
 #endif
 };
 
+// Test that the callback is NULL.
+MATCHER(CallbackIsNull, "") {
+  return arg.is_null();
+}
+
 }  // namespace
 
 TEST_F(FileIconSourceTest, FileIconSource_Parse) {
+  std::vector<ui::ScaleFactor> supported_scale_factors;
+  supported_scale_factors.push_back(ui::SCALE_FACTOR_100P);
+  supported_scale_factors.push_back(ui::SCALE_FACTOR_200P);
+  ui::test::ScopedSetSupportedScaleFactors scoped_supported(
+      supported_scale_factors);
+
   for (unsigned i = 0; i < arraysize(kBasicExpectations); i++) {
-    scoped_refptr<TestFileIconSource> source(CreateFileIconSource());
+    scoped_ptr<TestFileIconSource> source(CreateFileIconSource());
+    content::URLDataSource::GotDataCallback callback;
     EXPECT_CALL(*source.get(),
-                FetchFileIcon(FilePath(kBasicExpectations[i].unescaped_path),
-                              kBasicExpectations[i].scale_factor,
-                              kBasicExpectations[i].size, i));
-    source->StartDataRequest(kBasicExpectations[i].request_path, false, i);
+                FetchFileIcon(
+                    base::FilePath(kBasicExpectations[i].unescaped_path),
+                    kBasicExpectations[i].scale_factor,
+                    kBasicExpectations[i].size, CallbackIsNull()));
+    source->StartDataRequest(kBasicExpectations[i].request_path, -1, -1,
+                             callback);
   }
 }

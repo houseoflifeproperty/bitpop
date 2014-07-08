@@ -6,20 +6,21 @@
 
 #include "base/bind.h"
 #include "base/json/json_reader.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/plugins/plugin_metadata.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/plugin_service.h"
-#include "googleurl/src/gurl.h"
 #include "grit/browser_resources.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "url/gurl.h"
 
 #if defined(ENABLE_PLUGIN_INSTALLATION)
 #include "chrome/browser/plugins/plugin_installer.h"
@@ -33,40 +34,35 @@ namespace {
 typedef std::map<std::string, PluginMetadata*> PluginMap;
 
 // Gets the full path of the plug-in file as the identifier.
-std::string GetLongIdentifier(const webkit::WebPluginInfo& plugin) {
+std::string GetLongIdentifier(const content::WebPluginInfo& plugin) {
   return plugin.path.AsUTF8Unsafe();
 }
 
 // Gets the base name of the file path as the identifier.
-std::string GetIdentifier(const webkit::WebPluginInfo& plugin) {
+std::string GetIdentifier(const content::WebPluginInfo& plugin) {
   return plugin.path.BaseName().AsUTF8Unsafe();
 }
 
 // Gets the plug-in group name as the plug-in name if it is not empty or
 // the filename without extension if the name is empty.
-static string16 GetGroupName(const webkit::WebPluginInfo& plugin) {
+static base::string16 GetGroupName(const content::WebPluginInfo& plugin) {
   if (!plugin.name.empty())
     return plugin.name;
 
-  FilePath::StringType path = plugin.path.BaseName().RemoveExtension().value();
-#if defined(OS_POSIX)
-  return UTF8ToUTF16(path);
-#elif defined(OS_WIN)
-  return WideToUTF16(path);
-#endif
+  return plugin.path.BaseName().RemoveExtension().AsUTF16Unsafe();
 }
 
 void LoadMimeTypes(bool matching_mime_types,
-                   const DictionaryValue* plugin_dict,
+                   const base::DictionaryValue* plugin_dict,
                    PluginMetadata* plugin) {
-  const ListValue* mime_types = NULL;
+  const base::ListValue* mime_types = NULL;
   std::string list_key =
       matching_mime_types ? "matching_mime_types" : "mime_types";
   if (!plugin_dict->GetList(list_key, &mime_types))
     return;
 
   bool success = false;
-  for (ListValue::const_iterator mime_type_it = mime_types->begin();
+  for (base::ListValue::const_iterator mime_type_it = mime_types->begin();
        mime_type_it != mime_types->end(); ++mime_type_it) {
     std::string mime_type_str;
     success = (*mime_type_it)->GetAsString(&mime_type_str);
@@ -81,17 +77,17 @@ void LoadMimeTypes(bool matching_mime_types,
 
 PluginMetadata* CreatePluginMetadata(
     const std::string& identifier,
-    const DictionaryValue* plugin_dict) {
+    const base::DictionaryValue* plugin_dict) {
   std::string url;
   bool success = plugin_dict->GetString("url", &url);
   std::string help_url;
   plugin_dict->GetString("help_url", &help_url);
-  string16 name;
+  base::string16 name;
   success = plugin_dict->GetString("name", &name);
   DCHECK(success);
   bool display_url = false;
   plugin_dict->GetBoolean("displayurl", &display_url);
-  string16 group_name_matcher;
+  base::string16 group_name_matcher;
   success = plugin_dict->GetString("group_name_matcher", &group_name_matcher);
   DCHECK(success);
   std::string language_str;
@@ -104,11 +100,11 @@ PluginMetadata* CreatePluginMetadata(
                                               GURL(help_url),
                                               group_name_matcher,
                                               language_str);
-  const ListValue* versions = NULL;
+  const base::ListValue* versions = NULL;
   if (plugin_dict->GetList("versions", &versions)) {
-    for (ListValue::const_iterator it = versions->begin();
+    for (base::ListValue::const_iterator it = versions->begin();
          it != versions->end(); ++it) {
-      DictionaryValue* version_dict = NULL;
+      base::DictionaryValue* version_dict = NULL;
       if (!(*it)->GetAsDictionary(&version_dict)) {
         NOTREACHED();
         continue;
@@ -135,8 +131,8 @@ PluginMetadata* CreatePluginMetadata(
 }  // namespace
 
 // static
-void PluginFinder::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterBooleanPref(prefs::kDisablePluginFinder, false);
+void PluginFinder::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterBooleanPref(prefs::kDisablePluginFinder, false);
 }
 
 // static
@@ -146,35 +142,21 @@ PluginFinder* PluginFinder::GetInstance() {
   return Singleton<PluginFinder>::get();
 }
 
-PluginFinder::PluginFinder() {
+PluginFinder::PluginFinder() : version_(-1) {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
 }
 
 void PluginFinder::Init() {
   DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
-  plugin_list_.reset(ComputePluginList());
-  DCHECK(plugin_list_.get());
-
-  InitInternal();
+  // Load the built-in plug-in list first. If we have a newer version stored
+  // locally or download one, we will replace this one with it.
+  scoped_ptr<base::DictionaryValue> plugin_list(LoadBuiltInPluginList());
+  DCHECK(plugin_list);
+  ReinitializePlugins(plugin_list.get());
 }
 
 // static
-DictionaryValue* PluginFinder::ComputePluginList() {
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-  const base::DictionaryValue* metadata =
-      g_browser_process->local_state()->GetDictionary(prefs::kPluginsMetadata);
-  if (!metadata->empty())
-    return metadata->DeepCopy();
-#endif
-  base::DictionaryValue* result = LoadPluginList();
-  if (result)
-    return result;
-  return new base::DictionaryValue();
-}
-
-// static
-DictionaryValue* PluginFinder::LoadPluginList() {
-#if defined(OS_WIN) || defined(OS_MACOSX) || defined(OS_LINUX)
+base::DictionaryValue* PluginFinder::LoadBuiltInPluginList() {
   base::StringPiece json_resource(
       ResourceBundle::GetSharedInstance().GetRawDataResource(
           IDR_PLUGIN_DB_JSON));
@@ -191,9 +173,6 @@ DictionaryValue* PluginFinder::LoadPluginList() {
   if (value->GetType() != base::Value::TYPE_DICTIONARY)
     return NULL;
   return static_cast<base::DictionaryValue*>(value.release());
-#else
-  return new DictionaryValue();
-#endif
 }
 
 PluginFinder::~PluginFinder() {
@@ -209,10 +188,10 @@ bool PluginFinder::FindPlugin(
     const std::string& language,
     PluginInstaller** installer,
     scoped_ptr<PluginMetadata>* plugin_metadata) {
-  base::AutoLock lock(mutex_);
   if (g_browser_process->local_state()->GetBoolean(prefs::kDisablePluginFinder))
     return false;
 
+  base::AutoLock lock(mutex_);
   PluginMap::const_iterator metadata_it = identifier_plugin_.begin();
   for (; metadata_it != identifier_plugin_.end(); ++metadata_it) {
     if (language == metadata_it->second->language() &&
@@ -248,31 +227,51 @@ bool PluginFinder::FindPluginWithIdentifier(
   }
   return true;
 }
+#endif
 
 void PluginFinder::ReinitializePlugins(
-    const base::DictionaryValue& json_metadata) {
+    const base::DictionaryValue* plugin_list) {
   base::AutoLock lock(mutex_);
+  int version = 0;  // If no version is defined, we default to 0.
+  const char kVersionKey[] = "x-version";
+  plugin_list->GetInteger(kVersionKey, &version);
+  if (version <= version_)
+    return;
+
+  version_ = version;
+
   STLDeleteValues(&identifier_plugin_);
   identifier_plugin_.clear();
 
-  plugin_list_.reset(json_metadata.DeepCopy());
-  InitInternal();
-}
-#endif
+  for (base::DictionaryValue::Iterator plugin_it(*plugin_list);
+      !plugin_it.IsAtEnd(); plugin_it.Advance()) {
+    const base::DictionaryValue* plugin = NULL;
+    const std::string& identifier = plugin_it.key();
+    if (plugin_list->GetDictionaryWithoutPathExpansion(identifier, &plugin)) {
+      DCHECK(!identifier_plugin_[identifier]);
+      identifier_plugin_[identifier] = CreatePluginMetadata(identifier, plugin);
 
-string16 PluginFinder::FindPluginNameWithIdentifier(
+#if defined(ENABLE_PLUGIN_INSTALLATION)
+      if (installers_.find(identifier) == installers_.end())
+        installers_[identifier] = new PluginInstaller();
+#endif
+    }
+  }
+}
+
+base::string16 PluginFinder::FindPluginNameWithIdentifier(
     const std::string& identifier) {
   base::AutoLock lock(mutex_);
   PluginMap::const_iterator it = identifier_plugin_.find(identifier);
-  string16 name;
+  base::string16 name;
   if (it != identifier_plugin_.end())
     name = it->second->name();
 
-  return name.empty() ? UTF8ToUTF16(identifier) : name;
+  return name.empty() ? base::UTF8ToUTF16(identifier) : name;
 }
 
 scoped_ptr<PluginMetadata> PluginFinder::GetPluginMetadata(
-    const webkit::WebPluginInfo& plugin) {
+    const content::WebPluginInfo& plugin) {
   base::AutoLock lock(mutex_);
   for (PluginMap::const_iterator it = identifier_plugin_.begin();
        it != identifier_plugin_.end(); ++it) {
@@ -287,9 +286,11 @@ scoped_ptr<PluginMetadata> PluginFinder::GetPluginMetadata(
   std::string identifier = GetIdentifier(plugin);
   PluginMetadata* metadata = new PluginMetadata(identifier,
                                                 GetGroupName(plugin),
-                                                false, GURL(), GURL(),
+                                                false,
+                                                GURL(),
+                                                GURL(),
                                                 plugin.name,
-                                                "");
+                                                std::string());
   for (size_t i = 0; i < plugin.mime_types.size(); ++i)
     metadata->AddMatchingMimeType(plugin.mime_types[i].mime_type);
 
@@ -300,21 +301,4 @@ scoped_ptr<PluginMetadata> PluginFinder::GetPluginMetadata(
   DCHECK(identifier_plugin_.find(identifier) == identifier_plugin_.end());
   identifier_plugin_[identifier] = metadata;
   return metadata->Clone();
-}
-
-void PluginFinder::InitInternal() {
-  for (DictionaryValue::Iterator plugin_it(*plugin_list_);
-      plugin_it.HasNext(); plugin_it.Advance()) {
-    DictionaryValue* plugin = NULL;
-    const std::string& identifier = plugin_it.key();
-    if (plugin_list_->GetDictionaryWithoutPathExpansion(identifier, &plugin)) {
-      DCHECK(!identifier_plugin_[identifier]);
-      identifier_plugin_[identifier] = CreatePluginMetadata(identifier, plugin);
-
-#if defined(ENABLE_PLUGIN_INSTALLATION)
-      if (installers_.find(identifier) == installers_.end())
-        installers_[identifier] = new PluginInstaller();
-#endif
-    }
-  }
 }

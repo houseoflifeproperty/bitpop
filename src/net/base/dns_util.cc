@@ -50,6 +50,8 @@ bool DNSDomainFromDot(const base::StringPiece& dotted, std::string* out) {
 
   if (namelen + 1 > sizeof name)
     return false;
+  if (namelen == 0) // Empty names e.g. "", "." are not valid.
+    return false;
   name[namelen++] = 0;  // This is the root label (of length 0).
 
   *out = std::string(name, namelen);
@@ -62,34 +64,20 @@ std::string DNSDomainToString(const base::StringPiece& domain) {
   for (unsigned i = 0; i < domain.size() && domain[i]; i += domain[i] + 1) {
 #if CHAR_MIN < 0
     if (domain[i] < 0)
-      return "";
+      return std::string();
 #endif
     if (domain[i] > 63)
-      return "";
+      return std::string();
 
     if (i)
       ret += ".";
 
     if (static_cast<unsigned>(domain[i]) + i + 1 > domain.size())
-      return "";
+      return std::string();
 
     domain.substr(i + 1, domain[i]).AppendToString(&ret);
   }
   return ret;
-}
-
-bool IsSTD3ASCIIValidCharacter(char c) {
-  if (c <= 0x2c)
-    return false;
-  if (c >= 0x7b)
-    return false;
-  if (c >= 0x2e && c <= 0x2f)
-    return false;
-  if (c >= 0x3a && c <= 0x40)
-    return false;
-  if (c >= 0x5b && c <= 0x60)
-    return false;
-  return true;
 }
 
 std::string TrimEndingDot(const base::StringPiece& host) {
@@ -99,122 +87,6 @@ std::string TrimEndingDot(const base::StringPiece& host) {
     host_trimmed.remove_suffix(1);
   }
   return host_trimmed.as_string();
-}
-
-bool DnsResponseBuffer::U8(uint8* v) {
-  if (len_ < 1)
-    return false;
-  *v = *p_;
-  p_++;
-  len_--;
-  return true;
-}
-
-bool DnsResponseBuffer::U16(uint16* v) {
-  if (len_ < 2)
-    return false;
-  *v = static_cast<uint16>(p_[0]) << 8 |
-       static_cast<uint16>(p_[1]);
-  p_ += 2;
-  len_ -= 2;
-  return true;
-}
-
-bool DnsResponseBuffer::U32(uint32* v) {
-  if (len_ < 4)
-    return false;
-  *v = static_cast<uint32>(p_[0]) << 24 |
-       static_cast<uint32>(p_[1]) << 16 |
-       static_cast<uint32>(p_[2]) << 8 |
-       static_cast<uint32>(p_[3]);
-  p_ += 4;
-  len_ -= 4;
-  return true;
-}
-
-bool DnsResponseBuffer::Skip(unsigned n) {
-  if (len_ < n)
-    return false;
-  p_ += n;
-  len_ -= n;
-  return true;
-}
-
-bool DnsResponseBuffer::Block(base::StringPiece* out, unsigned len) {
-  if (len_ < len)
-    return false;
-  *out = base::StringPiece(reinterpret_cast<const char*>(p_), len);
-  p_ += len;
-  len_ -= len;
-  return true;
-}
-
-// DNSName parses a (possibly compressed) DNS name from the packet. If |name|
-// is not NULL, then the name is written into it. See RFC 1035 section 4.1.4.
-bool DnsResponseBuffer::DNSName(std::string* name) {
-  unsigned jumps = 0;
-  const uint8* p = p_;
-  unsigned len = len_;
-
-  if (name)
-    name->clear();
-
-  for (;;) {
-    if (len < 1)
-      return false;
-    uint8 d = *p;
-    p++;
-    len--;
-
-    // The two couple of bits of the length give the type of the length. It's
-    // either a direct length or a pointer to the remainder of the name.
-    if ((d & 0xc0) == 0xc0) {
-      // This limit matches the depth limit in djbdns.
-      if (jumps > 100)
-        return false;
-      if (len < 1)
-        return false;
-      uint16 offset = static_cast<uint16>(d) << 8 |
-                      static_cast<uint16>(p[0]);
-      offset &= 0x3ff;
-      p++;
-      len--;
-
-      if (jumps == 0) {
-        p_ = p;
-        len_ = len;
-      }
-      jumps++;
-
-      if (offset >= packet_len_)
-        return false;
-      p = &packet_[offset];
-      len = packet_len_ - offset;
-    } else if ((d & 0xc0) == 0) {
-      uint8 label_len = d;
-      if (len < label_len)
-        return false;
-      if (name && label_len) {
-        if (!name->empty())
-          name->append(".");
-        name->append(reinterpret_cast<const char*>(p), label_len);
-      }
-      p += label_len;
-      len -= label_len;
-
-      if (jumps == 0) {
-        p_ = p;
-        len_ = len;
-      }
-
-      if (label_len == 0)
-        break;
-    } else {
-      return false;
-    }
-  }
-
-  return true;
 }
 
 }  // namespace net

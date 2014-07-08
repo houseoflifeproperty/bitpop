@@ -4,7 +4,7 @@
 
 #include "chrome/common/chrome_constants.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 
 #define FPL FILE_PATH_LITERAL
 
@@ -51,71 +51,79 @@ const char kChromeVersionEnvVar[] = "BITPOP_VERSION";
 // do so.
 
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("bitpop.exe");
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop.exe");
-const FilePath::CharType kHelperProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableName[] =
     FPL("bitpop.exe");
-const FilePath::CharType kHelperProcessExecutableName[] = FPL("bitpop.exe");
+const base::FilePath::CharType kHelperProcessExecutableNameChromium[] =
+    FPL("bitpop.exe");
+const base::FilePath::CharType kHelperProcessExecutableName[] =
+    FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
-const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING);
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL(PRODUCT_STRING);
-const FilePath::CharType kHelperProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableName[] =
+    FPL(PRODUCT_STRING);
+const base::FilePath::CharType kHelperProcessExecutableNameChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING " Helper");
-const FilePath::CharType kHelperProcessExecutableName[] =
+const base::FilePath::CharType kHelperProcessExecutableName[] =
     FPL(PRODUCT_STRING " Helper");
 #elif defined(OS_ANDROID)
 // NOTE: Keep it synced with the process names defined in AndroidManifest.xml.
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
-const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
+const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("");
-const FilePath::CharType kHelperProcessExecutableName[] =
+const base::FilePath::CharType kHelperProcessExecutableName[] =
     FPL("sandboxed_process");
-const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
+const base::FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("");
 #elif defined(OS_POSIX)
-const FilePath::CharType kBrowserProcessExecutableNameChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutableNameChromium[] =
     FPL("chrome");
-const FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
+const base::FilePath::CharType kBrowserProcessExecutableName[] = FPL("bitpop");
 // Helper processes end up with a name of "exe" due to execing via
 // /proc/self/exe.  See bug 22703.
-const FilePath::CharType kHelperProcessExecutableNameChromium[] = FPL("exe");
-const FilePath::CharType kHelperProcessExecutableName[] = FPL("exe");
+const base::FilePath::CharType kHelperProcessExecutableNameChromium[] =
+    FPL("exe");
+const base::FilePath::CharType kHelperProcessExecutableName[] = FPL("exe");
 #endif  // OS_*
 
 #if defined(OS_WIN)
-const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL("bitpop.exe");
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("bitpop.exe");
-const FilePath::CharType kHelperProcessExecutablePathChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutablePath[] =
     FPL("bitpop.exe");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("bitpop.exe");
+const base::FilePath::CharType kHelperProcessExecutablePathChromium[] =
+    FPL("bitpop.exe");
+const base::FilePath::CharType kHelperProcessExecutablePath[] =
+    FPL("bitpop.exe");
 #elif defined(OS_MACOSX)
-const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING ".app/Contents/MacOS/" CHROMIUM_PRODUCT_STRING);
-const FilePath::CharType kBrowserProcessExecutablePath[] =
+const base::FilePath::CharType kBrowserProcessExecutablePath[] =
     FPL(PRODUCT_STRING ".app/Contents/MacOS/" PRODUCT_STRING);
-const FilePath::CharType kHelperProcessExecutablePathChromium[] =
+const base::FilePath::CharType kHelperProcessExecutablePathChromium[] =
     FPL(CHROMIUM_PRODUCT_STRING " Helper.app/Contents/MacOS/"
         CHROMIUM_PRODUCT_STRING " Helper");
-const FilePath::CharType kHelperProcessExecutablePath[] =
+const base::FilePath::CharType kHelperProcessExecutablePath[] =
     FPL(PRODUCT_STRING " Helper.app/Contents/MacOS/" PRODUCT_STRING " Helper");
 #elif defined(OS_ANDROID)
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
-const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
+const base::FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
+const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL("chrome");
-const FilePath::CharType kHelperProcessExecutablePathChromium[] = FPL("chrome");
+const base::FilePath::CharType kHelperProcessExecutablePathChromium[] =
+    FPL("chrome");
 #elif defined(OS_POSIX)
-const FilePath::CharType kBrowserProcessExecutablePathChromium[] =
+const base::FilePath::CharType kBrowserProcessExecutablePathChromium[] =
     FPL("chrome");
-const FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
-const FilePath::CharType kHelperProcessExecutablePathChromium[] = FPL("chrome");
-const FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
+const base::FilePath::CharType kBrowserProcessExecutablePath[] = FPL("chrome");
+const base::FilePath::CharType kHelperProcessExecutablePathChromium[] =
+    FPL("chrome");
+const base::FilePath::CharType kHelperProcessExecutablePath[] = FPL("chrome");
 #endif  // OS_*
 
 #if defined(OS_MACOSX)
-const FilePath::CharType kFrameworkName[] =
+const base::FilePath::CharType kFrameworkName[] =
     FPL(PRODUCT_STRING " Framework.framework");
 
 const char* const kHelperFlavorSuffixes[] = {
@@ -125,68 +133,74 @@ const char* const kHelperFlavorSuffixes[] = {
 };
 #endif  // OS_MACOSX
 
-const wchar_t kNaClAppName[] = L"nacl64";
-#if defined(GOOGLE_CHROME_BUILD)
-const wchar_t kBrowserAppName[] = L"Chrome";
-#else
-const wchar_t kBrowserAppName[] = L"BitPop";
-#endif
-
 #if defined(OS_WIN)
-const FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
+const base::FilePath::CharType kMetroDriverDll[] = FPL("metro_driver.dll");
 const wchar_t kStatusTrayWindowClass[] = L"BitPop_StatusTrayWindow";
 #endif  // defined(OS_WIN)
 
-const wchar_t kMessageWindowClass[] = L"Chrome_MessageWindow";
 const wchar_t kCrashReportLog[] = L"Reported Crashes.txt";
 const wchar_t kTestingInterfaceDLL[] = L"testing_interface.dll";
 const char    kInitialProfile[] = "Default";
 const char    kMultiProfileDirPrefix[] = "Profile ";
+const base::FilePath::CharType kGuestProfileDir[] = FPL("Guest Profile");
 const wchar_t kBrowserResourcesDll[] = L"chrome.dll";
-const FilePath::CharType kExtensionFileExtension[] = FPL(".crx");
-const FilePath::CharType kExtensionKeyFileExtension[] = FPL(".pem");
 
 // filenames
 #if defined(OS_ANDROID)
-const FilePath::CharType kAndroidCacheFilename[] = FPL("AndroidCache");
+const base::FilePath::CharType kAndroidCacheFilename[] = FPL("AndroidCache");
 #endif
-const FilePath::CharType kArchivedHistoryFilename[] = FPL("Archived History");
-const FilePath::CharType kBookmarksFileName[] = FPL("Bookmarks");
-const FilePath::CharType kCacheDirname[] = FPL("Cache");
-const FilePath::CharType kCookieFilename[] = FPL("Cookies");
-const FilePath::CharType kCRLSetFilename[] =
+const base::FilePath::CharType kArchivedHistoryFilename[] =
+    FPL("Archived History");
+const base::FilePath::CharType kCacheDirname[] = FPL("Cache");
+const base::FilePath::CharType kCookieFilename[] = FPL("Cookies");
+const base::FilePath::CharType kCRLSetFilename[] =
     FPL("Certificate Revocation Lists");
-const FilePath::CharType kCustomDictionaryFileName[] =
+const base::FilePath::CharType kCLDDataFilename[] =
+    FPL("cld2_data.bin");
+const base::FilePath::CharType kCustomDictionaryFileName[] =
     FPL("Custom Dictionary.txt");
-const FilePath::CharType kExtensionsCookieFilename[] = FPL("Extension Cookies");
-const FilePath::CharType kFaviconsFilename[] = FPL("Favicons");
-const FilePath::CharType kFirstRunSentinel[] = FPL("First Run");
-const FilePath::CharType kHistoryFilename[] = FPL("History");
-const FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
-const FilePath::CharType kLocalStateFilename[] = FPL("Local State");
-const FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
-const FilePath::CharType kManagedModePolicyFilename[] =
+const base::FilePath::CharType kExtensionActivityLogFilename[] =
+    FPL("Extension Activity");
+const base::FilePath::CharType kExtensionsCookieFilename[] =
+    FPL("Extension Cookies");
+const base::FilePath::CharType kFaviconsFilename[] = FPL("Favicons");
+const base::FilePath::CharType kFirstRunSentinel[] = FPL("First Run");
+const base::FilePath::CharType kGCMStoreDirname[] = FPL("GCM Store");
+const base::FilePath::CharType kHistoryFilename[] = FPL("History");
+const base::FilePath::CharType kJumpListIconDirname[] = FPL("JumpListIcons");
+const base::FilePath::CharType kLocalStateFilename[] = FPL("Local State");
+const base::FilePath::CharType kLocalStorePoolName[] = FPL("LocalStorePool");
+const base::FilePath::CharType kLoginDataFileName[] = FPL("Login Data");
+const base::FilePath::CharType kManagedUserSettingsFilename[] =
     FPL("Managed Mode Settings");
-const FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
-const FilePath::CharType kNewTabThumbnailsFilename[] = FPL("Top Thumbnails");
-const FilePath::CharType kOBCertFilename[] = FPL("Origin Bound Certs");
-const FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
-const FilePath::CharType kReadmeFilename[] = FPL("README");
-const FilePath::CharType kSafeBrowsingBaseFilename[] = FPL("Safe Browsing");
-const FilePath::CharType kServiceStateFileName[] = FPL("Service State");
-const FilePath::CharType kShortcutsDatabaseName[] = FPL("Shortcuts");
-const FilePath::CharType kSingletonCookieFilename[] = FPL("SingletonCookie");
-const FilePath::CharType kSingletonLockFilename[] = FPL("SingletonLock");
-const FilePath::CharType kSingletonSocketFilename[] = FPL("SingletonSocket");
-const FilePath::CharType kSyncCredentialsFilename[] = FPL("Sync Credentials");
-const FilePath::CharType kThemePackFilename[] = FPL("Cached Theme.pak");
-const FilePath::CharType kThumbnailsFilename[] = FPL("Thumbnails");
-const FilePath::CharType kTopSitesFilename[] = FPL("Top Sites");
-const FilePath::CharType kWebAppDirname[] = FPL("Web Applications");
-const FilePath::CharType kWebDataFilename[] = FPL("Web Data");
+const base::FilePath::CharType kMediaCacheDirname[] = FPL("Media Cache");
+const base::FilePath::CharType kNewTabThumbnailsFilename[] =
+    FPL("Top Thumbnails");
+const base::FilePath::CharType kOBCertFilename[] = FPL("Origin Bound Certs");
+const base::FilePath::CharType kPreferencesFilename[] = FPL("Preferences");
+const base::FilePath::CharType kProtectedPreferencesFilename[] =
+    FPL("Protected Preferences");
+const base::FilePath::CharType kReadmeFilename[] = FPL("README");
+const base::FilePath::CharType kResetPromptMementoFilename[] =
+    FPL("Reset Prompt Memento");
+const base::FilePath::CharType kSafeBrowsingBaseFilename[] =
+    FPL("Safe Browsing");
+const base::FilePath::CharType kServiceStateFileName[] = FPL("Service State");
+const base::FilePath::CharType kShortcutsDatabaseName[] = FPL("Shortcuts");
+const base::FilePath::CharType kSingletonCookieFilename[] =
+    FPL("SingletonCookie");
+const base::FilePath::CharType kSingletonLockFilename[] = FPL("SingletonLock");
+const base::FilePath::CharType kSingletonSocketFilename[] =
+    FPL("SingletonSocket");
+const base::FilePath::CharType kSyncCredentialsFilename[] =
+    FPL("Sync Credentials");
+const base::FilePath::CharType kThemePackFilename[] = FPL("Cached Theme.pak");
+const base::FilePath::CharType kThumbnailsFilename[] = FPL("Thumbnails");
+const base::FilePath::CharType kTopSitesFilename[] = FPL("Top Sites");
+const base::FilePath::CharType kWebAppDirname[] = FPL("Web Applications");
 
 // File name of the Pepper Flash plugin on different platforms.
-const FilePath::CharType kPepperFlashPluginFilename[] =
+const base::FilePath::CharType kPepperFlashPluginFilename[] =
 #if defined(OS_MACOSX)
     FPL("PepperFlashPlayer.plugin");
 #elif defined(OS_WIN)
@@ -197,10 +211,6 @@ const FilePath::CharType kPepperFlashPluginFilename[] =
 
 // directory names
 const wchar_t kUserDataDirname[] = L"User Data";
-
-#if defined(OS_CHROMEOS)
-const FilePath::CharType kDriveCacheDirname[] = FPL("GCache");
-#endif  // defined(OS_CHROMEOS)
 
 // We don't enable record mode in the released product because users could
 // potentially be tricked into running a product in record mode without
@@ -214,9 +224,7 @@ const FilePath::CharType kDriveCacheDirname[] = FPL("GCache");
 
 const bool kRecordModeEnabled = true;
 
-const char* const kUnknownLanguageCode = "und";
-
-const int kJavascriptMessageExpectedDelay = 1000;
+const int kJavaScriptMessageExpectedDelay = 1000;
 
 #if defined(OS_ANDROID)
 const bool kEnableTouchIcon = true;
@@ -226,16 +234,15 @@ const bool kEnableTouchIcon = false;
 
 const float kMaxShareOfExtensionProcesses = 0.30f;
 
+// This is used by the PreRead experiment.
+const char kPreReadEnvironmentVariable[] = "CHROME_PRE_READ_EXPERIMENT";
+
 #if defined(OS_LINUX)
 const int kLowestRendererOomScore = 300;
 const int kHighestRendererOomScore = 1000;
 #endif
 
 #if defined(OS_WIN)
-// This is used by the PreRead experiment.
-const char kPreReadEnvironmentVariable[] = "CHROME_PRE_READ_EXPERIMENT";
-// This is used by chrome in Windows 8 metro mode.
-const wchar_t kMetroChromeUserDataSubDir[] = L"Metro";
 const wchar_t kMetroNavigationAndSearchMessage[] =
     L"CHROME_METRO_NAV_SEARCH_REQUEST";
 const wchar_t kMetroGetCurrentTabInfoMessage[] =
@@ -243,10 +250,29 @@ const wchar_t kMetroGetCurrentTabInfoMessage[] =
 const wchar_t kMetroRegistryPath[] =
     L"Software\\" PRODUCT_STRING_PATH L"\\Metro";
 const wchar_t kLaunchModeValue[] = L"launch_mode";
+// This is used by breakpad and the metrics reporting.
+const wchar_t kBrowserCrashDumpAttemptsRegistryPath[] =
+    L"Software\\" PRODUCT_STRING_PATH L"\\BrowserCrashDumpAttempts";
+const char kSafeModeEnvVar[] = "CHROME_SAFE_MODE";
+#endif
+
+#if defined(OS_CHROMEOS)
+const char kProfileDirPrefix[] = "u-";
+const char kLegacyProfileDir[] = "user";
+const char kTestUserProfileDir[] = "test-user";
+#endif
+
+// This GUID is associated with any 'don't ask me again' settings that the
+// user can select for different file types.
+// {09DE0630-6CA2-430D-AC05-CC6B90CC17AB}
+const char kApplicationClientIDStringForAVScanning[] =
+    "09DE0630-6CA2-430D-AC05-CC6B90CC17AB";
+
+#if defined(OS_ANDROID)
+const size_t kMaxMetaTagAttributeLength = 2000;
 #endif
 
 const char kFacebookChatExtensionId[] = "engefnlnhcgeegefndkhijjfdfbpbeah";
-const char kFacebookControllerExtensionId[] = "igddmhdmkpkonlbfabbkkdoploafopcn";
 const char kFacebookMessagesExtensionId[] = "dhcejgafhmkdfanoalflifpjimaaijda";
 const char kFacebookNotificationsExtensionId[] = "omkphklbdjafhafacohmepaahbofnkcp";
 const char kUncensorISPExtensionId[] = "fjfallkmojjifpfkopjoogodecehcjam";
@@ -254,8 +280,6 @@ const char kUncensorFilterExtensionId[] = "oadgfoondcimpmclpkphkdnjhaddaehg";
 const char kGoogleDocsExtensionId[] = "nnbmlagghjjcbdhgmkedmbmedengocbn";
 const char kFacebookShareExtensionId[] = "geoplninmkljnhklaihoejihlogghapi";
 const char kDropdownListExtensionId[] = "jcpicigjjhpmobmnaoegfajemdcjkjdm";
-const char kBittorrentSurfExtensionId[] = "pchkdmeolfddeeedkhlfolaenanehddd";
-const char kBitPopGiftExtensionId[] = "kggkfhmkfhphhpieneonpjdggjheibjg";
 }  // namespace chrome
 
 #undef FPL

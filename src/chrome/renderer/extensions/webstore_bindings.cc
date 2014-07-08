@@ -4,24 +4,27 @@
 
 #include "chrome/renderer/extensions/webstore_bindings.h"
 
-#include "base/string_util.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_messages.h"
-#include "chrome/renderer/extensions/chrome_v8_context.h"
+#include "base/strings/string_util.h"
+#include "chrome/common/extensions/api/webstore/webstore_api_constants.h"
+#include "chrome/common/extensions/chrome_extension_messages.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/renderer/render_view.h"
-#include "googleurl/src/gurl.h"
-#include "grit/renderer_resources.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebElement.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNode.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebNodeList.h"
+#include "extensions/common/extension.h"
+#include "extensions/renderer/script_context.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebElement.h"
+#include "third_party/WebKit/public/web/WebNode.h"
+#include "third_party/WebKit/public/web/WebNodeList.h"
+#include "third_party/WebKit/public/web/WebUserGestureIndicator.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
-using WebKit::WebDocument;
-using WebKit::WebElement;
-using WebKit::WebFrame;
-using WebKit::WebNode;
-using WebKit::WebNodeList;
+using blink::WebDocument;
+using blink::WebElement;
+using blink::WebFrame;
+using blink::WebNode;
+using blink::WebNodeList;
+using blink::WebUserGestureIndicator;
 
 namespace extensions {
 
@@ -29,12 +32,6 @@ namespace {
 
 const char kWebstoreLinkRelation[] = "chrome-webstore-item";
 
-const char kPreferredStoreLinkUrlNotAString[] =
-    "The Chrome Web Store item link URL parameter must be a string.";
-const char kSuccessCallbackNotAFunctionError[] =
-    "The success callback parameter must be a function.";
-const char kFailureCallbackNotAFunctionError[] =
-    "The failure callback parameter must be a function.";
 const char kNotInTopFrameError[] =
     "Chrome Web Store installations can only be started by the top frame.";
 const char kNotUserGestureError[] =
@@ -51,62 +48,55 @@ int g_next_install_id = 0;
 
 } // anonymous namespace
 
-WebstoreBindings::WebstoreBindings(Dispatcher* dispatcher,
-                                   ChromeV8Context* context)
-    : ChromeV8Extension(dispatcher),
-      ChromeV8ExtensionHandler(context) {
+WebstoreBindings::WebstoreBindings(ScriptContext* context)
+    : ObjectBackedNativeHandler(context), ChromeV8ExtensionHandler(context) {
   RouteFunction("Install",
                 base::Bind(&WebstoreBindings::Install, base::Unretained(this)));
 }
 
-v8::Handle<v8::Value> WebstoreBindings::Install(
-    const v8::Arguments& args) {
-  WebFrame* frame = WebFrame::frameForCurrentContext();
-  if (!frame || !frame->view())
-    return v8::Undefined();
-
-  content::RenderView* render_view =
-      content::RenderView::FromWebView(frame->view());
+void WebstoreBindings::Install(
+    const v8::FunctionCallbackInfo<v8::Value>& args) {
+  content::RenderView* render_view = context()->GetRenderView();
   if (!render_view)
-    return v8::Undefined();
+    return;
+
+  // The first two arguments indicate whether or not there are install stage
+  // or download progress listeners.
+  int listener_mask = 0;
+  CHECK(args[0]->IsBoolean());
+  if (args[0]->BooleanValue())
+    listener_mask |= api::webstore::INSTALL_STAGE_LISTENER;
+  CHECK(args[1]->IsBoolean());
+  if (args[1]->BooleanValue())
+    listener_mask |= api::webstore::DOWNLOAD_PROGRESS_LISTENER;
 
   std::string preferred_store_link_url;
-  if (!args[0]->IsUndefined()) {
-    if (args[0]->IsString()) {
-      preferred_store_link_url = std::string(*v8::String::Utf8Value(args[0]));
-    } else {
-      v8::ThrowException(v8::String::New(kPreferredStoreLinkUrlNotAString));
-      return v8::Undefined();
-    }
+  if (!args[2]->IsUndefined()) {
+    CHECK(args[2]->IsString());
+    preferred_store_link_url = std::string(*v8::String::Utf8Value(args[2]));
   }
 
   std::string webstore_item_id;
   std::string error;
+  WebFrame* frame = context()->web_frame();
+
   if (!GetWebstoreItemIdFromFrame(
       frame, preferred_store_link_url, &webstore_item_id, &error)) {
-    v8::ThrowException(v8::String::New(error.c_str()));
-    return v8::Undefined();
+    args.GetIsolate()->ThrowException(
+        v8::String::NewFromUtf8(args.GetIsolate(), error.c_str()));
+    return;
   }
 
   int install_id = g_next_install_id++;
-  if (!args[1]->IsUndefined() && !args[1]->IsFunction()) {
-    v8::ThrowException(v8::String::New(kSuccessCallbackNotAFunctionError));
-    return v8::Undefined();
-  }
 
-  if (!args[2]->IsUndefined() && !args[2]->IsFunction()) {
-    v8::ThrowException(v8::String::New(kFailureCallbackNotAFunctionError));
-    return v8::Undefined();
-  }
+  Send(new ExtensionHostMsg_InlineWebstoreInstall(render_view->GetRoutingID(),
+                                                  install_id,
+                                                  GetRoutingID(),
+                                                  webstore_item_id,
+                                                  frame->document().url(),
+                                                  listener_mask));
 
-  Send(new ExtensionHostMsg_InlineWebstoreInstall(
-      render_view->GetRoutingID(),
-      install_id,
-      GetRoutingID(),
-      webstore_item_id,
-      frame->document().url()));
-
-  return v8::Integer::New(install_id);
+  args.GetReturnValue().Set(static_cast<int32_t>(install_id));
 }
 
 // static
@@ -118,7 +108,7 @@ bool WebstoreBindings::GetWebstoreItemIdFromFrame(
     return false;
   }
 
-  if (!frame->isProcessingUserGesture()) {
+  if (!WebUserGestureIndicator::isProcessingUserGesture()) {
     *error = kNotUserGestureError;
     return false;
   }
@@ -200,6 +190,10 @@ bool WebstoreBindings::OnMessageReceived(const IPC::Message& message) {
   IPC_BEGIN_MESSAGE_MAP(WebstoreBindings, message)
     IPC_MESSAGE_HANDLER(ExtensionMsg_InlineWebstoreInstallResponse,
                         OnInlineWebstoreInstallResponse)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_InlineInstallStageChanged,
+                        OnInlineInstallStageChanged)
+    IPC_MESSAGE_HANDLER(ExtensionMsg_InlineInstallDownloadProgress,
+                        OnInlineInstallDownloadProgress)
     IPC_MESSAGE_UNHANDLED(CHECK(false) << "Unhandled IPC message")
   IPC_END_MESSAGE_MAP()
   return true;
@@ -209,14 +203,47 @@ void WebstoreBindings::OnInlineWebstoreInstallResponse(
     int install_id,
     bool success,
     const std::string& error) {
-  v8::HandleScope handle_scope;
-  v8::Context::Scope context_scope(context_->v8_context());
-  v8::Handle<v8::Value> argv[3];
-  argv[0] = v8::Integer::New(install_id);
-  argv[1] = v8::Boolean::New(success);
-  argv[2] = v8::String::New(error.c_str());
-  CHECK(context_->CallChromeHiddenMethod("webstore.onInstallResponse",
-                                         arraysize(argv), argv, NULL));
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Value> argv[] = {
+    v8::Integer::New(isolate, install_id),
+    v8::Boolean::New(isolate, success),
+    v8::String::NewFromUtf8(isolate, error.c_str())
+  };
+  context()->module_system()->CallModuleMethod(
+      "webstore", "onInstallResponse", arraysize(argv), argv);
+}
+
+void WebstoreBindings::OnInlineInstallStageChanged(int stage) {
+  const char* stage_string = NULL;
+  api::webstore::InstallStage install_stage =
+      static_cast<api::webstore::InstallStage>(stage);
+  switch (install_stage) {
+    case api::webstore::INSTALL_STAGE_DOWNLOADING:
+      stage_string = api::webstore::kInstallStageDownloading;
+      break;
+    case api::webstore::INSTALL_STAGE_INSTALLING:
+      stage_string = api::webstore::kInstallStageInstalling;
+      break;
+  }
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Value> argv[] = {
+      v8::String::NewFromUtf8(isolate, stage_string)};
+  context()->module_system()->CallModuleMethod(
+      "webstore", "onInstallStageChanged", arraysize(argv), argv);
+}
+
+void WebstoreBindings::OnInlineInstallDownloadProgress(int percent_downloaded) {
+  v8::Isolate* isolate = context()->isolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Context::Scope context_scope(context()->v8_context());
+  v8::Handle<v8::Value> argv[] = {
+      v8::Number::New(isolate, percent_downloaded / 100.0)};
+  context()->module_system()->CallModuleMethod(
+      "webstore", "onDownloadProgress", arraysize(argv), argv);
 }
 
 }  // namespace extensions

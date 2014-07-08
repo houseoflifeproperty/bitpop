@@ -6,9 +6,9 @@
 #include <vector>
 
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
 #include "ipc/ipc_message_macros.h"
 #include "ipc/ipc_param_traits.h"
+#include "url/gurl.h"
 
 #undef IPC_MESSAGE_EXPORT
 #define IPC_MESSAGE_EXPORT CONTENT_EXPORT
@@ -21,10 +21,10 @@
 // The browser starts connecting asynchronously.
 // Once Socket Stream connection is established, the browser will send
 // SocketStreamMsg_Connected back.
-// |render_view_id| must be the routing id of RenderViewImpl to which the
+// |render_frame_id| must be the routing id of RenderFrameImpl to which the
 // Socket Stream belongs.
 IPC_MESSAGE_CONTROL3(SocketStreamHostMsg_Connect,
-                     int /* render_view_id */,
+                     int /* render_frame_id */,
                      GURL /* socket_url */,
                      int /* socket_id */)
 
@@ -73,3 +73,8 @@ IPC_MESSAGE_CONTROL2(SocketStreamMsg_SentData,
 // The Socket Stream is closed.
 IPC_MESSAGE_CONTROL1(SocketStreamMsg_Closed,
                      int /* socket_id */)
+
+// The Socket Stream is failed.
+IPC_MESSAGE_CONTROL2(SocketStreamMsg_Failed,
+                     int /* socket_id */,
+                     int /* error_code */)

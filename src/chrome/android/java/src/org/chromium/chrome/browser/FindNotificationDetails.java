@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -29,8 +29,7 @@ public class FindNotificationDetails {
     /** Whether this is the last Find Result update for the request. */
     public final boolean finalUpdate;
 
-    public FindNotificationDetails(
-            int numberOfMatches, Rect rendererSelectionRect,
+    public FindNotificationDetails(int numberOfMatches, Rect rendererSelectionRect,
             int activeMatchOrdinal, boolean finalUpdate) {
         this.numberOfMatches = numberOfMatches;
         this.rendererSelectionRect = rendererSelectionRect;

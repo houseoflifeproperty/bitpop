@@ -8,6 +8,9 @@ See http://dev.chromium.org/developers/how-tos/depottools/presubmit-scripts for
 details on the presubmit API built into depot_tools.
 """
 
+import fnmatch
+import os
+
 
 def CommonChecks(input_api, output_api, tests_to_black_list):
   results = []
@@ -15,29 +18,44 @@ def CommonChecks(input_api, output_api, tests_to_black_list):
   black_list = list(input_api.DEFAULT_BLACK_LIST) + [
       r'^cpplint\.py$',
       r'^cpplint_chromium\.py$',
-      r'^python_bin[\/\\].+',
+      r'^python[0-9]*_bin[\/\\].+',
       r'^site-packages-py[0-9]\.[0-9][\/\\].+',
       r'^svn_bin[\/\\].+',
       r'^testing_support[\/\\]_rietveld[\/\\].+']
+  if os.path.exists('.gitignore'):
+    with open('.gitignore') as fh:
+      lines = [l.strip() for l in fh.readlines()]
+      black_list.extend([fnmatch.translate(l) for l in lines if
+                         l and not l.startswith('#')])
+  if os.path.exists('.git/info/exclude'):
+    with open('.git/info/exclude') as fh:
+      lines = [l.strip() for l in fh.readlines()]
+      black_list.extend([fnmatch.translate(l) for l in lines if
+                         l and not l.startswith('#')])
   disabled_warnings = [
     'R0401',  # Cyclic import
     'W0613',  # Unused argument
   ]
-  results.extend(input_api.canned_checks.RunPylint(
+  pylint = input_api.canned_checks.GetPylint(
       input_api,
       output_api,
       white_list=[r'.*\.py$'],
       black_list=black_list,
-      disabled_warnings=disabled_warnings))
-
+      disabled_warnings=disabled_warnings)
   # TODO(maruel): Make sure at least one file is modified first.
   # TODO(maruel): If only tests are modified, only run them.
-  results.extend(input_api.canned_checks.RunUnitTestsInDirectory(
+  unit_tests = input_api.canned_checks.GetUnitTestsInDirectory(
       input_api,
       output_api,
       'tests',
       whitelist=[r'.*test\.py$'],
-      blacklist=tests_to_black_list))
+      blacklist=tests_to_black_list)
+  tests = pylint
+  if not input_api.platform.startswith(('cygwin', 'win32')):
+    tests.extend(unit_tests)
+  else:
+    print('Warning: not running unit tests on Windows')
+  results.extend(input_api.RunTests(tests))
   return results
 
 
@@ -96,6 +114,7 @@ def CheckChangeOnUpload(input_api, output_api):
       r'^checkout_test\.py$',
       r'^gclient_smoketest\.py$',
       r'^scm_unittest\.py$',
+      r'^subprocess2_test\.py$',
     ]
   return CommonChecks(input_api, output_api, tests_to_black_list)
 

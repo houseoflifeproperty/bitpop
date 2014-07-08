@@ -26,35 +26,34 @@
 
 #include <stdint.h>
 
+#include "libavutil/buffer.h"
 #include "libavutil/mathematics.h"
 #include "libavutil/pixfmt.h"
 #include "avcodec.h"
+#include "config.h"
 
-typedef struct InternalBuffer {
-    uint8_t *base[AV_NUM_DATA_POINTERS];
-    uint8_t *data[AV_NUM_DATA_POINTERS];
-    int linesize[AV_NUM_DATA_POINTERS];
-    int width;
-    int height;
-    enum PixelFormat pix_fmt;
-    uint8_t **extended_data;
-    int audio_data_size;
-    int nb_channels;
-} InternalBuffer;
+#define FF_SANE_NB_CHANNELS 63U
+
+typedef struct FramePool {
+    /**
+     * Pools for each data plane. For audio all the planes have the same size,
+     * so only pools[0] is used.
+     */
+    AVBufferPool *pools[4];
+
+    /*
+     * Pool parameters
+     */
+    int format;
+    int width, height;
+    int stride_align[AV_NUM_DATA_POINTERS];
+    int linesize[4];
+    int planes;
+    int channels;
+    int samples;
+} FramePool;
 
 typedef struct AVCodecInternal {
-    /**
-     * internal buffer count
-     * used by default get/release/reget_buffer().
-     */
-    int buffer_count;
-
-    /**
-     * internal buffers
-     * used by default get/release/reget_buffer().
-     */
-    InternalBuffer *buffer;
-
     /**
      * Whether the parent AVCodecContext is a copy of the context which had
      * init() called on it.
@@ -63,12 +62,27 @@ typedef struct AVCodecInternal {
      */
     int is_copy;
 
-#if FF_API_OLD_DECODE_AUDIO
+    /**
+     * Whether to allocate progress for frame threading.
+     *
+     * The codec must set it to 1 if it uses ff_thread_await/report_progress(),
+     * then progress will be allocated in ff_thread_get_buffer(). The frames
+     * then MUST be freed with ff_thread_release_buffer().
+     *
+     * If the codec does not need to call the progress functions (there are no
+     * dependencies between the frames), it should leave this at 0. Then it can
+     * decode straight to the user-provided frames (which the user will then
+     * free with av_frame_unref()), there is no need to call
+     * ff_thread_release_buffer().
+     */
+    int allocate_progress;
+
+#if FF_API_OLD_ENCODE_AUDIO
     /**
      * Internal sample count used by avcodec_encode_audio() to fabricate pts.
      * Can be removed along with avcodec_encode_audio().
      */
-    int sample_count;
+    int64_t sample_count;
 #endif
 
     /**
@@ -76,6 +90,18 @@ typedef struct AVCodecInternal {
      * padded with silence. Reject all subsequent frames.
      */
     int last_audio_frame;
+
+    AVFrame *to_free;
+
+    FramePool *pool;
+
+    void *thread_ctx;
+
+    /**
+     * Current packet as passed into the decoder, to avoid having to pass the
+     * packet into every function.
+     */
+    AVPacket *pkt;
 
     /**
      * temporary buffer used for encoders to store their bitstream
@@ -97,19 +123,13 @@ struct AVCodecDefault {
 };
 
 /**
- * Determine whether pix_fmt is a hardware accelerated format.
- */
-int ff_is_hwaccel_pix_fmt(enum PixelFormat pix_fmt);
-
-/**
  * Return the hardware accelerated codec for codec codec_id and
  * pixel format pix_fmt.
  *
- * @param codec_id the codec to match
- * @param pix_fmt the pixel format to match
+ * @param avctx The codec context containing the codec_id and pixel format.
  * @return the hardware accelerated codec, or NULL if none was found.
  */
-AVHWAccel *ff_find_hwaccel(enum AVCodecID codec_id, enum PixelFormat pix_fmt);
+AVHWAccel *ff_find_hwaccel(AVCodecContext *avctx);
 
 /**
  * Return the index into tab at which {a,b} match elements {[0],[1]} of tab.
@@ -122,12 +142,14 @@ unsigned int avpriv_toupper4(unsigned int x);
 /**
  * does needed setup of pkt_pts/pos and such for (re)get_buffer();
  */
-void ff_init_buffer_info(AVCodecContext *s, AVFrame *frame);
+int ff_init_buffer_info(AVCodecContext *s, AVFrame *frame);
 
-/**
- * Remove and free all side data from packet.
- */
-void ff_packet_free_side_data(AVPacket *pkt);
+
+void avpriv_color_frame(AVFrame *frame, const int color[4]);
+
+extern volatile int ff_avcodec_locked;
+int ff_lock_avcodec(AVCodecContext *log_ctx);
+int ff_unlock_avcodec(void);
 
 int avpriv_lock_avformat(void);
 int avpriv_unlock_avformat(void);
@@ -156,7 +178,7 @@ int avpriv_unlock_avformat(void);
  * @param size    the minimum required packet size
  * @return        0 on success, negative error code on failure
  */
-int ff_alloc_packet2(AVCodecContext *avctx, AVPacket *avpkt, int size);
+int ff_alloc_packet2(AVCodecContext *avctx, AVPacket *avpkt, int64_t size);
 
 int ff_alloc_packet(AVPacket *avpkt, int size);
 
@@ -172,10 +194,48 @@ static av_always_inline int64_t ff_samples_to_time_base(AVCodecContext *avctx,
                         avctx->time_base);
 }
 
+/**
+ * Get a buffer for a frame. This is a wrapper around
+ * AVCodecContext.get_buffer() and should be used instead calling get_buffer()
+ * directly.
+ */
+int ff_get_buffer(AVCodecContext *avctx, AVFrame *frame, int flags);
+
+/**
+ * Identical in function to av_frame_make_writable(), except it uses
+ * ff_get_buffer() to allocate the buffer when needed.
+ */
+int ff_reget_buffer(AVCodecContext *avctx, AVFrame *frame);
+
 int ff_thread_can_start_frame(AVCodecContext *avctx);
 
-int ff_get_logical_cpus(AVCodecContext *avctx);
-
 int avpriv_h264_has_num_reorder_frames(AVCodecContext *avctx);
+
+/**
+ * Call avcodec_open2 recursively by decrementing counter, unlocking mutex,
+ * calling the function and then restoring again. Assumes the mutex is
+ * already locked
+ */
+int ff_codec_open2_recursive(AVCodecContext *avctx, const AVCodec *codec, AVDictionary **options);
+
+/**
+ * Call avcodec_close recursively, counterpart to avcodec_open2_recursive.
+ */
+int ff_codec_close_recursive(AVCodecContext *avctx);
+
+/**
+ * Finalize buf into extradata and set its size appropriately.
+ */
+int avpriv_bprint_to_extradata(AVCodecContext *avctx, struct AVBPrint *buf);
+
+const uint8_t *avpriv_find_start_code(const uint8_t *p,
+                                      const uint8_t *end,
+                                      uint32_t *state);
+
+/**
+ * Check that the provided frame dimensions are valid and set them on the codec
+ * context.
+ */
+int ff_set_dimensions(AVCodecContext *s, int width, int height);
 
 #endif /* AVCODEC_INTERNAL_H */

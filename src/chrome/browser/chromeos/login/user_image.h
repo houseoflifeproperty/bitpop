@@ -5,10 +5,11 @@
 #ifndef CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_H_
 #define CHROME_BROWSER_CHROMEOS_LOGIN_USER_IMAGE_H_
 
+#include <string>
 #include <vector>
 
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 namespace chromeos {
 
@@ -61,6 +62,9 @@ class UserImage {
   bool is_safe_format() const { return is_safe_format_; }
   void MarkAsSafe();
 
+  const std::string& file_path() const { return file_path_; }
+  void set_file_path(const std::string& file_path) { file_path_ = file_path; }
+
  private:
   gfx::ImageSkia image_;
   bool has_raw_image_;
@@ -68,6 +72,9 @@ class UserImage {
   bool has_animated_image_;
   RawImage animated_image_;
   GURL url_;
+
+  // If image was loaded from the local file, file path is stored here.
+  std::string file_path_;
   bool is_safe_format_;
 };
 

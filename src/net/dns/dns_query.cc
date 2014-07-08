@@ -6,8 +6,8 @@
 
 #include <limits>
 
+#include "base/big_endian.h"
 #include "base/sys_byteorder.h"
-#include "net/base/big_endian.h"
 #include "net/base/dns_util.h"
 #include "net/base/io_buffer.h"
 #include "net/dns/dns_protocol.h"
@@ -33,7 +33,8 @@ DnsQuery::DnsQuery(uint16 id, const base::StringPiece& qname, uint16 qtype)
   header->qdcount = base::HostToNet16(1);
 
   // Write question section after the header.
-  BigEndianWriter writer(reinterpret_cast<char*>(header + 1), question_size);
+  base::BigEndianWriter writer(reinterpret_cast<char*>(header + 1),
+                               question_size);
   writer.WriteBytes(qname.data(), qname.size());
   writer.WriteU16(qtype);
   writer.WriteU16(dns_protocol::kClassIN);
@@ -59,9 +60,8 @@ base::StringPiece DnsQuery::qname() const {
 
 uint16 DnsQuery::qtype() const {
   uint16 type;
-  ReadBigEndian<uint16>(io_buffer_->data() +
-                        sizeof(dns_protocol::Header) +
-                        qname_size_, &type);
+  base::ReadBigEndian<uint16>(
+      io_buffer_->data() + sizeof(dns_protocol::Header) + qname_size_, &type);
   return type;
 }
 
@@ -78,6 +78,12 @@ DnsQuery::DnsQuery(const DnsQuery& orig, uint16 id) {
   dns_protocol::Header* header =
       reinterpret_cast<dns_protocol::Header*>(io_buffer_->data());
   header->id = base::HostToNet16(id);
+}
+
+void DnsQuery::set_flags(uint16 flags) {
+  dns_protocol::Header* header =
+      reinterpret_cast<dns_protocol::Header*>(io_buffer_->data());
+  header->flags = flags;
 }
 
 }  // namespace net

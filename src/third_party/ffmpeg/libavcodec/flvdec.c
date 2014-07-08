@@ -89,8 +89,8 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
     s->height = height;
 
     s->pict_type = AV_PICTURE_TYPE_I + get_bits(&s->gb, 2);
-    s->dropable= s->pict_type > AV_PICTURE_TYPE_P;
-    if (s->dropable)
+    s->droppable = s->pict_type > AV_PICTURE_TYPE_P;
+    if (s->droppable)
         s->pict_type = AV_PICTURE_TYPE_P;
 
     skip_bits1(&s->gb); /* deblocking flag */
@@ -102,14 +102,17 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
     s->h263_long_vectors = 0;
 
     /* PEI */
-    while (get_bits1(&s->gb) != 0) {
-        skip_bits(&s->gb, 8);
-    }
+    if (skip_1stop_8data_bits(&s->gb) < 0)
+        return AVERROR_INVALIDDATA;
     s->f_code = 1;
+
+    if (s->ehc_mode)
+        s->avctx->sample_aspect_ratio= (AVRational){1,2};
 
     if(s->avctx->debug & FF_DEBUG_PICT_INFO){
         av_log(s->avctx, AV_LOG_DEBUG, "%c esc_type:%d, qp:%d num:%d\n",
-               s->dropable ? 'D' : av_get_picture_type_char(s->pict_type), s->h263_flv-1, s->qscale, s->picture_number);
+               s->droppable ? 'D' : av_get_picture_type_char(s->pict_type),
+               s->h263_flv - 1, s->qscale, s->picture_number);
     }
 
     s->y_dc_scale_table=
@@ -120,6 +123,7 @@ int ff_flv_decode_picture_header(MpegEncContext *s)
 
 AVCodec ff_flv_decoder = {
     .name           = "flv",
+    .long_name      = NULL_IF_CONFIG_SMALL("FLV / Sorenson Spark / Sorenson H.263 (Flash Video)"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_FLV1,
     .priv_data_size = sizeof(MpegEncContext),
@@ -128,6 +132,5 @@ AVCodec ff_flv_decoder = {
     .decode         = ff_h263_decode_frame,
     .capabilities   = CODEC_CAP_DRAW_HORIZ_BAND | CODEC_CAP_DR1,
     .max_lowres     = 3,
-    .long_name      = NULL_IF_CONFIG_SMALL("FLV / Sorenson Spark / Sorenson H.263 (Flash Video)"),
     .pix_fmts       = ff_pixfmt_list_420,
 };

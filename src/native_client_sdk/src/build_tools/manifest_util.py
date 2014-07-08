@@ -51,7 +51,7 @@ def GetHostOS():
 
 def DictToJSON(pydict):
   """Convert a dict to a JSON-formatted string."""
-  pretty_string = json.dumps(pydict, sort_keys=False, indent=2)
+  pretty_string = json.dumps(pydict, sort_keys=True, indent=2)
   # json.dumps sometimes returns trailing whitespace and does not put
   # a newline at the end.  This code fixes these problems.
   pretty_lines = pretty_string.split('\n')
@@ -120,11 +120,13 @@ class Archive(dict):
     for key, value in src.items():
       self[key] = value
 
-  def Validate(self):
+  def Validate(self, error_on_unknown_keys=False):
     """Validate the content of the archive object. Raise an Error if
        an invalid or missing field is found.
 
-    Returns: True if self is a valid bundle.
+    Args:
+      error_on_unknown_keys: If True, raise an Error when unknown keys are
+      found in the archive.
     """
     host_os = self.get('host_os', None)
     if host_os and host_os not in HOST_OS_LITERALS:
@@ -144,15 +146,17 @@ class Archive(dict):
     elif not len(checksum):
       raise Error('Archive "%s" has an empty checksum dict' % host_os)
     # Verify that all key names are valid.
-    for key in self:
-      if key not in VALID_ARCHIVE_KEYS:
-        raise Error('Archive "%s" has invalid attribute "%s"' % (host_os, key))
+    if error_on_unknown_keys:
+      for key in self:
+        if key not in VALID_ARCHIVE_KEYS:
+          raise Error('Archive "%s" has invalid attribute "%s"' % (
+              host_os, key))
 
   def UpdateVitals(self, revision):
     """Update the size and checksum information for this archive
     based on the content currently at the URL.
 
-    This allows the template mandifest to be maintained without
+    This allows the template manifest to be maintained without
     the need to size and checksums to be present.
     """
     template = string.Template(self['url'])
@@ -171,7 +175,7 @@ class Archive(dict):
       name: the name of the key, 'bar' in the example above.
     Returns:
       The value associated with that key."""
-    if name not in VALID_ARCHIVE_KEYS:
+    if name not in self:
       raise AttributeError(name)
     # special case, self.checksum returns the sha1, not the checksum dict.
     if name == 'checksum':
@@ -186,8 +190,6 @@ class Archive(dict):
     Args:
       name: The name of the key, 'bar' in the example above.
       value: The value to associate with that key."""
-    if name not in VALID_ARCHIVE_KEYS:
-      raise AttributeError(name)
     # special case, self.checksum returns the sha1, not the checksum dict.
     if name == 'checksum':
       self.setdefault('checksum', {})['sha1'] = value
@@ -217,16 +219,16 @@ class Bundle(dict):
     duplicated: the values of the keys in |bundle| take precedence in the
     resulting dictionary.
 
-    Archives in |bundle| will be appended to archives in self. Archives in
-    |bundle| will override archives in self with the same host_os.
+    Archives in |bundle| will be appended to archives in self.
 
     Args:
       bundle: The other bundle.  Must be a dict.
     """
+    assert self is not bundle
+
     for k, v in bundle.iteritems():
       if k == ARCHIVES_KEY:
         for archive in v:
-          self.RemoveArchive(archive['host_os'])
           self.get(k, []).append(archive)
       else:
         self[k] = v
@@ -264,9 +266,14 @@ class Bundle(dict):
       else:
         self[key] = value
 
-  def Validate(self, add_missing_info=False):
+  def Validate(self, add_missing_info=False, error_on_unknown_keys=False):
     """Validate the content of the bundle. Raise an Error if an invalid or
-       missing field is found. """
+       missing field is found.
+
+    Args:
+      error_on_unknown_keys: If True, raise an Error when unknown keys are
+      found in the bundle.
+    """
     # Check required fields.
     if not self.get(NAME_KEY):
       raise Error('Bundle has no name')
@@ -290,15 +297,16 @@ class Bundle(dict):
           'Bundle "%s" has invalid recommended field: "%s"' %
           (self[NAME_KEY], self['recommended']))
     # Verify that all key names are valid.
-    for key in self:
-      if key not in VALID_BUNDLES_KEYS:
-        raise Error('Bundle "%s" has invalid attribute "%s"' %
-                    (self[NAME_KEY], key))
+    if error_on_unknown_keys:
+      for key in self:
+        if key not in VALID_BUNDLES_KEYS:
+          raise Error('Bundle "%s" has invalid attribute "%s"' %
+                      (self[NAME_KEY], key))
     # Validate the archives
     for archive in self[ARCHIVES_KEY]:
       if add_missing_info and 'size' not in archive:
         archive.UpdateVitals(self[REVISION_KEY])
-      archive.Validate()
+      archive.Validate(error_on_unknown_keys)
 
   def GetArchive(self, host_os_name):
     """Retrieve the archive for the given host os.
@@ -316,16 +324,25 @@ class Bundle(dict):
     """Retrieve the archive for the current host os."""
     return self.GetArchive(GetHostOS())
 
+  def GetHostOSArchives(self):
+    """Retrieve all archives for the current host os, or marked all.
+    """
+    return [archive for archive in self.GetArchives()
+        if archive.host_os in (GetHostOS(), 'all')]
+
   def GetArchives(self):
     """Returns all the archives in this bundle"""
     return self[ARCHIVES_KEY]
 
   def AddArchive(self, archive):
     """Add an archive to this bundle."""
-    self.RemoveArchive(archive.host_os)
     self[ARCHIVES_KEY].append(archive)
 
-  def RemoveArchive(self, host_os_name):
+  def RemoveAllArchives(self):
+    """Remove all archives from this Bundle."""
+    del self[ARCHIVES_KEY][:]
+
+  def RemoveAllArchivesForHostOS(self, host_os_name):
     """Remove an archive from this Bundle."""
     if host_os_name == 'all':
       del self[ARCHIVES_KEY][:]
@@ -343,7 +360,7 @@ class Bundle(dict):
       name: the name of the key, 'bar' in the example above.
     Returns:
       The value associated with that key."""
-    if name not in VALID_BUNDLES_KEYS:
+    if name not in self:
       raise AttributeError(name)
     return self.__getitem__(name)
 
@@ -355,8 +372,6 @@ class Bundle(dict):
     Args:
       name: The name of the key, 'bar' in the example above.
       value: The value to associate with that key."""
-    if name not in VALID_BUNDLES_KEYS:
-      raise AttributeError(name)
     self.__setitem__(name, value)
 
   def __eq__(self, bundle):
@@ -443,22 +458,41 @@ class SDKManifest(object):
     return self._manifest_data[BUNDLES_KEY]
 
   def SetBundle(self, new_bundle):
-    """Replace named bundle.  Add if absent.
+    """Add or replace a bundle in the manifest.
+
+    Note: If a bundle in the manifest already exists with this name, it will be
+    overwritten with a copy of this bundle, at the same index as the original.
 
     Args:
       bundle: The bundle.
     """
     name = new_bundle[NAME_KEY]
+    bundles = self.GetBundles()
+    new_bundle_copy = copy.deepcopy(new_bundle)
+    for i, bundle in enumerate(bundles):
+      if bundle[NAME_KEY] == name:
+        bundles[i] = new_bundle_copy
+        return
+    # Bundle not already in list, append it.
+    bundles.append(new_bundle_copy)
+
+  def RemoveBundle(self, name):
+    """Remove a bundle by name.
+
+    Args:
+      name: the name of the bundle to remove.
+    Return:
+      True if the bundle was removed, False if there is no bundle with that
+      name.
+    """
     if not BUNDLES_KEY in self._manifest_data:
-      self._manifest_data[BUNDLES_KEY] = []
+      return False
     bundles = self._manifest_data[BUNDLES_KEY]
-    # Delete any bundles from the list, then add the new one.  This has the
-    # effect of replacing the bundle if it already exists.  It also removes all
-    # duplicate bundles.
     for i, bundle in enumerate(bundles):
       if bundle[NAME_KEY] == name:
         del bundles[i]
-    bundles.append(copy.deepcopy(new_bundle))
+        return True
+    return False
 
   def BundleNeedsUpdate(self, bundle):
     """Decides if a bundle needs to be updated.
@@ -498,7 +532,7 @@ class SDKManifest(object):
       local_bundle.MergeWithBundle(bundle)
 
   def MergeManifest(self, manifest):
-    '''Merge another manifest into this manifest, disallowing overiding.
+    '''Merge another manifest into this manifest, disallowing overriding.
 
     Args
       manifest: The manifest to merge.

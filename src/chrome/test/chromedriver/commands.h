@@ -5,57 +5,62 @@
 #ifndef CHROME_TEST_CHROMEDRIVER_COMMANDS_H_
 #define CHROME_TEST_CHROMEDRIVER_COMMANDS_H_
 
-#include <map>
 #include <string>
 
 #include "base/callback_forward.h"
+#include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/test/chromedriver/command.h"
-#include "chrome/test/chromedriver/session_map.h"
+#include "chrome/test/chromedriver/session_thread_map.h"
 
 namespace base {
 class DictionaryValue;
 class Value;
 }
 
-class ChromeLauncher;
 struct Session;
+class Status;
+
+// Gets status/info about ChromeDriver.
+void ExecuteGetStatus(
+    const base::DictionaryValue& params,
+    const std::string& session_id,
+    const CommandCallback& callback);
 
 // Creates a new session.
-Status ExecuteNewSession(
-    SessionMap* session_map,
-    ChromeLauncher* launcher,
+void ExecuteCreateSession(
+    SessionThreadMap* session_thread_map,
+    const Command& init_session_cmd,
     const base::DictionaryValue& params,
     const std::string& session_id,
-    scoped_ptr<base::Value>* out_value,
-    std::string* out_session_id);
+    const CommandCallback& callback);
 
 // Quits all sessions.
-Status ExecuteQuitAll(
-    Command quit_command,
-    SessionMap* session_map,
+void ExecuteQuitAll(
+    const Command& quit_command,
+    SessionThreadMap* session_thread_map,
     const base::DictionaryValue& params,
     const std::string& session_id,
-    scoped_ptr<base::Value>* out_value,
-    std::string* out_session_id);
+    const CommandCallback& callback);
 
-// Quits a particular session.
-Status ExecuteQuit(
-    SessionMap* session_map,
+typedef base::Callback<Status(
     Session* session,
-    const base::DictionaryValue& params,
-    scoped_ptr<base::Value>* value);
+    const base::DictionaryValue&,
+    scoped_ptr<base::Value>*)> SessionCommand;
 
-// Loads a URL.
-Status ExecuteGet(
-    Session* session,
+// Executes a given session command, after acquiring access to the appropriate
+// session.
+void ExecuteSessionCommand(
+    SessionThreadMap* session_thread_map,
+    const char* command_name,
+    const SessionCommand& command,
+    bool return_ok_without_session,
     const base::DictionaryValue& params,
-    scoped_ptr<base::Value>* value);
+    const std::string& session_id,
+    const CommandCallback& callback);
 
-// Evaluates a given script with arguments.
-Status ExecuteExecuteScript(
-    Session* session,
-    const base::DictionaryValue& params,
-    scoped_ptr<base::Value>* value);
+namespace internal {
+void CreateSessionOnSessionThreadForTesting(const std::string& id);
+}  // namespace internal
 
 #endif  // CHROME_TEST_CHROMEDRIVER_COMMANDS_H_

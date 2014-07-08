@@ -3,12 +3,12 @@
 // found in the LICENSE file.
 
 #include "base/callback.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/test/base/interactive_test_utils.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "chrome/test/base/view_event_test_base.h"
 #include "ui/base/models/menu_model.h"
-#include "ui/ui_controls/ui_controls.h"
+#include "ui/base/test/ui_controls.h"
 #include "ui/views/controls/button/menu_button.h"
 #include "ui/views/controls/button/menu_button_listener.h"
 #include "ui/views/controls/menu/menu_controller.h"
@@ -31,7 +31,7 @@ const int kSubMenuBaseId = 200;
 //  virtual int GetItemCount() const = 0;
 //  virtual ItemType GetTypeAt(int index) const = 0;
 //  virtual int GetCommandIdAt(int index) const = 0;
-//  virtual string16 GetLabelAt(int index) const = 0;
+//  virtual base::string16 GetLabelAt(int index) const = 0;
 class CommonMenuModel : public ui::MenuModel {
  public:
   CommonMenuModel() {
@@ -107,7 +107,7 @@ class SubMenuModel : public CommonMenuModel {
       : showing_(false) {
   }
 
-  ~SubMenuModel() {
+  virtual ~SubMenuModel() {
   }
 
   bool showing() const {
@@ -128,16 +128,16 @@ class SubMenuModel : public CommonMenuModel {
     return index + kSubMenuBaseId;
   }
 
-  virtual string16 GetLabelAt(int index) const OVERRIDE {
-    return ASCIIToUTF16("Item");
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE {
+    return base::ASCIIToUTF16("Item");
   }
 
-  virtual void MenuWillShow() {
+  virtual void MenuWillShow() OVERRIDE {
     showing_ = true;
   }
 
   // Called when the menu has been closed.
-  virtual void MenuClosed() {
+  virtual void MenuClosed() OVERRIDE {
     showing_ = false;
   }
 
@@ -151,7 +151,7 @@ class TopMenuModel : public CommonMenuModel {
   TopMenuModel() {
   }
 
-  ~TopMenuModel() {
+  virtual ~TopMenuModel() {
   }
 
   bool IsSubmenuShowing() {
@@ -172,8 +172,8 @@ class TopMenuModel : public CommonMenuModel {
     return index + kTopMenuBaseId;
   }
 
-  virtual string16 GetLabelAt(int index) const OVERRIDE {
-    return ASCIIToUTF16("submenu");
+  virtual base::string16 GetLabelAt(int index) const OVERRIDE {
+    return base::ASCIIToUTF16("submenu");
   }
 
   virtual MenuModel* GetSubmenuModelAt(int index) const OVERRIDE {
@@ -207,7 +207,7 @@ class MenuModelAdapterTest : public ViewEventTestBase,
 
   virtual void SetUp() OVERRIDE {
     button_ = new views::MenuButton(
-        NULL, ASCIIToUTF16("Menu Adapter Test"), this, true);
+        NULL, base::ASCIIToUTF16("Menu Adapter Test"), this, true);
 
     menu_ = menu_model_adapter_.CreateMenu();
     menu_runner_.reset(new views::MenuRunner(menu_));
@@ -235,12 +235,12 @@ class MenuModelAdapterTest : public ViewEventTestBase,
     gfx::Point screen_location;
     views::View::ConvertPointToScreen(source, &screen_location);
     gfx::Rect bounds(screen_location, source->size());
-    ignore_result(menu_runner_->RunMenuAt(
-        source->GetWidget(),
-        button_,
-        bounds,
-        views::MenuItemView::TOPLEFT,
-        views::MenuRunner::HAS_MNEMONICS));
+    ignore_result(menu_runner_->RunMenuAt(source->GetWidget(),
+                                          button_,
+                                          bounds,
+                                          views::MENU_ANCHOR_TOPLEFT,
+                                          ui::MENU_SOURCE_NONE,
+                                          views::MenuRunner::HAS_MNEMONICS));
   }
 
   // ViewEventTestBase implementation
@@ -270,9 +270,8 @@ class MenuModelAdapterTest : public ViewEventTestBase,
 
     menu_model_adapter_.BuildMenu(menu_);
 
-    MessageLoopForUI::current()->PostTask(
-        FROM_HERE,
-        CreateEventTask(this, &MenuModelAdapterTest::Step3));
+    base::MessageLoopForUI::current()->PostTask(
+        FROM_HERE, CreateEventTask(this, &MenuModelAdapterTest::Step3));
   }
 
   // Verify that the submenu MenuModel received the close callback
@@ -317,9 +316,4 @@ class MenuModelAdapterTest : public ViewEventTestBase,
   scoped_ptr<views::MenuRunner> menu_runner_;
 };
 
-#if defined(OS_WIN)
-#define MAYBE_RebuildMenu DISABLED_RebuildMenu
-#else
-#define MAYBE_RebuildMenu RebuildMenu
-#endif
-VIEW_TEST(MenuModelAdapterTest, MAYBE_RebuildMenu)
+VIEW_TEST(MenuModelAdapterTest, RebuildMenu)

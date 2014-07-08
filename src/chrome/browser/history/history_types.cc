@@ -8,8 +8,6 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/values.h"
 #include "chrome/browser/history/page_usage_data.h"
 
 namespace history {
@@ -71,8 +69,7 @@ VisitRow::VisitRow()
       url_id(0),
       referring_visit(0),
       transition(content::PAGE_TRANSITION_LINK),
-      segment_id(0),
-      is_indexed(false) {
+      segment_id(0) {
 }
 
 VisitRow::VisitRow(URLID arg_url_id,
@@ -85,8 +82,7 @@ VisitRow::VisitRow(URLID arg_url_id,
       visit_time(arg_visit_time),
       referring_visit(arg_referring_visit),
       transition(arg_transition),
-      segment_id(arg_segment_id),
-      is_indexed(false) {
+      segment_id(arg_segment_id) {
 }
 
 VisitRow::~VisitRow() {
@@ -94,18 +90,24 @@ VisitRow::~VisitRow() {
 
 // URLResult -------------------------------------------------------------------
 
-URLResult::URLResult() {
+URLResult::URLResult()
+    : blocked_visit_(false) {
 }
 
 URLResult::URLResult(const GURL& url, base::Time visit_time)
     : URLRow(url),
-      visit_time_(visit_time) {
+      visit_time_(visit_time),
+      blocked_visit_(false) {
 }
 
 URLResult::URLResult(const GURL& url,
-                     const Snippet::MatchPositions& title_matches)
+                     const query_parser::Snippet::MatchPositions& title_matches)
     : URLRow(url) {
   title_match_positions_ = title_matches;
+}
+URLResult::URLResult(const URLRow& url_row)
+    : URLRow(url_row),
+      blocked_visit_(false) {
 }
 
 URLResult::~URLResult() {
@@ -116,38 +118,12 @@ void URLResult::SwapResult(URLResult* other) {
   std::swap(visit_time_, other->visit_time_);
   snippet_.Swap(&other->snippet_);
   title_match_positions_.swap(other->title_match_positions_);
+  std::swap(blocked_visit_, other->blocked_visit_);
 }
 
-// QueryCursor -----------------------------------------------------------------
-
-QueryCursor::QueryCursor() : rowid_(0) {
-}
-
-QueryCursor::~QueryCursor() {
-}
-
-Value* QueryCursor::ToValue() const {
-  ListValue* value = new ListValue;
-  value->AppendString(base::Int64ToString(time_.ToInternalValue()));
-  value->AppendString(base::Int64ToString(rowid_));
-  return value;
-}
-
-bool QueryCursor::FromValue(const Value* value, QueryCursor* cursor) {
-  if (value->GetType() == Value::TYPE_LIST) {
-    const ListValue* list_value = static_cast<const ListValue*>(value);
-    string16 string_value;
-    int64 timestamp;
-
-    if (list_value->GetString(0, &string_value) &&
-        base::StringToInt64(string_value, &timestamp) &&
-        list_value->GetString(1, &string_value) &&
-        base::StringToInt64(string_value, &cursor->rowid_)) {
-      cursor->time_ = base::Time::FromInternalValue(timestamp);
-      return true;
-    }
-  }
-  return false;
+// static
+bool URLResult::CompareVisitTime(const URLResult& lhs, const URLResult& rhs) {
+  return lhs.visit_time() > rhs.visit_time();
 }
 
 // QueryResults ----------------------------------------------------------------
@@ -155,10 +131,7 @@ bool QueryCursor::FromValue(const Value* value, QueryCursor* cursor) {
 QueryResults::QueryResults() : reached_beginning_(false) {
 }
 
-QueryResults::~QueryResults() {
-  // Free all the URL objects.
-  STLDeleteContainerPointers(results_.begin(), results_.end());
-}
+QueryResults::~QueryResults() {}
 
 const size_t* QueryResults::MatchesForURL(const GURL& url,
                                           size_t* num_matches) const {
@@ -180,7 +153,6 @@ const size_t* QueryResults::MatchesForURL(const GURL& url,
 void QueryResults::Swap(QueryResults* other) {
   std::swap(first_time_searched_, other->first_time_searched_);
   std::swap(reached_beginning_, other->reached_beginning_);
-  std::swap(cursor_, other->cursor_);
   results_.swap(other->results_);
   url_to_results_.swap(other->url_to_results_);
 }
@@ -208,8 +180,6 @@ void QueryResults::DeleteRange(size_t begin, size_t end) {
   std::set<GURL> urls_modified;
   for (size_t i = begin; i <= end; i++) {
     urls_modified.insert(results_[i]->url());
-    delete results_[i];
-    results_[i] = NULL;
   }
 
   // Now just delete that range in the vector en masse (the STL ending is
@@ -274,7 +244,6 @@ void QueryResults::AdjustResultMap(size_t begin, size_t end, ptrdiff_t delta) {
 
 QueryOptions::QueryOptions()
     : max_count(0),
-      body_only(false),
       duplicate_policy(QueryOptions::REMOVE_ALL_DUPLICATES) {
 }
 
@@ -288,15 +257,8 @@ int64 QueryOptions::EffectiveBeginTime() const {
 }
 
 int64 QueryOptions::EffectiveEndTime() const {
-  int64 end = end_time.is_null() ?
+  return end_time.is_null() ?
       std::numeric_limits<int64>::max() : end_time.ToInternalValue();
-
-  // If the cursor is specified, it provides the true end time.
-  if (!cursor.empty()) {
-    DCHECK(cursor.time_.ToInternalValue() <= end);
-    return cursor.time_.ToInternalValue();
-  }
-  return end;
 }
 
 int QueryOptions::EffectiveMaxCount() const {
@@ -320,9 +282,17 @@ KeywordSearchTermRow::~KeywordSearchTermRow() {}
 MostVisitedURL::MostVisitedURL() {}
 
 MostVisitedURL::MostVisitedURL(const GURL& url,
-                               const string16& title)
+                               const base::string16& title)
     : url(url),
       title(title) {
+}
+
+MostVisitedURL::MostVisitedURL(const GURL& url,
+                               const base::string16& title,
+                               const base::Time& last_forced_time)
+    : url(url),
+      title(title),
+      last_forced_time(last_forced_time) {
 }
 
 MostVisitedURL::~MostVisitedURL() {}
@@ -422,37 +392,9 @@ bool RowQualifiesAsSignificant(const URLRow& row,
 // IconMapping ----------------------------------------------------------------
 
 IconMapping::IconMapping()
-    : mapping_id(0),
-      icon_id(0),
-      icon_type(INVALID_ICON) {
-}
+    : mapping_id(0), icon_id(0), icon_type(favicon_base::INVALID_ICON) {}
 
 IconMapping::~IconMapping() {}
-
-// FaviconBitmapResult --------------------------------------------------------
-
-FaviconBitmapResult::FaviconBitmapResult()
-    : expired(false),
-      icon_type(history::INVALID_ICON) {
-}
-
-FaviconBitmapResult::~FaviconBitmapResult() {
-}
-
-// FaviconImageResult ---------------------------------------------------------
-
-FaviconImageResult::FaviconImageResult() {
-}
-
-FaviconImageResult::~FaviconImageResult() {
-}
-
-// FaviconSizes --------------------------------------------------------------
-
-const FaviconSizes& GetDefaultFaviconSizes() {
-  CR_DEFINE_STATIC_LOCAL(FaviconSizes, kDefaultFaviconSizes, ());
-  return kDefaultFaviconSizes;
-}
 
 // FaviconBitmapIDSize ---------------------------------------------------------
 
@@ -473,16 +415,22 @@ FaviconBitmap::FaviconBitmap()
 FaviconBitmap::~FaviconBitmap() {
 }
 
-// ImportedFaviconUsage --------------------------------------------------------
-
-ImportedFaviconUsage::ImportedFaviconUsage() {
-}
-
-ImportedFaviconUsage::~ImportedFaviconUsage() {
-}
-
 // VisitDatabaseObserver -------------------------------------------------------
 
 VisitDatabaseObserver::~VisitDatabaseObserver() {}
+
+ExpireHistoryArgs::ExpireHistoryArgs() {
+}
+
+ExpireHistoryArgs::~ExpireHistoryArgs() {
+}
+
+void ExpireHistoryArgs::SetTimeRangeForOneDay(base::Time time) {
+  begin_time = time.LocalMidnight();
+
+  // Due to DST, leap seconds, etc., the next day at midnight may be more than
+  // 24 hours away, so add 36 hours and round back down to midnight.
+  end_time = (begin_time + base::TimeDelta::FromHours(36)).LocalMidnight();
+}
 
 }  // namespace history

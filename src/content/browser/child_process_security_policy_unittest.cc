@@ -6,13 +6,17 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/platform_file.h"
 #include "content/browser/child_process_security_policy_impl.h"
 #include "content/public/common/url_constants.h"
 #include "content/test/test_content_browser_client.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
+#include "webkit/browser/fileapi/file_permission_policy.h"
+#include "webkit/browser/fileapi/file_system_url.h"
+#include "webkit/browser/fileapi/isolated_context.h"
+#include "webkit/common/fileapi/file_system_types.h"
 
 namespace content {
 namespace {
@@ -31,7 +35,7 @@ class ChildProcessSecurityPolicyTestBrowserClient
  public:
   ChildProcessSecurityPolicyTestBrowserClient() {}
 
-  virtual bool IsHandledURL(const GURL& url) {
+  virtual bool IsHandledURL(const GURL& url) OVERRIDE {
     return schemes_.find(url.scheme()) != schemes_.end();
   }
 
@@ -55,17 +59,22 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
   }
 
   virtual void SetUp() {
-    old_browser_client_ = GetContentClient()->browser();
-    GetContentClient()->set_browser_for_testing(&test_browser_client_);
+    old_browser_client_ = SetBrowserClientForTesting(&test_browser_client_);
 
     // Claim to always handle chrome:// URLs because the CPSP's notion of
     // allowing WebUI bindings is hard-wired to this particular scheme.
-    test_browser_client_.AddScheme("chrome");
+    test_browser_client_.AddScheme(kChromeUIScheme);
+
+    // Claim to always handle file:// URLs like the browser would.
+    // net::URLRequest::IsHandledURL() no longer claims support for default
+    // protocols as this is the responsibility of the browser (which is
+    // responsible for adding the appropriate ProtocolHandler).
+    test_browser_client_.AddScheme(kFileScheme);
   }
 
   virtual void TearDown() {
     test_browser_client_.ClearSchemes();
-    GetContentClient()->set_browser_for_testing(old_browser_client_);
+    SetBrowserClientForTesting(old_browser_client_);
   }
 
  protected:
@@ -73,60 +82,72 @@ class ChildProcessSecurityPolicyTest : public testing::Test {
     test_browser_client_.AddScheme(scheme);
   }
 
+  void GrantPermissionsForFile(ChildProcessSecurityPolicyImpl* p,
+                               int child_id,
+                               const base::FilePath& file,
+                               int permissions) {
+    p->GrantPermissionsForFile(child_id, file, permissions);
+  }
+
+  void CheckHasNoFileSystemPermission(ChildProcessSecurityPolicyImpl* p,
+                                      const std::string& child_id) {
+    EXPECT_FALSE(p->CanReadFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, child_id));
+    EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, child_id));
+  }
+
+  void CheckHasNoFileSystemFilePermission(ChildProcessSecurityPolicyImpl* p,
+                                          const base::FilePath& file,
+                                          const fileapi::FileSystemURL& url) {
+    EXPECT_FALSE(p->CanReadFile(kRendererID, file));
+    EXPECT_FALSE(p->CanCreateReadWriteFile(kRendererID, file));
+    EXPECT_FALSE(p->CanReadFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+    EXPECT_FALSE(p->CanDeleteFileSystemFile(kRendererID, url));
+  }
+
  private:
   ChildProcessSecurityPolicyTestBrowserClient test_browser_client_;
   ContentBrowserClient* old_browser_client_;
 };
 
+
 TEST_F(ChildProcessSecurityPolicyTest, IsWebSafeSchemeTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kHttpScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kHttpsScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFtpScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kDataScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kHttpScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(url::kHttpsScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kFtpScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kDataScheme));
   EXPECT_TRUE(p->IsWebSafeScheme("feed"));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kBlobScheme));
-  EXPECT_TRUE(p->IsWebSafeScheme(chrome::kFileSystemScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kBlobScheme));
+  EXPECT_TRUE(p->IsWebSafeScheme(kFileSystemScheme));
 
   EXPECT_FALSE(p->IsWebSafeScheme("registered-web-safe-scheme"));
   p->RegisterWebSafeScheme("registered-web-safe-scheme");
   EXPECT_TRUE(p->IsWebSafeScheme("registered-web-safe-scheme"));
 
-  EXPECT_FALSE(p->IsWebSafeScheme(chrome::kChromeUIScheme));
+  EXPECT_FALSE(p->IsWebSafeScheme(kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, IsPseudoSchemeTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
-  EXPECT_TRUE(p->IsPseudoScheme(chrome::kAboutScheme));
-  EXPECT_TRUE(p->IsPseudoScheme(chrome::kJavaScriptScheme));
-  EXPECT_TRUE(p->IsPseudoScheme(chrome::kViewSourceScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(kAboutScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(kJavaScriptScheme));
+  EXPECT_TRUE(p->IsPseudoScheme(kViewSourceScheme));
 
   EXPECT_FALSE(p->IsPseudoScheme("registered-pseudo-scheme"));
   p->RegisterPseudoScheme("registered-pseudo-scheme");
   EXPECT_TRUE(p->IsPseudoScheme("registered-pseudo-scheme"));
 
-  EXPECT_FALSE(p->IsPseudoScheme(chrome::kChromeUIScheme));
-}
-
-TEST_F(ChildProcessSecurityPolicyTest, IsDisabledSchemeTest) {
-  ChildProcessSecurityPolicyImpl* p =
-      ChildProcessSecurityPolicyImpl::GetInstance();
-
-  EXPECT_FALSE(p->IsDisabledScheme("evil-scheme"));
-  std::set<std::string> disabled_set;
-  disabled_set.insert("evil-scheme");
-  p->RegisterDisabledSchemes(disabled_set);
-  EXPECT_TRUE(p->IsDisabledScheme("evil-scheme"));
-  EXPECT_FALSE(p->IsDisabledScheme("good-scheme"));
-
-  disabled_set.clear();
-  p->RegisterDisabledSchemes(disabled_set);
-  EXPECT_FALSE(p->IsDisabledScheme("evil-scheme"));
-  EXPECT_FALSE(p->IsDisabledScheme("good-scheme"));
+  EXPECT_FALSE(p->IsPseudoScheme(kChromeUIScheme));
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, StandardSchemesTest) {
@@ -230,17 +251,6 @@ TEST_F(ChildProcessSecurityPolicyTest, CanServiceCommandsTest) {
   p->GrantRequestURL(kRendererID, GURL("file:///etc/passwd"));
   EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("file:///etc/passwd")));
 
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("evil-scheme:/path")));
-  std::set<std::string> disabled_set;
-  disabled_set.insert("evil-scheme");
-  p->RegisterDisabledSchemes(disabled_set);
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("http://www.google.com")));
-  EXPECT_FALSE(p->CanRequestURL(kRendererID, GURL("evil-scheme:/path")));
-  disabled_set.clear();
-  p->RegisterDisabledSchemes(disabled_set);
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("http://www.google.com")));
-  EXPECT_TRUE(p->CanRequestURL(kRendererID, GURL("evil-scheme:/path")));
-
   // We should forget our state if we repeat a renderer id.
   p->Remove(kRendererID);
   p->Add(kRendererID);
@@ -294,66 +304,162 @@ TEST_F(ChildProcessSecurityPolicyTest, SpecificFile) {
   p->Remove(kRendererID);
 }
 
-TEST_F(ChildProcessSecurityPolicyTest, CanReadFiles) {
+TEST_F(ChildProcessSecurityPolicyTest, FileSystemGrantsTest) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   p->Add(kRendererID);
+  std::string read_id = fileapi::IsolatedContext::GetInstance()->
+      RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
+                                       "read_filesystem",
+                                       base::FilePath());
+  std::string read_write_id = fileapi::IsolatedContext::GetInstance()->
+      RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
+                                       "read_write_filesystem",
+                                       base::FilePath());
+  std::string copy_into_id = fileapi::IsolatedContext::GetInstance()->
+      RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
+                                       "copy_into_filesystem",
+                                       base::FilePath());
+  std::string delete_from_id = fileapi::IsolatedContext::GetInstance()->
+      RegisterFileSystemForVirtualPath(fileapi::kFileSystemTypeTest,
+                                       "delete_from_filesystem",
+                                       base::FilePath());
 
-  EXPECT_FALSE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
-  p->GrantReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd")));
-  EXPECT_TRUE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
-  EXPECT_FALSE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/shadow"))));
+  // Test initially having no permissions.
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
 
+  // Testing varying combinations of grants and checks.
+  p->GrantReadFileSystem(kRendererID, read_id);
+  EXPECT_TRUE(p->CanReadFileSystem(kRendererID, read_id));
+  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, read_id));
+  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, read_id));
+
+  p->GrantReadFileSystem(kRendererID, read_write_id);
+  p->GrantWriteFileSystem(kRendererID, read_write_id);
+  EXPECT_TRUE(p->CanReadFileSystem(kRendererID, read_write_id));
+  EXPECT_TRUE(p->CanReadWriteFileSystem(kRendererID, read_write_id));
+  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, read_write_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, read_write_id));
+
+  p->GrantCopyIntoFileSystem(kRendererID, copy_into_id);
+  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, copy_into_id));
+  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, copy_into_id));
+  EXPECT_TRUE(p->CanCopyIntoFileSystem(kRendererID, copy_into_id));
+  EXPECT_FALSE(p->CanDeleteFromFileSystem(kRendererID, copy_into_id));
+
+  p->GrantDeleteFromFileSystem(kRendererID, delete_from_id);
+  EXPECT_FALSE(p->CanReadFileSystem(kRendererID, delete_from_id));
+  EXPECT_FALSE(p->CanReadWriteFileSystem(kRendererID, delete_from_id));
+  EXPECT_FALSE(p->CanCopyIntoFileSystem(kRendererID, delete_from_id));
+  EXPECT_TRUE(p->CanDeleteFromFileSystem(kRendererID, delete_from_id));
+
+  // Test revoke permissions on renderer ID removal.
   p->Remove(kRendererID);
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
+
+  // Test having no permissions upon re-adding same renderer ID.
   p->Add(kRendererID);
+  CheckHasNoFileSystemPermission(p, read_id);
+  CheckHasNoFileSystemPermission(p, read_write_id);
+  CheckHasNoFileSystemPermission(p, copy_into_id);
+  CheckHasNoFileSystemPermission(p, delete_from_id);
 
-  EXPECT_FALSE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
-  EXPECT_FALSE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/shadow"))));
-
+  // Cleanup.
   p->Remove(kRendererID);
+  fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(read_id);
+  fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(read_write_id);
+  fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(copy_into_id);
+  fileapi::IsolatedContext::GetInstance()->RevokeFileSystem(delete_from_id);
 }
 
-TEST_F(ChildProcessSecurityPolicyTest, CanReadDirectories) {
+TEST_F(ChildProcessSecurityPolicyTest, FilePermissionGrantingAndRevoking) {
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
+  p->RegisterFileSystemPermissionPolicy(
+      fileapi::kFileSystemTypeTest,
+      fileapi::FILE_PERMISSION_USE_FILE_PERMISSION);
+
   p->Add(kRendererID);
+  base::FilePath file(TEST_PATH("/dir/testfile"));
+  file = file.NormalizePathSeparators();
+  fileapi::FileSystemURL url = fileapi::FileSystemURL::CreateForTest(
+      GURL("http://foo/"), fileapi::kFileSystemTypeTest, file);
 
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID, FilePath(TEST_PATH("/etc/"))));
-  p->GrantReadDirectory(kRendererID, FilePath(TEST_PATH("/etc/")));
-  EXPECT_TRUE(p->CanReadDirectory(kRendererID, FilePath(TEST_PATH("/etc/"))));
-  EXPECT_TRUE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
+  // Test initially having no permissions.
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
+  // Testing every combination of permissions granting and revoking.
+  p->GrantReadFile(kRendererID, file);
+  EXPECT_TRUE(p->CanReadFile(kRendererID, file));
+  EXPECT_FALSE(p->CanCreateReadWriteFile(kRendererID, file));
+  EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanWriteFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanCreateFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_FALSE(p->CanDeleteFileSystemFile(kRendererID, url));
+  p->RevokeAllPermissionsForFile(kRendererID, file);
+  CheckHasNoFileSystemFilePermission(p, file, url);
+
+  p->GrantCreateReadWriteFile(kRendererID, file);
+  EXPECT_TRUE(p->CanReadFile(kRendererID, file));
+  EXPECT_TRUE(p->CanCreateReadWriteFile(kRendererID, file));
+  EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanDeleteFileSystemFile(kRendererID, url));
+  p->RevokeAllPermissionsForFile(kRendererID, file);
+  CheckHasNoFileSystemFilePermission(p, file, url);
+
+  // Test revoke permissions on renderer ID removal.
+  p->GrantCreateReadWriteFile(kRendererID, file);
+  EXPECT_TRUE(p->CanReadFile(kRendererID, file));
+  EXPECT_TRUE(p->CanCreateReadWriteFile(kRendererID, file));
+  EXPECT_TRUE(p->CanReadFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCreateReadWriteFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanCopyIntoFileSystemFile(kRendererID, url));
+  EXPECT_TRUE(p->CanDeleteFileSystemFile(kRendererID, url));
   p->Remove(kRendererID);
+  CheckHasNoFileSystemFilePermission(p, file, url);
+
+  // Test having no permissions upon re-adding same renderer ID.
   p->Add(kRendererID);
+  CheckHasNoFileSystemFilePermission(p, file, url);
 
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID, FilePath(TEST_PATH("/etc/"))));
-  EXPECT_FALSE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
-
-  // Just granting read permission as a file doesn't imply reading as a
-  // directory.
-  p->GrantReadFile(kRendererID, FilePath(TEST_PATH("/etc/")));
-  EXPECT_TRUE(p->CanReadFile(kRendererID, FilePath(TEST_PATH("/etc/passwd"))));
-  EXPECT_FALSE(p->CanReadDirectory(kRendererID, FilePath(TEST_PATH("/etc/"))));
-
+  // Cleanup.
   p->Remove(kRendererID);
 }
 
 TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
-  FilePath granted_file = FilePath(TEST_PATH("/home/joe"));
-  FilePath sibling_file = FilePath(TEST_PATH("/home/bob"));
-  FilePath child_file = FilePath(TEST_PATH("/home/joe/file"));
-  FilePath parent_file = FilePath(TEST_PATH("/home"));
-  FilePath parent_slash_file = FilePath(TEST_PATH("/home/"));
-  FilePath child_traversal1 = FilePath(TEST_PATH("/home/joe/././file"));
-  FilePath child_traversal2 = FilePath(
+  base::FilePath granted_file = base::FilePath(TEST_PATH("/home/joe"));
+  base::FilePath sibling_file = base::FilePath(TEST_PATH("/home/bob"));
+  base::FilePath child_file = base::FilePath(TEST_PATH("/home/joe/file"));
+  base::FilePath parent_file = base::FilePath(TEST_PATH("/home"));
+  base::FilePath parent_slash_file = base::FilePath(TEST_PATH("/home/"));
+  base::FilePath child_traversal1 =
+      base::FilePath(TEST_PATH("/home/joe/././file"));
+  base::FilePath child_traversal2 = base::FilePath(
       TEST_PATH("/home/joe/file/../otherfile"));
-  FilePath evil_traversal1 = FilePath(TEST_PATH("/home/joe/../../etc/passwd"));
-  FilePath evil_traversal2 = FilePath(
+  base::FilePath evil_traversal1 =
+      base::FilePath(TEST_PATH("/home/joe/../../etc/passwd"));
+  base::FilePath evil_traversal2 = base::FilePath(
       TEST_PATH("/home/joe/./.././../etc/passwd"));
-  FilePath self_traversal = FilePath(TEST_PATH("/home/joe/../joe/file"));
-  FilePath relative_file = FilePath(FILE_PATH_LITERAL("home/joe"));
+  base::FilePath self_traversal =
+      base::FilePath(TEST_PATH("/home/joe/../joe/file"));
+  base::FilePath relative_file = base::FilePath(FILE_PATH_LITERAL("home/joe"));
 
   ChildProcessSecurityPolicyImpl* p =
       ChildProcessSecurityPolicyImpl::GetInstance();
@@ -363,7 +469,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
 
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_OPEN_TRUNCATED |
                              base::PLATFORM_FILE_READ |
@@ -415,7 +521,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
-  p->GrantPermissionsForFile(kRendererID, parent_file,
+  GrantPermissionsForFile(p, kRendererID, parent_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -429,7 +535,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Add(kRendererID);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
-  p->GrantPermissionsForFile(kRendererID, parent_slash_file,
+  GrantPermissionsForFile(p, kRendererID, parent_slash_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -440,7 +546,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
 
   // Grant permissions for the file (should overwrite the permissions granted
   // for the directory).
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_TEMPORARY);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, granted_file,
                                         base::PLATFORM_FILE_OPEN));
@@ -460,7 +566,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   // Grant file permissions for the file to main thread renderer process,
   // make sure its worker thread renderer process inherits those.
   p->Add(kRendererID);
-  p->GrantPermissionsForFile(kRendererID, granted_file,
+  GrantPermissionsForFile(p, kRendererID, granted_file,
                              base::PLATFORM_FILE_OPEN |
                              base::PLATFORM_FILE_READ);
   EXPECT_TRUE(p->HasPermissionsForFile(kRendererID, granted_file,
@@ -481,7 +587,7 @@ TEST_F(ChildProcessSecurityPolicyTest, FilePermissions) {
   p->Remove(kWorkerRendererID);
 
   p->Add(kRendererID);
-  p->GrantPermissionsForFile(kRendererID, relative_file,
+  GrantPermissionsForFile(p, kRendererID, relative_file,
                              base::PLATFORM_FILE_OPEN);
   EXPECT_FALSE(p->HasPermissionsForFile(kRendererID, relative_file,
                                         base::PLATFORM_FILE_OPEN));
@@ -510,7 +616,7 @@ TEST_F(ChildProcessSecurityPolicyTest, RemoveRace) {
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   GURL url("file:///etc/passwd");
-  FilePath file(TEST_PATH("/etc/passwd"));
+  base::FilePath file(TEST_PATH("/etc/passwd"));
 
   p->Add(kRendererID);
 

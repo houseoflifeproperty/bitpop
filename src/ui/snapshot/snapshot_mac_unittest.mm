@@ -6,19 +6,11 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/mac/sdk_forward_declarations.h"
 #include "base/memory/scoped_ptr.h"
 #include "testing/platform_test.h"
 #include "ui/gfx/rect.h"
-
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-
-@interface NSWindow (LionAPI)
-- (CGFloat)backingScaleFactor;
-@end
-
-#endif  // 10.7
 
 namespace ui {
 namespace {
@@ -28,7 +20,7 @@ typedef PlatformTest GrabWindowSnapshotTest;
 TEST_F(GrabWindowSnapshotTest, TestGrabWindowSnapshot) {
   // Launch a test window so we can take a snapshot.
   NSRect frame = NSMakeRect(0, 0, 400, 400);
-  scoped_nsobject<NSWindow> window(
+  base::scoped_nsobject<NSWindow> window(
       [[NSWindow alloc] initWithContentRect:frame
                                   styleMask:NSBorderlessWindowMask
                                     backing:NSBackingStoreBuffered
@@ -43,7 +35,7 @@ TEST_F(GrabWindowSnapshotTest, TestGrabWindowSnapshot) {
                                            bounds));
 
   // Copy png back into NSData object so we can make sure we grabbed a png.
-  scoped_nsobject<NSData> image_data(
+  base::scoped_nsobject<NSData> image_data(
       [[NSData alloc] initWithBytes:&(*png_representation)[0]
                              length:png_representation->size()]);
   NSBitmapImageRep* rep = [NSBitmapImageRep imageRepWithData:image_data.get()];

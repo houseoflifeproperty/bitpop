@@ -139,7 +139,7 @@ class Instance {
   /// the clip when the instance is partially visible. Instead, update the
   /// entire region. The time saved doing partial paints is usually not
   /// significant and it can create artifacts when scrolling (this notification
-  /// is sent asynchronously from scolling so there can be flashes of old
+  /// is sent asynchronously from scrolling so there can be flashes of old
   /// content in the exposed regions).
   virtual void DidChangeView(const Rect& position, const Rect& clip);
 
@@ -174,10 +174,10 @@ class Instance {
   /// RequestInputEvents() or RequestFilteringInputEvents(). By
   /// default, no events are delivered.
   ///
-  /// If the event was handled, it will not be forwarded to the web page or
-  /// browser. If it was not handled, it will bubble according to the normal
-  /// rules. So it is important that an instance respond accurately with whether
-  /// event propagation should continue.
+  /// If the event was handled, it will not be forwarded to any default
+  /// handlers. If it was not handled, it may be dispatched to a default
+  /// handler. So it is important that an instance respond accurately with
+  /// whether event propagation should continue.
   ///
   /// Event propagation also controls focus. If you handle an event like a mouse
   /// event, typically the instance will be given focus. Returning false from
@@ -244,13 +244,19 @@ class Instance {
   /// JavaScript execution will not be blocked while HandleMessage() is
   /// processing the message.
   ///
+  /// When converting JavaScript arrays, any object properties whose name
+  /// is not an array index are ignored. When passing arrays and objects, the
+  /// entire reference graph will be converted and transferred. If the reference
+  /// graph has cycles, the message will not be sent and an error will be logged
+  /// to the console.
+  ///
   /// <strong>Example:</strong>
   ///
   /// The following JavaScript code invokes <code>HandleMessage</code>, passing
   /// the instance on which it was invoked, with <code>message</code> being a
   /// string <code>Var</code> containing "Hello world!"
   ///
-  /// <code>
+  /// @code{.html}
   ///
   /// <body>
   ///   <object id="plugin"
@@ -260,13 +266,14 @@ class Instance {
   ///   </script>
   /// </body>
   ///
-  /// </code>
+  /// @endcode
   ///
   /// Refer to PostMessage() for sending messages to JavaScript.
   ///
-  /// @param[in] message A <code>Var</code> containing the data sent from
-  /// JavaScript. Message can have an int32_t, double, bool, or string value
-  /// (objects are not supported).
+  /// @param[in] message A <code>Var</code> which has been converted from a
+  /// JavaScript value. JavaScript array/object types are supported from Chrome
+  /// M29 onward. All JavaScript values are copied when passing them to the
+  /// plugin.
   virtual void HandleMessage(const Var& message);
 
   /// @}
@@ -333,7 +340,7 @@ class Instance {
   /// do optimizations for scroll or touch events that can be processed
   /// substantially faster if it knows there are no non-default receivers for
   /// that message. Requesting that such messages be delivered, even if they are
-  /// processed very quickly, may have a noticable effect on the performance of
+  /// processed very quickly, may have a noticeable effect on the performance of
   /// the page.
   ///
   /// When requesting input events through this function, the events will be
@@ -343,12 +350,12 @@ class Instance {
   ///
   /// <strong>Example:</strong>
   ///
-  /// <code>
+  /// @code
   ///   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE);
   ///   RequestFilteringInputEvents(
   ///       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
   ///
-  /// </code>
+  /// @endcode
   ///
   /// @param event_classes A combination of flags from
   /// <code>PP_InputEvent_Class</code> that identifies the classes of events
@@ -381,13 +388,13 @@ class Instance {
   ///
   /// <strong>Example:</strong>
   ///
-  /// <code>
+  /// @code
   ///
   ///   RequestInputEvents(PP_INPUTEVENT_CLASS_MOUSE);
   ///   RequestFilteringInputEvents(
   ///       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
   ///
-  /// </code>
+  /// @endcode
   ///
   /// @param event_classes A combination of flags from
   /// <code>PP_InputEvent_Class</code> that identifies the classes of events
@@ -428,7 +435,7 @@ class Instance {
   ///
   /// <strong>Example:</strong>
   ///
-  /// <code>
+  /// @code{.html}
   ///
   /// <body>
   ///   <object id="plugin"
@@ -441,17 +448,22 @@ class Instance {
   ///   </script>
   /// </body>
   ///
-  /// </code>
+  /// @endcode
   ///
   /// The instance then invokes PostMessage() as follows:
   ///
-  /// <code>
+  /// @code
   ///
   ///  PostMessage(pp::Var("Hello world!"));
   ///
-  /// </code>
+  /// @endcode
   ///
   /// The browser will pop-up an alert saying "Hello world!"
+  ///
+  /// When passing array or dictionary <code>PP_Var</code>s, the entire
+  /// reference graph will be converted and transferred. If the reference graph
+  /// has cycles, the message will not be sent and an error will be logged to
+  /// the console.
   ///
   /// Listeners for message events in JavaScript code will receive an object
   /// conforming to the HTML 5 <code>MessageEvent</code> interface.
@@ -466,9 +478,9 @@ class Instance {
   /// Refer to HandleMessage() for receiving events from JavaScript.
   ///
   /// @param[in] message A <code>Var</code> containing the data to be sent to
-  /// JavaScript. Message can have a numeric, boolean, or string value; arrays
-  /// and dictionaries are not yet supported. Ref-counted var types are copied,
-  /// and are therefore not shared between the instance and the browser.
+  /// JavaScript. Message can have a numeric, boolean, or string value.
+  /// Array/Dictionary types are supported from Chrome M29 onward.
+  /// All var types are copied when passing them to JavaScript.
   void PostMessage(const Var& message);
 
   /// @}

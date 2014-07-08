@@ -7,11 +7,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_HISTORY_MENU
 #import "chrome/browser/app_controller_mac.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/favicon/favicon_service_factory.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/page_usage_data.h"
@@ -19,8 +20,8 @@
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 #import "chrome/browser/ui/cocoa/history_menu_cocoa_controller.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
+#include "components/favicon_base/favicon_types.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
 #include "grit/generated_resources.h"
@@ -33,7 +34,6 @@
 #include "ui/gfx/codec/png_codec.h"
 #include "ui/gfx/favicon_size.h"
 #include "ui/gfx/image/image.h"
-#include "ui/gfx/mac/nsimage_cache.h"
 
 namespace {
 
@@ -55,20 +55,18 @@ const unsigned int kRecentlyClosedCount = 10;
 }  // namespace
 
 HistoryMenuBridge::HistoryItem::HistoryItem()
-   : icon_requested(false),
-     icon_task_id(CancelableTaskTracker::kBadTaskId),
-     menu_item(nil),
-     session_id(0) {
-}
+    : icon_requested(false),
+      icon_task_id(base::CancelableTaskTracker::kBadTaskId),
+      menu_item(nil),
+      session_id(0) {}
 
 HistoryMenuBridge::HistoryItem::HistoryItem(const HistoryItem& copy)
-   : title(copy.title),
-     url(copy.url),
-     icon_requested(false),
-     icon_task_id(CancelableTaskTracker::kBadTaskId),
-     menu_item(nil),
-     session_id(copy.session_id) {
-}
+    : title(copy.title),
+      url(copy.url),
+      icon_requested(false),
+      icon_task_id(base::CancelableTaskTracker::kBadTaskId),
+      menu_item(nil),
+      session_id(copy.session_id) {}
 
 HistoryMenuBridge::HistoryItem::~HistoryItem() {
 }
@@ -207,12 +205,12 @@ void HistoryMenuBridge::TabRestoreServiceChanged(TabRestoreService* service) {
       item->session_id = entry_win->id;
 
       // Create the submenu.
-      scoped_nsobject<NSMenu> submenu([[NSMenu alloc] init]);
+      base::scoped_nsobject<NSMenu> submenu([[NSMenu alloc] init]);
 
       // Create standard items within the window submenu.
       NSString* restore_title = l10n_util::GetNSString(
           IDS_HISTORY_CLOSED_RESTORE_WINDOW_MAC);
-      scoped_nsobject<NSMenuItem> restore_item(
+      base::scoped_nsobject<NSMenuItem> restore_item(
           [[NSMenuItem alloc] initWithTitle:restore_title
                                      action:@selector(openHistoryMenuItem:)
                               keyEquivalent:@""]);
@@ -349,7 +347,7 @@ NSMenuItem* HistoryMenuBridge::AddItemToMenu(HistoryItem* item,
     title = base::SysUTF8ToNSString(url_string);
   NSString* full_title = title;
   if ([title length] > kMaximumMenuWidthInChars) {
-    // TODO(rsesek): use app/text_elider.h once it uses string16 and can
+    // TODO(rsesek): use app/text_elider.h once it uses base::string16 and can
     // take out the middle of strings.
     title = [NSString stringWithFormat:@"%@…%@",
                [title substringToIndex:kMenuTrimSizeInChars],
@@ -402,7 +400,7 @@ void HistoryMenuBridge::CreateMenu() {
   options.SetRecentDayRange(kVisitedScope);
 
   history_service_->QueryHistory(
-      string16(),
+      base::string16(),
       options,
       &cancelable_request_consumer_,
       base::Bind(&HistoryMenuBridge::OnVisitedHistoryResults,
@@ -442,7 +440,7 @@ HistoryMenuBridge::HistoryItem* HistoryMenuBridge::HistoryItemForTab(
     const TabRestoreService::Tab& entry) {
   DCHECK(!entry.navigations.empty());
 
-  const TabNavigation& current_navigation =
+  const sessions::SerializedNavigationEntry& current_navigation =
       entry.navigations.at(entry.current_navigation_index);
   HistoryItem* item = new HistoryItem();
   item->title = current_navigation.title();
@@ -458,14 +456,11 @@ HistoryMenuBridge::HistoryItem* HistoryMenuBridge::HistoryItemForTab(
 void HistoryMenuBridge::GetFaviconForHistoryItem(HistoryItem* item) {
   FaviconService* service =
       FaviconServiceFactory::GetForProfile(profile_, Profile::EXPLICIT_ACCESS);
-  CancelableTaskTracker::TaskId task_id = service->GetFaviconImageForURL(
-      FaviconService::FaviconForURLParams(profile_,
-                                          item->url,
-                                          history::FAVICON,
-                                          gfx::kFaviconSize),
-      base::Bind(&HistoryMenuBridge::GotFaviconData,
-                 base::Unretained(this),
-                 item),
+  base::CancelableTaskTracker::TaskId task_id = service->GetFaviconImageForURL(
+      FaviconService::FaviconForURLParams(
+          item->url, favicon_base::FAVICON, gfx::kFaviconSize),
+      base::Bind(
+          &HistoryMenuBridge::GotFaviconData, base::Unretained(this), item),
       &cancelable_task_tracker_);
   item->icon_task_id = task_id;
   item->icon_requested = true;
@@ -473,13 +468,13 @@ void HistoryMenuBridge::GetFaviconForHistoryItem(HistoryItem* item) {
 
 void HistoryMenuBridge::GotFaviconData(
     HistoryItem* item,
-    const history::FaviconImageResult& image_result) {
+    const favicon_base::FaviconImageResult& image_result) {
   // Since we're going to do Cocoa-y things, make sure this is the main thread.
   DCHECK([NSThread isMainThread]);
 
   DCHECK(item);
   item->icon_requested = false;
-  item->icon_task_id = CancelableTaskTracker::kBadTaskId;
+  item->icon_task_id = base::CancelableTaskTracker::kBadTaskId;
 
   NSImage* image = image_result.image.AsNSImage();
   if (image) {
@@ -493,6 +488,6 @@ void HistoryMenuBridge::CancelFaviconRequest(HistoryItem* item) {
   if (item->icon_requested) {
     cancelable_task_tracker_.TryCancel(item->icon_task_id);
     item->icon_requested = false;
-    item->icon_task_id = CancelableTaskTracker::kBadTaskId;
+    item->icon_task_id = base::CancelableTaskTracker::kBadTaskId;
   }
 }

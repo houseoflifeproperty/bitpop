@@ -4,62 +4,62 @@
 
 #include "chrome/browser/extensions/extension_browsertest.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
 #include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
 
 using content::WebContents;
 using extensions::Extension;
 
 namespace {
 
-const std::string kSubscribePage = "/subscribe.html";
-const std::string kFeedPageMultiRel = "files/feeds/feed_multi_rel.html";
-const std::string kValidFeedNoLinks = "files/feeds/feed_nolinks.xml";
-const std::string kValidFeed0 = "files/feeds/feed_script.xml";
-const std::string kValidFeed1 = "files/feeds/feed1.xml";
-const std::string kValidFeed2 = "files/feeds/feed2.xml";
-const std::string kValidFeed3 = "files/feeds/feed3.xml";
-const std::string kValidFeed4 = "files/feeds/feed4.xml";
-const std::string kValidFeed5 = "files/feeds/feed5.xml";
-const std::string kValidFeed6 = "files/feeds/feed6.xml";
-const std::string kInvalidFeed1 = "files/feeds/feed_invalid1.xml";
-const std::string kInvalidFeed2 = "files/feeds/feed_invalid2.xml";
+const char kSubscribePage[] = "/subscribe.html";
+const char kFeedPageMultiRel[] = "files/feeds/feed_multi_rel.html";
+const char kValidFeedNoLinks[] = "files/feeds/feed_nolinks.xml";
+const char kValidFeed0[] = "files/feeds/feed_script.xml";
+const char kValidFeed1[] = "files/feeds/feed1.xml";
+const char kValidFeed2[] = "files/feeds/feed2.xml";
+const char kValidFeed3[] = "files/feeds/feed3.xml";
+const char kValidFeed4[] = "files/feeds/feed4.xml";
+const char kValidFeed5[] = "files/feeds/feed5.xml";
+const char kValidFeed6[] = "files/feeds/feed6.xml";
+const char kInvalidFeed1[] = "files/feeds/feed_invalid1.xml";
+const char kInvalidFeed2[] = "files/feeds/feed_invalid2.xml";
 // We need a triple encoded string to prove that we are not decoding twice in
 // subscribe.js because one layer is also stripped off when subscribe.js passes
 // it to the XMLHttpRequest object.
-const std::string kFeedTripleEncoded = "files/feeds/url%25255Fdecoding.html";
+const char kFeedTripleEncoded[] = "files/feeds/url%25255Fdecoding.html";
 
-static const wchar_t* jscript_feed_title =
-    L"window.domAutomationController.send("
-    L"  document.getElementById('title') ? "
-    L"    document.getElementById('title').textContent : "
-    L"    \"element 'title' not found\""
-    L");";
-static const wchar_t* jscript_anchor =
-    L"window.domAutomationController.send("
-    L"  document.getElementById('anchor_0') ? "
-    L"    document.getElementById('anchor_0').textContent : "
-    L"    \"element 'anchor_0' not found\""
-    L");";
-static const wchar_t* jscript_desc =
-    L"window.domAutomationController.send("
-    L"  document.getElementById('desc_0') ? "
-    L"    document.getElementById('desc_0').textContent : "
-    L"    \"element 'desc_0' not found\""
-    L");";
-static const wchar_t* jscript_error =
-    L"window.domAutomationController.send("
-    L"  document.getElementById('error') ? "
-    L"    document.getElementById('error').textContent : "
-    L"    \"No error\""
-    L");";
+static const char kScriptFeedTitle[] =
+    "window.domAutomationController.send("
+    "  document.getElementById('title') ? "
+    "    document.getElementById('title').textContent : "
+    "    \"element 'title' not found\""
+    ");";
+static const char kScriptAnchor[] =
+    "window.domAutomationController.send("
+    "  document.getElementById('anchor_0') ? "
+    "    document.getElementById('anchor_0').textContent : "
+    "    \"element 'anchor_0' not found\""
+    ");";
+static const char kScriptDesc[] =
+    "window.domAutomationController.send("
+    "  document.getElementById('desc_0') ? "
+    "    document.getElementById('desc_0').textContent : "
+    "    \"element 'desc_0' not found\""
+    ");";
+static const char kScriptError[] =
+    "window.domAutomationController.send("
+    "  document.getElementById('error') ? "
+    "    document.getElementById('error').textContent : "
+    "    \"No error\""
+    ");";
 
-GURL GetFeedUrl(net::TestServer* server, const std::string& feed_page,
+GURL GetFeedUrl(net::SpawnedTestServer* server, const std::string& feed_page,
                 bool direct_url, std::string extension_id) {
   GURL feed_url = server->GetURL(feed_page);
   if (direct_url) {
@@ -76,17 +76,14 @@ GURL GetFeedUrl(net::TestServer* server, const std::string& feed_page,
   }
 }
 
-bool ValidatePageElement(WebContents* tab,
-                         const std::wstring& frame,
-                         const std::wstring& javascript,
+bool ValidatePageElement(content::RenderFrameHost* frame,
+                         const std::string& javascript,
                          const std::string& expected_value) {
   std::string returned_value;
-  std::string error;
 
-  if (!content::ExecuteJavaScriptAndExtractString(
-          tab->GetRenderViewHost(),
-          frame,
-          javascript, &returned_value))
+  if (!content::ExecuteScriptAndExtractString(frame,
+                                              javascript,
+                                              &returned_value))
     return false;
 
   EXPECT_STREQ(expected_value.c_str(), returned_value.c_str());
@@ -97,7 +94,7 @@ bool ValidatePageElement(WebContents* tab,
 // extension to kick in, detect the feed and redirect to a feed preview page.
 // |sniff_xml_type| is generally set to true if the feed is sniffable and false
 // for invalid feeds.
-void NavigateToFeedAndValidate(net::TestServer* server,
+void NavigateToFeedAndValidate(net::SpawnedTestServer* server,
                                const std::string& url,
                                Browser* browser,
                                std::string extension_id,
@@ -114,23 +111,14 @@ void NavigateToFeedAndValidate(net::TestServer* server,
   ui_test_utils::NavigateToURL(browser,
                                GetFeedUrl(server, url, true, extension_id));
 
-  WebContents* tab = chrome::GetActiveWebContents(browser);
-  ASSERT_TRUE(ValidatePageElement(tab,
-                                  L"",
-                                  jscript_feed_title,
-                                  expected_feed_title));
-  ASSERT_TRUE(ValidatePageElement(tab,
-                                  L"//html/body/div/iframe[1]",
-                                  jscript_anchor,
-                                  expected_item_title));
-  ASSERT_TRUE(ValidatePageElement(tab,
-                                  L"//html/body/div/iframe[1]",
-                                  jscript_desc,
-                                  expected_item_desc));
-  ASSERT_TRUE(ValidatePageElement(tab,
-                                  L"//html/body/div/iframe[1]",
-                                  jscript_error,
-                                  expected_error));
+  WebContents* tab = browser->tab_strip_model()->GetActiveWebContents();
+  content::RenderFrameHost* frame = content::FrameMatchingPredicate(
+      tab, base::Bind(&content::FrameIsChildOfMainFrame));
+  ASSERT_TRUE(ValidatePageElement(
+      tab->GetMainFrame(), kScriptFeedTitle, expected_feed_title));
+  ASSERT_TRUE(ValidatePageElement(frame, kScriptAnchor, expected_item_title));
+  ASSERT_TRUE(ValidatePageElement(frame, kScriptDesc, expected_item_desc));
+  ASSERT_TRUE(ValidatePageElement(frame, kScriptError, expected_error));
 }
 
 } // namespace
@@ -152,7 +140,8 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSMultiRelLink) {
   ASSERT_TRUE(WaitForPageActionVisibilityChangeTo(1));
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed1) {
+// This test is flaky on all platforms; see http://crbug.com/340354
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, DISABLED_RSSParseFeedValidFeed1) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -167,7 +156,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed1) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed2) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed2) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -182,7 +171,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed2) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed3) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed3) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -197,7 +186,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed3) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed4) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed4) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -212,7 +201,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed4) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed0) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed0) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -229,7 +218,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed0) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed5) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed5) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -245,7 +234,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed5) {
                             "This feed contains no entries.");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed6) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeed6) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -261,7 +250,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeed6) {
                             "No error");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed1) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedInvalidFeed1) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -277,7 +266,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed1) {
                             "This feed contains no entries.");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed2) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedInvalidFeed2) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -293,7 +282,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed2) {
                             "This feed contains no entries.");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed3) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedInvalidFeed3) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -309,7 +298,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed3) {
                             "This feed contains no entries.");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed4) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedInvalidFeed4) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(
@@ -332,7 +321,7 @@ IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedInvalidFeed4) {
       "This feed contains no entries.");
 }
 
-IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, ParseFeedValidFeedNoLinks) {
+IN_PROC_BROWSER_TEST_F(ExtensionBrowserTest, RSSParseFeedValidFeedNoLinks) {
   ASSERT_TRUE(test_server()->Start());
 
   const Extension* extension = LoadExtension(

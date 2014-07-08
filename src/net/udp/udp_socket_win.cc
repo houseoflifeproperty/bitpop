@@ -8,10 +8,10 @@
 
 #include "base/callback.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
+#include "base/metrics/sparse_histogram.h"
 #include "base/metrics/stats_counters.h"
-#include "base/posix/eintr_wrapper.h"
 #include "base/rand_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/ip_endpoint.h"
@@ -20,15 +20,16 @@
 #include "net/base/net_util.h"
 #include "net/base/winsock_init.h"
 #include "net/base/winsock_util.h"
+#include "net/socket/socket_descriptor.h"
 #include "net/udp/udp_net_log_parameters.h"
 
 namespace {
 
-static const int kBindRetries = 10;
-static const int kPortStart = 1024;
-static const int kPortEnd = 65535;
+const int kBindRetries = 10;
+const int kPortStart = 1024;
+const int kPortEnd = 65535;
 
-}  // namespace net
+}  // namespace
 
 namespace net {
 
@@ -106,8 +107,8 @@ class UDPSocketWin::Core : public base::RefCounted<Core> {
 
 UDPSocketWin::Core::Core(UDPSocketWin* socket)
     : socket_(socket),
-      ALLOW_THIS_IN_INITIALIZER_LIST(reader_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(writer_(this)) {
+      reader_(this),
+      writer_(this) {
   memset(&read_overlapped_, 0, sizeof(read_overlapped_));
   memset(&write_overlapped_, 0, sizeof(write_overlapped_));
 
@@ -163,7 +164,10 @@ UDPSocketWin::UDPSocketWin(DatagramSocket::BindType bind_type,
                            net::NetLog* net_log,
                            const net::NetLog::Source& source)
     : socket_(INVALID_SOCKET),
-      socket_options_(0),
+      addr_family_(0),
+      socket_options_(SOCKET_OPTION_MULTICAST_LOOP),
+      multicast_interface_(0),
+      multicast_time_to_live_(1),
       bind_type_(bind_type),
       rand_int_cb_(rand_int_cb),
       recv_from_address_(NULL),
@@ -196,6 +200,7 @@ void UDPSocketWin::Close() {
   UMA_HISTOGRAM_TIMES("Net.UDPSocketWinClose",
                       base::TimeTicks::Now() - start_time);
   socket_ = INVALID_SOCKET;
+  addr_family_ = 0;
 
   core_->Detach();
   core_ = NULL;
@@ -214,7 +219,7 @@ int UDPSocketWin::GetPeerAddress(IPEndPoint* address) const {
       return MapSystemError(WSAGetLastError());
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
     if (!address->FromSockAddr(storage.addr, storage.addr_len))
-      return ERR_FAILED;
+      return ERR_ADDRESS_INVALID;
     remote_address_.reset(address.release());
   }
 
@@ -235,8 +240,10 @@ int UDPSocketWin::GetLocalAddress(IPEndPoint* address) const {
       return MapSystemError(WSAGetLastError());
     scoped_ptr<IPEndPoint> address(new IPEndPoint());
     if (!address->FromSockAddr(storage.addr, storage.addr_len))
-      return ERR_FAILED;
+      return ERR_ADDRESS_INVALID;
     local_address_.reset(address.release());
+    net_log_.AddEvent(NetLog::TYPE_UDP_LOCAL_ADDRESS,
+                      CreateNetLogUDPConnectCallback(local_address_.get()));
   }
 
   *address = *local_address_;
@@ -307,6 +314,8 @@ int UDPSocketWin::Connect(const IPEndPoint& address) {
   net_log_.BeginEvent(NetLog::TYPE_UDP_CONNECT,
                       CreateNetLogUDPConnectCallback(&address));
   int rv = InternalConnect(address);
+  if (rv != OK)
+    Close();
   net_log_.EndEventWithNetErrorCode(NetLog::TYPE_UDP_CONNECT, rv);
   return rv;
 }
@@ -314,24 +323,38 @@ int UDPSocketWin::Connect(const IPEndPoint& address) {
 int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
   DCHECK(!is_connected());
   DCHECK(!remote_address_.get());
-  int rv = CreateSocket(address);
+  int addr_family = address.GetSockAddrFamily();
+  int rv = CreateSocket(addr_family);
   if (rv < 0)
     return rv;
 
-  if (bind_type_ == DatagramSocket::RANDOM_BIND)
-    rv = RandomBind(address);
+  if (bind_type_ == DatagramSocket::RANDOM_BIND) {
+    // Construct IPAddressNumber of appropriate size (IPv4 or IPv6) of 0s,
+    // representing INADDR_ANY or in6addr_any.
+    size_t addr_size =
+        addr_family == AF_INET ? kIPv4AddressSize : kIPv6AddressSize;
+    IPAddressNumber addr_any(addr_size);
+    rv = RandomBind(addr_any);
+  }
   // else connect() does the DatagramSocket::DEFAULT_BIND
 
-  if (rv < 0)
+  if (rv < 0) {
+    UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketRandomBindErrorCode", -rv);
+    Close();
     return rv;
+  }
 
   SockaddrStorage storage;
   if (!address.ToSockAddr(storage.addr, &storage.addr_len))
-    return ERR_FAILED;
+    return ERR_ADDRESS_INVALID;
 
   rv = connect(socket_, storage.addr, storage.addr_len);
-  if (rv < 0)
-    return MapSystemError(WSAGetLastError());
+  if (rv < 0) {
+    // Close() may change the last error. Map it beforehand.
+    int result = MapSystemError(WSAGetLastError());
+    Close();
+    return result;
+  }
 
   remote_address_.reset(new IPEndPoint(address));
   return rv;
@@ -339,42 +362,73 @@ int UDPSocketWin::InternalConnect(const IPEndPoint& address) {
 
 int UDPSocketWin::Bind(const IPEndPoint& address) {
   DCHECK(!is_connected());
-  int rv = CreateSocket(address);
+  int rv = CreateSocket(address.GetSockAddrFamily());
   if (rv < 0)
     return rv;
   rv = SetSocketOptions();
-  if (rv < 0)
+  if (rv < 0) {
+    Close();
     return rv;
+  }
   rv = DoBind(address);
-  if (rv < 0)
+  if (rv < 0) {
+    Close();
     return rv;
+  }
   local_address_.reset();
   return rv;
 }
 
-int UDPSocketWin::CreateSocket(const IPEndPoint& address) {
-  socket_ = WSASocket(address.GetSockAddrFamily(), SOCK_DGRAM, IPPROTO_UDP,
-                      NULL, 0, WSA_FLAG_OVERLAPPED);
+int UDPSocketWin::CreateSocket(int addr_family) {
+  addr_family_ = addr_family;
+  socket_ = CreatePlatformSocket(addr_family_, SOCK_DGRAM, IPPROTO_UDP);
   if (socket_ == INVALID_SOCKET)
     return MapSystemError(WSAGetLastError());
   core_ = new Core(this);
   return OK;
 }
 
-bool UDPSocketWin::SetReceiveBufferSize(int32 size) {
+int UDPSocketWin::SetReceiveBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket receive buffer size: " << errno;
-  return rv == 0;
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+
+  // According to documentation, setsockopt may succeed, but we need to check
+  // the results via getsockopt to be sure it works on Windows.
+  int32 actual_size = 0;
+  int option_size = sizeof(actual_size);
+  rv = getsockopt(socket_, SOL_SOCKET, SO_RCVBUF,
+                  reinterpret_cast<char*>(&actual_size), &option_size);
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  if (actual_size >= size)
+    return OK;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SocketUnchangeableReceiveBuffer",
+                              actual_size, 1000, 1000000, 50);
+  return ERR_SOCKET_RECEIVE_BUFFER_SIZE_UNCHANGEABLE;
 }
 
-bool UDPSocketWin::SetSendBufferSize(int32 size) {
+int UDPSocketWin::SetSendBufferSize(int32 size) {
   DCHECK(CalledOnValidThread());
   int rv = setsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
                       reinterpret_cast<const char*>(&size), sizeof(size));
-  DCHECK(!rv) << "Could not set socket send buffer size: " << errno;
-  return rv == 0;
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  // According to documentation, setsockopt may succeed, but we need to check
+  // the results via getsockopt to be sure it works on Windows.
+  int32 actual_size = 0;
+  int option_size = sizeof(actual_size);
+  rv = getsockopt(socket_, SOL_SOCKET, SO_SNDBUF,
+                  reinterpret_cast<char*>(&actual_size), &option_size);
+  if (rv != 0)
+    return MapSystemError(WSAGetLastError());
+  if (actual_size >= size)
+    return OK;
+  UMA_HISTOGRAM_CUSTOM_COUNTS("Net.SocketUnchangeableSendBuffer",
+                              actual_size, 1000, 1000000, 50);
+  return ERR_SOCKET_SEND_BUFFER_SIZE_UNCHANGEABLE;
 }
 
 void UDPSocketWin::AllowAddressReuse() {
@@ -420,7 +474,7 @@ void UDPSocketWin::DidCompleteRead() {
   // Convert address.
   if (recv_from_address_ && result >= 0) {
     if (!ReceiveAddressToIPEndpoint(recv_from_address_))
-      result = ERR_FAILED;
+      result = ERR_ADDRESS_INVALID;
   }
   LogRead(result, core_->read_iobuffer_->data());
   core_->read_iobuffer_ = NULL;
@@ -434,7 +488,7 @@ void UDPSocketWin::LogRead(int result, const char* bytes) const {
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     // Get address for logging, if |address| is NULL.
     IPEndPoint address;
     bool is_address_valid = ReceiveAddressToIPEndpoint(&address);
@@ -470,7 +524,7 @@ void UDPSocketWin::LogWrite(int result,
     return;
   }
 
-  if (net_log_.IsLoggingAllEvents()) {
+  if (net_log_.IsLogging()) {
     net_log_.AddEvent(
         NetLog::TYPE_UDP_BYTES_SENT,
         CreateNetLogUDPDataTranferCallback(result, bytes, address));
@@ -502,7 +556,7 @@ int UDPSocketWin::InternalRecvFrom(IOBuffer* buf, int buf_len,
       // Convert address.
       if (address && result >= 0) {
         if (!ReceiveAddressToIPEndpoint(address))
-          result = ERR_FAILED;
+          result = ERR_ADDRESS_INVALID;
       }
       LogRead(result, buf->data());
       return result;
@@ -531,7 +585,7 @@ int UDPSocketWin::InternalSendTo(IOBuffer* buf, int buf_len,
     storage.addr_len = 0;
   } else {
     if (!address->ToSockAddr(addr, &storage.addr_len)) {
-      int result = ERR_FAILED;
+      int result = ERR_ADDRESS_INVALID;
       LogWrite(result, NULL, NULL);
       return result;
     }
@@ -573,14 +627,62 @@ int UDPSocketWin::SetSocketOptions() {
                         reinterpret_cast<const char*>(&true_value),
                         sizeof(true_value));
     if (rv < 0)
-      return MapSystemError(errno);
+      return MapSystemError(WSAGetLastError());
   }
   if (socket_options_ & SOCKET_OPTION_BROADCAST) {
     int rv = setsockopt(socket_, SOL_SOCKET, SO_BROADCAST,
                         reinterpret_cast<const char*>(&true_value),
                         sizeof(true_value));
     if (rv < 0)
-      return MapSystemError(errno);
+      return MapSystemError(WSAGetLastError());
+  }
+  if (!(socket_options_ & SOCKET_OPTION_MULTICAST_LOOP)) {
+    DWORD loop = 0;
+    int protocol_level =
+        addr_family_ == AF_INET ? IPPROTO_IP : IPPROTO_IPV6;
+    int option =
+        addr_family_ == AF_INET ? IP_MULTICAST_LOOP: IPV6_MULTICAST_LOOP;
+    int rv = setsockopt(socket_, protocol_level, option,
+                        reinterpret_cast<const char*>(&loop), sizeof(loop));
+    if (rv < 0)
+      return MapSystemError(WSAGetLastError());
+  }
+  if (multicast_time_to_live_ != 1) {
+    DWORD hops = multicast_time_to_live_;
+    int protocol_level =
+        addr_family_ == AF_INET ? IPPROTO_IP : IPPROTO_IPV6;
+    int option =
+        addr_family_ == AF_INET ? IP_MULTICAST_TTL: IPV6_MULTICAST_HOPS;
+    int rv = setsockopt(socket_, protocol_level, option,
+                        reinterpret_cast<const char*>(&hops), sizeof(hops));
+    if (rv < 0)
+      return MapSystemError(WSAGetLastError());
+  }
+  if (multicast_interface_ != 0) {
+    switch (addr_family_) {
+      case AF_INET: {
+        in_addr address;
+        address.s_addr = htonl(multicast_interface_);
+        int rv = setsockopt(socket_, IPPROTO_IP, IP_MULTICAST_IF,
+                            reinterpret_cast<const char*>(&address),
+                            sizeof(address));
+        if (rv)
+          return MapSystemError(WSAGetLastError());
+        break;
+      }
+      case AF_INET6: {
+        uint32 interface_index = multicast_interface_;
+        int rv = setsockopt(socket_, IPPROTO_IPV6, IPV6_MULTICAST_IF,
+                            reinterpret_cast<const char*>(&interface_index),
+                            sizeof(interface_index));
+        if (rv)
+          return MapSystemError(WSAGetLastError());
+        break;
+      }
+      default:
+        NOTREACHED() << "Invalid address family";
+        return ERR_ADDRESS_INVALID;
+    }
   }
   return OK;
 }
@@ -588,28 +690,155 @@ int UDPSocketWin::SetSocketOptions() {
 int UDPSocketWin::DoBind(const IPEndPoint& address) {
   SockaddrStorage storage;
   if (!address.ToSockAddr(storage.addr, &storage.addr_len))
-    return ERR_UNEXPECTED;
+    return ERR_ADDRESS_INVALID;
   int rv = bind(socket_, storage.addr, storage.addr_len);
-  return rv < 0 ? MapSystemError(WSAGetLastError()) : rv;
+  if (rv == 0)
+    return OK;
+  int last_error = WSAGetLastError();
+  UMA_HISTOGRAM_SPARSE_SLOWLY("Net.UdpSocketBindErrorFromWinOS", last_error);
+  // Map some codes that are special to bind() separately.
+  // * WSAEACCES: If a port is already bound to a socket, WSAEACCES may be
+  //   returned instead of WSAEADDRINUSE, depending on whether the socket
+  //   option SO_REUSEADDR or SO_EXCLUSIVEADDRUSE is set and whether the
+  //   conflicting socket is owned by a different user account. See the MSDN
+  //   page "Using SO_REUSEADDR and SO_EXCLUSIVEADDRUSE" for the gory details.
+  if (last_error == WSAEACCES || last_error == WSAEADDRNOTAVAIL)
+    return ERR_ADDRESS_IN_USE;
+  return MapSystemError(last_error);
 }
 
-int UDPSocketWin::RandomBind(const IPEndPoint& address) {
+int UDPSocketWin::RandomBind(const IPAddressNumber& address) {
   DCHECK(bind_type_ == DatagramSocket::RANDOM_BIND && !rand_int_cb_.is_null());
 
-  // Construct IPAddressNumber of appropriate size (IPv4 or IPv6) of 0s.
-  IPAddressNumber ip(address.address().size());
-
   for (int i = 0; i < kBindRetries; ++i) {
-    int rv = DoBind(IPEndPoint(ip, rand_int_cb_.Run(kPortStart, kPortEnd)));
+    int rv = DoBind(IPEndPoint(address,
+                               rand_int_cb_.Run(kPortStart, kPortEnd)));
     if (rv == OK || rv != ERR_ADDRESS_IN_USE)
       return rv;
   }
-  return DoBind(IPEndPoint(ip, 0));
+  return DoBind(IPEndPoint(address, 0));
 }
 
 bool UDPSocketWin::ReceiveAddressToIPEndpoint(IPEndPoint* address) const {
   SockaddrStorage& storage = core_->recv_addr_storage_;
   return address->FromSockAddr(storage.addr, storage.addr_len);
+}
+
+int UDPSocketWin::JoinGroup(
+    const IPAddressNumber& group_address) const {
+  DCHECK(CalledOnValidThread());
+  if (!is_connected())
+    return ERR_SOCKET_NOT_CONNECTED;
+
+  switch (group_address.size()) {
+    case kIPv4AddressSize: {
+      if (addr_family_ != AF_INET)
+        return ERR_ADDRESS_INVALID;
+      ip_mreq mreq;
+      mreq.imr_interface.s_addr = htonl(multicast_interface_);
+      memcpy(&mreq.imr_multiaddr, &group_address[0], kIPv4AddressSize);
+      int rv = setsockopt(socket_, IPPROTO_IP, IP_ADD_MEMBERSHIP,
+                          reinterpret_cast<const char*>(&mreq),
+                          sizeof(mreq));
+      if (rv)
+        return MapSystemError(WSAGetLastError());
+      return OK;
+    }
+    case kIPv6AddressSize: {
+      if (addr_family_ != AF_INET6)
+        return ERR_ADDRESS_INVALID;
+      ipv6_mreq mreq;
+      mreq.ipv6mr_interface = multicast_interface_;
+      memcpy(&mreq.ipv6mr_multiaddr, &group_address[0], kIPv6AddressSize);
+      int rv = setsockopt(socket_, IPPROTO_IPV6, IPV6_ADD_MEMBERSHIP,
+                          reinterpret_cast<const char*>(&mreq),
+                          sizeof(mreq));
+      if (rv)
+        return MapSystemError(WSAGetLastError());
+      return OK;
+    }
+    default:
+      NOTREACHED() << "Invalid address family";
+      return ERR_ADDRESS_INVALID;
+  }
+}
+
+int UDPSocketWin::LeaveGroup(
+    const IPAddressNumber& group_address) const {
+  DCHECK(CalledOnValidThread());
+  if (!is_connected())
+    return ERR_SOCKET_NOT_CONNECTED;
+
+  switch (group_address.size()) {
+    case kIPv4AddressSize: {
+      if (addr_family_ != AF_INET)
+        return ERR_ADDRESS_INVALID;
+      ip_mreq mreq;
+      mreq.imr_interface.s_addr = htonl(multicast_interface_);
+      memcpy(&mreq.imr_multiaddr, &group_address[0], kIPv4AddressSize);
+      int rv = setsockopt(socket_, IPPROTO_IP, IP_DROP_MEMBERSHIP,
+                          reinterpret_cast<const char*>(&mreq), sizeof(mreq));
+      if (rv)
+        return MapSystemError(WSAGetLastError());
+      return OK;
+    }
+    case kIPv6AddressSize: {
+      if (addr_family_ != AF_INET6)
+        return ERR_ADDRESS_INVALID;
+      ipv6_mreq mreq;
+      mreq.ipv6mr_interface = multicast_interface_;
+      memcpy(&mreq.ipv6mr_multiaddr, &group_address[0], kIPv6AddressSize);
+      int rv = setsockopt(socket_, IPPROTO_IPV6, IP_DROP_MEMBERSHIP,
+                          reinterpret_cast<const char*>(&mreq), sizeof(mreq));
+      if (rv)
+        return MapSystemError(WSAGetLastError());
+      return OK;
+    }
+    default:
+      NOTREACHED() << "Invalid address family";
+      return ERR_ADDRESS_INVALID;
+  }
+}
+
+int UDPSocketWin::SetMulticastInterface(uint32 interface_index) {
+  DCHECK(CalledOnValidThread());
+  if (is_connected())
+    return ERR_SOCKET_IS_CONNECTED;
+  multicast_interface_ = interface_index;
+  return OK;
+}
+
+int UDPSocketWin::SetMulticastTimeToLive(int time_to_live) {
+  DCHECK(CalledOnValidThread());
+  if (is_connected())
+    return ERR_SOCKET_IS_CONNECTED;
+
+  if (time_to_live < 0 || time_to_live > 255)
+    return ERR_INVALID_ARGUMENT;
+  multicast_time_to_live_ = time_to_live;
+  return OK;
+}
+
+int UDPSocketWin::SetMulticastLoopbackMode(bool loopback) {
+  DCHECK(CalledOnValidThread());
+  if (is_connected())
+    return ERR_SOCKET_IS_CONNECTED;
+
+  if (loopback)
+    socket_options_ |= SOCKET_OPTION_MULTICAST_LOOP;
+  else
+    socket_options_ &= ~SOCKET_OPTION_MULTICAST_LOOP;
+  return OK;
+}
+
+// TODO(hubbe): Implement differentiated services for windows.
+// Note: setsockopt(IP_TOS) does not work on windows XP and later.
+int UDPSocketWin::SetDiffServCodePoint(DiffServCodePoint dscp) {
+  return ERR_NOT_IMPLEMENTED;
+}
+
+void UDPSocketWin::DetachFromThread() {
+  base::NonThreadSafe::DetachFromThread();
 }
 
 }  // namespace net

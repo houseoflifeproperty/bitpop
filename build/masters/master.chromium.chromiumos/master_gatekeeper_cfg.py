@@ -11,27 +11,32 @@ from master import master_utils
 # Note: don't include 'update scripts' since we can't do much about it when
 # it's failing and the tree is still technically fine.
 chromium_categories_steps = {
-  '': ['update'],
+  '': ['steps', 'update', 'runhooks'],
   'tester': [
+    'app_list_unittests',
     'aura_unit_tests',
     'base_unittests',
     'browser_tests',
     'cacheinvalidation_unittests',
     'chromeos_unittests',
+    'components_unittests',
     'content_browsertests',
     'content_unittests',
     'courgette_unittests',
     'crypto_unittests',
     'dbus_unittests',
     'device_unittests',
-    'googleurl_unittests',
+    'google_apis_unittests',
     'installer_util_unittests',
     'interactive_ui_tests',
     'ipc_tests',
     'jingle_unittests',
+    'keyboard_unittests',
     'media_unittests',
+    'message_center_unittests',
     'mini_installer_test',
     'nacl_integration',
+    'nacl_loader_unittests',
     'net_unittests',
     'ppapi_unittests',
     'printing_unittests',
@@ -43,9 +48,9 @@ chromium_categories_steps = {
     'sql_unittests',
     'start_crash_handler',
     'sync_unittests',
-    'test_shell_tests',
     'ui_unittests',
     'unit_tests',
+    'url_unittests',
     'views_unittests',
     #'webkit_tests',
    ],
@@ -57,7 +62,7 @@ exclusions = {
 }
 
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',
-                   'archive_build', 'start_crash_handler']
+                   'archive_build', 'start_crash_handler', 'gclient_revert']
 
 close_chromiumos_categories_steps = {
   'closer': [
@@ -89,7 +94,7 @@ subject = ('buildbot %(result)s in %(projectName)s on %(builder)s, '
 warning_header = ('Please look at failure in "%(steps)s" on "%(builder)s" '
                   'and help out if you can')
 
-def Update(config, active_master, alternate_master, c):
+def Update(config, active_master, c):
   # chrome likely/possible failures to the chrome sheriffs, closing the
   # chrome tree
   c['status'].append(gatekeeper.GateKeeper(
@@ -112,13 +117,15 @@ def Update(config, active_master, alternate_master, c):
       exclusions=exclusions,
       relayhost=config.Master.smtp,
       subject='Closer ' + subject,
-      extraRecipients=alternate_master.tree_closing_notification_recipients,
+      extraRecipients=(
+          active_master.alternate_tree_closing_notification_recipients),
       lookup=master_utils.FilterDomain(),
       forgiving_steps=forgiving_steps,
-      tree_status_url=alternate_master.tree_status_url,
+      tree_status_url=active_master.alternate_tree_status_url,
       sheriffs=['sheriff_cros_mtv', 'sheriff_cros_nonmtv'],
       public_html='../master.chromium/public_html',
-      use_getname=True))
+      use_getname=True,
+      throttle=True))
   # chromium os buried failures/flakiness to chrome OS folk
   c['status'].append(gatekeeper.GateKeeper(
       fromaddr=active_master.from_address,

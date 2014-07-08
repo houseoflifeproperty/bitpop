@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -53,7 +53,7 @@ typedef struct DVprofile {
     AVRational       sar[2];                /* sample aspect ratios for 4:3 and 16:9 */
     DVwork_chunk    *work_chunks;           /* each thread gets its own chunk of frame to work on */
     uint32_t        *idct_factor;           /* set of iDCT factor tables */
-    enum PixelFormat pix_fmt;               /* picture pixel format */
+    enum AVPixelFormat pix_fmt;             /* picture pixel format */
     int              bpm;                   /* blocks per macroblock */
     const uint8_t   *block_sizes;           /* AC block sizes, in bits */
     int              audio_stride;          /* size of audio_shuffle table */

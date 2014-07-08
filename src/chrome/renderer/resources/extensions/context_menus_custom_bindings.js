@@ -2,57 +2,57 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the contextMenus API.
+// Custom binding for the contextMenus API.
 
-var contextMenus = requireNative('context_menus');
-var GetNextContextMenuId = contextMenus.GetNextContextMenuId;
+var binding = require('binding').Binding.create('contextMenus');
+
+var contextMenuNatives = requireNative('context_menus');
 var sendRequest = require('sendRequest').sendRequest;
+var Event = require('event_bindings').Event;
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
-
-chromeHidden.registerCustomHook('contextMenus', function(bindingsAPI) {
+binding.registerCustomHook(function(bindingsAPI) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
-  chromeHidden.contextMenus = {};
-  chromeHidden.contextMenus.generatedIdHandlers = {};
-  chromeHidden.contextMenus.stringIdHandlers = {};
+  var contextMenus = {};
+  contextMenus.generatedIdHandlers = {};
+  contextMenus.stringIdHandlers = {};
   var eventName = 'contextMenus';
-  chromeHidden.contextMenus.event = new chrome.Event(eventName);
-  chromeHidden.contextMenus.getIdFromCreateProperties = function(prop) {
+  contextMenus.event = new Event(eventName);
+  contextMenus.getIdFromCreateProperties = function(prop) {
     if (typeof(prop.id) !== 'undefined')
       return prop.id;
     return prop.generatedId;
   };
-  chromeHidden.contextMenus.handlersForId = function(id) {
+  contextMenus.handlersForId = function(id) {
     if (typeof(id) === 'number')
-      return chromeHidden.contextMenus.generatedIdHandlers;
-    return chromeHidden.contextMenus.stringIdHandlers;
+      return contextMenus.generatedIdHandlers;
+    return contextMenus.stringIdHandlers;
   };
-  chromeHidden.contextMenus.ensureListenerSetup = function() {
-    if (chromeHidden.contextMenus.listening) {
+  contextMenus.ensureListenerSetup = function() {
+    if (contextMenus.listening) {
       return;
     }
-    chromeHidden.contextMenus.listening = true;
-    chromeHidden.contextMenus.event.addListener(function() {
+    contextMenus.listening = true;
+    contextMenus.event.addListener(function() {
       // An extension context menu item has been clicked on - fire the onclick
       // if there is one.
       var id = arguments[0].menuItemId;
-      var onclick = chromeHidden.contextMenus.handlersForId(id)[id];
+      var onclick = contextMenus.handlersForId(id)[id];
       if (onclick) {
-        onclick.apply(null, arguments);
+        $Function.apply(onclick, null, arguments);
       }
     });
   };
 
   apiFunctions.setHandleRequest('create', function() {
     var args = arguments;
-    var id = GetNextContextMenuId();
+    var id = contextMenuNatives.GetNextContextMenuId();
     args[0].generatedId = id;
     var optArgs = {
       customCallback: this.customCallback,
     };
     sendRequest(this.name, args, this.definition.parameters, optArgs);
-    return chromeHidden.contextMenus.getIdFromCreateProperties(args[0]);
+    return contextMenus.getIdFromCreateProperties(args[0]);
   });
 
   apiFunctions.setCustomCallback('create', function(name, request, response) {
@@ -60,14 +60,13 @@ chromeHidden.registerCustomHook('contextMenus', function(bindingsAPI) {
       return;
     }
 
-    var id = chromeHidden.contextMenus.getIdFromCreateProperties(
-        request.args[0]);
+    var id = contextMenus.getIdFromCreateProperties(request.args[0]);
 
     // Set up the onclick handler if we were passed one in the request.
     var onclick = request.args.length ? request.args[0].onclick : null;
     if (onclick) {
-      chromeHidden.contextMenus.ensureListenerSetup();
-      chromeHidden.contextMenus.handlersForId(id)[id] = onclick;
+      contextMenus.ensureListenerSetup();
+      contextMenus.handlersForId(id)[id] = onclick;
     }
   });
 
@@ -76,7 +75,7 @@ chromeHidden.registerCustomHook('contextMenus', function(bindingsAPI) {
       return;
     }
     var id = request.args[0];
-    delete chromeHidden.contextMenus.handlersForId(id)[id];
+    delete contextMenus.handlersForId(id)[id];
   });
 
   apiFunctions.setCustomCallback('update', function(name, request, response) {
@@ -85,7 +84,7 @@ chromeHidden.registerCustomHook('contextMenus', function(bindingsAPI) {
     }
     var id = request.args[0];
     if (request.args[1].onclick) {
-      chromeHidden.contextMenus.handlersForId(id)[id] = request.args[1].onclick;
+      contextMenus.handlersForId(id)[id] = request.args[1].onclick;
     }
   });
 
@@ -94,7 +93,9 @@ chromeHidden.registerCustomHook('contextMenus', function(bindingsAPI) {
     if (chrome.runtime.lastError) {
       return;
     }
-    chromeHidden.contextMenus.generatedIdHandlers = {};
-    chromeHidden.contextMenus.stringIdHandlers = {};
+    contextMenus.generatedIdHandlers = {};
+    contextMenus.stringIdHandlers = {};
   });
 });
+
+exports.binding = binding.generate();

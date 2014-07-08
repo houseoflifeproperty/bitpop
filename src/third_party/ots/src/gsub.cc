@@ -18,7 +18,7 @@
 namespace {
 
 // The GSUB header size
-const size_t kGsubHeaderSize = 8;
+const size_t kGsubHeaderSize = 4 + 3 * 2;
 
 enum GSUB_TYPE {
   GSUB_TYPE_SINGLE = 1,
@@ -63,9 +63,8 @@ const ots::LookupSubtableParser::TypeParser kGsubTypeParsers[] = {
     ParseReverseChainingContextSingleSubstitution}
 };
 
-// TODO(bashi): Port Chromium's arraysize macro and use it instead of sizeof().
 const ots::LookupSubtableParser kGsubLookupSubtableParser = {
-  sizeof(kGsubTypeParsers) / sizeof(kGsubTypeParsers[0]),
+  arraysize(kGsubTypeParsers),
   GSUB_TYPE_EXTENSION_SUBSTITUTION, kGsubTypeParsers
 };
 

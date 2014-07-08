@@ -3,7 +3,6 @@
 // found in the LICENSE file.
 
 #define IDR_MAINFRAME                   101
-#define IDR_CHROMEFRAME                 200
 
 #define IDI_THROBBER_01                 102
 #define IDI_THROBBER_02                 103
@@ -34,4 +33,3 @@
 // Values around 1600 are used by installer/setup/build/
 
 #define IDD_IPC_SETTINGS                3000
-

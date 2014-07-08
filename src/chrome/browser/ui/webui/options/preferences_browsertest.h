@@ -10,11 +10,12 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "chrome/browser/policy/mock_configuration_policy_provider.h"
-#include "chrome/browser/policy/policy_types.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/memory/scoped_vector.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/test/base/in_process_browser_test.h"
+#include "components/policy/core/common/mock_configuration_policy_provider.h"
+#include "components/policy/core/common/policy_types.h"
 #include "content/public/browser/notification_observer.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -45,9 +46,10 @@ class PreferencesBrowserTest : public InProcessBrowserTest {
  protected:
   MOCK_METHOD1(OnCommit, void(const PrefService::Preference*));
 
+  void SetUpPrefs();
+
   // InProcessBrowserTest implementation:
   virtual void SetUpInProcessBrowserTestFixture() OVERRIDE;
-  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE;
 
   // Sets user policies through the mock policy provider.
   void SetUserPolicies(const std::vector<std::string>& names,
@@ -108,9 +110,19 @@ class PreferencesBrowserTest : public InProcessBrowserTest {
   void SetupJavaScriptTestEnvironment(
       const std::vector<std::string>& pref_names,
       std::string* observed_json) const;
+
+  // Sets a value through the JavaScript Preferences class as if the user had
+  // modified it. Returns the observation which can be verified using the
+  // VerifyObserved* methods.
+  void SetPref(const std::string& name,
+               const std::string& type,
+               const base::Value* value,
+               bool commit,
+               std::string* observed_json);
+
   // Verifies that setting a user-modified pref value through the JavaScript
-  // Preferences class fires the correct notification in JavaScript and does
-  // respectively does not cause the change to be committed to the C++ backend.
+  // Preferences class fires the correct notification in JavaScript and commits
+  // the change to C++ if |commit| is true.
   void VerifySetPref(const std::string& name,
                      const std::string& type,
                      const base::Value* value,
@@ -160,7 +172,7 @@ class PreferencesBrowserTest : public InProcessBrowserTest {
   // the tab.
   content::RenderViewHost* render_view_host_;
 
-  // Mock user policy provider.
+  // Mock policy provider for both user and device policies.
   policy::MockConfigurationPolicyProvider policy_provider_;
 
   // Pref change registrar that detects changes to user-modified pref values
@@ -174,8 +186,8 @@ class PreferencesBrowserTest : public InProcessBrowserTest {
   std::vector<std::string> types_;
   std::vector<std::string> pref_names_;
   std::vector<std::string> policy_names_;
-  std::vector<base::Value*> default_values_;
-  std::vector<base::Value*> non_default_values_;
+  ScopedVector<base::Value> default_values_;
+  ScopedVector<base::Value> non_default_values_;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(PreferencesBrowserTest);

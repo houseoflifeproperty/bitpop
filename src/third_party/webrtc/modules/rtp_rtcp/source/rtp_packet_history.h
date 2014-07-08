@@ -15,18 +15,19 @@
 
 #include <vector>
 
-#include "module_common_types.h"
-#include "rtp_rtcp_defines.h"
-#include "typedefs.h"
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/modules/rtp_rtcp/interface/rtp_rtcp_defines.h"
+#include "webrtc/typedefs.h"
+#include "webrtc/system_wrappers/interface/thread_annotations.h"
 
 namespace webrtc {
 
-class RtpRtcpClock;
+class Clock;
 class CriticalSectionWrapper;
 
 class RTPPacketHistory {
  public:
-  RTPPacketHistory(RtpRtcpClock* clock);
+  RTPPacketHistory(Clock* clock);
   ~RTPPacketHistory();
 
   void SetStorePacketsStatus(bool enable, uint16_t number_to_store);
@@ -59,25 +60,29 @@ class RTPPacketHistory {
   // copied.
   // stored_time_ms: returns the time when the packet was stored.
   // type: returns the storage type set in PutRTPPacket.
-  bool GetRTPPacket(uint16_t sequence_number,
-                    uint32_t min_elapsed_time_ms,
-                    uint8_t* packet,
-                    uint16_t* packet_length,
-                    int64_t* stored_time_ms,
-                    StorageType* type) const;
+  bool GetPacketAndSetSendTime(uint16_t sequence_number,
+                               uint32_t min_elapsed_time_ms,
+                               bool retransmit,
+                               uint8_t* packet,
+                               uint16_t* packet_length,
+                               int64_t* stored_time_ms);
+
+  bool GetBestFittingPacket(uint8_t* packet, uint16_t* packet_length,
+                            int64_t* stored_time_ms);
 
   bool HasRTPPacket(uint16_t sequence_number) const;
 
-  void UpdateResendTime(uint16_t sequence_number);
-
  private:
-  void Allocate(uint16_t number_to_store);
-  void Free();
+  void GetPacket(int index, uint8_t* packet, uint16_t* packet_length,
+                 int64_t* stored_time_ms) const;
+  void Allocate(uint16_t number_to_store) EXCLUSIVE_LOCKS_REQUIRED(*critsect_);
+  void Free() EXCLUSIVE_LOCKS_REQUIRED(*critsect_);
   void VerifyAndAllocatePacketLength(uint16_t packet_length);
   bool FindSeqNum(uint16_t sequence_number, int32_t* index) const;
+  int FindBestFittingPacket(uint16_t size) const;
 
  private:
-  RtpRtcpClock& clock_;
+  Clock* clock_;
   CriticalSectionWrapper* critsect_;
   bool store_;
   uint32_t prev_index_;
@@ -87,7 +92,7 @@ class RTPPacketHistory {
   std::vector<uint16_t> stored_seq_nums_;
   std::vector<uint16_t> stored_lengths_;
   std::vector<int64_t> stored_times_;
-  std::vector<int64_t> stored_resend_times_;
+  std::vector<int64_t> stored_send_times_;
   std::vector<StorageType> stored_types_;
 };
 }  // namespace webrtc

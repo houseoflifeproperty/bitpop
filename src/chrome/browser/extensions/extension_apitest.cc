@@ -4,32 +4,140 @@
 
 #include "chrome/browser/extensions/extension_apitest.h"
 
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "chrome/browser/extensions/api/test/test_api.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/extensions/unpacked_installer.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/extensions/application_launch.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
-#include "net/base/net_util.h"
-#include "net/test/test_server.h"
+#include "extensions/browser/api/test/test_api.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
+#include "net/base/escape.h"
+#include "net/base/filename_util.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 namespace {
 
+const char kTestCustomArg[] = "customArg";
 const char kTestServerPort[] = "testServer.port";
 const char kTestDataDirectory[] = "testDataDirectory";
 const char kTestWebSocketPort[] = "testWebSocketPort";
+const char kFtpServerPort[] = "ftpServer.port";
+const char kSpawnedTestServerPort[] = "spawnedTestServer.port";
+
+scoped_ptr<net::test_server::HttpResponse> HandleServerRedirectRequest(
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, "/server-redirect?", true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  size_t query_string_pos = request.relative_url.find('?');
+  std::string redirect_target =
+      request.relative_url.substr(query_string_pos + 1);
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_MOVED_PERMANENTLY);
+  http_response->AddCustomHeader("Location", redirect_target);
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+scoped_ptr<net::test_server::HttpResponse> HandleEchoHeaderRequest(
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, "/echoheader?", true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  size_t query_string_pos = request.relative_url.find('?');
+  std::string header_name =
+      request.relative_url.substr(query_string_pos + 1);
+
+  std::string header_value;
+  std::map<std::string, std::string>::const_iterator it = request.headers.find(
+      header_name);
+  if (it != request.headers.end())
+    header_value = it->second;
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_OK);
+  http_response->set_content(header_value);
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+scoped_ptr<net::test_server::HttpResponse> HandleSetCookieRequest(
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, "/set-cookie?", true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_OK);
+
+  size_t query_string_pos = request.relative_url.find('?');
+  std::string cookie_value =
+      request.relative_url.substr(query_string_pos + 1);
+
+  std::vector<std::string> cookies;
+  base::SplitString(cookie_value, '&', &cookies);
+
+  for (size_t i = 0; i < cookies.size(); i++)
+    http_response->AddCustomHeader("Set-Cookie", cookies[i]);
+
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+scoped_ptr<net::test_server::HttpResponse> HandleSetHeaderRequest(
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, "/set-header?", true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  size_t query_string_pos = request.relative_url.find('?');
+  std::string escaped_header =
+      request.relative_url.substr(query_string_pos + 1);
+
+  std::string header =
+      net::UnescapeURLComponent(escaped_header,
+                                net::UnescapeRule::NORMAL |
+                                net::UnescapeRule::SPACES |
+                                net::UnescapeRule::URL_SPECIAL_CHARS);
+
+  size_t colon_pos = header.find(':');
+  if (colon_pos == std::string::npos)
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  std::string header_name = header.substr(0, colon_pos);
+  // Skip space after colon.
+  std::string header_value = header.substr(colon_pos + 2);
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_OK);
+  http_response->AddCustomHeader(header_name, header_value);
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
 
 };  // namespace
 
-ExtensionApiTest::ExtensionApiTest() {}
+ExtensionApiTest::ExtensionApiTest() {
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleServerRedirectRequest));
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleEchoHeaderRequest));
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleSetCookieRequest));
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleSetHeaderRequest));
+}
 
 ExtensionApiTest::~ExtensionApiTest() {}
 
@@ -80,9 +188,9 @@ void ExtensionApiTest::ResultCatcher::Observe(
     case chrome::NOTIFICATION_EXTENSION_TEST_PASSED:
       VLOG(1) << "Got EXTENSION_TEST_PASSED notification.";
       results_.push_back(true);
-      messages_.push_back("");
+      messages_.push_back(std::string());
       if (waiting_)
-        MessageLoopForUI::current()->Quit();
+        base::MessageLoopForUI::current()->Quit();
       break;
 
     case chrome::NOTIFICATION_EXTENSION_TEST_FAILED:
@@ -90,7 +198,7 @@ void ExtensionApiTest::ResultCatcher::Observe(
       results_.push_back(false);
       messages_.push_back(*(content::Details<std::string>(details).ptr()));
       if (waiting_)
-        MessageLoopForUI::current()->Quit();
+        base::MessageLoopForUI::current()->Quit();
       break;
 
     default:
@@ -100,7 +208,7 @@ void ExtensionApiTest::ResultCatcher::Observe(
 
 void ExtensionApiTest::SetUpInProcessBrowserTestFixture() {
   DCHECK(!test_config_.get()) << "Previous test did not clear config state.";
-  test_config_.reset(new DictionaryValue());
+  test_config_.reset(new base::DictionaryValue());
   test_config_->SetString(kTestDataDirectory,
                           net::FilePathToFileURL(test_data_dir_).spec());
   test_config_->SetInteger(kTestWebSocketPort, 0);
@@ -113,86 +221,117 @@ void ExtensionApiTest::TearDownInProcessBrowserTestFixture() {
   test_config_.reset(NULL);
 }
 
-bool ExtensionApiTest::RunExtensionTest(const char* extension_name) {
-  return RunExtensionTestImpl(extension_name, "", kFlagEnableFileAccess);
+bool ExtensionApiTest::RunExtensionTest(const std::string& extension_name) {
+  return RunExtensionTestImpl(
+      extension_name, std::string(), NULL, kFlagEnableFileAccess);
 }
 
-bool ExtensionApiTest::RunExtensionTestIncognito(const char* extension_name) {
-  return RunExtensionTestImpl(
-      extension_name, "", kFlagEnableIncognito | kFlagEnableFileAccess);
+bool ExtensionApiTest::RunExtensionTestIncognito(
+    const std::string& extension_name) {
+  return RunExtensionTestImpl(extension_name,
+                              std::string(),
+                              NULL,
+                              kFlagEnableIncognito | kFlagEnableFileAccess);
 }
 
 bool ExtensionApiTest::RunExtensionTestIgnoreManifestWarnings(
-    const char* extension_name) {
+    const std::string& extension_name) {
   return RunExtensionTestImpl(
-      extension_name, "", kFlagIgnoreManifestWarnings);
+      extension_name, std::string(), NULL, kFlagIgnoreManifestWarnings);
 }
 
 bool ExtensionApiTest::RunExtensionTestAllowOldManifestVersion(
-    const char* extension_name) {
+    const std::string& extension_name) {
   return RunExtensionTestImpl(
       extension_name,
-      "",
+      std::string(),
+      NULL,
       kFlagEnableFileAccess | kFlagAllowOldManifestVersions);
 }
 
-bool ExtensionApiTest::RunComponentExtensionTest(const char* extension_name) {
-  return RunExtensionTestImpl(
-      extension_name, "", kFlagEnableFileAccess | kFlagLoadAsComponent);
+bool ExtensionApiTest::RunComponentExtensionTest(
+    const std::string& extension_name) {
+  return RunExtensionTestImpl(extension_name,
+                              std::string(),
+                              NULL,
+                              kFlagEnableFileAccess | kFlagLoadAsComponent);
 }
 
 bool ExtensionApiTest::RunExtensionTestNoFileAccess(
-    const char* extension_name) {
-  return RunExtensionTestImpl(extension_name, "", kFlagNone);
+    const std::string& extension_name) {
+  return RunExtensionTestImpl(extension_name, std::string(), NULL, kFlagNone);
 }
 
 bool ExtensionApiTest::RunExtensionTestIncognitoNoFileAccess(
-    const char* extension_name) {
-  return RunExtensionTestImpl(extension_name, "", kFlagEnableIncognito);
+    const std::string& extension_name) {
+  return RunExtensionTestImpl(
+      extension_name, std::string(), NULL, kFlagEnableIncognito);
 }
 
-bool ExtensionApiTest::RunExtensionSubtest(const char* extension_name,
+bool ExtensionApiTest::RunExtensionSubtest(const std::string& extension_name,
                                            const std::string& page_url) {
   return RunExtensionSubtest(extension_name, page_url, kFlagEnableFileAccess);
 }
 
-bool ExtensionApiTest::RunExtensionSubtest(const char* extension_name,
+bool ExtensionApiTest::RunExtensionSubtest(const std::string& extension_name,
                                            const std::string& page_url,
                                            int flags) {
   DCHECK(!page_url.empty()) << "Argument page_url is required.";
-  return RunExtensionTestImpl(extension_name, page_url, flags);
+  // See http://crbug.com/177163 for details.
+#if defined(OS_WIN) && !defined(NDEBUG)
+  LOG(WARNING) << "Workaround for 177163, prematurely returning";
+  return true;
+#endif
+  return RunExtensionTestImpl(extension_name, page_url, NULL, flags);
 }
 
 
 bool ExtensionApiTest::RunPageTest(const std::string& page_url) {
-  return RunExtensionSubtest("", page_url);
+  return RunExtensionSubtest(std::string(), page_url);
 }
 
 bool ExtensionApiTest::RunPageTest(const std::string& page_url,
                                    int flags) {
-  return RunExtensionSubtest("", page_url, flags);
+  return RunExtensionSubtest(std::string(), page_url, flags);
 }
 
-bool ExtensionApiTest::RunPlatformAppTest(const char* extension_name) {
-  return RunExtensionTestImpl(extension_name, "", kFlagLaunchPlatformApp);
+bool ExtensionApiTest::RunPlatformAppTest(const std::string& extension_name) {
+  return RunExtensionTestImpl(
+      extension_name, std::string(), NULL, kFlagLaunchPlatformApp);
+}
+
+bool ExtensionApiTest::RunPlatformAppTestWithArg(
+    const std::string& extension_name, const char* custom_arg) {
+  return RunExtensionTestImpl(
+      extension_name, std::string(), custom_arg, kFlagLaunchPlatformApp);
+}
+
+bool ExtensionApiTest::RunPlatformAppTestWithFlags(
+    const std::string& extension_name, int flags) {
+  return RunExtensionTestImpl(
+      extension_name, std::string(), NULL, flags | kFlagLaunchPlatformApp);
 }
 
 // Load |extension_name| extension and/or |page_url| and wait for
 // PASSED or FAILED notification.
-bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
+bool ExtensionApiTest::RunExtensionTestImpl(const std::string& extension_name,
                                             const std::string& page_url,
+                                            const char* custom_arg,
                                             int flags) {
   bool load_as_component = (flags & kFlagLoadAsComponent) != 0;
   bool launch_platform_app = (flags & kFlagLaunchPlatformApp) != 0;
   bool use_incognito = (flags & kFlagUseIncognito) != 0;
 
+  if (custom_arg && custom_arg[0])
+    test_config_->SetString(kTestCustomArg, custom_arg);
+
   ResultCatcher catcher;
-  DCHECK(!std::string(extension_name).empty() || !page_url.empty()) <<
+  DCHECK(!extension_name.empty() || !page_url.empty()) <<
       "extension_name and page_url cannot both be empty";
 
   const extensions::Extension* extension = NULL;
-  if (!std::string(extension_name).empty()) {
-    FilePath extension_path = test_data_dir_.AppendASCII(extension_name);
+  if (!extension_name.empty()) {
+    base::FilePath extension_path = test_data_dir_.AppendASCII(extension_name);
     if (load_as_component) {
       extension = LoadExtensionAsComponent(extension_path);
     } else {
@@ -223,7 +362,7 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
     // may lack a scheme & host and thus be a relative url within the loaded
     // extension.
     if (!url.is_valid()) {
-      DCHECK(!std::string(extension_name).empty()) <<
+      DCHECK(!extension_name.empty()) <<
           "Relative page_url given with no extension_name";
 
       url = extension->GetResourceURL(page_url);
@@ -233,21 +372,21 @@ bool ExtensionApiTest::RunExtensionTestImpl(const char* extension_name,
       ui_test_utils::OpenURLOffTheRecord(browser()->profile(), url);
     else
       ui_test_utils::NavigateToURL(browser(), url);
-
   } else if (launch_platform_app) {
-    application_launch::LaunchParams params(browser()->profile(), extension,
-                                            extension_misc::LAUNCH_NONE,
-                                            NEW_WINDOW);
-    params.command_line = CommandLine::ForCurrentProcess();
-    application_launch::OpenApplication(params);
+    AppLaunchParams params(browser()->profile(),
+                           extension,
+                           extensions::LAUNCH_CONTAINER_NONE,
+                           NEW_WINDOW);
+    params.command_line = *CommandLine::ForCurrentProcess();
+    OpenApplication(params);
   }
 
   if (!catcher.GetNextResult()) {
     message_ = catcher.message();
     return false;
-  } else {
-    return true;
   }
+
+  return true;
 }
 
 // Test that exactly one extension is loaded, and return it.
@@ -256,11 +395,12 @@ const extensions::Extension* ExtensionApiTest::GetSingleLoadedExtension() {
       browser()->profile())->extension_service();
 
   const extensions::Extension* extension = NULL;
-  for (ExtensionSet::const_iterator it = service->extensions()->begin();
+  for (extensions::ExtensionSet::const_iterator it =
+           service->extensions()->begin();
        it != service->extensions()->end(); ++it) {
     // Ignore any component extensions. They are automatically loaded into all
     // profiles and aren't the extension we're looking for here.
-    if ((*it)->location() == extensions::Extension::COMPONENT)
+    if ((*it)->location() == extensions::Manifest::COMPONENT)
       continue;
 
     if (extension != NULL) {
@@ -271,7 +411,7 @@ const extensions::Extension* ExtensionApiTest::GetSingleLoadedExtension() {
       return NULL;
     }
 
-    extension = *it;
+    extension = it->get();
   }
 
   if (!extension) {
@@ -281,23 +421,24 @@ const extensions::Extension* ExtensionApiTest::GetSingleLoadedExtension() {
   return extension;
 }
 
-bool ExtensionApiTest::StartTestServer() {
-  if (!test_server()->Start())
+bool ExtensionApiTest::StartEmbeddedTestServer() {
+  if (!embedded_test_server()->InitializeAndWaitUntilReady())
     return false;
 
   // Build a dictionary of values that tests can use to build URLs that
   // access the test server and local file system.  Tests can see these values
   // using the extension API function chrome.test.getConfig().
   test_config_->SetInteger(kTestServerPort,
-                           test_server()->host_port_pair().port());
+                           embedded_test_server()->port());
 
   return true;
 }
 
-bool ExtensionApiTest::StartWebSocketServer(const FilePath& root_directory) {
-  websocket_server_.reset(new net::TestServer(
-      net::TestServer::TYPE_WS,
-      net::TestServer::kLocalhost,
+bool ExtensionApiTest::StartWebSocketServer(
+    const base::FilePath& root_directory) {
+  websocket_server_.reset(new net::SpawnedTestServer(
+      net::SpawnedTestServer::TYPE_WS,
+      net::SpawnedTestServer::kLocalhost,
       root_directory));
 
   if (!websocket_server_->Start())
@@ -305,6 +446,34 @@ bool ExtensionApiTest::StartWebSocketServer(const FilePath& root_directory) {
 
   test_config_->SetInteger(kTestWebSocketPort,
                            websocket_server_->host_port_pair().port());
+
+  return true;
+}
+
+bool ExtensionApiTest::StartFTPServer(const base::FilePath& root_directory) {
+  ftp_server_.reset(new net::SpawnedTestServer(
+      net::SpawnedTestServer::TYPE_FTP,
+      net::SpawnedTestServer::kLocalhost,
+      root_directory));
+
+  if (!ftp_server_->Start())
+    return false;
+
+  test_config_->SetInteger(kFtpServerPort,
+                           ftp_server_->host_port_pair().port());
+
+  return true;
+}
+
+bool ExtensionApiTest::StartSpawnedTestServer() {
+  if (!test_server()->Start())
+    return false;
+
+  // Build a dictionary of values that tests can use to build URLs that
+  // access the test server and local file system.  Tests can see these values
+  // using the extension API function chrome.test.getConfig().
+  test_config_->SetInteger(kSpawnedTestServerPort,
+                           test_server()->host_port_pair().port());
 
   return true;
 }

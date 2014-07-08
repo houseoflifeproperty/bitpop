@@ -24,11 +24,11 @@ import com.google.ipc.invalidation.external.client.android.service.AndroidLogger
 import com.google.ipc.invalidation.external.client.android.service.Request;
 import com.google.ipc.invalidation.external.client.android.service.Response;
 import com.google.ipc.invalidation.external.client.android.service.Response.Status;
+import com.google.ipc.invalidation.external.client.contrib.MultiplexingGcmListener;
 import com.google.ipc.invalidation.external.client.types.AckHandle;
 import com.google.ipc.invalidation.external.client.types.ObjectId;
 import com.google.ipc.invalidation.ticl.InvalidationClientCore;
 import com.google.ipc.invalidation.ticl.PersistenceUtils;
-import com.google.ipc.invalidation.ticl.android.c2dm.C2DMessaging;
 import com.google.ipc.invalidation.util.TypedUtil;
 import com.google.protos.ipc.invalidation.Client.PersistentTiclState;
 
@@ -36,6 +36,7 @@ import android.accounts.Account;
 import android.content.Context;
 import android.content.Intent;
 import android.os.IBinder;
+import android.util.Base64;
 
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -48,24 +49,98 @@ import java.util.concurrent.atomic.AtomicReference;
  * executing within the scope of that service. The invalidation service will have an associated
  * {@link AndroidClientManager} that is managing the set of active (in memory) clients associated
  * with the service.  It processes requests from invalidation applications (as invocations on
- * the {@code InvalidationService} bound service interface along with C2DM registration and
- * activity (from {@link AndroidC2DMReceiver}.
+ * the {@code InvalidationService} bound service interface along with GCM registration and
+ * activity (from {@link ReceiverService}).
  *
  */
 public class AndroidInvalidationService extends AbstractInvalidationService {
+
+  /**
+   * Service that handles system GCM messages (with support from the base class). It receives
+   * intents for GCM registration, errors and message delivery. It does some basic processing and
+   * then forwards the messages to the {@link AndroidInvalidationService} for handling.
+   */
+  public static class ReceiverService extends MultiplexingGcmListener.AbstractListener {
+
+    /**
+     * Receiver for broadcasts by the multiplexed GCM service. It forwards them to
+     * AndroidMessageReceiverService.
+     */
+    public static class Receiver extends MultiplexingGcmListener.AbstractListener.Receiver {
+      /* This class is public so that it can be instantiated by the Android runtime. */
+      @Override
+      protected Class<?> getServiceClass() {
+        return ReceiverService.class;
+      }
+    }
+
+    public ReceiverService() {
+      super("MsgRcvrSvc");
+    }
+
+    @Override
+    public void onRegistered(String registrationId) {
+      logger.info("GCM Registration received: %s", registrationId);
+
+      // Upon receiving a new updated GCM ID, notify the invalidation service
+      Intent serviceIntent =
+          AndroidInvalidationService.createRegistrationIntent(this, registrationId);
+      startService(serviceIntent);
+    }
+
+    @Override
+    public void onUnregistered(String registrationId) {
+      logger.info("GCM unregistered");
+    }
+
+    @Override
+    protected void onMessage(Intent intent) {
+      // Extract expected fields and do basic syntactic checks (but no value checking)
+      // and forward the result on to the AndroidInvalidationService for processing.
+      Intent serviceIntent;
+      String clientKey = intent.getStringExtra(AndroidC2DMConstants.CLIENT_KEY_PARAM);
+      if (clientKey == null) {
+        logger.severe("GCM Intent does not contain client key value: %s", intent);
+        return;
+      }
+      String encodedData = intent.getStringExtra(AndroidC2DMConstants.CONTENT_PARAM);
+      String echoToken = intent.getStringExtra(AndroidC2DMConstants.ECHO_PARAM);
+      if (encodedData != null) {
+        try {
+          byte [] rawData = Base64.decode(encodedData, Base64.URL_SAFE);
+          serviceIntent = AndroidInvalidationService.createDataIntent(this, clientKey, echoToken,
+              rawData);
+        } catch (IllegalArgumentException exception) {
+          logger.severe("Unable to decode intent data", exception);
+          return;
+        }
+      } else {
+        logger.severe("Received mailbox intent: %s", intent);
+        return;
+      }
+      startService(serviceIntent);
+    }
+
+    @Override
+    protected void onDeletedMessages(int total) {
+      // This method must be implemented if we start using non-collapsable messages with GCM. For
+      // now, there is nothing to do.
+    }
+  }
+
   /** The last created instance, for testing. */
   
   static AtomicReference<AndroidInvalidationService> lastInstanceForTest =
       new AtomicReference<AndroidInvalidationService>();
 
   /** For tests only, the number of C2DM errors received. */
-  static final AtomicInteger numC2dmErrorsForTest = new AtomicInteger(0);
+  static final AtomicInteger numGcmErrorsForTest = new AtomicInteger(0);
 
   /** For tests only, the number of C2DM registration messages received. */
-  static final AtomicInteger numC2dmRegistrationForTest = new AtomicInteger(0);
+  static final AtomicInteger numGcmRegistrationForTest = new AtomicInteger(0);
 
   /** For tests only, the number of C2DM messages received. */
-  static final AtomicInteger numC2dmMessagesForTest = new AtomicInteger(0);
+  static final AtomicInteger numGcmMessagesForTest = new AtomicInteger(0);
 
   /** For tests only, the number of onCreate calls made. */
   static final AtomicInteger numCreateForTest = new AtomicInteger(0);
@@ -80,14 +155,14 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   private static String channelUrl = AndroidHttpConstants.CHANNEL_URL;
 
   // The AndroidInvalidationService handles a set of internal intents that are used for
-  // communication and coordination between the it and the C2DM handling service.   These
+  // communication and coordination between the it and the GCM handling service.   These
   // are documented here with action and extra names documented with package private
   // visibility since they are not intended for use by external components.
 
   /**
-   * Sent when a new C2DM registration activity occurs for the service. This can occur the first
+   * Sent when a new GCM registration activity occurs for the service. This can occur the first
    * time the service is run or at any subsequent time if the Android C2DM service decides to issue
-   * a new C2DM registration ID.
+   * a new GCM registration ID.
    */
   static final String REGISTRATION_ACTION = "register";
 
@@ -99,25 +174,25 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   static final String REGISTER_ID = "id";
 
   /**
-   * This intent is sent when a C2DM message targeting the service is received.
+   * This intent is sent when a GCM message targeting the service is received.
    */
   static final String MESSAGE_ACTION = "message";
 
   /**
-   * The name of the String extra that contains the client key for the C2DM message.
+   * The name of the String extra that contains the client key for the GCM message.
    */
   static final String MESSAGE_CLIENT_KEY = "clientKey";
 
   /**
-   * The name of the byte array extra that contains the encoded event for the C2DM message.
+   * The name of the byte array extra that contains the encoded event for the GCM message.
    */
   static final String MESSAGE_DATA = "data";
 
-  /** The name of the string extra that contains the echo token in the C2DM message. */
+  /** The name of the string extra that contains the echo token in the GCM message. */
   static final String MESSAGE_ECHO = "echo-token";
 
   /**
-   * This intent is sent when C2DM registration has failed irrevocably.
+   * This intent is sent when GCM registration has failed irrevocably.
    */
   static final String ERROR_ACTION = "error";
 
@@ -204,9 +279,6 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   /** The function for computing persistence state digests when rewriting them. */
   private final DigestFunction digestFn = new ObjectIdDigestUtils.Sha1DigestFunction();
 
-  /** Whether the C2DM manager service has acknowledged our registration. */
-  private boolean isRegisteredWithC2dm = false;
-
   public AndroidInvalidationService() {
     lastInstanceForTest.set(this);
   }
@@ -215,11 +287,6 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   public void onCreate() {
     synchronized (lock) {
       super.onCreate();
-
-      // Retrieve the current registration ID and normalize the empty string value (for none)
-      // to null
-      String registrationId = C2DMessaging.getRegistrationId(this);
-      logger.fine("Registration ID:" + (registrationId != null));
 
       // Create the client manager
       if (clientManager == null) {
@@ -231,12 +298,12 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
 
   @Override
   public int onStartCommand(Intent intent, int flags, int startId) {
-    // Process C2DM related messages from the AndroidC2DMReceiver service. We do not check isCreated
-    // here because this is part of the stop/start lifecycle, not bind/unbind.
+    // Process GCM related messages from the ReceiverService. We do not check isCreated here because
+    // this is part of the stop/start lifecycle, not bind/unbind.
     synchronized (lock) {
       logger.fine("Received action = %s", intent.getAction());
       if (MESSAGE_ACTION.equals(intent.getAction())) {
-        handleC2dmMessage(intent);
+        handleMessage(intent);
       } else if (REGISTRATION_ACTION.equals(intent.getAction())) {
         handleRegistration(intent);
       } else if (ERROR_ACTION.equals(intent.getAction())) {
@@ -265,11 +332,6 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
 
   @Override
   public IBinder onBind(Intent intent) {
-    // We register with C2DM here, rather than in onStartCommand or onCreate, because doing so
-    // in either of those functions would cause a loop. We know that a Ticl cannot possibly be
-    // created in the service without onBind being called, so this is safe. See the comment on
-    // registerWithC2dmIfNeeded for more details.
-    registerWithC2dmIfNeeded();
     return super.onBind(intent);
   }
 
@@ -396,16 +458,16 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
     }
   }
 
-  private void handleC2dmMessage(Intent intent) {
-    numC2dmMessagesForTest.incrementAndGet();
+  private void handleMessage(Intent intent) {
+    numGcmMessagesForTest.incrementAndGet();
     String clientKey = intent.getStringExtra(MESSAGE_CLIENT_KEY);
     AndroidClientProxy proxy = clientManager.get(clientKey);
 
     // Client is unknown or unstarted; we can't deliver the message, but we need to
     // remember that we dropped it if the client is known.
     if ((proxy == null) || !proxy.isStarted()) {
-      logger.warning("Dropping C2DM message for unknown or unstarted client: %s", clientKey);
-      handleC2dmMessageForUnstartedClient(proxy);
+      logger.warning("Dropping GCM message for unknown or unstarted client: %s", clientKey);
+      handleGcmMessageForUnstartedClient(proxy);
       return;
     }
 
@@ -424,14 +486,14 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   }
 
   /**
-   * Handles receipt of a C2DM message for a client that was unknown or not started. If the client
+   * Handles receipt of a GCM message for a client that was unknown or not started. If the client
    * was unknown, drops the message. If the client was not started, rewrites the client's
    * persistent state to have a last-message-sent-time of 0, ensuring that the client will
-   * send a heartbeat to the server when restarted. Since we drop the received C2DM message,
+   * send a heartbeat to the server when restarted. Since we drop the received GCM message,
    * the client will be disconnected by the invalidation pusher; this heartbeat ensures a
    * timely reconnection.
    */
-  private void handleC2dmMessageForUnstartedClient(AndroidClientProxy proxy) {
+  private void handleGcmMessageForUnstartedClient(AndroidClientProxy proxy) {
     if (proxy == null) {
       // Unknown client; nothing to do.
       return;
@@ -472,14 +534,13 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
   private void handleRegistration(Intent intent) {
     // Notify the client manager of the updated registration ID
     String id = intent.getStringExtra(REGISTER_ID);
-    clientManager.setRegistrationId(id);
-    numC2dmRegistrationForTest.incrementAndGet();
-    isRegisteredWithC2dm = true;
+    clientManager.informRegistrationIdChanged();
+    numGcmRegistrationForTest.incrementAndGet();
   }
 
   private void handleError(Intent intent) {
-    logger.severe("Unable to perform C2DM registration: %s", intent.getStringExtra(ERROR_MESSAGE));
-    numC2dmErrorsForTest.incrementAndGet();
+    logger.severe("Unable to perform GCM registration: %s", intent.getStringExtra(ERROR_MESSAGE));
+    numGcmErrorsForTest.incrementAndGet();
   }
 
   /**
@@ -493,23 +554,6 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
     } else {
       logger.fine("Not stopping service since %s clients remain (%s)",
           clientManager.getClientCount(), debugInfo);
-    }
-  }
-
-  /**
-   * If not {@link #isRegisteredWithC2dm}, registers for C2DM events with the manager. Must
-   * never be called from onStartCommand or onCreate, or a loop with the manager could result. This
-   * would happen because a delayed c2dm-registered event could cause the service to be started. As
-   * part of starting, it would re-register with c2dm, since {@code isRegisteredWithC2dm} would be
-   * false, then shut down (since no Ticls are in memory). The c2dm response to the registration
-   * would then restart the service, causing the cycle.
-   */
-  private void registerWithC2dmIfNeeded() {
-    // Register for C2DM events related to the invalidation client
-    if (!isRegisteredWithC2dm) {
-      logger.fine("Registering for C2DM events");
-      C2DMessaging.register(this, AndroidC2DMReceiver.class, AndroidC2DMConstants.CLIENT_KEY_PARAM,
-          null, false);
     }
   }
 
@@ -542,11 +586,6 @@ public class AndroidInvalidationService extends AbstractInvalidationService {
       }
       return clientState;
     }
-  }
-
-  /** Whether the service is registered with C2DM, for tests. */
-  boolean isRegisteredWithC2dmForTest() {
-    return isRegisteredWithC2dm;
   }
 
   /**

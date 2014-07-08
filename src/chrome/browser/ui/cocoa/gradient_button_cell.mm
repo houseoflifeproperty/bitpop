@@ -7,12 +7,15 @@
 #include <cmath>
 
 #include "base/logging.h"
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
+#import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
+#import "chrome/browser/ui/cocoa/rect_path_utils.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "grit/theme_resources.h"
-#import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSColor+Luminance.h"
+#import "ui/base/cocoa/nsgraphics_context_additions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @interface GradientButtonCell (Private)
@@ -359,11 +362,12 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     if (!showClickedGradient)
       hoverAlpha *= 0.6;
   } else {
-    backgroundImageColor =
-        themeProvider ?
-          themeProvider->GetNSImageColorNamed(IDR_THEME_BUTTON_BACKGROUND,
-                                              false) :
-          nil;
+    backgroundImageColor = nil;
+    if (themeProvider &&
+        themeProvider->HasCustomImage(IDR_THEME_BUTTON_BACKGROUND)) {
+      backgroundImageColor =
+          themeProvider->GetNSImageColorNamed(IDR_THEME_BUTTON_BACKGROUND);
+    }
     useThemeGradient = backgroundImageColor ? YES : NO;
   }
 
@@ -384,7 +388,8 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     // Set the phase to match window.
     NSRect trueRect = [controlView convertRect:cellFrame toView:nil];
     [[NSGraphicsContext currentContext]
-        setPatternPhase:NSMakePoint(NSMinX(trueRect), NSMaxY(trueRect))];
+        cr_setPatternPhase:NSMakePoint(NSMinX(trueRect), NSMaxY(trueRect))
+                   forView:controlView];
     [innerPath fill];
   } else {
     if (showClickedGradient) {
@@ -395,8 +400,8 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
       } else {
         clickedGradient = themeProvider ? themeProvider->GetNSGradient(
             active ?
-                ThemeService::GRADIENT_TOOLBAR_BUTTON_PRESSED :
-                ThemeService::GRADIENT_TOOLBAR_BUTTON_PRESSED_INACTIVE) :
+                ThemeProperties::GRADIENT_TOOLBAR_BUTTON_PRESSED :
+                ThemeProperties::GRADIENT_TOOLBAR_BUTTON_PRESSED_INACTIVE) :
             nil;
       }
       [clickedGradient drawInBezierPath:innerPath angle:90.0];
@@ -418,7 +423,7 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     // Draw the top inner highlight.
     NSAffineTransform* highlightTransform = [NSAffineTransform transform];
     [highlightTransform translateXBy:1 yBy:1];
-    scoped_nsobject<NSBezierPath> highlightPath([innerPath copy]);
+    base::scoped_nsobject<NSBezierPath> highlightPath([innerPath copy]);
     [highlightPath transformUsingAffineTransform:highlightTransform];
     [[NSColor colorWithCalibratedWhite:1.0 alpha:0.2] setStroke];
     [highlightPath stroke];
@@ -439,10 +444,10 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
                                        alpha:0.3 * outerStrokeAlphaMult_];
   } else {
     strokeColor = themeProvider ? themeProvider->GetNSColor(
-        active ? ThemeService::COLOR_TOOLBAR_BUTTON_STROKE :
-                 ThemeService::COLOR_TOOLBAR_BUTTON_STROKE_INACTIVE,
-        true) : [NSColor colorWithCalibratedWhite:0.0
-                                            alpha:0.3 * outerStrokeAlphaMult_];
+        active ? ThemeProperties::COLOR_TOOLBAR_BUTTON_STROKE :
+                 ThemeProperties::COLOR_TOOLBAR_BUTTON_STROKE_INACTIVE) :
+        [NSColor colorWithCalibratedWhite:0.0
+                                    alpha:0.3 * outerStrokeAlphaMult_];
   }
   [strokeColor setStroke];
 
@@ -536,17 +541,12 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     BOOL showClickedGradient = pressed ||
         (pulseState_ == gradient_button_cell::kPulsingContinuous);
 
-    // When first responder, turn the hover alpha all the way up.
-    CGFloat hoverAlpha = [self hoverAlpha];
-    if ([self showsFirstResponder])
-      hoverAlpha = 1.0;
-
     [self drawBorderAndFillForTheme:themeProvider
                         controlView:controlView
                           innerPath:innerPath
                 showClickedGradient:showClickedGradient
               showHighlightGradient:[self isHighlighted]
-                         hoverAlpha:hoverAlpha
+                         hoverAlpha:[self hoverAlpha]
                              active:active
                           cellFrame:cellFrame
                     defaultGradient:nil];
@@ -559,15 +559,32 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     NSRect borderRect, contentRect;
     NSDivideRect(cellFrame, &borderRect, &contentRect, lineWidth, NSMaxXEdge);
     NSColor* stroke = themeProvider ? themeProvider->GetNSColor(
-        active ? ThemeService::COLOR_TOOLBAR_BUTTON_STROKE :
-                 ThemeService::COLOR_TOOLBAR_BUTTON_STROKE_INACTIVE,
-        true) : [NSColor blackColor];
+        active ? ThemeProperties::COLOR_TOOLBAR_BUTTON_STROKE :
+                 ThemeProperties::COLOR_TOOLBAR_BUTTON_STROKE_INACTIVE) :
+        [NSColor blackColor];
 
     [[stroke colorWithAlphaComponent:0.2] set];
     NSRectFillUsingOperation(NSInsetRect(borderRect, 0, 2),
                              NSCompositeSourceOver);
   }
   [self drawInteriorWithFrame:innerFrame inView:controlView];
+
+  // Draws the blue focus ring.
+  if ([self showsFirstResponder]) {
+    gfx::ScopedNSGraphicsContextSaveGState scoped_state;
+    const CGFloat lineWidth = [controlView cr_lineWidth];
+    // insetX = 1.0 is used for the drawing of blue highlight so that this
+    // highlight won't be too near the bookmark toolbar itself, in case we
+    // draw bookmark buttons in bookmark toolbar.
+    rect_path_utils::FrameRectWithInset(rect_path_utils::RoundedCornerAll,
+                                        NSInsetRect(cellFrame, 0, lineWidth),
+                                        1.0,            // insetX
+                                        0.0,            // insetY
+                                        3.0,            // outerRadius
+                                        lineWidth * 2,  // lineWidth
+                                        [controlView
+                                            cr_keyboardFocusIndicatorColor]);
+  }
 }
 
 - (void)drawInteriorWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
@@ -584,13 +601,13 @@ static const NSTimeInterval kAnimationContinuousCycleDuration = 0.4;
     ThemeService* themeProvider = static_cast<ThemeService*>(
         [[controlView window] themeProvider]);
     NSColor* color = themeProvider ?
-        themeProvider->GetNSColorTint(ThemeService::TINT_BUTTONS, true) :
+        themeProvider->GetNSColorTint(ThemeProperties::TINT_BUTTONS) :
         [NSColor blackColor];
 
     if (isTemplate && themeProvider && themeProvider->UsingDefaultTheme()) {
-      scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+      base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
       [shadow.get() setShadowColor:themeProvider->GetNSColor(
-          ThemeService::COLOR_TOOLBAR_BEZEL, true)];
+          ThemeProperties::COLOR_TOOLBAR_BEZEL)];
       [shadow.get() setShadowOffset:NSMakeSize(0.0, -lineWidth)];
       [shadow setShadowBlurRadius:lineWidth];
       [shadow set];

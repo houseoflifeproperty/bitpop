@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include <cstdlib>
+
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/data_buffer.h"
 #include "media/base/seekable_buffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -22,18 +24,19 @@ class SeekableBufferTest : public testing::Test {
   static const int kWriteSize = 512;
 
   virtual void SetUp() {
-    // Setup seed.
-    int seed = static_cast<int32>(base::Time::Now().ToInternalValue());
-    srand(seed);
-    VLOG(1) << "Random seed: " << seed;
+    // Note: We use srand() and rand() rather than base::RandXXX() to improve
+    // unit test performance.  We don't need good random numbers, just
+    // something that generates "mixed data."
+    const unsigned int kKnownSeed = 0x98765432;
+    srand(kKnownSeed);
 
-    // Creates a test data.
+    // Create random test data samples.
     for (int i = 0; i < kDataSize; i++)
       data_[i] = static_cast<char>(rand());
   }
 
   int GetRandomInt(int maximum) {
-    return rand() % maximum + 1;
+    return rand() % (maximum + 1);
   }
 
   SeekableBuffer buffer_;
@@ -225,7 +228,7 @@ TEST_F(SeekableBufferTest, SeekBackward) {
 TEST_F(SeekableBufferTest, GetCurrentChunk) {
   const int kSeekSize = kWriteSize / 3;
 
-  scoped_refptr<DataBuffer> buffer(new DataBuffer(data_, kWriteSize));
+  scoped_refptr<DataBuffer> buffer = DataBuffer::CopyFrom(data_, kWriteSize);
 
   const uint8* data;
   int size;
@@ -233,13 +236,13 @@ TEST_F(SeekableBufferTest, GetCurrentChunk) {
 
   buffer_.Append(buffer.get());
   EXPECT_TRUE(buffer_.GetCurrentChunk(&data, &size));
-  EXPECT_EQ(data, buffer->GetData());
-  EXPECT_EQ(size, buffer->GetDataSize());
+  EXPECT_EQ(data, buffer->data());
+  EXPECT_EQ(size, buffer->data_size());
 
   buffer_.Seek(kSeekSize);
   EXPECT_TRUE(buffer_.GetCurrentChunk(&data, &size));
-  EXPECT_EQ(data, buffer->GetData() + kSeekSize);
-  EXPECT_EQ(size, buffer->GetDataSize() - kSeekSize);
+  EXPECT_EQ(data, buffer->data() + kSeekSize);
+  EXPECT_EQ(size, buffer->data_size() - kSeekSize);
 }
 
 TEST_F(SeekableBufferTest, SeekForward) {
@@ -328,12 +331,12 @@ TEST_F(SeekableBufferTest, GetTime) {
   EXPECT_EQ(kNoTimestamp().ToInternalValue(),
             buffer_.current_time().ToInternalValue());
 
-  scoped_refptr<DataBuffer> buffer(new DataBuffer(data_, kWriteSize));
+  scoped_refptr<DataBuffer> buffer = DataBuffer::CopyFrom(data_, kWriteSize);
 
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
-    buffer->SetTimestamp(base::TimeDelta::FromMicroseconds(
+    buffer->set_timestamp(base::TimeDelta::FromMicroseconds(
         tests[i].first_time_useconds));
-    buffer->SetDuration(base::TimeDelta::FromMicroseconds(
+    buffer->set_duration(base::TimeDelta::FromMicroseconds(
         tests[i].duration_useconds));
     buffer_.Append(buffer.get());
     EXPECT_TRUE(buffer_.Seek(tests[i].consume_bytes));

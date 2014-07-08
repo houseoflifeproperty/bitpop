@@ -6,25 +6,14 @@
  * @fileoverview Oobe network screen implementation.
  */
 
-cr.define('oobe', function() {
-  /**
-   * Creates a new oobe screen div.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var NetworkScreen = cr.ui.define('div');
-
-  /**
-   * Registers with Oobe.
-   */
-  NetworkScreen.register = function() {
-    var screen = $('connect');
-    NetworkScreen.decorate(screen);
-    Oobe.getInstance().registerScreen(screen);
-  };
-
-  NetworkScreen.prototype = {
-    __proto__: HTMLDivElement.prototype,
+login.createScreen('NetworkScreen', 'connect', function() {
+  return {
+    EXTERNAL_API: [
+      'enableContinueButton',
+      'setInputMethod',
+      'setTimezone',
+      'showError'
+    ],
 
     /**
      * Dropdown element for networks selection.
@@ -34,12 +23,16 @@ cr.define('oobe', function() {
     /** @override */
     decorate: function() {
       Oobe.setupSelect($('language-select'),
-                       templateData.languageList,
+                       loadTimeData.getValue('languageList'),
                        'networkOnLanguageChanged');
 
       Oobe.setupSelect($('keyboard-select'),
-                       templateData.inputMethodsList,
+                       loadTimeData.getValue('inputMethodsList'),
                        'networkOnInputMethodChanged');
+
+      Oobe.setupSelect($('timezone-select'),
+                       loadTimeData.getValue('timezoneList'),
+                       'networkOnTimezoneChanged');
 
       this.dropdown_ = $('networks-list');
       cr.ui.DropDown.decorate(this.dropdown_);
@@ -51,6 +44,7 @@ cr.define('oobe', function() {
 
     onBeforeHide: function() {
       cr.ui.DropDown.hide('networks-list');
+      this.enableContinueButton(false);
     },
 
     /**
@@ -58,7 +52,7 @@ cr.define('oobe', function() {
      * @type {string}
      */
     get header() {
-      return localStrings.getString('networkScreenTitle');
+      return loadTimeData.getString('networkScreenTitle');
     },
 
     /**
@@ -69,8 +63,10 @@ cr.define('oobe', function() {
       var buttons = [];
 
       var continueButton = this.ownerDocument.createElement('button');
+      continueButton.disabled = true;
       continueButton.id = 'continue-button';
-      continueButton.textContent = localStrings.getString('continueButton');
+      continueButton.textContent = loadTimeData.getString('continueButton');
+      continueButton.classList.add('preserve-disabled-state');
       continueButton.addEventListener('click', function(e) {
         chrome.send('networkOnExit');
         e.stopPropagation();
@@ -85,26 +81,51 @@ cr.define('oobe', function() {
      */
     get defaultControl() {
       return $('language-select');
+    },
+
+    /**
+     * Enables/disables continue button.
+     * @param {boolean} enable Should the button be enabled?
+     */
+    enableContinueButton: function(enable) {
+      $('continue-button').disabled = !enable;
+    },
+
+    /**
+     * Sets the current input method.
+     * @param {string} inputMethodId The ID of the input method to select.
+     */
+    setInputMethod: function(inputMethodId) {
+      option = $('keyboard-select').querySelector(
+          'option[value="' + inputMethodId + '"]');
+      if (option)
+        option.selected = true;
+    },
+
+    /**
+     * Sets the current timezone.
+     * @param {string} timezoneId The timezone ID to select.
+     */
+    setTimezone: function(timezoneId) {
+      $('timezone-select').value = timezoneId;
+    },
+
+    /**
+     * Shows the network error message.
+     * @param {string} message Message to be shown.
+     */
+    showError: function(message) {
+      var error = document.createElement('div');
+      var messageDiv = document.createElement('div');
+      messageDiv.className = 'error-message-bubble';
+      messageDiv.textContent = message;
+      error.appendChild(messageDiv);
+      error.setAttribute('role', 'alert');
+
+      $('bubble').showContentForElement($('networks-list'),
+                                        cr.ui.Bubble.Attachment.BOTTOM,
+                                        error);
     }
   };
-
-  /**
-   * Shows the network error message.
-   * @param {string} message Message to be shown.
-   */
-  NetworkScreen.showError = function(message) {
-    var error = document.createElement('div');
-    var messageDiv = document.createElement('div');
-    messageDiv.className = 'error-message';
-    messageDiv.textContent = message;
-    error.appendChild(messageDiv);
-
-    $('bubble').showContentForElement($('networks-list'),
-                                      cr.ui.Bubble.Attachment.BOTTOM,
-                                      error);
-  };
-
-  return {
-    NetworkScreen: NetworkScreen
-  };
 });
+

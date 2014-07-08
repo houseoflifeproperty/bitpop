@@ -9,14 +9,19 @@
 
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/extensions/extension_icon_image.h"
-#include "chrome/browser/ui/app_list/chrome_app_list_item.h"
-#include "sync/api/string_ordinal.h"
-#include "ui/base/models/simple_menu_model.h"
+#include "chrome/browser/ui/app_list/app_context_menu_delegate.h"
+#include "chrome/browser/ui/app_list/app_list_syncable_service.h"
+#include "chrome/browser/ui/extensions/extension_enable_flow_delegate.h"
+#include "ui/app_list/app_list_item.h"
+#include "ui/gfx/image/image_skia.h"
 
 class AppListControllerDelegate;
-class ExtensionResource;
+class ExtensionEnableFlow;
 class Profile;
-class SkBitmap;
+
+namespace app_list {
+class AppContextMenu;
+}
 
 namespace extensions {
 class ContextMenuMatcher;
@@ -24,21 +29,27 @@ class Extension;
 }
 
 // ExtensionAppItem represents an extension app in app list.
-class ExtensionAppItem : public ChromeAppListItem,
+class ExtensionAppItem : public app_list::AppListItem,
                          public extensions::IconImage::Observer,
-                         public ui::SimpleMenuModel::Delegate {
+                         public ExtensionEnableFlowDelegate,
+                         public app_list::AppContextMenuDelegate {
  public:
+  static const char kItemType[];
+
   ExtensionAppItem(Profile* profile,
-                   const extensions::Extension* extension,
-                   AppListControllerDelegate* controller);
+                   const app_list::AppListSyncableService::SyncItem* sync_item,
+                   const std::string& extension_id,
+                   const std::string& extension_name,
+                   const gfx::ImageSkia& installing_icon,
+                   bool is_platform_app);
   virtual ~ExtensionAppItem();
 
-  // Gets extension associated with this model. Returns NULL if extension
-  // no longer exists.
-  const extensions::Extension* GetExtension() const;
+  // Reload the title and icon from the underlying extension.
+  void Reload();
 
-  syncer::StringOrdinal GetPageOrdinal() const;
-  syncer::StringOrdinal GetAppLaunchOrdinal() const;
+  // Updates the app item's icon, if necessary adding an overlay and/or making
+  // it gray.
+  void UpdateIcon();
 
   // Update page and app launcher ordinals to put the app in between |prev| and
   // |next|. Note that |prev| and |next| could be NULL when the app is put at
@@ -46,49 +57,70 @@ class ExtensionAppItem : public ChromeAppListItem,
   void Move(const ExtensionAppItem* prev, const ExtensionAppItem* next);
 
   const std::string& extension_id() const { return extension_id_; }
+  const std::string& extension_name() const { return extension_name_; }
 
  private:
+  // Gets extension associated with this model. Returns NULL if extension
+  // no longer exists.
+  const extensions::Extension* GetExtension() const;
+
   // Loads extension icon.
   void LoadImage(const extensions::Extension* extension);
 
-  // Whether or not the app item has an overlay.
-  bool HasOverlay();
+  // Checks if extension is disabled and if enable flow should be started.
+  // Returns true if extension enable flow is started or there is already one
+  // running.
+  bool RunExtensionEnableFlow();
 
-  // Sets the app item's icon, if necessary adding an overlay.
-  void SetIconWithOverlay(const gfx::ImageSkia& icon);
+  // Private equivalent to Activate(), without refocus for already-running apps.
+  void Launch(int event_flags);
 
-  void ShowExtensionOptions();
-  void ShowExtensionDetails();
-  void StartExtensionUninstall();
+  // Whether or not the app item needs an overlay.
+  bool NeedsOverlay() const;
 
   // Overridden from extensions::IconImage::Observer:
   virtual void OnExtensionIconImageChanged(
       extensions::IconImage* image) OVERRIDE;
 
-  // Overridden from ui::SimpleMenuModel::Delegate:
-  virtual bool IsItemForCommandIdDynamic(int command_id) const OVERRIDE;
-  virtual string16 GetLabelForCommandId(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdChecked(int command_id) const OVERRIDE;
-  virtual bool IsCommandIdEnabled(int command_id) const OVERRIDE;
-  virtual bool GetAcceleratorForCommandId(
-      int command_id,
-      ui::Accelerator* acclelrator) OVERRIDE;
-  virtual void ExecuteCommand(int command_id) OVERRIDE;
+  // Overridden from ExtensionEnableFlowDelegate:
+  virtual void ExtensionEnableFlowFinished() OVERRIDE;
+  virtual void ExtensionEnableFlowAborted(bool user_initiated) OVERRIDE;
 
-  // Overridden from ChromeAppListItem:
+  // Overridden from AppListItem:
   virtual void Activate(int event_flags) OVERRIDE;
   virtual ui::MenuModel* GetContextMenuModel() OVERRIDE;
+  // Updates the icon if the overlay needs to be added/removed.
+  virtual void OnExtensionPreferenceChanged() OVERRIDE;
+  virtual const char* GetItemType() const OVERRIDE;
 
-  // Private equivalent to Activate(), without refocus for already-running apps.
-  void Launch(int event_flags);
+  // Overridden from app_list::AppContextMenuDelegate:
+  virtual void ExecuteLaunchCommand(int event_flags) OVERRIDE;
+
+  // Set the position from the extension ordering.
+  void UpdatePositionFromExtensionOrdering();
+
+  // Return the controller for the active desktop type.
+  AppListControllerDelegate* GetController();
 
   Profile* profile_;
   const std::string extension_id_;
-  AppListControllerDelegate* controller_;
 
   scoped_ptr<extensions::IconImage> icon_;
-  scoped_ptr<ui::SimpleMenuModel> context_menu_model_;
-  scoped_ptr<extensions::ContextMenuMatcher> extension_menu_items_;
+  scoped_ptr<app_list::AppContextMenu> context_menu_;
+  scoped_ptr<ExtensionEnableFlow> extension_enable_flow_;
+  AppListControllerDelegate* extension_enable_flow_controller_;
+
+  // Name to use for the extension if we can't access it.
+  std::string extension_name_;
+
+  // Icon for the extension if we can't access the installed extension.
+  gfx::ImageSkia installing_icon_;
+
+  // Whether or not this app is a platform app.
+  bool is_platform_app_;
+
+  // Whether this app item has an overlay.
+  bool has_overlay_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionAppItem);
 };

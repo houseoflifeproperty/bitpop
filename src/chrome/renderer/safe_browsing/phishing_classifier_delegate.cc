@@ -20,10 +20,10 @@
 #include "content/public/renderer/navigation_state.h"
 #include "content/public/renderer/render_thread.h"
 #include "content/public/renderer/render_view.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebURL.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "third_party/WebKit/public/platform/WebURL.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
 
 using content::DocumentState;
 using content::NavigationState;
@@ -143,7 +143,7 @@ void PhishingClassifierDelegate::OnStartPhishingDetection(const GURL& url) {
 }
 
 void PhishingClassifierDelegate::DidCommitProvisionalLoad(
-    WebKit::WebFrame* frame, bool is_new_navigation) {
+    blink::WebLocalFrame* frame, bool is_new_navigation) {
   // A new page is starting to load, so cancel classificaiton.
   //
   // TODO(bryner): We shouldn't need to cancel classification if the navigation
@@ -161,7 +161,7 @@ void PhishingClassifierDelegate::DidCommitProvisionalLoad(
   }
 }
 
-void PhishingClassifierDelegate::PageCaptured(string16* page_text,
+void PhishingClassifierDelegate::PageCaptured(base::string16* page_text,
                                               bool preliminary_capture) {
   if (preliminary_capture) {
     return;

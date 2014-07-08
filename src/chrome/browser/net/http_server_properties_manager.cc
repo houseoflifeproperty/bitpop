@@ -1,16 +1,19 @@
 // Copyright (c) 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
+
 #include "chrome/browser/net/http_server_properties_manager.h"
 
 #include "base/bind.h"
+#include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/stringprintf.h"
 #include "base/values.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_source.h"
@@ -36,9 +39,18 @@ const int64 kUpdatePrefsDelayMs = 5000;
 const int kMissingVersion = 0;
 
 // The version number of persisted http_server_properties.
-const int kVersionNumber = 1;
+const int kVersionNumber = 2;
 
 typedef std::vector<std::string> StringVector;
+
+// Persist 200 MRU AlternateProtocolHostPortPairs.
+const int kMaxAlternateProtocolHostsToPersist = 200;
+
+// Persist 200 MRU SpdySettingsHostPortPairs.
+const int kMaxSpdySettingsHostsToPersist = 200;
+
+// Persist 300 MRU SupportsSpdyServerHostPortPairs.
+const int kMaxSupportsSpdyServerHostsToPersist = 300;
 
 }  // namespace
 
@@ -64,10 +76,14 @@ HttpServerPropertiesManager::HttpServerPropertiesManager(
 }
 
 HttpServerPropertiesManager::~HttpServerPropertiesManager() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  io_weak_ptr_factory_.reset();
 }
 
 void HttpServerPropertiesManager::InitializeOnIOThread() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  io_weak_ptr_factory_.reset(
+      new base::WeakPtrFactory<HttpServerPropertiesManager>(this));
   http_server_properties_impl_.reset(new net::HttpServerPropertiesImpl());
 
   io_prefs_update_timer_.reset(
@@ -89,12 +105,31 @@ void HttpServerPropertiesManager::ShutdownOnUIThread() {
 }
 
 // static
-void HttpServerPropertiesManager::RegisterPrefs(PrefService* prefs) {
-  prefs->RegisterDictionaryPref(prefs::kHttpServerProperties,
-                                PrefService::UNSYNCABLE_PREF);
+void HttpServerPropertiesManager::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* prefs) {
+  prefs->RegisterDictionaryPref(
+      prefs::kHttpServerProperties,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+}
+
+// static
+void HttpServerPropertiesManager::SetVersion(
+    base::DictionaryValue* http_server_properties_dict,
+    int version_number) {
+  if (version_number < 0)
+    version_number =  kVersionNumber;
+  DCHECK_LE(version_number, kVersionNumber);
+  if (version_number <= kVersionNumber)
+    http_server_properties_dict->SetInteger("version", version_number);
 }
 
 // This is required for conformance with the HttpServerProperties interface.
+base::WeakPtr<net::HttpServerProperties>
+    HttpServerPropertiesManager::GetWeakPtr() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return io_weak_ptr_factory_->GetWeakPtr();
+}
+
 void HttpServerPropertiesManager::Clear() {
   Clear(base::Closure());
 }
@@ -107,7 +142,7 @@ void HttpServerPropertiesManager::Clear(const base::Closure& completion) {
 }
 
 bool HttpServerPropertiesManager::SupportsSpdy(
-    const net::HostPortPair& server) const {
+    const net::HostPortPair& server) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return http_server_properties_impl_->SupportsSpdy(server);
 }
@@ -122,14 +157,14 @@ void HttpServerPropertiesManager::SetSupportsSpdy(
 }
 
 bool HttpServerPropertiesManager::HasAlternateProtocol(
-    const net::HostPortPair& server) const {
+    const net::HostPortPair& server) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return http_server_properties_impl_->HasAlternateProtocol(server);
 }
 
 net::PortAlternateProtocolPair
 HttpServerPropertiesManager::GetAlternateProtocol(
-    const net::HostPortPair& server) const {
+    const net::HostPortPair& server) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return http_server_properties_impl_->GetAlternateProtocol(server);
 }
@@ -151,6 +186,27 @@ void HttpServerPropertiesManager::SetBrokenAlternateProtocol(
   ScheduleUpdatePrefsOnIO();
 }
 
+bool HttpServerPropertiesManager::WasAlternateProtocolRecentlyBroken(
+    const net::HostPortPair& server) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return http_server_properties_impl_->WasAlternateProtocolRecentlyBroken(
+      server);
+}
+
+void HttpServerPropertiesManager::ConfirmAlternateProtocol(
+    const net::HostPortPair& server) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  http_server_properties_impl_->ConfirmAlternateProtocol(server);
+  ScheduleUpdatePrefsOnIO();
+}
+
+void HttpServerPropertiesManager::ClearAlternateProtocol(
+    const net::HostPortPair& server) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  http_server_properties_impl_->ClearAlternateProtocol(server);
+  ScheduleUpdatePrefsOnIO();
+}
+
 const net::AlternateProtocolMap&
 HttpServerPropertiesManager::alternate_protocol_map() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
@@ -159,7 +215,7 @@ HttpServerPropertiesManager::alternate_protocol_map() const {
 
 const net::SettingsMap&
 HttpServerPropertiesManager::GetSpdySettings(
-    const net::HostPortPair& host_port_pair) const {
+    const net::HostPortPair& host_port_pair) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return http_server_properties_impl_->GetSpdySettings(host_port_pair);
 }
@@ -177,9 +233,16 @@ bool HttpServerPropertiesManager::SetSpdySetting(
   return persist;
 }
 
-void HttpServerPropertiesManager::ClearSpdySettings() {
+void HttpServerPropertiesManager::ClearSpdySettings(
+    const net::HostPortPair& host_port_pair) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-  http_server_properties_impl_->ClearSpdySettings();
+  http_server_properties_impl_->ClearSpdySettings(host_port_pair);
+  ScheduleUpdatePrefsOnIO();
+}
+
+void HttpServerPropertiesManager::ClearAllSpdySettings() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  http_server_properties_impl_->ClearAllSpdySettings();
   ScheduleUpdatePrefsOnIO();
 }
 
@@ -187,6 +250,18 @@ const net::SpdySettingsMap&
 HttpServerPropertiesManager::spdy_settings_map() const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return http_server_properties_impl_->spdy_settings_map();
+}
+
+void HttpServerPropertiesManager::SetServerNetworkStats(
+    const net::HostPortPair& host_port_pair,
+    NetworkStats stats) {
+  http_server_properties_impl_->SetServerNetworkStats(host_port_pair, stats);
+}
+
+const HttpServerPropertiesManager::NetworkStats*
+HttpServerPropertiesManager::GetServerNetworkStats(
+    const net::HostPortPair& host_port_pair) const {
+  return http_server_properties_impl_->GetServerNetworkStats(host_port_pair);
 }
 
 net::HttpPipelinedHostCapability
@@ -246,43 +321,35 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
   const base::DictionaryValue& http_server_properties_dict =
       *pref_service_->GetDictionary(prefs::kHttpServerProperties);
 
-  // Initialize version to kMissingVersion because there might not be a
-  // "version" key in the properties.
   int version = kMissingVersion;
-  http_server_properties_dict.GetIntegerWithoutPathExpansion(
-      "version", &version);
+  if (!http_server_properties_dict.GetIntegerWithoutPathExpansion(
+      "version", &version)) {
+    DVLOG(1) << "Missing version. Clearing all properties.";
+    return;
+  }
 
-  const base::DictionaryValue* servers_dict;
-  if (version == kMissingVersion) {
-    // If http_server_properties_dict has no "version" key and no "servers" key,
-    // then the properties for a given server are in
-    // http_server_properties_dict[server].
-    servers_dict = &http_server_properties_dict;
-  } else {
-    // The "new" format has "version" and "servers" keys. The properties for a
-    // given server is in http_server_properties_dict["servers"][server].
-    const base::DictionaryValue* servers_dict_temp = NULL;
-    if (!http_server_properties_dict.GetDictionaryWithoutPathExpansion(
-        "servers", &servers_dict_temp)) {
-      DVLOG(1) << "Malformed http_server_properties for servers";
-      return;
-    }
-    servers_dict = servers_dict_temp;
+  // The properties for a given server is in
+  // http_server_properties_dict["servers"][server].
+  const base::DictionaryValue* servers_dict = NULL;
+  if (!http_server_properties_dict.GetDictionaryWithoutPathExpansion(
+      "servers", &servers_dict)) {
+    DVLOG(1) << "Malformed http_server_properties for servers.";
+    return;
   }
 
   // String is host/port pair of spdy server.
   scoped_ptr<StringVector> spdy_servers(new StringVector);
-  scoped_ptr<net::SpdySettingsMap> spdy_settings_map(new net::SpdySettingsMap);
+  scoped_ptr<net::SpdySettingsMap> spdy_settings_map(
+      new net::SpdySettingsMap(kMaxSpdySettingsHostsToPersist));
   scoped_ptr<net::PipelineCapabilityMap> pipeline_capability_map(
       new net::PipelineCapabilityMap);
   scoped_ptr<net::AlternateProtocolMap> alternate_protocol_map(
-      new net::AlternateProtocolMap);
+      new net::AlternateProtocolMap(kMaxAlternateProtocolHostsToPersist));
 
-  for (base::DictionaryValue::key_iterator it = servers_dict->begin_keys();
-       it != servers_dict->end_keys();
-       ++it) {
+  for (base::DictionaryValue::Iterator it(*servers_dict); !it.IsAtEnd();
+       it.Advance()) {
     // Get server's host/pair.
-    const std::string& server_str = *it;
+    const std::string& server_str = it.key();
     net::HostPortPair server = net::HostPortPair::FromString(server_str);
     if (server.host().empty()) {
       DVLOG(1) << "Malformed http_server_properties for server: " << server_str;
@@ -291,8 +358,7 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
     }
 
     const base::DictionaryValue* server_pref_dict = NULL;
-    if (!servers_dict->GetDictionaryWithoutPathExpansion(
-        server_str, &server_pref_dict)) {
+    if (!it.value().GetAsDictionary(&server_pref_dict)) {
       DVLOG(1) << "Malformed http_server_properties server: " << server_str;
       detected_corrupted_prefs = true;
       continue;
@@ -306,37 +372,33 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
     }
 
     // Get SpdySettings.
-    DCHECK(!ContainsKey(*spdy_settings_map, server));
-    if (version == kVersionNumber) {
-      const base::DictionaryValue* spdy_settings_dict = NULL;
-      if (server_pref_dict->GetDictionaryWithoutPathExpansion(
-          "settings", &spdy_settings_dict)) {
-        net::SettingsMap settings_map;
-        for (base::DictionaryValue::key_iterator dict_it =
-             spdy_settings_dict->begin_keys();
-             dict_it != spdy_settings_dict->end_keys(); ++dict_it) {
-          const std::string& id_str = *dict_it;
-          int id = 0;
-          if (!base::StringToInt(id_str, &id)) {
-            DVLOG(1) << "Malformed id in SpdySettings for server: " <<
-                server_str;
-            NOTREACHED();
-            continue;
-          }
-          int value = 0;
-          if (!spdy_settings_dict->GetIntegerWithoutPathExpansion(id_str,
-                                                                  &value)) {
-            DVLOG(1) << "Malformed value in SpdySettings for server: " <<
-                server_str;
-            NOTREACHED();
-            continue;
-          }
-          net::SettingsFlagsAndValue flags_and_value(
-              net::SETTINGS_FLAG_PERSISTED, value);
-          settings_map[static_cast<net::SpdySettingsIds>(id)] = flags_and_value;
+    DCHECK(spdy_settings_map->Peek(server) == spdy_settings_map->end());
+    const base::DictionaryValue* spdy_settings_dict = NULL;
+    if (server_pref_dict->GetDictionaryWithoutPathExpansion(
+        "settings", &spdy_settings_dict)) {
+      net::SettingsMap settings_map;
+      for (base::DictionaryValue::Iterator dict_it(*spdy_settings_dict);
+           !dict_it.IsAtEnd(); dict_it.Advance()) {
+        const std::string& id_str = dict_it.key();
+        int id = 0;
+        if (!base::StringToInt(id_str, &id)) {
+          DVLOG(1) << "Malformed id in SpdySettings for server: " <<
+              server_str;
+          NOTREACHED();
+          continue;
         }
-        (*spdy_settings_map)[server] = settings_map;
+        int value = 0;
+        if (!dict_it.value().GetAsInteger(&value)) {
+          DVLOG(1) << "Malformed value in SpdySettings for server: " <<
+              server_str;
+          NOTREACHED();
+          continue;
+        }
+        net::SettingsFlagsAndValue flags_and_value(
+            net::SETTINGS_FLAG_PERSISTED, value);
+        settings_map[static_cast<net::SpdySettingsIds>(id)] = flags_and_value;
       }
+      spdy_settings_map->Put(server, settings_map);
     }
 
     int pipeline_capability = net::PIPELINE_UNKNOWN;
@@ -348,7 +410,8 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
     }
 
     // Get alternate_protocol server.
-    DCHECK(!ContainsKey(*alternate_protocol_map, server));
+    DCHECK(alternate_protocol_map->Peek(server) ==
+           alternate_protocol_map->end());
     const base::DictionaryValue* port_alternate_protocol_dict = NULL;
     if (!server_pref_dict->GetDictionaryWithoutPathExpansion(
         "alternate_protocol", &port_alternate_protocol_dict)) {
@@ -372,7 +435,7 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
       }
       net::AlternateProtocol protocol =
           net::AlternateProtocolFromString(protocol_str);
-      if (protocol > net::NUM_ALTERNATE_PROTOCOLS) {
+      if (!net::IsAlternateProtocolValid(protocol)) {
         DVLOG(1) << "Malformed Alternate-Protocol server: " << server_str;
         detected_corrupted_prefs = true;
         continue;
@@ -382,7 +445,7 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnUI() {
       port_alternate_protocol.port = port;
       port_alternate_protocol.protocol = protocol;
 
-      (*alternate_protocol_map)[server] = port_alternate_protocol;
+      alternate_protocol_map->Put(server, port_alternate_protocol);
     } while (false);
   }
 
@@ -409,17 +472,23 @@ void HttpServerPropertiesManager::UpdateCacheFromPrefsOnIO(
   // preferences. Update the cached data with new data from preferences.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
+  UMA_HISTOGRAM_COUNTS("Net.CountOfSpdyServers", spdy_servers->size());
   http_server_properties_impl_->InitializeSpdyServers(spdy_servers, true);
 
   // Clear the cached data and use the new spdy_settings from preferences.
+  UMA_HISTOGRAM_COUNTS("Net.CountOfSpdySettings", spdy_settings_map->size());
   http_server_properties_impl_->InitializeSpdySettingsServers(
       spdy_settings_map);
 
   // Clear the cached data and use the new Alternate-Protocol server list from
   // preferences.
+  UMA_HISTOGRAM_COUNTS("Net.CountOfAlternateProtocolServers",
+                       alternate_protocol_map->size());
   http_server_properties_impl_->InitializeAlternateProtocolServers(
       alternate_protocol_map);
 
+  UMA_HISTOGRAM_COUNTS("Net.CountOfPipelineCapableServers",
+                       pipeline_capability_map->size());
   http_server_properties_impl_->InitializePipelineCapabilities(
       pipeline_capability_map);
 
@@ -459,15 +528,30 @@ void HttpServerPropertiesManager::UpdatePrefsFromCacheOnIO(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   base::ListValue* spdy_server_list = new base::ListValue;
-  http_server_properties_impl_->GetSpdyServerList(spdy_server_list);
+  http_server_properties_impl_->GetSpdyServerList(
+      spdy_server_list, kMaxSupportsSpdyServerHostsToPersist);
 
-  net::SpdySettingsMap* spdy_settings_map = new net::SpdySettingsMap;
-  *spdy_settings_map = http_server_properties_impl_->spdy_settings_map();
+  net::SpdySettingsMap* spdy_settings_map =
+      new net::SpdySettingsMap(kMaxSpdySettingsHostsToPersist);
+  const net::SpdySettingsMap& main_map =
+      http_server_properties_impl_->spdy_settings_map();
+  int count = 0;
+  for (net::SpdySettingsMap::const_iterator it = main_map.begin();
+       it != main_map.end() && count < kMaxSpdySettingsHostsToPersist;
+       ++it, ++count) {
+    spdy_settings_map->Put(it->first, it->second);
+  }
 
   net::AlternateProtocolMap* alternate_protocol_map =
-      new net::AlternateProtocolMap;
-  *alternate_protocol_map =
+      new net::AlternateProtocolMap(kMaxAlternateProtocolHostsToPersist);
+  const net::AlternateProtocolMap& map =
       http_server_properties_impl_->alternate_protocol_map();
+  count = 0;
+  for (net::AlternateProtocolMap::const_iterator it = map.begin();
+       it != map.end() && count < kMaxAlternateProtocolHostsToPersist;
+       ++it, ++count) {
+    alternate_protocol_map->Put(it->first, it->second);
+  }
 
   net::PipelineCapabilityMap* pipeline_capability_map =
       new net::PipelineCapabilityMap;
@@ -541,8 +625,7 @@ void HttpServerPropertiesManager::UpdatePrefsOnUI(
   }
 
   // Add servers that have SpdySettings to server_pref_map.
-  for (net::SpdySettingsMap::iterator map_it =
-       spdy_settings_map->begin();
+  for (net::SpdySettingsMap::iterator map_it = spdy_settings_map->begin();
        map_it != spdy_settings_map->end(); ++map_it) {
     const net::HostPortPair& server = map_it->first;
 
@@ -557,13 +640,12 @@ void HttpServerPropertiesManager::UpdatePrefsOnUI(
 
   // Add AlternateProtocol servers to server_pref_map.
   for (net::AlternateProtocolMap::const_iterator map_it =
-       alternate_protocol_map->begin();
+           alternate_protocol_map->begin();
        map_it != alternate_protocol_map->end(); ++map_it) {
     const net::HostPortPair& server = map_it->first;
     const net::PortAlternateProtocolPair& port_alternate_protocol =
         map_it->second;
-    if (port_alternate_protocol.protocol < 0 ||
-        port_alternate_protocol.protocol >= net::NUM_ALTERNATE_PROTOCOLS) {
+    if (!net::IsAlternateProtocolValid(port_alternate_protocol.protocol)) {
       continue;
     }
 
@@ -605,7 +687,8 @@ void HttpServerPropertiesManager::UpdatePrefsOnUI(
     base::DictionaryValue* server_pref_dict = new base::DictionaryValue;
 
     // Save supports_spdy.
-    server_pref_dict->SetBoolean("supports_spdy", server_pref.supports_spdy);
+    if (server_pref.supports_spdy)
+      server_pref_dict->SetBoolean("supports_spdy", server_pref.supports_spdy);
 
     // Save SPDY settings.
     if (server_pref.settings_map) {
@@ -645,7 +728,7 @@ void HttpServerPropertiesManager::UpdatePrefsOnUI(
   }
 
   http_server_properties_dict.SetWithoutPathExpansion("servers", servers_dict);
-  http_server_properties_dict.SetInteger("version", kVersionNumber);
+  SetVersion(&http_server_properties_dict, kVersionNumber);
   setting_prefs_ = true;
   pref_service_->Set(prefs::kHttpServerProperties,
                      http_server_properties_dict);

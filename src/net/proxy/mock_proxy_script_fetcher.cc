@@ -5,9 +5,9 @@
 #include "net/proxy/mock_proxy_script_fetcher.h"
 
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string16.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/net_errors.h"
 
 namespace net {
@@ -20,7 +20,7 @@ MockProxyScriptFetcher::MockProxyScriptFetcher()
 MockProxyScriptFetcher::~MockProxyScriptFetcher() {}
 
 // ProxyScriptFetcher implementation.
-int MockProxyScriptFetcher::Fetch(const GURL& url, string16* text,
+int MockProxyScriptFetcher::Fetch(const GURL& url, base::string16* text,
                                   const CompletionCallback& callback) {
   DCHECK(!has_pending_request());
 
@@ -30,7 +30,7 @@ int MockProxyScriptFetcher::Fetch(const GURL& url, string16* text,
   pending_request_text_ = text;
 
   if (waiting_for_fetch_)
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
 
   return ERR_IO_PENDING;
 }
@@ -38,7 +38,7 @@ int MockProxyScriptFetcher::Fetch(const GURL& url, string16* text,
 void MockProxyScriptFetcher::NotifyFetchCompletion(
     int result, const std::string& ascii_text) {
   DCHECK(has_pending_request());
-  *pending_request_text_ = ASCIIToUTF16(ascii_text);
+  *pending_request_text_ = base::ASCIIToUTF16(ascii_text);
   CompletionCallback callback = pending_request_callback_;
   pending_request_callback_.Reset();
   callback.Run(result);
@@ -62,7 +62,7 @@ bool MockProxyScriptFetcher::has_pending_request() const {
 void MockProxyScriptFetcher::WaitUntilFetch() {
   DCHECK(!has_pending_request());
   waiting_for_fetch_ = true;
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
   waiting_for_fetch_ = false;
 }
 

@@ -7,18 +7,19 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
 #include "content/public/test/test_browser_thread.h"
-#include "net/base/cert_test_util.h"
-#include "net/base/ssl_info.h"
+#include "net/base/request_priority.h"
 #include "net/base/test_data_directory.h"
-#include "net/base/transport_security_state.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
+#include "net/http/transport_security_state.h"
+#include "net/ssl/ssl_info.h"
+#include "net/test/cert_test_util.h"
 #include "net/url_request/fraudulent_certificate_reporter.h"
 #include "net/url_request/url_request.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -123,8 +124,10 @@ class NotSendingTestReporter : public TestReporter {
 class MockURLRequest : public net::URLRequest {
  public:
   explicit MockURLRequest(net::URLRequestContext* context)
-      : net::URLRequest(GURL(""), NULL, context) {
-  }
+      : net::URLRequest(GURL(std::string()),
+                        net::DEFAULT_PRIORITY,
+                        NULL,
+                        context) {}
 
  private:
 };
@@ -136,15 +139,15 @@ class MockReporter : public ChromeFraudulentCertificateReporter {
   explicit MockReporter(net::URLRequestContext* request_context)
     : ChromeFraudulentCertificateReporter(request_context) {}
 
-  virtual net::URLRequest* CreateURLRequest(
+  virtual scoped_ptr<net::URLRequest> CreateURLRequest(
       net::URLRequestContext* context) OVERRIDE {
-    return new MockURLRequest(context);
+    return scoped_ptr<net::URLRequest>(new MockURLRequest(context));
   }
 
   virtual void SendReport(
       const std::string& hostname,
       const net::SSLInfo& ssl_info,
-      bool sni_available) {
+      bool sni_available) OVERRIDE {
     DCHECK(!hostname.empty());
     DCHECK(ssl_info.is_valid());
     ChromeFraudulentCertificateReporter::SendReport(hostname, ssl_info,
@@ -153,24 +156,21 @@ class MockReporter : public ChromeFraudulentCertificateReporter {
 };
 
 static void DoReportIsSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   SendingTestReporter reporter(&context);
   SSLInfo info = GetGoodSSLInfo();
   reporter.SendReport("mail.google.com", info, true);
 }
 
 static void DoReportIsNotSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   NotSendingTestReporter reporter(&context);
   SSLInfo info = GetBadSSLInfo();
   reporter.SendReport("www.example.com", info, true);
 }
 
 static void DoMockReportIsSent() {
-  ChromeURLRequestContext context(ChromeURLRequestContext::CONTEXT_TYPE_MAIN,
-                                  NULL);
+  ChromeURLRequestContext context;
   MockReporter reporter(&context);
   SSLInfo info = GetGoodSSLInfo();
   reporter.SendReport("mail.google.com", info, true);
@@ -185,21 +185,21 @@ TEST(ChromeFraudulentCertificateReporterTest, GoodBadInfo) {
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, ReportIsSent) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsSent));
   loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, MockReportIsSent) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoMockReportIsSent));
   loop.RunUntilIdle();
 }
 
 TEST(ChromeFraudulentCertificateReporterTest, ReportIsNotSent) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
   content::TestBrowserThread io_thread(BrowserThread::IO, &loop);
   loop.PostTask(FROM_HERE, base::Bind(&DoReportIsNotSent));
   loop.RunUntilIdle();

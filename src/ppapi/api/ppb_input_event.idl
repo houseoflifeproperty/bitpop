@@ -9,7 +9,8 @@
 
 label Chrome {
   M13 = 1.0,
-  M14 = 1.1
+  M14 = 1.1,
+  M34 = 1.2
 };
 
 /**
@@ -312,19 +313,17 @@ interface PPB_InputEvent {
    * the page.
    *
    * Note that synthetic mouse events will be generated from touch events if
-   * (and only if) the you do not request touch events.
+   * (and only if) you do not request touch events.
    *
    * When requesting input events through this function, the events will be
-   * delivered and <i>not</i> bubbled to the page. This means that even if you
-   * aren't interested in the message, no other parts of the page will get
-   * a crack at the message.
+   * delivered and <i>not</i> bubbled to the default handlers.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @param instance The <code>PP_Instance</code> of the instance requesting
    * the given events.
@@ -352,8 +351,8 @@ interface PPB_InputEvent {
    * By default, no input events are delivered. In most cases you would
    * register to receive events by calling RequestInputEvents(). In some cases,
    * however, you may wish to filter events such that they can be bubbled up
-   * to the DOM. In this case, register for those classes of events using
-   * this function instead of RequestInputEvents().
+   * to the default handlers. In this case, register for those classes of
+   * events using this function instead of RequestInputEvents().
    *
    * Filtering input events requires significantly more overhead than just
    * delivering them to the instance. As such, you should only request
@@ -363,11 +362,11 @@ interface PPB_InputEvent {
    * can have significant overhead.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @return <code>PP_OK</code> if the operation succeeded,
    * <code>PP_ERROR_BADARGUMENT</code> if instance is invalid, or
@@ -733,8 +732,8 @@ interface PPB_KeyboardInputEvent {
    * <code>PP_InputEvent_Modifier</code> flags.
    *
    * @param[in] key_code This value reflects the DOM KeyboardEvent
-   * <code>keyCode</code> field. Chrome populates this with the Windows-style
-   * Virtual Key code of the key.
+   * <code>keyCode</code> field, which is the Windows-style Virtual Key
+   * code of the key.
    *
    * @param[in] character_text This value represents the typed character as a
    * UTF-8 string.
@@ -742,12 +741,52 @@ interface PPB_KeyboardInputEvent {
    * @return A <code>PP_Resource</code> containing the new keyboard input
    * event.
    */
+  [deprecate=1.2]
   PP_Resource Create([in] PP_Instance instance,
                      [in] PP_InputEvent_Type type,
                      [in] PP_TimeTicks time_stamp,
                      [in] uint32_t modifiers,
                      [in] uint32_t key_code,
                      [in] PP_Var character_text);
+
+  /**
+   * Creates a keyboard input event with the given parameters. Normally you
+   * will get a keyboard event passed through the HandleInputEvent and will not
+   * need to create them, but some applications may want to create their own
+   * for internal use. The type must be one of the keyboard event types.
+   *
+   * @param[in] instance The instance for which this event occurred.
+   *
+   * @param[in] type A <code>PP_InputEvent_Type</code> identifying the type of
+   * input event.
+   *
+   * @param[in] time_stamp A <code>PP_TimeTicks</code> indicating the time
+   * when the event occurred.
+   *
+   * @param[in] modifiers A bit field combination of the
+   * <code>PP_InputEvent_Modifier</code> flags.
+   *
+   * @param[in] key_code This value reflects the DOM KeyboardEvent
+   * <code>keyCode</code> field, which is the Windows-style Virtual Key
+   * code of the key.
+   *
+   * @param[in] character_text This value represents the typed character as a
+   * UTF-8 string.
+   *
+   * @param[in] code This value represents the DOM3 |code| string that
+   * corresponds to the physical key being pressed.
+   *
+   * @return A <code>PP_Resource</code> containing the new keyboard input
+   * event.
+   */
+  [version=1.2]
+  PP_Resource Create([in] PP_Instance instance,
+                     [in] PP_InputEvent_Type type,
+                     [in] PP_TimeTicks time_stamp,
+                     [in] uint32_t modifiers,
+                     [in] uint32_t key_code,
+                     [in] PP_Var character_text,
+                     [in] PP_Var code);
 
   /**
    * IsKeyboardInputEvent() determines if a resource is a keyboard event.
@@ -781,6 +820,18 @@ interface PPB_KeyboardInputEvent {
    * undefined var.
    */
   PP_Var GetCharacterText([in] PP_Resource character_event);
+
+  /**
+   * GetCode() returns the DOM |code| field for this keyboard event, as
+   * defined in the DOM3 Events spec:
+   * http://www.w3.org/TR/DOM-Level-3-Events/
+   *
+   * @param[in] key_event The key event for which to return the key code.
+   *
+   * @return The string that contains the DOM |code| for the keyboard event.
+   */
+  [version=1.2]
+  PP_Var GetCode([in] PP_Resource key_event);
 };
 
 [assert_size(4)]
@@ -890,7 +941,7 @@ interface PPB_TouchInputEvent {
                                 [in] uint32_t index);
 
   /**
-   * Returns the touch-point with the spcified touch-id in the specified list.
+   * Returns the touch-point with the specified touch-id in the specified list.
    *
    * @param[in] resource A <code>PP_Resource</code> corresponding to a touch
    * event.
@@ -904,4 +955,133 @@ interface PPB_TouchInputEvent {
   PP_TouchPoint GetTouchById([in] PP_Resource resource,
                              [in] PP_TouchListType list,
                              [in] uint32_t touch_id);
+};
+
+[macro="PPB_IME_INPUT_EVENT_INTERFACE"]
+interface PPB_IMEInputEvent {
+  /**
+   * Create() creates an IME input event with the given parameters. Normally
+   * you will get an IME event passed through the <code>HandleInputEvent</code>
+   * and will not need to create them, but some applications may want to create
+   * their own for internal use.
+   *
+   * @param[in] instance The instance for which this event occurred.
+   *
+   * @param[in] type A <code>PP_InputEvent_Type</code> identifying the type of
+   * input event. The type must be one of the IME event types.
+   *
+   * @param[in] time_stamp A <code>PP_TimeTicks</code> indicating the time
+   * when the event occurred.
+   *
+   * @param[in] text The string returned by <code>GetText</code>.
+   *
+   * @param[in] segment_number The number returned by
+   * <code>GetSegmentNumber</code>.
+   *
+   * @param[in] segment_offsets The array of numbers returned by
+   * <code>GetSegmentOffset</code>. If <code>segment_number</code> is zero,
+   * the number of elements of the array should be zero. If
+   * <code>segment_number</code> is non-zero, the length of the array must be
+   * <code>segment_number</code> + 1.
+   *
+   * @param[in] target_segment The number returned by
+   * <code>GetTargetSegment</code>.
+   *
+   * @param[in] selection_start The start index returned by
+   * <code>GetSelection</code>.
+   *
+   * @param[in] selection_end The end index returned by
+   * <code>GetSelection</code>.
+   *
+   * @return A <code>PP_Resource</code> containing the new IME input event.
+   */
+  PP_Resource Create([in] PP_Instance instance,
+                     [in] PP_InputEvent_Type type,
+                     [in] PP_TimeTicks time_stamp,
+                     [in] PP_Var text,
+                     [in] uint32_t segment_number,
+                     [in] uint32_t[] segment_offsets,
+                     [in] int32_t target_segment,
+                     [in] uint32_t selection_start,
+                     [in] uint32_t selection_end);
+
+  /**
+   * IsIMEInputEvent() determines if a resource is an IME event.
+   *
+   * @param[in] resource A <code>PP_Resource</code> corresponding to an event.
+   *
+   * @return <code>PP_TRUE</code> if the given resource is a valid input event.
+   */
+  PP_Bool IsIMEInputEvent([in] PP_Resource resource);
+
+  /**
+   * GetText() returns the composition text as a UTF-8 string for the given IME
+   * event.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return A string var representing the composition text. For non-IME input
+   * events the return value will be an undefined var.
+   */
+  PP_Var GetText([in] PP_Resource ime_event);
+
+  /**
+   * GetSegmentNumber() returns the number of segments in the composition text.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return The number of segments. For events other than COMPOSITION_UPDATE,
+   * returns 0.
+   */
+  uint32_t GetSegmentNumber([in] PP_Resource ime_event);
+
+  /**
+   * GetSegmentOffset() returns the position of the index-th segmentation point
+   * in the composition text. The position is given by a byte-offset (not a
+   * character-offset) of the string returned by GetText(). It always satisfies
+   * 0=GetSegmentOffset(0) < ... < GetSegmentOffset(i) < GetSegmentOffset(i+1)
+   * < ... < GetSegmentOffset(GetSegmentNumber())=(byte-length of GetText()).
+   * Note that [GetSegmentOffset(i), GetSegmentOffset(i+1)) represents the range
+   * of the i-th segment, and hence GetSegmentNumber() can be a valid argument
+   * to this function instead of an off-by-1 error.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @param[in] index An integer indicating a segment.
+   *
+   * @return The byte-offset of the segmentation point. If the event is not
+   * COMPOSITION_UPDATE or index is out of range, returns 0.
+   */
+  uint32_t GetSegmentOffset([in] PP_Resource ime_event,
+                            [in] uint32_t index);
+
+  /**
+   * GetTargetSegment() returns the index of the current target segment of
+   * composition.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return An integer indicating the index of the target segment. When there
+   * is no active target segment, or the event is not COMPOSITION_UPDATE,
+   * returns -1.
+   */
+  int32_t GetTargetSegment([in] PP_Resource ime_event);
+
+  /**
+   * GetSelection() returns the range selected by caret in the composition text.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @param[out] start The start position of the current selection.
+   *
+   * @param[out] end The end position of the current selection.
+   */
+  void GetSelection([in] PP_Resource ime_event,
+                    [out] uint32_t start,
+                    [out] uint32_t end);
 };

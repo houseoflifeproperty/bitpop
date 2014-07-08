@@ -15,16 +15,34 @@
 #include "SkReader32.h"
 #include "SkStream.h"
 
+#include "SkAnnotation.h"
 #include "SkColorFilter.h"
 #include "SkDrawLooper.h"
+#include "SkImageFilter.h"
 #include "SkMaskFilter.h"
-#include "SkOrderedReadBuffer.h"
+#include "SkReadBuffer.h"
 #include "SkPathEffect.h"
 #include "SkRasterizer.h"
 #include "SkRRect.h"
 #include "SkShader.h"
 #include "SkTypeface.h"
 #include "SkXfermode.h"
+
+static SkFlattenable::Type paintflat_to_flattype(PaintFlats pf) {
+    static const uint8_t gEffectTypesInPaintFlatsOrder[] = {
+        SkFlattenable::kSkColorFilter_Type,
+        SkFlattenable::kSkDrawLooper_Type,
+        SkFlattenable::kSkImageFilter_Type,
+        SkFlattenable::kSkMaskFilter_Type,
+        SkFlattenable::kSkPathEffect_Type,
+        SkFlattenable::kSkRasterizer_Type,
+        SkFlattenable::kSkShader_Type,
+        SkFlattenable::kSkXfermode_Type,
+    };
+
+    SkASSERT((size_t)pf < SK_ARRAY_COUNT(gEffectTypesInPaintFlatsOrder));
+    return (SkFlattenable::Type)gEffectTypesInPaintFlatsOrder[pf];
+}
 
 static void set_paintflat(SkPaint* paint, SkFlattenable* obj, unsigned paintFlat) {
     SkASSERT(paintFlat < kCount_PaintFlats);
@@ -87,7 +105,7 @@ public:
         return fFlags;
     }
 
-    void setReader(SkOrderedReadBuffer* reader) {
+    void setReader(SkReadBuffer* reader) {
         fReader = reader;
         this->updateReader();
     }
@@ -104,7 +122,7 @@ public:
 
     void defFlattenable(PaintFlats pf, int index) {
         index--;
-        SkFlattenable* obj = fReader->readFlattenable();
+        SkFlattenable* obj = fReader->readFlattenable(paintflat_to_flattype(pf));
         if (fFlatArray.count() == index) {
             *fFlatArray.append() = obj;
         } else {
@@ -121,7 +139,12 @@ public:
         }
     }
 
+    /**
+     * Add a bitmap to the array of bitmaps, or replace an existing one.
+     * This is only used when in cross process mode without a shared heap.
+     */
     void addBitmap(int index) {
+        SkASSERT(shouldFlattenBitmaps(fFlags));
         SkBitmap* bm;
         if(fBitmaps.count() == index) {
             bm = SkNEW(SkBitmap);
@@ -129,14 +152,16 @@ public:
         } else {
             bm = fBitmaps[index];
         }
-        bm->unflatten(*fReader);
+        fReader->readBitmap(bm);
     }
 
     /**
-     * Override of SkBitmapHeapReader, so that SkOrderedReadBuffer can use
-     * these SkBitmaps for bitmap shaders.
+     * Override of SkBitmapHeapReader, so that SkReadBuffer can use
+     * these SkBitmaps for bitmap shaders. Used only in cross process mode
+     * without a shared heap.
      */
     virtual SkBitmap* getBitmap(int32_t index) const SK_OVERRIDE {
+        SkASSERT(shouldFlattenBitmaps(fFlags));
         return fBitmaps[index];
     }
 
@@ -151,7 +176,12 @@ public:
         this->updateReader();
     }
 
+    /**
+     * Access the shared heap. Only used in the case when bitmaps are not
+     * flattened.
+     */
     SkBitmapHeap* getSharedHeap() const {
+        SkASSERT(!shouldFlattenBitmaps(fFlags));
         return fSharedHeap;
     }
 
@@ -173,7 +203,7 @@ private:
         }
         bool crossProcess = SkToBool(fFlags & SkGPipeWriter::kCrossProcess_Flag);
         fReader->setFlags(SkSetClearMask(fReader->getFlags(), crossProcess,
-                                         SkFlattenableReadBuffer::kCrossProcess_Flag));
+                                         SkReadBuffer::kCrossProcess_Flag));
         if (crossProcess) {
             fReader->setFactoryArray(&fFactoryArray);
         } else {
@@ -186,7 +216,7 @@ private:
             fReader->setBitmapStorage(fSharedHeap);
         }
     }
-    SkOrderedReadBuffer*      fReader;
+    SkReadBuffer*             fReader;
     SkPaint                   fPaint;
     SkTDArray<SkFlattenable*> fFlatArray;
     SkTDArray<SkTypeface*>    fTypefaces;
@@ -200,15 +230,13 @@ private:
 
 ///////////////////////////////////////////////////////////////////////////////
 
-template <typename T> const T* skip(SkReader32* reader, int count = 1) {
-    SkASSERT(count >= 0);
+template <typename T> const T* skip(SkReader32* reader, size_t count = 1) {
     size_t size = sizeof(T) * count;
     SkASSERT(SkAlign4(size) == size);
     return reinterpret_cast<const T*>(reader->skip(size));
 }
 
-template <typename T> const T* skipAlign(SkReader32* reader, int count = 1) {
-    SkASSERT(count >= 0);
+template <typename T> const T* skipAlign(SkReader32* reader, size_t count = 1) {
     size_t size = SkAlign4(sizeof(T) * count);
     return reinterpret_cast<const T*>(reader->skip(size));
 }
@@ -366,6 +394,16 @@ static void drawRRect_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
     }
 }
 
+static void drawDRRect_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
+                          SkGPipeState* state) {
+    SkRRect outer, inner;
+    reader->readRRect(&outer);
+    reader->readRRect(&inner);
+    if (state->shouldDraw()) {
+        canvas->drawDRRect(outer, inner, state->paint());
+    }
+}
+
 static void drawPath_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
                         SkGPipeState* state) {
     SkPath path;
@@ -379,7 +417,7 @@ static void drawVertices_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
                             SkGPipeState* state) {
     unsigned flags = DrawOp_unpackFlags(op32);
 
-    SkCanvas::VertexMode mode = (SkCanvas::VertexMode)reader->readU32();
+    SkCanvas::VertexMode vmode = (SkCanvas::VertexMode)reader->readU32();
     int vertexCount = reader->readU32();
     const SkPoint* verts = skip<SkPoint>(reader, vertexCount);
 
@@ -393,8 +431,11 @@ static void drawVertices_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
         colors = skip<SkColor>(reader, vertexCount);
     }
 
-    // TODO: flatten/unflatten xfermodes
-    SkXfermode* xfer = NULL;
+    SkAutoTUnref<SkXfermode> xfer;
+    if (flags & kDrawVertices_HasXfermode_DrawOpFlag) {
+        SkXfermode::Mode mode = (SkXfermode::Mode)reader->readU32();
+        xfer.reset(SkXfermode::Create(mode));
+    }
 
     int indexCount = 0;
     const uint16_t* indices = NULL;
@@ -403,7 +444,7 @@ static void drawVertices_rp(SkCanvas* canvas, SkReader32* reader, uint32_t op32,
         indices = skipAlign<uint16_t>(reader, indexCount);
     }
     if (state->shouldDraw()) {
-        canvas->drawVertices(mode, vertexCount, verts, texs, colors, xfer,
+        canvas->drawVertices(vmode, vertexCount, verts, texs, colors, xfer,
                              indices, indexCount, state->paint());
     }
 }
@@ -557,10 +598,15 @@ static void drawBitmapRect_rp(SkCanvas* canvas, SkReader32* reader,
     } else {
         src = NULL;
     }
+    SkCanvas::DrawBitmapRectFlags dbmrFlags = SkCanvas::kNone_DrawBitmapRectFlag;
+    if (flags & kDrawBitmap_Bleed_DrawOpFlag) {
+        dbmrFlags = (SkCanvas::DrawBitmapRectFlags)(dbmrFlags|SkCanvas::kBleed_DrawBitmapRectFlag);
+    }
     const SkRect* dst = skip<SkRect>(reader);
     const SkBitmap* bitmap = holder.getBitmap();
     if (state->shouldDraw()) {
-        canvas->drawBitmapRectToRect(*bitmap, src, *dst, hasPaint ? &state->paint() : NULL);
+        canvas->drawBitmapRectToRect(*bitmap, src, *dst,
+                                     hasPaint ? &state->paint() : NULL, dbmrFlags);
     }
 }
 
@@ -614,6 +660,7 @@ static void paintOp_rp(SkCanvas*, SkReader32* reader, uint32_t op32,
             case kReset_PaintOp: p->reset(); break;
             case kFlags_PaintOp: p->setFlags(data); break;
             case kColor_PaintOp: p->setColor(reader->readU32()); break;
+            case kFilterLevel_PaintOp: p->setFilterLevel((SkPaint::FilterLevel)data); break;
             case kStyle_PaintOp: p->setStyle((SkPaint::Style)data); break;
             case kJoin_PaintOp: p->setStrokeJoin((SkPaint::Join)data); break;
             case kCap_PaintOp: p->setStrokeCap((SkPaint::Cap)data); break;
@@ -650,6 +697,20 @@ static void typeface_rp(SkCanvas*, SkReader32* reader, uint32_t,
     SkASSERT(!SkToBool(state->getFlags() & SkGPipeWriter::kCrossProcess_Flag));
     SkPaint* p = state->editPaint();
     p->setTypeface(static_cast<SkTypeface*>(reader->readPtr()));
+}
+
+static void annotation_rp(SkCanvas*, SkReader32* reader, uint32_t op32,
+                          SkGPipeState* state) {
+    SkPaint* p = state->editPaint();
+
+    const size_t size = DrawOp_unpackData(op32);
+    if (size > 0) {
+        SkReadBuffer buffer(reader->skip(size), size);
+        p->setAnnotation(SkAnnotation::Create(buffer))->unref();
+        SkASSERT(buffer.offset() == size);
+    } else {
+        p->setAnnotation(NULL);
+    }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -711,6 +772,7 @@ static const ReadProc gReadTable[] = {
     drawBitmapRect_rp,
     drawClear_rp,
     drawData_rp,
+    drawDRRect_rp,
     drawOval_rp,
     drawPaint_rp,
     drawPath_rp,
@@ -735,6 +797,8 @@ static const ReadProc gReadTable[] = {
 
     paintOp_rp,
     typeface_rp,
+    annotation_rp,
+
     def_Typeface_rp,
     def_PaintFlat_rp,
     def_Bitmap_rp,
@@ -769,12 +833,14 @@ SkGPipeState::~SkGPipeState() {
 SkGPipeReader::SkGPipeReader() {
     fCanvas = NULL;
     fState = NULL;
+    fProc = NULL;
 }
 
 SkGPipeReader::SkGPipeReader(SkCanvas* target) {
     fCanvas = NULL;
     this->setCanvas(target);
     fState = NULL;
+    fProc = NULL;
 }
 
 void SkGPipeReader::setCanvas(SkCanvas *target) {
@@ -801,7 +867,8 @@ SkGPipeReader::Status SkGPipeReader::playback(const void* data, size_t length,
     SkASSERT(SK_ARRAY_COUNT(gReadTable) == (kDone_DrawOp + 1));
 
     const ReadProc* table = gReadTable;
-    SkOrderedReadBuffer reader(data, length);
+    SkReadBuffer reader(data, length);
+    reader.setBitmapDecoder(fProc);
     SkCanvas* canvas = fCanvas;
     Status status = kEOF_Status;
 
@@ -837,5 +904,3 @@ SkGPipeReader::Status SkGPipeReader::playback(const void* data, size_t length,
     }
     return status;
 }
-
-

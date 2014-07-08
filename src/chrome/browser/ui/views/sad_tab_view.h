@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "chrome/browser/ui/sad_tab_types.h"
+#include "chrome/browser/ui/sad_tab.h"
 #include "ui/views/controls/button/button.h"
 #include "ui/views/controls/link_listener.h"
 #include "ui/views/view.h"
@@ -16,13 +16,9 @@ namespace content {
 class WebContents;
 }
 
-namespace gfx {
-class Font;
-}
-
 namespace views {
 class Label;
-class TextButton;
+class LabelButton;
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -33,7 +29,8 @@ class TextButton;
 //  "sad tab" in the browser window when a renderer is destroyed unnaturally.
 //
 ///////////////////////////////////////////////////////////////////////////////
-class SadTabView : public views::View,
+class SadTabView : public chrome::SadTab,
+                   public views::View,
                    public views::LinkListener,
                    public views::ButtonListener {
  public:
@@ -52,23 +49,23 @@ class SadTabView : public views::View,
 
  protected:
   // Overridden from views::View:
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    views::View* parent,
-                                    views::View* child) OVERRIDE;
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE;
 
  private:
-  views::Label* CreateLabel(const string16& text);
-  views::Link* CreateLink(const string16& text);
+  // Overridden from chrome::SadTab:
+  virtual void Show() OVERRIDE;
+  virtual void Close() OVERRIDE;
+
+  views::Label* CreateLabel(const base::string16& text);
+  views::Link* CreateLink(const base::string16& text);
 
   content::WebContents* web_contents_;
   chrome::SadTabKind kind_;
   bool painted_;
-  const gfx::Font& base_font_;
   views::Label* message_;
   views::Link* help_link_;
   views::Link* feedback_link_;
-  views::TextButton* reload_button_;
+  views::LabelButton* reload_button_;
 
   DISALLOW_COPY_AND_ASSIGN(SadTabView);
 };

@@ -18,9 +18,18 @@ class ShellBrowserContext;
 struct MainFunctionParams;
 }
 
+namespace net {
+class NetLog;
+}
+
+namespace wm {
+class WMState;
+}
+
 namespace ash {
 namespace shell {
 
+class ShellDelegateImpl;
 class WindowWatcher;
 
 class ShellBrowserMainParts : public content::BrowserMainParts {
@@ -32,6 +41,7 @@ class ShellBrowserMainParts : public content::BrowserMainParts {
   // Overridden from content::BrowserMainParts:
   virtual void PreMainMessageLoopStart() OVERRIDE;
   virtual void PostMainMessageLoopStart() OVERRIDE;
+  virtual void ToolkitInitialized() OVERRIDE;
   virtual void PreMainMessageLoopRun() OVERRIDE;
   virtual bool MainMessageLoopRun(int* result_code) OVERRIDE;
   virtual void PostMainMessageLoopRun() OVERRIDE;
@@ -41,8 +51,11 @@ class ShellBrowserMainParts : public content::BrowserMainParts {
   }
 
  private:
+  scoped_ptr<net::NetLog> net_log_;
   scoped_ptr<content::ShellBrowserContext> browser_context_;
   scoped_ptr<ash::shell::WindowWatcher> window_watcher_;
+  ShellDelegateImpl* delegate_;  // owned by Shell
+  scoped_ptr<wm::WMState> wm_state_;
 
   DISALLOW_COPY_AND_ASSIGN(ShellBrowserMainParts);
 };

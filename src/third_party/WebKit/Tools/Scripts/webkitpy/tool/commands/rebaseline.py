@@ -29,13 +29,19 @@
 import json
 import logging
 import optparse
+import re
 import sys
+import time
+import traceback
+import urllib
+import urllib2
 
 from webkitpy.common.checkout.baselineoptimizer import BaselineOptimizer
+from webkitpy.common.memoized import memoized
 from webkitpy.common.system.executive import ScriptError
 from webkitpy.layout_tests.controllers.test_result_writer import TestResultWriter
 from webkitpy.layout_tests.models import test_failures
-from webkitpy.layout_tests.models.test_expectations import TestExpectations, BASELINE_SUFFIX_LIST
+from webkitpy.layout_tests.models.test_expectations import TestExpectations, BASELINE_SUFFIX_LIST, SKIP
 from webkitpy.layout_tests.port import builders
 from webkitpy.layout_tests.port import factory
 from webkitpy.tool.multicommandtool import AbstractDeclarativeCommand
@@ -50,10 +56,7 @@ def _baseline_name(fs, test_name, suffix):
 
 
 class AbstractRebaseliningCommand(AbstractDeclarativeCommand):
-    # not overriding execute() - pylint: disable-msg=W0223
-
-    move_overwritten_baselines_option = optparse.make_option("--move-overwritten-baselines", action="store_true", default=False,
-        help="Move overwritten baselines elsewhere in the baseline path. This is for bringing up new ports.")
+    # not overriding execute() - pylint: disable=W0223
 
     no_optimize_option = optparse.make_option('--no-optimize', dest='optimize', action='store_false', default=True,
         help=('Do not optimize/de-dup the expectations after rebaselining (default is to de-dup automatically). '
@@ -71,24 +74,18 @@ class AbstractRebaseliningCommand(AbstractDeclarativeCommand):
         self._baseline_suffix_list = BASELINE_SUFFIX_LIST
 
 
-class RebaselineTest(AbstractRebaseliningCommand):
-    name = "rebaseline-test-internal"
-    help_text = "Rebaseline a single test from a buildbot. Only intended for use by other webkit-patch commands."
-
+class BaseInternalRebaselineCommand(AbstractRebaseliningCommand):
     def __init__(self):
-        super(RebaselineTest, self).__init__(options=[
-            self.no_optimize_option,
+        super(BaseInternalRebaselineCommand, self).__init__(options=[
             self.results_directory_option,
             self.suffixes_option,
             optparse.make_option("--builder", help="Builder to pull new baselines from"),
-            optparse.make_option("--move-overwritten-baselines-to", action="append", default=[],
-                help="Platform to move existing baselines to before rebaselining. This is for bringing up new ports."),
             optparse.make_option("--test", help="Test to rebaseline"),
             ])
-        self._scm_changes = {'add': []}
+        self._scm_changes = {'add': [], 'remove-lines': []}
 
-    def _results_url(self, builder_name):
-        return self._tool.buildbot_for_builder_name(builder_name).builder_with_name(builder_name).latest_layout_test_results_url()
+    def _add_to_scm(self, path):
+        self._scm_changes['add'].append(path)
 
     def _baseline_directory(self, builder_name):
         port = self._tool.port_factory.get_from_builder_name(builder_name)
@@ -97,14 +94,54 @@ class RebaselineTest(AbstractRebaseliningCommand):
             return self._tool.filesystem.join(port.layout_tests_dir(), 'platform', override_dir)
         return port.baseline_version_dir()
 
-    def _copy_existing_baseline(self, move_overwritten_baselines_to, test_name, suffix):
+    def _test_root(self, test_name):
+        return self._tool.filesystem.splitext(test_name)[0]
+
+    def _file_name_for_actual_result(self, test_name, suffix):
+        return "%s-actual.%s" % (self._test_root(test_name), suffix)
+
+    def _file_name_for_expected_result(self, test_name, suffix):
+        return "%s-expected.%s" % (self._test_root(test_name), suffix)
+
+
+class CopyExistingBaselinesInternal(BaseInternalRebaselineCommand):
+    name = "copy-existing-baselines-internal"
+    help_text = "Copy existing baselines down one level in the baseline order to ensure new baselines don't break existing passing platforms."
+
+    @memoized
+    def _immediate_predecessors_in_fallback(self, path_to_rebaseline):
+        port_names = self._tool.port_factory.all_port_names()
+        immediate_predecessors_in_fallback = []
+        for port_name in port_names:
+            port = self._tool.port_factory.get(port_name)
+            if not port.buildbot_archives_baselines():
+                continue
+            baseline_search_path = port.baseline_search_path()
+            try:
+                index = baseline_search_path.index(path_to_rebaseline)
+                if index:
+                    immediate_predecessors_in_fallback.append(self._tool.filesystem.basename(baseline_search_path[index - 1]))
+            except ValueError:
+                # index throw's a ValueError if the item isn't in the list.
+                pass
+        return immediate_predecessors_in_fallback
+
+    def _port_for_primary_baseline(self, baseline):
+        for port in [self._tool.port_factory.get(port_name) for port_name in self._tool.port_factory.all_port_names()]:
+            if self._tool.filesystem.basename(port.baseline_version_dir()) == baseline:
+                return port
+        raise Exception("Failed to find port for primary baseline %s." % baseline)
+
+    def _copy_existing_baseline(self, builder_name, test_name, suffix):
+        baseline_directory = self._baseline_directory(builder_name)
+        ports = [self._port_for_primary_baseline(baseline) for baseline in self._immediate_predecessors_in_fallback(baseline_directory)]
+
         old_baselines = []
         new_baselines = []
 
         # Need to gather all the baseline paths before modifying the filesystem since
         # the modifications can affect the results of port.expected_filename.
-        for platform in move_overwritten_baselines_to:
-            port = self._tool.port_factory.get(platform)
+        for port in ports:
             old_baseline = port.expected_filename(test_name, "." + suffix)
             if not self._tool.filesystem.exists(old_baseline):
                 _log.debug("No existing baseline for %s." % test_name)
@@ -113,6 +150,11 @@ class RebaselineTest(AbstractRebaseliningCommand):
             new_baseline = self._tool.filesystem.join(port.baseline_path(), self._file_name_for_expected_result(test_name, suffix))
             if self._tool.filesystem.exists(new_baseline):
                 _log.debug("Existing baseline at %s, not copying over it." % new_baseline)
+                continue
+
+            expectations = TestExpectations(port, [test_name])
+            if SKIP in expectations.get_expectations(test_name):
+                _log.debug("%s is skipped on %s." % (test_name, port.name()))
                 continue
 
             old_baselines.append(old_baseline)
@@ -128,69 +170,54 @@ class RebaselineTest(AbstractRebaseliningCommand):
             if not self._tool.scm().exists(new_baseline):
                 self._add_to_scm(new_baseline)
 
-    def _save_baseline(self, data, target_baseline):
+    def execute(self, options, args, tool):
+        for suffix in options.suffixes.split(','):
+            self._copy_existing_baseline(options.builder, options.test, suffix)
+        print json.dumps(self._scm_changes)
+
+
+class RebaselineTest(BaseInternalRebaselineCommand):
+    name = "rebaseline-test-internal"
+    help_text = "Rebaseline a single test from a buildbot. Only intended for use by other webkit-patch commands."
+
+    def _results_url(self, builder_name):
+        return self._tool.buildbot_for_builder_name(builder_name).builder_with_name(builder_name).latest_layout_test_results_url()
+
+    def _save_baseline(self, data, target_baseline, baseline_directory, test_name, suffix):
         if not data:
+            _log.debug("No baseline data to save.")
             return
+
         filesystem = self._tool.filesystem
         filesystem.maybe_make_directory(filesystem.dirname(target_baseline))
         filesystem.write_binary_file(target_baseline, data)
         if not self._tool.scm().exists(target_baseline):
             self._add_to_scm(target_baseline)
 
-    def _add_to_scm(self, path):
-        self._scm_changes['add'].append(path)
-
-    def _update_expectations_file(self, builder_name, test_name):
-        port = self._tool.port_factory.get_from_builder_name(builder_name)
-
-        # Since rebaseline-test-internal can be called multiple times in parallel,
-        # we need to ensure that we're not trying to update the expectations file
-        # concurrently as well.
-        # FIXME: We should rework the code to not need this; maybe just download
-        # the files in parallel and rebaseline local files serially?
-        try:
-            path = port.path_to_test_expectations_file()
-            lock = self._tool.make_file_lock(path + '.lock')
-            lock.acquire_lock()
-            expectations = TestExpectations(port, include_overrides=False)
-            for test_configuration in port.all_test_configurations():
-                if test_configuration.version == port.test_configuration().version:
-                    expectationsString = expectations.remove_configuration_from_test(test_name, test_configuration)
-
-            self._tool.filesystem.write_text_file(path, expectationsString)
-        finally:
-            lock.release_lock()
-
-    def _test_root(self, test_name):
-        return self._tool.filesystem.splitext(test_name)[0]
-
-    def _file_name_for_actual_result(self, test_name, suffix):
-        return "%s-actual.%s" % (self._test_root(test_name), suffix)
-
-    def _file_name_for_expected_result(self, test_name, suffix):
-        return "%s-expected.%s" % (self._test_root(test_name), suffix)
-
-    def _rebaseline_test(self, builder_name, test_name, move_overwritten_baselines_to, suffix, results_url):
+    def _rebaseline_test(self, builder_name, test_name, suffix, results_url):
         baseline_directory = self._baseline_directory(builder_name)
 
         source_baseline = "%s/%s" % (results_url, self._file_name_for_actual_result(test_name, suffix))
         target_baseline = self._tool.filesystem.join(baseline_directory, self._file_name_for_expected_result(test_name, suffix))
 
-        if move_overwritten_baselines_to:
-            self._copy_existing_baseline(move_overwritten_baselines_to, test_name, suffix)
-
         _log.debug("Retrieving %s." % source_baseline)
-        self._save_baseline(self._tool.web.get_binary(source_baseline, convert_404_to_None=True), target_baseline)
+        self._save_baseline(self._tool.web.get_binary(source_baseline, convert_404_to_None=True), target_baseline, baseline_directory, test_name, suffix)
 
     def _rebaseline_test_and_update_expectations(self, options):
+        port = self._tool.port_factory.get_from_builder_name(options.builder)
+        if (port.reference_files(options.test)):
+            _log.warning("Cannot rebaseline reftest: %s", options.test)
+            return
+
         if options.results_directory:
             results_url = 'file://' + options.results_directory
         else:
             results_url = self._results_url(options.builder)
         self._baseline_suffix_list = options.suffixes.split(',')
+
         for suffix in self._baseline_suffix_list:
-            self._rebaseline_test(options.builder, options.test, options.move_overwritten_baselines_to, suffix, results_url)
-        self._update_expectations_file(options.builder, options.test)
+            self._rebaseline_test(options.builder, options.test, suffix, results_url)
+        self._scm_changes['remove-lines'].append({'builder': options.builder, 'test': options.test})
 
     def execute(self, options, args, tool):
         self._rebaseline_test_and_update_expectations(options)
@@ -200,6 +227,7 @@ class RebaselineTest(AbstractRebaseliningCommand):
 class OptimizeBaselines(AbstractRebaseliningCommand):
     name = "optimize-baselines"
     help_text = "Reshuffles the baselines for the given tests to use as litte space on disk as possible."
+    show_in_main_help = True
     argument_names = "TEST_NAMES"
 
     def __init__(self):
@@ -228,6 +256,7 @@ class OptimizeBaselines(AbstractRebaseliningCommand):
 class AnalyzeBaselines(AbstractRebaseliningCommand):
     name = "analyze-baselines"
     help_text = "Analyzes the baselines for the given tests and prints results that are identical."
+    show_in_main_help = True
     argument_names = "TEST_NAMES"
 
     def __init__(self):
@@ -266,14 +295,34 @@ class AnalyzeBaselines(AbstractRebaseliningCommand):
 
 
 class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
-    # not overriding execute() - pylint: disable-msg=W0223
+    # not overriding execute() - pylint: disable=W0223
+
+    def __init__(self, options=None):
+        super(AbstractParallelRebaselineCommand, self).__init__(options=options)
+        self._builder_data = {}
+
+    def builder_data(self):
+        if not self._builder_data:
+            for builder_name in self._release_builders():
+                builder = self._tool.buildbot_for_builder_name(builder_name).builder_with_name(builder_name)
+                self._builder_data[builder_name] = builder.latest_layout_test_results()
+        return self._builder_data
+
+    # The release builders cycle much faster than the debug ones and cover all the platforms.
+    def _release_builders(self):
+        release_builders = []
+        for builder_name in builders.all_builder_names():
+            port = self._tool.port_factory.get_from_builder_name(builder_name)
+            if port.test_configuration().build_type == 'release':
+                release_builders.append(builder_name)
+        return release_builders
 
     def _run_webkit_patch(self, args, verbose):
         try:
             verbose_args = ['--verbose'] if verbose else []
             stderr = self._tool.executive.run_command([self._tool.path()] + verbose_args + args, cwd=self._tool.scm().checkout_root, return_stderr=True)
             for line in stderr.splitlines():
-                print >> sys.stderr, line
+                _log.warning(line)
         except ScriptError, e:
             _log.error(e)
 
@@ -287,7 +336,7 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
         builders_to_fallback_paths = {}
         for builder in builders_to_check:
             port = self._tool.port_factory.get_from_builder_name(builder)
-            if port.test_configuration().build_type == 'Release':
+            if port.test_configuration().build_type == 'release':
                 release_builders.add(builder)
             else:
                 debug_builders.add(builder)
@@ -298,34 +347,48 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
                 builders_to_fallback_paths[builder] = fallback_path
         return builders_to_fallback_paths.keys()
 
-    def _rebaseline_commands(self, test_list, options):
-
+    def _rebaseline_commands(self, test_prefix_list, options):
         path_to_webkit_patch = self._tool.path()
         cwd = self._tool.scm().checkout_root
-        commands = []
-        for test in test_list:
-            for builder in self._builders_to_fetch_from(test_list[test]):
-                suffixes = ','.join(test_list[test][builder])
-                cmd_line = [path_to_webkit_patch, 'rebaseline-test-internal', '--suffixes', suffixes, '--builder', builder, '--test', test]
-                if options.move_overwritten_baselines:
-                    move_overwritten_baselines_to = builders.move_overwritten_baselines_to(builder)
-                    for platform in move_overwritten_baselines_to:
-                        cmd_line.extend(['--move-overwritten-baselines-to', platform])
-                if options.results_directory:
-                    cmd_line.extend(['--results-directory', options.results_directory])
-                if options.verbose:
-                    cmd_line.append('--verbose')
-                commands.append(tuple([cmd_line, cwd]))
-        return commands
+        copy_baseline_commands = []
+        rebaseline_commands = []
+        port = self._tool.port_factory.get()
+
+        for test_prefix in test_prefix_list:
+            for test in port.tests([test_prefix]):
+                for builder in self._builders_to_fetch_from(test_prefix_list[test_prefix]):
+                    actual_failures_suffixes = self._suffixes_for_actual_failures(test, builder, test_prefix_list[test_prefix][builder])
+                    if not actual_failures_suffixes:
+                        continue
+
+                    suffixes = ','.join(actual_failures_suffixes)
+                    cmd_line = ['--suffixes', suffixes, '--builder', builder, '--test', test]
+                    if options.results_directory:
+                        cmd_line.extend(['--results-directory', options.results_directory])
+                    if options.verbose:
+                        cmd_line.append('--verbose')
+                    copy_baseline_commands.append(tuple([[path_to_webkit_patch, 'copy-existing-baselines-internal'] + cmd_line, cwd]))
+                    rebaseline_commands.append(tuple([[path_to_webkit_patch, 'rebaseline-test-internal'] + cmd_line, cwd]))
+        return copy_baseline_commands, rebaseline_commands
 
     def _files_to_add(self, command_results):
         files_to_add = set()
+        lines_to_remove = {}
         for output in [result[1].split('\n') for result in command_results]:
             file_added = False
             for line in output:
                 try:
                     if line:
-                        files_to_add.update(json.loads(line)['add'])
+                        parsed_line = json.loads(line)
+                        if 'add' in parsed_line:
+                            files_to_add.update(parsed_line['add'])
+                        if 'remove-lines' in parsed_line:
+                            for line_to_remove in parsed_line['remove-lines']:
+                                test = line_to_remove['test']
+                                builder = line_to_remove['builder']
+                                if test not in lines_to_remove:
+                                    lines_to_remove[test] = []
+                                lines_to_remove[test].append(builder)
                         file_added = True
                 except ValueError:
                     _log.debug('"%s" is not a JSON object, ignoring' % line)
@@ -333,38 +396,85 @@ class AbstractParallelRebaselineCommand(AbstractRebaseliningCommand):
             if not file_added:
                 _log.debug('Could not add file based off output "%s"' % output)
 
+        return list(files_to_add), lines_to_remove
 
-        return list(files_to_add)
-
-    def _optimize_baselines(self, test_list, verbose=False):
+    def _optimize_baselines(self, test_prefix_list, verbose=False):
         # We don't run this in parallel because modifying the SCM in parallel is unreliable.
-        for test in test_list:
+        for test in test_prefix_list:
             all_suffixes = set()
-            for builder in self._builders_to_fetch_from(test_list[test]):
-                all_suffixes.update(test_list[test][builder])
+            for builder in self._builders_to_fetch_from(test_prefix_list[test]):
+                all_suffixes.update(self._suffixes_for_actual_failures(test, builder, test_prefix_list[test][builder]))
             # FIXME: We should propagate the platform options as well.
             self._run_webkit_patch(['optimize-baselines', '--suffixes', ','.join(all_suffixes), test], verbose)
 
-    def _rebaseline(self, options, test_list):
-        for test, builders_to_check in sorted(test_list.items()):
-            _log.info("Rebaselining %s" % test)
-            for builder, suffixes in sorted(builders_to_check.items()):
-                _log.debug("  %s: %s" % (builder, ",".join(suffixes)))
+    def _update_expectations_files(self, lines_to_remove):
+        # FIXME: This routine is way too expensive. We're creating N ports and N TestExpectations
+        # objects and (re-)writing the actual expectations file N times, for each test we update.
+        # We should be able to update everything in memory, once, and then write the file out a single time.
+        for test in lines_to_remove:
+            for builder in lines_to_remove[test]:
+                port = self._tool.port_factory.get_from_builder_name(builder)
+                path = port.path_to_generic_test_expectations_file()
+                expectations = TestExpectations(port, include_overrides=False)
+                for test_configuration in port.all_test_configurations():
+                    if test_configuration.version == port.test_configuration().version:
+                        expectationsString = expectations.remove_configuration_from_test(test, test_configuration)
+                self._tool.filesystem.write_text_file(path, expectationsString)
 
-        commands = self._rebaseline_commands(test_list, options)
+            for port_name in self._tool.port_factory.all_port_names():
+                port = self._tool.port_factory.get(port_name)
+                generic_expectations = TestExpectations(port, tests=[test], include_overrides=False)
+                if self._port_skips_test(port, test, generic_expectations):
+                    for test_configuration in port.all_test_configurations():
+                        if test_configuration.version == port.test_configuration().version:
+                            expectationsString = generic_expectations.remove_configuration_from_test(test, test_configuration)
+                    generic_path = port.path_to_generic_test_expectations_file()
+                    self._tool.filesystem.write_text_file(generic_path, expectationsString)
+
+    def _port_skips_test(self, port, test, generic_expectations):
+        fs = port.host.filesystem
+        if port.default_smoke_test_only():
+            smoke_test_filename = fs.join(port.layout_tests_dir(), 'SmokeTests')
+            if fs.exists(smoke_test_filename) and test not in fs.read_text_file(smoke_test_filename):
+                return True
+
+        full_expectations = TestExpectations(port, tests=[test], include_overrides=True)
+        return (SKIP in full_expectations.get_expectations(test) and
+                SKIP not in generic_expectations.get_expectations(test))
+
+    def _run_in_parallel_and_update_scm(self, commands):
         command_results = self._tool.executive.run_in_parallel(commands)
-
         log_output = '\n'.join(result[2] for result in command_results).replace('\n\n', '\n')
         for line in log_output.split('\n'):
             if line:
                 print >> sys.stderr, line  # FIXME: Figure out how to log properly.
 
-        files_to_add = self._files_to_add(command_results)
+        files_to_add, lines_to_remove = self._files_to_add(command_results)
         if files_to_add:
             self._tool.scm().add_list(list(files_to_add))
+        if lines_to_remove:
+            self._update_expectations_files(lines_to_remove)
+
+    def _rebaseline(self, options, test_prefix_list):
+        for test, builders_to_check in sorted(test_prefix_list.items()):
+            _log.info("Rebaselining %s" % test)
+            for builder, suffixes in sorted(builders_to_check.items()):
+                _log.debug("  %s: %s" % (builder, ",".join(suffixes)))
+
+        copy_baseline_commands, rebaseline_commands = self._rebaseline_commands(test_prefix_list, options)
+        if copy_baseline_commands:
+            self._run_in_parallel_and_update_scm(copy_baseline_commands)
+        if rebaseline_commands:
+            self._run_in_parallel_and_update_scm(rebaseline_commands)
 
         if options.optimize:
-            self._optimize_baselines(test_list, options.verbose)
+            self._optimize_baselines(test_prefix_list, options.verbose)
+
+    def _suffixes_for_actual_failures(self, test, builder_name, existing_suffixes):
+        actual_results = self.builder_data()[builder_name].actual_results(test)
+        if not actual_results:
+            return set()
+        return set(existing_suffixes) & TestExpectations.suffixes_for_actual_expectations_string(actual_results)
 
 
 class RebaselineJson(AbstractParallelRebaselineCommand):
@@ -373,7 +483,6 @@ class RebaselineJson(AbstractParallelRebaselineCommand):
 
     def __init__(self,):
         super(RebaselineJson, self).__init__(options=[
-            self.move_overwritten_baselines_option,
             self.no_optimize_option,
             self.results_directory_option,
             ])
@@ -385,27 +494,21 @@ class RebaselineJson(AbstractParallelRebaselineCommand):
 class RebaselineExpectations(AbstractParallelRebaselineCommand):
     name = "rebaseline-expectations"
     help_text = "Rebaselines the tests indicated in TestExpectations."
+    show_in_main_help = True
 
     def __init__(self):
         super(RebaselineExpectations, self).__init__(options=[
-            self.move_overwritten_baselines_option,
             self.no_optimize_option,
             ] + self.platform_options)
-        self._test_list = None
-
-    def _update_expectations_files(self, port_name):
-        port = self._tool.port_factory.get(port_name)
-
-        expectations = TestExpectations(port)
-        for path in port.expectations_dict():
-            if self._tool.filesystem.exists(path):
-                self._tool.filesystem.write_text_file(path, expectations.remove_rebaselined_tests(expectations.get_rebaselining_failures(), path))
+        self._test_prefix_list = None
 
     def _tests_to_rebaseline(self, port):
         tests_to_rebaseline = {}
-        expectations = TestExpectations(port, include_overrides=True)
-        for test in expectations.get_rebaselining_failures():
-            tests_to_rebaseline[test] = TestExpectations.suffixes_for_expectations(expectations.get_expectations(test))
+        for path, value in port.expectations_dict().items():
+            expectations = TestExpectations(port, include_overrides=False, expectations_dict={path: value})
+            for test in expectations.get_rebaselining_failures():
+                suffixes = TestExpectations.suffixes_for_expectations(expectations.get_expectations(test))
+                tests_to_rebaseline[test] = suffixes or BASELINE_SUFFIX_LIST
         return tests_to_rebaseline
 
     def _add_tests_to_rebaseline_for_port(self, port_name):
@@ -419,64 +522,50 @@ class RebaselineExpectations(AbstractParallelRebaselineCommand):
 
         for test_name, suffixes in tests:
             _log.info("    %s (%s)" % (test_name, ','.join(suffixes)))
-            if test_name not in self._test_list:
-                self._test_list[test_name] = {}
-            self._test_list[test_name][builder_name] = suffixes
+            if test_name not in self._test_prefix_list:
+                self._test_prefix_list[test_name] = {}
+            self._test_prefix_list[test_name][builder_name] = suffixes
 
     def execute(self, options, args, tool):
         options.results_directory = None
-        self._test_list = {}
+        self._test_prefix_list = {}
         port_names = tool.port_factory.all_port_names(options.platform)
         for port_name in port_names:
             self._add_tests_to_rebaseline_for_port(port_name)
-        if not self._test_list:
+        if not self._test_prefix_list:
             _log.warning("Did not find any tests marked Rebaseline.")
             return
 
-        self._rebaseline(options, self._test_list)
-
-        for port_name in port_names:
-            self._update_expectations_files(port_name)
+        self._rebaseline(options, self._test_prefix_list)
 
 
 class Rebaseline(AbstractParallelRebaselineCommand):
     name = "rebaseline"
     help_text = "Rebaseline tests with results from the build bots. Shows the list of failing tests on the builders if no test names are provided."
+    show_in_main_help = True
     argument_names = "[TEST_NAMES]"
 
     def __init__(self):
         super(Rebaseline, self).__init__(options=[
-            self.move_overwritten_baselines_option,
             self.no_optimize_option,
             # FIXME: should we support the platform options in addition to (or instead of) --builders?
             self.suffixes_option,
+            self.results_directory_option,
             optparse.make_option("--builders", default=None, action="append", help="Comma-separated-list of builders to pull new baselines from (can also be provided multiple times)"),
             ])
 
     def _builders_to_pull_from(self):
-        chromium_buildbot_builder_names = []
-        webkit_buildbot_builder_names = []
-        for name in builders.all_builder_names():
-            if self._tool.port_factory.get_from_builder_name(name).is_chromium():
-                chromium_buildbot_builder_names.append(name)
-            else:
-                webkit_buildbot_builder_names.append(name)
-
-        titles = ["build.webkit.org bots", "build.chromium.org bots"]
-        lists = [webkit_buildbot_builder_names, chromium_buildbot_builder_names]
-
-        chosen_names = self._tool.user.prompt_with_multiple_lists("Which builder to pull results from:", titles, lists, can_choose_multiple=True)
+        chosen_names = self._tool.user.prompt_with_list("Which builder to pull results from:", self._release_builders(), can_choose_multiple=True)
         return [self._builder_with_name(name) for name in chosen_names]
 
     def _builder_with_name(self, name):
         return self._tool.buildbot_for_builder_name(name).builder_with_name(name)
 
-    def _tests_to_update(self, builder):
-        failing_tests = builder.latest_layout_test_results().tests_matching_failure_types([test_failures.FailureTextMismatch])
-        return self._tool.user.prompt_with_list("Which test(s) to rebaseline for %s:" % builder.name(), failing_tests, can_choose_multiple=True)
-
     def execute(self, options, args, tool):
-        options.results_directory = None
+        if not args:
+            _log.error("Must list tests to rebaseline.")
+            return
+
         if options.builders:
             builders_to_check = []
             for builder_names in options.builders:
@@ -484,17 +573,297 @@ class Rebaseline(AbstractParallelRebaselineCommand):
         else:
             builders_to_check = self._builders_to_pull_from()
 
-        test_list = {}
+        test_prefix_list = {}
         suffixes_to_update = options.suffixes.split(",")
 
         for builder in builders_to_check:
-            tests = args or self._tests_to_update(builder)
-            for test in tests:
-                if test not in test_list:
-                    test_list[test] = {}
-                test_list[test][builder.name()] = suffixes_to_update
+            for test in args:
+                if test not in test_prefix_list:
+                    test_prefix_list[test] = {}
+                test_prefix_list[test][builder.name()] = suffixes_to_update
 
         if options.verbose:
-            _log.debug("rebaseline-json: " + str(test_list))
+            _log.debug("rebaseline-json: " + str(test_prefix_list))
 
-        self._rebaseline(options, test_list)
+        self._rebaseline(options, test_prefix_list)
+
+
+class AutoRebaseline(AbstractParallelRebaselineCommand):
+    name = "auto-rebaseline"
+    help_text = "Rebaselines any NeedsRebaseline lines in TestExpectations that have cycled through all the bots."
+    AUTO_REBASELINE_BRANCH_NAME = "auto-rebaseline-temporary-branch"
+
+    # Rietveld uploader stinks. Limit the number of rebaselines in a given patch to keep upload from failing.
+    # FIXME: http://crbug.com/263676 Obviously we should fix the uploader here.
+    MAX_LINES_TO_REBASELINE = 50
+
+    def __init__(self):
+        super(AutoRebaseline, self).__init__(options=[
+            # FIXME: Remove this option.
+            self.no_optimize_option,
+            # FIXME: Remove this option.
+            self.results_directory_option,
+            optparse.make_option("--log-server", help="Server to send logs to.")
+            ])
+
+    def _log_to_server(self, log_server, query):
+        if not log_server:
+            return
+        urllib2.urlopen("http://" + log_server + "/updatelog", data=urllib.urlencode(query))
+
+    # Logs when there are no NeedsRebaseline lines in TestExpectations.
+    # These entries overwrite the existing log entry if the existing
+    # entry is also a noneedsrebaseline entry. This is special cased
+    # so that the log doesn't get bloated with entries like this
+    # when there are no tests that needs rebaselining.
+    def _log_no_needs_rebaseline_lines(self, log_server):
+        self._log_to_server(log_server, {
+            "noneedsrebaseline": "on",
+        })
+
+    # Uploaded log entries append to the existing entry unless the
+    # newentry flag is set. In that case it starts a new entry to
+    # start appending to. So, we need to call this on any fresh run
+    # that is going to end up logging stuff (i.e. any run that isn't
+    # a noneedsrebaseline run).
+    def _start_new_log_entry(self, log_server):
+        self._log_to_server(log_server, {
+            "log": "",
+            "newentry": "on",
+        })
+
+    def _configure_logging(self, log_server):
+        if not log_server:
+            return
+
+        def _log_alias(query):
+            self._log_to_server(log_server, query)
+
+        class LogHandler(logging.Handler):
+            def __init__(self):
+                logging.Handler.__init__(self)
+                self._records = []
+
+            # Since this does not have the newentry flag, it will append
+            # to the most recent log entry (i.e. the one created by
+            # _start_new_log_entry.
+            def emit(self, record):
+                _log_alias({
+                    "log": record.getMessage(),
+                })
+
+        handler = LogHandler()
+        _log.setLevel(logging.DEBUG)
+        handler.setLevel(logging.DEBUG)
+        _log.addHandler(handler)
+
+    def bot_revision_data(self, log_server):
+        revisions = []
+        for result in self.builder_data().values():
+            if result.run_was_interrupted():
+                self._start_new_log_entry(log_server)
+                _log.error("Can't rebaseline because the latest run on %s exited early." % result.builder_name())
+                return []
+            revisions.append({
+                "builder": result.builder_name(),
+                "revision": result.blink_revision(),
+            })
+        return revisions
+
+    def tests_to_rebaseline(self, tool, min_revision, print_revisions, log_server):
+        port = tool.port_factory.get()
+        expectations_file_path = port.path_to_generic_test_expectations_file()
+
+        tests = set()
+        revision = None
+        author = None
+        bugs = set()
+        has_any_needs_rebaseline_lines = False
+
+        for line in tool.scm().blame(expectations_file_path).split("\n"):
+            comment_index = line.find("#")
+            if comment_index == -1:
+                comment_index = len(line)
+            line_without_comments = re.sub(r"\s+", " ", line[:comment_index].strip())
+
+            if "NeedsRebaseline" not in line_without_comments:
+                continue
+
+            if not has_any_needs_rebaseline_lines:
+                self._start_new_log_entry(log_server)
+            has_any_needs_rebaseline_lines = True
+
+            parsed_line = re.match("^(\S*)[^(]*\((\S*).*?([^ ]*)\ \[[^[]*$", line_without_comments)
+
+            commit_hash = parsed_line.group(1)
+            svn_revision = tool.scm().svn_revision_from_git_commit(commit_hash)
+
+            test = parsed_line.group(3)
+            if print_revisions:
+                _log.info("%s is waiting for r%s" % (test, svn_revision))
+
+            if not svn_revision or svn_revision > min_revision:
+                continue
+
+            if revision and svn_revision != revision:
+                continue
+
+            if not revision:
+                revision = svn_revision
+                author = parsed_line.group(2)
+
+            bugs.update(re.findall("crbug\.com\/(\d+)", line_without_comments))
+            tests.add(test)
+
+            if len(tests) >= self.MAX_LINES_TO_REBASELINE:
+                _log.info("Too many tests to rebaseline in one patch. Doing the first %d." % self.MAX_LINES_TO_REBASELINE)
+                break
+
+        return tests, revision, author, bugs, has_any_needs_rebaseline_lines
+
+    def link_to_patch(self, revision):
+        return "http://src.chromium.org/viewvc/blink?view=revision&revision=" + str(revision)
+
+    def commit_message(self, author, revision, bugs):
+        bug_string = ""
+        if bugs:
+            bug_string = "BUG=%s\n" % ",".join(bugs)
+
+        return """Auto-rebaseline for r%s
+
+%s
+
+%sTBR=%s
+""" % (revision, self.link_to_patch(revision), bug_string, author)
+
+    def get_test_prefix_list(self, tests):
+        test_prefix_list = {}
+        lines_to_remove = {}
+
+        for builder_name in self._release_builders():
+            port_name = builders.port_name_for_builder_name(builder_name)
+            port = self._tool.port_factory.get(port_name)
+            expectations = TestExpectations(port, include_overrides=True)
+            for test in expectations.get_needs_rebaseline_failures():
+                if test not in tests:
+                    continue
+
+                if test not in test_prefix_list:
+                    lines_to_remove[test] = []
+                    test_prefix_list[test] = {}
+                lines_to_remove[test].append(builder_name)
+                test_prefix_list[test][builder_name] = BASELINE_SUFFIX_LIST
+
+        return test_prefix_list, lines_to_remove
+
+    def _run_git_cl_command(self, options, command):
+        subprocess_command = ['git', 'cl'] + command
+        if options.verbose:
+            subprocess_command.append('--verbose')
+        # Use call instead of run_command so that stdout doesn't get swallowed.
+        self._tool.executive.call(subprocess_command)
+
+    # FIXME: Move this somewhere more general.
+    def tree_status(self):
+        blink_tree_status_url = "http://blink-status.appspot.com/status"
+        status = urllib2.urlopen(blink_tree_status_url).read().lower()
+        if status.find('closed') != -1 or status == "0":
+            return 'closed'
+        elif status.find('open') != -1 or status == "1":
+            return 'open'
+        return 'unknown'
+
+    def execute(self, options, args, tool):
+        if tool.scm().executable_name == "svn":
+            _log.error("Auto rebaseline only works with a git checkout.")
+            return
+
+        if tool.scm().has_working_directory_changes():
+            _log.error("Cannot proceed with working directory changes. Clean working directory first.")
+            return
+
+        self._configure_logging(options.log_server)
+
+        revision_data = self.bot_revision_data(options.log_server)
+        if not revision_data:
+            return
+
+        min_revision = int(min([item["revision"] for item in revision_data]))
+        tests, revision, author, bugs, has_any_needs_rebaseline_lines = self.tests_to_rebaseline(tool, min_revision, print_revisions=options.verbose, log_server=options.log_server)
+
+        if not has_any_needs_rebaseline_lines:
+            self._log_no_needs_rebaseline_lines(options.log_server)
+            return
+
+        if options.verbose:
+            _log.info("Min revision across all bots is %s." % min_revision)
+            for item in revision_data:
+                _log.info("%s: r%s" % (item["builder"], item["revision"]))
+
+        if not tests:
+            _log.debug('No tests to rebaseline.')
+            return
+
+        if self.tree_status() == 'closed':
+            _log.info('Cannot proceed. Tree is closed.')
+            return
+
+        _log.info('Rebaselining %s for r%s by %s.' % (list(tests), revision, author))
+
+        test_prefix_list, lines_to_remove = self.get_test_prefix_list(tests)
+
+        try:
+            old_branch_name = tool.scm().current_branch()
+            tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
+            tool.scm().create_clean_branch(self.AUTO_REBASELINE_BRANCH_NAME)
+
+            # If the tests are passing everywhere, then this list will be empty. We don't need
+            # to rebaseline, but we'll still need to update TestExpectations.
+            if test_prefix_list:
+                self._rebaseline(options, test_prefix_list)
+            # If a test is not failing on the bot, we don't try to rebaseline it, but we still
+            # want to remove the NeedsRebaseline line.
+            self._update_expectations_files(lines_to_remove)
+
+            tool.scm().commit_locally_with_message(self.commit_message(author, revision, bugs))
+
+            # FIXME: Log the upload, pull and dcommit stdout/stderr to the log-server.
+
+            # FIXME: It would be nice if we could dcommit the patch without uploading, but still
+            # go through all the precommit hooks. For rebaselines with lots of files, uploading
+            # takes a long time and sometimes fails, but we don't want to commit if, e.g. the
+            # tree is closed.
+            self._run_git_cl_command(options, ['upload', '-f'])
+
+            # Uploading can take a very long time. Do another pull to make sure TestExpectations is up to date,
+            # so the dcommit can go through.
+            tool.executive.run_command(['git', 'pull'])
+
+            self._run_git_cl_command(options, ['dcommit', '-f'])
+        finally:
+            self._run_git_cl_command(options, ['set_close'])
+            tool.scm().ensure_cleanly_tracking_remote_master()
+            tool.scm().checkout_branch(old_branch_name)
+            tool.scm().delete_branch(self.AUTO_REBASELINE_BRANCH_NAME)
+
+
+class RebaselineOMatic(AbstractDeclarativeCommand):
+    name = "rebaseline-o-matic"
+    help_text = "Calls webkit-patch auto-rebaseline in a loop."
+    show_in_main_help = True
+
+    SLEEP_TIME_IN_SECONDS = 30
+
+    def execute(self, options, args, tool):
+        while True:
+            try:
+                tool.executive.run_command(['git', 'pull'])
+                rebaseline_command = [tool.filesystem.join(tool.scm().checkout_root, 'Tools', 'Scripts', 'webkit-patch'), 'auto-rebaseline', '--log-server', 'blinkrebaseline.appspot.com']
+                if options.verbose:
+                    rebaseline_command.append('--verbose')
+                # Use call instead of run_command so that stdout doesn't get swallowed.
+                tool.executive.call(rebaseline_command)
+            except:
+                traceback.print_exc(file=sys.stderr)
+
+            time.sleep(self.SLEEP_TIME_IN_SECONDS)

@@ -182,10 +182,10 @@ public class InvalidationTestService extends AbstractInvalidationService {
   }
 
   @Override
-  public void onStart(Intent intent, int startId) {
+  public int onStartCommand(Intent intent, int flags, int startId) {
     synchronized (LOCK) {
       logger.info("onStart");
-      super.onStart(intent, startId);
+      return super.onStartCommand(intent, flags, startId);
     }
   }
 

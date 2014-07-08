@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sync/about_sync_util.h"
 #include "chrome/browser/sync/profile_sync_service_mock.h"
@@ -18,15 +18,15 @@ using content::BrowserThread;
 namespace sync_ui_util {
 namespace {
 
-TEST(SyncUIUtilTest, ConstructAboutInformationWithUnrecoverableErrorTest) {
-  MessageLoopForUI message_loop;
+TEST(SyncUIUtilTestAbout, ConstructAboutInformationWithUnrecoverableErrorTest) {
+  base::MessageLoopForUI message_loop;
   content::TestBrowserThread ui_thread(BrowserThread::UI, &message_loop);
   scoped_ptr<Profile> profile(
       ProfileSyncServiceMock::MakeSignedInTestingProfile());
   NiceMock<ProfileSyncServiceMock> service(profile.get());
 
   // Will be released when the dictionary is destroyed
-  string16 str(ASCIIToUTF16("none"));
+  base::string16 str(base::ASCIIToUTF16("none"));
 
   browser_sync::SyncBackendHost::Status status;
 
@@ -41,7 +41,8 @@ TEST(SyncUIUtilTest, ConstructAboutInformationWithUnrecoverableErrorTest) {
   EXPECT_CALL(service, GetLastSyncedTimeString())
               .WillOnce(Return(str));
 
-  scoped_ptr<DictionaryValue> strings(ConstructAboutInformation(&service));
+  scoped_ptr<base::DictionaryValue> strings(
+      ConstructAboutInformation(&service));
 
   EXPECT_TRUE(strings->HasKey("unrecoverable_error_detected"));
 }

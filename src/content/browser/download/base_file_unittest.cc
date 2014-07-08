@@ -5,16 +5,16 @@
 #include "content/browser/download/base_file.h"
 
 #include "base/file_util.h"
+#include "base/files/file.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/test/test_file_util.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/browser/download_interrupt_reasons.h"
 #include "crypto/secure_hash.h"
-#include "net/base/file_stream.h"
-#include "net/base/mock_file_stream.h"
+#include "crypto/sha2.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
@@ -36,8 +36,7 @@ const base::TimeDelta kElapsedTimeDelta = base::TimeDelta::FromSeconds(
 
 class BaseFileTest : public testing::Test {
  public:
-  static const size_t kSha256HashLen = 32;
-  static const unsigned char kEmptySha256Hash[kSha256HashLen];
+  static const unsigned char kEmptySha256Hash[crypto::kSHA256Length];
 
   BaseFileTest()
       : expect_file_survives_(false),
@@ -49,13 +48,13 @@ class BaseFileTest : public testing::Test {
   virtual void SetUp() {
     ResetHash();
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    base_file_.reset(new BaseFile(FilePath(),
+    base_file_.reset(new BaseFile(base::FilePath(),
                                   GURL(),
                                   GURL(),
                                   0,
                                   false,
-                                  "",
-                                  scoped_ptr<net::FileStream>(),
+                                  std::string(),
+                                  base::File(),
                                   net::BoundNetLog()));
   }
 
@@ -66,12 +65,12 @@ class BaseFileTest : public testing::Test {
                 base_file_->bytes_so_far());
     }
 
-    FilePath full_path = base_file_->full_path();
+    base::FilePath full_path = base_file_->full_path();
 
     if (!expected_data_.empty() && !expected_error_) {
       // Make sure the data has been properly written to disk.
       std::string disk_data;
-      EXPECT_TRUE(file_util::ReadFileToString(full_path, &disk_data));
+      EXPECT_TRUE(base::ReadFileToString(full_path, &disk_data));
       EXPECT_EQ(expected_data_, disk_data);
     }
 
@@ -79,12 +78,12 @@ class BaseFileTest : public testing::Test {
     // thread checks inside it.
     base_file_.reset();
 
-    EXPECT_EQ(expect_file_survives_, file_util::PathExists(full_path));
+    EXPECT_EQ(expect_file_survives_, base::PathExists(full_path));
   }
 
   void ResetHash() {
     secure_hash_.reset(crypto::SecureHash::Create(crypto::SecureHash::SHA256));
-    memcpy(sha256_hash_, kEmptySha256Hash, kSha256HashLen);
+    memcpy(sha256_hash_, kEmptySha256Hash, crypto::kSHA256Length);
   }
 
   void UpdateHash(const char* data, size_t length) {
@@ -93,20 +92,20 @@ class BaseFileTest : public testing::Test {
 
   std::string GetFinalHash() {
     std::string hash;
-    secure_hash_->Finish(sha256_hash_, kSha256HashLen);
+    secure_hash_->Finish(sha256_hash_, crypto::kSHA256Length);
     hash.assign(reinterpret_cast<const char*>(sha256_hash_),
                 sizeof(sha256_hash_));
     return hash;
   }
 
   void MakeFileWithHash() {
-    base_file_.reset(new BaseFile(FilePath(),
+    base_file_.reset(new BaseFile(base::FilePath(),
                                   GURL(),
                                   GURL(),
                                   0,
                                   true,
-                                  "",
-                                  scoped_ptr<net::FileStream>(),
+                                  std::string(),
+                                  base::File(),
                                   net::BoundNetLog()));
   }
 
@@ -138,21 +137,21 @@ class BaseFileTest : public testing::Test {
 
   // Helper functions.
   // Create a file.  Returns the complete file path.
-  FilePath CreateTestFile() {
-    FilePath file_name;
-    BaseFile file(FilePath(),
+  base::FilePath CreateTestFile() {
+    base::FilePath file_name;
+    BaseFile file(base::FilePath(),
                   GURL(),
                   GURL(),
                   0,
                   false,
-                  "",
-                  scoped_ptr<net::FileStream>(),
+                  std::string(),
+                  base::File(),
                   net::BoundNetLog());
 
     EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
               file.Initialize(temp_dir_.path()));
     file_name = file.full_path();
-    EXPECT_NE(FilePath::StringType(), file_name.value());
+    EXPECT_NE(base::FilePath::StringType(), file_name.value());
 
     EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
               file.AppendDataToFile(kTestData4, kTestDataLength4));
@@ -164,15 +163,15 @@ class BaseFileTest : public testing::Test {
   }
 
   // Create a file with the specified file name.
-  void CreateFileWithName(const FilePath& file_name) {
-    EXPECT_NE(FilePath::StringType(), file_name.value());
+  void CreateFileWithName(const base::FilePath& file_name) {
+    EXPECT_NE(base::FilePath::StringType(), file_name.value());
     BaseFile duplicate_file(file_name,
                             GURL(),
                             GURL(),
                             0,
                             false,
-                            "",
-                            scoped_ptr<net::FileStream>(),
+                            std::string(),
+                            base::File(),
                             net::BoundNetLog());
     EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
               duplicate_file.Initialize(temp_dir_.path()));
@@ -197,8 +196,6 @@ class BaseFileTest : public testing::Test {
   }
 
  protected:
-  linked_ptr<net::testing::MockFileStream> mock_file_stream_;
-
   // BaseClass instance we are testing.
   scoped_ptr<BaseFile> base_file_;
 
@@ -214,7 +211,7 @@ class BaseFileTest : public testing::Test {
   // Hash calculator.
   scoped_ptr<crypto::SecureHash> secure_hash_;
 
-  unsigned char sha256_hash_[kSha256HashLen];
+  unsigned char sha256_hash_[crypto::kSHA256Length];
 
  private:
   // Keep track of what data should be saved to the disk file.
@@ -222,7 +219,7 @@ class BaseFileTest : public testing::Test {
   DownloadInterruptReason expected_error_;
 
   // Mock file thread to satisfy debug checks in BaseFile.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   BrowserThreadImpl file_thread_;
 };
 
@@ -233,16 +230,16 @@ const unsigned char BaseFileTest::kEmptySha256Hash[] = { 0 };
 // on all its accessors. This is actually a case that rarely happens
 // in production, where we would at least Initialize it.
 TEST_F(BaseFileTest, CreateDestroy) {
-  EXPECT_EQ(FilePath().value(), base_file_->full_path().value());
+  EXPECT_EQ(base::FilePath().value(), base_file_->full_path().value());
 }
 
 // Cancel the download explicitly.
 TEST_F(BaseFileTest, Cancel) {
   ASSERT_TRUE(InitializeFile());
-  EXPECT_TRUE(file_util::PathExists(base_file_->full_path()));
+  EXPECT_TRUE(base::PathExists(base_file_->full_path()));
   base_file_->Cancel();
-  EXPECT_FALSE(file_util::PathExists(base_file_->full_path()));
-  EXPECT_NE(FilePath().value(), base_file_->full_path().value());
+  EXPECT_FALSE(base::PathExists(base_file_->full_path()));
+  EXPECT_NE(base::FilePath().value(), base_file_->full_path().value());
 }
 
 // Write data to the file and detach it, so it doesn't get deleted
@@ -283,16 +280,16 @@ TEST_F(BaseFileTest, WriteWithHashAndDetach) {
 TEST_F(BaseFileTest, WriteThenRenameAndDetach) {
   ASSERT_TRUE(InitializeFile());
 
-  FilePath initial_path(base_file_->full_path());
-  EXPECT_TRUE(file_util::PathExists(initial_path));
-  FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
-  EXPECT_FALSE(file_util::PathExists(new_path));
+  base::FilePath initial_path(base_file_->full_path());
+  EXPECT_TRUE(base::PathExists(initial_path));
+  base::FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
+  EXPECT_FALSE(base::PathExists(new_path));
 
   ASSERT_TRUE(AppendDataToFile(kTestData1));
 
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE, base_file_->Rename(new_path));
-  EXPECT_FALSE(file_util::PathExists(initial_path));
-  EXPECT_TRUE(file_util::PathExists(new_path));
+  EXPECT_FALSE(base::PathExists(initial_path));
+  EXPECT_TRUE(base::PathExists(new_path));
 
   base_file_->Finish();
   base_file_->Detach();
@@ -389,17 +386,22 @@ TEST_F(BaseFileTest, MultipleWritesInterruptedWithHash) {
   // Finish the file.
   base_file_->Finish();
 
+  base::FilePath new_file_path(temp_dir_.path().Append(
+      base::FilePath(FILE_PATH_LITERAL("second_file"))));
+
+  ASSERT_TRUE(base::CopyFile(base_file_->full_path(), new_file_path));
+
   // Create another file
-  BaseFile second_file(FilePath(),
+  BaseFile second_file(new_file_path,
                        GURL(),
                        GURL(),
                        base_file_->bytes_so_far(),
                        true,
                        hash_state,
-                       scoped_ptr<net::FileStream>(),
+                       base::File(),
                        net::BoundNetLog());
   ASSERT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
-            second_file.Initialize(temp_dir_.path()));
+            second_file.Initialize(base::FilePath()));
   std::string data(kTestData3);
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
             second_file.AppendDataToFile(data.data(), data.size()));
@@ -416,17 +418,17 @@ TEST_F(BaseFileTest, MultipleWritesInterruptedWithHash) {
 TEST_F(BaseFileTest, WriteThenRename) {
   ASSERT_TRUE(InitializeFile());
 
-  FilePath initial_path(base_file_->full_path());
-  EXPECT_TRUE(file_util::PathExists(initial_path));
-  FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
-  EXPECT_FALSE(file_util::PathExists(new_path));
+  base::FilePath initial_path(base_file_->full_path());
+  EXPECT_TRUE(base::PathExists(initial_path));
+  base::FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
+  EXPECT_FALSE(base::PathExists(new_path));
 
   ASSERT_TRUE(AppendDataToFile(kTestData1));
 
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE,
             base_file_->Rename(new_path));
-  EXPECT_FALSE(file_util::PathExists(initial_path));
-  EXPECT_TRUE(file_util::PathExists(new_path));
+  EXPECT_FALSE(base::PathExists(initial_path));
+  EXPECT_TRUE(base::PathExists(new_path));
 
   base_file_->Finish();
 }
@@ -435,17 +437,17 @@ TEST_F(BaseFileTest, WriteThenRename) {
 TEST_F(BaseFileTest, RenameWhileInProgress) {
   ASSERT_TRUE(InitializeFile());
 
-  FilePath initial_path(base_file_->full_path());
-  EXPECT_TRUE(file_util::PathExists(initial_path));
-  FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
-  EXPECT_FALSE(file_util::PathExists(new_path));
+  base::FilePath initial_path(base_file_->full_path());
+  EXPECT_TRUE(base::PathExists(initial_path));
+  base::FilePath new_path(temp_dir_.path().AppendASCII("NewFile"));
+  EXPECT_FALSE(base::PathExists(new_path));
 
   ASSERT_TRUE(AppendDataToFile(kTestData1));
 
   EXPECT_TRUE(base_file_->in_progress());
   EXPECT_EQ(DOWNLOAD_INTERRUPT_REASON_NONE, base_file_->Rename(new_path));
-  EXPECT_FALSE(file_util::PathExists(initial_path));
-  EXPECT_TRUE(file_util::PathExists(new_path));
+  EXPECT_FALSE(base::PathExists(initial_path));
+  EXPECT_TRUE(base::PathExists(new_path));
 
   ASSERT_TRUE(AppendDataToFile(kTestData2));
 
@@ -458,11 +460,11 @@ TEST_F(BaseFileTest, RenameWithError) {
 
   // TestDir is a subdirectory in |temp_dir_| that we will make read-only so
   // that the rename will fail.
-  FilePath test_dir(temp_dir_.path().AppendASCII("TestDir"));
-  ASSERT_TRUE(file_util::CreateDirectory(test_dir));
+  base::FilePath test_dir(temp_dir_.path().AppendASCII("TestDir"));
+  ASSERT_TRUE(base::CreateDirectory(test_dir));
 
-  FilePath new_path(test_dir.AppendASCII("TestFile"));
-  EXPECT_FALSE(file_util::PathExists(new_path));
+  base::FilePath new_path(test_dir.AppendASCII("TestFile"));
+  EXPECT_FALSE(base::PathExists(new_path));
 
   {
     file_util::PermissionRestorer restore_permissions_for(test_dir);
@@ -474,41 +476,29 @@ TEST_F(BaseFileTest, RenameWithError) {
   base_file_->Finish();
 }
 
-// Write data to the file multiple times.
-TEST_F(BaseFileTest, MultipleWritesWithError) {
-  FilePath path;
-  ASSERT_TRUE(file_util::CreateTemporaryFile(&path));
-  // Create a new file stream.  scoped_ptr takes ownership and passes it to
-  // BaseFile; we use the pointer anyway and rely on the BaseFile not
-  // deleting the MockFileStream until the BaseFile is reset.
-  net::testing::MockFileStream* mock_file_stream(
-      new net::testing::MockFileStream(NULL));
-  scoped_ptr<net::FileStream> mock_file_stream_scoped_ptr(mock_file_stream);
+// Test that a failed write reports an error.
+TEST_F(BaseFileTest, WriteWithError) {
+  base::FilePath path;
+  ASSERT_TRUE(base::CreateTemporaryFile(&path));
 
-  ASSERT_EQ(0,
-            mock_file_stream->OpenSync(
-                path,
-                base::PLATFORM_FILE_OPEN_ALWAYS | base::PLATFORM_FILE_WRITE));
-
-  // Copy of mock_file_stream; we pass ownership and rely on the BaseFile
-  // not deleting it until it is reset.
-
-  base_file_.reset(new BaseFile(mock_file_stream->get_path(),
+  // Pass a file handle which was opened without the WRITE flag.
+  // This should result in an error when writing.
+  base::File file(path, base::File::FLAG_OPEN_ALWAYS | base::File::FLAG_READ);
+  base_file_.reset(new BaseFile(path,
                                 GURL(),
                                 GURL(),
                                 0,
                                 false,
-                                "",
-                                mock_file_stream_scoped_ptr.Pass(),
+                                std::string(),
+                                file.Pass(),
                                 net::BoundNetLog()));
   ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_TRUE(AppendDataToFile(kTestData2));
-  mock_file_stream->set_forced_error(net::ERR_ACCESS_DENIED);
+#if defined(OS_WIN)
   set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED);
-  ASSERT_FALSE(AppendDataToFile(kTestData3));
-  std::string hash;
-  EXPECT_FALSE(base_file_->GetHash(&hash));
+#elif defined (OS_POSIX)
+  set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
+#endif
+  ASSERT_FALSE(AppendDataToFile(kTestData1));
   base_file_->Finish();
 }
 
@@ -535,7 +525,7 @@ TEST_F(BaseFileTest, DuplicateBaseFile) {
 // Create a file and append to it.
 TEST_F(BaseFileTest, AppendToBaseFile) {
   // Create a new file.
-  FilePath existing_file_name = CreateTestFile();
+  base::FilePath existing_file_name = CreateTestFile();
 
   set_expected_data(kTestData4);
 
@@ -545,14 +535,14 @@ TEST_F(BaseFileTest, AppendToBaseFile) {
                                 GURL(),
                                 kTestDataLength4,
                                 false,
-                                "",
-                                scoped_ptr<net::FileStream>(),
+                                std::string(),
+                                base::File(),
                                 net::BoundNetLog()));
 
   ASSERT_TRUE(InitializeFile());
 
-  const FilePath file_name = base_file_->full_path();
-  EXPECT_NE(FilePath::StringType(), file_name.value());
+  const base::FilePath file_name = base_file_->full_path();
+  EXPECT_NE(base::FilePath::StringType(), file_name.value());
 
   // Write into the file.
   EXPECT_TRUE(AppendDataToFile(kTestData1));
@@ -565,7 +555,7 @@ TEST_F(BaseFileTest, AppendToBaseFile) {
 // Create a read-only file and attempt to write to it.
 TEST_F(BaseFileTest, ReadonlyBaseFile) {
   // Create a new file.
-  FilePath readonly_file_name = CreateTestFile();
+  base::FilePath readonly_file_name = CreateTestFile();
 
   // Restore permissions to the file when we are done with this test.
   file_util::PermissionRestorer restore_permissions(readonly_file_name);
@@ -579,16 +569,16 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
                                 GURL(),
                                 0,
                                 false,
-                                "",
-                                scoped_ptr<net::FileStream>(),
+                                std::string(),
+                                base::File(),
                                 net::BoundNetLog()));
 
   expect_in_progress_ = false;
   set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_ACCESS_DENIED);
   EXPECT_FALSE(InitializeFile());
 
-  const FilePath file_name = base_file_->full_path();
-  EXPECT_NE(FilePath::StringType(), file_name.value());
+  const base::FilePath file_name = base_file_->full_path();
+  EXPECT_NE(base::FilePath::StringType(), file_name.value());
 
   // Write into the file.
   set_expected_error(DOWNLOAD_INTERRUPT_REASON_FILE_FAILED);
@@ -600,51 +590,15 @@ TEST_F(BaseFileTest, ReadonlyBaseFile) {
 }
 
 TEST_F(BaseFileTest, IsEmptyHash) {
-  std::string empty(BaseFile::kSha256HashLen, '\x00');
+  std::string empty(crypto::kSHA256Length, '\x00');
   EXPECT_TRUE(BaseFile::IsEmptyHash(empty));
-  std::string not_empty(BaseFile::kSha256HashLen, '\x01');
+  std::string not_empty(crypto::kSHA256Length, '\x01');
   EXPECT_FALSE(BaseFile::IsEmptyHash(not_empty));
-  EXPECT_FALSE(BaseFile::IsEmptyHash(""));
-}
+  EXPECT_FALSE(BaseFile::IsEmptyHash(std::string()));
 
-// Test that calculating speed after no writes.
-TEST_F(BaseFileTest, SpeedWithoutWrite) {
-  ASSERT_TRUE(InitializeFile());
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  ASSERT_EQ(0, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after a single write.
-TEST_F(BaseFileTest, SpeedAfterSingleWrite) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  int64 expected_speed = kTestDataLength1 / kElapsedTimeSeconds;
-  ASSERT_EQ(expected_speed, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after a multiple writes.
-TEST_F(BaseFileTest, SpeedAfterMultipleWrite) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_TRUE(AppendDataToFile(kTestData2));
-  ASSERT_TRUE(AppendDataToFile(kTestData3));
-  ASSERT_TRUE(AppendDataToFile(kTestData4));
-  base::TimeTicks current = StartTick() + kElapsedTimeDelta;
-  int64 expected_speed = (kTestDataLength1 + kTestDataLength2 +
-      kTestDataLength3 + kTestDataLength4) / kElapsedTimeSeconds;
-  ASSERT_EQ(expected_speed, CurrentSpeedAtTime(current));
-  base_file_->Finish();
-}
-
-// Test that calculating speed after no delay - should not divide by 0.
-TEST_F(BaseFileTest, SpeedAfterNoElapsedTime) {
-  ASSERT_TRUE(InitializeFile());
-  ASSERT_TRUE(AppendDataToFile(kTestData1));
-  ASSERT_EQ(0, CurrentSpeedAtTime(StartTick()));
-  base_file_->Finish();
+  std::string also_not_empty = empty;
+  also_not_empty[crypto::kSHA256Length - 1] = '\x01';
+  EXPECT_FALSE(BaseFile::IsEmptyHash(also_not_empty));
 }
 
 // Test that a temporary file is created in the default download directory.
@@ -657,9 +611,8 @@ TEST_F(BaseFileTest, CreatedInDefaultDirectory) {
   // to be expanded into a path with long names. Thus temp_dir.path() might not
   // be a string-wise match to base_file_->full_path().DirName() even though
   // they are in the same directory.
-  FilePath temp_file;
-  ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                  &temp_file));
+  base::FilePath temp_file;
+  ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &temp_file));
   ASSERT_FALSE(temp_file.empty());
   EXPECT_STREQ(temp_file.DirName().value().c_str(),
                base_file_->full_path().DirName().value().c_str());

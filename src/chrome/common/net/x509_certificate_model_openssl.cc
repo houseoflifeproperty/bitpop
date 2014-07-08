@@ -9,8 +9,8 @@
 #include <openssl/x509v3.h>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "net/base/x509_util_openssl.h"
+#include "base/strings/string_number_conversions.h"
+#include "net/cert/x509_util_openssl.h"
 
 namespace x509_util = net::x509_util;
 
@@ -37,7 +37,7 @@ std::string GetKeyValuesFromName(X509_NAME* name) {
   return ret;
 }
 
-}  // namepsace
+}  // namespace
 
 namespace x509_certificate_model {
 
@@ -67,7 +67,7 @@ std::string GetVersion(net::X509Certificate::OSCertHandle cert_handle) {
 
 net::CertType GetType(X509Certificate::OSCertHandle os_cert) {
   // TODO(bulach): implement me.
-  return net::UNKNOWN_CERT;
+  return net::OTHER_CERT;
 }
 
 std::string GetEmailAddress(X509Certificate::OSCertHandle os_cert) {
@@ -178,11 +178,6 @@ void GetNicknameStringsFromCertList(
     const std::string& cert_not_yet_valid,
     std::vector<std::string>* nick_names) {
   // TODO(bulach): implement me.
-}
-
-std::string GetPkcs11Id(net::X509Certificate::OSCertHandle cert_handle) {
-  // TODO(jamescook): implement me.
-  return "";
 }
 
 void GetExtensions(

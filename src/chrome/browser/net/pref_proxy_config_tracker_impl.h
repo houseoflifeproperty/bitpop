@@ -9,12 +9,18 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/observer_list.h"
-#include "base/prefs/public/pref_change_registrar.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/net/pref_proxy_config_tracker.h"
 #include "chrome/browser/prefs/proxy_config_dictionary.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service.h"
 
 class PrefService;
+class PrefRegistrySimple;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 // A net::ProxyConfigService implementation that applies preference proxy
 // settings (pushed from PrefProxyConfigTrackerImpl) as overrides to the proxy
@@ -26,10 +32,9 @@ class ChromeProxyConfigService
       public net::ProxyConfigService::Observer {
  public:
   // Takes ownership of the passed |base_service|.
-  // If |wait_for_first_update| is true, GetLatestProxyConfig returns
-  // ConfigAvailability::CONFIG_PENDING until UpdateProxyConfig has been called.
-  explicit ChromeProxyConfigService(net::ProxyConfigService* base_service,
-                                    bool wait_for_first_update);
+  // GetLatestProxyConfig returns ConfigAvailability::CONFIG_PENDING until
+  // UpdateProxyConfig has been called.
+  explicit ChromeProxyConfigService(net::ProxyConfigService* base_service);
   virtual ~ChromeProxyConfigService();
 
   // ProxyConfigService implementation:
@@ -77,18 +82,18 @@ class ChromeProxyConfigService
 // A class that tracks proxy preferences. It translates the configuration
 // to net::ProxyConfig and pushes the result over to the IO thread for
 // ChromeProxyConfigService::UpdateProxyConfig to use.
-class PrefProxyConfigTrackerImpl {
+class PrefProxyConfigTrackerImpl : public PrefProxyConfigTracker {
  public:
   explicit PrefProxyConfigTrackerImpl(PrefService* pref_service);
   virtual ~PrefProxyConfigTrackerImpl();
 
-  // Sets the proxy config service to push the preference proxy to.
-  void SetChromeProxyConfigService(
-      ChromeProxyConfigService* proxy_config_service);
+  // PrefProxyConfigTracker implementation:
+  virtual scoped_ptr<net::ProxyConfigService> CreateTrackingProxyConfigService(
+      scoped_ptr<net::ProxyConfigService> base_service) OVERRIDE;
 
   // Notifies the tracker that the pref service passed upon construction is
   // about to go away. This must be called from the UI thread.
-  void DetachFromPrefService();
+  virtual void DetachFromPrefService() OVERRIDE;
 
   // Determines if |config_state| takes precedence regardless, which happens if
   // config is from policy or extension or other-precede.
@@ -116,8 +121,16 @@ class PrefProxyConfigTrackerImpl {
   static bool PrefConfigToNetConfig(const ProxyConfigDictionary& proxy_dict,
                                     net::ProxyConfig* config);
 
-  // Registers the proxy preference.
-  static void RegisterPrefs(PrefService* user_prefs);
+  // Registers the proxy preferences. These are actually registered
+  // the same way in local state and in user prefs.
+  static void RegisterPrefs(PrefRegistrySimple* registry);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
+
+  // Creates a proxy configuration from proxy-related preferences of
+  // |pref_service|. Configuration is stored in |config|, return value indicates
+  // whether the configuration is valid.
+  static ProxyPrefs::ConfigState ReadPrefConfig(const PrefService* pref_service,
+                                                net::ProxyConfig* config);
 
  protected:
   // Get the proxy configuration currently defined by preferences.
@@ -137,11 +150,6 @@ class PrefProxyConfigTrackerImpl {
   bool update_pending() const { return update_pending_; }
 
  private:
-  // Creates a proxy configuration from proxy-related preferences. Configuration
-  // is stored in |config|, return value indicates whether the configuration is
-  // valid.
-  ProxyPrefs::ConfigState ReadPrefConfig(net::ProxyConfig* config);
-
   // Tracks configuration state. |pref_config_| is valid only if |config_state_|
   // is not CONFIG_UNSET.
   ProxyPrefs::ConfigState config_state_;

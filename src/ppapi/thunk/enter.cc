@@ -6,8 +6,8 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "base/synchronization/lock.h"
 #include "ppapi/c/pp_errors.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
@@ -29,24 +29,22 @@ namespace thunk {
 
 namespace subtle {
 
-void AssertLockHeld() {
-  base::Lock* proxy_lock = PpapiGlobals::Get()->GetProxyLock();
-  // The lock is only valid in the plugin side of the proxy, so it only makes
-  // sense to assert there. Otherwise, silently succeed.
-  if (proxy_lock)
-    proxy_lock->AssertAcquired();
-}
-
 EnterBase::EnterBase()
     : resource_(NULL),
       retval_(PP_OK) {
-  // TODO(dmichael) validate that threads have an associated message loop.
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Resource resource)
     : resource_(GetResource(resource)),
       retval_(PP_OK) {
-  // TODO(dmichael) validate that threads have an associated message loop.
+  PpapiGlobals::Get()->MarkPluginIsActive();
+}
+
+EnterBase::EnterBase(PP_Instance instance, SingletonResourceID resource_id)
+    : resource_(GetSingletonResource(instance, resource_id)),
+      retval_(PP_OK) {
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::EnterBase(PP_Resource resource,
@@ -54,20 +52,30 @@ EnterBase::EnterBase(PP_Resource resource,
     : resource_(GetResource(resource)),
       retval_(PP_OK) {
   callback_ = new TrackedCallback(resource_, callback);
+  PpapiGlobals::Get()->MarkPluginIsActive();
+}
 
-  // TODO(dmichael) validate that threads have an associated message loop.
+EnterBase::EnterBase(PP_Instance instance, SingletonResourceID resource_id,
+                     const PP_CompletionCallback& callback)
+    : resource_(GetSingletonResource(instance, resource_id)),
+      retval_(PP_OK) {
+  if (!resource_)
+    retval_ = PP_ERROR_BADARGUMENT;
+  callback_ = new TrackedCallback(resource_, callback);
+  PpapiGlobals::Get()->MarkPluginIsActive();
 }
 
 EnterBase::~EnterBase() {
   // callback_ is cleared any time it is run, scheduled to be run, or once we
   // know it will be completed asynchronously. So by this point it should be
   // NULL.
-  DCHECK(!callback_) << "|callback_| is not NULL. Did you forget to call "
-      "|EnterBase::SetResult| in the interface's thunk?";
+  DCHECK(!callback_.get())
+      << "|callback_| is not NULL. Did you forget to call "
+         "|EnterBase::SetResult| in the interface's thunk?";
 }
 
 int32_t EnterBase::SetResult(int32_t result) {
-  if (!callback_) {
+  if (!callback_.get()) {
     // It doesn't make sense to call SetResult if there is no callback.
     NOTREACHED();
     retval_ = result;
@@ -105,12 +113,23 @@ Resource* EnterBase::GetResource(PP_Resource resource) {
   return PpapiGlobals::Get()->GetResourceTracker()->GetResource(resource);
 }
 
+// static
+Resource* EnterBase::GetSingletonResource(PP_Instance instance,
+                                          SingletonResourceID resource_id) {
+  PPB_Instance_API* ppb_instance =
+      PpapiGlobals::Get()->GetInstanceAPI(instance);
+  if (!ppb_instance)
+    return NULL;
+
+  return ppb_instance->GetSingletonResource(instance, resource_id);
+}
+
 void EnterBase::SetStateForCallbackError(bool report_error) {
   if (PpapiGlobals::Get()->IsHostGlobals()) {
     // In-process plugins can't make PPAPI calls off the main thread.
     CHECK(IsMainThread());
   }
-  if (callback_) {
+  if (callback_.get()) {
     if (callback_->is_blocking() && IsMainThread()) {
       // Blocking callbacks are never allowed on the main thread.
       callback_->MarkAsCompleted();
@@ -133,8 +152,8 @@ void EnterBase::SetStateForCallbackError(bool report_error) {
       // the plugin won't expect any return code other than
       // PP_OK_COMPLETIONPENDING. So we crash to make the problem more obvious.
       if (callback_->is_required()) {
-        std::string message("Attempted to use a required callback, but there"
-                            "is no attached message loop on which to run the"
+        std::string message("Attempted to use a required callback, but there "
+                            "is no attached message loop on which to run the "
                             "callback.");
         PpapiGlobals::Get()->BroadcastLogWithSource(0, PP_LOGLEVEL_ERROR,
                                                     std::string(), message);
@@ -171,12 +190,12 @@ void EnterBase::SetStateForResourceError(PP_Resource pp_resource,
   if (object)
     return;  // Everything worked.
 
-  if (callback_ && callback_->is_required()) {
+  if (callback_.get() && callback_->is_required()) {
     callback_->PostRun(static_cast<int32_t>(PP_ERROR_BADRESOURCE));
     callback_ = NULL;
     retval_ = PP_OK_COMPLETIONPENDING;
   } else {
-    if (callback_)
+    if (callback_.get())
       callback_->MarkAsCompleted();
     callback_ = NULL;
     retval_ = PP_ERROR_BADRESOURCE;
@@ -213,12 +232,12 @@ void EnterBase::SetStateForFunctionError(PP_Instance pp_instance,
   if (object)
     return;  // Everything worked.
 
-  if (callback_ && callback_->is_required()) {
+  if (callback_.get() && callback_->is_required()) {
     callback_->PostRun(static_cast<int32_t>(PP_ERROR_BADARGUMENT));
     callback_ = NULL;
     retval_ = PP_OK_COMPLETIONPENDING;
   } else {
-    if (callback_)
+    if (callback_.get())
       callback_->MarkAsCompleted();
     callback_ = NULL;
     retval_ = PP_ERROR_BADARGUMENT;

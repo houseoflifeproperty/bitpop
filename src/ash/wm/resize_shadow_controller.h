@@ -7,6 +7,7 @@
 
 #include <map>
 
+#include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/linked_ptr.h"
@@ -17,13 +18,11 @@ class Window;
 }
 
 namespace ash {
-namespace internal {
-
 class ResizeShadow;
 
 // ResizeShadowController observes changes to resizable windows and shows
 // a resize handle visual effect when the cursor is near the edges.
-class ResizeShadowController : public aura::WindowObserver {
+class ASH_EXPORT ResizeShadowController : public aura::WindowObserver {
  public:
   ResizeShadowController();
   virtual ~ResizeShadowController();
@@ -33,6 +32,8 @@ class ResizeShadowController : public aura::WindowObserver {
 
   // Hides the shadow for a |window|, if it has one.
   void HideShadow(aura::Window* window);
+
+  ResizeShadow* GetShadowForWindowForTest(aura::Window* window);
 
   // aura::WindowObserver overrides:
   virtual void OnWindowBoundsChanged(
@@ -56,7 +57,6 @@ class ResizeShadowController : public aura::WindowObserver {
   DISALLOW_COPY_AND_ASSIGN(ResizeShadowController);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_RESIZE_SHADOW_CONTROLLER_H_

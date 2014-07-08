@@ -122,13 +122,15 @@ static struct NaClDesc *NaClResourceFileFactory(char const *resource_locator,
           resource_locator, nacl_flags, mode);
   if (0 != NaClHostDescOpen(hd, resource_locator, nacl_flags, mode)) {
     NaClLog(LOG_INFO,
-            "NaClResourceNaClAppFileOpen: NaClHostDescOpen failed\n");
+            "NaClResourceFileFactory: NaClHostDescOpen failed\n");
     goto done;
   }
   if (!NaClDescIoDescCtor(did, hd)) {
     NaClLog(LOG_INFO,
-            "NaClResourceNaClAppFileOpen: NaClDescIoDescCtor failed\n");
-    (void) NaClHostDescClose(hd);
+            "NaClResourceFileFactory: NaClDescIoDescCtor failed\n");
+    if (0 != NaClHostDescClose(hd)) {
+      NaClLog(LOG_FATAL, "NaClResourceFileFactory: NaClHostDescClose failed\n");
+    }
     goto done;
   }
   hd = NULL;  /* ownership passed into did */
@@ -190,7 +192,7 @@ static struct NaClDesc *NaClResourceNaClAppDevOpen(
   struct NaClResourceNaClApp  *self = (struct NaClResourceNaClApp *) vself;
   struct NaClDescPostMessage  *ndpm = NULL;
 
-  if (self->nap->resource_phase != NACL_RESOURCE_PHASE_REV_CHAN
+  if (self->nap->resource_phase != NACL_RESOURCE_PHASE_RUNTIME_HOST
       || !allow_debug) {
     return NULL;
   }
@@ -205,7 +207,7 @@ static struct NaClDesc *NaClResourceNaClAppDevOpen(
 
     ndpm = malloc(sizeof *ndpm);
     if (NULL != ndpm) {
-      if (!NaClDescPostMessageCtor(ndpm, self->nap)) {
+      if (!NaClDescPostMessageCtor(ndpm, self->nap->runtime_host_interface)) {
         free(ndpm);
         ndpm = NULL;
       }

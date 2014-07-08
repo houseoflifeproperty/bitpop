@@ -2,51 +2,69 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+# pylint: disable=W0212
+
+import fcntl
 import logging
 import os
-import re
-import sys
-import time
+import psutil
 
-import android_commands
-import cmd_helper
-import constants
-import ports
+from pylib import cmd_helper
+from pylib import constants
+from pylib import valgrind_tools
 
-from pylib import pexpect
+# TODO(jbudorick) Remove once telemetry gets switched over.
+import pylib.android_commands
+import pylib.device.device_utils
 
 
-def _MakeBinaryPath(build_type, binary_name):
-  return os.path.join(cmd_helper.OutDirectory.get(), build_type, binary_name)
+def _GetProcessStartTime(pid):
+  return psutil.Process(pid).create_time
+
+
+class _FileLock(object):
+  """With statement-aware implementation of a file lock.
+
+  File locks are needed for cross-process synchronization when the
+  multiprocessing Python module is used.
+  """
+  def __init__(self, path):
+    self._fd = -1
+    self._path = path
+
+  def __enter__(self):
+    self._fd = os.open(self._path, os.O_RDONLY | os.O_CREAT)
+    if self._fd < 0:
+      raise Exception('Could not open file %s for reading' % self._path)
+    fcntl.flock(self._fd, fcntl.LOCK_EX)
+
+  def __exit__(self, _exception_type, _exception_value, traceback):
+    fcntl.flock(self._fd, fcntl.LOCK_UN)
+    os.close(self._fd)
 
 
 class Forwarder(object):
-  """Class to manage port forwards from the device to the host."""
+  """Thread-safe class to manage port forwards from the device to the host."""
 
-  # Unix Abstract socket path:
-  _DEVICE_ADB_CONTROL_PORT = 'chrome_device_forwarder'
-  _TIMEOUT_SECS = 30
+  _DEVICE_FORWARDER_FOLDER = (constants.TEST_EXECUTABLE_DIR +
+                              '/forwarder/')
+  _DEVICE_FORWARDER_PATH = (constants.TEST_EXECUTABLE_DIR +
+                            '/forwarder/device_forwarder')
+  _LD_LIBRARY_PATH = 'LD_LIBRARY_PATH=%s' % _DEVICE_FORWARDER_FOLDER
+  _LOCK_PATH = '/tmp/chrome.forwarder.lock'
+  _MULTIPROCESSING_ENV_VAR = 'CHROME_FORWARDER_USE_MULTIPROCESSING'
+  # Defined in host_forwarder_main.cc
+  _HOST_FORWARDER_LOG = '/tmp/host_forwarder_log'
 
-  _DEVICE_FORWARDER_PATH = constants.TEST_EXECUTABLE_DIR + '/device_forwarder'
+  _instance = None
 
-  def __init__(self, adb, build_type):
-    """Forwards TCP ports on the device back to the host.
+  @staticmethod
+  def UseMultiprocessing():
+    """Tells the forwarder that multiprocessing is used."""
+    os.environ[Forwarder._MULTIPROCESSING_ENV_VAR] = '1'
 
-    Works like adb forward, but in reverse.
-
-    Args:
-      adb: Instance of AndroidCommands for talking to the device.
-      build_type: 'Release' or 'Debug'.
-    """
-    assert build_type in ('Release', 'Debug')
-    self._adb = adb
-    self._host_to_device_port_map = dict()
-    self._device_process = None
-    self._host_forwarder_path = _MakeBinaryPath(build_type, 'host_forwarder')
-    self._device_forwarder_path = _MakeBinaryPath(
-        build_type, 'device_forwarder')
-
-  def Run(self, port_pairs, tool, host_name):
+  @staticmethod
+  def Map(port_pairs, device, tool=None):
     """Runs the forwarder.
 
     Args:
@@ -55,90 +73,274 @@ class Forwarder(object):
                  port will by dynamically assigned on the device. You can
                  get the number of the assigned port using the
                  DevicePortForHostPort method.
+      device: A DeviceUtils instance.
       tool: Tool class to use to get wrapper, if necessary, for executing the
             forwarder (see valgrind_tools.py).
-      host_name: Address to forward to, must be addressable from the
-                 host machine. Usually use loopback '127.0.0.1'.
 
     Raises:
       Exception on failure to forward the port.
     """
-    host_adb_control_port = ports.AllocateTestServerPort()
-    if not host_adb_control_port:
-      raise Exception('Failed to allocate a TCP port in the host machine.')
-    self._adb.PushIfNeeded(
-        self._device_forwarder_path, Forwarder._DEVICE_FORWARDER_PATH)
-    redirection_commands = [
-        '%d:%d:%d:%s' % (host_adb_control_port, device, host,
-                         host_name) for device, host in port_pairs]
-    logging.info('Command format: <ADB port>:<Device port>' +
-                 '[:<Forward to port>:<Forward to address>]')
-    logging.info('Forwarding using commands: %s', redirection_commands)
-    if cmd_helper.RunCmd(
-        ['adb', '-s', self._adb._adb.GetSerialNumber(), 'forward',
-         'tcp:%s' % host_adb_control_port,
-         'localabstract:%s' % Forwarder._DEVICE_ADB_CONTROL_PORT]) != 0:
-      raise Exception('Error while running adb forward.')
+    # TODO(jbudorick) Remove once telemetry gets switched over.
+    if isinstance(device, pylib.android_commands.AndroidCommands):
+      device = pylib.device.device_utils.DeviceUtils(device)
+    if not tool:
+      tool = valgrind_tools.CreateTool(None, device)
+    with _FileLock(Forwarder._LOCK_PATH):
+      instance = Forwarder._GetInstanceLocked(tool)
+      instance._InitDeviceLocked(device, tool)
 
-    (exit_code, output) = self._adb.GetShellCommandStatusAndOutput(
-        '%s %s' % (Forwarder._DEVICE_FORWARDER_PATH,
-                   Forwarder._DEVICE_ADB_CONTROL_PORT))
+      device_serial = device.old_interface.Adb().GetSerialNumber()
+      redirection_commands = [
+          ['--serial-id=' + device_serial, '--map', str(device),
+           str(host)] for device, host in port_pairs]
+      logging.info('Forwarding using commands: %s', redirection_commands)
+
+      for redirection_command in redirection_commands:
+        try:
+          (exit_code, output) = cmd_helper.GetCmdStatusAndOutput(
+              [instance._host_forwarder_path] + redirection_command)
+        except OSError as e:
+          if e.errno == 2:
+            raise Exception('Unable to start host forwarder. Make sure you have'
+                            ' built host_forwarder.')
+          else: raise
+        if exit_code != 0:
+          raise Exception('%s exited with %d:\n%s' % (
+              instance._host_forwarder_path, exit_code, '\n'.join(output)))
+        tokens = output.split(':')
+        if len(tokens) != 2:
+          raise Exception(('Unexpected host forwarder output "%s", ' +
+                          'expected "device_port:host_port"') % output)
+        device_port = int(tokens[0])
+        host_port = int(tokens[1])
+        serial_with_port = (device_serial, device_port)
+        instance._device_to_host_port_map[serial_with_port] = host_port
+        instance._host_to_device_port_map[host_port] = serial_with_port
+        logging.info('Forwarding device port: %d to host port: %d.',
+                     device_port, host_port)
+
+  @staticmethod
+  def UnmapDevicePort(device_port, device):
+    """Unmaps a previously forwarded device port.
+
+    Args:
+      device: A DeviceUtils instance.
+      device_port: A previously forwarded port (through Map()).
+    """
+    # TODO(jbudorick) Remove once telemetry gets switched over.
+    if isinstance(device, pylib.android_commands.AndroidCommands):
+      device = pylib.device.device_utils.DeviceUtils(device)
+    with _FileLock(Forwarder._LOCK_PATH):
+      Forwarder._UnmapDevicePortLocked(device_port, device)
+
+  @staticmethod
+  def UnmapAllDevicePorts(device):
+    """Unmaps all the previously forwarded ports for the provided device.
+
+    Args:
+      device: A DeviceUtils instance.
+      port_pairs: A list of tuples (device_port, host_port) to unmap.
+    """
+    # TODO(jbudorick) Remove once telemetry gets switched over.
+    if isinstance(device, pylib.android_commands.AndroidCommands):
+      device = pylib.device.device_utils.DeviceUtils(device)
+    with _FileLock(Forwarder._LOCK_PATH):
+      if not Forwarder._instance:
+        return
+      adb_serial = device.old_interface.Adb().GetSerialNumber()
+      if adb_serial not in Forwarder._instance._initialized_devices:
+        return
+      port_map = Forwarder._GetInstanceLocked(
+          None)._device_to_host_port_map
+      for (device_serial, device_port) in port_map.keys():
+        if adb_serial == device_serial:
+          Forwarder._UnmapDevicePortLocked(device_port, device)
+      # There are no more ports mapped, kill the device_forwarder.
+      tool = valgrind_tools.CreateTool(None, device)
+      Forwarder._KillDeviceLocked(device, tool)
+      Forwarder._instance._initialized_devices.remove(adb_serial)
+
+
+  @staticmethod
+  def DevicePortForHostPort(host_port):
+    """Returns the device port that corresponds to a given host port."""
+    with _FileLock(Forwarder._LOCK_PATH):
+      (_device_serial, device_port) = Forwarder._GetInstanceLocked(
+          None)._host_to_device_port_map.get(host_port)
+      return device_port
+
+  @staticmethod
+  def RemoveHostLog():
+    if os.path.exists(Forwarder._HOST_FORWARDER_LOG):
+      os.unlink(Forwarder._HOST_FORWARDER_LOG)
+
+  @staticmethod
+  def GetHostLog():
+    if not os.path.exists(Forwarder._HOST_FORWARDER_LOG):
+      return ''
+    with file(Forwarder._HOST_FORWARDER_LOG, 'r') as f:
+      return f.read()
+
+  @staticmethod
+  def _GetInstanceLocked(tool):
+    """Returns the singleton instance.
+
+    Note that the global lock must be acquired before calling this method.
+
+    Args:
+      tool: Tool class to use to get wrapper, if necessary, for executing the
+            forwarder (see valgrind_tools.py).
+    """
+    if not Forwarder._instance:
+      Forwarder._instance = Forwarder(tool)
+    return Forwarder._instance
+
+  def __init__(self, tool):
+    """Constructs a new instance of Forwarder.
+
+    Note that Forwarder is a singleton therefore this constructor should be
+    called only once.
+
+    Args:
+      tool: Tool class to use to get wrapper, if necessary, for executing the
+            forwarder (see valgrind_tools.py).
+    """
+    assert not Forwarder._instance
+    self._tool = tool
+    self._initialized_devices = set()
+    self._device_to_host_port_map = dict()
+    self._host_to_device_port_map = dict()
+    self._host_forwarder_path = os.path.join(
+        constants.GetOutDirectory(), 'host_forwarder')
+    assert os.path.exists(self._host_forwarder_path), 'Please build forwarder2'
+    self._device_forwarder_path_on_host = os.path.join(
+        constants.GetOutDirectory(), 'forwarder_dist')
+    self._InitHostLocked()
+
+  @staticmethod
+  def _UnmapDevicePortLocked(device_port, device):
+    """Internal method used by UnmapDevicePort().
+
+    Note that the global lock must be acquired before calling this method.
+    """
+    instance = Forwarder._GetInstanceLocked(None)
+    serial = device.old_interface.Adb().GetSerialNumber()
+    serial_with_port = (serial, device_port)
+    if not serial_with_port in instance._device_to_host_port_map:
+      logging.error('Trying to unmap non-forwarded port %d' % device_port)
+      return
+    redirection_command = ['--serial-id=' + serial, '--unmap', str(device_port)]
+    (exit_code, output) = cmd_helper.GetCmdStatusAndOutput(
+        [instance._host_forwarder_path] + redirection_command)
+    if exit_code != 0:
+      logging.error('%s exited with %d:\n%s' % (
+          instance._host_forwarder_path, exit_code, '\n'.join(output)))
+    host_port = instance._device_to_host_port_map[serial_with_port]
+    del instance._device_to_host_port_map[serial_with_port]
+    del instance._host_to_device_port_map[host_port]
+
+  @staticmethod
+  def _GetPidForLock():
+    """Returns the PID used for host_forwarder initialization.
+
+    In case multi-process sharding is used, the PID of the "sharder" is used.
+    The "sharder" is the initial process that forks that is the parent process.
+    By default, multi-processing is not used. In that case the PID of the
+    current process is returned.
+    """
+    use_multiprocessing = Forwarder._MULTIPROCESSING_ENV_VAR in os.environ
+    return os.getppid() if use_multiprocessing else os.getpid()
+
+  def _InitHostLocked(self):
+    """Initializes the host forwarder daemon.
+
+    Note that the global lock must be acquired before calling this method. This
+    method kills any existing host_forwarder process that could be stale.
+    """
+    # See if the host_forwarder daemon was already initialized by a concurrent
+    # process or thread (in case multi-process sharding is not used).
+    pid_for_lock = Forwarder._GetPidForLock()
+    fd = os.open(Forwarder._LOCK_PATH, os.O_RDWR | os.O_CREAT)
+    with os.fdopen(fd, 'r+') as pid_file:
+      pid_with_start_time = pid_file.readline()
+      if pid_with_start_time:
+        (pid, process_start_time) = pid_with_start_time.split(':')
+        if pid == str(pid_for_lock):
+          if process_start_time == str(_GetProcessStartTime(pid_for_lock)):
+            return
+      self._KillHostLocked()
+      pid_file.seek(0)
+      pid_file.write(
+          '%s:%s' % (pid_for_lock, str(_GetProcessStartTime(pid_for_lock))))
+
+  def _InitDeviceLocked(self, device, tool):
+    """Initializes the device_forwarder daemon for a specific device (once).
+
+    Note that the global lock must be acquired before calling this method. This
+    method kills any existing device_forwarder daemon on the device that could
+    be stale, pushes the latest version of the daemon (to the device) and starts
+    it.
+
+    Args:
+      device: A DeviceUtils instance.
+      tool: Tool class to use to get wrapper, if necessary, for executing the
+            forwarder (see valgrind_tools.py).
+    """
+    device_serial = device.old_interface.Adb().GetSerialNumber()
+    if device_serial in self._initialized_devices:
+      return
+    Forwarder._KillDeviceLocked(device, tool)
+    device.old_interface.PushIfNeeded(
+        self._device_forwarder_path_on_host,
+        Forwarder._DEVICE_FORWARDER_FOLDER)
+    (exit_code, output) = device.old_interface.GetShellCommandStatusAndOutput(
+        '%s %s %s' % (Forwarder._LD_LIBRARY_PATH, tool.GetUtilWrapper(),
+                      Forwarder._DEVICE_FORWARDER_PATH))
     if exit_code != 0:
       raise Exception(
           'Failed to start device forwarder:\n%s' % '\n'.join(output))
+    self._initialized_devices.add(device_serial)
 
-    for redirection_command in redirection_commands:
-      (exit_code, output) = cmd_helper.GetCmdStatusAndOutput(
-          [self._host_forwarder_path, redirection_command])
-      if exit_code != 0:
-        raise Exception('%s exited with %d:\n%s' % (
-            self._host_forwarder_path, exit_code, '\n'.join(output)))
-      tokens = output.split(':')
-      if len(tokens) != 2:
-        raise Exception('Unexpected host forwarder output "%s", ' +
-                        'expected "device_port:host_port"' % output)
-      device_port = int(tokens[0])
-      host_port = int(tokens[1])
-      self._host_to_device_port_map[host_port] = device_port
-      logging.info('Forwarding device port: %d to host port: %d.', device_port,
-                   host_port)
+  def _KillHostLocked(self):
+    """Kills the forwarder process running on the host.
 
-  @staticmethod
-  def KillHost(build_type):
+    Note that the global lock must be acquired before calling this method.
+    """
     logging.info('Killing host_forwarder.')
-    host_forwarder_path = _MakeBinaryPath(build_type, 'host_forwarder')
     (exit_code, output) = cmd_helper.GetCmdStatusAndOutput(
-        [host_forwarder_path, 'kill-server'])
+        [self._host_forwarder_path, '--kill-server'])
     if exit_code != 0:
       (exit_code, output) = cmd_helper.GetCmdStatusAndOutput(
-          ['pkill', 'host_forwarder'])
+          ['pkill', '-9', 'host_forwarder'])
       if exit_code != 0:
         raise Exception('%s exited with %d:\n%s' % (
-              host_forwarder_path, exit_code, '\n'.join(output)))
+              self._host_forwarder_path, exit_code, '\n'.join(output)))
 
   @staticmethod
-  def KillDevice(adb):
+  def _KillDeviceLocked(device, tool):
+    """Kills the forwarder process running on the device.
+
+    Note that the global lock must be acquired before calling this method.
+
+    Args:
+      device: Instance of DeviceUtils for talking to the device.
+      tool: Wrapper tool (e.g. valgrind) that can be used to execute the device
+            forwarder (see valgrind_tools.py).
+    """
     logging.info('Killing device_forwarder.')
-    if not adb.FileExistsOnDevice(Forwarder._DEVICE_FORWARDER_PATH):
+    if not device.old_interface.FileExistsOnDevice(
+        Forwarder._DEVICE_FORWARDER_PATH):
       return
-    (exit_code, output) = adb.GetShellCommandStatusAndOutput(
-        '%s kill-server' % Forwarder._DEVICE_FORWARDER_PATH)
+    device.old_interface.GetShellCommandStatusAndOutput(
+        '%s %s --kill-server' % (tool.GetUtilWrapper(),
+                                 Forwarder._DEVICE_FORWARDER_PATH))
     # TODO(pliard): Remove the following call to KillAllBlocking() when we are
     # sure that the old version of device_forwarder (not supporting
     # 'kill-server') is not running on the bots anymore.
     timeout_sec = 5
-    processes_killed = adb.KillAllBlocking('device_forwarder', timeout_sec)
+    processes_killed = device.old_interface.KillAllBlocking(
+        'device_forwarder', timeout_sec)
     if not processes_killed:
-      pids = adb.ExtractPid('device_forwarder')
+      pids = device.old_interface.ExtractPid('device_forwarder')
       if pids:
         raise Exception('Timed out while killing device_forwarder')
-
-  def DevicePortForHostPort(self, host_port):
-    """Get the device port that corresponds to a given host port."""
-    return self._host_to_device_port_map.get(host_port)
-
-  def Close(self):
-    """Terminate the forwarder process."""
-    if self._device_process:
-      self._device_process.close()
-      self._device_process = None

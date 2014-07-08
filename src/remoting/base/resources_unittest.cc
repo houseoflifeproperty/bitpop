@@ -4,52 +4,48 @@
 
 #include "remoting/base/resources.h"
 
-#include "remoting/base/common_resources.h"
 #include "remoting/base/string_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/resource/resource_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace remoting {
 
-// TODO(sergeyu): Resources loading doesn't work yet on OSX. Fix it and enable
-// the test.
-#if !defined(OS_MACOSX)
-#define MAYBE_ProductName ProductName
-#define MAYBE_ProductLogo ProductLogo
-#else  // !defined(OS_MACOSX)
-#define MAYBE_ProductName DISABLED_ProductName
-#define MAYBE_ProductLogo DISABLED_ProductLogo
-#endif  // defined(OS_MACOSX)
-
 class ResourcesTest : public testing::Test {
  protected:
-  void SetUp() OVERRIDE {
-    ASSERT_TRUE(LoadResources("en-US"));
+  ResourcesTest(): resources_available_(false) {
   }
 
-  void TearDown() OVERRIDE {
-    ui::ResourceBundle::CleanupSharedInstance();
+  virtual void SetUp() OVERRIDE {
+    resources_available_ = LoadResources("en-US");
   }
+
+  virtual void TearDown() OVERRIDE {
+    UnloadResources();
+  }
+
+  bool resources_available_;
 };
 
-TEST_F(ResourcesTest, MAYBE_ProductName) {
+// TODO(alexeypa): Reenable the test once http://crbug.com/269143 (ChromeOS) and
+// http://crbug.com/268043 (MacOS) are fixed.
+TEST_F(ResourcesTest, DISABLED_ProductName) {
 #if defined(GOOGLE_CHROME_BUILD)
   std::string expected_product_name = "Chrome Remote Desktop";
 #else  // defined(GOOGLE_CHROME_BUILD)
   std::string expected_product_name = "Chromoting";
 #endif  // !defined(GOOGLE_CHROME_BUILD)
-  EXPECT_EQ(expected_product_name,
-            l10n_util::GetStringUTF8(IDR_PRODUCT_NAME));
-}
 
-TEST_F(ResourcesTest, MAYBE_ProductLogo) {
-  gfx::Image logo16 = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-      IDR_PRODUCT_LOGO_16);
-  EXPECT_FALSE(logo16.IsEmpty());
-  gfx::Image logo32 = ui::ResourceBundle::GetSharedInstance().GetImageNamed(
-      IDR_PRODUCT_LOGO_32);
-  EXPECT_FALSE(logo32.IsEmpty());
+  // Chrome-style i18n is not used on Windows.
+#if defined(OS_WIN)
+  EXPECT_FALSE(resources_available_);
+#else
+  EXPECT_TRUE(resources_available_);
+#endif
+
+  if (resources_available_) {
+    EXPECT_EQ(expected_product_name,
+              l10n_util::GetStringUTF8(IDS_PRODUCT_NAME));
+  }
 }
 
 }  // namespace remoting

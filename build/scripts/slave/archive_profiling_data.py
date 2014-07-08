@@ -10,12 +10,12 @@ Pushes generated profiling data to Google Storage.
 For a list of command-line options, call this script with '--help'.
 """
 
-
 import optparse
 import os
 import re
 import sys
 
+from slave import build_directory
 from slave import slave_utils
 
 FILENAME = 'task_profile.json'
@@ -83,13 +83,14 @@ def main():
   option_parser = optparse.OptionParser()
   option_parser.add_option('', '--revision', default=None,
                            help='unique id for this run')
-  option_parser.add_option('', '--build-dir', default=None,
-                           help=('path to the build directory'))
+  option_parser.add_option('', '--build-dir', help='ignored')
   option_parser.add_option('', '--builder-name', default=None,
                            help='name of the build machine')
   option_parser.add_option('', '--test-name', default=None,
                            help='name of the test')
   options = option_parser.parse_args()[0]
+  options.build_dir = build_directory.GetBuildOutputDirectory()
+
   if (options.revision is None or options.build_dir is None or
       options.builder_name is None or options.test_name is None):
     print 'All command options are required. Use --help.'

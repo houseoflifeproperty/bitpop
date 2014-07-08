@@ -7,12 +7,12 @@
 
 #include "base/basictypes.h"
 #include "third_party/skia/include/core/SkPath.h"
-#include "ui/base/ui_export.h"
+#include "ui/gfx/gfx_export.h"
 #include "ui/gfx/native_widget_types.h"
 
 namespace gfx {
 
-class UI_EXPORT Path : public SkPath {
+class GFX_EXPORT Path : public SkPath {
  public:
   // Used by Path(Point,size_t) constructor.
   struct Point {
@@ -32,7 +32,7 @@ class UI_EXPORT Path : public SkPath {
 
   ~Path();
 
-#if defined(USE_AURA) || defined(OS_WIN) || defined(USE_X11)
+#if defined(USE_AURA) || defined(USE_X11)
   // Creates a NativeRegion from the path. The caller is responsible for freeing
   // resources used by this region. This only supports polygon paths.
   NativeRegion CreateNativeRegion() const;

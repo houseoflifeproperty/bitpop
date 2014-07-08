@@ -4,37 +4,40 @@
 
 #include "ash/shell/content_client/shell_browser_main_parts.h"
 
+#include "ash/ash_switches.h"
 #include "ash/desktop_background/desktop_background_controller.h"
 #include "ash/shell.h"
 #include "ash/shell/shell_delegate_impl.h"
 #include "ash/shell/window_watcher.h"
+#include "ash/system/user/login_status.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "base/threading/thread_restrictions.h"
 #include "content/public/common/content_switches.h"
-#include "content/shell/shell_browser_context.h"
-#include "googleurl/src/gurl.h"
+#include "content/shell/browser/shell_browser_context.h"
+#include "content/shell/browser/shell_net_log.h"
 #include "net/base/net_module.h"
-#include "ui/aura/client/stacking_client.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
-#include "ui/compositor/test/compositor_test_support.h"
-#include "ui/views/focus/accelerator_handler.h"
+#include "ui/gfx/screen.h"
+#include "ui/message_center/message_center.h"
 #include "ui/views/test/test_views_delegate.h"
+#include "ui/wm/core/wm_state.h"
 
-#if defined(OS_LINUX)
-#include "ui/base/touch/touch_factory.h"
+#if defined(USE_X11)
+#include "ui/events/x/touch_factory_x11.h"
 #endif
 
 #if defined(OS_CHROMEOS)
+#include "chromeos/audio/cras_audio_handler.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
 #endif
 
@@ -43,6 +46,7 @@ namespace shell {
 void InitWindowTypeLauncher();
 
 namespace {
+
 class ShellViewsDelegate : public views::TestViewsDelegate {
  public:
   ShellViewsDelegate() {}
@@ -53,9 +57,17 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
       views::Widget* widget) OVERRIDE {
     return ash::Shell::GetInstance()->CreateDefaultNonClientFrameView(widget);
   }
-  bool UseTransparentWindows() const OVERRIDE {
-    // Ash uses transparent window frames.
-    return true;
+  virtual void OnBeforeWidgetInit(
+      views::Widget::InitParams* params,
+      views::internal::NativeWidgetDelegate* delegate) OVERRIDE {
+    if (params->opacity == views::Widget::InitParams::INFER_OPACITY)
+      params->opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
+
+    if (params->native_widget)
+      return;
+
+    if (!params->parent && !params->context && params->top_level)
+      params->context = Shell::GetPrimaryRootWindow();
   }
 
  private:
@@ -66,19 +78,18 @@ class ShellViewsDelegate : public views::TestViewsDelegate {
 
 ShellBrowserMainParts::ShellBrowserMainParts(
     const content::MainFunctionParams& parameters)
-    : BrowserMainParts() {
+    : BrowserMainParts(),
+      delegate_(NULL) {
 }
 
 ShellBrowserMainParts::~ShellBrowserMainParts() {
 }
 
-#if !defined(OS_MACOSX)
 void ShellBrowserMainParts::PreMainMessageLoopStart() {
-#if defined(OS_LINUX)
+#if defined(USE_X11)
   ui::TouchFactory::SetTouchDeviceListFromCommandLine();
 #endif
 }
-#endif
 
 void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #if defined(OS_CHROMEOS)
@@ -86,42 +97,73 @@ void ShellBrowserMainParts::PostMainMessageLoopStart() {
 #endif
 }
 
+void ShellBrowserMainParts::ToolkitInitialized() {
+  wm_state_.reset(new wm::WMState);
+}
+
 void ShellBrowserMainParts::PreMainMessageLoopRun() {
-  browser_context_.reset(new content::ShellBrowserContext(false));
+  net_log_.reset(new content::ShellNetLog("ash_shell"));
+  browser_context_.reset(new content::ShellBrowserContext(
+      false, net_log_.get()));
 
   // A ViewsDelegate is required.
   if (!views::ViewsDelegate::views_delegate)
     views::ViewsDelegate::views_delegate = new ShellViewsDelegate;
 
-  ash::shell::ShellDelegateImpl* delegate = new ash::shell::ShellDelegateImpl;
-  ash::Shell::CreateInstance(delegate);
-  ash::Shell::GetInstance()->set_browser_context(browser_context_.get());
+  delegate_ = new ash::shell::ShellDelegateImpl;
+  // The global message center state must be initialized absent
+  // g_browser_process.
+  message_center::MessageCenter::Initialize();
+
+#if defined(OS_CHROMEOS)
+  // Create CrasAudioHandler for testing since g_browser_process
+  // is absent.
+  chromeos::CrasAudioHandler::InitializeForTesting();
+#endif
+
+  ash::Shell::CreateInstance(delegate_);
+  delegate_->set_browser_context(browser_context_.get());
+  ash::Shell::GetInstance()->CreateShelf();
+  ash::Shell::GetInstance()->UpdateAfterLoginStatusChange(
+      user::LOGGED_IN_USER);
 
   window_watcher_.reset(new ash::shell::WindowWatcher);
-  delegate->SetWatcher(window_watcher_.get());
+  gfx::Screen* screen = Shell::GetInstance()->GetScreen();
+  screen->AddObserver(window_watcher_.get());
+  delegate_->SetWatcher(window_watcher_.get());
 
   ash::shell::InitWindowTypeLauncher();
 
-  DesktopBackgroundController* controller =
-      Shell::GetInstance()->desktop_background_controller();
-  if (controller->GetAppropriateResolution() == WALLPAPER_RESOLUTION_LARGE)
-    controller->SetDefaultWallpaper(kDefaultLargeWallpaper);
-  else
-    controller->SetDefaultWallpaper(kDefaultSmallWallpaper);
-
-  ash::Shell::GetPrimaryRootWindow()->ShowRootWindow();
+  ash::Shell::GetPrimaryRootWindow()->GetHost()->Show();
 }
 
 void ShellBrowserMainParts::PostMainMessageLoopRun() {
-  browser_context_.reset();
+  gfx::Screen* screen = Shell::GetInstance()->GetScreen();
+  screen->RemoveObserver(window_watcher_.get());
 
   window_watcher_.reset();
+  delegate_->SetWatcher(NULL);
+  delegate_ = NULL;
   ash::Shell::DeleteInstance();
+  // The global message center state must be shutdown absent
+  // g_browser_process.
+  message_center::MessageCenter::Shutdown();
+
+#if defined(OS_CHROMEOS)
+  chromeos::CrasAudioHandler::Shutdown();
+#endif
+
   aura::Env::DeleteInstance();
+
+  // The keyboard may have created a WebContents. The WebContents is destroyed
+  // with the UI, and it needs the BrowserContext to be alive during its
+  // destruction. So destroy all of the UI elements before destroying the
+  // browser context.
+  browser_context_.reset();
 }
 
 bool ShellBrowserMainParts::MainMessageLoopRun(int* result_code) {
-  MessageLoopForUI::current()->Run();
+  base::MessageLoopForUI::current()->Run();
   return true;
 }
 

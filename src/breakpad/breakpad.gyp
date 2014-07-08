@@ -16,6 +16,7 @@
           'target_name': 'minidump_stackwalk',
           'type': 'executable',
           'includes': ['breakpad_tools.gypi'],
+          'defines': ['BPLOG_MINIMUM_SEVERITY=SEVERITY_ERROR'],
           'sources': [
             'src/processor/basic_code_module.h',
             'src/processor/basic_code_modules.cc',
@@ -29,6 +30,8 @@
             'src/processor/disassembler_x86.cc',
             'src/processor/disassembler_x86.h',
             'src/processor/exploitability.cc',
+            'src/processor/exploitability_linux.cc',
+            'src/processor/exploitability_linux.h',
             'src/processor/exploitability_win.cc',
             'src/processor/exploitability_win.h',
             'src/processor/logging.cc',
@@ -42,14 +45,21 @@
             'src/processor/simple_symbol_supplier.cc',
             'src/processor/simple_symbol_supplier.h',
             'src/processor/source_line_resolver_base.cc',
+            'src/processor/stack_frame_cpu.cc',
             'src/processor/stack_frame_symbolizer.cc',
             'src/processor/stackwalker.cc',
             'src/processor/stackwalker_amd64.cc',
             'src/processor/stackwalker_amd64.h',
             'src/processor/stackwalker_arm.cc',
             'src/processor/stackwalker_arm.h',
+            'src/processor/stackwalker_arm64.cc',
+            'src/processor/stackwalker_arm64.h',
+            'src/processor/stackwalker_mips.cc',
+            'src/processor/stackwalker_mips.h',
             'src/processor/stackwalker_ppc.cc',
             'src/processor/stackwalker_ppc.h',
+            'src/processor/stackwalker_ppc64.cc',
+            'src/processor/stackwalker_ppc64.h',
             'src/processor/stackwalker_sparc.cc',
             'src/processor/stackwalker_sparc.h',
             'src/processor/stackwalker_x86.cc',
@@ -103,7 +113,106 @@
         },
       ],
     }],
-    [ 'OS=="mac"', {
+    ['OS=="mac" or (OS=="ios" and "<(GENERATOR)"=="ninja")', {
+      'target_defaults': {
+        'include_dirs': [
+          'src',
+        ],
+        'configurations': {
+          'Debug_Base': {
+            'defines': [
+              # This is needed for GTMLogger to work correctly.
+              'DEBUG',
+            ],
+          },
+        },
+      },
+      'targets': [
+        {
+          'target_name': 'dump_syms',
+          'type': 'executable',
+          'toolsets': ['host'],
+          'include_dirs': [
+            'src/common/mac',
+          ],
+          'sources': [
+            'src/common/dwarf/bytereader.cc',
+            'src/common/dwarf_cfi_to_module.cc',
+            'src/common/dwarf_cu_to_module.cc',
+            'src/common/dwarf/dwarf2diehandler.cc',
+            'src/common/dwarf/dwarf2reader.cc',
+            'src/common/dwarf_line_to_module.cc',
+            'src/common/language.cc',
+            'src/common/mac/arch_utilities.cc',
+            'src/common/mac/arch_utilities.h',
+            'src/common/mac/dump_syms.mm',
+            'src/common/mac/file_id.cc',
+            'src/common/mac/macho_id.cc',
+            'src/common/mac/macho_reader.cc',
+            'src/common/mac/macho_utilities.cc',
+            'src/common/mac/macho_walker.cc',
+            'src/common/md5.cc',
+            'src/common/module.cc',
+            'src/common/stabs_reader.cc',
+            'src/common/stabs_to_module.cc',
+            'src/tools/mac/dump_syms/dump_syms_tool.mm',
+          ],
+          'defines': [
+            # For src/common/stabs_reader.h.
+            'HAVE_MACH_O_NLIST_H',
+          ],
+          'xcode_settings': {
+            # Like ld, dump_syms needs to operate on enough data that it may
+            # actually need to be able to address more than 4GB. Use x86_64.
+            # Don't worry! An x86_64 dump_syms is perfectly able to dump
+            # 32-bit files.
+            'ARCHS': [
+              'x86_64',
+            ],
+
+            # The DWARF utilities require -funsigned-char.
+            'GCC_CHAR_IS_UNSIGNED_CHAR': 'YES',
+
+            # dwarf2reader.cc uses dynamic_cast.
+            'GCC_ENABLE_CPP_RTTI': 'YES',
+          },
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+            ],
+          },
+          'configurations': {
+            'Release_Base': {
+              'xcode_settings': {
+                # dump_syms crashes when built at -O1, -O2, and -O3.  It does
+                # not crash at -Os.  To play it safe, dump_syms is always built
+                # at -O0 until this can be sorted out.
+                # http://code.google.com/p/google-breakpad/issues/detail?id=329
+                'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
+               },
+             },
+          },
+        },
+        {
+          'target_name': 'symupload',
+          'type': 'executable',
+          'toolsets': ['host'],
+          'include_dirs': [
+            'src/common/mac',
+          ],
+          'sources': [
+            'src/common/mac/HTTPMultipartUpload.m',
+            'src/tools/mac/symupload/symupload.m',
+          ],
+          'link_settings': {
+            'libraries': [
+              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
+            ],
+          }
+        },
+      ],
+    }],
+    ['OS=="mac"', {
       'target_defaults': {
         'include_dirs': [
           'src',
@@ -128,7 +237,6 @@
             'src/client/minidump_file_writer.cc',
             'src/common/convert_UTF.c',
             'src/common/mac/MachIPC.mm',
-            'src/common/mac/SimpleStringDictionary.mm',
             'src/common/mac/arch_utilities.cc',
             'src/common/mac/bootstrap_compat.cc',
             'src/common/mac/file_id.cc',
@@ -137,6 +245,7 @@
             'src/common/mac/macho_walker.cc',
             'src/common/mac/string_utilities.cc',
             'src/common/md5.cc',
+            'src/common/simple_string_dictionary.cc',
             'src/common/string_conversion.cc',
           ],
         },
@@ -202,90 +311,6 @@
           }
         },
         {
-          'target_name': 'dump_syms',
-          'type': 'executable',
-          'include_dirs++': [
-            # ++ ensures this comes before src brought in from target_defaults.
-            'pending/src',
-          ],
-          'include_dirs': [
-            'src/common/mac',
-          ],
-          'sources': [
-            'pending/src/common/dwarf_cu_to_module.cc',
-            'pending/src/common/module.cc',
-            'src/common/dwarf/bytereader.cc',
-            'src/common/dwarf_cfi_to_module.cc',
-            'src/common/dwarf/dwarf2diehandler.cc',
-            'src/common/dwarf/dwarf2reader.cc',
-            'src/common/dwarf_line_to_module.cc',
-            'src/common/language.cc',
-            'src/common/mac/arch_utilities.cc',
-            'src/common/mac/arch_utilities.h',
-            'src/common/mac/dump_syms.mm',
-            'src/common/mac/file_id.cc',
-            'src/common/mac/macho_id.cc',
-            'src/common/mac/macho_reader.cc',
-            'src/common/mac/macho_utilities.cc',
-            'src/common/mac/macho_walker.cc',
-            'src/common/md5.cc',
-            'src/common/stabs_reader.cc',
-            'src/common/stabs_to_module.cc',
-            'src/tools/mac/dump_syms/dump_syms_tool.mm',
-          ],
-          'defines': [
-            # For src/common/stabs_reader.h.
-            'HAVE_MACH_O_NLIST_H',
-          ],
-          'xcode_settings': {
-            # Like ld, dump_syms needs to operate on enough data that it may
-            # actually need to be able to address more than 4GB. Use x86_64.
-            # Don't worry! An x86_64 dump_syms is perfectly able to dump
-            # 32-bit files.
-            'ARCHS': [
-              'x86_64',
-            ],
-
-            # The DWARF utilities require -funsigned-char.
-            'GCC_CHAR_IS_UNSIGNED_CHAR': 'YES',
-
-            # dwarf2reader.cc uses dynamic_cast.
-            'GCC_ENABLE_CPP_RTTI': 'YES',
-          },
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
-            ],
-          },
-          'configurations': {
-            'Release_Base': {
-              'xcode_settings': {
-                # dump_syms crashes when built at -O1, -O2, and -O3.  It does
-                # not crash at -Os.  To play it safe, dump_syms is always built
-                # at -O0 until this can be sorted out.
-                # http://code.google.com/p/google-breakpad/issues/detail?id=329
-                'GCC_OPTIMIZATION_LEVEL': '0',  # -O0
-               },
-             },
-          },
-        },
-        {
-          'target_name': 'symupload',
-          'type': 'executable',
-          'include_dirs': [
-            'src/common/mac',
-          ],
-          'sources': [
-            'src/common/mac/HTTPMultipartUpload.m',
-            'src/tools/mac/symupload/symupload.m',
-          ],
-          'link_settings': {
-            'libraries': [
-              '$(SDKROOT)/System/Library/Frameworks/Foundation.framework',
-            ],
-          }
-        },
-        {
           'target_name': 'breakpad',
           'type': 'static_library',
           'dependencies': [
@@ -315,102 +340,100 @@
         },
       ],
     }],
-    [ 'OS=="linux" or OS=="android"', {
+    [ 'OS=="linux" or OS=="android" or OS=="freebsd"', {
       'conditions': [
         ['OS=="android"', {
           'defines': [
             '__ANDROID__',
           ],
         }],
-        # Tools needed for archiving build symbols.
-        ['linux_breakpad==1', {
-          'targets': [
-            {
-              'target_name': 'symupload',
-              'type': 'executable',
-
-              'includes': ['breakpad_tools.gypi'],
-
-              'sources': [
-                'src/tools/linux/symupload/sym_upload.cc',
-                'src/common/linux/http_upload.cc',
-                'src/common/linux/http_upload.h',
-              ],
-              'include_dirs': [
-                'src',
-                'src/third_party',
-              ],
-              'link_settings': {
-                'libraries': [
-                  '-ldl',
-                ],
-              },
-            },
-            {
-              'target_name': 'dump_syms',
-              'type': 'executable',
-              'conditions': [
-                ['OS=="android"', {
-                  'toolsets': [ 'host' ],
-                }],
-              ],
-
-              # dwarf2reader.cc uses dynamic_cast. Because we don't typically
-              # don't support RTTI, we enable it for this single target. Since
-              # dump_syms doesn't share any object files with anything else,
-              # this doesn't end up polluting Chrome itself.
-              'cflags_cc!': ['-fno-rtti'],
-
-              'sources': [
-                'src/common/dwarf/bytereader.cc',
-                'src/common/dwarf_cfi_to_module.cc',
-                'src/common/dwarf_cfi_to_module.h',
-                'src/common/dwarf_cu_to_module.cc',
-                'src/common/dwarf_cu_to_module.h',
-                'src/common/dwarf/dwarf2diehandler.cc',
-                'src/common/dwarf/dwarf2reader.cc',
-                'src/common/dwarf_line_to_module.cc',
-                'src/common/dwarf_line_to_module.h',
-                'src/common/language.cc',
-                'src/common/language.h',
-                'src/common/linux/dump_symbols.cc',
-                'src/common/linux/dump_symbols.h',
-                'src/common/linux/elf_symbols_to_module.cc',
-                'src/common/linux/elf_symbols_to_module.h',
-                'src/common/linux/elfutils.cc',
-                'src/common/linux/elfutils.h',
-                'src/common/linux/file_id.cc',
-                'src/common/linux/file_id.h',
-                'src/common/linux/linux_libc_support.cc',
-                'src/common/linux/linux_libc_support.h',
-                'src/common/linux/memory_mapped_file.cc',
-                'src/common/linux/memory_mapped_file.h',
-                'src/common/linux/guid_creator.h',
-                'src/common/module.cc',
-                'src/common/module.h',
-                'src/common/stabs_reader.cc',
-                'src/common/stabs_reader.h',
-                'src/common/stabs_to_module.cc',
-                'src/common/stabs_to_module.h',
-                'src/tools/linux/dump_syms/dump_syms.cc',
-              ],
-
-              # Breakpad rev 583 introduced this flag.
-              # Using this define, stabs_reader.h will include a.out.h to
-              # build on Linux.
-              'defines': [
-                'HAVE_A_OUT_H',
-              ],
-
-              'include_dirs': [
-                'src',
-                '..',
-              ],
-            },
-          ],
-        }],
       ],
+      # Tools needed for archiving build symbols.
       'targets': [
+        {
+          'target_name': 'symupload',
+          'type': 'executable',
+
+          'includes': ['breakpad_tools.gypi'],
+
+          'sources': [
+            'src/tools/linux/symupload/sym_upload.cc',
+            'src/common/linux/http_upload.cc',
+            'src/common/linux/http_upload.h',
+          ],
+          'include_dirs': [
+            'src',
+            'src/third_party',
+          ],
+          'link_settings': {
+            'libraries': [
+              '-ldl',
+            ],
+          },
+        },
+        {
+          'target_name': 'dump_syms',
+          'type': 'executable',
+          'conditions': [
+            ['OS=="android"', {
+              'toolsets': [ 'host' ],
+            }],
+          ],
+
+          # dwarf2reader.cc uses dynamic_cast. Because we don't typically
+          # don't support RTTI, we enable it for this single target. Since
+          # dump_syms doesn't share any object files with anything else,
+          # this doesn't end up polluting Chrome itself.
+          'cflags_cc!': ['-fno-rtti'],
+
+          'sources': [
+            'src/common/dwarf/bytereader.cc',
+            'src/common/dwarf_cfi_to_module.cc',
+            'src/common/dwarf_cfi_to_module.h',
+            'src/common/dwarf_cu_to_module.cc',
+            'src/common/dwarf_cu_to_module.h',
+            'src/common/dwarf/dwarf2diehandler.cc',
+            'src/common/dwarf/dwarf2reader.cc',
+            'src/common/dwarf_line_to_module.cc',
+            'src/common/dwarf_line_to_module.h',
+            'src/common/language.cc',
+            'src/common/language.h',
+            'src/common/linux/crc32.cc',
+            'src/common/linux/crc32.h',
+            'src/common/linux/dump_symbols.cc',
+            'src/common/linux/dump_symbols.h',
+            'src/common/linux/elf_symbols_to_module.cc',
+            'src/common/linux/elf_symbols_to_module.h',
+            'src/common/linux/elfutils.cc',
+            'src/common/linux/elfutils.h',
+            'src/common/linux/file_id.cc',
+            'src/common/linux/file_id.h',
+            'src/common/linux/linux_libc_support.cc',
+            'src/common/linux/linux_libc_support.h',
+            'src/common/linux/memory_mapped_file.cc',
+            'src/common/linux/memory_mapped_file.h',
+            'src/common/linux/guid_creator.h',
+            'src/common/module.cc',
+            'src/common/module.h',
+            'src/common/stabs_reader.cc',
+            'src/common/stabs_reader.h',
+            'src/common/stabs_to_module.cc',
+            'src/common/stabs_to_module.h',
+            'src/tools/linux/dump_syms/dump_syms.cc',
+          ],
+
+          # Breakpad rev 583 introduced this flag.
+          # Using this define, stabs_reader.h will include a.out.h to
+          # build on Linux.
+          'defines': [
+            'HAVE_A_OUT_H',
+          ],
+
+          'include_dirs': [
+            'src',
+            '..',
+          ],
+        },
         {
           'target_name': 'breakpad_client',
           'type': 'static_library',
@@ -424,6 +447,7 @@
             'src/client/linux/handler/minidump_descriptor.h',
             'src/client/linux/log/log.cc',
             'src/client/linux/log/log.h',
+            'src/client/linux/minidump_writer/cpu_set.h',
             'src/client/linux/minidump_writer/directory_reader.h',
             'src/client/linux/minidump_writer/line_reader.h',
             'src/client/linux/minidump_writer/linux_core_dumper.cc',
@@ -434,6 +458,7 @@
             'src/client/linux/minidump_writer/linux_ptrace_dumper.h',
             'src/client/linux/minidump_writer/minidump_writer.cc',
             'src/client/linux/minidump_writer/minidump_writer.h',
+            'src/client/linux/minidump_writer/proc_cpuinfo_reader.h',
             'src/client/minidump_file_writer-inl.h',
             'src/client/minidump_file_writer.cc',
             'src/client/minidump_file_writer.h',
@@ -458,6 +483,8 @@
             'src/common/linux/safe_readlink.cc',
             'src/common/linux/safe_readlink.h',
             'src/common/memory.h',
+            'src/common/simple_string_dictionary.cc',
+            'src/common/simple_string_dictionary.h',
             'src/common/string_conversion.cc',
             'src/common/string_conversion.h',
           ],
@@ -485,13 +512,17 @@
                 'src/common/android/breakpad_getcontext.S',
               ],
             }],
+            ['OS!="android"', {
+              'link_settings': {
+                'libraries': [
+                  # In case of Android, '-ldl' is added in common.gypi, since it
+                  # is needed for stlport_static. For LD, the order of libraries
+                  # is important, and thus we skip to add it here.
+                  '-ldl',
+                ],
+              },
+            }],
           ],
-
-          'link_settings': {
-            'libraries': [
-              '-ldl',
-            ],
-          },
 
           'include_dirs': [
             'src',
@@ -507,6 +538,7 @@
           'type': 'static_library',
 
           'sources': [
+            'src/common/scoped_ptr.h',
             'src/processor/basic_code_modules.cc',
             'src/processor/basic_code_modules.h',
             'src/processor/logging.cc',
@@ -514,7 +546,6 @@
             'src/processor/minidump.cc',
             'src/processor/pathname_stripper.cc',
             'src/processor/pathname_stripper.h',
-            'src/processor/scoped_ptr.h',
           ],
 
           'include_dirs': [
@@ -540,20 +571,24 @@
           'sources': [
             'linux/breakpad_googletest_includes.h',
             'src/client/linux/handler/exception_handler_unittest.cc',
+            'src/client/linux/minidump_writer/cpu_set_unittest.cc',
             'src/client/linux/minidump_writer/directory_reader_unittest.cc',
             'src/client/linux/minidump_writer/line_reader_unittest.cc',
             'src/client/linux/minidump_writer/linux_core_dumper_unittest.cc',
             'src/client/linux/minidump_writer/linux_ptrace_dumper_unittest.cc',
             'src/client/linux/minidump_writer/minidump_writer_unittest.cc',
             'src/client/linux/minidump_writer/minidump_writer_unittest_utils.cc',
+            'src/client/linux/minidump_writer/proc_cpuinfo_reader_unittest.cc',
             'src/common/linux/elf_core_dump_unittest.cc',
             'src/common/linux/file_id_unittest.cc',
             'src/common/linux/linux_libc_support_unittest.cc',
             'src/common/linux/synth_elf.cc',
+            'src/common/linux/tests/auto_testfile.h',
             'src/common/linux/tests/crash_generator.cc',
             'src/common/linux/tests/crash_generator.h',
             'src/common/memory_range.h',
             'src/common/memory_unittest.cc',
+            'src/common/simple_string_dictionary_unittest.cc',
             'src/common/test_assembler.cc',
             'src/common/tests/file_utils.cc',
             'src/common/tests/file_utils.h',
@@ -581,6 +616,9 @@
               'include_dirs': [
                 'src/common/android/include',
               ],
+              'sources': [
+                'src/common/android/breakpad_getcontext_unittest.cc',
+              ],
             }],
           ],
         },
@@ -598,6 +636,13 @@
             'src',
             '..',
           ],
+          'conditions': [
+            ['target_arch=="mipsel" and OS=="android"', {
+              'include_dirs': [
+                'src/common/android/include',
+              ],
+            }],
+          ],
         },
         {
           'target_name': 'generate_test_dump',
@@ -614,6 +659,16 @@
           'include_dirs': [
             '..',
             'src',
+          ],
+          'conditions': [
+            ['OS=="android"', {
+              'libraries': [
+                '-llog',
+              ],
+              'include_dirs': [
+                'src/common/android/include',
+              ],
+            }],
           ],
         },
         {
@@ -652,7 +707,65 @@
         },
       ],
     }],
-    [ 'OS=="ios"', {
+    ['OS=="ios"', {
+      'targets': [
+        {
+          'target_name': 'breakpad_client',
+          'type': 'static_library',
+          'sources': [
+            'src/client/ios/Breakpad.h',
+            'src/client/ios/Breakpad.mm',
+            'src/client/ios/BreakpadController.h',
+            'src/client/ios/BreakpadController.mm',
+            'src/client/ios/handler/ios_exception_minidump_generator.mm',
+            'src/client/ios/handler/ios_exception_minidump_generator.h',
+            'src/client/mac/crash_generation/ConfigFile.h',
+            'src/client/mac/crash_generation/ConfigFile.mm',
+            'src/client/mac/handler/breakpad_nlist_64.cc',
+            'src/client/mac/handler/breakpad_nlist_64.h',
+            'src/client/mac/handler/dynamic_images.cc',
+            'src/client/mac/handler/dynamic_images.h',
+            'src/client/mac/handler/protected_memory_allocator.cc',
+            'src/client/mac/handler/protected_memory_allocator.h',
+            'src/client/mac/handler/exception_handler.cc',
+            'src/client/mac/handler/exception_handler.h',
+            'src/client/mac/handler/minidump_generator.cc',
+            'src/client/mac/handler/minidump_generator.h',
+            'src/client/mac/sender/uploader.h',
+            'src/client/mac/sender/uploader.mm',
+            'src/client/minidump_file_writer.cc',
+            'src/client/minidump_file_writer.h',
+            'src/client/minidump_file_writer-inl.h',
+            'src/common/convert_UTF.c',
+            'src/common/convert_UTF.h',
+            'src/common/mac/file_id.cc',
+            'src/common/mac/file_id.h',
+            'src/common/mac/HTTPMultipartUpload.m',
+            'src/common/mac/macho_id.cc',
+            'src/common/mac/macho_id.h',
+            'src/common/mac/macho_utilities.cc',
+            'src/common/mac/macho_utilities.h',
+            'src/common/mac/macho_walker.cc',
+            'src/common/mac/macho_walker.h',
+            'src/common/mac/string_utilities.cc',
+            'src/common/mac/string_utilities.h',
+            'src/common/md5.cc',
+            'src/common/md5.h',
+            'src/common/simple_string_dictionary.cc',
+            'src/common/simple_string_dictionary.h',
+            'src/common/string_conversion.cc',
+            'src/common/string_conversion.h',
+            'src/google_breakpad/common/minidump_format.h',
+          ],
+          'include_dirs': [
+            'src',
+            'src/client/mac/Framework',
+            'src/common/mac',
+          ],
+        }
+      ]
+    }],
+    ['OS=="ios" and "<(GENERATOR)"!="ninja"', {
       'variables': {
         'ninja_output_dir': 'ninja-breakpad',
         'ninja_product_dir':
@@ -741,78 +854,22 @@
           'dependencies': [
             'breakpad_utilities',
           ],
-        },
+        }
+      ],
+    }],
+    ['OS=="android"', {
+      'targets': [
         {
-          'target_name': 'breakpad_client',
-          'type': 'static_library',
-          'sources': [
-            'src/client/ios/Breakpad.h',
-            'src/client/ios/Breakpad.mm',
-            'src/client/ios/BreakpadController.h',
-            'src/client/ios/BreakpadController.mm',
-            'src/client/ios/handler/ios_exception_minidump_generator.mm',
-            'src/client/ios/handler/ios_exception_minidump_generator.h',
-            'src/client/mac/crash_generation/ConfigFile.h',
-            'src/client/mac/crash_generation/ConfigFile.mm',
-            'src/client/mac/handler/breakpad_nlist_64.cc',
-            'src/client/mac/handler/breakpad_nlist_64.h',
-            'src/client/mac/handler/dynamic_images.cc',
-            'src/client/mac/handler/dynamic_images.h',
-            'src/client/mac/handler/protected_memory_allocator.cc',
-            'src/client/mac/handler/protected_memory_allocator.h',
-            'src/client/mac/handler/exception_handler.cc',
-            'src/client/mac/handler/exception_handler.h',
-            'src/client/mac/handler/minidump_generator.cc',
-            'src/client/mac/handler/minidump_generator.h',
-            'src/client/mac/sender/uploader.h',
-            'src/client/mac/sender/uploader.mm',
-            'src/client/minidump_file_writer.cc',
-            'src/client/minidump_file_writer.h',
-            'src/client/minidump_file_writer-inl.h',
-            'src/common/convert_UTF.c',
-            'src/common/convert_UTF.h',
-            'src/common/mac/file_id.cc',
-            'src/common/mac/file_id.h',
-            'src/common/mac/HTTPMultipartUpload.m',
-            'src/common/mac/macho_id.cc',
-            'src/common/mac/macho_id.h',
-            'src/common/mac/macho_utilities.cc',
-            'src/common/mac/macho_utilities.h',
-            'src/common/mac/macho_walker.cc',
-            'src/common/mac/macho_walker.h',
-            'src/common/mac/string_utilities.cc',
-            'src/common/mac/string_utilities.h',
-            'src/common/mac/SimpleStringDictionary.mm',
-            'src/common/mac/SimpleStringDictionary.h',
-            'src/common/md5.cc',
-            'src/common/md5.h',
-            'src/common/string_conversion.cc',
-            'src/common/string_conversion.h',
-            'src/google_breakpad/common/minidump_format.h',
-          ],
-          'include_dirs': [
-            'src',
-            'src/client/mac/Framework',
-            'src/common/mac',
-            # For GTMLogger.
-            '<(DEPTH)/third_party/GTM',
-            '<(DEPTH)/third_party/GTM/Foundation',
-          ],
-          'link_settings': {
-            # Build the version of GTMLogger.m in third_party rather than the
-            # one in src/common/mac because the former catches all exceptions
-            # whereas the latter lets them propagate, which can cause odd
-            # crashes.
-            'sources': [
-              '<(DEPTH)/third_party/GTM/Foundation/GTMLogger.h',
-              '<(DEPTH)/third_party/GTM/Foundation/GTMLogger.m',
-            ],
-            'include_dirs': [
-              '<(DEPTH)/third_party/GTM',
-              '<(DEPTH)/third_party/GTM/Foundation',
-            ],
-          },
-        },
+          'target_name': 'breakpad_unittests_stripped',
+          'type': 'none',
+          'dependencies': [ 'breakpad_unittests' ],
+          'actions': [{
+            'action_name': 'strip breakpad_unittests',
+            'inputs': [ '<(PRODUCT_DIR)/breakpad_unittests' ],
+            'outputs': [ '<(PRODUCT_DIR)/breakpad_unittests_stripped' ],
+            'action': [ '<(android_strip)', '<@(_inputs)', '-o', '<@(_outputs)' ],
+          }],
+        }
       ],
     }],
   ],

@@ -161,8 +161,6 @@ def wait_for_port_to_free(host, port):
   assert False, '%d is still bound' % port
 
 
-_FAKE_LOADED = False
-
 class FakeReposBase(object):
   """Generate both svn and git repositories to test gclient functionality.
 
@@ -181,11 +179,6 @@ class FakeReposBase(object):
   ]
 
   def __init__(self, host=None):
-    global _FAKE_LOADED
-    if _FAKE_LOADED:
-      raise Exception('You can only start one FakeRepos at a time.')
-    _FAKE_LOADED = True
-
     self.trial = trial_dir.TrialDir('repos')
     self.host = host or '127.0.0.1'
     # Format is [ None, tree, tree, ...]
@@ -249,7 +242,7 @@ class FakeReposBase(object):
       logging.debug('Killing svnserve pid %s' % self.svnserve.pid)
       try:
         self.svnserve.kill()
-      except OSError, e:
+      except OSError as e:
         if e.errno != errno.ESRCH:   # no such process
           raise
       wait_for_port_to_free(self.host, self.svn_port)
@@ -274,7 +267,11 @@ class FakeReposBase(object):
         pid = int(self.git_pid_file.read())
         self.git_pid_file.close()
         logging.debug('Killing git daemon pid %s' % pid)
-        subprocess2.kill_pid(pid)
+        try:
+          subprocess2.kill_pid(pid)
+        except OSError as e:
+          if e.errno != errno.ESRCH:  # no such process
+            raise
         self.git_pid_file = None
       wait_for_port_to_free(self.host, self.git_port)
       self.git_port = None
@@ -320,6 +317,17 @@ class FakeReposBase(object):
     text = '[users]\n'
     text += ''.join('%s = %s\n' % (usr, pwd) for usr, pwd in self.USERS)
     write(join(self.svn_repo, 'conf', 'passwd'), text)
+
+    # Necessary to be able to change revision properties
+    revprop_hook_filename = join(self.svn_repo, 'hooks', 'pre-revprop-change')
+    if sys.platform == 'win32':
+      # TODO(kustermann): Test on Windows one day.
+      write("%s.bat" % revprop_hook_filename, "")
+    else:
+      write(revprop_hook_filename,
+          '#!/bin/sh\n'
+          'exit 0\n')
+      os.chmod(revprop_hook_filename, 0755)
 
     # Mac 10.6 ships with a buggy subversion build and we need this line
     # to work around the bug.
@@ -392,6 +400,14 @@ class FakeReposBase(object):
       new_tree = tree.copy()
     self.svn_revs.append(new_tree)
 
+  def _set_svn_commit_date(self, revision, date):
+    subprocess2.check_output(
+        ['svn', 'propset', 'svn:date', '--revprop', '-r', revision, date,
+         self.svn_base,
+         '--username', self.USERS[0][0],
+         '--password', self.USERS[0][1],
+         '--non-interactive'])
+
   def _commit_git(self, repo, tree):
     repo_root = join(self.git_root, repo)
     self._genTree(repo_root, tree)
@@ -423,7 +439,7 @@ class FakeReposBase(object):
 
 class FakeRepos(FakeReposBase):
   """Implements populateSvn() and populateGit()."""
-  NB_GIT_REPOS = 4
+  NB_GIT_REPOS = 5
 
   def populateSvn(self):
     """Creates a few revisions of changes including DEPS files."""
@@ -543,7 +559,7 @@ hooks = [
 
   def populateGit(self):
     # Testing:
-    # - dependency disapear
+    # - dependency disappear
     # - dependency renamed
     # - versioned and unversioned reference
     # - relative and full reference
@@ -641,23 +657,193 @@ hooks = [
       'origin': 'git/repo_1@2\n',
     })
 
+    self._commit_git('repo_5', {'origin': 'git/repo_5@1\n'})
+    self._commit_git('repo_5', {
+      'DEPS': """
+deps = {
+  'src/repo1': '%(git_base)srepo_1@%(hash1)s',
+  'src/repo2': '%(git_base)srepo_2@%(hash2)s',
+}
+
+# Hooks to run after a project is processed but before its dependencies are
+# processed.
+pre_deps_hooks = [
+  {
+    'action': ['python', '-c',
+               'print "pre-deps hook"; open(\\'src/git_pre_deps_hooked\\', \\'w\\').write(\\'git_pre_deps_hooked\\')'],
+  }
+]
+""" % {
+         'git_base': self.git_base,
+         'hash1': self.git_hashes['repo_1'][2][0][:7],
+         'hash2': self.git_hashes['repo_2'][1][0][:7],
+      },
+    'origin': 'git/repo_5@2\n',
+    })
+    self._commit_git('repo_5', {
+      'DEPS': """
+deps = {
+  'src/repo1': '%(git_base)srepo_1@%(hash1)s',
+  'src/repo2': '%(git_base)srepo_2@%(hash2)s',
+}
+
+# Hooks to run after a project is processed but before its dependencies are
+# processed.
+pre_deps_hooks = [
+  {
+    'action': ['python', '-c',
+               'print "pre-deps hook"; open(\\'src/git_pre_deps_hooked\\', \\'w\\').write(\\'git_pre_deps_hooked\\')'],
+  },
+  {
+    'action': ['python', '-c', 'import sys; sys.exit(1)'],
+  }
+]
+""" % {
+         'git_base': self.git_base,
+         'hash1': self.git_hashes['repo_1'][2][0][:7],
+         'hash2': self.git_hashes['repo_2'][1][0][:7],
+      },
+    'origin': 'git/repo_5@3\n',
+    })
+
+
+class FakeRepoTransitive(FakeReposBase):
+  """Implements populateSvn()"""
+
+  def populateSvn(self):
+    """Creates a few revisions of changes including a DEPS file."""
+    # Repos
+    subprocess2.check_call(
+        ['svn', 'checkout', self.svn_base, self.svn_checkout,
+         '-q', '--non-interactive', '--no-auth-cache',
+         '--username', self.USERS[0][0], '--password', self.USERS[0][1]])
+    assert os.path.isdir(join(self.svn_checkout, '.svn'))
+
+    def file_system(rev):
+      DEPS = """deps = {
+                'src/different_repo': '%(svn_base)strunk/third_party',
+                'src/different_repo_fixed': '%(svn_base)strunk/third_party@1',
+                'src/same_repo': '/trunk/third_party',
+                'src/same_repo_fixed': '/trunk/third_party@1',
+             }""" % { 'svn_base': self.svn_base }
+      return {
+        'trunk/src/DEPS': DEPS,
+        'trunk/src/origin': 'svn/trunk/src@%(rev)d' % { 'rev': rev },
+        'trunk/third_party/origin':
+            'svn/trunk/third_party@%(rev)d' % { 'rev': rev },
+      }
+
+    # We make three commits. We use always the same DEPS contents but
+    # - 'trunk/src/origin' contains 'svn/trunk/src/origin@rX'
+    # - 'trunk/third_party/origin' contains 'svn/trunk/third_party/origin@rX'
+    # where 'X' is the revision number.
+    # So the 'origin' files will change in every commit.
+    self._commit_svn(file_system(1))
+    self._commit_svn(file_system(2))
+    self._commit_svn(file_system(3))
+    # We rewrite the timestamps so we can test that '--transitive' will take the
+    # parent timestamp on different repositories and the parent revision
+    # otherwise.
+    self._set_svn_commit_date('1', '2011-10-01T03:00:00.000000Z')
+    self._set_svn_commit_date('2', '2011-10-09T03:00:00.000000Z')
+    self._set_svn_commit_date('3', '2011-10-02T03:00:00.000000Z')
+
+  def populateGit(self):
+    pass
+
+
+class FakeRepoSkiaDEPS(FakeReposBase):
+  """Simulates the Skia DEPS transition in Chrome."""
+
+  NB_GIT_REPOS = 5
+
+  DEPS_svn_pre = """deps = {
+  'src/third_party/skia/gyp': '%(svn_base)sskia/gyp',
+  'src/third_party/skia/include': '%(svn_base)sskia/include',
+  'src/third_party/skia/src': '%(svn_base)sskia/src',
+}"""
+
+  DEPS_git_pre = """deps = {
+  'src/third_party/skia/gyp': '%(git_base)srepo_3',
+  'src/third_party/skia/include': '%(git_base)srepo_4',
+  'src/third_party/skia/src': '%(git_base)srepo_5',
+}"""
+
+  DEPS_post = """deps = {
+  'src/third_party/skia': '%(git_base)srepo_1',
+}"""
+
+  def populateSvn(self):
+    """Create revisions which simulate the Skia DEPS transition in Chrome."""
+    subprocess2.check_call(
+        ['svn', 'checkout', self.svn_base, self.svn_checkout,
+         '-q', '--non-interactive', '--no-auth-cache',
+         '--username', self.USERS[0][0], '--password', self.USERS[0][1]])
+    assert os.path.isdir(join(self.svn_checkout, '.svn'))
+
+    # Skia repo.
+    self._commit_svn({
+        'skia/skia_base_file': 'root-level file.',
+        'skia/gyp/gyp_file': 'file in the gyp directory',
+        'skia/include/include_file': 'file in the include directory',
+        'skia/src/src_file': 'file in the src directory',
+    })
+
+    # Chrome repo.
+    self._commit_svn({
+        'trunk/src/DEPS': self.DEPS_svn_pre % {'svn_base': self.svn_base},
+        'trunk/src/myfile': 'svn/trunk/src@1'
+    })
+    self._commit_svn({
+        'trunk/src/DEPS': self.DEPS_post % {'git_base': self.git_base},
+        'trunk/src/myfile': 'svn/trunk/src@2'
+    })
+
+  def populateGit(self):
+    # Skia repo.
+    self._commit_git('repo_1', {
+        'skia_base_file': 'root-level file.',
+        'gyp/gyp_file': 'file in the gyp directory',
+        'include/include_file': 'file in the include directory',
+        'src/src_file': 'file in the src directory',
+    })
+    self._commit_git('repo_3', { # skia/gyp
+        'gyp_file': 'file in the gyp directory',
+    })
+    self._commit_git('repo_4', { # skia/include
+        'include_file': 'file in the include directory',
+    })
+    self._commit_git('repo_5', { # skia/src
+        'src_file': 'file in the src directory',
+    })
+
+    # Chrome repo.
+    self._commit_git('repo_2', {
+        'DEPS': self.DEPS_git_pre % {'git_base': self.git_base},
+        'myfile': 'svn/trunk/src@1'
+    })
+    self._commit_git('repo_2', {
+        'DEPS': self.DEPS_post % {'git_base': self.git_base},
+        'myfile': 'svn/trunk/src@2'
+    })
+
 
 class FakeReposTestBase(trial_dir.TestCase):
   """This is vaguely inspired by twisted."""
-  # static FakeRepos instance. Lazy loaded.
-  FAKE_REPOS = None
+  # Static FakeRepos instances. Lazy loaded.
+  CACHED_FAKE_REPOS = {}
   # Override if necessary.
   FAKE_REPOS_CLASS = FakeRepos
 
   def setUp(self):
     super(FakeReposTestBase, self).setUp()
-    if not FakeReposTestBase.FAKE_REPOS:
-      # Lazy create the global instance.
-      FakeReposTestBase.FAKE_REPOS = self.FAKE_REPOS_CLASS()
+    if not self.FAKE_REPOS_CLASS in self.CACHED_FAKE_REPOS:
+      self.CACHED_FAKE_REPOS[self.FAKE_REPOS_CLASS] = self.FAKE_REPOS_CLASS()
+    self.FAKE_REPOS = self.CACHED_FAKE_REPOS[self.FAKE_REPOS_CLASS]
     # No need to call self.FAKE_REPOS.setUp(), it will be called by the child
     # class.
     # Do not define tearDown(), since super's version does the right thing and
-    # FAKE_REPOS is kept across tests.
+    # self.FAKE_REPOS is kept across tests.
 
   @property
   def svn_base(self):

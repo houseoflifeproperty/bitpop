@@ -5,9 +5,9 @@
 #include "net/url_request/url_request_job_factory_impl.h"
 
 #include "base/stl_util.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_request_job_manager.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -15,7 +15,6 @@ URLRequestJobFactoryImpl::URLRequestJobFactoryImpl() {}
 
 URLRequestJobFactoryImpl::~URLRequestJobFactoryImpl() {
   STLDeleteValues(&protocol_handler_map_);
-  STLDeleteElements(&interceptors_);
 }
 
 bool URLRequestJobFactoryImpl::SetProtocolHandler(
@@ -39,29 +38,6 @@ bool URLRequestJobFactoryImpl::SetProtocolHandler(
   return true;
 }
 
-void URLRequestJobFactoryImpl::AddInterceptor(Interceptor* interceptor) {
-  DCHECK(CalledOnValidThread());
-  CHECK(interceptor);
-
-  interceptors_.push_back(interceptor);
-}
-
-URLRequestJob* URLRequestJobFactoryImpl::MaybeCreateJobWithInterceptor(
-    URLRequest* request, NetworkDelegate* network_delegate) const {
-  DCHECK(CalledOnValidThread());
-  URLRequestJob* job = NULL;
-
-  if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
-    InterceptorList::const_iterator i;
-    for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-      job = (*i)->MaybeIntercept(request, network_delegate);
-      if (job)
-        return job;
-    }
-  }
-  return NULL;
-}
-
 URLRequestJob* URLRequestJobFactoryImpl::MaybeCreateJobWithProtocolHandler(
     const std::string& scheme,
     URLRequest* request,
@@ -73,48 +49,9 @@ URLRequestJob* URLRequestJobFactoryImpl::MaybeCreateJobWithProtocolHandler(
   return it->second->MaybeCreateJob(request, network_delegate);
 }
 
-URLRequestJob* URLRequestJobFactoryImpl::MaybeInterceptRedirect(
-    const GURL& location,
-    URLRequest* request,
-    NetworkDelegate* network_delegate) const {
-  DCHECK(CalledOnValidThread());
-  URLRequestJob* job = NULL;
-
-  if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
-    InterceptorList::const_iterator i;
-    for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-      job = (*i)->MaybeInterceptRedirect(location, request, network_delegate);
-      if (job)
-        return job;
-    }
-  }
-  return NULL;
-}
-
-URLRequestJob* URLRequestJobFactoryImpl::MaybeInterceptResponse(
-    URLRequest* request, NetworkDelegate* network_delegate) const {
-  DCHECK(CalledOnValidThread());
-  URLRequestJob* job = NULL;
-
-  if (!(request->load_flags() & LOAD_DISABLE_INTERCEPT)) {
-    InterceptorList::const_iterator i;
-    for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-      job = (*i)->MaybeInterceptResponse(request, network_delegate);
-      if (job)
-        return job;
-    }
-  }
-  return NULL;
-}
-
 bool URLRequestJobFactoryImpl::IsHandledProtocol(
     const std::string& scheme) const {
   DCHECK(CalledOnValidThread());
-  InterceptorList::const_iterator i;
-  for (i = interceptors_.begin(); i != interceptors_.end(); ++i) {
-    if ((*i)->WillHandleProtocol(scheme))
-      return true;
-  }
   return ContainsKey(protocol_handler_map_, scheme) ||
       URLRequestJobManager::GetInstance()->SupportsScheme(scheme);
 }
@@ -125,6 +62,22 @@ bool URLRequestJobFactoryImpl::IsHandledURL(const GURL& url) const {
     return true;
   }
   return IsHandledProtocol(url.scheme());
+}
+
+bool URLRequestJobFactoryImpl::IsSafeRedirectTarget(
+    const GURL& location) const {
+  DCHECK(CalledOnValidThread());
+  if (!location.is_valid()) {
+    // Error cases are safely handled.
+    return true;
+  }
+  ProtocolHandlerMap::const_iterator it = protocol_handler_map_.find(
+      location.scheme());
+  if (it == protocol_handler_map_.end()) {
+    // Unhandled cases are safely handled.
+    return true;
+  }
+  return it->second->IsSafeRedirectTarget(location);
 }
 
 }  // namespace net

@@ -12,15 +12,15 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/completion_callback.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_log.h"
-#include "net/base/ssl_config_service.h"
 #include "net/proxy/proxy_info.h"
 #include "net/proxy/proxy_service.h"
 #include "net/socket/stream_socket.h"
+#include "net/ssl/ssl_config_service.h"
+#include "url/gurl.h"
 
 namespace net {
 class ClientSocketFactory;
@@ -52,8 +52,8 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
                    const net::CompletionCallback& callback) OVERRIDE;
   virtual int Write(net::IOBuffer* buf, int buf_len,
                     const net::CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual int Connect(const net::CompletionCallback& callback) OVERRIDE;
   virtual void Disconnect() OVERRIDE;
   virtual bool IsConnected() const OVERRIDE;
@@ -65,8 +65,6 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
   virtual void SetOmniboxSpeculation() OVERRIDE;
   virtual bool WasEverUsed() const OVERRIDE;
   virtual bool UsingTCPFastOpen() const OVERRIDE;
-  virtual int64 NumBytesRead() const OVERRIDE;
-  virtual base::TimeDelta GetConnectTimeMicros() const OVERRIDE;
   virtual bool WasNpnNegotiated() const OVERRIDE;
   virtual net::NextProto GetNegotiatedProtocol() const OVERRIDE;
   virtual bool GetSSLInfo(net::SSLInfo* ssl_info) OVERRIDE;
@@ -97,10 +95,13 @@ class ProxyResolvingClientSocket : public net::StreamSocket {
   const GURL proxy_url_;
   bool tried_direct_connect_fallback_;
   net::BoundNetLog bound_net_log_;
-  base::WeakPtrFactory<ProxyResolvingClientSocket> weak_factory_;
 
   // The callback passed to Connect().
   net::CompletionCallback user_connect_callback_;
+
+  base::WeakPtrFactory<ProxyResolvingClientSocket> weak_factory_;
+
+  DISALLOW_COPY_AND_ASSIGN(ProxyResolvingClientSocket);
 };
 
 }  // namespace jingle_glue

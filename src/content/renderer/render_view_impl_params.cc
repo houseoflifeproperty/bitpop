@@ -8,32 +8,37 @@ namespace content {
 
 RenderViewImplParams::RenderViewImplParams(
     int32 opener_id,
+    bool window_was_created_with_opener,
     const RendererPreferences& renderer_prefs,
-    const webkit_glue::WebPreferences& webkit_prefs,
-    SharedRenderViewCounter* counter,
+    const WebPreferences& webkit_prefs,
     int32 routing_id,
+    int32 main_frame_routing_id,
     int32 surface_id,
     int64 session_storage_namespace_id,
-    const string16& frame_name,
+    const base::string16& frame_name,
     bool is_renderer_created,
     bool swapped_out,
+    bool hidden,
+    bool never_visible,
     int32 next_page_id,
-    const WebKit::WebScreenInfo& screen_info,
+    const blink::WebScreenInfo& screen_info,
     AccessibilityMode accessibility_mode)
     : opener_id(opener_id),
+      window_was_created_with_opener(window_was_created_with_opener),
       renderer_prefs(renderer_prefs),
       webkit_prefs(webkit_prefs),
-      counter(counter),
       routing_id(routing_id),
+      main_frame_routing_id(main_frame_routing_id),
       surface_id(surface_id),
       session_storage_namespace_id(session_storage_namespace_id),
       frame_name(frame_name),
       is_renderer_created(is_renderer_created),
       swapped_out(swapped_out),
+      hidden(hidden),
+      never_visible(never_visible),
       next_page_id(next_page_id),
       screen_info(screen_info),
-      accessibility_mode(accessibility_mode) {
-}
+      accessibility_mode(accessibility_mode) {}
 
 RenderViewImplParams::~RenderViewImplParams() {}
 

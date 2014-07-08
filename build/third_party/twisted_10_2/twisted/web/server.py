@@ -102,7 +102,7 @@ class Request(pb.Copyable, http.Request, components.Componentized):
             return name
         else: # lpp == 0
             if len(self.prepath) and self.prepath[-1]:
-                return self.prepath[-1] + '/' + name
+                return quote(self.prepath[-1], safe='') + '/' + name
             else:
                 return name
 

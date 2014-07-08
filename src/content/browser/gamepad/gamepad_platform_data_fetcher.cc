@@ -4,14 +4,14 @@
 
 #include "content/browser/gamepad/gamepad_platform_data_fetcher.h"
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGamepads.h"
+#include "third_party/WebKit/public/platform/WebGamepads.h"
 
 namespace content {
 
 GamepadDataFetcherEmpty::GamepadDataFetcherEmpty() {
 }
 
-void GamepadDataFetcherEmpty::GetGamepadData(WebKit::WebGamepads* pads,
+void GamepadDataFetcherEmpty::GetGamepadData(blink::WebGamepads* pads,
                                              bool devices_changed_hint) {
   pads->length = 0;
 }

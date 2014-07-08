@@ -4,121 +4,113 @@
 
 #include "ui/base/ime/mock_input_method.h"
 
-#include "base/logging.h"
-#include "base/string16.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_constants.h"
-#include "ui/base/events/event_utils.h"
-#include "ui/base/glib/glib_integers.h"
-#include "ui/base/ime/input_method_delegate.h"
-#include "ui/base/ime/text_input_client.h"
-#include "ui/base/keycodes/keyboard_code_conversion.h"
-
-#if defined(USE_X11)
-#include <X11/X.h>
-#include <X11/Xlib.h>
-#include <X11/Xutil.h>
-#include "ui/base/keycodes/keyboard_code_conversion_x.h"
-#endif
-
-namespace {
-
-#if defined(USE_X11)
-uint32 EventFlagsFromXFlags(unsigned int flags) {
-  return (flags & LockMask ? ui::EF_CAPS_LOCK_DOWN : 0U) |
-      (flags & ControlMask ? ui::EF_CONTROL_DOWN : 0U) |
-      (flags & ShiftMask ? ui::EF_SHIFT_DOWN : 0U) |
-      (flags & Mod1Mask ? ui::EF_ALT_DOWN : 0U);
-}
-#endif
-
-}  // namespace
-
 namespace ui {
 
 MockInputMethod::MockInputMethod(internal::InputMethodDelegate* delegate)
-    : delegate_(NULL),
-      text_input_client_(NULL) {
-  SetDelegate(delegate);
+    : text_input_client_(NULL) {
 }
 
 MockInputMethod::~MockInputMethod() {
 }
 
 void MockInputMethod::SetDelegate(internal::InputMethodDelegate* delegate) {
-  delegate_ = delegate;
 }
 
 void MockInputMethod::SetFocusedTextInputClient(TextInputClient* client) {
+  if (text_input_client_ == client)
+    return;
   text_input_client_ = client;
+  if (client)
+    OnTextInputTypeChanged(client);
+}
+
+void MockInputMethod::DetachTextInputClient(TextInputClient* client) {
+  if (text_input_client_ == client) {
+    text_input_client_ = NULL;
+  }
 }
 
 TextInputClient* MockInputMethod::GetTextInputClient() const {
   return text_input_client_;
 }
 
-void MockInputMethod::DispatchKeyEvent(const base::NativeEvent& native_event) {
-#if defined(OS_WIN)
-  if (native_event.message == WM_CHAR) {
-    if (text_input_client_) {
-      text_input_client_->InsertChar(ui::KeyboardCodeFromNative(native_event),
-                                     ui::EventFlagsFromNative(native_event));
-    }
-  } else {
-    delegate_->DispatchKeyEventPostIME(native_event);
-  }
-#elif defined(USE_X11)
-  DCHECK(native_event);
-  if (native_event->type == KeyRelease) {
-    // On key release, just dispatch it.
-    delegate_->DispatchKeyEventPostIME(native_event);
-  } else {
-    const uint32 state = EventFlagsFromXFlags(native_event->xkey.state);
-    // Send a RawKeyDown event first,
-    delegate_->DispatchKeyEventPostIME(native_event);
-    if (text_input_client_) {
-      // then send a Char event via ui::TextInputClient.
-      const KeyboardCode key_code = ui::KeyboardCodeFromNative(native_event);
-      uint16 ch = 0;
-      if (!(state & ui::EF_CONTROL_DOWN))
-        ch = ui::GetCharacterFromXEvent(native_event);
-      if (!ch)
-        ch = ui::GetCharacterFromKeyCode(key_code, state);
-      if (ch)
-        text_input_client_->InsertChar(ch, state);
-    }
-  }
-#else
-  // TODO(yusukes): Support other platforms. Call InsertChar() when necessary.
-  delegate_->DispatchKeyEventPostIME(native_event);
-#endif
+bool MockInputMethod::DispatchKeyEvent(const ui::KeyEvent& event) {
+  return false;
 }
 
-void MockInputMethod::Init(bool focused) {}
-void MockInputMethod::OnFocus() {}
-void MockInputMethod::OnBlur() {}
-void MockInputMethod::OnTextInputTypeChanged(const TextInputClient* client) {}
-void MockInputMethod::OnCaretBoundsChanged(const TextInputClient* client) {}
-void MockInputMethod::CancelComposition(const TextInputClient* client) {}
+void MockInputMethod::Init(bool focused) {
+}
+
+void MockInputMethod::OnFocus() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnFocus());
+}
+
+void MockInputMethod::OnBlur() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnBlur());
+}
+
+bool MockInputMethod::OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                               NativeEventResult* result) {
+  if (result)
+    *result = NativeEventResult();
+  return false;
+}
+
+void MockInputMethod::OnTextInputTypeChanged(const TextInputClient* client) {
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnTextInputTypeChanged(client));
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnTextInputStateChanged(client));
+}
+
+void MockInputMethod::OnCaretBoundsChanged(const TextInputClient* client) {
+  FOR_EACH_OBSERVER(InputMethodObserver,
+                    observer_list_,
+                    OnCaretBoundsChanged(client));
+}
+
+void MockInputMethod::CancelComposition(const TextInputClient* client) {
+}
+
+void MockInputMethod::OnInputLocaleChanged() {
+}
 
 std::string MockInputMethod::GetInputLocale() {
   return "";
-}
-
-base::i18n::TextDirection MockInputMethod::GetInputTextDirection() {
-  return base::i18n::UNKNOWN_DIRECTION;
 }
 
 bool MockInputMethod::IsActive() {
   return true;
 }
 
-ui::TextInputType MockInputMethod::GetTextInputType() const {
-  return ui::TEXT_INPUT_TYPE_NONE;
+TextInputType MockInputMethod::GetTextInputType() const {
+  return TEXT_INPUT_TYPE_NONE;
+}
+
+TextInputMode MockInputMethod::GetTextInputMode() const {
+  return TEXT_INPUT_MODE_DEFAULT;
 }
 
 bool MockInputMethod::CanComposeInline() const {
   return true;
+}
+
+bool MockInputMethod::IsCandidatePopupOpen() const {
+  return false;
+}
+
+void MockInputMethod::ShowImeIfNeeded() {
+  FOR_EACH_OBSERVER(InputMethodObserver, observer_list_, OnShowImeIfNeeded());
+}
+
+void MockInputMethod::AddObserver(InputMethodObserver* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void MockInputMethod::RemoveObserver(InputMethodObserver* observer) {
+  observer_list_.RemoveObserver(observer);
 }
 
 }  // namespace ui

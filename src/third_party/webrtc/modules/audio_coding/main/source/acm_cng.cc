@@ -8,33 +8,36 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "acm_cng.h"
-#include "acm_codec_database.h"
-#include "acm_common_defs.h"
-#include "acm_neteq.h"
-#include "trace.h"
-#include "webrtc_cng.h"
-#include "webrtc_neteq.h"
-#include "webrtc_neteq_help_macros.h"
+#include "webrtc/modules/audio_coding/main/source/acm_cng.h"
+
+#include "webrtc/modules/audio_coding/codecs/cng/include/webrtc_cng.h"
+#include "webrtc/modules/audio_coding/main/source/acm_codec_database.h"
+#include "webrtc/modules/audio_coding/main/acm2/acm_common_defs.h"
+#include "webrtc/modules/audio_coding/main/source/acm_neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq_help_macros.h"
+#include "webrtc/system_wrappers/interface/trace.h"
 
 namespace webrtc {
 
-ACMCNG::ACMCNG(WebRtc_Word16 codecID) {
-  _encoderInstPtr = NULL;
-  _decoderInstPtr = NULL;
-  _codecID = codecID;
-  _sampFreqHz = ACMCodecDB::CodecFreq(_codecID);
+namespace acm1 {
+
+ACMCNG::ACMCNG(int16_t codec_id) {
+  encoder_inst_ptr_ = NULL;
+  decoder_inst_ptr_ = NULL;
+  codec_id_ = codec_id;
+  samp_freq_hz_ = ACMCodecDB::CodecFreq(codec_id_);
   return;
 }
 
 ACMCNG::~ACMCNG() {
-  if (_encoderInstPtr != NULL) {
-    WebRtcCng_FreeEnc(_encoderInstPtr);
-    _encoderInstPtr = NULL;
+  if (encoder_inst_ptr_ != NULL) {
+    WebRtcCng_FreeEnc(encoder_inst_ptr_);
+    encoder_inst_ptr_ = NULL;
   }
-  if (_decoderInstPtr != NULL) {
-    WebRtcCng_FreeDec(_decoderInstPtr);
-    _decoderInstPtr = NULL;
+  if (decoder_inst_ptr_ != NULL) {
+    WebRtcCng_FreeDec(decoder_inst_ptr_);
+    decoder_inst_ptr_ = NULL;
   }
   return;
 }
@@ -43,16 +46,16 @@ ACMCNG::~ACMCNG() {
 // should not be called normally
 // instead the following function is called from inside
 // ACMGenericCodec::ProcessFrameVADDTX
-WebRtc_Word16 ACMCNG::InternalEncode(WebRtc_UWord8* /* bitStream */,
-                                     WebRtc_Word16* /* bitStreamLenByte */) {
+int16_t ACMCNG::InternalEncode(uint8_t* /* bitstream */,
+                               int16_t* /* bitstream_len_byte */) {
   return -1;
 }
 
-WebRtc_Word16 ACMCNG::DecodeSafe(WebRtc_UWord8* /* bitStream */,
-                                 WebRtc_Word16 /* bitStreamLenByte */,
-                                 WebRtc_Word16* /* audio */,
-                                 WebRtc_Word16* /* audioSamples */,
-                                 WebRtc_Word8* /* speechType */) {
+int16_t ACMCNG::DecodeSafe(uint8_t* /* bitstream */,
+                           int16_t /* bitstream_len_byte */,
+                           int16_t* /* audio */,
+                           int16_t* /* audio_samples */,
+                           int8_t* /* speech_type */) {
   return 0;
 }
 
@@ -60,20 +63,20 @@ WebRtc_Word16 ACMCNG::DecodeSafe(WebRtc_UWord8* /* bitStream */,
 // this function should not be called normally
 // instead the following function is called from inside
 // ACMGenericCodec::ProcessFrameVADDTX
-WebRtc_Word16 ACMCNG::InternalInitEncoder(
-    WebRtcACMCodecParams* /* codecParams */) {
+int16_t ACMCNG::InternalInitEncoder(
+    WebRtcACMCodecParams* /* codec_params */) {
   return -1;
 }
 
-WebRtc_Word16 ACMCNG::InternalInitDecoder(
-    WebRtcACMCodecParams* /* codecParams */) {
-  return WebRtcCng_InitDec(_decoderInstPtr);
+int16_t ACMCNG::InternalInitDecoder(
+    WebRtcACMCodecParams* /* codec_params */) {
+  return WebRtcCng_InitDec(decoder_inst_ptr_);
 }
 
-WebRtc_Word32 ACMCNG::CodecDef(WebRtcNetEQ_CodecDef& codecDef,
-                               const CodecInst& codecInst) {
-  if (!_decoderInitialized) {
-    // TODO (tlegrand): log error
+int32_t ACMCNG::CodecDef(WebRtcNetEQ_CodecDef& codec_def,
+                         const CodecInst& codec_inst) {
+  if (!decoder_initialized_) {
+    // TODO(tlegrand): log error
     return -1;
   }
   // Fill up the structure by calling
@@ -81,11 +84,11 @@ WebRtc_Word32 ACMCNG::CodecDef(WebRtcNetEQ_CodecDef& codecDef,
   // Then return the structure back to NetEQ to add the codec to it's
   // database.
 
-  if (_sampFreqHz == 8000 || _sampFreqHz == 16000 || _sampFreqHz == 32000 ||
-      _sampFreqHz == 48000) {
-    SET_CODEC_PAR((codecDef), kDecoderCNG, codecInst.pltype,
-        _decoderInstPtr, _sampFreqHz);
-    SET_CNG_FUNCTIONS((codecDef));
+  if (samp_freq_hz_ == 8000 || samp_freq_hz_ == 16000 ||
+      samp_freq_hz_ == 32000 || samp_freq_hz_ == 48000) {
+    SET_CODEC_PAR((codec_def), kDecoderCNG, codec_inst.pltype,
+                  decoder_inst_ptr_, samp_freq_hz_);
+    SET_CNG_FUNCTIONS((codec_def));
     return 0;
   } else {
     return -1;
@@ -96,9 +99,9 @@ ACMGenericCodec* ACMCNG::CreateInstance(void) {
   return NULL;
 }
 
-WebRtc_Word16 ACMCNG::InternalCreateEncoder() {
-  if (WebRtcCng_CreateEnc(&_encoderInstPtr) < 0) {
-    _encoderInstPtr = NULL;
+int16_t ACMCNG::InternalCreateEncoder() {
+  if (WebRtcCng_CreateEnc(&encoder_inst_ptr_) < 0) {
+    encoder_inst_ptr_ = NULL;
     return -1;
   } else {
     return 0;
@@ -106,17 +109,17 @@ WebRtc_Word16 ACMCNG::InternalCreateEncoder() {
 }
 
 void ACMCNG::DestructEncoderSafe() {
-  if (_encoderInstPtr != NULL) {
-    WebRtcCng_FreeEnc(_encoderInstPtr);
-    _encoderInstPtr = NULL;
+  if (encoder_inst_ptr_ != NULL) {
+    WebRtcCng_FreeEnc(encoder_inst_ptr_);
+    encoder_inst_ptr_ = NULL;
   }
-  _encoderExist = false;
-  _encoderInitialized = false;
+  encoder_exist_ = false;
+  encoder_initialized_ = false;
 }
 
-WebRtc_Word16 ACMCNG::InternalCreateDecoder() {
-  if (WebRtcCng_CreateDec(&_decoderInstPtr) < 0) {
-    _decoderInstPtr = NULL;
+int16_t ACMCNG::InternalCreateDecoder() {
+  if (WebRtcCng_CreateDec(&decoder_inst_ptr_) < 0) {
+    decoder_inst_ptr_ = NULL;
     return -1;
   } else {
     return 0;
@@ -124,19 +127,24 @@ WebRtc_Word16 ACMCNG::InternalCreateDecoder() {
 }
 
 void ACMCNG::DestructDecoderSafe() {
-  if (_decoderInstPtr != NULL) {
-    WebRtcCng_FreeDec(_decoderInstPtr);
-    _decoderInstPtr = NULL;
+  if (decoder_inst_ptr_ != NULL) {
+    WebRtcCng_FreeDec(decoder_inst_ptr_);
+    decoder_inst_ptr_ = NULL;
   }
-  _decoderExist = false;
-  _decoderInitialized = false;
+  decoder_exist_ = false;
+  decoder_initialized_ = false;
 }
 
-void ACMCNG::InternalDestructEncoderInst(void* ptrInst) {
-  if (ptrInst != NULL) {
-    WebRtcCng_FreeEnc(static_cast<CNG_enc_inst*>(ptrInst));
+void ACMCNG::InternalDestructEncoderInst(void* ptr_inst) {
+  if (ptr_inst != NULL) {
+    WebRtcCng_FreeEnc(static_cast<CNG_enc_inst*>(ptr_inst));
   }
   return;
 }
 
-} // namespace webrtc
+int16_t ACMCNG::EnableDTX() { return -1; }
+int16_t ACMCNG::DisableDTX() { return -1; }
+
+}  // namespace acm1
+
+}  // namespace webrtc

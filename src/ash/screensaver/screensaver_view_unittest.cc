@@ -18,8 +18,8 @@ class ScreensaverViewTest : public ash::test::AshTestBase {
  public:
   ScreensaverViewTest() {
     url_ = GURL("http://www.google.com");
-    views_delegate_.reset(new AshTestViewsDelegate);
-    webview_test_helper_.reset(new views::WebViewTestHelper(message_loop()));
+    views_delegate_.reset(new AshTestViewsDelegate());
+    webview_test_helper_.reset(new views::WebViewTestHelper());
   }
 
   virtual ~ScreensaverViewTest() {}
@@ -30,23 +30,14 @@ class ScreensaverViewTest : public ash::test::AshTestBase {
   }
 
   void ExpectOpenScreensaver() {
-    internal::ScreensaverView* screensaver =
-        internal::ScreensaverView::GetInstance();
+    ScreensaverView* screensaver = ScreensaverView::GetInstance();
     EXPECT_TRUE(screensaver != NULL);
     if (!screensaver) return;
-
-    EXPECT_TRUE(screensaver->screensaver_webview_ != NULL);
-    if (!screensaver->screensaver_webview_) return;
-
-    EXPECT_TRUE(screensaver->screensaver_webview_->web_contents() != NULL);
-    if (!screensaver->screensaver_webview_->web_contents()) return;
-
-    EXPECT_EQ(screensaver->screensaver_webview_->web_contents()->GetURL(),
-              url_);
+    EXPECT_TRUE(screensaver->IsScreensaverShowingURL(url_));
   }
 
   void ExpectClosedScreensaver() {
-    EXPECT_TRUE(internal::ScreensaverView::GetInstance() == NULL);
+    EXPECT_TRUE(ScreensaverView::GetInstance() == NULL);
   }
 
  protected:

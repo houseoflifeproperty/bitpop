@@ -58,16 +58,6 @@ using ::testing::SetArgPointee;
 using ::testing::StrictMock;
 using ::testing::proto::WhenDeserializedAs;
 
-// Creates an action InvokeAndDeleteClosure<k> that invokes the kth closure and
-// deletes it after the Run method has been called.
-ACTION_TEMPLATE(
-    InvokeAndDeleteClosure,
-    HAS_1_TEMPLATE_PARAMS(int, k),
-    AND_0_VALUE_PARAMS()) {
-  std::tr1::get<k>(args)->Run();
-  delete std::tr1::get<k>(args);
-}
-
 // Creates an action SaveArgToVector<k>(vector*) that saves the kth argument in
 // |vec|.
 ACTION_TEMPLATE(
@@ -91,35 +81,6 @@ ACTION(InvokeWriteCallbackSuccess) {
   delete arg2;
 }
 
-// A mock of the InvalidationListener interface.
-class MockInvalidationListener : public InvalidationListener {
- public:
-  MOCK_METHOD1(Ready, void(InvalidationClient*));  // NOLINT
-
-  MOCK_METHOD3(Invalidate,
-      void(InvalidationClient *, const Invalidation&,  // NOLINT
-           const AckHandle&));  // NOLINT
-
-  MOCK_METHOD3(InvalidateUnknownVersion,
-               void(InvalidationClient *, const ObjectId&,
-                    const AckHandle&));  // NOLINT
-
-  MOCK_METHOD2(InvalidateAll,
-      void(InvalidationClient *, const AckHandle&));  // NOLINT
-
-  MOCK_METHOD3(InformRegistrationStatus,
-      void(InvalidationClient*, const ObjectId&, RegistrationState));  // NOLINT
-
-  MOCK_METHOD4(InformRegistrationFailure,
-      void(InvalidationClient*, const ObjectId&, bool, const string&));
-
-  MOCK_METHOD3(ReissueRegistrations,
-      void(InvalidationClient*, const string&, int));
-
-  MOCK_METHOD2(InformError,
-      void(InvalidationClient*, const ErrorInfo&));
-};
-
 // Tests the basic functionality of the invalidation client.
 class InvalidationClientImplTest : public UnitTestBase {
  public:
@@ -129,6 +90,8 @@ class InvalidationClientImplTest : public UnitTestBase {
   // components and setting up common expectations for certain mock objects.
   virtual void SetUp() {
     UnitTestBase::SetUp();
+    InitCommonExpectations();  // Set up expectations for common mock operations
+
 
     // Clear throttle limits so that it does not interfere with any test.
     InvalidationClientImpl::InitConfig(&config);
@@ -219,6 +182,21 @@ class InvalidationClientImplTest : public UnitTestBase {
 TEST_F(InvalidationClientImplTest, Start) {
   SetExpectationsForTiclStart(1);
   StartClient();
+}
+
+// Tests that GenerateNonce generates a unique nonce on every call.
+TEST_F(InvalidationClientImplTest, GenerateNonce) {
+  // Create a random number generated seeded with the current time.
+  scoped_ptr<Random> random;
+  random.reset(new Random(InvalidationClientUtil::GetCurrentTimeMs(
+      resources->internal_scheduler())));
+
+  // Generate two nonces and make sure they are distinct. (The chances
+  // of a collision should be vanishingly small since our correctness
+  // relies upon no collisions.)
+  string nonce1 = InvalidationClientCore::GenerateNonce(random.get());
+  string nonce2 = InvalidationClientCore::GenerateNonce(random.get());
+  ASSERT_NE(nonce1, nonce2);
 }
 
 // Starts the Ticl, registers for a few objects, gets success and ensures that
@@ -411,13 +389,7 @@ TEST_F(InvalidationClientImplTest, IncomingAuthErrorMessage) {
   InitTestObjectIds(num_objects, &oid_protos);
   ConvertFromObjectIdProtos(oid_protos, &oids);
 
-  // Expect success for the registration below since the client calls
-  // immediately with success.
-  EXPECT_CALL(listener, InformRegistrationStatus(Eq(client.get()), Eq(oids[0]),
-      InvalidationListener::REGISTERED));
-
-  // Expect error and registration failure from the ticl + a schedule for
-  // ticl.stop.
+  // Expect error and registration failure from the ticl.
   EXPECT_CALL(listener, InformError(Eq(client.get()), _));
   EXPECT_CALL(listener, InformRegistrationFailure(Eq(client.get()), Eq(oids[0]),
       Eq(false), _));
@@ -450,11 +422,6 @@ TEST_F(InvalidationClientImplTest, NetworkTimeouts) {
   vector<ObjectId> oids;
   InitTestObjectIds(num_objects, &oid_protos);
   ConvertFromObjectIdProtos(oid_protos, &oids);
-
-  // Expect success for the registration below since the client calls
-  // immediately with success.
-  EXPECT_CALL(listener, InformRegistrationStatus(Eq(client.get()), Eq(oids[0]),
-      InvalidationListener::REGISTERED));
 
   // Start the client.
   StartClient();

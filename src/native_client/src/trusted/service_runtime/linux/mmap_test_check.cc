@@ -20,7 +20,7 @@ void CheckMapping(uintptr_t addr, size_t size, int protect, int map_type) {
   uint64_t start;
   uint64_t end;
   int64_t inode;
-  char flags[4];
+  char flags[5];
   int prot = 0;
   int type = 0;
   int num;
@@ -36,8 +36,8 @@ void CheckMapping(uintptr_t addr, size_t size, int protect, int map_type) {
       break;
     }
     // Parse the line
-    if (3 < sscanf(buf, "%"SCNx64"-%"SCNx64" %4s %*d %*x:%*x %"SCNd64" %n",
-                   &start, &end, flags, &inode, &num)) {
+    if (3 < sscanf(buf, "%" SCNx64 "-%" SCNx64 " %4s %*d %*x:%*x %" SCNd64
+                   " %n", &start, &end, flags, &inode, &num)) {
       // The maps file will merge regions with the same attributes.  Thus,
       // we allow the starting address to be before the expected starting
       // address, and we allow the ending address to be after the expected

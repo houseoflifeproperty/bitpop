@@ -19,8 +19,15 @@
 #include "native_client/src/trusted/fault_injection/test_injection.h"
 #include "native_client/tests/thread_capture/thread_capture_test_injection.h"
 
+#if NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
+static const int kExpectedSignal = SIGILL;
+#else
+static const int kExpectedSignal = SIGSEGV;
+#endif
 
-void NaClSegVHandler(int signum, siginfo_t *info, void *other) {
+uintptr_t g_nacl_syscall_thread_capture_fault_addr;
+
+void NaClSignalHandler(int signum, siginfo_t *info, void *other) {
   uintptr_t faulting_pc;
   ucontext_t *ucp;
 
@@ -37,6 +44,8 @@ void NaClSegVHandler(int signum, siginfo_t *info, void *other) {
 #  endif
 # elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm
   faulting_pc = ucp->uc_mcontext.arm_pc;
+# elif NACL_ARCH(NACL_BUILD_ARCH) == NACL_mips
+  faulting_pc = ucp->uc_mcontext.pc;
 # else
 #  error "how do i get the PC on this cpu architecture?"
 # endif
@@ -63,10 +72,10 @@ void NaClSegVHandler(int signum, siginfo_t *info, void *other) {
   printf("signal %d\n", signum);
   printf("faulting_pc 0x%"NACL_PRIxPTR"\n", faulting_pc);
   printf("NaClSyscallThreadCaptureFault 0x%"NACL_PRIxPTR"\n",
-         (uintptr_t) NaClSyscallThreadCaptureFault);
+         g_nacl_syscall_thread_capture_fault_addr);
 
-  CHECK(signum == SIGSEGV);
-  CHECK((uintptr_t) NaClSyscallThreadCaptureFault == faulting_pc);
+  CHECK(signum == kExpectedSignal);
+  CHECK(g_nacl_syscall_thread_capture_fault_addr == faulting_pc);
   exit(0);
 }
 
@@ -82,11 +91,11 @@ void NaClSetSignalHandler(void) {
   sigaltstack(&stack, (stack_t *) NULL);
 
   memset(&action, 0, sizeof action);
-  action.sa_sigaction = NaClSegVHandler;
+  action.sa_sigaction = NaClSignalHandler;
   sigfillset(&action.sa_mask);
   action.sa_flags = SA_ONSTACK | SA_SIGINFO;
 
-  CHECK(0 == sigaction(SIGSEGV, &action, (struct sigaction *) NULL));
+  CHECK(0 == sigaction(kExpectedSignal, &action, (struct sigaction *) NULL));
 }
 
 static struct NaClTestInjectionTable const g_test_injection_functions = {

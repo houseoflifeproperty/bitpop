@@ -13,13 +13,13 @@
 //
 
 // Settings
-#include "vie_autotest_defines.h"
-#include "vie_autotest.h"
-#include "engine_configurations.h"
+#include "webrtc/engine_configurations.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_autotest.h"
+#include "webrtc/video_engine/test/auto_test/interface/vie_autotest_defines.h"
 
-#include "tb_interfaces.h"
-#include "tb_video_channel.h"
-#include "tb_capture_device.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_capture_device.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_interfaces.h"
+#include "webrtc/video_engine/test/libvietest/include/tb_video_channel.h"
 
 class MyEffectFilter: public webrtc::ViEEffectFilter
 {
@@ -28,12 +28,15 @@ public:
 
     ~MyEffectFilter() {}
 
-    virtual int Transform(int size, unsigned char* frameBuffer,
-                          unsigned int timeStamp90KHz, unsigned int width,
+    virtual int Transform(int size,
+                          unsigned char* frame_buffer,
+                          int64_t ntp_time_ms,
+                          unsigned int timestamp,
+                          unsigned int width,
                           unsigned int height)
     {
         // Black and white
-        memset(frameBuffer + (2 * size) / 3, 0x7f, size / 3);
+        memset(frame_buffer + (2 * size) / 3, 0x7f, size / 3);
         return 0;
     }
 };
@@ -61,7 +64,7 @@ void ViEAutoTest::ViEImageProcessStandardTest()
 
     ViETest::Log("Capture device is renderered in Window 1");
     ViETest::Log("Remote stream is renderered in Window 2");
-    AutoTestSleep(KAutoTestSleepTimeMs);
+    AutoTestSleep(kAutoTestSleepTimeMs);
 
     //***************************************************************
     //	Engine ready. Begin testing class
@@ -73,7 +76,7 @@ void ViEAutoTest::ViEImageProcessStandardTest()
 
     ViETest::Log("Black and white filter registered for capture device, "
                  "affects both windows");
-    AutoTestSleep(KAutoTestSleepTimeMs);
+    AutoTestSleep(kAutoTestSleepTimeMs);
 
     EXPECT_EQ(0, ViE.image_process->DeregisterCaptureEffectFilter(
         tbCapture.captureId));
@@ -84,7 +87,7 @@ void ViEAutoTest::ViEImageProcessStandardTest()
     ViETest::Log("Remove capture effect filter, adding filter for incoming "
                  "stream");
     ViETest::Log("Only Window 2 should be black and white");
-    AutoTestSleep(KAutoTestSleepTimeMs);
+    AutoTestSleep(kAutoTestSleepTimeMs);
 
     EXPECT_EQ(0, ViE.render->StopRender(tbCapture.captureId));
     EXPECT_EQ(0, ViE.render->RemoveRenderer(tbCapture.captureId));
@@ -111,7 +114,7 @@ void ViEAutoTest::ViEImageProcessStandardTest()
 
     ViETest::Log("Black and white filter registered for capture device, "
                  "affects both windows");
-    AutoTestSleep(KAutoTestSleepTimeMs);
+    AutoTestSleep(kAutoTestSleepTimeMs);
 
     EXPECT_EQ(0, ViE.image_process->DeregisterCaptureEffectFilter(
         tbCapture.captureId));
@@ -122,7 +125,7 @@ void ViEAutoTest::ViEImageProcessStandardTest()
     ViETest::Log("Capture filter removed.");
     ViETest::Log("Black and white filter registered for one channel, Window2 "
                  "should be black and white");
-    AutoTestSleep(KAutoTestSleepTimeMs);
+    AutoTestSleep(kAutoTestSleepTimeMs);
 
     EXPECT_EQ(0, ViE.image_process->DeregisterSendEffectFilter(
         tbChannel.videoChannel));
@@ -157,10 +160,9 @@ void ViEAutoTest::ViEImageProcessAPITest()
         tbCapture.captureId, effectFilter));
     EXPECT_EQ(0, ViE.image_process->DeregisterCaptureEffectFilter(
         tbCapture.captureId));
-
-    // Double deregister
-    EXPECT_NE(0, ViE.image_process->DeregisterCaptureEffectFilter(
+    EXPECT_EQ(0, ViE.image_process->DeregisterCaptureEffectFilter(
         tbCapture.captureId));
+
     // Non-existing capture device
     EXPECT_NE(0, ViE.image_process->RegisterCaptureEffectFilter(
         tbChannel.videoChannel, effectFilter));
@@ -174,7 +176,7 @@ void ViEAutoTest::ViEImageProcessAPITest()
         tbChannel.videoChannel, effectFilter));
     EXPECT_EQ(0, ViE.image_process->DeregisterRenderEffectFilter(
         tbChannel.videoChannel));
-    EXPECT_NE(0, ViE.image_process->DeregisterRenderEffectFilter(
+    EXPECT_EQ(0, ViE.image_process->DeregisterRenderEffectFilter(
         tbChannel.videoChannel));
 
     // Non-existing channel id
@@ -190,7 +192,7 @@ void ViEAutoTest::ViEImageProcessAPITest()
         tbChannel.videoChannel, effectFilter));
     EXPECT_EQ(0, ViE.image_process->DeregisterSendEffectFilter(
         tbChannel.videoChannel));
-    EXPECT_NE(0, ViE.image_process->DeregisterSendEffectFilter(
+    EXPECT_EQ(0, ViE.image_process->DeregisterSendEffectFilter(
         tbChannel.videoChannel));
     EXPECT_NE(0, ViE.image_process->RegisterSendEffectFilter(
         tbCapture.captureId, effectFilter));

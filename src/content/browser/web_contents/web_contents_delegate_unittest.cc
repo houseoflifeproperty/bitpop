@@ -4,40 +4,26 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/web_contents_delegate.h"
 #include "content/public/test/test_browser_context.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
 
 class MockWebContentsDelegate : public WebContentsDelegate {
- public:
-  virtual ~MockWebContentsDelegate() {}
 };
 
 class WebContentsDelegateTest : public RenderViewHostImplTestHarness {
- public:
-  WebContentsDelegateTest()
-      : file_user_blocking_thread_(
-            BrowserThread::FILE_USER_BLOCKING, &message_loop_),
-        io_thread_(BrowserThread::IO, &message_loop_) {
-  }
-
- private:
-  TestBrowserThread file_user_blocking_thread_;
-  TestBrowserThread io_thread_;
 };
 
 TEST_F(WebContentsDelegateTest, UnregisterInDestructor) {
   scoped_ptr<WebContentsImpl> contents_a(static_cast<WebContentsImpl*>(
-      WebContents::Create(WebContents::CreateParams(browser_context_.get()))));
+      WebContents::Create(WebContents::CreateParams(browser_context()))));
   scoped_ptr<WebContentsImpl> contents_b(static_cast<WebContentsImpl*>(
-      WebContents::Create(WebContents::CreateParams(browser_context_.get()))));
+      WebContents::Create(WebContents::CreateParams(browser_context()))));
   EXPECT_EQ(NULL, contents_a->GetDelegate());
   EXPECT_EQ(NULL, contents_b->GetDelegate());
 

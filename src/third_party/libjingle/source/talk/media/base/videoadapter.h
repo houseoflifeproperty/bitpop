@@ -26,6 +26,7 @@
 #ifndef TALK_MEDIA_BASE_VIDEOADAPTER_H_  // NOLINT
 #define TALK_MEDIA_BASE_VIDEOADAPTER_H_
 
+#include "talk/base/common.h"  // For ASSERT
 #include "talk/base/criticalsection.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/sigslot.h"
@@ -43,13 +44,15 @@ class VideoAdapter {
   VideoAdapter();
   virtual ~VideoAdapter();
 
-  void SetInputFormat(const VideoFormat& format);
+  virtual void SetInputFormat(const VideoFormat& format);
   void SetOutputFormat(const VideoFormat& format);
   // Constrain output resolution to this many pixels overall
   void SetOutputNumPixels(int num_pixels);
   int GetOutputNumPixels() const;
 
   const VideoFormat& input_format();
+  // Returns true if the adapter is dropping frames in calls to AdaptFrame.
+  bool drops_all_frames() const;
   const VideoFormat& output_format();
   // If the parameter black is true, the adapted frames will be black.
   void SetBlackOutput(bool black);
@@ -60,18 +63,33 @@ class VideoAdapter {
   // successfully. Return false otherwise.
   // output_frame_ is owned by the VideoAdapter that has the best knowledge on
   // the output frame.
-  bool AdaptFrame(const VideoFrame* in_frame, const VideoFrame** out_frame);
+  bool AdaptFrame(const VideoFrame* in_frame, VideoFrame** out_frame);
+
+  void set_scale_third(bool enable);
+  bool scale_third() const { return scale_third_; }
 
  protected:
   float FindClosestScale(int width, int height, int target_num_pixels);
+  float FindClosestViewScale(int width, int height, int target_num_pixels);
   float FindLowerScale(int width, int height, int target_num_pixels);
 
  private:
+  const float* GetViewScaleFactors() const;
+  float FindScale(const float* scale_factors,
+                  const float upbias, int width, int height,
+                  int target_num_pixels);
   bool StretchToOutputFrame(const VideoFrame* in_frame);
 
   VideoFormat input_format_;
   VideoFormat output_format_;
   int output_num_pixels_;
+  bool scale_third_;  // True if adapter allows scaling to 1/3 and 2/3.
+  int frames_in_;  // Number of input frames.
+  int frames_out_;  // Number of output frames.
+  int frames_scaled_;  // Number of frames scaled.
+  int adaption_changes_;  // Number of changes in scale factor.
+  size_t previous_width_;  // Previous adapter output width.
+  size_t previous_height_;  // Previous adapter output height.
   bool black_output_;  // Flag to tell if we need to black output_frame_.
   bool is_black_;  // Flag to tell if output_frame_ is currently black.
   int64 interval_next_frame_;
@@ -89,42 +107,61 @@ class CoordinatedVideoAdapter
     : public VideoAdapter, public sigslot::has_slots<>  {
  public:
   enum AdaptRequest { UPGRADE, KEEP, DOWNGRADE };
+  enum AdaptReasonEnum {
+    ADAPTREASON_NONE = 0,
+    ADAPTREASON_CPU = 1,
+    ADAPTREASON_BANDWIDTH = 2,
+    ADAPTREASON_VIEW = 4
+  };
+  typedef int AdaptReason;
 
   CoordinatedVideoAdapter();
   virtual ~CoordinatedVideoAdapter() {}
 
+  virtual void SetInputFormat(const VideoFormat& format);
+
   // Enable or disable video adaptation due to the change of the CPU load.
   void set_cpu_adaptation(bool enable) { cpu_adaptation_ = enable; }
   bool cpu_adaptation() const { return cpu_adaptation_; }
+  // Enable or disable smoothing when doing CPU adaptation. When smoothing is
+  // enabled, system CPU load is tracked using an exponential weighted
+  // average.
+  void set_cpu_smoothing(bool enable);
+  bool cpu_smoothing() const { return cpu_smoothing_; }
   // Enable or disable video adaptation due to the change of the GD
   void set_gd_adaptation(bool enable) { gd_adaptation_ = enable; }
   bool gd_adaptation() const { return gd_adaptation_; }
   // Enable or disable video adaptation due to the change of the View
   void set_view_adaptation(bool enable) { view_adaptation_ = enable; }
   bool view_adaptation() const { return view_adaptation_; }
+  // Enable or disable video adaptation to fast switch View
+  void set_view_switch(bool enable) { view_switch_ = enable; }
+  bool view_switch() const { return view_switch_; }
+
+  CoordinatedVideoAdapter::AdaptReason adapt_reason() const {
+    return adapt_reason_;
+  }
+
   // When the video is decreased, set the waiting time for CPU adaptation to
   // decrease video again.
-  void set_cpu_downgrade_wait_time(uint32 ms) { cpu_downgrade_wait_time_ = ms; }
-  // CPU system load high threshold for reducing resolution.  e.g. 0.90f
-  void set_high_system_threshold(float high_system_threshold) {
-    high_system_threshold_ = high_system_threshold;
-  }
+  void set_cpu_load_min_samples(int cpu_load_min_samples);
+  int cpu_load_min_samples() const { return cpu_load_min_samples_; }
+  // CPU system load high threshold for reducing resolution.  e.g. 0.85f
+  void set_high_system_threshold(float high_system_threshold);
   float high_system_threshold() const { return high_system_threshold_; }
   // CPU system load low threshold for increasing resolution.  e.g. 0.70f
-  void set_low_system_threshold(float low_system_threshold) {
-    low_system_threshold_ = low_system_threshold;
-  }
+  void set_low_system_threshold(float low_system_threshold);
   float low_system_threshold() const { return low_system_threshold_; }
-  // CPU process load medium threshold for reducing resolution.  e.g. 0.40f
-  void set_medium_process_threshold(float medium_process_threshold) {
-    medium_process_threshold_ = medium_process_threshold;
-  }
-  float medium_process_threshold() const { return medium_process_threshold_; }
+  // CPU process load threshold for reducing resolution.  e.g. 0.10f
+  void set_process_threshold(float process_threshold);
+  float process_threshold() const { return process_threshold_; }
 
   // Handle the format request from the server via Jingle update message.
   void OnOutputFormatRequest(const VideoFormat& format);
   // Handle the resolution request from the encoder due to bandwidth changes.
   void OnEncoderResolutionRequest(int width, int height, AdaptRequest request);
+  // Handle the resolution request for CPU overuse.
+  void OnCpuResolutionRequest(AdaptRequest request);
   // Handle the CPU load provided by a CPU monitor.
   void OnCpuLoadUpdated(int current_cpus, int max_cpus,
                         float process_load, float system_load);
@@ -133,7 +170,7 @@ class CoordinatedVideoAdapter
 
  private:
   // Adapt to the minimum of the formats the server requests, the CPU wants, and
-  // the encoder wants.  Returns true if resolution changed.
+  // the encoder wants. Returns true if resolution changed.
   bool AdaptToMinimumFormat(int* new_width, int* new_height);
   bool IsMinimumFormat(int pixels);
   void StepPixelCount(CoordinatedVideoAdapter::AdaptRequest request,
@@ -143,23 +180,31 @@ class CoordinatedVideoAdapter
     float process_load, float system_load);
 
   bool cpu_adaptation_;  // True if cpu adaptation is enabled.
+  bool cpu_smoothing_;  // True if cpu smoothing is enabled (with adaptation).
   bool gd_adaptation_;  // True if gd adaptation is enabled.
   bool view_adaptation_;  // True if view adaptation is enabled.
+  bool view_switch_;  // True if view switch is enabled.
   int cpu_downgrade_count_;
-  int cpu_downgrade_wait_time_;
+  int cpu_load_min_samples_;
+  int cpu_load_num_samples_;
   // cpu system load thresholds relative to max cpus.
-  float high_system_threshold_;  // 0.90f;
-  float low_system_threshold_;  // 0.70f;
+  float high_system_threshold_;
+  float low_system_threshold_;
   // cpu process load thresholds relative to current cpus.
-  float medium_process_threshold_;  // 0.40f;
+  float process_threshold_;
   // Video formats that the server view requests, the CPU wants, and the encoder
   // wants respectively. The adapted output format is the minimum of these.
   int view_desired_num_pixels_;
   int64 view_desired_interval_;
   int encoder_desired_num_pixels_;
   int cpu_desired_num_pixels_;
+  CoordinatedVideoAdapter::AdaptReason adapt_reason_;
   // The critical section to protect handling requests.
   talk_base::CriticalSection request_critical_section_;
+
+  // The weighted average of cpu load over time. It's always updated (if cpu
+  // adaptation is on), but only used if cpu_smoothing_ is set.
+  float system_load_average_;
 
   DISALLOW_COPY_AND_ASSIGN(CoordinatedVideoAdapter);
 };

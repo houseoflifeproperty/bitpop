@@ -4,27 +4,47 @@
 
 #include "gpu/command_buffer/service/framebuffer_manager.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "gpu/command_buffer/common/gles2_cmd_utils.h"
+#include "gpu/command_buffer/service/renderbuffer_manager.h"
+#include "gpu/command_buffer/service/texture_manager.h"
 #include "ui/gl/gl_bindings.h"
 
 namespace gpu {
 namespace gles2 {
 
-FramebufferManager::FramebufferInfo::FramebufferComboCompleteMap*
-    FramebufferManager::FramebufferInfo::framebuffer_combo_complete_map_;
+DecoderFramebufferState::DecoderFramebufferState()
+    : clear_state_dirty(false),
+      bound_read_framebuffer(NULL),
+      bound_draw_framebuffer(NULL) {
+}
 
-void FramebufferManager::FramebufferInfo::ClearFramebufferCompleteComboMap() {
+DecoderFramebufferState::~DecoderFramebufferState() {
+}
+
+Framebuffer::FramebufferComboCompleteMap*
+    Framebuffer::framebuffer_combo_complete_map_;
+
+// Framebuffer completeness is not cacheable on OS X because of dynamic
+// graphics switching.
+// http://crbug.com/180876
+#if defined(OS_MACOSX)
+bool Framebuffer::allow_framebuffer_combo_complete_map_ = false;
+#else
+bool Framebuffer::allow_framebuffer_combo_complete_map_ = true;
+#endif
+
+void Framebuffer::ClearFramebufferCompleteComboMap() {
   if (framebuffer_combo_complete_map_) {
     framebuffer_combo_complete_map_->clear();
   }
 }
 
 class RenderbufferAttachment
-    : public FramebufferManager::FramebufferInfo::Attachment {
+    : public Framebuffer::Attachment {
  public:
   explicit RenderbufferAttachment(
-      RenderbufferManager::RenderbufferInfo* renderbuffer)
+      Renderbuffer* renderbuffer)
       : renderbuffer_(renderbuffer) {
   }
 
@@ -40,8 +60,16 @@ class RenderbufferAttachment
     return renderbuffer_->internal_format();
   }
 
+  virtual GLenum texture_type() const OVERRIDE {
+    return 0;
+  }
+
   virtual GLsizei samples() const OVERRIDE {
     return renderbuffer_->samples();
+  }
+
+  virtual GLuint object_name() const OVERRIDE {
+    return renderbuffer_->client_id();
   }
 
   virtual bool cleared() const OVERRIDE {
@@ -52,35 +80,36 @@ class RenderbufferAttachment
       RenderbufferManager* renderbuffer_manager,
       TextureManager* /* texture_manager */,
       bool cleared) OVERRIDE {
-    renderbuffer_manager->SetCleared(renderbuffer_, cleared);
+    renderbuffer_manager->SetCleared(renderbuffer_.get(), cleared);
   }
 
   virtual bool IsTexture(
-      TextureManager::TextureInfo* /* texture */) const OVERRIDE {
+      TextureRef* /* texture */) const OVERRIDE {
     return false;
   }
 
   virtual bool IsRenderbuffer(
-       RenderbufferManager::RenderbufferInfo* renderbuffer) const OVERRIDE {
-     return renderbuffer_ == renderbuffer;
+       Renderbuffer* renderbuffer) const OVERRIDE {
+    return renderbuffer_.get() == renderbuffer;
   }
 
   virtual bool CanRenderTo() const OVERRIDE {
     return true;
   }
 
-  virtual void DetachFromFramebuffer() const OVERRIDE {
+  virtual void DetachFromFramebuffer(Framebuffer* framebuffer) const OVERRIDE {
     // Nothing to do for renderbuffers.
   }
 
-  virtual bool ValidForAttachmentType(GLenum attachment_type) OVERRIDE {
+  virtual bool ValidForAttachmentType(
+      GLenum attachment_type, uint32 max_color_attachments) OVERRIDE {
     uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
-        attachment_type);
+        attachment_type, max_color_attachments);
     uint32 have = GLES2Util::GetChannelsForFormat(internal_format());
     return (need & have) != 0;
   }
 
-  RenderbufferManager::RenderbufferInfo* renderbuffer() const {
+  Renderbuffer* renderbuffer() const {
     return renderbuffer_.get();
   }
 
@@ -90,160 +119,211 @@ class RenderbufferAttachment
     renderbuffer_->AddToSignature(signature);
   }
 
+  virtual void OnWillRenderTo() const OVERRIDE {}
+  virtual void OnDidRenderTo() const OVERRIDE {}
+
  protected:
   virtual ~RenderbufferAttachment() { }
 
  private:
-  RenderbufferManager::RenderbufferInfo::Ref renderbuffer_;
+  scoped_refptr<Renderbuffer> renderbuffer_;
 
   DISALLOW_COPY_AND_ASSIGN(RenderbufferAttachment);
 };
 
 class TextureAttachment
-    : public FramebufferManager::FramebufferInfo::Attachment {
+    : public Framebuffer::Attachment {
  public:
   TextureAttachment(
-      TextureManager::TextureInfo* texture, GLenum target, GLint level)
-      : texture_(texture),
+      TextureRef* texture_ref, GLenum target, GLint level, GLsizei samples)
+      : texture_ref_(texture_ref),
         target_(target),
-        level_(level) {
+        level_(level),
+        samples_(samples) {
   }
 
   virtual GLsizei width() const OVERRIDE {
     GLsizei temp_width = 0;
     GLsizei temp_height = 0;
-    texture_->GetLevelSize(target_, level_, &temp_width, &temp_height);
+    texture_ref_->texture()->GetLevelSize(
+        target_, level_, &temp_width, &temp_height);
     return temp_width;
   }
 
   virtual GLsizei height() const OVERRIDE {
     GLsizei temp_width = 0;
     GLsizei temp_height = 0;
-    texture_->GetLevelSize(target_, level_, &temp_width, &temp_height);
+    texture_ref_->texture()->GetLevelSize(
+        target_, level_, &temp_width, &temp_height);
     return temp_height;
   }
 
   virtual GLenum internal_format() const OVERRIDE {
     GLenum temp_type = 0;
     GLenum temp_internal_format = 0;
-    texture_->GetLevelType(target_, level_, &temp_type, &temp_internal_format);
+    texture_ref_->texture()->GetLevelType(
+        target_, level_, &temp_type, &temp_internal_format);
     return temp_internal_format;
   }
 
+  virtual GLenum texture_type() const OVERRIDE {
+    GLenum temp_type = 0;
+    GLenum temp_internal_format = 0;
+    texture_ref_->texture()->GetLevelType(
+        target_, level_, &temp_type, &temp_internal_format);
+    return temp_type;
+  }
+
   virtual GLsizei samples() const OVERRIDE {
-    return 0;
+    return samples_;
+  }
+
+  virtual GLuint object_name() const OVERRIDE {
+    return texture_ref_->client_id();
   }
 
   virtual bool cleared() const OVERRIDE {
-    return texture_->IsLevelCleared(target_, level_);
+    return texture_ref_->texture()->IsLevelCleared(target_, level_);
   }
 
   virtual void SetCleared(
       RenderbufferManager* /* renderbuffer_manager */,
       TextureManager* texture_manager,
       bool cleared) OVERRIDE {
-    texture_manager->SetLevelCleared(texture_, target_, level_, cleared);
+    texture_manager->SetLevelCleared(
+        texture_ref_.get(), target_, level_, cleared);
   }
 
-  virtual bool IsTexture(TextureManager::TextureInfo* texture) const OVERRIDE {
-    return texture == texture_.get();
+  virtual bool IsTexture(TextureRef* texture) const OVERRIDE {
+    return texture == texture_ref_.get();
   }
 
   virtual bool IsRenderbuffer(
-       RenderbufferManager::RenderbufferInfo* /* renderbuffer */)
+       Renderbuffer* /* renderbuffer */)
           const OVERRIDE {
     return false;
   }
 
-  TextureManager::TextureInfo* texture() const {
-    return texture_.get();
+  TextureRef* texture() const {
+    return texture_ref_.get();
   }
 
   virtual bool CanRenderTo() const OVERRIDE {
-    return texture_->CanRenderTo();
+    return texture_ref_->texture()->CanRenderTo();
   }
 
-  virtual void DetachFromFramebuffer() const OVERRIDE {
-    texture_->DetachFromFramebuffer();
+  virtual void DetachFromFramebuffer(Framebuffer* framebuffer)
+      const OVERRIDE {
+    texture_ref_->texture()->DetachFromFramebuffer();
+    framebuffer->OnTextureRefDetached(texture_ref_.get());
   }
 
-  virtual bool ValidForAttachmentType(GLenum attachment_type) OVERRIDE {
+  virtual bool ValidForAttachmentType(
+      GLenum attachment_type, uint32 max_color_attachments) OVERRIDE {
     GLenum type = 0;
     GLenum internal_format = 0;
-    if (!texture_->GetLevelType(target_, level_, &type, &internal_format)) {
+    if (!texture_ref_->texture()->GetLevelType(
+        target_, level_, &type, &internal_format)) {
       return false;
     }
     uint32 need = GLES2Util::GetChannelsNeededForAttachmentType(
-        attachment_type);
+        attachment_type, max_color_attachments);
     uint32 have = GLES2Util::GetChannelsForFormat(internal_format);
+
+    // Workaround for NVIDIA drivers that incorrectly expose these formats as
+    // renderable:
+    if (internal_format == GL_LUMINANCE || internal_format == GL_ALPHA ||
+        internal_format == GL_LUMINANCE_ALPHA) {
+      return false;
+    }
     return (need & have) != 0;
   }
 
   virtual void AddToSignature(
       TextureManager* texture_manager, std::string* signature) const OVERRIDE {
     DCHECK(signature);
-    texture_manager->AddToSignature(texture_, target_, level_, signature);
+    texture_manager->AddToSignature(
+        texture_ref_.get(), target_, level_, signature);
+  }
+
+  virtual void OnWillRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnWillModifyPixels();
+  }
+
+  virtual void OnDidRenderTo() const OVERRIDE {
+    texture_ref_->texture()->OnDidModifyPixels();
   }
 
  protected:
   virtual ~TextureAttachment() {}
 
  private:
-  TextureManager::TextureInfo::Ref texture_;
+  scoped_refptr<TextureRef> texture_ref_;
   GLenum target_;
   GLint level_;
+  GLsizei samples_;
 
   DISALLOW_COPY_AND_ASSIGN(TextureAttachment);
 };
 
-FramebufferManager::FramebufferManager()
+FramebufferManager::TextureDetachObserver::TextureDetachObserver() {}
+
+FramebufferManager::TextureDetachObserver::~TextureDetachObserver() {}
+
+FramebufferManager::FramebufferManager(
+    uint32 max_draw_buffers, uint32 max_color_attachments)
     : framebuffer_state_change_count_(1),
-      framebuffer_info_count_(0),
-      have_context_(true) {
+      framebuffer_count_(0),
+      have_context_(true),
+      max_draw_buffers_(max_draw_buffers),
+      max_color_attachments_(max_color_attachments) {
+  DCHECK_GT(max_draw_buffers_, 0u);
+  DCHECK_GT(max_color_attachments_, 0u);
 }
 
 FramebufferManager::~FramebufferManager() {
-  DCHECK(framebuffer_infos_.empty());
+  DCHECK(framebuffers_.empty());
   // If this triggers, that means something is keeping a reference to a
-  // FramebufferInfo belonging to this.
-  CHECK_EQ(framebuffer_info_count_, 0u);
+  // Framebuffer belonging to this.
+  CHECK_EQ(framebuffer_count_, 0u);
 }
 
-void FramebufferManager::FramebufferInfo::MarkAsDeleted() {
+void Framebuffer::MarkAsDeleted() {
   deleted_ = true;
   while (!attachments_.empty()) {
     Attachment* attachment = attachments_.begin()->second.get();
-    attachment->DetachFromFramebuffer();
+    attachment->DetachFromFramebuffer(this);
     attachments_.erase(attachments_.begin());
   }
 }
 
 void FramebufferManager::Destroy(bool have_context) {
   have_context_ = have_context;
-  framebuffer_infos_.clear();
+  framebuffers_.clear();
 }
 
 void FramebufferManager::StartTracking(
-    FramebufferManager::FramebufferInfo* /* framebuffer */) {
-  ++framebuffer_info_count_;
+    Framebuffer* /* framebuffer */) {
+  ++framebuffer_count_;
 }
 
 void FramebufferManager::StopTracking(
-    FramebufferManager::FramebufferInfo* /* framebuffer */) {
-  --framebuffer_info_count_;
+    Framebuffer* /* framebuffer */) {
+  --framebuffer_count_;
 }
 
-void FramebufferManager::CreateFramebufferInfo(
+void FramebufferManager::CreateFramebuffer(
     GLuint client_id, GLuint service_id) {
-  std::pair<FramebufferInfoMap::iterator, bool> result =
-      framebuffer_infos_.insert(
+  std::pair<FramebufferMap::iterator, bool> result =
+      framebuffers_.insert(
           std::make_pair(
               client_id,
-              FramebufferInfo::Ref(new FramebufferInfo(this, service_id))));
+              scoped_refptr<Framebuffer>(
+                  new Framebuffer(this, service_id))));
   DCHECK(result.second);
 }
 
-FramebufferManager::FramebufferInfo::FramebufferInfo(
+Framebuffer::Framebuffer(
     FramebufferManager* manager, GLuint service_id)
     : manager_(manager),
       deleted_(false),
@@ -251,9 +331,14 @@ FramebufferManager::FramebufferInfo::FramebufferInfo(
       has_been_bound_(false),
       framebuffer_complete_state_count_id_(0) {
   manager->StartTracking(this);
+  DCHECK_GT(manager->max_draw_buffers_, 0u);
+  draw_buffers_.reset(new GLenum[manager->max_draw_buffers_]);
+  draw_buffers_[0] = GL_COLOR_ATTACHMENT0;
+  for (uint32 i = 1; i < manager->max_draw_buffers_; ++i)
+    draw_buffers_[i] = GL_NONE;
 }
 
-FramebufferManager::FramebufferInfo::~FramebufferInfo() {
+Framebuffer::~Framebuffer() {
   if (manager_) {
     if (manager_->have_context_) {
       GLuint id = service_id();
@@ -264,25 +349,25 @@ FramebufferManager::FramebufferInfo::~FramebufferInfo() {
   }
 }
 
-bool FramebufferManager::FramebufferInfo::HasUnclearedAttachment(
+bool Framebuffer::HasUnclearedAttachment(
     GLenum attachment) const {
   AttachmentMap::const_iterator it =
       attachments_.find(attachment);
   if (it != attachments_.end()) {
-    const Attachment* attachment = it->second;
+    const Attachment* attachment = it->second.get();
     return !attachment->cleared();
   }
   return false;
 }
 
-void FramebufferManager::FramebufferInfo::MarkAttachmentAsCleared(
+void Framebuffer::MarkAttachmentAsCleared(
       RenderbufferManager* renderbuffer_manager,
       TextureManager* texture_manager,
       GLenum attachment,
       bool cleared) {
   AttachmentMap::iterator it = attachments_.find(attachment);
   if (it != attachments_.end()) {
-    Attachment* a = it->second;
+    Attachment* a = it->second.get();
     if (a->cleared() != cleared) {
       a->SetCleared(renderbuffer_manager,
                     texture_manager,
@@ -291,39 +376,48 @@ void FramebufferManager::FramebufferInfo::MarkAttachmentAsCleared(
   }
 }
 
-void FramebufferManager::FramebufferInfo::MarkAttachmentsAsCleared(
+void Framebuffer::MarkAttachmentsAsCleared(
       RenderbufferManager* renderbuffer_manager,
       TextureManager* texture_manager,
       bool cleared) {
   for (AttachmentMap::iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
-    Attachment* attachment = it->second;
+    Attachment* attachment = it->second.get();
     if (attachment->cleared() != cleared) {
       attachment->SetCleared(renderbuffer_manager, texture_manager, cleared);
     }
   }
 }
 
-bool FramebufferManager::FramebufferInfo::HasDepthAttachment() const {
+bool Framebuffer::HasDepthAttachment() const {
   return attachments_.find(GL_DEPTH_STENCIL_ATTACHMENT) != attachments_.end() ||
          attachments_.find(GL_DEPTH_ATTACHMENT) != attachments_.end();
 }
 
-bool FramebufferManager::FramebufferInfo::HasStencilAttachment() const {
+bool Framebuffer::HasStencilAttachment() const {
   return attachments_.find(GL_DEPTH_STENCIL_ATTACHMENT) != attachments_.end() ||
          attachments_.find(GL_STENCIL_ATTACHMENT) != attachments_.end();
 }
 
-GLenum FramebufferManager::FramebufferInfo::GetColorAttachmentFormat() const {
+GLenum Framebuffer::GetColorAttachmentFormat() const {
   AttachmentMap::const_iterator it = attachments_.find(GL_COLOR_ATTACHMENT0);
   if (it == attachments_.end()) {
     return 0;
   }
-  const Attachment* attachment = it->second;
+  const Attachment* attachment = it->second.get();
   return attachment->internal_format();
 }
 
-GLenum FramebufferManager::FramebufferInfo::IsPossiblyComplete() const {
+GLenum Framebuffer::GetColorAttachmentTextureType() const {
+  AttachmentMap::const_iterator it = attachments_.find(GL_COLOR_ATTACHMENT0);
+  if (it == attachments_.end()) {
+    return 0;
+  }
+  const Attachment* attachment = it->second.get();
+  return attachment->texture_type();
+}
+
+GLenum Framebuffer::IsPossiblyComplete() const {
   if (attachments_.empty()) {
     return GL_FRAMEBUFFER_INCOMPLETE_MISSING_ATTACHMENT;
   }
@@ -333,8 +427,9 @@ GLenum FramebufferManager::FramebufferInfo::IsPossiblyComplete() const {
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
     GLenum attachment_type = it->first;
-    Attachment* attachment = it->second;
-    if (!attachment->ValidForAttachmentType(attachment_type)) {
+    Attachment* attachment = it->second.get();
+    if (!attachment->ValidForAttachmentType(attachment_type,
+                                            manager_->max_color_attachments_)) {
       return GL_FRAMEBUFFER_INCOMPLETE_ATTACHMENT;
     }
     if (width < 0) {
@@ -359,39 +454,47 @@ GLenum FramebufferManager::FramebufferInfo::IsPossiblyComplete() const {
   return GL_FRAMEBUFFER_COMPLETE;
 }
 
-GLenum FramebufferManager::FramebufferInfo::GetStatus(
+GLenum Framebuffer::GetStatus(
     TextureManager* texture_manager, GLenum target) const {
   // Check if we have this combo already.
-  std::string signature(base::StringPrintf("|FBO|target=%04x", target));
-  for (AttachmentMap::const_iterator it = attachments_.begin();
-       it != attachments_.end(); ++it) {
-    Attachment* attachment = it->second;
-    signature += base::StringPrintf(
-        "|Attachment|attachmentpoint=%04x", it->first);
-    attachment->AddToSignature(texture_manager, &signature);
+  std::string signature;
+  if (allow_framebuffer_combo_complete_map_) {
+    signature = base::StringPrintf("|FBO|target=%04x", target);
+    for (AttachmentMap::const_iterator it = attachments_.begin();
+         it != attachments_.end(); ++it) {
+      Attachment* attachment = it->second.get();
+      signature +=
+          base::StringPrintf("|Attachment|attachmentpoint=%04x", it->first);
+      attachment->AddToSignature(texture_manager, &signature);
+    }
+
+    if (!framebuffer_combo_complete_map_) {
+      framebuffer_combo_complete_map_ = new FramebufferComboCompleteMap();
+    }
+
+    FramebufferComboCompleteMap::const_iterator it =
+        framebuffer_combo_complete_map_->find(signature);
+    if (it != framebuffer_combo_complete_map_->end()) {
+      return GL_FRAMEBUFFER_COMPLETE;
+    }
   }
 
-  if (!framebuffer_combo_complete_map_) {
-    framebuffer_combo_complete_map_ = new FramebufferComboCompleteMap();
-  }
-
-  FramebufferComboCompleteMap::const_iterator it =
-      framebuffer_combo_complete_map_->find(signature);
-  if (it != framebuffer_combo_complete_map_->end()) {
-    return GL_FRAMEBUFFER_COMPLETE;
-  }
   GLenum result = glCheckFramebufferStatusEXT(target);
-  if (result == GL_FRAMEBUFFER_COMPLETE) {
+
+  // Insert the new result into the combo map.
+  if (allow_framebuffer_combo_complete_map_ &&
+      result == GL_FRAMEBUFFER_COMPLETE) {
     framebuffer_combo_complete_map_->insert(std::make_pair(signature, true));
   }
+
   return result;
 }
 
-bool FramebufferManager::FramebufferInfo::IsCleared() const {
+bool Framebuffer::IsCleared() const {
   // are all the attachments cleaared?
   for (AttachmentMap::const_iterator it = attachments_.begin();
        it != attachments_.end(); ++it) {
-    Attachment* attachment = it->second;
+    Attachment* attachment = it->second.get();
     if (!attachment->cleared()) {
       return false;
     }
@@ -399,14 +502,42 @@ bool FramebufferManager::FramebufferInfo::IsCleared() const {
   return true;
 }
 
-void FramebufferManager::FramebufferInfo::UnbindRenderbuffer(
-    GLenum target, RenderbufferManager::RenderbufferInfo* renderbuffer) {
+GLenum Framebuffer::GetDrawBuffer(GLenum draw_buffer) const {
+  GLsizei index = static_cast<GLsizei>(
+      draw_buffer - GL_DRAW_BUFFER0_ARB);
+  CHECK(index >= 0 &&
+        index < static_cast<GLsizei>(manager_->max_draw_buffers_));
+  return draw_buffers_[index];
+}
+
+void Framebuffer::SetDrawBuffers(GLsizei n, const GLenum* bufs) {
+  DCHECK(n <= static_cast<GLsizei>(manager_->max_draw_buffers_));
+  for (GLsizei i = 0; i < n; ++i)
+    draw_buffers_[i] = bufs[i];
+}
+
+bool Framebuffer::HasAlphaMRT() const {
+  for (uint32 i = 0; i < manager_->max_draw_buffers_; ++i) {
+    if (draw_buffers_[i] != GL_NONE) {
+      const Attachment* attachment = GetAttachment(draw_buffers_[i]);
+      if (!attachment)
+        continue;
+      if ((GLES2Util::GetChannelsForFormat(
+               attachment->internal_format()) & 0x0008) != 0)
+        return true;
+    }
+  }
+  return false;
+}
+
+void Framebuffer::UnbindRenderbuffer(
+    GLenum target, Renderbuffer* renderbuffer) {
   bool done;
   do {
     done = true;
     for (AttachmentMap::const_iterator it = attachments_.begin();
          it != attachments_.end(); ++it) {
-      Attachment* attachment = it->second;
+      Attachment* attachment = it->second.get();
       if (attachment->IsRenderbuffer(renderbuffer)) {
         // TODO(gman): manually detach renderbuffer.
         // glFramebufferRenderbufferEXT(target, it->first, GL_RENDERBUFFER, 0);
@@ -418,18 +549,18 @@ void FramebufferManager::FramebufferInfo::UnbindRenderbuffer(
   } while (!done);
 }
 
-void FramebufferManager::FramebufferInfo::UnbindTexture(
-    GLenum target, TextureManager::TextureInfo* texture) {
+void Framebuffer::UnbindTexture(
+    GLenum target, TextureRef* texture_ref) {
   bool done;
   do {
     done = true;
     for (AttachmentMap::const_iterator it = attachments_.begin();
          it != attachments_.end(); ++it) {
-      Attachment* attachment = it->second;
-      if (attachment->IsTexture(texture)) {
+      Attachment* attachment = it->second.get();
+      if (attachment->IsTexture(texture_ref)) {
         // TODO(gman): manually detach texture.
         // glFramebufferTexture2DEXT(target, it->first, GL_TEXTURE_2D, 0, 0);
-        AttachTexture(it->first, NULL, GL_TEXTURE_2D, 0);
+        AttachTexture(it->first, NULL, GL_TEXTURE_2D, 0, 0);
         done = false;
         break;
       }
@@ -437,31 +568,27 @@ void FramebufferManager::FramebufferInfo::UnbindTexture(
   } while (!done);
 }
 
-FramebufferManager::FramebufferInfo* FramebufferManager::GetFramebufferInfo(
+Framebuffer* FramebufferManager::GetFramebuffer(
     GLuint client_id) {
-  FramebufferInfoMap::iterator it = framebuffer_infos_.find(client_id);
-  return it != framebuffer_infos_.end() ? it->second : NULL;
+  FramebufferMap::iterator it = framebuffers_.find(client_id);
+  return it != framebuffers_.end() ? it->second.get() : NULL;
 }
 
-void FramebufferManager::RemoveFramebufferInfo(GLuint client_id) {
-  FramebufferInfoMap::iterator it = framebuffer_infos_.find(client_id);
-  if (it != framebuffer_infos_.end()) {
+void FramebufferManager::RemoveFramebuffer(GLuint client_id) {
+  FramebufferMap::iterator it = framebuffers_.find(client_id);
+  if (it != framebuffers_.end()) {
     it->second->MarkAsDeleted();
-    framebuffer_infos_.erase(it);
+    framebuffers_.erase(it);
   }
 }
 
-void FramebufferManager::FramebufferInfo::AttachRenderbuffer(
-    GLenum attachment, RenderbufferManager::RenderbufferInfo* renderbuffer) {
-  DCHECK(attachment == GL_COLOR_ATTACHMENT0 ||
-         attachment == GL_DEPTH_ATTACHMENT ||
-         attachment == GL_STENCIL_ATTACHMENT ||
-         attachment == GL_DEPTH_STENCIL_ATTACHMENT);
+void Framebuffer::AttachRenderbuffer(
+    GLenum attachment, Renderbuffer* renderbuffer) {
   const Attachment* a = GetAttachment(attachment);
   if (a)
-    a->DetachFromFramebuffer();
+    a->DetachFromFramebuffer(this);
   if (renderbuffer) {
-    attachments_[attachment] = Attachment::Ref(
+    attachments_[attachment] = scoped_refptr<Attachment>(
         new RenderbufferAttachment(renderbuffer));
   } else {
     attachments_.erase(attachment);
@@ -469,41 +596,55 @@ void FramebufferManager::FramebufferInfo::AttachRenderbuffer(
   framebuffer_complete_state_count_id_ = 0;
 }
 
-void FramebufferManager::FramebufferInfo::AttachTexture(
-    GLenum attachment, TextureManager::TextureInfo* texture, GLenum target,
-    GLint level) {
-  DCHECK(attachment == GL_COLOR_ATTACHMENT0 ||
-         attachment == GL_DEPTH_ATTACHMENT ||
-         attachment == GL_STENCIL_ATTACHMENT ||
-         attachment == GL_DEPTH_STENCIL_ATTACHMENT);
+void Framebuffer::AttachTexture(
+    GLenum attachment, TextureRef* texture_ref, GLenum target,
+    GLint level, GLsizei samples) {
   const Attachment* a = GetAttachment(attachment);
   if (a)
-    a->DetachFromFramebuffer();
-  if (texture) {
-    attachments_[attachment] = Attachment::Ref(
-        new TextureAttachment(texture, target, level));
-    texture->AttachToFramebuffer();
+    a->DetachFromFramebuffer(this);
+  if (texture_ref) {
+    attachments_[attachment] = scoped_refptr<Attachment>(
+        new TextureAttachment(texture_ref, target, level, samples));
+    texture_ref->texture()->AttachToFramebuffer();
   } else {
     attachments_.erase(attachment);
   }
   framebuffer_complete_state_count_id_ = 0;
 }
 
-const FramebufferManager::FramebufferInfo::Attachment*
-    FramebufferManager::FramebufferInfo::GetAttachment(
+const Framebuffer::Attachment*
+    Framebuffer::GetAttachment(
         GLenum attachment) const {
   AttachmentMap::const_iterator it = attachments_.find(attachment);
   if (it != attachments_.end()) {
-    return it->second;
+    return it->second.get();
   }
   return NULL;
+}
+
+void Framebuffer::OnTextureRefDetached(TextureRef* texture) {
+  manager_->OnTextureRefDetached(texture);
+}
+
+void Framebuffer::OnWillRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnWillRenderTo();
+  }
+}
+
+void Framebuffer::OnDidRenderTo() const {
+  for (AttachmentMap::const_iterator it = attachments_.begin();
+       it != attachments_.end(); ++it) {
+    it->second->OnDidRenderTo();
+  }
 }
 
 bool FramebufferManager::GetClientId(
     GLuint service_id, GLuint* client_id) const {
   // This doesn't need to be fast. It's only used during slow queries.
-  for (FramebufferInfoMap::const_iterator it = framebuffer_infos_.begin();
-       it != framebuffer_infos_.end(); ++it) {
+  for (FramebufferMap::const_iterator it = framebuffers_.begin();
+       it != framebuffers_.end(); ++it) {
     if (it->second->service_id() == service_id) {
       *client_id = it->first;
       return true;
@@ -513,7 +654,7 @@ bool FramebufferManager::GetClientId(
 }
 
 void FramebufferManager::MarkAttachmentsAsCleared(
-    FramebufferManager::FramebufferInfo* framebuffer,
+    Framebuffer* framebuffer,
     RenderbufferManager* renderbuffer_manager,
     TextureManager* texture_manager) {
   DCHECK(framebuffer);
@@ -524,16 +665,26 @@ void FramebufferManager::MarkAttachmentsAsCleared(
 }
 
 void FramebufferManager::MarkAsComplete(
-    FramebufferManager::FramebufferInfo* framebuffer) {
+    Framebuffer* framebuffer) {
   DCHECK(framebuffer);
   framebuffer->MarkAsComplete(framebuffer_state_change_count_);
 }
 
 bool FramebufferManager::IsComplete(
-    FramebufferManager::FramebufferInfo* framebuffer) {
+    Framebuffer* framebuffer) {
   DCHECK(framebuffer);
   return framebuffer->framebuffer_complete_state_count_id() ==
       framebuffer_state_change_count_;
+}
+
+void FramebufferManager::OnTextureRefDetached(TextureRef* texture) {
+  for (TextureDetachObserverVector::iterator it =
+           texture_detach_observers_.begin();
+       it != texture_detach_observers_.end();
+       ++it) {
+    TextureDetachObserver* observer = *it;
+    observer->OnTextureRefDetachedFromFramebuffer(texture);
+  }
 }
 
 }  // namespace gles2

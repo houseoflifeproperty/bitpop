@@ -4,11 +4,12 @@
 
 // Shows an updating list of process statistics.
 function init() {
-  chrome.experimental.processes.onUpdatedWithMemory.addListener(
+  chrome.processes.onUpdatedWithMemory.addListener(
     function(processes) {
       var table = "<table>\n" +
         "<tr><td><b>Process</b></td>" +
         "<td>OS ID</td>" +
+        "<td>Title</td>" +
         "<td>Type</td>" +
         "<td>Tabs</td>" +
         "<td>CPU</td>" +
@@ -28,7 +29,7 @@ function init() {
 
   document.getElementById("killProcess").onclick = function () {
     var procId = parseInt(prompt("Enter process ID"));
-    chrome.experimental.processes.terminate(procId);
+    chrome.processes.terminate(procId);
   }
 }
 
@@ -46,6 +47,7 @@ function displayProcessInfo(process, table) {
   table +=
     "<tr><td>" + process.id + "</td>" +
     "<td>" + process.osProcessId + "</td>" +
+    "<td>" + process.title + "</td>" +
     "<td>" + process.type + "</td>" +
     "<td>" + process.tabs + "</td>" +
     "<td>" + process.cpu + "</td>" +

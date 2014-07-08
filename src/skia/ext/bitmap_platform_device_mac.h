@@ -26,7 +26,7 @@ namespace skia {
 // For us, that other bitmap will become invalid as soon as the device becomes
 // invalid, which may lead to subtle bugs. Therefore, DO NOT ASSIGN THE
 // DEVICE'S PIXEL DATA TO ANOTHER BITMAP, make sure you copy instead.
-class SK_API BitmapPlatformDevice : public SkDevice, public PlatformDevice {
+class SK_API BitmapPlatformDevice : public SkBitmapDevice, public PlatformDevice {
  public:
   // Creates a BitmapPlatformDevice instance. |is_opaque| should be set if the
   // caller knows the bitmap will be completely opaque and allows some
@@ -55,31 +55,44 @@ class SK_API BitmapPlatformDevice : public SkDevice, public PlatformDevice {
   virtual void DrawToNativeContext(CGContextRef context, int x, int y,
                                    const CGRect* src_rect) OVERRIDE;
 
-  // SkDevice overrides
+  // SkBaseDevice overrides
   virtual void setMatrixClip(const SkMatrix& transform, const SkRegion& region,
                              const SkClipStack&) OVERRIDE;
 
  protected:
-  // Reference counted data that can be shared between multiple devices. This
-  // allows copy constructors and operator= for devices to work properly. The
-  // bitmaps used by the base device class are already refcounted and copyable.
-  class BitmapPlatformDeviceData;
-
-  BitmapPlatformDevice(const skia::RefPtr<BitmapPlatformDeviceData>& data,
+  BitmapPlatformDevice(CGContextRef context,
                        const SkBitmap& bitmap);
 
-  // Flushes the CoreGraphics context so that the pixel data can be accessed
-  // directly by Skia. Overridden from SkDevice, this is called when Skia
-  // starts accessing pixel data.
-  virtual const SkBitmap& onAccessBitmap(SkBitmap*) OVERRIDE;
+  virtual SkBaseDevice* onCreateDevice(const SkImageInfo& info,
+                                       Usage usage) OVERRIDE;
 
-  virtual SkDevice* onCreateCompatibleDevice(SkBitmap::Config, int width,
-                                             int height, bool isOpaque,
-                                             Usage usage) OVERRIDE;
+ private:
+  void ReleaseBitmapContext();
 
-  // Data associated with this device, guaranteed non-null.
-  skia::RefPtr<BitmapPlatformDeviceData> data_;
+  // Sets the transform and clip operations. This will not update the CGContext,
+  // but will mark the config as dirty. The next call of LoadConfig will
+  // pick up these changes.
+  void SetMatrixClip(const SkMatrix& transform, const SkRegion& region);
 
+  // Loads the current transform and clip into the context. Can be called even
+  // when |bitmap_context_| is NULL (will be a NOP).
+  void LoadConfig();
+
+  // Lazily-created graphics context used to draw into the bitmap.
+  CGContextRef bitmap_context_;
+
+  // True when there is a transform or clip that has not been set to the
+  // context.  The context is retrieved for every text operation, and the
+  // transform and clip do not change as much. We can save time by not loading
+  // the clip and transform for every one.
+  bool config_dirty_;
+
+  // Translation assigned to the context: we need to keep track of this
+  // separately so it can be updated even if the context isn't created yet.
+  SkMatrix transform_;
+
+  // The current clipping
+  SkRegion clip_region_;
   DISALLOW_COPY_AND_ASSIGN(BitmapPlatformDevice);
 };
 

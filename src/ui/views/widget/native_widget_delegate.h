@@ -7,7 +7,7 @@
 
 #include <vector>
 
-#include "ui/base/events/event_constants.h"
+#include "ui/events/event_constants.h"
 #include "ui/views/views_export.h"
 
 namespace gfx {
@@ -28,6 +28,7 @@ class ScrollEvent;
 
 namespace views {
 class InputMethod;
+class Widget;
 
 namespace internal {
 
@@ -60,11 +61,16 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   virtual void OnNativeFocus(gfx::NativeView focused_view) = 0;
   virtual void OnNativeBlur(gfx::NativeView focused_view) = 0;
 
+  // Called when the window is about to be shown/hidden.
+  virtual void OnNativeWidgetVisibilityChanging(bool visible) = 0;
+
   // Called when the window is shown/hidden.
   virtual void OnNativeWidgetVisibilityChanged(bool visible) = 0;
 
   // Called when the native widget is created.
-  virtual void OnNativeWidgetCreated() = 0;
+  // The |desktop_widget| bool is true for widgets created in the desktop and
+  // false for widgets created in the shell.
+  virtual void OnNativeWidgetCreated(bool desktop_widget) = 0;
 
   // Called just before the native widget is destroyed. This is the delegate's
   // last chance to do anything with the native widget handle.
@@ -110,7 +116,6 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   virtual void OnMouseEvent(ui::MouseEvent* event) = 0;
   virtual void OnMouseCaptureLost() = 0;
 
-  virtual void OnTouchEvent(ui::TouchEvent* event) = 0;
   virtual void OnScrollEvent(ui::ScrollEvent* event) = 0;
   virtual void OnGestureEvent(ui::GestureEvent* event) = 0;
 
@@ -134,6 +139,14 @@ class VIEWS_EXPORT NativeWidgetDelegate {
   //
   virtual Widget* AsWidget() = 0;
   virtual const Widget* AsWidget() const = 0;
+
+  // Sets-up the focus manager with the view that should have focus when the
+  // window is shown the first time.  It takes the intended |show_state| of the
+  // window in order to decide whether the window should be focused now or
+  // later.  Returns true if the initial focus has been set or the window should
+  // not set the initial focus, or false if the caller should set the initial
+  // focus (if any).
+  virtual bool SetInitialFocus(ui::WindowShowState show_state) = 0;
 };
 
 }  // namespace internal

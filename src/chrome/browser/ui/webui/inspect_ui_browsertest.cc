@@ -2,11 +2,14 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "chrome/browser/devtools/device/adb/adb_device_provider.h"
+#include "chrome/browser/devtools/device/adb/mock_adb_server.h"
+#include "chrome/browser/devtools/device/devtools_android_bridge.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
+#include "chrome/test/base/web_ui_browsertest.h"
 #include "content/public/browser/navigation_details.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/test/browser_test_utils.h"
@@ -20,17 +23,29 @@ const char kSharedWorkerTestPage[] =
 const char kSharedWorkerJs[] =
     "files/workers/workers_ui_shared_worker.js";
 
-class InspectUITest : public InProcessBrowserTest {
+class InspectUITest : public WebUIBrowserTest {
  public:
   InspectUITest() {}
+
+  virtual void SetUpOnMainThread() OVERRIDE {
+    WebUIBrowserTest::SetUpOnMainThread();
+    AddLibrary(base::FilePath(FILE_PATH_LITERAL("inspect_ui_test.js")));
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InspectUITest);
 };
 
-// The test fails on Mac OS X and Windows, see crbug.com/89583
-// Intermittently fails on Linux.
-IN_PROC_BROWSER_TEST_F(InspectUITest, DISABLED_SharedWorkersList) {
+IN_PROC_BROWSER_TEST_F(InspectUITest, InspectUIPage) {
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIInspectURL));
+  ASSERT_TRUE(WebUIBrowserTest::RunJavascriptAsyncTest(
+      "testTargetListed",
+      new base::StringValue("#pages"),
+      new base::StringValue("populateWebContentsTargets"),
+      new base::StringValue(chrome::kChromeUIInspectURL)));
+}
+
+IN_PROC_BROWSER_TEST_F(InspectUITest, SharedWorker) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kSharedWorkerTestPage);
   ui_test_utils::NavigateToURL(browser(), url);
@@ -41,19 +56,39 @@ IN_PROC_BROWSER_TEST_F(InspectUITest, DISABLED_SharedWorkersList) {
       NEW_FOREGROUND_TAB,
       ui_test_utils::BROWSER_TEST_WAIT_FOR_NAVIGATION);
 
-  WebContents* web_contents = chrome::GetActiveWebContents(browser());
-  ASSERT_TRUE(web_contents != NULL);
+  ASSERT_TRUE(WebUIBrowserTest::RunJavascriptAsyncTest(
+      "testTargetListed",
+      new base::StringValue("#workers"),
+      new base::StringValue("populateWorkerTargets"),
+      new base::StringValue(kSharedWorkerJs)));
 
-  std::string result;
-  ASSERT_TRUE(
-      content::ExecuteJavaScriptAndExtractString(
-          web_contents->GetRenderViewHost(),
-          L"",
-          L"window.domAutomationController.send("
-          L"'' + document.body.textContent);",
-          &result));
-  ASSERT_TRUE(result.find(kSharedWorkerJs) != std::string::npos);
-  ASSERT_TRUE(result.find(kSharedWorkerTestPage) != std::string::npos);
+  ASSERT_TRUE(WebUIBrowserTest::RunJavascriptAsyncTest(
+      "testTargetListed",
+      new base::StringValue("#pages"),
+      new base::StringValue("populateWebContentsTargets"),
+      new base::StringValue(kSharedWorkerTestPage)));
+}
+
+IN_PROC_BROWSER_TEST_F(InspectUITest, AndroidTargets) {
+  scoped_refptr<DevToolsAndroidBridge> android_bridge =
+      DevToolsAndroidBridge::Factory::GetForProfile(browser()->profile());
+  AndroidDeviceManager::DeviceProviders providers;
+  providers.push_back(new AdbDeviceProvider());
+  android_bridge->set_device_providers_for_test(providers);
+
+  StartMockAdbServer();
+
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIInspectURL));
+
+  ASSERT_TRUE(WebUIBrowserTest::RunJavascriptAsyncTest("testAdbTargetsListed"));
+
+  StopMockAdbServer();
+}
+
+IN_PROC_BROWSER_TEST_F(InspectUITest, ReloadCrash) {
+  ASSERT_TRUE(test_server()->Start());
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIInspectURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kChromeUIInspectURL));
 }
 
 }  // namespace

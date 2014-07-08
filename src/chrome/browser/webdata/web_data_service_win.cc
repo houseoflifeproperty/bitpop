@@ -2,69 +2,50 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/webdata/logins_table.h"
 #include "chrome/browser/webdata/web_data_service.h"
 
 #include "base/bind.h"
-#include "chrome/browser/password_manager/ie7_password.h"
-#include "chrome/browser/webdata/web_database.h"
+#include "chrome/browser/webdata/logins_table.h"
+#include "components/os_crypt/ie7_password_win.h"
+#include "components/webdata/common/web_database_service.h"
 
 using base::Bind;
 
 void WebDataService::AddIE7Login(const IE7PasswordInfo& info) {
-  GenericRequest<IE7PasswordInfo>* request =
-      new GenericRequest<IE7PasswordInfo>(this, GetNextRequestHandle(), NULL,
-                                          info);
-  RegisterRequest(request);
-  ScheduleTask(FROM_HERE,
-               Bind(&WebDataService::AddIE7LoginImpl, this, request));
+  wdbs_->ScheduleDBTask(
+      FROM_HERE, Bind(&WebDataService::AddIE7LoginImpl, this, info));
 }
 
 void WebDataService::RemoveIE7Login(const IE7PasswordInfo& info) {
-  GenericRequest<IE7PasswordInfo>* request =
-      new GenericRequest<IE7PasswordInfo>(this, GetNextRequestHandle(), NULL,
-                                          info);
-  RegisterRequest(request);
-  ScheduleTask(FROM_HERE,
-               Bind(&WebDataService::RemoveIE7LoginImpl, this, request));
+  wdbs_->ScheduleDBTask(
+      FROM_HERE, Bind(&WebDataService::RemoveIE7LoginImpl, this, info));
 }
 
 WebDataService::Handle WebDataService::GetIE7Login(
     const IE7PasswordInfo& info,
     WebDataServiceConsumer* consumer) {
-  GenericRequest<IE7PasswordInfo>* request =
-      new GenericRequest<IE7PasswordInfo>(this, GetNextRequestHandle(),
-                                          consumer, info);
-  RegisterRequest(request);
-  ScheduleTask(FROM_HERE,
-               Bind(&WebDataService::GetIE7LoginImpl, this, request));
-  return request->GetHandle();
+  return wdbs_->ScheduleDBTaskWithResult(
+      FROM_HERE, Bind(&WebDataService::GetIE7LoginImpl, this, info), consumer);
 }
 
-void WebDataService::AddIE7LoginImpl(GenericRequest<IE7PasswordInfo>* request) {
-  if (db_ && !request->IsCancelled(NULL)) {
-    if (db_->GetLoginsTable()->AddIE7Login(request->arg()))
-      ScheduleCommit();
-  }
-  request->RequestComplete();
+WebDatabase::State WebDataService::AddIE7LoginImpl(
+    const IE7PasswordInfo& info, WebDatabase* db) {
+  if (LoginsTable::FromWebDatabase(db)->AddIE7Login(info))
+    return WebDatabase::COMMIT_NEEDED;
+  return WebDatabase::COMMIT_NOT_NEEDED;
 }
 
-void WebDataService::RemoveIE7LoginImpl(
-    GenericRequest<IE7PasswordInfo>* request) {
-  if (db_ && !request->IsCancelled(NULL)) {
-    if (db_->GetLoginsTable()->RemoveIE7Login(request->arg()))
-      ScheduleCommit();
-  }
-  request->RequestComplete();
+WebDatabase::State WebDataService::RemoveIE7LoginImpl(
+    const IE7PasswordInfo& info, WebDatabase* db) {
+  if (LoginsTable::FromWebDatabase(db)->RemoveIE7Login(info))
+    return WebDatabase::COMMIT_NEEDED;
+  return WebDatabase::COMMIT_NOT_NEEDED;
 }
 
-void WebDataService::GetIE7LoginImpl(
-    GenericRequest<IE7PasswordInfo>* request) {
-  if (db_ && !request->IsCancelled(NULL)) {
+scoped_ptr<WDTypedResult> WebDataService::GetIE7LoginImpl(
+    const IE7PasswordInfo& info, WebDatabase* db) {
     IE7PasswordInfo result;
-    db_->GetLoginsTable()->GetIE7Login(request->arg(), &result);
-    request->SetResult(
+    LoginsTable::FromWebDatabase(db)->GetIE7Login(info, &result);
+    return scoped_ptr<WDTypedResult>(
         new WDResult<IE7PasswordInfo>(PASSWORD_IE7_RESULT, result));
-  }
-  request->RequestComplete();
 }

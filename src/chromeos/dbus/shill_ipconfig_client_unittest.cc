@@ -26,15 +26,15 @@ class ShillIPConfigClientTest : public ShillClientUnittestBase {
  public:
   ShillIPConfigClientTest()
       : ShillClientUnittestBase(
-          flimflam::kFlimflamIPConfigInterface,
+          shill::kFlimflamIPConfigInterface,
           dbus::ObjectPath(kExampleIPConfigPath)) {
   }
 
   virtual void SetUp() {
     ShillClientUnittestBase::SetUp();
     // Create a client with the mock bus.
-    client_.reset(ShillIPConfigClient::Create(
-        REAL_DBUS_CLIENT_IMPLEMENTATION, mock_bus_));
+    client_.reset(ShillIPConfigClient::Create());
+    client_->Init(mock_bus_.get());
     // Run the message loop to run the signal connection result callback.
     message_loop_.RunUntilIdle();
   }
@@ -50,15 +50,15 @@ class ShillIPConfigClientTest : public ShillClientUnittestBase {
 TEST_F(ShillIPConfigClientTest, PropertyChanged) {
   // Create a signal.
   const base::FundamentalValue kConnected(true);
-  dbus::Signal signal(flimflam::kFlimflamIPConfigInterface,
-                      flimflam::kMonitorPropertyChanged);
+  dbus::Signal signal(shill::kFlimflamIPConfigInterface,
+                      shill::kMonitorPropertyChanged);
   dbus::MessageWriter writer(&signal);
-  writer.AppendString(flimflam::kConnectedProperty);
+  writer.AppendString(shill::kConnectedProperty);
   dbus::AppendBasicTypeValueDataAsVariant(&writer, kConnected);
 
   // Set expectations.
   MockPropertyChangeObserver observer;
-  EXPECT_CALL(observer, OnPropertyChanged(flimflam::kConnectedProperty,
+  EXPECT_CALL(observer, OnPropertyChanged(shill::kConnectedProperty,
                                           ValueEq(ByRef(kConnected)))).Times(1);
 
   // Add the observer
@@ -92,25 +92,25 @@ TEST_F(ShillIPConfigClientTest, GetProperties) {
   dbus::MessageWriter entry_writer(NULL);
   // Append address.
   array_writer.OpenDictEntry(&entry_writer);
-  entry_writer.AppendString(flimflam::kAddressProperty);
+  entry_writer.AppendString(shill::kAddressProperty);
   entry_writer.AppendVariantOfString(kAddress);
   array_writer.CloseContainer(&entry_writer);
   // Append MTU.
   array_writer.OpenDictEntry(&entry_writer);
-  entry_writer.AppendString(flimflam::kMtuProperty);
+  entry_writer.AppendString(shill::kMtuProperty);
   entry_writer.AppendVariantOfInt32(kMtu);
   array_writer.CloseContainer(&entry_writer);
   writer.CloseContainer(&array_writer);
 
   // Create the expected value.
   base::DictionaryValue value;
-  value.SetWithoutPathExpansion(flimflam::kAddressProperty,
+  value.SetWithoutPathExpansion(shill::kAddressProperty,
                                 base::Value::CreateStringValue(kAddress));
-  value.SetWithoutPathExpansion(flimflam::kMtuProperty,
+  value.SetWithoutPathExpansion(shill::kMtuProperty,
                                 base::Value::CreateIntegerValue(kMtu));
 
   // Set expectations.
-  PrepareForMethodCall(flimflam::kGetPropertiesFunction,
+  PrepareForMethodCall(shill::kGetPropertiesFunction,
                        base::Bind(&ExpectNoArgument),
                        response.get());
   // Call method.
@@ -118,47 +118,6 @@ TEST_F(ShillIPConfigClientTest, GetProperties) {
                          base::Bind(&ExpectDictionaryValueResult, &value));
   // Run the message loop.
   message_loop_.RunUntilIdle();
-}
-
-TEST_F(ShillIPConfigClientTest, CallGetPropertiesAndBlock) {
-  const char kAddress[] = "address";
-  const int32 kMtu = 68;
-
-  // Create response.
-  scoped_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
-  dbus::MessageWriter writer(response.get());
-  dbus::MessageWriter array_writer(NULL);
-  writer.OpenArray("{sv}", &array_writer);
-  dbus::MessageWriter entry_writer(NULL);
-  // Append address.
-  array_writer.OpenDictEntry(&entry_writer);
-  entry_writer.AppendString(flimflam::kAddressProperty);
-  entry_writer.AppendVariantOfString(kAddress);
-  array_writer.CloseContainer(&entry_writer);
-  // Append MTU.
-  array_writer.OpenDictEntry(&entry_writer);
-  entry_writer.AppendString(flimflam::kMtuProperty);
-  entry_writer.AppendVariantOfInt32(kMtu);
-  array_writer.CloseContainer(&entry_writer);
-  writer.CloseContainer(&array_writer);
-
-  // Create the expected value.
-  base::DictionaryValue value;
-  value.SetWithoutPathExpansion(flimflam::kAddressProperty,
-                                base::Value::CreateStringValue(kAddress));
-  value.SetWithoutPathExpansion(flimflam::kMtuProperty,
-                                base::Value::CreateIntegerValue(kMtu));
-  // Set expectations.
-  PrepareForMethodCall(flimflam::kGetPropertiesFunction,
-                       base::Bind(&ExpectNoArgument),
-                       response.get());
-  // Call method.
-  scoped_ptr<base::DictionaryValue> result(
-      client_->CallGetPropertiesAndBlock(
-          dbus::ObjectPath(kExampleIPConfigPath)));
-
-  ASSERT_TRUE(result.get());
-  EXPECT_TRUE(result->Equals(&value));
 }
 
 TEST_F(ShillIPConfigClientTest, SetProperty) {
@@ -169,14 +128,14 @@ TEST_F(ShillIPConfigClientTest, SetProperty) {
 
   // Set expectations.
   base::StringValue value(kAddress);
-  PrepareForMethodCall(flimflam::kSetPropertyFunction,
+  PrepareForMethodCall(shill::kSetPropertyFunction,
                        base::Bind(&ExpectStringAndValueArguments,
-                                  flimflam::kAddressProperty,
+                                  shill::kAddressProperty,
                                   &value),
                        response.get());
   // Call method.
   client_->SetProperty(dbus::ObjectPath(kExampleIPConfigPath),
-                       flimflam::kAddressProperty,
+                       shill::kAddressProperty,
                        value,
                        base::Bind(&ExpectNoResultValue));
   // Run the message loop.
@@ -188,13 +147,13 @@ TEST_F(ShillIPConfigClientTest, ClearProperty) {
   scoped_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  PrepareForMethodCall(flimflam::kClearPropertyFunction,
+  PrepareForMethodCall(shill::kClearPropertyFunction,
                        base::Bind(&ExpectStringArgument,
-                                  flimflam::kAddressProperty),
+                                  shill::kAddressProperty),
                        response.get());
   // Call method.
   client_->ClearProperty(dbus::ObjectPath(kExampleIPConfigPath),
-                       flimflam::kAddressProperty,
+                       shill::kAddressProperty,
                        base::Bind(&ExpectNoResultValue));
   // Run the message loop.
   message_loop_.RunUntilIdle();
@@ -205,7 +164,7 @@ TEST_F(ShillIPConfigClientTest, Remove) {
   scoped_ptr<dbus::Response> response(dbus::Response::CreateEmpty());
 
   // Set expectations.
-  PrepareForMethodCall(flimflam::kRemoveConfigFunction,
+  PrepareForMethodCall(shill::kRemoveConfigFunction,
                        base::Bind(&ExpectNoArgument),
                        response.get());
   // Call method.

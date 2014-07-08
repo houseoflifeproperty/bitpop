@@ -8,8 +8,8 @@
 
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_byteorder.h"
 #include "build/build_config.h"
 #include "chrome/browser/safe_browsing/protocol_parser.h"
@@ -33,7 +33,7 @@ bool GetLine(const char* input, int input_len, std::string* line) {
   }
   return false;
 }
-}
+}  // namespace
 
 //------------------------------------------------------------------------------
 // SafeBrowsingParser implementation
@@ -65,19 +65,22 @@ bool SafeBrowsingProtocolParser::ParseGetHash(
       return false;
 
     SBFullHashResult full_hash;
-    full_hash.list_name = cmd_parts[0];
-    full_hash.add_chunk_id = atoi(cmd_parts[1].c_str());
+    full_hash.list_id = safe_browsing_util::GetListId(cmd_parts[0]);
+    // Ignore cmd_parts[1] (add_chunk_id), as we no longer use it with SB 2.3
+    // caching rules.
     int full_hash_len = atoi(cmd_parts[2].c_str());
 
+    if (full_hash_len < 0 || full_hash_len > length)
+      return false;
+
     // Ignore hash results from lists we don't recognize.
-    if (safe_browsing_util::GetListId(full_hash.list_name) < 0) {
+    if (full_hash.list_id < 0) {
       data += full_hash_len;
       length -= full_hash_len;
       continue;
     }
 
-    while (full_hash_len > 0) {
-      DCHECK(static_cast<size_t>(full_hash_len) >= sizeof(SBFullHash));
+    while (static_cast<size_t>(full_hash_len) >= sizeof(SBFullHash)) {
       memcpy(&full_hash.hash, data, sizeof(SBFullHash));
       full_hashes->push_back(full_hash);
       data += sizeof(SBFullHash);
@@ -221,7 +224,7 @@ bool SafeBrowsingProtocolParser::ParseChunk(const std::string& list_name,
 
     const int chunk_len = atoi(cmd_parts[3].c_str());
 
-    if (remaining < chunk_len)
+    if (chunk_len < 0 || chunk_len > remaining)
       return false;  // parse error.
 
     chunks->push_back(SBChunk());
@@ -263,8 +266,9 @@ bool SafeBrowsingProtocolParser::ParseAddChunk(const std::string& list_name,
   SBEntry::Type type = hash_len == sizeof(SBPrefix) ?
       SBEntry::ADD_PREFIX : SBEntry::ADD_FULL_HASH;
 
-  if (list_name == safe_browsing_util::kBinHashList ||
-      list_name == safe_browsing_util::kDownloadWhiteList) {
+  if (list_name == safe_browsing_util::kDownloadWhiteList ||
+      list_name == safe_browsing_util::kExtensionBlacklist ||
+      list_name == safe_browsing_util::kIPBlacklist) {
     // These lists only contain prefixes, no HOSTKEY and COUNT.
     DCHECK_EQ(0, remaining % hash_len);
     prefix_count = remaining / hash_len;
@@ -272,8 +276,11 @@ bool SafeBrowsingProtocolParser::ParseAddChunk(const std::string& list_name,
     chunk_host.host = 0;
     chunk_host.entry = SBEntry::Create(type, prefix_count);
     hosts->push_back(chunk_host);
-    if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry, prefix_count))
+    if (!ReadPrefixes(&chunk_data, &remaining, chunk_host.entry,
+                      prefix_count)) {
+      DVLOG(2) << "Unable to read chunk data for list: " << list_name;
       return false;
+    }
     DCHECK_GE(remaining, 0);
   } else {
     SBPrefix host;
@@ -308,12 +315,13 @@ bool SafeBrowsingProtocolParser::ParseSubChunk(const std::string& list_name,
   SBEntry::Type type = hash_len == sizeof(SBPrefix) ?
       SBEntry::SUB_PREFIX : SBEntry::SUB_FULL_HASH;
 
-  if (list_name == safe_browsing_util::kBinHashList ||
-      list_name == safe_browsing_util::kDownloadWhiteList) {
+  if (list_name == safe_browsing_util::kDownloadWhiteList ||
+      list_name == safe_browsing_util::kExtensionBlacklist ||
+      list_name == safe_browsing_util::kIPBlacklist) {
     SBChunkHost chunk_host;
-    // Set host to 0 and it won't be used for kBinHashList.
+    // Set host to 0 and it won't be used.
     chunk_host.host = 0;
-    // kBinHashList only contains (add_chunk_number, prefix) pairs, no HOSTKEY
+    // lists only contain (add_chunk_number, prefix) pairs, no HOSTKEY
     // and COUNT. |add_chunk_number| is int32.
     prefix_count = remaining / (sizeof(int32) + hash_len);
     chunk_host.entry = SBEntry::Create(type, prefix_count);
@@ -399,11 +407,15 @@ bool SafeBrowsingProtocolParser::ReadPrefixes(
     if (*remaining < hash_len)
       return false;
     if (entry->IsPrefix()) {
-      DCHECK_EQ(hash_len, (int)sizeof(SBPrefix));
-      entry->SetPrefixAt(i, *reinterpret_cast<const SBPrefix*>(*data));
+      SBPrefix prefix;
+      DCHECK_EQ(hash_len, (int)sizeof(prefix));
+      memcpy(&prefix, *data, sizeof(prefix));
+      entry->SetPrefixAt(i, prefix);
     } else {
-      DCHECK_EQ(hash_len, (int)sizeof(SBFullHash));
-      entry->SetFullHashAt(i, *reinterpret_cast<const SBFullHash*>(*data));
+      SBFullHash hash;
+      DCHECK_EQ(hash_len, (int)sizeof(hash));
+      memcpy(&hash, *data, sizeof(hash));
+      entry->SetFullHashAt(i, hash);
     }
     *data += hash_len;
     *remaining -= hash_len;

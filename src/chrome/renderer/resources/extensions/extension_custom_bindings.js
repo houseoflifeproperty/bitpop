@@ -2,28 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the extension API.
+// Custom binding for the extension API.
 
-var extensionNatives = requireNative('extension');
-var GetExtensionViews = extensionNatives.GetExtensionViews;
-var OpenChannelToExtension = extensionNatives.OpenChannelToExtension;
-var OpenChannelToNativeApp = extensionNatives.OpenChannelToNativeApp;
+var binding = require('binding').Binding.create('extension');
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
+var messaging = require('messaging');
+var runtimeNatives = requireNative('runtime');
+var GetExtensionViews = runtimeNatives.GetExtensionViews;
+var OpenChannelToExtension = runtimeNatives.OpenChannelToExtension;
+var OpenChannelToNativeApp = runtimeNatives.OpenChannelToNativeApp;
+var chrome = requireNative('chrome').GetChrome();
 
 var inIncognitoContext = requireNative('process').InIncognitoContext();
 var sendRequestIsDisabled = requireNative('process').IsSendRequestDisabled();
 var contextType = requireNative('process').GetContextType();
-
-chrome.extension = chrome.extension || {};
-
 var manifestVersion = requireNative('process').GetManifestVersion();
-if (manifestVersion < 2) {
-  chrome.self = chrome.extension;
-  chrome.extension.inIncognitoTab = inIncognitoContext;
-}
-
-chrome.extension.inIncognitoContext = inIncognitoContext;
 
 // This should match chrome.windows.WINDOW_ID_NONE.
 //
@@ -32,8 +25,14 @@ chrome.extension.inIncognitoContext = inIncognitoContext;
 // which may not be the case.
 var WINDOW_ID_NONE = -1;
 
-chromeHidden.registerCustomHook('extension',
-                                function(bindingsAPI, extensionId) {
+binding.registerCustomHook(function(bindingsAPI, extensionId) {
+  var extension = bindingsAPI.compiledApi;
+  if (manifestVersion < 2) {
+    chrome.self = extension;
+    extension.inIncognitoTab = inIncognitoContext;
+  }
+  extension.inIncognitoContext = inIncognitoContext;
+
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setHandleRequest('getViews', function(properties) {
@@ -47,7 +46,7 @@ chromeHidden.registerCustomHook('extension',
         windowId = properties.windowId;
       }
     }
-    return GetExtensionViews(windowId, type) || null;
+    return GetExtensionViews(windowId, type);
   });
 
   apiFunctions.setHandleRequest('getBackgroundPage', function() {
@@ -67,136 +66,48 @@ chromeHidden.registerCustomHook('extension',
     return 'chrome-extension://' + extensionId + path;
   });
 
-  function sendMessageUpdateArguments(functionName) {
-    // Align missing (optional) function arguments with the arguments that
-    // schema validation is expecting, e.g.
-    //   extension.sendRequest(req)     -> extension.sendRequest(null, req)
-    //   extension.sendRequest(req, cb) -> extension.sendRequest(null, req, cb)
-    var args = Array.prototype.splice.call(arguments, 1);  // skip functionName
-    var lastArg = args.length - 1;
+  // Alias several messaging deprecated APIs to their runtime counterparts.
+  var mayNeedAlias = [
+    // Types
+    'Port',
+    // Functions
+    'connect', 'sendMessage', 'connectNative', 'sendNativeMessage',
+    // Events
+    'onConnect', 'onConnectExternal', 'onMessage', 'onMessageExternal'
+  ];
+  $Array.forEach(mayNeedAlias, function(alias) {
+    // Checking existence isn't enough since some functions are disabled via
+    // getters that throw exceptions. Assume that any getter is such a function.
+    if (chrome.runtime &&
+        $Object.hasOwnProperty(chrome.runtime, alias) &&
+        chrome.runtime.__lookupGetter__(alias) === undefined) {
+      extension[alias] = chrome.runtime[alias];
+    }
+  });
 
-    // responseCallback (last argument) is optional.
-    var responseCallback = null;
-    if (typeof(args[lastArg]) == 'function')
-      responseCallback = args[lastArg--];
-
-    // request (second argument) is required.
-    var request = args[lastArg--];
-
-    // targetId (first argument, extensionId in the manfiest) is optional.
-    var targetId = null;
-    if (lastArg >= 0)
-      targetId = args[lastArg--];
-
-    if (lastArg != -1)
-      throw new Error('Invalid arguments to ' + functionName + '.');
-    return [targetId, request, responseCallback];
-  }
   apiFunctions.setUpdateArgumentsPreValidate('sendRequest',
-      sendMessageUpdateArguments.bind(null, 'sendRequest'));
-  apiFunctions.setUpdateArgumentsPreValidate('sendMessage',
-      sendMessageUpdateArguments.bind(null, 'sendMessage'));
-  apiFunctions.setUpdateArgumentsPreValidate('sendNativeMessage',
-      sendMessageUpdateArguments.bind(null, 'sendNativeMessage'));
+      $Function.bind(messaging.sendMessageUpdateArguments,
+                     null, 'sendRequest', false /* hasOptionsArgument */));
 
   apiFunctions.setHandleRequest('sendRequest',
                                 function(targetId, request, responseCallback) {
     if (sendRequestIsDisabled)
       throw new Error(sendRequestIsDisabled);
-    var port = chrome.extension.connect(targetId || extensionId,
-                                        {name: chromeHidden.kRequestChannel});
-    chromeHidden.Port.sendMessageImpl(port, request, responseCallback);
+    var port = chrome.runtime.connect(targetId || extensionId,
+                                      {name: messaging.kRequestChannel});
+    messaging.sendMessageImpl(port, request, responseCallback);
   });
 
   if (sendRequestIsDisabled) {
-    chrome.extension.onRequest.addListener = function() {
+    extension.onRequest.addListener = function() {
       throw new Error(sendRequestIsDisabled);
-    }
+    };
     if (contextType == 'BLESSED_EXTENSION') {
-      chrome.extension.onRequestExternal.addListener = function() {
+      extension.onRequestExternal.addListener = function() {
         throw new Error(sendRequestIsDisabled);
-      }
+      };
     }
   }
-
-  apiFunctions.setHandleRequest('sendMessage',
-                                function(targetId, message, responseCallback) {
-    var port = chrome.extension.connect(targetId || extensionId,
-                                        {name: chromeHidden.kMessageChannel});
-    chromeHidden.Port.sendMessageImpl(port, message, responseCallback);
-  });
-
-  apiFunctions.setHandleRequest('sendNativeMessage',
-                                function(targetId, message, responseCallback) {
-    var port = chrome.extension.connectNative(
-        targetId, message, chromeHidden.kNativeMessageChannel);
-    chromeHidden.Port.sendMessageImpl(port, '', responseCallback);
-  });
-
-  apiFunctions.setUpdateArgumentsPreValidate('connect', function() {
-    // Align missing (optional) function arguments with the arguments that
-    // schema validation is expecting, e.g.
-    //   extension.connect()   -> extension.connect(null, null)
-    //   extension.connect({}) -> extension.connect(null, {})
-    var nextArg = 0;
-
-    // targetId (first argument) is optional.
-    var targetId = null;
-    if (typeof(arguments[nextArg]) == 'string')
-      targetId = arguments[nextArg++];
-
-    // connectInfo (second argument) is optional.
-    var connectInfo = null;
-    if (typeof(arguments[nextArg]) == 'object')
-      connectInfo = arguments[nextArg++];
-
-    if (nextArg != arguments.length)
-      throw new Error('Invalid arguments to connect.');
-    return [targetId, connectInfo];
-  });
-
-  apiFunctions.setUpdateArgumentsPreValidate('connectNative', function() {
-    var nextArg = 0;
-
-    // appName is required.
-    var appName = arguments[nextArg++];
-
-    // connectionMessage is required.
-    var connectMessage = arguments[nextArg++];
-
-    // channelName is only passed by sendMessage
-    var channelName = 'connectNative';
-    if (typeof(arguments[nextArg]) == 'string')
-      channelName = arguments[nextArg++];
-
-    if (nextArg != arguments.length)
-      throw new Error('Invalid arguments to connectNative.');
-    return [appName, {name: channelName, message: connectMessage}];
-  });
-
-  apiFunctions.setHandleRequest('connect', function(targetId, connectInfo) {
-    if (!targetId)
-      targetId = extensionId;
-    var name = '';
-    if (connectInfo && connectInfo.name)
-      name = connectInfo.name;
-
-    var portId = OpenChannelToExtension(extensionId, targetId, name);
-    if (portId >= 0)
-      return chromeHidden.Port.createPort(portId, name);
-    throw new Error('Error connecting to extension ' + targetId);
-  });
-
-  apiFunctions.setHandleRequest('connectNative',
-                                function(nativeAppName, connectInfo) {
-    // Turn the object into a string here, because it eventually will be.
-    var portId = OpenChannelToNativeApp(extensionId,
-                                        nativeAppName,
-                                        connectInfo.name,
-                                        JSON.stringify(connectInfo.message));
-    if (portId >= 0) {
-      return chromeHidden.Port.createPort(portId, connectInfo.name);
-    }
-    throw new Error('Error connecting to native app: ' + nativeAppName);
-  });
 });
+
+exports.binding = binding.generate();

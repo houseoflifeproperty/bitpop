@@ -15,10 +15,8 @@
 # limitations under the License.
 
 
-import pytest
 import unittest
 from selenium.webdriver.common.proxy import Proxy
-from selenium.webdriver.common.desired_capabilities import DesiredCapabilities
 
 
 class ProxyTests(unittest.TestCase):
@@ -32,7 +30,7 @@ class ProxyTests(unittest.TestCase):
 
         expected_capabilities = {
             'proxy': {
-                'proxyType': 'manual',
+                'proxyType': 'MANUAL',
                 'httpProxy': 'some.url:1234'
             }
         }

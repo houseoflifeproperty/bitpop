@@ -1,10 +1,9 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import android.test.FlakyTest;
 import android.test.suitebuilder.annotation.SmallTest;
 
 import org.chromium.android_webview.AwContents;
@@ -19,13 +18,21 @@ import org.chromium.net.test.util.TestWebServer;
 
 import java.util.concurrent.Callable;
 
-public class NavigationHistoryTest extends AndroidWebViewTestBase {
+/**
+ * Navigation history tests.
+ */
+public class NavigationHistoryTest extends AwTestBase {
 
     private static final String PAGE_1_PATH = "/page1.html";
     private static final String PAGE_1_TITLE = "Page 1 Title";
     private static final String PAGE_2_PATH = "/page2.html";
     private static final String PAGE_2_TITLE = "Page 2 Title";
     private static final String PAGE_WITH_HASHTAG_REDIRECT_TITLE = "Page with hashtag";
+    private static final String LOGIN_PAGE_PATH = "/login.html";
+    private static final String LOGIN_PAGE_TITLE = "Login page";
+    private static final String LOGIN_RESPONSE_PAGE_PATH = "/login-response.html";
+    private static final String LOGIN_RESPONSE_PAGE_TITLE = "Login response";
+    private static final String LOGIN_RESPONSE_PAGE_HELP_LINK_ID = "help";
 
     private TestWebServer mWebServer;
     private TestAwContentsClient mContentsClient;
@@ -34,6 +41,7 @@ public class NavigationHistoryTest extends AndroidWebViewTestBase {
     @Override
     public void setUp() throws Exception {
         super.setUp();
+        AwContents.setShouldDownloadFavicons();
         mContentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =
             createAwTestContainerViewOnMainSync(mContentsClient);
@@ -201,12 +209,110 @@ public class NavigationHistoryTest extends AndroidWebViewTestBase {
                 CommonResources.FAVICON_STATIC_HTML, null);
 
         assertEquals(0, list.getEntryCount());
-        getContentSettingsOnUiThread(mAwContents).setImagesEnabled(true);
+        getAwSettingsOnUiThread(mAwContents).setImagesEnabled(true);
         loadUrlSync(mAwContents, mContentsClient.getOnPageFinishedHelper(), url);
 
         list = getNavigationHistory(mAwContents);
 
         // Make sure the first entry is still okay.
         checkHistoryItem(list.getEntryAtIndex(0), url, url, "", false);
+    }
+
+    private String addNoncacheableLoginPageToServer(TestWebServer webServer) {
+        final String submitButtonId = "submit";
+        final String loginPageHtml =
+                "<html>" +
+                "  <head>" +
+                "    <title>" + LOGIN_PAGE_TITLE + "</title>" +
+                "    <script>" +
+                "      function startAction() {" +
+                "        button = document.getElementById('" + submitButtonId + "');" +
+                "        button.click();" +
+                "      }" +
+                "    </script>" +
+                "  </head>" +
+                "  <body onload='setTimeout(startAction, 0)'>" +
+                "    <form action='" + LOGIN_RESPONSE_PAGE_PATH.substring(1) + "' method='post'>" +
+                "      <input type='text' name='login'>" +
+                "      <input id='" + submitButtonId + "' type='submit' value='Submit'>" +
+                "    </form>" +
+                "  </body>" +
+                "</html>";
+        return mWebServer.setResponse(LOGIN_PAGE_PATH,
+                loginPageHtml,
+                CommonResources.getTextHtmlHeaders(true));
+    }
+
+    private String addNoncacheableLoginResponsePageToServer(TestWebServer webServer) {
+        final String loginResponsePageHtml =
+                "<html>" +
+                "  <head>" +
+                "    <title>" + LOGIN_RESPONSE_PAGE_TITLE + "</title>" +
+                "  </head>" +
+                "  <body>" +
+                "    Login incorrect" +
+                "    <div><a id='" + LOGIN_RESPONSE_PAGE_HELP_LINK_ID + "' href='" +
+                PAGE_1_PATH.substring(1) + "'>Help</a></div>'" +
+                "  </body>" +
+                "</html>";
+        return mWebServer.setResponse(LOGIN_RESPONSE_PAGE_PATH,
+                loginResponsePageHtml,
+                CommonResources.getTextHtmlHeaders(true));
+    }
+
+    // This test simulates Google login page behavior. The page is non-cacheable
+    // and uses POST method for submission. It also contains a help link, leading
+    // to another page. We are verifying that it is possible to go back to the
+    // submitted login page after visiting the help page.
+    /**
+     * Temporarily disabled. It is blocking a patch that fixes chromium's form
+     * resubmission defenses. This test should probably expect a modal dialog
+     * asking permission to re-post rather than expecting to just be able to navigate
+     * back to a page that specified Cache-Control: no-store.
+     *
+     * @MediumTest
+     * @Feature({"AndroidWebView"})
+     */
+    @DisabledTest
+    public void testNavigateBackToNoncacheableLoginPage() throws Throwable {
+        final TestCallbackHelperContainer.OnPageFinishedHelper onPageFinishedHelper =
+                mContentsClient.getOnPageFinishedHelper();
+
+        final String loginPageUrl = addNoncacheableLoginPageToServer(mWebServer);
+        final String loginResponsePageUrl = addNoncacheableLoginResponsePageToServer(mWebServer);
+        final String page1Url = addPage1ToServer(mWebServer);
+
+        getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
+        loadUrlSync(mAwContents, onPageFinishedHelper, loginPageUrl);
+        // Since the page performs an async action, we can't rely on callbacks.
+        pollOnUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                String title = mAwContents.getContentViewCore().getTitle();
+                return LOGIN_RESPONSE_PAGE_TITLE.equals(title);
+            }
+        });
+        executeJavaScriptAndWaitForResult(mAwContents,
+                mContentsClient,
+                "link = document.getElementById('" + LOGIN_RESPONSE_PAGE_HELP_LINK_ID + "');" +
+                "link.click();");
+        pollOnUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                String title = mAwContents.getContentViewCore().getTitle();
+                return PAGE_1_TITLE.equals(title);
+            }
+        });
+        // Verify that we can still go back to the login response page despite that
+        // it is non-cacheable.
+        HistoryUtils.goBackSync(getInstrumentation(), mAwContents.getContentViewCore(),
+                onPageFinishedHelper);
+        pollOnUiThread(new Callable<Boolean>() {
+            @Override
+            public Boolean call() {
+                String title = mAwContents.getContentViewCore().getTitle();
+                return LOGIN_RESPONSE_PAGE_TITLE.equals(title);
+            }
+        });
     }
 }

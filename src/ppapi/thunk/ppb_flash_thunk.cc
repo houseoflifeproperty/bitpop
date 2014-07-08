@@ -10,7 +10,6 @@
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/enter.h"
-#include "ppapi/thunk/ppb_flash_api.h"
 #include "ppapi/thunk/ppb_flash_functions_api.h"
 #include "ppapi/thunk/ppb_instance_api.h"
 #include "ppapi/thunk/ppb_video_capture_api.h"
@@ -22,10 +21,10 @@ namespace thunk {
 namespace {
 
 void SetInstanceAlwaysOnTop(PP_Instance instance, PP_Bool on_top) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return;
-  enter.functions()->GetFlashAPI()->SetInstanceAlwaysOnTop(instance, on_top);
+  enter.functions()->SetInstanceAlwaysOnTop(instance, on_top);
 }
 
 PP_Bool DrawGlyphs(PP_Instance instance,
@@ -39,10 +38,10 @@ PP_Bool DrawGlyphs(PP_Instance instance,
                    uint32_t glyph_count,
                    const uint16_t glyph_indices[],
                    const PP_Point glyph_advances[]) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_FALSE;
-  return enter.functions()->GetFlashAPI()->DrawGlyphs(
+  return enter.functions()->DrawGlyphs(
       instance, pp_image_data, font_desc, color, position, clip, transformation,
       allow_subpixel_aa, glyph_count, glyph_indices, glyph_advances);
 }
@@ -61,17 +60,17 @@ int32_t Navigate(PP_Resource request_id,
   // To work around this, use the PP_Instance from the resource.
   PP_Instance instance;
   {
-    thunk::EnterResource<thunk::PPB_URLRequestInfo_API> enter(request_id, true);
+    EnterResource<PPB_URLRequestInfo_API> enter(request_id, true);
     if (enter.failed())
       return PP_ERROR_BADRESOURCE;
     instance = enter.resource()->pp_instance();
   }
 
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_ERROR_BADARGUMENT;
-  return enter.functions()->GetFlashAPI()->Navigate(instance, request_id,
-                                                    target, from_user_action);
+  return enter.functions()->Navigate(instance, request_id, target,
+                                     from_user_action);
 }
 
 void RunMessageLoop(PP_Instance instance) {
@@ -107,10 +106,10 @@ void PreLoadFontWin(const void* logfontw) {
 }
 
 PP_Bool IsRectTopmost(PP_Instance instance, const PP_Rect* rect) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_FALSE;
-  return enter.functions()->GetFlashAPI()->IsRectTopmost(instance, rect);
+  return enter.functions()->IsRectTopmost(instance, rect);
 }
 
 int32_t InvokePrinting(PP_Instance instance) {
@@ -138,10 +137,10 @@ int32_t GetSettingInt(PP_Instance instance, PP_FlashSetting setting) {
 }
 
 PP_Var GetSetting(PP_Instance instance, PP_FlashSetting setting) {
-  EnterInstance enter(instance);
+  EnterInstanceAPI<PPB_Flash_Functions_API> enter(instance);
   if (enter.failed())
     return PP_MakeUndefined();
-  return enter.functions()->GetFlashAPI()->GetSetting(instance, setting);
+  return enter.functions()->GetSetting(instance, setting);
 }
 
 PP_Bool SetCrashData(PP_Instance instance,
@@ -156,7 +155,7 @@ PP_Bool SetCrashData(PP_Instance instance,
 int32_t EnumerateVideoCaptureDevices(PP_Instance instance,
                                      PP_Resource video_capture,
                                      PP_ArrayOutput devices) {
-  thunk::EnterResource<thunk::PPB_VideoCapture_API> enter(video_capture, true);
+  EnterResource<PPB_VideoCapture_API> enter(video_capture, true);
   if (enter.failed())
     return enter.retval();
   return enter.object()->EnumerateDevicesSync(devices);

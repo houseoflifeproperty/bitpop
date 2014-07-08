@@ -4,31 +4,27 @@
 
 #include "content/renderer/media/rtc_video_renderer.h"
 
-#include "base/bind.h"
 #include "base/debug/trace_event.h"
-#include "base/location.h"
-#include "base/logging.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "media/base/bind_to_current_loop.h"
 #include "media/base/video_frame.h"
 #include "media/base/video_util.h"
-#include "third_party/libjingle/source/talk/base/timeutils.h"
-#include "third_party/libjingle/source/talk/media/base/videoframe.h"
 
-using media::CopyYPlane;
-using media::CopyUPlane;
-using media::CopyVPlane;
+const int kMinFrameSize = 2;
 
 namespace content {
 
 RTCVideoRenderer::RTCVideoRenderer(
-    webrtc::VideoTrackInterface* video_track,
+    const blink::WebMediaStreamTrack& video_track,
     const base::Closure& error_cb,
     const RepaintCB& repaint_cb)
     : error_cb_(error_cb),
       repaint_cb_(repaint_cb),
       message_loop_proxy_(base::MessageLoopProxy::current()),
-      state_(kStopped),
-      video_track_(video_track) {
+      state_(STOPPED),
+      frame_size_(kMinFrameSize, kMinFrameSize),
+      video_track_(video_track),
+      weak_factory_(this) {
 }
 
 RTCVideoRenderer::~RTCVideoRenderer() {
@@ -36,75 +32,89 @@ RTCVideoRenderer::~RTCVideoRenderer() {
 
 void RTCVideoRenderer::Start() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  DCHECK_EQ(state_, kStopped);
+  DCHECK_EQ(state_, STOPPED);
 
-  if (video_track_)
-    video_track_->AddRenderer(this);
-  state_ = kStarted;
+  AddToVideoTrack(
+      this,
+      media::BindToCurrentLoop(
+          base::Bind(
+              &RTCVideoRenderer::OnVideoFrame,
+              weak_factory_.GetWeakPtr())),
+      video_track_);
+  state_ = STARTED;
+
+  if (video_track_.source().readyState() ==
+          blink::WebMediaStreamSource::ReadyStateEnded ||
+      !video_track_.isEnabled()) {
+    RenderSignalingFrame();
+  }
 }
 
 void RTCVideoRenderer::Stop() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_) {
-    state_ = kStopped;
-    video_track_->RemoveRenderer(this);
-    video_track_ = NULL;
-  }
+  DCHECK(state_ == STARTED || state_ == PAUSED);
+  RemoveFromVideoTrack(this, video_track_);
+  weak_factory_.InvalidateWeakPtrs();
+  state_ = STOPPED;
+  frame_size_.set_width(kMinFrameSize);
+  frame_size_.set_height(kMinFrameSize);
 }
 
 void RTCVideoRenderer::Play() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_ && state_ == kPaused) {
-    state_ = kStarted;
+  if (state_ == PAUSED) {
+    state_ = STARTED;
   }
 }
 
 void RTCVideoRenderer::Pause() {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
-  if (video_track_ && state_ == kStarted) {
-    state_ = kPaused;
+  if (state_ == STARTED) {
+    state_ = PAUSED;
   }
 }
 
-void RTCVideoRenderer::SetSize(int width, int height) {
-}
-
-void RTCVideoRenderer::RenderFrame(const cricket::VideoFrame* frame) {
-  base::TimeDelta timestamp = base::TimeDelta::FromMilliseconds(
-      frame->GetTimeStamp() / talk_base::kNumNanosecsPerMillisec);
-  gfx::Size size(frame->GetWidth(), frame->GetHeight());
-  scoped_refptr<media::VideoFrame> video_frame =
-      media::VideoFrame::CreateFrame(media::VideoFrame::YV12,
-                                     size,
-                                     gfx::Rect(size),
-                                     size,
-                                     timestamp);
-
-  // Aspect ratio unsupported; DCHECK when there are non-square pixels.
-  DCHECK_EQ(frame->GetPixelWidth(), 1u);
-  DCHECK_EQ(frame->GetPixelHeight(), 1u);
-
-  int y_rows = frame->GetHeight();
-  int uv_rows = frame->GetHeight() / 2;  // YV12 format.
-  CopyYPlane(frame->GetYPlane(), frame->GetYPitch(), y_rows, video_frame);
-  CopyUPlane(frame->GetUPlane(), frame->GetUPitch(), uv_rows, video_frame);
-  CopyVPlane(frame->GetVPlane(), frame->GetVPitch(), uv_rows, video_frame);
-
-  message_loop_proxy_->PostTask(
-      FROM_HERE, base::Bind(&RTCVideoRenderer::DoRenderFrameOnMainThread,
-                            this, video_frame));
-}
-
-void RTCVideoRenderer::DoRenderFrameOnMainThread(
-    scoped_refptr<media::VideoFrame> video_frame) {
+void RTCVideoRenderer::OnReadyStateChanged(
+    blink::WebMediaStreamSource::ReadyState state) {
   DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  if (state == blink::WebMediaStreamSource::ReadyStateEnded)
+    RenderSignalingFrame();
+}
 
-  if (state_ != kStarted) {
+void RTCVideoRenderer::OnEnabledChanged(bool enabled) {
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  if (!enabled)
+    RenderSignalingFrame();
+}
+
+void RTCVideoRenderer::OnVideoFrame(
+    const scoped_refptr<media::VideoFrame>& frame,
+    const media::VideoCaptureFormat& format) {
+  DCHECK(message_loop_proxy_->BelongsToCurrentThread());
+  if (state_ != STARTED) {
     return;
   }
 
-  TRACE_EVENT0("video", "DoRenderFrameOnMainThread");
-  repaint_cb_.Run(video_frame);
+  frame_size_ = frame->natural_size();
+
+  TRACE_EVENT_INSTANT1("rtc_video_renderer",
+                       "OnVideoFrame",
+                       TRACE_EVENT_SCOPE_THREAD,
+                       "timestamp",
+                       frame->timestamp().InMilliseconds());
+  repaint_cb_.Run(frame);
+}
+
+void RTCVideoRenderer::RenderSignalingFrame() {
+  // This is necessary to make sure audio can play if the video tag src is
+  // a MediaStream video track that has been rejected, ended or disabled.
+  // It also ensure that the renderer don't hold a reference to a real video
+  // frame if no more frames are provided. This is since there might be a
+  // finite number of available buffers. E.g, video that
+  // originates from a video camera.
+  scoped_refptr<media::VideoFrame> video_frame =
+      media::VideoFrame::CreateBlackFrame(frame_size_);
+  OnVideoFrame(video_frame, media::VideoCaptureFormat());
 }
 
 }  // namespace content

@@ -2,49 +2,49 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#if defined(USE_X11)
+#include <X11/Xlib.h>
+#endif
+
 #include "base/at_exit.h"
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/i18n/icu_util.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/string_split.h"
-#include "base/time.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_split.h"
+#include "base/time/time.h"
+#include "cc/output/context_provider.h"
+#include "gpu/command_buffer/client/gles2_interface.h"
 #include "third_party/khronos/GLES2/gl2.h"
 #include "third_party/skia/include/core/SkXfermode.h"
 #include "ui/aura/client/default_capture_client.h"
-#include "ui/aura/display_util.h"
 #include "ui/aura/env.h"
-#include "ui/aura/focus_manager.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/test/test_focus_client.h"
 #include "ui/aura/test/test_screen.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
-#include "ui/base/resource/resource_bundle.h"
-#include "ui/base/ui_base_paths.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/compositor_observer.h"
 #include "ui/compositor/debug_utils.h"
 #include "ui/compositor/layer.h"
-#include "ui/compositor/test/compositor_test_support.h"
+#include "ui/compositor/test/in_process_context_factory.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/skia_util.h"
+#include "ui/gfx/x/x11_connection.h"
+#include "ui/gl/gl_surface.h"
+
 #ifndef GL_GLEXT_PROTOTYPES
 #define GL_GLEXT_PROTOTYPES 1
 #endif
 #include "third_party/khronos/GLES2/gl2ext.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
-
-#if defined(USE_X11)
-#include "base/message_pump_aurax11.h"
-#endif
 
 using base::TimeTicks;
 using ui::Compositor;
 using ui::Layer;
 using ui::LayerDelegate;
-using WebKit::WebGraphicsContext3D;
 
 namespace {
 
@@ -96,7 +96,8 @@ class BenchCompositorObserver : public ui::CompositorObserver {
 
   virtual void OnCompositingDidCommit(ui::Compositor* compositor) OVERRIDE {}
 
-  virtual void OnCompositingStarted(Compositor* compositor) OVERRIDE {}
+  virtual void OnCompositingStarted(Compositor* compositor,
+                                    base::TimeTicks start_time) OVERRIDE {}
 
   virtual void OnCompositingEnded(Compositor* compositor) OVERRIDE {
     if (start_time_.is_null()) {
@@ -111,7 +112,7 @@ class BenchCompositorObserver : public ui::CompositorObserver {
       }
     }
     if (max_frames_ && frames_ == max_frames_) {
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
     } else {
       Draw();
     }
@@ -134,40 +135,15 @@ class BenchCompositorObserver : public ui::CompositorObserver {
   DISALLOW_COPY_AND_ASSIGN(BenchCompositorObserver);
 };
 
-class WebGLTexture : public ui::Texture {
- public:
-  WebGLTexture(WebGraphicsContext3D* context, const gfx::Size& size)
-      : ui::Texture(false, size, 1.0f),
-        context_(context),
-        texture_id_(context_->createTexture()) {
-    context_->bindTexture(GL_TEXTURE_2D, texture_id_);
-    context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    context_->texParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    context_->texImage2D(GL_TEXTURE_2D, 0, GL_RGBA,
-                         size.width(), size.height(), 0,
-                         GL_RGBA, GL_UNSIGNED_BYTE, NULL);
-  }
-
-  virtual unsigned int PrepareTexture() OVERRIDE {
-    return texture_id_;
-  }
-
-  virtual WebGraphicsContext3D* HostContext3D() OVERRIDE {
-    return context_;
-  }
-
- private:
-  virtual ~WebGLTexture() {
-    context_->deleteTexture(texture_id_);
-  }
-
-  WebGraphicsContext3D* context_;
-  unsigned texture_id_;
-
-  DISALLOW_COPY_AND_ASSIGN(WebGLTexture);
-};
+void ReturnMailbox(scoped_refptr<cc::ContextProvider> context_provider,
+                   GLuint texture,
+                   GLuint sync_point,
+                   bool is_lost) {
+  gpu::gles2::GLES2Interface* gl = context_provider->ContextGL();
+  gl->WaitSyncPointCHROMIUM(sync_point);
+  gl->DeleteTextures(1, &texture);
+  gl->ShallowFlushCHROMIUM();
+}
 
 // A benchmark that adds a texture layer that is updated every frame.
 class WebGLBench : public BenchCompositorObserver {
@@ -177,8 +153,6 @@ class WebGLBench : public BenchCompositorObserver {
         parent_(parent),
         webgl_(ui::LAYER_TEXTURED),
         compositor_(compositor),
-        context_(),
-        texture_(),
         fbo_(0),
         do_draw_(true) {
     CommandLine* command_line = CommandLine::ForCurrentProcess();
@@ -203,37 +177,60 @@ class WebGLBench : public BenchCompositorObserver {
     webgl_.SetBounds(bounds);
     parent_->Add(&webgl_);
 
-    context_.reset(ui::ContextFactory::GetInstance()->CreateOffscreenContext());
-    context_->makeContextCurrent();
-    texture_ = new WebGLTexture(context_.get(), bounds.size());
-    fbo_ = context_->createFramebuffer();
+    context_provider_ =
+        ui::ContextFactory::GetInstance()->SharedMainThreadContextProvider();
+    gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+    GLuint texture = 0;
+    gl->GenTextures(1, &texture);
+    gl->BindTexture(GL_TEXTURE_2D, texture);
+    gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    gl->TexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    gl->TexImage2D(GL_TEXTURE_2D,
+                   0,
+                   GL_RGBA,
+                   width,
+                   height,
+                   0,
+                   GL_RGBA,
+                   GL_UNSIGNED_BYTE,
+                   NULL);
+    gpu::Mailbox mailbox;
+    gl->GenMailboxCHROMIUM(mailbox.name);
+    gl->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+
+    gl->GenFramebuffers(1, &fbo_);
+    gl->BindFramebuffer(GL_FRAMEBUFFER, fbo_);
+    gl->FramebufferTexture2D(
+        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, texture, 0);
+    gl->ClearColor(0.f, 1.f, 0.f, 1.f);
+    gl->Clear(GL_COLOR_BUFFER_BIT);
+    gl->Flush();
+
+    GLuint sync_point = gl->InsertSyncPointCHROMIUM();
+    webgl_.SetTextureMailbox(
+        cc::TextureMailbox(mailbox, GL_TEXTURE_2D, sync_point),
+        cc::SingleReleaseCallback::Create(
+            base::Bind(ReturnMailbox, context_provider_, texture)),
+        bounds.size());
     compositor->AddObserver(this);
-    webgl_.SetExternalTexture(texture_);
-    context_->bindFramebuffer(GL_FRAMEBUFFER, fbo_);
-    context_->framebufferTexture2D(
-        GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
-        GL_TEXTURE_2D, texture_->PrepareTexture(), 0);
-    context_->clearColor(0.f, 1.f, 0.f, 1.f);
-    context_->clear(GL_COLOR_BUFFER_BIT);
-    context_->flush();
   }
 
   virtual ~WebGLBench() {
-    context_->makeContextCurrent();
-    context_->deleteFramebuffer(fbo_);
-    webgl_.SetExternalTexture(NULL);
-    texture_ = NULL;
+    webgl_.SetShowPaintedContent();
+    gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+    gl->DeleteFramebuffers(1, &fbo_);
     compositor_->RemoveObserver(this);
   }
 
   virtual void Draw() OVERRIDE {
     if (do_draw_) {
-      context_->makeContextCurrent();
-      context_->clearColor((frames() % kFrames)*1.0/kFrames, 1.f, 0.f, 1.f);
-      context_->clear(GL_COLOR_BUFFER_BIT);
-      context_->flush();
+      gpu::gles2::GLES2Interface* gl = context_provider_->ContextGL();
+      gl->ClearColor((frames() % kFrames)*1.0/kFrames, 1.f, 0.f, 1.f);
+      gl->Clear(GL_COLOR_BUFFER_BIT);
+      gl->Flush();
     }
-    webgl_.SetExternalTexture(texture_);
     webgl_.SchedulePaint(gfx::Rect(webgl_.bounds().size()));
     compositor_->ScheduleDraw();
   }
@@ -242,8 +239,7 @@ class WebGLBench : public BenchCompositorObserver {
   Layer* parent_;
   Layer webgl_;
   Compositor* compositor_;
-  scoped_ptr<WebGraphicsContext3D> context_;
-  scoped_refptr<WebGLTexture> texture_;
+  scoped_refptr<cc::ContextProvider> context_provider_;
 
   // The FBO that is used to render to the texture.
   unsigned int fbo_;
@@ -292,29 +288,40 @@ int main(int argc, char** argv) {
 
   base::AtExitManager exit_manager;
 
-  ui::RegisterPathProvider();
-  icu_util::Initialize();
-  ResourceBundle::InitSharedInstanceWithLocale("en-US", NULL);
+#if defined(USE_X11)
+  // This demo uses InProcessContextFactory which uses X on a separate Gpu
+  // thread.
+  gfx::InitializeThreadedX11();
+#endif
 
-  MessageLoop message_loop(MessageLoop::TYPE_UI);
-  ui::CompositorTestSupport::Initialize();
-  aura::Env::GetInstance();
-  aura::SetUseFullscreenHostWindow(true);
-  aura::TestScreen test_screen;
-  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, &test_screen);
-  scoped_ptr<aura::RootWindow> root_window(
-      test_screen.CreateRootWindowForPrimaryDisplay());
+  gfx::GLSurface::InitializeOneOff();
+
+  // The ContextFactory must exist before any Compositors are created.
+  scoped_ptr<ui::InProcessContextFactory> context_factory(
+      new ui::InProcessContextFactory());
+  ui::ContextFactory::SetInstance(context_factory.get());
+
+  base::i18n::InitializeICU();
+
+  base::MessageLoopForUI message_loop;
+  aura::Env::CreateInstance(true);
+  scoped_ptr<aura::TestScreen> test_screen(
+      aura::TestScreen::CreateFullscreen());
+  gfx::Screen::SetScreenInstance(gfx::SCREEN_TYPE_NATIVE, test_screen.get());
+  scoped_ptr<aura::WindowTreeHost> host(
+      test_screen->CreateHostForPrimaryDisplay());
   aura::client::SetCaptureClient(
-      root_window.get(),
-      new aura::client::DefaultCaptureClient(root_window.get()));
+      host->window(),
+      new aura::client::DefaultCaptureClient(host->window()));
 
-  scoped_ptr<aura::client::FocusClient> focus_client(new aura::FocusManager);
-  aura::client::SetFocusClient(root_window.get(), focus_client.get());
+  scoped_ptr<aura::client::FocusClient> focus_client(
+      new aura::test::TestFocusClient);
+  aura::client::SetFocusClient(host->window(), focus_client.get());
 
   // add layers
   ColoredLayer background(SK_ColorRED);
-  background.SetBounds(root_window->bounds());
-  root_window->layer()->Add(&background);
+  background.SetBounds(host->window()->bounds());
+  host->window()->layer()->Add(&background);
 
   ColoredLayer window(SK_ColorBLUE);
   window.SetBounds(gfx::Rect(background.bounds().size()));
@@ -339,24 +346,22 @@ int main(int argc, char** argv) {
 
   if (command_line->HasSwitch("bench-software-scroll")) {
     bench.reset(new SoftwareScrollBench(&page_background,
-                                        root_window->compositor(),
+                                        host->compositor(),
                                         frames));
   } else {
     bench.reset(new WebGLBench(&page_background,
-                               root_window->compositor(),
+                               host->compositor(),
                                frames));
   }
 
 #ifndef NDEBUG
-  ui::PrintLayerHierarchy(root_window->layer(), gfx::Point(100, 100));
+  ui::PrintLayerHierarchy(host->window()->layer(), gfx::Point(100, 100));
 #endif
 
-  root_window->ShowRootWindow();
-  MessageLoopForUI::current()->Run();
+  host->Show();
+  base::MessageLoopForUI::current()->Run();
   focus_client.reset();
-  root_window.reset();
-
-  ui::CompositorTestSupport::Terminate();
+  host.reset();
 
   return 0;
 }

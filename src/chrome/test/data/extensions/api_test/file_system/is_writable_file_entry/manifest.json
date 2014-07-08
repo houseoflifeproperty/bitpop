@@ -7,9 +7,5 @@
       "scripts": ["background.js"]
     }
   },
-  "permissions": [
-    {
-      "fileSystem": ["write"]
-    }
-  ]
+  "permissions": ["fileSystem"]
 }

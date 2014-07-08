@@ -7,10 +7,10 @@
 #include <algorithm>
 
 #include "base/stl_util.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_bubble_view_base.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/browser/notification_service.h"
 
 GlobalErrorService::GlobalErrorService(Profile* profile) : profile_(profile) {
@@ -21,6 +21,7 @@ GlobalErrorService::~GlobalErrorService() {
 }
 
 void GlobalErrorService::AddGlobalError(GlobalError* error) {
+  DCHECK(error);
   errors_.push_back(error);
   NotifyErrorsChanged(error);
 }
@@ -44,22 +45,23 @@ GlobalError* GlobalErrorService::GetGlobalErrorByMenuItemCommandID(
   return NULL;
 }
 
-int GlobalErrorService::GetFirstBadgeResourceID() const {
+GlobalError*
+GlobalErrorService::GetHighestSeverityGlobalErrorWithWrenchMenuItem() const {
   GlobalError::Severity highest_severity = GlobalError::SEVERITY_LOW;
-  int resource_id = 0;
+  GlobalError* highest_severity_error = NULL;
 
   for (GlobalErrorList::const_iterator
        it = errors_.begin(); it != errors_.end(); ++it) {
     GlobalError* error = *it;
-    if (error->HasBadge()) {
-      if (resource_id == 0 || error->GetSeverity() > highest_severity) {
+    if (error->HasMenuItem()) {
+      if (!highest_severity_error || error->GetSeverity() > highest_severity) {
         highest_severity = error->GetSeverity();
-        resource_id = error->GetBadgeResourceID();
+        highest_severity_error = error;
       }
     }
   }
 
-  return resource_id;
+  return highest_severity_error;
 }
 
 GlobalError* GlobalErrorService::GetFirstGlobalErrorWithBubbleView() const {

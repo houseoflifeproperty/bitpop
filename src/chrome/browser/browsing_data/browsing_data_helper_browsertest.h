@@ -11,7 +11,7 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 
 // This template can be used for the StartFetching methods of the browsing data
 // helper classes. It is supposed to be instantiated with the respective
@@ -24,7 +24,7 @@ class BrowsingDataHelperCallback {
   }
 
   const std::list<T>& result() {
-    MessageLoop::current()->Run();
+    base::MessageLoop::current()->Run();
     DCHECK(has_result_);
     return result_;
   }
@@ -32,7 +32,7 @@ class BrowsingDataHelperCallback {
   void callback(const std::list<T>& info) {
     result_ = info;
     has_result_ = true;
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
   }
 
  private:

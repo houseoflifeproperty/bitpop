@@ -24,13 +24,14 @@
 #include "content/public/browser/notification_registrar.h"
 
 namespace extensions {
-  class ExtensionHost;
+  class ExtensionViewHost;
 }
 
 class Browser;
 class ExtensionHostPantry;
 class SidebarExtensionContainer;
 class SidebarExtensionNotificationBridge;
+class SidebarLoadedObserver;
 
 // A class that handles updates of the sidebar view within a browser window.
 // It swaps in the relevant sidebar contents for a given TabContents or removes
@@ -41,7 +42,8 @@ class SidebarExtensionNotificationBridge;
   content::NotificationRegistrar registrar_;
   scoped_ptr<SidebarExtensionNotificationBridge> notification_bridge_;
   scoped_ptr<SidebarExtensionContainer> extension_container_;
-  scoped_ptr<extensions::ExtensionHost> extension_host_;
+  scoped_ptr<extensions::ExtensionViewHost> extension_view_host_;
+  scoped_ptr<SidebarLoadedObserver> sidebar_loaded_observer_;
   Browser* browser_;
 }
 
@@ -53,7 +55,7 @@ class SidebarExtensionNotificationBridge;
 
 - (void)removeAllChildViews;
 
-- (extensions::ExtensionHost*)extension_host;
+- (extensions::ExtensionViewHost*)extension_view_host;
 
 @end
 

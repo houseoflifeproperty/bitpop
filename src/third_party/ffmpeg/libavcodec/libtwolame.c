@@ -67,6 +67,8 @@ static av_cold int twolame_encode_init(AVCodecContext *avctx)
     twolame_set_psymodel(s->glopts, s->psymodel);
     twolame_set_energy_levels(s->glopts, s->energy);
     twolame_set_error_protection(s->glopts, s->error_protection);
+    twolame_set_copyright(s->glopts, s->copyright);
+    twolame_set_original(s->glopts, s->original);
 
     twolame_set_num_channels(s->glopts, avctx->channels);
     twolame_set_in_samplerate(s->glopts, avctx->sample_rate);
@@ -94,7 +96,7 @@ static int twolame_encode_frame(AVCodecContext *avctx, AVPacket *avpkt,
     TWOLAMEContext *s = avctx->priv_data;
     int ret;
 
-    if ((ret = ff_alloc_packet2(avctx, avpkt, MPA_MAX_CODED_FRAME_SIZE)))
+    if ((ret = ff_alloc_packet2(avctx, avpkt, MPA_MAX_CODED_FRAME_SIZE)) < 0)
         return ret;
 
     if (frame) {
@@ -175,6 +177,7 @@ static const AVClass libtwolame_class = {
 
 AVCodec ff_libtwolame_encoder = {
     .name                  = "libtwolame",
+    .long_name             = NULL_IF_CONFIG_SMALL("libtwolame MP2 (MPEG audio layer 2)"),
     .type                  = AVMEDIA_TYPE_AUDIO,
     .id                    = AV_CODEC_ID_MP2,
     .priv_data_size        = sizeof(TWOLAMEContext),
@@ -191,6 +194,5 @@ AVCodec ff_libtwolame_encoder = {
                                                   AV_CH_LAYOUT_STEREO,
                                                   0 },
     .supported_samplerates = (const int[]){ 16000, 22050, 24000, 32000, 44100, 48000, 0 },
-    .long_name             = NULL_IF_CONFIG_SMALL("libtwolame MP2 (MPEG audio layer 2)"),
     .priv_class            = &libtwolame_class,
 };

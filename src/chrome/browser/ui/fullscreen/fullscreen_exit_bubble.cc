@@ -4,7 +4,7 @@
 
 #include "chrome/browser/ui/fullscreen/fullscreen_exit_bubble.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -17,10 +17,10 @@
 
 // NOTE(koz): Linux doesn't use the thick shadowed border, so we add padding
 // here.
-#ifdef LINUX
+#if defined(OS_LINUX)
 const int FullscreenExitBubble::kPaddingPx = 8;
 #else
-const int FullscreenExitBubble::kPaddingPx = 0;
+const int FullscreenExitBubble::kPaddingPx = 15;
 #endif
 const int FullscreenExitBubble::kInitialDelayMs = 3800;
 const int FullscreenExitBubble::kIdleTimeMs = 2300;
@@ -58,6 +58,10 @@ void FullscreenExitBubble::StopWatchingMouse() {
   initial_delay_.Stop();
   idle_timeout_.Stop();
   mouse_position_checker_.Stop();
+}
+
+bool FullscreenExitBubble::IsWatchingMouse() const {
+  return mouse_position_checker_.IsRunning();
 }
 
 void FullscreenExitBubble::CheckMousePosition() {
@@ -101,41 +105,43 @@ void FullscreenExitBubble::CheckMousePosition() {
     if (!initial_delay_.IsRunning()) {
       Hide();
     }
-  } else if ((cursor_pos.y() < kSlideInRegionHeightPx) ||
-             IsAnimating()) {
-    // The cursor is not idle, and either it's in the slide-in region or it's in
-    // the neutral region and we're sliding out.
+  } else if (cursor_pos.y() < kSlideInRegionHeightPx &&
+             CanMouseTriggerSlideIn()) {
+    Show();
+  } else if (IsAnimating()) {
+    // The cursor is not idle and either it's in the slide-in region or it's in
+    // the neutral region and we're sliding in or out.
     Show();
   }
 }
 
 void FullscreenExitBubble::ToggleFullscreen() {
-  chrome::ExecuteCommand(browser_, IDC_FULLSCREEN);
+  browser_->fullscreen_controller()->
+      ExitTabOrBrowserFullscreenToPreviousState();
 }
 
 void FullscreenExitBubble::Accept() {
-  browser_->fullscreen_controller()->OnAcceptFullscreenPermission(url_,
-                                                                  bubble_type_);
+  browser_->fullscreen_controller()->OnAcceptFullscreenPermission();
 }
 
 void FullscreenExitBubble::Cancel() {
-  browser_->fullscreen_controller()->OnDenyFullscreenPermission(bubble_type_);
+  browser_->fullscreen_controller()->OnDenyFullscreenPermission();
 }
 
-string16 FullscreenExitBubble::GetCurrentMessageText() const {
+base::string16 FullscreenExitBubble::GetCurrentMessageText() const {
   return fullscreen_bubble::GetLabelTextForType(
       bubble_type_, url_, browser_->profile()->GetExtensionService());
 }
 
-string16 FullscreenExitBubble::GetCurrentDenyButtonText() const {
+base::string16 FullscreenExitBubble::GetCurrentDenyButtonText() const {
   return fullscreen_bubble::GetDenyButtonTextForType(bubble_type_);
 }
 
-string16 FullscreenExitBubble::GetAllowButtonText() const {
+base::string16 FullscreenExitBubble::GetAllowButtonText() const {
   return l10n_util::GetStringUTF16(IDS_FULLSCREEN_ALLOW);
 }
 
-string16 FullscreenExitBubble::GetInstructionText() const {
+base::string16 FullscreenExitBubble::GetInstructionText() const {
   return l10n_util::GetStringFUTF16(IDS_FULLSCREEN_PRESS_ESC_TO_EXIT,
       l10n_util::GetStringUTF16(IDS_APP_ESC_KEY));
 }

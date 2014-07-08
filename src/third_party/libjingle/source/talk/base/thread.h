@@ -36,7 +36,6 @@
 #ifdef POSIX
 #include <pthread.h>
 #endif
-
 #include "talk/base/constructormagic.h"
 #include "talk/base/messagequeue.h"
 
@@ -86,8 +85,6 @@ class ThreadManager {
   DISALLOW_COPY_AND_ASSIGN(ThreadManager);
 };
 
-class Thread;
-
 struct _SendMessage {
   _SendMessage() {}
   Thread *thread;
@@ -114,17 +111,21 @@ class Runnable {
   DISALLOW_COPY_AND_ASSIGN(Runnable);
 };
 
+// WARNING! SUBCLASSES MUST CALL Stop() IN THEIR DESTRUCTORS!  See ~Thread().
+
 class Thread : public MessageQueue {
  public:
-  Thread(SocketServer* ss = NULL);
+  explicit Thread(SocketServer* ss = NULL);
+  // NOTE: ALL SUBCLASSES OF Thread MUST CALL Stop() IN THEIR DESTRUCTORS (or
+  // guarantee Stop() is explicitly called before the subclass is destroyed).
+  // This is required to avoid a data race between the destructor modifying the
+  // vtable, and the Thread::PreRun calling the virtual method Run().
   virtual ~Thread();
 
-  static inline Thread* Current() {
-    return ThreadManager::Instance()->CurrentThread();
-  }
+  static Thread* Current();
 
   bool IsCurrent() const {
-    return ThreadManager::Instance()->CurrentThread() == this;
+    return Current() == this;
   }
 
   // Sleeps the calling thread for the specified number of milliseconds, during
@@ -164,6 +165,18 @@ class Thread : public MessageQueue {
 
   virtual void Send(MessageHandler *phandler, uint32 id = 0,
       MessageData *pdata = NULL);
+
+  // Convenience method to invoke a functor on another thread.  Caller must
+  // provide the |ReturnT| template argument, which cannot (easily) be deduced.
+  // Uses Send() internally, which blocks the current thread until execution
+  // is complete.
+  // Ex: bool result = thread.Invoke<bool>(&MyFunctionReturningBool);
+  template <class ReturnT, class FunctorT>
+  ReturnT Invoke(const FunctorT& functor) {
+    FunctorMessageHandler<ReturnT, FunctorT> handler(functor);
+    Send(&handler);
+    return handler.result();
+  }
 
   // From MessageQueue
   virtual void Clear(MessageHandler *phandler, uint32 id = MQID_ANY,
@@ -221,7 +234,6 @@ class Thread : public MessageQueue {
   std::string name_;
   ThreadPriority priority_;
   bool started_;
-  bool has_sends_;
 
 #ifdef POSIX
   pthread_t thread_;
@@ -246,7 +258,7 @@ class Thread : public MessageQueue {
 
 class AutoThread : public Thread {
  public:
-  AutoThread(SocketServer* ss = 0);
+  explicit AutoThread(SocketServer* ss = 0);
   virtual ~AutoThread();
 
  private:
@@ -258,6 +270,7 @@ class AutoThread : public Thread {
 class ComThread : public Thread {
  public:
   ComThread() {}
+  virtual ~ComThread() { Stop(); }
 
  protected:
   virtual void Run();

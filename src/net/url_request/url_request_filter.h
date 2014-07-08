@@ -12,9 +12,9 @@
 //     GURL("http://foo.com/"),
 //     &URLRequestCustomJob::Factory);
 //
-// If URLRequestFilter::Factory can't find a handle for the request, it passes
-// it through to URLRequestInetJob::Factory and lets the default network stack
-// handle it.
+// If URLRequestFilter::Factory can't find a handler for the request, it
+// returns null to URLRequestJobManager and lets a built-in protocol factory
+// handle the request.
 
 #ifndef NET_URL_REQUEST_URL_REQUEST_FILTER_H_
 #define NET_URL_REQUEST_URL_REQUEST_FILTER_H_
@@ -22,9 +22,12 @@
 #include <map>
 #include <string>
 
-#include "base/hash_tables.h"
+#include "base/callback.h"
+#include "base/containers/hash_tables.h"
+#include "base/memory/scoped_ptr.h"
 #include "net/base/net_export.h"
 #include "net/url_request/url_request.h"
+#include "net/url_request/url_request_job_factory.h"
 
 class GURL;
 
@@ -33,10 +36,11 @@ class URLRequestJob;
 
 class NET_EXPORT URLRequestFilter {
  public:
-  // scheme,hostname -> ProtocolFactory
+  // scheme,hostname -> ProtocolHandler
   typedef std::map<std::pair<std::string, std::string>,
-      URLRequest::ProtocolFactory*> HostnameHandlerMap;
-  typedef base::hash_map<std::string, URLRequest::ProtocolFactory*>
+      URLRequestJobFactory::ProtocolHandler* > HostnameHandlerMap;
+  // URL -> ProtocolHandler
+  typedef base::hash_map<std::string, URLRequestJobFactory::ProtocolHandler*>
       UrlHandlerMap;
 
   ~URLRequestFilter();
@@ -49,6 +53,10 @@ class NET_EXPORT URLRequestFilter {
   void AddHostnameHandler(const std::string& scheme,
                           const std::string& hostname,
                           URLRequest::ProtocolFactory* factory);
+  void AddHostnameProtocolHandler(
+      const std::string& scheme,
+      const std::string& hostname,
+      scoped_ptr<URLRequestJobFactory::ProtocolHandler> protocol_handler);
   void RemoveHostnameHandler(const std::string& scheme,
                              const std::string& hostname);
 
@@ -56,6 +64,9 @@ class NET_EXPORT URLRequestFilter {
   // old handlers for the URL if one existed.
   bool AddUrlHandler(const GURL& url,
                      URLRequest::ProtocolFactory* factory);
+  bool AddUrlProtocolHandler(
+      const GURL& url,
+      scoped_ptr<URLRequestJobFactory::ProtocolHandler> protocol_handler);
 
   void RemoveUrlHandler(const GURL& url);
 

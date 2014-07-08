@@ -45,6 +45,7 @@ static const size_t kDataMaxRtpPacketLen = 1200U;
 static const unsigned char kReservedSpace[] = {
   0x00, 0x00, 0x00, 0x00
 };
+
 // Amount of overhead SRTP may take.  We need to leave room in the
 // buffer for it, otherwise SRTP will fail later.  If SRTP ever uses
 // more than this, we need to increase this number.
@@ -52,20 +53,24 @@ static const size_t kMaxSrtpHmacOverhead = 16;
 
 RtpDataEngine::RtpDataEngine() {
   data_codecs_.push_back(
-      DataCodec(cricket::kGoogleDataCodecId,
-                cricket::kGoogleDataCodecName, 0));
+      DataCodec(kGoogleRtpDataCodecId,
+                kGoogleRtpDataCodecName, 0));
   SetTiming(new talk_base::Timing());
 }
 
-DataMediaChannel* RtpDataEngine::CreateChannel() {
+DataMediaChannel* RtpDataEngine::CreateChannel(
+    DataChannelType data_channel_type) {
+  if (data_channel_type != DCT_RTP) {
+    return NULL;
+  }
   return new RtpDataMediaChannel(timing_.get());
 }
 
 // TODO(pthatcher): Should we move these find/get functions somewhere
 // common?
-bool FindCodecById(const std::vector<cricket::DataCodec>& codecs,
-                   int id, cricket::DataCodec* codec_out) {
-  std::vector<cricket::DataCodec>::const_iterator iter;
+bool FindCodecById(const std::vector<DataCodec>& codecs,
+                   int id, DataCodec* codec_out) {
+  std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
     if (iter->id == id) {
       *codec_out = *iter;
@@ -75,9 +80,9 @@ bool FindCodecById(const std::vector<cricket::DataCodec>& codecs,
   return false;
 }
 
-bool FindCodecByName(const std::vector<cricket::DataCodec>& codecs,
-                     const std::string& name, cricket::DataCodec* codec_out) {
-  std::vector<cricket::DataCodec>::const_iterator iter;
+bool FindCodecByName(const std::vector<DataCodec>& codecs,
+                     const std::string& name, DataCodec* codec_out) {
+  std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
     if (iter->name == name) {
       *codec_out = *iter;
@@ -119,9 +124,10 @@ void RtpClock::Tick(
 }
 
 const DataCodec* FindUnknownCodec(const std::vector<DataCodec>& codecs) {
-  std::vector<cricket::DataCodec>::const_iterator iter;
+  DataCodec data_codec(kGoogleRtpDataCodecId, kGoogleRtpDataCodecName, 0);
+  std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
-    if (!iter->Matches(kGoogleDataCodecId, kGoogleDataCodecName)) {
+    if (!iter->Matches(data_codec)) {
       return &(*iter);
     }
   }
@@ -129,9 +135,10 @@ const DataCodec* FindUnknownCodec(const std::vector<DataCodec>& codecs) {
 }
 
 const DataCodec* FindKnownCodec(const std::vector<DataCodec>& codecs) {
-  std::vector<cricket::DataCodec>::const_iterator iter;
+  DataCodec data_codec(kGoogleRtpDataCodecId, kGoogleRtpDataCodecName, 0);
+  std::vector<DataCodec>::const_iterator iter;
   for (iter = codecs.begin(); iter != codecs.end(); ++iter) {
-    if (iter->Matches(kGoogleDataCodecId, kGoogleDataCodecName)) {
+    if (iter->Matches(data_codec)) {
       return &(*iter);
     }
   }
@@ -169,7 +176,7 @@ bool RtpDataMediaChannel::AddSendStream(const StreamParams& stream) {
 
   StreamParams found_stream;
   if (GetStreamBySsrc(send_streams_, stream.first_ssrc(), &found_stream)) {
-    LOG(LS_WARNING) << "Not adding data send stream '" << stream.name
+    LOG(LS_WARNING) << "Not adding data send stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
                     << " because stream already exists.";
     return false;
@@ -182,7 +189,7 @@ bool RtpDataMediaChannel::AddSendStream(const StreamParams& stream) {
       kDataCodecClockrate,
       talk_base::CreateRandomNonZeroId(), talk_base::CreateRandomNonZeroId());
 
-  LOG(LS_INFO) << "Added data send stream '" << stream.name
+  LOG(LS_INFO) << "Added data send stream '" << stream.id
                << "' with ssrc=" << stream.first_ssrc();
   return true;
 }
@@ -206,14 +213,14 @@ bool RtpDataMediaChannel::AddRecvStream(const StreamParams& stream) {
 
   StreamParams found_stream;
   if (GetStreamBySsrc(recv_streams_, stream.first_ssrc(), &found_stream)) {
-    LOG(LS_WARNING) << "Not adding data recv stream '" << stream.name
+    LOG(LS_WARNING) << "Not adding data recv stream '" << stream.id
                     << "' with ssrc=" << stream.first_ssrc()
                     << " because stream already exists.";
     return false;
   }
 
   recv_streams_.push_back(stream);
-  LOG(LS_INFO) << "Added data recv stream '" << stream.name
+  LOG(LS_INFO) << "Added data recv stream '" << stream.id
                << "' with ssrc=" << stream.first_ssrc();
   return true;
 }
@@ -223,7 +230,8 @@ bool RtpDataMediaChannel::RemoveRecvStream(uint32 ssrc) {
   return true;
 }
 
-void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
+void RtpDataMediaChannel::OnPacketReceived(
+    talk_base::Buffer* packet, const talk_base::PacketTime& packet_time) {
   RtpHeader header;
   if (!GetRtpHeader(packet->data(), packet->length(), &header)) {
     // Don't want to log for every corrupt packet.
@@ -252,10 +260,12 @@ void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
 
   DataCodec codec;
   if (!FindCodecById(recv_codecs_, header.payload_type, &codec)) {
-    LOG(LS_WARNING) << "Not receiving packet "
-                    << header.ssrc << ":" << header.seq_num
-                    << " (" << data_len << ")"
-                    << " because unknown payload id: " << header.payload_type;
+    // For bundling, this will be logged for every message.
+    // So disable this logging.
+    // LOG(LS_WARNING) << "Not receiving packet "
+    //                << header.ssrc << ":" << header.seq_num
+    //                << " (" << data_len << ")"
+    //                << " because unknown payload id: " << header.payload_type;
     return;
   }
 
@@ -266,7 +276,8 @@ void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
   }
 
   // Uncomment this for easy debugging.
-  // LOG(LS_INFO) << "Received packet from " << found_stream.nick << ":"
+  // LOG(LS_INFO) << "Received packet"
+  //              << " groupid=" << found_stream.groupid
   //              << ", ssrc=" << header.ssrc
   //              << ", seqnum=" << header.seq_num
   //              << ", timestamp=" << header.timestamp
@@ -279,8 +290,8 @@ void RtpDataMediaChannel::OnPacketReceived(talk_base::Buffer* packet) {
   SignalDataReceived(params, data, data_len);
 }
 
-bool RtpDataMediaChannel::SetSendBandwidth(bool autobw, int bps) {
-  if (autobw || bps <= 0) {
+bool RtpDataMediaChannel::SetMaxSendBandwidth(int bps) {
+  if (bps <= 0) {
     bps = kDataMaxBandwidth;
   }
   send_limiter_.reset(new talk_base::RateLimiter(bps / 8, 1.0));
@@ -289,10 +300,21 @@ bool RtpDataMediaChannel::SetSendBandwidth(bool autobw, int bps) {
 }
 
 bool RtpDataMediaChannel::SendData(
-    const SendDataParams& params, const std::string& data) {
+    const SendDataParams& params,
+    const talk_base::Buffer& payload,
+    SendDataResult* result) {
+  if (result) {
+    // If we return true, we'll set this to SDR_SUCCESS.
+    *result = SDR_ERROR;
+  }
   if (!sending_) {
     LOG(LS_WARNING) << "Not sending packet with ssrc=" << params.ssrc
-                    << " len=" << data.length() << " before SetSend(true).";
+                    << " len=" << payload.length() << " before SetSend(true).";
+    return false;
+  }
+
+  if (params.type != cricket::DMT_TEXT) {
+    LOG(LS_WARNING) << "Not sending data because binary type is unsupported.";
     return false;
   }
 
@@ -304,14 +326,14 @@ bool RtpDataMediaChannel::SendData(
   }
 
   DataCodec found_codec;
-  if (!FindCodecByName(send_codecs_, kGoogleDataCodecName, &found_codec)) {
+  if (!FindCodecByName(send_codecs_, kGoogleRtpDataCodecName, &found_codec)) {
     LOG(LS_WARNING) << "Not sending data because codec is unknown: "
-                    << kGoogleDataCodecName;
+                    << kGoogleRtpDataCodecName;
     return false;
   }
 
   size_t packet_len = (kMinRtpPacketLen + sizeof(kReservedSpace)
-                       + data.length() + kMaxSrtpHmacOverhead);
+                       + payload.length() + kMaxSrtpHmacOverhead);
   if (packet_len > kDataMaxRtpPacketLen) {
     return false;
   }
@@ -323,10 +345,6 @@ bool RtpDataMediaChannel::SendData(
                     << "; already sent " << send_limiter_->used_in_period()
                     << "/" << send_limiter_->max_per_period();
     return false;
-  } else {
-    LOG(LS_VERBOSE) << "Sending data packet of len=" << packet_len
-                    << "; already sent " << send_limiter_->used_in_period()
-                    << "/" << send_limiter_->max_per_period();
   }
 
   RtpHeader header;
@@ -342,17 +360,20 @@ bool RtpDataMediaChannel::SendData(
     return false;
   }
   packet.AppendData(&kReservedSpace, sizeof(kReservedSpace));
-  packet.AppendData(data.data(), data.length());
+  packet.AppendData(payload.data(), payload.length());
 
-  // Uncomment this for easy debugging.
-  // LOG(LS_INFO) << "Sent packet: "
-  //              << " stream=" << found_stream.name
-  //              << ", seqnum=" << header.seq_num
-  //              << ", timestamp=" << header.timestamp
-  //              << ", len=" << data_len;
+  LOG(LS_VERBOSE) << "Sent RTP data packet: "
+                  << " stream=" << found_stream.id
+                  << " ssrc=" << header.ssrc
+                  << ", seqnum=" << header.seq_num
+                  << ", timestamp=" << header.timestamp
+                  << ", len=" << payload.length();
 
-  network_interface()->SendPacket(&packet);
+  MediaChannel::SendPacket(&packet);
   send_limiter_->Use(packet_len, now);
+  if (result) {
+    *result = SDR_SUCCESS;
+  }
   return true;
 }
 

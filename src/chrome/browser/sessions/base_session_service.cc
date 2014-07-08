@@ -14,10 +14,10 @@
 #include "chrome/browser/sessions/session_backend.h"
 #include "chrome/browser/sessions/session_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/url_constants.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/common/referrer.h"
-#include "webkit/glue/webkit_glue.h"
 
 using content::BrowserThread;
 using content::NavigationEntry;
@@ -43,13 +43,18 @@ void WriteStringToPickle(Pickle& pickle, int* bytes_written, int max_bytes,
 // Helper used by ScheduleGetLastSessionCommands. It runs callback on TaskRunner
 // thread if it's not canceled.
 void RunIfNotCanceled(
-    const CancelableTaskTracker::IsCanceledCallback& is_canceled,
-    base::TaskRunner* task_runner,
+    const base::CancelableTaskTracker::IsCanceledCallback& is_canceled,
     const BaseSessionService::InternalGetCommandsCallback& callback,
     ScopedVector<SessionCommand> commands) {
   if (is_canceled.Run())
     return;
+  callback.Run(commands.Pass());
+}
 
+void PostOrRunInternalGetCommandsCallback(
+    base::TaskRunner* task_runner,
+    const BaseSessionService::InternalGetCommandsCallback& callback,
+    ScopedVector<SessionCommand> commands) {
   if (task_runner->RunsTasksOnCurrentThread()) {
     callback.Run(commands.Pass());
   } else {
@@ -69,27 +74,19 @@ const int BaseSessionService::max_persist_navigation_count = 6;
 
 BaseSessionService::BaseSessionService(SessionType type,
                                        Profile* profile,
-                                       const FilePath& path)
+                                       const base::FilePath& path)
     : profile_(profile),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       pending_reset_(false),
-      commands_since_reset_(0) {
+      commands_since_reset_(0),
+      sequence_token_(
+          content::BrowserThread::GetBlockingPool()->GetSequenceToken()) {
   if (profile) {
     // We should never be created when incognito.
     DCHECK(!profile->IsOffTheRecord());
   }
   backend_ = new SessionBackend(type, profile_ ? profile_->GetPath() : path);
   DCHECK(backend_.get());
-
-  // SessionBackend::Init() cannot be scheduled to be called here. There are
-  // service processes which create the BaseSessionService, but they should not
-  // initialize the backend. If they do, the backend will cycle the session
-  // restore files. That in turn prevents the session restore from working when
-  // the normal chromium process is launched. Normally, the backend will be
-  // initialized before it's actually used. However, if we're running as a part
-  // of a test, it must be initialized now.
-  if (!RunningInProduction())
-    backend_->Init();
 }
 
 BaseSessionService::~BaseSessionService() {
@@ -111,8 +108,9 @@ void BaseSessionService::ScheduleCommand(SessionCommand* command) {
 void BaseSessionService::StartSaveTimer() {
   // Don't start a timer when testing (profile == NULL or
   // MessageLoop::current() is NULL).
-  if (MessageLoop::current() && profile() && !weak_factory_.HasWeakPtrs()) {
-    MessageLoop::current()->PostDelayedTask(
+  if (base::MessageLoop::current() && profile() &&
+      !weak_factory_.HasWeakPtrs()) {
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&BaseSessionService::Save, weak_factory_.GetWeakPtr()),
         base::TimeDelta::FromMilliseconds(kSaveDelayMS));
@@ -143,11 +141,15 @@ void BaseSessionService::Save() {
 SessionCommand* BaseSessionService::CreateUpdateTabNavigationCommand(
     SessionID::id_type command_id,
     SessionID::id_type tab_id,
-    const TabNavigation& navigation) {
+    const sessions::SerializedNavigationEntry& navigation) {
   // Use pickle to handle marshalling.
   Pickle pickle;
   pickle.WriteInt(tab_id);
-  navigation.WriteToPickle(&pickle);
+  // We only allow navigations up to 63k (which should be completely
+  // reasonable).
+  static const size_t max_state_size =
+      std::numeric_limits<SessionCommand::size_type>::max() - 1024;
+  navigation.WriteToPickle(max_state_size, &pickle);
   return new SessionCommand(command_id, pickle);
 }
 
@@ -212,7 +214,7 @@ SessionCommand* BaseSessionService::CreateSetWindowAppNameCommand(
 
 bool BaseSessionService::RestoreUpdateTabNavigationCommand(
     const SessionCommand& command,
-    TabNavigation* navigation,
+    sessions::SerializedNavigationEntry* navigation,
     SessionID::id_type* tab_id) {
   scoped_ptr<Pickle> pickle(command.PayloadAsPickle());
   if (!pickle.get())
@@ -263,19 +265,27 @@ bool BaseSessionService::RestoreSetWindowAppNameCommand(
 }
 
 bool BaseSessionService::ShouldTrackEntry(const GURL& url) {
-  return url.is_valid();
+  // Blacklist chrome://quit and chrome://restart to avoid quit or restart
+  // loops.
+  return url.is_valid() && !(url.SchemeIs(content::kChromeUIScheme) &&
+                             (url.host() == chrome::kChromeUIQuitHost ||
+                              url.host() == chrome::kChromeUIRestartHost));
 }
 
-CancelableTaskTracker::TaskId
-    BaseSessionService::ScheduleGetLastSessionCommands(
+base::CancelableTaskTracker::TaskId
+BaseSessionService::ScheduleGetLastSessionCommands(
     const InternalGetCommandsCallback& callback,
-    CancelableTaskTracker* tracker) {
-  CancelableTaskTracker::IsCanceledCallback is_canceled;
-  CancelableTaskTracker::TaskId id = tracker->NewTrackedTaskId(&is_canceled);
+    base::CancelableTaskTracker* tracker) {
+  base::CancelableTaskTracker::IsCanceledCallback is_canceled;
+  base::CancelableTaskTracker::TaskId id =
+      tracker->NewTrackedTaskId(&is_canceled);
+
+  InternalGetCommandsCallback run_if_not_canceled =
+      base::Bind(&RunIfNotCanceled, is_canceled, callback);
 
   InternalGetCommandsCallback callback_runner =
-      base::Bind(&RunIfNotCanceled,
-                 is_canceled, base::MessageLoopProxy::current(), callback);
+      base::Bind(&PostOrRunInternalGetCommandsCallback,
+                 base::MessageLoopProxy::current(), run_if_not_canceled);
 
   RunTaskOnBackendThread(
       FROM_HERE,
@@ -287,17 +297,17 @@ CancelableTaskTracker::TaskId
 bool BaseSessionService::RunTaskOnBackendThread(
     const tracked_objects::Location& from_here,
     const base::Closure& task) {
-  if (profile_ && BrowserThread::IsMessageLoopValid(BrowserThread::FILE)) {
-    return BrowserThread::PostTask(BrowserThread::FILE, from_here, task);
+  DCHECK(content::BrowserThread::CurrentlyOn(content::BrowserThread::UI));
+  base::SequencedWorkerPool* pool = content::BrowserThread::GetBlockingPool();
+  if (!pool->IsShutdownInProgress()) {
+    return pool->PostSequencedWorkerTask(sequence_token_,
+                                         from_here,
+                                         task);
   } else {
-    // Fall back to executing on the main thread if the file thread
-    // has gone away (around shutdown time) or if we're running as
-    // part of a unit test that does not set profile_.
+    // Fall back to executing on the main thread if the sequence
+    // worker pool has been requested to shutdown (around shutdown
+    // time).
     task.Run();
     return true;
   }
-}
-
-bool BaseSessionService::RunningInProduction() const {
-  return profile_ && BrowserThread::IsMessageLoopValid(BrowserThread::FILE);
 }

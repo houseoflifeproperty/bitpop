@@ -7,6 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
+#include "chrome/browser/history/in_memory_url_index_types.h"
 
 class AutocompleteInput;
 struct AutocompleteMatch;
@@ -16,6 +17,11 @@ struct AutocompleteMatch;
 class HistoryProvider : public AutocompleteProvider {
  public:
   virtual void DeleteMatch(const AutocompleteMatch& match) OVERRIDE;
+
+  // Returns true if inline autocompletion should be prevented for URL-like
+  // input.  This method returns true if input.prevent_inline_autocomplete()
+  // is true or the input text contains trailing whitespace.
+  static bool PreventInlineAutocomplete(const AutocompleteInput& input);
 
  protected:
   HistoryProvider(AutocompleteProviderListener* listener,
@@ -27,35 +33,12 @@ class HistoryProvider : public AutocompleteProvider {
   // backing data.
   void DeleteMatchFromMatches(const AutocompleteMatch& match);
 
-  // Fixes up user URL input to make it more possible to match against.  Among
-  // many other things, this takes care of the following:
-  // * Prepending file:// to file URLs
-  // * Converting drive letters in file URLs to uppercase
-  // * Converting case-insensitive parts of URLs (like the scheme and domain)
-  //   to lowercase
-  // * Convert spaces to %20s
-  // Note that we don't do this in AutocompleteInput's constructor, because if
-  // e.g. we convert a Unicode hostname to punycode, other providers will show
-  // output that surprises the user ("Search Google for xn--6ca.com").
-  // Returns false if the fixup attempt resulted in an empty string (which
-  // providers generally can't do anything with).
-  static bool FixupUserInput(AutocompleteInput* input);
-
-  // Trims "http:" and up to two subsequent slashes from |url|.  Returns the
-  // number of characters that were trimmed.
-  // NOTE: For a view-source: URL, this will trim from after "view-source:" and
-  // return 0.
-  static size_t TrimHttpPrefix(string16* url);
-
-  // Returns true if inline autocompletion should be prevented. Use this instead
-  // of |input.prevent_inline_autocomplete| if the input is passed through
-  // FixupUserInput(). This method returns true if
-  // |input.prevent_inline_autocomplete()| is true, or the input text contains
-  // trailing whitespace, or if always_prevent_inline_autocomplete is true.
-  bool PreventInlineAutocomplete(const AutocompleteInput& input);
-
-  // If true, we always prevent inline autocompletions.
-  bool always_prevent_inline_autocomplete_;
+  // Fill and return an ACMatchClassifications structure given the |matches|
+  // to highlight.
+  static ACMatchClassifications SpansFromTermMatch(
+      const history::TermMatches& matches,
+      size_t text_length,
+      bool is_url);
 };
 
 #endif  // CHROME_BROWSER_AUTOCOMPLETE_HISTORY_PROVIDER_H_

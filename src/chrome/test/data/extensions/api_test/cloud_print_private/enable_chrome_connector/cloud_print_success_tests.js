@@ -8,7 +8,18 @@ var tests = [
     var robotEmail = 'foorobot@googleusercontent.com';
     var credentials = '1/23546efa54';
     chrome.cloudPrintPrivate.setupConnector(
-        userEmail, robotEmail, credentials, true, ['printer1', 'printer2']);
+        userEmail, robotEmail, credentials, {
+          "connectNewPrinters": true,
+          "printers": [
+            {
+              "name" : "printer1",
+              "connect" : false
+            }, {
+              "name" : "printer2",
+              "connect" : true
+            }
+          ]
+        });
     chrome.test.succeed();
   },
   function getHostName() {
@@ -24,6 +35,13 @@ var tests = [
              chrome.test.assertNoLastError();
              chrome.test.assertEq(result, ['printer1', 'printer2']);
           }));
+  },
+  function getClientId() {
+    chrome.cloudPrintPrivate.getClientId(
+        chrome.test.callbackPass(function(result) {
+          chrome.test.assertNoLastError();
+          chrome.test.assertEq("TestAPIClient", result);
+        }));
   }
 ];
 

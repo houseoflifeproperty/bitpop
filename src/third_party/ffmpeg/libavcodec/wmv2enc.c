@@ -19,7 +19,6 @@
  */
 
 #include "avcodec.h"
-#include "dsputil.h"
 #include "mpegvideo.h"
 #include "msmpeg4.h"
 #include "msmpeg4data.h"
@@ -148,7 +147,7 @@ int ff_wmv2_encode_picture_header(MpegEncContext * s, int picture_number)
  * useless M$ crap features. It is duplicated here in case someone wants
  * to add support for these crap features. */
 void ff_wmv2_encode_mb(MpegEncContext * s,
-                       DCTELEM block[6][64],
+                       int16_t block[6][64],
                        int motion_x, int motion_y)
 {
     Wmv2Context * const w= (Wmv2Context*)s;
@@ -170,10 +169,12 @@ void ff_wmv2_encode_mb(MpegEncContext * s,
                  ff_wmv2_inter_table[w->cbp_table_index][cbp + 64][1],
                  ff_wmv2_inter_table[w->cbp_table_index][cbp + 64][0]);
 
+        s->misc_bits += get_bits_diff(s);
         /* motion vector */
         ff_h263_pred_motion(s, 0, 0, &pred_x, &pred_y);
         ff_msmpeg4_encode_motion(s, motion_x - pred_x,
                               motion_y - pred_y);
+        s->mv_bits += get_bits_diff(s);
     } else {
         /* compute cbp */
         cbp = 0;
@@ -204,21 +205,26 @@ void ff_wmv2_encode_mb(MpegEncContext * s,
             s->h263_aic_dir=0;
             put_bits(&s->pb, ff_table_inter_intra[s->h263_aic_dir][1], ff_table_inter_intra[s->h263_aic_dir][0]);
         }
+        s->misc_bits += get_bits_diff(s);
     }
 
     for (i = 0; i < 6; i++) {
         ff_msmpeg4_encode_block(s, block[i], i);
     }
+    if (s->mb_intra)
+        s->i_tex_bits += get_bits_diff(s);
+    else
+        s->p_tex_bits += get_bits_diff(s);
 }
 
 AVCodec ff_wmv2_encoder = {
     .name           = "wmv2",
+    .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Video 8"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_WMV2,
     .priv_data_size = sizeof(Wmv2Context),
     .init           = wmv2_encode_init,
     .encode2        = ff_MPV_encode_picture,
     .close          = ff_MPV_encode_end,
-    .pix_fmts       = (const enum PixelFormat[]){ PIX_FMT_YUV420P, PIX_FMT_NONE },
-    .long_name      = NULL_IF_CONFIG_SMALL("Windows Media Video 8"),
+    .pix_fmts       = (const enum AVPixelFormat[]){ AV_PIX_FMT_YUV420P, AV_PIX_FMT_NONE },
 };

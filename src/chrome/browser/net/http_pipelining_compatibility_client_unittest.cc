@@ -10,22 +10,23 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
 #include "base/metrics/histogram.h"
 #include "base/metrics/histogram_samples.h"
 #include "base/metrics/statistics_recorder.h"
+#include "base/run_loop.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
-#include "content/public/test/test_browser_thread.h"
+#include "base/strings/stringprintf.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "net/base/net_errors.h"
 #include "net/base/test_completion_callback.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "net/url_request/url_request_test_util.h"
-#include "net/test/test_server.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using base::Histogram;
+using base::HistogramBase;
 using base::HistogramSamples;
 
 namespace chrome_browser_net {
@@ -81,11 +82,11 @@ using testing::StrEq;
 class HttpPipeliningCompatibilityClientTest : public testing::Test {
  public:
   HttpPipeliningCompatibilityClientTest()
-      : test_server_(
-          net::TestServer::TYPE_HTTP,
-          net::TestServer::kLocalhost,
-          FilePath(FILE_PATH_LITERAL("chrome/test/data/http_pipelining"))),
-        io_thread_(BrowserThread::IO, &message_loop_) {
+      : thread_bundle_(content::TestBrowserThreadBundle::IO_MAINLOOP),
+        test_server_(net::SpawnedTestServer::TYPE_HTTP,
+                     net::SpawnedTestServer::kLocalhost,
+                     base::FilePath(FILE_PATH_LITERAL(
+                         "chrome/test/data/http_pipelining"))) {
   }
 
  protected:
@@ -109,7 +110,7 @@ class HttpPipeliningCompatibilityClientTest : public testing::Test {
 
   virtual void TearDown() OVERRIDE {
     BrowserThread::ReleaseSoon(BrowserThread::IO, FROM_HERE, context_);
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     STLDeleteValues(&original_samples_);
   }
 
@@ -118,8 +119,10 @@ class HttpPipeliningCompatibilityClientTest : public testing::Test {
       HttpPipeliningCompatibilityClient::Options options) {
     HttpPipeliningCompatibilityClient client(NULL);
     net::TestCompletionCallback callback;
-    client.Start(test_server_.GetURL("").spec(),
-                 requests, options, callback.callback(),
+    client.Start(test_server_.GetURL(std::string()).spec(),
+                 requests,
+                 options,
+                 callback.callback(),
                  context_->GetURLRequestContext());
     callback.WaitForResult();
   }
@@ -202,16 +205,15 @@ class HttpPipeliningCompatibilityClientTest : public testing::Test {
     }
   }
 
-  MessageLoopForIO message_loop_;
-  net::TestServer test_server_;
+  content::TestBrowserThreadBundle thread_bundle_;
+  net::SpawnedTestServer test_server_;
   net::TestURLRequestContextGetter* context_;
-  content::TestBrowserThread io_thread_;
 
  private:
   scoped_ptr<HistogramSamples> GetHistogram(const char* name) {
     scoped_ptr<HistogramSamples> samples;
-    Histogram* cached_histogram = NULL;
-    Histogram* current_histogram =
+    HistogramBase* cached_histogram = NULL;
+    HistogramBase* current_histogram =
         base::StatisticsRecorder::FindHistogram(name);
     if (ContainsKey(histograms_, name)) {
       cached_histogram = histograms_[name];
@@ -238,12 +240,12 @@ class HttpPipeliningCompatibilityClientTest : public testing::Test {
     return samples.Pass();
   }
 
-  static std::map<std::string, Histogram*> histograms_;
+  static std::map<std::string, HistogramBase*> histograms_;
   std::map<std::string, HistogramSamples*> original_samples_;
 };
 
 // static
-std::map<std::string, Histogram*>
+std::map<std::string, HistogramBase*>
     HttpPipeliningCompatibilityClientTest::histograms_;
 
 TEST_F(HttpPipeliningCompatibilityClientTest, Success) {

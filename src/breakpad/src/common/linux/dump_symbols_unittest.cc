@@ -37,27 +37,27 @@
 #include <stdio.h>
 
 #include <sstream>
-#include <string>
 #include <vector>
 
 #include "breakpad_googletest_includes.h"
+#include "common/linux/dump_symbols.h"
 #include "common/linux/synth_elf.h"
+#include "common/module.h"
 #include "common/using_std_string.h"
 
 namespace google_breakpad {
-bool WriteSymbolFileInternal(const uint8_t* obj_file,
-                             const string &obj_filename,
-                             const string &debug_dir,
-                             bool cfi,
-                             std::ostream &sym_stream);
-}
+
+bool ReadSymbolDataInternal(const uint8_t* obj_file,
+                            const string& obj_filename,
+                            const std::vector<string>& debug_dir,
+                            const DumpOptions& options,
+                            Module** module);
 
 using google_breakpad::synth_elf::ELF;
 using google_breakpad::synth_elf::StringTable;
 using google_breakpad::synth_elf::SymbolTable;
 using google_breakpad::test_assembler::kLittleEndian;
 using google_breakpad::test_assembler::Section;
-using google_breakpad::WriteSymbolFileInternal;
 using std::stringstream;
 using std::vector;
 using ::testing::Test;
@@ -81,12 +81,13 @@ class DumpSymbols : public Test {
 TEST_F(DumpSymbols, Invalid) {
   Elf32_Ehdr header;
   memset(&header, 0, sizeof(header));
-  stringstream s;
-  EXPECT_FALSE(WriteSymbolFileInternal(reinterpret_cast<uint8_t*>(&header),
-                                       "foo",
-                                       "",
-                                       true,
-                                       s));
+  Module* module;
+  DumpOptions options(ALL_SYMBOL_DATA, true);
+  EXPECT_FALSE(ReadSymbolDataInternal(reinterpret_cast<uint8_t*>(&header),
+                                      "foo",
+                                      vector<string>(),
+                                      options,
+                                      &module));
 }
 
 TEST_F(DumpSymbols, SimplePublic32) {
@@ -113,15 +114,20 @@ TEST_F(DumpSymbols, SimplePublic32) {
   elf.Finish();
   GetElfContents(elf);
 
+  Module* module;
+  DumpOptions options(ALL_SYMBOL_DATA, true);
+  EXPECT_TRUE(ReadSymbolDataInternal(elfdata,
+                                     "foo",
+                                     vector<string>(),
+                                     options,
+                                     &module));
+
   stringstream s;
-  ASSERT_TRUE(WriteSymbolFileInternal(elfdata,
-                                      "foo",
-                                      "",
-                                      true,
-                                      s));
+  module->Write(s, ALL_SYMBOL_DATA);
   EXPECT_EQ("MODULE Linux x86 000000000000000000000000000000000 foo\n"
             "PUBLIC 1000 0 superfunc\n",
             s.str());
+  delete module;
 }
 
 TEST_F(DumpSymbols, SimplePublic64) {
@@ -148,13 +154,19 @@ TEST_F(DumpSymbols, SimplePublic64) {
   elf.Finish();
   GetElfContents(elf);
 
+  Module* module;
+  DumpOptions options(ALL_SYMBOL_DATA, true);
+  EXPECT_TRUE(ReadSymbolDataInternal(elfdata,
+                                     "foo",
+                                     vector<string>(),
+                                     options,
+                                     &module));
+
   stringstream s;
-  ASSERT_TRUE(WriteSymbolFileInternal(elfdata,
-                                      "foo",
-                                      "",
-                                      true,
-                                      s));
+  module->Write(s, ALL_SYMBOL_DATA);
   EXPECT_EQ("MODULE Linux x86_64 000000000000000000000000000000000 foo\n"
             "PUBLIC 1000 0 superfunc\n",
             s.str());
 }
+
+}  // namespace google_breakpad

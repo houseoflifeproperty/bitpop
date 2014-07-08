@@ -13,8 +13,9 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/sync/glue/data_type_controller.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
+#include "chrome/browser/sync/profile_sync_components_factory.h"
+#include "components/sync_driver/data_type_controller.h"
+#include "components/sync_driver/data_type_error_handler.h"
 
 class Profile;
 class ProfileSyncService;
@@ -36,14 +37,19 @@ class ChangeProcessor;
 // Implementation for datatypes that do not reside on the frontend thread
 // (UI thread). This is the same thread we perform initialization
 // on, so we don't have to worry about thread safety. The main start/stop
-// funtionality is implemented by default. Derived classes must implement:
+// functionality is implemented by default. Derived classes must implement:
 //    type()
 //    model_safe_group()
 //    PostTaskOnBackendThread()
 //    CreateSyncComponents()
 class NonFrontendDataTypeController : public DataTypeController {
  public:
+  // For creating non-frontend processor/associator and associating on backend.
+  class BackendComponentsContainer;
+
   NonFrontendDataTypeController(
+      scoped_refptr<base::MessageLoopProxy> ui_thread,
+      const base::Closure& error_callback,
       ProfileSyncComponentsFactory* profile_sync_factory,
       Profile* profile,
       ProfileSyncService* sync_service);
@@ -63,6 +69,22 @@ class NonFrontendDataTypeController : public DataTypeController {
   virtual void OnSingleDatatypeUnrecoverableError(
       const tracked_objects::Location& from_here,
       const std::string& message) OVERRIDE;
+
+  // Callback to receive background association results.
+  struct AssociationResult {
+    explicit AssociationResult(syncer::ModelType type);
+    ~AssociationResult();
+    bool needs_crypto;
+    bool unrecoverable_error;
+    bool sync_has_nodes;
+    syncer::SyncError error;
+    syncer::SyncMergeResult local_merge_result;
+    syncer::SyncMergeResult syncer_merge_result;
+    base::TimeDelta association_time;
+    ChangeProcessor* change_processor;
+    AssociatorInterface* model_associator;
+  };
+  void AssociationCallback(AssociationResult result);
 
  protected:
   // For testing only.
@@ -92,9 +114,20 @@ class NonFrontendDataTypeController : public DataTypeController {
       const tracked_objects::Location& from_here,
       const base::Closure& task) = 0;
 
+  // Returns true if the current thread is the backend thread, i.e. the same
+  // thread used by |PostTaskOnBackendThread|. The default implementation just
+  // checks that the current thread is not the UI thread, but subclasses should
+  // override it appropriately.
+  virtual bool IsOnBackendThread();
+
   // Datatype specific creation of sync components.
   // Note: this is performed on the datatype's thread.
-  virtual void CreateSyncComponents() = 0;
+  virtual ProfileSyncComponentsFactory::SyncComponents
+      CreateSyncComponents() = 0;
+
+  // Called on UI thread during shutdown to effectively disable processing
+  // any changes.
+  virtual void DisconnectProcessor(ChangeProcessor* processor) = 0;
 
   // Start up complete, update the state and invoke the callback.
   // Note: this is performed on the datatype's thread.
@@ -109,11 +142,6 @@ class NonFrontendDataTypeController : public DataTypeController {
       DataTypeController::State new_state,
       const syncer::SyncMergeResult& local_merge_result,
       const syncer::SyncMergeResult& syncer_merge_result);
-
-  // Perform any DataType controller specific state cleanup before stopping
-  // the datatype controller. The default implementation is a no-op.
-  // Note: this is performed on the frontend (UI) thread.
-  virtual void StopModels();
 
   // The actual implementation of Disabling the datatype. This happens
   // on the UI thread.
@@ -133,60 +161,26 @@ class NonFrontendDataTypeController : public DataTypeController {
   void set_state(State state);
 
   virtual AssociatorInterface* associator() const;
-  virtual void set_model_associator(AssociatorInterface* associator);
-  virtual ChangeProcessor* change_processor() const;
-  virtual void set_change_processor(ChangeProcessor* change_processor);
+  virtual ChangeProcessor* GetChangeProcessor() const OVERRIDE;
 
   State state_;
   StartCallback start_callback_;
   ModelLoadCallback model_load_callback_;
 
  private:
-  // Post the association task to the thread the datatype lives on.
-  // Note: this is performed on the frontend (UI) thread.
-  // Return value: True if task posted successfully, False otherwise.
-  //
-  // TODO(akalin): Callers handle false return values inconsistently;
-  // some set the state to NOT_RUNNING, and some set the state to
-  // DISABLED.  Move the error handling inside this function to be
-  // consistent.
-  virtual bool StartAssociationAsync();
-
-  // Build sync components and associate models.
-  // Note: this is performed on the datatype's thread.
-  void StartAssociation();
-
-  // Helper method to stop associating.
-  void StopWhileAssociating();
-
-  // Post the StopAssociation task to the thread the datatype lives on.
-  // Note: this is performed on the frontend (UI) thread.
-  // Return value: True if task posted successfully, False otherwise.
-  bool StopAssociationAsync();
-
-  // Disassociate the models and destroy the sync components.
-  // Note: this is performed on the datatype's thread.
-  void StopAssociation();
-
+  friend class BackendComponentsContainer;
   ProfileSyncComponentsFactory* const profile_sync_factory_;
   Profile* const profile_;
   ProfileSyncService* const profile_sync_service_;
 
-  scoped_ptr<AssociatorInterface> model_associator_;
-  scoped_ptr<ChangeProcessor> change_processor_;
+  // Created on UI thread and passed to backend to create processor/associator
+  // and associate model. Released on backend.
+  scoped_ptr<BackendComponentsContainer> components_container_;
 
-  // Locks/Barriers for aborting association early.
-  base::Lock abort_association_lock_;
-  bool abort_association_;
-  base::WaitableEvent abort_association_complete_;
+  AssociatorInterface* model_associator_;
+  ChangeProcessor* change_processor_;
 
-  // This is added for debugging purpose.
-  // TODO(lipalani): Remove this after debugging.
-  base::WaitableEvent start_association_called_;
-
-  // This is added for debugging purpose.
-  // TODO(lipalani): Remove after debugging.
-  bool start_models_failed_;
+  base::WeakPtrFactory<NonFrontendDataTypeController> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NonFrontendDataTypeController);
 };

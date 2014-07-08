@@ -12,211 +12,91 @@
 #ifndef VP9_COMMON_VP9_BLOCKD_H_
 #define VP9_COMMON_VP9_BLOCKD_H_
 
-void vpx_log(const char *format, ...);
+#include "./vpx_config.h"
 
-#include "vpx_ports/config.h"
-#include "vpx_scale/yv12config.h"
-#include "vp9/common/vp9_mv.h"
-#include "vp9/common/vp9_treecoder.h"
-#include "vp9/common/vp9_subpixel.h"
 #include "vpx_ports/mem.h"
+#include "vpx_scale/yv12config.h"
+
 #include "vp9/common/vp9_common.h"
+#include "vp9/common/vp9_common_data.h"
+#include "vp9/common/vp9_enums.h"
+#include "vp9/common/vp9_filter.h"
+#include "vp9/common/vp9_mv.h"
+#include "vp9/common/vp9_scale.h"
+#include "vp9/common/vp9_seg_common.h"
 
-#define TRUE    1
-#define FALSE   0
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-// #define MODE_STATS
-
-/*#define DCPRED 1*/
-#define DCPREDSIMTHRESH 0
-#define DCPREDCNTTHRESH 3
-
-#define MB_FEATURE_TREE_PROBS   3
-#define PREDICTION_PROBS 3
-
-#define MBSKIP_CONTEXTS 3
-
-#define MAX_MB_SEGMENTS         4
-
-#define MAX_REF_LF_DELTAS       4
-#define MAX_MODE_LF_DELTAS      4
+#define BLOCK_SIZE_GROUPS 4
+#define SKIP_CONTEXTS 3
+#define INTER_MODE_CONTEXTS 7
 
 /* Segment Feature Masks */
-#define SEGMENT_DELTADATA   0
-#define SEGMENT_ABSDATA     1
-#define MAX_MV_REFS 9
+#define MAX_MV_REF_CANDIDATES 2
 
-typedef struct {
-  int r, c;
-} POS;
+#define INTRA_INTER_CONTEXTS 4
+#define COMP_INTER_CONTEXTS 5
+#define REF_CONTEXTS 5
 
-typedef enum PlaneType {
-  PLANE_TYPE_Y_NO_DC = 0,
-  PLANE_TYPE_Y2,
-  PLANE_TYPE_UV,
-  PLANE_TYPE_Y_WITH_DC,
+typedef enum {
+  PLANE_TYPE_Y  = 0,
+  PLANE_TYPE_UV = 1,
+  PLANE_TYPES
 } PLANE_TYPE;
 
 typedef char ENTROPY_CONTEXT;
-typedef struct {
-  ENTROPY_CONTEXT y1[4];
-  ENTROPY_CONTEXT u[2];
-  ENTROPY_CONTEXT v[2];
-  ENTROPY_CONTEXT y2;
-} ENTROPY_CONTEXT_PLANES;
 
-extern const unsigned char vp9_block2left[25];
-extern const unsigned char vp9_block2above[25];
-extern const unsigned char vp9_block2left_8x8[25];
-extern const unsigned char vp9_block2above_8x8[25];
+typedef char PARTITION_CONTEXT;
 
-#define VP9_COMBINEENTROPYCONTEXTS( Dest, A, B) \
-  Dest = ((A)!=0) + ((B)!=0);
+static INLINE int combine_entropy_contexts(ENTROPY_CONTEXT a,
+                                           ENTROPY_CONTEXT b) {
+  return (a != 0) + (b != 0);
+}
 
 typedef enum {
   KEY_FRAME = 0,
-  INTER_FRAME = 1
+  INTER_FRAME = 1,
+  FRAME_TYPES,
 } FRAME_TYPE;
 
-typedef enum
-{
-  SIXTAP   = 0,
-  BILINEAR = 1,
-  EIGHTTAP = 2,
-  EIGHTTAP_SHARP = 3,
-  SWITCHABLE  /* should be the last one */
-} INTERPOLATIONFILTERTYPE;
-
-typedef enum
-{
-  DC_PRED,            /* average of above and left pixels */
-  V_PRED,             /* vertical prediction */
-  H_PRED,             /* horizontal prediction */
-  D45_PRED,           /* Directional 45 deg prediction  [anti-clockwise from 0 deg hor] */
-  D135_PRED,          /* Directional 135 deg prediction [anti-clockwise from 0 deg hor] */
-  D117_PRED,          /* Directional 112 deg prediction [anti-clockwise from 0 deg hor] */
-  D153_PRED,          /* Directional 157 deg prediction [anti-clockwise from 0 deg hor] */
-  D27_PRED,           /* Directional 22 deg prediction  [anti-clockwise from 0 deg hor] */
-  D63_PRED,           /* Directional 67 deg prediction  [anti-clockwise from 0 deg hor] */
-  TM_PRED,            /* Truemotion prediction */
-  I8X8_PRED,          /* 8x8 based prediction, each 8x8 has its own prediction mode */
-  B_PRED,             /* block based prediction, each block has its own prediction mode */
-
+typedef enum {
+  DC_PRED,         // Average of above and left pixels
+  V_PRED,          // Vertical
+  H_PRED,          // Horizontal
+  D45_PRED,        // Directional 45  deg = round(arctan(1/1) * 180/pi)
+  D135_PRED,       // Directional 135 deg = 180 - 45
+  D117_PRED,       // Directional 117 deg = 180 - 63
+  D153_PRED,       // Directional 153 deg = 180 - 27
+  D207_PRED,       // Directional 207 deg = 180 + 27
+  D63_PRED,        // Directional 63  deg = round(arctan(2/1) * 180/pi)
+  TM_PRED,         // True-motion
   NEARESTMV,
   NEARMV,
   ZEROMV,
   NEWMV,
-  SPLITMV,
-
   MB_MODE_COUNT
-} MB_PREDICTION_MODE;
+} PREDICTION_MODE;
 
-// Segment level features.
-typedef enum {
-  SEG_LVL_ALT_Q = 0,               // Use alternate Quantizer ....
-  SEG_LVL_ALT_LF = 1,              // Use alternate loop filter value...
-  SEG_LVL_REF_FRAME = 2,           // Optional Segment reference frame
-  SEG_LVL_MODE = 3,                // Optional Segment mode
-  SEG_LVL_EOB = 4,                 // EOB end stop marker.
-  SEG_LVL_TRANSFORM = 5,           // Block transform size.
-  SEG_LVL_MAX = 6                  // Number of MB level features supported
+static INLINE int is_inter_mode(PREDICTION_MODE mode) {
+  return mode >= NEARESTMV && mode <= NEWMV;
+}
 
-} SEG_LVL_FEATURES;
+#define INTRA_MODES (TM_PRED + 1)
 
-// Segment level features.
-typedef enum {
-  TX_4X4,                      // 4x4 dct transform
-  TX_8X8,                      // 8x8 dct transform
-  TX_16X16,                    // 16x16 dct transform
-  TX_SIZE_MAX                  // Number of different transforms available
-} TX_SIZE;
+#define INTER_MODES (1 + NEWMV - NEARESTMV)
 
-typedef enum {
-  DCT_DCT   = 0,                      // DCT  in both horizontal and vertical
-  ADST_DCT  = 1,                      // ADST in vertical, DCT in horizontal
-  DCT_ADST  = 2,                      // DCT  in vertical, ADST in horizontal
-  ADST_ADST = 3                       // ADST in both directions
-} TX_TYPE;
-
-#define VP9_YMODES  (B_PRED + 1)
-#define VP9_UV_MODES (TM_PRED + 1)
-#define VP9_I8X8_MODES (TM_PRED + 1)
-#define VP9_I32X32_MODES (TM_PRED + 1)
-
-#define VP9_MVREFS (1 + SPLITMV - NEARESTMV)
-
-#if CONFIG_LOSSLESS
-#define WHT_UPSCALE_FACTOR 3
-#define Y2_WHT_UPSCALE_FACTOR 2
-#endif
-
-typedef enum {
-  B_DC_PRED,          /* average of above and left pixels */
-  B_TM_PRED,
-
-  B_VE_PRED,          /* vertical prediction */
-  B_HE_PRED,          /* horizontal prediction */
-
-  B_LD_PRED,
-  B_RD_PRED,
-
-  B_VR_PRED,
-  B_VL_PRED,
-  B_HD_PRED,
-  B_HU_PRED,
-#if CONFIG_NEWBINTRAMODES
-  B_CONTEXT_PRED,
-#endif
-
-  LEFT4X4,
-  ABOVE4X4,
-  ZERO4X4,
-  NEW4X4,
-
-  B_MODE_COUNT
-} B_PREDICTION_MODE;
-
-#define VP9_BINTRAMODES (LEFT4X4)
-#define VP9_SUBMVREFS (1 + NEW4X4 - LEFT4X4)
-
-#if CONFIG_NEWBINTRAMODES
-/* The number of B_PRED intra modes that are replaced by B_CONTEXT_PRED */
-#define CONTEXT_PRED_REPLACEMENTS  0
-#define VP9_KF_BINTRAMODES (VP9_BINTRAMODES - 1)
-#define VP9_NKF_BINTRAMODES  (VP9_BINTRAMODES - CONTEXT_PRED_REPLACEMENTS)
-#else
-#define VP9_KF_BINTRAMODES (VP9_BINTRAMODES)   /* 10 */
-#define VP9_NKF_BINTRAMODES (VP9_BINTRAMODES)  /* 10 */
-#endif
-
-typedef enum {
-  PARTITIONING_16X8 = 0,
-  PARTITIONING_8X16,
-  PARTITIONING_8X8,
-  PARTITIONING_4X4,
-  NB_PARTITIONINGS,
-} SPLITMV_PARTITIONING_TYPE;
+#define INTER_OFFSET(mode) ((mode) - NEARESTMV)
 
 /* For keyframes, intra block modes are predicted by the (already decoded)
    modes for the Y blocks to the left and above us; for interframes, there
    is a single probability table. */
 
-union b_mode_info {
-  struct {
-    B_PREDICTION_MODE first;
-    TX_TYPE           tx_type;
-#if CONFIG_COMP_INTRA_PRED
-    B_PREDICTION_MODE second;
-#endif
-#if CONFIG_NEWBINTRAMODES
-    B_PREDICTION_MODE context;
-#endif
-  } as_mode;
-  struct {
-    int_mv first;
-    int_mv second;
-  } as_mv;
-};
+typedef struct {
+  PREDICTION_MODE as_mode;
+  int_mv as_mv[2];  // first, second inter predictor motion vectors
+} b_mode_info;
 
 typedef enum {
   NONE = -1,
@@ -227,145 +107,110 @@ typedef enum {
   MAX_REF_FRAMES = 4
 } MV_REFERENCE_FRAME;
 
+static INLINE int b_width_log2(BLOCK_SIZE sb_type) {
+  return b_width_log2_lookup[sb_type];
+}
+static INLINE int b_height_log2(BLOCK_SIZE sb_type) {
+  return b_height_log2_lookup[sb_type];
+}
+
+static INLINE int mi_width_log2(BLOCK_SIZE sb_type) {
+  return mi_width_log2_lookup[sb_type];
+}
+
+// This structure now relates to 8x8 block regions.
 typedef struct {
-  MB_PREDICTION_MODE mode, uv_mode;
-#if CONFIG_COMP_INTRA_PRED
-  MB_PREDICTION_MODE second_mode, second_uv_mode;
-#endif
-#if CONFIG_COMP_INTERINTRA_PRED
-  MB_PREDICTION_MODE interintra_mode, interintra_uv_mode;
-#endif
-  MV_REFERENCE_FRAME ref_frame, second_ref_frame;
-  TX_SIZE txfm_size;
-  int_mv mv[2]; // for each reference frame used
-  int_mv ref_mvs[MAX_REF_FRAMES][MAX_MV_REFS];
-  int_mv best_mv, best_second_mv;
-#if CONFIG_NEW_MVREF
-  int best_index, best_second_index;
-#endif
+  // Common for both INTER and INTRA blocks
+  BLOCK_SIZE sb_type;
+  PREDICTION_MODE mode;
+  TX_SIZE tx_size;
+  uint8_t skip;
+  uint8_t segment_id;
+  uint8_t seg_id_predicted;  // valid only when temporal_update is enabled
 
-  int mb_mode_context[MAX_REF_FRAMES];
+  // Only for INTRA blocks
+  PREDICTION_MODE uv_mode;
 
-  SPLITMV_PARTITIONING_TYPE partitioning;
-  unsigned char mb_skip_coeff;                                /* does this mb has coefficients at all, 1=no coefficients, 0=need decode tokens */
-  unsigned char need_to_clamp_mvs;
-  unsigned char need_to_clamp_secondmv;
-  unsigned char segment_id;                  /* Which set of segmentation parameters should be used for this MB */
-
-  // Flags used for prediction status of various bistream signals
-  unsigned char seg_id_predicted;
-  unsigned char ref_predicted;
-
-  // Indicates if the mb is part of the image (1) vs border (0)
-  // This can be useful in determining whether the MB provides
-  // a valid predictor
-  unsigned char mb_in_image;
-
-#if CONFIG_PRED_FILTER
-  // Flag to turn prediction signal filter on(1)/off(0 ) at the MB level
-  unsigned int pred_filter_enabled;
-#endif
-    INTERPOLATIONFILTERTYPE interp_filter;
-
-#if CONFIG_SUPERBLOCKS
-  // FIXME need a SB array of 4 MB_MODE_INFOs that
-  // only needs one encoded_as_sb.
-  unsigned char encoded_as_sb;
-#endif
+  // Only for INTER blocks
+  MV_REFERENCE_FRAME ref_frame[2];
+  int_mv mv[2];
+  int_mv ref_mvs[MAX_REF_FRAMES][MAX_MV_REF_CANDIDATES];
+  uint8_t mode_context[MAX_REF_FRAMES];
+  INTERP_FILTER interp_filter;
 } MB_MODE_INFO;
 
 typedef struct {
   MB_MODE_INFO mbmi;
-  union b_mode_info bmi[16];
+  b_mode_info bmi[4];
 } MODE_INFO;
 
-typedef struct blockd {
-  short *qcoeff;
-  short *dqcoeff;
-  unsigned char  *predictor;
-  short *diff;
-  short *dequant;
+static INLINE PREDICTION_MODE get_y_mode(const MODE_INFO *mi, int block) {
+  return mi->mbmi.sb_type < BLOCK_8X8 ? mi->bmi[block].as_mode
+                                      : mi->mbmi.mode;
+}
 
-  /* 16 Y blocks, 4 U blocks, 4 V blocks each with 16 entries */
-  unsigned char **base_pre;
-  unsigned char **base_second_pre;
-  int pre;
-  int pre_stride;
+static INLINE int is_inter_block(const MB_MODE_INFO *mbmi) {
+  return mbmi->ref_frame[0] > INTRA_FRAME;
+}
 
-  unsigned char **base_dst;
-  int dst;
-  int dst_stride;
+static INLINE int has_second_ref(const MB_MODE_INFO *mbmi) {
+  return mbmi->ref_frame[1] > INTRA_FRAME;
+}
 
-  int eob;
+PREDICTION_MODE vp9_left_block_mode(const MODE_INFO *cur_mi,
+                                    const MODE_INFO *left_mi, int b);
 
-  union b_mode_info bmi;
-} BLOCKD;
+PREDICTION_MODE vp9_above_block_mode(const MODE_INFO *cur_mi,
+                                     const MODE_INFO *above_mi, int b);
+
+enum mv_precision {
+  MV_PRECISION_Q3,
+  MV_PRECISION_Q4
+};
+
+#if CONFIG_ALPHA
+enum { MAX_MB_PLANE = 4 };
+#else
+enum { MAX_MB_PLANE = 3 };
+#endif
+
+struct buf_2d {
+  uint8_t *buf;
+  int stride;
+};
+
+struct macroblockd_plane {
+  int16_t *dqcoeff;
+  PLANE_TYPE plane_type;
+  int subsampling_x;
+  int subsampling_y;
+  struct buf_2d dst;
+  struct buf_2d pre[2];
+  const int16_t *dequant;
+  ENTROPY_CONTEXT *above_context;
+  ENTROPY_CONTEXT *left_context;
+};
+
+#define BLOCK_OFFSET(x, i) ((x) + (i) * 16)
+
+typedef struct RefBuffer {
+  // TODO(dkovalev): idx is not really required and should be removed, now it
+  // is used in vp9_onyxd_if.c
+  int idx;
+  YV12_BUFFER_CONFIG *buf;
+  struct scale_factors sf;
+} RefBuffer;
 
 typedef struct macroblockd {
-  DECLARE_ALIGNED(16, short, diff[400]);      /* from idct diff */
-  DECLARE_ALIGNED(16, unsigned char,  predictor[384]);
-  DECLARE_ALIGNED(16, short, qcoeff[400]);
-  DECLARE_ALIGNED(16, short, dqcoeff[400]);
-  DECLARE_ALIGNED(16, unsigned short,  eobs[25]);
+  struct macroblockd_plane plane[MAX_MB_PLANE];
 
-  /* 16 Y blocks, 4 U, 4 V, 1 DC 2nd order block, each with 16 entries. */
-  BLOCKD block[25];
-  int fullpixel_mask;
+  int mi_stride;
 
-  YV12_BUFFER_CONFIG pre; /* Filtered copy of previous frame reconstruction */
-  struct {
-    uint8_t *y_buffer, *u_buffer, *v_buffer;
-  } second_pre;
-  YV12_BUFFER_CONFIG dst;
-
-  MODE_INFO *prev_mode_info_context;
-  MODE_INFO *mode_info_context;
-  int mode_info_stride;
-
-  FRAME_TYPE frame_type;
+  // A NULL indicates that the 8x8 is not part of the image
+  MODE_INFO **mi;
 
   int up_available;
   int left_available;
-
-  /* Y,U,V,Y2 */
-  ENTROPY_CONTEXT_PLANES *above_context;
-  ENTROPY_CONTEXT_PLANES *left_context;
-
-  /* 0 indicates segmentation at MB level is not enabled. Otherwise the individual bits indicate which features are active. */
-  unsigned char segmentation_enabled;
-
-  /* 0 (do not update) 1 (update) the macroblock segmentation map. */
-  unsigned char update_mb_segmentation_map;
-
-  /* 0 (do not update) 1 (update) the macroblock segmentation feature data. */
-  unsigned char update_mb_segmentation_data;
-
-  /* 0 (do not update) 1 (update) the macroblock segmentation feature data. */
-  unsigned char mb_segment_abs_delta;
-
-  /* Per frame flags that define which MB level features (such as quantizer or loop filter level) */
-  /* are enabled and when enabled the proabilities used to decode the per MB flags in MB_MODE_INFO */
-
-  // Probability Tree used to code Segment number
-  vp9_prob mb_segment_tree_probs[MB_FEATURE_TREE_PROBS];
-
-#if CONFIG_NEW_MVREF
-  vp9_prob mb_mv_ref_id_probs[MAX_REF_FRAMES][3];
-#endif
-
-  // Segment features
-  signed char segment_feature_data[MAX_MB_SEGMENTS][SEG_LVL_MAX];
-  unsigned int segment_feature_mask[MAX_MB_SEGMENTS];
-
-  /* mode_based Loop filter adjustment */
-  unsigned char mode_ref_lf_delta_enabled;
-  unsigned char mode_ref_lf_delta_update;
-
-  /* Delta values have the range +/- MAX_LOOP_FILTER */
-  signed char last_ref_lf_deltas[MAX_REF_LF_DELTAS];                /* 0 = Intra, Last, GF, ARF */
-  signed char ref_lf_deltas[MAX_REF_LF_DELTAS];                     /* 0 = Intra, Last, GF, ARF */
-  signed char last_mode_lf_deltas[MAX_MODE_LF_DELTAS];              /* 0 = BPRED, ZERO_MV, MV, SPLIT */
-  signed char mode_lf_deltas[MAX_MODE_LF_DELTAS];                   /* 0 = BPRED, ZERO_MV, MV, SPLIT */
 
   /* Distance of MB away from frame edges */
   int mb_to_left_edge;
@@ -373,281 +218,112 @@ typedef struct macroblockd {
   int mb_to_top_edge;
   int mb_to_bottom_edge;
 
-  unsigned int frames_since_golden;
-  unsigned int frames_till_alt_ref_frame;
+  /* pointers to reference frames */
+  RefBuffer *block_refs[2];
 
+  /* pointer to current frame */
+  const YV12_BUFFER_CONFIG *cur_buf;
+
+  /* mc buffer */
+  DECLARE_ALIGNED(16, uint8_t, mc_buf[80 * 2 * 80 * 2]);
+
+  int lossless;
   /* Inverse transform function pointers. */
-  void (*inv_xform4x4_1_x8)(short *input, short *output, int pitch);
-  void (*inv_xform4x4_x8)(short *input, short *output, int pitch);
-  void (*inv_walsh4x4_1)(short *in, short *out);
-  void (*inv_walsh4x4_lossless)(short *in, short *out);
-
-
-  vp9_subpix_fn_t  subpixel_predict;
-  vp9_subpix_fn_t  subpixel_predict8x4;
-  vp9_subpix_fn_t  subpixel_predict8x8;
-  vp9_subpix_fn_t  subpixel_predict16x16;
-  vp9_subpix_fn_t  subpixel_predict_avg;
-  vp9_subpix_fn_t  subpixel_predict_avg8x4;
-  vp9_subpix_fn_t  subpixel_predict_avg8x8;
-  vp9_subpix_fn_t  subpixel_predict_avg16x16;
-  int allow_high_precision_mv;
+  void (*itxm_add)(const int16_t *input, uint8_t *dest, int stride, int eob);
 
   int corrupted;
 
-#if !CONFIG_SUPERBLOCKS && (ARCH_X86 || ARCH_X86_64)
-  /* This is an intermediate buffer currently used in sub-pixel motion search
-   * to keep a copy of the reference area. This buffer can be used for other
-   * purpose.
-   */
-  DECLARE_ALIGNED(32, unsigned char, y_buf[22 * 32]);
-#endif
+  DECLARE_ALIGNED(16, int16_t, dqcoeff[MAX_MB_PLANE][64 * 64]);
 
-  int mb_index;   // Index of the MB in the SB (0..3)
-  int q_index;
+  ENTROPY_CONTEXT *above_context[MAX_MB_PLANE];
+  ENTROPY_CONTEXT left_context[MAX_MB_PLANE][16];
 
+  PARTITION_CONTEXT *above_seg_context;
+  PARTITION_CONTEXT left_seg_context[8];
 } MACROBLOCKD;
 
-#define ACTIVE_HT 110                // quantization stepsize threshold
-
-#define ACTIVE_HT8 300
-
-#define ACTIVE_HT16 300
-
-// convert MB_PREDICTION_MODE to B_PREDICTION_MODE
-static B_PREDICTION_MODE pred_mode_conv(MB_PREDICTION_MODE mode) {
-  B_PREDICTION_MODE b_mode;
-  switch (mode) {
-    case DC_PRED:
-      b_mode = B_DC_PRED;
-      break;
-    case V_PRED:
-      b_mode = B_VE_PRED;
-      break;
-    case H_PRED:
-      b_mode = B_HE_PRED;
-      break;
-    case TM_PRED:
-      b_mode = B_TM_PRED;
-      break;
-    case D45_PRED:
-      b_mode = B_LD_PRED;
-      break;
-    case D135_PRED:
-      b_mode = B_RD_PRED;
-      break;
-    case D117_PRED:
-      b_mode = B_VR_PRED;
-      break;
-    case D153_PRED:
-      b_mode = B_HD_PRED;
-      break;
-    case D27_PRED:
-      b_mode = B_HU_PRED;
-      break;
-    case D63_PRED:
-      b_mode = B_VL_PRED;
-      break;
-    default :
-      // for debug purpose, to be removed after full testing
-      assert(0);
-      break;
-  }
-  return b_mode;
+static INLINE BLOCK_SIZE get_subsize(BLOCK_SIZE bsize,
+                                     PARTITION_TYPE partition) {
+  const BLOCK_SIZE subsize = subsize_lookup[partition][bsize];
+  assert(subsize < BLOCK_SIZES);
+  return subsize;
 }
 
-// transform mapping
-static TX_TYPE txfm_map(B_PREDICTION_MODE bmode) {
-  // map transform type
-  TX_TYPE tx_type;
-  switch (bmode) {
-    case B_TM_PRED :
-    case B_RD_PRED :
-      tx_type = ADST_ADST;
-      break;
+extern const TX_TYPE intra_mode_to_tx_type_lookup[INTRA_MODES];
 
-    case B_VE_PRED :
-    case B_VR_PRED :
-      tx_type = ADST_DCT;
-      break;
+static INLINE TX_TYPE get_tx_type(PLANE_TYPE plane_type,
+                                  const MACROBLOCKD *xd) {
+  const MB_MODE_INFO *const mbmi = &xd->mi[0]->mbmi;
 
-    case B_HE_PRED :
-    case B_HD_PRED :
-    case B_HU_PRED :
-      tx_type = DCT_ADST;
-      break;
-
-#if CONFIG_NEWBINTRAMODES
-    case B_CONTEXT_PRED:
-      assert(0);
-      break;
-#endif
-
-    default :
-      tx_type = DCT_DCT;
-      break;
-  }
-  return tx_type;
+  if (plane_type != PLANE_TYPE_Y || is_inter_block(mbmi))
+    return DCT_DCT;
+  return intra_mode_to_tx_type_lookup[mbmi->mode];
 }
 
-#define USE_ADST_FOR_I16X16_8X8   0
-#define USE_ADST_FOR_I16X16_4X4   0
-#define USE_ADST_FOR_I8X8_4X4     1
-#define USE_ADST_PERIPHERY_ONLY   1
+static INLINE TX_TYPE get_tx_type_4x4(PLANE_TYPE plane_type,
+                                      const MACROBLOCKD *xd, int ib) {
+  const MODE_INFO *const mi = xd->mi[0];
 
-static TX_TYPE get_tx_type_4x4(const MACROBLOCKD *xd, const BLOCKD *b) {
-  // TODO(debargha): explore different patterns for ADST usage when blocksize
-  // is smaller than the prediction size
-  TX_TYPE tx_type = DCT_DCT;
-  int ib = (int)(b - xd->block);
-  if (ib >= 16)
-    return tx_type;
-#if CONFIG_SUPERBLOCKS
-  // TODO(rbultje, debargha): Explore ADST usage for superblocks
-  if (xd->mode_info_context->mbmi.encoded_as_sb)
-    return tx_type;
-#endif
-  if (xd->mode_info_context->mbmi.mode == B_PRED &&
-      xd->q_index < ACTIVE_HT) {
-    tx_type = txfm_map(
-#if CONFIG_NEWBINTRAMODES
-        b->bmi.as_mode.first == B_CONTEXT_PRED ? b->bmi.as_mode.context :
-#endif
-        b->bmi.as_mode.first);
-  } else if (xd->mode_info_context->mbmi.mode == I8X8_PRED &&
-             xd->q_index < ACTIVE_HT) {
-#if USE_ADST_FOR_I8X8_4X4
-#if USE_ADST_PERIPHERY_ONLY
-    // Use ADST for periphery blocks only
-    int ic = (ib & 10);
-    b += ic - ib;
-    tx_type = (ic != 10) ?
-         txfm_map(pred_mode_conv((MB_PREDICTION_MODE)b->bmi.as_mode.first)) :
-         DCT_DCT;
-#else
-    // Use ADST
-    tx_type = txfm_map(pred_mode_conv(
-        (MB_PREDICTION_MODE)b->bmi.as_mode.first));
-#endif
-#else
-    // Use 2D DCT
-    tx_type = DCT_DCT;
-#endif
-  } else if (xd->mode_info_context->mbmi.mode < I8X8_PRED &&
-             xd->q_index < ACTIVE_HT) {
-#if USE_ADST_FOR_I16X16_4X4
-#if USE_ADST_PERIPHERY_ONLY
-    // Use ADST for periphery blocks only
-    tx_type = (ib < 4 || ((ib & 3) == 0)) ?
-        txfm_map(pred_mode_conv(xd->mode_info_context->mbmi.mode)) : DCT_DCT;
-#else
-    // Use ADST
-    tx_type = txfm_map(pred_mode_conv(xd->mode_info_context->mbmi.mode));
-#endif
-#else
-    // Use 2D DCT
-    tx_type = DCT_DCT;
-#endif
-  }
-  return tx_type;
+  if (plane_type != PLANE_TYPE_Y || xd->lossless || is_inter_block(&mi->mbmi))
+    return DCT_DCT;
+
+  return intra_mode_to_tx_type_lookup[get_y_mode(mi, ib)];
 }
 
-static TX_TYPE get_tx_type_8x8(const MACROBLOCKD *xd, const BLOCKD *b) {
-  // TODO(debargha): explore different patterns for ADST usage when blocksize
-  // is smaller than the prediction size
-  TX_TYPE tx_type = DCT_DCT;
-  int ib = (int)(b - xd->block);
-  if (ib >= 16)
-    return tx_type;
-#if CONFIG_SUPERBLOCKS
-  // TODO(rbultje, debargha): Explore ADST usage for superblocks
-  if (xd->mode_info_context->mbmi.encoded_as_sb)
-    return tx_type;
+void vp9_setup_block_planes(MACROBLOCKD *xd, int ss_x, int ss_y);
+
+static INLINE TX_SIZE get_uv_tx_size_impl(TX_SIZE y_tx_size, BLOCK_SIZE bsize) {
+  if (bsize < BLOCK_8X8) {
+    return TX_4X4;
+  } else {
+    // TODO(dkovalev): Assuming YUV420 (ss_x == 1, ss_y == 1)
+    const BLOCK_SIZE plane_bsize = ss_size_lookup[bsize][1][1];
+    return MIN(y_tx_size, max_txsize_lookup[plane_bsize]);
+  }
+}
+
+static INLINE TX_SIZE get_uv_tx_size(const MB_MODE_INFO *mbmi) {
+  return get_uv_tx_size_impl(mbmi->tx_size, mbmi->sb_type);
+}
+
+static INLINE BLOCK_SIZE get_plane_block_size(BLOCK_SIZE bsize,
+    const struct macroblockd_plane *pd) {
+  BLOCK_SIZE bs = ss_size_lookup[bsize][pd->subsampling_x][pd->subsampling_y];
+  assert(bs < BLOCK_SIZES);
+  return bs;
+}
+
+typedef void (*foreach_transformed_block_visitor)(int plane, int block,
+                                                  BLOCK_SIZE plane_bsize,
+                                                  TX_SIZE tx_size,
+                                                  void *arg);
+
+void vp9_foreach_transformed_block_in_plane(
+    const MACROBLOCKD *const xd, BLOCK_SIZE bsize, int plane,
+    foreach_transformed_block_visitor visit, void *arg);
+
+
+void vp9_foreach_transformed_block(
+    const MACROBLOCKD* const xd, BLOCK_SIZE bsize,
+    foreach_transformed_block_visitor visit, void *arg);
+
+static INLINE void txfrm_block_to_raster_xy(BLOCK_SIZE plane_bsize,
+                                            TX_SIZE tx_size, int block,
+                                            int *x, int *y) {
+  const int bwl = b_width_log2(plane_bsize);
+  const int tx_cols_log2 = bwl - tx_size;
+  const int tx_cols = 1 << tx_cols_log2;
+  const int raster_mb = block >> (tx_size << 1);
+  *x = (raster_mb & (tx_cols - 1)) << tx_size;
+  *y = (raster_mb >> tx_cols_log2) << tx_size;
+}
+
+void vp9_set_contexts(const MACROBLOCKD *xd, struct macroblockd_plane *pd,
+                      BLOCK_SIZE plane_bsize, TX_SIZE tx_size, int has_eob,
+                      int aoff, int loff);
+
+#ifdef __cplusplus
+}  // extern "C"
 #endif
-  if (xd->mode_info_context->mbmi.mode == I8X8_PRED &&
-      xd->q_index < ACTIVE_HT8) {
-    // TODO(rbultje): MB_PREDICTION_MODE / B_PREDICTION_MODE should be merged
-    // or the relationship otherwise modified to address this type conversion.
-    tx_type = txfm_map(pred_mode_conv(
-           (MB_PREDICTION_MODE)b->bmi.as_mode.first));
-  } else if (xd->mode_info_context->mbmi.mode < I8X8_PRED &&
-             xd->q_index < ACTIVE_HT8) {
-#if USE_ADST_FOR_I8X8_4X4
-#if USE_ADST_PERIPHERY_ONLY
-    // Use ADST for periphery blocks only
-    tx_type = (ib != 10) ?
-        txfm_map(pred_mode_conv(xd->mode_info_context->mbmi.mode)) : DCT_DCT;
-#else
-    // Use ADST
-    tx_type = txfm_map(pred_mode_conv(xd->mode_info_context->mbmi.mode));
-#endif
-#else
-    // Use 2D DCT
-    tx_type = DCT_DCT;
-#endif
-  }
-  return tx_type;
-}
 
-static TX_TYPE get_tx_type_16x16(const MACROBLOCKD *xd, const BLOCKD *b) {
-  TX_TYPE tx_type = DCT_DCT;
-  int ib = (int)(b - xd->block);
-  if (ib >= 16)
-    return tx_type;
-#if CONFIG_SUPERBLOCKS
-  // TODO(rbultje, debargha): Explore ADST usage for superblocks
-  if (xd->mode_info_context->mbmi.encoded_as_sb)
-    return tx_type;
-#endif
-  if (xd->mode_info_context->mbmi.mode < I8X8_PRED &&
-      xd->q_index < ACTIVE_HT16) {
-    tx_type = txfm_map(pred_mode_conv(xd->mode_info_context->mbmi.mode));
-  }
-  return tx_type;
-}
-
-static TX_TYPE get_tx_type(const MACROBLOCKD *xd, const BLOCKD *b) {
-  TX_TYPE tx_type = DCT_DCT;
-  int ib = (int)(b - xd->block);
-  if (ib >= 16)
-    return tx_type;
-  if (xd->mode_info_context->mbmi.txfm_size == TX_16X16) {
-    tx_type = get_tx_type_16x16(xd, b);
-  }
-  if (xd->mode_info_context->mbmi.txfm_size  == TX_8X8) {
-    ib = (ib & 8) + ((ib & 4) >> 1);
-    tx_type = get_tx_type_8x8(xd, &xd->block[ib]);
-  }
-  if (xd->mode_info_context->mbmi.txfm_size  == TX_4X4) {
-    tx_type = get_tx_type_4x4(xd, b);
-  }
-  return tx_type;
-}
-
-static int get_2nd_order_usage(const MACROBLOCKD *xd) {
-  int has_2nd_order = (xd->mode_info_context->mbmi.mode != SPLITMV &&
-                       xd->mode_info_context->mbmi.mode != I8X8_PRED &&
-                       xd->mode_info_context->mbmi.mode != B_PRED &&
-                       xd->mode_info_context->mbmi.txfm_size != TX_16X16);
-  if (has_2nd_order)
-    has_2nd_order = (get_tx_type(xd, xd->block) == DCT_DCT);
-  return has_2nd_order;
-}
-
-extern void vp9_build_block_doffsets(MACROBLOCKD *xd);
-extern void vp9_setup_block_dptrs(MACROBLOCKD *xd);
-
-static void update_blockd_bmi(MACROBLOCKD *xd) {
-  int i;
-  int is_4x4;
-  is_4x4 = (xd->mode_info_context->mbmi.mode == SPLITMV) ||
-           (xd->mode_info_context->mbmi.mode == I8X8_PRED) ||
-           (xd->mode_info_context->mbmi.mode == B_PRED);
-
-  if (is_4x4) {
-    for (i = 0; i < 16; i++) {
-      xd->block[i].bmi = xd->mode_info_context->bmi[i];
-    }
-  }
-}
-#endif  /* __INC_BLOCKD_H */
+#endif  // VP9_COMMON_VP9_BLOCKD_H_

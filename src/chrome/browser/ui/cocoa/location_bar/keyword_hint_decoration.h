@@ -9,19 +9,19 @@
 
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_decoration.h"
 
-#import "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
 
 // Draws the keyword hint, "Press [tab] to search <site>".
 
 class KeywordHintDecoration : public LocationBarDecoration {
  public:
-  KeywordHintDecoration(NSFont* font);
+  KeywordHintDecoration();
   virtual ~KeywordHintDecoration();
 
   // Calculates the message to display and where to place the [tab]
   // image.
-  void SetKeyword(const string16& keyword, bool is_extension_keyword);
+  void SetKeyword(const base::string16& keyword, bool is_extension_keyword);
 
   // Implement |LocationBarDecoration|.
   virtual void DrawInFrame(NSRect frame, NSView* control_view) OVERRIDE;
@@ -32,14 +32,14 @@ class KeywordHintDecoration : public LocationBarDecoration {
   NSImage* GetHintImage();
 
   // Attributes for drawing the hint string, such as font and color.
-  scoped_nsobject<NSDictionary> attributes_;
+  base::scoped_nsobject<NSDictionary> attributes_;
 
   // Cache for the [tab] image.
-  scoped_nsobject<NSImage> hint_image_;
+  base::scoped_nsobject<NSImage> hint_image_;
 
   // The text to display to the left and right of the hint image.
-  scoped_nsobject<NSString> hint_prefix_;
-  scoped_nsobject<NSString> hint_suffix_;
+  base::scoped_nsobject<NSString> hint_prefix_;
+  base::scoped_nsobject<NSString> hint_suffix_;
 
   DISALLOW_COPY_AND_ASSIGN(KeywordHintDecoration);
 };

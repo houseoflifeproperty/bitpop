@@ -11,7 +11,7 @@
 
 #include "base/basictypes.h"  // For DISALLOW_COPY_AND_ASSIGN
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class Profile;
 
@@ -22,7 +22,7 @@ class EncodingMenuController {
   FRIEND_TEST_ALL_PREFIXES(EncodingMenuControllerTest, IsItemChecked);
 
  public:
-  typedef std::pair<int, string16> EncodingMenuItem;
+  typedef std::pair<int, base::string16> EncodingMenuItem;
   typedef std::vector<EncodingMenuItem> EncodingMenuItemList;
 
  public:

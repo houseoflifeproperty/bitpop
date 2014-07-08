@@ -50,6 +50,16 @@
       'dependencies': [
         'gtest_prod',
       ],
+      'defines': [
+        # In order to allow regex matches in gtest to be shared between Windows
+        # and other systems, we tell gtest to always use it's internal engine.
+        'GTEST_HAS_POSIX_RE=0',
+      ],
+      'all_dependent_settings': {
+        'defines': [
+          'GTEST_HAS_POSIX_RE=0',
+        ],
+      },
       'conditions': [
         ['OS == "mac" or OS == "ios"', {
           'sources': [
@@ -65,7 +75,7 @@
         }],
         ['OS == "ios"', {
           'dependencies' : [
-            '<(DEPTH)/testing/iossim/iossim.gyp:iossim',
+            '<(DEPTH)/testing/iossim/iossim.gyp:iossim#host',
           ],
           'direct_dependent_settings': {
             'target_conditions': [
@@ -86,9 +96,34 @@
                 },
                 'mac_bundle_resources': [
                   '<(ios_unittest_info_plist_path)',
+                  '<(DEPTH)/testing/gtest_ios/Default-568h@2x.png',
                 ],
                 'mac_bundle_resources!': [
                   '<(ios_unittest_info_plist_path)',
+                ],
+              }],
+            ],
+          },
+        }],
+        ['OS=="ios" and asan==1', {
+          'direct_dependent_settings': {
+            'target_conditions': [
+              # Package the ASan runtime dylib into the test app bundles.
+              ['_type=="executable"', {
+                'postbuilds': [
+                  {
+                    'variables': {
+                      # Define copy_asan_dylib_path in a variable ending in
+                      # _path so that gyp understands it's a path and
+                      # performs proper relativization during dict merging.
+                      'copy_asan_dylib_path':
+                        '<(DEPTH)/build/mac/copy_asan_runtime_dylib.sh',
+                    },
+                    'postbuild_name': 'Copy ASan runtime dylib',
+                    'action': [
+                      '>(copy_asan_dylib_path)',
+                    ],
+                  },
                 ],
               }],
             ],
@@ -137,16 +172,6 @@
             'defines': [
               'GTEST_USE_OWN_TR1_TUPLE=1',
               'GTEST_HAS_TR1_TUPLE=1',
-            ],
-          },
-        }],
-        ['OS=="win" and MSVS_VERSION=="2012"', {
-          'defines': [
-            '_VARIADIC_MAX=10',
-          ],
-          'direct_dependent_settings': {
-            'defines': [
-              '_VARIADIC_MAX=10',
             ],
           },
         }],

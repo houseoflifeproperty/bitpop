@@ -6,10 +6,10 @@
 
 #include <algorithm>
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
 #include "chrome/browser/extensions/window_controller_list_observer.h"
 #include "chrome/browser/sessions/session_id.h"
-#include "chrome/browser/ui/base_window.h"
+#include "ui/base/base_window.h"
 
 namespace extensions {
 
@@ -52,19 +52,26 @@ void WindowControllerList::RemoveObserver(
   observers_.RemoveObserver(observer);
 }
 
-WindowController* WindowControllerList::FindWindowForFunctionById(
-    const UIThreadExtensionFunction* function,
-    int id) const {
+WindowController* WindowControllerList::FindWindowById(int id) const {
   for (ControllerList::const_iterator iter = windows().begin();
        iter != windows().end(); ++iter) {
-    if (function->CanOperateOnWindow(*iter) && (*iter)->GetWindowId() == id)
+    if ((*iter)->GetWindowId() == id)
       return *iter;
   }
   return NULL;
 }
 
+WindowController* WindowControllerList::FindWindowForFunctionById(
+    const ChromeUIThreadExtensionFunction* function,
+    int id) const {
+  WindowController* controller = FindWindowById(id);
+  if (controller && function->CanOperateOnWindow(controller))
+    return controller;
+  return NULL;
+}
+
 WindowController* WindowControllerList::CurrentWindowForFunction(
-    const UIThreadExtensionFunction* function) const {
+    const ChromeUIThreadExtensionFunction* function) const {
   WindowController* result = NULL;
   // Returns either the focused window (if any), or the last window in the list.
   for (ControllerList::const_iterator iter = windows().begin();

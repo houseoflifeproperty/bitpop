@@ -6,7 +6,10 @@
 
 #include <vector>
 
+#include "ash/metrics/user_metrics_recorder.h"
 #include "ash/shell.h"
+#include "ash/system/tray/fixed_sized_scroll_view.h"
+#include "ash/system/tray/hover_highlight_view.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/tray/system_tray_notifier.h"
@@ -14,11 +17,10 @@
 #include "ash/system/tray/tray_details_view.h"
 #include "ash/system/tray/tray_item_more.h"
 #include "ash/system/tray/tray_item_view.h"
-#include "ash/system/tray/tray_views.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
 #include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ash_resources.h"
 #include "grit/ash_strings.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -26,6 +28,7 @@
 #include "ui/gfx/font.h"
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/image_button.h"
+#include "ui/views/controls/image_view.h"
 #include "ui/views/controls/label.h"
 #include "ui/views/controls/progress_bar.h"
 #include "ui/views/layout/box_layout.h"
@@ -33,9 +36,6 @@
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-
-namespace internal {
-
 namespace {
 
 const int kSidePadding = 8;
@@ -44,20 +44,21 @@ const int kVerticalPadding = 6;
 const int kTopPadding = 6;
 const int kBottomPadding = 10;
 const int kProgressBarWidth = 100;
-const int kProgressBarHeight = 8;
+const int kProgressBarHeight = 11;
 const int64 kHideDelayInMs = 1000;
 
-string16 GetTrayLabel(const ash::DriveOperationStatusList& list) {
+base::string16 GetTrayLabel(const ash::DriveOperationStatusList& list) {
   return l10n_util::GetStringFUTF16(IDS_ASH_STATUS_TRAY_DRIVE_SYNCING,
       base::IntToString16(static_cast<int>(list.size())));
 }
 
-ash::DriveOperationStatusList* GetCurrentOperationList() {
+scoped_ptr<ash::DriveOperationStatusList> GetCurrentOperationList() {
   ash::SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
-  ash::DriveOperationStatusList* list = new ash::DriveOperationStatusList();
-  delegate->GetDriveOperationStatusList(list);
-  return list;
+  scoped_ptr<ash::DriveOperationStatusList> list(
+      new ash::DriveOperationStatusList);
+  delegate->GetDriveOperationStatusList(list.get());
+  return list.Pass();
 }
 
 }
@@ -79,7 +80,7 @@ class DriveDefaultView : public TrayItemMore {
 
   void Update(const DriveOperationStatusList* list) {
     DCHECK(list);
-    string16 label = GetTrayLabel(*list);
+    base::string16 label = GetTrayLabel(*list);
     SetLabel(label);
     SetAccessibleName(label);
   }
@@ -141,14 +142,15 @@ class DriveDetailedView : public TrayDetailsView,
     RowView(DriveDetailedView* parent,
             ash::DriveOperationStatus::OperationState state,
             double progress,
-            const FilePath& file_path)
+            const base::FilePath& file_path,
+            int32 operation_id)
         : HoverHighlightView(parent),
           container_(parent),
           status_img_(NULL),
           label_container_(NULL),
           progress_bar_(NULL),
           cancel_button_(NULL),
-          file_path_(file_path) {
+          operation_id_(operation_id) {
       // Status image.
       status_img_ = new views::ImageView();
       AddChildView(status_img_);
@@ -157,11 +159,11 @@ class DriveDetailedView : public TrayDetailsView,
       label_container_->SetLayoutManager(new views::BoxLayout(
           views::BoxLayout::kVertical, 0, 0, kVerticalPadding));
 #if defined(OS_POSIX)
-      string16 file_label =
-          UTF8ToUTF16(file_path.BaseName().value());
+      base::string16 file_label =
+          base::UTF8ToUTF16(file_path.BaseName().value());
 #elif defined(OS_WIN)
-      string16 file_label =
-          WideToUTF16(file_path.BaseName().value());
+      base::string16 file_label =
+          base::WideToUTF16(file_path.BaseName().value());
 #endif
       views::Label* label = new views::Label(file_label);
       label->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -189,8 +191,8 @@ class DriveDetailedView : public TrayDetailsView,
       status_img_->SetImage(container_->GetImageForState(state));
       progress_bar_->SetValue(progress);
       cancel_button_->SetVisible(
-          state == ash::DriveOperationStatus::OPERATION_IN_PROGRESS ||
-          state == ash::DriveOperationStatus::OPERATION_SUSPENDED);
+          state == ash::DriveOperationStatus::OPERATION_NOT_STARTED ||
+          state == ash::DriveOperationStatus::OPERATION_IN_PROGRESS);
     }
 
    private:
@@ -251,7 +253,9 @@ class DriveDetailedView : public TrayDetailsView,
     virtual void ButtonPressed(views::Button* sender,
                                const ui::Event& event) OVERRIDE {
       DCHECK(sender == cancel_button_);
-      container_->OnCancelOperation(file_path_);
+      Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+          ash::UMA_STATUS_AREA_DRIVE_CANCEL_OPERATION);
+      container_->OnCancelOperation(operation_id_);
     }
 
     DriveDetailedView* container_;
@@ -259,7 +263,7 @@ class DriveDetailedView : public TrayDetailsView,
     views::View* label_container_;
     views::ProgressBar* progress_bar_;
     views::ImageButton* cancel_button_;
-    FilePath file_path_;
+    int32 operation_id_;
 
     DISALLOW_COPY_AND_ASSIGN(RowView);
   };
@@ -274,9 +278,7 @@ class DriveDetailedView : public TrayDetailsView,
       ash::DriveOperationStatus::OperationState state) {
     switch (state) {
       case ash::DriveOperationStatus::OPERATION_NOT_STARTED:
-      case ash::DriveOperationStatus::OPERATION_STARTED:
       case ash::DriveOperationStatus::OPERATION_IN_PROGRESS:
-      case ash::DriveOperationStatus::OPERATION_SUSPENDED:
         return in_progress_img_;
       case ash::DriveOperationStatus::OPERATION_COMPLETED:
         return done_img_;
@@ -286,9 +288,9 @@ class DriveDetailedView : public TrayDetailsView,
     return failed_img_;
   }
 
-  virtual void OnCancelOperation(const FilePath& file_path) {
+  void OnCancelOperation(int32 operation_id) {
     SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
-    delegate->CancelDriveOperation(file_path);
+    delegate->CancelDriveOperation(operation_id);
   }
 
   void AppendOperationList(const DriveOperationStatusList* list) {
@@ -296,14 +298,14 @@ class DriveDetailedView : public TrayDetailsView,
       CreateScrollableList();
 
     // Apply the update.
-    std::set<FilePath> new_set;
+    std::set<base::FilePath> new_set;
     bool item_list_changed = false;
     for (DriveOperationStatusList::const_iterator it = list->begin();
          it != list->end(); ++it) {
       const DriveOperationStatus& operation = *it;
 
       new_set.insert(operation.file_path);
-      std::map<FilePath, RowView*>::iterator existing_item =
+      std::map<base::FilePath, RowView*>::iterator existing_item =
           update_map_.find(operation.file_path);
 
       if (existing_item != update_map_.end()) {
@@ -313,7 +315,8 @@ class DriveDetailedView : public TrayDetailsView,
         RowView* row_view = new RowView(this,
                                         operation.state,
                                         operation.progress,
-                                        operation.file_path);
+                                        operation.file_path,
+                                        operation.id);
 
         update_map_[operation.file_path] = row_view;
         scroll_content()->AddChildView(row_view);
@@ -323,8 +326,8 @@ class DriveDetailedView : public TrayDetailsView,
 
     // Remove items from the list that haven't been added or modified with this
     // update batch.
-    std::set<FilePath> remove_set;
-    for (std::map<FilePath, RowView*>::iterator update_iter =
+    std::set<base::FilePath> remove_set;
+    for (std::map<base::FilePath, RowView*>::iterator update_iter =
              update_map_.begin();
          update_iter != update_map_.end(); ++update_iter) {
       if (new_set.find(update_iter->first) == new_set.end()) {
@@ -332,7 +335,7 @@ class DriveDetailedView : public TrayDetailsView,
       }
     }
 
-    for (std::set<FilePath>::iterator removed_iter = remove_set.begin();
+    for (std::set<base::FilePath>::iterator removed_iter = remove_set.begin();
         removed_iter != remove_set.end(); ++removed_iter)  {
       delete update_map_[*removed_iter];
       update_map_.erase(*removed_iter);
@@ -352,25 +355,27 @@ class DriveDetailedView : public TrayDetailsView,
       return;
 
     HoverHighlightView* container = new HoverHighlightView(this);
-    container->AddLabel(ui::ResourceBundle::GetSharedInstance().
-        GetLocalizedString(IDS_ASH_STATUS_TRAY_DRIVE_SETTINGS),
+    container->AddLabel(
+        ui::ResourceBundle::GetSharedInstance().GetLocalizedString(
+            IDS_ASH_STATUS_TRAY_DRIVE_SETTINGS),
+        gfx::ALIGN_LEFT,
         gfx::Font::NORMAL);
     AddChildView(container);
     settings_ = container;
   }
 
   // Overridden from ViewClickListener.
-  virtual void ClickedOn(views::View* sender) OVERRIDE {
+  virtual void OnViewClicked(views::View* sender) OVERRIDE {
     SystemTrayDelegate* delegate = Shell::GetInstance()->system_tray_delegate();
     if (sender == footer()->content()) {
-      owner()->system_tray()->ShowDefaultView(BUBBLE_USE_EXISTING);
+      TransitionToDefaultView();
     } else if (sender == settings_) {
       delegate->ShowDriveSettings();
     }
   }
 
   // Maps operation entries to their file paths.
-  std::map<FilePath, RowView*> update_map_;
+  std::map<base::FilePath, RowView*> update_map_;
   views::View* settings_;
   gfx::ImageSkia* in_progress_img_;
   gfx::ImageSkia* done_img_;
@@ -393,8 +398,7 @@ TrayDrive::~TrayDrive() {
 }
 
 bool TrayDrive::GetInitialVisibility() {
-  scoped_ptr<DriveOperationStatusList> list(GetCurrentOperationList());
-  return list->size() > 0;
+  return false;
 }
 
 views::View* TrayDrive::CreateDefaultView(user::LoginStatus status) {
@@ -425,6 +429,8 @@ views::View* TrayDrive::CreateDetailedView(user::LoginStatus status) {
   if (list->empty() && !tray_view()->visible())
     return NULL;
 
+  Shell::GetInstance()->metrics()->RecordUserMetricsAction(
+      ash::UMA_STATUS_AREA_DETAILED_DRIVE_VIEW);
   detailed_ = new tray::DriveDetailedView(this, list.get());
   return detailed_;
 }
@@ -446,9 +452,39 @@ void TrayDrive::UpdateAfterLoginStatusChange(user::LoginStatus status) {
   DestroyDetailedView();
 }
 
-void TrayDrive::OnDriveRefresh(const DriveOperationStatusList& list) {
-  if (list.empty()) {
-    // If the list becomes empty, the tray item will be hidden after a certain
+void TrayDrive::OnDriveJobUpdated(const DriveOperationStatus& status) {
+  // The Drive job list manager changed its notification interface *not* to send
+  // the whole list of operations each time, to clarify which operation is
+  // updated and to reduce redundancy.
+  //
+  // TrayDrive should be able to benefit from the change, but for now, to
+  // incrementally migrate to the new way with minimum diffs, we still get the
+  // list of operations each time the event is fired.
+  // TODO(kinaba) http://crbug.com/128079 clean it up.
+  scoped_ptr<DriveOperationStatusList> list(GetCurrentOperationList());
+  bool is_new_item = true;
+  for (size_t i = 0; i < list->size(); ++i) {
+    if ((*list)[i].id == status.id) {
+      (*list)[i] = status;
+      is_new_item = false;
+      break;
+    }
+  }
+  if (is_new_item)
+    list->push_back(status);
+
+  // Check if all the operations are in the finished state.
+  bool all_jobs_finished = true;
+  for (size_t i = 0; i < list->size(); ++i) {
+    if ((*list)[i].state != DriveOperationStatus::OPERATION_COMPLETED &&
+        (*list)[i].state != DriveOperationStatus::OPERATION_FAILED) {
+      all_jobs_finished = false;
+      break;
+    }
+  }
+
+  if (all_jobs_finished) {
+    // If all the jobs ended, the tray item will be hidden after a certain
     // amount of delay. This is to avoid flashes between sequentially executed
     // Drive operations (see crbug/165679).
     hide_timer_.Start(FROM_HERE,
@@ -463,9 +499,9 @@ void TrayDrive::OnDriveRefresh(const DriveOperationStatusList& list) {
 
   tray_view()->SetVisible(true);
   if (default_)
-    default_->Update(&list);
+    default_->Update(list.get());
   if (detailed_)
-    detailed_->Update(&list);
+    detailed_->Update(list.get());
 }
 
 void TrayDrive::HideIfNoOperations() {
@@ -478,5 +514,4 @@ void TrayDrive::HideIfNoOperations() {
     detailed_->Update(&empty_list);
 }
 
-}  // namespace internal
 }  // namespace ash

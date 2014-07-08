@@ -4,19 +4,14 @@
 
 #include "gpu/command_buffer/service/async_pixel_transfer_delegate_mock.h"
 
-namespace gfx {
-
-MockAsyncPixelTransferState::MockAsyncPixelTransferState() {
-}
-
-MockAsyncPixelTransferState::~MockAsyncPixelTransferState() {
-}
+namespace gpu {
 
 MockAsyncPixelTransferDelegate::MockAsyncPixelTransferDelegate() {
 }
 
 MockAsyncPixelTransferDelegate::~MockAsyncPixelTransferDelegate() {
+  Destroy();
 }
 
-}  // namespace gfx
+}  // namespace gpu
 

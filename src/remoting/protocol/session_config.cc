@@ -11,6 +11,10 @@ namespace protocol {
 
 const int kDefaultStreamVersion = 2;
 
+// The control channel version that supports the "capabilities" message.
+const int kControlStreamVersion = 3;
+const int kControlStreamVersionNoCapabilities = kDefaultStreamVersion;
+
 ChannelConfig ChannelConfig::None() {
   return ChannelConfig();
 }
@@ -35,16 +39,19 @@ bool ChannelConfig::operator==(const ChannelConfig& b) const {
 }
 
 SessionConfig::SessionConfig() {
+}
 
+bool SessionConfig::SupportsCapabilities() const {
+  return control_config_.version >= kControlStreamVersion;
 }
 
 // static
 SessionConfig SessionConfig::ForTest() {
   SessionConfig result;
-  result.set_control_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                                          kDefaultStreamVersion,
+  result.set_control_config(ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
+                                          kControlStreamVersionNoCapabilities,
                                           ChannelConfig::CODEC_UNDEFINED));
-  result.set_event_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
+  result.set_event_config(ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
                                         kDefaultStreamVersion,
                                         ChannelConfig::CODEC_UNDEFINED));
   result.set_video_config(ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
@@ -52,7 +59,7 @@ SessionConfig SessionConfig::ForTest() {
                                         ChannelConfig::CODEC_VP8));
   result.set_audio_config(ChannelConfig(ChannelConfig::TRANSPORT_NONE,
                                         kDefaultStreamVersion,
-                                        ChannelConfig::CODEC_VERBATIM));
+                                        ChannelConfig::CODEC_UNDEFINED));
   return result;
 }
 
@@ -171,11 +178,11 @@ scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateDefault() {
   // Control channel.
   result->mutable_control_configs()->push_back(
       ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
-                    kDefaultStreamVersion,
+                    kControlStreamVersion,
                     ChannelConfig::CODEC_UNDEFINED));
   result->mutable_control_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                    kDefaultStreamVersion,
+      ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
+                    kControlStreamVersionNoCapabilities,
                     ChannelConfig::CODEC_UNDEFINED));
 
   // Event channel.
@@ -183,12 +190,12 @@ scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateDefault() {
       ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
                     kDefaultStreamVersion,
                     ChannelConfig::CODEC_UNDEFINED));
-  result->mutable_event_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_UNDEFINED));
 
   // Video channel.
+  result->mutable_video_configs()->push_back(
+      ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
+                    kDefaultStreamVersion,
+                    ChannelConfig::CODEC_VP9));
   result->mutable_video_configs()->push_back(
       ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
                     kDefaultStreamVersion,
@@ -199,18 +206,6 @@ scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateDefault() {
       ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
                     kDefaultStreamVersion,
                     ChannelConfig::CODEC_OPUS));
-  result->mutable_audio_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_SPEEX));
-  result->mutable_audio_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_STREAM,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_SPEEX));
-  result->mutable_audio_configs()->push_back(
-      ChannelConfig(ChannelConfig::TRANSPORT_MUX_STREAM,
-                    kDefaultStreamVersion,
-                    ChannelConfig::CODEC_VERBATIM));
   result->mutable_audio_configs()->push_back(ChannelConfig::None());
 
   return result.Pass();
@@ -218,9 +213,24 @@ scoped_ptr<CandidateSessionConfig> CandidateSessionConfig::CreateDefault() {
 
 // static
 void CandidateSessionConfig::DisableAudioChannel(
-  CandidateSessionConfig* config) {
+    CandidateSessionConfig* config) {
   config->mutable_audio_configs()->clear();
   config->mutable_audio_configs()->push_back(ChannelConfig());
+}
+
+// static
+void CandidateSessionConfig::DisableVideoCodec(
+    CandidateSessionConfig* config,
+    ChannelConfig::Codec codec) {
+  std ::vector<ChannelConfig>::iterator i;
+  for (i = config->mutable_video_configs()->begin();
+       i != config->mutable_video_configs()->end();) {
+    if (i->codec == codec) {
+      i = config->mutable_video_configs()->erase(i);
+    } else {
+      ++i;
+    }
+  }
 }
 
 }  // namespace protocol

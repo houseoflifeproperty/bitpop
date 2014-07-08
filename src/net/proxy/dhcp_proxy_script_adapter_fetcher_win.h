@@ -10,12 +10,16 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/threading/non_thread_safe.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_export.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
+
+namespace base {
+class TaskRunner;
+}
 
 namespace net {
 
@@ -29,8 +33,9 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptAdapterFetcher
       NON_EXPORTED_BASE(public base::NonThreadSafe) {
  public:
   // |url_request_context| must outlive DhcpProxyScriptAdapterFetcher.
-  explicit DhcpProxyScriptAdapterFetcher(
-      URLRequestContext* url_request_context);
+  // |task_runner| will be used to post tasks to a thread.
+  DhcpProxyScriptAdapterFetcher(URLRequestContext* url_request_context,
+                                scoped_refptr<base::TaskRunner> task_runner);
   virtual ~DhcpProxyScriptAdapterFetcher();
 
   // Starts a fetch.  On completion (but not cancellation), |callback|
@@ -58,7 +63,7 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptAdapterFetcher
   // Returns the contents of the PAC file retrieved.  Only valid if
   // |IsComplete()| is true.  Returns the empty string if |GetResult()|
   // returns anything other than OK.
-  virtual string16 GetPacScript() const;
+  virtual base::string16 GetPacScript() const;
 
   // Returns the PAC URL retrieved from DHCP.  Only guaranteed to be
   // valid if |IsComplete()| is true.  Returns an empty URL if no URL was
@@ -73,6 +78,10 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptAdapterFetcher
   // This function executes synchronously due to limitations of the Windows
   // DHCP client API.
   static std::string GetPacURLFromDhcp(const std::string& adapter_name);
+
+  // Sanitizes a string returned via the DHCP API.
+  static std::string SanitizeDhcpApiString(const char* data,
+                                           size_t count_bytes);
 
  protected:
   // This is the state machine for fetching from a given adapter.
@@ -144,6 +153,9 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptAdapterFetcher
   void OnFetcherDone(int result);
   void TransitionToFinish();
 
+  // TaskRunner for posting tasks to a worker thread.
+  scoped_refptr<base::TaskRunner> task_runner_;
+
   // Current state of this state machine.
   State state_;
 
@@ -151,7 +163,7 @@ class NET_EXPORT_PRIVATE DhcpProxyScriptAdapterFetcher
   int result_;
 
   // Empty string or the PAC script downloaded.
-  string16 pac_script_;
+  base::string16 pac_script_;
 
   // Empty URL or the PAC URL configured in DHCP.
   GURL pac_url_;

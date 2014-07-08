@@ -4,7 +4,7 @@
  *  Use of this source code is governed by a BSD-style license
  *  that can be found in the LICENSE file in the root of the source
  *  tree. An additional intellectual property rights grant can be found
- *  in the file PATENTS.  All contributing project authors may
+ *  in the file PATENTS. All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
@@ -122,14 +122,6 @@ int Q420ToI420(const uint8* src_y, int src_stride_y,
                uint8* dst_v, int dst_stride_v,
                int width, int height);
 
-// Convert V210 to I420.
-LIBYUV_API
-int V210ToI420(const uint8* src_uyvy, int src_stride_uyvy,
-               uint8* dst_y, int dst_stride_y,
-               uint8* dst_u, int dst_stride_u,
-               uint8* dst_v, int dst_stride_v,
-               int width, int height);
-
 // ARGB little endian (bgra in memory) to I420.
 LIBYUV_API
 int ARGBToI420(const uint8* src_frame, int src_stride_frame,
@@ -237,7 +229,7 @@ int MJPGSize(const uint8* sample, size_t sample_size,
 //              crop_y = (src_height - dst_height) / 2
 // "src_width" / "src_height" is size of src_frame in pixels.
 //   "src_height" can be negative indicating a vertically flipped image source.
-// "dst_width" / "dst_height" is size of destination to crop to.
+// "crop_width" / "crop_height" is the size to crop the src to.
 //    Must be less than or equal to src_width/src_height
 //    Cropping parameters are pre-rotation.
 // "rotation" can be 0, 90, 180 or 270.
@@ -250,8 +242,8 @@ int ConvertToI420(const uint8* src_frame, size_t src_size,
                   uint8* dst_v, int dst_stride_v,
                   int crop_x, int crop_y,
                   int src_width, int src_height,
-                  int dst_width, int dst_height,
-                  RotationMode rotation,
+                  int crop_width, int crop_height,
+                  enum RotationMode rotation,
                   uint32 format);
 
 #ifdef __cplusplus

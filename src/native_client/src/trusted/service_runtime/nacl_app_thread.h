@@ -11,11 +11,14 @@
 #ifndef NATIVE_CLIENT_SERVICE_RUNTIME_NACL_APP_THREAD_H__
 #define NATIVE_CLIENT_SERVICE_RUNTIME_NACL_APP_THREAD_H__ 1
 
+#include <stddef.h>
+
 #include "native_client/src/include/atomic_ops.h"
 #include "native_client/src/shared/platform/nacl_sync.h"
 #include "native_client/src/shared/platform/nacl_threads.h"
 #include "native_client/src/trusted/service_runtime/nacl_signal.h"
 #include "native_client/src/trusted/service_runtime/sel_rt.h"
+#include "native_client/src/trusted/service_runtime/sys_futex.h"
 
 
 EXTERN_C_BEGIN
@@ -61,6 +64,16 @@ enum NaClSuspendState {
  * application running untrusted code, the lock must *not* be held.
  */
 struct NaClAppThread {
+  /*
+   * NaClAppThread 'inherits' from NaClThreadContext; the 'user' field
+   * is first so that NaClAppThreadFromThreadContext() can convert by
+   * casting.
+   *
+   * 'user' contains all the architecture-specific state for this thread.
+   * TODO(mseaborn): Rename it to a more descriptive name.
+   */
+  struct NaClThreadContext  user;
+
   struct NaClMutex          mu;
 
   /*
@@ -71,7 +84,17 @@ struct NaClAppThread {
 
   int                       thread_num;  /* index into nap->threads */
 
-  struct NaClThread         thread;  /* low level thread representation */
+  /*
+   * If host_thread_is_defined is true, host_thread is initialized and
+   * owned by the NaClAppThread such that it will be freed by
+   * NaClAppThreadDelete().
+   *
+   * host_thread_is_defined may be false when running untrusted code
+   * on a borrowed host thread that was not created by
+   * NaClAppThreadSpawn().
+   */
+  int                       host_thread_is_defined;
+  struct NaClThread         host_thread;  /* low level thread representation */
 
   struct NaClMutex          suspend_mu;
   Atomic32                  suspend_state; /* enum NaClSuspendState */
@@ -97,19 +120,6 @@ struct NaClAppThread {
    * a signal number on Linux and an exception code on Windows).
    */
   int fault_signal;
-
-  /*
-   * 'user' contains all the architecture-specific state for this thread.
-   * TODO(mseaborn): Rename it to a more descriptive name.
-   */
-  struct NaClThreadContext  user;
-  /*
-   * NaClThread abstraction allows us to specify the stack size
-   * (NACL_KERN_STACK_SIZE), but not its location.  The underlying
-   * implementation takes care of finding memory for the thread stack,
-   * and when the thread exits (they're not joinable), the stack
-   * should be automatically released.
-   */
 
   uintptr_t                 usr_syscall_args;
   /*
@@ -139,23 +149,48 @@ struct NaClAppThread {
    * Protected by mu
    */
   int                       dynamic_delete_generation;
+
+  /*
+   * If this thread is waiting on a futex, futex_wait_list_node is
+   * linked into the doubly linked list NaClApp::futex_wait_list_head.
+   */
+  struct NaClListNode       futex_wait_list_node;
+  /*
+   * If this thread is waiting on a futex, futex_wait_addr contains
+   * the untrusted address that the thread is waiting on.
+   */
+  uint32_t                  futex_wait_addr;
+  struct NaClCondVar        futex_condvar;
 };
+
+void WINAPI NaClAppThreadLauncher(void *state);
 
 void NaClAppThreadTeardown(struct NaClAppThread *natp);
 
 /*
- * Low level initialization of thread, with validated values.  The
- * usr_entry and usr_stack_ptr values are directly used to initialize the
- * user register values; the sys_tls_base is the system address for
- * allocating a %gs thread descriptor block base.  The caller is
- * responsible for error checking: usr_entry is a valid entry point (0
- * mod N) and sys_tls_base is in the NaClApp's address space.
+ * NaClAppThreadMake() creates a NaClAppThread object without invoking
+ * untrusted code or creating a host thread.
+ *
+ * The usr_entry and usr_stack_ptr values are directly used to
+ * initialize the user register values.  The caller is responsible for
+ * error checking: usr_entry must be a valid entry point (0 mod N).
  */
 struct NaClAppThread *NaClAppThreadMake(struct NaClApp *nap,
                                         uintptr_t      usr_entry,
                                         uintptr_t      usr_stack_ptr,
                                         uint32_t       user_tls1,
                                         uint32_t       user_tls2) NACL_WUR;
+
+/*
+ * NaClAppThreadSpawn() creates a NaClAppThread and launches a host
+ * thread that invokes the given entry point in untrusted code.  This
+ * returns true on success, false on failure.
+ */
+int NaClAppThreadSpawn(struct NaClApp *nap,
+                       uintptr_t      usr_entry,
+                       uintptr_t      usr_stack_ptr,
+                       uint32_t       user_tls1,
+                       uint32_t       user_tls2) NACL_WUR;
 
 void NaClAppThreadDelete(struct NaClAppThread *natp);
 
@@ -167,6 +202,12 @@ void NaClAppThreadDelete(struct NaClAppThread *natp);
 void NaClAppThreadSetSuspendState(struct NaClAppThread *natp,
                                   enum NaClSuspendState old_state,
                                   enum NaClSuspendState new_state);
+
+static INLINE struct NaClAppThread *NaClAppThreadFromThreadContext(
+    struct NaClThreadContext *ntcp) {
+  NACL_COMPILE_TIME_ASSERT(offsetof(struct NaClAppThread, user) == 0);
+  return (struct NaClAppThread *) ntcp;
+}
 
 EXTERN_C_END
 

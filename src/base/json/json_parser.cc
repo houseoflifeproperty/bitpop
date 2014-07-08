@@ -7,13 +7,13 @@
 #include "base/float_util.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_piece.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversion_utils.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/third_party/icu/icu_utf.h"
-#include "base/utf_string_conversion_utils.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 
 namespace base {
@@ -56,7 +56,7 @@ class DictionaryHiddenRootValue : public base::DictionaryValue {
   // the method below.
 
   virtual bool RemoveWithoutPathExpansion(const std::string& key,
-                                          Value** out) OVERRIDE {
+                                          scoped_ptr<Value>* out) OVERRIDE {
     // If the caller won't take ownership of the removed value, just call up.
     if (!out)
       return DictionaryValue::RemoveWithoutPathExpansion(key, out);
@@ -65,12 +65,11 @@ class DictionaryHiddenRootValue : public base::DictionaryValue {
 
     // Otherwise, remove the value while its still "owned" by this and copy it
     // to convert any JSONStringValues to std::string.
-    Value* out_owned = NULL;
+    scoped_ptr<Value> out_owned;
     if (!DictionaryValue::RemoveWithoutPathExpansion(key, &out_owned))
       return false;
 
-    *out = out_owned->DeepCopy();
-    delete out_owned;
+    out->reset(out_owned->DeepCopy());
 
     return true;
   }
@@ -103,7 +102,7 @@ class ListHiddenRootValue : public base::ListValue {
     ListValue::Swap(copy.get());
   }
 
-  virtual bool Remove(size_t index, Value** out) OVERRIDE {
+  virtual bool Remove(size_t index, scoped_ptr<Value>* out) OVERRIDE {
     // If the caller won't take ownership of the removed value, just call up.
     if (!out)
       return ListValue::Remove(index, out);
@@ -112,12 +111,11 @@ class ListHiddenRootValue : public base::ListValue {
 
     // Otherwise, remove the value while its still "owned" by this and copy it
     // to convert any JSONStringValues to std::string.
-    Value* out_owned = NULL;
+    scoped_ptr<Value> out_owned;
     if (!ListValue::Remove(index, &out_owned))
       return false;
 
-    *out = out_owned->DeepCopy();
-    delete out_owned;
+    out->reset(out_owned->DeepCopy());
 
     return true;
   }
@@ -404,7 +402,9 @@ void JSONParser::EatWhitespaceAndComments() {
       case '\r':
       case '\n':
         index_last_line_ = index_;
-        ++line_number_;
+        // Don't increment line_number_ twice for "\r\n".
+        if (!(*pos_ == '\n' && pos_ > start_pos_ && *(pos_ - 1) == '\r'))
+          ++line_number_;
         // Fall through.
       case ' ':
       case '\t':
@@ -433,15 +433,18 @@ bool JSONParser::EatComment() {
         return true;
     }
   } else if (next_char == '*') {
+    char previous_char = '\0';
     // Block comment, read until end marker.
-    while (CanConsume(2)) {
-      if (*NextChar() == '*' && *NextChar() == '/') {
+    while (CanConsume(1)) {
+      next_char = *NextChar();
+      if (previous_char == '*' && next_char == '/') {
         // EatWhitespaceAndComments will inspect pos_, which will still be on
         // the last / of the comment, so advance once more (which may also be
         // end of input).
         NextChar();
         return true;
       }
+      previous_char = next_char;
     }
 
     // If the comment is unterminated, GetNextToken will report T_END_OF_INPUT.

@@ -13,14 +13,15 @@
 #include "base/base_paths.h"
 #include "base/command_line.h"
 #include "base/environment.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/process_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/process/launch.h"
+#include "base/process/process_handle.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "base/win/metro.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_comptr.h"
@@ -38,7 +39,7 @@
 
 namespace {
 
-bool GetNewerChromeFile(FilePath* path) {
+bool GetNewerChromeFile(base::FilePath* path) {
   if (!PathService::Get(base::DIR_EXE, path))
     return false;
   *path = path->Append(installer::kChromeNewExe);
@@ -67,9 +68,9 @@ bool InvokeGoogleUpdateForRename() {
   return false;
 }
 
-FilePath GetMetroRelauncherPath(const FilePath& chrome_exe,
-                                const std::string& version_str) {
-  FilePath path(chrome_exe.DirName());
+base::FilePath GetMetroRelauncherPath(const base::FilePath& chrome_exe,
+                                      const std::string& version_str) {
+  base::FilePath path(chrome_exe.DirName());
 
   // The relauncher is ordinarily in the version directory.  When running in a
   // build tree however (where CHROME_VERSION is not set in the environment)
@@ -84,7 +85,35 @@ FilePath GetMetroRelauncherPath(const FilePath& chrome_exe,
 
 namespace upgrade_util {
 
-bool RelaunchChromeHelper(const CommandLine& command_line, bool mode_switch) {
+const char kRelaunchModeMetro[] = "relaunch.mode.metro";
+const char kRelaunchModeDesktop[] = "relaunch.mode.desktop";
+const char kRelaunchModeDefault[] = "relaunch.mode.default";
+
+// TODO(shrikant): Have a map/array to quickly map enum to strings.
+std::string RelaunchModeEnumToString(const RelaunchMode relaunch_mode) {
+  if (relaunch_mode == RELAUNCH_MODE_METRO)
+    return kRelaunchModeMetro;
+
+  if (relaunch_mode == RELAUNCH_MODE_DESKTOP)
+    return kRelaunchModeDesktop;
+
+  // For the purpose of code flow, even in case of wrong value we will
+  // return default re-launch mode.
+  return kRelaunchModeDefault;
+}
+
+RelaunchMode RelaunchModeStringToEnum(const std::string& relaunch_mode) {
+  if (relaunch_mode == kRelaunchModeMetro)
+    return RELAUNCH_MODE_METRO;
+
+  if (relaunch_mode == kRelaunchModeDesktop)
+    return RELAUNCH_MODE_DESKTOP;
+
+  return RELAUNCH_MODE_DEFAULT;
+}
+
+bool RelaunchChromeHelper(const CommandLine& command_line,
+                          const RelaunchMode& relaunch_mode) {
   scoped_ptr<base::Environment> env(base::Environment::Create());
   std::string version_str;
 
@@ -101,7 +130,7 @@ bool RelaunchChromeHelper(const CommandLine& command_line, bool mode_switch) {
   //
   // Pass this Chrome's Start Menu shortcut path to the relauncher so it can
   // re-activate chrome via ShellExecute.
-  FilePath chrome_exe;
+  base::FilePath chrome_exe;
   if (!PathService::Get(base::FILE_EXE, &chrome_exe)) {
     NOTREACHED();
     return false;
@@ -114,7 +143,7 @@ bool RelaunchChromeHelper(const CommandLine& command_line, bool mode_switch) {
   // wait is satisfied.
   // The format of the named mutex is important. See DelegateExecuteOperation
   // for more details.
-  string16 mutex_name =
+  base::string16 mutex_name =
       base::StringPrintf(L"chrome.relaunch.%d", ::GetCurrentProcessId());
   HANDLE mutex = ::CreateMutexW(NULL, TRUE, mutex_name.c_str());
   // The |mutex| handle needs to be leaked. See comment above.
@@ -132,13 +161,13 @@ bool RelaunchChromeHelper(const CommandLine& command_line, bool mode_switch) {
       ShellIntegration::GetStartMenuShortcut(chrome_exe));
   relaunch_cmd.AppendSwitchNative(switches::kWaitForMutex, mutex_name);
 
-  if (mode_switch) {
-    relaunch_cmd.AppendSwitch(base::win::IsMetroProcess() ?
-        switches::kForceDesktop : switches::kForceImmersive);
+  if (relaunch_mode != RELAUNCH_MODE_DEFAULT) {
+    relaunch_cmd.AppendSwitch(relaunch_mode == RELAUNCH_MODE_METRO?
+        switches::kForceImmersive : switches::kForceDesktop);
   }
 
-  string16 params(relaunch_cmd.GetCommandLineString());
-  string16 path(GetMetroRelauncherPath(chrome_exe, version_str).value());
+  base::string16 params(relaunch_cmd.GetCommandLineString());
+  base::string16 path(GetMetroRelauncherPath(chrome_exe, version_str).value());
 
   SHELLEXECUTEINFO sei = { sizeof(sei) };
   sei.fMask = SEE_MASK_FLAG_LOG_USAGE | SEE_MASK_NOCLOSEPROCESS;
@@ -163,27 +192,28 @@ bool RelaunchChromeHelper(const CommandLine& command_line, bool mode_switch) {
 }
 
 bool RelaunchChromeBrowser(const CommandLine& command_line) {
-  return RelaunchChromeHelper(command_line, false);
+  return RelaunchChromeHelper(command_line, RELAUNCH_MODE_DEFAULT);
 }
 
-bool RelaunchChromeWithModeSwitch(const CommandLine& command_line) {
-  return RelaunchChromeHelper(command_line, true);
+bool RelaunchChromeWithMode(const CommandLine& command_line,
+                            const RelaunchMode& relaunch_mode) {
+  return RelaunchChromeHelper(command_line, relaunch_mode);
 }
 
 bool IsUpdatePendingRestart() {
-  FilePath new_chrome_exe;
+  base::FilePath new_chrome_exe;
   if (!GetNewerChromeFile(&new_chrome_exe))
     return false;
-  return file_util::PathExists(new_chrome_exe);
+  return base::PathExists(new_chrome_exe);
 }
 
 bool SwapNewChromeExeIfPresent() {
-  FilePath new_chrome_exe;
+  base::FilePath new_chrome_exe;
   if (!GetNewerChromeFile(&new_chrome_exe))
     return false;
-  if (!file_util::PathExists(new_chrome_exe))
+  if (!base::PathExists(new_chrome_exe))
     return false;
-  FilePath cur_chrome_exe;
+  base::FilePath cur_chrome_exe;
   if (!PathService::Get(base::FILE_EXE, &cur_chrome_exe))
     return false;
 
@@ -195,41 +225,17 @@ bool SwapNewChromeExeIfPresent() {
   base::win::RegKey key;
   if (key.Open(reg_root, dist->GetVersionKey().c_str(),
                KEY_QUERY_VALUE) == ERROR_SUCCESS) {
-
-    // Having just ascertained that we can swap, now check that we should: if
-    // we are given an explicit --chrome-version flag, don't rename unless the
-    // specified version matches the "pv" value. In practice, this is used to
-    // defer Chrome Frame updates until the current version of the Chrome Frame
-    // DLL component is loaded.
-    const CommandLine& cmd_line = *CommandLine::ForCurrentProcess();
-    if (cmd_line.HasSwitch(switches::kChromeVersion)) {
-      std::string version_string =
-          cmd_line.GetSwitchValueASCII(switches::kChromeVersion);
-      Version cmd_version(version_string);
-
-      std::wstring pv_value;
-      if (key.ReadValue(google_update::kRegVersionField,
-                        &pv_value) == ERROR_SUCCESS) {
-        Version pv_version(WideToASCII(pv_value));
-        if (cmd_version.IsValid() && pv_version.IsValid() &&
-            !cmd_version.Equals(pv_version)) {
-          return false;
-        }
-      }
-    }
-
     // First try to rename exe by launching rename command ourselves.
     std::wstring rename_cmd;
     if (key.ReadValue(google_update::kRegRenameCmdField,
                       &rename_cmd) == ERROR_SUCCESS) {
-      base::ProcessHandle handle;
+      base::win::ScopedHandle handle;
       base::LaunchOptions options;
       options.wait = true;
       options.start_hidden = true;
       if (base::LaunchProcess(rename_cmd, options, &handle)) {
         DWORD exit_code;
         ::GetExitCodeProcess(handle, &exit_code);
-        ::CloseHandle(handle);
         if (exit_code == installer::RENAME_SUCCESSFUL)
           return true;
       }

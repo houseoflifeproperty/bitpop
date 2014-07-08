@@ -4,11 +4,15 @@
 
 #include "ui/views/examples/scroll_view_example.h"
 
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/views/background.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/controls/button/radio_button.h"
 #include "ui/views/layout/grid_layout.h"
 #include "ui/views/view.h"
+
+using base::ASCIIToUTF16;
 
 namespace views {
 namespace examples {
@@ -19,11 +23,11 @@ class ScrollViewExample::ScrollableView : public View {
  public:
   ScrollableView() {
     SetColor(SK_ColorRED, SK_ColorCYAN);
-    AddChildView(new TextButton(NULL, ASCIIToUTF16("Button")));
+    AddChildView(new LabelButton(NULL, ASCIIToUTF16("Button")));
     AddChildView(new RadioButton(ASCIIToUTF16("Radio Button"), 0));
   }
 
-  virtual gfx::Size GetPreferredSize() {
+  virtual gfx::Size GetPreferredSize() OVERRIDE {
     return gfx::Size(width(), height());
   }
 
@@ -37,7 +41,7 @@ class ScrollViewExample::ScrollableView : public View {
     view->SetBounds(0, y, size.width(), size.height());
   }
 
-  virtual void Layout() {
+  virtual void Layout() OVERRIDE {
     PlaceChildY(0, 0);
     PlaceChildY(1, height() / 2);
     SizeToPreferredSize();
@@ -54,11 +58,11 @@ ScrollViewExample::~ScrollViewExample() {
 }
 
 void ScrollViewExample::CreateExampleView(View* container) {
-  wide_ = new TextButton(this, ASCIIToUTF16("Wide"));
-  tall_ = new TextButton(this, ASCIIToUTF16("Tall"));
-  big_square_ = new TextButton(this, ASCIIToUTF16("Big Square"));
-  small_square_ = new TextButton(this, ASCIIToUTF16("Small Square"));
-  scroll_to_ = new TextButton(this, ASCIIToUTF16("Scroll to"));
+  wide_ = new LabelButton(this, ASCIIToUTF16("Wide"));
+  tall_ = new LabelButton(this, ASCIIToUTF16("Tall"));
+  big_square_ = new LabelButton(this, ASCIIToUTF16("Big Square"));
+  small_square_ = new LabelButton(this, ASCIIToUTF16("Small Square"));
+  scroll_to_ = new LabelButton(this, ASCIIToUTF16("Scroll to"));
   scrollable_ = new ScrollableView();
   scroll_view_ = new ScrollView();
   scroll_view_->SetContents(scrollable_);

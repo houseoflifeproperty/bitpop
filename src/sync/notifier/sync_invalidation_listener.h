@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 //
@@ -17,13 +17,14 @@
 #include "base/memory/weak_ptr.h"
 #include "base/threading/non_thread_safe.h"
 #include "google/cacheinvalidation/include/invalidation-listener.h"
-#include "jingle/notifier/listener/push_client_observer.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/util/weak_handle.h"
+#include "sync/notifier/ack_handler.h"
 #include "sync/notifier/invalidation_state_tracker.h"
 #include "sync/notifier/invalidator_state.h"
-#include "sync/notifier/object_id_invalidation_map.h"
 #include "sync/notifier/state_writer.h"
 #include "sync/notifier/sync_system_resources.h"
+#include "sync/notifier/unacked_invalidation_set.h"
 
 namespace buzz {
 class XmppTaskParentInterface;
@@ -35,14 +36,16 @@ class PushClient;
 
 namespace syncer {
 
+class ObjectIdInvalidationMap;
 class RegistrationManager;
 
 // SyncInvalidationListener is not thread-safe and lives on the sync
 // thread.
-class SyncInvalidationListener
-    : public invalidation::InvalidationListener,
+class SYNC_EXPORT_PRIVATE SyncInvalidationListener
+    : public NON_EXPORTED_BASE(invalidation::InvalidationListener),
       public StateWriter,
-      public notifier::PushClientObserver,
+      public SyncNetworkChannel::Observer,
+      public AckHandler,
       public base::NonThreadSafe {
  public:
   typedef base::Callback<invalidation::InvalidationClient*(
@@ -52,18 +55,18 @@ class SyncInvalidationListener
       const invalidation::string&,
       invalidation::InvalidationListener*)> CreateInvalidationClientCallback;
 
-  class Delegate {
+  class SYNC_EXPORT_PRIVATE Delegate {
    public:
     virtual ~Delegate();
 
     virtual void OnInvalidate(
-        const ObjectIdInvalidationMap& invalidation_map) = 0;
+        const ObjectIdInvalidationMap& invalidations) = 0;
 
     virtual void OnInvalidatorStateChange(InvalidatorState state) = 0;
   };
 
   explicit SyncInvalidationListener(
-      scoped_ptr<notifier::PushClient> push_client);
+      scoped_ptr<SyncNetworkChannel> network_channel);
 
   // Calls Stop().
   virtual ~SyncInvalidationListener();
@@ -75,7 +78,7 @@ class SyncInvalidationListener
           create_invalidation_client_callback,
       const std::string& client_id, const std::string& client_info,
       const std::string& invalidation_bootstrap_data,
-      const InvalidationStateMap& initial_invalidation_state_map,
+      const UnackedInvalidationsMap& initial_object_states,
       const WeakHandle<InvalidationStateTracker>& invalidation_state_tracker,
       Delegate* delegate);
 
@@ -116,20 +119,27 @@ class SyncInvalidationListener
       invalidation::InvalidationClient* client,
       const invalidation::ErrorInfo& error_info) OVERRIDE;
 
+  // AckHandler implementation.
+  virtual void Acknowledge(
+      const invalidation::ObjectId& id,
+      const syncer::AckHandle& handle) OVERRIDE;
+  virtual void Drop(
+      const invalidation::ObjectId& id,
+      const syncer::AckHandle& handle) OVERRIDE;
+
   // StateWriter implementation.
   virtual void WriteState(const std::string& state) OVERRIDE;
 
-  // notifier::PushClientObserver implementation.
-  virtual void OnNotificationsEnabled() OVERRIDE;
-  virtual void OnNotificationsDisabled(
-      notifier::NotificationsDisabledReason reason) OVERRIDE;
-  virtual void OnIncomingNotification(
-      const notifier::Notification& notification) OVERRIDE;
+  // SyncNetworkChannel::Observer implementation.
+  virtual void OnNetworkChannelStateChanged(
+      InvalidatorState invalidator_state) OVERRIDE;
 
   void DoRegistrationUpdate();
 
+  void RequestDetailedStatus(
+      base::Callback<void(const base::DictionaryValue&)> callback) const;
+
   void StopForTest();
-  InvalidationStateMap GetStateMapForTest() const;
 
  private:
   void Stop();
@@ -138,12 +148,33 @@ class SyncInvalidationListener
 
   void EmitStateChange();
 
-  void EmitInvalidation(const ObjectIdInvalidationMap& invalidation_map);
+  // Sends invalidations to their appropriate destination.
+  //
+  // If there are no observers registered for them, they will be saved for
+  // later.
+  //
+  // If there are observers registered, they will be saved (to make sure we
+  // don't drop them until they've been acted on) and emitted to the observers.
+  void DispatchInvalidations(const ObjectIdInvalidationMap& invalidations);
 
-  // Owned by |sync_system_resources_|.
-  notifier::PushClient* const push_client_;
+  // Saves invalidations.
+  //
+  // This call isn't synchronous so we can't guarantee these invalidations will
+  // be safely on disk by the end of the call, but it should ensure that the
+  // data makes it to disk eventually.
+  void SaveInvalidations(const ObjectIdInvalidationMap& to_save);
+
+  // Emits previously saved invalidations to their registered observers.
+  void EmitSavedInvalidations(const ObjectIdInvalidationMap& to_emit);
+
+  // Generate a Dictionary with all the debugging information.
+  scoped_ptr<base::DictionaryValue> CollectDebugData() const;
+
+  WeakHandle<AckHandler> GetThisAsAckHandler();
+
+  scoped_ptr<SyncNetworkChannel> sync_network_channel_;
   SyncSystemResources sync_system_resources_;
-  InvalidationStateMap invalidation_state_map_;
+  UnackedInvalidationsMap unacked_invalidations_map_;
   WeakHandle<InvalidationStateTracker> invalidation_state_tracker_;
   Delegate* delegate_;
   scoped_ptr<invalidation::InvalidationClient> invalidation_client_;
@@ -154,6 +185,8 @@ class SyncInvalidationListener
   // The states of the ticl and the push client.
   InvalidatorState ticl_state_;
   InvalidatorState push_client_state_;
+
+  base::WeakPtrFactory<SyncInvalidationListener> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncInvalidationListener);
 };

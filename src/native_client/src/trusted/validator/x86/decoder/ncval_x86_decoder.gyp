@@ -103,7 +103,7 @@
            ],
         }],
     }],
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'nc_opcode_modeling_x86_64',
@@ -140,7 +140,7 @@
            ],
         }],
     }],
-    ['OS!="win" and target_arch=="x64"', {
+    ['target_arch=="x64"', {
       'targets': [
         {
           'target_name': 'nc_opcode_modeling_x86_64',
@@ -173,9 +173,6 @@
             '<(DEPTH)/native_client/src/trusted/validator/x86/validate_x86.gyp:ncval_base_x86_64',
            ],
         }],
-    }],
-    [ 'target_arch=="arm"', {
-      'targets': []
     }],
   ],
 }

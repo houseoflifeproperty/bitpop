@@ -5,6 +5,7 @@
 #ifndef MEDIA_BASE_AUDIO_CAPTURER_SOURCE_H_
 #define MEDIA_BASE_AUDIO_CAPTURER_SOURCE_H_
 
+#include <string>
 #include <vector>
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
@@ -25,7 +26,8 @@ class AudioCapturerSource
     // Callback to deliver the captured data from the OS.
     virtual void Capture(AudioBus* audio_source,
                          int audio_delay_milliseconds,
-                         double volume) = 0;
+                         double volume,
+                         bool key_pressed) = 0;
 
     // Signals an error has occurred.
     virtual void OnCaptureError() = 0;
@@ -34,25 +36,15 @@ class AudioCapturerSource
     virtual ~CaptureCallback() {}
   };
 
-  class CaptureEventHandler {
-   public:
-    // Notification to the client that the device with the specific |device_id|
-    // has been started.
-    virtual void OnDeviceStarted(const std::string& device_id) = 0;
-
-    // Notification to the client that the device has been stopped.
-    virtual void OnDeviceStopped() = 0;
-
-   protected:
-    virtual ~CaptureEventHandler() {}
-  };
-
   // Sets information about the audio stream format and the device
   // to be used. It must be called before any of the other methods.
-  // TODO(xians): Add |device_id| to this Initialize() function.
+  // The |session_id| is used by the browser to identify which input device to
+  // be used. For clients who do not care about device permission and device
+  // selection, pass |session_id| using
+  // AudioInputDeviceManager::kFakeOpenSessionId.
   virtual void Initialize(const AudioParameters& params,
                           CaptureCallback* callback,
-                          CaptureEventHandler* event_handler) = 0;
+                          int session_id) = 0;
 
   // Starts the audio recording.
   virtual void Start() = 0;
@@ -63,10 +55,6 @@ class AudioCapturerSource
 
   // Sets the capture volume, with range [0.0, 1.0] inclusive.
   virtual void SetVolume(double volume) = 0;
-
-  // Specifies the |session_id| to query which device to use.
-  // TODO(xians): Change the interface to SetDevice(const std::string&).
-  virtual void SetDevice(int session_id) = 0;
 
   // Enables or disables the WebRtc AGC control.
   virtual void SetAutomaticGainControl(bool enable) = 0;

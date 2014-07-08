@@ -7,23 +7,18 @@
 
 #include <string>
 
-#include "base/compiler_specific.h"
-#include "base/string16.h"
-#include "chrome/browser/extensions/crx_installer_error.h"
+#include "base/basictypes.h"
 
 class Browser;
 class ExtensionInstallPrompt;
 class Profile;
 class SkBitmap;
 
-namespace content {
-class WebContents;
-}
-
 namespace extensions {
+class CrxInstallerError;
 class Extension;
 class ExtensionWebstorePrivateApiTest;
-}  // namespace extensions
+}
 
 // Interface that should be implemented for each platform to display all the UI
 // around extension installation.
@@ -36,11 +31,10 @@ class ExtensionInstallUI {
   // Called when an extension was installed.
   virtual void OnInstallSuccess(const extensions::Extension* extension,
                                 SkBitmap* icon) = 0;
+
   // Called when an extension failed to install.
   virtual void OnInstallFailure(const extensions::CrxInstallerError& error) = 0;
 
-  // Whether or not to show the default UI after completing the installation.
-  virtual void SetSkipPostInstallUI(bool skip_ui) = 0;
 
   // TODO(asargent) Normally we navigate to the new tab page when an app is
   // installed, but we're experimenting with instead showing a bubble when
@@ -48,12 +42,19 @@ class ExtensionInstallUI {
   // the default behavior in the future.
   virtual void SetUseAppInstalledBubble(bool use_bubble) = 0;
 
-  // Opens apps UI and animates the app icon for the app with id |app_id|.
-  static void OpenAppInstalledUI(Browser* browser, const std::string& app_id);
+  // Whether or not to show the default UI after completing the installation.
+  void set_skip_post_install_ui(bool skip_ui) {
+    skip_post_install_ui_ = skip_ui;
+  }
 
-  // Disables showing UI (ErrorBox, etc.) for install failures. To be used only
-  // in tests.
-  static void DisableFailureUIForTests();
+  // Opens apps UI and animates the app icon for the app with id |app_id|.
+  static void OpenAppInstalledUI(Profile* profile, const std::string& app_id);
+
+#if defined(UNIT_TEST)
+  static void set_disable_failure_ui_for_tests() {
+    disable_failure_ui_for_tests_ = true;
+  }
+#endif
 
   // Creates an ExtensionInstallPrompt from |browser|.
   // Caller assumes ownership.
@@ -61,17 +62,31 @@ class ExtensionInstallUI {
       Browser* browser);
 
   // Creates an ExtensionInstallPrompt from |profile|.
-  // Caller assumes ownership. This method is deperecated
-  // and should not be used in new code.
+  // Caller assumes ownership. This method is deprecated and should not be used
+  // in new code.
   static ExtensionInstallPrompt* CreateInstallPromptWithProfile(
       Profile* profile);
 
   Profile* profile() { return profile_; }
 
  protected:
-  ExtensionInstallUI();
+  explicit ExtensionInstallUI(Profile* profile);
+
+  static bool disable_failure_ui_for_tests() {
+    return disable_failure_ui_for_tests_;
+  }
+
+  bool skip_post_install_ui() const { return skip_post_install_ui_; }
+
+ private:
+  static bool disable_failure_ui_for_tests_;
 
   Profile* profile_;
+
+  // Whether or not to show the default UI after completing the installation.
+  bool skip_post_install_ui_;
+
+  DISALLOW_COPY_AND_ASSIGN(ExtensionInstallUI);
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_EXTENSION_INSTALL_UI_H_

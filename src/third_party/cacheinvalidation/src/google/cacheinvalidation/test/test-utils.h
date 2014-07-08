@@ -13,15 +13,16 @@
 // limitations under the License.
 
 //
-// Helper classes for tests including a mock Scheduler, a mock network and a
-// mock storage layer.
+// Helper classes for tests including a mock Scheduler, a mock network, a
+// mock storage layer, and a mock listener.
 
 #ifndef GOOGLE_CACHEINVALIDATION_TEST_TEST_UTILS_H_
 #define GOOGLE_CACHEINVALIDATION_TEST_TEST_UTILS_H_
 
 #include "google/cacheinvalidation/client_protocol.pb.h"
-#include "google/cacheinvalidation/types.pb.h"
+#include "google/cacheinvalidation/include/invalidation-listener.h"
 #include "google/cacheinvalidation/include/types.h"
+#include "google/cacheinvalidation/types.pb.h"
 #include "google/cacheinvalidation/deps/gmock.h"
 #include "google/cacheinvalidation/deps/string_util.h"
 #include "google/cacheinvalidation/impl/basic-system-resources.h"
@@ -102,6 +103,35 @@ class MockStorage : public Storage {
   MOCK_METHOD2(DeleteKey, void(const string&, DeleteKeyCallback*));  // NOLINT
   MOCK_METHOD1(ReadAllKeys, void(ReadAllKeysCallback*));  // NOLINT
   MOCK_METHOD1(SetSystemResources, void(SystemResources*));  // NOLINT
+};
+
+// A mock of the InvalidationListener interface.
+class MockInvalidationListener : public InvalidationListener {
+ public:
+  MOCK_METHOD1(Ready, void(InvalidationClient*));  // NOLINT
+
+  MOCK_METHOD3(Invalidate,
+      void(InvalidationClient *, const Invalidation&,  // NOLINT
+           const AckHandle&));  // NOLINT
+
+  MOCK_METHOD3(InvalidateUnknownVersion,
+               void(InvalidationClient *, const ObjectId&,
+                    const AckHandle&));  // NOLINT
+
+  MOCK_METHOD2(InvalidateAll,
+      void(InvalidationClient *, const AckHandle&));  // NOLINT
+
+  MOCK_METHOD3(InformRegistrationStatus,
+      void(InvalidationClient*, const ObjectId&, RegistrationState));  // NOLINT
+
+  MOCK_METHOD4(InformRegistrationFailure,
+      void(InvalidationClient*, const ObjectId&, bool, const string&));
+
+  MOCK_METHOD3(ReissueRegistrations,
+      void(InvalidationClient*, const string&, int));
+
+  MOCK_METHOD2(InformError,
+      void(InvalidationClient*, const ErrorInfo&));
 };
 
 // A base class for unit tests to share common methods and helper routines.
@@ -274,6 +304,16 @@ class UnitTestBase : public testing::Test {
   // and vice-versa.
   scoped_ptr<RegistrationSummary> reg_summary;
 };
+
+// Creates an action InvokeAndDeleteClosure<k> that invokes the kth closure and
+// deletes it after the Run method has been called.
+ACTION_TEMPLATE(
+    InvokeAndDeleteClosure,
+    HAS_1_TEMPLATE_PARAMS(int, k),
+    AND_0_VALUE_PARAMS()) {
+  std::tr1::get<k>(args)->Run();
+  delete std::tr1::get<k>(args);
+}
 
 }  // namespace invalidation
 

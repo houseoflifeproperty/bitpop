@@ -4,8 +4,10 @@
 
 #include "media/filters/audio_file_reader.h"
 
+#include <cmath>
+
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/audio_bus.h"
 #include "media/ffmpeg/ffmpeg_common.h"
 #include "media/filters/ffmpeg_glue.h"
@@ -15,34 +17,14 @@ namespace media {
 AudioFileReader::AudioFileReader(FFmpegURLProtocol* protocol)
     : codec_context_(NULL),
       stream_index_(0),
-      protocol_(protocol) {
+      protocol_(protocol),
+      channels_(0),
+      sample_rate_(0),
+      av_sample_format_(0) {
 }
 
 AudioFileReader::~AudioFileReader() {
   Close();
-}
-
-int AudioFileReader::channels() const {
-  return codec_context_->channels;
-}
-
-int AudioFileReader::sample_rate() const {
-  return codec_context_->sample_rate;
-}
-
-base::TimeDelta AudioFileReader::duration() const {
-  const AVRational av_time_base = {1, AV_TIME_BASE};
-
-  // Add one microsecond to avoid rounding-down errors which can occur when
-  // |duration| has been calculated from an exact number of sample-frames.
-  // One microsecond is much less than the time of a single sample-frame
-  // at any real-world sample-rate.
-  return ConvertFromTimeBase(
-      av_time_base, glue_->format_context()->duration + 1);
-}
-
-int64 AudioFileReader::number_of_frames() const {
-  return static_cast<int64>(duration().InSecondsF() * sample_rate());
 }
 
 bool AudioFileReader::Open() {
@@ -79,25 +61,50 @@ bool AudioFileReader::Open() {
 
   AVCodec* codec = avcodec_find_decoder(codec_context_->codec_id);
   if (codec) {
+    // MP3 decodes to S16P which we don't support, tell it to use S16 instead.
+    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P)
+      codec_context_->request_sample_fmt = AV_SAMPLE_FMT_S16;
+
     if ((result = avcodec_open2(codec_context_, codec, NULL)) < 0) {
       DLOG(WARNING) << "AudioFileReader::Open() : could not open codec -"
-          << " result: " << result;
+                    << " result: " << result;
+      return false;
+    }
+
+    // Ensure avcodec_open2() respected our format request.
+    if (codec_context_->sample_fmt == AV_SAMPLE_FMT_S16P) {
+      DLOG(ERROR) << "AudioFileReader::Open() : unable to configure a"
+                  << " supported sample format - "
+                  << codec_context_->sample_fmt;
       return false;
     }
   } else {
     DLOG(WARNING) << "AudioFileReader::Open() : could not find codec -"
-        << " result: " << result;
+                  << " result: " << result;
     return false;
   }
+
+  // Verify the channel layout is supported by Chrome.  Acts as a sanity check
+  // against invalid files.  See http://crbug.com/171962
+  if (ChannelLayoutToChromeChannelLayout(
+          codec_context_->channel_layout, codec_context_->channels) ==
+      CHANNEL_LAYOUT_UNSUPPORTED) {
+    return false;
+  }
+
+  // Store initial values to guard against midstream configuration changes.
+  channels_ = codec_context_->channels;
+  sample_rate_ = codec_context_->sample_rate;
+  av_sample_format_ = codec_context_->sample_fmt;
 
   return true;
 }
 
 void AudioFileReader::Close() {
-  if (codec_context_) {
-    avcodec_close(codec_context_);
-    codec_context_ = NULL;
-  }
+  // |codec_context_| is a stream inside glue_->format_context(), so it is
+  // closed when |glue_| is disposed.
+  glue_.reset();
+  codec_context_ = NULL;
 }
 
 int AudioFileReader::Read(AudioBus* audio_bus) {
@@ -111,7 +118,7 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   size_t bytes_per_sample = av_get_bytes_per_sample(codec_context_->sample_fmt);
 
   // Holds decoded audio.
-  scoped_ptr_malloc<AVFrame, ScopedPtrAVFree> av_frame(avcodec_alloc_frame());
+  scoped_ptr<AVFrame, ScopedPtrAVFreeFrame> av_frame(av_frame_alloc());
 
   // Read until we hit EOF or we've read the requested number of frames.
   AVPacket packet;
@@ -119,14 +126,7 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   bool continue_decoding = true;
 
   while (current_frame < audio_bus->frames() && continue_decoding &&
-         av_read_frame(glue_->format_context(), &packet) >= 0 &&
-         av_dup_packet(&packet) >= 0) {
-    // Skip packets from other streams.
-    if (packet.stream_index != stream_index_) {
-      av_free_packet(&packet);
-      continue;
-    }
-
+         ReadPacket(&packet)) {
     // Make a shallow copy of packet so we can slide packet.data as frames are
     // decoded from the packet; otherwise av_free_packet() will corrupt memory.
     AVPacket packet_temp = packet;
@@ -140,7 +140,6 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
         DLOG(WARNING)
             << "AudioFileReader::Read() : error in avcodec_decode_audio4() -"
             << result;
-        continue_decoding = false;
         break;
       }
 
@@ -159,14 +158,56 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
         break;
       }
 
-      // Truncate, if necessary, if the destination isn't big enough.
-      if (current_frame + frames_read > audio_bus->frames())
-        frames_read = audio_bus->frames() - current_frame;
+#ifdef CHROMIUM_NO_AVFRAME_CHANNELS
+      int channels = av_get_channel_layout_nb_channels(
+          av_frame->channel_layout);
+#else
+      int channels = av_frame->channels;
+#endif
+      if (av_frame->sample_rate != sample_rate_ ||
+          channels != channels_ ||
+          av_frame->format != av_sample_format_) {
+        DLOG(ERROR) << "Unsupported midstream configuration change!"
+                    << " Sample Rate: " << av_frame->sample_rate << " vs "
+                    << sample_rate_
+                    << ", Channels: " << channels << " vs "
+                    << channels_
+                    << ", Sample Format: " << av_frame->format << " vs "
+                    << av_sample_format_;
 
-      // Deinterleave each channel and convert to 32bit floating-point
-      // with nominal range -1.0 -> +1.0.
-      audio_bus->FromInterleavedPartial(
-          av_frame->data[0], current_frame, frames_read, bytes_per_sample);
+        // This is an unrecoverable error, so bail out.
+        continue_decoding = false;
+        break;
+      }
+
+      // Truncate, if necessary, if the destination isn't big enough.
+      if (current_frame + frames_read > audio_bus->frames()) {
+        DLOG(ERROR) << "Truncating decoded data due to output size.";
+        frames_read = audio_bus->frames() - current_frame;
+      }
+
+      // Deinterleave each channel and convert to 32bit floating-point with
+      // nominal range -1.0 -> +1.0.  If the output is already in float planar
+      // format, just copy it into the AudioBus.
+      if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLT) {
+        float* decoded_audio_data = reinterpret_cast<float*>(av_frame->data[0]);
+        int channels = audio_bus->channels();
+        for (int ch = 0; ch < channels; ++ch) {
+          float* bus_data = audio_bus->channel(ch) + current_frame;
+          for (int i = 0, offset = ch; i < frames_read;
+               ++i, offset += channels) {
+            bus_data[i] = decoded_audio_data[offset];
+          }
+        }
+      } else if (codec_context_->sample_fmt == AV_SAMPLE_FMT_FLTP) {
+        for (int ch = 0; ch < audio_bus->channels(); ++ch) {
+          memcpy(audio_bus->channel(ch) + current_frame,
+                 av_frame->extended_data[ch], sizeof(float) * frames_read);
+        }
+      } else {
+        audio_bus->FromInterleavedPartial(
+            av_frame->data[0], current_frame, frames_read, bytes_per_sample);
+      }
 
       current_frame += frames_read;
     } while (packet_temp.size > 0);
@@ -180,6 +221,38 @@ int AudioFileReader::Read(AudioBus* audio_bus) {
   // Returns the actual number of sample-frames decoded.
   // Ideally this represents the "true" exact length of the file.
   return current_frame;
+}
+
+base::TimeDelta AudioFileReader::GetDuration() const {
+  const AVRational av_time_base = {1, AV_TIME_BASE};
+
+  // Add one microsecond to avoid rounding-down errors which can occur when
+  // |duration| has been calculated from an exact number of sample-frames.
+  // One microsecond is much less than the time of a single sample-frame
+  // at any real-world sample-rate.
+  return ConvertFromTimeBase(av_time_base,
+                             glue_->format_context()->duration + 1);
+}
+
+int AudioFileReader::GetNumberOfFrames() const {
+  return static_cast<int>(ceil(GetDuration().InSecondsF() * sample_rate()));
+}
+
+bool AudioFileReader::ReadPacketForTesting(AVPacket* output_packet) {
+  return ReadPacket(output_packet);
+}
+
+bool AudioFileReader::ReadPacket(AVPacket* output_packet) {
+  while (av_read_frame(glue_->format_context(), output_packet) >= 0 &&
+         av_dup_packet(output_packet) >= 0) {
+    // Skip packets from other streams.
+    if (output_packet->stream_index != stream_index_) {
+      av_free_packet(output_packet);
+      continue;
+    }
+    return true;
+  }
+  return false;
 }
 
 }  // namespace media

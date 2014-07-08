@@ -5,7 +5,7 @@
 #ifndef MEDIA_AUDIO_AUDIO_INPUT_IPC_H_
 #define MEDIA_AUDIO_AUDIO_INPUT_IPC_H_
 
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "media/audio/audio_parameters.h"
 #include "media/base/media_export.h"
@@ -21,7 +21,8 @@ class MEDIA_EXPORT AudioInputIPCDelegate {
   enum State {
     kRecording,
     kStopped,
-    kError
+    kError,
+    kStateLast = kError
   };
 
   // Called when an AudioInputController has been created.
@@ -34,7 +35,8 @@ class MEDIA_EXPORT AudioInputIPCDelegate {
   // and process the shared memory whenever data is read from the socket.
   virtual void OnStreamCreated(base::SharedMemoryHandle handle,
                                base::SyncSocket::Handle socket_handle,
-                               int length) = 0;
+                               int length,
+                               int total_segments) = 0;
 
   // Called when state of an audio stream has changed.
   virtual void OnStateChanged(State state) = 0;
@@ -42,61 +44,44 @@ class MEDIA_EXPORT AudioInputIPCDelegate {
   // Called when the input stream volume has changed.
   virtual void OnVolume(double volume) = 0;
 
-  // Called when a device has been started on the server side.
-  // If the device could not be started, |device_id| will be empty.
-  virtual void OnDeviceReady(const std::string& device_id) = 0;
-
   // Called when the AudioInputIPC object is going away and/or when the
   // IPC channel has been closed and no more IPC requests can be made.
-  // Implementations must clear any references to the AudioInputIPC object
-  // at this point.
+  // Implementations should delete their owned AudioInputIPC instance
+  // immediately.
   virtual void OnIPCClosed() = 0;
 
  protected:
   virtual ~AudioInputIPCDelegate();
 };
 
-// Provides IPC functionality for an AudioInputDevice.  The implementation
-// should asynchronously deliver the messages to an AudioInputController object
-// (or create one in the case of CreateStream()), that may live in a separate
-// process.
+// Provides IPC functionality for an AudioInputIPCDelegate (e.g., an
+// AudioInputDevice).  The implementation should asynchronously deliver the
+// messages to an AudioInputController object (or create one in the case of
+// CreateStream()), that may live in a separate process.
 class MEDIA_EXPORT AudioInputIPC {
  public:
-  // Registers an AudioInputIPCDelegate and returns a |stream_id| that
-  // must be used with all other IPC functions in this interface.
-  virtual int AddDelegate(AudioInputIPCDelegate* delegate) = 0;
-
-  // Unregisters a delegate that was previously registered via a call to
-  // AddDelegate().  The audio stream should be in a closed state prior to
-  // calling this function.
-  virtual void RemoveDelegate(int stream_id) = 0;
+  virtual ~AudioInputIPC();
 
   // Sends a request to create an AudioInputController object in the peer
-  // process, identify it by |stream_id| and configure it to use the specified
-  // audio |params|.  Once the stream has been created, the implementation must
-  // generate a notification to the AudioInputIPCDelegate and call
-  // OnStreamCreated().
-  virtual void CreateStream(int stream_id, const AudioParameters& params,
-      const std::string& device_id, bool automatic_gain_control) = 0;
-
-  // Starts the device on the server side.  Once the device has started,
-  // or failed to start, a callback to
-  // AudioInputIPCDelegate::OnDeviceReady() must be made.
-  virtual void StartDevice(int stream_id, int session_id) = 0;
+  // process, and configures it to use the specified audio |params|.  The
+  // |total_segments| indidates number of equal-lengthed segments in the shared
+  // memory buffer.  Once the stream has been created, the implementation will
+  // notify |delegate| by calling OnStreamCreated().
+  virtual void CreateStream(AudioInputIPCDelegate* delegate,
+                            int session_id,
+                            const AudioParameters& params,
+                            bool automatic_gain_control,
+                            uint32 total_segments) = 0;
 
   // Corresponds to a call to AudioInputController::Record() on the server side.
-  virtual void RecordStream(int stream_id) = 0;
+  virtual void RecordStream() = 0;
 
   // Sets the volume of the audio stream.
-  virtual void SetVolume(int stream_id, double volume) = 0;
+  virtual void SetVolume(double volume) = 0;
 
-  // Closes the audio stream and deletes the matching AudioInputController
-  // instance.  Prior to deleting the AudioInputController object, a call to
-  // AudioInputController::Close must be made.
-  virtual void CloseStream(int stream_id) = 0;
-
- protected:
-  virtual ~AudioInputIPC();
+  // Closes the audio stream, which should shut down the corresponding
+  // AudioInputController in the peer process.
+  virtual void CloseStream() = 0;
 };
 
 }  // namespace media

@@ -5,10 +5,12 @@
 #include "chrome/test/base/interactive_test_utils.h"
 
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/views/frame/browser_view.h"
-#include "ui/ui_controls/ui_controls.h"
+#include "ui/aura/window.h"
+#include "ui/base/test/ui_controls.h"
+#include "ui/compositor/layer.h"
 #include "ui/views/focus/focus_manager.h"
 
 namespace ui_test_utils {
@@ -31,11 +33,10 @@ void ClickOnView(const Browser* browser, ViewID vid) {
   views::View* view =
       BrowserView::GetBrowserViewForBrowser(browser)->GetViewByID(vid);
   DCHECK(view);
-  MoveMouseToCenterAndPress(
-      view,
-      ui_controls::LEFT,
-      ui_controls::DOWN | ui_controls::UP,
-      MessageLoop::QuitClosure());
+  MoveMouseToCenterAndPress(view,
+                            ui_controls::LEFT,
+                            ui_controls::DOWN | ui_controls::UP,
+                            base::MessageLoop::QuitClosure());
   content::RunMessageLoop();
 }
 
@@ -45,10 +46,22 @@ void MoveMouseToCenterAndPress(views::View* view,
                                const base::Closure& closure) {
   DCHECK(view);
   DCHECK(view->GetWidget());
+  // Complete any in-progress animation before sending the events so that the
+  // mouse-event targetting happens reliably, and does not flake because of
+  // unreliable animation state.
+  aura::Window* window = view->GetWidget()->GetNativeView();
+  if (window && window->layer()) {
+    ui::LayerAnimator* animator = window->layer()->GetAnimator();
+    if (animator && animator->is_animating())
+      animator->StopAnimating();
+  }
+
   gfx::Point view_center(view->width() / 2, view->height() / 2);
   views::View::ConvertPointToScreen(view, &view_center);
-  ui_controls::SendMouseMove(view_center.x(), view_center.y());
-  ui_controls::SendMouseEventsNotifyWhenDone(button, state, closure);
+  ui_controls::SendMouseMoveNotifyWhenDone(
+      view_center.x(),
+      view_center.y(),
+      base::Bind(&internal::ClickTask, button, state, closure));
 }
 
 }  // namespace ui_test_utils

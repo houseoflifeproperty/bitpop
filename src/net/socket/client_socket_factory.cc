@@ -8,17 +8,11 @@
 #include "base/thread_task_runner_handle.h"
 #include "base/threading/sequenced_worker_pool.h"
 #include "build/build_config.h"
-#include "net/base/cert_database.h"
+#include "net/cert/cert_database.h"
 #include "net/socket/client_socket_handle.h"
-#if defined(OS_WIN)
-#include "net/socket/ssl_client_socket_nss.h"
-#include "net/socket/ssl_client_socket_win.h"
-#elif defined(USE_OPENSSL)
+#if defined(USE_OPENSSL)
 #include "net/socket/ssl_client_socket_openssl.h"
-#elif defined(USE_NSS) || defined(OS_IOS)
-#include "net/socket/ssl_client_socket_nss.h"
-#elif defined(OS_MACOSX)
-#include "net/socket/ssl_client_socket_mac.h"
+#elif defined(USE_NSS) || defined(OS_MACOSX) || defined(OS_WIN)
 #include "net/socket/ssl_client_socket_nss.h"
 #endif
 #include "net/socket/tcp_client_socket.h"
@@ -29,8 +23,6 @@ namespace net {
 class X509Certificate;
 
 namespace {
-
-bool g_use_system_ssl = false;
 
 // ChromeOS and Linux may require interaction with smart cards or TPMs, which
 // may cause NSS functions to block for upwards of several seconds. To avoid
@@ -68,30 +60,32 @@ class DefaultClientSocketFactory : public ClientSocketFactory,
     ClearSSLSessionCache();
   }
 
-  virtual void OnCertTrustChanged(const X509Certificate* cert) OVERRIDE {
+  virtual void OnCACertChanged(const X509Certificate* cert) OVERRIDE {
     // Per wtc, we actually only need to flush when trust is reduced.
-    // Always flush now because OnCertTrustChanged does not tell us this.
-    // See comments in ClientSocketPoolManager::OnCertTrustChanged.
+    // Always flush now because OnCACertChanged does not tell us this.
+    // See comments in ClientSocketPoolManager::OnCACertChanged.
     ClearSSLSessionCache();
   }
 
-  virtual DatagramClientSocket* CreateDatagramClientSocket(
+  virtual scoped_ptr<DatagramClientSocket> CreateDatagramClientSocket(
       DatagramSocket::BindType bind_type,
       const RandIntCallback& rand_int_cb,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE {
-    return new UDPClientSocket(bind_type, rand_int_cb, net_log, source);
+    return scoped_ptr<DatagramClientSocket>(
+        new UDPClientSocket(bind_type, rand_int_cb, net_log, source));
   }
 
-  virtual StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<StreamSocket> CreateTransportClientSocket(
       const AddressList& addresses,
       NetLog* net_log,
       const NetLog::Source& source) OVERRIDE {
-    return new TCPClientSocket(addresses, net_log, source);
+    return scoped_ptr<StreamSocket>(
+        new TCPClientSocket(addresses, net_log, source));
   }
 
-  virtual SSLClientSocket* CreateSSLClientSocket(
-      ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<ClientSocketHandle> transport_socket,
       const HostPortPair& host_and_port,
       const SSLConfig& ssl_config,
       const SSLClientSocketContext& context) OVERRIDE {
@@ -106,34 +100,23 @@ class DefaultClientSocketFactory : public ClientSocketFactory,
     // from call to call.
     scoped_refptr<base::SequencedTaskRunner> nss_task_runner(
         nss_thread_task_runner_);
-    if (!nss_task_runner)
+    if (!nss_task_runner.get())
       nss_task_runner = base::ThreadTaskRunnerHandle::Get();
 
 #if defined(USE_OPENSSL)
-    return new SSLClientSocketOpenSSL(transport_socket, host_and_port,
-                                      ssl_config, context);
-#elif defined(USE_NSS) || defined(OS_IOS)
-    return new SSLClientSocketNSS(nss_task_runner, transport_socket,
-                                  host_and_port, ssl_config, context);
-#elif defined(OS_WIN)
-    if (g_use_system_ssl) {
-      return new SSLClientSocketWin(transport_socket, host_and_port,
-                                    ssl_config, context);
-    }
-    return new SSLClientSocketNSS(nss_task_runner, transport_socket,
-                                  host_and_port, ssl_config,
-                                  context);
-#elif defined(OS_MACOSX)
-    if (g_use_system_ssl) {
-      return new SSLClientSocketMac(transport_socket, host_and_port,
-                                    ssl_config, context);
-    }
-    return new SSLClientSocketNSS(nss_task_runner, transport_socket,
-                                  host_and_port, ssl_config,
-                                  context);
+    return scoped_ptr<SSLClientSocket>(
+        new SSLClientSocketOpenSSL(transport_socket.Pass(), host_and_port,
+                                   ssl_config, context));
+#elif defined(USE_NSS) || defined(OS_MACOSX) || defined(OS_WIN)
+    return scoped_ptr<SSLClientSocket>(
+        new SSLClientSocketNSS(nss_task_runner.get(),
+                               transport_socket.Pass(),
+                               host_and_port,
+                               ssl_config,
+                               context));
 #else
     NOTIMPLEMENTED();
-    return NULL;
+    return scoped_ptr<SSLClientSocket>();
 #endif
   }
 
@@ -151,34 +134,9 @@ static base::LazyInstance<DefaultClientSocketFactory>::Leaky
 
 }  // namespace
 
-// Deprecated function (http://crbug.com/37810) that takes a StreamSocket.
-SSLClientSocket* ClientSocketFactory::CreateSSLClientSocket(
-    StreamSocket* transport_socket,
-    const HostPortPair& host_and_port,
-    const SSLConfig& ssl_config,
-    const SSLClientSocketContext& context) {
-  ClientSocketHandle* socket_handle = new ClientSocketHandle();
-  socket_handle->set_socket(transport_socket);
-  return CreateSSLClientSocket(socket_handle, host_and_port, ssl_config,
-                               context);
-}
-
 // static
 ClientSocketFactory* ClientSocketFactory::GetDefaultFactory() {
   return g_default_client_socket_factory.Pointer();
-}
-
-// static
-void ClientSocketFactory::UseSystemSSL() {
-  g_use_system_ssl = true;
-
-#if defined(OS_WIN)
-  // Reflect the capability of SSLClientSocketWin.
-  SSLConfigService::SetDefaultVersionMax(SSL_PROTOCOL_VERSION_TLS1);
-#elif defined(OS_MACOSX) && !defined(OS_IOS)
-  // Reflect the capability of SSLClientSocketMac.
-  SSLConfigService::SetDefaultVersionMax(SSL_PROTOCOL_VERSION_TLS1);
-#endif
 }
 
 }  // namespace net

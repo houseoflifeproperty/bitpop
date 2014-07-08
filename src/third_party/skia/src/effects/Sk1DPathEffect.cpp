@@ -8,10 +8,12 @@
 
 
 #include "Sk1DPathEffect.h"
-#include "SkFlattenableBuffers.h"
+#include "SkReadBuffer.h"
+#include "SkWriteBuffer.h"
 #include "SkPathMeasure.h"
 
-bool Sk1DPathEffect::filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) {
+bool Sk1DPathEffect::filterPath(SkPath* dst, const SkPath& src,
+                                SkStrokeRec*, const SkRect*) const {
     SkPathMeasure   meas(src, false);
     do {
         SkScalar    length = meas.getLength();
@@ -68,10 +70,10 @@ SkPath1DPathEffect::SkPath1DPathEffect(const SkPath& path, SkScalar advance,
 }
 
 bool SkPath1DPathEffect::filterPath(SkPath* dst, const SkPath& src,
-                                    SkStrokeRec* rec) {
+                            SkStrokeRec* rec, const SkRect* cullRect) const {
     if (fAdvance > 0) {
         rec->setFillStyle();
-        return this->INHERITED::filterPath(dst, src, rec);
+        return this->INHERITED::filterPath(dst, src, rec, cullRect);
     }
     return false;
 }
@@ -145,7 +147,7 @@ static void morphpath(SkPath* dst, const SkPath& src, SkPathMeasure& meas,
     }
 }
 
-SkPath1DPathEffect::SkPath1DPathEffect(SkFlattenableReadBuffer& buffer) {
+SkPath1DPathEffect::SkPath1DPathEffect(SkReadBuffer& buffer) {
     fAdvance = buffer.readScalar();
     if (fAdvance > 0) {
         buffer.readPath(&fPath);
@@ -159,11 +161,11 @@ SkPath1DPathEffect::SkPath1DPathEffect(SkFlattenableReadBuffer& buffer) {
     }
 }
 
-SkScalar SkPath1DPathEffect::begin(SkScalar contourLength) {
+SkScalar SkPath1DPathEffect::begin(SkScalar contourLength) const {
     return fInitialOffset;
 }
 
-void SkPath1DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
+void SkPath1DPathEffect::flatten(SkWriteBuffer& buffer) const {
     this->INHERITED::flatten(buffer);
     buffer.writeScalar(fAdvance);
     if (fAdvance > 0) {
@@ -174,7 +176,7 @@ void SkPath1DPathEffect::flatten(SkFlattenableWriteBuffer& buffer) const {
 }
 
 SkScalar SkPath1DPathEffect::next(SkPath* dst, SkScalar distance,
-                                  SkPathMeasure& meas) {
+                                  SkPathMeasure& meas) const {
     switch (fStyle) {
         case kTranslate_Style: {
             SkPoint pos;

@@ -6,6 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include <CoreFoundation/CFTimeZone.h>
 extern "C" {
 #include <sandbox.h>
 }
@@ -16,28 +17,33 @@ extern "C" {
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/rand_util.h"
-#include "base/string16.h"
-#include "base/string_piece.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_piece.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/sys_info.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "grit/content_resources.h"
+#include "third_party/icu/source/common/unicode/uchar.h"
 #include "ui/base/layout.h"
 #include "ui/gl/gl_surface.h"
-#include "unicode/uchar.h"
+#include "ui/gl/io_surface_support_mac.h"
 
 namespace content {
 namespace {
+
+// Is the sandbox currently active.
+bool gSandboxIsActive = false;
 
 struct SandboxTypeToResourceIDMapping {
   SandboxType sandbox_type;
@@ -106,11 +112,11 @@ NOINLINE void FatalStringQuoteException(const std::string& str) {
 }  // namespace
 
 // static
-NSString* Sandbox::AllowMetadataForPath(const FilePath& allowed_path) {
+NSString* Sandbox::AllowMetadataForPath(const base::FilePath& allowed_path) {
   // Collect a list of all parent directories.
-  FilePath last_path = allowed_path;
-  std::vector<FilePath> subpaths;
-  for (FilePath path = allowed_path;
+  base::FilePath last_path = allowed_path;
+  std::vector<base::FilePath> subpaths;
+  for (base::FilePath path = allowed_path;
        path.value() != last_path.value();
        path = path.DirName()) {
     subpaths.push_back(path);
@@ -119,7 +125,7 @@ NSString* Sandbox::AllowMetadataForPath(const FilePath& allowed_path) {
 
   // Iterate through all parents and allow stat() on them explicitly.
   NSString* sandbox_command = @"(allow file-read-metadata ";
-  for (std::vector<FilePath>::reverse_iterator i = subpaths.rbegin();
+  for (std::vector<base::FilePath>::reverse_iterator i = subpaths.rbegin();
        i != subpaths.rend();
        ++i) {
     std::string subdir_escaped;
@@ -249,29 +255,27 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
   base::mac::ScopedNSAutoreleasePool scoped_pool;
 
   { // CGColorSpaceCreateWithName(), CGBitmapContextCreate() - 10.5.6
-    base::mac::ScopedCFTypeRef<CGColorSpaceRef> rgb_colorspace(
+    base::ScopedCFTypeRef<CGColorSpaceRef> rgb_colorspace(
         CGColorSpaceCreateWithName(kCGColorSpaceGenericRGB));
 
     // Allocate a 1x1 image.
     char data[4];
-    base::mac::ScopedCFTypeRef<CGContextRef> context(
-        CGBitmapContextCreate(data, 1, 1, 8, 1 * 4,
-                              rgb_colorspace,
-                              kCGImageAlphaPremultipliedFirst |
-                                  kCGBitmapByteOrder32Host));
+    base::ScopedCFTypeRef<CGContextRef> context(CGBitmapContextCreate(
+        data,
+        1,
+        1,
+        8,
+        1 * 4,
+        rgb_colorspace,
+        kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Host));
 
     // Load in the color profiles we'll need (as a side effect).
     (void) base::mac::GetSRGBColorSpace();
     (void) base::mac::GetSystemColorSpace();
 
     // CGColorSpaceCreateSystemDefaultCMYK - 10.6
-    base::mac::ScopedCFTypeRef<CGColorSpaceRef> cmyk_colorspace(
+    base::ScopedCFTypeRef<CGColorSpaceRef> cmyk_colorspace(
         CGColorSpaceCreateWithName(kCGColorSpaceGenericCMYK));
-  }
-
-  { // [-NSColor colorUsingColorSpaceName] - 10.5.6
-    NSColor* color = [NSColor controlTextColor];
-    [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
   }
 
   { // localtime() - 10.5.6
@@ -290,9 +294,8 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     char png_header[] = {0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A};
     NSData* data = [NSData dataWithBytes:png_header
                                   length:arraysize(png_header)];
-    base::mac::ScopedCFTypeRef<CGImageSourceRef> img(
-        CGImageSourceCreateWithData((CFDataRef)data,
-        NULL));
+    base::ScopedCFTypeRef<CGImageSourceRef> img(
+        CGImageSourceCreateWithData((CFDataRef)data, NULL));
     CGImageSourceGetStatus(img);
   }
 
@@ -301,17 +304,38 @@ void Sandbox::SandboxWarmup(int sandbox_type) {
     base::GetUrandomFD();
   }
 
+  { // IOSurfaceLookup() - 10.7
+    // Needed by zero-copy texture update framework - crbug.com/323338
+    IOSurfaceSupport* io_surface_support = IOSurfaceSupport::Initialize();
+    if (io_surface_support) {
+      base::ScopedCFTypeRef<CFTypeRef> io_surface(
+          io_surface_support->IOSurfaceLookup(0));
+    }
+  }
+
   // Process-type dependent warm-up.
+  if (sandbox_type == SANDBOX_TYPE_UTILITY) {
+    // CFTimeZoneCopyZone() tries to read /etc and /private/etc/localtime - 10.8
+    // Needed by Media Galleries API Picasa - crbug.com/151701
+    CFTimeZoneCopySystem();
+  }
+
   if (sandbox_type == SANDBOX_TYPE_GPU) {
     // Preload either the desktop GL or the osmesa so, depending on the
     // --use-gl flag.
     gfx::GLSurface::InitializeOneOff();
   }
+
+  if (sandbox_type == SANDBOX_TYPE_PPAPI) {
+    // Preload AppKit color spaces used for Flash/ppapi. http://crbug.com/348304
+    NSColor* color = [NSColor controlTextColor];
+    [color colorUsingColorSpaceName:NSCalibratedRGBColorSpace];
+  }
 }
 
 // static
 NSString* Sandbox::BuildAllowDirectoryAccessSandboxString(
-    const FilePath& allowed_dir,
+    const base::FilePath& allowed_dir,
     SandboxVariableSubstitions* substitutions) {
   // A whitelist is used to determine which directories can be statted
   // This means that in the case of an /a/b/c/d/ directory, we may be able to
@@ -326,7 +350,7 @@ NSString* Sandbox::BuildAllowDirectoryAccessSandboxString(
   // needed so the caller doesn't need to worry about things like /var
   // being a link to /private/var (like in the paths CreateNewTempDirectory()
   // returns).
-  FilePath allowed_dir_canonical = GetCanonicalSandboxPath(allowed_dir);
+  base::FilePath allowed_dir_canonical = GetCanonicalSandboxPath(allowed_dir);
 
   NSString* sandbox_command = AllowMetadataForPath(allowed_dir_canonical);
   sandbox_command = [sandbox_command
@@ -387,12 +411,12 @@ NSString* LoadSandboxTemplate(int sandbox_type) {
     return nil;
   }
 
-  scoped_nsobject<NSString> common_sandbox_prefix_data(
+  base::scoped_nsobject<NSString> common_sandbox_prefix_data(
       [[NSString alloc] initWithBytes:common_sandbox_definition.data()
                                length:common_sandbox_definition.length()
                              encoding:NSUTF8StringEncoding]);
 
-  scoped_nsobject<NSString> sandbox_data(
+  base::scoped_nsobject<NSString> sandbox_data(
       [[NSString alloc] initWithBytes:sandbox_definition.data()
                                length:sandbox_definition.length()
                              encoding:NSUTF8StringEncoding]);
@@ -474,7 +498,7 @@ bool Sandbox::PostProcessSandboxProfile(
 
 // static
 bool Sandbox::EnableSandbox(int sandbox_type,
-                            const FilePath& allowed_dir) {
+                            const base::FilePath& allowed_dir) {
   // Sanity - currently only SANDBOX_TYPE_UTILITY supports a directory being
   // passed in.
   if (sandbox_type < SANDBOX_TYPE_AFTER_LAST_TYPE &&
@@ -529,7 +553,8 @@ bool Sandbox::EnableSandbox(int sandbox_type,
   // (see renderer.sb for details).
   std::string home_dir = [NSHomeDirectory() fileSystemRepresentation];
 
-  FilePath home_dir_canonical = GetCanonicalSandboxPath(FilePath(home_dir));
+  base::FilePath home_dir_canonical =
+      GetCanonicalSandboxPath(base::FilePath(home_dir));
 
   substitutions["USER_HOMEDIR_AS_LITERAL"] =
       SandboxSubstring(home_dir_canonical.value(),
@@ -546,7 +571,7 @@ bool Sandbox::EnableSandbox(int sandbox_type,
   // contains LC_RPATH load commands. The components build uses those.
   // See http://crbug.com/127465
   if (base::mac::IsOSSnowLeopard()) {
-    FilePath bundle_executable = base::mac::NSStringToFilePath(
+    base::FilePath bundle_executable = base::mac::NSStringToFilePath(
         [base::mac::MainBundle() executablePath]);
     NSString* sandbox_command = AllowMetadataForPath(
         GetCanonicalSandboxPath(bundle_executable));
@@ -572,27 +597,32 @@ bool Sandbox::EnableSandbox(int sandbox_type,
                            << " "
                            << error_buff;
   sandbox_free_error(error_buff);
+  gSandboxIsActive = success;
   return success;
 }
 
 // static
-FilePath Sandbox::GetCanonicalSandboxPath(const FilePath& path) {
-  int fd = HANDLE_EINTR(open(path.value().c_str(), O_RDONLY));
-  if (fd < 0) {
-    DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
-                 << path.value();
-    return path;
-  }
-  file_util::ScopedFD file_closer(&fd);
+bool Sandbox::SandboxIsCurrentlyActive() {
+  return gSandboxIsActive;
+}
 
-  FilePath::CharType canonical_path[MAXPATHLEN];
-  if (HANDLE_EINTR(fcntl(fd, F_GETPATH, canonical_path)) != 0) {
+// static
+base::FilePath Sandbox::GetCanonicalSandboxPath(const base::FilePath& path) {
+  base::ScopedFD fd(HANDLE_EINTR(open(path.value().c_str(), O_RDONLY)));
+  if (!fd.is_valid()) {
     DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
                  << path.value();
     return path;
   }
 
-  return FilePath(canonical_path);
+  base::FilePath::CharType canonical_path[MAXPATHLEN];
+  if (HANDLE_EINTR(fcntl(fd.get(), F_GETPATH, canonical_path)) != 0) {
+    DPLOG(FATAL) << "GetCanonicalSandboxPath() failed for: "
+                 << path.value();
+    return path;
+  }
+
+  return base::FilePath(canonical_path);
 }
 
 }  // namespace content

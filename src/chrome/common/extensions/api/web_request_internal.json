@@ -5,8 +5,10 @@
 [
   {
     "namespace": "webRequestInternal",
-    "nodoc": true,
-    "internal": true,
+    "description": "none",
+    "compiler_options": {
+      "implemented_in": "chrome/browser/extensions/api/web_request/web_request_api.h"
+    },
     "functions": [
       {
         "name": "addEventListener",
@@ -30,7 +32,8 @@
             }
           },
           {"type": "string", "name": "eventName"},
-          {"type": "string", "name": "subEventName"}
+          {"type": "string", "name": "subEventName"},
+          {"type": "integer", "name": "webViewInstanceId"}
         ]
       },
       {

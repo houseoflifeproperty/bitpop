@@ -11,35 +11,36 @@
 #include "base/bind.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
+#include "base/prefs/pref_service.h"
 #include "base/rand_util.h"
 #include "base/stl_util.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "chrome/browser/extensions/blacklist.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/api/module/module.h"
 #include "chrome/browser/extensions/crx_installer.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/pending_extension_manager.h"
 #include "chrome/browser/extensions/updater/extension_downloader.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
 #include "crypto/sha2.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/pref_names.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest.h"
 
 using base::RandDouble;
 using base::RandInt;
 using base::Time;
 using base::TimeDelta;
 using content::BrowserThread;
-using prefs::kExtensionBlacklistUpdateVersion;
-using prefs::kLastExtensionsUpdateCheck;
-using prefs::kNextExtensionsUpdateCheck;
 
 typedef extensions::ExtensionDownloaderDelegate::Error Error;
 typedef extensions::ExtensionDownloaderDelegate::PingResult PingResult;
@@ -51,7 +52,9 @@ namespace {
 const int kStartupWaitSeconds = 60 * 5;
 
 // For sanity checking on update frequency - enforced in release mode only.
+#if defined(NDEBUG)
 const int kMinUpdateFrequencySeconds = 30;
+#endif
 const int kMaxUpdateFrequencySeconds = 60 * 60 * 24 * 7;  // 7 days
 
 // Require at least 5 seconds between consecutive non-succesful extension update
@@ -91,24 +94,22 @@ int CalculateActivePingDays(const Time& last_active_ping_day,
 namespace extensions {
 
 ExtensionUpdater::CheckParams::CheckParams()
-    : check_blacklist(true), install_immediately(false) {}
+    : install_immediately(false) {}
 
 ExtensionUpdater::CheckParams::~CheckParams() {}
 
 ExtensionUpdater::FetchedCRXFile::FetchedCRXFile(
     const std::string& i,
-    const FilePath& p,
-    const GURL& u,
+    const base::FilePath& p,
+    bool file_ownership_passed,
     const std::set<int>& request_ids)
     : extension_id(i),
       path(p),
-      download_url(u),
+      file_ownership_passed(file_ownership_passed),
       request_ids(request_ids) {}
 
 ExtensionUpdater::FetchedCRXFile::FetchedCRXFile()
-    : extension_id(""),
-      path(),
-      download_url() {}
+    : path(), file_ownership_passed(true) {}
 
 ExtensionUpdater::FetchedCRXFile::~FetchedCRXFile() {}
 
@@ -132,18 +133,19 @@ ExtensionUpdater::ExtensionUpdater(ExtensionServiceInterface* service,
                                    ExtensionPrefs* extension_prefs,
                                    PrefService* prefs,
                                    Profile* profile,
-                                   Blacklist* blacklist,
-                                   int frequency_seconds)
+                                   int frequency_seconds,
+                                   ExtensionCache* cache)
     : alive_(false),
-      weak_ptr_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
+      weak_ptr_factory_(this),
       service_(service), frequency_seconds_(frequency_seconds),
       will_check_soon_(false), extension_prefs_(extension_prefs),
-      prefs_(prefs), profile_(profile), blacklist_(blacklist),
+      prefs_(prefs), profile_(profile),
       next_request_id_(0),
-      crx_install_is_running_(false) {
+      crx_install_is_running_(false),
+      extension_cache_(cache) {
   DCHECK_GE(frequency_seconds_, 5);
   DCHECK_LE(frequency_seconds_, kMaxUpdateFrequencySeconds);
-#ifdef NDEBUG
+#if defined(NDEBUG)
   // In Release mode we enforce that update checks don't happen too often.
   frequency_seconds_ = std::max(frequency_seconds_, kMinUpdateFrequencySeconds);
 #endif
@@ -166,14 +168,14 @@ TimeDelta ExtensionUpdater::DetermineFirstCheckDelay() {
     return TimeDelta::FromSeconds(frequency_seconds_);
 
   // If we've never scheduled a check before, start at frequency_seconds_.
-  if (!prefs_->HasPrefPath(kNextExtensionsUpdateCheck))
+  if (!prefs_->HasPrefPath(pref_names::kNextUpdateCheck))
     return TimeDelta::FromSeconds(frequency_seconds_);
 
   // If it's been a long time since our last actual check, we want to do one
   // relatively soon.
   Time now = Time::Now();
   Time last = Time::FromInternalValue(prefs_->GetInt64(
-      kLastExtensionsUpdateCheck));
+      pref_names::kLastUpdateCheck));
   int days = (now - last).InDays();
   if (days >= 30) {
     // Wait 5-10 minutes.
@@ -189,12 +191,13 @@ TimeDelta ExtensionUpdater::DetermineFirstCheckDelay() {
                                           kStartupWaitSeconds * 8));
   }
 
-  // Read the persisted next check time, and use that if it isn't too soon.
-  // Otherwise pick something random.
+  // Read the persisted next check time, and use that if it isn't too soon
+  // or too late. Otherwise pick something random.
   Time saved_next = Time::FromInternalValue(prefs_->GetInt64(
-      kNextExtensionsUpdateCheck));
+      pref_names::kNextUpdateCheck));
   Time earliest = now + TimeDelta::FromSeconds(kStartupWaitSeconds);
-  if (saved_next >= earliest) {
+  Time latest = now + TimeDelta::FromSeconds(frequency_seconds_);
+  if (saved_next >= earliest && saved_next <= latest) {
     return saved_next - now;
   } else {
     return TimeDelta::FromSeconds(RandInt(kStartupWaitSeconds,
@@ -242,7 +245,7 @@ void ExtensionUpdater::ScheduleNextCheck(const TimeDelta& target_delay) {
 
   // Save the time of next check.
   Time next = Time::Now() + actual_delay;
-  prefs_->SetInt64(kNextExtensionsUpdateCheck, next.ToInternalValue());
+  prefs_->SetInt64(pref_names::kNextUpdateCheck, next.ToInternalValue());
 
   timer_.Start(FROM_HERE, actual_delay, this, &ExtensionUpdater::TimerFired);
 }
@@ -253,9 +256,9 @@ void ExtensionUpdater::TimerFired() {
 
   // If the user has overridden the update frequency, don't bother reporting
   // this.
-  if (frequency_seconds_ == ExtensionService::kDefaultUpdateFrequencySeconds) {
+  if (frequency_seconds_ == extensions::kDefaultUpdateFrequencySeconds) {
     Time last = Time::FromInternalValue(prefs_->GetInt64(
-        kLastExtensionsUpdateCheck));
+        pref_names::kLastUpdateCheck));
     if (last.ToInternalValue() != 0) {
       // Use counts rather than time so we can use minutes rather than millis.
       UMA_HISTOGRAM_CUSTOM_COUNTS("Extensions.UpdateCheckGap",
@@ -268,7 +271,7 @@ void ExtensionUpdater::TimerFired() {
 
   // Save the last check time, and schedule the next check.
   int64 now = Time::Now().ToInternalValue();
-  prefs_->SetInt64(kLastExtensionsUpdateCheck, now);
+  prefs_->SetInt64(pref_names::kLastUpdateCheck, now);
   ScheduleNextCheck(TimeDelta::FromSeconds(frequency_seconds_));
 }
 
@@ -303,8 +306,8 @@ void ExtensionUpdater::AddToDownloader(
   InProgressCheck& request = requests_in_progress_[request_id];
   for (ExtensionSet::const_iterator extension_iter = extensions->begin();
        extension_iter != extensions->end(); ++extension_iter) {
-    const Extension& extension = **extension_iter;
-    if (!Extension::IsAutoUpdateableLocation(extension.location())) {
+    const Extension& extension = *extension_iter->get();
+    if (!Manifest::IsAutoUpdateableLocation(extension.location())) {
       VLOG(2) << "Extension " << extension.id() << " is not auto updateable";
       continue;
     }
@@ -354,7 +357,7 @@ void ExtensionUpdater::CheckNow(const CheckParams& params) {
     for (iter = pending_ids.begin(); iter != pending_ids.end(); ++iter) {
       const PendingExtensionInfo* info = pending_extension_manager->GetById(
           *iter);
-      if (!Extension::IsAutoUpdateableLocation(info->install_source())) {
+      if (!Manifest::IsAutoUpdateableLocation(info->install_source())) {
         VLOG(2) << "Extension " << *iter << " is not auto updateable";
         continue;
       }
@@ -363,8 +366,9 @@ void ExtensionUpdater::CheckNow(const CheckParams& params) {
         request.in_progress_ids_.push_back(*iter);
     }
 
-    AddToDownloader(service_->extensions(), pending_ids, request_id);
-    AddToDownloader(service_->disabled_extensions(), pending_ids, request_id);
+    ExtensionRegistry* registry = ExtensionRegistry::Get(profile_);
+    AddToDownloader(&registry->enabled_extensions(), pending_ids, request_id);
+    AddToDownloader(&registry->disabled_extensions(), pending_ids, request_id);
   } else {
     for (std::list<std::string>::const_iterator it = params.ids.begin();
          it != params.ids.end(); ++it) {
@@ -373,17 +377,6 @@ void ExtensionUpdater::CheckNow(const CheckParams& params) {
       if (downloader_->AddExtension(*extension, request_id))
         request.in_progress_ids_.push_back(extension->id());
     }
-  }
-
-  // Start a fetch of the blacklist if needed.
-  if (params.check_blacklist) {
-    ManifestFetchData::PingData ping_data;
-    ping_data.rollcall_days =
-        CalculatePingDays(extension_prefs_->BlacklistLastPingDay());
-    request.in_progress_ids_.push_back(ExtensionDownloader::kBlacklistAppID);
-    downloader_->StartBlacklistUpdate(
-        prefs_->GetString(kExtensionBlacklistUpdateVersion), ping_data,
-        request_id);
   }
 
   // StartAllPending() might call OnExtensionDownloadFailed/Finished before
@@ -395,8 +388,7 @@ void ExtensionUpdater::CheckNow(const CheckParams& params) {
 
   // StartAllPending() will call OnExtensionDownloadFailed or
   // OnExtensionDownloadFinished for each extension that was checked.
-  downloader_->StartAllPending();
-
+  downloader_->StartAllPending(extension_cache_);
 
   if (noChecks)
     NotifyIfFinished(request_id);
@@ -436,7 +428,6 @@ bool ExtensionUpdater::CheckExtensionSoon(const std::string& extension_id,
 
   CheckParams params;
   params.ids.push_back(extension_id);
-  params.check_blacklist = false;
   params.callback = base::Bind(&ExtensionUpdater::ExtensionCheckFinished,
                                weak_ptr_factory_.GetWeakPtr(),
                                extension_id, callback);
@@ -481,7 +472,8 @@ void ExtensionUpdater::OnExtensionDownloadFailed(
 
 void ExtensionUpdater::OnExtensionDownloadFinished(
     const std::string& id,
-    const FilePath& path,
+    const base::FilePath& path,
+    bool file_ownership_passed,
     const GURL& download_url,
     const std::string& version,
     const PingResult& ping,
@@ -491,44 +483,12 @@ void ExtensionUpdater::OnExtensionDownloadFinished(
 
   VLOG(2) << download_url << " written to " << path.value();
 
-  FetchedCRXFile fetched(id, path, download_url, request_ids);
+  FetchedCRXFile fetched(id, path, file_ownership_passed, request_ids);
   fetched_crx_files_.push(fetched);
 
   // MaybeInstallCRXFile() removes extensions from |in_progress_ids_| after
   // starting the crx installer.
   MaybeInstallCRXFile();
-}
-
-void ExtensionUpdater::OnBlacklistDownloadFinished(
-    const std::string& data,
-    const std::string& package_hash,
-    const std::string& version,
-    const PingResult& ping,
-    const std::set<int>& request_ids) {
-  DCHECK(alive_);
-  UpdatePingData(ExtensionDownloader::kBlacklistAppID, ping);
-  for (std::set<int>::const_iterator it = request_ids.begin();
-       it != request_ids.end(); ++it) {
-    InProgressCheck& request = requests_in_progress_[*it];
-    request.in_progress_ids_.remove(ExtensionDownloader::kBlacklistAppID);
-    NotifyIfFinished(*it);
-  }
-
-  // Verify sha256 hash value.
-  char sha256_hash_value[crypto::kSHA256Length];
-  crypto::SHA256HashString(data, sha256_hash_value, crypto::kSHA256Length);
-  std::string hash_in_hex = base::HexEncode(sha256_hash_value,
-                                            crypto::kSHA256Length);
-
-  if (package_hash != hash_in_hex) {
-    NOTREACHED() << "Fetched blacklist checksum is not as expected. "
-        << "Expected: " << package_hash << " Actual: " << hash_in_hex;
-    return;
-  }
-  std::vector<std::string> blacklist;
-  base::SplitString(data, '\n', &blacklist);
-
-  blacklist_->SetFromUpdater(blacklist, version);
 }
 
 bool ExtensionUpdater::GetPingDataForExtension(
@@ -546,7 +506,7 @@ bool ExtensionUpdater::GetPingDataForExtension(
 
 std::string ExtensionUpdater::GetUpdateUrlData(const std::string& id) {
   DCHECK(alive_);
-  return extension_prefs_->GetUpdateUrlData(id);
+  return extension::GetUpdateURLData(extension_prefs_, id);
 }
 
 bool ExtensionUpdater::IsExtensionPending(const std::string& id) {
@@ -557,10 +517,6 @@ bool ExtensionUpdater::IsExtensionPending(const std::string& id) {
 bool ExtensionUpdater::GetExtensionExistingVersion(const std::string& id,
                                                    std::string* version) {
   DCHECK(alive_);
-  if (id == ExtensionDownloader::kBlacklistAppID) {
-    *version = prefs_->GetString(kExtensionBlacklistUpdateVersion);
-    return true;
-  }
   const Extension* extension = service_->GetExtensionById(id, true);
   if (!extension)
     return false;
@@ -575,13 +531,8 @@ bool ExtensionUpdater::GetExtensionExistingVersion(const std::string& id,
 void ExtensionUpdater::UpdatePingData(const std::string& id,
                                       const PingResult& ping_result) {
   DCHECK(alive_);
-  if (ping_result.did_ping) {
-    if (id == ExtensionDownloader::kBlacklistAppID) {
-      extension_prefs_->SetBlacklistLastPingDay(ping_result.day_start);
-    } else if (service_->GetExtensionById(id, true) != NULL) {
-      extension_prefs_->SetLastPingDay(id, ping_result.day_start);
-    }
-  }
+  if (ping_result.did_ping)
+    extension_prefs_->SetLastPingDay(id, ping_result.day_start);
   if (extension_prefs_->GetActiveBit(id)) {
     extension_prefs_->SetActiveBit(id, false);
     extension_prefs_->SetLastActivePingDay(id, ping_result.day_start);
@@ -605,7 +556,7 @@ void ExtensionUpdater::MaybeInstallCRXFile() {
     CrxInstaller* installer = NULL;
     if (service_->UpdateExtension(crx_file.extension_id,
                                   crx_file.path,
-                                  crx_file.download_url,
+                                  crx_file.file_ownership_passed,
                                   &installer)) {
       crx_install_is_running_ = true;
       current_crx_file_ = crx_file;
@@ -667,7 +618,7 @@ void ExtensionUpdater::Observe(int type,
     }
     case chrome::NOTIFICATION_EXTENSION_INSTALLED: {
       const Extension* extension =
-          content::Details<const Extension>(details).ptr();
+          content::Details<const InstalledExtensionInfo>(details)->extension;
       if (extension)
         throttle_info_.erase(extension->id());
       break;

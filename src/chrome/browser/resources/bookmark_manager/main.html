@@ -9,11 +9,13 @@ found in the LICENSE file.
 -->
 <head>
 <meta name="google" value="notranslate">
+<meta charset="utf-8">
 <title i18n-content="title"></title>
 
 <link rel="stylesheet" href="chrome://resources/css/list.css">
 <link rel="stylesheet" href="chrome://resources/css/tree.css">
 <link rel="stylesheet" href="chrome://resources/css/menu.css">
+<link rel="stylesheet" href="chrome://resources/css/menu_button.css">
 <link rel="stylesheet" href="chrome://resources/css/widgets.css">
 <link rel="stylesheet" href="css/bmm.css">
 
@@ -24,11 +26,11 @@ found in the LICENSE file.
 <script src="chrome://resources/js/cr.js"></script>
 <script src="chrome://resources/js/cr/event_target.js"></script>
 <script src="chrome://resources/js/cr/link_controller.js"></script>
-<script src="chrome://resources/js/cr/promise.js"></script>
 <script src="chrome://resources/js/cr/ui.js"></script>
 <script src="chrome://resources/js/cr/ui/touch_handler.js"></script>
 <script src="chrome://resources/js/cr/ui/array_data_model.js"></script>
 <script src="chrome://resources/js/cr/ui/command.js"></script>
+<script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
 <script src="chrome://resources/js/cr/ui/menu_item.js"></script>
 <script src="chrome://resources/js/cr/ui/menu.js"></script>
 <script src="chrome://resources/js/cr/ui/position_util.js"></script>
@@ -49,13 +51,13 @@ found in the LICENSE file.
 <script src="js/bmm.js"></script>
 <script src="js/bmm/bookmark_list.js"></script>
 <script src="js/bmm/bookmark_tree.js"></script>
+<script src="js/dnd.js"></script>
 </head>
 <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
 
 <div class="header">
   <button class="logo link-button" tabindex=3></button>
-  <form onsubmit="setSearch(this.term.value); return false;"
-      class="form">
+  <form class="form">
     <input type="search" id="term" tabindex=1 autofocus incremental
         i18n-values="placeholder:search_button">
   </form>
@@ -63,7 +65,8 @@ found in the LICENSE file.
 
 <div class="summary">
   <h3 i18n-content="title"></h3>
-  <button menu="#organize-menu" tabindex="-1" i18n-content="organize_menu"></button>
+  <button menu="#organize-menu" tabindex="4" i18n-content="organize_menu">
+  </button>
 </div>
 
 <div class=main>
@@ -75,16 +78,22 @@ found in the LICENSE file.
 </div>
 
 <!-- Organize menu -->
-<command i18n-values=".label:rename_folder" id="rename-folder-command"></command>
+<command i18n-values=".label:rename_folder" id="rename-folder-command">
+</command>
 <command i18n-values=".label:edit" id="edit-command"></command>
-<command i18n-values=".label:show_in_folder" id="show-in-folder-command"></command>
+<command i18n-values=".label:show_in_folder" id="show-in-folder-command">
+</command>
 <command i18n-values=".label:cut" id="cut-command"></command>
 <command i18n-values=".label:copy" id="copy-command"></command>
-<command i18n-values=".label:paste" id="paste-command"></command>
+<command i18n-values=".label:paste" id="paste-from-organize-menu-command">
+</command>
+<command i18n-values=".label:paste" id="paste-from-context-menu-command">
+</command>
 <command i18n-values=".label:delete" id="delete-command"></command>
 <command i18n-values=".label:undo_delete" id="undo-delete-command"></command>
 <command i18n-values=".label:sort" id="sort-command"></command>
-<command i18n-values=".label:add_new_bookmark" id="add-new-bookmark-command"></command>
+<command i18n-values=".label:add_new_bookmark" id="add-new-bookmark-command">
+</command>
 <command i18n-values=".label:new_folder" id="new-folder-command"></command>
 
 <!-- Tools menu -->
@@ -112,7 +121,7 @@ found in the LICENSE file.
   <hr>
   <button command="#cut-command"></button>
   <button command="#copy-command"></button>
-  <button command="#paste-command"></button>
+  <button command="#paste-from-organize-menu-command"></button>
   <hr>
   <button command="#delete-command"></button>
   <button command="#undo-delete-command"></button>
@@ -134,7 +143,7 @@ found in the LICENSE file.
   <hr>
   <button command="#cut-command"></button>
   <button command="#copy-command"></button>
-  <button command="#paste-command"></button>
+  <button command="#paste-from-context-menu-command"></button>
   <hr>
   <button command="#delete-command"></button>
   <button command="#undo-delete-command"></button>
@@ -142,8 +151,6 @@ found in the LICENSE file.
   <button command="#add-new-bookmark-command"></button>
   <button command="#new-folder-command"></button>
 </menu>
-
-<div id="drop-overlay"></div>
 
 <script src="js/main.js"></script>
 </body>

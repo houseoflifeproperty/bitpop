@@ -9,7 +9,7 @@
 #ifndef REMOTING_HOST_CAPTURE_SCHEDULER_H_
 #define REMOTING_HOST_CAPTURE_SCHEDULER_H_
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "remoting/base/running_average.h"
 
 namespace remoting {
@@ -19,14 +19,24 @@ class CaptureScheduler {
   CaptureScheduler();
   ~CaptureScheduler();
 
-  // Determine the time delay from current time to perform next capture.
+  // Returns the time to wait after initiating a capture before triggering
+  // the next.
   base::TimeDelta NextCaptureDelay();
 
-  // Record time spent on capturing and encoding.
+  // Records time spent on capturing and encoding.
   void RecordCaptureTime(base::TimeDelta capture_time);
   void RecordEncodeTime(base::TimeDelta encode_time);
 
+  // Sets minimum interval between frames.
+  void set_minimum_interval(base::TimeDelta minimum_interval) {
+    minimum_interval_ = minimum_interval;
+  }
+
+  // Overrides the number of processors for testing.
+  void SetNumOfProcessorsForTest(int num_of_processors);
+
  private:
+  base::TimeDelta minimum_interval_;
   int num_of_processors_;
   RunningAverage capture_time_;
   RunningAverage encode_time_;

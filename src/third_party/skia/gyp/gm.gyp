@@ -5,29 +5,77 @@
   ],
   'targets': [
     {
+      'target_name': 'gm_expectations',
+      'type': 'static_library',
+      'include_dirs' : [
+        '../src/utils/',
+      ],
+      'sources': [
+        '../gm/gm_expectations.h',
+        '../gm/gm_expectations.cpp',
+      ],
+      'dependencies': [
+        'skia_lib.gyp:skia_lib',
+        'jsoncpp.gyp:jsoncpp',
+      ],
+      'direct_dependent_settings': {
+        'include_dirs': [
+          '../gm/',
+        ],
+      },
+    },
+    {
       'target_name': 'gm',
       'type': 'executable',
       'include_dirs' : [
         '../src/core',
+        '../src/images',
+        '../src/effects',
         '../src/pipe/utils/',
+        '../src/utils/',
       ],
       'includes': [
         'gmslides.gypi',
       ],
       'sources': [
-        '../gm/gm.cpp',
         '../gm/gmmain.cpp',
         '../gm/system_preferences_default.cpp',
+
         '../src/pipe/utils/SamplePipeControllers.h',
         '../src/pipe/utils/SamplePipeControllers.cpp',
       ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
+        'flags.gyp:flags',
+        'gm.gyp:gm_expectations',
+        'jsoncpp.gyp:jsoncpp',
         'pdf.gyp:pdf',
       ],
       'conditions': [
+        ['skia_run_pdfviewer_in_gm or skia_poppler_enabled', {
+          'sources': [
+            '../src/utils/SkPDFRasterizer.cpp',
+          ],
+        }],
+        ['skia_run_pdfviewer_in_gm', {
+          'defines': [
+            'SK_BUILD_NATIVE_PDF_RENDERER',
+          ],
+          'include_dirs' : [
+            '../experimental/PdfViewer/inc',
+          ],
+          'dependencies': [
+            'pdfviewer_lib.gyp:pdfviewer_lib',
+          ],
+        }],
+        ['skia_poppler_enabled', {
+          'dependencies': [
+            'poppler.gyp:libpoppler-cpp-gpl',
+          ],
+          'defines': [
+            'SK_BUILD_POPPLER',
+          ],
+        }],
         ['skia_os == "mac"', {
           'sources!': [
             '../gm/system_preferences_default.cpp',
@@ -51,14 +99,11 @@
           'include_dirs': [
             '../src/gpu',
           ],
+          'dependencies': [
+            'gputest.gyp:skgputest',
+          ],
         }],
       ],
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

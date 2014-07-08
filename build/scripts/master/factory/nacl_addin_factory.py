@@ -42,10 +42,12 @@ class NativeClientAddInFactory(gclient_factory.GClientFactory):
                                             target_platform=target_platform)
 
 
-  def NativeClientAddInFactory(self, target='Release', clobber=True, tests=None,
-                             mode=None, slave_type='BuilderTester',
-                             options=None, compile_timeout=1200, build_url=None,
-                             factory_properties=None, official_release=False):
+  def NativeClientAddInFactory(self, target='Release', clobber=True,
+                               tests=None, mode=None,
+                               slave_type='BuilderTester', options=None,
+                               compile_timeout=1200, build_url=None,
+                               factory_properties=None,
+                               official_release=False):
     factory_properties = factory_properties or {}
     tests = tests or []
     # Create the spec for the solutions
@@ -69,6 +71,46 @@ class NativeClientAddInFactory(gclient_factory.GClientFactory):
         timeout=compile_timeout,
         description='Building NaCl AddIn',
         workdir='build/src/visual_studio/NativeClientVSAddIn',
+        haltOnFailure=True,
+        command=[python, 'buildbot_run.py'])
+
+    return factory
+
+
+class NativeClientGameFactory(NativeClientAddInFactory):
+  def __init__(self, build_dir, target_platform=None, use_supplement=False,
+             branch='trunk'):
+    NativeClientAddInFactory.__init__(self, build_dir, target_platform,
+                                      use_supplement, branch)
+
+  def NativeClientGameFactory(self, target='Release', clobber=True, tests=None,
+                              mode=None, slave_type='BuilderTester',
+                              options=None, compile_timeout=1200,
+                              build_url=None, factory_properties=None,
+                              official_release=False):
+    factory_properties = factory_properties or {}
+    tests = tests or []
+    # Create the spec for the solutions
+    gclient_spec = self.BuildGClientSpec(tests)
+    # Initialize the factory with the basic steps.
+    factory = self.BaseFactory(gclient_spec,
+                               official_release=official_release,
+                               factory_properties=factory_properties)
+
+    # Duplicated from commands.py.. since _python is private them
+    if self._target_platform == 'win32':
+      # Steps run using a separate copy of python.exe, so it can be killed at
+      # the start of a build. But the kill_processes (taskkill) step has to use
+      # the original python.exe, or it kills itself.
+      python = 'python_slave'
+    else:
+      python = 'python'
+
+    factory.addStep(chromium_step.AnnotatedCommand,
+        name='compile',
+        timeout=compile_timeout,
+        description='Building NaCl Game',
+        workdir='build/src/nacltoons',
         haltOnFailure=True,
         command=[python, 'buildbot_run.py'])
 

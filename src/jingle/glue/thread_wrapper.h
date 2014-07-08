@@ -9,7 +9,7 @@
 #include <map>
 
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/lock.h"
 #include "base/synchronization/waitable_event.h"
 #include "third_party/libjingle/source/talk/base/thread.h"
@@ -27,9 +27,8 @@ namespace jingle_glue {
 // - Using JingleThreadWrapper() constructor. In this case the creating code
 //   must pass a valid task runner for the current thread and also delete the
 //   wrapper later.
-class JingleThreadWrapper
-    : public MessageLoop::DestructionObserver,
-      public talk_base::Thread {
+class JingleThreadWrapper : public base::MessageLoop::DestructionObserver,
+                            public talk_base::Thread {
  public:
   // Create JingleThreadWrapper for the current thread if it hasn't been created
   // yet. The thread wrapper is destroyed automatically when the current
@@ -117,8 +116,8 @@ class JingleThreadWrapper
   std::list<PendingSend*> pending_send_messages_;
   base::WaitableEvent pending_send_event_;
 
-  base::WeakPtrFactory<JingleThreadWrapper> weak_ptr_factory_;
   base::WeakPtr<JingleThreadWrapper> weak_ptr_;
+  base::WeakPtrFactory<JingleThreadWrapper> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(JingleThreadWrapper);
 };

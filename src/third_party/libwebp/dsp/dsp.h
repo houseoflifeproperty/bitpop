@@ -1,8 +1,10 @@
 // Copyright 2011 Google Inc. All Rights Reserved.
 //
-// This code is licensed under the same terms as WebM:
-//  Software License Agreement:  http://www.webmproject.org/license/software/
-//  Additional IP Rights Grant:  http://www.webmproject.org/license/additional/
+// Use of this source code is governed by a BSD-style license
+// that can be found in the COPYING file in the root of the source
+// tree. An additional intellectual property rights grant can be found
+// in the file PATENTS. All contributing project authors may
+// be found in the AUTHORS file in the root of the source tree.
 // -----------------------------------------------------------------------------
 //
 //   Speed-critical functions.
@@ -14,14 +16,15 @@
 
 #include "../webp/types.h"
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 extern "C" {
 #endif
 
 //------------------------------------------------------------------------------
 // CPU detection
 
-#if defined(_MSC_VER) && (defined(_M_X64) || defined(_M_IX86))
+#if defined(_MSC_VER) && _MSC_VER > 1310 && \
+    (defined(_M_X64) || defined(_M_IX86))
 #define WEBP_MSC_SSE2  // Visual C++ SSE2 targets
 #endif
 
@@ -33,7 +36,8 @@ extern "C" {
 #define WEBP_ANDROID_NEON  // Android targets that might support NEON
 #endif
 
-#if defined(__ARM_NEON__) || defined(WEBP_ANDROID_NEON)
+#if (defined(__ARM_NEON__) && !defined(__aarch64__)) || \
+    defined(WEBP_ANDROID_NEON)
 #define WEBP_USE_NEON
 #endif
 
@@ -48,8 +52,6 @@ extern VP8CPUInfo VP8GetCPUInfo;
 
 //------------------------------------------------------------------------------
 // Encoding
-
-int VP8GetAlpha(const int histo[]);
 
 // Transforms
 // VP8Idct: Does one of two inverse transforms. If do_two is set, the transforms
@@ -85,10 +87,16 @@ typedef int (*VP8QuantizeBlock)(int16_t in[16], int16_t out[16],
                                 int n, const struct VP8Matrix* const mtx);
 extern VP8QuantizeBlock VP8EncQuantizeBlock;
 
-// Compute susceptibility based on DCT-coeff histograms:
-// the higher, the "easier" the macroblock is to compress.
-typedef int (*VP8CHisto)(const uint8_t* ref, const uint8_t* pred,
-                         int start_block, int end_block);
+// specific to 2nd transform:
+typedef int (*VP8QuantizeBlockWHT)(int16_t in[16], int16_t out[16],
+                                   const struct VP8Matrix* const mtx);
+extern VP8QuantizeBlockWHT VP8EncQuantizeBlockWHT;
+
+// Collect histogram for susceptibility calculation and accumulate in histo[].
+struct VP8Histogram;
+typedef void (*VP8CHisto)(const uint8_t* ref, const uint8_t* pred,
+                          int start_block, int end_block,
+                          struct VP8Histogram* const histo);
 extern const int VP8DspScan[16 + 4 + 4];
 extern VP8CHisto VP8CollectHistogram;
 
@@ -101,10 +109,11 @@ typedef void (*VP8DecIdct)(const int16_t* coeffs, uint8_t* dst);
 // when doing two transforms, coeffs is actually int16_t[2][16].
 typedef void (*VP8DecIdct2)(const int16_t* coeffs, uint8_t* dst, int do_two);
 extern VP8DecIdct2 VP8Transform;
+extern VP8DecIdct VP8TransformAC3;
 extern VP8DecIdct VP8TransformUV;
 extern VP8DecIdct VP8TransformDC;
 extern VP8DecIdct VP8TransformDCUV;
-extern void (*VP8TransformWHT)(const int16_t* in, int16_t* out);
+extern VP8WHT VP8TransformWHT;
 
 // *dst is the destination block, with stride BPS. Boundary samples are
 // assumed accessible when needed.
@@ -145,6 +154,8 @@ void VP8DspInit(void);
 
 #define FANCY_UPSAMPLING   // undefined to remove fancy upsampling support
 
+// Convert a pair of y/u/v lines together to the output rgb/a colorspace.
+// bottom_y can be NULL if only one line of output is needed (at top/bottom).
 typedef void (*WebPUpsampleLinePairFunc)(
     const uint8_t* top_y, const uint8_t* bottom_y,
     const uint8_t* top_u, const uint8_t* top_v,
@@ -158,6 +169,9 @@ extern WebPUpsampleLinePairFunc WebPUpsamplers[/* MODE_LAST */];
 
 // Initializes SSE2 version of the fancy upsamplers.
 void WebPInitUpsamplersSSE2(void);
+
+// NEON version
+void WebPInitUpsamplersNEON(void);
 
 #endif    // FANCY_UPSAMPLING
 
@@ -200,10 +214,11 @@ extern void (*WebPApplyAlphaMultiply4444)(
 void WebPInitPremultiply(void);
 
 void WebPInitPremultiplySSE2(void);   // should not be called directly.
+void WebPInitPremultiplyNEON(void);
 
 //------------------------------------------------------------------------------
 
-#if defined(__cplusplus) || defined(c_plusplus)
+#ifdef __cplusplus
 }    // extern "C"
 #endif
 

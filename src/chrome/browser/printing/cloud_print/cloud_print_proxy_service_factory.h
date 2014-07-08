@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class CloudPrintProxyService;
 class Profile;
@@ -15,7 +15,7 @@ class Profile;
 // Singleton that owns all CloudPrintProxyServices and associates them with
 // Profiles. Listens for the Profile's destruction notification and cleans up
 // the associated CloudPrintProxyService.
-class CloudPrintProxyServiceFactory : public ProfileKeyedServiceFactory {
+class CloudPrintProxyServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // Returns the CloudPrintProxyService for |profile|, creating if not yet
   // created.
@@ -29,9 +29,9 @@ class CloudPrintProxyServiceFactory : public ProfileKeyedServiceFactory {
   CloudPrintProxyServiceFactory();
   virtual ~CloudPrintProxyServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 };
 

@@ -5,19 +5,20 @@
 #ifndef CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_SERVICE_H_
 #define CHROME_BROWSER_SPELLCHECKER_SPELLCHECK_SERVICE_H_
 
-#include "base/gtest_prod_util.h"
 #include "base/compiler_specific.h"
+#include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "chrome/browser/spellchecker/feedback_sender.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_hunspell_dictionary.h"
 #include "chrome/common/spellcheck_common.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
-class Profile;
+class PrefService;
 class SpellCheckHostMetrics;
 
 namespace base {
@@ -26,14 +27,16 @@ class WaitableEvent;
 
 namespace content {
 class RenderProcessHost;
+class BrowserContext;
 }
 
 // Encapsulates the browser side spellcheck service. There is one of these per
 // profile and each is created by the SpellCheckServiceFactory.  The
-// SpellCheckService maintains any per-profile information about spellcheck.
-class SpellcheckService : public ProfileKeyedService,
+// SpellcheckService maintains any per-profile information about spellcheck.
+class SpellcheckService : public KeyedService,
                           public content::NotificationObserver,
-                          public SpellcheckCustomDictionary::Observer {
+                          public SpellcheckCustomDictionary::Observer,
+                          public SpellcheckHunspellDictionary::Observer {
  public:
   // Event types used for reporting the status of this class and its derived
   // classes to browser tests.
@@ -42,15 +45,22 @@ class SpellcheckService : public ProfileKeyedService,
     BDICT_CORRUPTED,
   };
 
-  explicit SpellcheckService(Profile* profile);
+  // Dictionary format used for loading an external dictionary.
+  enum DictionaryFormat {
+    DICT_HUNSPELL,
+    DICT_TEXT,
+    DICT_UNKNOWN,
+  };
+
+  explicit SpellcheckService(content::BrowserContext* context);
   virtual ~SpellcheckService();
 
   // This function computes a vector of strings which are to be displayed in
   // the context menu over a text area for changing spell check languages. It
   // returns the index of the current spell check language in the vector.
-  // TODO(port): this should take a vector of string16, but the implementation
-  // has some dependencies in l10n util that need porting first.
-  static int GetSpellCheckLanguages(Profile* profile,
+  // TODO(port): this should take a vector of base::string16, but the
+  // implementation has some dependencies in l10n util that need porting first.
+  static int GetSpellCheckLanguages(content::BrowserContext* context,
                                     std::vector<std::string>* languages);
 
   // Computes a vector of strings which are to be displayed in the context
@@ -70,10 +80,7 @@ class SpellcheckService : public ProfileKeyedService,
   // metrics. This should be called only if the metrics recording is active.
   void StartRecordingMetrics(bool spellcheck_enabled);
 
-  // Pass all renderers some basic initialization infomration.
-  void InitForAllRenderers();
-
-  // Pass the renderer some basic intialization information. Note that the
+  // Pass the renderer some basic initialization information. Note that the
   // renderer will not load Hunspell until it needs to.
   void InitForRenderer(content::RenderProcessHost* process);
 
@@ -84,6 +91,23 @@ class SpellcheckService : public ProfileKeyedService,
   // Returns the instance of the custom dictionary.
   SpellcheckCustomDictionary* GetCustomDictionary();
 
+  // Returns the instance of the Hunspell dictionary.
+  SpellcheckHunspellDictionary* GetHunspellDictionary();
+
+  // Returns the instance of the spelling service feedback sender.
+  spellcheck::FeedbackSender* GetFeedbackSender();
+
+  // Load a dictionary from a given path. Format specifies how the dictionary
+  // is stored. Return value is true if successful.
+  bool LoadExternalDictionary(std::string language,
+                              std::string locale,
+                              std::string path,
+                              DictionaryFormat format);
+
+  // Unload a dictionary. The path is given to identify the dictionary.
+  // Return value is true if successful.
+  bool UnloadExternalDictionary(std::string path);
+
   // NotificationProfile implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
@@ -91,8 +115,14 @@ class SpellcheckService : public ProfileKeyedService,
 
   // SpellcheckCustomDictionary::Observer implementation.
   virtual void OnCustomDictionaryLoaded() OVERRIDE;
-  virtual void OnCustomDictionaryWordAdded(const std::string& word) OVERRIDE;
-  virtual void OnCustomDictionaryWordRemoved(const std::string& word) OVERRIDE;
+  virtual void OnCustomDictionaryChanged(
+      const SpellcheckCustomDictionary::Change& dictionary_change) OVERRIDE;
+
+  // SpellcheckHunspellDictionary::Observer implementation.
+  virtual void OnHunspellDictionaryInitialized() OVERRIDE;
+  virtual void OnHunspellDictionaryDownloadBegin() OVERRIDE;
+  virtual void OnHunspellDictionaryDownloadSuccess() OVERRIDE;
+  virtual void OnHunspellDictionaryDownloadFailure() OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(SpellcheckServiceBrowserTest, DeleteCorruptedBDICT);
@@ -100,9 +130,11 @@ class SpellcheckService : public ProfileKeyedService,
   // Attaches an event so browser tests can listen the status events.
   static void AttachStatusEvent(base::WaitableEvent* status_event);
 
-  // Waits until a spellchecker updates its status. This function returns
-  // immediately when we do not set an event to |status_event_|.
-  static EventType WaitStatusEvent();
+  // Returns the status event type.
+  static EventType GetStatusEvent();
+
+  // Pass all renderers some basic initialization information.
+  void InitForAllRenderers();
 
   // Reacts to a change in user preferences on whether auto-spell-correct should
   // be enabled.
@@ -112,17 +144,26 @@ class SpellcheckService : public ProfileKeyedService,
   // spellchecking.
   void OnSpellCheckDictionaryChanged();
 
+  // Notification handler for changes to prefs::kSpellCheckUseSpellingService.
+  void OnUseSpellingServiceChanged();
+
+  // Enables the feedback sender if spelling server is available and enabled.
+  // Otherwise disables the feedback sender.
+  void UpdateFeedbackSenderState();
+
   PrefChangeRegistrar pref_change_registrar_;
   content::NotificationRegistrar registrar_;
 
-  // A pointer to the profile which this service refers to.
-  Profile* profile_;
+  // A pointer to the BrowserContext which this service refers to.
+  content::BrowserContext* context_;
 
   scoped_ptr<SpellCheckHostMetrics> metrics_;
 
   scoped_ptr<SpellcheckCustomDictionary> custom_dictionary_;
 
   scoped_ptr<SpellcheckHunspellDictionary> hunspell_dictionary_;
+
+  scoped_ptr<spellcheck::FeedbackSender> feedback_sender_;
 
   base::WeakPtrFactory<SpellcheckService> weak_ptr_factory_;
 

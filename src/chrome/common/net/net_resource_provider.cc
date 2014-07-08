@@ -6,15 +6,16 @@
 
 #include <string>
 
-#include "base/string_piece.h"
+#include "base/i18n/rtl.h"
+#include "base/strings/string_piece.h"
 #include "base/values.h"
-#include "chrome/common/jstemplate_builder.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/net_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/base/webui/jstemplate_builder.h"
 
 namespace {
 
@@ -25,7 +26,7 @@ namespace {
 // resource (via a StringPiece), instead of always copying resources.
 struct LazyDirectoryListerCacher {
   LazyDirectoryListerCacher() {
-    DictionaryValue value;
+    base::DictionaryValue value;
     value.SetString("header",
                     l10n_util::GetStringUTF16(IDS_DIRECTORY_LISTING_HEADER));
     value.SetString("parentDirText",
@@ -39,7 +40,8 @@ struct LazyDirectoryListerCacher {
     value.SetString("listingParsingErrorBoxText",
         l10n_util::GetStringFUTF16(IDS_DIRECTORY_LISTING_PARSING_ERROR_BOX_TEXT,
             l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)));
-    html_data = jstemplate_builder::GetI18nTemplateHtml(
+    value.SetString("textdirection", base::i18n::IsRTL() ? "rtl" : "ltr");
+    html_data = webui::GetI18nTemplateHtml(
         ResourceBundle::GetSharedInstance().GetRawDataResource(
             IDR_DIR_HEADER_HTML),
         &value);

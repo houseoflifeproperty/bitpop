@@ -32,6 +32,11 @@ function getLog()
   return "" + document.getElementById('status').innerHTML;
 }
 
+function unexpectedUpgradeNeededCallback()
+{
+  fail('unexpectedUpgradeNeededCallback');
+}
+
 function unexpectedAbortCallback()
 {
   fail('unexpectedAbortCallback');
@@ -55,6 +60,11 @@ function unexpectedErrorCallback()
 function unexpectedBlockedCallback()
 {
   fail('unexpectedBlockedCallback');
+}
+
+function unexpectedUpgradeNeededCallback()
+{
+  fail('unexpectedUpgradeNeededCallback');
 }
 
 function deleteAllObjectStores(db)
@@ -124,7 +134,7 @@ function shouldBeEqualToString(a, b)
 
 function indexedDBTest(upgradeCallback, optionalOpenCallback) {
   dbname = self.location.pathname.substring(
-      1 + self.location.pathname.lastIndexOf("/"));
+    1 + self.location.pathname.lastIndexOf("/"));
   var deleteRequest = indexedDB.deleteDatabase(dbname);
   deleteRequest.onerror = unexpectedErrorCallback;
   deleteRequest.onblocked = unexpectedBlockedCallback;
@@ -135,5 +145,11 @@ function indexedDBTest(upgradeCallback, optionalOpenCallback) {
     openRequest.onblocked = unexpectedBlockedCallback;
     if (optionalOpenCallback)
       openRequest.onsuccess = optionalOpenCallback;
+  };
+}
+
+if (typeof String.prototype.startsWith !== 'function') {
+  String.prototype.startsWith = function (str) {
+    return this.indexOf(str) === 0;
   };
 }

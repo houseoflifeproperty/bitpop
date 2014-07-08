@@ -4,12 +4,12 @@
 
 #include "chrome/browser/ui/cocoa/infobars/mock_confirm_infobar_delegate.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 const char MockConfirmInfoBarDelegate::kMessage[] = "MockConfirmInfoBarMessage";
 
 MockConfirmInfoBarDelegate::MockConfirmInfoBarDelegate(Owner* owner)
-    : ConfirmInfoBarDelegate(NULL),
+    : ConfirmInfoBarDelegate(),
       owner_(owner),
       closes_on_action_(true),
       icon_accessed_(false),
@@ -25,19 +25,19 @@ MockConfirmInfoBarDelegate::~MockConfirmInfoBarDelegate() {
     owner_->OnInfoBarDelegateClosed();
 }
 
-gfx::Image* MockConfirmInfoBarDelegate::GetIcon() const {
+int MockConfirmInfoBarDelegate::GetIconID() const {
   icon_accessed_ = true;
-  return NULL;
+  return kNoIconID;
 }
 
-string16 MockConfirmInfoBarDelegate::GetMessageText() const {
+base::string16 MockConfirmInfoBarDelegate::GetMessageText() const {
   message_text_accessed_ = true;
-  return ASCIIToUTF16(kMessage);
+  return base::ASCIIToUTF16(kMessage);
 }
 
-string16 MockConfirmInfoBarDelegate::GetButtonLabel(
+base::string16 MockConfirmInfoBarDelegate::GetButtonLabel(
     InfoBarButton button) const {
-  return ASCIIToUTF16((button == BUTTON_OK) ? "OK" : "Cancel");
+  return base::ASCIIToUTF16((button == BUTTON_OK) ? "OK" : "Cancel");
 }
 
 bool MockConfirmInfoBarDelegate::Accept() {
@@ -50,9 +50,9 @@ bool MockConfirmInfoBarDelegate::Cancel() {
   return closes_on_action_;
 }
 
-string16 MockConfirmInfoBarDelegate::GetLinkText() const {
+base::string16 MockConfirmInfoBarDelegate::GetLinkText() const {
   link_text_accessed_ = true;
-  return string16();
+  return base::string16();
 }
 
 bool MockConfirmInfoBarDelegate::LinkClicked(

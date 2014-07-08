@@ -9,26 +9,29 @@
 #include "base/compiler_specific.h"
 #include "base/format_macros.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/metrics/histogram.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "net/base/net_errors.h"
 #include "net/proxy/dhcp_proxy_script_fetcher.h"
 #include "net/proxy/dhcp_proxy_script_fetcher_factory.h"
 #include "net/proxy/proxy_script_fetcher.h"
+#include "net/url_request/url_request_context.h"
 
 namespace net {
 
 namespace {
 
-bool LooksLikePacScript(const string16& script) {
+bool LooksLikePacScript(const base::string16& script) {
   // Note: this is only an approximation! It may not always work correctly,
   // however it is very likely that legitimate scripts have this exact string,
   // since they must minimally define a function of this name. Conversely, a
   // file not containing the string is not likely to be a PAC script.
   //
   // An exact test would have to load the script in a javascript evaluator.
-  return script.find(ASCIIToUTF16("FindProxyForURL")) != string16::npos;
+  return script.find(base::ASCIIToUTF16("FindProxyForURL")) !=
+             base::string16::npos;
 }
 
 }
@@ -45,12 +48,15 @@ bool LooksLikePacScript(const string16& script) {
 //
 // For more details, also check out this comment:
 // http://code.google.com/p/chromium/issues/detail?id=18575#c20
-static const char kWpadUrl[] = "http://wpad/wpad.dat";
+namespace {
+const char kWpadUrl[] = "http://wpad/wpad.dat";
+const int kQuickCheckDelayMs = 1000;
+};
 
-Value* ProxyScriptDecider::PacSource::NetLogCallback(
+base::Value* ProxyScriptDecider::PacSource::NetLogCallback(
     const GURL* effective_pac_url,
     NetLog::LogLevel /* log_level */) const {
-  DictionaryValue* dict = new DictionaryValue();
+  base::DictionaryValue* dict = new base::DictionaryValue();
   std::string source;
   switch (type) {
     case PacSource::WPAD_DHCP:
@@ -81,7 +87,14 @@ ProxyScriptDecider::ProxyScriptDecider(
       next_state_(STATE_NONE),
       net_log_(BoundNetLog::Make(
           net_log, NetLog::SOURCE_PROXY_SCRIPT_DECIDER)),
-      fetch_pac_bytes_(false) {
+      fetch_pac_bytes_(false),
+      quick_check_enabled_(true) {
+  if (proxy_script_fetcher &&
+      proxy_script_fetcher->GetRequestContext() &&
+      proxy_script_fetcher->GetRequestContext()->host_resolver()) {
+      host_resolver_.reset(new SingleRequestHostResolver(
+          proxy_script_fetcher->GetRequestContext()->host_resolver()));
+  }
 }
 
 ProxyScriptDecider::~ProxyScriptDecider() {
@@ -106,6 +119,7 @@ int ProxyScriptDecider::Start(
     wait_delay_ = base::TimeDelta();
 
   pac_mandatory_ = config.pac_mandatory();
+  have_custom_pac_url_ = config.has_pac_url();
 
   pac_sources_ = BuildPacSourcesFallbackList(config);
   DCHECK(!pac_sources_.empty());
@@ -141,8 +155,8 @@ ProxyScriptDecider::PacSourceList ProxyScriptDecider::
     const ProxyConfig& config) const {
   PacSourceList pac_sources;
   if (config.auto_detect()) {
-    pac_sources.push_back(PacSource(PacSource::WPAD_DHCP, GURL()));
-    pac_sources.push_back(PacSource(PacSource::WPAD_DNS, GURL()));
+    pac_sources.push_back(PacSource(PacSource::WPAD_DHCP, GURL(kWpadUrl)));
+    pac_sources.push_back(PacSource(PacSource::WPAD_DNS, GURL(kWpadUrl)));
   }
   if (config.has_pac_url())
     pac_sources.push_back(PacSource(PacSource::CUSTOM, config.pac_url()));
@@ -171,6 +185,13 @@ int ProxyScriptDecider::DoLoop(int result) {
         break;
       case STATE_WAIT_COMPLETE:
         rv = DoWaitComplete(rv);
+        break;
+      case STATE_QUICK_CHECK:
+        DCHECK_EQ(OK, rv);
+        rv = DoQuickCheck();
+        break;
+      case STATE_QUICK_CHECK_COMPLETE:
+        rv = DoQuickCheckComplete(rv);
         break;
       case STATE_FETCH_PAC_SCRIPT:
         DCHECK_EQ(OK, rv);
@@ -221,8 +242,53 @@ int ProxyScriptDecider::DoWaitComplete(int result) {
     net_log_.EndEventWithNetErrorCode(NetLog::TYPE_PROXY_SCRIPT_DECIDER_WAIT,
                                       result);
   }
-  next_state_ = GetStartState();
+  if (quick_check_enabled_ && current_pac_source().type == PacSource::WPAD_DNS)
+    next_state_ = STATE_QUICK_CHECK;
+  else
+    next_state_ = GetStartState();
   return OK;
+}
+
+int ProxyScriptDecider::DoQuickCheck() {
+  DCHECK(quick_check_enabled_);
+  if (host_resolver_.get() == NULL) {
+    // If we have no resolver, skip QuickCheck altogether.
+    next_state_ = GetStartState();
+    return OK;
+  }
+
+  quick_check_start_time_ = base::Time::Now();
+  std::string host = current_pac_source().url.host();
+  HostResolver::RequestInfo reqinfo(HostPortPair(host, 80));
+  reqinfo.set_host_resolver_flags(HOST_RESOLVER_SYSTEM_ONLY);
+  CompletionCallback callback = base::Bind(
+      &ProxyScriptDecider::OnIOCompletion,
+      base::Unretained(this));
+
+  next_state_ = STATE_QUICK_CHECK_COMPLETE;
+  quick_check_timer_.Start(FROM_HERE,
+                           base::TimeDelta::FromMilliseconds(
+                              kQuickCheckDelayMs),
+                           base::Bind(callback, ERR_NAME_NOT_RESOLVED));
+
+  // We use HIGHEST here because proxy decision blocks doing any other requests.
+  return host_resolver_->Resolve(reqinfo, HIGHEST, &wpad_addresses_,
+                                 callback, net_log_);
+}
+
+int ProxyScriptDecider::DoQuickCheckComplete(int result) {
+  DCHECK(quick_check_enabled_);
+  base::TimeDelta delta = base::Time::Now() - quick_check_start_time_;
+  if (result == OK)
+    UMA_HISTOGRAM_TIMES("Net.WpadQuickCheckSuccess", delta);
+  else
+    UMA_HISTOGRAM_TIMES("Net.WpadQuickCheckFailure", delta);
+  host_resolver_->Cancel();
+  quick_check_timer_.Stop();
+  if (result != OK)
+    return TryToFallbackPacSource(result);
+  next_state_ = GetStartState();
+  return result;
 }
 
 int ProxyScriptDecider::DoFetchPacScript() {
@@ -347,8 +413,10 @@ int ProxyScriptDecider::TryToFallbackPacSource(int error) {
 
   net_log_.AddEvent(
       NetLog::TYPE_PROXY_SCRIPT_DECIDER_FALLING_BACK_TO_NEXT_PAC_SOURCE);
-
-  next_state_ = GetStartState();
+  if (quick_check_enabled_ && current_pac_source().type == PacSource::WPAD_DNS)
+    next_state_ = STATE_QUICK_CHECK;
+  else
+    next_state_ = GetStartState();
 
   return OK;
 }

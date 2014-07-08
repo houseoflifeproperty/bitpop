@@ -7,8 +7,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/scoped_com_initializer.h"
-#include "base/utf_string_conversions.h"
 #include "media/audio/audio_manager.h"
 #include "media/audio/win/audio_device_listener_win.h"
 #include "media/audio/win/core_audio_util_win.h"
@@ -19,9 +19,9 @@ using base::win::ScopedCOMInitializer;
 
 namespace media {
 
-static const char* kNoDevice = "";
-static const char* kFirstTestDevice = "test_device_0";
-static const char* kSecondTestDevice = "test_device_1";
+static const char kNoDevice[] = "";
+static const char kFirstTestDevice[] = "test_device_0";
+static const char kSecondTestDevice[] = "test_device_1";
 
 class AudioDeviceListenerWinTest : public testing::Test {
  public:
@@ -47,7 +47,7 @@ class AudioDeviceListenerWinTest : public testing::Test {
   bool SimulateDefaultOutputDeviceChange(const char* new_device_id) {
     return output_device_listener_->OnDefaultDeviceChanged(
         static_cast<EDataFlow>(eConsole), static_cast<ERole>(eRender),
-        ASCIIToWide(new_device_id).c_str()) == S_OK;
+        base::ASCIIToWide(new_device_id).c_str()) == S_OK;
   }
 
   void SetOutputDeviceId(std::string new_device_id) {

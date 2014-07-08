@@ -13,7 +13,7 @@
 @interface BookmarkEditorController : BookmarkEditorBaseController {
  @private
   const BookmarkNode* node_;  // weak; owned by the model
-  scoped_nsobject<NSString> initialUrl_;
+  base::scoped_nsobject<NSString> initialUrl_;
   NSString* displayURL_;  // Bound to a text field in the dialog.
   IBOutlet NSTextField* urlField_;
   IBOutlet NSTextField* nameTextField_;
@@ -26,7 +26,7 @@
                     parent:(const BookmarkNode*)parent
                       node:(const BookmarkNode*)node
                        url:(const GURL&)url
-                     title:(const string16&)title
+                     title:(const base::string16&)title
              configuration:(BookmarkEditor::Configuration)configuration;
 
 @end

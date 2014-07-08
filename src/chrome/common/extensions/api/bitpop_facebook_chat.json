@@ -1,7 +1,11 @@
 [
   {
     "namespace": "bitpop.facebookChat",
+    "compiler_options": {
+      "implemented_in": "chrome/browser/extensions/api/bitpop_facebook_chat/bitpop_facebook_chat_api.h"
+    },
     "nodoc": true,
+    "description": "Apis related to facebook chat integration in BitPop browser",
     "functions": [
       {
         "name": "setFriendsSidebarVisible",

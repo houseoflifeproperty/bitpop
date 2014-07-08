@@ -6,13 +6,14 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/test/base/ui_test_utils.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -27,28 +28,25 @@ WebUITestHandler::WebUITestHandler()
       is_waiting_(false) {
 }
 
-void WebUITestHandler::PreloadJavaScript(const string16& js_text,
+void WebUITestHandler::PreloadJavaScript(const base::string16& js_text,
                                          RenderViewHost* preload_host) {
   DCHECK(preload_host);
   preload_host->Send(new ChromeViewMsg_WebUIJavaScript(
-      preload_host->GetRoutingID(), string16(), js_text, 0,
-      false));
+      preload_host->GetRoutingID(), js_text));
 }
 
-void WebUITestHandler::RunJavaScript(const string16& js_text) {
-  web_ui()->GetWebContents()->GetRenderViewHost()->ExecuteJavascriptInWebFrame(
-      string16(), js_text);
+void WebUITestHandler::RunJavaScript(const base::string16& js_text) {
+  web_ui()->GetWebContents()->GetMainFrame()->ExecuteJavaScript(js_text);
 }
 
-bool WebUITestHandler::RunJavaScriptTestWithResult(const string16& js_text) {
+bool WebUITestHandler::RunJavaScriptTestWithResult(
+    const base::string16& js_text) {
   test_succeeded_ = false;
   run_test_succeeded_ = false;
-  RenderViewHost* rvh = web_ui()->GetWebContents()->GetRenderViewHost();
-  content::NotificationRegistrar notification_registrar;
-  notification_registrar.Add(
-      this, content::NOTIFICATION_EXECUTE_JAVASCRIPT_RESULT,
-      content::Source<RenderViewHost>(rvh));
-  rvh->ExecuteJavascriptInWebFrameNotifyResult(string16(), js_text);
+  content::RenderFrameHost* frame = web_ui()->GetWebContents()->GetMainFrame();
+  frame->ExecuteJavaScript(js_text,
+                           base::Bind(&WebUITestHandler::JavaScriptComplete,
+                                      base::Unretained(this)));
   return WaitForResult();
 }
 
@@ -57,11 +55,11 @@ void WebUITestHandler::RegisterMessages() {
       base::Bind(&WebUITestHandler::HandleTestResult, base::Unretained(this)));
 }
 
-void WebUITestHandler::HandleTestResult(const ListValue* test_result) {
+void WebUITestHandler::HandleTestResult(const base::ListValue* test_result) {
   // Quit the message loop if |is_waiting_| so waiting process can get result or
   // error. To ensure this gets done, do this before ASSERT* calls.
   if (is_waiting_)
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
 
   SCOPED_TRACE("WebUITestHandler::HandleTestResult");
 
@@ -77,24 +75,19 @@ void WebUITestHandler::HandleTestResult(const ListValue* test_result) {
   }
 }
 
-void WebUITestHandler::Observe(int type,
-                               const content::NotificationSource& source,
-                               const content::NotificationDetails& details) {
+void WebUITestHandler::JavaScriptComplete(const base::Value* result) {
   // Quit the message loop if |is_waiting_| so waiting process can get result or
   // error. To ensure this gets done, do this before ASSERT* calls.
   if (is_waiting_)
-    MessageLoopForUI::current()->Quit();
+    base::MessageLoopForUI::current()->Quit();
 
-  ASSERT_EQ(content::NOTIFICATION_EXECUTE_JAVASCRIPT_RESULT, type);
-
-  SCOPED_TRACE("WebUITestHandler::Observe");
+  SCOPED_TRACE("WebUITestHandler::JavaScriptComplete");
 
   EXPECT_FALSE(run_test_done_);
   run_test_done_ = true;
   run_test_succeeded_ = false;
 
-  Value* value = content::Details<std::pair<int, Value*> >(details)->second;
-  ASSERT_TRUE(value->GetAsBoolean(&run_test_succeeded_));
+  ASSERT_TRUE(result->GetAsBoolean(&run_test_succeeded_));
 }
 
 bool WebUITestHandler::WaitForResult() {

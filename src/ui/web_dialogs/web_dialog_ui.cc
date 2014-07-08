@@ -8,7 +8,6 @@
 #include "base/bind_helpers.h"
 #include "base/lazy_instance.h"
 #include "base/values.h"
-#include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
@@ -80,7 +79,7 @@ WebDialogDelegate* WebDialogUI::GetDelegate(
 void WebDialogUI::RenderViewCreated(RenderViewHost* render_view_host) {
   // Hook up the javascript function calls, also known as chrome.send("foo")
   // calls in the HTML, to the actual C++ functions.
-  web_ui()->RegisterMessageCallback("DialogClose",
+  web_ui()->RegisterMessageCallback("dialogClose",
       base::Bind(&WebDialogUI::OnDialogClosed, base::Unretained(this)));
 
   // Pass the arguments to the renderer supplied by the delegate.
@@ -103,14 +102,14 @@ void WebDialogUI::RenderViewCreated(RenderViewHost* render_view_host) {
     delegate->OnDialogShown(web_ui(), render_view_host);
 }
 
-void WebDialogUI::OnDialogClosed(const ListValue* args) {
+void WebDialogUI::OnDialogClosed(const base::ListValue* args) {
   WebDialogDelegate* delegate = GetDelegate(web_ui()->GetWebContents());
   if (delegate) {
     std::string json_retval;
     if (args && !args->empty() && !args->GetString(0, &json_retval))
       NOTREACHED() << "Could not read JSON argument";
 
-    delegate->OnDialogClosed(json_retval);
+    delegate->OnDialogCloseFromWebUI(json_retval);
   }
 }
 

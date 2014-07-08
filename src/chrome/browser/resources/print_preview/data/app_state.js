@@ -11,74 +11,44 @@ cr.define('print_preview', function() {
    */
   function AppState() {
     /**
-     * ID of the selected destination.
-     * @type {?string}
+     * Internal representation of application state.
+     * @type {Object.<string: Object>}
      * @private
      */
-    this.selectedDestinationId_ = null;
+    this.state_ = {};
+    this.state_[AppState.Field.VERSION] = AppState.VERSION_;
+    this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED] = true;
 
     /**
-     * Whether the selected destination is a local destination.
-     * @type {?boolean}
-     * @private
-     */
-    this.isSelectedDestinationLocal_ = null;
-
-    /**
-     * Whether the GCP promotion has been dismissed.
+     * Whether the app state has been initialized. The app state will ignore all
+     * writes until it has been initialized.
      * @type {boolean}
      * @private
      */
-    this.isGcpPromoDismissed_ = true;
+    this.isInitialized_ = false;
+  };
 
-    /**
-     * Margins type.
-     * @type {print_preview.ticket_items.MarginsType.Value}
-     * @private
-     */
-    this.marginsType_ = null;
-
-    /**
-     * Custom margins.
-     * @type {print_preview.Margins}
-     * @private
-     */
-    this.customMargins_ = null;
-
-    /**
-     * Whether the color option is enabled.
-     * @type {?boolean}
-     * @private
-     */
-    this.isColorEnabled_ = null;
-
-    /**
-     * Whether duplex printing is enabled.
-     * @type {?boolean}
-     * @private
-     */
-    this.isDuplexEnabled_ = null;
-
-    /**
-     * Whether the header-footer option is enabled.
-     * @type {?boolean}
-     * @private
-     */
-    this.isHeaderFooterEnabled_ = null;
-
-    /**
-     * Whether landscape page orientation is selected.
-     * @type {?boolean}
-     * @private
-     */
-    this.isLandscapeEnabled_ = null;
-
-    /**
-     * Whether printing collation is enabled.
-     * @type {?boolean}
-     * @private
-     */
-    this.isCollateEnabled_ = null;
+  /**
+   * Enumeration of field names for serialized app state.
+   * @enum {string}
+   */
+  AppState.Field = {
+    VERSION: 'version',
+    SELECTED_DESTINATION_ID: 'selectedDestinationId',
+    SELECTED_DESTINATION_ACCOUNT: 'selectedDestinationAccount',
+    SELECTED_DESTINATION_ORIGIN: 'selectedDestinationOrigin',
+    SELECTED_DESTINATION_CAPABILITIES: 'selectedDestinationCapabilities',
+    SELECTED_DESTINATION_NAME: 'selectedDestinationName',
+    IS_GCP_PROMO_DISMISSED: 'isGcpPromoDismissed',
+    MEDIA_SIZE: 'mediaSize',
+    MARGINS_TYPE: 'marginsType',
+    CUSTOM_MARGINS: 'customMargins',
+    IS_COLOR_ENABLED: 'isColorEnabled',
+    IS_DUPLEX_ENABLED: 'isDuplexEnabled',
+    IS_HEADER_FOOTER_ENABLED: 'isHeaderFooterEnabled',
+    IS_LANDSCAPE_ENABLED: 'isLandscapeEnabled',
+    IS_COLLATE_ENABLED: 'isCollateEnabled',
+    IS_CSS_BACKGROUND_ENABLED: 'isCssBackgroundEnabled'
   };
 
   /**
@@ -91,25 +61,6 @@ cr.define('print_preview', function() {
   AppState.VERSION_ = 2;
 
   /**
-   * Enumeration of field names for serialized app state.
-   * @enum {string}
-   * @private
-   */
-  AppState.Field_ = {
-    VERSION: 'version',
-    SELECTED_DESTINATION_ID: 'selectedDestinationId',
-    IS_SELECTED_DESTINATION_LOCAL: 'isSelectedDestinationLocal',
-    IS_GCP_PROMO_DISMISSED: 'isGcpPromoDismissed',
-    MARGINS_TYPE: 'marginsType',
-    CUSTOM_MARGINS: 'customMargins',
-    IS_COLOR_ENABLED: 'isColorEnabled',
-    IS_DUPLEX_ENABLED: 'isDuplexEnabled',
-    IS_HEADER_FOOTER_ENABLED: 'isHeaderFooterEnabled',
-    IS_LANDSCAPE_ENABLED: 'isLandscapeEnabled',
-    IS_COLLATE_ENABLED: 'isCollateEnabled'
-  };
-
-  /**
    * Name of C++ layer function to persist app state.
    * @type {string}
    * @const
@@ -120,52 +71,54 @@ cr.define('print_preview', function() {
   AppState.prototype = {
     /** @return {?string} ID of the selected destination. */
     get selectedDestinationId() {
-      return this.selectedDestinationId_;
+      return this.state_[AppState.Field.SELECTED_DESTINATION_ID];
     },
 
-    /** @return {?boolean} Whether the selected destination is local. */
-    get isSelectedDestinationLocal() {
-      return this.isSelectedDestinationLocal_;
+    /** @return {?string} Account the selected destination is registered for. */
+    get selectedDestinationAccount() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_ACCOUNT];
+    },
+
+    /** @return {?string} Origin of the selected destination. */
+    get selectedDestinationOrigin() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN];
+    },
+
+    /** @return {?print_preview.Cdd} CDD of the selected destination. */
+    get selectedDestinationCapabilities() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_CAPABILITIES];
+    },
+
+    /** @return {?string} Name of the selected destination. */
+    get selectedDestinationName() {
+      return this.state_[AppState.Field.SELECTED_DESTINATION_NAME];
     },
 
     /** @return {boolean} Whether the GCP promotion has been dismissed. */
     get isGcpPromoDismissed() {
-      return this.isGcpPromoDismissed_;
+      return this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED];
     },
 
-    /** @return {print_preview.ticket_items.MarginsType.Value} Margins type. */
-    get marginsType() {
-      return this.marginsType_;
+    /**
+     * @param {!print_preview.AppState.Field} field App state field to check if
+     *     set.
+     * @return {boolean} Whether a field has been set in the app state.
+     */
+    hasField: function(field) {
+      return this.state_.hasOwnProperty(field);
     },
 
-    /** @return {print_preview.Margins} Custom margins. */
-    get customMargins() {
-      return this.customMargins_;
-    },
-
-    /** @return {?boolean} Whether the color option is enabled. */
-    get isColorEnabled() {
-      return this.isColorEnabled_;
-    },
-
-    /** @return {?boolean} Whether duplex printing is enabled. */
-    get isDuplexEnabled() {
-      return this.isDuplexEnabled_;
-    },
-
-    /** @return {?boolean} Whether the header-footer option is enabled. */
-    get isHeaderFooterEnabled() {
-      return this.isHeaderFooterEnabled_;
-    },
-
-    /** @return {?boolean} Whether landscape page orientation is selected. */
-    get isLandscapeEnabled() {
-      return this.isLandscapeEnabled_;
-    },
-
-    /** @return {?boolean} Whether printing collation is enabled. */
-    get isCollateEnabled() {
-      return this.isCollateEnabled_;
+    /**
+     * @param {!print_preview.AppState.Field} field App state field to get.
+     * @return {Object} Value of the app state field.
+     */
+    getField: function(field) {
+      if (field == AppState.Field.CUSTOM_MARGINS) {
+        return this.state_[field] ?
+            print_preview.Margins.parse(this.state_[field]) : null;
+      } else {
+        return this.state_[field];
+      }
     },
 
     /**
@@ -173,50 +126,52 @@ cr.define('print_preview', function() {
      * layer.
      * @param {?string} serializedAppStateStr Serialized string representation
      *     of the app state.
+     * @param {?string} systemDefaultDestinationId ID of the system default
+     *     destination.
      */
-    init: function(serializedAppStateStr) {
-      if (!serializedAppStateStr) {
+    init: function(serializedAppStateStr, systemDefaultDestinationId) {
+      if (serializedAppStateStr) {
+        var state = JSON.parse(serializedAppStateStr);
+        if (state[AppState.Field.VERSION] == AppState.VERSION_) {
+          this.state_ = state;
+        }
+      } else {
         // Set some state defaults.
-        this.isGcpPromoDismissed_ = false;
-        return;
+        this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED] = false;
       }
+      // Default to system destination, if no destination was selected.
+      if (!this.state_[AppState.Field.SELECTED_DESTINATION_ID] ||
+          !this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN]) {
+        if (systemDefaultDestinationId) {
+          this.state_[AppState.Field.SELECTED_DESTINATION_ID] =
+              systemDefaultDestinationId;
+          this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN] =
+              print_preview.Destination.Origin.LOCAL;
+        }
+      }
+    },
 
-      var state = JSON.parse(serializedAppStateStr);
-      if (state[AppState.Field_.VERSION] == 2) {
-        this.selectedDestinationId_ =
-            state[AppState.Field_.SELECTED_DESTINATION_ID] || null;
-        if (state.hasOwnProperty(
-                AppState.Field_.IS_SELECTED_DESTINATION_LOCAL)) {
-          this.isSelectedDestinationLocal_ =
-              state[AppState.Field_.IS_SELECTED_DESTINATION_LOCAL];
-        }
-        this.isGcpPromoDismissed_ =
-            state[AppState.Field_.IS_GCP_PROMO_DISMISSED] || false;
-        if (state.hasOwnProperty(AppState.Field_.MARGINS_TYPE)) {
-          this.marginsType_ = state[AppState.Field_.MARGINS_TYPE];
-        }
-        if (state[AppState.Field_.CUSTOM_MARGINS]) {
-          this.customMargins_ = print_preview.Margins.parse(
-              state[AppState.Field_.CUSTOM_MARGINS]);
-        }
-        if (state.hasOwnProperty(AppState.Field_.IS_COLOR_ENABLED)) {
-          this.isColorEnabled_ = state[AppState.Field_.IS_COLOR_ENABLED];
-        }
-        if (state.hasOwnProperty(AppState.Field_.IS_DUPLEX_ENABLED)) {
-          this.isDuplexEnabled_ = state[AppState.Field_.IS_DUPLEX_ENABLED];
-        }
-        if (state.hasOwnProperty(AppState.Field_.IS_HEADER_FOOTER_ENABLED)) {
-          this.isHeaderFooterEnabled_ =
-              state[AppState.Field_.IS_HEADER_FOOTER_ENABLED];
-        }
-        if (state.hasOwnProperty(AppState.Field_.IS_LANDSCAPE_ENABLED)) {
-          this.isLandscapeEnabled_ =
-              state[AppState.Field_.IS_LANDSCAPE_ENABLED];
-        }
-        if (state.hasOwnProperty(AppState.Field_.IS_COLLATE_ENABLED)) {
-          this.isCollateEnabled_ = state[AppState.Field_.IS_COLLATE_ENABLED];
-        }
+    /**
+     * Sets to initialized state. Now object will accept persist requests.
+     */
+    setInitialized: function() {
+      this.isInitialized_ = true;
+    },
+
+    /**
+     * Persists the given value for the given field.
+     * @param {!print_preview.AppState.Field} field Field to persist.
+     * @param {Object} value Value of field to persist.
+     */
+    persistField: function(field, value) {
+      if (!this.isInitialized_)
+        return;
+      if (field == AppState.Field.CUSTOM_MARGINS) {
+        this.state_[field] = value ? value.serialize() : null;
+      } else {
+        this.state_[field] = value;
       }
+      this.persist_();
     },
 
     /**
@@ -224,82 +179,26 @@ cr.define('print_preview', function() {
      * @param {!print_preview.Destination} dest Destination to persist.
      */
     persistSelectedDestination: function(dest) {
-      this.selectedDestinationId_ = dest.id;
-      this.isSelectedDestinationLocal_ = dest.isLocal;
-      this.persist_();
-    },
-
-   /**
-    * Persists whether the GCP promotion has been dismissed.
-    * @param {boolean} isGcpPromoDismissed Whether the GCP promotion has been
-    *     dismissed.
-    */
-   persistIsGcpPromoDismissed: function(isGcpPromoDismissed) {
-     this.isGcpPromoDismissed_ = isGcpPromoDismissed;
-     this.persist_();
-   },
-
-    /**
-     * Persists the margins type.
-     * @param {print_preview.ticket_items.MarginsType.Value} marginsType Margins
-     *     type.
-     */
-    persistMarginsType: function(marginsType) {
-      this.marginsType_ = marginsType;
+      if (!this.isInitialized_)
+        return;
+      this.state_[AppState.Field.SELECTED_DESTINATION_ID] = dest.id;
+      this.state_[AppState.Field.SELECTED_DESTINATION_ACCOUNT] = dest.account;
+      this.state_[AppState.Field.SELECTED_DESTINATION_ORIGIN] = dest.origin;
+      this.state_[AppState.Field.SELECTED_DESTINATION_CAPABILITIES] =
+          dest.capabilities;
+      this.state_[AppState.Field.SELECTED_DESTINATION_NAME] = dest.displayName;
       this.persist_();
     },
 
     /**
-     * Persists custom margins.
-     * @param {print_preview.Margins} customMargins Custom margins.
+     * Persists whether the GCP promotion has been dismissed.
+     * @param {boolean} isGcpPromoDismissed Whether the GCP promotion has been
+     *     dismissed.
      */
-    persistCustomMargins: function(customMargins) {
-      this.customMargins_ = customMargins;
-      this.persist_();
-    },
-
-    /**
-     * Persists whether color printing is enabled.
-     * @param {?boolean} isColorEnabled Whether color printing is enabled.
-     */
-    persistIsColorEnabled: function(isColorEnabled) {
-      this.isColorEnabled_ = isColorEnabled;
-      this.persist_();
-    },
-
-    /**
-     * Persists whether duplexing is enabled.
-     * @param {?boolean} isDuplexEnabled Whether duplex printing is enabled.
-     */
-    persistIsDuplexEnabled: function(isDuplexEnabled) {
-      this.isDuplexEnabled_ = isDuplexEnabled;
-      this.persist_();
-    },
-
-    /**
-     * Persists whether header-footer is enabled.
-     * @param {?boolean} Whether header-footer is enabled.
-     */
-    persistIsHeaderFooterEnabled: function(isHeaderFooterEnabled) {
-      this.isHeaderFooterEnabled_ = isHeaderFooterEnabled;
-      this.persist_();
-    },
-
-    /**
-     * Persists whether landscape printing is enabled.
-     * @param {?boolean} isLandscapeEnabled landscape printing is enabled.
-     */
-    persistIsLandscapeEnabled: function(isLandscapeEnabled) {
-      this.isLandscapeEnabled_ = isLandscapeEnabled;
-      this.persist_();
-    },
-
-    /**
-     * Persists whether printing collation is enabled.
-     * @param {?boolean} isCollateEnabled Whether printing collation is enabled.
-     */
-    persistIsCollateEnabled: function(isCollateEnabled) {
-      this.isCollateEnabled_ = isCollateEnabled;
+    persistIsGcpPromoDismissed: function(isGcpPromoDismissed) {
+      if (!this.isInitialized_)
+        return;
+      this.state_[AppState.Field.IS_GCP_PROMO_DISMISSED] = isGcpPromoDismissed;
       this.persist_();
     },
 
@@ -308,24 +207,8 @@ cr.define('print_preview', function() {
      * @private
      */
     persist_: function() {
-      var obj = {};
-      obj[AppState.Field_.VERSION] = AppState.VERSION_;
-      obj[AppState.Field_.SELECTED_DESTINATION_ID] =
-          this.selectedDestinationId_;
-      obj[AppState.Field_.IS_SELECTED_DESTINATION_LOCAL] =
-          this.isSelectedDestinationLocal_;
-      obj[AppState.Field_.IS_GCP_PROMO_DISMISSED] = this.isGcpPromoDismissed_;
-      obj[AppState.Field_.MARGINS_TYPE] = this.marginsType_;
-      if (this.customMargins_) {
-        obj[AppState.Field_.CUSTOM_MARGINS] = this.customMargins_.serialize();
-      }
-      obj[AppState.Field_.IS_COLOR_ENABLED] = this.isColorEnabled_;
-      obj[AppState.Field_.IS_DUPLEX_ENABLED] = this.isDuplexEnabled_;
-      obj[AppState.Field_.IS_HEADER_FOOTER_ENABLED] =
-          this.isHeaderFooterEnabled_;
-      obj[AppState.Field_.IS_LANDSCAPE_ENABLED] = this.isLandscapeEnabled_;
-      obj[AppState.Field_.IS_COLLATE_ENABLED] = this.isCollateEnabled_;
-      chrome.send(AppState.NATIVE_FUNCTION_NAME_, [JSON.stringify(obj)]);
+      chrome.send(AppState.NATIVE_FUNCTION_NAME_,
+                  [JSON.stringify(this.state_)]);
     }
   };
 

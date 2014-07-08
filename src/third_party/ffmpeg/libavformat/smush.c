@@ -32,8 +32,10 @@ typedef struct {
 
 static int smush_read_probe(AVProbeData *p)
 {
-    if ((AV_RL32(p->buf) == MKTAG('S', 'A', 'N', 'M') ||
-         AV_RL32(p->buf) == MKTAG('A', 'N', 'I', 'M'))) {
+    if (((AV_RL32(p->buf) == MKTAG('S', 'A', 'N', 'M') &&
+          AV_RL32(p->buf + 8) == MKTAG('S', 'H', 'D', 'R')) ||
+         (AV_RL32(p->buf) == MKTAG('A', 'N', 'I', 'M') &&
+          AV_RL32(p->buf + 8) == MKTAG('A', 'H', 'D', 'R')))) {
         return AVPROBE_SCORE_MAX;
     }
 
@@ -143,11 +145,9 @@ static int smush_read_header(AVFormatContext *ctx)
     avpriv_set_pts_info(vst, 64, 66667, 1000000);
 
     if (!smush->version) {
-        vst->codec->extradata = av_malloc(1024 + 2 + FF_INPUT_BUFFER_PADDING_SIZE);
-        if (!vst->codec->extradata)
+        if (ff_alloc_extradata(vst->codec, 1024 + 2))
             return AVERROR(ENOMEM);
 
-        vst->codec->extradata_size = 1024 + 2;
         AV_WL16(vst->codec->extradata, subversion);
         for (i = 0; i < 256; i++)
             AV_WL32(vst->codec->extradata + 2 + i * 4, palette[i]);
@@ -209,7 +209,7 @@ static int smush_read_packet(AVFormatContext *ctx, AVPacket *pkt)
         case MKBETAG('W', 'a', 'v', 'e'):
             if (size < 13)
                 return AVERROR_INVALIDDATA;
-            if (av_get_packet(pb, pkt, size) < 0)
+            if (av_get_packet(pb, pkt, size) < 13)
                 return AVERROR(EIO);
 
             pkt->stream_index = smush->audio_stream_index;

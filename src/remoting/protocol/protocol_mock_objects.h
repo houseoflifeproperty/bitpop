@@ -5,8 +5,12 @@
 #ifndef REMOTING_PROTOCOL_PROTOCOL_MOCK_OBJECTS_H_
 #define REMOTING_PROTOCOL_PROTOCOL_MOCK_OBJECTS_H_
 
+#include <map>
 #include <string>
 
+#include "base/location.h"
+#include "base/single_thread_task_runner.h"
+#include "base/values.h"
 #include "net/base/ip_endpoint.h"
 #include "remoting/proto/internal.pb.h"
 #include "remoting/proto/video.pb.h"
@@ -16,6 +20,7 @@
 #include "remoting/protocol/connection_to_client.h"
 #include "remoting/protocol/host_stub.h"
 #include "remoting/protocol/input_stub.h"
+#include "remoting/protocol/pairing_registry.h"
 #include "remoting/protocol/session.h"
 #include "remoting/protocol/session_manager.h"
 #include "remoting/protocol/transport.h"
@@ -47,6 +52,8 @@ class MockConnectionToClientEventHandler :
   MockConnectionToClientEventHandler();
   virtual ~MockConnectionToClientEventHandler();
 
+  MOCK_METHOD1(OnConnectionAuthenticating,
+               void(ConnectionToClient* connection));
   MOCK_METHOD1(OnConnectionAuthenticated, void(ConnectionToClient* connection));
   MOCK_METHOD1(OnConnectionChannelsConnected,
                void(ConnectionToClient* connection));
@@ -91,6 +98,7 @@ class MockInputStub : public InputStub {
   virtual ~MockInputStub();
 
   MOCK_METHOD1(InjectKeyEvent, void(const KeyEvent& event));
+  MOCK_METHOD1(InjectTextEvent, void(const TextEvent& event));
   MOCK_METHOD1(InjectMouseEvent, void(const MouseEvent& event));
 
  private:
@@ -102,12 +110,14 @@ class MockHostStub : public HostStub {
   MockHostStub();
   virtual ~MockHostStub();
 
-  MOCK_METHOD1(NotifyClientDimensions,
-               void(const ClientDimensions& dimensions));
-  MOCK_METHOD1(ControlVideo,
-               void(const VideoControl& video_control));
-  MOCK_METHOD1(ControlAudio,
-               void(const AudioControl& audio_control));
+  MOCK_METHOD1(NotifyClientResolution,
+               void(const ClientResolution& resolution));
+  MOCK_METHOD1(ControlVideo, void(const VideoControl& video_control));
+  MOCK_METHOD1(ControlAudio, void(const AudioControl& audio_control));
+  MOCK_METHOD1(SetCapabilities, void(const Capabilities& capabilities));
+  MOCK_METHOD1(RequestPairing,
+               void(const PairingRequest& pairing_request));
+  MOCK_METHOD1(DeliverClientMessage, void(const ExtensionMessage& message));
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockHostStub);
@@ -117,6 +127,12 @@ class MockClientStub : public ClientStub {
  public:
   MockClientStub();
   virtual ~MockClientStub();
+
+  // ClientStub mock implementation.
+  MOCK_METHOD1(SetCapabilities, void(const Capabilities& capabilities));
+  MOCK_METHOD1(SetPairingResponse,
+               void(const PairingResponse& pairing_response));
+  MOCK_METHOD1(DeliverHostMessage, void(const ExtensionMessage& message));
 
   // ClipboardStub mock implementation.
   MOCK_METHOD1(InjectClipboardEvent, void(const ClipboardEvent& event));
@@ -180,21 +196,55 @@ class MockSessionManager : public SessionManager {
       Authenticator* authenticator,
       CandidateSessionConfig* config));
   MOCK_METHOD0(Close, void());
-  MOCK_METHOD1(set_authenticator_factory_ptr, void(AuthenticatorFactory*));
+  MOCK_METHOD1(set_authenticator_factory_ptr,
+               void(AuthenticatorFactory* factory));
   virtual scoped_ptr<Session> Connect(
       const std::string& host_jid,
       scoped_ptr<Authenticator> authenticator,
       scoped_ptr<CandidateSessionConfig> config) {
     return scoped_ptr<Session>(ConnectPtr(
         host_jid, authenticator.get(), config.get()));
-  };
+  }
   virtual void set_authenticator_factory(
       scoped_ptr<AuthenticatorFactory> authenticator_factory) {
     set_authenticator_factory_ptr(authenticator_factory.release());
-  };
+  }
 
  private:
   DISALLOW_COPY_AND_ASSIGN(MockSessionManager);
+};
+
+// Simple delegate that caches information on paired clients in memory.
+class MockPairingRegistryDelegate : public PairingRegistry::Delegate {
+ public:
+  MockPairingRegistryDelegate();
+  virtual ~MockPairingRegistryDelegate();
+
+  // PairingRegistry::Delegate implementation.
+  virtual scoped_ptr<base::ListValue> LoadAll() OVERRIDE;
+  virtual bool DeleteAll() OVERRIDE;
+  virtual protocol::PairingRegistry::Pairing Load(
+      const std::string& client_id) OVERRIDE;
+  virtual bool Save(const protocol::PairingRegistry::Pairing& pairing) OVERRIDE;
+  virtual bool Delete(const std::string& client_id) OVERRIDE;
+
+ private:
+  typedef std::map<std::string, protocol::PairingRegistry::Pairing> Pairings;
+  Pairings pairings_;
+};
+
+class SynchronousPairingRegistry : public PairingRegistry {
+ public:
+  explicit SynchronousPairingRegistry(scoped_ptr<Delegate> delegate);
+
+ protected:
+  virtual ~SynchronousPairingRegistry();
+
+  // Runs tasks synchronously instead of posting them to |task_runner|.
+  virtual void PostTask(
+      const scoped_refptr<base::SingleThreadTaskRunner>& task_runner,
+      const tracked_objects::Location& from_here,
+      const base::Closure& task) OVERRIDE;
 };
 
 }  // namespace protocol

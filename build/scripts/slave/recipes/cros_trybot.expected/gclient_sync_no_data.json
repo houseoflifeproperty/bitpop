@@ -1,0 +1,84 @@
+[
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]/gclient"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@null@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@STEP_WARNINGS@@@"
+    ]
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/apply_issue.py",
+      "-r",
+      "[SLAVE_BUILD]/src",
+      "-i",
+      "12853011",
+      "-p",
+      "1",
+      "-s",
+      "https://codereview.chromium.org",
+      "--no-auth"
+    ],
+    "name": "apply_issue"
+  },
+  {
+    "abort_on_failure": false,
+    "allow_subannotations": true,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[ROOT]/build/third_party/cbuildbot_chromite/bin/cbuildbot",
+      "--buildbot",
+      "--buildnumber=571",
+      "--buildroot=/b/cbuild/external_master",
+      "--chrome_root=.",
+      "--debug",
+      "x86-generic-telem-chrome-pfq-informational"
+    ],
+    "name": "cbuildbot (with patch)"
+  }
+]

@@ -37,3 +37,19 @@ the full diffs.
              if fd != slavefd:
 
 =======
+
+diff --git a/third_party/twisted_10_2/twisted/web/server.py b/third_party/twisted_10_2/twisted/web/server.py
+index 2e9eabf..edcb34c 100644
+--- a/third_party/twisted_10_2/twisted/web/server.py
++++ b/third_party/twisted_10_2/twisted/web/server.py
+@@ -102,7 +102,7 @@ class Request(pb.Copyable, http.Request, components.Componentized):
+             return name
+         else: # lpp == 0
+             if len(self.prepath) and self.prepath[-1]:
+-                return self.prepath[-1] + '/' + name
++                return quote(self.prepath[-1], safe='') + '/' + name
+             else:
+                 return name
+
+=======
+

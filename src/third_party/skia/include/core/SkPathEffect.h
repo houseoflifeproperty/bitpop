@@ -11,90 +11,13 @@
 #define SkPathEffect_DEFINED
 
 #include "SkFlattenable.h"
-#include "SkPaint.h"
 #include "SkPath.h"
 #include "SkPoint.h"
 #include "SkRect.h"
+#include "SkStrokeRec.h"
 #include "SkTDArray.h"
 
 class SkPath;
-
-class SkStrokeRec {
-public:
-    enum InitStyle {
-        kHairline_InitStyle,
-        kFill_InitStyle
-    };
-    SkStrokeRec(InitStyle style);
-
-    SkStrokeRec(const SkStrokeRec&);
-    explicit SkStrokeRec(const SkPaint&);
-
-    enum Style {
-        kHairline_Style,
-        kFill_Style,
-        kStroke_Style,
-        kStrokeAndFill_Style
-    };
-
-    Style getStyle() const;
-    SkScalar getWidth() const { return fWidth; }
-    SkScalar getMiter() const { return fMiterLimit; }
-    SkPaint::Cap getCap() const { return fCap; }
-    SkPaint::Join getJoin() const { return fJoin; }
-
-    bool isHairlineStyle() const {
-        return kHairline_Style == this->getStyle();
-    }
-
-    bool isFillStyle() const {
-        return kFill_Style == this->getStyle();
-    }
-
-    void setFillStyle();
-    void setHairlineStyle();
-    /**
-     *  Specify the strokewidth, and optionally if you want stroke + fill.
-     *  Note, if width==0, then this request is taken to mean:
-     *      strokeAndFill==true -> new style will be Fill
-     *      strokeAndFill==false -> new style will be Hairline
-     */
-    void setStrokeStyle(SkScalar width, bool strokeAndFill = false);
-
-    void setStrokeParams(SkPaint::Cap cap, SkPaint::Join join, SkScalar miterLimit) {
-        fCap = cap;
-        fJoin = join;
-        fMiterLimit = miterLimit;
-    }
-
-    /**
-     *  Returns true if this specifes any thick stroking, i.e. applyToPath()
-     *  will return true.
-     */
-    bool needToApply() const {
-        Style style = this->getStyle();
-        return (kStroke_Style == style) || (kStrokeAndFill_Style == style);
-    }
-
-    /**
-     *  Apply these stroke parameters to the src path, returning the result
-     *  in dst.
-     *
-     *  If there was no change (i.e. style == hairline or fill) this returns
-     *  false and dst is unchanged. Otherwise returns true and the result is
-     *  stored in dst.
-     *
-     *  src and dst may be the same path.
-     */
-    bool applyToPath(SkPath* dst, const SkPath& src) const;
-
-private:
-    SkScalar        fWidth;
-    SkScalar        fMiterLimit;
-    SkPaint::Cap    fCap;
-    SkPaint::Join   fJoin;
-    bool            fStrokeAndFill;
-};
 
 /** \class SkPathEffect
 
@@ -107,8 +30,6 @@ private:
 class SK_API SkPathEffect : public SkFlattenable {
 public:
     SK_DECLARE_INST_COUNT(SkPathEffect)
-
-    SkPathEffect() {}
 
     /**
      *  Given a src path (input) and a stroke-rec (input and output), apply
@@ -125,13 +46,14 @@ public:
      *  If this method returns true, the caller will apply (as needed) the
      *  resulting stroke-rec to dst and then draw.
      */
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) = 0;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect* cullR) const = 0;
 
     /**
      *  Compute a conservative bounds for its effect, given the src bounds.
      *  The baseline implementation just assigns src to dst.
      */
-    virtual void computeFastBounds(SkRect* dst, const SkRect& src);
+    virtual void computeFastBounds(SkRect* dst, const SkRect& src) const;
 
     /** \class PointData
 
@@ -164,12 +86,14 @@ public:
         };
 
         uint32_t           fFlags;      // flags that impact the drawing of the points
-        // TODO: consider replacing the TDArray with either SkData or a ptr/len field
         SkPoint*           fPoints;     // the center point of each generated point
         int                fNumPoints;  // number of points in fPoints
         SkVector           fSize;       // the size to draw the points
         SkRect             fClipRect;   // clip required to draw the points (if kUseClip is set)
         SkPath             fPath;       // 'stamp' to be used at each point (if kUsePath is set)
+
+        SkPath             fFirst;      // If not empty, contains geometry for first point
+        SkPath             fLast;       // If not empty, contains geometry for last point
     };
 
     /**
@@ -177,10 +101,41 @@ public:
      *  optionally return the points in 'results'.
      */
     virtual bool asPoints(PointData* results, const SkPath& src,
-                          const SkStrokeRec&, const SkMatrix&) const;
+                          const SkStrokeRec&, const SkMatrix&,
+                          const SkRect* cullR) const;
+
+    /**
+     *  If the PathEffect can be represented as a dash pattern, asADash will return kDash_DashType
+     *  and None otherwise. If a non NULL info is passed in, the various DashInfo will be filled
+     *  in if the PathEffect can be a dash pattern. If passed in info has an fCount equal or
+     *  greater to that of the effect, it will memcpy the values of the dash intervals into the
+     *  info. Thus the general approach will be call asADash once with default info to get DashType
+     *  and fCount. If effect can be represented as a dash pattern, allocate space for the intervals
+     *  in info, then call asADash again with the same info and the intervals will get copied in.
+     */
+
+    enum DashType {
+        kNone_DashType, //!< ignores the info parameter
+        kDash_DashType, //!< fills in all of the info parameter
+    };
+
+    struct DashInfo {
+        DashInfo() : fIntervals(NULL), fCount(0), fPhase(0) {}
+
+        SkScalar*   fIntervals;         //!< Length of on/off intervals for dashed lines
+                                        //   Even values represent ons, and odds offs
+        int32_t     fCount;             //!< Number of intervals in the dash. Should be even number
+        SkScalar    fPhase;             //!< Offset into the dashed interval pattern
+                                        //   mod the sum of all intervals
+    };
+
+    virtual DashType asADash(DashInfo* info) const;
+
+    SK_DEFINE_FLATTENABLE_TYPE(SkPathEffect)
 
 protected:
-    SkPathEffect(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkPathEffect() {}
+    SkPathEffect(SkReadBuffer& buffer) : INHERITED(buffer) {}
 
 private:
     // illegal
@@ -198,12 +153,12 @@ private:
 */
 class SkPairPathEffect : public SkPathEffect {
 public:
-    SkPairPathEffect(SkPathEffect* pe0, SkPathEffect* pe1);
     virtual ~SkPairPathEffect();
 
 protected:
-    SkPairPathEffect(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkPairPathEffect(SkPathEffect* pe0, SkPathEffect* pe1);
+    SkPairPathEffect(SkReadBuffer&);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
     // these are visible to our subclasses
     SkPathEffect* fPE0, *fPE1;
@@ -224,15 +179,23 @@ public:
         The reference counts for outer and inner are both incremented in the constructor,
         and decremented in the destructor.
     */
-    SkComposePathEffect(SkPathEffect* outer, SkPathEffect* inner)
-        : INHERITED(outer, inner) {}
+    static SkComposePathEffect* Create(SkPathEffect* outer, SkPathEffect* inner) {
+        return SkNEW_ARGS(SkComposePathEffect, (outer, inner));
+    }
 
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkComposePathEffect)
 
 protected:
-    SkComposePathEffect(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkComposePathEffect(SkReadBuffer& buffer) : INHERITED(buffer) {}
+
+#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
+public:
+#endif
+    SkComposePathEffect(SkPathEffect* outer, SkPathEffect* inner)
+        : INHERITED(outer, inner) {}
 
 private:
     // illegal
@@ -254,15 +217,23 @@ public:
         The reference counts for first and second are both incremented in the constructor,
         and decremented in the destructor.
     */
-    SkSumPathEffect(SkPathEffect* first, SkPathEffect* second)
-        : INHERITED(first, second) {}
+    static SkSumPathEffect* Create(SkPathEffect* first, SkPathEffect* second) {
+        return SkNEW_ARGS(SkSumPathEffect, (first, second));
+    }
 
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkSumPathEffect)
 
 protected:
-    SkSumPathEffect(SkFlattenableReadBuffer& buffer) : INHERITED(buffer) {}
+    SkSumPathEffect(SkReadBuffer& buffer) : INHERITED(buffer) {}
+
+#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
+public:
+#endif
+    SkSumPathEffect(SkPathEffect* first, SkPathEffect* second)
+        : INHERITED(first, second) {}
 
 private:
     // illegal
@@ -273,4 +244,3 @@ private:
 };
 
 #endif
-

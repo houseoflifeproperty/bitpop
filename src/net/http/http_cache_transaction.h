@@ -10,19 +10,20 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_log.h"
+#include "net/base/request_priority.h"
 #include "net/http/http_cache.h"
-#include "net/http/http_response_info.h"
 #include "net/http/http_request_headers.h"
+#include "net/http/http_response_info.h"
 #include "net/http/http_transaction.h"
 
 namespace net {
 
 class PartialData;
 struct HttpRequestInfo;
-class HttpTransactionDelegate;
+struct LoadTimingInfo;
 
 // This is the transaction that is returned by the HttpCache transaction
 // factory.
@@ -57,9 +58,8 @@ class HttpCache::Transaction : public HttpTransaction {
     UPDATE          = READ_META | WRITE,  // READ_WRITE & ~READ_DATA
   };
 
-  Transaction(HttpCache* cache,
-              HttpTransactionDelegate* transaction_delegate,
-              InfiniteCacheTransaction* infinite_cache_transaction);
+  Transaction(RequestPriority priority,
+              HttpCache* cache);
   virtual ~Transaction();
 
   Mode mode() const { return mode_; }
@@ -104,8 +104,9 @@ class HttpCache::Transaction : public HttpTransaction {
   const BoundNetLog& net_log() const;
 
   // HttpTransaction methods:
-  virtual int Start(const HttpRequestInfo*, const CompletionCallback&,
-                    const BoundNetLog&) OVERRIDE;
+  virtual int Start(const HttpRequestInfo* request_info,
+                    const CompletionCallback& callback,
+                    const BoundNetLog& net_log) OVERRIDE;
   virtual int RestartIgnoringLastError(
       const CompletionCallback& callback) OVERRIDE;
   virtual int RestartWithCertificate(
@@ -118,10 +119,22 @@ class HttpCache::Transaction : public HttpTransaction {
                    int buf_len,
                    const CompletionCallback& callback) OVERRIDE;
   virtual void StopCaching() OVERRIDE;
+  virtual bool GetFullRequestHeaders(
+      HttpRequestHeaders* headers) const OVERRIDE;
+  virtual int64 GetTotalReceivedBytes() const OVERRIDE;
   virtual void DoneReading() OVERRIDE;
   virtual const HttpResponseInfo* GetResponseInfo() const OVERRIDE;
   virtual LoadState GetLoadState() const OVERRIDE;
   virtual UploadProgress GetUploadProgress(void) const OVERRIDE;
+  virtual void SetQuicServerInfo(QuicServerInfo* quic_server_info) OVERRIDE;
+  virtual bool GetLoadTimingInfo(
+      LoadTimingInfo* load_timing_info) const OVERRIDE;
+  virtual void SetPriority(RequestPriority priority) OVERRIDE;
+  virtual void SetWebSocketHandshakeStreamCreateHelper(
+      net::WebSocketHandshakeStreamBase::CreateHelper* create_helper) OVERRIDE;
+  virtual void SetBeforeNetworkStartCallback(
+      const BeforeNetworkStartCallback& callback) OVERRIDE;
+  virtual int ResumeNetworkStart() OVERRIDE;
 
  private:
   static const size_t kNumValidationHeaders = 2;
@@ -152,7 +165,6 @@ class HttpCache::Transaction : public HttpTransaction {
     STATE_DOOM_ENTRY_COMPLETE,
     STATE_ADD_TO_ENTRY,
     STATE_ADD_TO_ENTRY_COMPLETE,
-    STATE_ADD_TO_ENTRY_COMPLETE_AFTER_DELAY,
     STATE_START_PARTIAL_CACHE_VALIDATION,
     STATE_COMPLETE_PARTIAL_CACHE_VALIDATION,
     STATE_UPDATE_CACHED_RESPONSE,
@@ -224,7 +236,6 @@ class HttpCache::Transaction : public HttpTransaction {
   int DoDoomEntryComplete(int result);
   int DoAddToEntry();
   int DoAddToEntryComplete(int result);
-  int DoAddToEntryCompleteAfterDelay(int result);
   int DoStartPartialCacheValidation();
   int DoCompletePartialCacheValidation(int result);
   int DoUpdateCachedResponse();
@@ -307,6 +318,9 @@ class HttpCache::Transaction : public HttpTransaction {
   // satisfiable).
   void FailRangeRequest();
 
+  // Setups the transaction for reading from the cache entry.
+  int SetupEntryForRead();
+
   // Reads data from the network.
   int ReadFromNetwork(IOBuffer* data, int data_len);
 
@@ -353,32 +367,24 @@ class HttpCache::Transaction : public HttpTransaction {
   // between the byte range request and the cached entry.
   int DoRestartPartialRequest();
 
+  // Resets |network_trans_|, which must be non-NULL.  Also updates
+  // |old_network_trans_load_timing_|, which must be NULL when this is called.
+  void ResetNetworkTransaction();
+
   // Returns true if we should bother attempting to resume this request if it
   // is aborted while in progress. If |has_data| is true, the size of the stored
   // data is considered for the result.
   bool CanResume(bool has_data);
 
-  // Called to signal completion of asynchronous IO.
-  void OnIOComplete(int result);
-
-  void ReportCacheActionStart();
-  void ReportCacheActionFinish();
-  void ReportNetworkActionStart();
-  void ReportNetworkActionFinish();
   void UpdateTransactionPattern(TransactionPattern new_transaction_pattern);
   void RecordHistograms();
 
-  // Resets cache_io_start_ to the current time, if |return_value| is
-  // ERR_IO_PENDING.
-  // Returns |return_value|.
-  int ResetCacheIOStart(int return_value);
-
-  void ScheduleDelayedLoop(base::TimeDelta delay, int result);
-  void RunDelayedLoop(base::TimeTicks delay_start_time,
-                      base::TimeDelta intended_delay, int result);
+  // Called to signal completion of asynchronous IO.
+  void OnIOComplete(int result);
 
   State next_state_;
   const HttpRequestInfo* request_;
+  RequestPriority priority_;
   BoundNetLog net_log_;
   scoped_ptr<HttpRequestInfo> custom_request_;
   HttpRequestHeaders request_headers_copy_;
@@ -389,7 +395,6 @@ class HttpCache::Transaction : public HttpTransaction {
   HttpCache::ActiveEntry* entry_;
   HttpCache::ActiveEntry* new_entry_;
   scoped_ptr<HttpTransaction> network_trans_;
-  scoped_ptr<InfiniteCacheTransaction> infinite_cache_transaction_;
   CompletionCallback callback_;  // Consumer's callback.
   HttpResponseInfo response_;
   HttpResponseInfo auth_response_;
@@ -397,14 +402,16 @@ class HttpCache::Transaction : public HttpTransaction {
   std::string cache_key_;
   Mode mode_;
   State target_state_;
-  bool reading_;  // We are already reading.
+  bool reading_;  // We are already reading. Never reverts to false once set.
   bool invalid_range_;  // We may bypass the cache for this request.
   bool truncated_;  // We don't have all the response data.
   bool is_sparse_;  // The data is stored in sparse byte ranges.
   bool range_requested_;  // The user requested a byte range.
   bool handling_206_;  // We must deal with this 206 response.
   bool cache_pending_;  // We are waiting for the HttpCache.
-  bool done_reading_;
+  bool done_reading_;  // All available data was read.
+  bool vary_mismatch_;  // The request doesn't match the stored vary data.
+  bool couldnt_conditionalize_request_;
   scoped_refptr<IOBuffer> read_buf_;
   int io_buf_len_;
   int read_offset_;
@@ -417,28 +424,27 @@ class HttpCache::Transaction : public HttpTransaction {
 
   // Members used to track data for histograms.
   TransactionPattern transaction_pattern_;
-  int bytes_read_from_cache_;
-  int bytes_read_from_network_;
   base::TimeTicks entry_lock_waiting_since_;
   base::TimeTicks first_cache_access_since_;
   base::TimeTicks send_request_since_;
 
-  // For sensitivity analysis (field trials emulating longer cache IO times),
-  // the time at which a cache IO action has started, or base::TimeTicks()
-  // if no cache IO action is currently in progress.
-  base::TimeTicks cache_io_start_;
+  int64 total_received_bytes_;
 
-  // For OpenEntry and CreateEntry, if sensitivity analysis would mandate
-  // a delay on return, we must defer that delay until AddToEntry has been
-  // called, to avoid a race condition on the address returned.
-  base::TimeDelta deferred_cache_sensitivity_delay_;
-  bool defer_cache_sensitivity_delay_;
+  // Load timing information for the last network request, if any.  Set in the
+  // 304 and 206 response cases, as the network transaction may be destroyed
+  // before the caller requests load timing information.
+  scoped_ptr<LoadTimingInfo> old_network_trans_load_timing_;
 
-  // For sensitivity analysis, the simulated increase in cache service times,
-  // in percent.
-  int sensitivity_analysis_percent_increase_;
+  // The helper object to use to create WebSocketHandshakeStreamBase
+  // objects. Only relevant when establishing a WebSocket connection.
+  // This is passed to the underlying network transaction. It is stored here in
+  // case the transaction does not exist yet.
+  WebSocketHandshakeStreamBase::CreateHelper*
+      websocket_handshake_stream_base_create_helper_;
 
-  HttpTransactionDelegate* transaction_delegate_;
+  BeforeNetworkStartCallback before_network_start_callback_;
+
+  DISALLOW_COPY_AND_ASSIGN(Transaction);
 };
 
 }  // namespace net

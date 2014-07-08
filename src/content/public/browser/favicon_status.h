@@ -6,9 +6,8 @@
 #define CONTENT_PUBLIC_BROWSER_FAVICON_STATUS_H_
 
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/image/image.h"
-#include "third_party/skia/include/core/SkBitmap.h"
+#include "url/gurl.h"
 
 namespace content {
 

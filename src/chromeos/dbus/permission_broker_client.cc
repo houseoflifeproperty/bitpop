@@ -22,17 +22,16 @@ namespace chromeos {
 
 class PermissionBrokerClientImpl : public PermissionBrokerClient {
  public:
-  explicit PermissionBrokerClientImpl(dbus::Bus* bus)
-      : proxy_(bus->GetObjectProxy(kPermissionBrokerServiceName,
-            dbus::ObjectPath(kPermissionBrokerServicePath))),
-        weak_ptr_factory_(this) {}
+  PermissionBrokerClientImpl() : proxy_(NULL), weak_ptr_factory_(this) {}
 
   virtual void RequestPathAccess(const std::string& path,
+                                 const int interface_id,
                                  const ResultCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(kPermissionBrokerInterface,
                                  kRequestPathAccess);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(path);
+    writer.AppendInt32(interface_id);
     proxy_->CallMethod(&method_call,
                        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
                        base::Bind(&PermissionBrokerClientImpl::OnResponse,
@@ -41,15 +40,24 @@ class PermissionBrokerClientImpl : public PermissionBrokerClient {
 
   virtual void RequestUsbAccess(const uint16_t vendor_id,
                                 const uint16_t product_id,
+                                const int interface_id,
                                 const ResultCallback& callback) OVERRIDE {
     dbus::MethodCall method_call(kPermissionBrokerInterface, kRequestUsbAccess);
     dbus::MessageWriter writer(&method_call);
     writer.AppendUint16(vendor_id);
     writer.AppendUint16(product_id);
+    writer.AppendInt32(interface_id);
     proxy_->CallMethod(&method_call,
                        dbus::ObjectProxy::TIMEOUT_USE_DEFAULT,
                        base::Bind(&PermissionBrokerClientImpl::OnResponse,
                                   weak_ptr_factory_.GetWeakPtr(), callback));
+  }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    proxy_ =
+        bus->GetObjectProxy(kPermissionBrokerServiceName,
+                            dbus::ObjectPath(kPermissionBrokerServicePath));
   }
 
  private:
@@ -79,35 +87,12 @@ class PermissionBrokerClientImpl : public PermissionBrokerClient {
   DISALLOW_COPY_AND_ASSIGN(PermissionBrokerClientImpl);
 };
 
-class PermissionBrokerClientStubImpl : public PermissionBrokerClient {
- public:
-  PermissionBrokerClientStubImpl() {}
-  virtual ~PermissionBrokerClientStubImpl() {}
-
-  virtual void RequestPathAccess(const std::string& path,
-                                 const ResultCallback& callback) OVERRIDE {
-    callback.Run(false);
-  }
-
-  virtual void RequestUsbAccess(const uint16_t vendor_id,
-                                const uint16_t product_id,
-                                const ResultCallback& callback) OVERRIDE {
-    callback.Run(false);
-  }
-
- private:
-  DISALLOW_COPY_AND_ASSIGN(PermissionBrokerClientStubImpl);
-};
-
 PermissionBrokerClient::PermissionBrokerClient() {}
 
 PermissionBrokerClient::~PermissionBrokerClient() {}
 
-PermissionBrokerClient* PermissionBrokerClient::Create(
-    DBusClientImplementationType type, dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new PermissionBrokerClientImpl(bus);
-  return new PermissionBrokerClientStubImpl();
+PermissionBrokerClient* PermissionBrokerClient::Create() {
+  return new PermissionBrokerClientImpl();
 }
 
 }  // namespace chromeos

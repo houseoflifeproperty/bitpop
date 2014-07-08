@@ -7,58 +7,59 @@
 #include "base/logging.h"
 #include "chrome/browser/ui/global_error/global_error_bubble_view_base.h"
 #include "grit/theme_resources.h"
+#include "ui/base/resource/resource_bundle.h"
+#include "ui/gfx/image/image.h"
 
-GlobalError::GlobalError()
-    : has_shown_bubble_view_(false),
-      bubble_view_(NULL) {
-}
+// GlobalError ---------------------------------------------------------------
 
-GlobalError::~GlobalError() {
-}
+GlobalError::GlobalError() {}
 
-int GlobalError::GetBadgeResourceID() {
-  return IDR_UPDATE_BADGE4;
-}
+GlobalError::~GlobalError() {}
 
-GlobalError::Severity GlobalError::GetSeverity() {
-  switch (GetBadgeResourceID()) {
-    case IDR_UPDATE_BADGE: return SEVERITY_LOW;
-    case IDR_UPDATE_BADGE2: return SEVERITY_MEDIUM;
-    case IDR_UPDATE_BADGE3: return SEVERITY_HIGH;
-    case IDR_UPDATE_BADGE4: return SEVERITY_CRITICAL;
-    default: break;
-  }
-  return SEVERITY_LOW;
-}
+GlobalError::Severity GlobalError::GetSeverity() { return SEVERITY_MEDIUM; }
 
 int GlobalError::MenuItemIconResourceID() {
-  return IDR_UPDATE_MENU4;
+  // If you change this make sure to also change the bubble icon and the wrench
+  // icon color.
+  return IDR_INPUT_ALERT_MENU;
 }
 
-bool GlobalError::HasShownBubbleView() {
+// GlobalErrorWithStandardBubble ---------------------------------------------
+
+GlobalErrorWithStandardBubble::GlobalErrorWithStandardBubble()
+    : has_shown_bubble_view_(false), bubble_view_(NULL) {}
+
+GlobalErrorWithStandardBubble::~GlobalErrorWithStandardBubble() {}
+
+bool GlobalErrorWithStandardBubble::HasBubbleView() { return true; }
+
+bool GlobalErrorWithStandardBubble::HasShownBubbleView() {
   return has_shown_bubble_view_;
 }
 
-void GlobalError::ShowBubbleView(Browser* browser) {
+void GlobalErrorWithStandardBubble::ShowBubbleView(Browser* browser) {
   has_shown_bubble_view_ = true;
 #if defined(OS_ANDROID)
   // http://crbug.com/136506
   NOTIMPLEMENTED() << "Chrome for Android doesn't support global errors";
 #else
   bubble_view_ =
-      GlobalErrorBubbleViewBase::ShowBubbleView(browser, AsWeakPtr());
+      GlobalErrorBubbleViewBase::ShowStandardBubbleView(browser, AsWeakPtr());
 #endif
 }
 
-GlobalErrorBubbleViewBase* GlobalError::GetBubbleView() {
+GlobalErrorBubbleViewBase* GlobalErrorWithStandardBubble::GetBubbleView() {
   return bubble_view_;
 }
 
-int GlobalError::GetBubbleViewIconResourceID() {
-  return IDR_INPUT_ALERT;
+gfx::Image GlobalErrorWithStandardBubble::GetBubbleViewIcon() {
+  // If you change this make sure to also change the menu icon and the wrench
+  // icon color.
+  return ResourceBundle::GetSharedInstance().GetNativeImageNamed(
+      IDR_INPUT_ALERT);
 }
 
-void GlobalError::BubbleViewDidClose(Browser* browser) {
+void GlobalErrorWithStandardBubble::BubbleViewDidClose(Browser* browser) {
   DCHECK(browser);
   bubble_view_ = NULL;
   OnBubbleViewDidClose(browser);

@@ -26,20 +26,25 @@
 #include "internal.h"
 #include "video.h"
 
-AVFilter avfilter_vf_null = {
-    .name      = "null",
+static const AVFilterPad avfilter_vf_null_inputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
+
+static const AVFilterPad avfilter_vf_null_outputs[] = {
+    {
+        .name = "default",
+        .type = AVMEDIA_TYPE_VIDEO,
+    },
+    { NULL }
+};
+
+AVFilter ff_vf_null = {
+    .name        = "null",
     .description = NULL_IF_CONFIG_SMALL("Pass the source unchanged to the output."),
-
-    .priv_size = 0,
-
-    .inputs    = (const AVFilterPad[]) {{ .name             = "default",
-                                          .type             = AVMEDIA_TYPE_VIDEO,
-                                          .get_video_buffer = ff_null_get_video_buffer,
-                                          .start_frame      = ff_null_start_frame,
-                                          .end_frame        = ff_null_end_frame },
-                                        { .name = NULL}},
-
-    .outputs   = (const AVFilterPad[]) {{ .name             = "default",
-                                          .type             = AVMEDIA_TYPE_VIDEO, },
-                                        { .name = NULL}},
+    .inputs      = avfilter_vf_null_inputs,
+    .outputs     = avfilter_vf_null_outputs,
 };

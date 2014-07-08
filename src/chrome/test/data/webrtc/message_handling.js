@@ -5,12 +5,18 @@
  */
 
 // This file requires these functions to be defined globally by someone else:
-// function handleMessage(peerConnection, message)
-// function createPeerConnection(stun_server)
-// function setupCall(peerConnection)
-// function answerCall(peerConnection, message)
+// function createPeerConnection(stun_server, useRtpDataChannel)
+// function createOffer(peerConnection, constraints, callback)
+// function receiveOffer(peerConnection, offer, constraints, callback)
+// function receiveAnswer(peerConnection, answer, callback)
 
 // Currently these functions are supplied by jsep01_call.js.
+
+/**
+ * We need a STUN server for some API calls.
+ * @private
+ */
+var STUN_SERVER = 'stun.l.google.com:19302';
 
 /**
  * This object represents the call.
@@ -19,91 +25,20 @@
 var gPeerConnection = null;
 
 /**
- * True if we are accepting incoming calls.
+ * If true, any created peer connection will use RTP data
+ * channels. Otherwise it will use SCTP data channels.
+ */
+var gUseRtpDataChannels = true;
+
+/**
+ * This stores ICE candidates generated on this side.
  * @private
  */
-var gAcceptsIncomingCalls = true;
+var gIceCandidates = [];
 
-/**
- * Our peer id as assigned by the peerconnection_server.
- * @private
- */
-var gOurPeerId = null;
-
-/**
- * The client id we use to identify to peerconnection_server.
- * @private
- */
-var gOurClientName = null;
-
-/**
- * The URL to the peerconnection_server.
- * @private
- */
-var gServerUrl = null;
-
-/**
- * The remote peer's id. We receive this one either when we connect (in the case
- * our peer connects before us) or in a notification later.
- * @private
- */
-var gRemotePeerId = null;
-
-/**
- * Whether or not to auto-respond by adding our local stream when we are called.
- * @private
- */
-var gAutoAddLocalToPeerConnectionStreamWhenCalled = true;
-
-/**
- * The one and only data channel.
- * @private
- */
-var gDataChannel = null;
-
-/**
- * We need a STUN server for some API calls.
- * @private
- */
-var STUN_SERVER = 'stun.l.google.com:19302';
-
-// Public interface to PyAuto test.
-
-
-/**
- * Connects to the provided peerconnection_server.
- *
- * @param{string} serverUrl The server URL in string form without an ending
- *     slash, something like http://localhost:8888.
- * @param{string} clientName The name to use when connecting to the server.
- */
-function connect(serverUrl, clientName) {
-  if (gOurPeerId != null)
-    throw failTest('connecting, but is already connected.');
-
-  debug('Connecting to ' + serverUrl + ' as ' + clientName);
-  gServerUrl = serverUrl;
-  gOurClientName = clientName;
-
-  request = new XMLHttpRequest();
-  request.open('GET', serverUrl + '/sign_in?' + clientName, true);
-  debug(serverUrl + '/sign_in?' + clientName);
-  request.onreadystatechange = function() {
-    connectCallback_(request);
-  }
-  request.send();
-}
-
-/**
- * Checks if the remote peer has connected. Returns peer-connected if that is
- * the case, otherwise no-peer-connected.
- */
-function remotePeerIsConnected() {
-  if (gRemotePeerId == null)
-    returnToTest('no-peer-connected');
-  else
-    returnToTest('peer-connected');
-}
+// Public interface to tests. These are expected to be called with
+// ExecuteJavascript invocations from the browser tests and will return answers
+// through the DOM automation controller.
 
 /**
  * Creates a peer connection. Must be called before most other public functions
@@ -113,34 +48,74 @@ function preparePeerConnection() {
   if (gPeerConnection != null)
     throw failTest('creating peer connection, but we already have one.');
 
-  gPeerConnection = createPeerConnection(STUN_SERVER);
+  gPeerConnection = createPeerConnection(STUN_SERVER, gUseRtpDataChannels);
   returnToTest('ok-peerconnection-created');
 }
 
 /**
- * Negotiates a call with the other side. This will create a peer connection on
- * the other side if there isn't one. The other side will automatically add any
- * stream it has unless doNotAutoAddLocalStreamWhenCalled() has been called.
+ * Asks this page to create a local offer.
  *
- * To call this method we need to be aware of the other side, e.g. we must be
- * connected to peerconnection_server and we must have exactly one peer on that
- * server.
+ * Returns a string on the format ok-(JSON encoded session description).
  *
- * This method may be called any number of times. If you haven't added any
- * streams to the call, an "empty" call will result. The method will return
- * ok-negotiating immediately to the test if the negotiation was successfully
- * sent.
+ * @param {!object} constraints Any createOffer constraints.
  */
-function negotiateCall() {
+function createLocalOffer(constraints) {
   if (gPeerConnection == null)
-    throw failTest('negotiating call, but we have no peer connection.');
-  if (gOurPeerId == null)
-    throw failTest('negotiating call, but not connected.');
-  if (gRemotePeerId == null)
-    throw failTest('negotiating call, but missing remote peer.');
+    throw failTest('Negotiating call, but we have no peer connection.');
 
-  setupCall(gPeerConnection);
-  returnToTest('ok-negotiating');
+  // TODO(phoglund): move jsep01.call stuff into this file and remove need
+  // of the createOffer method, etc.
+  createOffer(gPeerConnection, constraints, function(localOffer) {
+    returnToTest('ok-' + JSON.stringify(localOffer));
+  });
+}
+
+/**
+ * Asks this page to accept an offer and generate an answer.
+ *
+ * Returns a string on the format ok-(JSON encoded session description).
+ *
+ * @param {!string} sessionDescJson A JSON-encoded session description of type
+ *     'offer'.
+ * @param {!object} constraints Any createAnswer constraints.
+ */
+function receiveOfferFromPeer(sessionDescJson, constraints) {
+  if (gPeerConnection == null)
+    throw failTest('Receiving offer, but we have no peer connection.');
+
+  offer = parseJson_(sessionDescJson);
+  if (!offer.type)
+    failTest('Got invalid session description from peer: ' + sessionDescJson);
+  if (offer.type != 'offer')
+    failTest('Expected to receive offer from peer, got ' + offer.type);
+
+  receiveOffer(gPeerConnection, offer , constraints, function(answer) {
+    returnToTest('ok-' + JSON.stringify(answer));
+  });
+}
+
+/**
+ * Asks this page to accept an answer generated by the peer in response to a
+ * previous offer by this page
+ *
+ * Returns a string ok-accepted-answer on success.
+ *
+ * @param {!string} sessionDescJson A JSON-encoded session description of type
+ *     'answer'.
+ */
+function receiveAnswerFromPeer(sessionDescJson) {
+  if (gPeerConnection == null)
+    throw failTest('Receiving offer, but we have no peer connection.');
+
+  answer = parseJson_(sessionDescJson);
+  if (!answer.type)
+    failTest('Got invalid session description from peer: ' + sessionDescJson);
+  if (answer.type != 'answer')
+    failTest('Expected to receive answer from peer, got ' + answer.type);
+
+  receiveAnswer(gPeerConnection, answer, function() {
+    returnToTest('ok-accepted-answer');
+  });
 }
 
 /**
@@ -156,343 +131,136 @@ function addLocalStream() {
 }
 
 /**
- * Removes the local stream from the peer connection. You will have to
- * re-negotiate the call for this to take effect in the call.
- */
-function removeLocalStream() {
-  if (gPeerConnection == null)
-    throw failTest('attempting to remove local stream, but no call is up');
-
-  removeLocalStreamFromPeerConnection(gPeerConnection);
-  returnToTest('ok-local-stream-removed');
-}
-
-/**
- * (see getReadyState)
- */
-function getPeerConnectionReadyState() {
-  returnToTest(getReadyState());
-}
-
-/**
- * Toggles the remote audio stream's enabled state on the peer connection, given
- * that a call is active. Returns ok-[typeToToggle]-toggled-to-[true/false]
- * on success.
+ * Loads a file with WebAudio and connects it to the peer connection.
  *
- * @param selectAudioOrVideoTrack: A function that takes a remote stream as
- *     argument and returns a track (e.g. either the video or audio track).
- * @param typeToToggle: Either "audio" or "video" depending on what the selector
- *     function selects.
+ * The loadAudioAndAddToPeerConnection will return ok-added to the test when
+ * the sound is loaded and added to the peer connection. The sound will start
+ * playing when you call playAudioFile.
+ *
+ * @param url URL pointing to the file to play. You can assume that you can
+ *     serve files from the repository's file system. For instance, to serve a
+ *     file from chrome/test/data/pyauto_private/webrtc/file.wav, pass in a path
+ *     relative to this directory (e.g. ../pyauto_private/webrtc/file.wav).
  */
-function toggleRemoteStream(selectAudioOrVideoTrack, typeToToggle) {
+function addAudioFile(url) {
   if (gPeerConnection == null)
-    throw failTest('Tried to toggle remote stream, ' +
-                   'but have no peer connection.');
-  if (gPeerConnection.remoteStreams.length == 0)
-    throw failTest('Tried to toggle remote stream, ' +
-                   'but not receiving any stream.');
+    throw failTest('adding audio file, but we have no peer connection.');
 
-  var track = selectAudioOrVideoTrack(gPeerConnection.remoteStreams[0]);
-  toggle_(track, 'remote', typeToToggle);
+  loadAudioAndAddToPeerConnection(url, gPeerConnection);
 }
 
 /**
- * See documentation on toggleRemoteStream (this function is the same except
- * we are looking at local streams).
+ * Mixes the local audio stream with an audio file through WebAudio.
+ *
+ * You must have successfully requested access to the user's microphone through
+ * getUserMedia before calling this function (see getUserMedia.js).
+ * Additionally, you must have loaded an audio file to mix with.
+ *
+ * When playAudioFile is called, WebAudio will effectively mix the user's
+ * microphone input with the previously loaded file and feed that into the
+ * peer connection.
  */
-function toggleLocalStream(selectAudioOrVideoTrack, typeToToggle) {
+function mixLocalStreamWithPreviouslyLoadedAudioFile() {
   if (gPeerConnection == null)
-    throw failTest('Tried to toggle local stream, ' +
-                   'but have no peer connection.');
-  if (gPeerConnection.localStreams.length == 0)
-    throw failTest('Tried to toggle local stream, but there is no local ' +
-                   'stream in the call.');
+    throw failTest('trying to mix in stream, but we have no peer connection.');
+  if (getLocalStream() == null)
+    throw failTest('trying to mix in stream, but we have no stream to mix in.');
 
-  var track = selectAudioOrVideoTrack(gPeerConnection.localStreams[0]);
-  toggle_(track, 'local', typeToToggle);
+  mixLocalStreamIntoPeerConnection(gPeerConnection, getLocalStream());
 }
 
 /**
- * Hangs up a started call. Returns ok-call-hung-up on success. This tab will
- * not accept any incoming calls after this call.
+ * Must be called after addAudioFile.
+ */
+function playAudioFile() {
+  if (gPeerConnection == null)
+    throw failTest('trying to play file, but we have no peer connection.');
+
+  playPreviouslyLoadedAudioFile(gPeerConnection);
+  returnToTest('ok-playing');
+}
+
+/**
+ * Hangs up a started call. Returns ok-call-hung-up on success.
  */
 function hangUp() {
   if (gPeerConnection == null)
     throw failTest('hanging up, but has no peer connection');
-  if (getReadyState() != 'active')
-    throw failTest('hanging up, but ready state is not active (no call up).');
-  sendToPeer(gRemotePeerId, 'BYE');
-  closeCall_();
-  gAcceptsIncomingCalls = false;
+  gPeerConnection.close();
+  gPeerConnection = null;
   returnToTest('ok-call-hung-up');
 }
 
 /**
- * Start accepting incoming calls again after a hangup.
+ * Retrieves all ICE candidates generated on this side. Must be called after
+ * ICE candidate generation is triggered (for instance by running a call
+ * negotiation). This function will wait if necessary if we're not done
+ * generating ICE candidates on this side.
+ *
+ * Returns a JSON-encoded array of RTCIceCandidate instances to the test.
  */
-function acceptIncomingCallsAgain() {
-  gAcceptsIncomingCalls = true;
-}
-
-/**
- * Do not auto-add the local stream when called.
- */
-function doNotAutoAddLocalStreamWhenCalled() {
-  gAutoAddLocalToPeerConnectionStreamWhenCalled = false;
-}
-
-/**
- * Disconnects from the peerconnection server. Returns ok-disconnected on
- * success.
- */
-function disconnect() {
-  if (gOurPeerId == null)
-    throw failTest('Disconnecting, but we are not connected.');
-
-  request = new XMLHttpRequest();
-  request.open('GET', gServerUrl + '/sign_out?peer_id=' + gOurPeerId, false);
-  request.send();
-  gOurPeerId = null;
-  returnToTest('ok-disconnected');
-}
-
-/**
- * Creates a DataChannel on the current PeerConnection. Only one DataChannel can
- * be created on each PeerConnection.
- * Returns ok-datachannel-created on success.
- */
-function createDataChannelOnPeerConnection() {
+function getAllIceCandidates() {
   if (gPeerConnection == null)
-    throw failTest('Tried to create data channel, ' +
-        'but have no peer connection.');
+    throw failTest('Trying to get ICE candidates, but has no peer connection.');
 
-  createDataChannel(gPeerConnection, gOurClientName);
-  returnToTest('ok-datachannel-created');
+  if (gPeerConnection.iceGatheringState != 'complete') {
+    console.log('Still ICE gathering - waiting...');
+    setTimeout(getAllIceCandidates, 100);
+    return;
+  }
+
+  returnToTest(JSON.stringify(gIceCandidates));
 }
 
 /**
- * Close the DataChannel on the current PeerConnection.
- * Returns ok-datachannel-close on success.
+ * Receives ICE candidates from the peer.
+ *
+ * Returns ok-received-candidates to the test on success.
+ *
+ * @param iceCandidatesJson a JSON-encoded array of RTCIceCandidate instances.
  */
-function closeDataChannelOnPeerConnection() {
+function receiveIceCandidates(iceCandidatesJson) {
   if (gPeerConnection == null)
-    throw failTest('Tried to close data channel, ' +
-        'but have no peer connection.');
+    throw failTest('Received ICE candidate, but has no peer connection');
 
-  closeDataChannel(gPeerConnection);
-  returnToTest('ok-datachannel-close');
+  var iceCandidates = parseJson_(iceCandidatesJson);
+  if (!iceCandidates.length)
+    throw failTest('Received invalid ICE candidate list from peer: ' +
+      iceCandidatesJson);
+
+  iceCandidates.forEach(function(iceCandidate) {
+    if (!iceCandidate.candidate)
+      failTest('Received invalid ICE candidate from peer: ' +
+        iceCandidatesJson);
+
+    gPeerConnection.addIceCandidate(new RTCIceCandidate(iceCandidate));
+  });
+
+  returnToTest('ok-received-candidates');
 }
 
 // Public interface to signaling implementations, such as JSEP.
 
 /**
- * Sends a message to a peer through the peerconnection_server.
+ * Enqueues an ICE candidate for sending to the peer.
+ *
+ * @param {!RTCIceCandidate} The ICE candidate to send.
  */
-function sendToPeer(peer, message) {
-  var messageToLog = message.sdp ? message.sdp : message;
-  debug('Sending message ' + messageToLog + ' to peer ' + peer + '.');
-
-  var request = new XMLHttpRequest();
-  var url = gServerUrl + '/message?peer_id=' + gOurPeerId + '&to=' + peer;
-  request.open('POST', url, false);
-  request.setRequestHeader('Content-Type', 'text/plain');
-  request.send(message);
+function sendIceCandidate(message) {
+  gIceCandidates.push(message);
 }
 
 /**
- * Returns true if we are disconnected from peerconnection_server.
+ * Parses JSON-encoded session descriptions and ICE candidates.
+ * @private
  */
-function isDisconnected() {
-  return gOurPeerId == null;
-}
-
-/**
- * @return {!string} The current peer connection's ready state, or
- *     'no-peer-connection' if there is no peer connection up.
- */
-function getReadyState() {
-  if (gPeerConnection == null)
-    return 'no-peer-connection';
-  else
-    return gPeerConnection.readyState;
-}
-
-// Internals.
-
-/** @private */
-function toggle_(track, localOrRemote, audioOrVideo) {
-  if (!track)
-    throw failTest('Tried to toggle ' + localOrRemote + ' ' + audioOrVideo +
-             ' stream, but has no such stream.');
-
-  track.enabled = !track.enabled;
-  returnToTest('ok-' + audioOrVideo + '-toggled-to-' + track.enabled);
-}
-
-/** @private */
-function connectCallback_(request) {
-  debug('Connect callback: ' + request.status + ', ' + request.readyState);
-  if (request.status == 0) {
-    debug('peerconnection_server doesn\'t seem to be up.');
-    returnToTest('failed-to-connect');
+function parseJson_(json) {
+  // Escape since the \r\n in the SDP tend to get unescaped.
+  jsonWithEscapedLineBreaks = json.replace(/\r\n/g, '\\r\\n');
+  try {
+    return JSON.parse(jsonWithEscapedLineBreaks);
+  } catch (exception) {
+    failTest('Failed to parse JSON: ' + jsonWithEscapedLineBreaks + ', got ' +
+             exception);
   }
-  if (request.readyState == 4 && request.status == 200) {
-    gOurPeerId = parseOurPeerId_(request.responseText);
-    gRemotePeerId = parseRemotePeerIdIfConnected_(request.responseText);
-    startHangingGet_(gServerUrl, gOurPeerId);
-    returnToTest('ok-connected');
-  }
-}
-
-/** @private */
-function parseOurPeerId_(responseText) {
-  // According to peerconnection_server's protocol.
-  var peerList = responseText.split('\n');
-  return parseInt(peerList[0].split(',')[1]);
-}
-
-/** @private */
-function parseRemotePeerIdIfConnected_(responseText) {
-  var peerList = responseText.split('\n');
-  if (peerList.length == 1) {
-    // No peers have connected yet - we'll get their id later in a notification.
-    return null;
-  }
-  var remotePeerId = null;
-  for (var i = 0; i < peerList.length; i++) {
-    if (peerList[i].length == 0)
-      continue;
-
-    var parsed = peerList[i].split(',');
-    var name = parsed[0];
-    var id = parsed[1];
-
-    if (id != gOurPeerId) {
-      debug('Found remote peer with name ' + name + ', id ' +
-            id + ' when connecting.');
-
-      // There should be at most one remote peer in this test.
-      if (remotePeerId != null)
-        throw failTest('Expected just one remote peer in this test: ' +
-                       'found several.');
-
-      // Found a remote peer.
-      remotePeerId = id;
-    }
-  }
-  return remotePeerId;
-}
-
-/** @private */
-function startHangingGet_(server, ourId) {
-  if (isDisconnected())
-    return;
-  hangingGetRequest = new XMLHttpRequest();
-  hangingGetRequest.onreadystatechange = function() {
-    hangingGetCallback_(hangingGetRequest, server, ourId);
-  }
-  hangingGetRequest.ontimeout = function() {
-    hangingGetTimeoutCallback_(hangingGetRequest, server, ourId);
-  }
-  callUrl = server + '/wait?peer_id=' + ourId;
-  debug('Sending ' + callUrl);
-  hangingGetRequest.open('GET', callUrl, true);
-  hangingGetRequest.send();
-}
-
-/** @private */
-function hangingGetCallback_(hangingGetRequest, server, ourId) {
-  if (hangingGetRequest.readyState != 4)
-    return;
-  if (hangingGetRequest.status == 0) {
-    // Code 0 is not possible if the server actually responded.
-    throw failTest('Previous request was malformed, or server is unavailable.');
-  }
-  if (hangingGetRequest.status != 200) {
-    throw failTest('Error ' + hangingGetRequest.status + ' from server: ' +
-             hangingGetRequest.statusText);
-  }
-  var targetId = readResponseHeader_(hangingGetRequest, 'Pragma');
-  if (targetId == ourId)
-    handleServerNotification_(hangingGetRequest.responseText);
-  else
-    handlePeerMessage_(targetId, hangingGetRequest.responseText);
-
-  hangingGetRequest.abort();
-  restartHangingGet_(server, ourId);
-}
-
-/** @private */
-function hangingGetTimeoutCallback_(hangingGetRequest, server, ourId) {
-  debug('Hanging GET times out, re-issuing...');
-  hangingGetRequest.abort();
-  restartHangingGet_(server, ourId);
-}
-
-/** @private */
-function handleServerNotification_(message) {
-  var parsed = message.split(',');
-  if (parseInt(parsed[2]) == 1) {
-    // Peer connected - this must be our remote peer, and it must mean we
-    // connected before them (except if we happened to connect to the server
-    // at precisely the same moment).
-    debug('Found remote peer with name ' + parsed[0] + ', id ' +
-          parsed[1] + ' when connecting.');
-    gRemotePeerId = parseInt(parsed[1]);
-  }
-}
-
-/** @private */
-function closeCall_() {
-  if (gPeerConnection == null)
-    throw failTest('Closing call, but no call active.');
-  gPeerConnection.close();
-  gPeerConnection = null;
-}
-
-/** @private */
-function handlePeerMessage_(peerId, message) {
-  debug('Received message from peer ' + peerId + ': ' + message);
-  if (peerId != gRemotePeerId) {
-    addTestFailure('Received notification from unknown peer ' + peerId +
-                   ' (only know about ' + gRemotePeerId + '.');
-    return;
-  }
-  if (message.search('BYE') == 0) {
-    debug('Received BYE from peer: closing call');
-    closeCall_();
-    return;
-  }
-  if (gPeerConnection == null && gAcceptsIncomingCalls) {
-    // The other side is calling us.
-    debug('We are being called: answer...');
-
-    gPeerConnection = createPeerConnection(STUN_SERVER);
-    if (gAutoAddLocalToPeerConnectionStreamWhenCalled &&
-        obtainGetUserMediaResult() == 'ok-got-stream') {
-      debug('We have a local stream, so hook it up automatically.');
-      addLocalStreamToPeerConnection(gPeerConnection);
-    }
-    answerCall(gPeerConnection, message);
-    return;
-  }
-  handleMessage(gPeerConnection, message);
-}
-
-/** @private */
-function restartHangingGet_(server, ourId) {
-  window.setTimeout(function() {
-    startHangingGet_(server, ourId);
-  }, 0);
-}
-
-/** @private */
-function readResponseHeader_(request, key) {
-  var value = request.getResponseHeader(key)
-  if (value == null || value.length == 0) {
-    addTestFailure('Received empty value ' + value +
-                   ' for response header key ' + key + '.');
-    return -1;
-  }
-  return parseInt(value);
 }

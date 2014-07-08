@@ -6,7 +6,7 @@
 
 namespace skia {
 
-LazyPixelRef::LazyPixelRef() : SkPixelRef(0) {
+LazyPixelRef::LazyPixelRef(const SkImageInfo& info) : SkPixelRef(info) {
 }
 
 LazyPixelRef::~LazyPixelRef() {

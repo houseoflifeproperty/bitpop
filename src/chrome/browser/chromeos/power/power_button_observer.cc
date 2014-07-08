@@ -5,16 +5,14 @@
 #include "chrome/browser/chromeos/power/power_button_observer.h"
 
 #include "ash/shell.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/user/login_status.h"
 #include "ash/wm/power_button_controller.h"
 #include "base/logging.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/login/screen_locker.h"
-#include "chrome/browser/chromeos/login/user.h"
-#include "chrome/browser/chromeos/login/user_manager.h"
 #include "chrome/browser/chromeos/power/session_state_controller_delegate_chromeos.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chromeos/dbus/dbus_thread_manager.h"
-#include "chromeos/dbus/root_power_manager_client.h"
 #include "content/public/browser/notification_service.h"
 
 namespace chromeos {
@@ -22,31 +20,16 @@ namespace chromeos {
 namespace {
 
 ash::user::LoginStatus GetCurrentLoginStatus() {
-  const UserManager* user_manager = UserManager::Get();
-  if (!user_manager->IsUserLoggedIn())
+  if (!ash::Shell::GetInstance()->system_tray_delegate())
     return ash::user::LOGGED_IN_NONE;
-  if (user_manager->IsCurrentUserOwner())
-    return ash::user::LOGGED_IN_OWNER;
-
-  switch (user_manager->GetLoggedInUser()->GetType()) {
-    case User::USER_TYPE_REGULAR:
-      return ash::user::LOGGED_IN_USER;
-    case User::USER_TYPE_GUEST:
-      return ash::user::LOGGED_IN_GUEST;
-    case User::USER_TYPE_RETAIL_MODE:
-      return ash::user::LOGGED_IN_KIOSK;
-    case User::USER_TYPE_PUBLIC_ACCOUNT:
-      return ash::user::LOGGED_IN_PUBLIC;
-  }
-
-  NOTREACHED();
-  return ash::user::LOGGED_IN_USER;
+  return ash::Shell::GetInstance()->system_tray_delegate()->
+      GetUserLoginStatus();
 }
 
 }  // namespace
 
 PowerButtonObserver::PowerButtonObserver() {
-  ash::Shell::GetInstance()->session_state_controller()->
+  ash::Shell::GetInstance()->lock_state_controller()->
       SetDelegate(new SessionStateControllerDelegateChromeos);
 
   registrar_.Add(
@@ -62,7 +45,7 @@ PowerButtonObserver::PowerButtonObserver() {
       chrome::NOTIFICATION_SCREEN_LOCK_STATE_CHANGED,
       content::NotificationService::AllSources());
 
-  DBusThreadManager::Get()->GetRootPowerManagerClient()->AddObserver(this);
+  DBusThreadManager::Get()->GetPowerManagerClient()->AddObserver(this);
   DBusThreadManager::Get()->GetSessionManagerClient()->AddObserver(this);
 
   // Tell the controller about the initial state.
@@ -75,7 +58,7 @@ PowerButtonObserver::PowerButtonObserver() {
 
 PowerButtonObserver::~PowerButtonObserver() {
   DBusThreadManager::Get()->GetSessionManagerClient()->RemoveObserver(this);
-  DBusThreadManager::Get()->GetRootPowerManagerClient()->RemoveObserver(this);
+  DBusThreadManager::Get()->GetPowerManagerClient()->RemoveObserver(this);
 }
 
 void PowerButtonObserver::Observe(int type,
@@ -99,14 +82,10 @@ void PowerButtonObserver::Observe(int type,
   }
 }
 
-void PowerButtonObserver::OnPowerButtonEvent(
+void PowerButtonObserver::PowerButtonEventReceived(
     bool down, const base::TimeTicks& timestamp) {
   ash::Shell::GetInstance()->power_button_controller()->
       OnPowerButtonEvent(down, timestamp);
-}
-
-void PowerButtonObserver::LockScreen() {
-  ash::Shell::GetInstance()->session_state_controller()->OnStartingLock();
 }
 
 }  // namespace chromeos

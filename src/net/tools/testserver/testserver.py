@@ -1,9 +1,10 @@
 #!/usr/bin/env python
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-"""This is a simple HTTP/FTP/SYNC/TCP/UDP/ server used for testing Chrome.
+"""This is a simple HTTP/FTP/TCP/UDP/BASIC_AUTH_PROXY/WEBSOCKET server used for
+testing Chrome.
 
 It supports several test URLs, as specified by the handlers in TestPageHandler.
 By default, it listens on an ephemeral port and sends the port number back to
@@ -13,21 +14,21 @@ It can use https if you specify the flag --https=CERT where CERT is the path
 to a pem file containing the certificate and private key that should be used.
 """
 
-import asyncore
 import base64
 import BaseHTTPServer
 import cgi
-import errno
 import hashlib
-import json
 import logging
 import minica
 import os
+import json
 import random
 import re
 import select
 import socket
 import SocketServer
+import ssl
+import struct
 import sys
 import threading
 import time
@@ -35,35 +36,49 @@ import urllib
 import urlparse
 import zlib
 
-import echo_message
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(BASE_DIR)))
+
+# Temporary hack to deal with tlslite 0.3.8 -> 0.4.6 upgrade.
+#
+# TODO(davidben): Remove this when it has cycled through all the bots and
+# developer checkouts or when http://crbug.com/356276 is resolved.
+try:
+  os.remove(os.path.join(ROOT_DIR, 'third_party', 'tlslite',
+                         'tlslite', 'utils', 'hmac.pyc'))
+except Exception:
+  pass
+
+# Append at the end of sys.path, it's fine to use the system library.
+sys.path.append(os.path.join(ROOT_DIR, 'third_party', 'pyftpdlib', 'src'))
+
+# Insert at the beginning of the path, we want to use our copies of the library
+# unconditionally.
+sys.path.insert(0, os.path.join(ROOT_DIR, 'third_party', 'pywebsocket', 'src'))
+sys.path.insert(0, os.path.join(ROOT_DIR, 'third_party', 'tlslite'))
+
+import mod_pywebsocket.standalone
+from mod_pywebsocket.standalone import WebSocketServer
+# import manually
+mod_pywebsocket.standalone.ssl = ssl
+
 import pyftpdlib.ftpserver
-import testserver_base
+
 import tlslite
 import tlslite.api
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-sys.path.insert(
-    0, os.path.join(BASE_DIR, '..', '..', '..', 'third_party/pywebsocket/src'))
-from mod_pywebsocket.standalone import WebSocketServer
+import echo_message
+import testserver_base
 
 SERVER_HTTP = 0
 SERVER_FTP = 1
-SERVER_SYNC = 2
-SERVER_TCP_ECHO = 3
-SERVER_UDP_ECHO = 4
-SERVER_BASIC_AUTH_PROXY = 5
-SERVER_WEBSOCKET = 6
+SERVER_TCP_ECHO = 2
+SERVER_UDP_ECHO = 3
+SERVER_BASIC_AUTH_PROXY = 4
+SERVER_WEBSOCKET = 5
 
 # Default request queue size for WebSocketServer.
 _DEFAULT_REQUEST_QUEUE_SIZE = 128
-
-
-# Using debug() seems to cause hangs on XP: see http://crbug.com/64515 .
-debug_output = sys.stderr
-def debug(string):
-  debug_output.write(string + "\n")
-  debug_output.flush()
-
 
 class WebSocketOptions:
   """Holds options for WebSocketServer."""
@@ -86,6 +101,7 @@ class WebSocketOptions:
     self.certificate = None
     self.tls_client_auth = False
     self.tls_client_ca = None
+    self.tls_module = 'ssl'
     self.use_basic_auth = False
 
 
@@ -104,57 +120,16 @@ class RecordingSSLSessionCache(object):
     self.log.append(('insert', sessionID))
 
 
-class ClientRestrictingServerMixIn:
-  """Implements verify_request to limit connections to our configured IP
-  address."""
-
-  def verify_request(self, _request, client_address):
-    return client_address[0] == self.server_address[0]
-
-
-class BrokenPipeHandlerMixIn:
-  """Allows the server to deal with "broken pipe" errors (which happen if the
-  browser quits with outstanding requests, like for the favicon). This mix-in
-  requires the class to derive from SocketServer.BaseServer and not override its
-  handle_error() method. """
-
-  def handle_error(self, request, client_address):
-    value = sys.exc_info()[1]
-    if isinstance(value, socket.error):
-      err = value.args[0]
-      if sys.platform in ('win32', 'cygwin'):
-        # "An established connection was aborted by the software in your host."
-        pipe_err = 10053
-      else:
-        pipe_err = errno.EPIPE
-      if err == pipe_err:
-        print "testserver.py: Broken pipe"
-        return
-    SocketServer.BaseServer.handle_error(self, request, client_address)
-
-
-class StoppableHTTPServer(BaseHTTPServer.HTTPServer):
-  """This is a specialization of BaseHTTPServer to allow it
-  to be exited cleanly (by setting its "stop" member to True)."""
-
-  def serve_forever(self):
-    self.stop = False
-    self.nonce_time = None
-    while not self.stop:
-      self.handle_request()
-    self.socket.close()
-
-
-class HTTPServer(ClientRestrictingServerMixIn,
-                 BrokenPipeHandlerMixIn,
-                 StoppableHTTPServer):
+class HTTPServer(testserver_base.ClientRestrictingServerMixIn,
+                 testserver_base.BrokenPipeHandlerMixIn,
+                 testserver_base.StoppableHTTPServer):
   """This is a specialization of StoppableHTTPServer that adds client
   verification."""
 
   pass
 
-class OCSPServer(ClientRestrictingServerMixIn,
-                 BrokenPipeHandlerMixIn,
+class OCSPServer(testserver_base.ClientRestrictingServerMixIn,
+                 testserver_base.BrokenPipeHandlerMixIn,
                  BaseHTTPServer.HTTPServer):
   """This is a specialization of HTTPServer that serves an
   OCSP response"""
@@ -170,20 +145,39 @@ class OCSPServer(ClientRestrictingServerMixIn,
 
 
 class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
-                  ClientRestrictingServerMixIn,
-                  BrokenPipeHandlerMixIn,
-                  StoppableHTTPServer):
+                  testserver_base.ClientRestrictingServerMixIn,
+                  testserver_base.BrokenPipeHandlerMixIn,
+                  testserver_base.StoppableHTTPServer):
   """This is a specialization of StoppableHTTPServer that add https support and
   client verification."""
 
   def __init__(self, server_address, request_hander_class, pem_cert_and_key,
-               ssl_client_auth, ssl_client_cas, ssl_bulk_ciphers,
-               record_resume_info, tls_intolerant):
-    self.cert_chain = tlslite.api.X509CertChain().parseChain(pem_cert_and_key)
-    self.private_key = tlslite.api.parsePEMKey(pem_cert_and_key, private=True)
+               ssl_client_auth, ssl_client_cas,
+               ssl_bulk_ciphers, ssl_key_exchanges, enable_npn,
+               record_resume_info, tls_intolerant, signed_cert_timestamps,
+               fallback_scsv_enabled, ocsp_response):
+    self.cert_chain = tlslite.api.X509CertChain()
+    self.cert_chain.parsePemList(pem_cert_and_key)
+    # Force using only python implementation - otherwise behavior is different
+    # depending on whether m2crypto Python module is present (error is thrown
+    # when it is). m2crypto uses a C (based on OpenSSL) implementation under
+    # the hood.
+    self.private_key = tlslite.api.parsePEMKey(pem_cert_and_key,
+                                               private=True,
+                                               implementations=['python'])
     self.ssl_client_auth = ssl_client_auth
     self.ssl_client_cas = []
-    self.tls_intolerant = tls_intolerant
+    if enable_npn:
+      self.next_protos = ['http/1.1']
+    else:
+      self.next_protos = None
+    if tls_intolerant == 0:
+      self.tls_intolerant = None
+    else:
+      self.tls_intolerant = (3, tls_intolerant)
+    self.signed_cert_timestamps = signed_cert_timestamps
+    self.fallback_scsv_enabled = fallback_scsv_enabled
+    self.ocsp_response = ocsp_response
 
     for ca_file in ssl_client_cas:
       s = open(ca_file).read()
@@ -193,6 +187,8 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
     self.ssl_handshake_settings = tlslite.api.HandshakeSettings()
     if ssl_bulk_ciphers is not None:
       self.ssl_handshake_settings.cipherNames = ssl_bulk_ciphers
+    if ssl_key_exchanges is not None:
+      self.ssl_handshake_settings.keyExchangeNames = ssl_key_exchanges
 
     if record_resume_info:
       # If record_resume_info is true then we'll replace the session cache with
@@ -200,19 +196,27 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
       self.session_cache = RecordingSSLSessionCache()
     else:
       self.session_cache = tlslite.api.SessionCache()
-    StoppableHTTPServer.__init__(self, server_address, request_hander_class)
+    testserver_base.StoppableHTTPServer.__init__(self,
+                                                 server_address,
+                                                 request_hander_class)
 
   def handshake(self, tlsConnection):
     """Creates the SSL connection."""
 
     try:
+      self.tlsConnection = tlsConnection
       tlsConnection.handshakeServer(certChain=self.cert_chain,
                                     privateKey=self.private_key,
                                     sessionCache=self.session_cache,
                                     reqCert=self.ssl_client_auth,
                                     settings=self.ssl_handshake_settings,
                                     reqCAs=self.ssl_client_cas,
-                                    tlsIntolerant=self.tls_intolerant)
+                                    nextProtos=self.next_protos,
+                                    tlsIntolerant=self.tls_intolerant,
+                                    signedCertTimestamps=
+                                    self.signed_cert_timestamps,
+                                    fallbackSCSV=self.fallback_scsv_enabled,
+                                    ocspResponse = self.ocsp_response)
       tlsConnection.ignoreAbruptClose = True
       return True
     except tlslite.api.TLSAbruptCloseError:
@@ -223,122 +227,15 @@ class HTTPSServer(tlslite.api.TLSSocketServerMixIn,
       return False
 
 
-class SyncHTTPServer(ClientRestrictingServerMixIn,
-                     BrokenPipeHandlerMixIn,
-                     StoppableHTTPServer):
-  """An HTTP server that handles sync commands."""
-
-  def __init__(self, server_address, xmpp_port, request_handler_class):
-    # We import here to avoid pulling in chromiumsync's dependencies
-    # unless strictly necessary.
-    import chromiumsync
-    import xmppserver
-    StoppableHTTPServer.__init__(self, server_address, request_handler_class)
-    self._sync_handler = chromiumsync.TestServer()
-    self._xmpp_socket_map = {}
-    self._xmpp_server = xmppserver.XmppServer(
-      self._xmpp_socket_map, ('localhost', xmpp_port))
-    self.xmpp_port = self._xmpp_server.getsockname()[1]
-    self.authenticated = True
-
-  def GetXmppServer(self):
-    return self._xmpp_server
-
-  def HandleCommand(self, query, raw_request):
-    return self._sync_handler.HandleCommand(query, raw_request)
-
-  def HandleRequestNoBlock(self):
-    """Handles a single request.
-
-    Copied from SocketServer._handle_request_noblock().
-    """
-
-    try:
-      request, client_address = self.get_request()
-    except socket.error:
-      return
-    if self.verify_request(request, client_address):
-      try:
-        self.process_request(request, client_address)
-      except Exception:
-        self.handle_error(request, client_address)
-        self.close_request(request)
-
-  def SetAuthenticated(self, auth_valid):
-    self.authenticated = auth_valid
-
-  def GetAuthenticated(self):
-    return self.authenticated
-
-  def serve_forever(self):
-    """This is a merge of asyncore.loop() and SocketServer.serve_forever().
-    """
-
-    def HandleXmppSocket(fd, socket_map, handler):
-      """Runs the handler for the xmpp connection for fd.
-
-      Adapted from asyncore.read() et al.
-      """
-
-      xmpp_connection = socket_map.get(fd)
-      # This could happen if a previous handler call caused fd to get
-      # removed from socket_map.
-      if xmpp_connection is None:
-        return
-      try:
-        handler(xmpp_connection)
-      except (asyncore.ExitNow, KeyboardInterrupt, SystemExit):
-        raise
-      except:
-        xmpp_connection.handle_error()
-
-    while True:
-      read_fds = [ self.fileno() ]
-      write_fds = []
-      exceptional_fds = []
-
-      for fd, xmpp_connection in self._xmpp_socket_map.items():
-        is_r = xmpp_connection.readable()
-        is_w = xmpp_connection.writable()
-        if is_r:
-          read_fds.append(fd)
-        if is_w:
-          write_fds.append(fd)
-        if is_r or is_w:
-          exceptional_fds.append(fd)
-
-      try:
-        read_fds, write_fds, exceptional_fds = (
-          select.select(read_fds, write_fds, exceptional_fds))
-      except select.error, err:
-        if err.args[0] != errno.EINTR:
-          raise
-        else:
-          continue
-
-      for fd in read_fds:
-        if fd == self.fileno():
-          self.HandleRequestNoBlock()
-          continue
-        HandleXmppSocket(fd, self._xmpp_socket_map,
-                         asyncore.dispatcher.handle_read_event)
-
-      for fd in write_fds:
-        HandleXmppSocket(fd, self._xmpp_socket_map,
-                         asyncore.dispatcher.handle_write_event)
-
-      for fd in exceptional_fds:
-        HandleXmppSocket(fd, self._xmpp_socket_map,
-                         asyncore.dispatcher.handle_expt_event)
-
-
-class FTPServer(ClientRestrictingServerMixIn, pyftpdlib.ftpserver.FTPServer):
+class FTPServer(testserver_base.ClientRestrictingServerMixIn,
+                pyftpdlib.ftpserver.FTPServer):
   """This is a specialization of FTPServer that adds client verification."""
 
   pass
 
 
-class TCPEchoServer(ClientRestrictingServerMixIn, SocketServer.TCPServer):
+class TCPEchoServer(testserver_base.ClientRestrictingServerMixIn,
+                    SocketServer.TCPServer):
   """A TCP echo server that echoes back what it has received."""
 
   def server_bind(self):
@@ -357,7 +254,8 @@ class TCPEchoServer(ClientRestrictingServerMixIn, SocketServer.TCPServer):
     self.socket.close()
 
 
-class UDPEchoServer(ClientRestrictingServerMixIn, SocketServer.UDPServer):
+class UDPEchoServer(testserver_base.ClientRestrictingServerMixIn,
+                    SocketServer.UDPServer):
   """A UDP echo server that echoes back what it has received."""
 
   def server_bind(self):
@@ -376,60 +274,11 @@ class UDPEchoServer(ClientRestrictingServerMixIn, SocketServer.UDPServer):
     self.socket.close()
 
 
-class BasePageHandler(BaseHTTPServer.BaseHTTPRequestHandler):
-
-  def __init__(self, request, client_address, socket_server,
-               connect_handlers, get_handlers, head_handlers, post_handlers,
-               put_handlers):
-    self._connect_handlers = connect_handlers
-    self._get_handlers = get_handlers
-    self._head_handlers = head_handlers
-    self._post_handlers = post_handlers
-    self._put_handlers = put_handlers
-    BaseHTTPServer.BaseHTTPRequestHandler.__init__(
-      self, request, client_address, socket_server)
-
-  def log_request(self, *args, **kwargs):
-    # Disable request logging to declutter test log output.
-    pass
-
-  def _ShouldHandleRequest(self, handler_name):
-    """Determines if the path can be handled by the handler.
-
-    We consider a handler valid if the path begins with the
-    handler name. It can optionally be followed by "?*", "/*".
-    """
-
-    pattern = re.compile('%s($|\?|/).*' % handler_name)
-    return pattern.match(self.path)
-
-  def do_CONNECT(self):
-    for handler in self._connect_handlers:
-      if handler():
-        return
-
-  def do_GET(self):
-    for handler in self._get_handlers:
-      if handler():
-        return
-
-  def do_HEAD(self):
-    for handler in self._head_handlers:
-      if handler():
-        return
-
-  def do_POST(self):
-    for handler in self._post_handlers:
-      if handler():
-        return
-
-  def do_PUT(self):
-    for handler in self._put_handlers:
-      if handler():
-        return
-
-
-class TestPageHandler(BasePageHandler):
+class TestPageHandler(testserver_base.BasePageHandler):
+  # Class variables to allow for persistence state between page handler
+  # invocations
+  rst_limits = {}
+  fail_precondition = {}
 
   def __init__(self, request, client_address, socket_server):
     connect_handlers = [
@@ -470,15 +319,17 @@ class TestPageHandler(BasePageHandler):
       self.ServerRedirectHandler,
       self.ClientRedirectHandler,
       self.MultipartHandler,
-      self.MultipartSlowHandler,
       self.GetSSLSessionCacheHandler,
+      self.SSLManySmallRecords,
+      self.GetChannelID,
       self.CloseSocketHandler,
+      self.RangeResetHandler,
       self.DefaultResponseHandler]
     post_handlers = [
       self.EchoTitleHandler,
       self.EchoHandler,
-      self.DeviceManagementHandler,
-      self.PostOnlyFileHandler] + get_handlers
+      self.PostOnlyFileHandler,
+      self.EchoMultipartPostHandler] + get_handlers
     put_handlers = [
       self.EchoTitleHandler,
       self.EchoHandler] + get_handlers
@@ -494,13 +345,16 @@ class TestPageHandler(BasePageHandler):
       'jpg' : 'image/jpeg',
       'json': 'application/json',
       'pdf' : 'application/pdf',
+      'txt' : 'text/plain',
+      'wav' : 'audio/wav',
       'xml' : 'text/xml'
     }
     self._default_mime_type = 'text/html'
 
-    BasePageHandler.__init__(self, request, client_address, socket_server,
-                             connect_handlers, get_handlers, head_handlers,
-                             post_handlers, put_handlers)
+    testserver_base.BasePageHandler.__init__(self, request, client_address,
+                                             socket_server, connect_handlers,
+                                             get_handlers, head_handlers,
+                                             post_handlers, put_handlers)
 
   def GetMIMETypeFromName(self, file_name):
     """Returns the mime type for the specified file_name. So far it only looks
@@ -856,6 +710,37 @@ class TestPageHandler(BasePageHandler):
     self.wfile.write('</body></html>')
     return True
 
+  def EchoMultipartPostHandler(self):
+    """This handler echoes received multipart post data as json format."""
+
+    if not (self._ShouldHandleRequest("/echomultipartpost") or
+            self._ShouldHandleRequest("/searchbyimage")):
+      return False
+
+    content_type, parameters = cgi.parse_header(
+        self.headers.getheader('content-type'))
+    if content_type == 'multipart/form-data':
+      post_multipart = cgi.parse_multipart(self.rfile, parameters)
+    elif content_type == 'application/x-www-form-urlencoded':
+      raise Exception('POST by application/x-www-form-urlencoded is '
+                      'not implemented.')
+    else:
+      post_multipart = {}
+
+    # Since the data can be binary, we encode them by base64.
+    post_multipart_base64_encoded = {}
+    for field, values in post_multipart.items():
+      post_multipart_base64_encoded[field] = [base64.b64encode(value)
+                                              for value in values]
+
+    result = {'POST_multipart' : post_multipart_base64_encoded}
+
+    self.send_response(200)
+    self.send_header("Content-type", "text/plain")
+    self.end_headers()
+    self.wfile.write(json.dumps(result, indent=2, sort_keys=False))
+    return True
+
   def DownloadHandler(self):
     """This handler sends a downloadable file with or without reporting
     the size (6K)."""
@@ -890,8 +775,8 @@ class TestPageHandler(BasePageHandler):
     self.wfile.flush()
 
     # handle requests until one of them clears this flag.
-    self.server.waitForDownload = True
-    while self.server.waitForDownload:
+    self.server.wait_for_download = True
+    while self.server.wait_for_download:
       self.server.handle_request()
 
     # Second chunk of data:
@@ -904,7 +789,7 @@ class TestPageHandler(BasePageHandler):
     if not self._ShouldHandleRequest("/download-finish"):
       return False
 
-    self.server.waitForDownload = False
+    self.server.wait_for_download = False
     self.send_response(200)
     self.send_header('Content-Type', 'text/html')
     self.send_header('Cache-Control', 'max-age=0')
@@ -1508,7 +1393,7 @@ class TestPageHandler(BasePageHandler):
     if query_char < 0 or len(self.path) <= query_char + 1:
       self.sendRedirectHelp(test_name)
       return True
-    dest = self.path[query_char + 1:]
+    dest = urllib.unquote(self.path[query_char + 1:])
 
     self.send_response(301)  # moved permanently
     self.send_header('Location', dest)
@@ -1532,7 +1417,7 @@ class TestPageHandler(BasePageHandler):
     if query_char < 0 or len(self.path) <= query_char + 1:
       self.sendRedirectHelp(test_name)
       return True
-    dest = self.path[query_char + 1:]
+    dest = urllib.unquote(self.path[query_char + 1:])
 
     self.send_response(200)
     self.send_header('Content-Type', 'text/html')
@@ -1566,35 +1451,6 @@ class TestPageHandler(BasePageHandler):
     self.wfile.write('--' + bound + '--')
     return True
 
-  def MultipartSlowHandler(self):
-    """Send a multipart response (3 text/html pages) with a slight delay
-    between each page.  This is similar to how some pages show status using
-    multipart."""
-
-    test_name = '/multipart-slow'
-    if not self._ShouldHandleRequest(test_name):
-      return False
-
-    num_frames = 3
-    bound = '12345'
-    self.send_response(200)
-    self.send_header('Content-Type',
-                     'multipart/x-mixed-replace;boundary=' + bound)
-    self.end_headers()
-
-    for i in xrange(num_frames):
-      self.wfile.write('--' + bound + '\r\n')
-      self.wfile.write('Content-Type: text/html\r\n\r\n')
-      time.sleep(0.25)
-      if i == 2:
-        self.wfile.write('<title>PASS</title>')
-      else:
-        self.wfile.write('<title>page ' + str(i) + '</title>')
-      self.wfile.write('page ' + str(i) + '<!-- ' + ('x' * 2048) + '-->')
-
-    self.wfile.write('--' + bound + '--')
-    return True
-
   def GetSSLSessionCacheHandler(self):
     """Send a reply containing a log of the session cache operations."""
 
@@ -1605,11 +1461,45 @@ class TestPageHandler(BasePageHandler):
     self.send_header('Content-Type', 'text/plain')
     self.end_headers()
     try:
-      for (action, sessionID) in self.server.session_cache.log:
-        self.wfile.write('%s\t%s\n' % (action, sessionID.encode('hex')))
+      log = self.server.session_cache.log
     except AttributeError:
       self.wfile.write('Pass --https-record-resume in order to use' +
                        ' this request')
+      return True
+
+    for (action, sessionID) in log:
+      self.wfile.write('%s\t%s\n' % (action, bytes(sessionID).encode('hex')))
+    return True
+
+  def SSLManySmallRecords(self):
+    """Sends a reply consisting of a variety of small writes. These will be
+    translated into a series of small SSL records when used over an HTTPS
+    server."""
+
+    if not self._ShouldHandleRequest('/ssl-many-small-records'):
+      return False
+
+    self.send_response(200)
+    self.send_header('Content-Type', 'text/plain')
+    self.end_headers()
+
+    # Write ~26K of data, in 1350 byte chunks
+    for i in xrange(20):
+      self.wfile.write('*' * 1350)
+      self.wfile.flush()
+    return True
+
+  def GetChannelID(self):
+    """Send a reply containing the hashed ChannelID that the client provided."""
+
+    if not self._ShouldHandleRequest('/channel-id'):
+      return False
+
+    self.send_response(200)
+    self.send_header('Content-Type', 'text/plain')
+    self.end_headers()
+    channel_id = bytes(self.server.tlsConnection.channel_id)
+    self.wfile.write(hashlib.sha256(channel_id).digest().encode('base64'))
     return True
 
   def CloseSocketHandler(self):
@@ -1619,6 +1509,154 @@ class TestPageHandler(BasePageHandler):
       return False
 
     self.wfile.close()
+    return True
+
+  def RangeResetHandler(self):
+    """Send data broken up by connection resets every N (default 4K) bytes.
+    Support range requests.  If the data requested doesn't straddle a reset
+    boundary, it will all be sent.  Used for testing resuming downloads."""
+
+    def DataForRange(start, end):
+      """Data to be provided for a particular range of bytes."""
+      # Offset and scale to avoid too obvious (and hence potentially
+      # collidable) data.
+      return ''.join([chr(y % 256)
+                      for y in range(start * 2 + 15, end * 2 + 15, 2)])
+
+    if not self._ShouldHandleRequest('/rangereset'):
+      return False
+
+    # HTTP/1.1 is required for ETag and range support.
+    self.protocol_version = 'HTTP/1.1'
+    _, _, url_path, _, query, _ = urlparse.urlparse(self.path)
+
+    # Defaults
+    size = 8000
+    # Note that the rst is sent just before sending the rst_boundary byte.
+    rst_boundary = 4000
+    respond_to_range = True
+    hold_for_signal = False
+    rst_limit = -1
+    token = 'DEFAULT'
+    fail_precondition = 0
+    send_verifiers = True
+
+    # Parse the query
+    qdict = urlparse.parse_qs(query, True)
+    if 'size' in qdict:
+      size = int(qdict['size'][0])
+    if 'rst_boundary' in qdict:
+      rst_boundary = int(qdict['rst_boundary'][0])
+    if 'token' in qdict:
+      # Identifying token for stateful tests.
+      token = qdict['token'][0]
+    if 'rst_limit' in qdict:
+      # Max number of rsts for a given token.
+      rst_limit = int(qdict['rst_limit'][0])
+    if 'bounce_range' in qdict:
+      respond_to_range = False
+    if 'hold' in qdict:
+      # Note that hold_for_signal will not work with null range requests;
+      # see TODO below.
+      hold_for_signal = True
+    if 'no_verifiers' in qdict:
+      send_verifiers = False
+    if 'fail_precondition' in qdict:
+      fail_precondition = int(qdict['fail_precondition'][0])
+
+    # Record already set information, or set it.
+    rst_limit = TestPageHandler.rst_limits.setdefault(token, rst_limit)
+    if rst_limit != 0:
+      TestPageHandler.rst_limits[token] -= 1
+    fail_precondition = TestPageHandler.fail_precondition.setdefault(
+      token, fail_precondition)
+    if fail_precondition != 0:
+      TestPageHandler.fail_precondition[token] -= 1
+
+    first_byte = 0
+    last_byte = size - 1
+
+    # Does that define what we want to return, or do we need to apply
+    # a range?
+    range_response = False
+    range_header = self.headers.getheader('range')
+    if range_header and respond_to_range:
+      mo = re.match("bytes=(\d*)-(\d*)", range_header)
+      if mo.group(1):
+        first_byte = int(mo.group(1))
+      if mo.group(2):
+        last_byte = int(mo.group(2))
+      if last_byte > size - 1:
+        last_byte = size - 1
+      range_response = True
+      if last_byte < first_byte:
+        return False
+
+    if (fail_precondition and
+        (self.headers.getheader('If-Modified-Since') or
+         self.headers.getheader('If-Match'))):
+      self.send_response(412)
+      self.end_headers()
+      return True
+
+    if range_response:
+      self.send_response(206)
+      self.send_header('Content-Range',
+                       'bytes %d-%d/%d' % (first_byte, last_byte, size))
+    else:
+      self.send_response(200)
+    self.send_header('Content-Type', 'application/octet-stream')
+    self.send_header('Content-Length', last_byte - first_byte + 1)
+    if send_verifiers:
+      # If fail_precondition is non-zero, then the ETag for each request will be
+      # different.
+      etag = "%s%d" % (token, fail_precondition)
+      self.send_header('ETag', etag)
+      self.send_header('Last-Modified', 'Tue, 19 Feb 2013 14:32 EST')
+    self.end_headers()
+
+    if hold_for_signal:
+      # TODO(rdsmith/phajdan.jr): http://crbug.com/169519: Without writing
+      # a single byte, the self.server.handle_request() below hangs
+      # without processing new incoming requests.
+      self.wfile.write(DataForRange(first_byte, first_byte + 1))
+      first_byte = first_byte + 1
+      # handle requests until one of them clears this flag.
+      self.server.wait_for_download = True
+      while self.server.wait_for_download:
+        self.server.handle_request()
+
+    possible_rst = ((first_byte / rst_boundary) + 1) * rst_boundary
+    if possible_rst >= last_byte or rst_limit == 0:
+      # No RST has been requested in this range, so we don't need to
+      # do anything fancy; just write the data and let the python
+      # infrastructure close the connection.
+      self.wfile.write(DataForRange(first_byte, last_byte + 1))
+      self.wfile.flush()
+      return True
+
+    # We're resetting the connection part way in; go to the RST
+    # boundary and then send an RST.
+    # Because socket semantics do not guarantee that all the data will be
+    # sent when using the linger semantics to hard close a socket,
+    # we send the data and then wait for our peer to release us
+    # before sending the reset.
+    data = DataForRange(first_byte, possible_rst)
+    self.wfile.write(data)
+    self.wfile.flush()
+    self.server.wait_for_download = True
+    while self.server.wait_for_download:
+      self.server.handle_request()
+    l_onoff = 1  # Linger is active.
+    l_linger = 0  # Seconds to linger for.
+    self.connection.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER,
+                 struct.pack('ii', l_onoff, l_linger))
+
+    # Close all duplicates of the underlying socket to force the RST.
+    self.wfile.close()
+    self.rfile.close()
+    self.connection.close()
+
     return True
 
   def DefaultResponseHandler(self):
@@ -1681,31 +1719,6 @@ class TestPageHandler(BasePageHandler):
     self.wfile.write(contents)
     return True
 
-  def DeviceManagementHandler(self):
-    """Delegates to the device management service used for cloud policy."""
-
-    if not self._ShouldHandleRequest("/device_management"):
-      return False
-
-    raw_request = self.ReadRequestBody()
-
-    if not self.server._device_management_handler:
-      import device_management
-      policy_path = os.path.join(self.server.data_dir, 'device_management')
-      self.server._device_management_handler = (
-          device_management.TestServer(policy_path, self.server.policy_keys))
-
-    http_response, raw_reply = (
-        self.server._device_management_handler.HandleRequest(self.path,
-                                                             self.headers,
-                                                             raw_request))
-    self.send_response(http_response)
-    if (http_response == 200):
-      self.send_header('Content-Type', 'application/x-protobuffer')
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
   # called by the redirect handling function when there is no parameter
   def sendRedirectHelp(self, redirect_name):
     self.send_response(200)
@@ -1723,280 +1736,13 @@ class TestPageHandler(BasePageHandler):
     self.wfile.write('\r\n')
 
 
-class SyncPageHandler(BasePageHandler):
-  """Handler for the main HTTP sync server."""
-
-  def __init__(self, request, client_address, sync_http_server):
-    get_handlers = [self.ChromiumSyncTimeHandler,
-                    self.ChromiumSyncMigrationOpHandler,
-                    self.ChromiumSyncCredHandler,
-                    self.ChromiumSyncXmppCredHandler,
-                    self.ChromiumSyncDisableNotificationsOpHandler,
-                    self.ChromiumSyncEnableNotificationsOpHandler,
-                    self.ChromiumSyncSendNotificationOpHandler,
-                    self.ChromiumSyncBirthdayErrorOpHandler,
-                    self.ChromiumSyncTransientErrorOpHandler,
-                    self.ChromiumSyncErrorOpHandler,
-                    self.ChromiumSyncSyncTabFaviconsOpHandler,
-                    self.ChromiumSyncCreateSyncedBookmarksOpHandler,
-                    self.ChromiumSyncEnableKeystoreEncryptionOpHandler]
-
-    post_handlers = [self.ChromiumSyncCommandHandler,
-                     self.ChromiumSyncTimeHandler]
-    BasePageHandler.__init__(self, request, client_address,
-                             sync_http_server, [], get_handlers, [],
-                             post_handlers, [])
-
-
-  def ChromiumSyncTimeHandler(self):
-    """Handle Chromium sync .../time requests.
-
-    The syncer sometimes checks server reachability by examining /time.
-    """
-
-    test_name = "/chromiumsync/time"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-
-    # Chrome hates it if we send a response before reading the request.
-    if self.headers.getheader('content-length'):
-      length = int(self.headers.getheader('content-length'))
-      _raw_request = self.rfile.read(length)
-
-    self.send_response(200)
-    self.send_header('Content-Type', 'text/plain')
-    self.end_headers()
-    self.wfile.write('0123456789')
-    return True
-
-  def ChromiumSyncCommandHandler(self):
-    """Handle a chromiumsync command arriving via http.
-
-    This covers all sync protocol commands: authentication, getupdates, and
-    commit.
-    """
-
-    test_name = "/chromiumsync/command"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-
-    length = int(self.headers.getheader('content-length'))
-    raw_request = self.rfile.read(length)
-    http_response = 200
-    raw_reply = None
-    if not self.server.GetAuthenticated():
-      http_response = 401
-      challenge = 'GoogleLogin realm="http://%s", service="chromiumsync"' % (
-        self.server.server_address[0])
-    else:
-      http_response, raw_reply = self.server.HandleCommand(
-          self.path, raw_request)
-
-    ### Now send the response to the client. ###
-    self.send_response(http_response)
-    if http_response == 401:
-      self.send_header('www-Authenticate', challenge)
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncMigrationOpHandler(self):
-    test_name = "/chromiumsync/migrate"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-
-    http_response, raw_reply = self.server._sync_handler.HandleMigrate(
-        self.path)
-    self.send_response(http_response)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncCredHandler(self):
-    test_name = "/chromiumsync/cred"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    try:
-      query = urlparse.urlparse(self.path)[4]
-      cred_valid = urlparse.parse_qs(query)['valid']
-      if cred_valid[0] == 'True':
-        self.server.SetAuthenticated(True)
-      else:
-        self.server.SetAuthenticated(False)
-    except Exception:
-      self.server.SetAuthenticated(False)
-
-    http_response = 200
-    raw_reply = 'Authenticated: %s ' % self.server.GetAuthenticated()
-    self.send_response(http_response)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncXmppCredHandler(self):
-    test_name = "/chromiumsync/xmppcred"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    xmpp_server = self.server.GetXmppServer()
-    try:
-      query = urlparse.urlparse(self.path)[4]
-      cred_valid = urlparse.parse_qs(query)['valid']
-      if cred_valid[0] == 'True':
-        xmpp_server.SetAuthenticated(True)
-      else:
-        xmpp_server.SetAuthenticated(False)
-    except:
-      xmpp_server.SetAuthenticated(False)
-
-    http_response = 200
-    raw_reply = 'XMPP Authenticated: %s ' % xmpp_server.GetAuthenticated()
-    self.send_response(http_response)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncDisableNotificationsOpHandler(self):
-    test_name = "/chromiumsync/disablenotifications"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    self.server.GetXmppServer().DisableNotifications()
-    result = 200
-    raw_reply = ('<html><title>Notifications disabled</title>'
-                 '<H1>Notifications disabled</H1></html>')
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncEnableNotificationsOpHandler(self):
-    test_name = "/chromiumsync/enablenotifications"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    self.server.GetXmppServer().EnableNotifications()
-    result = 200
-    raw_reply = ('<html><title>Notifications enabled</title>'
-                 '<H1>Notifications enabled</H1></html>')
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncSendNotificationOpHandler(self):
-    test_name = "/chromiumsync/sendnotification"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    query = urlparse.urlparse(self.path)[4]
-    query_params = urlparse.parse_qs(query)
-    channel = ''
-    data = ''
-    if 'channel' in query_params:
-      channel = query_params['channel'][0]
-    if 'data' in query_params:
-      data = query_params['data'][0]
-    self.server.GetXmppServer().SendNotification(channel, data)
-    result = 200
-    raw_reply = ('<html><title>Notification sent</title>'
-                 '<H1>Notification sent with channel "%s" '
-                 'and data "%s"</H1></html>'
-                 % (channel, data))
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncBirthdayErrorOpHandler(self):
-    test_name = "/chromiumsync/birthdayerror"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = self.server._sync_handler.HandleCreateBirthdayError()
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncTransientErrorOpHandler(self):
-    test_name = "/chromiumsync/transienterror"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = self.server._sync_handler.HandleSetTransientError()
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncErrorOpHandler(self):
-    test_name = "/chromiumsync/error"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = self.server._sync_handler.HandleSetInducedError(
-        self.path)
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncSyncTabFaviconsOpHandler(self):
-    test_name = "/chromiumsync/synctabfavicons"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = self.server._sync_handler.HandleSetSyncTabFavicons()
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncCreateSyncedBookmarksOpHandler(self):
-    test_name = "/chromiumsync/createsyncedbookmarks"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = self.server._sync_handler.HandleCreateSyncedBookmarks()
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-  def ChromiumSyncEnableKeystoreEncryptionOpHandler(self):
-    test_name = "/chromiumsync/enablekeystoreencryption"
-    if not self._ShouldHandleRequest(test_name):
-      return False
-    result, raw_reply = (
-        self.server._sync_handler.HandleEnableKeystoreEncryption())
-    self.send_response(result)
-    self.send_header('Content-Type', 'text/html')
-    self.send_header('Content-Length', len(raw_reply))
-    self.end_headers()
-    self.wfile.write(raw_reply)
-    return True
-
-
-class OCSPHandler(BasePageHandler):
+class OCSPHandler(testserver_base.BasePageHandler):
   def __init__(self, request, client_address, socket_server):
     handlers = [self.OCSPResponse]
     self.ocsp_response = socket_server.ocsp_response
-    BasePageHandler.__init__(self, request, client_address, socket_server,
-                             [], handlers, [], handlers, [])
+    testserver_base.BasePageHandler.__init__(self, request, client_address,
+                                             socket_server, [], handlers, [],
+                                             handlers, [])
 
   def OCSPResponse(self):
     self.send_response(200)
@@ -2225,7 +1971,8 @@ class ServerRunner(testserver_base.TestServerRunner):
               subject = "127.0.0.1",
               ocsp_url = ("http://%s:%d/ocsp" %
                   (host, self.__ocsp_server.server_port)),
-              ocsp_state = ocsp_state)
+              ocsp_state = ocsp_state,
+              serial = self.options.cert_serial)
 
           self.__ocsp_server.ocsp_response = ocsp_der
 
@@ -2234,12 +1981,23 @@ class ServerRunner(testserver_base.TestServerRunner):
             raise testserver_base.OptionError(
                 'specified trusted client CA file not found: ' + ca_cert +
                 ' exiting...')
+
+        stapled_ocsp_response = None
+        if self.__ocsp_server and self.options.staple_ocsp_response:
+          stapled_ocsp_response = self.__ocsp_server.ocsp_response
+
         server = HTTPSServer((host, port), TestPageHandler, pem_cert_and_key,
                              self.options.ssl_client_auth,
                              self.options.ssl_client_ca,
                              self.options.ssl_bulk_cipher,
+                             self.options.ssl_key_exchange,
+                             self.options.enable_npn,
                              self.options.record_resume,
-                             self.options.tls_intolerant)
+                             self.options.tls_intolerant,
+                             self.options.signed_cert_timestamps_tls_ext.decode(
+                                 "base64"),
+                             self.options.fallback_scsv,
+                             stapled_ocsp_response)
         print 'HTTPS server started on %s:%d...' % (host, server.server_port)
       else:
         server = HTTPServer((host, port), TestPageHandler)
@@ -2248,8 +2006,6 @@ class ServerRunner(testserver_base.TestServerRunner):
       server.data_dir = self.__make_data_dir()
       server.file_root_url = self.options.file_root_url
       server_data['port'] = server.server_port
-      server._device_management_handler = None
-      server.policy_keys = self.options.policy_keys
     elif self.options.server_type == SERVER_WEBSOCKET:
       # Launch pywebsocket via WebSocketServer.
       logger = logging.getLogger()
@@ -2275,13 +2031,6 @@ class ServerRunner(testserver_base.TestServerRunner):
       server = WebSocketServer(websocket_options)
       print 'WebSocket server started on %s:%d...' % (host, server.server_port)
       server_data['port'] = server.server_port
-    elif self.options.server_type == SERVER_SYNC:
-      xmpp_port = self.options.xmpp_port
-      server = SyncHTTPServer((host, port), xmpp_port, SyncPageHandler)
-      print 'Sync HTTP server started on port %d...' % server.server_port
-      print 'Sync XMPP server started on port %d...' % server.xmpp_port
-      server_data['port'] = server.server_port
-      server_data['xmpp_port'] = server.xmpp_port
     elif self.options.server_type == SERVER_TCP_ECHO:
       # Used for generating the key (randomly) that encodes the "echo request"
       # message.
@@ -2345,10 +2094,6 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   const=SERVER_FTP, default=SERVER_HTTP,
                                   dest='server_type',
                                   help='start up an FTP server.')
-    self.option_parser.add_option('--sync', action='store_const',
-                                  const=SERVER_SYNC, default=SERVER_HTTP,
-                                  dest='server_type',
-                                  help='start up a sync server.')
     self.option_parser.add_option('--tcp-echo', action='store_const',
                                   const=SERVER_TCP_ECHO, default=SERVER_HTTP,
                                   dest='server_type',
@@ -2366,13 +2111,6 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   const=SERVER_WEBSOCKET, default=SERVER_HTTP,
                                   dest='server_type',
                                   help='start up a WebSocket server.')
-    self.option_parser.add_option('--xmpp-port', default='0', type='int',
-                                  help='Port used by the XMPP server. If '
-                                  'unspecified, the XMPP server will listen on '
-                                  'an ephemeral port.')
-    self.option_parser.add_option('--data-dir', dest='data_dir',
-                                  help='Directory from which to read the '
-                                  'files.')
     self.option_parser.add_option('--https', action='store_true',
                                   dest='https', help='Specify that https '
                                   'should be used.')
@@ -2385,6 +2123,10 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   help='The type of OCSP response generated '
                                   'for the automatically generated '
                                   'certificate. One of [ok,revoked,invalid]')
+    self.option_parser.add_option('--cert-serial', dest='cert_serial',
+                                  default=0, type=int,
+                                  help='If non-zero then the generated '
+                                  'certificate will have this serial number')
     self.option_parser.add_option('--tls-intolerant', dest='tls_intolerant',
                                   default='0', type='int',
                                   help='If nonzero, certain TLS connections '
@@ -2393,6 +2135,26 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'aborted. 2 means TLS 1.1 or higher will be '
                                   'aborted. 3 means TLS 1.2 or higher will be '
                                   'aborted.')
+    self.option_parser.add_option('--signed-cert-timestamps-tls-ext',
+                                  dest='signed_cert_timestamps_tls_ext',
+                                  default='',
+                                  help='Base64 encoded SCT list. If set, '
+                                  'server will respond with a '
+                                  'signed_certificate_timestamp TLS extension '
+                                  'whenever the client supports it.')
+    self.option_parser.add_option('--fallback-scsv', dest='fallback_scsv',
+                                  default=False, const=True,
+                                  action='store_const',
+                                  help='If given, TLS_FALLBACK_SCSV support '
+                                  'will be enabled. This causes the server to '
+                                  'reject fallback connections from compatible '
+                                  'clients (e.g. Chrome).')
+    self.option_parser.add_option('--staple-ocsp-response',
+                                  dest='staple_ocsp_response',
+                                  default=False, action='store_true',
+                                  help='If set, server will staple the OCSP '
+                                  'response whenever OCSP is on and the client '
+                                  'supports OCSP stapling.')
     self.option_parser.add_option('--https-record-resume',
                                   dest='record_resume', const=True,
                                   default=False, action='store_const',
@@ -2418,19 +2180,23 @@ class ServerRunner(testserver_base.TestServerRunner):
                                   'algorithms will be used. This option may '
                                   'appear multiple times, indicating '
                                   'multiple algorithms should be enabled.');
+    self.option_parser.add_option('--ssl-key-exchange', action='append',
+                                  help='Specify the key exchange algorithm(s)'
+                                  'that will be accepted by the SSL server. '
+                                  'Valid values are "rsa", "dhe_rsa". If '
+                                  'omitted, all algorithms will be used. This '
+                                  'option may appear multiple times, '
+                                  'indicating multiple algorithms should be '
+                                  'enabled.');
+    # TODO(davidben): Add ALPN support to tlslite.
+    self.option_parser.add_option('--enable-npn', dest='enable_npn',
+                                  default=False, const=True,
+                                  action='store_const',
+                                  help='Enable server support for the NPN '
+                                  'extension. The server will advertise '
+                                  'support for exactly one protocol, http/1.1')
     self.option_parser.add_option('--file-root-url', default='/files/',
                                   help='Specify a root URL for files served.')
-    self.option_parser.add_option('--policy-key', action='append',
-                                  dest='policy_keys',
-                                  help='Specify a path to a PEM-encoded '
-                                  'private key to use for policy signing. May '
-                                  'be specified multiple times in order to '
-                                  'load multipe keys into the server. If the '
-                                  'server has multiple keys, it will rotate '
-                                  'through them in at each request a '
-                                  'round-robin fashion. The server will '
-                                  'generate a random key if none is specified '
-                                  'on the command line.')
 
 
 if __name__ == '__main__':

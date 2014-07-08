@@ -5,55 +5,75 @@
 #include "ash/system/status_area_widget.h"
 
 #include "ash/root_window_controller.h"
+#include "ash/shelf/shelf_layout_manager.h"
+#include "ash/shelf/shelf_widget.h"
 #include "ash/shell.h"
 #include "ash/shell_delegate.h"
 #include "ash/shell_window_ids.h"
 #include "ash/system/bluetooth/bluetooth_observer.h"
+#include "ash/system/overview/overview_button_tray.h"
 #include "ash/system/status_area_widget_delegate.h"
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_delegate.h"
 #include "ash/system/web_notification/web_notification_tray.h"
-#include "ash/wm/shelf_layout_manager.h"
 #include "ash/wm/window_properties.h"
 #include "base/i18n/time_formatting.h"
 #include "ui/aura/window.h"
 #include "ui/gfx/screen.h"
 
+#if defined(OS_CHROMEOS)
+#include "ash/system/chromeos/session/logout_button_tray.h"
+#include "ash/system/chromeos/virtual_keyboard/virtual_keyboard_tray.h"
+#endif
+
 namespace ash {
 
-namespace internal {
+const char StatusAreaWidget::kNativeViewName[] = "StatusAreaWidget";
 
 StatusAreaWidget::StatusAreaWidget(aura::Window* status_container)
-    : status_area_widget_delegate_(new internal::StatusAreaWidgetDelegate),
+    : status_area_widget_delegate_(new StatusAreaWidgetDelegate),
+      overview_button_tray_(NULL),
       system_tray_(NULL),
       web_notification_tray_(NULL),
+#if defined(OS_CHROMEOS)
+      logout_button_tray_(NULL),
+      virtual_keyboard_tray_(NULL),
+#endif
       login_status_(user::LOGGED_IN_NONE) {
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
   params.delegate = status_area_widget_delegate_;
   params.parent = status_container;
-  params.transparent = true;
+  params.opacity = views::Widget::InitParams::TRANSLUCENT_WINDOW;
   Init(params);
   set_focus_on_creation(false);
   SetContentsView(status_area_widget_delegate_);
-  GetNativeView()->SetName("StatusAreaWidget");
-  GetNativeView()->SetProperty(internal::kStayInSameRootWindowKey, true);
+  GetNativeView()->SetName(kNativeViewName);
 }
 
 StatusAreaWidget::~StatusAreaWidget() {
 }
 
 void StatusAreaWidget::CreateTrayViews() {
+  AddOverviewButtonTray();
   AddSystemTray();
   AddWebNotificationTray();
+#if defined(OS_CHROMEOS)
+  AddLogoutButtonTray();
+  AddVirtualKeyboardTray();
+#endif
+
   SystemTrayDelegate* delegate =
       ash::Shell::GetInstance()->system_tray_delegate();
   DCHECK(delegate);
   // Initialize after all trays have been created.
-  if (system_tray_)
-    system_tray_->InitializeTrayItems(delegate);
-  if (web_notification_tray_)
-    web_notification_tray_->Initialize();
+  system_tray_->InitializeTrayItems(delegate);
+  web_notification_tray_->Initialize();
+#if defined(OS_CHROMEOS)
+  logout_button_tray_->Initialize();
+  virtual_keyboard_tray_->Initialize();
+#endif
+  overview_button_tray_->Initialize();
   UpdateAfterLoginStatusChange(delegate->GetUserLoginStatus());
 }
 
@@ -65,28 +85,42 @@ void StatusAreaWidget::Shutdown() {
   web_notification_tray_ = NULL;
   delete system_tray_;
   system_tray_ = NULL;
+#if defined(OS_CHROMEOS)
+  delete virtual_keyboard_tray_;
+  virtual_keyboard_tray_ = NULL;
+  delete logout_button_tray_;
+  logout_button_tray_ = NULL;
+#endif
+  delete overview_button_tray_;
+  overview_button_tray_ = NULL;
 }
 
-bool StatusAreaWidget::ShouldShowLauncher() const {
-  if ((system_tray_ && system_tray_->ShouldShowLauncher()) ||
+bool StatusAreaWidget::ShouldShowShelf() const {
+  if ((system_tray_ && system_tray_->ShouldShowShelf()) ||
       (web_notification_tray_ &&
-       web_notification_tray_->IsMessageCenterBubbleVisible()))
+       web_notification_tray_->ShouldBlockShelfAutoHide()))
     return true;
 
-  if (!RootWindowController::ForLauncher(GetNativeView())->shelf()->IsVisible())
+  if (!RootWindowController::ForShelf(GetNativeView())->shelf()->IsVisible())
     return false;
 
-  // If the launcher is currently visible, don't hide the launcher if the mouse
+  // If the shelf is currently visible, don't hide the shelf if the mouse
   // is in any of the notification bubbles.
   return (system_tray_ && system_tray_->IsMouseInNotificationBubble()) ||
-        (web_notification_tray_ &&
-         web_notification_tray_->IsMouseInNotificationBubble());
+         (web_notification_tray_ &&
+          web_notification_tray_->IsMouseInNotificationBubble());
 }
 
 bool StatusAreaWidget::IsMessageBubbleShown() const {
   return ((system_tray_ && system_tray_->IsAnyBubbleVisible()) ||
           (web_notification_tray_ &&
            web_notification_tray_->IsMessageCenterBubbleVisible()));
+}
+
+void StatusAreaWidget::OnNativeWidgetActivationChanged(bool active) {
+  Widget::OnNativeWidgetActivationChanged(active);
+  if (active)
+    status_area_widget_delegate_->SetPaneFocusAndFocusDefault();
 }
 
 void StatusAreaWidget::AddSystemTray() {
@@ -99,36 +133,43 @@ void StatusAreaWidget::AddWebNotificationTray() {
   status_area_widget_delegate_->AddTray(web_notification_tray_);
 }
 
+#if defined(OS_CHROMEOS)
+void StatusAreaWidget::AddLogoutButtonTray() {
+  logout_button_tray_ = new LogoutButtonTray(this);
+  status_area_widget_delegate_->AddTray(logout_button_tray_);
+}
+
+void StatusAreaWidget::AddVirtualKeyboardTray() {
+  virtual_keyboard_tray_ = new VirtualKeyboardTray(this);
+  status_area_widget_delegate_->AddTray(virtual_keyboard_tray_);
+}
+#endif
+
+void StatusAreaWidget::AddOverviewButtonTray() {
+  overview_button_tray_ = new OverviewButtonTray(this);
+  status_area_widget_delegate_->AddTray(overview_button_tray_);
+}
+
 void StatusAreaWidget::SetShelfAlignment(ShelfAlignment alignment) {
   status_area_widget_delegate_->set_alignment(alignment);
   if (system_tray_)
     system_tray_->SetShelfAlignment(alignment);
   if (web_notification_tray_)
     web_notification_tray_->SetShelfAlignment(alignment);
+#if defined(OS_CHROMEOS)
+  if (logout_button_tray_)
+    logout_button_tray_->SetShelfAlignment(alignment);
+  if (virtual_keyboard_tray_)
+    virtual_keyboard_tray_->SetShelfAlignment(alignment);
+#endif
+  if (overview_button_tray_)
+    overview_button_tray_->SetShelfAlignment(alignment);
   status_area_widget_delegate_->UpdateLayout();
-}
-
-void StatusAreaWidget::SetPaintsBackground(
-    bool value,
-    internal::BackgroundAnimator::ChangeType change_type) {
-  if (system_tray_)
-    system_tray_->SetPaintsBackground(value, change_type);
-  if (web_notification_tray_)
-    web_notification_tray_->SetPaintsBackground(value, change_type);
-}
-
-void StatusAreaWidget::SetHideWebNotifications(bool hide) {
-  if (web_notification_tray_)
-    web_notification_tray_->SetHidePopupBubble(hide);
 }
 
 void StatusAreaWidget::SetHideSystemNotifications(bool hide) {
   if (system_tray_)
     system_tray_->SetHideNotifications(hide);
-}
-
-bool StatusAreaWidget::ShouldShowWebNotifications() {
-  return !(system_tray_ && system_tray_->IsAnyBubbleVisible());
 }
 
 void StatusAreaWidget::UpdateAfterLoginStatusChange(
@@ -140,7 +181,12 @@ void StatusAreaWidget::UpdateAfterLoginStatusChange(
     system_tray_->UpdateAfterLoginStatusChange(login_status);
   if (web_notification_tray_)
     web_notification_tray_->UpdateAfterLoginStatusChange(login_status);
+#if defined(OS_CHROMEOS)
+  if (logout_button_tray_)
+    logout_button_tray_->UpdateAfterLoginStatusChange(login_status);
+#endif
+  if (overview_button_tray_)
+    overview_button_tray_->UpdateAfterLoginStatusChange(login_status);
 }
 
-}  // namespace internal
 }  // namespace ash

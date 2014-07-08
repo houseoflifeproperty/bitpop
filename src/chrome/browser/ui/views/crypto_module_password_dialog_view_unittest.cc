@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/crypto_module_password_dialog.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/views/controls/textfield/textfield.h"
@@ -17,9 +17,9 @@ namespace chrome {
 class CryptoModulePasswordDialogViewTest : public testing::Test {
  public:
   CryptoModulePasswordDialogViewTest() {}
-  ~CryptoModulePasswordDialogViewTest() {}
+  virtual ~CryptoModulePasswordDialogViewTest() {}
 
-  void Capture(const char* text) {
+  void Capture(const std::string& text) {
     text_ = text;
   }
 
@@ -41,10 +41,10 @@ TEST_F(CryptoModulePasswordDialogViewTest, TestAccept) {
   EXPECT_EQ(dialog_->password_entry_, dialog_->GetInitiallyFocusedView());
   EXPECT_TRUE(dialog_->GetModalType() != ui::MODAL_TYPE_NONE);
   const std::string kPassword = "diAl0g";
-  dialog_->password_entry_->SetText(ASCIIToUTF16(kPassword));
+  dialog_->password_entry_->SetText(base::ASCIIToUTF16(kPassword));
   EXPECT_TRUE(dialog_->Accept());
   EXPECT_EQ(kPassword, text_);
-  const string16 empty;
+  const base::string16 empty;
   EXPECT_EQ(empty, dialog_->password_entry_->text());
 }
 

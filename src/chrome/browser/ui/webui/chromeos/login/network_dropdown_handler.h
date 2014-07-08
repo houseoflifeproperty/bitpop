@@ -5,37 +5,56 @@
 #ifndef CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_NETWORK_DROPDOWN_HANDLER_H_
 #define CHROME_BROWSER_UI_WEBUI_CHROMEOS_LOGIN_NETWORK_DROPDOWN_HANDLER_H_
 
+#include <string>
+
 #include "base/memory/scoped_ptr.h"
+#include "base/observer_list.h"
 #include "chrome/browser/ui/webui/chromeos/login/base_screen_handler.h"
+#include "chrome/browser/ui/webui/chromeos/login/network_dropdown.h"
 
 namespace chromeos {
 
-class NetworkDropdown;
-
-class NetworkDropdownHandler : public BaseScreenHandler {
+class NetworkDropdownHandler : public BaseScreenHandler,
+                               public NetworkDropdown::Actor {
  public:
+  class Observer {
+   public:
+    virtual ~Observer() {}
+    virtual void OnConnectToNetworkRequested(
+        const std::string& service_path) = 0;
+  };
+
   NetworkDropdownHandler();
   virtual ~NetworkDropdownHandler();
 
+  void AddObserver(Observer* observer);
+  void RemoveObserver(Observer* observer);
+
   // BaseScreenHandler implementation:
-  virtual void GetLocalizedStrings(
-      base::DictionaryValue* localized_strings) OVERRIDE;
+  virtual void DeclareLocalizedValues(LocalizedValuesBuilder* builder) OVERRIDE;
   virtual void Initialize() OVERRIDE;
 
   // WebUIMessageHandler implementation:
   virtual void RegisterMessages() OVERRIDE;
 
  private:
+  // NetworkDropdown::Actor implementation:
+  virtual void OnConnectToNetworkRequested(
+      const std::string& service_path) OVERRIDE;
+
   // Handles choosing of the network menu item.
-  void HandleNetworkItemChosen(const base::ListValue* args);
+  void HandleNetworkItemChosen(double id);
   // Handles network drop-down showing.
-  void HandleNetworkDropdownShow(const base::ListValue* args);
+  void HandleNetworkDropdownShow(const std::string& element_id,
+                                 bool oobe);
   // Handles network drop-down hiding.
-  void HandleNetworkDropdownHide(const base::ListValue* args);
+  void HandleNetworkDropdownHide();
   // Handles network drop-down refresh.
-  void HandleNetworkDropdownRefresh(const base::ListValue* args);
+  void HandleNetworkDropdownRefresh();
 
   scoped_ptr<NetworkDropdown> dropdown_;
+
+  ObserverList<Observer> observers_;
 
   DISALLOW_COPY_AND_ASSIGN(NetworkDropdownHandler);
 };

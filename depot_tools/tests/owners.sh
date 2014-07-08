@@ -15,8 +15,8 @@ setup_gitsvn
 
   set -e
   cd git-svn
-  git config rietveld.server localhost:8080
-  export EDITOR=$(which true)
+  git config rietveld.server localhost:10000
+  export GIT_EDITOR=$(which true)
 
   git checkout -q -b work
   echo "ben@chromium.org" > OWNERS
@@ -33,7 +33,7 @@ END
     "$GIT_CL upload -m test master | grep -q 'Issue created'"
 
   test_expect_success "git-cl status has a suggested reviewer" \
-    "$GIT_CL status | grep -q 'R=ben@chromium.org'"
+    "$GIT_CL_STATUS | grep -q 'R=ben@chromium.org'"
 
   test_expect_failure "git-cl dcommit fails w/ missing LGTM" \
     "$GIT_CL dcommit -f"

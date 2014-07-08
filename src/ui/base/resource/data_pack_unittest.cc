@@ -2,11 +2,12 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/path_service.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/base/resource/data_pack.h"
 
@@ -24,10 +25,10 @@ extern const size_t kSamplePakSize;
 TEST(DataPackTest, LoadFromPath) {
   base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak file.
-  ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
             static_cast<int>(kSamplePakSize));
 
   // Load the file through the data pack API.
@@ -56,21 +57,18 @@ TEST(DataPackTest, LoadFromPath) {
 TEST(DataPackTest, LoadFromFile) {
   base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
+  base::FilePath data_path = dir.path().Append(FILE_PATH_LITERAL("sample.pak"));
 
   // Dump contents into the pak file.
-  ASSERT_EQ(file_util::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
+  ASSERT_EQ(base::WriteFile(data_path, kSamplePakContents, kSamplePakSize),
             static_cast<int>(kSamplePakSize));
 
-  bool created = false;
-  base::PlatformFileError error_code = base::PLATFORM_FILE_OK;
-  base::PlatformFile file = base::CreatePlatformFile(
-      data_path, base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ,
-      &created, &error_code);
+  base::File file(data_path, base::File::FLAG_OPEN | base::File::FLAG_READ);
+  ASSERT_TRUE(file.IsValid());
 
   // Load the file through the data pack API.
   DataPack pack(SCALE_FACTOR_100P);
-  ASSERT_TRUE(pack.LoadFromFile(file));
+  ASSERT_TRUE(pack.LoadFromFile(file.Pass()));
 
   base::StringPiece data;
   ASSERT_TRUE(pack.HasResource(4));
@@ -89,8 +87,6 @@ TEST(DataPackTest, LoadFromFile) {
   // Try looking up an invalid key.
   ASSERT_FALSE(pack.HasResource(140));
   ASSERT_FALSE(pack.GetStringPiece(140, &data));
-
-  base::ClosePlatformFile(file);
 }
 
 INSTANTIATE_TEST_CASE_P(WriteBINARY, DataPackTest, ::testing::Values(
@@ -101,7 +97,7 @@ INSTANTIATE_TEST_CASE_P(WriteUTF16, DataPackTest, ::testing::Values(
     DataPack::UTF16));
 
 TEST(DataPackTest, LoadFileWithTruncatedHeader) {
-  FilePath data_path;
+  base::FilePath data_path;
   PathService::Get(base::DIR_SOURCE_ROOT, &data_path);
   data_path = data_path.Append(FILE_PATH_LITERAL(
       "ui/base/test/data/data_pack_unittest/truncated-header.pak"));
@@ -113,7 +109,7 @@ TEST(DataPackTest, LoadFileWithTruncatedHeader) {
 TEST_P(DataPackTest, Write) {
   base::ScopedTempDir dir;
   ASSERT_TRUE(dir.CreateUniqueTempDir());
-  FilePath file = dir.path().Append(FILE_PATH_LITERAL("data.pak"));
+  base::FilePath file = dir.path().Append(FILE_PATH_LITERAL("data.pak"));
 
   std::string one("one");
   std::string two("two");

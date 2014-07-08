@@ -2,17 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "ash/session/session_state_delegate.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
-#include "ash/shell_window_ids.h"
 #include "ash/shell/example_factory.h"
-#include "ash/tooltips/tooltip_controller.h"
-#include "base/utf_string_conversions.h"
-#include "ui/aura/root_window.h"
+#include "ash/shell_window_ids.h"
+#include "base/strings/utf_string_conversions.h"
 #include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/geometry/rect.h"
+#include "ui/gfx/text_utils.h"
+#include "ui/views/controls/button/label_button.h"
+#include "ui/views/corewm/tooltip_controller.h"
 #include "ui/views/widget/widget.h"
 #include "ui/views/widget/widget_delegate.h"
 
@@ -24,10 +26,11 @@ namespace shell {
 class LockView : public views::WidgetDelegateView,
                  public views::ButtonListener {
  public:
-  LockView() : unlock_button_(ALLOW_THIS_IN_INITIALIZER_LIST(
-                   new views::NativeTextButton(this, ASCIIToUTF16("Unlock")))) {
+  LockView() : unlock_button_(new views::LabelButton(
+                                  this, base::ASCIIToUTF16("Unlock"))) {
+    unlock_button_->SetStyle(views::Button::STYLE_BUTTON);
     AddChildView(unlock_button_);
-    unlock_button_->set_focusable(true);
+    unlock_button_->SetFocusable(true);
   }
   virtual ~LockView() {}
 
@@ -40,11 +43,12 @@ class LockView : public views::WidgetDelegateView,
   // Overridden from views::View:
   virtual void OnPaint(gfx::Canvas* canvas) OVERRIDE {
     canvas->FillRect(GetLocalBounds(), SK_ColorYELLOW);
-    string16 text = ASCIIToUTF16("LOCKED!");
-    int string_width = font_.GetStringWidth(text);
-    canvas->DrawStringInt(text, font_, SK_ColorRED, (width() - string_width)/ 2,
-                          (height() - font_.GetHeight()) / 2,
-                          string_width, font_.GetHeight());
+    base::string16 text = base::ASCIIToUTF16("LOCKED!");
+    int string_width = gfx::GetStringWidth(text, font_list_);
+    canvas->DrawStringRect(text, font_list_, SK_ColorRED,
+                           gfx::Rect((width() - string_width)/ 2,
+                                     (height() - font_list_.GetHeight()) / 2,
+                                     string_width, font_list_.GetHeight()));
   }
   virtual void Layout() OVERRIDE {
     gfx::Rect bounds = GetLocalBounds();
@@ -54,16 +58,15 @@ class LockView : public views::WidgetDelegateView,
     bounds.set_size(ps);
     unlock_button_->SetBoundsRect(bounds);
   }
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    views::View* parent,
-                                    views::View* child) OVERRIDE {
-    if (is_add && child == this)
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE {
+    if (details.is_add && details.child == this)
       unlock_button_->RequestFocus();
   }
 
   // Overridden from views::WidgetDelegateView:
   virtual void WindowClosing() OVERRIDE {
-    Shell::GetInstance()->delegate()->UnlockScreen();
+    Shell::GetInstance()->session_state_delegate()->UnlockScreen();
   }
 
   // Overridden from views::ButtonListener:
@@ -73,8 +76,8 @@ class LockView : public views::WidgetDelegateView,
     GetWidget()->Close();
   }
 
-  gfx::Font font_;
-  views::NativeTextButton* unlock_button_;
+  gfx::FontList font_list_;
+  views::LabelButton* unlock_button_;
 
   DISALLOW_COPY_AND_ASSIGN(LockView);
 };
@@ -91,15 +94,15 @@ void CreateLockScreen() {
                             (root_window_size.height() - ps.height()) / 2,
                             ps.width(), ps.height());
   params.delegate = lock_view;
-  params.parent = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      internal::kShellWindowId_LockScreenContainer);
+  params.parent = Shell::GetContainer(Shell::GetPrimaryRootWindow(),
+                                      kShellWindowId_LockScreenContainer);
   widget->Init(params);
   widget->SetContentsView(lock_view);
   widget->Show();
   widget->GetNativeView()->SetName("LockView");
   widget->GetNativeView()->Focus();
 
+  // TODO: it shouldn't be necessary to invoke UpdateTooltip() here.
   Shell::GetInstance()->tooltip_controller()->UpdateTooltip(
       widget->GetNativeView());
 }

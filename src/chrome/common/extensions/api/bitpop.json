@@ -1,6 +1,7 @@
 [
   {
     "namespace": "bitpop",
+    "description": "BitPop specific preferences and functions are contained here",
     "dependencies": [ "types" ],
     "nodoc": true,
     "properties": {
@@ -73,57 +74,7 @@
         "type": "function",
         "description": "Fired when the app is launched.",
         "parameters": [
-          {
-            "type": "object",
-            "name": "params",
-            "description": "Optional params.",
-            "optional": true
-          }
         ]
-      },
-      {
-        "name": "onSyncStatusChanged",
-        "type": "function",
-        "description": "Fired when sync status (enabled/disabled) is changed.",
-        "parameters": [
-          {
-            "type": "boolean",
-            "name": "enabled",
-            "description": "Sync enabled flag.",
-            "optional": false
-          },
-          {
-            "type": "boolean",
-            "name": "logout_from_fb_com",
-            "description": "Optional logout from facebook on stop syncing",
-            "optional": true
-          }
-        ]
-      }
-    ],
-    "functions": [
-      {
-        "name": "getSyncStatus",
-        "description": "Call it to get the sync status (enabled/disabled).",
-        "parameters": [
-          {
-            "type": "function",
-            "name": "callback",
-            "parameters": [
-              {
-                "type": "boolean",
-                "name": "enabled",
-                "description": "Sync enabled flag.",
-                "optional": false
-              }
-            ]
-          }
-        ]
-      },
-      {
-        "name": "launchFacebookSync",
-        "description": "Call it to launch sync sign-in procedure with facebook credentials.",
-        "parameters": []
       }
     ]
   }

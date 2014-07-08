@@ -1,207 +1,134 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright (c) 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef CHROME_BROWSER_CHROMEOS_NET_NETWORK_PORTAL_DETECTOR_H_
 #define CHROME_BROWSER_CHROMEOS_NET_NETWORK_PORTAL_DETECTOR_H_
 
-#include <string>
-
-#include "base/cancelable_callback.h"
-#include "base/hash_tables.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/memory/weak_ptr.h"
-#include "base/observer_list.h"
-#include "base/threading/non_thread_safe.h"
-#include "base/time.h"
-#include "chrome/browser/captive_portal/captive_portal_detector.h"
-#include "chrome/browser/chromeos/cros/network_library.h"
-#include "googleurl/src/gurl.h"
-
-namespace net {
-class URLRequestContextGetter;
-}
+#include "base/basictypes.h"
+#include "chrome/browser/chromeos/net/network_portal_detector_strategy.h"
+#include "net/url_request/url_fetcher.h"
 
 namespace chromeos {
 
+class NetworkState;
+
 // This class handles all notifications about network changes from
-// NetworkLibrary and delegates portal detection for the active
+// NetworkStateHandler and delegates portal detection for the active
 // network to CaptivePortalService.
-class NetworkPortalDetector
-    : public base::NonThreadSafe,
-      public chromeos::NetworkLibrary::NetworkManagerObserver,
-      public chromeos::NetworkLibrary::NetworkObserver {
+class NetworkPortalDetector {
  public:
-  enum CaptivePortalState {
-    CAPTIVE_PORTAL_STATE_UNKNOWN  = 0,
-    CAPTIVE_PORTAL_STATE_OFFLINE  = 1,
-    CAPTIVE_PORTAL_STATE_ONLINE   = 2,
-    CAPTIVE_PORTAL_STATE_PORTAL   = 3,
+  enum CaptivePortalStatus {
+    CAPTIVE_PORTAL_STATUS_UNKNOWN  = 0,
+    CAPTIVE_PORTAL_STATUS_OFFLINE  = 1,
+    CAPTIVE_PORTAL_STATUS_ONLINE   = 2,
+    CAPTIVE_PORTAL_STATUS_PORTAL   = 3,
+    CAPTIVE_PORTAL_STATUS_PROXY_AUTH_REQUIRED = 4,
+    CAPTIVE_PORTAL_STATUS_COUNT
+  };
+
+  struct CaptivePortalState {
+    CaptivePortalState()
+        : status(CAPTIVE_PORTAL_STATUS_UNKNOWN),
+          response_code(net::URLFetcher::RESPONSE_CODE_INVALID) {
+    }
+
+    bool operator==(const CaptivePortalState& o) const {
+      return status == o.status && response_code == o.response_code;
+    }
+
+    CaptivePortalStatus status;
+    int response_code;
+    base::TimeTicks time;
   };
 
   class Observer {
    public:
-    // Called when portal state is changed for |network|.
-    virtual void OnPortalStateChanged(const Network* network,
-                                      CaptivePortalState state) = 0;
+    // Called when portal detection is completed for |network|, or
+    // when observers add themselves via AddAndFireObserver(). In the
+    // second case, |network| is the active network and |state| is a
+    // current portal state for the active network, which can be
+    // currently in the unknown state, for instance, if portal
+    // detection is in process for the active network. Note, that
+    // |network| may be NULL.
+    virtual void OnPortalDetectionCompleted(
+        const NetworkState* network,
+        const CaptivePortalState& state) = 0;
 
    protected:
     virtual ~Observer() {}
   };
 
-  virtual ~NetworkPortalDetector();
+  // Adds |observer| to the observers list.
+  virtual void AddObserver(Observer* observer) = 0;
 
-  void Init();
-  void Shutdown();
+  // Adds |observer| to the observers list and immediately calls
+  // OnPortalDetectionCompleted() with the active network (which may
+  // be NULL) and captive portal state for the active network (which
+  // may be unknown, if, for instance, portal detection is in process
+  // for the active network).
+  //
+  // WARNING: don't call this method from the Observer's ctors or
+  // dtors, as it implicitly calls OnPortalDetectionCompleted(), which
+  // is virtual.
+  // TODO (ygorshenin@): find a way to avoid this restriction.
+  virtual void AddAndFireObserver(Observer* observer) = 0;
 
-  void AddObserver(Observer* observer);
-  void RemoveObserver(Observer* observer);
+  // Removes |observer| from the observers list.
+  virtual void RemoveObserver(Observer* observer) = 0;
 
-  CaptivePortalState GetCaptivePortalState(const chromeos::Network* network);
+  // Returns Captive Portal state for the network specified by |service_path|.
+  virtual CaptivePortalState GetCaptivePortalState(
+      const std::string& service_path) = 0;
 
-  // NetworkLibrary::NetworkManagerObserver implementation:
-  virtual void OnNetworkManagerChanged(chromeos::NetworkLibrary* cros) OVERRIDE;
+  // Returns true if portal detection is enabled.
+  virtual bool IsEnabled() = 0;
 
-  // NetworkLibrary::NetworkObserver implementation:
-  virtual void OnNetworkChanged(chromeos::NetworkLibrary* cros,
-                                const chromeos::Network* network) OVERRIDE;
+  // Enable portal detection. This method is needed because we can't
+  // check current network for portal state unless user accepts EULA.
+  // If |start_detection| is true and NetworkPortalDetector was
+  // disabled previously, portal detection for the active network is
+  // initiated by this method.
+  virtual void Enable(bool start_detection) = 0;
+
+  // Restarts portal detection for the default network if currently in
+  // the idle state. Returns true if new portal detection attempt was
+  // started.
+  virtual bool StartDetectionIfIdle() = 0;
+
+  // Sets current strategy according to |id|. If current detection id
+  // doesn't equal to |id|, detection is restarted.
+  virtual void SetStrategy(PortalDetectorStrategy::StrategyId id) = 0;
+
+  // Initializes network portal detector for testing. The
+  // |network_portal_detector| will be owned by the internal pointer
+  // and deleted by Shutdown().
+  static void InitializeForTesting(
+      NetworkPortalDetector* network_portal_detector);
 
   // Creates an instance of the NetworkPortalDetector.
-  static NetworkPortalDetector* CreateInstance();
+  static void Initialize();
 
-  // Gets the instance of the NetworkPortalDetector.
-  static NetworkPortalDetector* GetInstance();
+  // Deletes the instance of the NetworkPortalDetector.
+  static void Shutdown();
 
-  // Returns true is NetworkPortalDetector service is enabled.
-  static bool IsEnabled();
+  // Gets the instance of the NetworkPortalDetector. Return value should
+  // be used carefully in tests, because it can be changed "on the fly"
+  // by calls to InitializeForTesting().
+  static NetworkPortalDetector* Get();
+
+  // Returns non-localized string representation of |status|.
+  static std::string CaptivePortalStatusString(CaptivePortalStatus status);
+
+  // Returns |true| if NetworkPortalDetector was Initialized and it is safe to
+  // call Get.
+  static bool IsInitialized();
+
+ protected:
+  NetworkPortalDetector() {}
+  virtual ~NetworkPortalDetector() {}
 
  private:
-  friend class NetworkPortalDetectorTest;
-
-  typedef std::string NetworkId;
-  typedef base::hash_map<NetworkId, CaptivePortalState> CaptivePortalStateMap;
-
-  enum State {
-    // No portal check is running.
-    STATE_IDLE,
-    // Waiting for portal check.
-    STATE_PORTAL_CHECK_PENDING,
-    // Portal check is in progress.
-    STATE_CHECKING_FOR_PORTAL,
-  };
-
-  explicit NetworkPortalDetector(
-      const scoped_refptr<net::URLRequestContextGetter>& request_context);
-
-  // Initiates Captive Portal detection after |delay|.
-  void DetectCaptivePortal(const base::TimeDelta& delay);
-
-  void DetectCaptivePortalTask();
-
-  // Called when portal check is timed out. Cancels portal check and
-  // calls OnPortalDetectionCompleted() with RESULT_NO_RESPONSE as
-  // a result.
-  void PortalDetectionTimeout();
-
-  void CancelPortalDetection();
-
-  // Called by CaptivePortalDetector when detection completes.
-  void OnPortalDetectionCompleted(
-      const captive_portal::CaptivePortalDetector::Results& results);
-
-  // Returns true if we're waiting for portal check.
-  bool IsPortalCheckPending() const;
-
-  // Returns true if portal check is in progress.
-  bool IsCheckingForPortal() const;
-
-  // Stores captive portal state for a |network|.
-  void SetCaptivePortalState(const Network* network,
-                             CaptivePortalState state);
-
-  // Notifies observers that portal state is changed for a |network|.
-  void NotifyPortalStateChanged(const Network* network,
-                                CaptivePortalState state);
-
-  // Returns the current TimeTicks.
-  base::TimeTicks GetCurrentTimeTicks() const;
-
-  State state() { return state_; }
-
-  // Returns current number of portal detection attempts.
-  // Used by unit tests.
-  int attempt_count_for_testing() { return attempt_count_; }
-
-  // Sets minimum time between consecutive portal checks for the same
-  // network. Used by unit tests.
-  void set_min_time_between_attempts_for_testing(const base::TimeDelta& delta) {
-    min_time_between_attempts_ = delta;
-  }
-
-  // Sets portal detection timeout. Used by unit tests.
-  void set_request_timeout_for_testing(const base::TimeDelta& timeout) {
-    request_timeout_ = timeout;
-  }
-
-  // Returns delay before next portal check. Used by unit tests.
-  const base::TimeDelta& next_attempt_delay_for_testing() {
-    return next_attempt_delay_;
-  }
-
-  // Sets current test time ticks. Used by unit tests.
-  void set_time_ticks_for_testing(const base::TimeTicks& time_ticks) {
-    time_ticks_for_testing_ = time_ticks;
-  }
-
-  // Advances current test time ticks. Used by unit tests.
-  void advance_time_ticks_for_testing(const base::TimeDelta& delta) {
-    time_ticks_for_testing_ += delta;
-  }
-
-  // Unique identifier of the active network.
-  std::string active_network_id_;
-
-  // Service path of the active network.
-  std::string active_service_path_;
-
-  // Connection state of the active network.
-  ConnectionState active_connection_state_;
-
-  State state_;
-  CaptivePortalStateMap captive_portal_state_map_;
-  ObserverList<Observer> observers_;
-
-  base::CancelableClosure detection_task_;
-  base::CancelableClosure detection_timeout_;
-
-  // URL that returns a 204 response code when connected to the Internet.
-  GURL test_url_;
-
-  // Detector for checking active network for a portal state.
-  scoped_ptr<captive_portal::CaptivePortalDetector> captive_portal_detector_;
-
-  base::WeakPtrFactory<NetworkPortalDetector> weak_ptr_factory_;
-
-  // Number of portal detection attemps for an active network.
-  int attempt_count_;
-
-  // Minimum time between consecutive portal checks for the same
-  // active network.
-  base::TimeDelta min_time_between_attempts_;
-
-  // Start time of portal detection attempt.
-  base::TimeTicks attempt_start_time_;
-
-  // Timeout for a portal detection.
-  base::TimeDelta request_timeout_;
-
-  // Delay before next portal detection.
-  base::TimeDelta next_attempt_delay_;
-
-  // Test time ticks used by unit tests.
-  base::TimeTicks time_ticks_for_testing_;
-
   DISALLOW_COPY_AND_ASSIGN(NetworkPortalDetector);
 };
 

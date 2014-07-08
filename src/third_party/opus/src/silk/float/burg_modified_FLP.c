@@ -8,11 +8,11 @@ this list of conditions and the following disclaimer.
 - Redistributions in binary form must reproduce the above copyright
 notice, this list of conditions and the following disclaimer in the
 documentation and/or other materials provided with the distribution.
-- Neither the name of Internet Society, IETF or IETF Trust, nor the 
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
 names of specific contributors, may be used to endorse or promote
 products derived from this software without specific prior written
 permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
@@ -40,7 +40,7 @@ silk_float silk_burg_modified_FLP(          /* O    returns residual energy     
     silk_float          A[],                /* O    prediction coefficients (length order)                      */
     const silk_float    x[],                /* I    input signal, length: nb_subfr*(D+L_sub)                    */
     const silk_float    minInvGain,         /* I    minimum inverse prediction gain                             */
-    const opus_int      subfr_length,       /* I    input signal subframe length (incl. D preceeding samples)   */
+    const opus_int      subfr_length,       /* I    input signal subframe length (incl. D preceding samples)    */
     const opus_int      nb_subfr,           /* I    number of subframes stacked in x                            */
     const opus_int      D                   /* I    order                                                       */
 )
@@ -162,7 +162,7 @@ silk_float silk_burg_modified_FLP(          /* O    returns residual energy     
         for( k = 0; k < D; k++ ) {
             A[ k ] = (silk_float)( -Af[ k ] );
         }
-        /* Subtract energy of preceeding samples from C0 */
+        /* Subtract energy of preceding samples from C0 */
         for( s = 0; s < nb_subfr; s++ ) {
             C0 -= silk_energy_FLP( x + s * subfr_length, D );
         }

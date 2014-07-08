@@ -6,7 +6,7 @@
 #define CONTENT_PUBLIC_TEST_RENDER_WIDGET_TEST_H_
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "content/public/test/render_view_test.h"
 
 class SkBitmap;
@@ -31,28 +31,8 @@ class RenderWidgetTest : public RenderViewTest {
   static const int kTextPositionY;
   static const uint32 kRedARGB;
 
-  // Helper function which calls OnMsgPaintAtSize and also paints the result
-  // in the given bitmap.  The widget is resized to |page_size| before we paint
-  // and the final image is resized to |desired_size|. This method is virtual so
-  // that TestResizeAndPaint() can be reused by subclasses of this test class.
-  virtual void ResizeAndPaint(const gfx::Size& page_size,
-                              const gfx::Size& desired_size,
-                              SkBitmap* snapshot);
-
-  // Test for ResizeAndPaint.
-  void TestResizeAndPaint();
-
-  // Helper function which returns true if the given bitmap contains the given
-  // ARGB color and false otherwise.
-  bool ImageContainsColor(const SkBitmap& bitmap, uint32 argb_color);
-
-  // This can be used for debugging if you want to output a bitmap
-  // image to a file.
-  // FilePath tmp_path;
-  // file_util::CreateTemporaryFile(&tmp_path);
-  // OutputBitmapToFile(bitmap, tmp_path);
-  // LOG(INFO) << "Bitmap image stored at: " << tmp_path.value();
-  void OutputBitmapToFile(const SkBitmap& bitmap, const FilePath& file_path);
+  // Test for OnResize and Resize.
+  void TestOnResize();
 };
 
 }  // namespace content

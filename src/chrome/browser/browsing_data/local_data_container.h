@@ -12,7 +12,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/browsing_data/browsing_data_appcache_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_database_helper.h"
@@ -21,7 +21,7 @@
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_quota_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
-#include "net/base/server_bound_cert_store.h"
+#include "net/ssl/server_bound_cert_store.h"
 
 class BrowsingDataFlashLSOHelper;
 class CookiesTreeModel;
@@ -40,7 +40,7 @@ typedef std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>
     LocalStorageInfoList;
 typedef std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>
     SessionStorageInfoList;
-typedef std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>
+typedef std::list<content::IndexedDBInfo>
     IndexedDBInfoList;
 typedef std::list<BrowsingDataFileSystemHelper::FileSystemInfo>
     FileSystemInfoList;

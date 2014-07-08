@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,11 +9,13 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.net.ConnectivityManager;
-import android.net.NetworkInfo;
+import android.net.wifi.WifiInfo;
+import android.net.wifi.WifiManager;
 import android.telephony.TelephonyManager;
 import android.util.Log;
 
-import org.chromium.base.ActivityStatus;
+import org.chromium.base.ApplicationState;
+import org.chromium.base.ApplicationStatus;
 
 /**
  * Used by the NetworkChangeNotifier to listens to platform changes in connectivity.
@@ -21,7 +23,7 @@ import org.chromium.base.ActivityStatus;
  * ACCESS_NETWORK_STATE permission.
  */
 public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
-        implements ActivityStatus.StateListener {
+        implements ApplicationStatus.ApplicationStateListener {
 
     /** Queries the ConnectivityManager for information about the current connection. */
     static class ConnectivityManagerDelegate {
@@ -55,6 +57,29 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
         }
     }
 
+    /** Queries the WifiManager for SSID of the current Wifi connection. */
+    static class WifiManagerDelegate {
+        private final WifiManager mWifiManager;
+
+        WifiManagerDelegate(Context context) {
+            mWifiManager = (WifiManager) context.getSystemService(Context.WIFI_SERVICE);
+        }
+
+        // For testing.
+        WifiManagerDelegate() {
+            // All the methods below should be overridden.
+            mWifiManager = null;
+        }
+
+        String getWifiSSID() {
+            WifiInfo wifiInfo = mWifiManager.getConnectionInfo();
+            if (wifiInfo == null)
+                return "";
+            String ssid = wifiInfo.getSSID();
+            return ssid == null ? "" : ssid;
+        }
+    }
+
     private static final String TAG = "NetworkChangeNotifierAutoDetect";
 
     private final NetworkConnectivityIntentFilter mIntentFilter =
@@ -64,8 +89,10 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
 
     private final Context mContext;
     private ConnectivityManagerDelegate mConnectivityManagerDelegate;
+    private WifiManagerDelegate mWifiManagerDelegate;
     private boolean mRegistered;
     private int mConnectionType;
+    private String mWifiSSID;
 
     /**
      * Observer notified on the UI thread whenever a new connection type was detected.
@@ -76,14 +103,12 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
 
     public NetworkChangeNotifierAutoDetect(Observer observer, Context context) {
         mObserver = observer;
-        mContext = context;
+        mContext = context.getApplicationContext();
         mConnectivityManagerDelegate = new ConnectivityManagerDelegate(context);
+        mWifiManagerDelegate = new WifiManagerDelegate(context);
         mConnectionType = getCurrentConnectionType();
-
-        if (ActivityStatus.getState() != ActivityStatus.PAUSED) {
-            registerReceiver();
-        }
-        ActivityStatus.registerStateListener(this);
+        mWifiSSID = getCurrentWifiSSID();
+        ApplicationStatus.registerApplicationStateListener(this);
     }
 
     /**
@@ -91,6 +116,13 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
      */
     void setConnectivityManagerDelegateForTests(ConnectivityManagerDelegate delegate) {
         mConnectivityManagerDelegate = delegate;
+    }
+
+    /**
+     * Allows overriding the WifiManagerDelegate for tests.
+     */
+    void setWifiManagerDelegateForTests(WifiManagerDelegate delegate) {
+        mWifiManagerDelegate = delegate;
     }
 
     public void destroy() {
@@ -102,8 +134,8 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
      */
     private void registerReceiver() {
         if (!mRegistered) {
-          mRegistered = true;
-          mContext.registerReceiver(this, mIntentFilter);
+            mRegistered = true;
+            mContext.registerReceiver(this, mIntentFilter);
         }
     }
 
@@ -112,8 +144,8 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
      */
     private void unregisterReceiver() {
         if (mRegistered) {
-           mRegistered = false;
-           mContext.unregisterReceiver(this);
+            mRegistered = false;
+            mContext.unregisterReceiver(this);
         }
     }
 
@@ -160,35 +192,44 @@ public class NetworkChangeNotifierAutoDetect extends BroadcastReceiver
         }
     }
 
+    private String getCurrentWifiSSID() {
+        if (getCurrentConnectionType() != NetworkChangeNotifier.CONNECTION_WIFI)
+            return "";
+        return mWifiManagerDelegate.getWifiSSID();
+    }
+
     // BroadcastReceiver
     @Override
     public void onReceive(Context context, Intent intent) {
         connectionTypeChanged();
     }
 
-    // ActivityStatus.StateListener
+    // ApplicationStatus.ApplicationStateListener
     @Override
-    public void onActivityStateChange(int state) {
-        if (state == ActivityStatus.PAUSED) {
-            unregisterReceiver();
-        } else if (state == ActivityStatus.RESUMED) {
+    public void onApplicationStateChange(int newState) {
+        if (newState == ApplicationState.HAS_RUNNING_ACTIVITIES) {
             connectionTypeChanged();
             registerReceiver();
+        } else if (newState == ApplicationState.HAS_PAUSED_ACTIVITIES) {
+            unregisterReceiver();
         }
     }
 
     private void connectionTypeChanged() {
         int newConnectionType = getCurrentConnectionType();
-        if (newConnectionType == mConnectionType) return;
+        String newWifiSSID = getCurrentWifiSSID();
+        if (newConnectionType == mConnectionType && newWifiSSID.equals(mWifiSSID))
+            return;
 
         mConnectionType = newConnectionType;
+        mWifiSSID = newWifiSSID;
         Log.d(TAG, "Network connectivity changed, type is: " + mConnectionType);
         mObserver.onConnectionTypeChanged(newConnectionType);
     }
 
     private static class NetworkConnectivityIntentFilter extends IntentFilter {
         NetworkConnectivityIntentFilter() {
-                addAction(ConnectivityManager.CONNECTIVITY_ACTION);
+            addAction(ConnectivityManager.CONNECTIVITY_ACTION);
         }
     }
 }

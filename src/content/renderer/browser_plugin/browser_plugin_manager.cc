@@ -25,34 +25,39 @@ BrowserPluginManager* BrowserPluginManager::Create(
 
 BrowserPluginManager::BrowserPluginManager(RenderViewImpl* render_view)
     : RenderViewObserver(render_view),
-      render_view_(render_view->AsWeakPtr()),
-      browser_plugin_counter_(0) {
+      render_view_(render_view->AsWeakPtr()) {
 }
 
 BrowserPluginManager::~BrowserPluginManager() {
 }
 
 void BrowserPluginManager::AddBrowserPlugin(
-    int instance_id,
+    int guest_instance_id,
     BrowserPlugin* browser_plugin) {
-  instances_.AddWithID(browser_plugin, instance_id);
+  instances_.AddWithID(browser_plugin, guest_instance_id);
 }
 
-void BrowserPluginManager::RemoveBrowserPlugin(int instance_id) {
-  instances_.Remove(instance_id);
+void BrowserPluginManager::RemoveBrowserPlugin(int guest_instance_id) {
+  instances_.Remove(guest_instance_id);
 }
 
-BrowserPlugin* BrowserPluginManager::GetBrowserPlugin(int instance_id) const {
-  return instances_.Lookup(instance_id);
+BrowserPlugin* BrowserPluginManager::GetBrowserPlugin(
+    int guest_instance_id) const {
+  return instances_.Lookup(guest_instance_id);
 }
 
-void BrowserPluginManager::SetEmbedderFocus(const RenderViewImpl* embedder,
-                                            bool focused) {
+void BrowserPluginManager::UpdateDeviceScaleFactor(float device_scale_factor) {
   IDMap<BrowserPlugin>::iterator iter(&instances_);
   while (!iter.IsAtEnd()) {
-    BrowserPlugin* browser_plugin = iter.GetCurrentValue();
-    if (browser_plugin->render_view() == embedder)
-      browser_plugin->SetEmbedderFocus(focused);
+    iter.GetCurrentValue()->UpdateDeviceScaleFactor(device_scale_factor);
+    iter.Advance();
+  }
+}
+
+void BrowserPluginManager::UpdateFocusState() {
+  IDMap<BrowserPlugin>::iterator iter(&instances_);
+  while (!iter.IsAtEnd()) {
+    iter.GetCurrentValue()->UpdateGuestFocusState();
     iter.Advance();
   }
 }

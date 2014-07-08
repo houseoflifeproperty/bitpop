@@ -12,13 +12,13 @@
 #include "base/stl_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
 #include "net/cookies/cookie_util.h"
 #include "net/cookies/parsed_cookie.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
@@ -63,7 +63,7 @@ void BrowsingDataCookieHelper::FetchCookiesOnIOThread() {
   scoped_refptr<net::CookieMonster> cookie_monster =
       request_context_getter_->GetURLRequestContext()->
       cookie_store()->GetCookieMonster();
-  if (cookie_monster) {
+  if (cookie_monster.get()) {
     cookie_monster->GetAllCookiesAsync(
         base::Bind(&BrowsingDataCookieHelper::OnFetchComplete, this));
   } else {
@@ -93,7 +93,7 @@ void BrowsingDataCookieHelper::DeleteCookieOnIOThread(
   scoped_refptr<net::CookieMonster> cookie_monster =
       request_context_getter_->GetURLRequestContext()->
       cookie_store()->GetCookieMonster();
-  if (cookie_monster) {
+  if (cookie_monster.get()) {
     cookie_monster->DeleteCanonicalCookieAsync(
         cookie, net::CookieMonster::DeleteCookieCallback());
   }
@@ -185,6 +185,16 @@ void CannedBrowsingDataCookieHelper::StartFetching(
                        it->second->end());
   }
   callback.Run(cookie_list);
+}
+
+void CannedBrowsingDataCookieHelper::DeleteCookie(
+    const net::CanonicalCookie& cookie) {
+  for (OriginCookieListMap::iterator it = origin_cookie_list_map_.begin();
+       it != origin_cookie_list_map_.end();
+       ++it) {
+    DeleteMatchingCookie(cookie, it->second);
+  }
+  BrowsingDataCookieHelper::DeleteCookie(cookie);
 }
 
 bool CannedBrowsingDataCookieHelper::DeleteMatchingCookie(

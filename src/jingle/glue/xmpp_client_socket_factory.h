@@ -10,7 +10,7 @@
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
 #include "jingle/glue/resolving_client_socket_factory.h"
-#include "net/base/ssl_config_service.h"
+#include "net/ssl/ssl_config_service.h"
 
 namespace net {
 class ClientSocketFactory;
@@ -35,11 +35,11 @@ class XmppClientSocketFactory : public ResolvingClientSocketFactory {
   virtual ~XmppClientSocketFactory();
 
   // ResolvingClientSocketFactory implementation.
-  virtual net::StreamSocket* CreateTransportClientSocket(
+  virtual scoped_ptr<net::StreamSocket> CreateTransportClientSocket(
       const net::HostPortPair& host_and_port) OVERRIDE;
 
-  virtual net::SSLClientSocket* CreateSSLClientSocket(
-      net::ClientSocketHandle* transport_socket,
+  virtual scoped_ptr<net::SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<net::ClientSocketHandle> transport_socket,
       const net::HostPortPair& host_and_port) OVERRIDE;
 
  private:

@@ -6,14 +6,16 @@
 
 #include "base/at_exit.h"
 #include "base/bind.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/browser/browser_thread_impl.h"
+#include "content/common/plugin_list.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "webkit/plugins/webplugininfo.h"
+
+using base::ASCIIToUTF16;
 
 namespace content {
 
@@ -25,7 +27,7 @@ class MockPluginLoaderPosix : public PluginLoaderPosix {
     return callbacks_.size();
   }
 
-  std::vector<FilePath>* canonical_list() {
+  std::vector<base::FilePath>* canonical_list() {
     return &canonical_list_;
   }
 
@@ -33,11 +35,11 @@ class MockPluginLoaderPosix : public PluginLoaderPosix {
     return next_load_index_;
   }
 
-  const std::vector<webkit::WebPluginInfo>& loaded_plugins() {
+  const std::vector<WebPluginInfo>& loaded_plugins() {
     return loaded_plugins_;
   }
 
-  std::vector<webkit::WebPluginInfo>* internal_plugins() {
+  std::vector<WebPluginInfo>* internal_plugins() {
     return &internal_plugins_;
   }
 
@@ -45,11 +47,11 @@ class MockPluginLoaderPosix : public PluginLoaderPosix {
     PluginLoaderPosix::LoadPluginsInternal();
   }
 
-  void TestOnPluginLoaded(uint32 index, const webkit::WebPluginInfo& plugin) {
+  void TestOnPluginLoaded(uint32 index, const WebPluginInfo& plugin) {
     OnPluginLoaded(index, plugin);
   }
 
-  void TestOnPluginLoadFailed(uint32 index, const FilePath& path) {
+  void TestOnPluginLoadFailed(uint32 index, const base::FilePath& path) {
     OnPluginLoadFailed(index, path);
   }
 
@@ -57,19 +59,19 @@ class MockPluginLoaderPosix : public PluginLoaderPosix {
   virtual ~MockPluginLoaderPosix() {}
 };
 
-void VerifyCallback(int* run_count, const std::vector<webkit::WebPluginInfo>&) {
+void VerifyCallback(int* run_count, const std::vector<WebPluginInfo>&) {
   ++(*run_count);
 }
 
 class PluginLoaderPosixTest : public testing::Test {
  public:
   PluginLoaderPosixTest()
-      : plugin1_(ASCIIToUTF16("plugin1"), FilePath("/tmp/one.plugin"),
-                 ASCIIToUTF16("1.0"), string16()),
-        plugin2_(ASCIIToUTF16("plugin2"), FilePath("/tmp/two.plugin"),
-                 ASCIIToUTF16("2.0"), string16()),
-        plugin3_(ASCIIToUTF16("plugin3"), FilePath("/tmp/three.plugin"),
-                 ASCIIToUTF16("3.0"), string16()),
+      : plugin1_(ASCIIToUTF16("plugin1"), base::FilePath("/tmp/one.plugin"),
+                 ASCIIToUTF16("1.0"), base::string16()),
+        plugin2_(ASCIIToUTF16("plugin2"), base::FilePath("/tmp/two.plugin"),
+                 ASCIIToUTF16("2.0"), base::string16()),
+        plugin3_(ASCIIToUTF16("plugin3"), base::FilePath("/tmp/three.plugin"),
+                 ASCIIToUTF16("3.0"), base::string16()),
         file_thread_(BrowserThread::FILE, &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_),
         plugin_loader_(new MockPluginLoaderPosix) {
@@ -79,7 +81,7 @@ class PluginLoaderPosixTest : public testing::Test {
     PluginServiceImpl::GetInstance()->Init();
   }
 
-  MessageLoop* message_loop() { return &message_loop_; }
+  base::MessageLoop* message_loop() { return &message_loop_; }
   MockPluginLoaderPosix* plugin_loader() { return plugin_loader_.get(); }
 
   void AddThreePlugins() {
@@ -90,14 +92,15 @@ class PluginLoaderPosixTest : public testing::Test {
   }
 
   // Data used for testing.
-  webkit::WebPluginInfo plugin1_;
-  webkit::WebPluginInfo plugin2_;
-  webkit::WebPluginInfo plugin3_;
+  WebPluginInfo plugin1_;
+  WebPluginInfo plugin2_;
+  WebPluginInfo plugin3_;
 
  private:
-  base::ShadowingAtExitManager at_exit_manager_;  // Destroys PluginService.
+  // Destroys PluginService and PluginList.
+  base::ShadowingAtExitManager at_exit_manager_;
 
-  MessageLoopForIO message_loop_;
+  base::MessageLoopForIO message_loop_;
   BrowserThreadImpl file_thread_;
   BrowserThreadImpl io_thread_;
 
@@ -109,14 +112,10 @@ TEST_F(PluginLoaderPosixTest, QueueRequests) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  EXPECT_EQ(0u, plugin_loader()->number_of_pending_callbacks());
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
-  EXPECT_EQ(1u, plugin_loader()->number_of_pending_callbacks());
+  plugin_loader()->GetPlugins(callback);
+  plugin_loader()->GetPlugins(callback);
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
-  EXPECT_EQ(2u, plugin_loader()->number_of_pending_callbacks());
-
-  EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(2);
+  EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
   message_loop()->RunUntilIdle();
 
   EXPECT_EQ(0, did_callback);
@@ -126,8 +125,35 @@ TEST_F(PluginLoaderPosixTest, QueueRequests) {
   plugin_loader()->TestOnPluginLoaded(0, plugin1_);
   message_loop()->RunUntilIdle();
 
+  EXPECT_EQ(2, did_callback);
+}
+
+TEST_F(PluginLoaderPosixTest, QueueRequestsAndInvalidate) {
+  int did_callback = 0;
+  PluginService::GetPluginsCallback callback =
+      base::Bind(&VerifyCallback, base::Unretained(&did_callback));
+
+  plugin_loader()->GetPlugins(callback);
+
+  EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
+  message_loop()->RunUntilIdle();
+
+  EXPECT_EQ(0, did_callback);
+  ::testing::Mock::VerifyAndClearExpectations(plugin_loader());
+
+  // Invalidate the plugin list, then queue up another request.
+  PluginList::Singleton()->RefreshPlugins();
+  plugin_loader()->GetPlugins(callback);
+
+  EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
+
+  plugin_loader()->canonical_list()->clear();
+  plugin_loader()->canonical_list()->push_back(plugin1_.path);
+  plugin_loader()->TestOnPluginLoaded(0, plugin1_);
+  message_loop()->RunUntilIdle();
+
+  // Only the first request should have been fulfilled.
   EXPECT_EQ(1, did_callback);
-  EXPECT_EQ(1u, plugin_loader()->number_of_pending_callbacks());
 
   plugin_loader()->canonical_list()->clear();
   plugin_loader()->canonical_list()->push_back(plugin1_.path);
@@ -135,7 +161,6 @@ TEST_F(PluginLoaderPosixTest, QueueRequests) {
   message_loop()->RunUntilIdle();
 
   EXPECT_EQ(2, did_callback);
-  EXPECT_EQ(0u, plugin_loader()->number_of_pending_callbacks());
 }
 
 TEST_F(PluginLoaderPosixTest, ThreeSuccessfulLoads) {
@@ -143,7 +168,7 @@ TEST_F(PluginLoaderPosixTest, ThreeSuccessfulLoads) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
   message_loop()->RunUntilIdle();
@@ -152,8 +177,7 @@ TEST_F(PluginLoaderPosixTest, ThreeSuccessfulLoads) {
 
   EXPECT_EQ(0u, plugin_loader()->next_load_index());
 
-  const std::vector<webkit::WebPluginInfo>& plugins(
-      plugin_loader()->loaded_plugins());
+  const std::vector<WebPluginInfo>& plugins(plugin_loader()->loaded_plugins());
 
   plugin_loader()->TestOnPluginLoaded(0, plugin1_);
   EXPECT_EQ(1u, plugin_loader()->next_load_index());
@@ -184,7 +208,7 @@ TEST_F(PluginLoaderPosixTest, ThreeSuccessfulLoadsThenCrash) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(2);
   message_loop()->RunUntilIdle();
@@ -193,8 +217,7 @@ TEST_F(PluginLoaderPosixTest, ThreeSuccessfulLoadsThenCrash) {
 
   EXPECT_EQ(0u, plugin_loader()->next_load_index());
 
-  const std::vector<webkit::WebPluginInfo>& plugins(
-      plugin_loader()->loaded_plugins());
+  const std::vector<WebPluginInfo>& plugins(plugin_loader()->loaded_plugins());
 
   plugin_loader()->TestOnPluginLoaded(0, plugin1_);
   EXPECT_EQ(1u, plugin_loader()->next_load_index());
@@ -227,7 +250,7 @@ TEST_F(PluginLoaderPosixTest, TwoFailures) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
   message_loop()->RunUntilIdle();
@@ -236,8 +259,7 @@ TEST_F(PluginLoaderPosixTest, TwoFailures) {
 
   EXPECT_EQ(0u, plugin_loader()->next_load_index());
 
-  const std::vector<webkit::WebPluginInfo>& plugins(
-      plugin_loader()->loaded_plugins());
+  const std::vector<WebPluginInfo>& plugins(plugin_loader()->loaded_plugins());
 
   plugin_loader()->TestOnPluginLoadFailed(0, plugin1_.path);
   EXPECT_EQ(1u, plugin_loader()->next_load_index());
@@ -266,7 +288,7 @@ TEST_F(PluginLoaderPosixTest, CrashedProcess) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
   message_loop()->RunUntilIdle();
@@ -275,8 +297,7 @@ TEST_F(PluginLoaderPosixTest, CrashedProcess) {
 
   EXPECT_EQ(0u, plugin_loader()->next_load_index());
 
-  const std::vector<webkit::WebPluginInfo>& plugins(
-      plugin_loader()->loaded_plugins());
+  const std::vector<WebPluginInfo>& plugins(plugin_loader()->loaded_plugins());
 
   plugin_loader()->TestOnPluginLoaded(0, plugin1_);
   EXPECT_EQ(1u, plugin_loader()->next_load_index());
@@ -299,12 +320,12 @@ TEST_F(PluginLoaderPosixTest, InternalPlugin) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);
   message_loop()->RunUntilIdle();
 
-  plugin2_.path = FilePath("/internal/plugin.plugin");
+  plugin2_.path = base::FilePath("/internal/plugin.plugin");
 
   AddThreePlugins();
 
@@ -313,8 +334,7 @@ TEST_F(PluginLoaderPosixTest, InternalPlugin) {
 
   EXPECT_EQ(0u, plugin_loader()->next_load_index());
 
-  const std::vector<webkit::WebPluginInfo>& plugins(
-      plugin_loader()->loaded_plugins());
+  const std::vector<WebPluginInfo>& plugins(plugin_loader()->loaded_plugins());
 
   plugin_loader()->TestOnPluginLoaded(0, plugin1_);
   EXPECT_EQ(1u, plugin_loader()->next_load_index());
@@ -348,7 +368,7 @@ TEST_F(PluginLoaderPosixTest, AllCrashed) {
   PluginService::GetPluginsCallback callback =
       base::Bind(&VerifyCallback, base::Unretained(&did_callback));
 
-  plugin_loader()->LoadPlugins(message_loop()->message_loop_proxy(), callback);
+  plugin_loader()->GetPlugins(callback);
 
   // Spin the loop so that the canonical list of plugins can be set.
   EXPECT_CALL(*plugin_loader(), LoadPluginsInternal()).Times(1);

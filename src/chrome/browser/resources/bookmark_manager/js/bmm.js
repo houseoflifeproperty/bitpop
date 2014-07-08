@@ -3,12 +3,13 @@
 // found in the LICENSE file.
 
 cr.define('bmm', function() {
-  const Promise = cr.Promise;
-
   /**
    * Whether a node contains another node.
-   * @param {!BookmarkTreeNode} parent
-   * @param {!BookmarkTreeNode} descendant
+   * TODO(yosin): Once JavaScript style guide is updated and linter follows
+   * that, we'll remove useless documentations for |parent| and |descendant|.
+   * TODO(yosin): bmm.contains() should be method of BookmarkTreeNode.
+   * @param {!BookmarkTreeNode} parent .
+   * @param {!BookmarkTreeNode} descendant .
    * @return {boolean} Whether the parent contains the descendant.
    */
   function contains(parent, descendant) {
@@ -32,31 +33,38 @@ cr.define('bmm', function() {
   var loadingPromises = {};
 
   /**
-   * Loads a subtree of the bookmark tree and returns a {@code cr.Promise} that
-   * will be fulfilled when done. This reuses multiple loads so that we do not
-   * load the same subtree more than once at the same time.
-   * @return {!cr.Promise} The future promise for the load.
+   * Promise version of chrome.bookmarkManagerPrivate.getSubtree.
+   * @param {string} id .
+   * @param {boolean} foldersOnly .
+   * @return {!Promise.<!Array.<!BookmarkTreeNode>>} .
    */
-  function loadSubtree(id) {
-    var p = new Promise;
-    if (!(id in loadingPromises)) {
-      loadingPromises[id] = new Promise;
-      chrome.bookmarkManagerPrivate.getSubtree(id, false, function(nodes) {
-        loadingPromises[id].value = nodes && nodes[0];
-        delete loadingPromises[id];
-      });
-    }
-    loadingPromises[id].addListener(function(n) {
-      p.value = n;
+  function getSubtreePromise(id, foldersOnly) {
+    return new Promise(function(resolve) {
+      chrome.bookmarkManagerPrivate.getSubtree(id, foldersOnly, resolve);
     });
-    return p;
   }
 
   /**
-   * Loads the entire bookmark tree and returns a {@code cr.Promise} that will
+   * Loads a subtree of the bookmark tree and returns a {@code Promise} that
+   * will be fulfilled when done. This reuses multiple loads so that we do not
+   * load the same subtree more than once at the same time.
+   * @return {!Promise.<!BookmarkTreeNode>} The future promise for the load.
+   */
+  function loadSubtree(id) {
+    if (!loadingPromises[id]) {
+      loadingPromises[id] = getSubtreePromise(id, false).then(function(nodes) {
+        delete loadingPromises[id];
+        return nodes && nodes[0];
+      });
+    }
+    return loadingPromises[id];
+  }
+
+  /**
+   * Loads the entire bookmark tree and returns a {@code Promise} that will
    * be fulfilled when done. This reuses multiple loads so that we do not load
    * the same tree more than once at the same time.
-   * @return {!cr.Promise} The future promise for the load.
+   * @return {!Promise.<Node>} The future promise for the load.
    */
   function loadTree() {
     return loadSubtree('');
@@ -105,8 +113,8 @@ cr.define('bmm', function() {
 
   /**
    * Called when the title of a bookmark changes.
-   * @param {string} id
-   * @param {!Object} changeInfo
+   * @param {string} id The id of changed bookmark node.
+   * @param {!Object} changeInfo The information about how the node changed.
    */
   function handleBookmarkChanged(id, changeInfo) {
     if (bmm.tree)
@@ -171,6 +179,17 @@ cr.define('bmm', function() {
 
     bookmarkCache.updateChildren(removeInfo.parentId);
     bookmarkCache.remove(id);
+  }
+
+  /**
+   * Callback for when all bookmark nodes have been deleted.
+   */
+  function handleRemoveAll() {
+    // Reload the list and the tree.
+    if (bmm.list)
+      bmm.list.reload();
+    if (bmm.tree)
+      bmm.tree.reload();
   }
 
   /**

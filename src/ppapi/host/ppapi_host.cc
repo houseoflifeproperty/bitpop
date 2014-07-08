@@ -12,10 +12,13 @@
 #include "ppapi/host/resource_host.h"
 #include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/resource_message_params.h"
+#include "ppapi/proxy/serialized_handle.h"
 #include "ppapi/shared_impl/host_resource.h"
 
 namespace ppapi {
 namespace host {
+
+using proxy::SerializedHandle;
 
 namespace {
 
@@ -52,6 +55,8 @@ bool PpapiHost::OnMessageReceived(const IPC::Message& msg) {
   IPC_BEGIN_MESSAGE_MAP(PpapiHost, msg)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_ResourceCall,
                         OnHostMsgResourceCall)
+    IPC_MESSAGE_HANDLER(PpapiHostMsg_InProcessResourceCall,
+                        OnHostMsgInProcessResourceCall)
     IPC_MESSAGE_HANDLER_DELAY_REPLY(PpapiHostMsg_ResourceSyncCall,
                                     OnHostMsgResourceSyncCall)
     IPC_MESSAGE_HANDLER(PpapiHostMsg_ResourceCreated,
@@ -77,25 +82,72 @@ bool PpapiHost::OnMessageReceived(const IPC::Message& msg) {
 
 void PpapiHost::SendReply(const ReplyMessageContext& context,
                           const IPC::Message& msg) {
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::SendReply",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   if (context.sync_reply_msg) {
     PpapiHostMsg_ResourceSyncCall::WriteReplyParams(context.sync_reply_msg,
                                                     context.params, msg);
     Send(context.sync_reply_msg);
   } else {
-    Send(new PpapiPluginMsg_ResourceReply(context.params, msg));
+    if (context.routing_id != MSG_ROUTING_NONE) {
+      Send(new PpapiHostMsg_InProcessResourceReply(context.routing_id,
+                                                   context.params,
+                                                   msg));
+    } else {
+      Send(new PpapiPluginMsg_ResourceReply(context.params, msg));
+    }
   }
 }
 
 void PpapiHost::SendUnsolicitedReply(PP_Resource resource,
                                      const IPC::Message& msg) {
+  SendUnsolicitedReplyWithHandles(
+      resource, msg, std::vector<SerializedHandle>());
+}
+
+void PpapiHost::SendUnsolicitedReplyWithHandles(
+    PP_Resource resource,
+    const IPC::Message& msg,
+    const std::vector<SerializedHandle>& handles) {
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::SendUnsolicitedReplyWithHandles",
+               "Class", IPC_MESSAGE_ID_CLASS(msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(msg.type()));
   DCHECK(resource);  // If this fails, host is probably pending.
   proxy::ResourceMessageReplyParams params(resource, 0);
+  for (std::vector<SerializedHandle>::const_iterator it = handles.begin();
+      it != handles.end(); ++it) {
+    params.AppendHandle(*it);
+  }
   Send(new PpapiPluginMsg_ResourceReply(params, msg));
+}
+
+scoped_ptr<ResourceHost> PpapiHost::CreateResourceHost(
+    const proxy::ResourceMessageCallParams& params,
+    PP_Instance instance,
+    const IPC::Message& nested_msg) {
+  scoped_ptr<ResourceHost> resource_host;
+  DCHECK(!host_factory_filters_.empty());  // Caller forgot to add a factory.
+  for (size_t i = 0; i < host_factory_filters_.size(); i++) {
+    resource_host = host_factory_filters_[i]->CreateResourceHost(
+        this, params, instance, nested_msg).Pass();
+    if (resource_host.get())
+      break;
+  }
+  return resource_host.Pass();
 }
 
 int PpapiHost::AddPendingResourceHost(scoped_ptr<ResourceHost> resource_host) {
   // The resource ID should not be assigned.
-  DCHECK(resource_host->pp_resource() == 0);
+  if (!resource_host.get() || resource_host->pp_resource() != 0) {
+    NOTREACHED();
+    return 0;
+  }
+
+  if (pending_resource_hosts_.size() + resources_.size()
+      >= kMaxResourcesPerPlugin) {
+    return 0;
+  }
 
   int pending_id = next_pending_resource_host_id_++;
   pending_resource_hosts_[pending_id] =
@@ -115,7 +167,21 @@ void PpapiHost::AddInstanceMessageFilter(
 void PpapiHost::OnHostMsgResourceCall(
     const proxy::ResourceMessageCallParams& params,
     const IPC::Message& nested_msg) {
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::OnHostMsgResourceCall",
+               "Class", IPC_MESSAGE_ID_CLASS(nested_msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(nested_msg.type()));
   HostMessageContext context(params);
+  HandleResourceCall(params, nested_msg, &context);
+}
+
+void PpapiHost::OnHostMsgInProcessResourceCall(
+    int routing_id,
+    const proxy::ResourceMessageCallParams& params,
+    const IPC::Message& nested_msg) {
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::OnHostMsgInProcessResourceCall",
+               "Class", IPC_MESSAGE_ID_CLASS(nested_msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(nested_msg.type()));
+  HostMessageContext context(routing_id, params);
   HandleResourceCall(params, nested_msg, &context);
 }
 
@@ -123,6 +189,9 @@ void PpapiHost::OnHostMsgResourceSyncCall(
     const proxy::ResourceMessageCallParams& params,
     const IPC::Message& nested_msg,
     IPC::Message* reply_msg) {
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::OnHostMsgResourceSyncCall",
+               "Class", IPC_MESSAGE_ID_CLASS(nested_msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(nested_msg.type()));
   // Sync messages should always have callback set because they always expect
   // a reply from the host.
   DCHECK(params.has_callback());
@@ -138,6 +207,7 @@ void PpapiHost::HandleResourceCall(
     HostMessageContext* context) {
   ResourceHost* resource_host = GetResourceHost(params.pp_resource());
   if (resource_host) {
+    // CAUTION: Handling the message may cause the destruction of this object.
     resource_host->HandleMessage(nested_msg, context);
   } else {
     if (context->params.has_callback()) {
@@ -152,18 +222,19 @@ void PpapiHost::OnHostMsgResourceCreated(
     const proxy::ResourceMessageCallParams& params,
     PP_Instance instance,
     const IPC::Message& nested_msg) {
-  if (resources_.size() >= kMaxResourcesPerPlugin)
+  TRACE_EVENT2("ppapi proxy", "PpapiHost::OnHostMsgResourceCreated",
+               "Class", IPC_MESSAGE_ID_CLASS(nested_msg.type()),
+               "Line", IPC_MESSAGE_ID_LINE(nested_msg.type()));
+
+  if (pending_resource_hosts_.size() + resources_.size()
+      >= kMaxResourcesPerPlugin) {
     return;
+  }
 
   // Run through all filters until one grabs this message.
-  scoped_ptr<ResourceHost> resource_host;
-  DCHECK(!host_factory_filters_.empty());  // Caller forgot to add a factory.
-  for (size_t i = 0; i < host_factory_filters_.size(); i++) {
-    resource_host = host_factory_filters_[i]->CreateResourceHost(
-        this, params, instance, nested_msg).Pass();
-    if (resource_host.get())
-      break;
-  }
+  scoped_ptr<ResourceHost> resource_host = CreateResourceHost(params, instance,
+                                                              nested_msg);
+
   if (!resource_host.get()) {
     NOTREACHED();
     return;
@@ -196,6 +267,12 @@ void PpapiHost::OnHostMsgResourceDestroyed(PP_Resource resource) {
     NOTREACHED();
     return;
   }
+  // Invoking the HostResource destructor might result in looking up the
+  // PP_Resource in resources_. std::map is not well specified as to whether the
+  // element will be there or not. Therefore, we delay destruction of the
+  // HostResource until after we've made sure the map no longer contains
+  // |resource|.
+  linked_ptr<ResourceHost> delete_at_end_of_scope(found->second);
   resources_.erase(found);
 }
 

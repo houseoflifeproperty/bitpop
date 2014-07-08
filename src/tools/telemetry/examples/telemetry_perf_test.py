@@ -2,20 +2,23 @@
 # Copyright (c) 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
+
 import os
 import sys
 import time
 
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), os.pardir))
 
-import telemetry
+from telemetry.core import browser_finder
+from telemetry.core import browser_options
+
 
 def Main(args):
-  options = telemetry.BrowserOptions()
+  options = browser_options.BrowserFinderOptions()
   parser = options.CreateParser('telemetry_perf_test.py')
   options, args = parser.parse_args(args)
 
-  browser_to_create = telemetry.FindBrowser(options)
+  browser_to_create = browser_finder.FindBrowser(options)
   assert browser_to_create
   with browser_to_create.Create() as b:
     tab = b.tabs[0]
@@ -24,7 +27,7 @@ def Main(args):
     times = []
     for i in range(1000):
       start = time.time()
-      tab.runtime.Evaluate('%i * 2' % i)
+      tab.EvaluateJavaScript('%i * 2' % i)
       times.append(time.time() - start)
     N = float(len(times))
     avg = sum(times, 0.0) / N
@@ -38,6 +41,7 @@ def Main(args):
       avg, stdev, min(times), percentile_75)
 
   return 0
+
 
 if __name__ == '__main__':
   sys.exit(Main(sys.argv[1:]))

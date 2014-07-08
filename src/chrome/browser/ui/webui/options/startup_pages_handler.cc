@@ -6,17 +6,16 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_controller.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_home_pages_table_model.h"
-#include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/prefs/session_startup_pref.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/web_ui.h"
@@ -24,16 +23,14 @@
 
 namespace options {
 
-StartupPagesHandler::StartupPagesHandler()
-    : startup_custom_pages_table_model_(NULL) {
+StartupPagesHandler::StartupPagesHandler() {
 }
 
 StartupPagesHandler::~StartupPagesHandler() {
-
 }
 
 void StartupPagesHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -104,16 +101,16 @@ void StartupPagesHandler::InitializePage() {
 }
 
 void StartupPagesHandler::OnModelChanged() {
-  ListValue startup_pages;
+  base::ListValue startup_pages;
   int page_count = startup_custom_pages_table_model_->RowCount();
   std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
   for (int i = 0; i < page_count; ++i) {
-    DictionaryValue* entry = new DictionaryValue();
+    base::DictionaryValue* entry = new base::DictionaryValue();
     entry->SetString("title", startup_custom_pages_table_model_->GetText(i, 0));
     entry->SetString("url", urls[i].spec());
     entry->SetString("tooltip",
                      startup_custom_pages_table_model_->GetTooltip(i));
-    entry->SetString("modelIndex", base::IntToString(i));
+    entry->SetInteger("modelIndex", i);
     startup_pages.Append(entry);
   }
 
@@ -134,17 +131,15 @@ void StartupPagesHandler::OnItemsRemoved(int start, int length) {
 }
 
 void StartupPagesHandler::SetStartupPagesToCurrentPages(
-    const ListValue* args) {
+    const base::ListValue* args) {
   startup_custom_pages_table_model_->SetToCurrentlyOpenPages();
 }
 
-void StartupPagesHandler::RemoveStartupPages(const ListValue* args) {
+void StartupPagesHandler::RemoveStartupPages(const base::ListValue* args) {
   for (int i = args->GetSize() - 1; i >= 0; --i) {
-    std::string string_value;
-    CHECK(args->GetString(i, &string_value));
-
     int selected_index;
-    base::StringToInt(string_value, &selected_index);
+    CHECK(args->GetInteger(i, &selected_index));
+
     if (selected_index < 0 ||
         selected_index >= startup_custom_pages_table_model_->RowCount()) {
       NOTREACHED();
@@ -154,25 +149,28 @@ void StartupPagesHandler::RemoveStartupPages(const ListValue* args) {
   }
 }
 
-void StartupPagesHandler::AddStartupPage(const ListValue* args) {
+void StartupPagesHandler::AddStartupPage(const base::ListValue* args) {
   std::string url_string;
-  CHECK_EQ(args->GetSize(), 1U);
   CHECK(args->GetString(0, &url_string));
 
   GURL url = URLFixerUpper::FixupURL(url_string, std::string());
   if (!url.is_valid())
     return;
-  int index = startup_custom_pages_table_model_->RowCount();
+
+  int row_count = startup_custom_pages_table_model_->RowCount();
+  int index;
+  if (!args->GetInteger(1, &index) || index > row_count)
+    index = row_count;
+
   startup_custom_pages_table_model_->Add(index, url);
 }
 
-void StartupPagesHandler::EditStartupPage(const ListValue* args) {
+void StartupPagesHandler::EditStartupPage(const base::ListValue* args) {
   std::string url_string;
-  std::string index_string;
+  GURL fixed_url;
   int index;
   CHECK_EQ(args->GetSize(), 2U);
-  CHECK(args->GetString(0, &index_string));
-  CHECK(base::StringToInt(index_string, &index));
+  CHECK(args->GetInteger(0, &index));
   CHECK(args->GetString(1, &url_string));
 
   if (index < 0 || index > startup_custom_pages_table_model_->RowCount()) {
@@ -180,34 +178,30 @@ void StartupPagesHandler::EditStartupPage(const ListValue* args) {
     return;
   }
 
-  std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
-  urls[index] = URLFixerUpper::FixupURL(url_string, std::string());
-  startup_custom_pages_table_model_->SetURLs(urls);
+  fixed_url = URLFixerUpper::FixupURL(url_string, std::string());
+  if (!fixed_url.is_empty()) {
+    std::vector<GURL> urls = startup_custom_pages_table_model_->GetURLs();
+    urls[index] = fixed_url;
+    startup_custom_pages_table_model_->SetURLs(urls);
+  } else {
+    startup_custom_pages_table_model_->Remove(index);
+  }
 }
 
-void StartupPagesHandler::DragDropStartupPage(const ListValue* args) {
+void StartupPagesHandler::DragDropStartupPage(const base::ListValue* args) {
   CHECK_EQ(args->GetSize(), 2U);
 
-  // TODO(dcheng): Due to http://crbug.com/122102, we can receive drag and drop
-  // events even if there are no entries in the model. Remove this check once
-  // that bug is fixed.
-  if (startup_custom_pages_table_model_->RowCount() == 0)
-    return;
-
-  std::string value;
   int to_index;
 
-  CHECK(args->GetString(0, &value));
-  base::StringToInt(value, &to_index);
+  CHECK(args->GetInteger(0, &to_index));
 
-  const ListValue* selected;
+  const base::ListValue* selected;
   CHECK(args->GetList(1, &selected));
 
   std::vector<int> index_list;
   for (size_t i = 0; i < selected->GetSize(); ++i) {
     int index;
-    CHECK(selected->GetString(i, &value));
-    base::StringToInt(value, &index);
+    CHECK(selected->GetInteger(i, &index));
     index_list.push_back(index);
   }
 
@@ -226,28 +220,28 @@ void StartupPagesHandler::SaveStartupPagesPref() {
   SessionStartupPref::SetStartupPref(prefs, pref);
 }
 
-void StartupPagesHandler::CommitChanges(const ListValue* args) {
+void StartupPagesHandler::CommitChanges(const base::ListValue* args) {
   SaveStartupPagesPref();
 }
 
-void StartupPagesHandler::CancelChanges(const ListValue* args) {
+void StartupPagesHandler::CancelChanges(const base::ListValue* args) {
   UpdateStartupPages();
 }
 
 void StartupPagesHandler::RequestAutocompleteSuggestions(
-    const ListValue* args) {
-  string16 input;
+    const base::ListValue* args) {
+  base::string16 input;
   CHECK_EQ(args->GetSize(), 1U);
   CHECK(args->GetString(0, &input));
 
   autocomplete_controller_->Start(AutocompleteInput(
-      input, string16::npos, string16(), true,
-      false, false, AutocompleteInput::ALL_MATCHES));
+      input, base::string16::npos, base::string16(), GURL(),
+      AutocompleteInput::INVALID_SPEC, true, false, false, true));
 }
 
 void StartupPagesHandler::OnResultChanged(bool default_match_changed) {
   const AutocompleteResult& result = autocomplete_controller_->result();
-  ListValue suggestions;
+  base::ListValue suggestions;
   OptionsUI::ProcessAutocompleteSuggestions(result, &suggestions);
   web_ui()->CallJavascriptFunction(
       "StartupOverlay.updateAutocompleteSuggestions", suggestions);

@@ -2,75 +2,63 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#ifndef MEDIA_FILTERS_NULL_AUDIO_RENDERER_H_
-#define MEDIA_FILTERS_NULL_AUDIO_RENDERER_H_
+#ifndef MEDIA_AUDIO_NULL_AUDIO_SINK_H_
+#define MEDIA_AUDIO_NULL_AUDIO_SINK_H_
 
-// NullAudioSink effectively uses an extra thread to "throw away" the
-// audio data at a rate resembling normal playback speed.  It's just like
-// decoding to /dev/null!
-//
-// NullAudioSink can also be used in situations where the client has no
-// audio device or we haven't written an audio implementation for a particular
-// platform yet.
+#include <string>
 
-#include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/threading/thread.h"
 #include "media/base/audio_renderer_sink.h"
+
+namespace base {
+class SingleThreadTaskRunner;
+}
 
 namespace media {
 class AudioBus;
+class AudioHash;
+class FakeAudioConsumer;
 
 class MEDIA_EXPORT NullAudioSink
     : NON_EXPORTED_BASE(public AudioRendererSink) {
  public:
-  NullAudioSink();
+  NullAudioSink(const scoped_refptr<base::SingleThreadTaskRunner>& task_runner);
 
   // AudioRendererSink implementation.
   virtual void Initialize(const AudioParameters& params,
                           RenderCallback* callback) OVERRIDE;
   virtual void Start() OVERRIDE;
   virtual void Stop() OVERRIDE;
-  virtual void Pause(bool flush) OVERRIDE;
+  virtual void Pause() OVERRIDE;
   virtual void Play() OVERRIDE;
   virtual bool SetVolume(double volume) OVERRIDE;
 
-  // Enables audio frame hashing and reinitializes the MD5 context.  Must be
-  // called prior to Initialize().
+  // Enables audio frame hashing.  Must be called prior to Initialize().
   void StartAudioHashForTesting();
 
-  // Returns the MD5 hash of all audio frames seen since the last reset.
+  // Returns the hash of all audio frames seen since construction.
   std::string GetAudioHashForTesting();
 
  protected:
   virtual ~NullAudioSink();
 
  private:
-  // Audio thread task that periodically calls FillBuffer() to consume
-  // audio data.
-  void FillBufferTask();
+  // Task that periodically calls Render() to consume audio data.
+  void CallRender(AudioBus* audio_bus);
 
-  void SetPlaying(bool is_playing);
-
-  // A buffer passed to FillBuffer to advance playback.
-  scoped_ptr<AudioBus> audio_bus_;
-
-  AudioParameters params_;
   bool initialized_;
   bool playing_;
   RenderCallback* callback_;
 
-  // Separate thread used to throw away data.
-  base::Thread thread_;
-  base::Lock lock_;
+  // Controls whether or not a running hash is computed for audio frames.
+  scoped_ptr<AudioHash> audio_hash_;
 
-  // Controls whether or not a running MD5 hash is computed for audio frames.
-  bool hash_audio_for_testing_;
-  scoped_array<base::MD5Context> md5_channel_contexts_;
+  scoped_refptr<base::SingleThreadTaskRunner> task_runner_;
+  scoped_ptr<FakeAudioConsumer> fake_consumer_;
 
   DISALLOW_COPY_AND_ASSIGN(NullAudioSink);
 };
 
 }  // namespace media
 
-#endif  // MEDIA_FILTERS_NULL_AUDIO_RENDERER_H_
+#endif  // MEDIA_AUDIO_NULL_AUDIO_SINK_H_

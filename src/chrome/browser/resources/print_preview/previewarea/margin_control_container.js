@@ -7,27 +7,45 @@ cr.define('print_preview', function() {
 
   /**
    * UI component used for setting custom print margins.
-   * @param {!print_preview.PrintTicketStore} printTicketStore Used to read and
-   *     write custom margin values.
+   * @param {!print_preview.DocumentInfo} documentInfo Document data model.
+   * @param {!print_preview.ticket_items.MarginsType} marginsTypeTicketItem
+   *     Used to read margins type.
+   * @param {!print_preview.ticket_items.CustomMargins} customMarginsTicketItem
+   *     Used to read and write custom margin values.
+   * @param {!print_preview.MeasurementSystem} measurementSystem Used to convert
+   *     between the system's local units and points.
    * @constructor
    * @extends {print_preview.Component}
    */
-  function MarginControlContainer(printTicketStore) {
+  function MarginControlContainer(documentInfo, marginsTypeTicketItem,
+                                  customMarginsTicketItem, measurementSystem) {
     print_preview.Component.call(this);
 
     /**
-     * Used to read and write custom margin values.
-     * @type {!print_preview.PrintTicketStore}
+     * Document data model.
+     * @type {!print_preview.DocumentInfo}
      * @private
      */
-    this.printTicketStore_ = printTicketStore;
+    this.documentInfo_ = documentInfo;
+
+    /**
+     * Margins type ticket item used to read predefined margins type.
+     */
+    this.marginsTypeTicketItem_ = marginsTypeTicketItem;
+
+    /**
+     * Custom margins ticket item used to read/write custom margin values.
+     * @type {!print_preview.ticket_items.CustomMargins}
+     * @private
+     */
+    this.customMarginsTicketItem_ = customMarginsTicketItem;
 
     /**
      * Used to convert between the system's local units and points.
      * @type {!print_preview.MeasurementSystem}
      * @private
      */
-    this.measurementSystem_ = printTicketStore.measurementSystem;
+    this.measurementSystem_ = measurementSystem;
 
     /**
      * Convenience array that contains all of the margin controls.
@@ -154,7 +172,7 @@ cr.define('print_preview', function() {
 
     /** Shows the margin controls if the need to be shown. */
     showMarginControlsIfNeeded: function() {
-      if (this.printTicketStore_.getMarginsType() ==
+      if (this.marginsTypeTicketItem_.getValue() ==
           print_preview.ticket_items.MarginsType.Value.CUSTOM) {
         this.setIsMarginControlsVisible_(true);
       }
@@ -174,20 +192,16 @@ cr.define('print_preview', function() {
           this.getElement(), 'mouseout', this.onMouseOut_.bind(this));
 
       this.tracker.add(
-          this.printTicketStore_,
-          print_preview.PrintTicketStore.EventType.INITIALIZE,
+          this.documentInfo_,
+          print_preview.DocumentInfo.EventType.CHANGE,
           this.onTicketChange_.bind(this));
       this.tracker.add(
-          this.printTicketStore_,
-          print_preview.PrintTicketStore.EventType.TICKET_CHANGE,
+          this.marginsTypeTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
           this.onTicketChange_.bind(this));
       this.tracker.add(
-          this.printTicketStore_,
-          print_preview.PrintTicketStore.EventType.DOCUMENT_CHANGE,
-          this.onTicketChange_.bind(this));
-      this.tracker.add(
-          this.printTicketStore_,
-          print_preview.PrintTicketStore.EventType.CAPABILITIES_CHANGE,
+          this.customMarginsTicketItem_,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
           this.onTicketChange_.bind(this));
 
       for (var orientation in this.controls_) {
@@ -234,9 +248,9 @@ cr.define('print_preview', function() {
       } else {
         newPosInPts = control.convertPixelsToPts(posInPixels.x);
       }
-      newPosInPts = Math.min(
-          this.printTicketStore_.getCustomMarginMax(control.getOrientation()),
-          newPosInPts);
+      newPosInPts = Math.min(this.customMarginsTicketItem_.getMarginMax(
+                                 control.getOrientation()),
+                             newPosInPts);
       newPosInPts = Math.max(0, newPosInPts);
       newPosInPts = Math.round(newPosInPts);
       control.setPositionInPts(newPosInPts);
@@ -330,7 +344,7 @@ cr.define('print_preview', function() {
           this.moveControlWithConstraints_(this.draggedControl_, posInPixels);
         }
         this.updateClippingMask(this.clippingSize_);
-        this.printTicketStore_.updateCustomMargin(
+        this.customMarginsTicketItem_.updateMargin(
             this.draggedControl_.getOrientation(),
             this.draggedControl_.getPositionInPts());
         this.draggedControl_ = null;
@@ -350,8 +364,8 @@ cr.define('print_preview', function() {
         }
         fromElement = fromElement.parentElement;
       }
-      if (this.printTicketStore_.hasMarginsCapability() &&
-          this.printTicketStore_.getMarginsType() ==
+      if (this.marginsTypeTicketItem_.isCapabilityAvailable() &&
+          this.marginsTypeTicketItem_.getValue() ==
               print_preview.ticket_items.MarginsType.Value.CUSTOM) {
         this.setIsMarginControlsVisible_(true);
       }
@@ -388,10 +402,10 @@ cr.define('print_preview', function() {
      * @private
      */
     onTicketChange_: function() {
-      var margins = this.printTicketStore_.getCustomMargins();
+      var margins = this.customMarginsTicketItem_.getValue();
       for (var orientation in this.controls_) {
         var control = this.controls_[orientation];
-        control.setPageSize(this.printTicketStore_.pageSize);
+        control.setPageSize(this.documentInfo_.pageSize);
         control.setTextboxValue(
             this.serializeValueFromPts_(margins.get(orientation)));
         control.setPositionInPts(margins.get(orientation));
@@ -399,7 +413,7 @@ cr.define('print_preview', function() {
         control.setIsEnabled(true);
       }
       this.updateClippingMask(this.clippingSize_);
-      if (this.printTicketStore_.getMarginsType() !=
+      if (this.marginsTypeTicketItem_.getValue() !=
           print_preview.ticket_items.MarginsType.Value.CUSTOM) {
         this.setIsMarginControlsVisible_(false);
       }
@@ -415,7 +429,7 @@ cr.define('print_preview', function() {
     onControlTextChange_: function(control) {
       var marginValue = this.parseValueToPts_(control.getTextboxValue());
       if (marginValue != null) {
-        this.printTicketStore_.updateCustomMargin(
+        this.customMarginsTicketItem_.updateMargin(
             control.getOrientation(), marginValue);
       } else {
         var enableOtherControls;

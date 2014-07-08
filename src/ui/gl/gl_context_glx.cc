@@ -11,40 +11,27 @@ extern "C" {
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "third_party/mesa/include/osmesa.h"
+#include "third_party/mesa/src/include/GL/osmesa.h"
+#include "ui/gl/GL/glextchromium.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_surface_glx.h"
 
 namespace gfx {
 
-namespace {
-
-// scoped_ptr functor for XFree(). Use as follows:
-//   scoped_ptr_malloc<XVisualInfo, ScopedPtrXFree> foo(...);
-// where "XVisualInfo" is any X type that is freed with XFree.
-class ScopedPtrXFree {
- public:
-  void operator()(void* x) const {
-    ::XFree(x);
-  }
-};
-
-}  // namespace
-
 GLContextGLX::GLContextGLX(GLShareGroup* share_group)
-  : GLContext(share_group),
+  : GLContextReal(share_group),
     context_(NULL),
     display_(NULL) {
 }
 
-Display* GLContextGLX::display() {
+XDisplay* GLContextGLX::display() {
   return display_;
 }
 
 bool GLContextGLX::Initialize(
     GLSurface* compatible_surface, GpuPreference gpu_preference) {
-  display_ = static_cast<Display*>(compatible_surface->GetDisplay());
+  display_ = static_cast<XDisplay*>(compatible_surface->GetDisplay());
 
   GLXContext share_handle = static_cast<GLXContext>(
       share_group() ? share_group()->GetHandle() : NULL);
@@ -111,6 +98,7 @@ bool GLContextGLX::MakeCurrent(GLSurface* surface) {
   if (IsCurrent(surface))
     return true;
 
+  ScopedReleaseCurrent release_current;
   TRACE_EVENT0("gpu", "GLContextGLX::MakeCurrent");
   if (!glXMakeContextCurrent(
       display_,
@@ -122,21 +110,22 @@ bool GLContextGLX::MakeCurrent(GLSurface* surface) {
     return false;
   }
 
-  SetCurrent(this, surface);
-  if (!InitializeExtensionBindings()) {
-    ReleaseCurrent(surface);
+  // Set this as soon as the context is current, since we might call into GL.
+  SetRealGLApi();
+
+  SetCurrent(surface);
+  if (!InitializeDynamicBindings()) {
     Destroy();
     return false;
   }
 
   if (!surface->OnMakeCurrent(this)) {
     LOG(ERROR) << "Could not make current.";
-    ReleaseCurrent(surface);
     Destroy();
     return false;
   }
 
-  SetRealGLApi();
+  release_current.Cancel();
   return true;
 }
 
@@ -144,7 +133,7 @@ void GLContextGLX::ReleaseCurrent(GLSurface* surface) {
   if (!IsCurrent(surface))
     return;
 
-  SetCurrent(NULL, NULL);
+  SetCurrent(NULL);
   if (!glXMakeContextCurrent(display_, 0, 0, 0))
     LOG(ERROR) << "glXMakeCurrent failed in ReleaseCurrent";
 }
@@ -156,7 +145,7 @@ bool GLContextGLX::IsCurrent(GLSurface* surface) {
   // If our context is current then our notion of which GLContext is
   // current must be correct. On the other hand, third-party code
   // using OpenGL might change the current context.
-  DCHECK(!native_context_is_current || (GetCurrent() == this));
+  DCHECK(!native_context_is_current || (GetRealCurrent() == this));
 
   if (!native_context_is_current)
     return false;

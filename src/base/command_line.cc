@@ -8,11 +8,11 @@
 #include <ostream>
 
 #include "base/basictypes.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "build/build_config.h"
 
 #if defined(OS_WIN)
@@ -20,22 +20,30 @@
 #include <shellapi.h>
 #endif
 
+namespace base {
+
 CommandLine* CommandLine::current_process_commandline_ = NULL;
 
 namespace {
+
 const CommandLine::CharType kSwitchTerminator[] = FILE_PATH_LITERAL("--");
 const CommandLine::CharType kSwitchValueSeparator[] = FILE_PATH_LITERAL("=");
+
 // Since we use a lazy match, make sure that longer versions (like "--") are
 // listed before shorter versions (like "-") of similar prefixes.
 #if defined(OS_WIN)
+// By putting slash last, we can control whether it is treaded as a switch
+// value by changing the value of switch_prefix_count to be one less than
+// the array size.
 const CommandLine::CharType* const kSwitchPrefixes[] = {L"--", L"-", L"/"};
 #elif defined(OS_POSIX)
 // Unixes don't use slash as a switch.
 const CommandLine::CharType* const kSwitchPrefixes[] = {"--", "-"};
 #endif
+size_t switch_prefix_count = arraysize(kSwitchPrefixes);
 
 size_t GetSwitchPrefixLength(const CommandLine::StringType& string) {
-  for (size_t i = 0; i < arraysize(kSwitchPrefixes); ++i) {
+  for (size_t i = 0; i < switch_prefix_count; ++i) {
     CommandLine::StringType prefix(kSwitchPrefixes[i]);
     if (string.compare(0, prefix.length(), prefix) == 0)
       return prefix.length();
@@ -74,7 +82,8 @@ void AppendSwitchesAndArguments(CommandLine& command_line,
     parse_switches &= (arg != kSwitchTerminator);
     if (parse_switches && IsSwitch(arg, &switch_string, &switch_value)) {
 #if defined(OS_WIN)
-      command_line.AppendSwitchNative(WideToASCII(switch_string), switch_value);
+      command_line.AppendSwitchNative(UTF16ToASCII(switch_string),
+                                      switch_value);
 #elif defined(OS_POSIX)
       command_line.AppendSwitchNative(switch_string, switch_value);
 #endif
@@ -167,6 +176,15 @@ CommandLine::CommandLine(const StringVector& argv)
 CommandLine::~CommandLine() {
 }
 
+#if defined(OS_WIN)
+// static
+void CommandLine::set_slash_is_not_a_switch() {
+  // The last switch prefix should be slash, so adjust the size to skip it.
+  DCHECK(wcscmp(kSwitchPrefixes[arraysize(kSwitchPrefixes) - 1], L"/") == 0);
+  switch_prefix_count = arraysize(kSwitchPrefixes) - 1;
+}
+#endif
+
 // static
 bool CommandLine::Init(int argc, const char* const* argv) {
   if (current_process_commandline_) {
@@ -199,6 +217,11 @@ CommandLine* CommandLine::ForCurrentProcess() {
   return current_process_commandline_;
 }
 
+// static
+bool CommandLine::InitializedForCurrentProcess() {
+  return !!current_process_commandline_;
+}
+
 #if defined(OS_WIN)
 // static
 CommandLine CommandLine::FromString(const std::wstring& command_line) {
@@ -218,6 +241,7 @@ void CommandLine::InitFromArgv(int argc,
 
 void CommandLine::InitFromArgv(const StringVector& argv) {
   argv_ = StringVector(1);
+  switches_.clear();
   begin_args_ = 1;
   SetProgram(argv.empty() ? FilePath() : FilePath(argv[0]));
   AppendSwitchesAndArguments(*this, argv);
@@ -286,7 +310,7 @@ std::string CommandLine::GetSwitchValueASCII(
     return std::string();
   }
 #if defined(OS_WIN)
-  return WideToASCII(value);
+  return UTF16ToASCII(value);
 #else
   return value;
 #endif
@@ -299,8 +323,8 @@ FilePath CommandLine::GetSwitchValuePath(
 
 CommandLine::StringType CommandLine::GetSwitchValueNative(
     const std::string& switch_string) const {
-  SwitchMap::const_iterator result = switches_.end();
-  result = switches_.find(LowerASCIIOnWindows(switch_string));
+  SwitchMap::const_iterator result =
+    switches_.find(LowerASCIIOnWindows(switch_string));
   return result == switches_.end() ? StringType() : result->second;
 }
 
@@ -391,7 +415,7 @@ void CommandLine::PrependWrapper(const CommandLine::StringType& wrapper) {
   // The wrapper may have embedded arguments (like "gdb --args"). In this case,
   // we don't pretend to do anything fancy, we just split on spaces.
   StringVector wrapper_argv;
-  base::SplitString(wrapper, FILE_PATH_LITERAL(' '), &wrapper_argv);
+  SplitString(wrapper, FILE_PATH_LITERAL(' '), &wrapper_argv);
   // Prepend the wrapper and update the switches/arguments |begin_args_|.
   argv_.insert(argv_.begin(), wrapper_argv.begin(), wrapper_argv.end());
   begin_args_ += wrapper_argv.size();
@@ -409,8 +433,10 @@ void CommandLine::ParseFromString(const std::wstring& command_line) {
   args = ::CommandLineToArgvW(command_line_string.c_str(), &num_args);
 
   DPLOG_IF(FATAL, !args) << "CommandLineToArgvW failed on command line: "
-                         << command_line;
+                         << UTF16ToUTF8(command_line);
   InitFromArgv(num_args, args);
   LocalFree(args);
 }
 #endif
+
+}  // namespace base

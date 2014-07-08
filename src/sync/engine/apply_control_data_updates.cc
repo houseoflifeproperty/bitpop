@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -12,7 +12,7 @@
 #include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/nigori_handler.h"
 #include "sync/syncable/nigori_util.h"
-#include "sync/syncable/write_transaction.h"
+#include "sync/syncable/syncable_write_transaction.h"
 #include "sync/util/cryptographer.h"
 
 namespace syncer {
@@ -24,8 +24,7 @@ using syncable::SERVER_SPECIFICS;
 using syncable::SPECIFICS;
 using syncable::SYNCER;
 
-void ApplyControlDataUpdates(sessions::SyncSession* session) {
-  syncable::Directory* dir = session->context()->directory();
+void ApplyControlDataUpdates(syncable::Directory* dir) {
   syncable::WriteTransaction trans(FROM_HERE, SYNCER, dir);
 
   std::vector<int64> handles;
@@ -45,7 +44,7 @@ void ApplyControlDataUpdates(sessions::SyncSession* session) {
                                  ModelTypeToRootTag(iter.Get()));
     if (!entry.good())
       continue;
-    if (!entry.Get(syncable::IS_UNAPPLIED_UPDATE))
+    if (!entry.GetIsUnappliedUpdate())
       continue;
 
     ModelType type = entry.GetServerModelType();
@@ -69,9 +68,9 @@ void ApplyControlDataUpdates(sessions::SyncSession* session) {
     CHECK(entry.good());
     ModelType type = entry.GetServerModelType();
     CHECK(ControlTypes().Has(type));
-    if (!entry.Get(syncable::UNIQUE_SERVER_TAG).empty()) {
+    if (!entry.GetUniqueServerTag().empty()) {
       // We should have already applied all top level control nodes.
-      DCHECK(!entry.Get(syncable::IS_UNAPPLIED_UPDATE));
+      DCHECK(!entry.GetIsUnappliedUpdate());
       continue;
     }
 
@@ -95,7 +94,7 @@ void ApplyControlDataUpdates(sessions::SyncSession* session) {
 void ApplyNigoriUpdate(syncable::WriteTransaction* const trans,
                        syncable::MutableEntry* const entry,
                        Cryptographer* cryptographer) {
-  DCHECK(entry->Get(IS_UNAPPLIED_UPDATE));
+  DCHECK(entry->GetIsUnappliedUpdate());
 
   // We apply the nigori update regardless of whether there's a conflict or
   // not in order to preserve any new encrypted types or encryption keys.
@@ -103,7 +102,7 @@ void ApplyNigoriUpdate(syncable::WriteTransaction* const trans,
   // valid update or not, and in the case of invalid updates not overwrite the
   // local data.
   const sync_pb::NigoriSpecifics& nigori =
-      entry->Get(SERVER_SPECIFICS).nigori();
+      entry->GetServerSpecifics().nigori();
   trans->directory()->GetNigoriHandler()->ApplyNigoriUpdate(nigori, trans);
 
   // Make sure any unsynced changes are properly encrypted as necessary.
@@ -125,19 +124,19 @@ void ApplyNigoriUpdate(syncable::WriteTransaction* const trans,
     syncable::ProcessUnsyncedChangesForEncryption(trans);
   }
 
-  if (!entry->Get(IS_UNSYNCED)) {  // Update only.
+  if (!entry->GetIsUnsynced()) {  // Update only.
     UpdateLocalDataFromServerData(trans, entry);
   } else {  // Conflict.
     const sync_pb::EntitySpecifics& server_specifics =
-        entry->Get(SERVER_SPECIFICS);
+        entry->GetServerSpecifics();
     const sync_pb::NigoriSpecifics& server_nigori = server_specifics.nigori();
     const sync_pb::EntitySpecifics& local_specifics =
-        entry->Get(SPECIFICS);
+        entry->GetSpecifics();
     const sync_pb::NigoriSpecifics& local_nigori = local_specifics.nigori();
 
     // We initialize the new nigori with the server state, and will override
     // it as necessary below.
-    sync_pb::EntitySpecifics new_specifics = entry->Get(SERVER_SPECIFICS);
+    sync_pb::EntitySpecifics new_specifics = entry->GetServerSpecifics();
     sync_pb::NigoriSpecifics* new_nigori = new_specifics.mutable_nigori();
 
     // If the cryptographer is not ready, another client set a new encryption
@@ -188,7 +187,7 @@ void ApplyNigoriUpdate(syncable::WriteTransaction* const trans,
         new_nigori,
         trans);
 
-    entry->Put(SPECIFICS, new_specifics);
+    entry->PutSpecifics(new_specifics);
     DVLOG(1) << "Resolving simple conflict, merging nigori nodes: "
              << entry;
 
@@ -204,8 +203,8 @@ void ApplyControlUpdate(syncable::WriteTransaction* const trans,
                         syncable::MutableEntry* const entry,
                         Cryptographer* cryptographer) {
   DCHECK_NE(entry->GetServerModelType(), NIGORI);
-  DCHECK(entry->Get(IS_UNAPPLIED_UPDATE));
-  if (entry->Get(IS_UNSYNCED)) {
+  DCHECK(entry->GetIsUnappliedUpdate());
+  if (entry->GetIsUnsynced()) {
       // We just let the server win all conflicts with control types.
     DVLOG(1) << "Ignoring local changes for control update.";
     conflict_util::IgnoreLocalChanges(entry);

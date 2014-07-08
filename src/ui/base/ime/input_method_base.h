@@ -7,9 +7,10 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "ui/base/events/event_constants.h"
+#include "base/memory/weak_ptr.h"
+#include "base/observer_list.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ui_base_export.h"
 
 namespace gfx {
 class Rect;
@@ -17,11 +18,15 @@ class Rect;
 
 namespace ui {
 
+class InputMethodObserver;
+class KeyEvent;
 class TextInputClient;
 
 // A helper class providing functionalities shared among ui::InputMethod
 // implementations.
-class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
+class UI_BASE_EXPORT InputMethodBase
+   : NON_EXPORTED_BASE(public InputMethod),
+     public base::SupportsWeakPtr<InputMethodBase> {
  public:
   InputMethodBase();
   virtual ~InputMethodBase();
@@ -35,6 +40,7 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
   virtual void SetFocusedTextInputClient(TextInputClient* client) OVERRIDE;
+  virtual void DetachTextInputClient(TextInputClient* client) OVERRIDE;
   virtual TextInputClient* GetTextInputClient() const OVERRIDE;
 
   // If a derived class overrides this method, it should call parent's
@@ -42,7 +48,12 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
 
   virtual TextInputType GetTextInputType() const OVERRIDE;
+  virtual TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
+  virtual void ShowImeIfNeeded() OVERRIDE;
+
+  virtual void AddObserver(InputMethodObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(InputMethodObserver* observer) OVERRIDE;
 
  protected:
   virtual void OnWillChangeFocusedClient(TextInputClient* focused_before,
@@ -64,20 +75,37 @@ class UI_EXPORT InputMethodBase : NON_EXPORTED_BASE(public InputMethod) {
   void OnInputMethodChanged() const;
 
   // Convenience method to call delegate_->DispatchKeyEventPostIME().
-  void DispatchKeyEventPostIME(const base::NativeEvent& native_event) const;
+  // Returns true if the event was processed
+  bool DispatchKeyEventPostIME(const ui::KeyEvent& event) const;
 
-  // Convenience method to call delegate_->DispatchFabricatedKeyEventPostIME().
-  void DispatchFabricatedKeyEventPostIME(EventType type,
-                                         KeyboardCode key_code,
-                                         int flags) const;
+  // Convenience method to notify all observers of TextInputClient changes.
+  void NotifyTextInputStateChanged(const TextInputClient* client);
+
+  // Interface for for signalling candidate window events.
+  // See also *Callback functions below. To avoid reentrancy issue that
+  // TextInputClient manipulates IME state during even handling, these methods
+  // defer sending actual signals to renderer.
+  void OnCandidateWindowShown();
+  void OnCandidateWindowUpdated();
+  void OnCandidateWindowHidden();
 
   bool system_toplevel_window_focused() const {
     return system_toplevel_window_focused_;
   }
 
  private:
+  void SetFocusedTextInputClientInternal(TextInputClient* client);
+
+  // Deferred callbacks for signalling TextInputClient about candidate window
+  // appearance changes.
+  void CandidateWindowShownCallback();
+  void CandidateWindowUpdatedCallback();
+  void CandidateWindowHiddenCallback();
+
   internal::InputMethodDelegate* delegate_;
   TextInputClient* text_input_client_;
+
+  ObserverList<InputMethodObserver> observer_list_;
 
   bool system_toplevel_window_focused_;
 

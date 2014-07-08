@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_file_io.idl modified Fri Nov 16 10:46:53 2012. */
+/* From ppb_file_io.idl modified Tue Oct 22 15:09:47 2013. */
 
 #ifndef PPAPI_C_PPB_FILE_IO_H_
 #define PPAPI_C_PPB_FILE_IO_H_
@@ -60,7 +60,14 @@ typedef enum {
    * <code>PP_FILEOPENFLAG_CREATE</code>.  If this flag is specified, and the
    * file already exists, then the FileIO::Open() call will fail.
    */
-  PP_FILEOPENFLAG_EXCLUSIVE = 1 << 4
+  PP_FILEOPENFLAG_EXCLUSIVE = 1 << 4,
+  /**
+   * Requests write access to a file, but writes will always occur at the end of
+   * the file. Mututally exclusive with <code>PP_FILEOPENFLAG_WRITE</code>.
+   *
+   * This is only supported in version 1.2 (Chrome 29) and later.
+   */
+  PP_FILEOPENFLAG_APPEND = 1 << 5
 } PP_FileOpenFlags;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_FileOpenFlags, 4);
 /**
@@ -128,7 +135,9 @@ struct PPB_FileIO_1_1 {
    * @param[out] info The <code>PP_FileInfo</code> structure representing all
    * information about the file.
    * @param[in] callback A <code>PP_CompletionCallback</code> to be called upon
-   * completion of Query().
+   * completion of Query(). <code>info</code> must remain valid until after the
+   * callback runs. If you pass a blocking callback, <code>info</code> must
+   * remain valid until after Query() returns.
    *
    * @return An int32_t containing an error code from <code>pp_errors.h</code>.
    * PP_ERROR_FAILED will be returned if the file isn't opened, and
@@ -163,6 +172,7 @@ struct PPB_FileIO_1_1 {
    * large enough to hold the specified number of bytes to read.  This function
    * might perform a partial read, meaning all the requested bytes
    * might not be returned, even if the end of the file has not been reached.
+   * The FileIO object must have been opened with read access.
    *
    * ReadToArray() is preferred to Read() when doing asynchronous operations.
    *
@@ -173,7 +183,9 @@ struct PPB_FileIO_1_1 {
    * @param[in] bytes_to_read The number of bytes to read from
    * <code>offset</code>.
    * @param[in] callback A <code>PP_CompletionCallback</code> to be called upon
-   * completion of Read().
+   * completion of Read(). <code>buffer</code> must remain valid until after
+   * the callback runs. If you pass a blocking callback, <code>buffer</code>
+   * must remain valid until after Read() returns.
    *
    * @return The number of bytes read or an error code from
    * <code>pp_errors.h</code>. If the return value is 0, then end-of-file was
@@ -260,7 +272,8 @@ struct PPB_FileIO_1_1 {
   /**
    * ReadToArray() reads from an offset in the file.  A PP_ArrayOutput must be
    * provided so that output will be stored in its allocated buffer.  This
-   * function might perform a partial read.
+   * function might perform a partial read. The FileIO object must have been
+   * opened with read access.
    *
    * @param[in] file_io A <code>PP_Resource</code> corresponding to a file
    * FileIO.

@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,13 +6,13 @@ package org.chromium.android_webview.test;
 
 import android.test.suitebuilder.annotation.SmallTest;
 
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
-
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
 
-public class UserAgentTest extends AndroidWebViewTestBase {
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+public class UserAgentTest extends AwTestBase {
 
     private TestAwContentsClient mContentsClient;
     private AwContents mAwContents;
@@ -31,7 +31,7 @@ public class UserAgentTest extends AndroidWebViewTestBase {
     @SmallTest
     @Feature({"AndroidWebView"})
     public void testNoExtraSpaceBeforeBuildName() throws Throwable {
-        getContentSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
+        getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
         loadDataSync(
             mAwContents,
             mContentsClient.getOnPageFinishedHelper(),

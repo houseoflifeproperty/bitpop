@@ -5,21 +5,24 @@
 #include "chrome/browser/ui/webui/certificate_viewer_ui.h"
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
+#include "chrome/browser/ui/webui/certificate_viewer_webui.h"
 #include "chrome/common/url_constants.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
 #include "grit/generated_resources.h"
+#include "ui/web_dialogs/web_dialog_delegate.h"
 
-CertificateViewerUI::CertificateViewerUI(content::WebUI* web_ui)
-    : ConstrainedWebDialogUI(web_ui) {
-  // Set up the chrome://view-cert source.
-  ChromeWebUIDataSource* html_source =
-      new ChromeWebUIDataSource(chrome::kChromeUICertificateViewerHost);
+namespace {
+
+content::WebUIDataSource* GetWebUIDataSource(const std::string& host) {
+  content::WebUIDataSource* html_source =
+      content::WebUIDataSource::Create(host);
 
   // Localized strings.
+  html_source->SetUseJsonJSFormatV2();
   html_source->AddLocalizedString("general", IDS_CERT_INFO_GENERAL_TAB_LABEL);
   html_source->AddLocalizedString("details", IDS_CERT_INFO_DETAILS_TAB_LABEL);
   html_source->AddLocalizedString("close", IDS_CLOSE);
@@ -48,17 +51,39 @@ CertificateViewerUI::CertificateViewerUI(content::WebUI* web_ui)
       IDS_CERT_DETAILS_CERTIFICATE_FIELDS_LABEL);
   html_source->AddLocalizedString("certFieldVal",
       IDS_CERT_DETAILS_CERTIFICATE_FIELD_VALUE_LABEL);
-  html_source->set_json_path("strings.js");
+  html_source->SetJsonPath("strings.js");
 
   // Add required resources.
-  html_source->add_resource_path("certificate_viewer.js",
+  html_source->AddResourcePath("certificate_viewer.js",
       IDR_CERTIFICATE_VIEWER_JS);
-  html_source->add_resource_path("certificate_viewer.css",
+  html_source->AddResourcePath("certificate_viewer.css",
       IDR_CERTIFICATE_VIEWER_CSS);
-  html_source->set_default_resource(IDR_CERTIFICATE_VIEWER_HTML);
+  html_source->SetDefaultResource(IDR_CERTIFICATE_VIEWER_HTML);
+  return html_source;
+}
 
+}  // namespace
+
+CertificateViewerModalDialogUI::CertificateViewerModalDialogUI(
+    content::WebUI* web_ui)
+    : ui::WebDialogUI(web_ui) {
+  // Set up the chrome://view-cert-dialog source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, html_source);
+  content::WebUIDataSource::Add(
+      profile,
+      GetWebUIDataSource(chrome::kChromeUICertificateViewerDialogHost));
+}
+
+CertificateViewerModalDialogUI::~CertificateViewerModalDialogUI() {
+}
+
+CertificateViewerUI::CertificateViewerUI(content::WebUI* web_ui)
+    : ConstrainedWebDialogUI(web_ui) {
+  // Set up the chrome://view-cert source.
+  Profile* profile = Profile::FromWebUI(web_ui);
+  content::WebUIDataSource::Add(
+      profile,
+      GetWebUIDataSource(chrome::kChromeUICertificateViewerHost));
 }
 
 CertificateViewerUI::~CertificateViewerUI() {

@@ -21,10 +21,10 @@
 
 #include "avformat.h"
 #include "caf.h"
-#include "riff.h"
 #include "isom.h"
 #include "avio_internal.h"
 #include "libavutil/intfloat.h"
+#include "libavutil/dict.h"
 
 typedef struct {
     int64_t data;
@@ -74,6 +74,7 @@ static uint32_t samples_per_packet(enum AVCodecID codec_id, int channels) {
         return 64;
     case AV_CODEC_ID_AMR_NB:
     case AV_CODEC_ID_GSM:
+    case AV_CODEC_ID_ILBC:
     case AV_CODEC_ID_QCELP:
         return 160;
     case AV_CODEC_ID_GSM_MS:
@@ -85,8 +86,9 @@ static uint32_t samples_per_packet(enum AVCodecID codec_id, int channels) {
         return 1152;
     case AV_CODEC_ID_AC3:
         return 1536;
-    case AV_CODEC_ID_ALAC:
     case AV_CODEC_ID_QDM2:
+        return 2048 * channels;
+    case AV_CODEC_ID_ALAC:
         return 4096;
     case AV_CODEC_ID_ADPCM_IMA_WAV:
         return (1024 - 4 * channels) * 8 / (4 * channels) + 1;
@@ -102,7 +104,9 @@ static int caf_write_header(AVFormatContext *s)
     AVIOContext *pb = s->pb;
     AVCodecContext *enc = s->streams[0]->codec;
     CAFContext *caf = s->priv_data;
+    AVDictionaryEntry *t = NULL;
     unsigned int codec_tag = ff_codec_get_tag(ff_codec_caf_tags, enc->codec_id);
+    int64_t chunk_size = 0;
 
     switch (enc->codec_id) {
     case AV_CODEC_ID_AAC:
@@ -180,6 +184,20 @@ static int caf_write_header(AVFormatContext *s)
         avio_write(pb, enc->extradata, enc->extradata_size);
     }
 
+    if (av_dict_count(s->metadata)) {
+        ffio_wfourcc(pb, "info"); //< Information chunk
+        while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX))) {
+            chunk_size += strlen(t->key) + strlen(t->value) + 2;
+        }
+        avio_wb64(pb, chunk_size + 4);
+        avio_wb32(pb, av_dict_count(s->metadata));
+        t = NULL;
+        while ((t = av_dict_get(s->metadata, "", t, AV_DICT_IGNORE_SUFFIX))) {
+            avio_put_str(pb, t->key);
+            avio_put_str(pb, t->value);
+        }
+    }
+
     ffio_wfourcc(pb, "data"); //< Audio Data chunk
     caf->data = avio_tell(pb);
     avio_wb64(pb, -1);        //< mChunkSize
@@ -221,11 +239,11 @@ static int caf_write_packet(AVFormatContext *s, AVPacket *pkt)
 
 static int caf_write_trailer(AVFormatContext *s)
 {
+    CAFContext *caf = s->priv_data;
     AVIOContext *pb = s->pb;
     AVCodecContext *enc = s->streams[0]->codec;
 
     if (pb->seekable) {
-        CAFContext *caf = s->priv_data;
         int64_t file_size = avio_tell(pb);
 
         avio_seek(pb, caf->data, SEEK_SET);
@@ -239,17 +257,17 @@ static int caf_write_trailer(AVFormatContext *s)
             avio_wb32(pb, 0); ///< mPrimingFrames
             avio_wb32(pb, 0); ///< mRemainderFrames
             avio_write(pb, caf->pkt_sizes, caf->size_entries_used);
-            av_freep(&caf->pkt_sizes);
             caf->size_buffer_size = 0;
         }
         avio_flush(pb);
     }
+    av_freep(&caf->pkt_sizes);
     return 0;
 }
 
 AVOutputFormat ff_caf_muxer = {
     .name           = "caf",
-    .long_name      = NULL_IF_CONFIG_SMALL("Apple Core Audio Format"),
+    .long_name      = NULL_IF_CONFIG_SMALL("Apple CAF (Core Audio Format)"),
     .mime_type      = "audio/x-caf",
     .extensions     = "caf",
     .priv_data_size = sizeof(CAFContext),
@@ -258,5 +276,5 @@ AVOutputFormat ff_caf_muxer = {
     .write_header   = caf_write_header,
     .write_packet   = caf_write_packet,
     .write_trailer  = caf_write_trailer,
-    .codec_tag= (const AVCodecTag* const []){ff_codec_caf_tags, 0},
+    .codec_tag      = (const AVCodecTag* const []){ff_codec_caf_tags, 0},
 };

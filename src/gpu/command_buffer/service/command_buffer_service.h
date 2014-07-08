@@ -6,7 +6,7 @@
 #define GPU_COMMAND_BUFFER_SERVICE_COMMAND_BUFFER_SERVICE_H_
 
 #include "base/callback.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "gpu/command_buffer/common/command_buffer.h"
 #include "gpu/command_buffer/common/command_buffer_shared.h"
 
@@ -14,9 +14,30 @@ namespace gpu {
 
 class TransferBufferManagerInterface;
 
+class GPU_EXPORT CommandBufferServiceBase : public CommandBuffer {
+ public:
+  // Sets the current get offset. This can be called from any thread.
+  virtual void SetGetOffset(int32 get_offset) = 0;
+
+  // Get the transfer buffer associated with an ID. Returns a null buffer for
+  // ID 0.
+  virtual scoped_refptr<gpu::Buffer> GetTransferBuffer(int32 id) = 0;
+
+  // Allows the reader to update the current token value.
+  virtual void SetToken(int32 token) = 0;
+
+  // Allows the reader to set the current parse error.
+  virtual void SetParseError(error::Error) = 0;
+
+  // Allows the reader to set the current context lost reason.
+  // NOTE: if calling this in conjunction with SetParseError,
+  // call this first.
+  virtual void SetContextLostReason(error::ContextLostReason) = 0;
+};
+
 // An object that implements a shared memory command buffer and a synchronous
 // API to manage the put and get pointers.
-class GPU_EXPORT CommandBufferService : public CommandBuffer {
+class GPU_EXPORT CommandBufferService : public CommandBufferServiceBase {
  public:
   typedef base::Callback<bool(int32)> GetBufferChangedCallback;
   explicit CommandBufferService(
@@ -25,18 +46,19 @@ class GPU_EXPORT CommandBufferService : public CommandBuffer {
 
   // CommandBuffer implementation:
   virtual bool Initialize() OVERRIDE;
-  virtual State GetState() OVERRIDE;
   virtual State GetLastState() OVERRIDE;
+  virtual int32 GetLastToken() OVERRIDE;
   virtual void Flush(int32 put_offset) OVERRIDE;
-  virtual State FlushSync(int32 put_offset, int32 last_known_get) OVERRIDE;
+  virtual void WaitForTokenInRange(int32 start, int32 end) OVERRIDE;
+  virtual void WaitForGetOffsetInRange(int32 start, int32 end) OVERRIDE;
   virtual void SetGetBuffer(int32 transfer_buffer_id) OVERRIDE;
-  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
-  virtual int32 CreateTransferBuffer(size_t size, int32 id_request) OVERRIDE;
-  virtual int32 RegisterTransferBuffer(base::SharedMemory* shared_memory,
-                                       size_t size,
-                                       int32 id_request) OVERRIDE;
+  virtual scoped_refptr<Buffer> CreateTransferBuffer(size_t size,
+                                                     int32* id) OVERRIDE;
   virtual void DestroyTransferBuffer(int32 id) OVERRIDE;
-  virtual Buffer GetTransferBuffer(int32 handle) OVERRIDE;
+
+  // CommandBufferServiceBase implementation:
+  virtual void SetGetOffset(int32 get_offset) OVERRIDE;
+  virtual scoped_refptr<Buffer> GetTransferBuffer(int32 id) OVERRIDE;
   virtual void SetToken(int32 token) OVERRIDE;
   virtual void SetParseError(error::Error error) OVERRIDE;
   virtual void SetContextLostReason(error::ContextLostReason) OVERRIDE;
@@ -55,15 +77,20 @@ class GPU_EXPORT CommandBufferService : public CommandBuffer {
       const GetBufferChangedCallback& callback);
   virtual void SetParseErrorCallback(const base::Closure& callback);
 
-  // Setup the transfer buffer that shared state should be copied into.
-  void SetSharedStateBuffer(int32 transfer_buffer_id);
+  // Setup the shared memory that shared state should be copied into.
+  void SetSharedStateBuffer(scoped_ptr<BufferBacking> shared_state_buffer);
 
   // Copy the current state into the shared state transfer buffer.
   void UpdateState();
 
+  // Registers an existing shared memory object and get an ID that can be used
+  // to identify it in the command buffer.
+  bool RegisterTransferBuffer(int32 id, scoped_ptr<BufferBacking> buffer);
+
  private:
   int32 ring_buffer_id_;
-  Buffer ring_buffer_;
+  scoped_refptr<Buffer> ring_buffer_;
+  scoped_ptr<BufferBacking> shared_state_buffer_;
   CommandBufferSharedState* shared_state_;
   int32 num_entries_;
   int32 get_offset_;

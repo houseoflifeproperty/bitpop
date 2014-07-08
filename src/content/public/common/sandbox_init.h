@@ -5,19 +5,23 @@
 #ifndef CONTENT_PUBLIC_COMMON_SANDBOX_INIT_H_
 #define CONTENT_PUBLIC_COMMON_SANDBOX_INIT_H_
 
-#include "base/process.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
 #include "content/common/content_export.h"
-#include "ipc/ipc_platform_file.h"
 
+namespace base {
 class CommandLine;
 class FilePath;
+}
 
 namespace sandbox {
+class SandboxBPFPolicy;
 struct SandboxInterfaceInfo;
 }
 
 namespace content {
+class SandboxedProcessLauncherDelegate;
 
 #if defined(OS_WIN)
 
@@ -50,11 +54,11 @@ CONTENT_EXPORT bool BrokerDuplicateHandle(HANDLE source_handle,
 // false otherwise.
 CONTENT_EXPORT bool BrokerAddTargetPeer(HANDLE peer_process);
 
-// Starts a sandboxed process with the given directory unsandboxed
-// and returns a handle to it.
-CONTENT_EXPORT base::ProcessHandle StartProcessWithAccess(
-    CommandLine* cmd_line,
-    const FilePath& exposed_dir);
+// Launch a sandboxed process. |delegate| may be NULL. If |delegate| is non-NULL
+// then it just has to outlive this method call.
+CONTENT_EXPORT base::ProcessHandle StartSandboxedProcess(
+    SandboxedProcessLauncherDelegate* delegate,
+    base::CommandLine* cmd_line);
 
 #elif defined(OS_MACOSX)
 
@@ -73,31 +77,22 @@ CONTENT_EXPORT base::ProcessHandle StartProcessWithAccess(
 // occurred.  If process_type isn't one that needs sandboxing, no action is
 // taken and true is always returned.
 CONTENT_EXPORT bool InitializeSandbox(int sandbox_type,
-                                      const FilePath& allowed_path);
+                                      const base::FilePath& allowed_path);
 
 #elif defined(OS_LINUX)
 
-// Initialize the sandbox (currently seccomp-legacy or seccomp-bpf, the setuid
-// sandbox works differently and is set-up in the Zygote).
-// The process sandbox type is determined at run time via the command line
-// switches. TODO(jln): switch to a model where the caller chooses a sandbox
-// type.
-// This should be called before any additional thread has been created.
-//
-// Returns true if a sandbox has been initialized successfully, false
-// otherwise.
-CONTENT_EXPORT bool InitializeSandbox();
+class SandboxInitializerDelegate;
 
-#endif
+// Initialize a seccomp-bpf sandbox. |policy| may not be NULL.
+// Returns true if the sandbox has been properly engaged.
+CONTENT_EXPORT bool InitializeSandbox(
+    scoped_ptr<sandbox::SandboxBPFPolicy> policy);
 
-// Platform neutral wrapper for making an exact copy of a handle for use in
-// the target process. On Windows this wraps BrokerDuplicateHandle() with the
-// DUPLICATE_SAME_ACCESS flag. On posix it behaves essentially the same as
-// IPC::GetFileHandleForProcess()
-CONTENT_EXPORT IPC::PlatformFileForTransit BrokerGetFileHandleForProcess(
-    base::PlatformFile handle,
-    base::ProcessId target_process_id,
-    bool should_close_source);
+// Return a "baseline" policy. This is used by a SandboxInitializerDelegate to
+// implement a policy that is derived from the baseline.
+CONTENT_EXPORT scoped_ptr<sandbox::SandboxBPFPolicy>
+GetBPFSandboxBaselinePolicy();
+#endif  // defined(OS_LINUX)
 
 }  // namespace content
 

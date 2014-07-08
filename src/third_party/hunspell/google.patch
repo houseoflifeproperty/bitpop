@@ -4,7 +4,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/affixmgr.cxx,v
 retrieving revision 1.41
 diff -u -r1.41 affixmgr.cxx
 --- src/hunspell/affixmgr.cxx	16 Dec 2011 09:15:34 -0000	1.41
-+++ src/hunspell/affixmgr.cxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/affixmgr.cxx	11 Mar 2014 17:47:58 -0000
 @@ -14,8 +14,14 @@
  
  #include "csutil.hxx"
@@ -195,7 +195,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/affixmgr.hxx,v
 retrieving revision 1.15
 diff -u -r1.15 affixmgr.hxx
 --- src/hunspell/affixmgr.hxx	13 Oct 2011 13:41:54 -0000	1.15
-+++ src/hunspell/affixmgr.hxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/affixmgr.hxx	11 Mar 2014 17:47:58 -0000
 @@ -18,6 +18,40 @@
  class PfxEntry;
  class SfxEntry;
@@ -280,7 +280,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/filemgr.cxx,v
 retrieving revision 1.5
 diff -u -r1.5 filemgr.cxx
 --- src/hunspell/filemgr.cxx	23 Jun 2011 09:21:50 -0000	1.5
-+++ src/hunspell/filemgr.cxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/filemgr.cxx	11 Mar 2014 17:47:58 -0000
 @@ -7,6 +7,32 @@
  
  #include "filemgr.hxx"
@@ -325,7 +325,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/filemgr.hxx,v
 retrieving revision 1.3
 diff -u -r1.3 filemgr.hxx
 --- src/hunspell/filemgr.hxx	15 Apr 2010 11:22:08 -0000	1.3
-+++ src/hunspell/filemgr.hxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/filemgr.hxx	11 Mar 2014 17:47:58 -0000
 @@ -7,6 +7,30 @@
  #include "hunzip.hxx"
  #include <stdio.h>
@@ -368,7 +368,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/hashmgr.cxx,v
 retrieving revision 1.12
 diff -u -r1.12 hashmgr.cxx
 --- src/hunspell/hashmgr.cxx	23 Jun 2011 09:21:50 -0000	1.12
-+++ src/hunspell/hashmgr.cxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/hashmgr.cxx	11 Mar 2014 17:47:58 -0000
 @@ -12,8 +12,14 @@
  
  // build a hash table from a munched word list
@@ -491,7 +491,28 @@ diff -u -r1.12 hashmgr.cxx
      return 0;
  }     
  
-@@ -339,6 +407,44 @@
+@@ -256,6 +324,12 @@
+ // remove word (personal dictionary function for standalone applications)
+ int HashMgr::remove(const char * word)
+ {
++#ifdef HUNSPELL_CHROME_CLIENT
++    std::map<base::StringPiece, int>::iterator iter =
++        custom_word_to_affix_id_map_.find(word);
++    if (iter != custom_word_to_affix_id_map_.end())
++        custom_word_to_affix_id_map_.erase(iter);
++#else
+     struct hentry * dp = lookup(word);
+     while (dp) {
+         if (dp->alen == 0 || !TESTAFF(dp->astr, forbiddenword, dp->alen)) {
+@@ -270,6 +344,7 @@
+         }
+         dp = dp->next_homonym;
+     }
++#endif
+     return 0;
+ }
+ 
+@@ -339,6 +414,44 @@
  // initialize: col=-1; hp = NULL; hp = walk_hashtable(&col, hp);
  struct hentry * HashMgr::walk_hashtable(int &col, struct hentry * hp) const
  {  
@@ -536,7 +557,7 @@ diff -u -r1.12 hashmgr.cxx
    if (hp && hp->next != NULL) return hp->next;
    for (col++; col < tablesize; col++) {
      if (tableptr[col]) return tableptr[col];
-@@ -346,11 +452,13 @@
+@@ -346,11 +459,13 @@
    // null at end and reset to start
    col = -1;
    return NULL;
@@ -550,7 +571,7 @@ diff -u -r1.12 hashmgr.cxx
    int al;
    char * ap;
    char * dp;
-@@ -471,6 +579,7 @@
+@@ -471,6 +586,7 @@
    }
  
    delete dict;
@@ -558,7 +579,7 @@ diff -u -r1.12 hashmgr.cxx
    return 0;
  }
  
-@@ -479,6 +588,9 @@
+@@ -479,6 +595,9 @@
  
  int HashMgr::hash(const char * word) const
  {
@@ -568,7 +589,7 @@ diff -u -r1.12 hashmgr.cxx
      long  hv = 0;
      for (int i=0; i < 4  &&  *word != 0; i++)
          hv = (hv << 8) | (*word++);
-@@ -487,6 +599,7 @@
+@@ -487,6 +606,7 @@
        hv ^= (*word++);
      }
      return (unsigned long) hv % tablesize;
@@ -576,7 +597,7 @@ diff -u -r1.12 hashmgr.cxx
  }
  
  int HashMgr::decode_flags(unsigned short ** result, char * flags, FileMgr * af) {
-@@ -607,7 +720,12 @@
+@@ -607,7 +727,12 @@
    int firstline = 1;
   
    // open the affix file
@@ -589,7 +610,7 @@ diff -u -r1.12 hashmgr.cxx
    if (!afflst) {
      HUNSPELL_WARNING(stderr, "Error - could not open affix description file %s\n",affpath);
      return 1;
-@@ -802,6 +920,121 @@
+@@ -802,6 +927,121 @@
     return 0;
  }
  
@@ -717,7 +738,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/hashmgr.hxx,v
 retrieving revision 1.3
 diff -u -r1.3 hashmgr.hxx
 --- src/hunspell/hashmgr.hxx	15 Apr 2010 11:22:08 -0000	1.3
-+++ src/hunspell/hashmgr.hxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/hashmgr.hxx	11 Mar 2014 17:47:58 -0000
 @@ -8,10 +8,25 @@
  #include "htypes.hxx"
  #include "filemgr.hxx"
@@ -727,7 +748,7 @@ diff -u -r1.3 hashmgr.hxx
 +#include <map>
 +
 +#include "base/stl_util.h"
-+#include "base/string_piece.h"
++#include "base/strings/string_piece.h"
 +#include "third_party/hunspell/google/bdict_reader.h"
 +#endif
 +
@@ -815,7 +836,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/htypes.hxx,v
 retrieving revision 1.3
 diff -u -r1.3 htypes.hxx
 --- src/hunspell/htypes.hxx	6 Sep 2010 07:58:53 -0000	1.3
-+++ src/hunspell/htypes.hxx	23 Mar 2012 05:56:23 -0000
++++ src/hunspell/htypes.hxx	11 Mar 2014 17:47:58 -0000
 @@ -1,6 +1,16 @@
  #ifndef _HTYPES_HXX_
  #define _HTYPES_HXX_
@@ -839,9 +860,16 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/hunspell.cxx,v
 retrieving revision 1.29
 diff -u -r1.29 hunspell.cxx
 --- src/hunspell/hunspell.cxx	23 Jun 2011 09:21:50 -0000	1.29
-+++ src/hunspell/hunspell.cxx	23 Mar 2012 05:56:24 -0000
-@@ -12,15 +12,30 @@
++++ src/hunspell/hunspell.cxx	11 Mar 2014 17:47:58 -0000
+@@ -7,20 +7,37 @@
+ 
+ #include "hunspell.hxx"
+ #include "hunspell.h"
++#ifndef HUNSPELL_CHROME_CLIENT
+ #ifndef MOZILLA_CLIENT
+ #    include "config.h"
  #endif
++#endif
  #include "csutil.hxx"
  
 +#ifdef HUNSPELL_CHROME_CLIENT
@@ -871,7 +899,7 @@ diff -u -r1.29 hunspell.cxx
      /* first set up the hash manager */
      pHMgr[0] = new HashMgr(dpath, affpath, key);
      if (pHMgr[0]) maxdic = 1;
-@@ -28,6 +43,7 @@
+@@ -28,6 +45,7 @@
      /* next set up the affix manager */
      /* it needs access to the hash manager lookup methods */
      pAMgr = new AffixMgr(affpath, pHMgr, &maxdic, key);
@@ -879,7 +907,19 @@ diff -u -r1.29 hunspell.cxx
  
      /* get the preferred try string and the dictionary */
      /* encoding from the Affix Manager for that dictionary */
-@@ -59,10 +75,16 @@
+@@ -41,7 +59,11 @@
+     wordbreak = pAMgr->get_breaktable();
+ 
+     /* and finally set up the suggestion manager */
++#ifdef HUNSPELL_CHROME_CLIENT
++    pSMgr = new SuggestMgr(bdict_reader, try_string, MAXSUGGESTION, pAMgr);
++#else
+     pSMgr = new SuggestMgr(try_string, MAXSUGGESTION, pAMgr);
++#endif
+     if (try_string) free(try_string);
+ }
+ 
+@@ -59,10 +81,16 @@
      csconv= NULL;
      if (encoding) free(encoding);
      encoding = NULL;
@@ -896,7 +936,7 @@ diff -u -r1.29 hunspell.cxx
  // load extra dictionaries
  int Hunspell::add_dic(const char * dpath, const char * key) {
      if (maxdic == MAXDIC || !affixpath) return 1;
-@@ -70,6 +92,7 @@
+@@ -70,6 +98,7 @@
      if (pHMgr[maxdic]) maxdic++; else return 1;
      return 0;
  }
@@ -904,17 +944,17 @@ diff -u -r1.29 hunspell.cxx
  
  // make a copy of src at destination while removing all leading
  // blanks and removing any trailing periods after recording
-@@ -322,6 +345,9 @@
+@@ -322,6 +351,9 @@
  
  int Hunspell::spell(const char * word, int * info, char ** root)
  {
 +#ifdef HUNSPELL_CHROME_CLIENT
-+  if (pHMgr) pHMgr[0]->EmptyHentryCache();
++  if (pHMgr[0]) pHMgr[0]->EmptyHentryCache();
 +#endif
    struct hentry * rv=NULL;
    // need larger vector. For example, Turkish capital letter I converted a
    // 2-byte UTF-8 character (dotless i) by mkallsmall.
-@@ -586,6 +612,13 @@
+@@ -586,6 +618,13 @@
    if (!len)
        return NULL;
  
@@ -928,17 +968,17 @@ diff -u -r1.29 hunspell.cxx
    // word reversing wrapper for complex prefixes
    if (complexprefixes) {
      if (word != w2) {
-@@ -675,6 +708,9 @@
+@@ -675,6 +714,9 @@
  
  int Hunspell::suggest(char*** slst, const char * word)
  {
 +#ifdef HUNSPELL_CHROME_CLIENT
-+  if (pHMgr) pHMgr[0]->EmptyHentryCache();
++  if (pHMgr[0]) pHMgr[0]->EmptyHentryCache();
 +#endif
    int onlycmpdsug = 0;
    char cw[MAXWORDUTF8LEN];
    char wspace[MAXWORDUTF8LEN];
-@@ -1921,13 +1957,21 @@
+@@ -1921,13 +1963,21 @@
  
  Hunhandle *Hunspell_create(const char * affpath, const char * dpath)
  {
@@ -966,7 +1006,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/hunspell.hxx,v
 retrieving revision 1.6
 diff -u -r1.6 hunspell.hxx
 --- src/hunspell/hunspell.hxx	21 Jan 2011 17:30:41 -0000	1.6
-+++ src/hunspell/hunspell.hxx	23 Mar 2012 05:56:24 -0000
++++ src/hunspell/hunspell.hxx	11 Mar 2014 17:47:58 -0000
 @@ -5,6 +5,10 @@
  #include "suggestmgr.hxx"
  #include "langnum.hxx"
@@ -1023,7 +1063,7 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/replist.hxx,v
 retrieving revision 1.2
 diff -u -r1.2 replist.hxx
 --- src/hunspell/replist.hxx	15 Apr 2010 11:22:09 -0000	1.2
-+++ src/hunspell/replist.hxx	23 Mar 2012 05:56:24 -0000
++++ src/hunspell/replist.hxx	11 Mar 2014 17:47:58 -0000
 @@ -2,6 +2,12 @@
  #ifndef _REPLIST_HXX_
  #define _REPLIST_HXX_
@@ -1043,8 +1083,8 @@ RCS file: /cvsroot/hunspell/hunspell/src/hunspell/suggestmgr.cxx,v
 retrieving revision 1.24
 diff -u -r1.24 suggestmgr.cxx
 --- src/hunspell/suggestmgr.cxx	14 Feb 2011 21:47:24 -0000	1.24
-+++ src/hunspell/suggestmgr.cxx	23 Mar 2012 05:56:24 -0000
-@@ -12,6 +12,98 @@
++++ src/hunspell/suggestmgr.cxx	11 Mar 2014 17:47:58 -0000
+@@ -12,9 +12,114 @@
  
  const w_char W_VLINE = { '\0', '|' };
  
@@ -1090,24 +1130,25 @@ diff -u -r1.24 suggestmgr.cxx
 +  // it can store affix flags into 'h->astr[0]',...,'h->astr[alen-1]'. To handle
 +  // this new hentry struct, we define a struct which combines three values: an
 +  // hentry struct 'hentry'; a char array 'word[kMaxWordLen]', and; an unsigned
-+  // short value 'astr' so a hentry struct 'h' returned from
++  // short array 'astr' so a hentry struct 'h' returned from
 +  // CreateScopedHashEntry() satisfies the following equations:
 +  //   hentry* h = factory.CreateScopedHashEntry(0, source);
 +  //   h->word[0] == ((HashEntryItem*)h)->entry.word[0].
 +  //   h->word[1] == ((HashEntryItem*)h)->word[0].
 +  //   ...
 +  //   h->word[h->blen] == ((HashEntryItem*)h)->word[h->blen-1].
-+  //   h->astr[0] == ((HashEntryItem*)h)->astr.
-+  // Our BDICT does not use affix flags longer than one for now since they are
-+  // discarded by convert_dict, i.e. 'h->astr' is always <= 1. Therefore, this
-+  // struct does not use an array for 'astr'.
++  //   h->astr[0] == ((HashEntryItem*)h)->astr[0].
++  //   h->astr[1] == ((HashEntryItem*)h)->astr[1].
++  //   ...
++  //   h->astr[h->alen-1] == ((HashEntryItem*)h)->astr[h->alen-1].
 +  enum {
 +    kMaxWordLen = 128,
++    kMaxAffixLen = 8,
 +  };
 +  struct HashEntryItem {
 +    hentry entry;
 +    char word[kMaxWordLen];
-+    unsigned short astr;
++    unsigned short astr[kMaxAffixLen];
 +  };
 +
 +  HashEntryItem hash_items_[MAX_ROOTS];
@@ -1122,7 +1163,7 @@ diff -u -r1.24 suggestmgr.cxx
 +
 +hentry* ScopedHashEntryFactory::CreateScopedHashEntry(int index,
 +                                                      const hentry* source) {
-+  if (index >= MAX_ROOTS || source->blen >= kMaxWordLen || source->alen > 1)
++  if (index >= MAX_ROOTS || source->blen >= kMaxWordLen)
 +    return NULL;
 +
 +  // Retrieve a HashEntryItem struct from our spool, initialize it, and
@@ -1131,8 +1172,11 @@ diff -u -r1.24 suggestmgr.cxx
 +  HashEntryItem* hash_item = &hash_items_[index];
 +  memcpy(&hash_item->entry, source, source_size);
 +  if (source->astr) {
-+    hash_item->astr = *source->astr;
-+    hash_item->entry.astr = &hash_item->astr;
++    hash_item->entry.alen = source->alen;
++    if (hash_item->entry.alen > kMaxAffixLen)
++      hash_item->entry.alen = kMaxAffixLen;
++    memcpy(hash_item->astr, source->astr, hash_item->entry.alen * sizeof(hash_item->astr[0]));
++    hash_item->entry.astr = &hash_item->astr[0];
 +  }
 +  return &hash_item->entry;
 +}
@@ -1140,10 +1184,104 @@ diff -u -r1.24 suggestmgr.cxx
 +}  // namespace
 +#endif
 +
++
++#ifdef HUNSPELL_CHROME_CLIENT
++SuggestMgr::SuggestMgr(hunspell::BDictReader* reader,
++                       const char * tryme, int maxn, 
++                       AffixMgr * aptr)
++{
++  bdict_reader = reader;
++#else
  SuggestMgr::SuggestMgr(const char * tryme, int maxn, 
                         AffixMgr * aptr)
  {
-@@ -1057,6 +1149,9 @@
++#endif
+ 
+   // register affix manager and check in string of chars to 
+   // try when building candidate suggestions
+@@ -407,6 +512,49 @@
+   int lenr, lenp;
+   int wl = strlen(word);
+   if (wl < 2 || ! pAMgr) return ns;
++  
++#ifdef HUNSPELL_CHROME_CLIENT
++  const char *pattern, *pattern2;
++  hunspell::ReplacementIterator iterator = bdict_reader->GetReplacementIterator();
++  while (iterator.GetNext(&pattern, &pattern2)) {
++      r = word;
++      lenr = strlen(pattern2);
++      lenp = strlen(pattern);
++      
++      // search every occurence of the pattern in the word
++      while ((r=strstr(r, pattern)) != NULL) {
++          strcpy(candidate, word);
++          if (r-word + lenr + strlen(r+lenp) >= MAXLNLEN) break;
++          strcpy(candidate+(r-word), pattern2);
++          strcpy(candidate+(r-word)+lenr, r+lenp);
++          ns = testsug(wlst, candidate, wl-lenp+lenr, ns, cpdsuggest, NULL, NULL);
++          if (ns == -1) return -1;
++          // check REP suggestions with space
++          char * sp = strchr(candidate, ' ');
++          if (sp) {
++            char * prev = candidate;
++            while (sp) {
++              *sp = '\0';
++              if (checkword(prev, strlen(prev), 0, NULL, NULL)) {
++                int oldns = ns;
++                *sp = ' ';
++                ns = testsug(wlst, sp + 1, strlen(sp + 1), ns, cpdsuggest, NULL, NULL);
++                if (ns == -1) return -1;
++                if (oldns < ns) {
++                  free(wlst[ns - 1]);
++                  wlst[ns - 1] = mystrdup(candidate);
++                  if (!wlst[ns - 1]) return -1;
++                }
++              }
++              *sp = ' ';
++              prev = sp + 1;
++              sp = strchr(prev, ' ');
++            }
++          }
++          r++; // search for the next letter
++    }
++  }
++#else
+   int numrep = pAMgr->get_numrep();
+   struct replentry* reptable = pAMgr->get_reptable();
+   if (reptable==NULL) return ns;
+@@ -448,6 +596,7 @@
+           r++; // search for the next letter
+       }
+    }
++#endif
+    return ns;
+ }
+ 
+@@ -678,7 +827,9 @@
+ // error is missing a letter it needs
+ int SuggestMgr::forgotchar(char ** wlst, const char * word, int ns, int cpdsuggest)
+ {
+-   char candidate[MAXSWUTF8L];
++   // TODO(rouslan): Remove the interim change below when this patch lands:
++   // http://sf.net/tracker/?func=detail&aid=3595024&group_id=143754&atid=756395
++   char candidate[MAXSWUTF8L + 4];
+    char * p;
+    clock_t timelimit = clock();
+    int timer = MINTIMER;
+@@ -700,8 +851,10 @@
+ // error is missing a letter it needs
+ int SuggestMgr::forgotchar_utf(char ** wlst, const w_char * word, int wl, int ns, int cpdsuggest)
+ {
+-   w_char  candidate_utf[MAXSWL];
+-   char    candidate[MAXSWUTF8L];
++   // TODO(rouslan): Remove the interim change below when this patch lands:
++   // http://sf.net/tracker/?func=detail&aid=3595024&group_id=143754&atid=756395
++   w_char  candidate_utf[MAXSWL + 1];
++   char    candidate[MAXSWUTF8L + 4];
+    w_char * p;
+    clock_t timelimit = clock();
+    int timer = MINTIMER;
+@@ -1057,6 +1210,9 @@
  
    struct hentry* hp = NULL;
    int col = -1;
@@ -1153,7 +1291,7 @@ diff -u -r1.24 suggestmgr.cxx
    phonetable * ph = (pAMgr) ? pAMgr->get_phonetable() : NULL;
    char target[MAXSWUTF8L];
    char candidate[MAXSWUTF8L];
-@@ -1115,7 +1210,11 @@
+@@ -1115,7 +1271,11 @@
  
      if (sc > scores[lp]) {
        scores[lp] = sc;  
@@ -1165,3 +1303,33 @@ diff -u -r1.24 suggestmgr.cxx
        lval = sc;
        for (j=0; j < MAX_ROOTS; j++)
          if (scores[j] < lval) {
+Index: src/hunspell/suggestmgr.hxx
+===================================================================
+RCS file: /cvsroot/hunspell/hunspell/src/hunspell/suggestmgr.hxx,v
+retrieving revision 1.5
+diff -u -r1.5 suggestmgr.hxx
+--- src/hunspell/suggestmgr.hxx	21 Jan 2011 22:10:24 -0000	1.5
++++ src/hunspell/suggestmgr.hxx	11 Mar 2014 17:47:58 -0000
+@@ -52,7 +52,11 @@
+ 
+ 
+ public:
++#ifdef HUNSPELL_CHROME_CLIENT
++  SuggestMgr(hunspell::BDictReader* reader, const char * tryme, int maxn, AffixMgr *aptr);
++#else
+   SuggestMgr(const char * tryme, int maxn, AffixMgr *aptr);
++#endif
+   ~SuggestMgr();
+ 
+   int suggest(char*** slst, const char * word, int nsug, int * onlycmpdsug);
+@@ -66,6 +70,10 @@
+   char * suggest_morph_for_spelling_error(const char * word);
+ 
+ private:
++#ifdef HUNSPELL_CHROME_CLIENT
++   // Not owned by us, owned by the Hunspell object.
++   hunspell::BDictReader* bdict_reader;
++#endif
+    int testsug(char** wlst, const char * candidate, int wl, int ns, int cpdsuggest,
+      int * timer, clock_t * timelimit);
+    int checkword(const char *, int, int, int *, clock_t *);

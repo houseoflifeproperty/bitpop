@@ -10,15 +10,14 @@
 #include "base/base_export.h"
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 
 namespace base {
-namespace files {
 
 // This class lets you register interest in changes on a FilePath.
-// The delegate will get called whenever the file or directory referenced by the
+// The callback will get called whenever the file or directory referenced by the
 // FilePath is changed, including created or deleted. Due to limitations in the
 // underlying OS APIs, FilePathWatcher has slightly different semantics on OS X
 // than on Windows or Linux. FilePathWatcher on Linux and Windows will detect
@@ -33,26 +32,7 @@ class BASE_EXPORT FilePathWatcher {
   // that case, the callback won't be invoked again.
   typedef base::Callback<void(const FilePath& path, bool error)> Callback;
 
-  // Declares the callback client code implements to receive notifications. Note
-  // that implementations of this interface should not keep a reference to the
-  // corresponding FileWatcher object to prevent a reference cycle.
-  //
-  // Deprecated: see comment on Watch() below.
-  class Delegate : public base::RefCountedThreadSafe<Delegate> {
-   public:
-    virtual void OnFilePathChanged(const FilePath& path) = 0;
-    // Called when platform specific code detected an error. The watcher will
-    // not call OnFilePathChanged for future changes.
-    virtual void OnFilePathError(const FilePath& path) {}
-
-   protected:
-    friend class base::RefCountedThreadSafe<Delegate>;
-    virtual ~Delegate() {}
-  };
-
   // Used internally to encapsulate different members on different platforms.
-  // TODO(jhawkins): Move this into its own file. Also fix the confusing naming
-  // wrt Delegate vs PlatformDelegate.
   class PlatformDelegate : public base::RefCountedThreadSafe<PlatformDelegate> {
    public:
     PlatformDelegate();
@@ -60,7 +40,7 @@ class BASE_EXPORT FilePathWatcher {
     // Start watching for the given |path| and notify |delegate| about changes.
     virtual bool Watch(const FilePath& path,
                        bool recursive,
-                       Delegate* delegate) WARN_UNUSED_RESULT = 0;
+                       const Callback& callback) WARN_UNUSED_RESULT = 0;
 
     // Stop watching. This is called from FilePathWatcher's dtor in order to
     // allow to shut down properly while the object is still alive.
@@ -108,17 +88,6 @@ class BASE_EXPORT FilePathWatcher {
   // shutdown.
   static void CancelWatch(const scoped_refptr<PlatformDelegate>& delegate);
 
-  // Register interest in any changes on |path|. OnPathChanged will be called
-  // back for each change. Returns true on success.
-  // OnFilePathChanged() will be called on the same thread as Watch() is called,
-  // which should have a MessageLoop of TYPE_IO.
-  //
-  // Deprecated: new code should use the callback interface, declared below.
-  // The FilePathWatcher::Delegate interface will be removed once all client
-  // code has been updated. http://crbug.com/130980
-  virtual bool Watch(const FilePath& path, Delegate* delegate)
-      WARN_UNUSED_RESULT;
-
   // Invokes |callback| whenever updates to |path| are detected. This should be
   // called at most once, and from a MessageLoop of TYPE_IO. Set |recursive| to
   // true, to watch |path| and its children. The callback will be invoked on
@@ -134,7 +103,6 @@ class BASE_EXPORT FilePathWatcher {
   DISALLOW_COPY_AND_ASSIGN(FilePathWatcher);
 };
 
-}  // namespace files
 }  // namespace base
 
 #endif  // BASE_FILES_FILE_PATH_WATCHER_H_

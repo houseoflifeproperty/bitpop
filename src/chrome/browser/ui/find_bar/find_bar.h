@@ -9,12 +9,16 @@
 #ifndef CHROME_BROWSER_UI_FIND_BAR_FIND_BAR_H_
 #define CHROME_BROWSER_UI_FIND_BAR_FIND_BAR_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "ui/gfx/rect.h"
 
 class FindBarController;
 class FindBarTesting;
 class FindNotificationDetails;
+
+namespace gfx {
+class Range;
+}
 
 class FindBar {
  public:
@@ -53,12 +57,20 @@ class FindBar {
                                      bool no_redraw) = 0;
 
   // Set the text in the find box.
-  virtual void SetFindText(const string16& find_text) = 0;
+  virtual void SetFindTextAndSelectedRange(
+      const base::string16& find_text,
+      const gfx::Range& selected_range) = 0;
+
+  // Gets the search string currently visible in the find box.
+  virtual base::string16 GetFindText() = 0;
+
+  // Gets the selection.
+  virtual gfx::Range GetSelectedRange() = 0;
 
   // Updates the FindBar with the find result details contained within the
   // specified |result|.
   virtual void UpdateUIForFindResult(const FindNotificationDetails& result,
-                                     const string16& find_text) = 0;
+                                     const base::string16& find_text) = 0;
 
   // No match was found; play an audible alert.
   virtual void AudibleAlert() = 0;
@@ -68,6 +80,12 @@ class FindBar {
   // Upon dismissing the window, restore focus to the last focused view which is
   // not FindBarView or any of its children.
   virtual void RestoreSavedFocus() = 0;
+
+  // Returns true if all tabs use a single find pasteboard.
+  virtual bool HasGlobalFindPasteboard() = 0;
+
+  // Called when the web contents associated with the find bar changes.
+  virtual void UpdateFindBarForChangedWebContents() = 0;
 
   // Returns a pointer to the testing interface to the FindBar, or NULL
   // if there is none.
@@ -87,14 +105,11 @@ class FindBarTesting {
   virtual bool GetFindBarWindowInfo(gfx::Point* position,
                                     bool* fully_visible) = 0;
 
-  // Gets the search string currently visible in the Find box.
-  virtual string16 GetFindText() = 0;
-
   // Gets the search string currently selected in the Find box.
-  virtual string16 GetFindSelectedText() = 0;
+  virtual base::string16 GetFindSelectedText() = 0;
 
   // Gets the match count text (ie. 1 of 3) visible in the Find box.
-  virtual string16 GetMatchCountText() = 0;
+  virtual base::string16 GetMatchCountText() = 0;
 
   // Gets the pixel width of the FindBar.
   virtual int GetWidth() = 0;

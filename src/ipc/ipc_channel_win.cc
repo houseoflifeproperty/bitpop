@@ -11,11 +11,11 @@
 #include "base/compiler_specific.h"
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "base/process_util.h"
+#include "base/process/process_handle.h"
 #include "base/rand_util.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/threading/thread_checker.h"
-#include "base/utf_string_conversions.h"
 #include "base/win/scoped_handle.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_logging.h"
@@ -36,13 +36,13 @@ Channel::ChannelImpl::State::~State() {
 Channel::ChannelImpl::ChannelImpl(const IPC::ChannelHandle &channel_handle,
                                   Mode mode, Listener* listener)
     : ChannelReader(listener),
-      ALLOW_THIS_IN_INITIALIZER_LIST(input_state_(this)),
-      ALLOW_THIS_IN_INITIALIZER_LIST(output_state_(this)),
+      input_state_(this),
+      output_state_(this),
       pipe_(INVALID_HANDLE_VALUE),
       peer_pid_(base::kNullProcessId),
       waiting_connect_(mode & MODE_SERVER_FLAG),
       processing_incoming_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       client_secret_(0),
       validate_client_(false) {
   CreatePipe(channel_handle, mode);
@@ -70,7 +70,7 @@ void Channel::ChannelImpl::Close() {
   // Make sure all IO has completed.
   base::Time start = base::Time::Now();
   while (input_state_.is_pending || output_state_.is_pending) {
-    MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
+    base::MessageLoopForIO::current()->WaitForIOCompletion(INFINITE, this);
   }
 
   while (!output_queue_.empty()) {
@@ -152,7 +152,8 @@ bool Channel::ChannelImpl::WillDispatchInputMessage(Message* msg) {
   return true;
 }
 
-void Channel::ChannelImpl::HandleHelloMessage(const Message& msg) {
+void Channel::ChannelImpl::HandleInternalMessage(const Message& msg) {
+  DCHECK_EQ(msg.type(), static_cast<unsigned>(Channel::HELLO_MESSAGE_TYPE));
   // The hello message contains one parameter containing the PID.
   PickleIterator it(msg);
   int32 claimed_pid;
@@ -182,7 +183,7 @@ bool Channel::ChannelImpl::DidEmptyInputBuffers() {
 }
 
 // static
-const string16 Channel::ChannelImpl::PipeName(
+const base::string16 Channel::ChannelImpl::PipeName(
     const std::string& channel_id, int32* secret) {
   std::string name("\\\\.\\pipe\\chrome.");
 
@@ -191,19 +192,19 @@ const string16 Channel::ChannelImpl::PipeName(
   if (index != std::string::npos) {
     if (secret)  // Retrieve the secret if asked for.
       base::StringToInt(channel_id.substr(index + 1), secret);
-    return ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
+    return base::ASCIIToWide(name.append(channel_id.substr(0, index - 1)));
   }
 
   // This case is here to support predictable named pipes in tests.
   if (secret)
     *secret = 0;
-  return ASCIIToWide(name.append(channel_id));
+  return base::ASCIIToWide(name.append(channel_id));
 }
 
 bool Channel::ChannelImpl::CreatePipe(const IPC::ChannelHandle &channel_handle,
                                       Mode mode) {
   DCHECK_EQ(INVALID_HANDLE_VALUE, pipe_);
-  string16 pipe_name;
+  base::string16 pipe_name;
   // If we already have a valid pipe for channel just copy it.
   if (channel_handle.pipe.handle) {
     DCHECK(channel_handle.name.empty());
@@ -294,7 +295,7 @@ bool Channel::ChannelImpl::Connect() {
   if (pipe_ == INVALID_HANDLE_VALUE)
     return false;
 
-  MessageLoopForIO::current()->RegisterIOHandler(pipe_, this);
+  base::MessageLoopForIO::current()->RegisterIOHandler(pipe_, this);
 
   // Check to see if there is a client connected to our pipe...
   if (waiting_connect_)
@@ -304,10 +305,13 @@ bool Channel::ChannelImpl::Connect() {
     // Complete setup asynchronously. By not setting input_state_.is_pending
     // to true, we indicate to OnIOCompleted that this is the special
     // initialization signal.
-    MessageLoopForIO::current()->PostTask(
-        FROM_HERE, base::Bind(&Channel::ChannelImpl::OnIOCompleted,
-                              weak_factory_.GetWeakPtr(), &input_state_.context,
-                              0, 0));
+    base::MessageLoopForIO::current()->PostTask(
+        FROM_HERE,
+        base::Bind(&Channel::ChannelImpl::OnIOCompleted,
+                   weak_factory_.GetWeakPtr(),
+                   &input_state_.context,
+                   0,
+                   0));
   }
 
   if (!waiting_connect_)
@@ -353,7 +357,7 @@ bool Channel::ChannelImpl::ProcessConnection() {
 }
 
 bool Channel::ChannelImpl::ProcessOutgoingMessages(
-    MessageLoopForIO::IOContext* context,
+    base::MessageLoopForIO::IOContext* context,
     DWORD bytes_written) {
   DCHECK(!waiting_connect_);  // Why are we trying to send messages if there's
                               // no connection?
@@ -368,7 +372,7 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
       return false;
     }
     // Message was sent.
-    DCHECK(!output_queue_.empty());
+    CHECK(!output_queue_.empty());
     Message* m = output_queue_.front();
     output_queue_.pop();
     delete m;
@@ -409,9 +413,10 @@ bool Channel::ChannelImpl::ProcessOutgoingMessages(
   return true;
 }
 
-void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
-                                         DWORD bytes_transfered,
-                                         DWORD error) {
+void Channel::ChannelImpl::OnIOCompleted(
+    base::MessageLoopForIO::IOContext* context,
+    DWORD bytes_transfered,
+    DWORD error) {
   bool ok = true;
   DCHECK(thread_check_->CalledOnValidThread());
   if (context == &input_state_.context) {
@@ -437,7 +442,7 @@ void Channel::ChannelImpl::OnIOCompleted(MessageLoopForIO::IOContext* context,
       input_state_.is_pending = false;
       if (!bytes_transfered)
         ok = false;
-      else
+      else if (pipe_ != INVALID_HANDLE_VALUE)
         ok = AsyncReadComplete(bytes_transfered);
     } else {
       DCHECK(!bytes_transfered);
@@ -475,10 +480,6 @@ bool Channel::Connect() {
 void Channel::Close() {
   if (channel_impl_)
     channel_impl_->Close();
-}
-
-void Channel::set_listener(Listener* listener) {
-  channel_impl_->set_listener(listener);
 }
 
 base::ProcessId Channel::peer_pid() const {

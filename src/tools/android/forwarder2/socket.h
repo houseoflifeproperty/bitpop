@@ -11,6 +11,7 @@
 #include <sys/un.h>
 
 #include <string>
+#include <vector>
 
 #include "base/basictypes.h"
 
@@ -18,14 +19,15 @@ namespace forwarder2 {
 
 // Wrapper class around unix socket api.  Can be used to create, bind or
 // connect to both Unix domain sockets and TCP sockets.
+// TODO(pliard): Split this class into TCPSocket and UnixDomainSocket.
 class Socket {
  public:
   Socket();
   ~Socket();
 
-  bool BindUnix(const std::string& path, bool abstract);
+  bool BindUnix(const std::string& path);
   bool BindTcp(const std::string& host, int port);
-  bool ConnectUnix(const std::string& path, bool abstract);
+  bool ConnectUnix(const std::string& path);
   bool ConnectTcp(const std::string& host, int port);
 
   // Just a wrapper around unix socket shutdown(), see man 2 shutdown.
@@ -35,21 +37,28 @@ class Socket {
   void Close();
   bool IsClosed() const { return socket_ < 0; }
 
+  int fd() const { return socket_; }
+
   bool Accept(Socket* new_socket);
 
   // Returns the port allocated to this socket or zero on error.
   int GetPort();
-
-  bool IsFdInSet(const fd_set& fds) const;
-  bool AddFdToSet(fd_set* fds) const;
 
   // Just a wrapper around unix read() function.
   // Reads up to buffer_size, but may read less then buffer_size.
   // Returns the number of bytes read.
   int Read(void* buffer, size_t buffer_size);
 
-  // Same as Read(), just a wrapper around write().
+  // Non-blocking version of Read() above. This must be called after a
+  // successful call to select(). The socket must also be in non-blocking mode
+  // before calling this method.
+  int NonBlockingRead(void* buffer, size_t buffer_size);
+
+  // Wrapper around send().
   int Write(const void* buffer, size_t count);
+
+  // Same as NonBlockingRead() but for writing.
+  int NonBlockingWrite(const void* buffer, size_t count);
 
   // Calls Read() multiple times until num_bytes is written to the provided
   // buffer. No bounds checking is performed.
@@ -68,23 +77,25 @@ class Socket {
 
   bool has_error() const { return socket_error_; }
 
-  // |exit_notifier_fd| must be a valid pipe file descriptor created from the
+  // |event_fd| must be a valid pipe file descriptor created from the
   // PipeNotifier and must live (not be closed) at least as long as this socket
   // is alive.
-  void set_exit_notifier_fd(int exit_notifier_fd) {
-    exit_notifier_fd_ = exit_notifier_fd;
-  }
-  // Unset the |exit_notifier_fd_| so that it will not receive notifications
-  // anymore.
-  void reset_exit_notifier_fd() { exit_notifier_fd_ = -1; }
+  void AddEventFd(int event_fd);
 
   // Returns whether Accept() or Connect() was interrupted because the socket
-  // received an exit notification.
-  bool exited() const { return exited_; }
+  // received an external event fired through the provided fd.
+  bool DidReceiveEventOnFd(int fd) const;
 
-  static int GetHighestFileDescriptor(const Socket& s1, const Socket& s2);
+  bool DidReceiveEvent() const;
+
+  static pid_t GetUnixDomainSocketProcessOwner(const std::string& path);
 
  private:
+  enum EventType {
+    READ,
+    WRITE
+  };
+
   union SockAddr {
     // IPv4 sockaddr
     sockaddr_in addr4;
@@ -94,20 +105,22 @@ class Socket {
     sockaddr_un addr_un;
   };
 
+  struct Event {
+    int fd;
+    bool was_fired;
+  };
+
+  bool SetNonBlocking();
+
   // If |host| is empty, use localhost.
   bool InitTcpSocket(const std::string& host, int port);
-  bool InitUnixSocket(const std::string& path, bool abstract);
+  bool InitUnixSocket(const std::string& path);
   bool BindAndListen();
   bool Connect();
 
   bool Resolve(const std::string& host);
   bool InitSocketInternal();
   void SetSocketError();
-
-  enum EventType {
-    READ,
-    WRITE
-  };
 
   // Waits until either the Socket or the |exit_notifier_fd_| has received an
   // event.
@@ -120,9 +133,6 @@ class Socket {
   // Family of the socket (PF_INET, PF_INET6 or PF_UNIX).
   int family_;
 
-  // True if this is an abstract unix domain socket.
-  bool abstract_;
-
   SockAddr addr_;
 
   // Points to one of the members of the above union depending on the family.
@@ -130,12 +140,9 @@ class Socket {
   // Length of one of the members of the above union depending on the family.
   socklen_t addr_len_;
 
-  // File descriptor from PipeNotifier (see pipe_notifier.h) to send application
-  // exit notifications before calling socket blocking operations such as Read
-  // and Accept.
-  int exit_notifier_fd_;
-
-  bool exited_;
+  // Used to listen for external events (e.g. process received a SIGTERM) while
+  // blocking on I/O operations.
+  std::vector<Event> events_;
 
   DISALLOW_COPY_AND_ASSIGN(Socket);
 };

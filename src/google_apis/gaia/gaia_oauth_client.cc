@@ -7,14 +7,16 @@
 #include "base/json/json_reader.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "google_apis/gaia/gaia_urls.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/escape.h"
+#include "net/base/load_flags.h"
 #include "net/http/http_status_code.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 
 namespace {
 const char kAccessTokenValue[] = "access_token";
@@ -24,17 +26,19 @@ const char kExpiresInValue[] = "expires_in";
 
 namespace gaia {
 
+// Use a non-zero number, so unit tests can differentiate the URLFetcher used by
+// this class from other fetchers (most other code just hardcodes the ID to 0).
+const int GaiaOAuthClient::kUrlFetcherId = 17109006;
+
 class GaiaOAuthClient::Core
     : public base::RefCountedThreadSafe<GaiaOAuthClient::Core>,
       public net::URLFetcherDelegate {
  public:
-  Core(const std::string& gaia_url,
-       net::URLRequestContextGetter* request_context_getter)
-           : gaia_url_(gaia_url),
-             num_retries_(0),
-             request_context_getter_(request_context_getter),
-             delegate_(NULL),
-             request_type_(NO_PENDING_REQUEST) {
+  Core(net::URLRequestContextGetter* request_context_getter)
+      : num_retries_(0),
+        request_context_getter_(request_context_getter),
+        delegate_(NULL),
+        request_type_(NO_PENDING_REQUEST) {
   }
 
   void GetTokensFromAuthCode(const OAuthClientInfo& oauth_client_info,
@@ -43,9 +47,19 @@ class GaiaOAuthClient::Core
                              GaiaOAuthClient::Delegate* delegate);
   void RefreshToken(const OAuthClientInfo& oauth_client_info,
                     const std::string& refresh_token,
+                    const std::vector<std::string>& scopes,
                     int max_retries,
                     GaiaOAuthClient::Delegate* delegate);
+  void GetUserEmail(const std::string& oauth_access_token,
+                    int max_retries,
+                    Delegate* delegate);
+  void GetUserId(const std::string& oauth_access_token,
+                 int max_retries,
+                 Delegate* delegate);
   void GetUserInfo(const std::string& oauth_access_token,
+                   int max_retries,
+                   Delegate* delegate);
+  void GetTokenInfo(const std::string& oauth_access_token,
                     int max_retries,
                     Delegate* delegate);
 
@@ -59,18 +73,24 @@ class GaiaOAuthClient::Core
     NO_PENDING_REQUEST,
     TOKENS_FROM_AUTH_CODE,
     REFRESH_TOKEN,
+    TOKEN_INFO,
+    USER_EMAIL,
+    USER_ID,
     USER_INFO,
   };
 
   virtual ~Core() {}
 
-  void MakeGaiaRequest(const std::string& post_body,
+  void PeopleGet(const std::string& oauth_access_token,
+                 int max_retries,
+                 Delegate* delegate);
+  void MakeGaiaRequest(const GURL& url,
+                       const std::string& post_body,
                        int max_retries,
                        GaiaOAuthClient::Delegate* delegate);
   void HandleResponse(const net::URLFetcher* source,
                       bool* should_retry_request);
 
-  GURL gaia_url_;
   int num_retries_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
   GaiaOAuthClient::Delegate* delegate_;
@@ -94,12 +114,14 @@ void GaiaOAuthClient::Core::GetTokensFromAuthCode(
       "&redirect_uri=" +
       net::EscapeUrlEncodedData(oauth_client_info.redirect_uri, true) +
       "&grant_type=authorization_code";
-  MakeGaiaRequest(post_body, max_retries, delegate);
+  MakeGaiaRequest(GURL(GaiaUrls::GetInstance()->oauth2_token_url()),
+                  post_body, max_retries, delegate);
 }
 
 void GaiaOAuthClient::Core::RefreshToken(
     const OAuthClientInfo& oauth_client_info,
     const std::string& refresh_token,
+    const std::vector<std::string>& scopes,
     int max_retries,
     GaiaOAuthClient::Delegate* delegate) {
   DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
@@ -111,7 +133,32 @@ void GaiaOAuthClient::Core::RefreshToken(
       "&client_secret=" +
       net::EscapeUrlEncodedData(oauth_client_info.client_secret, true) +
       "&grant_type=refresh_token";
-  MakeGaiaRequest(post_body, max_retries, delegate);
+
+  if (!scopes.empty()) {
+    std::string scopes_string = JoinString(scopes, ' ');
+    post_body += "&scope=" + net::EscapeUrlEncodedData(scopes_string, true);
+  }
+
+  MakeGaiaRequest(GURL(GaiaUrls::GetInstance()->oauth2_token_url()),
+                  post_body, max_retries, delegate);
+}
+
+void GaiaOAuthClient::Core::GetUserEmail(const std::string& oauth_access_token,
+                                         int max_retries,
+                                         Delegate* delegate) {
+  DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
+  DCHECK(!request_.get());
+  request_type_ = USER_EMAIL;
+  PeopleGet(oauth_access_token, max_retries, delegate);
+}
+
+void GaiaOAuthClient::Core::GetUserId(const std::string& oauth_access_token,
+                                      int max_retries,
+                                      Delegate* delegate) {
+  DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
+  DCHECK(!request_.get());
+  request_type_ = USER_ID;
+  PeopleGet(oauth_access_token, max_retries, delegate);
 }
 
 void GaiaOAuthClient::Core::GetUserInfo(const std::string& oauth_access_token,
@@ -120,15 +167,23 @@ void GaiaOAuthClient::Core::GetUserInfo(const std::string& oauth_access_token,
   DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
   DCHECK(!request_.get());
   request_type_ = USER_INFO;
+  PeopleGet(oauth_access_token, max_retries, delegate);
+}
+
+void GaiaOAuthClient::Core::PeopleGet(const std::string& oauth_access_token,
+                                      int max_retries,
+                                      Delegate* delegate) {
   delegate_ = delegate;
   num_retries_ = 0;
   request_.reset(net::URLFetcher::Create(
-      0, GURL(GaiaUrls::GetInstance()->oauth_user_info_url()),
+      kUrlFetcherId, GURL(GaiaUrls::GetInstance()->people_get_url()),
       net::URLFetcher::GET, this));
-  request_->SetRequestContext(request_context_getter_);
-  request_->AddExtraRequestHeader(
-      "Authorization: OAuth " + oauth_access_token);
+  request_->SetRequestContext(request_context_getter_.get());
+  request_->AddExtraRequestHeader("Authorization: OAuth " + oauth_access_token);
   request_->SetMaxRetriesOn5xx(max_retries);
+  request_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                         net::LOAD_DO_NOT_SAVE_COOKIES);
+
   // Fetchers are sometimes cancelled because a network change was detected,
   // especially at startup and after sign-in on ChromeOS. Retrying once should
   // be enough in those cases; let the fetcher retry up to 3 times just in case.
@@ -137,7 +192,22 @@ void GaiaOAuthClient::Core::GetUserInfo(const std::string& oauth_access_token,
   request_->Start();
 }
 
+void GaiaOAuthClient::Core::GetTokenInfo(const std::string& oauth_access_token,
+                                         int max_retries,
+                                         Delegate* delegate) {
+  DCHECK_EQ(request_type_, NO_PENDING_REQUEST);
+  DCHECK(!request_.get());
+  request_type_ = TOKEN_INFO;
+  std::string post_body =
+      "access_token=" + net::EscapeUrlEncodedData(oauth_access_token, true);
+  MakeGaiaRequest(GURL(GaiaUrls::GetInstance()->oauth2_token_info_url()),
+                  post_body,
+                  max_retries,
+                  delegate);
+}
+
 void GaiaOAuthClient::Core::MakeGaiaRequest(
+    const GURL& url,
     const std::string& post_body,
     int max_retries,
     GaiaOAuthClient::Delegate* delegate) {
@@ -145,10 +215,12 @@ void GaiaOAuthClient::Core::MakeGaiaRequest(
   delegate_ = delegate;
   num_retries_ = 0;
   request_.reset(net::URLFetcher::Create(
-      0, gaia_url_, net::URLFetcher::POST, this));
-  request_->SetRequestContext(request_context_getter_);
+      kUrlFetcherId, url, net::URLFetcher::POST, this));
+  request_->SetRequestContext(request_context_getter_.get());
   request_->SetUploadData("application/x-www-form-urlencoded", post_body);
   request_->SetMaxRetriesOn5xx(max_retries);
+  request_->SetLoadFlags(net::LOAD_DO_NOT_SEND_COOKIES |
+                         net::LOAD_DO_NOT_SAVE_COOKIES);
   // See comment on SetAutomaticallyRetryOnNetworkChanges() above.
   request_->SetAutomaticallyRetryOnNetworkChanges(3);
   request_->Start();
@@ -168,7 +240,7 @@ void GaiaOAuthClient::Core::OnURLFetchComplete(
     num_retries_++;
     // We must set our request_context_getter_ again because
     // URLFetcher::Core::RetryOrCompleteUrlFetch resets it to NULL...
-    request_->SetRequestContext(request_context_getter_);
+    request_->SetRequestContext(request_context_getter_.get());
     request_->Start();
   }
 }
@@ -176,26 +248,31 @@ void GaiaOAuthClient::Core::OnURLFetchComplete(
 void GaiaOAuthClient::Core::HandleResponse(
     const net::URLFetcher* source,
     bool* should_retry_request) {
-  // Keep the URLFetcher object in case we need to reuse it.
+  // Move ownership of the request fetcher into a local scoped_ptr which
+  // will be nuked when we're done handling the request, unless we need
+  // to retry, in which case ownership will be returned to request_.
   scoped_ptr<net::URLFetcher> old_request = request_.Pass();
   DCHECK_EQ(source, old_request.get());
 
-  // RC_BAD_REQUEST means the arguments are invalid. No point retrying. We are
+  // HTTP_BAD_REQUEST means the arguments are invalid.  HTTP_UNAUTHORIZED means
+  // the access or refresh token is invalid. No point retrying. We are
   // done here.
-  if (source->GetResponseCode() == net::HTTP_BAD_REQUEST) {
+  int response_code = source->GetResponseCode();
+  if (response_code == net::HTTP_BAD_REQUEST ||
+      response_code == net::HTTP_UNAUTHORIZED) {
     delegate_->OnOAuthError();
     return;
   }
 
-  scoped_ptr<DictionaryValue> response_dict;
+  scoped_ptr<base::DictionaryValue> response_dict;
   if (source->GetResponseCode() == net::HTTP_OK) {
     std::string data;
     source->GetResponseAsString(&data);
-    scoped_ptr<Value> message_value(base::JSONReader::Read(data));
+    scoped_ptr<base::Value> message_value(base::JSONReader::Read(data));
     if (message_value.get() &&
-        message_value->IsType(Value::TYPE_DICTIONARY)) {
+        message_value->IsType(base::Value::TYPE_DICTIONARY)) {
       response_dict.reset(
-          static_cast<DictionaryValue*>(message_value.release()));
+          static_cast<base::DictionaryValue*>(message_value.release()));
     }
   }
 
@@ -203,7 +280,7 @@ void GaiaOAuthClient::Core::HandleResponse(
     // If we don't have an access token yet and the the error was not
     // RC_BAD_REQUEST, we may need to retry.
     if ((source->GetMaxRetriesOn5xx() != -1) &&
-        (num_retries_ > source->GetMaxRetriesOn5xx())) {
+        (num_retries_ >= source->GetMaxRetriesOn5xx())) {
       // Retry limit reached. Give up.
       delegate_->OnNetworkError(source->GetResponseCode());
     } else {
@@ -217,10 +294,45 @@ void GaiaOAuthClient::Core::HandleResponse(
   request_type_ = NO_PENDING_REQUEST;
 
   switch (type) {
+    case USER_EMAIL: {
+      // Use first email of type "account" as the user's email.
+      const base::ListValue* emails_list;
+      bool email_found = false;
+      if (response_dict->GetList("emails", &emails_list)) {
+        for (size_t i = 0; i < emails_list->GetSize(); ++i) {
+          const base::DictionaryValue* email_dict;
+          if (emails_list->GetDictionary(i, &email_dict)) {
+            std::string email;
+            std::string type;
+            if (email_dict->GetString("type", &type) &&
+                type == "account" &&
+                email_dict->GetString("value", &email)) {
+              delegate_->OnGetUserEmailResponse(email);
+              email_found = true;
+              break;
+            }
+          }
+        }
+      }
+      if (!email_found)
+        delegate_->OnNetworkError(net::URLFetcher::RESPONSE_CODE_INVALID);
+      break;
+    }
+
+    case USER_ID: {
+      std::string id;
+      response_dict->GetString("id", &id);
+      delegate_->OnGetUserIdResponse(id);
+      break;
+    }
+
     case USER_INFO: {
-      std::string email;
-      response_dict->GetString("email", &email);
-      delegate_->OnGetUserInfoResponse(email);
+      delegate_->OnGetUserInfoResponse(response_dict.Pass());
+      break;
+    }
+
+    case TOKEN_INFO: {
+      delegate_->OnGetTokenInfoResponse(response_dict.Pass());
       break;
     }
 
@@ -253,9 +365,8 @@ void GaiaOAuthClient::Core::HandleResponse(
   }
 }
 
-GaiaOAuthClient::GaiaOAuthClient(const std::string& gaia_url,
-                                 net::URLRequestContextGetter* context_getter) {
-  core_ = new Core(gaia_url, context_getter);
+GaiaOAuthClient::GaiaOAuthClient(net::URLRequestContextGetter* context_getter) {
+  core_ = new Core(context_getter);
 }
 
 GaiaOAuthClient::~GaiaOAuthClient() {
@@ -272,20 +383,41 @@ void GaiaOAuthClient::GetTokensFromAuthCode(
                                       delegate);
 }
 
-void GaiaOAuthClient::RefreshToken(const OAuthClientInfo& oauth_client_info,
-                                   const std::string& refresh_token,
-                                   int max_retries,
-                                   Delegate* delegate) {
+void GaiaOAuthClient::RefreshToken(
+    const OAuthClientInfo& oauth_client_info,
+    const std::string& refresh_token,
+    const std::vector<std::string>& scopes,
+    int max_retries,
+    Delegate* delegate) {
   return core_->RefreshToken(oauth_client_info,
                              refresh_token,
+                             scopes,
                              max_retries,
                              delegate);
+}
+
+void GaiaOAuthClient::GetUserEmail(const std::string& access_token,
+                                  int max_retries,
+                                  Delegate* delegate) {
+  return core_->GetUserEmail(access_token, max_retries, delegate);
+}
+
+void GaiaOAuthClient::GetUserId(const std::string& access_token,
+                                int max_retries,
+                                Delegate* delegate) {
+  return core_->GetUserId(access_token, max_retries, delegate);
 }
 
 void GaiaOAuthClient::GetUserInfo(const std::string& access_token,
                                   int max_retries,
                                   Delegate* delegate) {
   return core_->GetUserInfo(access_token, max_retries, delegate);
+}
+
+void GaiaOAuthClient::GetTokenInfo(const std::string& access_token,
+                                   int max_retries,
+                                   Delegate* delegate) {
+  return core_->GetTokenInfo(access_token, max_retries, delegate);
 }
 
 }  // namespace gaia

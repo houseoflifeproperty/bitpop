@@ -1,7 +1,7 @@
 /*
- * Copyright 2008 The Native Client Authors.  All rights reserved.
- * Use of this source code is governed by a BSD-style license that can
- * be found in the LICENSE file.
+ * Copyright (c) 2008 The Native Client Authors. All rights reserved.
+ * Use of this source code is governed by a BSD-style license that can be
+ * found in the LICENSE file.
  */
 
 #ifndef NATIVE_CLIENT_SRC_INCLUDE_NACL_ASM_H_
@@ -17,7 +17,7 @@
 #elif NACL_LINUX
 # define IDENTIFIER(n)  n
 #elif NACL_WINDOWS
-# if _WIN64
+# if defined(_WIN64)
 #   define IDENTIFIER(n)  n
 # else
 #   define IDENTIFIER(n)  _##n
@@ -41,7 +41,31 @@
 # error "Unrecognized OS"
 #endif
 
-#define DEFINE_GLOBAL_HIDDEN_IDENTIFIER(n) \
+/*
+ * ARM requires .type XXX, %function to ensure proper switching between
+ * Thumb and ARM instruction sets.  We do not use '.type' globally because
+ * OSX builds use llvm which does not support '.type', and neither does
+ * the assembler under Windows.
+ */
+#if !defined(__llvm__) && !defined(NACL_WINDOWS)
+
+#define DEFINE_GLOBAL_HIDDEN_DATA(n) \
+  .globl IDENTIFIER(n); HIDDEN(n); .type IDENTIFIER(n), %object; IDENTIFIER(n)
+
+#define DEFINE_GLOBAL_HIDDEN_FUNCTION(n) \
+  .globl IDENTIFIER(n); HIDDEN(n); .type IDENTIFIER(n), %function; IDENTIFIER(n)
+
+#else
+
+#define DEFINE_GLOBAL_HIDDEN_DATA(n) \
+  .globl IDENTIFIER(n); HIDDEN(n); IDENTIFIER(n)
+
+#define DEFINE_GLOBAL_HIDDEN_FUNCTION(n) \
+  .globl IDENTIFIER(n); HIDDEN(n); IDENTIFIER(n)
+
+#endif
+
+#define DEFINE_GLOBAL_HIDDEN_LOCATION(n) \
   .globl IDENTIFIER(n); HIDDEN(n); IDENTIFIER(n)
 
 #endif  /* NATIVE_CLIENT_SRC_INCLUDE_NACL_ASM_H_ */

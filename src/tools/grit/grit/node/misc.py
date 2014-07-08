@@ -8,6 +8,7 @@
 
 import os.path
 import re
+import sys
 
 from grit import constants
 from grit import exception
@@ -48,7 +49,6 @@ def _ReadFirstIdsFromFile(filename, defines):
   def ReplaceVariable(matchobj):
     for key, value in defines.iteritems():
       if matchobj.group(1) == key:
-        value = os.path.abspath(value)[len(src_root_dir) + 1:]
         return value
     return ''
 
@@ -57,7 +57,12 @@ def _ReadFirstIdsFromFile(filename, defines):
     new_grd_filename = re.sub(r'<\(([A-Za-z_]+)\)', ReplaceVariable,
                               grd_filename)
     if new_grd_filename != grd_filename:
-      new_grd_filename = new_grd_filename.replace('\\', '/')
+      abs_grd_filename = os.path.abspath(new_grd_filename)
+      if abs_grd_filename[:len(src_root_dir)] != src_root_dir:
+        new_grd_filename = os.path.basename(abs_grd_filename)
+      else:
+        new_grd_filename = abs_grd_filename[len(src_root_dir) + 1:]
+        new_grd_filename = new_grd_filename.replace('\\', '/')
       renames.append((grd_filename, new_grd_filename))
 
   for grd_filename, new_grd_filename in renames:
@@ -166,6 +171,7 @@ class GritNode(base.Node):
     self.output_language = ''
     self.defines = {}
     self.substituter = None
+    self.target_platform = sys.platform
 
   def _IsValidChild(self, child):
     from grit.node import empty
@@ -176,7 +182,7 @@ class GritNode(base.Node):
     if name not in ['base_dir', 'first_ids_file', 'source_lang_id',
                     'latest_public_release', 'current_release',
                     'enc_check', 'tc_project', 'grit_version',
-                    'output_all_resource_defines']:
+                    'output_all_resource_defines', 'rc_header_format']:
       return False
     if name in ['latest_public_release', 'current_release'] and value.strip(
       '0123456789') != '':
@@ -194,7 +200,8 @@ class GritNode(base.Node):
       'source_lang_id' : 'en',
       'enc_check' : constants.ENCODING_CHECK,
       'tc_project' : 'NEED_TO_SET_tc_project_ATTRIBUTE',
-      'output_all_resource_defines': 'true'
+      'output_all_resource_defines': 'true',
+      'rc_header_format': None
     }
 
   def EndParsing(self):
@@ -292,6 +299,12 @@ class GritNode(base.Node):
     """
     return self.attrs['output_all_resource_defines'] == 'true'
 
+  def GetRcHeaderFormat(self):
+    return self.attrs['rc_header_format']
+
+  def AssignRcHeaderFormat(self, rc_header_format):
+    self.attrs['rc_header_format'] = rc_header_format
+
   def GetInputFiles(self):
     """Returns the list of files that are read to produce the output."""
 
@@ -382,6 +395,9 @@ class GritNode(base.Node):
   def SetDefines(self, defines):
     self.defines = defines
     self.substituter = None  # force recalculate
+
+  def SetTargetPlatform(self, target_platform):
+    self.target_platform = target_platform
 
   def GetSubstituter(self):
     if self.substituter is None:

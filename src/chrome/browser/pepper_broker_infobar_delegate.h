@@ -6,12 +6,13 @@
 #define CHROME_BROWSER_PEPPER_BROKER_INFOBAR_DELEGATE_H_
 
 #include "base/callback.h"
-#include "base/file_path.h"
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
-#include "googleurl/src/gurl.h"
+#include "base/files/file_path.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
+#include "url/gurl.h"
 
 class HostContentSettingsMap;
-class InfoBarTabHelper;
+class InfoBarService;
+class TabSpecificContentSettings;
 
 namespace content {
 class WebContents;
@@ -22,39 +23,40 @@ class WebContents;
 // by storing a content setting for the site.
 class PepperBrokerInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  virtual ~PepperBrokerInfoBarDelegate();
-
-  static void Show(
-      content::WebContents* web_contents,
-      const GURL& url,
-      const FilePath& plugin_path,
-      const base::Callback<void(bool)>& callback);
-
-  // ConfirmInfoBarDelegate:
-  virtual string16 GetMessageText() const OVERRIDE;
-  virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
-  virtual bool Accept() OVERRIDE;
-  virtual bool Cancel() OVERRIDE;
-  virtual string16 GetLinkText() const OVERRIDE;
-  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
-  virtual gfx::Image* GetIcon() const OVERRIDE;
+  // Determines whether the broker setting is allow, deny, or ask.  In the first
+  // two cases, runs the callback directly.  In the third, creates a pepper
+  // broker infobar and delegate and adds the infobar to the InfoBarService
+  // associated with |web_contents|.
+  static void Create(content::WebContents* web_contents,
+                     const GURL& url,
+                     const base::FilePath& plugin_path,
+                     const base::Callback<void(bool)>& callback);
 
  private:
-  PepperBrokerInfoBarDelegate(
-      InfoBarTabHelper* helper,
-      const GURL& url,
-      const FilePath& plugin_path,
-      const std::string& languages,
-      HostContentSettingsMap* content_settings,
-      const base::Callback<void(bool)>& callback);
+  PepperBrokerInfoBarDelegate(const GURL& url,
+                              const base::FilePath& plugin_path,
+                              const std::string& languages,
+                              HostContentSettingsMap* content_settings,
+                              TabSpecificContentSettings* tab_content_settings,
+                              const base::Callback<void(bool)>& callback);
+  virtual ~PepperBrokerInfoBarDelegate();
+
+  // ConfirmInfoBarDelegate:
+  virtual int GetIconID() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual bool Accept() OVERRIDE;
+  virtual bool Cancel() OVERRIDE;
+  virtual base::string16 GetLinkText() const OVERRIDE;
+  virtual bool LinkClicked(WindowOpenDisposition disposition) OVERRIDE;
 
   void DispatchCallback(bool result);
 
   const GURL url_;
-  const FilePath plugin_path_;
+  const base::FilePath plugin_path_;
   const std::string languages_;
   HostContentSettingsMap* content_settings_;
+  TabSpecificContentSettings* tab_content_settings_;
   base::Callback<void(bool)> callback_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperBrokerInfoBarDelegate);

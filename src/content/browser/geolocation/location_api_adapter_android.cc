@@ -9,7 +9,7 @@
 #include "base/bind.h"
 #include "base/location.h"
 #include "content/browser/geolocation/location_provider_android.h"
-#include "jni/LocationProvider_jni.h"
+#include "jni/LocationProviderAdapter_jni.h"
 
 using base::android::AttachCurrentThread;
 using base::android::CheckException;
@@ -41,7 +41,7 @@ AndroidLocationApiAdapter::AndroidLocationApiAdapter()
 
 AndroidLocationApiAdapter::~AndroidLocationApiAdapter() {
   CHECK(!location_provider_);
-  CHECK(!message_loop_);
+  CHECK(!message_loop_.get());
   CHECK(java_location_provider_android_object_.is_null());
 }
 
@@ -65,7 +65,7 @@ bool AndroidLocationApiAdapter::Start(
   CHECK(!java_location_provider_android_object_.is_null());
   // We'll start receiving notifications from java in the main thread looper
   // until Stop() is called.
-  return Java_LocationProvider_start(env,
+  return Java_LocationProviderAdapter_start(env,
       java_location_provider_android_object_.obj(), high_accuracy);
 }
 
@@ -84,7 +84,8 @@ void AndroidLocationApiAdapter::Stop() {
   location_provider_ = NULL;
 
   JNIEnv* env = AttachCurrentThread();
-  Java_LocationProvider_stop(env, java_location_provider_android_object_.obj());
+  Java_LocationProviderAdapter_stop(
+      env, java_location_provider_android_object_.obj());
   java_location_provider_android_object_.Reset();
 }
 
@@ -143,7 +144,7 @@ bool AndroidLocationApiAdapter::RegisterGeolocationService(JNIEnv* env) {
 void AndroidLocationApiAdapter::CreateJavaObject(JNIEnv* env) {
   // Create the Java AndroidLocationProvider object.
   java_location_provider_android_object_.Reset(
-      Java_LocationProvider_create(env,
+      Java_LocationProviderAdapter_create(env,
           base::android::GetApplicationContext()));
   CHECK(!java_location_provider_android_object_.is_null());
 }
@@ -151,7 +152,7 @@ void AndroidLocationApiAdapter::CreateJavaObject(JNIEnv* env) {
 void AndroidLocationApiAdapter::OnNewGeopositionInternal(
     const Geoposition& geoposition) {
   base::AutoLock lock(lock_);
-  if (!message_loop_)
+  if (!message_loop_.get())
     return;
   message_loop_->PostTask(
       FROM_HERE,

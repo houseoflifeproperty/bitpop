@@ -1,5 +1,5 @@
 <meta name="doc-family" content="apps">
-<h1>Manage App Lifecycle</h1>
+<h1>Chrome App Lifecycle</h1>
 
 
 <p>
@@ -59,7 +59,7 @@ Any library scripts used by the event page need to be added
 to the "background" field first:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 "background": {
   "scripts": [
     "foo.js",
@@ -74,8 +74,8 @@ This function is called
 when your application is launched in any way:
 </p>
 
-<pre>
-chrome.app.runtime.onLaunched.addListener(function() { 
+<pre data-filename="background.js">
+chrome.app.runtime.onLaunched.addListener(function() {
   // Tell your app what to launch and how.
 });
 </pre>
@@ -89,40 +89,26 @@ to the event page and are directly scriptable by the event page.
 </p>
 
 <p>
-Windows can either be shells or panels.
-Shell windows have no browser chrome.
-Panel windows are the same as shell windows,
-except they have different size and position restrictions,
-for example, a chat panel.
+Windows in Chrome Apps are not associated with any Chrome browser
+windows. They have an optional frame with title bar and size controls,
+and a recommended window ID.
+Windows without IDs will not restore to their size and location after restart.
 </p>
 
-<p>Here's a sample <code>background.js</code>
-  with a 'shell' window:</p>
+<p>Here's a sample window created from <code>background.js</code>:</p>
 
-<pre>
+<pre data-filename="background.js">
 chrome.app.runtime.onLaunched.addListener(function() {
   chrome.app.window.create('main.html', {
-    width: 800,
-    height: 600,
+    id: 'MyWindowID',
+    bounds: {
+      width: 800,
+      height: 600,
+      left: 100,
+      top: 100
+    },
     minWidth: 800,
-    minHeight: 600,
-    left: 100,
-    top: 100,
-    type: 'shell'
-  });
-});
-</pre>
-
-<p>Here's a sample <code>background.js</code>
-  with a 'panel' window:
-</p>
-
-<pre>
-chrome.app.runtime.onLaunched.addListener(function() {
-  chrome.app.window.create('index.html', {
-    width: 400,
-    height: 200,
-    type: 'panel'
+    minHeight: 600
   });
 });
 </pre>
@@ -131,21 +117,14 @@ chrome.app.runtime.onLaunched.addListener(function() {
 
 <p>
 Depending on how your app is launched,
-you may need to include launch data
+you may need to handle launch data
 in your event page.
 By default, there is no launch data
 when the app is started by the app launcher.
-For apps that provide intents,
-you need to include the
-<code>launchData.intent</code> parameter.
-</p>
-
-<p>
-Web intents can be launched by other apps invoking their intent, 
-or by the runtime when apps are launched to view or edit files,
-for example from the operating system file explorer.
-To find out how to launch an app with web intents,
-see <a href="app_intents.html#launching">Launching an App with a File</a>.
+For apps that have file handlers,
+you need to handle the
+<code>launchData.items</code> parameter to allow
+them to be launched with files.
 </p>
 
 <h2 id="runtime">Listening for app runtime events</h2>
@@ -173,8 +152,8 @@ to store and update local settings
 (see also <a href="app_storage.html#options">Storage options</a>).
 </p>
 
-<pre>
-chrome.runtime.onInstalled.addListener(function() { 
+<pre data-filename="background.js">
+chrome.runtime.onInstalled.addListener(function() {
   chrome.storage.local.set(object items, function callback);
 });
 </pre>
@@ -197,7 +176,7 @@ you should store user settings
 so that if users reinstall your app,
 their information is still available for reuse.
 Using the Storage API
-($ref:storage.sync),
+($(ref:storage.sync)),
 user data can be automatically synced
 with Chrome sync.
 </p>
@@ -221,8 +200,8 @@ while handling this event are not guaranteed to complete.
 Keep the clean-up tasks synchronous and simple.
 </p>
 
-<pre>
-chrome.runtime.onSuspend.addListener(function() { 
+<pre data-filename="background.js">
+chrome.runtime.onSuspend.addListener(function() {
   // Do some simple clean-up tasks.
 });
 </pre>

@@ -30,7 +30,7 @@
 
 from webkitpy.layout_tests.models import test_expectations
 
-from webkitpy.common.net import resultsjsonparser
+from webkitpy.common.net import layouttestresults
 
 
 TestExpectations = test_expectations.TestExpectations
@@ -49,7 +49,7 @@ class BuildBotPrinter(object):
     def print_results(self, run_details):
         if self.debug_logging:
             self.print_run_results(run_details.initial_results)
-        self.print_unexpected_results(run_details.summarized_results)
+        self.print_unexpected_results(run_details.summarized_full_results, run_details.enabled_pixel_tests_in_retry)
 
     def _print(self, msg):
         self.stream.write(msg + '\n')
@@ -79,7 +79,7 @@ class BuildBotPrinter(object):
                 run_results.tests_by_timeline[timeline]))
         self._print("=> %s (%d):" % (heading, not_passing))
 
-        for result in TestExpectations.EXPECTATION_ORDER:
+        for result in TestExpectations.EXPECTATION_DESCRIPTIONS.keys():
             if result in (test_expectations.PASS, test_expectations.SKIP):
                 continue
             results = (run_results.tests_by_expectation[result] & run_results.tests_by_timeline[timeline])
@@ -88,7 +88,7 @@ class BuildBotPrinter(object):
                 pct = len(results) * 100.0 / not_passing
                 self._print("  %5d %-24s (%4.1f%%)" % (len(results), desc, pct))
 
-    def print_unexpected_results(self, summarized_results):
+    def print_unexpected_results(self, summarized_results, enabled_pixel_tests_in_retry=False):
         passes = {}
         flaky = {}
         regressions = {}
@@ -100,10 +100,7 @@ class BuildBotPrinter(object):
             actual = results['actual'].split(" ")
             expected = results['expected'].split(" ")
 
-            def is_expected(result):
-                return (result in expected) or (result in ('AUDIO', 'TEXT', 'IMAGE+TEXT') and 'FAIL' in expected)
-
-            if all(is_expected(actual_result) for actual_result in actual):
+            if 'is_unexpected' not in results or not results['is_unexpected']:
                 # Don't print anything for tests that ran as expected.
                 return
 
@@ -114,13 +111,15 @@ class BuildBotPrinter(object):
                     add_to_dict_of_lists(passes, 'Expected to timeout, but passed', test)
                 else:
                     add_to_dict_of_lists(passes, 'Expected to fail, but passed', test)
+            elif enabled_pixel_tests_in_retry and actual == ['TEXT', 'IMAGE+TEXT']:
+                add_to_dict_of_lists(regressions, actual[0], test)
             elif len(actual) > 1:
                 # We group flaky tests by the first actual result we got.
                 add_to_dict_of_lists(flaky, actual[0], test)
             else:
                 add_to_dict_of_lists(regressions, results['actual'], test)
 
-        resultsjsonparser.for_each_test(summarized_results['tests'], add_result)
+        layouttestresults.for_each_test(summarized_results['tests'], add_result)
 
         if len(passes) or len(flaky) or len(regressions):
             self._print("")
@@ -141,7 +140,7 @@ class BuildBotPrinter(object):
                 tests.sort()
 
                 for test in tests:
-                    result = resultsjsonparser.result_for_test(summarized_results['tests'], test)
+                    result = layouttestresults.result_for_test(summarized_results['tests'], test)
                     actual = result['actual'].split(" ")
                     expected = result['expected'].split(" ")
                     result = TestExpectations.EXPECTATIONS[key.lower()]

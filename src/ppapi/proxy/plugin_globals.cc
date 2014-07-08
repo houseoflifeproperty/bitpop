@@ -4,11 +4,16 @@
 
 #include "ppapi/proxy/plugin_globals.h"
 
+#include "base/task_runner.h"
+#include "base/threading/thread.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_sender.h"
 #include "ppapi/proxy/plugin_dispatcher.h"
 #include "ppapi/proxy/plugin_proxy_delegate.h"
+#include "ppapi/proxy/ppapi_messages.h"
 #include "ppapi/proxy/ppb_message_loop_proxy.h"
+#include "ppapi/proxy/resource_reply_thread_registrar.h"
+#include "ppapi/shared_impl/ppapi_constants.h"
 #include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/thunk/enter.h"
 
@@ -50,39 +55,47 @@ PluginGlobals::PluginGlobals()
     : ppapi::PpapiGlobals(),
       plugin_proxy_delegate_(NULL),
       callback_tracker_(new CallbackTracker),
-      loop_for_main_thread_(
-          new MessageLoopResource(MessageLoopResource::ForMainThread())) {
-#if defined(ENABLE_PEPPER_THREADING)
-  enable_threading_ = true;
-#else
-  enable_threading_ = false;
-#endif
-
+      resource_reply_thread_registrar_(
+          new ResourceReplyThreadRegistrar(GetMainThreadMessageLoop())),
+      plugin_recently_active_(false),
+      keepalive_throttle_interval_milliseconds_(
+          ppapi::kKeepaliveThrottleIntervalDefaultMilliseconds),
+      weak_factory_(this) {
   DCHECK(!plugin_globals_);
   plugin_globals_ = this;
+
+  // ResourceTracker asserts that we have the lock when we add new resources,
+  // so we lock when creating the MessageLoopResource even though there is no
+  // chance of race conditions.
+  ProxyAutoLock lock;
+  loop_for_main_thread_ =
+      new MessageLoopResource(MessageLoopResource::ForMainThread());
 }
 
-PluginGlobals::PluginGlobals(ForTest for_test)
-    : ppapi::PpapiGlobals(for_test),
+PluginGlobals::PluginGlobals(PerThreadForTest per_thread_for_test)
+    : ppapi::PpapiGlobals(per_thread_for_test),
       plugin_proxy_delegate_(NULL),
-      callback_tracker_(new CallbackTracker) {
-#if defined(ENABLE_PEPPER_THREADING)
-  enable_threading_ = true;
-#else
-  enable_threading_ = false;
-#endif
+      callback_tracker_(new CallbackTracker),
+      resource_reply_thread_registrar_(
+          new ResourceReplyThreadRegistrar(GetMainThreadMessageLoop())),
+      plugin_recently_active_(false),
+      keepalive_throttle_interval_milliseconds_(
+          kKeepaliveThrottleIntervalDefaultMilliseconds),
+      weak_factory_(this) {
   DCHECK(!plugin_globals_);
 }
 
 PluginGlobals::~PluginGlobals() {
   DCHECK(plugin_globals_ == this || !plugin_globals_);
-  // Release the main-thread message loop. We should have the last reference
-  // count, so this will delete the MessageLoop resource. We do this before
-  // we clear plugin_globals_, because the Resource destructor tries to access
-  // this PluginGlobals.
-  DCHECK(!loop_for_main_thread_ || loop_for_main_thread_->HasOneRef());
-  loop_for_main_thread_ = NULL;
-
+  {
+    ProxyAutoLock lock;
+    // Release the main-thread message loop. We should have the last reference
+    // count, so this will delete the MessageLoop resource. We do this before
+    // we clear plugin_globals_, because the Resource destructor tries to access
+    // this PluginGlobals.
+    DCHECK(!loop_for_main_thread_.get() || loop_for_main_thread_->HasOneRef());
+    loop_for_main_thread_ = NULL;
+  }
   plugin_globals_ = NULL;
 }
 
@@ -130,12 +143,6 @@ void PluginGlobals::PreCacheFontForFlash(const void* logfontw) {
   plugin_proxy_delegate_->PreCacheFont(logfontw);
 }
 
-base::Lock* PluginGlobals::GetProxyLock() {
-  if (enable_threading_)
-    return &proxy_lock_;
-  return NULL;
-}
-
 void PluginGlobals::LogWithSource(PP_Instance instance,
                                   PP_LogLevel level,
                                   const std::string& source,
@@ -158,6 +165,32 @@ MessageLoopShared* PluginGlobals::GetCurrentMessageLoop() {
   return MessageLoopResource::GetCurrent();
 }
 
+base::TaskRunner* PluginGlobals::GetFileTaskRunner() {
+  if (!file_thread_.get()) {
+    file_thread_.reset(new base::Thread("Plugin::File"));
+    base::Thread::Options options;
+    options.message_loop_type = base::MessageLoop::TYPE_IO;
+    file_thread_->StartWithOptions(options);
+  }
+  return file_thread_->message_loop_proxy();
+}
+
+void PluginGlobals::MarkPluginIsActive() {
+  if (!plugin_recently_active_) {
+    plugin_recently_active_ = true;
+    if (!GetBrowserSender() || !base::MessageLoop::current())
+      return;
+    GetBrowserSender()->Send(new PpapiHostMsg_Keepalive());
+    DCHECK(keepalive_throttle_interval_milliseconds_);
+    GetMainThreadMessageLoop()->PostDelayedTask(
+        FROM_HERE,
+        RunWhileLocked(base::Bind(&PluginGlobals::OnReleaseKeepaliveThrottle,
+                                  weak_factory_.GetWeakPtr())),
+        base::TimeDelta::FromMilliseconds(
+            keepalive_throttle_interval_milliseconds_));
+  }
+}
+
 IPC::Sender* PluginGlobals::GetBrowserSender() {
   if (!browser_sender_.get()) {
     browser_sender_.reset(
@@ -175,12 +208,30 @@ void PluginGlobals::SetActiveURL(const std::string& url) {
   plugin_proxy_delegate_->SetActiveURL(url);
 }
 
+PP_Resource PluginGlobals::CreateBrowserFont(
+    Connection connection,
+    PP_Instance instance,
+    const PP_BrowserFont_Trusted_Description& desc,
+    const ppapi::Preferences& prefs) {
+  return plugin_proxy_delegate_->CreateBrowserFont(
+      connection, instance, desc, prefs);
+}
+
 MessageLoopResource* PluginGlobals::loop_for_main_thread() {
   return loop_for_main_thread_.get();
 }
 
+void PluginGlobals::set_keepalive_throttle_interval_milliseconds(unsigned i) {
+  keepalive_throttle_interval_milliseconds_ = i;
+}
+
 bool PluginGlobals::IsPluginGlobals() const {
   return true;
+}
+
+void PluginGlobals::OnReleaseKeepaliveThrottle() {
+  ppapi::ProxyLock::AssertAcquiredDebugOnly();
+  plugin_recently_active_ = false;
 }
 
 }  // namespace proxy

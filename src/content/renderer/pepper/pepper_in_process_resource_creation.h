@@ -7,8 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
+#include "content/renderer/pepper/resource_creation_impl.h"
 #include "ppapi/proxy/connection.h"
-#include "webkit/plugins/ppapi/resource_creation_impl.h"
 
 namespace content {
 
@@ -20,7 +20,7 @@ class RendererPpapiHostImpl;
 // (See pepper_in_process_router.h for more information.)
 //
 // This is a bit confusing. The "old-style" resources live in
-// webkit/plugins/ppapi and are created by the ResourceCreationImpl in that
+// content/renderer/pepper and are created by the ResourceCreationImpl in that
 // directory. The "new-style" IPC-only resources are in ppapi/proxy and are
 // created by the RessourceCreationProxy in that directory.
 //
@@ -34,36 +34,35 @@ class RendererPpapiHostImpl;
 // When we convert all resources to use the new-style, we can just use the
 // ResourceCreationProxy for all resources. This class is just glue to manage
 // the temporary "two different cases."
-class PepperInProcessResourceCreation
-    : public webkit::ppapi::ResourceCreationImpl {
+class PepperInProcessResourceCreation : public ResourceCreationImpl {
  public:
   PepperInProcessResourceCreation(RendererPpapiHostImpl* host_impl,
-                                  webkit::ppapi::PluginInstance* instance);
+                                  PepperPluginInstanceImpl* instance);
   virtual ~PepperInProcessResourceCreation();
 
   // ResourceCreation_API implementation.
   virtual PP_Resource CreateBrowserFont(
       PP_Instance instance,
       const PP_BrowserFont_Trusted_Description* description) OVERRIDE;
-  virtual PP_Resource CreateFileChooser(
+  virtual PP_Resource CreateFileChooser(PP_Instance instance,
+                                        PP_FileChooserMode_Dev mode,
+                                        const PP_Var& accept_types) OVERRIDE;
+  virtual PP_Resource CreateFileIO(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateFileRef(PP_Instance instance,
+                                    const ppapi::FileRefCreateInfo& create_info)
+      OVERRIDE;
+  virtual PP_Resource CreateFileSystem(PP_Instance instance,
+                                       PP_FileSystemType type) OVERRIDE;
+  virtual PP_Resource CreateGraphics2D(PP_Instance pp_instance,
+                                       const PP_Size* size,
+                                       PP_Bool is_always_opaque) OVERRIDE;
+  virtual PP_Resource CreatePrinting(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateTrueTypeFont(
       PP_Instance instance,
-      PP_FileChooserMode_Dev mode,
-      const char* accept_types) OVERRIDE;
-  virtual PP_Resource CreateGraphics2D(
-      PP_Instance pp_instance,
-      const PP_Size& size,
-      PP_Bool is_always_opaque) OVERRIDE;
-  virtual PP_Resource CreatePrinting(
-      PP_Instance instance) OVERRIDE;
-  virtual PP_Resource CreateURLRequestInfo(
-      PP_Instance instance,
-      const ::ppapi::URLRequestInfoData& data) OVERRIDE;
-  virtual PP_Resource CreateURLResponseInfo(
-      PP_Instance instance,
-      const ::ppapi::URLResponseInfoData& data,
-      PP_Resource file_ref_resource) OVERRIDE;
-  virtual PP_Resource CreateWebSocket(
-      PP_Instance instance) OVERRIDE;
+      const struct PP_TrueTypeFontDesc_Dev* desc) OVERRIDE;
+  virtual PP_Resource CreateURLLoader(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateURLRequestInfo(PP_Instance instance) OVERRIDE;
+  virtual PP_Resource CreateWebSocket(PP_Instance instance) OVERRIDE;
 
  private:
   // Non-owning pointer to the host for the current plugin.

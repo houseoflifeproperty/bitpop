@@ -58,10 +58,15 @@ class VisitDatabase {
   // may still be no matches).
   bool GetVisitsForURL(URLID url_id, VisitVector* visits);
 
-  // Fills in the given vector with all of the visits for the given page ID that
-  // have the |is_indexed| field set to true, in no particular order.
-  // Returns true on success (although there may still be no matches).
-  bool GetIndexedVisitsForURL(URLID url_id, VisitVector* visits);
+  // Fills in the given vector with the visits for the given page ID which
+  // should be user-visible, which excludes things like redirects and subframes,
+  // and match the set of options passed, sorted in ascending order of date.
+  //
+  // Returns true if there are more results available, i.e. if the number of
+  // results was restricted by |options.max_count|.
+  bool GetVisibleVisitsForURL(URLID url_id,
+                              const QueryOptions& options,
+                              VisitVector* visits);
 
   // Fills the vector with all visits with times in the given list.
   //
@@ -202,6 +207,14 @@ class VisitDatabase {
   // hasn't happened yet.
   static bool FillVisitVector(sql::Statement& statement, VisitVector* visits);
 
+  // Convenience to fill a VisitVector while respecting the set of options.
+  // |statement| should order the query decending by visit_time to ensure
+  // correct duplicate management behavior. Assumes that statement.step()
+  // hasn't happened yet.
+  static bool FillVisitVectorWithOptions(sql::Statement& statement,
+                                         const QueryOptions& options,
+                                         VisitVector* visits);
+
   // Called by the derived classes to migrate the older visits table which
   // don't have visit_duration column yet.
   bool MigrateVisitsWithoutDuration();
@@ -211,6 +224,10 @@ class VisitDatabase {
   DISALLOW_COPY_AND_ASSIGN(VisitDatabase);
 };
 
-}  // history
+// Rows, in order, of the visit table.
+#define HISTORY_VISIT_ROW_FIELDS \
+    " id,url,visit_time,from_visit,transition,segment_id,visit_duration "
+
+}  // namespace history
 
 #endif  // CHROME_BROWSER_HISTORY_VISIT_DATABASE_H_

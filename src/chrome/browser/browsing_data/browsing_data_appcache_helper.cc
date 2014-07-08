@@ -12,8 +12,8 @@
 #include "content/public/browser/browser_context.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
-#include "webkit/appcache/appcache_database.h"
-#include "webkit/appcache/appcache_storage.h"
+#include "webkit/browser/appcache/appcache_database.h"
+#include "webkit/browser/appcache/appcache_storage.h"
 
 using content::BrowserThread;
 using content::BrowserContext;
@@ -41,8 +41,8 @@ void BrowsingDataAppCacheHelper::StartFetching(const base::Closure& callback) {
   appcache_info_callback_.Reset(
       base::Bind(&BrowsingDataAppCacheHelper::OnFetchComplete,
                  base::Unretained(this)));
-  appcache_service_->
-      GetAllAppCacheInfo(info_collection_, appcache_info_callback_.callback());
+  appcache_service_->GetAllAppCacheInfo(info_collection_.get(),
+                                        appcache_info_callback_.callback());
 }
 
 void BrowsingDataAppCacheHelper::DeleteAppCacheGroup(
@@ -151,6 +151,12 @@ CannedBrowsingDataAppCacheHelper::GetOriginAppCacheInfoMap() const {
 void CannedBrowsingDataAppCacheHelper::StartFetching(
     const base::Closure& completion_callback) {
   completion_callback.Run();
+}
+
+void CannedBrowsingDataAppCacheHelper::DeleteAppCacheGroup(
+    const GURL& manifest_url) {
+  info_collection_->infos_by_origin.erase(manifest_url.GetOrigin());
+  BrowsingDataAppCacheHelper::DeleteAppCacheGroup(manifest_url);
 }
 
 CannedBrowsingDataAppCacheHelper::~CannedBrowsingDataAppCacheHelper() {}

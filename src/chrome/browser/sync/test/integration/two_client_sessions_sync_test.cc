@@ -4,8 +4,8 @@
 
 #include "base/memory/scoped_vector.h"
 #include "chrome/browser/sessions/session_service.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/passwords_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sessions_helper.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
@@ -37,8 +37,22 @@ static const char* kURL2 = "http://127.0.0.1/bubba2";
 // (as well as multi-window). We're currently only checking basic single-window/
 // single-tab functionality.
 
+// Fails on Win, see http://crbug.com/232313
+#if defined(OS_WIN)
+#define MAYBE_SingleClientChanged DISABLED_SingleClientChanged
+#define MAYBE_SingleClientEnabledEncryptionAndChanged DISABLED_SingleClientEnabledEncryptionAndChanged
+#define MAYBE_BothChanged DISABLED_BothChanged
+#define MAYBE_DeleteIdleSession DISABLED_DeleteIdleSession
+#else
+#define MAYBE_SingleClientChanged SingleClientChanged
+#define MAYBE_SingleClientEnabledEncryptionAndChanged SingleClientEnabledEncryptionAndChanged
+#define MAYBE_BothChanged BothChanged
+#define MAYBE_DeleteIdleSession DeleteIdleSession
+#endif
+
+
 IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
-                       SingleClientChanged) {
+                       MAYBE_SingleClientChanged) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(CheckInitialState(0));
@@ -66,19 +80,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
   ASSERT_TRUE(CheckInitialState(0));
   ASSERT_TRUE(CheckInitialState(1));
 
-  ASSERT_TRUE(EnableEncryption(0, syncer::SESSIONS));
+  ASSERT_TRUE(EnableEncryption(0));
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
-  ASSERT_TRUE(IsEncrypted(0, syncer::SESSIONS));
-  ASSERT_TRUE(IsEncrypted(1, syncer::SESSIONS));
-
-  // Should enable encryption for all other types as well. Just check a subset.
-  ASSERT_TRUE(IsEncrypted(1, syncer::PREFERENCES));
-  ASSERT_TRUE(IsEncrypted(1, syncer::BOOKMARKS));
-  ASSERT_TRUE(IsEncrypted(1, syncer::APPS));
+  ASSERT_TRUE(IsEncryptionComplete(0));
+  ASSERT_TRUE(IsEncryptionComplete(1));
 }
 
 IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
-                       SingleClientEnabledEncryptionAndChanged) {
+                       MAYBE_SingleClientEnabledEncryptionAndChanged) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(CheckInitialState(0));
@@ -87,11 +96,11 @@ IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
   ScopedWindowMap client0_windows;
   ASSERT_TRUE(OpenTabAndGetLocalWindows(0, GURL(kURL1),
       client0_windows.GetMutable()));
-  ASSERT_TRUE(EnableEncryption(0, syncer::SESSIONS));
+  ASSERT_TRUE(EnableEncryption(0));
   ASSERT_TRUE(GetClient(0)->AwaitMutualSyncCycleCompletion(GetClient(1)));
 
   // Get foreign session data from client 1.
-  ASSERT_TRUE(IsEncrypted(1, syncer::SESSIONS));
+  ASSERT_TRUE(IsEncryptionComplete(1));
   SyncedSessionVector sessions1;
   ASSERT_TRUE(GetSessionData(1, &sessions1));
 
@@ -107,14 +116,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
   ASSERT_TRUE(CheckInitialState(0));
   ASSERT_TRUE(CheckInitialState(1));
 
-  ASSERT_TRUE(EnableEncryption(0, syncer::SESSIONS));
-  ASSERT_TRUE(EnableEncryption(1, syncer::SESSIONS));
+  ASSERT_TRUE(EnableEncryption(0));
+  ASSERT_TRUE(EnableEncryption(1));
   ASSERT_TRUE(AwaitQuiescence());
-  ASSERT_TRUE(IsEncrypted(0, syncer::SESSIONS));
-  ASSERT_TRUE(IsEncrypted(1, syncer::SESSIONS));
+  ASSERT_TRUE(IsEncryptionComplete(0));
+  ASSERT_TRUE(IsEncryptionComplete(1));
 }
 
-IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, BothChanged) {
+IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, MAYBE_BothChanged) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(CheckInitialState(0));
@@ -145,7 +154,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, BothChanged) {
   ASSERT_TRUE(WindowsMatch(sessions0[0]->windows, *client1_windows.Get()));
 }
 
-IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, DeleteIdleSession) {
+IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, MAYBE_DeleteIdleSession) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(CheckInitialState(0));
@@ -172,7 +181,9 @@ IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, DeleteIdleSession) {
   ASSERT_FALSE(GetSessionData(1, &sessions1));
 }
 
-IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest, DeleteActiveSession) {
+// Fails all release trybots. crbug.com/263369.
+IN_PROC_BROWSER_TEST_F(TwoClientSessionsSyncTest,
+                       DISABLED_DeleteActiveSession) {
   ASSERT_TRUE(SetupSync()) << "SetupSync() failed.";
 
   ASSERT_TRUE(CheckInitialState(0));

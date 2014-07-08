@@ -5,7 +5,7 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_CRITICAL_NOTIFICATION_BUBBLE_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_CRITICAL_NOTIFICATION_BUBBLE_VIEW_H_
 
-#include "base/timer.h"
+#include "base/timer/timer.h"
 #include "ui/views/bubble/bubble_delegate.h"
 #include "ui/views/controls/button/button.h"
 
@@ -15,7 +15,7 @@ class Accelerator;
 
 namespace views {
 class Label;
-class NativeTextButton;
+class LabelButton;
 }
 
 class CriticalNotificationBubbleView : public views::BubbleDelegateView,
@@ -32,9 +32,9 @@ class CriticalNotificationBubbleView : public views::BubbleDelegateView,
   virtual void WindowClosing() OVERRIDE;
 
   // views::View overrides:
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
   virtual void ViewHierarchyChanged(
-      bool is_add, View* parent, View* child) OVERRIDE;
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
 
  protected:
   // views::BubbleDelegateView overrides:
@@ -55,8 +55,8 @@ class CriticalNotificationBubbleView : public views::BubbleDelegateView,
 
   // The headline and buttons on the bubble.
   views::Label* headline_;
-  views::NativeTextButton* restart_button_;
-  views::NativeTextButton* dismiss_button_;
+  views::LabelButton* restart_button_;
+  views::LabelButton* dismiss_button_;
 
   // A timer to refresh the bubble to show new countdown value.
   base::RepeatingTimer<CriticalNotificationBubbleView> refresh_timer_;

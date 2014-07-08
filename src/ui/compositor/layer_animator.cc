@@ -7,12 +7,15 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/animation/animation_container.h"
+#include "cc/animation/animation_id_provider.h"
+#include "cc/output/begin_frame_args.h"
 #include "ui/compositor/compositor.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_delegate.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animation_sequence.h"
+#include "ui/gfx/animation/animation_container.h"
+#include "ui/gfx/frame_time.h"
 
 #define SAFE_INVOKE_VOID(function, running_anim, ...) \
     if (running_anim.is_sequence_alive()) \
@@ -36,10 +39,10 @@ const int kDefaultTransitionDurationMs = 120;
 const int kTimerIntervalMs = 10;
 
 // Returns the AnimationContainer we're added to.
-ui::AnimationContainer* GetAnimationContainer() {
-  static ui::AnimationContainer* container = NULL;
+gfx::AnimationContainer* GetAnimationContainer() {
+  static gfx::AnimationContainer* container = NULL;
   if (!container) {
-    container = new AnimationContainer();
+    container = new gfx::AnimationContainer();
     container->AddRef();
   }
   return container;
@@ -47,20 +50,14 @@ ui::AnimationContainer* GetAnimationContainer() {
 
 }  // namespace
 
-// static
-bool LayerAnimator::disable_animations_for_test_ = false;
-// static
-bool LayerAnimator::slow_animation_mode_ = false;
-// static
-int LayerAnimator::slow_animation_scale_factor_ = 4;
-
 // LayerAnimator public --------------------------------------------------------
 
 LayerAnimator::LayerAnimator(base::TimeDelta transition_duration)
     : delegate_(NULL),
       preemption_strategy_(IMMEDIATELY_SET_NEW_TARGET),
+      is_transition_duration_locked_(false),
       transition_duration_(transition_duration),
-      tween_type_(Tween::LINEAR),
+      tween_type_(gfx::Tween::LINEAR),
       is_started_(false),
       disable_timer_for_test_(false),
       adding_animations_(false) {
@@ -121,6 +118,10 @@ ANIMATED_PROPERTY(bool, VISIBILITY, Visibility, bool, visibility);
 ANIMATED_PROPERTY(float, BRIGHTNESS, Brightness, float, brightness);
 ANIMATED_PROPERTY(float, GRAYSCALE, Grayscale, float, grayscale);
 ANIMATED_PROPERTY(SkColor, COLOR, Color, SkColor, color);
+
+base::TimeDelta LayerAnimator::GetTransitionDuration() const {
+  return transition_duration_;
+}
 
 void LayerAnimator::SetDelegate(LayerAnimationDelegate* delegate) {
   delegate_ = delegate;
@@ -183,16 +184,16 @@ void LayerAnimator::StartTogether(
     if (GetAnimationContainer()->is_running())
       last_step_time_ = GetAnimationContainer()->last_tick_time();
     else
-      last_step_time_ = base::TimeTicks::Now();
+      last_step_time_ = gfx::FrameTime::Now();
   }
 
   // Collect all the affected properties.
-  LayerAnimationElement::AnimatableProperties animated_properties;
+  LayerAnimationElement::AnimatableProperties animated_properties =
+      LayerAnimationElement::UNKNOWN;
+
   std::vector<LayerAnimationSequence*>::const_iterator iter;
-  for (iter = animations.begin(); iter != animations.end(); ++iter) {
-    animated_properties.insert((*iter)->properties().begin(),
-                               (*iter)->properties().end());
-  }
+  for (iter = animations.begin(); iter != animations.end(); ++iter)
+    animated_properties |= (*iter)->properties();
 
   // Starting a zero duration pause that affects all the animated properties
   // will prevent any of the sequences from animating until there are no
@@ -202,9 +203,17 @@ void LayerAnimator::StartTogether(
       LayerAnimationElement::CreatePauseElement(animated_properties,
                                                 base::TimeDelta())));
 
+  bool wait_for_group_start = false;
+  for (iter = animations.begin(); iter != animations.end(); ++iter)
+    wait_for_group_start |= (*iter)->IsFirstElementThreaded();
+
+  int group_id = cc::AnimationIdProvider::NextGroupId();
+
   // These animations (provided they don't animate any common properties) will
   // now animate together if trivially scheduled.
   for (iter = animations.begin(); iter != animations.end(); ++iter) {
+    (*iter)->set_animation_group_id(group_id);
+    (*iter)->set_waiting_for_group_start(wait_for_group_start);
     ScheduleAnimation(*iter);
   }
 
@@ -218,12 +227,12 @@ void LayerAnimator::ScheduleTogether(
   scoped_refptr<LayerAnimator> retain(this);
 
   // Collect all the affected properties.
-  LayerAnimationElement::AnimatableProperties animated_properties;
+  LayerAnimationElement::AnimatableProperties animated_properties =
+      LayerAnimationElement::UNKNOWN;
+
   std::vector<LayerAnimationSequence*>::const_iterator iter;
-  for (iter = animations.begin(); iter != animations.end(); ++iter) {
-    animated_properties.insert((*iter)->properties().begin(),
-                               (*iter)->properties().end());
-  }
+  for (iter = animations.begin(); iter != animations.end(); ++iter)
+    animated_properties |= (*iter)->properties();
 
   // Scheduling a zero duration pause that affects all the animated properties
   // will prevent any of the sequences from animating until there are no
@@ -232,9 +241,17 @@ void LayerAnimator::ScheduleTogether(
       LayerAnimationElement::CreatePauseElement(animated_properties,
                                                 base::TimeDelta())));
 
+  bool wait_for_group_start = false;
+  for (iter = animations.begin(); iter != animations.end(); ++iter)
+    wait_for_group_start |= (*iter)->IsFirstElementThreaded();
+
+  int group_id = cc::AnimationIdProvider::NextGroupId();
+
   // These animations (provided they don't animate any common properties) will
   // now animate together if trivially scheduled.
   for (iter = animations.begin(); iter != animations.end(); ++iter) {
+    (*iter)->set_animation_group_id(group_id);
+    (*iter)->set_waiting_for_group_start(wait_for_group_start);
     ScheduleAnimation(*iter);
   }
 
@@ -243,16 +260,7 @@ void LayerAnimator::ScheduleTogether(
 
 void LayerAnimator::SchedulePauseForProperties(
     base::TimeDelta duration,
-    LayerAnimationElement::AnimatableProperty property,
-    ...) {
-  ui::LayerAnimationElement::AnimatableProperties properties_to_pause;
-  va_list marker;
-  va_start(marker, property);
-  for (int p = static_cast<int>(property); p != -1; p = va_arg(marker, int)) {
-    properties_to_pause.insert(
-        static_cast<LayerAnimationElement::AnimatableProperty>(p));
-  }
-  va_end(marker);
+    LayerAnimationElement::AnimatableProperties properties_to_pause) {
   ScheduleAnimation(new ui::LayerAnimationSequence(
                         ui::LayerAnimationElement::CreatePauseElement(
                             properties_to_pause, duration)));
@@ -262,10 +270,8 @@ bool LayerAnimator::IsAnimatingProperty(
     LayerAnimationElement::AnimatableProperty property) const {
   for (AnimationQueue::const_iterator queue_iter = animation_queue_.begin();
        queue_iter != animation_queue_.end(); ++queue_iter) {
-    if ((*queue_iter)->properties().find(property) !=
-        (*queue_iter)->properties().end()) {
+    if ((*queue_iter)->properties() & property)
       return true;
-    }
   }
   return false;
 }
@@ -299,11 +305,50 @@ void LayerAnimator::RemoveObserver(LayerAnimationObserver* observer) {
   }
 }
 
+void LayerAnimator::OnThreadedAnimationStarted(
+    const cc::AnimationEvent& event) {
+  LayerAnimationElement::AnimatableProperty property =
+    LayerAnimationElement::ToAnimatableProperty(event.target_property);
+
+  RunningAnimation* running = GetRunningAnimation(property);
+  if (!running)
+    return;
+  DCHECK(running->is_sequence_alive());
+
+  if (running->sequence()->animation_group_id() != event.group_id)
+    return;
+
+  running->sequence()->OnThreadedAnimationStarted(event);
+  if (!running->sequence()->waiting_for_group_start())
+    return;
+
+  base::TimeTicks start_time = base::TimeTicks::FromInternalValue(
+      event.monotonic_time * base::Time::kMicrosecondsPerSecond);
+
+  running->sequence()->set_waiting_for_group_start(false);
+
+  // The call to GetRunningAnimation made above already purged deleted
+  // animations, so we are guaranteed that all the animations we iterate
+  // over now are alive.
+  for (RunningAnimations::iterator iter = running_animations_.begin();
+       iter != running_animations_.end(); ++iter) {
+    // Ensure that each sequence is only Started once, regardless of the
+    // number of sequences in the group that have threaded first elements.
+    if (((*iter).sequence()->animation_group_id() == event.group_id) &&
+        !(*iter).sequence()->IsFirstElementThreaded() &&
+        (*iter).sequence()->waiting_for_group_start()) {
+      (*iter).sequence()->set_start_time(start_time);
+      (*iter).sequence()->set_waiting_for_group_start(false);
+      (*iter).sequence()->Start(delegate());
+    }
+  }
+}
+
 // LayerAnimator protected -----------------------------------------------------
 
 void LayerAnimator::ProgressAnimation(LayerAnimationSequence* sequence,
                                       base::TimeTicks now) {
-  if (!delegate())
+  if (!delegate() || sequence->waiting_for_group_start())
     return;
 
   sequence->Progress(now, delegate());
@@ -399,11 +444,14 @@ LayerAnimationSequence* LayerAnimator::RemoveAnimation(
     LayerAnimationSequence* sequence) {
   linked_ptr<LayerAnimationSequence> to_return;
 
+  bool is_running = false;
+
   // First remove from running animations
   for (RunningAnimations::iterator iter = running_animations_.begin();
        iter != running_animations_.end(); ++iter) {
     if ((*iter).sequence() == sequence) {
       running_animations_.erase(iter);
+      is_running = true;
       break;
     }
   }
@@ -418,6 +466,39 @@ LayerAnimationSequence* LayerAnimator::RemoveAnimation(
     }
   }
 
+  if (!to_return.get() ||
+      !to_return->waiting_for_group_start() ||
+      !to_return->IsFirstElementThreaded())
+    return to_return.release();
+
+  // The removed sequence may have been responsible for making other sequences
+  // wait for a group start. If no other sequences in the group have a
+  // threaded first element, the group no longer needs the additional wait.
+  bool is_wait_still_needed = false;
+  int group_id = to_return->animation_group_id();
+  for (AnimationQueue::iterator queue_iter = animation_queue_.begin();
+       queue_iter != animation_queue_.end(); ++queue_iter) {
+    if (((*queue_iter)->animation_group_id() == group_id) &&
+        (*queue_iter)->IsFirstElementThreaded()) {
+      is_wait_still_needed = true;
+      break;
+    }
+  }
+
+  if (is_wait_still_needed)
+    return to_return.release();
+
+  for (AnimationQueue::iterator queue_iter = animation_queue_.begin();
+       queue_iter != animation_queue_.end(); ++queue_iter) {
+    if ((*queue_iter)->animation_group_id() == group_id &&
+        (*queue_iter)->waiting_for_group_start()) {
+      (*queue_iter)->set_waiting_for_group_start(false);
+      if (is_running) {
+        (*queue_iter)->set_start_time(last_step_time_);
+        (*queue_iter)->Start(delegate());
+      }
+    }
+  }
   return to_return.release();
 }
 
@@ -426,7 +507,7 @@ void LayerAnimator::FinishAnimation(
   scoped_refptr<LayerAnimator> retain(this);
   scoped_ptr<LayerAnimationSequence> removed(RemoveAnimation(sequence));
   if (abort)
-    sequence->Abort();
+    sequence->Abort(delegate());
   else
     ProgressAnimationToEnd(sequence);
   ProcessQueue();
@@ -464,8 +545,7 @@ LayerAnimator::RunningAnimation* LayerAnimator::GetRunningAnimation(
   PurgeDeletedAnimations();
   for (RunningAnimations::iterator iter = running_animations_.begin();
        iter != running_animations_.end(); ++iter) {
-    if ((*iter).sequence()->properties().find(property) !=
-        (*iter).sequence()->properties().end())
+    if ((*iter).sequence()->properties() & property)
       return &(*iter);
   }
   return NULL;
@@ -497,12 +577,12 @@ void LayerAnimator::RemoveAllAnimationsWithACommonProperty(
     if (!SAFE_INVOKE_BOOL(HasAnimation, running_animations_copy[i]))
       continue;
 
-    if (running_animations_copy[i].sequence()->HasCommonProperty(
+    if (running_animations_copy[i].sequence()->HasConflictingProperty(
             sequence->properties())) {
       scoped_ptr<LayerAnimationSequence> removed(
           SAFE_INVOKE_PTR(RemoveAnimation, running_animations_copy[i]));
       if (abort)
-        running_animations_copy[i].sequence()->Abort();
+        running_animations_copy[i].sequence()->Abort(delegate());
       else
         SAFE_INVOKE_VOID(ProgressAnimationToEnd, running_animations_copy[i]);
     }
@@ -516,15 +596,16 @@ void LayerAnimator::RemoveAllAnimationsWithACommonProperty(
     sequences.push_back((*queue_iter)->AsWeakPtr());
 
   for (size_t i = 0; i < sequences.size(); ++i) {
-    if (!sequences[i] || !HasAnimation(sequences[i]))
+    if (!sequences[i].get() || !HasAnimation(sequences[i].get()))
       continue;
 
-    if (sequences[i]->HasCommonProperty(sequence->properties())) {
-      scoped_ptr<LayerAnimationSequence> removed(RemoveAnimation(sequences[i]));
+    if (sequences[i]->HasConflictingProperty(sequence->properties())) {
+      scoped_ptr<LayerAnimationSequence> removed(
+          RemoveAnimation(sequences[i].get()));
       if (abort)
-        sequences[i]->Abort();
+        sequences[i]->Abort(delegate());
       else
-        ProgressAnimationToEnd(sequences[i]);
+        ProgressAnimationToEnd(sequences[i].get());
     }
   }
 }
@@ -536,16 +617,16 @@ void LayerAnimator::ImmediatelySetNewTarget(LayerAnimationSequence* sequence) {
 
   const bool abort = false;
   RemoveAllAnimationsWithACommonProperty(sequence, abort);
-  if (!weak_sequence_ptr)
+  if (!weak_sequence_ptr.get())
     return;
 
   LayerAnimationSequence* removed = RemoveAnimation(sequence);
   DCHECK(removed == NULL || removed == sequence);
-  if (!weak_sequence_ptr)
+  if (!weak_sequence_ptr.get())
     return;
 
   ProgressAnimationToEnd(sequence);
-  if (!weak_sequence_ptr)
+  if (!weak_sequence_ptr.get())
     return;
 
   delete sequence;
@@ -559,11 +640,11 @@ void LayerAnimator::ImmediatelyAnimateToNewTarget(
 
   const bool abort = true;
   RemoveAllAnimationsWithACommonProperty(sequence, abort);
-  if (!weak_sequence_ptr)
+  if (!weak_sequence_ptr.get())
     return;
 
   AddToQueueIfNotPresent(sequence);
-  if (!weak_sequence_ptr)
+  if (!weak_sequence_ptr.get())
     return;
 
   StartSequenceImmediately(sequence);
@@ -587,7 +668,7 @@ void LayerAnimator::ReplaceQueuedAnimations(LayerAnimationSequence* sequence) {
   // animation_queue_.size() - i is always decreasing and we are always making
   // progress towards the loop terminating.
   for (size_t i = 0; i < animation_queue_.size();) {
-    if (!weak_sequence_ptr)
+    if (!weak_sequence_ptr.get())
       break;
 
     PurgeDeletedAnimations();
@@ -615,13 +696,14 @@ void LayerAnimator::ProcessQueue() {
   do {
     started_sequence = false;
     // Build a list of all currently animated properties.
-    LayerAnimationElement::AnimatableProperties animated;
+    LayerAnimationElement::AnimatableProperties animated =
+        LayerAnimationElement::UNKNOWN;
     for (RunningAnimations::const_iterator iter = running_animations_.begin();
          iter != running_animations_.end(); ++iter) {
       if (!(*iter).is_sequence_alive())
         continue;
-      animated.insert((*iter).sequence()->properties().begin(),
-                      (*iter).sequence()->properties().end());
+
+      animated |= (*iter).sequence()->properties();
     }
 
     // Try to find an animation that doesn't conflict with an animated
@@ -634,10 +716,10 @@ void LayerAnimator::ProcessQueue() {
       sequences.push_back((*queue_iter)->AsWeakPtr());
 
     for (size_t i = 0; i < sequences.size(); ++i) {
-      if (!sequences[i] || !HasAnimation(sequences[i]))
+      if (!sequences[i].get() || !HasAnimation(sequences[i].get()))
         continue;
 
-      if (!sequences[i]->HasCommonProperty(animated)) {
+      if (!sequences[i]->HasConflictingProperty(animated)) {
         StartSequenceImmediately(sequences[i].get());
         started_sequence = true;
         break;
@@ -651,8 +733,7 @@ void LayerAnimator::ProcessQueue() {
       // the first element because it animates the transform, too. We cannot
       // start the second element, either, because the first element animates
       // bounds too, and needs to go first.
-      animated.insert(sequences[i]->properties().begin(),
-                      sequences[i]->properties().end());
+      animated |= sequences[i]->properties();
     }
 
     // If we started a sequence, try again. We may be able to start several.
@@ -665,7 +746,7 @@ bool LayerAnimator::StartSequenceImmediately(LayerAnimationSequence* sequence) {
   // Ensure that no one is animating one of the sequence's properties already.
   for (RunningAnimations::const_iterator iter = running_animations_.begin();
        iter != running_animations_.end(); ++iter) {
-    if ((*iter).sequence()->HasCommonProperty(sequence->properties()))
+    if ((*iter).sequence()->HasConflictingProperty(sequence->properties()))
       return false;
   }
 
@@ -682,9 +763,15 @@ bool LayerAnimator::StartSequenceImmediately(LayerAnimationSequence* sequence) {
   else if (GetAnimationContainer()->is_running())
     start_time = GetAnimationContainer()->last_tick_time();
   else
-    start_time = base::TimeTicks::Now();
+    start_time = gfx::FrameTime::Now();
 
-  sequence->set_start_time(start_time);
+  if (!sequence->animation_group_id())
+    sequence->set_animation_group_id(cc::AnimationIdProvider::NextGroupId());
+  if (!sequence->waiting_for_group_start() ||
+      sequence->IsFirstElementThreaded()) {
+    sequence->set_start_time(start_time);
+    sequence->Start(delegate());
+  }
   running_animations_.push_back(
       RunningAnimation(sequence->AsWeakPtr()));
 
@@ -716,8 +803,10 @@ void LayerAnimator::OnScheduled(LayerAnimationSequence* sequence) {
   sequence->OnScheduled();
 }
 
-base::TimeDelta LayerAnimator::GetTransitionDuration() const {
-  return transition_duration_;
+void LayerAnimator::SetTransitionDuration(base::TimeDelta duration) {
+  if (is_transition_duration_locked_)
+    return;
+  transition_duration_ = duration;
 }
 
 void LayerAnimator::ClearAnimationsInternal() {
@@ -733,7 +822,7 @@ void LayerAnimator::ClearAnimationsInternal() {
     scoped_ptr<LayerAnimationSequence> removed(
         RemoveAnimation(running_animations_copy[i].sequence()));
     if (removed.get())
-      removed->Abort();
+      removed->Abort(delegate());
   }
   // This *should* have cleared the list of running animations.
   DCHECK(running_animations_.empty());

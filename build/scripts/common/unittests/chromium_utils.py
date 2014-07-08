@@ -95,6 +95,16 @@ class TestRunCommand(unittest.TestCase):
     self.assertEqual(0, retval)
     self.assertEqual(['11\n', '21\n'], filter_obj.lines)
 
+  def testRunCommandPipesFailure(self):
+    firstcmd = synthesizeCmd(['print "1"'])
+
+    secondcmd = synthesizeCmd(["exit(1)"])
+    filter_obj = FakeFilterObj()
+    retval = chromium_utils.RunCommand(firstcmd, print_cmd=False,
+                                       pipes=[secondcmd],
+                                       filter_obj=filter_obj)
+    self.assertEqual(1, retval)
+
 
 if __name__ == '__main__':
   unittest.main()

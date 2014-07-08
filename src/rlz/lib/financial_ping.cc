@@ -6,11 +6,13 @@
 
 #include "rlz/lib/financial_ping.h"
 
+#include "base/atomicops.h"
 #include "base/basictypes.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/memory/weak_ptr.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "rlz/lib/assert.h"
 #include "rlz/lib/lib_values.h"
 #include "rlz/lib/machine_id.h"
@@ -19,7 +21,7 @@
 #include "rlz/lib/string_utils.h"
 
 #if !defined(OS_WIN)
-#include "base/time.h"
+#include "base/time/time.h"
 #endif
 
 #if defined(RLZ_NETWORK_IMPLEMENTATION_WIN_INET)
@@ -45,15 +47,15 @@ class InternetHandle {
 #else
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/run_loop.h"
-#include "base/time.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_request_context.h"
 #include "net/url_request/url_request_context_getter.h"
+#include "url/gurl.h"
 
 #endif
 
@@ -83,6 +85,8 @@ int64 GetSystemTimeAsInt64() {
 
 
 namespace rlz_lib {
+
+using base::subtle::AtomicWord;
 
 bool FinancialPing::FormRequest(Product product,
     const AccessPoint* access_points, const char* product_signature,
@@ -177,12 +181,15 @@ bool FinancialPing::FormRequest(Product product,
 }
 
 #if defined(RLZ_NETWORK_IMPLEMENTATION_CHROME_NET)
-// The URLRequestContextGetter used by FinancialPing::PingServer().
-net::URLRequestContextGetter* g_context;
+// The pointer to URLRequestContextGetter used by FinancialPing::PingServer().
+// It is atomic pointer because it can be accessed and modified by multiple
+// threads.
+AtomicWord g_context;
 
 bool FinancialPing::SetURLRequestContext(
     net::URLRequestContextGetter* context) {
-  g_context = context;
+  base::subtle::NoBarrier_Store(
+      &g_context, reinterpret_cast<AtomicWord>(context));
   return true;
 }
 
@@ -193,7 +200,7 @@ class FinancialPingUrlFetcherDelegate : public net::URLFetcherDelegate {
   FinancialPingUrlFetcherDelegate(const base::Closure& callback)
       : callback_(callback) {
   }
-  virtual void OnURLFetchComplete(const net::URLFetcher* source);
+  virtual void OnURLFetchComplete(const net::URLFetcher* source) OVERRIDE;
 
  private:
   base::Closure callback_;
@@ -204,8 +211,26 @@ void FinancialPingUrlFetcherDelegate::OnURLFetchComplete(
   callback_.Run();
 }
 
+bool send_financial_ping_interrupted_for_test = false;
+
 }  // namespace
 
+void ShutdownCheck(base::WeakPtr<base::RunLoop> weak) {
+  if (!weak.get())
+    return;
+  if (!base::subtle::NoBarrier_Load(&g_context)) {
+    send_financial_ping_interrupted_for_test = true;
+    weak->QuitClosure().Run();
+    return;
+  }
+  // How frequently the financial ping thread should check
+  // the shutdown condition?
+  const base::TimeDelta kInterval = base::TimeDelta::FromMilliseconds(500);
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::Bind(&ShutdownCheck, weak),
+      kInterval);
+}
 #endif
 
 bool FinancialPing::PingServer(const char* request, std::string* response) {
@@ -252,7 +277,7 @@ bool FinancialPing::PingServer(const char* request, std::string* response) {
     return false;
 
   // Get the response text.
-  scoped_array<char> buffer(new char[kMaxPingResponseLength]);
+  scoped_ptr<char[]> buffer(new char[kMaxPingResponseLength]);
   if (buffer.get() == NULL)
     return false;
 
@@ -265,11 +290,22 @@ bool FinancialPing::PingServer(const char* request, std::string* response) {
 
   return true;
 #else
+  // Copy the pointer to stack because g_context may be set to NULL
+  // in different thread. The instance is guaranteed to exist while
+  // the method is running.
+  net::URLRequestContextGetter* context =
+      reinterpret_cast<net::URLRequestContextGetter*>(
+          base::subtle::NoBarrier_Load(&g_context));
+
+  // Browser shutdown will cause the context to be reset to NULL.
+  if (!context)
+    return false;
+
   // Run a blocking event loop to match the win inet implementation.
-  scoped_ptr<MessageLoop> message_loop;
+  scoped_ptr<base::MessageLoop> message_loop;
   // Ensure that we have a MessageLoop.
-  if (!MessageLoop::current())
-    message_loop.reset(new MessageLoop);
+  if (!base::MessageLoop::current())
+    message_loop.reset(new base::MessageLoop);
   base::RunLoop loop;
   FinancialPingUrlFetcherDelegate delegate(loop.QuitClosure());
 
@@ -288,15 +324,20 @@ bool FinancialPing::PingServer(const char* request, std::string* response) {
 
   // Ensure rlz_lib::SetURLRequestContext() has been called before sending
   // pings.
-  CHECK(g_context);
-  fetcher->SetRequestContext(g_context);
+  fetcher->SetRequestContext(context);
+
+  base::WeakPtrFactory<base::RunLoop> weak(&loop);
 
   const base::TimeDelta kTimeout = base::TimeDelta::FromMinutes(5);
-  MessageLoop::ScopedNestableTaskAllower allow_nested(MessageLoop::current());
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::ScopedNestableTaskAllower allow_nested(
+      base::MessageLoop::current());
+  base::MessageLoop::current()->PostTask(
+      FROM_HERE,
+      base::Bind(&ShutdownCheck, weak.GetWeakPtr()));
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&net::URLFetcher::Start, base::Unretained(fetcher.get())));
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE, loop.QuitClosure(), kTimeout);
 
   loop.Run();
@@ -355,4 +396,18 @@ bool FinancialPing::ClearLastPingTime(Product product) {
   return store->ClearPingTime(product);
 }
 
-}  // namespace
+#if defined(RLZ_NETWORK_IMPLEMENTATION_CHROME_NET)
+namespace test {
+
+void ResetSendFinancialPingInterrupted() {
+  send_financial_ping_interrupted_for_test = false;
+}
+
+bool WasSendFinancialPingInterrupted() {
+  return send_financial_ping_interrupted_for_test;
+}
+
+}  // namespace test
+#endif
+
+}  // namespace rlz_lib

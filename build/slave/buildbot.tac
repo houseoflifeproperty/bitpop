@@ -12,11 +12,7 @@ import socket
 import sys
 
 from twisted.application import service
-# python module paths changed from buildbot-7 to buildbot-8; support both
-try:
-  from buildbot.slave.bot import BuildSlave
-except ImportError:
-  from buildslave.bot import BuildSlave
+from buildslave.bot import BuildSlave
 
 # Register the commands.
 from slave import chromium_commands
@@ -33,8 +29,8 @@ password = config.Master.GetBotPassword()
 host = None
 port = None
 basedir = None
-keepalive = 600
-usepty = 1
+keepalive = 300
+usepty = 0
 umask = None
 
 
@@ -58,5 +54,5 @@ if basedir is None:
 
 application = service.Application('buildslave')
 s = BuildSlave(host, port, slavename, password, basedir, keepalive, usepty,
-               umask=umask)
+               umask=umask, allow_shutdown='file')
 s.setServiceParent(application)

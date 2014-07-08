@@ -8,15 +8,16 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/string16.h"
-#include "base/time.h"
-#include "base/timer.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/autocomplete/autocomplete_provider_listener.h"
 #include "chrome/browser/autocomplete/autocomplete_result.h"
 
 class AutocompleteControllerDelegate;
+class HistoryURLProvider;
 class KeywordProvider;
 class Profile;
 class SearchProvider;
@@ -44,9 +45,6 @@ class ZeroSuggestProvider;
 // matches from a series of providers into one AutocompleteResult.
 class AutocompleteController : public AutocompleteProviderListener {
  public:
-  // Used to indicate an index that is not selected in a call to Update().
-  static const int kNoItemSelected;
-
   // |provider_types| is a bitmap containing AutocompleteProvider::Type values
   // that will (potentially, depending on platform, flags, etc.) be
   // instantiated.
@@ -76,15 +74,10 @@ class AutocompleteController : public AutocompleteProviderListener {
   // If |clear_result| is true, the controller will also erase the result set.
   void Stop(bool clear_result);
 
-  // Begin asynchronously fetching zero-suggest suggestions for |url|.
-  // |user_text| is the text entered in the omnibox, which may be non-empty if
-  // the user previously focused in the omnibox during this interaction.
-  // TODO(jered): Rip out |user_text| once the first match is decoupled from
-  // the current typing in the omnibox.
-  void StartZeroSuggest(const GURL& url, const string16& user_text);
-
-  // Cancels any pending zero-suggest fetch.
-  void StopZeroSuggest();
+  // Begin asynchronous fetch of zero-suggest suggestions. The |input| should
+  // contain current omnibox input, the URL of the page we are on, and
+  // that page's classification.
+  void StartZeroSuggest(const AutocompleteInput& input);
 
   // Asks the relevant provider to delete |match|, and ensures observers are
   // notified of resulting changes immediately.  This should only be called when
@@ -111,10 +104,26 @@ class AutocompleteController : public AutocompleteProviderListener {
   // content; see |OmniboxEditModel::user_input_in_progress_|.
   void ResetSession();
 
-  SearchProvider* search_provider() const { return search_provider_; }
-  KeywordProvider* keyword_provider() const { return keyword_provider_; }
+  // Constructs the final destination URL for a given match using additional
+  // parameters otherwise not available at initial construction time.  This
+  // method should be called from OmniboxEditModel::OpenMatch() before the user
+  // navigates to the selected match.
+  void UpdateMatchDestinationURL(base::TimeDelta query_formulation_time,
+                                 AutocompleteMatch* match) const;
 
+  HistoryURLProvider* history_url_provider() const {
+    return history_url_provider_;
+  }
+  KeywordProvider* keyword_provider() const { return keyword_provider_; }
+  SearchProvider* search_provider() const { return search_provider_; }
+
+  // Deprecated. Do not use that method! It's provided temporarily as clank
+  // migrates. If you need to access the aucomplete input you should keep a
+  // local copy of it.
+  // TODO(beaudoin): Remove this method once clank no longer rely on it.
+  // crbug.com/367832
   const AutocompleteInput& input() const { return input_; }
+
   const AutocompleteResult& result() const { return result_; }
   bool done() const { return done_; }
   const ACProviders* providers() const { return &providers_; }
@@ -128,6 +137,9 @@ class AutocompleteController : public AutocompleteProviderListener {
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest,
                            RedundantKeywordsIgnoredInResult);
   FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, UpdateAssistedQueryStats);
+  FRIEND_TEST_ALL_PREFIXES(AutocompleteProviderTest, GetDestinationURL);
+  FRIEND_TEST_ALL_PREFIXES(OmniboxViewTest, DoesNotUpdateAutocompleteOnBlur);
+  FRIEND_TEST_ALL_PREFIXES(OmniboxViewViewsTest, CloseOmniboxPopupOnTextDrag);
 
   // Updates |result_| to reflect the current provider state and fires
   // notifications.  If |regenerate_result| then we clear the result
@@ -167,13 +179,18 @@ class AutocompleteController : public AutocompleteProviderListener {
   // Updates |done_| to be accurate with respect to current providers' statuses.
   void CheckIfDone();
 
-  // Starts the expire timer.
+  // Starts |expire_timer_|.
   void StartExpireTimer();
+
+  // Starts |stop_timer_|.
+  void StartStopTimer();
 
   AutocompleteControllerDelegate* delegate_;
 
   // A list of all providers.
   ACProviders providers_;
+
+  HistoryURLProvider* history_url_provider_;
 
   KeywordProvider* keyword_provider_;
 
@@ -203,15 +220,22 @@ class AutocompleteController : public AutocompleteProviderListener {
   // invokes |ExpireCopiedEntries|.
   base::OneShotTimer<AutocompleteController> expire_timer_;
 
+  // Timer used to tell the providers to Stop() searching for matches.
+  base::OneShotTimer<AutocompleteController> stop_timer_;
+
+  // Amount of time (in ms) between when the user stops typing and
+  // when we send Stop() to every provider.  This is intended to avoid
+  // the disruptive effect of belated omnibox updates, updates that
+  // come after the user has had to time to read the whole dropdown
+  // and doesn't expect it to change.
+  const base::TimeDelta stop_timer_duration_;
+
   // True if a query is not currently running.
   bool done_;
 
   // Are we in Start()? This is used to avoid updating |result_| and sending
   // notifications until Start() has been invoked on all providers.
   bool in_start_;
-
-  // Has StartZeroSuggest() been called but not Start()?
-  bool in_zero_suggest_;
 
   Profile* profile_;
 

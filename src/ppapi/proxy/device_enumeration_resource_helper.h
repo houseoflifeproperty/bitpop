@@ -12,6 +12,7 @@
 #include "base/memory/weak_ptr.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
 #include "ppapi/proxy/ppapi_proxy_export.h"
+#include "ppapi/shared_impl/thread_aware_callback.h"
 
 namespace IPC {
 class Message;
@@ -36,8 +37,6 @@ class PPAPI_PROXY_EXPORT DeviceEnumerationResourceHelper
   explicit DeviceEnumerationResourceHelper(PluginResource* owner);
   ~DeviceEnumerationResourceHelper();
 
-  int32_t EnumerateDevices0_2(PP_Resource* devices,
-                              scoped_refptr<TrackedCallback> callback);
   int32_t EnumerateDevices(const PP_ArrayOutput& output,
                            scoped_refptr<TrackedCallback> callback);
   int32_t EnumerateDevicesSync(const PP_ArrayOutput& output);
@@ -51,11 +50,6 @@ class PPAPI_PROXY_EXPORT DeviceEnumerationResourceHelper
   void LastPluginRefWasDeleted();
 
  private:
-  void OnPluginMsgEnumerateDevicesReply0_2(
-      PP_Resource* devices_resource,
-      scoped_refptr<TrackedCallback> callback,
-      const ResourceMessageReplyParams& params,
-      const std::vector<DeviceRefData>& devices);
   void OnPluginMsgEnumerateDevicesReply(
       const PP_ArrayOutput& output,
       scoped_refptr<TrackedCallback> callback,
@@ -74,7 +68,8 @@ class PPAPI_PROXY_EXPORT DeviceEnumerationResourceHelper
   bool pending_enumerate_devices_;
 
   uint32_t monitor_callback_id_;
-  PP_MonitorDeviceChangeCallback monitor_callback_;
+  scoped_ptr<ThreadAwareCallback<PP_MonitorDeviceChangeCallback> >
+      monitor_callback_;
   void* monitor_user_data_;
 
   DISALLOW_COPY_AND_ASSIGN(DeviceEnumerationResourceHelper);

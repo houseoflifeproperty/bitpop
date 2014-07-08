@@ -200,17 +200,17 @@ bool SkScriptRuntime::executeTokens(unsigned char* opCode) {
             operand[0].fScalar = SkScriptEngine2::IntToScalar(operand[op - SkScriptEngine2::kIntToScalar].fS32);
             break;
         case SkScriptEngine2::kStringToInt:
-            if (SkParse::FindS32(operand[0].fString->c_str(), &operand[0].fS32) == false)
+            if (SkParse::FindS32(operand[0].fString->c_str(), &operand[0].fS32) == NULL)
                 return false;
             break;
         case SkScriptEngine2::kStringToScalar:
         case SkScriptEngine2::kStringToScalar2:
             if (SkParse::FindScalar(operand[0].fString->c_str(),
-                    &operand[op - SkScriptEngine2::kStringToScalar].fScalar) == false)
+                    &operand[op - SkScriptEngine2::kStringToScalar].fScalar) == NULL)
                 return false;
             break;
         case SkScriptEngine2::kScalarToInt:
-            operand[0].fS32 = SkScalarFloor(operand[0].fScalar);
+            operand[0].fS32 = SkScalarFloorToInt(operand[0].fScalar);
             break;
         // arithmetic ops
         case SkScriptEngine2::kAddInt:
@@ -349,4 +349,3 @@ void SkScriptRuntime::untrack(SkString* string) {
     SkASSERT(index >= 0);
     fTrackString.begin()[index] = NULL;
 }
-

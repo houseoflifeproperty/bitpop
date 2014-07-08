@@ -32,10 +32,14 @@
 #include <vector>
 
 #include "talk/base/basictypes.h"
+#include "talk/base/buffer.h"
+#include "talk/base/dscp.h"
+#include "talk/base/logging.h"
 #include "talk/base/sigslot.h"
 #include "talk/base/socket.h"
 #include "talk/base/window.h"
 #include "talk/media/base/codec.h"
+#include "talk/media/base/constants.h"
 #include "talk/media/base/streamparams.h"
 // TODO(juberti): re-evaluate this include
 #include "talk/session/media/audiomonitor.h"
@@ -48,6 +52,7 @@ class Timing;
 
 namespace cricket {
 
+class AudioRenderer;
 struct RtpHeader;
 class ScreencastId;
 struct VideoFormat;
@@ -57,12 +62,13 @@ class VideoRenderer;
 const int kMinRtpHeaderExtensionId = 1;
 const int kMaxRtpHeaderExtensionId = 255;
 const int kScreencastDefaultFps = 5;
+const int kHighStartBitrate = 1500;
 
-// Used in AudioOptions to signify "unset" values.
+// Used in AudioOptions and VideoOptions to signify "unset" values.
 template <class T>
 class Settable {
  public:
- Settable() : set_(false), val_() {}
+  Settable() : set_(false), val_() {}
   explicit Settable(T val) : set_(true), val_(val) {}
 
   bool IsSet() const {
@@ -74,31 +80,76 @@ class Settable {
     return set_;
   }
 
-  void Set(T val) {
+  T GetWithDefaultIfUnset(const T& default_value) const {
+    return set_ ? val_ : default_value;
+  }
+
+  virtual void Set(T val) {
     set_ = true;
     val_ = val;
   }
 
   void Clear() {
+    Set(T());
     set_ = false;
-    val_ = T();
   }
 
-  void SetFrom(Settable<T> o) {
+  void SetFrom(const Settable<T>& o) {
+    // Set this value based on the value of o, iff o is set.  If this value is
+    // set and o is unset, the current value will be unchanged.
     T val;
     if (o.Get(&val)) {
       Set(val);
     }
   }
 
+  std::string ToString() const {
+    return set_ ? talk_base::ToString(val_) : "";
+  }
+
   bool operator==(const Settable<T>& o) const {
-    return (set_ == o.set_) && (val_ == o.val_);
+    // Equal if both are unset with any value or both set with the same value.
+    return (set_ == o.set_) && (!set_ || (val_ == o.val_));
+  }
+
+  bool operator!=(const Settable<T>& o) const {
+    return !operator==(o);
+  }
+
+ protected:
+  void InitializeValue(const T &val) {
+    val_ = val;
   }
 
  private:
   bool set_;
   T val_;
 };
+
+class SettablePercent : public Settable<float> {
+ public:
+  virtual void Set(float val) {
+    if (val < 0) {
+      val = 0;
+    }
+    if (val >  1.0) {
+      val = 1.0;
+    }
+    Settable<float>::Set(val);
+  }
+};
+
+template <class T>
+static std::string ToStringIfSet(const char* key, const Settable<T>& val) {
+  std::string str;
+  if (val.IsSet()) {
+    str = key;
+    str += ": ";
+    str += val.ToString();
+    str += ", ";
+  }
+  return str;
+}
 
 // Options that can be applied to a VoiceMediaChannel or a VoiceMediaEngine.
 // Used to be flags, but that makes it hard to selectively apply options.
@@ -108,60 +159,85 @@ struct AudioOptions {
   void SetAll(const AudioOptions& change) {
     echo_cancellation.SetFrom(change.echo_cancellation);
     auto_gain_control.SetFrom(change.auto_gain_control);
+    rx_auto_gain_control.SetFrom(change.rx_auto_gain_control);
     noise_suppression.SetFrom(change.noise_suppression);
     highpass_filter.SetFrom(change.highpass_filter);
     stereo_swapping.SetFrom(change.stereo_swapping);
     typing_detection.SetFrom(change.typing_detection);
+    aecm_generate_comfort_noise.SetFrom(change.aecm_generate_comfort_noise);
     conference_mode.SetFrom(change.conference_mode);
     adjust_agc_delta.SetFrom(change.adjust_agc_delta);
+    experimental_agc.SetFrom(change.experimental_agc);
+    experimental_aec.SetFrom(change.experimental_aec);
+    experimental_ns.SetFrom(change.experimental_ns);
+    aec_dump.SetFrom(change.aec_dump);
+    tx_agc_target_dbov.SetFrom(change.tx_agc_target_dbov);
+    tx_agc_digital_compression_gain.SetFrom(
+        change.tx_agc_digital_compression_gain);
+    tx_agc_limiter.SetFrom(change.tx_agc_limiter);
+    rx_agc_target_dbov.SetFrom(change.rx_agc_target_dbov);
+    rx_agc_digital_compression_gain.SetFrom(
+        change.rx_agc_digital_compression_gain);
+    rx_agc_limiter.SetFrom(change.rx_agc_limiter);
+    recording_sample_rate.SetFrom(change.recording_sample_rate);
+    playout_sample_rate.SetFrom(change.playout_sample_rate);
+    dscp.SetFrom(change.dscp);
   }
 
   bool operator==(const AudioOptions& o) const {
     return echo_cancellation == o.echo_cancellation &&
         auto_gain_control == o.auto_gain_control &&
+        rx_auto_gain_control == o.rx_auto_gain_control &&
         noise_suppression == o.noise_suppression &&
         highpass_filter == o.highpass_filter &&
         stereo_swapping == o.stereo_swapping &&
         typing_detection == o.typing_detection &&
+        aecm_generate_comfort_noise == o.aecm_generate_comfort_noise &&
         conference_mode == o.conference_mode &&
-        adjust_agc_delta == o.adjust_agc_delta;
+        experimental_agc == o.experimental_agc &&
+        experimental_aec == o.experimental_aec &&
+        experimental_ns == o.experimental_ns &&
+        adjust_agc_delta == o.adjust_agc_delta &&
+        aec_dump == o.aec_dump &&
+        tx_agc_target_dbov == o.tx_agc_target_dbov &&
+        tx_agc_digital_compression_gain == o.tx_agc_digital_compression_gain &&
+        tx_agc_limiter == o.tx_agc_limiter &&
+        rx_agc_target_dbov == o.rx_agc_target_dbov &&
+        rx_agc_digital_compression_gain == o.rx_agc_digital_compression_gain &&
+        rx_agc_limiter == o.rx_agc_limiter &&
+        recording_sample_rate == o.recording_sample_rate &&
+        playout_sample_rate == o.playout_sample_rate &&
+        dscp == o.dscp;
   }
 
-  virtual std::string ToString() const {
+  std::string ToString() const {
     std::ostringstream ost;
     ost << "AudioOptions {";
-    bool aec;
-    if (echo_cancellation.Get(&aec)) {
-      ost << "aec: " << aec << ", ";
-    }
-    bool agc;
-    if (auto_gain_control.Get(&agc)) {
-      ost << "agc: " << agc << ", ";
-    }
-    bool ns;
-    if (noise_suppression.Get(&ns)) {
-      ost << "ns: " << ns << ", ";
-    }
-    bool hf;
-    if (highpass_filter.Get(&hf)) {
-      ost << "hf: " << hf << ", ";
-    }
-    bool swap;
-    if (stereo_swapping.Get(&swap)) {
-      ost << "swap: " << swap << ", ";
-    }
-    bool typing;
-    if (typing_detection.Get(&typing)) {
-      ost << "typing: " << typing << ", ";
-    }
-    bool conference;
-    if (conference_mode.Get(&conference)) {
-      ost << "conference: " << conference << ", ";
-    }
-    int agc_delta;
-    if (adjust_agc_delta.Get(&agc_delta)) {
-      ost << "agc_delta: " << agc_delta << ", ";
-    }
+    ost << ToStringIfSet("aec", echo_cancellation);
+    ost << ToStringIfSet("agc", auto_gain_control);
+    ost << ToStringIfSet("rx_agc", rx_auto_gain_control);
+    ost << ToStringIfSet("ns", noise_suppression);
+    ost << ToStringIfSet("hf", highpass_filter);
+    ost << ToStringIfSet("swap", stereo_swapping);
+    ost << ToStringIfSet("typing", typing_detection);
+    ost << ToStringIfSet("comfort_noise", aecm_generate_comfort_noise);
+    ost << ToStringIfSet("conference", conference_mode);
+    ost << ToStringIfSet("agc_delta", adjust_agc_delta);
+    ost << ToStringIfSet("experimental_agc", experimental_agc);
+    ost << ToStringIfSet("experimental_aec", experimental_aec);
+    ost << ToStringIfSet("experimental_ns", experimental_ns);
+    ost << ToStringIfSet("aec_dump", aec_dump);
+    ost << ToStringIfSet("tx_agc_target_dbov", tx_agc_target_dbov);
+    ost << ToStringIfSet("tx_agc_digital_compression_gain",
+        tx_agc_digital_compression_gain);
+    ost << ToStringIfSet("tx_agc_limiter", tx_agc_limiter);
+    ost << ToStringIfSet("rx_agc_target_dbov", rx_agc_target_dbov);
+    ost << ToStringIfSet("rx_agc_digital_compression_gain",
+        rx_agc_digital_compression_gain);
+    ost << ToStringIfSet("rx_agc_limiter", rx_agc_limiter);
+    ost << ToStringIfSet("recording_sample_rate", recording_sample_rate);
+    ost << ToStringIfSet("playout_sample_rate", playout_sample_rate);
+    ost << ToStringIfSet("dscp", dscp);
     ost << "}";
     return ost.str();
   }
@@ -171,6 +247,8 @@ struct AudioOptions {
   Settable<bool> echo_cancellation;
   // Audio processing to adjust the sensitivity of the local mic dynamically.
   Settable<bool> auto_gain_control;
+  // Audio processing to apply gain to the remote audio.
+  Settable<bool> rx_auto_gain_control;
   // Audio processing to filter out background noise.
   Settable<bool> noise_suppression;
   // Audio processing to remove background noise of lower frequencies.
@@ -179,8 +257,226 @@ struct AudioOptions {
   Settable<bool> stereo_swapping;
   // Audio processing to detect typing.
   Settable<bool> typing_detection;
+  Settable<bool> aecm_generate_comfort_noise;
   Settable<bool> conference_mode;
   Settable<int> adjust_agc_delta;
+  Settable<bool> experimental_agc;
+  Settable<bool> experimental_aec;
+  Settable<bool> experimental_ns;
+  Settable<bool> aec_dump;
+  // Note that tx_agc_* only applies to non-experimental AGC.
+  Settable<uint16> tx_agc_target_dbov;
+  Settable<uint16> tx_agc_digital_compression_gain;
+  Settable<bool> tx_agc_limiter;
+  Settable<uint16> rx_agc_target_dbov;
+  Settable<uint16> rx_agc_digital_compression_gain;
+  Settable<bool> rx_agc_limiter;
+  Settable<uint32> recording_sample_rate;
+  Settable<uint32> playout_sample_rate;
+  // Set DSCP value for packet sent from audio channel.
+  Settable<bool> dscp;
+};
+
+// Options that can be applied to a VideoMediaChannel or a VideoMediaEngine.
+// Used to be flags, but that makes it hard to selectively apply options.
+// We are moving all of the setting of options to structs like this,
+// but some things currently still use flags.
+struct VideoOptions {
+  enum HighestBitrate {
+    NORMAL,
+    HIGH,
+    VERY_HIGH
+  };
+
+  VideoOptions() {
+    process_adaptation_threshhold.Set(kProcessCpuThreshold);
+    system_low_adaptation_threshhold.Set(kLowSystemCpuThreshold);
+    system_high_adaptation_threshhold.Set(kHighSystemCpuThreshold);
+    unsignalled_recv_stream_limit.Set(kNumDefaultUnsignalledVideoRecvStreams);
+  }
+
+  void SetAll(const VideoOptions& change) {
+    adapt_input_to_encoder.SetFrom(change.adapt_input_to_encoder);
+    adapt_input_to_cpu_usage.SetFrom(change.adapt_input_to_cpu_usage);
+    adapt_cpu_with_smoothing.SetFrom(change.adapt_cpu_with_smoothing);
+    adapt_view_switch.SetFrom(change.adapt_view_switch);
+    video_adapt_third.SetFrom(change.video_adapt_third);
+    video_noise_reduction.SetFrom(change.video_noise_reduction);
+    video_one_layer_screencast.SetFrom(change.video_one_layer_screencast);
+    video_high_bitrate.SetFrom(change.video_high_bitrate);
+    video_start_bitrate.SetFrom(change.video_start_bitrate);
+    video_temporal_layer_screencast.SetFrom(
+        change.video_temporal_layer_screencast);
+    video_temporal_layer_realtime.SetFrom(
+        change.video_temporal_layer_realtime);
+    video_leaky_bucket.SetFrom(change.video_leaky_bucket);
+    video_highest_bitrate.SetFrom(change.video_highest_bitrate);
+    cpu_overuse_detection.SetFrom(change.cpu_overuse_detection);
+    cpu_underuse_threshold.SetFrom(change.cpu_underuse_threshold);
+    cpu_overuse_threshold.SetFrom(change.cpu_overuse_threshold);
+    cpu_overuse_encode_usage.SetFrom(change.cpu_overuse_encode_usage);
+    conference_mode.SetFrom(change.conference_mode);
+    process_adaptation_threshhold.SetFrom(change.process_adaptation_threshhold);
+    system_low_adaptation_threshhold.SetFrom(
+        change.system_low_adaptation_threshhold);
+    system_high_adaptation_threshhold.SetFrom(
+        change.system_high_adaptation_threshhold);
+    buffered_mode_latency.SetFrom(change.buffered_mode_latency);
+    lower_min_bitrate.SetFrom(change.lower_min_bitrate);
+    dscp.SetFrom(change.dscp);
+    suspend_below_min_bitrate.SetFrom(change.suspend_below_min_bitrate);
+    unsignalled_recv_stream_limit.SetFrom(change.unsignalled_recv_stream_limit);
+    use_simulcast_adapter.SetFrom(change.use_simulcast_adapter);
+    skip_encoding_unused_streams.SetFrom(change.skip_encoding_unused_streams);
+    screencast_min_bitrate.SetFrom(change.screencast_min_bitrate);
+    use_improved_wifi_bandwidth_estimator.SetFrom(
+        change.use_improved_wifi_bandwidth_estimator);
+  }
+
+  bool operator==(const VideoOptions& o) const {
+    return adapt_input_to_encoder == o.adapt_input_to_encoder &&
+        adapt_input_to_cpu_usage == o.adapt_input_to_cpu_usage &&
+        adapt_cpu_with_smoothing == o.adapt_cpu_with_smoothing &&
+        adapt_view_switch == o.adapt_view_switch &&
+        video_adapt_third == o.video_adapt_third &&
+        video_noise_reduction == o.video_noise_reduction &&
+        video_one_layer_screencast == o.video_one_layer_screencast &&
+        video_high_bitrate == o.video_high_bitrate &&
+        video_start_bitrate == o.video_start_bitrate &&
+        video_temporal_layer_screencast == o.video_temporal_layer_screencast &&
+        video_temporal_layer_realtime == o.video_temporal_layer_realtime &&
+        video_leaky_bucket == o.video_leaky_bucket &&
+        video_highest_bitrate == o.video_highest_bitrate &&
+        cpu_overuse_detection == o.cpu_overuse_detection &&
+        cpu_underuse_threshold == o.cpu_underuse_threshold &&
+        cpu_overuse_threshold == o.cpu_overuse_threshold &&
+        cpu_overuse_encode_usage == o.cpu_overuse_encode_usage &&
+        conference_mode == o.conference_mode &&
+        process_adaptation_threshhold == o.process_adaptation_threshhold &&
+        system_low_adaptation_threshhold ==
+            o.system_low_adaptation_threshhold &&
+        system_high_adaptation_threshhold ==
+            o.system_high_adaptation_threshhold &&
+        buffered_mode_latency == o.buffered_mode_latency &&
+        lower_min_bitrate == o.lower_min_bitrate &&
+        dscp == o.dscp &&
+        suspend_below_min_bitrate == o.suspend_below_min_bitrate &&
+        unsignalled_recv_stream_limit == o.unsignalled_recv_stream_limit &&
+        use_simulcast_adapter == o.use_simulcast_adapter &&
+        skip_encoding_unused_streams == o.skip_encoding_unused_streams &&
+        screencast_min_bitrate == o.screencast_min_bitrate &&
+        use_improved_wifi_bandwidth_estimator ==
+            o.use_improved_wifi_bandwidth_estimator;
+  }
+
+  std::string ToString() const {
+    std::ostringstream ost;
+    ost << "VideoOptions {";
+    ost << ToStringIfSet("encoder adaption", adapt_input_to_encoder);
+    ost << ToStringIfSet("cpu adaption", adapt_input_to_cpu_usage);
+    ost << ToStringIfSet("cpu adaptation smoothing", adapt_cpu_with_smoothing);
+    ost << ToStringIfSet("adapt view switch", adapt_view_switch);
+    ost << ToStringIfSet("video adapt third", video_adapt_third);
+    ost << ToStringIfSet("noise reduction", video_noise_reduction);
+    ost << ToStringIfSet("1 layer screencast", video_one_layer_screencast);
+    ost << ToStringIfSet("high bitrate", video_high_bitrate);
+    ost << ToStringIfSet("start bitrate", video_start_bitrate);
+    ost << ToStringIfSet("video temporal layer screencast",
+                         video_temporal_layer_screencast);
+    ost << ToStringIfSet("video temporal layer realtime",
+                         video_temporal_layer_realtime);
+    ost << ToStringIfSet("leaky bucket", video_leaky_bucket);
+    ost << ToStringIfSet("highest video bitrate", video_highest_bitrate);
+    ost << ToStringIfSet("cpu overuse detection", cpu_overuse_detection);
+    ost << ToStringIfSet("cpu underuse threshold", cpu_underuse_threshold);
+    ost << ToStringIfSet("cpu overuse threshold", cpu_overuse_threshold);
+    ost << ToStringIfSet("cpu overuse encode usage",
+                         cpu_overuse_encode_usage);
+    ost << ToStringIfSet("conference mode", conference_mode);
+    ost << ToStringIfSet("process", process_adaptation_threshhold);
+    ost << ToStringIfSet("low", system_low_adaptation_threshhold);
+    ost << ToStringIfSet("high", system_high_adaptation_threshhold);
+    ost << ToStringIfSet("buffered mode latency", buffered_mode_latency);
+    ost << ToStringIfSet("lower min bitrate", lower_min_bitrate);
+    ost << ToStringIfSet("dscp", dscp);
+    ost << ToStringIfSet("suspend below min bitrate",
+                         suspend_below_min_bitrate);
+    ost << ToStringIfSet("num channels for early receive",
+                         unsignalled_recv_stream_limit);
+    ost << ToStringIfSet("use simulcast adapter", use_simulcast_adapter);
+    ost << ToStringIfSet("skip encoding unused streams",
+                         skip_encoding_unused_streams);
+    ost << ToStringIfSet("screencast min bitrate", screencast_min_bitrate);
+    ost << ToStringIfSet("improved wifi bwe",
+                         use_improved_wifi_bandwidth_estimator);
+    ost << "}";
+    return ost.str();
+  }
+
+  // Encoder adaption, which is the gd callback in LMI, and TBA in WebRTC.
+  Settable<bool> adapt_input_to_encoder;
+  // Enable CPU adaptation?
+  Settable<bool> adapt_input_to_cpu_usage;
+  // Enable CPU adaptation smoothing?
+  Settable<bool> adapt_cpu_with_smoothing;
+  // Enable Adapt View Switch?
+  Settable<bool> adapt_view_switch;
+  // Enable video adapt third?
+  Settable<bool> video_adapt_third;
+  // Enable denoising?
+  Settable<bool> video_noise_reduction;
+  // Experimental: Enable one layer screencast?
+  Settable<bool> video_one_layer_screencast;
+  // Experimental: Enable WebRtc higher bitrate?
+  Settable<bool> video_high_bitrate;
+  // Experimental: Enable WebRtc higher start bitrate?
+  Settable<int> video_start_bitrate;
+  // Experimental: Enable WebRTC layered screencast.
+  Settable<bool> video_temporal_layer_screencast;
+  // Experimental: Enable WebRTC temporal layer strategy for realtime video.
+  Settable<bool> video_temporal_layer_realtime;
+  // Enable WebRTC leaky bucket when sending media packets.
+  Settable<bool> video_leaky_bucket;
+  // Set highest bitrate mode for video.
+  Settable<HighestBitrate> video_highest_bitrate;
+  // Enable WebRTC Cpu Overuse Detection, which is a new version of the CPU
+  // adaptation algorithm. So this option will override the
+  // |adapt_input_to_cpu_usage|.
+  Settable<bool> cpu_overuse_detection;
+  // Low threshold for cpu overuse adaptation in ms.  (Adapt up)
+  Settable<int> cpu_underuse_threshold;
+  // High threshold for cpu overuse adaptation in ms.  (Adapt down)
+  Settable<int> cpu_overuse_threshold;
+  // Use encode usage for cpu detection.
+  Settable<bool> cpu_overuse_encode_usage;
+  // Use conference mode?
+  Settable<bool> conference_mode;
+  // Threshhold for process cpu adaptation.  (Process limit)
+  SettablePercent process_adaptation_threshhold;
+  // Low threshhold for cpu adaptation.  (Adapt up)
+  SettablePercent system_low_adaptation_threshhold;
+  // High threshhold for cpu adaptation.  (Adapt down)
+  SettablePercent system_high_adaptation_threshhold;
+  // Specify buffered mode latency in milliseconds.
+  Settable<int> buffered_mode_latency;
+  // Make minimum configured send bitrate even lower than usual, at 30kbit.
+  Settable<bool> lower_min_bitrate;
+  // Set DSCP value for packet sent from video channel.
+  Settable<bool> dscp;
+  // Enable WebRTC suspension of video. No video frames will be sent when the
+  // bitrate is below the configured minimum bitrate.
+  Settable<bool> suspend_below_min_bitrate;
+  // Limit on the number of early receive channels that can be created.
+  Settable<int> unsignalled_recv_stream_limit;
+  // Enable use of simulcast adapter.
+  Settable<bool> use_simulcast_adapter;
+  // Enables the encoder to skip encoding stream not actually sent due to too
+  // low available bit rate.
+  Settable<bool> skip_encoding_unused_streams;
+  // Force screencast to use a minimum bitrate
+  Settable<int> screencast_min_bitrate;
+  // Enable improved bandwidth estiamtor on wifi.
+  Settable<bool> use_improved_wifi_bandwidth_estimator;
 };
 
 // A class for playing out soundclips.
@@ -205,6 +501,13 @@ struct RtpHeaderExtension {
   std::string uri;
   int id;
   // TODO(juberti): SendRecv direction;
+
+  bool operator==(const RtpHeaderExtension& ext) const {
+    // id is a reserved word in objective-c. Therefore the id attribute has to
+    // be a fully qualified name in order to compile on IOS.
+    return this->id == ext.id &&
+        uri == ext.uri;
+  }
 };
 
 // Returns the named header extension if found among all extensions, NULL
@@ -230,39 +533,23 @@ enum VoiceMediaChannelOptions {
   OPT_AGC_MINUS_10DB = 0x80000000
 };
 
-enum VideoMediaChannelOptions {
-  // Increase the output framerate by 2x by interpolating frames.
-  OPT_INTERPOLATE = 0x10000,
-  // Adapt the video input to the encoder based on CPU.
-  OPT_ADAPT_INPUT_TO_CPU_USAGE = 0x20000,
-  // Enable video adaption based on encoder's estimation on bandwidth and
-  // cpu load.
-  OPT_ADAPT_INPUT_TO_ENCODER = 0x40000,
-  // Enable video noise reduction.
-  OPT_VIDEO_NOISE_REDUCTION = 0x80000,
-  // Enable WebRTC leaky bucket when sending media packets.
-  OPT_VIDEO_LEAKY_BUCKET = 0x800000
-};
-
 // DTMF flags to control if a DTMF tone should be played and/or sent.
 enum DtmfFlags {
   DF_PLAY = 0x01,
   DF_SEND = 0x02,
 };
 
-// Special purpose DTMF event code used by the VoiceMediaChannel::InsertDtmf.
-const int kDtmfDelay = -1;  // Insert a delay to the end of the DTMF queue.
-const int kDtmfReset = -2;  // Reset the DTMF queue.
-// The delay in ms when the InsertDtmf is called with kDtmfDelay.
-const int kDtmfDelayInMs = 2000;
-
 class MediaChannel : public sigslot::has_slots<> {
  public:
   class NetworkInterface {
    public:
     enum SocketType { ST_RTP, ST_RTCP };
-    virtual bool SendPacket(talk_base::Buffer* packet) = 0;
-    virtual bool SendRtcp(talk_base::Buffer* packet) = 0;
+    virtual bool SendPacket(
+        talk_base::Buffer* packet,
+        talk_base::DiffServCodePoint dscp = talk_base::DSCP_NO_CHANGE) = 0;
+    virtual bool SendRtcp(
+        talk_base::Buffer* packet,
+        talk_base::DiffServCodePoint dscp = talk_base::DSCP_NO_CHANGE) = 0;
     virtual int SetOption(SocketType type, talk_base::Socket::Option opt,
                           int option) = 0;
     virtual ~NetworkInterface() {}
@@ -271,16 +558,20 @@ class MediaChannel : public sigslot::has_slots<> {
   MediaChannel() : network_interface_(NULL) {}
   virtual ~MediaChannel() {}
 
-  // Gets/sets the abstract inteface class for sending RTP/RTCP data.
-  NetworkInterface *network_interface() { return network_interface_; }
+  // Sets the abstract interface class for sending RTP/RTCP data.
   virtual void SetInterface(NetworkInterface *iface) {
+    talk_base::CritScope cs(&network_interface_crit_);
     network_interface_ = iface;
   }
 
   // Called when a RTP packet is received.
-  virtual void OnPacketReceived(talk_base::Buffer* packet) = 0;
+  virtual void OnPacketReceived(talk_base::Buffer* packet,
+                                const talk_base::PacketTime& packet_time) = 0;
   // Called when a RTCP packet is received.
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) = 0;
+  virtual void OnRtcpReceived(talk_base::Buffer* packet,
+                              const talk_base::PacketTime& packet_time) = 0;
+  // Called when the socket's ability to send has changed.
+  virtual void OnReadyToSend(bool ready) = 0;
   // Creates a new outgoing media stream with SSRCs and CNAME as described
   // by sp.
   virtual bool AddSendStream(const StreamParams& sp) = 0;
@@ -304,11 +595,64 @@ class MediaChannel : public sigslot::has_slots<> {
       const std::vector<RtpHeaderExtension>& extensions) = 0;
   virtual bool SetSendRtpHeaderExtensions(
       const std::vector<RtpHeaderExtension>& extensions) = 0;
-  // Sets the rate control to use when sending data.
-  virtual bool SetSendBandwidth(bool autobw, int bps) = 0;
+  // Returns the absoulte sendtime extension id value from media channel.
+  virtual int GetRtpSendTimeExtnId() const {
+    return -1;
+  }
+  // Sets the initial bandwidth to use when sending starts.
+  virtual bool SetStartSendBandwidth(int bps) = 0;
+  // Sets the maximum allowed bandwidth to use when sending data.
+  virtual bool SetMaxSendBandwidth(int bps) = 0;
+
+  // Base method to send packet using NetworkInterface.
+  bool SendPacket(talk_base::Buffer* packet) {
+    return DoSendPacket(packet, false);
+  }
+
+  bool SendRtcp(talk_base::Buffer* packet) {
+    return DoSendPacket(packet, true);
+  }
+
+  int SetOption(NetworkInterface::SocketType type,
+                talk_base::Socket::Option opt,
+                int option) {
+    talk_base::CritScope cs(&network_interface_crit_);
+    if (!network_interface_)
+      return -1;
+
+    return network_interface_->SetOption(type, opt, option);
+  }
 
  protected:
-  NetworkInterface *network_interface_;
+  // This method sets DSCP |value| on both RTP and RTCP channels.
+  int SetDscp(talk_base::DiffServCodePoint value) {
+    int ret;
+    ret = SetOption(NetworkInterface::ST_RTP,
+                    talk_base::Socket::OPT_DSCP,
+                    value);
+    if (ret == 0) {
+      ret = SetOption(NetworkInterface::ST_RTCP,
+                      talk_base::Socket::OPT_DSCP,
+                      value);
+    }
+    return ret;
+  }
+
+ private:
+  bool DoSendPacket(talk_base::Buffer* packet, bool rtcp) {
+    talk_base::CritScope cs(&network_interface_crit_);
+    if (!network_interface_)
+      return false;
+
+    return (!rtcp) ? network_interface_->SendPacket(packet) :
+                     network_interface_->SendRtcp(packet);
+  }
+
+  // |network_interface_| can be accessed from the worker_thread and
+  // from any MediaEngine threads. This critical section is to protect accessing
+  // of network_interface_ object.
+  talk_base::CriticalSection network_interface_crit_;
+  NetworkInterface* network_interface_;
 };
 
 enum SendFlags {
@@ -317,60 +661,177 @@ enum SendFlags {
   SEND_MICROPHONE
 };
 
-struct VoiceSenderInfo {
-  VoiceSenderInfo()
+// The stats information is structured as follows:
+// Media are represented by either MediaSenderInfo or MediaReceiverInfo.
+// Media contains a vector of SSRC infos that are exclusively used by this
+// media. (SSRCs shared between media streams can't be represented.)
+
+// Information about an SSRC.
+// This data may be locally recorded, or received in an RTCP SR or RR.
+struct SsrcSenderInfo {
+  SsrcSenderInfo()
       : ssrc(0),
-        bytes_sent(0),
+    timestamp(0) {
+  }
+  uint32 ssrc;
+  double timestamp;  // NTP timestamp, represented as seconds since epoch.
+};
+
+struct SsrcReceiverInfo {
+  SsrcReceiverInfo()
+      : ssrc(0),
+        timestamp(0) {
+  }
+  uint32 ssrc;
+  double timestamp;
+};
+
+struct MediaSenderInfo {
+  MediaSenderInfo()
+      : bytes_sent(0),
         packets_sent(0),
         packets_lost(0),
         fraction_lost(0.0),
-        ext_seqnum(0),
-        rtt_ms(0),
-        jitter_ms(0),
-        audio_level(0),
-        echo_delay_median_ms(0),
-        echo_delay_std_ms(0),
-        echo_return_loss(0),
-        echo_return_loss_enhancement(0) {
+        rtt_ms(0) {
   }
-
-  uint32 ssrc;
-  std::string codec_name;
-  int bytes_sent;
+  void add_ssrc(const SsrcSenderInfo& stat) {
+    local_stats.push_back(stat);
+  }
+  // Temporary utility function for call sites that only provide SSRC.
+  // As more info is added into SsrcSenderInfo, this function should go away.
+  void add_ssrc(uint32 ssrc) {
+    SsrcSenderInfo stat;
+    stat.ssrc = ssrc;
+    add_ssrc(stat);
+  }
+  // Utility accessor for clients that are only interested in ssrc numbers.
+  std::vector<uint32> ssrcs() const {
+    std::vector<uint32> retval;
+    for (std::vector<SsrcSenderInfo>::const_iterator it = local_stats.begin();
+         it != local_stats.end(); ++it) {
+      retval.push_back(it->ssrc);
+    }
+    return retval;
+  }
+  // Utility accessor for clients that make the assumption only one ssrc
+  // exists per media.
+  // This will eventually go away.
+  uint32 ssrc() const {
+    if (local_stats.size() > 0) {
+      return local_stats[0].ssrc;
+    } else {
+      return 0;
+    }
+  }
+  int64 bytes_sent;
   int packets_sent;
   int packets_lost;
   float fraction_lost;
-  int ext_seqnum;
   int rtt_ms;
+  std::string codec_name;
+  std::vector<SsrcSenderInfo> local_stats;
+  std::vector<SsrcReceiverInfo> remote_stats;
+};
+
+template<class T>
+struct VariableInfo {
+  VariableInfo()
+      : min_val(),
+        mean(0.0),
+        max_val(),
+        variance(0.0) {
+  }
+  T min_val;
+  double mean;
+  T max_val;
+  double variance;
+};
+
+struct MediaReceiverInfo {
+  MediaReceiverInfo()
+      : bytes_rcvd(0),
+        packets_rcvd(0),
+        packets_lost(0),
+        fraction_lost(0.0) {
+  }
+  void add_ssrc(const SsrcReceiverInfo& stat) {
+    local_stats.push_back(stat);
+  }
+  // Temporary utility function for call sites that only provide SSRC.
+  // As more info is added into SsrcSenderInfo, this function should go away.
+  void add_ssrc(uint32 ssrc) {
+    SsrcReceiverInfo stat;
+    stat.ssrc = ssrc;
+    add_ssrc(stat);
+  }
+  std::vector<uint32> ssrcs() const {
+    std::vector<uint32> retval;
+    for (std::vector<SsrcReceiverInfo>::const_iterator it = local_stats.begin();
+         it != local_stats.end(); ++it) {
+      retval.push_back(it->ssrc);
+    }
+    return retval;
+  }
+  // Utility accessor for clients that make the assumption only one ssrc
+  // exists per media.
+  // This will eventually go away.
+  uint32 ssrc() const {
+    if (local_stats.size() > 0) {
+      return local_stats[0].ssrc;
+    } else {
+      return 0;
+    }
+  }
+
+  int64 bytes_rcvd;
+  int packets_rcvd;
+  int packets_lost;
+  float fraction_lost;
+  std::vector<SsrcReceiverInfo> local_stats;
+  std::vector<SsrcSenderInfo> remote_stats;
+};
+
+struct VoiceSenderInfo : public MediaSenderInfo {
+  VoiceSenderInfo()
+      : ext_seqnum(0),
+        jitter_ms(0),
+        audio_level(0),
+        aec_quality_min(0.0),
+        echo_delay_median_ms(0),
+        echo_delay_std_ms(0),
+        echo_return_loss(0),
+        echo_return_loss_enhancement(0),
+        typing_noise_detected(false) {
+  }
+
+  int ext_seqnum;
   int jitter_ms;
   int audio_level;
+  float aec_quality_min;
   int echo_delay_median_ms;
   int echo_delay_std_ms;
   int echo_return_loss;
   int echo_return_loss_enhancement;
+  bool typing_noise_detected;
 };
 
-struct VoiceReceiverInfo {
+struct VoiceReceiverInfo : public MediaReceiverInfo {
   VoiceReceiverInfo()
-      : ssrc(0),
-        bytes_rcvd(0),
-        packets_rcvd(0),
-        packets_lost(0),
-        fraction_lost(0.0),
-        ext_seqnum(0),
+      : ext_seqnum(0),
         jitter_ms(0),
         jitter_buffer_ms(0),
         jitter_buffer_preferred_ms(0),
         delay_estimate_ms(0),
         audio_level(0),
-        expand_rate(0) {
+        expand_rate(0),
+        decoding_calls_to_silence_generator(0),
+        decoding_calls_to_neteq(0),
+        decoding_normal(0),
+        decoding_plc(0),
+        decoding_cng(0),
+        decoding_plc_cng(0) {
   }
 
-  uint32 ssrc;
-  int bytes_rcvd;
-  int packets_rcvd;
-  int packets_lost;
-  float fraction_lost;
   int ext_seqnum;
   int jitter_ms;
   int jitter_buffer_ms;
@@ -379,101 +840,134 @@ struct VoiceReceiverInfo {
   int audio_level;
   // fraction of synthesized speech inserted through pre-emptive expansion
   float expand_rate;
+  int decoding_calls_to_silence_generator;
+  int decoding_calls_to_neteq;
+  int decoding_normal;
+  int decoding_plc;
+  int decoding_cng;
+  int decoding_plc_cng;
 };
 
-struct VideoSenderInfo {
+struct VideoSenderInfo : public MediaSenderInfo {
   VideoSenderInfo()
-      : bytes_sent(0),
-        packets_sent(0),
-        packets_cached(0),
-        packets_lost(0),
-        fraction_lost(0.0),
+      : packets_cached(0),
         firs_rcvd(0),
+        plis_rcvd(0),
         nacks_rcvd(0),
-        rtt_ms(0),
-        frame_width(0),
-        frame_height(0),
+        input_frame_width(0),
+        input_frame_height(0),
+        send_frame_width(0),
+        send_frame_height(0),
         framerate_input(0),
         framerate_sent(0),
         nominal_bitrate(0),
-        preferred_bitrate(0) {
+        preferred_bitrate(0),
+        adapt_reason(0),
+        capture_jitter_ms(0),
+        avg_encode_ms(0),
+        encode_usage_percent(0),
+        capture_queue_delay_ms_per_s(0) {
   }
 
-  std::vector<uint32> ssrcs;
   std::vector<SsrcGroup> ssrc_groups;
-  std::string codec_name;
-  int bytes_sent;
-  int packets_sent;
   int packets_cached;
-  int packets_lost;
-  float fraction_lost;
   int firs_rcvd;
+  int plis_rcvd;
   int nacks_rcvd;
-  int rtt_ms;
-  int frame_width;
-  int frame_height;
+  int input_frame_width;
+  int input_frame_height;
+  int send_frame_width;
+  int send_frame_height;
   int framerate_input;
   int framerate_sent;
   int nominal_bitrate;
   int preferred_bitrate;
+  int adapt_reason;
+  int capture_jitter_ms;
+  int avg_encode_ms;
+  int encode_usage_percent;
+  int capture_queue_delay_ms_per_s;
+  VariableInfo<int> adapt_frame_drops;
+  VariableInfo<int> effects_frame_drops;
+  VariableInfo<double> capturer_frame_time;
 };
 
-struct VideoReceiverInfo {
+struct VideoReceiverInfo : public MediaReceiverInfo {
   VideoReceiverInfo()
-      : bytes_rcvd(0),
-        packets_rcvd(0),
-        packets_lost(0),
-        packets_concealed(0),
-        fraction_lost(0.0),
+      : packets_concealed(0),
         firs_sent(0),
+        plis_sent(0),
         nacks_sent(0),
         frame_width(0),
         frame_height(0),
         framerate_rcvd(0),
         framerate_decoded(0),
-        framerate_output(0) {
+        framerate_output(0),
+        framerate_render_input(0),
+        framerate_render_output(0),
+        decode_ms(0),
+        max_decode_ms(0),
+        jitter_buffer_ms(0),
+        min_playout_delay_ms(0),
+        render_delay_ms(0),
+        target_delay_ms(0),
+        current_delay_ms(0),
+        capture_start_ntp_time_ms(0) {
   }
 
-  std::vector<uint32> ssrcs;
   std::vector<SsrcGroup> ssrc_groups;
-  int bytes_rcvd;
-  // vector<int> layer_bytes_rcvd;
-  int packets_rcvd;
-  int packets_lost;
   int packets_concealed;
-  float fraction_lost;
   int firs_sent;
+  int plis_sent;
   int nacks_sent;
   int frame_width;
   int frame_height;
   int framerate_rcvd;
   int framerate_decoded;
   int framerate_output;
+  // Framerate as sent to the renderer.
+  int framerate_render_input;
+  // Framerate that the renderer reports.
+  int framerate_render_output;
+
+  // All stats below are gathered per-VideoReceiver, but some will be correlated
+  // across MediaStreamTracks.  NOTE(hta): when sinking stats into per-SSRC
+  // structures, reflect this in the new layout.
+
+  // Current frame decode latency.
+  int decode_ms;
+  // Maximum observed frame decode latency.
+  int max_decode_ms;
+  // Jitter (network-related) latency.
+  int jitter_buffer_ms;
+  // Requested minimum playout latency.
+  int min_playout_delay_ms;
+  // Requested latency to account for rendering delay.
+  int render_delay_ms;
+  // Target overall delay: network+decode+render, accounting for
+  // min_playout_delay_ms.
+  int target_delay_ms;
+  // Current overall delay, possibly ramping towards target_delay_ms.
+  int current_delay_ms;
+
+  // Estimated capture start time in NTP time in ms.
+  int64 capture_start_ntp_time_ms;
 };
 
-struct DataSenderInfo {
+struct DataSenderInfo : public MediaSenderInfo {
   DataSenderInfo()
-      : ssrc(0),
-        bytes_sent(0),
-        packets_sent(0) {
+      : ssrc(0) {
   }
 
   uint32 ssrc;
-  std::string codec_name;
-  int bytes_sent;
-  int packets_sent;
 };
 
-struct DataReceiverInfo {
+struct DataReceiverInfo : public MediaReceiverInfo {
   DataReceiverInfo()
-      : ssrc(0),
-        bytes_rcvd(0),
-        packets_rcvd(0) {
+      : ssrc(0) {
   }
 
   uint32 ssrc;
-  int bytes_rcvd;
-  int packets_rcvd;
 };
 
 struct BandwidthEstimationInfo {
@@ -484,7 +978,8 @@ struct BandwidthEstimationInfo {
         actual_enc_bitrate(0),
         retransmit_bitrate(0),
         transmit_bitrate(0),
-        bucket_delay(0) {
+        bucket_delay(0),
+        total_received_propagation_delta_ms(0) {
   }
 
   int available_send_bandwidth;
@@ -494,6 +989,11 @@ struct BandwidthEstimationInfo {
   int retransmit_bitrate;
   int transmit_bitrate;
   int bucket_delay;
+  // The following stats are only valid when
+  // StatsOptions::include_received_propagation_stats is true.
+  int total_received_propagation_delta_ms;
+  std::vector<int> recent_received_propagation_delta_ms;
+  std::vector<int64> recent_received_packet_group_arrival_time_ms;
 };
 
 struct VoiceMediaInfo {
@@ -523,6 +1023,12 @@ struct DataMediaInfo {
   }
   std::vector<DataSenderInfo> senders;
   std::vector<DataReceiverInfo> receivers;
+};
+
+struct StatsOptions {
+  StatsOptions() : include_received_propagation_stats(false) {}
+
+  bool include_received_propagation_stats;
 };
 
 class VoiceMediaChannel : public MediaChannel {
@@ -558,6 +1064,10 @@ class VoiceMediaChannel : public MediaChannel {
   virtual bool SetPlayout(bool playout) = 0;
   // Starts or stops sending (and potentially capture) of local audio.
   virtual bool SetSend(SendFlags flag) = 0;
+  // Sets the renderer object to be used for the specified remote audio stream.
+  virtual bool SetRemoteRenderer(uint32 ssrc, AudioRenderer* renderer) = 0;
+  // Sets the renderer object to be used for the specified local audio stream.
+  virtual bool SetLocalRenderer(uint32 ssrc, AudioRenderer* renderer) = 0;
   // Gets current energy levels for all incoming streams.
   virtual bool GetActiveStreams(AudioInfo::StreamList* actives) = 0;
   // Get the current energy level of the stream sent to the speaker.
@@ -581,10 +1091,8 @@ class VoiceMediaChannel : public MediaChannel {
   // Send and/or play a DTMF |event| according to the |flags|.
   // The DTMF out-of-band signal will be used on sending.
   // The |ssrc| should be either 0 or a valid send stream ssrc.
-  // The valid value for the |event| are -2 to 15.
-  // kDtmfReset(-2) is used to reset the DTMF.
-  // kDtmfDelay(-1) is used to insert a delay to the end of the DTMF queue.
-  // 0 to 15 which corresponding to DTMF event 0-9, *, #, A-D.
+  // The valid value for the |event| are 0 to 15 which corresponding to
+  // DTMF event 0-9, *, #, A-D.
   virtual bool InsertDtmf(uint32 ssrc, int event, int duration, int flags) = 0;
   // Gets quality stats for the channel.
   virtual bool GetStats(VoiceMediaInfo* info) = 0;
@@ -641,40 +1149,95 @@ class VideoMediaChannel : public MediaChannel {
   // |capturer|. If |ssrc| is non zero create a new stream with |ssrc| as SSRC.
   virtual bool SetCapturer(uint32 ssrc, VideoCapturer* capturer) = 0;
   // Gets quality stats for the channel.
-  virtual bool GetStats(VideoMediaInfo* info) = 0;
+  virtual bool GetStats(const StatsOptions& options, VideoMediaInfo* info) = 0;
+  // This is needed for MediaMonitor to use the same template for voice, video
+  // and data MediaChannels.
+  bool GetStats(VideoMediaInfo* info) {
+    return GetStats(StatsOptions(), info);
+  }
 
   // Send an intra frame to the receivers.
   virtual bool SendIntraFrame() = 0;
   // Reuqest each of the remote senders to send an intra frame.
   virtual bool RequestIntraFrame() = 0;
   // Sets the media options to use.
-  virtual bool SetOptions(int options) { return false; }
-  virtual int GetOptions() const { return 0; }
+  virtual bool SetOptions(const VideoOptions& options) = 0;
+  virtual bool GetOptions(VideoOptions* options) const = 0;
   virtual void UpdateAspectRatio(int ratio_w, int ratio_h) = 0;
 
-  // Signals events from the currently active window.
+  // Signal errors from MediaChannel.  Arguments are:
+  //     ssrc(uint32), and error(VideoMediaChannel::Error).
   sigslot::signal2<uint32, Error> SignalMediaError;
 
  protected:
   VideoRenderer *renderer_;
 };
 
+enum DataMessageType {
+  // Chrome-Internal use only.  See SctpDataMediaChannel for the actual PPID
+  // values.
+  DMT_NONE = 0,
+  DMT_CONTROL = 1,
+  DMT_BINARY = 2,
+  DMT_TEXT = 3,
+};
+
 // Info about data received in DataMediaChannel.  For use in
 // DataMediaChannel::SignalDataReceived and in all of the signals that
 // signal fires, on up the chain.
 struct ReceiveDataParams {
-  // TODO(pthatcher): Should we change this to non-ssrc for non-rtp
-  // data engines?
+  // The in-packet stream indentifier.
+  // For SCTP, this is really SID, not SSRC.
   uint32 ssrc;
+  // The type of message (binary, text, or control).
+  DataMessageType type;
+  // A per-stream value incremented per packet in the stream.
   int seq_num;
+  // A per-stream value monotonically increasing with time.
   int timestamp;
+
+  ReceiveDataParams() :
+      ssrc(0),
+      type(DMT_TEXT),
+      seq_num(0),
+      timestamp(0) {
+  }
 };
 
 struct SendDataParams {
-  // TODO(pthatcher): Should we change this to non-ssrc for non-rtp
-  // data engines?
+  // The in-packet stream indentifier.
+  // For SCTP, this is really SID, not SSRC.
   uint32 ssrc;
+  // The type of message (binary, text, or control).
+  DataMessageType type;
+
+  // For SCTP, whether to send messages flagged as ordered or not.
+  // If false, messages can be received out of order.
+  bool ordered;
+  // For SCTP, whether the messages are sent reliably or not.
+  // If false, messages may be lost.
+  bool reliable;
+  // For SCTP, if reliable == false, provide partial reliability by
+  // resending up to this many times.  Either count or millis
+  // is supported, not both at the same time.
+  int max_rtx_count;
+  // For SCTP, if reliable == false, provide partial reliability by
+  // resending for up to this many milliseconds.  Either count or millis
+  // is supported, not both at the same time.
+  int max_rtx_ms;
+
+  SendDataParams() :
+      ssrc(0),
+      type(DMT_TEXT),
+      // TODO(pthatcher): Make these true by default?
+      ordered(false),
+      reliable(false),
+      max_rtx_count(0),
+      max_rtx_ms(0) {
+  }
 };
+
+enum SendDataResult { SDR_SUCCESS, SDR_ERROR, SDR_BLOCK };
 
 class DataMediaChannel : public MediaChannel {
  public:
@@ -690,28 +1253,20 @@ class DataMediaChannel : public MediaChannel {
 
   virtual ~DataMediaChannel() {}
 
-  virtual bool SetSendBandwidth(bool autobw, int bps) = 0;
   virtual bool SetSendCodecs(const std::vector<DataCodec>& codecs) = 0;
   virtual bool SetRecvCodecs(const std::vector<DataCodec>& codecs) = 0;
-  virtual bool SetRecvRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
-  virtual bool SetSendRtpHeaderExtensions(
-      const std::vector<RtpHeaderExtension>& extensions) = 0;
-  virtual bool AddSendStream(const StreamParams& sp) = 0;
-  virtual bool RemoveSendStream(uint32 ssrc) = 0;
-  virtual bool AddRecvStream(const StreamParams& sp) = 0;
-  virtual bool RemoveRecvStream(uint32 ssrc) = 0;
+
   virtual bool MuteStream(uint32 ssrc, bool on) { return false; }
   // TODO(pthatcher): Implement this.
   virtual bool GetStats(DataMediaInfo* info) { return true; }
 
   virtual bool SetSend(bool send) = 0;
   virtual bool SetReceive(bool receive) = 0;
-  virtual void OnPacketReceived(talk_base::Buffer* packet) = 0;
-  virtual void OnRtcpReceived(talk_base::Buffer* packet) = 0;
 
   virtual bool SendData(
-      const SendDataParams& params, const std::string& data) = 0;
+      const SendDataParams& params,
+      const talk_base::Buffer& payload,
+      SendDataResult* result = NULL) = 0;
   // Signals when data is received (params, data, len)
   sigslot::signal3<const ReceiveDataParams&,
                    const char*,
@@ -719,6 +1274,9 @@ class DataMediaChannel : public MediaChannel {
   // Signal errors from MediaChannel.  Arguments are:
   //     ssrc(uint32), and error(DataMediaChannel::Error).
   sigslot::signal2<uint32, DataMediaChannel::Error> SignalMediaError;
+  // Signal when the media channel is ready to send the stream. Arguments are:
+  //     writable(bool)
+  sigslot::signal1<bool> SignalReadyToSend;
 };
 
 }  // namespace cricket

@@ -1,0 +1,26 @@
+Index: tools/PRESUBMIT.py
+diff --git tools/PRESUBMIT.py tools/PRESUBMIT.py
+old mode 100644
+new mode 100755
+Index: tools/valgrind-webrtc/webrtc_tests.py
+diff --git tools/valgrind-webrtc/webrtc_tests.py tools/valgrind-webrtc/webrtc_tests.py
+index 9a1b580..341483a 100755
+--- tools/valgrind-webrtc/webrtc_tests.py
++++ tools/valgrind-webrtc/webrtc_tests.py
+@@ -6,7 +6,6 @@
+ # tree. An additional intellectual property rights grant can be found
+ # in the file PATENTS.  All contributing project authors may
+ # be found in the AUTHORS file in the root of the source tree.
+-
+ """Runs various WebRTC tests through valgrind_test.py.
+ 
+ This script inherits the chrome_tests.py in Chrome, but allows running any test
+@@ -36,7 +35,7 @@ import logging_utils
+ import path_utils
+ 
+ import chrome_tests
+-
++# Dummy comment
+ 
+ class WebRTCTest(chrome_tests.ChromeTests):
+   """Class that handles setup of suppressions for WebRTC.

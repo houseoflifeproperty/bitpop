@@ -17,9 +17,9 @@
 
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class GURL;
 
@@ -33,7 +33,7 @@ namespace content {
 class AccessTokenStore : public base::RefCountedThreadSafe<AccessTokenStore> {
  public:
   // Map of server URLs to associated access token.
-  typedef std::map<GURL, string16> AccessTokenSet;
+  typedef std::map<GURL, base::string16> AccessTokenSet;
   typedef base::Callback<void(AccessTokenSet, net::URLRequestContextGetter*)>
       LoadAccessTokensCallbackType;
 
@@ -47,7 +47,7 @@ class AccessTokenStore : public base::RefCountedThreadSafe<AccessTokenStore> {
       const LoadAccessTokensCallbackType& callback) = 0;
 
   virtual void SaveAccessToken(
-      const GURL& server_url, const string16& access_token) = 0;
+      const GURL& server_url, const base::string16& access_token) = 0;
 
  protected:
   friend class base::RefCountedThreadSafe<AccessTokenStore>;

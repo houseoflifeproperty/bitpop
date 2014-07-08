@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "ui/gfx/rect.h"
 
 namespace prerender {
@@ -45,9 +45,6 @@ struct Config {
   // link element is removed because of navigation would destroy prerenders just
   // before they were going to be used.
   base::TimeDelta abandon_time_to_live;
-
-  // Is https allowed?
-  bool https_allowed;
 
   // The default tab bounds used as the prerenderer tab size when the active tab
   // cannot be accessed.

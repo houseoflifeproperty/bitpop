@@ -19,7 +19,6 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
-#define NO_DSHOW_STRSAFE
 #include "dshow_capture.h"
 
 #include <stddef.h>
@@ -359,5 +358,5 @@ libAVMemInputPin_Destroy(libAVMemInputPin *this)
 {
     libAVPin *pin = (libAVPin *) ((uint8_t *) this - imemoffset);
     dshowdebug("libAVMemInputPin_Destroy(%p)\n", this);
-    return libAVPin_Destroy(pin);
+    libAVPin_Destroy(pin);
 }

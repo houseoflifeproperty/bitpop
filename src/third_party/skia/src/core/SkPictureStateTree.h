@@ -36,7 +36,7 @@ public:
         SkMatrix* fMatrix;
         Node* fNode;
         uint32_t fOffset;
-        bool operator<(const Draw& other) { return fOffset < other.fOffset; }
+        bool operator<(const Draw& other) const { return fOffset < other.fOffset; }
     };
 
     class Iterator;
@@ -47,7 +47,7 @@ public:
     /**
      * Creates and returns a struct representing a draw at the given offset.
      */
-    Draw* appendDraw(uint32_t offset);
+    Draw* appendDraw(size_t offset);
 
     /**
      * Given a list of draws, and a canvas, returns an iterator that produces the correct sequence
@@ -57,10 +57,17 @@ public:
     Iterator getIterator(const SkTDArray<void*>& draws, SkCanvas* canvas);
 
     void appendSave();
-    void appendSaveLayer(uint32_t offset);
+    void appendSaveLayer(size_t offset);
     void appendRestore();
     void appendTransform(const SkMatrix& trans);
-    void appendClip(uint32_t offset);
+    void appendClip(size_t offset);
+
+    /**
+     * Call this immediately after an appendRestore call that is associated
+     * a save or saveLayer that was removed from the command stream
+     * due to a command pattern optimization in SkPicture.
+     */
+    void saveCollapsed();
 
     /**
      * Playback helper
@@ -68,12 +75,16 @@ public:
     class Iterator {
     public:
         /** Returns the next offset into the picture stream, or kDrawComplete if complete. */
-        uint32_t draw();
+        uint32_t nextDraw();
         static const uint32_t kDrawComplete = SK_MaxU32;
         Iterator() : fPlaybackMatrix(), fValid(false) { }
         bool isValid() const { return fValid; }
+
     private:
         Iterator(const SkTDArray<void*>& draws, SkCanvas* canvas, Node* root);
+
+        void setCurrentMatrix(const SkMatrix*);
+
         // The draws this iterator is associated with
         const SkTDArray<void*>* fDraws;
 
@@ -90,7 +101,7 @@ public:
         const SkMatrix fPlaybackMatrix;
 
         // Cache of current matrix, so we can avoid redundantly setting it
-        SkMatrix* fCurrentMatrix;
+        const SkMatrix* fCurrentMatrix;
 
         // current position in the array of draws
         int fPlaybackIndex;
@@ -105,10 +116,13 @@ public:
 
 private:
 
-    void appendNode(uint32_t offset);
+    void appendNode(size_t offset);
 
     SkChunkAlloc fAlloc;
-    Node* fRoot;
+    // Needed by saveCollapsed() because nodes do not currently store
+    // references to their children.  If they did, we could just retrieve the
+    // last added child.
+    Node* fLastRestoredNode;
 
     // The currently active state
     Draw fCurrentState;
@@ -129,8 +143,10 @@ private:
         };
     };
 
+    Node fRoot;
+    SkMatrix fRootMatrix;
+
     typedef SkRefCnt INHERITED;
 };
 
 #endif
-

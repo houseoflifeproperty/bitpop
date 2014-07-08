@@ -7,18 +7,15 @@
 #import "chrome/browser/ui/cocoa/location_bar/keyword_hint_decoration.h"
 
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "grit/theme_resources.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "grit/generated_resources.h"
+#include "grit/theme_resources.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
 
 namespace {
-
-// How far to inset the hint text area from sides.
-const CGFloat kHintTextYInset = 4.0;
 
 // How far to inset the hint image from sides.  Lines baseline of text
 // in image with baseline of prefix and suffix.
@@ -33,22 +30,19 @@ const CGFloat kHintAvailableRatio = 2.0 / 3.0;
 
 // Helper to convert |s| to an |NSString|, trimming whitespace at
 // ends.
-NSString* TrimAndConvert(const string16& s) {
-  string16 output;
-  TrimWhitespace(s, TRIM_ALL, &output);
+NSString* TrimAndConvert(const base::string16& s) {
+  base::string16 output;
+  base::TrimWhitespace(s, base::TRIM_ALL, &output);
   return base::SysUTF16ToNSString(output);
 }
 
 }  // namespace
 
-KeywordHintDecoration::KeywordHintDecoration(NSFont* font) {
+KeywordHintDecoration::KeywordHintDecoration() {
   NSColor* text_color = [NSColor lightGrayColor];
-  NSDictionary* attributes =
-      [NSDictionary dictionaryWithObjectsAndKeys:
-           font, NSFontAttributeName,
-           text_color, NSForegroundColorAttributeName,
-           nil];
-  attributes_.reset([attributes retain]);
+  attributes_.reset([@{ NSFontAttributeName : GetFont(),
+                        NSForegroundColorAttributeName : text_color
+                      } retain]);
 }
 
 KeywordHintDecoration::~KeywordHintDecoration() {
@@ -57,12 +51,12 @@ KeywordHintDecoration::~KeywordHintDecoration() {
 NSImage* KeywordHintDecoration::GetHintImage() {
   if (!hint_image_) {
     hint_image_.reset(ResourceBundle::GetSharedInstance().
-        GetNativeImageNamed(IDR_LOCATION_BAR_KEYWORD_HINT_TAB).CopyNSImage());
+        GetNativeImageNamed(IDR_OMNIBOX_KEYWORD_HINT_TAB).CopyNSImage());
   }
   return hint_image_;
 }
 
-void KeywordHintDecoration::SetKeyword(const string16& short_name,
+void KeywordHintDecoration::SetKeyword(const base::string16& short_name,
                                        bool is_extension_keyword) {
   // KEYWORD_HINT is a message like "Press [tab] to search <site>".
   // [tab] is a parameter to be replaced by an image.  "<site>" is
@@ -70,9 +64,9 @@ void KeywordHintDecoration::SetKeyword(const string16& short_name,
   std::vector<size_t> content_param_offsets;
   int message_id = is_extension_keyword ?
       IDS_OMNIBOX_EXTENSION_KEYWORD_HINT : IDS_OMNIBOX_KEYWORD_HINT;
-  const string16 keyword_hint(
+  const base::string16 keyword_hint(
       l10n_util::GetStringFUTF16(message_id,
-                                 string16(), short_name,
+                                 base::string16(), short_name,
                                  &content_param_offsets));
 
   // Should always be 2 offsets, see the comment in
@@ -104,9 +98,9 @@ CGFloat KeywordHintDecoration::GetWidthForSpace(CGFloat width) {
   // that any partially-drawn pixels don't look too close (or too
   // far).
   CGFloat full_width =
-      std::floor([hint_prefix_ sizeWithAttributes:attributes_].width + 0.5) +
+      std::floor(GetLabelSize(hint_prefix_, attributes_).width + 0.5) +
       kHintImagePadding + image_width + kHintImagePadding +
-      std::floor([hint_suffix_ sizeWithAttributes:attributes_].width + 0.5);
+      std::floor(GetLabelSize(hint_suffix_, attributes_).width + 0.5);
   if (full_width <= width * kHintAvailableRatio)
     return full_width;
 
@@ -120,11 +114,10 @@ void KeywordHintDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
   const bool draw_full = NSWidth(frame) > image_width;
 
   if (draw_full) {
-    NSRect prefix_rect = NSInsetRect(frame, 0.0, kHintTextYInset);
-    const CGFloat prefix_width =
-        [hint_prefix_ sizeWithAttributes:attributes_].width;
+    NSRect prefix_rect = frame;
+    const CGFloat prefix_width = GetLabelSize(hint_prefix_, attributes_).width;
     DCHECK_GE(NSWidth(prefix_rect), prefix_width);
-    [hint_prefix_ drawInRect:prefix_rect withAttributes:attributes_];
+    DrawLabel(hint_prefix_, attributes_, prefix_rect);
 
     // The image should be drawn at a pixel boundary, round the prefix
     // so that partial pixels aren't oddly close (or distant).
@@ -144,9 +137,8 @@ void KeywordHintDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
   frame.size.width -= NSWidth(image_rect);
 
   if (draw_full) {
-    NSRect suffix_rect = NSInsetRect(frame, 0.0, kHintTextYInset);
-    const CGFloat suffix_width =
-        [hint_suffix_ sizeWithAttributes:attributes_].width;
+    NSRect suffix_rect = frame;
+    const CGFloat suffix_width = GetLabelSize(hint_suffix_, attributes_).width;
 
     // Draw the text kHintImagePadding away from [tab] icon so that
     // equal amount of space is maintained on either side of the icon.
@@ -154,6 +146,6 @@ void KeywordHintDecoration::DrawInFrame(NSRect frame, NSView* control_view) {
     // from [tab] icon in different web pages.
     suffix_rect.origin.x += kHintImagePadding;
     DCHECK_GE(NSWidth(suffix_rect), suffix_width);
-    [hint_suffix_ drawInRect:suffix_rect withAttributes:attributes_];
+    DrawLabel(hint_suffix_, attributes_, suffix_rect);
   }
 }

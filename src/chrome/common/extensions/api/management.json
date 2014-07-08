@@ -5,6 +5,7 @@
 [
   {
     "namespace":"management",
+    "description": "The <code>chrome.management</code> API provides ways to manage the list of extensions/apps that are installed and running. It is particularly useful for extensions that <a href='override.html'>override</a> the built-in New Tab page.",
     "types": [
       {
         "id": "IconInfo",
@@ -28,12 +29,16 @@
             "description": "The name of this extension, app, or theme.",
             "type": "string"
           },
+          "shortName": {
+            "description": "A short version of the name of this extension, app, or theme.",
+            "type": "string"
+          },
           "description": {
             "description": "The description of this extension, app, or theme.",
             "type": "string"
           },
           "version": {
-            "description": "The <a href='manifest.html#version'>version</a> of this extension, app, or theme.",
+            "description": "The <a href='manifest/version.html'>version</a> of this extension, app, or theme.",
             "type": "string"
           },
           "mayDisable": {
@@ -53,7 +58,7 @@
           "isApp": {
             "description": "True if this is an app.",
             "type": "boolean",
-            "nodoc": true
+            "deprecated": "Please use $(ref:management.ExtensionInfo.type)."
           },
           "type": {
             "description": "The type of this extension, app, or theme.",
@@ -84,7 +89,7 @@
             "type": "string"
           },
           "icons": {
-            "description": "A list of icon information. Note that this just reflects what was declared in the manifest, and the actual image at that url may be larger or smaller than what was declared, so you might consider using explicit width and height attributes on img tags referencing these images. See the <a href='manifest.html#icons'>manifest documentation on icons</a> for more details.",
+            "description": "A list of icon information. Note that this just reflects what was declared in the manifest, and the actual image at that url may be larger or smaller than what was declared, so you might consider using explicit width and height attributes on img tags referencing these images. See the <a href='manifest/icons.html'>manifest documentation on icons</a> for more details.",
             "type": "array",
             "optional": true,
             "items": {
@@ -141,12 +146,12 @@
           {
             "name": "id",
             "type": "string",
-            "description": "The ID from an item of $ref:ExtensionInfo."
+            "description": "The ID from an item of $(ref:management.ExtensionInfo)."
           },
           {
             "type": "function",
             "name": "callback",
-            "optional": "true",
+            "optional": true,
             "parameters": [
               {
                 "name": "result",
@@ -167,7 +172,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": [
               {
                 "name": "permissionWarnings",
@@ -190,7 +195,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": [
               {
                 "name": "permissionWarnings",
@@ -208,7 +213,7 @@
           {
             "name": "id",
             "type": "string",
-            "description": "This should be the id from an item of $ref:ExtensionInfo."
+            "description": "This should be the id from an item of $(ref:management.ExtensionInfo)."
           },
           {
             "name": "enabled",
@@ -218,7 +223,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -230,12 +235,12 @@
           {
             "name": "id",
             "type": "string",
-            "description": "This should be the id from an item of $ref:ExtensionInfo."
+            "description": "This should be the id from an item of $(ref:management.ExtensionInfo)."
           },
           {
             "type": "object",
             "name": "options",
-            "optional": "true",
+            "optional": true,
             "properties": {
               "showConfirmDialog": {
                 "type": "boolean",
@@ -247,7 +252,31 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "uninstallSelf",
+        "description": "Uninstalls the calling extension. Note: This function can be used without requesting the 'management' permission in the manifest.",
+        "parameters": [
+          {
+            "type": "object",
+            "name": "options",
+            "optional": true,
+            "properties": {
+              "showConfirmDialog": {
+                "type": "boolean",
+                "optional": true,
+                "description": "Whether or not a confirm-uninstall dialog should prompt the user. Defaults to false."
+              }
+            }
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -264,8 +293,25 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "createAppShortcut",
+        "description": "Display options to create shortcuts for an app. On Mac, only packaged app shortcuts can be created. Note: This function is only available to Chrome users on the dev channel.",
+        "parameters": [
+          {
+            "name": "id",
+            "type": "string",
+            "description": "This should be the id from an app item of $(ref:management.ExtensionInfo)."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
+            "parameters":  []
           }
         ]
       }
@@ -297,7 +343,7 @@
       },
       {
         "name": "onDisabled",
-        "description": "Fired when an app or extension has been disabled",
+        "description": "Fired when an app or extension has been disabled.",
         "type": "function",
         "parameters": [{"name": "info", "$ref":"ExtensionInfo"}]
       }

@@ -18,7 +18,7 @@ The following code shows the supported fields for
 Only the "<em>name</em>" and "message" fields are required.
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 {
   "<a href="#name"><em>name</em></a>": {
     "<a href="#message">message</a>": "<em>Message text, with optional placeholders.</em>",
@@ -43,7 +43,7 @@ that defines three messages
 named "prompt_for_name", "hello", and "bye":
 </p>
 
-<pre>
+<pre data-filename="messages.json">
 {
   "prompt_for_name": {
     "message": "What's your name?",
@@ -182,7 +182,7 @@ For example, use the following code to specify the message
 Although placeholders such as <code>$USER$</code> are
 the preferred way of referring to <em>substitution strings</em>
 (strings specified using the <em>substitutions</em> parameter of
-$ref:i18n.getMessage)
+$(ref:i18n.getMessage))
 you can also refer to substitution strings directly
 within the message.
 For example, the following message
@@ -266,7 +266,7 @@ as a <a href="#name">message name</a>.
 The "content" item's value is a string
 that can refer to substitution strings, which are
 specified using the
-$ref:i18n.getMessage method's
+$(ref:i18n.getMessage) method's
 <em>substitutions</em> parameter.
 The value of a "content" item is typically something like
 "Example.com" or "$1".

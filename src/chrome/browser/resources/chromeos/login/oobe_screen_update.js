@@ -6,55 +6,25 @@
  * @fileoverview Oobe update screen implementation.
  */
 
-cr.define('oobe', function() {
-  /**
-   * Creates a new oobe screen div.
-   * @constructor
-   * @extends {HTMLDivElement}
-   */
-  var UpdateScreen = cr.ui.define('div');
-
-  /** @const */ var ELLIPSIS = ['', '.', '..', '...'];
-  /** @const */ var ELLIPSIS_ANIMATION_TIMEOUT_MS = 1000;
-
-  /**
-   * Registers with Oobe.
-   */
-  UpdateScreen.register = function() {
-    var screen = $('update');
-    UpdateScreen.decorate(screen);
-    Oobe.getInstance().registerScreen(screen);
-  };
-
-  UpdateScreen.prototype = {
-    __proto__: HTMLDivElement.prototype,
-
-    /** @override */
-    decorate: function() {
-    },
-
-    onBeforeShow: function(data) {
-      UpdateScreen.startEllipsisAnimation();
-    },
-
-    onBeforeHide: function() {
-      UpdateScreen.stopEllipsisAnimation();
-    },
+login.createScreen('UpdateScreen', 'update', function() {
+  return {
+    EXTERNAL_API: [
+      'enableUpdateCancel',
+      'setUpdateProgress',
+      'showEstimatedTimeLeft',
+      'setEstimatedTimeLeft',
+      'showProgressMessage',
+      'setProgressMessage',
+      'setUpdateMessage',
+      'showUpdateCurtain'
+    ],
 
     /**
      * Header text of the screen.
      * @type {string}
      */
     get header() {
-      return localStrings.getString('updateScreenTitle');
-    },
-
-    /**
-     * Buttons in oobe wizard's button strip.
-     * @type {array} Array of Buttons.
-     */
-    get buttons() {
-      return null;
+      return loadTimeData.getString('updateScreenTitle');
     },
 
     /**
@@ -65,51 +35,90 @@ cr.define('oobe', function() {
       // builds, since Chrome will just ignore the message in that case.
       var updateCancelHint = $('update-cancel-hint').firstElementChild;
       updateCancelHint.textContent =
-          localStrings.getString('cancelledUpdateMessage');
+          loadTimeData.getString('cancelledUpdateMessage');
       chrome.send('cancelUpdate');
     },
-  };
 
-  var ellipsis_animation_active = false;
+    /**
+     * Makes 'press Escape to cancel update' hint visible.
+     */
+    enableUpdateCancel: function() {
+      $('update-cancel-hint').hidden = false;
+    },
 
-  /**
-   * Updates number of dots in the ellipsis.
-   *
-   * @private
-   * @param {number} count Number of dots that should be shown.
-   */
-  function updateEllipsisAnimation_(count) {
-    $('update-checking-ellipsis').textContent = ELLIPSIS[count];
-    if (ellipsis_animation_active) {
-      window.setTimeout(function() {
-          updateEllipsisAnimation_((count + 1) % ELLIPSIS.length);
-        }, ELLIPSIS_ANIMATION_TIMEOUT_MS);
+    /**
+     * Sets update's progress bar value.
+     * @param {number} progress Percentage of the progress bar.
+     */
+    setUpdateProgress: function(progress) {
+      $('update-progress-bar').value = progress;
+    },
+
+    /**
+     * Shows or hides downloading ETA message.
+     * @param {boolean} visible Are ETA message visible?
+     */
+    showEstimatedTimeLeft: function(visible) {
+      $('progress-message').hidden = visible;
+      $('estimated-time-left').hidden = !visible;
+    },
+
+    /**
+     * Sets estimated time left until download will complete.
+     * @param {number} seconds Time left in seconds.
+     */
+    setEstimatedTimeLeft: function(seconds) {
+      var minutes = Math.ceil(seconds / 60);
+      var message = '';
+      if (minutes > 60) {
+        message = loadTimeData.getString('downloadingTimeLeftLong');
+      } else if (minutes > 55) {
+        message = loadTimeData.getString('downloadingTimeLeftStatusOneHour');
+      } else if (minutes > 20) {
+        message = loadTimeData.getStringF('downloadingTimeLeftStatusMinutes',
+                                          Math.ceil(minutes / 5) * 5);
+      } else if (minutes > 1) {
+        message = loadTimeData.getStringF('downloadingTimeLeftStatusMinutes',
+                                          minutes);
+      } else {
+        message = loadTimeData.getString('downloadingTimeLeftSmall');
+      }
+      $('estimated-time-left').textContent =
+        loadTimeData.getStringF('downloading', message);
+    },
+
+    /**
+     * Shows or hides info message below progress bar.
+     * @param {boolean} visible Are message visible?
+     */
+    showProgressMessage: function(visible) {
+      $('estimated-time-left').hidden = visible;
+      $('progress-message').hidden = !visible;
+    },
+
+    /**
+     * Sets message below progress bar.
+     * @param {string} message Message that should be shown.
+     */
+    setProgressMessage: function(message) {
+      $('progress-message').innerText = message;
+    },
+
+    /**
+     * Sets update message, which is shown above the progress bar.
+     * @param {text} message Message which is shown by the label.
+     */
+    setUpdateMessage: function(message) {
+      $('update-upper-label').textContent = message;
+    },
+
+    /**
+     * Shows or hides update curtain.
+     * @param {boolean} visible Are curtains visible?
+     */
+    showUpdateCurtain: function(visible) {
+      $('update-screen-curtain').hidden = !visible;
+      $('update-screen-main').hidden = visible;
     }
-  };
-
-  /**
-   * Makes 'press Escape to cancel update' hint visible.
-   */
-  UpdateScreen.enableUpdateCancel = function() {
-    $('update-cancel-hint').hidden = false;
-  };
-
-  /**
-   * Starts animation for tail ellipses in "Checking for update..." label.
-   */
-  UpdateScreen.startEllipsisAnimation = function() {
-    ellipsis_animation_active = true;
-    updateEllipsisAnimation_(0);
-  };
-
-  /**
-   * Stops animation for tail ellipses in "Checking for update..." label.
-   */
-  UpdateScreen.stopEllipsisAnimation = function() {
-    ellipsis_animation_active = false;
-  };
-
-  return {
-    UpdateScreen: UpdateScreen
   };
 });

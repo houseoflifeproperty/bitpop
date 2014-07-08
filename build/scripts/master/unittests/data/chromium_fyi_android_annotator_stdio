@@ -1512,7 +1512,7 @@ BUILD SUCCESSFUL
 Total time: 14 seconds
 WARNING:root:None
 WARNING:root:COMPLETE.
-[103/107] STAMP obj/third_party/WebKit/Source/WebKit/chromium/all_webkit.actions_depends.stamp
+[103/107] STAMP obj/third_party/WebKit/Source/WebKit/chromium/blink_tests.actions_depends.stamp
 [104/106] ACTION Building unit_tests test apk.
 WARNING:root:root name: unit_tests
 WARNING:root:rsync ['AndroidManifest.xml', 'native_test_apk.xml', 'res', 'java'] --> /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug/unit_tests_apk
@@ -1662,7 +1662,7 @@ Full Staging in /mnt/data/b/build/slave/Android_Builder__dbg_/chrome_staging
 Build Directory /mnt/data/b/build/slave/Android_Builder__dbg_/build/src/out/Debug
 Zip rules
   Inclusions: []
-  Exclusions: ['lib.target', 'gen', 'android_webview', 'jingle_unittests', 'appcache', 'glue', 'googleurl', 'lib', 'lib.host', 'obj', 'obj.host', 'obj.target', 'src', '.deps', '.sconsign.dblite', 'mksnapshot']
+  Exclusions: ['lib.target', 'gen', 'android_webview', 'jingle_unittests', 'appcache', 'glue', 'url_unittests', 'lib', 'lib.host', 'obj', 'obj.host', 'obj.target', 'src', '.deps', '.sconsign.dblite', 'mksnapshot']
   Whitelist regex: '$NO_FILTER^'
   Blacklist regex: '^.+\.(o|a|d)$'
 

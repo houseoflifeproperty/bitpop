@@ -8,7 +8,7 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "voice_engine/test/auto_test/fixtures/after_streaming_fixture.h"
+#include "webrtc/voice_engine/test/auto_test/fixtures/after_streaming_fixture.h"
 
 class NetEQStatsTest : public AfterStreamingFixture {
 };
@@ -49,4 +49,7 @@ TEST_F(NetEQStatsTest, ManualPrintStatisticsAfterRunningAWhile) {
       network_statistics.minWaitingTimeMs);
   TEST_LOG("    maxWaitingTimeMs          = %i \n",
       network_statistics.maxWaitingTimeMs);
+
+  // This is only set to a non-zero value in off-mode.
+  EXPECT_EQ(0, network_statistics.addedSamples);
 }

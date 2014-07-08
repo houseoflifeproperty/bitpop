@@ -5,12 +5,13 @@
 #include "chrome/browser/net/proxy_service_factory.h"
 
 #include "base/command_line.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/threading/thread.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/io_thread.h"
-#include "chrome/browser/net/pref_proxy_config_tracker.h"
+#include "chrome/browser/net/pref_proxy_config_tracker_impl.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "net/base/net_log.h"
 #include "net/proxy/dhcp_proxy_script_fetcher_factory.h"
@@ -22,18 +23,23 @@
 
 #if defined(OS_CHROMEOS)
 #include "chrome/browser/chromeos/proxy_config_service_impl.h"
+#include "chromeos/network/dhcp_proxy_script_fetcher_chromeos.h"
 #endif  // defined(OS_CHROMEOS)
+
+#if !defined(OS_IOS)
+#include "net/proxy/proxy_resolver_v8.h"
+#endif
 
 using content::BrowserThread;
 
 // static
-ChromeProxyConfigService* ProxyServiceFactory::CreateProxyConfigService(
-    bool wait_for_first_update) {
+net::ProxyConfigService* ProxyServiceFactory::CreateProxyConfigService(
+    PrefProxyConfigTracker* tracker) {
   // The linux gconf-based proxy settings getter relies on being initialized
   // from the UI thread.
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 
-  net::ProxyConfigService* base_service = NULL;
+  scoped_ptr<net::ProxyConfigService> base_service;
 
 #if !defined(OS_CHROMEOS)
   // On ChromeOS, base service is NULL; chromeos::ProxyConfigServiceImpl
@@ -47,35 +53,46 @@ ChromeProxyConfigService* ProxyServiceFactory::CreateProxyConfigService(
   // TODO(port): the IO and FILE message loops are only used by Linux.  Can
   // that code be moved to chrome/browser instead of being in net, so that it
   // can use BrowserThread instead of raw MessageLoop pointers? See bug 25354.
-  base_service = net::ProxyService::CreateSystemProxyConfigService(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
-      BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE));
+  base_service.reset(net::ProxyService::CreateSystemProxyConfigService(
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
+      BrowserThread::UnsafeGetMessageLoopForThread(BrowserThread::FILE)));
 #endif  // !defined(OS_CHROMEOS)
 
-  return new ChromeProxyConfigService(base_service, wait_for_first_update);
+  return tracker->CreateTrackingProxyConfigService(base_service.Pass())
+      .release();
 }
 
+// static
+PrefProxyConfigTracker*
+ProxyServiceFactory::CreatePrefProxyConfigTrackerOfProfile(
+    PrefService* profile_prefs,
+    PrefService* local_state_prefs) {
 #if defined(OS_CHROMEOS)
-// static
-chromeos::ProxyConfigServiceImpl*
-    ProxyServiceFactory::CreatePrefProxyConfigTracker(
-        PrefService* pref_service) {
-  return new chromeos::ProxyConfigServiceImpl(pref_service);
-}
+  return new chromeos::ProxyConfigServiceImpl(profile_prefs, local_state_prefs);
 #else
-// static
-PrefProxyConfigTrackerImpl* ProxyServiceFactory::CreatePrefProxyConfigTracker(
-    PrefService* pref_service) {
-  return new PrefProxyConfigTrackerImpl(pref_service);
-}
+  return new PrefProxyConfigTrackerImpl(profile_prefs);
 #endif  // defined(OS_CHROMEOS)
+}
+
+// static
+PrefProxyConfigTracker*
+ProxyServiceFactory::CreatePrefProxyConfigTrackerOfLocalState(
+    PrefService* local_state_prefs) {
+#if defined(OS_CHROMEOS)
+  return new chromeos::ProxyConfigServiceImpl(NULL, local_state_prefs);
+#else
+  return new PrefProxyConfigTrackerImpl(local_state_prefs);
+#endif  // defined(OS_CHROMEOS)
+}
 
 // static
 net::ProxyService* ProxyServiceFactory::CreateProxyService(
     net::NetLog* net_log,
     net::URLRequestContext* context,
+    net::NetworkDelegate* network_delegate,
     net::ProxyConfigService* proxy_config_service,
-    const CommandLine& command_line) {
+    const CommandLine& command_line,
+    bool quick_check_enabled) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
 #if defined(OS_IOS)
@@ -106,24 +123,29 @@ net::ProxyService* ProxyServiceFactory::CreateProxyService(
     }
   }
 
-  net::ProxyService* proxy_service;
+  net::ProxyService* proxy_service = NULL;
   if (use_v8) {
 #if defined(OS_IOS)
     NOTREACHED();
 #else
+    net::ProxyResolverV8::EnsureIsolateCreated();
+
+    net::DhcpProxyScriptFetcher* dhcp_proxy_script_fetcher;
+#if defined(OS_CHROMEOS)
+    dhcp_proxy_script_fetcher =
+        new chromeos::DhcpProxyScriptFetcherChromeos(context);
+#else
     net::DhcpProxyScriptFetcherFactory dhcp_factory;
-    if (command_line.HasSwitch(switches::kDisableDhcpWpad)) {
-      dhcp_factory.set_enabled(false);
-    }
+    dhcp_proxy_script_fetcher = dhcp_factory.Create(context);
+#endif
 
     proxy_service = net::CreateProxyServiceUsingV8ProxyResolver(
         proxy_config_service,
-        num_pac_threads,
         new net::ProxyScriptFetcherImpl(context),
-        dhcp_factory.Create(context),
+        dhcp_proxy_script_fetcher,
         context->host_resolver(),
         net_log,
-        context->network_delegate());
+        network_delegate);
 #endif  // defined(OS_IOS)
   } else {
     proxy_service = net::ProxyService::CreateUsingSystemProxyResolver(
@@ -131,6 +153,8 @@ net::ProxyService* ProxyServiceFactory::CreateProxyService(
         num_pac_threads,
         net_log);
   }
+
+  proxy_service->set_quick_check_enabled(quick_check_enabled);
 
   return proxy_service;
 }

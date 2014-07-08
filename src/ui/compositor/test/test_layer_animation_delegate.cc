@@ -63,8 +63,7 @@ const gfx::Rect& TestLayerAnimationDelegate::GetBoundsForAnimation() const {
   return bounds_;
 }
 
-const gfx::Transform&
-TestLayerAnimationDelegate::GetTransformForAnimation() const {
+gfx::Transform TestLayerAnimationDelegate::GetTransformForAnimation() const {
   return transform_;
 }
 
@@ -86,6 +85,17 @@ float TestLayerAnimationDelegate::GetGrayscaleForAnimation() const {
 
 SkColor TestLayerAnimationDelegate::GetColorForAnimation() const {
   return color_;
+}
+
+float TestLayerAnimationDelegate::GetDeviceScaleFactor() const {
+  return 1.0f;
+}
+
+void TestLayerAnimationDelegate::AddThreadedAnimation(
+      scoped_ptr<cc::Animation> animation) {
+}
+
+void TestLayerAnimationDelegate::RemoveThreadedAnimation(int animation_id) {
 }
 
 }  // namespace ui

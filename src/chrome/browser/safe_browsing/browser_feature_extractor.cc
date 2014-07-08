@@ -11,22 +11,23 @@
 #include "base/bind_helpers.h"
 #include "base/format_macros.h"
 #include "base/stl_util.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
 #include "chrome/browser/common/cancelable_request.h"
-#include "chrome/browser/history/history.h"
+#include "chrome/browser/history/history_service.h"
 #include "chrome/browser/history/history_service_factory.h"
 #include "chrome/browser/history/history_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/safe_browsing/browser_features.h"
-#include "chrome/browser/safe_browsing/client_side_detection_service.h"
+#include "chrome/browser/safe_browsing/client_side_detection_host.h"
+#include "chrome/browser/safe_browsing/database_manager.h"
 #include "chrome/common/safe_browsing/csd.pb.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 using content::NavigationController;
@@ -34,6 +35,38 @@ using content::NavigationEntry;
 using content::WebContents;
 
 namespace safe_browsing {
+
+namespace {
+
+const int kMaxMalwareIPPerRequest = 5;
+
+void FilterBenignIpsOnIOThread(
+    scoped_refptr<SafeBrowsingDatabaseManager> database_manager,
+    IPUrlMap* ips) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  for (IPUrlMap::iterator it = ips->begin(); it != ips->end();) {
+    if (!database_manager.get() ||
+        !database_manager->MatchMalwareIP(it->first)) {
+      // it++ here returns a copy of the old iterator and passes it to erase.
+      ips->erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
+}  // namespace
+
+IPUrlInfo::IPUrlInfo(const std::string& url,
+                     const std::string& method,
+                     const std::string& referrer,
+                     const ResourceType::Type& resource_type)
+      : url(url),
+        method(method),
+        referrer(referrer),
+        resource_type(resource_type) {
+}
+
+IPUrlInfo::~IPUrlInfo() {}
 
 BrowseInfo::BrowseInfo() : http_status_code(0) {}
 
@@ -50,6 +83,24 @@ static void AddFeature(const std::string& feature_name,
   VLOG(2) << "Browser feature: " << feature->name() << " " << feature->value();
 }
 
+static void AddMalwareIpUrlInfo(const std::string& ip,
+                                const std::vector<IPUrlInfo>& meta_infos,
+                                ClientMalwareRequest* request) {
+  DCHECK(request);
+  for (std::vector<IPUrlInfo>::const_iterator it = meta_infos.begin();
+       it != meta_infos.end(); ++it) {
+    ClientMalwareRequest::UrlInfo* urlinfo =
+        request->add_bad_ip_url_info();
+    // We add the information about url on the bad ip.
+    urlinfo->set_ip(ip);
+    urlinfo->set_url(it->url);
+    urlinfo->set_method(it->method);
+    urlinfo->set_referrer(it->referrer);
+    urlinfo->set_resource_type(static_cast<int>(it->resource_type));
+  }
+  DVLOG(2) << "Added url info for bad ip: " << ip;
+}
+
 static void AddNavigationFeatures(
     const std::string& feature_prefix,
     const NavigationController& controller,
@@ -59,10 +110,10 @@ static void AddNavigationFeatures(
   NavigationEntry* entry = controller.GetEntryAtIndex(index);
   bool is_secure_referrer = entry->GetReferrer().url.SchemeIsSecure();
   if (!is_secure_referrer) {
-    AddFeature(StringPrintf("%s%s=%s",
-                            feature_prefix.c_str(),
-                            features::kReferrer,
-                            entry->GetReferrer().url.spec().c_str()),
+    AddFeature(base::StringPrintf("%s%s=%s",
+                                  feature_prefix.c_str(),
+                                  features::kReferrer,
+                                  entry->GetReferrer().url.spec().c_str()),
                1.0,
                request);
   }
@@ -102,11 +153,11 @@ static void AddNavigationFeatures(
     if (redirect_chain[i].SchemeIsSecure()) {
       printable_redirect = features::kSecureRedirectValue;
     }
-    AddFeature(StringPrintf("%s%s[%"PRIuS"]=%s",
-                            feature_prefix.c_str(),
-                            features::kRedirect,
-                            i,
-                            printable_redirect.c_str()),
+    AddFeature(base::StringPrintf("%s%s[%" PRIuS "]=%s",
+                                  feature_prefix.c_str(),
+                                  features::kRedirect,
+                                  i,
+                                  printable_redirect.c_str()),
                1.0,
                request);
   }
@@ -114,10 +165,10 @@ static void AddNavigationFeatures(
 
 BrowserFeatureExtractor::BrowserFeatureExtractor(
     WebContents* tab,
-    ClientSideDetectionService* service)
+    ClientSideDetectionHost* host)
     : tab_(tab),
-      service_(service),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      host_(host),
+      weak_factory_(this) {
   DCHECK(tab);
 }
 
@@ -151,11 +202,6 @@ void BrowserFeatureExtractor::ExtractFeatures(const BrowseInfo* info,
   DCHECK(info);
   DCHECK_EQ(0U, request->url().find("http:"));
   DCHECK(!callback.is_null());
-  if (callback.is_null()) {
-    DLOG(ERROR) << "ExtractFeatures called without a callback object";
-    return;
-  }
-
   // Extract features pertaining to this navigation.
   const NavigationController& controller = tab_->GetController();
   int url_index = -1;
@@ -192,8 +238,8 @@ void BrowserFeatureExtractor::ExtractFeatures(const BrowseInfo* info,
   //   2) The first url on the same host as the candidate url (assuming that
   //      it's different from the candidate url).
   if (url_index != -1) {
-    AddNavigationFeatures("", controller, url_index, info->url_redirects,
-                          request);
+    AddNavigationFeatures(
+        std::string(), controller, url_index, info->url_redirects, request);
   }
   if (first_host_index != -1) {
     AddNavigationFeatures(features::kHostPrefix,
@@ -205,23 +251,45 @@ void BrowserFeatureExtractor::ExtractFeatures(const BrowseInfo* info,
 
   ExtractBrowseInfoFeatures(*info, request);
   pending_extractions_[request] = callback;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&BrowserFeatureExtractor::StartExtractFeatures,
                  weak_factory_.GetWeakPtr(), request, callback));
 }
 
+void BrowserFeatureExtractor::ExtractMalwareFeatures(
+    BrowseInfo* info,
+    ClientMalwareRequest* request,
+    const MalwareDoneCallback& callback) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK(!callback.is_null());
+
+  // Grab the IPs because they might go away before we're done
+  // checking them against the IP blacklist on the IO thread.
+  scoped_ptr<IPUrlMap> ips(new IPUrlMap);
+  ips->swap(info->ips);
+
+  IPUrlMap* ips_ptr = ips.get();
+
+  // The API doesn't take a scoped_ptr because the API gets mocked and we
+  // cannot mock an API that takes scoped_ptr as arguments.
+  scoped_ptr<ClientMalwareRequest> req(request);
+
+  // IP blacklist lookups have to happen on the IO thread.
+  BrowserThread::PostTaskAndReply(
+      BrowserThread::IO,
+      FROM_HERE,
+      base::Bind(&FilterBenignIpsOnIOThread,
+                 host_->database_manager(),
+                 ips_ptr),
+      base::Bind(&BrowserFeatureExtractor::FinishExtractMalwareFeatures,
+                 weak_factory_.GetWeakPtr(),
+                 base::Passed(&ips), callback, base::Passed(&req)));
+}
+
 void BrowserFeatureExtractor::ExtractBrowseInfoFeatures(
     const BrowseInfo& info,
     ClientPhishingRequest* request) {
-  if (service_) {
-    for (std::set<std::string>::const_iterator it = info.ips.begin();
-         it != info.ips.end(); ++it) {
-      if (service_->IsBadIpAddress(*it)) {
-        AddFeature(features::kBadIpFetch + *it, 1.0, request);
-      }
-    }
-  }
   if (info.unsafe_resource.get()) {
     // A SafeBrowsing interstitial was shown for the current URL.
     AddFeature(features::kSafeBrowsingMaliciousUrl +
@@ -449,6 +517,25 @@ bool BrowserFeatureExtractor::GetHistoryService(HistoryService** history) {
   }
   VLOG(2) << "Unable to query history.  No history service available.";
   return false;
+}
+
+void BrowserFeatureExtractor::FinishExtractMalwareFeatures(
+    scoped_ptr<IPUrlMap> bad_ips,
+    MalwareDoneCallback callback,
+    scoped_ptr<ClientMalwareRequest> request) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  int matched_bad_ips = 0;
+  for (IPUrlMap::const_iterator it = bad_ips->begin();
+       it != bad_ips->end(); ++it) {
+    AddMalwareIpUrlInfo(it->first, it->second, request.get());
+    ++matched_bad_ips;
+    // Limit the number of matched bad IPs in one request to control
+    // the request's size
+    if (matched_bad_ips >= kMaxMalwareIPPerRequest) {
+      break;
+    }
+  }
+  callback.Run(true, request.Pass());
 }
 
 }  // namespace safe_browsing

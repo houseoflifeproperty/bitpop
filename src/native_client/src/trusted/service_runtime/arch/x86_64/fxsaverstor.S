@@ -12,10 +12,10 @@
 
         .text
 
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(DoFxsave):
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClDoFxsave):
         fxsave (%rcx)
         ret
 
-DEFINE_GLOBAL_HIDDEN_IDENTIFIER(DoFxrstor):
+DEFINE_GLOBAL_HIDDEN_FUNCTION(NaClDoFxrstor):
         fxrstor (%rcx)
         ret

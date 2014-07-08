@@ -30,21 +30,20 @@ struct RTPMuxContext {
     AVStream *st;
     int payload_type;
     uint32_t ssrc;
-    uint16_t seq;
+    const char *cname;
+    int seq;
     uint32_t timestamp;
     uint32_t base_timestamp;
     uint32_t cur_timestamp;
     int max_payload_size;
     int num_frames;
 
-    /* rtcp sender statistics receive */
-    int64_t last_rtcp_ntp_time;    // TODO: move into statistics
-    int64_t first_rtcp_ntp_time;   // TODO: move into statistics
-
     /* rtcp sender statistics */
-    unsigned int packet_count;     // TODO: move into statistics (outgoing)
-    unsigned int octet_count;      // TODO: move into statistics (outgoing)
-    unsigned int last_octet_count; // TODO: move into statistics (outgoing)
+    int64_t last_rtcp_ntp_time;
+    int64_t first_rtcp_ntp_time;
+    unsigned int packet_count;
+    unsigned int octet_count;
+    unsigned int last_octet_count;
     int first_packet;
     /* buffer for output */
     uint8_t *buf;
@@ -59,6 +58,8 @@ struct RTPMuxContext {
     int nal_length_size;
 
     int flags;
+
+    unsigned int frame_count;
 };
 
 typedef struct RTPMuxContext RTPMuxContext;
@@ -67,13 +68,15 @@ typedef struct RTPMuxContext RTPMuxContext;
 #define FF_RTP_FLAG_RFC2190   2
 #define FF_RTP_FLAG_SKIP_RTCP 4
 #define FF_RTP_FLAG_H264_MODE0 8
+#define FF_RTP_FLAG_SEND_BYE  16
 
 #define FF_RTP_FLAG_OPTS(ctx, fieldname) \
     { "rtpflags", "RTP muxer flags", offsetof(ctx, fieldname), AV_OPT_TYPE_FLAGS, {.i64 = 0}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" }, \
     { "latm", "Use MP4A-LATM packetization instead of MPEG4-GENERIC for AAC", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_MP4A_LATM}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" }, \
     { "rfc2190", "Use RFC 2190 packetization instead of RFC 4629 for H.263", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_RFC2190}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" }, \
     { "skip_rtcp", "Don't send RTCP sender reports", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_SKIP_RTCP}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" }, \
-    { "h264_mode0", "Use mode 0 for H264 in RTP", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_H264_MODE0}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" } \
+    { "h264_mode0", "Use mode 0 for H264 in RTP", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_H264_MODE0}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" }, \
+    { "send_bye", "Send RTCP BYE packets when finishing", 0, AV_OPT_TYPE_CONST, {.i64 = FF_RTP_FLAG_SEND_BYE}, INT_MIN, INT_MAX, AV_OPT_FLAG_ENCODING_PARAM, "rtpflags" } \
 
 void ff_rtp_send_data(AVFormatContext *s1, const uint8_t *buf1, int len, int m);
 

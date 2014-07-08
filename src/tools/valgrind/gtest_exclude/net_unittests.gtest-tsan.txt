@@ -22,3 +22,6 @@ URLRequestTest.FileTest
 
 # http://crbug.com/92439
 ServerBoundCertServiceTest.*
+
+# Flaky, see http://crbug.com/259781
+EmbeddedTestServerTest.*

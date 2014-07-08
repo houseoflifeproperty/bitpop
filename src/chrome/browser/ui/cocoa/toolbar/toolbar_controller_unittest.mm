@@ -4,17 +4,19 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/command_updater.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_command_controller.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/gradient_button_cell.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #import "chrome/browser/ui/cocoa/view_resizer_pong.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
+#include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/platform_test.h"
 
@@ -61,11 +63,11 @@ class ToolbarControllerTest : public CocoaProfileTest {
     updater->UpdateCommandEnabled(IDC_FORWARD, false);
     resizeDelegate_.reset([[ViewResizerPong alloc] init]);
     bar_.reset(
-        [[ToolbarController alloc] initWithModel:browser()->toolbar_model()
-                                        commands:browser()->command_controller()->command_updater()
-                                         profile:profile()
-                                         browser:browser()
-                                  resizeDelegate:resizeDelegate_.get()]);
+        [[ToolbarController alloc]
+            initWithCommands:browser()->command_controller()->command_updater()
+                     profile:profile()
+                     browser:browser()
+              resizeDelegate:resizeDelegate_.get()]);
     EXPECT_TRUE([bar_ view]);
     NSView* parent = [test_window() contentView];
     [parent addSubview:[bar_ view]];
@@ -89,8 +91,8 @@ class ToolbarControllerTest : public CocoaProfileTest {
               [[views objectAtIndex:kHomeIndex] isEnabled] ? true : false);
   }
 
-  scoped_nsobject<ViewResizerPong> resizeDelegate_;
-  scoped_nsobject<ToolbarController> bar_;
+  base::scoped_nsobject<ViewResizerPong> resizeDelegate_;
+  base::scoped_nsobject<ToolbarController> bar_;
 };
 
 TEST_VIEW(ToolbarControllerTest, [bar_ view])
@@ -214,9 +216,16 @@ TEST_F(ToolbarControllerTest, BookmarkBubblePoint) {
   EXPECT_TRUE(NSPointInRect(starPoint, barFrame));
 }
 
+TEST_F(ToolbarControllerTest, TranslateBubblePoint) {
+  const NSPoint translatePoint = [bar_ translateBubblePoint];
+  const NSRect barFrame =
+      [[bar_ view] convertRect:[[bar_ view] bounds] toView:nil];
+  EXPECT_TRUE(NSPointInRect(translatePoint, barFrame));
+}
+
 TEST_F(ToolbarControllerTest, HoverButtonForEvent) {
-  scoped_nsobject<HitView> view([[HitView alloc]
-                                  initWithFrame:NSMakeRect(0,0,100,100)]);
+  base::scoped_nsobject<HitView> view(
+      [[HitView alloc] initWithFrame:NSMakeRect(0, 0, 100, 100)]);
   [bar_ setView:view];
   NSEvent* event = [NSEvent mouseEventWithType:NSMouseMoved
                                       location:NSMakePoint(10,10)
@@ -233,12 +242,13 @@ TEST_F(ToolbarControllerTest, HoverButtonForEvent) {
   EXPECT_FALSE([bar_ hoverButtonForEvent:event]);
 
   // Not yet...
-  scoped_nsobject<NSButton> button([[NSButton alloc] init]);
+  base::scoped_nsobject<NSButton> button([[NSButton alloc] init]);
   [view setHitTestReturn:button];
   EXPECT_FALSE([bar_ hoverButtonForEvent:event]);
 
   // Now!
-  scoped_nsobject<GradientButtonCell> cell([[GradientButtonCell alloc] init]);
+  base::scoped_nsobject<GradientButtonCell> cell(
+      [[GradientButtonCell alloc] init]);
   [button setCell:cell.get()];
   EXPECT_TRUE([bar_ hoverButtonForEvent:nil]);
 }

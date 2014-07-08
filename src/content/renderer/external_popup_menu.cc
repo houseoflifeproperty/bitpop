@@ -5,29 +5,47 @@
 #include "content/renderer/external_popup_menu.h"
 
 #include "content/common/view_messages.h"
+#include "content/renderer/menu_item_builder.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebExternalPopupMenuClient.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebRect.h"
+#include "third_party/WebKit/public/platform/WebRect.h"
+#include "third_party/WebKit/public/web/WebExternalPopupMenuClient.h"
 
 namespace content {
 
 ExternalPopupMenu::ExternalPopupMenu(
     RenderViewImpl* render_view,
-    const WebKit::WebPopupMenuInfo& popup_menu_info,
-    WebKit::WebExternalPopupMenuClient* popup_menu_client)
+    const blink::WebPopupMenuInfo& popup_menu_info,
+    blink::WebExternalPopupMenuClient* popup_menu_client)
     : render_view_(render_view),
       popup_menu_info_(popup_menu_info),
-      popup_menu_client_(popup_menu_client) {
+      popup_menu_client_(popup_menu_client),
+      origin_scale_for_emulation_(0) {
 }
 
-void ExternalPopupMenu::show(const WebKit::WebRect& bounds) {
+void ExternalPopupMenu::SetOriginScaleAndOffsetForEmulation(
+    float scale, const gfx::Point& offset) {
+  origin_scale_for_emulation_ = scale;
+  origin_offset_for_emulation_ = offset;
+}
+
+void ExternalPopupMenu::show(const blink::WebRect& bounds) {
+  blink::WebRect rect = bounds;
+  if (origin_scale_for_emulation_) {
+    rect.x *= origin_scale_for_emulation_;
+    rect.y *= origin_scale_for_emulation_;
+  }
+  rect.x += origin_offset_for_emulation_.x();
+  rect.y += origin_offset_for_emulation_.y();
+
   ViewHostMsg_ShowPopup_Params popup_params;
-  popup_params.bounds = bounds;
+  popup_params.bounds = rect;
   popup_params.item_height = popup_menu_info_.itemHeight;
   popup_params.item_font_size = popup_menu_info_.itemFontSize;
   popup_params.selected_item = popup_menu_info_.selectedIndex;
-  for (size_t i = 0; i < popup_menu_info_.items.size(); ++i)
-    popup_params.popup_items.push_back(WebMenuItem(popup_menu_info_.items[i]));
+  for (size_t i = 0; i < popup_menu_info_.items.size(); ++i) {
+    popup_params.popup_items.push_back(
+        MenuItemBuilder::Build(popup_menu_info_.items[i]));
+  }
   popup_params.right_aligned = popup_menu_info_.rightAligned;
   popup_params.allow_multiple_selection =
       popup_menu_info_.allowMultipleSelection;
@@ -36,8 +54,9 @@ void ExternalPopupMenu::show(const WebKit::WebRect& bounds) {
 }
 
 void ExternalPopupMenu::close()  {
-  popup_menu_client_ = NULL;
-  render_view_ = NULL;
+  render_view_->Send(new ViewHostMsg_HidePopup(render_view_->routing_id()));
+  render_view_->DidHideExternalPopupMenu();
+  // |this| was deleted.
 }
 
 #if defined(OS_MACOSX)

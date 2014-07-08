@@ -46,6 +46,11 @@ else
 	launchctl stop org.chromium.buildbot.slave
 endif
 
+stopall:
+	for t in twistd.pid $(wildcard /c/*/build/slave/twistd.pid); do \
+	  if `test -f $$t`; then kill `cat $$t`; fi; \
+	done
+
 reconfig:
 	kill -HUP `cat twistd.pid`
 

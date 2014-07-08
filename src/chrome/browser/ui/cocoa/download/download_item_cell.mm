@@ -4,20 +4,21 @@
 
 #import "chrome/browser/ui/cocoa/download/download_item_cell.h"
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/download/download_item_model.h"
-#include "chrome/browser/download/download_util.h"
-#import "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/download/download_shelf.h"
+#import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/ui/cocoa/download/background_theme.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
 #include "grit/theme_resources.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
-#import "third_party/GTM/AppKit/GTMNSColor+Luminance.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSColor+Luminance.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 #include "ui/gfx/canvas_skia_paint.h"
+#include "ui/gfx/font_list.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 // Distance from top border to icon.
@@ -34,7 +35,7 @@ const CGFloat kImageHeight = 16;
 
 // x coordinate of download name string, in view coords.
 const CGFloat kTextPosLeft = kImagePaddingLeft +
-    kImageWidth + download_util::kSmallProgressIconOffset;
+    kImageWidth + DownloadShelf::kSmallProgressIconOffset;
 
 // Distance from end of download name string to dropdown area.
 const CGFloat kTextPaddingRight = 3;
@@ -49,9 +50,6 @@ const CGFloat kPrimaryTextOnlyPosTop = 10;
 
 // y coordinate of status message, in view coords.
 const CGFloat kSecondaryTextPosTop = 18;
-
-// Grey value of status text.
-const CGFloat kSecondaryTextColor = 0.5;
 
 // Width of dropdown area on the right (includes 1px for the border on each
 // side).
@@ -80,11 +78,28 @@ using content::DownloadItem;
 
 // This is a helper class to animate the fading out of the status text.
 @interface DownloadItemCellAnimation : NSAnimation {
+ @private
   DownloadItemCell* cell_;
 }
 - (id)initWithDownloadItemCell:(DownloadItemCell*)cell
                       duration:(NSTimeInterval)duration
                 animationCurve:(NSAnimationCurve)animationCurve;
+
+@end
+
+// Timer used to animate indeterminate progress. An NSTimer retains its target.
+// This means that the target must explicitly invalidate the timer before it
+// can be deleted. This class keeps a weak reference to the target so the
+// timer can be invalidated from the destructor.
+@interface IndeterminateProgressTimer : NSObject {
+ @private
+  DownloadItemCell* cell_;
+  base::scoped_nsobject<NSTimer> timer_;
+}
+
+- (id)initWithDownloadItemCell:(DownloadItemCell*)cell;
+- (void)invalidate;
+
 @end
 
 @interface DownloadItemCell(Private)
@@ -94,6 +109,8 @@ using content::DownloadItem;
 - (void)hideSecondaryTitle;
 - (void)animation:(NSAnimation*)animation
        progressed:(NSAnimationProgress)progress;
+- (void)updateIndeterminateDownload;
+- (void)stopIndeterminateAnimation;
 - (NSString*)elideTitle:(int)availableWidth;
 - (NSString*)elideStatus:(int)availableWidth;
 - (ui::ThemeProvider*)backgroundThemeWrappingProvider:
@@ -101,6 +118,7 @@ using content::DownloadItem;
 - (BOOL)pressedWithDefaultThemeOnPart:(DownloadItemMousePosition)part;
 - (NSColor*)titleColorForPart:(DownloadItemMousePosition)part;
 - (void)drawSecondaryTitleInRect:(NSRect)innerFrame;
+- (BOOL)isDefaultTheme;
 @end
 
 @implementation DownloadItemCell
@@ -112,6 +130,7 @@ using content::DownloadItem;
   isStatusTextVisible_ = NO;
   titleY_ = kPrimaryTextPosTop;
   statusAlpha_ = 0.0;
+  indeterminateProgressAngle_ = DownloadShelf::kStartAngleDegrees;
 
   [self setFont:[NSFont systemFontOfSize:
       [NSFont systemFontSizeForControlSize:NSSmallControlSize]]];
@@ -156,6 +175,7 @@ using content::DownloadItem;
     [[self controlView] removeTrackingArea:trackingAreaDropdown_];
     trackingAreaDropdown_.reset();
   }
+  [self stopIndeterminateAnimation];
   [secondaryTitle_ release];
   [secondaryFont_ release];
   [super dealloc];
@@ -165,7 +185,7 @@ using content::DownloadItem;
   // Set the name of the download.
   downloadPath_ = downloadModel->download()->GetFileNameToReportUser();
 
-  string16 statusText = downloadModel->GetStatusText();
+  base::string16 statusText = downloadModel->GetStatusText();
   if (statusText.empty()) {
     // Remove the status text label.
     [self hideSecondaryTitle];
@@ -191,9 +211,11 @@ using content::DownloadItem;
       [completionAnimation_.get() setDelegate:self];
       [completionAnimation_.get() startAnimation];
       percentDone_ = -1;
+      [self stopIndeterminateAnimation];
       break;
     case DownloadItem::CANCELLED:
       percentDone_ = -1;
+      [self stopIndeterminateAnimation];
       break;
     case DownloadItem::INTERRUPTED:
       // Small downloads may start in an interrupted state due to asynchronous
@@ -209,10 +231,22 @@ using content::DownloadItem;
       [completionAnimation_.get() setDelegate:self];
       [completionAnimation_.get() startAnimation];
       percentDone_ = -2;
+      [self stopIndeterminateAnimation];
       break;
     case DownloadItem::IN_PROGRESS:
-      percentDone_ = downloadModel->download()->IsPaused() ?
-          -1 : downloadModel->PercentComplete();
+      if (downloadModel->download()->IsPaused()) {
+        percentDone_ = -1;
+        [self stopIndeterminateAnimation];
+      } else if (downloadModel->PercentComplete() == -1) {
+        percentDone_ = -1;
+        if (!indeterminateProgressTimer_) {
+          indeterminateProgressTimer_.reset([[IndeterminateProgressTimer alloc]
+              initWithDownloadItemCell:self]);
+        }
+      } else {
+        percentDone_ = downloadModel->PercentComplete();
+        [self stopIndeterminateAnimation];
+      }
       break;
     default:
       NOTREACHED();
@@ -336,24 +370,16 @@ using content::DownloadItem;
 }
 
 - (NSString*)elideTitle:(int)availableWidth {
-  NSFont* font = [self font];
-  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
-                     [font pointSize]);
-
-  return base::SysUTF16ToNSString(
-      ui::ElideFilename(downloadPath_, font_chr, availableWidth));
+  return base::SysUTF16ToNSString(gfx::ElideFilename(
+      downloadPath_, gfx::FontList(gfx::Font([self font])), availableWidth));
 }
 
 - (NSString*)elideStatus:(int)availableWidth {
-  NSFont* font = [self secondaryFont];
-  gfx::Font font_chr(base::SysNSStringToUTF8([font fontName]),
-                     [font pointSize]);
-
-  return base::SysUTF16ToNSString(ui::ElideText(
+  return base::SysUTF16ToNSString(gfx::ElideText(
       base::SysNSStringToUTF16([self secondaryTitle]),
-      font_chr,
+      gfx::FontList(gfx::Font([self secondaryFont])),
       availableWidth,
-      ui::ELIDE_AT_END));
+      gfx::ELIDE_AT_END));
 }
 
 - (ui::ThemeProvider*)backgroundThemeWrappingProvider:
@@ -367,22 +393,17 @@ using content::DownloadItem;
 
 // Returns if |part| was pressed while the default theme was active.
 - (BOOL)pressedWithDefaultThemeOnPart:(DownloadItemMousePosition)part {
-  ui::ThemeProvider* themeProvider =
-      [[[self controlView] window] themeProvider];
-  bool isDefaultTheme =
-      !themeProvider->HasCustomImage(IDR_THEME_BUTTON_BACKGROUND);
-  return isDefaultTheme && [self isHighlighted] && mousePosition_ == part;
+  return [self isDefaultTheme] && [self isHighlighted] &&
+          mousePosition_ == part;
 }
 
 // Returns the text color that should be used to draw text on |part|.
 - (NSColor*)titleColorForPart:(DownloadItemMousePosition)part {
   ui::ThemeProvider* themeProvider =
       [[[self controlView] window] themeProvider];
-  NSColor* themeTextColor =
-      themeProvider->GetNSColor(ThemeService::COLOR_BOOKMARK_TEXT,
-                                true);
-  return [self pressedWithDefaultThemeOnPart:part]
-      ? [NSColor alternateSelectedControlTextColor] : themeTextColor;
+  if ([self pressedWithDefaultThemeOnPart:part] || !themeProvider)
+    return [NSColor alternateSelectedControlTextColor];
+  return themeProvider->GetNSColor(ThemeProperties::COLOR_BOOKMARK_TEXT);
 }
 
 - (void)drawSecondaryTitleInRect:(NSRect)innerFrame {
@@ -417,6 +438,14 @@ using content::DownloadItem;
               withAttributes:secondaryTextAttributes];
 }
 
+- (BOOL)isDefaultTheme {
+  ui::ThemeProvider* themeProvider =
+      [[[self controlView] window] themeProvider];
+  if (!themeProvider)
+    return YES;
+  return !themeProvider->HasCustomImage(IDR_THEME_BUTTON_BACKGROUND);
+}
+
 - (void)drawWithFrame:(NSRect)cellFrame inView:(NSView*)controlView {
   NSRect drawFrame = NSInsetRect(cellFrame, 1.5, 1.5);
   NSRect innerFrame = NSInsetRect(cellFrame, 2, 2);
@@ -432,15 +461,13 @@ using content::DownloadItem;
   // the superclass into drawing what we want.
   ui::ThemeProvider* themeProvider =
       [[[self controlView] window] themeProvider];
-  bool isDefaultTheme =
-      !themeProvider->HasCustomImage(IDR_THEME_BUTTON_BACKGROUND);
 
   NSGradient* bgGradient = nil;
-  if (!isDefaultTheme) {
+  if (![self isDefaultTheme]) {
     themeProvider = [self backgroundThemeWrappingProvider:themeProvider];
     bgGradient = themeProvider->GetNSGradient(
-        active ? ThemeService::GRADIENT_TOOLBAR_BUTTON :
-                 ThemeService::GRADIENT_TOOLBAR_BUTTON_INACTIVE);
+        active ? ThemeProperties::GRADIENT_TOOLBAR_BUTTON :
+                 ThemeProperties::GRADIENT_TOOLBAR_BUTTON_INACTIVE);
   }
 
   NSRect buttonDrawRect, dropdownDrawRect;
@@ -517,35 +544,40 @@ using content::DownloadItem;
 
     // Always repaint the whole disk.
     NSPoint imagePosition = [self imageRectForBounds:cellFrame].origin;
-    int x = imagePosition.x - download_util::kSmallProgressIconOffset;
-    int y = imagePosition.y - download_util::kSmallProgressIconOffset;
+    int x = imagePosition.x - DownloadShelf::kSmallProgressIconOffset;
+    int y = imagePosition.y - DownloadShelf::kSmallProgressIconOffset;
     NSRect dirtyRect = NSMakeRect(
         x, y,
-        download_util::kSmallProgressIconSize,
-        download_util::kSmallProgressIconSize);
+        DownloadShelf::kSmallProgressIconSize,
+        DownloadShelf::kSmallProgressIconSize);
 
     gfx::CanvasSkiaPaint canvas(dirtyRect, false);
     canvas.set_composite_alpha(true);
     if (completionAnimation_.get()) {
       if ([completionAnimation_ isAnimating]) {
         if (percentDone_ == -1) {
-          download_util::PaintDownloadComplete(&canvas,
-              x, y,
+          DownloadShelf::PaintDownloadComplete(
+              &canvas,
+              x,
+              y,
               [completionAnimation_ currentValue],
-              download_util::SMALL);
+              DownloadShelf::SMALL);
         } else {
-          download_util::PaintDownloadInterrupted(&canvas,
-              x, y,
+          DownloadShelf::PaintDownloadInterrupted(
+              &canvas,
+              x,
+              y,
               [completionAnimation_ currentValue],
-              download_util::SMALL);
+              DownloadShelf::SMALL);
         }
       }
-    } else if (percentDone_ >= 0) {
-      download_util::PaintDownloadProgress(&canvas,
-          x, y,
-          download_util::kStartAngleDegrees,  // TODO(thakis): Animate
-          percentDone_,
-          download_util::SMALL);
+    } else if (percentDone_ >= 0 || indeterminateProgressTimer_) {
+      DownloadShelf::PaintDownloadProgress(&canvas,
+                                           x,
+                                           y,
+                                           indeterminateProgressAngle_,
+                                           percentDone_,
+                                           DownloadShelf::SMALL);
     }
   }
 
@@ -583,7 +615,7 @@ using content::DownloadItem;
 
   gfx::ScopedNSGraphicsContextSaveGState scopedGState;
 
-  scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+  base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
   [shadow.get() setShadowColor:[NSColor whiteColor]];
   [shadow.get() setShadowOffset:NSMakeSize(0, -1)];
   [shadow setShadowBlurRadius:0.0];
@@ -635,6 +667,10 @@ using content::DownloadItem;
   [self setupToggleStatusVisibilityAnimation];
 }
 
+- (IndeterminateProgressTimer*)indeterminateProgressTimer {
+  return indeterminateProgressTimer_;
+}
+
 - (void)animation:(NSAnimation*)animation
    progressed:(NSAnimationProgress)progress {
   if (animation == toggleStatusVisibilityAnimation_) {
@@ -650,6 +686,18 @@ using content::DownloadItem;
   } else if (animation == completionAnimation_) {
     [[self controlView] setNeedsDisplay:YES];
   }
+}
+
+- (void)updateIndeterminateDownload {
+  indeterminateProgressAngle_ =
+      (indeterminateProgressAngle_ + DownloadShelf::kUnknownIncrementDegrees) %
+      DownloadShelf::kMaxDegrees;
+  [[self controlView] setNeedsDisplay:YES];
+}
+
+- (void)stopIndeterminateAnimation {
+  [indeterminateProgressTimer_ invalidate];
+  indeterminateProgressTimer_.reset();
 }
 
 - (void)animationDidEnd:(NSAnimation *)animation {
@@ -690,6 +738,31 @@ using content::DownloadItem;
 - (void)setCurrentProgress:(NSAnimationProgress)progress {
   [super setCurrentProgress:progress];
   [cell_ animation:self progressed:progress];
+}
+
+@end
+
+@implementation IndeterminateProgressTimer
+
+- (id)initWithDownloadItemCell:(DownloadItemCell*)cell {
+  if ((self = [super init])) {
+    cell_ = cell;
+    timer_.reset([[NSTimer
+        scheduledTimerWithTimeInterval:DownloadShelf::kProgressRateMs / 1000.0
+                                target:self
+                              selector:@selector(onTimer:)
+                              userInfo:nil
+                               repeats:YES] retain]);
+  }
+  return self;
+}
+
+- (void)invalidate {
+  [timer_ invalidate];
+}
+
+- (void)onTimer:(NSTimer*)timer {
+  [cell_ updateIndeterminateDownload];
 }
 
 @end

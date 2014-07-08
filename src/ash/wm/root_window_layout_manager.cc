@@ -5,12 +5,13 @@
 #include "ash/wm/root_window_layout_manager.h"
 
 #include "ash/desktop_background/desktop_background_widget_controller.h"
-#include "ui/aura/window.h"
+#include "ash/root_window_controller.h"
+#include "ash/root_window_settings.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
 
 ////////////////////////////////////////////////////////////////////////////////
 // RootWindowLayoutManager, public:
@@ -27,6 +28,10 @@ RootWindowLayoutManager::~RootWindowLayoutManager() {
 // RootWindowLayoutManager, aura::LayoutManager implementation:
 
 void RootWindowLayoutManager::OnWindowResized() {
+  // X event may arrive during shutdown.
+  if (GetRootWindowSettings(owner_->GetRootWindow())->shutdown)
+    return;
+
   gfx::Rect fullscreen_bounds =
       gfx::Rect(owner_->bounds().width(), owner_->bounds().height());
 
@@ -39,10 +44,13 @@ void RootWindowLayoutManager::OnWindowResized() {
     for (j = (*i)->children().begin(); j != (*i)->children().end(); ++j)
       (*j)->SetBounds(fullscreen_bounds);
   }
-  internal::DesktopBackgroundWidgetController* background =
-      owner_->GetProperty(kDesktopController);
-  if (!background && owner_->GetProperty(kAnimatingDesktopController)) {
-    background = owner_->GetProperty(kAnimatingDesktopController)->
+  RootWindowController* root_window_controller =
+      GetRootWindowController(owner_);
+  DesktopBackgroundWidgetController* background =
+      root_window_controller->wallpaper_controller();
+
+  if (!background && root_window_controller->animating_wallpaper_controller()) {
+    background = root_window_controller->animating_wallpaper_controller()->
         GetController(false);
   }
   if (background)
@@ -70,5 +78,4 @@ void RootWindowLayoutManager::SetChildBounds(
   SetChildBoundsDirect(child, requested_bounds);
 }
 
-}  // namespace internal
 }  // namespace ash

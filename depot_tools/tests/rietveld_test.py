@@ -7,12 +7,16 @@
 
 import logging
 import os
+import ssl
 import sys
+import time
+import traceback
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from testing_support.patches_data import GIT, RAW
+from testing_support import auto_stub
 
 import patch
 import rietveld
@@ -403,11 +407,12 @@ class CachingRietveldTest(BaseFixture):
     self.assertEqual(expected, self.rietveld.get_description(1))
 
   def test_get_issue_properties(self):
+    data = {'description': 'wow\r\nno CR!', 'messages': 'foo'}
     self.requests = [
-      ('/api/1?messages=true', rietveld.json.dumps({'messages': 'foo'})),
+      ('/api/1?messages=true', rietveld.json.dumps(data)),
     ]
-    expected = {}
-    expected_msg = {'messages': 'foo'}
+    expected = {u'description': u'wow\nno CR!'}
+    expected_msg = {u'description': u'wow\nno CR!', u'messages': u'foo'}
     self.assertEqual(expected, self.rietveld.get_issue_properties(1, False))
     self.assertEqual(expected_msg, self.rietveld.get_issue_properties(1, True))
 
@@ -420,6 +425,65 @@ class CachingRietveldTest(BaseFixture):
     self.assertEqual(expected, self.rietveld.get_patchset_properties(1, 2))
 
 
+class ProbeException(Exception):
+  """Deep-probe a value."""
+  value = None
+
+  def __init__(self, value):
+    super(ProbeException, self).__init__()
+    self.value = value
+
+
+def MockSend(request_path, payload=None,
+             content_type="application/octet-stream",
+             timeout=None,
+             extra_headers=None,
+             **kwargs):
+  """Mock upload.py's Send() to probe the timeout value"""
+  raise ProbeException(timeout)
+
+def MockSendTimeout(request_path, payload=None,
+                    content_type="application/octet-stream",
+                    timeout=None,
+                    extra_headers=None,
+                    **kwargs):
+  """Mock upload.py's Send() to raise SSLError"""
+  raise ssl.SSLError('The read operation timed out')
+
+
+class DefaultTimeoutTest(auto_stub.TestCase):
+  TESTED_CLASS = rietveld.Rietveld
+
+  def setUp(self):
+    super(DefaultTimeoutTest, self).setUp()
+    self.rietveld = self.TESTED_CLASS('url', 'email', 'password')
+    self.mock(self.rietveld.rpc_server, 'Send', MockSend)
+    self.sleep_time = 0
+
+  def test_timeout_get(self):
+    with self.assertRaises(ProbeException) as cm:
+      self.rietveld.get('/api/1234')
+
+    self.assertIsNotNone(cm.exception.value, 'Rietveld timeout was not set: %s'
+                         % traceback.format_exc())
+
+  def test_timeout_post(self):
+    with self.assertRaises(ProbeException) as cm:
+      self.rietveld.post('/api/1234', [('key', 'data')])
+
+    self.assertIsNotNone(cm.exception.value, 'Rietveld timeout was not set: %s'
+                         % traceback.format_exc())
+
+  def MockSleep(self, t):
+    self.sleep_time = t
+
+  def test_ssl_timeout_post(self):
+    self.mock(self.rietveld.rpc_server, 'Send', MockSendTimeout)
+    self.mock(time, 'sleep', self.MockSleep)
+    self.sleep_time = 0
+    with self.assertRaises(ssl.SSLError):
+      self.rietveld.post('/api/1234', [('key', 'data')])
+    self.assertNotEqual(self.sleep_time, 0)
 
 if __name__ == '__main__':
   logging.basicConfig(level=[

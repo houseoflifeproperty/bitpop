@@ -8,7 +8,7 @@
 #include <string>
 
 #include "content/renderer/media/media_stream_dispatcher.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -23,15 +23,22 @@ class MockMediaStreamDispatcher : public MediaStreamDispatcher {
       const base::WeakPtr<MediaStreamDispatcherEventHandler>& event_handler,
       const StreamOptions& components,
       const GURL& url) OVERRIDE;
-  virtual void CancelGenerateStream(int request_id) OVERRIDE;
-  virtual void StopStream(const std::string& label) OVERRIDE;
+  virtual void CancelGenerateStream(
+      int request_id,
+      const base::WeakPtr<MediaStreamDispatcherEventHandler>&
+          event_handler) OVERRIDE;
+  virtual void StopStreamDevice(const StreamDeviceInfo& device_info) OVERRIDE;
   virtual bool IsStream(const std::string& label) OVERRIDE;
   virtual int video_session_id(const std::string& label, int index) OVERRIDE;
   virtual int audio_session_id(const std::string& label, int index) OVERRIDE;
 
   int request_id() const { return request_id_; }
   int request_stream_counter() const { return request_stream_counter_; }
-  int stop_stream_counter() const { return stop_stream_counter_; }
+  void IncrementSessionId() { ++session_id_; }
+
+  int stop_audio_device_counter() const { return stop_audio_device_counter_; }
+  int stop_video_device_counter() const { return stop_video_device_counter_; }
+
   const std::string& stream_label() const { return stream_label_;}
   StreamDeviceInfoArray audio_array() const { return audio_array_; }
   StreamDeviceInfoArray video_array() const { return video_array_; }
@@ -40,9 +47,11 @@ class MockMediaStreamDispatcher : public MediaStreamDispatcher {
   int request_id_;
   base::WeakPtr<MediaStreamDispatcherEventHandler> event_handler_;
   int request_stream_counter_;
-  int stop_stream_counter_;
+  int stop_audio_device_counter_;
+  int stop_video_device_counter_;
 
   std::string stream_label_;
+  int session_id_;
   StreamDeviceInfoArray audio_array_;
   StreamDeviceInfoArray video_array_;
 

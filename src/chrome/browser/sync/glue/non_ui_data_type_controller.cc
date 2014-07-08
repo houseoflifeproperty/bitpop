@@ -10,6 +10,7 @@
 #include "chrome/browser/sync/glue/shared_change_processor_ref.h"
 #include "chrome/browser/sync/profile_sync_components_factory.h"
 #include "chrome/browser/sync/profile_sync_service.h"
+#include "components/sync_driver/generic_change_processor_factory.h"
 #include "content/public/browser/browser_thread.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/syncable_service.h"
@@ -20,14 +21,23 @@ using content::BrowserThread;
 
 namespace browser_sync {
 
+SharedChangeProcessor*
+NonUIDataTypeController::CreateSharedChangeProcessor() {
+  return new SharedChangeProcessor();
+}
+
 NonUIDataTypeController::NonUIDataTypeController(
+    scoped_refptr<base::MessageLoopProxy> ui_thread,
+    const base::Closure& error_callback,
     ProfileSyncComponentsFactory* profile_sync_factory,
     Profile* profile,
     ProfileSyncService* sync_service)
-    : profile_sync_factory_(profile_sync_factory),
+    : DataTypeController(ui_thread, error_callback),
+      profile_sync_factory_(profile_sync_factory),
       profile_(profile),
       sync_service_(sync_service),
-      state_(NOT_RUNNING) {
+      state_(NOT_RUNNING),
+      user_share_(NULL) {
 }
 
 void NonUIDataTypeController::LoadModels(
@@ -35,21 +45,21 @@ void NonUIDataTypeController::LoadModels(
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   DCHECK(!model_load_callback.is_null());
   if (state() != NOT_RUNNING) {
-    model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
-                                                      "Model already running",
-                                                      type()));
+    model_load_callback.Run(type(),
+                            syncer::SyncError(FROM_HERE,
+                                              syncer::SyncError::DATATYPE_ERROR,
+                                              "Model already running",
+                                              type()));
     return;
   }
 
   state_ = MODEL_STARTING;
-
   // Since we can't be called multiple times before Stop() is called,
   // |shared_change_processor_| must be NULL here.
   DCHECK(!shared_change_processor_.get());
-  shared_change_processor_ =
-      profile_sync_factory_->CreateSharedChangeProcessor();
+  shared_change_processor_ = CreateSharedChangeProcessor();
   DCHECK(shared_change_processor_.get());
-
+  user_share_ = sync_service_->GetUserShare();
   model_load_callback_ = model_load_callback;
   if (!StartModels()) {
     // If we are waiting for some external service to load before associating
@@ -79,7 +89,7 @@ bool NonUIDataTypeController::StartModels() {
 }
 
 void NonUIDataTypeController::StopModels() {
-  // Do nothing by default.
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 void NonUIDataTypeController::StartAssociating(
@@ -92,7 +102,10 @@ void NonUIDataTypeController::StartAssociating(
   start_callback_ = start_callback;
   if (!StartAssociationAsync()) {
     syncer::SyncError error(
-        FROM_HERE, "Failed to post StartAssociation", type());
+        FROM_HERE,
+        syncer::SyncError::DATATYPE_ERROR,
+        "Failed to post StartAssociation",
+        type());
     syncer::SyncMergeResult local_merge_result(type());
     local_merge_result.set_error(error);
     StartDoneImpl(ASSOCIATION_FAILED,
@@ -132,10 +145,11 @@ void NonUIDataTypeController::Stop() {
                     syncer::SyncMergeResult(type()));
       // We continue on to deactivate the datatype and stop the local service.
       break;
+    case MODEL_LOADED:
     case DISABLED:
-      // If we're disabled we never succeded associating and never activated the
-      // datatype. We would have already stopped the local service in
-      // StartDoneImpl(..).
+      // If DTC is loaded or disabled, we never attempted or succeeded
+      // associating and never activated the datatype. We would have already
+      // stopped the local service in StartDoneImpl(..).
       state_ = NOT_RUNNING;
       StopModels();
       return;
@@ -180,7 +194,8 @@ void NonUIDataTypeController::OnSingleDatatypeUnrecoverableError(
 }
 
 NonUIDataTypeController::NonUIDataTypeController()
-    : profile_sync_factory_(NULL),
+    : DataTypeController(base::MessageLoopProxy::current(), base::Closure()),
+      profile_sync_factory_(NULL),
       profile_(NULL),
       sync_service_(NULL) {}
 
@@ -258,7 +273,8 @@ void NonUIDataTypeController::RecordAssociationTime(base::TimeDelta time) {
 
 void NonUIDataTypeController::RecordStartFailure(StartResult result) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures", type(),
+  UMA_HISTOGRAM_ENUMERATION("Sync.DataTypeStartFailures",
+                            ModelTypeToHistogramInt(type()),
                             syncer::MODEL_TYPE_COUNT);
 #define PER_DATA_TYPE_MACRO(type_str) \
     UMA_HISTOGRAM_ENUMERATION("Sync." type_str "StartFailure", result, \
@@ -272,9 +288,11 @@ void NonUIDataTypeController::AbortModelLoad() {
   StopModels();
   ModelLoadCallback model_load_callback = model_load_callback_;
   model_load_callback_.Reset();
-  model_load_callback.Run(type(), syncer::SyncError(FROM_HERE,
-                                                    "ABORTED",
-                                                    type()));
+  model_load_callback.Run(type(),
+                          syncer::SyncError(FROM_HERE,
+                                            syncer::SyncError::DATATYPE_ERROR,
+                                            "ABORTED",
+                                            type()));
 }
 
 void NonUIDataTypeController::DisableImpl(
@@ -293,6 +311,11 @@ bool NonUIDataTypeController::StartAssociationAsync() {
           &NonUIDataTypeController::StartAssociationWithSharedChangeProcessor,
           this,
           shared_change_processor_));
+}
+
+ChangeProcessor* NonUIDataTypeController::GetChangeProcessor() const {
+  DCHECK_EQ(state_, RUNNING);
+  return shared_change_processor_->generic_change_processor();
 }
 
 // This method can execute after we've already stopped (and possibly even
@@ -315,14 +338,19 @@ void NonUIDataTypeController::
   // Note that it's possible the shared_change_processor has already been
   // disconnected at this point, so all our accesses to the syncer from this
   // point on are through it.
+  GenericChangeProcessorFactory factory;
   local_service_ = shared_change_processor->Connect(
       profile_sync_factory_,
-      sync_service_,
+      &factory,
+      user_share_,
       this,
       type(),
       weak_ptr_factory.GetWeakPtr());
   if (!local_service_.get()) {
-    syncer::SyncError error(FROM_HERE, "Failed to connect to syncer.", type());
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::DATATYPE_ERROR,
+                            "Failed to connect to syncer.",
+                            type());
     local_merge_result.set_error(error);
     StartDone(ASSOCIATION_FAILED,
               local_merge_result,
@@ -339,7 +367,10 @@ void NonUIDataTypeController::
 
   bool sync_has_nodes = false;
   if (!shared_change_processor->SyncModelHasUserCreatedNodes(&sync_has_nodes)) {
-    syncer::SyncError error(FROM_HERE, "Failed to load sync nodes", type());
+    syncer::SyncError error(FROM_HERE,
+                            syncer::SyncError::UNRECOVERABLE_ERROR,
+                            "Failed to load sync nodes",
+                            type());
     local_merge_result.set_error(error);
     StartDone(UNRECOVERABLE_ERROR,
               local_merge_result,
@@ -350,13 +381,20 @@ void NonUIDataTypeController::
   base::TimeTicks start_time = base::TimeTicks::Now();
   syncer::SyncDataList initial_sync_data;
   syncer::SyncError error =
-      shared_change_processor->GetSyncData(&initial_sync_data);
+      shared_change_processor->GetAllSyncDataReturnError(
+          type(), &initial_sync_data);
   if (error.IsSet()) {
     local_merge_result.set_error(error);
     StartDone(ASSOCIATION_FAILED,
               local_merge_result,
               syncer_merge_result);
     return;
+  }
+
+  std::string datatype_context;
+  if (shared_change_processor_->GetDataTypeContext(&datatype_context)) {
+    local_service_->UpdateDataTypeContext(
+        type(), syncer::SyncChangeProcessor::NO_REFRESH, datatype_context);
   }
 
   syncer_merge_result.set_num_items_before_association(
@@ -381,13 +419,6 @@ void NonUIDataTypeController::
   syncer_merge_result.set_num_items_after_association(
       shared_change_processor->GetSyncCount());
 
-  // If we've been disconnected, sync_service_ may return an invalid
-  // pointer, but |shared_change_processor| protects us from attempting to
-  // access it.
-  // Note: This must be done on the datatype's thread to ensure local_service_
-  // doesn't start trying to push changes from its thread before we activate
-  // the datatype.
-  shared_change_processor->ActivateDataType(model_safe_group());
   StartDone(!sync_has_nodes ? OK_FIRST_RUN : OK,
             local_merge_result,
             syncer_merge_result);
@@ -417,4 +448,4 @@ void NonUIDataTypeController::StopLocalService() {
   local_service_.reset();
 }
 
-}  // namepsace browser_sync
+}  // namespace browser_sync

@@ -5,10 +5,10 @@
 #ifndef CHROME_BROWSER_SYNC_SYNC_UI_UTIL_H_
 #define CHROME_BROWSER_SYNC_SYNC_UI_UTIL_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class ProfileSyncService;
-class SigninManager;
+class SigninManagerBase;
 
 // Utility functions to gather current sync status information from the sync
 // service and constructs messages suitable for showing in UI.
@@ -34,32 +34,30 @@ enum StatusLabelStyle {
 // by querying |service|.
 // |style| sets the link properties, see |StatusLabelStyle|.
 MessageType GetStatusLabels(ProfileSyncService* service,
-                            const SigninManager& signin,
+                            const SigninManagerBase& signin,
                             StatusLabelStyle style,
-                            string16* status_label,
-                            string16* link_label);
+                            base::string16* status_label,
+                            base::string16* link_label);
 
 // Same as above but for use specifically on the New Tab Page.
 // |status_label| may contain an HTML-formatted link.
 MessageType GetStatusLabelsForNewTabPage(ProfileSyncService* service,
-                                         const SigninManager& signin,
-                                         string16* status_label,
-                                         string16* link_label);
+                                         const SigninManagerBase& signin,
+                                         base::string16* status_label,
+                                         base::string16* link_label);
 
 // Gets various labels for the sync global error based on the sync error state.
 // |menu_item_label|, |bubble_message|, and |bubble_accept_label| must not be
-// NULL.
-void GetStatusLabelsForSyncGlobalError(ProfileSyncService* service,
-                                       const SigninManager& signin,
-                                       string16* menu_item_label,
-                                       string16* bubble_message,
-                                       string16* bubble_accept_label);
+// NULL. Note that we don't use SyncGlobalError on Chrome OS.
+#if !defined(OS_CHROMEOS)
+void GetStatusLabelsForSyncGlobalError(const ProfileSyncService* service,
+                                       base::string16* menu_item_label,
+                                       base::string16* bubble_message,
+                                       base::string16* bubble_accept_label);
+#endif
 
-MessageType GetStatus(ProfileSyncService* service, const SigninManager& signin);
-
-// Returns a string with the synchronization status.
-string16 GetSyncMenuLabel(ProfileSyncService* service,
-                          const SigninManager& signin);
+MessageType GetStatus(ProfileSyncService* service,
+                      const SigninManagerBase& signin);
 
 }  // namespace sync_ui_util
 #endif  // CHROME_BROWSER_SYNC_SYNC_UI_UTIL_H_

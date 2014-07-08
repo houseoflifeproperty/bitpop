@@ -3,14 +3,23 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/bookmark_app_helper.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_sorting.h"
+#include "chrome/browser/extensions/launch_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/sync/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/apps_helper.h"
+#include "chrome/browser/sync/test/integration/profile_sync_service_harness.h"
 #include "chrome/browser/sync/test/integration/sync_app_helper.h"
+#include "chrome/browser/sync/test/integration/sync_integration_test_util.h"
 #include "chrome/browser/sync/test/integration/sync_test.h"
 #include "chrome/common/extensions/extension_constants.h"
+#include "content/public/browser/notification_service.h"
+#include "content/public/test/test_utils.h"
+#include "extensions/browser/app_sorting.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_registry.h"
 #include "sync/api/string_ordinal.h"
 
 using apps_helper::AllProfilesHaveSameAppsAsVerifier;
@@ -28,6 +37,7 @@ using apps_helper::InstallPlatformApp;
 using apps_helper::SetAppLaunchOrdinalForApp;
 using apps_helper::SetPageOrdinalForApp;
 using apps_helper::UninstallApp;
+using sync_integration_test_util::AwaitCommitActivityCompletion;
 
 class TwoClientAppsSyncTest : public SyncTest {
  public:
@@ -37,6 +47,16 @@ class TwoClientAppsSyncTest : public SyncTest {
 
  private:
   DISALLOW_COPY_AND_ASSIGN(TwoClientAppsSyncTest);
+};
+
+class LegacyTwoClientAppsSyncTest : public SyncTest {
+ public:
+  LegacyTwoClientAppsSyncTest() : SyncTest(TWO_CLIENT_LEGACY) {}
+
+  virtual ~LegacyTwoClientAppsSyncTest() {}
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(LegacyTwoClientAppsSyncTest);
 };
 
 IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, StartWithNoApps) {
@@ -216,7 +236,8 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UninstallThenInstall) {
 }
 
 // TCM ID - 3699295.
-IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, Merge) {
+// Flaky: http://crbug.com/226055
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DISABLED_Merge) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
@@ -298,14 +319,14 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateIncognitoEnableDisable) {
 }
 
 // TCM ID - 3718276.
-IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DisableApps) {
+IN_PROC_BROWSER_TEST_F(LegacyTwoClientAppsSyncTest, DisableApps) {
   ASSERT_TRUE(SetupSync());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
   ASSERT_TRUE(GetClient(1)->DisableSyncForDatatype(syncer::APPS));
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Installed an app."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -328,7 +349,7 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, DisableSync) {
   ASSERT_TRUE(GetClient(1)->DisableSyncForAllDatatypes());
   InstallApp(GetProfile(0), 0);
   InstallApp(verifier(), 0);
-  ASSERT_TRUE(GetClient(0)->AwaitFullSyncCompletion("Installed an app."));
+  ASSERT_TRUE(AwaitCommitActivityCompletion(GetSyncService((0))));
   ASSERT_TRUE(HasSameAppsAsVerifier(0));
   ASSERT_FALSE(HasSameAppsAsVerifier(1));
 
@@ -394,33 +415,148 @@ IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateCWSOrdinals) {
 
   // Change the app launch ordinal.
   syncer::StringOrdinal cws_app_launch_ordinal =
-      GetProfile(0)->GetExtensionService()->
-      extension_prefs()->extension_sorting()->GetAppLaunchOrdinal(
-          extension_misc::kWebStoreAppId);
-  GetProfile(0)->GetExtensionService()->extension_prefs()->extension_sorting()->
-      SetAppLaunchOrdinal(
-          extension_misc::kWebStoreAppId, cws_app_launch_ordinal.CreateAfter());
-  verifier()->GetExtensionService()->extension_prefs()->extension_sorting()->
-      SetAppLaunchOrdinal(
-          extension_misc::kWebStoreAppId, cws_app_launch_ordinal.CreateAfter());
+      extensions::ExtensionPrefs::Get(GetProfile(0))
+          ->app_sorting()
+          ->GetAppLaunchOrdinal(extension_misc::kWebStoreAppId);
+  extensions::ExtensionPrefs::Get(GetProfile(0))
+      ->app_sorting()
+      ->SetAppLaunchOrdinal(extension_misc::kWebStoreAppId,
+                            cws_app_launch_ordinal.CreateAfter());
+  extensions::ExtensionPrefs::Get(verifier())
+      ->app_sorting()
+      ->SetAppLaunchOrdinal(extension_misc::kWebStoreAppId,
+                            cws_app_launch_ordinal.CreateAfter());
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 
   // Change the page ordinal.
   syncer::StringOrdinal cws_page_ordinal =
-      GetProfile(1)->GetExtensionService()->
-      extension_prefs()->extension_sorting()->GetPageOrdinal(
-          extension_misc::kWebStoreAppId);
-  GetProfile(1)->GetExtensionService()->extension_prefs()->
-      extension_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
-                                          cws_page_ordinal.CreateAfter());
-  verifier()->GetExtensionService()->extension_prefs()->
-      extension_sorting()->SetPageOrdinal(extension_misc::kWebStoreAppId,
-                                          cws_page_ordinal.CreateAfter());
+      extensions::ExtensionPrefs::Get(GetProfile(1))
+          ->app_sorting()
+          ->GetPageOrdinal(extension_misc::kWebStoreAppId);
+  extensions::ExtensionPrefs::Get(GetProfile(1))->app_sorting()->SetPageOrdinal(
+      extension_misc::kWebStoreAppId, cws_page_ordinal.CreateAfter());
+  extensions::ExtensionPrefs::Get(verifier())->app_sorting()->SetPageOrdinal(
+      extension_misc::kWebStoreAppId, cws_page_ordinal.CreateAfter());
   ASSERT_TRUE(AwaitQuiescence());
   ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
 }
 
+// Adjust the launch type on the first client and sync. Both clients should
+// have the same launch type values for the CWS.
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UpdateLaunchType) {
+  ASSERT_TRUE(SetupSync());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  // Change the launch type to window.
+  extensions::SetLaunchType(GetProfile(1)->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_WINDOW);
+  extensions::SetLaunchType(verifier()->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_WINDOW);
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  // Change the launch type to regular tab.
+  extensions::SetLaunchType(GetProfile(1)->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_REGULAR);
+  ASSERT_FALSE(HasSameAppsAsVerifier(1));
+  extensions::SetLaunchType(verifier()->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_REGULAR);
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+}
+
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, UnexpectedLaunchType) {
+  ASSERT_TRUE(SetupSync());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  extensions::SetLaunchType(GetProfile(1)->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_REGULAR);
+  extensions::SetLaunchType(verifier()->GetExtensionService(),
+                            extension_misc::kWebStoreAppId,
+                            extensions::LAUNCH_TYPE_REGULAR);
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  const extensions::Extension* extension =
+      GetProfile(1)->GetExtensionService()->
+          GetInstalledExtension(extension_misc::kWebStoreAppId);
+  ASSERT_TRUE(extension);
+
+  ExtensionSyncService* extension_sync_service =
+      ExtensionSyncService::Get(GetProfile(1));
+
+  extensions::AppSyncData original_data(
+      extension_sync_service->GetAppSyncData(*extension));
+
+  // Create an invalid launch type and ensure it doesn't get down-synced. This
+  // simulates the case of a future launch type being added which old versions
+  // don't yet understand.
+  extensions::AppSyncData invalid_launch_type_data(
+      *extension,
+      original_data.extension_sync_data().enabled(),
+      original_data.extension_sync_data().incognito_enabled(),
+      original_data.app_launch_ordinal(),
+      original_data.page_ordinal(),
+      extensions::NUM_LAUNCH_TYPES);
+  extension_sync_service->ProcessAppSyncData(invalid_launch_type_data);
+
+  // The launch type should remain the same.
+  ASSERT_TRUE(AwaitQuiescence());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+}
+
+IN_PROC_BROWSER_TEST_F(TwoClientAppsSyncTest, BookmarkApp) {
+  ASSERT_TRUE(SetupSync());
+  ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+
+  size_t num_extensions =
+      GetProfile(0)->GetExtensionService()->extensions()->size();
+
+  WebApplicationInfo web_app_info;
+  web_app_info.app_url = GURL("http://www.chromium.org");
+  web_app_info.title = base::UTF8ToUTF16("Test name");
+  web_app_info.description = base::UTF8ToUTF16("Test description");
+  ++num_extensions;
+  {
+    content::WindowedNotificationObserver windowed_observer(
+        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        content::NotificationService::AllSources());
+    extensions::CreateOrUpdateBookmarkApp(GetProfile(0)->GetExtensionService(),
+                                          web_app_info);
+    windowed_observer.Wait();
+    EXPECT_EQ(num_extensions,
+              extensions::ExtensionRegistry::Get(GetProfile(0))
+                  ->enabled_extensions()
+                  .size());
+  }
+  {
+    content::WindowedNotificationObserver windowed_observer(
+        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        content::NotificationService::AllSources());
+    extensions::CreateOrUpdateBookmarkApp(verifier()->GetExtensionService(),
+                                          web_app_info);
+    windowed_observer.Wait();
+    EXPECT_EQ(num_extensions,
+              extensions::ExtensionRegistry::Get(verifier())
+                  ->enabled_extensions()
+                  .size());
+  }
+  {
+    // Wait for the synced app to install.
+    content::WindowedNotificationObserver windowed_observer(
+        chrome::NOTIFICATION_CRX_INSTALLER_DONE,
+        content::NotificationService::AllSources());
+    ASSERT_TRUE(AwaitQuiescence());
+    windowed_observer.Wait();
+    ASSERT_TRUE(AllProfilesHaveSameAppsAsVerifier());
+  }
+}
 // TODO(akalin): Add tests exercising:
 //   - Offline installation/uninstallation behavior
 //   - App-specific properties

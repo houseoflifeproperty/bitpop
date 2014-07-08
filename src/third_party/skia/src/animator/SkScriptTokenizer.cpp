@@ -170,7 +170,7 @@ void SkScriptEngine2::addTokenScalar(SkScalar scalar) {
 }
 
 void SkScriptEngine2::addTokenString(const SkString& string) {
-    int size = string.size();
+    int size = SkToInt(string.size());
     addTokenInt(size);
     fActiveStream->write(string.c_str(), size);
 }
@@ -603,8 +603,6 @@ scalarCommon:
         }
         if (ch ==  '.') {
             if (fTokenLength == 0) {
-                SkDEBUGCODE(SkScriptValue2 scriptValue;)
-                SkDEBUGCODE(scriptValue.fOperand.fObject = NULL);
                 int tokenLength = token_length(++script);
                 const char* token = script;
                 script += tokenLength;
@@ -986,14 +984,14 @@ void SkScriptEngine2::processLogicalOp(Op op) {
                 SkScriptValue2 value;
                 fValueStack.pop(&value);
                 SkASSERT(value.fType == SkOperand2::kS32 || value.fType == SkOperand2::kScalar); // !!! add error handling (although, could permit strings eventually)
-                int index = value.fType == SkOperand2::kScalar ? SkScalarFloor(value.fOperand.fScalar) :
+                int index = value.fType == SkOperand2::kScalar ? SkScalarFloorToInt(value.fOperand.fScalar) :
                     value.fOperand.fS32;
                 SkScriptValue2 arrayValue;
                 fValueStack.pop(&arrayValue);
                 SkASSERT(arrayValue.fType == SkOperand2::kArray);  // !!! add error handling
                 SkOpArray* array = arrayValue.fOperand.fArray;
                 SkOperand2 operand;
-                bool success = array->getIndex(index, &operand);
+                SkDEBUGCODE(bool success = ) array->getIndex(index, &operand);
                 SkASSERT(success); // !!! add error handling
                 SkScriptValue2 resultValue;
                 resultValue.fType = array->getType();
@@ -1025,7 +1023,7 @@ void SkScriptEngine2::processLogicalOp(Op op) {
             branch.fOperator = op;
             branch.fDone = Branch::kIsNotDone;
             SkASSERT(branch.fOpStackDepth == fOpStack.count());
-            branch.fOffset = newOffset;
+            branch.fOffset = SkToU16(newOffset);
             fAccumulatorType = SkOperand2::kNoType;
         } break;
         case kLogicalAnd:
@@ -1202,7 +1200,7 @@ bool SkScriptEngine2::ConvertTo(SkScriptEngine2* engine, SkOperand2::OpType toTy
     switch (toType) {
         case SkOperand2::kS32:
             if (type == SkOperand2::kScalar)
-                operand.fS32 = SkScalarFloor(operand.fScalar);
+                operand.fS32 = SkScalarFloorToInt(operand.fScalar);
             else {
                 SkASSERT(type == SkOperand2::kString);
                 success = SkParse::FindS32(operand.fString->c_str(), &operand.fS32) != NULL;
@@ -1273,15 +1271,11 @@ bool SkScriptEngine2::ValueToString(const SkScriptValue2& value, SkString* strin
 }
 
 #ifdef SK_DEBUG
+#if defined(SK_SUPPORT_UNITTEST)
 
 #define testInt(expression) { #expression, SkOperand2::kS32, expression, 0, NULL }
-#ifdef SK_SCALAR_IS_FLOAT
 #define testScalar(expression) { #expression, SkOperand2::kScalar, 0, (float) (expression), NULL }
 #define testRemainder(exp1, exp2) { #exp1 "%" #exp2, SkOperand2::kScalar, 0, fmodf((float) exp1, (float) exp2), NULL }
-#else
-#define testScalar(expression) { #expression, SkOperand2::kScalar, 0, (int) ((expression) * 65536.0f), NULL }
-#define testRemainder(exp1, exp2) { #exp1 "%" #exp2, SkOperand2::kScalar, 0, (int) (fmod(exp1, exp2)  * 65536.0f), NULL }
-#endif
 #define testTrue(expression) { #expression, SkOperand2::kS32, 1, 0, NULL }
 #define testFalse(expression) { #expression, SkOperand2::kS32, 0, 0, NULL }
 
@@ -1475,11 +1469,12 @@ static const SkScriptNAnswer2 scriptTests[]  = {
 };
 
 #define SkScriptNAnswer_testCount    SK_ARRAY_COUNT(scriptTests)
+#endif  // SK_SUPPORT_UNITTEST
 
 void SkScriptEngine2::UnitTest() {
 #if defined(SK_SUPPORT_UNITTEST)
     ValidateDecompileTable();
-    for (int index = 0; index < SkScriptNAnswer_testCount; index++) {
+    for (size_t index = 0; index < SkScriptNAnswer_testCount; index++) {
         SkScriptEngine2 engine(scriptTests[index].fType);
         SkScriptValue2 value;
         const char* script = scriptTests[index].fScript;
@@ -1506,6 +1501,6 @@ void SkScriptEngine2::UnitTest() {
                 SkASSERT(0);
         }
     }
-#endif
+#endif  // SK_SUPPORT_UNITTEST
 }
-#endif
+#endif  // SK_DEBUG

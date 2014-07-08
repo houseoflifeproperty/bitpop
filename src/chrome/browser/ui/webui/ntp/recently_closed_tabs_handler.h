@@ -24,13 +24,13 @@ class RecentlyClosedTabsHandler : public content::WebUIMessageHandler,
   // Callback for the "reopenTab" message. Rewrites the history of the
   // currently displayed tab to be the one in TabRestoreService with a
   // history of a session passed in through the content pointer.
-  void HandleReopenTab(const ListValue* args);
+  void HandleReopenTab(const base::ListValue* args);
 
   // Callback for the "getRecentlyClosedTabs" message.
-  void HandleGetRecentlyClosedTabs(const ListValue* args);
+  void HandleGetRecentlyClosedTabs(const base::ListValue* args);
 
   // Callback for the "clearRecentlyClosed" message.
-  void HandleClearRecentlyClosed(const ListValue* args);
+  void HandleClearRecentlyClosed(const base::ListValue* args);
 
   // Observer callback for TabRestoreServiceObserver. Sends data on
   // recently closed tabs to the javascript side of this page to
@@ -40,12 +40,6 @@ class RecentlyClosedTabsHandler : public content::WebUIMessageHandler,
   // Observer callback to notice when our associated TabRestoreService
   // is destroyed.
   virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
-
-  // Converts a list of TabRestoreService entries to the JSON format required
-  // by the NTP and adds them to the given list value.
-  static void CreateRecentlyClosedValues(
-      const TabRestoreService::Entries& entries,
-      base::ListValue* entry_list_value);
 
  private:
   // Construct and initialize tab_restore_service_ if it's NULL.

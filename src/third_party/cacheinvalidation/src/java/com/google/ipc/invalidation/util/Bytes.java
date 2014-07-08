@@ -19,7 +19,9 @@ import com.google.common.base.Preconditions;
 import com.google.protobuf.ByteString;
 
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.util.Arrays;
+
 
 /**
  * A class that encapsulates a (fixed size) sequence of bytes and provides a
@@ -30,6 +32,7 @@ import java.util.Arrays;
 public class Bytes extends InternalBase implements Comparable<Bytes> {
 
   public static final Bytes EMPTY_BYTES = new Bytes(new byte[0]);
+  private static final Charset UTF_8 = Charset.forName("UTF-8");
 
   /**
    * Three arrays that store the representation of each character from 0 to 255.
@@ -94,6 +97,11 @@ public class Bytes extends InternalBase implements Comparable<Bytes> {
 
   public Bytes(ByteString byteString) {
     this(byteString.toByteArray());
+  }
+
+  /** Creates a Bytes object from the given string encoded as a UTF-8 byte array. */
+  public static Bytes fromUtf8Encoding(String s) {
+    return new Bytes(s.getBytes(UTF_8));
   }
 
   /**
@@ -217,8 +225,19 @@ public class Bytes extends InternalBase implements Comparable<Bytes> {
     return compare(bytes, other.bytes);
   }
 
-  /** Same specs as Bytes.compareTo except for the byte[] type. */
+  /**
+   * Same specs as Bytes.compareTo except for the byte[] type. Null arrays are ordered before
+   * non-null arrays.
+   */
   public static int compare(byte[] first, byte[] second) {
+    // Order null arrays before non-null arrays.
+    if (first == null) {
+      return (second == null) ? 0 : -1;
+    }
+    if (second == null) {
+      return 1;
+    }
+
     int minLength = Math.min(first.length, second.length);
     for (int i = 0; i < minLength; i++) {
       if (first[i] != second[i]) {

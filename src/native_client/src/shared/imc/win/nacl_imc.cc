@@ -5,11 +5,11 @@
  */
 
 
-// NaCl inter-module communication primitives.
+/* NaCl inter-module communication primitives. */
 
+/* Disables the generation of the min and max macro in <windows.h> */
 #ifndef NOMINMAX
-#define NOMINMAX  // Disables the generation of the min and max macro in
-                  // <windows.h>.
+#define NOMINMAX
 #endif
 
 #include <algorithm>
@@ -22,19 +22,16 @@
 
 #include "native_client/src/include/atomic_ops.h"
 #include "native_client/src/include/portability.h"
-#include "native_client/src/shared/imc/nacl_imc.h"
 #include "native_client/src/shared/imc/nacl_imc_c.h"
 
 
-namespace {
-NaClBrokerDuplicateHandleFunc g_broker_duplicate_handle_func;
-}
+static NaClBrokerDuplicateHandleFunc g_broker_duplicate_handle_func;
 
 void NaClSetBrokerDuplicateHandleFunc(NaClBrokerDuplicateHandleFunc func) {
   g_broker_duplicate_handle_func = func;
 }
 
-// Duplicate a Windows HANDLE within the current process.
+/* Duplicate a Windows HANDLE within the current process. */
 NaClHandle NaClDuplicateNaClHandle(NaClHandle handle) {
   NaClHandle dup_handle;
   if (DuplicateHandle(GetCurrentProcess(),
@@ -50,29 +47,29 @@ NaClHandle NaClDuplicateNaClHandle(NaClHandle handle) {
   }
 }
 
-namespace nacl {
+/*
+ * This prefix used to be appended to pipe names for pipes
+ * created in BoundSocket. We keep it for backward compatibility.
+ * TODO(gregoryd): implement versioning support
+ */
+static const char kOldPipePrefix[] = "\\\\.\\pipe\\google-nacl-";
+static const char kPipePrefix[] = "\\\\.\\pipe\\chrome.nacl.";
 
-namespace {
-// This prefix used to be appended to pipe names for pipes
-// created in BoundSocket. We keep it for backward compatibility.
-// TODO(gregoryd): implement versioning support
-const char kOldPipePrefix[] = "\\\\.\\pipe\\google-nacl-";
-const char kPipePrefix[] = "\\\\.\\pipe\\chrome.nacl.";
-
-const size_t kPipePrefixSize = sizeof kPipePrefix / sizeof kPipePrefix[0];
-const size_t kOldPipePrefixSize =
+static const size_t kPipePrefixSize =
+    sizeof kPipePrefix / sizeof kPipePrefix[0];
+static const size_t kOldPipePrefixSize =
     sizeof kOldPipePrefix / sizeof kOldPipePrefix[0];
 
-const int kPipePathMax = kPipePrefixSize + kPathMax + 1;
-const int kOutBufferSize = 4096;  // TBD
-const int kInBufferSize = 4096;   // TBD
-const int kDefaultTimeoutMilliSeconds = 1000;
+static const int kPipePathMax = kPipePrefixSize + NACL_PATH_MAX + 1;
+static const int kOutBufferSize = 4096;  /* TBD */
+static const int kInBufferSize = 4096;   /* TBD */
+static const int kDefaultTimeoutMilliSeconds = 1000;
 
-// ControlHeader::command
-const int kEchoRequest = 0;
-const int kEchoResponse = 1;
-const int kMessage = 2;
-const int kCancel = 3;   // Cancels Handle transfer operations
+/* ControlHeader::command */
+static const int kEchoRequest = 0;
+static const int kEchoResponse = 1;
+static const int kMessage = 2;
+static const int kCancel = 3;   /* Cancels Handle transfer operations */
 
 struct ControlHeader {
   int command;
@@ -81,64 +78,67 @@ struct ControlHeader {
   uint32_t handle_count;
 };
 
-// TODO(gregoryd): a similar function exists in Chrome's base, but we cannot
-// use it here since it cannot be built with scons.
-std::wstring ASCIIToWide(const char* ascii) {
+/*
+ * TODO(gregoryd): a similar function exists in Chrome's base, but we cannot
+ * use it here since it cannot be built with scons.
+ */
+static std::wstring ASCIIToWide(const char* ascii) {
   return std::wstring(ascii, &ascii[strlen(ascii)]);
 }
 
-bool GetSocketName(const SocketAddress* address, char* name) {
+static bool GetSocketName(const NaClSocketAddress* address, char* name) {
   if (address == NULL || !isprint(address->path[0])) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return false;
   }
   sprintf_s(name, kPipePathMax, "%s%.*s",
-    kPipePrefix, kPathMax, address->path);
+    kPipePrefix, NACL_PATH_MAX, address->path);
   return true;
 }
 
-bool GetSocketNameWithOldPrefix(const SocketAddress* address, char* name) {
+static bool GetSocketNameWithOldPrefix(const NaClSocketAddress* address,
+                                       char* name) {
   if (address == NULL || !isprint(address->path[0])) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return false;
   }
   sprintf_s(name, kPipePathMax, "%s%.*s",
-            kOldPipePrefix, kPathMax, address->path);
+            kOldPipePrefix, NACL_PATH_MAX, address->path);
   return true;
 }
 
-int ReadAll(HANDLE handle, void* buffer, size_t length) {
+static int ReadAll(HANDLE handle, void* buffer, size_t length) {
   size_t count = 0;
   while (count < length) {
     DWORD len;
-    DWORD chunk = static_cast<DWORD>(
+    DWORD chunk = (DWORD) (
       ((length - count) <= UINT_MAX) ? (length - count) : UINT_MAX);
-    if (ReadFile(handle, static_cast<char*>(buffer) + count,
+    if (ReadFile(handle, (char *) buffer + count,
                  chunk, &len, NULL) == FALSE) {
-      return static_cast<int>((0 < count) ? count : -1);
+      return (int) ((0 < count) ? count : -1);
     }
     count += len;
   }
-  return static_cast<int>(count);
-};
+  return (int) count;
+}
 
-int WriteAll(HANDLE handle, const void* buffer, size_t length) {
+static int WriteAll(HANDLE handle, const void* buffer, size_t length) {
   size_t count = 0;
   while (count < length) {
     DWORD len;
-    // The following statement is for the 64 bit portability.
-    DWORD chunk = static_cast<DWORD>(
+    /* The following statement is for the 64 bit portability. */
+    DWORD chunk = (DWORD) (
       ((length - count) <= UINT_MAX) ? (length - count) : UINT_MAX);
-    if (WriteFile(handle, static_cast<const char*>(buffer) + count,
+    if (WriteFile(handle, (const char *) buffer + count,
                   chunk, &len, NULL) == FALSE) {
-      return static_cast<int>((0 < count) ? count : -1);
+      return (int) ((0 < count) ? count : -1);
     }
     count += len;
   }
-  return static_cast<int>(count);
-};
+  return (int) count;
+}
 
-BOOL SkipFile(HANDLE handle, size_t length) {
+static BOOL SkipFile(HANDLE handle, size_t length) {
   while (0 < length) {
     char scratch[1024];
     size_t count = std::min(sizeof scratch, length);
@@ -150,25 +150,23 @@ BOOL SkipFile(HANDLE handle, size_t length) {
   return TRUE;
 }
 
-BOOL SkipHandles(HANDLE handle, size_t count) {
+static BOOL SkipHandles(HANDLE handle, size_t count) {
   while (0 < count) {
     uint64_t discard;
     if (ReadAll(handle, &discard, sizeof discard) != sizeof discard) {
       return FALSE;
     }
-    CloseHandle(reinterpret_cast<HANDLE>(discard));
+    CloseHandle((HANDLE) discard);
     --count;
   }
   return TRUE;
 }
 
-}  // namespace
-
-bool WouldBlock() {
-  return (GetLastError() == ERROR_PIPE_LISTENING) ? true : false;
+int NaClWouldBlock() {
+  return GetLastError() == ERROR_PIPE_LISTENING;
 }
 
-int GetLastErrorString(char* buffer, size_t length) {
+int NaClGetLastErrorString(char* buffer, size_t length) {
   DWORD error = GetLastError();
   return FormatMessageA(
       FORMAT_MESSAGE_FROM_SYSTEM |
@@ -177,16 +175,16 @@ int GetLastErrorString(char* buffer, size_t length) {
       error,
       MAKELANGID(LANG_NEUTRAL, SUBLANG_DEFAULT),
       buffer,
-      static_cast<DWORD>((64 * 1024 < length) ? 64 * 1024 : length),
+      (DWORD) ((64 * 1024 < length) ? 64 * 1024 : length),
       NULL) ? 0 : -1;
 }
 
-Handle BoundSocket(const SocketAddress* address) {
+NaClHandle NaClBoundSocket(const NaClSocketAddress* address) {
   char name[kPipePathMax];
   if (!GetSocketName(address, name)) {
-    return kInvalidHandle;
+    return NACL_INVALID_HANDLE;
   }
-  // Create a named pipe in nonblocking mode.
+  /* Create a named pipe in nonblocking mode. */
   return CreateNamedPipeW(
       ASCIIToWide(name).c_str(),
       PIPE_ACCESS_DUPLEX | FILE_FLAG_FIRST_PIPE_INSTANCE,
@@ -198,10 +196,10 @@ Handle BoundSocket(const SocketAddress* address) {
       NULL);
 }
 
-int SocketPair(Handle pair[2]) {
+int NaClSocketPair(NaClHandle pair[2]) {
   static Atomic32 socket_pair_count;
-
   char name[kPipePathMax];
+
   do {
     sprintf_s(name, kPipePathMax, "%s%u.%lu",
               kPipePrefix, GetCurrentProcessId(),
@@ -223,11 +221,11 @@ int SocketPair(Handle pair[2]) {
   } while (pair[0] == INVALID_HANDLE_VALUE);
   pair[1] = CreateFileW(ASCIIToWide(name).c_str(),
                         GENERIC_READ | GENERIC_WRITE,
-                        0,              // no sharing
-                        NULL,           // default security attributes
-                        OPEN_EXISTING,  // opens existing pipe
+                        0,              /* no sharing */
+                        NULL,           /* default security attributes */
+                        OPEN_EXISTING,  /* opens existing pipe */
                         SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
-                        NULL);          // no template file
+                        NULL);          /* no template file */
   if (pair[1] == INVALID_HANDLE_VALUE) {
     CloseHandle(pair[0]);
     return -1;
@@ -243,42 +241,46 @@ int SocketPair(Handle pair[2]) {
   return 0;
 }
 
-int Close(Handle handle) {
+int NaClClose(NaClHandle handle) {
   if (handle == NULL || handle == INVALID_HANDLE_VALUE) {
     return 0;
   }
   return CloseHandle(handle) ? 0 : -1;
 }
 
-int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
+int NaClSendDatagram(NaClHandle handle, const NaClMessageHeader* message,
+                     int flags) {
   ControlHeader header = { kEchoRequest, GetCurrentProcessId(), 0, 0 };
-  uint64_t remote_handles[kHandleCountMax];
+  uint64_t remote_handles[NACL_HANDLE_COUNT_MAX];
+  uint32_t i;
 
-  if (kHandleCountMax < message->handle_count) {
+  if (NACL_HANDLE_COUNT_MAX < message->handle_count) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return -1;
   }
-  if (!MessageSizeIsValid(message)) {
+  if (!NaClMessageSizeIsValid(message)) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return -1;
   }
   if (0 < message->handle_count && message->handles) {
-    // TODO(shiki): On Windows Vista, we can use GetNamedPipeClientProcessId()
-    // and GetNamedPipeServerProcessId() and probably we can remove
-    // kEchoRequest and kEchoResponse completely.
+    HANDLE target;
+    /*
+     * TODO(shiki): On Windows Vista, we can use GetNamedPipeClientProcessId()
+     * and GetNamedPipeServerProcessId() and probably we can remove
+     * kEchoRequest and kEchoResponse completely.
+     */
     if (WriteAll(handle, &header, sizeof header) != sizeof header ||
         ReadAll(handle, &header, sizeof header) != sizeof header ||
         header.command != kEchoResponse) {
       return -1;
     }
-    HANDLE target;
     if (g_broker_duplicate_handle_func == NULL) {
       target = OpenProcess(PROCESS_DUP_HANDLE, FALSE, header.pid);
       if (target == NULL) {
         return -1;
       }
     }
-    for (uint32_t i = 0; i < message->handle_count; ++i) {
+    for (i = 0; i < message->handle_count; ++i) {
       HANDLE temp_remote_handle;
       bool success;
       if (g_broker_duplicate_handle_func != NULL) {
@@ -292,8 +294,10 @@ int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
                                   0, FALSE, DUPLICATE_SAME_ACCESS);
       }
       if (!success) {
-        // Send the kCancel message to revoke the handles duplicated
-        // so far in the remote peer.
+        /*
+         * Send the kCancel message to revoke the handles duplicated
+         * so far in the remote peer.
+         */
         header.command = kCancel;
         header.handle_count = i;
         if (0 < i) {
@@ -305,7 +309,7 @@ int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
         }
         return -1;
       }
-      remote_handles[i] = reinterpret_cast<uint64_t>(temp_remote_handle);
+      remote_handles[i] = (uint64_t) temp_remote_handle;
     }
     if (g_broker_duplicate_handle_func == NULL) {
       CloseHandle(target);
@@ -313,16 +317,16 @@ int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
   }
   header.command = kMessage;
   header.handle_count = message->handle_count;
-  for (uint32_t i = 0; i < message->iov_length; ++i) {
+  for (i = 0; i < message->iov_length; ++i) {
     if (UINT32_MAX - header.message_length < message->iov[i].length) {
       return -1;
     }
-    header.message_length += static_cast<uint32_t>(message->iov[i].length);
+    header.message_length += (uint32_t) message->iov[i].length;
   }
   if (WriteAll(handle, &header, sizeof header) != sizeof header) {
     return -1;
   }
-  for (uint32_t i = 0; i < message->iov_length; ++i) {
+  for (i = 0; i < message->iov_length; ++i) {
     if (WriteAll(handle, message->iov[i].base, message->iov[i].length) !=
         message->iov[i].length) {
       return -1;
@@ -335,89 +339,93 @@ int SendDatagram(Handle handle, const MessageHeader* message, int flags) {
           sizeof(uint64_t) * message->handle_count) {
     return -1;
   }
-  return static_cast<int>(header.message_length);
+  return (int) header.message_length;
 }
 
-int SendDatagramTo(const MessageHeader* message, int flags,
-                   const SocketAddress* name) {
-  Handle handle;
-  if (kHandleCountMax < message->handle_count) {
-    SetLastError(ERROR_INVALID_PARAMETER);
-    return -1;
-  }
-  if (!MessageSizeIsValid(message)) {
-    SetLastError(ERROR_INVALID_PARAMETER);
-    return -1;
-  }
+int NaClSendDatagramTo(const NaClMessageHeader* message, int flags,
+                       const NaClSocketAddress* name) {
+  NaClHandle handle;
   char pipe_name[kPipePathMax];
+  int timeout_ms;
+  int result;
+
+  if (NACL_HANDLE_COUNT_MAX < message->handle_count) {
+    SetLastError(ERROR_INVALID_PARAMETER);
+    return -1;
+  }
+  if (!NaClMessageSizeIsValid(message)) {
+    SetLastError(ERROR_INVALID_PARAMETER);
+    return -1;
+  }
   if (!GetSocketName(name, pipe_name)) {
     return -1;
   }
-  int timeout_ms = 10;
+  timeout_ms = 10;
   for (;;) {
     handle = CreateFileW(ASCIIToWide(pipe_name).c_str(),
                          GENERIC_READ | GENERIC_WRITE,
-                         0,              // no sharing
-                         NULL,           // default security attributes
-                         OPEN_EXISTING,  // opens existing pipe
+                         0,              /* no sharing */
+                         NULL,           /* default security attributes */
+                         OPEN_EXISTING,  /* opens existing pipe */
                          SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
-                         NULL);          // no template file
+                         NULL);          /* no template file */
     if (handle != INVALID_HANDLE_VALUE) {
       break;
     }
 
-    // If the pipe is busy it means it exists, so we can try and wait
+    /* If the pipe is busy it means it exists, so we can try and wait. */
     if (GetLastError() != ERROR_PIPE_BUSY) {
       if (GetLastError() != ERROR_FILE_NOT_FOUND) {
         return -1;
       } else {
-        // Try to find the file using name with prefix (can be created
-        // by an old version of IMC library.
+        /*
+         * Try to find the file using name with prefix (can be created
+         * by an old version of IMC library.
+         */
         if (!GetSocketNameWithOldPrefix(name, pipe_name)) {
           return -1;
         }
         handle = CreateFileW(ASCIIToWide(pipe_name).c_str(),
                              GENERIC_READ | GENERIC_WRITE,
-                             0,              // no sharing
-                             NULL,           // default security attributes
-                             OPEN_EXISTING,  // opens existing pipe
+                             0,              /* no sharing */
+                             NULL,           /* default security attributes */
+                             OPEN_EXISTING,  /* opens existing pipe */
                              SECURITY_SQOS_PRESENT | SECURITY_IDENTIFICATION,
-                             NULL);          // no template file
+                             NULL);          /* no template file */
         if (handle != INVALID_HANDLE_VALUE) {
           break;
         }
         if (GetLastError() != ERROR_PIPE_BUSY) {
-          // Could not find the pipe - nothing to do
+          /* Could not find the pipe - nothing to do */
           return -1;
         }
       }
       break;
     }
-    if (flags & kDontWait) {
+    if (flags & NACL_DONT_WAIT) {
       SetLastError(ERROR_PIPE_LISTENING);
       return -1;
     }
-    // Cannot call WaitNamedPipe here because it's blocked by Chrome sandbox.
+    /* Cannot call WaitNamedPipe here because it's blocked by Chrome sandbox. */
     Sleep(timeout_ms);
     timeout_ms *= 2;
     if (timeout_ms > kDefaultTimeoutMilliSeconds) {
       timeout_ms = kDefaultTimeoutMilliSeconds;
     }
   }
-  int result = SendDatagram(handle, message, flags);
+  result = NaClSendDatagram(handle, message, flags);
   CloseHandle(handle);
   return result;
 }
 
-namespace {
-
-int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
-                    bool bound_socket) {
+static int ReceiveDatagram(NaClHandle handle, NaClMessageHeader* message,
+                           int flags, bool bound_socket) {
   ControlHeader header;
   int result = -1;
   bool dontPeek = false;
+  uint32_t i;
  Repeat:
-  if ((flags & kDontWait) && !dontPeek) {
+  if ((flags & NACL_DONT_WAIT) && !dontPeek) {
     DWORD len;
     DWORD total;
     if (PeekNamedPipe(handle, &header, sizeof header, &len, &total, NULL)) {
@@ -426,16 +434,18 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
       } else {
         switch (header.command) {
         case kEchoRequest:
-          // Send back the process id to the remote peer to duplicate handles.
-          // TODO(shiki) : It might be better to keep remote pid by the initial
-          //               handshake rather than send kEchoRequest each time
-          //               before duplicating handles.
+          /*
+           * Send back the process id to the remote peer to duplicate handles.
+           * TODO(shiki) : It might be better to keep remote pid by the initial
+           *               handshake rather than send kEchoRequest each time
+           *               before duplicating handles.
+           */
           if (ReadAll(handle, &header, sizeof header) == sizeof header) {
             header.command = kEchoResponse;
             header.pid = GetCurrentProcessId();
             WriteAll(handle, &header, sizeof header);
             if (bound_socket) {
-              // We must not close this connection.
+              /* We must not close this connection. */
               dontPeek = true;
             }
             goto Repeat;
@@ -447,11 +457,11 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
           break;
         case kMessage:
           if (header.message_length + sizeof header <= total) {
-            if (flags & kDontWait) {
-              flags &= ~kDontWait;
+            if (flags & NACL_DONT_WAIT) {
+              flags &= ~NACL_DONT_WAIT;
               goto Repeat;
             }
-            result = static_cast<int>(header.message_length);
+            result = (int) header.message_length;
           } else {
             SetLastError(ERROR_PIPE_LISTENING);
           }
@@ -484,12 +494,11 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
       uint32_t total_message_bytes = header.message_length;
       size_t count = 0;
       message->flags = 0;
-      for (size_t i = 0;
+      for (i = 0;
            i < message->iov_length && count < header.message_length;
            ++i) {
-        IOVec* iov = &message->iov[i];
-        uint32_t len = std::min(static_cast<uint32_t>(iov->length),
-                                total_message_bytes);
+        NaClIOVec* iov = &message->iov[i];
+        uint32_t len = std::min((uint32_t) iov->length, total_message_bytes);
         if (ReadAll(handle, iov->base, len) != len) {
           break;
         }
@@ -500,19 +509,19 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
         if (SkipFile(handle, header.message_length - count) == FALSE) {
           break;
         }
-        message->flags |= kMessageTruncated;
+        message->flags |= NACL_MESSAGE_TRUNCATED;
       }
       if (0 < message->handle_count && message->handles) {
+        uint64_t received_handles[NACL_HANDLE_COUNT_MAX];
         message->handle_count = std::min(message->handle_count,
                                          header.handle_count);
-        uint64_t received_handles[kHandleCountMax];
         if (ReadAll(handle, received_handles,
                     message->handle_count * sizeof(uint64_t)) !=
             message->handle_count * sizeof(uint64_t)) {
           break;
         }
-        for (uint32_t i = 0; i < message->handle_count; ++i) {
-          message->handles[i] = reinterpret_cast<HANDLE>(received_handles[i]);
+        for (i = 0; i < message->handle_count; ++i) {
+          message->handles[i] = (HANDLE) received_handles[i];
         }
       } else {
         message->handle_count = 0;
@@ -522,9 +531,9 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
             FALSE) {
           break;
         }
-        message->flags |= kHandlesTruncated;
+        message->flags |= NACL_HANDLES_TRUNCATED;
       }
-      result = static_cast<int>(count);
+      result = (int) count;
       break;
     }
     case kCancel:
@@ -538,56 +547,60 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags,
   return result;
 }
 
-}  // namespace
-
-int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
-  if (!MessageSizeIsValid(message)) {
+int NaClReceiveDatagram(NaClHandle handle, NaClMessageHeader* message,
+                        int flags) {
+  DWORD state;
+  if (!NaClMessageSizeIsValid(message)) {
     SetLastError(ERROR_INVALID_PARAMETER);
     return -1;
   }
 
-  // If handle is a bound socket, it is a named pipe in non-blocking mode.
-  // Set is_bound_socket to true if handle has been created by BoundSocket().
-  DWORD state;
+  /*
+   * If handle is a bound socket, it is a named pipe in non-blocking mode.
+   * Set is_bound_socket to true if handle has been created by BoundSocket().
+   */
   if (!GetNamedPipeHandleState(handle, &state, NULL, NULL, NULL, NULL, NULL)) {
     return -1;
   }
 
   if (!(state & PIPE_NOWAIT)) {
-    // handle is a connected socket.
+    /* handle is a connected socket. */
     return ReceiveDatagram(handle, message, flags, false);
   }
 
-  // handle is a bound socket.
+  /* handle is a bound socket. */
   for (;;) {
     if (ConnectNamedPipe(handle, NULL)) {
-      // Note ConnectNamedPipe() for a handle in non-blocking mode returns a
-      // nonzero value just to indicate that the pipe is now available to be
-      // connected.
+      /*
+       * Note ConnectNamedPipe() for a handle in non-blocking mode returns a
+       * nonzero value just to indicate that the pipe is now available to be
+       * connected.
+       */
       continue;
     }
     switch (GetLastError()) {
     case ERROR_PIPE_LISTENING: {
-      if (flags & kDontWait) {
+      /* Set handle to blocking mode */
+      DWORD mode = PIPE_READMODE_BYTE | PIPE_WAIT;
+      if (flags & NACL_DONT_WAIT) {
         return -1;
       }
-      // Set handle to blocking mode
-      DWORD mode = PIPE_READMODE_BYTE | PIPE_WAIT;
       SetNamedPipeHandleState(handle, &mode, NULL, NULL);
       break;
     }
     case ERROR_PIPE_CONNECTED: {
-      // Set handle to blocking mode
+      /* Set handle to blocking mode */
       DWORD mode = PIPE_READMODE_BYTE | PIPE_WAIT;
+      int result;
       SetNamedPipeHandleState(handle, &mode, NULL, NULL);
-      int result = ReceiveDatagram(handle, message, flags, true);
+      result = ReceiveDatagram(handle, message, flags, true);
       FlushFileBuffers(handle);
-      // Set handle back to non-blocking mode
+      /* Set handle back to non-blocking mode. */
       mode = PIPE_READMODE_BYTE | PIPE_NOWAIT;
       SetNamedPipeHandleState(handle, &mode, NULL, NULL);
       DisconnectNamedPipe(handle);
       if (result == -1 && GetLastError() == ERROR_BROKEN_PIPE) {
-        if (flags & kDontWait) {
+        if (flags & NACL_DONT_WAIT) {
           SetLastError(ERROR_PIPE_LISTENING);
           return result;
         }
@@ -602,5 +615,3 @@ int ReceiveDatagram(Handle handle, MessageHeader* message, int flags) {
     }
   }
 }
-
-}  // namespace nacl

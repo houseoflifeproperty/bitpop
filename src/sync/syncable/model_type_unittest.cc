@@ -31,7 +31,7 @@ TEST_F(ModelTypeTest, ModelTypeToValue) {
 TEST_F(ModelTypeTest, ModelTypeFromValue) {
   for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
     ModelType model_type = ModelTypeFromInt(i);
-    scoped_ptr<StringValue> value(ModelTypeToValue(model_type));
+    scoped_ptr<base::StringValue> value(ModelTypeToValue(model_type));
     EXPECT_EQ(model_type, ModelTypeFromValue(*value));
   }
 }
@@ -39,7 +39,7 @@ TEST_F(ModelTypeTest, ModelTypeFromValue) {
 TEST_F(ModelTypeTest, ModelTypeSetToValue) {
   const ModelTypeSet model_types(BOOKMARKS, APPS);
 
-  scoped_ptr<ListValue> value(ModelTypeSetToValue(model_types));
+  scoped_ptr<base::ListValue> value(ModelTypeSetToValue(model_types));
   EXPECT_EQ(2u, value->GetSize());
   std::string types[2];
   EXPECT_TRUE(value->GetString(0, &types[0]));
@@ -51,7 +51,7 @@ TEST_F(ModelTypeTest, ModelTypeSetToValue) {
 TEST_F(ModelTypeTest, ModelTypeSetFromValue) {
   // Try empty set first.
   ModelTypeSet model_types;
-  scoped_ptr<ListValue> value(ModelTypeSetToValue(model_types));
+  scoped_ptr<base::ListValue> value(ModelTypeSetToValue(model_types));
   EXPECT_TRUE(model_types.Equals(ModelTypeSetFromValue(*value)));
 
   // Now try with a few random types.
@@ -73,16 +73,48 @@ TEST_F(ModelTypeTest, IsRealDataType) {
 // Make sure we can convert ModelTypes to and from specifics field
 // numbers.
 TEST_F(ModelTypeTest, ModelTypeToFromSpecificsFieldNumber) {
-  for (int i = FIRST_REAL_MODEL_TYPE; i < MODEL_TYPE_COUNT; ++i) {
-    ModelType model_type = ModelTypeFromInt(i);
-    int field_number = GetSpecificsFieldNumberFromModelType(model_type);
-    EXPECT_EQ(model_type,
+  ModelTypeSet protocol_types = ProtocolTypes();
+  for (ModelTypeSet::Iterator iter = protocol_types.First(); iter.Good();
+       iter.Inc()) {
+    int field_number = GetSpecificsFieldNumberFromModelType(iter.Get());
+    EXPECT_EQ(iter.Get(),
               GetModelTypeFromSpecificsFieldNumber(field_number));
   }
 }
 
 TEST_F(ModelTypeTest, ModelTypeOfInvalidSpecificsFieldNumber) {
   EXPECT_EQ(UNSPECIFIED, GetModelTypeFromSpecificsFieldNumber(0));
+}
+
+TEST_F(ModelTypeTest, ModelTypeHistogramMapping) {
+  std::set<int> histogram_values;
+  ModelTypeSet all_types = ModelTypeSet::All();
+  for (ModelTypeSet::Iterator it = all_types.First(); it.Good(); it.Inc()) {
+    SCOPED_TRACE(ModelTypeToString(it.Get()));
+    int histogram_value = ModelTypeToHistogramInt(it.Get());
+
+    EXPECT_TRUE(histogram_values.insert(histogram_value).second)
+        << "Expected histogram values to be unique";
+
+    // This is not necessary for the mapping to be valid, but most instances of
+    // UMA_HISTOGRAM that use this mapping specify MODEL_TYPE_COUNT as the
+    // maximum possible value.  If you break this assumption, you should update
+    // those histograms.
+    EXPECT_LT(histogram_value, MODEL_TYPE_COUNT);
+  }
+}
+
+TEST_F(ModelTypeTest, ModelTypeSetFromString) {
+  syncer::ModelTypeSet empty;
+  syncer::ModelTypeSet one(BOOKMARKS);
+  syncer::ModelTypeSet two(BOOKMARKS, TYPED_URLS);
+
+  EXPECT_TRUE(
+      empty.Equals(ModelTypeSetFromString(ModelTypeSetToString(empty))));
+  EXPECT_TRUE(
+      one.Equals(ModelTypeSetFromString(ModelTypeSetToString(one))));
+  EXPECT_TRUE(
+      two.Equals(ModelTypeSetFromString(ModelTypeSetToString(two))));
 }
 
 }  // namespace

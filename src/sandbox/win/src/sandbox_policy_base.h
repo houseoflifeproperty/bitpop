@@ -12,7 +12,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "sandbox/win/src/crosscall_server.h"
 #include "sandbox/win/src/handle_closer.h"
 #include "sandbox/win/src/ipc_tags.h"
@@ -44,7 +44,7 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   virtual ResultCode SetJobLevel(JobLevel job_level,
                                  uint32 ui_exceptions) OVERRIDE;
   virtual ResultCode SetAlternateDesktop(bool alternate_winstation) OVERRIDE;
-  virtual string16 GetAlternateDesktop() const OVERRIDE;
+  virtual base::string16 GetAlternateDesktop() const OVERRIDE;
   virtual ResultCode CreateAlternateDesktop(bool alternate_winstation) OVERRIDE;
   virtual void DestroyAlternateDesktop() OVERRIDE;
   virtual ResultCode SetIntegrityLevel(IntegrityLevel integrity_level) OVERRIDE;
@@ -58,11 +58,14 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
       MitigationFlags flags) OVERRIDE;
   virtual MitigationFlags GetDelayedProcessMitigations() OVERRIDE;
   virtual void SetStrictInterceptions() OVERRIDE;
+  virtual ResultCode SetStdoutHandle(HANDLE handle) OVERRIDE;
+  virtual ResultCode SetStderrHandle(HANDLE handle) OVERRIDE;
   virtual ResultCode AddRule(SubSystem subsystem, Semantics semantics,
                              const wchar_t* pattern) OVERRIDE;
   virtual ResultCode AddDllToUnload(const wchar_t* dll_name);
-  virtual ResultCode AddKernelObjectToClose(const char16* handle_type,
-                                            const char16* handle_name) OVERRIDE;
+  virtual ResultCode AddKernelObjectToClose(
+      const base::char16* handle_type,
+      const base::char16* handle_name) OVERRIDE;
 
   // Dispatcher:
   virtual Dispatcher* OnMessageReady(IPCParams* ipc,
@@ -89,6 +92,9 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   bool OnJobEmpty(HANDLE job);
 
   EvalResult EvalPolicy(int service, CountedParameterSetBase* params);
+
+  HANDLE GetStdoutHandle();
+  HANDLE GetStderrHandle();
 
  private:
   ~PolicyBase();
@@ -123,6 +129,8 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   // Helps the file system policy initialization.
   bool file_system_init_;
   bool relaxed_interceptions_;
+  HANDLE stdout_handle_;
+  HANDLE stderr_handle_;
   IntegrityLevel integrity_level_;
   IntegrityLevel delayed_integrity_level_;
   MitigationFlags mitigations_;
@@ -134,12 +142,12 @@ class PolicyBase : public Dispatcher, public TargetPolicy {
   // Memory structure that stores the low level policy.
   PolicyGlobal* policy_;
   // The list of dlls to unload in the target process.
-  std::vector<string16> blacklisted_dlls_;
+  std::vector<base::string16> blacklisted_dlls_;
   // This is a map of handle-types to names that we need to close in the
   // target process. A null set means we need to close all handles of the
   // given type.
   HandleCloser handle_closer_;
-  std::vector<string16> capabilities_;
+  std::vector<base::string16> capabilities_;
   scoped_ptr<AppContainerAttributes> appcontainer_list_;
 
   static HDESK alternate_desktop_handle_;

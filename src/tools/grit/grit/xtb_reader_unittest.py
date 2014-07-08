@@ -71,6 +71,30 @@ and another after a blank line.</translation>
     self.failUnless('Saelir %s',
                     clique_hello_user.MessageForLanguage('is').GetRealContent())
 
+  def testIfNodesWithUseNameForId(self):
+    root = util.ParseGrdForUnittest('''
+      <messages>
+        <message name="ID_BINGO" use_name_for_id="true">Bingo!</message>
+      </messages>''')
+    msgs, = root.GetChildrenOfType(empty.MessagesNode)
+    clique = msgs.children[0].GetCliques()[0]
+    msg = clique.GetMessage()
+
+    xtb_file = StringIO.StringIO('''<?xml version="1.0" encoding="UTF-8"?>
+      <!DOCTYPE translationbundle>
+      <translationbundle lang="is">
+        <if expr="is_linux">
+          <translation id="ID_BINGO">Bongo!</translation>
+        </if>
+        <if expr="not is_linux">
+          <translation id="ID_BINGO">Congo!</translation>
+        </if>
+      </translationbundle>''')
+    xtb_reader.Parse(xtb_file,
+                     msgs.UberClique().GenerateXtbParserCallback('is'),
+                     target_platform='darwin')
+    self.assertEqual('Congo!', clique.MessageForLanguage('is').GetRealContent())
+
   def testParseLargeFile(self):
     def Callback(id, structure):
       pass

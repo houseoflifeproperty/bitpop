@@ -4,6 +4,8 @@
  * found in the LICENSE file.
  */
 
+#define NACL_LOG_MODULE_NAME "reverse_service"
+
 #include "native_client/src/trusted/reverse_service/reverse_service.h"
 
 #include <string.h>
@@ -26,23 +28,18 @@
 #include "native_client/src/trusted/desc/nacl_desc_io.h"
 
 #include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
+#include "native_client/src/trusted/validator/nacl_file_info.h"
 
 namespace {
+
+// ReverseInterfaceWrapper wraps a C++ interface and provides
+// C-callable wrapper functions for use by the underlying C
+// implementation.
 
 struct ReverseInterfaceWrapper {
   NaClReverseInterface base NACL_IS_REFCOUNT_SUBCLASS;
   nacl::ReverseInterface* iface;
 };
-
-void RevLog(NaClReverseInterface* self, char const* message) {
-  ReverseInterfaceWrapper* wrapper =
-      reinterpret_cast<ReverseInterfaceWrapper*>(self);
-  if (NULL == wrapper->iface) {
-    NaClLog(1, "Log, no reverse_interface. Message: %s\n", message);
-  } else {
-    wrapper->iface->Log(message);
-  }
-}
 
 void StartupInitializationComplete(NaClReverseInterface* self) {
   ReverseInterfaceWrapper* wrapper =
@@ -54,66 +51,16 @@ void StartupInitializationComplete(NaClReverseInterface* self) {
   }
 }
 
-size_t EnumerateManifestKeys(NaClReverseInterface* self,
-                             char* buffer,
-                             size_t buffer_bytes) {
-  ReverseInterfaceWrapper* wrapper =
-      reinterpret_cast<ReverseInterfaceWrapper*>(self);
-  if (NULL == wrapper->iface) {
-    NaClLog(1, "EnumerateManifestKeys, no reverse_interface.\n");
-    return 0;
-  }
-
-  std::set<nacl::string> manifest_keys;
-  if (!wrapper->iface->EnumerateManifestKeys(&manifest_keys)) {
-    NaClLog(LOG_WARNING, "EnumerateManifestKeys failed\n");
-    return 0;
-  }
-
-  size_t size = 0;
-  for (std::set<nacl::string>::iterator it = manifest_keys.begin();
-       it != manifest_keys.end();
-       ++it) {
-    if (size >= buffer_bytes) {
-      size += it->size() + 1;
-      continue;
-    }
-
-    size_t to_write = buffer_bytes - size;
-    if (it->size() + 1 < to_write) {
-      to_write = it->size() + 1;
-    } else {
-      NaClLog(3,
-              "EnumerateManifestKeys: truncating entry %s\n", it->c_str());
-    }
-    strncpy(buffer + size, it->c_str(), to_write);
-    NaClLog(3, "EnumerateManifestKeys: %.*s\n", (int) to_write, buffer + size);
-    size += to_write;
-  }
-  return size;
-}
-
 int OpenManifestEntry(NaClReverseInterface* self,
                       char const* url_key,
-                      int32_t* out_desc) {
+                      struct NaClFileInfo* info) {
   ReverseInterfaceWrapper* wrapper =
       reinterpret_cast<ReverseInterfaceWrapper*>(self);
   if (NULL == wrapper->iface) {
     NaClLog(1, "OpenManifestEntry, no reverse_interface.\n");
     return 0;
   }
-  return wrapper->iface->OpenManifestEntry(nacl::string(url_key), out_desc);
-}
-
-int CloseManifestEntry(NaClReverseInterface* self,
-                       int32_t desc) {
-  ReverseInterfaceWrapper* wrapper =
-      reinterpret_cast<ReverseInterfaceWrapper*>(self);
-  if (NULL == wrapper->iface) {
-    NaClLog(1, "CloseManifestEntry, no reverse_interface.\n");
-    return 0;
-  }
-  return wrapper->iface->CloseManifestEntry(desc);
+  return wrapper->iface->OpenManifestEntry(nacl::string(url_key), info);
 }
 
 void ReportCrash(NaClReverseInterface* self) {
@@ -163,10 +110,51 @@ int CreateProcess(NaClReverseInterface* self,
   nacl::DescWrapper* sock_addr;
   nacl::DescWrapper* app_addr;
   if (0 == (status = wrapper->iface->CreateProcess(&sock_addr, &app_addr))) {
-    *out_sock_addr = NaClDescRef(sock_addr->desc());
-    *out_app_addr = NaClDescRef(app_addr->desc());
+    *out_sock_addr = sock_addr->desc();
+    *out_app_addr = app_addr->desc();
   }
   return status;
+}
+
+class CreateProcessFunctorBinder : public nacl::CreateProcessFunctorInterface {
+ public:
+  CreateProcessFunctorBinder(void (*functor)(void* functor_state,
+                                             NaClDesc* out_sock_addr,
+                                             NaClDesc* out_app_addr,
+                                             int32_t out_pid_or_errno),
+                             void* functor_state)
+      : functor_(functor), state_(functor_state) {}
+
+  virtual void Results(nacl::DescWrapper* out_sock_addr,
+                       nacl::DescWrapper* out_app_addr,
+                       int32_t out_pid_or_errno) {
+    functor_(state_, out_sock_addr->desc(), out_app_addr->desc(),
+             out_pid_or_errno);
+  }
+ private:
+  void (*functor_)(void*, NaClDesc*, NaClDesc*, int32_t);
+  void* state_;
+};
+
+void CreateProcessFunctorResult(NaClReverseInterface* self,
+                                void (*functor)(void* functor_state,
+                                                NaClDesc* out_sock_addr,
+                                                NaClDesc* out_app_addr,
+                                                int32_t out_pid_or_errno),
+                                void *functor_state) {
+  ReverseInterfaceWrapper* wrapper =
+      reinterpret_cast<ReverseInterfaceWrapper*>(self);
+
+  CreateProcessFunctorBinder callback(functor, functor_state);
+  wrapper->iface->CreateProcessFunctorResult(&callback);
+}
+
+void FinalizeProcess(NaClReverseInterface* self,
+                     int32_t pid) {
+  ReverseInterfaceWrapper* wrapper =
+      reinterpret_cast<ReverseInterfaceWrapper*>(self);
+
+  wrapper->iface->FinalizeProcess(pid);
 }
 
 int64_t RequestQuotaForWrite(NaClReverseInterface* self,
@@ -198,22 +186,21 @@ static NaClReverseInterfaceVtbl const kReverseInterfaceWrapperVtbl = {
   {
     ReverseInterfaceWrapperDtor,
   },
-  RevLog,
   StartupInitializationComplete,
-  EnumerateManifestKeys,
   OpenManifestEntry,
-  CloseManifestEntry,
   ReportCrash,
   ReportExitStatus,
   DoPostMessage,
   CreateProcess,
+  CreateProcessFunctorResult,
+  FinalizeProcess,
   RequestQuotaForWrite,
 };
 
 int ReverseInterfaceWrapperCtor(ReverseInterfaceWrapper* self,
                                 nacl::ReverseInterface* itf) {
   NaClLog(4,
-          "ReverseInterfaceWrapperCtor: self 0x%"NACL_PRIxPTR"\n",
+          "ReverseInterfaceWrapperCtor: self 0x%" NACL_PRIxPTR "\n",
           reinterpret_cast<uintptr_t>(self));
   if (!NaClReverseInterfaceCtor_protected(
         reinterpret_cast<NaClReverseInterface*>(&self->base))) {

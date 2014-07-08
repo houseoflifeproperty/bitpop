@@ -8,18 +8,18 @@
 #include "base/i18n/rtl.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #import "chrome/browser/ui/chrome_style.h"
-#import "chrome/browser/ui/cocoa/hyperlink_button_cell.h"
-#include "chrome/browser/ui/constrained_window.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "content/public/browser/page_navigator.h"
+#include "extensions/common/extension.h"
 #include "grit/generated_resources.h"
 #include "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "ui/base/cocoa/controls/hyperlink_button_cell.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/image/image_skia_util_mac.h"
@@ -28,17 +28,48 @@ using content::OpenURLParams;
 using content::Referrer;
 using extensions::BundleInstaller;
 
+namespace {
+
+// A collection of attributes (bitmask) for how to draw a cell, the expand
+// marker and the text in the cell.
+enum CellAttributesMask {
+  kBoldText                = 1 << 0,
+  kNoExpandMarker          = 1 << 1,
+  kUseBullet               = 1 << 2,
+  kAutoExpandCell          = 1 << 3,
+  kUseCustomLinkCell       = 1 << 4,
+  kCanExpand               = 1 << 5,
+};
+
+typedef NSUInteger CellAttributes;
+
+}  // namespace.
+
 @interface ExtensionInstallViewController ()
 - (BOOL)isBundleInstall;
-- (BOOL)isInlineInstall;
+- (BOOL)hasWebstoreData;
 - (void)appendRatingStar:(const gfx::ImageSkia*)skiaImage;
 - (void)onOutlineViewRowCountDidChange;
 - (NSDictionary*)buildItemWithTitle:(NSString*)title
-                        isGroupItem:(BOOL)isGroupItem
+                     cellAttributes:(CellAttributes)cellAttributes
                            children:(NSArray*)children;
-- (NSDictionary*)buildIssue:(const IssueAdviceInfoEntry&)issue;
+- (NSDictionary*)buildDetailToggleItem:(size_t)type
+                 permissionsDetailIndex:(size_t)index;
 - (NSArray*)buildWarnings:(const ExtensionInstallPrompt::Prompt&)prompt;
 - (void)updateViewFrame:(NSRect)frame;
+@end
+
+@interface DetailToggleHyperlinkButtonCell : HyperlinkButtonCell {
+  NSUInteger permissionsDetailIndex_;
+  ExtensionInstallPrompt::DetailsType permissionsDetailType_;
+  SEL linkClickedAction_;
+}
+
+@property(assign, nonatomic) NSUInteger permissionsDetailIndex;
+@property(assign, nonatomic)
+    ExtensionInstallPrompt::DetailsType permissionsDetailType;
+@property(assign, nonatomic) SEL linkClickedAction;
+
 @end
 
 namespace {
@@ -47,14 +78,18 @@ namespace {
 // it.
 const CGFloat kWarningsSeparatorPadding = 14;
 
+// The left padding for the link cell.
+const CGFloat kLinkCellPaddingLeft = 3;
+
 // Maximum height we will adjust controls to when trying to accomodate their
 // contents.
-const CGFloat kMaxControlHeight = 400;
+const CGFloat kMaxControlHeight = 250;
 
 NSString* const kTitleKey = @"title";
-NSString* const kIsGroupItemKey = @"isGroupItem";
 NSString* const kChildrenKey = @"children";
-NSString* const kCanExpandKey = @"canExpand";
+NSString* const kCellAttributesKey = @"cellAttributes";
+NSString* const kPermissionsDetailIndex = @"permissionsDetailIndex";
+NSString* const kPermissionsDetailType = @"permissionsDetailType";
 
 // Adjust the |control|'s height so that its content is not clipped.
 // This also adds the change in height to the |totalOffset| and shifts the
@@ -93,6 +128,8 @@ void OffsetOutlineViewVerticallyToFitContent(NSOutlineView* outlineView,
   NSScrollView* scrollView = [outlineView enclosingScrollView];
   NSRect frame = [scrollView frame];
   CGFloat desiredHeight = GetDesiredOutlineViewHeight(outlineView);
+  if (desiredHeight > kMaxControlHeight)
+    desiredHeight = kMaxControlHeight;
   CGFloat offset = desiredHeight - NSHeight(frame);
   frame.size.height += offset;
 
@@ -121,6 +158,10 @@ void DrawBulletInFrame(NSRect frame) {
   [[NSBezierPath bezierPathWithOvalInRect:rect] fill];
 }
 
+bool HasAttribute(id item, CellAttributesMask attributeMask) {
+  return [[item objectForKey:kCellAttributesKey] intValue] & attributeMask;
+}
+
 }  // namespace
 
 @implementation ExtensionInstallViewController
@@ -140,16 +181,17 @@ void DrawBulletInFrame(NSRect frame) {
 - (id)initWithNavigator:(content::PageNavigator*)navigator
                delegate:(ExtensionInstallPrompt::Delegate*)delegate
                  prompt:(const ExtensionInstallPrompt::Prompt&)prompt {
-  // We use a different XIB in the case of bundle installs, inline installs or
-  // no permission warnings. These are laid out nicely for the data they
-  // display.
+  // We use a different XIB in the case of bundle installs, installs with
+  // webstore data, or no permission warnings. These are laid out nicely for
+  // the data they display.
   NSString* nibName = nil;
   if (prompt.type() == ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT) {
     nibName = @"ExtensionInstallPromptBundle";
-  } else if (prompt.type() == ExtensionInstallPrompt::INLINE_INSTALL_PROMPT) {
-    nibName = @"ExtensionInstallPromptInline";
-  } else if (prompt.GetPermissionCount() == 0 &&
-             prompt.GetOAuthIssueCount() == 0) {
+  } else if (prompt.has_webstore_data()) {
+    nibName = @"ExtensionInstallPromptWebstoreData";
+  } else if (!prompt.ShouldShowPermissions() &&
+             prompt.GetOAuthIssueCount() == 0 &&
+             prompt.GetRetainedFileCount() == 0) {
     nibName = @"ExtensionInstallPromptNoWarnings";
   } else {
     nibName = @"ExtensionInstallPrompt";
@@ -186,12 +228,19 @@ void DrawBulletInFrame(NSRect frame) {
 - (void)awakeFromNib {
   // Set control labels.
   [titleField_ setStringValue:base::SysUTF16ToNSString(prompt_->GetHeading())];
-  [okButton_ setTitle:base::SysUTF16ToNSString(
-      prompt_->GetAcceptButtonLabel())];
+  NSRect okButtonRect;
+  if (prompt_->HasAcceptButtonLabel()) {
+    [okButton_ setTitle:base::SysUTF16ToNSString(
+        prompt_->GetAcceptButtonLabel())];
+  } else {
+    [okButton_ removeFromSuperview];
+    okButtonRect = [okButton_ frame];
+    okButton_ = nil;
+  }
   [cancelButton_ setTitle:prompt_->HasAbortButtonLabel() ?
       base::SysUTF16ToNSString(prompt_->GetAbortButtonLabel()) :
       l10n_util::GetNSString(IDS_CANCEL)];
-  if ([self isInlineInstall]) {
+  if ([self hasWebstoreData]) {
     prompt_->AppendRatingStars(AppendRatingStarsShim, self);
     [ratingCountField_ setStringValue:base::SysUTF16ToNSString(
         prompt_->GetRatingCount())];
@@ -218,11 +267,21 @@ void DrawBulletInFrame(NSRect frame) {
 
   // Resize |okButton_| and |cancelButton_| to fit the button labels, but keep
   // them right-aligned.
-  NSSize buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:okButton_];
-  if (buttonDelta.width) {
-    [okButton_ setFrame:NSOffsetRect([okButton_ frame], -buttonDelta.width, 0)];
-    [cancelButton_ setFrame:NSOffsetRect([cancelButton_ frame],
-                                         -buttonDelta.width, 0)];
+  NSSize buttonDelta;
+  if (okButton_) {
+    buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:okButton_];
+    if (buttonDelta.width) {
+      [okButton_ setFrame:NSOffsetRect([okButton_ frame],
+                                       -buttonDelta.width, 0)];
+      [cancelButton_ setFrame:NSOffsetRect([cancelButton_ frame],
+                                           -buttonDelta.width, 0)];
+    }
+  } else {
+    // Make |cancelButton_| right-aligned in the absence of |okButton_|.
+    NSRect cancelButtonRect = [cancelButton_ frame];
+    cancelButtonRect.origin.x =
+        NSMaxX(okButtonRect) - NSWidth(cancelButtonRect);
+    [cancelButton_ setFrame:cancelButtonRect];
   }
   buttonDelta = [GTMUILocalizerAndLayoutTweaker sizeToFitView:cancelButton_];
   if (buttonDelta.width) {
@@ -251,22 +310,22 @@ void DrawBulletInFrame(NSRect frame) {
 
   // If there are any warnings or OAuth issues, then we have to do some special
   // layout.
-  if (prompt_->GetPermissionCount() > 0 || prompt_->GetOAuthIssueCount() > 0) {
+  if (prompt_->ShouldShowPermissions() || prompt_->GetOAuthIssueCount() > 0 ||
+      prompt_->GetRetainedFileCount() > 0) {
     NSSize spacing = [outlineView_ intercellSpacing];
     spacing.width += 2;
     spacing.height += 2;
     [outlineView_ setIntercellSpacing:spacing];
     [[[[outlineView_ tableColumns] objectAtIndex:0] dataCell] setWraps:YES];
-    for (id item in warnings_.get()) {
-      if ([[item objectForKey:kIsGroupItemKey] boolValue])
-        [outlineView_ expandItem:item expandChildren:NO];
-    }
+    for (id item in warnings_.get())
+      [self expandItemAndChildren:item];
+
     // Adjust the outline view to fit the warnings.
     OffsetOutlineViewVerticallyToFitContent(outlineView_, &totalOffset);
-  } else if ([self isInlineInstall] || [self isBundleInstall]) {
-    // Inline and bundle installs that don't have a permissions section need to
-    // hide controls related to that and shrink the window by the space they
-    // take up.
+  } else if ([self hasWebstoreData] || [self isBundleInstall]) {
+    // Installs with webstore data and bundle installs that don't have a
+    // permissions section need to hide controls related to that and shrink the
+    // window by the space they take up.
     NSRect hiddenRect = NSUnionRect([warningsSeparator_ frame],
                                     [[outlineView_ enclosingScrollView] frame]);
     [warningsSeparator_ setHidden:YES];
@@ -286,15 +345,16 @@ void DrawBulletInFrame(NSRect frame) {
   return prompt_->type() == ExtensionInstallPrompt::BUNDLE_INSTALL_PROMPT;
 }
 
-- (BOOL)isInlineInstall {
-  return prompt_->type() == ExtensionInstallPrompt::INLINE_INSTALL_PROMPT;
+- (BOOL)hasWebstoreData {
+  return prompt_->has_webstore_data();
 }
 
 - (void)appendRatingStar:(const gfx::ImageSkia*)skiaImage {
   NSImage* image = gfx::NSImageFromImageSkiaWithColorSpace(
       *skiaImage, base::mac::GetSystemColorSpace());
   NSRect frame = NSMakeRect(0, 0, skiaImage->width(), skiaImage->height());
-  scoped_nsobject<NSImageView> view([[NSImageView alloc] initWithFrame:frame]);
+  base::scoped_nsobject<NSImageView> view(
+      [[NSImageView alloc] initWithFrame:frame]);
   [view setImage:image];
 
   // Add this star after all the other ones
@@ -341,8 +401,10 @@ void DrawBulletInFrame(NSRect frame) {
   numberOfChildrenOfItem:(id)item {
   if (!item)
     return [warnings_ count];
+
   if ([item isKindOfClass:[NSDictionary class]])
     return [[item objectForKey:kChildrenKey] count];
+
   NOTREACHED();
   return 0;
 }
@@ -355,7 +417,7 @@ void DrawBulletInFrame(NSRect frame) {
 
 - (BOOL)outlineView:(NSOutlineView *)outlineView
    shouldExpandItem:(id)item {
-  return [[item objectForKey:kCanExpandKey] boolValue];
+  return HasAttribute(item, kCanExpand);
 }
 
 - (void)outlineViewItemDidExpand:sender {
@@ -391,16 +453,21 @@ void DrawBulletInFrame(NSRect frame) {
 
 - (BOOL)outlineView:(NSOutlineView*)outlineView
     shouldShowOutlineCellForItem:(id)item {
-  // The top most group header items are always expanded so hide their
-  // disclosure trianggles.
-  return ![[item objectForKey:kIsGroupItemKey] boolValue];
+  return !HasAttribute(item, kNoExpandMarker);
+}
+
+- (BOOL)outlineView:(NSOutlineView*)outlineView
+    shouldTrackCell:(NSCell*)cell
+     forTableColumn:(NSTableColumn*)tableColumn
+               item:(id)item {
+  return HasAttribute(item, kUseCustomLinkCell);
 }
 
 - (void)outlineView:(NSOutlineView*)outlineView
     willDisplayCell:(id)cell
      forTableColumn:(NSTableColumn *)tableColumn
                item:(id)item {
-  if ([[item objectForKey:kIsGroupItemKey] boolValue])
+  if (HasAttribute(item, kBoldText))
     [cell setFont:[NSFont boldSystemFontOfSize:12.0]];
   else
     [cell setFont:[NSFont systemFontOfSize:12.0]];
@@ -410,15 +477,21 @@ void DrawBulletInFrame(NSRect frame) {
     willDisplayOutlineCell:(id)cell
             forTableColumn:(NSTableColumn *)tableColumn
                       item:(id)item {
-  // Replace disclosure triangles with bullet lists for leaf nodes.
-  if (![[item objectForKey:kCanExpandKey] boolValue]) {
+  if (HasAttribute(item, kNoExpandMarker)) {
+    [cell setImagePosition:NSNoImage];
+    return;
+  }
+
+  if (HasAttribute(item, kUseBullet)) {
+    // Replace disclosure triangles with bullet lists for leaf nodes.
     [cell setImagePosition:NSNoImage];
     DrawBulletInFrame([outlineView_ frameOfOutlineCellAtRow:
         [outlineView_ rowForItem:item]]);
-  } else {
-    // Reset image to default value.
-    [cell setImagePosition:NSImageOverlaps];
+    return;
   }
+
+  // Reset image to default value.
+  [cell setImagePosition:NSImageOverlaps];
 }
 
 - (BOOL)outlineView:(NSOutlineView *)outlineView
@@ -426,72 +499,205 @@ void DrawBulletInFrame(NSRect frame) {
   return false;
 }
 
+- (NSCell*)outlineView:(NSOutlineView*)outlineView
+    dataCellForTableColumn:(NSTableColumn*)tableColumn
+                  item:(id)item {
+  if (HasAttribute(item, kUseCustomLinkCell)) {
+    base::scoped_nsobject<DetailToggleHyperlinkButtonCell> cell(
+        [[DetailToggleHyperlinkButtonCell alloc] initTextCell:@""]);
+    [cell setTarget:self];
+    [cell setLinkClickedAction:@selector(onToggleDetailsLinkClicked:)];
+    [cell setAlignment:NSLeftTextAlignment];
+    [cell setUnderlineOnHover:YES];
+    [cell setTextColor:
+        gfx::SkColorToCalibratedNSColor(chrome_style::GetLinkColor())];
+
+    size_t detailsIndex =
+        [[item objectForKey:kPermissionsDetailIndex] unsignedIntegerValue];
+    [cell setPermissionsDetailIndex:detailsIndex];
+
+    ExtensionInstallPrompt::DetailsType detailsType =
+        static_cast<ExtensionInstallPrompt::DetailsType>(
+            [[item objectForKey:kPermissionsDetailType] unsignedIntegerValue]);
+    [cell setPermissionsDetailType:detailsType];
+
+    if (prompt_->GetIsShowingDetails(detailsType, detailsIndex)) {
+      [cell setTitle:
+          l10n_util::GetNSStringWithFixup(IDS_EXTENSIONS_HIDE_DETAILS)];
+    } else {
+      [cell setTitle:
+          l10n_util::GetNSStringWithFixup(IDS_EXTENSIONS_SHOW_DETAILS)];
+    }
+
+    return cell.autorelease();
+  } else {
+    return [tableColumn dataCell];
+  }
+}
+
+- (void)expandItemAndChildren:(id)item {
+  if (HasAttribute(item, kAutoExpandCell))
+    [outlineView_ expandItem:item expandChildren:NO];
+
+  for (id child in [item objectForKey:kChildrenKey])
+    [self expandItemAndChildren:child];
+}
+
+- (void)onToggleDetailsLinkClicked:(id)sender {
+  size_t index = [sender permissionsDetailIndex];
+  ExtensionInstallPrompt::DetailsType type = [sender permissionsDetailType];
+  prompt_->SetIsShowingDetails(
+      type, index, !prompt_->GetIsShowingDetails(type, index));
+
+  warnings_.reset([[self buildWarnings:*prompt_] retain]);
+  [outlineView_ reloadData];
+
+  for (id item in warnings_.get())
+    [self expandItemAndChildren:item];
+}
+
 - (NSDictionary*)buildItemWithTitle:(NSString*)title
-                        isGroupItem:(BOOL)isGroupItem
+                     cellAttributes:(CellAttributes)cellAttributes
                            children:(NSArray*)children {
-  BOOL canExpand = YES;
-  if (!children) {
+  if (!children || ([children count] == 0 && cellAttributes & kUseBullet)) {
     // Add a dummy child even though this is a leaf node. This will cause
     // the outline view to show a disclosure triangle for this item.
     // This is later overriden in willDisplayOutlineCell: to draw a bullet
     // instead. (The bullet could be placed in the title instead but then
     // the bullet wouldn't line up with disclosure triangles of sibling nodes.)
     children = [NSArray arrayWithObject:[NSDictionary dictionary]];
-    canExpand = NO;
+  } else {
+    cellAttributes = cellAttributes | kCanExpand;
   }
 
   return @{
-      kTitleKey:       title,
-      kIsGroupItemKey: [NSNumber numberWithBool:isGroupItem],
-      kChildrenKey:    children,
-      kCanExpandKey:   [NSNumber numberWithBool:canExpand]
+    kTitleKey : title,
+    kChildrenKey : children,
+    kCellAttributesKey : [NSNumber numberWithInt:cellAttributes],
+    kPermissionsDetailIndex : @0ul,
+    kPermissionsDetailType : @0ul,
   };
 }
 
-- (NSDictionary*)buildIssue:(const IssueAdviceInfoEntry&)issue {
-  if (issue.details.empty()) {
-    return [self buildItemWithTitle:SysUTF16ToNSString(issue.description)
-                        isGroupItem:NO
-                           children:nil];
-  }
-
-  NSMutableArray* details = [NSMutableArray array];
-  for (size_t j = 0; j < issue.details.size(); ++j) {
-    [details addObject:
-        [self buildItemWithTitle:SysUTF16ToNSString(issue.details[j])
-                     isGroupItem:NO
-                        children:nil]];
-   }
-  return [self buildItemWithTitle:SysUTF16ToNSString(issue.description)
-                      isGroupItem:NO
-                         children:details];
+- (NSDictionary*)buildDetailToggleItem:(size_t)type
+                permissionsDetailIndex:(size_t)index {
+  return @{
+    kTitleKey : @"",
+    kChildrenKey : @[ @{} ],
+    kCellAttributesKey : [NSNumber numberWithInt:kUseCustomLinkCell |
+                                                 kNoExpandMarker],
+    kPermissionsDetailIndex : [NSNumber numberWithUnsignedInteger:index],
+    kPermissionsDetailType : [NSNumber numberWithUnsignedInteger:type],
+  };
 }
 
 - (NSArray*)buildWarnings:(const ExtensionInstallPrompt::Prompt&)prompt {
   NSMutableArray* warnings = [NSMutableArray array];
+  NSString* heading = nil;
 
-  if (prompt.GetPermissionCount() > 0) {
+  ExtensionInstallPrompt::DetailsType type =
+      ExtensionInstallPrompt::PERMISSIONS_DETAILS;
+  if (prompt.ShouldShowPermissions()) {
     NSMutableArray* children = [NSMutableArray array];
-    for (size_t i = 0; i < prompt.GetPermissionCount(); ++i) {
+    if (prompt.GetPermissionCount() > 0) {
+      for (size_t i = 0; i < prompt.GetPermissionCount(); ++i) {
+        [children addObject:
+            [self buildItemWithTitle:SysUTF16ToNSString(prompt.GetPermission(i))
+                      cellAttributes:kUseBullet
+                            children:nil]];
+
+        // If there are additional details, add them below this item.
+        if (!prompt.GetPermissionsDetails(i).empty()) {
+          if (prompt.GetIsShowingDetails(
+              ExtensionInstallPrompt::PERMISSIONS_DETAILS, i)) {
+            [children addObject:
+                [self buildItemWithTitle:SysUTF16ToNSString(
+                    prompt.GetPermissionsDetails(i))
+                          cellAttributes:kNoExpandMarker
+                                children:nil]];
+          }
+
+          // Add a row for the link.
+          [children addObject:
+              [self buildDetailToggleItem:type permissionsDetailIndex:i]];
+        }
+      }
+
+      heading = SysUTF16ToNSString(prompt.GetPermissionsHeading());
+    } else {
       [children addObject:
-          [self buildItemWithTitle:SysUTF16ToNSString(prompt.GetPermission(i))
-                       isGroupItem:NO
+          [self buildItemWithTitle:
+              l10n_util::GetNSString(IDS_EXTENSION_NO_SPECIAL_PERMISSIONS)
+                    cellAttributes:kUseBullet
                           children:nil]];
+      heading = @"";
     }
+
     [warnings addObject:[self
-        buildItemWithTitle:SysUTF16ToNSString(prompt.GetPermissionsHeading())
-               isGroupItem:YES
+        buildItemWithTitle:heading
+            cellAttributes:kBoldText | kAutoExpandCell | kNoExpandMarker
                   children:children]];
   }
 
   if (prompt.GetOAuthIssueCount() > 0) {
+    type = ExtensionInstallPrompt::OAUTH_DETAILS;
+
     NSMutableArray* children = [NSMutableArray array];
-    for (size_t i = 0; i < prompt.GetOAuthIssueCount(); ++i)
-      [children addObject:[self buildIssue:prompt.GetOAuthIssue(i)]];
+
+    for (size_t i = 0; i < prompt.GetOAuthIssueCount(); ++i) {
+      NSMutableArray* details = [NSMutableArray array];
+      const IssueAdviceInfoEntry& issue = prompt.GetOAuthIssue(i);
+      if (!issue.details.empty() && prompt.GetIsShowingDetails(type, i)) {
+        for (size_t j = 0; j < issue.details.size(); ++j) {
+          [details addObject:
+              [self buildItemWithTitle:SysUTF16ToNSString(issue.details[j])
+                        cellAttributes:kNoExpandMarker
+                              children:nil]];
+        }
+      }
+
+      [children addObject:
+          [self buildItemWithTitle:SysUTF16ToNSString(issue.description)
+                    cellAttributes:kUseBullet | kAutoExpandCell
+                          children:details]];
+
+      if (!issue.details.empty()) {
+        // Add a row for the link.
+        [children addObject:
+            [self buildDetailToggleItem:type permissionsDetailIndex:i]];
+      }
+    }
+
     [warnings addObject:
-        [self buildItemWithTitle:SysUTF16ToNSString(prompt.GetOAuthHeading())
-                     isGroupItem:YES
+    [self buildItemWithTitle:SysUTF16ToNSString(prompt.GetOAuthHeading())
+              cellAttributes:kBoldText | kAutoExpandCell| kNoExpandMarker
+                    children:children]];
+  }
+
+  if (prompt.GetRetainedFileCount() > 0) {
+    type = ExtensionInstallPrompt::RETAINED_FILES_DETAILS;
+
+    NSMutableArray* children = [NSMutableArray array];
+
+    if (prompt.GetIsShowingDetails(type, 0)) {
+      for (size_t i = 0; i < prompt.GetRetainedFileCount(); ++i) {
+        [children addObject:
+            [self buildItemWithTitle:SysUTF16ToNSString(
+                prompt.GetRetainedFile(i))
+                      cellAttributes:kUseBullet
+                            children:nil]];
+      }
+    }
+
+    [warnings addObject:
+        [self buildItemWithTitle:SysUTF16ToNSString(
+            prompt.GetRetainedFilesHeading())
+                  cellAttributes:kBoldText | kAutoExpandCell | kNoExpandMarker
                         children:children]];
+
+    // Add a row for the link.
+    [warnings addObject:
+        [self buildDetailToggleItem:type permissionsDetailIndex:0]];
   }
 
   return warnings;
@@ -501,6 +707,74 @@ void DrawBulletInFrame(NSRect frame) {
   NSWindow* window = [[self view] window];
   [window setFrame:[window frameRectForContentRect:frame] display:YES];
   [[self view] setFrame:frame];
+}
+
+@end
+
+
+@implementation DetailToggleHyperlinkButtonCell
+
+@synthesize permissionsDetailIndex = permissionsDetailIndex_;
+@synthesize permissionsDetailType = permissionsDetailType_;
+@synthesize linkClickedAction = linkClickedAction_;
+
++ (BOOL)prefersTrackingUntilMouseUp {
+  return YES;
+}
+
+- (NSRect)drawingRectForBounds:(NSRect)rect {
+  NSRect rectInset = NSMakeRect(rect.origin.x + kLinkCellPaddingLeft,
+                                rect.origin.y,
+                                rect.size.width - kLinkCellPaddingLeft,
+                                rect.size.height);
+  return [super drawingRectForBounds:rectInset];
+}
+
+- (NSUInteger)hitTestForEvent:(NSEvent*)event
+                       inRect:(NSRect)cellFrame
+                       ofView:(NSView*)controlView {
+  NSUInteger hitTestResult =
+      [super hitTestForEvent:event inRect:cellFrame ofView:controlView];
+  if ((hitTestResult & NSCellHitContentArea) != 0)
+    hitTestResult |= NSCellHitTrackableArea;
+  return hitTestResult;
+}
+
+- (void)handleLinkClicked {
+  [NSApp sendAction:linkClickedAction_ to:[self target] from:self];
+}
+
+- (BOOL)trackMouse:(NSEvent*)event
+            inRect:(NSRect)cellFrame
+            ofView:(NSView*)controlView
+      untilMouseUp:(BOOL)flag {
+  BOOL result = YES;
+  NSUInteger hitTestResult =
+      [self hitTestForEvent:event inRect:cellFrame ofView:controlView];
+  if ((hitTestResult & NSCellHitContentArea) != 0) {
+    result = [super trackMouse:event
+                        inRect:cellFrame
+                        ofView:controlView
+                  untilMouseUp:flag];
+    event = [NSApp currentEvent];
+    hitTestResult =
+        [self hitTestForEvent:event inRect:cellFrame ofView:controlView];
+    if ((hitTestResult & NSCellHitContentArea) != 0)
+      [self handleLinkClicked];
+  }
+  return result;
+}
+
+- (NSArray*)accessibilityActionNames {
+  return [[super accessibilityActionNames]
+      arrayByAddingObject:NSAccessibilityPressAction];
+}
+
+- (void)accessibilityPerformAction:(NSString*)action {
+  if ([action isEqualToString:NSAccessibilityPressAction])
+    [self handleLinkClicked];
+  else
+    [super accessibilityPerformAction:action];
 }
 
 @end

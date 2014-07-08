@@ -64,5 +64,27 @@ class MessageUnittest(unittest.TestCase):
     msg_from_node = msg_node.GetCdata()
     self.failUnless(msg_from_node == text)
 
+  def testFormatterData(self):
+    root = util.ParseGrdForUnittest("""\
+        <messages>
+        <message name="IDS_BLA" desc="" formatter_data="  foo=123 bar  qux=low">
+          Text
+        </message>
+        </messages>""")
+    msg, = root.GetChildrenOfType(message.MessageNode)
+    expected_formatter_data = {
+        'foo': '123',
+        'bar': '',
+        'qux': 'low'}
+
+    # Can't use assertDictEqual, not available in Python 2.6, so do it
+    # by hand.
+    self.failUnlessEqual(len(expected_formatter_data),
+                         len(msg.formatter_data))
+    for key in expected_formatter_data:
+      self.failUnlessEqual(expected_formatter_data[key],
+                           msg.formatter_data[key])
+
+
 if __name__ == '__main__':
   unittest.main()

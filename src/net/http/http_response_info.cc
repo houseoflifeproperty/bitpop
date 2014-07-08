@@ -6,13 +6,14 @@
 
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_cert_request_info.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/signed_certificate_timestamp.h"
+#include "net/cert/x509_certificate.h"
 #include "net/http/http_response_headers.h"
+#include "net/ssl/ssl_cert_request_info.h"
 
 using base::Time;
 
@@ -81,24 +82,41 @@ enum {
   // This bit is set if the response info has protocol version.
   RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL = 1 << 17,
 
+  // This bit is set if the response info has connection info.
+  RESPONSE_INFO_HAS_CONNECTION_INFO = 1 << 18,
+
+  // This bit is set if the request has http authentication.
+  RESPONSE_INFO_USE_HTTP_AUTHENTICATION = 1 << 19,
+
+  // This bit is set if ssl_info has SCTs.
+  RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS = 1 << 20,
+
   // TODO(darin): Add other bits to indicate alternate request methods.
   // For now, we don't support storing those.
 };
 
 HttpResponseInfo::HttpResponseInfo()
     : was_cached(false),
+      server_data_unavailable(false),
+      network_accessed(false),
       was_fetched_via_spdy(false),
       was_npn_negotiated(false),
-      was_fetched_via_proxy(false) {
+      was_fetched_via_proxy(false),
+      did_use_http_auth(false),
+      connection_info(CONNECTION_INFO_UNKNOWN) {
 }
 
 HttpResponseInfo::HttpResponseInfo(const HttpResponseInfo& rhs)
     : was_cached(rhs.was_cached),
+      server_data_unavailable(rhs.server_data_unavailable),
+      network_accessed(rhs.network_accessed),
       was_fetched_via_spdy(rhs.was_fetched_via_spdy),
       was_npn_negotiated(rhs.was_npn_negotiated),
       was_fetched_via_proxy(rhs.was_fetched_via_proxy),
+      did_use_http_auth(rhs.did_use_http_auth),
       socket_address(rhs.socket_address),
       npn_negotiated_protocol(rhs.npn_negotiated_protocol),
+      connection_info(rhs.connection_info),
       request_time(rhs.request_time),
       response_time(rhs.response_time),
       auth_challenge(rhs.auth_challenge),
@@ -114,11 +132,15 @@ HttpResponseInfo::~HttpResponseInfo() {
 
 HttpResponseInfo& HttpResponseInfo::operator=(const HttpResponseInfo& rhs) {
   was_cached = rhs.was_cached;
+  server_data_unavailable = rhs.server_data_unavailable;
+  network_accessed = rhs.network_accessed;
   was_fetched_via_spdy = rhs.was_fetched_via_spdy;
   was_npn_negotiated = rhs.was_npn_negotiated;
   was_fetched_via_proxy = rhs.was_fetched_via_proxy;
+  did_use_http_auth = rhs.did_use_http_auth;
   socket_address = rhs.socket_address;
   npn_negotiated_protocol = rhs.npn_negotiated_protocol;
+  connection_info = rhs.connection_info;
   request_time = rhs.request_time;
   response_time = rhs.response_time;
   auth_challenge = rhs.auth_challenge;
@@ -134,7 +156,7 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
                                       bool* response_truncated) {
   PickleIterator iter(pickle);
 
-  // read flags and verify version
+  // Read flags and verify version
   int flags;
   if (!pickle.ReadInt(&iter, &flags))
     return false;
@@ -145,28 +167,28 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
     return false;
   }
 
-  // read request-time
+  // Read request-time
   int64 time_val;
   if (!pickle.ReadInt64(&iter, &time_val))
     return false;
   request_time = Time::FromInternalValue(time_val);
   was_cached = true;  // Set status to show cache resurrection.
 
-  // read response-time
+  // Read response-time
   if (!pickle.ReadInt64(&iter, &time_val))
     return false;
   response_time = Time::FromInternalValue(time_val);
 
-  // read response-headers
+  // Read response-headers
   headers = new HttpResponseHeaders(pickle, &iter);
   if (headers->response_code() == -1)
     return false;
 
-  // read ssl-info
+  // Read ssl-info
   if (flags & RESPONSE_INFO_HAS_CERT) {
     X509Certificate::PickleType type = GetPickleTypeForVersion(version);
     ssl_info.cert = X509Certificate::CreateFromPickle(pickle, &iter, type);
-    if (!ssl_info.cert)
+    if (!ssl_info.cert.get())
       return false;
   }
   if (flags & RESPONSE_INFO_HAS_CERT_STATUS) {
@@ -189,7 +211,23 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
     ssl_info.connection_status = connection_status;
   }
 
-  // read vary-data
+  if (flags & RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS) {
+    int num_scts;
+    if (!pickle.ReadInt(&iter, &num_scts))
+      return false;
+    for (int i = 0; i < num_scts; ++i) {
+      scoped_refptr<ct::SignedCertificateTimestamp> sct(
+          ct::SignedCertificateTimestamp::CreateFromPickle(&iter));
+      uint16 status;
+      if (!sct.get() || !pickle.ReadUInt16(&iter, &status))
+        return false;
+      ssl_info.signed_certificate_timestamps.push_back(
+          SignedCertificateTimestampAndStatus(
+              sct, static_cast<ct::SCTVerifyStatus>(status)));
+    }
+  }
+
+  // Read vary-data
   if (flags & RESPONSE_INFO_HAS_VARY_DATA) {
     if (!vary_data.InitFromPickle(pickle, &iter))
       return false;
@@ -209,10 +247,22 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
     return false;
   }
 
-  // read protocol-version.
+  // Read protocol-version.
   if (flags & RESPONSE_INFO_HAS_NPN_NEGOTIATED_PROTOCOL) {
     if (!pickle.ReadString(&iter, &npn_negotiated_protocol))
       return false;
+  }
+
+  // Read connection info.
+  if (flags & RESPONSE_INFO_HAS_CONNECTION_INFO) {
+    int value;
+    if (!pickle.ReadInt(&iter, &value))
+      return false;
+
+    if (value > static_cast<int>(CONNECTION_INFO_UNKNOWN) &&
+        value < static_cast<int>(NUM_OF_CONNECTION_INFOS)) {
+      connection_info = static_cast<ConnectionInfo>(value);
+    }
   }
 
   was_fetched_via_spdy = (flags & RESPONSE_INFO_WAS_SPDY) != 0;
@@ -222,6 +272,8 @@ bool HttpResponseInfo::InitFromPickle(const Pickle& pickle,
   was_fetched_via_proxy = (flags & RESPONSE_INFO_WAS_PROXY) != 0;
 
   *response_truncated = (flags & RESPONSE_INFO_TRUNCATED) != 0;
+
+  did_use_http_auth = (flags & RESPONSE_INFO_USE_HTTP_AUTHENTICATION) != 0;
 
   return true;
 }
@@ -250,6 +302,12 @@ void HttpResponseInfo::Persist(Pickle* pickle,
   }
   if (was_fetched_via_proxy)
     flags |= RESPONSE_INFO_WAS_PROXY;
+  if (connection_info != CONNECTION_INFO_UNKNOWN)
+    flags |= RESPONSE_INFO_HAS_CONNECTION_INFO;
+  if (did_use_http_auth)
+    flags |= RESPONSE_INFO_USE_HTTP_AUTHENTICATION;
+  if (!ssl_info.signed_certificate_timestamps.empty())
+    flags |= RESPONSE_INFO_HAS_SIGNED_CERTIFICATE_TIMESTAMPS;
 
   pickle->WriteInt(flags);
   pickle->WriteInt64(request_time.ToInternalValue());
@@ -277,6 +335,15 @@ void HttpResponseInfo::Persist(Pickle* pickle,
       pickle->WriteInt(ssl_info.security_bits);
     if (ssl_info.connection_status != 0)
       pickle->WriteInt(ssl_info.connection_status);
+    if (!ssl_info.signed_certificate_timestamps.empty()) {
+      pickle->WriteInt(ssl_info.signed_certificate_timestamps.size());
+      for (SignedCertificateTimestampAndStatusList::const_iterator it =
+           ssl_info.signed_certificate_timestamps.begin(); it !=
+           ssl_info.signed_certificate_timestamps.end(); ++it) {
+        it->sct->Persist(pickle);
+        pickle->WriteUInt16(it->status);
+      }
+    }
   }
 
   if (vary_data.is_valid())
@@ -287,6 +354,56 @@ void HttpResponseInfo::Persist(Pickle* pickle,
 
   if (was_npn_negotiated)
     pickle->WriteString(npn_negotiated_protocol);
+
+  if (connection_info != CONNECTION_INFO_UNKNOWN)
+    pickle->WriteInt(static_cast<int>(connection_info));
+}
+
+HttpResponseInfo::ConnectionInfo HttpResponseInfo::ConnectionInfoFromNextProto(
+    NextProto next_proto) {
+  switch (next_proto) {
+    case kProtoDeprecatedSPDY2:
+      return CONNECTION_INFO_DEPRECATED_SPDY2;
+    case kProtoSPDY3:
+    case kProtoSPDY31:
+      return CONNECTION_INFO_SPDY3;
+    case kProtoSPDY4:
+      return CONNECTION_INFO_SPDY4;
+    case kProtoQUIC1SPDY3:
+      return CONNECTION_INFO_QUIC1_SPDY3;
+
+    case kProtoUnknown:
+    case kProtoHTTP11:
+      break;
+  }
+
+  NOTREACHED();
+  return CONNECTION_INFO_UNKNOWN;
+}
+
+// static
+std::string HttpResponseInfo::ConnectionInfoToString(
+    ConnectionInfo connection_info) {
+  switch (connection_info) {
+    case CONNECTION_INFO_UNKNOWN:
+      return "unknown";
+    case CONNECTION_INFO_HTTP1:
+      return "http/1";
+    case CONNECTION_INFO_DEPRECATED_SPDY2:
+      return "spdy/2";
+    case CONNECTION_INFO_SPDY3:
+      return "spdy/3";
+    case CONNECTION_INFO_SPDY4:
+      // This is the HTTP/2 draft 11 identifier. For internal
+      // consistency, HTTP/2 is named SPDY4 within Chromium.
+      return "h2-11";
+    case CONNECTION_INFO_QUIC1_SPDY3:
+      return "quic/1+spdy/3";
+    case NUM_OF_CONNECTION_INFOS:
+      break;
+  }
+  NOTREACHED();
+  return "";
 }
 
 }  // namespace net

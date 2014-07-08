@@ -7,6 +7,7 @@
 
 #include <string>
 
+#include "base/callback_forward.h"
 #include "base/compiler_specific.h"
 #include "sync/notifier/invalidation_util.h"
 #include "sync/notifier/invalidator.h"
@@ -22,35 +23,29 @@ class FakeInvalidator : public Invalidator {
   bool IsHandlerRegistered(InvalidationHandler* handler) const;
   ObjectIdSet GetRegisteredIds(InvalidationHandler* handler) const;
   const std::string& GetUniqueId() const;
-  const std::string& GetStateDeprecated() const;
   const std::string& GetCredentialsEmail() const;
   const std::string& GetCredentialsToken() const;
-  const ObjectIdInvalidationMap& GetLastSentInvalidationMap() const;
 
   void EmitOnInvalidatorStateChange(InvalidatorState state);
   void EmitOnIncomingInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map,
-      IncomingInvalidationSource source);
+      const ObjectIdInvalidationMap& invalidation_map);
 
   virtual void RegisterHandler(InvalidationHandler* handler) OVERRIDE;
   virtual void UpdateRegisteredIds(InvalidationHandler* handler,
                                    const ObjectIdSet& ids) OVERRIDE;
   virtual void UnregisterHandler(InvalidationHandler* handler) OVERRIDE;
   virtual InvalidatorState GetInvalidatorState() const OVERRIDE;
-  virtual void SetUniqueId(const std::string& unique_id) OVERRIDE;
-  virtual void SetStateDeprecated(const std::string& state) OVERRIDE;
   virtual void UpdateCredentials(
       const std::string& email, const std::string& token) OVERRIDE;
-  virtual void SendInvalidation(
-      const ObjectIdInvalidationMap& invalidation_map) OVERRIDE;
+  virtual void RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> callback) const
+    OVERRIDE;
 
  private:
   InvalidatorRegistrar registrar_;
-  std::string unique_id_;
   std::string state_;
   std::string email_;
   std::string token_;
-  ObjectIdInvalidationMap last_sent_invalidation_map_;
 };
 
 }  // namespace syncer

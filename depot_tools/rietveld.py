@@ -18,28 +18,34 @@ import copy
 import json
 import logging
 import re
+import ssl
 import time
+import urllib
 import urllib2
+import urlparse
 
-from third_party import upload
 import patch
 
-# Hack out upload logging.info()
-upload.logging = logging.getLogger('upload')
-# Mac pylint choke on this line.
-upload.logging.setLevel(logging.WARNING)  # pylint: disable=E1103
+from third_party import upload
+import third_party.oauth2client.client as oa2client
+from third_party import httplib2
+
+# Appengine replies with 302 when authentication fails (sigh.)
+oa2client.REFRESH_STATUS_CODES.append(302)
+upload.LOGGER.setLevel(logging.WARNING)  # pylint: disable=E1103
 
 
 class Rietveld(object):
   """Accesses rietveld."""
   def __init__(self, url, email, password, extra_headers=None):
     self.url = url.rstrip('/')
+    # Email and password are accessed by commit queue, keep them.
+    self.email = email
+    self.password = password
     # TODO(maruel): It's not awesome but maybe necessary to retrieve the value.
     # It happens when the presubmit check is ran out of process, the cookie
     # needed to be recreated from the credentials. Instead, it should pass the
     # email and the cookie.
-    self.email = email
-    self.password = password
     if email and password:
       get_creds = lambda: (email, password)
       self.rpc_server = upload.HttpRpcServer(
@@ -50,10 +56,8 @@ class Rietveld(object):
       if email == '':
         # If email is given as an empty string, then assume we want to make
         # requests that do not need authentication.  Bypass authentication by
-        # setting the flag to True.
-        get_creds = lambda: (email, None)
-        self.rpc_server = upload.HttpRpcServer(url, get_creds)
-        self.rpc_server.authenticated = True
+        # setting the auth_function to None.
+        self.rpc_server = upload.HttpRpcServer(url, None)
       else:
         self.rpc_server = upload.GetRpcServer(url, email)
 
@@ -82,15 +86,20 @@ class Rietveld(object):
     self.post("/%d/close" % issue, [('xsrf_token', self.xsrf_token())])
 
   def get_description(self, issue):
-    """Returns the issue's description."""
-    return self.get('/%d/description' % issue)
+    """Returns the issue's description.
+
+    Converts any CRLF into LF and strip extraneous whitespace.
+    """
+    return '\n'.join(self.get('/%d/description' % issue).strip().splitlines())
 
   def get_issue_properties(self, issue, messages):
     """Returns all the issue's metadata as a dictionary."""
     url = '/api/%d' % issue
     if messages:
       url += '?messages=true'
-    return json.loads(self.get(url))
+    data = json.loads(self.get(url))
+    data['description'] = '\n'.join(data['description'].strip().splitlines())
+    return data
 
   def get_patchset_properties(self, issue, patchset):
     """Returns the patchset properties."""
@@ -146,16 +155,11 @@ class Rietveld(object):
                 filename,
                 'Binary file is empty. Maybe the file wasn\'t uploaded in the '
                 'first place?')
-          raise patch.UnsupportedPatchFormat(
+          out.append(patch.FilePatchBinary(
               filename,
-              'Binary file support is temporarilly disabled due to a bug. '
-              'Please commit blindly the binary files first then commit the '
-              'source change as a separate CL. Sorry for the annoyance.')
-          #out.append(patch.FilePatchBinary(
-          #    filename,
-          #    content,
-          #    svn_props,
-          #    is_new=(status[0] == 'A')))
+              content,
+              svn_props,
+              is_new=(status[0] == 'A')))
         continue
 
       try:
@@ -246,7 +250,7 @@ class Rietveld(object):
     tail = '…\n(message too large)'
     if len(message) > max_message:
       message = message[:max_message-len(tail)] + tail
-    logging.info('issue %d; comment: %s' % (issue, message))
+    logging.info('issue %d; comment: %s' % (issue, message.strip()[:300]))
     return self.post('/%d/publish' % issue, [
         ('xsrf_token', self.xsrf_token()),
         ('message', message),
@@ -255,11 +259,23 @@ class Rietveld(object):
         ('send_mail', 'True'),
         ('no_redirect', 'True')])
 
+  def add_inline_comment(
+      self, issue, text, side, snapshot, patchset, patchid, lineno):
+    logging.info('add inline comment for issue %d' % issue)
+    return self.post('/inline_draft', [
+        ('issue', str(issue)),
+        ('text', text),
+        ('side', side),
+        ('snapshot', snapshot),
+        ('patchset', str(patchset)),
+        ('patch', str(patchid)),
+         ('lineno', str(lineno))])
+
   def set_flag(self, issue, patchset, flag, value):
     return self.post('/%d/edit_flags' % issue, [
         ('last_patchset', str(patchset)),
         ('xsrf_token', self.xsrf_token()),
-        (flag, value)])
+        (flag, str(value))])
 
   def search(
       self,
@@ -320,10 +336,12 @@ class Rietveld(object):
       cursor = '&cursor=%s' % data['cursor']
 
   def trigger_try_jobs(
-      self, issue, patchset, reason, clobber, revision, builders_and_tests):
+      self, issue, patchset, reason, clobber, revision, builders_and_tests,
+      master=None):
     """Requests new try jobs.
 
     |builders_and_tests| is a map of builders: [tests] to run.
+    |master| is the name of the try master the builders belong to.
 
     Returns the keys of the new TryJobResult entites.
     """
@@ -335,7 +353,23 @@ class Rietveld(object):
     ]
     if revision:
       params.append(('revision', revision))
+    if master:
+      # Temporarily allow empty master names for old configurations. The try
+      # job will not be associated with a master name on rietveld. This is
+      # going to be deprecated.
+      params.append(('master', master))
     return self.post('/%d/try/%d' % (issue, patchset), params)
+
+  def trigger_distributed_try_jobs(
+      self, issue, patchset, reason, clobber, revision, masters):
+    """Requests new try jobs.
+
+    |masters| is a map of masters: map of builders: [tests] to run.
+    """
+    for (master, builders_and_tests) in masters.iteritems():
+      self.trigger_try_jobs(
+          issue, patchset, reason, clobber, revision, builders_and_tests,
+          master)
 
   def get_pending_try_jobs(self, cursor=None, limit=100):
     """Retrieves the try job requests in pending state.
@@ -357,6 +391,10 @@ class Rietveld(object):
 
   def _send(self, request_path, **kwargs):
     """Sends a POST/GET to Rietveld.  Returns the response body."""
+    # rpc_server.Send() assumes timeout=None by default; make sure it's set
+    # to something reasonable.
+    kwargs.setdefault('timeout', 15)
+    logging.debug('POSTing to %s, args %s.', request_path, kwargs)
     try:
       # Sadly, upload.py calls ErrorExit() which does a sys.exit(1) on HTTP
       # 500 in AbstractRpcServer.Send().
@@ -366,7 +404,8 @@ class Rietveld(object):
         m = re.search(r'(50\d) Server Error', msg)
         if m:
           # Fake an HTTPError exception. Cheezy. :(
-          raise urllib2.HTTPError(request_path, m.group(1), msg, None, None)
+          raise urllib2.HTTPError(
+              request_path, int(m.group(1)), msg, None, None)
         old_error_exit(msg)
       upload.ErrorExit = trap_http_500
 
@@ -386,8 +425,14 @@ class Rietveld(object):
         except urllib2.URLError, e:
           if retry >= (maxtries - 1):
             raise
-          if not 'Name or service not known' in e.reason:
+          if (not 'Name or service not known' in e.reason and
+              not 'EOF occurred in violation of protocol' in e.reason):
             # Usually internal GAE flakiness.
+            raise
+        except ssl.SSLError, e:
+          if retry >= (maxtries - 1):
+            raise
+          if not 'timed out' in str(e):
             raise
         # If reaching this line, loop again. Uses a small backoff.
         time.sleep(1+maxtries*2)
@@ -396,6 +441,155 @@ class Rietveld(object):
 
   # DEPRECATED.
   Send = get
+
+
+class OAuthRpcServer(object):
+  def __init__(self,
+               host,
+               client_email,
+               client_private_key,
+               private_key_password='notasecret',
+               user_agent=None,
+               timeout=None,
+               extra_headers=None):
+    """Wrapper around httplib2.Http() that handles authentication.
+
+    client_email: email associated with the service account
+    client_private_key: encrypted private key, as a string
+    private_key_password: password used to decrypt the private key
+    """
+
+    # Enforce https
+    host_parts = urlparse.urlparse(host)
+
+    if host_parts.scheme == 'https':  # fine
+      self.host = host
+    elif host_parts.scheme == 'http':
+      upload.logging.warning('Changing protocol to https')
+      self.host = 'https' + host[4:]
+    else:
+      msg = 'Invalid url provided: %s' % host
+      upload.logging.error(msg)
+      raise ValueError(msg)
+
+    self.host = self.host.rstrip('/')
+
+    self.extra_headers = extra_headers or {}
+
+    if not oa2client.HAS_OPENSSL:
+      logging.error("No support for OpenSSL has been found, "
+                    "OAuth2 support requires it.")
+      logging.error("Installing pyopenssl will probably solve this issue.")
+      raise RuntimeError('No OpenSSL support')
+    self.creds = oa2client.SignedJwtAssertionCredentials(
+      client_email,
+      client_private_key,
+      'https://www.googleapis.com/auth/userinfo.email',
+      private_key_password=private_key_password,
+      user_agent=user_agent)
+
+    self._http = self.creds.authorize(httplib2.Http(timeout=timeout))
+
+  def Send(self,
+           request_path,
+           payload=None,
+           content_type='application/octet-stream',
+           timeout=None,
+           extra_headers=None,
+           **kwargs):
+    """Send a POST or GET request to the server.
+
+    Args:
+      request_path: path on the server to hit. This is concatenated with the
+        value of 'host' provided to the constructor.
+      payload: request is a POST if not None, GET otherwise
+      timeout: in seconds
+      extra_headers: (dict)
+    """
+    # This method signature should match upload.py:AbstractRpcServer.Send()
+    method = 'GET'
+
+    headers = self.extra_headers.copy()
+    headers.update(extra_headers or {})
+
+    if payload is not None:
+      method = 'POST'
+      headers['Content-Type'] = content_type
+
+    prev_timeout = self._http.timeout
+    try:
+      if timeout:
+        self._http.timeout = timeout
+      # TODO(pgervais) implement some kind of retry mechanism (see upload.py).
+      url = self.host + request_path
+      if kwargs:
+        url += "?" + urllib.urlencode(kwargs)
+
+      # This weird loop is there to detect when the OAuth2 token has expired.
+      # This is specific to appengine *and* rietveld. It relies on the
+      # assumption that a 302 is triggered only by an expired OAuth2 token. This
+      # prevents any usage of redirections in pages accessed this way.
+
+      # This variable is used to make sure the following loop runs only twice.
+      redirect_caught = False
+      while True:
+        try:
+          ret = self._http.request(url,
+                                   method=method,
+                                   body=payload,
+                                   headers=headers,
+                                   redirections=0)
+        except httplib2.RedirectLimit:
+          if redirect_caught or method != 'GET':
+            logging.error('Redirection detected after logging in. Giving up.')
+            raise
+          redirect_caught = True
+          logging.debug('Redirection detected. Trying to log in again...')
+          self.creds.access_token = None
+          continue
+        break
+
+      return ret[1]
+
+    finally:
+      self._http.timeout = prev_timeout
+
+
+class JwtOAuth2Rietveld(Rietveld):
+  """Access to Rietveld using OAuth authentication.
+
+  This class is supposed to be used only by bots, since this kind of
+  access is restricted to service accounts.
+  """
+  # The parent__init__ is not called on purpose.
+  # pylint: disable=W0231
+  def __init__(self,
+               url,
+               client_email,
+               client_private_key_file,
+               private_key_password=None,
+               extra_headers=None):
+
+    # These attributes are accessed by commit queue. Keep them.
+    self.email = client_email
+    self.private_key_file = client_private_key_file
+
+    if private_key_password is None:  # '' means 'empty password'
+      private_key_password = 'notasecret'
+
+    self.url = url.rstrip('/')
+    bot_url = self.url + '/bots'
+
+    with open(client_private_key_file, 'rb') as f:
+      client_private_key = f.read()
+    logging.info('Using OAuth login: %s' % client_email)
+    self.rpc_server = OAuthRpcServer(bot_url,
+                                     client_email,
+                                     client_private_key,
+                                     private_key_password=private_key_password,
+                                     extra_headers=extra_headers or {})
+    self._xsrf_token = None
+    self._xsrf_token_time = None
 
 
 class CachingRietveld(Rietveld):
@@ -446,3 +640,87 @@ class CachingRietveld(Rietveld):
         'get_patchset_properties',
         (issue, patchset),
         super(CachingRietveld, self).get_patchset_properties)
+
+
+class ReadOnlyRietveld(object):
+  """
+  Only provides read operations, and simulates writes locally.
+
+  Intentionally do not inherit from Rietveld to avoid any write-issuing
+  logic to be invoked accidentally.
+  """
+
+  # Dictionary of local changes, indexed by issue number as int.
+  _local_changes = {}
+
+  def __init__(self, *args, **kwargs):
+    # We still need an actual Rietveld instance to issue reads, just keep
+    # it hidden.
+    self._rietveld = Rietveld(*args, **kwargs)
+
+  @classmethod
+  def _get_local_changes(cls, issue):
+    """Returns dictionary of local changes for |issue|, if any."""
+    return cls._local_changes.get(issue, {})
+
+  @property
+  def url(self):
+    return self._rietveld.url
+
+  @property
+  def email(self):
+    return self._rietveld.email
+
+  @property
+  def password(self):
+    return self._rietveld.password
+
+  def get_pending_issues(self):
+    pending_issues = self._rietveld.get_pending_issues()
+
+    # Filter out issues we've closed or unchecked the commit checkbox.
+    return [issue for issue in pending_issues
+            if not self._get_local_changes(issue).get('closed', False) and
+            self._get_local_changes(issue).get('commit', True)]
+
+  def close_issue(self, issue):  # pylint:disable=R0201
+    logging.info('ReadOnlyRietveld: closing issue %d' % issue)
+    ReadOnlyRietveld._local_changes.setdefault(issue, {})['closed'] = True
+
+  def get_issue_properties(self, issue, messages):
+    data = self._rietveld.get_issue_properties(issue, messages)
+    data.update(self._get_local_changes(issue))
+    return data
+
+  def get_patchset_properties(self, issue, patchset):
+    return self._rietveld.get_patchset_properties(issue, patchset)
+
+  def get_patch(self, issue, patchset):
+    return self._rietveld.get_patch(issue, patchset)
+
+  def update_description(self, issue, description):  # pylint:disable=R0201
+    logging.info('ReadOnlyRietveld: new description for issue %d: %s' %
+        (issue, description))
+
+  def add_comment(self,  # pylint:disable=R0201
+                  issue,
+                  message,
+                  add_as_reviewer=False):
+    logging.info('ReadOnlyRietveld: posting comment "%s" to issue %d' %
+        (message, issue))
+
+  def set_flag(self, issue, patchset, flag, value):  # pylint:disable=R0201
+    logging.info('ReadOnlyRietveld: setting flag "%s" to "%s" for issue %d' %
+        (flag, value, issue))
+    ReadOnlyRietveld._local_changes.setdefault(issue, {})[flag] = value
+
+  def trigger_try_jobs(  # pylint:disable=R0201
+      self, issue, patchset, reason, clobber, revision, builders_and_tests,
+      master=None):
+    logging.info('ReadOnlyRietveld: triggering try jobs %r for issue %d' %
+        (builders_and_tests, issue))
+
+  def trigger_distributed_try_jobs(  # pylint:disable=R0201
+      self, issue, patchset, reason, clobber, revision, masters):
+    logging.info('ReadOnlyRietveld: triggering try jobs %r for issue %d' %
+        (masters, issue))

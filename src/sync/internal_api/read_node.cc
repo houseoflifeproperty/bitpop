@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,8 +6,9 @@
 
 #include "base/logging.h"
 #include "sync/internal_api/public/base_transaction.h"
-#include "sync/syncable/base_transaction.h"
 #include "sync/syncable/entry.h"
+#include "sync/syncable/syncable_base_transaction.h"
+#include "sync/syncable/syncable_util.h"
 
 namespace syncer {
 
@@ -42,7 +43,7 @@ BaseNode::InitByLookupResult ReadNode::InitByIdLookup(int64 id) {
   entry_ = new syncable::Entry(trans, syncable::GET_BY_HANDLE, id);
   if (!entry_->good())
     return INIT_FAILED_ENTRY_NOT_GOOD;
-  if (entry_->Get(syncable::IS_DEL))
+  if (entry_->GetIsDel())
     return INIT_FAILED_ENTRY_IS_DEL;
   ModelType model_type = GetModelType();
   LOG_IF(WARNING, model_type == UNSPECIFIED || model_type == TOP_LEVEL_FOLDER)
@@ -57,13 +58,13 @@ BaseNode::InitByLookupResult ReadNode::InitByClientTagLookup(
   if (tag.empty())
     return INIT_FAILED_PRECONDITION;
 
-  const std::string hash = GenerateSyncableHash(model_type, tag);
+  const std::string hash = syncable::GenerateSyncableHash(model_type, tag);
 
   entry_ = new syncable::Entry(transaction_->GetWrappedTrans(),
                                syncable::GET_BY_CLIENT_TAG, hash);
   if (!entry_->good())
     return INIT_FAILED_ENTRY_NOT_GOOD;
-  if (entry_->Get(syncable::IS_DEL))
+  if (entry_->GetIsDel())
     return INIT_FAILED_ENTRY_IS_DEL;
   return DecryptIfNecessary() ? INIT_OK : INIT_FAILED_DECRYPT_IF_NECESSARY;
 }
@@ -85,7 +86,7 @@ BaseNode::InitByLookupResult ReadNode::InitByTagLookup(
   entry_ = new syncable::Entry(trans, syncable::GET_BY_SERVER_TAG, tag);
   if (!entry_->good())
     return INIT_FAILED_ENTRY_NOT_GOOD;
-  if (entry_->Get(syncable::IS_DEL))
+  if (entry_->GetIsDel())
     return INIT_FAILED_ENTRY_IS_DEL;
   ModelType model_type = GetModelType();
   LOG_IF(WARNING, model_type == UNSPECIFIED || model_type == TOP_LEVEL_FOLDER)

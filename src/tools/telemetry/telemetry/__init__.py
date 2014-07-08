@@ -1,30 +1,40 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright (c) 2013 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
-"""A library for chrome-based tests.
 
-"""
-from telemetry.browser import Browser
-from telemetry.browser_finder import FindBrowser
-from telemetry.browser_finder import GetAllAvailableBrowserTypes
-from telemetry.browser_gone_exception import BrowserGoneException
-from telemetry.browser_options import BrowserOptions
-from telemetry.tab import Tab
-from telemetry.tab_crash_exception import TabCrashException
-from telemetry.util import TimeoutException, WaitFor
+"""A library for cross-platform browser tests."""
 
-def CreateBrowser(browser_type):
-  """Shorthand way to create a browser of a given type
+import inspect
+import logging
+import os
+import sys
 
-  However, note that the preferred way to create a browser is:
-     options = BrowserOptions()
-     _, leftover_args, = options.CreateParser().parse_args()
-     browser_to_create = FindBrowser(options)
-     return browser_to_create.Create()
+# Ensure Python >= 2.7.
+if sys.version_info < (2, 7):
+  print >> sys.stderr, 'Need Python 2.7 or greater.'
+  sys.exit(-1)
 
-  as it creates more opportunities for customization and
-  error handling."""
-  browser_to_create = FindBrowser(BrowserOptions(browser_type))
-  if not browser_to_create:
-    raise Exception('No browser of type %s found' % browser_type)
-  return browser_to_create.Create()
+from telemetry.util import global_hooks
+global_hooks.InstallHooks()
+
+from telemetry.core.browser import Browser
+from telemetry.core.browser_options import BrowserFinderOptions
+from telemetry.core.tab import Tab
+
+from telemetry.page.page_measurement import PageMeasurement
+from telemetry.page.page_runner import Run as RunPage
+
+
+__all__ = []
+
+# Find all local vars that are classes or functions and make sure they're in the
+# __all__ array so they're included in docs.
+for x in dir():
+  if x.startswith('_'):
+    continue
+  if x in (inspect, os, sys):
+    continue
+  m = sys.modules[__name__]
+  if (inspect.isclass(getattr(m, x)) or
+      inspect.isfunction(getattr(m, x))):
+    __all__.append(x)

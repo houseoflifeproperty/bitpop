@@ -10,11 +10,11 @@
 #include "base/version.h"
 #include "chrome/browser/ui/simple_message_box.h"
 #include "chrome/common/logging_chrome.h"
+#include "content/public/browser/plugin_service.h"
+#include "content/public/common/webplugininfo.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/win/hwnd_util.h"
-#include "webkit/plugins/npapi/plugin_utils.h"
-#include "webkit/plugins/npapi/webplugin_delegate_impl.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace {
 
@@ -38,10 +38,10 @@ enum GTalkPluginLogVersion {
 // version format is "major(1 digit).minor(1 digit).sub(1 or 2 digits)",
 // for example, "2.7.10" and "2.8.1". Converts the string to a number as
 // 10 * major + minor - kGTalkPluginLogMinVersion.
-GTalkPluginLogVersion GetGTalkPluginVersion(const string16& version) {
+GTalkPluginLogVersion GetGTalkPluginVersion(const base::string16& version) {
   int gtalk_plugin_version = GTALK_PLUGIN_VERSION_MIN;
   Version plugin_version;
-  webkit::npapi::CreateVersionFromString(version, &plugin_version);
+  content::WebPluginInfo::CreateVersionFromString(version, &plugin_version);
   if (plugin_version.IsValid() && plugin_version.components().size() >= 2) {
     gtalk_plugin_version = 10 * plugin_version.components()[0] +
         plugin_version.components()[1] - kGTalkPluginLogMinVersion;
@@ -81,8 +81,8 @@ bool HungPluginAction::OnHungWindowDetected(HWND hung_window,
 
   *action = HungWindowNotification::HUNG_WINDOW_IGNORE;
   if (top_level_window_process_id != hung_window_process_id) {
-    string16 plugin_name;
-    string16 plugin_version;
+    base::string16 plugin_name;
+    base::string16 plugin_version;
     GetPluginNameAndVersion(hung_window,
                             top_level_window_process_id,
                             &plugin_name,
@@ -99,9 +99,9 @@ bool HungPluginAction::OnHungWindowDetected(HWND hung_window,
       NOTREACHED() << "Terminated a hung plugin process.";
       *action = HungWindowNotification::HUNG_WINDOW_TERMINATE_PROCESS;
     } else {
-      const string16 title = l10n_util::GetStringUTF16(
+      const base::string16 title = l10n_util::GetStringUTF16(
           IDS_BROWSER_HANGMONITOR_TITLE);
-      const string16 message = l10n_util::GetStringFUTF16(
+      const base::string16 message = l10n_util::GetStringFUTF16(
           IDS_BROWSER_HANGMONITOR, plugin_name);
       // Before displaying the message box, invoke SendMessageCallback on the
       // hung window. If the callback ever hits, the window is not hung anymore
@@ -113,8 +113,8 @@ bool HungPluginAction::OnHungWindowDetected(HWND hung_window,
                           HungWindowResponseCallback,
                           reinterpret_cast<ULONG_PTR>(this));
       current_hung_plugin_window_ = hung_window;
-      if (chrome::ShowMessageBox(NULL, title, message,
-          chrome::MESSAGE_BOX_TYPE_QUESTION) ==
+      if (chrome::ShowMessageBox(
+              NULL, title, message, chrome::MESSAGE_BOX_TYPE_QUESTION) ==
           chrome::MESSAGE_BOX_RESULT_YES) {
         *action = HungWindowNotification::HUNG_WINDOW_TERMINATE_PROCESS;
       } else {
@@ -162,8 +162,8 @@ void HungPluginAction::OnWindowResponsive(HWND window) {
 
 bool HungPluginAction::GetPluginNameAndVersion(HWND plugin_window,
                                                DWORD browser_process_id,
-                                               string16* plugin_name,
-                                               string16* plugin_version) {
+                                               base::string16* plugin_name,
+                                               base::string16* plugin_version) {
   DCHECK(plugin_name);
   DCHECK(plugin_version);
   HWND window_to_check = plugin_window;
@@ -175,10 +175,8 @@ bool HungPluginAction::GetPluginNameAndVersion(HWND plugin_window,
       // we have gone too far.
       return false;
     }
-    if (webkit::npapi::WebPluginDelegateImpl::GetPluginNameFromWindow(
-            window_to_check, plugin_name)) {
-      webkit::npapi::WebPluginDelegateImpl::GetPluginVersionFromWindow(
-          window_to_check, plugin_version);
+    if (content::PluginService::GetInstance()->GetPluginInfoFromWindow(
+            window_to_check, plugin_name, plugin_version)) {
       return true;
     }
     window_to_check = GetParent(window_to_check);
@@ -188,7 +186,7 @@ bool HungPluginAction::GetPluginNameAndVersion(HWND plugin_window,
 
 // static
 BOOL CALLBACK HungPluginAction::DismissMessageBox(HWND window, LPARAM ignore) {
-  string16 class_name = ui::GetClassName(window);
+  base::string16 class_name = gfx::GetClassName(window);
   // #32770 is the dialog window class which is the window class of
   // the message box being displayed.
   if (class_name == L"#32770") {

@@ -222,6 +222,7 @@ DEFINE_VALIDATOR(ClientHeader) {
   REQUIRE(client_time_ms);
   REQUIRE(max_known_server_time_ms);
   ALLOW(message_id);
+  ALLOW(client_type);
 }
 
 DEFINE_VALIDATOR(ApplicationClientIdP) {
@@ -276,7 +277,10 @@ DEFINE_VALIDATOR(ClientConfigP) {
   ALLOW(smear_percent);
   ALLOW(is_transient);
   ALLOW(initial_persistent_heartbeat_delay_ms);
+  ALLOW(channel_supports_offline_delivery);
   REQUIRE(protocol_handler_config);
+  ALLOW(offline_heartbeat_threshold_ms);
+  ALLOW(allow_suppression);
 }
 
 DEFINE_VALIDATOR(InfoMessage) {

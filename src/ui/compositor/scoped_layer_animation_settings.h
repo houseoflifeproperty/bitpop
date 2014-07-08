@@ -7,16 +7,18 @@
 
 #include <set>
 
-#include "base/time.h"
+#include "base/memory/scoped_vector.h"
+#include "base/time/time.h"
 
-#include "ui/base/animation/tween.h"
 #include "ui/compositor/compositor_export.h"
 #include "ui/compositor/layer_animator.h"
+#include "ui/gfx/animation/tween.h"
 
 namespace ui {
 
 class ImplicitAnimationObserver;
 class LayerAnimationObserver;
+class InvertingObserver;
 
 // Scoped settings allow you to temporarily change the animator's settings and
 // these changes are reverted when the object is destroyed. NOTE: when the
@@ -24,7 +26,7 @@ class LayerAnimationObserver;
 // (200ms).
 class COMPOSITOR_EXPORT ScopedLayerAnimationSettings {
  public:
-  explicit ScopedLayerAnimationSettings(LayerAnimator* animator);
+  explicit ScopedLayerAnimationSettings(scoped_refptr<LayerAnimator> animator);
   virtual ~ScopedLayerAnimationSettings();
 
   void AddObserver(ImplicitAnimationObserver* observer);
@@ -32,18 +34,34 @@ class COMPOSITOR_EXPORT ScopedLayerAnimationSettings {
   void SetTransitionDuration(base::TimeDelta duration);
   base::TimeDelta GetTransitionDuration() const;
 
-  void SetTweenType(Tween::Type tween_type);
-  Tween::Type GetTweenType() const;
+  // Locks transition duration in |animator_|. When transition duration
+  // is locked any subsequent changes to it are ignored until the
+  // ScopedLayerAnimationSettings object that has locked the duration goes out
+  // of scope.
+  void LockTransitionDuration();
+
+  void SetTweenType(gfx::Tween::Type tween_type);
+  gfx::Tween::Type GetTweenType() const;
 
   void SetPreemptionStrategy(LayerAnimator::PreemptionStrategy strategy);
   LayerAnimator::PreemptionStrategy GetPreemptionStrategy() const;
 
+  // Sets the base layer whose animation will be countered.
+  void SetInverselyAnimatedBaseLayer(Layer* base);
+
+  // Adds the layer to be counter-animated when a transform animation is
+  // scheduled on the animator_. Must call SetInverselyAnimatedBaseLayer with
+  // the layer associated with animator_ before animating.
+  void AddInverselyAnimatedLayer(Layer* inverse_layer);
+
  private:
-  LayerAnimator* animator_;
+  scoped_refptr<LayerAnimator> animator_;
+  bool old_is_transition_duration_locked_;
   base::TimeDelta old_transition_duration_;
-  Tween::Type old_tween_type_;
+  gfx::Tween::Type old_tween_type_;
   LayerAnimator::PreemptionStrategy old_preemption_strategy_;
   std::set<ImplicitAnimationObserver*> observers_;
+  scoped_ptr<InvertingObserver> inverse_observer_;
 
   DISALLOW_COPY_AND_ASSIGN(ScopedLayerAnimationSettings);
 };

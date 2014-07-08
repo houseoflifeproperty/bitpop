@@ -35,12 +35,12 @@
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/sslidentity.h"
 #include "talk/examples/call/console.h"
-#include "talk/examples/call/status.h"
 #include "talk/media/base/mediachannel.h"
 #include "talk/p2p/base/session.h"
 #include "talk/session/media/mediamessages.h"
 #include "talk/session/media/mediasessionclient.h"
 #include "talk/xmpp/hangoutpubsubclient.h"
+#include "talk/xmpp/presencestatus.h"
 #include "talk/xmpp/xmppclient.h"
 
 namespace buzz {
@@ -51,11 +51,11 @@ class MucInviteSendTask;
 class FriendInviteSendTask;
 class DiscoInfoQueryTask;
 class Muc;
-class Status;
+class PresenceStatus;
 class IqTask;
 class MucRoomConfigTask;
 class MucRoomLookupTask;
-class MucStatus;
+class MucPresenceStatus;
 class XmlElement;
 class HangoutPubSubClient;
 struct AvailableMediaEntry;
@@ -80,7 +80,7 @@ struct StreamParams;
 
 struct RosterItem {
   buzz::Jid jid;
-  buzz::Status::Show show;
+  buzz::PresenceStatus::Show show;
   std::string status;
 };
 
@@ -119,8 +119,8 @@ class CallClient: public sigslot::has_slots<> {
   void SetRender(bool render) {
     render_ = render;
   }
-  void SetDataChannelEnabled(bool data_channel_enabled) {
-    data_channel_enabled_ = data_channel_enabled;
+  void SetDataChannelType(cricket::DataChannelType data_channel_type) {
+    data_channel_type_ = data_channel_type;
   }
   void SetMultiSessionEnabled(bool multisession_enabled) {
     multisession_enabled_ = multisession_enabled;
@@ -134,7 +134,7 @@ class CallClient: public sigslot::has_slots<> {
   void SendStatus() {
     SendStatus(my_status_);
   }
-  void SendStatus(const buzz::Status& status);
+  void SendStatus(const buzz::PresenceStatus& status);
 
   void ParseLine(const std::string &str);
 
@@ -176,6 +176,10 @@ class CallClient: public sigslot::has_slots<> {
     return mucs_;
   }
 
+  void SetShowRosterMessages(bool show_roster_messages) {
+    show_roster_messages_ = show_roster_messages;
+  }
+
  private:
   void AddStream(uint32 audio_src_id, uint32 video_src_id);
   void RemoveStream(uint32 audio_src_id, uint32 video_src_id);
@@ -192,11 +196,12 @@ class CallClient: public sigslot::has_slots<> {
   void OnSessionState(cricket::Call* call,
                       cricket::Session* session,
                       cricket::Session::State state);
-  void OnStatusUpdate(const buzz::Status& status);
+  void OnStatusUpdate(const buzz::PresenceStatus& status);
   void OnMucInviteReceived(const buzz::Jid& inviter, const buzz::Jid& room,
       const std::vector<buzz::AvailableMediaEntry>& avail);
   void OnMucJoined(const buzz::Jid& endpoint);
-  void OnMucStatusUpdate(const buzz::Jid& jid, const buzz::MucStatus& status);
+  void OnMucStatusUpdate(const buzz::Jid& jid,
+                         const buzz::MucPresenceStatus& status);
   void OnMucLeft(const buzz::Jid& endpoint, int error);
   void OnPresenterStateChange(const std::string& nick,
                               bool was_presenting, bool is_presenting);
@@ -237,7 +242,7 @@ class CallClient: public sigslot::has_slots<> {
                          const buzz::XmlElement* stanza);
   void OnDataReceived(cricket::Call*,
                       const cricket::ReceiveDataParams& params,
-                      const std::string& data);
+                      const talk_base::Buffer& payload);
   buzz::Jid GenerateRandomMucJid();
 
   // Depending on |enable|, render (or don't) all the streams in |session|.
@@ -317,14 +322,14 @@ class CallClient: public sigslot::has_slots<> {
   bool auto_accept_;
   std::string pmuc_domain_;
   bool render_;
-  bool data_channel_enabled_;
+  cricket::DataChannelType data_channel_type_;
   bool multisession_enabled_;
   cricket::VideoRenderer* local_renderer_;
   StaticRenderedViews static_rendered_views_;
   uint32 static_views_accumulated_count_;
   uint32 screencast_ssrc_;
 
-  buzz::Status my_status_;
+  buzz::PresenceStatus my_status_;
   buzz::PresencePushTask* presence_push_;
   buzz::PresenceOutTask* presence_out_;
   buzz::MucInviteRecvTask* muc_invite_recv_;
@@ -340,6 +345,8 @@ class CallClient: public sigslot::has_slots<> {
   cricket::SecurePolicy dtls_policy_;
   talk_base::scoped_ptr<talk_base::SSLIdentity> ssl_identity_;
   std::string last_sent_to_;
+
+  bool show_roster_messages_;
 };
 
 #endif  // TALK_EXAMPLES_CALL_CALLCLIENT_H_

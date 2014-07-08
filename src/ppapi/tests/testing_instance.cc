@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <cstring>
+#include <iomanip>
 #include <sstream>
 #include <vector>
 
+#include "ppapi/cpp/core.h"
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/var.h"
 #include "ppapi/cpp/view.h"
@@ -52,6 +54,8 @@ bool TestingInstance::Init(uint32_t argc,
         nacl_mode_ = true;
     } else if (std::strcmp(argn[i], "protocol") == 0) {
       protocol_ = argv[i];
+    } else if (std::strcmp(argn[i], "websocket_host") == 0) {
+      websocket_host_ = argv[i];
     } else if (std::strcmp(argn[i], "websocket_port") == 0) {
       websocket_port_ = atoi(argv[i]);
     } else if (std::strcmp(argn[i], "ssl_server_port") == 0) {
@@ -64,7 +68,7 @@ bool TestingInstance::Init(uint32_t argc,
       if (argv[i][0] == '\0')
         break;
       current_case_ = CaseForTestName(argv[i]);
-      test_filter_ = FilterForTestName(argv[i]);
+      test_filter_ = argv[i];
       if (!current_case_)
         errors_.append(std::string("Unknown test case ") + argv[i]);
       else if (!current_case_->Init())
@@ -118,7 +122,15 @@ void TestingInstance::SetCookie(const std::string& name,
 }
 
 void TestingInstance::LogTest(const std::string& test_name,
-                              const std::string& error_message) {
+                              const std::string& error_message,
+                              PP_TimeTicks start_time) {
+  // Compute the time to run the test and save it in a string for logging:
+  PP_TimeTicks end_time(pp::Module::Get()->core()->GetTimeTicks());
+  std::ostringstream number_stream;
+  PP_TimeTicks elapsed_time(end_time - start_time);
+  number_stream << std::fixed << std::setprecision(3) << elapsed_time;
+  std::string time_string(number_stream.str());
+
   // Tell the browser we're still working.
   ReportProgress(kProgressSignal);
 
@@ -139,8 +151,19 @@ void TestingInstance::LogTest(const std::string& test_name,
       errors_.append(", ");  // Separator for different error messages.
     errors_.append(test_name + " FAIL: " + error_message);
   }
+  html.append(" <span class=\"time\">(");
+  html.append(time_string);
+  html.append("s)</span>");
+
   html.append("</div>");
   LogHTML(html);
+
+  std::string test_time;
+  test_time.append(test_name);
+  test_time.append(" finished in ");
+  test_time.append(time_string);
+  test_time.append(" seconds.");
+  LogTestTime(test_time);
 }
 
 void TestingInstance::AppendError(const std::string& message) {
@@ -170,20 +193,45 @@ void TestingInstance::ExecuteTests(int32_t unused) {
                      "restrictive: '" + test_filter_ + "'.");
       LogError(errors_);
     }
-    else {
-      // Automated PyAuto tests rely on finding the exact strings below.
-      LogHTML(errors_.empty() ?
-              "<span class=\"pass\">[SHUTDOWN]</span> All tests passed." :
-              "<span class=\"fail\">[SHUTDOWN]</span> Some tests failed.");
+    if (current_case_->skipped_tests().size()) {
+      // TODO(dmichael): Convert all TestCases to run all tests in one fixture,
+      //                 and enable this check. Currently, a lot of our tests
+      //                 run 1 test per fixture, which is slow.
+      /*
+      errors_.append("Some tests were not listed and thus were not run. Make "
+                     "sure all tests are passed in the test_case URL (even if "
+                     "they are marked DISABLED_). Forgotten tests: ");
+      std::set<std::string>::const_iterator iter =
+          current_case_->skipped_tests().begin();
+      for (; iter != current_case_->skipped_tests().end(); ++iter) {
+        errors_.append(*iter);
+        errors_.append(" ");
+      }
+      LogError(errors_);
+      */
+    }
+    if (current_case_->remaining_tests().size()) {
+      errors_.append("Some listed tests were not found in the TestCase. Check "
+                     "the test names that were passed to make sure they match "
+                     "tests in the TestCase. Unknown tests: ");
+      std::map<std::string, bool>::const_iterator iter =
+          current_case_->remaining_tests().begin();
+      for (; iter != current_case_->remaining_tests().end(); ++iter) {
+        errors_.append(iter->first);
+        errors_.append(" ");
+      }
+      LogError(errors_);
     }
   }
 
-  // Declare we're done by setting a cookie to either "PASS" or the errors.
-  ReportProgress(errors_.empty() ? "PASS" : errors_);
   if (remove_plugin_)
-    SendTestCommand("DidExecuteTests");
-  // Note, DidExecuteTests unloads the plugin. We can't really do anthing after
-  // this point.
+    SendTestCommand("RemovePluginWhenFinished");
+  std::string result(errors_);
+  if (result.empty())
+    result = "PASS";
+  SendTestCommand("DidExecuteTests", result);
+  // Note, DidExecuteTests may unload the plugin. We can't really do anything
+  // after this point.
 }
 
 TestCase* TestingInstance::CaseForTestName(const std::string& name) {
@@ -195,13 +243,6 @@ TestCase* TestingInstance::CaseForTestName(const std::string& name) {
     iter = iter->next_;
   }
   return NULL;
-}
-
-std::string TestingInstance::FilterForTestName(const std::string& name) {
-  size_t delim = name.find_first_of('_');
-  if (delim != std::string::npos)
-    return name.substr(delim+1);
-  return "";
 }
 
 void TestingInstance::SendTestCommand(const std::string& command) {
@@ -256,15 +297,15 @@ void TestingInstance::LogHTML(const std::string& html) {
 }
 
 void TestingInstance::ReportProgress(const std::string& progress_value) {
-  // Use streams since nacl doesn't compile base yet (for StringPrintf).
-  std::ostringstream script;
-  script << "window.domAutomationController.setAutomationId(0);" <<
-            "window.domAutomationController.send(\"" << progress_value << "\")";
-  EvalScript(script.str());
+  SendTestCommand("ReportProgress", progress_value);
 }
 
 void TestingInstance::AddPostCondition(const std::string& script) {
   SendTestCommand("AddPostCondition", script);
+}
+
+void TestingInstance::LogTestTime(const std::string& test_time) {
+  SendTestCommand("LogTestTime", test_time);
 }
 
 class Module : public pp::Module {

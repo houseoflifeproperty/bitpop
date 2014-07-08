@@ -4,9 +4,9 @@
 
 #include "base/files/scoped_temp_dir.h"
 #include "content/browser/download/save_package.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
+#include "content/shell/browser/shell.h"
 
 namespace content {
 
@@ -14,15 +14,15 @@ const char kTestFile[] = "files/simple_page.html";
 
 class SavePackageBrowserTest : public ContentBrowserTest {
  protected:
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(save_dir_.CreateUniqueTempDir());
     ContentBrowserTest::SetUp();
   }
 
   // Returns full paths of destination file and directory.
   void GetDestinationPaths(const std::string& prefix,
-                           FilePath* full_file_name,
-                           FilePath* dir) {
+                           base::FilePath* full_file_name,
+                           base::FilePath* dir) {
     *full_file_name = save_dir_.path().AppendASCII(prefix + ".htm");
     *dir = save_dir_.path().AppendASCII(prefix + "_files");
   }
@@ -37,7 +37,7 @@ IN_PROC_BROWSER_TEST_F(SavePackageBrowserTest, ImplicitCancel) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kTestFile);
   NavigateToURL(shell(), url);
-  FilePath full_file_name, dir;
+  base::FilePath full_file_name, dir;
   GetDestinationPaths("a", &full_file_name, &dir);
   scoped_refptr<SavePackage> save_package(new SavePackage(
       shell()->web_contents(), SAVE_PAGE_TYPE_AS_ONLY_HTML, full_file_name,
@@ -51,7 +51,7 @@ IN_PROC_BROWSER_TEST_F(SavePackageBrowserTest, ExplicitCancel) {
   ASSERT_TRUE(test_server()->Start());
   GURL url = test_server()->GetURL(kTestFile);
   NavigateToURL(shell(), url);
-  FilePath full_file_name, dir;
+  base::FilePath full_file_name, dir;
   GetDestinationPaths("a", &full_file_name, &dir);
   scoped_refptr<SavePackage> save_package(new SavePackage(
       shell()->web_contents(), SAVE_PAGE_TYPE_AS_ONLY_HTML, full_file_name,

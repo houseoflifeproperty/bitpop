@@ -4,46 +4,53 @@
 
 #include "content/browser/gpu/gpu_process_host.h"
 
+#include "base/base64.h"
 #include "base/base_switches.h"
+#include "base/basictypes.h"
 #include "base/bind.h"
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "base/command_line.h"
 #include "base/debug/trace_event.h"
+#include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/metrics/histogram.h"
-#include "base/process_util.h"
-#include "base/string_piece.h"
+#include "base/sha1.h"
 #include "base/threading/thread.h"
 #include "content/browser/browser_child_process_host_impl.h"
 #include "content/browser/gpu/gpu_data_manager_impl.h"
 #include "content/browser/gpu/gpu_process_host_ui_shim.h"
-#include "content/browser/gpu/gpu_surface_tracker.h"
+#include "content/browser/gpu/shader_disk_cache.h"
 #include "content/browser/renderer_host/render_widget_helper.h"
 #include "content/browser/renderer_host/render_widget_host_impl.h"
 #include "content/common/child_process_host_impl.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/view_messages.h"
-#include "content/gpu/gpu_child_thread.h"
-#include "content/gpu/gpu_process.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/content_browser_client.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_widget_host_view.h"
+#include "content/public/browser/render_widget_host_view_frame_subscriber.h"
+#include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/result_codes.h"
+#include "content/public/common/sandboxed_process_launcher_delegate.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "ipc/ipc_channel_handle.h"
 #include "ipc/ipc_switches.h"
-#include "ui/gl/gl_context.h"
-#include "ui/gl/gl_implementation.h"
+#include "ipc/message_filter.h"
+#include "ui/events/latency_info.h"
 #include "ui/gl/gl_switches.h"
 
-#if defined(TOOLKIT_GTK)
-#include "ui/gfx/gtk_native_view_id_manager.h"
-#endif
 
 #if defined(OS_WIN)
-#include "ui/surface/accelerated_surface_win.h"
+#include "base/win/windows_version.h"
+#include "content/common/sandbox_win.h"
+#include "sandbox/win/src/sandbox_policy.h"
+#include "ui/gfx/switches.h"
+#endif
+
+#if defined(USE_OZONE)
+#include "ui/ozone/ozone_switches.h"
 #endif
 
 namespace content {
@@ -64,30 +71,8 @@ enum GPUProcessLifetimeEvent {
 
 // Indexed by GpuProcessKind. There is one of each kind maximum. This array may
 // only be accessed from the IO thread.
-static GpuProcessHost *g_gpu_process_hosts[
-    GpuProcessHost::GPU_PROCESS_KIND_COUNT];
+GpuProcessHost* g_gpu_process_hosts[GpuProcessHost::GPU_PROCESS_KIND_COUNT];
 
-// Number of times the gpu process has crashed in the current browser session.
-static int g_gpu_crash_count = 0;
-static int g_gpu_recent_crash_count = 0;
-static double g_last_gpu_crash_time;
-static bool g_crashed_before = false;
-static int g_gpu_software_crash_count = 0;
-
-// Maximum number of times the gpu process is allowed to crash in a session.
-// Once this limit is reached, any request to launch the gpu process will fail.
-static const int kGpuMaxCrashCount = 3;
-
-int g_last_host_id = 0;
-
-#if defined(TOOLKIT_GTK)
-
-void ReleasePermanentXIDDispatcher(gfx::PluginWindowHandle surface) {
-  GtkNativeViewManager* manager = GtkNativeViewManager::GetInstance();
-  manager->ReleasePermanentXID(surface);
-}
-
-#endif
 
 void SendGpuProcessMessage(GpuProcessHost::GpuProcessKind kind,
                            CauseForGpuLaunch cause,
@@ -100,166 +85,139 @@ void SendGpuProcessMessage(GpuProcessHost::GpuProcessKind kind,
   }
 }
 
-void AcceleratedSurfaceBuffersSwappedCompletedForGPU(int host_id,
-                                                     int route_id,
-                                                     bool alive,
-                                                     uint64 surface_handle) {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::IO)) {
-    BrowserThread::PostTask(
-        BrowserThread::IO,
-        FROM_HERE,
-        base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
-                   host_id,
-                   route_id,
-                   alive,
-                   surface_handle));
-    return;
-  }
+// NOTE: changes to this class need to be reviewed by the security team.
+class GpuSandboxedProcessLauncherDelegate
+    : public SandboxedProcessLauncherDelegate {
+ public:
+  GpuSandboxedProcessLauncherDelegate(CommandLine* cmd_line,
+                                      ChildProcessHost* host)
+#if defined(OS_WIN)
+      : cmd_line_(cmd_line) {}
+#elif defined(OS_POSIX)
+      : ipc_fd_(host->TakeClientFileDescriptor()) {}
+#endif
 
-  GpuProcessHost* host = GpuProcessHost::FromID(host_id);
-  if (host) {
-    if (alive) {
-      AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
-      ack_params.surface_handle = surface_handle;
-      ack_params.sync_point = 0;
-      host->Send(new AcceleratedSurfaceMsg_BufferPresented(
-          route_id, ack_params));
-    } else {
-      host->ForceShutdown();
-    }
-  }
-}
+  virtual ~GpuSandboxedProcessLauncherDelegate() {}
 
 #if defined(OS_WIN)
-// This sends a ViewMsg_SwapBuffers_ACK directly to the renderer process
-// (RenderWidget). This path is currently not used with the threaded compositor.
-void AcceleratedSurfaceBuffersSwappedCompletedForRenderer(
-    int surface_id,
-    base::TimeTicks timebase,
-    base::TimeDelta interval) {
-  if (!BrowserThread::CurrentlyOn(BrowserThread::UI)) {
-    BrowserThread::PostTask(
-        BrowserThread::UI,
-        FROM_HERE,
-        base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForRenderer,
-                   surface_id, timebase, interval));
-    return;
+  virtual bool ShouldSandbox() OVERRIDE {
+    bool sandbox = !cmd_line_->HasSwitch(switches::kDisableGpuSandbox);
+    if(! sandbox) {
+      DVLOG(1) << "GPU sandbox is disabled";
+    }
+    return sandbox;
   }
 
-  int render_process_id = 0;
-  int render_widget_id = 0;
-  if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
-      surface_id, &render_process_id, &render_widget_id)) {
-    return;
+  virtual void PreSandbox(bool* disable_default_policy,
+                          base::FilePath* exposed_dir) OVERRIDE {
+    *disable_default_policy = true;
   }
-  RenderProcessHost* host = RenderProcessHost::FromID(render_process_id);
-  if (!host)
-    return;
-  RenderWidgetHost* rwh = host->GetRenderWidgetHostByID(render_widget_id);
-  if (!rwh)
-    return;
-  RenderWidgetHostImpl::From(rwh)->AcknowledgeSwapBuffersToRenderer();
-  if (interval != base::TimeDelta())
-    RenderWidgetHostImpl::From(rwh)->UpdateVSyncParameters(timebase, interval);
-}
 
-void AcceleratedSurfaceBuffersSwappedCompleted(int host_id,
-                                               int route_id,
-                                               int surface_id,
-                                               uint64 surface_handle,
-                                               bool alive,
-                                               base::TimeTicks timebase,
-                                               base::TimeDelta interval) {
-  AcceleratedSurfaceBuffersSwappedCompletedForGPU(host_id, route_id,
-                                                  alive, surface_handle);
-  AcceleratedSurfaceBuffersSwappedCompletedForRenderer(surface_id, timebase,
-                                                       interval);
-}
-#endif  // defined(OS_WIN)
+  // For the GPU process we gotten as far as USER_LIMITED. The next level
+  // which is USER_RESTRICTED breaks both the DirectX backend and the OpenGL
+  // backend. Note that the GPU process is connected to the interactive
+  // desktop.
+  virtual void PreSpawnTarget(sandbox::TargetPolicy* policy,
+                              bool* success) {
+    if (base::win::GetVersion() > base::win::VERSION_XP) {
+      if (cmd_line_->GetSwitchValueASCII(switches::kUseGL) ==
+          gfx::kGLImplementationDesktopName) {
+        // Open GL path.
+        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                              sandbox::USER_LIMITED);
+        SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
+        policy->SetDelayedIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
+      } else {
+        policy->SetTokenLevel(sandbox::USER_RESTRICTED_SAME_ACCESS,
+                              sandbox::USER_LIMITED);
+
+        // UI restrictions break when we access Windows from outside our job.
+        // However, we don't want a proxy window in this process because it can
+        // introduce deadlocks where the renderer blocks on the gpu, which in
+        // turn blocks on the browser UI thread. So, instead we forgo a window
+        // message pump entirely and just add job restrictions to prevent child
+        // processes.
+        SetJobLevel(*cmd_line_,
+                    sandbox::JOB_LIMITED_USER,
+                    JOB_OBJECT_UILIMIT_SYSTEMPARAMETERS |
+                    JOB_OBJECT_UILIMIT_DESKTOP |
+                    JOB_OBJECT_UILIMIT_EXITWINDOWS |
+                    JOB_OBJECT_UILIMIT_DISPLAYSETTINGS,
+                    policy);
+
+        policy->SetIntegrityLevel(sandbox::INTEGRITY_LEVEL_LOW);
+      }
+    } else {
+      SetJobLevel(*cmd_line_, sandbox::JOB_UNPROTECTED, 0, policy);
+      policy->SetTokenLevel(sandbox::USER_UNPROTECTED,
+                            sandbox::USER_LIMITED);
+    }
+
+    // Allow the server side of GPU sockets, which are pipes that have
+    // the "chrome.gpu" namespace and an arbitrary suffix.
+    sandbox::ResultCode result = policy->AddRule(
+        sandbox::TargetPolicy::SUBSYS_NAMED_PIPES,
+        sandbox::TargetPolicy::NAMEDPIPES_ALLOW_ANY,
+        L"\\\\.\\pipe\\chrome.gpu.*");
+    if (result != sandbox::SBOX_ALL_OK) {
+      *success = false;
+      return;
+    }
+
+    // Block this DLL even if it is not loaded by the browser process.
+    policy->AddDllToUnload(L"cmsetac.dll");
+
+#ifdef USE_AURA
+    // GPU also needs to add sections to the browser for aura
+    // TODO(jschuh): refactor the GPU channel to remove this. crbug.com/128786
+    result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_HANDLES,
+                             sandbox::TargetPolicy::HANDLES_DUP_BROKER,
+                             L"Section");
+    if (result != sandbox::SBOX_ALL_OK) {
+      *success = false;
+      return;
+    }
+#endif
+
+    if (cmd_line_->HasSwitch(switches::kEnableLogging)) {
+      base::string16 log_file_path = logging::GetLogFileFullPath();
+      if (!log_file_path.empty()) {
+        result = policy->AddRule(sandbox::TargetPolicy::SUBSYS_FILES,
+                                 sandbox::TargetPolicy::FILES_ALLOW_ANY,
+                                 log_file_path.c_str());
+        if (result != sandbox::SBOX_ALL_OK) {
+          *success = false;
+          return;
+        }
+      }
+    }
+  }
+#elif defined(OS_POSIX)
+
+  virtual int GetIpcFd() OVERRIDE {
+    return ipc_fd_;
+  }
+#endif  // OS_WIN
+
+ private:
+#if defined(OS_WIN)
+  CommandLine* cmd_line_;
+#elif defined(OS_POSIX)
+  int ipc_fd_;
+#endif  // OS_WIN
+};
 
 }  // anonymous namespace
 
-#if defined(TOOLKIT_GTK)
-// Used to put a lock on surfaces so that the window to which the GPU
-// process is drawing to doesn't disappear while it is drawing when
-// a WebContents is closed.
-class GpuProcessHost::SurfaceRef {
- public:
-  explicit SurfaceRef(gfx::PluginWindowHandle surface);
-  ~SurfaceRef();
- private:
-  gfx::PluginWindowHandle surface_;
-};
-
-GpuProcessHost::SurfaceRef::SurfaceRef(gfx::PluginWindowHandle surface)
-    : surface_(surface) {
-  GtkNativeViewManager* manager = GtkNativeViewManager::GetInstance();
-  if (!manager->AddRefPermanentXID(surface_)) {
-    LOG(ERROR) << "Surface " << surface << " cannot be referenced.";
-  }
-}
-
-GpuProcessHost::SurfaceRef::~SurfaceRef() {
-  BrowserThread::PostTask(BrowserThread::UI,
-                          FROM_HERE,
-                          base::Bind(&ReleasePermanentXIDDispatcher, surface_));
-}
-#endif  // defined(TOOLKIT_GTK)
-
-// This class creates a GPU thread (instead of a GPU process), when running
-// with --in-process-gpu or --single-process.
-class GpuMainThread : public base::Thread {
- public:
-  explicit GpuMainThread(const std::string& channel_id)
-      : base::Thread("Chrome_InProcGpuThread"),
-        channel_id_(channel_id),
-        gpu_process_(NULL),
-        child_thread_(NULL) {
-  }
-
-  ~GpuMainThread() {
-    Stop();
-  }
-
- protected:
-  virtual void Init() {
-    if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess)) {
-      child_thread_ = new GpuChildThread(channel_id_);
-    } else {
-      gpu_process_ = new GpuProcess();
-      // The process object takes ownership of the thread object, so do not
-      // save and delete the pointer.
-      gpu_process_->set_main_thread(new GpuChildThread(channel_id_));
-    }
-  }
-
-  virtual void CleanUp() {
-    delete gpu_process_;
-    if (child_thread_)
-      delete child_thread_;
-  }
-
- private:
-  std::string channel_id_;
-  // Deleted in CleanUp() on the gpu thread, so don't use smart pointers.
-  GpuProcess* gpu_process_;
-  GpuChildThread* child_thread_;
-
-  DISALLOW_COPY_AND_ASSIGN(GpuMainThread);
-};
-
 // static
-bool GpuProcessHost::HostIsValid(GpuProcessHost* host) {
-  if (!host)
-    return false;
-
-  // The Gpu process is invalid if it's not using software, the card is
+bool GpuProcessHost::ValidateHost(GpuProcessHost* host) {
+  // The Gpu process is invalid if it's not using SwiftShader, the card is
   // blacklisted, and we can kill it and start over.
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
       CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU) ||
       (host->valid_ &&
-       (host->software_rendering() ||
-        !GpuDataManagerImpl::GetInstance()->ShouldUseSoftwareRendering()))) {
+       (host->swiftshader_rendering_ ||
+        !GpuDataManagerImpl::GetInstance()->ShouldUseSwiftShader()))) {
     return true;
   }
 
@@ -275,17 +233,18 @@ GpuProcessHost* GpuProcessHost::Get(GpuProcessKind kind,
   // Don't grant further access to GPU if it is not allowed.
   GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
   DCHECK(gpu_data_manager);
-  if (!gpu_data_manager->GpuAccessAllowed())
+  if (!gpu_data_manager->GpuAccessAllowed(NULL))
     return NULL;
 
-  if (g_gpu_process_hosts[kind] && HostIsValid(g_gpu_process_hosts[kind]))
+  if (g_gpu_process_hosts[kind] && ValidateHost(g_gpu_process_hosts[kind]))
     return g_gpu_process_hosts[kind];
 
   if (cause == CAUSE_FOR_GPU_LAUNCH_NO_LAUNCH)
     return NULL;
 
+  static int last_host_id = 0;
   int host_id;
-  host_id = ++g_last_host_id;
+  host_id = ++last_host_id;
 
   UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessLaunchCause",
                             cause,
@@ -310,9 +269,9 @@ void GpuProcessHost::GetProcessHandles(
     return;
   }
   std::list<base::ProcessHandle> handles;
-  for (int i = 0; i < GPU_PROCESS_KIND_COUNT; ++i) {
+  for (size_t i = 0; i < arraysize(g_gpu_process_hosts); ++i) {
     GpuProcessHost* host = g_gpu_process_hosts[i];
-    if (host && HostIsValid(host))
+    if (host && ValidateHost(host))
       handles.push_back(host->process_->GetHandle());
   }
   BrowserThread::PostTask(
@@ -333,13 +292,20 @@ void GpuProcessHost::SendOnIO(GpuProcessKind kind,
   }
 }
 
+GpuMainThreadFactoryFunction g_gpu_main_thread_factory = NULL;
+
+void GpuProcessHost::RegisterGpuMainThreadFactory(
+    GpuMainThreadFactoryFunction create) {
+  g_gpu_main_thread_factory = create;
+}
+
 // static
 GpuProcessHost* GpuProcessHost::FromID(int host_id) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
   for (int i = 0; i < GPU_PROCESS_KIND_COUNT; ++i) {
     GpuProcessHost* host = g_gpu_process_hosts[i];
-    if (host && host->host_id_ == host_id && HostIsValid(host))
+    if (host && host->host_id_ == host_id && ValidateHost(host))
       return host;
   }
 
@@ -350,12 +316,15 @@ GpuProcessHost::GpuProcessHost(int host_id, GpuProcessKind kind)
     : host_id_(host_id),
       valid_(true),
       in_process_(false),
-      software_rendering_(false),
+      swiftshader_rendering_(false),
       kind_(kind),
-      process_launched_(false) {
+      process_launched_(false),
+      initialized_(false),
+      uma_memory_stats_received_(false) {
   if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSingleProcess) ||
-      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU))
+      CommandLine::ForCurrentProcess()->HasSwitch(switches::kInProcessGPU)) {
     in_process_ = true;
+  }
 
   // If the 'single GPU process' policy ever changes, we still want to maintain
   // it for 'gpu thread' mode and only create one instance of host and thread.
@@ -380,81 +349,67 @@ GpuProcessHost::~GpuProcessHost() {
   DCHECK(CalledOnValidThread());
 
   SendOutstandingReplies();
+
+  // Maximum number of times the gpu process is allowed to crash in a session.
+  // Once this limit is reached, any request to launch the gpu process will
+  // fail.
+  const int kGpuMaxCrashCount = 3;
+
+  // Number of times the gpu process has crashed in the current browser session.
+  static int gpu_crash_count = 0;
+  static int gpu_recent_crash_count = 0;
+  static base::Time last_gpu_crash_time;
+  static bool crashed_before = false;
+  static int swiftshader_crash_count = 0;
+
+  bool disable_crash_limit = CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableGpuProcessCrashLimit);
+
   // Ending only acts as a failure if the GPU process was actually started and
   // was intended for actual rendering (and not just checking caps or other
   // options).
   if (process_launched_ && kind_ == GPU_PROCESS_KIND_SANDBOXED) {
-    if (software_rendering_) {
-      UMA_HISTOGRAM_ENUMERATION("GPU.SoftwareRendererLifetimeEvents",
-                                DIED_FIRST_TIME + g_gpu_software_crash_count,
+    if (swiftshader_rendering_) {
+      UMA_HISTOGRAM_ENUMERATION("GPU.SwiftShaderLifetimeEvents",
+                                DIED_FIRST_TIME + swiftshader_crash_count,
                                 GPU_PROCESS_LIFETIME_EVENT_MAX);
 
-      if (++g_gpu_software_crash_count >= kGpuMaxCrashCount) {
-        // The software renderer is too unstable to use. Disable it for current
-        // session.
+      if (++swiftshader_crash_count >= kGpuMaxCrashCount &&
+          !disable_crash_limit) {
+        // SwiftShader is too unstable to use. Disable it for current session.
         gpu_enabled_ = false;
       }
     } else {
-      ++g_gpu_crash_count;
+      ++gpu_crash_count;
       UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessLifetimeEvents",
-                                std::min(DIED_FIRST_TIME + g_gpu_crash_count,
+                                std::min(DIED_FIRST_TIME + gpu_crash_count,
                                          GPU_PROCESS_LIFETIME_EVENT_MAX - 1),
                                 GPU_PROCESS_LIFETIME_EVENT_MAX);
 
-      /*
-       * Allow about 1 GPU crash per hour to be removed from the crash count,
-       * so very occasional crashes won't eventually add up and prevent the
-       * GPU process from launching.
-       */
-      ++g_gpu_recent_crash_count;
+      // Allow about 1 GPU crash per hour to be removed from the crash count,
+      // so very occasional crashes won't eventually add up and prevent the
+      // GPU process from launching.
+      ++gpu_recent_crash_count;
       base::Time current_time = base::Time::Now();
-      if (g_crashed_before) {
-        base::Time last_crash_time =
-            base::Time::FromDoubleT(g_last_gpu_crash_time);
-        int hours_different = (current_time - last_crash_time).InHours();
-        g_gpu_recent_crash_count = std::max(0,
-            g_gpu_recent_crash_count - hours_different);
+      if (crashed_before) {
+        int hours_different = (current_time - last_gpu_crash_time).InHours();
+        gpu_recent_crash_count =
+            std::max(0, gpu_recent_crash_count - hours_different);
       }
 
-      g_crashed_before = true;
-      g_last_gpu_crash_time = current_time.ToDoubleT();
+      crashed_before = true;
+      last_gpu_crash_time = current_time;
 
-      if (g_gpu_recent_crash_count >= kGpuMaxCrashCount) {
+      if ((gpu_recent_crash_count >= kGpuMaxCrashCount && !disable_crash_limit)
+          || !initialized_) {
 #if !defined(OS_CHROMEOS)
         // The gpu process is too unstable to use. Disable it for current
         // session.
         hardware_gpu_enabled_ = false;
-        GpuDataManagerImpl::GetInstance()->BlacklistCard();
+        GpuDataManagerImpl::GetInstance()->DisableHardwareAcceleration();
 #endif
       }
     }
-  }
-
-  int exit_code;
-  base::TerminationStatus status = process_->GetTerminationStatus(&exit_code);
-  UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
-                            status,
-                            base::TERMINATION_STATUS_MAX_ENUM);
-
-  UMA_HISTOGRAM_COUNTS_100("GPU.AtExitSurfaceCount",
-                           GpuSurfaceTracker::Get()->GetSurfaceCount());
-  UMA_HISTOGRAM_COUNTS_100("GPU.AtExitWindowCount",
-                           uma_memory_stats_.window_count);
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "GPU.AtExitMBytesAllocated",
-      uma_memory_stats_.bytes_allocated_current / 1024 / 1024, 1, 2000, 50);
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "GPU.AtExitMBytesAllocatedMax",
-      uma_memory_stats_.bytes_allocated_max / 1024 / 1024, 1, 2000, 50);
-  UMA_HISTOGRAM_CUSTOM_COUNTS(
-      "GPU.AtExitMBytesLimit",
-      uma_memory_stats_.bytes_limit / 1024 / 1024, 1, 2000, 50);
-
-  if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
-      status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION) {
-    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessExitCode",
-                              exit_code,
-                              RESULT_CODE_LAST_CODE);
   }
 
   // In case we never started, clean up.
@@ -473,38 +428,90 @@ GpuProcessHost::~GpuProcessHost() {
   // URLs from accessing client 3D APIs without prompting.
   BlockLiveOffscreenContexts();
 
+  UMA_HISTOGRAM_COUNTS_100("GPU.AtExitSurfaceCount",
+                           GpuSurfaceTracker::Get()->GetSurfaceCount());
+  UMA_HISTOGRAM_BOOLEAN("GPU.AtExitReceivedMemoryStats",
+                        uma_memory_stats_received_);
+
+  if (uma_memory_stats_received_) {
+    UMA_HISTOGRAM_COUNTS_100("GPU.AtExitManagedMemoryClientCount",
+                             uma_memory_stats_.client_count);
+    UMA_HISTOGRAM_COUNTS_100("GPU.AtExitContextGroupCount",
+                             uma_memory_stats_.context_group_count);
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "GPU.AtExitMBytesAllocated",
+        uma_memory_stats_.bytes_allocated_current / 1024 / 1024, 1, 2000, 50);
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "GPU.AtExitMBytesAllocatedMax",
+        uma_memory_stats_.bytes_allocated_max / 1024 / 1024, 1, 2000, 50);
+    UMA_HISTOGRAM_CUSTOM_COUNTS(
+        "GPU.AtExitMBytesLimit",
+        uma_memory_stats_.bytes_limit / 1024 / 1024, 1, 2000, 50);
+  }
+
+  std::string message;
+  if (!in_process_) {
+    int exit_code;
+    base::TerminationStatus status = process_->GetTerminationStatus(
+        false /* known_dead */, &exit_code);
+    UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessTerminationStatus",
+                              status,
+                              base::TERMINATION_STATUS_MAX_ENUM);
+
+    if (status == base::TERMINATION_STATUS_NORMAL_TERMINATION ||
+        status == base::TERMINATION_STATUS_ABNORMAL_TERMINATION) {
+      UMA_HISTOGRAM_ENUMERATION("GPU.GPUProcessExitCode",
+                                exit_code,
+                                RESULT_CODE_LAST_CODE);
+    }
+
+    switch (status) {
+      case base::TERMINATION_STATUS_NORMAL_TERMINATION:
+        message = "The GPU process exited normally. Everything is okay.";
+        break;
+      case base::TERMINATION_STATUS_ABNORMAL_TERMINATION:
+        message = base::StringPrintf(
+            "The GPU process exited with code %d.",
+            exit_code);
+        break;
+      case base::TERMINATION_STATUS_PROCESS_WAS_KILLED:
+        message = "You killed the GPU process! Why?";
+        break;
+      case base::TERMINATION_STATUS_PROCESS_CRASHED:
+        message = "The GPU process crashed!";
+        break;
+      default:
+        break;
+    }
+  }
+
   BrowserThread::PostTask(BrowserThread::UI,
                           FROM_HERE,
-                          base::Bind(&GpuProcessHostUIShim::Destroy, host_id_));
+                          base::Bind(&GpuProcessHostUIShim::Destroy,
+                                     host_id_,
+                                     message));
 }
 
 bool GpuProcessHost::Init() {
   init_start_time_ = base::TimeTicks::Now();
 
-  TRACE_EVENT_INSTANT0("gpu", "LaunchGpuProcess");
+  TRACE_EVENT_INSTANT0("gpu", "LaunchGpuProcess", TRACE_EVENT_SCOPE_THREAD);
 
   std::string channel_id = process_->GetHost()->CreateChannel();
   if (channel_id.empty())
     return false;
 
   if (in_process_) {
-    CommandLine::ForCurrentProcess()->AppendSwitch(
-        switches::kDisableGpuWatchdog);
+    DCHECK(g_gpu_main_thread_factory);
+    CommandLine* command_line = CommandLine::ForCurrentProcess();
+    command_line->AppendSwitch(switches::kDisableGpuWatchdog);
 
-    in_process_gpu_thread_.reset(new GpuMainThread(channel_id));
+    GpuDataManagerImpl* gpu_data_manager = GpuDataManagerImpl::GetInstance();
+    DCHECK(gpu_data_manager);
+    gpu_data_manager->AppendGpuCommandLine(command_line);
 
-    base::Thread::Options options;
-#if defined(OS_WIN)
-  // On Windows the GPU thread needs to pump the compositor child window's
-  // message loop. TODO(apatrick): make this an IO thread if / when we get rid
-  // of this child window. Unfortunately it might always be necessary for
-  // Windows XP because we cannot share the backing store textures between
-  // processes.
-  options.message_loop_type = MessageLoop::TYPE_UI;
-#else
-  options.message_loop_type = MessageLoop::TYPE_IO;
-#endif
-    in_process_gpu_thread_->StartWithOptions(options);
+    in_process_gpu_thread_.reset(g_gpu_main_thread_factory(channel_id));
+    in_process_gpu_thread_->Start();
 
     OnProcessLaunched();  // Fake a callback that the process is ready.
   } else if (!LaunchGpuProcess(channel_id)) {
@@ -514,8 +521,7 @@ bool GpuProcessHost::Init() {
   if (!Send(new GpuMsg_Initialize()))
     return false;
 
-  return Send(new GpuMsg_SetVideoMemoryWindowCount(
-      GpuDataManagerImpl::GetInstance()->GetWindowCount()));
+  return true;
 }
 
 void GpuProcessHost::RouteOnUIThread(const IPC::Message& message) {
@@ -542,7 +548,7 @@ bool GpuProcessHost::Send(IPC::Message* msg) {
   return result;
 }
 
-void GpuProcessHost::AddFilter(IPC::ChannelProxy::MessageFilter* filter) {
+void GpuProcessHost::AddFilter(IPC::MessageFilter* filter) {
   DCHECK(CalledOnValidThread());
   process_->GetHost()->AddFilter(filter);
 }
@@ -566,16 +572,11 @@ bool GpuProcessHost::OnMessageReceived(const IPC::Message& message) {
     IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
                         OnAcceleratedSurfaceBuffersSwapped)
 #endif
-#if defined(OS_WIN)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceBuffersSwapped,
-                        OnAcceleratedSurfaceBuffersSwapped)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfacePostSubBuffer,
-                        OnAcceleratedSurfacePostSubBuffer)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceSuspend,
-                        OnAcceleratedSurfaceSuspend)
-    IPC_MESSAGE_HANDLER(GpuHostMsg_AcceleratedSurfaceRelease,
-                        OnAcceleratedSurfaceRelease)
-#endif
+    IPC_MESSAGE_HANDLER(GpuHostMsg_DestroyChannel,
+                        OnDestroyChannel)
+    IPC_MESSAGE_HANDLER(GpuHostMsg_CacheShader,
+                        OnCacheShader)
+
     IPC_MESSAGE_UNHANDLED(RouteOnUIThread(message))
   IPC_END_MESSAGE_MAP()
 
@@ -583,7 +584,7 @@ bool GpuProcessHost::OnMessageReceived(const IPC::Message& message) {
 }
 
 void GpuProcessHost::OnChannelConnected(int32 peer_pid) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::OnChannelConnected");
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnChannelConnected");
 
   while (!queued_messages_.empty()) {
     Send(queued_messages_.front());
@@ -596,21 +597,25 @@ void GpuProcessHost::EstablishGpuChannel(
     bool share_context,
     const EstablishChannelCallback& callback) {
   DCHECK(CalledOnValidThread());
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::EstablishGpuChannel");
+  TRACE_EVENT0("gpu", "GpuProcessHost::EstablishGpuChannel");
 
   // If GPU features are already blacklisted, no need to establish the channel.
-  if (!GpuDataManagerImpl::GetInstance()->GpuAccessAllowed()) {
-    EstablishChannelError(
-        callback, IPC::ChannelHandle(), base::kNullProcessHandle, GPUInfo());
+  if (!GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL)) {
+    DVLOG(1) << "GPU blacklisted, refusing to open a GPU channel.";
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
     return;
   }
 
   if (Send(new GpuMsg_EstablishChannel(client_id, share_context))) {
     channel_requests_.push(callback);
   } else {
-    EstablishChannelError(
-        callback, IPC::ChannelHandle(),
-        base::kNullProcessHandle, GPUInfo());
+    DVLOG(1) << "Failed to send GpuMsg_EstablishChannel.";
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
+  }
+
+  if (!CommandLine::ForCurrentProcess()->HasSwitch(
+      switches::kDisableGpuShaderDiskCache)) {
+    CreateChannelCache(client_id);
   }
 }
 
@@ -619,83 +624,79 @@ void GpuProcessHost::CreateViewCommandBuffer(
     int surface_id,
     int client_id,
     const GPUCreateCommandBufferConfig& init_params,
+    int route_id,
     const CreateCommandBufferCallback& callback) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::CreateViewCommandBuffer");
+  TRACE_EVENT0("gpu", "GpuProcessHost::CreateViewCommandBuffer");
 
   DCHECK(CalledOnValidThread());
 
-#if defined(TOOLKIT_GTK)
-  // There should only be one such command buffer (for the compositor).  In
-  // practice, if the GPU process lost a context, GraphicsContext3D with
-  // associated command buffer and view surface will not be gone until new
-  // one is in place and all layers are reattached.
-  linked_ptr<SurfaceRef> surface_ref;
-  SurfaceRefMap::iterator it = surface_refs_.find(surface_id);
-  if (it != surface_refs_.end())
-    surface_ref = (*it).second;
-  else
-    surface_ref.reset(new SurfaceRef(compositing_surface.handle));
-#endif  // defined(TOOLKIT_GTK)
-
   if (!compositing_surface.is_null() &&
       Send(new GpuMsg_CreateViewCommandBuffer(
-          compositing_surface, surface_id, client_id, init_params))) {
+          compositing_surface, surface_id, client_id, init_params, route_id))) {
     create_command_buffer_requests_.push(callback);
-#if defined(TOOLKIT_GTK)
-    surface_refs_.insert(std::make_pair(surface_id, surface_ref));
-#endif
+    surface_refs_.insert(std::make_pair(surface_id,
+        GpuSurfaceTracker::GetInstance()->GetSurfaceRefForSurface(surface_id)));
   } else {
-    CreateCommandBufferError(callback, MSG_ROUTING_NONE);
+    callback.Run(false);
   }
 }
 
-void GpuProcessHost::CreateImage(
-    gfx::PluginWindowHandle window,
-    int client_id,
-    int image_id,
-    const CreateImageCallback& callback) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::CreateImage");
+void GpuProcessHost::CreateImage(gfx::PluginWindowHandle window,
+                                 int client_id,
+                                 int image_id,
+                                 const CreateImageCallback& callback) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::CreateImage");
 
   DCHECK(CalledOnValidThread());
 
   if (Send(new GpuMsg_CreateImage(window, client_id, image_id))) {
     create_image_requests_.push(callback);
   } else {
-    CreateImageError(callback, gfx::Size());
+    callback.Run(gfx::Size());
   }
 }
 
-void GpuProcessHost::DeleteImage(
-    int client_id,
-    int image_id,
-    int sync_point) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::DeleteImage");
+void GpuProcessHost::DeleteImage(int client_id,
+                                 int image_id,
+                                 int sync_point) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::DeleteImage");
 
   DCHECK(CalledOnValidThread());
 
   Send(new GpuMsg_DeleteImage(client_id, image_id, sync_point));
 }
 
-void GpuProcessHost::OnInitialized(bool result) {
+void GpuProcessHost::OnInitialized(bool result, const gpu::GPUInfo& gpu_info) {
   UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessInitialized", result);
+  initialized_ = result;
+
+  if (!initialized_)
+    GpuDataManagerImpl::GetInstance()->OnGpuProcessInitFailure();
+  else if (!in_process_)
+    GpuDataManagerImpl::GetInstance()->UpdateGpuInfo(gpu_info);
 }
 
 void GpuProcessHost::OnChannelEstablished(
     const IPC::ChannelHandle& channel_handle) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::OnChannelEstablished");
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnChannelEstablished");
 
+  if (channel_requests_.empty()) {
+    // This happens when GPU process is compromised.
+    RouteOnUIThread(GpuHostMsg_OnLogMessage(
+        logging::LOG_WARNING,
+        "WARNING",
+        "Received a ChannelEstablished message but no requests in queue."));
+    return;
+  }
   EstablishChannelCallback callback = channel_requests_.front();
   channel_requests_.pop();
 
   // Currently if any of the GPU features are blacklisted, we don't establish a
   // GPU channel.
   if (!channel_handle.name.empty() &&
-      !GpuDataManagerImpl::GetInstance()->GpuAccessAllowed()) {
+      !GpuDataManagerImpl::GetInstance()->GpuAccessAllowed(NULL)) {
     Send(new GpuMsg_CloseChannel(channel_handle));
-    EstablishChannelError(callback,
-                          IPC::ChannelHandle(),
-                          base::kNullProcessHandle,
-                          GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
     RouteOnUIThread(GpuHostMsg_OnLogMessage(
         logging::LOG_WARNING,
         "WARNING",
@@ -707,42 +708,38 @@ void GpuProcessHost::OnChannelEstablished(
                GpuDataManagerImpl::GetInstance()->GetGPUInfo());
 }
 
-void GpuProcessHost::OnCommandBufferCreated(const int32 route_id) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::OnCommandBufferCreated");
+void GpuProcessHost::OnCommandBufferCreated(bool succeeded) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnCommandBufferCreated");
 
-  if (!create_command_buffer_requests_.empty()) {
-    CreateCommandBufferCallback callback =
-        create_command_buffer_requests_.front();
-    create_command_buffer_requests_.pop();
-    if (route_id == MSG_ROUTING_NONE)
-      CreateCommandBufferError(callback, route_id);
-    else
-      callback.Run(route_id);
-  }
+  if (create_command_buffer_requests_.empty())
+    return;
+
+  CreateCommandBufferCallback callback =
+      create_command_buffer_requests_.front();
+  create_command_buffer_requests_.pop();
+  callback.Run(succeeded);
 }
 
 void GpuProcessHost::OnDestroyCommandBuffer(int32 surface_id) {
-  TRACE_EVENT0("gpu", "GpuProcessHostUIShim::OnDestroyCommandBuffer");
-
-#if defined(TOOLKIT_GTK)
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnDestroyCommandBuffer");
   SurfaceRefMap::iterator it = surface_refs_.find(surface_id);
-  if (it != surface_refs_.end())
+  if (it != surface_refs_.end()) {
     surface_refs_.erase(it);
-#endif  // defined(TOOLKIT_GTK)
+  }
 }
 
 void GpuProcessHost::OnImageCreated(const gfx::Size size) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnImageCreated");
 
-  if (!create_image_requests_.empty()) {
-    CreateImageCallback callback = create_image_requests_.front();
-    create_image_requests_.pop();
-    callback.Run(size);
-  }
+  if (create_image_requests_.empty())
+    return;
+
+  CreateImageCallback callback = create_image_requests_.front();
+  create_image_requests_.pop();
+  callback.Run(size);
 }
 
-void GpuProcessHost::OnDidCreateOffscreenContext(
-    const GURL& url) {
+void GpuProcessHost::OnDidCreateOffscreenContext(const GURL& url) {
   urls_with_live_offscreen_contexts_.insert(url);
 }
 
@@ -765,10 +762,7 @@ void GpuProcessHost::OnDidLoseContext(bool offscreen,
     return;
   }
 
-  // Initialization only needed because compiler is stupid.
-  GpuDataManagerImpl::DomainGuilt guilt =
-      GpuDataManagerImpl::DOMAIN_GUILT_UNKNOWN;
-
+  GpuDataManagerImpl::DomainGuilt guilt;
   switch (reason) {
     case gpu::error::kGuilty:
       guilt = GpuDataManagerImpl::DOMAIN_GUILT_KNOWN;
@@ -778,20 +772,22 @@ void GpuProcessHost::OnDidLoseContext(bool offscreen,
       break;
     case gpu::error::kInnocent:
       return;
+    default:
+      NOTREACHED();
+      return;
   }
 
-  GpuDataManagerImpl::GetInstance()->BlockDomainFrom3DAPIs(
-      url, guilt);
+  GpuDataManagerImpl::GetInstance()->BlockDomainFrom3DAPIs(url, guilt);
 }
 
-void GpuProcessHost::OnDidDestroyOffscreenContext(
-    const GURL& url) {
+void GpuProcessHost::OnDidDestroyOffscreenContext(const GURL& url) {
   urls_with_live_offscreen_contexts_.erase(url);
 }
 
 void GpuProcessHost::OnGpuMemoryUmaStatsReceived(
     const GPUMemoryUmaStats& stats) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnGpuMemoryUmaStatsReceived");
+  uma_memory_stats_received_ = true;
   uma_memory_stats_ = stats;
 }
 
@@ -800,141 +796,57 @@ void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
     const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
   TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped");
 
-  gfx::PluginWindowHandle handle =
-      GpuSurfaceTracker::Get()->GetSurfaceWindowHandle(params.surface_id);
+  if (!ui::LatencyInfo::Verify(params.latency_info,
+                               "GpuHostMsg_AcceleratedSurfaceBuffersSwapped"))
+    return;
+
+  gfx::GLSurfaceHandle surface_handle =
+      GpuSurfaceTracker::Get()->GetSurfaceHandle(params.surface_id);
   // Compositor window is always gfx::kNullPluginWindow.
   // TODO(jbates) http://crbug.com/105344 This will be removed when there are no
   // plugin windows.
-  if (handle != gfx::kNullPluginWindow) {
+  if (surface_handle.handle != gfx::kNullPluginWindow ||
+      surface_handle.transport_type == gfx::TEXTURE_TRANSPORT) {
     RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
     return;
   }
 
-  base::ScopedClosureRunner scoped_completion_runner(
-      base::Bind(&AcceleratedSurfaceBuffersSwappedCompletedForGPU,
-                 host_id_, params.route_id,
-                 true /* alive */, params.surface_handle));
+  AcceleratedSurfaceMsg_BufferPresented_Params ack_params;
+  ack_params.sync_point = 0;
 
   int render_process_id = 0;
   int render_widget_id = 0;
   if (!GpuSurfaceTracker::Get()->GetRenderWidgetIDForSurface(
       params.surface_id, &render_process_id, &render_widget_id)) {
+    Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
+                                                   ack_params));
     return;
   }
   RenderWidgetHelper* helper =
       RenderWidgetHelper::FromProcessHostID(render_process_id);
-  if (!helper)
+  if (!helper) {
+    Send(new AcceleratedSurfaceMsg_BufferPresented(params.route_id,
+                                                   ack_params));
     return;
+  }
 
   // Pass the SwapBuffers on to the RenderWidgetHelper to wake up the UI thread
   // if the browser is waiting for a new frame. Otherwise the RenderWidgetHelper
   // will forward to the RenderWidgetHostView via RenderProcessHostImpl and
   // RenderWidgetHostImpl.
-  scoped_completion_runner.Release();
+  ViewHostMsg_CompositorSurfaceBuffersSwapped_Params view_params;
+  view_params.surface_id = params.surface_id;
+  view_params.surface_handle = params.surface_handle;
+  view_params.route_id = params.route_id;
+  view_params.size = params.size;
+  view_params.scale_factor = params.scale_factor;
+  view_params.gpu_process_host_id = host_id_;
+  view_params.latency_info = params.latency_info;
   helper->DidReceiveBackingStoreMsg(ViewHostMsg_CompositorSurfaceBuffersSwapped(
       render_widget_id,
-      params.surface_id,
-      params.surface_handle,
-      params.route_id,
-      params.size,
-      host_id_));
+      view_params));
 }
 #endif  // OS_MACOSX
-
-#if defined(OS_WIN)
-void GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped(
-    const GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params& params) {
-  TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceBuffersSwapped");
-
-  base::ScopedClosureRunner scoped_completion_runner(
-      base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
-          host_id_, params.route_id, params.surface_id, params.surface_handle,
-          true, base::TimeTicks(), base::TimeDelta()));
-
-  gfx::PluginWindowHandle handle =
-      GpuSurfaceTracker::Get()->GetSurfaceWindowHandle(params.surface_id);
-
-  if (!handle) {
-    TRACE_EVENT1("gpu", "SurfaceIDNotFound_RoutingToUI",
-                 "surface_id", params.surface_id);
-#if defined(USE_AURA)
-    // This is a content area swap, send it on to the UI thread.
-    scoped_completion_runner.Release();
-    RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceBuffersSwapped(params));
-#endif
-    return;
-  }
-
-  // Otherwise it's the UI swap.
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle));
-  if (!presenter) {
-    TRACE_EVENT1("gpu", "EarlyOut_NativeWindowNotFound", "handle", handle);
-    return;
-  }
-
-  scoped_completion_runner.Release();
-  presenter->AsyncPresentAndAcknowledge(
-      params.size,
-      params.surface_handle,
-      base::Bind(&AcceleratedSurfaceBuffersSwappedCompleted,
-                 host_id_,
-                 params.route_id,
-                 params.surface_id,
-                 params.surface_handle));
-}
-
-void GpuProcessHost::OnAcceleratedSurfacePostSubBuffer(
-    const GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params& params) {
-  TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfacePostSubBuffer");
-
-  NOTIMPLEMENTED();
-}
-
-void GpuProcessHost::OnAcceleratedSurfaceSuspend(int32 surface_id) {
-  TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceSuspend");
-
-  gfx::PluginWindowHandle handle =
-      GpuSurfaceTracker::Get()->GetSurfaceWindowHandle(surface_id);
-
-  if (!handle) {
-#if defined(USE_AURA)
-    RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceSuspend(surface_id));
-#endif
-    return;
-  }
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle));
-  if (!presenter)
-    return;
-
-  presenter->Suspend();
-}
-
-void GpuProcessHost::OnAcceleratedSurfaceRelease(
-    const GpuHostMsg_AcceleratedSurfaceRelease_Params& params) {
-  TRACE_EVENT0("gpu", "GpuProcessHost::OnAcceleratedSurfaceRelease");
-
-  gfx::PluginWindowHandle handle =
-      GpuSurfaceTracker::Get()->GetSurfaceWindowHandle(params.surface_id);
-  if (!handle) {
-#if defined(USE_AURA)
-    RouteOnUIThread(GpuHostMsg_AcceleratedSurfaceRelease(params));
-    return;
-#endif
-  }
-
-  scoped_refptr<AcceleratedPresenter> presenter(
-      AcceleratedPresenter::GetForWindow(handle));
-  if (!presenter)
-    return;
-
-  presenter->ReleaseSurface();
-}
-
-#endif  // OS_WIN
 
 void GpuProcessHost::OnProcessLaunched() {
   UMA_HISTOGRAM_TIMES("GPU.GPUProcessLaunchTime",
@@ -943,10 +855,8 @@ void GpuProcessHost::OnProcessLaunched() {
 
 void GpuProcessHost::OnProcessCrashed(int exit_code) {
   SendOutstandingReplies();
-}
-
-bool GpuProcessHost::software_rendering() {
-  return software_rendering_;
+  GpuDataManagerImpl::GetInstance()->ProcessCrashed(
+      process_->GetTerminationStatus(true /* known_dead */, NULL));
 }
 
 GpuProcessHost::GpuProcessKind GpuProcessHost::kind() {
@@ -962,9 +872,19 @@ void GpuProcessHost::ForceShutdown() {
   process_->ForceShutdown();
 }
 
+void GpuProcessHost::BeginFrameSubscription(
+    int surface_id,
+    base::WeakPtr<RenderWidgetHostViewFrameSubscriber> subscriber) {
+  frame_subscribers_[surface_id] = subscriber;
+}
+
+void GpuProcessHost::EndFrameSubscription(int surface_id) {
+  frame_subscribers_.erase(surface_id);
+}
+
 bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   if (!(gpu_enabled_ &&
-      GpuDataManagerImpl::GetInstance()->ShouldUseSoftwareRendering()) &&
+      GpuDataManagerImpl::GetInstance()->ShouldUseSwiftShader()) &&
       !hardware_gpu_enabled_) {
     SendOutstandingReplies();
     return false;
@@ -982,7 +902,7 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
   int child_flags = ChildProcessHost::CHILD_NORMAL;
 #endif
 
-  FilePath exe_path = ChildProcessHost::GetChildPath(child_flags);
+  base::FilePath exe_path = ChildProcessHost::GetChildPath(child_flags);
   if (exe_path.empty())
     return false;
 
@@ -995,71 +915,68 @@ bool GpuProcessHost::LaunchGpuProcess(const std::string& channel_id) {
 
   // Propagate relevant command line switches.
   static const char* const kSwitchNames[] = {
-    switches::kDisableBreakpad,
-    switches::kDisableGLMultisampling,
-    switches::kDisableGpuSandbox,
-    switches::kReduceGpuSandbox,
-    switches::kDisableSeccompFilterSandbox,
-    switches::kEnableGpuSandbox,
-    switches::kDisableGpuVsync,
-    switches::kDisableGpuWatchdog,
-    switches::kDisableImageTransportSurface,
     switches::kDisableAcceleratedVideoDecode,
+    switches::kDisableBreakpad,
+    switches::kDisableGpuSandbox,
+    switches::kDisableGpuWatchdog,
     switches::kDisableLogging,
-    switches::kEnableGPUServiceLogging,
-    switches::kEnableLogging,
-#if defined(OS_MACOSX)
-    switches::kEnableSandboxLogging,
+    switches::kDisableSeccompFilterSandbox,
+#if defined(ENABLE_WEBRTC)
+    switches::kDisableWebRtcHWEncoding,
 #endif
-    switches::kGpuNoContextLost,
+    switches::kEnableLogging,
+    switches::kEnableShareGroupAsyncTextureUpload,
     switches::kGpuStartupDialog,
-    switches::kGpuSwitching,
+    switches::kGpuSandboxAllowSysVShm,
+    switches::kGpuSandboxFailuresFatal,
+    switches::kGpuSandboxStartAfterInitialization,
     switches::kLoggingLevel,
     switches::kNoSandbox,
     switches::kTestGLLib,
     switches::kTraceStartup,
     switches::kV,
     switches::kVModule,
-    switches::kEnableUIReleaseFrontSurface,
+#if defined(OS_MACOSX)
+    switches::kEnableSandboxLogging,
+#endif
 #if defined(USE_AURA)
     switches::kUIPrioritizeInGpuProcess,
 #endif
-    switches::kCrashOnGpuHang,
-    switches::kEnableVirtualGLContexts,
+#if defined(USE_OZONE)
+    switches::kOzonePlatform,
+#endif
+#if defined(OS_WIN)
+    switches::kHighDPISupport,
+#endif
   };
   cmd_line->CopySwitchesFrom(browser_command_line, kSwitchNames,
                              arraysize(kSwitchNames));
   cmd_line->CopySwitchesFrom(
       browser_command_line, switches::kGpuSwitches, switches::kNumGpuSwitches);
+  cmd_line->CopySwitchesFrom(
+      browser_command_line, switches::kGLSwitchesCopiedFromGpuProcessHost,
+      switches::kGLSwitchesCopiedFromGpuProcessHostNumSwitches);
 
   GetContentClient()->browser()->AppendExtraCommandLineSwitches(
       cmd_line, process_->GetData().id);
 
   GpuDataManagerImpl::GetInstance()->AppendGpuCommandLine(cmd_line);
 
-  if (cmd_line->HasSwitch(switches::kUseGL))
-    software_rendering_ =
+  if (cmd_line->HasSwitch(switches::kUseGL)) {
+    swiftshader_rendering_ =
         (cmd_line->GetSwitchValueASCII(switches::kUseGL) == "swiftshader");
+  }
 
-  UMA_HISTOGRAM_BOOLEAN("GPU.GPUProcessSoftwareRendering", software_rendering_);
-
-#if defined(OS_WIN)
-  // Make GoogleDesktopNetwork3.dll think that this is a renderer process so
-  // it unloads itself. http://crbug/129884
-  cmd_line->AppendSwitchASCII("ignored", " --type=renderer ");
-#endif
+  UMA_HISTOGRAM_BOOLEAN("GPU.GPU.GPUProcessSoftwareRendering",
+                        swiftshader_rendering_);
 
   // If specified, prepend a launcher program to the command line.
   if (!gpu_launcher.empty())
     cmd_line->PrependWrapper(gpu_launcher);
 
   process_->Launch(
-#if defined(OS_WIN)
-      FilePath(),
-#elif defined(OS_POSIX)
-      false,  // Never use the zygote (GPU plugin can't be sandboxed).
-      base::EnvironmentVector(),
-#endif
+      new GpuSandboxedProcessLauncherDelegate(cmd_line,
+                                              process_->GetHost()),
       cmd_line);
   process_launched_ = true;
 
@@ -1074,29 +991,15 @@ void GpuProcessHost::SendOutstandingReplies() {
   while (!channel_requests_.empty()) {
     EstablishChannelCallback callback = channel_requests_.front();
     channel_requests_.pop();
-    EstablishChannelError(callback,
-                          IPC::ChannelHandle(),
-                          base::kNullProcessHandle,
-                          GPUInfo());
+    callback.Run(IPC::ChannelHandle(), gpu::GPUInfo());
   }
-}
 
-void GpuProcessHost::EstablishChannelError(
-    const EstablishChannelCallback& callback,
-    const IPC::ChannelHandle& channel_handle,
-    base::ProcessHandle renderer_process_for_gpu,
-    const GPUInfo& gpu_info) {
-  callback.Run(channel_handle, gpu_info);
-}
-
-void GpuProcessHost::CreateCommandBufferError(
-    const CreateCommandBufferCallback& callback, int32 route_id) {
-  callback.Run(route_id);
-}
-
-void GpuProcessHost::CreateImageError(
-    const CreateImageCallback& callback, const gfx::Size size) {
-  callback.Run(size);
+  while (!create_command_buffer_requests_.empty()) {
+    CreateCommandBufferCallback callback =
+        create_command_buffer_requests_.front();
+    create_command_buffer_requests_.pop();
+    callback.Run(false);
+  }
 }
 
 void GpuProcessHost::BlockLiveOffscreenContexts() {
@@ -1106,6 +1009,57 @@ void GpuProcessHost::BlockLiveOffscreenContexts() {
     GpuDataManagerImpl::GetInstance()->BlockDomainFrom3DAPIs(
         *iter, GpuDataManagerImpl::DOMAIN_GUILT_UNKNOWN);
   }
+}
+
+std::string GpuProcessHost::GetShaderPrefixKey() {
+  if (shader_prefix_key_.empty()) {
+    gpu::GPUInfo info = GpuDataManagerImpl::GetInstance()->GetGPUInfo();
+
+    std::string in_str = GetContentClient()->GetProduct() + "-" +
+        info.gl_vendor + "-" + info.gl_renderer + "-" +
+        info.driver_version + "-" + info.driver_vendor;
+
+    base::Base64Encode(base::SHA1HashString(in_str), &shader_prefix_key_);
+  }
+
+  return shader_prefix_key_;
+}
+
+void GpuProcessHost::LoadedShader(const std::string& key,
+                                  const std::string& data) {
+  std::string prefix = GetShaderPrefixKey();
+  if (!key.compare(0, prefix.length(), prefix))
+    Send(new GpuMsg_LoadedShader(data));
+}
+
+void GpuProcessHost::CreateChannelCache(int32 client_id) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::CreateChannelCache");
+
+  scoped_refptr<ShaderDiskCache> cache =
+      ShaderCacheFactory::GetInstance()->Get(client_id);
+  if (!cache.get())
+    return;
+
+  cache->set_host_id(host_id_);
+
+  client_id_to_shader_cache_[client_id] = cache;
+}
+
+void GpuProcessHost::OnDestroyChannel(int32 client_id) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnDestroyChannel");
+  client_id_to_shader_cache_.erase(client_id);
+}
+
+void GpuProcessHost::OnCacheShader(int32 client_id,
+                                   const std::string& key,
+                                   const std::string& shader) {
+  TRACE_EVENT0("gpu", "GpuProcessHost::OnCacheShader");
+  ClientIdToShaderCacheMap::iterator iter =
+      client_id_to_shader_cache_.find(client_id);
+  // If the cache doesn't exist then this is an off the record profile.
+  if (iter == client_id_to_shader_cache_.end())
+    return;
+  iter->second->Cache(GetShaderPrefixKey() + ":" + key, shader);
 }
 
 }  // namespace content

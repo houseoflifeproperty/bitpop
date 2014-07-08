@@ -2,19 +2,18 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "base/string_util.h"
-#include "chrome/browser/extensions/api/api_resource.h"
-#include "chrome/browser/extensions/api/api_resource_manager.h"
+#include "base/files/file_path.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/extensions/extension_function_test_utils.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/common/extensions/extension_test_util.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/api/api_resource.h"
+#include "extensions/browser/api/api_resource_manager.h"
+#include "extensions/common/extension.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "chrome/browser/extensions/api/api_resource_event_notifier.h"
-#include "chrome/browser/profiles/profile.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 namespace utils = extension_function_test_utils;
 
@@ -22,24 +21,23 @@ using content::BrowserThread;
 
 namespace extensions {
 
+// TODO(rockot): Move these tests to src/extensions.
 class ApiResourceManagerUnitTest : public BrowserWithTestWindowTest {
  public:
-  virtual void SetUp() {
-    BrowserWithTestWindowTest::SetUp();
-  }
+  virtual void SetUp() { BrowserWithTestWindowTest::SetUp(); }
 };
 
 class FakeApiResource : public ApiResource {
  public:
-  FakeApiResource(const std::string& owner_extension_id,
-                  ApiResourceEventNotifier* event_notifier) :
-      ApiResource(owner_extension_id, event_notifier) {}
-  ~FakeApiResource() {}
+  explicit FakeApiResource(const std::string& owner_extension_id)
+      : ApiResource(owner_extension_id) {}
+  virtual ~FakeApiResource() {}
+  static const BrowserThread::ID kThreadId = BrowserThread::UI;
 };
 
 TEST_F(ApiResourceManagerUnitTest, TwoAppsCannotShareResources) {
   scoped_ptr<ApiResourceManager<FakeApiResource> > manager(
-      new ApiResourceManager<FakeApiResource>(BrowserThread::UI));
+      new ApiResourceManager<FakeApiResource>(NULL));
   scoped_refptr<extensions::Extension> extension_one(
       utils::CreateEmptyExtension("one"));
   scoped_refptr<extensions::Extension> extension_two(
@@ -48,19 +46,8 @@ TEST_F(ApiResourceManagerUnitTest, TwoAppsCannotShareResources) {
   const std::string extension_one_id(extension_one->id());
   const std::string extension_two_id(extension_two->id());
 
-  GURL url_one("url-one");
-  GURL url_two("url-two");
-  scoped_refptr<ApiResourceEventNotifier> event_notifier_one(
-      new ApiResourceEventNotifier(
-          NULL, NULL, extension_one_id, 1111, url_one));
-  scoped_refptr<ApiResourceEventNotifier> event_notifier_two(
-      new ApiResourceEventNotifier(
-          NULL, NULL, extension_two_id, 2222, url_two));
-
-  int resource_one_id = manager->Add(new FakeApiResource(
-      extension_one_id, event_notifier_one.get()));
-  int resource_two_id = manager->Add(new FakeApiResource(
-      extension_two_id, event_notifier_two.get()));
+  int resource_one_id = manager->Add(new FakeApiResource(extension_one_id));
+  int resource_two_id = manager->Add(new FakeApiResource(extension_two_id));
   CHECK(resource_one_id);
   CHECK(resource_two_id);
 

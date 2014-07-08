@@ -24,8 +24,6 @@ enum SkinEnum {
 };
 */
 
-SK_DEFINE_INST_COUNT(SkListSource)
-
 const char* get_skin_enum_path(SkinEnum se)
 {
     SkASSERT((unsigned)se < kSkinEnumCount);
@@ -41,20 +39,16 @@ const char* get_skin_enum_path(SkinEnum se)
     return gSkinPaths[se];
 }
 
-void init_skin_anim(const char path[], SkAnimator* anim)
-{
+void init_skin_anim(const char path[], SkAnimator* anim) {
     SkASSERT(path && anim);
 
-    SkFILEStream    stream(path);
-
-    if (!stream.isValid())
-    {
+    SkAutoTUnref<SkStream> stream(SkStream::NewFromFile(path));
+    if (!stream.get()) {
         SkDEBUGF(("init_skin_anim: loading skin failed <%s>\n", path));
         sk_throw();
     }
 
-    if (!anim->decodeStream(&stream))
-    {
+    if (!anim->decodeStream(stream)) {
         SkDEBUGF(("init_skin_anim: decoding skin failed <%s>\n", path));
         sk_throw();
     }

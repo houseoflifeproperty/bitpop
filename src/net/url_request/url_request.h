@@ -11,77 +11,49 @@
 #include "base/debug/leak_tracker.h"
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "base/supports_user_data.h"
-#include "base/time.h"
 #include "base/threading/non_thread_safe.h"
-#include "googleurl/src/gurl.h"
+#include "base/time/time.h"
 #include "net/base/auth.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
+#include "net/base/load_timing_info.h"
 #include "net/base/net_export.h"
 #include "net/base/net_log.h"
 #include "net/base/network_delegate.h"
 #include "net/base/request_priority.h"
 #include "net/base/upload_progress.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/cookies/cookie_store.h"
 #include "net/http/http_request_headers.h"
 #include "net/http/http_response_info.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
-class FilePath;
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 class ChildProcessSecurityPolicyTest;
-class ComponentUpdateInterceptor;
-class TestAutomationProvider;
-class URLRequestAutomationJob;
 
 namespace base {
+class Value;
+
 namespace debug {
 class StackTrace;
-}
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace appcache {
-class AppCacheInterceptor;
-class AppCacheRequestHandlerTest;
-class AppCacheURLRequestJobTest;
-}
+}  // namespace debug
+}  // namespace base
 
 // Temporary layering violation to allow existing users of a deprecated
 // interface.
 namespace content {
-class ResourceDispatcherHostTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace extensions {
-class AutoUpdateInterceptor;
-class UserScriptListenerTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace fileapi {
+class AppCacheInterceptor;
+class AppCacheURLRequestJobTest;
+class AppCacheRequestHandlerTest;
+class BlobURLRequestJobTest;
 class FileSystemDirURLRequestJobTest;
 class FileSystemURLRequestJobTest;
 class FileWriterDelegateTest;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace policy {
-class CannedResponseInterceptor;
-}
-
-// Temporary layering violation to allow existing users of a deprecated
-// interface.
-namespace webkit_blob {
-class BlobURLRequestJobTest;
+class ResourceDispatcherHostTest;
 }
 
 namespace net {
@@ -89,6 +61,7 @@ namespace net {
 class CookieOptions;
 class HostPortPair;
 class IOBuffer;
+struct LoadTimingInfo;
 class SSLCertRequestInfo;
 class SSLInfo;
 class UploadDataStream;
@@ -187,29 +160,24 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   class NET_EXPORT Deprecated {
    private:
     // TODO(willchan): Kill off these friend declarations.
-    friend class extensions::AutoUpdateInterceptor;
     friend class ::ChildProcessSecurityPolicyTest;
-    friend class ::ComponentUpdateInterceptor;
-    friend class ::TestAutomationProvider;
-    friend class ::URLRequestAutomationJob;
     friend class TestInterceptor;
     friend class URLRequestFilter;
-    friend class appcache::AppCacheInterceptor;
-    friend class appcache::AppCacheRequestHandlerTest;
-    friend class appcache::AppCacheURLRequestJobTest;
+    friend class content::AppCacheInterceptor;
+    friend class content::AppCacheRequestHandlerTest;
+    friend class content::AppCacheURLRequestJobTest;
+    friend class content::BlobURLRequestJobTest;
+    friend class content::FileSystemDirURLRequestJobTest;
+    friend class content::FileSystemURLRequestJobTest;
+    friend class content::FileWriterDelegateTest;
     friend class content::ResourceDispatcherHostTest;
-    friend class extensions::UserScriptListenerTest;
-    friend class fileapi::FileSystemDirURLRequestJobTest;
-    friend class fileapi::FileSystemURLRequestJobTest;
-    friend class fileapi::FileWriterDelegateTest;
-    friend class policy::CannedResponseInterceptor;
-    friend class webkit_blob::BlobURLRequestJobTest;
 
     // Use URLRequestJobFactory::ProtocolHandler instead.
     static ProtocolFactory* RegisterProtocolFactory(const std::string& scheme,
                                                     ProtocolFactory* factory);
 
-    // Use URLRequestJobFactory::Interceptor instead.
+    // TODO(pauljensen): Remove this when AppCacheInterceptor is a
+    // ProtocolHandler, see crbug.com/161547.
     static void RegisterRequestInterceptor(Interceptor* interceptor);
     static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
@@ -292,6 +260,12 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
                                        const SSLInfo& ssl_info,
                                        bool fatal);
 
+    // Called to notify that the request must use the network to complete the
+    // request and is about to do so. This is called at most once per
+    // URLRequest, and by default does not defer. If deferred, call
+    // ResumeNetworkStart() to continue or Cancel() to cancel.
+    virtual void OnBeforeNetworkStart(URLRequest* request, bool* defer);
+
     // After calling Start(), the delegate will receive an OnResponseStarted
     // callback when the request has completed.  If an error occurred, the
     // request->status() will be set.  On success, all redirects have been
@@ -313,16 +287,19 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     virtual ~Delegate() {}
   };
 
-  // TODO(shalev): Get rid of this constructor in favour of the one below it.
-  // Initialize an URL request.
+  // TODO(tburkard): we should get rid of this constructor, and have each
+  // creator of a URLRequest specifically list the cookie store to be used.
+  // For now, this constructor will use the cookie store in |context|.
   URLRequest(const GURL& url,
+             RequestPriority priority,
              Delegate* delegate,
              const URLRequestContext* context);
 
   URLRequest(const GURL& url,
+             RequestPriority priority,
              Delegate* delegate,
              const URLRequestContext* context,
-             NetworkDelegate* network_delegate);
+             CookieStore* cookie_store);
 
   // If destroyed after Start() has been called but while IO is pending,
   // then the request will be effectively canceled and the delegate
@@ -381,14 +358,19 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const std::string& method() const { return method_; }
   void set_method(const std::string& method);
 
+  // Determines the new method of the request afer following a redirect.
+  // |method| is the method used to arrive at the redirect,
+  // |http_status_code| is the status code associated with the redirect.
+  static std::string ComputeMethodForRedirect(const std::string& method,
+                                              int http_status_code);
+
   // The referrer URL for the request.  This header may actually be suppressed
   // from the underlying network request for security reasons (e.g., a HTTPS
   // URL will not be sent as the referrer for a HTTP request).  The referrer
   // may only be changed before Start() is called.
   const std::string& referrer() const { return referrer_; }
-  void set_referrer(const std::string& referrer);
-  // Returns the referrer header with potential username and password removed.
-  GURL GetSanitizedReferrer() const;
+  // Referrer is sanitized to remove URL fragment, user name and password.
+  void SetReferrer(const std::string& referrer);
 
   // The referrer policy to apply when updating the referrer during redirects.
   // The referrer policy may only be changed before Start() is called.
@@ -438,13 +420,50 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     return extra_request_headers_;
   }
 
-  // Returns the current load state for the request. |param| is an optional
-  // parameter describing details related to the load state. Not all load states
-  // have a parameter.
+  // Gets the full request headers sent to the server.
+  //
+  // Return true and overwrites headers if it can get the request headers;
+  // otherwise, returns false and does not modify headers.  (Always returns
+  // false for request types that don't have headers, like file requests.)
+  //
+  // This is guaranteed to succeed if:
+  //
+  // 1. A redirect or auth callback is currently running.  Once it ends, the
+  //    headers may become unavailable as a new request with the new address
+  //    or credentials is made.
+  //
+  // 2. The OnResponseStarted callback is currently running or has run.
+  bool GetFullRequestHeaders(HttpRequestHeaders* headers) const;
+
+  // Gets the total amount of data received from network after SSL decoding and
+  // proxy handling.
+  int64 GetTotalReceivedBytes() const;
+
+  // Returns the current load state for the request. The returned value's
+  // |param| field is an optional parameter describing details related to the
+  // load state. Not all load states have a parameter.
   LoadStateWithParam GetLoadState() const;
-  void SetLoadStateParam(const string16& param) {
-    load_state_param_ = param;
-  }
+
+  // Returns a partial representation of the request's state as a value, for
+  // debugging.  Caller takes ownership of returned value.
+  base::Value* GetStateAsValue() const;
+
+  // Logs information about the what external object currently blocking the
+  // request.  LogUnblocked must be called before resuming the request.  This
+  // can be called multiple times in a row either with or without calling
+  // LogUnblocked between calls.  |blocked_by| must not be NULL or have length
+  // 0.
+  void LogBlockedBy(const char* blocked_by);
+
+  // Just like LogBlockedBy, but also makes GetLoadState return source as the
+  // |param| in the value returned by GetLoadState.  Calling LogUnblocked or
+  // LogBlockedBy will clear the load param.  |blocked_by| must not be NULL or
+  // have length 0.
+  void LogAndReportBlockedBy(const char* blocked_by);
+
+  // Logs that the request is no longer blocked by the last caller to
+  // LogBlockedBy.
+  void LogUnblocked();
 
   // Returns the current upload progress in bytes. When the upload data is
   // chunked, size is set to zero, but position will not be.
@@ -486,6 +505,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
     return response_info_.was_fetched_via_proxy;
   }
 
+  // Returns true if the URLRequest was delivered over SPDY.
+  bool was_fetched_via_spdy() const {
+    return response_info_.was_fetched_via_spdy;
+  }
+
   // Returns the host and port that the content was fetched from.  See
   // http_response_info.h for caveats relating to cached content.
   HostPortPair GetSocketAddress() const;
@@ -498,6 +522,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   const SSLInfo& ssl_info() const {
     return response_info_.ssl_info;
   }
+
+  // Gets timing information related to the request.  Events that have not yet
+  // occurred are left uninitialized.  After a second request starts, due to
+  // a redirect or authentication, values will be reset.
+  //
+  // LoadTimingInfo only contains ConnectTiming information and socket IDs for
+  // non-cached HTTP responses.
+  void GetLoadTimingInfo(LoadTimingInfo* load_timing_info) const;
 
   // Returns the cookie values included in the response, if the request is one
   // that can have cookies.  Returns true if the request is a cookie-bearing
@@ -516,14 +548,18 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Returns the HTTP response code (e.g., 200, 404, and so on).  This method
   // may only be called once the delegate's OnResponseStarted method has been
   // called.  For non-HTTP requests, this method returns -1.
-  int GetResponseCode();
+  int GetResponseCode() const;
 
   // Get the HTTP response info in its entirety.
   const HttpResponseInfo& response_info() const { return response_info_; }
 
   // Access the LOAD_* flags modifying this request (see load_flags.h).
   int load_flags() const { return load_flags_; }
-  void set_load_flags(int flags) { load_flags_ = flags; }
+
+  // The new flags may change the IGNORE_LIMITS flag only when called
+  // before Start() is called, it must only set the flag, and if set,
+  // the priority of this request must already be MAXIMUM_PRIORITY.
+  void SetLoadFlags(int flags);
 
   // Returns true if the request is "pending" (i.e., if Start() has been called,
   // and the response has not yet been called).
@@ -596,6 +632,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // response to an OnReceivedRedirect call.
   void FollowDeferredRedirect();
 
+  // This method must be called to resume network communications that were
+  // deferred in response to an OnBeforeNetworkStart call.
+  void ResumeNetworkStart();
+
   // One of the following two methods should be called in response to an
   // OnAuthRequired() callback (and only then).
   // SetAuth will reissue the request with the given credentials.
@@ -623,11 +663,11 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   // Returns the priority level for this request.
   RequestPriority priority() const { return priority_; }
-  void set_priority(RequestPriority priority) {
-    DCHECK_GE(priority, MINIMUM_PRIORITY);
-    DCHECK_LT(priority, NUM_PRIORITIES);
-    priority_ = priority;
-  }
+
+  // Sets the priority level for this request and any related
+  // jobs. Must not change the priority to anything other than
+  // MAXIMUM_PRIORITY if the IGNORE_LIMITS load flag is set.
+  void SetPriority(RequestPriority priority);
 
   // Returns true iff this request would be internally redirected to HTTPS
   // due to HSTS. If so, |redirect_url| is rewritten to the new HTTPS URL.
@@ -656,12 +696,18 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Allow the URLRequestJob class to set our status too
   void set_status(const URLRequestStatus& value) { status_ = value; }
 
+  CookieStore* cookie_store() const { return cookie_store_; }
+
   // Allow the URLRequestJob to redirect this request.  Returns OK if
   // successful, otherwise an error code is returned.
   int Redirect(const GURL& location, int http_status_code);
 
   // Called by URLRequestJob to allow interception when a redirect occurs.
   void NotifyReceivedRedirect(const GURL& location, bool* defer_redirect);
+
+  // Called by URLRequestHttpJob (note, only HTTP(S) jobs will call this) to
+  // allow deferral of network initialization.
+  void NotifyBeforeNetworkStart(bool* defer);
 
   // Allow an interceptor's URLRequestJob to restart this request.
   // Should only be called if the original job has not started a response.
@@ -691,6 +737,15 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   static void RegisterRequestInterceptor(Interceptor* interceptor);
   static void UnregisterRequestInterceptor(Interceptor* interceptor);
 
+  // Initializes the URLRequest. Code shared between the two constructors.
+  // TODO(tburkard): This can ultimately be folded into a single constructor
+  // again.
+  void Init(const GURL& url,
+            RequestPriority priotity,
+            Delegate* delegate,
+            const URLRequestContext* context,
+            CookieStore* cookie_store);
+
   // Resumes or blocks a request paused by the NetworkDelegate::OnBeforeRequest
   // handler. If |blocked| is true, the request is blocked and an error page is
   // returned indicating so. This should only be called after Start is called
@@ -713,6 +768,10 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // Cancels the request and set the error and ssl info for this request to the
   // passed values.
   void DoCancel(int error, const SSLInfo& ssl_info);
+
+  // Called by the URLRequestJob when the headers are received, before any other
+  // method, to allow caching of load timing information.
+  void OnHeadersComplete();
 
   // Notifies the network delegate that the request has been completed.
   // This does not imply a successful completion. Also a canceled request is
@@ -738,11 +797,13 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   bool CanGetCookies(const CookieList& cookie_list) const;
   bool CanSetCookie(const std::string& cookie_line,
                     CookieOptions* options) const;
+  bool CanEnablePrivacyMode() const;
 
-  // Called when the delegate blocks or unblocks this request when intercepting
-  // certain requests.
-  void SetBlockedOnDelegate();
-  void SetUnblockedOnDelegate();
+  // Called just before calling a delegate that may block a request.
+  void OnCallToDelegate();
+  // Called when the delegate lets a request continue.  Also called on
+  // cancellation.
+  void OnCallToDelegateComplete();
 
   // Contextual information used for this request. Cannot be NULL. This contains
   // most of the dependencies which are shared between requests (disk cache,
@@ -796,8 +857,9 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // first transaction in a request involving redirects.
   UploadProgress final_upload_progress_;
 
-  // The priority level for this request.  Objects like ClientSocketPool use
-  // this to determine which URLRequest to allocate sockets to first.
+  // The priority level for this request.  Objects like
+  // ClientSocketPool use this to determine which URLRequest to
+  // allocate sockets to first.
   RequestPriority priority_;
 
   // TODO(battre): The only consumer of the identifier_ is currently the
@@ -809,13 +871,14 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
   // A globally unique identifier for this request.
   const uint64 identifier_;
 
-  // True if this request is blocked waiting for the network delegate to resume
-  // it.
-  bool blocked_on_delegate_;
+  // True if this request is currently calling a delegate, or is blocked waiting
+  // for the URL request or network delegate to resume it.
+  bool calling_delegate_;
 
-  // An optional parameter that provides additional information about the load
-  // state. Only used with the LOAD_STATE_WAITING_FOR_DELEGATE state.
-  string16 load_state_param_;
+  // An optional parameter that provides additional information about what
+  // |this| is currently being blocked by.
+  std::string blocked_by_;
+  bool use_blocked_by_as_load_param_;
 
   base::debug::LeakTracker<URLRequest> leak_tracker_;
 
@@ -839,7 +902,17 @@ class NET_EXPORT URLRequest : NON_EXPORTED_BASE(public base::NonThreadSafe),
 
   base::TimeTicks creation_time_;
 
+  // Timing information for the most recent request.  Its start times are
+  // populated during Start(), and the rest are populated in OnResponseReceived.
+  LoadTimingInfo load_timing_info_;
+
   scoped_ptr<const base::debug::StackTrace> stack_trace_;
+
+  // Keeps track of whether or not OnBeforeNetworkStart has been called yet.
+  bool notified_before_network_start_;
+
+  // The cookie store to be used for this request.
+  scoped_refptr<CookieStore> cookie_store_;
 
   DISALLOW_COPY_AND_ASSIGN(URLRequest);
 };

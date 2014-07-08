@@ -5,10 +5,11 @@
 [
   {
     "namespace":"webstorePrivate",
-    "nodoc": "true",
+    "description": "none",
     "functions": [
       {
         "name": "install",
+        "nocompile": true,
         "description": "Installs the extension corresponding to the given id",
         "parameters": [
           {
@@ -19,7 +20,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -56,8 +57,8 @@
           {
             "name": "callback",
             "type": "function",
-            "description": "Called when the install process completes. Upon failures, chrome.extension.lastError will be set to 'user_canceled' or 'unknown_error'.",
-            "optional": "true",
+            "description": "Called when the install process completes. Upon failures, chrome.runtime.lastError will be set to 'user_canceled' or 'unknown_error'.",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -105,6 +106,16 @@
                 "type": "boolean",
                 "optional": true,
                 "description": "A flag to change the UI we show when an app is installed - a value of true means to show a bubble pointing at the new tab button (instead of the default behavior of opening the new tab page and animating the app icon)."
+              },
+              "enableLauncher": {
+                "type": "boolean",
+                "optional": true,
+                "description": "A flag to cause the app launcher to be installed before installing the extension, if it isn't installed already."
+              },
+              "authuser": {
+                "type": "string",
+                "optional": true,
+                "description": "The authuser index to be included with CRX download requests in multi-login sessions."
               }
             },
             "additionalProperties": { "type": "any" }
@@ -113,12 +124,12 @@
             "name": "callback",
             "type": "function",
             "description": "Called when the user has either accepted/rejected the dialog, or some error occurred (such as invalid manifest or icon image data).",
-            "optional": "true",
+            "optional": true,
             "parameters": [
               {
                 "name": "result",
                 "type": "string",
-                "description": "A string result code, which will be empty upon success. The possible values in the case of errors include 'unknown_error', 'user_cancelled', 'manifest_error', 'icon_error', 'invalid_id', 'permission_denied', and 'invalid_icon_url'."
+                "description": "A string result code, which will be empty upon success. The possible values in the case of errors include 'unknown_error', 'user_cancelled', 'manifest_error', 'icon_error', 'invalid_id', 'permission_denied', 'invalid_icon_url', 'signin_failed', and 'already_installed'."
               }
             ]
           }
@@ -137,7 +148,19 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "enableAppLauncher",
+        "description": "",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": true,
             "parameters": []
           }
         ]
@@ -149,14 +172,13 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               {
                 "name": "info",
                 "type": "object",
                 "properties": {
-                  "login": { "type": "string" },
-                  "token": { "type": "string", "optional": true }
+                  "login": { "type": "string" }
                 }
               }
             ]
@@ -170,7 +192,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               { "name": "login", "type": "string" }
             ]
@@ -185,34 +207,8 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "true",
+            "optional": true,
             "parameters": []
-          }
-        ]
-      },
-      {
-        "name": "promptBrowserLogin",
-        "description": "Causes the browser to bring up the browser login UI.",
-        "parameters": [
-          {
-            "name": "preferred_email",
-            "type": "string",
-            "description": "The email address to use to pre-populate the login dialog (can be an empty string)."
-          },
-          {
-            "name": "callback",
-            "type": "function",
-            "optional": "true",
-            "parameters": [
-              {
-                "name": "info",
-                "type": "object",
-                "properties": {
-                  "login": { "type": "string", "optional": true },
-                  "token": { "type": "string", "optional": true }
-                }
-              }
-            ]
           }
         ]
       },
@@ -223,7 +219,7 @@
           {
             "name": "callback",
             "type": "function",
-            "optional": "false",
+            "optional": false,
             "parameters": [
               {
                 "name": "webgl_status",
@@ -231,6 +227,52 @@
                 "enum": ["webgl_allowed", "webgl_blocked"]
               }
             ]
+          }
+        ]
+      },
+      {
+        "name": "getIsLauncherEnabled",
+        "description": "Returns whether the apps launcher is enabled or not.",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": false,
+            "parameters": [
+              { "name": "is_enabled", "type": "boolean" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "isInIncognitoMode",
+        "description": "Returns whether the browser is in incognito mode or not.",
+        "parameters": [
+          {
+            "name": "callback",
+            "type": "function",
+            "optional": false,
+            "parameters": [
+              { "name": "is_incognito", "type": "boolean" }
+            ]
+          }
+        ]
+      },
+      {
+        "name": "signIn",
+        "description": "Signs the user into Chrome.",
+        "parameters": [
+          {
+            "name": "continue_url",
+            "type": "string",
+            "description": "The continue URL to navigate to once sign-in completes."
+          },
+          {
+            "name": "callback",
+            "type": "function",
+            "description": "Called if the user is already signed in or if the sign-in method was invoked incorrectly (e.g. with an invalid continue URL), sign-in is unavailable (e.g. in Incognito), or the API was not called in response to a user gesture. Upon such a failure, chrome.runtime.lastError will be set to 'invalid_continue_url', 'signin_is_disallowed', 'signin_failed', 'merge_session_failed', or 'user_gesture_required'.",
+            "optional": true,
+            "parameters": []
           }
         ]
       }

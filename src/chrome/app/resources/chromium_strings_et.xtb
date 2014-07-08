@@ -1,216 +1,250 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="et">
 <translation id="6676384891291319759">Pääs Internetti</translation>
+<translation id="8586442755830160949">Autoriõigus <ph name="YEAR"/> The Chromium Authors. Kõik õigused on kaitstud.</translation>
 <translation id="8447784615389818621">Kas soovite kindlasti BitPopi desinstallida?</translation>
+<translation id="1928147301259050372">Kas soovite, et BitPop salvestaks krediitkaarditeabe veebivormide täitmiseks?</translation>
 <translation id="100741878661450640">Desinstalli BitPop</translation>
+<translation id="7015513946685052865">See arvuti ei saa peagi enam BitPopi värskendusi, kuna selle riistvara ei toetata enam.</translation>
 <translation id="4301276314211054820">BitPopi on värskendatud, kuid te ei ole seda kasutanud vähemalt 30 päeva.</translation>
 <translation id="8935261719622405725">Käivitage BitPopi rakendusi</translation>
-<translation id="2556535128417126306">BitPopi rakenduste käiviti on eraldiseisev platvorm BitPopi rakenduste jaoks.</translation>
+<translation id="2787245396912783582">BitPopi rakenduste käiviti on eraldiseisev platvorm BitPopi rakenduste jaoks.</translation>
 <translation id="2770231113462710648">Asenda vaikebrauser:</translation>
 <translation id="6870152852581894991">Teie muudatused jõustuvad järgmine kord, kui BitPopi taaskäivitate.</translation>
+<translation id="7725527658463487664">BitPop on aegunud</translation>
+<translation id="302025056100997516">Kontaktide üksikasjad aitavad BitPopis kiiremini vorme täita.</translation>
 <translation id="3588014340702790340">Vaatate turvalist BitPopi lehte.</translation>
-<translation id="6789998774111513164">BitPop Frame</translation>
+<translation id="2077129598763517140">Kasuta võimaluse korral riistvarakiirendust</translation>
 <translation id="1065672644894730302">Teie eelistusi ei saa lugeda. Mõned funktsioonid ei pruugi saadaval olla ja eelistuste muudatusi ei salvestata.</translation>
-<translation id="4901429675189043920">BitPop Frame'i värskendus.</translation>
-<translation id="1132852132282742543">BitPop Renderer</translation>
-<translation id="7155774694068736041">BitPop Frame on juba installitud ja arvutis kõikidele kasutajatele saadaval. Kui soovite installida BitPop Frame'i kasutaja tasemel, siis tuleb teil esmalt desinstallida süsteemi taseme versioon, mille on installinud administraator.</translation>
+<translation id="4795239855223923830">BitPopi kohandamine ja juhtimine</translation>
+<translation id="98449668525928921">Logite sisse hallatud kontoga ja annate selle administraatorile üle BitPopi profiili juhtimise. Teie BitPopi andmed, näiteks rakendused, järjehoidjad, ajalugu, paroolid ja muud seaded seotakse jäädavalt kasutajaga <ph name="USER_NAME"/>. Saate need andmed kustutada Google'i kontode juhtpaneeli kaudu, kuid te ei saa neid seostada teise kontoga. Võite olemasolevate Chrome'i andmete eraldi hoidmiseks luua aga uue profiili. <ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">Täname teid uue BitPopi proovimise eest. BitPop peab taaskäivituma, seega veenduge enne jätkamist, et oleksite salvestanud kõik pooleliolevad tööd.</translation>
 <translation id="731644333568559921">Värskenda &amp;Chromium OS-i</translation>
 <translation id="5284421695473942517">BitPop nõuab Windows XP-d või uuemat operatsioonisüsteemi. Mõni funktsioon ei pruugi töötada.</translation>
+<translation id="4534284284800306880">Google Walleti kasutamiseks peate BitPopi täiendama [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1258942147733482141">BitPopi avatud lähtekoodi litsentsid</translation>
+<translation id="2001441118695834744">Kui soovite olemasolevad BitPopi andmed eraldi hoida, võite kasutajale <ph name="USER_NAME"/> luua uue BitPopi kasutaja.</translation>
+<translation id="3207916442629104800">Määra BitPop vaikebrauseriks</translation>
+<translation id="2346981135360001626">Seadet värskendatakse kanalile <ph name="CHANNEL_NAME"/> ...</translation>
 <translation id="3549345495227188780">Alustamine Chromium OS-iga</translation>
-<translation id="8363397932717822970">Süsteemist leiti BitPopi või BitPop Frame'i vastuoluline install. Desinstallige see ja proovige uuesti.</translation>
+<translation id="7593639489233822734">Pärast konto eemaldamist BitPopist tuleb avatud vahekaardid võib-olla uuesti laadida, et need toimiksid.</translation>
 <translation id="8235603028098851915">BitPopi tööriistariba</translation>
-<translation id="5953515305183787825">BitPop ei ole enam ajakohane, kuna teie operatsioonisüsteem on aegunud.</translation>
-<translation id="7230682351542979557">BitPopi Captive Portali tuvasti</translation>
 <translation id="325440606879482824">Installimine ebaõnnestus tundmatu vea tõttu. Kui BitPop praegu töötab, siis sulgege see ja proovige uuesti.</translation>
-<translation id="7224939653007212692">BitPopi automaatse täitmise seaded</translation>
-<translation id="3078552028547324322">Kasutage rakenduste käivitamiseks BitPopi rakenduste käivitit.</translation>
-<translation id="3555616473548901994">Desinstallimine on lõpetatud.</translation>
-<translation id="5814137742095860156">BitPop App Host</translation>
+<translation id="2681187513058372590">BitPop püüab paroole kuvada.</translation>
 <translation id="9205983754412543288">Valikuline: aidake muuta BitPopi paremaks, saates Google'ile automaatselt kasutusstatistikat ja krahhiaruandeid.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> – BitPop</translation>
-<translation id="6259082392093297310">Üritasite jõuda aadressile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid serveri esitatud sertifikaat sisaldab vigu. BitPop ei saa kasutada vigadega sertifikaati ega tuvastada soovitud saidi identiteeti.</translation>
-<translation id="3801183610358973379">Installeril ei õnnestunud arhiivi lahti pakkida. Laadige BitPop uuesti alla.</translation>
-<translation id="4450789702440326676">Luba BitPopil taustal töötada</translation>
-<translation id="2963590958538393837">Jah, välju BitPopist</translation>
-<translation id="8031724302809093115">BitPopi uus vaheleht kujundati ümber. Vahetage jaotiste vahel nendel siltidel klõpsates. Chromium jätab teie eelistuse järgmiseks korraks meelde.</translation>
-<translation id="1480489203462860648">Proovige järele, see on juba installitud</translation>
-<translation id="7098153548331126805">BitPopi lisamine ...</translation>
-<translation id="5928487969163300899">Desinstalli BitPopi rakenduste käiviti</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Hoiatus:<ph name="END_BOLD"/> BitPop ei saa takistada rakendusi teie sirvimisajalugu talletamast. Kui soovite laienduse inkognitorežiimis keelata, siis tühistage see valik.</translation>
-<translation id="3941397373453695568">BitPop ei sisalda PDF-vaaturit, mida on printimise eelvaate jaoks vaja.</translation>
-<translation id="8155571637339134666">BitPop võib kasutada veebiteenuseid sirvimiskogemuse täiustamiseks.</translation>
-<translation id="5383732173730790693">Olete nüüd BitPopi sisse logitud. Teie järjehoidjad, ajalugu ja muud seaded sünkroonitakse teie Google'i kontoga.</translation>
-<translation id="6866316083935040427">Välju BitPopist</translation>
-<translation id="4759775690587852534">Kahjuks ei ole Mozilla Firefoxi seaded saadaval, kui brauser töötab. Seadete BitPopi importimiseks salvestage töö ja sulgege kõik Firefoxi aknad. Seejärel klõpsake käsul Jätka.</translation>
-<translation id="2411757162791070146">Sel juhul ei kattu sertifikaadis olev aadress veebisaidi aadressiga, mida brauser avada üritas. Üks võimalik põhjus on see, et teie sidet häirib ründaja, kes esitab muu veebisaidi sertifikaadi ja põhjustab seega vastuolu. Põhjus võib olla ka selles, et server on seadistatud esitama sama sertifikaadi mitme veebisaidi, sealhulgas praegu külastatava saidi kohta, kuigi sertifikaat ei kehti kõikidele saitidele. BitPop võib väita, et jõudsite domeenile &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, kuid ei saa kinnitada, et tegemist on sama saidiga kui &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuhu üritasite jõuda. Jätkamisel ei kontrolli BitPop enam nimede vastuolusid.</translation>
-<translation id="2423180989259159758">Valige
-          <ph name="BEGIN_BOLD"/>
-          BitPopi menüü &gt;
+<translation id="3898160962923474892">Minge
+          BitPopi menüüsse &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          &gt;
-          LAN-i seaded
-          <ph name="END_BOLD"/>
-          ja kustutage märge ruudust „Kasutage oma LAN-i puhul puhverserverit”.</translation>
+          ja veenduge, et konfiguratsioon on määratud valikule „Puhverserverita” või „Otse”.</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> – BitPop</translation>
+<translation id="3334080844010912902">BitPop ei saa teie andmeid sünkroonida, sest teie domeenil pole sünkroonimine saadaval.</translation>
+<translation id="2030214613468936763">Üritasite jõuda aadressile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid serveri esitatud sertifikaat sisaldab vigu. BitPop ei saa kasutada vigadega sertifikaati ega tuvastada soovitud saidi identiteeti.</translation>
+<translation id="3801183610358973379">Installeril ei õnnestunud arhiivi lahti pakkida. Laadige BitPop uuesti alla.</translation>
+<translation id="4138697454314244697">Ei leitud BitPopi installi, mida värskendada.</translation>
+<translation id="4450789702440326676">Luba BitPopil taustal töötada</translation>
+<translation id="8743840534367614002">BitPopi rakendused</translation>
+<translation id="2963590958538393837">Jah, välju BitPopist</translation>
+<translation id="1480489203462860648">Proovige järele, see on juba installitud</translation>
+<translation id="7098153548331126805">BitPopi lisamine ...</translation>
+<translation id="4831257561365056138">Desinstalli BitPopi rakenduste käiviti</translation>
+<translation id="7680117738450774222">Olete nüüd BitPopi sisse logitud. Administraator on sünkroonimise keelanud.</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>Hoiatus:<ph name="END_BOLD"/> BitPop ei saa takistada rakendusi teie sirvimisajalugu talletamast. Kui soovite laienduse inkognitorežiimis keelata, siis tühistage see valik.</translation>
+<translation id="9123740998411173947">Kui olete sisse logitud, näete oma vahelehti, järjehoidjaid ja muud BitPopi kraami kõikjal oma sülearvutis, telefonis ja tahvelarvutis. Google'i teenused pakuvad teile ka asjakohasemaid soovitusi ja funktsioone.</translation>
+<translation id="985602178874221306">The Chromium Authors</translation>
+<translation id="3941397373453695568">BitPop ei sisalda PDF-vaaturit, mida on printimise eelvaate jaoks vaja.</translation>
+<translation id="8155571637339134666">BitPop võib kasutada veebiteenuseid sirvimiskogemuse täiustamiseks.</translation>
+<translation id="6157791660174418859">Proovige uut viisi, kuidas BitPopi kasutada oma Google'i kontoga ja jagatud arvutites.</translation>
+<translation id="4759775690587852534">Kahjuks ei ole Mozilla Firefoxi seaded saadaval, kui brauser töötab. Seadete BitPopi importimiseks salvestage töö ja sulgege kõik Firefoxi aknad. Seejärel klõpsake käsul Jätka.</translation>
+<translation id="5769857394054687534">Sel juhul ei kattu sertifikaadis olev aadress veebisaidi aadressiga, mida brauser avada üritas. Üks võimalik põhjus on see, et teie sidet häirib ründaja, kes esitab muu veebisaidi sertifikaadi ja põhjustab seega vastuolu. Põhjus võib olla ka selles, et server on seadistatud esitama sama sertifikaadi mitme veebisaidi, sealhulgas praegu külastatava saidi kohta, kuigi sertifikaat ei kehti kõikidele saitidele. BitPop võib väita, et jõudsite domeenile &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, kuid ei saa kinnitada, et tegemist on sama saidiga kui &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuhu üritasite jõuda. Jätkamisel ei kontrolli BitPop enam nimede vastuolusid.</translation>
+<translation id="2224367722165014156">BitPop ei suutnud ennast uusimale versioonile värskendada, nii et te ei saa kasutada lahedaid uusi funktsioone ja turvaparandusi. Peate BitPopi käsitsi uuesti installima.</translation>
+<translation id="8897323336392112261">Lisaks juhib see seda, mis leht kuvatakse Chromiumi käivitamisel või avalehe nupul klõpsamisel.</translation>
 <translation id="2886079192271351730">See moodul põhjustab teadaolevalt BitPopiga vastuolusid.</translation>
 <translation id="8324687802311409372">BitPop jooksis kokku. Kas soovite kohe taaskäivitada?</translation>
-<translation id="606385048658239900">Ei leitud BitPopi või BitPop Frame'i installi, mida värskendada.</translation>
+<translation id="5689811886832352959">Aidake BitPopi täiustada, saates Google'ile krahhiaruandeid ja lingi <ph name="UMA_LINK"/></translation>
+<translation id="5101127815285864538">Siin asuvad teie veeb, järjehoidjad ja ülejäänud BitPopi kraam.</translation>
 <translation id="3197823471738295152">Teie seade on ajakohane.</translation>
 <translation id="8551886023433311834">Seade on peaaegu ajakohane. Täienduse lõpuleviimiseks taaskäivitage seade.</translation>
 <translation id="9090519209458031409">Kas soovite, et BitPop salvestaks parooli, mida selle saidi jaoks kasutate?</translation>
 <translation id="7339898014177206373">Uus aken</translation>
-<translation id="3026202950002788510">Minge siia:
-          <ph name="BEGIN_BOLD"/>
-          Rakendused &gt; Süsteemieelistused &gt; Võrk &gt; Täpsem &gt; Puhverserverid
-          <ph name="END_BOLD"/>
-          ja tühjendage kõik valitud puhverserverite märkeruudud.</translation>
-<translation id="85540521058185027">BitPopi installikataloog paistab olevat kasutusel. Taaskäivitage arvuti ja proovige uuesti.</translation>
-<translation id="5710380450759072582">BitPop impordib nüüd lemmikud/järjehoidjad.</translation>
-<translation id="225614027745146050">Tere tulemast</translation>
-<translation id="3421246989510066651">Administraator on installinud teie süsteemi BitPopi ja see on kõikidele kasutajatele saadava. Süsteemi taseme BitPop asendab nüüd kasutaja taseme installi.</translation>
-<translation id="1563133725769368154">Sulgege kõik BitPopi aknad ja proovige uuesti.</translation>
-<translation id="6948146312619379712">Muudatuse rakendamiseks sulgege kõik BitPopi aknad ja taaskäivitage BitPop.</translation>
-<translation id="5845248948746043578">BitPopi laaditud moodulid</translation>
-<translation id="4718546117684412327">Üritasite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas sertifikaadi, mille väljastajat arvuti operatsioonisüsteem ei usalda. See võib tähendada, et server lõi ise turbemandaadid, mille identiteediteabele BitPop ei saa tugineda, või ründaja üritab teie sidet häirida.</translation>
-<translation id="2585492770508769131">Jätka taustarakenduste käitamist pärast BitPopi sulgemist</translation>
-<translation id="473775607612524610">Värskenda</translation>
-<translation id="1141543168124987471">Saadaval on BitPopi uus versioon ja see on kiirem kui kunagi varem.</translation>
-<translation id="6560811749587757293">Teave BitPop Frame'i kohta ...</translation>
-<translation id="5971960158340115871">Eemalda BitPopist</translation>
-<translation id="7747138024166251722">Installija ei suutnud luua ajutist kataloogi. Palun kontrollige vaba kettaruumi ja tarkvara installimise loa olemasolu.</translation>
-<translation id="6494656531179085521">BitPop ei saa andmekataloogi lugeda ega sellesse kirjutada:
-
-<ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop ei toeta operatsioonisüsteemi <ph name="OS_NAME"/> .</translation>
-<translation id="8738921060445980047">Tundmatu versioon.</translation>
-<translation id="6970811910055250180">Teie seadme täiendamine ...</translation>
-<translation id="2485422356828889247">Desinstalli</translation>
-<translation id="8450502629618876351">Hangi abi BitPopi kasutamise kohta</translation>
-<translation id="4742066939161073105">Käivita BitPop</translation>
-<translation id="736882515641604854">BitPop ei saa luua rakenduse otseteed, kuna praegust töölauakeskkonda ei saa määrata.</translation>
-<translation id="7209647769822542891">Arvutis on juba BitPop Frame'i uuem versioon. Kui tarkvara ei tööta, siis desinstallige BitPop Frame ja proovige uuesti.</translation>
-<translation id="911206726377975832">Kas kustutada ka teie sirvimisandmed?</translation>
-<translation id="4501582071990606935">Sulgege kõik BitPopi aknad (ka Windows 8 režiimis) ja proovige uuesti.</translation>
-<translation id="2318017154298876822">Värskenda &amp;BitPopi</translation>
-<translation id="8862326446509486874">Teil ei ole süsteemi tasemel installimiseks sobivaid õigusi. Proovige installijat administraatorina uuesti käivitada.</translation>
-<translation id="8308846639737830860">Luba BitPopil taustal töötada</translation>
-<translation id="8251642411216619957">Logige BitPopi sisse</translation>
-<translation id="4365115785552740256">Chromiumi aluseks on avatud lähtekoodiga projekt <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> ja muu <ph name="BEGIN_LINK_OSS"/>avatud lähtekoodiga tarkvara<ph name="END_LINK_OSS"/>.</translation>
-<translation id="6321973207566602686">Määra BitPop vaikebrauseriks</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">BitPop Worker</translation>
-<translation id="5820394555380036790">Chromium OS</translation>
-<translation id="6757767188268205357">Ära tüüta mind</translation>
-<translation id="6312770669638222416">Proovige võrgu prognoos keelata, toimides järgmiselt:
-        valige
-        <ph name="BEGIN_BOLD"/>
-        BitPopi menüü &gt;
+<translation id="6188910816550019957">Minge
+        BitPopi menüüsse &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
-        ja kustutage märge ruudust „<ph name="NO_PREFETCH_DESCRIPTION"/>”.
-        Kui see probleemi ei lahenda, soovitame selle valiku uuesti teha,
-        et toimivust parandada.</translation>
+        ja tühistage valik „<ph name="NO_PREFETCH_DESCRIPTION"/>”.
+        Kui see probleemi ei lahenda, soovitame selle valiku
+        toimivuse parandamiseks uuesti teha.</translation>
+<translation id="2397909649953118924">BitPop – märguanded (<ph name="QUANTITY"/> on lugemata)</translation>
+<translation id="225614027745146050">Tere tulemast</translation>
+<translation id="1823899440832622134">BitPop ei suutnud ennast uusimale versioonile värskendada, nii et te ei saa kasutada lahedaid uusi funktsioone ja turvaparandusi. Peate BitPopi värskendama.</translation>
+<translation id="3421246989510066651">Administraator on installinud teie süsteemi BitPopi ja see on kõikidele kasutajatele saadava. Süsteemi taseme BitPop asendab nüüd kasutaja taseme installi.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">Sulgege kõik BitPopi aknad ja proovige uuesti.</translation>
+<translation id="6948146312619379712">Muudatuse rakendamiseks sulgege kõik BitPopi aknad ja taaskäivitage BitPop.</translation>
+<translation id="6475912303565314141">Lisaks juhib see seda, mis leht kuvatakse Chromiumi käivitamisel.</translation>
+<translation id="158578066452246627">See fail on pahatahtlik ja BitPop on selle blokeerinud.</translation>
+<translation id="5845248948746043578">BitPopi laaditud moodulid</translation>
+<translation id="3494861236236958082">Macis salvestatakse paroolid rakendusse Keychain ja teised sama OS X-i kontoga BitPopi kasutajad saavad neid paroole kasutada ja neid sünkroonida.</translation>
+<translation id="6497704981133944775">Üritasite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas sertifikaadi, mille väljastajat arvuti operatsioonisüsteem ei usalda. See võib tähendada, et server lõi ise turbemandaadid, mille identiteediteabele BitPop ei saa tugineda, või ründaja üritab teie sidet häirida.</translation>
+<translation id="963040405972220509">Rakenduste kasutamiseks peate olema BitPopi sisse logitud. See võimaldab BitPopil sünkroonida teie rakendusi, järjehoidjaid, ajalugu, paroole ja muid seadeid erinevates seadmetes.</translation>
+<translation id="2585492770508769131">Jätka taustarakenduste käitamist pärast BitPopi sulgemist</translation>
+<translation id="473775607612524610">Värskenda</translation>
+<translation id="1053737967432347853">See sait kasutab pistikprogrammi BitPop Frame, mille tugi peagi lõpeb. Desinstallige see ja minge üle kaasaegsele brauserile.</translation>
+<translation id="8237944200818342704">Käivita BitPop automaatselt, kui arvuti käivitub</translation>
+<translation id="5904788103100750653">Kui jagate arvutit, saavad sõbrad ja pereliikmed eraldi sirvida ning seadistada BitPopi just nii, nagu neile meeldib.</translation>
+<translation id="1141543168124987471">Saadaval on BitPopi uus versioon ja see on kiirem kui kunagi varem.</translation>
+<translation id="3089560314597734657">BitPop ei saa andmeid sünkroonida, sest teie konto sisselogimisandmed on aegunud.</translation>
+<translation id="5107343520309227066">Näib, et profiili kasutab BitPopi muu protsess (<ph name="PROCESS_ID"/>) mingis muus arvutis (<ph name="HOST_NAME"/>). BitPop on profiili lukustanud, et seda ei saaks rikkuda. Kui olete kindel, et ükski muu protsess seda profiili ei kasuta, saate profiili avada ja BitPopi taaskäivitada.</translation>
+<translation id="5971960158340115871">Eemalda BitPopist</translation>
+<translation id="4817923018536741011">Lisa BitPopi</translation>
+<translation id="7066436765290594559">Chromium OS ei saanud teie andmeid sünkroonida. Värskendage oma sünkroonimisparooli.</translation>
+<translation id="7747138024166251722">Installija ei suutnud luua ajutist kataloogi. Palun kontrollige vaba kettaruumi ja tarkvara installimise loa olemasolu.</translation>
+<translation id="1657309500244281883">BitPop ei saa andmekataloogi lugeda ega sellesse kirjutada:
+
+<ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">Teie seadme täiendamine ...</translation>
+<translation id="2485422356828889247">Desinstalli</translation>
+<translation id="8450502629618876351">Hangi abi BitPopi kasutamise kohta</translation>
+<translation id="7974150821733212325">Logite sisse hallatud kontoga ja annate selle administraatorile üle BitPopi profiili juhtimise. Teie BitPopi andmed, näiteks rakendused, järjehoidjad, ajalugu, paroolid ja muud seaded seotakse jäädavalt kasutajaga <ph name="USER_NAME"/>. Saate need andmed kustutada Google'i kontode juhtpaneeli kaudu, kuid te ei saa neid seostada teise kontoga. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">BitPopi rakenduste käiviti</translation>
+<translation id="8643500805082769156">BitPop on aegunud</translation>
+<translation id="911206726377975832">Kas kustutada ka teie sirvimisandmed?</translation>
+<translation id="7531302439507262213">Domeen <ph name="DOMAIN"/> nõuab, et loete enne selle seadme kasutamist läbi järgmised teenusetingimused ja nõustute nendega. Need tingimused ei laienda, muuda ega piira Chromium OS-i tingimusi.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">Sulgege kõik BitPopi aknad (ka Windows 8 režiimis) ja proovige uuesti.</translation>
+<translation id="2318017154298876822">Värskenda &amp;BitPopi</translation>
+<translation id="8862326446509486874">Teil ei ole süsteemi tasemel installimiseks sobivaid õigusi. Proovige installijat administraatorina uuesti käivitada.</translation>
+<translation id="2535480412977113886">Chromium OS ei saanud andmeid sünkroonida, sest teie konto sisselogimisandmed on aegunud.</translation>
+<translation id="8697124171261953979">Lisaks juhib see seda, mis leht kuvatakse Chromiumi käivitamisel või omnikastikeses otsingu tegemisel.</translation>
+<translation id="8106224471637848707">Teie arvutis töötav tarkvara ei ühildu BitPopiga.</translation>
+<translation id="8308846639737830860">Luba BitPopil taustal töötada</translation>
+<translation id="8251642411216619957">Logige BitPopi sisse</translation>
+<translation id="4365115785552740256">Chromiumi aluseks on avatud lähtekoodiga projekt <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> ja muu <ph name="BEGIN_LINK_OSS"/>avatud lähtekoodiga tarkvara<ph name="END_LINK_OSS"/>.</translation>
+<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
+<translation id="5819325063060806784">Külastajad saavad kasutada BitPopi jälgi jätmata.</translation>
+<translation id="1526986572493888898">See sait kasutab pistikprogrammi BitPop Frame, mille tugi peagi lõpeb. Desinstallige see ja laadige alla ühilduv brauser.</translation>
+<translation id="7131892997749364444">Laiendus muutis seda, mis leht kuvatakse BitPopi käivitamisel.</translation>
+<translation id="5877064549588274448">Kanal on muutunud. Muudatuste rakendamiseks taaskäivitage oma seade.</translation>
+<translation id="6321973207566602686">Määra BitPop vaikebrauseriks</translation>
+<translation id="6899689707951760367">BitPop kasutab teie kaamerat.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">Chromium OS</translation>
+<translation id="6757767188268205357">Ära tüüta mind</translation>
+<translation id="690823546498424823">BitPop salvestab turvaliselt teie teabe, nii et te ei pea seda uuesti sisestama, kuid peate ka tulevaste maksete puhul kinnitama oma kaardi turvakoodi.</translation>
 <translation id="6220055452245182274">Krahhiaruandlus ei ole BitPopis saadaval.</translation>
 <translation id="924450301557116466">Seda ei kasutata BitPopis. See on kohatäide, mis sünkroonib ressursikaarte. See eeldab üht argumenti: $1.</translation>
+<translation id="843167022919259875">BitPop töötab taustal.</translation>
+<translation id="2171549355847332070">Olite BitPopisse sisse logitud kasutajana <ph name="USER_EMAIL_ADDRESS"/>. Kasutage uuesti sisselogimiseks sama kontot.</translation>
+<translation id="6165323383832829057">BitPopi värskendamine peatati ja teie operatsioonisüsteemi seda versiooni ei toetata enam.</translation>
+<translation id="2645729404591158594">Uue BitPopi eelvaade</translation>
 <translation id="1984238998837921833">BitPopi värskendamine ...</translation>
 <translation id="9102885271730191378">Tegumihaldur – BitPop</translation>
-<translation id="3916917357864849352">BitPop impordib nüüd jaotisest <ph name="BROWSER_COMPONENT"/> järgmised üksused:</translation>
+<translation id="1608739712349494181">BitPopi turvalisemaks muutmiseks keelasime mõned laiendused, mida ei leidu veebipoes <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> ja mille lisamisest te ei pruugi teadlik olla.</translation>
 <translation id="5243897687251941678">Otsige oma järjehoidjaid BitPopi menüüst või järjehoidjaribalt.</translation>
 <translation id="5925519479755588070">Rakendus on peaaegu ajakohane! Värskendamise lõpuleviimiseks taaskäivitage BitPop.</translation>
+<translation id="5866485601389562653">Saate lisada teised Google'i kontod ja lukustada BitPopi allpool.</translation>
+<translation id="8072646586465991214">Süsteemist tuvastati BitPopi konfliktne install. Desinstallige see ja proovige uuesti.</translation>
 <translation id="4352003675682958984">BitPopi uus versioon on saadaval.</translation>
 <translation id="8972540218839637401">Installimisel ilmnes operatsioonisüsteemi viga. Laadige BitPop uuesti alla.</translation>
-<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> on BitPopi lisatud.</translation>
-<translation id="8871841738132225233">Kas soovite kasutada seda Google'i kontot kogu BitPopi kraami sünkroonimiseks?</translation>
-<translation id="8988481325911971852">Installimine ebaõnnestus tundmatu vea tõttu. Laadige BitPop uuesti alla.</translation>
-<translation id="660036136456272595">Teie profiili ei saa kasutada, kuna see pärineb BitPopi uuemast versioonist.
-
-On võimalik, et mõni funktsioon ei ole saadaval. Määrake muu profiilikataloog või kasutage BitPopi uuemat versiooni.</translation>
-<translation id="2712549016134575851">Tuvastatud on konflikt teise installitud rakendusega.</translation>
-<translation id="1095023322915848441">Olite varem sisse logitud teise kontoga. Sisselogimine ühendab andmed. Kaaluge oma BitPopi kraami jaoks uue BitPopi kasutaja loomist <ph name="BEGIN_LINK"/>seadete lehel<ph name="END_LINK"/>.</translation>
-<translation id="7862155441175671173">BitPopi lisamine</translation>
-<translation id="5594704848342987755">Arvutis on juba BitPopi uuem versioon. Kui tarkvara ei tööta, siis desinstallige BitPop ja proovige uuesti.</translation>
-<translation id="3422131153907641068">BitPop Utility</translation>
-<translation id="1298199220304005244">Hangi abi Chromium OS-i kasutamise kohta</translation>
-<translation id="8854394556488040390">BitPop Frame on värskendatud. Taaskäivitage brauser. BitPopi versioon: <ph name="TODO_0001"/>, Chromium Frame'i versioon: <ph name="TODO_0002"/></translation>
-<translation id="130631256467250065">Muudatused jõustuvad järgmine kord, kui seadme taaskäivitate.</translation>
-<translation id="2901348058800597589">BitPop ei sulgunud korralikult. Lehtede taasavamiseks klõpsake käsul taasta.</translation>
-<translation id="5653921603290474550">BitPop ei reageeri. Kas soovite kohe taaskäivitada?</translation>
-<translation id="6089587093203430357">Instant</translation>
-<translation id="2410206016513008786">BitPop peab rakenduse <ph name="SCHEME"/> linkide käsitlemiseks käivitama välisrakenduse. Taotletud link on <ph name="PROTOLINK"/>.</translation>
-<translation id="8046283042877435986">See sait soovitab Chromium Frame'i (juba installitud).</translation>
-<translation id="5523374683005655880">Ei saa installida sama BitPop Frame'i versiooni, mis praegu töötab. Sulgege BitPop Frame ja proovige uuesti.</translation>
-<translation id="5574763173398621221">Kas soovite, et BitPop salvestaks teie parooli?</translation>
-<translation id="7730150800475367955">Valige
-          <ph name="BEGIN_BOLD"/>
-          BitPopi menüü &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          „<ph name="OPTIONS_BUTTON"/>”
-          <ph name="END_BOLD"/>
-          (praeguse võrgu puhul). Kui nupp
-          <ph name="BEGIN_BOLD"/>
-          „<ph name="PROXY_BUTTON"/>”
-          <ph name="END_BOLD"/> (vahekaardil
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>)
-          on olemas, klõpsake sellel ja veenduge, et konfiguratsioon
-          on määratud valikule „Otse”.</translation>
-<translation id="5387335700352644169">BitPopi menüü kuvamine</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=et<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
-<translation id="8865765905101981392">Interneti-brauser</translation>
-<translation id="6424492062988593837">Chromium muutus just veelgi paremaks! Saadaval on uus versioon.</translation>
-<translation id="6385431739515246076">Teave &amp;BitPopi kohta</translation>
-<translation id="7521125380721653484">Installeri arhiiv on rikutud või kehtetu. Laadige BitPop uuesti alla.</translation>
-<translation id="6836892784612884953">Valige
-          <ph name="BEGIN_BOLD"/>
+<translation id="2581134012974124523"><ph name="EXTENSION_NAME"/> on BitPopi lisatud.</translation>
+<translation id="6452045500174243632">Valige
           BitPopi menüü &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          ja veenduge, et konfiguratsioon on määratud valikule „Puhverserverita” või „Otse”.</translation>
-<translation id="457806999714267838">Üritasite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas aegunud sertifikaadi. Saadaval ei ole teavet selle kohta, kas sertifikaati on pärast aegumist rikutud. Seetõttu ei saa BitPop tagada, et suhtlete domeeniga &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mitte ründajaga. Teie arvuti kell on praegu <ph name="CURRENT_TIME"/>. Kas see on õige? Vastasel korral parandage viga ja värskendage lehte.</translation>
+          &gt;
+          LAN-seaded
+          ja tühjendage ruut valiku „Kasutage LAN-i puhul puhverserverit” juures.</translation>
+<translation id="8988481325911971852">Installimine ebaõnnestus tundmatu vea tõttu. Laadige BitPop uuesti alla.</translation>
+<translation id="660036136456272595">Teie profiili ei saa kasutada, kuna see pärineb BitPopi uuemast versioonist.
+
+On võimalik, et mõni funktsioon ei ole saadaval. Määrake muu profiilikataloog või kasutage BitPopi uuemat versiooni.</translation>
+<translation id="3787192530015965250">BitPop proovib kuvada paroole. Selle lubamiseks sisestage Windowsi parool.</translation>
+<translation id="7862155441175671173">BitPopi lisamine</translation>
+<translation id="1211470790061593728">Nüüd on BitPopi lihtsam kasutada Google'i kontoga ja jagatud arvutistes.</translation>
+<translation id="5594704848342987755">Arvutis on juba BitPopi uuem versioon. Kui tarkvara ei tööta, siis desinstallige BitPop ja proovige uuesti.</translation>
+<translation id="3528119622127530876">BitPop ei saanud teie andmeid sünkroonida. Värskendage oma sünkroonimisparooli.</translation>
+<translation id="1298199220304005244">Hangi abi Chromium OS-i kasutamise kohta</translation>
+<translation id="331951419404882060">Chromium OS ei saanud sisselogimisvea tõttu teie andmeid sünkroonida.</translation>
+<translation id="8187289872471304532">Tehke valikud
+          Rakendused &gt; Süsteemieelised &gt; Võrk &gt; Täpsem &gt; Puhverserverid
+          ja tühjendage kõigi valitud puhverserverite märkeruudud.</translation>
+<translation id="4634257184917711644"><ph name="FILE_NAME"/> on pahatahtlik ja BitPop on selle blokeerinud.</translation>
+<translation id="454930334682314382">Teie arvelduse detailid on salvestatud BitPopi.</translation>
+<translation id="130631256467250065">Muudatused jõustuvad järgmine kord, kui seadme taaskäivitate.</translation>
+<translation id="8810991521775422988">BitPopi märguandekeskus</translation>
+<translation id="2901348058800597589">BitPop ei sulgunud korralikult. Lehtede taasavamiseks klõpsake käsul Taasta.</translation>
+<translation id="838316505303362561">BitPopi soovitus</translation>
+<translation id="5653921603290474550">BitPop ei reageeri. Kas soovite kohe taaskäivitada?</translation>
+<translation id="3306752603341080445">Olete BitPopi sisse logitud.</translation>
+<translation id="2158734852934720349">Chromium OS-i avatud lähtekoodi litsentsid</translation>
+<translation id="2239725456669400190">BitPop peab rakenduse <ph name="SCHEME"/> linkide käsitlemiseks käivitama välisrakenduse. Taotletud link on <ph name="PROTOLINK"/>.</translation>
+<translation id="5574763173398621221">Kas soovite, et BitPop salvestaks teie parooli?</translation>
+<translation id="5387335700352644169">BitPopi menüü kuvamine</translation>
+<translation id="1981756165552484777">Kasutate BitPopi kraami sünkroonimiseks kontot <ph name="PROFILE_EMAIL"/>. Sünkroonimiseelistuste värskendamiseks või BitPopi kasutamiseks ilma Google'i kontota avage <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="1681324505975197559">(nõuab BitPopi <ph name="BEGIN_BUTTON"/>taaskäivitamist<ph name="END_BUTTON"/>)</translation>
+<translation id="6863452815496188645">Seadistage sünkroonimine, et salvestada isikupärastatud brauserifunktsioonid veebi, misjuhul pääsete igast arvutist BitPopi kaudu nende juurde.</translation>
+<translation id="8865765905101981392">Interneti-brauser</translation>
+<translation id="3099708656176429608">Juurdepääsuks võrgule tulemüüri või viirusetõrje seadetes lubage
+        BitPop.</translation>
+<translation id="8098179324031720100">BitPop muutus just veelgi paremaks! Saadaval on uus versioon.</translation>
+<translation id="4320683788245444425">See arvuti ei saa enam BitPopi värskendusi, kuna selle riistvara ei toetata enam.</translation>
+<translation id="6385431739515246076">Teave &amp;BitPopi kohta</translation>
+<translation id="7521125380721653484">Installeri arhiiv on rikutud või kehtetu. Laadige BitPop uuesti alla.</translation>
+<translation id="8457938350903919620">BitPopi avamiseks ja sirvimise alustamiseks klõpsake oma nimel.</translation>
+<translation id="8410648211590980711">BitPop kasutab teie mikrofoni.</translation>
+<translation id="3298525902784604502">Üritasite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas aegunud sertifikaadi. Saadaval ei ole teavet selle kohta, kas sertifikaati on pärast aegumist rikutud. Seetõttu ei saa BitPop tagada, et suhtlete domeeniga &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mitte ründajaga. Teie arvuti kell on praegu <ph name="CURRENT_TIME"/>. Kas see on õige? Vastasel korral parandage viga ja värskendage lehte.</translation>
 <translation id="7196020411877309443">Miks mulle seda näidatakse?</translation>
+<translation id="6809805128084420516">Oluline teave teie BitPopi andmete kohta</translation>
+<translation id="5312973105258198185">Olete sisse logitud aadressiga <ph name="USER_EMAIL_ADDRESS"/>. Nüüd on teil juurdepääs oma järjehoidjatele, ajaloole ja muudele seadetele kõigis seadmetes, kuhu olete sisse logitud.</translation>
 <translation id="473359818469623008">Ei saa installida sama BitPopi versiooni, mis praegu töötab. Sulgege BitPop ja proovige uuesti.</translation>
 <translation id="2595850371931815386">BitPop ei ole teie vaikebrauser.</translation>
-<translation id="1857156280997837230">BitPopi rakenduste käiviti</translation>
 <translation id="4458285410772214805">Muudatuse jõustamiseks logige välja ja uuesti sisse.</translation>
-<translation id="6523007289492675308">Kuvab BitPopi rakenduste käiviti otsetee Windowsi tegumiribal.</translation>
+<translation id="6627720938086825017">BitPop kasutab kaamerat ja mikrofoni.</translation>
+<translation id="6382607600997384001">Siin näete kõiki BitPopi rakendustest, laiendustest ja veebisaitidelt pärinevaid märguandeid.</translation>
 <translation id="2119636228670142020">Teave &amp;Chromium OS-i kohta</translation>
 <translation id="4196382931981526364">Saadaval on BitPopi uus, turvalisem versioon.</translation>
-<translation id="1077424736315176936">Kuva BitPopi rakenduste käiviti</translation>
-<translation id="5330935702921516708">Vaadake BitPopi sisselogimise <ph name="BEGIN_LINK"/>muid eeliseid<ph name="END_LINK"/>.</translation>
 <translation id="862266784641000464">BitPop võimaldab teil veebis telefoninumbril klõpsata ja sellele Skype'i kaudu helistada!</translation>
 <translation id="8072591166076742072">Allalaadimine on pooleli. Kas soovite BitPopist väljuda ja allalaadimise tühistada?</translation>
-<translation id="932207424499184915">BitPop Binaries</translation>
-<translation id="3223104112377435850">BitPop Plug-In Host</translation>
+<translation id="8650443074479376435">BitPop ei saanud sisselogimisvea tõttu teie andmeid sünkroonida.</translation>
+<translation id="7561209000218748370">Sissetuleku reegel BitPopile mDNS-liikluse lubamiseks.</translation>
+<translation id="151962892725702025">Chromium OS ei saanud teie andmeid sünkroonida, sest teie domeenil pole sünkroonimine saadaval.</translation>
+<translation id="3360567213983886831">Chromium Binaries</translation>
+<translation id="108010966668726733">Keegi on varem selles arvutis BitPopi sisse loginud kasutajana <ph name="ACCOUNT_EMAIL_LAST"/>. Kui see pole teie konto, looge uus BitPopi kasutaja, et oma teave eraldi hoida.
+
+Kui logite siiski sisse, liidetakse BitPopi teave, nagu järjehoidjad, ajalugu ja muud seaded, kontoga <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
 <translation id="7826309952950470209">Allalaadimised on pooleli. Kas soovite BitPopist väljuda ja allalaadimised tühistada?</translation>
 <translation id="380873736468525691">BitPop nõuab Windows Vistat või Windows XP-d vähemalt hoolduspaketiga SP2.</translation>
 <translation id="2762974284703971745">Samanimeline moodul põhjustab teadaolevalt BitPopiga vastuolusid.</translation>
+<translation id="5213128101330439346">See on teie BitPop</translation>
 <translation id="5443433498537176573">BitPop on ajakohane.</translation>
 <translation id="5637727561937246825">Selles arvutis on juba BitPopi komponentide uuem versioon. Kasutage uuemat installerit.</translation>
-<translation id="5082591353921977637">Proovisite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas sertifikaadi, mis veel ei kehti. Saadaval ei ole teavet, mis näitaks, kas sertifikaat on usaldusväärne. BitPop ei saa tagada, et suhtlete domeeniga &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mitte ründajaga. Teie arvuti kell on praegu <ph name="CURRENT_TIME"/>. Kas see on õige? Muul juhul muutke süsteemi kellaaega ja värskendage lehte.</translation>
-<translation id="1138135211676039883">BitPop kasutab teie vaikeotsingumootorit (praegu <ph name="PAGE_TITLE"/>). Kas soovite vaikeotsingumootori säilitada?</translation>
+<translation id="4547797007790555015">Proovisite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas sertifikaadi, mis veel ei kehti. Saadaval ei ole teavet, mis näitaks, kas sertifikaat on usaldusväärne. BitPop ei saa tagada, et suhtlete domeeniga &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mitte ründajaga. Teie arvuti kell on praegu <ph name="CURRENT_TIME"/>. Kas see on õige? Muul juhul muutke süsteemi kellaaega ja värskendage lehte.</translation>
 <translation id="185658551912723674">Tere tulemast BitPopi</translation>
-<translation id="6808688532552992663">Arvutis on juba BitPopi ja BitPop Frame'i uuem versioon. Kui tarkvara ei tööta, siis desinstallige nii BitPop kui ka BitPop Frame ja proovige uuesti.</translation>
 <translation id="1909867102505992367">Teie eelistuste fail on rikutud või kehtetu.
 
 BitPop ei saa teie seadeid taastada.</translation>
+<translation id="6239286721842301381">Vaatate uue BitPopi eelvaadet.</translation>
+<translation id="7591092481995851856">Kui katkestate ühenduse kasutajaga <ph name="USERNAME"/>, siis kustutatakse sellesse seadmesse salvestatud ajalugu, järjehoidjad, seaded ja muud BitPopi andmed. Google'i kontole salvestatud andmeid ei kustutata ja neid saab hallata <ph name="GOOGLE_DASHBOARD_LINK"/>Google'i juhtpaneelil<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
 <translation id="4933902704814222889">BitPop on veebibrauser, mis avab veebilehti ja rakendusi välgukiirusel. See on kiire, stabiilne ja hõlpsasti kasutatav. Sirvige veebi turvalisemalt tänu BitPopi sisseehitatud pahavara- ja andmepüügikaitsele.</translation>
-<translation id="7673336527696184948">Argumendid on kehtetud. BitPop Frame'i valmisolekurežiimis installimiseks tuleb installida ka BitPop.</translation>
+<translation id="5806792281256987775">Üritasite jõuda domeenile &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, kuid server esitas sertifikaadi, mille väljastajat BitPop ei usalda. See võib tähendada, et server lõi ise turvamandaadid, mille identiteediteabele BitPop ei saa tugineda, või ründaja üritab teie sidet häirida.</translation>
+<translation id="26317130586606191">Kas soovite linkida BitPopi andmed selle kontoga?</translation>
 <translation id="5583217122091744450">BitPopi abiline</translation>
+<translation id="3089741509794563091">BitPop muutus just paremaks</translation>
 <translation id="6404599307042403560">BitPop on seadistatud arvuti sisselülitamisel automaatselt käivituma.</translation>
-<translation id="8974095189086268230">Chromium OS-i aluseks on täiendav <ph name="BEGIN_LINK_CROS_OSS"/>avatud lähtekoodiga tarkvara<ph name="END_LINK_CROS_OSS"/>.</translation>
-<translation id="1221340462641866827">Chromium OS ei toeta rakenduse <ph name="SCHEME"/> linkide käsitlemiseks välisrakenduste käivitamist. Taotletud link on <ph name="PROTOLINK"/>.</translation>
+<translation id="554833011526807667">Chromium OS-i aluseks on täiendav <ph name="BEGIN_LINK_CROS_OSS"/>avatud lähtekoodiga tarkvara<ph name="END_LINK_CROS_OSS"/>.</translation>
+<translation id="8166042339699941380">Logite sisse hallatud kontoga ja annate selle administraatorile üle oma BitPopi profiili juhtimise. Teie BitPopi andmed, nagu rakendused, järjehoidjad, ajalugu, paroolid ja muud seaded, jäävad püsivalt seotuks kasutajaga <ph name="USER_NAME"/>. Saate need andmed kustutada Google'i kontode juhtpaneeli kaudu, kuid te ei saa neid andmeid seostada teise kontoga.</translation>
+<translation id="2032763513380168750">Lingi minu BitPopi andmed selle kontoga</translation>
+<translation id="2477235356415090659">Installi BitPop uuesti</translation>
+<translation id="807350504213044844">Chromium OS ei toeta rakenduse <ph name="SCHEME"/> linkide käsitlemiseks välisrakenduste käivitamist. Taotletud link on <ph name="PROTOLINK"/>.</translation>
+<translation id="3484768020161794310">Google API võtmed on puudu. Teatud BitPopi funktsioonid keelatakse.</translation>
+<translation id="531363935678210182">BitPop – märguanded</translation>
+<translation id="3151848949510984428">Salvesta üksikasjad BitPopi</translation>
 </translationbundle>

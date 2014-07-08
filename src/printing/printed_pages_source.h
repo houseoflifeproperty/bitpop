@@ -5,7 +5,7 @@
 #ifndef PRINTING_PRINTED_PAGES_SOURCE_H_
 #define PRINTING_PRINTED_PAGES_SOURCE_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace printing {
 
@@ -13,7 +13,7 @@ namespace printing {
 class PrintedPagesSource {
  public:
   // Returns the document title.
-  virtual string16 RenderSourceName() = 0;
+  virtual base::string16 RenderSourceName() = 0;
 
  protected:
   virtual ~PrintedPagesSource() {}

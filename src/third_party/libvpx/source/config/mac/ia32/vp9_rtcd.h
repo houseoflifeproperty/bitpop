@@ -1,5 +1,5 @@
-#ifndef VP__RTCD_
-#define VP__RTCD_
+#ifndef VP9_RTCD_H_
+#define VP9_RTCD_H_
 
 #ifdef RTCD_C
 #define RTCD_EXTERN
@@ -7,382 +7,730 @@
 #define RTCD_EXTERN extern
 #endif
 
+#ifdef __cplusplus
+extern "C" {
+#endif
+
 /*
  * VP9
  */
 
-struct loop_filter_info;
-struct blockd;
+#include "vpx/vpx_integer.h"
+#include "vp9/common/vp9_enums.h"
+
 struct macroblockd;
-struct loop_filter_info;
 
 /* Encoder forward decls */
-struct block;
 struct macroblock;
-struct variance_vtable;
-
-#define DEC_MVCOSTS int *mvjcost, int *mvcost[2]
+struct vp9_variance_vtable;
+struct search_site_config;
+struct mv;
 union int_mv;
 struct yv12_buffer_config;
 
-void vp9_filter_block2d_4x4_8_c(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-void vp9_filter_block2d_4x4_8_sse2(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-void vp9_filter_block2d_4x4_8_sse4_1(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-RTCD_EXTERN void (*vp9_filter_block2d_4x4_8)(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-
-void vp9_filter_block2d_8x4_8_c(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-void vp9_filter_block2d_8x4_8_ssse3(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-RTCD_EXTERN void (*vp9_filter_block2d_8x4_8)(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-
-void vp9_filter_block2d_8x8_8_c(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-void vp9_filter_block2d_8x8_8_ssse3(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-RTCD_EXTERN void (*vp9_filter_block2d_8x8_8)(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-
-void vp9_filter_block2d_16x16_8_c(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-void vp9_filter_block2d_16x16_8_ssse3(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-RTCD_EXTERN void (*vp9_filter_block2d_16x16_8)(const unsigned char *src_ptr, const unsigned int src_stride, const short *HFilter_aligned16, const short *VFilter_aligned16, unsigned char *dst_ptr, unsigned int dst_stride);
-
-void vp9_dequantize_b_c(struct blockd *x);
-void vp9_dequantize_b_mmx(struct blockd *x);
-RTCD_EXTERN void (*vp9_dequantize_b)(struct blockd *x);
-
-void vp9_dequantize_b_2x2_c(struct blockd *x);
-#define vp9_dequantize_b_2x2 vp9_dequantize_b_2x2_c
-
-void vp9_dequant_dc_idct_add_y_block_8x8_c(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs, const short *dc, struct macroblockd *xd);
-#define vp9_dequant_dc_idct_add_y_block_8x8 vp9_dequant_dc_idct_add_y_block_8x8_c
-
-void vp9_dequant_idct_add_y_block_8x8_c(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs, struct macroblockd *xd);
-#define vp9_dequant_idct_add_y_block_8x8 vp9_dequant_idct_add_y_block_8x8_c
-
-void vp9_dequant_idct_add_uv_block_8x8_c(short *q, const short *dq, unsigned char *pre, unsigned char *dstu, unsigned char *dstv, int stride, unsigned short *eobs, struct macroblockd *xd);
-#define vp9_dequant_idct_add_uv_block_8x8 vp9_dequant_idct_add_uv_block_8x8_c
-
-void vp9_dequant_idct_add_16x16_c(short *input, const short *dq, unsigned char *pred, unsigned char *dest, int pitch, int stride, unsigned short eobs);
-#define vp9_dequant_idct_add_16x16 vp9_dequant_idct_add_16x16_c
-
-void vp9_dequant_idct_add_8x8_c(short *input, const short *dq, unsigned char *pred, unsigned char *dest, int pitch, int stride, int dc, unsigned short eobs);
-#define vp9_dequant_idct_add_8x8 vp9_dequant_idct_add_8x8_c
-
-void vp9_dequant_idct_add_c(short *input, const short *dq, unsigned char *pred, unsigned char *dest, int pitch, int stride);
-#define vp9_dequant_idct_add vp9_dequant_idct_add_c
-
-void vp9_dequant_dc_idct_add_c(short *input, const short *dq, unsigned char *pred, unsigned char *dest, int pitch, int stride, int Dc);
-#define vp9_dequant_dc_idct_add vp9_dequant_dc_idct_add_c
-
-void vp9_dequant_dc_idct_add_y_block_c(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs, const short *dc);
-void vp9_dequant_dc_idct_add_y_block_mmx(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs, const short *dc);
-RTCD_EXTERN void (*vp9_dequant_dc_idct_add_y_block)(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs, const short *dc);
-
-void vp9_dequant_idct_add_y_block_c(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs);
-void vp9_dequant_idct_add_y_block_mmx(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs);
-RTCD_EXTERN void (*vp9_dequant_idct_add_y_block)(short *q, const short *dq, unsigned char *pre, unsigned char *dst, int stride, unsigned short *eobs);
-
-void vp9_dequant_idct_add_uv_block_c(short *q, const short *dq, unsigned char *pre, unsigned char *dstu, unsigned char *dstv, int stride, unsigned short *eobs);
-void vp9_dequant_idct_add_uv_block_mmx(short *q, const short *dq, unsigned char *pre, unsigned char *dstu, unsigned char *dstv, int stride, unsigned short *eobs);
-RTCD_EXTERN void (*vp9_dequant_idct_add_uv_block)(short *q, const short *dq, unsigned char *pre, unsigned char *dstu, unsigned char *dstv, int stride, unsigned short *eobs);
-
-void vp9_copy_mem16x16_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-void vp9_copy_mem16x16_mmx(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-void vp9_copy_mem16x16_sse2(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-RTCD_EXTERN void (*vp9_copy_mem16x16)(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-
-void vp9_copy_mem8x8_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-void vp9_copy_mem8x8_mmx(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-RTCD_EXTERN void (*vp9_copy_mem8x8)(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-
-void vp9_copy_mem8x4_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-void vp9_copy_mem8x4_mmx(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-RTCD_EXTERN void (*vp9_copy_mem8x4)(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-
-void vp9_avg_mem16x16_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-#define vp9_avg_mem16x16 vp9_avg_mem16x16_c
-
-void vp9_avg_mem8x8_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-#define vp9_avg_mem8x8 vp9_avg_mem8x8_c
-
-void vp9_copy_mem8x4_c(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-void vp9_copy_mem8x4_mmx(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-RTCD_EXTERN void (*vp9_copy_mem8x4)(unsigned char *src, int src_pitch, unsigned char *dst, int dst_pitch);
-
-void vp9_recon_b_c(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-#define vp9_recon_b vp9_recon_b_c
-
-void vp9_recon_uv_b_c(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-#define vp9_recon_uv_b vp9_recon_uv_b_c
-
-void vp9_recon2b_c(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-void vp9_recon2b_sse2(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-RTCD_EXTERN void (*vp9_recon2b)(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-
-void vp9_recon4b_c(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-void vp9_recon4b_sse2(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-RTCD_EXTERN void (*vp9_recon4b)(unsigned char *pred_ptr, short *diff_ptr, unsigned char *dst_ptr, int stride);
-
-void vp9_recon_mb_c(struct macroblockd *x);
-#define vp9_recon_mb vp9_recon_mb_c
-
-void vp9_recon_mby_c(struct macroblockd *x);
-#define vp9_recon_mby vp9_recon_mby_c
-
-void vp9_recon_mby_s_c(struct macroblockd *x, unsigned char *dst);
-#define vp9_recon_mby_s vp9_recon_mby_s_c
-
-void vp9_recon_mbuv_s_c(struct macroblockd *x, unsigned char *udst, unsigned char *vdst);
-#define vp9_recon_mbuv_s vp9_recon_mbuv_s_c
-
-void vp9_build_intra_predictors_mby_s_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_mby_s vp9_build_intra_predictors_mby_s_c
-
-void vp9_build_intra_predictors_sby_s_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_sby_s vp9_build_intra_predictors_sby_s_c
-
-void vp9_build_intra_predictors_sbuv_s_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_sbuv_s vp9_build_intra_predictors_sbuv_s_c
-
-void vp9_build_intra_predictors_mby_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_mby vp9_build_intra_predictors_mby_c
-
-void vp9_build_comp_intra_predictors_mby_c(struct macroblockd *x);
-#define vp9_build_comp_intra_predictors_mby vp9_build_comp_intra_predictors_mby_c
-
-void vp9_build_intra_predictors_mby_s_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_mby_s vp9_build_intra_predictors_mby_s_c
-
-void vp9_build_intra_predictors_mbuv_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_mbuv vp9_build_intra_predictors_mbuv_c
-
-void vp9_build_intra_predictors_mbuv_s_c(struct macroblockd *x);
-#define vp9_build_intra_predictors_mbuv_s vp9_build_intra_predictors_mbuv_s_c
-
-void vp9_build_comp_intra_predictors_mbuv_c(struct macroblockd *x);
-#define vp9_build_comp_intra_predictors_mbuv vp9_build_comp_intra_predictors_mbuv_c
-
-void vp9_intra4x4_predict_c(struct blockd *x, int b_mode, unsigned char *predictor);
-#define vp9_intra4x4_predict vp9_intra4x4_predict_c
-
-void vp9_comp_intra4x4_predict_c(struct blockd *x, int b_mode, int second_mode, unsigned char *predictor);
-#define vp9_comp_intra4x4_predict vp9_comp_intra4x4_predict_c
-
-void vp9_intra8x8_predict_c(struct blockd *x, int b_mode, unsigned char *predictor);
-#define vp9_intra8x8_predict vp9_intra8x8_predict_c
-
-void vp9_comp_intra8x8_predict_c(struct blockd *x, int b_mode, int second_mode, unsigned char *predictor);
-#define vp9_comp_intra8x8_predict vp9_comp_intra8x8_predict_c
-
-void vp9_intra_uv4x4_predict_c(struct blockd *x, int b_mode, unsigned char *predictor);
-#define vp9_intra_uv4x4_predict vp9_intra_uv4x4_predict_c
-
-void vp9_comp_intra_uv4x4_predict_c(struct blockd *x, int b_mode, int second_mode, unsigned char *predictor);
-#define vp9_comp_intra_uv4x4_predict vp9_comp_intra_uv4x4_predict_c
-
-void vp9_loop_filter_mbv_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_mbv_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_mbv)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_bv_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_bv_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_bv)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_bv8x8_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_bv8x8_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_bv8x8)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_mbh_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_mbh_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_mbh)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_bh_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_bh_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_bh)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_bh8x8_c(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-void vp9_loop_filter_bh8x8_sse2(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-RTCD_EXTERN void (*vp9_loop_filter_bh8x8)(unsigned char *y, unsigned char *u, unsigned char *v, int ystride, int uv_stride, struct loop_filter_info *lfi);
-
-void vp9_loop_filter_simple_vertical_edge_c(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_simple_vertical_edge_mmx(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_simple_vertical_edge_sse2(unsigned char *y, int ystride, const unsigned char *blimit);
-RTCD_EXTERN void (*vp9_loop_filter_simple_mbv)(unsigned char *y, int ystride, const unsigned char *blimit);
-
-void vp9_loop_filter_simple_horizontal_edge_c(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_simple_horizontal_edge_mmx(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_simple_horizontal_edge_sse2(unsigned char *y, int ystride, const unsigned char *blimit);
-RTCD_EXTERN void (*vp9_loop_filter_simple_mbh)(unsigned char *y, int ystride, const unsigned char *blimit);
-
-void vp9_loop_filter_bvs_c(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_bvs_mmx(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_bvs_sse2(unsigned char *y, int ystride, const unsigned char *blimit);
-RTCD_EXTERN void (*vp9_loop_filter_simple_bv)(unsigned char *y, int ystride, const unsigned char *blimit);
-
-void vp9_loop_filter_bhs_c(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_bhs_mmx(unsigned char *y, int ystride, const unsigned char *blimit);
-void vp9_loop_filter_bhs_sse2(unsigned char *y, int ystride, const unsigned char *blimit);
-RTCD_EXTERN void (*vp9_loop_filter_simple_bh)(unsigned char *y, int ystride, const unsigned char *blimit);
-
-void vp9_mbpost_proc_down_c(unsigned char *dst, int pitch, int rows, int cols, int flimit);
-void vp9_mbpost_proc_down_mmx(unsigned char *dst, int pitch, int rows, int cols, int flimit);
-void vp9_mbpost_proc_down_xmm(unsigned char *dst, int pitch, int rows, int cols, int flimit);
-RTCD_EXTERN void (*vp9_mbpost_proc_down)(unsigned char *dst, int pitch, int rows, int cols, int flimit);
-
-void vp9_mbpost_proc_across_ip_c(unsigned char *src, int pitch, int rows, int cols, int flimit);
-void vp9_mbpost_proc_across_ip_xmm(unsigned char *src, int pitch, int rows, int cols, int flimit);
-RTCD_EXTERN void (*vp9_mbpost_proc_across_ip)(unsigned char *src, int pitch, int rows, int cols, int flimit);
-
-void vp9_post_proc_down_and_across_c(unsigned char *src_ptr, unsigned char *dst_ptr, int src_pixels_per_line, int dst_pixels_per_line, int rows, int cols, int flimit);
-void vp9_post_proc_down_and_across_mmx(unsigned char *src_ptr, unsigned char *dst_ptr, int src_pixels_per_line, int dst_pixels_per_line, int rows, int cols, int flimit);
-void vp9_post_proc_down_and_across_xmm(unsigned char *src_ptr, unsigned char *dst_ptr, int src_pixels_per_line, int dst_pixels_per_line, int rows, int cols, int flimit);
-RTCD_EXTERN void (*vp9_post_proc_down_and_across)(unsigned char *src_ptr, unsigned char *dst_ptr, int src_pixels_per_line, int dst_pixels_per_line, int rows, int cols, int flimit);
-
-void vp9_plane_add_noise_c(unsigned char *Start, char *noise, char blackclamp[16], char whiteclamp[16], char bothclamp[16], unsigned int Width, unsigned int Height, int Pitch);
-void vp9_plane_add_noise_mmx(unsigned char *Start, char *noise, char blackclamp[16], char whiteclamp[16], char bothclamp[16], unsigned int Width, unsigned int Height, int Pitch);
-void vp9_plane_add_noise_wmt(unsigned char *Start, char *noise, char blackclamp[16], char whiteclamp[16], char bothclamp[16], unsigned int Width, unsigned int Height, int Pitch);
-RTCD_EXTERN void (*vp9_plane_add_noise)(unsigned char *Start, char *noise, char blackclamp[16], char whiteclamp[16], char bothclamp[16], unsigned int Width, unsigned int Height, int Pitch);
-
-void vp9_blend_mb_inner_c(unsigned char *y, unsigned char *u, unsigned char *v, int y1, int u1, int v1, int alpha, int stride);
-#define vp9_blend_mb_inner vp9_blend_mb_inner_c
-
-void vp9_blend_mb_outer_c(unsigned char *y, unsigned char *u, unsigned char *v, int y1, int u1, int v1, int alpha, int stride);
-#define vp9_blend_mb_outer vp9_blend_mb_outer_c
-
-void vp9_blend_b_c(unsigned char *y, unsigned char *u, unsigned char *v, int y1, int u1, int v1, int alpha, int stride);
+void vp9_blend_b_c(uint8_t *y, uint8_t *u, uint8_t *v, int y1, int u1, int v1, int alpha, int stride);
 #define vp9_blend_b vp9_blend_b_c
 
-unsigned int vp9_sad16x3_c(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
-unsigned int vp9_sad16x3_sse2(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
-RTCD_EXTERN unsigned int (*vp9_sad16x3)(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
+void vp9_blend_mb_inner_c(uint8_t *y, uint8_t *u, uint8_t *v, int y1, int u1, int v1, int alpha, int stride);
+#define vp9_blend_mb_inner vp9_blend_mb_inner_c
 
-unsigned int vp9_sad3x16_c(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
-unsigned int vp9_sad3x16_sse2(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
-RTCD_EXTERN unsigned int (*vp9_sad3x16)(const unsigned char *src_ptr, int  src_stride, const unsigned char *ref_ptr, int ref_stride);
+void vp9_blend_mb_outer_c(uint8_t *y, uint8_t *u, uint8_t *v, int y1, int u1, int v1, int alpha, int stride);
+#define vp9_blend_mb_outer vp9_blend_mb_outer_c
 
-void vp9_eighttap_predict16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict16x16 vp9_eighttap_predict16x16_c
+int64_t vp9_block_error_c(const int16_t *coeff, const int16_t *dqcoeff, intptr_t block_size, int64_t *ssz);
+#define vp9_block_error vp9_block_error_c
 
-void vp9_eighttap_predict8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict8x8 vp9_eighttap_predict8x8_c
+void vp9_convolve8_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict_avg16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg16x16 vp9_eighttap_predict_avg16x16_c
+void vp9_convolve8_avg_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8_avg)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict_avg8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg8x8 vp9_eighttap_predict_avg8x8_c
+void vp9_convolve8_avg_horiz_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_horiz_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_horiz_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8_avg_horiz)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict_avg4x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg4x4 vp9_eighttap_predict_avg4x4_c
+void vp9_convolve8_avg_vert_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_vert_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_avg_vert_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8_avg_vert)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict8x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict8x4 vp9_eighttap_predict8x4_c
+void vp9_convolve8_horiz_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_horiz_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_horiz_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8_horiz)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict vp9_eighttap_predict_c
+void vp9_convolve8_vert_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_vert_sse2(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+void vp9_convolve8_vert_ssse3(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+RTCD_EXTERN void (*vp9_convolve8_vert)(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
 
-void vp9_eighttap_predict16x16_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict16x16_sharp vp9_eighttap_predict16x16_sharp_c
+void vp9_convolve_avg_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+#define vp9_convolve_avg vp9_convolve_avg_c
 
-void vp9_eighttap_predict8x8_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict8x8_sharp vp9_eighttap_predict8x8_sharp_c
+void vp9_convolve_copy_c(const uint8_t *src, ptrdiff_t src_stride, uint8_t *dst, ptrdiff_t dst_stride, const int16_t *filter_x, int x_step_q4, const int16_t *filter_y, int y_step_q4, int w, int h);
+#define vp9_convolve_copy vp9_convolve_copy_c
 
-void vp9_eighttap_predict_avg16x16_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg16x16_sharp vp9_eighttap_predict_avg16x16_sharp_c
+void vp9_d117_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d117_predictor_16x16 vp9_d117_predictor_16x16_c
 
-void vp9_eighttap_predict_avg8x8_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg8x8_sharp vp9_eighttap_predict_avg8x8_sharp_c
+void vp9_d117_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d117_predictor_32x32 vp9_d117_predictor_32x32_c
 
-void vp9_eighttap_predict_avg4x4_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_avg4x4_sharp vp9_eighttap_predict_avg4x4_sharp_c
+void vp9_d117_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d117_predictor_4x4 vp9_d117_predictor_4x4_c
 
-void vp9_eighttap_predict8x4_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict8x4_sharp vp9_eighttap_predict8x4_sharp_c
+void vp9_d117_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d117_predictor_8x8 vp9_d117_predictor_8x8_c
 
-void vp9_eighttap_predict_sharp_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_eighttap_predict_sharp vp9_eighttap_predict_sharp_c
+void vp9_d135_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d135_predictor_16x16 vp9_d135_predictor_16x16_c
 
-void vp9_sixtap_predict16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict16x16 vp9_sixtap_predict16x16_c
+void vp9_d135_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d135_predictor_32x32 vp9_d135_predictor_32x32_c
 
-void vp9_sixtap_predict8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict8x8 vp9_sixtap_predict8x8_c
+void vp9_d135_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d135_predictor_4x4 vp9_d135_predictor_4x4_c
 
-void vp9_sixtap_predict_avg16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict_avg16x16 vp9_sixtap_predict_avg16x16_c
+void vp9_d135_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d135_predictor_8x8 vp9_d135_predictor_8x8_c
 
-void vp9_sixtap_predict_avg8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict_avg8x8 vp9_sixtap_predict_avg8x8_c
+void vp9_d153_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d153_predictor_16x16 vp9_d153_predictor_16x16_c
 
-void vp9_sixtap_predict8x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict8x4 vp9_sixtap_predict8x4_c
+void vp9_d153_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d153_predictor_32x32 vp9_d153_predictor_32x32_c
 
-void vp9_sixtap_predict_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict vp9_sixtap_predict_c
+void vp9_d153_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d153_predictor_4x4 vp9_d153_predictor_4x4_c
 
-void vp9_sixtap_predict_avg_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_sixtap_predict_avg vp9_sixtap_predict_avg_c
+void vp9_d153_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d153_predictor_8x8 vp9_d153_predictor_8x8_c
 
-void vp9_bilinear_predict16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict16x16_mmx(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict16x16_sse2(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-RTCD_EXTERN void (*vp9_bilinear_predict16x16)(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
+void vp9_d207_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d207_predictor_16x16 vp9_d207_predictor_16x16_c
 
-void vp9_bilinear_predict8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict8x8_mmx(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict8x8_sse2(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-RTCD_EXTERN void (*vp9_bilinear_predict8x8)(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
+void vp9_d207_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d207_predictor_32x32 vp9_d207_predictor_32x32_c
 
-void vp9_bilinear_predict_avg16x16_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_bilinear_predict_avg16x16 vp9_bilinear_predict_avg16x16_c
+void vp9_d207_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d207_predictor_4x4 vp9_d207_predictor_4x4_c
 
-void vp9_bilinear_predict_avg8x8_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_bilinear_predict_avg8x8 vp9_bilinear_predict_avg8x8_c
+void vp9_d207_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d207_predictor_8x8 vp9_d207_predictor_8x8_c
 
-void vp9_bilinear_predict8x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict8x4_mmx(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-RTCD_EXTERN void (*vp9_bilinear_predict8x4)(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
+void vp9_d45_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d45_predictor_16x16 vp9_d45_predictor_16x16_c
 
-void vp9_bilinear_predict4x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-void vp9_bilinear_predict4x4_mmx(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-RTCD_EXTERN void (*vp9_bilinear_predict4x4)(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
+void vp9_d45_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d45_predictor_32x32 vp9_d45_predictor_32x32_c
 
-void vp9_bilinear_predict_avg4x4_c(unsigned char *src_ptr, int  src_pixels_per_line, int  xoffset, int  yoffset, unsigned char *dst_ptr, int  dst_pitch);
-#define vp9_bilinear_predict_avg4x4 vp9_bilinear_predict_avg4x4_c
+void vp9_d45_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d45_predictor_4x4 vp9_d45_predictor_4x4_c
 
-void vp9_short_idct4x4llm_1_c(short *input, short *output, int pitch);
-void vp9_short_idct4x4llm_1_mmx(short *input, short *output, int pitch);
-RTCD_EXTERN void (*vp9_short_idct4x4llm_1)(short *input, short *output, int pitch);
+void vp9_d45_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d45_predictor_8x8 vp9_d45_predictor_8x8_c
 
-void vp9_short_idct4x4llm_c(short *input, short *output, int pitch);
-void vp9_short_idct4x4llm_mmx(short *input, short *output, int pitch);
-RTCD_EXTERN void (*vp9_short_idct4x4llm)(short *input, short *output, int pitch);
+void vp9_d63_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d63_predictor_16x16 vp9_d63_predictor_16x16_c
 
-void vp9_short_idct8x8_c(short *input, short *output, int pitch);
-#define vp9_short_idct8x8 vp9_short_idct8x8_c
+void vp9_d63_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d63_predictor_32x32 vp9_d63_predictor_32x32_c
 
-void vp9_short_idct10_8x8_c(short *input, short *output, int pitch);
-#define vp9_short_idct10_8x8 vp9_short_idct10_8x8_c
+void vp9_d63_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d63_predictor_4x4 vp9_d63_predictor_4x4_c
 
-void vp9_short_ihaar2x2_c(short *input, short *output, int pitch);
-#define vp9_short_ihaar2x2 vp9_short_ihaar2x2_c
+void vp9_d63_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_d63_predictor_8x8 vp9_d63_predictor_8x8_c
 
-void vp9_short_idct16x16_c(short *input, short *output, int pitch);
-#define vp9_short_idct16x16 vp9_short_idct16x16_c
+void vp9_dc_128_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_128_predictor_16x16 vp9_dc_128_predictor_16x16_c
 
-void vp9_short_idct10_16x16_c(short *input, short *output, int pitch);
-#define vp9_short_idct10_16x16 vp9_short_idct10_16x16_c
+void vp9_dc_128_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_128_predictor_32x32 vp9_dc_128_predictor_32x32_c
 
-void vp9_ihtllm_c(const short *input, short *output, int pitch, int tx_type, int tx_dim, short eobs);
-#define vp9_ihtllm vp9_ihtllm_c
+void vp9_dc_128_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_128_predictor_4x4 vp9_dc_128_predictor_4x4_c
 
-void vp9_short_inv_walsh4x4_1_c(short *in, short *out);
-#define vp9_short_inv_walsh4x4_1 vp9_short_inv_walsh4x4_1_c
+void vp9_dc_128_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_128_predictor_8x8 vp9_dc_128_predictor_8x8_c
 
-void vp9_short_inv_walsh4x4_c(short *in, short *out);
-#define vp9_short_inv_walsh4x4 vp9_short_inv_walsh4x4_c
+void vp9_dc_left_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_left_predictor_16x16 vp9_dc_left_predictor_16x16_c
 
-void vp9_dc_only_idct_add_8x8_c(short input_dc, unsigned char *pred_ptr, unsigned char *dst_ptr, int pitch, int stride);
-#define vp9_dc_only_idct_add_8x8 vp9_dc_only_idct_add_8x8_c
+void vp9_dc_left_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_left_predictor_32x32 vp9_dc_left_predictor_32x32_c
 
-void vp9_dc_only_idct_add_c(short input_dc, unsigned char *pred_ptr, unsigned char *dst_ptr, int pitch, int stride);
-#define vp9_dc_only_idct_add vp9_dc_only_idct_add_c
+void vp9_dc_left_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_left_predictor_4x4 vp9_dc_left_predictor_4x4_c
+
+void vp9_dc_left_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_left_predictor_8x8 vp9_dc_left_predictor_8x8_c
+
+void vp9_dc_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_predictor_16x16 vp9_dc_predictor_16x16_c
+
+void vp9_dc_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_predictor_32x32 vp9_dc_predictor_32x32_c
+
+void vp9_dc_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_predictor_4x4 vp9_dc_predictor_4x4_c
+
+void vp9_dc_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_predictor_8x8 vp9_dc_predictor_8x8_c
+
+void vp9_dc_top_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_top_predictor_16x16 vp9_dc_top_predictor_16x16_c
+
+void vp9_dc_top_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_top_predictor_32x32 vp9_dc_top_predictor_32x32_c
+
+void vp9_dc_top_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_top_predictor_4x4 vp9_dc_top_predictor_4x4_c
+
+void vp9_dc_top_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_dc_top_predictor_8x8 vp9_dc_top_predictor_8x8_c
+
+int vp9_diamond_search_sad_c(const struct macroblock *x, const struct search_site_config *cfg,  struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+int vp9_diamond_search_sadx4(const struct macroblock *x, const struct search_site_config *cfg,  struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+RTCD_EXTERN int (*vp9_diamond_search_sad)(const struct macroblock *x, const struct search_site_config *cfg,  struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+
+void vp9_fdct16x16_c(const int16_t *input, int16_t *output, int stride);
+void vp9_fdct16x16_sse2(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fdct16x16)(const int16_t *input, int16_t *output, int stride);
+
+void vp9_fdct32x32_c(const int16_t *input, int16_t *output, int stride);
+void vp9_fdct32x32_sse2(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fdct32x32)(const int16_t *input, int16_t *output, int stride);
+
+void vp9_fdct32x32_rd_c(const int16_t *input, int16_t *output, int stride);
+void vp9_fdct32x32_rd_sse2(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fdct32x32_rd)(const int16_t *input, int16_t *output, int stride);
+
+void vp9_fdct4x4_c(const int16_t *input, int16_t *output, int stride);
+void vp9_fdct4x4_sse2(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fdct4x4)(const int16_t *input, int16_t *output, int stride);
+
+void vp9_fdct8x8_c(const int16_t *input, int16_t *output, int stride);
+void vp9_fdct8x8_sse2(const int16_t *input, int16_t *output, int stride);
+RTCD_EXTERN void (*vp9_fdct8x8)(const int16_t *input, int16_t *output, int stride);
+
+void vp9_fht16x16_c(const int16_t *input, int16_t *output, int stride, int tx_type);
+void vp9_fht16x16_sse2(const int16_t *input, int16_t *output, int stride, int tx_type);
+RTCD_EXTERN void (*vp9_fht16x16)(const int16_t *input, int16_t *output, int stride, int tx_type);
+
+void vp9_fht4x4_c(const int16_t *input, int16_t *output, int stride, int tx_type);
+void vp9_fht4x4_sse2(const int16_t *input, int16_t *output, int stride, int tx_type);
+RTCD_EXTERN void (*vp9_fht4x4)(const int16_t *input, int16_t *output, int stride, int tx_type);
+
+void vp9_fht8x8_c(const int16_t *input, int16_t *output, int stride, int tx_type);
+void vp9_fht8x8_sse2(const int16_t *input, int16_t *output, int stride, int tx_type);
+RTCD_EXTERN void (*vp9_fht8x8)(const int16_t *input, int16_t *output, int stride, int tx_type);
+
+int vp9_full_range_search_c(const struct macroblock *x, const struct search_site_config *cfg, struct mv *ref_mv, struct mv *best_mv, int search_param, int sad_per_bit, int *num00, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+#define vp9_full_range_search vp9_full_range_search_c
+
+int vp9_full_search_sad_c(const struct macroblock *x, const struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv, struct mv *best_mv);
+int vp9_full_search_sadx3(const struct macroblock *x, const struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv, struct mv *best_mv);
+int vp9_full_search_sadx8(const struct macroblock *x, const struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv, struct mv *best_mv);
+RTCD_EXTERN int (*vp9_full_search_sad)(const struct macroblock *x, const struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv, struct mv *best_mv);
+
+void vp9_fwht4x4_c(const int16_t *input, int16_t *output, int stride);
+#define vp9_fwht4x4 vp9_fwht4x4_c
+
+unsigned int vp9_get_mb_ss_c(const int16_t *);
+unsigned int vp9_get_mb_ss_mmx(const int16_t *);
+unsigned int vp9_get_mb_ss_sse2(const int16_t *);
+RTCD_EXTERN unsigned int (*vp9_get_mb_ss)(const int16_t *);
+
+void vp9_h_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_h_predictor_16x16 vp9_h_predictor_16x16_c
+
+void vp9_h_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_h_predictor_32x32 vp9_h_predictor_32x32_c
+
+void vp9_h_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_h_predictor_4x4 vp9_h_predictor_4x4_c
+
+void vp9_h_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_h_predictor_8x8 vp9_h_predictor_8x8_c
+
+void vp9_idct16x16_10_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct16x16_10_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct16x16_10_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct16x16_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct16x16_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct16x16_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct16x16_256_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct16x16_256_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct16x16_256_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct32x32_1024_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct32x32_1024_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct32x32_1024_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct32x32_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct32x32_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct32x32_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct32x32_34_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct32x32_34_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct32x32_34_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct4x4_16_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct4x4_16_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct4x4_16_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct4x4_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct4x4_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct8x8_10_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_10_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct8x8_10_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct8x8_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_1_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct8x8_1_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_idct8x8_64_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+void vp9_idct8x8_64_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride);
+RTCD_EXTERN void (*vp9_idct8x8_64_add)(const int16_t *input, uint8_t *dest, int dest_stride);
+
+void vp9_iht16x16_256_add_c(const int16_t *input, uint8_t *output, int pitch, int tx_type);
+void vp9_iht16x16_256_add_sse2(const int16_t *input, uint8_t *output, int pitch, int tx_type);
+RTCD_EXTERN void (*vp9_iht16x16_256_add)(const int16_t *input, uint8_t *output, int pitch, int tx_type);
+
+void vp9_iht4x4_16_add_c(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+void vp9_iht4x4_16_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+RTCD_EXTERN void (*vp9_iht4x4_16_add)(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+
+void vp9_iht8x8_64_add_c(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+void vp9_iht8x8_64_add_sse2(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+RTCD_EXTERN void (*vp9_iht8x8_64_add)(const int16_t *input, uint8_t *dest, int dest_stride, int tx_type);
+
+void vp9_iwht4x4_16_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+#define vp9_iwht4x4_16_add vp9_iwht4x4_16_add_c
+
+void vp9_iwht4x4_1_add_c(const int16_t *input, uint8_t *dest, int dest_stride);
+#define vp9_iwht4x4_1_add vp9_iwht4x4_1_add_c
+
+void vp9_lpf_horizontal_16_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_16_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_16)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_4_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_4_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_4)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_4_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_horizontal_4_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_horizontal_4_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+void vp9_lpf_horizontal_8_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_horizontal_8_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_horizontal_8)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_horizontal_8_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_horizontal_8_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_horizontal_8_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+void vp9_lpf_vertical_16_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+void vp9_lpf_vertical_16_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+RTCD_EXTERN void (*vp9_lpf_vertical_16)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+
+void vp9_lpf_vertical_16_dual_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+void vp9_lpf_vertical_16_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+RTCD_EXTERN void (*vp9_lpf_vertical_16_dual)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh);
+
+void vp9_lpf_vertical_4_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_4_mmx(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_vertical_4)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_vertical_4_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_vertical_4_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_vertical_4_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+void vp9_lpf_vertical_8_c(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+void vp9_lpf_vertical_8_sse2(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+RTCD_EXTERN void (*vp9_lpf_vertical_8)(uint8_t *s, int pitch, const uint8_t *blimit, const uint8_t *limit, const uint8_t *thresh, int count);
+
+void vp9_lpf_vertical_8_dual_c(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+void vp9_lpf_vertical_8_dual_sse2(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+RTCD_EXTERN void (*vp9_lpf_vertical_8_dual)(uint8_t *s, int pitch, const uint8_t *blimit0, const uint8_t *limit0, const uint8_t *thresh0, const uint8_t *blimit1, const uint8_t *limit1, const uint8_t *thresh1);
+
+unsigned int vp9_mse16x16_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+unsigned int vp9_mse16x16_mmx(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_mse16x16)(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+
+unsigned int vp9_mse16x8_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+#define vp9_mse16x8 vp9_mse16x8_c
+
+unsigned int vp9_mse8x16_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+#define vp9_mse8x16 vp9_mse8x16_c
+
+unsigned int vp9_mse8x8_c(const uint8_t *src_ptr, int  source_stride, const uint8_t *ref_ptr, int  recon_stride, unsigned int *sse);
+#define vp9_mse8x8 vp9_mse8x8_c
+
+void vp9_quantize_b_c(const int16_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, int16_t *qcoeff_ptr, int16_t *dqcoeff_ptr, const int16_t *dequant_ptr, int zbin_oq_value, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan);
+#define vp9_quantize_b vp9_quantize_b_c
+
+void vp9_quantize_b_32x32_c(const int16_t *coeff_ptr, intptr_t n_coeffs, int skip_block, const int16_t *zbin_ptr, const int16_t *round_ptr, const int16_t *quant_ptr, const int16_t *quant_shift_ptr, int16_t *qcoeff_ptr, int16_t *dqcoeff_ptr, const int16_t *dequant_ptr, int zbin_oq_value, uint16_t *eob_ptr, const int16_t *scan, const int16_t *iscan);
+#define vp9_quantize_b_32x32 vp9_quantize_b_32x32_c
+
+int vp9_refining_search_sad_c(const struct macroblock *x, struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+int vp9_refining_search_sadx4(const struct macroblock *x, struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+RTCD_EXTERN int (*vp9_refining_search_sad)(const struct macroblock *x, struct mv *ref_mv, int sad_per_bit, int distance, const struct vp9_variance_vtable *fn_ptr, const struct mv *center_mv);
+
+unsigned int vp9_sad16x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+unsigned int vp9_sad16x16_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+RTCD_EXTERN unsigned int (*vp9_sad16x16)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+
+unsigned int vp9_sad16x16_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad16x16_avg vp9_sad16x16_avg_c
+
+void vp9_sad16x16x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x16x3_sse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x16x3_ssse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad16x16x3)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad16x16x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x16x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad16x16x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad16x16x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad16x16x8 vp9_sad16x16x8_c
+
+unsigned int vp9_sad16x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad16x32 vp9_sad16x32_c
+
+unsigned int vp9_sad16x32_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad16x32_avg vp9_sad16x32_avg_c
+
+void vp9_sad16x32x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x32x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad16x32x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+unsigned int vp9_sad16x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+unsigned int vp9_sad16x8_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+RTCD_EXTERN unsigned int (*vp9_sad16x8)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+
+unsigned int vp9_sad16x8_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad16x8_avg vp9_sad16x8_avg_c
+
+void vp9_sad16x8x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x8x3_sse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x8x3_ssse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad16x8x3)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad16x8x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad16x8x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad16x8x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad16x8x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad16x8x8 vp9_sad16x8x8_c
+
+unsigned int vp9_sad32x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad32x16 vp9_sad32x16_c
+
+unsigned int vp9_sad32x16_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad32x16_avg vp9_sad32x16_avg_c
+
+void vp9_sad32x16x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad32x16x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad32x16x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+unsigned int vp9_sad32x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+#define vp9_sad32x32 vp9_sad32x32_c
+
+unsigned int vp9_sad32x32_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad32x32_avg vp9_sad32x32_avg_c
+
+void vp9_sad32x32x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+#define vp9_sad32x32x3 vp9_sad32x32x3_c
+
+void vp9_sad32x32x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad32x32x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad32x32x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad32x32x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad32x32x8 vp9_sad32x32x8_c
+
+unsigned int vp9_sad32x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad32x64 vp9_sad32x64_c
+
+unsigned int vp9_sad32x64_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad32x64_avg vp9_sad32x64_avg_c
+
+void vp9_sad32x64x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad32x64x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad32x64x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+unsigned int vp9_sad4x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+unsigned int vp9_sad4x4_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+RTCD_EXTERN unsigned int (*vp9_sad4x4)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+
+unsigned int vp9_sad4x4_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad4x4_avg vp9_sad4x4_avg_c
+
+void vp9_sad4x4x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad4x4x3_sse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad4x4x3)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad4x4x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad4x4x4d_sse(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad4x4x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad4x4x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad4x4x8 vp9_sad4x4x8_c
+
+unsigned int vp9_sad4x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad4x8 vp9_sad4x8_c
+
+unsigned int vp9_sad4x8_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad4x8_avg vp9_sad4x8_avg_c
+
+void vp9_sad4x8x4d_c(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+void vp9_sad4x8x4d_sse(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad4x8x4d)(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+
+void vp9_sad4x8x8_c(const uint8_t *src_ptr, int src_stride, const uint8_t *ref_ptr, int ref_stride, uint32_t *sad_array);
+#define vp9_sad4x8x8 vp9_sad4x8x8_c
+
+unsigned int vp9_sad64x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad64x32 vp9_sad64x32_c
+
+unsigned int vp9_sad64x32_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad64x32_avg vp9_sad64x32_avg_c
+
+void vp9_sad64x32x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad64x32x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad64x32x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+unsigned int vp9_sad64x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+#define vp9_sad64x64 vp9_sad64x64_c
+
+unsigned int vp9_sad64x64_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad64x64_avg vp9_sad64x64_avg_c
+
+void vp9_sad64x64x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+#define vp9_sad64x64x3 vp9_sad64x64x3_c
+
+void vp9_sad64x64x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad64x64x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad64x64x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad64x64x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad64x64x8 vp9_sad64x64x8_c
+
+unsigned int vp9_sad8x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+unsigned int vp9_sad8x16_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+RTCD_EXTERN unsigned int (*vp9_sad8x16)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+
+unsigned int vp9_sad8x16_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad8x16_avg vp9_sad8x16_avg_c
+
+void vp9_sad8x16x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad8x16x3_sse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad8x16x3)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad8x16x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad8x16x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad8x16x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad8x16x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad8x16x8 vp9_sad8x16x8_c
+
+unsigned int vp9_sad8x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int max_sad);
+#define vp9_sad8x4 vp9_sad8x4_c
+
+unsigned int vp9_sad8x4_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad8x4_avg vp9_sad8x4_avg_c
+
+void vp9_sad8x4x4d_c(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+void vp9_sad8x4x4d_sse2(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad8x4x4d)(const uint8_t *src_ptr, int src_stride, const uint8_t* const ref_ptr[], int ref_stride, unsigned int *sad_array);
+
+void vp9_sad8x4x8_c(const uint8_t *src_ptr, int src_stride, const uint8_t *ref_ptr, int ref_stride, uint32_t *sad_array);
+#define vp9_sad8x4x8 vp9_sad8x4x8_c
+
+unsigned int vp9_sad8x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+unsigned int vp9_sad8x8_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+RTCD_EXTERN unsigned int (*vp9_sad8x8)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int max_sad);
+
+unsigned int vp9_sad8x8_avg_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, const uint8_t *second_pred, unsigned int max_sad);
+#define vp9_sad8x8_avg vp9_sad8x8_avg_c
+
+void vp9_sad8x8x3_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+void vp9_sad8x8x3_sse3(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad8x8x3)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad8x8x4d_c(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+void vp9_sad8x8x4d_sse2(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+RTCD_EXTERN void (*vp9_sad8x8x4d)(const uint8_t *src_ptr, int  src_stride, const uint8_t* const ref_ptr[], int  ref_stride, unsigned int *sad_array);
+
+void vp9_sad8x8x8_c(const uint8_t *src_ptr, int  src_stride, const uint8_t *ref_ptr, int  ref_stride, uint32_t *sad_array);
+#define vp9_sad8x8x8 vp9_sad8x8x8_c
+
+unsigned int vp9_sub_pixel_avg_variance16x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance16x16 vp9_sub_pixel_avg_variance16x16_c
+
+unsigned int vp9_sub_pixel_avg_variance16x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance16x32 vp9_sub_pixel_avg_variance16x32_c
+
+unsigned int vp9_sub_pixel_avg_variance16x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance16x8 vp9_sub_pixel_avg_variance16x8_c
+
+unsigned int vp9_sub_pixel_avg_variance32x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance32x16 vp9_sub_pixel_avg_variance32x16_c
+
+unsigned int vp9_sub_pixel_avg_variance32x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance32x32 vp9_sub_pixel_avg_variance32x32_c
+
+unsigned int vp9_sub_pixel_avg_variance32x64_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance32x64 vp9_sub_pixel_avg_variance32x64_c
+
+unsigned int vp9_sub_pixel_avg_variance4x4_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance4x4 vp9_sub_pixel_avg_variance4x4_c
+
+unsigned int vp9_sub_pixel_avg_variance4x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance4x8 vp9_sub_pixel_avg_variance4x8_c
+
+unsigned int vp9_sub_pixel_avg_variance64x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance64x32 vp9_sub_pixel_avg_variance64x32_c
+
+unsigned int vp9_sub_pixel_avg_variance64x64_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance64x64 vp9_sub_pixel_avg_variance64x64_c
+
+unsigned int vp9_sub_pixel_avg_variance8x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance8x16 vp9_sub_pixel_avg_variance8x16_c
+
+unsigned int vp9_sub_pixel_avg_variance8x4_c(const uint8_t *src_ptr, int source_stride, int xoffset, int yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance8x4 vp9_sub_pixel_avg_variance8x4_c
+
+unsigned int vp9_sub_pixel_avg_variance8x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse, const uint8_t *second_pred);
+#define vp9_sub_pixel_avg_variance8x8 vp9_sub_pixel_avg_variance8x8_c
+
+unsigned int vp9_sub_pixel_variance16x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance16x16 vp9_sub_pixel_variance16x16_c
+
+unsigned int vp9_sub_pixel_variance16x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance16x32 vp9_sub_pixel_variance16x32_c
+
+unsigned int vp9_sub_pixel_variance16x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance16x8 vp9_sub_pixel_variance16x8_c
+
+unsigned int vp9_sub_pixel_variance32x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance32x16 vp9_sub_pixel_variance32x16_c
+
+unsigned int vp9_sub_pixel_variance32x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance32x32 vp9_sub_pixel_variance32x32_c
+
+unsigned int vp9_sub_pixel_variance32x64_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance32x64 vp9_sub_pixel_variance32x64_c
+
+unsigned int vp9_sub_pixel_variance4x4_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance4x4 vp9_sub_pixel_variance4x4_c
+
+unsigned int vp9_sub_pixel_variance4x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance4x8 vp9_sub_pixel_variance4x8_c
+
+unsigned int vp9_sub_pixel_variance64x32_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance64x32 vp9_sub_pixel_variance64x32_c
+
+unsigned int vp9_sub_pixel_variance64x64_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance64x64 vp9_sub_pixel_variance64x64_c
+
+unsigned int vp9_sub_pixel_variance8x16_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance8x16 vp9_sub_pixel_variance8x16_c
+
+unsigned int vp9_sub_pixel_variance8x4_c(const uint8_t *src_ptr, int source_stride, int xoffset, int yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance8x4 vp9_sub_pixel_variance8x4_c
+
+unsigned int vp9_sub_pixel_variance8x8_c(const uint8_t *src_ptr, int source_stride, int xoffset, int  yoffset, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_sub_pixel_variance8x8 vp9_sub_pixel_variance8x8_c
+
+void vp9_subtract_block_c(int rows, int cols, int16_t *diff_ptr, ptrdiff_t diff_stride, const uint8_t *src_ptr, ptrdiff_t src_stride, const uint8_t *pred_ptr, ptrdiff_t pred_stride);
+#define vp9_subtract_block vp9_subtract_block_c
+
+void vp9_temporal_filter_apply_c(uint8_t *frame1, unsigned int stride, uint8_t *frame2, unsigned int block_size, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count);
+void vp9_temporal_filter_apply_sse2(uint8_t *frame1, unsigned int stride, uint8_t *frame2, unsigned int block_size, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count);
+RTCD_EXTERN void (*vp9_temporal_filter_apply)(uint8_t *frame1, unsigned int stride, uint8_t *frame2, unsigned int block_size, int strength, int filter_weight, unsigned int *accumulator, uint16_t *count);
+
+void vp9_tm_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_tm_predictor_16x16 vp9_tm_predictor_16x16_c
+
+void vp9_tm_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_tm_predictor_32x32 vp9_tm_predictor_32x32_c
+
+void vp9_tm_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_tm_predictor_4x4 vp9_tm_predictor_4x4_c
+
+void vp9_tm_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_tm_predictor_8x8 vp9_tm_predictor_8x8_c
+
+void vp9_v_predictor_16x16_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_v_predictor_16x16 vp9_v_predictor_16x16_c
+
+void vp9_v_predictor_32x32_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_v_predictor_32x32 vp9_v_predictor_32x32_c
+
+void vp9_v_predictor_4x4_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_v_predictor_4x4 vp9_v_predictor_4x4_c
+
+void vp9_v_predictor_8x8_c(uint8_t *dst, ptrdiff_t y_stride, const uint8_t *above, const uint8_t *left);
+#define vp9_v_predictor_8x8 vp9_v_predictor_8x8_c
+
+unsigned int vp9_variance16x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+unsigned int vp9_variance16x16_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_variance16x16)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+
+unsigned int vp9_variance16x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance16x32 vp9_variance16x32_c
+
+unsigned int vp9_variance16x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+unsigned int vp9_variance16x8_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_variance16x8)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+
+unsigned int vp9_variance32x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance32x16 vp9_variance32x16_c
+
+unsigned int vp9_variance32x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance32x32 vp9_variance32x32_c
+
+unsigned int vp9_variance32x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance32x64 vp9_variance32x64_c
+
+unsigned int vp9_variance4x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+unsigned int vp9_variance4x4_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_variance4x4)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+
+unsigned int vp9_variance4x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance4x8 vp9_variance4x8_c
+
+unsigned int vp9_variance64x32_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance64x32 vp9_variance64x32_c
+
+unsigned int vp9_variance64x64_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance64x64 vp9_variance64x64_c
+
+unsigned int vp9_variance8x16_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+unsigned int vp9_variance8x16_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_variance8x16)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+
+unsigned int vp9_variance8x4_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+#define vp9_variance8x4 vp9_variance8x4_c
+
+unsigned int vp9_variance8x8_c(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+unsigned int vp9_variance8x8_mmx(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
+RTCD_EXTERN unsigned int (*vp9_variance8x8)(const uint8_t *src_ptr, int source_stride, const uint8_t *ref_ptr, int ref_stride, unsigned int *sse);
 
 void vp9_rtcd(void);
 
@@ -394,182 +742,167 @@ static void setup_rtcd_internal(void)
 
     (void)flags;
 
-    vp9_filter_block2d_4x4_8 = vp9_filter_block2d_4x4_8_c;
-    if (flags & HAS_SSE2) vp9_filter_block2d_4x4_8 = vp9_filter_block2d_4x4_8_sse2;
-    if (flags & HAS_SSE4_1) vp9_filter_block2d_4x4_8 = vp9_filter_block2d_4x4_8_sse4_1;
-
-    vp9_filter_block2d_8x4_8 = vp9_filter_block2d_8x4_8_c;
-    if (flags & HAS_SSSE3) vp9_filter_block2d_8x4_8 = vp9_filter_block2d_8x4_8_ssse3;
-
-    vp9_filter_block2d_8x8_8 = vp9_filter_block2d_8x8_8_c;
-    if (flags & HAS_SSSE3) vp9_filter_block2d_8x8_8 = vp9_filter_block2d_8x8_8_ssse3;
-
-    vp9_filter_block2d_16x16_8 = vp9_filter_block2d_16x16_8_c;
-    if (flags & HAS_SSSE3) vp9_filter_block2d_16x16_8 = vp9_filter_block2d_16x16_8_ssse3;
-
-    vp9_dequantize_b = vp9_dequantize_b_c;
-    if (flags & HAS_MMX) vp9_dequantize_b = vp9_dequantize_b_mmx;
-
-
-
-
-
-
-
-
-
-    vp9_dequant_dc_idct_add_y_block = vp9_dequant_dc_idct_add_y_block_c;
-    if (flags & HAS_MMX) vp9_dequant_dc_idct_add_y_block = vp9_dequant_dc_idct_add_y_block_mmx;
-
-    vp9_dequant_idct_add_y_block = vp9_dequant_idct_add_y_block_c;
-    if (flags & HAS_MMX) vp9_dequant_idct_add_y_block = vp9_dequant_idct_add_y_block_mmx;
-
-    vp9_dequant_idct_add_uv_block = vp9_dequant_idct_add_uv_block_c;
-    if (flags & HAS_MMX) vp9_dequant_idct_add_uv_block = vp9_dequant_idct_add_uv_block_mmx;
-
-    vp9_copy_mem16x16 = vp9_copy_mem16x16_c;
-    if (flags & HAS_MMX) vp9_copy_mem16x16 = vp9_copy_mem16x16_mmx;
-    if (flags & HAS_SSE2) vp9_copy_mem16x16 = vp9_copy_mem16x16_sse2;
-
-    vp9_copy_mem8x8 = vp9_copy_mem8x8_c;
-    if (flags & HAS_MMX) vp9_copy_mem8x8 = vp9_copy_mem8x8_mmx;
-
-    vp9_copy_mem8x4 = vp9_copy_mem8x4_c;
-    if (flags & HAS_MMX) vp9_copy_mem8x4 = vp9_copy_mem8x4_mmx;
-
-
-
-    vp9_copy_mem8x4 = vp9_copy_mem8x4_c;
-    if (flags & HAS_MMX) vp9_copy_mem8x4 = vp9_copy_mem8x4_mmx;
-
-
-
-    vp9_recon2b = vp9_recon2b_c;
-    if (flags & HAS_SSE2) vp9_recon2b = vp9_recon2b_sse2;
-
-    vp9_recon4b = vp9_recon4b_c;
-    if (flags & HAS_SSE2) vp9_recon4b = vp9_recon4b_sse2;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    vp9_loop_filter_mbv = vp9_loop_filter_mbv_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_mbv = vp9_loop_filter_mbv_sse2;
-
-    vp9_loop_filter_bv = vp9_loop_filter_bv_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_bv = vp9_loop_filter_bv_sse2;
-
-    vp9_loop_filter_bv8x8 = vp9_loop_filter_bv8x8_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_bv8x8 = vp9_loop_filter_bv8x8_sse2;
-
-    vp9_loop_filter_mbh = vp9_loop_filter_mbh_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_mbh = vp9_loop_filter_mbh_sse2;
-
-    vp9_loop_filter_bh = vp9_loop_filter_bh_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_bh = vp9_loop_filter_bh_sse2;
-
-    vp9_loop_filter_bh8x8 = vp9_loop_filter_bh8x8_c;
-    if (flags & HAS_SSE2) vp9_loop_filter_bh8x8 = vp9_loop_filter_bh8x8_sse2;
-
-    vp9_loop_filter_simple_mbv = vp9_loop_filter_simple_vertical_edge_c;
-    if (flags & HAS_MMX) vp9_loop_filter_simple_mbv = vp9_loop_filter_simple_vertical_edge_mmx;
-    if (flags & HAS_SSE2) vp9_loop_filter_simple_mbv = vp9_loop_filter_simple_vertical_edge_sse2;
-
-    vp9_loop_filter_simple_mbh = vp9_loop_filter_simple_horizontal_edge_c;
-    if (flags & HAS_MMX) vp9_loop_filter_simple_mbh = vp9_loop_filter_simple_horizontal_edge_mmx;
-    if (flags & HAS_SSE2) vp9_loop_filter_simple_mbh = vp9_loop_filter_simple_horizontal_edge_sse2;
-
-    vp9_loop_filter_simple_bv = vp9_loop_filter_bvs_c;
-    if (flags & HAS_MMX) vp9_loop_filter_simple_bv = vp9_loop_filter_bvs_mmx;
-    if (flags & HAS_SSE2) vp9_loop_filter_simple_bv = vp9_loop_filter_bvs_sse2;
-
-    vp9_loop_filter_simple_bh = vp9_loop_filter_bhs_c;
-    if (flags & HAS_MMX) vp9_loop_filter_simple_bh = vp9_loop_filter_bhs_mmx;
-    if (flags & HAS_SSE2) vp9_loop_filter_simple_bh = vp9_loop_filter_bhs_sse2;
-
-    vp9_mbpost_proc_down = vp9_mbpost_proc_down_c;
-    if (flags & HAS_MMX) vp9_mbpost_proc_down = vp9_mbpost_proc_down_mmx;
-    if (flags & HAS_SSE2) vp9_mbpost_proc_down = vp9_mbpost_proc_down_xmm;
-
-    vp9_mbpost_proc_across_ip = vp9_mbpost_proc_across_ip_c;
-    if (flags & HAS_SSE2) vp9_mbpost_proc_across_ip = vp9_mbpost_proc_across_ip_xmm;
-
-    vp9_post_proc_down_and_across = vp9_post_proc_down_and_across_c;
-    if (flags & HAS_MMX) vp9_post_proc_down_and_across = vp9_post_proc_down_and_across_mmx;
-    if (flags & HAS_SSE2) vp9_post_proc_down_and_across = vp9_post_proc_down_and_across_xmm;
-
-    vp9_plane_add_noise = vp9_plane_add_noise_c;
-    if (flags & HAS_MMX) vp9_plane_add_noise = vp9_plane_add_noise_mmx;
-    if (flags & HAS_SSE2) vp9_plane_add_noise = vp9_plane_add_noise_wmt;
-
-
-
-
-    vp9_sad16x3 = vp9_sad16x3_c;
-    if (flags & HAS_SSE2) vp9_sad16x3 = vp9_sad16x3_sse2;
-
-    vp9_sad3x16 = vp9_sad3x16_c;
-    if (flags & HAS_SSE2) vp9_sad3x16 = vp9_sad3x16_sse2;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    vp9_bilinear_predict16x16 = vp9_bilinear_predict16x16_c;
-    if (flags & HAS_MMX) vp9_bilinear_predict16x16 = vp9_bilinear_predict16x16_mmx;
-    if (flags & HAS_SSE2) vp9_bilinear_predict16x16 = vp9_bilinear_predict16x16_sse2;
-
-    vp9_bilinear_predict8x8 = vp9_bilinear_predict8x8_c;
-    if (flags & HAS_MMX) vp9_bilinear_predict8x8 = vp9_bilinear_predict8x8_mmx;
-    if (flags & HAS_SSE2) vp9_bilinear_predict8x8 = vp9_bilinear_predict8x8_sse2;
-
-
-
-    vp9_bilinear_predict8x4 = vp9_bilinear_predict8x4_c;
-    if (flags & HAS_MMX) vp9_bilinear_predict8x4 = vp9_bilinear_predict8x4_mmx;
-
-    vp9_bilinear_predict4x4 = vp9_bilinear_predict4x4_c;
-    if (flags & HAS_MMX) vp9_bilinear_predict4x4 = vp9_bilinear_predict4x4_mmx;
-
-
-    vp9_short_idct4x4llm_1 = vp9_short_idct4x4llm_1_c;
-    if (flags & HAS_MMX) vp9_short_idct4x4llm_1 = vp9_short_idct4x4llm_1_mmx;
-
-    vp9_short_idct4x4llm = vp9_short_idct4x4llm_c;
-    if (flags & HAS_MMX) vp9_short_idct4x4llm = vp9_short_idct4x4llm_mmx;
+    vp9_convolve8 = vp9_convolve8_c;
+    if (flags & HAS_SSE2) vp9_convolve8 = vp9_convolve8_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8 = vp9_convolve8_ssse3;
+    vp9_convolve8_avg = vp9_convolve8_avg_c;
+    if (flags & HAS_SSE2) vp9_convolve8_avg = vp9_convolve8_avg_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8_avg = vp9_convolve8_avg_ssse3;
+    vp9_convolve8_avg_horiz = vp9_convolve8_avg_horiz_c;
+    if (flags & HAS_SSE2) vp9_convolve8_avg_horiz = vp9_convolve8_avg_horiz_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8_avg_horiz = vp9_convolve8_avg_horiz_ssse3;
+    vp9_convolve8_avg_vert = vp9_convolve8_avg_vert_c;
+    if (flags & HAS_SSE2) vp9_convolve8_avg_vert = vp9_convolve8_avg_vert_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8_avg_vert = vp9_convolve8_avg_vert_ssse3;
+    vp9_convolve8_horiz = vp9_convolve8_horiz_c;
+    if (flags & HAS_SSE2) vp9_convolve8_horiz = vp9_convolve8_horiz_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8_horiz = vp9_convolve8_horiz_ssse3;
+    vp9_convolve8_vert = vp9_convolve8_vert_c;
+    if (flags & HAS_SSE2) vp9_convolve8_vert = vp9_convolve8_vert_sse2;
+    if (flags & HAS_SSSE3) vp9_convolve8_vert = vp9_convolve8_vert_ssse3;
+    vp9_diamond_search_sad = vp9_diamond_search_sad_c;
+    if (flags & HAS_SSE3) vp9_diamond_search_sad = vp9_diamond_search_sadx4;
+    vp9_fdct16x16 = vp9_fdct16x16_c;
+    if (flags & HAS_SSE2) vp9_fdct16x16 = vp9_fdct16x16_sse2;
+    vp9_fdct32x32 = vp9_fdct32x32_c;
+    if (flags & HAS_SSE2) vp9_fdct32x32 = vp9_fdct32x32_sse2;
+    vp9_fdct32x32_rd = vp9_fdct32x32_rd_c;
+    if (flags & HAS_SSE2) vp9_fdct32x32_rd = vp9_fdct32x32_rd_sse2;
+    vp9_fdct4x4 = vp9_fdct4x4_c;
+    if (flags & HAS_SSE2) vp9_fdct4x4 = vp9_fdct4x4_sse2;
+    vp9_fdct8x8 = vp9_fdct8x8_c;
+    if (flags & HAS_SSE2) vp9_fdct8x8 = vp9_fdct8x8_sse2;
+    vp9_fht16x16 = vp9_fht16x16_c;
+    if (flags & HAS_SSE2) vp9_fht16x16 = vp9_fht16x16_sse2;
+    vp9_fht4x4 = vp9_fht4x4_c;
+    if (flags & HAS_SSE2) vp9_fht4x4 = vp9_fht4x4_sse2;
+    vp9_fht8x8 = vp9_fht8x8_c;
+    if (flags & HAS_SSE2) vp9_fht8x8 = vp9_fht8x8_sse2;
+    vp9_full_search_sad = vp9_full_search_sad_c;
+    if (flags & HAS_SSE3) vp9_full_search_sad = vp9_full_search_sadx3;
+    if (flags & HAS_SSE4_1) vp9_full_search_sad = vp9_full_search_sadx8;
+    vp9_get_mb_ss = vp9_get_mb_ss_c;
+    if (flags & HAS_MMX) vp9_get_mb_ss = vp9_get_mb_ss_mmx;
+    if (flags & HAS_SSE2) vp9_get_mb_ss = vp9_get_mb_ss_sse2;
+    vp9_idct16x16_10_add = vp9_idct16x16_10_add_c;
+    if (flags & HAS_SSE2) vp9_idct16x16_10_add = vp9_idct16x16_10_add_sse2;
+    vp9_idct16x16_1_add = vp9_idct16x16_1_add_c;
+    if (flags & HAS_SSE2) vp9_idct16x16_1_add = vp9_idct16x16_1_add_sse2;
+    vp9_idct16x16_256_add = vp9_idct16x16_256_add_c;
+    if (flags & HAS_SSE2) vp9_idct16x16_256_add = vp9_idct16x16_256_add_sse2;
+    vp9_idct32x32_1024_add = vp9_idct32x32_1024_add_c;
+    if (flags & HAS_SSE2) vp9_idct32x32_1024_add = vp9_idct32x32_1024_add_sse2;
+    vp9_idct32x32_1_add = vp9_idct32x32_1_add_c;
+    if (flags & HAS_SSE2) vp9_idct32x32_1_add = vp9_idct32x32_1_add_sse2;
+    vp9_idct32x32_34_add = vp9_idct32x32_34_add_c;
+    if (flags & HAS_SSE2) vp9_idct32x32_34_add = vp9_idct32x32_34_add_sse2;
+    vp9_idct4x4_16_add = vp9_idct4x4_16_add_c;
+    if (flags & HAS_SSE2) vp9_idct4x4_16_add = vp9_idct4x4_16_add_sse2;
+    vp9_idct4x4_1_add = vp9_idct4x4_1_add_c;
+    if (flags & HAS_SSE2) vp9_idct4x4_1_add = vp9_idct4x4_1_add_sse2;
+    vp9_idct8x8_10_add = vp9_idct8x8_10_add_c;
+    if (flags & HAS_SSE2) vp9_idct8x8_10_add = vp9_idct8x8_10_add_sse2;
+    vp9_idct8x8_1_add = vp9_idct8x8_1_add_c;
+    if (flags & HAS_SSE2) vp9_idct8x8_1_add = vp9_idct8x8_1_add_sse2;
+    vp9_idct8x8_64_add = vp9_idct8x8_64_add_c;
+    if (flags & HAS_SSE2) vp9_idct8x8_64_add = vp9_idct8x8_64_add_sse2;
+    vp9_iht16x16_256_add = vp9_iht16x16_256_add_c;
+    if (flags & HAS_SSE2) vp9_iht16x16_256_add = vp9_iht16x16_256_add_sse2;
+    vp9_iht4x4_16_add = vp9_iht4x4_16_add_c;
+    if (flags & HAS_SSE2) vp9_iht4x4_16_add = vp9_iht4x4_16_add_sse2;
+    vp9_iht8x8_64_add = vp9_iht8x8_64_add_c;
+    if (flags & HAS_SSE2) vp9_iht8x8_64_add = vp9_iht8x8_64_add_sse2;
+    vp9_lpf_horizontal_16 = vp9_lpf_horizontal_16_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_16 = vp9_lpf_horizontal_16_sse2;
+    vp9_lpf_horizontal_4 = vp9_lpf_horizontal_4_c;
+    if (flags & HAS_MMX) vp9_lpf_horizontal_4 = vp9_lpf_horizontal_4_mmx;
+    vp9_lpf_horizontal_4_dual = vp9_lpf_horizontal_4_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_4_dual = vp9_lpf_horizontal_4_dual_sse2;
+    vp9_lpf_horizontal_8 = vp9_lpf_horizontal_8_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_8 = vp9_lpf_horizontal_8_sse2;
+    vp9_lpf_horizontal_8_dual = vp9_lpf_horizontal_8_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_horizontal_8_dual = vp9_lpf_horizontal_8_dual_sse2;
+    vp9_lpf_vertical_16 = vp9_lpf_vertical_16_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_16 = vp9_lpf_vertical_16_sse2;
+    vp9_lpf_vertical_16_dual = vp9_lpf_vertical_16_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_16_dual = vp9_lpf_vertical_16_dual_sse2;
+    vp9_lpf_vertical_4 = vp9_lpf_vertical_4_c;
+    if (flags & HAS_MMX) vp9_lpf_vertical_4 = vp9_lpf_vertical_4_mmx;
+    vp9_lpf_vertical_4_dual = vp9_lpf_vertical_4_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_4_dual = vp9_lpf_vertical_4_dual_sse2;
+    vp9_lpf_vertical_8 = vp9_lpf_vertical_8_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_8 = vp9_lpf_vertical_8_sse2;
+    vp9_lpf_vertical_8_dual = vp9_lpf_vertical_8_dual_c;
+    if (flags & HAS_SSE2) vp9_lpf_vertical_8_dual = vp9_lpf_vertical_8_dual_sse2;
+    vp9_mse16x16 = vp9_mse16x16_c;
+    if (flags & HAS_MMX) vp9_mse16x16 = vp9_mse16x16_mmx;
+    vp9_refining_search_sad = vp9_refining_search_sad_c;
+    if (flags & HAS_SSE3) vp9_refining_search_sad = vp9_refining_search_sadx4;
+    vp9_sad16x16 = vp9_sad16x16_c;
+    if (flags & HAS_MMX) vp9_sad16x16 = vp9_sad16x16_mmx;
+    vp9_sad16x16x3 = vp9_sad16x16x3_c;
+    if (flags & HAS_SSE3) vp9_sad16x16x3 = vp9_sad16x16x3_sse3;
+    if (flags & HAS_SSSE3) vp9_sad16x16x3 = vp9_sad16x16x3_ssse3;
+    vp9_sad16x16x4d = vp9_sad16x16x4d_c;
+    if (flags & HAS_SSE2) vp9_sad16x16x4d = vp9_sad16x16x4d_sse2;
+    vp9_sad16x32x4d = vp9_sad16x32x4d_c;
+    if (flags & HAS_SSE2) vp9_sad16x32x4d = vp9_sad16x32x4d_sse2;
+    vp9_sad16x8 = vp9_sad16x8_c;
+    if (flags & HAS_MMX) vp9_sad16x8 = vp9_sad16x8_mmx;
+    vp9_sad16x8x3 = vp9_sad16x8x3_c;
+    if (flags & HAS_SSE3) vp9_sad16x8x3 = vp9_sad16x8x3_sse3;
+    if (flags & HAS_SSSE3) vp9_sad16x8x3 = vp9_sad16x8x3_ssse3;
+    vp9_sad16x8x4d = vp9_sad16x8x4d_c;
+    if (flags & HAS_SSE2) vp9_sad16x8x4d = vp9_sad16x8x4d_sse2;
+    vp9_sad32x16x4d = vp9_sad32x16x4d_c;
+    if (flags & HAS_SSE2) vp9_sad32x16x4d = vp9_sad32x16x4d_sse2;
+    vp9_sad32x32x4d = vp9_sad32x32x4d_c;
+    if (flags & HAS_SSE2) vp9_sad32x32x4d = vp9_sad32x32x4d_sse2;
+    vp9_sad32x64x4d = vp9_sad32x64x4d_c;
+    if (flags & HAS_SSE2) vp9_sad32x64x4d = vp9_sad32x64x4d_sse2;
+    vp9_sad4x4 = vp9_sad4x4_c;
+    if (flags & HAS_MMX) vp9_sad4x4 = vp9_sad4x4_mmx;
+    vp9_sad4x4x3 = vp9_sad4x4x3_c;
+    if (flags & HAS_SSE3) vp9_sad4x4x3 = vp9_sad4x4x3_sse3;
+    vp9_sad4x4x4d = vp9_sad4x4x4d_c;
+    if (flags & HAS_SSE) vp9_sad4x4x4d = vp9_sad4x4x4d_sse;
+    vp9_sad4x8x4d = vp9_sad4x8x4d_c;
+    if (flags & HAS_SSE) vp9_sad4x8x4d = vp9_sad4x8x4d_sse;
+    vp9_sad64x32x4d = vp9_sad64x32x4d_c;
+    if (flags & HAS_SSE2) vp9_sad64x32x4d = vp9_sad64x32x4d_sse2;
+    vp9_sad64x64x4d = vp9_sad64x64x4d_c;
+    if (flags & HAS_SSE2) vp9_sad64x64x4d = vp9_sad64x64x4d_sse2;
+    vp9_sad8x16 = vp9_sad8x16_c;
+    if (flags & HAS_MMX) vp9_sad8x16 = vp9_sad8x16_mmx;
+    vp9_sad8x16x3 = vp9_sad8x16x3_c;
+    if (flags & HAS_SSE3) vp9_sad8x16x3 = vp9_sad8x16x3_sse3;
+    vp9_sad8x16x4d = vp9_sad8x16x4d_c;
+    if (flags & HAS_SSE2) vp9_sad8x16x4d = vp9_sad8x16x4d_sse2;
+    vp9_sad8x4x4d = vp9_sad8x4x4d_c;
+    if (flags & HAS_SSE2) vp9_sad8x4x4d = vp9_sad8x4x4d_sse2;
+    vp9_sad8x8 = vp9_sad8x8_c;
+    if (flags & HAS_MMX) vp9_sad8x8 = vp9_sad8x8_mmx;
+    vp9_sad8x8x3 = vp9_sad8x8x3_c;
+    if (flags & HAS_SSE3) vp9_sad8x8x3 = vp9_sad8x8x3_sse3;
+    vp9_sad8x8x4d = vp9_sad8x8x4d_c;
+    if (flags & HAS_SSE2) vp9_sad8x8x4d = vp9_sad8x8x4d_sse2;
+    vp9_temporal_filter_apply = vp9_temporal_filter_apply_c;
+    if (flags & HAS_SSE2) vp9_temporal_filter_apply = vp9_temporal_filter_apply_sse2;
+    vp9_variance16x16 = vp9_variance16x16_c;
+    if (flags & HAS_MMX) vp9_variance16x16 = vp9_variance16x16_mmx;
+    vp9_variance16x8 = vp9_variance16x8_c;
+    if (flags & HAS_MMX) vp9_variance16x8 = vp9_variance16x8_mmx;
+    vp9_variance4x4 = vp9_variance4x4_c;
+    if (flags & HAS_MMX) vp9_variance4x4 = vp9_variance4x4_mmx;
+    vp9_variance8x16 = vp9_variance8x16_c;
+    if (flags & HAS_MMX) vp9_variance8x16 = vp9_variance8x16_mmx;
+    vp9_variance8x8 = vp9_variance8x8_c;
+    if (flags & HAS_MMX) vp9_variance8x8 = vp9_variance8x8_mmx;
 }
 #endif
+
+#ifdef __cplusplus
+}  // extern "C"
+#endif
+
 #endif

@@ -9,8 +9,8 @@
 #include <vector>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -26,7 +26,7 @@ struct FtpDirectoryListingEntry {
   FtpDirectoryListingEntry();
 
   Type type;
-  string16 name;  // Name (UTF-16-encoded).
+  base::string16 name;  // Name (UTF-16-encoded).
   std::string raw_name;  // Name in original character encoding.
   int64 size;  // File size, in bytes. -1 if not applicable.
 

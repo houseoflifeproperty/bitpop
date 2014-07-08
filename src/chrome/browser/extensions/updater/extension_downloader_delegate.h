@@ -8,11 +8,14 @@
 #include <set>
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 
-class FilePath;
 class GURL;
+
+namespace base {
+class FilePath;
+}
 
 namespace extensions {
 
@@ -76,21 +79,13 @@ class ExtensionDownloaderDelegate {
                                          const std::set<int>& request_ids);
 
   // Invoked if the extension had an update available and its crx was
-  // successfully downloaded to |path|. Ownership of that file is transferred
-  // to the delegate.
+  // successfully downloaded to |path|. |ownership_passed| is true if delegate
+  // should get ownership of the file.
   virtual void OnExtensionDownloadFinished(
       const std::string& id,
-      const FilePath& path,
+      const base::FilePath& path,
+      bool file_ownership_passed,
       const GURL& download_url,
-      const std::string& version,
-      const PingResult& ping_result,
-      const std::set<int>& request_ids) = 0;
-
-  // Same as OnExtensionDownloadFinished() but only for the kBlacklistAppID
-  // extension, which passes different data to the delegate.
-  virtual void OnBlacklistDownloadFinished(
-      const std::string& data,
-      const std::string& package_hash,
       const std::string& version,
       const PingResult& ping_result,
       const std::set<int>& request_ids) = 0;

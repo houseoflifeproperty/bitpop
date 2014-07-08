@@ -47,10 +47,10 @@ URLRequestJob* AwURLRequestJobFactory::MaybeCreateJobWithProtocolHandler(
   if (job)
     return job;
 
-  // If the URLRequestJobManager supports the scheme NULL should be returned
-  // from this method. In that case the built in handlers in
-  // URLRequestJobManager will then be used to create the job.
-  if (net::URLRequestJobManager::GetInstance()->SupportsScheme(scheme))
+  // If URLRequest supports the scheme NULL should be returned from this method.
+  // In that case the built in handlers will then be used to create the job.
+  // NOTE(joth): See the assumption in IsHandledProtocol above.
+  if (net::URLRequest::IsHandledProtocol(scheme))
     return NULL;
 
   return new net::URLRequestErrorJob(
@@ -63,28 +63,8 @@ bool AwURLRequestJobFactory::SetProtocolHandler(
   return next_factory_->SetProtocolHandler(scheme, protocol_handler);
 }
 
-void AwURLRequestJobFactory::AddInterceptor(Interceptor* interceptor) {
-  next_factory_->AddInterceptor(interceptor);
-}
-
-URLRequestJob* AwURLRequestJobFactory::MaybeCreateJobWithInterceptor(
-    URLRequest* request, NetworkDelegate* network_delegate) const {
-  return next_factory_->MaybeCreateJobWithInterceptor(
-      request, network_delegate);
-}
-
-URLRequestJob* AwURLRequestJobFactory::MaybeInterceptRedirect(
-    const GURL& location,
-    URLRequest* request,
-    NetworkDelegate* network_delegate) const {
-  return next_factory_->MaybeInterceptRedirect(
-      location, request, network_delegate);
-}
-
-URLRequestJob* AwURLRequestJobFactory::MaybeInterceptResponse(
-    URLRequest* request,
-    NetworkDelegate* network_delegate) const {
-  return next_factory_->MaybeInterceptResponse(request, network_delegate);
+bool AwURLRequestJobFactory::IsSafeRedirectTarget(const GURL& location) const {
+  return next_factory_->IsSafeRedirectTarget(location);
 }
 
 } // namespace android_webview

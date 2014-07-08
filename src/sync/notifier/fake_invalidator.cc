@@ -4,6 +4,8 @@
 
 #include "sync/notifier/fake_invalidator.h"
 
+#include "sync/notifier/object_id_invalidation_map.h"
+
 namespace syncer {
 
 FakeInvalidator::FakeInvalidator() {}
@@ -19,14 +21,6 @@ ObjectIdSet FakeInvalidator::GetRegisteredIds(
   return registrar_.GetRegisteredIds(handler);
 }
 
-const std::string& FakeInvalidator::GetUniqueId() const {
-  return unique_id_;
-}
-
-const std::string& FakeInvalidator::GetStateDeprecated() const {
-  return state_;
-}
-
 const std::string& FakeInvalidator::GetCredentialsEmail() const {
   return email_;
 }
@@ -35,19 +29,13 @@ const std::string& FakeInvalidator::GetCredentialsToken() const {
   return token_;
 }
 
-const ObjectIdInvalidationMap&
-FakeInvalidator::GetLastSentInvalidationMap() const {
-  return last_sent_invalidation_map_;
-}
-
 void FakeInvalidator::EmitOnInvalidatorStateChange(InvalidatorState state) {
   registrar_.UpdateInvalidatorState(state);
 }
 
 void FakeInvalidator::EmitOnIncomingInvalidation(
-    const ObjectIdInvalidationMap& invalidation_map,
-    IncomingInvalidationSource source) {
-  registrar_.DispatchInvalidationsToHandlers(invalidation_map, source);
+    const ObjectIdInvalidationMap& invalidation_map) {
+  registrar_.DispatchInvalidationsToHandlers(invalidation_map);
 }
 
 void FakeInvalidator::RegisterHandler(InvalidationHandler* handler) {
@@ -55,7 +43,7 @@ void FakeInvalidator::RegisterHandler(InvalidationHandler* handler) {
 }
 
 void FakeInvalidator::UpdateRegisteredIds(InvalidationHandler* handler,
-                                           const ObjectIdSet& ids) {
+                                          const ObjectIdSet& ids) {
   registrar_.UpdateRegisteredIds(handler, ids);
 }
 
@@ -67,23 +55,15 @@ InvalidatorState FakeInvalidator::GetInvalidatorState() const {
   return registrar_.GetInvalidatorState();
 }
 
-void FakeInvalidator::SetUniqueId(const std::string& unique_id) {
-  unique_id_ = unique_id;
-}
-
-void FakeInvalidator::SetStateDeprecated(const std::string& state) {
-  state_ = state;
-}
-
 void FakeInvalidator::UpdateCredentials(
     const std::string& email, const std::string& token) {
   email_ = email;
   token_ = token;
 }
 
-void FakeInvalidator::SendInvalidation(
-    const ObjectIdInvalidationMap& invalidation_map) {
-  last_sent_invalidation_map_ = invalidation_map;
+void FakeInvalidator::RequestDetailedStatus(
+    base::Callback<void(const base::DictionaryValue&)> callback) const {
+  base::DictionaryValue value;
+  callback.Run(value);
 }
-
 }  // namespace syncer

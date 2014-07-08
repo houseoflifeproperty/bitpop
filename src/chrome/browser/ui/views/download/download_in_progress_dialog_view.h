@@ -7,9 +7,8 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "chrome/browser/ui/browser.h"
 #include "ui/views/window/dialog_delegate.h"
-
-class Browser;
 
 namespace views {
 class MessageBoxView;
@@ -17,32 +16,41 @@ class MessageBoxView;
 
 class DownloadInProgressDialogView : public views::DialogDelegate {
  public:
-  static void Show(Browser* browser, gfx::NativeWindow parent_window);
+  static void Show(gfx::NativeWindow parent_window,
+                   int download_count,
+                   Browser::DownloadClosePreventionType dialog_type,
+                   bool app_modal,
+                   const base::Callback<void(bool)>& callback);
 
  private:
-  explicit DownloadInProgressDialogView(Browser* browser);
+  DownloadInProgressDialogView(int download_count,
+                               Browser::DownloadClosePreventionType dialog_type,
+                               bool app_modal,
+                               const base::Callback<void(bool)>& callback);
   virtual ~DownloadInProgressDialogView();
 
   // views::DialogDelegate:
   virtual int GetDefaultDialogButton() const OVERRIDE;
-  virtual string16 GetDialogButtonLabel(ui::DialogButton button) const OVERRIDE;
+  virtual base::string16 GetDialogButtonLabel(
+      ui::DialogButton button) const OVERRIDE;
   virtual bool Cancel() OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   // views::WidgetDelegate:
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual void DeleteDelegate() OVERRIDE;
   virtual views::Widget* GetWidget() OVERRIDE;
   virtual const views::Widget* GetWidget() const OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
 
-  Browser* browser_;
+  const bool app_modal_;
+  const base::Callback<void(bool)> callback_;
   views::MessageBoxView* message_box_view_;
 
-  string16 title_text_;
-  string16 ok_button_text_;
-  string16 cancel_button_text_;
+  base::string16 title_text_;
+  base::string16 ok_button_text_;
+  base::string16 cancel_button_text_;
 
   gfx::Size dialog_dimensions_;
 

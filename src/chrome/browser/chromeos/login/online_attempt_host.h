@@ -9,6 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state_resolver.h"
 
 class Profile;
@@ -17,26 +18,26 @@ namespace chromeos {
 
 class AuthAttemptState;
 class OnlineAttempt;
+struct UserContext;
 
 // Helper class which hosts OnlineAttempt for online credentials checking.
 class OnlineAttemptHost : public AuthAttemptStateResolver {
  public:
   class Delegate {
     public:
-     // Called after credentials were checked online.
+     // Called after user_context were checked online.
      virtual void OnChecked(const std::string &username, bool success) = 0;
   };
 
   explicit OnlineAttemptHost(Delegate *delegate);
   virtual ~OnlineAttemptHost();
 
-  // Checks credentials using an online attempt. Calls callback with the check
-  // result (whether authentication was successful). Note, only one checking at
-  // a time (the newest call stops the old one, if called with another username
-  // and password combination).
+  // Checks user credentials using an online attempt. Calls callback with the
+  // check result (whether authentication was successful). Note, only one
+  // checking at a time (the newest call stops the old one, if called with
+  // another username and password combination).
   void Check(Profile* profile,
-             const std::string &username,
-             const std::string &password);
+             const UserContext& user_context);
 
   // Resets the checking process.
   void Reset();
@@ -54,10 +55,12 @@ class OnlineAttemptHost : public AuthAttemptStateResolver {
   std::string current_username_;
   scoped_ptr<OnlineAttempt> online_attempt_;
   scoped_ptr<AuthAttemptState> state_;
+  base::WeakPtrFactory<OnlineAttemptHost> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(OnlineAttemptHost);
 };
 
-}  // chromeos
+}  // namespace chromeos
 
 #endif  // CHROME_BROWSER_CHROMEOS_LOGIN_ONLINE_ATTEMPT_HOST_H_
+

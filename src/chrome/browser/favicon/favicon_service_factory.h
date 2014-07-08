@@ -7,7 +7,7 @@
 
 #include "base/memory/singleton.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 template <typename T> struct DefaultSingletonTraits;
 
@@ -16,7 +16,7 @@ class FaviconService;
 
 // Singleton that owns all FaviconService and associates them with
 // Profiles.
-class FaviconServiceFactory : public ProfileKeyedServiceFactory {
+class FaviconServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   // |access| defines what the caller plans to do with the service. See
   // the ServiceAccessType definition in profile.h.
@@ -31,9 +31,9 @@ class FaviconServiceFactory : public ProfileKeyedServiceFactory {
   FaviconServiceFactory();
   virtual ~FaviconServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
   virtual bool ServiceIsNULLWhileTesting() const OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(FaviconServiceFactory);

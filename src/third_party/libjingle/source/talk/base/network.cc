@@ -32,16 +32,27 @@
 #include "talk/base/network.h"
 
 #ifdef POSIX
+// linux/if.h can't be included at the same time as the posix sys/if.h, and
+// it's transitively required by linux/route.h, so include that version on
+// linux instead of the standard posix one.
+#if defined(ANDROID) || defined(LINUX)
+#include <linux/if.h>
+#include <linux/route.h>
+#elif !defined(__native_client__)
+#include <net/if.h>
+#endif
 #include <sys/socket.h>
 #include <sys/utsname.h>
 #include <sys/ioctl.h>
-#include <net/if.h>
 #include <unistd.h>
 #include <errno.h>
-// There's no ifaddrs.h in Android.
-#ifndef ANDROID
+
+#ifdef ANDROID
+#include "talk/base/ifaddrs-android.h"
+#elif !defined(__native_client__)
 #include <ifaddrs.h>
 #endif
+
 #endif  // POSIX
 
 #ifdef WIN32
@@ -49,10 +60,10 @@
 #include <Iphlpapi.h>
 #endif
 
-#include <algorithm>
-#include <cstdio>
+#include <stdio.h>
 
-#include "talk/base/host.h"
+#include <algorithm>
+
 #include "talk/base/logging.h"
 #include "talk/base/scoped_ptr.h"
 #include "talk/base/socket.h"  // includes something that makes windows happy
@@ -69,16 +80,7 @@ const uint32 kSignalNetworksMessage = 2;
 // Fetch list of networks every two seconds.
 const int kNetworksUpdateIntervalMs = 2000;
 
-
-// Makes a string key for this network. Used in the network manager's maps.
-// Network objects are keyed on interface name, network prefix and the
-// length of that prefix.
-std::string MakeNetworkKey(const std::string& name, const IPAddress& prefix,
-                           int prefix_length) {
-  std::ostringstream ost;
-  ost << name << "%" << prefix.ToString() << "/" << prefix_length;
-  return ost.str();
-}
+const int kHighestNetworkPreference = 127;
 
 bool CompareNetworks(const Network* a, const Network* b) {
   if (a->prefix_length() == b->prefix_length()) {
@@ -89,8 +91,53 @@ bool CompareNetworks(const Network* a, const Network* b) {
   return a->name() < b->name();
 }
 
+bool SortNetworks(const Network* a, const Network* b) {
+  // Network types will be preferred above everything else while sorting
+  // Networks.
+
+  // Networks are sorted first by type.
+  if (a->type() != b->type()) {
+    return a->type() < b->type();
+  }
+
+  // After type, networks are sorted by IP address precedence values
+  // from RFC 3484-bis
+  if (IPAddressPrecedence(a->ip()) != IPAddressPrecedence(b->ip())) {
+    return IPAddressPrecedence(a->ip()) > IPAddressPrecedence(b->ip());
+  }
+
+  // TODO(mallinath) - Add VPN and Link speed conditions while sorting.
+
+  // Networks are sorted last by key.
+  return a->key() > b->key();
+}
+
+std::string AdapterTypeToString(AdapterType type) {
+  switch (type) {
+    case ADAPTER_TYPE_UNKNOWN:
+      return "Unknown";
+    case ADAPTER_TYPE_ETHERNET:
+      return "Ethernet";
+    case ADAPTER_TYPE_WIFI:
+      return "Wifi";
+    case ADAPTER_TYPE_CELLULAR:
+      return "Cellular";
+    case ADAPTER_TYPE_VPN:
+      return "VPN";
+    default:
+      ASSERT(false);
+      return std::string();
+  }
+}
 
 }  // namespace
+
+std::string MakeNetworkKey(const std::string& name, const IPAddress& prefix,
+                           int prefix_length) {
+  std::ostringstream ost;
+  ost << name << "%" << prefix.ToString() << "/" << prefix_length;
+  return ost.str();
+}
 
 NetworkManager::NetworkManager() {
 }
@@ -170,26 +217,49 @@ void NetworkManagerBase::MergeNetworkList(const NetworkList& new_networks,
     }
   }
   networks_ = merged_list;
+
+  // If the network lists changes, we resort it.
+  if (changed) {
+    std::sort(networks_.begin(), networks_.end(), SortNetworks);
+    // Now network interfaces are sorted, we should set the preference value
+    // for each of the interfaces we are planning to use.
+    // Preference order of network interfaces might have changed from previous
+    // sorting due to addition of higher preference network interface.
+    // Since we have already sorted the network interfaces based on our
+    // requirements, we will just assign a preference value starting with 127,
+    // in decreasing order.
+    int pref = kHighestNetworkPreference;
+    for (NetworkList::const_iterator iter = networks_.begin();
+         iter != networks_.end(); ++iter) {
+      (*iter)->set_preference(pref);
+      if (pref > 0) {
+        --pref;
+      } else {
+        LOG(LS_ERROR) << "Too many network interfaces to handle!";
+        break;
+      }
+    }
+  }
 }
 
 BasicNetworkManager::BasicNetworkManager()
-    : thread_(NULL),
-      start_count_(0) {
+    : thread_(NULL), sent_first_update_(false), start_count_(0),
+      ignore_non_default_routes_(false) {
 }
 
 BasicNetworkManager::~BasicNetworkManager() {
 }
 
-#if defined(ANDROID)
+#if defined(__native_client__)
 
 bool BasicNetworkManager::CreateNetworks(bool include_ignored,
                                          NetworkList* networks) const {
-  // TODO: Implement CreateNetworks on Android without using ifaddrs.
+  ASSERT(false);
+  LOG(LS_WARNING) << "BasicNetworkManager doesn't work on NaCl yet";
   return false;
 }
 
-#elif defined(POSIX) && !defined(ANDROID)
-
+#elif defined(POSIX)
 void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
                                          bool include_ignored,
                                          NetworkList* networks) const {
@@ -230,6 +300,7 @@ void BasicNetworkManager::ConvertIfAddrs(struct ifaddrs* interfaces,
         continue;
       }
     }
+
     int prefix_length = CountIPMaskBits(mask);
     prefix = TruncateIP(ip, prefix_length);
     std::string key = MakeNetworkKey(std::string(cursor->ifa_name),
@@ -317,7 +388,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
   NetworkMap current_networks;
   // MSDN recommends a 15KB buffer for the first try at GetAdaptersAddresses.
   size_t buffer_size = 16384;
-  scoped_array<char> adapter_info(new char[buffer_size]);
+  scoped_ptr<char[]> adapter_info(new char[buffer_size]);
   PIP_ADAPTER_ADDRESSES adapter_addrs =
       reinterpret_cast<PIP_ADAPTER_ADDRESSES>(adapter_info.get());
   int adapter_flags = (GAA_FLAG_SKIP_DNS_SERVER | GAA_FLAG_SKIP_ANYCAST |
@@ -376,6 +447,7 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
             continue;
           }
         }
+
         IPAddress prefix;
         int prefix_length = GetPrefix(prefixlist, ip, &prefix);
         std::string key = MakeNetworkKey(name, prefix, prefix_length);
@@ -407,14 +479,52 @@ bool BasicNetworkManager::CreateNetworks(bool include_ignored,
 }
 #endif  // WIN32
 
-bool BasicNetworkManager::IsIgnoredNetwork(const Network& network) {
+#if defined(ANDROID) || defined(LINUX)
+bool IsDefaultRoute(const std::string& network_name) {
+  FileStream fs;
+  if (!fs.Open("/proc/net/route", "r", NULL)) {
+    LOG(LS_WARNING) << "Couldn't read /proc/net/route, skipping default "
+                    << "route check (assuming everything is a default route).";
+    return true;
+  } else {
+    std::string line;
+    while (fs.ReadLine(&line) == SR_SUCCESS) {
+      char iface_name[256];
+      unsigned int iface_ip, iface_gw, iface_mask, iface_flags;
+      if (sscanf(line.c_str(),
+                 "%255s %8X %8X %4X %*d %*u %*d %8X",
+                 iface_name, &iface_ip, &iface_gw,
+                 &iface_flags, &iface_mask) == 5 &&
+          network_name == iface_name &&
+          iface_mask == 0 &&
+          (iface_flags & (RTF_UP | RTF_HOST)) == RTF_UP) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+#endif
+
+bool BasicNetworkManager::IsIgnoredNetwork(const Network& network) const {
+  // Ignore networks on the explicit ignore list.
+  for (size_t i = 0; i < network_ignore_list_.size(); ++i) {
+    if (network.name() == network_ignore_list_[i]) {
+      return true;
+    }
+  }
 #ifdef POSIX
-  // Ignore local networks (lo, lo0, etc)
-  // Also filter out VMware interfaces, typically named vmnet1 and vmnet8
+  // Filter out VMware interfaces, typically named vmnet1 and vmnet8
   if (strncmp(network.name().c_str(), "vmnet", 5) == 0 ||
       strncmp(network.name().c_str(), "vnic", 4) == 0) {
     return true;
   }
+#if defined(ANDROID) || defined(LINUX)
+  // Make sure this is a default route, if we're ignoring non-defaults.
+  if (ignore_non_default_routes_ && !IsDefaultRoute(network.name())) {
+    return true;
+  }
+#endif
 #elif defined(WIN32)
   // Ignore any HOST side vmware adapters with a description like:
   // VMware Virtual Ethernet Adapter for VMnet1
@@ -501,18 +611,32 @@ void BasicNetworkManager::DumpNetworks(bool include_ignored) {
   for (size_t i = 0; i < list.size(); ++i) {
     const Network* network = list[i];
     if (!network->ignored() || include_ignored) {
-      LOG(LS_INFO) << network->ToString() << ": " << network->description()
+      LOG(LS_INFO) << network->ToString() << ": "
+                   << network->description()
                    << ((network->ignored()) ? ", Ignored" : "");
     }
+  }
+  // Release the network list created previously.
+  // Do this in a seperated for loop for better readability.
+  for (size_t i = 0; i < list.size(); ++i) {
+    delete list[i];
   }
 }
 
 Network::Network(const std::string& name, const std::string& desc,
                  const IPAddress& prefix, int prefix_length)
     : name_(name), description_(desc), prefix_(prefix),
-      prefix_length_(prefix_length), scope_id_(0), ignored_(false),
-      uniform_numerator_(0), uniform_denominator_(0), exponential_numerator_(0),
-      exponential_denominator_(0) {
+      prefix_length_(prefix_length),
+      key_(MakeNetworkKey(name, prefix, prefix_length)), scope_id_(0),
+      ignored_(false), type_(ADAPTER_TYPE_UNKNOWN), preference_(0) {
+}
+
+Network::Network(const std::string& name, const std::string& desc,
+                 const IPAddress& prefix, int prefix_length, AdapterType type)
+    : name_(name), description_(desc), prefix_(prefix),
+      prefix_length_(prefix_length),
+      key_(MakeNetworkKey(name, prefix, prefix_length)), scope_id_(0),
+      ignored_(false), type_(type), preference_(0) {
 }
 
 std::string Network::ToString() const {
@@ -520,7 +644,8 @@ std::string Network::ToString() const {
   // Print out the first space-terminated token of the network desc, plus
   // the IP address.
   ss << "Net[" << description_.substr(0, description_.find(' '))
-     << ":" << prefix_ << "/" << prefix_length_ << "]";
+     << ":" << prefix_.ToSensitiveString() << "/" << prefix_length_
+     << ":" << AdapterTypeToString(type_) << "]";
   return ss.str();
 }
 
@@ -546,4 +671,5 @@ bool Network::SetIPs(const std::vector<IPAddress>& ips, bool changed) {
   ips_ = ips;
   return changed;
 }
+
 }  // namespace talk_base

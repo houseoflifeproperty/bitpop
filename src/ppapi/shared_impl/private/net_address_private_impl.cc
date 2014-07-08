@@ -20,10 +20,11 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "build/build_config.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/c/private/ppb_net_address_private.h"
+#include "ppapi/shared_impl/proxy_lock.h"
 #include "ppapi/shared_impl/var.h"
 #include "ppapi/thunk/thunk.h"
 
@@ -53,7 +54,15 @@ namespace {
 // Define our own net-host-net conversion, rather than reuse the one in
 // base/sys_byteorder.h, to simplify the NaCl port. NaCl has no byte swap
 // primitives.
-uint16 ConvertNetEndian16(uint16 x) {
+uint16 ConvertFromNetEndian16(uint16 x) {
+#if defined(ARCH_CPU_LITTLE_ENDIAN)
+  return (x << 8) | (x >> 8);
+#else
+  return x;
+#endif
+}
+
+uint16 ConvertToNetEndian16(uint16 x) {
 #if defined(ARCH_CPU_LITTLE_ENDIAN)
   return (x << 8) | (x >> 8);
 #else
@@ -124,9 +133,9 @@ bool IsValid(const NetAddress* net_addr) {
 PP_NetAddressFamily_Private GetFamily(const PP_NetAddress_Private* addr) {
   const NetAddress* net_addr = ToNetAddress(addr);
   if (!IsValid(net_addr))
-    return PP_NETADDRESSFAMILY_UNSPECIFIED;
+    return PP_NETADDRESSFAMILY_PRIVATE_UNSPECIFIED;
   return net_addr->is_ipv6 ?
-         PP_NETADDRESSFAMILY_IPV6 : PP_NETADDRESSFAMILY_IPV4;
+         PP_NETADDRESSFAMILY_PRIVATE_IPV6 : PP_NETADDRESSFAMILY_PRIVATE_IPV4;
 }
 
 uint16_t GetPort(const PP_NetAddress_Private* addr) {
@@ -260,7 +269,7 @@ std::string ConvertIPv6AddressToString(const NetAddress* net_addr,
         need_sep = false;
         i += longest_length;
       } else {
-        uint16_t v = ConvertNetEndian16(address16[i]);
+        uint16_t v = ConvertFromNetEndian16(address16[i]);
         base::StringAppendF(&description, need_sep ? ":%x" : "%x", v);
         need_sep = true;
         i++;
@@ -285,6 +294,9 @@ PP_Var Describe(PP_Module /*module*/,
       *addr, PP_ToBool(include_port));
   if (str.empty())
     return PP_MakeUndefined();
+  // We must acquire the lock while accessing the VarTracker, which is part of
+  // the critical section of the proxy which may be accessed by other threads.
+  ProxyAutoLock lock;
   return StringVar::StringToPPVar(str);
 }
 
@@ -391,8 +403,6 @@ GetPPB_NetAddress_Private_1_1_Thunk() {
 
 // For the NaCl target, all we need are the API functions and the thunk.
 #if !defined(OS_NACL)
-// static
-const PP_NetAddress_Private NetAddressPrivateImpl::kInvalidNetAddress = { 0 };
 
 // static
 bool NetAddressPrivateImpl::ValidateNetAddress(
@@ -417,7 +427,7 @@ bool NetAddressPrivateImpl::SockaddrToNetAddress(
           reinterpret_cast<const struct sockaddr_in*>(sa);
       net_addr->is_valid = true;
       net_addr->is_ipv6 = false;
-      net_addr->port = ConvertNetEndian16(addr4->sin_port);
+      net_addr->port = ConvertFromNetEndian16(addr4->sin_port);
       memcpy(net_addr->address, &addr4->sin_addr.s_addr, kIPv4AddressSize);
       break;
     }
@@ -426,7 +436,7 @@ bool NetAddressPrivateImpl::SockaddrToNetAddress(
           reinterpret_cast<const struct sockaddr_in6*>(sa);
       net_addr->is_valid = true;
       net_addr->is_ipv6 = true;
-      net_addr->port = ConvertNetEndian16(addr6->sin6_port);
+      net_addr->port = ConvertFromNetEndian16(addr6->sin6_port);
       net_addr->flow_info = addr6->sin6_flowinfo;
       net_addr->scope_id = addr6->sin6_scope_id;
       memcpy(net_addr->address, addr6->sin6_addr.s6_addr, kIPv6AddressSize);
@@ -505,6 +515,72 @@ std::string NetAddressPrivateImpl::DescribeNetAddress(
   if (net_addr->is_ipv6)
     return ConvertIPv6AddressToString(net_addr, include_port);
   return ConvertIPv4AddressToString(net_addr, include_port);
+}
+
+// static
+void NetAddressPrivateImpl::CreateNetAddressPrivateFromIPv4Address(
+    const PP_NetAddress_IPv4& ipv4_addr,
+    PP_NetAddress_Private* addr) {
+  CreateFromIPv4Address(ipv4_addr.addr, ConvertFromNetEndian16(ipv4_addr.port),
+                        addr);
+}
+
+// static
+void NetAddressPrivateImpl::CreateNetAddressPrivateFromIPv6Address(
+    const PP_NetAddress_IPv6& ipv6_addr,
+    PP_NetAddress_Private* addr) {
+  CreateFromIPv6Address(ipv6_addr.addr, 0,
+                        ConvertFromNetEndian16(ipv6_addr.port), addr);
+}
+
+// static
+PP_NetAddress_Family NetAddressPrivateImpl::GetFamilyFromNetAddressPrivate(
+    const PP_NetAddress_Private& addr) {
+  const NetAddress* net_addr = ToNetAddress(&addr);
+  if (!IsValid(net_addr))
+    return PP_NETADDRESS_FAMILY_UNSPECIFIED;
+  return net_addr->is_ipv6 ? PP_NETADDRESS_FAMILY_IPV6 :
+                             PP_NETADDRESS_FAMILY_IPV4;
+}
+
+// static
+bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv4Address(
+   const PP_NetAddress_Private& addr,
+   PP_NetAddress_IPv4* ipv4_addr) {
+  if (!ipv4_addr)
+    return false;
+
+  const NetAddress* net_addr = ToNetAddress(&addr);
+  if (!IsValid(net_addr) || net_addr->is_ipv6)
+    return false;
+
+  ipv4_addr->port = ConvertToNetEndian16(net_addr->port);
+
+  COMPILE_ASSERT(sizeof(ipv4_addr->addr) == kIPv4AddressSize,
+                 mismatched_IPv4_address_size);
+  memcpy(ipv4_addr->addr, net_addr->address, kIPv4AddressSize);
+
+  return true;
+}
+
+// static
+bool NetAddressPrivateImpl::DescribeNetAddressPrivateAsIPv6Address(
+    const PP_NetAddress_Private& addr,
+    PP_NetAddress_IPv6* ipv6_addr) {
+  if (!ipv6_addr)
+    return false;
+
+  const NetAddress* net_addr = ToNetAddress(&addr);
+  if (!IsValid(net_addr) || !net_addr->is_ipv6)
+    return false;
+
+  ipv6_addr->port = ConvertToNetEndian16(net_addr->port);
+
+  COMPILE_ASSERT(sizeof(ipv6_addr->addr) == kIPv6AddressSize,
+                 mismatched_IPv6_address_size);
+  memcpy(ipv6_addr->addr, net_addr->address, kIPv6AddressSize);
+
+  return true;
 }
 
 }  // namespace ppapi

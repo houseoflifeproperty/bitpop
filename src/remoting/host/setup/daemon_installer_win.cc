@@ -7,13 +7,13 @@
 #include <windows.h>
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
-#include "base/timer.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/process/launch.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
+#include "base/timer/timer.h"
 #include "base/win/object_watcher.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_bstr.h"
@@ -113,13 +113,12 @@ DaemonComInstallerWin::DaemonComInstallerWin(
     const CompletionCallback& done)
     : DaemonInstallerWin(done),
       update3_(update3),
-      ALLOW_THIS_IN_INITIALIZER_LIST(
-          polling_timer_(
-              FROM_HERE,
-              base::TimeDelta::FromMilliseconds(kOmahaPollIntervalMs),
-              base::Bind(&DaemonComInstallerWin::PollInstallationStatus,
-                         base::Unretained(this)),
-              false)) {
+      polling_timer_(
+          FROM_HERE,
+          base::TimeDelta::FromMilliseconds(kOmahaPollIntervalMs),
+          base::Bind(&DaemonComInstallerWin::PollInstallationStatus,
+                     base::Unretained(this)),
+          false) {
 }
 
 void DaemonComInstallerWin::Install() {
@@ -294,14 +293,14 @@ void DaemonCommandLineInstallerWin::Install() {
   }
 
   // Launch the updater process and wait for its termination.
-  string16 command_line = WideToUTF16(
-      StringPrintf(kGoogleUpdateCommandLineFormat,
-                   google_update.c_str(),
-                   kHostOmahaAppid,
-                   kOmahaLanguage));
+  base::string16 command_line = base::WideToUTF16(
+      base::StringPrintf(kGoogleUpdateCommandLineFormat,
+                         google_update.c_str(),
+                         kHostOmahaAppid,
+                         kOmahaLanguage));
 
   base::LaunchOptions options;
-  if (!base::LaunchProcess(command_line, options, process_.Receive())) {
+  if (!base::LaunchProcess(command_line, options, &process_)) {
     result = GetLastError();
     Done(HRESULT_FROM_WIN32(result));
     return;
@@ -332,7 +331,9 @@ DaemonInstallerWin::~DaemonInstallerWin() {
 }
 
 void DaemonInstallerWin::Done(HRESULT result) {
-  done_.Run(result);
+  CompletionCallback done = done_;
+  done_.Reset();
+  done.Run(result);
 }
 
 // static

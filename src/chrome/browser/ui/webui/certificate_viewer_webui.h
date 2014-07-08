@@ -9,10 +9,10 @@
 #include <vector>
 
 #include "base/compiler_specific.h"
-#include "base/observer_list.h"
 #include "base/values.h"
+#include "components/web_modal/native_web_contents_modal_dialog.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 
@@ -20,35 +20,30 @@ namespace content {
 class WebContents;
 }
 
-namespace ui {
-class WebDialogObserver;
-}
+class ConstrainedWebDialogDelegate;
 
-// Dialog for displaying detailed certificate information. This is used in linux
-// and chromeos builds to display detailed information in a floating dialog when
-// the user clicks on "Certificate Information" from the lock icon of a web site
-// or "View" from the Certificate Manager.
-class CertificateViewerDialog : private ui::WebDialogDelegate {
+// Modal dialog for displaying detailed certificate information. This is used in
+// chromeos builds to display detailed information in a modal dialog when the
+// user clicks on "View" from the Certificate Manager dialog.
+class CertificateViewerModalDialog : public ui::WebDialogDelegate {
  public:
   // Construct a certificate viewer for the passed in certificate. A reference
   // to the certificate pointer is added for the lifetime of the certificate
   // viewer.
-  explicit CertificateViewerDialog(net::X509Certificate* cert);
-  virtual ~CertificateViewerDialog();
+  explicit CertificateViewerModalDialog(
+      net::X509Certificate* cert);
+  virtual ~CertificateViewerModalDialog();
 
-  // Show the dialog using the given parent window.
-  void Show(content::WebContents* web_contents, gfx::NativeWindow parent);
+  virtual void Show(content::WebContents* web_contents,
+                    gfx::NativeWindow parent);
+  virtual web_modal::NativeWebContentsModalDialog
+  GetNativeWebContentsModalDialog();
+  const content::WebUI* GetWebUI() const { return webui_; }
 
-  // Add WebDialogObserver for this dialog.
-  void AddObserver(ui::WebDialogObserver* observer);
-
-  // Remove WebDialogObserver for this dialog.
-  void RemoveObserver(ui::WebDialogObserver* observer);
-
- private:
+ protected:
   // Overridden from ui::WebDialogDelegate:
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -65,13 +60,40 @@ class CertificateViewerDialog : private ui::WebDialogDelegate {
   // The certificate being viewed.
   scoped_refptr<net::X509Certificate> cert_;
 
-  // The window displaying this dialog.
-  gfx::NativeWindow window_;
-
   // The title of the certificate viewer dialog, Certificate Viewer: CN.
-  string16 title_;
+  base::string16 title_;
 
-  ObserverList<ui::WebDialogObserver> observers_;
+ private:
+  content::WebUI* webui_;
+  gfx::NativeWindow window_;
+  DISALLOW_COPY_AND_ASSIGN(CertificateViewerModalDialog);
+};
+
+// Dialog for displaying detailed certificate information. This is used in linux
+// and chromeos builds to display detailed information in a floating dialog when
+// the user clicks on "Certificate Information" from the lock icon of a web site
+// or "View" from the Certificate Manager.
+class CertificateViewerDialog : public CertificateViewerModalDialog {
+ public:
+  // Construct a certificate viewer for the passed in certificate. A reference
+  // to the certificate pointer is added for the lifetime of the certificate
+  // viewer.
+  explicit CertificateViewerDialog(net::X509Certificate* cert);
+  virtual ~CertificateViewerDialog();
+
+  // CertificateViewerModalDialog overrides.
+  virtual void Show(content::WebContents* web_contents,
+                    gfx::NativeWindow parent) OVERRIDE;
+  virtual web_modal::NativeWebContentsModalDialog
+  GetNativeWebContentsModalDialog() OVERRIDE;
+
+ protected:
+  // Overridden from ui::WebDialogDelegate:
+  virtual GURL GetDialogContentURL() const OVERRIDE;
+  virtual ui::ModalType GetDialogModalType() const OVERRIDE;
+
+ private:
+  ConstrainedWebDialogDelegate* dialog_;
 
   DISALLOW_COPY_AND_ASSIGN(CertificateViewerDialog);
 };
@@ -80,7 +102,7 @@ class CertificateViewerDialog : private ui::WebDialogDelegate {
 // details and export the certificate.
 class CertificateViewerDialogHandler : public content::WebUIMessageHandler {
  public:
-  CertificateViewerDialogHandler(gfx::NativeWindow window,
+  CertificateViewerDialogHandler(CertificateViewerModalDialog* dialog,
                                  net::X509Certificate* cert);
   virtual ~CertificateViewerDialogHandler();
 
@@ -108,8 +130,8 @@ class CertificateViewerDialogHandler : public content::WebUIMessageHandler {
   // The certificate being viewed.
   scoped_refptr<net::X509Certificate> cert_;
 
-  // The dialog window.
-  gfx::NativeWindow window_;
+  // The dialog.
+  CertificateViewerModalDialog* dialog_;
 
   // The certificate chain.
   net::X509Certificate::OSCertHandles cert_chain_;

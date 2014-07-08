@@ -40,7 +40,21 @@ cr.define('print_preview', function() {
     // search widget) is shown to the user.
     CLOUDPRINT_PROMO_SHOWN: 3,
     // Used when the user chooses to sign-in to their Google account.
-    SIGNIN_TRIGGERED: 4
+    SIGNIN_TRIGGERED: 4,
+    // Used when a user selects the privet printer in a pair of duplicate
+    // privet and cloud printers.
+    PRIVET_DUPLICATE_SELECTED: 5,
+    // Used when a user selects the cloud printer in a pair of duplicate
+    // privet and cloud printers.
+    CLOUD_DUPLICATE_SELECTED: 6,
+    // Used when a user sees a register promo for a cloud print printer.
+    REGISTER_PROMO_SHOWN: 7,
+    // Used when a user selects a register promo for a cloud print printer.
+    REGISTER_PROMO_SELECTED: 8,
+    // User changed active account.
+    ACCOUNT_CHANGED: 9,
+    // User tried to log into another account.
+    ADD_ACCOUNT_SELECTED: 10
   };
 
   /**

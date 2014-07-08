@@ -4,6 +4,7 @@
 
 #include "chrome/browser/ui/cocoa/download/download_item_mac.h"
 
+#include "base/bind.h"
 #include "base/callback.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/download/download_item_model.h"
@@ -15,48 +16,46 @@ using content::DownloadItem;
 
 // DownloadItemMac -------------------------------------------------------------
 
-DownloadItemMac::DownloadItemMac(DownloadItemModel* download_model,
+DownloadItemMac::DownloadItemMac(DownloadItem* download,
                                  DownloadItemController* controller)
-    : download_model_(download_model), item_controller_(controller) {
-  download_model_->download()->AddObserver(this);
+    : download_model_(download),
+      item_controller_(controller) {
+  download_model_.download()->AddObserver(this);
 }
 
 DownloadItemMac::~DownloadItemMac() {
-  download_model_->download()->RemoveObserver(this);
+  download_model_.download()->RemoveObserver(this);
 }
 
 void DownloadItemMac::OnDownloadUpdated(content::DownloadItem* download) {
-  DCHECK_EQ(download, download_model_->download());
+  DCHECK_EQ(download, download_model_.download());
 
-  if ([item_controller_ isDangerousMode] && !download_model_->IsDangerous()) {
+  if ([item_controller_ isDangerousMode] && !download_model_.IsDangerous()) {
     // We have been approved.
     [item_controller_ clearDangerousMode];
   }
 
-  if (download->GetUserVerifiedFilePath() != lastFilePath_) {
-    // Turns out the file path is "Unconfirmed %d.crdownload" for dangerous
-    // downloads. When the download is confirmed, the file is renamed on
-    // another thread, so reload the icon if the download filename changes.
+  if (download->GetTargetFilePath() != lastFilePath_) {
     LoadIcon();
-    lastFilePath_ = download->GetUserVerifiedFilePath();
+    lastFilePath_ = download->GetTargetFilePath();
 
     [item_controller_ updateToolTip];
   }
 
   switch (download->GetState()) {
     case DownloadItem::COMPLETE:
-      if (download->GetAutoOpened()) {
+      if (download_model_.ShouldRemoveFromShelfWhenComplete()) {
         [item_controller_ remove];  // We're deleted now!
         return;
       }
       // fall through
     case DownloadItem::IN_PROGRESS:
     case DownloadItem::CANCELLED:
-      [item_controller_ setStateFromDownload:download_model_.get()];
+      [item_controller_ setStateFromDownload:&download_model_];
       break;
     case DownloadItem::INTERRUPTED:
       [item_controller_ updateToolTip];
-      [item_controller_ setStateFromDownload:download_model_.get()];
+      [item_controller_ setStateFromDownload:&download_model_];
       break;
     default:
       NOTREACHED();
@@ -68,7 +67,7 @@ void DownloadItemMac::OnDownloadDestroyed(content::DownloadItem* download) {
 }
 
 void DownloadItemMac::OnDownloadOpened(content::DownloadItem* download) {
-  DCHECK_EQ(download, download_model_->download());
+  DCHECK_EQ(download, download_model_.download());
   [item_controller_ downloadWasOpened];
 }
 
@@ -80,8 +79,9 @@ void DownloadItemMac::LoadIcon() {
   }
 
   // We may already have this particular image cached.
-  FilePath file = download_model_->download()->GetUserVerifiedFilePath();
-  gfx::Image* icon = icon_manager->LookupIcon(file, IconLoader::ALL);
+  base::FilePath file = download_model_.download()->GetTargetFilePath();
+  gfx::Image* icon = icon_manager->LookupIconFromFilepath(
+      file, IconLoader::ALL);
   if (icon) {
     [item_controller_ setIcon:icon->ToNSImage()];
     return;

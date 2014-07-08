@@ -58,8 +58,6 @@ import com.google.protos.ipc.invalidation.ClientProtocol.ServerHeader;
 import com.google.protos.ipc.invalidation.ClientProtocol.ServerToClientMessage;
 import com.google.protos.ipc.invalidation.ClientProtocol.Version;
 
-
-
 /**
  * Validator for v2 protocol messages.
  * <p>
@@ -125,7 +123,7 @@ public class TiclMessageValidator2 extends ProtoValidator {
         FieldInfo.newRequired(InvalidationPAccessor.VERSION),
         FieldInfo.newOptional(InvalidationPAccessor.PAYLOAD),
         FieldInfo.newOptional(InvalidationPAccessor.IS_TRICKLE_RESTART),
-        FieldInfo.newOptional(InvalidationPAccessor.BRIDGE_ARRIVAL_TIME_MS)) {
+        FieldInfo.newOptional(InvalidationPAccessor.BRIDGE_ARRIVAL_TIME_MS_DEPRECATED)) {
       @Override
       public boolean postValidate(MessageLite message) {
         // Must have non-negative version.
@@ -204,7 +202,8 @@ public class TiclMessageValidator2 extends ProtoValidator {
         FieldInfo.newOptional(ClientConfigPAccessor.CHANNEL_SUPPORTS_OFFLINE_DELIVERY),
         FieldInfo.newRequired(ClientConfigPAccessor.PROTOCOL_HANDLER_CONFIG,
             PROTOCOL_HANDLER_CONFIG),
-        FieldInfo.newOptional(ClientConfigPAccessor.OFFLINE_HEARTBEAT_THRESHOLD_MS)
+        FieldInfo.newOptional(ClientConfigPAccessor.OFFLINE_HEARTBEAT_THRESHOLD_MS),
+        FieldInfo.newOptional(ClientConfigPAccessor.ALLOW_SUPPRESSION)
         );
 
     private CommonMsgInfos() {
@@ -228,7 +227,8 @@ public class TiclMessageValidator2 extends ProtoValidator {
             commonMsgInfos.REGISTRATION_SUMMARY),
         FieldInfo.newRequired(ClientHeaderAccessor.CLIENT_TIME_MS),
         FieldInfo.newRequired(ClientHeaderAccessor.MAX_KNOWN_SERVER_TIME_MS),
-        FieldInfo.newOptional(ClientHeaderAccessor.MESSAGE_ID)) {
+        FieldInfo.newOptional(ClientHeaderAccessor.MESSAGE_ID),
+        FieldInfo.newOptional(ClientHeaderAccessor.CLIENT_TYPE)) {
       @Override
       public boolean postValidate(MessageLite message) {
         ClientHeader header = (ClientHeader) message;
@@ -466,5 +466,15 @@ public class TiclMessageValidator2 extends ProtoValidator {
   /** Returns whether {@code invalidation} is valid. */
   public boolean isValid(InvalidationP invalidation) {
     return checkMessage(invalidation, commonMsgInfos.INVALIDATION);
+  }
+
+  /** Returns whether {@code version} is valid. */
+  public boolean isValid(Version version) {
+    return checkMessage(version, commonMsgInfos.VERSION);
+  }
+
+  /** Returns the {@code MessageInfo} for a {@link ServerToClientMessage}. */
+  public MessageInfo getServerToClientMessageInfo() {
+    return serverMsgInfos.SERVER_MSG;
   }
 }

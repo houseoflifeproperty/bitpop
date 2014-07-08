@@ -16,7 +16,6 @@
     #error "can't define MSCALAR both as DOUBLE and FLOAT"
 #endif
     typedef double SkMScalar;
-    typedef int64_t SkMIntScalar;
 
     static inline double SkFloatToMScalar(float x) {
         return static_cast<double>(x);
@@ -36,7 +35,6 @@
     #error "can't define MSCALAR both as DOUBLE and FLOAT"
 #endif
     typedef float SkMScalar;
-    typedef int32_t SkMIntScalar;
 
     static inline float SkFloatToMScalar(float x) {
         return x;
@@ -114,13 +112,23 @@ public:
     SkMatrix44(Uninitialized_Constructor) { }
     SkMatrix44(Identity_Constructor) { this->setIdentity(); }
 
+    SK_ATTR_DEPRECATED("use the constructors that take an enum")
     SkMatrix44() { this->setIdentity(); }
-    SkMatrix44(const SkMatrix44&);
-    SkMatrix44(const SkMatrix44& a, const SkMatrix44& b);
+
+    SkMatrix44(const SkMatrix44& src) {
+        memcpy(fMat, src.fMat, sizeof(fMat));
+        fTypeMask = src.fTypeMask;
+    }
+
+    SkMatrix44(const SkMatrix44& a, const SkMatrix44& b) {
+        this->setConcat(a, b);
+    }
 
     SkMatrix44& operator=(const SkMatrix44& src) {
-        SkASSERT(sizeof(src) == sizeof(fMat) + sizeof(SkMIntScalar));
-        memcpy(this, &src, sizeof(*this));
+        if (&src != this) {
+            memcpy(fMat, src.fMat, sizeof(fMat));
+            fTypeMask = src.fTypeMask;
+        }
         return *this;
     }
 
@@ -129,6 +137,14 @@ public:
         return !(other == *this);
     }
 
+    /* When converting from SkMatrix44 to SkMatrix, the third row and
+     * column is dropped.  When converting from SkMatrix to SkMatrix44
+     * the third row and column remain as identity:
+     * [ a b c ]      [ a b 0 c ]
+     * [ d e f ]  ->  [ d e 0 f ]
+     * [ g h i ]      [ 0 0 1 0 ]
+     *                [ g h 0 i ]
+     */
     SkMatrix44(const SkMatrix&);
     SkMatrix44& operator=(const SkMatrix& src);
     operator SkMatrix() const;
@@ -216,6 +232,12 @@ public:
     inline void setDouble(int row, int col, double value) {
         this->set(row, col, SkDoubleToMScalar(value));
     }
+    inline float getFloat(int row, int col) const {
+        return SkMScalarToFloat(this->get(row, col));
+    }
+    inline void setFloat(int row, int col, float value) {
+        this->set(row, col, SkFloatToMScalar(value));
+    }
 
     /** These methods allow one to efficiently read matrix entries into an
      *  array. The given array must have room for exactly 16 entries. Whenever
@@ -245,6 +267,8 @@ public:
     void setRowMajor(const SkMScalar data[]) { this->setRowMajord(data); }
 #endif
 
+    /* This sets the top-left of the matrix and clears the translation and
+     * perspective components (with [3][3] set to 1). */
     void set3x3(SkMScalar m00, SkMScalar m01, SkMScalar m02,
                 SkMScalar m10, SkMScalar m11, SkMScalar m12,
                 SkMScalar m20, SkMScalar m21, SkMScalar m22);
@@ -311,11 +335,12 @@ public:
         this->mapScalars(vec, vec);
     }
 
-    // DEPRECATED: call mapScalars()
+    SK_ATTR_DEPRECATED("use mapScalars")
     void map(const SkScalar src[4], SkScalar dst[4]) const {
         this->mapScalars(src, dst);
     }
-    // DEPRECATED: call mapScalars()
+
+    SK_ATTR_DEPRECATED("use mapScalars")
     void map(SkScalar vec[4]) const {
         this->mapScalars(vec, vec);
     }
@@ -333,7 +358,7 @@ public:
 
     friend SkVector4 operator*(const SkMatrix44& m, const SkVector4& src) {
         SkVector4 dst;
-        m.map(src.fData, dst.fData);
+        m.mapScalars(src.fData, dst.fData);
         return dst;
     }
 
@@ -353,11 +378,8 @@ public:
     double determinant() const;
 
 private:
-    SkMScalar               fMat[4][4];
-    // we use SkMIntScalar instead of just int, as we want to ensure that
-    // we are always packed with no extra bits, allowing us to call memcpy
-    // without fear of copying uninitialized bits.
-    mutable SkMIntScalar    fTypeMask;
+    SkMScalar           fMat[4][4];
+    mutable unsigned    fTypeMask;
 
     enum {
         kUnknown_Mask = 0x80,

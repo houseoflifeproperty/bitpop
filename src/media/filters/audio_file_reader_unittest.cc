@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "base/logging.h"
-#include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/sys_byteorder.h"
+#include "build/build_config.h"
 #include "media/base/audio_bus.h"
+#include "media/base/audio_hash.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/test_data_util.h"
 #include "media/filters/audio_file_reader.h"
@@ -23,36 +23,21 @@ class AudioFileReaderTest : public testing::Test {
   void Initialize(const char* filename) {
     data_ = ReadTestDataFile(filename);
     protocol_.reset(new InMemoryUrlProtocol(
-        data_->GetData(), data_->GetDataSize(), false));
+        data_->data(), data_->data_size(), false));
     reader_.reset(new AudioFileReader(protocol_.get()));
   }
 
-  void ReadAndVerify(const char* audio_hash, int expected_frames) {
+  // Reads and the entire file provided to Initialize().
+  void ReadAndVerify(const char* expected_audio_hash, int expected_frames) {
     scoped_ptr<AudioBus> decoded_audio_data = AudioBus::Create(
-        reader_->channels(), reader_->number_of_frames());
+        reader_->channels(), reader_->GetNumberOfFrames());
     int actual_frames = reader_->Read(decoded_audio_data.get());
     ASSERT_LE(actual_frames, decoded_audio_data->frames());
     ASSERT_EQ(expected_frames, actual_frames);
 
-    base::MD5Context md5_context;
-    base::MD5Init(&md5_context);
-
-    DCHECK_EQ(sizeof(float), sizeof(uint32));
-    int channels = decoded_audio_data->channels();
-    for (int ch = 0; ch < channels; ++ch) {
-      float* channel = decoded_audio_data->channel(ch);
-      for (int i = 0; i < actual_frames; ++i) {
-        // Convert float to uint32 w/o conversion loss.
-        uint32 frame = base::ByteSwapToLE32(bit_cast<uint32>(channel[i]));
-        base::MD5Update(&md5_context, base::StringPiece(
-            reinterpret_cast<char*>(&frame), sizeof(frame)));
-      }
-    }
-
-    base::MD5Digest digest;
-    base::MD5Final(&digest, &md5_context);
-
-    EXPECT_EQ(audio_hash, base::MD5DigestToBase16(digest));
+    AudioHash audio_hash;
+    audio_hash.Update(decoded_audio_data.get(), actual_frames);
+    EXPECT_EQ(expected_audio_hash, audio_hash.ToString());
   }
 
   void RunTest(const char* fn, const char* hash, int channels, int sample_rate,
@@ -61,9 +46,23 @@ class AudioFileReaderTest : public testing::Test {
     ASSERT_TRUE(reader_->Open());
     EXPECT_EQ(channels, reader_->channels());
     EXPECT_EQ(sample_rate, reader_->sample_rate());
-    EXPECT_EQ(duration.InMicroseconds(), reader_->duration().InMicroseconds());
-    EXPECT_EQ(frames, reader_->number_of_frames());
+    EXPECT_EQ(duration.InMicroseconds(),
+              reader_->GetDuration().InMicroseconds());
+    EXPECT_EQ(frames, reader_->GetNumberOfFrames());
     ReadAndVerify(hash, trimmed_frames);
+  }
+
+  void RunTestFailingDemux(const char* fn) {
+    Initialize(fn);
+    EXPECT_FALSE(reader_->Open());
+  }
+
+  void RunTestFailingDecode(const char* fn) {
+    Initialize(fn);
+    EXPECT_TRUE(reader_->Open());
+    scoped_ptr<AudioBus> decoded_audio_data = AudioBus::Create(
+        reader_->channels(), reader_->GetNumberOfFrames());
+    EXPECT_EQ(reader_->Read(decoded_audio_data.get()), 0);
   }
 
  protected:
@@ -79,43 +78,67 @@ TEST_F(AudioFileReaderTest, WithoutOpen) {
 }
 
 TEST_F(AudioFileReaderTest, InvalidFile) {
-  Initialize("ten_byte_file");
-  ASSERT_FALSE(reader_->Open());
+  RunTestFailingDemux("ten_byte_file");
 }
 
 TEST_F(AudioFileReaderTest, WithVideo) {
-  RunTest("bear.ogv", "302e1773ba2f9a194c35a0f8f0b73f15", 2, 44100,
-          base::TimeDelta::FromMicroseconds(1011520), 44608, 44608);
+  RunTest("bear.ogv", "-2.49,-0.75,0.38,1.60,0.70,-1.22,", 2, 44100,
+          base::TimeDelta::FromMicroseconds(1011520), 44609, 44609);
 }
 
 TEST_F(AudioFileReaderTest, Vorbis) {
-  RunTest("sfx.ogg", "2b84ad6d605abba1125c0dacc9c8dbdd", 1, 44100,
-          base::TimeDelta::FromMicroseconds(350001), 15435, 15435);
+  RunTest("sfx.ogg", "4.36,4.81,4.84,4.45,4.61,4.63,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(350001), 15436, 15436);
 }
 
 TEST_F(AudioFileReaderTest, WaveU8) {
-  RunTest("sfx_u8.wav", "d7e255a8e634fffdf9f744c5803632f8", 1, 44100,
-          base::TimeDelta::FromMicroseconds(288414), 12719, 12719);
+  RunTest("sfx_u8.wav", "-1.23,-1.57,-1.14,-0.91,-0.87,-0.07,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(288414), 12720, 12719);
 }
+
 TEST_F(AudioFileReaderTest, WaveS16LE) {
-  RunTest("sfx_s16le.wav", "2a5847207fdcba1c05e52f65ad010f66", 1, 44100,
-          base::TimeDelta::FromMicroseconds(288414), 12719, 12719);
+  RunTest("sfx_s16le.wav", "3.05,2.87,3.00,3.32,3.58,4.08,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(288414), 12720, 12719);
 }
+
 TEST_F(AudioFileReaderTest, WaveS24LE) {
-  RunTest("sfx_s24le.wav", "66296b4ec633290581f9abf3c21cd5e7", 1, 44100,
-          base::TimeDelta::FromMicroseconds(288414), 12719, 12719);
+  RunTest("sfx_s24le.wav", "3.03,2.86,2.99,3.31,3.57,4.06,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(288414), 12720, 12719);
 }
 
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
-TEST_F(AudioFileReaderTest, DISABLED_MP3) {
-  RunTest("sfx.mp3", "2a5847207fdcba1c05e52f65ad010f66", 1, 44100,
-          base::TimeDelta::FromMicroseconds(313470), 13824, 12719);
+TEST_F(AudioFileReaderTest, WaveF32LE) {
+  RunTest("sfx_f32le.wav", "3.03,2.86,2.99,3.31,3.57,4.06,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(288414), 12720, 12719);
 }
 
-TEST_F(AudioFileReaderTest, DISABLED_AAC) {
-  RunTest("sfx.m4a", "d4d3207758d1e8cb0aa176ff77fa6932", 1, 44100,
-          base::TimeDelta::FromMicroseconds(312001), 13759, 13312);
+#if defined(USE_PROPRIETARY_CODECS)
+TEST_F(AudioFileReaderTest, MP3) {
+  RunTest("sfx.mp3", "3.05,2.87,3.00,3.32,3.58,4.08,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(313470), 13825, 12719);
+}
+
+TEST_F(AudioFileReaderTest, CorruptMP3) {
+  RunTest("corrupt.mp3", "-4.95,-2.95,-0.44,1.16,0.31,-2.21,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(1018826), 44931, 44928);
+}
+
+TEST_F(AudioFileReaderTest, AAC) {
+  RunTest("sfx.m4a", "1.81,1.66,2.32,3.27,4.46,3.36,", 1, 44100,
+          base::TimeDelta::FromMicroseconds(312001), 13760, 13312);
+}
+
+TEST_F(AudioFileReaderTest, MidStreamConfigChangesFail) {
+  RunTestFailingDecode("midstream_config_change.mp3");
 }
 #endif
+
+TEST_F(AudioFileReaderTest, VorbisInvalidChannelLayout) {
+  RunTestFailingDemux("9ch.ogg");
+}
+
+TEST_F(AudioFileReaderTest, WaveValidFourChannelLayout) {
+  RunTest("4ch.wav", "131.71,38.02,130.31,44.89,135.98,42.52,", 4, 44100,
+          base::TimeDelta::FromMicroseconds(100001), 4411, 4410);
+}
 
 }  // namespace media

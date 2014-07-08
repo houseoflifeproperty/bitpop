@@ -50,11 +50,23 @@ void memio_SetPeerName(PRFileDesc *fd, const PRNetAddr *peername);
  */
 memio_Private *memio_GetSecret(PRFileDesc *fd);
 
+/* Ask memio how many bytes were requested by a higher layer if the
+ * last attempt to read data resulted in PR_WOULD_BLOCK_ERROR, due to the
+ * transport buffer being empty. If the last attempt to read data from the
+ * memio did not result in PR_WOULD_BLOCK_ERROR, returns 0.
+ */
+int memio_GetReadRequest(memio_Private *secret);
+
 /* Ask memio where to put bytes from the network, and how many it can handle.
  * Returns bytes available to write, or 0 if none available.
  * Puts current buffer position into *buf.
  */
 int memio_GetReadParams(memio_Private *secret, char **buf);
+
+/* Ask memio how many bytes are contained in the internal buffer.
+ * Returns bytes available to read, or 0 if none available.
+ */
+int memio_GetReadableBufferSize(memio_Private *secret);
 
 /* Tell memio how many bytes were read from the network.
  * If bytes_read is 0, causes EOF to be reported to

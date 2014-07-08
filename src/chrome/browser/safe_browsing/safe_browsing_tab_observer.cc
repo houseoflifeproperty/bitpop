@@ -4,10 +4,10 @@
 
 #include "chrome/browser/safe_browsing/safe_browsing_tab_observer.h"
 
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/render_messages.h"
 #include "content/public/browser/notification_details.h"
@@ -19,7 +19,7 @@
 #include "chrome/browser/safe_browsing/client_side_detection_host.h"
 #endif
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(safe_browsing::SafeBrowsingTabObserver)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(safe_browsing::SafeBrowsingTabObserver);
 
 namespace safe_browsing {
 

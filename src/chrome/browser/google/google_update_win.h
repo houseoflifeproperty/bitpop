@@ -7,10 +7,13 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "google_update/google_update_idl.h"
 
+namespace base {
 class MessageLoop;
+}
+
 namespace views {
 class Widget;
 }
@@ -53,8 +56,12 @@ enum GoogleUpdateErrorCode {
   // An error occurred while upgrading (or while checking for update).
   // Check the Google Update log in %TEMP% for more details.
   GOOGLE_UPDATE_ERROR_UPDATING,
-  // Updates can not be downloaded because the administrator has disabled them.
+  // Updates can not be downloaded because the administrator has disabled all
+  // types of updating.
   GOOGLE_UPDATE_DISABLED_BY_POLICY,
+  // Updates can not be downloaded because the administrator has disabled
+  // manual (on-demand) updates.  Automatic background updates are allowed.
+  GOOGLE_UPDATE_DISABLED_BY_POLICY_AUTO_ONLY,
 };
 
 // The GoogleUpdateStatusListener interface is used by components to receive
@@ -70,8 +77,8 @@ class GoogleUpdateStatusListener {
   // server config for Chrome) is blank.
   virtual void OnReportResults(GoogleUpdateUpgradeResult results,
                                GoogleUpdateErrorCode error_code,
-                               const string16& error_message,
-                               const string16& version) = 0;
+                               const base::string16& error_message,
+                               const base::string16& version) = 0;
 };
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -108,7 +115,8 @@ class GoogleUpdate : public base::RefCountedThreadSafe<GoogleUpdate> {
   // listener.
   // Note, after this function completes, this object will have deleted itself.
   bool ReportFailure(HRESULT hr, GoogleUpdateErrorCode error_code,
-                     const string16& error_message, MessageLoop* main_loop);
+                     const base::string16& error_message,
+                     base::MessageLoop* main_loop);
 
   // The update check needs to run on another thread than the main thread, and
   // therefore CheckForUpdate will delegate to this function. |main_loop| points
@@ -116,7 +124,7 @@ class GoogleUpdate : public base::RefCountedThreadSafe<GoogleUpdate> {
   // |window| should point to a foreground window. This is needed to ensure that
   // Vista/Windows 7 UAC prompts show up in the foreground. It may also be null.
   void InitiateGoogleUpdateCheck(bool install_if_newer, HWND window,
-                                 MessageLoop* main_loop);
+                                 base::MessageLoop* main_loop);
 
   // This function reports the results of the GoogleUpdate operation to the
   // listener. If results indicates an error, the |error_code| and
@@ -124,11 +132,11 @@ class GoogleUpdate : public base::RefCountedThreadSafe<GoogleUpdate> {
   // Note, after this function completes, this object will have deleted itself.
   void ReportResults(GoogleUpdateUpgradeResult results,
                      GoogleUpdateErrorCode error_code,
-                     const string16& error_message);
+                     const base::string16& error_message);
 
   // Which version string Google Update found (if a new one was available).
   // Otherwise, this will be blank.
-  string16 version_available_;
+  base::string16 version_available_;
 
   // The listener who is interested in finding out the result of the operation.
   GoogleUpdateStatusListener* listener_;

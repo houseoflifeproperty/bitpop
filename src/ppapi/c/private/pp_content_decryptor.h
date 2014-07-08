@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From private/pp_content_decryptor.idl modified Tue Dec  4 16:42:46 2012. */
+/* From private/pp_content_decryptor.idl modified Wed Apr  9 10:36:52 2014. */
 
 #ifndef PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
 #define PPAPI_C_PRIVATE_PP_CONTENT_DECRYPTOR_H_
@@ -103,10 +103,6 @@ struct PP_EncryptedBlockInfo {
    */
   uint32_t data_size;
   /**
-   * Size in bytes of data to be discarded before applying the decryption.
-   */
-  uint32_t data_offset;
-  /**
    * Key ID of the block to be decrypted.
    *
    * TODO(xhwang): For WebM the key ID can be as large as 2048 bytes in theory.
@@ -127,13 +123,8 @@ struct PP_EncryptedBlockInfo {
    */
   struct PP_DecryptSubsampleDescription subsamples[16];
   uint32_t num_subsamples;
-  /**
-   * 4-byte padding to make the size of <code>PP_EncryptedBlockInfo</code>
-   * a multiple of 8 bytes. The value of this field should not be used.
-   */
-  uint32_t padding;
 };
-PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_EncryptedBlockInfo, 248);
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_EncryptedBlockInfo, 240);
 /**
  * @}
  */
@@ -151,6 +142,20 @@ typedef enum {
   PP_DECRYPTEDFRAMEFORMAT_I420 = 2
 } PP_DecryptedFrameFormat;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptedFrameFormat, 4);
+
+/**
+ * <code>PP_DecryptedSampleFormat</code> contains audio sample formats.
+ */
+typedef enum {
+  PP_DECRYPTEDSAMPLEFORMAT_UNKNOWN = 0,
+  PP_DECRYPTEDSAMPLEFORMAT_U8 = 1,
+  PP_DECRYPTEDSAMPLEFORMAT_S16 = 2,
+  PP_DECRYPTEDSAMPLEFORMAT_S32 = 3,
+  PP_DECRYPTEDSAMPLEFORMAT_F32 = 4,
+  PP_DECRYPTEDSAMPLEFORMAT_PLANAR_S16 = 5,
+  PP_DECRYPTEDSAMPLEFORMAT_PLANAR_F32 = 6
+} PP_DecryptedSampleFormat;
+PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_DecryptedSampleFormat, 4);
 
 /**
  * The <code>PP_DecryptResult</code> enum contains decryption and decoding
@@ -259,6 +264,36 @@ struct PP_DecryptedFrameInfo {
   struct PP_DecryptTrackingInfo tracking_info;
 };
 PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_DecryptedFrameInfo, 56);
+
+/**
+ * <code>PP_DecryptedSampleInfo</code> contains the result of the
+ * decrypt and decode operation on the associated samples, information required
+ * to access the sample data in buffer, and tracking info.
+ */
+struct PP_DecryptedSampleInfo {
+  /**
+   * Result of the decrypt and decode operation.
+   */
+  PP_DecryptResult result;
+  /**
+   * Format of the decrypted samples.
+   */
+  PP_DecryptedSampleFormat format;
+  /**
+   * Size in bytes of decrypted samples.
+   */
+  uint32_t data_size;
+  /**
+   * 4-byte padding to make the size of <code>PP_DecryptedSampleInfo</code>
+   * a multiple of 8 bytes. The value of this field should not be used.
+   */
+  uint32_t padding;
+  /**
+   * Information needed by the client to track the decrypted samples.
+   */
+  struct PP_DecryptTrackingInfo tracking_info;
+};
+PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_DecryptedSampleInfo, 32);
 /**
  * @}
  */
@@ -331,7 +366,8 @@ PP_COMPILE_ASSERT_STRUCT_SIZE_IN_BYTES(PP_AudioDecoderConfig, 20);
 typedef enum {
   PP_VIDEOCODEC_UNKNOWN = 0,
   PP_VIDEOCODEC_VP8 = 1,
-  PP_VIDEOCODEC_H264 = 2
+  PP_VIDEOCODEC_H264 = 2,
+  PP_VIDEOCODEC_VP9 = 3
 } PP_VideoCodec;
 PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodec, 4);
 
@@ -342,7 +378,7 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_VideoCodec, 4);
  */
 typedef enum {
   PP_VIDEOCODECPROFILE_UNKNOWN = 0,
-  PP_VIDEOCODECPROFILE_VP8_MAIN = 1,
+  PP_VIDEOCODECPROFILE_NOT_NEEDED = 1,
   PP_VIDEOCODECPROFILE_H264_BASELINE = 2,
   PP_VIDEOCODECPROFILE_H264_MAIN = 3,
   PP_VIDEOCODECPROFILE_H264_EXTENDED = 4,

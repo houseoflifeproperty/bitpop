@@ -18,16 +18,18 @@
 #include "base/mac/scoped_cftyperef.h"
 #endif
 
+namespace base {
 class FilePath;
+}
 
 namespace gfx {
 class Rect;
 class Size;
 }
 
-class SkDevice;
+class SkBaseDevice;
 
-#if defined(OS_CHROMEOS)
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
 namespace base {
 struct FileDescriptor;
 }
@@ -85,7 +87,7 @@ class PRINTING_EXPORT Metafile {
   // This method calls StartPage and then returns an appropriate
   // VectorPlatformDevice implementation bound to the context created by
   // StartPage or NULL on error.
-  virtual SkDevice* StartPageForVectorCanvas(
+  virtual SkBaseDevice* StartPageForVectorCanvas(
       const gfx::Size& page_size,
       const gfx::Rect& content_area,
       const float& scale_factor) = 0;
@@ -117,7 +119,7 @@ class PRINTING_EXPORT Metafile {
 
   // Saves the underlying data to the given file. This function should ONLY be
   // called after the metafile is closed. Returns true if writing succeeded.
-  virtual bool SaveTo(const FilePath& file_path) const = 0;
+  virtual bool SaveTo(const base::FilePath& file_path) const = 0;
 
   // Returns the bounds of the given page. Pages use a 1-based index.
   virtual gfx::Rect GetPageBounds(unsigned int page_number) const = 0;
@@ -153,12 +155,12 @@ class PRINTING_EXPORT Metafile {
                           gfx::NativeDrawingContext context,
                           const CGRect rect,
                           const MacRenderPageParams& params) const = 0;
-#elif defined(OS_CHROMEOS)
+#elif defined(OS_CHROMEOS) || defined(OS_ANDROID)
   // Saves the underlying data to the file associated with fd. This function
   // should ONLY be called after the metafile is closed.
   // Returns true if writing succeeded.
   virtual bool SaveToFD(const base::FileDescriptor& fd) const = 0;
-#endif  // if defined(OS_CHROMEOS)
+#endif  // if defined(OS_CHROMEOS) || defined(OS_ANDROID)
 };
 
 }  // namespace printing

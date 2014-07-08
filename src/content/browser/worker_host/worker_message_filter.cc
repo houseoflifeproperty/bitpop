@@ -4,7 +4,7 @@
 
 #include "content/browser/worker_host/worker_message_filter.h"
 
-#include "content/browser/worker_host/message_port_service.h"
+#include "content/browser/message_port_message_filter.h"
 #include "content/browser/worker_host/worker_service_impl.h"
 #include "content/common/view_messages.h"
 #include "content/common/worker_messages.h"
@@ -16,11 +16,12 @@ WorkerMessageFilter::WorkerMessageFilter(
     int render_process_id,
     ResourceContext* resource_context,
     const WorkerStoragePartition& partition,
-    const NextRoutingIDCallback& callback)
-    : render_process_id_(render_process_id),
+    MessagePortMessageFilter* message_port_message_filter)
+    : BrowserMessageFilter(ViewMsgStart),
+      render_process_id_(render_process_id),
       resource_context_(resource_context),
       partition_(partition),
-      next_routing_id_(callback) {
+      message_port_message_filter_(message_port_message_filter) {
   // Note: This constructor is called on both IO or UI thread.
   DCHECK(resource_context);
 }
@@ -30,9 +31,6 @@ WorkerMessageFilter::~WorkerMessageFilter() {
 }
 
 void WorkerMessageFilter::OnChannelClosing() {
-  BrowserMessageFilter::OnChannelClosing();
-
-  MessagePortService::GetInstance()->OnWorkerMessageFilterClosing(this);
   WorkerServiceImpl::GetInstance()->OnWorkerMessageFilterClosing(this);
 }
 
@@ -43,29 +41,9 @@ bool WorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
     // Worker messages.
     // Only sent from renderer for now, until we have nested workers.
     IPC_MESSAGE_HANDLER(ViewHostMsg_CreateWorker, OnCreateWorker)
-    // Only sent from renderer for now, until we have nested workers.
-    IPC_MESSAGE_HANDLER(ViewHostMsg_LookupSharedWorker, OnLookupSharedWorker)
     IPC_MESSAGE_HANDLER(ViewHostMsg_ForwardToWorker, OnForwardToWorker)
     // Only sent from renderer.
     IPC_MESSAGE_HANDLER(ViewHostMsg_DocumentDetached, OnDocumentDetached)
-    // Message Port related messages.
-    IPC_MESSAGE_HANDLER(WorkerProcessHostMsg_CreateMessagePort,
-                        OnCreateMessagePort)
-    IPC_MESSAGE_FORWARD(WorkerProcessHostMsg_DestroyMessagePort,
-                        MessagePortService::GetInstance(),
-                        MessagePortService::Destroy)
-    IPC_MESSAGE_FORWARD(WorkerProcessHostMsg_Entangle,
-                        MessagePortService::GetInstance(),
-                        MessagePortService::Entangle)
-    IPC_MESSAGE_FORWARD(WorkerProcessHostMsg_PostMessage,
-                        MessagePortService::GetInstance(),
-                        MessagePortService::PostMessage)
-    IPC_MESSAGE_FORWARD(WorkerProcessHostMsg_QueueMessages,
-                        MessagePortService::GetInstance(),
-                        MessagePortService::QueueMessages)
-    IPC_MESSAGE_FORWARD(WorkerProcessHostMsg_SendQueuedMessages,
-                        MessagePortService::GetInstance(),
-                        MessagePortService::SendQueuedMessages)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
 
@@ -73,28 +51,18 @@ bool WorkerMessageFilter::OnMessageReceived(const IPC::Message& message,
 }
 
 int WorkerMessageFilter::GetNextRoutingID() {
-  return next_routing_id_.Run();
+  return message_port_message_filter_->GetNextRoutingID();
 }
 
 void WorkerMessageFilter::OnCreateWorker(
     const ViewHostMsg_CreateWorker_Params& params,
     int* route_id) {
-  *route_id = params.route_id != MSG_ROUTING_NONE ?
-      params.route_id : next_routing_id_.Run();
+  bool url_error = false;
+  *route_id = GetNextRoutingID();
   WorkerServiceImpl::GetInstance()->CreateWorker(
-      params, *route_id, this, resource_context_, partition_);
-}
-
-void WorkerMessageFilter::OnLookupSharedWorker(
-    const ViewHostMsg_CreateWorker_Params& params,
-    bool* exists,
-    int* route_id,
-    bool* url_error) {
-  *route_id = next_routing_id_.Run();
-
-  WorkerServiceImpl::GetInstance()->LookupSharedWorker(
-      params, *route_id, this, resource_context_, partition_, exists,
-      url_error);
+      params, *route_id, this, resource_context_, partition_, &url_error);
+  if (url_error)
+    *route_id = MSG_ROUTING_NONE;
 }
 
 void WorkerMessageFilter::OnForwardToWorker(const IPC::Message& message) {
@@ -103,12 +71,6 @@ void WorkerMessageFilter::OnForwardToWorker(const IPC::Message& message) {
 
 void WorkerMessageFilter::OnDocumentDetached(unsigned long long document_id) {
   WorkerServiceImpl::GetInstance()->DocumentDetached(document_id, this);
-}
-
-void WorkerMessageFilter::OnCreateMessagePort(int *route_id,
-                                              int* message_port_id) {
-  *route_id = next_routing_id_.Run();
-  MessagePortService::GetInstance()->Create(*route_id, this, message_port_id);
 }
 
 }  // namespace content

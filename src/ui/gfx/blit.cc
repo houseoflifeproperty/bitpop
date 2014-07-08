@@ -11,10 +11,12 @@
 #include "ui/gfx/rect.h"
 #include "ui/gfx/vector2d.h"
 
+#if defined(USE_CAIRO)
 #if defined(OS_OPENBSD)
 #include <cairo.h>
 #elif defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID)
 #include <cairo/cairo.h>
+#endif
 #endif
 
 #if defined(OS_MACOSX)
@@ -27,21 +29,28 @@ namespace {
 
 // Returns true if the given canvas has any part of itself clipped out or
 // any non-identity tranform.
-bool HasClipOrTransform(const SkCanvas& canvas) {
+bool HasClipOrTransform(SkCanvas& canvas) {
   if (!canvas.getTotalMatrix().isIdentity())
     return true;
 
-  const SkRegion& clip_region = canvas.getTotalClip();
-  if (clip_region.isEmpty() || clip_region.isComplex())
+  if (!canvas.isClipRect())
     return true;
 
   // Now we know the clip is a regular rectangle, make sure it covers the
   // entire canvas.
-  const SkBitmap& bitmap = skia::GetTopDevice(canvas)->accessBitmap(false);
-  const SkIRect& clip_bounds = clip_region.getBounds();
+  SkIRect clip_bounds;
+  canvas.getClipDeviceBounds(&clip_bounds);
+
+  SkImageInfo info;
+  size_t row_bytes;
+  void* pixels = canvas.accessTopLayerPixels(&info, &row_bytes);
+  DCHECK(pixels);
+  if (!pixels)
+    return true;
+
   if (clip_bounds.fLeft != 0 || clip_bounds.fTop != 0 ||
-      clip_bounds.fRight != bitmap.width() ||
-      clip_bounds.fBottom != bitmap.height())
+      clip_bounds.fRight != info.width() ||
+      clip_bounds.fBottom != info.height())
     return true;
 
   return false;
@@ -71,14 +80,12 @@ void BlitContextToContext(NativeDrawingContext dst_context,
                             : transform.ty;
   src_rect.Offset(transform.tx, delta_y);
 
-  base::mac::ScopedCFTypeRef<CGImageRef>
-      src_image(CGBitmapContextCreateImage(src_context));
-  base::mac::ScopedCFTypeRef<CGImageRef> src_sub_image(
+  base::ScopedCFTypeRef<CGImageRef> src_image(
+      CGBitmapContextCreateImage(src_context));
+  base::ScopedCFTypeRef<CGImageRef> src_sub_image(
       CGImageCreateWithImageInRect(src_image, src_rect.ToCGRect()));
   CGContextDrawImage(dst_context, dst_rect.ToCGRect(), src_sub_image);
-#elif defined(OS_ANDROID)
-  NOTIMPLEMENTED();
-#else  // Linux, BSD, others
+#elif defined(USE_CAIRO)
   // Only translations in the source context are supported; more complex
   // source context transforms will be ignored.
   cairo_save(dst_context);
@@ -92,6 +99,8 @@ void BlitContextToContext(NativeDrawingContext dst_context,
   cairo_clip(dst_context);
   cairo_paint(dst_context);
   cairo_restore(dst_context);
+#else
+  NOTIMPLEMENTED();
 #endif
 }
 

@@ -5,18 +5,24 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_TEST_RULES_REGISTRY_H__
 #define CHROME_BROWSER_EXTENSIONS_API_DECLARATIVE_TEST_RULES_REGISTRY_H__
 
-#include "chrome/browser/extensions/api/declarative/rules_registry_with_cache.h"
+#include "chrome/browser/extensions/api/declarative/rules_registry.h"
 
 namespace extensions {
 
 // This is a trivial test RulesRegistry that can only store and retrieve rules.
-class TestRulesRegistry : public RulesRegistryWithCache {
+class TestRulesRegistry : public RulesRegistry {
  public:
-  TestRulesRegistry();
+  TestRulesRegistry(content::BrowserThread::ID owner_thread,
+                    const std::string& event_name,
+                    const WebViewKey& webview_key);
+  TestRulesRegistry(
+      Profile* profile,
+      const std::string& event_name,
+      content::BrowserThread::ID owner_thread,
+      RulesCacheDelegate* cache_delegate,
+      const WebViewKey& webview_key);
 
-  void SetOwnerThread(content::BrowserThread::ID owner_thread);
-
-  // RulesRegistryWithCache implementation:
+  // RulesRegistry implementation:
   virtual std::string AddRulesImpl(
       const std::string& extension_id,
       const std::vector<linked_ptr<RulesRegistry::Rule> >& rules) OVERRIDE;
@@ -25,7 +31,6 @@ class TestRulesRegistry : public RulesRegistryWithCache {
       const std::vector<std::string>& rule_identifiers) OVERRIDE;
   virtual std::string RemoveAllRulesImpl(
       const std::string& extension_id) OVERRIDE;
-  virtual content::BrowserThread::ID GetOwnerThread() const OVERRIDE;
 
   // Sets the result message that will be returned by the next call of
   // AddRulesImpl, RemoveRulesImpl and RemoveAllRulesImpl.
@@ -36,9 +41,10 @@ class TestRulesRegistry : public RulesRegistryWithCache {
 
  private:
   // The string that gets returned by the implementation functions of
-  // RulesRegistryWithCache. Defaults to "".
+  // RulesRegistry. Defaults to "".
   std::string result_;
-  content::BrowserThread::ID owner_thread_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestRulesRegistry);
 };
 
 }  // namespace extensions

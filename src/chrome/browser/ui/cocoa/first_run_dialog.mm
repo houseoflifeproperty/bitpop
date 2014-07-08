@@ -7,10 +7,10 @@
 #include "base/bind.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/ref_counted.h"
-#import "base/memory/scoped_nsobject.h"
-#include "base/message_loop.h"
-#include "base/sys_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/first_run/first_run.h"
 #include "chrome/browser/first_run/first_run_dialog.h"
 #include "chrome/browser/profiles/profile.h"
@@ -19,18 +19,16 @@
 #include "chrome/browser/shell_integration.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "grit/locale_settings.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util_mac.h"
+#include "url/gurl.h"
 
-//#if defined(GOOGLE_CHROME_BUILD)
-#import "chrome/app/breakpad_mac.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/installer/util/google_update_settings.h"
-//#endif
+#import "components/breakpad/app/breakpad_mac.h"
 
 @interface FirstRunDialogController (PrivateMethods)
 // Show the dialog.
@@ -72,14 +70,15 @@ FirstRunShowBridge::FirstRunShowBridge(
 
 void FirstRunShowBridge::ShowDialog() {
   [controller_ show];
-  MessageLoop::current()->QuitNow();
+  base::MessageLoop::current()->QuitNow();
 }
 
 FirstRunShowBridge::~FirstRunShowBridge() {}
 
 // Show the first run UI.
-void ShowFirstRun(Profile* profile) {
-//#if defined(GOOGLE_CHROME_BUILD)
+// Returns true if the first run dialog was shown.
+bool ShowFirstRun(Profile* profile) {
+  bool dialog_shown = false;
   // The purpose of the dialog is to ask the user to enable stats and crash
   // reporting. This setting may be controlled through configuration management
   // in enterprise scenarios. If that is the case, skip the dialog entirely, as
@@ -89,10 +88,11 @@ void ShowFirstRun(Profile* profile) {
       g_browser_process->local_state()->FindPreference(
           prefs::kMetricsReportingEnabled);
   if (!metrics_reporting_pref || !metrics_reporting_pref->IsManaged()) {
-    scoped_nsobject<FirstRunDialogController> dialog(
+    base::scoped_nsobject<FirstRunDialogController> dialog(
         [[FirstRunDialogController alloc] init]);
 
     [dialog.get() showWindow:nil];
+    dialog_shown = true;
 
     // If the dialog asked the user to opt-in for stats and crash reporting,
     // record the decision and enable the crash reporter if appropriate.
@@ -102,9 +102,9 @@ void ShowFirstRun(Profile* profile) {
     // Breakpad is normally enabled very early in the startup process.  However,
     // on the first run it may not have been enabled due to the missing opt-in
     // from the user.  If the user agreed now, enable breakpad if necessary.
-    if (!IsCrashReporterEnabled() && stats_enabled) {
-      InitCrashReporter();
-      InitCrashProcessInfo();
+    if (!breakpad::IsCrashReporterEnabled() && stats_enabled) {
+      breakpad::InitCrashReporter(std::string());
+      breakpad::InitCrashProcessInfo(std::string());
     }
 
     // If selected set as default browser.
@@ -114,11 +114,6 @@ void ShowFirstRun(Profile* profile) {
       DCHECK(success);
     }
   }
-//#else  // GOOGLE_CHROME_BUILD
-  // We don't show the dialog in Chromium.
-//#endif  // GOOGLE_CHROME_BUILD
-
-  first_run::CreateSentinel();
 
   // Set preference to show first run bubble and welcome page.
   // Only display the bubble if there is a default search provider.
@@ -126,9 +121,11 @@ void ShowFirstRun(Profile* profile) {
       TemplateURLServiceFactory::GetForProfile(profile);
   if (search_engines_model &&
       search_engines_model->GetDefaultSearchProvider()) {
-    first_run::SetShowFirstRunBubblePref(true);
+    first_run::SetShowFirstRunBubblePref(first_run::FIRST_RUN_BUBBLE_SHOW);
   }
-  first_run::SetShowWelcomePagePref();
+  first_run::SetShouldShowWelcomePage();
+
+  return dialog_shown;
 }
 
 // True when the stats checkbox should be checked by default. This is only
@@ -142,8 +139,8 @@ bool StatsCheckboxDefault() {
 
 namespace first_run {
 
-void ShowFirstRunDialog(Profile* profile) {
-  ShowFirstRun(profile);
+bool ShowFirstRunDialog(Profile* profile) {
+  return ShowFirstRun(profile);
 }
 
 }  // namespace first_run
@@ -176,9 +173,9 @@ void ShowFirstRunDialog(Profile* profile) {
   // Therefore the main MessageLoop is run so things work.
 
   scoped_refptr<FirstRunShowBridge> bridge(new FirstRunShowBridge(self));
-  MessageLoop::current()->PostTask(FROM_HERE,
+  base::MessageLoop::current()->PostTask(FROM_HERE,
       base::Bind(&FirstRunShowBridge::ShowDialog, bridge.get()));
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 }
 
 - (void)show {

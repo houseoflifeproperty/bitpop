@@ -5,8 +5,8 @@
 #ifndef CHROME_BROWSER_UI_FULLSCREEN_FULLSCREEN_EXIT_BUBBLE_TYPE_H_
 #define CHROME_BROWSER_UI_FULLSCREEN_FULLSCREEN_EXIT_BUBBLE_TYPE_H_
 
-#include "base/string16.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string16.h"
+#include "url/gurl.h"
 
 class ExtensionService;
 
@@ -34,10 +34,10 @@ enum FullscreenExitBubbleType {
 
 namespace fullscreen_bubble {
 
-string16 GetLabelTextForType(FullscreenExitBubbleType type,
-                             const GURL& url,
-                             ExtensionService* extension_service);
-string16 GetDenyButtonTextForType(FullscreenExitBubbleType type);
+base::string16 GetLabelTextForType(FullscreenExitBubbleType type,
+                                   const GURL& url,
+                                   ExtensionService* extension_service);
+base::string16 GetDenyButtonTextForType(FullscreenExitBubbleType type);
 bool ShowButtonsForType(FullscreenExitBubbleType type);
 void PermissionRequestedByType(FullscreenExitBubbleType type,
                                bool* tab_fullscreen,

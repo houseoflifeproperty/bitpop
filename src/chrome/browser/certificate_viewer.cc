@@ -5,7 +5,7 @@
 #include "chrome/browser/certificate_viewer.h"
 
 #include "content/public/browser/cert_store.h"
-#include "net/base/x509_certificate.h"
+#include "net/cert/x509_certificate.h"
 
 void ShowCertificateViewerByID(content::WebContents* web_contents,
                                gfx::NativeWindow parent,
@@ -17,5 +17,5 @@ void ShowCertificateViewerByID(content::WebContents* web_contents,
     // we displayed the page info.
     return;
   }
-  ShowCertificateViewer(web_contents, parent, cert);
+  ShowCertificateViewer(web_contents, parent, cert.get());
 }

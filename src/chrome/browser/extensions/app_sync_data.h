@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_EXTENSIONS_APP_SYNC_DATA_H_
 
 #include "chrome/browser/extensions/extension_sync_data.h"
+#include "chrome/common/extensions/extension_constants.h"
 #include "sync/api/string_ordinal.h"
 #include "sync/api/sync_change.h"
 
@@ -31,10 +32,9 @@ class AppSyncData {
   AppSyncData(const Extension& extension,
               bool enabled,
               bool incognito_enabled,
-              const std::string& notifications_client_id,
-              bool notifications_disabled,
               const syncer::StringOrdinal& app_launch_ordinal,
-              const syncer::StringOrdinal& page_ordinal);
+              const syncer::StringOrdinal& page_ordinal,
+              extensions::LaunchType launch_type);
   ~AppSyncData();
 
   // Retrive sync data from this class.
@@ -45,14 +45,6 @@ class AppSyncData {
   const std::string& id() const { return extension_sync_data_.id(); }
 
   bool uninstalled() const { return extension_sync_data_.uninstalled(); }
-
-  const std::string& notifications_client_id() const {
-    return notifications_client_id_;
-  }
-
-  bool notifications_disabled() const {
-    return notifications_disabled_;
-  }
 
   // These ordinals aren't necessarily valid. Some applications don't have
   // valid ordinals because they don't appear on the new tab page.
@@ -65,6 +57,18 @@ class AppSyncData {
     return extension_sync_data_;
   }
 
+  extensions::LaunchType launch_type() const {
+    return launch_type_;
+  }
+
+  const std::string& bookmark_app_url() const {
+    return bookmark_app_url_;
+  };
+
+  const std::string& bookmark_app_description() const {
+    return bookmark_app_description_;
+  };
+
  private:
   // Convert an AppSyncData back out to a sync structure.
   void PopulateAppSpecifics(sync_pb::AppSpecifics* specifics) const;
@@ -75,12 +79,14 @@ class AppSyncData {
   void PopulateFromSyncData(const syncer::SyncData& sync_data);
 
   ExtensionSyncData extension_sync_data_;
-  std::string notifications_client_id_;
-  bool notifications_disabled_;
   syncer::StringOrdinal app_launch_ordinal_;
   syncer::StringOrdinal page_ordinal_;
+  extensions::LaunchType launch_type_;
+  std::string bookmark_app_url_;
+  std::string bookmark_app_description_;
 };
 
 }  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_APP_SYNC_DATA_H_
+

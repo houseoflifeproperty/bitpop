@@ -14,14 +14,21 @@
 // You should have received a copy of the GNU General Public License
 // along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-#include "base/basictypes.h"
+#ifndef CHROME_BROWSER_FACEBOOK_CHAT_FACEBOOK_BITPOP_NOTIFICATION_SERVICE_FACTORY_H_
+#define CHROME_BROWSER_FACEBOOK_CHAT_FACEBOOK_BITPOP_NOTIFICATION_SERVICE_FACTORY_H_
+
+#include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class FacebookBitpopNotification;
 class Profile;
 
-class FacebookBitpopNotificationServiceFactory : public ProfileKeyedServiceFactory {
+// Singleton that owns all BackgroundContentsServices and associates them with
+// Profiles. Listens for the Profile's destruction notification and cleans up
+// the associated BackgroundContentsService.
+class FacebookBitpopNotificationServiceFactory
+    : public BrowserContextKeyedServiceFactory {
  public:
   static FacebookBitpopNotification* GetForProfile(Profile* profile);
 
@@ -33,10 +40,10 @@ class FacebookBitpopNotificationServiceFactory : public ProfileKeyedServiceFacto
   FacebookBitpopNotificationServiceFactory();
   virtual ~FacebookBitpopNotificationServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-    Profile* profile) const OVERRIDE;
-
-  DISALLOW_COPY_AND_ASSIGN(FacebookBitpopNotificationServiceFactory);
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* profile) const OVERRIDE;
 };
+
+#endif  // CHROME_BROWSER_FACEBOOK_CHAT_FACEBOOK_BITPOP_NOTIFICATION_SERVICE_FACTORY_H_
 

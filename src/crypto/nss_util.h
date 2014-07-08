@@ -7,13 +7,13 @@
 
 #include <string>
 #include "base/basictypes.h"
+#include "base/callback.h"
+#include "base/compiler_specific.h"
+#include "base/files/scoped_temp_dir.h"
 #include "crypto/crypto_export.h"
 
-#if defined(USE_NSS)
-class FilePath;
-#endif  // defined(USE_NSS)
-
 namespace base {
+class FilePath;
 class Lock;
 class Time;
 }  // namespace base
@@ -23,7 +23,8 @@ class Time;
 // initialization functions.
 namespace crypto {
 
-class SymmetricKey;
+// The TPMToken name used for the NSS slot opened by ScopedTestNSSDB.
+CRYPTO_EXPORT extern const char kTestTPMTokenName[];
 
 #if defined(USE_NSS)
 // EarlySetupForNSSInit performs lightweight setup which must occur before the
@@ -104,29 +105,47 @@ CRYPTO_EXPORT void OpenPersistentNSSDB();
 // GetPrivateNSSKeySlot() will return the TPM slot if one was found.
 CRYPTO_EXPORT void EnableTPMTokenForNSS();
 
-// Get name and user PIN for the built-in TPM token on ChromeOS.
-// Either one can safely be NULL.  Should only be called after
-// EnableTPMTokenForNSS has been called with a non-null delegate.
-CRYPTO_EXPORT void GetTPMTokenInfo(std::string* token_name,
-                                   std::string* user_pin);
+// Returns true if EnableTPMTokenForNSS has been called.
+CRYPTO_EXPORT bool IsTPMTokenEnabledForNSS();
 
 // Returns true if the TPM is owned and PKCS#11 initialized with the
 // user and security officer PINs, and has been enabled in NSS by
 // calling EnableTPMForNSS, and Chaps has been successfully
 // loaded into NSS.
-CRYPTO_EXPORT bool IsTPMTokenReady();
+// If |callback| is non-null and the function returns false, the |callback| will
+// be run once the TPM is ready. |callback| will never be run if the function
+// returns true.
+CRYPTO_EXPORT bool IsTPMTokenReady(const base::Closure& callback)
+    WARN_UNUSED_RESULT;
 
-// Initialize the TPM token.  Does nothing if it is already initialized.
-CRYPTO_EXPORT bool InitializeTPMToken(const std::string& token_name,
-                                      const std::string& user_pin);
+// Initialize the TPM token. The |callback| will run on the same thread with
+// true if the token and slot were successfully loaded or were already
+// initialized. |callback| will be passed false if loading failed.
+// Once called, InitializeTPMToken must not be called again until the |callback|
+// has been run.
+CRYPTO_EXPORT void InitializeTPMToken(
+    int token_slot_id,
+    const base::Callback<void(bool)>& callback);
 
-// Gets supplemental user key. Creates one in NSS database if it does not exist.
-// The supplemental user key is used for AES encryption of user data that is
-// stored and protected by cryptohome. This additional layer of encryption of
-// provided to ensure that sensitive data wouldn't be exposed in plain text in
-// case when an attacker would somehow gain access to all content within
-// cryptohome.
-CRYPTO_EXPORT SymmetricKey* GetSupplementalUserKey();
+// Exposed for unittests only.
+class CRYPTO_EXPORT_PRIVATE ScopedTestNSSChromeOSUser {
+ public:
+  explicit ScopedTestNSSChromeOSUser(const std::string& username_hash);
+  ~ScopedTestNSSChromeOSUser();
+
+  std::string username_hash() const { return username_hash_; }
+  bool constructed_successfully() const { return constructed_successfully_; }
+
+  // Completes initialization of user. Causes any waiting private slot callbacks
+  // to run.
+  void FinishInit();
+
+ private:
+  const std::string username_hash_;
+  base::ScopedTempDir temp_dir_;
+  bool constructed_successfully_;
+  DISALLOW_COPY_AND_ASSIGN(ScopedTestNSSChromeOSUser);
+};
 #endif
 
 // Convert a NSS PRTime value into a base::Time object.

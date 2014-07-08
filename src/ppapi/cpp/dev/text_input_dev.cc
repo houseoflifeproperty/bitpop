@@ -54,10 +54,10 @@ TextInput_Dev::~TextInput_Dev() {
 
 void TextInput_Dev::RequestSurroundingText(uint32_t) {
   // Default implementation. Send a null range.
-  UpdateSurroundingText("", 0, 0);
+  UpdateSurroundingText(std::string(), 0, 0);
 }
 
-void TextInput_Dev::SetTextInputType(PP_TextInput_Type type) {
+void TextInput_Dev::SetTextInputType(PP_TextInput_Type_Dev type) {
   if (has_interface<PPB_TextInput_Dev_0_2>()) {
     get_interface<PPB_TextInput_Dev_0_2>()->SetTextInputType(
         instance_.pp_instance(), type);

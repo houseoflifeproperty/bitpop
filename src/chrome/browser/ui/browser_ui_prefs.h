@@ -7,13 +7,17 @@
 
 #include <string>
 
-class PrefService;
+class PrefRegistrySimple;
 class Profile;
+
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
 
 namespace chrome {
 
-void RegisterBrowserPrefs(PrefService* prefs);
-void RegisterBrowserUserPrefs(PrefService* prefs);
+void RegisterBrowserPrefs(PrefRegistrySimple* registry);
+void RegisterBrowserUserPrefs(user_prefs::PrefRegistrySyncable* registry);
 
 // Create a preference dictionary for the provided application name, in the
 // given user profile. This is done only once per application name / per

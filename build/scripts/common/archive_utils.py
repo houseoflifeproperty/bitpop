@@ -20,6 +20,60 @@ class StagingError(Exception):
   pass
 
 
+class Config(object):
+  """Defines default values for archival utilities to use."""
+  # List of symbol files to save, but not to upload to the symbol server
+  # (generally because they have no symbols and thus would produce an error).
+  # We have to list all the previous names of icudt*.dll. Now that we
+  # use icudt.dll, we don't need to update this file any more next time
+  # we pull in a new version of ICU.
+  symbols_to_skip_upload = [
+      'icudt38.dll', 'icudt42.dll', 'icudt46.dll', 'icudt.dll', 'rlz.dll',
+      'avcodec-53.dll', 'avcodec-54.dll', 'avformat-53.dll', 'avformat-54.dll',
+      'avutil-51.dll', 'd3dx9_42.dll', 'd3dx9_43.dll', 'D3DCompiler_42.dll',
+      'D3DCompiler_43.dll', 'd3dcompiler_46.dll', 'msvcp120.dll',
+      'msvcr120.dll', 'xinput1_3.dll', 'widevinecdm.dll', 'FlashPlayerApp.exe',]
+
+  if os.environ.get('CHROMIUM_BUILD', '') == '_google_chrome':
+    exes_to_skip_entirely = []
+  else:
+    exes_to_skip_entirely = ['rlz']
+
+  # Installer to archive.
+  installer_exe = 'mini_installer.exe'
+
+  # Test files to archive.
+  tests_to_archive = ['reliability_tests.exe',
+                      'test_shell.exe',
+                      'automated_ui_tests.exe',
+                      'ui_tests.exe',  # For syzygy (binary reorder) test bot
+                      'icudt.dll',
+                      'icudt38.dll',
+                      'icudt42.dll',
+                      'icudt46.dll',
+                      'icudtl.dat',
+                      'plugins\\npapi_layout_test_plugin.dll',
+                     ]
+
+  # Archive everything in these directories, using glob.
+  test_dirs_to_archive = ['fonts']
+  # Create these directories, initially empty, in the archive.
+  test_dirs_to_create = ['plugins', 'fonts']
+
+  archive_host = 'master1.golo.chromium.org'
+
+  if (sys.platform in ['linux', 'linux2', 'darwin'] or
+      os.environ.get('BUILDBOT_ARCHIVE_FORCE_SSH')):
+    # Directory on archive_host (accessed via ssh)
+    www_dir_base = "/home/chrome-bot/www/"
+  elif sys.platform in ['cygwin', 'win32']:
+    # archive_host SMB share.
+    www_dir_base = "\\\\" + archive_host + "\\chrome-bot\\www\\"
+
+  symbol_url = 'http://clients2.google.com/cr/symbol'
+  symbol_staging_url = 'http://clients2.google.com/cr/staging_symbol'
+
+
 class FilesCfgParser(object):
   """Class to process a FILES.cfg style listing of build files."""
 
@@ -160,8 +214,14 @@ def ExtractDirsFromPaths(path_list):
   return list(filter(None, set(os.path.dirname(path) for path in path_list)))
 
 
-def BuildArch():
+def BuildArch(target_arch=None):
   """Determine the architecture of the build being processed."""
+  if target_arch == 'x64':
+    # Just use the architecture specified by the build if it's 64 bit.
+    return '64bit'
+  elif target_arch:
+    raise StagingError('Unknown target_arch "%s"', target_arch)
+
   if chromium_utils.IsWindows() or chromium_utils.IsMac():
     # Architecture is not relevant for Mac (combines multiple archs in one
     # release) and Win (32-bit only), so just call it 32bit.

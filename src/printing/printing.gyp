@@ -14,11 +14,12 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
-        '../build/temp_gyp/googleurl.gyp:googleurl',
         '../skia/skia.gyp:skia',
         '../third_party/icu/icu.gyp:icui18n',
         '../third_party/icu/icu.gyp:icuuc',
-        '../ui/ui.gyp:ui',
+        '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        '../url/url.gyp:url_lib',
       ],
       'defines': [
         'PRINTING_IMPLEMENTATION',
@@ -37,14 +38,15 @@
         'emf_win.cc',
         'emf_win.h',
         'image.cc',
+        'image.h',
+        'image_android.cc',
         'image_linux.cc',
         'image_mac.cc',
         'image_win.cc',
-        'image.h',
         'metafile.h',
         'metafile_impl.h',
-        'metafile_skia_wrapper.h',
         'metafile_skia_wrapper.cc',
+        'metafile_skia_wrapper.h',
         'page_number.cc',
         'page_number.h',
         'page_range.cc',
@@ -55,21 +57,10 @@
         'page_size_margins.h',
         'pdf_metafile_cg_mac.cc',
         'pdf_metafile_cg_mac.h',
-        'pdf_metafile_skia.h',
         'pdf_metafile_skia.cc',
+        'pdf_metafile_skia.h',
         'print_destination_interface.h',
         'print_destination_none.cc',
-        'print_destination_win.cc',
-        'printed_document_gtk.cc',
-        'printed_document.cc',
-        'printed_document.h',
-        'printed_document_mac.cc',
-        'printed_document_win.cc',
-        'printed_page.cc',
-        'printed_page.h',
-        'printed_pages_source.h',
-        'printing_context.cc',
-        'printing_context.h',
         'print_dialog_gtk_interface.h',
         'print_job_constants.cc',
         'print_job_constants.h',
@@ -77,12 +68,22 @@
         'print_settings.h',
         'print_settings_initializer.cc',
         'print_settings_initializer.h',
-        'print_settings_initializer_gtk.cc',
-        'print_settings_initializer_gtk.h',
         'print_settings_initializer_mac.cc',
         'print_settings_initializer_mac.h',
         'print_settings_initializer_win.cc',
         'print_settings_initializer_win.h',
+        'printed_document.cc',
+        'printed_document.h',
+        'printed_document_linux.cc',
+        'printed_document_mac.cc',
+        'printed_document_win.cc',
+        'printed_page.cc',
+        'printed_page.h',
+        'printed_pages_source.h',
+        'printing_context.cc',
+        'printing_context.h',
+        'printing_utils.cc',
+        'printing_utils.h',
         'units.cc',
         'units.h',
       ],
@@ -92,31 +93,9 @@
         ],
       },
       'conditions': [
-        ['enable_printing!=1', {
-          'sources/': [
-            ['exclude', '.'],
-          ],
-        }],
-        ['toolkit_uses_gtk == 0',{
-            'sources/': [['exclude', '_cairo\\.cc$']]
-        }],
-        ['OS!="mac"', {'sources/': [['exclude', '_mac\\.(cc|mm?)$']]}],
-        ['OS!="win"', {'sources/': [['exclude', '_win\\.cc$']]
-          }, {  # else: OS=="win"
-            'sources/': [['exclude', '_posix\\.cc$']]
-        }],
-        ['toolkit_uses_gtk == 1', {
+        ['use_aura==1', {
           'dependencies': [
-            # For FT_Init_FreeType and friends.
-            '../build/linux/system.gyp:freetype2',
-            '../build/linux/system.gyp:gtk',
-            '../build/linux/system.gyp:gtkprint',
-          ],
-        }],
-        ['OS=="mac" and use_skia==0', {
-          'sources/': [
-            ['exclude', 'pdf_metafile_skia\\.(cc|h)$'],
-            ['exclude', 'metafile_skia_wrapper\\.(cc|h)$'],
+            '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
         }],
         # Mac-Aura does not support printing.
@@ -135,15 +114,8 @@
         }],
         ['OS=="win"', {
           'dependencies': [
-            '../win8/win8.gyp:win8_util',
+            '<(DEPTH)/ui/aura/aura.gyp:aura',
           ],
-          'conditions': [
-            ['use_aura==0', {
-              'sources': [
-                'printing_context_win.cc',
-                'printing_context_win.h',
-              ],
-          }]],
           'defines': [
             # PRINT_BACKEND_AVAILABLE disables the default dummy implementation
             # of the print backend and enables a custom implementation instead.
@@ -153,12 +125,11 @@
             'backend/win_helper.cc',
             'backend/win_helper.h',
             'backend/print_backend_win.cc',
-          ],
-          'sources!': [
-            'print_destination_none.cc',
+            'printing_context_win.cc',
+            'printing_context_win.h',
           ],
         }],
-        ['chromeos==1 or use_aura==1',{
+        ['chromeos==1',{
           'sources': [
             'printing_context_no_system_dialog.cc',
             'printing_context_no_system_dialog.h',
@@ -168,11 +139,37 @@
           'dependencies': [
             'cups',
           ],
+          'variables': {
+            'cups_version': '<!(cups-config --api-version)',
+          },
           'conditions': [
             ['OS!="mac"', {
               'dependencies': [
                 '../build/linux/system.gyp:libgcrypt',
               ],
+            }],
+            ['cups_version in ["1.6", "1.7"]', {
+              'cflags': [
+                # CUPS 1.6 deprecated the PPD APIs, but we will stay with this
+                # API for now as supported Linux and Mac OS'es are still using
+                # older versions of CUPS. More info: crbug.com/226176
+                '-Wno-deprecated-declarations',
+                # CUPS 1.7 deprecates httpConnectEncrypt(), see the mac section
+                # below.
+              ],
+            }],
+            ['OS=="mac" and mac_sdk=="10.9"', {
+              # The 10.9 SDK includes cups 1.7, which deprecates
+              # httpConnectEncrypt() in favor of httpConnect2(). hhttpConnect2()
+              # is new in 1.7, so it doesn't exist on OS X 10.6-10.8 and we
+              # can't use it until 10.9 is our minimum system version.
+              # (cups_version isn't reliable on OS X, so key the check off of
+              # mac_sdk).
+              'xcode_settings': {
+                'WARNING_CFLAGS':  [
+                  '-Wno-deprecated-declarations',
+                ],
+              },
             }],
           ],
           'defines': [
@@ -196,10 +193,19 @@
             'backend/print_backend_chromeos.cc',
           ],
         }],
-        ['toolkit_uses_gtk==1 and chromeos==0', {
+        ['OS=="linux" and chromeos==0', {
           'sources': [
-            'printing_context_gtk.cc',
-            'printing_context_gtk.h',
+            'printing_context_linux.cc',
+            'printing_context_linux.h',
+          ],
+        }],
+        ['OS=="android"', {
+          'sources': [
+            'printing_context_android.cc',
+            'printing_context_android.h',
+          ],
+          'dependencies': [
+            'printing_jni_headers',
           ],
         }],
       ],
@@ -208,38 +214,29 @@
       'target_name': 'printing_unittests',
       'type': 'executable',
       'dependencies': [
-        'printing',
-        '../testing/gtest.gyp:gtest',
+        '../base/base.gyp:run_all_unittests',
         '../base/base.gyp:test_support_base',
-        '../ui/ui.gyp:ui',
+        '../testing/gtest.gyp:gtest',
+        '../ui/base/ui_base.gyp:ui_base',
+        '../ui/gfx/gfx.gyp:gfx',
+        '../ui/gfx/gfx.gyp:gfx_geometry',
+        'printing',
       ],
       'sources': [
-        'backend/print_backend_unittest.cc',
         'emf_win_unittest.cc',
-        'printing_test.h',
         'page_number_unittest.cc',
         'page_range_unittest.cc',
         'page_setup_unittest.cc',
         'pdf_metafile_cg_mac_unittest.cc',
         'printed_page_unittest.cc',
-        'run_all_unittests.cc',
+        'printing_context_win_unittest.cc',
+        'printing_test.h',
+        'printing_utils_unittest.cc',
         'units_unittest.cc',
       ],
       'conditions': [
-        ['enable_printing!=1', {
-          'sources/': [
-            ['exclude', '.'],
-            ['include', 'run_all_unittests.cc'],
-          ],
-        }],
-        ['toolkit_uses_gtk == 0', {'sources/': [['exclude', '_gtk_unittest\\.cc$']]}],
         ['OS!="mac"', {'sources/': [['exclude', '_mac_unittest\\.(cc|mm?)$']]}],
         ['OS!="win"', {'sources/': [['exclude', '_win_unittest\\.cc$']]}],
-        ['OS=="win" and use_aura == 0', {
-          'sources': [
-            'printing_context_win_unittest.cc',
-          ]
-        }],
         ['use_cups==1', {
           'defines': [
             'USE_CUPS',
@@ -248,14 +245,9 @@
             'backend/cups_helper_unittest.cc',
           ],
         }],
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
-          ],
-        }],
         [ 'os_posix == 1 and OS != "mac" and OS != "android" and OS != "ios"', {
           'conditions': [
-            ['linux_use_tcmalloc == 1', {
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -263,6 +255,8 @@
           ],
         }],
       ],
+      # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+      'msvs_disabled_warnings': [ 4267, ],
     },
     {
       'target_name': 'cups',
@@ -298,4 +292,33 @@
       ],
     },
   ],
+  'conditions': [
+    ['OS == "android"', {
+      'targets': [
+        {
+          'target_name': 'printing_jni_headers',
+          'type': 'none',
+          'sources': [
+            'android/java/src/org/chromium/printing/PrintingContext.java',
+          ],
+          'variables': {
+            'jni_gen_package': 'printing',
+            'jni_generator_ptr_type': 'long',
+          },
+          'includes': [ '../build/jni_generator.gypi' ],
+        },
+	{
+	  'target_name': 'printing_java',
+          'type': 'none',
+          'variables': {
+            'java_in_dir': '../printing/android/java',
+          },
+          'dependencies': [
+            '../base/base.gyp:base_java',
+          ],
+          'includes': [ '../build/java.gypi'  ],
+	}
+      ]
+    }],
+  ]
 }

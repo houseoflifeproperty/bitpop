@@ -5,11 +5,11 @@
 #include "chrome/common/cloud_print/cloud_print_helpers.h"
 
 #include "base/md5.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "chrome/common/chrome_version_info.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace cloud_print {
 
@@ -52,10 +52,11 @@ void CheckURLs(const GURL& server_base_url) {
                 expected_url_base.c_str()),
             GetUrlForJobDelete(server_base_url, "myprinter").spec());
 
-  EXPECT_EQ(base::StringPrintf("%scontrol?jobid=myprinter&status=s1",
+  EXPECT_EQ(base::StringPrintf(
+                "%scontrol?jobid=myprinter&status=s1&connector_code=0",
                 expected_url_base.c_str()),
             GetUrlForJobStatusUpdate(
-                server_base_url, "myprinter", "s1").spec());
+                server_base_url, "myprinter", "s1", 0).spec());
 
   EXPECT_EQ(base::StringPrintf("%smessage?code=testmsg",
                 expected_url_base.c_str()),
@@ -83,7 +84,7 @@ TEST(CloudPrintHelpersTest, GetHashOfPrinterTags) {
   printer_tags["tag2"] = std::string("value2");
 
   chrome::VersionInfo version_info;
-  std::string expected_list_string = StringPrintf(
+  std::string expected_list_string = base::StringPrintf(
       "chrome_version%ssystem_name%ssystem_version%stag1value1tag2value2",
       version_info.CreateVersionString().c_str(),
       base::SysInfo::OperatingSystemName().c_str(),

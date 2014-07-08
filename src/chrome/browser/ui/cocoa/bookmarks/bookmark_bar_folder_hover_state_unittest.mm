@@ -4,7 +4,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_folder_hover_state.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
@@ -18,15 +18,15 @@ class BookmarkBarFolderHoverStateTest : public CocoaTest {
 // A strict call order is implied with these calls.  It is ONLY valid to make
 // these specific state transitions.
 TEST_F(BookmarkBarFolderHoverStateTest, HoverState) {
-  MessageLoopForUI message_loop;
-  scoped_nsobject<BookmarkBarFolderHoverState> bbfhs;
+  base::MessageLoopForUI message_loop;
+  base::scoped_nsobject<BookmarkBarFolderHoverState> bbfhs;
   bbfhs.reset([[BookmarkBarFolderHoverState alloc] init]);
 
   // Initial state.
   EXPECT_FALSE([bbfhs hoverButton]);
   ASSERT_EQ(kHoverStateClosed, [bbfhs hoverState]);
 
-  scoped_nsobject<BookmarkButton> button;
+  base::scoped_nsobject<BookmarkButton> button;
   button.reset([[BookmarkButton alloc] initWithFrame:NSMakeRect(0, 0, 20, 20)]);
 
   // Test transition from closed to opening.
@@ -47,7 +47,7 @@ TEST_F(BookmarkBarFolderHoverStateTest, HoverState) {
   // Test transition from opening to opened.
   message_loop.PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(
           bookmarks::kDragHoverOpenDelay * 1000.0 * 1.5));
   message_loop.Run();
@@ -68,7 +68,7 @@ TEST_F(BookmarkBarFolderHoverStateTest, HoverState) {
   ASSERT_EQ(kHoverStateClosing, [bbfhs hoverState]);
   message_loop.PostDelayedTask(
       FROM_HERE,
-      MessageLoop::QuitClosure(),
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(
           bookmarks::kDragHoverCloseDelay * 1000.0 * 1.5));
   message_loop.Run();

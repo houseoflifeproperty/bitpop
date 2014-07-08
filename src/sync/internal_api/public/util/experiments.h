@@ -5,35 +5,54 @@
 #ifndef SYNC_UTIL_EXPERIMENTS_
 #define SYNC_UTIL_EXPERIMENTS_
 
+#include <string>
+
 #include "sync/internal_api/public/base/model_type.h"
 
 namespace syncer {
 
-const char kKeystoreEncryptionTag[] = "keystore_encryption";
-const char kKeystoreEncryptionFlag[] = "sync-keystore-encryption";
-const char kAutofillCullingTag[] = "autofill_culling";
+const char kFaviconSyncTag[] = "favicon_sync";
+const char kPreCommitUpdateAvoidanceTag[] = "pre_commit_update_avoidance";
+const char kGCMChannelTag[] = "gcm_channel";
+const char kEnhancedBookmarksTag[] = "enhanced_bookmarks";
+const char kGCMInvalidationsTag[] = "gcm_invalidations";
 
 // A structure to hold the enable status of experimental sync features.
 struct Experiments {
-  Experiments() : sync_tab_favicons(false),
-                  keystore_encryption(false),
-                  autofill_culling(false) {}
+  enum GCMChannelState {
+    UNSET,
+    SUPPRESSED,
+    ENABLED,
+  };
+
+  Experiments()
+      : favicon_sync_limit(200),
+        gcm_channel_state(UNSET),
+        enhanced_bookmarks_enabled(false),
+        gcm_invalidations_enabled(false) {}
 
   bool Matches(const Experiments& rhs) {
-    return (sync_tab_favicons == rhs.sync_tab_favicons &&
-            keystore_encryption == rhs.keystore_encryption &&
-            autofill_culling == rhs.autofill_culling);
+    return (favicon_sync_limit == rhs.favicon_sync_limit &&
+            gcm_channel_state == rhs.gcm_channel_state &&
+            enhanced_bookmarks_enabled == rhs.enhanced_bookmarks_enabled &&
+            enhanced_bookmarks_ext_id == rhs.enhanced_bookmarks_ext_id &&
+            gcm_invalidations_enabled == rhs.gcm_invalidations_enabled);
   }
 
-  // Enable syncing of favicons within tab sync (only has an effect if tab sync
-  // is already enabled). This takes effect on the next restart.
-  bool sync_tab_favicons;
+  // The number of favicons that a client is permitted to sync.
+  int favicon_sync_limit;
 
-  // Enable keystore encryption logic and the new encryption UI.
-  bool keystore_encryption;
+  // Enable state of the GCM channel.
+  GCMChannelState gcm_channel_state;
 
-  // Enable deletion of expired autofill entries (if autofill sync is enabled).
-  bool autofill_culling;
+  // Enable the enhanced bookmarks sync datatype.
+  bool enhanced_bookmarks_enabled;
+
+  // Enable invalidations over GCM channel.
+  bool gcm_invalidations_enabled;
+
+  // Enhanced bookmarks extension id.
+  std::string enhanced_bookmarks_ext_id;
 };
 
 }  // namespace syncer

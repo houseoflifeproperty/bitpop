@@ -126,7 +126,8 @@ public class ClientProtocolAccessor {
         "initial_persistent_heartbeat_delay_ms",
         "protocol_handler_config",
         "channel_supports_offline_delivery",
-        "offline_heartbeat_threshold_ms"
+        "offline_heartbeat_threshold_ms",
+        "allow_suppression"
       ));
     
     public static final Descriptor VERSION = new Descriptor("version");
@@ -141,6 +142,7 @@ public class ClientProtocolAccessor {
     public static final Descriptor PROTOCOL_HANDLER_CONFIG = new Descriptor("protocol_handler_config");
     public static final Descriptor CHANNEL_SUPPORTS_OFFLINE_DELIVERY = new Descriptor("channel_supports_offline_delivery");
     public static final Descriptor OFFLINE_HEARTBEAT_THRESHOLD_MS = new Descriptor("offline_heartbeat_threshold_ms");
+    public static final Descriptor ALLOW_SUPPRESSION = new Descriptor("allow_suppression");
     
     /** Returns whether {@code field} is present in {@code message}. */
     @Override
@@ -184,6 +186,9 @@ public class ClientProtocolAccessor {
       }
       if (field == OFFLINE_HEARTBEAT_THRESHOLD_MS) {
         return message.hasOfflineHeartbeatThresholdMs();
+      }
+      if (field == ALLOW_SUPPRESSION) {
+        return message.hasAllowSuppression();
       }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }
@@ -231,6 +236,9 @@ public class ClientProtocolAccessor {
       if (field == OFFLINE_HEARTBEAT_THRESHOLD_MS) {
         return message.getOfflineHeartbeatThresholdMs();
       }
+      if (field == ALLOW_SUPPRESSION) {
+        return message.getAllowSuppression();
+      }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }
     
@@ -250,7 +258,8 @@ public class ClientProtocolAccessor {
         "registration_summary",
         "client_time_ms",
         "max_known_server_time_ms",
-        "message_id"
+        "message_id",
+        "client_type"
       ));
     
     public static final Descriptor PROTOCOL_VERSION = new Descriptor("protocol_version");
@@ -259,6 +268,7 @@ public class ClientProtocolAccessor {
     public static final Descriptor CLIENT_TIME_MS = new Descriptor("client_time_ms");
     public static final Descriptor MAX_KNOWN_SERVER_TIME_MS = new Descriptor("max_known_server_time_ms");
     public static final Descriptor MESSAGE_ID = new Descriptor("message_id");
+    public static final Descriptor CLIENT_TYPE = new Descriptor("client_type");
     
     /** Returns whether {@code field} is present in {@code message}. */
     @Override
@@ -284,6 +294,9 @@ public class ClientProtocolAccessor {
       }
       if (field == MESSAGE_ID) {
         return message.hasMessageId();
+      }
+      if (field == CLIENT_TYPE) {
+        return message.hasClientType();
       }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }
@@ -312,6 +325,9 @@ public class ClientProtocolAccessor {
       }
       if (field == MESSAGE_ID) {
         return message.getMessageId();
+      }
+      if (field == CLIENT_TYPE) {
+        return message.getClientType();
       }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }
@@ -796,7 +812,7 @@ public class ClientProtocolAccessor {
         "version",
         "is_trickle_restart",
         "payload",
-        "bridge_arrival_time_ms"
+        "bridge_arrival_time_ms_deprecated"
       ));
     
     public static final Descriptor OBJECT_ID = new Descriptor("object_id");
@@ -804,11 +820,11 @@ public class ClientProtocolAccessor {
     public static final Descriptor VERSION = new Descriptor("version");
     public static final Descriptor IS_TRICKLE_RESTART = new Descriptor("is_trickle_restart");
     public static final Descriptor PAYLOAD = new Descriptor("payload");
-    public static final Descriptor BRIDGE_ARRIVAL_TIME_MS = new Descriptor("bridge_arrival_time_ms");
+    public static final Descriptor BRIDGE_ARRIVAL_TIME_MS_DEPRECATED = new Descriptor("bridge_arrival_time_ms_deprecated");
     
     /** Returns whether {@code field} is present in {@code message}. */
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "deprecation", "unchecked" })
     public boolean hasField(MessageLite rawMessage, Descriptor field) {
       Preconditions.checkNotNull(rawMessage);
       Preconditions.checkNotNull(field);
@@ -828,15 +844,15 @@ public class ClientProtocolAccessor {
       if (field == PAYLOAD) {
         return message.hasPayload();
       }
-      if (field == BRIDGE_ARRIVAL_TIME_MS) {
-        return message.hasBridgeArrivalTimeMs();
+      if (field == BRIDGE_ARRIVAL_TIME_MS_DEPRECATED) {
+        return message.hasBridgeArrivalTimeMsDeprecated();
       }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }
     
     /** Returns the {@code field} from {@code message}. */
     @Override
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "deprecation", "unchecked" })
     public Object getField(MessageLite rawMessage, Descriptor field) {
       Preconditions.checkNotNull(rawMessage);
       Preconditions.checkNotNull(field);
@@ -856,8 +872,8 @@ public class ClientProtocolAccessor {
       if (field == PAYLOAD) {
         return message.getPayload();
       }
-      if (field == BRIDGE_ARRIVAL_TIME_MS) {
-        return message.getBridgeArrivalTimeMs();
+      if (field == BRIDGE_ARRIVAL_TIME_MS_DEPRECATED) {
+        return message.getBridgeArrivalTimeMsDeprecated();
       }
       throw new IllegalArgumentException("Bad descriptor: " + field);
     }

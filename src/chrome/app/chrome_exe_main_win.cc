@@ -5,94 +5,102 @@
 #include <windows.h>
 #include <tchar.h>
 
+#include <string>
+
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "chrome/app/breakpad_win.h"
+#include "base/files/file_path.h"
 #include "chrome/app/client_util.h"
-#include "chrome/app/metro_driver_win.h"
-#include "content/public/app/startup_helper_win.h"
+#include "chrome/browser/chrome_process_finder_win.h"
+#include "chrome/browser/policy/policy_path_parser.h"
+#include "chrome/common/chrome_constants.h"
+#include "chrome/common/chrome_paths_internal.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome_elf/chrome_elf_main.h"
+#include "components/startup_metric_utils/startup_metric_utils.h"
 #include "content/public/common/result_codes.h"
-#include "sandbox/win/src/sandbox_factory.h"
+#include "ui/gfx/win/dpi.h"
 
 namespace {
 
-// TODO(jschuh): Remove this after we narrow down the cause of the crashes.
-class ThreadTracker {
- public:
-  static void NTAPI UpdateCount(PVOID module, DWORD reason, PVOID reserved) {
-    if (reason == DLL_THREAD_ATTACH) {
-      // We hit the threshold, but the loader would eat an exception fired now.
-      // So, schedule an APC to fire the exception exactly once after loading
-      // is complete.
-      if (::InterlockedIncrement(&count_) == cap_ &&
-          !InterlockedExchange(&crash_triggered_, TRUE)) {
-        ::QueueUserAPC(CrashProcessCallback, ::GetCurrentThread(), NULL);
-      }
-    } else if (reason == DLL_THREAD_DETACH) {
-      ::InterlockedDecrement(&count_);
-    }
-  }
+void CheckSafeModeLaunch() {
+  unsigned short k1 = ::GetAsyncKeyState(VK_CONTROL);
+  unsigned short k2 = ::GetAsyncKeyState(VK_MENU);
+  const unsigned short kPressedMask = 0x8000;
+  if ((k1 & kPressedMask) && (k2 & kPressedMask))
+    ::SetEnvironmentVariableA(chrome::kSafeModeEnvVar, "1");
+}
 
-  static void SetCap(LONG cap) { cap_ = cap; }
-
- private:
-  static void CALLBACK CrashProcessCallback(ULONG_PTR) { __debugbreak(); }
-
-  static volatile LONG count_;
-  static volatile LONG cap_;
-  static volatile LONG crash_triggered_;
+// List of switches that it's safe to rendezvous early with. Fast start should
+// not be done if a command line contains a switch not in this set.
+// Note this is currently stored as a list of two because it's probably faster
+// to iterate over this small array than building a map for constant time
+// lookups.
+const char* const kFastStartSwitches[] = {
+  switches::kProfileDirectory,
+  switches::kShowAppList,
 };
 
-LONG volatile ThreadTracker::count_ = 1;
-LONG volatile ThreadTracker::cap_ = LONG_MAX;
-LONG volatile ThreadTracker::crash_triggered_ = FALSE;
+bool IsFastStartSwitch(const std::string& command_line_switch) {
+  for (size_t i = 0; i < arraysize(kFastStartSwitches); ++i) {
+    if (command_line_switch == kFastStartSwitches[i])
+      return true;
+  }
+  return false;
+}
+
+bool ContainsNonFastStartFlag(const CommandLine& command_line) {
+  const CommandLine::SwitchMap& switches = command_line.GetSwitches();
+  if (switches.size() > arraysize(kFastStartSwitches))
+    return true;
+  for (CommandLine::SwitchMap::const_iterator it = switches.begin();
+       it != switches.end(); ++it) {
+    if (!IsFastStartSwitch(it->first))
+      return true;
+  }
+  return false;
+}
+
+bool AttemptFastNotify(const CommandLine& command_line) {
+  if (ContainsNonFastStartFlag(command_line))
+    return false;
+
+  base::FilePath user_data_dir;
+  if (!chrome::GetDefaultUserDataDirectory(&user_data_dir))
+    return false;
+  policy::path_parser::CheckUserDataDirPolicy(&user_data_dir);
+
+  HWND chrome = chrome::FindRunningChromeWindow(user_data_dir);
+  if (!chrome)
+    return false;
+  return chrome::AttemptToNotifyRunningChrome(chrome, true) ==
+      chrome::NOTIFY_SUCCESS;
+}
 
 }  // namespace
 
-// Magic required to get our function called on thread attach and detach.
-extern "C" {
-#pragma data_seg(push, old_seg)
-#pragma data_seg(".CRT$XLB")
-PIMAGE_TLS_CALLBACK p_thread_callback = ThreadTracker::UpdateCount;
-#pragma data_seg(pop, old_seg)
-
-#pragma comment(linker, "/INCLUDE:__tls_used")
-#pragma comment(linker, "/INCLUDE:_p_thread_callback")
-}
-
-int RunChrome(HINSTANCE instance) {
-  bool exit_now = true;
-  // We restarted because of a previous crash. Ask user if we should relaunch.
-  if (ShowRestartDialogIfCrashed(&exit_now)) {
-    if (exit_now)
-      return content::RESULT_CODE_NORMAL_EXIT;
-  }
-
-  // Initialize the sandbox services.
-  sandbox::SandboxInterfaceInfo sandbox_info = {0};
-  content::InitializeSandboxInfo(&sandbox_info);
-
-  // Cap the threads for any sandboxed process.
-  if (sandbox_info.target_services)
-    ThreadTracker::SetCap(200);
-
-  // Load and launch the chrome dll. *Everything* happens inside.
-  MainDllLoader* loader = MakeMainDllLoader();
-  int rc = loader->Launch(instance, &sandbox_info);
-  loader->RelaunchChromeBrowserWithNewCommandLineIfNeeded();
-  delete loader;
-  return rc;
-}
-
 int APIENTRY wWinMain(HINSTANCE instance, HINSTANCE prev, wchar_t*, int) {
+  startup_metric_utils::RecordExeMainEntryTime();
+
+  // Signal Chrome Elf that Chrome has begun to start.
+  SignalChromeElf();
+
   // Initialize the commandline singleton from the environment.
   CommandLine::Init(0, NULL);
   // The exit manager is in charge of calling the dtors of singletons.
   base::AtExitManager exit_manager;
 
-  MetroDriver metro_driver;
-  if (metro_driver.in_metro_mode())
-    return metro_driver.RunInMetro(instance, &RunChrome);
-  // Not in metro mode, proceed as normal.
-  return RunChrome(instance);
+  gfx::EnableHighDPISupport();
+
+  if (AttemptFastNotify(*CommandLine::ForCurrentProcess()))
+    return 0;
+
+  CheckSafeModeLaunch();
+
+  // Load and launch the chrome dll. *Everything* happens inside.
+  MainDllLoader* loader = MakeMainDllLoader();
+  int rc = loader->Launch(instance);
+  loader->RelaunchChromeBrowserWithNewCommandLineIfNeeded();
+  delete loader;
+  return rc;
 }

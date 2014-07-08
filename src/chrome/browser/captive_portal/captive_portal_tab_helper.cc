@@ -6,13 +6,14 @@
 
 #include "base/bind.h"
 #include "chrome/browser/captive_portal/captive_portal_login_detector.h"
-#include "chrome/browser/captive_portal/captive_portal_tab_reloader.h"
 #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
+#include "chrome/browser/captive_portal/captive_portal_tab_reloader.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -22,11 +23,11 @@
 #include "content/public/browser/resource_request_details.h"
 #include "content/public/browser/web_contents.h"
 #include "net/base/net_errors.h"
-#include "net/base/ssl_info.h"
+#include "net/ssl/ssl_info.h"
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(captive_portal::CaptivePortalTabHelper)
+using captive_portal::CaptivePortalResult;
 
-namespace captive_portal {
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(CaptivePortalTabHelper);
 
 CaptivePortalTabHelper::CaptivePortalTabHelper(
     content::WebContents* web_contents)
@@ -51,12 +52,18 @@ CaptivePortalTabHelper::CaptivePortalTabHelper(
   registrar_.Add(this,
                  content::NOTIFICATION_RESOURCE_RECEIVED_REDIRECT,
                  content::Source<content::WebContents>(web_contents));
-  registrar_.Add(this,
-                 content::NOTIFICATION_RENDER_VIEW_HOST_DELETED,
-                 content::NotificationService::AllSources());
 }
 
 CaptivePortalTabHelper::~CaptivePortalTabHelper() {
+}
+
+void CaptivePortalTabHelper::RenderViewDeleted(
+    content::RenderViewHost* render_view_host) {
+  // This can happen when a cross-process navigation is aborted, either by
+  // pressing stop or by starting a new cross-process navigation that can't
+  // re-use |provisional_render_view_host_|.  May also happen on a crash.
+  if (render_view_host == provisional_render_view_host_)
+    OnLoadAborted();
 }
 
 void CaptivePortalTabHelper::DidStartProvisionalLoadForFrame(
@@ -65,6 +72,7 @@ void CaptivePortalTabHelper::DidStartProvisionalLoadForFrame(
     bool is_main_frame,
     const GURL& validated_url,
     bool is_error_page,
+    bool is_iframe_srcdoc,
     content::RenderViewHost* render_view_host) {
   DCHECK(CalledOnValidThread());
 
@@ -90,6 +98,7 @@ void CaptivePortalTabHelper::DidStartProvisionalLoadForFrame(
 
 void CaptivePortalTabHelper::DidCommitProvisionalLoadForFrame(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& url,
     content::PageTransition transition_type,
@@ -119,10 +128,11 @@ void CaptivePortalTabHelper::DidCommitProvisionalLoadForFrame(
 
 void CaptivePortalTabHelper::DidFailProvisionalLoad(
     int64 frame_id,
+    const base::string16& frame_unique_name,
     bool is_main_frame,
     const GURL& validated_url,
     int error_code,
-    const string16& error_description,
+    const base::string16& error_description,
     content::RenderViewHost* render_view_host) {
   DCHECK(CalledOnValidThread());
 
@@ -174,16 +184,6 @@ void CaptivePortalTabHelper::Observe(
       OnCaptivePortalResults(results->previous_result, results->result);
       break;
     }
-    case content::NOTIFICATION_RENDER_VIEW_HOST_DELETED: {
-      content::RenderViewHost* render_view_host =
-          content::Source<content::RenderViewHost>(source).ptr();
-      // This can happen when a cross-process navigation is aborted, either by
-      // pressing stop or by starting a new cross-process navigation that can't
-      // re-use |provisional_render_view_host_|.  May also happen on a crash.
-      if (render_view_host == provisional_render_view_host_)
-        OnLoadAborted();
-      break;
-    }
     default:
       NOTREACHED();
   }
@@ -210,8 +210,9 @@ void CaptivePortalTabHelper::OnRedirect(int child_id,
   tab_reloader_->OnRedirect(new_url.SchemeIsSecure());
 }
 
-void CaptivePortalTabHelper::OnCaptivePortalResults(Result previous_result,
-                                                    Result result) {
+void CaptivePortalTabHelper::OnCaptivePortalResults(
+    CaptivePortalResult previous_result,
+    CaptivePortalResult result) {
   tab_reloader_->OnCaptivePortalResults(previous_result, result);
   login_detector_->OnCaptivePortalResults(previous_result, result);
 }
@@ -249,10 +250,11 @@ void CaptivePortalTabHelper::OpenLoginTab() {
   // If so, do nothing.
   // TODO(mmenke):  Consider focusing that tab, at least if this is the tab
   //                helper for the currently active tab for the profile.
-  for (int i = 0; i < browser->tab_count(); ++i) {
-    content::WebContents* web_contents = chrome::GetWebContentsAt(browser, i);
-    captive_portal::CaptivePortalTabHelper* captive_portal_tab_helper =
-        captive_portal::CaptivePortalTabHelper::FromWebContents(web_contents);
+  for (int i = 0; i < browser->tab_strip_model()->count(); ++i) {
+    content::WebContents* web_contents =
+        browser->tab_strip_model()->GetWebContentsAt(i);
+    CaptivePortalTabHelper* captive_portal_tab_helper =
+        CaptivePortalTabHelper::FromWebContents(web_contents);
     if (captive_portal_tab_helper->IsLoginTab())
       return;
   }
@@ -263,9 +265,7 @@ void CaptivePortalTabHelper::OpenLoginTab() {
           browser,
           CaptivePortalServiceFactory::GetForProfile(profile_)->test_url(),
           content::PAGE_TRANSITION_TYPED);
-  captive_portal::CaptivePortalTabHelper* captive_portal_tab_helper =
-      captive_portal::CaptivePortalTabHelper::FromWebContents(web_contents);
+  CaptivePortalTabHelper* captive_portal_tab_helper =
+      CaptivePortalTabHelper::FromWebContents(web_contents);
   captive_portal_tab_helper->SetIsLoginTab();
 }
-
-}  // namespace captive_portal

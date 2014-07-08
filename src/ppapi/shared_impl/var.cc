@@ -7,21 +7,17 @@
 #include <limits>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
 #include "ppapi/c/pp_var.h"
 #include "ppapi/shared_impl/ppapi_globals.h"
+#include "ppapi/shared_impl/resource_var.h"
 #include "ppapi/shared_impl/var_tracker.h"
 
 namespace ppapi {
 
 // Var -------------------------------------------------------------------------
-
-Var::Var() : var_id_(0) {
-}
-
-Var::~Var() {
-}
 
 // static
 std::string Var::PPVarToLogString(PP_Var var) {
@@ -56,26 +52,43 @@ std::string Var::PPVarToLogString(PP_Var var) {
     }
     case PP_VARTYPE_OBJECT:
       return "[Object]";
+    case PP_VARTYPE_ARRAY:
+      return "[Array]";
+    case PP_VARTYPE_DICTIONARY:
+      return "[Dictionary]";
+    case PP_VARTYPE_ARRAY_BUFFER:
+      return "[Array buffer]";
+    case PP_VARTYPE_RESOURCE: {
+      ResourceVar* resource(ResourceVar::FromPPVar(var));
+      if (!resource)
+        return "[Invalid resource]";
+
+      if (resource->IsPending()) {
+        return base::StringPrintf("[Pending resource]");
+      } else if (resource->GetPPResource()) {
+        return base::StringPrintf("[Resource %d]", resource->GetPPResource());
+      } else {
+        return "[Null resource]";
+      }
+    }
     default:
       return "[Invalid var]";
   }
 }
 
-StringVar* Var::AsStringVar() {
-  return NULL;
-}
+StringVar* Var::AsStringVar() { return NULL; }
 
-ArrayBufferVar* Var::AsArrayBufferVar() {
-  return NULL;
-}
+ArrayBufferVar* Var::AsArrayBufferVar() { return NULL; }
 
-NPObjectVar* Var::AsNPObjectVar() {
-  return NULL;
-}
+NPObjectVar* Var::AsNPObjectVar() { return NULL; }
 
-ProxyObjectVar* Var::AsProxyObjectVar() {
-  return NULL;
-}
+ProxyObjectVar* Var::AsProxyObjectVar() { return NULL; }
+
+ArrayVar* Var::AsArrayVar() { return NULL; }
+
+DictionaryVar* Var::AsDictionaryVar() { return NULL; }
+
+ResourceVar* Var::AsResourceVar() { return NULL; }
 
 PP_Var Var::GetPPVar() {
   int32 id = GetOrCreateVarID();
@@ -89,9 +102,11 @@ PP_Var Var::GetPPVar() {
   return result;
 }
 
-int32 Var::GetExistingVarID() const {
-  return var_id_;
-}
+int32 Var::GetExistingVarID() const { return var_id_; }
+
+Var::Var() : var_id_(0) {}
+
+Var::~Var() {}
 
 int32 Var::GetOrCreateVarID() {
   VarTracker* tracker = PpapiGlobals::Get()->GetVarTracker();
@@ -113,27 +128,17 @@ void Var::AssignVarID(int32 id) {
 
 // StringVar -------------------------------------------------------------------
 
-StringVar::StringVar() {
-}
+StringVar::StringVar() {}
 
-StringVar::StringVar(const std::string& str)
-    : value_(str) {
-}
+StringVar::StringVar(const std::string& str) : value_(str) {}
 
-StringVar::StringVar(const char* str, uint32 len)
-    : value_(str, len) {
-}
+StringVar::StringVar(const char* str, uint32 len) : value_(str, len) {}
 
-StringVar::~StringVar() {
-}
+StringVar::~StringVar() {}
 
-StringVar* StringVar::AsStringVar() {
-  return this;
-}
+StringVar* StringVar::AsStringVar() { return this; }
 
-PP_VarType StringVar::GetType() const {
-  return PP_VARTYPE_STRING;
-}
+PP_VarType StringVar::GetType() const { return PP_VARTYPE_STRING; }
 
 // static
 PP_Var StringVar::StringToPPVar(const std::string& var) {
@@ -143,7 +148,7 @@ PP_Var StringVar::StringToPPVar(const std::string& var) {
 // static
 PP_Var StringVar::StringToPPVar(const char* data, uint32 len) {
   scoped_refptr<StringVar> str(new StringVar(data, len));
-  if (!str || !IsStringUTF8(str->value()))
+  if (!str.get() || !base::IsStringUTF8(str->value()))
     return PP_MakeNull();
   return str->GetPPVar();
 }
@@ -154,7 +159,7 @@ StringVar* StringVar::FromPPVar(PP_Var var) {
     return NULL;
   scoped_refptr<Var> var_object(
       PpapiGlobals::Get()->GetVarTracker()->GetVar(var));
-  if (!var_object)
+  if (!var_object.get())
     return NULL;
   return var_object->AsStringVar();
 }
@@ -168,19 +173,13 @@ PP_Var StringVar::SwapValidatedUTF8StringIntoPPVar(std::string* src) {
 
 // ArrayBufferVar --------------------------------------------------------------
 
-ArrayBufferVar::ArrayBufferVar() {
-}
+ArrayBufferVar::ArrayBufferVar() {}
 
-ArrayBufferVar::~ArrayBufferVar() {
-}
+ArrayBufferVar::~ArrayBufferVar() {}
 
-ArrayBufferVar* ArrayBufferVar::AsArrayBufferVar() {
-  return this;
-}
+ArrayBufferVar* ArrayBufferVar::AsArrayBufferVar() { return this; }
 
-PP_VarType ArrayBufferVar::GetType() const {
-  return PP_VARTYPE_ARRAY_BUFFER;
-}
+PP_VarType ArrayBufferVar::GetType() const { return PP_VARTYPE_ARRAY_BUFFER; }
 
 // static
 ArrayBufferVar* ArrayBufferVar::FromPPVar(PP_Var var) {
@@ -188,10 +187,9 @@ ArrayBufferVar* ArrayBufferVar::FromPPVar(PP_Var var) {
     return NULL;
   scoped_refptr<Var> var_object(
       PpapiGlobals::Get()->GetVarTracker()->GetVar(var));
-  if (!var_object)
+  if (!var_object.get())
     return NULL;
   return var_object->AsArrayBufferVar();
 }
 
 }  // namespace ppapi
-

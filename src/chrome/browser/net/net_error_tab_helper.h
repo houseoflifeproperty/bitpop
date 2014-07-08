@@ -6,10 +6,12 @@
 #define CHROME_BROWSER_NET_NET_ERROR_TAB_HELPER_H_
 
 #include "base/basictypes.h"
+#include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/net/dns_probe_service.h"
+#include "chrome/common/net/net_error_info.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 
@@ -22,52 +24,102 @@ class NetErrorTabHelper
     : public content::WebContentsObserver,
       public content::WebContentsUserData<NetErrorTabHelper> {
  public:
+  enum TestingState {
+    TESTING_DEFAULT,
+    TESTING_FORCE_DISABLED,
+    TESTING_FORCE_ENABLED
+  };
+
+  typedef base::Callback<void(chrome_common_net::DnsProbeStatus)>
+      DnsProbeStatusSnoopCallback;
+
   virtual ~NetErrorTabHelper();
 
+  static void set_state_for_testing(TestingState testing_state);
+
+  // Sets a callback that will be called immediately after the helper sends
+  // a NetErrorHelper IPC.  (Used by the DNS probe browser test to know when to
+  // check the error page for updates, instead of polling.)
+  void set_dns_probe_status_snoop_callback_for_testing(
+      const DnsProbeStatusSnoopCallback& dns_probe_status_snoop_callback) {
+    dns_probe_status_snoop_callback_ = dns_probe_status_snoop_callback;
+  }
+
   // content::WebContentsObserver implementation.
+  virtual void DidStartNavigationToPendingEntry(
+      const GURL& url,
+      content::NavigationController::ReloadType reload_type) OVERRIDE;
+
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      int64 parent_frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc,
+      content::RenderViewHost* render_view_host) OVERRIDE;
+
+  virtual void DidCommitProvisionalLoadForFrame(
+      int64 frame_id,
+      const base::string16& frame_unique_name,
+      bool is_main_frame,
+      const GURL& url,
+      content::PageTransition transition_type,
+      content::RenderViewHost* render_view_host) OVERRIDE;
+
   virtual void DidFailProvisionalLoad(
       int64 frame_id,
+      const base::string16& frame_unique_name,
       bool is_main_frame,
       const GURL& validated_url,
       int error_code,
-      const string16& error_description,
+      const base::string16& error_description,
       content::RenderViewHost* render_view_host) OVERRIDE;
 
-  void OnDnsProbeFinished(DnsProbeService::Result result);
-
-  static void set_enabled_for_testing(bool enabled_for_testing);
-
  protected:
-  friend class content::WebContentsUserData<NetErrorTabHelper>;
-
   // |contents| is the WebContents of the tab this NetErrorTabHelper is
   // attached to.
   explicit NetErrorTabHelper(content::WebContents* contents);
+  virtual void StartDnsProbe();
+  virtual void SendInfo();
+  void OnDnsProbeFinished(chrome_common_net::DnsProbeStatus result);
 
-  // Posts a task to the IO thread that will start a DNS probe.
-  virtual void PostStartDnsProbeTask();
-
-  // Checks if probes are allowed by enabled_for_testing and "use web service"
-  // pref.
-  virtual bool ProbesAllowed() const;
-
-  bool dns_probe_running() { return dns_probe_running_; }
-  void set_dns_probe_running(bool running) { dns_probe_running_ = running; }
+  chrome_common_net::DnsProbeStatus dns_probe_status() const {
+    return dns_probe_status_;
+  }
 
  private:
-  void InitializePref(content::WebContents* contents);
+  friend class content::WebContentsUserData<NetErrorTabHelper>;
 
   void OnMainFrameDnsError();
 
-  // Whether the tab helper has started a DNS probe that has not yet returned
-  // a result.
-  bool dns_probe_running_;
+  void InitializePref(content::WebContents* contents);
+  bool ProbesAllowed() const;
+
+  base::WeakPtrFactory<NetErrorTabHelper> weak_factory_;
+
+  // True if the last provisional load that started was for an error page.
+  bool is_error_page_;
+
+  // True if the helper has seen a main frame page load fail with a DNS error,
+  // but has not yet seen a new page commit successfully afterwards.
+  bool dns_error_active_;
+
+  // True if the helper has seen an error page commit while |dns_error_active_|
+  // is true.  (This should never be true if |dns_error_active_| is false.)
+  bool dns_error_page_committed_;
+
+  // The status of a DNS probe that may or may not have started or finished.
+  // Since the renderer can change out from under the helper (in cross-process
+  // navigations), it re-sends the status whenever an error page commits.
+  chrome_common_net::DnsProbeStatus dns_probe_status_;
+
+  // Optional callback for browser test to snoop on outgoing NetErrorInfo IPCs.
+  DnsProbeStatusSnoopCallback dns_probe_status_snoop_callback_;
+
   // "Use a web service to resolve navigation errors" preference is required
   // to allow probes.
   BooleanPrefMember resolve_errors_with_web_service_;
-  // Whether the above pref was initialized -- will be false in unit tests.
-  bool pref_initialized_;
-  base::WeakPtrFactory<NetErrorTabHelper> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(NetErrorTabHelper);
 };

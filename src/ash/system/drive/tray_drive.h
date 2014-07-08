@@ -7,15 +7,13 @@
 
 #include "ash/system/drive/drive_observer.h"
 #include "ash/system/tray/tray_image_item.h"
-#include "base/timer.h"
+#include "base/timer/timer.h"
 
 namespace views {
 class Label;
 }
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 class DriveTrayView;
 class DriveDefaultView;
@@ -40,7 +38,7 @@ class TrayDrive : public TrayImageItem,
   virtual void UpdateAfterLoginStatusChange(user::LoginStatus status) OVERRIDE;
 
   // Overridden from DriveObserver.
-  virtual void OnDriveRefresh(const DriveOperationStatusList& list) OVERRIDE;
+  virtual void OnDriveJobUpdated(const DriveOperationStatus& status) OVERRIDE;
 
   // Delayed hiding of the tray item after encountering an empty operation list.
   void HideIfNoOperations();
@@ -52,7 +50,6 @@ class TrayDrive : public TrayImageItem,
   DISALLOW_COPY_AND_ASSIGN(TrayDrive);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_DRIVE_TRAY_DRIVE_H_

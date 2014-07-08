@@ -4,8 +4,32 @@
 
 {
   'variables': {
-    'use_snappy%': 0,
+    'use_snappy%': 1,
   },
+  'conditions': [
+    ['OS == "android" and android_webview_build == 1', {
+      'variables': {
+        # Snappy not used in Android WebView
+        # crbug.com/236780
+        'use_snappy': 0,
+      },
+    }],
+    ['OS=="android" and gtest_target_type == "shared_library"', {
+      # Wrap env_chromium_unittests into an android apk for execution.
+      'targets': [{
+        'target_name': 'env_chromium_unittests_apk',
+        'type': 'none',
+        'dependencies': [
+          '<(DEPTH)/base/base.gyp:base_java',
+          'env_chromium_unittests',
+        ],
+        'variables': {
+          'test_suite_name': 'env_chromium_unittests',
+        },
+        'includes': [ '../../build/apk_test.gypi' ],
+      }],
+    }],
+  ],
   'target_defaults': {
     'defines': [
       'LEVELDB_PLATFORM_CHROMIUM=1',
@@ -16,11 +40,6 @@
       'src/include/',
     ],
     'conditions': [
-      ['OS == "win"', {
-        'include_dirs': [
-          'src/port/win',
-        ],
-      }],
       ['use_snappy', {
         'defines': [
           'USE_SNAPPY=1',
@@ -31,8 +50,9 @@
   'targets': [
     {
       'target_name': 'leveldatabase',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
+        '../../third_party/re2/re2.gyp:re2',
         '../../base/base.gyp:base',
         # base::LazyInstance is a template that pulls in dynamic_annotations so
         # we need to explictly link in the code for dynamic_annotations.
@@ -44,18 +64,18 @@
             '../../third_party/snappy/snappy.gyp:snappy',
           ],
         }],
+        ['OS=="win"', {
+          'sources': [
+            'env_chromium_win.cc',
+            'env_chromium_win.h',
+          ],
+        }],
       ],
       'direct_dependent_settings': {
         'include_dirs': [
           'src/include/',
           'src/',
-        ],
-        'conditions': [
-          ['OS == "win"', {
-            'include_dirs': [
-              'src/port/win',
-            ],
-          }],
+          '.',
         ],
       },
       # Patch posted for upstream, can be removed once that's landed and
@@ -64,11 +84,18 @@
       'msvs_disabled_warnings': [
         # Signed/unsigned comparison.
         4018,
+
+        # TODO(jschuh): http://crbug.com/167187 size_t -> int
+        4267,
       ],
       'sources': [
         # Include and then exclude so that all files show up in IDEs, even if
         # they don't build.
         'env_chromium.cc',
+        'env_chromium.h',
+        'env_chromium_stdio.cc',
+        'env_chromium_stdio.h',
+        'env_idb.h',
         'port/port_chromium.cc',
         'port/port_chromium.h',
         'src/db/builder.cc',
@@ -158,8 +185,29 @@
       ],
     },
     {
+      'target_name': 'env_chromium_unittests',
+      'type': '<(gtest_target_type)',
+      'dependencies': [
+        'leveldatabase',
+        '../../base/base.gyp:test_support_base',
+        '../../testing/gtest.gyp:gtest',
+      ],
+      'sources': [
+        'env_chromium_unittest.cc',
+      ],
+      'conditions': [
+        ['OS=="android" and gtest_target_type == "shared_library"', {
+          'type': 'shared_library',
+          'dependencies': [
+            '../../testing/android/native_test.gyp:native_test_native_code',
+            '../../tools/android/forwarder2/forwarder.gyp:forwarder2',
+          ],
+        }],
+      ],
+    },
+    {
       'target_name': 'leveldb_testutil',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
         'leveldatabase',

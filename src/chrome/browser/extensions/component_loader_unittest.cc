@@ -2,21 +2,27 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include <string>
-
 #include "chrome/browser/extensions/component_loader.h"
+
+#include <string>
 
 #include "base/file_util.h"
 #include "base/path_service.h"
+#include "base/prefs/pref_registry_simple.h"
 #include "chrome/browser/extensions/test_extension_service.h"
 #include "chrome/common/chrome_paths.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_set.h"
 #include "chrome/common/pref_names.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chrome/test/base/testing_pref_service_syncable.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/user_prefs/pref_registry_syncable.h"
+#include "content/public/test/test_browser_thread_bundle.h"
+#include "extensions/common/constants.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_set.h"
+#include "extensions/common/manifest_handlers/background_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using extensions::Extension;
+namespace extensions {
 
 namespace {
 
@@ -38,11 +44,16 @@ class MockExtensionService : public TestExtensionService {
 
   virtual void UnloadExtension(
       const std::string& extension_id,
-      extension_misc::UnloadedExtensionReason reason) OVERRIDE {
+      UnloadedExtensionInfo::Reason reason) OVERRIDE {
     ASSERT_TRUE(extension_set_.Contains(extension_id));
     // Remove the extension with the matching id.
     extension_set_.Remove(extension_id);
     unloaded_count_++;
+  }
+
+  virtual void RemoveComponentExtension(const std::string & extension_id)
+      OVERRIDE {
+    UnloadExtension(extension_id, UnloadedExtensionInfo::REASON_DISABLE);
   }
 
   virtual bool is_ready() OVERRIDE {
@@ -68,17 +79,18 @@ class MockExtensionService : public TestExtensionService {
 
 }  // namespace
 
-namespace extensions {
-
 class ComponentLoaderTest : public testing::Test {
  public:
-  ComponentLoaderTest() :
+  ComponentLoaderTest()
       // Note: we pass the same pref service here, to stand in for both
       // user prefs and local state.
-      component_loader_(&extension_service_, &prefs_, &prefs_) {
+      : component_loader_(&extension_service_,
+                          &prefs_,
+                          &local_state_,
+                          &profile_) {
   }
 
-  void SetUp() {
+  virtual void SetUp() OVERRIDE {
     extension_path_ =
         GetBasePath().AppendASCII("good")
                      .AppendASCII("Extensions")
@@ -86,40 +98,41 @@ class ComponentLoaderTest : public testing::Test {
                      .AppendASCII("1.0.0.0");
 
     // Read in the extension manifest.
-    ASSERT_TRUE(file_util::ReadFileToString(
-        extension_path_.Append(Extension::kManifestFilename),
-                               &manifest_contents_));
-
-    // Register the user prefs that ComponentLoader will read.
-    prefs_.RegisterStringPref(prefs::kEnterpriseWebStoreURL, std::string());
-    prefs_.RegisterStringPref(prefs::kEnterpriseWebStoreName, std::string());
+    ASSERT_TRUE(base::ReadFileToString(
+        extension_path_.Append(kManifestFilename),
+        &manifest_contents_));
 
     // Register the local state prefs.
 #if defined(OS_CHROMEOS)
-    prefs_.RegisterBooleanPref(prefs::kSpokenFeedbackEnabled, false);
+    local_state_.registry()->RegisterBooleanPref(
+        prefs::kSpokenFeedbackEnabled, false);
 #endif
   }
 
  protected:
   MockExtensionService extension_service_;
-  TestingPrefService prefs_;
+  TestingPrefServiceSyncable prefs_;
+  TestingPrefServiceSimple local_state_;
+  TestingProfile profile_;
   ComponentLoader component_loader_;
 
   // The root directory of the text extension.
-  FilePath extension_path_;
+  base::FilePath extension_path_;
 
   // The contents of the text extension's manifest file.
   std::string manifest_contents_;
 
-  FilePath GetBasePath() {
-    FilePath test_data_dir;
+  content::TestBrowserThreadBundle thread_bundle_;
+
+  base::FilePath GetBasePath() {
+    base::FilePath test_data_dir;
     PathService::Get(chrome::DIR_TEST_DATA, &test_data_dir);
     return test_data_dir.AppendASCII("extensions");
   }
 };
 
 TEST_F(ComponentLoaderTest, ParseManifest) {
-  scoped_ptr<DictionaryValue> manifest;
+  scoped_ptr<base::DictionaryValue> manifest;
 
   // Test invalid JSON.
   manifest.reset(
@@ -129,7 +142,7 @@ TEST_F(ComponentLoaderTest, ParseManifest) {
   // Test manifests that are valid JSON, but don't have an object literal
   // at the root. ParseManifest() should always return NULL.
 
-  manifest.reset(component_loader_.ParseManifest(""));
+  manifest.reset(component_loader_.ParseManifest(std::string()));
   EXPECT_FALSE(manifest.get());
 
   manifest.reset(component_loader_.ParseManifest("[{ \"foo\": 3 }]"));
@@ -232,56 +245,14 @@ TEST_F(ComponentLoaderTest, LoadAll) {
   EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
 }
 
-TEST_F(ComponentLoaderTest, RemoveAll) {
-  extension_service_.set_ready(true);
-  EXPECT_EQ(0u, extension_service_.extensions()->size());
-  // Add all the default extensions. Since the extension service is ready, they
-  // will be loaded immediately.
-  component_loader_.AddDefaultComponentExtensions(false);
-  unsigned int default_count = extension_service_.extensions()->size();
-
-  // And add one more just to make sure there is anything in there in case
-  // there are no defaults for this platform.
-  component_loader_.Add(manifest_contents_, extension_path_);
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Remove all default extensions.
-  component_loader_.RemoveAll();
-  EXPECT_EQ(0u, extension_service_.extensions()->size());
-}
-
-TEST_F(ComponentLoaderTest, EnterpriseWebStore) {
-  component_loader_.AddDefaultComponentExtensions(false);
-  component_loader_.LoadAll();
-  unsigned int default_count = extension_service_.extensions()->size();
-
-  // Set the pref, and it should get loaded automatically.
-  extension_service_.set_ready(true);
-  prefs_.SetUserPref(prefs::kEnterpriseWebStoreURL,
-                     Value::CreateStringValue("http://www.google.com"));
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Now that the pref is set, check if it's added by default.
-  extension_service_.set_ready(false);
-  extension_service_.clear_extensions();
-  component_loader_.ClearAllRegistered();
-  component_loader_.AddDefaultComponentExtensions(false);
-  component_loader_.LoadAll();
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-
-  // Number of loaded extensions should be the same after changing the pref.
-  prefs_.SetUserPref(prefs::kEnterpriseWebStoreURL,
-                     Value::CreateStringValue("http://www.google.de"));
-  EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
-}
-
 TEST_F(ComponentLoaderTest, AddOrReplace) {
   EXPECT_EQ(0u, component_loader_.registered_extensions_count());
   component_loader_.AddDefaultComponentExtensions(false);
   size_t const default_count = component_loader_.registered_extensions_count();
-  FilePath known_extension = GetBasePath()
+  base::FilePath known_extension = GetBasePath()
       .AppendASCII("override_component_extension");
-  FilePath unknow_extension = extension_path_;
+  base::FilePath unknow_extension = extension_path_;
+  base::FilePath invalid_extension = GetBasePath().AppendASCII("bad");
 
   // Replace a default component extension.
   component_loader_.AddOrReplace(known_extension);
@@ -303,6 +274,10 @@ TEST_F(ComponentLoaderTest, AddOrReplace) {
   component_loader_.AddOrReplace(known_extension);
   EXPECT_EQ(default_count + 1, extension_service_.extensions()->size());
   EXPECT_EQ(1u, extension_service_.unloaded_count());
+
+  // Add an invalid component extension.
+  std::string extension_id = component_loader_.AddOrReplace(invalid_extension);
+  EXPECT_TRUE(extension_id.empty());
 }
 
 }  // namespace extensions

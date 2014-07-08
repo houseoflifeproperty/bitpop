@@ -58,11 +58,12 @@ class FileNetworkInterface : public MediaChannel::NetworkInterface {
   }
 
   // Implement pure virtual methods of NetworkInterface.
-  virtual bool SendPacket(talk_base::Buffer* packet) {
+  virtual bool SendPacket(talk_base::Buffer* packet,
+                          talk_base::DiffServCodePoint dscp) {
     if (!packet) return false;
 
     if (media_channel_) {
-      media_channel_->OnPacketReceived(packet);
+      media_channel_->OnPacketReceived(packet, talk_base::PacketTime());
     }
     if (dump_writer_.get() &&
         talk_base::SR_SUCCESS != dump_writer_->WriteRtpPacket(
@@ -74,11 +75,13 @@ class FileNetworkInterface : public MediaChannel::NetworkInterface {
     return true;
   }
 
-  virtual bool SendRtcp(talk_base::Buffer* packet) { return false; }
+  virtual bool SendRtcp(talk_base::Buffer* packet,
+                        talk_base::DiffServCodePoint dscp) { return false; }
   virtual int SetOption(MediaChannel::NetworkInterface::SocketType type,
       talk_base::Socket::Option opt, int option) {
     return 0;
   }
+  virtual void SetDefaultDSCPCode(talk_base::DiffServCodePoint dscp) {}
 
   size_t num_sent_packets() const { return num_sent_packets_; }
 
@@ -133,6 +136,7 @@ class FileMediaEngineTest : public testing::Test {
     engine_->set_voice_output_filename(voice_out);
     engine_->set_video_input_filename(video_in);
     engine_->set_video_output_filename(video_out);
+    engine_->set_rtp_sender_thread(talk_base::Thread::Current());
 
     voice_channel_.reset(engine_->CreateChannel());
     video_channel_.reset(engine_->CreateVideoChannel(NULL));
@@ -163,7 +167,8 @@ class FileMediaEngineTest : public testing::Test {
     for (size_t i = 0; i < ssrc_count; ++i) {
       ret &= RtpTestUtility::WriteTestPackets(
           RtpTestUtility::GetTestPacketCount(), false,
-          RtpTestUtility::kDefaultSsrc + i, &writer);
+          static_cast<uint32>(RtpTestUtility::kDefaultSsrc + i),
+          &writer);
     }
     return ret;
   }
@@ -211,13 +216,15 @@ class FileMediaEngineTest : public testing::Test {
 
 TEST_F(FileMediaEngineTest, TestDefaultImplementation) {
   EXPECT_TRUE(CreateEngineAndChannels("", "", "", "", 1));
-  EXPECT_TRUE(engine_->Init());
+  EXPECT_TRUE(engine_->Init(talk_base::Thread::Current()));
   EXPECT_EQ(0, engine_->GetCapabilities());
   EXPECT_TRUE(NULL == voice_channel_.get());
   EXPECT_TRUE(NULL == video_channel_.get());
   EXPECT_TRUE(NULL == engine_->CreateSoundclip());
-  EXPECT_TRUE(engine_->SetAudioOptions(0));
-  EXPECT_TRUE(engine_->SetVideoOptions(0));
+  cricket::AudioOptions audio_options;
+  EXPECT_TRUE(engine_->SetAudioOptions(audio_options));
+  cricket::VideoOptions video_options;
+  EXPECT_TRUE(engine_->SetVideoOptions(video_options));
   VideoEncoderConfig video_encoder_config;
   EXPECT_TRUE(engine_->SetDefaultVideoEncoderConfig(video_encoder_config));
   EXPECT_TRUE(engine_->SetSoundDevices(NULL, NULL));

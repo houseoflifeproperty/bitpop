@@ -10,10 +10,10 @@
 #include "base/android/jni_android.h"
 #include "base/android/path_utils.h"
 #include "base/base_paths.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/process_util.h"
+#include "base/process/process_metrics.h"
 
 namespace base {
 
@@ -47,9 +47,6 @@ bool PathProviderAndroid(int key, FilePath* result) {
       return base::android::GetCacheDirectory(result);
     case base::DIR_ANDROID_APP_DATA:
       return base::android::GetDataDirectory(result);
-    case base::DIR_HOME:
-      *result = file_util::GetHomeDir();
-      return true;
     case base::DIR_ANDROID_EXTERNAL_STORAGE:
       return base::android::GetExternalStorageDirectory(result);
     default:

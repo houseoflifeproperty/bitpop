@@ -21,8 +21,8 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/memory/scoped_nsobject.h"
 #include "chrome/browser/ui/cocoa/facebook_chat/facebook_chat_item_mac.h"
 
 @class FacebookChatbarController;
@@ -35,11 +35,11 @@ class GURL;
   IBOutlet NSButton* button_;
   IBOutlet HoverButton* hoverCloseButton_;
 
-  scoped_nsobject<NSTrackingArea> buttonTrackingArea_;
+  base::scoped_nsobject<NSTrackingArea> buttonTrackingArea_;
   BOOL showMouseEntered_;
 
   scoped_ptr<FacebookChatItemMac> bridge_;
-  scoped_nsobject<FacebookNotificationController> notificationController_;
+  base::scoped_nsobject<FacebookNotificationController> notificationController_;
   FacebookChatbarController *chatbarController_;
 
   NSImage *numNotificationsImage_;

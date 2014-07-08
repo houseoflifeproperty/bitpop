@@ -5,6 +5,8 @@
 #ifndef SANDBOX_SRC_SANDBOX_NT_UTIL_H_
 #define SANDBOX_SRC_SANDBOX_NT_UTIL_H_
 
+#include <intrin.h>
+
 #include "base/basictypes.h"
 #include "sandbox/win/src/nt_internals.h"
 #include "sandbox/win/src/sandbox_nt_types.h"
@@ -34,7 +36,7 @@ void __cdecl operator delete(void* memory, void* buffer,
 // returning a bool, while VERIFY_SUCCESS_NT expects an action returning
 // NTSTATUS.
 #ifndef NDEBUG
-#define DCHECK_NT(condition) { (condition) ? 0 : __debugbreak(); }
+#define DCHECK_NT(condition) { (condition) ? (void)0 : __debugbreak(); }
 #define VERIFY(action) DCHECK_NT(action)
 #define VERIFY_SUCCESS(action) DCHECK_NT(NT_SUCCESS(action))
 #else
@@ -43,10 +45,17 @@ void __cdecl operator delete(void* memory, void* buffer,
 #define VERIFY_SUCCESS(action) (action)
 #endif
 
+#define CHECK_NT(condition) { (condition) ? (void)0 : __debugbreak(); }
+
 #define NOTREACHED_NT() DCHECK_NT(false)
 
 namespace sandbox {
 
+#if defined(_M_X64)
+#pragma intrinsic(_InterlockedCompareExchange)
+#pragma intrinsic(_InterlockedCompareExchangePointer)
+
+#elif defined(_M_IX86)
 extern "C" long _InterlockedCompareExchange(long volatile* destination,
                                             long exchange, long comperand);
 
@@ -63,6 +72,11 @@ __forceinline void* _InterlockedCompareExchangePointer(
 
   return reinterpret_cast<void*>(static_cast<size_t>(ret));
 }
+
+#else
+#error Architecture not supported.
+
+#endif
 
 // Returns a pointer to the IPC shared memory.
 void* GetGlobalIPCMemory();
@@ -81,7 +95,6 @@ enum RequiredAccess {
 // Note that write intent implies destruction of the buffer content (we actually
 // write)
 bool ValidParameter(void* buffer, size_t size, RequiredAccess intent);
-
 
 // Copies data from a user buffer to our buffer. Returns the operation status.
 NTSTATUS CopyData(void* destination, const void* source, size_t bytes);

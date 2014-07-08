@@ -5,256 +5,182 @@
 var chrome;
 if (!chrome)
   chrome = {};
-if (!chrome.searchBox) {
-  chrome.searchBox = new function() {
-    var safeObjects = {};
-    chrome.searchBoxOnWindowReady = function() {
-      // |searchBoxOnWindowReady| is used for initializing window context and
-      // should be called only once per context.
-      safeObjects.createShadowRoot = Element.prototype.webkitCreateShadowRoot;
-      safeObjects.defineProperty = Object.defineProperty;
-      delete window.chrome.searchBoxOnWindowReady;
+
+if (!chrome.embeddedSearch) {
+  chrome.embeddedSearch = new function() {
+    this.searchBox = new function() {
+
+      // =======================================================================
+      //                            Private functions
+      // =======================================================================
+      native function Focus();
+      native function GetDisplayInstantResults();
+      native function GetMostVisitedItemData();
+      native function GetQuery();
+      native function GetRightToLeft();
+      native function GetStartMargin();
+      native function GetSuggestionToPrefetch();
+      native function IsFocused();
+      native function IsKeyCaptureEnabled();
+      native function Paste();
+      native function SetVoiceSearchSupported();
+      native function StartCapturingKeyStrokes();
+      native function StopCapturingKeyStrokes();
+
+      // =======================================================================
+      //                           Exported functions
+      // =======================================================================
+      this.__defineGetter__('displayInstantResults', GetDisplayInstantResults);
+      this.__defineGetter__('isFocused', IsFocused);
+      this.__defineGetter__('isKeyCaptureEnabled', IsKeyCaptureEnabled);
+      this.__defineGetter__('rtl', GetRightToLeft);
+      this.__defineGetter__('startMargin', GetStartMargin);
+      this.__defineGetter__('suggestion', GetSuggestionToPrefetch);
+      this.__defineGetter__('value', GetQuery);
+
+      this.focus = function() {
+        Focus();
+      };
+
+      // This method is restricted to chrome-search://most-visited pages by
+      // checking the invoking context's origin in searchbox_extension.cc.
+      this.getMostVisitedItemData = function(restrictedId) {
+        return GetMostVisitedItemData(restrictedId);
+      };
+
+      this.paste = function(value) {
+        Paste(value);
+      };
+
+      this.setVoiceSearchSupported = function(supported) {
+        SetVoiceSearchSupported(supported);
+      };
+
+      this.startCapturingKeyStrokes = function() {
+        StartCapturingKeyStrokes();
+      };
+
+      this.stopCapturingKeyStrokes = function() {
+        StopCapturingKeyStrokes();
+      };
+
+      this.onfocuschange = null;
+      this.onkeycapturechange = null;
+      this.onmarginchange = null;
+      this.onsubmit = null;
+      this.onsuggestionchange = null;
+      this.ontogglevoicesearch = null;
+
+      //TODO(jered): Remove this empty method when google no longer requires it.
+      this.setRestrictedValue = function() {};
     };
 
-    // =========================================================================
-    //                                  Constants
-    // =========================================================================
-    var MAX_CLIENT_SUGGESTIONS_TO_DEDUPE = 6;
-    var MAX_ALLOWED_DEDUPE_ATTEMPTS = 5;
+    this.newTabPage = new function() {
 
-    var HTTP_REGEX = /^https?:\/\//;
+      // =======================================================================
+      //                            Private functions
+      // =======================================================================
+      native function CheckIsUserSignedInToChromeAs();
+      native function DeleteMostVisitedItem();
+      native function GetAppLauncherEnabled();
+      native function GetDispositionFromClick();
+      native function GetMostVisitedItems();
+      native function GetThemeBackgroundInfo();
+      native function IsInputInProgress();
+      native function LogEvent();
+      native function LogMostVisitedImpression();
+      native function LogMostVisitedNavigation();
+      native function NavigateContentWindow();
+      native function UndoAllMostVisitedDeletions();
+      native function UndoMostVisitedDeletion();
 
-    var WWW_REGEX = /^www\./;
-
-    // =========================================================================
-    //                            Private functions
-    // =========================================================================
-    native function GetQuery();
-    native function GetVerbatim();
-    native function GetSelectionStart();
-    native function GetSelectionEnd();
-    native function GetX();
-    native function GetY();
-    native function GetWidth();
-    native function GetHeight();
-    native function GetStartMargin();
-    native function GetEndMargin();
-    native function GetRightToLeft();
-    native function GetAutocompleteResults();
-    native function GetContext();
-    native function GetDisplayInstantResults();
-    native function GetFont();
-    native function GetFontSize();
-    native function GetThemeBackgroundInfo();
-    native function GetThemeAreaHeight();
-    native function IsKeyCaptureEnabled();
-    native function NavigateContentWindow();
-    native function SetSuggestions();
-    native function SetQuerySuggestion();
-    native function SetQuerySuggestionFromAutocompleteResult();
-    native function SetQuery();
-    native function SetQueryFromAutocompleteResult();
-    native function Show();
-    native function StartCapturingKeyStrokes();
-    native function StopCapturingKeyStrokes();
-
-    function escapeHTML(text) {
-      return text.replace(/[<>&"']/g, function(match) {
-        switch (match) {
-          case '<': return '&lt;';
-          case '>': return '&gt;';
-          case '&': return '&amp;';
-          case '"': return '&quot;';
-          case "'": return '&apos;';
+      function GetMostVisitedItemsWrapper() {
+        var mostVisitedItems = GetMostVisitedItems();
+        for (var i = 0, item; item = mostVisitedItems[i]; ++i) {
+          item.faviconUrl = GenerateFaviconURL(item.renderViewId, item.rid);
+          // These properties are private data and should not be returned to
+          // the page. They are only accessible via getMostVisitedItemData().
+          item.url = null;
+          item.title = null;
+          item.domain = null;
+          item.direction = null;
+          item.renderViewId = null;
         }
-      });
-    }
-
-    // Returns the |restrictedText| wrapped in a ShadowDOM.
-    function SafeWrap(restrictedText) {
-      var node = document.createElement('div');
-      var nodeShadow = safeObjects.createShadowRoot.apply(node);
-      nodeShadow.applyAuthorStyles = true;
-      nodeShadow.innerHTML =
-          '<div style="width:700px!important;' +
-          '            height:22px!important;' +
-          '            font-family:\'' + GetFont() + '\',\'Arial\'!important;' +
-          '            overflow:hidden!important;' +
-          '            text-overflow:ellipsis!important">' +
-          '  <nobr>' + restrictedText + '</nobr>' +
-          '</div>';
-      safeObjects.defineProperty(node, 'webkitShadowRoot', { value: null });
-      return node;
-    }
-
-    // Wraps the AutocompleteResult query and URL into ShadowDOM nodes so that
-    // the JS cannot access them and deletes the raw values.
-    function GetAutocompleteResultsWrapper() {
-      var autocompleteResults = DedupeAutocompleteResults(
-          GetAutocompleteResults());
-      var userInput = GetQuery();
-      for (var i = 0, result; result = autocompleteResults[i]; ++i) {
-        var title = escapeHTML(result.contents);
-        var url = escapeHTML(CleanUrl(result.destination_url, userInput));
-        var combinedHtml = '<span class=chrome_url>' + url + '</span>';
-        if (title) {
-          result.titleNode = SafeWrap(title);
-          combinedHtml += '<span class=chrome_separator> &ndash; </span>' +
-              '<span class=chrome_title>' + title + '</span>';
-        }
-        result.urlNode = SafeWrap(url);
-        result.combinedNode = SafeWrap(combinedHtml);
-        delete result.contents;
-        delete result.destination_url;
-      }
-      return autocompleteResults;
-    }
-
-    // TODO(dcblack): Do this in C++ instead of JS.
-    function CleanUrl(url, userInput) {
-      if (url.indexOf(userInput) == 0) {
-        return url;
-      }
-      url = url.replace(HTTP_REGEX, '');
-      if (url.indexOf(userInput) == 0) {
-        return url;
-      }
-      return url.replace(WWW_REGEX, '');
-    }
-
-    // TODO(dcblack): Do this in C++ instead of JS.
-    function CanonicalizeUrl(url) {
-      return url.replace(HTTP_REGEX, '').replace(WWW_REGEX, '');
-    }
-
-    // Removes duplicates from AutocompleteResults.
-    // TODO(dcblack): Do this in C++ instead of JS.
-    function DedupeAutocompleteResults(autocompleteResults) {
-      var urlToResultMap = {};
-      for (var i = 0, result; result = autocompleteResults[i]; ++i) {
-        var url = CanonicalizeUrl(result.destination_url);
-        if (url in urlToResultMap) {
-          var oldRelevance = urlToResultMap[url].rankingData.relevance;
-          var newRelevance = result.rankingData.relevance;
-          if (newRelevance > oldRelevance) {
-            urlToResultMap[url] = result;
-          }
-        } else {
-          urlToResultMap[url] = result;
-        }
-      }
-      var dedupedResults = [];
-      for (url in urlToResultMap) {
-        dedupedResults.push(urlToResultMap[url]);
-      }
-      return dedupedResults;
-    }
-
-    var lastPrefixQueriedForDuplicates = '';
-    var numDedupeAttempts = 0;
-
-    function DedupeClientSuggestions(clientSuggestions) {
-      var userInput = GetQuery();
-      if (userInput == lastPrefixQueriedForDuplicates) {
-        numDedupeAttempts += 1;
-        if (numDedupeAttempts > MAX_ALLOWED_DEDUPE_ATTEMPTS) {
-          // Request blocked for privacy reasons.
-          // TODO(dcblack): This check is insufficient.  We should have a check
-          // such that it's only callable once per onnativesuggestions, not
-          // once per prefix.  Also, there is a timing problem where if the user
-          // types quickly then the client will (correctly) attempt to render
-          // stale results, and end up calling dedupe multiple times when
-          // getValue shows the same prefix.  A better solution would be to have
-          // the client send up rid ranges to dedupe against and have the
-          // binary keep around all the old suggestions ever given to this
-          // overlay.  I suspect such an approach would clean up this code quite
-          // a bit.
-          return false;
-        }
-      } else {
-        lastPrefixQueriedForDuplicates = userInput;
-        numDedupeAttempts = 1;
+        return mostVisitedItems;
       }
 
-      var autocompleteResults = GetAutocompleteResults();
-      var nativeUrls = {};
-      for (var i = 0, result; result = autocompleteResults[i]; ++i) {
-        var nativeUrl = CanonicalizeUrl(result.destination_url);
-        nativeUrls[nativeUrl] = result.rid;
+      function GenerateFaviconURL(renderViewId, rid) {
+        return "chrome-search://favicon/size/16@" +
+            window.devicePixelRatio + "x/" +
+            renderViewId + "/" + rid;
       }
-      for (var i = 0; clientSuggestions[i] &&
-           i < MAX_CLIENT_SUGGESTIONS_TO_DEDUPE; ++i) {
-        var result = clientSuggestions[i];
-        if (result.url) {
-          var clientUrl = CanonicalizeUrl(result.url);
-          if (clientUrl in nativeUrls) {
-            result.duplicateOf = nativeUrls[clientUrl];
-          }
-        }
-      }
-      return true;
-    }
 
-    // =========================================================================
-    //                           Exported functions
-    // =========================================================================
-    this.__defineGetter__('value', GetQuery);
-    this.__defineGetter__('verbatim', GetVerbatim);
-    this.__defineGetter__('selectionStart', GetSelectionStart);
-    this.__defineGetter__('selectionEnd', GetSelectionEnd);
-    this.__defineGetter__('x', GetX);
-    this.__defineGetter__('y', GetY);
-    this.__defineGetter__('width', GetWidth);
-    this.__defineGetter__('height', GetHeight);
-    this.__defineGetter__('startMargin', GetStartMargin);
-    this.__defineGetter__('endMargin', GetEndMargin);
-    this.__defineGetter__('rtl', GetRightToLeft);
-    this.__defineGetter__('nativeSuggestions', GetAutocompleteResultsWrapper);
-    this.__defineGetter__('isKeyCaptureEnabled', IsKeyCaptureEnabled);
-    this.__defineGetter__('context', GetContext);
-    this.__defineGetter__('displayInstantResults', GetDisplayInstantResults);
-    this.__defineGetter__('themeBackgroundInfo', GetThemeBackgroundInfo);
-    this.__defineGetter__('themeAreaHeight', GetThemeAreaHeight);
-    this.__defineGetter__('font', GetFont);
-    this.__defineGetter__('fontSize', GetFontSize);
-    this.setSuggestions = function(text) {
-      SetSuggestions(text);
+      // =======================================================================
+      //                           Exported functions
+      // =======================================================================
+      this.__defineGetter__('appLauncherEnabled', GetAppLauncherEnabled);
+      this.__defineGetter__('isInputInProgress', IsInputInProgress);
+      this.__defineGetter__('mostVisited', GetMostVisitedItemsWrapper);
+      this.__defineGetter__('themeBackgroundInfo', GetThemeBackgroundInfo);
+
+      this.deleteMostVisitedItem = function(restrictedId) {
+        DeleteMostVisitedItem(restrictedId);
+      };
+
+      this.getDispositionFromClick = function(middle_button,
+                                              alt_key,
+                                              ctrl_key,
+                                              meta_key,
+                                              shift_key) {
+        return GetDispositionFromClick(middle_button,
+                                       alt_key,
+                                       ctrl_key,
+                                       meta_key,
+                                       shift_key);
+      };
+
+      this.checkIsUserSignedIntoChromeAs = function(identity) {
+        CheckIsUserSignedInToChromeAs(identity);
+      };
+
+      // This method is restricted to chrome-search://most-visited pages by
+      // checking the invoking context's origin in searchbox_extension.cc.
+      this.logEvent = function(histogram_name) {
+        LogEvent(histogram_name);
+      };
+
+      // This method is restricted to chrome-search://most-visited pages by
+      // checking the invoking context's origin in searchbox_extension.cc.
+      this.logMostVisitedImpression = function(position, provider) {
+        LogMostVisitedImpression(position, provider);
+      };
+
+      // This method is restricted to chrome-search://most-visited pages by
+      // checking the invoking context's origin in searchbox_extension.cc.
+      this.logMostVisitedNavigation = function(position, provider) {
+        LogMostVisitedNavigation(position, provider);
+      };
+
+      this.navigateContentWindow = function(destination, disposition) {
+        NavigateContentWindow(destination, disposition);
+      };
+
+      this.undoAllMostVisitedDeletions = function() {
+        UndoAllMostVisitedDeletions();
+      };
+
+      this.undoMostVisitedDeletion = function(restrictedId) {
+        UndoMostVisitedDeletion(restrictedId);
+      };
+
+      this.onsignedincheckdone = null;
+      this.oninputcancel = null;
+      this.oninputstart = null;
+      this.onmostvisitedchange = null;
+      this.onthemechange = null;
     };
-    this.setAutocompleteText = function(text, behavior) {
-      SetQuerySuggestion(text, behavior);
-    };
-    this.setRestrictedAutocompleteText = function(resultId) {
-      SetQuerySuggestionFromAutocompleteResult(resultId);
-    };
-    this.setValue = function(text, type) {
-      SetQuery(text, type);
-    };
-    this.setRestrictedValue = function(resultId) {
-      SetQueryFromAutocompleteResult(resultId);
-    };
-    this.show = function(reason, height) {
-      Show(reason, height);
-    };
-    this.markDuplicateSuggestions = function(clientSuggestions) {
-      return DedupeClientSuggestions(clientSuggestions);
-    };
-    this.navigateContentWindow = function(destination) {
-      return NavigateContentWindow(destination);
-    };
-    this.startCapturingKeyStrokes = function() {
-      StartCapturingKeyStrokes();
-    };
-    this.stopCapturingKeyStrokes = function() {
-      StopCapturingKeyStrokes();
-    };
-    this.onchange = null;
-    this.onsubmit = null;
-    this.oncancel = null;
-    this.onresize = null;
-    this.onautocompleteresults = null;
-    this.onkeypress = null;
-    this.onkeycapturechange = null;
-    this.oncontextchange = null;
-    this.onmarginchange = null;
+
+    // TODO(jered): Remove when google no longer expects this object.
+    chrome.searchBox = this.searchBox;
   };
 }

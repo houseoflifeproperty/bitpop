@@ -8,10 +8,8 @@ namespace net {
 
 StaticHttpUserAgentSettings::StaticHttpUserAgentSettings(
     const std::string& accept_language,
-    const std::string& accept_charset,
     const std::string& user_agent)
     : accept_language_(accept_language),
-      accept_charset_(accept_charset),
       user_agent_(user_agent) {
 }
 
@@ -22,11 +20,7 @@ std::string StaticHttpUserAgentSettings::GetAcceptLanguage() const {
   return accept_language_;
 }
 
-std::string StaticHttpUserAgentSettings::GetAcceptCharset() const {
-  return accept_charset_;
-}
-
-std::string StaticHttpUserAgentSettings::GetUserAgent(const GURL& url) const {
+std::string StaticHttpUserAgentSettings::GetUserAgent() const {
   return user_agent_;
 }
 

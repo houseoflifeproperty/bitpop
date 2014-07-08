@@ -17,6 +17,7 @@
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/nsgraphics_context_additions.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
@@ -38,6 +39,8 @@
 
     // Register to be an URL drop target.
     dropHandler_.reset([[URLDropTargetHandler alloc] initWithView:self]);
+
+    [self setWantsLayer:YES];
   }
   return self;
 }
@@ -55,20 +58,22 @@
   if (NSMinY(dirtyRect) < backgroundHeight) {
     gfx::ScopedNSGraphicsContextSaveGState scopedGState;
     NSGraphicsContext *context = [NSGraphicsContext currentContext];
-    [context setPatternPhase:[[self window] themePatternPhase]];
+    NSPoint position = [[self window] themeImagePositionForAlignment:
+        THEME_IMAGE_ALIGN_WITH_TAB_STRIP];
+    [context cr_setPatternPhase:position forView:self];
 
     // Themes don't have an inactive image so only look for one if there's no
     // theme.
     bool active = [[self window] isKeyWindow] || [[self window] isMainWindow] ||
                   !themeProvider->UsingDefaultTheme();
     int resource_id = active ? IDR_THEME_TOOLBAR : IDR_THEME_TOOLBAR_INACTIVE;
-    [themeProvider->GetNSImageColorNamed(resource_id, true) set];
+    [themeProvider->GetNSImageColorNamed(resource_id) set];
     NSRectFill(
         NSMakeRect(NSMinX(dirtyRect), 0, NSWidth(dirtyRect), backgroundHeight));
   }
 
   // Draw the border bitmap, which is partially transparent.
-  NSImage* image = themeProvider->GetNSImageNamed(IDR_TOOLBAR_SHADE_TOP, true);
+  NSImage* image = themeProvider->GetNSImageNamed(IDR_TOOLBAR_SHADE_TOP);
   if (NSMinY(dirtyRect) >= [image size].height)
     return;
 

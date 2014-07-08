@@ -2,30 +2,57 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/url_constants.h"
 #include "content/public/test/browser_test_utils.h"
+#include "content/public/test/content_browser_test.h"
+#include "content/public/test/content_browser_test_utils.h"
 #include "content/public/test/test_utils.h"
-#include "content/shell/shell.h"
-#include "content/test/content_browser_test.h"
-#include "content/test/content_browser_test_utils.h"
-#include "net/test/test_server.h"
+#include "content/shell/browser/shell.h"
+#include "net/test/embedded_test_server/embedded_test_server.h"
+#include "net/test/embedded_test_server/http_request.h"
+#include "net/test/embedded_test_server/http_response.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace content {
+
+namespace {
+
+// Handles |request| by serving a response with title set to request contents.
+scoped_ptr<net::test_server::HttpResponse> HandleEchoTitleRequest(
+    const std::string& echotitle_path,
+    const net::test_server::HttpRequest& request) {
+  if (!StartsWithASCII(request.relative_url, echotitle_path, true))
+    return scoped_ptr<net::test_server::HttpResponse>();
+
+  scoped_ptr<net::test_server::BasicHttpResponse> http_response(
+      new net::test_server::BasicHttpResponse);
+  http_response->set_code(net::HTTP_OK);
+  http_response->set_content(
+      base::StringPrintf(
+          "<html><head><title>%s</title></head></html>",
+          request.content.c_str()));
+  return http_response.PassAs<net::test_server::HttpResponse>();
+}
+
+}  // namespace
 
 class SessionHistoryTest : public ContentBrowserTest {
  protected:
   SessionHistoryTest() {}
 
-  virtual void SetUpOnMainThread() {
-    ASSERT_TRUE(test_server()->Start());
-    NavigateToURL(shell(), GURL(chrome::kAboutBlankURL));
+  virtual void SetUpOnMainThread() OVERRIDE {
+    ASSERT_TRUE(embedded_test_server()->InitializeAndWaitUntilReady());
+    embedded_test_server()->RegisterRequestHandler(
+        base::Bind(&HandleEchoTitleRequest, "/echotitle"));
+
+    NavigateToURL(shell(), GURL(kAboutBlankURL));
   }
 
   // Simulate clicking a link.  Only works on the frames.html testserver page.
@@ -58,20 +85,21 @@ class SessionHistoryTest : public ContentBrowserTest {
   }
 
   std::string GetTabTitle() {
-    return UTF16ToASCII(shell()->web_contents()->GetTitle());
+    return base::UTF16ToASCII(shell()->web_contents()->GetTitle());
   }
 
   GURL GetTabURL() {
-    return shell()->web_contents()->GetURL();
+    return shell()->web_contents()->GetLastCommittedURL();
   }
 
   GURL GetURL(const std::string file) {
-    return test_server()->GetURL(std::string("files/session_history/") + file);
+    return embedded_test_server()->GetURL(
+        std::string("/session_history/") + file);
   }
 
   void NavigateAndCheckTitle(const char* filename,
                              const std::string& expected_title) {
-    string16 expected_title16(ASCIIToUTF16(expected_title));
+    base::string16 expected_title16(base::ASCIIToUTF16(expected_title));
     TitleWatcher title_watcher(shell()->web_contents(), expected_title16);
     NavigateToURL(shell(), GetURL(filename));
     ASSERT_EQ(expected_title16, title_watcher.WaitAndGetTitle());
@@ -136,10 +164,10 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, BasicBackForward) {
   EXPECT_EQ("bot1", GetTabTitle());
 
   GoBack();
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   ASSERT_FALSE(CanGoBack());
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   GoForward();
   EXPECT_EQ("bot1", GetTabTitle());
@@ -175,8 +203,8 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, FrameBackForward) {
   EXPECT_EQ(frames, GetTabURL());
 
   GoBack();
-  EXPECT_EQ("about:blank", GetTabTitle());
-  EXPECT_EQ(GURL(chrome::kAboutBlankURL), GetTabURL());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
+  EXPECT_EQ(GURL(kAboutBlankURL), GetTabURL());
 
   GoForward();
   EXPECT_EQ("bot1", GetTabTitle());
@@ -297,6 +325,9 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, CrossFrameFormBackForward) {
 // navigations. Bug 730379.
 // If this flakes use http://crbug.com/61619.
 IN_PROC_BROWSER_TEST_F(SessionHistoryTest, FragmentBackForward) {
+  embedded_test_server()->RegisterRequestHandler(
+      base::Bind(&HandleEchoTitleRequest, "/echotitle"));
+
   ASSERT_FALSE(CanGoBack());
 
   GURL fragment(GetURL("fragment.html"));
@@ -369,10 +400,10 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, JavascriptHistory) {
   // history is [blank, bot1, bot2, *bot3]
 
   JavascriptGo("-3");
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   ASSERT_FALSE(CanGoBack());
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   JavascriptGo("1");
   EXPECT_EQ("bot1", GetTabTitle());
@@ -388,10 +419,10 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, JavascriptHistory) {
   EXPECT_EQ("bot1", GetTabTitle());
 
   JavascriptGo("-1");
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   ASSERT_FALSE(CanGoBack());
-  EXPECT_EQ("about:blank", GetTabTitle());
+  EXPECT_EQ(std::string(kAboutBlankURL), GetTabTitle());
 
   JavascriptGo("1");
   EXPECT_EQ("bot1", GetTabTitle());
@@ -429,24 +460,27 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, LocationChangeInSubframe) {
 // http://code.google.com/p/chromium/issues/detail?id=56267
 IN_PROC_BROWSER_TEST_F(SessionHistoryTest, HistoryLength) {
   int length;
-  ASSERT_TRUE(ExecuteJavaScriptAndExtractInt(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"", L"domAutomationController.send(history.length)", &length));
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "domAutomationController.send(history.length)",
+      &length));
   EXPECT_EQ(1, length);
 
   NavigateToURL(shell(), GetURL("title1.html"));
 
-  ASSERT_TRUE(ExecuteJavaScriptAndExtractInt(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"", L"domAutomationController.send(history.length)", &length));
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "domAutomationController.send(history.length)",
+      &length));
   EXPECT_EQ(2, length);
 
   // Now test that history.length is updated when the navigation is committed.
   NavigateToURL(shell(), GetURL("record_length.html"));
 
-  ASSERT_TRUE(ExecuteJavaScriptAndExtractInt(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"", L"domAutomationController.send(history.length)", &length));
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "domAutomationController.send(history.length)",
+      &length));
   EXPECT_EQ(3, length);
 
   GoBack();
@@ -455,9 +489,10 @@ IN_PROC_BROWSER_TEST_F(SessionHistoryTest, HistoryLength) {
   // Ensure history.length is properly truncated.
   NavigateToURL(shell(), GetURL("title2.html"));
 
-  ASSERT_TRUE(ExecuteJavaScriptAndExtractInt(
-      shell()->web_contents()->GetRenderViewHost(),
-      L"", L"domAutomationController.send(history.length)", &length));
+  ASSERT_TRUE(ExecuteScriptAndExtractInt(
+      shell()->web_contents(),
+      "domAutomationController.send(history.length)",
+      &length));
   EXPECT_EQ(2, length);
 }
 

@@ -35,24 +35,38 @@ public:
         kAll_BlurFlag               = 0x07
     };
 
+    static SkBlurDrawLooper* Create(SkColor color, SkScalar sigma, SkScalar dx, SkScalar dy,
+                                    uint32_t flags = kNone_BlurFlag) {
+        return SkNEW_ARGS(SkBlurDrawLooper, (color, sigma, dx, dy, flags));
+    }
+
+#ifdef SK_SUPPORT_LEGACY_BLURDRAWLOOPERCONSTRUCTORS
     SkBlurDrawLooper(SkScalar radius, SkScalar dx, SkScalar dy, SkColor color,
                      uint32_t flags = kNone_BlurFlag);
+#endif
+
     virtual ~SkBlurDrawLooper();
 
-    // overrides from SkDrawLooper
-    virtual void init(SkCanvas*);
-    virtual bool next(SkCanvas*, SkPaint* paint);
+    virtual SkDrawLooper::Context* createContext(SkCanvas*, void* storage) const SK_OVERRIDE;
 
+    virtual size_t contextSize() const SK_OVERRIDE { return sizeof(BlurDrawLooperContext); }
+
+    SK_TO_STRING_OVERRIDE()
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkBlurDrawLooper)
 
 protected:
-    SkBlurDrawLooper(SkFlattenableReadBuffer&);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkBlurDrawLooper(SkColor color, SkScalar sigma, SkScalar dx, SkScalar dy,
+                     uint32_t flags);
+
+    SkBlurDrawLooper(SkReadBuffer&);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
+
+    virtual bool asABlurShadow(BlurShadowRec*) const SK_OVERRIDE;
 
 private:
     SkMaskFilter*   fBlur;
     SkColorFilter*  fColorFilter;
-    SkScalar        fDx, fDy;
+    SkScalar        fDx, fDy, fSigma;
     SkColor         fBlurColor;
     uint32_t        fBlurFlags;
 
@@ -61,7 +75,20 @@ private:
         kAfterEdge,
         kDone
     };
-    State   fState;
+
+    class BlurDrawLooperContext : public SkDrawLooper::Context {
+    public:
+        explicit BlurDrawLooperContext(const SkBlurDrawLooper* looper);
+
+        virtual bool next(SkCanvas* canvas, SkPaint* paint) SK_OVERRIDE;
+
+    private:
+        const SkBlurDrawLooper* fLooper;
+        State fState;
+    };
+
+    void init(SkScalar sigma, SkScalar dx, SkScalar dy, SkColor color, uint32_t flags);
+    void initEffects();
 
     typedef SkDrawLooper INHERITED;
 };

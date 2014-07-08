@@ -4,14 +4,36 @@
 
 #include "chrome/common/mac/app_mode_common.h"
 
+#include "base/file_util.h"
+
 namespace app_mode {
 
+const char kAppShimSocketShortName[] = "Socket";
+const char kAppShimSocketSymlinkName[] = "App Shim Socket";
+
+const char kAppListModeId[] = "app_list";
+
+const char kLaunchedByChromeProcessId[] = "launched-by-chrome-process-id";
+
+const char kAppShimError[] = "app-shim-error";
+
+NSString* const kCFBundleDocumentTypesKey = @"CFBundleDocumentTypes";
+NSString* const kCFBundleTypeExtensionsKey = @"CFBundleTypeExtensions";
+NSString* const kCFBundleTypeIconFileKey = @"CFBundleTypeIconFile";
+NSString* const kCFBundleTypeNameKey = @"CFBundleTypeName";
+NSString* const kCFBundleTypeMIMETypesKey = @"CFBundleTypeMIMETypes";
+NSString* const kCFBundleTypeRoleKey = @"CFBundleTypeRole";
+NSString* const kBundleTypeRoleViewer = @"Viewer";
+
+NSString* const kCFBundleDisplayNameKey = @"CFBundleDisplayName";
+NSString* const kLSHasLocalizedDisplayNameKey = @"LSHasLocalizedDisplayName";
 NSString* const kBrowserBundleIDKey = @"CrBundleIdentifier";
 NSString* const kCrAppModeShortcutIDKey = @"CrAppModeShortcutID";
 NSString* const kCrAppModeShortcutNameKey = @"CrAppModeShortcutName";
 NSString* const kCrAppModeShortcutURLKey = @"CrAppModeShortcutURL";
 NSString* const kCrAppModeUserDataDirKey = @"CrAppModeUserDataDir";
-NSString* const kCrAppModeExtensionPathKey = @"CrAppModeExtensionPath";
+NSString* const kCrAppModeProfileDirKey = @"CrAppModeProfileDir";
+NSString* const kCrAppModeProfileNameKey = @"CrAppModeProfileName";
 
 NSString* const kLastRunAppBundlePathPrefsKey = @"LastRunAppBundlePath";
 
@@ -29,6 +51,14 @@ ChromeAppModeInfo::ChromeAppModeInfo()
 }
 
 ChromeAppModeInfo::~ChromeAppModeInfo() {
+}
+
+void VerifySocketPermissions(const base::FilePath& socket_path) {
+  CHECK(base::PathIsWritable(socket_path));
+  base::FilePath socket_dir = socket_path.DirName();
+  int socket_dir_mode = 0;
+  CHECK(base::GetPosixFilePermissions(socket_dir, &socket_dir_mode));
+  CHECK_EQ(0700, socket_dir_mode);
 }
 
 }  // namespace app_mode

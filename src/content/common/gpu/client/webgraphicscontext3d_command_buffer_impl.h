@@ -11,132 +11,152 @@
 #include "base/callback.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "base/synchronization/lock.h"
+#include "content/common/content_export.h"
 #include "content/common/gpu/client/command_buffer_proxy_impl.h"
-#include "content/common/gpu/gpu_process_launch_causes.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebGraphicsContext3D.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
-#include "ui/gl/gpu_preference.h"
+#include "third_party/WebKit/public/platform/WebGraphicsContext3D.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 #include "ui/gfx/native_widget_types.h"
-
-#if defined(USE_SKIA)
-#define FLIP_FRAMEBUFFER_VERTICALLY
-#endif
+#include "ui/gl/gpu_preference.h"
+#include "url/gurl.h"
 
 namespace gpu {
 
+class ContextSupport;
 class TransferBuffer;
 
 namespace gles2 {
 class GLES2CmdHelper;
 class GLES2Implementation;
+class GLES2Interface;
 }
 }
 
-using WebKit::WebGLId;
+using blink::WebGLId;
 
-using WebKit::WGC3Dbyte;
-using WebKit::WGC3Dchar;
-using WebKit::WGC3Denum;
-using WebKit::WGC3Dboolean;
-using WebKit::WGC3Dbitfield;
-using WebKit::WGC3Dint;
-using WebKit::WGC3Dsizei;
-using WebKit::WGC3Duint;
-using WebKit::WGC3Dfloat;
-using WebKit::WGC3Dclampf;
-using WebKit::WGC3Dintptr;
-using WebKit::WGC3Dsizeiptr;
-using WebKit::WebGraphicsManagedMemoryStats;
-using WebKit::WebGraphicsMemoryAllocation;
+using blink::WGC3Dbyte;
+using blink::WGC3Dchar;
+using blink::WGC3Denum;
+using blink::WGC3Dboolean;
+using blink::WGC3Dbitfield;
+using blink::WGC3Dint;
+using blink::WGC3Dsizei;
+using blink::WGC3Duint;
+using blink::WGC3Dfloat;
+using blink::WGC3Dclampf;
+using blink::WGC3Dintptr;
+using blink::WGC3Dsizeiptr;
 
 namespace content {
 class GpuChannelHost;
-class GpuChannelHostFactory;
-struct GpuMemoryAllocationForRenderer;
 
-// TODO(piman): move this logic to the compositor and remove it from the
-// context...
-class WebGraphicsContext3DSwapBuffersClient {
- public:
-  virtual void OnViewContextSwapBuffersPosted() = 0;
-  virtual void OnViewContextSwapBuffersComplete() = 0;
-  virtual void OnViewContextSwapBuffersAborted() = 0;
-
- protected:
-  virtual ~WebGraphicsContext3DSwapBuffersClient() {}
-};
+const size_t kDefaultCommandBufferSize = 1024 * 1024;
+const size_t kDefaultStartTransferBufferSize = 1 * 1024 * 1024;
+const size_t kDefaultMinTransferBufferSize = 1 * 256 * 1024;
+const size_t kDefaultMaxTransferBufferSize = 16 * 1024 * 1024;
 
 class WebGraphicsContext3DErrorMessageCallback;
 
 class WebGraphicsContext3DCommandBufferImpl
-    : public WebKit::WebGraphicsContext3D,
-      public base::SupportsWeakPtr<WebGraphicsContext3DCommandBufferImpl> {
+    : public blink::WebGraphicsContext3D {
  public:
+  enum MappedMemoryReclaimLimit {
+    kNoLimit = 0,
+  };
+
+  struct CONTENT_EXPORT SharedMemoryLimits {
+    SharedMemoryLimits();
+
+    size_t command_buffer_size;
+    size_t start_transfer_buffer_size;
+    size_t min_transfer_buffer_size;
+    size_t max_transfer_buffer_size;
+    size_t mapped_memory_reclaim_limit;
+  };
+
+  class ShareGroup : public base::RefCountedThreadSafe<ShareGroup> {
+   public:
+    ShareGroup();
+
+    WebGraphicsContext3DCommandBufferImpl* GetAnyContextLocked() {
+      // In order to ensure that the context returned is not removed while
+      // in use, the share group's lock should be aquired before calling this
+      // function.
+      lock_.AssertAcquired();
+      if (contexts_.empty())
+        return NULL;
+      return contexts_.front();
+    }
+
+    void AddContextLocked(WebGraphicsContext3DCommandBufferImpl* context) {
+      lock_.AssertAcquired();
+      contexts_.push_back(context);
+    }
+
+    void RemoveContext(WebGraphicsContext3DCommandBufferImpl* context) {
+      base::AutoLock auto_lock(lock_);
+      contexts_.erase(std::remove(contexts_.begin(), contexts_.end(), context),
+          contexts_.end());
+    }
+
+    void RemoveAllContexts() {
+      base::AutoLock auto_lock(lock_);
+      contexts_.clear();
+    }
+
+    base::Lock& lock() {
+      return lock_;
+    }
+
+   private:
+    friend class base::RefCountedThreadSafe<ShareGroup>;
+    virtual ~ShareGroup();
+
+    std::vector<WebGraphicsContext3DCommandBufferImpl*> contexts_;
+    base::Lock lock_;
+
+    DISALLOW_COPY_AND_ASSIGN(ShareGroup);
+  };
+
   WebGraphicsContext3DCommandBufferImpl(
       int surface_id,
       const GURL& active_url,
-      GpuChannelHostFactory* factory,
-      const base::WeakPtr<WebGraphicsContext3DSwapBuffersClient>& swap_client);
+      GpuChannelHost* host,
+      const Attributes& attributes,
+      bool lose_context_when_out_of_memory,
+      const SharedMemoryLimits& limits,
+      WebGraphicsContext3DCommandBufferImpl* share_context);
 
   virtual ~WebGraphicsContext3DCommandBufferImpl();
 
-  void InitializeWithCommandBuffer(
-      CommandBufferProxyImpl* command_buffer,
-      const Attributes& attributes,
-      bool bind_generates_resources);
+  CommandBufferProxyImpl* GetCommandBufferProxy() {
+    return command_buffer_.get();
+  }
 
-  bool Initialize(const Attributes& attributes,
-                  bool bind_generates_resources,
-                  CauseForGpuLaunch cause);
+  CONTENT_EXPORT gpu::ContextSupport* GetContextSupport();
 
-  // The following 3 IDs let one uniquely identify this context.
-  // Gets the GPU process ID for this context.
-  int GetGPUProcessID();
-
-  // Gets the channel ID for this context.
-  int GetChannelID();
-
-  // Gets the context ID (relative to the channel).
-  int GetContextID();
-
-  CommandBufferProxyImpl* GetCommandBufferProxy() { return command_buffer_; }
-
-  gpu::gles2::GLES2Implementation* GetImplementation() { return gl_; }
+  gpu::gles2::GLES2Implementation* GetImplementation() {
+    return real_gl_.get();
+  }
 
   // Return true if GPU process reported context lost or there was a
   // problem communicating with the GPU process.
   bool IsCommandBufferContextLost();
 
-  // Create a WebGraphicsContext3DCommandBufferImpl that renders directly to a
-  // view. The view and the associated window must not be destroyed until
-  // the returned ContentGLContext has been destroyed, otherwise the GPU process
-  // might attempt to render to an invalid window handle.
-  //
-  // NOTE: on Mac OS X, this entry point is only used to set up the
-  // accelerated compositor's output. On this platform, we actually pass
-  // a gfx::PluginWindowHandle in place of the gfx::NativeViewId,
-  // because the facility to allocate a fake PluginWindowHandle is
-  // already in place. We could add more entry points and messages to
-  // allocate both fake PluginWindowHandles and NativeViewIds and map
-  // from fake NativeViewIds to PluginWindowHandles, but this seems like
-  // unnecessary complexity at the moment.
-  static WebGraphicsContext3DCommandBufferImpl* CreateViewContext(
-      GpuChannelHostFactory* factory,
-      int32 surface_id,
-      const char* allowed_extensions,
-      const WebGraphicsContext3D::Attributes& attributes,
-      bool bind_generates_resources,
-      const GURL& active_url,
-      CauseForGpuLaunch cause);
-
   // Create & initialize a WebGraphicsContext3DCommandBufferImpl.  Return NULL
   // on any failure.
-  static WebGraphicsContext3DCommandBufferImpl* CreateOffscreenContext(
-      GpuChannelHostFactory* factory,
-      const WebGraphicsContext3D::Attributes& attributes,
-      const GURL& active_url);
+  static CONTENT_EXPORT WebGraphicsContext3DCommandBufferImpl*
+      CreateOffscreenContext(
+          GpuChannelHost* host,
+          const WebGraphicsContext3D::Attributes& attributes,
+          bool lose_context_when_out_of_memory,
+          const GURL& active_url,
+          const SharedMemoryLimits& limits,
+          WebGraphicsContext3DCommandBufferImpl* share_context);
+
+  size_t GetMappedMemoryLimit() {
+    return mem_limits_.mapped_memory_reclaim_limit;
+  }
 
   //----------------------------------------------------------------------
   // WebGraphicsContext3D methods
@@ -146,23 +166,16 @@ class WebGraphicsContext3DCommandBufferImpl
   // graphics context fails to create. Do not call from more than one thread.
   virtual bool makeContextCurrent();
 
-  virtual int width();
-  virtual int height();
-
-  virtual bool isGLES2Compliant();
-
-  virtual bool setParentContext(WebGraphicsContext3D* parent_context);
+  virtual uint32_t lastFlushID();
 
   virtual unsigned int insertSyncPoint();
-  virtual void waitSyncPoint(unsigned int);
+  virtual void waitSyncPoint(unsigned int sync_point);
 
-  virtual void reshape(int width, int height);
+  virtual void loseContextCHROMIUM(WGC3Denum current, WGC3Denum other);
 
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size);
-  virtual bool readBackFramebuffer(unsigned char* pixels, size_t buffer_size,
-                                   WebGLId framebuffer, int width, int height);
+  virtual void reshapeWithScaleFactor(
+      int width, int height, float scale_factor);
 
-  virtual WebGLId getPlatformTextureId();
   virtual void prepareTexture();
   virtual void postSubBufferCHROMIUM(int x, int y, int width, int height);
 
@@ -299,7 +312,7 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void getProgramiv(WebGLId program, WGC3Denum pname, WGC3Dint* value);
 
-  virtual WebKit::WebString getProgramInfoLog(WebGLId program);
+  virtual blink::WebString getProgramInfoLog(WebGLId program);
 
   virtual void getRenderbufferParameteriv(WGC3Denum target,
                                           WGC3Denum pname,
@@ -307,15 +320,15 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void getShaderiv(WebGLId shader, WGC3Denum pname, WGC3Dint* value);
 
-  virtual WebKit::WebString getShaderInfoLog(WebGLId shader);
+  virtual blink::WebString getShaderInfoLog(WebGLId shader);
 
   virtual void getShaderPrecisionFormat(WGC3Denum shadertype,
                                         WGC3Denum precisiontype,
                                         WGC3Dint* range,
                                         WGC3Dint* precision);
 
-  virtual WebKit::WebString getShaderSource(WebGLId shader);
-  virtual WebKit::WebString getString(WGC3Denum name);
+  virtual blink::WebString getShaderSource(WebGLId shader);
+  virtual blink::WebString getString(WGC3Denum name);
 
   virtual void getTexParameterfv(WGC3Denum target,
                                  WGC3Denum pname,
@@ -479,19 +492,31 @@ class WebGraphicsContext3DCommandBufferImpl
                         WGC3Dsizei width, WGC3Dsizei height);
 
   // Support for buffer creation and deletion
+  virtual void genBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void genTextures(WGC3Dsizei count, WebGLId* ids);
+
+  virtual void deleteBuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteFramebuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteRenderbuffers(WGC3Dsizei count, WebGLId* ids);
+  virtual void deleteTextures(WGC3Dsizei count, WebGLId* ids);
+
   virtual WebGLId createBuffer();
   virtual WebGLId createFramebuffer();
-  virtual WebGLId createProgram();
   virtual WebGLId createRenderbuffer();
-  virtual WebGLId createShader(WGC3Denum);
   virtual WebGLId createTexture();
 
   virtual void deleteBuffer(WebGLId);
   virtual void deleteFramebuffer(WebGLId);
-  virtual void deleteProgram(WebGLId);
   virtual void deleteRenderbuffer(WebGLId);
-  virtual void deleteShader(WebGLId);
   virtual void deleteTexture(WebGLId);
+
+  virtual WebGLId createProgram();
+  virtual WebGLId createShader(WGC3Denum);
+
+  virtual void deleteProgram(WebGLId);
+  virtual void deleteShader(WebGLId);
 
   virtual void synthesizeGLError(WGC3Denum);
 
@@ -516,21 +541,10 @@ class WebGraphicsContext3DCommandBufferImpl
   virtual void discardFramebufferEXT(WGC3Denum target,
                                      WGC3Dsizei numAttachments,
                                      const WGC3Denum* attachments);
-  virtual void discardBackbufferCHROMIUM();
-  virtual void ensureBackbufferCHROMIUM();
-
-  virtual void setMemoryAllocationChangedCallbackCHROMIUM(
-      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback);
-
-  virtual void sendManagedMemoryStatsCHROMIUM(
-      const WebGraphicsManagedMemoryStats* stats);
-
   virtual void copyTextureToParentTextureCHROMIUM(
       WebGLId texture, WebGLId parentTexture);
 
-  virtual void rateLimitOffscreenContextCHROMIUM();
-
-  virtual WebKit::WebString getRequestableExtensionsCHROMIUM();
+  virtual blink::WebString getRequestableExtensionsCHROMIUM();
   virtual void requestExtensionCHROMIUM(const char*);
 
   virtual void blitFramebufferCHROMIUM(
@@ -541,7 +555,7 @@ class WebGraphicsContext3DCommandBufferImpl
       WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat,
       WGC3Dsizei width, WGC3Dsizei height);
 
-  virtual WebKit::WebString getTranslatedShaderSourceANGLE(WebGLId shader);
+  virtual blink::WebString getTranslatedShaderSourceANGLE(WebGLId shader);
 
   virtual void setContextLostCallback(
       WebGraphicsContext3D::WebGraphicsContextLostCallback* callback);
@@ -550,10 +564,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void setErrorMessageCallback(
       WebGraphicsContext3D::WebGraphicsErrorMessageCallback* callback);
-
-  virtual void setSwapBuffersCompleteCallbackCHROMIUM(
-      WebGraphicsContext3D::
-          WebGraphicsSwapBuffersCompleteCallbackCHROMIUM* callback);
 
   virtual void texImageIOSurface2DCHROMIUM(
       WGC3Denum target, WGC3Dint width, WGC3Dint height,
@@ -575,12 +585,14 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void copyTextureCHROMIUM(WGC3Denum target, WebGLId source_id,
                                    WebGLId dest_id, WGC3Dint level,
-                                   WGC3Denum internal_format);
+                                   WGC3Denum internal_format,
+                                   WGC3Denum dest_type);
 
   virtual void bindUniformLocationCHROMIUM(WebGLId program, WGC3Dint location,
                                            const WGC3Dchar* uniform);
 
   virtual void shallowFlushCHROMIUM();
+  virtual void shallowFinishCHROMIUM();
 
   virtual void genMailboxCHROMIUM(WGC3Dbyte* mailbox);
   virtual void produceTextureCHROMIUM(WGC3Denum target,
@@ -600,9 +612,6 @@ class WebGraphicsContext3DCommandBufferImpl
 
   virtual void bindTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint image_id);
   virtual void releaseTexImage2DCHROMIUM(WGC3Denum target, WGC3Dint image_id);
-
-  virtual WebGLId createStreamTextureCHROMIUM(WebGLId texture);
-  virtual void destroyStreamTextureCHROMIUM(WebGLId texture);
 
   virtual void* mapBufferCHROMIUM(WGC3Denum target, WGC3Denum access);
   virtual WGC3Dboolean unmapBufferCHROMIUM(WGC3Denum target);
@@ -628,9 +637,48 @@ class WebGraphicsContext3DCommandBufferImpl
       WGC3Denum format,
       WGC3Denum type,
       const void* pixels);
+  virtual void waitAsyncTexImage2DCHROMIUM(WGC3Denum target);
 
- protected:
-  virtual GrGLInterface* onCreateGrGLInterface();
+  // GL_EXT_draw_buffers
+  virtual void drawBuffersEXT(
+      WGC3Dsizei n,
+      const WGC3Denum* bufs);
+
+  // GL_ANGLE_instanced_arrays
+  virtual void drawArraysInstancedANGLE(WGC3Denum mode, WGC3Dint first,
+      WGC3Dsizei count, WGC3Dsizei primcount);
+  virtual void drawElementsInstancedANGLE(WGC3Denum mode, WGC3Dsizei count,
+      WGC3Denum type, WGC3Dintptr offset, WGC3Dsizei primcount);
+  virtual void vertexAttribDivisorANGLE(WGC3Duint index, WGC3Duint divisor);
+
+  // GL_CHROMIUM_map_image
+  // TODO(alexst): remove this old function after blink cleanup.
+  virtual WGC3Duint createImageCHROMIUM(
+      WGC3Dsizei width, WGC3Dsizei height, WGC3Denum internalformat);
+  virtual WGC3Duint createImageCHROMIUM(WGC3Dsizei width,
+                                        WGC3Dsizei height,
+                                        WGC3Denum internalformat,
+                                        WGC3Denum usage);
+  virtual void destroyImageCHROMIUM(WGC3Duint image_id);
+  virtual void getImageParameterivCHROMIUM(
+      WGC3Duint image_id, WGC3Denum pname, WGC3Dint* params);
+  // TODO(alexst): remove this old function after blink cleanup.
+  virtual void* mapImageCHROMIUM(WGC3Duint image_id, WGC3Denum access);
+  virtual void* mapImageCHROMIUM(WGC3Duint image_id);
+  virtual void unmapImageCHROMIUM(WGC3Duint image_id);
+
+  // GL_EXT_multisampled_render_to_texture
+  virtual void framebufferTexture2DMultisampleEXT(WGC3Denum target,
+                                    WGC3Denum attachment,
+                                    WGC3Denum textarget,
+                                    WebGLId texture,
+                                    WGC3Dint level,
+                                    WGC3Dsizei samples);
+  virtual void renderbufferStorageMultisampleEXT(
+      WGC3Denum target, WGC3Dsizei samples, WGC3Denum internalformat,
+      WGC3Dsizei width, WGC3Dsizei height);
+
+  virtual GrGLInterface* createGrGLInterface();
 
  private:
   // These are the same error codes as used by EGL.
@@ -643,20 +691,25 @@ class WebGraphicsContext3DCommandBufferImpl
   // the 16-bit range are the same as used by EGL. Those outside the 16-bit
   // range are unique to Chromium. Attributes are matched using a closest fit
   // algorithm.
+  // Changes to this enum should also be copied to
+  // gpu/command_buffer/common/gles2_cmd_utils.cc and to
+  // gpu/command_buffer/client/gl_in_process_context.cc
   enum Attribute {
-    ALPHA_SIZE                = 0x3021,
-    BLUE_SIZE                 = 0x3022,
-    GREEN_SIZE                = 0x3023,
-    RED_SIZE                  = 0x3024,
-    DEPTH_SIZE                = 0x3025,
-    STENCIL_SIZE              = 0x3026,
-    SAMPLES                   = 0x3031,
-    SAMPLE_BUFFERS            = 0x3032,
-    HEIGHT                    = 0x3056,
-    WIDTH                     = 0x3057,
-    NONE                      = 0x3038,  // Attrib list = terminator
-    SHARE_RESOURCES           = 0x10000,
-    BIND_GENERATES_RESOURCES  = 0x10001
+    ALPHA_SIZE = 0x3021,
+    BLUE_SIZE = 0x3022,
+    GREEN_SIZE = 0x3023,
+    RED_SIZE = 0x3024,
+    DEPTH_SIZE = 0x3025,
+    STENCIL_SIZE = 0x3026,
+    SAMPLES = 0x3031,
+    SAMPLE_BUFFERS = 0x3032,
+    HEIGHT = 0x3056,
+    WIDTH = 0x3057,
+    NONE = 0x3038,  // Attrib list = terminator
+    SHARE_RESOURCES = 0x10000,
+    BIND_GENERATES_RESOURCES = 0x10001,
+    FAIL_IF_MAJOR_PERF_CAVEAT = 0x10002,
+    LOSE_CONTEXT_WHEN_OUT_OF_MEMORY = 0x10003,
   };
   friend class WebGraphicsContext3DErrorMessageCallback;
 
@@ -664,13 +717,10 @@ class WebGraphicsContext3DCommandBufferImpl
   // and subsequent calls are ignored. Must be called from the thread that is
   // going to use this object to issue GL commands (which might not be the main
   // thread).
-  bool MaybeInitializeGL(const char* allowed_extensions);
+  bool MaybeInitializeGL();
 
-  bool InitializeCommandBuffer(
-      bool onscreen,
-      const char* allowed_extensions);
-
-  bool SetParent(WebGraphicsContext3DCommandBufferImpl* parent_context);
+  bool InitializeCommandBuffer(bool onscreen,
+      WebGraphicsContext3DCommandBufferImpl* share_context);
 
   void Destroy();
 
@@ -687,40 +737,19 @@ class WebGraphicsContext3DCommandBufferImpl
   // allocate both fake PluginWindowHandles and NativeViewIds and map
   // from fake NativeViewIds to PluginWindowHandles, but this seems like
   // unnecessary complexity at the moment.
-  bool CreateContext(bool onscreen,
-                     const char* allowed_extensions);
+  bool CreateContext(bool onscreen);
 
-  // SwapBuffers callback.
-  void OnSwapBuffersComplete();
-  virtual void OnContextLost();
+  virtual void OnGpuChannelLost();
   virtual void OnErrorMessage(const std::string& message, int id);
-
-  // Check if we should call into the swap client. We can only do that on the
-  // main thread.
-  bool ShouldUseSwapClient();
-
-  // MemoryAllocationChanged callback.
-  void OnMemoryAllocationChanged(
-      WebGraphicsMemoryAllocationChangedCallbackCHROMIUM* callback,
-      const GpuMemoryAllocationForRenderer& allocation);
-
-  // Convert the gpu cutoff enum to the WebKit enum.
-  static WebGraphicsMemoryAllocation::PriorityCutoff WebkitPriorityCutoff(
-      GpuMemoryAllocationForRenderer::PriorityCutoff priorityCutoff);
 
   bool initialize_failed_;
 
-  // The channel factory to talk to the GPU process
-  GpuChannelHostFactory* factory_;
-
   bool visible_;
-  bool free_command_buffer_when_invisible_;
 
   // State needed by MaybeInitializeGL.
   scoped_refptr<GpuChannelHost> host_;
   int32 surface_id_;
   GURL active_url_;
-  base::WeakPtr<WebGraphicsContext3DSwapBuffersClient> swap_client_;
 
   WebGraphicsContext3D::WebGraphicsContextLostCallback* context_lost_callback_;
   WGC3Denum context_lost_reason_;
@@ -730,39 +759,27 @@ class WebGraphicsContext3DCommandBufferImpl
   scoped_ptr<WebGraphicsContext3DErrorMessageCallback>
       client_error_message_callback_;
 
-  WebGraphicsContext3D::WebGraphicsSwapBuffersCompleteCallbackCHROMIUM*
-      swapbuffers_complete_callback_;
-
-  WebKit::WebGraphicsContext3D::Attributes attributes_;
+  blink::WebGraphicsContext3D::Attributes attributes_;
   gfx::GpuPreference gpu_preference_;
-  int cached_width_, cached_height_;
-
-  // For tracking which FBO is bound.
-  WebGLId bound_fbo_;
 
   // Errors raised by synthesizeGLError().
   std::vector<WGC3Denum> synthetic_errors_;
 
   base::WeakPtrFactory<WebGraphicsContext3DCommandBufferImpl> weak_ptr_factory_;
 
-#ifdef FLIP_FRAMEBUFFER_VERTICALLY
-  std::vector<uint8> scanline_;
-  void FlipVertically(uint8* framebuffer,
-                      unsigned int width,
-                      unsigned int height);
-#endif
-
   bool initialized_;
-  WebGraphicsContext3DCommandBufferImpl* parent_;
-  uint32 parent_texture_id_;
-  CommandBufferProxyImpl* command_buffer_;
-  gpu::gles2::GLES2CmdHelper* gles2_helper_;
-  gpu::TransferBuffer* transfer_buffer_;
-  gpu::gles2::GLES2Implementation* gl_;
+  scoped_ptr<CommandBufferProxyImpl> command_buffer_;
+  scoped_ptr<gpu::gles2::GLES2CmdHelper> gles2_helper_;
+  scoped_ptr<gpu::TransferBuffer> transfer_buffer_;
+  gpu::gles2::GLES2Interface* gl_;
+  scoped_ptr<gpu::gles2::GLES2Implementation> real_gl_;
+  scoped_ptr<gpu::gles2::GLES2Interface> trace_gl_;
   Error last_error_;
-  int frame_number_;
-  bool bind_generates_resources_;
-  bool use_echo_for_swap_ack_;
+  bool lose_context_when_out_of_memory_;
+  SharedMemoryLimits mem_limits_;
+
+  uint32_t flush_id_;
+  scoped_refptr<ShareGroup> share_group_;
 };
 
 }  // namespace content

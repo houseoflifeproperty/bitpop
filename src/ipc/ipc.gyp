@@ -18,6 +18,7 @@
       },
       'dependencies': [
         '../base/base.gyp:base',
+        # TODO(viettrungluu): Needed for base/lazy_instance.h, which is suspect.
         '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
       ],
       # TODO(gregoryd): direct_dependent_settings should be shared with the
@@ -37,7 +38,6 @@
         '../base/base.gyp:base',
         '../base/base.gyp:base_i18n',
         '../base/base.gyp:test_support_base',
-        '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations',
         '../testing/gtest.gyp:gtest',
       ],
       'include_dirs': [
@@ -46,6 +46,8 @@
       'sources': [
         'file_descriptor_set_posix_unittest.cc',
         'ipc_channel_posix_unittest.cc',
+        'ipc_channel_proxy_unittest.cc',
+        'ipc_channel_unittest.cc',
         'ipc_fuzzing_tests.cc',
         'ipc_message_unittest.cc',
         'ipc_message_utils_unittest.cc',
@@ -53,14 +55,16 @@
         'ipc_sync_channel_unittest.cc',
         'ipc_sync_message_unittest.cc',
         'ipc_sync_message_unittest.h',
-        'ipc_tests.cc',
-        'ipc_tests.h',
+        'ipc_test_base.cc',
+        'ipc_test_base.h',
+        'run_all_unittests.cc',
         'sync_socket_unittest.cc',
+        'unix_domain_socket_util_unittest.cc',
       ],
       'conditions': [
-        ['toolkit_uses_gtk == 1', {
-          'dependencies': [
-            '../build/linux/system.gyp:gtk',
+        ['OS == "win" or OS == "ios"', {
+          'sources!': [
+            'unix_domain_socket_util_unittest.cc',
           ],
         }],
         ['OS == "android" and gtest_target_type == "shared_library"', {
@@ -70,7 +74,45 @@
         }],
         ['os_posix == 1 and OS != "mac" and OS != "android"', {
           'conditions': [
-            ['linux_use_tcmalloc==1', {
+            ['use_allocator!="none"', {
+              'dependencies': [
+                '../base/allocator/allocator.gyp:allocator',
+              ],
+            }],
+          ],
+        }]
+      ],
+    },
+    {
+      'target_name': 'ipc_perftests',
+      'type': '<(gtest_target_type)',
+      # TODO(viettrungluu): Figure out which dependencies are really needed.
+      'dependencies': [
+        'ipc',
+        'test_support_ipc',
+        '../base/base.gyp:base',
+        '../base/base.gyp:base_i18n',
+        '../base/base.gyp:test_support_base',
+        '../base/base.gyp:test_support_perf',
+        '../testing/gtest.gyp:gtest',
+      ],
+      'include_dirs': [
+        '..'
+      ],
+      'sources': [
+        'ipc_perftests.cc',
+        'ipc_test_base.cc',
+        'ipc_test_base.h',
+      ],
+      'conditions': [
+        ['OS == "android" and gtest_target_type == "shared_library"', {
+          'dependencies': [
+            '../testing/android/native_test.gyp:native_test_native_code',
+          ],
+        }],
+        ['os_posix == 1 and OS != "mac" and OS != "android"', {
+          'conditions': [
+            ['use_allocator!="none"', {
               'dependencies': [
                 '../base/allocator/allocator.gyp:allocator',
               ],
@@ -96,7 +138,7 @@
     },
   ],
   'conditions': [
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'ipc_win64',
@@ -105,7 +147,9 @@
             'ipc_target': 1,
           },
           'dependencies': [
-            '../base/base.gyp:base_nacl_win64',
+            '../base/base.gyp:base_win64',
+            # TODO(viettrungluu): Needed for base/lazy_instance.h, which is
+            # suspect.
             '../base/third_party/dynamic_annotations/dynamic_annotations.gyp:dynamic_annotations_win64',
           ],
           # TODO(gregoryd): direct_dependent_settings should be shared with the
@@ -136,7 +180,17 @@
           ],
           'variables': {
             'test_suite_name': 'ipc_tests',
-            'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)ipc_tests<(SHARED_LIB_SUFFIX)',
+          },
+          'includes': [ '../build/apk_test.gypi' ],
+        },
+        {
+          'target_name': 'ipc_perftests_apk',
+          'type': 'none',
+          'dependencies': [
+            'ipc_perftests',
+          ],
+          'variables': {
+            'test_suite_name': 'ipc_perftests',
           },
           'includes': [ '../build/apk_test.gypi' ],
         }],

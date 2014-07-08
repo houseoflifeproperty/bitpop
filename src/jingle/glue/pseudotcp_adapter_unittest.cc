@@ -28,11 +28,6 @@ namespace jingle_glue {
 
 namespace {
 
-// The range is chosen arbitrarily. It must be big enough so that we
-// always have at least two UDP ports available.
-const int kMinPort = 32000;
-const int kMaxPort = 33000;
-
 const int kMessageSize = 1024;
 const int kMessages = 100;
 const int kTestDataSize = kMessages * kMessageSize;
@@ -113,7 +108,7 @@ class FakeSocket : public net::Socket {
 
   // net::Socket interface.
   virtual int Read(net::IOBuffer* buf, int buf_len,
-                   const net::CompletionCallback& callback) {
+                   const net::CompletionCallback& callback) OVERRIDE {
     CHECK(read_callback_.is_null());
     CHECK(buf);
 
@@ -136,7 +131,7 @@ class FakeSocket : public net::Socket {
                     const net::CompletionCallback& callback) OVERRIDE {
     DCHECK(buf);
     if (peer_socket_) {
-      MessageLoop::current()->PostDelayedTask(
+      base::MessageLoop::current()->PostDelayedTask(
           FROM_HERE,
           base::Bind(&FakeSocket::AppendInputPacket,
                      base::Unretained(peer_socket_),
@@ -147,13 +142,13 @@ class FakeSocket : public net::Socket {
     return buf_len;
   }
 
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE {
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE {
+  virtual int SetSendBufferSize(int32 size) OVERRIDE {
     NOTIMPLEMENTED();
-    return false;
+    return net::ERR_NOT_IMPLEMENTED;
   }
 
  private:
@@ -170,7 +165,7 @@ class FakeSocket : public net::Socket {
 
 class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
  public:
-  TCPChannelTester(MessageLoop* message_loop,
+  TCPChannelTester(base::MessageLoop* message_loop,
                    net::Socket* client_socket,
                    net::Socket* host_socket)
       : message_loop_(message_loop),
@@ -178,8 +173,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
         client_socket_(client_socket),
         done_(false),
         write_errors_(0),
-        read_errors_(0) {
-  }
+        read_errors_(0) {}
 
   void Start() {
     message_loop_->PostTask(
@@ -204,7 +198,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
 
   void Done() {
     done_ = true;
-    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   void DoStart() {
@@ -232,7 +226,8 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
       int bytes_to_write = std::min(output_buffer_->BytesRemaining(),
                                     kMessageSize);
       result = client_socket_->Write(
-          output_buffer_, bytes_to_write,
+          output_buffer_.get(),
+          bytes_to_write,
           base::Bind(&TCPChannelTester::OnWritten, base::Unretained(this)));
       HandleWriteResult(result);
     }
@@ -258,9 +253,10 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
     while (result > 0) {
       input_buffer_->set_offset(input_buffer_->capacity() - kMessageSize);
 
-      result = host_socket_->Read(input_buffer_, kMessageSize,
-                                  base::Bind(&TCPChannelTester::OnRead,
-                                             base::Unretained(this)));
+      result = host_socket_->Read(
+          input_buffer_.get(),
+          kMessageSize,
+          base::Bind(&TCPChannelTester::OnRead, base::Unretained(this)));
       HandleReadResult(result);
     };
   }
@@ -288,7 +284,7 @@ class TCPChannelTester : public base::RefCountedThreadSafe<TCPChannelTester> {
  private:
   friend class base::RefCountedThreadSafe<TCPChannelTester>;
 
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   net::Socket* host_socket_;
   net::Socket* client_socket_;
   bool done_;
@@ -320,7 +316,7 @@ class PseudoTcpAdapterTest : public testing::Test {
 
   scoped_ptr<PseudoTcpAdapter> host_pseudotcp_;
   scoped_ptr<PseudoTcpAdapter> client_pseudotcp_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 };
 
 TEST_F(PseudoTcpAdapterTest, DataTransfer) {
@@ -383,14 +379,14 @@ TEST_F(PseudoTcpAdapterTest, LimitedChannel) {
 
 class DeleteOnConnected {
  public:
-  DeleteOnConnected(MessageLoop* message_loop,
+  DeleteOnConnected(base::MessageLoop* message_loop,
                     scoped_ptr<PseudoTcpAdapter>* adapter)
       : message_loop_(message_loop), adapter_(adapter) {}
   void OnConnected(int error) {
     adapter_->reset();
-    message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
-  MessageLoop* message_loop_;
+  base::MessageLoop* message_loop_;
   scoped_ptr<PseudoTcpAdapter>* adapter_;
 };
 

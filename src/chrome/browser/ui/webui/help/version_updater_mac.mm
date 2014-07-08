@@ -8,6 +8,7 @@
 #include "base/bind_helpers.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
 #import "chrome/browser/mac/keystone_glue.h"
+#include "chrome/browser/mac/obsolete_system.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
@@ -57,8 +58,9 @@ VersionUpdater* VersionUpdater::Create() {
   return new VersionUpdaterMac;
 }
 
-VersionUpdaterMac::VersionUpdaterMac() {
-  keystone_observer_.reset([[KeystoneObserver alloc] initWithUpdater:this]);
+VersionUpdaterMac::VersionUpdaterMac()
+    : show_promote_button_(false),
+      keystone_observer_([[KeystoneObserver alloc] initWithUpdater:this]) {
 }
 
 VersionUpdaterMac::~VersionUpdaterMac() {
@@ -102,7 +104,7 @@ void VersionUpdaterMac::CheckForUpdate(
   } else {
     // There is no glue, or the application is on a read-only filesystem.
     // Updates and promotions are impossible.
-    status_callback_.Run(DISABLED, 0, string16());
+    status_callback_.Run(DISABLED, 0, base::string16());
   }
 }
 
@@ -124,7 +126,7 @@ void VersionUpdaterMac::PromoteUpdater() const {
 
 void VersionUpdaterMac::RelaunchBrowser() const {
   // Tell the Broweser to restart if possible.
-  browser::AttemptRestart();
+  chrome::AttemptRestart();
 }
 
 void VersionUpdaterMac::UpdateStatus(NSDictionary* dictionary) {
@@ -132,7 +134,7 @@ void VersionUpdaterMac::UpdateStatus(NSDictionary* dictionary) {
       [[dictionary objectForKey:kAutoupdateStatusStatus] intValue]);
 
   bool enable_promote_button = true;
-  string16 message;
+  base::string16 message;
 
   Status status;
   switch (keystone_status) {
@@ -198,9 +200,10 @@ void VersionUpdaterMac::UpdateStatus(NSDictionary* dictionary) {
     case kAutoupdateNeedsPromotion:
       {
         status = FAILED;
-        string16 product_name = l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
-        message = l10n_util:: GetStringFUTF16(IDS_PROMOTE_INFOBAR_TEXT,
-                                              product_name);
+        base::string16 product_name =
+            l10n_util::GetStringUTF16(IDS_PRODUCT_NAME);
+        message = l10n_util::GetStringFUTF16(IDS_PROMOTE_INFOBAR_TEXT,
+                                             product_name);
       }
       break;
 
@@ -221,6 +224,13 @@ void VersionUpdaterMac::UpdateStatus(NSDictionary* dictionary) {
 }
 
 void VersionUpdaterMac::UpdateShowPromoteButton() {
+  if (ObsoleteSystemMac::Has32BitOnlyCPU() &&
+      ObsoleteSystemMac::Is32BitEndOfTheLine()) {
+    // Promotion is moot upon reaching the end of the line.
+    show_promote_button_ = false;
+    return;
+  }
+
   KeystoneGlue* keystone_glue = [KeystoneGlue defaultKeystoneGlue];
   AutoupdateStatus recent_status = [keystone_glue recentStatus];
   if (recent_status == kAutoupdateRegistering ||

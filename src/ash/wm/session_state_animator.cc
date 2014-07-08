@@ -8,15 +8,13 @@
 #include "ash/shell_window_ids.h"
 #include "ash/wm/window_animations.h"
 #include "ui/aura/client/aura_constants.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/layer_animation_sequence.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
 #include "ui/views/widget/widget.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // Slightly-smaller size that we scale the screen down to for the pre-lock and
@@ -163,11 +161,11 @@ void HideWindow(aura::Window* window,
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
   settings.SetTransitionDuration(duration);
 
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   SetTransformForScaleAnimation(layer,
       above ? LAYER_SCALE_ANIMATION_ABOVE : LAYER_SCALE_ANIMATION_BELOW);
 
-  settings.SetTweenType(ui::Tween::EASE_IN_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_IN_OUT);
   layer->SetOpacity(0.0f);
 
   // After the animation completes snap the transform back to the identity,
@@ -203,10 +201,10 @@ void TransformWindowToBaseState(aura::Window* window,
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
   settings.SetTransitionDuration(duration);
 
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   layer->SetTransform(gfx::Transform());
 
-  settings.SetTweenType(ui::Tween::EASE_IN_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_IN_OUT);
   layer->SetOpacity(1.0f);
 
   // A bit of a dirty trick: we need to catch the end of the animation we don't
@@ -246,7 +244,7 @@ void StartGrayscaleBrightnessAnimationForWindow(
     aura::Window* window,
     float target,
     base::TimeDelta duration,
-    ui::Tween::Type tween_type,
+    gfx::Tween::Type tween_type,
     ui::LayerAnimationObserver* observer) {
   ui::LayerAnimator* animator = window->layer()->GetAnimator();
 
@@ -403,7 +401,7 @@ bool SessionStateAnimator::TestApi::ContainersAreAnimated(
 
 bool SessionStateAnimator::TestApi::RootWindowIsAnimated(AnimationType type)
     const {
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   ui::Layer* layer = root_window->layer();
   return IsLayerAnimated(layer, type);
 }
@@ -455,49 +453,43 @@ base::TimeDelta SessionStateAnimator::GetDuration(AnimationSpeed speed) {
 // Fills |containers| with the containers described by |container_mask|.
 void SessionStateAnimator::GetContainers(int container_mask,
                                          aura::Window::Windows* containers) {
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   containers->clear();
 
   if (container_mask & DESKTOP_BACKGROUND) {
     containers->push_back(Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_DesktopBackgroundContainer));
+        root_window, kShellWindowId_DesktopBackgroundContainer));
   }
   if (container_mask & LAUNCHER) {
-    containers->push_back(Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_LauncherContainer));
+    containers->push_back(
+        Shell::GetContainer(root_window, kShellWindowId_ShelfContainer));
   }
   if (container_mask & NON_LOCK_SCREEN_CONTAINERS) {
     // TODO(antrim): Figure out a way to eliminate a need to exclude launcher
     // in such way.
     aura::Window* non_lock_screen_containers = Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_NonLockScreenContainersContainer);
+        root_window, kShellWindowId_NonLockScreenContainersContainer);
     aura::Window::Windows children = non_lock_screen_containers->children();
 
     for (aura::Window::Windows::const_iterator it = children.begin();
          it != children.end(); ++it) {
       aura::Window* window = *it;
-      if (window->id() == internal::kShellWindowId_LauncherContainer)
+      if (window->id() == kShellWindowId_ShelfContainer)
         continue;
       containers->push_back(window);
     }
   }
   if (container_mask & LOCK_SCREEN_BACKGROUND) {
     containers->push_back(Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_LockScreenBackgroundContainer));
+        root_window, kShellWindowId_LockScreenBackgroundContainer));
   }
   if (container_mask & LOCK_SCREEN_CONTAINERS) {
     containers->push_back(Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_LockScreenContainersContainer));
+        root_window, kShellWindowId_LockScreenContainersContainer));
   }
   if (container_mask & LOCK_SCREEN_RELATED_CONTAINERS) {
     containers->push_back(Shell::GetContainer(
-        root_window,
-        internal::kShellWindowId_LockScreenRelatedContainersContainer));
+        root_window, kShellWindowId_LockScreenRelatedContainersContainer));
   }
 }
 
@@ -542,7 +534,7 @@ void SessionStateAnimator::StartAnimationWithObserver(
 
 void SessionStateAnimator::StartGlobalAnimation(AnimationType type,
                                                 AnimationSpeed speed) {
-  aura::RootWindow* root_window = Shell::GetPrimaryRootWindow();
+  aura::Window* root_window = Shell::GetPrimaryRootWindow();
   RunAnimationForWindow(root_window, type, speed, NULL);
 }
 
@@ -604,31 +596,13 @@ void SessionStateAnimator::RunAnimationForWindow(
       break;
     case ANIMATION_GRAYSCALE_BRIGHTNESS:
       StartGrayscaleBrightnessAnimationForWindow(
-          window, 1.0, duration, ui::Tween::EASE_IN, observer);
+          window, 1.0, duration, gfx::Tween::EASE_IN, observer);
       break;
     case ANIMATION_UNDO_GRAYSCALE_BRIGHTNESS:
       StartGrayscaleBrightnessAnimationForWindow(
-          window, 0.0, duration, ui::Tween::EASE_IN_OUT, observer);
+          window, 0.0, duration, gfx::Tween::EASE_IN_OUT, observer);
       break;
   }
 }
 
-void SessionStateAnimator::CreateForeground() {
-  if (foreground_.get())
-    return;
-  aura::Window* window = Shell::GetContainer(
-      Shell::GetPrimaryRootWindow(),
-      internal::kShellWindowId_PowerButtonAnimationContainer);
-  HideWindowImmediately(window, NULL);
-  foreground_.reset(
-      new ColoredWindowController(window, "SessionStateAnimatorForeground"));
-  foreground_->SetColor(SK_ColorWHITE);
-  foreground_->GetWidget()->Show();
-}
-
-void SessionStateAnimator::DropForeground() {
-  foreground_.reset();
-}
-
-}  // namespace internal
 }  // namespace ash

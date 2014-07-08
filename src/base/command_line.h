@@ -23,6 +23,8 @@
 #include "base/base_export.h"
 #include "build/build_config.h"
 
+namespace base {
+
 class FilePath;
 
 class BASE_EXPORT CommandLine {
@@ -51,6 +53,17 @@ class BASE_EXPORT CommandLine {
 
   ~CommandLine();
 
+#if defined(OS_WIN)
+  // By default this class will treat command-line arguments beginning with
+  // slashes as switches on Windows, but not other platforms.
+  //
+  // If this behavior is inappropriate for your application, you can call this
+  // function BEFORE initializing the current process' global command line
+  // object and the behavior will be the same as Posix systems (only hyphens
+  // begin switches, everything else will be an arg).
+  static void set_slash_is_not_a_switch();
+#endif
+
   // Initialize the current process CommandLine singleton. On Windows, ignores
   // its arguments (we instead parse GetCommandLineW() directly) because we
   // don't trust the CRT's parsing of the command line, but it still must be
@@ -69,6 +82,9 @@ class BASE_EXPORT CommandLine {
   // command line. Note: returned value is mutable, but not thread safe;
   // only mutate if you know what you're doing!
   static CommandLine* ForCurrentProcess();
+
+  // Returns true if the CommandLine has been initialized for the given process.
+  static bool InitializedForCurrentProcess();
 
 #if defined(OS_WIN)
   static CommandLine FromString(const std::wstring& command_line);
@@ -111,7 +127,8 @@ class BASE_EXPORT CommandLine {
   // Append a switch [with optional value] to the command line.
   // Note: Switches will precede arguments regardless of appending order.
   void AppendSwitch(const std::string& switch_string);
-  void AppendSwitchPath(const std::string& switch_string, const FilePath& path);
+  void AppendSwitchPath(const std::string& switch_string,
+                        const FilePath& path);
   void AppendSwitchNative(const std::string& switch_string,
                           const StringType& value);
   void AppendSwitchASCII(const std::string& switch_string,
@@ -168,5 +185,10 @@ class BASE_EXPORT CommandLine {
   // The index after the program and switches, any arguments start here.
   size_t begin_args_;
 };
+
+}  // namespace base
+
+// TODO(brettw) remove once all callers specify the namespace properly.
+using base::CommandLine;
 
 #endif  // BASE_COMMAND_LINE_H_

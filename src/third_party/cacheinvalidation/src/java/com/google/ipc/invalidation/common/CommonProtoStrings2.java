@@ -163,22 +163,22 @@ public class CommonProtoStrings2 {
 
   /** See spec in implementation notes and toCompactString for ClientToServerMessage. */
   public static Object toLazyCompactString(final ClientToServerMessage message,
-      final ByteString authUserId, final boolean printLowFrequencyMessagesOnly) {
+      final boolean printHighFrequencyMessages) {
     return LazyString.toLazyCompactString(message, new Receiver<TextBuilder>() {
       @Override
       public void accept(TextBuilder builder) {
-        toCompactString(builder, message, authUserId, printLowFrequencyMessagesOnly);
+        toCompactString(builder, message, printHighFrequencyMessages);
       }
     });
   }
 
   /** See spec in implementation notes and toCompactString for ServerToClientMessage. */
   public static Object toLazyCompactString(final ServerToClientMessage message,
-      final ByteString authUserId, final boolean printLowFrequencyMessagesOnly) {
+      final boolean printHighFrequencyMessages) {
     return LazyString.toLazyCompactString(message, new Receiver<TextBuilder>() {
       @Override
       public void accept(TextBuilder builder) {
-        toCompactString(builder, message, authUserId, printLowFrequencyMessagesOnly);
+        toCompactString(builder, message, printHighFrequencyMessages);
       }
     });
   }
@@ -254,6 +254,9 @@ public class CommonProtoStrings2 {
     builder.append("(Inv: ");
     toCompactString(builder, invalidation.getObjectId());
     builder.append(", ");
+    if (invalidation.getIsTrickleRestart()) {
+      builder.append("<");
+    }
     builder.append(invalidation.getVersion());
     if (invalidation.hasPayload()) {
       builder.append(", P:");
@@ -565,23 +568,16 @@ public class CommonProtoStrings2 {
   }
 
   /**
-   * If {@code printLowFrequencyMessagesOnly} is true, does not add messages that are exchanged at
-   * a high frequency between the client and the registrar (if they are the only messages present),
-   * e.g., invalidation ack message, heartbeat message.
+   * If {@code printHighFrequencyMessages} is true, logs sub-messages that are exchanged at a high
+   * frequency between the client and the registrar, e.g., invalidation ack message, heartbeat
+   * message.
    */
   public static TextBuilder toCompactString(TextBuilder builder,
-      ClientToServerMessage msg, ByteString authUserId,
-      boolean printLowFrequencyMessagesOnly) {
-    // Do not print if the only sub-message is invalidation ack or heartbeat message.
-    if (printLowFrequencyMessagesOnly && !msg.hasInitializeMessage() &&
-        !msg.hasRegistrationMessage() && !msg.hasRegistrationSyncMessage()) {
-      return null;
-    }
-
+      ClientToServerMessage msg, boolean printHighFrequencyMessages) {
     // Print the header and any sub-messages in the message.
 
     toCompactString(builder, msg.getHeader());
-    builder.appendFormat(", User: %s, ", Bytes.toString(authUserId));
+    builder.append(',');
 
     if (msg.hasInitializeMessage()) {
       toCompactString(builder, msg.getInitializeMessage());
@@ -595,11 +591,11 @@ public class CommonProtoStrings2 {
       toCompactString(builder, msg.getRegistrationSyncMessage());
       builder.append(',');
     }
-    if (!printLowFrequencyMessagesOnly && msg.hasInvalidationAckMessage()) {
+    if (printHighFrequencyMessages && msg.hasInvalidationAckMessage()) {
       toCompactString(builder, msg.getInvalidationAckMessage());
       builder.append(',');
     }
-    if (!printLowFrequencyMessagesOnly && msg.hasInfoMessage()) {
+    if (printHighFrequencyMessages && msg.hasInfoMessage()) {
       toCompactString(builder, msg.getInfoMessage());
       builder.append(',');
     }
@@ -607,31 +603,22 @@ public class CommonProtoStrings2 {
   }
 
   /**
-   * If {@code printLowFrequencyMessagesOnly} is true, does not add messages that are exchanged at
-   * a high frequency between the client and the registrar (if they are the only messages present),
+   * If {@code printHighFrequencyMessages} is true, logs sub-messages that are exchanged at a high
+   * frequency between the client and the registrar (if they are the only messages present),
    * e.g., invalidation message.
    */
   public static TextBuilder toCompactString(TextBuilder builder,
-      ServerToClientMessage msg, ByteString authUserId,
-      boolean printLowFrequencyMessagesOnly) {
-
-    // Do not print if the only sub-message is invalidation message.
-    if (printLowFrequencyMessagesOnly && !msg.hasConfigChangeMessage() && !msg.hasErrorMessage() &&
-        !msg.hasInfoRequestMessage() && !msg.hasRegistrationStatusMessage() &&
-        !msg.hasRegistrationSyncRequestMessage() && !msg.hasTokenControlMessage()) {
-      return null;
-    }
-
+      ServerToClientMessage msg, boolean printHighFrequencyMessages) {
     // Print the header and any sub-messages in the message.
 
     toCompactString(builder, msg.getHeader());
-    builder.appendFormat(", User: %s, ", Bytes.toString(authUserId));
+    builder.append(',');
 
     if (msg.hasTokenControlMessage()) {
       toCompactString(builder, msg.getTokenControlMessage());
       builder.append(',');
     }
-    if (!printLowFrequencyMessagesOnly && msg.hasInvalidationMessage()) {
+    if (printHighFrequencyMessages && msg.hasInvalidationMessage()) {
       toCompactString(builder, msg.getInvalidationMessage());
       builder.append(',');
     }

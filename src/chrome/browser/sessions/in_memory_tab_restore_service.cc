@@ -4,14 +4,16 @@
 
 #include "chrome/browser/sessions/in_memory_tab_restore_service.h"
 
+#include <vector>
+
 #include "base/compiler_specific.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/tab_restore_service_factory.h"
 
 InMemoryTabRestoreService::InMemoryTabRestoreService(
     Profile* profile,
     TabRestoreService::TimeFactory* time_factory)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(
-        helper_(this, NULL, profile, time_factory)) {
+    : helper_(this, NULL, profile, time_factory) {
 }
 
 InMemoryTabRestoreService::~InMemoryTabRestoreService() {}
@@ -50,9 +52,11 @@ const TabRestoreService::Entries& InMemoryTabRestoreService::entries() const {
   return helper_.entries();
 }
 
-void InMemoryTabRestoreService::RestoreMostRecentEntry(
-    TabRestoreServiceDelegate* delegate) {
-  helper_.RestoreMostRecentEntry(delegate);
+std::vector<content::WebContents*>
+InMemoryTabRestoreService::RestoreMostRecentEntry(
+    TabRestoreServiceDelegate* delegate,
+    chrome::HostDesktopType host_desktop_type) {
+  return helper_.RestoreMostRecentEntry(delegate, host_desktop_type);
 }
 
 TabRestoreService::Tab* InMemoryTabRestoreService::RemoveTabEntryById(
@@ -60,11 +64,12 @@ TabRestoreService::Tab* InMemoryTabRestoreService::RemoveTabEntryById(
   return helper_.RemoveTabEntryById(id);
 }
 
-void InMemoryTabRestoreService::RestoreEntryById(
+std::vector<content::WebContents*> InMemoryTabRestoreService::RestoreEntryById(
     TabRestoreServiceDelegate* delegate,
     SessionID::id_type id,
+    chrome::HostDesktopType host_desktop_type,
     WindowOpenDisposition disposition) {
-  helper_.RestoreEntryById(delegate, id, disposition);
+  return helper_.RestoreEntryById(delegate, id, host_desktop_type, disposition);
 }
 
 void InMemoryTabRestoreService::LoadTabsFromLastSession() {
@@ -84,7 +89,7 @@ void InMemoryTabRestoreService::DeleteLastSession() {
 void InMemoryTabRestoreService::Shutdown() {
 }
 
-ProfileKeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new InMemoryTabRestoreService(profile, NULL);
+KeyedService* TabRestoreServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new InMemoryTabRestoreService(static_cast<Profile*>(profile), NULL);
 }

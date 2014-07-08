@@ -9,18 +9,13 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/aura/root_window_observer.h"
-
-namespace aura {
-class RootWindow;
-}
+#include "ui/aura/window_observer.h"
 
 namespace ui {
 class Layer;
 }
 
 namespace ash {
-namespace internal {
 
 // ScreenDimmer displays a partially-opaque layer above everything
 // else in the root window to darken the display.  It shouldn't be used
@@ -29,7 +24,7 @@ namespace internal {
 // briefly dim the screen (e.g. to indicate to the user that we're
 // about to suspend a machine that lacks an internal backlight that
 // can be adjusted).
-class ASH_EXPORT ScreenDimmer : public aura::RootWindowObserver {
+class ASH_EXPORT ScreenDimmer : public aura::WindowObserver {
  public:
   class TestApi {
    public:
@@ -43,20 +38,21 @@ class ASH_EXPORT ScreenDimmer : public aura::RootWindowObserver {
     DISALLOW_COPY_AND_ASSIGN(TestApi);
   };
 
-  explicit ScreenDimmer(aura::RootWindow* root_window);
+  explicit ScreenDimmer(aura::Window* root_window);
   virtual ~ScreenDimmer();
 
   // Dim or undim the root window.
   void SetDimming(bool should_dim);
 
-  // aura::RootWindowObserver overrides:
-  virtual void OnRootWindowResized(const aura::RootWindow* root,
-                                   const gfx::Size& old_size) OVERRIDE;
+  // aura::WindowObserver overrides:
+  virtual void OnWindowBoundsChanged(aura::Window* root_window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
  private:
   friend class TestApi;
 
-  aura::RootWindow* root_window_;
+  aura::Window* root_window_;
 
   // Partially-opaque layer that's stacked above all of the root window's
   // children and used to dim the screen.  NULL until the first time we dim.
@@ -68,7 +64,6 @@ class ASH_EXPORT ScreenDimmer : public aura::RootWindowObserver {
   DISALLOW_COPY_AND_ASSIGN(ScreenDimmer);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_WM_SCREEN_DIMMER_H_

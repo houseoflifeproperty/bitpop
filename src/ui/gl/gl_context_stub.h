@@ -10,7 +10,7 @@
 namespace gfx {
 
 // A GLContext that does nothing for unit tests.
-class GL_EXPORT GLContextStub : public GLContext {
+class GL_EXPORT GLContextStub : public GLContextReal {
  public:
   GLContextStub();
 
@@ -24,6 +24,7 @@ class GL_EXPORT GLContextStub : public GLContext {
   virtual void* GetHandle() OVERRIDE;
   virtual void SetSwapInterval(int interval) OVERRIDE;
   virtual std::string GetExtensions() OVERRIDE;
+  virtual std::string GetGLRenderer() OVERRIDE;
 
  protected:
   virtual ~GLContextStub();

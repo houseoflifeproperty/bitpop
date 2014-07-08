@@ -7,7 +7,7 @@
 
 #include "base/basictypes.h"
 #include "base/observer_list_threadsafe.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/net_export.h"
 
 class GURL;
@@ -17,6 +17,7 @@ namespace net {
 struct DnsConfig;
 class HistogramWatcher;
 class NetworkChangeNotifierFactory;
+class URLRequest;
 
 #if defined(OS_LINUX)
 namespace internal {
@@ -216,13 +217,40 @@ class NET_EXPORT NetworkChangeNotifier {
   static const char* ConnectionTypeToString(ConnectionType type);
 
   // Let the NetworkChangeNotifier know we received some data.
-  // This is used strictly for producing histogram data about the accuracy of
-  // the NetworkChangenotifier's online detection.
-  static void NotifyDataReceived(const GURL& source);
+  // This is used for producing histogram data about the accuracy of
+  // the NetworkChangenotifier's online detection and rough network
+  // connection measurements.
+  static void NotifyDataReceived(const URLRequest& request, int bytes_read);
 
   // Register the Observer callbacks for producing histogram data.  This
   // should be called from the network thread to avoid race conditions.
+  // ShutdownHistogramWatcher() must be called prior to NetworkChangeNotifier
+  // destruction.
   static void InitHistogramWatcher();
+
+  // Unregister the Observer callbacks for producing histogram data.  This
+  // should be called from the network thread to avoid race conditions.
+  static void ShutdownHistogramWatcher();
+
+  // Log the |NCN.NetworkOperatorMCCMNC| histogram.
+  static void LogOperatorCodeHistogram(ConnectionType type);
+
+  // Allows a second NetworkChangeNotifier to be created for unit testing, so
+  // the test suite can create a MockNetworkChangeNotifier, but platform
+  // specific NetworkChangeNotifiers can also be created for testing.  To use,
+  // create an DisableForTest object, and then create the new
+  // NetworkChangeNotifier object.  The NetworkChangeNotifier must be
+  // destroyed before the DisableForTest object, as its destruction will restore
+  // the original NetworkChangeNotifier.
+  class NET_EXPORT DisableForTest {
+   public:
+    DisableForTest();
+    ~DisableForTest();
+
+   private:
+    // The original NetworkChangeNotifier to be restored on destruction.
+    NetworkChangeNotifier* network_change_notifier_;
+  };
 
  protected:
   // NetworkChanged signal is calculated from the IPAddressChanged and
@@ -274,27 +302,9 @@ class NET_EXPORT NetworkChangeNotifier {
   friend class NetworkChangeNotifierAndroidTest;
   friend class NetworkChangeNotifierLinuxTest;
   friend class NetworkChangeNotifierWinTest;
-  friend class URLFetcherMockDnsTest;
 
   class NetworkState;
   class NetworkChangeCalculator;
-
-  // Allows a second NetworkChangeNotifier to be created for unit testing, so
-  // the test suite can create a MockNetworkChangeNotifier, but platform
-  // specific NetworkChangeNotifiers can also be created for testing.  To use,
-  // create an DisableForTest object, and then create the new
-  // NetworkChangeNotifier object.  The NetworkChangeNotifier must be
-  // destroyed before the DisableForTest object, as its destruction will restore
-  // the original NetworkChangeNotifier.
-  class NET_EXPORT_PRIVATE DisableForTest {
-   public:
-    DisableForTest();
-    ~DisableForTest();
-
-   private:
-    // The original NetworkChangeNotifier to be restored on destruction.
-    NetworkChangeNotifier* network_change_notifier_;
-  };
 
   const scoped_refptr<ObserverListThreadSafe<IPAddressObserver> >
       ip_address_observer_list_;

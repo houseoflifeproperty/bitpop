@@ -38,21 +38,18 @@ class ContentSettingDecoration : public ImageDecoration {
   virtual NSString* GetToolTip() OVERRIDE;
   virtual CGFloat GetWidthForSpace(CGFloat width) OVERRIDE;
   virtual void DrawInFrame(NSRect frame, NSView* control_view) OVERRIDE;
+  virtual NSPoint GetBubblePointInFrame(NSRect frame) OVERRIDE;
 
   // Called from internal animator. Only public because ObjC objects can't
   // be friends.
   virtual void AnimationTimerFired();
 
  private:
-  // Helper to get where the bubble point should land.  Similar to
-  // |PageActionDecoration| or |StarDecoration| (|LocationBarViewMac|
-  // calls those).
-  NSPoint GetBubblePointInFrame(NSRect frame);
 
   void SetToolTip(NSString* tooltip);
 
   // Returns an attributed string with the animated text.
-  scoped_nsobject<NSAttributedString> CreateAnimatedText();
+  base::scoped_nsobject<NSAttributedString> CreateAnimatedText();
 
   // Measure the width of the animated text.
   CGFloat MeasureTextWidth();
@@ -62,13 +59,12 @@ class ContentSettingDecoration : public ImageDecoration {
   LocationBarViewMac* owner_;  // weak
   Profile* profile_;  // weak
 
-  scoped_nsobject<NSString> tooltip_;
+  base::scoped_nsobject<NSString> tooltip_;
 
   // Used when the decoration has animated text.
-  scoped_nsobject<ContentSettingAnimationState> animation_;
+  base::scoped_nsobject<ContentSettingAnimationState> animation_;
   CGFloat text_width_;
-  scoped_nsobject<NSAttributedString> animated_text_;
-  scoped_nsobject<NSGradient> gradient_;
+  base::scoped_nsobject<NSAttributedString> animated_text_;
 
   DISALLOW_COPY_AND_ASSIGN(ContentSettingDecoration);
 };

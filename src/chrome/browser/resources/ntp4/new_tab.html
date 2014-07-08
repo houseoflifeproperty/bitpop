@@ -20,12 +20,12 @@
 <!-- It's important that this be the first script loaded. -->
 <script src="logging.js"></script>
 
-<link rel="stylesheet" href="../shared/css/bubble.css">
-<link rel="stylesheet" href="../shared/css/expandable_bubble.css">
-<link rel="stylesheet" href="../shared/css/menu.css">
-<link rel="stylesheet" href="../shared/css/menu_button.css">
-<link rel="stylesheet" href="../shared/css/trash.css">
-<link rel="stylesheet" href="../shared/css/widgets.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/bubble.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/expandable_bubble.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/menu.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/menu_button.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/trash.css">
+<link rel="stylesheet" href="../../../../ui/webui/resources/css/widgets.css">
 <link rel="stylesheet" href="apps_page.css">
 <link rel="stylesheet" href="chrome://newtab/suggestions_page.css">
 <link rel="stylesheet" href="most_visited_page.css">
@@ -35,24 +35,26 @@
 <link rel="stylesheet" href="tile_page.css">
 <link id="themecss" rel="stylesheet">
 
-<script src="../shared/js/event_tracker.js"></script>
-<script src="../shared/js/load_time_data.js"></script>
-<script src="../shared/js/parse_html_subset.js"></script>
-<script src="../shared/js/util.js"></script>
+<script src="../../../../ui/webui/resources/js/event_tracker.js"></script>
+<script src="../../../../ui/webui/resources/js/load_time_data.js"></script>
+<script src="../../../../ui/webui/resources/js/parse_html_subset.js"></script>
+<script src="../../../../ui/webui/resources/js/util.js"></script>
 
-<script src="../shared/js/cr.js"></script>
-<script src="../shared/js/cr/ui.js"></script>
-<script src="../shared/js/cr/ui/bubble.js"></script>
-<script src="../shared/js/cr/ui/card_slider.js"></script>
-<script src="../shared/js/cr/ui/context_menu_handler.js"></script>
-<script src="../shared/js/cr/ui/drag_wrapper.js"></script>
-<script src="../shared/js/cr/ui/expandable_bubble.js"></script>
-<script src="../shared/js/cr/ui/menu.js"></script>
-<script src="../shared/js/cr/ui/menu_item.js"></script>
-<script src="../shared/js/cr/ui/position_util.js"></script>
-<script src="../shared/js/cr/ui/menu_button.js"></script>
-<script src="../shared/js/cr/ui/context_menu_button.js"></script>
-<script src="../shared/js/cr/ui/touch_handler.js"></script>
+<script src="../../../../ui/webui/resources/js/cr.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/event_target.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/bubble.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/card_slider.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/context_menu_handler.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/drag_wrapper.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/expandable_bubble.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/focus_manager.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/menu.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/menu_item.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/position_util.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/menu_button.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/context_menu_button.js"></script>
+<script src="../../../../ui/webui/resources/js/cr/ui/touch_handler.js"></script>
 
 <script src="tile_page.js"></script>
 <script src="apps_page.js"></script>
@@ -92,6 +94,18 @@
     </div>
   </div>
 
+  <div id="app-launcher-promo" hidden>
+    <div class="apps-promo-text" i18n-content="appsPromoTitle"></div>
+    <a href="https://chrome.google.com/webstore/launcher"
+       id="apps-promo-learn-more" class="apps-promo-learn-more"
+       i18n-content="learn_more">
+    </a>
+    <img src="app_launcher_promo.png">
+    <button class="close-button custom-appearance"
+            id="app-launcher-promo-close-button">
+    </button>
+  </div>
+
   <div id="footer">
     <div id="footer-border"></div>
     <div id="footer-content">
@@ -110,17 +124,16 @@
           <div class="disclosure-triangle"></div>
         </button>
         <button id="recently-closed-menu-button"
-            class="footer-menu-button custom-appearance">
+            class="footer-menu-button custom-appearance" hidden>
           <span i18n-content="recentlyclosed"></span>
           <div class="disclosure-triangle"></div>
         </button>
+        <a id="chrome-web-store-link">
+          <span id="chrome-web-store-title" i18n-content="webStoreTitleShort">
+          </span>
+        </a>
         <div id="vertical-separator"></div>
       </div>
-
-      <a id="chrome-web-store-link">
-        <span id="chrome-web-store-title" i18n-content="webStoreTitleShort">
-        </span>
-      </a>
 
       <div id="trash" class="trash">
         <span class="lid"></span>

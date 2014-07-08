@@ -8,10 +8,12 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "chrome/browser/extensions/extension_installer.h"
 
 class ExtensionService;
 
@@ -28,6 +30,9 @@ class RequirementsChecker;
 class UnpackedInstaller
     : public base::RefCountedThreadSafe<UnpackedInstaller> {
  public:
+  typedef base::Callback<void(const base::FilePath&, const std::string&)>
+      OnFailureCallback;
+
   static scoped_refptr<UnpackedInstaller> Create(
       ExtensionService* extension_service);
 
@@ -35,12 +40,17 @@ class UnpackedInstaller
   // the top directory of a specific extension where its manifest file lives.
   // Errors are reported through ExtensionErrorReporter. On success,
   // ExtensionService::AddExtension() is called.
-  void Load(const FilePath& extension_path);
+  void Load(const base::FilePath& extension_path);
 
   // Loads the extension from the directory |extension_path|;
-  // for use with command line switch --load-extension=path.
-  // This is equivalent to Load, except that it runs synchronously.
-  void LoadFromCommandLine(const FilePath& extension_path);
+  // for use with command line switch --load-extension=path or
+  // --load-and-launch-app=path.
+  // This is equivalent to Load, except that it reads the extension from
+  // |extension_path| synchronously.
+  // The return value indicates whether the installation has begun successfully.
+  // The id of the extension being loaded is returned in |extension_id|.
+  bool LoadFromCommandLine(const base::FilePath& extension_path,
+                           std::string* extension_id);
 
   // Allows prompting for plugins to be disabled; intended for testing only.
   bool prompt_for_plugins() { return prompt_for_plugins_; }
@@ -55,6 +65,14 @@ class UnpackedInstaller
     require_modern_manifest_version_ = val;
   }
 
+  void set_on_failure_callback(const OnFailureCallback& callback) {
+    on_failure_callback_ = callback;
+  }
+
+  void set_be_noisy_on_failure(bool be_noisy_on_failure) {
+    be_noisy_on_failure_ = be_noisy_on_failure;
+  }
+
  private:
   friend class base::RefCountedThreadSafe<UnpackedInstaller>;
 
@@ -62,7 +80,10 @@ class UnpackedInstaller
   virtual ~UnpackedInstaller();
 
   // Must be called from the UI thread.
-  void CheckRequirements();
+  void ShowInstallPrompt();
+
+  // Calls CheckRequirements.
+  void CallCheckRequirements();
 
   // Callback from RequirementsChecker.
   void OnRequirementsChecked(std::vector<std::string> requirement_errors);
@@ -76,37 +97,46 @@ class UnpackedInstaller
   // the UI thread. In turn, once that gets the pref, it goes back to the
   // file thread with LoadWithFileAccess.
   // TODO(yoz): It would be nice to remove this ping-pong, but we need to know
-  // what file access flags to pass to extension_file_util::LoadExtension.
+  // what file access flags to pass to file_util::LoadExtension.
   void GetAbsolutePath();
   void CheckExtensionFileAccess();
   void LoadWithFileAccess(int flags);
+
+  // Notify the frontend that an attempt to retry will not be necessary.
+  void UnregisterLoadRetryListener();
 
   // Notify the frontend that there was an error loading an extension.
   void ReportExtensionLoadError(const std::string& error);
 
   // Called when an unpacked extension has been loaded and installed.
-  void OnLoaded();
+  void ConfirmInstall();
 
   // Helper to get the Extension::CreateFlags for the installing extension.
   int GetFlags();
 
+  // The service we will report results back to.
   base::WeakPtr<ExtensionService> service_weak_;
 
   // The pathname of the directory to load from, which is an absolute path
   // after GetAbsolutePath has been called.
-  FilePath extension_path_;
+  base::FilePath extension_path_;
 
   // If true and the extension contains plugins, we prompt the user before
   // loading.
   bool prompt_for_plugins_;
 
-  scoped_ptr<RequirementsChecker> requirements_checker_;
-
-  scoped_refptr<const Extension> extension_;
-
   // Whether to require the extension installed to have a modern manifest
   // version.
   bool require_modern_manifest_version_;
+
+  // An optional callback to set in order to be notified of failure.
+  OnFailureCallback on_failure_callback_;
+
+  // Whether or not to be noisy (show a dialog) on failure. Defaults to true.
+  bool be_noisy_on_failure_;
+
+  // Gives access to common methods and data of an extension installer.
+  ExtensionInstaller installer_;
 
   DISALLOW_COPY_AND_ASSIGN(UnpackedInstaller);
 };

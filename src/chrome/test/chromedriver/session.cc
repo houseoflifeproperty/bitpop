@@ -4,21 +4,119 @@
 
 #include "chrome/test/chromedriver/session.h"
 
-#include "chrome/test/chromedriver/chrome.h"
+#include <list>
 
-Session::Session(const std::string& id) : id(id) {}
+#include "base/lazy_instance.h"
+#include "base/threading/thread_local.h"
+#include "base/values.h"
+#include "chrome/test/chromedriver/chrome/chrome.h"
+#include "chrome/test/chromedriver/chrome/status.h"
+#include "chrome/test/chromedriver/chrome/version.h"
+#include "chrome/test/chromedriver/chrome/web_view.h"
+#include "chrome/test/chromedriver/logging.h"
+
+namespace {
+
+base::LazyInstance<base::ThreadLocalPointer<Session> >
+    lazy_tls_session = LAZY_INSTANCE_INITIALIZER;
+
+}  // namespace
+
+FrameInfo::FrameInfo(const std::string& parent_frame_id,
+                     const std::string& frame_id,
+                     const std::string& chromedriver_frame_id)
+    : parent_frame_id(parent_frame_id),
+      frame_id(frame_id),
+      chromedriver_frame_id(chromedriver_frame_id) {}
+
+const base::TimeDelta Session::kDefaultPageLoadTimeout =
+    base::TimeDelta::FromMinutes(5);
+
+Session::Session(const std::string& id)
+    : id(id),
+      quit(false),
+      detach(false),
+      force_devtools_screenshot(false),
+      sticky_modifiers(0),
+      mouse_position(0, 0),
+      page_load_timeout(kDefaultPageLoadTimeout),
+      auto_reporting_enabled(false) {}
 
 Session::Session(const std::string& id, scoped_ptr<Chrome> chrome)
-    : id(id), chrome(chrome.Pass()) {}
+    : id(id),
+      quit(false),
+      detach(false),
+      force_devtools_screenshot(false),
+      chrome(chrome.Pass()),
+      sticky_modifiers(0),
+      mouse_position(0, 0),
+      page_load_timeout(kDefaultPageLoadTimeout),
+      auto_reporting_enabled(false) {}
 
 Session::~Session() {}
 
-SessionAccessorImpl::SessionAccessorImpl(scoped_ptr<Session> session)
-    : session_(session.Pass()) {}
+Status Session::GetTargetWindow(WebView** web_view) {
+  if (!chrome)
+    return Status(kNoSuchWindow, "no chrome started in this session");
 
-Session* SessionAccessorImpl::Access(scoped_ptr<base::AutoLock>* lock) {
-  lock->reset(new base::AutoLock(session_lock_));
-  return session_.get();
+  Status status = chrome->GetWebViewById(window, web_view);
+  if (status.IsError())
+    status = Status(kNoSuchWindow, "target window already closed", status);
+  return status;
 }
 
-SessionAccessorImpl::~SessionAccessorImpl() {}
+void Session::SwitchToTopFrame() {
+  frames.clear();
+}
+
+void Session::SwitchToParentFrame() {
+  if (!frames.empty())
+    frames.pop_back();
+}
+
+void Session::SwitchToSubFrame(const std::string& frame_id,
+                               const std::string& chromedriver_frame_id) {
+  std::string parent_frame_id;
+  if (!frames.empty())
+    parent_frame_id = frames.back().frame_id;
+  frames.push_back(FrameInfo(parent_frame_id, frame_id, chromedriver_frame_id));
+}
+
+std::string Session::GetCurrentFrameId() const {
+  if (frames.empty())
+    return std::string();
+  return frames.back().frame_id;
+}
+
+std::vector<WebDriverLog*> Session::GetAllLogs() const {
+  std::vector<WebDriverLog*> logs;
+  for (ScopedVector<WebDriverLog>::const_iterator log = devtools_logs.begin();
+       log != devtools_logs.end();
+       ++log) {
+    logs.push_back(*log);
+  }
+  if (driver_log)
+    logs.push_back(driver_log.get());
+  return logs;
+}
+
+std::string Session::GetFirstBrowserError() const {
+  for (ScopedVector<WebDriverLog>::const_iterator it = devtools_logs.begin();
+       it != devtools_logs.end();
+       ++it) {
+    if ((*it)->type() == WebDriverLog::kBrowserType) {
+      std::string message = (*it)->GetFirstErrorMessage();
+      if (!message.empty())
+        return message;
+    }
+  }
+  return std::string();
+}
+
+Session* GetThreadLocalSession() {
+  return lazy_tls_session.Pointer()->Get();
+}
+
+void SetThreadLocalSession(scoped_ptr<Session> session) {
+  lazy_tls_session.Pointer()->Set(session.release());
+}

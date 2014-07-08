@@ -5,8 +5,7 @@
 #include "ash/wm/default_window_resizer.h"
 
 #include "ash/shell.h"
-#include "ash/wm/cursor_manager.h"
-#include "ash/wm/property_util.h"
+#include "ash/wm/window_state.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
 #include "ui/aura/window.h"
@@ -23,44 +22,37 @@ DefaultWindowResizer::~DefaultWindowResizer() {
 
 // static
 DefaultWindowResizer*
-DefaultWindowResizer::Create(aura::Window* window,
-                             const gfx::Point& location,
-                             int window_component) {
-  Details details(window, location, window_component);
-  return details.is_resizable ? new DefaultWindowResizer(details) : NULL;
+DefaultWindowResizer::Create(wm::WindowState* window_state) {
+  return new DefaultWindowResizer(window_state);
 }
 
 void DefaultWindowResizer::Drag(const gfx::Point& location, int event_flags) {
-  gfx::Rect bounds(CalculateBoundsForDrag(details_, location));
-  if (bounds != details_.window->bounds()) {
-    if (!did_move_or_resize_ && !details_.restore_bounds.IsEmpty())
-      ClearRestoreBounds(details_.window);
+  gfx::Rect bounds(CalculateBoundsForDrag(location));
+  if (bounds != GetTarget()->bounds()) {
+    if (!did_move_or_resize_ && !details().restore_bounds.IsEmpty())
+      window_state_->ClearRestoreBounds();
     did_move_or_resize_ = true;
-    details_.window->SetBounds(bounds);
+    GetTarget()->SetBounds(bounds);
   }
 }
 
-void DefaultWindowResizer::CompleteDrag(int event_flags) {
+void DefaultWindowResizer::CompleteDrag() {
 }
 
 void DefaultWindowResizer::RevertDrag() {
   if (!did_move_or_resize_)
     return;
 
-  details_.window->SetBounds(details_.initial_bounds_in_parent);
+  GetTarget()->SetBounds(details().initial_bounds_in_parent);
 
-  if (!details_.restore_bounds.IsEmpty())
-    SetRestoreBoundsInScreen(details_.window, details_.restore_bounds);
+  if (!details().restore_bounds.IsEmpty())
+    window_state_->SetRestoreBoundsInScreen(details().restore_bounds);
 }
 
-aura::Window* DefaultWindowResizer::GetTarget() {
-  return details_.window;
-}
-
-DefaultWindowResizer::DefaultWindowResizer(const Details& details)
-    : details_(details),
+DefaultWindowResizer::DefaultWindowResizer(wm::WindowState* window_state)
+    : WindowResizer(window_state),
       did_move_or_resize_(false) {
-  DCHECK(details_.is_resizable);
+  DCHECK(details().is_resizable);
   ash::Shell::GetInstance()->cursor_manager()->LockCursor();
 }
 

@@ -2,20 +2,20 @@
  * Decryption protocol handler
  * Copyright (c) 2011 Martin Storsjo
  *
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -59,7 +59,7 @@ static const AVClass crypto_class = {
     .version        = LIBAVUTIL_VERSION_INT,
 };
 
-static int crypto_open(URLContext *h, const char *uri, int flags)
+static int crypto_open2(URLContext *h, const char *uri, int flags, AVDictionary **options)
 {
     const char *nested_url;
     int ret = 0;
@@ -83,11 +83,11 @@ static int crypto_open(URLContext *h, const char *uri, int flags)
         goto err;
     }
     if ((ret = ffurl_open(&c->hd, nested_url, AVIO_FLAG_READ,
-                          &h->interrupt_callback, NULL)) < 0) {
+                          &h->interrupt_callback, options)) < 0) {
         av_log(h, AV_LOG_ERROR, "Unable to open input\n");
         goto err;
     }
-    c->aes = av_mallocz(av_aes_size);
+    c->aes = av_aes_alloc();
     if (!c->aes) {
         ret = AVERROR(ENOMEM);
         goto err;
@@ -161,7 +161,7 @@ static int crypto_close(URLContext *h)
 
 URLProtocol ff_crypto_protocol = {
     .name            = "crypto",
-    .url_open        = crypto_open,
+    .url_open2       = crypto_open2,
     .url_read        = crypto_read,
     .url_close       = crypto_close,
     .priv_data_size  = sizeof(CryptoContext),

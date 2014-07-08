@@ -42,13 +42,6 @@ GoogleServiceAuthError CreateAuthError(const URLFetcher* source) {
   }
 }
 
-// Returns a vector of scopes needed to call the API to get obfuscated Gaia ID.
-std::vector<std::string> GetScopes() {
-  std::vector<std::string> scopes;
-  scopes.push_back("https://www.googleapis.com/auth/gcm_for_chrome.readonly");
-  return scopes;
-}
-
 }  // namespace
 
 namespace extensions {
@@ -56,13 +49,20 @@ namespace extensions {
 ObfuscatedGaiaIdFetcher::ObfuscatedGaiaIdFetcher(
     URLRequestContextGetter* context,
     Delegate* delegate,
-    const std::string& refresh_token)
-    : OAuth2ApiCallFlow(context, refresh_token, std::string(), GetScopes()),
+    const std::string& access_token)
+    : OAuth2ApiCallFlow(context, std::string(), access_token, GetScopes()),
       delegate_(delegate) {
   DCHECK(delegate);
 }
 
 ObfuscatedGaiaIdFetcher::~ObfuscatedGaiaIdFetcher() { }
+
+// Returns a vector of scopes needed to call the API to get obfuscated Gaia ID.
+std::vector<std::string> ObfuscatedGaiaIdFetcher::GetScopes() {
+  std::vector<std::string> scopes;
+  scopes.push_back("https://www.googleapis.com/auth/gcm_for_chrome.readonly");
+  return scopes;
+}
 
 void ObfuscatedGaiaIdFetcher::ReportSuccess(const std::string& obfuscated_id) {
   if (delegate_)
@@ -127,7 +127,7 @@ bool ObfuscatedGaiaIdFetcher::ParseResponse(
   if (!value.get())
     return false;
 
-  DictionaryValue* dict = NULL;
+  base::DictionaryValue* dict = NULL;
   if (!value->GetAsDictionary(&dict))
     return false;
 

@@ -27,8 +27,6 @@ class DescWrapperFactory {
   int MakeSocketPair(DescWrapper* pair[2]);
   // Create an IMC socket object.
   DescWrapper* MakeImcSock(NaClHandle handle);
-  // Create a shared memory object.
-  DescWrapper* MakeShm(size_t size);
   // Create a file descriptor object.
   DescWrapper* MakeFileDesc(int host_os_desc, int mode);
   // As with MakeFileDesc, but with quota management.
@@ -113,10 +111,6 @@ class DescWrapper {
   // Move the file pointer.
   // Returns updated position on success, negative NaCl ABI errno on failure.
   nacl_off64_t Seek(nacl_off64_t offset, int whence);
-
-  // The generic I/O control function.
-  // Returns zero on success, negative NaCl ABI errno on failure.
-  int Ioctl(int request, void* arg);
 
   // Get descriptor information.
   // Returns zero on success, negative NaCl ABI errno on failure.

@@ -5,16 +5,12 @@
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
 #include "third_party/skia/include/core/SkPaint.h"
-#include "ui/base/layout.h"
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_png_rep.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_unittest_util.h"
 
-#if defined(TOOLKIT_GTK)
-#include <gtk/gtk.h>
-#include "ui/gfx/gtk_util.h"
-#elif defined(OS_IOS)
+#if defined(OS_IOS)
 #include "base/mac/foundation_util.h"
 #include "skia/ext/skia_utils_ios.h"
 #elif defined(OS_MACOSX)
@@ -24,13 +20,23 @@
 
 namespace {
 
-#if defined(TOOLKIT_VIEWS) || defined(OS_ANDROID)
+#if defined(TOOLKIT_VIEWS) || defined(OS_ANDROID) || \
+    (defined(OS_LINUX) && !defined(USE_CAIRO))
 const bool kUsesSkiaNatively = true;
 #else
 const bool kUsesSkiaNatively = false;
 #endif
 
 class ImageTest : public testing::Test {
+ public:
+  ImageTest() {
+    std::vector<float> scales;
+    scales.push_back(1.0f);
+#if !defined(OS_IOS)
+    scales.push_back(2.0f);
+#endif
+    gfx::ImageSkia::SetSupportedScales(scales);
+  }
 };
 
 namespace gt = gfx::test;
@@ -40,105 +46,113 @@ TEST_F(ImageTest, EmptyImage) {
   gfx::Image image;
   EXPECT_EQ(0U, image.RepresentationCount());
   EXPECT_TRUE(image.IsEmpty());
+  EXPECT_EQ(0, image.Width());
+  EXPECT_EQ(0, image.Height());
 
   // Test the copy constructor.
   gfx::Image imageCopy(image);
   EXPECT_TRUE(imageCopy.IsEmpty());
+  EXPECT_EQ(0, imageCopy.Width());
+  EXPECT_EQ(0, imageCopy.Height());
 
   // Test calling SwapRepresentations() with an empty image.
-  gfx::Image image2(gt::CreateBitmap(25, 25));
+  gfx::Image image2(gt::CreateImageSkia(25, 25));
   EXPECT_FALSE(image2.IsEmpty());
+  EXPECT_EQ(25, image2.Width());
+  EXPECT_EQ(25, image2.Height());
 
   image.SwapRepresentations(&image2);
   EXPECT_FALSE(image.IsEmpty());
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
   EXPECT_TRUE(image2.IsEmpty());
+  EXPECT_EQ(0, image2.Width());
+  EXPECT_EQ(0, image2.Height());
 }
 
 // Test constructing a gfx::Image from an empty PlatformImage.
 TEST_F(ImageTest, EmptyImageFromEmptyPlatformImage) {
-#if defined(OS_IOS) || defined(OS_MACOSX) || defined(TOOLKIT_GTK)
+#if defined(OS_IOS) || defined(OS_MACOSX)
   gfx::Image image1(NULL);
   EXPECT_TRUE(image1.IsEmpty());
+  EXPECT_EQ(0, image1.Width());
+  EXPECT_EQ(0, image1.Height());
   EXPECT_EQ(0U, image1.RepresentationCount());
 #endif
 
-  // SkBitmap, gfx::ImageSkia, and ImagePNGRep are available on all platforms.
-  SkBitmap bitmap;
-  EXPECT_TRUE(bitmap.empty());
-  gfx::Image image2(bitmap);
-  EXPECT_TRUE(image2.IsEmpty());
-  EXPECT_EQ(0U, image2.RepresentationCount());
-
+  // gfx::ImageSkia and gfx::ImagePNGRep are available on all platforms.
   gfx::ImageSkia image_skia;
   EXPECT_TRUE(image_skia.isNull());
-  gfx::Image image3(image_skia);
-  EXPECT_TRUE(image3.IsEmpty());
-  EXPECT_EQ(0U, image3.RepresentationCount());
+  gfx::Image image2(image_skia);
+  EXPECT_TRUE(image2.IsEmpty());
+  EXPECT_EQ(0, image2.Width());
+  EXPECT_EQ(0, image2.Height());
+  EXPECT_EQ(0U, image2.RepresentationCount());
 
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  gfx::Image image4(image_png_reps);
-  EXPECT_TRUE(image4.IsEmpty());
-  EXPECT_EQ(0U, image4.RepresentationCount());
+  gfx::Image image3(image_png_reps);
+  EXPECT_TRUE(image3.IsEmpty());
+  EXPECT_EQ(0, image3.Width());
+  EXPECT_EQ(0, image3.Height());
+  EXPECT_EQ(0U, image3.RepresentationCount());
 }
 
 // The resulting Image should be empty when it is created using obviously
 // invalid data.
 TEST_F(ImageTest, EmptyImageFromObviouslyInvalidPNGImage) {
   std::vector<gfx::ImagePNGRep> image_png_reps1;
-  image_png_reps1.push_back(gfx::ImagePNGRep(NULL, ui::SCALE_FACTOR_100P));
+  image_png_reps1.push_back(gfx::ImagePNGRep(NULL, 1.0f));
   gfx::Image image1(image_png_reps1);
   EXPECT_TRUE(image1.IsEmpty());
   EXPECT_EQ(0U, image1.RepresentationCount());
 
   std::vector<gfx::ImagePNGRep> image_png_reps2;
   image_png_reps2.push_back(gfx::ImagePNGRep(
-      new base::RefCountedBytes(), ui::SCALE_FACTOR_100P));
+      new base::RefCountedBytes(), 1.0f));
   gfx::Image image2(image_png_reps2);
   EXPECT_TRUE(image2.IsEmpty());
   EXPECT_EQ(0U, image2.RepresentationCount());
 }
 
+// Test the Width, Height and Size of an empty and non-empty image.
+TEST_F(ImageTest, ImageSize) {
+  gfx::Image image;
+  EXPECT_EQ(0, image.Width());
+  EXPECT_EQ(0, image.Height());
+  EXPECT_EQ(gfx::Size(0, 0), image.Size());
+
+  gfx::Image image2(gt::CreateImageSkia(10, 25));
+  EXPECT_EQ(10, image2.Width());
+  EXPECT_EQ(25, image2.Height());
+  EXPECT_EQ(gfx::Size(10, 25), image2.Size());
+}
+
 TEST_F(ImageTest, SkiaToSkia) {
-  gfx::Image image(gt::CreateBitmap(25, 25));
-  const SkBitmap* bitmap = image.ToSkBitmap();
-  EXPECT_TRUE(bitmap);
-  EXPECT_FALSE(bitmap->isNull());
+  gfx::Image image(gt::CreateImageSkia(25, 25));
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
+
+  // Test ToImageSkia().
+  const gfx::ImageSkia* image_skia1 = image.ToImageSkia();
+  EXPECT_TRUE(image_skia1);
+  EXPECT_FALSE(image_skia1->isNull());
   EXPECT_EQ(1U, image.RepresentationCount());
 
   // Make sure double conversion doesn't happen.
-  bitmap = image.ToSkBitmap();
-  EXPECT_TRUE(bitmap);
-  EXPECT_FALSE(bitmap->isNull());
+  const gfx::ImageSkia* image_skia2 = image.ToImageSkia();
   EXPECT_EQ(1U, image.RepresentationCount());
 
-  EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepSkia));
-  if (!kUsesSkiaNatively)
-    EXPECT_FALSE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
-}
+  // ToImageSkia() should always return the same gfx::ImageSkia.
+  EXPECT_EQ(image_skia1, image_skia2);
 
-TEST_F(ImageTest, SkiaRefToSkia) {
-  gfx::Image image(gt::CreateBitmap(25, 25));
-  const SkBitmap* bitmap = image.ToSkBitmap();
-  EXPECT_TRUE(bitmap);
-  EXPECT_FALSE(bitmap->isNull());
-  EXPECT_EQ(1U, image.RepresentationCount());
-
-  EXPECT_EQ(bitmap, image.ToSkBitmap());
-  if (!kUsesSkiaNatively)
-    EXPECT_FALSE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
-}
-
-TEST_F(ImageTest, SkiaToSkiaRef) {
-  gfx::Image image(gt::CreateBitmap(25, 25));
-
-  const SkBitmap* bitmap = image.ToSkBitmap();
-  EXPECT_FALSE(bitmap->isNull());
-  EXPECT_EQ(1U, image.RepresentationCount());
-
+  // Test ToSkBitmap().
   const SkBitmap* bitmap1 = image.ToSkBitmap();
+  const SkBitmap* bitmap2 = image.ToSkBitmap();
+  EXPECT_TRUE(bitmap1);
   EXPECT_FALSE(bitmap1->isNull());
-  EXPECT_EQ(1U, image.RepresentationCount());
+  EXPECT_EQ(bitmap1, bitmap2);
 
+  EXPECT_EQ(1U, image.RepresentationCount());
   EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepSkia));
   if (!kUsesSkiaNatively)
     EXPECT_FALSE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
@@ -158,7 +172,7 @@ TEST_F(ImageTest, ImageNo1xToPNG) {
   const int kSize2x = 50;
   gfx::ImageSkia image_skia;
   image_skia.AddRepresentation(gfx::ImageSkiaRep(gt::CreateBitmap(
-      kSize2x, kSize2x), ui::SCALE_FACTOR_200P));
+      kSize2x, kSize2x), 2.0f));
   gfx::Image image1(image_skia);
   scoped_refptr<base::RefCountedMemory> png_bytes1 = image1.As1xPNGBytes();
   EXPECT_TRUE(png_bytes1.get());
@@ -166,8 +180,11 @@ TEST_F(ImageTest, ImageNo1xToPNG) {
 
   std::vector<gfx::ImagePNGRep> image_png_reps;
   image_png_reps.push_back(gfx::ImagePNGRep(
-      gt::CreatePNGBytes(kSize2x), ui::SCALE_FACTOR_200P));
+      gt::CreatePNGBytes(kSize2x), 2.0f));
   gfx::Image image2(image_png_reps);
+  EXPECT_FALSE(image2.IsEmpty());
+  EXPECT_EQ(0, image2.Width());
+  EXPECT_EQ(0, image2.Height());
   scoped_refptr<base::RefCountedMemory> png_bytes2 = image2.As1xPNGBytes();
   EXPECT_TRUE(png_bytes2.get());
   EXPECT_FALSE(png_bytes2->size());
@@ -181,11 +198,14 @@ TEST_F(ImageTest, CreateExtractPNGBytes) {
 
   scoped_refptr<base::RefCountedMemory> bytes1x = gt::CreatePNGBytes(kSize1x);
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, ui::SCALE_FACTOR_100P));
+  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, 1.0f));
   image_png_reps.push_back(gfx::ImagePNGRep(
-      gt::CreatePNGBytes(kSize2x), ui::SCALE_FACTOR_200P));
+      gt::CreatePNGBytes(kSize2x), 2.0f));
 
   gfx::Image image(image_png_reps);
+  EXPECT_FALSE(image.IsEmpty());
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
 
   EXPECT_TRUE(std::equal(bytes1x->front(), bytes1x->front() + bytes1x->size(),
                          image.As1xPNGBytes()->front()));
@@ -198,9 +218,9 @@ TEST_F(ImageTest, MultiResolutionImageSkiaToPNG) {
   SkBitmap bitmap_1x = gt::CreateBitmap(kSize1x, kSize1x);
   gfx::ImageSkia image_skia;
   image_skia.AddRepresentation(gfx::ImageSkiaRep(bitmap_1x,
-                                                 ui::SCALE_FACTOR_100P));
+                                                 1.0f));
   image_skia.AddRepresentation(gfx::ImageSkiaRep(gt::CreateBitmap(
-      kSize2x, kSize2x), ui::SCALE_FACTOR_200P));
+      kSize2x, kSize2x), 2.0f));
   gfx::Image image(image_skia);
 
   EXPECT_TRUE(gt::IsEqual(image.As1xPNGBytes(), bitmap_1x));
@@ -215,20 +235,20 @@ TEST_F(ImageTest, MultiResolutionPNGToImageSkia) {
   scoped_refptr<base::RefCountedMemory> bytes2x = gt::CreatePNGBytes(kSize2x);
 
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, ui::SCALE_FACTOR_100P));
-  image_png_reps.push_back(gfx::ImagePNGRep(bytes2x, ui::SCALE_FACTOR_200P));
+  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, 1.0f));
+  image_png_reps.push_back(gfx::ImagePNGRep(bytes2x, 2.0f));
   gfx::Image image(image_png_reps);
 
-  std::vector<ui::ScaleFactor> scale_factors;
-  scale_factors.push_back(ui::SCALE_FACTOR_100P);
-  scale_factors.push_back(ui::SCALE_FACTOR_200P);
+  std::vector<float> scales;
+  scales.push_back(1.0f);
+  scales.push_back(2.0f);
   gfx::ImageSkia image_skia = image.AsImageSkia();
   EXPECT_TRUE(gt::ImageSkiaStructureMatches(image_skia, kSize1x, kSize1x,
-                                            scale_factors));
+                                            scales));
   EXPECT_TRUE(gt::IsEqual(bytes1x,
-      image_skia.GetRepresentation(ui::SCALE_FACTOR_100P).sk_bitmap()));
+      image_skia.GetRepresentation(1.0f).sk_bitmap()));
   EXPECT_TRUE(gt::IsEqual(bytes2x,
-      image_skia.GetRepresentation(ui::SCALE_FACTOR_200P).sk_bitmap()));
+      image_skia.GetRepresentation(2.0f).sk_bitmap()));
 }
 
 TEST_F(ImageTest, MultiResolutionPNGToPlatform) {
@@ -238,18 +258,18 @@ TEST_F(ImageTest, MultiResolutionPNGToPlatform) {
   scoped_refptr<base::RefCountedMemory> bytes1x = gt::CreatePNGBytes(kSize1x);
   scoped_refptr<base::RefCountedMemory> bytes2x = gt::CreatePNGBytes(kSize2x);
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, ui::SCALE_FACTOR_100P));
-  image_png_reps.push_back(gfx::ImagePNGRep(bytes2x, ui::SCALE_FACTOR_200P));
+  image_png_reps.push_back(gfx::ImagePNGRep(bytes1x, 1.0f));
+  image_png_reps.push_back(gfx::ImagePNGRep(bytes2x, 2.0f));
 
   gfx::Image from_png(image_png_reps);
   gfx::Image from_platform(gt::CopyPlatformType(from_png));
 #if defined(OS_IOS)
   // On iOS the platform type (UIImage) only supports one resolution.
-  std::vector<ui::ScaleFactor> scale_factors = ui::GetSupportedScaleFactors();
-  EXPECT_EQ(scale_factors.size(), 1U);
-  if (scale_factors[0] == ui::SCALE_FACTOR_100P)
+  std::vector<float> scales = gfx::ImageSkia::GetSupportedScales();
+  EXPECT_EQ(scales.size(), 1U);
+  if (scales[0] == 1.0f)
     EXPECT_TRUE(gt::IsEqual(bytes1x, from_platform.AsBitmap()));
-  else if (scale_factors[0] == ui::SCALE_FACTOR_200P)
+  else if (scales[0] == 2.0f)
     EXPECT_TRUE(gt::IsEqual(bytes2x, from_platform.AsBitmap()));
   else
     ADD_FAILURE() << "Unexpected platform scale factor.";
@@ -267,7 +287,7 @@ TEST_F(ImageTest, PlatformToPNGEncodeAndDecode) {
   EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepPNG));
 
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(png_data, ui::SCALE_FACTOR_100P));
+  image_png_reps.push_back(gfx::ImagePNGRep(png_data, 1.0f));
   gfx::Image from_png(image_png_reps);
 
   EXPECT_TRUE(from_png.HasRepresentation(gfx::Image::kImageRepPNG));
@@ -278,14 +298,13 @@ TEST_F(ImageTest, PlatformToPNGEncodeAndDecode) {
 // sure these work with the Skia Encode/Decode.
 TEST_F(ImageTest, PNGEncodeFromSkiaDecodeToPlatform) {
   // Force the conversion sequence skia to png to platform_type.
-  ui::ScaleFactor ideal_scale_factor = ui::GetScaleFactorFromScale(1.0f);
-
-  gfx::Image from_skia(gt::CreateBitmap(25, 25));
+  gfx::Image from_bitmap = gfx::Image::CreateFrom1xBitmap(
+      gt::CreateBitmap(25, 25));
   scoped_refptr<base::RefCountedMemory> png_bytes =
-      from_skia.As1xPNGBytes();
+      from_bitmap.As1xPNGBytes();
 
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(png_bytes, ideal_scale_factor));
+  image_png_reps.push_back(gfx::ImagePNGRep(png_bytes, 1.0f));
   gfx::Image from_png(image_png_reps);
 
   gfx::Image from_platform(gt::CopyPlatformType(from_png));
@@ -300,7 +319,7 @@ TEST_F(ImageTest, PNGEncodeFromPlatformDecodeToSkia) {
   scoped_refptr<base::RefCountedMemory> png_bytes =
       from_platform.As1xPNGBytes();
   std::vector<gfx::ImagePNGRep> image_png_reps;
-  image_png_reps.push_back(gfx::ImagePNGRep(png_bytes, ui::SCALE_FACTOR_100P));
+  image_png_reps.push_back(gfx::ImagePNGRep(png_bytes, 1.0f));
   gfx::Image from_png(image_png_reps);
 
   EXPECT_TRUE(gt::IsEqual(from_platform.AsBitmap(), from_png.AsBitmap()));
@@ -312,7 +331,7 @@ TEST_F(ImageTest, PNGDecodeToSkiaFailure) {
   invalid_bytes->data().push_back('0');
   std::vector<gfx::ImagePNGRep> image_png_reps;
   image_png_reps.push_back(gfx::ImagePNGRep(
-      invalid_bytes, ui::SCALE_FACTOR_100P));
+      invalid_bytes, 1.0f));
   gfx::Image image(image_png_reps);
   gt::CheckImageIndicatesPNGDecodeFailure(image);
 }
@@ -323,14 +342,16 @@ TEST_F(ImageTest, PNGDecodeToPlatformFailure) {
   invalid_bytes->data().push_back('0');
   std::vector<gfx::ImagePNGRep> image_png_reps;
   image_png_reps.push_back(gfx::ImagePNGRep(
-      invalid_bytes, ui::SCALE_FACTOR_100P));
+      invalid_bytes, 1.0f));
   gfx::Image from_png(image_png_reps);
   gfx::Image from_platform(gt::CopyPlatformType(from_png));
   gt::CheckImageIndicatesPNGDecodeFailure(from_platform);
 }
 
 TEST_F(ImageTest, SkiaToPlatform) {
-  gfx::Image image(gt::CreateBitmap(25, 25));
+  gfx::Image image(gt::CreateImageSkia(25, 25));
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
   const size_t kRepCount = kUsesSkiaNatively ? 1U : 2U;
 
   EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepSkia));
@@ -346,10 +367,14 @@ TEST_F(ImageTest, SkiaToPlatform) {
 
   EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepSkia));
   EXPECT_TRUE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
 }
 
 TEST_F(ImageTest, PlatformToSkia) {
   gfx::Image image(gt::CreatePlatformImage());
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
   const size_t kRepCount = kUsesSkiaNatively ? 1U : 2U;
 
   EXPECT_TRUE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
@@ -365,10 +390,14 @@ TEST_F(ImageTest, PlatformToSkia) {
   EXPECT_EQ(kRepCount, image.RepresentationCount());
 
   EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepSkia));
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
 }
 
 TEST_F(ImageTest, PlatformToPlatform) {
   gfx::Image image(gt::CreatePlatformImage());
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
   EXPECT_TRUE(gt::IsPlatformImageValid(gt::ToPlatformType(image)));
   EXPECT_EQ(1U, image.RepresentationCount());
 
@@ -379,11 +408,21 @@ TEST_F(ImageTest, PlatformToPlatform) {
   EXPECT_TRUE(image.HasRepresentation(gt::GetPlatformRepresentationType()));
   if (!kUsesSkiaNatively)
     EXPECT_FALSE(image.HasRepresentation(gfx::Image::kImageRepSkia));
+  EXPECT_EQ(25, image.Width());
+  EXPECT_EQ(25, image.Height());
 }
 
 TEST_F(ImageTest, PlatformToSkiaToCopy) {
-  const SkBitmap* bitmap;
+  const gfx::ImageSkia* image_skia = NULL;
+  {
+    gfx::Image image(gt::CreatePlatformImage());
+    image_skia = image.CopyImageSkia();
+  }
+  EXPECT_TRUE(image_skia);
+  EXPECT_FALSE(image_skia->isNull());
+  delete image_skia;
 
+  const SkBitmap* bitmap = NULL;
   {
     gfx::Image image(gt::CreatePlatformImage());
     bitmap = image.CopySkBitmap();
@@ -391,37 +430,15 @@ TEST_F(ImageTest, PlatformToSkiaToCopy) {
 
   EXPECT_TRUE(bitmap);
   EXPECT_FALSE(bitmap->isNull());
-
   delete bitmap;
 }
-
-#if defined(TOOLKIT_GTK)
-TEST_F(ImageTest, SkiaToGdkCopy) {
-  GdkPixbuf* pixbuf;
-
-  {
-    gfx::Image image(gt::CreateBitmap(25, 25));
-    pixbuf = image.CopyGdkPixbuf();
-  }
-
-  EXPECT_TRUE(pixbuf);
-  g_object_unref(pixbuf);
-}
-
-TEST_F(ImageTest, SkiaToCairoCreatesGdk) {
-  gfx::Image image(gt::CreateBitmap(25, 25));
-  EXPECT_FALSE(image.HasRepresentation(gfx::Image::kImageRepGdk));
-  EXPECT_TRUE(image.ToCairo());
-  EXPECT_TRUE(image.HasRepresentation(gfx::Image::kImageRepGdk));
-}
-#endif
 
 #if defined(OS_IOS)
 TEST_F(ImageTest, SkiaToCocoaTouchCopy) {
   UIImage* ui_image;
 
   {
-    gfx::Image image(gt::CreateBitmap(25, 25));
+    gfx::Image image(gt::CreateImageSkia(25, 25));
     ui_image = image.CopyUIImage();
   }
 
@@ -433,7 +450,7 @@ TEST_F(ImageTest, SkiaToCocoaCopy) {
   NSImage* ns_image;
 
   {
-    gfx::Image image(gt::CreateBitmap(25, 25));
+    gfx::Image image(gt::CreateImageSkia(25, 25));
     ns_image = image.CopyNSImage();
   }
 
@@ -447,15 +464,14 @@ TEST_F(ImageTest, CheckSkiaColor) {
 
   const SkBitmap* bitmap = image.ToSkBitmap();
   SkAutoLockPixels auto_lock(*bitmap);
-  gt::CheckColor(bitmap->getColor(10, 10), false);
+  gt::CheckColors(bitmap->getColor(10, 10), SK_ColorGREEN);
 }
 
 TEST_F(ImageTest, SkBitmapConversionPreservesOrientation) {
   const int width = 50;
   const int height = 50;
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.allocPixels();
+  bitmap.allocN32Pixels(width, height);
   bitmap.eraseRGB(0, 255, 0);
 
   // Paint the upper half of the image in red (lower half is in green).
@@ -465,21 +481,21 @@ TEST_F(ImageTest, SkBitmapConversionPreservesOrientation) {
   canvas.drawRect(SkRect::MakeWH(width, height / 2), red);
   {
     SCOPED_TRACE("Checking color of the initial SkBitmap");
-    gt::CheckColor(bitmap.getColor(10, 10), true);
-    gt::CheckColor(bitmap.getColor(10, 40), false);
+    gt::CheckColors(bitmap.getColor(10, 10), SK_ColorRED);
+    gt::CheckColors(bitmap.getColor(10, 40), SK_ColorGREEN);
   }
 
   // Convert from SkBitmap to a platform representation, then check the upper
   // half of the platform image to make sure it is red, not green.
-  gfx::Image from_skbitmap(bitmap);
+  gfx::Image from_skbitmap = gfx::Image::CreateFrom1xBitmap(bitmap);
   {
     SCOPED_TRACE("Checking color of the platform image");
-    gt::CheckColor(
+    gt::CheckColors(
         gt::GetPlatformImageColor(gt::ToPlatformType(from_skbitmap), 10, 10),
-        true);
-    gt::CheckColor(
+        SK_ColorRED);
+    gt::CheckColors(
         gt::GetPlatformImageColor(gt::ToPlatformType(from_skbitmap), 10, 40),
-        false);
+        SK_ColorGREEN);
   }
 
   // Force a conversion back to SkBitmap and check that the upper half is red.
@@ -488,8 +504,8 @@ TEST_F(ImageTest, SkBitmapConversionPreservesOrientation) {
   SkAutoLockPixels auto_lock(*bitmap2);
   {
     SCOPED_TRACE("Checking color after conversion back to SkBitmap");
-    gt::CheckColor(bitmap2->getColor(10, 10), true);
-    gt::CheckColor(bitmap2->getColor(10, 40), false);
+    gt::CheckColors(bitmap2->getColor(10, 10), SK_ColorRED);
+    gt::CheckColors(bitmap2->getColor(10, 40), SK_ColorGREEN);
   }
 }
 
@@ -497,9 +513,7 @@ TEST_F(ImageTest, SkBitmapConversionPreservesTransparency) {
   const int width = 50;
   const int height = 50;
   SkBitmap bitmap;
-  bitmap.setConfig(SkBitmap::kARGB_8888_Config, width, height);
-  bitmap.allocPixels();
-  bitmap.setIsOpaque(false);
+  bitmap.allocN32Pixels(width, height);
   bitmap.eraseARGB(0, 0, 255, 0);
 
   // Paint the upper half of the image in red (lower half is transparent).
@@ -509,18 +523,18 @@ TEST_F(ImageTest, SkBitmapConversionPreservesTransparency) {
   canvas.drawRect(SkRect::MakeWH(width, height / 2), red);
   {
     SCOPED_TRACE("Checking color of the initial SkBitmap");
-    gt::CheckColor(bitmap.getColor(10, 10), true);
+    gt::CheckColors(bitmap.getColor(10, 10), SK_ColorRED);
     gt::CheckIsTransparent(bitmap.getColor(10, 40));
   }
 
   // Convert from SkBitmap to a platform representation, then check the upper
   // half of the platform image to make sure it is red, not green.
-  gfx::Image from_skbitmap(bitmap);
+  gfx::Image from_skbitmap = gfx::Image::CreateFrom1xBitmap(bitmap);
   {
     SCOPED_TRACE("Checking color of the platform image");
-    gt::CheckColor(
+    gt::CheckColors(
         gt::GetPlatformImageColor(gt::ToPlatformType(from_skbitmap), 10, 10),
-        true);
+        SK_ColorRED);
     gt::CheckIsTransparent(
         gt::GetPlatformImageColor(gt::ToPlatformType(from_skbitmap), 10, 40));
   }
@@ -531,7 +545,7 @@ TEST_F(ImageTest, SkBitmapConversionPreservesTransparency) {
   SkAutoLockPixels auto_lock(*bitmap2);
   {
     SCOPED_TRACE("Checking color after conversion back to SkBitmap");
-    gt::CheckColor(bitmap2->getColor(10, 10), true);
+    gt::CheckColors(bitmap2->getColor(10, 10), SK_ColorRED);
     gt::CheckIsTransparent(bitmap.getColor(10, 40));
   }
 }
@@ -539,21 +553,21 @@ TEST_F(ImageTest, SkBitmapConversionPreservesTransparency) {
 TEST_F(ImageTest, SwapRepresentations) {
   const size_t kRepCount = kUsesSkiaNatively ? 1U : 2U;
 
-  gfx::Image image1(gt::CreateBitmap(25, 25));
-  const SkBitmap* bitmap1 = image1.ToSkBitmap();
+  gfx::Image image1(gt::CreateImageSkia(25, 25));
+  const gfx::ImageSkia* image_skia1 = image1.ToImageSkia();
   EXPECT_EQ(1U, image1.RepresentationCount());
 
   gfx::Image image2(gt::CreatePlatformImage());
-  const SkBitmap* bitmap2 = image2.ToSkBitmap();
+  const gfx::ImageSkia* image_skia2 = image2.ToImageSkia();
   gt::PlatformImage platform_image = gt::ToPlatformType(image2);
   EXPECT_EQ(kRepCount, image2.RepresentationCount());
 
   image1.SwapRepresentations(&image2);
 
-  EXPECT_EQ(bitmap2, image1.ToSkBitmap());
+  EXPECT_EQ(image_skia2, image1.ToImageSkia());
   EXPECT_TRUE(gt::PlatformImagesEqual(platform_image,
                                       gt::ToPlatformType(image1)));
-  EXPECT_EQ(bitmap1, image2.ToSkBitmap());
+  EXPECT_EQ(image_skia1, image2.ToImageSkia());
   EXPECT_EQ(kRepCount, image1.RepresentationCount());
   EXPECT_EQ(1U, image2.RepresentationCount());
 }
@@ -561,12 +575,16 @@ TEST_F(ImageTest, SwapRepresentations) {
 TEST_F(ImageTest, Copy) {
   const size_t kRepCount = kUsesSkiaNatively ? 1U : 2U;
 
-  gfx::Image image1(gt::CreateBitmap(25, 25));
+  gfx::Image image1(gt::CreateImageSkia(25, 25));
+  EXPECT_EQ(25, image1.Width());
+  EXPECT_EQ(25, image1.Height());
   gfx::Image image2(image1);
+  EXPECT_EQ(25, image2.Width());
+  EXPECT_EQ(25, image2.Height());
 
   EXPECT_EQ(1U, image1.RepresentationCount());
   EXPECT_EQ(1U, image2.RepresentationCount());
-  EXPECT_EQ(image1.ToSkBitmap(), image2.ToSkBitmap());
+  EXPECT_EQ(image1.ToImageSkia(), image2.ToImageSkia());
 
   EXPECT_TRUE(gt::IsPlatformImageValid(gt::ToPlatformType(image2)));
   EXPECT_EQ(kRepCount, image2.RepresentationCount());
@@ -575,7 +593,14 @@ TEST_F(ImageTest, Copy) {
 
 TEST_F(ImageTest, Assign) {
   gfx::Image image1(gt::CreatePlatformImage());
-  gfx::Image image2 = image1;
+  EXPECT_EQ(25, image1.Width());
+  EXPECT_EQ(25, image1.Height());
+  // Assignment must be on a separate line to the declaration in order to test
+  // assignment operator (instead of copy constructor).
+  gfx::Image image2;
+  image2 = image1;
+  EXPECT_EQ(25, image2.Width());
+  EXPECT_EQ(25, image2.Height());
 
   EXPECT_EQ(1U, image1.RepresentationCount());
   EXPECT_EQ(1U, image2.RepresentationCount());
@@ -591,20 +616,22 @@ TEST_F(ImageTest, MultiResolutionImageSkia) {
   gfx::ImageSkia image_skia;
   image_skia.AddRepresentation(gfx::ImageSkiaRep(
       gt::CreateBitmap(kWidth1x, kHeight1x),
-      ui::SCALE_FACTOR_100P));
+      1.0f));
   image_skia.AddRepresentation(gfx::ImageSkiaRep(
       gt::CreateBitmap(kWidth2x, kHeight2x),
-      ui::SCALE_FACTOR_200P));
+      2.0f));
 
-  std::vector<ui::ScaleFactor> scale_factors;
-  scale_factors.push_back(ui::SCALE_FACTOR_100P);
-  scale_factors.push_back(ui::SCALE_FACTOR_200P);
+  std::vector<float> scales;
+  scales.push_back(1.0f);
+  scales.push_back(2.0f);
   EXPECT_TRUE(gt::ImageSkiaStructureMatches(image_skia, kWidth1x, kHeight1x,
-                                            scale_factors));
+                                            scales));
 
   // Check that the image has a single representation.
   gfx::Image image(image_skia);
   EXPECT_EQ(1u, image.RepresentationCount());
+  EXPECT_EQ(kWidth1x, image.Width());
+  EXPECT_EQ(kHeight1x, image.Height());
 }
 
 TEST_F(ImageTest, RemoveFromMultiResolutionImageSkia) {
@@ -614,13 +641,13 @@ TEST_F(ImageTest, RemoveFromMultiResolutionImageSkia) {
   gfx::ImageSkia image_skia;
 
   image_skia.AddRepresentation(gfx::ImageSkiaRep(
-      gt::CreateBitmap(kWidth2x, kHeight2x), ui::SCALE_FACTOR_200P));
+      gt::CreateBitmap(kWidth2x, kHeight2x), 2.0f));
   EXPECT_EQ(1u, image_skia.image_reps().size());
 
-  image_skia.RemoveRepresentation(ui::SCALE_FACTOR_100P);
+  image_skia.RemoveRepresentation(1.0f);
   EXPECT_EQ(1u, image_skia.image_reps().size());
 
-  image_skia.RemoveRepresentation(ui::SCALE_FACTOR_200P);
+  image_skia.RemoveRepresentation(2.0f);
   EXPECT_EQ(0u, image_skia.image_reps().size());
 }
 
@@ -632,7 +659,7 @@ TEST_F(ImageTest, OwnershipTest) {
     SkBitmap bitmap(gt::CreateBitmap(10, 10));
     EXPECT_TRUE(!bitmap.isNull());
     image = gfx::Image(gfx::ImageSkia(
-        gfx::ImageSkiaRep(bitmap, ui::SCALE_FACTOR_100P)));
+        gfx::ImageSkiaRep(bitmap, 1.0f)));
   }
   EXPECT_TRUE(!image.ToSkBitmap()->isNull());
 }

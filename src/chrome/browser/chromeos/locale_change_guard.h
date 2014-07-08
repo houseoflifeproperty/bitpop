@@ -12,7 +12,7 @@
 #include "base/lazy_instance.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_types.h"
@@ -47,8 +47,6 @@ class LocaleChangeGuard : public content::NotificationObserver,
   void OnLogin();
 
  private:
-  class Delegate;
-
   void RevertLocaleChangeCallback(const base::ListValue* list);
   void Check();
 
@@ -61,14 +59,16 @@ class LocaleChangeGuard : public content::NotificationObserver,
   std::string to_locale_;
   Profile* profile_;
   bool reverted_;
+  bool session_started_;
+  bool main_frame_loaded_;
   content::NotificationRegistrar registrar_;
 
   // We want to show locale change notification in previous language however
   // we cannot directly load strings for non-current locale.  So we cache
   // messages before locale change.
-  string16 title_text_;
-  string16 message_text_;
-  string16 revert_link_text_;
+  base::string16 title_text_;
+  base::string16 message_text_;
+  base::string16 revert_link_text_;
 };
 
 }  // namespace chromeos

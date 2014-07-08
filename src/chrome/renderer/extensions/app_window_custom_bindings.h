@@ -5,19 +5,26 @@
 #ifndef CHROME_RENDERER_EXTENSIONS_APP_WINDOW_CUSTOM_BINDINGS_H_
 #define CHROME_RENDERER_EXTENSIONS_APP_WINDOW_CUSTOM_BINDINGS_H_
 
-#include "chrome/renderer/extensions/chrome_v8_extension.h"
+#include "extensions/renderer/object_backed_native_handler.h"
 
 namespace extensions {
 class Dispatcher;
 
 // Implements custom bindings for the app.window API.
-class AppWindowCustomBindings : public ChromeV8Extension {
+class AppWindowCustomBindings : public ObjectBackedNativeHandler {
  public:
-  explicit AppWindowCustomBindings(Dispatcher* dispatcher);
+  AppWindowCustomBindings(Dispatcher* dispatcher, ScriptContext* context);
 
  private:
-  v8::Handle<v8::Value> GetView(const v8::Arguments& args);
-  v8::Handle<v8::Value> OnContextReady(const v8::Arguments& args);
+  void GetView(const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Return string containing the HTML <template> for the <window-controls>
+  // custom element.
+  void GetWindowControlsHtmlTemplate(
+      const v8::FunctionCallbackInfo<v8::Value>& args);
+
+  // Dispatcher handle. Not owned.
+  Dispatcher* dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(AppWindowCustomBindings);
 };

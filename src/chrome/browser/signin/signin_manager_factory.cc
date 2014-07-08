@@ -4,60 +4,145 @@
 
 #include "chrome/browser/signin/signin_manager_factory.h"
 
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
-#include "chrome/browser/signin/signin_manager.h"
-#include "chrome/browser/signin/token_service_factory.h"
+#include "base/prefs/pref_registry_simple.h"
+#include "chrome/browser/browser_process.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/chrome_signin_client_factory.h"
+#include "chrome/browser/signin/local_auth.h"
+#include "chrome/browser/signin/profile_oauth2_token_service_factory.h"
 #include "chrome/common/pref_names.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "components/signin/core/browser/signin_manager.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 
 SigninManagerFactory::SigninManagerFactory()
-    : ProfileKeyedServiceFactory("SigninManager",
-                                 ProfileDependencyManager::GetInstance()) {
-  DependsOn(TokenServiceFactory::GetInstance());
+    : BrowserContextKeyedServiceFactory(
+        "SigninManager",
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(ChromeSigninClientFactory::GetInstance());
+  DependsOn(ProfileOAuth2TokenServiceFactory::GetInstance());
 }
 
-SigninManagerFactory::~SigninManagerFactory() {}
+SigninManagerFactory::~SigninManagerFactory() {
+#if defined(OS_MACOSX)
+  // Check that the number of remaining observers is as expected. Mac has a
+  // known issue wherein there might be a remaining observer
+  // (UIAppListViewDelegate).
+  int num_observers = 0;
+  if (observer_list_.might_have_observers()) {
+    ObserverListBase<SigninManagerFactory::Observer>::Iterator it(
+        observer_list_);
+    while (it.GetNext()) {
+      num_observers++;
+    }
+  }
+  DCHECK_LE(num_observers, 1);
+#endif  // defined(OS_MACOSX)
+}
 
+#if defined(OS_CHROMEOS)
+// static
+SigninManagerBase* SigninManagerFactory::GetForProfileIfExists(
+    Profile* profile) {
+  return static_cast<SigninManagerBase*>(
+      GetInstance()->GetServiceForBrowserContext(profile, false));
+}
+
+// static
+SigninManagerBase* SigninManagerFactory::GetForProfile(
+    Profile* profile) {
+  return static_cast<SigninManagerBase*>(
+      GetInstance()->GetServiceForBrowserContext(profile, true));
+}
+
+#else
 // static
 SigninManager* SigninManagerFactory::GetForProfile(Profile* profile) {
   return static_cast<SigninManager*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
+// static
 SigninManager* SigninManagerFactory::GetForProfileIfExists(Profile* profile) {
   return static_cast<SigninManager*>(
-      GetInstance()->GetServiceForProfile(profile, false));
+      GetInstance()->GetServiceForBrowserContext(profile, false));
 }
+#endif
 
 // static
 SigninManagerFactory* SigninManagerFactory::GetInstance() {
   return Singleton<SigninManagerFactory>::get();
 }
 
-void SigninManagerFactory::RegisterUserPrefs(PrefService* user_prefs) {
-  user_prefs->RegisterStringPref(prefs::kGoogleServicesLastUsername, "",
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterStringPref(prefs::kGoogleServicesUsername, "",
-                                 PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kAutologinEnabled, true,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kReverseAutologinEnabled, true,
-                                  PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
-                               new ListValue, PrefService::UNSYNCABLE_PREF);
-  user_prefs->RegisterBooleanPref(prefs::kIsGooglePlusUser, false,
-                                 PrefService::UNSYNCABLE_PREF);
+void SigninManagerFactory::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterStringPref(
+      prefs::kGoogleServicesLastUsername,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kGoogleServicesUserAccountId,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterStringPref(
+      prefs::kGoogleServicesUsername,
+      std::string(),
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kAutologinEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kReverseAutologinEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kReverseAutologinRejectedEmailList,
+                             new base::ListValue,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  chrome::RegisterLocalAuthPrefs(registry);
 }
 
 // static
-void SigninManagerFactory::RegisterPrefs(PrefService* local_state) {
-  local_state->RegisterStringPref(prefs::kGoogleServicesUsernamePattern, "",
-                                  PrefService::UNSYNCABLE_PREF);
+void SigninManagerFactory::RegisterPrefs(PrefRegistrySimple* registry) {
+  registry->RegisterStringPref(prefs::kGoogleServicesUsernamePattern,
+                               std::string());
 }
 
-ProfileKeyedService* SigninManagerFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  SigninManager* service = new SigninManager();
-  service->Initialize(profile);
+void SigninManagerFactory::AddObserver(Observer* observer) {
+  observer_list_.AddObserver(observer);
+}
+
+void SigninManagerFactory::RemoveObserver(Observer* observer) {
+  observer_list_.RemoveObserver(observer);
+}
+
+void SigninManagerFactory::NotifyObserversOfSigninManagerCreationForTesting(
+    SigninManagerBase* manager) {
+  FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerCreated(manager));
+}
+
+KeyedService* SigninManagerFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
+  SigninManagerBase* service = NULL;
+  Profile* profile = static_cast<Profile*>(context);
+  SigninClient* client =
+      ChromeSigninClientFactory::GetInstance()->GetForProfile(profile);
+#if defined(OS_CHROMEOS)
+  service = new SigninManagerBase(client);
+#else
+  service = new SigninManager(
+      client, ProfileOAuth2TokenServiceFactory::GetForProfile(profile));
+#endif
+  service->Initialize(g_browser_process->local_state());
+  FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerCreated(service));
   return service;
+}
+
+void SigninManagerFactory::BrowserContextShutdown(
+    content::BrowserContext* context) {
+  SigninManagerBase* manager = static_cast<SigninManagerBase*>(
+      GetServiceForBrowserContext(context, false));
+  if (manager)
+    FOR_EACH_OBSERVER(Observer, observer_list_, SigninManagerShutdown(manager));
+  BrowserContextKeyedServiceFactory::BrowserContextShutdown(context);
 }

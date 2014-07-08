@@ -4,34 +4,33 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/stl_util.h"
-#include "base/string16.h"
+#include "base/memory/scoped_vector.h"
+#include "base/strings/string16.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/browser/browsing_instance.h"
 #include "content/browser/child_process_security_policy_impl.h"
+#include "content/browser/frame_host/navigation_entry_impl.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_view_host_impl.h"
-#include "content/browser/renderer_host/test_render_view_host.h"
 #include "content/browser/site_instance_impl.h"
-#include "content/browser/web_contents/navigation_entry_impl.h"
 #include "content/browser/web_contents/web_contents_impl.h"
-#include "content/public/browser/web_ui_controller_factory.h"
+#include "content/browser/webui/web_ui_controller_factory_registry.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_constants.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/url_constants.h"
+#include "content/public/common/url_utils.h"
 #include "content/public/test/mock_render_process_host.h"
 #include "content/public/test/test_browser_context.h"
 #include "content/public/test/test_browser_thread.h"
 #include "content/test/test_content_browser_client.h"
 #include "content/test/test_content_client.h"
-#include "googleurl/src/url_util.h"
+#include "content/test/test_render_view_host.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/url_util.h"
 
 namespace content {
 namespace {
-
-const char kSameAsAnyInstanceURL[] = "about:internets";
 
 const char kPrivilegedScheme[] = "privileged";
 
@@ -47,27 +46,11 @@ class SiteInstanceTestWebUIControllerFactory : public WebUIControllerFactory {
   }
   virtual bool UseWebUIForURL(BrowserContext* browser_context,
                               const GURL& url) const OVERRIDE {
-    return GetContentClient()->HasWebUIScheme(url);
+    return HasWebUIScheme(url);
   }
   virtual bool UseWebUIBindingsForURL(BrowserContext* browser_context,
                                       const GURL& url) const OVERRIDE {
-    return GetContentClient()->HasWebUIScheme(url);
-  }
-  virtual bool IsURLAcceptableForWebUI(
-      BrowserContext* browser_context,
-      const GURL& url,
-      bool data_urls_allowed) const OVERRIDE {
-    return false;
-  }
-};
-
-class SiteInstanceTestClient : public TestContentClient {
- public:
-  SiteInstanceTestClient() {
-  }
-
-  virtual bool HasWebUIScheme(const GURL& url) const OVERRIDE {
-    return url.SchemeIs(chrome::kChromeUIScheme);
+    return HasWebUIScheme(url);
   }
 };
 
@@ -75,10 +58,11 @@ class SiteInstanceTestBrowserClient : public TestContentBrowserClient {
  public:
   SiteInstanceTestBrowserClient()
       : privileged_process_id_(-1) {
+    WebUIControllerFactory::RegisterFactory(&factory_);
   }
 
-  virtual WebUIControllerFactory* GetWebUIControllerFactory() OVERRIDE {
-    return &factory_;
+  virtual ~SiteInstanceTestBrowserClient() {
+    WebUIControllerFactory::UnregisterFactoryForTesting(&factory_);
   }
 
   virtual bool IsSuitableHost(RenderProcessHost* process_host,
@@ -103,25 +87,23 @@ class SiteInstanceTest : public testing::Test {
         file_user_blocking_thread_(BrowserThread::FILE_USER_BLOCKING,
                                    &message_loop_),
         io_thread_(BrowserThread::IO, &message_loop_),
-        old_client_(NULL),
         old_browser_client_(NULL) {
   }
 
   virtual void SetUp() {
-    old_client_ = GetContentClient();
-    old_browser_client_ = GetContentClient()->browser();
-    SetContentClient(&client_);
-    GetContentClient()->set_browser_for_testing(&browser_client_);
-    url_util::AddStandardScheme(kPrivilegedScheme);
-    url_util::AddStandardScheme(chrome::kChromeUIScheme);
+    old_browser_client_ = SetBrowserClientForTesting(&browser_client_);
+    url::AddStandardScheme(kPrivilegedScheme);
+    url::AddStandardScheme(kChromeUIScheme);
+
+    SiteInstanceImpl::set_render_process_host_factory(&rph_factory_);
   }
 
   virtual void TearDown() {
     // Ensure that no RenderProcessHosts are left over after the tests.
     EXPECT_TRUE(RenderProcessHost::AllHostsIterator().IsAtEnd());
 
-    GetContentClient()->set_browser_for_testing(old_browser_client_);
-    SetContentClient(old_client_);
+    SetBrowserClientForTesting(old_browser_client_);
+    SiteInstanceImpl::set_render_process_host_factory(NULL);
 
     // http://crbug.com/143565 found SiteInstanceTest leaking an
     // AppCacheDatabase. This happens because some part of the test indirectly
@@ -143,20 +125,19 @@ class SiteInstanceTest : public testing::Test {
     // We don't just do this in TearDown() because we create TestBrowserContext
     // objects in each test, which will be destructed before
     // TearDown() is called.
-    MessageLoop::current()->RunUntilIdle();
+    base::MessageLoop::current()->RunUntilIdle();
     message_loop_.RunUntilIdle();
   }
 
  private:
-  MessageLoopForUI message_loop_;
+  base::MessageLoopForUI message_loop_;
   TestBrowserThread ui_thread_;
   TestBrowserThread file_user_blocking_thread_;
   TestBrowserThread io_thread_;
 
-  SiteInstanceTestClient client_;
   SiteInstanceTestBrowserClient browser_client_;
-  ContentClient* old_client_;
   ContentBrowserClient* old_browser_client_;
+  MockRenderProcessHostFactory rph_factory_;
 };
 
 // Subclass of BrowsingInstance that updates a counter when deleted and
@@ -223,7 +204,8 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
   EXPECT_EQ(0, site_delete_counter);
 
   NavigationEntryImpl* e1 = new NavigationEntryImpl(
-      instance, 0, url, Referrer(), string16(), PAGE_TRANSITION_LINK, false);
+      instance, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      false);
 
   // Redundantly setting e1's SiteInstance shouldn't affect the ref count.
   e1->set_site_instance(instance);
@@ -231,7 +213,8 @@ TEST_F(SiteInstanceTest, SiteInstanceDestructor) {
 
   // Add a second reference
   NavigationEntryImpl* e2 = new NavigationEntryImpl(
-      instance, 0, url, Referrer(), string16(), PAGE_TRANSITION_LINK, false);
+      instance, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      false);
 
   // Now delete both entries and be sure the SiteInstance goes away.
   delete e1;
@@ -283,7 +266,8 @@ TEST_F(SiteInstanceTest, CloneNavigationEntry) {
                                                &browsing_delete_counter);
 
   NavigationEntryImpl* e1 = new NavigationEntryImpl(
-      instance1, 0, url, Referrer(), string16(), PAGE_TRANSITION_LINK, false);
+      instance1, 0, url, Referrer(), base::string16(), PAGE_TRANSITION_LINK,
+      false);
   // Clone the entry
   NavigationEntryImpl* e2 = new NavigationEntryImpl(*e1);
 
@@ -365,7 +349,7 @@ TEST_F(SiteInstanceTest, GetSiteForURL) {
   test_url = GURL("file:///C:/Downloads/");
   EXPECT_EQ(GURL(), SiteInstanceImpl::GetSiteForURL(NULL, test_url));
 
-  std::string guest_url(chrome::kGuestScheme);
+  std::string guest_url(kGuestScheme);
   guest_url.append("://abc123");
   test_url = GURL(guest_url);
   EXPECT_EQ(test_url, SiteInstanceImpl::GetSiteForURL(NULL, test_url));
@@ -429,7 +413,7 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance->GetSiteInstanceForURL(url_b1)));
   EXPECT_NE(site_instance_a1.get(), site_instance_b1.get());
-  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1));
+  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1.get()));
 
   // Getting the new SiteInstance from the BrowsingInstance and from another
   // SiteInstance in the BrowsingInstance should give the same result.
@@ -452,7 +436,8 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSite) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance2->GetSiteInstanceForURL(url_a2)));
   EXPECT_NE(site_instance_a1.get(), site_instance_a2_2.get());
-  EXPECT_FALSE(site_instance_a1->IsRelatedSiteInstance(site_instance_a2_2));
+  EXPECT_FALSE(
+      site_instance_a1->IsRelatedSiteInstance(site_instance_a2_2.get()));
 
   // The two SiteInstances for http://google.com should not use the same process
   // if process-per-site is not enabled.
@@ -503,7 +488,7 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSiteInBrowserContext) {
       static_cast<SiteInstanceImpl*>(
           browsing_instance->GetSiteInstanceForURL(url_b1)));
   EXPECT_NE(site_instance_a1.get(), site_instance_b1.get());
-  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1));
+  EXPECT_TRUE(site_instance_a1->IsRelatedSiteInstance(site_instance_b1.get()));
 
   // Getting the new SiteInstance from the BrowsingInstance and from another
   // SiteInstance in the BrowsingInstance should give the same result.
@@ -563,38 +548,37 @@ TEST_F(SiteInstanceTest, OneSiteInstancePerSiteInBrowserContext) {
   DrainMessageLoops();
 }
 
-static SiteInstanceImpl* CreateSiteInstance(
-    BrowserContext* browser_context,
-    RenderProcessHostFactory* factory,
-    const GURL& url) {
-  SiteInstanceImpl* instance =
-      reinterpret_cast<SiteInstanceImpl*>(
-          SiteInstance::CreateForURL(browser_context, url));
-  instance->set_render_process_host_factory(factory);
-  return instance;
+static SiteInstanceImpl* CreateSiteInstance(BrowserContext* browser_context,
+                                            const GURL& url) {
+  return static_cast<SiteInstanceImpl*>(
+      SiteInstance::CreateForURL(browser_context, url));
 }
 
 // Test to ensure that pages that require certain privileges are grouped
 // in processes with similar pages.
 TEST_F(SiteInstanceTest, ProcessSharingByType) {
-  MockRenderProcessHostFactory rph_factory;
+  // This test shouldn't run with --site-per-process mode, since it doesn't
+  // allow render process reuse, which this test explicitly exercises.
+  if (CommandLine::ForCurrentProcess()->HasSwitch(switches::kSitePerProcess))
+    return;
+
   ChildProcessSecurityPolicyImpl* policy =
       ChildProcessSecurityPolicyImpl::GetInstance();
 
   // Make a bunch of mock renderers so that we hit the limit.
   scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
-  std::vector<MockRenderProcessHost*> hosts;
+  ScopedVector<MockRenderProcessHost> hosts;
   for (size_t i = 0; i < kMaxRendererProcessCount; ++i)
     hosts.push_back(new MockRenderProcessHost(browser_context.get()));
 
   // Create some extension instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> extension1_instance(
-      CreateSiteInstance(browser_context.get(), &rph_factory,
+      CreateSiteInstance(browser_context.get(),
           GURL(kPrivilegedScheme + std::string("://foo/bar"))));
   set_privileged_process_id(extension1_instance->GetProcess()->GetID());
 
   scoped_refptr<SiteInstanceImpl> extension2_instance(
-      CreateSiteInstance(browser_context.get(), &rph_factory,
+      CreateSiteInstance(browser_context.get(),
           GURL(kPrivilegedScheme + std::string("://baz/bar"))));
 
   scoped_ptr<RenderProcessHost> extension_host(
@@ -604,13 +588,12 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
 
   // Create some WebUI instances and make sure they share a process.
   scoped_refptr<SiteInstanceImpl> webui1_instance(CreateSiteInstance(
-      browser_context.get(), &rph_factory,
-      GURL(chrome::kChromeUIScheme + std::string("://newtab"))));
+      browser_context.get(), GURL(kChromeUIScheme + std::string("://newtab"))));
   policy->GrantWebUIBindings(webui1_instance->GetProcess()->GetID());
 
-  scoped_refptr<SiteInstanceImpl> webui2_instance(CreateSiteInstance(
-      browser_context.get(), &rph_factory,
-      GURL(chrome::kChromeUIScheme + std::string("://history"))));
+  scoped_refptr<SiteInstanceImpl> webui2_instance(
+      CreateSiteInstance(browser_context.get(),
+                         GURL(kChromeUIScheme + std::string("://history"))));
 
   scoped_ptr<RenderProcessHost> dom_host(webui1_instance->GetProcess());
   EXPECT_EQ(webui1_instance->GetProcess(), webui2_instance->GetProcess());
@@ -622,8 +605,6 @@ TEST_F(SiteInstanceTest, ProcessSharingByType) {
     EXPECT_NE(extension1_instance->GetProcess(), hosts[i]);
     EXPECT_NE(webui1_instance->GetProcess(), hosts[i]);
   }
-
-  STLDeleteContainerPointers(hosts.begin(), hosts.end());
 
   DrainMessageLoops();
 }
@@ -716,6 +697,68 @@ TEST_F(SiteInstanceTest, HasWrongProcessForURLInSitePerProcess) {
       GURL("javascript:alert(document.location.href);")));
 
   EXPECT_TRUE(instance->HasWrongProcessForURL(GURL("chrome://settings")));
+
+  DrainMessageLoops();
+}
+
+// Test that we do not reuse a process in process-per-site mode if it has the
+// wrong bindings for its URL.  http://crbug.com/174059.
+TEST_F(SiteInstanceTest, ProcessPerSiteWithWrongBindings) {
+  scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
+  scoped_ptr<RenderProcessHost> host;
+  scoped_ptr<RenderProcessHost> host2;
+  scoped_refptr<SiteInstanceImpl> instance(static_cast<SiteInstanceImpl*>(
+      SiteInstance::Create(browser_context.get())));
+
+  EXPECT_FALSE(instance->HasSite());
+  EXPECT_TRUE(instance->GetSiteURL().is_empty());
+
+  // Simulate navigating to a WebUI URL in a process that does not have WebUI
+  // bindings.  This already requires bypassing security checks.
+  const GURL webui_url("chrome://settings");
+  instance->SetSite(webui_url);
+  EXPECT_TRUE(instance->HasSite());
+
+  // The call to GetProcess actually creates a new real process.
+  host.reset(instance->GetProcess());
+  EXPECT_TRUE(host.get() != NULL);
+  EXPECT_TRUE(instance->HasProcess());
+
+  // Without bindings, this should look like the wrong process.
+  EXPECT_TRUE(instance->HasWrongProcessForURL(webui_url));
+
+  // WebUI uses process-per-site, so another instance would normally use the
+  // same process.  Make sure it doesn't use the same process if the bindings
+  // are missing.
+  scoped_refptr<SiteInstanceImpl> instance2(
+      static_cast<SiteInstanceImpl*>(
+          SiteInstance::Create(browser_context.get())));
+  instance2->SetSite(webui_url);
+  host2.reset(instance2->GetProcess());
+  EXPECT_TRUE(host2.get() != NULL);
+  EXPECT_TRUE(instance2->HasProcess());
+  EXPECT_NE(host.get(), host2.get());
+
+  DrainMessageLoops();
+}
+
+// Test that we do not register processes with empty sites for process-per-site
+// mode.
+TEST_F(SiteInstanceTest, NoProcessPerSiteForEmptySite) {
+  CommandLine::ForCurrentProcess()->AppendSwitch(
+      switches::kProcessPerSite);
+  scoped_ptr<TestBrowserContext> browser_context(new TestBrowserContext());
+  scoped_ptr<RenderProcessHost> host;
+  scoped_refptr<SiteInstanceImpl> instance(static_cast<SiteInstanceImpl*>(
+      SiteInstance::Create(browser_context.get())));
+
+  instance->SetSite(GURL());
+  EXPECT_TRUE(instance->HasSite());
+  EXPECT_TRUE(instance->GetSiteURL().is_empty());
+  host.reset(instance->GetProcess());
+
+  EXPECT_FALSE(RenderProcessHostImpl::GetProcessHostForSite(
+      browser_context.get(), GURL()));
 
   DrainMessageLoops();
 }

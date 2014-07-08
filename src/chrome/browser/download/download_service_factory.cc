@@ -6,13 +6,14 @@
 
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/history/history_service_factory.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/incognito_helpers.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
-DownloadService* DownloadServiceFactory::GetForProfile(
-    Profile* profile) {
+DownloadService* DownloadServiceFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
   return static_cast<DownloadService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 // static
@@ -21,17 +22,19 @@ DownloadServiceFactory* DownloadServiceFactory::GetInstance() {
 }
 
 DownloadServiceFactory::DownloadServiceFactory()
-    : ProfileKeyedServiceFactory("DownloadService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "DownloadService",
+        BrowserContextDependencyManager::GetInstance()) {
   DependsOn(HistoryServiceFactory::GetInstance());
 }
 
 DownloadServiceFactory::~DownloadServiceFactory() {
 }
 
-ProfileKeyedService* DownloadServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  DownloadService* service = new DownloadService(profile);
+KeyedService* DownloadServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  DownloadService* service =
+      new DownloadService(static_cast<Profile*>(profile));
 
   // No need for initialization; initialization can be done on first
   // use of service.
@@ -39,6 +42,7 @@ ProfileKeyedService* DownloadServiceFactory::BuildServiceInstanceFor(
   return service;
 }
 
-bool DownloadServiceFactory::ServiceHasOwnInstanceInIncognito() const {
-  return true;
+content::BrowserContext* DownloadServiceFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return chrome::GetBrowserContextOwnInstanceInIncognito(context);
 }

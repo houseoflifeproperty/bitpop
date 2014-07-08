@@ -1,18 +1,18 @@
 /*
- * This file is part of Libav.
+ * This file is part of FFmpeg.
  *
- * Libav is free software; you can redistribute it and/or
+ * FFmpeg is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
  * License as published by the Free Software Foundation; either
  * version 2.1 of the License, or (at your option) any later version.
  *
- * Libav is distributed in the hope that it will be useful,
+ * FFmpeg is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
  * Lesser General Public License for more details.
  *
  * You should have received a copy of the GNU Lesser General Public
- * License along with Libav; if not, write to the Free Software
+ * License along with FFmpeg; if not, write to the Free Software
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
@@ -91,7 +91,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{8, 9}, {32, 27}},
       .work_chunks = &work_chunks_dv25ntsc[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV411P,
+      .pix_fmt = AV_PIX_FMT_YUV411P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 90,
@@ -111,7 +111,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{16, 15}, {64, 45}},
       .work_chunks = &work_chunks_dv25pal[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV420P,
+      .pix_fmt = AV_PIX_FMT_YUV420P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 108,
@@ -131,7 +131,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{16, 15}, {64, 45}},
       .work_chunks = &work_chunks_dv25pal411[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV411P,
+      .pix_fmt = AV_PIX_FMT_YUV411P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 108,
@@ -151,7 +151,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{8, 9}, {32, 27}},
       .work_chunks = &work_chunks_dv50ntsc[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 90,
@@ -171,7 +171,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{16, 15}, {64, 45}},
       .work_chunks = &work_chunks_dv50pal[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 108,
@@ -191,7 +191,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{1, 1}, {3, 2}},
       .work_chunks = &work_chunks_dv100ntsci[0],
       .idct_factor = &dv_idct_factor_hd1080[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
       .audio_stride = 90,
@@ -211,7 +211,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{1, 1}, {4, 3}},
       .work_chunks = &work_chunks_dv100pali[0],
       .idct_factor = &dv_idct_factor_hd1080[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
       .audio_stride = 108,
@@ -231,7 +231,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{1, 1}, {4, 3}},
       .work_chunks = &work_chunks_dv100ntscp[0],
       .idct_factor = &dv_idct_factor_hd720[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
       .audio_stride = 90,
@@ -251,7 +251,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{1, 1}, {4, 3}},
       .work_chunks = &work_chunks_dv100palp[0],
       .idct_factor = &dv_idct_factor_hd720[0],
-      .pix_fmt = PIX_FMT_YUV422P,
+      .pix_fmt = AV_PIX_FMT_YUV422P,
       .bpm = 8,
       .block_sizes = block_sizes_dv100,
       .audio_stride = 90,
@@ -271,7 +271,7 @@ static const DVprofile dv_profiles[] = {
       .sar = {{16, 15}, {64, 45}},
       .work_chunks = &work_chunks_dv25pal[0],
       .idct_factor = &dv_idct_factor_sd[0],
-      .pix_fmt = PIX_FMT_YUV420P,
+      .pix_fmt = AV_PIX_FMT_YUV420P,
       .bpm = 6,
       .block_sizes = block_sizes_dv2550,
       .audio_stride = 108,
@@ -298,7 +298,11 @@ const DVprofile* avpriv_dv_frame_profile2(AVCodecContext* codec, const DVprofile
         return &dv_profiles[2];
     }
 
-    if(stype == 0 && codec && codec->codec_tag==AV_RL32("dvsd") && codec->coded_width==720 && codec->coded_height==576)
+    if(   stype == 0
+       && codec
+       && (codec->codec_tag==AV_RL32("dvsd") || codec->codec_tag==AV_RL32("CDVC"))
+       && codec->coded_width ==720
+       && codec->coded_height==576)
         return &dv_profiles[1];
 
     for (i = 0; i < FF_ARRAY_ELEMS(dv_profiles); i++)

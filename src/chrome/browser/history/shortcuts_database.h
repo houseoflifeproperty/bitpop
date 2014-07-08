@@ -9,15 +9,13 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
-#include "chrome/browser/history/shortcuts_backend.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string16.h"
 #include "sql/connection.h"
-
-class Profile;
+#include "sql/meta_table.h"
+#include "url/gurl.h"
 
 namespace history {
 
@@ -41,50 +39,97 @@ namespace history {
 //   number_of_hits      Number of times that the entry has been selected.
 class ShortcutsDatabase : public base::RefCountedThreadSafe<ShortcutsDatabase> {
  public:
-  typedef std::map<std::string, ShortcutsBackend::Shortcut> GuidToShortcutMap;
+  // The following struct encapsulates one previously selected omnibox shortcut.
+  struct Shortcut {
+    // The fields of an AutocompleteMatch that we preserve in a shortcut.
+    struct MatchCore {
+      MatchCore(const base::string16& fill_into_edit,
+                const GURL& destination_url,
+                const base::string16& contents,
+                const std::string& contents_class,
+                const base::string16& description,
+                const std::string& description_class,
+                int transition,
+                int type,
+                const base::string16& keyword);
+      ~MatchCore();
 
-  explicit ShortcutsDatabase(Profile* profile);
+      base::string16 fill_into_edit;
+      GURL destination_url;
+      base::string16 contents;
+      // For both contents_class and description_class, we strip MATCH
+      // classifications; the ShortcutsProvider will re-mark MATCH regions based
+      // on the user's current typing.
+      std::string contents_class;
+      base::string16 description;
+      std::string description_class;
+      int transition;
+      int type;
+      base::string16 keyword;
+    };
+
+    Shortcut(const std::string& id,
+             const base::string16& text,
+             const MatchCore& match_core,
+             const base::Time& last_access_time,
+             int number_of_hits);
+    // Required for STL, we don't use this directly.
+    Shortcut();
+    ~Shortcut();
+
+    std::string id;  // Unique guid for the shortcut.
+    base::string16 text;   // The user's original input string.
+    MatchCore match_core;
+    base::Time last_access_time;  // Last time shortcut was selected.
+    int number_of_hits;           // How many times shortcut was selected.
+  };
+
+  typedef std::vector<std::string> ShortcutIDs;
+  typedef std::map<std::string, Shortcut> GuidToShortcutMap;
+
+  explicit ShortcutsDatabase(const base::FilePath& database_path);
 
   bool Init();
 
   // Adds the ShortcutsProvider::Shortcut to the database.
-  bool AddShortcut(const ShortcutsBackend::Shortcut& shortcut);
+  bool AddShortcut(const Shortcut& shortcut);
 
   // Updates timing and selection count for the ShortcutsProvider::Shortcut.
-  bool UpdateShortcut(const ShortcutsBackend::Shortcut& shortcut);
+  bool UpdateShortcut(const Shortcut& shortcut);
 
-  // Deletes the ShortcutsProvider::Shortcuts with the id.
-  bool DeleteShortcutsWithIds(const std::vector<std::string>& shortcut_ids);
+  // Deletes the ShortcutsProvider::Shortcuts with these IDs.
+  bool DeleteShortcutsWithIDs(const ShortcutIDs& shortcut_ids);
 
   // Deletes the ShortcutsProvider::Shortcuts with the url.
-  bool DeleteShortcutsWithUrl(const std::string& shortcut_url_spec);
+  bool DeleteShortcutsWithURL(const std::string& shortcut_url_spec);
 
   // Deletes all of the ShortcutsProvider::Shortcuts.
   bool DeleteAllShortcuts();
 
   // Loads all of the shortcuts.
-  bool LoadShortcuts(GuidToShortcutMap* shortcuts);
+  void LoadShortcuts(GuidToShortcutMap* shortcuts);
 
  private:
   friend class base::RefCountedThreadSafe<ShortcutsDatabase>;
+  friend class ShortcutsDatabaseTest;
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, AddShortcut);
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, UpdateShortcut);
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, DeleteShortcutsWithIds);
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, DeleteShortcutsWithURL);
+  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, LoadShortcuts);
 
   virtual ~ShortcutsDatabase();
 
   // Ensures that the table is present.
   bool EnsureTable();
 
-  friend class ShortcutsDatabaseTest;
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, AddShortcut);
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, UpdateShortcut);
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, DeleteShortcutsWithIds);
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, DeleteShortcutsWithUrl);
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsDatabaseTest, LoadShortcuts);
-
   // The sql database. Not valid until Init is called.
   sql::Connection db_;
-  FilePath database_path_;
+  base::FilePath database_path_;
 
-  static const FilePath::CharType kShortcutsDatabaseName[];
+  sql::MetaTable meta_table_;
+
+  static const base::FilePath::CharType kShortcutsDatabaseName[];
 
   DISALLOW_COPY_AND_ASSIGN(ShortcutsDatabase);
 };

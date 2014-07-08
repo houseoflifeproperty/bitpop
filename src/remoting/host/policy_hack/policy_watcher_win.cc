@@ -16,10 +16,10 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop_proxy.h"
-#include "base/string16.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/string16.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/waitable_event.h"
-#include "base/utf_string_conversions.h"
 #include "base/values.h"
 #include "base/win/object_watcher.h"
 #include "base/win/registry.h"
@@ -115,13 +115,13 @@ class PolicyWatcherWin :
   bool GetRegistryPolicyString(const std::string& value_name,
                                std::string* result) const {
     // presubmit: allow wstring
-    std::wstring value_name_wide = UTF8ToWide(value_name);
+    std::wstring value_name_wide = base::UTF8ToWide(value_name);
     // presubmit: allow wstring
     std::wstring value;
     RegKey policy_key(HKEY_LOCAL_MACHINE, kRegistrySubKey, KEY_READ);
     if (policy_key.ReadValue(value_name_wide.c_str(), &value) ==
         ERROR_SUCCESS) {
-      *result = WideToUTF8(value);
+      *result = base::WideToUTF8(value);
       return true;
     }
 
@@ -129,7 +129,7 @@ class PolicyWatcherWin :
       ERROR_SUCCESS) {
       if (policy_key.ReadValue(value_name_wide.c_str(), &value) ==
           ERROR_SUCCESS) {
-        *result = WideToUTF8(value);
+        *result = base::WideToUTF8(value);
         return true;
       }
     }
@@ -139,7 +139,7 @@ class PolicyWatcherWin :
   bool GetRegistryPolicyInteger(const std::string& value_name,
                                 uint32* result) const {
     // presubmit: allow wstring
-    std::wstring value_name_wide = UTF8ToWide(value_name);
+    std::wstring value_name_wide = base::UTF8ToWide(value_name);
     DWORD value = 0;
     RegKey policy_key(HKEY_LOCAL_MACHINE, kRegistrySubKey, KEY_READ);
     if (policy_key.ReadValueDW(value_name_wide.c_str(), &value) ==
@@ -172,7 +172,7 @@ class PolicyWatcherWin :
     scoped_ptr<base::DictionaryValue> policy(new base::DictionaryValue());
 
     for (base::DictionaryValue::Iterator i(Defaults());
-         i.HasNext(); i.Advance()) {
+         !i.IsAtEnd(); i.Advance()) {
       const std::string& policy_name = i.key();
       if (i.value().GetType() == base::DictionaryValue::TYPE_BOOLEAN) {
         bool bool_value;
@@ -194,7 +194,7 @@ class PolicyWatcherWin :
   void Reload() {
     DCHECK(OnPolicyWatcherThread());
     SetupWatches();
-    scoped_ptr<DictionaryValue> new_policy(Load());
+    scoped_ptr<base::DictionaryValue> new_policy(Load());
     UpdatePolicies(new_policy.get());
   }
 

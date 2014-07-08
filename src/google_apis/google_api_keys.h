@@ -5,6 +5,8 @@
 #ifndef GOOGLE_APIS_GOOGLE_API_KEYS_H_
 #define GOOGLE_APIS_GOOGLE_API_KEYS_H_
 
+// If you add more includes to this file, you also need to add them to
+// google_api_keys_unittest.cc.
 #include <string>
 
 // These functions enable you to retrieve keys to use for Google APIs
@@ -54,7 +56,10 @@
 
 namespace google_apis {
 
-// Retrieves the API key, a.k.a. developer key, or the empty string
+// Returns true if no dummy API keys or OAuth2 tokens are set.
+bool HasKeysConfigured();
+
+// Retrieves the API key, a.k.a. developer key, or a dummy string
 // if not set.
 //
 // Note that the key should be escaped for the context you use it in,
@@ -66,6 +71,7 @@ enum OAuth2Client {
   CLIENT_MAIN,         // Several different features use this.
   CLIENT_CLOUD_PRINT,
   CLIENT_REMOTING,
+  CLIENT_REMOTING_HOST,
 
   CLIENT_NUM_ITEMS     // Must be last item.
 };
@@ -83,6 +89,10 @@ std::string GetOAuth2ClientID(OAuth2Client client);
 // Note that the secret should be escaped for the context you use it
 // in, e.g. URL-escaped if you use it in a URL.
 std::string GetOAuth2ClientSecret(OAuth2Client client);
+
+// Returns if the API key using in the current build is the one for official
+// Google Chrome.
+bool IsGoogleChromeAPIKeyUsed();
 
 }  // namespace google_apis
 

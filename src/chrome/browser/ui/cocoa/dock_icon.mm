@@ -8,7 +8,7 @@
 
 #include "base/logging.h"
 #include "base/mac/bundle_locations.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "content/public/browser/browser_thread.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
@@ -83,10 +83,10 @@ static const float kProfileImageFrameFraction = 0.6f;
   NSRect badgeRect = NSZeroRect;
 
   if (downloads_ != 0) {
-    badgeRect = [self bounds];
+    NSRect badgeRect = [self bounds];
     badgeRect.size.height = (int)(kBadgeFraction * badgeRect.size.height);
-    int newWidth = kBadgeFraction * badgeRect.size.width;
-    badgeRect.origin.x = badgeRect.size.width - newWidth;
+    int newWidth = kBadgeFraction * NSWidth(badgeRect);
+    badgeRect.origin.x = NSWidth(badgeRect) - newWidth;
     badgeRect.size.width = newWidth;
 
     CGFloat badgeRadius = NSMidY(badgeRect);
@@ -94,8 +94,7 @@ static const float kProfileImageFrameFraction = 0.6f;
     badgeRect.origin.x -= kBadgeIndent;
     badgeRect.origin.y += kBadgeIndent;
 
-    NSPoint badgeCenter = NSMakePoint(NSMidX(badgeRect),
-                                      NSMidY(badgeRect));
+    NSPoint badgeCenter = NSMakePoint(NSMidX(badgeRect), NSMidY(badgeRect));
 
     // Background
     NSColor* backgroundColor = [NSColor colorWithCalibratedRed:0.85
@@ -105,7 +104,7 @@ static const float kProfileImageFrameFraction = 0.6f;
     NSColor* backgroundHighlight =
         [backgroundColor blendedColorWithFraction:0.85
                                           ofColor:[NSColor whiteColor]];
-    scoped_nsobject<NSGradient> backgroundGradient(
+    base::scoped_nsobject<NSGradient> backgroundGradient(
         [[NSGradient alloc] initWithStartingColor:backgroundHighlight
                                       endingColor:backgroundColor]);
     NSBezierPath* badgeEdge = [NSBezierPath bezierPathWithOvalInRect:badgeRect];
@@ -128,7 +127,7 @@ static const float kProfileImageFrameFraction = 0.6f;
       NSColor* sliceHighlight =
           [sliceColor blendedColorWithFraction:0.4
                                        ofColor:[NSColor whiteColor]];
-      scoped_nsobject<NSGradient> sliceGradient(
+      base::scoped_nsobject<NSGradient> sliceGradient(
           [[NSGradient alloc] initWithStartingColor:sliceHighlight
                                         endingColor:sliceColor]);
       NSBezierPath* progressSlice;
@@ -147,20 +146,13 @@ static const float kProfileImageFrameFraction = 0.6f;
                                                clockwise:YES];
         [progressSlice closePath];
       }
-      gfx::ScopedNSGraphicsContextSaveGState scopedGState;
-      [progressSlice addClip];
-      [sliceGradient drawFromCenter:badgeCenter
-                             radius:0.0
-                           toCenter:badgeCenter
-                             radius:badgeRadius
-                            options:0];
     }
 
     // Edge
     {
       gfx::ScopedNSGraphicsContextSaveGState scopedGState;
       [[NSColor whiteColor] set];
-      scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
+      base::scoped_nsobject<NSShadow> shadow([[NSShadow alloc] init]);
       [shadow.get() setShadowOffset:NSMakeSize(0, -2)];
       [shadow setShadowBlurRadius:2];
       [shadow set];
@@ -169,12 +161,12 @@ static const float kProfileImageFrameFraction = 0.6f;
     }
 
     // Download count
-    scoped_nsobject<NSNumberFormatter> formatter(
+    base::scoped_nsobject<NSNumberFormatter> formatter(
         [[NSNumberFormatter alloc] init]);
     NSString* countString =
         [formatter stringFromNumber:[NSNumber numberWithInt:downloads_]];
 
-    scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
+    base::scoped_nsobject<NSShadow> countShadow([[NSShadow alloc] init]);
     [countShadow setShadowBlurRadius:3.0];
     [countShadow.get() setShadowColor:[NSColor whiteColor]];
     [countShadow.get() setShadowOffset:NSMakeSize(0.0, 0.0)];
@@ -185,7 +177,7 @@ static const float kProfileImageFrameFraction = 0.6f;
             nil];
     CGFloat countFontSize = badgeRadius;
     NSSize countSize = NSZeroSize;
-    scoped_nsobject<NSAttributedString> countAttrString;
+    base::scoped_nsobject<NSAttributedString> countAttrString;
     while (1) {
       NSFont* countFont = [NSFont fontWithName:@"Helvetica-Bold"
                                           size:countFontSize];
@@ -274,7 +266,8 @@ static const float kProfileImageFrameFraction = 0.6f;
   if (!icon) {
     NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
 
-    scoped_nsobject<DockTileView> dockTileView([[DockTileView alloc] init]);
+    base::scoped_nsobject<DockTileView> dockTileView(
+        [[DockTileView alloc] init]);
     [dockTile setContentView:dockTileView];
 
     icon = [[DockIcon alloc] init];
@@ -284,7 +277,7 @@ static const float kProfileImageFrameFraction = 0.6f;
 }
 
 - (void)updateIcon {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   static base::TimeDelta updateFrequency =
       base::TimeDelta::FromMilliseconds(kUpdateFrequencyMs);
 
@@ -302,7 +295,7 @@ static const float kProfileImageFrameFraction = 0.6f;
 }
 
 - (void)setDownloads:(int)downloads {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 
@@ -313,7 +306,7 @@ static const float kProfileImageFrameFraction = 0.6f;
 }
 
 - (void)setIndeterminate:(BOOL)indeterminate {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 
@@ -324,7 +317,7 @@ static const float kProfileImageFrameFraction = 0.6f;
 }
 
 - (void)setProgress:(float)progress {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   NSDockTile* dockTile = [[NSApplication sharedApplication] dockTile];
   DockTileView* dockTileView = (DockTileView*)([dockTile contentView]);
 
@@ -339,7 +332,7 @@ static const float kProfileImageFrameFraction = 0.6f;
   [dockTileView setProfilePhoto:image];
 
   if (unread != 0) {
-    scoped_nsobject<NSNumberFormatter> formatter(
+    base::scoped_nsobject<NSNumberFormatter> formatter(
         [[NSNumberFormatter alloc] init]);
     NSString* countString =
         [formatter stringFromNumber:[NSNumber numberWithInt:unread]];

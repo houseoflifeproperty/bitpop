@@ -9,8 +9,9 @@
 #include "base/debug/debugger.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
+#include "chrome/browser/chrome_notification_types.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
 #import "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 #import "chrome/browser/ui/cocoa/panels/panel_cocoa.h"
@@ -19,8 +20,8 @@
 #import "chrome/browser/ui/cocoa/run_loop_testing.h"
 #include "chrome/browser/ui/panels/panel.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
+#include "chrome/test/base/testing_profile.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gtest_mac.h"
@@ -296,7 +297,7 @@ TEST_F(PanelCocoaTest, TitlebarViewClose) {
 TEST_F(PanelCocoaTest, MenuItems) {
   Panel* panel = CreateTestPanel("Test Panel");
 
-  scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
+  base::scoped_nsobject<NSMenu> menu([[NSMenu alloc] initWithTitle:@""]);
   NSMenuItem* close_tab_menu_item = CreateMenuItem(menu, IDC_CLOSE_TAB);
   NSMenuItem* new_tab_menu_item = CreateMenuItem(menu, IDC_NEW_TAB);
   NSMenuItem* new_tab_window_item = CreateMenuItem(menu, IDC_NEW_WINDOW);
@@ -362,17 +363,6 @@ TEST_F(PanelCocoaTest, KeyEvent) {
   PanelCocoa* native_window = static_cast<PanelCocoa*>(panel->native_panel());
   [BrowserWindowUtils handleKeyboardEvent:event
                       inWindow:[native_window->controller_ window]];
-  ClosePanelAndWait(panel);
-}
-
-// Verify that the theme provider is properly plumbed through.
-TEST_F(PanelCocoaTest, ThemeProvider) {
-  Panel* panel = CreateTestPanel("Test Panel");
-  ASSERT_TRUE(panel);
-
-  PanelCocoa* native_window = static_cast<PanelCocoa*>(panel->native_panel());
-  ASSERT_TRUE(native_window);
-  EXPECT_TRUE(NULL != [[native_window->controller_ window] themeProvider]);
   ClosePanelAndWait(panel);
 }
 

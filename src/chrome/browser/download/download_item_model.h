@@ -9,7 +9,7 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 class SavePackage;
 
@@ -18,7 +18,7 @@ class DownloadItem;
 }
 
 namespace gfx {
-class Font;
+class FontList;
 }
 
 // This class is an abstraction for common UI tasks and properties associated
@@ -35,15 +35,16 @@ class DownloadItemModel {
   explicit DownloadItemModel(content::DownloadItem* download);
   ~DownloadItemModel();
 
-  // Cancel the task corresponding to the item.
-  void CancelTask();
-
   // Returns a long descriptive string for a download that's in the INTERRUPTED
   // state. For other downloads, the returned string will be empty.
-  string16 GetInterruptReasonText() const;
+  base::string16 GetInterruptReasonText() const;
 
   // Returns a short one-line status string for the download.
-  string16 GetStatusText() const;
+  base::string16 GetStatusText() const;
+
+  // Returns the localized status text for an in-progress download. This
+  // is the progress status used in the WebUI interface.
+  base::string16 GetTabProgressStatusText() const;
 
   // Returns a string suitable for use as a tooltip. For a regular download, the
   // tooltip is the filename. For an interrupted download, the string states the
@@ -51,20 +52,20 @@ class DownloadItemModel {
   // example:
   //    Report.pdf
   //    Network disconnected
-  // |font| and |max_width| are used to elide the filename and/or interrupt
+  // |font_list| and |max_width| are used to elide the filename and/or interrupt
   // reason as necessary to keep the width of the tooltip text under
   // |max_width|. The tooltip will be at most 2 lines.
-  string16 GetTooltipText(const gfx::Font& font, int max_width) const;
+  base::string16 GetTooltipText(const gfx::FontList& font_list, int max_width) const;
 
   // Get the warning text to display for a dangerous download. The |base_width|
   // is the maximum width of an embedded filename (if there is one). The metrics
-  // for the filename will be based on |font|. Should only be called if
+  // for the filename will be based on |font_list|. Should only be called if
   // IsDangerous() is true.
-  string16 GetWarningText(const gfx::Font& font, int base_width) const;
+  base::string16 GetWarningText(const gfx::FontList& font_list, int base_width) const;
 
   // Get the caption text for a button for confirming a dangerous download
   // warning.
-  string16 GetWarningConfirmButtonText() const;
+  base::string16 GetWarningConfirmButtonText() const;
 
   // Get the number of bytes that has completed so far. Virtual for testing.
   int64 GetCompletedBytes() const;
@@ -80,7 +81,32 @@ class DownloadItemModel {
   bool IsDangerous() const;
 
   // Is this considered a malicious download? Implies IsDangerous().
+  bool MightBeMalicious() const;
+
+  // Is this considered a malicious download with very high confidence?
+  // Implies IsDangerous() and MightBeMalicious().
   bool IsMalicious() const;
+
+  // Is safe browsing download feedback feature available for this download?
+  bool ShouldAllowDownloadFeedback() const;
+
+  // Returns |true| if this download is expected to complete successfully and
+  // thereafter be removed from the shelf.  Downloads that are opened
+  // automatically or are temporary will be removed from the shelf on successful
+  // completion.
+  //
+  // Returns |false| if the download is not expected to complete (interrupted,
+  // cancelled, dangerous, malicious), or won't be removed on completion.
+  //
+  // Since the expectation of successful completion may change, the return value
+  // of this function will change over the course of a download.
+  bool ShouldRemoveFromShelfWhenComplete() const;
+
+  // Returns |true| if the download started animation (big download arrow
+  // animates down towards the shelf) should be displayed for this download.
+  // Downloads that were initiated via "Save As" or are extension installs don't
+  // show the animation.
+  bool ShouldShowDownloadStartedAnimation() const;
 
   // Returns |true| if this download should be displayed in the downloads shelf.
   bool ShouldShowInShelf() const;
@@ -90,6 +116,28 @@ class DownloadItemModel {
   // displayed in the shelf.
   void SetShouldShowInShelf(bool should_show);
 
+  // Returns |true| if the UI should be notified when the download is ready to
+  // be presented in the UI. By default, this value is |false| and should be
+  // changed explicitly using SetShouldNotifyUI(). Note that this is indpendent
+  // of ShouldShowInShelf() since there might be actions other than showing in
+  // the shelf that the UI must perform.
+  bool ShouldNotifyUI() const;
+
+  // Change what's returned by ShouldNotifyUI().
+  void SetShouldNotifyUI(bool should_notify);
+
+  // Returns |true| if opening in the browser is preferred for this download. If
+  // |false|, the download should be opened with the system default application.
+  bool ShouldPreferOpeningInBrowser() const;
+
+  // Change what's returned by ShouldPreferOpeningInBrowser to |preference|.
+  void SetShouldPreferOpeningInBrowser(bool preference);
+
+  // Open the download using the platform handler for the download. The behavior
+  // of this method will be different from DownloadItem::OpenDownload() if
+  // ShouldPreferOpeningInBrowser().
+  void OpenUsingPlatformHandler();
+
   content::DownloadItem* download() { return download_; }
 
  private:
@@ -98,10 +146,10 @@ class DownloadItemModel {
   // MB" where the numerator is the transferred size and the denominator is the
   // total size. If the total isn't known, returns the transferred size as a
   // string (e.g.: "100 MB").
-  string16 GetProgressSizesString() const;
+  base::string16 GetProgressSizesString() const;
 
   // Returns a string indicating the status of an in-progress download.
-  string16 GetInProgressStatusString() const;
+  base::string16 GetInProgressStatusString() const;
 
   // The DownloadItem that this model represents. Note that DownloadItemModel
   // itself shouldn't maintain any state since there can be more than one

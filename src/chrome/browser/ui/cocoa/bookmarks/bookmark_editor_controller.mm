@@ -4,11 +4,15 @@
 
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_editor_controller.h"
 
-#include "base/string16.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/bookmarks/bookmark_expanded_state_tracker.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
-#import "chrome/browser/ui/cocoa/bookmarks/bookmark_cell_single_line.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string16.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/bookmarks/bookmark_utils.h"
+#include "chrome/common/net/url_fixer_upper.h"
+#include "components/bookmarks/core/browser/bookmark_expanded_state_tracker.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/user_prefs/user_prefs.h"
 #include "ui/base/l10n/l10n_util.h"
 
 @interface BookmarkEditorController (Private)
@@ -31,7 +35,7 @@
                     parent:(const BookmarkNode*)parent
                       node:(const BookmarkNode*)node
                        url:(const GURL&)url
-                     title:(const string16&)title
+                     title:(const base::string16&)title
              configuration:(BookmarkEditor::Configuration)configuration {
   if ((self = [super initWithParentWindow:parentWindow
                                   nibName:@"BookmarkEditor"
@@ -65,9 +69,12 @@
   // arrived here from an "Add Page..." item in a context menu.
   if (node_) {
     [self setInitialName:base::SysUTF16ToNSString(node_->GetTitle())];
-    std::string url_string = node_->url().possibly_invalid_spec();
-    initialUrl_.reset([[NSString stringWithUTF8String:url_string.c_str()]
-                        retain]);
+    PrefService* prefs = [self profile] ?
+        user_prefs::UserPrefs::Get([self profile]) :
+        NULL;
+    base::string16 urlString =
+        chrome::FormatBookmarkURLForDisplay(node_->url(), prefs);
+    initialUrl_.reset([base::SysUTF16ToNSString(urlString) retain]);
   } else {
     GURL url = [self url];
     [self setInitialName:base::SysUTF16ToNSString([self title])];
@@ -94,12 +101,7 @@
 // If possible, return a valid GURL from the URL text field.
 - (GURL)GURLFromUrlField {
   NSString* url = [self displayURL];
-  GURL newURL = GURL([url UTF8String]);
-  if (!newURL.is_valid()) {
-    // Mimic observed friendliness from Windows
-    newURL = GURL([[NSString stringWithFormat:@"http://%@", url] UTF8String]);
-  }
-  return newURL;
+  return URLFixerUpper::FixupURL([url UTF8String], std::string());
 }
 
 // Enable the OK button if there is a valid URL.
@@ -127,7 +129,7 @@
 - (NSNumber*)didCommit {
   NSString* name = [[self displayName] stringByTrimmingCharactersInSet:
                     [NSCharacterSet newlineCharacterSet]];
-  string16 newTitle = base::SysNSStringToUTF16(name);
+  base::string16 newTitle = base::SysNSStringToUTF16(name);
   const BookmarkNode* newParentNode = [self selectedNode];
   GURL newURL = [self GURLFromUrlField];
   if (!newURL.is_valid()) {

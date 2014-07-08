@@ -1,0 +1,31 @@
+[
+  {
+    "cmd": [
+      "svn",
+      "export",
+      "--force",
+      "svn://checkout.url",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff contents@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]",
+      "--force",
+      "--forward",
+      "--input",
+      "fake patch.diff contents",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch"
+  }
+]

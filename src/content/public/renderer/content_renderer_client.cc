@@ -19,16 +19,16 @@ std::string ContentRendererClient::GetDefaultEncoding() {
 }
 
 bool ContentRendererClient::OverrideCreatePlugin(
-    RenderView* render_view,
-    WebKit::WebFrame* frame,
-    const WebKit::WebPluginParams& params,
-    WebKit::WebPlugin** plugin) {
+    RenderFrame* render_frame,
+    blink::WebLocalFrame* frame,
+    const blink::WebPluginParams& params,
+    blink::WebPlugin** plugin) {
   return false;
 }
 
-WebKit::WebPlugin* ContentRendererClient::CreatePluginReplacement(
-    RenderView* render_view,
-    const FilePath& plugin_path) {
+blink::WebPlugin* ContentRendererClient::CreatePluginReplacement(
+    RenderFrame* render_frame,
+    const base::FilePath& plugin_path) {
   return NULL;
 }
 
@@ -37,18 +37,50 @@ bool ContentRendererClient::HasErrorPage(int http_status_code,
   return false;
 }
 
-webkit_media::WebMediaPlayerImpl*
-    ContentRendererClient::OverrideCreateWebMediaPlayer(
-        RenderView* render_view,
-        WebKit::WebFrame* frame,
-        WebKit::WebMediaPlayerClient* client,
-        base::WeakPtr<webkit_media::WebMediaPlayerDelegate> delegate,
-        media::FilterCollection* collection,
-        WebKit::WebAudioSourceProvider* audio_source_provider,
-        media::AudioRendererSink* audio_renderer_sink,
-        media::MessageLoopFactory* message_loop_factory,
-        webkit_media::MediaStreamClient* media_stream_client,
-        media::MediaLog* media_log) {
+bool ContentRendererClient::ShouldSuppressErrorPage(RenderFrame* render_frame,
+                                                    const GURL& url) {
+  return false;
+}
+
+void ContentRendererClient::DeferMediaLoad(RenderFrame* render_frame,
+                                           const base::Closure& closure) {
+  closure.Run();
+}
+
+blink::WebMediaStreamCenter*
+ContentRendererClient::OverrideCreateWebMediaStreamCenter(
+    blink::WebMediaStreamCenterClient* client) {
+  return NULL;
+}
+
+blink::WebRTCPeerConnectionHandler*
+ContentRendererClient::OverrideCreateWebRTCPeerConnectionHandler(
+    blink::WebRTCPeerConnectionHandlerClient* client) {
+  return NULL;
+}
+
+blink::WebMIDIAccessor*
+ContentRendererClient::OverrideCreateMIDIAccessor(
+    blink::WebMIDIAccessorClient* client) {
+  return NULL;
+}
+
+blink::WebAudioDevice*
+ContentRendererClient::OverrideCreateAudioDevice(
+    double sample_rate) {
+  return NULL;
+}
+
+blink::WebClipboard* ContentRendererClient::OverrideWebClipboard() {
+  return NULL;
+}
+
+blink::WebThemeEngine* ContentRendererClient::OverrideThemeEngine() {
+  return NULL;
+}
+
+blink::WebSpeechSynthesizer* ContentRendererClient::OverrideSpeechSynthesizer(
+    blink::WebSpeechSynthesizerClient* client) {
   return NULL;
 }
 
@@ -60,32 +92,35 @@ bool ContentRendererClient::AllowPopup() {
   return false;
 }
 
+#ifdef OS_ANDROID
 bool ContentRendererClient::HandleNavigation(
-    WebKit::WebFrame* frame,
-    const WebKit::WebURLRequest& request,
-    WebKit::WebNavigationType type,
-    WebKit::WebNavigationPolicy default_policy,
+    RenderFrame* render_frame,
+    DocumentState* document_state,
+    int opener_id,
+    blink::WebFrame* frame,
+    const blink::WebURLRequest& request,
+    blink::WebNavigationType type,
+    blink::WebNavigationPolicy default_policy,
     bool is_redirect) {
   return false;
 }
+#endif
 
-bool ContentRendererClient::ShouldFork(WebKit::WebFrame* frame,
+bool ContentRendererClient::ShouldFork(blink::WebFrame* frame,
                                        const GURL& url,
+                                       const std::string& http_method,
                                        bool is_initial_navigation,
+                                       bool is_server_redirect,
                                        bool* send_referrer) {
   return false;
 }
 
 bool ContentRendererClient::WillSendRequest(
-    WebKit::WebFrame* frame,
+    blink::WebFrame* frame,
     PageTransition transition_type,
     const GURL& url,
     const GURL& first_party_for_cookies,
     GURL* new_url) {
-  return false;
-}
-
-bool ContentRendererClient::ShouldPumpEventsDuringCookieMessage() {
   return false;
 }
 
@@ -98,26 +133,53 @@ bool ContentRendererClient::IsLinkVisited(unsigned long long link_hash) {
   return false;
 }
 
+blink::WebPrescientNetworking*
+ContentRendererClient::GetPrescientNetworking() {
+  return NULL;
+}
+
 bool ContentRendererClient::ShouldOverridePageVisibilityState(
-    const RenderView* render_view,
-    WebKit::WebPageVisibilityState* override_state) const {
+    const RenderFrame* render_frame,
+    blink::WebPageVisibilityState* override_state) {
   return false;
 }
 
-bool ContentRendererClient::HandleGetCookieRequest(
-    RenderView* sender,
-    const GURL& url,
-    const GURL& first_party_for_cookies,
-    std::string* cookies) {
+const void* ContentRendererClient::CreatePPAPIInterface(
+    const std::string& interface_name) {
+  return NULL;
+}
+
+bool ContentRendererClient::IsExternalPepperPlugin(
+    const std::string& module_name) {
   return false;
 }
 
-bool ContentRendererClient::HandleSetCookieRequest(
-    RenderView* sender,
-    const GURL& url,
-    const GURL& first_party_for_cookies,
-    const std::string& value) {
+bool ContentRendererClient::AllowBrowserPlugin(
+    blink::WebPluginContainer* container) {
   return false;
+}
+
+bool ContentRendererClient::AllowPepperMediaStreamAPI(const GURL& url) {
+  return false;
+}
+
+void ContentRendererClient::AddKeySystems(
+    std::vector<KeySystemInfo>* key_systems) {
+}
+
+bool ContentRendererClient::ShouldReportDetailedMessageForSource(
+    const base::string16& source) const {
+  return false;
+}
+
+bool ContentRendererClient::ShouldEnableSiteIsolationPolicy() const {
+  return true;
+}
+
+blink::WebWorkerPermissionClientProxy*
+ContentRendererClient::CreateWorkerPermissionClientProxy(
+    RenderFrame* render_frame, blink::WebFrame* frame) {
+  return NULL;
 }
 
 }  // namespace content

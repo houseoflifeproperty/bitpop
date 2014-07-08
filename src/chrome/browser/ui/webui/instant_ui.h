@@ -7,20 +7,23 @@
 
 #include "content/public/browser/web_ui_controller.h"
 
-class PrefService;
 
 namespace content {
 class BrowserContext;
 }
 
-// Provides configuration options for Instant web search.
+namespace user_prefs {
+class PrefRegistrySyncable;
+}
+
+// Provides configuration options for Instant web search and shows debug info.
 class InstantUI : public content::WebUIController {
  public:
   // Constructs an instance using |web_ui| for its data sources and message
   // handlers.
   explicit InstantUI(content::WebUI* web_ui);
 
-  static void RegisterUserPrefs(PrefService* user_prefs);
+  static void RegisterProfilePrefs(user_prefs::PrefRegistrySyncable* registry);
 
  private:
   DISALLOW_COPY_AND_ASSIGN(InstantUI);

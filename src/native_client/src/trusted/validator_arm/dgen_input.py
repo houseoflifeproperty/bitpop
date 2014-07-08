@@ -11,24 +11,22 @@ A simple recursive-descent parser for the table file format.
 The grammar implemented here is roughly (taking some liberties with whitespace
 and comment parsing):
 
-table_file ::= classdef* table+ eof ;
+table_file ::= decoder_actions? table+ eof ;
 
 action         ::= decoder_action | decoder_method | '"'
-action_actual  := 'actual' ':=' id
-action_arch    ::= 'arch' ':=' id
-action_baseline::= 'actual' ':=' id
-action_option  ::= (action_actual |
-                    action_baseline |
-                    action_rule |
+action_arch    ::= 'arch' ':=' id | '(' id (',' id)* ')'
+action_option  ::= (action_rule |
                     action_pattern |
                     action_safety |
                     action_arch |
+                    action_violations |
                     action_other) ';'
-action_options_deprecated ::= (id (word (rule_restrict_deprecated id?)?)?)?
 action_other   ::= word ':=' bit_expr
-action_pattern ::= 'pattern' ':=' word rule_restrict?
-action_safety  ::= 'safety' ':=' safety_check ('&' safety_check)*
+action_pattern ::= 'pattern' ':=' bitpattern
+action_safety  ::= 'safety' ':=' ('super.safety' | safety_check)
+                            ('&' safety_check)*
 action_rule    ::= 'rule' ':=' id
+action_violations ::= 'violations' ':=' violation ('&' violation)*
 arch           ::= '(' word+ ')'
 bit_expr       ::= bit_expr1 ('if' bit_expr 'else' bit_expr)?  # conditional
 bit_expr1      ::= bit_expr2 (('&' bit_expr2)* | ('|' bit_expr2)*)?
@@ -45,49 +43,44 @@ bit_expr7      ::= bit_expr8 |                                 # mul ops
 bit_expr8      ::= bit_expr9 ('=' bitpattern)?                 # bit check
 bit_expr9      ::= bit_expr10 (':' bit_expr10)*                # concat
 bit_expr10     ::= bit_expr11 | bit_expr10 '(' int (':' int)? ')' # bit range
-bit_expr11     ::= int | id | bit_set | '(' bit_expr ')' | call
+bit_expr11     ::= int | nondecimal_int | id | bit_set | '(' bit_expr ')' | call
 bit_set        ::= '{' (bit_expr (',' bit_expr)*)? '}'
 bitpattern     ::= word | negated_word
 call           ::= word '(' (bit_expr (',' bit_expr)*)? ')'
 citation       ::= '(' word+ ')'
 column         ::= id '(' int (':' int)? ')'
-classdef       ::= 'class' word ':' word
-decoder        ::= (id ('=>' id)?)?
 decoder_action ::= '=" decoder_defn
-decoder_defn   ::= (decoder (fields? action_option* |
-                             action_options_deprecated arch?)
-                   | '*' (int | id) fields? action_option*)
+decoder_actions::= ('*' (int | id) decoder_defn)+
+decoder_defn   ::= fields? action_option*
+                   | '*' (int | id) ('-' field_names)? fields? action_option*
 decoder_method ::= '->' id
 default_row    ::= 'else' ':' action
+field_names    ::= '{' (id (',' id)*)? '}'
 fields         ::= '{' column (',' column)* '}'
 footer         ::= '+' '-' '-'
 header         ::= "|" column+
 int            ::= word     (where word is a sequence of digits)
 id             ::= word     (where word is sequence of letters, digits and _)
 negated_word   ::= '~' word
+nondecimal_int ::= word     (where word is a hexidecimal or bitstring pattern)
 parenthesized_exp ::= '(' (word | punctuation)+ ')'
 pat_bit_set        ::= '{' (bitpattern (',' bitpattern)*)? '}'
 pat_row        ::= pattern+ action
 pattern        ::= bitpattern | '-' | '"'
+quoted_string  := word      (where word text enclosed in quotes('))
 row            ::= '|' (pat_row | default_row)
-rule_restrict  ::= ('&' (bit_expr | bitpattern))* ('&' 'other' ':' id)?
-rule_restrict_deprecated ::= ('&' bitpattern)* ('&' 'other' ':' id)?
-safety_check   ::= id | bit_expr1 ('=>' id)?     # note: single id only at end.
+safety_check   ::= bit_expr '=>' id
 table          ::= table_desc table_actions header row+ footer
-table_actions  ::= ( ('*' (int | id) decoder_defn)+ footer)?
+table_actions  ::= (decoder_actions footer)?
 table_desc     ::= '+' '-' '-' id citation?
-
-Note that action_options_deprecated is deprecated, and one should generate
-a sequence of action_option's. For action_options_depcrected, the interpretation
-is as follows:
-   id[1] = Arm rule action corresponds to.
-   word = Bit pattern of rule.
-   rule_restrict = Name defining additional constraints (parse and safety)
-          for match.
+violation      ::= bit_expr '=>' 'error' '(' quoted_string (',' bit_expr)* ')'
 """
 
 import re
 import dgen_core
+# The following import adds type information for decoder actions corresponding
+# to method definitions.
+import dgen_decoder
 
 # Set the following to True if you want to see each read/pushback of a token.
 _TRACE_TOKENS = False
@@ -122,10 +115,54 @@ _PREDEFINED_CONSTS = {
     'true': dgen_core.BoolValue(True),
     'false': dgen_core.BoolValue(False),
     'inst': dgen_core.Instruction(),
+    # Instruction value selectors used in ARM tables. Numbered sequentially
+    # to guarantee selectors are unique.
+    'VFPNegMul_VNMLA': dgen_core.Literal(1),
+    'VFPNegMul_VNMLS': dgen_core.Literal(2),
+    'VFPNegMul_VNMUL': dgen_core.Literal(3),
+    # conditions for conditional instructions (see enum Condition in model.h).
+    # Possible values for the condition field, from the ARM ARM section A8.3.
+    'cond_EQ': dgen_core.Literal(0x0),
+    'cond_NE': dgen_core.Literal(0x1),
+    'cond_CS': dgen_core.Literal(0x2),
+    'cond_CC': dgen_core.Literal(0x3),
+    'cond_MI': dgen_core.Literal(0x4),
+    'cond_PL': dgen_core.Literal(0x5),
+    'cond_VS': dgen_core.Literal(0x6),
+    'cond_VC': dgen_core.Literal(0x7),
+    'cond_HI': dgen_core.Literal(0x8),
+    'cond_LS': dgen_core.Literal(0x9),
+    'cond_GE': dgen_core.Literal(0xA),
+    'cond_LT': dgen_core.Literal(0xB),
+    'cond_GT': dgen_core.Literal(0xC),
+    'cond_LE': dgen_core.Literal(0xD),
+    'cond_AL': dgen_core.Literal(0xE),
+    'cond_unconditional': dgen_core.Literal(0xF),
+    'cond_HS': dgen_core.Literal(0x2),
+    'cond_LO': dgen_core.Literal(0x3),
     }
+
+# Predefined regular expressions.
+_DECIMAL_PATTERN = re.compile(r'^([0-9]+)$')
+_HEXIDECIMAL_PATTERN = re.compile(r'^0x([0-9a-fA-F]+)$')
+_BITSTRING_PATTERN = re.compile(r'^\'([01]+)\'$')
+_ID_PATTERN = re.compile(r'^[a-zA-z][a-zA-z0-9_]*$')
+_STRING_PATTERN = re.compile(r'^\'(.*)\'$')
 
 # When true, catch all bugs when parsing and report line.
 _CATCH_EXCEPTIONS = True
+
+# List of file level decoder actions that must be specified in every
+# specification file, because they are used somewhere else than in table rows.
+_REQUIRED_FILE_DECODER_ACTIONS = [
+    # Defiles the decoder action that handles instructions that are
+    # not defined by rows in the instruction tables.
+    'NotImplemented',
+    # Defines the decoder action that handles the fictitious instruction
+    # inserted before the code segment, acting as the previous instruction
+    # for the first instruction in the bundle.
+    'FictitiousFirst'
+    ]
 
 class Parser(object):
   """Parses a set of tables from the input file."""
@@ -144,14 +181,14 @@ class Parser(object):
       return self._parse(decoder)
 
   def _parse(self, decoder):
-    # Read the class definitions while there.
-    while self._next_token().kind == 'class':
-      self._classdef(decoder)
+    # Read global decoder actions.
+    self._global_decoder_actions(decoder)
 
-    # Read tables while there.
+    # Read tables while there are tables to read.
     while self._next_token().kind == '+':
       self._table(decoder)
 
+    # Check that we read everything.
     if not self._next_token().kind == 'eof':
       self._unexpected('unrecognized input found')
     if not decoder.primary:
@@ -168,14 +205,15 @@ class Parser(object):
     self._pushed_tokens = []     # Tokens pushed back onto the input stream.
     # Reserved words allowed. Must be ordered such that if p1 != p2 are in
     # the list, and p1.startswith(p2), then p1 must appear before p2.
-    self._reserved = ['class', 'else', 'pattern', 'safety', 'rule',
-                      'arch', 'other', 'mod', 'if', 'not', 'in', 'bitset',
-                      'actual', 'baseline']
+    self._reserved = ['else', 'other', 'mod', 'if', 'not', 'in']
     # Punctuation allowed. Must be ordered such that if p1 != p2 are in
     # the list, and p1.startswith(p2), then p1 must appear before p2.
     self._punctuation = ['=>', '->', '-', '+', '(', ')', '==', ':=', '"',
                          '|', '~', '&', '{', '}', ',', ';', '!=',':',
                          '>>', '<<', '>=', '>', '<=', '<', '=', '*', '/']
+    # Holds global decoder actions, that can be used in tables if not defined
+    # locally.
+    self._file_actions = {}
 
   #-------- Recursive descent parse functions corresponding to grammar above.
 
@@ -191,44 +229,40 @@ class Parser(object):
     else:
       self._unexpected("Row doesn't define an action")
 
-  def _action_actual(self, context):
-    """action_actual  := 'actual' ':=' id"""
-    self._read_token('actual')
-    self._read_token(':=')
-    self._define('actual', self._id(), context)
-
   def _action_arch(self, context):
-    """action_arch    ::= 'arch' ':=' id
+    """action_arch    ::= 'arch' ':=' id | '(' id (',' id)* ')'
 
        Adds architecture to context."""
-    self._read_token('arch')
+    self._read_keyword('arch')
     self._read_token(':=')
-    self._define('arch', self._id(), context)
-
-  def _action_baseline(self, context):
-    """action_baseline ::= 'actual' ':=' id"""
-    self._read_token('baseline')
-    self._read_token(':=')
-    self._define('baseline', self._id(), context)
+    if self._next_token().kind == '(':
+      self._read_token('(')
+      names = [ self._id() ]
+      while self._next_token().kind == ',':
+        self._read_token(',')
+        names.append(self._id())
+      self._read_token(')')
+      self._define('arch', names, context)
+    else:
+      self._define('arch', self._id(), context)
 
   def _action_option(self, context):
     """action_option  ::= (action_rule | action_pattern |
-                           action_safety | action_arch) ';'
+                           action_safety | action_arch |
+                           action_violation | action_other) ';'
 
        Returns the specified architecture, or None if other option.
        """
-    if self._next_token().kind == 'actual':
-      self._action_actual(context)
-    elif self._next_token().kind == 'baseline':
-      self._action_baseline(context)
-    elif self._next_token().kind == 'rule':
+    if self._is_keyword('rule'):
       self._action_rule(context)
-    elif self._next_token().kind == 'pattern':
+    elif self._is_keyword('pattern'):
       self._action_pattern(context)
-    elif self._next_token().kind == 'safety':
+    elif self._is_keyword('safety'):
       self._action_safety(context)
-    elif self._next_token().kind == 'arch':
+    elif self._is_keyword('arch'):
       self._action_arch(context)
+    elif self._is_keyword('violations'):
+      self._action_violations(context)
     elif self._next_token().kind == 'word':
       self._action_other(context)
     else:
@@ -242,44 +276,58 @@ class Parser(object):
        """
     name = self._read_token('word').value
     self._read_token(':=')
-    if not context.define(name, self._bit_expr(context), False):
-      raise Exception('%s: multiple definitions.' % name)
+    self._define(name, self._bit_expr(context), context)
 
   def _action_pattern(self, context):
-    """action_pattern ::= 'pattern' ':=' bitpattern rule_restrict?
+    """action_pattern ::= 'pattern' ':=' bitpattern
 
        Adds pattern/parse constraints to the context.
        """
-    self._read_token('pattern')
+    self._read_keyword('pattern')
     self._read_token(':=')
-    if not context.define('pattern', self._bitpattern32(), False):
-      raise Exception('pattern: multiple definitions.')
-    if self._next_token().kind == '&':
-      self._rule_restrict(context)
+    self._define('pattern', self._bitpattern32(), context)
 
   def _action_safety(self, context):
-    """action_safety  ::= 'safety' ':=' safety_check ('&' safety_check)*
+    """action_safety  ::=
+          'safety' ':=' ('super.safety' | safety_check) ('&' safety_check)*
 
        Adds safety constraints to the context.
        """
-    self._read_token('safety')
+    self._read_keyword('safety')
     self._read_token(':=')
-    checks = [ self._safety_check(context) ]
+    if self._is_keyword('super.safety'):
+      # Treat as extending case of inherited safety.
+      self._read_keyword('super.safety')
+      checks = context.find('safety', install_inheriting=False)
+      if isinstance(checks, list):
+        checks = list(checks)
+      else:
+        self._unexpected('safety extensions not allowed, nothing to extend')
+    else:
+      checks = [ self._safety_check(context) ]
     while self._next_token().kind == '&':
       self._read_token('&')
       checks.append(self._safety_check(context))
-    if not context.define('safety', checks, False):
-      self._unexpected('safety: multiple definitions')
+    self._define('safety', checks, context)
 
   def _action_rule(self, context):
     """action_rule    ::= 'rule' ':=' id
 
        Adds rule name to the context.
        """
-    self._read_token('rule')
+    self._read_keyword('rule')
     self._read_token(':=')
-    if not context.define('rule', self._id(), False):
-      raise Exception('rule: multiple definitions')
+    self._define('rule', self._id(), context)
+
+  def _action_violations(self, context):
+    """action_violations ::= 'violations' ':=' violation ('&' violation)*"""
+    self._read_keyword('violations')
+    self._read_token(':=')
+    violations = [ self._violation(context) ]
+    while self._next_token().kind == '&':
+      self._read_token('&')
+      violations.append(self._violation(context))
+    self._define('violations', violations, context)
 
   def _arch(self):
     """ arch ::= '(' word+ ')' """
@@ -343,8 +391,8 @@ class Parser(object):
     value = self._bit_expr4(context)
     if not self._next_token().kind == 'in': return value
     self._read_token('in')
-    if self._next_token().kind == 'bitset':
-      self._read_token('bitset')
+    if self._is_keyword('bitset'):
+      self._read_keyword('bitset')
       return dgen_core.InBitSet(value, self._pat_bit_set())
     else:
       return dgen_core.InUintSet(value, self._bit_set(context))
@@ -422,9 +470,12 @@ class Parser(object):
     return value
 
   def _bit_expr11(self, context):
-    """bit_expr11 ::= int | id | bit_set | '(' bit_expr ')' | call"""
+    """bit_expr11 ::= int | nondecimal_int | id | bit_set |
+                     '(' bit_expr ')' | call"""
     if self._is_int():
       return dgen_core.Literal(self._int())
+    elif self._is_nondecimal_int():
+      return self._nondecimal_int()
     elif self._next_token().kind == '{':
       return self._bit_set(context)
     elif self._next_token().kind == '(':
@@ -436,7 +487,7 @@ class Parser(object):
       # Note: we defer input like "foo(2)" to being a (bit field) column.
       # If you want to recognize "foo(2)" as a function call, write 'foo((2))'
       return self._call(context)
-    else:
+    elif self._is_id():
       name = self._id()
       value = context.find(name)
       if not value:
@@ -447,6 +498,8 @@ class Parser(object):
         # definition will be available when the context is printed.
         context.define(name, value)
       return dgen_core.IdRef(name, value)
+    else:
+      self._unexpected("Don't understand value: %s" % self._next_token().value)
 
   def _bit_set(self, context):
     """bit_set        ::= '{' (bit_expr (',' bit_expr)*)? '}'"""
@@ -485,7 +538,10 @@ class Parser(object):
         self._read_token(',')
       args.append(self._bit_expr(context))
     self._read_token(')')
-    return dgen_core.FunctionCall(name, args)
+    if len(args) == 1 and name in dgen_core.DGEN_TYPE_TO_CPP_TYPE.keys():
+        return dgen_core.TypeCast(name, args[0])
+    else:
+        return dgen_core.FunctionCall(name, args)
 
   def _citation(self):
     """ citation ::= '(' word+ ')' """
@@ -506,28 +562,6 @@ class Parser(object):
     self._read_token(')')
     return dgen_core.BitField(name, hi_bit, lo_bit)
 
-  def _classdef(self, decoder):
-    """ classdef       ::= 'class' word ':' word """
-    self._read_token('class')
-    class_name = self._read_token('word').value
-    self._read_token(':')
-    class_superclass = self._read_token('word').value
-    if not decoder.add_class_def(class_name, class_superclass):
-      self._unexpected('Inconsistent definitions for class %s' % class_name)
-
-  def _decoder(self):
-    """ decoder        ::= (id ('=>' id)?)? """
-    decoder = dgen_core.DecoderAction()
-    # Check if optional.
-    if self._next_token().kind in ['{', '+'] or self._is_action_option():
-      return decoder
-
-    self._define('baseline', self._id(), decoder)
-    if self._next_token().kind == '=>':
-      self._read_token('=>')
-      self._define('actual', self._id(), decoder)
-    return decoder
-
   def _decoder_action_options(self, context):
     """Parses 'action_options*'."""
     while True:
@@ -540,38 +574,52 @@ class Parser(object):
     """decoder_action ::= '=" decoder_defn"""
     self._read_token('=')
     action = self._decoder_defn(starred_actions)
-    if not action.baseline():
-      self._unexpected("No baseline class defined for row")
-    return action
+    self._check_action_is_well_defined(action)
+    return self._decoder_defn_end(action)
+
+  def _decoder_actions(self):
+    """ decoder_actions::= ('*' (int | id) decoder_defn)+ """
+    starred_actions = {}
+    while self._next_token().kind == '*':
+      self._read_token('*')
+      if self._is_int():
+        index = self._int()
+      else:
+        index = self._id()
+
+      if starred_actions.get(index):
+        self._unexpected("Multple *actions defined for %s" % index)
+
+      starred_actions[index] = self._decoder_defn(starred_actions)
+    return starred_actions
+
+  def _decoder_defn_end(self, action):
+      """Called when at end of a decoder definition. Used to
+         turn off type checking."""
+      action.force_type_checking(False)
+      return action
 
   def _decoder_defn(self, starred_actions):
-    """decoder_defnn ::=  (decoder (fields? action_option* |
-                                    action_options_deprecated arch?)
-                           | '*' (int | id) fields? action_option*)
+    """decoder_defn ::=  fields? action_option*
+                         | '*' (int | id) ('-' field_names)?
+                               fields? action_option*
     """
     if self._next_token().kind == '*':
-      return self._decoder_action_extend(starred_actions)
+      return self._decoder_defn_end(
+          self._decoder_action_extend(starred_actions))
 
-    action = self._decoder()
+    action = dgen_core.DecoderAction()
+    action.force_type_checking(True)
     if self._next_token().kind == '{':
       fields = self._fields(action)
       self._define('fields', fields, action)
       self._decoder_action_options(action)
     elif self._is_action_option():
       self._decoder_action_options(action)
-    else:
-      self._define('rule', self._read_id_or_none(True), action)
-      self._define('pattern', self._read_id_or_none(False), action)
-      self._rule_restrict_deprecated(action)
-      other_restrictions = self._read_id_or_none(True)
-      if other_restrictions:
-        self._define('safety', [other_restrictions], action)
-      if self._next_token().kind == '(':
-        self._define('arch', self._arch(), action)
-    return action
+    return self._decoder_defn_end(action)
 
   def _decoder_action_extend(self, starred_actions):
-    """'*' (int | id) fields? action_option*
+    """'*' (int | id) ('-' field_names)? fields? action_option*
 
        Helper function to _decoder_action."""
     self._read_token('*')
@@ -581,12 +629,22 @@ class Parser(object):
       index = self._id()
     indexed_action = starred_actions.get(index)
     if not indexed_action:
-      self._unexpected("Can't find decoder action *%s" % index)
+      indexed_action = self._file_actions.get(index)
+      if not indexed_action:
+        self._unexpected("Can't find decoder action *%s" % index)
 
     # Create an initial copy, and define starred action as
     # inheriting definition.
     action = dgen_core.DecoderAction()
-    action.inherits(indexed_action)
+    action.force_type_checking(True)
+
+    # Get the set of field names.
+    fields = []
+    if self._next_token().kind == '-':
+      self._read_token('-')
+      fields = self._field_names()
+
+    action.inherits(indexed_action, fields)
 
     # Recognize fields if applicable.
     if self._next_token().kind == '{':
@@ -608,11 +666,36 @@ class Parser(object):
     self._read_token('else')
     self._read_token(':')
     action = self._action(starred_actions, last_action)
-    if not action.baseline():
-      self._unexpected("No baseline class defined for row")
+    self._check_action_is_well_defined(action)
     if not table.add_default_row(action):
       self._unexpected('Unable to install row default')
-    return (None, action)
+    return (None, self._decoder_defn_end(action))
+
+  def _field_names(self):
+    """'{' (id (',' id)*)? '}'
+
+       Note: To capture predefined actions, we allow special
+       action keywords to also apply.
+       """
+    names = []
+    self._read_token('{')
+    if self._is_field_name():
+      names.append(self._read_token().value)
+      while self._next_token().kind == ',':
+        self._read_token(',')
+        if self._is_field_name():
+          name == self._read_token().value
+          if name in names:
+            raise Exception("Repeated field name: %s" % name)
+          names.append(name)
+        else:
+          raise Exception("field name expected, found %s" %
+                          self._next_token().value)
+    self._read_token('}')
+    return names
+
+  def _field_name_next(self):
+    return self._is_id() or self._is_action_option()
 
   def _fields(self, context):
     """fields         ::= '{' column (',' column)* '}'"""
@@ -635,6 +718,16 @@ class Parser(object):
     self._read_token('-')
     self._read_token('-')
 
+  def _global_decoder_actions(self, decoder):
+    """Read in file level decoder actions, and install required predefined
+       file decoder actions."""
+    self._file_actions = self._decoder_actions()
+    for required_action in _REQUIRED_FILE_DECODER_ACTIONS:
+      action = self._file_actions.get(required_action)
+      if not action:
+        self._unexpected("File level action '%s' not defined" % required_action)
+      decoder.define_value(required_action, action)
+
   def _header(self, table):
     """ header ::= "|" column+ """
     self._read_token('|')
@@ -642,16 +735,36 @@ class Parser(object):
     while self._is_column():
       self._add_column(table)
 
+  def _nondecimal_int(self):
+    """nondecimal_int ::= word
+
+       where word is a hexidecimal or bitstring pattern."""
+    word = self._read_token('word').value
+
+    match = _HEXIDECIMAL_PATTERN.match(word)
+    if match:
+      return Literal(int(match.group(1), 16), name=word)
+
+    match = _BITSTRING_PATTERN.match(word)
+    if match:
+      text = match.group(1)
+      l = dgen_core.Literal(int(text, 2), name=word)
+      return dgen_core.BitField(l, len(text) - 1, 0)
+
+    self._unexpected('Nondecimal integer expected but not found: %s' % word)
+
   def _int(self):
     """ int ::= word
 
     Int is a sequence of digits. Returns the corresponding integer.
     """
-    if self._is_int():
-      return int(self._read_token('word').value)
-    else:
-      self._unexpected(
-          'integer expected but found "%s"' % self._next_token())
+    word = self._read_token('word').value
+    match = _DECIMAL_PATTERN.match(word)
+    if match:
+      return int(match.group(1))
+
+    self._unexpected(
+        'integer expected but found "%s"' % word)
 
   def _id(self):
     """ id ::= word
@@ -659,11 +772,8 @@ class Parser(object):
     Word starts with a letter, and followed by letters, digits,
     and underscores. Returns the corresponding identifier.
     """
-    ident = self._read_token('word').value
-    m = re.match(r'^[a-zA-z][a-zA-z0-9_]*$', ident)
-    if not m:
-      self._unexpected('"%s" is not a valid identifier' % ident)
-    return ident
+    if self._is_id():
+      return self._read_token('word').value
 
   def _named_value(self, context):
     """named_value    ::= id ':=' bit_expr."""
@@ -744,6 +854,19 @@ class Parser(object):
       return self._read_token().value
     return self._bitpattern()
 
+  def _quoted_string(self):
+    """quoted_string := word
+
+       where word is text enclosed in quotes(')."""
+    word = self._read_token('word').value
+
+    match = _STRING_PATTERN.match(word)
+    if match:
+      text = match.group(1)
+      return dgen_core.QuotedString(text, name=word)
+
+    self._unexpected('Quoted string expected but not found: "%s"' % word)
+
   def _row(self, table, starred_actions, last_patterns=None, last_action=None):
     """ row ::= '|' (pat_row | default_row)
 
@@ -756,68 +879,22 @@ class Parser(object):
     else:
       return self._pat_row(table, starred_actions, last_patterns, last_action)
 
-  def _rule_restrict(self, context):
-    """ rule_restrict  ::= ('&' (bit_expr | bitpattern))* ('&' 'other' ':' id)?
-
-        Note: We restrict bit_expr to only be those cases where it isn't a
-        bitpattern, since the overlap with bit_expr is non-empty. If you
-        need to make a conflicting bit_expr not conflict with a bit pattern,
-        just enclose the expression with parenthesis.
-    """
-    restrictions = context.find('constraints')
-    if not restrictions:
-      context.define('constraints', dgen_core.RuleRestrictions())
-    while self._next_token().kind == '&':
-      self._read_token('&')
-      if self._next_token().kind == 'other':
-        self._read_token('other')
-        self._read_token(':')
-        restrictions.safety = self._id()
-        return
-      elif (self._is_next_tokens(['word', '&']) or
-            self._is_next_tokens(['word', ';']) or
-            self._is_next_tokens(['~', 'word', '&']) or
-            self._is_next_tokens(['~', 'word', ';'])):
-        restrictions.add(
-            dgen_core.BitPattern.parse(self._bitpattern32(),
-                                       dgen_core.BitField('constraint', 31, 0)))
-      else:
-        restrictions.add(self._bit_expr(context))
-
-  def _rule_restrict_deprecated(self, context):
-    """ rule_restrict  ::= ('&' bitpattern)* ('&' 'other' ':' id)? """
-
-    restrictions = context.find('constraints')
-    if not restrictions:
-      context.define('constraints', dgen_core.RuleRestrictions())
-    while self._next_token().kind == '&':
-      self._read_token('&')
-      if self._next_token().kind == 'other':
-        self._read_token('other')
-        self._read_token(':')
-        restrictions.safety = self._id()
-        return
-      else:
-        restrictions.add(
-            dgen_core.BitPattern.parse(self._bitpattern32(),
-                                       dgen_core.BitField('constraint', 31, 0)))
+  def _read_keyword(self, keyword):
+    """Returns true if the next symbol matches the (identifier) keyword."""
+    token = self._read_token()
+    if not ((token.kind == keyword) or
+            (token.kind == 'word' and token.value == keyword)):
+      self._unexpected("Expected '%s' but found '%s'" % (keyword, token.value))
 
   def _safety_check(self, context):
-    """safety_check   ::= id | bit_expr ('=>' id)?
+    """safety_check   ::= bit_expr '=>' id
 
        Parses safety check and returns it.
        """
-    if self._is_name_semicolon():
-      # This is a special case where we are picking up a instruction
-      # tester suffix.
-      check = self._id()
-    else:
-      check = self._bit_expr1(context)
-      if self._next_token().kind == '=>':
-        self._read_token('=>')
-        name = self._id()
-        check = dgen_core.SafetyAction(check, name)
-    return check
+    check = self._bit_expr(context)
+    self._read_token('=>')
+    name = self._id()
+    return dgen_core.SafetyAction(check, name)
 
   def _table(self, decoder):
     """table ::= table_desc table_actions header row+ footer"""
@@ -832,20 +909,10 @@ class Parser(object):
     self._footer()
 
   def _table_actions(self):
-    """table_actions ::= ( ('*' (int | id) decoder_defn)+ footer)?"""
+    """table_actions  ::= ( ('*' (int | id) decoder_defn)+ footer)?"""
     starred_actions = {}
     if self._next_token().kind != '*': return starred_actions
-    while self._next_token().kind == '*':
-      self._read_token('*')
-      if self._is_int():
-        index = self._int()
-      else:
-        index = self._id()
-
-      if starred_actions.get(index):
-        self._unexpected("Multple *actions defined for %s" % index)
-
-      starred_actions[index] = self._decoder_defn(starred_actions)
+    starred_actions = self._decoder_actions()
     self._footer()
     return starred_actions
 
@@ -860,6 +927,21 @@ class Parser(object):
       citation = self._citation()
     return dgen_core.Table(name, citation)
 
+  def _violation(self, context):
+    """violation ::= bit_expr '=>' 'error' '(' quoted_string (',' bit_expr)* ')'
+
+       Parses a (conditional) violation and returns it."""
+    check = self._bit_expr(context)
+    self._read_token('=>')
+    self._read_keyword('error')
+    self._read_token('(')
+    args = [ self._quoted_string() ]
+    while self._next_token().kind == ',':
+      self._read_token(',')
+      args.append(self._bit_expr(context))
+    self._read_token(')')
+    return dgen_core.Violation(check, args)
+
   #------ Syntax checks ------
 
   def _at_eof(self):
@@ -873,8 +955,7 @@ class Parser(object):
        is sufficient.
        """
     matches = False
-    if self._next_token().kind in ['pattern', 'rule', 'safety', 'arch', 'word',
-                                   'actual', 'baseline']:
+    if self._next_token().kind == 'word':
       token = self._read_token()
       if self._next_token().kind == ':=':
         matches = True
@@ -926,11 +1007,30 @@ class Parser(object):
             matches = True
     return (tokens, matches)
 
+  def _is_id(self):
+    word = self._next_token()
+    if word.kind != 'word': return False
+    return _ID_PATTERN.match(word.value)
+
+  def _is_field_name(self):
+    return self._is_id() or self._is_action_option()
+
   def _is_int(self):
     """Tests if an integer occurs next."""
-    if self._next_token().kind != 'word': return False
+    if self._next_token().kind != 'word': return None
+    return _DECIMAL_PATTERN.match(self._next_token().value)
+
+  def _is_keyword(self, keyword):
+    """Returns true if the next token is the given keyword."""
+    token = self._next_token()
+    return (token.kind == keyword or
+            (token.kind == 'word' and token.value == keyword))
+
+  def _is_nondecimal_int(self):
+    if self._next_token().kind != 'word': return None
     word = self._next_token().value
-    return re.match(r'^([0-9]+)$', word)
+    return (_HEXIDECIMAL_PATTERN.match(word) or
+            _BITSTRING_PATTERN.match(word))
 
   def _is_name_equals(self):
     """Returns true if input begins with 'name='."""
@@ -961,6 +1061,10 @@ class Parser(object):
         matches = True
       self._pushback_token(token)
     return matches
+
+  def _check_action_is_well_defined(self, action):
+    if not dgen_decoder.ActionDefinesDecoder(action):
+      self._unexpected("No virtual fields defined for decoder")
 
   #------ Helper functions.
 
@@ -1025,11 +1129,16 @@ class Parser(object):
     # If no more tokens left on the current line. read
     # input till more tokens are found
     while not self._reached_eof and not self._words:
-      self._words = self._read_line().split()
+      self._words = self._extract_words(self._read_line())
 
     if self._words:
       # More tokens found. Convert the first word to a token.
       word = self._words.pop(0)
+
+      # Quoted strings must not be split!
+      if word[0] == "'":
+        self._token = Token('word', word)
+        return self._token
 
       # First remove any applicable punctuation.
       for p in self._punctuation:
@@ -1061,6 +1170,50 @@ class Parser(object):
       # No more tokens found, assume eof.
       self._token = Token('eof')
     return self._token
+
+  def _extract_words(self, line):
+    """Returns the list of words in the given line. Words, in this
+       context include any non-commented text that is separated by
+       whitespace, and do not appear in quotes.
+       Note: This code assumes that comments have already been removed."""
+    words = []
+    start_index = 0;
+    line_length = len(line)
+    for i in range(0, line_length):
+      # Skip over matched text.
+      if i < start_index: continue
+
+      # See if word separator, and process accordingly.
+      ch = line[i]
+      if ch in [' ', '\t', '\n', "'"]:
+        #  Word separator. Add word and skip over separator.
+        if start_index < i:
+          # non-empty text found. add as word.
+          words.append(line[start_index:i])
+        if ch == "'":
+          text = self._extract_quoted_string(ch, i, line)
+          words.append(text)
+          start_index = i + len(text)
+        else:
+          start_index = i + 1
+
+    # All text processed. Add word if non-empty text at end of line.
+    if start_index < line_length:
+      words.append(line[start_index:line_length])
+    return words
+
+  def _extract_quoted_string(self, quote, start_index, line):
+    i = start_index + 1
+    line_length = len(line)
+    while i < line_length:
+      ch = line[i]
+      i += 1
+      if ch == quote:
+        return line[start_index:i]
+    # If reached, did not find end of quoted string.
+    self._unexpected(
+        "Can't find matching quote for string starting with quote %s" %
+        quote)
 
   def _pushback(self, word):
     """Puts word back onto the list of words."""

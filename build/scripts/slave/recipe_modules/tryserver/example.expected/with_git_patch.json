@@ -1,0 +1,75 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/git_setup.py",
+      "--path",
+      "[TMP_BASE]/patch_tmp_1",
+      "--url",
+      "http://patch.url/"
+    ],
+    "name": "patch git setup",
+    "seed_steps": [
+      "patch git setup",
+      "patch fetch",
+      "patch clean",
+      "patch git checkout",
+      "apply patch"
+    ]
+  },
+  {
+    "cmd": [
+      "git",
+      "fetch",
+      "origin",
+      "johndoe#123.diff"
+    ],
+    "cwd": "[TMP_BASE]/patch_tmp_1",
+    "name": "patch fetch"
+  },
+  {
+    "cmd": [
+      "git",
+      "clean",
+      "-f",
+      "-d",
+      "-x"
+    ],
+    "cwd": "[TMP_BASE]/patch_tmp_1",
+    "name": "patch clean"
+  },
+  {
+    "cmd": [
+      "git",
+      "checkout",
+      "-f",
+      "FETCH_HEAD"
+    ],
+    "cwd": "[TMP_BASE]/patch_tmp_1",
+    "name": "patch git checkout"
+  },
+  {
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]",
+      "--force",
+      "--forward",
+      "--input",
+      "[TMP_BASE]/patch_tmp_1/patch.diff",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch"
+  },
+  {
+    "cmd": [
+      "rm",
+      "-rf",
+      "[TMP_BASE]/patch_tmp_1"
+    ],
+    "name": "remove patch"
+  }
+]

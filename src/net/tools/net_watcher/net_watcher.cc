@@ -13,7 +13,7 @@
 #include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/values.h"
 #include "build/build_config.h"
 #include "net/base/network_change_notifier.h"
@@ -21,7 +21,7 @@
 #include "net/proxy/proxy_config_service.h"
 #include "net/proxy/proxy_service.h"
 
-#if (defined(OS_LINUX) || defined(OS_OPENBSD)) && !defined(OS_CHROMEOS)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
 #include <glib-object.h>
 #endif
 
@@ -131,22 +131,24 @@ int main(int argc, char* argv[]) {
 #if defined(OS_MACOSX)
   base::mac::ScopedNSAutoreleasePool pool;
 #endif
-#if (defined(OS_LINUX) || defined(OS_OPENBSD)) && !defined(OS_CHROMEOS)
+#if defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
+  // g_type_init will be deprecated in 2.36. 2.35 is the development
+  // version for 2.36, hence do not call g_type_init starting 2.35.
+  // http://developer.gnome.org/gobject/unstable/gobject-Type-Information.html#g-type-init
+#if !GLIB_CHECK_VERSION(2, 35, 0)
   // Needed so ProxyConfigServiceLinux can use gconf.
   // Normally handled by BrowserMainLoop::InitializeToolkit().
   g_type_init();
 #endif
+#endif  // defined(OS_POSIX) && !defined(OS_MACOSX) && !defined(OS_ANDROID) && !defined(OS_CHROMEOS)
   base::AtExitManager exit_manager;
   CommandLine::Init(argc, argv);
-  logging::InitLogging(
-      NULL,
-      logging::LOG_ONLY_TO_SYSTEM_DEBUG_LOG,
-      logging::LOCK_LOG_FILE,
-      logging::DELETE_OLD_LOG_FILE,
-      logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS);
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_SYSTEM_DEBUG_LOG;
+  logging::InitLogging(settings);
 
   // Just make the main message loop the network loop.
-  MessageLoopForIO network_loop;
+  base::MessageLoopForIO network_loop;
 
   NetWatcher net_watcher;
 
@@ -156,8 +158,7 @@ int main(int argc, char* argv[]) {
   // Use the network loop as the file loop also.
   scoped_ptr<net::ProxyConfigService> proxy_config_service(
       net::ProxyService::CreateSystemProxyConfigService(
-          network_loop.message_loop_proxy(),
-          &network_loop));
+          network_loop.message_loop_proxy().get(), &network_loop));
 
   // Uses |network_change_notifier|.
   net::NetworkChangeNotifier::AddIPAddressObserver(&net_watcher);

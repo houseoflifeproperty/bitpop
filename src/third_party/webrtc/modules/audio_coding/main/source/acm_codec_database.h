@@ -16,11 +16,13 @@
 #ifndef WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_CODEC_DATABASE_H_
 #define WEBRTC_MODULES_AUDIO_CODING_MAIN_SOURCE_ACM_CODEC_DATABASE_H_
 
-#include "acm_generic_codec.h"
-#include "common_types.h"
-#include "webrtc_neteq.h"
+#include "webrtc/common_types.h"
+#include "webrtc/modules/audio_coding/main/source/acm_generic_codec.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq.h"
 
 namespace webrtc {
+
+namespace acm1 {
 
 // TODO(tlegrand): replace class ACMCodecDB with a namespace.
 class ACMCodecDB {
@@ -103,7 +105,9 @@ class ACMCodecDB {
     , kCNNB
     , kCNWB
     , kCNSWB
+#ifdef ENABLE_48000_HZ
     , kCNFB
+#endif
 #ifdef WEBRTC_CODEC_AVT
     , kAVT
 #endif
@@ -240,14 +244,8 @@ class ACMCodecDB {
   // Output:
   //   [mirror_id] - mirror id, which most often is the same as the return
   //                 value, see above.
-  //   [err_message] - if present, in the event of a mismatch found between the
-  //                   input and the database, a descriptive error message is
-  //                   written here.
-  //   [err_message] - if present, the length of error message is returned here.
   // Return:
   //   codec id if successful, otherwise < 0.
-  static int CodecNumber(const CodecInst* codec_inst, int* mirror_id,
-                         char* err_message, int max_message_len_byte);
   static int CodecNumber(const CodecInst* codec_inst, int* mirror_id);
   static int CodecId(const CodecInst* codec_inst);
   static int CodecId(const char* payload_name, int frequency, int channels);
@@ -330,6 +328,8 @@ class ACMCodecDB {
   static const CodecSettings codec_settings_[kMaxNumCodecs];
   static const WebRtcNetEQDecoder neteq_decoders_[kMaxNumCodecs];
 };
+
+}  // namespace acm1
 
 }  // namespace webrtc
 

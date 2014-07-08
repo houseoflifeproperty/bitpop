@@ -6,23 +6,32 @@
 
 #import <QTKit/QTKit.h>
 
+#include "base/debug/crash_logging.h"
 #include "base/logging.h"
-#include "base/mac/crash_logging.h"
+#include "base/mac/scoped_nsexception_enabler.h"
 #include "media/video/capture/mac/video_capture_device_mac.h"
 #include "media/video/capture/video_capture_device.h"
 #include "media/video/capture/video_capture_types.h"
+#include "ui/gfx/size.h"
 
 @implementation VideoCaptureDeviceQTKit
 
 #pragma mark Class methods
 
 + (void)getDeviceNames:(NSMutableDictionary*)deviceNames {
+  // Third-party drivers often throw exceptions, which are fatal in
+  // Chromium (see comments in scoped_nsexception_enabler.h).  The
+  // following catches any exceptions and continues in an orderly
+  // fashion with no devices detected.
   NSArray* captureDevices =
-      [QTCaptureDevice inputDevicesWithMediaType:QTMediaTypeVideo];
+      base::mac::RunBlockIgnoringExceptions(^{
+          return [QTCaptureDevice inputDevicesWithMediaType:QTMediaTypeVideo];
+      });
 
   for (QTCaptureDevice* device in captureDevices) {
-    [deviceNames setObject:[device localizedDisplayName]
-                    forKey:[device uniqueID]];
+    if (![[device attributeForKey:QTCaptureDeviceSuspendedAttribute] boolValue])
+      [deviceNames setObject:[device localizedDisplayName]
+                      forKey:[device uniqueID]];
   }
 }
 
@@ -40,7 +49,7 @@
 
 #pragma mark Public methods
 
-- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver {
+- (id)initWithFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver {
   self = [super init];
   if (self) {
     frameReceiver_ = frameReceiver;
@@ -55,13 +64,13 @@
   [super dealloc];
 }
 
-- (void)setFrameReceiver:(media::VideoCaptureDeviceMac *)frameReceiver {
+- (void)setFrameReceiver:(media::VideoCaptureDeviceMac*)frameReceiver {
   [lock_ lock];
   frameReceiver_ = frameReceiver;
   [lock_ unlock];
 }
 
-- (BOOL)setCaptureDevice:(NSString *)deviceId {
+- (BOOL)setCaptureDevice:(NSString*)deviceId {
   if (deviceId) {
     // Set the capture device.
     if (captureDeviceInput_) {
@@ -79,6 +88,11 @@
       return NO;
     }
     QTCaptureDevice *device = [captureDevices objectAtIndex:index];
+    if ([[device attributeForKey:QTCaptureDeviceSuspendedAttribute]
+            boolValue]) {
+      DLOG(ERROR) << "Cannot open suspended video capture device.";
+      return NO;
+    }
     NSError *error;
     if (![device open:&error]) {
       DLOG(ERROR) << "Could not open video capture device."
@@ -99,7 +113,14 @@
 
     // This key can be used to check if video capture code was related to a
     // particular crash.
-    base::mac::SetCrashKeyValue(@"VideoCaptureDeviceQTKit", @"OpenedDevice");
+    base::debug::SetCrashKeyValue("VideoCaptureDeviceQTKit", "OpenedDevice");
+
+    // Set the video pixel format to 2VUY (a.k.a UYVY, packed 4:2:2).
+    NSDictionary *captureDictionary = [NSDictionary
+        dictionaryWithObject:
+            [NSNumber numberWithUnsignedInt:kCVPixelFormatType_422YpCbCr8]
+                      forKey:(id)kCVPixelBufferPixelFormatTypeKey];
+    [captureDecompressedOutput setPixelBufferAttributes:captureDictionary];
 
     return YES;
   } else {
@@ -114,6 +135,7 @@
     }
     if ([[captureSession_ outputs] count] > 0) {
       // Only one output is set for |captureSession_|.
+      DCHECK_EQ([[captureSession_ outputs] count], 1u);
       id output = [[captureSession_ outputs] objectAtIndex:0];
       [output setDelegate:nil];
 
@@ -152,25 +174,22 @@
     return NO;
   }
 
-  frameWidth_ = width;
-  frameHeight_ = height;
   frameRate_ = frameRate;
 
-  // Set up desired output properties.
-  NSDictionary *captureDictionary =
-      [NSDictionary dictionaryWithObjectsAndKeys:
-          [NSNumber numberWithDouble:frameWidth_],
-          (id)kCVPixelBufferWidthKey,
-          [NSNumber numberWithDouble:frameHeight_],
-          (id)kCVPixelBufferHeightKey,
-          [NSNumber numberWithUnsignedInt:kCVPixelFormatType_32BGRA],
-          (id)kCVPixelBufferPixelFormatTypeKey,
-          nil];
-  [[[captureSession_ outputs] objectAtIndex:0]
-      setPixelBufferAttributes:captureDictionary];
+  QTCaptureDecompressedVideoOutput *output =
+      [[captureSession_ outputs] objectAtIndex:0];
 
-  [[[captureSession_ outputs] objectAtIndex:0]
-      setMinimumVideoFrameInterval:(NSTimeInterval)1/(float)frameRate];
+  // Set up desired output properties. The old capture dictionary is used to
+  // retrieve the initial pixel format, which must be maintained.
+  NSDictionary* videoSettingsDictionary = @{
+    (id)kCVPixelBufferWidthKey : @(width),
+    (id)kCVPixelBufferHeightKey : @(height),
+    (id)kCVPixelBufferPixelFormatTypeKey : [[output pixelBufferAttributes]
+        valueForKey:(id)kCVPixelBufferPixelFormatTypeKey]
+  };
+  [output setPixelBufferAttributes:videoSettingsDictionary];
+
+  [output setMinimumVideoFrameInterval:(NSTimeInterval)1/(float)frameRate];
   return YES;
 }
 
@@ -187,6 +206,12 @@
                   << [[error localizedDescription] UTF8String];
       return NO;
     }
+    NSNotificationCenter * notificationCenter =
+        [NSNotificationCenter defaultCenter];
+    [notificationCenter addObserver:self
+                           selector:@selector(handleNotification:)
+                               name:QTCaptureSessionRuntimeErrorNotification
+                             object:captureSession_];
     [captureSession_ startRunning];
   }
   return YES;
@@ -197,13 +222,15 @@
     [captureSession_ removeInput:captureDeviceInput_];
     [captureSession_ stopRunning];
   }
+
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
 }
 
 // |captureOutput| is called by the capture device to deliver a new frame.
-- (void)captureOutput:(QTCaptureOutput *)captureOutput
+- (void)captureOutput:(QTCaptureOutput*)captureOutput
   didOutputVideoFrame:(CVImageBufferRef)videoFrame
-     withSampleBuffer:(QTSampleBuffer *)sampleBuffer
-       fromConnection:(QTCaptureConnection *)connection {
+     withSampleBuffer:(QTSampleBuffer*)sampleBuffer
+       fromConnection:(QTCaptureConnection*)connection {
   [lock_ lock];
   if(!frameReceiver_) {
     [lock_ unlock];
@@ -216,15 +243,20 @@
       == kCVReturnSuccess) {
     void *baseAddress = CVPixelBufferGetBaseAddress(videoFrame);
     size_t bytesPerRow = CVPixelBufferGetBytesPerRow(videoFrame);
-    int frameHeight = CVPixelBufferGetHeight(videoFrame);
-    int frameSize = bytesPerRow * frameHeight;
+    size_t frameWidth = CVPixelBufferGetWidth(videoFrame);
+    size_t frameHeight = CVPixelBufferGetHeight(videoFrame);
+    size_t frameSize = bytesPerRow * frameHeight;
 
-    // TODO(shess): bytesPerRow may not correspond to frameWidth_*4,
-    // but VideoCaptureController::OnIncomingCapturedFrame() requires
+    // TODO(shess): bytesPerRow may not correspond to frameWidth_*2,
+    // but VideoCaptureController::OnIncomingCapturedData() requires
     // it to do so.  Plumbing things through is intrusive, for now
     // just deliver an adjusted buffer.
+    // TODO(nick): This workaround could probably be eliminated by using
+    // VideoCaptureController::OnIncomingCapturedVideoFrame, which supports
+    // pitches.
     UInt8* addressToPass = static_cast<UInt8*>(baseAddress);
-    size_t expectedBytesPerRow = frameWidth_ * 4;
+    // UYVY is 2 bytes per pixel.
+    size_t expectedBytesPerRow = frameWidth * 2;
     if (bytesPerRow > expectedBytesPerRow) {
       // TODO(shess): frameHeight and frameHeight_ are not the same,
       // try to do what the surrounding code seems to assume.
@@ -234,7 +266,7 @@
       // std::vector is contiguous according to standard.
       UInt8* adjustedAddress = &adjustedFrame_[0];
 
-      for (int y = 0; y < frameHeight; ++y) {
+      for (size_t y = 0; y < frameHeight; ++y) {
         memcpy(adjustedAddress + y * expectedBytesPerRow,
                addressToPass + y * bytesPerRow,
                expectedBytesPerRow);
@@ -243,20 +275,46 @@
       addressToPass = adjustedAddress;
       frameSize = frameHeight * expectedBytesPerRow;
     }
-    media::VideoCaptureCapability captureCapability;
-    captureCapability.width = frameWidth_;
-    captureCapability.height = frameHeight_;
-    captureCapability.frame_rate = frameRate_;
-    captureCapability.color = media::VideoCaptureCapability::kARGB;
-    captureCapability.expected_capture_delay = 0;
-    captureCapability.interlaced = false;
+
+    media::VideoCaptureFormat captureFormat(gfx::Size(frameWidth, frameHeight),
+                                            frameRate_,
+                                            media::PIXEL_FORMAT_UYVY);
+
+    // The aspect ratio dictionary is often missing, in which case we report
+    // a pixel aspect ratio of 0:0.
+    int aspectNumerator = 0, aspectDenominator = 0;
+    CFDictionaryRef aspectRatioDict = (CFDictionaryRef)CVBufferGetAttachment(
+        videoFrame, kCVImageBufferPixelAspectRatioKey, NULL);
+    if (aspectRatioDict) {
+      CFNumberRef aspectNumeratorRef = (CFNumberRef)CFDictionaryGetValue(
+          aspectRatioDict, kCVImageBufferPixelAspectRatioHorizontalSpacingKey);
+      CFNumberRef aspectDenominatorRef = (CFNumberRef)CFDictionaryGetValue(
+          aspectRatioDict, kCVImageBufferPixelAspectRatioVerticalSpacingKey);
+      DCHECK(aspectNumeratorRef && aspectDenominatorRef) <<
+          "Aspect Ratio dictionary missing its entries.";
+      CFNumberGetValue(aspectNumeratorRef, kCFNumberIntType, &aspectNumerator);
+      CFNumberGetValue(
+          aspectDenominatorRef, kCFNumberIntType, &aspectDenominator);
+    }
 
     // Deliver the captured video frame.
-    frameReceiver_->ReceiveFrame(addressToPass, frameSize, captureCapability);
+    frameReceiver_->ReceiveFrame(addressToPass, frameSize, captureFormat,
+        aspectNumerator, aspectDenominator);
 
     CVPixelBufferUnlockBaseAddress(videoFrame, kLockFlags);
   }
   [lock_ unlock];
+}
+
+- (void)handleNotification:(NSNotification*)errorNotification {
+  NSError * error = (NSError*)[[errorNotification userInfo]
+      objectForKey:QTCaptureSessionErrorKey];
+  NSString* str_error =
+      [NSString stringWithFormat:@"%@: %@",
+                                 [error localizedDescription],
+                                 [error localizedFailureReason]];
+
+  frameReceiver_->ReceiveError([str_error UTF8String]);
 }
 
 @end

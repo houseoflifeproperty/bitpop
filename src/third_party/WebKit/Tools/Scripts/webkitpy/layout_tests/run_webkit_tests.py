@@ -31,13 +31,12 @@
 import logging
 import optparse
 import os
-import signal
 import sys
 import traceback
 
 from webkitpy.common.host import Host
 from webkitpy.layout_tests.controllers.manager import Manager
-from webkitpy.layout_tests.models import test_expectations
+from webkitpy.layout_tests.models import test_run_results
 from webkitpy.layout_tests.port import configuration_options, platform_options
 from webkitpy.layout_tests.views import buildbot_results
 from webkitpy.layout_tests.views import printing
@@ -46,178 +45,73 @@ from webkitpy.layout_tests.views import printing
 _log = logging.getLogger(__name__)
 
 
-# This mirrors what the shell normally does.
-INTERRUPTED_EXIT_STATUS = signal.SIGINT + 128
 
-# This is a randomly chosen exit code that can be tested against to
-# indicate that an unexpected exception occurred.
-EXCEPTIONAL_EXIT_STATUS = 254
+def main(argv, stdout, stderr):
+    options, args = parse_args(argv)
 
-
-def lint(port, options, logging_stream):
-    host = port.host
-    logging.getLogger().setLevel(logging.DEBUG if options.debug_rwt_logging else logging.INFO)
-    printer = printing.Printer(port, options, logging_stream, logger=logging.getLogger())
-
-    if options.platform:
-        ports_to_lint = [port]
+    if options.platform and 'test' in options.platform:
+        # It's a bit lame to import mocks into real code, but this allows the user
+        # to run tests against the test platform interactively, which is useful for
+        # debugging test failures.
+        from webkitpy.common.host_mock import MockHost
+        host = MockHost()
     else:
-        ports_to_lint = [host.port_factory.get(name) for name in host.port_factory.all_port_names()]
+        host = Host()
 
-    files_linted = set()
-    lint_failed = False
+    if options.lint_test_files:
+        from webkitpy.layout_tests.lint_test_expectations import lint
+        return lint(host, options, stderr)
 
-    for port_to_lint in ports_to_lint:
-        expectations_dict = port_to_lint.expectations_dict()
-
-        # FIXME: This won't work if multiple ports share a TestExpectations file but support different modifiers in the file.
-        for expectations_file in expectations_dict.keys():
-            if expectations_file in files_linted:
-                continue
-
-            try:
-                test_expectations.TestExpectations(port_to_lint, expectations_to_lint={expectations_file: expectations_dict[expectations_file]})
-            except test_expectations.ParseError, e:
-                lint_failed = True
-                _log.error('')
-                for warning in e.warnings:
-                    _log.error(warning)
-                _log.error('')
-            files_linted.add(expectations_file)
-
-    if lint_failed:
-        _log.error('Lint failed.')
-        printer.cleanup()
-        return -1
-    _log.info('Lint succeeded.')
-    printer.cleanup()
-    return 0
-
-
-def run(port, options, args, logging_stream):
     try:
-        printer = printing.Printer(port, options, logging_stream, logger=logging.getLogger())
+        port = host.port_factory.get(options.platform, options)
+    except NotImplementedError, e:
+        # FIXME: is this the best way to handle unsupported port names?
+        print >> stderr, str(e)
+        return test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
 
-        _set_up_derived_options(port, options)
-        manager = Manager(port, options, printer)
-        printer.print_config(port.results_directory())
+    try:
+        run_details = run(port, options, args, stderr)
+        if run_details.exit_code not in test_run_results.ERROR_CODES and not run_details.initial_results.keyboard_interrupted:
+            bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
+            bot_printer.print_results(run_details)
 
-        run_details = manager.run(args)
-        _log.debug("Testing completed, Exit status: %d" % run_details.exit_code)
-        return run_details
-    finally:
-        printer.cleanup()
-
-
-def _set_up_derived_options(port, options):
-    """Sets the options values that depend on other options values."""
-    if not options.child_processes:
-        options.child_processes = os.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
-                                                 str(port.default_child_processes()))
-    if not options.max_locked_shards:
-        options.max_locked_shards = int(os.environ.get("WEBKIT_TEST_MAX_LOCKED_SHARDS",
-                                                       str(port.default_max_locked_shards())))
-
-    if not options.configuration:
-        options.configuration = port.default_configuration()
-
-    if options.pixel_tests is None:
-        options.pixel_tests = port.default_pixel_tests()
-
-    if not options.time_out_ms:
-        options.time_out_ms = str(port.default_timeout_ms())
-
-    options.slow_time_out_ms = str(5 * int(options.time_out_ms))
-
-    if options.additional_platform_directory:
-        additional_platform_directories = []
-        for path in options.additional_platform_directory:
-            additional_platform_directories.append(port.host.filesystem.abspath(path))
-        options.additional_platform_directory = additional_platform_directories
-
-    if not options.http and options.skipped in ('ignore', 'only'):
-        _log.warning("--force/--skipped=%s overrides --no-http." % (options.skipped))
-        options.http = True
-
-    if options.ignore_metrics and (options.new_baseline or options.reset_results):
-        _log.warning("--ignore-metrics has no effect with --new-baselines or with --reset-results")
-
-    if options.new_baseline:
-        options.reset_results = True
-        options.add_platform_exceptions = True
-
-    if options.pixel_test_directories:
-        options.pixel_tests = True
-        varified_dirs = set()
-        pixel_test_directories = options.pixel_test_directories
-        for directory in pixel_test_directories:
-            # FIXME: we should support specifying the directories all the ways we support it for additional
-            # arguments specifying which tests and directories to run. We should also move the logic for that
-            # to Port.
-            filesystem = port.host.filesystem
-            if not filesystem.isdir(filesystem.join(port.layout_tests_dir(), directory)):
-                _log.warning("'%s' was passed to --pixel-test-directories, which doesn't seem to be a directory" % str(directory))
-            else:
-                varified_dirs.add(directory)
-
-        options.pixel_test_directories = list(varified_dirs)
-
-    if options.run_singly:
-        options.verbose = True
+        return run_details.exit_code
+    # We need to still handle KeyboardInterrupt, atleast for webkitpy unittest cases.
+    except KeyboardInterrupt:
+        return test_run_results.INTERRUPTED_EXIT_STATUS
+    except test_run_results.TestRunException as e:
+        print >> stderr, e.msg
+        return e.code
+    except BaseException as e:
+        if isinstance(e, Exception):
+            print >> stderr, '\n%s raised: %s' % (e.__class__.__name__, str(e))
+            traceback.print_exc(file=stderr)
+        return test_run_results.UNEXPECTED_ERROR_EXIT_STATUS
 
 
-def parse_args(args=None):
+def parse_args(args):
     option_group_definitions = []
 
     option_group_definitions.append(("Platform options", platform_options()))
     option_group_definitions.append(("Configuration options", configuration_options()))
     option_group_definitions.append(("Printing Options", printing.print_options()))
 
-    # FIXME: These options should move onto the ChromiumPort.
-    option_group_definitions.append(("Chromium-specific Options", [
-        optparse.make_option("--nocheck-sys-deps", action="store_true",
-            default=False,
-            help="Don't check the system dependencies (themes)"),
+    option_group_definitions.append(("Android-specific Options", [
         optparse.make_option("--adb-device",
             action="append", default=[],
             help="Run Android layout tests on these devices."),
-    ]))
 
-    option_group_definitions.append(("EFL-specific Options", [
-        optparse.make_option("--webprocess-cmd-prefix", type="string",
-            default=False, help="Prefix used when spawning the Web process (Debug mode only)"),
-    ]))
-
-    option_group_definitions.append(("WebKit Options", [
-        optparse.make_option("--gc-between-tests", action="store_true", default=False,
-            help="Force garbage collection between each test"),
-        optparse.make_option("--complex-text", action="store_true", default=False,
-            help="Use the complex text code path for all text (Mac OS X and Windows only)"),
-        optparse.make_option("-l", "--leaks", action="store_true", default=False,
-            help="Enable leaks checking (Mac OS X only)"),
-        optparse.make_option("-g", "--guard-malloc", action="store_true", default=False,
-            help="Enable Guard Malloc (Mac OS X only)"),
-        optparse.make_option("--threaded", action="store_true", default=False,
-            help="Run a concurrent JavaScript thread with each test"),
-        optparse.make_option("--webkit-test-runner", "-2", action="store_true",
-            help="Use WebKitTestRunner rather than DumpRenderTree."),
-        # FIXME: We should merge this w/ --build-directory and only have one flag.
-        optparse.make_option("--root", action="store",
-            help="Path to a directory containing the executables needed to run tests."),
+        # FIXME: Flip this to be off by default once we can log the device setup more cleanly.
+        optparse.make_option("--no-android-logging",
+            action="store_false", dest='android_logging', default=True,
+            help="Do not log android-specific debug messages (default is to log as part of --debug-rwt-logging"),
     ]))
 
     option_group_definitions.append(("Results Options", [
-        optparse.make_option("-p", "--pixel-tests", action="store_true",
+        optparse.make_option("-p", "--pixel", "--pixel-tests", action="store_true",
             dest="pixel_tests", help="Enable pixel-to-pixel PNG comparisons"),
-        optparse.make_option("--no-pixel-tests", action="store_false",
+        optparse.make_option("--no-pixel", "--no-pixel-tests", action="store_false",
             dest="pixel_tests", help="Disable pixel-to-pixel PNG comparisons"),
-        optparse.make_option("--no-sample-on-timeout", action="store_false",
-            dest="sample_on_timeout", help="Don't run sample on timeout (Mac OS X only)"),
-        optparse.make_option("--no-ref-tests", action="store_true",
-            dest="no_ref_tests", help="Skip all ref tests"),
-        optparse.make_option("--tolerance",
-            help="Ignore image differences less than this percentage (some "
-                "ports may ignore this option)", type="float"),
         optparse.make_option("--results-directory", help="Location of test results"),
         optparse.make_option("--build-directory",
             help="Path to the directory under which build files are kept (should not include configuration)"),
@@ -248,10 +142,10 @@ def parse_args(args=None):
                  "Note: When using this option, you might miss new crashes "
                  "in these tests."),
         optparse.make_option("--additional-drt-flag", action="append",
-            default=[], help="Additional command line flag to pass to DumpRenderTree "
+            default=[], help="Additional command line flag to pass to the driver "
                  "Specify multiple times to add multiple flags."),
         optparse.make_option("--driver-name", type="string",
-            help="Alternative DumpRenderTree binary to use"),
+            help="Alternative driver binary to use"),
         optparse.make_option("--additional-platform-directory", action="append",
             default=[], help="Additional directory where to look for test "
                  "baselines (will take precendence over platform baselines). "
@@ -270,48 +164,53 @@ def parse_args(args=None):
             help="Show all failures in results.html, rather than only regressions"),
         optparse.make_option("--clobber-old-results", action="store_true",
             default=False, help="Clobbers test results from previous runs."),
-        optparse.make_option("--http", action="store_true", dest="http",
-            default=True, help="Run HTTP and WebSocket tests (default)"),
-        optparse.make_option("--no-http", action="store_false", dest="http",
-            help="Don't run HTTP and WebSocket tests"),
-        optparse.make_option("--ignore-metrics", action="store_true", dest="ignore_metrics",
-            default=False, help="Ignore rendering metrics related information from test "
-            "output, only compare the structure of the rendertree."),
+        optparse.make_option("--smoke", action="store_true",
+            help="Run just the SmokeTests"),
+        optparse.make_option("--no-smoke", dest="smoke", action="store_false",
+            help="Do not run just the SmokeTests"),
     ]))
 
     option_group_definitions.append(("Testing Options", [
         optparse.make_option("--build", dest="build",
             action="store_true", default=True,
-            help="Check to ensure the DumpRenderTree build is up-to-date "
-                 "(default)."),
+            help="Check to ensure the build is up-to-date (default)."),
         optparse.make_option("--no-build", dest="build",
-            action="store_false", help="Don't check to see if the "
-                                       "DumpRenderTree build is up-to-date."),
+            action="store_false", help="Don't check to see if the build is up-to-date."),
         optparse.make_option("-n", "--dry-run", action="store_true",
             default=False,
             help="Do everything but actually run the tests or upload results."),
+        optparse.make_option("--nocheck-sys-deps", action="store_true",
+            default=False,
+            help="Don't check the system dependencies (themes)"),
         optparse.make_option("--wrapper",
             help="wrapper command to insert before invocations of "
-                 "DumpRenderTree; option is split on whitespace before "
+                 "the driver; option is split on whitespace before "
                  "running. (Example: --wrapper='valgrind --smc-check=all')"),
         optparse.make_option("-i", "--ignore-tests", action="append", default=[],
             help="directories or test to ignore (may specify multiple times)"),
+        optparse.make_option("--ignore-flaky-tests", action="store",
+            help=("Control whether tests that are flaky on the bots get ignored."
+                "'very-flaky' == Ignore any tests that flaked more than once on the bot."
+                "'maybe-flaky' == Ignore any tests that flaked once on the bot."
+                "'unexpected' == Ignore any tests that had unexpected results on the bot.")),
+        optparse.make_option("--ignore-builder-category", action="store",
+            help=("The category of builders to use with the --ignore-flaky-tests "
+                "option ('layout' or 'deps').")),
         optparse.make_option("--test-list", action="append",
             help="read list of tests to run from file", metavar="FILE"),
-        optparse.make_option("--skipped", action="store", default="default",
+        optparse.make_option("--skipped", action="store", default=None,
             help=("control how tests marked SKIP are run. "
                  "'default' == Skip tests unless explicitly listed on the command line, "
                  "'ignore' == Run them anyway, "
                  "'only' == only run the SKIP tests, "
                  "'always' == always skip, even if listed on the command line.")),
-        optparse.make_option("--force", dest="skipped", action="store_const", const='ignore',
-            help="Run all tests, even those marked SKIP in the test list (same as --skipped=ignore)"),
         optparse.make_option("--time-out-ms",
             help="Set the timeout for each test"),
         optparse.make_option("--order", action="store", default="natural",
             help=("determine the order in which the test cases will be run. "
                   "'none' == use the order in which the tests were listed either in arguments or test list, "
                   "'natural' == use the natural order (default), "
+                  "'random-seeded' == randomize the test order using a fixed seed, "
                   "'random' == randomize the test order.")),
         optparse.make_option("--run-chunk",
             help=("Run a specified chunk (n:l), the nth of len l, "
@@ -320,11 +219,11 @@ def parse_args(args=None):
                   "the nth of m parts, of the layout tests")),
         optparse.make_option("--batch-size",
             help=("Run a the tests in batches (n), after every n tests, "
-                  "DumpRenderTree is relaunched."), type="int", default=None),
+                  "the driver is relaunched."), type="int", default=None),
         optparse.make_option("--run-singly", action="store_true",
-            default=False, help="run a separate DumpRenderTree for each test (implies --verbose)"),
+            default=False, help="DEPRECATED, same as --batch-size=1 --verbose"),
         optparse.make_option("--child-processes",
-            help="Number of DumpRenderTrees to run in parallel."),
+            help="Number of drivers to run in parallel."),
         # FIXME: Display default number of child processes that will run.
         optparse.make_option("-f", "--fully-parallel", action="store_true",
             help="run all tests in parallel"),
@@ -337,15 +236,29 @@ def parse_args(args=None):
         optparse.make_option("--iterations", type="int", default=1, help="Number of times to run the set of tests (e.g. ABCABCABC)"),
         optparse.make_option("--repeat-each", type="int", default=1, help="Number of times to run each test (e.g. AAABBBCCC)"),
         optparse.make_option("--retry-failures", action="store_true",
-            default=True,
-            help="Re-try any tests that produce unexpected results (default)"),
+            help="Re-try any tests that produce unexpected results. Default is to not retry if an explicit list of tests is passed to run-webkit-tests."),
         optparse.make_option("--no-retry-failures", action="store_false",
             dest="retry_failures",
             help="Don't re-try any tests that produce unexpected results."),
+
         optparse.make_option("--max-locked-shards", type="int", default=0,
             help="Set the maximum number of locked shards"),
         optparse.make_option("--additional-env-var", type="string", action="append", default=[],
             help="Passes that environment variable to the tests (--additional-env-var=NAME=VALUE)"),
+        optparse.make_option("--profile", action="store_true",
+            help="Output per-test profile information."),
+        optparse.make_option("--profiler", action="store",
+            help="Output per-test profile information, using the specified profiler."),
+        optparse.make_option("--driver-logging", action="store_true",
+            help="Print detailed logging of the driver/content_shell"),
+        optparse.make_option("--disable-breakpad", action="store_true",
+            help="Don't use breakpad to symbolize unexpected crashes."),
+        optparse.make_option("--use-apache", action="store_true",
+            help="Use Apache instead of LigHTTPd (default is port-specific)."),
+        optparse.make_option("--no-use-apache", action="store_false", dest="use_apache",
+            help="Use LigHTTPd instead of Apache (default is port-specific)."),
+        optparse.make_option("--enable-leak-detection", action="store_true",
+            help="Enable the leak detection of DOM objects."),
     ]))
 
     option_group_definitions.append(("Miscellaneous Options", [
@@ -380,47 +293,88 @@ def parse_args(args=None):
     return option_parser.parse_args(args)
 
 
-def main(argv=None, stdout=sys.stdout, stderr=sys.stderr):
-    options, args = parse_args(argv)
-    if options.platform and 'test' in options.platform:
-        # It's a bit lame to import mocks into real code, but this allows the user
-        # to run tests against the test platform interactively, which is useful for
-        # debugging test failures.
-        from webkitpy.common.host_mock import MockHost
-        host = MockHost()
-    else:
-        host = Host()
+def _set_up_derived_options(port, options, args):
+    """Sets the options values that depend on other options values."""
+    if not options.child_processes:
+        options.child_processes = os.environ.get("WEBKIT_TEST_CHILD_PROCESSES",
+                                                 str(port.default_child_processes()))
+    if not options.max_locked_shards:
+        options.max_locked_shards = int(os.environ.get("WEBKIT_TEST_MAX_LOCKED_SHARDS",
+                                                       str(port.default_max_locked_shards())))
+
+    if not options.configuration:
+        options.configuration = port.default_configuration()
+
+    if options.pixel_tests is None:
+        options.pixel_tests = port.default_pixel_tests()
+
+    if not options.time_out_ms:
+        options.time_out_ms = str(port.default_timeout_ms())
+
+    options.slow_time_out_ms = str(5 * int(options.time_out_ms))
+
+    if options.additional_platform_directory:
+        additional_platform_directories = []
+        for path in options.additional_platform_directory:
+            additional_platform_directories.append(port.host.filesystem.abspath(path))
+        options.additional_platform_directory = additional_platform_directories
+
+    if options.new_baseline:
+        options.reset_results = True
+        options.add_platform_exceptions = True
+
+    if options.pixel_test_directories:
+        options.pixel_tests = True
+        varified_dirs = set()
+        pixel_test_directories = options.pixel_test_directories
+        for directory in pixel_test_directories:
+            # FIXME: we should support specifying the directories all the ways we support it for additional
+            # arguments specifying which tests and directories to run. We should also move the logic for that
+            # to Port.
+            filesystem = port.host.filesystem
+            if not filesystem.isdir(filesystem.join(port.layout_tests_dir(), directory)):
+                _log.warning("'%s' was passed to --pixel-test-directories, which doesn't seem to be a directory" % str(directory))
+            else:
+                varified_dirs.add(directory)
+
+        options.pixel_test_directories = list(varified_dirs)
+
+    if options.run_singly:
+        options.batch_size = 1
+        options.verbose = True
+
+    if not args and not options.test_list and options.smoke is None:
+        options.smoke = port.default_smoke_test_only()
+    if options.smoke:
+        if not args and not options.test_list and options.retry_failures is None:
+            # Retry failures by default if we're doing just a smoke test (no additional tests).
+            options.retry_failures = True
+
+        if not options.test_list:
+            options.test_list = []
+        options.test_list.append(port.host.filesystem.join(port.layout_tests_dir(), 'SmokeTests'))
+        if not options.skipped:
+            options.skipped = 'always'
+
+    if not options.skipped:
+        options.skipped = 'default'
+
+def run(port, options, args, logging_stream):
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG if options.debug_rwt_logging else logging.INFO)
 
     try:
-        port = host.port_factory.get(options.platform, options)
-    except NotImplementedError, e:
-        # FIXME: is this the best way to handle unsupported port names?
-        print >> stderr, str(e)
-        return EXCEPTIONAL_EXIT_STATUS
+        printer = printing.Printer(port, options, logging_stream, logger=logger)
 
-    logging.getLogger().setLevel(logging.DEBUG if options.debug_rwt_logging else logging.INFO)
+        _set_up_derived_options(port, options, args)
+        manager = Manager(port, options, printer)
+        printer.print_config(port.results_directory())
 
-    if options.lint_test_files:
-        return lint(port, options, stderr)
+        run_details = manager.run(args)
+        _log.debug("Testing completed, Exit status: %d" % run_details.exit_code)
+        return run_details
+    finally:
+        printer.cleanup()
 
-    try:
-        run_details = run(port, options, args, stderr)
-        if run_details.exit_code != -1:
-            bot_printer = buildbot_results.BuildBotPrinter(stdout, options.debug_rwt_logging)
-            bot_printer.print_results(run_details)
-
-        return run_details.exit_code
-    except Exception, e:
-        print >> stderr, '\n%s raised: %s' % (e.__class__.__name__, str(e))
-        traceback.print_exc(file=stderr)
-        raise
-
-
-if '__main__' == __name__:
-    try:
-        exit_status = main()
-    except KeyboardInterrupt:
-        exit_status = INTERRUPTED_EXIT_STATUS
-    except BaseException, e:
-        exit_status = EXCEPTIONAL_EXIT_STATUS
-    sys.exit(exit_status)
+if __name__ == '__main__':
+    sys.exit(main(sys.argv[1:], sys.stdout, sys.stderr))

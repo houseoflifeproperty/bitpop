@@ -5,8 +5,8 @@
 #import "chrome/browser/ui/cocoa/web_dialog_window_controller.h"
 
 #include "base/logging.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #import "chrome/browser/ui/browser_dialogs.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
 #import "chrome/browser/ui/cocoa/chrome_event_processing_window.h"
@@ -14,7 +14,7 @@
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "ui/base/keycodes/keyboard_codes.h"
+#include "ui/events/keycodes/keyboard_codes.h"
 #include "ui/gfx/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
 #include "ui/web_dialogs/web_dialog_web_contents_delegate.h"
@@ -45,7 +45,7 @@ public:
 
   // WebDialogDelegate declarations.
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -58,9 +58,10 @@ public:
   virtual bool ShouldShowDialogTitle() const OVERRIDE { return true; }
 
   // WebDialogWebContentsDelegate declarations.
-  virtual void MoveContents(WebContents* source, const gfx::Rect& pos);
-  virtual void HandleKeyboardEvent(content::WebContents* source,
-                                   const NativeWebKeyboardEvent& event);
+  virtual void MoveContents(WebContents* source, const gfx::Rect& pos) OVERRIDE;
+  virtual void HandleKeyboardEvent(
+      content::WebContents* source,
+      const NativeWebKeyboardEvent& event) OVERRIDE;
   virtual void CloseContents(WebContents* source) OVERRIDE;
   virtual content::WebContents* OpenURLFromTab(
       content::WebContents* source,
@@ -71,7 +72,8 @@ public:
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE;
 
 private:
   WebDialogWindowController* controller_;  // weak
@@ -148,8 +150,8 @@ ui::ModalType WebDialogWindowDelegateBridge::GetDialogModalType() const {
   return ui::MODAL_TYPE_NONE;
 }
 
-string16 WebDialogWindowDelegateBridge::GetDialogTitle() const {
-  return delegate_ ? delegate_->GetDialogTitle() : string16();
+base::string16 WebDialogWindowDelegateBridge::GetDialogTitle() const {
+  return delegate_ ? delegate_->GetDialogTitle() : base::string16();
 }
 
 GURL WebDialogWindowDelegateBridge::GetDialogContentURL() const {
@@ -238,7 +240,7 @@ void WebDialogWindowDelegateBridge::AddNewContents(
 }
 
 void WebDialogWindowDelegateBridge::LoadingStateChanged(
-    content::WebContents* source) {
+    content::WebContents* source, bool to_different_document) {
   if (delegate_)
     delegate_->OnLoadingStateChanged(source);
 }
@@ -315,12 +317,12 @@ void WebDialogWindowDelegateBridge::HandleKeyboardEvent(
   NSRect dialogRect = NSMakeRect(0, 0, dialogSize.width(), dialogSize.height());
   NSUInteger style = NSTitledWindowMask | NSClosableWindowMask |
       NSResizableWindowMask;
-  scoped_nsobject<ChromeEventProcessingWindow> window(
+  base::scoped_nsobject<ChromeEventProcessingWindow> window(
       [[ChromeEventProcessingWindow alloc]
-           initWithContentRect:dialogRect
-                     styleMask:style
-                       backing:NSBackingStoreBuffered
-                         defer:YES]);
+          initWithContentRect:dialogRect
+                    styleMask:style
+                      backing:NSBackingStoreBuffered
+                        defer:YES]);
   if (!window.get()) {
     return nil;
   }

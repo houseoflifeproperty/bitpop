@@ -5,7 +5,7 @@
 #include "chrome/browser/extensions/browser_action_test_util.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -71,7 +71,8 @@ gfx::Rect BrowserActionTestUtil::GetPopupBounds() {
 bool BrowserActionTestUtil::HidePopup() {
   ExtensionPopupController* controller = [ExtensionPopupController popup];
   // The window must be gone or we'll fail a unit test with windows left open.
-  [static_cast<InfoBubbleWindow*>([controller window]) setDelayOnClose:NO];
+  [static_cast<InfoBubbleWindow*>([controller window])
+      setAllowedAnimations:info_bubble::kAnimateNone];
   [controller close];
   return !HasPopup();
 }

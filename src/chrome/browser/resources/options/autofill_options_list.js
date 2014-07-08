@@ -15,9 +15,11 @@ cr.define('options.autofillOptions', function() {
         loadTimeData.getString('autofillEditProfileButton');
     editButtonEl.onclick = function(e) { edit(guid); };
 
-    // Don't select the row when clicking the button.
     editButtonEl.onmousedown = function(e) {
+      // Don't select the row when clicking the button.
       e.stopPropagation();
+      // Don't focus on the button when clicking it.
+      e.preventDefault();
     };
 
     return editButtonEl;
@@ -92,7 +94,7 @@ cr.define('options.autofillOptions', function() {
       this.contentElement.appendChild(label);
 
       // The credit card icon.
-      var icon = this.ownerDocument.createElement('image');
+      var icon = this.ownerDocument.createElement('img');
       icon.src = this.icon;
       icon.alt = this.description;
       this.contentElement.appendChild(icon);
@@ -108,7 +110,7 @@ cr.define('options.autofillOptions', function() {
   /**
    * Creates a new value list item.
    * @param {AutofillValuesList} list The parent list of this item.
-   * @param {String} entry A string value.
+   * @param {string} entry A string value.
    * @constructor
    * @extends {options.InlineEditableItem}
    */
@@ -487,9 +489,52 @@ cr.define('options.autofillOptions', function() {
       var info = new Array();
       info[0] = index;
       info[1] = numbers;
-      info[2] = $('country').value;
+      info[2] = document.querySelector(
+          '#autofill-edit-address-overlay [field=country]').value;
+      this.validationRequests_++;
       chrome.send('validatePhoneNumbers', info);
     },
+
+    /**
+     * The number of ongoing validation requests.
+     * @type {number}
+     * @private
+     */
+    validationRequests_: 0,
+
+    /**
+     * Pending Promise resolver functions.
+     * @type {Array.<!Function>}
+     * @private
+     */
+    validationPromiseResolvers_: [],
+
+    /**
+     * This should be called when a reply of chrome.send('validatePhoneNumbers')
+     * is received.
+     */
+    didReceiveValidationResult: function() {
+      this.validationRequests_--;
+      assert(this.validationRequests_ >= 0);
+      if (this.validationRequests_ <= 0) {
+        while (this.validationPromiseResolvers_.length) {
+          this.validationPromiseResolvers_.pop()();
+        }
+      }
+    },
+
+    /**
+     * Returns a Promise which is fulfilled when all of validation requests are
+     * completed.
+     * @return {!Promise} A promise.
+     */
+    doneValidating: function() {
+      if (this.validationRequests_ <= 0)
+        return Promise.resolve();
+      return new Promise(function(resolve) {
+        this.validationPromiseResolvers_.push(resolve);
+      }.bind(this));
+    }
   };
 
   return {

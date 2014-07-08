@@ -9,7 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -17,7 +17,7 @@ class PluginPrefs;
 class PrefService;
 class Profile;
 
-namespace webkit {
+namespace content {
 struct WebPluginInfo;
 }
 
@@ -53,17 +53,18 @@ class PluginStatusPrefSetter : public content::NotificationObserver {
  private:
   void StartUpdate();
   void GotPlugins(scoped_refptr<PluginPrefs> plugin_prefs,
-                  const std::vector<webkit::WebPluginInfo>& plugins);
+                  const std::vector<content::WebPluginInfo>& plugins);
 
   content::NotificationRegistrar registrar_;
   // Weak pointer.
   Profile* profile_;
-  base::WeakPtrFactory<PluginStatusPrefSetter> factory_;
 
   // Whether clearing LSO data is supported.
   BooleanPrefMember clear_plugin_lso_data_enabled_;
   // Whether we should show Pepper Flash-specific settings.
   BooleanPrefMember pepper_flash_settings_enabled_;
+
+  base::WeakPtrFactory<PluginStatusPrefSetter> factory_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginStatusPrefSetter);
 };

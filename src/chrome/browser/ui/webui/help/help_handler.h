@@ -19,6 +19,10 @@
 #include "chrome/browser/chromeos/version_loader.h"
 #endif  // defined(OS_CHROMEOS)
 
+namespace content {
+class WebUIDataSource;
+}
+
 // WebUI message handler for the help page.
 class HelpHandler : public content::WebUIMessageHandler,
                     public content::NotificationObserver {
@@ -29,8 +33,8 @@ class HelpHandler : public content::WebUIMessageHandler,
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE;
 
-  // Fills |localized_strings| with string values for the UI.
-  void GetLocalizedValues(base::DictionaryValue* localized_strings);
+  // Fills |source| with string values for the UI.
+  void GetLocalizedValues(content::WebUIDataSource* source);
 
   // NotificationObserver implementation.
   virtual void Observe(int type, const content::NotificationSource& source,
@@ -56,12 +60,15 @@ class HelpHandler : public content::WebUIMessageHandler,
 
 #if defined(OS_CHROMEOS)
   // Sets the release track version.
-  void SetReleaseTrack(const base::ListValue* args);
+  void SetChannel(const base::ListValue* args);
+
+  // Performs relaunch and powerwash.
+  void RelaunchAndPowerwash(const base::ListValue* args);
 #endif
 
   // Callback method which forwards status updates to the page.
   void SetUpdateStatus(VersionUpdater::Status status, int progress,
-                       const string16& fail_message);
+                       const base::string16& fail_message);
 
 #if defined(OS_MACOSX)
   // Callback method which forwards promotion state to the page.
@@ -72,17 +79,12 @@ class HelpHandler : public content::WebUIMessageHandler,
   // Callbacks from VersionLoader.
   void OnOSVersion(const std::string& version);
   void OnOSFirmware(const std::string& firmware);
-  void OnReleaseChannel(const std::string& channel);
-
-  void ProcessLsbFileInfo(
-      base::PlatformFileError rv, const base::PlatformFileInfo& file_info);
+  void OnCurrentChannel(const std::string& channel);
+  void OnTargetChannel(const std::string& channel);
 #endif
 
   // Specialized instance of the VersionUpdater used to update the browser.
   scoped_ptr<VersionUpdater> version_updater_;
-
-  // Used for callbacks.
-  base::WeakPtrFactory<HelpHandler> weak_factory_;
 
   // Used to observe notifications.
   content::NotificationRegistrar registrar_;
@@ -92,8 +94,11 @@ class HelpHandler : public content::WebUIMessageHandler,
   chromeos::VersionLoader loader_;
 
   // Used to request the version.
-  CancelableTaskTracker tracker_;
+  base::CancelableTaskTracker tracker_;
 #endif  // defined(OS_CHROMEOS)
+
+  // Used for callbacks.
+  base::WeakPtrFactory<HelpHandler> weak_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HelpHandler);
 };

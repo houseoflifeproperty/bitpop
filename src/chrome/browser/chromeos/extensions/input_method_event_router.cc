@@ -9,46 +9,43 @@
 #include "base/json/json_writer.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/extensions/input_method_api.h"
-#include "chrome/browser/chromeos/input_method/input_method_configuration.h"
-#include "chrome/browser/chromeos/web_socket_proxy_controller.h"
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/profiles/profile_manager.h"
-#include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/browser_context.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_system.h"
 
 namespace chromeos {
 
-ExtensionInputMethodEventRouter::ExtensionInputMethodEventRouter() {
-  input_method::GetInputMethodManager()->AddObserver(this);
+ExtensionInputMethodEventRouter::ExtensionInputMethodEventRouter(
+    content::BrowserContext* context)
+    : context_(context) {
+  input_method::InputMethodManager::Get()->AddObserver(this);
 }
 
 ExtensionInputMethodEventRouter::~ExtensionInputMethodEventRouter() {
-  input_method::GetInputMethodManager()->RemoveObserver(this);
+  input_method::InputMethodManager::Get()->RemoveObserver(this);
 }
 
 void ExtensionInputMethodEventRouter::InputMethodChanged(
     input_method::InputMethodManager *manager,
     bool show_message) {
-  Profile *profile = ProfileManager::GetDefaultProfile();
-  extensions::EventRouter *router =
-      extensions::ExtensionSystem::Get(profile)->event_router();
+  extensions::EventRouter* router = extensions::EventRouter::Get(context_);
 
-  if (!router->HasEventListener(extensions::event_names::kOnInputMethodChanged))
+  if (!router->HasEventListener(
+          extensions::InputMethodAPI::kOnInputMethodChanged)) {
     return;
+  }
 
-  scoped_ptr<ListValue> args(new ListValue());
-  StringValue *input_method_name = new StringValue(
+  scoped_ptr<base::ListValue> args(new base::ListValue());
+  base::StringValue *input_method_name = new base::StringValue(
       extensions::InputMethodAPI::GetInputMethodForXkb(
           manager->GetCurrentInputMethod().id()));
   args->Append(input_method_name);
 
   // The router will only send the event to extensions that are listening.
   scoped_ptr<extensions::Event> event(new extensions::Event(
-      extensions::event_names::kOnInputMethodChanged, args.Pass()));
-  event->restrict_to_profile = profile;
-  extensions::ExtensionSystem::Get(profile)->event_router()->
-      BroadcastEvent(event.Pass());
+      extensions::InputMethodAPI::kOnInputMethodChanged, args.Pass()));
+  event->restrict_to_browser_context = context_;
+  router->BroadcastEvent(event.Pass());
 }
 
 }  // namespace chromeos

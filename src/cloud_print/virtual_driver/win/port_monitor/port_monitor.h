@@ -8,16 +8,16 @@
 #include <windows.h>
 #include <string>
 #include "base/file_util.h"
-#include "base/process.h"
-#include "base/string16.h"
+#include "base/process/process.h"
+#include "base/strings/string16.h"
 
 namespace cloud_print {
 
 // Returns path to be used for launching Chrome.
-FilePath GetChromeExePath();
+base::FilePath GetChromeExePath();
 
 // Returns path to user profile to be used for launching Chrome.
-FilePath GetChromeProfilePath();
+base::FilePath GetChromeProfilePath();
 
 // Implementations for the function pointers in the MONITOR2 structure
 // returned by InitializePrintMonitor2.  The prototypes and behaviors

@@ -2,7 +2,6 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/gfx/color_utils.h"
 #include "ui/gfx/sys_color_change_listener.h"
 
 #if defined(OS_WIN)
@@ -12,8 +11,10 @@
 #include "base/basictypes.h"
 #include "base/memory/singleton.h"
 #include "base/observer_list.h"
+#include "ui/gfx/color_utils.h"
+
 #if defined(OS_WIN)
-#include "ui/base/win/singleton_hwnd.h"
+#include "ui/gfx/win/singleton_hwnd.h"
 #endif
 
 namespace gfx {
@@ -48,7 +49,7 @@ bool IsInvertedColorScheme() {
 }
 
 #if defined(OS_WIN)
-class SysColorChangeObserver : public ui::SingletonHwnd::Observer {
+class SysColorChangeObserver : public gfx::SingletonHwnd::Observer {
  public:
   static SysColorChangeObserver* GetInstance();
 
@@ -75,11 +76,11 @@ SysColorChangeObserver* SysColorChangeObserver::GetInstance() {
 }
 
 SysColorChangeObserver::SysColorChangeObserver() {
-  ui::SingletonHwnd::GetInstance()->AddObserver(this);
+  gfx::SingletonHwnd::GetInstance()->AddObserver(this);
 }
 
 SysColorChangeObserver::~SysColorChangeObserver() {
-  ui::SingletonHwnd::GetInstance()->RemoveObserver(this);
+  gfx::SingletonHwnd::GetInstance()->RemoveObserver(this);
 }
 
 void SysColorChangeObserver::AddListener(SysColorChangeListener* listener) {

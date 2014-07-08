@@ -7,88 +7,26 @@
 #include "base/json/json_writer.h"
 #include "base/memory/ref_counted.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/permissions/permissions_api_helpers.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_prefs.h"
-#include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/signin/token_service.h"
-#include "chrome/browser/signin/token_service_factory.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/extensions/api/permissions.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/render_process_host.h"
-#include "google_apis/gaia/oauth2_mint_token_flow.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/extension_messages.h"
+#include "extensions/common/permissions/permissions_data.h"
 
 using content::RenderProcessHost;
 using extensions::permissions_api_helpers::PackPermissionSet;
-using extensions::PermissionSet;
 
 namespace extensions {
 
-namespace {
-
-const char kOnAdded[] = "permissions.onAdded";
-const char kOnRemoved[] = "permissions.onRemoved";
-
-// An object to link the lifetime of an OAuth2MintTokenFlow to a Profile.
-// The flow should not outlive the profile because the request context will
-// become invalid.
-class OAuth2GrantRecorder : public OAuth2MintTokenFlow::Delegate,
-                            public content::NotificationObserver {
- public:
-  OAuth2GrantRecorder(Profile* profile, const Extension* extension)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(flow_(
-          profile->GetRequestContext(),
-          this,
-          OAuth2MintTokenFlow::Parameters(
-              TokenServiceFactory::GetForProfile(profile)->
-                  GetOAuth2LoginRefreshToken(),
-              extension->id(),
-              extension->oauth2_info().client_id,
-              extension->oauth2_info().scopes,
-              OAuth2MintTokenFlow::MODE_RECORD_GRANT))) {
-    notification_registrar_.Add(this,
-                                chrome::NOTIFICATION_PROFILE_DESTROYED,
-                                content::Source<Profile>(profile));
-
-    flow_.Start();
-  }
-
-  // content::NotificationObserver:
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) OVERRIDE {
-    DCHECK_EQ(type, chrome::NOTIFICATION_PROFILE_DESTROYED);
-    delete this;
-  }
-
-  // OAuth2MintTokenFlow::Delegate:
-  virtual void OnMintTokenSuccess(const std::string& access_token) OVERRIDE {
-    delete this;
-  }
-  virtual void OnIssueAdviceSuccess(
-      const IssueAdviceInfo& issue_advice) OVERRIDE {
-    delete this;
-  }
-  virtual void OnMintTokenFailure(
-      const GoogleServiceAuthError& error) OVERRIDE {
-    delete this;
-  }
-
- private:
-  virtual ~OAuth2GrantRecorder() {}
-
-  OAuth2MintTokenFlow flow_;
-  content::NotificationRegistrar notification_registrar_;
-};
-
-}  // namespace
+namespace permissions = api::permissions;
 
 PermissionsUpdater::PermissionsUpdater(Profile* profile)
     : profile_(profile) {}
@@ -100,14 +38,14 @@ void PermissionsUpdater::AddPermissions(
   scoped_refptr<const PermissionSet> existing(
       extension->GetActivePermissions());
   scoped_refptr<PermissionSet> total(
-      PermissionSet::CreateUnion(existing, permissions));
+      PermissionSet::CreateUnion(existing.get(), permissions));
   scoped_refptr<PermissionSet> added(
-      PermissionSet::CreateDifference(total.get(), existing));
+      PermissionSet::CreateDifference(total.get(), existing.get()));
 
   UpdateActivePermissions(extension, total.get());
 
   // Update the granted permissions so we don't auto-disable the extension.
-  GrantActivePermissions(extension, false);
+  GrantActivePermissions(extension);
 
   NotifyPermissionsUpdated(ADDED, extension, added.get());
 }
@@ -117,9 +55,9 @@ void PermissionsUpdater::RemovePermissions(
   scoped_refptr<const PermissionSet> existing(
       extension->GetActivePermissions());
   scoped_refptr<PermissionSet> total(
-      PermissionSet::CreateDifference(existing, permissions));
+      PermissionSet::CreateDifference(existing.get(), permissions));
   scoped_refptr<PermissionSet> removed(
-      PermissionSet::CreateDifference(existing, total.get()));
+      PermissionSet::CreateDifference(existing.get(), total.get()));
 
   // We update the active permissions, and not the granted permissions, because
   // the extension, not the user, removed the permissions. This allows the
@@ -129,56 +67,41 @@ void PermissionsUpdater::RemovePermissions(
   NotifyPermissionsUpdated(REMOVED, extension, removed.get());
 }
 
-void PermissionsUpdater::GrantActivePermissions(const Extension* extension,
-                                                bool record_oauth2_grant) {
+void PermissionsUpdater::GrantActivePermissions(const Extension* extension) {
   CHECK(extension);
 
   // We only maintain the granted permissions prefs for INTERNAL and LOAD
   // extensions.
-  if (extension->location() != Extension::LOAD &&
-      extension->location() != Extension::INTERNAL)
+  if (!Manifest::IsUnpackedLocation(extension->location()) &&
+      extension->location() != Manifest::INTERNAL)
     return;
 
-  if (record_oauth2_grant) {
-    // Only record OAuth grant if:
-    // 1. The extension has client id and scopes.
-    // 2. The user is signed in to Chrome.
-    const Extension::OAuth2Info& oauth2_info = extension->oauth2_info();
-    if (!oauth2_info.client_id.empty() && !oauth2_info.scopes.empty()) {
-      TokenService* token_service = TokenServiceFactory::GetForProfile(
-          profile_);
-      if (token_service && token_service->HasOAuthLoginToken()) {
-        new OAuth2GrantRecorder(profile_, extension);
-      }
-    }
-  }
-
-  GetExtensionPrefs()->AddGrantedPermissions(extension->id(),
-                                             extension->GetActivePermissions());
+  ExtensionPrefs::Get(profile_)->AddGrantedPermissions(
+      extension->id(), extension->GetActivePermissions().get());
 }
 
 void PermissionsUpdater::UpdateActivePermissions(
     const Extension* extension, const PermissionSet* permissions) {
-  GetExtensionPrefs()->SetActivePermissions(extension->id(), permissions);
-  extension->SetActivePermissions(permissions);
+  ExtensionPrefs::Get(profile_)->SetActivePermissions(
+      extension->id(), permissions);
+  PermissionsData::SetActivePermissions(extension, permissions);
 }
 
 void PermissionsUpdater::DispatchEvent(
     const std::string& extension_id,
     const char* event_name,
     const PermissionSet* changed_permissions) {
-  if (!profile_ ||
-      !extensions::ExtensionSystem::Get(profile_)->event_router())
+  if (!profile_ || !EventRouter::Get(profile_))
     return;
 
-  scoped_ptr<ListValue> value(new ListValue());
+  scoped_ptr<base::ListValue> value(new base::ListValue());
   scoped_ptr<api::permissions::Permissions> permissions =
       PackPermissionSet(changed_permissions);
   value->Append(permissions->ToValue().release());
   scoped_ptr<Event> event(new Event(event_name, value.Pass()));
-  event->restrict_to_profile = profile_;
-  ExtensionSystem::Get(profile_)->event_router()->
-      DispatchEventToExtension(extension_id, event.Pass());
+  event->restrict_to_browser_context = profile_;
+  EventRouter::Get(profile_)
+      ->DispatchEventToExtension(extension_id, event.Pass());
 }
 
 void PermissionsUpdater::NotifyPermissionsUpdated(
@@ -193,11 +116,11 @@ void PermissionsUpdater::NotifyPermissionsUpdated(
 
   if (event_type == REMOVED) {
     reason = UpdatedExtensionPermissionsInfo::REMOVED;
-    event_name = kOnRemoved;
+    event_name = permissions::OnRemoved::kEventName;
   } else {
     CHECK_EQ(ADDED, event_type);
     reason = UpdatedExtensionPermissionsInfo::ADDED;
-    event_name = kOnAdded;
+    event_name = permissions::OnAdded::kEventName;
   }
 
   // Notify other APIs or interested parties.
@@ -213,22 +136,20 @@ void PermissionsUpdater::NotifyPermissionsUpdated(
        !i.IsAtEnd(); i.Advance()) {
     RenderProcessHost* host = i.GetCurrentValue();
     Profile* profile = Profile::FromBrowserContext(host->GetBrowserContext());
-    if (profile_->IsSameProfile(profile))
-      host->Send(new ExtensionMsg_UpdatePermissions(
-          static_cast<int>(reason),
-          extension->id(),
-          changed->apis(),
-          changed->explicit_hosts(),
-          changed->scriptable_hosts()));
+    if (profile_->IsSameProfile(profile)) {
+      ExtensionMsg_UpdatePermissions_Params info;
+      info.reason_id = static_cast<int>(reason);
+      info.extension_id = extension->id();
+      info.apis = changed->apis();
+      info.manifest_permissions = changed->manifest_permissions();
+      info.explicit_hosts = changed->explicit_hosts();
+      info.scriptable_hosts = changed->scriptable_hosts();
+      host->Send(new ExtensionMsg_UpdatePermissions(info));
+    }
   }
 
   // Trigger the onAdded and onRemoved events in the extension.
   DispatchEvent(extension->id(), event_name, changed);
-}
-
-ExtensionPrefs* PermissionsUpdater::GetExtensionPrefs() {
-  return extensions::ExtensionSystem::Get(profile_)->extension_service()->
-      extension_prefs();
 }
 
 }  // namespace extensions

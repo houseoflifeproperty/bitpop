@@ -36,8 +36,10 @@ _format_modules = {
   'resource_map_source':      'resource_map',
   'resource_file_map_source': 'resource_map',
 }
-_format_modules.update((type, 'policy_templates.template_formatter')
-    for type in 'adm plist plist_strings admx adml doc json reg'.split())
+_format_modules.update(
+    (type, 'policy_templates.template_formatter') for type in
+        [ 'adm', 'admx', 'adml', 'reg', 'doc', 'json',
+          'plist', 'plist_strings', 'ios_plist' ])
 
 
 def GetFormatter(type):
@@ -78,6 +80,15 @@ Options:
   -w WHITELISTFILE  Path to a file containing the string names of the
                     resources to include.  Anything not listed is dropped.
 
+  -t PLATFORM       Specifies the platform the build is targeting; defaults
+                    to the value of sys.platform. The value provided via this
+                    flag should match what sys.platform would report for your
+                    target platform; see grit.node.base.EvaluateCondition.
+
+  -h HEADERFORMAT   Custom format string to use for generating rc header files.
+                    The string should have two placeholders: {textual_id}
+                    and {numeric_id}. E.g. "#define {textual_id} {numeric_id}"
+                    Otherwise it will use the default "#define SYMBOL 1234"
 
 Conditional inclusion of resources only affects the output of files which
 control which resources get linked into a binary, e.g. it affects .rc files
@@ -93,7 +104,11 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.output_directory = '.'
     first_ids_file = None
     whitelist_filenames = []
-    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:')
+    target_platform = None
+    depfile = None
+    depdir = None
+    rc_header_format = None
+    (own_opts, args) = getopt.getopt(args, 'o:D:E:f:w:t:h:', ('depdir=','depfile='))
     for (key, val) in own_opts:
       if key == '-o':
         self.output_directory = val
@@ -110,6 +125,14 @@ are exported to translation interchange files (e.g. XMB files), etc.
         first_ids_file = val
       elif key == '-w':
         whitelist_filenames.append(val)
+      elif key == '-t':
+        target_platform = val
+      elif key == '-h':
+        rc_header_format = val
+      elif key == '--depdir':
+        depdir = val
+      elif key == '--depfile':
+        depfile = val
 
     if len(args):
       print 'This tool takes no tool-specific arguments.'
@@ -132,13 +155,20 @@ are exported to translation interchange files (e.g. XMB files), etc.
     self.res = grd_reader.Parse(opts.input,
                                 debug=opts.extra_verbose,
                                 first_ids_file=first_ids_file,
-                                defines=self.defines)
+                                defines=self.defines,
+                                target_platform=target_platform)
     # Set an output context so that conditionals can use defines during the
     # gathering stage; we use a dummy language here since we are not outputting
     # a specific language.
     self.res.SetOutputLanguage('en')
+    if rc_header_format:
+      self.res.AssignRcHeaderFormat(rc_header_format)
     self.res.RunGatherers()
     self.Process()
+
+    if depfile and depdir:
+      self.GenerateDepfile(opts.input, depfile, depdir)
+
     return 0
 
   def __init__(self, defines=None):
@@ -162,7 +192,6 @@ are exported to translation interchange files (e.g. XMB files), etc.
     # The set of names that are whitelisted to actually be included in the
     # output.
     self.whitelist_names = None
-
 
   @staticmethod
   def AddWhitelistTags(start_node, whitelist_names):
@@ -243,9 +272,7 @@ are exported to translation interchange files (e.g. XMB files), etc.
       self.res.SetDefines(self.defines)
 
       # Make the output directory if it doesn't exist.
-      outdir = os.path.split(output.GetOutputFilename())[0]
-      if not os.path.exists(outdir):
-        os.makedirs(outdir)
+      self.MakeDirectoriesTo(output.GetOutputFilename())
 
       # Write the results to a temporary file and only overwrite the original
       # if the file changed.  This avoids unnecessary rebuilds.
@@ -296,3 +323,46 @@ are exported to translation interchange files (e.g. XMB files), etc.
     if self.res.UberClique().HasMissingTranslations():
       print self.res.UberClique().missing_translations_
       sys.exit(-1)
+
+  def GenerateDepfile(self, input_filename, depfile, depdir):
+    '''Generate a depfile that contains the imlicit dependencies of the input
+    grd. The depfile will be in the same format as a makefile, and will contain
+    references to files relative to |depdir|. It will be put in |depfile|.
+
+    For example, supposing we have three files in a directory src/
+
+    src/
+      blah.grd    <- depends on input{1,2}.xtb
+      input1.xtb
+      input2.xtb
+
+    and we run
+
+      grit -i blah.grd -o ../out/gen --depdir ../out --depfile ../out/gen/blah.rd.d
+
+    from the directory src/ we will generate a depfile ../out/gen/blah.grd.d
+    that has the contents
+
+      gen/blah.grd.d: ../src/input1.xtb ../src/input2.xtb
+
+    Note that all paths in the depfile are relative to ../out, the depdir.
+    '''
+    depfile = os.path.abspath(depfile)
+    depdir = os.path.abspath(depdir)
+    # The path prefix to prepend to dependencies in the depfile.
+    prefix = os.path.relpath(os.getcwd(), depdir)
+    # The path that the depfile refers to itself by.
+    self_ref_depfile = os.path.relpath(depfile, depdir)
+    infiles = self.res.GetInputFiles()
+    deps_text = ' '.join([os.path.join(prefix, i) for i in infiles])
+    depfile_contents = self_ref_depfile + ': ' + deps_text
+    self.MakeDirectoriesTo(depfile)
+    outfile = self.fo_create(depfile, 'wb')
+    outfile.writelines(depfile_contents)
+
+  @staticmethod
+  def MakeDirectoriesTo(file):
+    '''Creates directories necessary to contain |file|.'''
+    dir = os.path.split(file)[0]
+    if not os.path.exists(dir):
+      os.makedirs(dir)

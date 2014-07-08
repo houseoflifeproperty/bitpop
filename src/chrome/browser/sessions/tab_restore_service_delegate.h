@@ -8,15 +8,20 @@
 #include <string>
 #include <vector>
 
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/sessions/session_id.h"
+#include "chrome/browser/ui/host_desktop.h"
 
 class Profile;
-class TabNavigation;
 
 namespace content {
 class NavigationController;
 class SessionStorageNamespace;
 class WebContents;
+}
+
+namespace sessions {
+class SerializedNavigationEntry;
 }
 
 // Objects implement this interface to provide necessary functionality for
@@ -44,7 +49,7 @@ class TabRestoreServiceDelegate {
   virtual content::WebContents* GetActiveWebContents() const = 0;
   virtual bool IsTabPinned(int index) const = 0;
   virtual content::WebContents* AddRestoredTab(
-      const std::vector<TabNavigation>& navigations,
+      const std::vector<sessions::SerializedNavigationEntry>& navigations,
       int tab_index,
       int selected_navigation,
       const std::string& extension_app_id,
@@ -53,8 +58,8 @@ class TabRestoreServiceDelegate {
       bool from_last_session,
       content::SessionStorageNamespace* storage_namespace,
       const std::string& user_agent_override) = 0;
-  virtual void ReplaceRestoredTab(
-      const std::vector<TabNavigation>& navigations,
+  virtual content::WebContents* ReplaceRestoredTab(
+      const std::vector<sessions::SerializedNavigationEntry>& navigations,
       int selected_navigation,
       bool from_last_session,
       const std::string& extension_app_id,
@@ -63,16 +68,21 @@ class TabRestoreServiceDelegate {
   virtual void CloseTab() = 0;
 
   // see Browser::Create
-  static TabRestoreServiceDelegate* Create(Profile* profile,
-                                           const std::string& app_name);
+  static TabRestoreServiceDelegate* Create(
+      Profile* profile,
+      chrome::HostDesktopType host_desktop_type,
+      const std::string& app_name);
 
   // see browser::FindBrowserForWebContents
   static TabRestoreServiceDelegate* FindDelegateForWebContents(
       const content::WebContents* contents);
 
   // see chrome::FindBrowserWithID
+  // Returns the TabRestoreServiceDelegate of the Browser with |desired_id| if
+  // such a Browser exists and is on the desktop defined by |host_desktop_type|.
   static TabRestoreServiceDelegate* FindDelegateWithID(
-      SessionID::id_type desired_id);
+      SessionID::id_type desired_id,
+      chrome::HostDesktopType host_desktop_type);
 
  protected:
   virtual ~TabRestoreServiceDelegate() {}

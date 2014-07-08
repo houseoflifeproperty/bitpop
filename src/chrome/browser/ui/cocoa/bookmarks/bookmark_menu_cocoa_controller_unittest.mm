@@ -2,14 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string16.h"
-#import "base/memory/scoped_nsobject.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
-#include "chrome/browser/bookmarks/bookmark_utils.h"
 #include "chrome/browser/ui/browser.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_menu_cocoa_controller.h"
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 @interface FakeBookmarkMenuController : BookmarkMenuCocoaController {
@@ -27,7 +28,7 @@
 
 - (id)initWithProfile:(Profile*)profile {
   if ((self = [super init])) {
-    string16 empty;
+    base::string16 empty;
     BookmarkModel* model = BookmarkModelFactory::GetForProfile(profile);
     const BookmarkNode* bookmark_bar = model->bookmark_bar_node();
     nodes_[0] = model->AddURL(bookmark_bar, 0, empty, GURL("http://0.com"));
@@ -76,7 +77,7 @@ class BookmarkMenuCocoaControllerTest : public CocoaProfileTest {
   FakeBookmarkMenuController* controller() { return controller_.get(); }
 
  private:
-  scoped_nsobject<FakeBookmarkMenuController> controller_;
+  base::scoped_nsobject<FakeBookmarkMenuController> controller_;
 };
 
 TEST_F(BookmarkMenuCocoaControllerTest, TestOpenItem) {

@@ -5,7 +5,7 @@
 #import "content/browser/renderer_host/text_input_client_mac.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "content/browser/renderer_host/render_process_host_impl.h"
 #include "content/browser/renderer_host/render_widget_host_delegate.h"
@@ -35,13 +35,13 @@ class MockRenderWidgetHostDelegate : public RenderWidgetHostDelegate {
 class TextInputClientMacTest : public testing::Test {
  public:
   TextInputClientMacTest()
-      : message_loop_(MessageLoop::TYPE_UI),
-        browser_context_(),
+      : browser_context_(),
         process_factory_(),
         delegate_(),
         widget_(&delegate_,
-                process_factory_.CreateRenderProcessHost(&browser_context_),
-                MSG_ROUTING_NONE),
+                process_factory_.CreateRenderProcessHost(
+                    &browser_context_, NULL),
+                MSG_ROUTING_NONE, false),
         thread_("TextInputClientMacTestThread") {}
 
   // Accessor for the TextInputClientMac instance.
@@ -73,7 +73,7 @@ class TextInputClientMacTest : public testing::Test {
  private:
   friend class ScopedTestingThread;
 
-  MessageLoop message_loop_;
+  base::MessageLoopForUI message_loop_;
   TestBrowserContext browser_context_;
 
   // Gets deleted when the last RWH in the "process" gets destroyed.
@@ -202,7 +202,7 @@ TEST_F(TextInputClientMacTest, GetSubstring) {
   NSDictionary* attributes =
       [NSDictionary dictionaryWithObject:[NSColor purpleColor]
                                   forKey:NSForegroundColorAttributeName];
-  scoped_nsobject<NSAttributedString> kSuccessValue(
+  base::scoped_nsobject<NSAttributedString> kSuccessValue(
       [[NSAttributedString alloc] initWithString:@"Barney is a purple dinosaur"
                                       attributes:attributes]);
 

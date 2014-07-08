@@ -24,9 +24,9 @@
 #include "native_client/src/trusted/service_runtime/include/sys/fcntl.h"
 #include "native_client/src/trusted/service_runtime/mmap_test_check.h"
 #include "native_client/src/trusted/service_runtime/nacl_app_thread.h"
-#include "native_client/src/trusted/service_runtime/nacl_syscall_common.h"
 #include "native_client/src/trusted/service_runtime/sel_addrspace.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
+#include "native_client/src/trusted/service_runtime/sys_memory.h"
 
 class MmapTest : public testing::Test {
  protected:
@@ -42,14 +42,15 @@ void MmapTest::TearDown() {
   NaClNrdAllModulesFini();
 }
 
-// These tests are disabled for ARM because the ARM sandbox is
-// zero-based, and sel_addrspace_arm.c does not work when allocating a
+// These tests are disabled for ARM/MIPS because the ARM/MIPS sandboxes are
+// zero-based, and sel_addrspace_(arm/mips).c do not work when allocating a
 // non-zero-based region.
 // TODO(mseaborn): Change sel_addrspace_arm.c to work with this test.
 // However, for now, testing the Linux memory mapping code under
 // x86-32 and x86-64 gives us good coverage of the Linux code in
 // general.
-#if NACL_ARCH(NACL_BUILD_ARCH) != NACL_arm
+#if NACL_ARCH(NACL_BUILD_ARCH) != NACL_arm && \
+    NACL_ARCH(NACL_BUILD_ARCH) != NACL_mips
 
 // Check that the untrusted address space really gets freed by trying
 // to allocate and free a sandbox multiple times.  On a 32-bit system,
@@ -74,9 +75,9 @@ void MapShmFd(struct NaClApp *nap, uintptr_t addr, size_t shm_size) {
   ASSERT_EQ(NaClDescImcShmAllocCtor(shm_desc, shm_size,
                                     /* executable= */ 0), 1);
   struct NaClDesc *desc = &shm_desc->base;
-  int fd = NaClSetAvail(nap, desc);
+  int fd = NaClAppSetDescAvail(nap, desc);
 
-  uintptr_t mapping_addr = (uint32_t) NaClCommonSysMmapIntern(
+  uintptr_t mapping_addr = (uint32_t) NaClSysMmapIntern(
       nap, (void *) addr, shm_size,
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_SHARED, fd, 0);
@@ -113,9 +114,9 @@ void MapFileFd(struct NaClApp *nap, uintptr_t addr, size_t file_size) {
   ASSERT_EQ(written, (ssize_t) file_size);
   delete[] buf;
 
-  int fd = NaClSetAvail(nap, desc);
+  int fd = NaClAppSetDescAvail(nap, desc);
 
-  uintptr_t mapping_addr = (uint32_t) NaClCommonSysMmapIntern(
+  uintptr_t mapping_addr = (uint32_t) NaClSysMmapIntern(
       nap, (void *) addr, file_size,
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_SHARED, fd, 0);
@@ -210,7 +211,7 @@ TEST_F(MmapTest, TestUnmapFileMapping) {
 
   uintptr_t sysaddr = NaClUserToSys(&app, addr);
 #if NACL_WINDOWS
-  CheckMapping(sysaddr, size, MEM_COMMIT, PAGE_WRITECOPY, MEM_MAPPED);
+  CheckMapping(sysaddr, size, MEM_COMMIT, PAGE_READWRITE, MEM_MAPPED);
 #elif NACL_LINUX
   CheckMapping(sysaddr, size, PROT_READ | PROT_WRITE, MAP_SHARED);
 #elif NACL_OSX
@@ -239,7 +240,7 @@ TEST_F(MmapTest, TestUnmapAnonymousMemoryMapping) {
   // Create an anonymous memory mapping.
   uintptr_t addr = 0x200000;
   size_t size = 0x100000;
-  uintptr_t mapping_addr = (uint32_t) NaClCommonSysMmapIntern(
+  uintptr_t mapping_addr = (uint32_t) NaClSysMmapIntern(
       &app, (void *) addr, size,
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_PRIVATE | NACL_ABI_MAP_ANONYMOUS,
@@ -289,7 +290,7 @@ TEST_F(MmapTest, TestProtectShmMapping) {
 # error Unsupported platform
 #endif
 
-  ASSERT_EQ(0, NaClCommonSysMprotectInternal(
+  ASSERT_EQ(0, NaClSysMprotectInternal(
                    &app, (uint32_t) addr, size, NACL_ABI_PROT_NONE));
 
 #if NACL_WINDOWS
@@ -323,7 +324,7 @@ TEST_F(MmapTest, TestProtectFileMapping) {
 
   uintptr_t sysaddr = NaClUserToSys(&app, addr);
 #if NACL_WINDOWS
-  CheckMapping(sysaddr, size, MEM_COMMIT, PAGE_WRITECOPY, MEM_MAPPED);
+  CheckMapping(sysaddr, size, MEM_COMMIT, PAGE_READWRITE, MEM_MAPPED);
 #elif NACL_LINUX
   CheckMapping(sysaddr, size, PROT_READ | PROT_WRITE, MAP_SHARED);
 #elif NACL_OSX
@@ -332,7 +333,7 @@ TEST_F(MmapTest, TestProtectFileMapping) {
 # error Unsupported platform
 #endif
 
-  ASSERT_EQ(0, NaClCommonSysMprotectInternal(
+  ASSERT_EQ(0, NaClSysMprotectInternal(
                    &app, (uint32_t) addr, size, NACL_ABI_PROT_NONE));
 
 #if NACL_WINDOWS
@@ -363,7 +364,7 @@ TEST_F(MmapTest, TestProtectAnonymousMemory) {
   // Create an anonymous memory mapping.
   uintptr_t addr = 0x200000;
   size_t size = 0x100000;
-  uintptr_t mapping_addr = (uint32_t) NaClCommonSysMmapIntern(
+  uintptr_t mapping_addr = (uint32_t) NaClSysMmapIntern(
       &app, (void *) addr, size,
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_PRIVATE | NACL_ABI_MAP_ANONYMOUS,
@@ -381,7 +382,7 @@ TEST_F(MmapTest, TestProtectAnonymousMemory) {
 # error Unsupported platform
 #endif
 
-  ASSERT_EQ(0, NaClCommonSysMprotectInternal(
+  ASSERT_EQ(0, NaClSysMprotectInternal(
                    &app, (uint32_t) addr, size, NACL_ABI_PROT_NONE));
 
 #if NACL_WINDOWS
@@ -413,21 +414,21 @@ TEST_F(MmapTest, TestSysvShmMapping) {
       (struct NaClDescSysvShm *) malloc(sizeof(*shm_desc));
   ASSERT_TRUE(NaClDescSysvShmCtor(shm_desc, shm_size));
   struct NaClDesc *desc = &shm_desc->base;
-  int fd = NaClSetAvail(&app, desc);
+  int fd = NaClAppSetDescAvail(&app, desc);
 
   uintptr_t mapping_addr = 0x200000;
 
   // First, map something with PROT_READ, so that we can later check
   // that this is correctly overwritten by PROT_READ|PROT_WRITE and
   // PROT_NONE mappings.
-  uintptr_t result_addr = (uint32_t) NaClCommonSysMmapIntern(
+  uintptr_t result_addr = (uint32_t) NaClSysMmapIntern(
       &app, (void *) mapping_addr, shm_size,
       NACL_ABI_PROT_READ,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_PRIVATE | NACL_ABI_MAP_ANONYMOUS,
       -1, 0);
   ASSERT_EQ(result_addr, mapping_addr);
 
-  result_addr = (uint32_t) NaClCommonSysMmapIntern(
+  result_addr = (uint32_t) NaClSysMmapIntern(
       &app, (void *) mapping_addr, shm_size,
       NACL_ABI_PROT_READ | NACL_ABI_PROT_WRITE,
       NACL_ABI_MAP_FIXED | NACL_ABI_MAP_SHARED, fd, 0);

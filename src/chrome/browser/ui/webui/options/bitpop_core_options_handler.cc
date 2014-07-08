@@ -20,29 +20,31 @@
 #include "base/bind_helpers.h"
 #include "base/json/json_reader.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
-#include "chrome/browser/net/url_fixer_upper.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/options/options_util.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_ui.h"
-#include "googleurl/src/gurl.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/locale_settings.h"
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
-using content::UserMetricsAction;
+using base::DictionaryValue;
+using base::ListValue;
+using base::UserMetricsAction;
 
 namespace options {
 
@@ -155,7 +157,7 @@ void BitpopCoreOptionsHandler::Uninitialize() {
   }
 }
 
-void BitpopCoreOptionsHandler::OnPreferenceChanged(PrefServiceBase* service,
+void BitpopCoreOptionsHandler::OnPreferenceChanged(PrefService* service,
                                              const std::string& pref_name) {
   if (pref_name == prefs::kClearPluginLSODataEnabled) {
     // This preference is stored in Local State, not in the user preferences.
@@ -389,7 +391,7 @@ void BitpopCoreOptionsHandler::HandleFetchPrefs(const ListValue* args) {
   if (!args->Get(0, &callback) || !callback->IsType(base::Value::TYPE_STRING))
     return;
 
-  string16 callback_function;
+  base::string16 callback_function;
   if (!callback->GetAsString(&callback_function))
     return;
 

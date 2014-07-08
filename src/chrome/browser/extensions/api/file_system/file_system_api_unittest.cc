@@ -2,21 +2,21 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
-#include "base/file_util.h"
-#include "base/string_split.h"
-#include "base/utf_string_conversions.h"
+#include "base/files/file_path.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/extensions/api/file_system/file_system_api.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/dialogs/select_file_dialog.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 using extensions::FileSystemChooseEntryFunction;
 using extensions::api::file_system::AcceptOption;
 
 namespace {
 
-void CheckExtensions(std::vector<FilePath::StringType>& expected,
-    std::vector<FilePath::StringType>& actual) {
+void CheckExtensions(const std::vector<base::FilePath::StringType>& expected,
+    std::vector<base::FilePath::StringType>& actual) {
   EXPECT_EQ(expected.size(), actual.size());
   if (expected.size() != actual.size())
     return;
@@ -26,9 +26,9 @@ void CheckExtensions(std::vector<FilePath::StringType>& expected,
   }
 }
 
-AcceptOption* BuildAcceptOption(std::string description,
-    std::string mime_types,
-    std::string extensions) {
+AcceptOption* BuildAcceptOption(const std::string& description,
+                                const std::string& mime_types,
+                                const std::string& extensions) {
   AcceptOption* option = new AcceptOption();
 
   if (!description.empty())
@@ -48,7 +48,7 @@ AcceptOption* BuildAcceptOption(std::string description,
 }
 
 #if defined(OS_WIN)
-#define ToStringType UTF8ToWide
+#define ToStringType base::UTF8ToWide
 #else
 #define ToStringType
 #endif
@@ -63,25 +63,25 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   ui::SelectFileDialog::FileTypeInfo file_type_info;
   bool acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), NULL, &acceptsAllTypes);
+      base::FilePath::StringType(), NULL, &acceptsAllTypes);
   EXPECT_TRUE(file_type_info.include_all_files);
   EXPECT_TRUE(file_type_info.extensions.empty());
 
   // Test grouping of multiple types.
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   std::vector<linked_ptr<AcceptOption> > options;
-  options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "application/x-chrome-extension", "jso")));
+  options.push_back(linked_ptr<AcceptOption>(BuildAcceptOption(
+      base::EmptyString(), "application/x-chrome-extension", "jso")));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), &options, &acceptsAllTypes);
+      base::FilePath::StringType(), &options, &acceptsAllTypes);
   EXPECT_FALSE(file_type_info.include_all_files);
   ASSERT_EQ(file_type_info.extensions.size(), (size_t) 1);
   EXPECT_TRUE(file_type_info.extension_description_overrides[0].empty()) <<
       "No override must be specified for boring accept types";
   // Note here (and below) that the expectedTypes are sorted, because we use a
   // set internally to generate the output: thus, the output is sorted.
-  std::vector<FilePath::StringType> expectedTypes;
+  std::vector<base::FilePath::StringType> expectedTypes;
   expectedTypes.push_back(ToStringType("crx"));
   expectedTypes.push_back(ToStringType("jso"));
   CheckExtensions(expectedTypes, file_type_info.extensions[0]);
@@ -89,8 +89,8 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   // Test that not satisfying the extension will force all types.
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
-  options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "", "unrelated")));
+  options.push_back(linked_ptr<AcceptOption>(BuildAcceptOption(
+      base::EmptyString(), base::EmptyString(), "unrelated")));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
       ToStringType(".jso"), &options, &acceptsAllTypes);
@@ -100,12 +100,12 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
   options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "", "jso,js")));
+      BuildAcceptOption(base::EmptyString(), base::EmptyString(), "jso,js")));
   options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "", "cpp,cc")));
+      BuildAcceptOption(base::EmptyString(), base::EmptyString(), "cpp,cc")));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), &options, &acceptsAllTypes);
+      base::FilePath::StringType(), &options, &acceptsAllTypes);
   ASSERT_EQ(file_type_info.extensions.size(), options.size());
 
   expectedTypes.clear();
@@ -122,10 +122,10 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
   options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "image/*", "html")));
+      BuildAcceptOption(base::EmptyString(), "image/*", "html")));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), &options, &acceptsAllTypes);
+      base::FilePath::StringType(), &options, &acceptsAllTypes);
   ASSERT_EQ(file_type_info.extension_description_overrides.size(), (size_t) 1);
   EXPECT_FALSE(file_type_info.extension_description_overrides[0].empty()) <<
       "Accept type \"image/*\" must generate description override";
@@ -134,11 +134,11 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   // still present the default.
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
-  options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("", "image/*,audio/*,video/*", "")));
+  options.push_back(linked_ptr<AcceptOption>(BuildAcceptOption(
+      base::EmptyString(), "image/*,audio/*,video/*", base::EmptyString())));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), &options, &acceptsAllTypes);
+      base::FilePath::StringType(), &options, &acceptsAllTypes);
   ASSERT_EQ(file_type_info.extension_description_overrides.size(), (size_t) 1);
   EXPECT_TRUE(file_type_info.extension_description_overrides[0].empty());
 
@@ -146,18 +146,18 @@ TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionFileTypeInfoTest) {
   file_type_info = ui::SelectFileDialog::FileTypeInfo();
   options.clear();
   options.push_back(linked_ptr<AcceptOption>(
-      BuildAcceptOption("File Types 101", "image/jpeg", "")));
+      BuildAcceptOption("File Types 101", "image/jpeg", base::EmptyString())));
   acceptsAllTypes = false;
   FileSystemChooseEntryFunction::BuildFileTypeInfo(&file_type_info,
-      FilePath::StringType(), &options, &acceptsAllTypes);
+      base::FilePath::StringType(), &options, &acceptsAllTypes);
   EXPECT_EQ(file_type_info.extension_description_overrides[0],
-      UTF8ToUTF16("File Types 101"));
+      base::UTF8ToUTF16("File Types 101"));
 }
 
 TEST_F(FileSystemApiUnitTest, FileSystemChooseEntryFunctionSuggestionTest) {
   std::string opt_name;
-  FilePath suggested_name;
-  FilePath::StringType suggested_extension;
+  base::FilePath suggested_name;
+  base::FilePath::StringType suggested_extension;
 
   opt_name = std::string("normal_path.txt");
   FileSystemChooseEntryFunction::BuildSuggestion(&opt_name, &suggested_name,

@@ -130,6 +130,14 @@ extern const buzz::StaticQName QN_SSRC;
 extern const buzz::StaticQName QN_JINGLE_RTP_PAYLOADTYPE;
 extern const buzz::StaticQName QN_JINGLE_RTP_BANDWIDTH;
 extern const buzz::StaticQName QN_JINGLE_RTCP_MUX;
+extern const buzz::StaticQName QN_JINGLE_RTCP_FB;
+extern const buzz::StaticQName QN_SUBTYPE;
+extern const buzz::StaticQName QN_JINGLE_RTP_HDREXT;
+extern const buzz::StaticQName QN_URI;
+
+extern const char NS_JINGLE_DRAFT_SCTP[];
+extern const buzz::StaticQName QN_JINGLE_DRAFT_SCTP_CONTENT;
+extern const buzz::StaticQName QN_JINGLE_DRAFT_SCTP_STREAM;
 
 extern const char NS_GINGLE_AUDIO[];
 extern const buzz::StaticQName QN_GINGLE_AUDIO_CONTENT;
@@ -252,6 +260,12 @@ extern const buzz::StaticQName QN_JINGLE_LEGACY_SOURCE;
 extern const char NS_VOICEMAIL[];
 extern const buzz::StaticQName QN_VOICEMAIL_REGARDING;
 #endif
+
+// RFC 4145, SDP setup attribute values.
+extern const char CONNECTIONROLE_ACTIVE_STR[];
+extern const char CONNECTIONROLE_PASSIVE_STR[];
+extern const char CONNECTIONROLE_ACTPASS_STR[];
+extern const char CONNECTIONROLE_HOLDCONN_STR[];
 
 }  // namespace cricket
 

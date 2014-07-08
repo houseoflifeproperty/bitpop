@@ -9,9 +9,6 @@
 ;
 
 
-bilinear_taps_coeff
-    DCD     128, 0, 112, 16, 96, 32, 80, 48, 64, 64, 48, 80, 32, 96, 16, 112
-
 ;-----------------
 
     EXPORT  |vp8_sub_pixel_variance16x16_neon_func|
@@ -29,13 +26,17 @@ bilinear_taps_coeff
 ; stack(r6) unsigned int *sse
 ;note: most of the code is copied from bilinear_predict16x16_neon and vp8_variance16x16_neon.
 
+bilinear_taps_coeff
+    DCD     128, 0, 112, 16, 96, 32, 80, 48, 64, 64, 48, 80, 32, 96, 16, 112
+
 |vp8_sub_pixel_variance16x16_neon_func| PROC
     push            {r4-r6, lr}
+    vpush           {d8-d15}
 
     adr             r12, bilinear_taps_coeff
-    ldr             r4, [sp, #16]           ;load *dst_ptr from stack
-    ldr             r5, [sp, #20]           ;load dst_pixels_per_line from stack
-    ldr             r6, [sp, #24]           ;load *sse from stack
+    ldr             r4, [sp, #80]           ;load *dst_ptr from stack
+    ldr             r5, [sp, #84]           ;load dst_pixels_per_line from stack
+    ldr             r6, [sp, #88]           ;load *sse from stack
 
     cmp             r2, #0                  ;skip first_pass filter if xoffset=0
     beq             secondpass_bfilter16x16_only
@@ -416,6 +417,7 @@ sub_pixel_variance16x16_neon_loop
     add             sp, sp, #528
     vmov.32         r0, d0[0]                   ;return
 
+    vpop            {d8-d15}
     pop             {r4-r6,pc}
 
     ENDP

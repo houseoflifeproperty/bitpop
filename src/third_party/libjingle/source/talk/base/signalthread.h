@@ -31,8 +31,8 @@
 #include <string>
 
 #include "talk/base/constructormagic.h"
-#include "talk/base/thread.h"
 #include "talk/base/sigslot.h"
+#include "talk/base/thread.h"
 
 namespace talk_base {
 
@@ -53,7 +53,9 @@ namespace talk_base {
 //   tasks in the context of the main thread.
 ///////////////////////////////////////////////////////////////////////////////
 
-class SignalThread : public sigslot::has_slots<>, protected MessageHandler {
+class SignalThread
+    : public sigslot::has_slots<>,
+      protected MessageHandler {
  public:
   SignalThread();
 
@@ -121,6 +123,7 @@ class SignalThread : public sigslot::has_slots<>, protected MessageHandler {
   class Worker : public Thread {
    public:
     explicit Worker(SignalThread* parent) : parent_(parent) {}
+    virtual ~Worker() { Stop(); }
     virtual void Run() { parent_->Run(); }
 
    private:

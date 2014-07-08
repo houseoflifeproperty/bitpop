@@ -7,20 +7,21 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "base/string16.h"
-#include "ui/views/controls/button/text_button.h"
+#include "base/macros.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/controls/textfield/textfield_controller.h"
 #include "ui/views/examples/example_base.h"
 
 namespace views {
+
+class LabelButton;
+
 namespace examples {
 
 // TextfieldExample mimics login screen.
-class TextfieldExample : public ExampleBase,
-                         public TextfieldController,
-                         public ButtonListener {
+class VIEWS_EXAMPLES_EXPORT TextfieldExample : public ExampleBase,
+                                               public TextfieldController,
+                                               public ButtonListener {
  public:
   TextfieldExample();
   virtual ~TextfieldExample();
@@ -31,9 +32,11 @@ class TextfieldExample : public ExampleBase,
  private:
   // TextfieldController:
   virtual void ContentsChanged(Textfield* sender,
-                               const string16& new_contents) OVERRIDE;
+                               const base::string16& new_contents) OVERRIDE;
   virtual bool HandleKeyEvent(Textfield* sender,
                               const ui::KeyEvent& key_event) OVERRIDE;
+  virtual bool HandleMouseEvent(Textfield* sender,
+                                const ui::MouseEvent& mouse_event) OVERRIDE;
 
   // ButtonListener:
   virtual void ButtonPressed(Button* sender, const ui::Event& event) OVERRIDE;
@@ -41,13 +44,14 @@ class TextfieldExample : public ExampleBase,
   // Textfields for name and password.
   Textfield* name_;
   Textfield* password_;
+  Textfield* read_only_;
 
   // Various buttons to control textfield.
-  TextButton* show_password_;
-  TextButton* clear_all_;
-  TextButton* append_;
-  TextButton* set_;
-  TextButton* set_style_;
+  LabelButton* show_password_;
+  LabelButton* clear_all_;
+  LabelButton* append_;
+  LabelButton* set_;
+  LabelButton* set_style_;
 
   DISALLOW_COPY_AND_ASSIGN(TextfieldExample);
 };

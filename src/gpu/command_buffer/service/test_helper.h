@@ -5,12 +5,18 @@
 #ifndef GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 #define GPU_COMMAND_BUFFER_SERVICE_TEST_HELPER_H_
 
+#include "ui/gl/gl_implementation.h"
 #include "ui/gl/gl_mock.h"
 
 namespace gpu {
 namespace gles2 {
 
 struct DisallowedFeatures;
+class Buffer;
+class BufferManager;
+class MockErrorState;
+class TextureRef;
+class TextureManager;
 
 class TestHelper {
  public:
@@ -59,18 +65,23 @@ class TestHelper {
   static void SetupContextGroupInitExpectations(
       ::gfx::MockGLInterface* gl,
       const DisallowedFeatures& disallowed_features,
-      const char* extensions);
+      const char* extensions,
+      const char* gl_version,
+      bool bind_generates_resource);
   static void SetupFeatureInfoInitExpectations(
       ::gfx::MockGLInterface* gl, const char* extensions);
-  static void SetupFeatureInfoInitExpectationsWithVendor(
+  static void SetupFeatureInfoInitExpectationsWithGLVersion(
       ::gfx::MockGLInterface* gl,
       const char* extensions,
-      const char* vendor,
-      const char* renderer);
-  static void SetupTextureManagerInitExpectations(
-      ::gfx::MockGLInterface* gl, const char* extensions);
+      const char* gl_renderer,
+      const char* gl_version);
+  static void SetupTextureManagerInitExpectations(::gfx::MockGLInterface* gl,
+                                                  const char* extensions,
+                                                  bool use_default_textures);
   static void SetupTextureManagerDestructionExpectations(
-      ::gfx::MockGLInterface* gl, const char* extensions);
+      ::gfx::MockGLInterface* gl,
+      const char* extensions,
+      bool use_default_textures);
 
   static void SetupExpectationsForClearingUniforms(
       ::gfx::MockGLInterface* gl, UniformInfo* uniforms, size_t num_uniforms);
@@ -86,11 +97,35 @@ class TestHelper {
       UniformInfo* uniforms, size_t num_uniforms,
       GLuint service_id);
 
+  static void DoBufferData(
+      ::gfx::MockGLInterface* gl, MockErrorState* error_state,
+      BufferManager* manager, Buffer* buffer, GLsizeiptr size, GLenum usage,
+      const GLvoid* data, GLenum error);
+
+  static void SetTexParameteriWithExpectations(
+      ::gfx::MockGLInterface* gl, MockErrorState* error_state,
+      TextureManager* manager, TextureRef* texture_ref,
+      GLenum pname, GLint value, GLenum error);
+
  private:
-  static void SetupTextureInitializationExpectations(
-       ::gfx::MockGLInterface* gl, GLenum target);
-  static void SetupTextureDestructionExpectations(
-       ::gfx::MockGLInterface* gl, GLenum target);
+  static void SetupTextureInitializationExpectations(::gfx::MockGLInterface* gl,
+                                                     GLenum target,
+                                                     bool use_default_textures);
+  static void SetupTextureDestructionExpectations(::gfx::MockGLInterface* gl,
+                                                  GLenum target,
+                                                  bool use_default_textures);
+};
+
+// This object temporaritly Sets what gfx::GetGLImplementation returns. During
+// testing the GLImplementation is set to kGLImplemenationMockGL but lots of
+// code branches based on what gfx::GetGLImplementation returns.
+class ScopedGLImplementationSetter {
+ public:
+  explicit ScopedGLImplementationSetter(gfx::GLImplementation implementation);
+  ~ScopedGLImplementationSetter();
+
+ private:
+  gfx::GLImplementation old_implementation_;
 };
 
 }  // namespace gles2

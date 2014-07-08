@@ -8,23 +8,17 @@
 #include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
+#include "base/process/process_handle.h"
+#include "base/process/process_metrics.h"
 
 typedef std::vector<base::ProcessId> ChromeProcessList;
-
-// Returns the executable name of the current Chrome browser process.
-const FilePath::CharType* GetRunningBrowserExecutableName();
-
-// Returns the executable name of the current Chrome helper process.
-const FilePath::CharType* GetRunningHelperExecutableName();
 
 // Returns a vector of PIDs of all chrome processes (main and renderers etc)
 // based on |browser_pid|, the PID of the main browser process.
 ChromeProcessList GetRunningChromeProcesses(base::ProcessId browser_pid);
 
-// Attempts to terminate all chrome processes launched by (and including)
-// |browser_pid|.
-void TerminateAllChromeProcesses(base::ProcessId browser_pid);
+// Attempts to terminate all chrome processes in |process_list|.
+void TerminateAllChromeProcesses(const ChromeProcessList& process_list);
 
 // A wrapper class for tests to use in fetching process metrics.
 // Delegates everything we need to base::ProcessMetrics, except

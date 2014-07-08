@@ -20,11 +20,14 @@ enum LinuxSandboxStatus {
   // SUID sandbox is using the network namespace.
   kSandboxLinuxNetNS = 1 << 2,
 
-  // seccomp-legacy sandbox active.
-  kSandboxLinuxSeccompLegacy = 1 << 3,
-
   // seccomp-bpf sandbox active.
-  kSandboxLinuxSeccompBpf = 1 << 4,
+  kSandboxLinuxSeccompBPF = 1 << 3,
+
+  // The Yama LSM module is present and enforcing.
+  kSandboxLinuxYama = 1 << 4,
+
+  // A flag that denotes an invalid sandbox status.
+  kSandboxLinuxInvalid = 1 << 31,
 };
 
 }  // namespace content

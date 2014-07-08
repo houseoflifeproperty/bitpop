@@ -54,6 +54,11 @@ ThreadManager* ThreadManager::Instance() {
   return &thread_manager;
 }
 
+// static
+Thread* Thread::Current() {
+  return ThreadManager::Instance()->CurrentThread();
+}
+
 #ifdef POSIX
 ThreadManager::ThreadManager() {
   pthread_key_create(&key_, NULL);
@@ -115,7 +120,6 @@ void ThreadManager::SetCurrentThread(Thread *thread) {
 }
 #endif
 
-// static
 Thread *ThreadManager::WrapCurrentThread() {
   Thread* result = CurrentThread();
   if (NULL == result) {
@@ -125,7 +129,6 @@ Thread *ThreadManager::WrapCurrentThread() {
   return result;
 }
 
-// static
 void ThreadManager::UnwrapCurrentThread() {
   Thread* t = CurrentThread();
   if (t && !(t->IsOwned())) {
@@ -143,7 +146,6 @@ Thread::Thread(SocketServer* ss)
     : MessageQueue(ss),
       priority_(PRIORITY_NORMAL),
       started_(false),
-      has_sends_(false),
 #if defined(WIN32)
       thread_(NULL),
       thread_id_(0),
@@ -222,6 +224,8 @@ bool Thread::Start(Runnable* runnable) {
   ASSERT(!started_);
   if (started_) return false;
 
+  Restart();  // reset fStop_ if the thread is being restarted
+
   // Make sure that ThreadManager is created on the main thread before
   // we start a new thread.
   ThreadManager::Instance();
@@ -248,6 +252,9 @@ bool Thread::Start(Runnable* runnable) {
 #elif defined(POSIX)
   pthread_attr_t attr;
   pthread_attr_init(&attr);
+
+  // Thread priorities are not supported in NaCl.
+#if !defined(__native_client__)
   if (priority_ != PRIORITY_NORMAL) {
     if (priority_ == PRIORITY_IDLE) {
       // There is no POSIX-standard way to set a below-normal priority for an
@@ -275,6 +282,8 @@ bool Thread::Start(Runnable* runnable) {
       }
     }
   }
+#endif  // !defined(__native_client__)
+
   int error_code = pthread_create(&thread_, &attr, PreRun, init);
   if (0 != error_code) {
     LOG(LS_ERROR) << "Unable to create pthread, error " << error_code;
@@ -400,7 +409,6 @@ void Thread::Send(MessageHandler *phandler, uint32 id, MessageData *pdata) {
     smsg.msg = msg;
     smsg.ready = &ready;
     sendlist_.push_back(smsg);
-    has_sends_ = true;
   }
 
   // Wait for a reply
@@ -408,11 +416,15 @@ void Thread::Send(MessageHandler *phandler, uint32 id, MessageData *pdata) {
   ss_->WakeUp();
 
   bool waited = false;
+  crit_.Enter();
   while (!ready) {
+    crit_.Leave();
     current_thread->ReceiveSends();
     current_thread->socketserver()->Wait(kForever, false);
     waited = true;
+    crit_.Enter();
   }
+  crit_.Leave();
 
   // Our Wait loop above may have consumed some WakeUp events for this
   // MessageQueue, that weren't relevant to this Send.  Losing these WakeUps can
@@ -431,11 +443,6 @@ void Thread::Send(MessageHandler *phandler, uint32 id, MessageData *pdata) {
 }
 
 void Thread::ReceiveSends() {
-  // Before entering critical section, check boolean.
-
-  if (!has_sends_)
-    return;
-
   // Receive a sent message. Cleanup scenarios:
   // - thread sending exits: We don't allow this, since thread can exit
   //   only via Join, so Send must complete.
@@ -451,7 +458,6 @@ void Thread::ReceiveSends() {
     *smsg.ready = true;
     smsg.thread->socketserver()->WakeUp();
   }
-  has_sends_ = false;
   crit_.Leave();
 }
 
@@ -556,6 +562,7 @@ AutoThread::AutoThread(SocketServer* ss) : Thread(ss) {
 }
 
 AutoThread::~AutoThread() {
+  Stop();
   if (ThreadManager::Instance()->CurrentThread() == this) {
     ThreadManager::Instance()->SetCurrentThread(NULL);
   }

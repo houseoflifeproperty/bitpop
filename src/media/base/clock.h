@@ -6,16 +6,20 @@
 #define MEDIA_BASE_CLOCK_H_
 
 #include "base/basictypes.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "media/base/media_export.h"
+
+namespace base {
+class TickClock;
+}  // namespace base
 
 namespace media {
 
 // A clock represents a single source of time to allow audio and video streams
 // to synchronize with each other.  Clock essentially tracks the media time with
-// respect to some other source of time, whether that may be the system clock or
-// updates via SetTime(). Clock uses linear interpolation to calculate the
-// current media time since the last time SetTime() was called.
+// respect to some other source of time, whether that may be the monotonic
+// system clock or updates via SetTime(). Clock uses linear interpolation to
+// calculate the current media time since the last time SetTime() was called.
 //
 // Clocks start off paused with a playback rate of 1.0f and a media time of 0.
 //
@@ -24,12 +28,12 @@ namespace media {
 // TODO(scherkus): Clock will some day be responsible for executing callbacks
 // given a media time.  This will be used primarily by video renderers.  For now
 // we'll keep using a poll-and-sleep solution.
+//
+// TODO(miu): Rename media::Clock to avoid confusion (and tripping up the media
+// PRESUBMIT script on future changes).
 class MEDIA_EXPORT Clock {
  public:
-  // Type for a static function pointer that acts as a time source.
-  typedef base::Time(TimeProvider)();
-
-  explicit Clock(TimeProvider* time_provider);
+  explicit Clock(base::TickClock* clock);
   ~Clock();
 
   // Returns true if the clock is running.
@@ -87,16 +91,13 @@ class MEDIA_EXPORT Clock {
   // the |max_time_| cap.
   base::TimeDelta EstimatedElapsedTime();
 
-  // Returns the current media time treating the given time as the latest
-  // value as returned by |time_provider_|.
-  base::TimeDelta ElapsedViaProvidedTime(const base::Time& time) const;
-
-  base::Time GetTimeFromProvider() const;
+  // Translates |time| into the current media time, based on the perspective of
+  // the monotonically-increasing system clock.
+  base::TimeDelta ElapsedViaProvidedTime(const base::TimeTicks& time) const;
 
   base::TimeDelta ClampToValidTimeRange(base::TimeDelta time) const;
 
-  // Function returning current time in base::Time units.
-  TimeProvider* time_provider_;
+  base::TickClock* const clock_;
 
   // Whether the clock is running.
   bool playing_;
@@ -105,9 +106,9 @@ class MEDIA_EXPORT Clock {
   // allowed.
   bool underflow_;
 
-  // The system clock time when this clock last starting playing or had its
-  // time set via SetTime().
-  base::Time reference_;
+  // The monotonic system clock time when this Clock last started playing or had
+  // its time set via SetTime().
+  base::TimeTicks reference_;
 
   // Current accumulated amount of media time.  The remaining portion must be
   // calculated by comparing the system time to the reference time.

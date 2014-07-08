@@ -7,7 +7,6 @@
 #include "ash/display/display_controller.h"
 #include "ash/shell.h"
 #include "ui/aura/client/screen_position_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/gfx/display.h"
 #include "ui/gfx/point.h"
 #include "ui/gfx/rect.h"
@@ -16,22 +15,27 @@
 namespace ash {
 namespace wm {
 
-aura::RootWindow* GetRootWindowAt(const gfx::Point& point) {
+aura::Window* GetRootWindowAt(const gfx::Point& point) {
   const gfx::Display& display =
       Shell::GetScreen()->GetDisplayNearestPoint(point);
+  DCHECK(display.is_valid());
   // TODO(yusukes): Move coordinate_conversion.cc and .h to ui/aura/ once
   // GetRootWindowForDisplayId() is moved to aura::Env.
   return Shell::GetInstance()->display_controller()->
       GetRootWindowForDisplayId(display.id());
 }
 
-aura::RootWindow* GetRootWindowMatching(const gfx::Rect& rect) {
+aura::Window* GetRootWindowMatching(const gfx::Rect& rect) {
   const gfx::Display& display = Shell::GetScreen()->GetDisplayMatching(rect);
   return Shell::GetInstance()->display_controller()->
       GetRootWindowForDisplayId(display.id());
 }
 
 void ConvertPointToScreen(aura::Window* window, gfx::Point* point) {
+  // It is possible for the root window to not have a screen position client
+  // when switching multi-monitor mode from extended to mirror.
+  if (!aura::client::GetScreenPositionClient(window->GetRootWindow()))
+    return;
   aura::client::GetScreenPositionClient(window->GetRootWindow())->
       ConvertPointToScreen(window, point);
 }

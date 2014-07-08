@@ -30,7 +30,7 @@ class SyncMessage;
 // Overview of how the sync channel works
 // --------------------------------------
 // When the sending thread sends a synchronous message, we create a bunch
-// of tracking info (created in SendWithTimeout, stored in the PendingSyncMsg
+// of tracking info (created in Send, stored in the PendingSyncMsg
 // structure) associated with the message that we identify by the unique
 // "MessageId" on the SyncMessage. Among the things we save is the
 // "Deserializer" which is provided by the sync message. This object is in
@@ -58,8 +58,7 @@ class SyncMessage;
 // is more than this object.  If the message loop goes away while this object
 // is running and it's used to send a message, then it will use the invalid
 // message loop pointer to proxy it to the ipc thread.
-class IPC_EXPORT SyncChannel : public ChannelProxy,
-                               public base::WaitableEventWatcher::Delegate {
+class IPC_EXPORT SyncChannel : public ChannelProxy {
  public:
   enum RestrictDispatchGroup {
     kRestrictDispatchGroup_None = 0,
@@ -84,12 +83,6 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
   virtual ~SyncChannel();
 
   virtual bool Send(Message* message) OVERRIDE;
-  virtual bool SendWithTimeout(Message* message, int timeout_ms);
-
-  // Whether we allow sending messages with no time-out.
-  void set_sync_messages_with_no_timeout_allowed(bool value) {
-    sync_messages_with_no_timeout_allowed_ = value;
-  }
 
   // Sets the dispatch group for this channel, to only allow re-entrant dispatch
   // of messages to other channels in the same group.
@@ -115,8 +108,7 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
   // SyncContext holds the per object data for SyncChannel, so that SyncChannel
   // can be deleted while it's being used in a different thread.  See
   // ChannelProxy::Context for more information.
-  class SyncContext : public Context,
-                      public base::WaitableEventWatcher::Delegate {
+  class SyncContext : public Context {
    public:
     SyncContext(Listener* listener,
                 base::SingleThreadTaskRunner* ipc_task_runner,
@@ -152,7 +144,7 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
     base::WaitableEvent* shutdown_event() { return shutdown_event_; }
 
     ReceivedSyncMsgQueue* received_sync_msgs() {
-      return received_sync_msgs_;
+      return received_sync_msgs_.get();
     }
 
     void set_restrict_dispatch_group(int group) {
@@ -162,6 +154,8 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
     int restrict_dispatch_group() const {
       return restrict_dispatch_group_;
     }
+
+    base::WaitableEventWatcher::EventCallback MakeWaitableEventCallback();
 
    private:
     virtual ~SyncContext();
@@ -179,8 +173,7 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
     // Cancels all pending Send calls.
     void CancelPendingSends();
 
-    // WaitableEventWatcher::Delegate implementation.
-    virtual void OnWaitableEventSignaled(base::WaitableEvent* arg) OVERRIDE;
+    void OnWaitableEventSignaled(base::WaitableEvent* event);
 
     typedef std::deque<PendingSyncMsg> PendingSyncMessageQueue;
     PendingSyncMessageQueue deserializers_;
@@ -190,12 +183,12 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
 
     base::WaitableEvent* shutdown_event_;
     base::WaitableEventWatcher shutdown_watcher_;
+    base::WaitableEventWatcher::EventCallback shutdown_watcher_callback_;
     int restrict_dispatch_group_;
   };
 
  private:
-  // WaitableEventWatcher::Delegate implementation.
-  virtual void OnWaitableEventSignaled(base::WaitableEvent* arg) OVERRIDE;
+  void OnWaitableEventSignaled(base::WaitableEvent* arg);
 
   SyncContext* sync_context() {
     return reinterpret_cast<SyncContext*>(context());
@@ -213,10 +206,9 @@ class IPC_EXPORT SyncChannel : public ChannelProxy,
   // Starts the dispatch watcher.
   void StartWatching();
 
-  bool sync_messages_with_no_timeout_allowed_;
-
   // Used to signal events between the IPC and listener threads.
   base::WaitableEventWatcher dispatch_watcher_;
+  base::WaitableEventWatcher::EventCallback dispatch_watcher_callback_;
 
   DISALLOW_COPY_AND_ASSIGN(SyncChannel);
 };

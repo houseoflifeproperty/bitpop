@@ -24,7 +24,7 @@ enum HistogramResultEnum {
 }  // namespace
 
 OnDiskDirectoryBackingStore::OnDiskDirectoryBackingStore(
-    const std::string& dir_name, const FilePath& backing_filepath)
+    const std::string& dir_name, const base::FilePath& backing_filepath)
     : DirectoryBackingStore(dir_name),
       allow_failure_for_test_(false),
       backing_filepath_(backing_filepath) {
@@ -35,7 +35,8 @@ OnDiskDirectoryBackingStore::OnDiskDirectoryBackingStore(
 OnDiskDirectoryBackingStore::~OnDiskDirectoryBackingStore() { }
 
 DirOpenResult OnDiskDirectoryBackingStore::TryLoad(
-    MetahandlesIndex* entry_bucket,
+    Directory::MetahandlesMap* handles_map,
+    JournalIndex* delete_journals,
     Directory::KernelLoadInfo* kernel_load_info) {
   DCHECK(CalledOnValidThread());
   if (!db_->is_open()) {
@@ -48,11 +49,13 @@ DirOpenResult OnDiskDirectoryBackingStore::TryLoad(
 
   if (!DropDeletedEntries())
     return FAILED_DATABASE_CORRUPT;
-  if (!LoadEntries(entry_bucket))
+  if (!LoadEntries(handles_map))
+    return FAILED_DATABASE_CORRUPT;
+  if (!LoadDeleteJournals(delete_journals))
     return FAILED_DATABASE_CORRUPT;
   if (!LoadInfo(kernel_load_info))
     return FAILED_DATABASE_CORRUPT;
-  if (!VerifyReferenceIntegrity(*entry_bucket))
+  if (!VerifyReferenceIntegrity(handles_map))
     return FAILED_DATABASE_CORRUPT;
 
   return OPENED;
@@ -60,9 +63,11 @@ DirOpenResult OnDiskDirectoryBackingStore::TryLoad(
 }
 
 DirOpenResult OnDiskDirectoryBackingStore::Load(
-    MetahandlesIndex* entry_bucket,
+    Directory::MetahandlesMap* handles_map,
+    JournalIndex* delete_journals,
     Directory::KernelLoadInfo* kernel_load_info) {
-  DirOpenResult result = TryLoad(entry_bucket, kernel_load_info);
+  DirOpenResult result = TryLoad(handles_map, delete_journals,
+                                 kernel_load_info);
   if (result == OPENED) {
     UMA_HISTOGRAM_ENUMERATION(
         "Sync.DirectoryOpenResult", FIRST_TRY_SUCCESS, RESULT_COUNT);
@@ -72,12 +77,19 @@ DirOpenResult OnDiskDirectoryBackingStore::Load(
   ReportFirstTryOpenFailure();
 
   // The fallback: delete the current database and return a fresh one.  We can
-  // fetch the user's data from the could.
-  STLDeleteElements(entry_bucket);
+  // fetch the user's data from the cloud.
+  STLDeleteValues(handles_map);
+  STLDeleteElements(delete_journals);
   db_.reset(new sql::Connection);
-  file_util::Delete(backing_filepath_, false);
+  // TODO: Manually propagating the default database settings is
+  // brittle.  Either have a helper to set these up (or generate a new
+  // connection), or add something like Reset() to sql::Connection.
+  db_->set_exclusive_locking();
+  db_->set_page_size(4096);
+  db_->set_histogram_tag("SyncDirectory");
+  base::DeleteFile(backing_filepath_, false);
 
-  result = TryLoad(entry_bucket, kernel_load_info);
+  result = TryLoad(handles_map, delete_journals, kernel_load_info);
   if (result == OPENED) {
     UMA_HISTOGRAM_ENUMERATION(
         "Sync.DirectoryOpenResult", SECOND_TRY_SUCCESS, RESULT_COUNT);

@@ -26,16 +26,16 @@ class Instance;
 /// composition.
 ///
 /// <strong>Example (inheritance):</strong>
-/// <code>
+/// @code
 ///   class MyInstance : public pp::Instance, public pp::MouseLock {
 ///     class MyInstance() : pp::MouseLock(this) {
 ///     }
 ///     ...
 ///   };
-/// </code>
+/// @endcode
 ///
 /// <strong>Example (composition):</strong>
-/// <code>
+/// @code
 ///   class MyMouseLock : public pp::MouseLock {
 ///     ...
 ///   };
@@ -46,7 +46,7 @@ class Instance;
 ///
 ///     MyMouseLock mouse_lock_;
 ///   };
-/// </code>
+/// @endcode
 class MouseLock {
  public:
   /// A constructor for creating a <code>MouseLock</code>.
@@ -61,8 +61,7 @@ class MouseLock {
   /// PPP_MouseLock functions exposed as virtual functions for you to override.
   virtual void MouseLockLost() = 0;
 
-  /// LockMouse() requests the mouse to be locked. The browser will permit
-  /// mouse lock only while the tab is in fullscreen mode.
+  /// LockMouse() requests the mouse to be locked.
   ///
   /// While the mouse is locked, the cursor is implicitly hidden from the user.
   /// Any movement of the mouse will generate a

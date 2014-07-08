@@ -4,12 +4,13 @@
 
 #include <vector>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/spellcheck_result.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider_test.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebString.h"
 
 namespace {
 
@@ -22,7 +23,8 @@ struct MessageParameters {
 
   int router_id;
   int request_id;
-  string16 text;
+  base::string16 text;
+  std::vector<SpellCheckMarker> markers;
 };
 
 MessageParameters ReadRequestTextCheck(IPC::Message* message) {
@@ -31,7 +33,8 @@ MessageParameters ReadRequestTextCheck(IPC::Message* message) {
       message,
       &parameters.router_id,
       &parameters.request_id,
-      &parameters.text);
+      &parameters.text,
+      &parameters.markers);
   EXPECT_TRUE(ok);
   return parameters;
 }
@@ -50,15 +53,16 @@ void FakeMessageArrival(SpellCheckProvider* provider,
 TEST_F(SpellCheckProviderMacTest, SingleRoundtripSuccess) {
   FakeTextCheckingCompletion completion;
 
-  provider_.RequestTextChecking(WebKit::WebString("hello"),
-                                &completion);
+  provider_.RequestTextChecking(blink::WebString("hello "),
+                                &completion,
+                                std::vector<SpellCheckMarker>());
   EXPECT_EQ(completion.completion_count_, 0U);
   EXPECT_EQ(provider_.messages_.size(), 1U);
   EXPECT_EQ(provider_.pending_text_request_size(), 1U);
 
   MessageParameters read_parameters =
       ReadRequestTextCheck(provider_.messages_[0]);
-  EXPECT_EQ(read_parameters.text, UTF8ToUTF16("hello"));
+  EXPECT_EQ(read_parameters.text, base::UTF8ToUTF16("hello "));
 
   FakeMessageArrival(&provider_, read_parameters);
   EXPECT_EQ(completion.completion_count_, 1U);
@@ -67,11 +71,13 @@ TEST_F(SpellCheckProviderMacTest, SingleRoundtripSuccess) {
 
 TEST_F(SpellCheckProviderMacTest, TwoRoundtripSuccess) {
   FakeTextCheckingCompletion completion1;
-  provider_.RequestTextChecking(WebKit::WebString("hello"),
-                                &completion1);
+  provider_.RequestTextChecking(blink::WebString("hello "),
+                                &completion1,
+                                std::vector<SpellCheckMarker>());
   FakeTextCheckingCompletion completion2;
-  provider_.RequestTextChecking(WebKit::WebString("bye"),
-                                &completion2);
+  provider_.RequestTextChecking(blink::WebString("bye "),
+                                &completion2,
+                                std::vector<SpellCheckMarker>());
 
   EXPECT_EQ(completion1.completion_count_, 0U);
   EXPECT_EQ(completion2.completion_count_, 0U);
@@ -80,11 +86,11 @@ TEST_F(SpellCheckProviderMacTest, TwoRoundtripSuccess) {
 
   MessageParameters read_parameters1 =
       ReadRequestTextCheck(provider_.messages_[0]);
-  EXPECT_EQ(read_parameters1.text, UTF8ToUTF16("hello"));
+  EXPECT_EQ(read_parameters1.text, base::UTF8ToUTF16("hello "));
 
   MessageParameters read_parameters2 =
       ReadRequestTextCheck(provider_.messages_[1]);
-  EXPECT_EQ(read_parameters2.text, UTF8ToUTF16("bye"));
+  EXPECT_EQ(read_parameters2.text, base::UTF8ToUTF16("bye "));
 
   FakeMessageArrival(&provider_, read_parameters1);
   EXPECT_EQ(completion1.completion_count_, 1U);

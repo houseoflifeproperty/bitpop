@@ -1,0 +1,23 @@
+[
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/apply_issue.py",
+      "-r",
+      "[SLAVE_BUILD]/foo/bar",
+      "-i",
+      "1",
+      "-p",
+      "1",
+      "-s",
+      "http://review_tool.url",
+      "-E",
+      "[BUILD]/site_config/.rietveld_client_email",
+      "-k",
+      "[BUILD]/site_config/.rietveld_secret_key"
+    ],
+    "name": "apply_issue"
+  }
+]

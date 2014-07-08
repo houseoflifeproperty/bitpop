@@ -9,6 +9,7 @@
 #include <shobjidl.h>
 
 #include "base/win/scoped_comptr.h"
+#include "base/win/scoped_hdc.h"
 #include "third_party/skia/include/core/SkBitmap.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
 #include "ui/base/dragdrop/os_exchange_data_provider_win.h"
@@ -39,18 +40,19 @@ static void SetDragImageOnDataObject(HBITMAP hbitmap,
 // Blit the contents of the canvas to a new HBITMAP. It is the caller's
 // responsibility to release the |bits| buffer.
 static HBITMAP CreateHBITMAPFromSkBitmap(const SkBitmap& sk_bitmap) {
-  HDC screen_dc = GetDC(NULL);
+  base::win::ScopedGetDC screen_dc(NULL);
   BITMAPINFOHEADER header;
   gfx::CreateBitmapHeader(sk_bitmap.width(), sk_bitmap.height(), &header);
   void* bits;
   HBITMAP bitmap =
       CreateDIBSection(screen_dc, reinterpret_cast<BITMAPINFO*>(&header),
                        DIB_RGB_COLORS, &bits, NULL, 0);
-  DCHECK(sk_bitmap.rowBytes() == sk_bitmap.width() * 4);
+  if (!bitmap || !bits)
+    return NULL;
+  DCHECK_EQ(sk_bitmap.rowBytes(), static_cast<size_t>(sk_bitmap.width() * 4));
   SkAutoLockPixels lock(sk_bitmap);
   memcpy(
       bits, sk_bitmap.getPixels(), sk_bitmap.height() * sk_bitmap.rowBytes());
-  ReleaseDC(NULL, screen_dc);
   return bitmap;
 }
 
@@ -64,10 +66,17 @@ void SetDragImageOnDataObject(const gfx::ImageSkia& image_skia,
   // SetDragImageOnDataObject(HBITMAP) takes ownership of the bitmap.
   HBITMAP bitmap = CreateHBITMAPFromSkBitmap(
       SkBitmapOperations::UnPreMultiply(*image_skia.bitmap()));
+  if (bitmap) {
+    // Attach 'bitmap' to the data_object.
+    SetDragImageOnDataObject(bitmap, size, cursor_offset,
+        ui::OSExchangeDataProviderWin::GetIDataObject(*data_object));
+  }
 
-  // Attach 'bitmap' to the data_object.
-  SetDragImageOnDataObject(bitmap, size, cursor_offset,
-      ui::OSExchangeDataProviderWin::GetIDataObject(*data_object));
+  // TODO: the above code is used in non-Ash, while below is used in Ash. If we
+  // could figure this context out then we wouldn't do unnecessary work. However
+  // as it stands getting this information in ui/base would be a layering
+  // violation.
+  data_object->provider().SetDragImage(image_skia, cursor_offset);
 }
 
 }  // namespace drag_utils

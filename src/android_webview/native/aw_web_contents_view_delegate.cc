@@ -4,7 +4,6 @@
 
 #include "android_webview/native/aw_web_contents_view_delegate.h"
 
-#include "android_webview/native/aw_contents.h"
 #include "content/public/browser/android/content_view_core.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/common/context_menu_params.h"
@@ -34,8 +33,8 @@ content::WebDragDestDelegate* AwWebContentsViewDelegate::GetDragDestDelegate() {
 }
 
 void AwWebContentsViewDelegate::ShowContextMenu(
-    const content::ContextMenuParams& params,
-    content::ContextMenuSourceType type) {
+    content::RenderFrameHost* render_frame_host,
+    const content::ContextMenuParams& params) {
   // TODO(boliu): Large blocks of this function are identical with
   // ChromeWebContentsViewDelegateAndroid::ShowContextMenu. De-dup this if
   // possible.
@@ -43,23 +42,12 @@ void AwWebContentsViewDelegate::ShowContextMenu(
   // Display paste pop-up only when selection is empty and editable.
   if (params.is_editable && params.selection_text.empty()) {
     content::ContentViewCore* content_view_core =
-        web_contents_->GetContentNativeView();
+        content::ContentViewCore::FromWebContents(web_contents_);
     if (content_view_core) {
       content_view_core->ShowPastePopup(params.selection_start.x(),
                                         params.selection_start.y());
-      return;
     }
   }
-
-  AwContents* aw_contents = AwContents::FromWebContents(web_contents_);
-  if (!aw_contents)
-    return;
-
-  // Context menu callback in Chromium is triggered by WebKit on an
-  // unhandled GestureLongPress event. Convert the context menu callback
-  // back into a long click event for Android WebView since the view
-  // system may choose to handle the gesture.
-  aw_contents->PerformLongClick();
 }
 
 }  // namespace android_webview

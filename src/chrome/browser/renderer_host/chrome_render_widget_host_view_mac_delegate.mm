@@ -6,96 +6,54 @@
 
 #include <cmath>
 
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/debugger/devtools_window.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/devtools/devtools_window.h"
 #include "chrome/browser/profiles/profile.h"
+#import "chrome/browser/renderer_host/chrome_render_widget_host_view_mac_history_swiper.h"
 #include "chrome/browser/spellchecker/spellcheck_platform_mac.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_finder.h"
-#import "chrome/browser/ui/cocoa/history_overlay_controller.h"
+#import "chrome/browser/ui/cocoa/browser_window_controller.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/render_process_host.h"
 #include "content/public/browser/render_view_host.h"
-#include "content/public/browser/render_view_host_observer.h"
 #include "content/public/browser/render_widget_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
+#include "content/public/browser/web_contents_observer.h"
 
 using content::RenderViewHost;
 
-// Declare things that are part of the 10.7 SDK.
-#if !defined(MAC_OS_X_VERSION_10_7) || \
-    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_7
-enum {
-  NSEventPhaseNone        = 0, // event not associated with a phase.
-  NSEventPhaseBegan       = 0x1 << 0,
-  NSEventPhaseStationary  = 0x1 << 1,
-  NSEventPhaseChanged     = 0x1 << 2,
-  NSEventPhaseEnded       = 0x1 << 3,
-  NSEventPhaseCancelled   = 0x1 << 4,
-};
-typedef NSUInteger NSEventPhase;
-
-enum {
-  NSEventSwipeTrackingLockDirection = 0x1 << 0,
-  NSEventSwipeTrackingClampGestureAmount = 0x1 << 1
-};
-typedef NSUInteger NSEventSwipeTrackingOptions;
-
-@interface NSEvent (LionAPI)
-+ (BOOL)isSwipeTrackingFromScrollEventsEnabled;
-
-- (NSEventPhase)phase;
-- (CGFloat)scrollingDeltaX;
-- (CGFloat)scrollingDeltaY;
-- (void)trackSwipeEventWithOptions:(NSEventSwipeTrackingOptions)options
-          dampenAmountThresholdMin:(CGFloat)minDampenThreshold
-                               max:(CGFloat)maxDampenThreshold
-                      usingHandler:(void (^)(CGFloat gestureAmount,
-                                             NSEventPhase phase,
-                                             BOOL isComplete,
-                                             BOOL *stop))trackingHandler;
-@end
-#endif  // 10.7
-
-@interface ChromeRenderWidgetHostViewMacDelegate ()
-- (BOOL)maybeHandleHistorySwiping:(NSEvent*)theEvent;
+@interface ChromeRenderWidgetHostViewMacDelegate () <HistorySwiperDelegate>
 - (void)spellCheckEnabled:(BOOL)enabled checked:(BOOL)checked;
 @end
 
 namespace ChromeRenderWidgetHostViewMacDelegateInternal {
 
-// Filters the message sent to RenderViewHost to know if spellchecking is
-// enabled or not for the currently focused element.
-class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
+// Filters the message sent by the renderer to know if spellchecking is enabled
+// or not for the currently focused element.
+class SpellCheckObserver : public content::WebContentsObserver {
  public:
-  SpellCheckRenderViewObserver(
+  SpellCheckObserver(
       RenderViewHost* host,
       ChromeRenderWidgetHostViewMacDelegate* view_delegate)
-      : content::RenderViewHostObserver(host),
+      : content::WebContentsObserver(
+            content::WebContents::FromRenderViewHost(host)),
         view_delegate_(view_delegate) {
   }
 
-  virtual ~SpellCheckRenderViewObserver() {
+  virtual ~SpellCheckObserver() {
   }
 
  private:
-  // content::RenderViewHostObserver implementation.
-  virtual void RenderViewHostDestroyed(RenderViewHost* rvh) OVERRIDE {
-    // The parent implementation destroys the observer, scoping the lifetime of
-    // the observer to the RenderViewHost. Since this class is acting as a
-    // bridge to the view for the delegate below, and is owned by that delegate,
-    // undo the scoping by not calling through to the parent implementation.
-  }
-
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE {
     bool handled = true;
-    IPC_BEGIN_MESSAGE_MAP(SpellCheckRenderViewObserver, message)
+    IPC_BEGIN_MESSAGE_MAP(SpellCheckObserver, message)
       IPC_MESSAGE_HANDLER(SpellCheckHostMsg_ToggleSpellCheck,
                           OnToggleSpellCheck)
       IPC_MESSAGE_UNHANDLED(handled = false)
@@ -123,161 +81,98 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
 
     if (renderWidgetHost_->IsRenderView()) {
       spellingObserver_.reset(
-          new ChromeRenderWidgetHostViewMacDelegateInternal::
-              SpellCheckRenderViewObserver(
-                  RenderViewHost::From(renderWidgetHost_), self));
+          new ChromeRenderWidgetHostViewMacDelegateInternal::SpellCheckObserver(
+              RenderViewHost::From(renderWidgetHost_), self));
     }
+
+    historySwiper_.reset([[HistorySwiper alloc] initWithDelegate:self]);
   }
   return self;
 }
 
+- (void)dealloc {
+  [historySwiper_ setDelegate:nil];
+  [super dealloc];
+}
+
 - (void)viewGone:(NSView*)view {
   view_id_util::UnsetID(view);
-  [self autorelease];
 }
 
+// Handle an event. All incoming key and mouse events flow through this
+// delegate method if implemented. Return YES if the event is fully handled, or
+// NO if normal processing should take place.
 - (BOOL)handleEvent:(NSEvent*)event {
-  if ([event type] == NSScrollWheel)
-    return [self maybeHandleHistorySwiping:event];
-
-  return NO;
+  return [historySwiper_ handleEvent:event];
 }
 
+// Notification that a wheel event was unhandled.
 - (void)gotUnhandledWheelEvent {
-  gotUnhandledWheelEvent_ = YES;
+  [historySwiper_ gotUnhandledWheelEvent];
 }
 
+// Notification of scroll offset pinning.
 - (void)scrollOffsetPinnedToLeft:(BOOL)left toRight:(BOOL)right {
-  isPinnedLeft_ = left;
-  isPinnedRight_ = right;
+  [historySwiper_ scrollOffsetPinnedToLeft:left toRight:right];
 }
 
-- (void)setHasHorizontalScrollbar:(BOOL)hasHorizontalScrollbar {
-  hasHorizontalScrollbar_ = hasHorizontalScrollbar;
+// Notification of whether the view has a horizontal scrollbar.
+- (void)setHasHorizontalScrollbar:(BOOL)has_horizontal_scrollbar {
+  [historySwiper_ setHasHorizontalScrollbar:has_horizontal_scrollbar];
 }
 
-// Checks if |theEvent| should trigger history swiping, and if so, does
-// history swiping. Returns YES if the event was consumed or NO if it should
-// be passed on to the renderer.
-- (BOOL)maybeHandleHistorySwiping:(NSEvent*)theEvent {
-  BOOL canUseLionApis = [theEvent respondsToSelector:@selector(phase)];
-  if (!canUseLionApis)
-    return NO;
+// NSWindow events.
 
-  // Scroll events always go to the web first, and can only trigger history
-  // swiping if they come back unhandled.
-  if ([theEvent phase] == NSEventPhaseBegan) {
-    totalScrollDelta_ = NSZeroSize;
-    gotUnhandledWheelEvent_ = NO;
-  }
+- (void)beginGestureWithEvent:(NSEvent*)event {
+  [historySwiper_ beginGestureWithEvent:event];
+}
 
+- (void)endGestureWithEvent:(NSEvent*)event {
+  [historySwiper_ endGestureWithEvent:event];
+}
+
+// This is a low level API which provides touches associated with an event.
+// It is used in conjunction with gestures to determine finger placement
+// on the trackpad.
+- (void)touchesMovedWithEvent:(NSEvent*)event {
+  [historySwiper_ touchesMovedWithEvent:event];
+}
+
+- (void)touchesBeganWithEvent:(NSEvent*)event {
+  [historySwiper_ touchesBeganWithEvent:event];
+}
+
+- (void)touchesCancelledWithEvent:(NSEvent*)event {
+  [historySwiper_ touchesCancelledWithEvent:event];
+}
+
+- (void)touchesEndedWithEvent:(NSEvent*)event {
+  [historySwiper_ touchesEndedWithEvent:event];
+}
+
+- (BOOL)canRubberbandLeft:(NSView*)view {
+  return [historySwiper_ canRubberbandLeft:view];
+}
+
+- (BOOL)canRubberbandRight:(NSView*)view {
+  return [historySwiper_ canRubberbandRight:view];
+}
+
+// HistorySwiperDelegate methods
+
+- (BOOL)shouldAllowHistorySwiping {
   if (!renderWidgetHost_ || !renderWidgetHost_->IsRenderView())
     return NO;
   if (DevToolsWindow::IsDevToolsWindow(
-          RenderViewHost::From(renderWidgetHost_))) {
+      RenderViewHost::From(renderWidgetHost_))) {
     return NO;
   }
 
-  if (gotUnhandledWheelEvent_ &&
-      [NSEvent isSwipeTrackingFromScrollEventsEnabled] &&
-      [theEvent phase] == NSEventPhaseChanged) {
-    Browser* browser = chrome::FindBrowserWithWindow([theEvent window]);
-    totalScrollDelta_.width += [theEvent scrollingDeltaX];
-    totalScrollDelta_.height += [theEvent scrollingDeltaY];
+  return YES;
+}
 
-    bool isHorizontalGesture =
-      std::abs(totalScrollDelta_.width) > std::abs(totalScrollDelta_.height);
-
-    bool isRightScroll = [theEvent scrollingDeltaX] < 0;
-    bool goForward = isRightScroll;
-    bool canGoBack = false, canGoForward = false;
-    if (browser) {
-      canGoBack = chrome::CanGoBack(browser);
-      canGoForward = chrome::CanGoForward(browser);
-    }
-
-    // If "forward" is inactive and the user rubber-bands to the right,
-    // "isPinnedLeft" will be false.  When the user then rubber-bands to the
-    // left in the same gesture, that should trigger history immediately if
-    // there's no scrollbar, hence the check for hasHorizontalScrollbar_.
-    bool shouldGoBack = isPinnedLeft_ || !hasHorizontalScrollbar_;
-    bool shouldGoForward = isPinnedRight_ || !hasHorizontalScrollbar_;
-    if (isHorizontalGesture &&
-        // For normal pages, canGoBack/canGoForward are checked in the renderer
-        // (ChromeClientImpl::shouldRubberBand()), when it decides if it should
-        // rubberband or send back an event unhandled. The check here is
-        // required for pages with an onmousewheel handler that doesn't call
-        // preventDefault().
-        ((shouldGoBack && canGoBack && !isRightScroll) ||
-         (shouldGoForward && canGoForward && isRightScroll))) {
-
-      // Released by the tracking handler once the gesture is complete.
-      HistoryOverlayController* historyOverlay =
-          [[HistoryOverlayController alloc]
-              initForMode:goForward ? kHistoryOverlayModeForward :
-                                      kHistoryOverlayModeBack];
-
-      // The way this API works: gestureAmount is between -1 and 1 (float).  If
-      // the user does the gesture for more than about 25% (i.e. < -0.25 or >
-      // 0.25) and then lets go, it is accepted, we get a NSEventPhaseEnded,
-      // and after that the block is called with amounts animating towards 1
-      // (or -1, depending on the direction).  If the user lets go below that
-      // threshold, we get NSEventPhaseCancelled, and the amount animates
-      // toward 0.  When gestureAmount has reaches its final value, i.e. the
-      // track animation is done, the handler is called with |isComplete| set
-      // to |YES|.
-      // When starting a backwards navigation gesture (swipe from left to right,
-      // gestureAmount will go from 0 to 1), if the user swipes from left to
-      // right and then quickly back to the left, this call can send
-      // NSEventPhaseEnded and then animate to gestureAmount of -1. For a
-      // picture viewer, that makes sense, but for back/forward navigation users
-      // find it confusing. There are two ways to prevent this:
-      // 1. Set Options to NSEventSwipeTrackingLockDirection. This way,
-      //    gestureAmount will always stay > 0.
-      // 2. Pass min:0 max:1 (instead of min:-1 max:1). This way, gestureAmount
-      //    will become less than 0, but on the quick swipe back to the left,
-      //    NSEventPhaseCancelled is sent instead.
-      // The current UI looks nicer with (1) so that swiping the opposite
-      // direction after the initial swipe doesn't cause the shield to move
-      // in the wrong direction.
-      [theEvent trackSwipeEventWithOptions:NSEventSwipeTrackingLockDirection
-                  dampenAmountThresholdMin:-1
-                                       max:1
-                              usingHandler:^(CGFloat gestureAmount,
-                                             NSEventPhase phase,
-                                             BOOL isComplete,
-                                             BOOL *stop) {
-          if (phase == NSEventPhaseBegan) {
-            [historyOverlay showPanelForView:
-                renderWidgetHost_->GetView()->GetNativeView()];
-            return;
-          }
-
-          BOOL ended = phase == NSEventPhaseEnded;
-
-          // Dismiss the panel before navigation for immediate visual feedback.
-          [historyOverlay setProgress:gestureAmount];
-          if (ended)
-            [historyOverlay dismiss];
-
-          // |gestureAmount| obeys -[NSEvent isDirectionInvertedFromDevice]
-          // automatically.
-          Browser* browser = chrome::FindBrowserWithWindow(
-              historyOverlay.view.window);
-          if (ended && browser) {
-            if (goForward)
-              chrome::GoForward(browser, CURRENT_TAB);
-            else
-              chrome::GoBack(browser, CURRENT_TAB);
-          }
-
-          if (isComplete)
-            [historyOverlay release];
-        }];
-      return YES;
-    }
-  }
-  return NO;
+- (NSView*)viewThatWantsHistoryOverlay {
+  return renderWidgetHost_->GetView()->GetNativeView();
 }
 
 - (BOOL)validateUserInterfaceItem:(id<NSValidatedUserInterfaceItem>)item
@@ -323,7 +218,10 @@ class SpellCheckRenderViewObserver : public content::RenderViewHostObserver {
   // that we want to replace the selected word in the text with.
   NSString* newWord = [[sender selectedCell] stringValue];
   if (newWord != nil) {
-    renderWidgetHost_->Replace(base::SysNSStringToUTF16(newWord));
+    content::WebContents* webContents =
+        content::WebContents::FromRenderViewHost(
+            RenderViewHost::From(renderWidgetHost_));
+    webContents->Replace(base::SysNSStringToUTF16(newWord));
   }
 }
 

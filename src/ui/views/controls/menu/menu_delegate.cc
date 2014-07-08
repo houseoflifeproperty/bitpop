@@ -2,8 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "ui/views/controls/menu/menu_config.h"
 #include "ui/views/controls/menu/menu_delegate.h"
+
+#include "ui/events/event.h"
+#include "ui/views/controls/menu/menu_config.h"
 
 namespace views {
 
@@ -13,17 +15,34 @@ bool MenuDelegate::IsItemChecked(int id) const {
   return false;
 }
 
-string16 MenuDelegate::GetLabel(int id) const {
-  return string16();
+base::string16 MenuDelegate::GetLabel(int id) const {
+  return base::string16();
 }
 
-const gfx::Font* MenuDelegate::GetLabelFont(int id) const {
+const gfx::FontList* MenuDelegate::GetLabelFontList(int id) const {
   return NULL;
 }
 
-string16 MenuDelegate::GetTooltipText(int id,
+bool MenuDelegate::GetShouldUseDisabledEmphasizedForegroundColor(
+    int command_id) const {
+  return false;
+}
+
+bool MenuDelegate::GetBackgroundColor(int command_id,
+                                      bool is_hovered,
+                                      SkColor* override_color) const {
+  return false;
+}
+
+bool MenuDelegate::GetForegroundColor(int command_id,
+                                      bool is_hovered,
+                                      SkColor* override_color) const {
+  return false;
+}
+
+base::string16 MenuDelegate::GetTooltipText(int id,
                                       const gfx::Point& screen_loc) const {
-  return string16();
+  return base::string16();
 }
 
 bool MenuDelegate::GetAccelerator(int id, ui::Accelerator* accelerator) {
@@ -33,7 +52,7 @@ bool MenuDelegate::GetAccelerator(int id, ui::Accelerator* accelerator) {
 bool MenuDelegate::ShowContextMenu(MenuItemView* source,
                                    int id,
                                    const gfx::Point& p,
-                                   bool is_mouse_gesture) {
+                                   ui::MenuSourceType source_type) {
   return false;
 }
 
@@ -45,7 +64,7 @@ bool MenuDelegate::IsCommandEnabled(int id) const {
   return true;
 }
 
-bool MenuDelegate::GetContextualLabel(int id, string16* out) const {
+bool MenuDelegate::GetContextualLabel(int id, base::string16* out) const {
   return false;
 }
 
@@ -114,7 +133,7 @@ int MenuDelegate::GetDragOperations(MenuItemView* sender) {
 
 MenuItemView* MenuDelegate::GetSiblingMenu(MenuItemView* menu,
                                            const gfx::Point& screen_point,
-                                           MenuItemView::AnchorPosition* anchor,
+                                           MenuAnchorPosition* anchor,
                                            bool* has_mnemonics,
                                            MenuButton** button) {
   return NULL;
@@ -130,6 +149,18 @@ void MenuDelegate::WillShowMenu(MenuItemView* menu) {
 }
 
 void MenuDelegate::WillHideMenu(MenuItemView* menu) {
+}
+
+void MenuDelegate::GetHorizontalIconMargins(int command_id,
+                                            int icon_size,
+                                            int* left_margin,
+                                            int* right_margin) const {
+  *left_margin = 0;
+  *right_margin = 0;
+}
+
+bool MenuDelegate::ShouldReserveSpaceForSubmenuIndicator() const {
+  return true;
 }
 
 }  // namespace views

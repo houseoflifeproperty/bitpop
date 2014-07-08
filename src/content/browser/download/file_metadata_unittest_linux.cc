@@ -10,14 +10,14 @@
 #include <sstream>
 #include <string>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/logging.h"
-#include "base/string_split.h"
+#include "base/strings/string_split.h"
 #include "content/browser/download/file_metadata_linux.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace content {
 namespace {
@@ -30,9 +30,10 @@ class FileMetadataLinuxTest : public testing::Test {
  public:
   FileMetadataLinuxTest()
       : source_url_("http://www.source.com"),
-        referrer_url_("http://www.referrer.com") {}
+        referrer_url_("http://www.referrer.com"),
+        is_xattr_supported_(false) {}
 
-  const FilePath& test_file() const {
+  const base::FilePath& test_file() const {
     return test_file_;
   }
 
@@ -51,13 +52,12 @@ class FileMetadataLinuxTest : public testing::Test {
  protected:
   virtual void SetUp() OVERRIDE {
     ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
-    ASSERT_TRUE(file_util::CreateTemporaryFileInDir(temp_dir_.path(),
-                                                    &test_file_));
+    ASSERT_TRUE(base::CreateTemporaryFileInDir(temp_dir_.path(), &test_file_));
     int result = setxattr(test_file_.value().c_str(),
                           "user.test", "test", 4, 0);
     is_xattr_supported_ = (!result) || (errno != ENOTSUP);
     if (!is_xattr_supported_) {
-      LOG(INFO) << "Test will be skipped because extended attributes are not "
+      VLOG(0) << "Test will be skipped because extended attributes are not "
                 << "supported on this OS/file system.";
     }
   }
@@ -105,7 +105,7 @@ class FileMetadataLinuxTest : public testing::Test {
 
  private:
   base::ScopedTempDir temp_dir_;
-  FilePath test_file_;
+  base::FilePath test_file_;
   GURL source_url_;
   GURL referrer_url_;
   bool is_xattr_supported_;

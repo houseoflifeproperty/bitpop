@@ -9,8 +9,8 @@
 
 #include "base/compiler_specific.h"
 #include "base/gtest_prod_util.h"
-#include "base/memory/scoped_nsobject.h"
-#include "base/string16.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/status_icons/desktop_notification_balloon.h"
 #include "chrome/browser/status_icons/status_icon.h"
 
@@ -26,16 +26,17 @@ class StatusIconMac : public StatusIcon {
   // Overridden from StatusIcon.
   virtual void SetImage(const gfx::ImageSkia& image) OVERRIDE;
   virtual void SetPressedImage(const gfx::ImageSkia& image) OVERRIDE;
-  virtual void SetToolTip(const string16& tool_tip) OVERRIDE;
+  virtual void SetToolTip(const base::string16& tool_tip) OVERRIDE;
   virtual void DisplayBalloon(const gfx::ImageSkia& icon,
-                              const string16& title,
-                              const string16& contents) OVERRIDE;
+                              const base::string16& title,
+                              const base::string16& contents) OVERRIDE;
 
   bool HasStatusIconMenu();
 
  protected:
   // Overridden from StatusIcon.
-  virtual void UpdatePlatformContextMenu(ui::MenuModel* model) OVERRIDE;
+  virtual void UpdatePlatformContextMenu(
+      StatusIconMenuModel* model) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(StatusIconMacTest, CreateMenu);
@@ -46,18 +47,18 @@ class StatusIconMac : public StatusIcon {
 
   // Getter for item_ that allows lazy initialization.
   NSStatusItem* item();
-  scoped_nsobject<NSStatusItem> item_;
+  base::scoped_nsobject<NSStatusItem> item_;
 
-  scoped_nsobject<StatusItemController> controller_;
+  base::scoped_nsobject<StatusItemController> controller_;
 
   // Notification balloon.
   DesktopNotificationBalloon notification_;
 
-  scoped_nsobject<NSString> toolTip_;
+  base::scoped_nsobject<NSString> toolTip_;
 
   // Status menu shown when right-clicking the system icon, if it has been
   // created by |UpdatePlatformContextMenu|.
-  scoped_nsobject<MenuController> menu_;
+  base::scoped_nsobject<MenuController> menu_;
 
   DISALLOW_COPY_AND_ASSIGN(StatusIconMac);
 };

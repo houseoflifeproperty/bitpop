@@ -4,13 +4,16 @@
 
 #include "ash/system/tray/system_tray_item.h"
 
+#include "ash/shell.h"
 #include "ash/system/tray/system_tray.h"
+#include "ash/system/tray/system_tray_delegate.h"
 #include "ui/views/view.h"
 
 namespace ash {
 
 SystemTrayItem::SystemTrayItem(SystemTray* system_tray)
-    : system_tray_(system_tray) {
+    : system_tray_(system_tray),
+      restore_focus_(false) {
 }
 
 SystemTrayItem::~SystemTrayItem() {
@@ -75,7 +78,11 @@ void SystemTrayItem::HideNotificationView() {
   system_tray()->HideNotificationView(this);
 }
 
-bool SystemTrayItem::ShouldShowLauncher() const {
+bool SystemTrayItem::ShouldHideArrow() const {
+  return false;
+}
+
+bool SystemTrayItem::ShouldShowShelf() const {
   return true;
 }
 

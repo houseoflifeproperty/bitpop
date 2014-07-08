@@ -1,0 +1,34 @@
+#!/usr/bin/env python
+# Copyright 2014 The Chromium Authors. All rights reserved.
+# Use of this source code is governed by a BSD-style license that can be
+# found in the LICENSE file.
+
+"""Reboot the slave immediately"""
+
+import os
+import sys
+
+CURR_DIR = os.path.dirname(os.path.abspath(__file__))
+SCRIPTS_DIR = os.path.join(CURR_DIR, os.pardir)
+BUILD_DIR = os.path.join(SCRIPTS_DIR, os.pardir)
+SITE_CONFIG_DIR = os.path.join(BUILD_DIR, 'site_config')
+
+sys.path.insert(0, SITE_CONFIG_DIR)
+sys.path.insert(0, SCRIPTS_DIR)
+
+# Trick reboot_tools to accept a dummy master config
+import config_bootstrap
+
+
+class DummyMaster(config_bootstrap.Master.Master1):
+  project_name = 'Dummy Master'
+  reboot_on_step_timeout = True
+
+
+config_bootstrap.Master.active_master = DummyMaster
+
+import slave.reboot_tools
+
+
+if '__main__' == __name__:
+  slave.reboot_tools.Reboot()

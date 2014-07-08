@@ -13,13 +13,19 @@
 #
 # Copyright Buildbot Team Members
 
+import collections
 import os, weakref
+
+
 from zope.interface import implements
 from twisted.persisted import styles
 from twisted.python import log
 from twisted.internet import reactor, defer
 from buildbot import interfaces, util
 from buildbot.status.logfile import LogFile, HTMLLogFile
+
+# This allows use of OrderedDict on python 2.6, found in scripts/common.
+import common.python26_polyfill  # pylint: disable=W0611
 
 class BuildStepStatus(styles.Versioned):
     """
@@ -70,7 +76,7 @@ class BuildStepStatus(styles.Versioned):
         self.step_number = step_number
         self.hidden = False
         self.logs = []
-        self.urls = {}
+        self.urls = collections.OrderedDict()
         self.watchers = []
         self.updates = {}
         self.finishedWatchers = []

@@ -31,6 +31,7 @@
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
 #include "talk/base/scoped_ptr.h"
+#include "talk/base/ssladapter.h"
 #include "talk/base/timing.h"
 #include "talk/media/base/constants.h"
 #include "talk/media/base/fakenetworkinterface.h"
@@ -82,6 +83,14 @@ class FakeDataReceiver : public sigslot::has_slots<> {
 
 class RtpDataMediaChannelTest : public testing::Test {
  protected:
+  static void SetUpTestCase() {
+    talk_base::InitializeSSL();
+  }
+
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
+  }
+
   virtual void SetUp() {
     // Seed needed for each test to satisfy expectations.
     iface_.reset(new cricket::FakeNetworkInterface());
@@ -106,7 +115,8 @@ class RtpDataMediaChannelTest : public testing::Test {
 
   cricket::RtpDataMediaChannel* CreateChannel(cricket::RtpDataEngine* dme) {
     cricket::RtpDataMediaChannel* channel =
-        static_cast<cricket::RtpDataMediaChannel*>(dme->CreateChannel());
+        static_cast<cricket::RtpDataMediaChannel*>(dme->CreateChannel(
+            cricket::DCT_RTP));
     channel->SetInterface(iface_.get());
     channel->SignalDataReceived.connect(
         receiver_.get(), &FakeDataReceiver::OnDataReceived);
@@ -139,7 +149,8 @@ class RtpDataMediaChannelTest : public testing::Test {
 
   std::string GetSentData(int index) {
     // Assume RTP header of length 12
-    const talk_base::Buffer* packet = iface_->GetRtpPacket(index);
+    talk_base::scoped_ptr<const talk_base::Buffer> packet(
+        iface_->GetRtpPacket(index));
     if (packet->length() > 12) {
       return std::string(packet->data() + 12, packet->length() - 12);
     } else {
@@ -148,7 +159,8 @@ class RtpDataMediaChannelTest : public testing::Test {
   }
 
   cricket::RtpHeader GetSentDataHeader(int index) {
-    const talk_base::Buffer* packet = iface_->GetRtpPacket(index);
+    talk_base::scoped_ptr<const talk_base::Buffer> packet(
+        iface_->GetRtpPacket(index));
     cricket::RtpHeader header;
     GetRtpHeader(packet->data(), packet->length(), &header);
     return header;
@@ -225,19 +237,23 @@ TEST_F(RtpDataMediaChannelTest, SendData) {
 
   cricket::SendDataParams params;
   params.ssrc = 42;
-  std::string data = "food";
+  unsigned char data[] = "food";
+  talk_base::Buffer payload(data, 4);
   unsigned char padded_data[] = {
     0x00, 0x00, 0x00, 0x00,
     'f', 'o', 'o', 'd',
   };
+  cricket::SendDataResult result;
 
   // Not sending
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
+  EXPECT_EQ(cricket::SDR_ERROR, result);
   EXPECT_FALSE(HasSentData(0));
   ASSERT_TRUE(dmc->SetSend(true));
 
   // Unknown stream name.
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
+  EXPECT_EQ(cricket::SDR_ERROR, result);
   EXPECT_FALSE(HasSentData(0));
 
   cricket::StreamParams stream;
@@ -245,22 +261,27 @@ TEST_F(RtpDataMediaChannelTest, SendData) {
   ASSERT_TRUE(dmc->AddSendStream(stream));
 
   // Unknown codec;
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
+  EXPECT_EQ(cricket::SDR_ERROR, result);
   EXPECT_FALSE(HasSentData(0));
 
   cricket::DataCodec codec;
   codec.id = 103;
-  codec.name = cricket::kGoogleDataCodecName;
+  codec.name = cricket::kGoogleRtpDataCodecName;
   std::vector<cricket::DataCodec> codecs;
   codecs.push_back(codec);
   ASSERT_TRUE(dmc->SetSendCodecs(codecs));
 
   // Length too large;
-  EXPECT_FALSE(dmc->SendData(params, std::string(10000, 'x')));
+  std::string x10000(10000, 'x');
+  EXPECT_FALSE(dmc->SendData(
+      params, talk_base::Buffer(x10000.data(), x10000.length()), &result));
+  EXPECT_EQ(cricket::SDR_ERROR, result);
   EXPECT_FALSE(HasSentData(0));
 
   // Finally works!
-  EXPECT_TRUE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_EQ(cricket::SDR_SUCCESS, result);
   ASSERT_TRUE(HasSentData(0));
   EXPECT_EQ(sizeof(padded_data), GetSentData(0).length());
   EXPECT_EQ(0, memcmp(
@@ -274,7 +295,7 @@ TEST_F(RtpDataMediaChannelTest, SendData) {
   // Should bump timestamp by 180000 because the clock rate is 90khz.
   SetNow(2);
 
-  EXPECT_TRUE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
   ASSERT_TRUE(HasSentData(1));
   EXPECT_EQ(sizeof(padded_data), GetSentData(1).length());
   EXPECT_EQ(0, memcmp(
@@ -282,7 +303,8 @@ TEST_F(RtpDataMediaChannelTest, SendData) {
   cricket::RtpHeader header1 = GetSentDataHeader(1);
   EXPECT_EQ(header1.ssrc, 42U);
   EXPECT_EQ(header1.payload_type, 103);
-  EXPECT_EQ(header0.seq_num + 1, header1.seq_num);
+  EXPECT_EQ(static_cast<uint16>(header0.seq_num + 1),
+            static_cast<uint16>(header1.seq_num));
   EXPECT_EQ(header0.timestamp + 180000, header1.timestamp);
 }
 
@@ -309,7 +331,7 @@ TEST_F(RtpDataMediaChannelTest, SendDataMultipleClocks) {
 
   cricket::DataCodec codec;
   codec.id = 103;
-  codec.name = cricket::kGoogleDataCodecName;
+  codec.name = cricket::kGoogleRtpDataCodecName;
   std::vector<cricket::DataCodec> codecs;
   codecs.push_back(codec);
   ASSERT_TRUE(dmc1->SetSendCodecs(codecs));
@@ -320,18 +342,20 @@ TEST_F(RtpDataMediaChannelTest, SendDataMultipleClocks) {
   cricket::SendDataParams params2;
   params2.ssrc = 42;
 
-  std::string data = "foo";
+  unsigned char data[] = "foo";
+  talk_base::Buffer payload(data, 3);
+  cricket::SendDataResult result;
 
-  EXPECT_TRUE(dmc1->SendData(params1, data));
-  EXPECT_TRUE(dmc2->SendData(params2, data));
+  EXPECT_TRUE(dmc1->SendData(params1, payload, &result));
+  EXPECT_TRUE(dmc2->SendData(params2, payload, &result));
 
   // Should bump timestamp by 90000 because the clock rate is 90khz.
   timing1->set_now(1);
   // Should bump timestamp by 180000 because the clock rate is 90khz.
   timing2->set_now(2);
 
-  EXPECT_TRUE(dmc1->SendData(params1, data));
-  EXPECT_TRUE(dmc2->SendData(params2, data));
+  EXPECT_TRUE(dmc1->SendData(params1, payload, &result));
+  EXPECT_TRUE(dmc2->SendData(params2, payload, &result));
 
   ASSERT_TRUE(HasSentData(3));
   cricket::RtpHeader header1a = GetSentDataHeader(0);
@@ -339,9 +363,11 @@ TEST_F(RtpDataMediaChannelTest, SendDataMultipleClocks) {
   cricket::RtpHeader header1b = GetSentDataHeader(2);
   cricket::RtpHeader header2b = GetSentDataHeader(3);
 
-  EXPECT_EQ(header1a.seq_num + 1, header1b.seq_num);
+  EXPECT_EQ(static_cast<uint16>(header1a.seq_num + 1),
+            static_cast<uint16>(header1b.seq_num));
   EXPECT_EQ(header1a.timestamp + 90000, header1b.timestamp);
-  EXPECT_EQ(header2a.seq_num + 1, header2b.seq_num);
+  EXPECT_EQ(static_cast<uint16>(header2a.seq_num + 1),
+            static_cast<uint16>(header2b.seq_num));
   EXPECT_EQ(header2a.timestamp + 180000, header2b.timestamp);
 }
 
@@ -352,7 +378,7 @@ TEST_F(RtpDataMediaChannelTest, SendDataRate) {
 
   cricket::DataCodec codec;
   codec.id = 103;
-  codec.name = cricket::kGoogleDataCodecName;
+  codec.name = cricket::kGoogleRtpDataCodecName;
   std::vector<cricket::DataCodec> codecs;
   codecs.push_back(codec);
   ASSERT_TRUE(dmc->SetSendCodecs(codecs));
@@ -363,33 +389,35 @@ TEST_F(RtpDataMediaChannelTest, SendDataRate) {
 
   cricket::SendDataParams params;
   params.ssrc = 42;
-  std::string data = "food";
+  unsigned char data[] = "food";
+  talk_base::Buffer payload(data, 4);
+  cricket::SendDataResult result;
 
   // With rtp overhead of 32 bytes, each one of our packets is 36
   // bytes, or 288 bits.  So, a limit of 872bps will allow 3 packets,
   // but not four.
-  dmc->SetSendBandwidth(false, 872);
+  dmc->SetMaxSendBandwidth(872);
 
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_FALSE(dmc->SendData(params, data));
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
 
   SetNow(0.9);
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
 
   SetNow(1.1);
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_TRUE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
   SetNow(1.9);
-  EXPECT_TRUE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
 
   SetNow(2.2);
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_TRUE(dmc->SendData(params, data));
-  EXPECT_FALSE(dmc->SendData(params, data));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_TRUE(dmc->SendData(params, payload, &result));
+  EXPECT_FALSE(dmc->SendData(params, payload, &result));
 }
 
 TEST_F(RtpDataMediaChannelTest, ReceiveData) {
@@ -404,24 +432,24 @@ TEST_F(RtpDataMediaChannelTest, ReceiveData) {
   talk_base::scoped_ptr<cricket::RtpDataMediaChannel> dmc(CreateChannel());
 
   // SetReceived not called.
-  dmc->OnPacketReceived(&packet);
+  dmc->OnPacketReceived(&packet, talk_base::PacketTime());
   EXPECT_FALSE(HasReceivedData());
 
   dmc->SetReceive(true);
 
   // Unknown payload id
-  dmc->OnPacketReceived(&packet);
+  dmc->OnPacketReceived(&packet, talk_base::PacketTime());
   EXPECT_FALSE(HasReceivedData());
 
   cricket::DataCodec codec;
   codec.id = 103;
-  codec.name = cricket::kGoogleDataCodecName;
+  codec.name = cricket::kGoogleRtpDataCodecName;
   std::vector<cricket::DataCodec> codecs;
   codecs.push_back(codec);
   ASSERT_TRUE(dmc->SetRecvCodecs(codecs));
 
   // Unknown stream
-  dmc->OnPacketReceived(&packet);
+  dmc->OnPacketReceived(&packet, talk_base::PacketTime());
   EXPECT_FALSE(HasReceivedData());
 
   cricket::StreamParams stream;
@@ -429,7 +457,7 @@ TEST_F(RtpDataMediaChannelTest, ReceiveData) {
   ASSERT_TRUE(dmc->AddRecvStream(stream));
 
   // Finally works!
-  dmc->OnPacketReceived(&packet);
+  dmc->OnPacketReceived(&packet, talk_base::PacketTime());
   EXPECT_TRUE(HasReceivedData());
   EXPECT_EQ("abcde", GetReceivedData());
   EXPECT_EQ(5U, GetReceivedDataLen());
@@ -444,6 +472,6 @@ TEST_F(RtpDataMediaChannelTest, InvalidRtpPackets) {
   talk_base::scoped_ptr<cricket::RtpDataMediaChannel> dmc(CreateChannel());
 
   // Too short
-  dmc->OnPacketReceived(&packet);
+  dmc->OnPacketReceived(&packet, talk_base::PacketTime());
   EXPECT_FALSE(HasReceivedData());
 }

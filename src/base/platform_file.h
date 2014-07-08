@@ -14,22 +14,23 @@
 
 #include "base/base_export.h"
 #include "base/basictypes.h"
-#include "base/file_path.h"
-#include "base/time.h"
+#include "base/files/file_path.h"
+#include "base/time/time.h"
 
 namespace base {
 
-#if defined(OS_WIN)
-typedef HANDLE PlatformFile;
-const PlatformFile kInvalidPlatformFileValue = INVALID_HANDLE_VALUE;
-#elif defined(OS_POSIX)
-typedef int PlatformFile;
-const PlatformFile kInvalidPlatformFileValue = -1;
-#endif
+// ***************************************************************************
+// ***** Don't use anything from this file anymore. It is being removed!
+// ***** Use base/files/file.h instead
+// ***************************************************************************
 
 // PLATFORM_FILE_(OPEN|CREATE).* are mutually exclusive. You should specify
 // exactly one of the five (possibly combining with other flags) when opening
 // or creating a file.
+// PLATFORM_FILE_(WRITE|APPEND) are mutually exclusive. This is so that APPEND
+// behavior will be consistent with O_APPEND on POSIX.
+// PLATFORM_FILE_EXCLUSIVE_(READ|WRITE) only grant exclusive access to the file
+// on creation on POSIX; for existing files, consider using LockPlatformFile().
 enum PlatformFileFlags {
   PLATFORM_FILE_OPEN = 1 << 0,             // Opens a file, only if it exists.
   PLATFORM_FILE_CREATE = 1 << 1,           // Creates a new file, only if it
@@ -40,23 +41,29 @@ enum PlatformFileFlags {
                                            // only if it exists.
   PLATFORM_FILE_READ = 1 << 5,
   PLATFORM_FILE_WRITE = 1 << 6,
-  PLATFORM_FILE_EXCLUSIVE_READ = 1 << 7,   // EXCLUSIVE is opposite of Windows
+  PLATFORM_FILE_APPEND = 1 << 7,
+  PLATFORM_FILE_EXCLUSIVE_READ = 1 << 8,   // EXCLUSIVE is opposite of Windows
                                            // SHARE
-  PLATFORM_FILE_EXCLUSIVE_WRITE = 1 << 8,
-  PLATFORM_FILE_ASYNC = 1 << 9,
-  PLATFORM_FILE_TEMPORARY = 1 << 10,       // Used on Windows only
-  PLATFORM_FILE_HIDDEN = 1 << 11,          // Used on Windows only
-  PLATFORM_FILE_DELETE_ON_CLOSE = 1 << 12,
+  PLATFORM_FILE_EXCLUSIVE_WRITE = 1 << 9,
+  PLATFORM_FILE_ASYNC = 1 << 10,
+  PLATFORM_FILE_TEMPORARY = 1 << 11,       // Used on Windows only
+  PLATFORM_FILE_HIDDEN = 1 << 12,          // Used on Windows only
+  PLATFORM_FILE_DELETE_ON_CLOSE = 1 << 13,
 
-  PLATFORM_FILE_WRITE_ATTRIBUTES = 1 << 13,  // Used on Windows only
-  PLATFORM_FILE_ENUMERATE = 1 << 14,         // May enumerate directory
+  PLATFORM_FILE_WRITE_ATTRIBUTES = 1 << 14,  // Used on Windows only
 
   PLATFORM_FILE_SHARE_DELETE = 1 << 15,      // Used on Windows only
 
   PLATFORM_FILE_TERMINAL_DEVICE = 1 << 16,   // Serial port flags
   PLATFORM_FILE_BACKUP_SEMANTICS = 1 << 17,  // Used on Windows only
+
+  PLATFORM_FILE_EXECUTE = 1 << 18,           // Used on Windows only
 };
 
+// This enum has been recorded in multiple histograms. If the order of the
+// fields needs to change, please ensure that those histograms are obsolete or
+// have been moved to a different enum.
+//
 // PLATFORM_FILE_ERROR_ACCESS_DENIED is returned when a call fails because of
 // a filesystem restriction. PLATFORM_FILE_ERROR_SECURITY is returned when a
 // browser policy doesn't allow the operation to be executed.
@@ -77,8 +84,9 @@ enum PlatformFileError {
   PLATFORM_FILE_ERROR_NOT_A_FILE = -13,
   PLATFORM_FILE_ERROR_NOT_EMPTY = -14,
   PLATFORM_FILE_ERROR_INVALID_URL = -15,
+  PLATFORM_FILE_ERROR_IO = -16,
   // Put new entries here and increment PLATFORM_FILE_ERROR_MAX.
-  PLATFORM_FILE_ERROR_MAX = -16
+  PLATFORM_FILE_ERROR_MAX = -17
 };
 
 // This explicit mapping matches both FILE_ on Windows and SEEK_ on Linux.
@@ -116,24 +124,17 @@ struct BASE_EXPORT PlatformFileInfo {
   base::Time creation_time;
 };
 
-// Creates or opens the given file. If |created| is provided, it will be set to
-// true if a new file was created [or an old one truncated to zero length to
-// simulate a new file, which can happen with PLATFORM_FILE_CREATE_ALWAYS], and
-// false otherwise.  |error| can be NULL.
-//
-// This function fails with 'access denied' if the |name| contains path
-// traversal ('..') components.
-BASE_EXPORT PlatformFile CreatePlatformFile(const FilePath& name,
-                                            int flags,
-                                            bool* created,
-                                            PlatformFileError* error);
+#if defined(OS_WIN)
+typedef HANDLE PlatformFile;
+const PlatformFile kInvalidPlatformFileValue = INVALID_HANDLE_VALUE;
+BASE_EXPORT PlatformFileError LastErrorToPlatformFileError(DWORD last_error);
+#elif defined(OS_POSIX)
+typedef int PlatformFile;
+const PlatformFile kInvalidPlatformFileValue = -1;
+BASE_EXPORT PlatformFileError ErrnoToPlatformFileError(int saved_errno);
+#endif
 
-// Same as CreatePlatformFile but allows paths with traversal (like \..\)
-// components. Use only with extreme care.
-BASE_EXPORT PlatformFile CreatePlatformFileUnsafe(const FilePath& name,
-                                                  int flags,
-                                                  bool* created,
-                                                  PlatformFileError* error);
+BASE_EXPORT FILE* FdopenPlatformFile(PlatformFile file, const char* mode);
 
 // Closes a file handle. Returns |true| on success and |false| otherwise.
 BASE_EXPORT bool ClosePlatformFile(PlatformFile file);
@@ -171,6 +172,8 @@ BASE_EXPORT int ReadPlatformFileCurPosNoBestEffort(PlatformFile file,
 // data that was previously there. Returns the number of bytes written, or -1
 // on error. Note that this function makes a best effort to write all data on
 // all platforms.
+// Ignores the offset and writes to the end of the file if the file was opened
+// with PLATFORM_FILE_APPEND.
 BASE_EXPORT int WritePlatformFile(PlatformFile file, int64 offset,
                                   const char* data, int size);
 
@@ -198,6 +201,31 @@ BASE_EXPORT bool TouchPlatformFile(PlatformFile file,
 
 // Returns some information for the given file.
 BASE_EXPORT bool GetPlatformFileInfo(PlatformFile file, PlatformFileInfo* info);
+
+// Attempts to take an exclusive write lock on the file. Returns immediately
+// (i.e. does not wait for another process to unlock the file). If the lock
+// was obtained, the result will be PLATFORM_FILE_OK. A lock only guarantees
+// that other processes may not also take a lock on the same file with the
+// same API - it may still be opened, renamed, unlinked, etc.
+//
+// Common semantics:
+//  * Locks are held by processes, but not inherited by child processes.
+//  * Locks are released by the OS on file handle close or process termination.
+//  * Locks are reliable only on local filesystems.
+//  * Duplicated file handles may also write to locked files.
+// Windows-specific semantics:
+//  * Locks are mandatory for read/write APIs, advisory for mapping APIs.
+//  * Within a process, locking the same file (by the same or new handle)
+//    will fail.
+// POSIX-specific semantics:
+//  * Locks are advisory only.
+//  * Within a process, locking the same file (by the same or new handle)
+//    will succeed.
+//  * Closing any descriptor on a given file releases the lock.
+BASE_EXPORT PlatformFileError LockPlatformFile(PlatformFile file);
+
+// Unlock a file previously locked with LockPlatformFile.
+BASE_EXPORT PlatformFileError UnlockPlatformFile(PlatformFile file);
 
 // Use this class to pass ownership of a PlatformFile to a receiver that may or
 // may not want to accept it.  This class does not own the storage for the

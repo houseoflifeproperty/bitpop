@@ -42,10 +42,10 @@ typedef struct MTVDemuxContext {
     unsigned int audio_br;          ///< bitrate of audio channel (mp3)
     unsigned int img_colorfmt;      ///< frame colorfmt rgb 565/555
     unsigned int img_bpp;           ///< frame bits per pixel
-    unsigned int img_width;         //
-    unsigned int img_height;        //
+    unsigned int img_width;
+    unsigned int img_height;
     unsigned int img_segment_size;  ///< size of image segment
-    unsigned int video_fps;         //
+    unsigned int video_fps;
     unsigned int full_segment_size;
 
 } MTVDemuxContext;
@@ -64,13 +64,13 @@ static int mtv_probe(AVProbeData *p)
     if(!AV_RL16(&p->buf[52]) || !AV_RL16(&p->buf[54]))
     {
         if(!!AV_RL16(&p->buf[56]))
-            return AVPROBE_SCORE_MAX/2;
+            return AVPROBE_SCORE_EXTENSION;
         else
             return 0;
     }
 
     if(p->buf[51] != 16)
-        return AVPROBE_SCORE_MAX/4; // But we are going to assume 16bpp anyway ..
+        return AVPROBE_SCORE_EXTENSION / 2; // But we are going to assume 16bpp anyway ..
 
     return AVPROBE_SCORE_MAX;
 }
@@ -105,8 +105,8 @@ static int mtv_read_header(AVFormatContext *s)
         mtv->img_height=mtv->img_segment_size / (mtv->img_bpp>>3)
                         / mtv->img_width;
     }
-    if(!mtv->img_height || !mtv->img_width){
-        av_log(s, AV_LOG_ERROR, "width or height is invalid and I cannot calculate them from other information\n");
+    if(!mtv->img_height || !mtv->img_width || !mtv->img_segment_size){
+        av_log(s, AV_LOG_ERROR, "width or height or segment_size is invalid and I cannot calculate them from other information\n");
         return AVERROR(EINVAL);
     }
 
@@ -114,8 +114,8 @@ static int mtv_read_header(AVFormatContext *s)
     audio_subsegments = avio_rl16(pb);
 
     if (audio_subsegments == 0) {
-        av_log_ask_for_sample(s, "MTV files without audio are not supported\n");
-        return AVERROR_INVALIDDATA;
+        avpriv_request_sample(s, "MTV files without audio");
+        return AVERROR_PATCHWELCOME;
     }
 
     mtv->full_segment_size =
@@ -136,7 +136,7 @@ static int mtv_read_header(AVFormatContext *s)
     avpriv_set_pts_info(st, 64, 1, mtv->video_fps);
     st->codec->codec_type      = AVMEDIA_TYPE_VIDEO;
     st->codec->codec_id        = AV_CODEC_ID_RAWVIDEO;
-    st->codec->pix_fmt         = PIX_FMT_RGB565BE;
+    st->codec->pix_fmt         = AV_PIX_FMT_RGB565BE;
     st->codec->width           = mtv->img_width;
     st->codec->height          = mtv->img_height;
     st->codec->sample_rate     = mtv->video_fps;

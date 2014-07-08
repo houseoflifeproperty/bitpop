@@ -15,6 +15,17 @@
 // called Read yet).
 LOAD_STATE(IDLE)
 
+// When a socket pool group is below the maximum number of sockets allowed per
+// group, but a new socket cannot be created due to the per-pool socket limit,
+// this state is returned by all requests for the group waiting on an idle
+// connection, except those that may be serviced by a pending new connection.
+LOAD_STATE(WAITING_FOR_STALLED_SOCKET_POOL)
+
+// When a socket pool group has reached the maximum number of sockets allowed
+// per group, this state is returned for all requests that don't have a socket,
+// except those that correspond to a pending new connection.
+LOAD_STATE(WAITING_FOR_AVAILABLE_SOCKET)
+
 // This state indicates that the URLRequest delegate has chosen to block this
 // request before it was sent over the network. When in this state, the
 // delegate should set a load state parameter on the URLRequest describing
@@ -34,6 +45,10 @@ LOAD_STATE(WAITING_FOR_CACHE)
 // Note: This is a layering violation, but being the only one it's not that
 // bad. TODO(rvargas): Reconsider what to do if we need to add more.
 LOAD_STATE(WAITING_FOR_APPCACHE)
+
+// This state corresponds to a resource being blocked waiting for the
+// PAC script to be downloaded.
+LOAD_STATE(DOWNLOADING_PROXY_SCRIPT)
 
 // This state corresponds to a resource load that is blocked waiting for a
 // proxy autoconfig script to return a proxy server to use.

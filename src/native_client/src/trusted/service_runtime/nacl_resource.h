@@ -66,13 +66,13 @@ struct NaClResource {
 };
 
 /*
- * NaCLResourceOpen handles NACL_RESOURCE_DEBUG_WARNING_PREFIX checks
+ * NaClResourceOpen handles NACL_RESOURCE_DEBUG_WARNING_PREFIX checks
  * (and stripping), NACL_RESOURCE_{FILE,DEV}_PREFIX dispatch.
  *
  * This function does not take a descriptor number to directly modify
- * the descriptor array and require the caller to invoke NaClSetDesc,
- * since the API allows other uses of the returned NaClDesc object
- * than just for redirection.
+ * the descriptor array and require the caller to invoke
+ * NaClAppSetDesc(), since the API allows other uses of the returned
+ * NaClDesc object than just for redirection.
  */
 struct NaClDesc *NaClResourceOpen(struct NaClResource *self,
                                   char const          *resource_locator,

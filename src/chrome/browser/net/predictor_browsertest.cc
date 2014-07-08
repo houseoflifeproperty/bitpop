@@ -3,16 +3,16 @@
 // found in the LICENSE file.
 
 #include "base/json/json_string_value_serializer.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/net/predictor.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/in_process_browser_test.h"
 #include "chrome/test/base/ui_test_utils.h"
-#include "net/base/host_resolver_proc.h"
-#include "net/base/mock_host_resolver.h"
 #include "net/base/net_errors.h"
+#include "net/dns/host_resolver_proc.h"
+#include "net/dns/mock_host_resolver.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
 using content::BrowserThread;
@@ -69,7 +69,7 @@ class HostResolutionRequestRecorder : public net::HostResolverProc {
     if (is_waiting_for_hostname_ && waiting_for_hostname_ == hostname) {
       is_waiting_for_hostname_ = false;
       waiting_for_hostname_.clear();
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
     }
   }
 
@@ -102,10 +102,15 @@ class PredictorBrowserTest : public InProcessBrowserTest {
   }
 
  protected:
-  virtual void SetUp() OVERRIDE {
-    net::ScopedDefaultHostResolverProc scoped_host_resolver_proc(
-        host_resolution_request_recorder_);
-    InProcessBrowserTest::SetUp();
+  virtual void SetUpInProcessBrowserTestFixture() OVERRIDE {
+    scoped_host_resolver_proc_.reset(new net::ScopedDefaultHostResolverProc(
+        host_resolution_request_recorder_.get()));
+    InProcessBrowserTest::SetUpInProcessBrowserTestFixture();
+  }
+
+  virtual void TearDownInProcessBrowserTestFixture() OVERRIDE {
+    InProcessBrowserTest::TearDownInProcessBrowserTestFixture();
+    scoped_host_resolver_proc_.reset();
   }
 
   void LearnAboutInitialNavigation(const GURL& url) {
@@ -131,7 +136,7 @@ class PredictorBrowserTest : public InProcessBrowserTest {
 
   void PrepareFrameSubresources(const GURL& url) {
     Predictor* predictor = browser()->profile()->GetNetworkPredictor();
-    predictor->PredictFrameSubresources(url);
+    predictor->PredictFrameSubresources(url, GURL());
   }
 
   void GetListFromPrefsAsString(const char* list_path,
@@ -153,6 +158,7 @@ class PredictorBrowserTest : public InProcessBrowserTest {
  private:
   scoped_refptr<HostResolutionRequestRecorder>
       host_resolution_request_recorder_;
+  scoped_ptr<net::ScopedDefaultHostResolverProc> scoped_host_resolver_proc_;
 };
 
 IN_PROC_BROWSER_TEST_F(PredictorBrowserTest, PRE_ShutdownStartupCycle) {

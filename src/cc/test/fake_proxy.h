@@ -5,48 +5,55 @@
 #ifndef CC_TEST_FAKE_PROXY_H_
 #define CC_TEST_FAKE_PROXY_H_
 
-#include "cc/layer_tree_host.h"
-#include "cc/proxy.h"
-#include "cc/thread.h"
+#include "base/single_thread_task_runner.h"
+#include "cc/trees/layer_tree_host.h"
+#include "cc/trees/proxy.h"
 
 namespace cc {
 
 class FakeProxy : public Proxy {
-public:
-    explicit FakeProxy(scoped_ptr<Thread> implThread) : Proxy(implThread.Pass()) { }
+ public:
+  FakeProxy() : Proxy(NULL), layer_tree_host_(NULL) {}
+  explicit FakeProxy(
+      scoped_refptr<base::SingleThreadTaskRunner> impl_task_runner)
+      : Proxy(impl_task_runner),
+        layer_tree_host_(NULL) {}
 
-    virtual bool compositeAndReadback(void *pixels, const gfx::Rect&) OVERRIDE;
-    virtual void startPageScaleAnimation(gfx::Vector2d targetPosition, bool useAnchor, float scale, base::TimeDelta duration) OVERRIDE { }
-    virtual void finishAllRendering() OVERRIDE { }
-    virtual bool isStarted() const OVERRIDE;
-    virtual bool initializeOutputSurface() OVERRIDE;
-    virtual void setSurfaceReady() OVERRIDE { }
-    virtual void setVisible(bool) OVERRIDE { }
-    virtual bool initializeRenderer() OVERRIDE;
-    virtual bool recreateOutputSurface() OVERRIDE;
-    virtual void renderingStats(RenderingStats*) OVERRIDE { }
-    virtual const RendererCapabilities& rendererCapabilities() const OVERRIDE;
-    virtual void setNeedsAnimate() OVERRIDE { }
-    virtual void setNeedsCommit() OVERRIDE { }
-    virtual void setNeedsRedraw() OVERRIDE { }
-    virtual void setDeferCommits(bool) OVERRIDE { }
-    virtual void didAddAnimation() OVERRIDE { }
-    virtual void mainThreadHasStoppedFlinging() OVERRIDE { }
-    virtual bool commitRequested() const OVERRIDE;
-    virtual void start() OVERRIDE { }
-    virtual void stop() OVERRIDE { }
-    virtual void forceSerializeOnSwapBuffers() OVERRIDE { }
-    virtual size_t maxPartialTextureUpdates() const OVERRIDE;
-    virtual void acquireLayerTextures() OVERRIDE { }
-    virtual void loseOutputSurface() OVERRIDE { }
-    virtual bool commitPendingForTesting() OVERRIDE;
+  void SetLayerTreeHost(LayerTreeHost* host);
 
-    virtual RendererCapabilities& rendererCapabilities();
-    void setMaxPartialTextureUpdates(size_t);
+  virtual bool CompositeAndReadback(void* pixels,
+                                    const gfx::Rect& rect) OVERRIDE;
+  virtual void FinishAllRendering() OVERRIDE {}
+  virtual bool IsStarted() const OVERRIDE;
+  virtual void SetLayerTreeHostClientReady() OVERRIDE {}
+  virtual void SetVisible(bool visible) OVERRIDE {}
+  virtual void CreateAndInitializeOutputSurface() OVERRIDE;
+  virtual const RendererCapabilities& GetRendererCapabilities() const OVERRIDE;
+  virtual void SetNeedsAnimate() OVERRIDE {}
+  virtual void SetNeedsUpdateLayers() OVERRIDE {}
+  virtual void SetNeedsCommit() OVERRIDE {}
+  virtual void SetNeedsRedraw(const gfx::Rect& damage_rect) OVERRIDE {}
+  virtual void SetNextCommitWaitsForActivation() OVERRIDE {}
+  virtual void NotifyInputThrottledUntilCommit() OVERRIDE {}
+  virtual void SetDeferCommits(bool defer_commits) OVERRIDE {}
+  virtual void MainThreadHasStoppedFlinging() OVERRIDE {}
+  virtual bool BeginMainFrameRequested() const OVERRIDE;
+  virtual bool CommitRequested() const OVERRIDE;
+  virtual void Start() OVERRIDE {}
+  virtual void Stop() OVERRIDE {}
+  virtual void ForceSerializeOnSwapBuffers() OVERRIDE {}
+  virtual size_t MaxPartialTextureUpdates() const OVERRIDE;
+  virtual void SetDebugState(const LayerTreeDebugState& debug_state) OVERRIDE {}
+  virtual bool CommitPendingForTesting() OVERRIDE;
+  virtual scoped_ptr<base::Value> AsValue() const OVERRIDE;
 
-private:
-    RendererCapabilities m_capabilities;
-    size_t m_maxPartialTextureUpdates;
+  virtual RendererCapabilities& GetRendererCapabilities();
+  void SetMaxPartialTextureUpdates(size_t max);
+
+ private:
+  RendererCapabilities capabilities_;
+  size_t max_partial_texture_updates_;
+  LayerTreeHost* layer_tree_host_;
 };
 
 }  // namespace cc

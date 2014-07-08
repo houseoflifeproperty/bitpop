@@ -13,10 +13,22 @@
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
 #include "chrome/browser/profiles/profile.h"
+#include "content/public/browser/storage_partition.h"
 #include "content/public/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
 #include "net/cookies/canonical_cookie.h"
+#include "url/gurl.h"
+
+namespace {
+
+bool SameDomainOrHost(const GURL& gurl1, const GURL& gurl2) {
+  return net::registry_controlled_domains::SameDomainOrHost(
+      gurl1,
+      gurl2,
+      net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
+}
+
+}  // namespace
 
 LocalSharedObjectsContainer::LocalSharedObjectsContainer(Profile* profile)
     : appcaches_(new CannedBrowsingDataAppCacheHelper(profile)),
@@ -24,7 +36,9 @@ LocalSharedObjectsContainer::LocalSharedObjectsContainer(Profile* profile)
           profile->GetRequestContext())),
       databases_(new CannedBrowsingDataDatabaseHelper(profile)),
       file_systems_(new CannedBrowsingDataFileSystemHelper(profile)),
-      indexed_dbs_(new CannedBrowsingDataIndexedDBHelper()),
+      indexed_dbs_(new CannedBrowsingDataIndexedDBHelper(
+          content::BrowserContext::GetDefaultStoragePartition(profile)->
+              GetIndexedDBContext())),
       local_storages_(new CannedBrowsingDataLocalStorageHelper(profile)),
       server_bound_certs_(new CannedBrowsingDataServerBoundCertHelper()),
       session_storages_(new CannedBrowsingDataLocalStorageHelper(profile)) {
@@ -82,15 +96,13 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
       std::string cookie_domain = cookie->Domain();
       if (cookie_domain[0] == '.')
         cookie_domain = cookie_domain.substr(1);
-      // The |domain_url| is only created in order to use the SameDomainOrHost
-      // method below. It does not matter which scheme is used as the scheme is
-      // ignored by the SameDomainOrHost method.
-      GURL domain_url(std::string(chrome::kHttpScheme) +
+      // The |domain_url| is only created in order to use the
+      // SameDomainOrHost method below. It does not matter which scheme is
+      // used as the scheme is ignored by the SameDomainOrHost method.
+      GURL domain_url(std::string(url::kHttpScheme) +
                       content::kStandardSchemeSeparator + cookie_domain);
-      if (net::RegistryControlledDomainService::SameDomainOrHost(
-             origin, domain_url)) {
+      if (SameDomainOrHost(origin, domain_url))
         ++count;
-      }
     }
   }
 
@@ -100,10 +112,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
   for (std::set<GURL>::const_iterator it = local_storage_info.begin();
        it != local_storage_info.end();
        ++it) {
-    if (net::RegistryControlledDomainService::SameDomainOrHost(
-            origin, *it)) {
+    if (SameDomainOrHost(origin, *it))
       ++count;
-    }
   }
 
   // Count session storages for the domain of the given |origin|.
@@ -111,10 +121,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
   for (std::set<GURL>::const_iterator it = urls.begin();
        it != urls.end();
        ++it) {
-    if (net::RegistryControlledDomainService::SameDomainOrHost(
-            origin, *it)) {
+    if (SameDomainOrHost(origin, *it))
       ++count;
-    }
   }
 
   // Count indexed dbs for the domain of the given |origin|.
@@ -125,10 +133,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
           indexed_db_info.begin();
       it != indexed_db_info.end();
       ++it) {
-    if (net::RegistryControlledDomainService::SameDomainOrHost(
-            origin, it->origin)) {
+    if (SameDomainOrHost(origin, it->origin))
       ++count;
-    }
   }
 
   // Count filesystems for the domain of the given |origin|.
@@ -139,10 +145,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
   for (FileSystemInfoList::const_iterator it = file_system_info.begin();
        it != file_system_info.end();
        ++it) {
-    if (net::RegistryControlledDomainService::SameDomainOrHost(
-        origin, it->origin)) {
+    if (SameDomainOrHost(origin, it->origin))
       ++count;
-    }
   }
 
   // Count databases for the domain of the given |origin|.
@@ -153,10 +157,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
           database_list.begin();
       it != database_list.end();
       ++it) {
-    if (net::RegistryControlledDomainService::SameDomainOrHost(
-            origin, it->origin)) {
+    if (SameDomainOrHost(origin, it->origin))
       ++count;
-    }
   }
 
   // Count the AppCache manifest files for the domain of the given |origin|.
@@ -171,10 +173,8 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
              info_vector.begin();
          info != info_vector.end();
          ++info) {
-       if (net::RegistryControlledDomainService::SameDomainOrHost(
-            origin, info->manifest_url)) {
+       if (SameDomainOrHost(origin, info->manifest_url))
          ++count;
-       }
     }
   }
 
@@ -184,15 +184,15 @@ size_t LocalSharedObjectsContainer::GetObjectCountForDomain(
 scoped_ptr<CookiesTreeModel>
 LocalSharedObjectsContainer::CreateCookiesTreeModel() const {
   LocalDataContainer* container = new LocalDataContainer(
-      cookies()->Clone(),
-      databases()->Clone(),
-      local_storages()->Clone(),
-      session_storages()->Clone(),
-      appcaches()->Clone(),
-      indexed_dbs()->Clone(),
-      file_systems()->Clone(),
+      cookies(),
+      databases(),
+      local_storages(),
+      session_storages(),
+      appcaches(),
+      indexed_dbs(),
+      file_systems(),
       NULL,
-      server_bound_certs()->Clone(),
+      server_bound_certs(),
       NULL);
 
   return make_scoped_ptr(new CookiesTreeModel(container, NULL, true));

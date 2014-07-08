@@ -8,11 +8,12 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/memory/ref_counted.h"
 #include "google_apis/gaia/gaia_oauth_client.h"
-#include "remoting/host/host_key_pair.h"
-#include "remoting/host/service_client.h"
+#include "remoting/base/rsa_key_pair.h"
+#include "remoting/base/url_request_context.h"
 #include "remoting/host/setup/daemon_controller.h"
-#include "remoting/host/url_request_context.h"
+#include "remoting/host/setup/service_client.h"
 
 namespace remoting {
 
@@ -33,6 +34,7 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
 
   // Creates a HostStarter.
   static scoped_ptr<HostStarter> Create(
+      const std::string& chromoting_hosts_url,
       net::URLRequestContextGetter* url_request_context_getter);
 
   // Registers a new host with the Chromoting service, and starts it.
@@ -51,10 +53,10 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
                                    int expires_in_seconds) OVERRIDE;
   virtual void OnRefreshTokenResponse(const std::string& access_token,
                                       int expires_in_seconds) OVERRIDE;
-  virtual void OnGetUserInfoResponse(const std::string& user_email) OVERRIDE;
+  virtual void OnGetUserEmailResponse(const std::string& user_email) OVERRIDE;
 
   // remoting::ServiceClient::Delegate
-  virtual void OnHostRegistered() OVERRIDE;
+  virtual void OnHostRegistered(const std::string& authorization_code) OVERRIDE;
   virtual void OnHostUnregistered() OVERRIDE;
 
   // TODO(sergeyu): Following methods are members of all three delegate
@@ -67,13 +69,15 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
  private:
   HostStarter(scoped_ptr<gaia::GaiaOAuthClient> oauth_client,
               scoped_ptr<remoting::ServiceClient> service_client,
-              scoped_ptr<remoting::DaemonController> daemon_controller);
+              scoped_refptr<remoting::DaemonController> daemon_controller);
+
+  void StartHostProcess();
 
   void OnHostStarted(DaemonController::AsyncResult result);
 
   scoped_ptr<gaia::GaiaOAuthClient> oauth_client_;
   scoped_ptr<remoting::ServiceClient> service_client_;
-  scoped_ptr<remoting::DaemonController> daemon_controller_;
+  scoped_refptr<remoting::DaemonController> daemon_controller_;
   gaia::OAuthClientInfo oauth_client_info_;
   std::string host_name_;
   std::string host_pin_;
@@ -82,12 +86,19 @@ class HostStarter : public gaia::GaiaOAuthClient::Delegate,
   scoped_refptr<base::SingleThreadTaskRunner> main_task_runner_;
   std::string refresh_token_;
   std::string access_token_;
-  std::string user_email_;
-  remoting::HostKeyPair key_pair_;
+  std::string host_owner_;
+  std::string xmpp_login_;
+  scoped_refptr<remoting::RsaKeyPair> key_pair_;
   std::string host_id_;
+  bool use_service_account_;
 
-  base::WeakPtrFactory<HostStarter> weak_ptr_factory_;
+  // True if the host was not started and unregistration was requested. If this
+  // is set and a network/OAuth error occurs during unregistration, this will
+  // be logged, but the error will still be reported as START_ERROR.
+  bool unregistering_host_;
+
   base::WeakPtr<HostStarter> weak_ptr_;
+  base::WeakPtrFactory<HostStarter> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(HostStarter);
 };

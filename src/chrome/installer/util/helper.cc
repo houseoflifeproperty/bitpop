@@ -4,60 +4,25 @@
 
 #include "chrome/installer/util/helper.h"
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/file_path.h"
 #include "base/path_service.h"
-#include "base/win/windows_version.h"
-#include "chrome/common/chrome_constants.h"
 #include "chrome/installer/util/browser_distribution.h"
-#include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/install_util.h"
+#include "chrome/installer/util/installation_state.h"
 #include "chrome/installer/util/util_constants.h"
-
-namespace {
-
-FilePath GetChromeInstallBasePath(bool system,
-                                  BrowserDistribution* distribution,
-                                  const wchar_t* sub_path) {
-  FilePath install_path;
-  if (system) {
-    PathService::Get(base::DIR_PROGRAM_FILES, &install_path);
-  } else {
-    PathService::Get(base::DIR_LOCAL_APP_DATA, &install_path);
-  }
-
-  if (!install_path.empty()) {
-    install_path = install_path.Append(distribution->GetInstallSubDir());
-    install_path = install_path.Append(sub_path);
-  }
-
-  return install_path;
-}
-
-}  // namespace
 
 namespace installer {
 
-FilePath GetChromeInstallPath(bool system_install, BrowserDistribution* dist) {
-  return GetChromeInstallBasePath(system_install, dist, kInstallBinaryDir);
-}
-
-void GetChromeUserDataPaths(BrowserDistribution* dist,
-                            std::vector<FilePath>* paths) {
-  const bool has_metro_data = dist->CanSetAsDefault() &&
-      base::win::GetVersion() >= base::win::VERSION_WIN8;
-  FilePath data_dir(GetChromeInstallBasePath(false, dist, kInstallUserDataDir));
-  if (data_dir.empty()) {
-    paths->clear();
-  } else {
-    paths->resize(has_metro_data ? 2 : 1);
-    (*paths)[0] = data_dir;
-    if (has_metro_data) {
-      (*paths)[1] = data_dir.DirName().Append(
-          chrome::kMetroChromeUserDataSubDir);
-    }
+base::FilePath GetChromeInstallPath(bool system_install,
+                                    BrowserDistribution* dist) {
+  base::FilePath install_path;
+  int key = system_install ? base::DIR_PROGRAM_FILES : base::DIR_LOCAL_APP_DATA;
+  if (PathService::Get(key, &install_path)) {
+    install_path = install_path.Append(dist->GetInstallSubDir());
+    install_path = install_path.Append(kInstallBinaryDir);
   }
-  DCHECK(!paths->empty());
+  return install_path;
 }
 
 BrowserDistribution* GetBinariesDistribution(bool system_install) {

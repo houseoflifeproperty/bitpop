@@ -4,12 +4,12 @@
 
 #include "chrome/common/content_settings_pattern_parser.h"
 
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/url_constants.h"
 #include "extensions/common/constants.h"
-#include "googleurl/src/gurl.h"
-#include "googleurl/src/url_canon.h"
 #include "net/base/net_util.h"
+#include "url/gurl.h"
+#include "url/url_canon.h"
 
 namespace {
 
@@ -173,7 +173,7 @@ void PatternParser::Parse(const std::string& pattern_spec,
     }
   } else {
     if (scheme != std::string(extensions::kExtensionScheme) &&
-        scheme != std::string(chrome::kFileScheme))
+        scheme != std::string(content::kFileScheme))
       builder->WithPortWildcard();
   }
 
@@ -198,11 +198,11 @@ std::string PatternParser::ToString(
       parts.is_port_wildcard)
     return "*";
 
-  std::string str = "";
+  std::string str;
   if (!parts.is_scheme_wildcard)
     str += parts.scheme + content::kStandardSchemeSeparator;
 
-  if (parts.scheme == chrome::kFileScheme) {
+  if (parts.scheme == content::kFileScheme) {
     if (parts.is_path_wildcard)
       return str + kUrlPathSeparator + kPathWildcard;
     else

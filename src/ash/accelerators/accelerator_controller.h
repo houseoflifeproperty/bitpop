@@ -8,6 +8,7 @@
 #include <map>
 #include <set>
 
+#include "ash/accelerators/exit_warning_handler.h"
 #include "ash/ash_export.h"
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -23,6 +24,7 @@ namespace ash {
 
 struct AcceleratorData;
 class BrightnessControlDelegate;
+class ExitWarningHandler;
 class ImeControlDelegate;
 class KeyboardBrightnessControlDelegate;
 class ScreenshotDelegate;
@@ -109,10 +111,18 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
   BrightnessControlDelegate* brightness_control_delegate() const {
     return brightness_control_delegate_.get();
   }
+  ScreenshotDelegate* screenshot_delegate() {
+    return screenshot_delegate_.get();
+  }
 
   // Provides access to an object holding contextual information.
   AcceleratorControllerContext* context() {
     return &context_;
+  }
+
+  // Provides access to the ExitWarningHandler for testing.
+  ExitWarningHandler* GetExitWarningHandlerForTest() {
+    return &exit_warning_handler_;
   }
 
  private:
@@ -142,6 +152,10 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
   // Contextual information, eg. if the current accelerator is repeated.
   AcceleratorControllerContext context_;
 
+  // Handles the exit accelerator which requires a double press to exit and
+  // shows a popup with an explanation.
+  ExitWarningHandler exit_warning_handler_;
+
   // A map from accelerators to the AcceleratorAction values, which are used in
   // the implementation.
   std::map<ui::Accelerator, int> accelerators_;
@@ -156,6 +170,10 @@ class ASH_EXPORT AcceleratorController : public ui::AcceleratorTarget {
   std::set<int> reserved_actions_;
   // Actions which will not be repeated while holding the accelerator key.
   std::set<int> nonrepeatable_actions_;
+  // Actions allowed in app mode.
+  std::set<int> actions_allowed_in_app_mode_;
+  // Actions disallowed if there are no windows.
+  std::set<int> actions_needing_window_;
 
   DISALLOW_COPY_AND_ASSIGN(AcceleratorController);
 };

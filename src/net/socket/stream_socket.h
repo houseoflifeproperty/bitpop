@@ -5,7 +5,6 @@
 #ifndef NET_SOCKET_STREAM_SOCKET_H_
 #define NET_SOCKET_STREAM_SOCKET_H_
 
-#include "base/time.h"
 #include "net/base/net_log.h"
 #include "net/socket/next_proto.h"
 #include "net/socket/socket.h"
@@ -56,7 +55,6 @@ class NET_EXPORT_PRIVATE StreamSocket : public Socket {
 
   // Copies the peer address to |address| and returns a network error code.
   // ERR_SOCKET_NOT_CONNECTED will be returned if the socket is not connected.
-  // TODO(sergeyu): Use IPEndPoint instead of AddressList.
   virtual int GetPeerAddress(IPEndPoint* address) const = 0;
 
   // Copies the local address to |address| and returns a network error code.
@@ -72,20 +70,14 @@ class NET_EXPORT_PRIVATE StreamSocket : public Socket {
   virtual void SetSubresourceSpeculation() = 0;
   virtual void SetOmniboxSpeculation() = 0;
 
-  // Returns true if the underlying transport socket ever had any reads or
-  // writes.  StreamSockets layered on top of transport sockets should forward
-  // this call to the transport socket.
+  // Returns true if the socket ever had any reads or writes.  StreamSockets
+  // layered on top of transport sockets should return if their own Read() or
+  // Write() methods had been called, not the underlying transport's.
   virtual bool WasEverUsed() const = 0;
 
   // Returns true if the underlying transport socket is using TCP FastOpen.
   // TCP FastOpen is an experiment with sending data in the TCP SYN packet.
   virtual bool UsingTCPFastOpen() const = 0;
-
-  // Returns the number of bytes successfully read from this socket.
-  virtual int64 NumBytesRead() const = 0;
-
-  // Returns the connection setup time of this socket.
-  virtual base::TimeDelta GetConnectTimeMicros() const = 0;
 
   // Returns true if NPN was negotiated during the connection of this socket.
   virtual bool WasNpnNegotiated() const = 0;

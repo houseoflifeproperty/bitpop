@@ -7,9 +7,9 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
@@ -18,7 +18,6 @@
 namespace content {
 
 class BrowserContext;
-class DownloadId;
 class WebContents;
 
 // Called by SavePackage when it creates a DownloadItem.
@@ -29,7 +28,7 @@ typedef base::Callback<void(DownloadItem*)>
 // operation.  If the delegate wants notification of the download item created
 // in response to this operation, the SavePackageDownloadCreatedCallback will be
 // non-null.
-typedef base::Callback<void(const FilePath&,
+typedef base::Callback<void(const base::FilePath&,
                             SavePageType,
                             const SavePackageDownloadCreatedCallback&)>
     SavePackagePathPickedCallback;
@@ -41,13 +40,18 @@ typedef base::Callback<void(const FilePath&,
 // same as |target_path|). Both |target_path| and |intermediate_path| are
 // expected to in the same directory.
 typedef base::Callback<void(
-    const FilePath& target_path,
+    const base::FilePath& target_path,
     DownloadItem::TargetDisposition disposition,
     DownloadDangerType danger_type,
-    const FilePath& intermediate_path)> DownloadTargetCallback;
+    const base::FilePath& intermediate_path)> DownloadTargetCallback;
 
 // Called when a download delayed by the delegate has completed.
 typedef base::Callback<void(bool)> DownloadOpenDelayedCallback;
+
+// Called with the result of CheckForFileExistence().
+typedef base::Callback<void(bool result)> CheckForFileExistenceCallback;
+
+typedef base::Callback<void(uint32)> DownloadIdCallback;
 
 // Browser's download manager: manages all downloads and destination view.
 class CONTENT_EXPORT DownloadManagerDelegate {
@@ -55,8 +59,9 @@ class CONTENT_EXPORT DownloadManagerDelegate {
   // Lets the delegate know that the download manager is shutting down.
   virtual void Shutdown() {}
 
-  // Returns a new DownloadId.
-  virtual DownloadId GetNextId();
+  // Runs |callback| with a new download id when possible, perhaps
+  // synchronously.
+  virtual void GetNextId(const DownloadIdCallback& callback);
 
   // Called to notify the delegate that a new download |item| requires a
   // download target to be determined. The delegate should return |true| if it
@@ -74,20 +79,15 @@ class CONTENT_EXPORT DownloadManagerDelegate {
   virtual bool DetermineDownloadTarget(DownloadItem* item,
                                        const DownloadTargetCallback& callback);
 
-  // Called when the download system wants to alert a WebContents that a
-  // download has started, but the TabConetnts has gone away. This lets an
-  // delegate return an alternative WebContents. The delegate can return NULL.
-  virtual WebContents* GetAlternativeWebContentsToNotifyForDownload();
-
   // Tests if a file type should be opened automatically.
-  virtual bool ShouldOpenFileBasedOnExtension(const FilePath& path);
+  virtual bool ShouldOpenFileBasedOnExtension(const base::FilePath& path);
 
   // Allows the delegate to delay completion of the download.  This function
   // will either return true (in which case the download may complete)
   // or will call the callback passed when the download is ready for
-  // completion.  This routine may be called multiple times; once it has
-  // returned true for a particular download it should continue to return
-  // true for that download.
+  // completion.  This routine may be called multiple times; once the callback
+  // has been called or the function has returned true for a particular
+  // download it should continue to return true for that download.
   virtual bool ShouldCompleteDownload(
       DownloadItem* item,
       const base::Closure& complete_callback);
@@ -104,18 +104,36 @@ class CONTENT_EXPORT DownloadManagerDelegate {
 
   // Retrieve the directories to save html pages and downloads to.
   virtual void GetSaveDir(BrowserContext* browser_context,
-                          FilePath* website_save_dir,
-                          FilePath* download_save_dir,
+                          base::FilePath* website_save_dir,
+                          base::FilePath* download_save_dir,
                           bool* skip_dir_check) {}
 
   // Asks the user for the path to save a page. The delegate calls the callback
   // to give the answer.
-  virtual void ChooseSavePath(WebContents* web_contents,
-                              const FilePath& suggested_path,
-                              const FilePath::StringType& default_extension,
-                              bool can_save_as_complete,
-                              const SavePackagePathPickedCallback& callback) {
+  virtual void ChooseSavePath(
+      WebContents* web_contents,
+      const base::FilePath& suggested_path,
+      const base::FilePath::StringType& default_extension,
+      bool can_save_as_complete,
+      const SavePackagePathPickedCallback& callback) {
   }
+
+  // Opens the file associated with this download.
+  virtual void OpenDownload(DownloadItem* download) {}
+
+  // Shows the download via the OS shell.
+  virtual void ShowDownloadInShell(DownloadItem* download) {}
+
+  // Checks whether a downloaded file still exists.
+  virtual void CheckForFileExistence(
+      DownloadItem* download,
+      const CheckForFileExistenceCallback& callback) {}
+
+  // Return a GUID string used for identifying the application to the
+  // system AV function for scanning downloaded files. If an empty
+  // or invalid GUID string is returned, no client identification
+  // will be given to the AV function.
+  virtual std::string ApplicationClientIdForFileScanning() const;
 
  protected:
   virtual ~DownloadManagerDelegate();

@@ -32,6 +32,7 @@ struct ChannelConfig {
     CODEC_VERBATIM,
     CODEC_ZIP,
     CODEC_VP8,
+    CODEC_VP9,
     CODEC_OPUS,
     CODEC_SPEEX,
   };
@@ -81,6 +82,9 @@ class SessionConfig {
   bool is_audio_enabled() const {
     return audio_config_.transport != ChannelConfig::TRANSPORT_NONE;
   }
+
+  // Returns true if the control channel supports capabilities.
+  bool SupportsCapabilities() const;
 
   // Returns a suitable session configuration for use in tests.
   static SessionConfig ForTest();
@@ -154,8 +158,10 @@ class CandidateSessionConfig {
       const SessionConfig& config);
   static scoped_ptr<CandidateSessionConfig> CreateDefault();
 
-  // Helper method that modifies |config| to disable audio support.
+  // Modifies |config| to disable specific features.
   static void DisableAudioChannel(CandidateSessionConfig* config);
+  static void DisableVideoCodec(CandidateSessionConfig* config,
+                                ChannelConfig::Codec codec);
 
  private:
   CandidateSessionConfig();

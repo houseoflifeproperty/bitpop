@@ -10,15 +10,15 @@
 #include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/threading/thread.h"
-#include "chrome/browser/password_manager/login_database.h"
-#include "chrome/browser/password_manager/password_store.h"
-
-namespace content {
-class NotificationService;
-}
+#include "components/password_manager/core/browser/login_database.h"
+#include "components/password_manager/core/browser/password_store.h"
 
 namespace crypto {
 class AppleKeychain;
+}
+
+namespace password_manager {
+class LoginDatabase;
 }
 
 // Implements PasswordStore on top of the OS X Keychain, with an internal
@@ -26,77 +26,79 @@ class AppleKeychain;
 // Keychain, as well as the rationale for some of the behaviors, see the
 // Keychain integration design doc:
 // http://dev.chromium.org/developers/design-documents/os-x-password-manager-keychain-integration
-class PasswordStoreMac : public PasswordStore {
+class PasswordStoreMac : public password_manager::PasswordStore {
  public:
   // Takes ownership of |keychain| and |login_db|, both of which must be
   // non-NULL.
-  PasswordStoreMac(crypto::AppleKeychain* keychain, LoginDatabase* login_db);
+  PasswordStoreMac(
+      scoped_refptr<base::SingleThreadTaskRunner> main_thread_runner,
+      scoped_refptr<base::SingleThreadTaskRunner> db_thread_runner,
+      crypto::AppleKeychain* keychain,
+      password_manager::LoginDatabase* login_db);
 
-  // Initializes |thread_| and |notification_service_|.
-  virtual bool Init() OVERRIDE;
+  // Initializes |thread_|.
+  virtual bool Init(
+      const syncer::SyncableService::StartSyncFlare& flare) OVERRIDE;
 
-  virtual void ShutdownOnUIThread() OVERRIDE;
+  // Stops |thread_|.
+  virtual void Shutdown() OVERRIDE;
 
  protected:
   virtual ~PasswordStoreMac();
 
-  virtual bool ScheduleTask(const base::Closure& task) OVERRIDE;
+  virtual scoped_refptr<base::SingleThreadTaskRunner>
+      GetBackgroundTaskRunner() OVERRIDE;
 
  private:
   virtual void ReportMetricsImpl() OVERRIDE;
-  virtual void AddLoginImpl(const content::PasswordForm& form) OVERRIDE;
-  virtual void UpdateLoginImpl(
-      const content::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginImpl(
-      const content::PasswordForm& form) OVERRIDE;
-  virtual void RemoveLoginsCreatedBetweenImpl(
-      const base::Time& delete_begin, const base::Time& delete_end) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList AddLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList UpdateLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList RemoveLoginImpl(
+      const autofill::PasswordForm& form) OVERRIDE;
+  virtual password_manager::PasswordStoreChangeList
+      RemoveLoginsCreatedBetweenImpl(const base::Time& delete_begin,
+                                     const base::Time& delete_end) OVERRIDE;
   virtual void GetLoginsImpl(
-      const content::PasswordForm& form,
+      const autofill::PasswordForm& form,
+      AuthorizationPromptPolicy prompt_policy,
       const ConsumerCallbackRunner& callback_runner) OVERRIDE;
   virtual void GetAutofillableLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual void GetBlacklistLoginsImpl(GetLoginsRequest* request) OVERRIDE;
   virtual bool FillAutofillableLogins(
-      std::vector<content::PasswordForm*>* forms) OVERRIDE;
+      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
   virtual bool FillBlacklistLogins(
-      std::vector<content::PasswordForm*>* forms) OVERRIDE;
+      std::vector<autofill::PasswordForm*>* forms) OVERRIDE;
 
   // Adds the given form to the Keychain if it's something we want to store
   // there (i.e., not a blacklist entry). Returns true if the operation
   // succeeded (either we added successfully, or we didn't need to).
-  bool AddToKeychainIfNecessary(const content::PasswordForm& form);
+  bool AddToKeychainIfNecessary(const autofill::PasswordForm& form);
 
   // Returns true if our database contains a form that exactly matches the given
   // keychain form.
   bool DatabaseHasFormMatchingKeychainForm(
-      const content::PasswordForm& form);
+      const autofill::PasswordForm& form);
 
   // Returns all the Keychain entries that we own but no longer have
   // corresponding metadata for in our database.
   // Caller is responsible for deleting the forms.
-  std::vector<content::PasswordForm*> GetUnusedKeychainForms();
+  std::vector<autofill::PasswordForm*> GetUnusedKeychainForms();
 
   // Removes the given forms from the database.
   void RemoveDatabaseForms(
-      const std::vector<content::PasswordForm*>& forms);
+      const std::vector<autofill::PasswordForm*>& forms);
 
   // Removes the given forms from the Keychain.
   void RemoveKeychainForms(
-      const std::vector<content::PasswordForm*>& forms);
-
-  // Allows the creation of |notification_service_| to be scheduled on the right
-  // thread.
-  void CreateNotificationService();
+      const std::vector<autofill::PasswordForm*>& forms);
 
   scoped_ptr<crypto::AppleKeychain> keychain_;
-  scoped_ptr<LoginDatabase> login_metadata_db_;
+  scoped_ptr<password_manager::LoginDatabase> login_metadata_db_;
 
   // Thread that the synchronous methods are run on.
   scoped_ptr<base::Thread> thread_;
-
-  // Since we aren't running on a well-known thread but still want to send out
-  // notifications, we need to run our own service.
-  scoped_ptr<content::NotificationService> notification_service_;
 
   DISALLOW_COPY_AND_ASSIGN(PasswordStoreMac);
 };

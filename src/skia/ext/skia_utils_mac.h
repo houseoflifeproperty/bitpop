@@ -52,7 +52,7 @@ inline const SkPoint& CGPointToSkPoint(const CGPoint& point) {
 SK_API CGAffineTransform SkMatrixToCGAffineTransform(const SkMatrix& matrix);
 
 // Rectangle converters.
-SkRect CGRectToSkRect(const CGRect& rect);
+SK_API SkRect CGRectToSkRect(const CGRect& rect);
 
 // Converts a Skia rect to a CoreGraphics CGRect.
 CGRect SkIRectToCGRect(const SkIRect& rect);
@@ -68,19 +68,25 @@ SK_API CGColorRef CGColorCreateFromSkColor(SkColor color);
 // conversion. Only valid for colors in calibrated and device color spaces.
 SK_API SkColor NSDeviceColorToSkColor(NSColor* color);
 
-// Converts ARGB to NSColor.
+// Converts ARGB in the specified color space to NSColor.
+// Prefer sRGB over calibrated colors.
 SK_API NSColor* SkColorToCalibratedNSColor(SkColor color);
 SK_API NSColor* SkColorToDeviceNSColor(SkColor color);
+SK_API NSColor* SkColorToSRGBNSColor(SkColor color);
 
 // Converts a CGImage to a SkBitmap.
 SK_API SkBitmap CGImageToSkBitmap(CGImageRef image);
 
 // Draws an NSImage with a given size into a SkBitmap.
-SK_API SkBitmap NSImageToSkBitmap(NSImage* image, NSSize size, bool is_opaque);
+SK_API SkBitmap NSImageToSkBitmapWithColorSpace(NSImage* image,
+                                                bool is_opaque,
+                                                CGColorSpaceRef color_space);
 
 // Draws an NSImageRep with a given size into a SkBitmap.
-SK_API SkBitmap NSImageRepToSkBitmap(
-    NSImageRep* image, NSSize size, bool is_opaque);
+SK_API SkBitmap NSImageRepToSkBitmapWithColorSpace(NSImageRep* image,
+                                                   NSSize size,
+                                                   bool is_opaque,
+                                                   CGColorSpaceRef colorspace);
 
 // Given an SkBitmap, return an autoreleased NSBitmapImageRep in the generic
 // color space.

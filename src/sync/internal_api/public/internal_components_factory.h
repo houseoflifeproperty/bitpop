@@ -12,19 +12,18 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 
 namespace syncer {
 
-class ExtensionsActivityMonitor;
+class CancelationSignal;
+class ExtensionsActivity;
+class ModelTypeRegistry;
 class ServerConnectionManager;
 class SyncEngineEventListener;
 class SyncScheduler;
-class TrafficRecorder;
-
-class ThrottledDataTypeTracker;
 
 namespace sessions {
 class DebugInfoGetter;
@@ -52,6 +51,16 @@ class SYNC_EXPORT InternalComponentsFactory {
     BACKOFF_SHORT_INITIAL_RETRY_OVERRIDE
   };
 
+  enum PreCommitUpdatesPolicy {
+    // By default, the server will enable or disable this experiment through the
+    // sync protocol's experiments data type.
+    SERVER_CONTROLLED_PRE_COMMIT_UPDATE_AVOIANCE,
+
+    // This flag overrides the server's decision and enables the pre-commit
+    // update avoidance experiment.
+    FORCE_ENABLE_PRE_COMMIT_UPDATE_AVOIDANCE,
+  };
+
   // Configuration options for internal components. This struct is expected
   // to grow and shrink over time with transient features / experiments,
   // roughly following command line flags in chrome. Implementations of
@@ -60,28 +69,29 @@ class SYNC_EXPORT InternalComponentsFactory {
   struct Switches {
     EncryptionMethod encryption_method;
     BackoffOverride backoff_override;
+    PreCommitUpdatesPolicy pre_commit_updates_policy;
   };
 
   virtual ~InternalComponentsFactory() {}
 
   virtual scoped_ptr<SyncScheduler> BuildScheduler(
       const std::string& name,
-      sessions::SyncSessionContext* context) = 0;
+      sessions::SyncSessionContext* context,
+      CancelationSignal* cancelation_signal) = 0;
 
   virtual scoped_ptr<sessions::SyncSessionContext> BuildContext(
       ServerConnectionManager* connection_manager,
       syncable::Directory* directory,
-      const std::vector<ModelSafeWorker*> workers,
-      ExtensionsActivityMonitor* monitor,
-      ThrottledDataTypeTracker* throttled_data_type_tracker,
+      ExtensionsActivity* extensions_activity,
       const std::vector<SyncEngineEventListener*>& listeners,
       sessions::DebugInfoGetter* debug_info_getter,
-      TrafficRecorder* traffic_recorder) = 0;
+      ModelTypeRegistry* model_type_registry,
+      const std::string& invalidator_client_id) = 0;
 
   virtual scoped_ptr<syncable::DirectoryBackingStore>
   BuildDirectoryBackingStore(
       const std::string& dir_name,
-      const FilePath& backing_filepath) = 0;
+      const base::FilePath& backing_filepath) = 0;
 
   // Returns the Switches struct that this object is using as configuration, if
   // the implementation is making use of one.

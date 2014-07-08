@@ -14,13 +14,12 @@
 #include "base/debug/trace_event.h"
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "build/build_config.h"
 #include "skia/ext/convolver.h"
 #include "third_party/skia/include/core/SkColorPriv.h"
-#include "third_party/skia/include/core/SkBitmap.h"
-#include "third_party/skia/include/core/SkRect.h"
 #include "third_party/skia/include/core/SkFontHost.h"
+#include "third_party/skia/include/core/SkRect.h"
 
 namespace skia {
 
@@ -141,7 +140,7 @@ class ResizeFilter {
   // for the transform is also specified.
   void ComputeFilters(int src_size,
                       int dest_subset_lo, int dest_subset_size,
-                      float scale, float src_support,
+                      float scale,
                       ConvolutionFilter1D* output);
 
   // Computes the filter value given the coordinate in filter space.
@@ -192,17 +191,10 @@ ResizeFilter::ResizeFilter(ImageOperations::ResizeMethod method,
   float scale_y = static_cast<float>(dest_height) /
                   static_cast<float>(src_full_height);
 
-  x_filter_support_ = GetFilterSupport(scale_x);
-  y_filter_support_ = GetFilterSupport(scale_y);
-
-  // Support of the filter in source space.
-  float src_x_support = x_filter_support_ / scale_x;
-  float src_y_support = y_filter_support_ / scale_y;
-
   ComputeFilters(src_full_width, dest_subset.fLeft, dest_subset.width(),
-                 scale_x, src_x_support, &x_filter_);
+                 scale_x, &x_filter_);
   ComputeFilters(src_full_height, dest_subset.fTop, dest_subset.height(),
-                 scale_y, src_y_support, &y_filter_);
+                 scale_y, &y_filter_);
 }
 
 // TODO(egouriou): Take advantage of periods in the convolution.
@@ -218,7 +210,7 @@ ResizeFilter::ResizeFilter(ImageOperations::ResizeMethod method,
 // loading the factors only once outside the borders.
 void ResizeFilter::ComputeFilters(int src_size,
                                   int dest_subset_lo, int dest_subset_size,
-                                  float scale, float src_support,
+                                  float scale,
                                   ConvolutionFilter1D* output) {
   int dest_subset_hi = dest_subset_lo + dest_subset_size;  // [lo, hi)
 
@@ -228,6 +220,10 @@ void ResizeFilter::ComputeFilters(int src_size,
   // pixel boundaries. Therefore, we use these clamped values (max of 1) for
   // some computations.
   float clamped_scale = std::min(1.0f, scale);
+
+  // This is how many source pixels from the center we need to count
+  // to support the filtering function.
+  float src_support = GetFilterSupport(clamped_scale) / clamped_scale;
 
   // Speed up the divisions below by turning them into multiplies.
   float inv_scale = 1.0f / scale;
@@ -304,7 +300,7 @@ void ResizeFilter::ComputeFilters(int src_size,
                       static_cast<int>(fixed_filter_values->size()));
   }
 
-  output->PaddingForSIMD(8);
+  output->PaddingForSIMD();
 }
 
 ImageOperations::ResizeMethod ResizeMethodToAlgorithmMethod(
@@ -344,17 +340,22 @@ ImageOperations::ResizeMethod ResizeMethodToAlgorithmMethod(
 SkBitmap ImageOperations::Resize(const SkBitmap& source,
                                  ResizeMethod method,
                                  int dest_width, int dest_height,
-                                 const SkIRect& dest_subset) {
-  if (method == ImageOperations::RESIZE_SUBPIXEL)
-    return ResizeSubpixel(source, dest_width, dest_height, dest_subset);
-  else
-    return ResizeBasic(source, method, dest_width, dest_height, dest_subset);
+                                 const SkIRect& dest_subset,
+                                 SkBitmap::Allocator* allocator) {
+  if (method == ImageOperations::RESIZE_SUBPIXEL) {
+    return ResizeSubpixel(source, dest_width, dest_height,
+                          dest_subset, allocator);
+  } else {
+    return ResizeBasic(source, method, dest_width, dest_height, dest_subset,
+                       allocator);
+  }
 }
 
 // static
 SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
                                          int dest_width, int dest_height,
-                                         const SkIRect& dest_subset) {
+                                         const SkIRect& dest_subset,
+                                         SkBitmap::Allocator* allocator) {
   TRACE_EVENT2("skia", "ImageOperations::ResizeSubpixel",
                "src_pixels", source.width()*source.height(),
                "dst_pixels", dest_width*dest_height);
@@ -385,7 +386,7 @@ SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
                      dest_subset.fLeft + dest_subset.width() * w,
                      dest_subset.fTop + dest_subset.height() * h };
   SkBitmap img = ResizeBasic(source, ImageOperations::RESIZE_LANCZOS3, width,
-                             height, subset);
+                             height, subset, allocator);
   const int row_words = img.rowBytes() / 4;
   if (w == 1 && h == 1)
     return img;
@@ -393,8 +394,8 @@ SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
   // Render into subpixels.
   SkBitmap result;
   result.setConfig(SkBitmap::kARGB_8888_Config, dest_subset.width(),
-                   dest_subset.height());
-  result.allocPixels();
+                   dest_subset.height(), 0, img.alphaType());
+  result.allocPixels(allocator, NULL);
   if (!result.readyToDraw())
     return img;
 
@@ -454,7 +455,6 @@ SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
     src_row += h * row_words;
     dst_row += result.rowBytes() / 4;
   }
-  result.setIsOpaque(img.isOpaque());
   return result;
 #else
   return SkBitmap();
@@ -465,7 +465,8 @@ SkBitmap ImageOperations::ResizeSubpixel(const SkBitmap& source,
 SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
                                       ResizeMethod method,
                                       int dest_width, int dest_height,
-                                      const SkIRect& dest_subset) {
+                                      const SkIRect& dest_subset,
+                                      SkBitmap::Allocator* allocator) {
   TRACE_EVENT2("skia", "ImageOperations::ResizeBasic",
                "src_pixels", source.width()*source.height(),
                "dst_pixels", dest_width*dest_height);
@@ -494,8 +495,8 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
            (method <= ImageOperations::RESIZE_LAST_ALGORITHM_METHOD));
 
   SkAutoLockPixels locker(source);
-  if (!source.readyToDraw())
-      return SkBitmap();
+  if (!source.readyToDraw() || source.config() != SkBitmap::kARGB_8888_Config)
+    return SkBitmap();
 
   ResizeFilter filter(method, source.width(), source.height(),
                       dest_width, dest_height, dest_subset);
@@ -507,11 +508,10 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
       reinterpret_cast<const uint8*>(source.getPixels());
 
   // Convolve into the result.
-  base::CPU cpu;
   SkBitmap result;
-  result.setConfig(SkBitmap::kARGB_8888_Config,
-                   dest_subset.width(), dest_subset.height());
-  result.allocPixels();
+  result.setConfig(SkBitmap::kARGB_8888_Config, dest_subset.width(),
+                   dest_subset.height(), 0, source.alphaType());
+  result.allocPixels(allocator, NULL);
   if (!result.readyToDraw())
     return SkBitmap();
 
@@ -519,10 +519,7 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
                  !source.isOpaque(), filter.x_filter(), filter.y_filter(),
                  static_cast<int>(result.rowBytes()),
                  static_cast<unsigned char*>(result.getPixels()),
-                 cpu.has_sse2());
-
-  // Preserve the "opaque" flag for use as an optimization later.
-  result.setIsOpaque(source.isOpaque());
+                 true);
 
   base::TimeDelta delta = base::TimeTicks::Now() - resize_start;
   UMA_HISTOGRAM_TIMES("Image.ResampleMS", delta);
@@ -533,9 +530,11 @@ SkBitmap ImageOperations::ResizeBasic(const SkBitmap& source,
 // static
 SkBitmap ImageOperations::Resize(const SkBitmap& source,
                                  ResizeMethod method,
-                                 int dest_width, int dest_height) {
+                                 int dest_width, int dest_height,
+                                 SkBitmap::Allocator* allocator) {
   SkIRect dest_subset = { 0, 0, dest_width, dest_height };
-  return Resize(source, method, dest_width, dest_height, dest_subset);
+  return Resize(source, method, dest_width, dest_height, dest_subset,
+                allocator);
 }
 
 }  // namespace skia

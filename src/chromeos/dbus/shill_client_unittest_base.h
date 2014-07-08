@@ -9,7 +9,7 @@
 
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chromeos/dbus/dbus_method_call_status.h"
 #include "chromeos/dbus/shill_client_helper.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
@@ -143,6 +143,15 @@ class ShillClientUnittestBase : public testing::Test {
                                             const base::Value* expected_value,
                                             dbus::MessageReader* reader);
 
+  // Expects the reader to have a string-to-variant dictionary.
+  static void ExpectDictionaryValueArgument(
+      const base::DictionaryValue* expected_dictionary,
+      dbus::MessageReader* reader);
+
+  // Creates a DictionaryValue with example Service properties. The caller owns
+  // the result.
+  static base::DictionaryValue* CreateExampleServiceProperties();
+
   // Expects the call status to be SUCCESS.
   static void ExpectNoResultValue(DBusMethodCallStatus call_status);
 
@@ -151,10 +160,17 @@ class ShillClientUnittestBase : public testing::Test {
                                      DBusMethodCallStatus call_status,
                                      const dbus::ObjectPath& result);
 
-  // Checks the result and expects the call status to be SUCCESS.
   static void ExpectObjectPathResultWithoutStatus(
       const dbus::ObjectPath& expected_result,
       const dbus::ObjectPath& result);
+
+  static void ExpectBoolResultWithoutStatus(
+      bool expected_result,
+      bool result);
+
+  static void ExpectStringResultWithoutStatus(
+      const std::string& expected_result,
+      const std::string& result);
 
   // Checks the result and expects the call status to be SUCCESS.
   static void ExpectDictionaryValueResult(
@@ -168,7 +184,7 @@ class ShillClientUnittestBase : public testing::Test {
       const base::DictionaryValue& result);
 
   // A message loop to emulate asynchronous behavior.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   // The mock bus.
   scoped_refptr<dbus::MockBus> mock_bus_;
 
@@ -195,11 +211,6 @@ class ShillClientUnittestBase : public testing::Test {
       int timeout_ms,
       const dbus::ObjectProxy::ResponseCallback& response_callback,
       const dbus::ObjectProxy::ErrorCallback& error_callback);
-
-  // Checks the content of the method call and returns the response.
-  // Used to implement the mock proxy.
-  dbus::Response* OnCallMethodAndBlock(dbus::MethodCall* method_call,
-                                       int timeout_ms);
 
   // The interface name.
   const std::string interface_name_;

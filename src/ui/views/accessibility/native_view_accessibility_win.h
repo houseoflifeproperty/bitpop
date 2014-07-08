@@ -7,13 +7,15 @@
 
 #include <atlbase.h>
 #include <atlcom.h>
-
 #include <oleacc.h>
+
 #include <UIAutomationCore.h>
 
-#include "base/memory/ref_counted.h"
+#include <set>
+
 #include "third_party/iaccessible2/ia2_api_all.h"
-#include "ui/base/accessibility/accessible_view_state.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/views/accessibility/native_view_accessibility.h"
 #include "ui/views/controls/native/native_view_host.h"
 #include "ui/views/view.h"
 
@@ -22,8 +24,7 @@ enum TextBoundaryDirection;
 enum TextBoundaryType;
 }
 
-// Note: do not put NativeViewAccessibilityWin in the namespace "views";
-// Visual Studio 2005 does not allow an ATL::CComObject symbol in a namespace.
+namespace views {
 
 ////////////////////////////////////////////////////////////////////////////////
 //
@@ -42,7 +43,8 @@ NativeViewAccessibilityWin
     public IAccessibleText,
     public IServiceProvider,
     public IAccessibleEx,
-    public IRawElementProviderSimple {
+    public IRawElementProviderSimple,
+    public NativeViewAccessibility {
  public:
   BEGIN_COM_MAP(NativeViewAccessibilityWin)
     COM_INTERFACE_ENTRY2(IDispatch, IAccessible2)
@@ -54,17 +56,20 @@ NativeViewAccessibilityWin
     COM_INTERFACE_ENTRY(IRawElementProviderSimple)
   END_COM_MAP()
 
-  // Create method for view accessibility.
-  static scoped_refptr<NativeViewAccessibilityWin> Create(views::View* view);
-
   virtual ~NativeViewAccessibilityWin();
+
+  // NativeViewAccessibility.
+  virtual void NotifyAccessibilityEvent(
+      ui::AXEvent event_type) OVERRIDE;
+  virtual gfx::NativeViewAccessible GetNativeObject() OVERRIDE;
+  virtual void Destroy() OVERRIDE;
 
   void set_view(views::View* view) { view_ = view; }
 
   // Supported IAccessible methods.
 
   // Retrieves the child element or child object at a given point on the screen.
-  STDMETHODIMP accHitTest(LONG x_left, LONG y_top, VARIANT* child);
+  virtual STDMETHODIMP accHitTest(LONG x_left, LONG y_top, VARIANT* child);
 
   // Performs the object's default action.
   STDMETHODIMP accDoDefaultAction(VARIANT var_id);
@@ -80,10 +85,10 @@ NativeViewAccessibilityWin
   STDMETHODIMP accNavigate(LONG nav_dir, VARIANT start, VARIANT* end);
 
   // Retrieves an IDispatch interface pointer for the specified child.
-  STDMETHODIMP get_accChild(VARIANT var_child, IDispatch** disp_child);
+  virtual STDMETHODIMP get_accChild(VARIANT var_child, IDispatch** disp_child);
 
   // Retrieves the number of accessible children.
-  STDMETHODIMP get_accChildCount(LONG* child_count);
+  virtual STDMETHODIMP get_accChildCount(LONG* child_count);
 
   // Retrieves a string that describes the object's default action.
   STDMETHODIMP get_accDefaultAction(VARIANT var_id, BSTR* default_action);
@@ -109,10 +114,11 @@ NativeViewAccessibilityWin
   // Retrieves the current state of the specified object.
   STDMETHODIMP get_accState(VARIANT var_id, VARIANT* state);
 
-  // Retrieves the current value associated with the specified object.
+  // Retrieve or set the string value associated with the specified object.
+  // Setting the value is not typically used by screen readers, but it's
+  // used frequently by automation software.
   STDMETHODIMP get_accValue(VARIANT var_id, BSTR* value);
-
-  // Non-supported IAccessible methods.
+  STDMETHODIMP put_accValue(VARIANT var_id, BSTR new_value);
 
   // Selections not applicable to views.
   STDMETHODIMP get_accSelection(VARIANT* selected);
@@ -126,7 +132,6 @@ NativeViewAccessibilityWin
 
   // Deprecated functions, not implemented here.
   STDMETHODIMP put_accName(VARIANT var_id, BSTR put_name);
-  STDMETHODIMP put_accValue(VARIANT var_id, BSTR put_val);
 
   //
   // IAccessible2
@@ -330,21 +335,26 @@ NativeViewAccessibilityWin
     return E_NOTIMPL;
   }
 
-  // Returns a conversion from the event (as defined in accessibility_types.h)
+  // Static methods
+
+  // Returns a conversion from the event (as defined in ax_enums.idl)
   // to an MSAA event.
-  static int32 MSAAEvent(ui::AccessibilityTypes::Event event);
+  static int32 MSAAEvent(ui::AXEvent event);
 
-  // Returns a conversion from the Role (as defined in accessibility_types.h)
+  // Returns a conversion from the Role (as defined in ax_enums.idl)
   // to an MSAA role.
-  static int32 MSAARole(ui::AccessibilityTypes::Role role);
+  static int32 MSAARole(ui::AXRole role);
 
-  // Returns a conversion from the State (as defined in accessibility_types.h)
+  // Returns a conversion from the State (as defined in ax_enums.idl)
   // to MSAA states set.
-  static int32 MSAAState(ui::AccessibilityTypes::State state);
+  static int32 MSAAState(const ui::AXViewState& state);
 
- private:
+ protected:
   NativeViewAccessibilityWin();
 
+  const View* view() const { return view_; }
+
+ private:
   // Determines navigation direction for accNavigate, based on left, up and
   // previous being mapped all to previous and right, down, next being mapped
   // to next. Returns true if navigation direction is next, false otherwise.
@@ -361,14 +371,14 @@ NativeViewAccessibilityWin
   bool IsValidId(const VARIANT& child) const;
 
   // Helper function which sets applicable states of view.
-  void SetState(VARIANT* msaa_state, views::View* view);
+  void SetState(VARIANT* msaa_state, View* view);
 
   // Return the text to use for IAccessibleText.
-  string16 TextForIAccessibleText();
+  base::string16 TextForIAccessibleText();
 
   // If offset is a member of IA2TextSpecialOffsets this function updates the
   // value of offset and returns, otherwise offset remains unchanged.
-  void HandleSpecialTextOffset(const string16& text, LONG* offset);
+  void HandleSpecialTextOffset(const base::string16& text, LONG* offset);
 
   // Convert from a IA2TextBoundaryType to a ui::TextBoundaryType.
   ui::TextBoundaryType IA2TextBoundaryToTextBoundary(IA2TextBoundaryType type);
@@ -376,16 +386,21 @@ NativeViewAccessibilityWin
   // Search forwards (direction == 1) or backwards (direction == -1)
   // from the given offset until the given boundary is found, and
   // return the offset of that boundary.
-  LONG FindBoundary(const string16& text,
+  LONG FindBoundary(const base::string16& text,
                     IA2TextBoundaryType ia2_boundary,
                     LONG start_offset,
                     ui::TextBoundaryDirection direction);
+
+  // Populates the given vector with all widgets that are either a child
+  // or are owned by this view's widget, and who are not contained in a
+  // NativeViewHost.
+  void PopulateChildWidgetVector(std::vector<Widget*>* child_widgets);
 
   // Give CComObject access to the class constructor.
   template <class Base> friend class CComObject;
 
   // Member View needed for view-specific calls.
-  views::View* view_;
+  View* view_;
 
   // A unique id for each object, needed for IAccessible2.
   long unique_id_;
@@ -393,7 +408,19 @@ NativeViewAccessibilityWin
   // Next unique id to assign.
   static long next_unique_id_;
 
+  // Circular queue size.
+  static const int kMaxViewStorageIds = 20;
+
+  // Circular queue of view storage ids corresponding to child ids
+  // used to post notifications using NotifyWinEvent.
+  static int view_storage_ids_[kMaxViewStorageIds];
+
+  // Next index into |view_storage_ids_| to use.
+  static int next_view_storage_id_index_;
+
   DISALLOW_COPY_AND_ASSIGN(NativeViewAccessibilityWin);
 };
+
+}  // namespace views
 
 #endif  // UI_VIEWS_ACCESSIBILITY_NATIVE_VIEW_ACCESSIBILITY_WIN_H_

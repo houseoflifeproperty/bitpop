@@ -15,17 +15,20 @@
 
 #include "base/ios/ios_util.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/stringprintf.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
 
 namespace {
 
 // Client ID key in the user preferences.
 NSString* const kLegacyClientIdPreferenceKey = @"ChromiumClientID";
 NSString* const kClientIdPreferenceKey = @"ChromeClientID";
+// Current hardware type. This is used to detect that a device has been backed
+// up and restored to another device, and allows regenerating a new device id.
+NSString* const kHardwareTypePreferenceKey = @"ClientIDGenerationHardwareType";
 // Default salt for device ids.
 const char kDefaultSalt[] = "Salt";
 // Zero UUID returned on buggy iOS devices.
@@ -65,12 +68,22 @@ std::string GetPlatform() {
   return platform;
 }
 
-bool IsRunningOnHighRamDevice() {
+bool RamIsAtLeast512Mb() {
+  // 512MB devices report anywhere from 502-504 MB, use 450 MB just to be safe.
+  return RamIsAtLeast(450);
+}
+
+bool RamIsAtLeast1024Mb() {
+  // 1GB devices report anywhere from 975-999 MB, use 900 MB just to be safe.
+  return RamIsAtLeast(900);
+}
+
+bool RamIsAtLeast(uint64_t ram_in_mb) {
   uint64_t memory_size = 0;
   size_t size = sizeof(memory_size);
   if (sysctlbyname("hw.memsize", &memory_size, &size, NULL, 0) == 0) {
-    // Anything >= 250M, call high ram.
-    return memory_size >= 250 * 1024 * 1024;
+    // Anything >= 500M, call high ram.
+    return memory_size >= ram_in_mb * 1024 * 1024;
   }
   return false;
 }
@@ -116,20 +129,31 @@ std::string GetMacAddress(const std::string& interface_name) {
 }
 
 std::string GetRandomId() {
-  base::mac::ScopedCFTypeRef<CFUUIDRef>
-      uuid_object(CFUUIDCreate(kCFAllocatorDefault));
-  base::mac::ScopedCFTypeRef<CFStringRef> uuid_string(
+  base::ScopedCFTypeRef<CFUUIDRef> uuid_object(
+      CFUUIDCreate(kCFAllocatorDefault));
+  base::ScopedCFTypeRef<CFStringRef> uuid_string(
       CFUUIDCreateString(kCFAllocatorDefault, uuid_object));
   return base::SysCFStringRefToUTF8(uuid_string);
 }
 
 std::string GetDeviceIdentifier(const char* salt) {
   NSUserDefaults* defaults = [NSUserDefaults standardUserDefaults];
+
+  NSString* last_seen_hardware =
+      [defaults stringForKey:kHardwareTypePreferenceKey];
+  NSString* current_hardware = base::SysUTF8ToNSString(GetPlatform());
+  if (!last_seen_hardware) {
+    last_seen_hardware = current_hardware;
+    [defaults setObject:current_hardware forKey:kHardwareTypePreferenceKey];
+    [defaults synchronize];
+  }
+
   NSString* client_id = [defaults stringForKey:kClientIdPreferenceKey];
 
-  if (!client_id) {
+  if (!client_id || ![last_seen_hardware isEqualToString:current_hardware]) {
     client_id = GenerateClientId();
     [defaults setObject:client_id forKey:kClientIdPreferenceKey];
+    [defaults setObject:current_hardware forKey:kHardwareTypePreferenceKey];
     [defaults synchronize];
   }
 
@@ -140,9 +164,9 @@ std::string GetDeviceIdentifier(const char* salt) {
   CC_SHA256([hash_data bytes], [hash_data length], hash);
   CFUUIDBytes* uuid_bytes = reinterpret_cast<CFUUIDBytes*>(hash);
 
-  base::mac::ScopedCFTypeRef<CFUUIDRef>
-      uuid_object(CFUUIDCreateFromUUIDBytes(kCFAllocatorDefault, *uuid_bytes));
-  base::mac::ScopedCFTypeRef<CFStringRef> device_id(
+  base::ScopedCFTypeRef<CFUUIDRef> uuid_object(
+      CFUUIDCreateFromUUIDBytes(kCFAllocatorDefault, *uuid_bytes));
+  base::ScopedCFTypeRef<CFStringRef> device_id(
       CFUUIDCreateString(kCFAllocatorDefault, uuid_object));
   return base::SysCFStringRefToUTF8(device_id);
 }

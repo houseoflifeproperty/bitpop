@@ -48,11 +48,12 @@ class MessageRouter : public IPC::Listener, public IPC::Sender {
   // IPC::Sender implementation:
   virtual bool Send(IPC::Message* msg) OVERRIDE;
 
-  // Called to add/remove a listener for a particular message routing ID.
-  void AddRoute(int32 routing_id, IPC::Listener* listener);
-  void RemoveRoute(int32 routing_id);
+  // Called to add a listener for a particular message routing ID.
+  // Returns true if succeeded.
+  bool AddRoute(int32 routing_id, IPC::Listener* listener);
 
-  IPC::Listener* ResolveRoute(int32 routing_id);
+  // Called to remove a listener for a particular message routing ID.
+  void RemoveRoute(int32 routing_id);
 
  private:
   // A list of all listeners with assigned routing IDs.

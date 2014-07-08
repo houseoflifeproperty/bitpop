@@ -53,17 +53,17 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
 
   // Overridden from views::ClientView:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual bool AcceleratorPressed(const ui::Accelerator& accelerator)
       OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    views::View* parent,
-                                    views::View* child) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual bool CanClose() OVERRIDE;
 
   // Overridden from views::WidgetDelegate:
   virtual bool CanResize() const OVERRIDE;
   virtual ui::ModalType GetModalType() const OVERRIDE;
-  virtual string16 GetWindowTitle() const OVERRIDE;
+  virtual base::string16 GetWindowTitle() const OVERRIDE;
   virtual std::string GetWindowName() const OVERRIDE;
   virtual void WindowClosing() OVERRIDE;
   virtual views::View* GetContentsView() OVERRIDE;
@@ -75,7 +75,7 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
 
   // Overridden from ui::WebDialogDelegate:
   virtual ui::ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;
@@ -86,6 +86,8 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
       content::WebUI* webui,
       content::RenderViewHost* render_view_host) OVERRIDE;
   virtual void OnDialogClosed(const std::string& json_retval) OVERRIDE;
+  virtual void OnDialogCloseFromWebUI(
+      const std::string& json_retval) OVERRIDE;
   virtual void OnCloseContents(content::WebContents* source,
                                bool* out_close_dialog) OVERRIDE;
   virtual bool ShouldShowDialogTitle() const OVERRIDE;
@@ -108,18 +110,17 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
                               const gfx::Rect& initial_pos,
                               bool user_gesture,
                               bool* was_blocked) OVERRIDE;
-  virtual void LoadingStateChanged(content::WebContents* source) OVERRIDE;
+  virtual void LoadingStateChanged(content::WebContents* source,
+                                   bool to_different_document) OVERRIDE;
+  virtual void BeforeUnloadFired(content::WebContents* tab,
+                                 bool proceed,
+                                 bool* proceed_to_fire_unload) OVERRIDE;
 
  private:
   FRIEND_TEST_ALL_PREFIXES(WebDialogBrowserTest, WebContentRendered);
 
   // Initializes the contents of the dialog.
   void InitDialog();
-
-  // Whether the view is initialized. That is, dialog accelerators is registered
-  // and FreezeUpdates property is set to prevent WM from showing the window
-  // until the property is removed.
-  bool initialized_;
 
   // This view is a delegate to the HTML content since it needs to get notified
   // about when the dialog is closing. For all other actions (besides dialog
@@ -128,6 +129,24 @@ class WEBVIEW_EXPORT WebDialogView : public views::ClientView,
   ui::WebDialogDelegate* delegate_;
 
   views::WebView* web_view_;
+
+  // Whether user is attempting to close the dialog and we are processing
+  // beforeunload event.
+  bool is_attempting_close_dialog_;
+
+  // Whether beforeunload event has been fired and we have finished processing
+  // beforeunload event.
+  bool before_unload_fired_;
+
+  // Whether the dialog is closed from WebUI in response to a "dialogClose"
+  // message.
+  bool closed_via_webui_;
+
+  // A json string returned to WebUI from a "dialogClose" message.
+  std::string dialog_close_retval_;
+
+  // Whether CloseContents() has been called.
+  bool close_contents_called_;
 
   DISALLOW_COPY_AND_ASSIGN(WebDialogView);
 };

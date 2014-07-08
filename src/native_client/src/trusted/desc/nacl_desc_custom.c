@@ -74,10 +74,10 @@ static const struct NaClDescVtbl kNaClDescCustomVtbl = {
   NaClDescReadNotImplemented,
   NaClDescWriteNotImplemented,
   NaClDescSeekNotImplemented,
-  NaClDescIoctlNotImplemented,
+  NaClDescPReadNotImplemented,
+  NaClDescPWriteNotImplemented,
   NaClDescFstatNotImplemented,
   NaClDescGetdentsNotImplemented,
-  NACL_DESC_CUSTOM,  /* diff */
   NaClDescExternalizeSizeNotImplemented,
   NaClDescExternalizeNotImplemented,
   NaClDescLockNotImplemented,
@@ -96,4 +96,10 @@ static const struct NaClDescVtbl kNaClDescCustomVtbl = {
   NaClDescPostNotImplemented,
   NaClDescSemWaitNotImplemented,
   NaClDescGetValueNotImplemented,
+  NaClDescSetMetadata,
+  NaClDescGetMetadata,
+  NaClDescSetFlags,
+  NaClDescGetFlags,
+  NaClDescIsattyNotImplemented,
+  NACL_DESC_CUSTOM,  /* diff */
 };

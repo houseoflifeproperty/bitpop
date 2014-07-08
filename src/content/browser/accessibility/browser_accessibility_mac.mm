@@ -7,8 +7,7 @@
 #import "content/browser/accessibility/browser_accessibility_mac.h"
 
 #import "content/browser/accessibility/browser_accessibility_cocoa.h"
-#import "content/browser/accessibility/browser_accessibility_delegate_mac.h"
-#include "content/browser/accessibility/browser_accessibility_manager.h"
+#include "content/browser/accessibility/browser_accessibility_manager_mac.h"
 
 namespace content {
 
@@ -21,41 +20,32 @@ BrowserAccessibilityMac::BrowserAccessibilityMac()
     : browser_accessibility_cocoa_(NULL) {
 }
 
-void BrowserAccessibilityMac::PreInitialize() {
-  BrowserAccessibility::PreInitialize();
+void BrowserAccessibilityMac::OnDataChanged() {
+  BrowserAccessibility::OnDataChanged();
 
-  if (browser_accessibility_cocoa_)
+  if (browser_accessibility_cocoa_) {
+    [browser_accessibility_cocoa_ childrenChanged];
     return;
+  }
 
   // We take ownership of the cocoa obj here.
   browser_accessibility_cocoa_ = [[BrowserAccessibilityCocoa alloc]
-      initWithObject:this
-      delegate:
-          (id<BrowserAccessibilityDelegateCocoa>)manager_->GetParentView()];
+      initWithObject:this];
 }
 
 void BrowserAccessibilityMac::NativeReleaseReference() {
-  if (browser_accessibility_cocoa_) {
-    BrowserAccessibilityCocoa* temp = browser_accessibility_cocoa_;
-    browser_accessibility_cocoa_ = nil;
-    // Relinquish ownership of the cocoa obj.
-    [temp release];
-    // At this point, other processes may have a reference to
-    // the cocoa object. When the retain count hits zero, it will
-    // destroy us in dealloc.
-    // For that reason, do *not* make any more calls here after
-    // as we might have been deleted.
-  }
+  // Detach this object from |browser_accessibility_cocoa_| so it
+  // no longer has a pointer to this object.
+  [browser_accessibility_cocoa_ detach];
+  // Now, release it - but at this point, other processes may have a
+  // reference to the cocoa object.
+  [browser_accessibility_cocoa_ release];
+  // Finally, it's safe to delete this since we've detached.
+  delete this;
 }
 
 bool BrowserAccessibilityMac::IsNative() const {
   return true;
-}
-
-void BrowserAccessibilityMac::DetachTree(
-    std::vector<BrowserAccessibility*>* nodes) {
-  [browser_accessibility_cocoa_ childrenChanged];
-  BrowserAccessibility::DetachTree(nodes);
 }
 
 BrowserAccessibilityCocoa* BrowserAccessibility::ToBrowserAccessibilityCocoa() {

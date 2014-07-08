@@ -32,7 +32,12 @@
 #include <utility>
 #include <vector>
 
+#include "talk/base/messagehandler.h"
 #include "talk/p2p/base/transportchannel.h"
+
+namespace talk_base {
+class Thread;
+}
 
 namespace cricket {
 
@@ -42,7 +47,8 @@ class TransportChannelImpl;
 // This is needed because clients are allowed to create channels before the
 // network negotiation is complete.  Hence, we create a proxy up front, and
 // when negotiation completes, connect the proxy to the implementaiton.
-class TransportChannelProxy : public TransportChannel {
+class TransportChannelProxy : public TransportChannel,
+                              public talk_base::MessageHandler {
  public:
   TransportChannelProxy(const std::string& content_name,
                         const std::string& name,
@@ -57,13 +63,20 @@ class TransportChannelProxy : public TransportChannel {
 
   // Implementation of the TransportChannel interface.  These simply forward to
   // the implementation.
-  virtual int SendPacket(const char* data, size_t len, int flags);
+  virtual int SendPacket(const char* data, size_t len,
+                         const talk_base::PacketOptions& options,
+                         int flags);
   virtual int SetOption(talk_base::Socket::Option opt, int value);
   virtual int GetError();
+  virtual IceRole GetIceRole() const;
   virtual bool GetStats(ConnectionInfos* infos);
   virtual bool IsDtlsActive() const;
+  virtual bool GetSslRole(talk_base::SSLRole* role) const;
+  virtual bool SetSslRole(talk_base::SSLRole role);
   virtual bool SetSrtpCiphers(const std::vector<std::string>& ciphers);
   virtual bool GetSrtpCipher(std::string* cipher);
+  virtual bool GetLocalIdentity(talk_base::SSLIdentity** identity) const;
+  virtual bool GetRemoteCertificate(talk_base::SSLCertificate** cert) const;
   virtual bool ExportKeyingMaterial(const std::string& label,
                             const uint8* context,
                             size_t context_len,
@@ -77,12 +90,16 @@ class TransportChannelProxy : public TransportChannel {
   void OnReadableState(TransportChannel* channel);
   void OnWritableState(TransportChannel* channel);
   void OnReadPacket(TransportChannel* channel, const char* data, size_t size,
-                    int flags);
+                    const talk_base::PacketTime& packet_time, int flags);
+  void OnReadyToSend(TransportChannel* channel);
   void OnRouteChange(TransportChannel* channel, const Candidate& candidate);
 
-  std::string name_;
+  void OnMessage(talk_base::Message* message);
+
   typedef std::pair<talk_base::Socket::Option, int> OptionPair;
   typedef std::vector<OptionPair> OptionList;
+  std::string name_;
+  talk_base::Thread* worker_thread_;
   TransportChannelImpl* impl_;
   OptionList pending_options_;
   std::vector<std::string> pending_srtp_ciphers_;

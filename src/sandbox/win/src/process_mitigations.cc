@@ -4,9 +4,10 @@
 
 #include "sandbox/win/src/process_mitigations.h"
 
+#include <algorithm>
+
 #include "base/win/windows_version.h"
 #include "sandbox/win/src/nt_internals.h"
-#include "sandbox/win/src/sandbox_utils.h"
 #include "sandbox/win/src/win_utils.h"
 
 namespace {
@@ -29,10 +30,6 @@ namespace sandbox {
 bool ApplyProcessMitigationsToCurrentProcess(MitigationFlags flags) {
   if (!CanSetProcessMitigationsPostStartup(flags))
     return false;
-
-  // We can't apply anything before Win XP, so just return cleanly.
-  if (!IsXPSP2OrLater())
-    return true;
 
   base::win::Version version = base::win::GetVersion();
   HMODULE module = ::GetModuleHandleA("kernel32.dll");
@@ -191,6 +188,8 @@ void ConvertProcessMitigationsToPolicy(MitigationFlags flags,
   if (version <= base::win::VERSION_VISTA)
     return;
 
+  // DEP and SEHOP are not valid for 64-bit Windows
+#if !defined(_WIN64)
   if (flags & MITIGATION_DEP) {
     *policy_flags |= PROCESS_CREATION_MITIGATION_POLICY_DEP_ENABLE;
     if (!(flags & MITIGATION_DEP_NO_ATL_THUNK))
@@ -199,6 +198,7 @@ void ConvertProcessMitigationsToPolicy(MitigationFlags flags,
 
   if (flags & MITIGATION_SEHOP)
     *policy_flags |= PROCESS_CREATION_MITIGATION_POLICY_SEHOP_ENABLE;
+#endif
 
   // Win 7
   if (version < base::win::VERSION_WIN8)
@@ -245,28 +245,23 @@ void ConvertProcessMitigationsToPolicy(MitigationFlags flags,
 }
 
 MitigationFlags FilterPostStartupProcessMitigations(MitigationFlags flags) {
-  // Anything prior to XP SP2.
-  if (!IsXPSP2OrLater())
-    return 0;
-
   base::win::Version version = base::win::GetVersion();
 
   // Windows XP SP2+.
   if (version < base::win::VERSION_VISTA) {
     return flags & (MITIGATION_DEP |
                     MITIGATION_DEP_NO_ATL_THUNK);
+  }
 
   // Windows Vista
   if (version < base::win::VERSION_WIN7) {
-    return flags & (MITIGATION_DEP |
-                    MITIGATION_DEP_NO_ATL_THUNK |
-                    MITIGATION_BOTTOM_UP_ASLR |
+    return flags & (MITIGATION_BOTTOM_UP_ASLR |
                     MITIGATION_DLL_SEARCH_ORDER |
                     MITIGATION_HEAP_TERMINATE);
   }
 
-  // Windows 7 and Vista.
-  } else if (version < base::win::VERSION_WIN8) {
+  // Windows 7.
+  if (version < base::win::VERSION_WIN8) {
     return flags & (MITIGATION_BOTTOM_UP_ASLR |
                     MITIGATION_DLL_SEARCH_ORDER |
                     MITIGATION_HEAP_TERMINATE);

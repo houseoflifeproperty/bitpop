@@ -4,44 +4,68 @@
 
 #include "chrome/browser/ui/views/location_bar/location_icon_view.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/search/search.h"
+#include "chrome/browser/ui/views/location_bar/location_bar_view.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
 LocationIconView::LocationIconView(LocationBarView* location_bar)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(page_info_helper_(this, location_bar)) {
+    : page_info_helper_(this, location_bar) {
   SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_LOCATION_ICON));
-  TouchableLocationBarView::Init(this);
 }
 
 LocationIconView::~LocationIconView() {
 }
 
 bool LocationIconView::OnMousePressed(const ui::MouseEvent& event) {
-  // We want to show the dialog on mouse release; that is the standard behavior
-  // for buttons.
+  if (event.IsOnlyMiddleMouseButton() &&
+      ui::Clipboard::IsSupportedClipboardType(ui::CLIPBOARD_TYPE_SELECTION)) {
+    base::string16 text;
+    ui::Clipboard::GetForCurrentThread()->ReadText(
+        ui::CLIPBOARD_TYPE_SELECTION, &text);
+    text = OmniboxView::SanitizeTextForPaste(text);
+    OmniboxEditModel* model =
+        page_info_helper_.location_bar()->GetOmniboxView()->model();
+    if (model->CanPasteAndGo(text))
+      model->PasteAndGo(text);
+  }
+
+  // Showing the bubble on mouse release is standard button behavior.
   return true;
 }
 
 void LocationIconView::OnMouseReleased(const ui::MouseEvent& event) {
-  page_info_helper_.ProcessEvent(event);
+  if (event.IsOnlyMiddleMouseButton())
+    return;
+  OnClickOrTap(event);
+}
+
+bool LocationIconView::OnMouseDragged(const ui::MouseEvent& event) {
+  page_info_helper_.location_bar()->GetOmniboxView()->CloseOmniboxPopup();
+  return false;
 }
 
 void LocationIconView::OnGestureEvent(ui::GestureEvent* event) {
-  if (event->type() == ui::ET_GESTURE_TAP) {
-    page_info_helper_.ProcessEvent(*event);
-    event->SetHandled();
-  }
+  if (event->type() != ui::ET_GESTURE_TAP)
+    return;
+  OnClickOrTap(*event);
+  event->SetHandled();
 }
 
-int LocationIconView::GetBuiltInHorizontalPadding() const {
-  return GetBuiltInHorizontalPaddingImpl();
+void LocationIconView::OnClickOrTap(const ui::LocatedEvent& event) {
+  // Do not show page info if the user has been editing the location bar or the
+  // location bar is at the NTP.  Also skip showing the page info if the
+  // toolbar-based origin chip is being shown because it is responsible for
+  // showing the page info instead.
+  if (page_info_helper_.location_bar()->GetOmniboxView()->IsEditingOrEmpty() ||
+      chrome::ShouldDisplayOriginChip())
+    return;
+
+  page_info_helper_.ProcessEvent(event);
 }
 
 void LocationIconView::ShowTooltip(bool show) {
-  if (show) {
-    SetTooltipText(l10n_util::GetStringUTF16(IDS_TOOLTIP_LOCATION_ICON));
-  } else {
-    SetTooltipText(string16());
-  }
+  SetTooltipText(show ?
+      l10n_util::GetStringUTF16(IDS_TOOLTIP_LOCATION_ICON) : base::string16());
 }

@@ -6,29 +6,64 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "base/lazy_instance.h"
+#include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/chromeos/settings/device_settings_provider.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
 #include "chrome/browser/chromeos/settings/stub_cros_settings_provider.h"
 #include "chrome/browser/chromeos/settings/system_settings_provider.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/chrome_switches.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
+#include "chromeos/chromeos_switches.h"
 #include "google_apis/gaia/gaia_auth_util.h"
 
 namespace chromeos {
 
-static base::LazyInstance<CrosSettings> g_cros_settings =
-    LAZY_INSTANCE_INITIALIZER;
+static CrosSettings*  g_cros_settings = NULL;
 
+// static
+void CrosSettings::Initialize() {
+  CHECK(!g_cros_settings);
+  g_cros_settings = new CrosSettings(DeviceSettingsService::Get());
+}
+
+// static
+bool CrosSettings::IsInitialized() {
+  return g_cros_settings;
+}
+
+// static
+void CrosSettings::Shutdown() {
+  DCHECK(g_cros_settings);
+  delete g_cros_settings;
+  g_cros_settings = NULL;
+}
+
+// static
 CrosSettings* CrosSettings::Get() {
-  // TODO(xiyaun): Use real stuff when underlying libcros is ready.
-  return g_cros_settings.Pointer();
+  CHECK(g_cros_settings);
+  return g_cros_settings;
+}
+
+CrosSettings::CrosSettings(DeviceSettingsService* device_settings_service) {
+  CrosSettingsProvider::NotifyObserversCallback notify_cb(
+      base::Bind(&CrosSettings::FireObservers,
+                 // This is safe since |this| is never deleted.
+                 base::Unretained(this)));
+  if (CommandLine::ForCurrentProcess()->HasSwitch(
+          switches::kStubCrosSettings)) {
+    AddSettingsProvider(new StubCrosSettingsProvider(notify_cb));
+  } else {
+    AddSettingsProvider(
+        new DeviceSettingsProvider(notify_cb, device_settings_service));
+  }
+  // System settings are not mocked currently.
+  AddSettingsProvider(new SystemSettingsProvider(notify_cb));
+}
+
+CrosSettings::~CrosSettings() {
+  STLDeleteElements(&providers_);
+  STLDeleteValues(&settings_observers_);
 }
 
 bool CrosSettings::IsCrosSettings(const std::string& path) {
@@ -154,8 +189,19 @@ bool CrosSettings::GetList(const std::string& path,
   return false;
 }
 
+bool CrosSettings::GetDictionary(
+    const std::string& path,
+    const base::DictionaryValue** out_value) const {
+  DCHECK(CalledOnValidThread());
+  const base::Value* value = GetPref(path);
+  if (value)
+    return value->GetAsDictionary(out_value);
+  return false;
+}
+
 bool CrosSettings::FindEmailInList(const std::string& path,
-                                   const std::string& email) const {
+                                   const std::string& email,
+                                   bool* wildcard_match) const {
   DCHECK(CalledOnValidThread());
   std::string canonicalized_email(
       gaia::CanonicalizeEmail(gaia::SanitizeEmail(email)));
@@ -166,9 +212,14 @@ bool CrosSettings::FindEmailInList(const std::string& path,
         std::string("*").append(canonicalized_email.substr(at_pos));
   }
 
+  if (wildcard_match)
+    *wildcard_match = false;
+
   const base::ListValue* list;
   if (!GetList(path, &list))
     return false;
+
+  bool found_wildcard_match = false;
   for (base::ListValue::const_iterator entry(list->begin());
        entry != list->end();
        ++entry) {
@@ -180,12 +231,21 @@ bool CrosSettings::FindEmailInList(const std::string& path,
     std::string canonicalized_entry(
         gaia::CanonicalizeEmail(gaia::SanitizeEmail(entry_string)));
 
-    if (canonicalized_entry == canonicalized_email ||
-        canonicalized_entry == wildcard_email) {
+    if (canonicalized_entry != wildcard_email &&
+        canonicalized_entry == canonicalized_email) {
       return true;
     }
+
+    // If there is a wildcard match, don't exit early. There might be an exact
+    // match further down the list that should take precedence if present.
+    if (canonicalized_entry == wildcard_email)
+      found_wildcard_match = true;
   }
-  return false;
+
+  if (wildcard_match)
+    *wildcard_match = found_wildcard_match;
+
+  return found_wildcard_match;
 }
 
 bool CrosSettings::AddSettingsProvider(CrosSettingsProvider* provider) {
@@ -213,52 +273,31 @@ bool CrosSettings::RemoveSettingsProvider(CrosSettingsProvider* provider) {
   return false;
 }
 
-void CrosSettings::AddSettingsObserver(const char* path,
-                                       content::NotificationObserver* obs) {
-  DCHECK(path);
-  DCHECK(obs);
+scoped_ptr<CrosSettings::ObserverSubscription>
+CrosSettings::AddSettingsObserver(const std::string& path,
+                                  const base::Closure& callback) {
+  DCHECK(!path.empty());
+  DCHECK(!callback.is_null());
   DCHECK(CalledOnValidThread());
 
-  if (!GetProvider(std::string(path))) {
+  if (!GetProvider(path)) {
     NOTREACHED() << "Trying to add an observer for an unregistered setting: "
                  << path;
-    return;
+    return scoped_ptr<CrosSettings::ObserverSubscription>();
   }
 
-  // Get the settings observer list associated with the path.
-  NotificationObserverList* observer_list = NULL;
+  // Get the callback registry associated with the path.
+  base::CallbackList<void(void)>* registry = NULL;
   SettingsObserverMap::iterator observer_iterator =
       settings_observers_.find(path);
   if (observer_iterator == settings_observers_.end()) {
-    observer_list = new NotificationObserverList;
-    settings_observers_[path] = observer_list;
+    registry = new base::CallbackList<void(void)>;
+    settings_observers_[path] = registry;
   } else {
-    observer_list = observer_iterator->second;
+    registry = observer_iterator->second;
   }
 
-  // Verify that this observer doesn't already exist.
-  NotificationObserverList::Iterator it(*observer_list);
-  content::NotificationObserver* existing_obs;
-  while ((existing_obs = it.GetNext()) != NULL) {
-    if (existing_obs == obs)
-      return;
-  }
-
-  // Ok, safe to add the pref observer.
-  observer_list->AddObserver(obs);
-}
-
-void CrosSettings::RemoveSettingsObserver(const char* path,
-                                          content::NotificationObserver* obs) {
-  DCHECK(CalledOnValidThread());
-
-  SettingsObserverMap::iterator observer_iterator =
-      settings_observers_.find(path);
-  if (observer_iterator == settings_observers_.end())
-    return;
-
-  NotificationObserverList* observer_list = observer_iterator->second;
-  observer_list->RemoveObserver(obs);
+  return registry->Add(callback);
 }
 
 CrosSettingsProvider* CrosSettings::GetProvider(
@@ -270,27 +309,6 @@ CrosSettingsProvider* CrosSettings::GetProvider(
   return NULL;
 }
 
-CrosSettings::CrosSettings() {
-  CrosSettingsProvider::NotifyObserversCallback notify_cb(
-      base::Bind(&CrosSettings::FireObservers,
-                 // This is safe since |this| is never deleted.
-                 base::Unretained(this)));
-  if (CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kStubCrosSettings)) {
-    AddSettingsProvider(new StubCrosSettingsProvider(notify_cb));
-  } else {
-    AddSettingsProvider(
-        new DeviceSettingsProvider(notify_cb, DeviceSettingsService::Get()));
-  }
-  // System settings are not mocked currently.
-  AddSettingsProvider(new SystemSettingsProvider(notify_cb));
-}
-
-CrosSettings::~CrosSettings() {
-  STLDeleteElements(&providers_);
-  STLDeleteValues(&settings_observers_);
-}
-
 void CrosSettings::FireObservers(const std::string& path) {
   DCHECK(CalledOnValidThread());
   SettingsObserverMap::iterator observer_iterator =
@@ -298,13 +316,15 @@ void CrosSettings::FireObservers(const std::string& path) {
   if (observer_iterator == settings_observers_.end())
     return;
 
-  NotificationObserverList::Iterator it(*(observer_iterator->second));
-  content::NotificationObserver* observer;
-  while ((observer = it.GetNext()) != NULL) {
-    observer->Observe(chrome::NOTIFICATION_SYSTEM_SETTING_CHANGED,
-                      content::Source<CrosSettings>(this),
-                      content::Details<const std::string>(&path));
-  }
+  observer_iterator->second->Notify();
+}
+
+ScopedTestCrosSettings::ScopedTestCrosSettings() {
+  CrosSettings::Initialize();
+}
+
+ScopedTestCrosSettings::~ScopedTestCrosSettings() {
+  CrosSettings::Shutdown();
 }
 
 }  // namespace chromeos

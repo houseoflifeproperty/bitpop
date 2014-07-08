@@ -32,6 +32,7 @@
  * up and sending out the chunks.
  */
 
+#include "libavutil/channel_layout.h"
 #include "libavutil/intreadwrite.h"
 #include "avformat.h"
 #include "internal.h"
@@ -375,7 +376,7 @@ static int process_ipmovie_chunk(IPMVEContext *s, AVIOContext *pb,
 
         case OPCODE_INIT_VIDEO_BUFFERS:
             av_dlog(NULL, "initialize video buffers\n");
-            if ((opcode_version > 2) || (opcode_size > 8)) {
+            if ((opcode_version > 2) || (opcode_size > 8) || opcode_size < 4) {
                 av_dlog(NULL, "bad init_video_buffers opcode\n");
                 chunk_type = CHUNK_BAD;
                 break;
@@ -526,8 +527,8 @@ static const char signature[] = "Interplay MVE File\x1A\0\x1A";
 
 static int ipmovie_probe(AVProbeData *p)
 {
-    uint8_t *b = p->buf;
-    uint8_t *b_end = p->buf + p->buf_size - sizeof(signature);
+    const uint8_t *b = p->buf;
+    const uint8_t *b_end = p->buf + p->buf_size - sizeof(signature);
     do {
         if (b[0] == signature[0] && memcmp(b, signature, sizeof(signature)) == 0)
             return AVPROBE_SCORE_MAX;
@@ -605,6 +606,8 @@ static int ipmovie_read_header(AVFormatContext *s)
         st->codec->codec_id = ipmovie->audio_type;
         st->codec->codec_tag = 0;  /* no tag */
         st->codec->channels = ipmovie->audio_channels;
+        st->codec->channel_layout = st->codec->channels == 1 ? AV_CH_LAYOUT_MONO :
+                                                               AV_CH_LAYOUT_STEREO;
         st->codec->sample_rate = ipmovie->audio_sample_rate;
         st->codec->bits_per_coded_sample = ipmovie->audio_bits;
         st->codec->bit_rate = st->codec->channels * st->codec->sample_rate *

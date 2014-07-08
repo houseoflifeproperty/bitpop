@@ -14,22 +14,28 @@ import config
 
 # A list of unittests to run after each build.
 _UNITTESTS = [
-  'asan_rtl_unittests',
   'agent_common_unittests',
+  'agent_logger_unittests',
   'basic_block_entry_unittests',
+  'block_graph_analysis_unittests',
   'block_graph_orderers_unittests',
   'block_graph_transforms_unittests',
   'block_graph_unittests',
   'common_unittests',
   'core_unittests',
   'coverage_unittests',
+  'genfilter_unittests',
   'grinder_unittests',
   'instrument_unittests',
+  'integration_tests',
+  'optimize_unittests',
   'parse_unittests',
   'pdb_unittests',
+  'pdbfind_unittests',
   'pe_orderers_unittests',
   'pe_transforms_unittests',
   'pe_unittests',
+  'pehacker_unittests',
   'playback_unittests',
   'profile_unittests',
   'protocol_unittests',
@@ -37,9 +43,20 @@ _UNITTESTS = [
   'reorder_unittests',
   'rpc_client_lib_unittests',
   'rpc_service_unittests',
+  'sampler_unittests',
   'simulate_unittests',
+  'syzyasan_rtl_unittests',
+  'trace_common_unittests',
   'wsdump_unittests',
+  'zap_timestamp_unittests',
 ]
+
+
+def ForceToMsvsBuildTool(options):
+  # TODO: Move syzygy off msvs to ninja once it works. http://crbug.com/332429
+  options = options or []
+  options.append('--build-tool=vs')
+  return options
 
 
 class SyzygyFactory(gclient_factory.GClientFactory):
@@ -48,7 +65,8 @@ class SyzygyFactory(gclient_factory.GClientFactory):
   def __init__(self, build_dir, target_platform=None):
     self.target_platform = target_platform
     main = gclient_factory.GClientSolution(config.Master.syzygy_url + 'trunk',
-                                           name='src')
+                                           name='src',
+                                           custom_deps_file='DEPS.syzygy')
 
     custom_deps_list = [main]
     if config.Master.syzygy_internal_url:
@@ -65,6 +83,12 @@ class SyzygyFactory(gclient_factory.GClientFactory):
                     compile_timeout=1200, build_url=None, project=None,
                     factory_properties=None, target_arch=None,
                     official_release=False):
+    factory_properties = factory_properties or {}
+    gclient_env = factory_properties.setdefault('gclient_env', {})
+    if official_release:
+      gclient_env.setdefault('GYP_DEFINES', '')
+      gclient_env['GYP_DEFINES'] += ' official_build=1'
+
     factory = self.BaseFactory(factory_properties=factory_properties,
                                official_release=official_release)
 
@@ -74,13 +98,17 @@ class SyzygyFactory(gclient_factory.GClientFactory):
                                                     self.target_platform,
                                                     target_arch)
 
+    options = ForceToMsvsBuildTool(options)
+
     if official_release:
       # Compile the official_build project of the "all" solution for
       # official builds.
-      syzygy_cmd_obj.AddCompileStep('../syzygy/build/all.sln;official_build')
+      syzygy_cmd_obj.AddCompileStep('../syzygy/build/all.sln;official_build',
+                                    options=options)
     else:
       # Compile the build_all project of the Syzygy solution.
-      syzygy_cmd_obj.AddCompileStep('../syzygy/syzygy.sln;build_all')
+      syzygy_cmd_obj.AddCompileStep('../syzygy/syzygy.sln;build_all',
+                                    options=options)
 
     # Run the unittests.
     for test_name in _UNITTESTS:
@@ -93,6 +121,7 @@ class SyzygyFactory(gclient_factory.GClientFactory):
     if official_release:
       # Archive official build output.
       syzygy_cmd_obj.AddArchival()
+      syzygy_cmd_obj.AddUploadSymbols()
 
     return factory
 
@@ -108,9 +137,12 @@ class SyzygyFactory(gclient_factory.GClientFactory):
                                                     self.target_platform,
                                                     target_arch)
 
+    options = ForceToMsvsBuildTool(options)
+
     # Compile everything. We need the grinder, the instrumenter and the
     # coverage agent as well as the unittests.
-    syzygy_cmd_obj.AddCompileStep('../syzygy/syzygy.sln;build_all')
+    syzygy_cmd_obj.AddCompileStep('../syzygy/syzygy.sln;build_all',
+                                  options=options)
 
     # Then generate and upload a coverage report.
     syzygy_cmd_obj.AddGenerateCoverage()

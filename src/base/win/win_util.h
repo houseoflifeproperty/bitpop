@@ -27,7 +27,7 @@
 #include <string>
 
 #include "base/base_export.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 struct IPropertyStore;
 struct _tagpropertykey;
@@ -35,14 +35,6 @@ typedef _tagpropertykey PROPERTYKEY;
 
 namespace base {
 namespace win {
-
-// A Windows message reflected from other windows. This message is sent
-// with the following arguments:
-// hWnd - Target window
-// uMsg - kReflectedMessage
-// wParam - Should be 0
-// lParam - Pointer to MSG struct containing the original message.
-const int kReflectedMessage = WM_APP + 3;
 
 BASE_EXPORT void GetNonClientMetrics(NONCLIENTMETRICS* metrics);
 
@@ -57,6 +49,11 @@ BASE_EXPORT bool IsCtrlPressed();
 
 // Returns true if the alt key is currently pressed.
 BASE_EXPORT bool IsAltPressed();
+
+// Returns true if the altgr key is currently pressed.
+// Windows does not have specific key code and modifier bit and Alt+Ctrl key is
+// used as AltGr key in Windows.
+BASE_EXPORT bool IsAltGrPressed();
 
 // Returns false if user account control (UAC) has been disabled with the
 // EnableLUA registry flag. Returns true if user account control is enabled.
@@ -110,9 +107,9 @@ BASE_EXPORT bool ShouldCrashOnProcessDetach();
 // process is aborted.
 BASE_EXPORT void SetAbortBehaviorForCrashReporting();
 
-// A tablet by this definition is something that has integrated multi-touch
-// ready to use and also has screen resolution not greater than 1366x768.
-BASE_EXPORT bool IsMachineATablet();
+// A touch enabled device by this definition is something that has
+// integrated multi-touch ready to use and has Windows version > Windows7.
+BASE_EXPORT bool IsTouchEnabledDevice();
 
 // Get the size of a struct up to and including the specified member.
 // This is necessary to set compatible struct sizes for different versions
@@ -120,6 +117,21 @@ BASE_EXPORT bool IsMachineATablet();
 #define SIZEOF_STRUCT_WITH_SPECIFIED_LAST_MEMBER(struct_name, member) \
     offsetof(struct_name, member) + \
     (sizeof static_cast<struct_name*>(NULL)->member)
+
+// Displays the on screen keyboard on Windows 8 and above. Returns true on
+// success.
+BASE_EXPORT bool DisplayVirtualKeyboard();
+
+// Dismisses the on screen keyboard if it is being displayed on Windows 8 and.
+// above. Returns true on success.
+BASE_EXPORT bool DismissVirtualKeyboard();
+
+// Returns true if the machine is enrolled to a domain.
+BASE_EXPORT bool IsEnrolledToDomain();
+
+// Used by tests to mock any wanted state. Call with |state| set to true to
+// simulate being in a domain and false otherwise.
+BASE_EXPORT void SetDomainStateForTesting(bool state);
 
 }  // namespace win
 }  // namespace base

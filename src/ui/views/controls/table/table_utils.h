@@ -11,36 +11,46 @@
 #include "ui/views/views_export.h"
 
 namespace gfx {
-class Font;
+class FontList;
 }
 
 namespace views {
+
+class TableView;
 
 VIEWS_EXPORT extern const int kUnspecifiedColumnWidth;
 
 // Returns the width needed to display the contents of the specified column.
 // This is used internally by CalculateTableColumnSizes() and generally not
-// useful by itself.
-VIEWS_EXPORT int WidthForContent(const gfx::Font& header_font,
-                                 const gfx::Font& content_font,
+// useful by itself. |header_padding| is padding added to the header.
+VIEWS_EXPORT int WidthForContent(const gfx::FontList& header_font_list,
+                                 const gfx::FontList& content_font_list,
                                  int padding,
+                                 int header_padding,
                                  const ui::TableColumn& column,
                                  ui::TableModel* model);
 
 // Determines the width for each of the specified columns. |width| is the width
-// to fit the columns into. |header_font| the font used to draw the header and
-// |content_font| the header used to draw the content. |padding| is extra
-// horizontal spaced added to each cell.
+// to fit the columns into. |header_font_list| the font list used to draw the
+// header and |content_font_list| the header used to draw the content. |padding|
+// is extra horizontal spaced added to each cell, and |header_padding| added to
+// the width needed for the header.
 VIEWS_EXPORT std::vector<int> CalculateTableColumnSizes(
     int width,
-    const gfx::Font& header_font,
-    const gfx::Font& content_font,
+    int first_column_padding,
+    const gfx::FontList& header_font_list,
+    const gfx::FontList& content_font_list,
     int padding,
+    int header_padding,
     const std::vector<ui::TableColumn>& columns,
     ui::TableModel* model);
 
 // Converts a TableColumn::Alignment to the alignment for drawing the string.
 int TableColumnAlignmentToCanvasAlignment(ui::TableColumn::Alignment alignment);
+
+// Returns the index of the closest visible column index to |x|. Return value is
+// in terms of table->visible_columns().
+int GetClosestVisibleColumnIndex(const TableView* table, int x);
 
 }  // namespace views
 

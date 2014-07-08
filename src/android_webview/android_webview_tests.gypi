@@ -4,28 +4,76 @@
 {
   'targets': [
     {
+      'target_name': 'android_webview_apk',
+      'type': 'none',
+      'dependencies': [
+        'libwebviewchromium',
+        'android_webview_java',
+        'android_webview_pak',
+      ],
+      'variables': {
+        'apk_name': 'AndroidWebView',
+        'java_in_dir': 'test/shell',
+        'native_lib_target': 'libstandalonelibwebviewchromium',
+        'resource_dir': 'test/shell/res',
+        'additional_input_paths': [
+          '<(PRODUCT_DIR)/android_webview_apk/assets/webviewchromium.pak',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/asset_file.html',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/asset_icon.png',
+          '<(PRODUCT_DIR)/android_webview_apk/assets/full_screen_video_test.html',
+        ],
+        'conditions': [
+          ['icu_use_data_file_flag==1', {
+            'additional_input_paths': [
+              '<(PRODUCT_DIR)/icudtl.dat',
+            ],
+          }],
+        ],
+      },
+      'copies': [
+        {
+          'destination': '<(PRODUCT_DIR)/android_webview_apk/assets',
+          'files': [
+            '<(java_in_dir)/assets/asset_file.html',
+            '<(java_in_dir)/assets/asset_icon.png',
+            '<(java_in_dir)/assets/full_screen_video_test.html',
+          ],
+	  'conditions': [
+            ['icu_use_data_file_flag==1', {
+              'files': [
+                '<(PRODUCT_DIR)/icudtl.dat',
+              ],
+	    }],
+          ],
+        },
+      ],
+      'includes': [ '../build/java_apk.gypi' ],
+    },
+    {
+      # android_webview_apk creates a .jar as a side effect. Any java
+      # targets that need that .jar in their classpath should depend on this
+      # target. For more details see the chrome_shell_apk_java target.
+      'target_name': 'android_webview_apk_java',
+      'type': 'none',
+      'dependencies': [
+        'android_webview_apk',
+      ],
+      'includes': [ '../build/apk_fake_jar.gypi' ],
+    },
+    {
       'target_name': 'android_webview_test_apk',
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_java_test_support',
-        '../content/content.gyp:content_java_test_support',
+        '../content/content_shell_and_tests.gyp:content_java_test_support',
         '../net/net.gyp:net_java_test_support',
-       'android_webview_java',
-        'libwebviewchromium',
+        'android_webview_apk_java',
       ],
       'variables': {
-        'package_name': 'android_webview_test',
         'apk_name': 'AndroidWebViewTest',
         'java_in_dir': '../android_webview/javatests',
-        'resource_dir': 'res',
         'is_test_apk': 1,
       },
-      'copies': [
-        {
-          'destination': '<(PRODUCT_DIR)/android_webview_test/assets',
-          'files': [ '<!@(find <(java_in_dir)/assets -type f)' ]
-        },
-      ],
       'includes': [ '../build/java_apk.gypi' ],
     },
     {
@@ -33,11 +81,14 @@
       'type': '<(gtest_target_type)',
       'dependencies': [
         '../base/base.gyp:test_support_base',
+        '../content/content_shell_and_tests.gyp:test_support_content',
         '../net/net.gyp:net_test_support',
         '../testing/android/native_test.gyp:native_test_native_code',
         '../testing/gmock.gyp:gmock',
         '../testing/gtest.gyp:gtest',
+        '../ui/base/ui_base.gyp:ui_base_jni_headers',
         'android_webview_common',
+        'android_webview_unittests_jni',
       ],
       'include_dirs': [
         '..',
@@ -45,11 +96,17 @@
         '<(SHARED_INTERMEDIATE_DIR)/android_webview_unittests',
       ],
       'sources': [
+        'browser/aw_cookie_access_policy_unittest.cc',
+        'browser/aw_form_database_service_unittest.cc',
+        'browser/global_tile_manager_unittest.cc',
         'browser/net/android_stream_reader_url_request_job_unittest.cc',
         'browser/net/input_stream_reader_unittest.cc',
         'lib/main/webview_tests.cc',
+        'native/aw_contents_client_bridge_unittest.cc',
         'native/input_stream_unittest.cc',
-        'native/state_serializer_unittests.cc',
+        'native/permission/media_access_permission_request_unittest.cc',
+        'native/permission/permission_request_handler_unittest.cc',
+        'native/state_serializer_unittest.cc',
       ],
     },
     {
@@ -57,11 +114,10 @@
       'type': 'none',
       'dependencies': [
         '../base/base.gyp:base_java_test_support',
-        '../content/content.gyp:content_java_test_support',
+        '../content/content_shell_and_tests.gyp:content_java_test_support',
         'android_webview_java',
       ],
       'variables': {
-        'package_name': 'android_webview_unittest_java',
         'java_in_dir': '../android_webview/unittestjava',
       },
       'includes': [ '../build/java.gypi' ],
@@ -71,9 +127,11 @@
       'type': 'none',
       'sources': [
           '../android_webview/unittestjava/src/org/chromium/android_webview/unittest/InputStreamUnittest.java',
+          '../android_webview/unittestjava/src/org/chromium/android_webview/unittest/MockAwContentsClientBridge.java',
       ],
       'variables': {
-        'jni_gen_dir': 'android_webview_unittests',
+        'jni_gen_package': 'android_webview_unittests',
+        'jni_generator_ptr_type': 'long',
       },
       'includes': [ '../build/jni_generator.gypi' ],
     },
@@ -83,11 +141,9 @@
       'dependencies': [
         'android_webview_unittest_java',
         'android_webview_unittests',
-        'android_webview_unittests_jni',
       ],
       'variables': {
         'test_suite_name': 'android_webview_unittests',
-        'input_shlib_path': '<(SHARED_LIB_DIR)/<(SHARED_LIB_PREFIX)android_webview_unittests<(SHARED_LIB_SUFFIX)',
       },
       'includes': [ '../build/apk_test.gypi' ],
     },

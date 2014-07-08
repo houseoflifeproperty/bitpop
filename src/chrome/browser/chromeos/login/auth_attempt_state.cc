@@ -14,16 +14,12 @@ using content::BrowserThread;
 
 namespace chromeos {
 
-AuthAttemptState::AuthAttemptState(const std::string& username,
-                                   const std::string& password,
-                                   const std::string& ascii_hash,
+AuthAttemptState::AuthAttemptState(const UserContext& user_context,
                                    const std::string& login_token,
                                    const std::string& login_captcha,
                                    const User::UserType user_type,
                                    const bool user_is_new)
-    : username(username),
-      password(password),
-      ascii_hash(ascii_hash),
+    : user_context(user_context),
       login_token(login_token),
       login_captcha(login_captcha),
       user_type(user_type),
@@ -34,13 +30,14 @@ AuthAttemptState::AuthAttemptState(const std::string& username,
       is_first_time_user_(user_is_new),
       cryptohome_complete_(false),
       cryptohome_outcome_(false),
-      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE) {
+      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE),
+      username_hash_obtained_(true),
+      username_hash_valid_(true) {
 }
 
 AuthAttemptState::AuthAttemptState(const std::string& username,
-                                   const std::string& ascii_hash)
-    : username(username),
-      ascii_hash(ascii_hash),
+                                   const std::string& password)
+    : user_context(username, password, ""),
       user_type(User::USER_TYPE_REGULAR),
       unlock(true),
       online_complete_(true),
@@ -49,16 +46,13 @@ AuthAttemptState::AuthAttemptState(const std::string& username,
       is_first_time_user_(false),
       cryptohome_complete_(false),
       cryptohome_outcome_(false),
-      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE) {
+      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE),
+      username_hash_obtained_(true) {
 }
 
-AuthAttemptState::AuthAttemptState(const std::string& username,
-                                   const std::string& password,
-                                   const std::string& ascii_hash,
+AuthAttemptState::AuthAttemptState(const UserContext& user_context,
                                    const bool user_is_new)
-    : username(username),
-      password(password),
-      ascii_hash(ascii_hash),
+    : user_context(user_context),
       user_type(User::USER_TYPE_REGULAR),
       unlock(true),
       online_complete_(false),
@@ -67,7 +61,8 @@ AuthAttemptState::AuthAttemptState(const std::string& username,
       is_first_time_user_(user_is_new),
       cryptohome_complete_(false),
       cryptohome_outcome_(false),
-      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE) {
+      cryptohome_code_(cryptohome::MOUNT_ERROR_NONE),
+      username_hash_obtained_(true) {
 }
 
 AuthAttemptState::~AuthAttemptState() {}
@@ -94,6 +89,24 @@ void AuthAttemptState::RecordCryptohomeStatus(
   cryptohome_complete_ = true;
   cryptohome_outcome_ = cryptohome_outcome;
   cryptohome_code_ = cryptohome_code;
+}
+
+void AuthAttemptState::RecordUsernameHash(const std::string& username_hash) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  user_context.username_hash = username_hash;
+  username_hash_obtained_ = true;
+  username_hash_valid_ = true;
+}
+
+void AuthAttemptState::RecordUsernameHashFailed() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  username_hash_obtained_ = true;
+  username_hash_valid_ = false;
+}
+
+void AuthAttemptState::UsernameHashRequested() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  username_hash_obtained_ = false;
 }
 
 void AuthAttemptState::ResetCryptohomeStatus() {
@@ -138,11 +151,14 @@ cryptohome::MountError AuthAttemptState::cryptohome_code() {
   return cryptohome_code_;
 }
 
-void AuthAttemptState::SetOAuth1Token(const std::string& token,
-                                      const std::string& secret) {
+bool AuthAttemptState::username_hash_obtained() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  oauth1_access_token_ = token;
-  oauth1_access_secret_ = secret;
+  return username_hash_obtained_;
+}
+
+bool AuthAttemptState::username_hash_valid() {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  return username_hash_obtained_;
 }
 
 }  // namespace chromeos

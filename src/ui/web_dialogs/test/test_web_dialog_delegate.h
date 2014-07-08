@@ -8,9 +8,9 @@
 #include <string>
 
 #include "base/compiler_specific.h"
-#include "googleurl/src/gurl.h"
 #include "ui/gfx/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
+#include "url/gurl.h"
 
 namespace ui {
 namespace test {
@@ -26,7 +26,7 @@ class TestWebDialogDelegate : public WebDialogDelegate {
 
   // WebDialogDelegate implementation:
   virtual ModalType GetDialogModalType() const OVERRIDE;
-  virtual string16 GetDialogTitle() const OVERRIDE;
+  virtual base::string16 GetDialogTitle() const OVERRIDE;
   virtual GURL GetDialogContentURL() const OVERRIDE;
   virtual void GetWebUIMessageHandlers(
       std::vector<content::WebUIMessageHandler*>* handlers) const OVERRIDE;

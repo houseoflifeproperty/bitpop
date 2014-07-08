@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,10 +6,10 @@ package org.chromium.content.browser.accessibility;
 
 import android.accessibilityservice.AccessibilityServiceInfo;
 import android.content.Context;
+import android.content.pm.PackageManager;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Vibrator;
-import android.provider.Settings;
 import android.speech.tts.TextToSpeech;
 import android.util.Log;
 import android.view.View;
@@ -21,24 +21,25 @@ import com.googlecode.eyesfree.braille.selfbraille.WriteData;
 
 import org.apache.http.NameValuePair;
 import org.apache.http.client.utils.URLEncodedUtils;
+import org.chromium.base.CommandLine;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.JavascriptInterface;
 import org.chromium.content.browser.WebContentsObserverAndroid;
-import org.chromium.content.common.CommandLine;
+import org.chromium.content.common.ContentSwitches;
 import org.json.JSONException;
 import org.json.JSONObject;
 
-import java.lang.reflect.Field;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.util.HashMap;
+import java.util.Iterator;
 import java.util.List;
 
 /**
  * Responsible for accessibility injection and management of a {@link ContentViewCore}.
  */
 public class AccessibilityInjector extends WebContentsObserverAndroid {
-    private static final String TAG = AccessibilityInjector.class.getSimpleName();
+    private static final String TAG = "AccessibilityInjector";
 
     // The ContentView this injector is responsible for managing.
     protected ContentViewCore mContentViewCore;
@@ -46,6 +47,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
     // The Java objects that are exposed to JavaScript
     private TextToSpeechWrapper mTextToSpeech;
     private VibratorWrapper mVibrator;
+    private final boolean mHasVibratePermission;
 
     // Lazily loaded helper objects.
     private AccessibilityManager mAccessibilityManager;
@@ -109,7 +111,11 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
         mContentViewCore = view;
 
         mAccessibilityScreenReaderUrl = CommandLine.getInstance().getSwitchValue(
-                CommandLine.ACCESSIBILITY_JAVASCRIPT_URL, DEFAULT_ACCESSIBILITY_SCREEN_READER_URL);
+                ContentSwitches.ACCESSIBILITY_JAVASCRIPT_URL,
+                DEFAULT_ACCESSIBILITY_SCREEN_READER_URL);
+
+        mHasVibratePermission = mContentViewCore.getContext().checkCallingOrSelfPermission(
+                android.Manifest.permission.VIBRATE) == PackageManager.PERMISSION_GRANTED;
     }
 
     /**
@@ -124,27 +130,17 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
         if (!accessibilityIsAvailable()) return;
 
         int axsParameterValue = getAxsUrlParameterValue();
-        if (axsParameterValue == ACCESSIBILITY_SCRIPT_INJECTION_UNDEFINED) {
-            try {
-                Field field = Settings.Secure.class.getField("ACCESSIBILITY_SCRIPT_INJECTION");
-                field.setAccessible(true);
-                String ACCESSIBILITY_SCRIPT_INJECTION = (String) field.get(null);
+        if (axsParameterValue != ACCESSIBILITY_SCRIPT_INJECTION_UNDEFINED) {
+            return;
+        }
 
-                boolean onDeviceScriptInjectionEnabled = (Settings.Secure.getInt(
-                        mContentViewCore.getContext().getContentResolver(),
-                        ACCESSIBILITY_SCRIPT_INJECTION, 0) == 1);
-                String js = getScreenReaderInjectingJs();
-
-                if (onDeviceScriptInjectionEnabled && js != null && mContentViewCore.isAlive()) {
-                    addOrRemoveAccessibilityApisIfNecessary();
-                    mContentViewCore.evaluateJavaScript(js);
-                    mInjectedScriptEnabled = true;
-                    mScriptInjected = true;
-                }
-            } catch (NoSuchFieldException ex) {
-            } catch (IllegalArgumentException ex) {
-            } catch (IllegalAccessException ex) {
-            }
+        String js = getScreenReaderInjectingJs();
+        if (mContentViewCore.isDeviceAccessibilityScriptInjectionEnabled() &&
+                js != null && mContentViewCore.isAlive()) {
+            addOrRemoveAccessibilityApisIfNecessary();
+            mContentViewCore.evaluateJavaScript(js, null);
+            mInjectedScriptEnabled = true;
+            mScriptInjected = true;
         }
     }
 
@@ -171,31 +167,39 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
      * Checks whether or not touch to explore is enabled on the system.
      */
     public boolean accessibilityIsAvailable() {
-        // Need to make sure we actually have a service running that requires injecting
-        // this script.
-        List<AccessibilityServiceInfo> services =
-                getAccessibilityManager().getEnabledAccessibilityServiceList(
-                        FEEDBACK_BRAILLE | AccessibilityServiceInfo.FEEDBACK_SPOKEN);
+        if (!getAccessibilityManager().isEnabled() ||
+                mContentViewCore.getContentSettings() == null ||
+                !mContentViewCore.getContentSettings().getJavaScriptEnabled()) {
+            return false;
+        }
 
-        return getAccessibilityManager().isEnabled() &&
-                mContentViewCore.getContentSettings() != null &&
-                mContentViewCore.getContentSettings().getJavaScriptEnabled() &&
-                services.size() > 0;
+        try {
+            // Check that there is actually a service running that requires injecting this script.
+            List<AccessibilityServiceInfo> services =
+                    getAccessibilityManager().getEnabledAccessibilityServiceList(
+                            FEEDBACK_BRAILLE | AccessibilityServiceInfo.FEEDBACK_SPOKEN);
+            return services.size() > 0;
+        } catch (NullPointerException e) {
+            // getEnabledAccessibilityServiceList() can throw an NPE due to a bad
+            // AccessibilityService.
+            return false;
+        }
     }
 
     /**
      * Sets whether or not the script is enabled.  If the script is disabled, we also stop any
-     * we output that is occurring.
+     * we output that is occurring. If the script has not yet been injected, injects it.
      * @param enabled Whether or not to enable the script.
      */
     public void setScriptEnabled(boolean enabled) {
+        if (enabled && !mScriptInjected) injectAccessibilityScriptIntoPage();
         if (!accessibilityIsAvailable() || mInjectedScriptEnabled == enabled) return;
 
         mInjectedScriptEnabled = enabled;
         if (mContentViewCore.isAlive()) {
             String js = String.format(TOGGLE_CHROME_VOX_JAVASCRIPT, Boolean.toString(
                     mInjectedScriptEnabled));
-            mContentViewCore.evaluateJavaScript(js);
+            mContentViewCore.evaluateJavaScript(js, null);
 
             if (!mInjectedScriptEnabled) {
                 // Stop any TTS/Vibration right now.
@@ -277,7 +281,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
                         ALIAS_ACCESSIBILITY_JS_INTERFACE);
             }
 
-            if (mVibrator == null) {
+            if (mVibrator == null && mHasVibratePermission) {
                 mVibrator = new VibratorWrapper(context);
                 mContentViewCore.addJavascriptInterface(mVibrator,
                         ALIAS_ACCESSIBILITY_JS_INTERFACE_2);
@@ -393,7 +397,7 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
             mView = view;
             mTextToSpeech = new TextToSpeech(context, null, null);
             mSelfBrailleClient = new SelfBrailleClient(context, CommandLine.getInstance().hasSwitch(
-                    CommandLine.ACCESSIBILITY_DEBUG_BRAILLE_SERVICE));
+                    ContentSwitches.ACCESSIBILITY_DEBUG_BRAILLE_SERVICE));
         }
 
         @JavascriptInterface
@@ -404,7 +408,30 @@ public class AccessibilityInjector extends WebContentsObserverAndroid {
 
         @JavascriptInterface
         @SuppressWarnings("unused")
-        public int speak(String text, int queueMode, HashMap<String, String> params) {
+        public int speak(String text, int queueMode, String jsonParams) {
+            // Try to pull the params from the JSON string.
+            HashMap<String, String> params = null;
+            try {
+                if (jsonParams != null) {
+                    params = new HashMap<String, String>();
+                    JSONObject json = new JSONObject(jsonParams);
+
+                    // Using legacy API here.
+                    @SuppressWarnings("unchecked")
+                    Iterator<String> keyIt = json.keys();
+
+                    while (keyIt.hasNext()) {
+                        String key = keyIt.next();
+                        // Only add parameters that are raw data types.
+                        if (json.optJSONObject(key) == null && json.optJSONArray(key) == null) {
+                            params.put(key, json.getString(key));
+                        }
+                    }
+                }
+            } catch (JSONException e) {
+                params = null;
+            }
+
             return mTextToSpeech.speak(text, queueMode, params);
         }
 

@@ -9,23 +9,26 @@
 
 class TranslateMessageInfoBar : public TranslateInfoBarBase {
  public:
-  TranslateMessageInfoBar(InfoBarTabHelper* owner,
-                          TranslateInfoBarDelegate* delegate);
+  explicit TranslateMessageInfoBar(
+      scoped_ptr<TranslateInfoBarDelegate> delegate);
 
  private:
   virtual ~TranslateMessageInfoBar();
 
   // TranslateInfoBarBase:
   virtual void Layout() OVERRIDE;
-  virtual void ViewHierarchyChanged(bool is_add,
-                                    View* parent,
-                                    View* child) OVERRIDE;
+  virtual void ViewHierarchyChanged(
+      const ViewHierarchyChangedDetails& details) OVERRIDE;
   virtual void ButtonPressed(views::Button* sender,
                              const ui::Event& event) OVERRIDE;
-  virtual int ContentMinimumWidth() const OVERRIDE;
+  virtual int ContentMinimumWidth() OVERRIDE;
+
+  // Returns the width of all content other than the label.  Layout() uses this
+  // to determine how much space the label can take.
+  int NonLabelWidth() const;
 
   views::Label* label_;
-  views::TextButton* button_;
+  views::LabelButton* button_;
 
   DISALLOW_COPY_AND_ASSIGN(TranslateMessageInfoBar);
 };

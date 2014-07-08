@@ -8,13 +8,15 @@
 
 #include "base/file_util.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/print_backend_consts.h"
+#include "url/gurl.h"
+
+namespace printing {
 
 // This section contains helper code for PPD parsing for semantic capabilities.
 namespace {
@@ -31,10 +33,11 @@ const char kDuplex[] = "Duplex";
 const char kDuplexNone[] = "None";
 
 #if !defined(OS_MACOSX)
-void ParseLpOptions(const FilePath& filepath, const std::string& printer_name,
+void ParseLpOptions(const base::FilePath& filepath,
+                    const std::string& printer_name,
                     int* num_options, cups_option_t** options) {
   std::string content;
-  if (!file_util::ReadFileToString(filepath, &content))
+  if (!base::ReadFileToString(filepath, &content))
     return;
 
   const char kDest[] = "dest";
@@ -59,7 +62,7 @@ void ParseLpOptions(const FilePath& filepath, const std::string& printer_name,
       continue;
     }
 
-    TrimWhitespaceASCII(line, TRIM_ALL, &line);
+    base::TrimWhitespaceASCII(line, base::TRIM_ALL, &line);
     if (line.empty())
       continue;
 
@@ -77,7 +80,8 @@ void ParseLpOptions(const FilePath& filepath, const std::string& printer_name,
     }
 
     line = line.substr(space_found + 1);
-    TrimWhitespaceASCII(line, TRIM_ALL, &line);  // Remove extra spaces.
+    // Remove extra spaces.
+    base::TrimWhitespaceASCII(line, base::TRIM_ALL, &line);
     if (line.empty())
       continue;
     // Parse the selected printer custom options.
@@ -93,12 +97,12 @@ void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
   const char kSystemLpOptionPath[] = "/etc/cups/lpoptions";
   const char kUserLpOptionPath[] = ".cups/lpoptions";
 
-  std::vector<FilePath> file_locations;
-  file_locations.push_back(FilePath(kSystemLpOptionPath));
-  file_locations.push_back(FilePath(
-      file_util::GetHomeDir().Append(kUserLpOptionPath)));
+  std::vector<base::FilePath> file_locations;
+  file_locations.push_back(base::FilePath(kSystemLpOptionPath));
+  file_locations.push_back(base::FilePath(
+      base::GetHomeDir().Append(kUserLpOptionPath)));
 
-  for (std::vector<FilePath>::const_iterator it = file_locations.begin();
+  for (std::vector<base::FilePath>::const_iterator it = file_locations.begin();
        it != file_locations.end(); ++it) {
     num_options = 0;
     options = NULL;
@@ -112,8 +116,8 @@ void MarkLpOptions(const std::string& printer_name, ppd_file_t** ppd) {
 #endif  // !defined(OS_MACOSX)
 
 bool GetBasicColorModelSettings(ppd_file_t* ppd,
-                                int* color_model_for_black,
-                                int* color_model_for_color,
+                                ColorModel* color_model_for_black,
+                                ColorModel* color_model_for_color,
                                 bool* color_is_default) {
   ppd_option_t* color_model = ppdFindOption(ppd, kColorModel);
   if (!color_model)
@@ -157,8 +161,8 @@ bool GetBasicColorModelSettings(ppd_file_t* ppd,
 }
 
 bool GetPrintOutModeColorSettings(ppd_file_t* ppd,
-                                  int* color_model_for_black,
-                                  int* color_model_for_color,
+                                  ColorModel* color_model_for_black,
+                                  ColorModel* color_model_for_color,
                                   bool* color_is_default) {
   ppd_option_t* printout_mode = ppdFindOption(ppd, kPrintoutMode);
   if (!printout_mode)
@@ -194,8 +198,8 @@ bool GetPrintOutModeColorSettings(ppd_file_t* ppd,
 }
 
 bool GetColorModeSettings(ppd_file_t* ppd,
-                          int* color_model_for_black,
-                          int* color_model_for_color,
+                          ColorModel* color_model_for_black,
+                          ColorModel* color_model_for_color,
                           bool* color_is_default) {
   // Samsung printers use "ColorMode" attribute in their ppds.
   ppd_option_t* color_mode_option = ppdFindOption(ppd, kColorMode);
@@ -222,8 +226,8 @@ bool GetColorModeSettings(ppd_file_t* ppd,
 }
 
 bool GetHPColorSettings(ppd_file_t* ppd,
-                        int* color_model_for_black,
-                        int* color_model_for_color,
+                        ColorModel* color_model_for_black,
+                        ColorModel* color_model_for_color,
                         bool* color_is_default) {
   // HP printers use "Color/Color Model" attribute in their ppds.
   ppd_option_t* color_mode_option = ppdFindOption(ppd, printing::kColor);
@@ -248,8 +252,8 @@ bool GetHPColorSettings(ppd_file_t* ppd,
 }
 
 bool GetProcessColorModelSettings(ppd_file_t* ppd,
-                                  int* color_model_for_black,
-                                  int* color_model_for_color,
+                                  ColorModel* color_model_for_black,
+                                  ColorModel* color_model_for_color,
                                   bool* color_is_default) {
   // Canon printers use "ProcessColorModel" attribute in their ppds.
   ppd_option_t* color_mode_option =  ppdFindOption(ppd, kProcessColorModel);
@@ -278,8 +282,8 @@ bool GetProcessColorModelSettings(ppd_file_t* ppd,
 }
 
 bool GetColorModelSettings(ppd_file_t* ppd,
-                           int* cm_black,
-                           int* cm_color,
+                           ColorModel* cm_black,
+                           ColorModel* cm_color,
                            bool* is_color) {
   bool is_color_device = false;
   ppd_attr_t* attr = ppdFindAttr(ppd, kColorDevice, NULL);
@@ -295,12 +299,10 @@ bool GetColorModelSettings(ppd_file_t* ppd,
       GetProcessColorModelSettings(ppd, cm_black, cm_color, is_color);
 }
 
-}  // namespace
-
-namespace printing {
-
 // Default port for IPP print servers.
-static const int kDefaultIPPServerPort = 631;
+const int kDefaultIPPServerPort = 631;
+
+}  // namespace
 
 // Helper wrapper around http_t structure, with connection and cleanup
 // functionality.
@@ -312,14 +314,13 @@ HttpConnectionCUPS::HttpConnectionCUPS(const GURL& print_server_url,
     return;
 
   int port = print_server_url.IntPort();
-  if (port == url_parse::PORT_UNSPECIFIED)
+  if (port == url::PORT_UNSPECIFIED)
     port = kDefaultIPPServerPort;
 
-  http_ = httpConnectEncrypt(print_server_url.host().c_str(), port,
-                             encryption);
+  http_ = httpConnectEncrypt(print_server_url.host().c_str(), port, encryption);
   if (http_ == NULL) {
-    LOG(ERROR) << "CP_CUPS: Failed connecting to print server: " <<
-               print_server_url;
+    LOG(ERROR) << "CP_CUPS: Failed connecting to print server: "
+               << print_server_url;
   }
 }
 
@@ -336,20 +337,20 @@ http_t* HttpConnectionCUPS::http() {
   return http_;
 }
 
-bool parsePpdCapabilities(
+bool ParsePpdCapabilities(
     const std::string& printer_name,
     const std::string& printer_capabilities,
     PrinterSemanticCapsAndDefaults* printer_info) {
-  FilePath ppd_file_path;
-  if (!file_util::CreateTemporaryFile(&ppd_file_path))
+  base::FilePath ppd_file_path;
+  if (!base::CreateTemporaryFile(&ppd_file_path))
     return false;
 
   int data_size = printer_capabilities.length();
-  if (data_size != file_util::WriteFile(
+  if (data_size != base::WriteFile(
                        ppd_file_path,
                        printer_capabilities.data(),
                        data_size)) {
-    file_util::Delete(ppd_file_path, false);
+    base::DeleteFile(ppd_file_path, false);
     return false;
   }
 
@@ -377,16 +378,20 @@ bool parsePpdCapabilities(
   }
 
   bool is_color = false;
-  int cm_color = 0, cm_black = 0;
+  ColorModel cm_color = UNKNOWN_COLOR_MODEL, cm_black = UNKNOWN_COLOR_MODEL;
   if (!GetColorModelSettings(ppd, &cm_black, &cm_color, &is_color)) {
     VLOG(1) << "Unknown printer color model";
   }
 
-  caps.color_capable = (cm_color && cm_black && (cm_color != cm_black));
+  caps.color_changeable = ((cm_color != UNKNOWN_COLOR_MODEL) &&
+                           (cm_black != UNKNOWN_COLOR_MODEL) &&
+                           (cm_color != cm_black));
   caps.color_default = is_color;
+  caps.color_model = cm_color;
+  caps.bw_model = cm_black;
 
   ppdClose(ppd);
-  file_util::Delete(ppd_file_path, false);
+  base::DeleteFile(ppd_file_path, false);
 
   *printer_info = caps;
   return true;

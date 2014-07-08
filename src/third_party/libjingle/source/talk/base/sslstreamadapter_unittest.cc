@@ -33,6 +33,7 @@
 
 #include "talk/base/gunit.h"
 #include "talk/base/helpers.h"
+#include "talk/base/scoped_ptr.h"
 #include "talk/base/ssladapter.h"
 #include "talk/base/sslconfig.h"
 #include "talk/base/sslidentity.h"
@@ -45,6 +46,37 @@ static const char kAES_CM_HMAC_SHA1_32[] = "AES_CM_128_HMAC_SHA1_32";
 static const char kExporterLabel[] = "label";
 static const unsigned char kExporterContext[] = "context";
 static int kExporterContextLen = sizeof(kExporterContext);
+
+static const char kRSA_PRIVATE_KEY_PEM[] =
+    "-----BEGIN RSA PRIVATE KEY-----\n"
+    "MIICdwIBADANBgkqhkiG9w0BAQEFAASCAmEwggJdAgEAAoGBAMYRkbhmI7kVA/rM\n"
+    "czsZ+6JDhDvnkF+vn6yCAGuRPV03zuRqZtDy4N4to7PZu9PjqrRl7nDMXrG3YG9y\n"
+    "rlIAZ72KjcKKFAJxQyAKLCIdawKRyp8RdK3LEySWEZb0AV58IadqPZDTNHHRX8dz\n"
+    "5aTSMsbbkZ+C/OzTnbiMqLL/vg6jAgMBAAECgYAvgOs4FJcgvp+TuREx7YtiYVsH\n"
+    "mwQPTum2z/8VzWGwR8BBHBvIpVe1MbD/Y4seyI2aco/7UaisatSgJhsU46/9Y4fq\n"
+    "2TwXH9QANf4at4d9n/R6rzwpAJOpgwZgKvdQjkfrKTtgLV+/dawvpxUYkRH4JZM1\n"
+    "CVGukMfKNrSVH4Ap4QJBAOJmGV1ASPnB4r4nc99at7JuIJmd7fmuVUwUgYi4XgaR\n"
+    "WhScBsgYwZ/JoywdyZJgnbcrTDuVcWG56B3vXbhdpMsCQQDf9zeJrjnPZ3Cqm79y\n"
+    "kdqANep0uwZciiNiWxsQrCHztywOvbFhdp8iYVFG9EK8DMY41Y5TxUwsHD+67zao\n"
+    "ZNqJAkEA1suLUP/GvL8IwuRneQd2tWDqqRQ/Td3qq03hP7e77XtF/buya3Ghclo5\n"
+    "54czUR89QyVfJEC6278nzA7n2h1uVQJAcG6mztNL6ja/dKZjYZye2CY44QjSlLo0\n"
+    "MTgTSjdfg/28fFn2Jjtqf9Pi/X+50LWI/RcYMC2no606wRk9kyOuIQJBAK6VSAim\n"
+    "1pOEjsYQn0X5KEIrz1G3bfCbB848Ime3U2/FWlCHMr6ch8kCZ5d1WUeJD3LbwMNG\n"
+    "UCXiYxSsu20QNVw=\n"
+    "-----END RSA PRIVATE KEY-----\n";
+
+static const char kCERT_PEM[] =
+    "-----BEGIN CERTIFICATE-----\n"
+    "MIIBmTCCAQKgAwIBAgIEbzBSAjANBgkqhkiG9w0BAQsFADARMQ8wDQYDVQQDEwZX\n"
+    "ZWJSVEMwHhcNMTQwMTAyMTgyNDQ3WhcNMTQwMjAxMTgyNDQ3WjARMQ8wDQYDVQQD\n"
+    "EwZXZWJSVEMwgZ8wDQYJKoZIhvcNAQEBBQADgY0AMIGJAoGBAMYRkbhmI7kVA/rM\n"
+    "czsZ+6JDhDvnkF+vn6yCAGuRPV03zuRqZtDy4N4to7PZu9PjqrRl7nDMXrG3YG9y\n"
+    "rlIAZ72KjcKKFAJxQyAKLCIdawKRyp8RdK3LEySWEZb0AV58IadqPZDTNHHRX8dz\n"
+    "5aTSMsbbkZ+C/OzTnbiMqLL/vg6jAgMBAAEwDQYJKoZIhvcNAQELBQADgYEAUflI\n"
+    "VUe5Krqf5RVa5C3u/UTAOAUJBiDS3VANTCLBxjuMsvqOG0WvaYWP3HYPgrz0jXK2\n"
+    "LJE/mGw3MyFHEqi81jh95J+ypl6xKW6Rm8jKLR87gUvCaVYn/Z4/P3AqcQTB7wOv\n"
+    "UD0A8qfhfDM+LK6rPAnCsVN0NRDY3jvd6rzix9M=\n"
+    "-----END CERTIFICATE-----\n";
 
 #define MAYBE_SKIP_TEST(feature)                    \
   if (!(talk_base::SSLStreamAdapter::feature())) {  \
@@ -136,11 +168,15 @@ class SSLDummyStream : public talk_base::StreamInterface,
   bool first_packet_;
 };
 
+static const int kFifoBufferSize = 4096;
+
 class SSLStreamAdapterTestBase : public testing::Test,
                                  public sigslot::has_slots<> {
  public:
-  explicit SSLStreamAdapterTestBase(bool dtls) :
-      client_buffer_(4096), server_buffer_(4096),
+  SSLStreamAdapterTestBase(const std::string& client_cert_pem,
+                           const std::string& client_private_key_pem,
+                           bool dtls) :
+      client_buffer_(kFifoBufferSize), server_buffer_(kFifoBufferSize),
       client_stream_(
           new SSLDummyStream(this, "c2s", &client_buffer_, &server_buffer_)),
       server_stream_(
@@ -158,7 +194,12 @@ class SSLStreamAdapterTestBase : public testing::Test,
     client_ssl_->SignalEvent.connect(this, &SSLStreamAdapterTestBase::OnEvent);
     server_ssl_->SignalEvent.connect(this, &SSLStreamAdapterTestBase::OnEvent);
 
-    client_identity_ = talk_base::SSLIdentity::Generate("client");
+    if (!client_cert_pem.empty() && !client_private_key_pem.empty()) {
+      client_identity_ = talk_base::SSLIdentity::FromPEMStrings(
+          client_private_key_pem, client_cert_pem);
+    } else {
+      client_identity_ = talk_base::SSLIdentity::Generate("client");
+    }
     server_identity_ = talk_base::SSLIdentity::Generate("server");
 
     client_ssl_->SetIdentity(client_identity_);
@@ -174,6 +215,41 @@ class SSLStreamAdapterTestBase : public testing::Test,
     talk_base::InitializeSSL();
   }
 
+  static void TearDownTestCase() {
+    talk_base::CleanupSSL();
+  }
+
+  // Recreate the client/server identities with the specified validity period.
+  // |not_before| and |not_after| are offsets from the current time in number
+  // of seconds.
+  void ResetIdentitiesWithValidity(int not_before, int not_after) {
+    client_stream_ =
+        new SSLDummyStream(this, "c2s", &client_buffer_, &server_buffer_);
+    server_stream_ =
+        new SSLDummyStream(this, "s2c", &server_buffer_, &client_buffer_);
+
+    client_ssl_.reset(talk_base::SSLStreamAdapter::Create(client_stream_));
+    server_ssl_.reset(talk_base::SSLStreamAdapter::Create(server_stream_));
+
+    client_ssl_->SignalEvent.connect(this, &SSLStreamAdapterTestBase::OnEvent);
+    server_ssl_->SignalEvent.connect(this, &SSLStreamAdapterTestBase::OnEvent);
+
+    talk_base::SSLIdentityParams client_params;
+    client_params.common_name = "client";
+    client_params.not_before = not_before;
+    client_params.not_after = not_after;
+    client_identity_ = talk_base::SSLIdentity::GenerateForTest(client_params);
+
+    talk_base::SSLIdentityParams server_params;
+    server_params.common_name = "server";
+    server_params.not_before = not_before;
+    server_params.not_after = not_after;
+    server_identity_ = talk_base::SSLIdentity::GenerateForTest(server_params);
+
+    client_ssl_->SetIdentity(client_identity_);
+    server_ssl_->SetIdentity(server_identity_);
+  }
+
   virtual void OnEvent(talk_base::StreamInterface *stream, int sig, int err) {
     LOG(LS_INFO) << "SSLStreamAdapterTestBase::OnEvent sig=" << sig;
 
@@ -186,24 +262,6 @@ class SSLStreamAdapterTestBase : public testing::Test,
     }
   }
 
-  void SetPeerIdentitiesByCertificate(bool correct) {
-    LOG(LS_INFO) << "Setting peer identities by certificate";
-
-    if (correct) {
-      client_ssl_->SetPeerCertificate(server_identity_->certificate().
-                                           GetReference());
-      server_ssl_->SetPeerCertificate(client_identity_->certificate().
-                                           GetReference());
-    } else {
-      // If incorrect, set up to expect our own certificate at the peer
-      client_ssl_->SetPeerCertificate(client_identity_->certificate().
-                                           GetReference());
-      server_ssl_->SetPeerCertificate(server_identity_->certificate().
-                                           GetReference());
-    }
-    identities_set_ = true;
-  }
-
   void SetPeerIdentitiesByDigest(bool correct) {
     unsigned char digest[20];
     size_t digest_len;
@@ -212,8 +270,8 @@ class SSLStreamAdapterTestBase : public testing::Test,
     LOG(LS_INFO) << "Setting peer identities by digest";
 
     rv = server_identity_->certificate().ComputeDigest(talk_base::DIGEST_SHA_1,
-                                                      digest, 20,
-                                                      &digest_len);
+                                                       digest, 20,
+                                                       &digest_len);
     ASSERT_TRUE(rv);
     if (!correct) {
       LOG(LS_INFO) << "Setting bogus digest for server cert";
@@ -225,7 +283,7 @@ class SSLStreamAdapterTestBase : public testing::Test,
 
 
     rv = client_identity_->certificate().ComputeDigest(talk_base::DIGEST_SHA_1,
-                                                      digest, 20, &digest_len);
+                                                       digest, 20, &digest_len);
     ASSERT_TRUE(rv);
     if (!correct) {
       LOG(LS_INFO) << "Setting bogus digest for client cert";
@@ -348,6 +406,13 @@ class SSLStreamAdapterTestBase : public testing::Test,
       return server_ssl_->GetDtlsSrtpCipher(retval);
   }
 
+  bool GetPeerCertificate(bool client, talk_base::SSLCertificate** cert) {
+    if (client)
+      return client_ssl_->GetPeerCertificate(cert);
+    else
+      return server_ssl_->GetPeerCertificate(cert);
+  }
+
   bool ExportKeyingMaterial(const char *label,
                             const unsigned char *context,
                             size_t context_len,
@@ -391,11 +456,10 @@ class SSLStreamAdapterTestBase : public testing::Test,
   bool identities_set_;
 };
 
-
 class SSLStreamAdapterTestTLS : public SSLStreamAdapterTestBase {
  public:
   SSLStreamAdapterTestTLS() :
-      SSLStreamAdapterTestBase(false) {
+      SSLStreamAdapterTestBase("", "", false) {
   };
 
   // Test data transfer for TLS
@@ -495,11 +559,16 @@ class SSLStreamAdapterTestTLS : public SSLStreamAdapterTestBase {
   talk_base::MemoryStream recv_stream_;
 };
 
-
 class SSLStreamAdapterTestDTLS : public SSLStreamAdapterTestBase {
  public:
   SSLStreamAdapterTestDTLS() :
-      SSLStreamAdapterTestBase(true),
+      SSLStreamAdapterTestBase("", "", true),
+      packet_size_(1000), count_(0), sent_(0) {
+  }
+
+  SSLStreamAdapterTestDTLS(const std::string& cert_pem,
+                           const std::string& private_key_pem) :
+      SSLStreamAdapterTestBase(cert_pem, private_key_pem, true),
       packet_size_(1000), count_(0), sent_(0) {
   }
 
@@ -528,14 +597,13 @@ class SSLStreamAdapterTestDTLS : public SSLStreamAdapterTestBase {
   }
 
   virtual void ReadData(talk_base::StreamInterface *stream) {
-    unsigned char *buffer = new unsigned char[2000];
+    unsigned char buffer[2000];
     size_t bread;
     int err2;
     talk_base::StreamResult r;
 
     for (;;) {
-      r = stream->Read(buffer, 2000,
-                       &bread, &err2);
+      r = stream->Read(buffer, 2000, &bread, &err2);
 
       if (r == talk_base::SR_ERROR) {
         // Unfortunately, errors are the way that the stream adapter
@@ -552,7 +620,8 @@ class SSLStreamAdapterTestDTLS : public SSLStreamAdapterTestBase {
 
       // Now parse the datagram
       ASSERT_EQ(packet_size_, bread);
-      uint32_t packet_num = *(reinterpret_cast<uint32_t *>(buffer));
+      unsigned char* ptr_to_buffer = buffer;
+      uint32_t packet_num = *(reinterpret_cast<uint32_t *>(ptr_to_buffer));
 
       for (size_t i = 4; i < packet_size_; i++) {
         ASSERT_EQ((packet_num & 0xff), buffer[i]);
@@ -607,6 +676,12 @@ talk_base::StreamResult SSLDummyStream::Write(const void* data, size_t data_len,
   return talk_base::SR_SUCCESS;
 };
 
+class SSLStreamAdapterTestDTLSFromPEMStrings : public SSLStreamAdapterTestDTLS {
+ public:
+  SSLStreamAdapterTestDTLSFromPEMStrings() :
+      SSLStreamAdapterTestDTLS(kCERT_PEM, kRSA_PRIVATE_KEY_PEM) {
+  }
+};
 
 // Basic tests: TLS
 
@@ -664,17 +739,6 @@ TEST_F(SSLStreamAdapterTestTLS, TestTLSBogusDigest) {
   TestHandshake(false);
 };
 
-// Test a handshake with a peer certificate
-TEST_F(SSLStreamAdapterTestTLS, TestTLSPeerCertificate) {
-  SetPeerIdentitiesByCertificate(true);
-  TestHandshake();
-};
-
-// Test a handshake with a bogus peer certificate
-TEST_F(SSLStreamAdapterTestTLS, TestTLSBogusPeerCertificate) {
-  SetPeerIdentitiesByCertificate(false);
-  TestHandshake(false);
-};
 // Test moving a bunch of data
 
 // Basic tests: DTLS
@@ -827,4 +891,68 @@ TEST_F(SSLStreamAdapterTestDTLS, TestDTLSExporter) {
   ASSERT_TRUE(result);
 
   ASSERT_TRUE(!memcmp(client_out, server_out, sizeof(client_out)));
+}
+
+// Test not yet valid certificates are not rejected.
+TEST_F(SSLStreamAdapterTestDTLS, TestCertNotYetValid) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  long one_day = 60 * 60 * 24;
+  // Make the certificates not valid until one day later.
+  ResetIdentitiesWithValidity(one_day, one_day);
+  TestHandshake();
+}
+
+// Test expired certificates are not rejected.
+TEST_F(SSLStreamAdapterTestDTLS, TestCertExpired) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  long one_day = 60 * 60 * 24;
+  // Make the certificates already expired.
+  ResetIdentitiesWithValidity(-one_day, -one_day);
+  TestHandshake();
+}
+
+// Test data transfer using certs created from strings.
+TEST_F(SSLStreamAdapterTestDTLSFromPEMStrings, TestTransfer) {
+  MAYBE_SKIP_TEST(HaveDtls);
+  TestHandshake();
+  TestTransfer(100);
+}
+
+// Test getting the remote certificate.
+TEST_F(SSLStreamAdapterTestDTLSFromPEMStrings, TestDTLSGetPeerCertificate) {
+  MAYBE_SKIP_TEST(HaveDtls);
+
+  // Peer certificates haven't been received yet.
+  talk_base::scoped_ptr<talk_base::SSLCertificate> client_peer_cert;
+  ASSERT_FALSE(GetPeerCertificate(true, client_peer_cert.accept()));
+  ASSERT_FALSE(client_peer_cert != NULL);
+
+  talk_base::scoped_ptr<talk_base::SSLCertificate> server_peer_cert;
+  ASSERT_FALSE(GetPeerCertificate(false, server_peer_cert.accept()));
+  ASSERT_FALSE(server_peer_cert != NULL);
+
+  TestHandshake();
+
+  // The client should have a peer certificate after the handshake.
+  ASSERT_TRUE(GetPeerCertificate(true, client_peer_cert.accept()));
+  ASSERT_TRUE(client_peer_cert != NULL);
+
+  // It's not kCERT_PEM.
+  std::string client_peer_string = client_peer_cert->ToPEMString();
+  ASSERT_NE(kCERT_PEM, client_peer_string);
+
+  // It must not have a chain, because the test certs are self-signed.
+  talk_base::SSLCertChain* client_peer_chain;
+  ASSERT_FALSE(client_peer_cert->GetChain(&client_peer_chain));
+
+  // The server should have a peer certificate after the handshake.
+  ASSERT_TRUE(GetPeerCertificate(false, server_peer_cert.accept()));
+  ASSERT_TRUE(server_peer_cert != NULL);
+
+  // It's kCERT_PEM
+  ASSERT_EQ(kCERT_PEM, server_peer_cert->ToPEMString());
+
+  // It must not have a chain, because the test certs are self-signed.
+  talk_base::SSLCertChain* server_peer_chain;
+  ASSERT_FALSE(server_peer_cert->GetChain(&server_peer_chain));
 }

@@ -1,0 +1,135 @@
+[
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'deps_file': 'DEPS', 'managed': True, 'name': 'v8', 'url': 'http://v8.googlecode.com/svn/branches/bleeding_edge'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/gclient_safe_revert.py",
+      ".",
+      "[DEPOT_TOOLS]/gclient"
+    ],
+    "name": "gclient revert"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--revision",
+      "v8@12345",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 50110@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@50110@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "svn",
+      "export",
+      "--force",
+      "svn://svn-mirror.golo.chromium.org/patch",
+      "/path/to/tmp/diff"
+    ],
+    "name": "download patch",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@patch.diff@fake patch.diff contents@@@",
+      "@@@STEP_LOG_END@patch.diff@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "patch",
+      "--dir",
+      "[SLAVE_BUILD]/v8",
+      "--force",
+      "--forward",
+      "--input",
+      "fake patch.diff contents",
+      "--remove-empty-files",
+      "--strip",
+      "0"
+    ],
+    "name": "apply patch"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "dcheck_always_on=1 fastbuild=1 target_arch=x64 v8_target_arch=x64"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "abort_on_failure": false,
+    "can_fail_build": false,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]/v8",
+      "--build-tool",
+      "make",
+      "--"
+    ],
+    "name": "compile (with patch)"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/v8/v8testing.py",
+      "--target",
+      "Release",
+      "--arch",
+      "x64",
+      "--testname",
+      "mjsunit fuzz-natives cctest message preparser",
+      "--quickcheck"
+    ],
+    "cwd": "[SLAVE_BUILD]/v8",
+    "name": "Check"
+  }
+]

@@ -9,10 +9,11 @@
 #include "ash/shell.h"
 #include "base/bind.h"
 #include "base/memory/weak_ptr.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/gfx/screen.h"
 #include "ui/views/controls/webview/web_dialog_view.h"
@@ -39,7 +40,7 @@ class PaintMessageHandler
   virtual void RegisterMessages() OVERRIDE;
 
  private:
-  void DidPaint(const ListValue* args);
+  void DidPaint(const base::ListValue* args);
 
   views::Widget* widget_;
 
@@ -52,7 +53,7 @@ void PaintMessageHandler::RegisterMessages() {
       base::Bind(&PaintMessageHandler::DidPaint, base::Unretained(this)));
 }
 
-void PaintMessageHandler::DidPaint(const ListValue* args) {
+void PaintMessageHandler::DidPaint(const base::ListValue* args) {
   // Show the widget after the web content has been painted.
   widget_->Show();
 }
@@ -61,44 +62,44 @@ void PaintMessageHandler::DidPaint(const ListValue* args) {
 
 namespace ash {
 
-KeyboardOverlayDelegate::KeyboardOverlayDelegate(const string16& title,
+KeyboardOverlayDelegate::KeyboardOverlayDelegate(const base::string16& title,
                                                  const GURL& url)
     : title_(title),
       url_(url),
-      view_(NULL) {
+      widget_(NULL) {
 }
 
 KeyboardOverlayDelegate::~KeyboardOverlayDelegate() {
 }
 
-void KeyboardOverlayDelegate::Show(views::WebDialogView* view) {
-  view_ = view;
-
-  views::Widget* widget = new views::Widget;
+views::Widget* KeyboardOverlayDelegate::Show(views::WebDialogView* view) {
+  widget_ = new views::Widget;
   views::Widget::InitParams params(
       views::Widget::InitParams::TYPE_WINDOW_FRAMELESS);
+  params.context = Shell::GetPrimaryRootWindow();
   params.delegate = view;
-  widget->Init(params);
+  widget_->Init(params);
 
   // Show the widget at the bottom of the work area.
   gfx::Size size;
   GetDialogSize(&size);
   const gfx::Rect& rect = Shell::GetScreen()->GetDisplayNearestWindow(
-      widget->GetNativeView()).work_area();
-  gfx::Rect bounds((rect.width() - size.width()) / 2,
-                   rect.height() - size.height(),
+      widget_->GetNativeView()).work_area();
+  gfx::Rect bounds(rect.x() + (rect.width() - size.width()) / 2,
+                   rect.bottom() - size.height(),
                    size.width(),
                    size.height());
-  widget->SetBounds(bounds);
+  widget_->SetBounds(bounds);
 
   // The widget will be shown when the web contents gets ready to display.
+  return widget_;
 }
 
 ui::ModalType KeyboardOverlayDelegate::GetDialogModalType() const {
   return ui::MODAL_TYPE_SYSTEM;
 }
 
-string16 KeyboardOverlayDelegate::GetDialogTitle() const {
+base::string16 KeyboardOverlayDelegate::GetDialogTitle() const {
   return title_;
 }
 
@@ -108,15 +109,15 @@ GURL KeyboardOverlayDelegate::GetDialogContentURL() const {
 
 void KeyboardOverlayDelegate::GetWebUIMessageHandlers(
     std::vector<WebUIMessageHandler*>* handlers) const {
-  handlers->push_back(new PaintMessageHandler(view_->GetWidget()));
+  handlers->push_back(new PaintMessageHandler(widget_));
 }
 
 void KeyboardOverlayDelegate::GetDialogSize(
     gfx::Size* size) const {
   using std::min;
-  DCHECK(view_);
+  DCHECK(widget_);
   gfx::Rect rect = ash::Shell::GetScreen()->GetDisplayNearestWindow(
-      view_->GetWidget()->GetNativeView()).bounds();
+      widget_->GetNativeView()).work_area();
   const int width = min(kBaseWidth, rect.width() - kHorizontalMargin);
   const int height = width * kBaseHeight / kBaseWidth;
   size->SetSize(width, height);

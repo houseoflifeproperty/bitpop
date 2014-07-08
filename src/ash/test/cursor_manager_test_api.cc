@@ -4,25 +4,43 @@
 
 #include "ash/test/cursor_manager_test_api.h"
 
-#include "ash/wm/cursor_manager.h"
-#include "ash/wm/image_cursors.h"
+#include "ash/shell.h"
+#include "ash/test/shell_test_api.h"
+#include "ash/wm/ash_native_cursor_manager.h"
+#include "ui/base/cursor/image_cursors.h"
+#include "ui/gfx/display.h"
+#include "ui/wm/core/cursor_manager.h"
 
 namespace ash {
 namespace test {
 
-CursorManagerTestApi::CursorManagerTestApi(CursorManager* cursor_manager)
+CursorManagerTestApi::CursorManagerTestApi(
+    wm::CursorManager* cursor_manager)
     : cursor_manager_(cursor_manager) {
 }
 
 CursorManagerTestApi::~CursorManagerTestApi() {
 }
 
-gfx::NativeCursor CursorManagerTestApi::GetCurrentCursor() const {
-  return cursor_manager_->GetCurrentCursor();
+// TODO(tdanderson): CursorManagerTestApi may no longer be needed.
+ui::CursorSetType CursorManagerTestApi::GetCurrentCursorSet() const {
+  return cursor_manager_->GetCursorSet();
 }
 
-float CursorManagerTestApi::GetDeviceScaleFactor() const {
-  return cursor_manager_->image_cursors_->GetDeviceScaleFactor();
+gfx::NativeCursor CursorManagerTestApi::GetCurrentCursor() const {
+  return cursor_manager_->GetCursor();
+}
+
+gfx::Display::Rotation
+CursorManagerTestApi::GetCurrentCursorRotation() const {
+  return ShellTestApi(Shell::GetInstance()).ash_native_cursor_manager()->
+      image_cursors_->GetRotation();
+}
+
+float
+CursorManagerTestApi::GetCurrentCursorScale() const {
+  return ShellTestApi(Shell::GetInstance()).ash_native_cursor_manager()->
+      image_cursors_->GetScale();
 }
 
 }  // namespace test

@@ -17,8 +17,8 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
-#include "base/string_piece.h"
+#include "base/containers/hash_tables.h"
+#include "base/strings/string_piece.h"
 #include "chrome/common/safe_browsing/client_model.pb.h"
 
 namespace safe_browsing {

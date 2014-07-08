@@ -50,6 +50,8 @@ class StatusResourceBuilder(HtmlResource, BuildLineMixin):
             b['when'] = util.formatInterval(when)
             b['when_time'] = time.strftime("%H:%M:%S",
                                       time.localtime(time.time() + when))
+        if build.started:
+            b['delay'] = util.formatInterval(time.time() - build.started)
 
         step = build.getCurrentStep()
         # TODO: is this necessarily the case?

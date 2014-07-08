@@ -4,28 +4,29 @@
 
 #include "net/ftp/ftp_auth_cache.h"
 
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/auth.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
+using base::ASCIIToUTF16;
 using net::FtpAuthCache;
 
 namespace {
 
-const string16 kBogus(ASCIIToUTF16("bogus"));
-const string16 kOthername(ASCIIToUTF16("othername"));
-const string16 kOtherword(ASCIIToUTF16("otherword"));
-const string16 kPassword(ASCIIToUTF16("password"));
-const string16 kPassword1(ASCIIToUTF16("password1"));
-const string16 kPassword2(ASCIIToUTF16("password2"));
-const string16 kPassword3(ASCIIToUTF16("password3"));
-const string16 kUsername(ASCIIToUTF16("username"));
-const string16 kUsername1(ASCIIToUTF16("username1"));
-const string16 kUsername2(ASCIIToUTF16("username2"));
-const string16 kUsername3(ASCIIToUTF16("username3"));
+const base::string16 kBogus(ASCIIToUTF16("bogus"));
+const base::string16 kOthername(ASCIIToUTF16("othername"));
+const base::string16 kOtherword(ASCIIToUTF16("otherword"));
+const base::string16 kPassword(ASCIIToUTF16("password"));
+const base::string16 kPassword1(ASCIIToUTF16("password1"));
+const base::string16 kPassword2(ASCIIToUTF16("password2"));
+const base::string16 kPassword3(ASCIIToUTF16("password3"));
+const base::string16 kUsername(ASCIIToUTF16("username"));
+const base::string16 kUsername1(ASCIIToUTF16("username1"));
+const base::string16 kUsername2(ASCIIToUTF16("username2"));
+const base::string16 kUsername3(ASCIIToUTF16("username3"));
 
 }  // namespace
 

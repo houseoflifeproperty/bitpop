@@ -8,16 +8,16 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/message_loop_proxy.h"
-#include "base/time.h"
-#include "content/browser/download/byte_stream.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/strings/stringprintf.h"
+#include "base/time/time.h"
+#include "content/browser/byte_stream.h"
 #include "content/browser/download/download_create_info.h"
 #include "content/browser/download/download_interrupt_reasons_impl.h"
 #include "content/browser/download/download_net_log_parameters.h"
 #include "content/browser/download/download_stats.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/download_destination_observer.h"
-#include "content/public/browser/power_save_blocker.h"
 #include "net/base/io_buffer.h"
 
 namespace content {
@@ -29,13 +29,12 @@ int DownloadFile::number_active_objects_ = 0;
 
 DownloadFileImpl::DownloadFileImpl(
     scoped_ptr<DownloadSaveInfo> save_info,
-    const FilePath& default_download_directory,
+    const base::FilePath& default_download_directory,
     const GURL& url,
     const GURL& referrer_url,
     bool calculate_hash,
     scoped_ptr<ByteStreamReader> stream,
     const net::BoundNetLog& bound_net_log,
-    scoped_ptr<PowerSaveBlocker> power_save_blocker,
     base::WeakPtr<DownloadDestinationObserver> observer)
         : file_(save_info->file_path,
                 url,
@@ -43,15 +42,14 @@ DownloadFileImpl::DownloadFileImpl(
                 save_info->offset,
                 calculate_hash,
                 save_info->hash_state,
-                save_info->file_stream.Pass(),
+                save_info->file.Pass(),
                 bound_net_log),
           default_download_directory_(default_download_directory),
           stream_reader_(stream.Pass()),
           bytes_seen_(0),
           bound_net_log_(bound_net_log),
           observer_(observer),
-          weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)),
-          power_save_blocker_(power_save_blocker.Pass()) {
+          weak_factory_(this) {
 }
 
 DownloadFileImpl::~DownloadFileImpl() {
@@ -76,6 +74,9 @@ void DownloadFileImpl::Initialize(const InitializeCallback& callback) {
 
   download_start_ = base::TimeTicks::Now();
 
+  // Primarily to make reset to zero in restart visible to owner.
+  SendUpdate();
+
   // Initial pull from the straw.
   StreamActive();
 
@@ -95,20 +96,22 @@ DownloadInterruptReason DownloadFileImpl::AppendDataToFile(
                          base::TimeDelta::FromMilliseconds(kUpdatePeriodMs),
                          this, &DownloadFileImpl::SendUpdate);
   }
+  rate_estimator_.Increment(data_len);
   return file_.AppendDataToFile(data, data_len);
 }
 
 void DownloadFileImpl::RenameAndUniquify(
-    const FilePath& full_path, const RenameCompletionCallback& callback) {
+    const base::FilePath& full_path,
+    const RenameCompletionCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  FilePath new_path(full_path);
+  base::FilePath new_path(full_path);
 
-  int uniquifier =
-      file_util::GetUniquePathNumber(new_path, FILE_PATH_LITERAL(""));
+  int uniquifier = base::GetUniquePathNumber(
+      new_path, base::FilePath::StringType());
   if (uniquifier > 0) {
     new_path = new_path.InsertBeforeExtensionASCII(
-        StringPrintf(" (%d)", uniquifier));
+        base::StringPrintf(" (%d)", uniquifier));
   }
 
   DownloadInterruptReason reason = file_.Rename(new_path);
@@ -129,10 +132,11 @@ void DownloadFileImpl::RenameAndUniquify(
 }
 
 void DownloadFileImpl::RenameAndAnnotate(
-    const FilePath& full_path, const RenameCompletionCallback& callback) {
+    const base::FilePath& full_path,
+    const RenameCompletionCallback& callback) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
 
-  FilePath new_path(full_path);
+  base::FilePath new_path(full_path);
 
   DownloadInterruptReason reason = DOWNLOAD_INTERRUPT_REASON_NONE;
   // Short circuit null rename.
@@ -173,7 +177,7 @@ void DownloadFileImpl::Cancel() {
   file_.Cancel();
 }
 
-FilePath DownloadFileImpl::FullPath() const {
+base::FilePath DownloadFileImpl::FullPath() const {
   return file_.full_path();
 }
 
@@ -181,12 +185,8 @@ bool DownloadFileImpl::InProgress() const {
   return file_.in_progress();
 }
 
-int64 DownloadFileImpl::BytesSoFar() const {
-  return file_.bytes_so_far();
-}
-
 int64 DownloadFileImpl::CurrentSpeed() const {
-  return file_.CurrentSpeed();
+  return rate_estimator_.GetCountPerSecond();
 }
 
 bool DownloadFileImpl::GetHash(std::string* hash) {
@@ -195,6 +195,10 @@ bool DownloadFileImpl::GetHash(std::string* hash) {
 
 std::string DownloadFileImpl::GetHashState() {
   return file_.GetHashState();
+}
+
+void DownloadFileImpl::SetClientGuid(const std::string& guid) {
+  file_.SetClientGuid(guid);
 }
 
 void DownloadFileImpl::StreamActive() {
@@ -229,7 +233,8 @@ void DownloadFileImpl::StreamActive() {
         break;
       case ByteStreamReader::STREAM_COMPLETE:
         {
-          reason = stream_reader_->GetStatus();
+          reason = static_cast<DownloadInterruptReason>(
+              stream_reader_->GetStatus());
           SendUpdate();
           base::TimeTicks close_start(base::TimeTicks::Now());
           file_.Finish();
@@ -289,7 +294,7 @@ void DownloadFileImpl::StreamActive() {
             &DownloadDestinationObserver::DestinationCompleted,
             observer_, hash));
   }
-  if (bound_net_log_.IsLoggingAllEvents()) {
+  if (bound_net_log_.IsLogging()) {
     bound_net_log_.AddEvent(
         net::NetLog::TYPE_DOWNLOAD_STREAM_DRAINED,
         base::Bind(&FileStreamDrainedNetLogCallback, total_incoming_data_size,
@@ -301,7 +306,8 @@ void DownloadFileImpl::SendUpdate() {
   BrowserThread::PostTask(
       BrowserThread::UI, FROM_HERE,
       base::Bind(&DownloadDestinationObserver::DestinationUpdate,
-                 observer_, BytesSoFar(), CurrentSpeed(), GetHashState()));
+                 observer_, file_.bytes_so_far(), CurrentSpeed(),
+                 GetHashState()));
 }
 
 // static

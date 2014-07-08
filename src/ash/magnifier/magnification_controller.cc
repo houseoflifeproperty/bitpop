@@ -4,24 +4,33 @@
 
 #include "ash/magnifier/magnification_controller.h"
 
+#include "ash/accelerators/accelerator_controller.h"
+#include "ash/accessibility_delegate.h"
+#include "ash/ash_switches.h"
+#include "ash/display/root_window_transformers.h"
+#include "ash/host/ash_window_tree_host.h"
+#include "ash/host/root_window_transformer.h"
+#include "ash/root_window_controller.h"
 #include "ash/shell.h"
-#include "ash/shell_delegate.h"
 #include "ash/system/tray/system_tray_delegate.h"
+#include "base/command_line.h"
+#include "base/synchronization/waitable_event.h"
 #include "ui/aura/client/cursor_client.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_property.h"
-#include "ui/base/events/event.h"
-#include "ui/base/events/event_handler.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/compositor/dip_util.h"
 #include "ui/compositor/layer.h"
 #include "ui/compositor/layer_animation_observer.h"
 #include "ui/compositor/scoped_layer_animation_settings.h"
+#include "ui/events/event.h"
+#include "ui/events/event_handler.h"
+#include "ui/gfx/point3_f.h"
 #include "ui/gfx/point_conversions.h"
 #include "ui/gfx/point_f.h"
 #include "ui/gfx/rect_conversions.h"
 #include "ui/gfx/screen.h"
-#include "ui/views/corewm/compound_event_filter.h"
+#include "ui/wm/core/compound_event_filter.h"
 
 namespace {
 
@@ -37,6 +46,13 @@ const float kScrollScaleChangeFactor = 0.05f;
 // |kPanningMergin| from the edge, the view-port moves.
 const int kPanningMergin = 100;
 
+void MoveCursorTo(aura::WindowTreeHost* host, const gfx::Point& root_location) {
+  gfx::Point3F host_location_3f(root_location);
+  host->GetRootTransform().TransformPoint(&host_location_3f);
+  host->MoveCursorToHostLocation(
+      gfx::ToCeiledPoint(host_location_3f.AsPointF()));
+}
+
 }  // namespace
 
 namespace ash {
@@ -46,7 +62,8 @@ namespace ash {
 
 class MagnificationControllerImpl : virtual public MagnificationController,
                                     public ui::EventHandler,
-                                    public ui::ImplicitAnimationObserver {
+                                    public ui::ImplicitAnimationObserver,
+                                    public aura::WindowObserver {
  public:
   MagnificationControllerImpl();
   virtual ~MagnificationControllerImpl();
@@ -61,14 +78,22 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   virtual gfx::Point GetWindowPosition() const OVERRIDE {
     return gfx::ToFlooredPoint(origin_);
   }
-  virtual void EnsureRectIsVisible(const gfx::Rect& rect,
-                                   bool animate) OVERRIDE;
-  virtual void EnsurePointIsVisible(const gfx::Point& point,
-                                    bool animate) OVERRIDE;
+  virtual void SetScrollDirection(ScrollDirection direction) OVERRIDE;
+
+  // For test
+  virtual gfx::Point GetPointOfInterestForTesting() OVERRIDE {
+    return point_of_interest_;
+  }
 
  private:
   // ui::ImplicitAnimationObserver overrides:
   virtual void OnImplicitAnimationsCompleted() OVERRIDE;
+
+  // aura::WindowObserver overrides:
+  virtual void OnWindowDestroying(aura::Window* root_window) OVERRIDE;
+  virtual void OnWindowBoundsChanged(aura::Window* window,
+                                     const gfx::Rect& old_bounds,
+                                     const gfx::Rect& new_bounds) OVERRIDE;
 
   // Redraws the magnification window with the given origin position and the
   // given scale. Returns true if the window is changed; otherwise, false.
@@ -77,22 +102,18 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   bool Redraw(const gfx::PointF& position, float scale, bool animate);
   bool RedrawDIP(const gfx::PointF& position, float scale, bool animate);
 
+  // 1) If the screen is scrolling (i.e. animating) and should scroll further,
+  // it does nothing.
+  // 2) If the screen is scrolling (i.e. animating) and the direction is NONE,
+  // it stops the scrolling animation.
+  // 3) If the direction is set to value other than NONE, it starts the
+  // scrolling/ animation towards that direction.
+  void StartOrStopScrollIfNecessary();
+
   // Redraw with the given zoom scale keeping the mouse cursor location. In
   // other words, zoom (or unzoom) centering around the cursor.
   void RedrawKeepingMousePosition(float scale, bool animate);
 
-  // Ensures that the given point, rect or last mouse location is inside
-  // magnification window. If not, the controller moves the window to contain
-  // the given point/rect.
-  void EnsureRectIsVisibleWithScale(const gfx::Rect& target_rect,
-                                    float scale,
-                                    bool animate);
-  void EnsureRectIsVisibleDIP(const gfx::Rect& target_rect_in_dip,
-                              float scale,
-                              bool animate);
-  void EnsurePointIsVisibleWithScale(const gfx::Point& point,
-                                     float scale,
-                                     bool animate);
   void OnMouseMove(const gfx::Point& location);
 
   // Move the mouse cursot to the given point. Actual move will be done when
@@ -104,7 +125,8 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   //  - Unzoom the current root_window.
   //  - Zoom the given new root_window |new_root_window|.
   //  - Switch the target window from current window to |new_root_window|.
-  void SwitchTargetRootWindow(aura::RootWindow* new_root_window);
+  void SwitchTargetRootWindow(aura::Window* new_root_window,
+                              bool redraw_original_root_window);
 
   // Returns if the magnification scale is 1.0 or not (larger then 1.0).
   bool IsMagnified() const;
@@ -120,8 +142,10 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   // ui::EventHandler overrides:
   virtual void OnMouseEvent(ui::MouseEvent* event) OVERRIDE;
   virtual void OnScrollEvent(ui::ScrollEvent* event) OVERRIDE;
+  virtual void OnTouchEvent(ui::TouchEvent* event) OVERRIDE;
 
-  aura::RootWindow* root_window_;
+  // Target root window. This must not be NULL.
+  aura::Window* root_window_;
 
   // True if the magnified window is currently animating a change. Otherwise,
   // false.
@@ -135,9 +159,15 @@ class MagnificationControllerImpl : virtual public MagnificationController,
   // Stores the position of cursor to be moved after animation.
   gfx::Point position_after_animation_;
 
+  // Stores the last mouse cursor (or last touched) location. This value is
+  // used on zooming to keep this location visible.
+  gfx::Point point_of_interest_;
+
   // Current scale, origin (left-top) position of the magnification window.
   float scale_;
   gfx::PointF origin_;
+
+  ScrollDirection scroll_direction_;
 
   DISALLOW_COPY_AND_ASSIGN(MagnificationControllerImpl);
 };
@@ -146,21 +176,26 @@ class MagnificationControllerImpl : virtual public MagnificationController,
 // MagnificationControllerImpl:
 
 MagnificationControllerImpl::MagnificationControllerImpl()
-    : root_window_(ash::Shell::GetPrimaryRootWindow()),
+    : root_window_(Shell::GetPrimaryRootWindow()),
       is_on_animation_(false),
       is_enabled_(false),
       move_cursor_after_animation_(false),
-      scale_(kNonMagnifiedScale) {
+      scale_(kNonMagnifiedScale),
+      scroll_direction_(SCROLL_NONE) {
   Shell::GetInstance()->AddPreTargetHandler(this);
+  root_window_->AddObserver(this);
+  point_of_interest_ = root_window_->bounds().CenterPoint();
 }
 
 MagnificationControllerImpl::~MagnificationControllerImpl() {
+  root_window_->RemoveObserver(this);
+
   Shell::GetInstance()->RemovePreTargetHandler(this);
 }
 
 void MagnificationControllerImpl::RedrawKeepingMousePosition(
     float scale, bool animate) {
-  gfx::Point mouse_in_root = root_window_->GetLastMouseLocationInRoot();
+  gfx::Point mouse_in_root = point_of_interest_;
 
   // mouse_in_root is invalid value when the cursor is hidden.
   if (!root_window_->bounds().Contains(mouse_in_root))
@@ -171,7 +206,7 @@ void MagnificationControllerImpl::RedrawKeepingMousePosition(
                       (scale_ / scale) * (mouse_in_root.x() - origin_.x()),
                   mouse_in_root.y() -
                       (scale_ / scale) * (mouse_in_root.y() - origin_.y()));
-  bool changed = Redraw(origin, scale, animate);
+  bool changed = RedrawDIP(origin, scale, animate);
   if (changed)
     AfterAnimationMoveCursorTo(mouse_in_root);
 }
@@ -187,6 +222,8 @@ bool MagnificationControllerImpl::Redraw(const gfx::PointF& position,
 bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
                                             float scale,
                                             bool animate) {
+  DCHECK(root_window_);
+
   float x = position_in_dip.x();
   float y = position_in_dip.y();
 
@@ -229,11 +266,16 @@ bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
   settings.AddObserver(this);
   settings.SetPreemptionStrategy(
       ui::LayerAnimator::IMMEDIATELY_ANIMATE_TO_NEW_TARGET);
-  settings.SetTweenType(ui::Tween::EASE_OUT);
+  settings.SetTweenType(gfx::Tween::EASE_OUT);
   settings.SetTransitionDuration(
       base::TimeDelta::FromMilliseconds(animate ? 100 : 0));
 
-  root_window_->layer()->SetTransform(transform);
+  gfx::Display display =
+      Shell::GetScreen()->GetDisplayNearestWindow(root_window_);
+  scoped_ptr<RootWindowTransformer> transformer(
+      CreateRootWindowTransformerForDisplay(root_window_, display));
+  GetRootWindowController(root_window_)->ash_host()->SetRootWindowTransformer(
+      transformer.Pass());
 
   if (animate)
     is_on_animation_ = true;
@@ -241,56 +283,39 @@ bool MagnificationControllerImpl::RedrawDIP(const gfx::PointF& position_in_dip,
   return true;
 }
 
-void MagnificationControllerImpl::EnsureRectIsVisibleWithScale(
-    const gfx::Rect& target_rect,
-    float scale,
-    bool animate) {
-  const gfx::Rect target_rect_in_dip =
-      ui::ConvertRectToDIP(root_window_->layer(), target_rect);
-  EnsureRectIsVisibleDIP(target_rect_in_dip, scale, animate);
-}
-
-void MagnificationControllerImpl::EnsureRectIsVisibleDIP(
-    const gfx::Rect& target_rect,
-    float scale,
-    bool animate) {
-  ValidateScale(&scale);
-
-  const gfx::Rect window_rect = gfx::ToEnclosingRect(GetWindowRectDIP(scale));
-  if (scale == scale_ && window_rect.Contains(target_rect))
+void MagnificationControllerImpl::StartOrStopScrollIfNecessary() {
+  // This value controls the scrolling speed.
+  const int kMoveOffset = 40;
+  if (is_on_animation_) {
+    if (scroll_direction_ == SCROLL_NONE)
+      root_window_->layer()->GetAnimator()->StopAnimating();
     return;
+  }
 
-  // TODO(yoshiki): Un-zoom and change the scale if the magnification window
-  // can't contain the whole given rect.
-
-  gfx::Rect rect = window_rect;
-  if (target_rect.width() > rect.width())
-    rect.set_x(target_rect.CenterPoint().x() - rect.x() / 2);
-  else if (target_rect.right() < rect.x())
-    rect.set_x(target_rect.right());
-  else if (rect.right() < target_rect.x())
-    rect.set_x(target_rect.x() - rect.width());
-
-  if (rect.height() > window_rect.height())
-    rect.set_y(target_rect.CenterPoint().y() - rect.y() / 2);
-  else if (target_rect.bottom() < rect.y())
-    rect.set_y(target_rect.bottom());
-  else if (rect.bottom() < target_rect.y())
-    rect.set_y(target_rect.y() - rect.height());
-
-  RedrawDIP(rect.origin(), scale, animate);
-}
-
-void MagnificationControllerImpl::EnsurePointIsVisibleWithScale(
-    const gfx::Point& point,
-    float scale,
-    bool animate) {
-  EnsureRectIsVisibleWithScale(gfx::Rect(point, gfx::Size(0, 0)),
-                               scale,
-                               animate);
+  gfx::PointF new_origin = origin_;
+  switch (scroll_direction_) {
+    case SCROLL_NONE:
+      // No need to take action.
+      return;
+    case SCROLL_LEFT:
+      new_origin.Offset(-kMoveOffset, 0);
+      break;
+    case SCROLL_RIGHT:
+      new_origin.Offset(kMoveOffset, 0);
+      break;
+    case SCROLL_UP:
+      new_origin.Offset(0, -kMoveOffset);
+      break;
+    case SCROLL_DOWN:
+      new_origin.Offset(0, kMoveOffset);
+      break;
+  }
+  RedrawDIP(new_origin, scale_, true);
 }
 
 void MagnificationControllerImpl::OnMouseMove(const gfx::Point& location) {
+  DCHECK(root_window_);
+
   gfx::Point mouse(location);
 
   int x = origin_.x();
@@ -338,13 +363,15 @@ void MagnificationControllerImpl::OnMouseMove(const gfx::Point& location) {
     if (ret) {
       // If the magnified region is moved, hides the mouse cursor and moves it.
       if (x_diff != 0 || y_diff != 0)
-        root_window_->MoveCursorTo(mouse);
+        MoveCursorTo(root_window_->GetHost(), mouse);
     }
   }
 }
 
 void MagnificationControllerImpl::AfterAnimationMoveCursorTo(
     const gfx::Point& location) {
+  DCHECK(root_window_);
+
   aura::client::CursorClient* cursor_client =
       aura::client::GetCursorClient(root_window_);
   if (cursor_client) {
@@ -359,14 +386,11 @@ void MagnificationControllerImpl::AfterAnimationMoveCursorTo(
 }
 
 gfx::Size MagnificationControllerImpl::GetHostSizeDIP() const {
-  return ui::ConvertSizeToDIP(root_window_->layer(),
-                              root_window_->GetHostSize());
+  return root_window_->bounds().size();
 }
 
 gfx::RectF MagnificationControllerImpl::GetWindowRectDIP(float scale) const {
-  const gfx::Size size_in_dip =
-      ui::ConvertSizeToDIP(root_window_->layer(),
-                           root_window_->GetHostSize());
+  const gfx::Size size_in_dip = root_window_->bounds().size();
   const float width = size_in_dip.width() / scale;
   const float height = size_in_dip.height() / scale;
 
@@ -396,7 +420,7 @@ void MagnificationControllerImpl::OnImplicitAnimationsCompleted() {
     return;
 
   if (move_cursor_after_animation_) {
-    root_window_->MoveCursorTo(position_after_animation_);
+    MoveCursorTo(root_window_->GetHost(), position_after_animation_);
     move_cursor_after_animation_ = false;
 
     aura::client::CursorClient* cursor_client =
@@ -406,18 +430,54 @@ void MagnificationControllerImpl::OnImplicitAnimationsCompleted() {
   }
 
   is_on_animation_ = false;
+
+  StartOrStopScrollIfNecessary();
+}
+
+void MagnificationControllerImpl::OnWindowDestroying(
+    aura::Window* root_window) {
+  if (root_window == root_window_) {
+    // There must be at least one root window because this controller is
+    // destroyed before the root windows get destroyed.
+    DCHECK(root_window);
+
+    aura::Window* target_root_window = Shell::GetTargetRootWindow();
+    CHECK(target_root_window);
+
+    // The destroyed root window must not be target.
+    CHECK_NE(target_root_window, root_window);
+    // Don't redraw the old root window as it's being destroyed.
+    SwitchTargetRootWindow(target_root_window, false);
+    point_of_interest_ = target_root_window->bounds().CenterPoint();
+  }
+}
+
+void MagnificationControllerImpl::OnWindowBoundsChanged(
+    aura::Window* window,
+    const gfx::Rect& old_bounds,
+    const gfx::Rect& new_bounds) {
+  // TODO(yoshiki): implement here. crbug.com/230979
 }
 
 void MagnificationControllerImpl::SwitchTargetRootWindow(
-    aura::RootWindow* new_root_window) {
+    aura::Window* new_root_window,
+    bool redraw_original_root_window) {
+  DCHECK(new_root_window);
+
   if (new_root_window == root_window_)
     return;
 
+  // Stores the previous scale.
   float scale = GetScale();
 
-  RedrawKeepingMousePosition(1.0f, true);
+  // Unmagnify the previous root window.
+  root_window_->RemoveObserver(this);
+  if (redraw_original_root_window)
+    RedrawKeepingMousePosition(1.0f, true);
+
   root_window_ = new_root_window;
   RedrawKeepingMousePosition(scale, true);
+  root_window_->AddObserver(this);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -428,7 +488,8 @@ void MagnificationControllerImpl::SetScale(float scale, bool animate) {
     return;
 
   ValidateScale(&scale);
-  ash::Shell::GetInstance()->delegate()->SaveScreenMagnifierScale(scale);
+  Shell::GetInstance()->accessibility_delegate()->
+      SaveScreenMagnifierScale(scale);
   RedrawKeepingMousePosition(scale, animate);
 }
 
@@ -447,28 +508,18 @@ void MagnificationControllerImpl::MoveWindow(const gfx::Point& point,
   Redraw(point, scale_, animate);
 }
 
-void MagnificationControllerImpl::EnsureRectIsVisible(
-    const gfx::Rect& target_rect,
-    bool animate) {
-  if (!is_enabled_)
-    return;
-
-  EnsureRectIsVisibleWithScale(target_rect, scale_, animate);
-}
-
-void MagnificationControllerImpl::EnsurePointIsVisible(
-    const gfx::Point& point,
-    bool animate) {
-  if (!is_enabled_)
-    return;
-
-  EnsurePointIsVisibleWithScale(point, scale_, animate);
+void MagnificationControllerImpl::SetScrollDirection(
+    ScrollDirection direction) {
+  scroll_direction_ = direction;
+  StartOrStopScrollIfNecessary();
 }
 
 void MagnificationControllerImpl::SetEnabled(bool enabled) {
+  Shell* shell = Shell::GetInstance();
   if (enabled) {
     float scale =
-        ash::Shell::GetInstance()->delegate()->GetSavedScreenMagnifierScale();
+        Shell::GetInstance()->accessibility_delegate()->
+        GetSavedScreenMagnifierScale();
     if (scale <= 0.0f)
       scale = kInitialMagnifiedScale;
     ValidateScale(&scale);
@@ -477,9 +528,9 @@ void MagnificationControllerImpl::SetEnabled(bool enabled) {
     if (is_enabled_ && scale == scale_)
       return;
 
-    RedrawKeepingMousePosition(scale, true);
-    ash::Shell::GetInstance()->delegate()->SaveScreenMagnifierScale(scale);
     is_enabled_ = enabled;
+    RedrawKeepingMousePosition(scale, true);
+    shell->accessibility_delegate()->SaveScreenMagnifierScale(scale);
   } else {
     // Do nothing, if already disabled.
     if (!is_enabled_)
@@ -498,22 +549,26 @@ bool MagnificationControllerImpl::IsEnabled() const {
 // MagnificationControllerImpl: aura::EventFilter implementation
 
 void MagnificationControllerImpl::OnMouseEvent(ui::MouseEvent* event) {
-  if (IsMagnified() && event->type() == ui::ET_MOUSE_MOVED) {
-    aura::Window* target = static_cast<aura::Window*>(event->target());
-    aura::RootWindow* current_root = target->GetRootWindow();
-    gfx::Rect root_bounds = current_root->bounds();
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  aura::Window* current_root = target->GetRootWindow();
+  gfx::Rect root_bounds = current_root->bounds();
 
-    if (root_bounds.Contains(event->root_location())) {
-      if (current_root != root_window_)
-        SwitchTargetRootWindow(current_root);
+  if (root_bounds.Contains(event->root_location())) {
+    // This must be before |SwitchTargetRootWindow()|.
+    if (event->type() != ui::ET_MOUSE_CAPTURE_CHANGED)
+      point_of_interest_ = event->root_location();
 
-      OnMouseMove(event->root_location());
+    if (current_root != root_window_) {
+      DCHECK(current_root);
+      SwitchTargetRootWindow(current_root, true);
     }
+
+    if (IsMagnified() && event->type() == ui::ET_MOUSE_MOVED)
+      OnMouseMove(event->root_location());
   }
 }
 
-void MagnificationControllerImpl::OnScrollEvent(
-    ui::ScrollEvent* event) {
+void MagnificationControllerImpl::OnScrollEvent(ui::ScrollEvent* event) {
   if (event->IsAltDown() && event->IsControlDown()) {
     if (event->type() == ui::ET_SCROLL_FLING_START ||
         event->type() == ui::ET_SCROLL_FLING_CANCEL) {
@@ -529,6 +584,16 @@ void MagnificationControllerImpl::OnScrollEvent(
       event->StopPropagation();
       return;
     }
+  }
+}
+
+void MagnificationControllerImpl::OnTouchEvent(ui::TouchEvent* event) {
+  aura::Window* target = static_cast<aura::Window*>(event->target());
+  aura::Window* current_root = target->GetRootWindow();
+  if (current_root == root_window_) {
+    gfx::Rect root_bounds = current_root->bounds();
+    if (root_bounds.Contains(event->root_location()))
+      point_of_interest_ = event->root_location();
   }
 }
 

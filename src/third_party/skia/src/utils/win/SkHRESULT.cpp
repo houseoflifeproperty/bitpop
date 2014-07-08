@@ -7,7 +7,7 @@
 
 #include "SkTypes.h"
 
-#include "SKHRESULT.h"
+#include "SkHRESULT.h"
 
 void SkTraceHR(const char* file, unsigned long line,
                HRESULT hr, const char* msg) {
@@ -29,7 +29,7 @@ void SkTraceHR(const char* file, unsigned long line,
     if (NULL == errorText) {
         SkDEBUGF(("<unknown>\n"));
     } else {
-        SkDEBUGF((errorText));
+        SkDEBUGF(("%s", errorText));
         LocalFree(errorText);
         errorText = NULL;
     }

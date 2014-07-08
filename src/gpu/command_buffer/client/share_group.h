@@ -6,10 +6,10 @@
 #define GPU_COMMAND_BUFFER_CLIENT_SHARE_GROUP_H_
 
 #include <GLES2/gl2.h>
-#include "../client/ref_counted.h"
-#include "../common/gles2_cmd_format.h"
-#include "../common/scoped_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "gles2_impl_export.h"
+#include "gpu/command_buffer/client/ref_counted.h"
+#include "gpu/command_buffer/common/gles2_cmd_format.h"
 
 namespace gpu {
 namespace gles2 {
@@ -20,14 +20,29 @@ class ProgramInfoManager;
 
 typedef void (GLES2Implementation::*DeleteFn)(GLsizei n, const GLuint* ids);
 
+class ShareGroupContextData {
+ public:
+  struct IdHandlerData {
+    IdHandlerData();
+    ~IdHandlerData();
+
+    std::vector<GLuint> freed_ids_;
+    uint32 flush_generation_;
+  };
+
+  IdHandlerData* id_handler_data(int namespace_id) {
+    return &id_handler_data_[namespace_id];
+  }
+
+ private:
+  IdHandlerData id_handler_data_[id_namespaces::kNumIdNamespaces];
+};
+
 // Base class for IdHandlers
 class IdHandlerInterface {
  public:
   IdHandlerInterface() { }
   virtual ~IdHandlerInterface() { }
-
-  // Free everything.
-  virtual void Destroy(GLES2Implementation* gl_impl) = 0;
 
   // Makes some ids at or above id_offset.
   virtual void MakeIds(
@@ -41,21 +56,16 @@ class IdHandlerInterface {
 
   // Marks an id as used for glBind functions. id = 0 does nothing.
   virtual bool MarkAsUsedForBind(GLuint id) = 0;
+
+  // Called when a context in the share group is destructed.
+  virtual void FreeContext(GLES2Implementation* gl_impl) = 0;
 };
 
 // ShareGroup manages shared resources for contexts that are sharing resources.
 class GLES2_IMPL_EXPORT ShareGroup
     : public gpu::RefCountedThreadSafe<ShareGroup> {
  public:
-  typedef scoped_refptr<ShareGroup> Ref;
-
-  ShareGroup(bool share_resources, bool bind_generates_resource);
-
-  void SetGLES2ImplementationForDestruction(GLES2Implementation* gl_impl);
-
-  bool sharing_resources() const {
-    return sharing_resources_;
-  }
+  ShareGroup(bool bind_generates_resource);
 
   bool bind_generates_resource() const {
     return bind_generates_resource_;
@@ -71,6 +81,12 @@ class GLES2_IMPL_EXPORT ShareGroup
     return program_info_manager_.get();
   }
 
+  void FreeContext(GLES2Implementation* gl_impl) {
+    for (int i = 0; i < id_namespaces::kNumIdNamespaces; ++i) {
+      id_handlers_[i]->FreeContext(gl_impl);
+    }
+  }
+
  private:
   friend class gpu::RefCountedThreadSafe<ShareGroup>;
   friend class gpu::gles2::GLES2ImplementationTest;
@@ -82,11 +98,7 @@ class GLES2_IMPL_EXPORT ShareGroup
   scoped_ptr<IdHandlerInterface> id_handlers_[id_namespaces::kNumIdNamespaces];
   scoped_ptr<ProgramInfoManager> program_info_manager_;
 
-  // Whether or not this context is sharing resources.
-  bool sharing_resources_;
   bool bind_generates_resource_;
-
-  GLES2Implementation* gles2_;
 
   DISALLOW_COPY_AND_ASSIGN(ShareGroup);
 };

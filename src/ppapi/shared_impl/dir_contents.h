@@ -5,15 +5,14 @@
 #ifndef PPAPI_SHARED_IMPL_DIR_CONTENTS_H_
 #define PPAPI_SHARED_IMPL_DIR_CONTENTS_H_
 
-
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 
 namespace ppapi {
 
 struct DirEntry {
-  FilePath name;
+  base::FilePath name;
   bool is_dir;
 };
 

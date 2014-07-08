@@ -10,22 +10,30 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/i18n/rtl.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/character_encoding.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/extensions/extension_service.h"
+#include "chrome/browser/extensions/extension_tab_util.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/webui/options/font_settings_utils.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/font_list_async.h"
 #include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_service.h"
 #include "content/public/browser/web_ui.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "url/gurl.h"
 
 #if defined(OS_WIN)
 #include "ui/gfx/font.h"
@@ -47,6 +55,9 @@ std::string MaybeGetLocalizedFontName(const std::string& font_name) {
 #endif
 }
 
+const char kAdvancedFontSettingsExtensionId[] =
+    "caclkomlalccbpcdllchkeecicepbmbm";
+
 }  // namespace
 
 
@@ -59,7 +70,7 @@ FontSettingsHandler::~FontSettingsHandler() {
 }
 
 void FontSettingsHandler::GetLocalizedValues(
-    DictionaryValue* localized_strings) {
+    base::DictionaryValue* localized_strings) {
   DCHECK(localized_strings);
 
   static OptionsStringResource resources[] = {
@@ -81,6 +92,8 @@ void FontSettingsHandler::GetLocalizedValues(
       IDS_FONT_LANGUAGE_SETTING_FONT_SIZE_HUGE },
     { "fontSettingsLoremIpsum",
       IDS_FONT_LANGUAGE_SETTING_LOREM_IPSUM },
+    { "advancedFontSettingsOptions",
+      IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_OPTIONS }
   };
 
   RegisterStrings(localized_strings, resources, arraysize(resources));
@@ -89,6 +102,21 @@ void FontSettingsHandler::GetLocalizedValues(
   localized_strings->SetString("fontSettingsPlaceholder",
       l10n_util::GetStringUTF16(
           IDS_FONT_LANGUAGE_SETTING_PLACEHOLDER));
+
+  GURL install_url(extension_urls::GetWebstoreItemDetailURLPrefix());
+  localized_strings->SetString("advancedFontSettingsInstall",
+      l10n_util::GetStringFUTF16(
+          IDS_FONT_LANGUAGE_SETTING_ADVANCED_FONT_SETTINGS_INSTALL,
+          base::UTF8ToUTF16(
+              install_url.Resolve(kAdvancedFontSettingsExtensionId).spec())));
+}
+
+void FontSettingsHandler::InitializeHandler() {
+  registrar_.Add(this,
+                 chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                 content::NotificationService::AllSources());
+  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
+                 content::NotificationService::AllSources());
 }
 
 void FontSettingsHandler::InitializePage() {
@@ -98,6 +126,7 @@ void FontSettingsHandler::InitializePage() {
   SetUpSansSerifFontSample();
   SetUpFixedFontSample();
   SetUpMinimumFontSample();
+  NotifyAdvancedFontSettingsAvailability();
 }
 
 void FontSettingsHandler::RegisterMessages() {
@@ -142,9 +171,20 @@ void FontSettingsHandler::RegisterMessages() {
   web_ui()->RegisterMessageCallback("fetchFontsData",
       base::Bind(&FontSettingsHandler::HandleFetchFontsData,
                  base::Unretained(this)));
+  web_ui()->RegisterMessageCallback("openAdvancedFontSettingsOptions",
+      base::Bind(&FontSettingsHandler::HandleOpenAdvancedFontSettingsOptions,
+                 base::Unretained(this)));
 }
 
-void FontSettingsHandler::HandleFetchFontsData(const ListValue* args) {
+void FontSettingsHandler::Observe(int type,
+                                  const content::NotificationSource& source,
+                                  const content::NotificationDetails& details) {
+  DCHECK(type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED ||
+         type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED);
+  NotifyAdvancedFontSettingsAvailability();
+}
+
+void FontSettingsHandler::HandleFetchFontsData(const base::ListValue* args) {
   content::GetFontListAsync(
       base::Bind(&FontSettingsHandler::FontsListHasLoaded,
                  base::Unretained(this)));
@@ -154,17 +194,17 @@ void FontSettingsHandler::FontsListHasLoaded(
     scoped_ptr<base::ListValue> list) {
   // Selects the directionality for the fonts in the given list.
   for (size_t i = 0; i < list->GetSize(); i++) {
-    ListValue* font;
+    base::ListValue* font;
     bool has_font = list->GetList(i, &font);
     DCHECK(has_font);
-    string16 value;
+    base::string16 value;
     bool has_value = font->GetString(1, &value);
     DCHECK(has_value);
     bool has_rtl_chars = base::i18n::StringContainsStrongRTLChars(value);
     font->Append(new base::StringValue(has_rtl_chars ? "rtl" : "ltr"));
   }
 
-  ListValue encoding_list;
+  base::ListValue encoding_list;
   const std::vector<CharacterEncoding::EncodingInfo>* encodings;
   PrefService* pref_service = Profile::FromWebUI(web_ui())->GetPrefs();
   encodings = CharacterEncoding::GetCurrentDisplayEncodings(
@@ -176,25 +216,25 @@ void FontSettingsHandler::FontsListHasLoaded(
 
   std::vector<CharacterEncoding::EncodingInfo>::const_iterator it;
   for (it = encodings->begin(); it != encodings->end(); ++it) {
-    ListValue* option = new ListValue();
+    base::ListValue* option = new base::ListValue();
     if (it->encoding_id) {
       int cmd_id = it->encoding_id;
       std::string encoding =
       CharacterEncoding::GetCanonicalEncodingNameByCommandId(cmd_id);
-      string16 name = it->encoding_display_name;
+      base::string16 name = it->encoding_display_name;
       bool has_rtl_chars = base::i18n::StringContainsStrongRTLChars(name);
       option->Append(new base::StringValue(encoding));
       option->Append(new base::StringValue(name));
       option->Append(new base::StringValue(has_rtl_chars ? "rtl" : "ltr"));
     } else {
       // Add empty name/value to indicate a separator item.
-      option->Append(new base::StringValue(""));
-      option->Append(new base::StringValue(""));
+      option->Append(new base::StringValue(std::string()));
+      option->Append(new base::StringValue(std::string()));
     }
     encoding_list.Append(option);
   }
 
-  ListValue selected_values;
+  base::ListValue selected_values;
   selected_values.Append(new base::StringValue(MaybeGetLocalizedFontName(
       standard_font_.GetValue())));
   selected_values.Append(new base::StringValue(MaybeGetLocalizedFontName(
@@ -242,6 +282,31 @@ void FontSettingsHandler::SetUpMinimumFontSample() {
   base::FundamentalValue size_value(minimum_font_size_.GetValue());
   web_ui()->CallJavascriptFunction("FontSettings.setUpMinimumFontSample",
                                    size_value);
+}
+
+const extensions::Extension*
+FontSettingsHandler::GetAdvancedFontSettingsExtension() {
+  Profile* profile = Profile::FromWebUI(web_ui());
+  ExtensionService* service =
+      extensions::ExtensionSystem::Get(profile)->extension_service();
+  if (!service->IsExtensionEnabled(kAdvancedFontSettingsExtensionId))
+    return NULL;
+  return service->GetInstalledExtension(kAdvancedFontSettingsExtensionId);
+}
+
+void FontSettingsHandler::NotifyAdvancedFontSettingsAvailability() {
+  web_ui()->CallJavascriptFunction(
+      "FontSettings.notifyAdvancedFontSettingsAvailability",
+      base::FundamentalValue(GetAdvancedFontSettingsExtension() != NULL));
+}
+
+void FontSettingsHandler::HandleOpenAdvancedFontSettingsOptions(
+    const base::ListValue* args) {
+  const extensions::Extension* extension = GetAdvancedFontSettingsExtension();
+  if (!extension)
+    return;
+  extensions::ExtensionTabUtil::OpenOptionsPage(extension,
+      chrome::FindBrowserWithWebContents(web_ui()->GetWebContents()));
 }
 
 void FontSettingsHandler::OnWebKitDefaultFontSizeChanged() {

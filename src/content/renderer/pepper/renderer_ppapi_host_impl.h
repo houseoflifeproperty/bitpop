@@ -10,8 +10,6 @@
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "content/renderer/pepper/content_renderer_pepper_host_factory.h"
 #include "ppapi/host/ppapi_host.h"
-#include "webkit/plugins/ppapi/plugin_delegate.h"
-#include "webkit/plugins/ppapi/plugin_module.h"
 
 namespace IPC {
 class Sender;
@@ -29,22 +27,14 @@ class ResourceCreationAPI;
 
 }  // namespace ppapi
 
-namespace webkit {
-namespace ppapi {
-class PluginInstance;
-class PluginModule;
-}
-}
-
 namespace content {
 
 class PepperInProcessRouter;
+class PepperPluginInstanceImpl;
+class PluginModule;
 
-// This class is attached to a PluginModule via the module's embedder state.
-// The plugin module manages our lifetime.
-class RendererPpapiHostImpl
-    : public RendererPpapiHost,
-      public webkit::ppapi::PluginModule::EmbedderState {
+// This class is attached to a PluginModule which manages our lifetime.
+class RendererPpapiHostImpl : public RendererPpapiHost {
  public:
   virtual ~RendererPpapiHostImpl();
 
@@ -55,11 +45,11 @@ class RendererPpapiHostImpl
   // The module will take ownership of the new host impl. The returned value
   // does not pass ownership, it's just for the information of the caller.
   static RendererPpapiHostImpl* CreateOnModuleForOutOfProcess(
-      webkit::ppapi::PluginModule* module,
+      PluginModule* module,
       ppapi::proxy::HostDispatcher* dispatcher,
       const ppapi::PpapiPermissions& permissions);
   static RendererPpapiHostImpl* CreateOnModuleForInProcess(
-      webkit::ppapi::PluginModule* module,
+      PluginModule* module,
       const ppapi::PpapiPermissions& permissions);
 
   // Returns the RendererPpapiHostImpl associated with the given PP_Instance,
@@ -78,36 +68,44 @@ class RendererPpapiHostImpl
   // host impl should outlive the returned pointer. Since the resource
   // creation object is associated with the instance, this will generally
   // happen automatically.
-  scoped_ptr< ::ppapi::thunk::ResourceCreationAPI>
-      CreateInProcessResourceCreationAPI(
-          webkit::ppapi::PluginInstance* instance);
+  scoped_ptr<ppapi::thunk::ResourceCreationAPI>
+      CreateInProcessResourceCreationAPI(PepperPluginInstanceImpl* instance);
 
-  // RendererPpapiHost.
+  PepperPluginInstanceImpl* GetPluginInstanceImpl(PP_Instance instance) const;
+
+  // RendererPpapiHost implementation.
   virtual ppapi::host::PpapiHost* GetPpapiHost() OVERRIDE;
   virtual bool IsValidInstance(PP_Instance instance) const OVERRIDE;
-  virtual webkit::ppapi::PluginInstance* GetPluginInstance(
+  virtual PepperPluginInstance* GetPluginInstance(PP_Instance instance) const
+      OVERRIDE;
+  virtual RenderFrame* GetRenderFrameForInstance(PP_Instance instance) const
+      OVERRIDE;
+  virtual RenderView* GetRenderViewForInstance(PP_Instance instance) const
+      OVERRIDE;
+  virtual blink::WebPluginContainer* GetContainerForInstance(
       PP_Instance instance) const OVERRIDE;
-  virtual webkit::ppapi::PluginDelegate::PlatformGraphics2D*
-      GetPlatformGraphics2D(PP_Resource resource) OVERRIDE;
-  virtual RenderView* GetRenderViewForInstance(
-      PP_Instance instance) const OVERRIDE;
-  virtual WebKit::WebPluginContainer* GetContainerForInstance(
-      PP_Instance instance) const OVERRIDE;
+  virtual base::ProcessId GetPluginPID() const OVERRIDE;
   virtual bool HasUserGesture(PP_Instance instance) const OVERRIDE;
   virtual int GetRoutingIDForWidget(PP_Instance instance) const OVERRIDE;
-  virtual gfx::Point PluginPointToRenderView(
-      PP_Instance instance,
-      const gfx::Point& pt) const OVERRIDE;
+  virtual gfx::Point PluginPointToRenderFrame(PP_Instance instance,
+                                              const gfx::Point& pt) const
+      OVERRIDE;
   virtual IPC::PlatformFileForTransit ShareHandleWithRemote(
       base::PlatformFile handle,
       bool should_close_source) OVERRIDE;
   virtual bool IsRunningInProcess() const OVERRIDE;
+  virtual void CreateBrowserResourceHosts(
+      PP_Instance instance,
+      const std::vector<IPC::Message>& nested_msgs,
+      const base::Callback<void(const std::vector<int>&)>& callback) const
+      OVERRIDE;
+  virtual GURL GetDocumentURL(PP_Instance instance) const OVERRIDE;
 
  private:
-  RendererPpapiHostImpl(webkit::ppapi::PluginModule* module,
+  RendererPpapiHostImpl(PluginModule* module,
                         ppapi::proxy::HostDispatcher* dispatcher,
                         const ppapi::PpapiPermissions& permissions);
-  RendererPpapiHostImpl(webkit::ppapi::PluginModule* module,
+  RendererPpapiHostImpl(PluginModule* module,
                         const ppapi::PpapiPermissions& permissions);
 
   // Retrieves the plugin instance object associated with the given PP_Instance
@@ -116,12 +114,13 @@ class RendererPpapiHostImpl
   //
   // We use this to security check the PP_Instance values sent from a plugin to
   // make sure it's not trying to spoof another instance.
-  webkit::ppapi::PluginInstance* GetAndValidateInstance(
-      PP_Instance instance) const;
+  PepperPluginInstanceImpl* GetAndValidateInstance(PP_Instance instance) const;
 
-  webkit::ppapi::PluginModule* module_;  // Non-owning pointer.
+  PluginModule* module_;  // Non-owning pointer.
 
-  ppapi::proxy::HostDispatcher* dispatcher_;  // Non-owning pointer.
+  // The dispatcher we use to send messagse when the plugin is out-of-process.
+  // Will be null when running in-process. Non-owning pointer.
+  ppapi::proxy::HostDispatcher* dispatcher_;
 
   scoped_ptr<ppapi::host::PpapiHost> ppapi_host_;
 

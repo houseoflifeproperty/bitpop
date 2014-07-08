@@ -114,7 +114,18 @@ const buzz::StaticQName QN_JINGLE_RTP_PAYLOADTYPE =
 const buzz::StaticQName QN_JINGLE_RTP_BANDWIDTH =
     { NS_JINGLE_RTP, LN_BANDWIDTH };
 const buzz::StaticQName QN_JINGLE_RTCP_MUX = { NS_JINGLE_RTP, "rtcp-mux" };
+const buzz::StaticQName QN_JINGLE_RTCP_FB = { NS_JINGLE_RTP, "rtcp-fb" };
+const buzz::StaticQName QN_SUBTYPE = { NS_EMPTY, "subtype" };
 const buzz::StaticQName QN_PARAMETER = { NS_JINGLE_RTP, "parameter" };
+const buzz::StaticQName QN_JINGLE_RTP_HDREXT =
+    { NS_JINGLE_RTP, "rtp-hdrext" };
+const buzz::StaticQName QN_URI = { NS_EMPTY, "uri" };
+
+const char NS_JINGLE_DRAFT_SCTP[] = "google:jingle:sctp";
+const buzz::StaticQName QN_JINGLE_DRAFT_SCTP_CONTENT =
+    { NS_JINGLE_DRAFT_SCTP, LN_DESCRIPTION };
+const buzz::StaticQName QN_JINGLE_DRAFT_SCTP_STREAM =
+    { NS_JINGLE_DRAFT_SCTP, "stream" };
 
 const char NS_GINGLE_AUDIO[] = "http://www.google.com/session/phone";
 const buzz::StaticQName QN_GINGLE_AUDIO_CONTENT =
@@ -191,7 +202,6 @@ const buzz::StaticQName QN_ADDRESS = { cricket::NS_EMPTY, "address" };
 const buzz::StaticQName QN_USERNAME = { cricket::NS_EMPTY, "username" };
 const buzz::StaticQName QN_PASSWORD = { cricket::NS_EMPTY, "password" };
 const buzz::StaticQName QN_PREFERENCE = { cricket::NS_EMPTY, "preference" };
-const char GICE_CANDIDATE_TYPE_STUN[] = "stun";
 const char GICE_CHANNEL_NAME_RTP[] = "rtp";
 const char GICE_CHANNEL_NAME_RTCP[] = "rtcp";
 const char GICE_CHANNEL_NAME_VIDEO_RTP[] = "video_rtp";
@@ -250,5 +260,11 @@ const buzz::StaticQName QN_GINGLE_RAW_CHANNEL = { NS_GINGLE_RAW, "channel" };
 const char NS_VOICEMAIL[] = "http://www.google.com/session/voicemail";
 const buzz::StaticQName QN_VOICEMAIL_REGARDING = { NS_VOICEMAIL, "regarding" };
 #endif
+
+// From RFC 4145, SDP setup attribute values.
+const char CONNECTIONROLE_ACTIVE_STR[] = "active";
+const char CONNECTIONROLE_PASSIVE_STR[] = "passive";
+const char CONNECTIONROLE_ACTPASS_STR[] = "actpass";
+const char CONNECTIONROLE_HOLDCONN_STR[] = "holdconn";
 
 }  // namespace cricket

@@ -1,4 +1,4 @@
-#!/usr/bin/perl
+#!/usr/bin/env perl
 ##
 ##  Copyright (c) 2010 The WebM project authors. All Rights Reserved.
 ##
@@ -17,9 +17,24 @@
 #
 # Usage: cat inputfile | perl ads2gas.pl > outputfile
 #
+
+use FindBin;
+use lib $FindBin::Bin;
+use thumb;
+
+my $thumb = 0;
+
+foreach my $arg (@ARGV) {
+    $thumb = 1 if ($arg eq "-thumb");
+}
+
 print "@ This file was created from a .asm file\n";
 print "@  using the ads2gas.pl script.\n";
 print "\t.equ DO1STROUNDING, 0\n";
+if ($thumb) {
+    print "\t.syntax unified\n";
+    print "\t.thumb\n";
+}
 
 # Stack of procedure names.
 @proc_stack = ();
@@ -61,26 +76,26 @@ while (<STDIN>)
     s/:SHR:/ >> /g;
 
     # Convert ELSE to .else
-    s/ELSE/.else/g;
+    s/\bELSE\b/.else/g;
 
     # Convert ENDIF to .endif
-    s/ENDIF/.endif/g;
+    s/\bENDIF\b/.endif/g;
 
     # Convert ELSEIF to .elseif
-    s/ELSEIF/.elseif/g;
+    s/\bELSEIF\b/.elseif/g;
 
     # Convert LTORG to .ltorg
-    s/LTORG/.ltorg/g;
+    s/\bLTORG\b/.ltorg/g;
 
     # Convert endfunc to nothing.
-    s/endfunc//ig;
+    s/\bendfunc\b//ig;
 
     # Convert FUNCTION to nothing.
-    s/FUNCTION//g;
-    s/function//g;
+    s/\bFUNCTION\b//g;
+    s/\bfunction\b//g;
 
-    s/ENTRY//g;
-    s/MSARMASM/0/g;
+    s/\bENTRY\b//g;
+    s/\bMSARMASM\b/0/g;
     s/^\s+end\s+$//g;
 
     # Convert IF :DEF:to .if
@@ -151,12 +166,25 @@ while (<STDIN>)
     # ALIGN directive
     s/\bALIGN\b/.balign/g;
 
-    # ARM code
-    s/\sARM/.arm/g;
+    if ($thumb) {
+        # ARM code - we force everything to thumb with the declaration in the header
+        s/\sARM//g;
+    } else {
+        # ARM code
+        s/\sARM/.arm/g;
+    }
+
+    # push/pop
+    s/(push\s+)(r\d+)/stmdb sp\!, \{$2\}/g;
+    s/(pop\s+)(r\d+)/ldmia sp\!, \{$2\}/g;
 
     # NEON code
     s/(vld1.\d+\s+)(q\d+)/$1\{$2\}/g;
     s/(vtbl.\d+\s+[^,]+),([^,]+)/$1,\{$2\}/g;
+
+    if ($thumb) {
+        thumb::FixThumbInstructions($_, 0);
+    }
 
     # eabi_attributes numerical equivalents can be found in the
     # "ARM IHI 0045C" document.
@@ -189,7 +217,7 @@ while (<STDIN>)
     s/(\S+\s+)EQU(\s+\S+)/.equ $1, $2/;
 
     # Begin macro definition
-    if (/MACRO/) {
+    if (/\bMACRO\b/) {
         $_ = <STDIN>;
         s/^/.macro/;
         s/\$//g;                # remove formal param reference
@@ -198,7 +226,7 @@ while (<STDIN>)
 
     # For macros, use \ to reference formal params
     s/\$/\\/g;                  # End macro definition
-    s/MEND/.endm/;              # No need to tell it where to stop assembling
+    s/\bMEND\b/.endm/;              # No need to tell it where to stop assembling
     next if /^\s*END\s*$/;
     print;
     print "$comment_sub$comment\n" if defined $comment;

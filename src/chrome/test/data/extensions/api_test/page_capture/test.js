@@ -9,7 +9,7 @@ const assertEq = chrome.test.assertEq;
 const assertTrue = chrome.test.assertTrue;
 
 var testUrl = 'http://www.a.com:PORT' +
-    '/files/extensions/api_test/page_capture/google.html';
+    '/extensions/api_test/page_capture/google.html';
 
 function waitForCurrentTabLoaded(callback) {
   chrome.tabs.getSelected(null, function(tab) {
@@ -31,7 +31,7 @@ chrome.test.getConfig(function(config) {
         waitForCurrentTabLoaded(function() {
           chrome.pageCapture.saveAsMHTML({ "tabId": tab.id },
               function(data) {
-            assertEq(undefined, chrome.extension.lastError);
+            assertEq(undefined, chrome.runtime.lastError);
             assertTrue(data != null);
             // It should contain few KBs of data.
             assertTrue(data.size > 100);

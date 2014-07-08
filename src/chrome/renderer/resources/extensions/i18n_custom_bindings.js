@@ -2,18 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Custom bindings for the i18n API.
+// Custom binding for the i18n API.
+
+var binding = require('binding').Binding.create('i18n');
 
 var i18nNatives = requireNative('i18n');
 var GetL10nMessage = i18nNatives.GetL10nMessage;
+var GetL10nUILanguage = i18nNatives.GetL10nUILanguage;
 
-var chromeHidden = requireNative('chrome_hidden').GetChromeHidden();
-
-chromeHidden.registerCustomHook('i18n', function(bindingsAPI, extensionId) {
+binding.registerCustomHook(function(bindingsAPI, extensionId) {
   var apiFunctions = bindingsAPI.apiFunctions;
 
   apiFunctions.setUpdateArgumentsPreValidate('getMessage', function() {
-    var args = Array.prototype.slice.call(arguments);
+    var args = $Array.slice(arguments);
 
     // The first argument is the message, and should be a string.
     var message = args[0];
@@ -31,4 +32,10 @@ chromeHidden.registerCustomHook('i18n', function(bindingsAPI, extensionId) {
                                 function(messageName, substitutions) {
     return GetL10nMessage(messageName, substitutions, extensionId);
   });
+
+  apiFunctions.setHandleRequest('getUILanguage', function() {
+    return GetL10nUILanguage();
+  });
 });
+
+exports.binding = binding.generate();

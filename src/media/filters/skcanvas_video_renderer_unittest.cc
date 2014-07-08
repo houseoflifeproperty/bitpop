@@ -6,7 +6,6 @@
 #include "media/base/video_util.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkCanvas.h"
-#include "third_party/skia/include/core/SkDevice.h"
 #include "media/filters/skcanvas_video_renderer.h"
 
 using media::VideoFrame;
@@ -19,19 +18,17 @@ static const gfx::Rect kNaturalRect(0, 0, kWidth, kHeight);
 
 // Helper for filling a |canvas| with a solid |color|.
 void FillCanvas(SkCanvas* canvas, SkColor color) {
-  const SkBitmap& bitmap = canvas->getDevice()->accessBitmap(true);
-  bitmap.lockPixels();
-  bitmap.eraseColor(color);
-  bitmap.unlockPixels();
+  canvas->clear(color);
 }
 
 // Helper for returning the color of a solid |canvas|.
 SkColor GetColorAt(SkCanvas* canvas, int x, int y) {
-  const SkBitmap& bitmap = canvas->getDevice()->accessBitmap(false);
-  bitmap.lockPixels();
-  SkColor c = bitmap.getColor(x, y);
-  bitmap.unlockPixels();
-  return c;
+  SkBitmap bitmap;
+  if (!bitmap.allocN32Pixels(1, 1))
+    return 0;
+  if (!canvas->readPixels(&bitmap, x, y))
+    return 0;
+  return bitmap.getColor(0, 0);
 }
 
 SkColor GetColor(SkCanvas* canvas) {
@@ -58,10 +55,10 @@ class SkCanvasVideoRendererTest : public testing::Test {
   void Paint(VideoFrame* video_frame, SkCanvas* canvas, Color color);
 
   // Getters for various frame sizes.
-  VideoFrame* natural_frame() { return natural_frame_; }
-  VideoFrame* larger_frame() { return larger_frame_; }
-  VideoFrame* smaller_frame() { return smaller_frame_; }
-  VideoFrame* cropped_frame() { return cropped_frame_; }
+  VideoFrame* natural_frame() { return natural_frame_.get(); }
+  VideoFrame* larger_frame() { return larger_frame_.get(); }
+  VideoFrame* smaller_frame() { return smaller_frame_.get(); }
+  VideoFrame* cropped_frame() { return cropped_frame_.get(); }
 
   // Getters for canvases that trigger the various painting paths.
   SkCanvas* fast_path_canvas() { return &fast_path_canvas_; }
@@ -75,13 +72,21 @@ class SkCanvasVideoRendererTest : public testing::Test {
   scoped_refptr<VideoFrame> smaller_frame_;
   scoped_refptr<VideoFrame> cropped_frame_;
 
-  SkDevice fast_path_device_;
   SkCanvas fast_path_canvas_;
-  SkDevice slow_path_device_;
   SkCanvas slow_path_canvas_;
 
   DISALLOW_COPY_AND_ASSIGN(SkCanvasVideoRendererTest);
 };
+
+static SkBitmap AllocBitmap(int width, int height, bool isOpaque) {
+  SkAlphaType alpha_type = isOpaque ? kOpaque_SkAlphaType : kPremul_SkAlphaType;
+  SkBitmap bitmap;
+
+  bitmap.allocPixels(SkImageInfo::MakeN32(width, height, alpha_type));
+  if (!isOpaque)
+    bitmap.eraseColor(0);
+  return bitmap;
+}
 
 SkCanvasVideoRendererTest::SkCanvasVideoRendererTest()
     : natural_frame_(VideoFrame::CreateBlackFrame(gfx::Size(kWidth, kHeight))),
@@ -95,19 +100,17 @@ SkCanvasVideoRendererTest::SkCanvasVideoRendererTest()
           gfx::Rect(6, 6, 8, 6),
           gfx::Size(8, 6),
           base::TimeDelta::FromMilliseconds(4))),
-      fast_path_device_(SkBitmap::kARGB_8888_Config, kWidth, kHeight, true),
-      fast_path_canvas_(&fast_path_device_),
-      slow_path_device_(SkBitmap::kARGB_8888_Config, kWidth, kHeight, false),
-      slow_path_canvas_(&slow_path_device_) {
+      fast_path_canvas_(AllocBitmap(kWidth, kHeight, true)),
+      slow_path_canvas_(AllocBitmap(kWidth, kHeight, false)) {
   // Give each frame a unique timestamp.
-  natural_frame_->SetTimestamp(base::TimeDelta::FromMilliseconds(1));
-  larger_frame_->SetTimestamp(base::TimeDelta::FromMilliseconds(2));
-  smaller_frame_->SetTimestamp(base::TimeDelta::FromMilliseconds(3));
+  natural_frame_->set_timestamp(base::TimeDelta::FromMilliseconds(1));
+  larger_frame_->set_timestamp(base::TimeDelta::FromMilliseconds(2));
+  smaller_frame_->set_timestamp(base::TimeDelta::FromMilliseconds(3));
 
   // Make sure the cropped video frame's aspect ratio matches the output device.
   // Update cropped_frame_'s crop dimensions if this is not the case.
-  EXPECT_EQ(cropped_frame()->natural_size().width() * kHeight,
-      cropped_frame()->natural_size().height() * kWidth);
+  EXPECT_EQ(cropped_frame()->visible_rect().width() * kHeight,
+            cropped_frame()->visible_rect().height() * kWidth);
 
   // Fill in the cropped frame's entire data with colors:
   //
@@ -268,14 +271,14 @@ TEST_F(SkCanvasVideoRendererTest, SlowPaint_Smaller) {
 
 TEST_F(SkCanvasVideoRendererTest, FastPaint_NoTimestamp) {
   VideoFrame* video_frame = natural_frame();
-  video_frame->SetTimestamp(media::kNoTimestamp());
+  video_frame->set_timestamp(media::kNoTimestamp());
   Paint(video_frame, fast_path_canvas(), kRed);
   EXPECT_EQ(SK_ColorRED, GetColor(fast_path_canvas()));
 }
 
 TEST_F(SkCanvasVideoRendererTest, SlowPaint_NoTimestamp) {
   VideoFrame* video_frame = natural_frame();
-  video_frame->SetTimestamp(media::kNoTimestamp());
+  video_frame->set_timestamp(media::kNoTimestamp());
   Paint(video_frame, slow_path_canvas(), kRed);
   EXPECT_EQ(SK_ColorRED, GetColor(slow_path_canvas()));
 }

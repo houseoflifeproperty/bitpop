@@ -15,8 +15,9 @@ const char kAutoLaunchChrome[] = "auto-launch-chrome";
 // Currently this is only required when used in combination with kMultiInstall.
 const char kChrome[] = "chrome";
 
-// Install Chrome App Host.
-const char kChromeAppHost[] = "app-host";
+// Install Chrome App Host. This is now interpreted as kChromeAppLauncher.
+// TODO(huangs): Remove by M27.
+const char kChromeAppHostDeprecated[] = "app-host";
 
 // Install Chrome App Launcher, which subsumes Chrome App Host, i.e.,
 // App Launcher install converts App Host to App Launcher, and all subsequent
@@ -25,24 +26,6 @@ const char kChromeAppLauncher[] = "app-launcher";
 
 // Install Chrome Frame.
 const char kChromeFrame[] = "chrome-frame";
-
-// Installs Chrome Frame from an already installed multi-install of Chrome.
-const char kChromeFrameQuickEnable[] = "quick-enable-cf";
-
-// When installing Chrome Frame, install it in ready mode.
-// If --chrome-frame is not on the command line, this switch has no effect.
-const char kChromeFrameReadyMode[] = "ready-mode";
-
-// GCF ready mode opt-in.  This enables a full installation of GCF.
-const char kChromeFrameReadyModeOptIn[] = "ready-mode-opt-in";
-
-// GCF ready mode temp opt-out.  This disables the GCF user agent modification
-// and detection of headers/meta tags.
-const char kChromeFrameReadyModeTempOptOut[] = "ready-mode-temp-opt-out";
-
-// End GCF ready mode temp opt-out.  This re-enables the GCF user agent
-// modification and detection of headers/meta tags.
-const char kChromeFrameReadyModeEndTempOptOut[] = "ready-mode-end-temp-opt-out";
 
 // Run the installer for Chrome SxS.
 const char kChromeSxS[] = "chrome-sxs";
@@ -93,7 +76,10 @@ const char kForceConfigureUserSettings[] = "force-configure-user-settings";
 // confirmation from user.
 const char kForceUninstall[] = "force-uninstall";
 
-// Specify the file path of Chrome archive for install.
+// Specify the path to the compressed Chrome archive for install. If not
+// specified, chrome.packed.7z or chrome.7z in the same directory as setup.exe
+// is used (the packed file is preferred; see kUncompressedArchive to force use
+// of an uncompressed archive).
 const char kInstallArchive[] = "install-archive";
 
 // Specify the file path of Chrome master preference file.
@@ -122,7 +108,14 @@ const char kNewSetupExe[] = "new-setup-exe";
 // Notify the installer that the OS has been upgraded.
 const char kOnOsUpgrade[] = "on-os-upgrade";
 
-// Register Chrome as a valid browser on the current sytem. This option
+// Determines whether or not EULA has been accepted at some point. Returns via
+// exit code: 0 if EULA not accepted, 1 if EULA accepted, and E_FAIL on error.
+const char kQueryEULAAcceptance[] = "query-eula-acceptance";
+
+// Requests that setup attempt to reenable autoupdates for Chrome.
+const char kReenableAutoupdates[] = "reenable-autoupdates";
+
+// Register Chrome as a valid browser on the current system. This option
 // requires that setup.exe is running as admin. If this option is specified,
 // options kInstallArchive and kUninstall are ignored.
 const char kRegisterChromeBrowser[] = "register-chrome-browser";
@@ -154,8 +147,15 @@ const char kRemoveChromeRegistration[] = "remove-chrome-registration";
 // line flag so that we try the launch only once.
 const char kRunAsAdmin[] = "run-as-admin";
 
+// Combined with --uninstall, signals to setup.exe that this uninstall was
+// triggered by a self-destructing Chrome.
+const char kSelfDestruct[] = "self-destruct";
+
 // Install Chrome to system wise location. The default is per user install.
 const char kSystemLevel[] = "system-level";
+
+// Signals to setup.exe that it should trigger the active setup command.
+const char kTriggerActiveSetup[] = "trigger-active-setup";
 
 // If present, setup will uninstall chrome.
 const char kUninstall[] = "uninstall";
@@ -164,6 +164,10 @@ const char kUninstall[] = "uninstall";
 // that setup.exe will apply to itself and store the resulting binary in the
 // path given by --new-setup-exe.
 const char kUpdateSetupExe[] = "update-setup-exe";
+
+// Use the given uncompressed chrome.7z archive as the source of files to
+// install.
+const char kUncompressedArchive[] = "uncompressed-archive";
 
 // Enable verbose logging (info level).
 const char kVerboseLogging[] = "verbose-logging";
@@ -187,6 +191,15 @@ const char kExperimentGroup[] = "experiment-group";
 // to. See DuplicateGoogleUpdateSystemClientKey for details.
 const char kToastResultsKey[] = "toast-results-key";
 
+// Applies a binary patch to a file. The input, patch, and the output file are
+// specified as command line arguments following the --patch switch.
+// Ex: --patch=courgette --input_file='input' --patch_file='patch'
+//        --output_file='output'
+const char kPatch[] = "patch";
+const char kInputFile[] = "input-file";
+const char kPatchFile[] = "patch-file";
+const char kOutputFile[] = "output-file";
+
 }  // namespace switches
 
 // The Active Setup executable will be an identical copy of setup.exe; this is
@@ -201,16 +214,20 @@ const char kToastResultsKey[] = "toast-results-key";
 const wchar_t kActiveSetupExe[] = L"chrmstp.exe";
 const wchar_t kChromeAppHostExe[] = L"app_host.exe";
 const wchar_t kChromeDll[] = L"chrome.dll";
+const wchar_t kChromeChildDll[] = L"chrome_child.dll";
 const wchar_t kChromeExe[] = L"bitpop.exe";
 const wchar_t kChromeFrameDll[] = L"npchrome_frame.dll";
+const wchar_t kChromeFrameHelperDll[] = L"chrome_frame_helper.dll";
 const wchar_t kChromeFrameHelperExe[] = L"chrome_frame_helper.exe";
 const wchar_t kChromeFrameHelperWndClass[] = L"ChromeFrameHelperWindowClass";
-const wchar_t kChromeFrameReadyModeField[] = L"ChromeFrameReadyMode";
 const wchar_t kChromeLauncherExe[] = L"chrome_launcher.exe";
+const wchar_t kChromeMetroDll[] = L"metro_driver.dll";
 const wchar_t kChromeNewExe[] = L"new_bitpop.exe";
 const wchar_t kChromeOldExe[] = L"old_bitpop.exe";
 const wchar_t kCmdInstallApp[] = L"install-application";
+const wchar_t kCmdInstallExtension[] = L"install-extension";
 const wchar_t kCmdOnOsUpgrade[] = L"on-os-upgrade";
+const wchar_t kCmdQueryEULAAcceptance[] = L"query-eula-acceptance";
 const wchar_t kCmdQuickEnableApplicationHost[] =
     L"quick-enable-application-host";
 const wchar_t kCmdQuickEnableCf[] = L"quick-enable-cf";
@@ -221,7 +238,6 @@ const wchar_t kGoogleChromeInstallSubDir2[] = L"Chrome";
 const wchar_t kInstallBinaryDir[] = L"Application";
 const wchar_t kInstallerDir[] = L"Installer";
 const wchar_t kInstallTempDir[] = L"Temp";
-const wchar_t kInstallUserDataDir[] = L"User Data";
 const wchar_t kLnkExt[] = L".lnk";
 const wchar_t kNaClExe[] = L"nacl64.exe";
 const wchar_t kSetupExe[] = L"setup.exe";
@@ -238,14 +254,7 @@ const wchar_t kInstallerResultUIString[] = L"InstallerResultUIString";
 const wchar_t kInstallerSuccessLaunchCmdLine[] =
     L"InstallerSuccessLaunchCmdLine";
 
-// The presence of this environment variable with a value of 1 implies that
-// we should run as a system installation regardless of what is on the
-// command line.
-const char kGoogleUpdateIsMachineEnvVar[] = "GoogleUpdateIsMachine";
-
-const wchar_t kOptionAppHostIsLauncher[] = L"app-host-is-launcher";
 const wchar_t kOptionMultiInstall[] = L"multi-install";
-const wchar_t kOptionReadyMode[] = L"ready-mode";
 
 // Chrome channel display names.
 const wchar_t kChromeChannelUnknown[] = L"unknown";
@@ -255,5 +264,8 @@ const wchar_t kChromeChannelBeta[] = L"beta";
 const wchar_t kChromeChannelStable[] = L"";
 
 const size_t kMaxAppModelIdLength = 64U;
+
+const char kCourgette[] = "courgette";
+const char kBsdiff[] = "bsdiff";
 
 }  // namespace installer

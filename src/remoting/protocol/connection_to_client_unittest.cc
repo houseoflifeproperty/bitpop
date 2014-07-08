@@ -5,8 +5,9 @@
 #include "remoting/protocol/connection_to_client.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/run_loop.h"
 #include "remoting/base/constants.h"
 #include "remoting/protocol/fake_session.h"
 #include "remoting/protocol/protocol_mock_objects.h"
@@ -38,15 +39,15 @@ class ConnectionToClientTest : public testing::Test {
     EXPECT_CALL(handler_, OnConnectionChannelsConnected(viewer_.get()));
     session_->event_handler()->OnSessionStateChange(Session::CONNECTED);
     session_->event_handler()->OnSessionStateChange(Session::AUTHENTICATED);
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
   virtual void TearDown() OVERRIDE {
     viewer_.reset();
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockConnectionToClientEventHandler handler_;
   MockClipboardStub clipboard_stub_;
   MockHostStub host_stub_;
@@ -64,7 +65,7 @@ TEST_F(ConnectionToClientTest, SendUpdateStream) {
   scoped_ptr<VideoPacket> packet(new VideoPacket());
   viewer_->video_stub()->ProcessVideoPacket(packet.Pass(), base::Closure());
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   // Verify that something has been written.
   // TODO(sergeyu): Verify that the correct data has been written.
@@ -75,7 +76,7 @@ TEST_F(ConnectionToClientTest, SendUpdateStream) {
   // And then close the connection to ConnectionToClient.
   viewer_->Disconnect();
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ConnectionToClientTest, NoWriteAfterDisconnect) {
@@ -88,18 +89,18 @@ TEST_F(ConnectionToClientTest, NoWriteAfterDisconnect) {
   // The test will crash if data writer tries to write data to the
   // channel socket.
   // TODO(sergeyu): Use MockSession to verify that no data is written?
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(ConnectionToClientTest, StateChange) {
   EXPECT_CALL(handler_, OnConnectionClosed(viewer_.get(), OK));
   session_->event_handler()->OnSessionStateChange(Session::CLOSED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 
   EXPECT_CALL(handler_, OnConnectionClosed(viewer_.get(), SESSION_REJECTED));
   session_->set_error(SESSION_REJECTED);
   session_->event_handler()->OnSessionStateChange(Session::FAILED);
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 }  // namespace protocol

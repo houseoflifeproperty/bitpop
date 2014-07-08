@@ -30,6 +30,7 @@
 #include "talk/base/logging.h"
 #include "talk/base/thread.h"
 #include "talk/base/window.h"
+#include "talk/media/base/constants.h"
 #include "talk/media/base/screencastid.h"
 #include "talk/p2p/base/parsing.h"
 #include "talk/session/media/call.h"
@@ -58,6 +59,19 @@ V FindOrNull(const std::map<K, V>& map,
   return (it != map.end()) ? it->second : NULL;
 }
 
+
+bool ContentContainsCrypto(const cricket::ContentInfo* content) {
+  if (content != NULL) {
+    const cricket::MediaContentDescription* desc =
+        static_cast<const cricket::MediaContentDescription*>(
+            content->description);
+    if (!desc || desc->cryptos().empty()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 }
 
 Call::Call(MediaSessionClient* session_client)
@@ -84,22 +98,16 @@ Call::~Call() {
 Session* Call::InitiateSession(const buzz::Jid& to,
                                const buzz::Jid& initiator,
                                const CallOptions& options) {
-  const SessionDescription* offer = session_client_->CreateOffer(options);
+  std::string id;
+  std::string initiator_name = initiator.Str();
+  return InternalInitiateSession(id, to, initiator_name, options);
+}
 
-  Session* session = session_client_->CreateSession(this);
-  session->set_initiator_name(initiator.Str());
-
-  AddSession(session, offer);
-  session->Initiate(to.Str(), offer);
-
-  // After this timeout, terminate the call because the callee isn't
-  // answering
-  session_client_->session_manager()->signaling_thread()->Clear(this,
-      MSG_TERMINATECALL);
-  session_client_->session_manager()->signaling_thread()->PostDelayed(
-    send_to_voicemail_ ? kSendToVoicemailTimeout : kNoVoicemailTimeout,
-    this, MSG_TERMINATECALL);
-  return session;
+Session *Call::InitiateSession(const std::string& id,
+                               const buzz::Jid& to,
+                               const CallOptions& options) {
+  std::string initiator_name;
+  return InternalInitiateSession(id, to, initiator_name, options);
 }
 
 void Call::IncomingSession(Session* session, const SessionDescription* offer) {
@@ -119,8 +127,9 @@ void Call::AcceptSession(Session* session,
                          const cricket::CallOptions& options) {
   MediaSessionMap::iterator it = media_session_map_.find(session->id());
   if (it != media_session_map_.end()) {
-    it->second.session->Accept(
-        session_client_->CreateAnswer(session->remote_description(), options));
+    const SessionDescription* answer = session_client_->CreateAnswer(
+        session->remote_description(), options);
+    it->second.session->Accept(answer);
   }
 }
 
@@ -159,10 +168,13 @@ bool Call::SendViewRequest(Session* session,
     bool found = false;
     MediaStreams* recv_streams = GetMediaStreams(session);
     if (recv_streams)
-      found = recv_streams->GetVideoStreamBySsrc(it->ssrc, &found_stream);
+      found = recv_streams->GetVideoStream(it->selector, &found_stream);
     if (!found) {
-      LOG(LS_WARNING) <<
-          "Tried sending view request for bad ssrc: " << it->ssrc;
+      LOG(LS_WARNING) << "Trying to send view request for ("
+                      << it->selector.ssrc << ", '"
+                      << it->selector.groupid << "', '"
+                      << it->selector.streamid << "'"
+                      << ") is not in the local streams.";
       return false;
     }
   }
@@ -174,7 +186,7 @@ bool Call::SendViewRequest(Session* session,
     return false;
   }
 
-  return session->SendInfoMessage(elems);
+  return session->SendInfoMessage(elems, session->remote_name());
 }
 
 void Call::SetLocalRenderer(VideoRenderer* renderer) {
@@ -271,17 +283,28 @@ bool Call::AddSession(Session* session, const SessionDescription* offer) {
     }
   }
 
-  // If desired, create data channel
+  // If desired, create data channel.
   if (has_data_ && succeeded) {
-    bool rtcp = false;
-    media_session.data_channel =
-        session_client_->channel_manager()->CreateDataChannel(
-            session, data_offer->name, rtcp);
-    if (media_session.data_channel) {
-      media_session.data_channel->SignalDataReceived.connect(
-          this, &Call::OnDataReceived);
-    } else {
+    const DataContentDescription* data = GetFirstDataContentDescription(offer);
+    if (data == NULL) {
       succeeded = false;
+    } else {
+      DataChannelType data_channel_type = DCT_RTP;
+      if ((data->protocol() == kMediaProtocolSctp) ||
+          (data->protocol() == kMediaProtocolDtlsSctp)) {
+        data_channel_type = DCT_SCTP;
+      }
+
+      bool rtcp = false;
+      media_session.data_channel =
+          session_client_->channel_manager()->CreateDataChannel(
+              session, data_offer->name, rtcp, data_channel_type);
+      if (media_session.data_channel) {
+        media_session.data_channel->SignalDataReceived.connect(
+            this, &Call::OnDataReceived);
+      } else {
+        succeeded = false;
+      }
     }
   }
 
@@ -415,16 +438,17 @@ void Call::MuteVideo(bool mute) {
   }
 }
 
-void Call::SendData(Session* session,
+bool Call::SendData(Session* session,
                     const SendDataParams& params,
-                    const std::string& data) {
+                    const talk_base::Buffer& payload,
+                    SendDataResult* result) {
   DataChannel* data_channel = GetDataChannel(session);
   if (!data_channel) {
     LOG(LS_WARNING) << "Could not send data: no data channel.";
-    return;
+    return false;
   }
 
-  data_channel->SendData(params, data);
+  return data_channel->SendData(params, payload, result);
 }
 
 void Call::PressDTMF(int event) {
@@ -450,7 +474,7 @@ cricket::VideoFormat ScreencastFormatFromFps(int fps) {
 }
 
 bool Call::StartScreencast(Session* session,
-                           const std::string& stream_name, uint32 ssrc,
+                           const std::string& streamid, uint32 ssrc,
                            const ScreencastId& screencastid, int fps) {
   MediaSessionMap::iterator it = media_session_map_.find(session->id());
   if (it == media_session_map_.end()) {
@@ -491,21 +515,21 @@ bool Call::StartScreencast(Session* session,
   it->second.started_screencasts.insert(
       std::make_pair(ssrc, StartedCapture(capturer, format)));
 
-  // TODO(pthatcher): Verify we aren't re-using an existing name or
+  // TODO(pthatcher): Verify we aren't re-using an existing id or
   // ssrc.
   StreamParams stream;
-  stream.name = stream_name;
+  stream.id = streamid;
   stream.ssrcs.push_back(ssrc);
   VideoContentDescription* video = CreateVideoStreamUpdate(stream);
 
   // TODO(pthatcher): Wait until view request before sending video.
-  video_channel->SetLocalContent(video, CA_UPDATE);
+  video_channel->SetLocalContent(video, CA_UPDATE, NULL);
   SendVideoStreamUpdate(session, video);
   return true;
 }
 
 bool Call::StopScreencast(Session* session,
-                          const std::string& stream_name, uint32 ssrc) {
+                          const std::string& streamid, uint32 ssrc) {
   if (!StopScreencastWithoutSendingUpdate(session, ssrc)) {
     return false;
   }
@@ -518,11 +542,11 @@ bool Call::StopScreencast(Session* session,
   }
 
   StreamParams stream;
-  stream.name = stream_name;
+  stream.id = streamid;
   // No ssrcs
   VideoContentDescription* video = CreateVideoStreamUpdate(stream);
 
-  video_channel->SetLocalContent(video, CA_UPDATE);
+  video_channel->SetLocalContent(video, CA_UPDATE, NULL);
   SendVideoStreamUpdate(session, video);
   return true;
 }
@@ -574,17 +598,18 @@ VideoContentDescription* Call::CreateVideoStreamUpdate(
 
 void Call::SendVideoStreamUpdate(
     Session* session, VideoContentDescription* video) {
+  // Takes the ownership of |video|.
+  talk_base::scoped_ptr<VideoContentDescription> description(video);
   const ContentInfo* video_info =
       GetFirstVideoContent(session->local_description());
   if (video_info == NULL) {
     LOG(LS_WARNING) << "Cannot send stream update for video.";
-    delete video;
     return;
   }
 
   std::vector<ContentInfo> contents;
   contents.push_back(
-      ContentInfo(video_info->name, video_info->type, video));
+      ContentInfo(video_info->name, video_info->type, description.get()));
 
   session->SendDescriptionInfoMessage(contents);
 }
@@ -734,7 +759,7 @@ void Call::OnSpeakerMonitor(CurrentSpeakerMonitor* monitor, uint32 ssrc) {
   MediaStreams* recv_streams = GetMediaStreams(session);
   if (recv_streams) {
     StreamParams stream;
-    recv_streams->GetAudioStreamBySsrc(ssrc, &stream);
+    recv_streams->GetAudioStream(StreamSelector(ssrc), &stream);
     SignalSpeakerMonitor(this, session, stream);
   }
 }
@@ -750,8 +775,8 @@ void Call::OnMediaMonitor(VideoChannel* channel, const VideoMediaInfo& info) {
 
 void Call::OnDataReceived(DataChannel* channel,
                           const ReceiveDataParams& params,
-                          const std::string& data) {
-  SignalDataReceived(this, params, data);
+                          const talk_base::Buffer& payload) {
+  SignalDataReceived(this, params, payload);
 }
 
 uint32 Call::id() {
@@ -845,9 +870,11 @@ void Call::OnRemoteDescriptionUpdate(BaseSession* base_session,
 bool Call::UpdateVoiceChannelRemoteContent(
     Session* session, const AudioContentDescription* audio) {
   VoiceChannel* voice_channel = GetVoiceChannel(session);
-  if (!voice_channel->SetRemoteContent(audio, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in audio SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!voice_channel->SetRemoteContent(audio, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in audio SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -856,9 +883,11 @@ bool Call::UpdateVoiceChannelRemoteContent(
 bool Call::UpdateVideoChannelRemoteContent(
     Session* session, const VideoContentDescription* video) {
   VideoChannel* video_channel = GetVideoChannel(session);
-  if (!video_channel->SetRemoteContent(video, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in video SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!video_channel->SetRemoteContent(video, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in video SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -867,9 +896,11 @@ bool Call::UpdateVideoChannelRemoteContent(
 bool Call::UpdateDataChannelRemoteContent(
     Session* session, const DataContentDescription* data) {
   DataChannel* data_channel = GetDataChannel(session);
-  if (!data_channel->SetRemoteContent(data, CA_UPDATE)) {
-    LOG(LS_ERROR) << "Failure in data SetRemoteContent with CA_UPDATE";
-    session->SetError(BaseSession::ERROR_CONTENT);
+  if (!data_channel->SetRemoteContent(data, CA_UPDATE, NULL)) {
+    const std::string error_desc =
+        "Failure in data SetRemoteContent with CA_UPDATE";
+    LOG(LS_ERROR) << error_desc;
+    session->SetError(BaseSession::ERROR_CONTENT, error_desc);
     return false;
   }
   return true;
@@ -930,7 +961,7 @@ void FindStreamChanges(const std::vector<StreamParams>& streams,
   for (std::vector<StreamParams>::const_iterator update = updates.begin();
        update != updates.end(); ++update) {
     StreamParams stream;
-    if (GetStreamByNickAndName(streams, update->nick, update->name, &stream)) {
+    if (GetStreamByIds(streams, update->groupid, update->id, &stream)) {
       if (!update->has_ssrcs()) {
         removed_streams->push_back(stream);
       }
@@ -997,7 +1028,7 @@ void Call::RemoveRecvStream(const StreamParams& stream,
     // TODO(pthatcher): Change RemoveRecvStream to take a stream argument.
     channel->RemoveRecvStream(stream.first_ssrc());
   }
-  RemoveStreamByNickAndName(recv_streams, stream.nick, stream.name);
+  RemoveStreamByIds(recv_streams, stream.groupid, stream.id);
 }
 
 void Call::OnReceivedTerminateReason(Session* session,
@@ -1005,6 +1036,72 @@ void Call::OnReceivedTerminateReason(Session* session,
   session_client_->session_manager()->signaling_thread()->Clear(this,
     MSG_TERMINATECALL);
   SignalReceivedTerminateReason(this, session, reason);
+}
+
+// TODO(mdodd): Get ride of this method since all Hangouts are using a secure
+// connection.
+bool Call::secure() const {
+  if (session_client_->secure() == SEC_DISABLED) {
+    return false;
+  }
+
+  bool ret = true;
+  int i = 0;
+
+  MediaSessionMap::const_iterator it;
+  for (it = media_session_map_.begin(); it != media_session_map_.end(); ++it) {
+    LOG_F(LS_VERBOSE) << "session[" << i
+                      << "], check local and remote descriptions";
+    i++;
+
+    if (!SessionDescriptionContainsCrypto(
+            it->second.session->local_description()) ||
+        !SessionDescriptionContainsCrypto(
+            it->second.session->remote_description())) {
+      ret = false;
+      break;
+    }
+  }
+
+  LOG_F(LS_VERBOSE) << "secure=" << ret;
+  return ret;
+}
+
+bool Call::SessionDescriptionContainsCrypto(
+    const SessionDescription* sdesc) const {
+  if (sdesc == NULL) {
+    LOG_F(LS_VERBOSE) << "sessionDescription is NULL";
+    return false;
+  }
+
+  return ContentContainsCrypto(sdesc->GetContentByName(CN_AUDIO)) &&
+         ContentContainsCrypto(sdesc->GetContentByName(CN_VIDEO));
+}
+
+Session* Call::InternalInitiateSession(const std::string& id,
+                                       const buzz::Jid& to,
+                                       const std::string& initiator_name,
+                                       const CallOptions& options) {
+  const SessionDescription* offer = session_client_->CreateOffer(options);
+
+  Session* session = session_client_->CreateSession(id, this);
+  // Only override the initiator_name if it was manually supplied. Otherwise,
+  // session_client_ will supply the local jid as initiator in CreateOffer.
+  if (!initiator_name.empty()) {
+    session->set_initiator_name(initiator_name);
+  }
+
+  AddSession(session, offer);
+  session->Initiate(to.Str(), offer);
+
+  // After this timeout, terminate the call because the callee isn't
+  // answering
+  session_client_->session_manager()->signaling_thread()->Clear(this,
+      MSG_TERMINATECALL);
+  session_client_->session_manager()->signaling_thread()->PostDelayed(
+    send_to_voicemail_ ? kSendToVoicemailTimeout : kNoVoicemailTimeout,
+    this, MSG_TERMINATECALL);
+  return session;
 }
 
 }  // namespace cricket

@@ -13,7 +13,7 @@ import time
 import unittest
 
 try:
-  import fcntl
+  import fcntl  # pylint: disable=F0401
 except ImportError:
   fcntl = None
 
@@ -77,7 +77,8 @@ class DefaultsTest(auto_stub.TestCase):
         results.update(kwargs)
         results['args'] = args
       @staticmethod
-      def communicate(input=None, timeout=None):  # pylint: disable=W0622
+      # pylint: disable=W0622
+      def communicate(input=None, timeout=None, nag_max=None, nag_timer=None):
         return None, None
     self.mock(subprocess2, 'Popen', fake_Popen)
     return results
@@ -326,6 +327,16 @@ class RegressionTest(BaseTestCase):
       self._check_res(res, None, None, 0)
     self._run_test(fn)
 
+  def test_stderr(self):
+    cmd = ['expr', '1', '/', '0']
+    if sys.platform == 'win32':
+      cmd = ['cmd.exe', '/c', 'exit', '1']
+    p1 = subprocess.Popen(cmd, stderr=subprocess.PIPE, shell=False)
+    p2 = subprocess2.Popen(cmd, stderr=subprocess.PIPE, shell=False)
+    r1 = p1.communicate()
+    r2 = p2.communicate(timeout=100)
+    self.assertEquals(r1, r2)
+
 
 class S2Test(BaseTestCase):
   # Tests that can only run in subprocess2, e.g. new functionalities.
@@ -422,7 +433,8 @@ class S2Test(BaseTestCase):
           stdin=VOID,
           stdout=PIPE,
           timeout=10,
-          universal_newlines=un)
+          universal_newlines=un,
+          shell=False)
       self._check_res(res, c('A\nBB\nCCC\n'), None, 0)
     self._run_test(fn)
 
@@ -567,7 +579,9 @@ class S2Test(BaseTestCase):
     res = subprocess2.communicate(
         self.exe + ['--large', '--read'], stdin=stdin, stdout=stdout.append)
     self.assertEquals(128*1024, len(''.join(stdout)))
-    self._check_res(res, None, None, 0)
+    # Windows return code is > 8 bits.
+    returncode = len(stdin) if sys.platform == 'win32' else 0
+    self._check_res(res, None, None, returncode)
 
   def test_tee_cb_throw(self):
     # Having a callback throwing up should not cause side-effects. It's a bit
@@ -583,7 +597,27 @@ class S2Test(BaseTestCase):
     except Blow:
       self.assertNotEquals(0, proc.returncode)
 
+  def test_nag_timer(self):
+    w = []
+    l = logging.getLogger()
+    class _Filter(logging.Filter):
+      def filter(self, record):
+        if record.levelno == logging.WARNING:
+          w.append(record.getMessage().lstrip())
+        return 0
+    f = _Filter()
+    l.addFilter(f)
+    proc = subprocess2.Popen(
+        self.exe + ['--stdout', '--sleep_first'], stdout=PIPE)
+    res = proc.communicate(nag_timer=3), proc.returncode
+    l.removeFilter(f)
+    self._check_res(res, 'A\nBB\nCCC\n', None, 0)
+    expected = ['No output for 3 seconds from command:', proc.cmd_str,
+                'No output for 6 seconds from command:', proc.cmd_str,
+                'No output for 9 seconds from command:', proc.cmd_str]
+    self.assertEquals(w, expected)
 
+    
 def child_main(args):
   if sys.platform == 'win32':
     # Annoying, make sure the output is not translated on Windows.

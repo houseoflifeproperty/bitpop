@@ -19,7 +19,7 @@
 
 #include <string>
 
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/canvas_image_source.h"
 #include "ui/gfx/image/image_skia.h"
 

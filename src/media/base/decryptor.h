@@ -6,47 +6,28 @@
 #define MEDIA_BASE_DECRYPTOR_H_
 
 #include <list>
-#include <string>
 
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/ref_counted.h"
-#include "media/base/audio_decoder.h"
+#include "media/base/audio_buffer.h"
 #include "media/base/media_export.h"
 
 namespace media {
 
 class AudioDecoderConfig;
-class Buffer;
 class DecoderBuffer;
 class VideoDecoderConfig;
 class VideoFrame;
 
-// Performs key operations and decrypts (and decodes) encrypted buffer.
+// Decrypts (and decodes) encrypted buffer.
 //
-// Key operations (GenerateKeyRequest(), AddKey() and CancelKeyRequest())
-// are called on the renderer thread. Therefore, these calls should be fast
-// and nonblocking; key events should be fired asynchronously.
-// All other methods are called on the (video/audio) decoder thread.
-// Decryptor implementations must be thread safe when methods are called
-// following the above model.
+// All methods are called on the (video/audio) decoder thread. Decryptor
+// implementations must be thread safe when methods are called this way.
 // Depending on the implementation callbacks may be fired synchronously or
 // asynchronously.
 class MEDIA_EXPORT Decryptor {
  public:
-  // Reported to UMA, so never reuse a value!
-  // Must be kept in sync with WebKit::WebMediaPlayerClient::MediaKeyErrorCode
-  // (enforced in webmediaplayer_impl.cc).
-  enum KeyError {
-    kUnknownError = 1,
-    kClientError,
-    kServiceError,
-    kOutputError,
-    kHardwareChangeError,
-    kDomainError,
-    kMaxKeyError  // Must be last and greater than any legit value.
-  };
-
   // TODO(xhwang): Replace kError with kDecryptError and kDecodeError.
   // TODO(xhwang): Replace kNeedMoreData with kNotEnoughData.
   enum Status {
@@ -65,41 +46,17 @@ class MEDIA_EXPORT Decryptor {
   Decryptor();
   virtual ~Decryptor();
 
-  // Generates a key request for the |key_system| with |type| and
-  // |init_data| provided.
-  // Returns true if generating key request succeeded, false otherwise.
-  // Note: AddKey() and CancelKeyRequest() should only be called after
-  // GenerateKeyRequest() returns true.
-  virtual bool GenerateKeyRequest(const std::string& key_system,
-                                  const std::string& type,
-                                  const uint8* init_data,
-                                  int init_data_length) = 0;
+  // Indicates that a new key has been added to the MediaKeys object associated
+  // with the Decryptor.
+  typedef base::Callback<void()> NewKeyCB;
 
-  // Adds a |key| to the |key_system|. The |key| is not limited to a decryption
-  // key. It can be any data that the key system accepts, such as a license.
-  // If multiple calls of this function set different keys for the same
-  // key ID, the older key will be replaced by the newer key.
-  virtual void AddKey(const std::string& key_system,
-                      const uint8* key,
-                      int key_length,
-                      const uint8* init_data,
-                      int init_data_length,
-                      const std::string& session_id) = 0;
-
-  // Cancels the key request specified by |session_id|.
-  virtual void CancelKeyRequest(const std::string& key_system,
-                                const std::string& session_id) = 0;
-
-  // Indicates that a key has been added to the Decryptor.
-  typedef base::Callback<void()> KeyAddedCB;
-
-  // Registers a KeyAddedCB which should be called when a key is added to the
-  // decryptor. Only one KeyAddedCB can be registered for one |stream_type|.
+  // Registers a NewKeyCB which should be called when a new key is added to the
+  // decryptor. Only one NewKeyCB can be registered for one |stream_type|.
   // If this function is called multiple times for the same |stream_type|, the
   // previously registered callback will be replaced. In other words,
   // registering a null callback cancels the originally registered callback.
-  virtual void RegisterKeyAddedCB(StreamType stream_type,
-                                  const KeyAddedCB& key_added_cb) = 0;
+  virtual void RegisterNewKeyCB(StreamType stream_type,
+                                const NewKeyCB& key_added_cb) = 0;
 
   // Indicates completion of a decryption operation.
   //
@@ -139,14 +96,14 @@ class MEDIA_EXPORT Decryptor {
 
   // Initializes a decoder with the given |config|, executing the |init_cb|
   // upon completion.
-  virtual void InitializeAudioDecoder(scoped_ptr<AudioDecoderConfig> config,
+  virtual void InitializeAudioDecoder(const AudioDecoderConfig& config,
                                       const DecoderInitCB& init_cb) = 0;
-  virtual void InitializeVideoDecoder(scoped_ptr<VideoDecoderConfig> config,
+  virtual void InitializeVideoDecoder(const VideoDecoderConfig& config,
                                       const DecoderInitCB& init_cb) = 0;
 
   // Helper structure for managing multiple decoded audio buffers per input.
   // TODO(xhwang): Rename this to AudioFrames.
-  typedef std::list<scoped_refptr<Buffer> > AudioBuffers;
+  typedef std::list<scoped_refptr<AudioBuffer> > AudioBuffers;
 
   // Indicates completion of audio/video decrypt-and-decode operation.
   //

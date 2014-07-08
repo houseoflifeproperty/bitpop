@@ -39,6 +39,21 @@ class RequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       full_path = os.path.join(extra_dir, os.path.basename(path))
       if os.path.isfile(full_path):
         return full_path
+
+      # Try the complete relative path, not just a basename. This allows the
+      # user to serve everything recursively under extra_dir, not just one
+      # level deep.
+      #
+      # One use case for this is the Native Client SDK examples. The examples
+      # expect to be able to access files as relative paths from the root of
+      # the example directory.
+      # Sometimes two subdirectories contain files with the same name, so
+      # including all subdirectories in self.server.serving_dirs will not do
+      # the correct thing; (i.e. the wrong file will be chosen, even though the
+      # correct path was given).
+      full_path = os.path.join(extra_dir, path)
+      if os.path.isfile(full_path):
+        return full_path
     if not path.endswith('favicon.ico') and not self.server.allow_404:
       self.server.listener.ServerError('Cannot find file \'%s\'' % path)
     return path
@@ -109,8 +124,43 @@ class RequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
       self.end_headers()
       data = self.rfile.read(int(self.headers.getheader('content-length')))
       self.wfile.write(data)
+    elif self.server.output_dir is not None:
+      # Try to write the file to disk.
+      path = self.NormalizePath(path)
+      output_path = os.path.join(self.server.output_dir, path)
+      try:
+        outfile = open(output_path, 'w')
+      except IOError:
+        error_message = 'File not found: %r' % output_path
+        self.server.listener.ServerError(error_message)
+        self.send_error(404, error_message)
+        return
+
+      try:
+        data = self.rfile.read(int(self.headers.getheader('content-length')))
+        outfile.write(data)
+      except IOError, e:
+        outfile.close()
+        try:
+          os.remove(output_path)
+        except OSError:
+          # Oh, well.
+          pass
+        error_message = 'Can\'t write file: %r\n' % output_path
+        error_message += 'Exception:\n%s' % str(e)
+        self.server.listener.ServerError(error_message)
+        self.send_error(500, error_message)
+        return
+
+      outfile.close()
+
+      # Send a success response.
+      self.send_response(200)
+      self.end_headers()
     else:
-      self.send_error(404, 'File not found')
+      error_message = 'File not found: %r' % path
+      self.server.listener.ServerError(error_message)
+      self.send_error(404, error_message)
 
     self.server.ResetTimeout()
 
@@ -199,8 +249,8 @@ class RequestHandler(SimpleHTTPServer.SimpleHTTPRequestHandler):
 class Server(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
 
   def Configure(
-    self, file_mapping, redirect_mapping, extensions_mapping, allow_404,
-    bandwidth, listener, serving_dirs=[]):
+      self, file_mapping, redirect_mapping, extensions_mapping, allow_404,
+      bandwidth, listener, serving_dirs=[], output_dir=None):
     self.file_mapping = file_mapping
     self.redirect_mapping = redirect_mapping
     self.extensions_mapping.update(extensions_mapping)
@@ -209,6 +259,7 @@ class Server(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer):
     self.listener = listener
     self.rpc_lock = threading.Lock()
     self.serving_dirs = serving_dirs
+    self.output_dir = output_dir
 
   def TestingBegun(self, timeout):
     self.test_in_progress = True

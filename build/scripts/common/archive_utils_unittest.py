@@ -533,9 +533,6 @@ class RealFilesCfgTest(unittest.TestCase):
     self.assertFalse([f for f in fparser._files_cfg # pylint: disable=W0212
         if not f['buildtype']
         or set(f['buildtype']) - set(['dev', 'official'])])
-    # arch must exist and be in ['32bit', '64bit']
-    self.assertFalse([f for f in fparser._files_cfg # pylint: disable=W0212
-        if not f['arch'] or set(f['arch']) - set(['32bit', '64bit'])])
 
   def testWinParse(self):
     self.ParseFilesCfg(options.src_base + RealFilesCfgTest.WIN_PATH)

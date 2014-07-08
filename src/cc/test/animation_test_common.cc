@@ -4,13 +4,14 @@
 
 #include "cc/test/animation_test_common.h"
 
-#include "cc/keyframed_animation_curve.h"
-#include "cc/layer.h"
-#include "cc/layer_animation_controller.h"
-#include "cc/layer_impl.h"
-#include <public/WebTransformOperations.h>
+#include "cc/animation/animation_id_provider.h"
+#include "cc/animation/keyframed_animation_curve.h"
+#include "cc/animation/layer_animation_controller.h"
+#include "cc/animation/transform_operations.h"
+#include "cc/layers/layer.h"
+#include "cc/layers/layer_impl.h"
 
-using cc::ActiveAnimation;
+using cc::Animation;
 using cc::AnimationCurve;
 using cc::EaseTimingFunction;
 using cc::FloatKeyframe;
@@ -21,198 +22,333 @@ using cc::TransformKeyframe;
 
 namespace cc {
 
-static int nextAnimationId = 0;
-
 template <class Target>
-int addOpacityTransition(Target& target, double duration, float startOpacity, float endOpacity, bool useTimingFunction)
-{
-    scoped_ptr<KeyframedFloatAnimationCurve> curve(KeyframedFloatAnimationCurve::create());
+int AddOpacityTransition(Target* target,
+                         double duration,
+                         float start_opacity,
+                         float end_opacity,
+                         bool use_timing_function) {
+  scoped_ptr<KeyframedFloatAnimationCurve>
+      curve(KeyframedFloatAnimationCurve::Create());
 
-    scoped_ptr<TimingFunction> func;
-    if (!useTimingFunction)
-        func = EaseTimingFunction::create();
-    if (duration > 0)
-        curve->addKeyframe(FloatKeyframe::create(0, startOpacity, func.Pass()));
-    curve->addKeyframe(FloatKeyframe::create(duration, endOpacity, scoped_ptr<cc::TimingFunction>()));
+  scoped_ptr<TimingFunction> func;
+  if (!use_timing_function)
+    func = EaseTimingFunction::Create();
+  if (duration > 0.0)
+    curve->AddKeyframe(FloatKeyframe::Create(0.0, start_opacity, func.Pass()));
+  curve->AddKeyframe(FloatKeyframe::Create(
+      duration, end_opacity, scoped_ptr<TimingFunction>()));
 
-    int id = nextAnimationId++;
+  int id = AnimationIdProvider::NextAnimationId();
 
-    scoped_ptr<ActiveAnimation> animation(ActiveAnimation::create(curve.PassAs<AnimationCurve>(), id, 0, ActiveAnimation::Opacity));
-    animation->setNeedsSynchronizedStartTime(true);
+  scoped_ptr<Animation> animation(Animation::Create(
+      curve.PassAs<AnimationCurve>(),
+      id,
+      AnimationIdProvider::NextGroupId(),
+      Animation::Opacity));
+  animation->set_needs_synchronized_start_time(true);
 
-    target.addAnimation(animation.Pass());
-    return id;
+  target->AddAnimation(animation.Pass());
+  return id;
 }
 
 template <class Target>
-int addAnimatedTransform(Target& target, double duration, int deltaX, int deltaY)
-{
-    scoped_ptr<KeyframedTransformAnimationCurve> curve(KeyframedTransformAnimationCurve::create());
+int AddAnimatedTransform(Target* target,
+                         double duration,
+                         TransformOperations start_operations,
+                         TransformOperations operations) {
+  scoped_ptr<KeyframedTransformAnimationCurve>
+      curve(KeyframedTransformAnimationCurve::Create());
 
-    if (duration > 0) {
-        WebKit::WebTransformOperations startOperations;
-        startOperations.appendTranslate(deltaX, deltaY, 0);
-        curve->addKeyframe(TransformKeyframe::create(0, startOperations, scoped_ptr<cc::TimingFunction>()));
-    }
+  if (duration > 0.0) {
+    curve->AddKeyframe(TransformKeyframe::Create(
+        0.0, start_operations, scoped_ptr<TimingFunction>()));
+  }
 
-    WebKit::WebTransformOperations operations;
-    operations.appendTranslate(deltaX, deltaY, 0);
-    curve->addKeyframe(TransformKeyframe::create(duration, operations, scoped_ptr<cc::TimingFunction>()));
+  curve->AddKeyframe(TransformKeyframe::Create(
+      duration, operations, scoped_ptr<TimingFunction>()));
 
-    int id = nextAnimationId++;
+  int id = AnimationIdProvider::NextAnimationId();
 
-    scoped_ptr<ActiveAnimation> animation(ActiveAnimation::create(curve.PassAs<AnimationCurve>(), id, 0, ActiveAnimation::Transform));
-    animation->setNeedsSynchronizedStartTime(true);
+  scoped_ptr<Animation> animation(Animation::Create(
+      curve.PassAs<AnimationCurve>(),
+      id,
+      AnimationIdProvider::NextGroupId(),
+      Animation::Transform));
+  animation->set_needs_synchronized_start_time(true);
 
-    target.addAnimation(animation.Pass());
-    return id;
+  target->AddAnimation(animation.Pass());
+  return id;
+}
+
+template <class Target>
+int AddAnimatedTransform(Target* target,
+                         double duration,
+                         int delta_x,
+                         int delta_y) {
+  TransformOperations start_operations;
+  if (duration > 0.0) {
+    start_operations.AppendTranslate(delta_x, delta_y, 0.0);
+  }
+
+  TransformOperations operations;
+  operations.AppendTranslate(delta_x, delta_y, 0.0);
+  return AddAnimatedTransform(target, duration, start_operations, operations);
+}
+
+template <class Target>
+int AddAnimatedFilter(Target* target,
+                      double duration,
+                      float start_brightness,
+                      float end_brightness) {
+  scoped_ptr<KeyframedFilterAnimationCurve>
+      curve(KeyframedFilterAnimationCurve::Create());
+
+  if (duration > 0.0) {
+    FilterOperations start_filters;
+    start_filters.Append(
+        FilterOperation::CreateBrightnessFilter(start_brightness));
+    curve->AddKeyframe(FilterKeyframe::Create(
+        0.0, start_filters, scoped_ptr<TimingFunction>()));
+  }
+
+  FilterOperations filters;
+  filters.Append(FilterOperation::CreateBrightnessFilter(end_brightness));
+  curve->AddKeyframe(
+      FilterKeyframe::Create(duration, filters, scoped_ptr<TimingFunction>()));
+
+  int id = AnimationIdProvider::NextAnimationId();
+
+  scoped_ptr<Animation> animation(Animation::Create(
+      curve.PassAs<AnimationCurve>(),
+      id,
+      AnimationIdProvider::NextGroupId(),
+      Animation::Filter));
+  animation->set_needs_synchronized_start_time(true);
+
+  target->AddAnimation(animation.Pass());
+  return id;
 }
 
 FakeFloatAnimationCurve::FakeFloatAnimationCurve()
-    : m_duration(1)
-{
-}
+    : duration_(1.0) {}
 
 FakeFloatAnimationCurve::FakeFloatAnimationCurve(double duration)
-    : m_duration(duration)
-{
+    : duration_(duration) {}
+
+FakeFloatAnimationCurve::~FakeFloatAnimationCurve() {}
+
+double FakeFloatAnimationCurve::Duration() const {
+  return duration_;
 }
 
-FakeFloatAnimationCurve::~FakeFloatAnimationCurve()
-{
+float FakeFloatAnimationCurve::GetValue(double now) const {
+  return 0.0f;
 }
 
-double FakeFloatAnimationCurve::duration() const
-{
-    return m_duration;
-}
-
-float FakeFloatAnimationCurve::getValue(double now) const
-{
-    return 0;
-}
-
-scoped_ptr<cc::AnimationCurve> FakeFloatAnimationCurve::clone() const
-{
-    return make_scoped_ptr(new FakeFloatAnimationCurve).PassAs<cc::AnimationCurve>();
+scoped_ptr<AnimationCurve> FakeFloatAnimationCurve::Clone() const {
+  return make_scoped_ptr(new FakeFloatAnimationCurve).PassAs<AnimationCurve>();
 }
 
 FakeTransformTransition::FakeTransformTransition(double duration)
-    : m_duration(duration)
-{
+    : duration_(duration) {}
+
+FakeTransformTransition::~FakeTransformTransition() {}
+
+double FakeTransformTransition::Duration() const {
+  return duration_;
 }
 
-FakeTransformTransition::~FakeTransformTransition()
-{
+gfx::Transform FakeTransformTransition::GetValue(double time) const {
+  return gfx::Transform();
 }
 
-double FakeTransformTransition::duration() const
-{
-    return m_duration;
+bool FakeTransformTransition::AnimatedBoundsForBox(const gfx::BoxF& box,
+                                                   gfx::BoxF* bounds) const {
+  return false;
 }
 
-WebKit::WebTransformationMatrix FakeTransformTransition::getValue(double time) const
-{
-    return WebKit::WebTransformationMatrix();
+bool FakeTransformTransition::AffectsScale() const { return false; }
+
+bool FakeTransformTransition::IsTranslation() const { return true; }
+
+bool FakeTransformTransition::MaximumScale(float* max_scale) const {
+  *max_scale = 1.f;
+  return true;
 }
 
-scoped_ptr<cc::AnimationCurve> FakeTransformTransition::clone() const
-{
-    return make_scoped_ptr(new FakeTransformTransition(*this)).PassAs<cc::AnimationCurve>();
+scoped_ptr<AnimationCurve> FakeTransformTransition::Clone() const {
+  return make_scoped_ptr(new FakeTransformTransition(*this))
+      .PassAs<AnimationCurve>();
 }
 
 
 FakeFloatTransition::FakeFloatTransition(double duration, float from, float to)
-    : m_duration(duration)
-    , m_from(from)
-    , m_to(to)
-{
+    : duration_(duration), from_(from), to_(to) {}
+
+FakeFloatTransition::~FakeFloatTransition() {}
+
+double FakeFloatTransition::Duration() const {
+  return duration_;
 }
 
-FakeFloatTransition::~FakeFloatTransition()
-{
+float FakeFloatTransition::GetValue(double time) const {
+  time /= duration_;
+  if (time >= 1.0)
+    time = 1.0;
+  return (1.0 - time) * from_ + time * to_;
 }
 
-double FakeFloatTransition::duration() const
-{
-    return m_duration;
+FakeLayerAnimationValueObserver::FakeLayerAnimationValueObserver()
+    : opacity_(0.0f),
+      animation_waiting_for_deletion_(false) {}
+
+FakeLayerAnimationValueObserver::~FakeLayerAnimationValueObserver() {}
+
+void FakeLayerAnimationValueObserver::OnFilterAnimated(
+    const FilterOperations& filters) {
+  filters_ = filters;
 }
 
-float FakeFloatTransition::getValue(double time) const
-{
-    time /= m_duration;
-    if (time >= 1)
-        time = 1;
-    return (1 - time) * m_from + time * m_to;
+void FakeLayerAnimationValueObserver::OnOpacityAnimated(float opacity) {
+  opacity_ = opacity;
 }
 
-FakeLayerAnimationControllerClient::FakeLayerAnimationControllerClient()
-    : m_opacity(0)
-{
+void FakeLayerAnimationValueObserver::OnTransformAnimated(
+    const gfx::Transform& transform) {
+  transform_ = transform;
 }
 
-FakeLayerAnimationControllerClient::~FakeLayerAnimationControllerClient()
-{
+void FakeLayerAnimationValueObserver::OnScrollOffsetAnimated(
+    const gfx::Vector2dF& scroll_offset) {
+  scroll_offset_ = scroll_offset;
 }
 
-int FakeLayerAnimationControllerClient::id() const
-{
-    return 0;
+void FakeLayerAnimationValueObserver::OnAnimationWaitingForDeletion() {
+  animation_waiting_for_deletion_ = true;
 }
 
-void FakeLayerAnimationControllerClient::setOpacityFromAnimation(float opacity)
-{
-    m_opacity = opacity;
+bool FakeLayerAnimationValueObserver::IsActive() const {
+  return true;
 }
 
-float FakeLayerAnimationControllerClient::opacity() const
-{
-    return m_opacity;
+bool FakeInactiveLayerAnimationValueObserver::IsActive() const {
+  return false;
 }
 
-void FakeLayerAnimationControllerClient::setTransformFromAnimation(const gfx::Transform& transform)
-{
-    m_transform = transform;
+gfx::Vector2dF FakeLayerAnimationValueProvider::ScrollOffsetForAnimation()
+    const {
+  return scroll_offset_;
 }
 
-const gfx::Transform& FakeLayerAnimationControllerClient::transform() const
-{
-    return m_transform;
+scoped_ptr<AnimationCurve> FakeFloatTransition::Clone() const {
+  return make_scoped_ptr(new FakeFloatTransition(*this))
+      .PassAs<AnimationCurve>();
 }
 
-scoped_ptr<cc::AnimationCurve> FakeFloatTransition::clone() const
-{
-    return make_scoped_ptr(new FakeFloatTransition(*this)).PassAs<cc::AnimationCurve>();
+int AddOpacityTransitionToController(LayerAnimationController* controller,
+                                     double duration,
+                                     float start_opacity,
+                                     float end_opacity,
+                                     bool use_timing_function) {
+  return AddOpacityTransition(controller,
+                              duration,
+                              start_opacity,
+                              end_opacity,
+                              use_timing_function);
 }
 
-int addOpacityTransitionToController(cc::LayerAnimationController& controller, double duration, float startOpacity, float endOpacity, bool useTimingFunction)
-{
-    return addOpacityTransition(controller, duration, startOpacity, endOpacity, useTimingFunction);
+int AddAnimatedTransformToController(LayerAnimationController* controller,
+                                     double duration,
+                                     int delta_x,
+                                     int delta_y) {
+  return AddAnimatedTransform(controller,
+                              duration,
+                              delta_x,
+                              delta_y);
 }
 
-int addAnimatedTransformToController(cc::LayerAnimationController& controller, double duration, int deltaX, int deltaY)
-{
-    return addAnimatedTransform(controller, duration, deltaX, deltaY);
+int AddAnimatedFilterToController(LayerAnimationController* controller,
+                                  double duration,
+                                  float start_brightness,
+                                  float end_brightness) {
+  return AddAnimatedFilter(
+      controller, duration, start_brightness, end_brightness);
 }
 
-int addOpacityTransitionToLayer(cc::Layer& layer, double duration, float startOpacity, float endOpacity, bool useTimingFunction)
-{
-    return addOpacityTransition(layer, duration, startOpacity, endOpacity, useTimingFunction);
+int AddOpacityTransitionToLayer(Layer* layer,
+                                double duration,
+                                float start_opacity,
+                                float end_opacity,
+                                bool use_timing_function) {
+  return AddOpacityTransition(layer,
+                              duration,
+                              start_opacity,
+                              end_opacity,
+                              use_timing_function);
 }
 
-int addOpacityTransitionToLayer(cc::LayerImpl& layer, double duration, float startOpacity, float endOpacity, bool useTimingFunction)
-{
-    return addOpacityTransition(*layer.layerAnimationController(), duration, startOpacity, endOpacity, useTimingFunction);
+int AddOpacityTransitionToLayer(LayerImpl* layer,
+                                double duration,
+                                float start_opacity,
+                                float end_opacity,
+                                bool use_timing_function) {
+  return AddOpacityTransition(layer->layer_animation_controller(),
+                              duration,
+                              start_opacity,
+                              end_opacity,
+                              use_timing_function);
 }
 
-int addAnimatedTransformToLayer(cc::Layer& layer, double duration, int deltaX, int deltaY)
-{
-    return addAnimatedTransform(layer, duration, deltaX, deltaY);
+int AddAnimatedTransformToLayer(Layer* layer,
+                                double duration,
+                                int delta_x,
+                                int delta_y) {
+  return AddAnimatedTransform(layer, duration, delta_x, delta_y);
 }
 
-int addAnimatedTransformToLayer(cc::LayerImpl& layer, double duration, int deltaX, int deltaY)
-{
-    return addAnimatedTransform(*layer.layerAnimationController(), duration, deltaX, deltaY);
+int AddAnimatedTransformToLayer(LayerImpl* layer,
+                                double duration,
+                                int delta_x,
+                                int delta_y) {
+  return AddAnimatedTransform(layer->layer_animation_controller(),
+                              duration,
+                              delta_x,
+                              delta_y);
+}
+
+int AddAnimatedTransformToLayer(Layer* layer,
+                                double duration,
+                                TransformOperations start_operations,
+                                TransformOperations operations) {
+  return AddAnimatedTransform(layer, duration, start_operations, operations);
+}
+
+int AddAnimatedTransformToLayer(LayerImpl* layer,
+                                double duration,
+                                TransformOperations start_operations,
+                                TransformOperations operations) {
+  return AddAnimatedTransform(layer->layer_animation_controller(),
+                              duration,
+                              start_operations,
+                              operations);
+}
+
+int AddAnimatedFilterToLayer(Layer* layer,
+                             double duration,
+                             float start_brightness,
+                             float end_brightness) {
+  return AddAnimatedFilter(layer, duration, start_brightness, end_brightness);
+}
+
+int AddAnimatedFilterToLayer(LayerImpl* layer,
+                             double duration,
+                             float start_brightness,
+                             float end_brightness) {
+  return AddAnimatedFilter(layer->layer_animation_controller(),
+                           duration,
+                           start_brightness,
+                           end_brightness);
 }
 
 }  // namespace cc

@@ -7,14 +7,15 @@
 
 #include <string>
 
-#include "base/basictypes.h"
+#include "base/macros.h"
+#include "ui/views/examples/views_examples_export.h"
 
 namespace views {
 class View;
 
 namespace examples {
 
-class ExampleBase {
+class VIEWS_EXAMPLES_EXPORT ExampleBase {
  public:
   virtual ~ExampleBase();
 
@@ -26,6 +27,8 @@ class ExampleBase {
 
  protected:
   explicit ExampleBase(const char* title);
+
+  View* container() { return container_; }
 
   // Prints a message in the status area, at the bottom of the window.
   void PrintStatus(const char* format, ...);

@@ -19,6 +19,7 @@
         '../experimental/Intersection/CubicIntersection.cpp',
         '../experimental/Intersection/CubicReduceOrder.cpp',
         '../experimental/Intersection/CubicSubDivide.cpp',
+        '../experimental/Intersection/CubicToQuadratics.cpp',
         '../experimental/Intersection/CubicUtilities.cpp',
         '../experimental/Intersection/DataTypes.cpp',
         '../experimental/Intersection/EdgeDemo.cpp',
@@ -26,6 +27,7 @@
         '../experimental/Intersection/EdgeWalker.cpp',
         '../experimental/Intersection/EdgeWalker_TestUtility.cpp',
         '../experimental/Intersection/Extrema.cpp',
+        '../experimental/Intersection/Intersections.cpp',
         '../experimental/Intersection/LineCubicIntersection.cpp',
         '../experimental/Intersection/LineIntersection.cpp',
         '../experimental/Intersection/LineParameterization.cpp',
@@ -43,6 +45,7 @@
         '../experimental/Intersection/QuarticRoot.cpp',
         '../experimental/Intersection/ShapeOps.cpp',
         '../experimental/Intersection/Simplify.cpp',
+        '../experimental/Intersection/TriangleUtilities.cpp',
         '../experimental/Intersection/CubicParameterization.cpp',
         '../experimental/Intersection/CubicReduceOrder.cpp',
         '../experimental/Intersection/CubicSubDivide.cpp',
@@ -63,20 +66,15 @@
         '../experimental/Intersection/ShapeOps.h',
         '../experimental/Intersection/Simplify.h',
         '../experimental/Intersection/TSearch.h',
-      ],
+        '../experimental/Intersection/TriangleUtilities.h',
+     ],
       'dependencies': [
-        'skia_base_libs.gyp:skia_base_libs',
-        'effects.gyp:effects',
-        'images.gyp:images',
+        'skia_lib.gyp:skia_lib',
         'views.gyp:views',
-        'animator.gyp:animator',
         'xml.gyp:xml',
-        'svg.gyp:svg',
-        'experimental.gyp:experimental',
-        'pdf.gyp:pdf',
       ],
       'conditions' : [
-        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris"]', {
+        [ 'skia_os in ["linux", "freebsd", "openbsd", "solaris", "chromeos"]', {
         }],
         [ 'skia_os == "win"', {
         }],
@@ -118,9 +116,3 @@
     },
   ],
 }
-
-# Local Variables:
-# tab-width:2
-# indent-tabs-mode:nil
-# End:
-# vim: set expandtab tabstop=2 shiftwidth=2:

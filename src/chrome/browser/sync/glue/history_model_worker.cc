@@ -5,9 +5,8 @@
 #include "chrome/browser/sync/glue/history_model_worker.h"
 
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/synchronization/waitable_event.h"
-#include "chrome/browser/history/history.h"
 #include "content/public/browser/browser_thread.h"
 
 using base::WaitableEvent;
@@ -15,7 +14,7 @@ using content::BrowserThread;
 
 namespace browser_sync {
 
-class WorkerTask : public HistoryDBTask {
+class WorkerTask : public history::HistoryDBTask {
  public:
   WorkerTask(
       const syncer::WorkCallback& work,
@@ -24,15 +23,15 @@ class WorkerTask : public HistoryDBTask {
     : work_(work), done_(done), error_(error) {}
 
   virtual bool RunOnDBThread(history::HistoryBackend* backend,
-                             history::HistoryDatabase* db) {
+                             history::HistoryDatabase* db) OVERRIDE {
     *error_ = work_.Run();
     done_->Signal();
     return true;
   }
 
-  // Since the DoWorkAndWaitUntilDone() is syncronous, we don't need to run any
-  // code asynchronously on the main thread after completion.
-  virtual void DoneRunOnMainThread() {}
+  // Since the DoWorkAndWaitUntilDone() is synchronous, we don't need to run
+  // any code asynchronously on the main thread after completion.
+  virtual void DoneRunOnMainThread() OVERRIDE {}
 
  protected:
   virtual ~WorkerTask() {}
@@ -40,6 +39,25 @@ class WorkerTask : public HistoryDBTask {
   syncer::WorkCallback work_;
   WaitableEvent* done_;
   syncer::SyncerError* error_;
+};
+
+class AddDBThreadObserverTask : public history::HistoryDBTask {
+ public:
+  explicit AddDBThreadObserverTask(base::Closure register_callback)
+     : register_callback_(register_callback) {}
+
+  virtual bool RunOnDBThread(history::HistoryBackend* backend,
+                             history::HistoryDatabase* db) OVERRIDE {
+    register_callback_.Run();
+    return true;
+  }
+
+  virtual void DoneRunOnMainThread() OVERRIDE {}
+
+ private:
+  virtual ~AddDBThreadObserverTask() {}
+
+  base::Closure register_callback_;
 };
 
 namespace {
@@ -64,21 +82,35 @@ void PostWorkerTask(const base::WeakPtr<HistoryService>& history_service,
 }  // namespace
 
 HistoryModelWorker::HistoryModelWorker(
-    const base::WeakPtr<HistoryService>& history_service)
-  : history_service_(history_service) {
+    const base::WeakPtr<HistoryService>& history_service,
+    syncer::WorkerLoopDestructionObserver* observer)
+  : syncer::ModelSafeWorker(observer),
+    history_service_(history_service) {
   CHECK(history_service.get());
 }
 
-syncer::SyncerError HistoryModelWorker::DoWorkAndWaitUntilDone(
+void HistoryModelWorker::RegisterForLoopDestruction() {
+  CHECK(history_service_.get());
+  history_service_->ScheduleDBTask(
+      new AddDBThreadObserverTask(
+          base::Bind(&HistoryModelWorker::RegisterOnDBThread, this)),
+      &cancelable_consumer_);
+}
+
+void HistoryModelWorker::RegisterOnDBThread() {
+  base::MessageLoop::current()->AddDestructionObserver(this);
+  SetWorkingLoopToCurrent();
+}
+
+syncer::SyncerError HistoryModelWorker::DoWorkAndWaitUntilDoneImpl(
     const syncer::WorkCallback& work) {
   syncer::SyncerError error = syncer::UNSET;
-  WaitableEvent done(false, false);
   if (BrowserThread::PostTask(BrowserThread::UI, FROM_HERE,
-                              base::Bind(&PostWorkerTask,
-                                         history_service_, work,
-                                         &cancelable_consumer_,
-                                         &done, &error))) {
-    done.Wait();
+                              base::Bind(&PostWorkerTask, history_service_,
+                                         work, &cancelable_consumer_,
+                                         work_done_or_stopped(),
+                                         &error))) {
+    work_done_or_stopped()->Wait();
   } else {
     error = syncer::CANNOT_DO_WORK;
   }

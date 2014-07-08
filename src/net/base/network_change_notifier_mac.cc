@@ -73,7 +73,7 @@ NetworkChangeNotifierMac::NetworkChangeNotifierMac()
   // SetInitialConnectionType().
   config_watcher_.reset(new NetworkConfigWatcherMac(&forwarder_));
   dns_config_service_thread_->StartWithOptions(
-        base::Thread::Options(MessageLoop::TYPE_IO, 0));
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
 }
 
 NetworkChangeNotifierMac::~NetworkChangeNotifierMac() {
@@ -196,9 +196,9 @@ void NetworkChangeNotifierMac::SetDynamicStoreNotificationKeys(
   // SCDynamicStore API does not exist on iOS.
   NOTREACHED();
 #else
-  base::mac::ScopedCFTypeRef<CFMutableArrayRef> notification_keys(
+  base::ScopedCFTypeRef<CFMutableArrayRef> notification_keys(
       CFArrayCreateMutable(kCFAllocatorDefault, 0, &kCFTypeArrayCallBacks));
-  base::mac::ScopedCFTypeRef<CFStringRef> key(
+  base::ScopedCFTypeRef<CFStringRef> key(
       SCDynamicStoreKeyCreateNetworkGlobalEntity(
           NULL, kSCDynamicStoreDomainState, kSCEntNetInterface));
   CFArrayAppendValue(notification_keys.get(), key.get());
@@ -265,8 +265,7 @@ void NetworkChangeNotifierMac::ReachabilityCallback(
 #if defined(OS_IOS)
   // On iOS, the SCDynamicStore API does not exist, and we use the reachability
   // API to detect IP address changes instead.
-  if (new_type != CONNECTION_NONE)
-    NotifyObserversOfIPAddressChange();
+  NotifyObserversOfIPAddressChange();
 #endif  // defined(OS_IOS)
 }
 

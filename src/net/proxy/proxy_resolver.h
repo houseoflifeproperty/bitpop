@@ -7,12 +7,12 @@
 
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/string16.h"
 #include "net/base/completion_callback.h"
 #include "net/base/load_states.h"
 #include "net/base/net_export.h"
 #include "net/proxy/proxy_resolver_script_data.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -52,9 +52,6 @@ class NET_EXPORT_PRIVATE ProxyResolver {
   // Gets the LoadState for |request|.
   virtual LoadState GetLoadState(RequestHandle request) const = 0;
 
-  // Gets the LoadState for |request|. May be called from another thread.
-  virtual LoadState GetLoadStateThreadSafe(RequestHandle request) const = 0;
-
   // The PAC script backend can be specified to the ProxyResolver either via
   // URL, or via the javascript text itself.  If |expects_pac_bytes| is true,
   // then the ProxyResolverScriptData passed to SetPacScript() should
@@ -63,21 +60,12 @@ class NET_EXPORT_PRIVATE ProxyResolver {
 
   virtual void CancelSetPacScript() = 0;
 
-  // Frees any unneeded memory held by the resolver, e.g. garbage in the JS
-  // engine.  Most subclasses don't need to do anything, so we provide a default
-  // no-op implementation.
-  virtual void PurgeMemory() {}
-
   // Called to set the PAC script backend to use.
   // Returns ERR_IO_PENDING in the case of asynchronous completion, and notifies
   // the result through |callback|.
   virtual int SetPacScript(
       const scoped_refptr<ProxyResolverScriptData>& pac_script,
       const net::CompletionCallback& callback) = 0;
-
-  // Optional shutdown code to be run before destruction. This is only used
-  // by the multithreaded runner to signal cleanup from origin thread
-  virtual void Shutdown() {}
 
  private:
   const bool expects_pac_bytes_;

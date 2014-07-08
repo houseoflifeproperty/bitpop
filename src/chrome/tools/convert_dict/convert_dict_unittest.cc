@@ -8,8 +8,8 @@
 #include "base/file_util.h"
 #include "base/format_macros.h"
 #include "base/i18n/icu_string_conversions.h"
-#include "base/stringprintf.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/tools/convert_dict/aff_reader.h"
 #include "chrome/tools/convert_dict/dic_reader.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -62,12 +62,12 @@ bool VerifyWords(const convert_dict::DicReader::WordList& org_words,
 // * Creates bdict data.
 // * Verify the bdict data.
 void RunDictionaryTest(const char* codepage,
-                       const std::map<string16, bool>& word_list) {
+                       const std::map<base::string16, bool>& word_list) {
   // Create an affix data and a dictionary data.
   std::string aff_data(base::StringPrintf("SET %s\n", codepage));
 
   std::string dic_data(base::StringPrintf("%" PRIuS "\n", word_list.size()));
-  for (std::map<string16, bool>::const_iterator it = word_list.begin();
+  for (std::map<base::string16, bool>::const_iterator it = word_list.begin();
        it != word_list.end(); ++it) {
     std::string encoded_word;
     EXPECT_TRUE(UTF16ToCodepage(it->first,
@@ -79,13 +79,13 @@ void RunDictionaryTest(const char* codepage,
   }
 
   // Create a temporary affix file and a dictionary file from the test data.
-  FilePath aff_file;
-  file_util::CreateTemporaryFile(&aff_file);
-  file_util::WriteFile(aff_file, aff_data.c_str(), aff_data.length());
+  base::FilePath aff_file;
+  base::CreateTemporaryFile(&aff_file);
+  base::WriteFile(aff_file, aff_data.c_str(), aff_data.length());
 
-  FilePath dic_file;
-  file_util::CreateTemporaryFile(&dic_file);
-  file_util::WriteFile(dic_file, dic_data.c_str(), dic_data.length());
+  base::FilePath dic_file;
+  base::CreateTemporaryFile(&dic_file);
+  base::WriteFile(dic_file, dic_data.c_str(), dic_data.length());
 
   {
     // Read the above affix file with AffReader and read the dictionary file
@@ -101,7 +101,7 @@ void RunDictionaryTest(const char* codepage,
     for (size_t i = 0; i < dic_reader.words().size(); ++i) {
       SCOPED_TRACE(base::StringPrintf("dic_reader.words()[%" PRIuS "]: %s",
                                       i, dic_reader.words()[i].first.c_str()));
-      string16 word(UTF8ToUTF16(dic_reader.words()[i].first));
+      base::string16 word(base::UTF8ToUTF16(dic_reader.words()[i].first));
       EXPECT_TRUE(word_list.find(word) != word_list.end());
     }
 
@@ -130,8 +130,8 @@ void RunDictionaryTest(const char* codepage,
   // Deletes the temporary files.
   // We need to delete them after the above AffReader and DicReader are deleted
   // since they close the input files in their destructors.
-  file_util::Delete(aff_file, false);
-  file_util::Delete(dic_file, false);
+  base::DeleteFile(aff_file, false);
+  base::DeleteFile(dic_file, false);
 }
 
 }  // namespace
@@ -149,10 +149,11 @@ TEST(ConvertDictTest, English) {
     L"they",
   };
 
-  std::map<string16, bool> word_list;
+  std::map<base::string16, bool> word_list;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kWords); ++i)
-    word_list.insert(std::make_pair<string16, bool>(WideToUTF16(kWords[i]),
-                                                    true));
+    word_list.insert(
+        std::make_pair<base::string16, bool>(base::WideToUTF16(kWords[i]),
+                                             true));
 
   RunDictionaryTest(kCodepage, word_list);
 }
@@ -171,10 +172,11 @@ TEST(ConvertDictTest, Russian) {
     L"\x043e\x043d\x0438",
   };
 
-  std::map<string16, bool> word_list;
+  std::map<base::string16, bool> word_list;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kWords); ++i)
-    word_list.insert(std::make_pair<string16, bool>(WideToUTF16(kWords[i]),
-                                                    true));
+    word_list.insert(
+        std::make_pair<base::string16, bool>(base::WideToUTF16(kWords[i]),
+                                             true));
 
   RunDictionaryTest(kCodepage, word_list);
 }
@@ -195,10 +197,11 @@ TEST(ConvertDictTest, Hungarian) {
     L"\x006d\x0061\x0067\x0075\x006b",
   };
 
-  std::map<string16, bool> word_list;
+  std::map<base::string16, bool> word_list;
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(kWords); ++i)
-    word_list.insert(std::make_pair<string16, bool>(WideToUTF16(kWords[i]),
-                                                    true));
+    word_list.insert(
+        std::make_pair<base::string16, bool>(base::WideToUTF16(kWords[i]),
+                                             true));
 
   RunDictionaryTest(kCodepage, word_list);
 }

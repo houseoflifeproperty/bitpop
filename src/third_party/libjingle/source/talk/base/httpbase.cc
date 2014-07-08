@@ -166,12 +166,16 @@ HttpParser::ProcessLine(const char* line, size_t len, HttpError* error) {
       } while ((value < eol) && isspace(static_cast<unsigned char>(*value)));
       size_t vlen = eol - value;
       if (MatchHeader(line, nlen, HH_CONTENT_LENGTH)) {
-	unsigned int temp_size;
-        if (sscanf(value, "%u", &temp_size) != 1) {
+        // sscanf isn't safe with strings that aren't null-terminated, and there
+        // is no guarantee that |value| is.
+        // Create a local copy that is null-terminated.
+        std::string value_str(value, vlen);
+        unsigned int temp_size;
+        if (sscanf(value_str.c_str(), "%u", &temp_size) != 1) {
           *error = HE_PROTOCOL;
           return PR_COMPLETE;
         }
-	data_size_ = static_cast<size_t>(temp_size);
+        data_size_ = static_cast<size_t>(temp_size);
       } else if (MatchHeader(line, nlen, HH_TRANSFER_ENCODING)) {
         if ((vlen == 7) && (_strnicmp(value, "chunked", 7) == 0)) {
           chunked_ = true;
@@ -862,9 +866,6 @@ HttpBase::ProcessHeaderComplete(bool chunked, size_t& data_size,
 HttpParser::ProcessResult
 HttpBase::ProcessData(const char* data, size_t len, size_t& read,
                       HttpError* error) {
-#ifndef ANDROID
-  LOG_F(LS_VERBOSE) << "data: " << std::string(data, len);
-#endif // ANDROID
   if (ignore_data_ || !data_->document) {
     read = len;
     return PR_CONTINUE;

@@ -72,7 +72,8 @@ StackFrame* StackwalkerSPARC::GetContextFrame() {
 }
 
 
-StackFrame* StackwalkerSPARC::GetCallerFrame(const CallStack* stack) {
+StackFrame* StackwalkerSPARC::GetCallerFrame(const CallStack* stack,
+                                             bool stack_scan_allowed) {
   if (!memory_ || !stack) {
     BPLOG(ERROR) << "Can't get caller frame without memory or stack";
     return NULL;
@@ -93,18 +94,18 @@ StackFrame* StackwalkerSPARC::GetCallerFrame(const CallStack* stack) {
   // A caller frame must reside higher in memory than its callee frames.
   // Anything else is an error, or an indication that we've reached the
   // end of the stack.
-  u_int64_t stack_pointer = last_frame->context.g_r[30];
+  uint64_t stack_pointer = last_frame->context.g_r[30];
   if (stack_pointer <= last_frame->context.g_r[14]) {
     return NULL;
   }
 
-  u_int32_t instruction;
+  uint32_t instruction;
   if (!memory_->GetMemoryAtAddress(stack_pointer + 60,
                      &instruction) || instruction <= 1) {
     return NULL;
   }
 
-  u_int32_t stack_base;
+  uint32_t stack_base;
   if (!memory_->GetMemoryAtAddress(stack_pointer + 56,
                      &stack_base) || stack_base <= 1) {
     return NULL;

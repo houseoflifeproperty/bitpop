@@ -10,11 +10,7 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
-
-namespace dbus {
-class Bus;
-}  // namespace dbus
+#include "chromeos/dbus/dbus_client.h"
 
 namespace chromeos {
 
@@ -25,7 +21,7 @@ namespace chromeos {
 // which the user the browser runs under normally wouldn't have access to. For
 // more details on the permission broker see:
 // http://git.chromium.org/gitweb/?p=chromiumos/platform/permission_broker.git
-class CHROMEOS_EXPORT PermissionBrokerClient {
+class CHROMEOS_EXPORT PermissionBrokerClient : public DBusClient {
  public:
   // The ResultCallback is used for both the RequestPathAccess and
   // RequestUsbAcess methods. Its boolean parameter represents the result of the
@@ -34,20 +30,28 @@ class CHROMEOS_EXPORT PermissionBrokerClient {
 
   virtual ~PermissionBrokerClient();
 
-  static PermissionBrokerClient* Create(DBusClientImplementationType type,
-                                        dbus::Bus* bus);
+  static PermissionBrokerClient* Create();
 
   // RequestPathAccess requests access to a single device node identified by
-  // |path|.
+  // |path|. If |interface_id| value is passed (different than
+  // UsbDevicePermissionData::ANY_INTERFACE), the request will check if a
+  // specific interface is claimed while requesting access.
+  // This allows devices with multiple interfaces to be accessed even if
+  // some of them are already claimed by kernel.
   virtual void RequestPathAccess(const std::string& path,
+                                 int interface_id,
                                  const ResultCallback& callback) = 0;
 
   // RequestUsbAccess attempts to request access to _all_ USB devices attached
-  // to the system that match |vendor_id| and |product_id|. This call makes no
-  // attempt to guarantee atomicity, and partial failure is indistinguishable
-  // from complete failure.
+  // to the system that match |vendor_id| and |product_id|. If |interface_id| is
+  // passed (not -1), the request will check if a specific interface is claimed
+  // while requesting access. This allows devices with multiple interfaces to be
+  // accessed even if some of them are already claimed by kernel.
+  // This call makes no attempt to guarantee atomicity, and partial failure is
+  // indistinguishable from complete failure.
   virtual void RequestUsbAccess(uint16_t vendor_id,
                                 uint16_t product_id,
+                                int interface_id,
                                 const ResultCallback& callback) = 0;
 
  protected:

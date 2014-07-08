@@ -41,6 +41,8 @@ void* GetReturnAddress(void* frame_end) {
 
 #if defined(__arm__)
   return ((void**)frame_end)[-1];
+#elif defined(__mips__)
+  return ((void**)frame_end)[-1];
 #elif defined(__i386__)
   return ((void**)frame_end)[-1];
 #elif defined(__x86_64__)
@@ -54,9 +56,9 @@ void* GetReturnAddress(void* frame_end) {
 // NOTE: we also want to compile this file with local compilers like so
 // g++ tests/toolchain/stack_frame.cc -m32
 // g++ tests/toolchain/stack_frame.cc -m64
-// toolchain/linux_arm-trusted/arm-2009q3/bin/arm-none-linux-gnueabi-g++
+// arm-none-linux-gnueabihf-g++
 //   tests/toolchain/stack_frame.cc
-//   -Wl,-T -Wl,toolchain/linux_arm-trusted/ld_script_arm_trusted
+//   -Wl,-T -Wl,toolchain/linux_x86_linux_arm/arm_trusted/ld_script_arm_trusted
 #if defined(__arm__)
   return ((void**)frame_end)[-1];
 #elif defined(__i386__)
@@ -91,7 +93,7 @@ void recurse(int n, unsigned char* old_cfa) {
 
   // TODO(sehr): change those to 16
   ASSERT(frame_size % 8 == 0, "ERRRO: bad frame size");
-  ASSERT((long) cfa % 8 == 0, "ERRRO: bad frame pointer");
+  ASSERT((int) cfa % 8 == 0, "ERRRO: bad frame pointer");
 
   if (n == NUM_ITERS) {
     // main()'s stackframe may be non-standard due to the startup code

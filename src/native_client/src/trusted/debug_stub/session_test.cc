@@ -52,13 +52,19 @@ class DCSocketTransport : public port::ITransport {
     return true;
   }
 
+  virtual void WaitForDebugStubEvent(struct NaClApp *nap,
+                                     bool ignore_gdb) {
+    UNREFERENCED_PARAMETER(nap);
+    UNREFERENCED_PARAMETER(ignore_gdb);
+  }
+
   virtual void Disconnect() {}
 };
 
 
 // Simulate a transport transmitting data Q'd in TX and verifying that
 // inbound data matches expected "golden" string.
-class GoldenTransport : public port::ITransport {
+class GoldenTransport : public DCSocketTransport {
  public:
   GoldenTransport(const char *rx, const char *tx, int cnt) {
     rx_ = rx;
@@ -117,7 +123,7 @@ class GoldenTransport : public port::ITransport {
 };
 
 
-class TestTransport : public port::ITransport {
+class TestTransport : public DCSocketTransport {
  public:
   TestTransport(SharedVector *rvec, SharedVector *wvec) {
     rvector_ = rvec;

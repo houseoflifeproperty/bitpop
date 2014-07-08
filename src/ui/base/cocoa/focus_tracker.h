@@ -4,17 +4,18 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "ui/base/ui_base_export.h"
 
 // A class that handles saving and restoring focus.  An instance of
 // this class snapshots the currently focused view when it is
 // constructed, and callers can use restoreFocus to return focus to
 // that view.  FocusTracker will not restore focus to views that are
 // no longer in the view hierarchy or are not in the correct window.
-
+UI_BASE_EXPORT
 @interface FocusTracker : NSObject {
  @private
-  scoped_nsobject<NSView> focusedView_;
+  base::scoped_nsobject<NSView> focusedView_;
 }
 
 // |window| is the window that we are saving focus for.  This

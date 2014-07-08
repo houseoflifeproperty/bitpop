@@ -5,24 +5,31 @@
 #include <windows.h>
 
 #include "chrome/browser/platform_util.h"
+#include "chrome/browser/ui/browser_dialogs.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/views/color_chooser_dialog.h"
 #include "content/public/browser/color_chooser.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_observer.h"
 #include "ui/views/color_chooser/color_chooser_listener.h"
+
+#if defined(USE_ASH)
+#include "chrome/browser/ui/views/color_chooser_aura.h"
+#endif
 
 class ColorChooserWin : public content::ColorChooser,
                         public views::ColorChooserListener {
  public:
-  ColorChooserWin(int identifier,
-                  content::WebContents* tab,
+  static ColorChooserWin* Open(content::WebContents* web_contents,
+                               SkColor initial_color);
+
+  ColorChooserWin(content::WebContents* web_contents,
                   SkColor initial_color);
   ~ColorChooserWin();
 
   // content::ColorChooser overrides:
-  virtual void End() OVERRIDE {}
+  virtual void End() OVERRIDE;
   virtual void SetSelectedColor(SkColor color) OVERRIDE {}
 
   // views::ColorChooserListener overrides:
@@ -30,27 +37,31 @@ class ColorChooserWin : public content::ColorChooser,
   virtual void OnColorChooserDialogClosed();
 
  private:
+  static ColorChooserWin* current_color_chooser_;
+
   // The web contents invoking the color chooser.  No ownership. because it will
   // outlive this class.
-  content::WebContents* tab_;
+  content::WebContents* web_contents_;
 
   // The color chooser dialog which maintains the native color chooser UI.
   scoped_refptr<ColorChooserDialog> color_chooser_dialog_;
 };
 
-content::ColorChooser* content::ColorChooser::Create(int identifier,
-                                                     content::WebContents* tab,
-                                                     SkColor initial_color) {
-  return new ColorChooserWin(identifier, tab, initial_color);
+ColorChooserWin* ColorChooserWin::current_color_chooser_ = NULL;
+
+ColorChooserWin* ColorChooserWin::Open(content::WebContents* web_contents,
+                                       SkColor initial_color) {
+  if (current_color_chooser_)
+    return NULL;
+  current_color_chooser_ = new ColorChooserWin(web_contents, initial_color);
+  return current_color_chooser_;
 }
 
-ColorChooserWin::ColorChooserWin(int identifier,
-                                 content::WebContents* tab,
+ColorChooserWin::ColorChooserWin(content::WebContents* web_contents,
                                  SkColor initial_color)
-    : content::ColorChooser(identifier),
-      tab_(tab) {
+    : web_contents_(web_contents) {
   gfx::NativeWindow owning_window = platform_util::GetTopLevel(
-      tab_->GetRenderViewHost()->GetView()->GetNativeView());
+      web_contents->GetRenderViewHost()->GetView()->GetNativeView());
   color_chooser_dialog_ = new ColorChooserDialog(this,
                                                  initial_color,
                                                  owning_window);
@@ -61,9 +72,19 @@ ColorChooserWin::~ColorChooserWin() {
   DCHECK(!color_chooser_dialog_);
 }
 
+void ColorChooserWin::End() {
+  // The ColorChooserDialog's listener is going away.  Ideally we'd
+  // programmatically close the dialog at this point.  Since that's impossible,
+  // we instead tell the dialog its listener is going away, so that the dialog
+  // doesn't try to communicate with a destroyed listener later.  (We also tell
+  // the renderer the dialog is closed, since from the renderer's perspective
+  // it effectively is.)
+  OnColorChooserDialogClosed();
+}
+
 void ColorChooserWin::OnColorChosen(SkColor color) {
-  if (tab_)
-    tab_->DidChooseColorInColorChooser(identifier(), color);
+  if (web_contents_)
+    web_contents_->DidChooseColorInColorChooser(color);
 }
 
 void ColorChooserWin::OnColorChooserDialogClosed() {
@@ -71,6 +92,22 @@ void ColorChooserWin::OnColorChooserDialogClosed() {
     color_chooser_dialog_->ListenerDestroyed();
     color_chooser_dialog_ = NULL;
   }
-  if (tab_)
-    tab_->DidEndColorChooser(identifier());
+  DCHECK(current_color_chooser_ == this);
+  current_color_chooser_ = NULL;
+  if (web_contents_)
+    web_contents_->DidEndColorChooser();
 }
+
+namespace chrome {
+
+content::ColorChooser* ShowColorChooser(content::WebContents* web_contents,
+                                        SkColor initial_color) {
+#if defined(USE_ASH)
+  gfx::NativeView native_view = web_contents->GetNativeView();
+  if (GetHostDesktopTypeForNativeView(native_view) == HOST_DESKTOP_TYPE_ASH)
+    return ColorChooserAura::Open(web_contents, initial_color);
+#endif
+  return ColorChooserWin::Open(web_contents, initial_color);
+}
+
+}  // namespace chrome

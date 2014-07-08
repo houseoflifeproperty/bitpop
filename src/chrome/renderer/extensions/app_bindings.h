@@ -12,39 +12,37 @@
 #define CHROME_RENDERER_EXTENSIONS_APP_BINDINGS_H_
 
 #include "base/compiler_specific.h"
-#include "chrome/renderer/extensions/chrome_v8_extension.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
+#include "chrome/renderer/extensions/chrome_v8_extension_handler.h"
+#include "extensions/renderer/object_backed_native_handler.h"
+#include "third_party/WebKit/public/web/WebFrame.h"
 
 namespace extensions {
-class ChromeV8Context;
+class Dispatcher;
 
 // Implements the chrome.app JavaScript object.
 //
 // TODO(aa): Add unit testing for this class.
-class AppBindings : public ChromeV8Extension,
+class AppBindings : public ObjectBackedNativeHandler,
                     public ChromeV8ExtensionHandler {
  public:
-  explicit AppBindings(Dispatcher* dispatcher,
-                       ChromeV8Context* context);
+  AppBindings(Dispatcher* dispatcher, ScriptContext* context);
 
  private:
   // IPC::Listener
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
 
-  v8::Handle<v8::Value> GetIsInstalled(const v8::Arguments& args);
-  v8::Handle<v8::Value> Install(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetDetails(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetDetailsForFrame(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetAppNotifyChannel(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetInstallState(const v8::Arguments& args);
-  v8::Handle<v8::Value> GetRunningState(const v8::Arguments& args);
+  void GetIsInstalled(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetDetails(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetDetailsForFrame(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetInstallState(const v8::FunctionCallbackInfo<v8::Value>& args);
+  void GetRunningState(const v8::FunctionCallbackInfo<v8::Value>& args);
 
-  v8::Handle<v8::Value> GetDetailsForFrameImpl(WebKit::WebFrame* frame);
+  v8::Handle<v8::Value> GetDetailsForFrameImpl(blink::WebFrame* frame);
 
-  void OnGetAppNotifyChannelResponse(const std::string& channel_id,
-                                     const std::string& error,
-                                     int callback_id);
   void OnAppInstallStateResponse(const std::string& state, int callback_id);
+
+  // Dispatcher handle. Not owned.
+  Dispatcher* dispatcher_;
 
   DISALLOW_COPY_AND_ASSIGN(AppBindings);
 };

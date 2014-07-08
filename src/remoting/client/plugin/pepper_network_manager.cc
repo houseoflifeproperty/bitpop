@@ -9,17 +9,23 @@
 #include "base/single_thread_task_runner.h"
 #include "base/thread_task_runner_handle.h"
 #include "ppapi/cpp/module.h"
-#include "ppapi/cpp/private/network_list_private.h"
-#include "ppapi/cpp/private/net_address_private.h"
+#include "ppapi/cpp/net_address.h"
+#include "ppapi/cpp/network_list.h"
+#include "remoting/client/plugin/pepper_util.h"
+#include "third_party/libjingle/source/talk/base/socketaddress.h"
 
 namespace remoting {
 
 PepperNetworkManager::PepperNetworkManager(const pp::InstanceHandle& instance)
-    : monitor_(instance, &PepperNetworkManager::OnNetworkListCallbackHandler,
-               this),
+    : monitor_(instance),
       start_count_(0),
       network_list_received_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      callback_factory_(this),
+      weak_factory_(this) {
+  pp::CompletionCallbackWithOutput<pp::NetworkList> callback =
+      callback_factory_.NewCallbackWithOutput(
+          &PepperNetworkManager::OnNetworkList);
+  monitor_.UpdateNetworkList(callback);
 }
 
 PepperNetworkManager::~PepperNetworkManager() {
@@ -41,63 +47,40 @@ void PepperNetworkManager::StopUpdating() {
   --start_count_;
 }
 
-// static
-void PepperNetworkManager::OnNetworkListCallbackHandler(
-    void* user_data,
-    PP_Resource list_resource) {
-  PepperNetworkManager* object = static_cast<PepperNetworkManager*>(user_data);
-  pp::NetworkListPrivate list(pp::PASS_REF, list_resource);
-  object->OnNetworkList(list);
-}
+void PepperNetworkManager::OnNetworkList(int32_t result,
+                                         const pp::NetworkList& list) {
+  if (result != PP_OK) {
+    SignalError();
+    return;
+  }
+  DCHECK(!list.is_null());
 
-void PepperNetworkManager::OnNetworkList(const pp::NetworkListPrivate& list) {
   network_list_received_ = true;
 
+  // Request for the next update.
+  pp::CompletionCallbackWithOutput<pp::NetworkList> callback =
+      callback_factory_.NewCallbackWithOutput(
+          &PepperNetworkManager::OnNetworkList);
+  monitor_.UpdateNetworkList(callback);
+
+  // Convert the networks to talk_base::Network.
   std::vector<talk_base::Network*> networks;
   size_t count = list.GetCount();
   for (size_t i = 0; i < count; i++) {
-    std::vector<PP_NetAddress_Private> addresses;
+    std::vector<pp::NetAddress> addresses;
     list.GetIpAddresses(i, &addresses);
 
     if (addresses.size() == 0)
       continue;
 
-    char address_bytes[sizeof(in6_addr)];
-    if (!pp::NetAddressPrivate::GetAddress(
-            addresses[0], &address_bytes, sizeof(address_bytes))) {
-      LOG(ERROR) << "Failed to get address for network interface.";
-      continue;
+    for (size_t i = 0; i < addresses.size(); ++i) {
+      talk_base::SocketAddress address;
+      PpNetAddressToSocketAddress(addresses[i], &address);
+      talk_base::Network* network = new talk_base::Network(
+          list.GetName(i), list.GetDisplayName(i), address.ipaddr(), 0);
+      network->AddIP(address.ipaddr());
+      networks.push_back(network);
     }
-
-    int prefix_length;
-
-    // TODO(sergeyu): Copy all addresses, not only the first one.
-    talk_base::IPAddress address;
-    switch (pp::NetAddressPrivate::GetFamily(addresses[0])) {
-      case PP_NETADDRESSFAMILY_IPV4: {
-        in_addr* address_ipv4 = reinterpret_cast<in_addr*>(address_bytes);
-        address = talk_base::IPAddress(*address_ipv4);
-        prefix_length = sizeof(in_addr) * 8;
-        break;
-      }
-
-      case PP_NETADDRESSFAMILY_IPV6: {
-        in6_addr* address_ipv6 = reinterpret_cast<in6_addr*>(address_bytes);
-        address = talk_base::IPAddress(*address_ipv6);
-        prefix_length = sizeof(in6_addr) * 8;
-        break;
-      }
-
-      default:
-        LOG(WARNING) << "Skipping address with unknown family: "
-                     << pp::NetAddressPrivate::GetFamily(addresses[0]);
-        continue;
-    }
-
-    talk_base::Network* network = new talk_base::Network(
-        list.GetName(i), list.GetDisplayName(i), address, prefix_length);
-    network->AddIP(address);
-    networks.push_back(network);
   }
 
   bool changed = false;

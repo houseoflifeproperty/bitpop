@@ -6,6 +6,7 @@
 #define CHROME_BROWSER_UI_PANELS_NATIVE_PANEL_H_
 
 #include "chrome/browser/ui/panels/panel.h"
+#include "chrome/browser/ui/panels/panel_constants.h"
 #include "ui/gfx/native_widget_types.h"
 
 class NativePanelTesting;
@@ -20,7 +21,7 @@ class Rect;
 }  // namespace gfx
 
 // An interface for a class that implements platform-specific behavior for panel
-// windows to provide additional methods not found in BaseWindow.
+// windows to provide additional methods not found in ui::BaseWindow.
 class NativePanel {
   friend class BasePanelBrowserTest;  // for CreateNativePanelTesting
   friend class Panel;
@@ -41,10 +42,9 @@ class NativePanel {
   virtual void DeactivatePanel() = 0;
   virtual bool IsPanelActive() const = 0;
   virtual void PreventActivationByOS(bool prevent_activation) = 0;
-  virtual gfx::NativeWindow GetNativePanelHandle() = 0;
+  virtual gfx::NativeWindow GetNativePanelWindow() = 0;
   virtual void UpdatePanelTitleBar() = 0;
   virtual void UpdatePanelLoadingAnimations(bool should_animate) = 0;
-  virtual void NotifyPanelOnUserChangedTheme() = 0;
   virtual void PanelWebContentsFocused(content::WebContents* contents) = 0;
   virtual void PanelCut() = 0;
   virtual void PanelCopy() = 0;
@@ -72,11 +72,25 @@ class NativePanel {
   virtual bool IsPanelAlwaysOnTop() const = 0;
   virtual void SetPanelAlwaysOnTop(bool on_top) = 0;
 
-  // Enables resizing by dragging edges/corners.
-  virtual void EnableResizeByMouse(bool enable) = 0;
-
   // Updates the visibility of the minimize and restore buttons.
   virtual void UpdatePanelMinimizeRestoreButtonVisibility() = 0;
+
+  // Sets how the panel window displays its 4 corners, rounded or not.
+  virtual void SetWindowCornerStyle(panel::CornerStyle corner_style) = 0;
+
+  // Performs the system minimize for the panel, i.e. becoming iconic.
+  virtual void MinimizePanelBySystem() = 0;
+
+  // Returns true if the panel has been minimized by the system, i.e. becoming
+  // iconic.
+  virtual bool IsPanelMinimizedBySystem() const = 0;
+
+  // Returns true if the panel is shown in the active desktop. The user could
+  // create and use multiple virtual desktops or workspaces.
+  virtual bool IsPanelShownOnActiveDesktop() const = 0;
+
+  // Turns on/off the shadow effect around the window shape.
+  virtual void ShowShadow(bool show) = 0;
 
   // Create testing interface for native panel. (Keep this last to separate
   // it from regular API.)
@@ -114,10 +128,20 @@ class NativePanelTesting {
   // Verifies, on a deepest possible level, if the native panel is really
   // showing a correct app icon (taskbar icon).
   virtual bool VerifyAppIcon() const = 0;
+  // Verifies, on a deepest possible level, if the native panel is really
+  // minimized by the system.
+  virtual bool VerifySystemMinimizeState() const = 0;
 
+  virtual bool IsWindowVisible() const = 0;
   virtual bool IsWindowSizeKnown() const = 0;
   virtual bool IsAnimatingBounds() const = 0;
   virtual bool IsButtonVisible(panel::TitlebarButtonType button_type) const = 0;
+
+  virtual panel::CornerStyle GetWindowCornerStyle() const = 0;
+
+  // Makes sure that the application is running on foreground. Returns false
+  // if the effort fails.
+  virtual bool EnsureApplicationRunOnForeground() = 0;
 };
 
 #endif  // CHROME_BROWSER_UI_PANELS_NATIVE_PANEL_H_

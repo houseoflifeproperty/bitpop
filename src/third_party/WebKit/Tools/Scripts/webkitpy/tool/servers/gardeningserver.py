@@ -27,6 +27,7 @@ import SocketServer
 import logging
 import json
 import os
+import re
 import sys
 import urllib
 
@@ -52,9 +53,15 @@ class GardeningHTTPServer(SocketServer.ThreadingMixIn, BaseHTTPServer.HTTPServer
 
 
 class GardeningHTTPRequestHandler(ReflectionHandler):
+    REVISION_LIMIT = 100
+    BLINK_SVN_URL = 'http://src.chromium.org/blink/trunk'
+    CHROMIUM_SVN_DEPS_URL = 'http://src.chromium.org/chrome/trunk/src/DEPS'
+    # "webkit_revision": "149598",
+    BLINK_REVISION_REGEXP = re.compile(r'^  "webkit_revision": "(?P<revision>\d+)",$', re.MULTILINE);
+
     STATIC_FILE_NAMES = frozenset()
 
-    STATIC_FILE_EXTENSIONS = ('.js', '.css', '.html', '.gif', '.png')
+    STATIC_FILE_EXTENSIONS = ('.js', '.css', '.html', '.gif', '.png', '.ico')
 
     STATIC_FILE_DIRECTORY = os.path.join(
         os.path.dirname(__file__),
@@ -62,10 +69,7 @@ class GardeningHTTPRequestHandler(ReflectionHandler):
         '..',
         '..',
         '..',
-        'BuildSlaveSupport',
-        'build.webkit.org-config',
-        'public_html',
-        'TestFailures')
+        'GardeningServer')
 
     allow_cross_origin_requests = True
     debug_output = ''
@@ -80,10 +84,23 @@ class GardeningHTTPRequestHandler(ReflectionHandler):
         output, error = process.communicate()
         return (process.returncode, output, error)
 
+    def svnlog(self):
+        self._serve_xml(self.server.tool.executive.run_command(['svn', 'log', '--xml', '--limit', self.REVISION_LIMIT, self.BLINK_SVN_URL]))
+
+    def lastroll(self):
+        deps_contents = self.server.tool.executive.run_command(['svn', 'cat', self.CHROMIUM_SVN_DEPS_URL])
+        match = re.search(self.BLINK_REVISION_REGEXP, deps_contents)
+        if not match:
+            _log.error("Unable to produce last Blink roll revision")
+            self._serve_text("0")
+            return
+
+        revision_line = match.group()
+        revision = match.group("revision")
+        self._serve_text(revision)
+
     def rebaselineall(self):
         command = ['rebaseline-json']
-        if self.server.options.move_overwritten_baselines:
-            command.append('--move-overwritten-baselines')
         if self.server.options.results_directory:
             command.extend(['--results-directory', self.server.options.results_directory])
         if not self.server.options.optimize:
@@ -95,13 +112,14 @@ class GardeningHTTPRequestHandler(ReflectionHandler):
         _log.debug("calling %s, input='%s'", command, json_input)
         return_code, output, error = self._run_webkit_patch(command, json_input)
         print >> sys.stderr, error
+        json_result = {"return_code": return_code}
         if return_code:
             _log.error("rebaseline-json failed: %d, output='%s'" % (return_code, output))
+            json_result["output"] = output
         else:
             _log.debug("rebaseline-json succeeded")
 
-        # FIXME: propagate error and/or log messages back to the UI.
-        self._serve_text('success')
+        self._serve_text(json.dumps(json_result))
 
     def localresult(self):
         path = self.query['path'][0]

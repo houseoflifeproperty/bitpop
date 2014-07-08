@@ -10,34 +10,54 @@ defaults = {}
 
 helper = master_config.Helper(defaults)
 B = helper.Builder
-D = helper.Dependent
 F = helper.Factory
-S = helper.Scheduler
 
-def linux(): return chromium_factory.ChromiumFactory('src/build', 'linux2')
+def linux():
+  return chromium_factory.ChromiumFactory('src/out', 'linux2')
 
 
 ################################################################################
 ## Release
 ################################################################################
 
-defaults['category'] = '9linux latest'
-
-#
-# Main release scheduler for webkit
-#
-S('s9_webkit_rel', branch='trunk', treeStableTimer=60)
+defaults['category'] = 'nonlayout'
 
 #
 # Linux Rel tests
 #
-B('Linux Tests', 'f_linux_tests_rel', scheduler='s9_webkit_rel')
-F('f_linux_tests_rel', linux().ChromiumWebkitLatestFactory(
+B('Linux Tests', 'f_linux_tests_rel', scheduler='global_scheduler')
+F('f_linux_tests_rel', linux().ChromiumFactory(
     tests=[
         'browser_tests',
+        'cc_unittests',
         'content_browsertests',
-        'interactive_ui',
+        'interactive_ui_tests',
         'unit',
+        'webkit_compositor_bindings_unittests',
+    ],
+    options=[
+        '--build-tool=ninja',
+        '--compiler=goma'
+    ],
+    factory_properties={
+        'archive_build': True,
+        'blink_config': 'blink',
+        'build_name': 'Linux_x64',
+        'generate_gtest_json': True,
+        'gclient_env': { 'GYP_GENERATORS': 'ninja' },
+        'gs_bucket': 'gs://chromium-webkit-snapshots',
+    }))
+
+B('Linux Tests (dbg)', 'f_linux_tests_dbg', scheduler='global_scheduler')
+F('f_linux_tests_dbg', linux().ChromiumFactory(
+    target='Debug',
+    tests=[
+        'browser_tests',
+        'cc_unittests',
+        'content_browsertests',
+        'interactive_ui_tests',
+        'unit',
+        'webkit_compositor_bindings_unittests',
     ],
     options=[
         '--build-tool=ninja',
@@ -46,6 +66,7 @@ F('f_linux_tests_rel', linux().ChromiumWebkitLatestFactory(
     factory_properties={
         'generate_gtest_json': True,
         'gclient_env': { 'GYP_GENERATORS': 'ninja' },
+        'blink_config': 'blink',
     }))
 
 linux_aura_build_targets = [
@@ -58,7 +79,6 @@ linux_aura_build_targets = [
     'content_unittests',
     'crypto_unittests',
     'device_unittests',
-    'googleurl_unittests',
     'gpu_unittests',
     'interactive_ui_tests',
     'ipc_tests',
@@ -70,10 +90,11 @@ linux_aura_build_targets = [
     'remoting_unittests',
     'sql_unittests',
     'ui_unittests',
+    'url_unittests',
 ]
 
-B('Linux Aura', 'f_linux_aura_rel', scheduler='s9_webkit_rel')
-F('f_linux_aura_rel', linux().ChromiumWebkitLatestFactory(
+B('Linux Aura', 'f_linux_aura_rel', scheduler='global_scheduler')
+F('f_linux_aura_rel', linux().ChromiumFactory(
     tests=[
         'aura',
         # This seems to have many failures
@@ -87,56 +108,11 @@ F('f_linux_aura_rel', linux().ChromiumWebkitLatestFactory(
     ] + linux_aura_build_targets,
     factory_properties={
         'generate_gtest_json': True,
-        'gclient_env': {'GYP_DEFINES': 'use_aura=1', 'GYP_GENERATORS': 'ninja'}
-    }))
-
-B('Linux Perf', 'f_linux_perf_rel', scheduler='s9_webkit_rel')
-F('f_linux_perf_rel', linux().ChromiumWebkitLatestFactory(
-    options=[
-        '--build-tool=ninja',
-        '--compiler=goma',
-        '--',
-        'chromium_builder_perf'
-    ],
-    tests=[
-        'dom_perf',
-        'dromaeo',
-        'page_cycler_bloat-http',
-        'page_cycler_database',
-        'page_cycler_dhtml',
-        'page_cycler_indexeddb',
-        'page_cycler_intl1',
-        'page_cycler_intl2',
-        'page_cycler_morejs',
-        'page_cycler_moz',
-        'page_cycler_moz-http',
-        'startup',
-        'sunspider'
-    ],
-    factory_properties={
-        'perf_id': 'chromium-rel-linux-webkit',
-        'show_perf_results': True,
-        'gclient_env': { 'GYP_GENERATORS': 'ninja' },
-    }))
-
-valgrind_gyp_defines = chromium_factory.ChromiumFactory.MEMORY_TOOLS_GYP_DEFINES
-B('Linux Valgrind', 'f_linux_valgrind_rel', scheduler='s9_webkit_rel')
-F('f_linux_valgrind_rel', linux().ChromiumWebkitLatestFactory(
-    options=[
-        '--build-tool=ninja',
-        '--compiler=goma',
-        '--',
-        'test_shell',
-        'test_shell_tests'],
-    tests=['valgrind_test_shell'],
-    factory_properties={
-        'needs_valgrind': True,
-        'gclient_env': {
-            'GYP_DEFINES' : valgrind_gyp_defines,
-            'GYP_GENERATORS': 'ninja',
-        },
+        'gclient_env': {'GYP_DEFINES': 'use_aura=1', 'GYP_GENERATORS': 'ninja'},
+        'window_manager': 'False',
+        'blink_config': 'blink',
     }))
 
 
-def Update(config, active_master, c):
+def Update(_config, _active_master, c):
   return helper.Update(c)

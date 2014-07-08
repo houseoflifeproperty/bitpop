@@ -4,11 +4,17 @@
 
 #include "chrome/browser/download/test_download_shelf.h"
 
+#include "content/public/browser/download_manager.h"
+
 TestDownloadShelf::TestDownloadShelf()
-    : is_showing_(false) {
+    : is_showing_(false),
+      did_add_download_(false),
+      download_manager_(NULL) {
 }
 
 TestDownloadShelf::~TestDownloadShelf() {
+  if (download_manager_)
+    download_manager_->RemoveObserver(this);
 }
 
 bool TestDownloadShelf::IsShowing() const {
@@ -23,14 +29,36 @@ Browser* TestDownloadShelf::browser() const {
   return NULL;
 }
 
-void TestDownloadShelf::DoAddDownload(DownloadItemModel* download_model) {
+void TestDownloadShelf::set_download_manager(
+    content::DownloadManager* download_manager) {
+  if (download_manager_)
+    download_manager_->RemoveObserver(this);
+  download_manager_ = download_manager;
+  if (download_manager_)
+    download_manager_->AddObserver(this);
+}
+
+void TestDownloadShelf::ManagerGoingDown(content::DownloadManager* manager) {
+  DCHECK_EQ(manager, download_manager_);
+  download_manager_ = NULL;
+}
+
+void TestDownloadShelf::DoAddDownload(content::DownloadItem* download) {
+  did_add_download_ = true;
 }
 
 void TestDownloadShelf::DoShow() {
   is_showing_ = true;
 }
 
-void TestDownloadShelf::DoClose() {
+void TestDownloadShelf::DoClose(CloseReason reason) {
   is_showing_ = false;
 }
 
+base::TimeDelta TestDownloadShelf::GetTransientDownloadShowDelay() {
+  return base::TimeDelta();
+}
+
+content::DownloadManager* TestDownloadShelf::GetDownloadManager() {
+  return download_manager_;
+}

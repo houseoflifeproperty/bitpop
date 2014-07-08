@@ -16,6 +16,7 @@ const char kIdKey[] = "id";
 const char kImageCacheKey[] = "imageCache";
 const char kJsMemoryAllocatedKey[] = "jsMemoryAllocated";
 const char kJsMemoryUsedKey[] = "jsMemoryUsed";
+const char kNaClDebugPortKey[] = "naclDebugPort";
 const char kNetworkKey[] = "network";
 const char kOsProcessIdKey[] = "osProcessId";
 const char kPrivateMemoryKey[] = "privateMemory";
@@ -23,6 +24,7 @@ const char kProfileKey[] = "profile";
 const char kScriptCacheKey[] = "scriptCache";
 const char kSqliteMemoryKey[] = "sqliteMemory";
 const char kTabsListKey[] = "tabs";
+const char kTitleKey[] = "title";
 const char kTypeKey[] = "type";
 
 // Process types.
@@ -42,12 +44,11 @@ const char kCacheLiveSize[] = "liveSize";
 const char kCacheSize[] = "size";
 
 // Event names.
-const char kOnCreated[] = "experimental.processes.onCreated";
-const char kOnExited[] = "experimental.processes.onExited";
-const char kOnUnresponsive[] = "experimental.processes.onUnresponsive";
-const char kOnUpdated[] = "experimental.processes.onUpdated";
-const char kOnUpdatedWithMemory[] =
-    "experimental.processes.onUpdatedWithMemory";
+const char kOnCreated[] = "processes.onCreated";
+const char kOnExited[] = "processes.onExited";
+const char kOnUnresponsive[] = "processes.onUnresponsive";
+const char kOnUpdated[] = "processes.onUpdated";
+const char kOnUpdatedWithMemory[] = "processes.onUpdatedWithMemory";
 
 // Error strings.
 const char kExtensionNotSupported[] =

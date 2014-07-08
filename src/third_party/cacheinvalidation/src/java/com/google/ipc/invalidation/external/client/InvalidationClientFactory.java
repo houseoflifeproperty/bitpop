@@ -32,17 +32,17 @@ public class InvalidationClientFactory {
    *
    * @param resources {@link SystemResources} to use for logging, scheduling, persistence, and
    *     network connectivity
-   * @param clientType client type code as assigned by the notification system's backend
-   * @param clientName id/name of the client in the application's own naming scheme
-   * @param applicationName name of the application using the library (for debugging/monitoring)
+   * @param clientConfig application provided configuration for the client.
    * @param listener callback object for invalidation events
    */
-  public static InvalidationClient create(SystemResources resources, int clientType,
-      byte[] clientName, String applicationName, InvalidationListener listener) {
-    ClientConfigP config = InvalidationClientCore.createConfig().build();
+  public static InvalidationClient createClient(SystemResources resources,
+      InvalidationClientConfig clientConfig, InvalidationListener listener) {
+    ClientConfigP internalConfig = InvalidationClientCore.createConfig()
+        .setAllowSuppression(clientConfig.allowSuppression)
+        .build();
     Random random = new Random(resources.getInternalScheduler().getCurrentTimeMs());
-    return new InvalidationClientImpl(resources, random, clientType, clientName, config,
-        applicationName, listener);
+    return new InvalidationClientImpl(resources, random, clientConfig.clientType,
+        clientConfig.clientName, internalConfig, clientConfig.applicationName, listener);
   }
 
   private InvalidationClientFactory() {} // Prevents instantiation.

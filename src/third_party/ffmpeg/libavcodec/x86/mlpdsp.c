@@ -19,8 +19,11 @@
  * Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301 USA
  */
 
+#include "libavutil/attributes.h"
+#include "libavutil/cpu.h"
 #include "libavutil/x86/asm.h"
-#include "libavcodec/dsputil.h"
+#include "libavutil/x86/cpu.h"
+#include "libavcodec/mlpdsp.h"
 #include "libavcodec/mlp.h"
 
 #if HAVE_7REGS && HAVE_INLINE_ASM
@@ -173,9 +176,11 @@ static void mlp_filter_channel_x86(int32_t *state, const int32_t *coeff,
 
 #endif /* HAVE_7REGS && HAVE_INLINE_ASM */
 
-void ff_mlp_init_x86(DSPContext* c, AVCodecContext *avctx)
+av_cold void ff_mlpdsp_init_x86(MLPDSPContext *c)
 {
 #if HAVE_7REGS && HAVE_INLINE_ASM
-    c->mlp_filter_channel = mlp_filter_channel_x86;
+    int cpu_flags = av_get_cpu_flags();
+    if (INLINE_MMX(cpu_flags))
+        c->mlp_filter_channel = mlp_filter_channel_x86;
 #endif
 }

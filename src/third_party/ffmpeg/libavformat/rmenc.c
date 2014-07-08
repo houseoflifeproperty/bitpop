@@ -217,8 +217,8 @@ static int rv10_write_header(AVFormatContext *ctx,
                 coded_frame_size--;
             avio_wb32(s, coded_frame_size); /* frame length */
             avio_wb32(s, 0x51540); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
-            avio_wb32(s, 0x249f0); /* unknown */
+            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
+            avio_wb32(s, stream->enc->bit_rate / 8 * 60); /* bytes per minute */
             avio_wb16(s, 0x01);
             /* frame length : seems to be very important */
             avio_wb16(s, coded_frame_size);
@@ -374,7 +374,6 @@ static int rm_write_audio(AVFormatContext *s, const uint8_t *buf, int size, int 
     } else {
         avio_write(pb, buf, size);
     }
-    avio_flush(pb);
     stream->nb_frames++;
     av_free(buf1);
     return 0;
@@ -419,7 +418,6 @@ static int rm_write_video(AVFormatContext *s, const uint8_t *buf, int size, int 
     avio_w8(pb, stream->nb_frames & 0xff);
 
     avio_write(pb, buf, size);
-    avio_flush(pb);
 
     stream->nb_frames++;
     return 0;

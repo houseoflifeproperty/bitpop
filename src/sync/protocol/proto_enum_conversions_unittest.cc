@@ -25,6 +25,13 @@ void TestEnumStringFunction(const char* (*enum_string_fn)(T),
   }
 }
 
+TEST_F(ProtoEnumConversionsTest, GetAppListItemTypeString) {
+  TestEnumStringFunction(
+      GetAppListItemTypeString,
+      sync_pb::AppListSpecifics::AppListItemType_MIN,
+      sync_pb::AppListSpecifics::AppListItemType_MAX);
+}
+
 TEST_F(ProtoEnumConversionsTest, GetBrowserTypeString) {
   TestEnumStringFunction(
       GetBrowserTypeString,
@@ -53,7 +60,7 @@ TEST_F(ProtoEnumConversionsTest, GetUpdatesSourceString) {
       sync_pb::GetUpdatesCallerInfo::PERIODIC);
   TestEnumStringFunction(
       GetUpdatesSourceString,
-      sync_pb::GetUpdatesCallerInfo::NEWLY_SUPPORTED_DATATYPE,
+      sync_pb::GetUpdatesCallerInfo::RETRY,
       sync_pb::GetUpdatesCallerInfo::GetUpdatesSource_MAX);
 }
 

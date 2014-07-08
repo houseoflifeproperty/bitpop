@@ -51,51 +51,132 @@
 
 #include <vector>
 
+#include "base/gtest_prod_util.h"
+#include "base/memory/scoped_ptr.h"
 #include "chrome/browser/safe_browsing/safe_browsing_util.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace safe_browsing {
 
 class PrefixSet {
  public:
-  explicit PrefixSet(const std::vector<SBPrefix>& sorted_prefixes);
   ~PrefixSet();
 
-  // |true| if |prefix| was in |prefixes| passed to the constructor.
-  bool Exists(SBPrefix prefix) const;
+  // |true| if |hash| is in the hashes passed to the set's builder, or if
+  // |hash.prefix| is one of the prefixes passed to the set's builder.
+  bool Exists(const SBFullHash& hash) const;
 
   // Persist the set on disk.
-  static PrefixSet* LoadFile(const FilePath& filter_name);
-  bool WriteFile(const FilePath& filter_name) const;
-
-  // Regenerate the vector of prefixes passed to the constructor into
-  // |prefixes|.  Prefixes will be added in sorted order.
-  void GetPrefixes(std::vector<SBPrefix>* prefixes) const;
+  static scoped_ptr<PrefixSet> LoadFile(const base::FilePath& filter_name);
+  bool WriteFile(const base::FilePath& filter_name) const;
 
  private:
+  friend class PrefixSetBuilder;
+
+  friend class PrefixSetTest;
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, AllBig);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, EdgeCases);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, Empty);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, FullHashBuild);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, IntMinMax);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, OneElement);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, ReadWrite);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, ReadWriteSigned);
+  FRIEND_TEST_ALL_PREFIXES(PrefixSetTest, Version3);
+
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, BasicStore);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, DeleteChunks);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, DetectsCorruption);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, Empty);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, KnockoutPrefixVolunteers);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, PrefixMinMax);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, SubKnockout);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, Version7);
+  FRIEND_TEST_ALL_PREFIXES(SafeBrowsingStoreFileTest, Version8);
+
   // Maximum number of consecutive deltas to encode before generating
   // a new index entry.  This helps keep the worst-case performance
   // for |Exists()| under control.
   static const size_t kMaxRun = 100;
 
-  // Helper for |LoadFile()|.  Steals the contents of |index| and
-  // |deltas| using |swap()|.
-  PrefixSet(std::vector<std::pair<SBPrefix,size_t> > *index,
-            std::vector<uint16> *deltas);
+  // Helpers to make |index_| easier to deal with.
+  typedef std::pair<SBPrefix,uint32> IndexPair;
+  typedef std::vector<IndexPair> IndexVector;
+  static bool PrefixLess(const IndexPair& a, const IndexPair& b);
+
+  // Helper to let |PrefixSetBuilder| add a run of data.  |index_prefix| is
+  // added to |index_|, with the other elements added into |deltas_|.
+  void AddRun(SBPrefix index_prefix,
+              const uint16* run_begin, const uint16* run_end);
+
+  // |true| if |prefix| is one of the prefixes passed to the set's builder.
+  // Provided for testing purposes.
+  bool PrefixExists(SBPrefix prefix) const;
+
+  // Regenerate the vector of prefixes passed to the constructor into
+  // |prefixes|.  Prefixes will be added in sorted order.  Useful for testing.
+  void GetPrefixes(std::vector<SBPrefix>* prefixes) const;
+
+  // Used by |PrefixSetBuilder|.
+  PrefixSet();
+
+  // Helper for |LoadFile()|.  Steals vector contents using |swap()|.
+  PrefixSet(IndexVector* index,
+            std::vector<uint16>* deltas,
+            std::vector<SBFullHash>* full_hashes);
 
   // Top-level index of prefix to offset in |deltas_|.  Each pair
   // indicates a base prefix and where the deltas from that prefix
   // begin in |deltas_|.  The deltas for a pair end at the next pair's
   // index into |deltas_|.
-  std::vector<std::pair<SBPrefix,size_t> > index_;
+  IndexVector index_;
 
   // Deltas which are added to the prefix in |index_| to generate
   // prefixes.  Deltas are only valid between consecutive items from
   // |index_|, or the end of |deltas_| for the last |index_| pair.
   std::vector<uint16> deltas_;
 
+  // Full hashes ordered by SBFullHashLess.
+  std::vector<SBFullHash> full_hashes_;
+
   DISALLOW_COPY_AND_ASSIGN(PrefixSet);
+};
+
+// Helper to incrementally build a PrefixSet from a stream of sorted prefixes.
+class PrefixSetBuilder {
+ public:
+  PrefixSetBuilder();
+  ~PrefixSetBuilder();
+
+  // Helper for unit tests and format conversion.
+  explicit PrefixSetBuilder(const std::vector<SBPrefix>& prefixes);
+
+  // Add a prefix to the set.  Prefixes must arrive in ascending order.
+  // Duplicate prefixes are dropped.
+  void AddPrefix(SBPrefix prefix);
+
+  // Flush any buffered prefixes, and return the final PrefixSet instance.
+  // |hashes| are sorted and stored in |full_hashes_|.  Any call other than the
+  // destructor is illegal after this call.
+  scoped_ptr<PrefixSet> GetPrefixSet(const std::vector<SBFullHash>& hashes);
+
+  // Helper for clients which only track prefixes.  Calls GetPrefixSet() with
+  // empty hash vector.
+  scoped_ptr<PrefixSet> GetPrefixSetNoHashes();
+
+ private:
+  // Encode a run of deltas for |AddRun()|.  The run is broken by a too-large
+  // delta, or kMaxRun, whichever comes first.
+  void EmitRun();
+
+  // Buffers prefixes until enough are avaliable to emit a run.
+  std::vector<SBPrefix> buffer_;
+
+  // The PrefixSet being built.
+  scoped_ptr<PrefixSet> prefix_set_;
 };
 
 }  // namespace safe_browsing

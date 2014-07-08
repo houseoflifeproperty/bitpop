@@ -123,18 +123,25 @@ cr.define('options', function() {
         var focusElement = this.editClickTarget_ || this.initialFocusElement;
         this.editClickTarget_ = null;
 
-        // When this is called in response to the selectedChange event,
-        // the list grabs focus immediately afterwards. Thus we must delay
-        // our focus grab.
-        var self = this;
         if (focusElement) {
-          window.setTimeout(function() {
-            // Make sure we are still in edit mode by the time we execute.
-            if (self.editing) {
-              focusElement.focus();
-              focusElement.select();
-            }
-          }, 50);
+          var self = this;
+          // We should delay to give focus on |focusElement| if this is called
+          // in mousedown event handler. If we did give focus immediately, Blink
+          // would try to focus on an ancestor of the mousedown target element,
+          // and remove focus from |focusElement|.
+          if (focusElement.staticVersion &&
+              focusElement.staticVersion.hasAttribute('tabindex')) {
+            setTimeout(function() {
+              if (self.editing) {
+                if (focusElement.disabled)
+                  self.parentNode.focus();
+                self.focusAndMaybeSelect_(focusElement);
+              }
+              focusElement.staticVersion.removeAttribute('tabindex');
+            }, 0);
+          } else {
+            this.focusAndMaybeSelect_(focusElement);
+          }
         }
       } else {
         if (!this.editCancelled_ && this.hasBeenEdited &&
@@ -149,6 +156,18 @@ cr.define('options', function() {
           cr.dispatchSimpleEvent(this, 'canceledit', true);
         }
       }
+    },
+
+    /**
+     * Focus on the specified element, and select the editable text in it
+     * if possible.
+     * @param {!Element} control An element to be focused.
+     * @private
+     */
+    focusAndMaybeSelect_: function(control) {
+      control.focus();
+      if (control.tagName == 'INPUT')
+        control.select();
     },
 
     /**
@@ -218,9 +237,9 @@ cr.define('options', function() {
      */
     createEditableTextCell: function(text) {
       var container = this.ownerDocument.createElement('div');
-
+      var textEl;
       if (!this.isPlaceholder) {
-        var textEl = this.ownerDocument.createElement('div');
+        textEl = this.ownerDocument.createElement('div');
         textEl.className = 'static-text';
         textEl.textContent = text;
         textEl.setAttribute('displaymode', 'static');
@@ -232,7 +251,6 @@ cr.define('options', function() {
       inputEl.value = text;
       if (!this.isPlaceholder) {
         inputEl.setAttribute('displaymode', 'edit');
-        inputEl.staticVersion = textEl;
       } else {
         // At this point |this| is not attached to the parent list yet, so give
         // a short timeout in order for the attachment to occur.
@@ -247,11 +265,31 @@ cr.define('options', function() {
         }, 50);
       }
 
-      inputEl.addEventListener('focus', this.handleFocus_.bind(this));
+      // In some cases 'focus' event may arrive before 'input'.
+      // To make sure revalidation is triggered we postpone 'focus' handling.
+      var handler = this.handleFocus_.bind(this);
+      inputEl.addEventListener('focus', function() {
+        window.setTimeout(function() {
+          if (inputEl.ownerDocument.activeElement == inputEl)
+            handler();
+        }, 0);
+      });
       container.appendChild(inputEl);
-      this.editFields_.push(inputEl);
+      this.addEditField(inputEl, textEl);
 
       return container;
+    },
+
+    /**
+     * Register an edit field.
+     * @param {!Element} control An editable element. It's a form control
+     *     element typically.
+     * @param {Element} staticElement An element representing non-editable
+     *     state.
+     */
+    addEditField: function(control, staticElement) {
+      control.staticVersion = staticElement;
+      this.editFields_.push(control);
     },
 
     /**
@@ -305,6 +343,7 @@ cr.define('options', function() {
         return;
 
       var endEdit = false;
+      var handledKey = true;
       switch (e.keyIdentifier) {
         case 'U+001B':  // Esc
           this.editCancelled_ = true;
@@ -314,14 +353,17 @@ cr.define('options', function() {
           if (this.currentInputIsValid)
             endEdit = true;
           break;
+        default:
+          handledKey = false;
       }
-
-      if (endEdit) {
-        // Blurring will trigger the edit to end; see InlineEditableItemList.
-        this.ownerDocument.activeElement.blur();
+      if (handledKey) {
         // Make sure that handled keys aren't passed on and double-handled.
         // (e.g., esc shouldn't both cancel an edit and close a subpage)
         e.stopPropagation();
+      }
+      if (endEdit) {
+        // Blurring will trigger the edit to end; see InlineEditableItemList.
+        this.ownerDocument.activeElement.blur();
       }
     },
 
@@ -338,6 +380,8 @@ cr.define('options', function() {
       var clickTarget = e.target;
       var editFields = this.editFields_;
       for (var i = 0; i < editFields.length; i++) {
+        if (editFields[i].staticVersion == clickTarget)
+          clickTarget.tabIndex = 0;
         if (editFields[i] == clickTarget ||
             editFields[i].staticVersion == clickTarget) {
           this.editClickTarget_ = editFields[i];

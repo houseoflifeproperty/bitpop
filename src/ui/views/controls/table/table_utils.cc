@@ -6,24 +6,28 @@
 
 #include "base/logging.h"
 #include "ui/gfx/canvas.h"
-#include "ui/gfx/font.h"
+#include "ui/gfx/font_list.h"
+#include "ui/gfx/text_utils.h"
+#include "ui/views/controls/table/table_view.h"
 
 namespace views {
 
 const int kUnspecifiedColumnWidth = 90;
 
-int WidthForContent(const gfx::Font& header_font,
-                    const gfx::Font& content_font,
+int WidthForContent(const gfx::FontList& header_font_list,
+                    const gfx::FontList& content_font_list,
                     int padding,
+                    int header_padding,
                     const ui::TableColumn& column,
                     ui::TableModel* model) {
-  int width = 0;
+  int width = header_padding;
   if (!column.title.empty())
-    width = header_font.GetStringWidth(column.title);
+    width = gfx::GetStringWidth(column.title, header_font_list) +
+        header_padding;
 
   for (int i = 0, row_count = model->RowCount(); i < row_count; ++i) {
     const int cell_width =
-        content_font.GetStringWidth(model->GetText(i, column.id));
+        gfx::GetStringWidth(model->GetText(i, column.id), content_font_list);
     width = std::max(width, cell_width);
   }
   return width + padding;
@@ -31,9 +35,11 @@ int WidthForContent(const gfx::Font& header_font,
 
 std::vector<int> CalculateTableColumnSizes(
     int width,
-    const gfx::Font& header_font,
-    const gfx::Font& content_font,
+    int first_column_padding,
+    const gfx::FontList& header_font_list,
+    const gfx::FontList& content_font_list,
     int padding,
+    int header_padding,
     const std::vector<ui::TableColumn>& columns,
     ui::TableModel* model) {
   float total_percent = 0;
@@ -44,11 +50,17 @@ std::vector<int> CalculateTableColumnSizes(
     if (column.width <= 0) {
       if (column.percent > 0) {
         total_percent += column.percent;
+        // Make sure there is at least enough room for the header.
+        content_widths[i] = gfx::GetStringWidth(column.title, header_font_list)
+            + padding + header_padding;
       } else {
-        content_widths[i] = WidthForContent(header_font, content_font, padding,
-                                            column, model);
-        non_percent_width += content_widths[i];
+        content_widths[i] = WidthForContent(header_font_list, content_font_list,
+                                            padding, header_padding, column,
+                                            model);
+        if (i == 0)
+          content_widths[i] += first_column_padding;
       }
+      non_percent_width += content_widths[i];
     } else {
       content_widths[i] = column.width;
       non_percent_width += column.width;
@@ -61,8 +73,8 @@ std::vector<int> CalculateTableColumnSizes(
     const ui::TableColumn& column = columns[i];
     int column_width = content_widths[i];
     if (column.width <= 0 && column.percent > 0 && available_width > 0) {
-      column_width = static_cast<int>(available_width *
-                                      (column.percent / total_percent));
+      column_width += static_cast<int>(available_width *
+                                       (column.percent / total_percent));
     }
     widths.push_back(column_width == 0 ? kUnspecifiedColumnWidth :
                      column_width);
@@ -90,6 +102,16 @@ int TableColumnAlignmentToCanvasAlignment(
   }
   NOTREACHED();
   return gfx::Canvas::TEXT_ALIGN_LEFT;
+}
+
+int GetClosestVisibleColumnIndex(const TableView* table, int x) {
+  const std::vector<TableView::VisibleColumn>& columns(
+      table->visible_columns());
+  for (size_t i = 0; i < columns.size(); ++i) {
+    if (x <= columns[i].x + columns[i].width)
+      return static_cast<int>(i);
+  }
+  return static_cast<int>(columns.size()) - 1;
 }
 
 }  // namespace views

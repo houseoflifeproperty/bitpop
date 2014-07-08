@@ -1,212 +1,247 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="iw">
 <translation id="6676384891291319759">גישה אל האינטרנט</translation>
-<translation id="8447784615389818621">האם אתה בטוח שברצונך להסיר את התקנת BitPop?</translation>
-<translation id="100741878661450640">הסר את התקנת BitPop</translation>
-<translation id="4301276314211054820">BitPop עודכן, אך לא השתמשת בו לפחות 30 ימים.</translation>
-<translation id="8935261719622405725">הפעל יישומי BitPop</translation>
-<translation id="2556535128417126306">BitPop App Launcher הוא פלטפורמה עצמאית ליישומי BitPop.</translation>
+<translation id="8586442755830160949">‏Copyright <ph name="YEAR"/> The Chromium Authors. כל הזכויות שמורות.</translation>
+<translation id="8447784615389818621">‏האם אתה בטוח שברצונך להסיר את התקנת BitPop?</translation>
+<translation id="1928147301259050372">‏האם ברצונך ש-BitPop ישמור פרטים אלה של כרטיס האשראי להשלמת טופסי אינטרנט?</translation>
+<translation id="100741878661450640">‏הסר את התקנת BitPop</translation>
+<translation id="7015513946685052865">‏קבלת העדכונים של BitPop תופסק בקרוב למחשב זה מאחר והחומרה שלו אינה נתמכת עוד.</translation>
+<translation id="4301276314211054820">‏BitPop עודכן, אך לא השתמשת בו לפחות 30 ימים.</translation>
+<translation id="8935261719622405725">‏הפעל יישומי BitPop</translation>
+<translation id="2787245396912783582">‏Chromium App Launcher הוא פלטפורמה עצמאית ליישומי BitPop.</translation>
 <translation id="2770231113462710648">שנה את דפדפן ברירת המחדל ל:</translation>
-<translation id="6870152852581894991">השינויים שביצעת ייכנסו לתוקף בפעם הבאה שתפעיל מחדש את BitPop‏.</translation>
-<translation id="3588014340702790340">אתה מציג דף BitPop מאובטח.</translation>
-<translation id="6789998774111513164">BitPop Frame</translation>
+<translation id="6870152852581894991">‏השינויים שביצעת ייכנסו לתוקף בפעם הבאה שתפעיל מחדש את BitPop‏.</translation>
+<translation id="7725527658463487664">‏BitPop אינו מעודכן</translation>
+<translation id="302025056100997516">‏פרטים מאנשי הקשר שלך יכולים לעזור לך למלא טפסים במהירות רבה יותר ב-BitPop.</translation>
+<translation id="3588014340702790340">‏אתה מציג דף BitPop מאובטח.</translation>
+<translation id="2077129598763517140">השתמש בהאצת חומרה כשניתן</translation>
 <translation id="1065672644894730302">לא היתה אפשרות לקרוא את ההעדפות שלך. ייתכן שחלק מהתכונות לא יהיו זמינות ושינויים בהעדפות לא יישמרו.</translation>
-<translation id="4901429675189043920">עדכון Chrome Frame.</translation>
-<translation id="1132852132282742543">BitPop Renderer</translation>
-<translation id="7155774694068736041">BitPop Frame כבר מותקן וזמין לכל המשתמשים במחשב זה. אם ברצונך להתקין את BitPop Frame ברמת המשתמש, עליך ראשית להסיר התקנת את הגרסה ברמת המערכת שהותקנה על ידי מנהל המערכת.</translation>
-<translation id="731644333568559921">עדכן את &amp;מערכת ההפעלה של Chromium‏</translation>
-<translation id="5284421695473942517">BitPop דורש גרסת Windows XP או מאוחרת יותר. תכונות מסוימות עלולות שלא לפעול.</translation>
-<translation id="3549345495227188780">תחילת העבודה עם Chromium OS</translation>
-<translation id="8363397932717822970">התקנה מתנגשת של BitPop או BitPop Frame נמצאה במערכת. הסר אותה ונסה שוב.</translation>
-<translation id="8235603028098851915">סרגל הכלים של BitPop</translation>
-<translation id="5953515305183787825">BitPop‏ אינו מתעדכן יותר, כי מערכת ההפעלה שלך מיושנת.</translation>
-<translation id="7230682351542979557">מזהה BitPop Captive Portal</translation>
-<translation id="325440606879482824">ההתקנה נכשלה בשל שגיאה לא צפויה. אם BitPop  פועל כעת, סגור אותו ונסה שוב.</translation>
-<translation id="7224939653007212692">הגדרות מילוי אוטומטי של BitPop</translation>
-<translation id="3078552028547324322">השתמש ב-BitPop Apps Launcher כדי להפעיל את היישומים שלך.</translation>
-<translation id="3555616473548901994">הסרת ההתקנה הושלמה.</translation>
-<translation id="5814137742095860156">BitPop App Host</translation>
-<translation id="9205983754412543288">אופציונלי: עזור לנו לשפר את BitPop באמצעות שליחת סטטיסטיקת שימוש ודוחות קריסה אל Google באופן אוטומטי.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="6259082392093297310">ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך האישור שהשרת הציג מכיל שגיאות. BitPop אינו יכול להשתמש באישור שמכיל שגיאות ואינו יכול לאמת את הזהות של האתר שאליו ניסית להתחבר.</translation>
-<translation id="3801183610358973379">המתקין לא הצליח לבטל את דחיסת הארכיון. הורד שוב את BitPop.</translation>
-<translation id="4450789702440326676">אפשר ל-BitPop לפעול ברקע</translation>
-<translation id="2963590958538393837">כן, צא מ-BitPop</translation>
-<translation id="8031724302809093115">הדף 'כרטיסייה חדשה' של BitPop כבר עוצב מחדש. עבור בין הקטעים באמצעות לחיצה על תוויות אלו. Chromium יזכור את ההעדפה שלך בפעם הבאה.</translation>
-<translation id="1480489203462860648">נסה את זה, זה כבר מותקן</translation>
-<translation id="7098153548331126805">הוספה ל-BitPop</translation>
-<translation id="5928487969163300899">הסר את ההתקנה של BitPop App Launcher</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>אזהרה:<ph name="END_BOLD"/> BitPop‏ לא יכול למנוע מתוספים לתעד את היסטוריית הגלישה שלך. כדי להשבית תוסף זה במצב גלישה בסתר, בטל את הבחירה באפשרות זו.</translation>
-<translation id="3941397373453695568">BitPop אינו כולל מציג PDF, הנדרש להפעלת תצוגה מקדימה של הדפסה.</translation>
-<translation id="8155571637339134666">BitPop עשוי להשתמש בשירותי אינטרנט כדי לשפר את חווית הגלישה שלך.</translation>
-<translation id="5383732173730790693">נכנסת ל-BitPop! הסימניות, ההיסטוריה, והגדרות אחרות שלך יסונכרנו עם חשבון Google שלך.</translation>
-<translation id="6866316083935040427">יציאה מ-BitPop</translation>
-<translation id="4759775690587852534">למרבה הצער, הגדרות Mozilla Firefox שלך אינן זמינות בזמן שהדפדפן פועל. כדי לייבא הגדרות אלו ל-BitPop, שמור את עבודתך וסגור את כל חלונות Firefox. לאחר מכן לחץ על המשך.</translation>
-<translation id="2411757162791070146">במקרה כזה, הכתובת שמופיעה באישור אינה תואמת לכתובת של האתר שאליו הדפדפן שלך ניסה להגיע. סיבה אפשרית  לכך היא שהתקשורת שלך יורטה על ידי תוקף שמציג אישור עבור אתר שונה, וכך נוצרה אי התאמה. סיבה אפשרית נוספת היא שהשרת מוגדר להחזיר את אותו אישור עבור אתרים מרובים, כולל האתר שבו אתה מנסה לבקר, אפילו שהאישור אינו תקף לכל אותם אתרים. BitPop יכול לומר בוודאות שהגעת אל &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/ strong&gt;, אך אינו יכול לאמת שהוא זהה ל-&lt;strong&gt;<ph name="DOMAIN"/>&lt;/ strong&gt;, שאליו ניסית להגיע. אם תמשיך, BitPop לא יחפש אי התאמות שמיות נוספות.</translation>
-<translation id="2423180989259159758">עבור אל
-          <ph name="BEGIN_BOLD"/>
-          תפריט BitPop &gt;
+<translation id="4795239855223923830">‏התאם אישית ושלוט ב-BitPop</translation>
+<translation id="98449668525928921">‏אתה נכנס עם חשבון מנוהל ונותן למנהל המערכת שלו שליטה על הפרופיל שלך ב-BitPop. הנתונים שלך ב-BitPop, כגון יישומים, סימניות, היסטוריה, סיסמאות והגדרות אחרות ייקשרו באופן קבוע ל-<ph name="USER_NAME"/>. תוכל למחוק את הנתונים האלה באמצעות מרכז השליטה של חשבונות Google, אבל לא תוכל לשייך את הנתונים האלה לחשבון אחר. לחלופין, תוכל ליצור פרופיל חדש כדי לשמור את הנתונים הקיימים שלך ב-BitPop בנפרד.<ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">‏תודה שניסית את BitPop החדש. יש לאתחל את BitPop על מנת לוודא ששמרת עבודות פתוחות לפני שתמשיך.</translation>
+<translation id="731644333568559921">‏עדכן את &amp;מערכת ההפעלה של BitPop‏</translation>
+<translation id="5284421695473942517">‏BitPop דורש גרסת Windows XP או מאוחרת יותר. תכונות מסוימות עלולות שלא לפעול.</translation>
+<translation id="4534284284800306880">‏עליך לשדרג את BitPop כדי להשתמש בארנק Google‏‏ [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1258942147733482141">‏רישיונות קוד פתוח של BitPop</translation>
+<translation id="2001441118695834744">‏אם אתה מעדיף לשמור את נתוני BitPop הקיימים שלך בנפרד, תוכל ליצור משתמש BitPop חדש עבור <ph name="USER_NAME"/>.</translation>
+<translation id="3207916442629104800">‏הגדר את BitPop כדפדפן ברירת המחדל שלך</translation>
+<translation id="2346981135360001626">מעדכן את המכשיר שלך לערוץ <ph name="CHANNEL_NAME"/>...</translation>
+<translation id="3549345495227188780">‏תחילת העבודה עם Chromium OS</translation>
+<translation id="7593639489233822734">‏לאחר הסרת החשבון שלך מ-Chromeium, ייתכן שתידרש לטעון מחדש את הכרטיסיות הפתוחות שלך כדי שההסרה תיושם בפועל.</translation>
+<translation id="8235603028098851915">‏סרגל הכלים של BitPop</translation>
+<translation id="325440606879482824">‏ההתקנה נכשלה בשל שגיאה לא צפויה. אם BitPop  פועל כעת, סגור אותו ונסה שוב.</translation>
+<translation id="2681187513058372590">‏BitPop מנסה להציג סיסמאות.</translation>
+<translation id="9205983754412543288">‏אופציונלי: עזור לנו לשפר את BitPop באמצעות שליחת נתוני שימוש ודוחות קריסה אל Google באופן אוטומטי.</translation>
+<translation id="3898160962923474892">‏עבור אל
+          תפריט BitPop‏ &gt;
           <ph name="SETTINGS_TITLE"/>
-          &gt;
+          ‏&gt;
           <ph name="ADVANCED_TITLE"/>
-          &gt;
+          ‏&gt;
           <ph name="PROXIES_TITLE"/>
-          &gt;
-          הגדרות LAN
-          <ph name="END_BOLD"/>
-          ובטל את הבחירה בתיבת הסימון "השתמש בשרת Proxy עבור רשת LAN".</translation>
-<translation id="2886079192271351730">מודול זה מתנגש עם BitPop.</translation>
-<translation id="8324687802311409372">וואו! BitPop קרס. להפעיל מחדש עכשיו?</translation>
-<translation id="606385048658239900">לא נמצאה התקנה של BitPop או BitPop Frame שיש לעדכן.</translation>
+          ובדוק שהתצורה שלך מוגדרת לאפשרות "ללא שרת proxy‏" או "ישיר".</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="3334080844010912902">‏BitPop לא הצליח לסנכרן את הנתונים שלך מפני שסנכרון אינו זמין עבור הדומיין שלך.</translation>
+<translation id="2030214613468936763">‏ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך האישור שהשרת הציג מכיל שגיאות. BitPop אינו יכול להשתמש באישור שמכיל שגיאות ואינו יכול לאמת את הזהות של האתר שאליו ניסית להתחבר.</translation>
+<translation id="3801183610358973379">‏המתקין לא הצליח לבטל את דחיסת הארכיון. הורד שוב את BitPop.</translation>
+<translation id="4138697454314244697">‏לא נמצאה התקנה של BitPop שיש לעדכן.</translation>
+<translation id="4450789702440326676">‏אפשר ל-BitPop לפעול ברקע</translation>
+<translation id="8743840534367614002">‏יישומי BitPop</translation>
+<translation id="2963590958538393837">‏כן, צא מ-BitPop</translation>
+<translation id="1480489203462860648">נסה את זה, זה כבר מותקן</translation>
+<translation id="7098153548331126805">‏הוספה ל-BitPop</translation>
+<translation id="4831257561365056138">‏הסר את ההתקנה של Chromium App Launcher</translation>
+<translation id="7680117738450774222">‏אתה מחובר כעת ל-BitPop! הסנכרון הושבת על ידי מנהל המערכת שלך.</translation>
+<translation id="5995722392285490130">‏<ph name="BEGIN_BOLD"/>אזהרה:<ph name="END_BOLD"/> BitPop‏ לא יכול למנוע מתוספים לתעד את היסטוריית הגלישה שלך. כדי להשבית תוסף זה במצב גלישה בסתר, בטל את הבחירה באפשרות זו.</translation>
+<translation id="9123740998411173947">‏כעת, לאחר שהתחברת, תוכל לקבל את הכרטיסיות, הסימניות ופריטי BitPop נוספים במחשב הנייד, בטלפון ובטאבלט. תקבל גם הצעות ותכונות רלוונטיות יותר בשירותי Google.</translation>
+<translation id="985602178874221306">‏מחברי Chromium</translation>
+<translation id="3941397373453695568">‏BitPop אינו כולל מציג PDF, הנדרש להפעלת תצוגה מקדימה של הדפסה.</translation>
+<translation id="8155571637339134666">‏BitPop עשוי להשתמש בשירותי אינטרנט כדי לשפר את חווית הגלישה שלך.</translation>
+<translation id="6157791660174418859">‏נסה את הדרך החדשה להשתמש ב-BitPop יחד עם 'חשבון Google' ובמחשבים משותפים.</translation>
+<translation id="4759775690587852534">‏למרבה הצער, הגדרות Mozilla Firefox שלך אינן זמינות בזמן שהדפדפן פועל. כדי לייבא הגדרות אלו ל-BitPop, שמור את עבודתך וסגור את כל חלונות Firefox. לאחר מכן לחץ על המשך.</translation>
+<translation id="5769857394054687534">‏במקרה כזה, הכתובת שמופיעה באישור אינה תואמת לכתובת של האתר שאליו הדפדפן שלך ניסה להגיע. סיבה אפשרית  לכך היא שהתקשורת שלך יורטה על ידי תוקף שמציג אישור עבור אתר שונה, וכך נוצרה אי התאמה. סיבה אפשרית נוספת היא שהשרת מוגדר להחזיר את אותו אישור עבור אתרים מרובים, כולל האתר שבו אתה מנסה לבקר, אפילו שהאישור אינו תקף לכל אותם אתרים. BitPop יכול לומר בוודאות שהגעת אל &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/ strong&gt;, אך אינו יכול לאמת שהוא זהה ל-&lt;strong&gt;<ph name="DOMAIN"/>&lt;/ strong&gt;, שאליו ניסית להגיע. אם תמשיך, BitPop לא יחפש אי התאמות שמיות נוספות.</translation>
+<translation id="2224367722165014156">‏העדכון העצמי של BitPop לגרסה העדכנית ביותר נכשל, לכן אתה מחמיץ תכונות חדשות מדליקות ותיקוני אבטחה. עליך להתקין מחדש את BitPop באופן ידני.</translation>
+<translation id="8897323336392112261">‏הגדרה זו גם קובעת איזה דף מוצג שאתה מפעיל את Chromium או לוחץ על הלחצן 'דף הבית'.</translation>
+<translation id="2886079192271351730">‏מודול זה מתנגש עם BitPop.</translation>
+<translation id="8324687802311409372">‏וואו! BitPop קרס. להפעיל מחדש עכשיו?</translation>
+<translation id="5689811886832352959">‏עזור לשפר את BitPop על ידי שליחת דוחות קריסה ו-<ph name="UMA_LINK"/> אל Google</translation>
+<translation id="5101127815285864538">‏היסטוריית האתרים, הסימניות ונתונים נוספים מ-BitPop נמצאים כאן.</translation>
 <translation id="3197823471738295152">המכשיר שלך מעודכן.</translation>
 <translation id="8551886023433311834">כמעט מעודכן! הפעל מחדש את המכשיר שלך כדי לסיים את העדכון.</translation>
-<translation id="9090519209458031409">האם אתה מעוניין ש-BitPop ישמור את הסיסמה עבור אתר זה?</translation>
+<translation id="9090519209458031409">‏האם אתה מעוניין ש-BitPop ישמור את הסיסמה עבור אתר זה?</translation>
 <translation id="7339898014177206373">חלון חדש</translation>
-<translation id="3026202950002788510">עבור אל
-          <ph name="BEGIN_BOLD"/>
-יישומים &gt;‏ העדפות מערכת &gt;‏ רשת &gt;‏ מתקדם &gt;‏ שרתי proxy
-          <ph name="END_BOLD"/>
-          ובטל את הסימון עבור כל שרת proxy שנבחר.</translation>
-<translation id="85540521058185027">ספריית ההתקנה של BitPop נמצאת בשימוש. אתחל את המחשב מחדש ונסה שוב.</translation>
-<translation id="5710380450759072582">BitPop מייבא כעת מועדפים/סימניות.</translation>
-<translation id="225614027745146050">ברוכים הבאים</translation>
-<translation id="3421246989510066651">מנהל המערכת התקין BitPop במערכת זו, והוא זמין לכל המשתמשים. BitPop ברמת המערכת יחליף כעת את ההתקנה שלך ברמת המשתמש.</translation>
-<translation id="1563133725769368154">סגור את כל חלונות BitPop ונסה שוב.</translation>
-<translation id="6948146312619379712">סגור את כל החלונות של BitPop והפעל אותו מחדש כדי שהשינוי ייכנס לתוקף.</translation>
-<translation id="5845248948746043578">מודולים שנטענו ב-BitPop</translation>
-<translation id="4718546117684412327">ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שהונפק על ידי ישות שמערכת ההפעלה של המחשב אינה בוטחת בה. ייתכן שהשרת יצר את פרטי הכניסה בעצמו, ו-BitPop אינו יכול להסתמך עליהם לשם השגת פרטי זיהוי, או שייתכן שתוקף מנסה ליירט את התקשורת שלך.</translation>
-<translation id="2585492770508769131">המשך הפעלת יישומים ברקע כאשר BitPop סגור</translation>
-<translation id="473775607612524610">עדכן</translation>
-<translation id="1141543168124987471">גרסה חדשה של BitPop זמינה, והיא מהירה יותר מאי פעם.</translation>
-<translation id="6560811749587757293">מידע על BitPop Frame...</translation>
-<translation id="5971960158340115871">להסיר מ-‏BitPop‏</translation>
-<translation id="7747138024166251722">המתקין לא הצליח ליצור ספריה זמנית. בדוק את המקום הפנוי בדיסק ואת האישור להתקנת תוכנה.</translation>
-<translation id="6494656531179085521">BitPop אינו יכול לקרוא ולכתוב בספריית הנתונים שלו: <ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop אינו תומך ב-<ph name="OS_NAME"/> .</translation>
-<translation id="8738921060445980047">גרסה לא ידועה.</translation>
-<translation id="6970811910055250180">מעדכן את המכשיר שלך...</translation>
-<translation id="2485422356828889247">הסר התקנה</translation>
-<translation id="8450502629618876351">קבלת עזרה באמצעות BitPop</translation>
-<translation id="4742066939161073105">הפעל את BitPop</translation>
-<translation id="736882515641604854">BitPop‏ אינו מצליח ליצור קיצור דרך ליישום משום שאינו יכול לקבוע את סביבת שולחן העבודה הנוכחית.</translation>
-<translation id="7209647769822542891">במחשב זה קיימת כבר גרסה מתקדמת יותר של BitPop Frame. אם התוכנה אינה פועלת, הסר את ההתקנה של BitPop Frame ונסה שוב.</translation>
-<translation id="911206726377975832">למחוק גם את נתוני הגלישה שלך?</translation>
-<translation id="4501582071990606935">סגור את כל החלונות של BitPop (כולל חלונות במצב Windows 8) ונסה שוב.</translation>
-<translation id="2318017154298876822">עדכן &amp;את BitPop‏</translation>
-<translation id="8862326446509486874">אין לך זכויות שמתאימות להתקנה ברמת המערכת. נסה להפעיל שוב את המתקין כמנהל מערכת.</translation>
-<translation id="8308846639737830860">אפשר ל-BitPop לפעול ברקע</translation>
-<translation id="8251642411216619957">היכנס אל BitPop</translation>
-<translation id="4365115785552740256">Chromium התאפשר תודות לפרויקט הקוד הפתוח של <ph name="BEGIN_LINK_CHROMIUM"/> Chromium‏<ph name="END_LINK_CHROMIUM"/> ו<ph name="BEGIN_LINK_OSS"/>תוכנות קוד פתוח<ph name="END_LINK_OSS"/> אחרות.</translation>
-<translation id="6321973207566602686">הפוך את BitPop לדפדפן ברירת המחדל</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">BitPop Worker</translation>
-<translation id="5820394555380036790">מערכת ההפעלה של Chromium</translation>
-<translation id="6757767188268205357">אל תנדנד לי</translation>
-<translation id="6312770669638222416">נסה להשבית את חיזוי הרשת על ידי ביצוע הפעולות הבאות:
-        עבור אל
-        <ph name="BEGIN_BOLD"/>
+<translation id="6188910816550019957">‏עבור אל
         תפריט BitPop &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
         ובטל את הבחירה באפשרות "<ph name="NO_PREFETCH_DESCRIPTION"/>".
-        אם פעולה זו אינה פותרת את הבעיה, מומלץ לבחור באפשרות הזו שוב לקבלת ביצועים משופרים.</translation>
-<translation id="6220055452245182274">דיווח על התרסקויות אינו זמין ב-BitPop.</translation>
-<translation id="924450301557116466">אינו משמש ב-BitPop. מציין מיקום שנועד לסנכרון מפות משאבים. הוא מקבל ארגומנט אחד: $1.</translation>
-<translation id="1984238998837921833">מעדכן את BitPop‏...</translation>
-<translation id="9102885271730191378">מנהל המשימות - BitPop</translation>
-<translation id="3916917357864849352">BitPop מייבא כעת את הפריטים הבאים מ-<ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="5243897687251941678">מצא את הסימניות שלך בתפריט BitPop או בסרגל הסימניות.</translation>
-<translation id="5925519479755588070">כמעט מעודכן! הפעל מחדש את BitPop‏ כדי לסיים את העדכון.</translation>
-<translation id="4352003675682958984">גרסה חדשה של BitPop זמינה כעת.</translation>
-<translation id="8972540218839637401">במהלך ההתקנה ארעה שגיאה של מערכת ההפעלה. הורד שוב את BitPop.</translation>
-<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> נוסף ל-‏BitPop‏.</translation>
-<translation id="8871841738132225233">האם להשתמש בחשבון Google זה כדי לסנכרן את כל הדברים שלך ב-BitPop?</translation>
-<translation id="8988481325911971852">ההתקנה נכשלה בשל שגיאה לא מזוהה. הורד שוב את BitPop.</translation>
-<translation id="660036136456272595">לא ניתן להשתמש בפרופיל שלך משום שהוא מגיע מגרסה חדשה יותר של BitPop.
+        אם פעולה זו אינה פותרת את הבעיה, מומלץ לבחור באפשרות זו שוב
+        לקבלת ביצועים משופרים.</translation>
+<translation id="2397909649953118924">‏BitPop - הודעות (<ph name="QUANTITY"/> שלא נקראו)</translation>
+<translation id="225614027745146050">ברוכים הבאים</translation>
+<translation id="1823899440832622134">‏העדכון העצמי של BitPop לגרסה העדכנית ביותר נכשל, לכן אתה מחמיץ תכונות חדשות מדליקות ותיקוני אבטחה. עליך לעדכן את BitPop.</translation>
+<translation id="3421246989510066651">‏מנהל המערכת התקין BitPop במערכת זו, והוא זמין לכל המשתמשים. BitPop ברמת המערכת יחליף כעת את ההתקנה שלך ברמת המשתמש.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">‏סגור את כל חלונות BitPop ונסה שוב.</translation>
+<translation id="6948146312619379712">‏סגור את כל החלונות של BitPop והפעל אותו מחדש כדי שהשינוי ייכנס לתוקף.</translation>
+<translation id="6475912303565314141">‏הגדרה זו גם קובעת איזה דף מוצג כשאתה מפעיל את Chromium.</translation>
+<translation id="158578066452246627">‏הקובץ הזה זדוני, ו-BitPop חסם אותו.</translation>
+<translation id="5845248948746043578">‏מודולים שנטענו ב-BitPop</translation>
+<translation id="3494861236236958082">‏ב-Mac, סיסמאות נשמרות ב-Keychain שלך ומשתמשי BitPop אחרים המשתפים חשבון OS X זה יכולים לגשת אליהן או לסנכרן אותן.</translation>
+<translation id="6497704981133944775">‏ניסית להגיע אל <ph name="DOMAIN"/>, ‏אך השרת הציג אישור שהונפק על ידי ישות שמערכת ההפעלה של המחשב אינה בוטחת בה. ייתכן שהשרת יצר את פרטי הכניסה בעצמו, ו-BitPop אינו יכול להסתמך עליהם לשם השגת פרטי זיהוי, או שייתכן שמישהו מנסה ליירט את התקשורת שלך.</translation>
+<translation id="963040405972220509">‏עליך להיות מחובר ל-BitPop כדי להשתמש ביישומים. כך BitPop יכול לסנכרן את היישומים, הסימניות, ההיסטוריה, הסיסמאות והגדרות נוספות בין מכשירים שונים.</translation>
+<translation id="2585492770508769131">‏המשך הפעלת יישומים ברקע כאשר BitPop סגור</translation>
+<translation id="473775607612524610">עדכן</translation>
+<translation id="1053737967432347853">‏אתר זה משתמש בפלאגין BitPop Frame, שבקרוב לא ייתמך. הסר את התקנתו ושדרג לדפדפן מתקדם.</translation>
+<translation id="8237944200818342704">‏הפעל את BitPop אוטומטית בעת הפעלת המחשב</translation>
+<translation id="5904788103100750653">‏אם אתה משתף מחשב, חברים ובני משפחה יכולים לגלוש בנפרד ולהגדיר את BitPop בדיוק כפי שהם רוצים.</translation>
+<translation id="1141543168124987471">‏גרסה חדשה של BitPop זמינה, והיא מהירה יותר מאי פעם.</translation>
+<translation id="3089560314597734657">‏BitPop לא הצליח לסנכרן את הנתונים שלך מפני שפרטי הכניסה של חשבונך אינם מעודכנים.</translation>
+<translation id="5107343520309227066">‏נראה שהפרופיל נמצא בשימוש על ידי תהליך BitPop אחר (<ph name="PROCESS_ID"/>) במחשב אחר (<ph name="HOST_NAME"/>)‏. BitPop נעל את הפרופיל כדי שלא ייפגם. אם אתה משוכנע שאף תהליך אחר אינו משתמש בפרופיל זה, תוכל לבטל את נעילת הפרופיל ולהפעיל את BitPop מחדש.</translation>
+<translation id="5971960158340115871">‏להסיר מ-‏BitPop‏</translation>
+<translation id="4817923018536741011">‏הוסף את עצמך ל-BitPop</translation>
+<translation id="7066436765290594559">‏מערכת ההפעלה של BitPop לא הצליחה לסנכרן את הנתונים שלך. עדכן את משפט הסיסמה לסנכרון.</translation>
+<translation id="7747138024166251722">המתקין לא הצליח ליצור ספריה זמנית. בדוק את המקום הפנוי בדיסק ואת האישור להתקנת תוכנה.</translation>
+<translation id="1657309500244281883">‏BitPop אינו יכול לקרוא ולכתוב בספריית הנתונים שלו: <ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">מעדכן את המכשיר שלך...</translation>
+<translation id="2485422356828889247">הסר התקנה</translation>
+<translation id="8450502629618876351">‏עזרה באמצעות BitPop</translation>
+<translation id="7974150821733212325">‏אתה נכנס עם חשבון מנוהל ונותן למנהל המערכת שלו שליטה על הפרופיל שלך ב-BitPop. הנתונים שלך ב-BitPop, כגון יישומים, סימניות, היסטוריה, סיסמאות והגדרות אחרות ייקשרו באופן קבוע ל-<ph name="USER_NAME"/>. תוכל למחוק את הנתונים האלה באמצעות מרכז השליטה של חשבונות Google, אבל לא תוכל לשייך את הנתונים האלה לחשבון אחר. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">Chromium App Launcher</translation>
+<translation id="8643500805082769156">‏BitPop אינו מעודכן</translation>
+<translation id="911206726377975832">למחוק גם את נתוני הגלישה שלך?</translation>
+<translation id="7531302439507262213">‏<ph name="DOMAIN"/> דורש שתקרא ותקבל את התנאים וההגבלות הבאים לפני שתשתמש במכשיר הזה. תנאים אלה אינם מרחיבים, משנים או מגבילים את התנאים של מערכת ההפעלה של BitPop.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">‏סגור את כל החלונות של BitPop (כולל חלונות במצב Windows 8) ונסה שוב.</translation>
+<translation id="2318017154298876822">‏עדכן &amp;את BitPop‏</translation>
+<translation id="8862326446509486874">אין לך זכויות שמתאימות להתקנה ברמת המערכת. נסה להפעיל שוב את המתקין כמנהל מערכת.</translation>
+<translation id="2535480412977113886">‏מערכת ההפעלה של BitPop לא הצליחה לסנכרן את הנתונים שלך מפני שפרטי הכניסה של חשבונך אינם מעודכנים.</translation>
+<translation id="8697124171261953979">‏הגדרה זו גם קובעת איזה דף מוצג כשאתה מפעיל את Chromium או מבצע חיפוש מסרגל הכתובות.</translation>
+<translation id="8106224471637848707">‏תוכנה שפועלת במחשב שלך אינה תואמת ל-BitPop.</translation>
+<translation id="8308846639737830860">‏אפשר ל-BitPop לפעול ברקע</translation>
+<translation id="8251642411216619957">‏היכנס אל BitPop</translation>
+<translation id="4365115785552740256">‏Chromium קיים הודות לפרויקט הקוד הפתוח של <ph name="BEGIN_LINK_CHROMIUM"/> Chromium‏<ph name="END_LINK_CHROMIUM"/> ו<ph name="BEGIN_LINK_OSS"/>תוכנות קוד פתוח<ph name="END_LINK_OSS"/> אחרות.</translation>
+<translation id="1990056108053403520">‏BitPop ‏(mDNS-In)</translation>
+<translation id="5819325063060806784">‏אורחים יכולים להשתמש ב-BitPop בלי להשאיר דבר מאחור.</translation>
+<translation id="1526986572493888898">‏אתר זה משתמש בפלאגין BitPop Frame, שבקרוב לא ייתמך. הסר את התקנתו והורד דפדפן תואם.</translation>
+<translation id="7131892997749364444">‏תוסף שינה את הדף שמוצג כשאתה מפעיל את BitPop.</translation>
+<translation id="5877064549588274448">הערוץ שונה. הפעל מחדש את המכשיר להחלת השינויים.</translation>
+<translation id="6321973207566602686">‏הפוך את BitPop לדפדפן ברירת המחדל</translation>
+<translation id="6899689707951760367">‏BitPop משתמש במצלמה שלך.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">‏מערכת ההפעלה של BitPop</translation>
+<translation id="6757767188268205357">אל תנדנד לי</translation>
+<translation id="690823546498424823">‏BitPop יאחסן את המידע שלך באופן מאובטח כך שלא תידרש להקליד אותו שוב, אך עדיין תידרש לאמת את קוד האבטחה של הכרטיס שלך לביצוע תשלומים בעתיד.</translation>
+<translation id="6220055452245182274">‏דיווח על התרסקויות אינו זמין ב-BitPop.</translation>
+<translation id="924450301557116466">‏אינו משמש ב-BitPop. מציין מיקום שנועד לסנכרון מפות משאבים. הוא מקבל ארגומנט אחד: $1.</translation>
+<translation id="843167022919259875">‏BitPop פועל ברקע.</translation>
+<translation id="2171549355847332070">‏נכנסת ל-BitPop כ-<ph name="USER_EMAIL_ADDRESS"/>. השתמש באותו חשבון כדי להיכנס שוב.</translation>
+<translation id="6165323383832829057">‏BitPop הפסיק לעדכן את הגרסה הזו של מערכת ההפעלה שלך וכבר אינו תומך בה.</translation>
+<translation id="2645729404591158594">‏קבל הצצה ל-BitPop החדש</translation>
+<translation id="1984238998837921833">‏מעדכן את BitPop‏...</translation>
+<translation id="9102885271730191378">‏מנהל המשימות - BitPop</translation>
+<translation id="1608739712349494181">‏כדי לשפר את האבטחה של BitPop, השבתנו חלק מהתוספים שלא רשומים ב<ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> וייתכן שנוספו ללא ידיעתך.</translation>
+<translation id="5243897687251941678">‏מצא את הסימניות שלך בתפריט BitPop או בסרגל הסימניות.</translation>
+<translation id="5925519479755588070">‏כמעט מעודכן! הפעל מחדש את BitPop‏ כדי לסיים את העדכון.</translation>
+<translation id="5866485601389562653">‏תוכל להוסיף את חשבונות Google האחרים שלך ולנעול את BitPop בהמשך.</translation>
+<translation id="8072646586465991214">‏נמצאה במערכת התקנה מתנגשת של BitPop. הסר את ההתקנה ונסה שוב.</translation>
+<translation id="4352003675682958984">‏גרסה חדשה של BitPop זמינה כעת.</translation>
+<translation id="8972540218839637401">‏במהלך ההתקנה ארעה שגיאה של מערכת ההפעלה. הורד שוב את BitPop.</translation>
+<translation id="2581134012974124523">‏<ph name="EXTENSION_NAME"/> נוסף ל-‏BitPop‏.</translation>
+<translation id="6452045500174243632">‏עבור אל
+          תפריט BitPop‏ &gt;
+          <ph name="SETTINGS_TITLE"/>
+          ‏&gt;
+          <ph name="ADVANCED_TITLE"/>
+          ‏&gt;
+          <ph name="PROXIES_TITLE"/>
+          ‏&gt;
+          הגדרות LAN
+          ובטל את הבחירה באפשרות "השתמש בשרת proxy עבור רשת LAN‏".</translation>
+<translation id="8988481325911971852">‏ההתקנה נכשלה בשל שגיאה לא מזוהה. הורד שוב את BitPop.</translation>
+<translation id="660036136456272595">‏לא ניתן להשתמש בפרופיל שלך משום שהוא מגיע מגרסה חדשה יותר של BitPop.
 
 ייתכן שחלק מהתכונות לא יהיו זמינות. ציין ספריית פרופיל אחרת או השתמש בגרסה חדשה יותר של BitPop.</translation>
-<translation id="2712549016134575851">אותרה התנגשות עם יישום מותקן אחר.</translation>
-<translation id="1095023322915848441">נכנסת בעבר באמצעות חשבון אחר. אם תיכנס הנתונים שלך ימוזגו. כדאי שתיצור משתמש BitPop חדש דרך <ph name="BEGIN_LINK"/>דף ההגדרות<ph name="END_LINK"/> בשביל הדברים שלך ב-BitPop.</translation>
-<translation id="7862155441175671173">הוסף ל-‏BitPop‏</translation>
-<translation id="5594704848342987755">במחשב זה קיימת כבר גרסה מתקדמת יותר של BitPop. אם התוכנה אינה פועלת, הסר את ההתקנה של BitPop ונסה שוב.</translation>
-<translation id="3422131153907641068">BitPop Utility</translation>
-<translation id="1298199220304005244">קבלת עזרה באמצעות מערכת ההפעלה של Chromium</translation>
-<translation id="8854394556488040390">BitPop Frame עודכן. הפעל מחדש את הדפדפן. גרסת BitPop‏ : <ph name="TODO_0001"/>, גרסת Chromium Frame‏: <ph name="TODO_0002"/></translation>
+<translation id="3787192530015965250">‏BitPop מנסה להציג סיסמאות. הקלד את הסיסמה שלך ל-Windows כדי לאפשר זאת.</translation>
+<translation id="7862155441175671173">‏הוסף ל-‏BitPop‏</translation>
+<translation id="1211470790061593728">‏קל יותר כעת להשתמש ב-BitPop באמצעות חשבון Google שלך ובמחשבים משותפים.</translation>
+<translation id="5594704848342987755">‏במחשב זה קיימת כבר גרסה מתקדמת יותר של BitPop. אם התוכנה אינה פועלת, הסר את ההתקנה של BitPop ונסה שוב.</translation>
+<translation id="3528119622127530876">‏BitPop לא הצליח לסנכרן את הנתונים שלך. עדכן את משפט הסיסמה לסנכרון.</translation>
+<translation id="1298199220304005244">‏עזרה באמצעות מערכת ההפעלה של BitPop</translation>
+<translation id="331951419404882060">‏מערכת ההפעלה של BitPop לא הצליחה לסנכרן את הנתונים שלך עקב שגיאה בתהליך הכניסה.</translation>
+<translation id="8187289872471304532">‏עבור אל
+          'יישומים' &gt; 'העדפות מערכת' &gt; 'רשת' &gt; 'מתקדם' &gt; שרתי Proxy'
+          ובטל את הבחירה בשרתי proxy שנבחרו.</translation>
+<translation id="4634257184917711644">‏<ph name="FILE_NAME"/> הוא קובץ זדוני, ו-BitPop חסם אותו.</translation>
+<translation id="454930334682314382">‏פרטי החיוב שלך נשמרו ב-BitPop.</translation>
 <translation id="130631256467250065">השינויים ייכנסו לתוקף בפעם הבאה שתפעיל מחדש את המכשיר.</translation>
-<translation id="2901348058800597589">BitPop לא נסגר כראוי. לפתיחה מחדש של הדפים שפתחת, לחץ על שחזר.</translation>
-<translation id="5653921603290474550">BitPop אינו מגיב. להפעיל מחדש עכשיו?</translation>
-<translation id="6089587093203430357">Instant</translation>
-<translation id="2410206016513008786">BitPop צריך להפעיל יישום חיצוני כדי לטפל בקישורים של <ph name="SCHEME"/>. הקישור הנדרש הוא <ph name="PROTOLINK"/>.</translation>
-<translation id="8046283042877435986">אתר זה ממליץ על Chromium Frame (כבר מותקן).</translation>
-<translation id="5523374683005655880">לא ניתן להתקין את אותה גרסת BitPop Frame שפועלת כרגע. סגור את BitPop Frame ונסה שוב.</translation>
-<translation id="5574763173398621221">האם אתה רוצה ש-BitPop ישמור את הסיסמה שלך?</translation>
-<translation id="7730150800475367955">עבור אל
-          <ph name="BEGIN_BOLD"/>
-          תפריט BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          "<ph name="OPTIONS_BUTTON"/>"
-          <ph name="END_BOLD"/>
-          (עבור הרשת הנוכחית). אם הלחצן
-          <ph name="BEGIN_BOLD"/>
-          "<ph name="PROXY_BUTTON"/>"
-          <ph name="END_BOLD"/> (בכרטיסייה
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>
-          ) מופיע, לחץ עליו וודא שהגדרת התצורה היא "ישיר".</translation>
-<translation id="5387335700352644169">הצג את תפריט BitPop</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
+<translation id="8810991521775422988">‏מרכז ההתראות של BitPop</translation>
+<translation id="2901348058800597589">‏BitPop לא נסגר כראוי. לפתיחה מחדש של הדפים שפתחת, לחץ על 'שחזר'.</translation>
+<translation id="838316505303362561">‏הוצעה על ידי BitPop</translation>
+<translation id="5653921603290474550">‏BitPop אינו מגיב. להפעיל מחדש עכשיו?</translation>
+<translation id="3306752603341080445">‏נכנסת ל-BitPop!</translation>
+<translation id="2158734852934720349">‏רישיונות קוד פתוח של מערכת ההפעלה של BitPop</translation>
+<translation id="2239725456669400190">‏BitPop צריך להפעיל יישום חיצוני כדי לטפל בקישורים של <ph name="SCHEME"/>. הקישור הנדרש הוא <ph name="PROTOLINK"/>.</translation>
+<translation id="5574763173398621221">‏האם אתה רוצה ש-BitPop ישמור את הסיסמה שלך?</translation>
+<translation id="5387335700352644169">‏הצג את תפריט BitPop</translation>
+<translation id="1981756165552484777">‏אתה משתמש ב-<ph name="PROFILE_EMAIL"/> כדי לסנכרן את הפריטים שלך ב-BitPop. עבור אל '<ph name="SETTINGS_LINK"/>' כדי לעדכן את העדפות הסנכרון או להשתמש ב-BitPop ללא חשבון Google.</translation>
+<translation id="1681324505975197559">‏(נדרש <ph name="BEGIN_BUTTON"/>אתחול<ph name="END_BUTTON"/> של BitPop)</translation>
+<translation id="6863452815496188645">‏הגדר סנכרון כדי לשמור את תכונות הדפדפן המותאמות אישית שלך באינטרנט ולגשת אליהן מ-BitPop בכל מחשב.</translation>
 <translation id="8865765905101981392">דפדפן אינטרנט</translation>
-<translation id="6424492062988593837">‫Chromium ממשיך להשתפר! קיימת גירסה חדשה.</translation>
-<translation id="6385431739515246076">מידע על &amp;BitPop‏</translation>
-<translation id="7521125380721653484">הארכיון של המתקין פגום או שאינו חוקי. הורד שוב את BitPop.</translation>
-<translation id="6836892784612884953">עבור אל
-          <ph name="BEGIN_BOLD"/>
-          תפריט BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="ADVANCED_TITLE"/>
-          &gt;
-          <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          וודא שהגדרות התצורה הן "אין שרת Proxy" או "ישיר".</translation>
-<translation id="457806999714267838">ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שתוקפו פג. אין מידע זמין שיכול לציין אם האישור נפגע מאז פג תוקפו. פירוש הדבר ש-BitPop אינו יכול להבטיח שאתה מתקשר עם &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ולא עם תוקף. השעון של המחשב מוגדר כעת ל-<ph name="CURRENT_TIME"/>. האם זה נכון? אם לא, עליך לתקן את השגיאה ולרענן את דף.</translation>
+<translation id="3099708656176429608">‏אפשר ל-BitPop לגשת לרשת בהגדרות חומת האש או האנטי-וירוס שלך.</translation>
+<translation id="8098179324031720100">‏‫BitPop ממשיך להשתפר! קיימת גירסה חדשה.</translation>
+<translation id="4320683788245444425">‏קבלת העדכונים של BitPop תופסק בקרוב למחשב זה מאחר והחומרה שלו אינה נתמכת עוד.</translation>
+<translation id="6385431739515246076">‏מידע על &amp;BitPop‏</translation>
+<translation id="7521125380721653484">‏הארכיון של המתקין פגום או שאינו חוקי. הורד שוב את BitPop.</translation>
+<translation id="8457938350903919620">‏לחץ על השם שלך כדי לפתוח את BitPop ולהתחיל לגלוש.</translation>
+<translation id="8410648211590980711">‏BitPop משתמש במיקרופון שלך.</translation>
+<translation id="3298525902784604502">‏ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שתוקפו פג. אין מידע זמין שיכול לציין אם האישור נפגע מאז פג תוקפו. פירוש הדבר ש-BitPop אינו יכול להבטיח שאתה מתקשר עם &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ולא עם תוקף. השעון של המחשב מוגדר כעת ל-<ph name="CURRENT_TIME"/>. האם זה נכון? אם לא, עליך לתקן את השגיאה ולרענן את דף.</translation>
 <translation id="7196020411877309443">למה אני רואה את הדף הזה?</translation>
-<translation id="473359818469623008">לא ניתן להתקין את אותה גרסת BitPop שפועלת כרגע. סגור את BitPop ונסה שוב.</translation>
-<translation id="2595850371931815386">BitPop אינו דפדפן ברירת המחדל שלך.</translation>
-<translation id="1857156280997837230">BitPop Apps Launcher</translation>
+<translation id="6809805128084420516">‏מידע חשוב בנוגע לנתונים שלך ב-BitPop</translation>
+<translation id="5312973105258198185">נכנסת למערכת בתור <ph name="USER_EMAIL_ADDRESS"/>. כעת אתה יכול לגשת אל הסימניות, ההיסטוריה והגדרות אחרות שלך בכל המכשירים שבהם אתה מחובר לחשבון.</translation>
+<translation id="473359818469623008">‏לא ניתן להתקין את אותה גרסת BitPop שפועלת כרגע. סגור את BitPop ונסה שוב.</translation>
+<translation id="2595850371931815386">‏BitPop אינו דפדפן ברירת המחדל שלך.</translation>
 <translation id="4458285410772214805">צא מהמערכת והיכנס שוב כדי שהשינוי ייכנס לתוקף.</translation>
-<translation id="6523007289492675308">הצג קיצור דרך ל-BitPop Apps Launcher בשורת המשימות של Windows.</translation>
-<translation id="2119636228670142020">מידע על &amp;מערכת ההפעלה של Chromium‏</translation>
-<translation id="4196382931981526364">גרסה חדשה ובטוחה יותר של BitPop זמינה כעת.</translation>
-<translation id="1077424736315176936">הצג את BitPop Apps Launcher.</translation>
-<translation id="5330935702921516708">עיין ב<ph name="BEGIN_LINK"/>יתרונות נוספים<ph name="END_LINK"/> של הכניסה ל-BitPop.</translation>
-<translation id="862266784641000464">BitPop מאפשר לך ללחוץ על מספר טלפון באינטרנט ולהתקשר אליו באמצעות Skype!</translation>
-<translation id="8072591166076742072">הורדה מתבצעת כעת. האם ברצונך לצאת מ-BitPop ולבטל את ההורדה?</translation>
-<translation id="932207424499184915">BitPop Binaries</translation>
-<translation id="3223104112377435850">מארח הפלאגין של BitPop</translation>
-<translation id="7826309952950470209">הורדות מתבצעות כעת. האם ברצונך לצאת מ-BitPop ולבטל את ההורדות?</translation>
-<translation id="380873736468525691">להפעלת BitPop יש להשתמש במערכת ההפעלה Windows Vista או Windows XP עם SP2 ואילך.</translation>
-<translation id="2762974284703971745">מודול בעל אותו שם מתנגש עם BitPop.</translation>
-<translation id="5443433498537176573">BitPop‏ מעודכן.</translation>
-<translation id="5637727561937246825">במחשב זה כבר קיימת גרסה מתקדמת יותר של רכיבי BitPop. השתמש במתקין עדכני יותר.</translation>
-<translation id="5082591353921977637">ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שעדיין אינו תקף. אין מידע זמין שיכול לציין אם ניתן לבטוח באישור. BitPop אינו יכול להבטיח באופן מהימן שאתה מתקשר עם &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ולא עם תוקף. השעון של המחשב מוגדר כעת ל-<ph name="CURRENT_TIME"/>. האם זה נכון? אם לא, עליך לתקן את שעון המערכת ולרענן את דף.</translation>
-<translation id="1138135211676039883">BitPop משתמש במנוע חיפוש המוגדר כברירת מחדל, שמוגדר כרגע ל-<ph name="PAGE_TITLE"/>. האם ברצונך להשאיר את מנוע החיפוש המוגדר כברירת מחדל?</translation>
-<translation id="185658551912723674">ברוכים הבאים ל-BitPop‏</translation>
-<translation id="6808688532552992663">במחשב זה קיימות כבר גרסאות מתקדמות יותר של BitPop ו-‏BitPop Frame. אם התוכנות אינן פועלות, הסר את ההתקנה של BitPop‏ ושל BitPop Frame ונסה שוב.</translation>
-<translation id="1909867102505992367">קובץ ההעדפות שלך פגום או לא חוקי.
+<translation id="6627720938086825017">‏BitPop משתמש במצלמה ובמיקרופון שלך.</translation>
+<translation id="6382607600997384001">‏כאן תוכל לראות את כל ההתראות שלך מיישומים, מתוספים ומאתרים של BitPop.</translation>
+<translation id="2119636228670142020">‏מידע על &amp;מערכת ההפעלה של BitPop‏</translation>
+<translation id="4196382931981526364">‏גרסה חדשה ובטוחה יותר של BitPop זמינה כעת.</translation>
+<translation id="862266784641000464">‏BitPop מאפשר לך ללחוץ על מספר טלפון באינטרנט ולהתקשר אליו באמצעות Skype!</translation>
+<translation id="8072591166076742072">‏הורדה מתבצעת כעת. האם ברצונך לצאת מ-BitPop ולבטל את ההורדה?</translation>
+<translation id="8650443074479376435">‏BitPop לא הצליח לסנכרן את הנתונים שלך בשל שגיאת כניסה.</translation>
+<translation id="7561209000218748370">‏כלל נכנס עבור BitPop על מנת לאפשר תנועת mDNS.</translation>
+<translation id="151962892725702025">‏מערכת ההפעלה של BitPop לא הצליחה לסנכרן את הנתונים שלך מפני שסנכרון אינו זמין עבור הדומיין שלך.</translation>
+<translation id="3360567213983886831">Chromium Binaries</translation>
+<translation id="108010966668726733">‏מישהו נכנס בעבר ל-Chromuim מהמחשב הזה כ-<ph name="ACCOUNT_EMAIL_LAST"/>. אם זה לא החשבון שלך, צור משתמש חדש ל-Chromuim כדי לשמור על הפרדת המידע שלך.
+
+אם תמשיך בכניסה, המידע ב-Chromuim , כמו סימניות, היסטוריה והגדרות אחרות, ימוזג עם <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
+<translation id="7826309952950470209">‏הורדות מתבצעות כעת. האם ברצונך לצאת מ-BitPop ולבטל את ההורדות?</translation>
+<translation id="380873736468525691">‏להפעלת BitPop יש להשתמש במערכת ההפעלה Windows Vista או Windows XP עם SP2 ואילך.</translation>
+<translation id="2762974284703971745">‏מודול בעל אותו שם מתנגש עם BitPop.</translation>
+<translation id="5213128101330439346">‏זהו ה-BitPop שלך</translation>
+<translation id="5443433498537176573">‏BitPop‏ מעודכן.</translation>
+<translation id="5637727561937246825">‏במחשב זה כבר קיימת גרסה מתקדמת יותר של רכיבי BitPop. השתמש במתקין עדכני יותר.</translation>
+<translation id="4547797007790555015">‏ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שעדיין אינו תקף. אין מידע זמין שיכול לציין אם ניתן לבטוח באישור. BitPop אינו יכול להבטיח באופן מהימן שאתה מתקשר עם &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; ולא עם תוקף. השעון של המחשב מוגדר כעת ל-<ph name="CURRENT_TIME"/>. האם זה נכון? אם לא, עליך לתקן את שעון המערכת ולרענן את דף.</translation>
+<translation id="185658551912723674">‏ברוכים הבאים ל-BitPop‏</translation>
+<translation id="1909867102505992367">‏קובץ ההעדפות שלך פגום או לא חוקי. 
 
 BitPop לא יכול לשחזר את ההגדרות שלך.</translation>
-<translation id="4933902704814222889">BitPop הוא דפדפן אינטרנט שמפעיל דפי אינטרנט ויישומים במהירות הבזק. הוא מהיר, יציב ונוח לשימוש. הוא מאפשר גלישה בטוחה יותר באינטרנט, הודות להגנה מובנית כנגד התחזות ותוכנות זדוניות.</translation>
-<translation id="7673336527696184948">ארגומנטים לא חוקיים. לא ניתן להתקין את BitPop Frame במצב מוכן מבלי להתקין גם את BitPop.</translation>
+<translation id="6239286721842301381">‏אתה צופה בתצוגה מקדימה של BitPop החדש.</translation>
+<translation id="7591092481995851856">‏ניתוק <ph name="USERNAME"/> ינקה את ההיסטוריה, הסימניות, ההגדרות ונתוני BitPop אחרים המאוחסנים במכשיר הזה. נתונים המאוחסנים בחשבון Google לא ינוקו, וניתן לנהל אותם <ph name="GOOGLE_DASHBOARD_LINK"/>במרכז השליטה של Google<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
+<translation id="4933902704814222889">‏BitPop הוא דפדפן אינטרנט המפעיל דפי אינטרנט ואפליקציות במהירות הבזק. זהו דפדפן מהיר, יציב וקל לשימוש. תוכל לגלוש באינטרנט בצורה מאובטחת יותר הודות להגנה מפני תוכנות זדוניות ודיוג המובנית ב-BitPop.</translation>
+<translation id="5806792281256987775">‏ניסית להגיע אל &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, אך השרת הציג אישור שהונפק על ידי ישות ש-BitPop אינו בוטח בה. ייתכן שהשרת יצר את פרטי הכניסה בעצמו, ו-BitPop אינו יכול להסתמך עליהם כפרטי זהות, או שתוקף מנסה ליירט את התקשורת שלך.</translation>
+<translation id="26317130586606191">‏האם לקשר את הנתונים שלך ב-BitPop לחשבון זה?</translation>
 <translation id="5583217122091744450">BitPop Helper</translation>
-<translation id="6404599307042403560">BitPop‏ מוגדר באופן אוטומטי לפעול בעת הפעלת המחשב.</translation>
-<translation id="8974095189086268230">מערכת ההפעלה של Chrome התאפשרה באמצעות <ph name="BEGIN_LINK_CROS_OSS"/>תוכנת קוד פתוח<ph name="END_LINK_CROS_OSS"/> נוספת.</translation>
-<translation id="1221340462641866827">מערכת ההפעלה של Chromium אינה תומכת בהפעלת יישום חיצוני כדי לטפל בקישורים של <ph name="SCHEME"/>. הקישור הנדרש הוא <ph name="PROTOLINK"/>.</translation>
+<translation id="3089741509794563091">‏BitPop השתפר</translation>
+<translation id="6404599307042403560">‏BitPop‏ מוגדר באופן אוטומטי לפעול בעת הפעלת המחשב.</translation>
+<translation id="554833011526807667">‏מערכת ההפעלה של Chrome התאפשרה באמצעות <ph name="BEGIN_LINK_CROS_OSS"/>תוכנת קוד פתוח<ph name="END_LINK_CROS_OSS"/> נוספת.</translation>
+<translation id="8166042339699941380">‏אתה נכנס עם חשבון מנוהל ונותן למנהל המערכת שלו שליטה על הפרופיל שלך ב-BitPop. הנתונים שלך ב-BitPop, כמו יישומים, סימניות, היסטוריה, סיסמאות והגדרות אחרות ייקשרו באופן קבוע ל-<ph name="USER_NAME"/>. תוכל למחוק את הנתונים האלה באמצעות מרכז השליטה של חשבונות Google, אבל לא תוכל לשייך את הנתונים האלה לחשבון אחר.</translation>
+<translation id="2032763513380168750">‏קשר את הנתונים שלי ב-BitPop לחשבון הזה</translation>
+<translation id="2477235356415090659">‏התקן מחדש את BitPop</translation>
+<translation id="807350504213044844">‏מערכת ההפעלה של BitPop אינה תומכת בהפעלת יישום חיצוני כדי לטפל בקישורים של <ph name="SCHEME"/>. הקישור הנדרש הוא <ph name="PROTOLINK"/>.</translation>
+<translation id="3484768020161794310">‏המפתחות של Google API חסרים. פונקציונליות מסוימת של BitPop תהיה מושבתת.</translation>
+<translation id="531363935678210182">‏BitPop - הודעות</translation>
+<translation id="3151848949510984428">‏שמור פרטים ב-BitPop</translation>
 </translationbundle>

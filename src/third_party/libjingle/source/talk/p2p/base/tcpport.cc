@@ -38,8 +38,7 @@ TCPPort::TCPPort(talk_base::Thread* thread,
                  talk_base::Network* network, const talk_base::IPAddress& ip,
                  int min_port, int max_port, const std::string& username,
                  const std::string& password, bool allow_listen)
-    : Port(thread, LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP,
-           factory, network, ip, min_port, max_port,
+    : Port(thread, LOCAL_PORT_TYPE, factory, network, ip, min_port, max_port,
            username, password),
       incoming_only_(false),
       allow_listen_(allow_listen),
@@ -68,13 +67,19 @@ bool TCPPort::Init() {
 
 TCPPort::~TCPPort() {
   delete socket_;
+  std::list<Incoming>::iterator it;
+  for (it = incoming_.begin(); it != incoming_.end(); ++it)
+    delete it->socket;
+  incoming_.clear();
 }
 
 Connection* TCPPort::CreateConnection(const Candidate& address,
                                       CandidateOrigin origin) {
   // We only support TCP protocols
-  if ((address.protocol() != "tcp") && (address.protocol() != "ssltcp"))
+  if ((address.protocol() != TCP_PROTOCOL_NAME) &&
+      (address.protocol() != SSLTCP_PROTOCOL_NAME)) {
     return NULL;
+  }
 
   // We can't accept TCP connections incoming on other ports
   if (origin == ORIGIN_OTHER_PORT)
@@ -85,8 +90,10 @@ Connection* TCPPort::CreateConnection(const Candidate& address,
     return NULL;
 
   // We don't know how to act as an ssl server yet
-  if ((address.protocol() == "ssltcp") && (origin == ORIGIN_THIS_PORT))
+  if ((address.protocol() == SSLTCP_PROTOCOL_NAME) &&
+      (origin == ORIGIN_THIS_PORT)) {
     return NULL;
+  }
 
   if (!IsCompatibleAddress(address.address())) {
     return NULL;
@@ -114,19 +121,24 @@ void TCPPort::PrepareAddress() {
     if (socket_->GetState() == talk_base::AsyncPacketSocket::STATE_BOUND ||
         socket_->GetState() == talk_base::AsyncPacketSocket::STATE_CLOSED)
       AddAddress(socket_->GetLocalAddress(), socket_->GetLocalAddress(),
-                 "tcp", LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP, true);
+                 talk_base::SocketAddress(),
+                 TCP_PROTOCOL_NAME, LOCAL_PORT_TYPE,
+                 ICE_TYPE_PREFERENCE_HOST_TCP, true);
   } else {
     LOG_J(LS_INFO, this) << "Not listening due to firewall restrictions.";
     // Note: We still add the address, since otherwise the remote side won't
     // recognize our incoming TCP connections.
     AddAddress(talk_base::SocketAddress(ip(), 0),
-               talk_base::SocketAddress(ip(), 0), "tcp",
-               LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP, true);
+               talk_base::SocketAddress(ip(), 0), talk_base::SocketAddress(),
+               TCP_PROTOCOL_NAME, LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP,
+               true);
   }
 }
 
 int TCPPort::SendTo(const void* data, size_t size,
-                    const talk_base::SocketAddress& addr, bool payload) {
+                    const talk_base::SocketAddress& addr,
+                    const talk_base::PacketOptions& options,
+                    bool payload) {
   talk_base::AsyncPacketSocket * socket = NULL;
   if (TCPConnection * conn = static_cast<TCPConnection*>(GetConnection(addr))) {
     socket = conn->socket();
@@ -135,11 +147,11 @@ int TCPPort::SendTo(const void* data, size_t size,
   }
   if (!socket) {
     LOG_J(LS_ERROR, this) << "Attempted to send to an unknown destination, "
-                          << addr.ToString();
+                          << addr.ToSensitiveString();
     return -1;  // TODO: Set error_
   }
 
-  int sent = socket->Send(data, size);
+  int sent = socket->Send(data, size, options);
   if (sent < 0) {
     error_ = socket->GetError();
     LOG_J(LS_ERROR, this) << "TCP send of " << size
@@ -176,9 +188,10 @@ void TCPPort::OnNewConnection(talk_base::AsyncPacketSocket* socket,
   incoming.addr = new_socket->GetRemoteAddress();
   incoming.socket = new_socket;
   incoming.socket->SignalReadPacket.connect(this, &TCPPort::OnReadPacket);
+  incoming.socket->SignalReadyToSend.connect(this, &TCPPort::OnReadyToSend);
 
   LOG_J(LS_VERBOSE, this) << "Accepted connection from "
-                          << incoming.addr.ToString();
+                          << incoming.addr.ToSensitiveString();
   incoming_.push_back(incoming);
 }
 
@@ -199,13 +212,18 @@ talk_base::AsyncPacketSocket* TCPPort::GetIncoming(
 
 void TCPPort::OnReadPacket(talk_base::AsyncPacketSocket* socket,
                            const char* data, size_t size,
-                           const talk_base::SocketAddress& remote_addr) {
+                           const talk_base::SocketAddress& remote_addr,
+                           const talk_base::PacketTime& packet_time) {
   Port::OnReadPacket(data, size, remote_addr, PROTO_TCP);
+}
+
+void TCPPort::OnReadyToSend(talk_base::AsyncPacketSocket* socket) {
+  Port::OnReadyToSend();
 }
 
 void TCPPort::OnAddressReady(talk_base::AsyncPacketSocket* socket,
                              const talk_base::SocketAddress& address) {
-  AddAddress(address, address, "tcp",
+  AddAddress(address, address, talk_base::SocketAddress(), "tcp",
              LOCAL_PORT_TYPE, ICE_TYPE_PREFERENCE_HOST_TCP,
              true);
 }
@@ -216,20 +234,21 @@ TCPConnection::TCPConnection(TCPPort* port, const Candidate& candidate,
   bool outgoing = (socket_ == NULL);
   if (outgoing) {
     // TODO: Handle failures here (unlikely since TCP).
-
+    int opts = (candidate.protocol() == SSLTCP_PROTOCOL_NAME) ?
+        talk_base::PacketSocketFactory::OPT_SSLTCP : 0;
     socket_ = port->socket_factory()->CreateClientTcpSocket(
-        talk_base::SocketAddress(port_->Network()->ip(), 0),
-        candidate.address(), port->proxy(), port->user_agent(),
-        candidate.protocol() == "ssltcp");
+        talk_base::SocketAddress(port->ip(), 0),
+        candidate.address(), port->proxy(), port->user_agent(), opts);
     if (socket_) {
       LOG_J(LS_VERBOSE, this) << "Connecting from "
-                              << socket_->GetLocalAddress().ToString() << " to "
-                              << candidate.address().ToString();
+                              << socket_->GetLocalAddress().ToSensitiveString()
+                              << " to "
+                              << candidate.address().ToSensitiveString();
       set_connected(false);
       socket_->SignalConnect.connect(this, &TCPConnection::OnConnect);
     } else {
       LOG_J(LS_WARNING, this) << "Failed to create connection to "
-                              << candidate.address().ToString();
+                              << candidate.address().ToSensitiveString();
     }
   } else {
     // Incoming connections should match the network address.
@@ -238,6 +257,7 @@ TCPConnection::TCPConnection(TCPPort* port, const Candidate& candidate,
 
   if (socket_) {
     socket_->SignalReadPacket.connect(this, &TCPConnection::OnReadPacket);
+    socket_->SignalReadyToSend.connect(this, &TCPConnection::OnReadyToSend);
     socket_->SignalClose.connect(this, &TCPConnection::OnClose);
   }
 }
@@ -246,7 +266,8 @@ TCPConnection::~TCPConnection() {
   delete socket_;
 }
 
-int TCPConnection::Send(const void* data, size_t size) {
+int TCPConnection::Send(const void* data, size_t size,
+                        const talk_base::PacketOptions& options) {
   if (!socket_) {
     error_ = ENOTCONN;
     return SOCKET_ERROR;
@@ -257,7 +278,7 @@ int TCPConnection::Send(const void* data, size_t size) {
     error_ = EWOULDBLOCK;
     return SOCKET_ERROR;
   }
-  int sent = socket_->Send(data, size);
+  int sent = socket_->Send(data, size, options);
   if (sent < 0) {
     error_ = socket_->GetError();
   } else {
@@ -272,9 +293,19 @@ int TCPConnection::GetError() {
 
 void TCPConnection::OnConnect(talk_base::AsyncPacketSocket* socket) {
   ASSERT(socket == socket_);
-  LOG_J(LS_VERBOSE, this) << "Connection established to "
-                          << socket->GetRemoteAddress().ToString();
-  set_connected(true);
+  // Do not use this connection if the socket bound to a different address than
+  // the one we asked for. This is seen in Chrome, where TCP sockets cannot be
+  // given a binding address, and the platform is expected to pick the
+  // correct local address.
+  if (socket->GetLocalAddress().ipaddr() == port()->ip()) {
+    LOG_J(LS_VERBOSE, this) << "Connection established to "
+                            << socket->GetRemoteAddress().ToSensitiveString();
+    set_connected(true);
+  } else {
+    LOG_J(LS_WARNING, this) << "Dropping connection as TCP socket bound to a "
+                            << "different address from the local candidate.";
+    socket_->Close();
+  }
 }
 
 void TCPConnection::OnClose(talk_base::AsyncPacketSocket* socket, int error) {
@@ -284,11 +315,17 @@ void TCPConnection::OnClose(talk_base::AsyncPacketSocket* socket, int error) {
   set_write_state(STATE_WRITE_TIMEOUT);
 }
 
-void TCPConnection::OnReadPacket(talk_base::AsyncPacketSocket* socket,
-                                 const char* data, size_t size,
-                                 const talk_base::SocketAddress& remote_addr) {
+void TCPConnection::OnReadPacket(
+  talk_base::AsyncPacketSocket* socket, const char* data, size_t size,
+  const talk_base::SocketAddress& remote_addr,
+  const talk_base::PacketTime& packet_time) {
   ASSERT(socket == socket_);
-  Connection::OnReadPacket(data, size);
+  Connection::OnReadPacket(data, size, packet_time);
+}
+
+void TCPConnection::OnReadyToSend(talk_base::AsyncPacketSocket* socket) {
+  ASSERT(socket == socket_);
+  Connection::OnReadyToSend();
 }
 
 }  // namespace cricket

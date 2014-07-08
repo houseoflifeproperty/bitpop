@@ -5,10 +5,11 @@
 #import <Cocoa/Cocoa.h>
 
 #include "base/file_util.h"
+#include "base/files/scoped_file.h"
 #include "base/logging.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "content/common/mac/font_descriptor.h"
 #include "content/common/mac/font_loader.h"
 #include "content/common/sandbox_mac_unittest_helper.h"
@@ -19,8 +20,8 @@ namespace content {
 class FontLoadingTestCase : public MacSandboxTestCase {
  public:
   FontLoadingTestCase() : font_data_length_(-1) {}
-  virtual bool BeforeSandboxInit();
-  virtual bool SandboxedTest();
+  virtual bool BeforeSandboxInit() OVERRIDE;
+  virtual bool SandboxedTest() OVERRIDE;
  private:
   scoped_ptr<base::SharedMemory> font_shmem_;
   size_t font_data_length_;
@@ -31,7 +32,7 @@ REGISTER_SANDBOX_TEST_CASE(FontLoadingTestCase);
 // Load raw font data into shared memory object.
 bool FontLoadingTestCase::BeforeSandboxInit() {
   std::string font_data;
-  if (!file_util::ReadFileToString(FilePath(test_data_.c_str()), &font_data)) {
+  if (!base::ReadFileToString(base::FilePath(test_data_.c_str()), &font_data)) {
     LOG(ERROR) << "Failed to read font data from file (" << test_data_ << ")";
     return false;
   }
@@ -43,7 +44,7 @@ bool FontLoadingTestCase::BeforeSandboxInit() {
   }
 
   font_shmem_.reset(new base::SharedMemory);
-  if (!font_shmem_.get()) {
+  if (!font_shmem_) {
     LOG(ERROR) << "Failed to create shared memory object.";
     return false;
   }
@@ -63,7 +64,7 @@ bool FontLoadingTestCase::BeforeSandboxInit() {
 
 bool FontLoadingTestCase::SandboxedTest() {
   base::SharedMemoryHandle shmem_handle;
-  if (!font_shmem_->ShareToProcess(NULL, &shmem_handle)) {
+  if (!font_shmem_->ShareToProcess(base::kNullProcessHandle, &shmem_handle)) {
     LOG(ERROR) << "SharedMemory::ShareToProcess failed";
     return false;
   }
@@ -79,11 +80,11 @@ bool FontLoadingTestCase::SandboxedTest() {
     LOG(ERROR) << "Got NULL CGFontRef";
     return false;
   }
-  base::mac::ScopedCFTypeRef<CGFontRef> cgfont(cg_font_ref);
+  base::ScopedCFTypeRef<CGFontRef> cgfont(cg_font_ref);
 
   CTFontRef ct_font_ref =
       CTFontCreateWithGraphicsFont(cgfont.get(), 16.0, NULL, NULL);
-  base::mac::ScopedCFTypeRef<CTFontRef> ctfont(ct_font_ref);
+  base::ScopedCFTypeRef<CTFontRef> ctfont(ct_font_ref);
 
   if (!ct_font_ref) {
     LOG(ERROR) << "CTFontCreateWithGraphicsFont() failed";
@@ -102,10 +103,10 @@ bool FontLoadingTestCase::SandboxedTest() {
 }
 
 TEST_F(MacSandboxTest, FontLoadingTest) {
-  FilePath temp_file_path;
-  FILE* temp_file = file_util::CreateAndOpenTemporaryFile(&temp_file_path);
+  base::FilePath temp_file_path;
+  FILE* temp_file = base::CreateAndOpenTemporaryFile(&temp_file_path);
   ASSERT_TRUE(temp_file);
-  file_util::ScopedFILE temp_file_closer(temp_file);
+  base::ScopedFILE temp_file_closer(temp_file);
 
   NSFont* srcFont = [NSFont fontWithName:@"Geeza Pro" size:16.0];
   FontDescriptor descriptor(srcFont);
@@ -114,14 +115,14 @@ TEST_F(MacSandboxTest, FontLoadingTest) {
   EXPECT_GT(result.font_data_size, 0U);
   EXPECT_GT(result.font_id, 0U);
 
-  file_util::WriteFileDescriptor(fileno(temp_file),
+  base::WriteFileDescriptor(fileno(temp_file),
       static_cast<const char *>(result.font_data.memory()),
       result.font_data_size);
 
   ASSERT_TRUE(RunTestInSandbox(SANDBOX_TYPE_RENDERER,
                   "FontLoadingTestCase", temp_file_path.value().c_str()));
   temp_file_closer.reset();
-  ASSERT_TRUE(file_util::Delete(temp_file_path, false));
+  ASSERT_TRUE(base::DeleteFile(temp_file_path, false));
 }
 
 }  // namespace content

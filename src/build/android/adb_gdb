@@ -7,7 +7,7 @@
 
 # A generic script used to attach to a running Chromium process and
 # debug it. Most users should not use this directly, but one of the
-# wrapper scripts like adb_gdb_content_shell, or adb_gdb_drt
+# wrapper scripts like adb_gdb_content_shell
 #
 # Use --help to print full usage instructions.
 #
@@ -17,6 +17,11 @@ PROGDIR=$(dirname "$0")
 
 # Location of Chromium-top-level sources.
 CHROMIUM_SRC=$(cd "$PROGDIR"/../.. && pwd 2>/dev/null)
+
+# Location of Chromium out/ directory.
+if [ -z "$CHROMIUM_OUT_DIR" ]; then
+  CHROMIUM_OUT_DIR=out
+fi
 
 TMPDIR=
 GDBSERVER_PIDFILE=
@@ -36,15 +41,17 @@ clean_exit () {
     log "Cleaning up: $TMPDIR"
     rm -rf "$TMPDIR"
   fi
+  trap "" EXIT
   exit $1
 }
 
-# Ensure clean exit on Ctrl-C.
-trap "clean_exit 1" INT
+# Ensure clean exit on Ctrl-C or normal exit.
+trap "clean_exit 1" INT HUP QUIT TERM
+trap "clean_exit \$?" EXIT
 
 panic () {
   echo "ERROR: $@" >&2
-  clean_exit 1
+  exit 1
 }
 
 fail_panic () {
@@ -81,6 +88,7 @@ ANNOTATE=
 # Note: Ignore BUILDTYPE variable, because the Ninja build doesn't use it.
 BUILDTYPE=
 FORCE=
+GDBEXEPOSTFIX=gdb
 GDBINIT=
 GDBSERVER=
 HELP=
@@ -94,6 +102,7 @@ PULL_LIBS_DIR=
 SANDBOXED=
 SANDBOXED_INDEX=
 START=
+SU_PREFIX=
 SYMBOL_DIR=
 TARGET_ARCH=
 TOOLCHAIN=
@@ -116,6 +125,9 @@ for opt; do
       ;;
     --gdbserver=*)
       GDBSERVER=$optarg
+      ;;
+    --gdb=*)
+      GDB=$optarg
       ;;
     --help|-h|-?)
       HELP=true
@@ -154,14 +166,23 @@ for opt; do
     --start)
       START=true
       ;;
+    --su-prefix=*)
+      SU_PREFIX=$optarg
+      ;;
     --symbol-dir=*)
       SYMBOL_DIR=$optarg
+      ;;
+    --out-dir=*)
+      CHROMIUM_OUT_DIR=$optarg
       ;;
     --target-arch=*)
       TARGET_ARCH=$optarg
       ;;
     --toolchain=*)
       TOOLCHAIN=$optarg
+      ;;
+    --ui)
+      GDBEXEPOSTFIX=gdbtui
       ;;
     --verbose)
       VERBOSE=$(( $VERBOSE + 1 ))
@@ -224,21 +245,19 @@ them up automatically for you though:
    - host gdb client (e.g. arm-linux-androideabi-gdb)
    - directory with symbolic version of $PROGRAM_NAME's shared libraries.
 
-If you have sourced Chromium's build/android/envsetup.sh, this script will
-find all of them automatically. This is the recommended way to use it.
-
-Otherwise, if you have ANDROID_NDK_ROOT defined in your environment,
-the script will use it to find the gdb and gdbserver binaries. You can
-also use --ndk-dir=<path> to specify an alternative NDK installation
+You can also use --ndk-dir=<path> to specify an alternative NDK installation
 directory.
 
 The script tries to find the most recent version of the debug version of
 shared libraries under one of the following directories:
 
-  \$CHROMIUM_SRC/out/Release/lib/           (used by Ninja builds)
-  \$CHROMIUM_SRC/out/Debug/lib/             (used by Ninja builds)
-  \$CHROMIUM_SRC/out/Release/lib.target/    (used by Make builds)
-  \$CHROMIUM_SRC/out/Debug/lib.target/      (used by Make builds)
+  \$CHROMIUM_SRC/<out>/Release/lib/           (used by Ninja builds)
+  \$CHROMIUM_SRC/<out>/Debug/lib/             (used by Ninja builds)
+  \$CHROMIUM_SRC/<out>/Release/lib.target/    (used by Make builds)
+  \$CHROMIUM_SRC/<out>/Debug/lib.target/      (used by Make builds)
+
+Where <out> is 'out' by default, unless the --out=<name> option is used or
+the CHROMIUM_OUT_DIR environment variable is defined.
 
 You can restrict this search by using --release or --debug to specify the
 build type, or simply use --symbol-dir=<path> to specify the file manually.
@@ -282,19 +301,25 @@ Valid options:
   --sandboxed           Debug first sandboxed process we find.
   --sandboxed=<num>     Debug specific sandboxed process.
   --symbol-dir=<path>   Specify directory with symbol shared libraries.
+  --out-dir=<path>      Specify the out directory.
   --package-name=<name> Specify package name (alternative to 1st argument).
   --program-name=<name> Specify program name (cosmetic only).
   --pid=<pid>           Specify application process pid.
   --force               Kill any previous debugging session, if any.
   --start               Start package's activity on device.
+  --ui                  Use gdbtui instead of gdb
   --activity=<name>     Activity name for --start [$DEFAULT_ACTIVITY].
   --annotate=<num>      Enable gdb annotation.
   --script=<file>       Specify extra GDB init script.
 
-  --gdbserver=<file>    Specify targer gdbserver binary.
-  --gdb=<program>       Specify host gdb client binary.
+  --gdbserver=<file>    Specify target gdbserver binary.
+  --gdb=<file>          Specify host gdb client binary.
   --target-arch=<name>  Specify NDK target arch.
-  --adb=<program>       Specify host ADB binary.
+  --adb=<file>          Specify host ADB binary.
+
+  --su-prefix=<prefix>  Prepend <prefix> to 'adb shell' commands that are
+                        run by this script. This can be useful to use
+                        the 'su' program on rooted production devices.
 
   --pull-libs           Force system libraries extraction.
   --no-pull-libs        Do not extract any system library.
@@ -312,10 +337,8 @@ if [ -z "$PACKAGE_NAME" ]; then
 fi
 
 if [ -z "$NDK_DIR" ]; then
-  if [ -z "$ANDROID_NDK_ROOT" ]; then
-    panic "Can't find NDK directory, please source \
-build/android/envsetup.sh!"
-  fi
+  ANDROID_NDK_ROOT=$(PYTHONPATH=build/android python -c \
+'from pylib.constants import ANDROID_NDK_ROOT; print ANDROID_NDK_ROOT,')
 else
   if [ ! -d "$NDK_DIR" ]; then
     panic "Invalid directory: $NDK_DIR"
@@ -358,17 +381,44 @@ else
   fi
 fi
 
-# Detect the NDK system tag, i.e. the name used to identify the host.
-# out: NDK system tag (e.g. 'linux-x86').
-get_ndk_host_tag () {
-  if [ -z "$NDK_HOST_TAG" ]; then
-    case $(uname -s) in
-      Linux) NDK_HOST_TAG=linux-x86;;
-      Darwin) NDK_HOST_TAG=darwin-x86;;
-      *) panic "You can't run this script on this system: $uname -a";;
+# Detect the NDK system name, i.e. the name used to identify the host.
+# out: NDK system name (e.g. 'linux' or 'darwin')
+get_ndk_host_system () {
+  local HOST_OS
+  if [ -z "$NDK_HOST_SYSTEM" ]; then
+    HOST_OS=$(uname -s)
+    case $HOST_OS in
+      Linux) NDK_HOST_SYSTEM=linux;;
+      Darwin) NDK_HOST_SYSTEM=darwin;;
+      *) panic "You can't run this script on this system: $HOST_OS";;
     esac
   fi
-  echo "$NDK_HOST_TAG"
+  echo "$NDK_HOST_SYSTEM"
+}
+
+# Detect the NDK host architecture name.
+# out: NDK arch name (e.g. 'x86' or 'x86_64')
+get_ndk_host_arch () {
+  local HOST_ARCH HOST_OS
+  if [ -z "$NDK_HOST_ARCH" ]; then
+    HOST_OS=$(get_ndk_host_system)
+    HOST_ARCH=$(uname -p)
+    case $HOST_ARCH in
+      i?86) NDK_HOST_ARCH=x86;;
+      x86_64|amd64) NDK_HOST_ARCH=x86_64;;
+      *) panic "You can't run this script on this host architecture: $HOST_ARCH";;
+    esac
+    # Darwin trick: "uname -p" always returns i386 on 64-bit installations.
+    if [ "$HOST_OS" = darwin -a "$NDK_HOST_ARCH" = "x86" ]; then
+      # Use '/usr/bin/file', not just 'file' to avoid buggy MacPorts
+      # implementations of the tool. See http://b.android.com/53769
+      HOST_64BITS=$(/usr/bin/file -L "$SHELL" | grep -e "x86[_-]64")
+      if [ "$HOST_64BITS" ]; then
+        NDK_HOST_ARCH=x86_64
+      fi
+    fi
+  fi
+  echo "$NDK_HOST_ARCH"
 }
 
 # Convert an NDK architecture name into a GNU configure triplet.
@@ -428,27 +478,32 @@ get_ndk_toolchain_prebuilt () {
 
 # Find the path to an NDK's toolchain full prefix for a given architecture
 # $1: NDK install path
-# $2: NDK architecture name
+# $2: NDK target architecture name
 # Out: install path + binary prefix (e.g.
 #      ".../path/to/bin/arm-linux-androideabi-")
 get_ndk_toolchain_fullprefix () {
   local NDK_DIR="$1"
   local ARCH="$2"
-  local TARGET NAME HOST GCC CONFIG
+  local TARGET NAME HOST_OS HOST_ARCH GCC CONFIG
 
   # NOTE: This will need to be updated if the NDK changes the names or moves
   #        the location of its prebuilt toolchains.
   #
   GCC=
-  HOST=$(get_ndk_host_tag)
+  HOST_OS=$(get_ndk_host_system)
+  HOST_ARCH=$(get_ndk_host_arch)
   CONFIG=$(get_arch_gnu_config $ARCH)
   GCC=$(get_ndk_toolchain_prebuilt \
-        "$NDK_DIR" "$ARCH" "$HOST/bin/$CONFIG-gcc")
+        "$NDK_DIR" "$ARCH" "$HOST_OS-$HOST_ARCH/bin/$CONFIG-gcc")
+  if [ -z "$GCC" -a "$HOST_ARCH" = "x86_64" ]; then
+    GCC=$(get_ndk_toolchain_prebuilt \
+          "$NDK_DIR" "$ARCH" "$HOST_OS-x86/bin/$CONFIG-gcc")
+  fi
   if [ ! -f "$GCC" -a "$ARCH" = "x86" ]; then
     # Special case, the x86 toolchain used to be incorrectly
     # named i686-android-linux-gcc!
     GCC=$(get_ndk_toolchain_prebuilt \
-          "$NDK_DIR" "$ARCH" "$HOST/bin/i686-android-linux-gcc")
+          "$NDK_DIR" "$ARCH" "$HOST_OS-x86/bin/i686-android-linux-gcc")
   fi
   if [ -z "$GCC" ]; then
     panic "Cannot find Android NDK toolchain for '$ARCH' architecture. \
@@ -462,7 +517,6 @@ Please verify your NDK installation!"
 get_ndk_gdbserver () {
   local NDK_DIR="$1"
   local ARCH=$2
-  local HOST=$(get_ndk_host_tag)
   local BINARY
 
   # The location has moved after NDK r8
@@ -496,12 +550,14 @@ fi
 ANDROID_TOOLCHAIN=${ANDROID_TOOLCHAIN%/}
 
 # Find host GDB client binary
-GDB=$(which $ANDROID_TOOLCHAIN/*-gdb 2>/dev/null | head -1)
 if [ -z "$GDB" ]; then
-  panic "Can't find Android gdb client in your path, check your \
---toolchain path."
+  GDB=$(which $ANDROID_TOOLCHAIN/*-$GDBEXEPOSTFIX 2>/dev/null | head -1)
+  if [ -z "$GDB" ]; then
+    panic "Can't find Android gdb client in your path, check your \
+--toolchain or --gdb path."
+  fi
+  log "Host gdb client: $GDB"
 fi
-log "Host gdb client: $GDB"
 
 # Find gdbserver binary, we will later push it to /data/local/tmp
 # This ensures that both gdbserver and $GDB talk the same binary protocol,
@@ -621,7 +677,7 @@ get_file_timestamp () {
 
 # Detect the build type and symbol directory. This is done by finding
 # the most recent sub-directory containing debug shared libraries under
-# $CHROMIUM_SRC/out/
+# $CHROMIUM_SRC/$CHROMIUM_OUT_DIR/
 #
 # $1: $BUILDTYPE value, can be empty
 # Out: nothing, but this sets SYMBOL_DIR
@@ -638,7 +694,7 @@ detect_symbol_dir () {
   LIST=$TMPDIR/scan-subdirs-$$.txt
   printf "" > "$LIST"
   for SUBDIR in $SUBDIRS; do
-    DIR=$CHROMIUM_SRC/out/$SUBDIR
+    DIR=$CHROMIUM_SRC/$CHROMIUM_OUT_DIR/$SUBDIR
     if [ -d "$DIR" ]; then
       # Ignore build directories that don't contain symbol versions
       # of the shared libraries.
@@ -657,14 +713,14 @@ detect_symbol_dir () {
   if [ -z "$SUBDIR" ]; then
     if [ -z "$1" ]; then
       panic "Could not find any build directory under \
-$CHROMIUM_SRC/out. Please build the program first!"
+$CHROMIUM_SRC/$CHROMIUM_OUT_DIR. Please build the program first!"
     else
       panic "Could not find any $1 directory under \
-$CHROMIUM_SRC/out. Check your build type!"
+$CHROMIUM_SRC/$CHROMIUM_OUT_DIR. Check your build type!"
     fi
   fi
 
-  SYMBOL_DIR=$CHROMIUM_SRC/out/$SUBDIR
+  SYMBOL_DIR=$CHROMIUM_SRC/$CHROMIUM_OUT_DIR/$SUBDIR
   log "Auto-config: --symbol-dir=$SYMBOL_DIR"
 }
 
@@ -777,22 +833,46 @@ fi
 # If so, we can launch gdbserver directly, otherwise, we have to
 # use run-as $PACKAGE_NAME ..., which requires the package to be debuggable.
 #
-SHELL_UID=$(adb shell cat /proc/self/status | \
-            awk '$1 == "Uid:" { print $2; }')
-log "Shell UID: $SHELL_UID"
-COMMAND_PREFIX=
-if [ "$SHELL_UID" != 0 -o -n "$NO_ROOT" ]; then
-  log "Using run-as $PACKAGE_NAME to run without root."
-  COMMAND_PREFIX="run-as $PACKAGE_NAME"
+if [ "$SU_PREFIX" ]; then
+  # Need to check that this works properly.
+  SU_PREFIX_TEST_LOG=$TMPDIR/su-prefix.log
+  adb_shell $SU_PREFIX echo "foo" > $SU_PREFIX_TEST_LOG 2>&1
+  if [ $? != 0 -o "$(cat $SU_PREFIX_TEST_LOG)" != "foo" ]; then
+    echo "ERROR: Cannot use '$SU_PREFIX' as a valid su prefix:"
+    echo "$ adb shell $SU_PREFIX echo foo"
+    cat $SU_PREFIX_TEST_LOG
+    exit 1
+  fi
+  COMMAND_PREFIX=$SU_PREFIX
+else
+  SHELL_UID=$(adb shell cat /proc/self/status | \
+              awk '$1 == "Uid:" { print $2; }')
+  log "Shell UID: $SHELL_UID"
+  if [ "$SHELL_UID" != 0 -o -n "$NO_ROOT" ]; then
+    COMMAND_PREFIX="run-as $PACKAGE_NAME"
+  else
+    COMMAND_PREFIX=
+  fi
 fi
+log "Command prefix: '$COMMAND_PREFIX'"
 
 # Pull device's system libraries that are mapped by our process.
 # Pulling all system libraries is too long, so determine which ones
 # we need by looking at /proc/$PID/maps instead
 if [ "$PULL_LIBS" -a -z "$NO_PULL_LIBS" ]; then
   echo "Extracting system libraries into: $PULL_LIBS_DIR"
-  SYSTEM_LIBS=$(adb_shell $COMMAND_PREFIX cat /proc/$PID/maps | \
-                awk '$6 ~ /\/system\/.*\.so$/ { print $6; }' | sort -u)
+  rm -f $PULL_LIBS_DIR/build.prop
+  MAPPINGS=$(adb_shell $COMMAND_PREFIX cat /proc/$PID/maps)
+  if [ $? != 0 ]; then
+    echo "ERROR: Could not list process's memory mappings."
+    if [ "$SU_PREFIX" ]; then
+      panic "Are you sure your --su-prefix is correct?"
+    else
+      panic "Use --su-prefix if the application is not debuggable."
+    fi
+  fi
+  SYSTEM_LIBS=$(echo "$MAPPINGS" | \
+      awk '$6 ~ /\/system\/.*\.so$/ { print $6; }' | sort -u)
   for SYSLIB in /system/bin/linker $SYSTEM_LIBS; do
     echo "Pulling from device: $SYSLIB"
     DST_FILE=$PULL_LIBS_DIR$SYSLIB
@@ -816,7 +896,7 @@ SOLIB_DIRS=$(find $PULL_LIBS_DIR -mindepth 1 -maxdepth 4 -type d | \
 #
 
 # Push gdbserver to the device
-log "Pushing gdbserver to $TARGET_GDBSERVER"
+log "Pushing gdbserver $GDBSERVER to $TARGET_GDBSERVER"
 adb push $GDBSERVER $TARGET_GDBSERVER &>/dev/null
 fail_panic "Could not copy gdbserver to the device!"
 
@@ -824,8 +904,16 @@ PORT=5039
 HOST_PORT=$PORT
 TARGET_PORT=$PORT
 
-# Pull the app_process binary from the device
+# Detect AddressSanitizer setup on the device. In that case app_process is a
+# script, and the real executable is app_process.real.
 GDBEXEC=app_process
+GDBEXEC_ASAN=app_process.real
+adb_shell ls /system/bin/$GDBEXEC_ASAN
+if [ $? == 0 ]; then
+    GDBEXEC=$GDBEXEC_ASAN
+fi
+
+# Pull the app_process binary from the device.
 log "Pulling $GDBEXEC from device"
 adb pull /system/bin/$GDBEXEC "$TMPDIR"/$GDBEXEC &>/dev/null
 fail_panic "Could not retrieve $GDBEXEC from the device!"
@@ -891,5 +979,3 @@ fi
 log "Launching gdb client: $GDB $GDBARGS -x $COMMANDS"
 $GDB $GDBARGS -x $COMMANDS &&
 rm -f "$GDBSERVER_PIDFILE"
-
-clean_exit $?

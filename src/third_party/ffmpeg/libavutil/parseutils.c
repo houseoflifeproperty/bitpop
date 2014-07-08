@@ -31,8 +31,6 @@
 #include "random_seed.h"
 #include "parseutils.h"
 
-#undef time
-
 #ifdef TEST
 
 #define av_get_random_seed av_get_random_seed_deterministic
@@ -47,7 +45,6 @@ int av_parse_ratio(AVRational *q, const char *str, int max,
 {
     char c;
     int ret;
-    int64_t gcd;
 
     if (sscanf(str, "%d:%d%c", &q->num, &q->den, &c) != 2) {
         double d;
@@ -57,12 +54,8 @@ int av_parse_ratio(AVRational *q, const char *str, int max,
         if (ret < 0)
             return ret;
         *q = av_d2q(d, max);
-    }
-
-    gcd = av_gcd(FFABS(q->num), FFABS(q->den));
-    if (gcd) {
-        q->num /= gcd;
-        q->den /= gcd;
+    } else {
+        av_reduce(&q->num, &q->den, q->num, q->den, max);
     }
 
     return 0;
@@ -116,6 +109,18 @@ static const VideoSizeAbbr video_size_abbrs[] = {
     { "hd480",     852, 480 },
     { "hd720",    1280, 720 },
     { "hd1080",   1920,1080 },
+    { "2k",       2048,1080 }, /* Digital Cinema System Specification */
+    { "2kflat",   1998,1080 },
+    { "2kscope",  2048, 858 },
+    { "4k",       4096,2160 }, /* Digital Cinema System Specification */
+    { "4kflat",   3996,2160 },
+    { "4kscope",  4096,1716 },
+    { "nhd",       640,360  },
+    { "hqvga",     240,160  },
+    { "wqvga",     400,240  },
+    { "fwqvga",    432,240  },
+    { "hvga",      480,320  },
+    { "qhd",       960,540  },
 };
 
 static const VideoRateAbbr video_rate_abbrs[]= {
@@ -144,11 +149,14 @@ int av_parse_video_size(int *width_ptr, int *height_ptr, const char *str)
         }
     }
     if (i == n) {
-        p = str;
-        width = strtol(p, (void*)&p, 10);
+        width = strtol(str, (void*)&p, 10);
         if (*p)
             p++;
         height = strtol(p, (void*)&p, 10);
+
+        /* trailing extraneous data detected, like in 123x345foobar */
+        if (*p)
+            return AVERROR(EINVAL);
     }
     if (width <= 0 || height <= 0)
         return AVERROR(EINVAL);
@@ -389,7 +397,7 @@ int av_parse_color(uint8_t *rgba_color, const char *color_string, int slen,
     }
 
     if (tail) {
-        unsigned long int alpha;
+        double alpha;
         const char *alpha_string = tail;
         if (!strncmp(alpha_string, "0x", 2)) {
             alpha = strtoul(alpha_string, &tail, 16);
@@ -401,7 +409,7 @@ int av_parse_color(uint8_t *rgba_color, const char *color_string, int slen,
                 alpha = 255 * norm_alpha;
         }
 
-        if (tail == alpha_string || *tail || alpha > 255) {
+        if (tail == alpha_string || *tail || alpha > 255 || alpha < 0) {
             av_log(log_ctx, AV_LOG_ERROR, "Invalid alpha value specifier '%s' in '%s'\n",
                    alpha_string, color_string);
             return AVERROR(EINVAL);
@@ -410,6 +418,20 @@ int av_parse_color(uint8_t *rgba_color, const char *color_string, int slen,
     }
 
     return 0;
+}
+
+const char *av_get_known_color_name(int color_idx, const uint8_t **rgbp)
+{
+    const ColorEntry *color;
+
+    if ((unsigned)color_idx >= FF_ARRAY_ELEMS(color_table))
+        return NULL;
+
+    color = &color_table[color_idx];
+    if (rgbp)
+        *rgbp = color->rgb_color;
+
+    return color->name;
 }
 
 /* get a positive number between n_min and n_max, for a maximum length
@@ -424,7 +446,7 @@ static int date_get_num(const char **pp,
     val = 0;
     for(i = 0; i < len_max; i++) {
         c = *p;
-        if (!isdigit(c))
+        if (!av_isdigit(c))
             break;
         val = (val * 10) + c - '0';
         p++;
@@ -444,8 +466,8 @@ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt)
 
     for(;;) {
         /* consume time string until a non whitespace char is found */
-        while (isspace(*fmt)) {
-            while (isspace(*p))
+        while (av_isspace(*fmt)) {
+            while (av_isspace(*p))
                 p++;
             fmt++;
         }
@@ -456,7 +478,8 @@ char *av_small_strptime(const char *p, const char *fmt, struct tm *dt)
             c = *fmt++;
             switch(c) {
             case 'H':
-                val = date_get_num(&p, 0, 23, 2);
+            case 'J':
+                val = date_get_num(&p, 0, c == 'H' ? 23 : INT_MAX, 2);
                 if (val == -1)
                     return NULL;
                 dt->tm_hour = val;
@@ -516,7 +539,7 @@ time_t av_timegm(struct tm *tm)
         y--;
     }
 
-    t = 86400 *
+    t = 86400LL *
         (d + (153 * m - 457) / 5 + 365 * y + y / 4 - y / 100 + y / 400 - 719469);
 
     t += 3600 * tm->tm_hour + 60 * tm->tm_min + tm->tm_sec;
@@ -583,7 +606,12 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
             ++p;
         }
         /* parse timestr as HH:MM:SS */
-        q = av_small_strptime(p, time_fmt[0], &dt);
+        q = av_small_strptime(p, "%J:%M:%S", &dt);
+        if (!q) {
+            /* parse timestr as MM:SS */
+            q = av_small_strptime(p, "%M:%S", &dt);
+            dt.tm_hour = 0;
+        }
         if (!q) {
             /* parse timestr as S+ */
             dt.tm_sec = strtol(p, (void *)&q, 10);
@@ -603,11 +631,11 @@ int av_parse_time(int64_t *timeval, const char *timestr, int duration)
         int n;
         q++;
         for (n = 100000; n >= 1; n /= 10, q++) {
-            if (!isdigit(*q))
+            if (!av_isdigit(*q))
                 break;
             microseconds += n * (*q - '0');
         }
-        while (isdigit(*q))
+        while (av_isdigit(*q))
             q++;
     }
 
@@ -677,21 +705,19 @@ int av_find_info_tag(char *arg, int arg_size, const char *tag1, const char *info
 
 #ifdef TEST
 
-static uint32_t random = MKTAG('L','A','V','U');
+static uint32_t randomv = MKTAG('L','A','V','U');
 
 static uint32_t av_get_random_seed_deterministic(void)
 {
-    return random = random * 1664525 + 1013904223;
+    return randomv = randomv * 1664525 + 1013904223;
 }
-
-#undef printf
 
 int main(void)
 {
     printf("Testing av_parse_video_rate()\n");
     {
         int i;
-        const char *rates[] = {
+        static const char *const rates[] = {
             "-inf",
             "inf",
             "nan",
@@ -721,10 +747,10 @@ int main(void)
 
         for (i = 0; i < FF_ARRAY_ELEMS(rates); i++) {
             int ret;
-            AVRational q = (AVRational){0, 0};
+            AVRational q = { 0, 0 };
             ret = av_parse_video_rate(&q, rates[i]);
-            printf("'%s' -> %d/%d%s\n",
-                   rates[i], q.num, q.den, ret ? " error" : "");
+            printf("'%s' -> %d/%d %s\n",
+                   rates[i], q.num, q.den, ret ? "ERROR" : "OK");
         }
     }
 
@@ -732,7 +758,7 @@ int main(void)
     {
         int i;
         uint8_t rgba[4];
-        const char *color_names[] = {
+        static const char *const color_names[] = {
             "bikeshed",
             "RaNdOm",
             "foo",
@@ -775,7 +801,8 @@ int main(void)
 
         for (i = 0;  i < FF_ARRAY_ELEMS(color_names); i++) {
             if (av_parse_color(rgba, color_names[i], -1, NULL) >= 0)
-                printf("%s -> R(%d) G(%d) B(%d) A(%d)\n", color_names[i], rgba[0], rgba[1], rgba[2], rgba[3]);
+                printf("%s -> R(%d) G(%d) B(%d) A(%d)\n",
+                       color_names[i], rgba[0], rgba[1], rgba[2], rgba[3]);
             else
                 printf("%s -> error\n", color_names[i]);
         }
@@ -817,13 +844,13 @@ int main(void)
         time_t tvi;
         struct tm *tm;
         static char tzstr[] = "TZ=CET-1";
-        const char *time_string[] = {
+        static const char * const time_string[] = {
             "now",
             "12:35:46",
             "2000-12-20 0:02:47.5z",
             "2000-12-20T010247.6",
         };
-        const char *duration_string[] = {
+        static const char * const duration_string[] = {
             "2:34:56.79",
             "-1:23:45.67",
             "42.1729",

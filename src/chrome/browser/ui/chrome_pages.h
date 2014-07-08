@@ -7,11 +7,12 @@
 
 #include <string>
 
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
+#include "chrome/browser/signin/signin_promo.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/content_settings_types.h"
+#include "url/gurl.h"
 
 class Browser;
-class GURL;
 
 namespace content {
 class WebContents;
@@ -36,31 +37,48 @@ void ShowBookmarkManager(Browser* browser);
 void ShowBookmarkManagerForNode(Browser* browser, int64 node_id);
 void ShowHistory(Browser* browser);
 void ShowDownloads(Browser* browser);
-void ShowExtensions(Browser* browser);
+void ShowExtensions(Browser* browser,
+                    const std::string& extension_to_highlight);
 void ShowConflicts(Browser* browser);
+
+// ShowFeedbackPage() uses |browser| to determine the URL of the current tab.
+// |browser| should be NULL if there are no currently open browser windows.
 void ShowFeedbackPage(Browser* browser,
                       const std::string& description_template,
                       const std::string& category_tag);
 
 void ShowHelp(Browser* browser, HelpSource source);
+void ShowHelpForProfile(Profile* profile,
+                        HostDesktopType host_desktop_type,
+                        HelpSource source);
 void ShowPolicy(Browser* browser);
+void ShowSlow(Browser* browser);
+
+// Constructs a settings GURL for the specified |sub_page|.
+GURL GetSettingsUrl(const std::string& sub_page);
+
+// Returns true if |browser| is a trusted popup window containing a page with
+// matching |scheme| (or any trusted popup if |scheme| is empty).
+bool IsTrustedPopupWindowWithScheme(const Browser* browser,
+                                    const std::string& scheme);
 
 // Various things that open in a settings UI.
 void ShowSettings(Browser* browser);
 void ShowSettingsSubPage(Browser* browser, const std::string& sub_page);
+void ShowSettingsSubPageForProfile(Profile* profile,
+                                   const std::string& sub_page);
 void ShowContentSettings(Browser* browser,
                          ContentSettingsType content_settings_type);
+void ShowSettingsSubPageInTabbedBrowser(Browser* browser,
+                                        const std::string& sub_page);
 void ShowClearBrowsingDataDialog(Browser* browser);
 void ShowPasswordManager(Browser* browser);
 void ShowImportDialog(Browser* browser);
 void ShowAboutChrome(Browser* browser);
 void ShowSearchEngineSettings(Browser* browser);
-void ShowSyncSetup(Browser* browser, SyncPromoUI::Source source);
-
-// Open a tab to sign into GAIA.
-void ShowGaiaSignin(Browser* browser,
-                    const std::string& service,
-                    const GURL& continue_url);
+// If the user is already signed in, shows the "Signin" portion of Settings,
+// otherwise initiates signin.
+void ShowBrowserSignin(Browser* browser, signin::Source source);
 
 }  // namespace chrome
 

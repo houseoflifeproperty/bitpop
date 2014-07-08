@@ -40,6 +40,7 @@
 #define GOOGLE_PROTOBUF_WIRE_FORMAT_H__
 
 #include <string>
+#include <google/protobuf/stubs/common.h>
 #include <google/protobuf/descriptor.pb.h>
 #include <google/protobuf/descriptor.h>
 #include <google/protobuf/message.h>
@@ -229,6 +230,9 @@ inline void WireFormat::VerifyUTF8String(const char* data, int size,
     WireFormat::Operation op) {
 #ifdef GOOGLE_PROTOBUF_UTF8_VALIDATION_ENABLED
   WireFormat::VerifyUTF8StringFallback(data, size, op);
+#else
+  // Avoid the compiler warning about unsued variables.
+  (void)data; (void)size; (void)op;
 #endif
 }
 

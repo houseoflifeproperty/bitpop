@@ -56,6 +56,29 @@ var NetInternalsTest = (function() {
     isAsync: true,
 
     setUp: function() {
+      // Enforce accessibility auditing, but suppress some false positives.
+      this.accessibilityIssuesAreErrors = true;
+      // False positive because a unicode character is used to draw a square.
+      // If it was actual text it'd be too low-contrast, but a square is fine.
+      this.accessibilityAuditConfig.ignoreSelectors(
+          'lowContrastElements', '#timeline-view-selection-ul label');
+      // Suppress this error; the black-on-gray button is readable.
+      this.accessibilityAuditConfig.ignoreSelectors(
+          'lowContrastElements', '#export-view-save-log-file');
+      // False positive because the background color highlights and then
+      // fades out with a transition when there's an error.
+      this.accessibilityAuditConfig.ignoreSelectors(
+          'lowContrastElements', '#hsts-view-query-output span');
+      // False positives for unknown reason.
+      this.accessibilityAuditConfig.ignoreSelectors(
+          'focusableElementNotVisibleAndNotAriaHidden',
+          '#hsts-view-tab-content *');
+
+      // TODO(aboxhall): enable when this bug is fixed:
+      // https://github.com/GoogleChrome/accessibility-developer-tools/issues/69
+      this.accessibilityAuditConfig.auditRulesToIgnore.push(
+          'focusableElementNotVisibleAndNotAriaHidden');
+
       // Wrap g_browser.receive around a test function so that assert and expect
       // functions can be called from observers.
       g_browser.receive =
@@ -129,70 +152,92 @@ var NetInternalsTest = (function() {
   };
 
   /**
-   * Returns the first styled table body that's a descendent of |ancestorId|.
-   * If the specified node is itself a table body node, just returns that node.
+   * Returns the first tbody that's a descendant of |ancestorId|. If the
+   * specified node is itself a table body node, just returns that node.
    * Returns null if no such node is found.
-   * @param {string} ancestorId HTML element id containing a styled table.
+   * @param {string} ancestorId ID of an HTML element with a tbody descendant.
+   * @return {node} The tbody node, or null.
    */
-  NetInternalsTest.getStyledTableDescendent = function(ancestorId) {
+  NetInternalsTest.getTbodyDescendent = function(ancestorId) {
     if ($(ancestorId).nodeName == 'TBODY')
       return $(ancestorId);
     // The tbody element of the first styled table in |parentId|.
-    return document.querySelector('#' + ancestorId + ' .styled-table tbody');
+    return document.querySelector('#' + ancestorId + ' tbody');
   };
 
   /**
-   * Finds the first styled table body that's a descendent of |ancestorId|,
-   * including the |ancestorId| element itself, and returns the number of rows
-   * it has. Returns -1 if there's no such table.
-   * @param {string} ancestorId HTML element id containing a styled table.
+   * Finds the first tbody that's a descendant of |ancestorId|, including the
+   * |ancestorId| element itself, and returns the number of rows it has.
+   * Returns -1 if there's no such table.  Excludes hidden rows.
+   * @param {string} ancestorId ID of an HTML element with a tbody descendant.
    * @return {number} Number of rows the style table's body has.
    */
-  NetInternalsTest.getStyledTableNumRows = function(ancestorId) {
+  NetInternalsTest.getTbodyNumRows = function(ancestorId) {
     // The tbody element of the first styled table in |parentId|.
-    var tbody = NetInternalsTest.getStyledTableDescendent(ancestorId);
+    var tbody = NetInternalsTest.getTbodyDescendent(ancestorId);
     if (!tbody)
       return -1;
-    return tbody.children.length;
+    var visibleChildren = 0;
+    for (var i = 0; i < tbody.children.length; ++i) {
+      if (NetInternalsTest.nodeIsVisible(tbody.children[i]))
+        ++visibleChildren;
+    }
+    return visibleChildren;
   };
 
   /**
-   * Finds the first styled table body that's a descendent of |ancestorId|,
-   * including the |ancestorId| element itself, and checks if it has exactly
-   * |expectedRows| rows.  As only table bodies are considered, the header row
-   * will not be included in the count.
-   * @param {string} ancestorId HTML element id containing a styled table.
+   * Finds the first tbody that's a descendant of |ancestorId|, including the
+   * |ancestorId| element itself, and checks if it has exactly |expectedRows|
+   * rows.  Does not count hidden rows.
+   * @param {string} ancestorId ID of an HTML element with a tbody descendant.
    * @param {number} expectedRows Expected number of rows in the table.
    */
-  NetInternalsTest.checkStyledTableRows = function(ancestorId, expectedRows) {
+  NetInternalsTest.checkTbodyRows = function(ancestorId, expectedRows) {
     expectEquals(expectedRows,
-                 NetInternalsTest.getStyledTableNumRows(ancestorId),
+                 NetInternalsTest.getTbodyNumRows(ancestorId),
                  'Incorrect number of rows in ' + ancestorId);
   };
 
   /**
-   * Finds the first styled table body that's a descendent of |ancestorId|,
-   * including the |ancestorId| element itself, and returns the text of the
-   * specified cell.  If the cell does not exist, throws an exception.
-   * @param {string} ancestorId HTML element id containing a styled table.
+   * Finds the tbody that's a descendant of |ancestorId|, including the
+   * |ancestorId| element itself, and returns the text of the specified cell.
+   * If the cell does not exist, throws an exception.  Skips over hidden rows.
+   * @param {string} ancestorId ID of an HTML element with a tbody descendant.
    * @param {number} row Row of the value to retrieve.
    * @param {number} column Column of the value to retrieve.
    */
-  NetInternalsTest.getStyledTableText = function(ancestorId, row, column) {
-    var tbody = NetInternalsTest.getStyledTableDescendent(ancestorId);
-    return tbody.children[row].children[column].innerText;
+  NetInternalsTest.getTbodyText = function(ancestorId, row, column) {
+    var tbody = NetInternalsTest.getTbodyDescendent(ancestorId);
+    var currentChild = tbody.children[0];
+    while (currentChild) {
+      if (NetInternalsTest.nodeIsVisible(currentChild)) {
+        if (row == 0)
+          return currentChild.children[column].innerText;
+        --row;
+      }
+      currentChild = currentChild.nextElementSibling;
+    }
+    return 'invalid row';
   };
 
   /**
-   * Returns the TabEntry with the given id.  Asserts if the tab can't be found.
-   * @param {string}: tabId Id of the TabEntry to get.
-   * @return {TabEntry} The specified TabEntry.
+   * Returns the view and menu item node for the tab with given id.
+   * Asserts if the tab can't be found.
+   * @param {string}: tabId Id of the tab to lookup.
+   * @return {Object}
    */
   NetInternalsTest.getTab = function(tabId) {
-    var categoryTabSwitcher = MainView.getInstance().categoryTabSwitcher();
-    var tab = categoryTabSwitcher.findTabById(tabId);
-    assertNotEquals(tab, undefined, tabId + ' does not exist.');
-    return tab;
+    var tabSwitcher = MainView.getInstance().tabSwitcher();
+    var view = tabSwitcher.getTabView(tabId);
+    var menuItem = tabSwitcher.getMenuItemNode_(tabId);
+
+    assertNotEquals(view, undefined, tabId + ' does not exist.');
+    assertNotEquals(menuItem, undefined, tabId + ' does not exist.');
+
+    return {
+      view: view,
+      menuItem: menuItem,
+    };
   };
 
   /**
@@ -211,7 +256,7 @@ var NetInternalsTest = (function() {
    * @return {bool} Whether or not the tab's handle is visible.
    */
   NetInternalsTest.tabHandleIsVisible = function(tabId) {
-    var tabHandleNode = NetInternalsTest.getTab(tabId).getTabHandleNode();
+    var tabHandleNode = NetInternalsTest.getTab(tabId).menuItem;
     return NetInternalsTest.nodeIsVisible(tabHandleNode);
   };
 
@@ -220,7 +265,7 @@ var NetInternalsTest = (function() {
    * @return {string} ID of the active tab.
    */
   NetInternalsTest.getActiveTabId = function() {
-    return MainView.getInstance().categoryTabSwitcher().findActiveTab().id;
+    return MainView.getInstance().tabSwitcher().getActiveTabId();
   };
 
   /**
@@ -238,24 +283,27 @@ var NetInternalsTest = (function() {
      * @type {object.<string, string>}
      */
     var hashToTabHandleIdMap = {
-      capture: CaptureView.TAB_HANDLE_ID,
-      export: ExportView.TAB_HANDLE_ID,
-      import: ImportView.TAB_HANDLE_ID,
-      proxy: ProxyView.TAB_HANDLE_ID,
-      events: EventsView.TAB_HANDLE_ID,
-      timeline: TimelineView.TAB_HANDLE_ID,
-      dns: DnsView.TAB_HANDLE_ID,
-      sockets: SocketsView.TAB_HANDLE_ID,
-      spdy: SpdyView.TAB_HANDLE_ID,
-      httpPipeline: HttpPipelineView.TAB_HANDLE_ID,
-      httpCache: HttpCacheView.TAB_HANDLE_ID,
-      serviceProviders: ServiceProvidersView.TAB_HANDLE_ID,
-      tests: TestView.TAB_HANDLE_ID,
-      hsts: HSTSView.TAB_HANDLE_ID,
-      logs: LogsView.TAB_HANDLE_ID,
-      prerender: PrerenderView.TAB_HANDLE_ID,
-      bandwidth: BandwidthView.TAB_HANDLE_ID,
-      chromeos: CrosView.TAB_HANDLE_ID
+      capture: CaptureView.TAB_ID,
+      export: ExportView.TAB_ID,
+      import: ImportView.TAB_ID,
+      proxy: ProxyView.TAB_ID,
+      events: EventsView.TAB_ID,
+      waterfall: WaterfallView.TAB_ID,
+      timeline: TimelineView.TAB_ID,
+      dns: DnsView.TAB_ID,
+      sockets: SocketsView.TAB_ID,
+      spdy: SpdyView.TAB_ID,
+      quic: QuicView.TAB_ID,
+      httpPipeline: HttpPipelineView.TAB_ID,
+      httpCache: HttpCacheView.TAB_ID,
+      modules: ModulesView.TAB_ID,
+      tests: TestView.TAB_ID,
+      hsts: HSTSView.TAB_ID,
+      logs: LogsView.TAB_ID,
+      prerender: PrerenderView.TAB_ID,
+      bandwidth: BandwidthView.TAB_ID,
+      chromeos: CrosView.TAB_ID,
+      visualizer: CrosLogVisualizerView.TAB_ID
     };
 
     assertEquals(typeof hashToTabHandleIdMap[hash], 'string',
@@ -276,29 +324,22 @@ var NetInternalsTest = (function() {
     // Make sure the tab handle is visible, as we only simulate normal usage.
     expectTrue(NetInternalsTest.tabHandleIsVisible(tabId),
                tabId + ' does not have a visible tab handle.');
-    var tabHandleNode = NetInternalsTest.getTab(tabId).getTabHandleNode();
+    var tabHandleNode = NetInternalsTest.getTab(tabId).menuItem;
 
-    // Simulate a left click.
-    var mouseEvent = document.createEvent('MouseEvents');
-    mouseEvent.initMouseEvent('click', true, true, window,
-                              1, 0, 0, 0, 0,
-                              false, false, false, false, 0, null);
-    $(tabId).dispatchEvent(mouseEvent);
+    // Simulate selecting the menuitem.
+    tabHandleNode.selected = true;
+    tabHandleNode.parentNode.onchange();
 
     // Make sure the hash changed.
     assertEquals('#' + hash, document.location.hash);
 
-    // Run the onhashchange function, so we can test the resulting state.
-    // Otherwise, won't trigger until after we return.
-    window.onhashchange();
-
     // Make sure only the specified tab is visible.
-    var categoryTabSwitcher = MainView.getInstance().categoryTabSwitcher();
-    var tabIds = categoryTabSwitcher.getAllTabIds();
-    for (var i = 0; i < tabIds.length; ++i) {
-      expectEquals(tabIds[i] == tabId,
-                   NetInternalsTest.getTab(tabIds[i]).contentView.isVisible(),
-                   tabIds[i] + ': Unexpected visibility state.');
+    var tabSwitcher = MainView.getInstance().tabSwitcher();
+    var tabIdToView = tabSwitcher.getAllTabViews();
+    for (var curTabId in tabIdToView) {
+      expectEquals(curTabId == tabId,
+                   tabSwitcher.getTabView(curTabId).isVisible(),
+                   curTabId + ': Unexpected visibility state.');
     }
   };
 
@@ -331,9 +372,12 @@ var NetInternalsTest = (function() {
     }
 
     // Check that every tab was listed.
-    var categoryTabSwitcher = MainView.getInstance().categoryTabSwitcher();
-    var tabIds = categoryTabSwitcher.getAllTabIds();
-    expectEquals(tabCount, tabIds.length);
+    var tabSwitcher = MainView.getInstance().tabSwitcher();
+    var tabIdToView = tabSwitcher.getAllTabViews();
+    var expectedTabCount = 0;
+    for (tabId in tabIdToView)
+      expectedTabCount++;
+    expectEquals(tabCount, expectedTabCount);
   };
 
   /**

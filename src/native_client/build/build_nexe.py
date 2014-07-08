@@ -3,40 +3,65 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from optparse import OptionParser
-import os
-import subprocess
-import sys
-import tempfile
-
 """NEXE building script
 
 This module will take a set of source files, include paths, library paths, and
 additional arguments, and use them to build.
 """
 
+from optparse import OptionParser
+import os
+import re
+import Queue
+import shutil
+import subprocess
+import sys
+import tempfile
+import threading
+import urllib2
 
-def ErrOut(text):
-  """ErrOut prints an error message and the command-line that caused it.
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.platform
 
-  Prints to standard err, both the command-line normally, and separated by
-  >>...<< to make it easier to copy and paste the command, or to
-  find command formating issues.
-  """
-  sys.stderr.write('\n\n')
-  sys.stderr.write( '>>>' + '>> <<'.join(sys.argv) + '<<\n\n')
-  sys.stderr.write(' '.join(sys.argv) + '<<\n\n')
-  sys.stderr.write(text + '\n')
-  sys.exit(1)
+class Error(Exception):
+  pass
+
+
+def FixPath(path):
+  # On Windows, |path| can be a long relative path: ..\..\..\..\out\Foo\bar...
+  # If the full path -- os.path.join(os.getcwd(), path) -- is longer than 255
+  # characters, then any operations that open or check for existence will fail.
+  # We can't use os.path.abspath here, because that calls into a Windows
+  # function that still has the path length limit. Instead, we'll cheat and
+  # normalize the path lexically.
+  path = os.path.normpath(os.path.join(os.getcwd(), path))
+  if pynacl.platform.IsWindows():
+    if len(path) > 255:
+      raise Error('Path "%s" is too long (%d characters), and will fail.' % (
+          path, len(path)))
+  return path
+
+
+def IsFile(path):
+  return os.path.isfile(FixPath(path))
 
 
 def MakeDir(outdir):
+  outdir = FixPath(outdir)
   if outdir and not os.path.exists(outdir):
     # There may be a race creating this directory, so ignore failure.
     try:
       os.makedirs(outdir)
     except OSError:
       pass
+
+
+def RemoveFile(path):
+  os.remove(FixPath(path))
+
+
+def OpenFile(path, mode='r'):
+  return open(FixPath(path), mode)
 
 
 def RemoveQuotes(opt):
@@ -60,7 +85,7 @@ def ArgToList(opt):
 def GetMTime(filepath):
   """GetMTime returns the last modification time of the file or None."""
   try:
-    return os.path.getmtime(filepath)
+    return os.path.getmtime(FixPath(filepath))
   except OSError:
     return None
 
@@ -77,6 +102,44 @@ def IsStale(out_ts, src_ts, rebuilt=False):
   return out_ts <= src_ts
 
 
+def IsEnvFlagTrue(flag_name, default=False):
+  """Return true when the given flag is true.
+
+  Note:
+  Any values that do not match the true pattern are False.
+
+  Args:
+    flag_name: a string name of a flag.
+    default: default return value if the flag is not set.
+
+  Returns:
+    True if the flag is in the true pattern.  Otherwise False.
+  """
+  flag_value = os.environ.get(flag_name)
+  if flag_value is None:
+    return default
+  return bool(re.search(r'^([tTyY]|1:?)', flag_value))
+
+
+def GetIntegerEnv(flag_name, default=0):
+  """Parses and returns integer environment variable.
+
+  Args:
+    flag_name: a string name of a flag.
+    default: default return value if the flag is not set.
+
+  Returns:
+    Integer value of the flag.
+  """
+  flag_value = os.environ.get(flag_name)
+  if flag_value is None:
+    return default
+  try:
+    return int(flag_value)
+  except ValueError:
+    raise Error('Invalid ' + flag_name + ': ' + flag_value)
+
+
 class Builder(object):
   """Builder object maintains options and generates build command-lines.
 
@@ -89,23 +152,15 @@ class Builder(object):
     build_type = options.build.split('_')
     toolname = build_type[0]
     self.outtype = build_type[1]
-
-    if sys.platform.startswith('linux'):
-      self.osname = 'linux'
-    elif sys.platform.startswith('win'):
-      self.osname = 'win'
-    elif sys.platform.startswith('darwin'):
-      self.osname = 'mac'
-    else:
-      ErrOut('Toolchain OS %s not supported.' % sys.platform)
+    self.osname = pynacl.platform.GetOS()
 
     # pnacl toolchain can be selected in three different ways
     # 1. by specifying --arch=pnacl directly to generate
     #    pexe targets.
     # 2. by specifying --build=newlib_translate to generated
     #    nexe via translation
-    # 3. by specifying --build=newlib_nexe_pnacl use pnacl
-    #    toolchain in arm-native mode (e.g. the arm IRT)
+    # 3. by specifying --build=newlib_{nexe,nlib}_pnacl use pnacl
+    #    toolchain in native mode (e.g. the IRT shim)
     self.is_pnacl_toolchain = False
     if self.outtype == 'translate':
       self.is_pnacl_toolchain = True
@@ -113,37 +168,42 @@ class Builder(object):
     if len(build_type) > 2 and build_type[2] == 'pnacl':
       self.is_pnacl_toolchain = True
 
+    if arch.endswith('-nonsfi'):
+      arch = arch[:-len('-nonsfi')]
+
     if arch in ['x86-32', 'x86-64']:
       mainarch = 'x86'
-      self.subarch = arch.split('-')[1]
       self.tool_prefix = 'x86_64-nacl-'
     elif arch == 'arm':
-      self.subarch = ''
       self.tool_prefix = 'arm-nacl-'
       mainarch = 'arm'
+    elif arch == 'mips':
+      self.is_pnacl_toolchain = True
     elif arch == 'pnacl':
-      self.subarch = ''
       self.is_pnacl_toolchain = True
     else:
-      ErrOut('Toolchain architecture %s not supported.' % arch)
+      raise Error('Toolchain architecture %s not supported.' % arch)
 
     if toolname not in ['newlib', 'glibc']:
-      ErrOut('Toolchain of type %s not supported.' % toolname)
+      raise Error('Toolchain of type %s not supported.' % toolname)
 
     if arch == 'arm' and toolname == 'glibc':
-      ErrOut('arm glibc not yet supported.')
+      raise Error('arm glibc not yet supported.')
+
+    if arch == 'mips' and toolname == 'glibc':
+      raise Error('mips glibc not supported.')
 
     if arch == 'pnacl' and toolname == 'glibc':
-      ErrOut('pnacl glibc not yet supported.')
+      raise Error('pnacl glibc not yet supported.')
 
     if self.is_pnacl_toolchain:
-      mainarch = 'x86'
       self.tool_prefix = 'pnacl-'
-      tool_subdir = toolname
-      tooldir = '%s_%s_pnacl' % (self.osname, mainarch)
+      tool_subdir = 'pnacl_newlib'
     else:
-      tool_subdir = ''
-      tooldir = '%s_%s_%s' % (self.osname, mainarch, toolname)
+      tool_subdir = 'nacl_%s_%s' % (mainarch, toolname)
+
+    build_arch = pynacl.platform.GetArch()
+    tooldir = os.path.join('%s_%s' % (self.osname, build_arch), tool_subdir)
 
     self.root_path = options.root
     self.nacl_path = os.path.join(self.root_path, 'native_client')
@@ -153,7 +213,10 @@ class Builder(object):
 
     # Set the toolchain directories
     self.toolchain = os.path.join(options.toolpath, tooldir)
-    self.toolbin = os.path.join(self.toolchain, tool_subdir, 'bin')
+    self.toolbin = os.path.join(self.toolchain, 'bin')
+    self.toolstamp = os.path.join(self.toolchain, 'stamp.prep')
+    if not IsFile(self.toolstamp):
+      raise Error('Could not find toolchain prep stamp file: ' + self.toolstamp)
 
     self.inc_paths = ArgToList(options.incdirs)
     self.lib_paths = ArgToList(options.libdirs)
@@ -169,7 +232,47 @@ class Builder(object):
     self.empty = options.empty
     self.strip_all = options.strip_all
     self.strip_debug = options.strip_debug
+    self.tls_edit = options.tls_edit
+    self.finalize_pexe = options.finalize_pexe and arch == 'pnacl'
+    goma_config = self.GetGomaConfig(options.gomadir, arch, toolname)
+    self.gomacc = goma_config.get('gomacc', '')
+    self.goma_burst = goma_config.get('burst', False)
+    self.goma_threads = goma_config.get('threads', 1)
 
+    # Use unoptimized native objects for debug IRT builds for faster compiles.
+    if (self.is_pnacl_toolchain
+        and (self.outtype == 'nlib'
+             or self.outtype == 'nexe')
+        and self.arch != 'pnacl'):
+      if (options.build_config is not None
+          and options.build_config == 'Debug'):
+        self.compile_options.extend(['--pnacl-allow-translate',
+                                     '--pnacl-allow-native',
+                                     '-arch', self.arch])
+        # Also use fast translation because we are still translating libc/libc++
+        self.link_options.append('-Wt,-O0')
+
+    self.irt_layout = options.irt_layout
+    if self.irt_layout:
+      # IRT constraints for auto layout.
+      # IRT text can only go up to 256MB. Addresses after that are for data.
+      # Reserve an extra page because:
+      # * sel_ldr requires a HLT sled at the end of the dynamic code area;
+      # * dynamic_load_test currently tests loading at the end of the dynamic
+      #   code area.
+      self.irt_text_max = 0x10000000 - 0x10000
+      # Data can only go up to the sandbox_top - sizeof(stack).
+      # NaCl allocates 16MB for the initial thread's stack (see
+      # NACL_DEFAULT_STACK_MAX in sel_ldr.h).
+      # Assume sandbox_top is 1GB, since even on x86-64 the limit would
+      # only be 2GB (rip-relative references can only be +/- 2GB).
+      sandbox_top = 0x40000000
+      self.irt_data_max = sandbox_top - (16 << 20)
+      # Initialize layout flags with "too-close-to-max" flags so that
+      # we can relax this later and get a tight fit.
+      self.link_options += [
+          '-Wl,-Ttext-segment=0x%x' % (self.irt_text_max - 0x10000),
+          '-Wl,-Trodata-segment=0x%x' % (self.irt_data_max - 0x10000)]
     self.Log('Compile options: %s' % self.compile_options)
     self.Log('Linker options: %s' % self.link_options)
 
@@ -203,9 +306,50 @@ class Builder(object):
     """Helper which returns strip path."""
     return self.GetBinName('strip')
 
+  def GetObjCopy(self):
+    """Helper which returns objcopy path."""
+    return self.GetBinName('objcopy')
+
+  def GetReadElf(self):
+    """Helper which returns readelf path."""
+    return self.GetBinName('readelf')
+
+  def GetPnaclFinalize(self):
+    """Helper which returns pnacl-finalize path."""
+    assert self.is_pnacl_toolchain
+    return self.GetBinName('finalize')
+
   def BuildAssembleOptions(self, options):
     options = ArgToList(options)
     self.assemble_options = options + ['-I' + name for name in self.inc_paths]
+
+  def DebugName(self):
+    return self.name + '.debug'
+
+  def UntaggedName(self):
+    return self.name + '.untagged'
+
+  def LinkOutputName(self):
+    if (self.is_pnacl_toolchain and self.finalize_pexe or
+        self.strip_all or self.strip_debug):
+      return self.DebugName()
+    else:
+      return self.name
+
+  def ArchiveOutputName(self):
+    if self.strip_debug:
+      return self.DebugName()
+    else:
+      return self.name
+
+  def StripOutputName(self):
+    return self.name
+
+  def TranslateOutputName(self):
+    return self.name
+
+  def Soname(self):
+    return self.name
 
   def BuildCompileOptions(self, options, define_list):
     """Generates compile options, called once by __init__."""
@@ -236,7 +380,7 @@ class Builder(object):
     if self.outtype == 'nso':
       options += ['-Wl,-rpath-link,' + name for name in self.lib_paths]
       options += ['-shared']
-      options += ['-Wl,-soname,' + os.path.basename(self.name)]
+      options += ['-Wl,-soname,' + os.path.basename(self.Soname())]
     self.link_options = options + ['-L' + name for name in self.lib_paths]
 
   def BuildArchiveOptions(self):
@@ -245,10 +389,14 @@ class Builder(object):
 
   def Log(self, msg):
     if self.verbose:
-      print str(msg)
+      sys.stderr.write(str(msg) + '\n')
 
-  def Run(self, cmd_line, out):
-    """Helper which runs a command line."""
+  def Run(self, cmd_line, get_output=False, **kwargs):
+    """Helper which runs a command line.
+
+    Returns the error code if get_output is False.
+    Returns the output if get_output is True.
+    """
 
     # For POSIX style path on windows for POSIX based toolchain
     # (just for arguments, not for the path to the command itself)
@@ -262,28 +410,27 @@ class Builder(object):
 
     self.Log(' '.join(cmd_line))
     try:
+      runner = subprocess.call
+      if get_output:
+        runner = subprocess.check_output
       if self.is_pnacl_toolchain:
         # PNaCl toolchain executable is a script, not a binary, so it doesn't
         # want to run on Windows without a shell
-        ecode = subprocess.call(' '.join(cmd_line), shell=True)
+        result = runner(' '.join(cmd_line), shell=True, **kwargs)
       else:
-        ecode = subprocess.call(cmd_line)
-
-    except Exception, err:
-      ErrOut('\n%s\nFAILED: %s\n\n' % (' '.join(cmd_line), str(err)))
-    if ecode != 0:
-      print 'Err %d: nacl-%s %s' % (ecode, os.path.basename(cmd_line[0]), out)
-      print '>>%s<<' % '<< >>'.join(cmd_line)
-
-    if temp_file is not None:
-      os.remove(temp_file.name)
-    return ecode
+        result = runner(cmd_line, **kwargs)
+    except Exception as err:
+      raise Error('%s\nFAILED: %s' % (' '.join(cmd_line), str(err)))
+    finally:
+      if temp_file is not None:
+        RemoveFile(temp_file.name)
+    return result
 
   def GetObjectName(self, src):
     if self.strip:
       src = src.replace(self.strip,'')
-    filepath, filename = os.path.split(src)
-    filename, ext = os.path.splitext(filename)
+    _, filename = os.path.split(src)
+    filename, _ = os.path.splitext(filename)
     if self.suffix:
       return os.path.join(self.outdir, filename + '.o')
     else:
@@ -291,8 +438,8 @@ class Builder(object):
       return os.path.join(self.outdir, os.path.splitext(filename)[0] + '.o')
 
   def CleanOutput(self, out):
-    if os.path.isfile(out):
-      os.remove(out)
+    if IsFile(out):
+      RemoveFile(out)
 
   def FixWindowsPath(self, path):
     # The windows version of the nacl toolchain returns badly
@@ -313,58 +460,125 @@ class Builder(object):
       path = os.path.normpath(os.path.join(self.toolchain, path[1:]))
     return path
 
+  def GetGomaConfig(self, gomadir, arch, toolname):
+    """Returns a goma config dictionary if goma is available or {}."""
+
+    # Start goma support from os/arch/toolname that have been tested.
+    # Set NO_NACL_GOMA=true to force to avoid using goma.
+    if (arch not in ['x86-32', 'x86-64', 'pnacl']
+        or toolname not in ['newlib', 'glibc']
+        or IsEnvFlagTrue('NO_NACL_GOMA', default=False)):
+      return {}
+
+    goma_config = {}
+    gomacc_base = 'gomacc.exe' if self.osname == 'win' else 'gomacc'
+    # Search order of gomacc:
+    # --gomadir command argument -> GOMA_DIR env. -> PATH env.
+    search_path = []
+    # 1. --gomadir in the command argument.
+    if gomadir:
+      search_path.append(gomadir)
+    # 2. Use GOMA_DIR environment variable if exist.
+    goma_dir_env = os.environ.get('GOMA_DIR')
+    if goma_dir_env:
+      search_path.append(goma_dir_env)
+    # 3. Append PATH env.
+    path_env = os.environ.get('PATH')
+    if path_env:
+      search_path.extend(path_env.split(os.path.pathsep))
+
+    for directory in search_path:
+      gomacc = os.path.join(directory, gomacc_base)
+      if os.path.isfile(gomacc):
+        try:
+          port = int(subprocess.Popen(
+              [gomacc, 'port'],
+              stdout=subprocess.PIPE).communicate()[0].strip())
+          status = urllib2.urlopen(
+              'http://127.0.0.1:%d/healthz' % port).read().strip()
+          if status == 'ok':
+            goma_config['gomacc'] = gomacc
+            break
+        except (OSError, ValueError, urllib2.URLError) as e:
+          # Try another gomacc in the search path.
+          self.Log('Strange gomacc %s found, try another one: %s' % (gomacc, e))
+
+    if goma_config:
+      goma_config['burst'] = IsEnvFlagTrue('NACL_GOMA_BURST')
+      default_threads = 100 if self.osname == 'linux' else 1
+      goma_config['threads'] = GetIntegerEnv('NACL_GOMA_THREADS',
+                                             default=default_threads)
+    return goma_config
+
   def NeedsRebuild(self, outd, out, src, rebuilt=False):
-    if not os.path.isfile(outd):
+    if not IsFile(self.toolstamp):
       if rebuilt:
-        print 'Could not find dependency file %s.' % outd
+        raise Error('Could not find toolchain stamp file %s.' % self.toolstamp)
       return True
-    if not os.path.isfile(out):
+    if not IsFile(outd):
       if rebuilt:
-        print 'Could not find output file %s.' % out
+        raise Error('Could not find dependency file %s.' % outd)
       return True
+    if not IsFile(out):
+      if rebuilt:
+        raise Error('Could not find output file %s.' % out)
+      return True
+    stamp_tm = GetMTime(self.toolstamp)
     out_tm = GetMTime(out)
     outd_tm = GetMTime(outd)
     src_tm = GetMTime(src)
+    if IsStale(out_tm, stamp_tm, rebuilt):
+      if rebuilt:
+        raise Error('Output %s is older than toolchain stamp %s' % (
+            out, self.toolstamp))
+      return True
     if IsStale(out_tm, src_tm, rebuilt):
       if rebuilt:
-        print 'Output %s is older than source %s.' % (out, src)
+        raise Error('Output %s is older than source %s.' % (out, src))
       return True
 
     if IsStale(outd_tm, src_tm, rebuilt):
       if rebuilt:
-        print 'Dependency file is older than source %s.' % src
+        raise Error('Dependency file is older than source %s.' % src)
       return True
 
     # Decode emitted makefile.
-    fh = open(outd, 'r')
-    deps = fh.read()
-    fh.close()
+    with open(FixPath(outd), 'r') as fh:
+      deps = fh.read()
     # Remove line continuations
     deps = deps.replace('\\\n', ' ')
     deps = deps.replace('\n', '')
-    # The dependancies are whitespace delimited following the first ':'
-    deps = deps.split(':', 1)[1]
+    # The dependencies are whitespace delimited following the first ':'
+    # (that is not part of a windows drive letter)
+    deps = deps.split(':', 1)
+    if pynacl.platform.IsWindows() and len(deps[0]) == 1:
+      # The path has a drive letter, find the next ':'
+      deps = deps[1].split(':', 1)[1]
+    else:
+      deps = deps[1]
     deps = deps.split()
-    if sys.platform in ['win32', 'cygwin']:
+    if pynacl.platform.IsWindows():
       deps = [self.FixWindowsPath(d) for d in deps]
     # Check if any input has changed.
     for filename in deps:
       file_tm = GetMTime(filename)
       if IsStale(out_tm, file_tm, rebuilt):
         if rebuilt:
-          print 'Dependency %s is older than output %s.' % (filename, out)
+          raise Error('Dependency %s is older than output %s.' % (
+              filename, out))
         return True
 
       if IsStale(outd_tm, file_tm, rebuilt):
         if rebuilt:
-          print 'Dependency %s is older than dep file %s.' % (filename, outd)
+          raise Error('Dependency %s is older than dep file %s.' % (
+              filename, outd))
         return True
     return False
 
   def Compile(self, src):
     """Compile the source with pre-determined options."""
 
-    filename, ext = os.path.splitext(src)
+    _, ext = os.path.splitext(src)
     if ext in ['.c', '.S']:
       bin_name = self.GetCCompiler()
       extra = ['-std=gnu99']
@@ -393,56 +607,161 @@ class Builder(object):
     self.CleanOutput(outd)
     cmd_line = [bin_name, '-c', src, '-o', out,
                 '-MD', '-MF', outd] + extra + self.compile_options
+    if self.gomacc:
+      cmd_line.insert(0, self.gomacc)
     err = self.Run(cmd_line, out)
-    if sys.platform.startswith('win') and err == 5:
-      # Try again on mystery windows failure.
-      err = self.Run(cmd_line, out)
     if err:
       self.CleanOutput(outd)
-      ErrOut('\nFAILED with %d: %s\n\n' % (err, ' '.join(cmd_line)))
-    elif self.NeedsRebuild(outd, out, src, True):
-      ErrOut('\nFailed to compile %s to %s with deps %s and cmdline:\t%s' %
-          (src, out, outd, ' '.join(cmd_line)))
+      raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
+    else:
+      try:
+        self.NeedsRebuild(outd, out, src, True)
+      except Error as e:
+        raise Error('Failed to compile %s to %s with deps %s and cmdline:\t%s'
+                    '\nNeedsRebuild returned error: %s' % (
+                        src, out, outd, ' '.join(cmd_line), e))
     return out
+
+  def IRTLayoutFits(self, irt_file):
+    """Check if the IRT's data and text segment fit layout constraints.
+
+    Returns a tuple containing:
+      * whether the IRT data/text top addresses fit within the max limit
+      * current data/text top addrs
+    """
+    cmd_line = [self.GetReadElf(), '-W', '--segments', irt_file]
+    env = dict(os.environ)
+    env.update({'LANG': 'en_US.UTF-8'})
+    seginfo = self.Run(cmd_line, get_output=True, env=env)
+    lines = seginfo.splitlines()
+    ph_start = -1
+    for i, line in enumerate(lines):
+      if line == 'Program Headers:':
+        ph_start = i + 1
+        break
+    if ph_start == -1:
+      raise Error('Could not find Program Headers start: %s\n' % lines)
+    seg_lines = lines[ph_start:]
+    text_top = 0
+    data_top = 0
+    for line in seg_lines:
+      pieces = line.split()
+      # Type, Offset, Vaddr, Paddr, FileSz, MemSz, Flg(multiple), Align
+      if len(pieces) >= 8 and pieces[0] == 'LOAD':
+        # Vaddr + MemSz
+        segment_top = int(pieces[2], 16) + int(pieces[5], 16)
+        if pieces[6] == 'R' and pieces[7] == 'E':
+          text_top = max(segment_top, text_top)
+          continue
+        if pieces[6] == 'R' or pieces[6] == 'RW':
+          data_top = max(segment_top, data_top)
+          continue
+    if text_top == 0 or data_top == 0:
+      raise Error('Could not parse IRT Layout: text_top=0x%x data_top=0x%x\n'
+                  'readelf output: %s\n' % (text_top, data_top, lines))
+    return (text_top <= self.irt_text_max and
+            data_top <= self.irt_data_max), text_top, data_top
+
+  def FindOldIRTFlagPosition(self, cmd_line, flag_name):
+    """Search for a given IRT link flag's position and value."""
+    pos = -1
+    old_start = ''
+    for i, option in enumerate(cmd_line):
+      m = re.search('.*%s=(0x.*)' % flag_name, option)
+      if m:
+        if pos != -1:
+          raise Exception('Duplicate %s flag at position %d' % (flag_name, i))
+        pos = i
+        old_start = m.group(1)
+    if pos == -1:
+      raise Exception('Could not find IRT layout flag %s' % flag_name)
+    return pos, old_start
+
+  def AdjustIRTLinkToFit(self, cmd_line, text_top, data_top):
+    """Adjust the linker options so that the IRT's data and text segment fit."""
+    def RoundDownToAlign(x):
+      return x - (x % 0x10000)
+    def AdjustFlag(flag_name, orig_max, expected_max):
+      if orig_max < expected_max:
+        return
+      pos, old_start = self.FindOldIRTFlagPosition(cmd_line, flag_name)
+      size = orig_max - int(old_start, 16)
+      self.Log('IRT %s size is %s' % (flag_name, size))
+      new_start = RoundDownToAlign(expected_max - size)
+      self.Log('Adjusting link flag %s from %s to %s' % (flag_name,
+                                                         old_start,
+                                                         hex(new_start)))
+      cmd_line[pos] = cmd_line[pos].replace(old_start, hex(new_start))
+    AdjustFlag('-Ttext-segment', text_top, self.irt_text_max)
+    AdjustFlag('-Trodata-segment', data_top, self.irt_data_max)
+    self.Log('Adjusted link options to %s' % ' '.join(cmd_line))
+    return cmd_line
+
+  def RunLink(self, cmd_line, link_out):
+    self.CleanOutput(link_out)
+    err = self.Run(cmd_line, link_out)
+    if err:
+      raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
 
   def Link(self, srcs):
     """Link these objects with predetermined options and output name."""
-    out = self.name
+    out = self.LinkOutputName()
     self.Log('\nLink %s' % out)
     bin_name = self.GetCXXCompiler()
-    MakeDir(os.path.dirname(out))
-    self.CleanOutput(out)
 
-    cmd_line = [bin_name, '-o', out, '-Wl,--as-needed']
+    link_out = out
+    if self.tls_edit is not None:
+      link_out = out + '.raw'
+
+    MakeDir(os.path.dirname(link_out))
+
+    cmd_line = [bin_name, '-o', link_out, '-Wl,--as-needed']
     if not self.empty:
       cmd_line += srcs
     cmd_line += self.link_options
 
-    err = self.Run(cmd_line, out)
-    # TODO( Retry on windows
-    if sys.platform.startswith('win') and err == 5:
-      # Try again on mystery windows failure.
-      err = self.Run(cmd_line, out)
-    if err:
-      ErrOut('\nFAILED with %d: %s\n\n' % (err, ' '.join(cmd_line)))
+    self.RunLink(cmd_line, link_out)
+
+    if self.irt_layout:
+      fits, text_top, data_top = self.IRTLayoutFits(link_out)
+      if not fits:
+        self.Log('IRT layout does not fit: text_top=0x%x and data_top=0x%x' %
+                 (text_top, data_top))
+        cmd_line = self.AdjustIRTLinkToFit(cmd_line, text_top, data_top)
+        self.RunLink(cmd_line, link_out)
+        fits, text_top, data_top = self.IRTLayoutFits(link_out)
+        if not fits:
+          raise Error('Already re-linked IRT and it still does not fit:\n'
+                      'text_top=0x%x and data_top=0x%x\n' % (
+                          text_top, data_top))
+      self.Log('IRT layout fits: text_top=0x%x and data_top=0x%x' %
+               (text_top, data_top))
+
+    if self.tls_edit is not None:
+      tls_edit_cmd = [FixPath(self.tls_edit), link_out, out]
+      tls_edit_err = self.Run(tls_edit_cmd, out)
+      if tls_edit_err:
+        raise Error('FAILED with %d: %s' % (err, ' '.join(tls_edit_cmd)))
+
     return out
 
   # For now, only support translating a pexe, and not .o file(s)
   def Translate(self, src):
     """Translate a pexe to a nexe."""
-    out = self.name
+    out = self.TranslateOutputName()
     self.Log('\nTranslate %s' % out)
     bin_name = self.GetBinName('translate')
     cmd_line = [bin_name, '-arch', self.arch, src, '-o', out]
+    cmd_line += self.link_options
 
     err = self.Run(cmd_line, out)
     if err:
-      ErrOut('\nFAILED with %d: %s\n\n' % (err, ' '.join(cmd_line)))
+      raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
     return out
 
   def Archive(self, srcs):
     """Archive these objects with predetermined options and output name."""
-    out = self.name
+    out = self.ArchiveOutputName()
     self.Log('\nArchive %s' % out)
 
     if '-r' in self.link_options:
@@ -460,29 +779,58 @@ class Builder(object):
     MakeDir(os.path.dirname(out))
     self.CleanOutput(out)
     err = self.Run(cmd_line, out)
-    if sys.platform.startswith('win') and err == 5:
-      # Try again on mystery windows failure.
-      err = self.Run(cmd_line, out)
     if err:
-      ErrOut('\nFAILED with %d: %s\n\n' % (err, ' '.join(cmd_line)))
+      raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
     return out
 
-  def Strip(self, out):
+  def Strip(self, src):
     """Strip the NEXE"""
-    self.Log('\nStrip %s' % out)
+    self.Log('\nStrip %s' % src)
 
-    tmp = out + '.tmp'
-    self.CleanOutput(tmp)
-    os.rename(out, tmp)
-    bin_name = self.GetStrip()
+    out = self.StripOutputName()
+    pre_debug_tagging = self.UntaggedName()
+    self.CleanOutput(out)
+    self.CleanOutput(pre_debug_tagging)
+
+    # Strip from foo.debug to foo.untagged.
+    strip_name = self.GetStrip()
     strip_option = '--strip-all' if self.strip_all else '--strip-debug'
-    cmd_line = [bin_name, strip_option, tmp, '-o', out]
-    err = self.Run(cmd_line, out)
-    if sys.platform.startswith('win') and err == 5:
-      # Try again on mystery windows failure.
+    # pnacl does not have an objcopy so there are no way to embed a link
+    if self.is_pnacl_toolchain:
+      cmd_line = [strip_name, strip_option, src, '-o', out]
       err = self.Run(cmd_line, out)
+      if err:
+        raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
+    else:
+      cmd_line = [strip_name, strip_option, src, '-o', pre_debug_tagging]
+      err = self.Run(cmd_line, pre_debug_tagging)
+      if err:
+        raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
+
+      # Tag with a debug link to foo.debug copying from foo.untagged to foo.
+      objcopy_name = self.GetObjCopy()
+      cmd_line = [objcopy_name, '--add-gnu-debuglink', src,
+                  pre_debug_tagging, out]
+      err = self.Run(cmd_line, out)
+      if err:
+        raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
+
+      # Drop the untagged intermediate.
+      self.CleanOutput(pre_debug_tagging)
+
+    return out
+
+  def Finalize(self, src):
+    """Finalize the PEXE"""
+    self.Log('\nFinalize %s' % src)
+
+    out = self.StripOutputName()
+    self.CleanOutput(out)
+    bin_name = self.GetPnaclFinalize()
+    cmd_line = [bin_name, src, '-o', out]
+    err = self.Run(cmd_line, out)
     if err:
-      ErrOut('\nFAILED with %d: %s\n\n' % (err, ' '.join(cmd_line)))
+      raise Error('FAILED with %d: %s' % (err, ' '.join(cmd_line)))
     return out
 
   def Generate(self, srcs):
@@ -492,16 +840,19 @@ class Builder(object):
     """
     if self.outtype in ['nexe', 'pexe', 'nso']:
       out = self.Link(srcs)
-      if self.strip_all or self.strip_debug:
+      if self.is_pnacl_toolchain and self.finalize_pexe:
+        # Note: pnacl-finalize also does stripping.
+        self.Finalize(out)
+      elif self.strip_all or self.strip_debug:
         self.Strip(out)
     elif self.outtype in ['nlib', 'plib']:
       out = self.Archive(srcs)
       if self.strip_debug:
         self.Strip(out)
       elif self.strip_all:
-        ErrOut('FAILED: --strip-all on libs will result in unusable libs.')
+        raise Error('FAILED: --strip-all on libs will result in unusable libs.')
     else:
-      ErrOut('FAILED: Unknown outtype %s:\n' % (self.outtype))
+      raise Error('FAILED: Unknown outtype: %s' % (self.outtype))
 
 
 def Main(argv):
@@ -518,8 +869,16 @@ def Main(argv):
                     help='Strip the NEXE for production', action='store_true')
   parser.add_option('--strip', dest='strip', default='',
                     help='Strip the filename')
+  parser.add_option('--nonstable-pnacl', dest='finalize_pexe', default=True,
+                    help='Do not finalize pnacl bitcode for ABI stability',
+                    action='store_false')
   parser.add_option('--source-list', dest='source_list',
                     help='Filename to load a source list from')
+  parser.add_option('--tls-edit', dest='tls_edit', default=None,
+                    help='tls_edit location if TLS should be modified for IRT')
+  parser.add_option('--irt-layout', dest='irt_layout', default=False,
+                    help='Apply the IRT layout (pick data/text seg addresses)',
+                    action='store_true')
   parser.add_option('-a', '--arch', dest='arch',
                     help='Set target architecture')
   parser.add_option('-c', '--compile', dest='compile_only', default=False,
@@ -548,39 +907,114 @@ def Main(argv):
                     help='Enable verbosity', action='store_true')
   parser.add_option('-t', '--toolpath', dest='toolpath',
                     help='Set the path for of the toolchains.')
-  (options, files) = parser.parse_args(argv[1:])
+  parser.add_option('--config-name', dest='build_config',
+                    help='GYP build configuration name (Release/Debug)')
+  parser.add_option('--gomadir', dest='gomadir',
+                    help='Path of the goma directory.')
+  options, files = parser.parse_args(argv[1:])
 
   if not argv:
     parser.print_help()
     return 1
 
-  if options.source_list:
-    source_list_handle = open(options.source_list, 'r')
-    source_list = source_list_handle.read().splitlines()
-    source_list_handle.close()
-    files = files + source_list
+  try:
+    if options.source_list:
+      source_list_handle = open(options.source_list, 'r')
+      source_list = source_list_handle.read().splitlines()
+      source_list_handle.close()
+      files = files + source_list
 
-  # Fix slash style to insulate invoked toolchains.
-  options.toolpath = os.path.normpath(options.toolpath)
+    # Use set instead of list not to compile the same file twice.
+    # To keep in mind that the order of files may differ from the .gypcmd file,
+    # the set is not converted to a list.
+    # Having duplicated files can cause race condition of compiling during
+    # parallel build using goma.
+    # TODO(sbc): remove the duplication and turn it into an error.
+    files = set(files)
 
-  build = Builder(options)
-  objs = []
+    # Fix slash style to insulate invoked toolchains.
+    options.toolpath = os.path.normpath(options.toolpath)
 
-  if build.outtype == 'translate':
-    # Just translate a pexe to a nexe
-    if len(files) != 1:
-      ErrOut('Pexe translation requires exactly one input file.')
-    build.Translate(files[0])
+    build = Builder(options)
+    objs = []
+
+    if build.outtype == 'translate':
+      # Just translate a pexe to a nexe
+      if len(files) != 1:
+        parser.error('Pexe translation requires exactly one input file.')
+      build.Translate(list(files)[0])
+      return 0
+
+    if build.gomacc and (build.goma_burst or build.goma_threads > 1):
+      returns = Queue.Queue()
+
+      # Push all files into the inputs queue
+      inputs = Queue.Queue()
+      for filename in files:
+        inputs.put(filename)
+
+      def CompileThread(input_queue, output_queue):
+        try:
+          while True:
+            try:
+              filename = input_queue.get_nowait()
+            except Queue.Empty:
+              return
+            output_queue.put(build.Compile(filename))
+        except Exception:
+          # Put current exception info to the queue.
+          output_queue.put(sys.exc_info())
+
+      # Don't limit number of threads in the burst mode.
+      if build.goma_burst:
+        num_threads = len(files)
+      else:
+        num_threads = min(build.goma_threads, len(files))
+
+      # Start parallel build.
+      build_threads = []
+      for _ in xrange(num_threads):
+        thr = threading.Thread(target=CompileThread, args=(inputs, returns))
+        thr.start()
+        build_threads.append(thr)
+
+      # Wait for results.
+      for _ in files:
+        out = returns.get()
+        # An exception raised in the thread may come through the queue.
+        # Raise it again here.
+        if (isinstance(out, tuple) and len(out) == 3 and
+            isinstance(out[1], Exception)):
+          raise out[0], None, out[2]
+        elif out:
+          objs.append(out)
+
+      assert inputs.empty()
+
+      # Wait until all threads have stopped and verify that there are no more
+      # results.
+      for thr in build_threads:
+        thr.join()
+      assert returns.empty()
+
+    else:  # slow path.
+      for filename in files:
+        out = build.Compile(filename)
+        if out:
+          objs.append(out)
+
+    # Do not link if building an object. However we still want the output file
+    # to be what was specified in options.name
+    if options.compile_only:
+      if len(objs) > 1:
+        raise Error('--compile mode cannot be used with multiple sources')
+      shutil.copy(objs[0], options.name)
+    else:
+      build.Generate(objs)
     return 0
-
-  for filename in files:
-    out = build.Compile(filename)
-    if out:
-      objs.append(out)
-  # Do not link if building an object
-  if not options.compile_only:
-    build.Generate(objs)
-  return 0
+  except Error as e:
+    sys.stderr.write('%s\n' % e)
+    return 1
 
 if __name__ == '__main__':
   sys.exit(Main(sys.argv))

@@ -13,72 +13,23 @@
 #include "content/public/renderer/render_view.h"
 #include "content/public/renderer/v8_value_converter.h"
 #include "content/renderer/web_ui_extension_data.h"
-#include "googleurl/src/gurl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDocument.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebFrame.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebView.h"
+#include "gin/arguments.h"
+#include "gin/function_template.h"
+#include "third_party/WebKit/public/web/WebDocument.h"
+#include "third_party/WebKit/public/web/WebKit.h"
+#include "third_party/WebKit/public/web/WebLocalFrame.h"
+#include "third_party/WebKit/public/web/WebView.h"
+#include "url/gurl.h"
 #include "v8/include/v8.h"
 
 namespace content {
 
-static const char* const kWebUIExtensionName = "v8/WebUI";
+namespace {
 
-// Javascript that gets executed when the extension loads into all frames.
-// Exposes two methods:
-//  - chrome.send: Used to send messages to the browser. Requires the message
-//      name as the first argument and can have an optional second argument that
-//      should be an array.
-//  - chrome.getVariableValue: Returns value for the input variable name if such
-//      a value was set by the browser. Else will return an empty string.
-static const char* const kWebUIExtensionJS =
-    "var chrome;"
-    "if (!chrome)"
-    "  chrome = {};"
-    "chrome.send = function(name, data) {"
-    "  native function Send();"
-    "  Send(name, data);"
-    "};"
-    "chrome.getVariableValue = function(name) {"
-    "  native function GetVariableValue();"
-    "  return GetVariableValue(name);"
-    "};";
-
-class WebUIExtensionWrapper : public v8::Extension {
- public:
-  WebUIExtensionWrapper();
-  virtual ~WebUIExtensionWrapper();
-
-  virtual v8::Handle<v8::FunctionTemplate> GetNativeFunction(
-      v8::Handle<v8::String> name);
-  static v8::Handle<v8::Value> Send(const v8::Arguments& args);
-  static v8::Handle<v8::Value> GetVariableValue(const v8::Arguments& args);
-
- private:
-  static bool ShouldRespondToRequest(WebKit::WebFrame** frame_ptr,
-                                     RenderView** render_view_ptr);
-
-  DISALLOW_COPY_AND_ASSIGN(WebUIExtensionWrapper);
-};
-
-WebUIExtensionWrapper::WebUIExtensionWrapper()
-    : v8::Extension(kWebUIExtensionName, kWebUIExtensionJS) {}
-
-WebUIExtensionWrapper::~WebUIExtensionWrapper() {}
-
-v8::Handle<v8::FunctionTemplate> WebUIExtensionWrapper::GetNativeFunction(
-    v8::Handle<v8::String> name) {
-  if (name->Equals(v8::String::New("Send")))
-    return v8::FunctionTemplate::New(Send);
-  if (name->Equals(v8::String::New("GetVariableValue")))
-    return v8::FunctionTemplate::New(GetVariableValue);
-  return v8::Handle<v8::FunctionTemplate>();
-}
-
-// static
-bool WebUIExtensionWrapper::ShouldRespondToRequest(
-    WebKit::WebFrame** frame_ptr,
+bool ShouldRespondToRequest(
+    blink::WebFrame** frame_ptr,
     RenderView** render_view_ptr) {
-  WebKit::WebFrame* frame = WebKit::WebFrame::frameForCurrentContext();
+  blink::WebFrame* frame = blink::WebLocalFrame::frameForCurrentContext();
   if (!frame || !frame->view())
     return false;
 
@@ -90,8 +41,8 @@ bool WebUIExtensionWrapper::ShouldRespondToRequest(
 
   bool webui_enabled =
       (render_view->GetEnabledBindings() & BINDINGS_POLICY_WEB_UI) &&
-      (frame_url.SchemeIs(chrome::kChromeUIScheme) ||
-       frame_url.SchemeIs(chrome::kDataScheme));
+      (frame_url.SchemeIs(kChromeUIScheme) ||
+       frame_url.SchemeIs(kDataScheme));
 
   if (!webui_enabled)
     return false;
@@ -101,33 +52,68 @@ bool WebUIExtensionWrapper::ShouldRespondToRequest(
   return true;
 }
 
+}  // namespace
+
+// Exposes two methods:
+//  - chrome.send: Used to send messages to the browser. Requires the message
+//      name as the first argument and can have an optional second argument that
+//      should be an array.
+//  - chrome.getVariableValue: Returns value for the input variable name if such
+//      a value was set by the browser. Else will return an empty string.
+void WebUIExtension::Install(blink::WebFrame* frame) {
+  v8::Isolate* isolate = blink::mainThreadIsolate();
+  v8::HandleScope handle_scope(isolate);
+  v8::Handle<v8::Context> context = frame->mainWorldScriptContext();
+  if (context.IsEmpty())
+    return;
+
+  v8::Context::Scope context_scope(context);
+
+  v8::Handle<v8::Object> global = context->Global();
+  v8::Handle<v8::Object> chrome =
+      global->Get(gin::StringToV8(isolate, "chrome"))->ToObject();
+  if (chrome.IsEmpty()) {
+    chrome = v8::Object::New(isolate);
+    global->Set(gin::StringToSymbol(isolate, "chrome"), chrome);
+  }
+  chrome->Set(gin::StringToSymbol(isolate, "send"),
+              gin::CreateFunctionTemplate(
+                  isolate, base::Bind(&WebUIExtension::Send))->GetFunction());
+  chrome->Set(gin::StringToSymbol(isolate, "getVariableValue"),
+              gin::CreateFunctionTemplate(
+                  isolate, base::Bind(&WebUIExtension::GetVariableValue))
+                  ->GetFunction());
+}
+
 // static
-v8::Handle<v8::Value> WebUIExtensionWrapper::Send(const v8::Arguments& args) {
-  WebKit::WebFrame* frame;
+void WebUIExtension::Send(gin::Arguments* args) {
+  blink::WebFrame* frame;
   RenderView* render_view;
   if (!ShouldRespondToRequest(&frame, &render_view))
-    return v8::Undefined();
+    return;
 
-  // We expect at least two parameters - a string message identifier, and
-  // an object parameter. The object param can be undefined.
-  if (args.Length() != 2 || !args[0]->IsString())
-    return v8::Undefined();
-
-  const std::string message = *v8::String::Utf8Value(args[0]->ToString());
+  std::string message;
+  if (!args->GetNext(&message)) {
+    args->ThrowError();
+    return;
+  }
 
   // If they've provided an optional message parameter, convert that into a
   // Value to send to the browser process.
-  scoped_ptr<ListValue> content;
-  if (args[1]->IsUndefined()) {
-    content.reset(new ListValue());
+  scoped_ptr<base::ListValue> content;
+  if (args->PeekNext().IsEmpty() || args->PeekNext()->IsUndefined()) {
+    content.reset(new base::ListValue());
   } else {
-    if (!args[1]->IsObject())
-      return v8::Undefined();
+    v8::Handle<v8::Object> obj;
+    if (!args->GetNext(&obj)) {
+      args->ThrowError();
+      return;
+    }
 
     scoped_ptr<V8ValueConverter> converter(V8ValueConverter::create());
 
-    base::Value* value = converter->FromV8Value(
-        args[1], frame->mainWorldScriptContext());
+    base::Value* value =
+        converter->FromV8Value(obj, frame->mainWorldScriptContext());
     base::ListValue* list = NULL;
     value->GetAsList(&list);
     DCHECK(list);
@@ -139,28 +125,16 @@ v8::Handle<v8::Value> WebUIExtensionWrapper::Send(const v8::Arguments& args) {
                                               frame->document().url(),
                                               message,
                                               *content));
-  return v8::Undefined();
 }
 
 // static
-v8::Handle<v8::Value> WebUIExtensionWrapper::GetVariableValue(
-    const v8::Arguments& args) {
-  WebKit::WebFrame* frame;
+std::string WebUIExtension::GetVariableValue(const std::string& name) {
+  blink::WebFrame* frame;
   RenderView* render_view;
   if (!ShouldRespondToRequest(&frame, &render_view))
-    return v8::Undefined();
+    return std::string();
 
-  if (!args.Length() || !args[0]->IsString())
-    return v8::Undefined();
-
-  std::string key = *v8::String::Utf8Value(args[0]->ToString());
-  std::string value = WebUIExtensionData::Get(render_view)->GetValue(key);
-  return v8::String::New(value.c_str(), value.length());
-}
-
-// static
-v8::Extension* WebUIExtension::Get() {
-  return new WebUIExtensionWrapper();
+  return WebUIExtensionData::Get(render_view)->GetValue(name);
 }
 
 }  // namespace content

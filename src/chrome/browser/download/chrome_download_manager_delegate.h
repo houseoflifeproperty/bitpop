@@ -6,11 +6,12 @@
 #define CHROME_BROWSER_DOWNLOAD_CHROME_DOWNLOAD_MANAGER_DELEGATE_H_
 
 #include "base/compiler_specific.h"
-#include "base/hash_tables.h"
-#include "base/memory/ref_counted.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/common/cancelable_request.h"
+#include "base/memory/weak_ptr.h"
 #include "chrome/browser/download/download_path_reservation_tracker.h"
+#include "chrome/browser/download/download_target_determiner_delegate.h"
+#include "chrome/browser/download/download_target_info.h"
 #include "chrome/browser/safe_browsing/download_protection_service.h"
 #include "content/public/browser/download_danger_type.h"
 #include "content/public/browser/download_item.h"
@@ -19,7 +20,6 @@
 #include "content/public/browser/notification_registrar.h"
 
 class DownloadPrefs;
-class ExtensionDownloadsEventRouter;
 class Profile;
 
 namespace content {
@@ -28,6 +28,10 @@ class DownloadManager;
 
 namespace extensions {
 class CrxInstaller;
+}
+
+namespace user_prefs {
+class PrefRegistrySyncable;
 }
 
 #if defined(COMPILER_GCC)
@@ -43,32 +47,31 @@ struct hash<extensions::CrxInstaller*> {
 
 // This is the Chrome side helper for the download system.
 class ChromeDownloadManagerDelegate
-    : public base::RefCountedThreadSafe<ChromeDownloadManagerDelegate>,
-      public content::DownloadManagerDelegate,
-      public content::NotificationObserver {
+    : public content::DownloadManagerDelegate,
+      public content::NotificationObserver,
+      public DownloadTargetDeterminerDelegate {
  public:
-  // Callback type used with ChooseDownloadPath(). The callback should be
-  // invoked with the user-selected path as the argument. If the file selection
-  // was canceled, the argument should be the empty path.
-  typedef base::Callback<void(const FilePath&)> FileSelectedCallback;
-
   explicit ChromeDownloadManagerDelegate(Profile* profile);
-
-  void SetDownloadManager(content::DownloadManager* dm);
+  virtual ~ChromeDownloadManagerDelegate();
 
   // Should be called before the first call to ShouldCompleteDownload() to
   // disable SafeBrowsing checks for |item|.
   static void DisableSafeBrowsing(content::DownloadItem* item);
 
+  void SetDownloadManager(content::DownloadManager* dm);
+
+  // Callbacks passed to GetNextId() will not be called until the returned
+  // callback is called.
+  content::DownloadIdCallback GetDownloadIdReceiverCallback();
+
   // content::DownloadManagerDelegate
   virtual void Shutdown() OVERRIDE;
-  virtual content::DownloadId GetNextId() OVERRIDE;
+  virtual void GetNextId(const content::DownloadIdCallback& callback) OVERRIDE;
   virtual bool DetermineDownloadTarget(
       content::DownloadItem* item,
       const content::DownloadTargetCallback& callback) OVERRIDE;
-  virtual content::WebContents*
-      GetAlternativeWebContentsToNotifyForDownload() OVERRIDE;
-  virtual bool ShouldOpenFileBasedOnExtension(const FilePath& path) OVERRIDE;
+  virtual bool ShouldOpenFileBasedOnExtension(
+      const base::FilePath& path) OVERRIDE;
   virtual bool ShouldCompleteDownload(
       content::DownloadItem* item,
       const base::Closure& complete_callback) OVERRIDE;
@@ -77,148 +80,99 @@ class ChromeDownloadManagerDelegate
       const content::DownloadOpenDelayedCallback& callback) OVERRIDE;
   virtual bool GenerateFileHash() OVERRIDE;
   virtual void GetSaveDir(content::BrowserContext* browser_context,
-                          FilePath* website_save_dir,
-                          FilePath* download_save_dir,
+                          base::FilePath* website_save_dir,
+                          base::FilePath* download_save_dir,
                           bool* skip_dir_check) OVERRIDE;
   virtual void ChooseSavePath(
       content::WebContents* web_contents,
-      const FilePath& suggested_path,
-      const FilePath::StringType& default_extension,
+      const base::FilePath& suggested_path,
+      const base::FilePath::StringType& default_extension,
       bool can_save_as_complete,
       const content::SavePackagePathPickedCallback& callback) OVERRIDE;
+  virtual void OpenDownload(content::DownloadItem* download) OVERRIDE;
+  virtual void ShowDownloadInShell(content::DownloadItem* download) OVERRIDE;
+  virtual void CheckForFileExistence(
+      content::DownloadItem* download,
+      const content::CheckForFileExistenceCallback& callback) OVERRIDE;
+  virtual std::string ApplicationClientIdForFileScanning() const OVERRIDE;
 
-  // Clears the last directory chosen by the user in response to a file chooser
-  // prompt. Called when clearing recent history.
-  void ClearLastDownloadPath();
+  // Opens a download using the platform handler. DownloadItem::OpenDownload,
+  // which ends up being handled by OpenDownload(), will open a download in the
+  // browser if doing so is preferred.
+  void OpenDownloadUsingPlatformHandler(content::DownloadItem* download);
 
   DownloadPrefs* download_prefs() { return download_prefs_.get(); }
 
  protected:
-  // So that test classes can inherit from this for override purposes.
-  virtual ~ChromeDownloadManagerDelegate();
-
-  // Returns the SafeBrowsing download protection service if it's
-  // enabled. Returns NULL otherwise. Protected virtual for testing.
-  virtual safe_browsing::DownloadProtectionService*
-     GetDownloadProtectionService();
-
-  // Returns true if this download should show the "dangerous file" warning.
-  // Various factors are considered, such as the type of the file, whether a
-  // user action initiated the download, and whether the user has explicitly
-  // marked the file type as "auto open". Protected virtual for testing.
-  virtual bool IsDangerousFile(const content::DownloadItem& download,
-                               const FilePath& suggested_path,
-                               bool visited_referrer_before);
-
-  // Obtains a path reservation by calling
-  // DownloadPathReservationTracker::GetReservedPath(). Protected virtual for
-  // testing.
-  virtual void GetReservedPath(
-      content::DownloadItem& download,
-      const FilePath& target_path,
-      const FilePath& default_download_path,
-      bool should_uniquify_path,
-      const DownloadPathReservationTracker::ReservedPathCallback& callback);
-
-  // Displays the file chooser dialog to prompt the user for the download
-  // location for |item|. |suggested_path| will be used as the initial download
-  // path. Once a location is available |callback| will be invoked with the
-  // selected full path. If the user cancels the dialog, then an empty FilePath
-  // will be passed into |callback|. Protected virtual for testing.
-  virtual void ChooseDownloadPath(content::DownloadItem* item,
-                                  const FilePath& suggested_path,
-                                  const FileSelectedCallback& callback);
-
   // So that test classes that inherit from this for override purposes
   // can call back into the DownloadManager.
-  scoped_refptr<content::DownloadManager> download_manager_;
+  content::DownloadManager* download_manager_;
+
+  virtual safe_browsing::DownloadProtectionService*
+      GetDownloadProtectionService();
+
+  // DownloadTargetDeterminerDelegate. Protected for testing.
+  virtual void NotifyExtensions(
+      content::DownloadItem* download,
+      const base::FilePath& suggested_virtual_path,
+      const NotifyExtensionsCallback& callback) OVERRIDE;
+  virtual void ReserveVirtualPath(
+      content::DownloadItem* download,
+      const base::FilePath& virtual_path,
+      bool create_directory,
+      DownloadPathReservationTracker::FilenameConflictAction conflict_action,
+      const ReservedPathCallback& callback) OVERRIDE;
+  virtual void PromptUserForDownloadPath(
+      content::DownloadItem* download,
+      const base::FilePath& suggested_virtual_path,
+      const FileSelectedCallback& callback) OVERRIDE;
+  virtual void DetermineLocalPath(
+      content::DownloadItem* download,
+      const base::FilePath& virtual_path,
+      const LocalPathCallback& callback) OVERRIDE;
+  virtual void CheckDownloadUrl(
+      content::DownloadItem* download,
+      const base::FilePath& suggested_virtual_path,
+      const CheckDownloadUrlCallback& callback) OVERRIDE;
+  virtual void GetFileMimeType(
+      const base::FilePath& path,
+      const GetFileMimeTypeCallback& callback) OVERRIDE;
 
  private:
   friend class base::RefCountedThreadSafe<ChromeDownloadManagerDelegate>;
+
+  typedef std::vector<content::DownloadIdCallback> IdCallbackVector;
 
   // content::NotificationObserver implementation.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
-  // Callback function after url is checked with safebrowsing service.
-  void CheckDownloadUrlDone(
-      int32 download_id,
-      const content::DownloadTargetCallback& callback,
-      safe_browsing::DownloadProtectionService::DownloadCheckResult result);
-
   // Callback function after the DownloadProtectionService completes.
   void CheckClientDownloadDone(
-      int32 download_id,
+      uint32 download_id,
       safe_browsing::DownloadProtectionService::DownloadCheckResult result);
-
-  // Callback function after we check whether the referrer URL has been visited
-  // before today. Determines the danger state of the download based on the file
-  // type and |visited_referrer_before|. Generates a target path for the
-  // download. Invokes |DownloadPathReservationTracker::GetReservedPath| to get
-  // a reserved path for the download. The path is then passed into
-  // OnPathReservationAvailable().
-  void CheckVisitedReferrerBeforeDone(
-    int32 download_id,
-    const content::DownloadTargetCallback& callback,
-    content::DownloadDangerType danger_type,
-    bool visited_referrer_before);
-
-#if defined (OS_CHROMEOS)
-  // DriveDownloadObserver::SubstituteDriveDownloadPath callback. Calls
-  // |DownloadPathReservationTracker::GetReservedPath| to get a reserved path
-  // for the download. The path is then passed into
-  // OnPathReservationAvailable().
-  void SubstituteDriveDownloadPathCallback(
-      int32 download_id,
-      const content::DownloadTargetCallback& callback,
-      bool should_prompt,
-      bool is_forced_path,
-      content::DownloadDangerType danger_type,
-      const FilePath& unverified_path);
-#endif
-
-  // Determine the intermediate path to use for |target_path|. |danger_type|
-  // specifies the danger level of the download.
-  FilePath GetIntermediatePath(const FilePath& target_path,
-                               content::DownloadDangerType danger_type);
-
-  // Called on the UI thread once a reserved path is available. Updates the
-  // download identified by |download_id| with the |target_path|, target
-  // disposition and |danger_type|.
-  void OnPathReservationAvailable(
-      int32 download_id,
-      const content::DownloadTargetCallback& callback,
-      bool should_prompt,
-      content::DownloadDangerType danger_type,
-      const FilePath& reserved_path,
-      bool reserved_path_verified);
-
-  // Called on the UI thread once the final target path is available.
-  void OnTargetPathDetermined(
-      int32 download_id,
-      const content::DownloadTargetCallback& callback,
-      content::DownloadItem::TargetDisposition disposition,
-      content::DownloadDangerType danger_type,
-      const FilePath& target_path);
-
-  // Check policy of whether we should open this download with a web intents
-  // dispatch.
-  bool ShouldOpenWithWebIntents(const content::DownloadItem* item);
-
-  // Open the given item with a web intent dispatch.
-  void OpenWithWebIntent(const content::DownloadItem* item);
 
   // Internal gateways for ShouldCompleteDownload().
   bool IsDownloadReadyForCompletion(
       content::DownloadItem* item,
       const base::Closure& internal_complete_callback);
   void ShouldCompleteDownloadInternal(
-    int download_id,
+    uint32 download_id,
     const base::Closure& user_complete_callback);
 
+  void SetNextId(uint32 id);
+
+  void ReturnNextId(const content::DownloadIdCallback& callback);
+
+  void OnDownloadTargetDetermined(
+      int32 download_id,
+      const content::DownloadTargetCallback& callback,
+      scoped_ptr<DownloadTargetInfo> target_info);
+
   Profile* profile_;
-  int next_download_id_;
+  uint32 next_download_id_;
+  IdCallbackVector id_callbacks_;
   scoped_ptr<DownloadPrefs> download_prefs_;
 
   // Maps from pending extension installations to DownloadItem IDs.
@@ -226,27 +180,9 @@ class ChromeDownloadManagerDelegate
       content::DownloadOpenDelayedCallback> CrxInstallerMap;
   CrxInstallerMap crx_installers_;
 
-  CancelableRequestConsumer history_consumer_;
-
   content::NotificationRegistrar registrar_;
 
-  // On Android, GET downloads are not handled by the DownloadManager.
-  // Once we have extensions on android, we probably need the EventRouter
-  // in ContentViewDownloadDelegate which knows about both GET and POST
-  // downloads.
-#if !defined(OS_ANDROID)
-  // The ExtensionDownloadsEventRouter dispatches download creation, change, and
-  // erase events to extensions. Like ChromeDownloadManagerDelegate, it's a
-  // chrome-level concept and its lifetime should match DownloadManager. There
-  // should be a separate EDER for on-record and off-record managers.
-  // There does not appear to be a separate ExtensionSystem for on-record and
-  // off-record profiles, so ExtensionSystem cannot own the EDER.
-  scoped_ptr<ExtensionDownloadsEventRouter> extension_event_router_;
-#endif
-
-  // The directory most recently chosen by the user in response to a Save As
-  // dialog for a regular download.
-  FilePath last_download_path_;
+  base::WeakPtrFactory<ChromeDownloadManagerDelegate> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeDownloadManagerDelegate);
 };

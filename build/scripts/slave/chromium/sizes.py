@@ -19,9 +19,26 @@ import stat
 import subprocess
 import sys
 
+from slave import build_directory
 
 def get_size(filename):
   return os.stat(filename)[stat.ST_SIZE]
+
+
+def run_process(result, command):
+  p = subprocess.Popen(command, stdout=subprocess.PIPE)
+  stdout = p.communicate()[0]
+  if p.returncode != 0:
+    print 'ERROR from command "%s": %d' % (' '.join(command), p.returncode)
+    if result == 0:
+      result = p.returncode
+  return result, stdout
+
+
+def print_si_fail_hint(path_to_tool):
+  """Print a hint regarding how to handle a static initializer failure."""
+  print '# HINT: To get this list, run %s' % path_to_tool
+  print '# HINT: diff against the log from the last run to see what changed'
 
 
 def main_mac(options, args):
@@ -30,13 +47,8 @@ def main_mac(options, args):
   Returns the first non-zero exit status of any command it executes,
   or zero on success.
   """
-  xcodebuild_dir = os.path.join(os.path.dirname(options.build_dir),
-                                'xcodebuild', options.target)
-  out_dir = os.path.join(os.path.dirname(options.build_dir),
-                         'out', options.target)
-  target_dir = xcodebuild_dir
-  if not os.path.isdir(target_dir) and os.path.isdir(out_dir):
-    target_dir = out_dir
+  build_dir = build_directory.GetBuildOutputDirectory()
+  target_dir = os.path.join(build_dir, options.target)
 
   result = 0
   # Work with either build type.
@@ -45,13 +57,21 @@ def main_mac(options, args):
     app_bundle = base_name + '.app'
     framework_name = base_name + ' Framework'
     framework_bundle = framework_name + '.framework'
+    framework_dsym_bundle = framework_bundle + '.dSYM'
 
     chromium_app_dir = os.path.join(target_dir, app_bundle)
     chromium_executable = os.path.join(chromium_app_dir,
                                        'Contents', 'MacOS', base_name)
+
     chromium_framework_dir = os.path.join(target_dir, framework_bundle)
     chromium_framework_executable = os.path.join(chromium_framework_dir,
                                                  framework_name)
+
+    chromium_framework_dsym_dir = os.path.join(target_dir,
+                                               framework_dsym_bundle)
+    chromium_framework_dsym = os.path.join(chromium_framework_dsym_dir,
+                                           'Contents', 'Resources', 'DWARF',
+                                           framework_name)
     if os.path.exists(chromium_executable):
       print_dict = {
         # Remove spaces in the names so any downstream processing is less
@@ -65,31 +85,20 @@ def main_mac(options, args):
       }
 
       # Collect the segment info out of the App
-      p = subprocess.Popen(['size', chromium_executable],
-                           stdout=subprocess.PIPE)
-      stdout = p.communicate()[0]
+      result, stdout = run_process(result, ['size', chromium_executable])
       print_dict['app_text'], print_dict['app_data'], print_dict['app_objc'] = \
           re.search('(\d+)\s+(\d+)\s+(\d+)', stdout).groups()
-      if result == 0:
-        result = p.returncode
 
       # Collect the segment info out of the Framework
-      p = subprocess.Popen(['size', chromium_framework_executable],
-                           stdout=subprocess.PIPE)
-      stdout = p.communicate()[0]
+      result, stdout = run_process(result, ['size',
+                                            chromium_framework_executable])
       print_dict['framework_text'], print_dict['framework_data'], \
         print_dict['framework_objc'] = \
           re.search('(\d+)\s+(\d+)\s+(\d+)', stdout).groups()
-      if result == 0:
-        result = p.returncode
 
       # Collect the whole size of the App bundle on disk (include the framework)
-      p = subprocess.Popen(['du', '-s', '-k', chromium_app_dir],
-                           stdout=subprocess.PIPE)
-      stdout = p.communicate()[0]
+      result, stdout = run_process(result, ['du', '-s', '-k', chromium_app_dir])
       du_s = re.search('(\d+)', stdout).group(1)
-      if result == 0:
-        result = p.returncode
       print_dict['app_bundle_size'] = (int(du_s) * 1024)
 
       # Count the number of files with at least one static initializer.
@@ -105,7 +114,21 @@ def main_mac(options, args):
       if result == 0:
         result = p.returncode
       word_size = 4  # Assume 32 bit
-      print_dict['initializers'] = int(initializers_s, 16) / word_size
+      si_count = int(initializers_s, 16) / word_size
+      print_dict['initializers'] = si_count
+
+      # For Release builds only, use dump-static-initializers.py to print the
+      # list of static initializers.
+      if si_count > 0 and options.target == 'Release':
+        dump_static_initializers = os.path.join(
+            os.path.dirname(build_dir), 'tools', 'mac',
+            'dump-static-initializers.py')
+        result, stdout = run_process(result, [dump_static_initializers,
+                                              chromium_framework_dsym])
+        print '\n# Static initializers in %s:' % chromium_framework_executable
+        print_si_fail_hint('tools/mac/dump_static_initializers.py')
+        print stdout
+
 
       print ("""RESULT %(app_name)s: %(app_name)s= %(app_size)s bytes
 RESULT %(app_name)s-__TEXT: __TEXT= %(app_text)s bytes
@@ -145,14 +168,14 @@ def check_linux_binary(target_dir, binary_name, options):
   result = 0
   sizes = []
 
-  def run_process(result, command):
-    p = subprocess.Popen(command, stdout=subprocess.PIPE)
-    stdout = p.communicate()[0]
-    if p.returncode != 0:
-      print 'ERROR from command "%s": %d' % (' '.join(command), p.returncode)
-      if result != 0:
-        result = p.returncode
-    return result, stdout
+  def get_elf_section_size(readelf_stdout, section_name):
+    # Matches: .ctors PROGBITS 000000000516add0 5169dd0 000010 00 WA 0 0 8
+    match = re.search('\.%s.*$' % re.escape(section_name),
+                      readelf_stdout, re.MULTILINE)
+    if not match:
+      return (False, -1)
+    size_str = re.split('\W+', match.group(0))[5]
+    return (True, int(size_str, 16))
 
   sizes.append((binary_name, binary_name, 'size',
                 get_size(binary_file), 'bytes'))
@@ -175,29 +198,37 @@ def check_linux_binary(target_dir, binary_name, options):
   else:
     word_size = 8
 
-  # Then find the size of the .ctors section.
+  # Then find the number of files with global static initializers.
+  # NOTE: this is very implementation-specific and makes assumptions
+  # about how compiler and linker implement global static initializers.
+  si_count = 0
   result, stdout = run_process(result, ['readelf', '-SW', binary_file])
-  size_match = re.search('.ctors.*$', stdout, re.MULTILINE)
-  if size_match is None:
-    count = 0
-  else:
-    size_line = re.search('.ctors.*$', stdout, re.MULTILINE).group(0)
-    size = re.split('\W+', size_line)[5]
-    size = int(size, 16)
+  # TODO(phajdan.jr): Remove .ctors logic after migrating to Precise
+  # (http://crbug.com/170262). More recent toolchains use .init_array
+  # instead.
+  has_ctors, ctors_size = get_elf_section_size(stdout, 'ctors')
+  if has_ctors:
     # The first entry is always 0 and the last is -1 as guards.
     # So subtract 2 from the count.
-    count = (size / word_size) - 2
-  sizes.append((binary_name + '-si', 'initializers', '', count, 'files'))
+    si_count = (ctors_size / word_size) - 2
+  if si_count <= 0:
+    has_init_array, init_array_size = get_elf_section_size(stdout, 'init_array')
+    if has_init_array:
+      si_count = init_array_size / word_size
+    si_count = max(si_count, 0)
+  sizes.append((binary_name + '-si', 'initializers', '', si_count, 'files'))
 
   # For Release builds only, use dump-static-initializers.py to print the list
   # of static initializers.
-  if count and options.target == 'Release':
-    dump_static_initializers = os.path.join(os.path.dirname(options.build_dir),
+  if si_count > 0 and options.target == 'Release':
+    build_dir = os.path.dirname(target_dir)
+    dump_static_initializers = os.path.join(os.path.dirname(build_dir),
                                             'tools', 'linux',
                                             'dump-static-initializers.py')
     result, stdout = run_process(result, [dump_static_initializers,
                                           '-d', binary_file])
     print '\n# Static initializers in %s:' % binary_file
+    print_si_fail_hint('tools/linux/dump_static_initializers.py')
     print stdout
 
   # Determine if the binary has the DT_TEXTREL marker.
@@ -220,8 +251,8 @@ def main_linux(options, args):
   Returns the first non-zero exit status of any command it executes,
   or zero on success.
   """
-  target_dir = os.path.join(os.path.dirname(options.build_dir),
-                            'sconsbuild', options.target)
+  build_dir = build_directory.GetBuildOutputDirectory()
+  target_dir = os.path.join(build_dir, options.target)
 
   binaries = [
       'chrome',
@@ -229,6 +260,7 @@ def main_linux(options, args):
       'nacl_helper_bootstrap',
       'libffmpegsumo.so',
       'libgcflashplayer.so',
+      'lib/libpeerconnection.so',
       'libpdf.so',
       'libppGoogleNaClPluginChrome.so',
   ]
@@ -247,8 +279,8 @@ def main_linux(options, args):
       totals[totals_id] = totals.get(totals_id, 0) + int(value)
 
   files = [
-    'chrome.pak',
     'nacl_irt_x86_64.nexe',
+    'resources.pak',
   ]
 
   for filename in files:
@@ -272,20 +304,9 @@ def main_linux(options, args):
   return result
 
 
-def main_android(options, args):
-  """Print appropriate size information about built Android targets.
-
-  Returns the first non-zero exit status of any command it executes,
-  or zero on success.
+def check_android_binaries(binaries, target_dir, options):
+  """Common method for printing size information for Android targets.
   """
-  target_dir = os.path.join(os.path.dirname(options.build_dir),
-                            'out', options.target)
-
-  binaries = [
-      'chromium_testshell/libs/armeabi-v7a/libchromiumtestshell.so',
-      'lib/libchromiumtestshell.so',
-  ]
-
   result = 0
 
   for binary in binaries:
@@ -299,28 +320,71 @@ def main_android(options, args):
   return result
 
 
+def main_android(options, args):
+  """Print appropriate size information about built Android targets.
+
+  Returns the first non-zero exit status of any command it executes,
+  or zero on success.
+  """
+  target_dir = os.path.join(build_directory.GetBuildOutputDirectory(),
+                            options.target)
+
+  binaries = [
+      'chrome_shell_apk/libs/armeabi-v7a/libchromeshell.so',
+      'lib/libchromeshell.so',
+  ]
+
+  return check_android_binaries(binaries, target_dir, options)
+
+
+def main_android_webview(options, args):
+  """Print appropriate size information about Android WebViewChromium targets.
+
+  Returns the first non-zero exit status of any command it executes,
+  or zero on success.
+  """
+  target_dir = os.path.join(build_directory.GetBuildOutputDirectory(),
+                            options.target)
+
+  binaries = ['lib/libwebviewchromium.so']
+
+  return check_android_binaries(binaries, target_dir, options)
+
+
 def main_win(options, args):
   """Print appropriate size information about built Windows targets.
 
   Returns the first non-zero exit status of any command it executes,
   or zero on success.
   """
-  target_dir = os.path.join(options.build_dir, options.target)
+  build_dir = build_directory.GetBuildOutputDirectory()
+  target_dir = os.path.join(build_dir, options.target)
   chrome_dll = os.path.join(target_dir, 'chrome.dll')
+  chrome_child_dll = os.path.join(target_dir, 'chrome_child.dll')
   chrome_exe = os.path.join(target_dir, 'chrome.exe')
   mini_installer_exe = os.path.join(target_dir, 'mini_installer.exe')
   setup_exe = os.path.join(target_dir, 'setup.exe')
+  libpeerconnection_dll = os.path.join(target_dir, 'libpeerconnection.dll')
 
   result = 0
 
   print 'RESULT chrome.dll: chrome.dll= %s bytes' % get_size(chrome_dll)
 
+  fmt = 'RESULT chrome_child.dll: chrome_child.dll= %s bytes'
+  print fmt % get_size(chrome_child_dll)
+
   print 'RESULT chrome.exe: chrome.exe= %s bytes' % get_size(chrome_exe)
 
-  fmt = 'RESULT mini_installer.exe: mini_installer.exe= %s bytes'
-  print fmt % get_size(mini_installer_exe)
+  if os.path.exists(mini_installer_exe):
+    fmt = 'RESULT mini_installer.exe: mini_installer.exe= %s bytes'
+    print fmt % get_size(mini_installer_exe)
 
-  print 'RESULT setup.exe: setup.exe= %s bytes' % get_size(setup_exe)
+  if os.path.exists(setup_exe):
+    print 'RESULT setup.exe: setup.exe= %s bytes' % get_size(setup_exe)
+
+  if os.path.exists(libpeerconnection_dll):
+    fmt = 'RESULT libpeerconnection.dll: libpeerconnection.dll= %s bytes'
+    print fmt % get_size(libpeerconnection_dll)
 
   return result
 
@@ -337,6 +401,7 @@ def main():
 
   main_map = {
     'android' : main_android,
+    'android-webview' : main_android_webview,
     'linux' : main_linux,
     'mac' : main_mac,
     'win' : main_win,
@@ -344,16 +409,13 @@ def main():
   platforms = sorted(main_map.keys())
 
   option_parser = optparse.OptionParser()
-  option_parser.add_option('', '--target',
+  option_parser.add_option('--target',
                            default='Release',
                            help='build target (Debug, Release) '
                                 '[default: %default]')
-  option_parser.add_option('', '--build-dir',
-                           default='chrome',
-                           metavar='DIR',
-                           help='directory in which build was run '
-                                '[default: %default]')
-  option_parser.add_option('', '--platform',
+  option_parser.add_option('--target-dir', help='ignored')
+  option_parser.add_option('--build-dir', help='ignored')
+  option_parser.add_option('--platform',
                            default=default_platform,
                            help='specify platform (%s) [default: %%default]'
                                 % ', '.join(platforms))

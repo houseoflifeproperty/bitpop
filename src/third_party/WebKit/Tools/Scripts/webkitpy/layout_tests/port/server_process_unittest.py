@@ -28,14 +28,13 @@
 
 import sys
 import time
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.layout_tests.port.factory import PortFactory
 from webkitpy.layout_tests.port import server_process
 from webkitpy.common.system.systemhost import SystemHost
 from webkitpy.common.system.systemhost_mock import MockSystemHost
 from webkitpy.common.system.outputcapture import OutputCapture
-
 
 
 class TrivialMockPort(object):
@@ -46,9 +45,6 @@ class TrivialMockPort(object):
 
     def results_directory(self):
         return "/mock-results"
-
-    def check_for_leaks(self, process_name, process_pid):
-        pass
 
     def process_kill_time(self):
         return 1
@@ -140,13 +136,34 @@ class TestServerProcess(unittest.TestCase):
         server_process = FakeServerProcess(port_obj=port_obj, name="test", cmd=["test"])
         server_process.write("should break")
         self.assertTrue(server_process.has_crashed())
-        self.assertNotEquals(server_process.pid(), None)
-        self.assertEqual(server_process._proc, None)
+        self.assertIsNotNone(server_process.pid())
+        self.assertIsNone(server_process._proc)
         self.assertEqual(server_process.broken_pipes, [server_process.stdin])
 
         port_obj.host.platform.os_name = 'mac'
         server_process = FakeServerProcess(port_obj=port_obj, name="test", cmd=["test"])
         server_process.write("should break")
         self.assertTrue(server_process.has_crashed())
-        self.assertEqual(server_process._proc, None)
+        self.assertIsNone(server_process._proc)
         self.assertEqual(server_process.broken_pipes, [server_process.stdin])
+
+
+class TestQuoteData(unittest.TestCase):
+    def test_plain(self):
+        qd = server_process.quote_data
+        self.assertEqual(qd("foo"), ["foo"])
+
+    def test_trailing_spaces(self):
+        qd = server_process.quote_data
+        self.assertEqual(qd("foo  "),
+                         ["foo\x20\x20"])
+
+    def test_newlines(self):
+        qd = server_process.quote_data
+        self.assertEqual(qd("foo \nbar\n"),
+                         ["foo\x20\\n", "bar\\n"])
+
+    def test_binary_data(self):
+        qd = server_process.quote_data
+        self.assertEqual(qd("\x00\x01ab"),
+                         ["\\x00\\x01ab"])

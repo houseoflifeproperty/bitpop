@@ -5,15 +5,13 @@
 var assertEq = chrome.test.assertEq;
 var assertFalse = chrome.test.assertFalse;
 var assertTrue = chrome.test.assertTrue;
+var assertThrows = chrome.test.assertThrows;
 var fail = chrome.test.callbackFail;
 var pass = chrome.test.callbackPass;
 var listenOnce = chrome.test.listenOnce;
 
 var NOT_OPTIONAL_ERROR =
     "Optional permissions must be listed in extension manifest.";
-
-var NO_BOOKMARKS_PERMISSION =
-    "You do not have permission to use 'bookmarks.getTree'.";
 
 var REQUIRED_ERROR =
     "You cannot remove required permissions.";
@@ -62,7 +60,7 @@ chrome.test.getConfig(function(config) {
 
   function doReq(domain, callback) {
     var req = new XMLHttpRequest();
-    var url = domain + ":PORT/files/extensions/test_file.txt";
+    var url = domain + ":PORT/extensions/test_file.txt";
     url = url.replace(/PORT/, config.testServer.port);
 
     chrome.test.log("Requesting url: " + url);
@@ -127,16 +125,7 @@ chrome.test.getConfig(function(config) {
     // We should be able to request the bookmarks API since it's in the granted
     // permissions list (see permissions_apitest.cc).
     function requestBookmarks() {
-      // chrome.bookmarks is a optional permission, so the API definition should
-      // exist but its use disallowed.
-      assertTrue(!!chrome.bookmarks);
-      try {
-        chrome.bookmarks.getTree(function() {
-          chrome.test.fail("Should not have bookmarks API permission.");
-        });
-      } catch (e) {
-        assertTrue(e.message.indexOf(NO_BOOKMARKS_PERMISSION) == 0);
-      }
+      assertEq(undefined, chrome.bookmarks);
       listenOnce(chrome.permissions.onAdded,
                  function(permissions) {
         assertTrue(permissions.permissions.length == 1);
@@ -205,14 +194,13 @@ chrome.test.getConfig(function(config) {
             chrome.permissions.getAll(pass(function(permissions) {
               assertTrue(checkPermSetsEq(initialPermissions, permissions));
             }));
-            try {
-              chrome.bookmarks.getTree(function() {
-                chrome.test.fail("Should not have bookmarks API permission.");
-              });
-            } catch (e) {
-              assertTrue(e.message.indexOf(NO_BOOKMARKS_PERMISSION) == 0);
-            }
-      }));
+            assertTrue(typeof chrome.bookmarks == 'object' &&
+                       chrome.bookmarks != null);
+            assertThrows(
+              chrome.bookmarks.getTree, [function(){}],
+              "'bookmarks' requires a different Feature that is not present.");
+          }
+      ));
     },
 
     // The user shouldn't have to approve permissions that have no warnings.
@@ -305,13 +293,11 @@ chrome.test.getConfig(function(config) {
       });
       listenOnce(chrome.permissions.onRemoved,
                  function(permissions) {
-        try {
-          chrome.bookmarks.getTree(function() {
-            chrome.test.fail("Should not have bookmakrs API permission.");
-          });
-        } catch (e) {
-          assertTrue(e.message.indexOf(NO_BOOKMARKS_PERMISSION) == 0);
-        }
+        assertTrue(typeof chrome.bookmarks == 'object' &&
+                   chrome.bookmarks != null);
+        assertThrows(
+          chrome.bookmarks.getTree, [function(){}],
+          "'bookmarks' requires a different Feature that is not present.");
       });
 
       chrome.permissions.request(

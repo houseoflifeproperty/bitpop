@@ -15,6 +15,9 @@ const char kPreviewRequestID[] = "requestID";
 // Unique ID to identify a print preview UI.
 const char kPreviewUIID[] = "previewUIID";
 
+// Capabilities option. Contains the capabilities in CDD format.
+const char kSettingCapabilities[] = "capabilities";
+
 // Print using cloud print: true if selected, false if not.
 const char kSettingCloudPrintId[] = "cloudPrintID";
 
@@ -93,6 +96,9 @@ const char kSettingMarginsCustom[] = "marginsCustom";
 // MarginType enum.
 const char kSettingMarginsType[] = "marginsType";
 
+// Number of pages to print.
+const char kSettingPreviewPageCount[] = "pageCount";
+
 // A page range.
 const char kSettingPageRange[] = "pageRange";
 
@@ -101,6 +107,10 @@ const char kSettingPageRangeFrom[] = "from";
 
 // The last page of a page range. (1-based)
 const char kSettingPageRangeTo[] = "to";
+
+// Page size of document to print.
+const char kSettingPageWidth[] = "pageWidth";
+const char kSettingPageHeight[] = "pageHeight";
 
 const char kSettingPreviewModifiable[] = "previewModifiable";
 
@@ -113,16 +123,34 @@ const char kSettingPrintableAreaHeight[] = "printableAreaHeight";
 // Printer name.
 const char kSettingPrinterName[] = "printerName";
 
+// Printer description.
+const char kSettingPrinterDescription[] = "printerDescription";
+
+// Additional printer options.
+const char kSettingPrinterOptions[] = "printerOptions";
+
 // Print to PDF option: true if selected, false if not.
 const char kSettingPrintToPDF[] = "printToPDF";
+
+// Print using Privet option: true if destination is a Privet printer, false if
+// not.
+const char kSettingPrintWithPrivet[] = "printWithPrivet";
+
+// Ticket option. Contains the ticket in CJT format.
+const char kSettingTicket[] = "ticket";
+
+// Whether to print CSS backgrounds.
+const char kSettingShouldPrintBackgrounds[] = "shouldPrintBackgrounds";
+
+// Whether to print selection only.
+const char kSettingShouldPrintSelectionOnly[] = "shouldPrintSelectionOnly";
 
 // Indices used to represent first preview page and complete preview document.
 const int FIRST_PAGE_INDEX = 0;
 const int COMPLETE_PREVIEW_DOCUMENT_INDEX = -1;
 
-#if defined(OS_MACOSX)
+// Whether to show PDF in view provided by OS. Implemented for MacOS only.
 const char kSettingOpenPDFInPreview[] = "OpenPDFInPreview";
-#endif
 
 #if defined (USE_CUPS)
 const char kBlack[] = "Black";

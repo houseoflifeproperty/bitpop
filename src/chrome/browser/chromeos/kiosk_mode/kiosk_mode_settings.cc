@@ -12,12 +12,12 @@
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/chromeos/kiosk_mode/kiosk_mode_screensaver.h"
 #include "chrome/browser/chromeos/login/user_manager.h"
+#include "chrome/browser/chromeos/policy/browser_policy_connector_chromeos.h"
 #include "chrome/browser/chromeos/settings/cros_settings.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
 #include "chrome/browser/lifetime/application_lifetime.h"
-#include "chrome/browser/policy/browser_policy_connector.h"
-#include "chrome/browser/policy/cloud_policy_constants.h"
-#include "chrome/common/chrome_switches.h"
+#include "chromeos/chromeos_switches.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "components/policy/core/common/cloud/cloud_policy_constants.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -103,7 +103,7 @@ bool KioskModeSettings::is_initialized() const {
 void KioskModeSettings::GetScreensaverPath(
     policy::AppPackUpdater::ScreenSaverUpdateCallback callback) const {
   if (!is_initialized_) {
-    callback.Run(FilePath());
+    callback.Run(base::FilePath());
     return;
   }
 
@@ -111,17 +111,17 @@ void KioskModeSettings::GetScreensaverPath(
   // for testing and dev workflows.
   if (CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kKioskModeScreensaverPath)) {
-    callback.Run(FilePath(
+    callback.Run(base::FilePath(
         CommandLine::ForCurrentProcess()->
             GetSwitchValueASCII(switches::kKioskModeScreensaverPath)));
     return;
   }
 
   if (g_browser_process) {
-    policy::BrowserPolicyConnector* bpc =
-        g_browser_process->browser_policy_connector();
-    if (bpc && bpc->GetAppPackUpdater()) {
-      bpc->GetAppPackUpdater()->SetScreenSaverUpdateCallback(callback);
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    if (connector && connector->GetAppPackUpdater()) {
+      connector->GetAppPackUpdater()->SetScreenSaverUpdateCallback(callback);
       return;
     }
   }
@@ -158,10 +158,10 @@ KioskModeSettings::KioskModeSettings() : is_initialized_(false) {
   // Precache the value as we know it at construction time to avoid serving
   // different values to different users.
   if (g_browser_process) {
-    policy::BrowserPolicyConnector* bpc =
-        g_browser_process->browser_policy_connector();
-    policy::DeviceMode device_mode = bpc->GetDeviceMode();
-    if (device_mode == policy::DEVICE_MODE_KIOSK) {
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    policy::DeviceMode device_mode = connector->GetDeviceMode();
+    if (device_mode == policy::DEVICE_MODE_RETAIL_KIOSK) {
       is_kiosk_mode_ = true;
       return;
     } else if (device_mode == policy::DEVICE_MODE_PENDING){
@@ -177,26 +177,25 @@ KioskModeSettings::~KioskModeSettings() {
 }
 
 void KioskModeSettings::VerifyModeIsKnown(
-    DeviceSettingsService::OwnershipStatus status,
-    bool is_owner) {
+    DeviceSettingsService::OwnershipStatus status) {
   if (status != DeviceSettingsService::OWNERSHIP_TAKEN)
     return;
 
   if (g_browser_process) {
-    policy::BrowserPolicyConnector* bpc =
-        g_browser_process->browser_policy_connector();
-    policy::DeviceMode device_mode = bpc->GetDeviceMode();
+    policy::BrowserPolicyConnectorChromeOS* connector =
+        g_browser_process->platform_part()->browser_policy_connector_chromeos();
+    policy::DeviceMode device_mode = connector->GetDeviceMode();
     // We retry asking for the mode until it becomes known.
     switch (device_mode) {
       case policy::DEVICE_MODE_PENDING:
         content::BrowserThread::PostDelayedTask(
             content::BrowserThread::UI, FROM_HERE,
             base::Bind(&KioskModeSettings::VerifyModeIsKnown,
-                       base::Unretained(this), status, is_owner),
+                       base::Unretained(this), status),
             base::TimeDelta::FromMilliseconds(kDeviceModeFetchRetryDelayMs));
         break;
-      case policy::DEVICE_MODE_KIOSK:
-        browser::ExitCleanly();
+      case policy::DEVICE_MODE_RETAIL_KIOSK:
+        chrome::AttemptRestart();
         break;
       default:
         break;

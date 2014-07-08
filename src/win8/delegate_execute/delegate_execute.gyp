@@ -6,8 +6,8 @@
     'chromium_code': 1,
   },
   'includes': [
+    '../../build/util/version.gypi',
     '../../build/win_precompile.gypi',
-    '../../chrome/version.gypi',
   ],
   'targets': [
     {
@@ -42,9 +42,11 @@
         '../../base/base.gyp:base',
         '../../breakpad/breakpad.gyp:breakpad_handler',
         '../../chrome/chrome.gyp:installer_util',
+        '../../content/content.gyp:content_common',
         '../../google_update/google_update.gyp:google_update',
-        '../../ui/ui.gyp:ui',
-        '../../win8/win8.gyp:check_sdk_patch',
+        '../../ui/base/ui_base.gyp:ui_base',
+        '../../ui/gfx/gfx.gyp:gfx',
+        '../../ui/gfx/gfx.gyp:gfx_geometry',
         'delegate_execute_version_resources',
       ],
       'sources': [
@@ -57,7 +59,6 @@
         'crash_server_init.h',
         'delegate_execute.cc',
         'delegate_execute.rc',
-        'delegate_execute.rgs',
         'delegate_execute_operation.cc',
         'delegate_execute_operation.h',
         'delegate_execute_util.cc',
@@ -70,6 +71,13 @@
           'SubSystem': '2',  # Set /SUBSYSTEM:WINDOWS
         },
       },
+      'conditions': [
+        ['use_aura==1', {
+          'dependencies': [
+            '../win8.gyp:metro_viewer_constants',
+          ],
+        }],
+      ],
     },
     {
       'target_name': 'delegate_execute_unittests',

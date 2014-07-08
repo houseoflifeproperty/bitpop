@@ -10,7 +10,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/common/net/predictor_common.h"
 #include "chrome/common/render_messages.h"
 #include "chrome/renderer/net/predictor_queue.h"
@@ -24,7 +24,7 @@ static const size_t kMAX_SUBMISSION_PER_TASK = 30;
 
 RendererNetPredictor::RendererNetPredictor()
     : c_string_queue_(1000),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
   Reset();
 }
 

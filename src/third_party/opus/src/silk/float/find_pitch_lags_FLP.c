@@ -8,11 +8,11 @@ this list of conditions and the following disclaimer.
 - Redistributions in binary form must reproduce the above copyright
 notice, this list of conditions and the following disclaimer in the
 documentation and/or other materials provided with the distribution.
-- Neither the name of Internet Society, IETF or IETF Trust, nor the 
+- Neither the name of Internet Society, IETF or IETF Trust, nor the
 names of specific contributors, may be used to endorse or promote
 products derived from this software without specific prior written
 permission.
-THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS “AS IS”
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
 AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
 ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS BE
@@ -37,7 +37,8 @@ void silk_find_pitch_lags_FLP(
     silk_encoder_state_FLP          *psEnc,                             /* I/O  Encoder state FLP                           */
     silk_encoder_control_FLP        *psEncCtrl,                         /* I/O  Encoder control FLP                         */
     silk_float                      res[],                              /* O    Residual                                    */
-    const silk_float                x[]                                 /* I    Speech signal                               */
+    const silk_float                x[],                                /* I    Speech signal                               */
+    int                             arch                                /* I    Run-time architecture                       */
 )
 {
     opus_int   buf_len;
@@ -54,7 +55,7 @@ void silk_find_pitch_lags_FLP(
     /******************************************/
     buf_len = psEnc->sCmn.la_pitch + psEnc->sCmn.frame_length + psEnc->sCmn.ltp_mem_length;
 
-    /* Safty check */
+    /* Safety check */
     silk_assert( buf_len >= psEnc->sCmn.pitch_LPC_win_length );
 
     x_buf = x - psEnc->sCmn.ltp_mem_length;
@@ -96,7 +97,7 @@ void silk_find_pitch_lags_FLP(
     silk_k2a_FLP( A, refl_coef, psEnc->sCmn.pitchEstimationLPCOrder );
 
     /* Bandwidth expansion */
-    silk_bwexpander_FLP( A, psEnc->sCmn.pitchEstimationLPCOrder, FIND_PITCH_BANDWITH_EXPANSION );
+    silk_bwexpander_FLP( A, psEnc->sCmn.pitchEstimationLPCOrder, FIND_PITCH_BANDWIDTH_EXPANSION );
 
     /*****************************************/
     /* LPC analysis filtering                */
@@ -116,7 +117,7 @@ void silk_find_pitch_lags_FLP(
         /*****************************************/
         if( silk_pitch_analysis_core_FLP( res, psEncCtrl->pitchL, &psEnc->sCmn.indices.lagIndex,
             &psEnc->sCmn.indices.contourIndex, &psEnc->LTPCorr, psEnc->sCmn.prevLag, psEnc->sCmn.pitchEstimationThreshold_Q16 / 65536.0f,
-            thrhld, psEnc->sCmn.fs_kHz, psEnc->sCmn.pitchEstimationComplexity, psEnc->sCmn.nb_subfr ) == 0 )
+            thrhld, psEnc->sCmn.fs_kHz, psEnc->sCmn.pitchEstimationComplexity, psEnc->sCmn.nb_subfr, arch ) == 0 )
         {
             psEnc->sCmn.indices.signalType = TYPE_VOICED;
         } else {

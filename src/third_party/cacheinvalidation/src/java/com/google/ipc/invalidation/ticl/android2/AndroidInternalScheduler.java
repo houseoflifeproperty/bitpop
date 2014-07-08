@@ -71,13 +71,13 @@ public final class AndroidInternalScheduler implements Scheduler {
 
   /**
    * If {@code true}, {@link #isRunningOnThread} will verify that calls are being made from either
-   * the {@link TiclService} or the {@link TestTiclService.TestableClient}.
+   * the {@link TiclService} or the {@link TestableTiclService.TestableClient}.
    */
   public static boolean checkStackForTest = false;
 
   /** Class name of the testable client class, for checking call stacks in tests. */
   private static final String TESTABLE_CLIENT_CLASSNAME_FOR_TEST =
-      "com.google.ipc.invalidation.ticl.android2.TestTiclService$TestableClient";
+      "com.google.ipc.invalidation.ticl.android2.TestableTiclService$TestableClient";
 
   /**
    * {@link RecurringTask}-created runnables that can be executed by this instance, by their names.

@@ -9,8 +9,8 @@
 
 #include "base/basictypes.h"
 #include "base/callback.h"
-#include "chrome/browser/favicon/favicon_handler_delegate.h"
-#include "chrome/browser/history/history_types.h"
+#include "components/favicon/core/browser/favicon_client.h"
+#include "components/favicon/core/favicon_driver.h"
 #include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_contents_user_data.h"
 #include "content/public/common/favicon_url.h"
@@ -31,7 +31,8 @@ class SkBitmap;
 // downloaded and saved in the history backend.
 //
 class FaviconTabHelper : public content::WebContentsObserver,
-                         public FaviconHandlerDelegate,
+                         public FaviconClient,
+                         public FaviconDriver,
                          public content::WebContentsUserData<FaviconTabHelper> {
  public:
   virtual ~FaviconTabHelper();
@@ -52,41 +53,53 @@ class FaviconTabHelper : public content::WebContentsObserver,
   // space is provided for the favicon, and the favicon is never displayed.
   virtual bool ShouldDisplayFavicon();
 
+  // Returns the current tab's favicon urls. If this is empty,
+  // DidUpdateFaviconURL has not yet been called for the current navigation.
+  const std::vector<content::FaviconURL>& favicon_urls() const {
+    return favicon_urls_;
+  }
+
   // content::WebContentsObserver override. Must be public, because also
   // called from PrerenderContents.
   virtual void DidUpdateFaviconURL(
-      int32 page_id,
       const std::vector<content::FaviconURL>& candidates) OVERRIDE;
 
   // Saves the favicon for the current page.
   void SaveFavicon();
 
-  // FaviconHandlerDelegate methods.
+  // FaviconDriver methods.
   virtual content::NavigationEntry* GetActiveEntry() OVERRIDE;
-  virtual int StartDownload(const GURL& url, int image_size) OVERRIDE;
-  virtual void NotifyFaviconUpdated() OVERRIDE;
+  virtual int StartDownload(const GURL& url, int max_bitmap_size) OVERRIDE;
+  virtual void NotifyFaviconUpdated(bool icon_url_changed) OVERRIDE;
+  virtual bool IsOffTheRecord() OVERRIDE;
+
+  // Favicon download callback.
+  void DidDownloadFavicon(
+      int id,
+      int http_status_code,
+      const GURL& image_url,
+      const std::vector<SkBitmap>& bitmaps,
+      const std::vector<gfx::Size>& original_bitmap_sizes);
+
+  // FaviconClient implementation:
+  virtual FaviconService* GetFaviconService() OVERRIDE;
+  virtual bool IsBookmarked(const GURL& url) OVERRIDE;
 
  private:
   explicit FaviconTabHelper(content::WebContents* web_contents);
   friend class content::WebContentsUserData<FaviconTabHelper>;
 
   // content::WebContentsObserver overrides.
-  virtual void NavigateToPendingEntry(
+  virtual void DidStartNavigationToPendingEntry(
       const GURL& url,
       content::NavigationController::ReloadType reload_type) OVERRIDE;
   virtual void DidNavigateMainFrame(
       const content::LoadCommittedDetails& details,
       const content::FrameNavigateParams& params) OVERRIDE;
 
-  // Favicon download callback.
-  void DidDownloadFavicon(
-      int id,
-      const GURL& image_url,
-      bool errored,
-      int requested_size,
-      const std::vector<SkBitmap>& bitmaps);
-
   Profile* profile_;
+
+  std::vector<content::FaviconURL> favicon_urls_;
 
   scoped_ptr<FaviconHandler> favicon_handler_;
 

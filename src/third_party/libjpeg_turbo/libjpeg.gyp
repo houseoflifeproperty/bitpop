@@ -3,7 +3,7 @@
 # found in the LICENSE file.
 
 {
-  # This file is not used when use_system_libjepg==1. Settings for building with
+  # This file is not used when use_system_libjpeg==1. Settings for building with
   # the system libjpeg is in third_party/libjpeg/libjpeg.gyp.
   'variables': {
     'shared_generated_dir': '<(SHARED_INTERMEDIATE_DIR)/third_party/libjpeg_turbo',
@@ -18,12 +18,14 @@
   'targets': [
     {
       'target_name': 'libjpeg',
-      'type': '<(library)',
+      'type': 'static_library',
       'include_dirs': [
         '.',
       ],
       'defines': [
-        'WITH_SIMD', 'MOTION_JPEG_SUPPORTED',
+        'WITH_SIMD',
+        'MOTION_JPEG_SUPPORTED',
+        'NO_GETENV',
       ],
       'sources': [
         'jcapimin.c',
@@ -134,7 +136,7 @@
             'simd/jsimdcpu.asm',
           ],
         }],
-        [ 'target_arch=="x64"', {
+        [ 'target_arch=="x64" and msan!=1', {
           'sources': [
             'simd/jsimd_x86_64.c',
             'simd/jccolss2-64.asm',
@@ -154,12 +156,19 @@
             'simd/jiss2red-64.asm',
           ],
         }],
+        # MemorySanitizer doesn't support assembly code, so keep it disabled in
+        # MSan builds for now.
+        [ 'msan==1', {
+          'sources': [
+            'jsimd_none.c',
+          ],
+        }],
         # The ARM SIMD implementation can be used for devices that support
-        # the NEON instruction set. This is done dynamically by probing CPU
-        # features at runtime, so always compile it for ARMv7-A devices.
+        # the NEON instruction set. This can safely be done dynamically by
+        # probing CPU features at runtime, if you wish.
         [ 'target_arch=="arm"', {
           'conditions': [
-            [ 'armv7 == 1 or arm_neon == 1', {
+            [ 'arm_version >= 7 and (arm_neon == 1 or arm_neon_optional == 1)', {
               'sources': [
                 'simd/jsimd_arm.c',
                 'simd/jsimd_arm_neon.S',
@@ -169,6 +178,11 @@
                 'jsimd_none.c',
               ],
             }]
+          ],
+        }],
+        [ 'target_arch=="arm64"', {
+          'sources': [
+            'jsimd_none.c',
           ],
         }],
         [ 'target_arch=="mipsel"', {
@@ -231,7 +245,7 @@
             ],
           },
         }],
-        [ 'OS=="linux" or (OS=="android" and target_arch!="arm")', {
+        [ 'OS=="linux" or OS=="freebsd" or (OS=="android" and target_arch!="arm")', {
           'conditions': [
             [ 'use_system_yasm==0', {
               'dependencies': [

@@ -8,16 +8,18 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/synchronization/lock.h"
-#include "base/utf_string_conversions.h"
-#include "chrome/browser/password_manager/password_manager.h"
+#include "chrome/browser/chrome_notification_types.h"
+#include "chrome/browser/password_manager/chrome_password_manager_client.h"
+#include "chrome/browser/prerender/prerender_contents.h"
 #include "chrome/browser/tab_contents/tab_util.h"
-#include "chrome/browser/ui/constrained_window.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "components/password_manager/core/browser/browser_save_password_progress_logger.h"
+#include "components/password_manager/core/browser/password_manager.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_service.h"
-#include "content/public/browser/render_view_host.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/resource_dispatcher_host.h"
 #include "content/public/browser/resource_request_info.h"
 #include "content/public/browser/web_contents.h"
@@ -28,8 +30,9 @@
 #include "net/url_request/url_request.h"
 #include "net/url_request/url_request_context.h"
 #include "ui/base/l10n/l10n_util.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 
+using autofill::PasswordForm;
 using content::BrowserThread;
 using content::NavigationController;
 using content::RenderViewHost;
@@ -37,7 +40,6 @@ using content::RenderViewHostDelegate;
 using content::ResourceDispatcherHost;
 using content::ResourceRequestInfo;
 using content::WebContents;
-using content::PasswordForm;
 
 class LoginHandlerImpl;
 
@@ -78,7 +80,6 @@ std::string GetSignonRealm(const GURL& url,
 LoginHandler::LoginHandler(net::AuthChallengeInfo* auth_info,
                            net::URLRequest* request)
     : handled_auth_(false),
-      dialog_(NULL),
       auth_info_(auth_info),
       request_(request),
       http_network_session_(
@@ -89,7 +90,7 @@ LoginHandler::LoginHandler(net::AuthChallengeInfo* auth_info,
   // here. BuildViewForPasswordManager() will be invoked on the UI thread
   // later, so wait with loading the nib until then.
   DCHECK(request_) << "LoginHandler constructed with NULL request";
-  DCHECK(auth_info_) << "LoginHandler constructed with NULL auth info";
+  DCHECK(auth_info_.get()) << "LoginHandler constructed with NULL auth info";
 
   AddRef();  // matched by LoginHandler::ReleaseSoon().
 
@@ -97,8 +98,8 @@ LoginHandler::LoginHandler(net::AuthChallengeInfo* auth_info,
       BrowserThread::UI, FROM_HERE,
       base::Bind(&LoginHandler::AddObservers, this));
 
-  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderView(
-          &render_process_host_id_,  &tab_contents_id_)) {
+  if (!ResourceRequestInfo::ForRequest(request_)->GetAssociatedRenderFrame(
+          &render_process_host_id_,  &render_frame_id_)) {
     NOTREACHED();
   }
 }
@@ -114,26 +115,42 @@ void LoginHandler::OnRequestCancelled() {
   CancelAuth();
 }
 
-void LoginHandler::SetPasswordForm(const content::PasswordForm& form) {
+void LoginHandler::SetPasswordForm(const autofill::PasswordForm& form) {
   password_form_ = form;
 }
 
-void LoginHandler::SetPasswordManager(PasswordManager* password_manager) {
+void LoginHandler::SetPasswordManager(
+    password_manager::PasswordManager* password_manager) {
   password_manager_ = password_manager;
 }
 
 WebContents* LoginHandler::GetWebContentsForLogin() const {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  return tab_util::GetWebContentsByID(render_process_host_id_,
-                                      tab_contents_id_);
+  content::RenderFrameHost* rfh = content::RenderFrameHost::FromID(
+      render_process_host_id_, render_frame_id_);
+  return WebContents::FromRenderFrameHost(rfh);
 }
 
-void LoginHandler::SetAuth(const string16& username,
-                           const string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void LoginHandler::SetAuth(const base::string16& username,
+                           const base::string16& password) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  if (TestAndSetAuthHandled())
+  scoped_ptr<password_manager::BrowserSavePasswordProgressLogger> logger;
+  if (password_manager_ && password_manager_->client()->IsLoggingActive()) {
+    logger.reset(new password_manager::BrowserSavePasswordProgressLogger(
+        password_manager_->client()));
+    logger->LogMessage(
+        autofill::SavePasswordProgressLogger::STRING_SET_AUTH_METHOD);
+  }
+
+  bool already_handled = TestAndSetAuthHandled();
+  if (logger) {
+    logger->LogBoolean(
+        autofill::SavePasswordProgressLogger::STRING_AUTHENTICATION_HANDLED,
+        already_handled);
+  }
+  if (already_handled)
     return;
 
   // Tell the password manager the credentials were submitted / accepted.
@@ -141,6 +158,11 @@ void LoginHandler::SetAuth(const string16& username,
     password_form_.username_value = username;
     password_form_.password_value = password;
     password_manager_->ProvisionallySavePassword(password_form_);
+    if (logger) {
+      logger->LogPasswordForm(
+          autofill::SavePasswordProgressLogger::STRING_LOGINHANDLER_FORM,
+          password_form_);
+    }
   }
 
   // Calling NotifyAuthSupplied() directly instead of posting a task
@@ -184,7 +206,7 @@ void LoginHandler::CancelAuth() {
 void LoginHandler::Observe(int type,
                            const content::NotificationSource& source,
                            const content::NotificationDetails& details) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(type == chrome::NOTIFICATION_AUTH_SUPPLIED ||
          type == chrome::NOTIFICATION_AUTH_CANCELLED);
 
@@ -234,20 +256,16 @@ LoginHandler::~LoginHandler() {
   SetModel(NULL);
 }
 
-void LoginHandler::SetModel(LoginModel* model) {
+void LoginHandler::SetModel(password_manager::LoginModel* model) {
   if (login_model_)
-    login_model_->SetObserver(NULL);
+    login_model_->RemoveObserver(this);
   login_model_ = model;
   if (login_model_)
-    login_model_->SetObserver(this);
-}
-
-void LoginHandler::SetDialog(ConstrainedWindow* dialog) {
-  dialog_ = dialog;
+    login_model_->AddObserver(this);
 }
 
 void LoginHandler::NotifyAuthNeeded() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   if (WasAuthHandled())
     return;
 
@@ -285,7 +303,7 @@ void LoginHandler::ReleaseSoon() {
 }
 
 void LoginHandler::AddObservers() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // This is probably OK; we need to listen to everything and we break out of
   // the Observe() if we aren't handling the same auth_info().
@@ -297,14 +315,14 @@ void LoginHandler::AddObservers() {
 }
 
 void LoginHandler::RemoveObservers() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   registrar_.reset();
 }
 
-void LoginHandler::NotifyAuthSupplied(const string16& username,
-                                      const string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+void LoginHandler::NotifyAuthSupplied(const base::string16& username,
+                                      const base::string16& password) {
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
 
   WebContents* requesting_contents = GetWebContentsForLogin();
@@ -324,7 +342,7 @@ void LoginHandler::NotifyAuthSupplied(const string16& username,
 }
 
 void LoginHandler::NotifyAuthCancelled() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
   DCHECK(WasAuthHandled());
 
   content::NotificationService* service =
@@ -351,9 +369,9 @@ bool LoginHandler::TestAndSetAuthHandled() {
 }
 
 // Calls SetAuth from the IO loop.
-void LoginHandler::SetAuthDeferred(const string16& username,
-                                   const string16& password) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+void LoginHandler::SetAuthDeferred(const base::string16& username,
+                                   const base::string16& password) {
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (request_) {
     request_->SetAuth(net::AuthCredentials(username, password));
@@ -363,7 +381,7 @@ void LoginHandler::SetAuthDeferred(const string16& username,
 
 // Calls CancelAuth from the IO loop.
 void LoginHandler::CancelAuthDeferred() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  DCHECK_CURRENTLY_ON(BrowserThread::IO);
 
   if (request_) {
     request_->CancelAuth();
@@ -375,11 +393,9 @@ void LoginHandler::CancelAuthDeferred() {
 
 // Closes the view_contents from the UI loop.
 void LoginHandler::CloseContentsDeferred() {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
-  // The hosting ConstrainedWindow may have been freed.
-  if (dialog_)
-    dialog_->CloseConstrainedWindow();
+  CloseDialog();
 }
 
 // Helper to create a PasswordForm and stuff it into a vector as input
@@ -432,8 +448,15 @@ void LoginDialogCallback(const GURL& request_url,
     return;
   }
 
-  PasswordManager* password_manager =
-      PasswordManager::FromWebContents(parent_contents);
+  prerender::PrerenderContents* prerender_contents =
+      prerender::PrerenderContents::FromWebContents(parent_contents);
+  if (prerender_contents) {
+    prerender_contents->Destroy(prerender::FINAL_STATUS_AUTH_NEEDED);
+    return;
+  }
+
+  password_manager::PasswordManager* password_manager =
+      ChromePasswordManagerClient::GetManagerFromWebContents(parent_contents);
   if (!password_manager) {
     // Same logic as above.
     handler->CancelAuth();
@@ -448,12 +471,12 @@ void LoginDialogCallback(const GURL& request_url,
 
   // The realm is controlled by the remote server, so there is no reason
   // to believe it is of a reasonable length.
-  string16 elided_realm;
-  ui::ElideString(UTF8ToUTF16(auth_info->realm), 120, &elided_realm);
+  base::string16 elided_realm;
+  gfx::ElideString(base::UTF8ToUTF16(auth_info->realm), 120, &elided_realm);
 
-  string16 host_and_port = ASCIIToUTF16(request_url.scheme() + "://" +
-                                        auth_info->challenger.ToString());
-  string16 explanation = elided_realm.empty() ?
+  base::string16 host_and_port = base::ASCIIToUTF16(
+      request_url.scheme() + "://" + auth_info->challenger.ToString());
+  base::string16 explanation = elided_realm.empty() ?
       l10n_util::GetStringFUTF16(IDS_LOGIN_DIALOG_DESCRIPTION_NO_REALM,
                                  host_and_port) :
       l10n_util::GetStringFUTF16(IDS_LOGIN_DIALOG_DESCRIPTION,

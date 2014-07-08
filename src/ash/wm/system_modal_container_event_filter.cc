@@ -6,10 +6,9 @@
 
 #include "ash/wm/system_modal_container_event_filter_delegate.h"
 #include "ui/aura/window.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 namespace ash {
-namespace internal {
 
 SystemModalContainerEventFilter::SystemModalContainerEventFilter(
     SystemModalContainerEventFilterDelegate* delegate)
@@ -32,5 +31,4 @@ void SystemModalContainerEventFilter::OnMouseEvent(
     event->StopPropagation();
 }
 
-}  // namespace internal
 }  // namespace ash

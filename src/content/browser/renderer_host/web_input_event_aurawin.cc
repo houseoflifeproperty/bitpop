@@ -6,42 +6,45 @@
 
 #include "base/event_types.h"
 #include "base/logging.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/win/WebInputEventFactory.h"
+#include "content/browser/renderer_host/input/web_input_event_builders_win.h"
 
 namespace content {
 
 // On Windows, we can just use the builtin WebKit factory methods to fully
 // construct our pre-translated events.
 
-WebKit::WebMouseEvent MakeUntranslatedWebMouseEventFromNativeEvent(
-    base::NativeEvent native_event) {
-  return WebKit::WebInputEventFactory::mouseEvent(native_event.hwnd,
-                                                  native_event.message,
-                                                  native_event.wParam,
-                                                  native_event.lParam);
+blink::WebMouseEvent MakeUntranslatedWebMouseEventFromNativeEvent(
+    const base::NativeEvent& native_event) {
+  return WebMouseEventBuilder::Build(native_event.hwnd,
+                                     native_event.message,
+                                     native_event.wParam,
+                                     native_event.lParam,
+                                     native_event.time);
 }
 
-WebKit::WebMouseWheelEvent MakeUntranslatedWebMouseWheelEventFromNativeEvent(
-    base::NativeEvent native_event) {
-  return WebKit::WebInputEventFactory::mouseWheelEvent(native_event.hwnd,
-                                                       native_event.message,
-                                                       native_event.wParam,
-                                                       native_event.lParam);
+blink::WebMouseWheelEvent MakeUntranslatedWebMouseWheelEventFromNativeEvent(
+    const base::NativeEvent& native_event) {
+  return WebMouseWheelEventBuilder::Build(native_event.hwnd,
+                                          native_event.message,
+                                          native_event.wParam,
+                                          native_event.lParam,
+                                          native_event.time);
 }
 
-WebKit::WebKeyboardEvent MakeWebKeyboardEventFromNativeEvent(
-    base::NativeEvent native_event) {
-  return WebKit::WebInputEventFactory::keyboardEvent(native_event.hwnd,
-                                                     native_event.message,
-                                                     native_event.wParam,
-                                                     native_event.lParam);
+blink::WebKeyboardEvent MakeWebKeyboardEventFromNativeEvent(
+    const base::NativeEvent& native_event) {
+  return WebKeyboardEventBuilder::Build(native_event.hwnd,
+                                        native_event.message,
+                                        native_event.wParam,
+                                        native_event.lParam,
+                                        native_event.time);
 }
 
-WebKit::WebGestureEvent MakeWebGestureEventFromNativeEvent(
-    base::NativeEvent native_event) {
+blink::WebGestureEvent MakeWebGestureEventFromNativeEvent(
+    const base::NativeEvent& native_event) {
   // TODO: Create gestures from native event.
   NOTIMPLEMENTED();
-  return  WebKit::WebGestureEvent();
+  return  blink::WebGestureEvent();
 }
 
 }  // namespace content

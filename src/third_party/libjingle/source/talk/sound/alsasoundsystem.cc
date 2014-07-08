@@ -342,7 +342,7 @@ class AlsaInputStream :
   }
 
   AlsaStream stream_;
-  talk_base::scoped_array<char> buffer_;
+  talk_base::scoped_ptr<char[]> buffer_;
   size_t buffer_size_;
 
   DISALLOW_COPY_AND_ASSIGN(AlsaInputStream);
@@ -624,7 +624,8 @@ bool AlsaSoundSystem::GetDefaultDevice(SoundDeviceLocator **device) {
 }
 
 inline size_t AlsaSoundSystem::FrameSize(const OpenParams &params) {
-  ASSERT(params.format < ARRAY_SIZE(kCricketFormatToSampleSizeTable));
+  ASSERT(static_cast<int>(params.format) <
+         ARRAY_SIZE(kCricketFormatToSampleSizeTable));
   return kCricketFormatToSampleSizeTable[params.format] * params.channels;
 }
 
@@ -679,7 +680,8 @@ StreamInterface *AlsaSoundSystem::OpenDevice(
     latency = talk_base::_max(latency, kMinimumLatencyUsecs);
   }
 
-  ASSERT(params.format < ARRAY_SIZE(kCricketFormatToAlsaFormatTable));
+  ASSERT(static_cast<int>(params.format) <
+         ARRAY_SIZE(kCricketFormatToAlsaFormatTable));
 
   err = symbol_table_.snd_pcm_set_params()(
       handle,

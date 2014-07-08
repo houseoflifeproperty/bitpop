@@ -8,9 +8,9 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
-#include "base/time.h"
-#include "sync/engine/throttled_data_type_tracker.h"
+#include "base/message_loop/message_loop.h"
+#include "base/time/time.h"
+#include "sync/internal_api/public/base/cancelation_signal.h"
 #include "sync/internal_api/public/base/model_type_test_util.h"
 #include "sync/protocol/bookmark_specifics.pb.h"
 #include "sync/protocol/password_specifics.pb.h"
@@ -39,13 +39,11 @@ class MockDelegate : public sessions::SyncSession::Delegate {
    MockDelegate() {}
    ~MockDelegate() {}
 
-  MOCK_METHOD0(IsSyncingCurrentlySilenced, bool());
   MOCK_METHOD1(OnReceivedShortPollIntervalUpdate, void(const base::TimeDelta&));
   MOCK_METHOD1(OnReceivedLongPollIntervalUpdate ,void(const base::TimeDelta&));
   MOCK_METHOD1(OnReceivedSessionsCommitDelay, void(const base::TimeDelta&));
-  MOCK_METHOD1(OnSyncProtocolError, void(const sessions::SyncSessionSnapshot&));
-  MOCK_METHOD0(OnShouldStopSyncingPermanently, void());
-  MOCK_METHOD1(OnSilencedUntil, void(const base::TimeTicks&));
+  MOCK_METHOD1(OnReceivedClientInvalidationHintBufferSize, void(int));
+  MOCK_METHOD1(OnSyncProtocolError, void(const SyncProtocolError&));
 };
 
 // Builds a ClientToServerResponse with some data type ids, including
@@ -199,7 +197,7 @@ class SyncerProtoUtilTest : public testing::Test {
   }
 
  protected:
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   TestDirectorySetterUpper dir_maker_;
 };
 
@@ -227,6 +225,20 @@ TEST_F(SyncerProtoUtilTest, VerifyResponseBirthday) {
   EXPECT_FALSE(SyncerProtoUtil::VerifyResponseBirthday(response, directory()));
 }
 
+TEST_F(SyncerProtoUtilTest, VerifyDisabledByAdmin) {
+  // No error code
+  sync_pb::ClientToServerResponse response;
+  EXPECT_FALSE(SyncerProtoUtil::IsSyncDisabledByAdmin(response));
+
+  // Has error code, but not disabled
+  response.set_error_code(sync_pb::SyncEnums::NOT_MY_BIRTHDAY);
+  EXPECT_FALSE(SyncerProtoUtil::IsSyncDisabledByAdmin(response));
+
+  // Has error code, and is disabled by admin
+  response.set_error_code(sync_pb::SyncEnums::DISABLED_BY_ADMIN);
+  EXPECT_TRUE(SyncerProtoUtil::IsSyncDisabledByAdmin(response));
+}
+
 TEST_F(SyncerProtoUtilTest, AddRequestBirthday) {
   EXPECT_TRUE(directory()->store_birthday().empty());
   ClientToServerMessage msg;
@@ -240,8 +252,8 @@ TEST_F(SyncerProtoUtilTest, AddRequestBirthday) {
 
 class DummyConnectionManager : public ServerConnectionManager {
  public:
-  DummyConnectionManager()
-      : ServerConnectionManager("unused", 0, false),
+  DummyConnectionManager(CancelationSignal* signal)
+      : ServerConnectionManager("unused", 0, false, signal),
         send_error_(false),
         access_denied_(false) {}
 
@@ -276,7 +288,8 @@ class DummyConnectionManager : public ServerConnectionManager {
 };
 
 TEST_F(SyncerProtoUtilTest, PostAndProcessHeaders) {
-  DummyConnectionManager dcm;
+  CancelationSignal signal;
+  DummyConnectionManager dcm(&signal);
   ClientToServerMessage msg;
   SyncerProtoUtil::SetProtocolVersion(&msg);
   msg.set_share("required");
@@ -294,34 +307,6 @@ TEST_F(SyncerProtoUtilTest, PostAndProcessHeaders) {
   dcm.set_access_denied(true);
   EXPECT_FALSE(SyncerProtoUtil::PostAndProcessHeaders(&dcm, NULL,
       msg, &response));
-}
-
-TEST_F(SyncerProtoUtilTest, HandleThrottlingWithDatatypes) {
-  ThrottledDataTypeTracker tracker(NULL);
-  SyncProtocolError error;
-  error.error_type = THROTTLED;
-  ModelTypeSet types;
-  types.Put(BOOKMARKS);
-  types.Put(PASSWORDS);
-  error.error_data_types = types;
-
-  base::TimeTicks ticks = base::TimeTicks::FromInternalValue(1);
-  SyncerProtoUtil::HandleThrottleError(error, ticks, &tracker, NULL);
-  EXPECT_TRUE(tracker.GetThrottledTypes().Equals(types));
-}
-
-TEST_F(SyncerProtoUtilTest, HandleThrottlingNoDatatypes) {
-  ThrottledDataTypeTracker tracker(NULL);
-  MockDelegate delegate;
-  SyncProtocolError error;
-  error.error_type = THROTTLED;
-
-  base::TimeTicks ticks = base::TimeTicks::FromInternalValue(1);
-
-  EXPECT_CALL(delegate, OnSilencedUntil(ticks));
-
-  SyncerProtoUtil::HandleThrottleError(error, ticks, &tracker, &delegate);
-  EXPECT_TRUE(tracker.GetThrottledTypes().Empty());
 }
 
 }  // namespace syncer

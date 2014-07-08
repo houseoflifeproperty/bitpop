@@ -4,17 +4,17 @@
 
 #include "remoting/host/setup/oauth_helper.h"
 
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "google_apis/google_api_keys.h"
-#include "googleurl/src/url_parse.h"
 #include "net/base/escape.h"
+#include "url/url_parse.h"
 
 namespace {
 
 std::string GetComponent(const std::string& url,
-                         const url_parse::Component component) {
+                         const url::Component component) {
   if (component.len < 0) {
-    return "";
+    return std::string();
   }
   return url.substr(component.begin, component.len);
 }
@@ -53,28 +53,28 @@ std::string GetOauthStartUrl(const std::string& redirect_url) {
 
 std::string GetOauthCodeInUrl(const std::string& url,
                               const std::string& redirect_url) {
-  url_parse::Parsed url_parsed;
+  url::Parsed url_parsed;
   ParseStandardURL(url.c_str(), url.length(), &url_parsed);
-  url_parse::Parsed redirect_url_parsed;
+  url::Parsed redirect_url_parsed;
   ParseStandardURL(redirect_url.c_str(), redirect_url.length(),
                    &redirect_url_parsed);
   if (GetComponent(url, url_parsed.scheme) !=
       GetComponent(redirect_url, redirect_url_parsed.scheme)) {
-    return "";
+    return std::string();
   }
   if (GetComponent(url, url_parsed.host) !=
       GetComponent(redirect_url, redirect_url_parsed.host)) {
-    return "";
+    return std::string();
   }
-  url_parse::Component query = url_parsed.query;
-  url_parse::Component key;
-  url_parse::Component value;
+  url::Component query = url_parsed.query;
+  url::Component key;
+  url::Component value;
   while (ExtractQueryKeyValue(url.c_str(), &query, &key, &value)) {
     if (GetComponent(url, key) == "code") {
       return GetComponent(url, value);
     }
   }
-  return "";
+  return std::string();
 }
 
 }  // namespace remoting

@@ -3,10 +3,10 @@
 // found in the LICENSE file.
 
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/browser_process_platform_part_chromeos.h"
 #include "chrome/browser/chromeos/memory/oom_priority_manager.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/find_bar/find_bar_controller.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/common/url_constants.h"
@@ -14,7 +14,7 @@
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_types.h"
 #include "content/public/test/test_utils.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::OpenURLParams;
 
@@ -24,6 +24,10 @@ typedef InProcessBrowserTest OomPriorityManagerTest;
 
 IN_PROC_BROWSER_TEST_F(OomPriorityManagerTest, OomPriorityManagerBasics) {
   using content::WindowedNotificationObserver;
+
+  chromeos::OomPriorityManager* oom_priority_manager =
+      g_browser_process->platform_part()->oom_priority_manager();
+  EXPECT_FALSE(oom_priority_manager->recent_tab_discard());
 
   // Get three tabs open.
   WindowedNotificationObserver load1(
@@ -52,7 +56,7 @@ IN_PROC_BROWSER_TEST_F(OomPriorityManagerTest, OomPriorityManagerBasics) {
   browser()->OpenURL(open3);
   load3.Wait();
 
-  EXPECT_EQ(3, browser()->tab_count());
+  EXPECT_EQ(3, browser()->tab_strip_model()->count());
 
   // Navigate the current (third) tab to a different URL, so we can test
   // back/forward later.
@@ -75,33 +79,34 @@ IN_PROC_BROWSER_TEST_F(OomPriorityManagerTest, OomPriorityManagerBasics) {
   browser()->OpenURL(open5);
   load5.Wait();
 
-  EXPECT_EQ(3, browser()->tab_count());
+  EXPECT_EQ(3, browser()->tab_strip_model()->count());
 
   // Discard a tab.  It should kill the first tab, since it was the oldest
   // and was not selected.
-  EXPECT_TRUE(g_browser_process->oom_priority_manager()->DiscardTab());
-  EXPECT_EQ(3, browser()->tab_count());
+  EXPECT_TRUE(oom_priority_manager->DiscardTab());
+  EXPECT_EQ(3, browser()->tab_strip_model()->count());
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(0));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(1));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(2));
+  EXPECT_TRUE(oom_priority_manager->recent_tab_discard());
 
   // Run discard again, make sure it kills the second tab.
-  EXPECT_TRUE(g_browser_process->oom_priority_manager()->DiscardTab());
-  EXPECT_EQ(3, browser()->tab_count());
+  EXPECT_TRUE(oom_priority_manager->DiscardTab());
+  EXPECT_EQ(3, browser()->tab_strip_model()->count());
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(0));
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(1));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(2));
 
   // Kill the third tab. It should not kill the last tab, since it is active
   // tab.
-  EXPECT_FALSE(g_browser_process->oom_priority_manager()->DiscardTab());
+  EXPECT_FALSE(oom_priority_manager->DiscardTab());
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(0));
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(1));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(2));
 
   // Kill the third tab after making second tab active.
   browser()->tab_strip_model()->ActivateTabAt(1, true);
-  EXPECT_EQ(1, browser()->active_index());
+  EXPECT_EQ(1, browser()->tab_strip_model()->active_index());
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(1));
   browser()->tab_strip_model()->DiscardWebContentsAt(2);
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(2));
@@ -117,8 +122,8 @@ IN_PROC_BROWSER_TEST_F(OomPriorityManagerTest, OomPriorityManagerBasics) {
   reload1.Wait();
   // Make sure the FindBarController gets the right WebContents.
   EXPECT_EQ(browser()->GetFindBarController()->web_contents(),
-            chrome::GetActiveWebContents(browser()));
-  EXPECT_EQ(0, browser()->active_index());
+            browser()->tab_strip_model()->GetActiveWebContents());
+  EXPECT_EQ(0, browser()->tab_strip_model()->active_index());
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(0));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(1));
   EXPECT_TRUE(browser()->tab_strip_model()->IsTabDiscarded(2));
@@ -129,7 +134,7 @@ IN_PROC_BROWSER_TEST_F(OomPriorityManagerTest, OomPriorityManagerBasics) {
       content::NotificationService::AllSources());
   chrome::SelectNumberedTab(browser(), 2);
   reload2.Wait();
-  EXPECT_EQ(2, browser()->active_index());
+  EXPECT_EQ(2, browser()->tab_strip_model()->active_index());
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(0));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(1));
   EXPECT_FALSE(browser()->tab_strip_model()->IsTabDiscarded(2));

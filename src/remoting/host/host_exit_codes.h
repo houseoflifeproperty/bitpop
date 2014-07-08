@@ -11,7 +11,7 @@ namespace remoting {
 // sync with:
 //  - remoting/host/installer/mac/PrivilegedHelperTools/
 //      org.chromium.chromoting.me2me.sh
-//  - remoting/tools/me2me_virtual_host.py.
+//  - remoting/host/linux/linux_me2me_host.py
 enum HostExitCodes {
   // Error codes that don't indicate a permanent error condition.
   kSuccessExitCode = 0,
@@ -33,6 +33,7 @@ enum HostExitCodes {
   kMaxPermanentErrorExitCode = kUsernameMismatchExitCode
 };
 
+const char* ExitCodeToString(HostExitCodes exit_code);
 }  // namespace remoting
 
 #endif  // REMOTING_HOST_HOST_EXIT_CODES_H_

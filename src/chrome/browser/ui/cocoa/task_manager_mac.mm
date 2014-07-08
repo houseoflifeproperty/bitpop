@@ -9,9 +9,11 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/browser_process.h"
 #import "chrome/browser/ui/cocoa/window_size_autosaver.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/common/pref_names.h"
 #include "grit/generated_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -60,6 +62,10 @@ const struct ColumnWidth {
       arraysize("800 kB") * kCharWidth, -1 },
   { IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN,
       arraysize("2000.0K (2000.0 live)") * kCharWidth, -1 },
+  { IDS_TASK_MANAGER_NACL_DEBUG_STUB_PORT_COLUMN,
+      arraysize("32767") * kCharWidth, -1 },
+  { IDS_TASK_MANAGER_IDLE_WAKEUPS_COLUMN,
+      arraysize("idlewakeups") * kCharWidth, -1 },
   { IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN,
       arraysize("15 ") * kCharWidth, -1 },
 };
@@ -111,8 +117,7 @@ class SortHelper {
 
 @implementation TaskManagerWindowController
 
-- (id)initWithTaskManagerObserver:(TaskManagerMac*)taskManagerObserver
-     highlightBackgroundResources:(bool)highlightBackgroundResources {
+- (id)initWithTaskManagerObserver:(TaskManagerMac*)taskManagerObserver {
   NSString* nibpath = [base::mac::FrameworkBundle()
                         pathForResource:@"TaskManager"
                                  ofType:@"nib"];
@@ -120,15 +125,6 @@ class SortHelper {
     taskManagerObserver_ = taskManagerObserver;
     taskManager_ = taskManagerObserver_->task_manager();
     model_ = taskManager_->model();
-    highlightBackgroundResources_ = highlightBackgroundResources;
-    if (highlightBackgroundResources_) {
-      // Highlight background resources with a yellow background.
-      backgroundResourceColor_.reset(
-          [[NSColor colorWithDeviceRed:0xff/255.0
-                                 green:0xfa/255.0
-                                  blue:0xcd/255.0
-                                 alpha:1.0] retain]);
-    }
 
     if (g_browser_process && g_browser_process->local_state()) {
       size_saver_.reset([[WindowSizeAutosaver alloc]
@@ -182,7 +178,7 @@ class SortHelper {
 }
 
 - (IBAction)statsLinkClicked:(id)sender {
-  TaskManager::GetInstance()->OpenAboutMemory();
+  TaskManager::GetInstance()->OpenAboutMemory(chrome::HOST_DESKTOP_TYPE_NATIVE);
 }
 
 - (IBAction)killSelectedProcesses:(id)sender {
@@ -224,7 +220,7 @@ class SortHelper {
 // Adds a column which has the given string id as title. |isVisible| specifies
 // if the column is initially visible.
 - (NSTableColumn*)addColumnWithId:(int)columnId visible:(BOOL)isVisible {
-  scoped_nsobject<NSTableColumn> column([[NSTableColumn alloc]
+  base::scoped_nsobject<NSTableColumn> column([[NSTableColumn alloc]
       initWithIdentifier:[NSString stringWithFormat:@"%d", columnId]]);
 
   NSTextAlignment textAlignment =
@@ -246,9 +242,10 @@ class SortHelper {
   // The page column should by default be sorted ascending.
   BOOL ascending = columnId == IDS_TASK_MANAGER_TASK_COLUMN;
 
-  scoped_nsobject<NSSortDescriptor> sortDescriptor([[NSSortDescriptor alloc]
-      initWithKey:[NSString stringWithFormat:@"%d", columnId]
-        ascending:ascending]);
+  base::scoped_nsobject<NSSortDescriptor> sortDescriptor(
+      [[NSSortDescriptor alloc]
+          initWithKey:[NSString stringWithFormat:@"%d", columnId]
+            ascending:ascending]);
   [column.get() setSortDescriptorPrototype:sortDescriptor.get()];
 
   // Default values, only used in release builds if nobody notices the DCHECK
@@ -283,7 +280,7 @@ class SortHelper {
                                             visible:YES];
   // |nameColumn| displays an icon for every row -- this is done by an
   // NSButtonCell.
-  scoped_nsobject<NSButtonCell> nameCell(
+  base::scoped_nsobject<NSButtonCell> nameCell(
       [[NSButtonCell alloc] initTextCell:@""]);
   [nameCell.get() setImagePosition:NSImageLeft];
   [nameCell.get() setButtonType:NSSwitchButton];
@@ -311,6 +308,10 @@ class SortHelper {
   [self addColumnWithId:IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN
                 visible:NO];
+  [self addColumnWithId:IDS_TASK_MANAGER_NACL_DEBUG_STUB_PORT_COLUMN
+                visible:NO];
+  [self addColumnWithId:IDS_TASK_MANAGER_IDLE_WAKEUPS_COLUMN
+                visible:NO];
   [self addColumnWithId:IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN visible:NO];
 }
 
@@ -318,7 +319,7 @@ class SortHelper {
 // which columns should be shown and which should be hidden (like e.g.
 // Task Manager.app's table header context menu).
 - (void)setUpTableHeaderContextMenu {
-  scoped_nsobject<NSMenu> contextMenu(
+  base::scoped_nsobject<NSMenu> contextMenu(
       [[NSMenu alloc] initWithTitle:@"Task Manager context menu"]);
   for (NSTableColumn* column in [tableView_ tableColumns]) {
     NSMenuItem* item = [contextMenu.get()
@@ -381,8 +382,15 @@ class SortHelper {
   [tableView_ deselectAll:self];
 }
 
-// Table view delegate method.
+// Table view delegate methods.
+
+// The selection is being changed by mouse (drag/click).
 - (void)tableViewSelectionIsChanging:(NSNotification*)aNotification {
+  [self adjustSelectionAndEndProcessButton];
+}
+
+// The selection is being changed by keyboard (arrows).
+- (void)tableViewSelectionDidChange:(NSNotification*)aNotification {
   [self adjustSelectionAndEndProcessButton];
 }
 
@@ -392,35 +400,6 @@ class SortHelper {
     taskManagerObserver_ = nil;
   }
   [self autorelease];
-}
-
-// Delegate method invoked before each cell in the table is displayed. We
-// override this to provide highlighting of background resources.
-- (void)  tableView:(NSTableView*)tableView
-    willDisplayCell:(id)cell
-     forTableColumn:(NSTableColumn*)tableColumn
-                row:(NSInteger)row {
-  if (!highlightBackgroundResources_)
-    return;
-
-  DCHECK([cell respondsToSelector:@selector(setBackgroundColor:)]);
-  if ([cell respondsToSelector:@selector(setBackgroundColor:)]) {
-    NSColor* color = nil;
-    if (taskManagerObserver_->IsBackgroundRow(viewToModelMap_[row]) &&
-        ![tableView isRowSelected:row]) {
-      color = backgroundResourceColor_.get();
-      if ((row % 2) == 1 && [tableView usesAlternatingRowBackgroundColors]) {
-        color = [color blendedColorWithFraction:0.05
-                                        ofColor:[NSColor blackColor]];
-      }
-    }
-    [cell setBackgroundColor:color];
-
-    // The icon at the left is an |NSButtonCell|, which does not
-    // implement this method on 10.5.
-    if ([cell respondsToSelector:@selector(setDrawsBackground:)])
-      [cell setDrawsBackground:(color != nil)];
-  }
 }
 
 @end
@@ -434,85 +413,8 @@ class SortHelper {
 
 - (NSString*)modelTextForRow:(int)row column:(int)columnId {
   DCHECK_LT(static_cast<size_t>(row), viewToModelMap_.size());
-  row = viewToModelMap_[row];
-  switch (columnId) {
-    case IDS_TASK_MANAGER_TASK_COLUMN:  // Process
-      return base::SysUTF16ToNSString(model_->GetResourceTitle(row));
-
-    case IDS_TASK_MANAGER_PROFILE_NAME_COLUMN:  // Profile Name
-      return base::SysUTF16ToNSString(model_->GetResourceProfileName(row));
-
-    case IDS_TASK_MANAGER_PRIVATE_MEM_COLUMN:  // Memory
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(model_->GetResourcePrivateMemory(row));
-
-    case IDS_TASK_MANAGER_SHARED_MEM_COLUMN:  // Memory
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(model_->GetResourceSharedMemory(row));
-
-    case IDS_TASK_MANAGER_PHYSICAL_MEM_COLUMN:  // Memory
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(model_->GetResourcePhysicalMemory(row));
-
-    case IDS_TASK_MANAGER_CPU_COLUMN:  // CPU
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(model_->GetResourceCPUUsage(row));
-
-    case IDS_TASK_MANAGER_NET_COLUMN:  // Net
-      return base::SysUTF16ToNSString(model_->GetResourceNetworkUsage(row));
-
-    case IDS_TASK_MANAGER_PROCESS_ID_COLUMN:  // Process ID
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(model_->GetResourceProcessId(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_IMAGE_CACHE_COLUMN:  // WebCore image cache
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(
-          model_->GetResourceWebCoreImageCacheSize(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_SCRIPTS_CACHE_COLUMN:  // WebCore script cache
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(
-          model_->GetResourceWebCoreScriptsCacheSize(row));
-
-    case IDS_TASK_MANAGER_WEBCORE_CSS_CACHE_COLUMN:  // WebCore CSS cache
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(
-          model_->GetResourceWebCoreCSSCacheSize(row));
-
-    case IDS_TASK_MANAGER_FPS_COLUMN:
-      return base::SysUTF16ToNSString(model_->GetResourceFPS(row));
-
-    case IDS_TASK_MANAGER_VIDEO_MEMORY_COLUMN:
-      return base::SysUTF16ToNSString(model_->GetResourceVideoMemory(row));
-
-    case IDS_TASK_MANAGER_SQLITE_MEMORY_USED_COLUMN:
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(
-          model_->GetResourceSqliteMemoryUsed(row));
-
-    case IDS_TASK_MANAGER_JAVASCRIPT_MEMORY_ALLOCATED_COLUMN:
-      if (!model_->IsResourceFirstInGroup(row))
-        return @"";
-      return base::SysUTF16ToNSString(
-          model_->GetResourceV8MemoryAllocatedSize(row));
-
-    case IDS_TASK_MANAGER_GOATS_TELEPORTED_COLUMN:  // Goats Teleported!
-      return base::SysUTF16ToNSString(model_->GetResourceGoatsTeleported(row));
-
-    default:
-      NOTREACHED();
-      return @"";
-  }
+  return base::SysUTF16ToNSString(
+      model_->GetResourceById(viewToModelMap_[row], columnId));
 }
 
 - (id)tableView:(NSTableView*)tableView
@@ -564,16 +466,12 @@ class SortHelper {
 ////////////////////////////////////////////////////////////////////////////////
 // TaskManagerMac implementation:
 
-TaskManagerMac::TaskManagerMac(TaskManager* task_manager,
-                               bool highlight_background_resources)
+TaskManagerMac::TaskManagerMac(TaskManager* task_manager)
   : task_manager_(task_manager),
     model_(task_manager->model()),
-    icon_cache_(this),
-    highlight_background_resources_(highlight_background_resources) {
+    icon_cache_(this) {
   window_controller_ =
-      [[TaskManagerWindowController alloc]
-           initWithTaskManagerObserver:this
-          highlightBackgroundResources:highlight_background_resources];
+      [[TaskManagerWindowController alloc] initWithTaskManagerObserver:this];
   model_->AddObserver(this);
 }
 
@@ -623,8 +521,8 @@ NSImage* TaskManagerMac::GetImageForRow(int row) {
 // TaskManagerMac, public:
 
 void TaskManagerMac::WindowWasClosed() {
-  delete this;
   instance_ = NULL;
+  delete this;
 }
 
 int TaskManagerMac::RowCount() const {
@@ -635,28 +533,24 @@ gfx::ImageSkia TaskManagerMac::GetIcon(int r) const {
   return model_->GetResourceIcon(r);
 }
 
-bool TaskManagerMac::IsBackgroundRow(int row) const {
-  return model_->IsBackgroundResource(row);
-}
-
 // static
-void TaskManagerMac::Show(bool highlight_background_resources) {
+void TaskManagerMac::Show() {
   if (instance_) {
-    if (instance_->highlight_background_resources_ ==
-        highlight_background_resources) {
-      // There's a Task manager window open already, so just activate it.
-      [[instance_->window_controller_ window]
-        makeKeyAndOrderFront:instance_->window_controller_];
-      return;
-    } else {
-      // The user is switching between "View Background Pages" and
-      // "Task Manager" so close the existing window and fall through to
-      // open a new one.
-      [[instance_->window_controller_ window] close];
-    }
+    [[instance_->window_controller_ window]
+      makeKeyAndOrderFront:instance_->window_controller_];
+    return;
   }
   // Create a new instance.
-  instance_ = new TaskManagerMac(TaskManager::GetInstance(),
-                                 highlight_background_resources);
+  instance_ = new TaskManagerMac(TaskManager::GetInstance());
   instance_->model_->StartUpdating();
 }
+
+namespace chrome {
+
+// Declared in browser_dialogs.h.
+void ShowTaskManager(Browser* browser) {
+  TaskManagerMac::Show();
+}
+
+}  // namespace chrome
+

@@ -90,76 +90,72 @@ typedef std::map<int, TransportChannelProxy*> ChannelMap;
 class TransportProxy : public sigslot::has_slots<>,
                        public CandidateTranslator {
  public:
-  enum TransportState {
-    STATE_INIT,
-    STATE_CONNECTING,
-    STATE_NEGOTIATED
-  };
-
   TransportProxy(
+      talk_base::Thread* worker_thread,
       const std::string& sid,
       const std::string& content_name,
       TransportWrapper* transport)
-      : sid_(sid),
+      : worker_thread_(worker_thread),
+        sid_(sid),
         content_name_(content_name),
         transport_(transport),
-        state_(STATE_INIT),
+        connecting_(false),
+        negotiated_(false),
         sent_candidates_(false),
-        candidates_allocated_(false) {
+        candidates_allocated_(false),
+        local_description_set_(false),
+        remote_description_set_(false) {
     transport_->get()->SignalCandidatesReady.connect(
         this, &TransportProxy::OnTransportCandidatesReady);
   }
   ~TransportProxy();
 
   std::string content_name() const { return content_name_; }
-  // Ideally we should never set or update content names. This value should
-  // be set during transport proxy creation time. But in some case we may need
-  // to change from the initial value ( e.g. creating transport proxy before
-  // setLocalDescription in webrtc. Due to this reason method name is
-  // UpdateContentName not set_content_name.
-  void UpdateContentName(const std::string& content_name) {
-    content_name_ = content_name;
-  }
+  // TODO(juberti): It's not good form to expose the object you're wrapping,
+  // since callers can mutate it. Can we make this return a const Transport*?
   Transport* impl() const { return transport_->get(); }
 
   std::string type() const;
-  TransportState state() const { return state_; }
-  bool negotiated() const { return state_ == STATE_NEGOTIATED; }
+  bool negotiated() const { return negotiated_; }
   const Candidates& sent_candidates() const { return sent_candidates_; }
   const Candidates& unsent_candidates() const { return unsent_candidates_; }
+  bool candidates_allocated() const { return candidates_allocated_; }
+  void set_candidates_allocated(bool allocated) {
+    candidates_allocated_ = allocated;
+  }
 
   TransportChannel* GetChannel(int component);
   TransportChannel* CreateChannel(const std::string& channel_name,
                                   int component);
   bool HasChannel(int component);
   void DestroyChannel(int component);
+
   void AddSentCandidates(const Candidates& candidates);
   void AddUnsentCandidates(const Candidates& candidates);
   void ClearSentCandidates() { sent_candidates_.clear(); }
   void ClearUnsentCandidates() { unsent_candidates_.clear(); }
-  void SpeculativelyConnectChannels();
+
+  // Start the connection process for any channels, creating impls if needed.
+  void ConnectChannels();
+  // Hook up impls to the proxy channels. Doesn't change connect state.
   void CompleteNegotiation();
-  void SetupMux(TransportProxy* proxy);
-  const ChannelMap& channels() { return channels_; }
-  void set_candidates_allocated(bool allocated) {
-    candidates_allocated_ = allocated;
-  }
-  bool candidates_allocated() { return candidates_allocated_; }
+
+  // Mux this proxy onto the specified proxy's transport.
+  bool SetupMux(TransportProxy* proxy);
+
+  // Simple functions that thunk down to the same functions on Transport.
+  void SetIceRole(IceRole role);
+  void SetIdentity(talk_base::SSLIdentity* identity);
   bool SetLocalTransportDescription(const TransportDescription& description,
-                                    ContentAction action) {
-    return transport_->get()->SetLocalTransportDescription(description, action);
-  }
+                                    ContentAction action,
+                                    std::string* error_desc);
   bool SetRemoteTransportDescription(const TransportDescription& description,
-                                     ContentAction action) {
-    return transport_->get()->SetRemoteTransportDescription(description,
-                                                            action);
-  }
+                                     ContentAction action,
+                                     std::string* error_desc);
+  void OnSignalingReady();
+  bool OnRemoteCandidates(const Candidates& candidates, std::string* error);
 
-  void OnRemoteCandidates(const Candidates& candidates) {
-    transport_->get()->OnRemoteCandidates(candidates);
-  }
-
-  // As CandidateTranslator
+  // CandidateTranslator methods.
   virtual bool GetChannelNameFromComponent(
       int component, std::string* channel_name) const;
   virtual bool GetComponentFromChannelName(
@@ -171,30 +167,58 @@ class TransportProxy : public sigslot::has_slots<>,
     SignalCandidatesReady(this, candidates);
   }
 
+  bool local_description_set() const {
+    return local_description_set_;
+  }
+  bool remote_description_set() const {
+    return remote_description_set_;
+  }
+
   // Handles sending of ready candidates and receiving of remote candidates.
   sigslot::signal2<TransportProxy*,
-                   const std::vector<Candidate>&> SignalCandidatesReady;
+                         const std::vector<Candidate>&> SignalCandidatesReady;
 
  private:
   TransportChannelProxy* GetChannelProxy(int component) const;
   TransportChannelProxy* GetChannelProxyByName(const std::string& name) const;
-  void ReplaceChannelProxyImpl(TransportChannelProxy* channel_proxy,
-                               size_t index);
-  TransportChannelImpl* GetOrCreateChannelProxyImpl(int component);
-  void SetChannelProxyImpl(int component,
-                           TransportChannelProxy* proxy);
 
+  TransportChannelImpl* GetOrCreateChannelProxyImpl(int component);
+  TransportChannelImpl* GetOrCreateChannelProxyImpl_w(int component);
+
+  // Manipulators of transportchannelimpl in channel proxy.
+  void SetupChannelProxy(int component,
+                           TransportChannelProxy* proxy);
+  void SetupChannelProxy_w(int component,
+                             TransportChannelProxy* proxy);
+  void ReplaceChannelProxyImpl(TransportChannelProxy* proxy,
+                               TransportChannelImpl* impl);
+  void ReplaceChannelProxyImpl_w(TransportChannelProxy* proxy,
+                                 TransportChannelImpl* impl);
+
+  talk_base::Thread* worker_thread_;
   std::string sid_;
   std::string content_name_;
   talk_base::scoped_refptr<TransportWrapper> transport_;
-  TransportState state_;
+  bool connecting_;
+  bool negotiated_;
   ChannelMap channels_;
   Candidates sent_candidates_;
   Candidates unsent_candidates_;
   bool candidates_allocated_;
+  bool local_description_set_;
+  bool remote_description_set_;
 };
 
 typedef std::map<std::string, TransportProxy*> TransportMap;
+
+// Statistics for all the transports of this session.
+typedef std::map<std::string, TransportStats> TransportStatsMap;
+typedef std::map<std::string, std::string> ProxyTransportMap;
+
+struct SessionStats {
+  ProxyTransportMap proxy_to_transport;
+  TransportStatsMap transport_stats;
+};
 
 // A BaseSession manages general session state. This includes negotiation
 // of both the application-level and network-level protocols:  the former
@@ -316,22 +340,32 @@ class BaseSession : public sigslot::has_slots<>,
   // Returns the last error in the session.  See the enum above for details.
   // Each time the an error occurs, we will fire this signal.
   Error error() const { return error_; }
+  const std::string& error_desc() const { return error_desc_; }
   sigslot::signal2<BaseSession* , Error> SignalError;
 
   // Updates the state, signaling if necessary.
   virtual void SetState(State state);
 
   // Updates the error state, signaling if necessary.
-  virtual void SetError(Error error);
+  // TODO(ronghuawu): remove the SetError method that doesn't take |error_desc|.
+  virtual void SetError(Error error, const std::string& error_desc);
 
   // Fired when the remote description is updated, with the updated
   // contents.
   sigslot::signal2<BaseSession* , const ContentInfos&>
       SignalRemoteDescriptionUpdate;
 
+  // Fired when SetState is called (regardless if there's a state change), which
+  // indicates the session description might have be updated.
+  sigslot::signal2<BaseSession*, ContentAction> SignalNewLocalDescription;
+
+  // Fired when SetState is called (regardless if there's a state change), which
+  // indicates the session description might have be updated.
+  sigslot::signal2<BaseSession*, ContentAction> SignalNewRemoteDescription;
+
   // Returns the transport that has been negotiated or NULL if
   // negotiation is still in progress.
-  Transport* GetTransport(const std::string& content_name);
+  virtual Transport* GetTransport(const std::string& content_name);
 
   // Creates a new channel with the given names.  This method may be called
   // immediately after creating the session.  However, the actual
@@ -354,13 +388,20 @@ class BaseSession : public sigslot::has_slots<>,
   virtual void DestroyChannel(const std::string& content_name,
                               int component);
 
- protected:
-  bool PushdownTransportDescription(ContentSource source,
-                                    ContentAction action);
-  void set_initiator(bool initiator) { initiator_ = initiator; }
+  // Returns stats for all channels of all transports.
+  // This avoids exposing the internal structures used to track them.
+  virtual bool GetStats(SessionStats* stats);
 
+  talk_base::SSLIdentity* identity() { return identity_; }
+
+ protected:
   // Specifies the identity to use in this session.
-  void set_identity(talk_base::SSLIdentity* identity) { identity_ = identity; }
+  bool SetIdentity(talk_base::SSLIdentity* identity);
+
+  bool PushdownTransportDescription(ContentSource source,
+                                    ContentAction action,
+                                    std::string* error_desc);
+  void set_initiator(bool initiator) { initiator_ = initiator; }
 
   const TransportMap& transport_proxies() const { return transports_; }
   // Get a TransportProxy by content_name or transport. NULL if not found.
@@ -373,11 +414,6 @@ class BaseSession : public sigslot::has_slots<>,
   // Creates the actual transport object. Overridable for testing.
   virtual Transport* CreateTransport(const std::string& content_name);
 
-  // Method to update TransportMap entry to a different content name for a
-  // transport proxy.
-  void UpdateContentName(const std::string& old_content_name,
-                         const std::string& new_content_name);
-
   void OnSignalingReady();
   void SpeculativelyConnectAllTransportChannels();
   // Helper method to provide remote candidates to the transport.
@@ -388,8 +424,6 @@ class BaseSession : public sigslot::has_slots<>,
   // This method will mux transport channels by content_name.
   // First content is used for muxing.
   bool MaybeEnableMuxingSupport();
-  void MaybeCandidatesAllocationDone();
-  bool transport_muxed() const { return transport_muxed_; }
 
   // Called when a transport requests signaling.
   virtual void OnTransportRequestSignaling(Transport* transport) {
@@ -407,6 +441,14 @@ class BaseSession : public sigslot::has_slots<>,
   virtual void OnTransportWritable(Transport* transport) {
   }
   virtual void OnTransportReadable(Transport* transport) {
+  }
+
+  // Called when a transport has found its steady-state connections.
+  virtual void OnTransportCompleted(Transport* transport) {
+  }
+
+  // Called when a transport has failed permanently.
+  virtual void OnTransportFailed(Transport* transport) {
   }
 
   // Called when a transport signals that it has new candidates.
@@ -448,18 +490,25 @@ class BaseSession : public sigslot::has_slots<>,
  protected:
   State state_;
   Error error_;
+  std::string error_desc_;
 
  private:
   // Helper methods to push local and remote transport descriptions.
-  bool PushdownLocalTransportDescription(ContentAction action);
-  bool PushdownRemoteTransportDescription(ContentAction action);
-  // This method will check GroupInfo in local and remote SessionDescriptions.
-  bool ContentsGrouped();
-  // This method will delete the Transport and TransportChannelImpl's and
+  bool PushdownLocalTransportDescription(
+      const SessionDescription* sdesc, ContentAction action,
+      std::string* error_desc);
+  bool PushdownRemoteTransportDescription(
+      const SessionDescription* sdesc, ContentAction action,
+      std::string* error_desc);
+
+  bool IsCandidateAllocationDone() const;
+  void MaybeCandidateAllocationDone();
+
+  // This method will delete the Transport and TransportChannelImpls and
   // replace those with the selected Transport objects. Selection is done
   // based on the content_name and in this case first MediaContent information
   // is used for mux.
-  void SetSelectedProxy(const std::string& content_name,
+  bool SetSelectedProxy(const std::string& content_name,
                         const ContentGroup* muxed_group);
   // Log session state.
   void LogState(State old_state, State new_state);
@@ -470,19 +519,11 @@ class BaseSession : public sigslot::has_slots<>,
                                const std::string& content_name,
                                TransportDescription* info);
 
-  // Returns true and the TransportInfo of the given |content_name|
-  // from |local_description_|.
-  bool GetLocalTransportDescription(const std::string& content_name,
-                                    TransportDescription* tdesc) {
-    return GetTransportDescription(local_description_, content_name, tdesc);
-  }
+  // Fires the new description signal according to the current state.
+  void SignalNewDescription();
 
-  // Returns true and the TransportInfo of the given |content_name|
-  // from |remote_description|.
-  bool GetRemoteTransportDescription(const std::string& content_name,
-                                     TransportDescription* tdesc) {
-    return GetTransportDescription(remote_description_, content_name, tdesc);
-  }
+  // Gets the ContentAction and ContentSource according to the session state.
+  bool GetContentAction(ContentAction* action, ContentSource* source);
 
   talk_base::Thread* signaling_thread_;
   talk_base::Thread* worker_thread_;
@@ -494,7 +535,6 @@ class BaseSession : public sigslot::has_slots<>,
   talk_base::SSLIdentity* identity_;
   const SessionDescription* local_description_;
   SessionDescription* remote_description_;
-  bool transport_muxed_;
   uint64 ice_tiebreaker_;
   // This flag will be set to true after the first role switch. This flag
   // will enable us to stop any role switch during the call.
@@ -540,7 +580,7 @@ class Session : public BaseSession {
   }
 
   // Updates the error state, signaling if necessary.
-  virtual void SetError(Error error);
+  virtual void SetError(Error error, const std::string& error_desc);
 
   // When the session needs to send signaling messages, it beings by requesting
   // signaling.  The client should handle this by calling OnSignalingReady once
@@ -571,7 +611,8 @@ class Session : public BaseSession {
   // arbitrary XML messages, which are called "info" messages. Sending
   // takes ownership of the given elements.  The signal does not; the
   // parent element will be deleted after the signal.
-  bool SendInfoMessage(const XmlElements& elems);
+  bool SendInfoMessage(const XmlElements& elems,
+                       const std::string& remote_name);
   bool SendDescriptionInfoMessage(const ContentInfos& contents);
   sigslot::signal2<Session*, const buzz::XmlElement*> SignalInfoMessage;
 
@@ -625,7 +666,7 @@ class Session : public BaseSession {
   bool ResendAllTransportInfoMessages(SessionError* error);
   bool SendAllUnsentTransportInfoMessages(SessionError* error);
 
-  // Both versions of SendMessage send a message of the given type to
+  // All versions of SendMessage send a message of the given type to
   // the other client.  Can pass either a set of elements or an
   // "action", which must have a WriteSessionAction method to go along
   // with it.  Sending with an action supports sending a "hybrid"
@@ -634,6 +675,10 @@ class Session : public BaseSession {
   // When passing elems, must be either Jingle or Gingle protocol.
   // Takes ownership of action_elems.
   bool SendMessage(ActionType type, const XmlElements& action_elems,
+                   SessionError* error);
+  // Sends a messge, but overrides the remote name.
+  bool SendMessage(ActionType type, const XmlElements& action_elems,
+                   const std::string& remote_name,
                    SessionError* error);
   // When passing an action, may be Hybrid protocol.
   template <typename Action>

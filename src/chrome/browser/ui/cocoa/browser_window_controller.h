@@ -12,9 +12,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/sync/sync_ui_util.h"
+#include "chrome/browser/translate/translate_tab_helper.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_bubble_controller.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
@@ -24,31 +24,38 @@
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/url_drop_target.h"
 #import "chrome/browser/ui/cocoa/view_resizer.h"
+#include "components/translate/core/common/translate_errors.h"
 #include "ui/gfx/rect.h"
 
-@class AvatarButtonController;
+@class AvatarBaseController;
 class Browser;
 class BrowserWindow;
 class BrowserWindowCocoa;
-@class ChromeToMobileBubbleController;
 @class DevToolsController;
 @class DownloadShelfController;
 class ExtensionKeybindingRegistryCocoa;
 @class FacebookChatbarController;
 @class FacebookSidebarController;
 @class FindBarCocoaController;
+@class FullscreenModeController;
 @class FullscreenWindow;
 @class InfoBarContainerController;
 class LocationBarViewMac;
+@class OverlayableContentsController;
+class PermissionBubbleCocoa;
 @class PresentationModeController;
-@class PreviewableContentsController;
 class StatusBubbleMac;
 @class TabStripController;
 @class TabStripView;
 @class ToolbarController;
+@class TranslateBubbleController;
 
 namespace content {
 class WebContents;
+}
+
+namespace extensions {
+class Command;
 }
 
 @interface BrowserWindowController :
@@ -65,18 +72,20 @@ class WebContents;
   scoped_ptr<Browser> browser_;
   NSWindow* savedRegularWindow_;
   scoped_ptr<BrowserWindowCocoa> windowShim_;
-  scoped_nsobject<ToolbarController> toolbarController_;
-  scoped_nsobject<TabStripController> tabStripController_;
-  scoped_nsobject<FindBarCocoaController> findBarCocoaController_;
-  scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
-  scoped_nsobject<DownloadShelfController> downloadShelfController_;
-  scoped_nsobject<FacebookChatbarController> facebookChatbarController_;
-  scoped_nsobject<BookmarkBarController> bookmarkBarController_;
-  scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
-  scoped_nsobject<DevToolsController> devToolsController_;
-  scoped_nsobject<PreviewableContentsController> previewableContentsController_;
-  scoped_nsobject<PresentationModeController> presentationModeController_;
-  scoped_nsobject<FullscreenExitBubbleController>
+  base::scoped_nsobject<ToolbarController> toolbarController_;
+  base::scoped_nsobject<TabStripController> tabStripController_;
+  base::scoped_nsobject<FindBarCocoaController> findBarCocoaController_;
+  base::scoped_nsobject<InfoBarContainerController> infoBarContainerController_;
+  base::scoped_nsobject<DownloadShelfController> downloadShelfController_;
+  base::scoped_nsobject<FacebookChatbarController> facebookChatbarController_;
+  base::scoped_nsobject<BookmarkBarController> bookmarkBarController_;
+  base::scoped_nsobject<FacebookSidebarController> facebookSidebarController_;
+  base::scoped_nsobject<DevToolsController> devToolsController_;
+  base::scoped_nsobject<OverlayableContentsController>
+      overlayableContentsController_;
+  base::scoped_nsobject<PresentationModeController> presentationModeController_;
+  base::scoped_nsobject<FullscreenModeController> fullscreenModeController_;
+  base::scoped_nsobject<FullscreenExitBubbleController>
       fullscreenExitBubbleController_;
 
   // Strong. StatusBubble is a special case of a strong reference that
@@ -89,7 +98,7 @@ class WebContents;
   BOOL initializing_;  // YES while we are currently in initWithBrowser:
   BOOL ownsBrowser_;  // Only ever NO when testing
 
-  ChromeToMobileBubbleController* chromeToMobileBubbleController_;  // Weak.
+  TranslateBubbleController* translateBubbleController_;  // Weak.
 
   // The total amount by which we've grown the window up or down (to display a
   // bookmark bar and/or download shelf), respectively; reset to 0 when moved
@@ -107,40 +116,35 @@ class WebContents;
   BOOL isShrinkingFromZoomed_;
   BOOL isShrinkingWFromZoomed_;
 
-  // The raw accumulated zoom value and the actual zoom increments made for an
-  // an in-progress pinch gesture.
-  CGFloat totalMagnifyGestureAmount_;
-  NSInteger currentZoomStepDelta_;
-
   // The view controller that manages the incognito badge or the multi-profile
-  // avatar icon. The view is always in the view hierarchy, but will be hidden
-  // unless it's appropriate to show it.
-  scoped_nsobject<AvatarButtonController> avatarButtonController_;
+  // avatar button. Depending on whether the --new-profile-management flag is
+  // used, the multi-profile button can either be the avatar's icon badge or a
+  // button with the profile's name. If the flag is used, the button is always
+  // shown, otherwise the view will always be in the view hierarchy but will
+  // be hidden unless it's appropriate to show it (i.e. if there's more than
+  // one profile).
+  base::scoped_nsobject<AvatarBaseController> avatarButtonController_;
 
   // Lazily created view which draws the background for the floating set of bars
   // in presentation mode (for window types having a floating bar; it remains
   // nil for those which don't).
-  scoped_nsobject<NSView> floatingBarBackingView_;
+  base::scoped_nsobject<NSView> floatingBarBackingView_;
 
-  // Tracks whether the floating bar is above or below the bookmark bar, in
-  // terms of z-order.
-  BOOL floatingBarAboveBookmarkBar_;
+  // The borderless window used in fullscreen mode when Cocoa's System
+  // Fullscreen API is not being used (or not available, before OS 10.7).
+  base::scoped_nsobject<NSWindow> fullscreenWindow_;
 
-  // The borderless window used in fullscreen mode.  Lion reuses the original
-  // window in fullscreen mode, so this is always nil on Lion.
-  scoped_nsobject<NSWindow> fullscreenWindow_;
+  // The Cocoa implementation of the PermissionBubbleView.
+  scoped_ptr<PermissionBubbleCocoa> permissionBubbleCocoa_;
 
-  // Tracks whether presentation mode was entered from fullscreen mode or
-  // directly from normal windowed mode.  Used to determine what to do when
-  // exiting presentation mode.
-  BOOL enteredPresentationModeFromFullscreen_;
-
-  // True between -windowWillEnterFullScreen and -windowDidEnterFullScreen.
-  // Only used on Lion and higher.
+  // True between |-windowWillEnterFullScreen:| and |-windowDidEnterFullScreen:|
+  // to indicate that the window is in the process of transitioning into
+  // fullscreen mode.
   BOOL enteringFullscreen_;
 
   // True between |-setPresentationMode:url:bubbleType:| and
-  // -windowDidEnterFullScreen. Only used on Lion and higher.
+  // |-windowDidEnterFullScreen:| to indicate that the window is in the process
+  // of transitioning into fullscreen presentation mode.
   BOOL enteringPresentationMode_;
 
   // The size of the original (non-fullscreen) window.  This is saved just
@@ -156,7 +160,7 @@ class WebContents;
   // where keyboard focus is. Whenever an object requires bar visibility, it has
   // itself added to |barVisibilityLocks_|. When it no longer requires bar
   // visibility, it has itself removed.
-  scoped_nsobject<NSMutableSet> barVisibilityLocks_;
+  base::scoped_nsobject<NSMutableSet> barVisibilityLocks_;
 
   // Bar visibility locks and releases only result (when appropriate) in changes
   // in visible state when the following is |YES|.
@@ -171,6 +175,9 @@ class WebContents;
   // The Extension Command Registry used to determine which keyboard events to
   // handle.
   scoped_ptr<ExtensionKeybindingRegistryCocoa> extension_keybinding_registry_;
+
+  // The number of overlapped views being shown.
+  NSUInteger overlappedViewCount_;
 }
 
 // A convenience class method which gets the |BrowserWindowController| for a
@@ -182,6 +189,13 @@ class WebContents;
 // is a BWC, or the first controller in the parent-window chain that is a
 // BWC. This method returns nil if no window in the chain has a BWC.
 + (BrowserWindowController*)browserWindowControllerForView:(NSView*)view;
+
+// Helper method used to update the "Signin" menu item to reflect the current
+// signed in state. Class-level function as it's still required even when there
+// are no open browser windows.
++ (void)updateSigninItem:(id)signinItem
+              shouldShow:(BOOL)showSigninMenuItem
+          currentProfile:(Profile*)profile;
 
 // Load the browser window nib and do any Cocoa-specific initialization.
 // Takes ownership of |browser|.
@@ -203,6 +217,9 @@ class WebContents;
 // Return a weak pointer to the tab strip controller.
 - (TabStripController*)tabStripController;
 
+// Return a weak pointer to the find bar controller.
+- (FindBarCocoaController*)findBarCocoaController;
+
 // Access the ObjC controller that contains the infobars.
 - (InfoBarContainerController*)infoBarContainerController;
 
@@ -212,21 +229,28 @@ class WebContents;
 // Access the C++ bridge object representing the location bar.
 - (LocationBarViewMac*)locationBarBridge;
 
+// Returns a weak pointer to the floating bar backing view;
+- (NSView*)floatingBarBackingView;
+
+// Returns a weak pointer to the overlayable contents controller.
+- (OverlayableContentsController*)overlayableContentsController;
+
 // Access the Profile object that backs this Browser.
 - (Profile*)profile;
 
 // Access the avatar button controller.
-- (AvatarButtonController*)avatarButtonController;
+- (AvatarBaseController*)avatarButtonController;
 
-// Updates the toolbar (and transitively the location bar) with the states of
-// the specified |tab|.  If |shouldRestore| is true, we're switching
-// (back?) to this tab and should restore any previous location bar state
-// (such as user editing) as well.
-- (void)updateToolbarWithContents:(content::WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore;
+// Forces the toolbar (and transitively the location bar) to update its current
+// state.  If |tab| is non-NULL, we're switching (back?) to this tab and should
+// restore any previous location bar state (such as user editing) as well.
+- (void)updateToolbarWithContents:(content::WebContents*)tab;
 
 // Sets whether or not the current page in the frontmost tab is bookmarked.
 - (void)setStarredState:(BOOL)isStarred;
+
+// Sets whether or not the current page is translated.
+- (void)setCurrentPageIsTranslated:(BOOL)on;
 
 // Happens when the zoom level is changed in the active tab, the active tab is
 // changed, or a new browser window or tab is created. |canShowBubble| denotes
@@ -260,12 +284,17 @@ class WebContents;
 // user's profile avatar.
 - (BOOL)shouldShowAvatar;
 
+// Whether or not to show the new avatar button used by --new-profile-maagement.
+- (BOOL)shouldUseNewAvatarButton;
+
 - (BOOL)isBookmarkBarVisible;
 
 // Returns YES if the bookmark bar is currently animating.
 - (BOOL)isBookmarkBarAnimating;
 
 - (BookmarkBarController*)bookmarkBarController;
+
+- (DevToolsController*)devToolsController;
 
 - (BOOL)isDownloadShelfVisible;
 
@@ -306,12 +335,10 @@ class WebContents;
 - (void)showBookmarkBubbleForURL:(const GURL&)url
                alreadyBookmarked:(BOOL)alreadyBookmarked;
 
-// Show the Chrome To Mobile bubble (e.g. user just clicked on the icon)
-- (void)showChromeToMobileBubble;
-
-// Nil out the weak Chrome To Mobile bubble controller reference.
-// This should be called by the ChromeToMobileBubbleController on close.
-- (void)chromeToMobileBubbleWindowWillClose;
+// Show the translate bubble.
+- (void)showTranslateBubbleForWebContents:(content::WebContents*)contents
+                                     step:(translate::TranslateStep)step
+                                errorType:(TranslateErrors::Type)errorType;
 
 // Shows or hides the docked web inspector depending on |contents|'s state.
 - (void)updateDevToolsForContents:(content::WebContents*)contents;
@@ -322,26 +349,46 @@ class WebContents;
 // Gets the window style.
 - (ThemedWindowStyle)themedWindowStyle;
 
-// Gets the pattern phase for the window.
-- (NSPoint)themePatternPhase;
+// Returns the position in the coordinates of the root view
+// ([[self contentView] superview]) that the top left of a theme image with
+// |alignment| should be painted at. If the window does not have a tab strip,
+// the offset for THEME_IMAGE_ALIGN_WITH_FRAME is always returned. The result of
+// this method can be used in conjunction with
+// [NSGraphicsContext cr_setPatternPhase:] to set the offset of pattern colors.
+- (NSPoint)themeImagePositionForAlignment:(ThemeImageAlignment)alignment;
 
 // Return the point to which a bubble window's arrow should point, in window
 // coordinates.
 - (NSPoint)bookmarkBubblePoint;
 
-// Shows or hides the Instant preview contents.
-- (void)commitInstant;
-- (BOOL)isInstantTabShowing;
-
-// Returns the frame, in Cocoa (unflipped) screen coordinates, of the area where
-// Instant results are.  If Instant is not showing, returns the frame of where
-// it would be.
-- (NSRect)instantFrame;
-
 // Called when the Add Search Engine dialog is closed.
 - (void)sheetDidEnd:(NSWindow*)sheet
          returnCode:(NSInteger)code
             context:(void*)context;
+
+// Called when the find bar visibility changes. This is used to update the
+// allowOverlappingViews state.
+- (void)onFindBarVisibilityChanged;
+
+// Called when an overlapped view is shown. This is used to update the
+// allowOverlappingViews state. Currently used for history overlay and
+// confirm bubble.
+- (void)onOverlappedViewShown;
+
+// Called when a history overlay is hidden. This is used to update the
+// allowOverlappingViews state. Currently used for history overlay and
+// confirm bubble.
+- (void)onOverlappedViewHidden;
+
+// Executes the command registered by the extension that has the given id.
+- (void)executeExtensionCommand:(const std::string&)extension_id
+                        command:(const extensions::Command&)command;
+
+// Activates the page action for the extension that has the given id.
+- (void)activatePageAction:(const std::string&)extension_id;
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end  // @interface BrowserWindowController
 
@@ -392,8 +439,7 @@ class WebContents;
 
 // Enters (or exits) fullscreen mode.  This method is safe to call on all OS
 // versions.
-- (void)enterFullscreenForURL:(const GURL&)url
-                   bubbleType:(FullscreenExitBubbleType)bubbleType;
+- (void)enterFullscreen;
 - (void)exitFullscreen;
 
 // Updates the contents of the fullscreen exit bubble with |url| and
@@ -401,8 +447,17 @@ class WebContents;
 - (void)updateFullscreenExitBubbleURL:(const GURL&)url
                            bubbleType:(FullscreenExitBubbleType)bubbleType;
 
-// Returns fullscreen state.  This method is safe to call on all OS versions.
+// Returns fullscreen state: YES when the window is in fullscreen or is
+// animating into fullscreen.
 - (BOOL)isFullscreen;
+
+// Returns YES if the browser window is currently in fullscreen via the built-in
+// immersive mechanism.
+- (BOOL)isInImmersiveFullscreen;
+
+// Returns YES if the browser window is currently in fullscreen via the Cocoa
+// System Fullscreen API.
+- (BOOL)isInSystemFullscreen;
 
 // Enters (or exits) presentation mode.  Also enters fullscreen mode if this
 // window is not already fullscreen.  This method is safe to call on all OS
@@ -410,6 +465,12 @@ class WebContents;
 - (void)enterPresentationModeForURL:(const GURL&)url
                          bubbleType:(FullscreenExitBubbleType)bubbleType;
 - (void)exitPresentationMode;
+
+// For simplified fullscreen: Enters fullscreen for a tab at a URL. The |url|
+// is guaranteed to be non-empty; see -enterFullscreen for the user-initiated
+// fullscreen mode. Called on Snow Leopard and Lion+.
+- (void)enterFullscreenForURL:(const GURL&)url
+                   bubbleType:(FullscreenExitBubbleType)bubbleType;
 
 // Returns presentation mode state.  This method is safe to call on all OS
 // versions.
@@ -445,9 +506,6 @@ class WebContents;
 
 // Returns YES if any of the views in the floating bar currently has focus.
 - (BOOL)floatingBarHasFocus;
-
-// Opens the tabpose window.
-- (void)openTabpose;
 
 @end  // @interface BrowserWindowController(Fullscreen)
 
@@ -489,6 +547,14 @@ class WebContents;
 
 // The fullscreen exit bubble controller, or nil if the bubble isn't showing.
 - (FullscreenExitBubbleController*)fullscreenExitBubbleController;
+
+// Gets the rect, in window base coordinates, that the omnibox popup should be
+// positioned relative to.
+- (NSRect)omniboxPopupAnchorRect;
+
+// Force a layout of info bars.
+- (void)layoutInfoBars;
+
 @end  // @interface BrowserWindowController (TestingAPI)
 
 

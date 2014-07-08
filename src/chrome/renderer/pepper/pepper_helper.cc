@@ -5,18 +5,14 @@
 #include "chrome/renderer/pepper/pepper_helper.h"
 
 #include "chrome/renderer/pepper/chrome_renderer_pepper_host_factory.h"
-#include "chrome/renderer/pepper/pepper_flash_renderer_message_filter.h"
+#include "chrome/renderer/pepper/pepper_shared_memory_message_filter.h"
 #include "content/public/renderer/renderer_ppapi_host.h"
 #include "ppapi/host/ppapi_host.h"
 
-namespace chrome {
+PepperHelper::PepperHelper(content::RenderFrame* render_frame)
+    : RenderFrameObserver(render_frame) {}
 
-PepperHelper::PepperHelper(content::RenderView* render_view)
-    : RenderViewObserver(render_view) {
-}
-
-PepperHelper::~PepperHelper() {
-}
+PepperHelper::~PepperHelper() {}
 
 void PepperHelper::DidCreatePepperPlugin(content::RendererPpapiHost* host) {
   // TODO(brettw) figure out how to hook up the host factory. It needs some
@@ -26,7 +22,5 @@ void PepperHelper::DidCreatePepperPlugin(content::RendererPpapiHost* host) {
           new ChromeRendererPepperHostFactory(host)));
   host->GetPpapiHost()->AddInstanceMessageFilter(
       scoped_ptr<ppapi::host::InstanceMessageFilter>(
-          new PepperFlashRendererMessageFilter(host)));
+          new PepperSharedMemoryMessageFilter(host)));
 }
-
-}  // namespace chrome

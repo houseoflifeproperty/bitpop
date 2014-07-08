@@ -10,7 +10,7 @@
   -webkit-box-flex: 1;
   /* Center child dots. */
   -webkit-box-pack: center;
-  display: -webkit-box;
+  display: -webkit-flex;
   height: 100%;
   list-style-type: none;
   margin: 0;
@@ -22,10 +22,9 @@ html.starting-up #dot-list {
 }
 
 .dot {
-  -webkit-box-flex: 1;
   -webkit-margin-end: 10px;
   -webkit-padding-start: 2px;
-  -webkit-transition: max-width 250ms, -webkit-margin-end 250ms;
+  -webkit-transition: -webkit-margin-end 250ms, max-width 250ms, opacity 250ms;
   box-sizing: border-box;
   cursor: pointer;
   /* max-width: Set in new_tab.js. See measureNavDots() */
@@ -35,6 +34,12 @@ html.starting-up #dot-list {
 
 .dot:last-child {
   -webkit-margin-end: 0;
+}
+
+.dot:only-of-type {
+  cursor: default;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .dot.small {

@@ -29,6 +29,9 @@ class UberClique(object):
     # Different messages can have the same ID because they have the
     # same translateable portion and placeholder names, but occur in different
     # places in the resource tree.
+    #
+    # Each list of cliques is kept sorted by description, to achieve
+    # stable results from the BestClique method, see below.
     self.cliques_ = {}
 
     # A map of clique IDs to list of languages to indicate translations where we
@@ -95,9 +98,14 @@ class UberClique(object):
     # Enable others to find this clique by its message ID
     if message.GetId() in self.cliques_:
       presentable_text = clique.GetMessage().GetPresentableContent()
-      for c in self.cliques_[message.GetId()]:
-        assert c.GetMessage().GetPresentableContent() == presentable_text
+      if not message.HasAssignedId():
+        for c in self.cliques_[message.GetId()]:
+          assert c.GetMessage().GetPresentableContent() == presentable_text
       self.cliques_[message.GetId()].append(clique)
+      # We need to keep each list of cliques sorted by description, to
+      # achieve stable results from the BestClique method, see below.
+      self.cliques_[message.GetId()].sort(
+          key=lambda c:c.GetMessage().GetDescription())
     else:
       self.cliques_[message.GetId()] = [clique]
 
@@ -125,22 +133,32 @@ class UberClique(object):
     '''Returns the "best" clique from a list of cliques.  All the cliques
     must have the same ID.  The "best" clique is chosen in the following
     order of preference:
-    - The first clique that has a non-ID-based description
-    - If no such clique found, one of the cliques with an ID-based description
-    - Otherwise an arbitrary clique
+    - The first clique that has a non-ID-based description.
+    - If no such clique found, the first clique with an ID-based description.
+    - Otherwise the first clique.
+
+    This method is stable in terms of always returning a clique with
+    an identical description (on different runs of GRIT on the same
+    data) because self.cliques_ is sorted by description.
     '''
     clique_list = self.cliques_[id]
-    clique_to_ret = None
+    clique_with_id = None
+    clique_default = None
     for clique in clique_list:
-      if not clique_to_ret:
-        clique_to_ret = clique
+      if not clique_default:
+        clique_default = clique
 
       description = clique.GetMessage().GetDescription()
       if description and len(description) > 0:
-        clique_to_ret = clique
         if not description.startswith('ID:'):
-          break  # this is the preferred case so we exit right away
-    return clique_to_ret
+          # this is the preferred case so we exit right away
+          return clique
+        elif not clique_with_id:
+          clique_with_id = clique
+    if clique_with_id:
+      return clique_with_id
+    else:
+      return clique_default
 
   def BestCliquePerId(self):
     '''Iterates over the list of all cliques and returns the best clique for

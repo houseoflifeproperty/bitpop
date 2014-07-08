@@ -1,8 +1,8 @@
-<h1>Embed Content</h1>
+<h1>External Content</h1>
 
 
 <p>
-The <a href="app_architecture.html#security">packaged apps security model</a> disallows
+The <a href="app_architecture.html#security">Chrome Apps security model</a> disallows
 external content in iframes and
 the use of inline scripting and <code>eval()</code>.
 You can override these restrictions,
@@ -27,7 +27,7 @@ Check out the
 <h2 id="external">Referencing external resources</h2>
 
 <p>
-The <a href="app_csp.html">Content Security Policy</a> used by apps disallows
+The <a href="contentSecurityPolicy.html">Content Security Policy</a> used by apps disallows
 the use of many kinds of remote URLs, so you can't directly reference external
 images, stylesheets, or fonts from an app page. Instead, you can use use
 cross-origin XMLHttpRequests to fetch these resources,
@@ -41,7 +41,7 @@ To be able to do cross-origin XMLHttpRequests, you'll need to add a permission
 for the remote URL's host:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 "permissions": [
     "...",
     "https://supersweetdomainbutnotcspfriendly.com/"
@@ -61,7 +61,7 @@ xhr.open('GET', 'https://supersweetdomainbutnotcspfriendly.com/image.png', true)
 xhr.responseType = 'blob';
 xhr.onload = function(e) {
   var img = document.createElement('img');
-  img.src = window.webkitURL.createObjectURL(this.response);
+  img.src = window.URL.createObjectURL(this.response);
   document.body.appendChild(img);
 };
 
@@ -83,7 +83,7 @@ sample.
 <p>
 The <code>webview</code> tag allows you to embed external web content in your
 app, for example, a web page. It replaces iframes that point to remote URLs,
-which are disabled inside packaged apps. Unlike iframes, the
+which are disabled inside Chrome Apps. Unlike iframes, the
 <code>webview</code> tag runs in a separate process. This means that an exploit
 inside of it will still be isolated and won't be able to gain elevated
 privileges. Further, since its storage (cookies, etc.) is isolated from the app,
@@ -97,7 +97,9 @@ Your <code>webview</code> element must include the URL to the source content
 and specify its dimensions.
 </p>
 
-<pre>&lt;webview src="http://news.google.com/" width="640" height="480">&lt;/webview></pre>
+<pre data-filename="browser.html">
+&lt;webview src="http://news.google.com/" width="640" height="480">&lt;/webview>
+</pre>
 
 <h3 id="properties">Update properties</h3>
 
@@ -108,7 +110,7 @@ set those properties directly on the JavaScript object, or use the
 <code>setAttribute</code> DOM function.
 </p>
 
-<pre>
+<pre data-filename="browser.js">
 document.querySelector('#mywebview').src =
     'http://blog.chromium.org/';
 // or
@@ -125,7 +127,7 @@ These pages are then exempt from their Content Security Policy.
 Sandboxed pages can use iframes, inline scripting,
 and <code>eval()</code>.
 Check out the manifest field description for
-<a href="manifest.html#sandbox">sandbox</a>.
+<a href="manifest/sandbox.html">sandbox</a>.
 </p>
 
 <p>
@@ -139,17 +141,15 @@ but you won't be able to use the cool new stuff.
 <h3 id="inline_scripts">Use inline scripts in sandbox</h3>
 
 <p>
-Here's a sample sandboxed page
-which uses an inline script and <code>eval()</code>:
+Here's a sample sandboxed page which uses an inline script and <code>eval()</code>:
 </p>
 
-<pre>
+<pre data-filename="sandboxed.html">
 &lt;html>
   &lt;body>
     &lt;h1>Woot&lt;/h1>
     &lt;script>
-      document.write('I am an inline script.&lt;br>');
-      eval('document.write(\'I am an eval-ed inline script.\');');
+      eval('console.log(\'I am an eval-ed inline script.\')');
     &lt;/script>
   &lt;/body>
 &lt;/html>
@@ -162,7 +162,7 @@ You need to include the <code>sandbox</code> field in the manifest
 and list the app pages to be served in a sandbox:
 </p>
 
-<pre>
+<pre data-filename="manifest.json">
 "sandbox": {
   "pages": ["sandboxed.html"]
 }
@@ -178,20 +178,34 @@ one for the main app window that isn't sandboxed,
 and one for the sandboxed page:
 </p>
 
-<pre>
+<p class="warning">
+NOTE:
+<a href="https://code.google.com/p/chromium/issues/detail?id=154662">issue 154662</a>
+is a bug when using sandbox pages to create windows.
+The effect is that an error "Uncaught TypeError: Cannot call method
+'initializeAppWindow' of undefined" is output to the developer console
+and that the app.window.create call does not call the callback function
+with a window object. However, the sandbox page is created as a new window.
+</p>
+
+<pre data-filename="background.js">
 chrome.app.runtime.onLaunched.addListener(function() {
   chrome.app.window.create('window.html', {
-    'width': 400,
-    'height': 400,
-    'left': 0,
-    'top': 0
+    'bounds': {
+      'width': 400,
+      'height': 400,
+      'left': 0,
+      'top': 0
+    }
   });
 
   chrome.app.window.create('sandboxed.html', {
-    'width': 400,
-    'height': 400,
-    'left': 400,
-    'top': 0
+    'bounds': {
+      'width': 400,
+      'height': 400,
+      'left': 400,
+      'top': 0
+    }
   });
 });
 </pre>
@@ -201,7 +215,7 @@ chrome.app.runtime.onLaunched.addListener(function() {
 <p>Sandboxed pages can also be embedded within another app page
   using an <code>iframe</code>:</p>
 
-<pre>
+<pre data-filename="window.html">
 &lt;!DOCTYPE html>
 &lt;html>
 &lt;head>
@@ -233,16 +247,18 @@ that posts a message to the sandboxed page it
 opens:
 </p>
 
-<pre>
+<pre data-filename="background.js">
 var myWin = null;
 
 chrome.app.runtime.onLaunched.addListener(function() {
   chrome.app.window.create('sandboxed.html', {
-    'width': 400,
-    'height': 400
+    'bounds': {
+      'width': 400,
+      'height': 400
+    }
   }, function(win) {
        myWin = win;
-       myWin.postMessage('Just wanted to say hey.', '*');
+       myWin.contentWindow.postMessage('Just wanted to say hey.', '*');
      });
 });
 </pre>
@@ -251,13 +267,13 @@ chrome.app.runtime.onLaunched.addListener(function() {
 Generally speaking on the web,
 you want to specify the exact origin
 from where the message is sent.
-Packaged apps have no access
+Chrome Apps have no access
 to the unique origin of sandboxed content,
 so you can only whitelist all origins
 as acceptable origins ('*').
 On the receiving end,
 you generally want to check the origin;
-but since packaged apps content is contained,
+but since Chrome Apps content is contained,
 it isn't necessary.
 To find out more,
 see <a href="https://developer.mozilla.org/en/DOM/window.postMessage">window.postMessage</a>.
@@ -270,7 +286,7 @@ Here's a sample message receiver
 that gets added to your sandboxed page:
 </p>
 
-<pre>
+<pre data-filename="sandboxed.html">
 var messageHandler = function(e) {
   console.log('Background script says hello.', e.data);
 };

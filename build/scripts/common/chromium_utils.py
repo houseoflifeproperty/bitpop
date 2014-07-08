@@ -4,18 +4,23 @@
 
 """ Set of basic operations/utilities that are used by the build. """
 
+from contextlib import contextmanager
 import copy
+import cStringIO
 import errno
 import fnmatch
 import glob
 import math
+import multiprocessing
 import os
 import shutil
+import socket
 import stat
 import string  # pylint: disable=W0402
 import subprocess
 import sys
 import threading
+import traceback
 import time
 import urllib
 import zipfile
@@ -25,6 +30,15 @@ try:
 except ImportError:
   import simplejson as json
 
+
+BUILD_DIR = os.path.realpath(os.path.join(
+    os.path.dirname(__file__), os.pardir, os.pardir))
+
+# Wrapper around git that enforces a timeout.
+GIT_BIN = os.path.join(BUILD_DIR, 'scripts', 'tools', 'git-with-timeout')
+
+# Wrapper around svn that enforces a timeout.
+SVN_BIN = os.path.join(BUILD_DIR, 'scripts', 'tools', 'svn-with-timeout')
 
 # Local errors.
 class MissingArgument(Exception): pass
@@ -126,6 +140,8 @@ def FilteredMeanAndStandardDeviation(data):
   return MeanAndStandardDeviation(_FilterMax(data))
 
 def HistogramPercentiles(histogram, percentiles):
+  if not 'buckets' in histogram or not 'count' in histogram:
+    return []
   computed_percentiles = _ComputePercentiles(histogram['buckets'],
                                              histogram['count'],
                                              percentiles)
@@ -135,6 +151,8 @@ def HistogramPercentiles(histogram, percentiles):
   return output
 
 def GeomMeanAndStdDevFromHistogram(histogram):
+  if not 'buckets' in histogram or not 'count' in histogram:
+    return 0.0, 0.0
   count = 0
   sum_of_logs = 0
   for bucket in histogram['buckets']:
@@ -454,7 +472,7 @@ def RemoveDirectory(*path):
 
 
 def CopyFileToDir(src_path, dest_dir, dest_fn=None):
-  """Copies the file found at src_path to the dest_dir directory.
+  """Copies the file found at src_path to the dest_dir directory, with metadata.
 
   If dest_fn is specified, the src_path is copied to that name in dest_dir,
   otherwise it is copied to a file of the same name.
@@ -469,9 +487,9 @@ def CopyFileToDir(src_path, dest_dir, dest_fn=None):
     raise PathNotFound('Unable to find dir %s' % dest_dir)
   src_file = os.path.basename(src_path)
   if dest_fn:
-    shutil.copy(src_path, os.path.join(dest_dir, dest_fn))
+    shutil.copy2(src_path, os.path.join(dest_dir, dest_fn))
   else:
-    shutil.copy(src_path, os.path.join(dest_dir, src_file))
+    shutil.copy2(src_path, os.path.join(dest_dir, src_file))
 
 
 def MakeZip(output_dir, archive_name, file_list, file_relative_dir,
@@ -482,7 +500,7 @@ def MakeZip(output_dir, archive_name, file_list, file_relative_dir,
   the archive_name, which will be created if necessary and emptied if it
   already exists.  The files are then then packed using archive names
   relative to the output_dir.  That is, if the zipfile is unpacked in place,
-  it will create a directory identical to the new archiev_name directory, in
+  it will create a directory identical to the new archive_name directory, in
   the output_dir.  The zip file will be named as the archive_name, plus
   '.zip'.
 
@@ -576,7 +594,8 @@ def MakeZip(output_dir, archive_name, file_list, file_relative_dir,
             compress_method = zipfile.ZIP_DEFLATED
           to_zip_file.write(this_path, archive_name, compress_method)
           print 'Adding %s' % archive_name
-    zip_file = zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED)
+    zip_file = zipfile.ZipFile(output_file, 'w', zipfile.ZIP_DEFLATED,
+                               allowZip64=True)
     try:
       os.path.walk(archive_dir, _Addfiles, zip_file)
     finally:
@@ -596,7 +615,6 @@ def MakeZip(output_dir, archive_name, file_list, file_relative_dir,
 
 def ExtractZip(filename, output_dir, verbose=True):
   """ Extract the zip archive in the output directory.
-      Based on http://aspn.activestate.com/ASPN/Cookbook/Python/Recipe/252508.
   """
   MaybeMakeDirectory(output_dir)
 
@@ -626,22 +644,10 @@ def ExtractZip(filename, output_dir, verbose=True):
   else:
     assert IsWindows()
     zf = zipfile.ZipFile(filename)
-
-    # Grabs all the directories in the zip structure. This is necessary
-    # to create the structure before trying to extract the file to it.
-    dirs = set([os.path.dirname(n) for n in zf.namelist()])
-
-    # Create the directory structure.
-    for item in dirs:
-      MaybeMakeDirectory(os.path.join(output_dir, item))
-
-    # Extract files to directory structure.
     for name in zf.namelist():
       if verbose:
         print 'Extracting %s' % name
-      outfile = open(os.path.join(output_dir, name), 'wb')
-      outfile.write(zf.read(name))
-      outfile.close()
+      zf.extract(name, output_dir)
 
 
 def WindowsPath(path):
@@ -738,12 +744,29 @@ class RunCommandFilter(object):
     return last_bits
 
 
+class FilterCapture(RunCommandFilter):
+  """Captures the text and places it into an array."""
+  def __init__(self):
+    RunCommandFilter.__init__(self)
+    self.text = []
+
+  def FilterLine(self, line):
+    self.text.append(line.rstrip())
+
+  def FilterDone(self, text):
+    self.text.append(text)
+
+
 def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
-               print_cmd=True, **kwargs):
+               print_cmd=True, timeout=None, max_time=None, **kwargs):
   """Runs the command list, printing its output and returning its exit status.
 
   Prints the given command (which should be a list of one or more strings),
   then runs it and writes its stdout and stderr to the appropriate file handles.
+
+  If timeout is set, the process will be killed if output is stopped after
+  timeout seconds. If max_time is set, the process will be killed if it runs for
+  more than max_time.
 
   If parser_func is not given, the subprocess's output is passed to stdout
   and stderr directly.  If the func is given, each line of the subprocess's
@@ -763,55 +786,68 @@ def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
   [['python', 'b'],['c']]
   """
 
+  def TimedFlush(timeout, fh):
+    while True:
+      try:
+        fh.flush()
+      # File handle is closed, exit.
+      except ValueError:
+        return
+      time.sleep(timeout)
+
   # TODO(all): nsylvain's CommandRunner in buildbot_slave is based on this
   # method.  Update it when changes are introduced here.
-  def ProcessRead(readfh, writefh, parser_func=None, filter_obj=None):
-    last_flushed_at = time.time()
+  def ProcessRead(readfh, writefh, parser_func=None, filter_obj=None,
+                  log_event=None):
     writefh.flush()
 
+    # Python on Windows writes the buffer only when it reaches 4k.  Ideally
+    # we would flush a minimum of 10 seconds.  However, we only write and
+    # flush no more often than 20 seconds to avoid flooding the master with
+    # network traffic from unbuffered output.
+    flush_thread = threading.Thread(target=TimedFlush, args=(20, writefh))
+    flush_thread.daemon = True
+    flush_thread.start()
+
     in_byte = readfh.read(1)
-    in_line = ''
-    unwritten_characters = ''
+    in_line = cStringIO.StringIO()
     while in_byte:
       # Capture all characters except \r.
       if in_byte != '\r':
-        in_line += in_byte
+        in_line.write(in_byte)
 
       # Write and flush on newline.
       if in_byte == '\n':
+        if log_event:
+          log_event.set()
         if parser_func:
-          parser_func(in_line.strip())
+          parser_func(in_line.getvalue().strip())
+
         if filter_obj:
-          in_line = filter_obj.FilterLine(in_line)
-        # Python on Windows writes the buffer only when it reaches 4k.  Ideally
-        # we would flush a minimum of 10 seconds.  However, we only write and
-        # flush no more often than 20 seconds to avoid flooding the master with
-        # network traffic from unbuffered output.
-        if not in_line is None:
-          unwritten_characters += in_line
-          if (time.time() - last_flushed_at) > 20:
-            last_flushed_at = time.time()
-            writefh.write(unwritten_characters)
-            writefh.flush()
-            unwritten_characters = ''
-        in_line = ''
+          filtered_line = filter_obj.FilterLine(in_line.getvalue())
+          if filtered_line is not None:
+            writefh.write(filtered_line)
+        else:
+          writefh.write(in_line.getvalue())
+        in_line = cStringIO.StringIO()
       in_byte = readfh.read(1)
+
+    if log_event and in_line.getvalue():
+      log_event.set()
 
     # Write remaining data and flush on EOF.
     if parser_func:
-      parser_func(in_line.strip())
+      parser_func(in_line.getvalue().strip())
+
     if filter_obj:
-      if in_line != '':
-        in_line = filter_obj.FilterDone(in_line)
-    # If unwritten_characters is added to multiple times and it has been 15
-    # seconds since the last write and a EOF is encountered, then we can
-    # have unwritten_characters contain text that hasn't yet been written.
-    # Write that text here before the final write of in_line and the flush.
-    if in_line:
-      unwritten_characters += in_line
-    if unwritten_characters:
-      writefh.write(unwritten_characters)
-      writefh.flush()
+      if in_line.getvalue():
+        filtered_line = filter_obj.FilterDone(in_line.getvalue())
+        if filtered_line is not None:
+          writefh.write(filtered_line)
+    else:
+      if in_line.getvalue():
+        writefh.write(in_line.getvalue())
+    writefh.flush()
 
   pipes = pipes or []
 
@@ -823,13 +859,18 @@ def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
 
   sys.stdout.flush()
   sys.stderr.flush()
-  if not (parser_func or filter_obj or pipes):
+
+  if not (parser_func or filter_obj or pipes or timeout or max_time):
     # Run the command.  The stdout and stderr file handles are passed to the
     # subprocess directly for writing.  No processing happens on the output of
     # the subprocess.
     proc = subprocess.Popen(command, stdout=sys.stdout, stderr=sys.stderr,
                             bufsize=0, **kwargs)
+
   else:
+    if not (parser_func or filter_obj):
+      filter_obj = RunCommandFilter()
+
     # Start the initial process.
     proc = subprocess.Popen(command, stdout=subprocess.PIPE,
                             stderr=subprocess.STDOUT, bufsize=0, **kwargs)
@@ -853,32 +894,114 @@ def RunCommand(command, parser_func=None, filter_obj=None, pipes=None,
       for handle in proc_handles[1:]:
         handle.stdout.close()
 
-    thread = None
-    if parser_func or filter_obj:
-      # Launch and start the reader thread.
-      thread = threading.Thread(target=ProcessRead,
-                                args=(proc_handles[0].stdout, sys.stdout,
-                                      parser_func, filter_obj))
-      thread.start()
+    log_event = threading.Event()
+
+    # Launch and start the reader thread.
+    thread = threading.Thread(target=ProcessRead,
+                              args=(proc_handles[0].stdout, sys.stdout),
+                              kwargs={'parser_func': parser_func,
+                                      'filter_obj': filter_obj,
+                                      'log_event': log_event})
+
+    kill_lock = threading.Lock()
+
+
+    def term_then_kill(handle, initial_timeout, numtimeouts, interval):
+      def timed_check():
+        for _ in range(numtimeouts):
+          if handle.poll() is not None:
+            return True
+          time.sleep(interval)
+
+      handle.terminate()
+      time.sleep(initial_timeout)
+      timed_check()
+      if handle.poll() is None:
+        handle.kill()
+      timed_check()
+      return handle.poll() is not None
+
+
+    def kill_proc(proc_handles, message=None):
+      with kill_lock:
+        if proc_handles:
+          killed = term_then_kill(proc_handles[0], 0.1, 5, 1)
+
+          if message:
+            print >> sys.stderr, message
+
+          if not killed:
+            print >> sys.stderr, 'could not kill pid %d!' % proc_handles[0].pid
+          else:
+            print >> sys.stderr, 'program finished with exit code %d' % (
+                proc_handles[0].returncode)
+
+          # Prevent other timeouts from double-killing.
+          del proc_handles[:]
+
+    def timeout_func(timeout, proc_handles, log_event, finished_event):
+      while log_event.wait(timeout):
+        log_event.clear()
+        if finished_event.is_set():
+          return
+
+      message = ('command timed out: %d seconds without output, attempting to '
+                 'kill' % timeout)
+      kill_proc(proc_handles, message)
+
+    def maxtimeout_func(timeout, proc_handles, finished_event):
+      if not finished_event.wait(timeout):
+        message = ('command timed out: %d seconds elapsed' % timeout)
+        kill_proc(proc_handles, message)
+
+    timeout_thread = None
+    maxtimeout_thread = None
+    finished_event = threading.Event()
+
+    if timeout:
+      timeout_thread = threading.Thread(target=timeout_func,
+                                        args=(timeout, proc_handles, log_event,
+                                              finished_event))
+      timeout_thread.daemon = True
+    if max_time:
+      maxtimeout_thread = threading.Thread(target=maxtimeout_func,
+                                           args=(max_time, proc_handles,
+                                                 finished_event))
+      maxtimeout_thread.daemon = True
+
+    thread.start()
+    if timeout_thread:
+      timeout_thread.start()
+    if maxtimeout_thread:
+      maxtimeout_thread.start()
 
     # Wait for the commands to terminate.
     for handle in proc_handles:
       handle.wait()
 
-    if parser_func or filter_obj:
-      # Wait for the reader thread to complete (implies EOF reached on stdout/
-      # stderr pipes).
-      thread.join()
+    # Wake up timeout threads.
+    finished_event.set()
+    log_event.set()
+
+    # Wait for the reader thread to complete (implies EOF reached on stdout/
+    # stderr pipes).
+    thread.join()
+
+    # Check whether any of the sub commands has failed.
+    for handle in proc_handles:
+      if handle.returncode:
+        return handle.returncode
 
   # Wait for the command to terminate.
   proc.wait()
   return proc.returncode
 
 
-def GetStatusOutput(command):
+def GetStatusOutput(command, **kwargs):
   """Runs the command list, returning its result and output."""
   proc = subprocess.Popen(command, stdout=subprocess.PIPE,
-                          stderr=subprocess.STDOUT, bufsize=1)
+                          stderr=subprocess.STDOUT, bufsize=1,
+                          **kwargs)
   output = proc.communicate()[0]
   result = proc.returncode
 
@@ -984,37 +1107,115 @@ def SshCopyTree(srctree, host, dst):
                         (srctree, host + ':' + dst, result))
 
 
-def ListMasters(cue='master.cfg', include_internal=True):
+def ListMasters(cue='master.cfg', include_public=True, include_internal=True):
   """Returns all the masters found."""
   # Look for "internal" masters first.
-  path_internal = os.path.join(os.path.dirname(__file__), '..', '..', '..',
-      'build_internal', 'masters/*/' + cue)
-  path = os.path.join(os.path.dirname(__file__), '..', '..',
-      'masters/*/' + cue)
-  filenames = glob.glob(path)
+  path_internal = os.path.join(
+      BUILD_DIR, os.pardir, 'build_internal', 'masters/*/' + cue)
+  path = os.path.join(BUILD_DIR, 'masters/*/' + cue)
+  filenames = []
+  if include_public:
+    filenames += glob.glob(path)
   if include_internal:
     filenames += glob.glob(path_internal)
   return [os.path.abspath(os.path.dirname(f)) for f in filenames]
 
 
-def RunSlavesCfg(slaves_cfg):
-  """Runs slaves.cfg in a consistent way."""
-  if not os.path.exists(slaves_cfg):
-    return []
-  slaves_path = os.path.dirname(os.path.abspath(slaves_cfg))
+def GetAllSlaves(fail_hard=False):
+  """Return all slave objects from masters."""
+  slaves = []
+  for master in ListMasters(cue='slaves.cfg'):
+    cur_slaves = RunSlavesCfg(os.path.join(master, 'slaves.cfg'),
+                              fail_hard=fail_hard)
+    for slave in cur_slaves:
+      slave['mastername'] = os.path.basename(master)
+    slaves.extend(cur_slaves)
+  return slaves
+
+
+def GetSlavesForHost():
+  """Get slaves for a host, defaulting to current host."""
+  hostname = os.getenv('TESTING_SLAVENAME')
+  if not hostname:
+    hostname = socket.getfqdn().split('.', 1)[0].lower()
+  slaves = []
+  for master in ListMasters(cue='slaves.cfg'):
+    slaves.extend(
+        s for s in RunSlavesCfg(os.path.join(master, 'slaves.cfg'))
+        if s.get('hostname') == hostname)
+  return slaves
+
+
+def GetActiveSubdir():
+  """Get current checkout's subdir, if checkout uses subdir layout."""
+  rootdir, subdir = os.path.split(os.path.dirname(BUILD_DIR))
+  if subdir != 'b' and os.path.basename(rootdir) == 'c':
+    return subdir
+
+
+def GetActiveSlavename():
+  slavename = os.getenv('TESTING_SLAVENAME')
+  if not slavename:
+    slavename = socket.getfqdn().split('.', 1)[0].lower()
+  subdir = GetActiveSubdir()
+  if subdir:
+    return '%s#%s' % (slavename, subdir)
+  return slavename
+
+
+def EntryToSlaveName(entry):
+  """Produces slave name from the slaves config dict."""
+  name = entry.get('slavename') or entry.get('hostname')
+  if 'subdir' in entry:
+    return '%s#%s' % (name, entry['subdir'])
+  return name
+
+
+def GetActiveMaster(slavename=None, default=None):
+  """Parses all the slaves.cfg and returns the name of the active master
+  determined by the hostname. Returns None otherwise.
+
+  It will be matched against *both* the 'slavename' and 'hostname' fields
+  in slaves.cfg.
+  """
+  slavename = slavename or GetActiveSlavename()
+  for slave in GetAllSlaves():
+    if slavename == EntryToSlaveName(slave):
+      return slave['master']
+  return default
+
+
+def ParsePythonCfg(cfg_filepath, fail_hard=False):
+  """Retrieves data from a python config file."""
+  if not os.path.exists(cfg_filepath):
+    return None
+  base_path = os.path.dirname(os.path.abspath(cfg_filepath))
   old_sys_path = sys.path
-  sys.path = sys.path + [slaves_path]
+  sys.path = sys.path + [base_path]
+  old_cwd = os.getcwd()
   try:
-    old_path = os.getcwd()
-    try:
-      os.chdir(slaves_path)
-      local_vars = {}
-      execfile(os.path.join(slaves_cfg), local_vars)
-      return local_vars['slaves']
-    finally:
-      os.chdir(old_path)
+    os.chdir(base_path)
+    local_vars = {}
+    execfile(os.path.join(cfg_filepath), local_vars)
+    del local_vars['__builtins__']
+    return local_vars
+  except Exception as e:
+    # pylint: disable=C0323
+    print >>sys.stderr, 'An error occurred while parsing %s: %s' % (
+        cfg_filepath, e)
+    print >>sys.stderr, traceback.format_exc()  # pylint: disable=C0323
+    if fail_hard:
+      raise
+    return {}
   finally:
+    os.chdir(old_cwd)
     sys.path = old_sys_path
+
+
+def RunSlavesCfg(slaves_cfg, fail_hard=False):
+  """Runs slaves.cfg in a consistent way."""
+  slave_config = ParsePythonCfg(slaves_cfg, fail_hard=fail_hard) or {}
+  return slave_config.get('slaves', [])
 
 
 def convert_json(option, opt, value, parser):
@@ -1036,7 +1237,7 @@ def SafeTranslate(inputstr):
 
 
 def GetCBuildbotConfigs(chromite_path=None):
-  """Get the sorted cbuildbot configs from cbuildbot_config.py.
+  """Get the sorted cbuildbot configs from cbuildbot_view_config.
 
   Args:
     chromite_path: The path to the chromite/ directory.
@@ -1053,7 +1254,7 @@ def GetCBuildbotConfigs(chromite_path=None):
       chromite_path = os.path.dirname(os.path.abspath(chromite.__file__))
 
     chromite_path = os.path.abspath(chromite_path)
-    config_path = os.path.join(chromite_path, 'buildbot', 'cbuildbot_config.py')
+    config_path = os.path.join(chromite_path, 'bin', 'cbuildbot_view_config')
     proc = subprocess.Popen([config_path, '--dump', '--for-buildbot'],
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE,
                             close_fds=True, cwd=os.path.dirname(config_path))
@@ -1067,7 +1268,6 @@ def GetCBuildbotConfigs(chromite_path=None):
   except ImportError:
     # To get around CQ pylint failures, because CQ doesn't check out chromite.
     # TODO(maruel): Remove this try block when this issue is resolved.
-    print 'cbuildbot_chromite not found!  Returning empty config dictionary.'
     return {}
 
 
@@ -1099,8 +1299,7 @@ def AddThirdPartyLibToPath(lib, override=False):
   Setting 'override' to true will place the directory in the beginning of
   sys.path, useful for overriding previously set packages.
   """
-  libpath = os.path.abspath(os.path.join(os.path.dirname(__file__),
-                                         '..', '..', 'third_party', lib))
+  libpath = os.path.abspath(os.path.join(BUILD_DIR, 'third_party', lib))
   if override:
     sys.path.insert(0, libpath)
   else:
@@ -1137,3 +1336,109 @@ def AbsoluteCanonicalPath(*path):
 
   file_path = os.path.join(*path)
   return os.path.realpath(os.path.abspath(os.path.expanduser(file_path)))
+
+
+def IsolatedImportFromPath(path, extra_paths=None):
+  dir_path, module_file = os.path.split(path)
+  module_file = os.path.splitext(module_file)[0]
+
+  saved = sys.path
+  sys.path = [dir_path] + (extra_paths or [])
+  try:
+    return __import__(module_file)
+  except ImportError:
+    pass
+  finally:
+    sys.path = saved
+
+
+@contextmanager
+def MultiPool(processes):
+  """Manages a multiprocessing.Pool making sure to close the pool when done.
+
+  This will also call pool.terminate() when an exception is raised (and
+  re-raised the exception to the calling procedure can handle it).
+  """
+  try:
+    pool = multiprocessing.Pool(processes=processes)
+    yield pool
+    pool.close()
+  except:
+    pool.terminate()
+    raise
+  finally:
+    pool.join()
+
+
+def ReadJsonAsUtf8(filename=None, text=None):
+  """Read a json file or string and output a dict.
+
+  This function is different from json.load and json.loads in that it
+  returns utf8-encoded string for keys and values instead of unicode.
+
+  Args:
+  filename: path of a file to parse
+  text: json string to parse
+
+  If both 'filename' and 'text' are provided, 'filename' is used.
+  """
+  def _decode_list(data):
+    rv = []
+    for item in data:
+      if isinstance(item, unicode):
+        item = item.encode('utf-8')
+      elif isinstance(item, list):
+        item = _decode_list(item)
+      elif isinstance(item, dict):
+        item = _decode_dict(item)
+      rv.append(item)
+    return rv
+
+  def _decode_dict(data):
+    rv = {}
+    for key, value in data.iteritems():
+      if isinstance(key, unicode):
+        key = key.encode('utf-8')
+      if isinstance(value, unicode):
+        value = value.encode('utf-8')
+      elif isinstance(value, list):
+        value = _decode_list(value)
+      elif isinstance(value, dict):
+        value = _decode_dict(value)
+      rv[key] = value
+    return rv
+
+  if filename:
+    with open(filename, 'rb') as f:
+      return json.load(f, object_hook=_decode_dict)
+  if text:
+    return json.loads(text, object_hook=_decode_dict)
+
+
+def GetMasterDevParameters(filename='master_cfg_params.json'):
+  """Look for master development parameter files in the master directory.
+
+  Return the parsed content if the file exists, as a dictionary.
+  Every string value in the dictionary is utf8-encoded str.
+
+  If the file is not found, returns an empty dict. This is on purpose, to
+  make the file optional.
+  """
+  if os.path.isfile(filename):
+    return ReadJsonAsUtf8(filename=filename)
+  return {}
+
+
+def DatabaseSetup(buildmaster_config, require_dbconfig=False):
+  """Read database credentials in the master directory."""
+  if os.path.isfile('.dbconfig'):
+    values = {}
+    execfile('.dbconfig', values)
+    if 'password' not in values:
+      raise Exception('could not get db password')
+
+    buildmaster_config['db_url'] = 'postgresql://%s:%s@%s/%s' % (
+        values['username'], values['password'],
+        values.get('hostname', 'localhost'), values['dbname'])
+  else:
+    assert(not require_dbconfig)

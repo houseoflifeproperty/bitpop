@@ -7,7 +7,7 @@
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
 #include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "net/base/net_log.h"
 #include "net/base/net_util.h"
 
@@ -38,7 +38,7 @@ URLRequestThrottlerManager::~URLRequestThrottlerManager() {
   // entries, detach the entries' back-pointer to the manager.
   UrlEntryMap::iterator i = url_entries_.begin();
   while (i != url_entries_.end()) {
-    if (i->second != NULL) {
+    if (i->second.get() != NULL) {
       i->second->DetachManager();
     }
     ++i;

@@ -16,6 +16,7 @@
       'SQLITE_ENABLE_ICU',
       'SQLITE_ENABLE_MEMORY_MANAGEMENT',
       'SQLITE_SECURE_DELETE',
+      'SQLITE_SEPARATE_CACHE_POOLS',
       'THREADSAFE',
       '_HAS_EXCEPTIONS=0',
     ],
@@ -44,6 +45,9 @@
 
           'conditions': [
             ['OS == "ios"', {
+              'dependencies': [
+                'sqlite_regexp',
+              ],
               'link_settings': {
                 'libraries': [
                   '$(SDKROOT)/usr/lib/libsqlite3.dylib',
@@ -113,13 +117,20 @@
             ],
           },
           'msvs_disabled_warnings': [
-            4018, 4244,
+            4018, 4244, 4267,
           ],
           'conditions': [
             ['OS=="linux"', {
               'link_settings': {
                 'libraries': [
                   '-ldl',
+                ],
+              },
+            }],
+            ['OS == "mac" or OS == "ios"', {
+              'link_settings': {
+                'libraries': [
+                  '$(SDKROOT)/System/Library/Frameworks/CoreFoundation.framework',
                 ],
               },
             }],
@@ -174,12 +185,26 @@
           'sources': [
             'src/src/shell.c',
             'src/src/shell_icu_linux.c',
+            # Include a dummy c++ file to force linking of libstdc++.
+            'build_as_cpp.cc',
           ],
-          'link_settings': {
-            'link_languages': ['c++'],
-          },
         },
       ],
-    },]
+    },],
+    ['OS == "ios"', {
+      'targets': [
+        {
+          'target_name': 'sqlite_regexp',
+          'type': 'static_library',
+          'dependencies': [
+            '../icu/icu.gyp:icui18n',
+            '../icu/icu.gyp:icuuc',
+          ],
+          'sources': [
+            'src/ext/icu/icu.c',
+          ],
+        },
+      ],
+    }],
   ],
 }

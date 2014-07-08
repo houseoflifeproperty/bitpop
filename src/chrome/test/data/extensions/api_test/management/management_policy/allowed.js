@@ -11,7 +11,7 @@ var UNINSTALL_NAME = 'enabled_extension';
 
 // Given a list of extension |items|, finds the one with the given |name|.
 function findByName(items, name) {
-  chrome.test.assertEq(7, items.length);
+  chrome.test.assertEq(8, items.length);
   var item;
   for (var i = 0; i < items.length; i++) {
     item = items[i];
@@ -64,10 +64,12 @@ var tests = [
       chrome.test.assertEq(true, item.mayDisable);
 
       var id = item.id;
-      chrome.management.uninstall(id, callback(function() {
-        chrome.test.assertNoLastError();
-        // The calling api test will verify that the item was uninstalled.
-      }));
+      chrome.test.runWithUserGesture(function() {
+        chrome.management.uninstall(id, callback(function() {
+          chrome.test.assertNoLastError();
+          // The calling api test will verify that the item was uninstalled.
+        }));
+      });
     }));
   }
 ];

@@ -35,7 +35,12 @@ __asm__(".pushsection .text, \"ax\", @progbits\n"
 #elif defined(__arm__)
 __asm__(".pushsection .text, \"ax\", %progbits\n"
         "fault_addr:\n"
-        ".word " NACL_TO_STRING(NACL_INSTR_ARM_BREAKPOINT) "\n"
+        ".word " NACL_TO_STRING(NACL_INSTR_ARM_ABORT_NOW) "\n"
+        ".popsection\n");
+#elif defined(__mips__)
+__asm__(".pushsection .text, \"ax\", @progbits\n"
+        "fault_addr:\n"
+        ".word 0x0000000d\n" /* Break instruction on MIPS. */
         ".popsection\n");
 #else
 # error Update fault_addr for other architectures
@@ -59,7 +64,6 @@ void set_registers_and_stop(void) {
   regs.edi = 0x66000077;
   regs.ebp = 0x77000088;
   regs.stack_ptr = 0x88000099;
-  ASM_WITH_REGS(&regs, "jmp fault_addr\n");
 #elif defined(__x86_64__)
   regs.rax = 0x1100000000000022;
   regs.rbx = 0x2200000000000033;
@@ -80,7 +84,6 @@ void set_registers_and_stop(void) {
    */
   regs.stack_ptr = 0x12300321;
   regs.rbp = 0x23400432;
-  ASM_WITH_REGS(&regs, "jmp fault_addr\n");
 #elif defined(__arm__)
   regs.r0 = 0x00000001;
   regs.r1 = 0x10000002;
@@ -102,10 +105,40 @@ void set_registers_and_stop(void) {
   regs.stack_ptr = 0x12345678;
   regs.lr = 0xe000000f;
   regs.cpsr = (1 << 29) | (1 << 27); /* C and Q flags */
-  ASM_WITH_REGS(&regs, "b fault_addr\n");
+#elif defined(__mips__)
+  /* Skip zero register because it cannot be set. */
+  regs.at = 0x11000220;
+  regs.v0 = 0x22000330;
+  regs.v1 = 0x33000440;
+  regs.a0 = 0x44000550;
+  regs.a1 = 0x55000660;
+  regs.a2 = 0x66000770;
+  regs.a3 = 0x77000880;
+  regs.t0 = 0x88000990;
+  regs.t1 = 0x99000aa0;
+  regs.t2 = 0xaa000bb0;
+  regs.t3 = 0xbb000cc0;
+  regs.t4 = 0xcc000dd0;
+  regs.t5 = 0xdd000ee0;
+  /* Skip t6, t7 and t8, because they cannot be set by untrusted code. */
+  regs.s0 = 0x11100222;
+  regs.s1 = 0x22200333;
+  regs.s2 = 0x33300444;
+  regs.s3 = 0x44400555;
+  regs.s4 = 0x55500666;
+  regs.s5 = 0x66600777;
+  regs.s6 = 0x77700888;
+  regs.s7 = 0x88800999;
+  regs.t9 = 0xaaa00bbb;
+  /* Skip k0 and k1 registers, since they can be changed by kernel. */
+  regs.global_ptr = 0xddd00eee;
+  regs.stack_ptr = 0x2ee00fff;
+  regs.frame_ptr = 0xfff00000;
+  regs.return_addr = 0x0a0a0a0a;
 #else
 # error Update set_registers_and_stop for other architectures
 #endif
+  JUMP_WITH_REGS(&regs, fault_addr);
 }
 
 void test_jump_to_address_zero(void) {
@@ -158,8 +191,8 @@ void test_single_step(void) {
       ".byte 0x48, 0x83, 0xeb, 0x01\n"              /* sub  $0x1,%rbx */
       ".byte 0x66, 0x0f, 0x1f, 0x44, 0x00, 0x00\n"  /* nopw 0x0(%rax,%rax,1) */
       ".byte 0x5b\n");                              /* pop  %rbx */
-#elif defined(__arm__)
-  printf("Single-stepping is not supported on ARM\n");
+#elif defined(__arm__) || defined(__mips__)
+  printf("Single-stepping is not supported on ARM and MIPS.\n");
   exit(1);
 #else
 # error Update test_single_step for other architectures
@@ -189,7 +222,11 @@ void breakpoint(void) {
    * because BKPTs guard data literals in the ARM sandbox.
    */
   __asm__(".p2align 4\n"
-          ".word " NACL_TO_STRING(NACL_INSTR_ARM_BREAKPOINT) "\n"
+          ".word " NACL_TO_STRING(NACL_INSTR_ARM_ABORT_NOW) "\n"
+          ".p2align 4\n");
+#elif defined(__mips__)
+  __asm__(".p2align 4\n"
+          ".word 0x0000000d\n" /* Break instruction on MIPS. */
           ".p2align 4\n");
 #else
 # error Unsupported architecture

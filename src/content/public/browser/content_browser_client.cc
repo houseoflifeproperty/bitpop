@@ -4,9 +4,9 @@
 
 #include "content/public/browser/content_browser_client.h"
 
-#include "base/file_path.h"
-#include "googleurl/src/gurl.h"
+#include "base/files/file_path.h"
 #include "ui/gfx/image/image_skia.h"
+#include "url/gurl.h"
 
 namespace content {
 
@@ -15,18 +15,8 @@ BrowserMainParts* ContentBrowserClient::CreateBrowserMainParts(
   return NULL;
 }
 
-WebContentsView* ContentBrowserClient::OverrideCreateWebContentsView(
-    WebContents* web_contents,
-    RenderViewHostDelegateView** render_view_host_delegate_view) {
-  return NULL;
-}
-
 WebContentsViewDelegate* ContentBrowserClient::GetWebContentsViewDelegate(
     WebContents* web_contents) {
-  return NULL;
-}
-
-WebUIControllerFactory* ContentBrowserClient::GetWebUIControllerFactory() {
   return NULL;
 }
 
@@ -40,8 +30,35 @@ bool ContentBrowserClient::ShouldUseProcessPerSite(
   return false;
 }
 
+net::URLRequestContextGetter* ContentBrowserClient::CreateRequestContext(
+    BrowserContext* browser_context,
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
+  return NULL;
+}
+
+net::URLRequestContextGetter*
+ContentBrowserClient::CreateRequestContextForStoragePartition(
+    BrowserContext* browser_context,
+    const base::FilePath& partition_path,
+    bool in_memory,
+    ProtocolHandlerMap* protocol_handlers,
+    ProtocolHandlerScopedVector protocol_interceptors) {
+  return NULL;
+}
+
 bool ContentBrowserClient::IsHandledURL(const GURL& url) {
   return false;
+}
+
+bool ContentBrowserClient::CanCommitURL(RenderProcessHost* process_host,
+                                        const GURL& site_url) {
+  return true;
+}
+
+bool ContentBrowserClient::ShouldAllowOpenURL(SiteInstance* site_instance,
+                                              const GURL& url) {
+  return true;
 }
 
 bool ContentBrowserClient::IsSuitableHost(RenderProcessHost* process_host,
@@ -54,7 +71,8 @@ bool ContentBrowserClient::ShouldTryToUseExistingProcessHost(
   return false;
 }
 
-bool ContentBrowserClient::ShouldSwapProcessesForNavigation(
+bool ContentBrowserClient::ShouldSwapBrowsingInstancesForNavigation(
+    SiteInstance* site_instance,
     const GURL& current_url,
     const GURL& new_url) {
   return false;
@@ -64,6 +82,10 @@ bool ContentBrowserClient::ShouldSwapProcessesForRedirect(
     ResourceContext* resource_context, const GURL& current_url,
     const GURL& new_url) {
   return false;
+}
+
+bool ContentBrowserClient::ShouldAssignSiteForURL(const GURL& url) {
+  return true;
 }
 
 std::string ContentBrowserClient::GetCanonicalEncodingNameByAliasName(
@@ -95,7 +117,7 @@ bool ContentBrowserClient::AllowGetCookie(const GURL& url,
                                           const net::CookieList& cookie_list,
                                           ResourceContext* context,
                                           int render_process_id,
-                                          int render_view_id) {
+                                          int render_frame_id) {
   return true;
 }
 
@@ -104,22 +126,9 @@ bool ContentBrowserClient::AllowSetCookie(const GURL& url,
                                           const std::string& cookie_line,
                                           ResourceContext* context,
                                           int render_process_id,
-                                          int render_view_id,
+                                          int render_frame_id,
                                           net::CookieOptions* options) {
   return true;
-}
-
-bool ContentBrowserClient::AllowPluginLocalDataAccess(
-    const GURL& document_url,
-    const GURL& plugin_url,
-    content::ResourceContext* context) {
-  return true;
-}
-
-bool ContentBrowserClient::AllowPluginLocalDataSessionOnly(
-    const GURL& url,
-    content::ResourceContext* context) {
-  return false;
 }
 
 bool ContentBrowserClient::AllowSaveLocalState(ResourceContext* context) {
@@ -128,26 +137,26 @@ bool ContentBrowserClient::AllowSaveLocalState(ResourceContext* context) {
 
 bool ContentBrowserClient::AllowWorkerDatabase(
     const GURL& url,
-    const string16& name,
-    const string16& display_name,
+    const base::string16& name,
+    const base::string16& display_name,
     unsigned long estimated_size,
     ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   return true;
 }
 
 bool ContentBrowserClient::AllowWorkerFileSystem(
     const GURL& url,
     ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   return true;
 }
 
 bool ContentBrowserClient::AllowWorkerIndexedDB(
     const GURL& url,
-    const string16& name,
+    const base::string16& name,
     ResourceContext* context,
-    const std::vector<std::pair<int, int> >& render_views) {
+    const std::vector<std::pair<int, int> >& render_frames) {
   return true;
 }
 
@@ -190,20 +199,30 @@ MediaObserver* ContentBrowserClient::GetMediaObserver() {
   return NULL;
 }
 
-WebKit::WebNotificationPresenter::Permission
+blink::WebNotificationPresenter::Permission
     ContentBrowserClient::CheckDesktopNotificationPermission(
         const GURL& source_origin,
         ResourceContext* context,
         int render_process_id) {
-  return WebKit::WebNotificationPresenter::PermissionAllowed;
+  return blink::WebNotificationPresenter::PermissionAllowed;
 }
 
-bool ContentBrowserClient::CanCreateWindow(const GURL& opener_url,
-                                           const GURL& origin,
-                                           WindowContainerType container_type,
-                                           ResourceContext* context,
-                                           int render_process_id,
-                                           bool* no_javascript_access) {
+bool ContentBrowserClient::CanCreateWindow(
+    const GURL& opener_url,
+    const GURL& opener_top_level_frame_url,
+    const GURL& source_origin,
+    WindowContainerType container_type,
+    const GURL& target_url,
+    const content::Referrer& referrer,
+    WindowOpenDisposition disposition,
+    const blink::WebWindowFeatures& features,
+    bool user_gesture,
+    bool opener_suppressed,
+    content::ResourceContext* context,
+    int render_process_id,
+    bool is_guest,
+    int opener_id,
+    bool* no_javascript_access) {
   *no_javascript_access = false;
   return true;
 }
@@ -230,8 +249,8 @@ bool ContentBrowserClient::IsFastShutdownPossible() {
   return true;
 }
 
-FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
-  return FilePath();
+base::FilePath ContentBrowserClient::GetDefaultDownloadDirectory() {
+  return base::FilePath();
 }
 
 std::string ContentBrowserClient::GetDefaultDownloadName() {
@@ -246,12 +265,22 @@ BrowserPpapiHost*
 bool ContentBrowserClient::AllowPepperSocketAPI(
     BrowserContext* browser_context,
     const GURL& url,
-    const SocketPermissionRequest& params) {
+    bool private_api,
+    const SocketPermissionRequest* params) {
   return false;
 }
 
-FilePath ContentBrowserClient::GetHyphenDictionaryDirectory() {
-  return FilePath();
+ui::SelectFilePolicy* ContentBrowserClient::CreateSelectFilePolicy(
+    WebContents* web_contents) {
+  return NULL;
+}
+
+LocationProvider* ContentBrowserClient::OverrideSystemLocationProvider() {
+  return NULL;
+}
+
+VibrationProvider* ContentBrowserClient::OverrideVibrationProvider() {
+  return NULL;
 }
 
 #if defined(OS_WIN)
@@ -260,9 +289,25 @@ const wchar_t* ContentBrowserClient::GetResourceDllName() {
 }
 #endif
 
-#if defined(USE_NSS)
-crypto::CryptoModuleBlockingPasswordDelegate*
-    ContentBrowserClient::GetCryptoPasswordDelegate(const GURL& url) {
+bool ContentBrowserClient::IsPluginAllowedToCallRequestOSFileHandle(
+    content::BrowserContext* browser_context,
+    const GURL& url) {
+  return false;
+}
+
+bool ContentBrowserClient::IsPluginAllowedToUseDevChannelAPIs() {
+  return false;
+}
+
+net::CookieStore* ContentBrowserClient::OverrideCookieStoreForRenderProcess(
+    int render_process_id) {
+  return NULL;
+}
+
+#if defined(VIDEO_HOLE)
+ExternalVideoSurfaceContainer*
+ContentBrowserClient::OverrideCreateExternalVideoSurfaceContainer(
+    WebContents* web_contents) {
   return NULL;
 }
 #endif

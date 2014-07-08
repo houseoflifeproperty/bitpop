@@ -18,22 +18,22 @@ setup_gitsvn
   echo "some work done on a branch" >> test
   git add test; git commit -q -m "branch work"
 
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
   # Prevent the editor from coming up when you upload.
-  export EDITOR=$(which true)
+  export GIT_EDITOR=$(which true)
 
   test_expect_success "upload succeeds (needs a server running on localhost)" \
     "$GIT_CL upload -m test master | grep -q 'Issue created'"
 
   test_expect_success "git-cl status now knows the issue" \
-    "$GIT_CL status | grep -q 'Issue number'"
+    "$GIT_CL_STATUS | grep -q 'Issue number'"
 
-  ISSUE=$($GIT_CL status | awk '$0 ~ "Issue number:" { print $3 }')
+  ISSUE=$($GIT_CL_STATUS | awk '$0 ~ "Issue number:" { print $3 }')
 
   git checkout -q -b test2 master
 
-  test_expect_success "git cl patch $ISSUE"
+  test_expect_success "$GIT_CL patch $ISSUE"
 )
 SUCCESS=$?
 

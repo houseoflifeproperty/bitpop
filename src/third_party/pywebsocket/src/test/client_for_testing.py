@@ -53,7 +53,9 @@ import random
 import re
 import socket
 import struct
+import time
 
+from mod_pywebsocket import common
 from mod_pywebsocket import util
 
 
@@ -86,14 +88,14 @@ STATUS_INVALID_FRAME_PAYLOAD_DATA = 1007
 STATUS_POLICY_VIOLATION = 1008
 STATUS_MESSAGE_TOO_BIG = 1009
 STATUS_MANDATORY_EXT = 1010
-STATUS_INTERNAL_SERVER_ERROR = 1011
+STATUS_INTERNAL_ENDPOINT_ERROR = 1011
 STATUS_TLS_HANDSHAKE = 1015
 
 # Extension tokens
-_DEFLATE_STREAM_EXTENSION = 'deflate-stream'
 _DEFLATE_FRAME_EXTENSION = 'deflate-frame'
 # TODO(bashi): Update after mux implementation finished.
 _MUX_EXTENSION = 'mux_DO_NOT_USE'
+_PERMESSAGE_DEFLATE_EXTENSION = 'permessage-deflate'
 
 def _method_line(resource):
     return 'GET %s HTTP/1.1\r\n' % resource
@@ -130,18 +132,18 @@ def _format_host_header(host, port, secure):
 
 
 def receive_bytes(socket, length):
-    bytes = []
+    received_bytes = []
     remaining = length
     while remaining > 0:
-        received_bytes = socket.recv(remaining)
-        if not received_bytes:
+        new_received_bytes = socket.recv(remaining)
+        if not new_received_bytes:
             raise Exception(
                 'Connection closed before receiving requested length '
                 '(requested %d bytes but received only %d bytes)' %
                 (length, length - remaining))
-        bytes.append(received_bytes)
-        remaining -= len(received_bytes)
-    return ''.join(bytes)
+        received_bytes.append(new_received_bytes)
+        remaining -= len(new_received_bytes)
+    return ''.join(received_bytes)
 
 
 # TODO(tyoshino): Now the WebSocketHandshake class diverts these methods. We
@@ -421,45 +423,36 @@ class WebSocketHandshake(object):
                 '(actual)' % (accept, expected_accept))
 
         server_extensions_header = fields.get('sec-websocket-extensions')
-        if (server_extensions_header is None or
-            len(server_extensions_header) != 1):
-            accepted_extensions = []
-        else:
-            accepted_extensions = server_extensions_header[0].split(',')
-            # TODO(tyoshino): Follow the ABNF in the spec.
-            accepted_extensions = [s.strip() for s in accepted_extensions]
+        accepted_extensions = []
+        if server_extensions_header is not None:
+            accepted_extensions = common.parse_extensions(
+                    ', '.join(server_extensions_header))
 
         # Scan accepted extension list to check if there is any unrecognized
         # extensions or extensions we didn't request in it. Then, for
         # extensions we request, parse them and store parameters. They will be
         # used later by each extension.
-        deflate_stream_accepted = False
         deflate_frame_accepted = False
         mux_accepted = False
         for extension in accepted_extensions:
-            if extension == '':
-                continue
-            if extension == _DEFLATE_STREAM_EXTENSION:
-                if self._options.use_deflate_stream:
-                    deflate_stream_accepted = True
-                    continue
-            if extension == _DEFLATE_FRAME_EXTENSION:
+            if extension.name() == _DEFLATE_FRAME_EXTENSION:
                 if self._options.use_deflate_frame:
                     deflate_frame_accepted = True
                     continue
-            if extension == _MUX_EXTENSION:
+            if extension.name() == _MUX_EXTENSION:
                 if self._options.use_mux:
                     mux_accepted = True
                     continue
+            if extension.name() == _PERMESSAGE_DEFLATE_EXTENSION:
+                checker = self._options.check_permessage_deflate
+                if checker:
+                    checker(extension)
+                    continue
 
             raise Exception(
-                'Received unrecognized extension: %s' % extension)
+                'Received unrecognized extension: %s' % extension.name())
 
         # Let all extensions check the response for extension request.
-
-        if self._options.use_deflate_stream and not deflate_stream_accepted:
-            raise Exception('%s extension not accepted' %
-                            _DEFLATE_STREAM_EXTENSION)
 
         if (self._options.use_deflate_frame and
             not deflate_frame_accepted):
@@ -749,10 +742,7 @@ class WebSocketStream(object):
 
     def __init__(self, socket, handshake):
         self._handshake = handshake
-        if self._handshake._options.use_deflate_stream:
-            self._socket = util.DeflateSocket(socket)
-        else:
-            self._socket = socket
+        self._socket = socket
 
         # Filters applied to application data part of data frames.
         self._outgoing_frame_filter = None
@@ -780,7 +770,8 @@ class WebSocketStream(object):
     def send_frame_of_arbitrary_bytes(self, header, body):
         self._socket.sendall(header + self._mask_hybi(body))
 
-    def send_data(self, payload, frame_type, end=True, mask=True):
+    def send_data(self, payload, frame_type, end=True, mask=True,
+                  rsv1=0, rsv2=0, rsv3=0):
         if self._outgoing_frame_filter is not None:
             payload = self._outgoing_frame_filter.filter(payload)
 
@@ -796,7 +787,6 @@ class WebSocketStream(object):
             self._fragmented = True
             fin = 0
 
-        rsv1 = 0
         if self._handshake._options.use_deflate_frame:
             rsv1 = 1
 
@@ -805,7 +795,7 @@ class WebSocketStream(object):
         else:
             mask_bit = 0
 
-        header = chr(fin << 7 | rsv1 << 6 | opcode)
+        header = chr(fin << 7 | rsv1 << 6 | rsv2 << 5 | rsv3 << 4 | opcode)
         payload_length = len(payload)
         if payload_length <= 125:
             header += chr(mask_bit | payload_length)
@@ -983,16 +973,10 @@ class ClientOptions(object):
         self.socket_timeout = 1000
         self.use_tls = False
         self.extensions = []
-        # Enable deflate-stream.
-        self.use_deflate_stream = False
         # Enable deflate-application-data.
         self.use_deflate_frame = False
         # Enable mux
         self.use_mux = False
-
-    def enable_deflate_stream(self):
-        self.use_deflate_stream = True
-        self.extensions.append(_DEFLATE_STREAM_EXTENSION)
 
     def enable_deflate_frame(self):
         self.use_deflate_frame = True
@@ -1001,6 +985,27 @@ class ClientOptions(object):
     def enable_mux(self):
         self.use_mux = True
         self.extensions.append(_MUX_EXTENSION)
+
+
+def connect_socket_with_retry(host, port, timeout, use_tls,
+                              retry=10, sleep_sec=0.1):
+    retry_count = 0
+    while retry_count < retry:
+        try:
+            s = socket.socket()
+            s.settimeout(timeout)
+            s.connect((host, port))
+            if use_tls:
+                return _TLSSocket(s)
+            return s
+        except socket.error, e:
+            if e.errno != errno.ECONNREFUSED:
+                raise
+            else:
+                retry_count = retry_count + 1
+                time.sleep(sleep_sec)
+
+    return None
 
 
 class Client(object):
@@ -1016,13 +1021,11 @@ class Client(object):
         self._stream_class = stream_class
 
     def connect(self):
-        self._socket = socket.socket()
-        self._socket.settimeout(self._options.socket_timeout)
-
-        self._socket.connect((self._options.server_host,
-                              self._options.server_port))
-        if self._options.use_tls:
-            self._socket = _TLSSocket(self._socket)
+        self._socket = connect_socket_with_retry(
+                self._options.server_host,
+                self._options.server_port,
+                self._options.socket_timeout,
+                self._options.use_tls)
 
         self._handshake.handshake(self._socket)
 

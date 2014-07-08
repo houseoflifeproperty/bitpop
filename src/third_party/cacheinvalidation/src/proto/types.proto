@@ -31,6 +31,7 @@ message ClientType {
     // Numbers below 1000 are reserved for internal use.
     CHROME_SYNC = 1004;
     CHROME_SYNC_ANDROID = 1018;
+    CHROME_SYNC_IOS = 1038;
   }
   optional Type type = 1;
 }

@@ -12,6 +12,13 @@
 #include <string.h>
 #include "arm.h"
 
+#ifdef WINAPI_FAMILY
+#include <winapifamily.h>
+#if !WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
+#define getenv(x) NULL
+#endif
+#endif
+
 static int arm_cpu_env_flags(int *flags) {
   char *env;
   env = getenv("VPX_SIMD_CAPS");
@@ -52,8 +59,6 @@ int arm_cpu_caps(void) {
 #endif /* HAVE_NEON */
   return flags & mask;
 }
-
-#elif defined(_MSC_VER) /* end !CONFIG_RUNTIME_CPU_DETECT */
 
 #elif defined(_MSC_VER) /* end !CONFIG_RUNTIME_CPU_DETECT */
 /*For GetExceptionCode() and EXCEPTION_ILLEGAL_INSTRUCTION.*/
@@ -136,7 +141,6 @@ int arm_cpu_caps(void) {
 
 #elif defined(__linux__) /* end __ANDROID__ */
 
-#elif defined(__linux__) /* end __ANDROID__ */
 #include <stdio.h>
 
 int arm_cpu_caps(void) {

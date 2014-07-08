@@ -9,8 +9,8 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
-#include "base/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/utf_string_conversions.h"
+#include "url/gurl.h"
 #include "win8/metro_driver/chrome_app_view.h"
 #include "win8/metro_driver/winrt_utils.h"
 
@@ -77,7 +77,8 @@ HRESULT TileRequestCompleter::Respond(winfoundtn::IAsyncOperation<bool>* async,
         break;
     }
   } else {
-    LOG(ERROR) << __FUNCTION__ << " Unexpected async status " << status;
+    LOG(ERROR) << __FUNCTION__ << " Unexpected async status "
+               << static_cast<int>(status);
     pin_state = type_ == PIN ?
         base::win::METRO_PIN_RESULT_ERROR :
         base::win::METRO_UNPIN_RESULT_ERROR;
@@ -88,7 +89,7 @@ HRESULT TileRequestCompleter::Respond(winfoundtn::IAsyncOperation<bool>* async,
   return S_OK;
 }
 
-void DeleteTileFromStartScreen(const string16& tile_id,
+void DeleteTileFromStartScreen(const base::string16& tile_id,
                                const MetroPinUmaResultCallback& callback) {
   DVLOG(1) << __FUNCTION__;
   mswr::ComPtr<winui::StartScreen::ISecondaryTileFactory> tile_factory;
@@ -120,10 +121,10 @@ void DeleteTileFromStartScreen(const string16& tile_id,
   completer->Complete(completion);
 }
 
-void CreateTileOnStartScreen(const string16& tile_id,
-                             const string16& title_str,
-                             const string16& url_str,
-                             const FilePath& logo_path,
+void CreateTileOnStartScreen(const base::string16& tile_id,
+                             const base::string16& title_str,
+                             const base::string16& url_str,
+                             const base::FilePath& logo_path,
                              const MetroPinUmaResultCallback& callback) {
   VLOG(1) << __FUNCTION__;
 
@@ -146,7 +147,7 @@ void CreateTileOnStartScreen(const string16& tile_id,
   // chrome will see the arguments as command line parameters.
   // A GURL is used to ensure any spaces are properly escaped.
   GURL url(url_str);
-  args.Attach(MakeHString(UTF8ToUTF16(url.spec())));
+  args.Attach(MakeHString(base::UTF8ToUTF16(url.spec())));
 
   mswr::ComPtr<winfoundtn::IUriRuntimeClassFactory> uri_factory;
   hr = winrt_utils::CreateActivationFactory(
@@ -155,7 +156,8 @@ void CreateTileOnStartScreen(const string16& tile_id,
   CheckHR(hr, "Failed to create URIFactory");
 
   mswrw::HString logo_url;
-  logo_url.Attach(MakeHString(string16(L"file:///").append(logo_path.value())));
+  logo_url.Attach(
+      MakeHString(base::string16(L"file:///").append(logo_path.value())));
   mswr::ComPtr<winfoundtn::IUriRuntimeClass> uri;
   hr = uri_factory->CreateUri(logo_url.Get(), &uri);
   CheckHR(hr, "Failed to create URI");
@@ -191,7 +193,7 @@ void CreateTileOnStartScreen(const string16& tile_id,
 
 }  // namespace
 
-BOOL MetroIsPinnedToStartScreen(const string16& tile_id) {
+BOOL MetroIsPinnedToStartScreen(const base::string16& tile_id) {
   mswr::ComPtr<winui::StartScreen::ISecondaryTileStatics> tile_statics;
   HRESULT hr = winrt_utils::CreateActivationFactory(
       RuntimeClass_Windows_UI_StartScreen_SecondaryTile,
@@ -204,7 +206,7 @@ BOOL MetroIsPinnedToStartScreen(const string16& tile_id) {
   return exists;
 }
 
-void MetroUnPinFromStartScreen(const string16& tile_id,
+void MetroUnPinFromStartScreen(const base::string16& tile_id,
                                const MetroPinUmaResultCallback& callback) {
   globals.appview_msg_loop->PostTask(
       FROM_HERE, base::Bind(&DeleteTileFromStartScreen,
@@ -212,10 +214,10 @@ void MetroUnPinFromStartScreen(const string16& tile_id,
                             callback));
 }
 
-void MetroPinToStartScreen(const string16& tile_id,
-                           const string16& title,
-                           const string16& url,
-                           const FilePath& logo_path,
+void MetroPinToStartScreen(const base::string16& tile_id,
+                           const base::string16& title,
+                           const base::string16& url,
+                           const base::FilePath& logo_path,
                            const MetroPinUmaResultCallback& callback) {
   globals.appview_msg_loop->PostTask(
     FROM_HERE, base::Bind(&CreateTileOnStartScreen,

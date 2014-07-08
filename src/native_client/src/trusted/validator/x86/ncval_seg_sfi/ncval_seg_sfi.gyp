@@ -105,7 +105,7 @@
           'msvs_2010_disable_uldi_when_referenced': 1,
         }],
     }],
-    ['OS=="win"', {
+    ['OS=="win" and target_arch=="ia32"', {
       'targets': [
         {
           'target_name': 'ncdis_seg_sfi_x86_64',
@@ -141,7 +141,7 @@
           'hard_dependency': 1,
         }],
     }],
-    ['OS!="win" and target_arch=="x64"', {
+    ['target_arch=="x64"', {
       'targets': [
         {
           'target_name': 'ncdis_seg_sfi_x86_64',
@@ -171,9 +171,6 @@
             '<(DEPTH)/native_client/src/trusted/validator/x86/validate_x86.gyp:ncval_base_x86_64'          ],
           'hard_dependency': 1,
         }],
-    }],
-    [ 'target_arch=="arm"', {
-      'targets': []
     }],
   ],
 }

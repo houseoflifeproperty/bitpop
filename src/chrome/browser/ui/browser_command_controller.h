@@ -5,19 +5,21 @@
 #ifndef CHROME_BROWSER_UI_BROWSER_COMMAND_CONTROLLER_H_
 #define CHROME_BROWSER_UI_BROWSER_COMMAND_CONTROLLER_H_
 
-#include "base/prefs/public/pref_change_registrar.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
+#include <vector>
+
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/command_updater.h"
 #include "chrome/browser/command_updater_delegate.h"
+#include "chrome/browser/profiles/profile_info_cache_observer.h"
 #include "chrome/browser/sessions/tab_restore_service_observer.h"
 #include "chrome/browser/ui/tabs/tab_strip_model_observer.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
-#include "webkit/glue/window_open_disposition.h"
+#include "ui/base/window_open_disposition.h"
 
 class Browser;
 class BrowserWindow;
 class Profile;
+class ProfileManager;
 
 namespace content {
 struct NativeWebKeyboardEvent;
@@ -26,12 +28,11 @@ struct NativeWebKeyboardEvent;
 namespace chrome {
 
 class BrowserCommandController : public CommandUpdaterDelegate,
-                                 public content::NotificationObserver,
+                                 public ProfileInfoCacheObserver,
                                  public TabStripModelObserver,
-                                 public TabRestoreServiceObserver,
-                                 public ProfileSyncServiceObserver {
+                                 public TabRestoreServiceObserver {
  public:
-  explicit BrowserCommandController(Browser* browser);
+  BrowserCommandController(Browser* browser, ProfileManager* profile_manager);
   virtual ~BrowserCommandController();
 
   CommandUpdater* command_updater() { return &command_updater_; }
@@ -63,28 +64,30 @@ class BrowserCommandController : public CommandUpdaterDelegate,
   void PrintingStateChanged();
   void LoadingStateChanged(bool is_loading, bool force);
 
+  // Shared state updating: these functions are static and public to share with
+  // outside code.
+
+  // Updates the open-file state.
+  static void UpdateOpenFileState(CommandUpdater* command_updater);
+
+  // Update commands whose state depends on incognito mode availability and that
+  // only depend on the profile.
+  static void UpdateSharedCommandsForIncognitoAvailability(
+      CommandUpdater* command_updater,
+      Profile* profile);
+
  private:
-  enum FullScreenMode {
-    // Not in fullscreen mode.
-    FULLSCREEN_DISABLED,
-
-    // Fullscreen mode, occupying the whole screen.
-    FULLSCREEN_NORMAL,
-
-    // Fullscreen mode for metro snap, occupying the full height and 20% of
-    // the screen width.
-    FULLSCREEN_METRO_SNAP,
-  };
+  class InterstitialObserver;
 
   // Overridden from CommandUpdaterDelegate:
   virtual void ExecuteCommandWithDisposition(
       int id,
       WindowOpenDisposition disposition) OVERRIDE;
 
-  // Overridden from content::NotificationObserver:
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE;
+  // Overridden from ProfileInfoCacheObserver:
+  virtual void OnProfileAdded(const base::FilePath& profile_path) OVERRIDE;
+  virtual void OnProfileWasRemoved(const base::FilePath& profile_path,
+                                   const base::string16& profile_name) OVERRIDE;
 
   // Overridden from TabStripModelObserver:
   virtual void TabInsertedAt(content::WebContents* contents,
@@ -103,14 +106,11 @@ class BrowserCommandController : public CommandUpdaterDelegate,
   virtual void TabRestoreServiceChanged(TabRestoreService* service) OVERRIDE;
   virtual void TabRestoreServiceDestroyed(TabRestoreService* service) OVERRIDE;
 
-  // Overridden from ProfileSyncServiceObserver:
-  virtual void OnStateChanged() OVERRIDE;
-
   // Returns true if the regular Chrome UI (not the fullscreen one and
   // not the single-tab one) is shown. Used for updating window command states
   // only. Consider using SupportsWindowFeature if you need the mentioned
   // functionality anywhere else.
-  bool IsShowingMainUI(bool is_fullscreen);
+  bool IsShowingMainUI();
 
   // Initialize state for all browser commands.
   void InitCommandState();
@@ -139,7 +139,7 @@ class BrowserCommandController : public CommandUpdaterDelegate,
 
   // Update commands whose state depends on the type of fullscreen mode the
   // window is in.
-  void UpdateCommandsForFullscreenMode(FullScreenMode fullscreen_mode);
+  void UpdateCommandsForFullscreenMode();
 
   // Update commands whose state depends on whether multiple profiles are
   // allowed.
@@ -148,11 +148,14 @@ class BrowserCommandController : public CommandUpdaterDelegate,
   // Updates the printing command state.
   void UpdatePrintingState();
 
+  // Updates the SHOW_SYNC_SETUP menu entry.
+  void OnSigninAllowedPrefChange();
+
   // Updates the save-page-as command state.
   void UpdateSaveAsState();
 
-  // Updates the open-file state (Mac Only).
-  void UpdateOpenFileState();
+  // Updates the show-sync command state.
+  void UpdateShowSyncState(bool show_main_ui);
 
   // Ask the Reload/Stop button to change its icon, and update the Stop command
   // state.  |is_loading| is true if the current WebContents is loading.
@@ -172,6 +175,8 @@ class BrowserCommandController : public CommandUpdaterDelegate,
 
   Browser* browser_;
 
+  ProfileManager* profile_manager_;
+
   // The CommandUpdater that manages the browser window commands.
   CommandUpdater command_updater_;
 
@@ -184,9 +189,11 @@ class BrowserCommandController : public CommandUpdaterDelegate,
   // Stores the disposition type of the last blocked command.
   WindowOpenDisposition last_blocked_command_disposition_;
 
-  content::NotificationRegistrar registrar_;
+  std::vector<InterstitialObserver*> interstitial_observers_;
+
   PrefChangeRegistrar profile_pref_registrar_;
   PrefChangeRegistrar local_pref_registrar_;
+  BooleanPrefMember pref_signin_allowed_;
 
   DISALLOW_COPY_AND_ASSIGN(BrowserCommandController);
 };

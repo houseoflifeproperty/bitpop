@@ -14,20 +14,12 @@
 #include "SkUnitMapper.h"
 
 static SkScalar SkUnitToScalar(U16CPU x) {
-#ifdef SK_SCALAR_IS_FLOAT
     return x / 65535.0f;
-#else
-    return x + (x >> 8);
-#endif
 }
 
 static U16CPU SkScalarToUnit(SkScalar x) {
     SkScalar pin =  SkScalarPin(x, 0, SK_Scalar1);
-#ifdef SK_SCALAR_IS_FLOAT
     return (int) (pin * 65535.0f);
-#else
-    return pin - (pin >= 32768);
-#endif
 }
 
 class SkDrawGradientUnitMapper : public SkUnitMapper {
@@ -183,9 +175,9 @@ SkShader* SkDrawLinearGradient::getShader() {
     if (addPrelude() == 0 || points.count() != 4)
         return NULL;
     SkShader* shader = SkGradientShader::CreateLinear((SkPoint*)points.begin(),
-        fColors.begin(), offsets.begin(), fColors.count(), (SkShader::TileMode) tileMode, fUnitMapper);
+        fColors.begin(), offsets.begin(), fColors.count(), (SkShader::TileMode) tileMode,
+        fUnitMapper, 0, getMatrix());
     SkAutoTDelete<SkShader> autoDel(shader);
-    addPostlude(shader);
     (void)autoDel.detach();
     return shader;
 }
@@ -218,9 +210,9 @@ SkShader* SkDrawRadialGradient::getShader() {
     if (addPrelude() == 0)
         return NULL;
     SkShader* shader = SkGradientShader::CreateRadial(center,
-        radius, fColors.begin(), offsets.begin(), fColors.count(), (SkShader::TileMode) tileMode, fUnitMapper);
+        radius, fColors.begin(), offsets.begin(), fColors.count(), (SkShader::TileMode) tileMode,
+        fUnitMapper, 0, getMatrix());
     SkAutoTDelete<SkShader> autoDel(shader);
-    addPostlude(shader);
     (void)autoDel.detach();
     return shader;
 }

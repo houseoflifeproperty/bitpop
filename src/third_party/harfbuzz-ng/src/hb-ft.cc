@@ -53,14 +53,7 @@
  *
  *   - We don't handle / allow for emboldening / obliqueing.
  *
- *   - Rounding, etc?
- *
- *   - In the future, we should add constructors to create fonts in font space.
- *
- *   - I believe transforms are not correctly implemented.  FreeType does not
- *     provide any API to get to the transform/delta set on the face. :(
- *
- *   - Always use FT_LOAD_IGNORE_GLOBAL_ADVANCE_WIDTH?
+ *   - In the future, we should add constructors to create fonts in font space?
  *
  *   - FT_Load_Glyph() is exteremely costly.  Do something about it?
  */
@@ -80,8 +73,7 @@ hb_ft_get_glyph (hb_font_t *font HB_UNUSED,
 #ifdef HAVE_FT_FACE_GETCHARVARIANTINDEX
   if (unlikely (variation_selector)) {
     *glyph = FT_Face_GetCharVariantIndex (ft_face, unicode, variation_selector);
-    if (*glyph)
-      return true;
+    return *glyph != 0;
   }
 #endif
 
@@ -102,7 +94,7 @@ hb_ft_get_glyph_h_advance (hb_font_t *font HB_UNUSED,
   if (unlikely (FT_Get_Advance (ft_face, glyph, load_flags, &v)))
     return 0;
 
-  return v >> 10;
+  return (v + (1<<9)) >> 10;
 }
 
 static hb_position_t
@@ -120,7 +112,7 @@ hb_ft_get_glyph_v_advance (hb_font_t *font HB_UNUSED,
 
   /* Note: FreeType's vertical metrics grows downward while other FreeType coordinates
    * have a Y growing upward.  Hence the extra negation. */
-  return -v >> 10;
+  return (-v + (1<<9)) >> 10;
 }
 
 static hb_bool_t
@@ -242,8 +234,8 @@ hb_ft_get_glyph_name (hb_font_t *font HB_UNUSED,
   FT_Face ft_face = (FT_Face) font_data;
 
   hb_bool_t ret = !FT_Get_Glyph_Name (ft_face, glyph, name, size);
-  if (!ret)
-    snprintf (name, size, "gid%u", glyph);
+  if (ret && (size && !*name))
+    ret = false;
 
   return ret;
 }
@@ -266,6 +258,15 @@ hb_ft_get_glyph_from_name (hb_font_t *font HB_UNUSED,
     strncpy (buf, name, len);
     buf[len] = '\0';
     *glyph = FT_Get_Name_Index (ft_face, buf);
+  }
+
+  if (*glyph == 0)
+  {
+    /* Check whether the given name was actually the name of glyph 0. */
+    char buf[128];
+    if (!FT_Get_Glyph_Name(ft_face, 0, buf, sizeof (buf)) &&
+        len < 0 ? !strcmp (buf, name) : !strncmp (buf, name, len))
+      return true;
   }
 
   return *glyph != 0;
@@ -318,7 +319,16 @@ reference_table  (hb_face_t *face HB_UNUSED, hb_tag_t tag, void *user_data)
 			 buffer, free);
 }
 
-
+/**
+ * hb_ft_face_create:
+ * @ft_face: (destroy destroy) (scope notified): 
+ * @destroy:
+ *
+ * 
+ *
+ * Return value: (transfer full): 
+ * Since: 1.0
+ **/
 hb_face_t *
 hb_ft_face_create (FT_Face           ft_face,
 		   hb_destroy_func_t destroy)
@@ -354,6 +364,15 @@ hb_ft_face_finalize (FT_Face ft_face)
   hb_face_destroy ((hb_face_t *) ft_face->generic.data);
 }
 
+/**
+ * hb_ft_face_create_cached:
+ * @ft_face: 
+ *
+ * 
+ *
+ * Return value: (transfer full): 
+ * Since: 1.0
+ **/
 hb_face_t *
 hb_ft_face_create_cached (FT_Face ft_face)
 {
@@ -375,6 +394,16 @@ _do_nothing (void)
 }
 
 
+/**
+ * hb_ft_font_create:
+ * @ft_face: (destroy destroy) (scope notified): 
+ * @destroy:
+ *
+ * 
+ *
+ * Return value: (transfer full): 
+ * Since: 1.0
+ **/
 hb_font_t *
 hb_ft_font_create (FT_Face           ft_face,
 		   hb_destroy_func_t destroy)
@@ -389,8 +418,8 @@ hb_ft_font_create (FT_Face           ft_face,
 		     _hb_ft_get_font_funcs (),
 		     ft_face, (hb_destroy_func_t) _do_nothing);
   hb_font_set_scale (font,
-		     ((uint64_t) ft_face->size->metrics.x_scale * (uint64_t) ft_face->units_per_EM) >> 16,
-		     ((uint64_t) ft_face->size->metrics.y_scale * (uint64_t) ft_face->units_per_EM) >> 16);
+		     (int) (((uint64_t) ft_face->size->metrics.x_scale * (uint64_t) ft_face->units_per_EM + (1<<15)) >> 16),
+		     (int) (((uint64_t) ft_face->size->metrics.y_scale * (uint64_t) ft_face->units_per_EM + (1<<15)) >> 16));
   hb_font_set_ppem (font,
 		    ft_face->size->metrics.x_ppem,
 		    ft_face->size->metrics.y_ppem);
@@ -403,7 +432,7 @@ hb_ft_font_create (FT_Face           ft_face,
 
 static FT_Library ft_library;
 
-static
+static inline
 void free_ft_library (void)
 {
   FT_Done_FreeType (ft_library);

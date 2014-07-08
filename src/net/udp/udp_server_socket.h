@@ -6,6 +6,7 @@
 #define NET_SOCKET_UDP_SERVER_SOCKET_H_
 
 #include "net/base/completion_callback.h"
+#include "net/base/net_util.h"
 #include "net/udp/datagram_server_socket.h"
 #include "net/udp/udp_socket.h"
 
@@ -17,8 +18,7 @@ class BoundNetLog;
 // A client socket that uses UDP as the transport layer.
 class NET_EXPORT UDPServerSocket : public DatagramServerSocket {
  public:
-  UDPServerSocket(net::NetLog* net_log,
-                  const net::NetLog::Source& source);
+  UDPServerSocket(net::NetLog* net_log, const net::NetLog::Source& source);
   virtual ~UDPServerSocket();
 
   // Implement DatagramServerSocket:
@@ -31,14 +31,21 @@ class NET_EXPORT UDPServerSocket : public DatagramServerSocket {
                      int buf_len,
                      const IPEndPoint& address,
                      const CompletionCallback& callback) OVERRIDE;
-  virtual bool SetReceiveBufferSize(int32 size) OVERRIDE;
-  virtual bool SetSendBufferSize(int32 size) OVERRIDE;
+  virtual int SetReceiveBufferSize(int32 size) OVERRIDE;
+  virtual int SetSendBufferSize(int32 size) OVERRIDE;
   virtual void Close() OVERRIDE;
   virtual int GetPeerAddress(IPEndPoint* address) const OVERRIDE;
   virtual int GetLocalAddress(IPEndPoint* address) const OVERRIDE;
   virtual const BoundNetLog& NetLog() const OVERRIDE;
   virtual void AllowAddressReuse() OVERRIDE;
   virtual void AllowBroadcast() OVERRIDE;
+  virtual int JoinGroup(const IPAddressNumber& group_address) const OVERRIDE;
+  virtual int LeaveGroup(const IPAddressNumber& group_address) const OVERRIDE;
+  virtual int SetMulticastInterface(uint32 interface_index) OVERRIDE;
+  virtual int SetMulticastTimeToLive(int time_to_live) OVERRIDE;
+  virtual int SetMulticastLoopbackMode(bool loopback) OVERRIDE;
+  virtual int SetDiffServCodePoint(DiffServCodePoint dscp) OVERRIDE;
+  virtual void DetachFromThread() OVERRIDE;
 
  private:
   UDPSocket socket_;

@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/callback.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/captive_portal/captive_portal_service.h"
 #include "chrome/browser/captive_portal/captive_portal_service_factory.h"
 #include "content/public/browser/interstitial_page.h"
@@ -15,7 +15,7 @@
 #include "content/public/browser/web_contents.h"
 #include "net/base/net_errors.h"
 
-namespace captive_portal {
+using captive_portal::CaptivePortalResult;
 
 namespace {
 
@@ -53,7 +53,7 @@ CaptivePortalTabReloader::CaptivePortalTabReloader(
       slow_ssl_load_time_(
           base::TimeDelta::FromSeconds(kDefaultSlowSSLTimeSeconds)),
       open_login_tab_callback_(open_login_tab_callback),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 CaptivePortalTabReloader::~CaptivePortalTabReloader() {
@@ -100,7 +100,7 @@ void CaptivePortalTabReloader::OnLoadCommitted(int net_error) {
   // If the tab needs to reload, do so asynchronously, to avoid reentrancy
   // issues.
   if (state_ == STATE_NEEDS_RELOAD) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&CaptivePortalTabReloader::ReloadTabIfNeeded,
                    weak_factory_.GetWeakPtr()));
@@ -127,9 +127,9 @@ void CaptivePortalTabReloader::OnRedirect(bool is_ssl) {
 }
 
 void CaptivePortalTabReloader::OnCaptivePortalResults(
-    Result previous_result,
-    Result result) {
-  if (result == RESULT_BEHIND_CAPTIVE_PORTAL) {
+    CaptivePortalResult previous_result,
+    CaptivePortalResult result) {
+  if (result == captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL) {
     if (state_ == STATE_MAYBE_BROKEN_BY_PORTAL) {
       SetState(STATE_BROKEN_BY_PORTAL);
       MaybeOpenCaptivePortalLoginTab();
@@ -146,7 +146,7 @@ void CaptivePortalTabReloader::OnCaptivePortalResults(
       // page, so if the page ends up at an error caused by a captive portal, it
       // will be reloaded.  If not, the state will just be reset.  The helps in
       // the case that a user tries to reload a tab, and then quickly logs in.
-      if (previous_result == RESULT_BEHIND_CAPTIVE_PORTAL) {
+      if (previous_result == captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL) {
         SetState(STATE_NEEDS_RELOAD);
         return;
       }
@@ -279,5 +279,3 @@ void CaptivePortalTabReloader::CheckForCaptivePortal() {
   if (service)
     service->DetectCaptivePortal();
 }
-
-}  // namespace captive_portal

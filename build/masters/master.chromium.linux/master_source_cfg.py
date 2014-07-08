@@ -2,6 +2,9 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os.path
+
+from common import chromium_utils
 from master import build_utils
 
 from buildbot.changes import svnpoller
@@ -23,7 +26,10 @@ def ChromeTreeFileSplitter(path):
 def Update(config, active_master, c):
   # Polls config.Master.trunk_url for changes
   viewvc_url = "http://src.chromium.org/viewvc/chrome?view=rev&revision=%s"
+  svnbin = os.path.join(
+      chromium_utils.BUILD_DIR, 'scripts', 'tools', 'svn-with-timeout')
   poller = svnpoller.SVNPoller(svnurl=config.Master.trunk_url,
+                               svnbin=svnbin,
                                split_file=ChromeTreeFileSplitter,
                                pollinterval=10,
                                revlinktmpl=viewvc_url)

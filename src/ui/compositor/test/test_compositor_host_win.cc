@@ -6,18 +6,17 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "ui/base/win/window_impl.h"
 #include "ui/compositor/compositor.h"
+#include "ui/gfx/win/window_impl.h"
 
 namespace ui {
 
 class TestCompositorHostWin : public TestCompositorHost,
-                              public WindowImpl,
-                              public CompositorDelegate {
+                              public gfx::WindowImpl {
  public:
   TestCompositorHostWin(const gfx::Rect& bounds) {
     Init(NULL, bounds);
-    compositor_.reset(new ui::Compositor(this, hwnd()));
+    compositor_.reset(new ui::Compositor(hwnd()));
     compositor_->SetScaleAndSize(1.0f, GetSize());
   }
 
@@ -33,20 +32,13 @@ class TestCompositorHostWin : public TestCompositorHost,
     return compositor_.get();
   }
 
-  // Overridden from CompositorDelegate:
-  virtual void ScheduleDraw() OVERRIDE {
-    RECT rect;
-    ::GetClientRect(hwnd(), &rect);
-    InvalidateRect(hwnd(), &rect, FALSE);
-  }
-
  private:
-  BEGIN_MSG_MAP_EX(TestCompositorHostWin)
-    MSG_WM_PAINT(OnPaint)
-  END_MSG_MAP()
+  CR_BEGIN_MSG_MAP_EX(TestCompositorHostWin)
+    CR_MSG_WM_PAINT(OnPaint)
+  CR_END_MSG_MAP()
 
   void OnPaint(HDC dc) {
-    compositor_->Draw(false);
+    compositor_->Draw();
     ValidateRect(hwnd(), NULL);
   }
 

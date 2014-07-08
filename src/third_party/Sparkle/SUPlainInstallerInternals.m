@@ -234,7 +234,7 @@ static BOOL AuthorizationExecuteWithPrivilegesAndWait(AuthorizationRef authoriza
 
 	// Trash the old copy of the app.
 #if MAC_OS_X_VERSION_MAX_ALLOWED > MAC_OS_X_VERSION_10_4
-	if (FSMoveObjectToTrashSync == NULL)
+	if (&FSMoveObjectToTrashSync == NULL)
 		[self performSelectorOnMainThread:@selector(movePathToTrash:) withObject:tmpPath waitUntilDone:YES];
 	else if (noErr != FSMoveObjectToTrashSync(&movedRef, NULL, 0))
 		NSLog(@"Sparkle error: couldn't move %@ to the trash. This is often a sign of a permissions error.", tmpPath);

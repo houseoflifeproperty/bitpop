@@ -57,6 +57,7 @@ BEGIN
     "E",            IDC_FOCUS_SEARCH,           VIRTKEY, CONTROL
     "T",            IDC_FOCUS_TOOLBAR,          VIRTKEY, SHIFT, ALT
     "B",            IDC_FOCUS_BOOKMARKS,        VIRTKEY, SHIFT, ALT
+    "A",            IDC_FOCUS_INFOBARS,         VIRTKEY, SHIFT, ALT
     VK_RIGHT,       IDC_FORWARD,                VIRTKEY, ALT
     VK_BACK,        IDC_FORWARD,                VIRTKEY, SHIFT
     VK_F11,         IDC_FULLSCREEN,             VIRTKEY
@@ -125,21 +126,6 @@ BEGIN
     "A",            IDC_TOGGLE_ASH_DESKTOP,     VIRTKEY, CONTROL, SHIFT
 END
 
-IDR_CHROMEFRAME ACCELERATORS
-BEGIN
-    "I",            IDC_DEV_TOOLS,              VIRTKEY, CONTROL, SHIFT
-    "J",            IDC_DEV_TOOLS_CONSOLE,      VIRTKEY, CONTROL, SHIFT
-    "C",            IDC_DEV_TOOLS_INSPECT,      VIRTKEY, CONTROL, SHIFT
-    VK_OEM_MINUS,   IDC_ZOOM_MINUS,             VIRTKEY, CONTROL
-    VK_OEM_MINUS,   IDC_ZOOM_MINUS,             VIRTKEY, CONTROL, SHIFT
-    VK_SUBTRACT,    IDC_ZOOM_MINUS,             VIRTKEY, CONTROL
-    "0",            IDC_ZOOM_NORMAL,            VIRTKEY, CONTROL
-    VK_NUMPAD0,     IDC_ZOOM_NORMAL,            VIRTKEY, CONTROL
-    VK_OEM_PLUS,    IDC_ZOOM_PLUS,              VIRTKEY, CONTROL
-    VK_OEM_PLUS,    IDC_ZOOM_PLUS,              VIRTKEY, CONTROL, SHIFT
-    VK_ADD,         IDC_ZOOM_PLUS,              VIRTKEY, CONTROL
-END
-
 #ifdef APSTUDIO_INVOKED
 /////////////////////////////////////////////////////////////////////////////
 //
@@ -176,10 +162,10 @@ END
 // future to get the icon from the .exe, which would save a copy.
 
 #if defined(GOOGLE_CHROME_BUILD)
-IDR_MAINFRAME       ICON                        "theme\google_chrome\chrome.ico"
-IDR_SXS             ICON                        "theme\google_chrome\chrome_sxs.ico"
+IDR_MAINFRAME       ICON                        "theme\google_chrome\win\chrome.ico"
+IDR_SXS             ICON                        "theme\google_chrome\win\chrome_sxs.ico"
 #else
-IDR_MAINFRAME       ICON                        "theme\chromium\chromium.ico"
+IDR_MAINFRAME       ICON                        "theme\chromium\win\chromium.ico"
 #endif
 
 // We include these resources because all ICON types need to be in the

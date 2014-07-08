@@ -21,22 +21,22 @@ class SYNC_EXPORT InternalComponentsFactoryImpl
 
   virtual scoped_ptr<SyncScheduler> BuildScheduler(
       const std::string& name,
-      sessions::SyncSessionContext* context) OVERRIDE;
+      sessions::SyncSessionContext* context,
+      syncer::CancelationSignal* cancelation_signal) OVERRIDE;
 
   virtual scoped_ptr<sessions::SyncSessionContext> BuildContext(
       ServerConnectionManager* connection_manager,
       syncable::Directory* directory,
-      const std::vector<ModelSafeWorker*> workers,
-      ExtensionsActivityMonitor* monitor,
-      ThrottledDataTypeTracker* throttled_data_type_tracker,
+      ExtensionsActivity* extensions_activity,
       const std::vector<SyncEngineEventListener*>& listeners,
       sessions::DebugInfoGetter* debug_info_getter,
-      TrafficRecorder* traffic_recorder) OVERRIDE;
+      ModelTypeRegistry* model_type_registry,
+      const std::string& invalidator_client_id) OVERRIDE;
 
   virtual scoped_ptr<syncable::DirectoryBackingStore>
   BuildDirectoryBackingStore(
       const std::string& dir_name,
-      const FilePath& backing_filepath) OVERRIDE;
+      const base::FilePath& backing_filepath) OVERRIDE;
 
   virtual Switches GetSwitches() const OVERRIDE;
 

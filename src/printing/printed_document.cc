@@ -9,22 +9,22 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/i18n/file_util_icu.h"
-#include "base/lazy_instance.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
 #include "base/i18n/time_formatting.h"
+#include "base/lazy_instance.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/utf_string_conversions.h"
 #include "printing/page_number.h"
-#include "printing/printed_pages_source.h"
 #include "printing/printed_page.h"
+#include "printing/printed_pages_source.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "ui/base/text/text_elider.h"
 #include "ui/gfx/font.h"
+#include "ui/gfx/text_elider.h"
 
 namespace {
 
@@ -34,7 +34,7 @@ struct PrintDebugDumpPath {
   }
 
   bool enabled;
-  FilePath debug_dump_path;
+  base::FilePath debug_dump_path;
 };
 
 base::LazyInstance<PrintDebugDumpPath> g_debug_dump_info =
@@ -51,10 +51,10 @@ PrintedDocument::PrintedDocument(const PrintSettings& settings,
       immutable_(settings, source, cookie) {
 
   // Records the expected page count if a range is setup.
-  if (!settings.ranges.empty()) {
+  if (!settings.ranges().empty()) {
     // If there is a range, set the number of page
-    for (unsigned i = 0; i < settings.ranges.size(); ++i) {
-      const PageRange& range = settings.ranges[i];
+    for (unsigned i = 0; i < settings.ranges().size(); ++i) {
+      const PageRange& range = settings.ranges()[i];
       mutable_.expected_page_count_ += range.to - range.from + 1;
     }
   }
@@ -85,7 +85,7 @@ void PrintedDocument::SetPage(int page_number,
       mutable_.first_page = page_number;
 #endif
   }
-  DebugDump(*page);
+  DebugDump(*page.get());
 }
 
 bool PrintedDocument::GetPage(int page_number,
@@ -153,7 +153,7 @@ void PrintedDocument::set_page_count(int max_page) {
   base::AutoLock lock(lock_);
   DCHECK_EQ(0, mutable_.page_count_);
   mutable_.page_count_ = max_page;
-  if (immutable_.settings_.ranges.empty()) {
+  if (immutable_.settings_.ranges().empty()) {
     mutable_.expected_page_count_ = max_page;
   } else {
     // If there is a range, don't bother since expected_page_count_ is already
@@ -176,27 +176,30 @@ void PrintedDocument::DebugDump(const PrintedPage& page) {
   if (!g_debug_dump_info.Get().enabled)
     return;
 
-  string16 filename;
+  base::string16 filename;
   filename += name();
-  filename += ASCIIToUTF16("_");
-  filename += ASCIIToUTF16(StringPrintf("%02d", page.page_number()));
+  filename += base::ASCIIToUTF16("_");
+  filename += base::ASCIIToUTF16(
+      base::StringPrintf("%02d", page.page_number()));
 #if defined(OS_WIN)
-  filename += ASCIIToUTF16("_.emf");
+  filename += base::ASCIIToUTF16("_.emf");
   page.metafile()->SaveTo(
       g_debug_dump_info.Get().debug_dump_path.Append(filename));
 #else  // OS_WIN
-  filename += ASCIIToUTF16("_.pdf");
+  filename += base::ASCIIToUTF16("_.pdf");
   page.metafile()->SaveTo(
-      g_debug_dump_info.Get().debug_dump_path.Append(UTF16ToUTF8(filename)));
+      g_debug_dump_info.Get().debug_dump_path.Append(
+          base::UTF16ToUTF8(filename)));
 #endif  // OS_WIN
 }
 
-void PrintedDocument::set_debug_dump_path(const FilePath& debug_dump_path) {
+void PrintedDocument::set_debug_dump_path(
+    const base::FilePath& debug_dump_path) {
   g_debug_dump_info.Get().enabled = !debug_dump_path.empty();
   g_debug_dump_info.Get().debug_dump_path = debug_dump_path;
 }
 
-const FilePath& PrintedDocument::debug_dump_path() {
+const base::FilePath& PrintedDocument::debug_dump_path() {
   return g_debug_dump_info.Get().debug_dump_path;
 }
 
@@ -216,7 +219,7 @@ PrintedDocument::Immutable::Immutable(const PrintSettings& settings,
                                       PrintedPagesSource* source,
                                       int cookie)
     : settings_(settings),
-      source_message_loop_(MessageLoop::current()),
+      source_message_loop_(base::MessageLoop::current()),
       name_(source->RenderSourceName()),
       cookie_(cookie) {
 }
@@ -224,8 +227,8 @@ PrintedDocument::Immutable::Immutable(const PrintSettings& settings,
 PrintedDocument::Immutable::~Immutable() {
 }
 
-#if defined(OS_POSIX) && defined(USE_AURA)
-// This function is not used on aura linux/chromeos.
+#if defined(OS_CHROMEOS) || defined(OS_ANDROID)
+// This function is not used on aura linux/chromeos or android.
 void PrintedDocument::RenderPrintedPage(const PrintedPage& page,
                                         PrintingContext* context) const {
 }

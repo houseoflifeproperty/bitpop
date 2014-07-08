@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "chrome/browser/extensions/api/web_request/form_data_parser.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -17,12 +17,12 @@ scoped_ptr<FormDataParser> InitParser(
     const std::string& content_type_header,
     std::vector<std::string>* output) {
   if (output == NULL)
-    return scoped_ptr<FormDataParser>(NULL);
+    return scoped_ptr<FormDataParser>();
   output->clear();
   scoped_ptr<FormDataParser> parser(
       FormDataParser::CreateFromContentTypeHeader(&content_type_header));
   if (parser.get() == NULL)
-    return scoped_ptr<FormDataParser>(NULL);
+    return scoped_ptr<FormDataParser>();
   return parser.Pass();
 }
 

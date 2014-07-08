@@ -29,7 +29,7 @@
 '''Basic unit test functionality.'''
 
 import re
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 
 class TestCase(unittest.TestCase):

@@ -24,7 +24,8 @@ remoting.MenuButton = function(container, opt_onShow) {
    * @type {HTMLElement}
    * @private
    */
-  this.button_ = /** @type {HTMLElement} */ (container.querySelector('button'));
+  this.button_ = /** @type {HTMLElement} */
+      (container.querySelector('button,.menu-button-activator'));
 
   /**
    * @type {undefined|function():void}
@@ -51,7 +52,11 @@ remoting.MenuButton = function(container, opt_onShow) {
     that.button_.removeEventListener('click', that.onClick_, false);
     window.setTimeout(
         function() {
-          document.all[0].addEventListener('click', that.closeHandler_, true);
+          // Attach the click handler to the <html> node so that it includes
+          // the document area outside the plugin, which is not covered by
+          // the <body> node.
+          var htmlNode = document.body.parentNode;
+          htmlNode.addEventListener('click', that.closeHandler_, true);
         },
         100);
   };
@@ -62,7 +67,7 @@ remoting.MenuButton = function(container, opt_onShow) {
    */
   this.closeHandler_ = function(event) {
     that.button_.classList.remove(remoting.MenuButton.BUTTON_ACTIVE_CLASS_);
-    document.all[0].removeEventListener('click', that.closeHandler_, true);
+    document.body.removeEventListener('click', that.closeHandler_, true);
     window.setTimeout(
         function() {
           that.button_.addEventListener('click', that.onClick_, false);

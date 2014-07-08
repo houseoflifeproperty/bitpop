@@ -4,8 +4,8 @@
 
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/ui/browser_list.h"
 #import "chrome/browser/ui/cocoa/browser_window_controller.h"
@@ -110,11 +110,10 @@ BOOL ThePasteboardIsTooDamnBig() {
   [self delete:nil];
 }
 
-- (void)copyURL:(id)sender {
+- (void)showURL:(id)sender {
   AutocompleteTextFieldObserver* observer = [self observer];
   DCHECK(observer);
-  if (observer->CanCopy())
-    observer->CopyURLToPasteboard([NSPasteboard generalPasteboard]);
+  observer->ShowURL();
 }
 
 // This class assumes that the delegate is an AutocompleteTextField.
@@ -230,15 +229,6 @@ BOOL ThePasteboardIsTooDamnBig() {
                   action:@selector(copy:)
            keyEquivalent:@""];
 
-  if ([self isEditable]) {
-    // Copy URL if the URL has been replaced by the Extended Instant API.
-    DCHECK([self observer]);
-    NSString* label = l10n_util::GetNSStringWithFixup(IDS_COPY_URL_MAC);
-    [menu addItemWithTitle:label
-                    action:@selector(copyURL:)
-             keyEquivalent:@""];
-  }
-
   [menu addItemWithTitle:l10n_util::GetNSStringWithFixup(IDS_PASTE)
                   action:@selector(paste:)
            keyEquivalent:@""];
@@ -249,18 +239,31 @@ BOOL ThePasteboardIsTooDamnBig() {
     // Paste and go/search.
     AutocompleteTextFieldObserver* observer = [self observer];
     DCHECK(observer);
-    const int string_id = observer->GetPasteActionStringId();
-    NSString* label = l10n_util::GetNSStringWithFixup(string_id);
-    DCHECK([label length]);
-    [menu addItemWithTitle:label
-                    action:@selector(pasteAndGo:)
-             keyEquivalent:@""];
+    if (!ThePasteboardIsTooDamnBig()) {
+      NSString* pasteAndGoLabel =
+          l10n_util::GetNSStringWithFixup(observer->GetPasteActionStringId());
+      DCHECK([pasteAndGoLabel length]);
+      [menu addItemWithTitle:pasteAndGoLabel
+                      action:@selector(pasteAndGo:)
+               keyEquivalent:@""];
+    }
 
-    NSString* search_engine_label =
-        l10n_util::GetNSStringWithFixup(IDS_EDIT_SEARCH_ENGINES);
-    DCHECK([search_engine_label length]);
     [menu addItem:[NSMenuItem separatorItem]];
-    NSMenuItem* item = [menu addItemWithTitle:search_engine_label
+
+    // Display a "Show URL" option if search term replacement is active.
+    if (observer->ShouldEnableShowURL()) {
+      NSString* showURLLabel =
+          l10n_util::GetNSStringWithFixup(IDS_SHOW_URL_MAC);
+      DCHECK([showURLLabel length]);
+      [menu addItemWithTitle:showURLLabel
+                      action:@selector(showURL:)
+               keyEquivalent:@""];
+    }
+
+    NSString* searchEngineLabel =
+        l10n_util::GetNSStringWithFixup(IDS_EDIT_SEARCH_ENGINES);
+    DCHECK([searchEngineLabel length]);
+    NSMenuItem* item = [menu addItemWithTitle:searchEngineLabel
                                        action:@selector(commandDispatch:)
                                 keyEquivalent:@""];
     [item setTag:IDC_EDIT_SEARCH_ENGINES];
@@ -388,15 +391,6 @@ BOOL ThePasteboardIsTooDamnBig() {
 }
 
 - (void)setMarkedText:(id)aString selectedRange:(NSRange)selRange {
-  if (![self hasMarkedText]) {
-    // Before input methods set composition text in the omnibox, we need to
-    // examine whether the autocompletion controller accepts the keyword to
-    // avoid committing the current composition text wrongly.
-    AutocompleteTextFieldObserver* observer = [self observer];
-    if (observer)
-      observer->OnStartingIME();
-  }
-
   [super setMarkedText:aString selectedRange:selRange];
 
   // Because the OmniboxViewMac class treats marked text as content,
@@ -523,10 +517,10 @@ BOOL ThePasteboardIsTooDamnBig() {
     DCHECK(observer);
     return observer->CanPasteAndGo();
   }
-  if ([item action] == @selector(copyURL:)) {
+  if ([item action] == @selector(showURL:)) {
     AutocompleteTextFieldObserver* observer = [self observer];
     DCHECK(observer);
-    return observer->ShouldEnableCopyURL();
+    return observer->ShouldEnableShowURL();
   }
   return [super validateMenuItem:item];
 }
@@ -542,6 +536,16 @@ BOOL ThePasteboardIsTooDamnBig() {
     return;
 
   [[FindPasteboard sharedInstance] setFindText:[selection string]];
+}
+
+- (void)drawRect:(NSRect)rect {
+  [super drawRect:rect];
+  autocomplete_text_field::DrawGrayTextAutocompletion(
+      [self textStorage],
+      [[self delegate] suggestText],
+      [[self delegate] suggestColor],
+      self,
+      [self bounds]);
 }
 
 @end

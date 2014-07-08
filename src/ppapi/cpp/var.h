@@ -10,6 +10,7 @@
 
 #include "ppapi/c/pp_var.h"
 #include "ppapi/cpp/pass_ref.h"
+#include "ppapi/cpp/resource.h"
 
 /// @file
 /// This file defines the API for handling the passing of data types between
@@ -50,27 +51,31 @@ class Var {
   /// A constructor used to create a UTF-8 character <code>Var</code>.
   Var(const std::string& utf8_str);  // Must be encoded in UTF-8.
 
+  /// A constructor used to create a resource <code>Var</code>.
+  explicit Var(const pp::Resource& resource);
+
   /// A constructor used when you have received a <code>Var</code> as a return
   /// value that has had its reference count incremented for you.
   ///
   /// You will not normally need to use this constructor because
   /// the reference count will not normally be incremented for you.
-  Var(PassRef, PP_Var var) {
+  Var(PassRef, const PP_Var& var) {
     var_ = var;
     is_managed_ = true;
   }
 
+  /// A constructor that increments the reference count.
+  explicit Var(const PP_Var& var);
+
   struct DontManage {};
 
-  // TODO(brettw): remove DontManage when this bug is fixed
-  //               http://code.google.com/p/chromium/issues/detail?id=52105
   /// This constructor is used when we've given a <code>PP_Var</code> as an
   /// input argument from somewhere and that reference is managing the
   /// reference count for us. The object will not have its reference count
   /// increased or decreased by this class instance.
   ///
   /// @param[in] var A <code>Var</code>.
-  Var(DontManage, PP_Var var) {
+  Var(DontManage, const PP_Var& var) {
     var_ = var;
     is_managed_ = false;
   }
@@ -119,8 +124,23 @@ class Var {
 
   /// This function determines if this <code>Var</code> is an object.
   ///
-  /// @return true if this  <code>Var</code> is an object, otherwise false.
+  /// @return true if this <code>Var</code> is an object, otherwise false.
   bool is_object() const { return var_.type == PP_VARTYPE_OBJECT; }
+
+  /// This function determines if this <code>Var</code> is an array.
+  ///
+  /// @return true if this <code>Var</code> is an array, otherwise false.
+  bool is_array() const { return var_.type == PP_VARTYPE_ARRAY; }
+
+  /// This function determines if this <code>Var</code> is a dictionary.
+  ///
+  /// @return true if this <code>Var</code> is a dictionary, otherwise false.
+  bool is_dictionary() const { return var_.type == PP_VARTYPE_DICTIONARY; }
+
+  /// This function determines if this <code>Var</code> is a resource.
+  ///
+  /// @return true if this <code>Var</code> is a resource, otherwise false.
+  bool is_resource() const { return var_.type == PP_VARTYPE_RESOURCE; }
 
   /// This function determines if this <code>Var</code> is an integer value.
   /// The <code>is_int</code> function returns the internal representation.
@@ -193,6 +213,12 @@ class Var {
   /// @return A string version of this <code>Var</code>.
   std::string AsString() const;
 
+  /// Gets the resource contained in the var. If this object is not a resource,
+  /// it will assert in debug mode, and return a null resource.
+  ///
+  /// @return The <code>pp::Resource</code> that is contained in the var.
+  pp::Resource AsResource() const;
+
   /// This function returns the internal <code>PP_Var</code>
   /// managed by this <code>Var</code> object.
   ///
@@ -224,7 +250,7 @@ class Var {
   std::string DebugString() const;
 
   /// This class is used when calling the raw C PPAPI when using the C++
-  /// <code>Var</code> as a possibe NULL exception. This class will handle
+  /// <code>Var</code> as a possible NULL exception. This class will handle
   /// getting the address of the internal value out if it's non-NULL and
   /// fixing up the reference count.
   ///

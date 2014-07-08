@@ -9,12 +9,13 @@
 #include "base/md5.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/rand_util.h"
-#include "base/stringprintf.h"
+#include "base/strings/stringprintf.h"
 #include "base/sys_info.h"
 #include "base/values.h"
 #include "chrome/common/chrome_version_info.h"
 #include "chrome/common/cloud_print/cloud_print_constants.h"
-#include "googleurl/src/gurl.h"
+#include "net/base/mime_util.h"
+#include "url/gurl.h"
 
 namespace cloud_print {
 
@@ -76,7 +77,7 @@ GURL GetUrlForPrinterList(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "list"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf("proxy=%s", proxy_id.c_str());
+  std::string query = base::StringPrintf("proxy=%s", proxy_id.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
@@ -93,7 +94,7 @@ GURL GetUrlForPrinterUpdate(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "update"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf("printerid=%s", printer_id.c_str());
+  std::string query = base::StringPrintf("printerid=%s", printer_id.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
@@ -104,7 +105,7 @@ GURL GetUrlForPrinterDelete(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "delete"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf(
+  std::string query = base::StringPrintf(
       "printerid=%s&reason=%s", printer_id.c_str(), reason.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
@@ -116,31 +117,44 @@ GURL GetUrlForJobFetch(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "fetch"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf(
+  std::string query = base::StringPrintf(
       "printerid=%s&deb=%s", printer_id.c_str(), reason.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
 
+GURL GetUrlForJobCjt(const GURL& cloud_print_server_url,
+                     const std::string& job_id,
+                     const std::string& reason) {
+  std::string path(AppendPathToUrl(cloud_print_server_url, "ticket"));
+  GURL::Replacements replacements;
+  replacements.SetPathStr(path);
+  std::string query = base::StringPrintf(
+      "jobid=%s&deb=%s&use_cjt=true", job_id.c_str(), reason.c_str());
+  replacements.SetQueryStr(query);
+  return cloud_print_server_url.ReplaceComponents(replacements);
+}
 
 GURL GetUrlForJobDelete(const GURL& cloud_print_server_url,
                         const std::string& job_id) {
   std::string path(AppendPathToUrl(cloud_print_server_url, "deletejob"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf("jobid=%s", job_id.c_str());
+  std::string query = base::StringPrintf("jobid=%s", job_id.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
 
 GURL GetUrlForJobStatusUpdate(const GURL& cloud_print_server_url,
                               const std::string& job_id,
-                              const std::string& status_string) {
+                              const std::string& status_string,
+                              int connector_code) {
   std::string path(AppendPathToUrl(cloud_print_server_url, "control"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf(
-      "jobid=%s&status=%s", job_id.c_str(), status_string.c_str());
+  std::string query = base::StringPrintf(
+      "jobid=%s&status=%s&connector_code=%d", job_id.c_str(),
+      status_string.c_str(), connector_code);
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
@@ -150,7 +164,7 @@ GURL GetUrlForUserMessage(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "message"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf("code=%s", message_id.c_str());
+  std::string query = base::StringPrintf("code=%s", message_id.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
@@ -163,51 +177,29 @@ GURL GetUrlForGetAuthCode(const GURL& cloud_print_server_url,
   std::string path(AppendPathToUrl(cloud_print_server_url, "createrobot"));
   GURL::Replacements replacements;
   replacements.SetPathStr(path);
-  std::string query = StringPrintf("oauth_client_id=%s&proxy=%s",
-                                    oauth_client_id.c_str(),
-                                    proxy_id.c_str());
+  std::string query = base::StringPrintf("oauth_client_id=%s&proxy=%s",
+                                          oauth_client_id.c_str(),
+                                          proxy_id.c_str());
   replacements.SetQueryStr(query);
   return cloud_print_server_url.ReplaceComponents(replacements);
 }
 
-bool ParseResponseJSON(const std::string& response_data,
-                       bool* succeeded,
-                       DictionaryValue** response_dict) {
-  scoped_ptr<Value> message_value(base::JSONReader::Read(response_data));
+scoped_ptr<base::DictionaryValue> ParseResponseJSON(
+    const std::string& response_data,
+    bool* succeeded) {
+  scoped_ptr<base::Value> message_value(base::JSONReader::Read(response_data));
   if (!message_value.get())
-    return false;
+    return scoped_ptr<base::DictionaryValue>();
 
-  if (!message_value->IsType(Value::TYPE_DICTIONARY))
-    return false;
+  if (!message_value->IsType(base::Value::TYPE_DICTIONARY))
+    return scoped_ptr<base::DictionaryValue>();
 
-  scoped_ptr<DictionaryValue> response_dict_local(
-      static_cast<DictionaryValue*>(message_value.release()));
+  scoped_ptr<base::DictionaryValue> response_dict(
+      static_cast<base::DictionaryValue*>(message_value.release()));
   if (succeeded &&
-      !response_dict_local->GetBoolean(kSuccessValue, succeeded))
+      !response_dict->GetBoolean(kSuccessValue, succeeded))
     *succeeded = false;
-  if (response_dict)
-    *response_dict = response_dict_local.release();
-  return true;
-}
-
-void AddMultipartValueForUpload(const std::string& value_name,
-                                const std::string& value,
-                                const std::string& mime_boundary,
-                                const std::string& content_type,
-                                std::string* post_data) {
-  DCHECK(post_data);
-  // First line is the boundary
-  post_data->append("--" + mime_boundary + "\r\n");
-  // Next line is the Content-disposition
-  post_data->append(StringPrintf("Content-Disposition: form-data; "
-                   "name=\"%s\"\r\n", value_name.c_str()));
-  if (!content_type.empty()) {
-    // If Content-type is specified, the next line is that
-    post_data->append(StringPrintf("Content-Type: %s\r\n",
-                      content_type.c_str()));
-  }
-  // Leave an empty line and append the value.
-  post_data->append(StringPrintf("\r\n%s\r\n", value.c_str()));
+  return response_dict.Pass();
 }
 
 std::string GetMultipartMimeType(const std::string& mime_boundary) {
@@ -241,21 +233,21 @@ std::string GetPostDataForPrinterTags(
       NOTREACHED();
     }
     // All our tags have a special prefix to identify them as such.
-    std::string msg = StringPrintf("%s%s=%s",
+    std::string msg = base::StringPrintf("%s%s=%s",
         proxy_tag_prefix.c_str(), it->first.c_str(), it->second.c_str());
-    AddMultipartValueForUpload(kPrinterTagValue, msg, mime_boundary,
+    net::AddMultipartValueForUpload(kPrinterTagValue, msg, mime_boundary,
         std::string(), &post_data);
   }
-  std::string tags_hash_msg = StringPrintf("%s=%s",
+  std::string tags_hash_msg = base::StringPrintf("%s=%s",
       tags_hash_tag_name.c_str(),
       HashPrinterTags(printer_tags_prepared).c_str());
-  AddMultipartValueForUpload(kPrinterTagValue, tags_hash_msg, mime_boundary,
-      std::string(), &post_data);
+  net::AddMultipartValueForUpload(kPrinterTagValue, tags_hash_msg,
+      mime_boundary, std::string(), &post_data);
   return post_data;
 }
 
 std::string GetCloudPrintAuthHeader(const std::string& auth_token) {
-  return StringPrintf("Authorization: OAuth %s", auth_token.c_str());
+  return base::StringPrintf("Authorization: OAuth %s", auth_token.c_str());
 }
 
 }  // namespace cloud_print

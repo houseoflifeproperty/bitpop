@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -19,7 +19,7 @@ public interface AwContentsIoThreadClient {
     public int getCacheMode();
 
     @CalledByNative
-    public InterceptedRequestData shouldInterceptRequest(String url);
+    public InterceptedRequestData shouldInterceptRequest(String url, boolean isMainFrame);
 
     @CalledByNative
     public boolean shouldBlockContentUrls();
@@ -31,9 +31,9 @@ public interface AwContentsIoThreadClient {
     public boolean shouldBlockNetworkLoads();
 
     @CalledByNative
-    public void onDownloadStart(String url,
-                                String userAgent,
-                                String contentDisposition,
-                                String mimeType,
-                                long contentLength);
+    public void onDownloadStart(String url, String userAgent,
+        String contentDisposition, String mimeType, long contentLength);
+
+    @CalledByNative
+    public void newLoginRequest(String realm, String account, String args);
 }

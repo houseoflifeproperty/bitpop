@@ -21,8 +21,10 @@ var remoting = remoting || {};
 // 'home' state applies to all elements and can be removed.
 remoting.AppMode = {
   HOME: 'home',
-    UNAUTHENTICATED: 'home.auth',
     TOKEN_REFRESH_FAILED: 'home.token-refresh-failed',
+    HOST_INSTALL: 'home.host-install',
+      HOST_INSTALL_PROMPT: 'home.host-install.prompt',
+      HOST_INSTALL_PENDING: 'home.host-install.pending',
     HOST: 'home.host',
       HOST_WAITING_FOR_CODE: 'home.host.waiting-for-code',
       HOST_WAITING_FOR_CONNECTION: 'home.host.waiting-for-connection',
@@ -32,22 +34,28 @@ remoting.AppMode = {
     CLIENT: 'home.client',
       CLIENT_UNCONNECTED: 'home.client.unconnected',
       CLIENT_PIN_PROMPT: 'home.client.pin-prompt',
+      CLIENT_THIRD_PARTY_AUTH: 'home.client.third-party-auth',
       CLIENT_CONNECTING: 'home.client.connecting',
       CLIENT_CONNECT_FAILED_IT2ME: 'home.client.connect-failed.it2me',
       CLIENT_CONNECT_FAILED_ME2ME: 'home.client.connect-failed.me2me',
       CLIENT_SESSION_FINISHED_IT2ME: 'home.client.session-finished.it2me',
       CLIENT_SESSION_FINISHED_ME2ME: 'home.client.session-finished.me2me',
+      CLIENT_HOST_NEEDS_UPGRADE: 'home.client.host-needs-upgrade',
     HISTORY: 'home.history',
     CONFIRM_HOST_DELETE: 'home.confirm-host-delete',
     HOST_SETUP: 'home.host-setup',
-      HOST_SETUP_INSTALL: 'home.host-setup.install',
-      HOST_SETUP_INSTALL_PENDING: 'home.host-setup.install-pending',
       HOST_SETUP_ASK_PIN: 'home.host-setup.ask-pin',
       HOST_SETUP_PROCESSING: 'home.host-setup.processing',
       HOST_SETUP_DONE: 'home.host-setup.done',
       HOST_SETUP_ERROR: 'home.host-setup.error',
+    HOME_MANAGE_PAIRINGS: 'home.manage-pairings',
   IN_SESSION: 'in-session'
 };
+
+/** @const */
+remoting.kIT2MeVisitedStorageKey = 'it2me-visited';
+/** @const */
+remoting.kMe2MeVisitedStorageKey = 'me2me-visited';
 
 /**
  * @param {Element} element The element to check.
@@ -115,14 +123,28 @@ remoting.setMode = function(mode) {
   if (mode == remoting.AppMode.IN_SESSION) {
     document.removeEventListener('keydown', remoting.ConnectionStats.onKeydown,
                                  false);
-    document.addEventListener('webkitvisibilitychange',
-                              remoting.onVisibilityChanged, false);
+    if ('hidden' in document) {
+      document.addEventListener('visibilitychange',
+                                remoting.onVisibilityChanged, false);
+    } else {
+      document.addEventListener('webkitvisibilitychange',
+                                remoting.onVisibilityChanged, false);
+    }
   } else {
     document.addEventListener('keydown', remoting.ConnectionStats.onKeydown,
                               false);
+    document.removeEventListener('visibilitychange',
+                                 remoting.onVisibilityChanged, false);
     document.removeEventListener('webkitvisibilitychange',
                                  remoting.onVisibilityChanged, false);
+    // TODO(jamiewalch): crbug.com/252796: Remove this once crbug.com/240772
+    // is fixed.
+    var htmlNode = /** @type {HTMLElement} */ (document.body.parentNode);
+    htmlNode.classList.remove('no-horizontal-scroll');
+    htmlNode.classList.remove('no-vertical-scroll');
   }
+
+  remoting.testEvents.raiseEvent(remoting.testEvents.Names.uiModeChanged, mode);
 };
 
 /**
@@ -133,33 +155,52 @@ remoting.getMajorMode = function() {
   return remoting.currentMode.split('.')[0];
 };
 
-remoting.showOrHideIt2MeUi = function() {
-  var visited = !!window.localStorage.getItem('it2me-visited');
-  document.getElementById('it2me-first-run').hidden = visited;
-  document.getElementById('it2me-content').hidden = !visited;
+/**
+ * Helper function for showing or hiding the infographic UI based on
+ * whether or not the user has already dismissed it.
+ *
+ * @param {string} mode
+ * @param {!Object} items
+ */
+remoting.showOrHideCallback = function(mode, items) {
+  // Get the first element of a dictionary or array, without needing to know
+  // the key.
+  /** @type {string} */
+  var key = Object.keys(items)[0];
+  var visited = !!items[key];
+  document.getElementById(mode + '-first-run').hidden = visited;
+  document.getElementById(mode + '-content').hidden = !visited;
+};
+
+remoting.showOrHideIT2MeUi = function() {
+  chrome.storage.local.get(remoting.kIT2MeVisitedStorageKey,
+                           remoting.showOrHideCallback.bind(null, 'it2me'));
 };
 
 remoting.showOrHideMe2MeUi = function() {
-  var visited = !!window.localStorage.getItem('me2me-visited');
-  document.getElementById('me2me-first-run').hidden = visited;
-  document.getElementById('me2me-content').hidden = !visited;
+  chrome.storage.local.get(remoting.kMe2MeVisitedStorageKey,
+                           remoting.showOrHideCallback.bind(null, 'me2me'));
 };
 
-remoting.showIt2MeUiAndSave = function() {
-  window.localStorage.setItem('it2me-visited', true);
-  remoting.showOrHideIt2MeUi();
+remoting.showIT2MeUiAndSave = function() {
+  var items = {};
+  items[remoting.kIT2MeVisitedStorageKey] = true;
+  chrome.storage.local.set(items);
+  remoting.showOrHideCallback('it2me', [true]);
 };
 
 remoting.showMe2MeUiAndSave = function() {
-  window.localStorage.setItem('me2me-visited', true);
-  remoting.showOrHideMe2MeUi();
+  var items = {};
+  items[remoting.kMe2MeVisitedStorageKey] = true;
+  chrome.storage.local.set(items);
+  remoting.showOrHideCallback('me2me', [true]);
 };
 
 remoting.resetInfographics = function() {
-  window.localStorage.removeItem('it2me-visited');
-  window.localStorage.removeItem('me2me-visited');
-  remoting.showOrHideIt2MeUi();
-  remoting.showOrHideMe2MeUi();
+  chrome.storage.local.remove(remoting.kIT2MeVisitedStorageKey);
+  chrome.storage.local.remove(remoting.kMe2MeVisitedStorageKey);
+  remoting.showOrHideCallback('it2me', [false]);
+  remoting.showOrHideCallback('me2me', [false]);
 }
 
 
@@ -170,7 +211,7 @@ remoting.resetInfographics = function() {
  */
 remoting.initModalDialogs = function() {
   var dialogs = document.querySelectorAll('.kd-modaldialog');
-  var observer = new WebKitMutationObserver(confineOrRestoreFocus_);
+  var observer = new MutationObserver(confineOrRestoreFocus_);
   var options = {
     subtree: false,
     attributes: true
@@ -234,4 +275,13 @@ function confineOrRestoreFocus_(mutations) {
       }
     }
   }
+}
+
+/**
+ * @param {string} tag
+ */
+remoting.showSetupProcessingMessage = function(tag) {
+  var messageDiv = document.getElementById('host-setup-processing-message');
+  l10n.localizeElementFromTag(messageDiv, tag);
+  remoting.setMode(remoting.AppMode.HOST_SETUP_PROCESSING);
 }

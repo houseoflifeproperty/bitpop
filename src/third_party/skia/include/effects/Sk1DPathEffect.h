@@ -16,19 +16,20 @@ class SkPathMeasure;
 // This class is not exported to java.
 class SK_API Sk1DPathEffect : public SkPathEffect {
 public:
-    virtual bool filterPath(SkPath* dst, const SkPath& src, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath* dst, const SkPath& src,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
 protected:
     /** Called at the start of each contour, returns the initial offset
         into that contour.
     */
-    virtual SkScalar begin(SkScalar contourLength) = 0;
+    virtual SkScalar begin(SkScalar contourLength) const = 0;
     /** Called with the current distance along the path, with the current matrix
         for the point/tangent at the specified distance.
         Return the distance to travel for the next call. If return <= 0, then that
         contour is done.
     */
-    virtual SkScalar next(SkPath* dst, SkScalar distance, SkPathMeasure&) = 0;
+    virtual SkScalar next(SkPath* dst, SkScalar dist, SkPathMeasure&) const = 0;
 
 private:
     typedef SkPathEffect INHERITED;
@@ -51,19 +52,28 @@ public:
         @param style how to transform path at each point (based on the current
                      position and tangent)
     */
-    SkPath1DPathEffect(const SkPath& path, SkScalar advance, SkScalar phase, Style);
+    static SkPath1DPathEffect* Create(const SkPath& path, SkScalar advance, SkScalar phase,
+                                      Style style) {
+        return SkNEW_ARGS(SkPath1DPathEffect, (path, advance, phase, style));
+    }
 
-    virtual bool filterPath(SkPath*, const SkPath&, SkStrokeRec*) SK_OVERRIDE;
+    virtual bool filterPath(SkPath*, const SkPath&,
+                            SkStrokeRec*, const SkRect*) const SK_OVERRIDE;
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkPath1DPathEffect)
 
 protected:
-    SkPath1DPathEffect(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkPath1DPathEffect(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
     // overrides from Sk1DPathEffect
-    virtual SkScalar begin(SkScalar contourLength) SK_OVERRIDE;
-    virtual SkScalar next(SkPath*, SkScalar distance, SkPathMeasure&) SK_OVERRIDE;
+    virtual SkScalar begin(SkScalar contourLength) const SK_OVERRIDE;
+    virtual SkScalar next(SkPath*, SkScalar, SkPathMeasure&) const SK_OVERRIDE;
+
+#ifdef SK_SUPPORT_LEGACY_PUBLICEFFECTCONSTRUCTORS
+public:
+#endif
+    SkPath1DPathEffect(const SkPath& path, SkScalar advance, SkScalar phase, Style);
 
 private:
     SkPath      fPath;          // copied from constructor

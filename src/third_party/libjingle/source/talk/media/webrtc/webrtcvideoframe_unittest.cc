@@ -53,7 +53,7 @@ class WebRtcVideoFrameTest : public VideoFrameTest<cricket::WebRtcVideoFrame> {
     captured_frame.height = frame_height;
     captured_frame.data_size = (frame_width * frame_height) +
         ((frame_width + 1) / 2) * ((frame_height + 1) / 2) * 2;
-    talk_base::scoped_array<uint8> captured_frame_buffer(
+    talk_base::scoped_ptr<uint8[]> captured_frame_buffer(
         new uint8[captured_frame.data_size]);
     captured_frame.data = captured_frame_buffer.get();
 
@@ -202,9 +202,6 @@ TEST_WEBRTCVIDEOFRAME(ConvertToYUY2BufferInverted)
 TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBuffer)
 TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBufferStride)
 TEST_WEBRTCVIDEOFRAME(ConvertToUYVYBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertToV210Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertToV210BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertToV210BufferInverted)
 TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBuffer)
 TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBufferStride)
 TEST_WEBRTCVIDEOFRAME(ConvertFromABGRBufferInverted)
@@ -250,15 +247,13 @@ TEST_WEBRTCVIDEOFRAME(ConvertFromYUY2BufferInverted)
 TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBuffer)
 TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBufferStride)
 TEST_WEBRTCVIDEOFRAME(ConvertFromUYVYBufferInverted)
-TEST_WEBRTCVIDEOFRAME(ConvertFromV210Buffer)
-TEST_WEBRTCVIDEOFRAME(ConvertFromV210BufferStride)
-TEST_WEBRTCVIDEOFRAME(ConvertFromV210BufferInverted)
 // TEST_WEBRTCVIDEOFRAME(ConvertToI422Buffer)
 TEST_WEBRTCVIDEOFRAME(ConvertARGBToBayerGRBG)
 TEST_WEBRTCVIDEOFRAME(ConvertARGBToBayerGBRG)
 TEST_WEBRTCVIDEOFRAME(ConvertARGBToBayerBGGR)
 TEST_WEBRTCVIDEOFRAME(ConvertARGBToBayerRGGB)
 TEST_WEBRTCVIDEOFRAME(CopyToBuffer)
+TEST_WEBRTCVIDEOFRAME(CopyToFrame)
 TEST_WEBRTCVIDEOFRAME(Write)
 TEST_WEBRTCVIDEOFRAME(CopyToBuffer1Pixel)
 // TEST_WEBRTCVIDEOFRAME(ConstructARGBBlackWhitePixel)
@@ -269,35 +264,16 @@ TEST_WEBRTCVIDEOFRAME(CopyIsRef)
 TEST_WEBRTCVIDEOFRAME(MakeExclusive)
 
 // These functions test implementation-specific details.
-TEST_F(WebRtcVideoFrameTest, AttachAndRelease) {
+TEST_F(WebRtcVideoFrameTest, Alias) {
   cricket::WebRtcVideoFrame frame1, frame2;
   ASSERT_TRUE(LoadFrameNoRepeat(&frame1));
-  const int64 time_stamp = 0x7FFFFFFFFFFFFFF0LL;
+  const int64 time_stamp = INT64_C(0x7FFFFFFFFFFFFFF0);
   frame1.SetTimeStamp(time_stamp);
   EXPECT_EQ(time_stamp, frame1.GetTimeStamp());
-  frame2.Attach(frame1.frame()->Buffer(), frame1.frame()->Size(),
-                kWidth, kHeight, 1, 1,
-                frame1.GetElapsedTime(), frame1.GetTimeStamp(), 0);
+  frame2.Alias(frame1.frame()->Buffer(), frame1.frame()->Size(),
+               kWidth, kHeight, 1, 1,
+               frame1.GetElapsedTime(), frame1.GetTimeStamp(), 0);
   EXPECT_TRUE(IsEqual(frame1, frame2, 0));
-  uint8* buffer;
-  size_t size;
-  frame2.Detach(&buffer, &size);
-  EXPECT_EQ(frame1.frame()->Buffer(), buffer);
-  EXPECT_EQ(frame1.frame()->Size(), size);
-  EXPECT_TRUE(IsNull(frame2));
-  EXPECT_TRUE(IsSize(frame1, kWidth, kHeight));
-}
-
-TEST_F(WebRtcVideoFrameTest, Transfer) {
-  cricket::WebRtcVideoFrame frame1, frame2;
-  ASSERT_TRUE(LoadFrameNoRepeat(&frame1));
-  uint8* buffer;
-  size_t size;
-  frame1.Detach(&buffer, &size);
-  frame2.Attach(buffer, size, kWidth, kHeight, 1, 1,
-                frame1.GetElapsedTime(), frame1.GetTimeStamp(), 0);
-  EXPECT_TRUE(IsNull(frame1));
-  EXPECT_TRUE(IsSize(frame2, kWidth, kHeight));
 }
 
 // Tests the Init function with different cropped size.

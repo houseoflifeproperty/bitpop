@@ -1,61 +1,82 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "chrome/browser/download/download_status_updater.h"
 
 #include "base/mac/foundation_util.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/supports_user_data.h"
-#include "base/sys_string_conversions.h"
-#include "content/public/browser/download_item.h"
 #import "chrome/browser/ui/cocoa/dock_icon.h"
-#include "googleurl/src/gurl.h"
+#include "content/public/browser/download_item.h"
+#include "url/gurl.h"
 
-// --- Private 10.8 API for showing progress ---
-// rdar://12058866 http://www.openradar.me/12058866
+// NSProgress is public API in 10.9, but a version of it exists and is usable
+// in 10.8.
+
+#if !defined(MAC_OS_X_VERSION_10_9) || \
+    MAC_OS_X_VERSION_MAX_ALLOWED < MAC_OS_X_VERSION_10_9
+
+@interface NSProgress : NSObject
+
+- (instancetype)initWithParent:(NSProgress*)parentProgressOrNil
+                      userInfo:(NSDictionary*)userInfoOrNil;
+@property (copy) NSString* kind;
+
+@property int64_t totalUnitCount;
+@property int64_t completedUnitCount;
+
+@property (getter=isCancellable) BOOL cancellable;
+@property (getter=isPausable) BOOL pausable;
+@property (readonly, getter=isCancelled) BOOL cancelled;
+@property (readonly, getter=isPaused) BOOL paused;
+@property (copy) void (^cancellationHandler)(void);
+@property (copy) void (^pausingHandler)(void);
+- (void)cancel;
+- (void)pause;
+
+- (void)setUserInfoObject:(id)objectOrNil forKey:(NSString*)key;
+- (NSDictionary*)userInfo;
+
+@property (readonly, getter=isIndeterminate) BOOL indeterminate;
+@property (readonly) double fractionCompleted;
+
+- (void)publish;
+- (void)unpublish;
+
+@end
+
+#endif  // MAC_OS_X_VERSION_10_9
 
 namespace {
 
-NSString* const kNSProgressAppBundleIdentifierKey =
-    @"NSProgressAppBundleIdentifierKey";
-NSString* const kNSProgressEstimatedTimeKey =
-    @"NSProgressEstimatedTimeKey";
-NSString* const kNSProgressFileCompletedCountKey =
-    @"NSProgressFileCompletedCountKey";
-NSString* const kNSProgressFileContainerURLKey =
-    @"NSProgressFileContainerURLKey";
-NSString* const kNSProgressFileDownloadingSourceURLKey =
-    @"NSProgressFileDownloadingSourceURLKey";
-NSString* const kNSProgressFileIconKey =
-    @"NSProgressFileIconKey";
-NSString* const kNSProgressFileIconOriginalRectKey =
-    @"NSProgressFileIconOriginalRectKey";
-NSString* const kNSProgressFileLocationCanChangeKey =
-    @"NSProgressFileLocationCanChangeKey";
-NSString* const kNSProgressFileOperationKindAirDropping =
-    @"NSProgressFileOperationKindAirDropping";
-NSString* const kNSProgressFileOperationKindCopying =
-    @"NSProgressFileOperationKindCopying";
-NSString* const kNSProgressFileOperationKindDecompressingAfterDownloading =
-    @"NSProgressFileOperationKindDecompressingAfterDownloading";
-NSString* const kNSProgressFileOperationKindDownloading =
+// These are not the keys themselves; they are the names for dynamic lookup via
+// the ProgressString() function.
+
+// Public keys, SPI in 10.8, API in 10.9:
+NSString* const kNSProgressEstimatedTimeRemainingKeyName =
+    @"NSProgressEstimatedTimeRemainingKey";
+NSString* const kNSProgressFileOperationKindDownloadingName =
     @"NSProgressFileOperationKindDownloading";
-NSString* const kNSProgressFileOperationKindEncrypting =
-    @"NSProgressFileOperationKindEncrypting";
-NSString* const kNSProgressFileOperationKindKey =
+NSString* const kNSProgressFileOperationKindKeyName =
     @"NSProgressFileOperationKindKey";
-NSString* const kNSProgressFileTotalCountKey =
-    @"NSProgressFileTotalCountKey";
-NSString* const kNSProgressFileURLKey =
+NSString* const kNSProgressFileURLKeyName =
     @"NSProgressFileURLKey";
-NSString* const kNSProgressIsWaitingKey =
-    @"NSProgressIsWaitingKey";
-NSString* const kNSProgressKindFile =
+NSString* const kNSProgressKindFileName =
     @"NSProgressKindFile";
-NSString* const kNSProgressThroughputKey =
+NSString* const kNSProgressThroughputKeyName =
     @"NSProgressThroughputKey";
 
+// Private keys, SPI in 10.8 and 10.9:
+// TODO(avi): Are any of these actually needed for the NSProgress integration?
+NSString* const kNSProgressFileDownloadingSourceURLKeyName =
+    @"NSProgressFileDownloadingSourceURLKey";
+NSString* const kNSProgressFileLocationCanChangeKeyName =
+    @"NSProgressFileLocationCanChangeKey";
+
+// Given an NSProgress string name (kNSProgress[...]Name above), looks up the
+// real symbol of that name from Foundation and returns it.
 NSString* ProgressString(NSString* string) {
   static NSMutableDictionary* cache;
   static CFBundleRef foundation;
@@ -75,6 +96,17 @@ NSString* ProgressString(NSString* string) {
     }
   }
 
+  if (!result && string == kNSProgressEstimatedTimeRemainingKeyName) {
+    // Perhaps this is 10.8; try the old name of this key.
+    NSString** ref = static_cast<NSString**>(
+        CFBundleGetDataPointerForName(foundation,
+                                      CFSTR("NSProgressEstimatedTimeKey")));
+    if (ref) {
+      result = *ref;
+      [cache setObject:result forKey:string];
+    }
+  }
+
   if (!result) {
     // Huh. At least return a local copy of the expected string.
     result = string;
@@ -85,61 +117,6 @@ NSString* ProgressString(NSString* string) {
 
   return result;
 }
-
-}  // namespace
-
-@interface NSProgress : NSObject
-
-- (id)initWithParent:(id)parent userInfo:(NSDictionary*)info;
-@property(copy) NSString* kind;
-
-- (void)unpublish;
-- (void)publish;
-
-- (void)setUserInfoObject:(id)object forKey:(NSString*)key;
-- (NSDictionary*)userInfo;
-
-@property(readonly) double fractionCompleted;
-// Set the totalUnitCount to -1 to indicate an indeterminate download. The dock
-// shows a non-filling progress bar; the Finder is lame and draws its progress
-// bar off the right side.
-@property(readonly, getter=isIndeterminate) BOOL indeterminate;
-@property long long completedUnitCount;
-@property long long totalUnitCount;
-
-// Pausing appears to be unimplemented in 10.8.0.
-- (void)pause;
-@property(readonly, getter=isPaused) BOOL paused;
-@property(getter=isPausable) BOOL pausable;
-- (void)setPausingHandler:(id)blockOfUnknownSignature;
-
-- (void)cancel;
-@property(readonly, getter=isCancelled) BOOL cancelled;
-@property(getter=isCancellable) BOOL cancellable;
-// Note that the cancellation handler block will be called on a random thread.
-- (void)setCancellationHandler:(void (^)())block;
-
-// Allows other applications to provide feedback as to whether the progress is
-// visible in that app. Note that the acknowledgement handler block will be
-// called on a random thread.
-// com.apple.dock => BOOL indicating whether the download target folder was
-//                   successfully "flown to" at the beginning of the download.
-//                   This primarily depends on whether the download target
-//                   folder is in the dock. Note that if the download target
-//                   folder is added or removed from the dock during the
-//                   duration of the download, it will not trigger a callback.
-//                   Note that if the "fly to the dock" keys were not set, the
-//                   callback's parameter will always be NO.
-// com.apple.Finder => always YES, no matter whether the download target
-//                     folder's window is open.
-- (void)handleAcknowledgementByAppWithBundleIdentifier:(NSString*)bundle
-                                       usingBlock:(void (^)(BOOL success))block;
-
-@end
-
-// --- Private 10.8 API for showing progress ---
-
-namespace {
 
 bool NSProgressSupported() {
   static bool supported;
@@ -156,7 +133,7 @@ const char kCrNSProgressUserDataKey[] = "CrNSProgressUserData";
 
 class CrNSProgressUserData : public base::SupportsUserData::Data {
  public:
-  CrNSProgressUserData(NSProgress* progress, const FilePath& target)
+  CrNSProgressUserData(NSProgress* progress, const base::FilePath& target)
       : target_(target) {
     progress_.reset(progress);
   }
@@ -165,12 +142,12 @@ class CrNSProgressUserData : public base::SupportsUserData::Data {
   }
 
   NSProgress* progress() const { return progress_.get(); }
-  FilePath target() const { return target_; }
-  void setTarget(const FilePath& target) { target_ = target; }
+  base::FilePath target() const { return target_; }
+  void setTarget(const base::FilePath& target) { target_ = target; }
 
  private:
-  scoped_nsobject<NSProgress> progress_;
-  FilePath target_;
+  base::scoped_nsobject<NSProgress> progress_;
+  base::FilePath target_;
 };
 
 void UpdateAppIcon(int download_count,
@@ -186,20 +163,15 @@ void UpdateAppIcon(int download_count,
 void CreateNSProgress(content::DownloadItem* download) {
   NSURL* source_url = [NSURL URLWithString:
       base::SysUTF8ToNSString(download->GetURL().possibly_invalid_spec())];
-  FilePath destination_path = download->GetFullPath();
+  base::FilePath destination_path = download->GetFullPath();
   NSURL* destination_url = [NSURL fileURLWithPath:
       base::mac::FilePathToNSString(destination_path)];
 
-  // If there were an image to fly to the download folder in the dock, then
-  // the keys in the userInfo to set would be:
-  // - @"NSProgressFlyToImageKey" : NSImage
-  // - kNSProgressFileIconOriginalRectKey : NSValue of NSRect in global coords
-
   NSDictionary* user_info = @{
-    ProgressString(kNSProgressFileLocationCanChangeKey) : @true,
-    ProgressString(kNSProgressFileOperationKindKey) :
-        ProgressString(kNSProgressFileOperationKindDownloading),
-    ProgressString(kNSProgressFileURLKey) : destination_url
+    ProgressString(kNSProgressFileLocationCanChangeKeyName) : @true,
+    ProgressString(kNSProgressFileOperationKindKeyName) :
+        ProgressString(kNSProgressFileOperationKindDownloadingName),
+    ProgressString(kNSProgressFileURLKeyName) : destination_url
   };
 
   Class progress_class = NSClassFromString(@"NSProgress");
@@ -207,11 +179,11 @@ void CreateNSProgress(content::DownloadItem* download) {
   progress = [progress performSelector:@selector(initWithParent:userInfo:)
                             withObject:nil
                             withObject:user_info];
-  progress.kind = ProgressString(kNSProgressKindFile);
+  progress.kind = ProgressString(kNSProgressKindFileName);
 
   if (source_url) {
     [progress setUserInfoObject:source_url forKey:
-        ProgressString(kNSProgressFileDownloadingSourceURLKey)];
+        ProgressString(kNSProgressFileDownloadingSourceURLKeyName)];
   }
 
   progress.pausable = NO;
@@ -236,14 +208,23 @@ void UpdateNSProgress(content::DownloadItem* download,
   NSProgress* progress = progress_data->progress();
   progress.totalUnitCount = download->GetTotalBytes();
   progress.completedUnitCount = download->GetReceivedBytes();
+  [progress setUserInfoObject:@(download->CurrentSpeed())
+                       forKey:ProgressString(kNSProgressThroughputKeyName)];
 
-  FilePath download_path = download->GetFullPath();
+  base::TimeDelta time_remaining;
+  NSNumber* time_remaining_ns = nil;
+  if (download->TimeRemaining(&time_remaining))
+    time_remaining_ns = @(time_remaining.InSeconds());
+  [progress setUserInfoObject:time_remaining_ns
+               forKey:ProgressString(kNSProgressEstimatedTimeRemainingKeyName)];
+
+  base::FilePath download_path = download->GetFullPath();
   if (progress_data->target() != download_path) {
     progress_data->setTarget(download_path);
     NSURL* download_url = [NSURL fileURLWithPath:
         base::mac::FilePathToNSString(download_path)];
     [progress setUserInfoObject:download_url
-                         forKey:ProgressString(kNSProgressFileURLKey)];
+                         forKey:ProgressString(kNSProgressFileURLKeyName)];
   }
 }
 
@@ -263,9 +244,6 @@ void DownloadStatusUpdater::UpdateAppIconDownloadProgress(
   int download_count = 0;
   bool progress_known = GetProgress(&progress, &download_count);
   UpdateAppIcon(download_count, progress_known, progress);
-
-  if (download->GetFullPath().empty())
-    return;
 
   // Update NSProgress-based indicators.
 
@@ -290,9 +268,10 @@ void DownloadStatusUpdater::UpdateAppIconDownloadProgress(
   }
 
   // Handle downloads that ended.
-  if (download->GetState() != content::DownloadItem::IN_PROGRESS) {
+  if (download->GetState() != content::DownloadItem::IN_PROGRESS &&
+      !download->GetTargetFilePath().empty()) {
     NSString* download_path =
-        base::mac::FilePathToNSString(download->GetFullPath());
+        base::mac::FilePathToNSString(download->GetTargetFilePath());
     if (download->GetState() == content::DownloadItem::COMPLETE) {
       // Bounce the dock icon.
       [[NSDistributedNotificationCenter defaultCenter]

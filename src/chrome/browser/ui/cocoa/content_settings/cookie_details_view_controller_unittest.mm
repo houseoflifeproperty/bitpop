@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details.h"
 #include "chrome/browser/ui/cocoa/content_settings/cookie_details_view_controller.h"
@@ -35,8 +35,8 @@ static CookiePromptContentDetailsAdapter* CreateCookieTestContent(
 
 static CocoaCookieDetails* CreateTestDatabaseDetails() {
   std::string domain("chromium.org");
-  string16 name(base::SysNSStringToUTF16(@"wicked_name"));
-  string16 desc(base::SysNSStringToUTF16(@"wicked_desc"));
+  base::string16 name(base::SysNSStringToUTF16(@"wicked_name"));
+  base::string16 desc(base::SysNSStringToUTF16(@"wicked_desc"));
   CocoaCookieDetails* details = [CocoaCookieDetails alloc];
   [details initWithDatabase:domain
                databaseName:name
@@ -52,14 +52,14 @@ static CookiePromptContentDetailsAdapter* CreateDatabaseTestContent() {
 }
 
 TEST_F(CookieDetailsViewControllerTest, Create) {
-  scoped_nsobject<CookieDetailsViewController> detailsViewController(
+  base::scoped_nsobject<CookieDetailsViewController> detailsViewController(
       [[CookieDetailsViewController alloc] init]);
 }
 
 TEST_F(CookieDetailsViewControllerTest, ShrinkToFit) {
-  scoped_nsobject<CookieDetailsViewController> detailsViewController(
+  base::scoped_nsobject<CookieDetailsViewController> detailsViewController(
       [[CookieDetailsViewController alloc] init]);
-  scoped_nsobject<CookiePromptContentDetailsAdapter> adapter(
+  base::scoped_nsobject<CookiePromptContentDetailsAdapter> adapter(
       [CreateDatabaseTestContent() retain]);
   [detailsViewController.get() setContentObject:adapter.get()];
   NSRect beforeFrame = [[detailsViewController.get() view] frame];
@@ -70,10 +70,10 @@ TEST_F(CookieDetailsViewControllerTest, ShrinkToFit) {
 }
 
 TEST_F(CookieDetailsViewControllerTest, ExpirationEditability) {
-  scoped_nsobject<CookieDetailsViewController> detailsViewController(
+  base::scoped_nsobject<CookieDetailsViewController> detailsViewController(
       [[CookieDetailsViewController alloc] init]);
   [detailsViewController view];
-  scoped_nsobject<CookiePromptContentDetailsAdapter> adapter(
+  base::scoped_nsobject<CookiePromptContentDetailsAdapter> adapter(
       [CreateCookieTestContent(YES) retain]);
   [detailsViewController.get() setContentObject:adapter.get()];
 

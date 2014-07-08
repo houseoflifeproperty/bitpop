@@ -9,7 +9,7 @@
 namespace media {
 
 // Implement IEnumPins.
-class PinEnumerator
+class PinEnumerator FINAL
     : public IEnumPins,
       public base::RefCounted<PinEnumerator> {
  public:
@@ -72,8 +72,6 @@ class PinEnumerator
 
   STDMETHOD(Clone)(IEnumPins** clone) {
     PinEnumerator* pin_enum = new PinEnumerator(filter_);
-    if (!pin_enum)
-      return E_OUTOFMEMORY;
     pin_enum->AddRef();
     pin_enum->index_ = index_;
     *clone = pin_enum;

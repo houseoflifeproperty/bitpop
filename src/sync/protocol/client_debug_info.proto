@@ -12,6 +12,7 @@ option retain_unknown_fields = true;
 package sync_pb;
 
 import "get_updates_caller_info.proto";
+import "sync_enums.proto";
 
 // Per-type hint information.
 message TypeHint {
@@ -86,46 +87,60 @@ message DatatypeAssociationStats {
   optional int32 num_sync_items_deleted = 10;
   optional int32 num_sync_items_modified = 11;
 
-  // The datatype ran into an error during model association.
+  // Model versions before association. Ideally local and sync model should
+  // have same version if models were persisted properly in last session.
+  // Note: currently version is only set on bookmark model.
+  optional int64 local_version_pre_association = 20;
+  optional int64 sync_version_pre_association = 21;
+
+  // The data type ran into an error during model association.
   optional bool had_error = 12;
+
+  // Waiting time before downloading starts. This measures the time between
+  // receiving configuration request for a set of data types to starting
+  // downloading data of this type.
+  optional int64 download_wait_time_us = 15;
+
+  // Time spent on downloading sync data for first time sync.
+  // Note: This measures the time between asking backend to download data to
+  //       being notified of download-ready by backend. So it consists of
+  //       time on data downloading and processing at sync backend. But
+  //       downloading time should dominate. It's also the total time spent on
+  //       downloading data of all types in the priority group of
+  //       |data_type_id| instead of just one data type.
+  optional int64 download_time_us = 13;
+
+  // Waiting time for higher priority types to finish association. This
+  // measures the time between finishing downloading data to requesting
+  // association manager to associate this batch of types. High priority types
+  // have near zero waiting time.
+  optional int64 association_wait_time_for_high_priority_us = 16;
+
+  // Waiting time for other types with same priority during association.
+  // Data type manger sends types of same priority to association manager to
+  // configure as a batch. Association manager configures one type at a time.
+  // This measures the time between when a type is sent to association manager
+  // (among other types) to when association manager starts configuring the
+  // type. Total wait time before association is
+  //     |association_wait_time_for_high_priority_us| +
+  //     |association_wait_time_for_same_priority_us|
+  optional int64 association_wait_time_for_same_priority_us = 14;
+
+  // Time spent on model association.
+  optional int64 association_time_us = 17;
+
+  // Higher priority type that's configured before this type.
+  repeated int32 high_priority_type_configured_before = 18;
+
+  // Same priority type that's configured before this type.
+  repeated int32 same_priority_type_configured_before = 19;
 }
 
 message DebugEventInfo {
-  // Singleton event types. These events have no further information beyond
-  // the fact that the event happened.
-  enum SingletonEventType {
-    CONNECTION_STATUS_CHANGE = 1; // Connection status change. Note this
-                                  // gets generated even during a successful
-                                  // connection.
-    UPDATED_TOKEN = 2; // Client received an updated token.
-    PASSPHRASE_REQUIRED = 3; // Cryptographer needs passphrase.
-    PASSPHRASE_ACCEPTED = 4; // Passphrase was accepted by cryptographer.
-    INITIALIZATION_COMPLETE = 5; // Sync Initialization is complete.
-
-    // |STOP_SYNCING_PERMANENTLY| event should never be seen by the server in
-    // the absence of bugs.
-    STOP_SYNCING_PERMANENTLY = 6; // Server sent stop syncing permanently.
-
-    ENCRYPTION_COMPLETE = 7; // Client has finished encrypting all data.
-    ACTIONABLE_ERROR = 8; // Client received an actionable error.
-    ENCRYPTED_TYPES_CHANGED = 9; // Set of encrypted types has changed.
-                                 // NOTE: until m25 bootstrap token updated also
-                                 // shared this field (erroneously).
-    PASSPHRASE_TYPE_CHANGED = 10;  // The encryption passphrase state changed.
-    KEYSTORE_TOKEN_UPDATED = 11;  // A new keystore encryption token was
-                                  // persisted.
-    CONFIGURE_COMPLETE = 12;      // The datatype manager has finished an
-                                  // at least partially successful
-                                  // configuration and is once again syncing
-                                  // with the server.
-    BOOTSTRAP_TOKEN_UPDATED = 13;  // A new cryptographer bootstrap token was
-                                   // generated.
-  }
-
   // Each of the following fields correspond to different kinds of events. as
   // a result, only one is set during any single DebugEventInfo.
   // A singleton event. See enum definition.
-  optional SingletonEventType singleton_event = 1;
+  optional SyncEnums.SingletonDebugEventType singleton_event = 1;
   // A sync cycle completed.
   optional SyncCycleCompletedEventInfo sync_cycle_completed_event_info = 2;
   // A datatype triggered a nudge.

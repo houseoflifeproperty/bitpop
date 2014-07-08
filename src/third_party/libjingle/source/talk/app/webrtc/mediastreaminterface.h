@@ -43,6 +43,7 @@
 
 namespace cricket {
 
+class AudioRenderer;
 class VideoCapturer;
 class VideoRenderer;
 class VideoFrame;
@@ -72,8 +73,8 @@ class NotifierInterface {
 // provide media. A source can be shared with multiple tracks.
 // TODO(perkj): Implement sources for local and remote audio tracks and
 // remote video tracks.
-class MediaSourceInterface :  public talk_base::RefCountInterface,
-                              public NotifierInterface {
+class MediaSourceInterface : public talk_base::RefCountInterface,
+                             public NotifierInterface {
  public:
   enum SourceState {
     kInitializing,
@@ -100,12 +101,15 @@ class MediaStreamTrackInterface : public talk_base::RefCountInterface,
   };
 
   virtual std::string kind() const = 0;
-  virtual std::string label() const = 0;
+  virtual std::string id() const = 0;
   virtual bool enabled() const = 0;
   virtual TrackState state() const = 0;
   virtual bool set_enabled(bool enable) = 0;
   // These methods should be called by implementation only.
   virtual bool set_state(TrackState new_state) = 0;
+
+ protected:
+  virtual ~MediaStreamTrackInterface() {}
 };
 
 // Interface for rendering VideoFrames from a VideoTrack
@@ -130,129 +134,129 @@ class VideoTrackInterface : public MediaStreamTrackInterface {
   // Deregister a renderer.
   virtual void RemoveRenderer(VideoRendererInterface* renderer) = 0;
 
-  // Gets a pointer to the frame input of this VideoTrack.
-  // The pointer is valid for the lifetime of this VideoTrack.
-  // VideoFrames rendered to the cricket::VideoRenderer will be rendered on all
-  // registered renderers.
-  virtual cricket::VideoRenderer* FrameInput() = 0;
-
   virtual VideoSourceInterface* GetSource() const = 0;
 
  protected:
   virtual ~VideoTrackInterface() {}
 };
 
-// TODO(perkj): Deprecate and remove LocalAudioTrackInterface when no clients
-// use it.
-typedef VideoTrackInterface LocalVideoTrackInterface;
-
 // AudioSourceInterface is a reference counted source used for AudioTracks.
 // The same source can be used in multiple AudioTracks.
-// TODO(perkj): Extend this class with necessary methods to allow separate
-// sources for each audio track.
 class AudioSourceInterface : public MediaSourceInterface {
+ public:
+  class AudioObserver {
+   public:
+    virtual void OnSetVolume(double volume) = 0;
+
+   protected:
+    virtual ~AudioObserver() {}
+  };
+
+  // TODO(xians): Makes all the interface pure virtual after Chrome has their
+  // implementations.
+  // Sets the volume to the source. |volume| is in  the range of [0, 10].
+  virtual void SetVolume(double volume) {}
+
+  // Registers/unregisters observer to the audio source.
+  virtual void RegisterAudioObserver(AudioObserver* observer) {}
+  virtual void UnregisterAudioObserver(AudioObserver* observer) {}
+};
+
+// Interface for receiving audio data from a AudioTrack.
+class AudioTrackSinkInterface {
+ public:
+  virtual void OnData(const void* audio_data,
+                      int bits_per_sample,
+                      int sample_rate,
+                      int number_of_channels,
+                      int number_of_frames) = 0;
+ protected:
+  virtual ~AudioTrackSinkInterface() {}
+};
+
+// Interface of the audio processor used by the audio track to collect
+// statistics.
+class AudioProcessorInterface : public talk_base::RefCountInterface {
+ public:
+  struct AudioProcessorStats {
+    AudioProcessorStats() : typing_noise_detected(false),
+                            echo_return_loss(0),
+                            echo_return_loss_enhancement(0),
+                            echo_delay_median_ms(0),
+                            aec_quality_min(0.0),
+                            echo_delay_std_ms(0) {}
+    ~AudioProcessorStats() {}
+
+    bool typing_noise_detected;
+    int echo_return_loss;
+    int echo_return_loss_enhancement;
+    int echo_delay_median_ms;
+    float aec_quality_min;
+    int echo_delay_std_ms;
+  };
+
+  // Get audio processor statistics.
+  virtual void GetStats(AudioProcessorStats* stats) = 0;
+
+ protected:
+  virtual ~AudioProcessorInterface() {}
 };
 
 class AudioTrackInterface : public MediaStreamTrackInterface {
  public:
+  // TODO(xians): Figure out if the following interface should be const or not.
   virtual AudioSourceInterface* GetSource() const =  0;
+
+  // Add/Remove a sink that will receive the audio data from the track.
+  virtual void AddSink(AudioTrackSinkInterface* sink) = 0;
+  virtual void RemoveSink(AudioTrackSinkInterface* sink) = 0;
+
+  // Get the signal level from the audio track.
+  // Return true on success, otherwise false.
+  // TODO(xians): Change the interface to int GetSignalLevel() and pure virtual
+  // after Chrome has the correct implementation of the interface.
+  virtual bool GetSignalLevel(int* level) { return false; }
+
+  // Get the audio processor used by the audio track. Return NULL if the track
+  // does not have any processor.
+  // TODO(xians): Make the interface pure virtual.
+  virtual talk_base::scoped_refptr<AudioProcessorInterface>
+      GetAudioProcessor() { return NULL; }
+
+  // Get a pointer to the audio renderer of this AudioTrack.
+  // The pointer is valid for the lifetime of this AudioTrack.
+  // TODO(xians): Remove the following interface after Chrome switches to
+  // AddSink() and RemoveSink() interfaces.
+  virtual cricket::AudioRenderer* GetRenderer() { return NULL; }
 
  protected:
   virtual ~AudioTrackInterface() {}
 };
 
-// TODO(perkj): Deprecate and remove LocalAudioTrackInterface when no clients
-// use it.
-typedef AudioTrackInterface LocalAudioTrackInterface;
-
-// List of of tracks.
-template <class TrackType>
-class MediaStreamTrackListInterface : public talk_base::RefCountInterface {
- public:
-  virtual size_t count() const = 0;
-  virtual TrackType* at(size_t index) = 0;
-
- protected:
-  virtual ~MediaStreamTrackListInterface() {}
-};
-
-typedef MediaStreamTrackListInterface<AudioTrackInterface> AudioTracks;
-typedef MediaStreamTrackListInterface<VideoTrackInterface> VideoTracks;
+typedef std::vector<talk_base::scoped_refptr<AudioTrackInterface> >
+    AudioTrackVector;
+typedef std::vector<talk_base::scoped_refptr<VideoTrackInterface> >
+    VideoTrackVector;
 
 class MediaStreamInterface : public talk_base::RefCountInterface,
                              public NotifierInterface {
  public:
   virtual std::string label() const = 0;
-  virtual AudioTracks* audio_tracks() = 0;
-  virtual VideoTracks* video_tracks() = 0;
 
-  enum ReadyState {
-    kInitializing,
-    kLive = 1,  // Stream alive
-    kEnded = 2,  // Stream have ended
-  };
+  virtual AudioTrackVector GetAudioTracks() = 0;
+  virtual VideoTrackVector GetVideoTracks() = 0;
+  virtual talk_base::scoped_refptr<AudioTrackInterface>
+      FindAudioTrack(const std::string& track_id) = 0;
+  virtual talk_base::scoped_refptr<VideoTrackInterface>
+      FindVideoTrack(const std::string& track_id) = 0;
 
-  virtual ReadyState ready_state() const = 0;
-
-  // These methods should be called by implementation only.
-  virtual void set_ready_state(ReadyState state) = 0;
+  virtual bool AddTrack(AudioTrackInterface* track) = 0;
+  virtual bool AddTrack(VideoTrackInterface* track) = 0;
+  virtual bool RemoveTrack(AudioTrackInterface* track) = 0;
+  virtual bool RemoveTrack(VideoTrackInterface* track) = 0;
 
  protected:
   virtual ~MediaStreamInterface() {}
-};
-
-class LocalMediaStreamInterface : public MediaStreamInterface {
- public:
-  virtual bool AddTrack(AudioTrackInterface* track) = 0;
-  virtual bool AddTrack(VideoTrackInterface* track) = 0;
-};
-
-// MediaConstraintsInterface
-// Interface used for passing arguments about media constraints
-// to the MediaStream and PeerConnection implementation.
-class MediaConstraintsInterface {
- public:
-  struct Constraint {
-    Constraint() {}
-    Constraint(const std::string& key, const std::string value)
-        : key(key), value(value) {
-    }
-    std::string key;
-    std::string value;
-  };
-  typedef std::vector<Constraint> Constraints;
-
-  virtual const Constraints& GetMandatory() const = 0;
-  virtual const Constraints& GetOptional() const = 0;
-
-  // Constraint keys used by a local video source.
-  // Specified by draft-alvestrand-constraints-resolution-00b
-  static const char kMinAspectRatio[];  // minAspectRatio
-  static const char kMaxAspectRatio[];  // maxAspectRatio
-  static const char kMaxWidth[];  // maxWidth
-  static const char kMinWidth[];  // minWidth
-  static const char kMaxHeight[];  // maxHeight
-  static const char kMinHeight[];  // minHeight
-  static const char kMaxFrameRate[];  // maxFrameRate
-  static const char kMinFrameRate[];  // minFrameRate
-
-  // Constraint keys for CreateOffer / CreateAnswer
-  // Specified by the W3C PeerConnection spec
-  static const char kOfferToReceiveVideo[];  // OfferToReceiveVideo
-  static const char kOfferToReceiveAudio[];  // OfferToReceiveAudio
-
-  // Constraints values.
-  static const char kValueTrue[];  // true
-  static const char kValueFalse[];  // false
-
-  // Temporary pseudo-constraints used to enable DTLS-SRTP
-  static const char kEnableDtlsSrtp[];  // Enable DTLS-SRTP
-  // Temporary pseudo-constraints used to enable DataChannels
-  static const char kEnableRtpDataChannels[];  // Enable DataChannels
-
- protected:
-  // Dtor protected as objects shouldn't be deleted via this interface
-  virtual ~MediaConstraintsInterface() {}
 };
 
 }  // namespace webrtc

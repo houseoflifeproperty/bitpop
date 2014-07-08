@@ -6,44 +6,54 @@
 
 #include <vector>
 
+#include "ash/display/display_info.h"
 #include "ash/display/display_manager.h"
 #include "ash/shell.h"
-#include "base/string_split.h"
-#include "ui/aura/display_util.h"
-#include "ui/aura/root_window.h"
+#include "base/strings/string_split.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/gfx/display.h"
 
 namespace ash {
 namespace test {
+typedef std::vector<gfx::Display> DisplayList;
+typedef DisplayInfo DisplayInfo;
+typedef std::vector<DisplayInfo> DisplayInfoList;
+
 namespace {
 
-std::vector<gfx::Display> CreateDisplaysFromString(
-    const std::string specs) {
-  std::vector<gfx::Display> displays;
+std::vector<DisplayInfo> CreateDisplayInfoListFromString(
+    const std::string specs,
+    DisplayManager* display_manager) {
+  std::vector<DisplayInfo> display_info_list;
   std::vector<std::string> parts;
   base::SplitString(specs, ',', &parts);
+  size_t index = 0;
   for (std::vector<std::string>::const_iterator iter = parts.begin();
-       iter != parts.end(); ++iter) {
-    displays.push_back(aura::CreateDisplayFromSpec(*iter));
+       iter != parts.end(); ++iter, ++index) {
+    int64 id = index < display_manager->GetNumDisplays() ?
+        display_manager->GetDisplayAt(index).id() :
+        gfx::Display::kInvalidDisplayID;
+    display_info_list.push_back(
+        DisplayInfo::CreateFromSpecWithID(*iter, id));
   }
-  return displays;
+  return display_info_list;
 }
 
 }  // namespace
 
-DisplayManagerTestApi::DisplayManagerTestApi(
-    internal::DisplayManager* display_manager)
-        : display_manager_(display_manager) {
-}
+DisplayManagerTestApi::DisplayManagerTestApi(DisplayManager* display_manager)
+    : display_manager_(display_manager) {}
 
 DisplayManagerTestApi::~DisplayManagerTestApi() {}
 
 void DisplayManagerTestApi::UpdateDisplay(
     const std::string& display_specs) {
-  std::vector<gfx::Display> displays = CreateDisplaysFromString(display_specs);
+  std::vector<DisplayInfo> display_info_list =
+      CreateDisplayInfoListFromString(display_specs, display_manager_);
   bool is_host_origin_set = false;
-  for (size_t i = 0; i < displays.size(); ++i) {
-    if (displays[i].bounds_in_pixel().origin() != gfx::Point(0, 0)) {
+  for (size_t i = 0; i < display_info_list.size(); ++i) {
+    const DisplayInfo& display_info = display_info_list[i];
+    if (display_info.bounds_in_native().origin() != gfx::Point(0, 0)) {
       is_host_origin_set = true;
       break;
     }
@@ -57,18 +67,34 @@ void DisplayManagerTestApi::UpdateDisplay(
     // Sart from (1,1) so that windows won't overlap with native mouse cursor.
     // See |AshTestBase::SetUp()|.
     int next_y = 1;
-    for (std::vector<gfx::Display>::iterator iter = displays.begin();
-         iter != displays.end(); ++iter) {
-      gfx::Rect bounds(iter->GetSizeInPixel());
+    for (std::vector<DisplayInfo>::iterator iter = display_info_list.begin();
+         iter != display_info_list.end(); ++iter) {
+      gfx::Rect bounds(iter->bounds_in_native().size());
       bounds.set_x(1);
       bounds.set_y(next_y);
       next_y += bounds.height();
-      iter->SetScaleAndBounds(iter->device_scale_factor(), bounds);
+      iter->SetBounds(bounds);
     }
   }
 
-  display_manager_->SetDisplayIdsForTest(&displays);
-  display_manager_->OnNativeDisplaysChanged(displays);
+  display_manager_->OnNativeDisplaysChanged(display_info_list);
+}
+
+int64 DisplayManagerTestApi::SetFirstDisplayAsInternalDisplay() {
+  const gfx::Display& internal = display_manager_->displays_[0];
+  gfx::Display::SetInternalDisplayId(internal.id());
+  return gfx::Display::InternalDisplayId();
+}
+
+void DisplayManagerTestApi::DisableChangeDisplayUponHostResize() {
+  display_manager_->set_change_display_upon_host_resize(false);
+}
+
+void DisplayManagerTestApi::SetAvailableColorProfiles(
+    int64 display_id,
+    const std::vector<ui::ColorCalibrationProfile>& profiles) {
+  display_manager_->display_info_[display_id].set_available_color_profiles(
+      profiles);
 }
 
 }  // namespace test

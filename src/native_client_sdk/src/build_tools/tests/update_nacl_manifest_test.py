@@ -6,6 +6,7 @@
 import copy
 import datetime
 import hashlib
+import logging
 import os
 import posixpath
 import subprocess
@@ -23,14 +24,16 @@ import update_nacl_manifest
 from update_nacl_manifest import CANARY_BUNDLE_NAME
 
 
-HTTPS_BASE_URL = 'https://commondatastorage.googleapis.com' \
+HTTPS_BASE_URL = 'https://storage.googleapis.com' \
     '/nativeclient_mirror/nacl/nacl_sdk/'
 
 OS_CR = ('cros',)
 OS_M = ('mac',)
 OS_ML = ('mac', 'linux')
 OS_MW = ('mac', 'win')
+OS_LW = ('linux', 'win')
 OS_MLW = ('mac', 'linux', 'win')
+OS_ALL = ('all',)
 POST_STABLE = 'post_stable'
 STABLE = 'stable'
 BETA = 'beta'
@@ -38,9 +41,13 @@ DEV = 'dev'
 CANARY = 'canary'
 
 
-def GetArchiveUrl(host_os, version):
-  basename = 'naclsdk_%s.tar.bz2' % (host_os,)
+def GetArchiveURL(basename, version):
   return urlparse.urljoin(HTTPS_BASE_URL, posixpath.join(version, basename))
+
+
+def GetPlatformArchiveUrl(host_os, version):
+  basename = 'naclsdk_%s.tar.bz2' % (host_os,)
+  return GetArchiveURL(basename, version)
 
 
 def MakeGsUrl(rel_path):
@@ -57,14 +64,22 @@ def GetPathFromHttpsUrl(url):
   return url[len(HTTPS_BASE_URL):]
 
 
-def MakeArchive(host_os, version):
+def MakeArchive(url, host_os):
   archive = manifest_util.Archive(host_os)
-  archive.url = GetArchiveUrl(host_os, version)
+  archive.url = url
   # dummy values that won't succeed if we ever use them, but will pass
   # validation. :)
   archive.checksum = {'sha1': 'foobar'}
   archive.size = 1
   return archive
+
+
+def MakePlatformArchive(host_os, version):
+  return MakeArchive(GetPlatformArchiveUrl(host_os, version), host_os)
+
+
+def MakeNonPlatformArchive(basename, version):
+  return MakeArchive(GetArchiveURL(basename, version), 'all')
 
 
 def MakeNonPepperBundle(name, with_archives=False):
@@ -85,8 +100,7 @@ def MakeNonPepperBundle(name, with_archives=False):
   return bundle
 
 
-def MakeBundle(major_version, revision=0, version=None, host_oses=None,
-    stability='dev'):
+def MakePepperBundle(major_version, revision=0, version=None, stability='dev'):
   assert (version is None or
           version.split('.')[0] == 'trunk' or
           version.split('.')[0] == str(major_version))
@@ -104,9 +118,17 @@ def MakeBundle(major_version, revision=0, version=None, host_oses=None,
   bundle.recommended = 'no'
   bundle.stability = stability
 
+  return bundle
+
+
+def MakePlatformBundle(major_version, revision=0, version=None, host_oses=None,
+    stability='dev'):
+  bundle = MakePepperBundle(major_version, revision, version, stability)
+
   if host_oses:
     for host_os in host_oses:
-      bundle.AddArchive(MakeArchive(host_os, version))
+      bundle.AddArchive(MakePlatformArchive(host_os, version))
+
   return bundle
 
 
@@ -144,18 +166,20 @@ class MakeFiles(dict):
       if not archive.host_os in add_archive_for_os:
         continue
 
-      # add a dummy file for each archive
-      path = GetPathFromHttpsUrl(archive.url)
-      self[path] = 'My Dummy Archive'
+      self.AddArchive(bundle, archive, archive.host_os in add_json_for_os)
 
-      if archive.host_os in add_json_for_os:
-        # add .json manifest snippet, it should look like a normal Bundle, but
-        # only has one archive.
-        new_bundle = manifest_util.Bundle('')
-        new_bundle.CopyFrom(bundle)
-        del new_bundle.archives[:]
-        new_bundle.AddArchive(archive)
-        self[path + '.json'] = new_bundle.GetDataAsString()
+  def AddArchive(self, bundle, archive, add_json=True):
+    path = GetPathFromHttpsUrl(archive.url)
+    self[path] = 'My Dummy archive'
+
+    if add_json:
+      # add .json manifest snippet, it should look like a normal Bundle, but
+      # only has one archive.
+      new_bundle = manifest_util.Bundle('')
+      new_bundle.CopyFrom(bundle)
+      del new_bundle.archives[:]
+      new_bundle.AddArchive(archive)
+      self[path + '.json'] = new_bundle.GetDataAsString()
 
 
 class TestDelegate(update_nacl_manifest.Delegate):
@@ -166,6 +190,7 @@ class TestDelegate(update_nacl_manifest.Delegate):
     self.version_mapping = version_mapping
     self.dryrun = 0
     self.called_gsutil_cp = False
+    self.called_sendmail = False
 
   def GetRepoManifest(self):
     return self.manifest
@@ -201,9 +226,8 @@ class TestDelegate(update_nacl_manifest.Delegate):
         raise subprocess.CalledProcessError(1, 'gsutil cp %s %s' % (src, dest))
       self.files[dest_path] = self.files[src_path]
 
-  def Print(self, *args):
-    # eat all informational messages
-    pass
+  def SendMail(self, subject, text):
+    self.called_sendmail = True
 
 
 # Shorthand for premade bundles/versions
@@ -214,17 +238,22 @@ V19_0_1084_41 = '19.0.1084.41'
 V19_0_1084_67 = '19.0.1084.67'
 V21_0_1145_0 = '21.0.1145.0'
 V21_0_1166_0 = '21.0.1166.0'
-VTRUNK_138079 = 'trunk.138079'
-B18_0_1025_163_R1_MLW = MakeBundle(18, 1, V18_0_1025_163, OS_MLW)
-B18_0_1025_184_R1_MLW = MakeBundle(18, 1, V18_0_1025_184, OS_MLW)
-B18_R1_NONE = MakeBundle(18)
-B19_0_1084_41_R1_MLW = MakeBundle(19, 1, V19_0_1084_41, OS_MLW)
-B19_0_1084_67_R1_MLW = MakeBundle(19, 1, V19_0_1084_67, OS_MLW)
-B19_R1_NONE = MakeBundle(19)
-BCANARY_R1_NONE = MakeBundle(0, stability=CANARY)
-B21_0_1145_0_R1_MLW = MakeBundle(21, 1, V21_0_1145_0, OS_MLW)
-B21_0_1166_0_R1_MW = MakeBundle(21, 1, V21_0_1166_0, OS_MW)
-BTRUNK_138079_R1_MLW = MakeBundle(21, 1, VTRUNK_138079, OS_MLW)
+V26_0_1386_0 = '26.0.1386.0'
+V26_0_1386_1 = '26.0.1386.1'
+VTRUNK_140819 = 'trunk.140819'
+B18_0_1025_163_MLW = MakePlatformBundle(18, 132135, V18_0_1025_163, OS_MLW)
+B18_0_1025_184_MLW = MakePlatformBundle(18, 134900, V18_0_1025_184, OS_MLW)
+B18_NONE = MakePlatformBundle(18)
+B19_0_1084_41_MLW = MakePlatformBundle(19, 134854, V19_0_1084_41, OS_MLW)
+B19_0_1084_67_MLW = MakePlatformBundle(19, 142000, V19_0_1084_67, OS_MLW)
+B19_NONE = MakePlatformBundle(19)
+BCANARY_NONE = MakePlatformBundle(0, stability=CANARY)
+B21_0_1145_0_MLW = MakePlatformBundle(21, 138079, V21_0_1145_0, OS_MLW)
+B21_0_1166_0_MW = MakePlatformBundle(21, 140819, V21_0_1166_0, OS_MW)
+B26_NONE = MakePlatformBundle(26)
+B26_0_1386_0_MLW = MakePlatformBundle(26, 177362, V26_0_1386_0, OS_MLW)
+B26_0_1386_1_MLW = MakePlatformBundle(26, 177439, V26_0_1386_1, OS_MLW)
+BTRUNK_140819_MLW = MakePlatformBundle(21, 140819, VTRUNK_140819, OS_MLW)
 NON_PEPPER_BUNDLE_NOARCHIVES = MakeNonPepperBundle('foo')
 NON_PEPPER_BUNDLE_ARCHIVES = MakeNonPepperBundle('bar', with_archives=True)
 
@@ -237,13 +266,16 @@ class TestUpdateManifest(unittest.TestCase):
     self.delegate = None
     self.uploaded_manifest = None
     self.manifest = None
+    # Ignore logging warnings, etc.
+    logging.getLogger('update_nacl_manifest').setLevel(logging.CRITICAL)
 
   def _MakeDelegate(self):
     self.delegate = TestDelegate(self.manifest, self.history.history,
         self.files, self.version_mapping)
 
-  def _Run(self, host_oses, fixed_bundle_versions=None):
-    update_nacl_manifest.Run(self.delegate, host_oses, fixed_bundle_versions)
+  def _Run(self, host_oses, extra_archives=None, fixed_bundle_versions=None):
+    update_nacl_manifest.Run(self.delegate, host_oses, extra_archives,
+                             fixed_bundle_versions)
 
   def _HasUploadedManifest(self):
     return 'naclsdk_manifest2.json' in self.files
@@ -277,104 +309,104 @@ class TestUpdateManifest(unittest.TestCase):
         for platform, channel, version, date in csv.reader(history_stream)]
 
   def testNoUpdateNeeded(self):
-    self.manifest = MakeManifest(B18_0_1025_163_R1_MLW)
+    self.manifest = MakeManifest(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self.assertFalse(self._HasUploadedManifest())
 
     # Add another bundle, make sure it still doesn't update
-    self.manifest.AddBundle(B19_0_1084_41_R1_MLW)
+    self.manifest.AddBundle(B19_0_1084_41_MLW)
     self._Run(OS_MLW)
     self.assertFalse(self._HasUploadedManifest())
 
   def testSimpleUpdate(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testOnePlatformHasNewerRelease(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_M, BETA, V18_0_1025_175)  # Mac has newer version
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testMultipleMissingPlatformsInHistory(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_ML, BETA, V18_0_1025_184)
     self.history.Add(OS_M, BETA, V18_0_1025_175)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testUpdateOnlyOneBundle(self):
-    self.manifest = MakeManifest(B18_R1_NONE, B19_0_1084_41_R1_MLW)
+    self.manifest = MakeManifest(B18_NONE, B19_0_1084_41_MLW)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
-    self._AssertUploadedManifestHasBundle(B19_0_1084_41_R1_MLW, DEV)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B19_0_1084_41_MLW, DEV)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 2)
 
   def testUpdateTwoBundles(self):
-    self.manifest = MakeManifest(B18_R1_NONE, B19_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE, B19_NONE)
     self.history.Add(OS_MLW, DEV, V19_0_1084_41)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
-    self.files.Add(B19_0_1084_41_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
+    self.files.Add(B19_0_1084_41_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
-    self._AssertUploadedManifestHasBundle(B19_0_1084_41_R1_MLW, DEV)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B19_0_1084_41_MLW, DEV)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 2)
 
   def testUpdateWithMissingPlatformsInArchives(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_184)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_184_R1_MLW, add_archive_for_os=OS_M)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_184_MLW, add_archive_for_os=OS_M)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testUpdateWithMissingManifestSnippets(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_184)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_184_R1_MLW, add_json_for_os=OS_ML)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_184_MLW, add_json_for_os=OS_ML)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testRecommendedIsStable(self):
     for channel in STABLE, BETA, DEV, CANARY:
       self.setUp()
-      bundle = copy.deepcopy(B18_R1_NONE)
+      bundle = copy.deepcopy(B18_NONE)
       self.manifest = MakeManifest(bundle)
       self.history.Add(OS_MLW, channel, V18_0_1025_163)
-      self.files.Add(B18_0_1025_163_R1_MLW)
+      self.files.Add(B18_0_1025_163_MLW)
       self._MakeDelegate()
       self._Run(OS_MLW)
       self._ReadUploadedManifest()
@@ -387,31 +419,32 @@ class TestUpdateManifest(unittest.TestCase):
 
   def testNoUpdateWithNonPepperBundle(self):
     self.manifest = MakeManifest(NON_PEPPER_BUNDLE_NOARCHIVES,
-        B18_0_1025_163_R1_MLW)
+        B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self.assertFalse(self._HasUploadedManifest())
 
   def testUpdateWithHistoryWithExtraneousPlatforms(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_ML, BETA, V18_0_1025_184)
     self.history.Add(OS_CR, BETA, V18_0_1025_184)
     self.history.Add(OS_CR, BETA, V18_0_1025_175)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_163_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_163_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testSnippetWithStringRevisionAndVersion(self):
     # This test exists because some manifest snippets were uploaded with
     # strings for their revisions and versions. I want to make sure the
     # resulting manifest is still consistent with the old format.
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    bundle_string_revision = MakeBundle('18', '1234', V18_0_1025_163, OS_MLW)
+    bundle_string_revision = MakePlatformBundle('18', '1234', V18_0_1025_163,
+                                                OS_MLW)
     self.files.Add(bundle_string_revision)
     self._MakeDelegate()
     self._Run(OS_MLW)
@@ -425,37 +458,37 @@ class TestUpdateManifest(unittest.TestCase):
     # Note that the bundle in naclsdk_manifest2.json will be called
     # CANARY_BUNDLE_NAME, whereas the bundle in the manifest "snippet" will be
     # called "pepper_21".
-    canary_bundle = copy.deepcopy(BCANARY_R1_NONE)
+    canary_bundle = copy.deepcopy(BCANARY_NONE)
     self.manifest = MakeManifest(canary_bundle)
     self.history.Add(OS_MW, CANARY, V21_0_1145_0)
-    self.files.Add(B21_0_1145_0_R1_MLW)
+    self.files.Add(B21_0_1145_0_MLW)
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B21_0_1145_0_R1_MLW, CANARY)
+    self._AssertUploadedManifestHasBundle(B21_0_1145_0_MLW, CANARY)
 
   def testUpdateCanaryUseTrunkArchives(self):
-    canary_bundle = copy.deepcopy(BCANARY_R1_NONE)
+    canary_bundle = copy.deepcopy(BCANARY_NONE)
     self.manifest = MakeManifest(canary_bundle)
     self.history.Add(OS_MW, CANARY, V21_0_1166_0)
-    self.files.Add(B21_0_1166_0_R1_MW)
-    self.files.Add(BTRUNK_138079_R1_MLW)
-    self.version_mapping[V21_0_1166_0] = VTRUNK_138079
+    self.files.Add(B21_0_1166_0_MW)
+    self.files.Add(BTRUNK_140819_MLW)
+    self.version_mapping[V21_0_1166_0] = VTRUNK_140819
     self._MakeDelegate()
     self._Run(OS_MLW)
     self._ReadUploadedManifest()
 
-    test_bundle = copy.deepcopy(B21_0_1166_0_R1_MW)
-    test_bundle.AddArchive(BTRUNK_138079_R1_MLW.GetArchive('linux'))
+    test_bundle = copy.deepcopy(B21_0_1166_0_MW)
+    test_bundle.AddArchive(BTRUNK_140819_MLW.GetArchive('linux'))
     self._AssertUploadedManifestHasBundle(test_bundle, CANARY)
 
   def testCanaryUseOnlyTrunkArchives(self):
-    self.manifest = MakeManifest(copy.deepcopy(BCANARY_R1_NONE))
+    self.manifest = MakeManifest(copy.deepcopy(BCANARY_NONE))
     history = """win,canary,21.0.1163.0,2012-06-04 12:35:44.784446
 mac,canary,21.0.1163.0,2012-06-04 11:54:09.433166"""
     self._AddCsvHistory(history)
     self.version_mapping['21.0.1163.0'] = 'trunk.140240'
-    my_bundle = MakeBundle(21, 140240, '21.0.1163.0', OS_MLW)
+    my_bundle = MakePlatformBundle(21, 140240, '21.0.1163.0', OS_MLW)
     self.files.Add(my_bundle)
     self._MakeDelegate()
     self._Run(OS_MLW)
@@ -463,12 +496,12 @@ mac,canary,21.0.1163.0,2012-06-04 11:54:09.433166"""
     self._AssertUploadedManifestHasBundle(my_bundle, CANARY)
 
   def testCanaryShouldOnlyUseCanaryVersions(self):
-    canary_bundle = copy.deepcopy(BCANARY_R1_NONE)
+    canary_bundle = copy.deepcopy(BCANARY_NONE)
     self.manifest = MakeManifest(canary_bundle)
     self.history.Add(OS_MW, CANARY, V21_0_1166_0)
     self.history.Add(OS_MW, BETA, V19_0_1084_41)
-    self.files.Add(B19_0_1084_41_R1_MLW)
-    self.version_mapping[V21_0_1166_0] = VTRUNK_138079
+    self.files.Add(B19_0_1084_41_MLW)
+    self.version_mapping[V21_0_1166_0] = VTRUNK_140819
     self._MakeDelegate()
     self.assertRaises(Exception, self._Run, OS_MLW)
 
@@ -489,7 +522,7 @@ win,canary,21.0.1156.1,2012-05-30 22:28:01.872056
 mac,canary,21.0.1156.1,2012-05-30 21:20:29.920390
 win,canary,21.0.1156.0,2012-05-30 12:46:48.046627
 mac,canary,21.0.1156.0,2012-05-30 12:14:21.305090"""
-    self.manifest = MakeManifest(copy.deepcopy(BCANARY_R1_NONE))
+    self.manifest = MakeManifest(copy.deepcopy(BCANARY_NONE))
     self._AddCsvHistory(history)
     self.version_mapping = {
         '21.0.1160.0': 'trunk.139984',
@@ -498,9 +531,9 @@ mac,canary,21.0.1156.0,2012-05-30 12:14:21.305090"""
         '21.0.1157.0': 'unknown',
         '21.0.1156.1': 'trunk.139576',
         '21.0.1156.0': 'trunk.139984'}
-    self.files.Add(MakeBundle(21, 139890, '21.0.1159.2', OS_MLW))
-    self.files.Add(MakeBundle(21, 0, '21.0.1157.1', ('linux', 'win')))
-    my_bundle = MakeBundle(21, 139576, '21.0.1156.1', OS_MLW)
+    self.files.Add(MakePlatformBundle(21, 139890, '21.0.1159.2', OS_MLW))
+    self.files.Add(MakePlatformBundle(21, 0, '21.0.1157.1', ('linux', 'win')))
+    my_bundle = MakePlatformBundle(21, 139576, '21.0.1156.1', OS_MLW)
     self.files.Add(my_bundle)
     self._MakeDelegate()
     self._Run(OS_MLW)
@@ -509,9 +542,9 @@ mac,canary,21.0.1156.0,2012-05-30 12:14:21.305090"""
 
   def testExtensionWorksAsBz2(self):
     # Allow old bundles with just .bz2 extension to work
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    bundle = copy.deepcopy(B18_0_1025_163_R1_MLW)
+    bundle = copy.deepcopy(B18_0_1025_163_MLW)
     archive_url = bundle.GetArchive('mac').url
     bundle.GetArchive('mac').url = archive_url.replace('.tar', '')
     self.files.Add(bundle)
@@ -522,27 +555,33 @@ mac,canary,21.0.1156.0,2012-05-30 12:14:21.305090"""
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testOnlyOneStableBundle(self):
-    self.manifest = MakeManifest(B18_R1_NONE, B19_R1_NONE)
-    self.history.Add(OS_MLW, STABLE, V18_0_1025_163)
-    self.history.Add(OS_MLW, STABLE, V19_0_1084_41)
-    self.files.Add(B18_0_1025_163_R1_MLW)
-    self.files.Add(B19_0_1084_41_R1_MLW)
-    self._MakeDelegate()
-    self._Run(OS_MLW)
-    self._ReadUploadedManifest()
-    p18_bundle = self.uploaded_manifest.GetBundle(B18_R1_NONE.name)
-    self.assertEqual(p18_bundle.stability, POST_STABLE)
-    p19_bundle = self.uploaded_manifest.GetBundle(B19_R1_NONE.name)
-    self.assertEqual(p19_bundle.stability, STABLE)
+    # Make sure that any bundle that has an older version than STABLE is marked
+    # as POST_STABLE, even if the last version we found was BETA, DEV, etc.
+    for channel in STABLE, BETA, DEV, CANARY:
+      self.setUp()
+      self.manifest = MakeManifest(B18_NONE, B19_NONE)
+      self.history.Add(OS_MLW, channel, V18_0_1025_163)
+      self.history.Add(OS_MLW, STABLE, V19_0_1084_41)
+      self.files.Add(B18_0_1025_163_MLW)
+      self.files.Add(B19_0_1084_41_MLW)
+      self._MakeDelegate()
+      self._Run(OS_MLW)
+      self._ReadUploadedManifest()
+      p18_bundle = self.uploaded_manifest.GetBundle(B18_NONE.name)
+      self.assertEqual(p18_bundle.stability, POST_STABLE)
+      self.assertEqual(p18_bundle.recommended, 'no')
+      p19_bundle = self.uploaded_manifest.GetBundle(B19_NONE.name)
+      self.assertEqual(p19_bundle.stability, STABLE)
+      self.assertEqual(p19_bundle.recommended, 'yes')
 
   def testDontPushIfNoChange(self):
     # Make an online manifest that already has this bundle.
-    online_manifest = MakeManifest(B18_0_1025_163_R1_MLW)
+    online_manifest = MakeManifest(B18_0_1025_163_MLW)
     self.files.AddOnlineManifest(online_manifest.GetDataAsString())
 
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, DEV, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
 
     self._MakeDelegate()
     self._Run(OS_MLW)
@@ -550,38 +589,161 @@ mac,canary,21.0.1156.0,2012-05-30 12:14:21.305090"""
 
   def testDontPushIfRollback(self):
     # Make an online manifest that has a newer bundle
-    online_manifest = MakeManifest(B18_0_1025_184_R1_MLW)
+    online_manifest = MakeManifest(B18_0_1025_184_MLW)
     self.files.AddOnlineManifest(online_manifest.GetDataAsString())
 
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, DEV, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
 
     self._MakeDelegate()
     self._Run(OS_MLW)
     self.assertFalse(self.delegate.called_gsutil_cp)
 
   def testRunWithFixedBundleVersions(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
-    self.files.Add(B18_0_1025_184_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
+    self.files.Add(B18_0_1025_184_MLW)
 
     self._MakeDelegate()
-    self._Run(OS_MLW, [('pepper_18', '18.0.1025.184')])
+    self._Run(OS_MLW, None, [('pepper_18', '18.0.1025.184')])
     self._ReadUploadedManifest()
-    self._AssertUploadedManifestHasBundle(B18_0_1025_184_R1_MLW, BETA)
+    self._AssertUploadedManifestHasBundle(B18_0_1025_184_MLW, BETA)
     self.assertEqual(len(self.uploaded_manifest.GetBundles()), 1)
 
   def testRunWithMissingFixedBundleVersions(self):
-    self.manifest = MakeManifest(B18_R1_NONE)
+    self.manifest = MakeManifest(B18_NONE)
     self.history.Add(OS_MLW, BETA, V18_0_1025_163)
-    self.files.Add(B18_0_1025_163_R1_MLW)
+    self.files.Add(B18_0_1025_163_MLW)
 
     self._MakeDelegate()
-    self._Run(OS_MLW, [('pepper_18', '18.0.1025.184')])
+    self._Run(OS_MLW, None, [('pepper_18', '18.0.1025.184')])
     # Nothing should be uploaded if the user gives a missing fixed version.
     self.assertFalse(self.delegate.called_gsutil_cp)
+
+  def testDontIncludeRandomBundles(self):
+    self.manifest = MakeManifest(B26_NONE)
+    self.history.Add(OS_MLW, BETA, V26_0_1386_0)
+    self.files.Add(B26_0_1386_0_MLW)
+
+    some_other_bundle = MakePepperBundle(26, 1, V26_0_1386_0, BETA)
+    some_other_archive = MakeNonPlatformArchive('some_other.tar.bz2',
+                                                V26_0_1386_0)
+    some_other_bundle.AddArchive(some_other_archive)
+    self.files.AddArchive(some_other_bundle, some_other_archive)
+
+    self._MakeDelegate()
+    self._Run(OS_MLW)
+    self._ReadUploadedManifest()
+    uploaded_bundle = self.uploaded_manifest.GetBundle('pepper_26')
+    self.assertEqual(1, len(uploaded_bundle.GetHostOSArchives()))
+
+  def testNaclportsBundle(self):
+    self.manifest = MakeManifest(B26_NONE)
+    self.history.Add(OS_MLW, BETA, V26_0_1386_0)
+    self.files.Add(B26_0_1386_0_MLW)
+
+    # NaclPorts "bundle".
+    naclports_bundle = MakePepperBundle(26, 1, V26_0_1386_0, BETA)
+    naclports_archive = MakeNonPlatformArchive('naclports.tar.bz2',
+                                               V26_0_1386_0)
+    naclports_bundle.AddArchive(naclports_archive)
+    self.files.AddArchive(naclports_bundle, naclports_archive)
+
+    self._MakeDelegate()
+    self._Run(OS_MLW, [('naclports.tar.bz2', '26.0.1386.0')])
+    self._ReadUploadedManifest()
+
+    uploaded_bundle = self.uploaded_manifest.GetBundle('pepper_26')
+    self.assertEqual(2, len(uploaded_bundle.GetHostOSArchives()))
+
+  def testKeepBundleOrder(self):
+    # This is a regression test: when a bundle is skipped (because it isn't
+    # newer than the online bundle), it was added to the end of the list.
+
+    # Make an online manifest that already has B18.
+    online_manifest = MakeManifest(B18_0_1025_163_MLW)
+    self.files.AddOnlineManifest(online_manifest.GetDataAsString())
+
+    self.manifest = MakeManifest(B18_NONE, B19_NONE)
+    self.history.Add(OS_MLW, STABLE, V18_0_1025_163)
+    self.history.Add(OS_MLW, STABLE, V19_0_1084_41)
+    self.files.Add(B18_0_1025_163_MLW)
+    self.files.Add(B19_0_1084_41_MLW)
+
+    self._MakeDelegate()
+    self._Run(OS_MLW)
+    self._ReadUploadedManifest()
+
+    # Bundle 18 should be before bundle 19.
+    bundles = self.uploaded_manifest.GetBundles()
+    self.assertEqual(2, len(bundles))
+    self.assertEqual('pepper_18', bundles[0].name)
+    self.assertEqual('pepper_19', bundles[1].name)
+
+  def testBundleWithoutHistoryUsesOnline(self):
+    online_manifest = MakeManifest(B18_0_1025_163_MLW)
+    self.files.AddOnlineManifest(online_manifest.GetDataAsString())
+
+    self.manifest = MakeManifest(B18_NONE)
+
+    self._MakeDelegate()
+    # This should not raise.
+    self._Run(OS_MLW)
+    self._ReadUploadedManifest()
+
+    # But it should have sent an email nagging the users to lock this bundle
+    # manually.
+    self.assertTrue(self.delegate.called_sendmail)
+
+    uploaded_bundle = self.uploaded_manifest.GetBundle('pepper_18')
+    self.assertEqual(uploaded_bundle, B18_0_1025_163_MLW)
+
+  def testBundleWithoutHistoryOrOnlineRaises(self):
+    self.manifest = MakeManifest(B18_NONE)
+    self._MakeDelegate()
+    self.assertRaises(update_nacl_manifest.UnknownLockedBundleException,
+                      self._Run, OS_MLW)
+
+  def testIgnoreLastDigitOnCanary(self):
+    # The final number in a canary build does not include any different
+    # changes, it is just a different experiment (e.g. using ASAN, or using
+    # aura). We should not compare these versions differently.
+    #
+    # Note that the version mapping will show that 31.0.1608.0 is different
+    # from 31.0.1608.1 -- this is because 31.0.1608.1 is built from the branch,
+    # not from trunk. Inspecting the branch would show that there are no
+    # changes (why would there be? No one has any reason to merge changes to a
+    # canary branch.)
+    self.manifest = MakeManifest(copy.deepcopy(BCANARY_NONE))
+    history = """win,canary,31.0.1608.1,2013-08-22 09:33:24.469760
+mac,canary,31.0.1608.0,2013-08-22 07:18:09.762600"""
+    self._AddCsvHistory(history)
+    self.version_mapping['31.0.1608.1'] = 'trunk.218914'
+    self.version_mapping['31.0.1608.0'] = 'trunk.218872'
+    my_bundle = MakePlatformBundle(31, 218872, '31.0.1608.0', OS_MLW)
+    self.files.Add(my_bundle)
+    self._MakeDelegate()
+    self._Run(OS_MLW)
+    self._ReadUploadedManifest()
+    self._AssertUploadedManifestHasBundle(my_bundle, CANARY)
+
+  def testDontIgnoreLastDigitForNonCanary(self):
+    self.manifest = MakeManifest(B26_NONE)
+    self.history.Add(OS_M, BETA, V26_0_1386_1)  # Only Mac
+    self.history.Add(OS_LW, BETA, V26_0_1386_0)  # Only Linux, Windows.
+    self.files.Add(B26_0_1386_0_MLW)
+
+    self._MakeDelegate()
+    # This raises because pepper_26 is not found in the history, and therefore
+    # "locked", but it also doesn't have an online version, therefore there is
+    # no good version number to upload.
+    #
+    # Basically we're asserting that 26.0.1386.1 != 26.0.1386.0, which would be
+    # true if it were canary.
+    self.assertRaises(update_nacl_manifest.UnknownLockedBundleException,
+                      self._Run, OS_MLW)
 
 
 class TestUpdateVitals(unittest.TestCase):
@@ -607,7 +769,7 @@ class TestUpdateVitals(unittest.TestCase):
       path = '/' + path
     archive.url = 'file://' + path
 
-    bundle = MakeBundle(18)
+    bundle = MakePlatformBundle(18)
     bundle.AddArchive(archive)
     manifest = MakeManifest(bundle)
     archive = manifest.GetBundles()[0]['archives'][0]

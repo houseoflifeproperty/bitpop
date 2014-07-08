@@ -9,12 +9,16 @@
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 
-#include "base/message_pump_aurax11.h"
-#include "ui/aura/root_window.h"
+#include "ui/aura/client/aura_constants.h"
+#include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
-#include "ui/base/events/event.h"
+#include "ui/aura/window_tree_host.h"
 #include "ui/base/hit_test.h"
-#include "ui/views/widget/desktop_aura/desktop_activation_client.h"
+#include "ui/events/event.h"
+#include "ui/events/event_utils.h"
+#include "ui/gfx/x/x11_types.h"
+#include "ui/views/linux_ui/linux_ui.h"
+#include "ui/views/widget/desktop_aura/desktop_window_tree_host.h"
 #include "ui/views/widget/native_widget_aura.h"
 
 namespace {
@@ -58,14 +62,14 @@ const char* kAtomsToCache[] = {
 namespace views {
 
 X11WindowEventFilter::X11WindowEventFilter(
-    aura::RootWindow* root_window,
-    DesktopActivationClient* activation_client)
-    : activation_client_(activation_client),
-      xdisplay_(base::MessagePumpAuraX11::GetDefaultXDisplay()),
-      xwindow_(root_window->GetAcceleratedWidget()),
+    DesktopWindowTreeHost* window_tree_host)
+    : xdisplay_(gfx::GetXDisplay()),
+      xwindow_(window_tree_host->AsWindowTreeHost()->GetAcceleratedWidget()),
       x_root_window_(DefaultRootWindow(xdisplay_)),
       atom_cache_(xdisplay_, kAtomsToCache),
-      is_active_(false) {
+      window_tree_host_(window_tree_host),
+      is_active_(false),
+      click_component_(HTNOWHERE) {
 }
 
 X11WindowEventFilter::~X11WindowEventFilter() {
@@ -78,7 +82,7 @@ void X11WindowEventFilter::SetUseHostWindowBorders(bool use_os_border) {
   motif_hints.decorations = use_os_border ? 1 : 0;
 
   ::Atom hint_atom = atom_cache_.GetAtom("_MOTIF_WM_HINTS");
-  XChangeProperty(base::MessagePumpAuraX11::GetDefaultXDisplay(),
+  XChangeProperty(gfx::GetXDisplay(),
                   xwindow_,
                   hint_atom,
                   hint_atom,
@@ -92,19 +96,81 @@ void X11WindowEventFilter::OnMouseEvent(ui::MouseEvent* event) {
   if (event->type() != ui::ET_MOUSE_PRESSED)
     return;
 
-  if (!event->IsLeftMouseButton())
+  if (!(event->IsLeftMouseButton() || event->IsMiddleMouseButton()))
     return;
 
   aura::Window* target = static_cast<aura::Window*>(event->target());
+  if (!target->delegate())
+    return;
+
+  int previous_click_component = HTNOWHERE;
   int component =
       target->delegate()->GetNonClientComponent(event->location());
+  if (event->IsLeftMouseButton()) {
+    previous_click_component = click_component_;
+    click_component_ = component;
+  }
   if (component == HTCLIENT)
     return;
 
+  if (event->IsMiddleMouseButton() && (component == HTCAPTION)) {
+    LinuxUI::NonClientMiddleClickAction action =
+        LinuxUI::MIDDLE_CLICK_ACTION_LOWER;
+    LinuxUI* linux_ui = LinuxUI::instance();
+    if (linux_ui)
+      action = linux_ui->GetNonClientMiddleClickAction();
+
+    switch (action) {
+      case LinuxUI::MIDDLE_CLICK_ACTION_NONE:
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_LOWER:
+        XLowerWindow(xdisplay_, xwindow_);
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_MINIMIZE:
+        window_tree_host_->Minimize();
+        break;
+      case LinuxUI::MIDDLE_CLICK_ACTION_TOGGLE_MAXIMIZE:
+        if (target->GetProperty(aura::client::kCanMaximizeKey))
+          ToggleMaximizedState();
+        break;
+    }
+
+    event->SetHandled();
+    return;
+  }
+
+  // Left button case.
+  if (event->flags() & ui::EF_IS_DOUBLE_CLICK) {
+    click_component_ = HTNOWHERE;
+    if (component == HTCAPTION &&
+        target->GetProperty(aura::client::kCanMaximizeKey) &&
+        previous_click_component == component) {
+      // Our event is a double click in the caption area in a window that can be
+      // maximized. We are responsible for dispatching this as a minimize/
+      // maximize on X11 (Windows converts this to min/max events for us).
+      ToggleMaximizedState();
+      event->SetHandled();
+      return;
+    }
+  }
+
   // Get the |x_root_window_| location out of the native event.
-  gfx::Point root_location = event->system_location();
-  if (DispatchHostWindowDragMovement(component, root_location))
-    event->StopPropagation();
+  if (event->native_event()) {
+    const gfx::Point x_root_location =
+        ui::EventSystemLocationFromNative(event->native_event());
+    if ((component == HTCAPTION ||
+         target->GetProperty(aura::client::kCanResizeKey)) &&
+        DispatchHostWindowDragMovement(component, x_root_location)) {
+      event->StopPropagation();
+    }
+  }
+}
+
+void X11WindowEventFilter::ToggleMaximizedState() {
+  if (window_tree_host_->IsMaximized())
+    window_tree_host_->Restore();
+  else
+    window_tree_host_->Maximize();
 }
 
 bool X11WindowEventFilter::DispatchHostWindowDragMovement(
@@ -170,4 +236,3 @@ bool X11WindowEventFilter::DispatchHostWindowDragMovement(
 }
 
 }  // namespace views
-

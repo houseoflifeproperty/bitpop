@@ -92,7 +92,7 @@
 #endif
 
 static int RENAME(dct_quantize)(MpegEncContext *s,
-                            DCTELEM *block, int n,
+                            int16_t *block, int n,
                             int qscale, int *overflow)
 {
     x86_reg last_non_zero_p1;
@@ -100,7 +100,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
     const uint16_t *qmat, *bias;
     LOCAL_ALIGNED_16(int16_t, temp_block, [64]);
 
-    assert((7&(int)(&temp_block[0])) == 0); //did gcc align it correctly?
+    av_assert2((7&(int)(&temp_block[0])) == 0); //did gcc align it correctly?
 
     //s->fdct (block);
     RENAMEl(ff_fdct) (block); //cannot be anything else ...
@@ -171,7 +171,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat), "r" (bias),
-              "r" (ff_inv_zigzag_direct16+64), "r" (temp_block+64)
+              "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
               XMM_CLOBBERS_ONLY("%xmm0", "%xmm1", "%xmm2", "%xmm3",
                                 "%xmm4", "%xmm5", "%xmm6", "%xmm7")
         );
@@ -205,7 +205,7 @@ static int RENAME(dct_quantize)(MpegEncContext *s,
             "movzb %%al, %%"REG_a"              \n\t" // last_non_zero_p1
             : "+a" (last_non_zero_p1)
             : "r" (block+64), "r" (qmat+64), "r" (bias+64),
-              "r" (ff_inv_zigzag_direct16+64), "r" (temp_block+64)
+              "r" (inv_zigzag_direct16 + 64), "r" (temp_block + 64)
               XMM_CLOBBERS_ONLY("%xmm0", "%xmm1", "%xmm2", "%xmm3",
                                 "%xmm4", "%xmm5", "%xmm6", "%xmm7")
         );

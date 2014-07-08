@@ -4,9 +4,9 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#import "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/bookmarks/bookmark_tree_browser_cell.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 #include "testing/platform_test.h"
 
 class BookmarkTreeBrowserCellTest : public PlatformTest {
@@ -20,8 +20,8 @@ class BookmarkTreeBrowserCellTest : public PlatformTest {
   }
 
   scoped_ptr<BookmarkNode> bookmarkNodeMock_;
-  scoped_nsobject<NSMatrix> matrixMock_;
-  scoped_nsobject<NSObject> targetMock_;
+  base::scoped_nsobject<NSMatrix> matrixMock_;
+  base::scoped_nsobject<NSObject> targetMock_;
 };
 
 TEST_F(BookmarkTreeBrowserCellTest, BasicAllocDealloc) {

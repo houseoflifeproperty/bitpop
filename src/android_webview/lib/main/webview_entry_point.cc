@@ -5,28 +5,54 @@
 #include "android_webview/lib/main/aw_main_delegate.h"
 #include "android_webview/native/android_webview_jni_registrar.h"
 #include "base/android/jni_android.h"
-#include "base/command_line.h"
+#include "base/android/jni_registrar.h"
+#include "base/android/library_loader/library_loader_hooks.h"
+#include "components/navigation_interception/component_jni_registrar.h"
+#include "components/web_contents_delegate_android/component_jni_registrar.h"
 #include "content/public/app/android_library_loader_hooks.h"
 #include "content/public/app/content_main.h"
-#include "content/public/common/content_switches.h"
+#include "url/url_util.h"
+
+static base::android::RegistrationMethod
+    kWebViewDependencyRegisteredMethods[] = {
+    { "NavigationInterception",
+        navigation_interception::RegisterNavigationInterceptionJni },
+    { "WebContentsDelegateAndroid",
+        web_contents_delegate_android::RegisterWebContentsDelegateAndroidJni },
+};
 
 // This is called by the VM when the shared library is first loaded.
 // Most of the initialization is done in LibraryLoadedOnMainThread(), not here.
 JNI_EXPORT jint JNI_OnLoad(JavaVM* vm, void* reserved) {
+
+  base::android::SetLibraryLoadedHook(&content::LibraryLoaded);
+
   base::android::InitVM(vm);
   JNIEnv* env = base::android::AttachCurrentThread();
-  if (!content::RegisterLibraryLoaderEntryHook(env))
+  if (!base::android::RegisterLibraryLoaderEntryHook(env))
+    return -1;
+
+  // Register content JNI functions now, rather than waiting until
+  // LibraryLoadedOnMainThread, so that we can call into native code early.
+  if (!content::EnsureJniRegistered(env))
+    return -1;
+
+  // Register JNI for components we depend on.
+  if (!RegisterNativeMethods(
+      env,
+      kWebViewDependencyRegisteredMethods,
+      arraysize(kWebViewDependencyRegisteredMethods)))
     return -1;
 
   if (!android_webview::RegisterJni(env))
     return -1;
 
-  // Set the command line to enable synchronous API compatibility.
-  CommandLine::Init(0, NULL);
-  CommandLine::ForCurrentProcess()->AppendSwitch(
-      switches::kEnableWebViewSynchronousAPIs);
-
   content::SetContentMainDelegate(new android_webview::AwMainDelegate());
+
+  // Initialize url lib here while we are still single-threaded, in case we use
+  // CookieManager before initializing Chromium (which would normally have done
+  // this). It's safe to call this multiple times.
+  url::Initialize();
 
   return JNI_VERSION_1_4;
 }

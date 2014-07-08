@@ -5,22 +5,22 @@
 #ifndef NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 #define NET_QUIC_CRYPTO_CRYPTO_FRAMER_H_
 
-#include <map>
+#include <utility>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/memory/scoped_ptr.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
-#include "net/quic/crypto/crypto_protocol.h"
+#include "net/quic/crypto/crypto_handshake_message.h"
 #include "net/quic/quic_protocol.h"
 
 namespace net {
 
 class CryptoFramer;
-class QuicDataReader;
 class QuicData;
+class QuicDataReader;
+class QuicDataWriter;
 
 class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
  public:
@@ -34,12 +34,18 @@ class NET_EXPORT_PRIVATE CryptoFramerVisitorInterface {
       const CryptoHandshakeMessage& message) = 0;
 };
 
-// A class for framing the crypto message that are exchanged in a QUIC session.
+// A class for framing the crypto messages that are exchanged in a QUIC
+// session.
 class NET_EXPORT_PRIVATE CryptoFramer {
  public:
   CryptoFramer();
 
   virtual ~CryptoFramer();
+
+  // ParseMessage parses exactly one message from the given StringPiece. If
+  // there is an error, the message is truncated, or the message has trailing
+  // garbage then NULL will be returned.
+  static CryptoHandshakeMessage* ParseMessage(base::StringPiece in);
 
   // Set callbacks to be called from the framer.  A visitor must be set, or
   // else the framer will crash.  It is acceptable for the visitor to do
@@ -49,32 +55,38 @@ class NET_EXPORT_PRIVATE CryptoFramer {
     visitor_ = visitor;
   }
 
-  QuicErrorCode error() const {
-    return error_;
-  }
+  QuicErrorCode error() const { return error_; }
 
-  // Processes input data, which must be delivered in order.  Returns
+  // Processes input data, which must be delivered in order. Returns
   // false if there was an error, and true otherwise.
   bool ProcessInput(base::StringPiece input);
 
+  // Returns the number of bytes of buffered input data remaining to be
+  // parsed.
+  size_t InputBytesRemaining() const { return buffer_.length(); }
+
   // Returns a new QuicData owned by the caller that contains a serialized
   // |message|, or NULL if there was an error.
-  QuicData* ConstructHandshakeMessage(const CryptoHandshakeMessage& message);
+  static QuicData* ConstructHandshakeMessage(
+      const CryptoHandshakeMessage& message);
 
  private:
   // Clears per-message state.  Does not clear the visitor.
   void Clear();
 
-  void set_error(QuicErrorCode error) {
-    error_ = error;
-  }
+  // Process does does the work of |ProcessInput|, but returns an error code,
+  // doesn't set error_ and doesn't call |visitor_->OnError()|.
+  QuicErrorCode Process(base::StringPiece input);
 
-  // Represents the current state of the framing state machine.
+  static bool WritePadTag(QuicDataWriter* writer,
+                          size_t pad_length,
+                          uint32* end_offset);
+
+  // Represents the current state of the parsing state machine.
   enum CryptoFramerState {
     STATE_READING_TAG,
     STATE_READING_NUM_ENTRIES,
-    STATE_READING_KEY_TAGS,
-    STATE_READING_LENGTHS,
+    STATE_READING_TAGS_AND_LENGTHS,
     STATE_READING_VALUES
   };
 
@@ -86,17 +98,13 @@ class NET_EXPORT_PRIVATE CryptoFramer {
   std::string buffer_;
   // Current state of the parsing.
   CryptoFramerState state_;
-  // Tag of the message currently being parsed.
-  CryptoTag message_tag_;
+  // The message currently being parsed.
+  CryptoHandshakeMessage message_;
   // Number of entires in the message currently being parsed.
   uint16 num_entries_;
-  // Vector of tags in the message currently being parsed.
-  CryptoTagVector tags_;
-  // Length of the data associated with each tag in the message currently
-  // being parsed.
-  std::map<CryptoTag, size_t> tag_length_map_;
-  // Data associated with each tag in the message currently being parsed.
-  CryptoTagValueMap tag_value_map_;
+  // tags_and_lengths_ contains the tags that are currently being parsed and
+  // their lengths.
+  std::vector<std::pair<QuicTag, size_t> > tags_and_lengths_;
   // Cumulative length of all values in the message currently being parsed.
   size_t values_len_;
 };

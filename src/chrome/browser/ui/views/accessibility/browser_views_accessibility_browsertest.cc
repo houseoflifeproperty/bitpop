@@ -4,9 +4,11 @@
 
 #include <oleacc.h>
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/win/scoped_bstr.h"
 #include "base/win/scoped_com_initializer.h"
 #include "base/win/scoped_comptr.h"
+#include "base/win/scoped_variant.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_window.h"
 #include "chrome/browser/ui/view_ids.h"
@@ -24,11 +26,7 @@
 #include "ui/views/accessibility/native_view_accessibility_win.h"
 #include "ui/views/widget/widget.h"
 
-namespace {
-
-VARIANT id_self = {VT_I4, CHILDID_SELF};
-
-}  // namespace
+using base::UTF16ToWide;
 
 class BrowserViewsAccessibilityTest : public InProcessBrowserTest {
  public:
@@ -103,18 +101,16 @@ void BrowserViewsAccessibilityTest::TestAccessibilityInfo(IAccessible* acc_obj,
                                                           std::wstring name,
                                                           int32 role) {
   // Verify MSAA Name property.
-  BSTR acc_name;
-  ASSERT_EQ(S_OK, acc_obj->get_accName(id_self, &acc_name));
-  EXPECT_STREQ(name.c_str(), acc_name);
-  ::SysFreeString(acc_name);
+  base::win::ScopedVariant childid_self(CHILDID_SELF);
+  base::win::ScopedBstr acc_name;
+  ASSERT_EQ(S_OK, acc_obj->get_accName(childid_self, acc_name.Receive()));
+  EXPECT_EQ(name, base::string16(acc_name));
 
   // Verify MSAA Role property.
-  VARIANT acc_role;
-  ::VariantInit(&acc_role);
-  ASSERT_EQ(S_OK, acc_obj->get_accRole(id_self, &acc_role));
-  EXPECT_EQ(VT_I4, acc_role.vt);
-  EXPECT_EQ(role, acc_role.lVal);
-  ::VariantClear(&acc_role);
+  base::win::ScopedVariant acc_role;
+  ASSERT_EQ(S_OK, acc_obj->get_accRole(childid_self, acc_role.Receive()));
+  EXPECT_EQ(VT_I4, acc_role.type());
+  EXPECT_EQ(role, V_I4(&acc_role));
 }
 
 // Retrieve accessibility object for main window and verify accessibility info.
@@ -133,44 +129,43 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
   ASSERT_EQ(S_OK, hr);
   ASSERT_TRUE(NULL != acc_obj);
 
-  ui_test_utils::NavigateToURL(browser(), GURL(chrome::kAboutBlankURL));
+  ui_test_utils::NavigateToURL(browser(), GURL(content::kAboutBlankURL));
   std::wstring title = UTF16ToWide(l10n_util::GetStringFUTF16(
       IDS_BROWSER_WINDOW_TITLE_FORMAT,
-      ASCIIToUTF16(chrome::kAboutBlankURL)));
+      base::ASCIIToUTF16(content::kAboutBlankURL)));
   TestAccessibilityInfo(acc_obj, title, ROLE_SYSTEM_WINDOW);
 }
 
 // Retrieve accessibility object for non client view and verify accessibility
 // info.
-// http://crbug.com/104132
+// TODO(pkasting): Disabled pending resolution of whether this should be
+// ROLE_SYSTEM_CLIENT or ROLE_SYSTEM_WINDOW.
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
                        DISABLED_TestNonClientViewAccObj) {
-  views::View* non_client_view =
-  GetBrowserView()->GetWidget()->non_client_view();
-
-  TestViewAccessibilityObject(non_client_view,
+  TestViewAccessibilityObject(
+      GetBrowserView()->GetWidget()->non_client_view(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)),
       ROLE_SYSTEM_WINDOW);
 }
 
-// Retrieve accessibility object for browser root view and verify
-// accessibility info.
-// http://crbug.com/104132
+// Retrieve accessibility object for browser root view and verify accessibility
+// info.
+// TODO(pkasting): Disabled pending resolution of whether this should be
+// ROLE_SYSTEM_WINDOW or ROLE_SYSTEM_APPLICATION, as well as what the name
+// should be.
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
                        DISABLED_TestBrowserRootViewAccObj) {
-  views::View* browser_root_view = GetBrowserView()->frame()->GetRootView();
-
   TestViewAccessibilityObject(
-      browser_root_view,
+      GetBrowserView()->frame()->GetRootView(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)),
       ROLE_SYSTEM_APPLICATION);
 }
 
 // Retrieve accessibility object for browser view and verify accessibility info.
-// http://crbug.com/104132
+// TODO(pkasting): Disabled pending resolution of whether this object should
+// have an accessible name.
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
                        DISABLED_TestBrowserViewAccObj) {
-  // Verify root view MSAA name and role.
   TestViewAccessibilityObject(
       GetBrowserView(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_PRODUCT_NAME)),
@@ -178,10 +173,7 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 }
 
 // Retrieve accessibility object for toolbar view and verify accessibility info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestToolbarViewAccObj) {
-  // Verify toolbar MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestToolbarViewAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_TOOLBAR)),
@@ -189,10 +181,7 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 }
 
 // Retrieve accessibility object for Back button and verify accessibility info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestBackButtonAccObj) {
-  // Verify Back button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestBackButtonAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_BACK_BUTTON),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_BACK)),
@@ -201,10 +190,7 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 
 // Retrieve accessibility object for Forward button and verify accessibility
 // info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestForwardButtonAccObj) {
-  // Verify Forward button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestForwardButtonAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_FORWARD_BUTTON),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_FORWARD)),
@@ -213,10 +199,7 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 
 // Retrieve accessibility object for Reload button and verify accessibility
 // info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestReloadButtonAccObj) {
-  // Verify Reload button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestReloadButtonAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_RELOAD_BUTTON),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_RELOAD)),
@@ -224,10 +207,7 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 }
 
 // Retrieve accessibility object for Home button and verify accessibility info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestHomeButtonAccObj) {
-  // Verify Home button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestHomeButtonAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_HOME_BUTTON),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_HOME)),
@@ -235,31 +215,35 @@ IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
 }
 
 // Retrieve accessibility object for Star button and verify accessibility info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestStarButtonAccObj) {
-  // Verify Star button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestStarButtonAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_STAR_BUTTON),
-      UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_STAR)),
+      UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_STAR)),
+      ROLE_SYSTEM_PUSHBUTTON);
+}
+
+// Retrieve accessibility object for Mic search button and verify accessibility
+// info.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
+                       TestMicSearchButtonViewAccObj) {
+  TestViewAccessibilityObject(
+      GetToolbarView()->GetViewByID(VIEW_ID_MIC_SEARCH_BUTTON),
+      UTF16ToWide(l10n_util::GetStringUTF16(IDS_TOOLTIP_MIC_SEARCH)),
       ROLE_SYSTEM_PUSHBUTTON);
 }
 
 // Retrieve accessibility object for App menu button and verify accessibility
 // info.
-// http://crbug.com/104132
-IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestAppMenuAccObj) {
-  // Verify App menu button MSAA name and role.
+IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest, TestAppMenuAccObj) {
   TestViewAccessibilityObject(
       GetToolbarView()->GetViewByID(VIEW_ID_APP_MENU),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_APP)),
       ROLE_SYSTEM_BUTTONMENU);
 }
 
-// http://crbug.com/104132
+// Retrieve accessibility object for bookmark bar and verify accessibility info.
 IN_PROC_BROWSER_TEST_F(BrowserViewsAccessibilityTest,
-                       DISABLED_TestBookmarkBarViewAccObj) {
+                       TestBookmarkBarViewAccObj) {
   TestViewAccessibilityObject(
       GetBookmarkBarView(),
       UTF16ToWide(l10n_util::GetStringUTF16(IDS_ACCNAME_BOOKMARKS)),

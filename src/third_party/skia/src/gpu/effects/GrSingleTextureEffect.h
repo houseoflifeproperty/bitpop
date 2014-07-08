@@ -10,56 +10,56 @@
 
 #include "GrEffect.h"
 #include "SkMatrix.h"
-#include "GrTexture.h"
+#include "GrCoordTransform.h"
 
-class GrGLSingleTextureEffect;
+class GrTexture;
 
 /**
- * An effect that draws a single texture with a texture matrix; commonly used as a base class. The
- * output color is the texture color is modulated against the input color.
+ * A base class for effects that draw a single texture with a texture matrix. This effect has no
+ * backend implementations. One must be provided by the subclass.
  */
 class GrSingleTextureEffect : public GrEffect {
-
 public:
-    /** These three constructors assume an identity matrix. TODO: Remove these.*/
-    GrSingleTextureEffect(GrTexture* texture); /* unfiltered, clamp mode */
-    GrSingleTextureEffect(GrTexture* texture, bool bilerp); /* clamp mode */
-    GrSingleTextureEffect(GrTexture* texture, const GrTextureParams&);
-
-    /** These three constructors take an explicit matrix */
-    GrSingleTextureEffect(GrTexture*, const SkMatrix&); /* unfiltered, clamp mode */
-    GrSingleTextureEffect(GrTexture*, const SkMatrix&, bool bilerp); /* clamp mode */
-    GrSingleTextureEffect(GrTexture*, const SkMatrix&, const GrTextureParams&);
-
     virtual ~GrSingleTextureEffect();
 
-    virtual const GrTextureAccess& textureAccess(int index) const SK_OVERRIDE;
+protected:
+    /** unfiltered, clamp mode */
+    GrSingleTextureEffect(GrTexture*, const SkMatrix&, GrCoordSet = kLocal_GrCoordSet);
+    /** clamp mode */
+    GrSingleTextureEffect(GrTexture*, const SkMatrix&, GrTextureParams::FilterMode filterMode,
+                          GrCoordSet = kLocal_GrCoordSet);
+    GrSingleTextureEffect(GrTexture*,
+                          const SkMatrix&,
+                          const GrTextureParams&,
+                          GrCoordSet = kLocal_GrCoordSet);
 
-    static const char* Name() { return "Single Texture"; }
-
-    const SkMatrix& getMatrix() const { return fMatrix; }
-
-    typedef GrGLSingleTextureEffect GLEffect;
-
-    virtual const GrBackendEffectFactory& getFactory() const SK_OVERRIDE;
-
-    virtual bool isEqual(const GrEffect& effect) const SK_OVERRIDE {
-        const GrSingleTextureEffect& ste = static_cast<const GrSingleTextureEffect&>(effect);
-        return INHERITED::isEqual(effect) && fMatrix.cheapEqualTo(ste.getMatrix());
+    /**
+     * Helper for subclass onIsEqual() functions.
+     */
+    bool hasSameTextureParamsMatrixAndSourceCoords(const GrSingleTextureEffect& other) const {
+        // We don't have to check the accesses' swizzles because they are inferred from the texture.
+        return fTextureAccess == other.fTextureAccess &&
+               fCoordTransform.getMatrix().cheapEqualTo(other.fCoordTransform.getMatrix()) &&
+               fCoordTransform.sourceCoords() == other.fCoordTransform.sourceCoords();
     }
 
-    static inline SkMatrix MakeDivByTextureWHMatrix(const GrTexture* texture) {
-        GrAssert(NULL != texture);
-        SkMatrix mat;
-        mat.setIDiv(texture->width(), texture->height());
-        return mat;
+    /**
+     * Can be used as a helper to implement subclass getConstantColorComponents(). It assumes that
+     * the subclass output color will be a modulation of the input color with a value read from the
+     * texture.
+     */
+    void updateConstantColorComponentsForModulation(GrColor* color, uint32_t* validFlags) const {
+        if ((*validFlags & kA_GrColorComponentFlag) && 0xFF == GrColorUnpackA(*color) &&
+            GrPixelConfigIsOpaque(this->texture(0)->config())) {
+            *validFlags = kA_GrColorComponentFlag;
+        } else {
+            *validFlags = 0;
+        }
     }
 
 private:
-    GR_DECLARE_EFFECT_TEST;
-
-    GrTextureAccess fTextureAccess;
-    SkMatrix        fMatrix;
+    GrCoordTransform fCoordTransform;
+    GrTextureAccess  fTextureAccess;
 
     typedef GrEffect INHERITED;
 };

@@ -83,14 +83,6 @@ BITSPLATFORM = 64
 
 LINUX_HEADERS = "$(abspath $(dir $(THISMAKEFILE)))/SRC/linux-headers-for-nacl/include"
 HPREFIX = SRC/newlib/newlib/libc/sys/nacl
-NACL_SYS_HEADERS = \
-      "$(HPREFIX)/sys/nacl_imc_api.h" \
-      "$(HPREFIX)/sys/nacl_name_service.h" \
-      "$(HPREFIX)/sys/nacl_syscalls.h"
-NACL_BITS_HEADERS = \
-      "$(HPREFIX)/bits/nacl_imc_api.h" \
-      "$(HPREFIX)/bits/nacl_syscalls.h"
-NACL_MACHINE_HEADERS = "$(HPREFIX)/machine/_types.h"
 
 # No 'uname -o' on OSX
 ifeq ($(shell uname -s), Darwin)
@@ -157,8 +149,6 @@ GCC_VERSION = 4.4.3
 NACL_GCC_GIT_BASE = 4e0ae761f59baae95282ab07efa9b831ac524642
 NEWLIB_VERSION = 1.20.0
 NACL_NEWLIB_GIT_BASE = 151b2c72fb87849bbc6e3ef569718c6344eed2e6
-GDB_VERSION = 6.8
-NACL_GDB_GIT_BASE = 5540d856ee177a454c2b8871c6498d0524b0c6f9
 GLIBC_VERSION = 2.9
 NACL_GLIBC_GIT_BASE = 5c46008d0874c9b9d5f5f201a10e975d1fe84787
 
@@ -169,7 +159,7 @@ NACL_GLIBC_GIT_BASE = 5c46008d0874c9b9d5f5f201a10e975d1fe84787
 SRC:
 	mkdir SRC
 
-git-sources := binutils gcc gdb glibc linux-headers-for-nacl newlib
+git-sources := binutils gcc glibc linux-headers-for-nacl newlib
 
 nacl-name = $(patsubst nacl-linux-headers-for-nacl,linux-headers-for-nacl,nacl-$*)
 
@@ -239,8 +229,10 @@ rm -rf $@
 mkdir -p $@
 BUILD=$$PWD/BUILD && cd $@ && \
   ../../SRC/.gcc-extra-$(@:BUILD/.gcc-extra-build-%=%)/configure \
-  CFLAGS="-m$(HOST_TOOLCHAIN_BITS) $(CFLAGS)" \
-  CXXFLAGS="-m$(HOST_TOOLCHAIN_BITS) $(CXXFLAGS)" \
+  CC="$(GCC_CC)" \
+  CXX="$(GCC_CXX)" \
+  CFLAGS="$(CFLAGS)" \
+  CXXFLAGS="$(CXXFLAGS)" \
   CPPFLAGS="-fexceptions $(CPPFLAGS)" \
   --prefix=$$BUILD/.gcc-extra-install-$(@:BUILD/.gcc-extra-build-%=%) \
   --disable-shared
@@ -409,6 +401,7 @@ GCC_CONFIGURE_FLAGS = \
     --disable-libssp \
     --disable-libstdcxx-pch \
     --target=$(CROSSARCH) \
+    --enable-linker-build-id \
     $(GCC_EXTRAS_FLAGS)
 
 ifdef MULTILIB
@@ -419,7 +412,13 @@ $(error MULTILIB: Bad value)
 endif
 endif
 
+ifeq ($(PLATFORM), mac)
+GCC_CC = clang -m$(HOST_TOOLCHAIN_BITS) -fgnu89-inline
+GCC_CXX = clang++ -m$(HOST_TOOLCHAIN_BITS)
+else
 GCC_CC = gcc -m$(HOST_TOOLCHAIN_BITS)
+GCC_CXX = g++ -m$(HOST_TOOLCHAIN_BITS)
+endif
 
 GCC_DEFINES = \
     -Dinhibit_libc \
@@ -432,14 +431,7 @@ GCC_CONFIGURE_FLAGS-nolibc = --disable-shared \
 			     --enable-languages="c" \
 			     --without-headers
 
-# The newlib-based build of the GCC target libraries (libstdc++ et al)
-# gets used in irt.nexe, which must not use direct register access for
-# TLS.  src/untrusted/irt/nacl.scons:run_irt_tls_test ensures that no
-# such accesses leaked into that binary.  The pregcc build does not
-# produce target libraries that are linked into anything, and the glibc
-# build is not used for building irt.nexe, so they do not need this option.
-GCC_CFLAGS_FOR_TARGET-newlib = -mtls-use-call \
-			       -I$(HEADERS_FOR_BUILD)
+GCC_CFLAGS_FOR_TARGET-newlib = -I$(HEADERS_FOR_BUILD)
 
 GCC_CONFIGURE_FLAGS-newlib = --disable-shared \
 			     --enable-languages="c,c++,objc" \
@@ -556,8 +548,7 @@ endif
 # by the Native Client threads package build.
 ##################################################################
 
-NEWLIB_CFLAGS = -O2 -D_I386MACH_ALLOW_HW_INTERRUPTS -DSIGNAL_PROVIDED \
-  -mtls-use-call
+NEWLIB_CFLAGS = -O2
 
 BUILD/stamp-$(CROSSARCH)-newlib: | SRC/newlib BUILD newlib-libc-script
 	rm -rf BUILD/build-newlib-$(CROSSARCH)
@@ -567,6 +558,8 @@ BUILD/stamp-$(CROSSARCH)-newlib: | SRC/newlib BUILD newlib-libc-script
 	  ../../SRC/newlib/configure \
 		      --disable-libgloss \
 		      --enable-newlib-iconv \
+		      --enable-newlib-iconv-from-encodings=UTF-8,UTF-16LE,UCS-4LE,UTF-16,UCS-4 \
+		      --enable-newlib-iconv-to-encodings=UTF-8,UTF-16LE,UCS-4LE,UTF-16,UCS-4 \
 		      --enable-newlib-io-long-long \
 		      --enable-newlib-io-long-double \
 		      --enable-newlib-io-c99-formats \
@@ -579,12 +572,20 @@ BUILD/stamp-$(CROSSARCH)-newlib: | SRC/newlib BUILD newlib-libc-script
 	  $(MAKE) && \
 	  $(MAKE) DESTDIR=$(DESTDIR) install
 ifeq ($(CANNED_REVISION), no)
-	rm $(DESTDIR)$(PREFIX)/$(CROSSARCH)/include/pthread.h
+# The buildbot script that creates the source tarball adds all the headers to
+# the tarball itself (see buildbot/buildbot_linux-glibc-makefile.sh)
+	cp -f $(addprefix ../src/untrusted/pthread/, pthread.h semaphore.h) \
+	  $(DESTDIR)$(PREFIX)/$(CROSSARCH)/include
 endif
 	for bits in 32 64; do \
 	  mv $(DESTDIR)$(PREFIX)/$(CROSSARCH)/lib$$bits/libc.a \
 	     $(DESTDIR)$(PREFIX)/$(CROSSARCH)/lib$$bits/libcrt_common.a; \
-	  sed "s/@OBJFORMAT@/elf$${bits}-nacl/" newlib-libc-script \
+	  if [[ "$$bits" = "32" ]]; then \
+	    objformat=elf32-i386-nacl ; \
+	  else \
+	    objformat=elf64-x86-64-nacl ; \
+	  fi ; \
+	  sed "s/@OBJFORMAT@/$$objformat/" newlib-libc-script \
 	    > $(DESTDIR)$(PREFIX)/$(CROSSARCH)/lib$$bits/libc.a; \
 	done
 	touch $@
@@ -629,6 +630,7 @@ BUILD/stamp-glibc32: BUILD/stamp-$(CROSSARCH)-pregcc-standalone | SRC/glibc
 	    libc_cv_forced_unwind=yes \
 	    libc_cv_c_cleanup=yes \
 	    libc_cv_slibdir=/lib32 \
+	    libc_cv_z_combreloc=no \
 	    --prefix= \
 	    --libdir=/lib32 \
 	    --host=i486-linux-gnu \
@@ -651,6 +653,7 @@ BUILD/stamp-glibc64: BUILD/stamp-$(CROSSARCH)-pregcc-standalone | SRC/glibc
 	    libc_cv_forced_unwind=yes \
 	    libc_cv_c_cleanup=yes \
 	    libc_cv_slibdir=/lib \
+	    libc_cv_z_combreloc=no \
 	    --prefix= \
 	    --libdir=/lib \
 	    --host=x86_64-linux-gnu \
@@ -695,11 +698,8 @@ glibc-adhoc-files: | SRC/glibc
 	install -m 755 -d  $(ARCH_DEST)/lib/ldscripts
 	cp -f SRC/glibc/nacl/dyn-link/ldscripts/* \
 	    $(ARCH_DEST)/lib/ldscripts/
-	mkdir -p $(ARCH_DEST)/include/{sys,machine,bits}
+	mkdir -p $(ARCH_DEST)/include/machine
 	cp -rf $(LINUX_HEADERS)/{asm*,linux} $(ARCH_DEST)/include
-	cp -f $(NACL_BITS_HEADERS) $(ARCH_DEST)/include/bits
-	cp -f $(NACL_SYS_HEADERS) $(ARCH_DEST)/include/sys
-	cp -f $(NACL_MACHINE_HEADERS) $(ARCH_DEST)/include/machine
 ifeq ($(CANNED_REVISION), no)
 	cp ../src/untrusted/include/machine/_default_types.h \
 	    $(ARCH_DEST)/include/machine/_default_types.h
@@ -820,52 +820,12 @@ endif
 gcc: BUILD/stamp-$(CROSSARCH)-gcc
 
 ##################################################################
-# gdb:
-# Builds gdb.
-##################################################################
-# Only linux and windows are supported.
-BUILD/stamp-$(CROSSARCH)-gdb: | SRC/gdb BUILD
-	rm -rf BUILD/build-gdb-$(CROSSARCH)
-	mkdir BUILD/build-gdb-$(CROSSARCH)
-ifeq ($(PLATFORM),win)
-	cd BUILD/build-gdb-$(CROSSARCH) && \
-	  CC="x86_64-w64-mingw32-gcc -m32" \
-	  CC_FOR_BUILD="x86_64-w64-mingw32-gcc -m32" \
-	  LDFLAGS="$(USER_LDFLAGS)" \
-	  CFLAGS="$(USER_CFLAGS)" \
-	  ../../SRC/gdb/configure \
-	    --prefix=$(PREFIX) \
-	    --without-python \
-	    --host=x86_64-w64-mingw32 \
-	    --target=x86_64-nacl \
-	    --enable-targets=arm-none-nacl-eabi
-	$(MAKE) -C BUILD/build-gdb-$(CROSSARCH) all
-	$(MAKE) -C BUILD/build-gdb-$(CROSSARCH) DESTDIR=$(DESTDIR) install
-else
-	cd BUILD/build-gdb-$(CROSSARCH) && \
-	  CC="gcc -m32" \
-	  LDFLAGS="$(USER_LDFLAGS)" \
-	  CFLAGS="$(USER_CFLAGS)" \
-	  ../../SRC/gdb/configure \
-	    --prefix=$(PREFIX) \
-	    --target=x86_64-nacl \
-	    --enable-targets=arm-none-eabi-nacl
-	$(MAKE) -C BUILD/build-gdb-$(CROSSARCH) all
-	$(MAKE) -C BUILD/build-gdb-$(CROSSARCH) DESTDIR=$(DESTDIR) install
-endif
-	touch $@
-
-.PHONY: gdb
-gdb: BUILD/stamp-$(CROSSARCH)-gdb
-
-
-##################################################################
 # Install headers from the NaCl tree locally for the gcc build to see.
 ##################################################################
 .PHONY: headers_for_build
 headers_for_build:
 	cd .. && \
-	  ./$(SCONS) naclsdk_mode=custom:$(PREFIX_NATIVE) \
+	  ./$(SCONS) nacl_newlib_dir=$(PREFIX_NATIVE) \
 		     --verbose platform=x86-$(BITSPLATFORM) \
 		     install_headers includedir=$(HEADERS_FOR_BUILD_NATIVE)
 
@@ -902,12 +862,6 @@ endif
 	$(MAKE) -f $(THISMAKEFILE) export-headers
 	$(MAKE) -f $(THISMAKEFILE) glibc-adhoc-files
 	$(MAKE) -f $(THISMAKEFILE) BUILD/stamp-$(CROSSARCH)-full-gcc
-ifeq ($(CANNED_REVISION), no)
-ifeq ($(PLATFORM), win)
-else
-	$(MAKE) -f $(THISMAKEFILE) BUILD/stamp-$(CROSSARCH)-gdb
-endif
-endif
 	$(CREATE_REDIRECTORS) "$(DESTDIR)$(PREFIX)"
 	for dir in lib32 lib64 ; do ( \
 	  cd $(DESTDIR)$(PREFIX)/$(CROSSARCH)/$$dir ; \
@@ -928,6 +882,17 @@ endif
 	  for fulllib in libthread_db.so.* ; do \
 	    mv libthread_db-1.0.so "$$fulllib" ; \
 	    ln -sfn "$$fulllib" libthread_db-1.0.so ; \
+	  done ; \
+	  chmod a+x libgcc_s.so.1 ; \
+	  for fulllib in libgfortran.so.3.* ; do \
+	    mv "$$fulllib" libgfortran.so.3 ; \
+	    ln -sfn libgfortran.so.3 "$$fulllib" ; \
+	    ln -sfn libgfortran.so.3 libgfortran.so ; \
+	  done ; \
+	  for fulllib in libobjc.so.2.* ; do \
+	    mv "$$fulllib" libobjc.so.2 ; \
+	    ln -sfn libobjc.so.2 "$$fulllib" ; \
+	    ln -sfn libobjc.so.2 libobjc.so ; \
 	  done ; \
 	  for fulllib in libstdc++.so.6.* ; do \
 	    mv "$$fulllib" libstdc++.so.6 ; \
@@ -951,12 +916,6 @@ ifeq ($(CANNED_REVISION), no)
 	$(MAKE) -f $(THISMAKEFILE) headers_for_build
 endif
 	$(MAKE) -f $(THISMAKEFILE) BUILD/stamp-$(CROSSARCH)-gcc
-ifeq ($(CANNED_REVISION), no)
-ifeq ($(PLATFORM), win)
-else
-	$(MAKE) -f $(THISMAKEFILE) BUILD/stamp-$(CROSSARCH)-gdb
-endif
-endif
 	$(CREATE_REDIRECTORS) "$(DESTDIR)$(PREFIX)"
 	rm -rf "$(DESTDIR)$(PREFIX)"/{include,lib/*.a*,lib/*.so*,lib32,lib64}
 
@@ -973,7 +932,6 @@ buildbot-build-with-newlib: | \
 # because these are not changed from upstream.
 BINUTILS_PATCHNAME := naclbinutils-$(BINUTILS_VERSION)-r$(shell $(SVNVERSION) | tr : _)
 GCC_PATCHNAME := naclgcc-$(GCC_VERSION)-r$(shell $(SVNVERSION) | tr : _)
-#GDB_PATCHNAME := naclgdb-$(GDB_VERSION)-r$(shell $(SVNVERSION) | tr : _)
 GLIBC_PATCHNAME := naclglibc-$(GLIBC_VERSION)-r$(shell $(SVNVERSION) | tr : _)
 NEWLIB_PATCHNAME := naclnewlib-$(NEWLIB_VERSION)-r$(shell $(SVNVERSION) | tr : _)
 
@@ -1011,8 +969,7 @@ buildbot-build-with-glibc: | \
 .PHONY: buildbot-mark-version
 buildbot-mark-version: | \
   pinned-src-binutils \
-  pinned-src-gcc \
-  pinned-src-gdb
+  pinned-src-gcc
 	cd SRC/binutils
 	printf -- "--- SRC/binutils/bfd/version.h\n\
 	+++ SRC/binutils/bfd/version.h\n\
@@ -1022,12 +979,6 @@ buildbot-mark-version: | \
 	patch -p0
 	LC_ALL=C $(SVN) info | grep 'Last Changed Date' | sed -e s'+Last Changed Date: \(....\)-\(..\)-\(..\).*+\1\2\3+' > SRC/gcc/gcc/DATESTAMP
 	echo "Native Client r`LC_ALL=C $(SVNVERSION)`, Git Commit `cd SRC/gcc ; LC_ALL=C git rev-parse HEAD`" > SRC/gcc/gcc/DEV-PHASE
-	printf -- "--- SRC/gdb/gdb/version.in\n\
-	+++ SRC/gdb/gdb/version.in\n\
-	@@ -1 +1 @@\n\
-	-`cat SRC/gdb/gdb/version.in`\n\
-	+`cat SRC/gdb/gdb/version.in` `LC_ALL=C $(SVN) info | grep 'Last Changed Date' | sed -e s'+Last Changed Date: \(....\)-\(..\)-\(..\).*+\1\2\3+'` (Native Client r`LC_ALL=C $(SVNVERSION)`, Git Commit `cd SRC/gdb ; LC_ALL=C git rev-parse HEAD`)\n" |\
-	patch -p0
 endif
 
 ##################################################################
@@ -1040,14 +991,14 @@ DEJAGNU_TIMESTAMP := $(shell date +%y%m%d%H%M%S)
 .PHONY: $(SEL_LDR)
 $(SEL_LDR):
 	(cd .. && \
-	  ./$(SCONS) naclsdk_mode=custom:$(DESTDIR)$(PREFIX) \
+	  ./$(SCONS) nacl_glibc_dir=$(DESTDIR)$(PREFIX) \
 	    --mode=opt-host,nacl platform=x86-$(BITSPLATFORM) \
 	    --verbose sel_ldr)
 
 .PHONY: check
 check: $(SEL_LDR)
 	(cd .. && \
-	  ./$(SCONS) naclsdk_mode=custom:$(DESTDIR)$(PREFIX) \
+	  ./$(SCONS) nacl_glibc_dir=$(DESTDIR)$(PREFIX) \
 	    --mode=opt-host,nacl platform=x86-$(BITSPLATFORM) \
 	    --verbose run_hello_world_test)
 	mkdir BUILD/build-gcc-$(CROSSARCH)/results.$(DEJAGNU_TIMESTAMP)

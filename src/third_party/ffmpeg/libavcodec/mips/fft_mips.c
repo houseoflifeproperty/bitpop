@@ -49,7 +49,7 @@
  */
 #include "config.h"
 #include "libavcodec/fft.h"
-#include "fft_table.h"
+#include "libavcodec/fft_table.h"
 
 /**
  * FFT transform
@@ -408,6 +408,8 @@ static void ff_imdct_half_mips(FFTContext *s, FFTSample *output, const FFTSample
               [tsin1]"+r"(tsin1), [tcos1]"+r"(tcos1),
               [in1]"+r"(in1), [in2]"+r"(in2),
               [in3]"+r"(in3), [in4]"+r"(in4)
+            :
+            : "memory"
         );
 
         z[j ].re = temp9;
@@ -472,6 +474,7 @@ static void ff_imdct_half_mips(FFTContext *s, FFTSample *output, const FFTSample
             : [z1]"r"(z1), [z2]"r"(z2),
               [tsin1]"r"(tsin1), [tcos1]"r"(tcos1),
               [tsin2]"r"(tsin2), [tcos2]"r"(tcos2)
+            : "memory"
         );
 
         z1[1].re = temp9;
@@ -485,7 +488,6 @@ static void ff_imdct_half_mips(FFTContext *s, FFTSample *output, const FFTSample
         z2[1].im = temp12;
     }
 }
-#endif /* HAVE_INLINE_ASM */
 
 /**
  * Compute inverse MDCT of size N = 2^nbits
@@ -513,18 +515,20 @@ static void ff_imdct_calc_mips(FFTContext *s, FFTSample *output, const FFTSample
         output[n-k-4] = output[n2+k+3];
     }
 }
+#endif /* HAVE_INLINE_ASM */
 
 av_cold void ff_fft_init_mips(FFTContext *s)
 {
     int n=0;
 
     ff_fft_lut_init(fft_offsets_lut, 0, 1 << 16, &n);
+    ff_init_ff_cos_tabs(16);
 
 #if HAVE_INLINE_ASM
     s->fft_calc     = ff_fft_calc_mips;
-#endif
 #if CONFIG_MDCT
     s->imdct_calc   = ff_imdct_calc_mips;
     s->imdct_half   = ff_imdct_half_mips;
+#endif
 #endif
 }

@@ -3,13 +3,14 @@
 // found in the LICENSE file.
 
 #include "ui/gl/gl_wgl_api_implementation.h"
+#include "ui/gl/gl_implementation.h"
 
 namespace gfx {
 
 RealWGLApi* g_real_wgl;
 
-void InitializeGLBindingsWGL() {
-  g_driver_wgl.InitializeBindings();
+void InitializeStaticGLBindingsWGL() {
+  g_driver_wgl.InitializeStaticBindings();
   if (!g_real_wgl) {
     g_real_wgl = new RealWGLApi();
   }
@@ -17,8 +18,8 @@ void InitializeGLBindingsWGL() {
   g_current_wgl_context = g_real_wgl;
 }
 
-void InitializeGLExtensionBindingsWGL(GLContext* context) {
-  g_driver_wgl.InitializeExtensionBindings(context);
+void InitializeDynamicGLBindingsWGL(GLContext* context) {
+  g_driver_wgl.InitializeDynamicBindings(context);
 }
 
 void InitializeDebugGLBindingsWGL() {
@@ -59,6 +60,17 @@ RealWGLApi::~RealWGLApi() {
 
 void RealWGLApi::Initialize(DriverWGL* driver) {
   InitializeBase(driver);
+}
+
+TraceWGLApi::~TraceWGLApi() {
+}
+
+bool GetGLWindowSystemBindingInfoWGL(GLWindowSystemBindingInfo* info) {
+  const char* extensions = wglGetExtensionsStringEXT();
+  *info = GLWindowSystemBindingInfo();
+  if (extensions)
+    info->extensions = extensions;
+  return true;
 }
 
 }  // namespace gfx

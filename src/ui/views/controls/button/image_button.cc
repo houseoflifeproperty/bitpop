@@ -4,16 +4,21 @@
 
 #include "ui/views/controls/button/image_button.h"
 
-#include "base/utf_string_conversions.h"
-#include "ui/base/animation/throb_animation.h"
+#include "base/strings/utf_string_conversions.h"
+#include "ui/accessibility/ax_view_state.h"
+#include "ui/gfx/animation/throb_animation.h"
 #include "ui/gfx/canvas.h"
 #include "ui/gfx/image/image_skia_operations.h"
+#include "ui/gfx/scoped_canvas.h"
+#include "ui/views/painter.h"
 #include "ui/views/widget/widget.h"
 
 namespace views {
 
 static const int kDefaultWidth = 16;   // Default button width if no theme.
 static const int kDefaultHeight = 14;  // Default button height if no theme.
+
+const char ImageButton::kViewClassName[] = "ImageButton";
 
 ////////////////////////////////////////////////////////////////////////////////
 // ImageButton, public:
@@ -22,7 +27,9 @@ ImageButton::ImageButton(ButtonListener* listener)
     : CustomButton(listener),
       h_alignment_(ALIGN_LEFT),
       v_alignment_(ALIGN_TOP),
-      preferred_size_(kDefaultWidth, kDefaultHeight) {
+      preferred_size_(kDefaultWidth, kDefaultHeight),
+      draw_image_mirrored_(false),
+      focus_painter_(Painter::CreateDashedFocusPainter()) {
   // By default, we request that the gfx::Canvas passed to our View::OnPaint()
   // implementation is flipped horizontally so that the button's images are
   // mirrored when the UI directionality is right-to-left.
@@ -30,6 +37,10 @@ ImageButton::ImageButton(ButtonListener* listener)
 }
 
 ImageButton::~ImageButton() {
+}
+
+const gfx::ImageSkia& ImageButton::GetImage(ButtonState state) const {
+  return images_[state];
 }
 
 void ImageButton::SetImage(ButtonState state, const gfx::ImageSkia* image) {
@@ -49,14 +60,6 @@ void ImageButton::SetBackground(SkColor color,
      *image, *mask);
 }
 
-void ImageButton::SetOverlayImage(const gfx::ImageSkia* image) {
-  if (!image) {
-    overlay_image_ = gfx::ImageSkia();
-    return;
-  }
-  overlay_image_ = *image;
-}
-
 void ImageButton::SetImageAlignment(HorizontalAlignment h_align,
                                     VerticalAlignment v_align) {
   h_alignment_ = h_align;
@@ -64,15 +67,27 @@ void ImageButton::SetImageAlignment(HorizontalAlignment h_align,
   SchedulePaint();
 }
 
+void ImageButton::SetFocusPainter(scoped_ptr<Painter> focus_painter) {
+  focus_painter_ = focus_painter.Pass();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // ImageButton, View overrides:
 
 gfx::Size ImageButton::GetPreferredSize() {
+  gfx::Size size = preferred_size_;
   if (!images_[STATE_NORMAL].isNull()) {
-    return gfx::Size(images_[STATE_NORMAL].width(),
+    size = gfx::Size(images_[STATE_NORMAL].width(),
                      images_[STATE_NORMAL].height());
   }
-  return preferred_size_;
+
+  gfx::Insets insets = GetInsets();
+  size.Enlarge(insets.width(), insets.height());
+  return size;
+}
+
+const char* ImageButton::GetClassName() const {
+  return kViewClassName;
 }
 
 void ImageButton::OnPaint(gfx::Canvas* canvas) {
@@ -82,20 +97,36 @@ void ImageButton::OnPaint(gfx::Canvas* canvas) {
   gfx::ImageSkia img = GetImageToPaint();
 
   if (!img.isNull()) {
+    gfx::ScopedCanvas scoped(canvas);
+    if (draw_image_mirrored_) {
+      canvas->Translate(gfx::Vector2d(width(), 0));
+      canvas->Scale(-1, 1);
+    }
+
     gfx::Point position = ComputeImagePaintPosition(img);
     if (!background_image_.isNull())
       canvas->DrawImageInt(background_image_, position.x(), position.y());
 
     canvas->DrawImageInt(img, position.x(), position.y());
-
-    if (!overlay_image_.isNull())
-      canvas->DrawImageInt(overlay_image_, position.x(), position.y());
   }
-  OnPaintFocusBorder(canvas);
+
+  Painter::PaintFocusPainter(this, canvas, focus_painter());
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ImageButton, protected:
+
+void ImageButton::OnFocus() {
+  View::OnFocus();
+  if (focus_painter_.get())
+    SchedulePaint();
+}
+
+void ImageButton::OnBlur() {
+  View::OnBlur();
+  if (focus_painter_.get())
+    SchedulePaint();
+}
 
 gfx::ImageSkia ImageButton::GetImageToPaint() {
   gfx::ImageSkia img;
@@ -117,9 +148,17 @@ gfx::Point ImageButton::ComputeImagePaintPosition(const gfx::ImageSkia& image) {
   int x = 0, y = 0;
   gfx::Rect rect = GetContentsBounds();
 
-  if (h_alignment_ == ALIGN_CENTER)
+  HorizontalAlignment h_alignment = h_alignment_;
+  if (draw_image_mirrored_) {
+    if (h_alignment == ALIGN_RIGHT)
+      h_alignment = ALIGN_LEFT;
+    else if (h_alignment == ALIGN_LEFT)
+      h_alignment = ALIGN_RIGHT;
+  }
+
+  if (h_alignment == ALIGN_CENTER)
     x = (rect.width() - image.width()) / 2;
-  else if (h_alignment_ == ALIGN_RIGHT)
+  else if (h_alignment == ALIGN_RIGHT)
     x = rect.width() - image.width();
 
   if (v_alignment_ == ALIGN_MIDDLE)
@@ -155,6 +194,8 @@ void ToggleImageButton::SetToggled(bool toggled) {
   }
   toggled_ = toggled;
   SchedulePaint();
+
+  NotifyAccessibilityEvent(ui::AX_EVENT_VALUE_CHANGED, true);
 }
 
 void ToggleImageButton::SetToggledImage(ButtonState state,
@@ -168,12 +209,18 @@ void ToggleImageButton::SetToggledImage(ButtonState state,
   }
 }
 
-void ToggleImageButton::SetToggledTooltipText(const string16& tooltip) {
+void ToggleImageButton::SetToggledTooltipText(const base::string16& tooltip) {
   toggled_tooltip_text_ = tooltip;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
 // ToggleImageButton, ImageButton overrides:
+
+const gfx::ImageSkia& ToggleImageButton::GetImage(ButtonState state) const {
+  if (toggled_)
+    return alternate_images_[state];
+  return images_[state];
+}
 
 void ToggleImageButton::SetImage(ButtonState state,
                                  const gfx::ImageSkia* image) {
@@ -191,12 +238,17 @@ void ToggleImageButton::SetImage(ButtonState state,
 // ToggleImageButton, View overrides:
 
 bool ToggleImageButton::GetTooltipText(const gfx::Point& p,
-                                       string16* tooltip) const {
+                                       base::string16* tooltip) const {
   if (!toggled_ || toggled_tooltip_text_.empty())
     return Button::GetTooltipText(p, tooltip);
 
   *tooltip = toggled_tooltip_text_;
   return true;
+}
+
+void ToggleImageButton::GetAccessibleState(ui::AXViewState* state) {
+  ImageButton::GetAccessibleState(state);
+  GetTooltipText(gfx::Point(), &state->name);
 }
 
 }  // namespace views

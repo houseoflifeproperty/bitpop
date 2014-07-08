@@ -7,7 +7,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/prefs/public/pref_member.h"
+#include "base/prefs/pref_member.h"
 #include "chrome/browser/chromeos/system/pointer_device_observer.h"
 #include "chrome/browser/ui/webui/options/options_ui.h"
 
@@ -23,7 +23,8 @@ class PointerHandler
   virtual ~PointerHandler();
 
   // OptionsPageUIHandler implementation.
-  virtual void GetLocalizedValues(DictionaryValue* localized_strings) OVERRIDE;
+  virtual void GetLocalizedValues(
+      base::DictionaryValue* localized_strings) OVERRIDE;
 
  private:
   // PointerDeviceObserver implementation.

@@ -7,7 +7,8 @@
 
 #include <string>
 
-#include "webkit/fileapi/syncable/sync_operation_result.h"
+#include "chrome/browser/sync_file_system/file_status_observer.h"
+#include "chrome/browser/sync_file_system/sync_service_state.h"
 
 class GURL;
 
@@ -19,29 +20,8 @@ namespace sync_file_system {
 
 class SyncEventObserver {
  public:
-  typedef fileapi::SyncOperationResult SyncOperationResult;
-
   SyncEventObserver() {}
   virtual ~SyncEventObserver() {}
-
-  enum SyncServiceState {
-    // The sync service is up and running.
-    SYNC_SERVICE_RUNNING,
-
-    // The sync service is not synchronizing files because the remote service
-    // needs to be authenticated by the user to proceed.
-    SYNC_SERVICE_AUTHENTICATION_REQUIRED,
-
-    // The sync service is not synchronizing files because the remote service
-    // is (temporarily) unavailable due to some recoverable errors, e.g.
-    // network is offline, the remote service is down or not
-    // reachable etc. More details should be given by |description| parameter
-    // in OnSyncStateUpdated (which could contain service-specific details).
-    SYNC_SERVICE_TEMPORARY_UNAVAILABLE,
-
-    // The sync service is disabled and the content will never sync.
-    SYNC_SERVICE_DISABLED,
-  };
 
   // Reports there was a state change in the sync file system backend.
   // If |app_origin| is empty, then broadcast to all registered apps.
@@ -52,7 +32,9 @@ class SyncEventObserver {
   // Reports the file |url| was updated and resulted in |result|
   // by the sync file system backend.
   virtual void OnFileSynced(const fileapi::FileSystemURL& url,
-                            fileapi::SyncOperationResult result) = 0;
+                            SyncFileStatus status,
+                            SyncAction action,
+                            SyncDirection direction) = 0;
 
  private:
   DISALLOW_COPY_AND_ASSIGN(SyncEventObserver);

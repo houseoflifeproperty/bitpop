@@ -7,7 +7,6 @@
 #include "base/memory/scoped_ptr.h"
 #include "base/test/values_test_util.h"
 #include "base/values.h"
-#include "sync/internal_api/public/sessions/sync_source_info.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace syncer {
@@ -24,7 +23,6 @@ class SyncSessionSnapshotTest : public testing::Test {};
 
 TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   ModelNeutralState model_neutral;
-  model_neutral.num_server_changes_remaining = 105;
   model_neutral.num_successful_commits = 5;
   model_neutral.num_successful_bookmark_commits = 10;
   model_neutral.num_updates_downloaded_total = 100;
@@ -36,7 +34,7 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   ProgressMarkerMap download_progress_markers;
   download_progress_markers[BOOKMARKS] = "test";
   download_progress_markers[APPS] = "apps";
-  scoped_ptr<DictionaryValue> expected_download_progress_markers_value(
+  scoped_ptr<base::DictionaryValue> expected_download_progress_markers_value(
       ProgressMarkerMapToValue(download_progress_markers));
 
   const bool kIsSilenced = true;
@@ -44,29 +42,20 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
   const int kNumHierarchyConflicts = 1055;
   const int kNumServerConflicts = 1057;
 
-  SyncSourceInfo source;
-  scoped_ptr<DictionaryValue> expected_source_value(source.ToValue());
-
-  std::vector<SyncSourceInfo> debug_info_sources_list;
-  debug_info_sources_list.push_back(source);
-  scoped_ptr<ListValue> expected_sources_list_value(new ListValue());
-  expected_sources_list_value->Append(source.ToValue());
-
   SyncSessionSnapshot snapshot(model_neutral,
                                download_progress_markers,
                                kIsSilenced,
                                kNumEncryptionConflicts,
                                kNumHierarchyConflicts,
                                kNumServerConflicts,
-                               source,
-                               debug_info_sources_list,
                                false,
                                0,
                                base::Time::Now(),
                                std::vector<int>(MODEL_TYPE_COUNT,0),
-                               std::vector<int>(MODEL_TYPE_COUNT, 0));
-  scoped_ptr<DictionaryValue> value(snapshot.ToValue());
-  EXPECT_EQ(18u, value->size());
+                               std::vector<int>(MODEL_TYPE_COUNT, 0),
+                               sync_pb::GetUpdatesCallerInfo::UNKNOWN);
+  scoped_ptr<base::DictionaryValue> value(snapshot.ToValue());
+  EXPECT_EQ(16u, value->size());
   ExpectDictIntegerValue(model_neutral.num_successful_commits,
                          *value, "numSuccessfulCommits");
   ExpectDictIntegerValue(model_neutral.num_successful_bookmark_commits,
@@ -81,8 +70,6 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
                          *value, "numLocalOverwrites");
   ExpectDictIntegerValue(model_neutral.num_server_overwrites,
                          *value, "numServerOverwrites");
-  ExpectDictIntegerValue(model_neutral.num_server_changes_remaining,
-                         *value, "numServerChangesRemaining");
   ExpectDictDictionaryValue(*expected_download_progress_markers_value,
                             *value, "downloadProgressMarkers");
   ExpectDictBooleanValue(kIsSilenced, *value, "isSilenced");
@@ -92,8 +79,6 @@ TEST_F(SyncSessionSnapshotTest, SyncSessionSnapshotToValue) {
                          "numHierarchyConflicts");
   ExpectDictIntegerValue(kNumServerConflicts, *value,
                          "numServerConflicts");
-  ExpectDictDictionaryValue(*expected_source_value, *value, "source");
-  ExpectDictListValue(*expected_sources_list_value, *value, "sourcesList");
   ExpectDictBooleanValue(false, *value, "notificationsEnabled");
 }
 

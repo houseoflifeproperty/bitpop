@@ -4,7 +4,7 @@
 
 #include "net/http/http_content_disposition.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace net {
@@ -198,7 +198,7 @@ TEST(HttpContentDispositionTest, Filename) {
   for (size_t i = 0; i < ARRAYSIZE_UNSAFE(tests); ++i) {
     HttpContentDisposition header(tests[i].header, tests[i].referrer_charset);
     EXPECT_EQ(tests[i].expected,
-        UTF8ToWide(header.filename()))
+        base::UTF8ToWide(header.filename()))
         << "Failed on input: " << tests[i].header;
   }
 }
@@ -507,7 +507,7 @@ TEST(HttpContentDispositionTest, tc2231) {
     HttpContentDisposition header(tests[i].header, std::string());
     EXPECT_EQ(tests[i].expected_type, header.type())
         << "Failed on input: " << tests[i].header;
-    EXPECT_EQ(tests[i].expected_filename, UTF8ToWide(header.filename()))
+    EXPECT_EQ(tests[i].expected_filename, base::UTF8ToWide(header.filename()))
         << "Failed on input: " << tests[i].header;
   }
 }

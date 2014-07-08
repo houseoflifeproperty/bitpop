@@ -5,14 +5,14 @@
 #include "ui/gfx/gfx_paths.h"
 
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/path_service.h"
 
 namespace gfx {
 
-bool PathProvider(int key, FilePath* result) {
-  FilePath cur;
+bool PathProvider(int key, base::FilePath* result) {
+  base::FilePath cur;
   switch (key) {
     // The following are only valid in the development environment, and
     // will fail if executed from an installed executable (because the
@@ -24,7 +24,7 @@ bool PathProvider(int key, FilePath* result) {
       cur = cur.Append(FILE_PATH_LITERAL("gfx"));
       cur = cur.Append(FILE_PATH_LITERAL("test"));
       cur = cur.Append(FILE_PATH_LITERAL("data"));
-      if (!file_util::PathExists(cur))  // we don't want to create this
+      if (!base::PathExists(cur))  // we don't want to create this
         return false;
       break;
     default:

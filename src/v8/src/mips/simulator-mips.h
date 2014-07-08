@@ -1,29 +1,6 @@
 // Copyright 2011 the V8 project authors. All rights reserved.
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are
-// met:
-//
-//     * Redistributions of source code must retain the above copyright
-//       notice, this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above
-//       copyright notice, this list of conditions and the following
-//       disclaimer in the documentation and/or other materials provided
-//       with the distribution.
-//     * Neither the name of Google Inc. nor the names of its
-//       contributors may be used to endorse or promote products derived
-//       from this software without specific prior written permission.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
-// "AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
-// LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
-// A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
-// OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
-// SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
-// LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
-// DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
-// THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
-// (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-// OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+// Use of this source code is governed by a BSD-style license that can be
+// found in the LICENSE file.
 
 
 // Declares a Simulator for MIPS instructions if we are not generating a native
@@ -203,6 +180,10 @@ class Simulator {
   void set_pc(int32_t value);
   int32_t get_pc() const;
 
+  Address get_sp() {
+    return reinterpret_cast<Address>(static_cast<intptr_t>(get_register(sp)));
+  }
+
   // Accessor to the internal simulator stack area.
   uintptr_t StackLimit() const;
 
@@ -289,6 +270,7 @@ class Simulator {
                              int64_t& i64hilo,
                              uint64_t& u64hilo,
                              int32_t& next_pc,
+                             int32_t& return_addr_reg,
                              bool& do_interrupt);
 
   void DecodeTypeImmediate(Instruction* instr);
@@ -316,8 +298,6 @@ class Simulator {
     if (instr->InstructionBits() == nopInstr) {
       // Short-cut generic nop instructions. They are always valid and they
       // never change the simulator state.
-      set_register(pc, reinterpret_cast<int32_t>(instr) +
-                       Instruction::kInstrSize);
       return;
     }
 
@@ -351,10 +331,8 @@ class Simulator {
   static void* RedirectExternalReference(void* external_function,
                                          ExternalReference::Type type);
 
-  // For use in calls that take double value arguments.
-  void GetFpArgs(double* x, double* y);
-  void GetFpArgs(double* x);
-  void GetFpArgs(double* x, int32_t* y);
+  // Handle arguments and return value for runtime FP functions.
+  void GetFpArgs(double* x, double* y, int32_t* z);
   void SetFpResult(const double& result);
 
   void CallInternal(byte* entry);
@@ -391,14 +369,14 @@ class Simulator {
   static const uint32_t kStopDisabledBit = 1 << 31;
 
   // A stop is enabled, meaning the simulator will stop when meeting the
-  // instruction, if bit 31 of watched_stops[code].count is unset.
-  // The value watched_stops[code].count & ~(1 << 31) indicates how many times
+  // instruction, if bit 31 of watched_stops_[code].count is unset.
+  // The value watched_stops_[code].count & ~(1 << 31) indicates how many times
   // the breakpoint was hit or gone through.
   struct StopCountAndDesc {
     uint32_t count;
     char* desc;
   };
-  StopCountAndDesc watched_stops[kMaxStopCode + 1];
+  StopCountAndDesc watched_stops_[kMaxStopCode + 1];
 };
 
 

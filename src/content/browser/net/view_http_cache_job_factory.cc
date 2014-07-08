@@ -9,8 +9,8 @@
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
 #include "content/public/common/url_constants.h"
 #include "net/base/completion_callback.h"
 #include "net/base/net_errors.h"
@@ -28,10 +28,9 @@ class ViewHttpCacheJob : public net::URLRequestJob {
                    net::NetworkDelegate* network_delegate)
       : net::URLRequestJob(request, network_delegate),
         core_(new Core),
-        ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
-        ALLOW_THIS_IN_INITIALIZER_LIST(
-            callback_(base::Bind(&ViewHttpCacheJob::OnStartCompleted,
-                                 base::Unretained(this)))) {
+        weak_factory_(this),
+        callback_(base::Bind(&ViewHttpCacheJob::OnStartCompleted,
+                             base::Unretained(this))) {
   }
 
   // net::URLRequestJob implementation.
@@ -53,8 +52,7 @@ class ViewHttpCacheJob : public net::URLRequestJob {
    public:
     Core()
         : data_offset_(0),
-          ALLOW_THIS_IN_INITIALIZER_LIST(callback_(
-              base::Bind(&Core::OnIOComplete, this))) {
+          callback_(base::Bind(&Core::OnIOComplete, this)) {
     }
 
     int Start(const net::URLRequest& request, const base::Closure& callback);
@@ -85,7 +83,7 @@ class ViewHttpCacheJob : public net::URLRequestJob {
     DISALLOW_COPY_AND_ASSIGN(Core);
   };
 
-  ~ViewHttpCacheJob() {}
+  virtual ~ViewHttpCacheJob() {}
 
   void StartAsync();
   void OnStartCompleted();
@@ -98,14 +96,14 @@ class ViewHttpCacheJob : public net::URLRequestJob {
 };
 
 void ViewHttpCacheJob::Start() {
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&ViewHttpCacheJob::StartAsync, weak_factory_.GetWeakPtr()));
 }
 
 void ViewHttpCacheJob::Kill() {
   weak_factory_.InvalidateWeakPtrs();
-  if (core_) {
+  if (core_.get()) {
     core_->Orphan();
     core_ = NULL;
   }
@@ -192,8 +190,8 @@ void ViewHttpCacheJob::Core::OnIOComplete(int result) {
 
 // Static.
 bool ViewHttpCacheJobFactory::IsSupportedURL(const GURL& url) {
-  return url.SchemeIs(chrome::kChromeUIScheme) &&
-         url.host() == chrome::kChromeUINetworkViewCacheHost;
+  return url.SchemeIs(kChromeUIScheme) &&
+         url.host() == kChromeUINetworkViewCacheHost;
 }
 
 // Static.

@@ -9,21 +9,22 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/memory/singleton.h"
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/autocomplete/autocomplete_input.h"
 #include "chrome/browser/autocomplete/autocomplete_match.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/command_updater.h"
-#include "chrome/browser/net/url_fixer_upper.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/search/search.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/background_gradient_view.h"
 #include "chrome/browser/ui/cocoa/drag_util.h"
@@ -35,20 +36,20 @@
 #import "chrome/browser/ui/cocoa/location_bar/autocomplete_text_field_editor.h"
 #import "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
 #import "chrome/browser/ui/cocoa/menu_button.h"
-#import "chrome/browser/ui/cocoa/menu_controller.h"
 #import "chrome/browser/ui/cocoa/toolbar/back_forward_menu_controller.h"
 #import "chrome/browser/ui/cocoa/toolbar/reload_button.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_button.h"
 #import "chrome/browser/ui/cocoa/toolbar/toolbar_view.h"
+#import "chrome/browser/ui/cocoa/toolbar/wrench_toolbar_button_cell.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #import "chrome/browser/ui/cocoa/wrench_menu/wrench_menu_controller.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
 #include "chrome/browser/ui/omnibox/omnibox_view.h"
-#include "chrome/browser/ui/toolbar/toolbar_model.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/wrench_menu_model.h"
 #include "chrome/browser/upgrade_detector.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/common/net/url_fixer_upper.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_observer.h"
@@ -57,6 +58,7 @@
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/menu_controller.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/l10n/l10n_util_mac.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -70,7 +72,7 @@ using content::WebContents;
 namespace {
 
 // Height of the toolbar in pixels when the bookmark bar is closed.
-const CGFloat kBaseToolbarHeight = 35.0;
+const CGFloat kBaseToolbarHeightNormal = 35.0;
 
 // The minimum width of the location bar in pixels.
 const CGFloat kMinimumLocationBarWidth = 100.0;
@@ -97,7 +99,7 @@ const CGFloat kWrenchMenuLeftPadding = 3.0;
 - (void)browserActionsContainerDragFinished:(NSNotification*)notification;
 - (void)browserActionsVisibilityChanged:(NSNotification*)notification;
 - (void)adjustLocationSizeBy:(CGFloat)dX animate:(BOOL)animate;
-- (void)badgeWrenchMenuIfNeeded;
+- (void)updateWrenchButtonSeverity;
 @end
 
 namespace ToolbarControllerInternal {
@@ -123,7 +125,7 @@ class NotificationBridge
     switch (type) {
       case chrome::NOTIFICATION_UPGRADE_RECOMMENDED:
       case chrome::NOTIFICATION_GLOBAL_ERRORS_CHANGED:
-        [controller_ badgeWrenchMenuIfNeeded];
+        [controller_ updateWrenchButtonSeverity];
         break;
       default:
         NOTREACHED();
@@ -146,16 +148,14 @@ class NotificationBridge
 
 @synthesize browser = browser_;
 
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate
-       nibFileNamed:(NSString*)nibName {
-  DCHECK(model && commands && profile && [nibName length]);
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate
+          nibFileNamed:(NSString*)nibName {
+  DCHECK(commands && profile && [nibName length]);
   if ((self = [super initWithNibName:nibName
                               bundle:base::mac::FrameworkBundle()])) {
-    toolbarModel_ = model;
     commands_ = commands;
     profile_ = profile;
     browser_ = browser;
@@ -174,17 +174,15 @@ class NotificationBridge
   return self;
 }
 
-- (id)initWithModel:(ToolbarModel*)model
-           commands:(CommandUpdater*)commands
-            profile:(Profile*)profile
-            browser:(Browser*)browser
-     resizeDelegate:(id<ViewResizer>)resizeDelegate {
-  if ((self = [self initWithModel:model
-                         commands:commands
-                          profile:profile
-                          browser:browser
-                   resizeDelegate:resizeDelegate
-                     nibFileNamed:@"Toolbar"])) {
+- (id)initWithCommands:(CommandUpdater*)commands
+               profile:(Profile*)profile
+               browser:(Browser*)browser
+        resizeDelegate:(id<ViewResizer>)resizeDelegate {
+  if ((self = [self initWithCommands:commands
+                             profile:profile
+                             browser:browser
+                      resizeDelegate:resizeDelegate
+                        nibFileNamed:@"Toolbar"])) {
   }
   return self;
 }
@@ -254,7 +252,7 @@ class NotificationBridge
   [[wrenchButton_ cell] setImageID:IDR_TOOLS_P
                     forButtonState:image_button_cell::kPressedState];
 
-  [self badgeWrenchMenuIfNeeded];
+  [self updateWrenchButtonSeverity];
 
   [wrenchButton_ setOpenMenuOnClick:YES];
 
@@ -267,8 +265,8 @@ class NotificationBridge
   [homeButton_ setHandleMiddleClick:YES];
 
   [self initCommandStatus:commands_];
-  locationBarView_.reset(new LocationBarViewMac(locationBar_,
-                                                commands_, toolbarModel_,
+
+  locationBarView_.reset(new LocationBarViewMac(locationBar_, commands_,
                                                 profile_, browser_));
   [locationBar_ setFont:[NSFont systemFontOfSize:[NSFont systemFontSize]]];
   // Register pref observers for the optional home and page/options buttons
@@ -400,8 +398,18 @@ class NotificationBridge
 }
 
 - (void)focusLocationBar:(BOOL)selectAll {
-  if (locationBarView_.get())
-    locationBarView_->FocusLocation(selectAll ? true : false);
+  if (locationBarView_.get()) {
+    if (selectAll &&
+        locationBarView_->GetToolbarModel()->WouldOmitURLDueToOriginChip()) {
+      // select_all is true when it's expected that the user may want to copy
+      // the URL to the clipboard. If the origin chip is being displayed (and
+      // thus the URL is not being shown in the Omnibox) show it now to support
+      // the same functionality.
+      locationBarView_->GetOmniboxView()->ShowURL();
+    } else {
+      locationBarView_->FocusLocation(selectAll ? true : false);
+    }
+  }
 }
 
 // Called when the state for a command changes to |enabled|. Update the
@@ -432,9 +440,8 @@ class NotificationBridge
   [homeButton_ setEnabled:commands->IsCommandEnabled(IDC_HOME) ? YES : NO];
 }
 
-- (void)updateToolbarWithContents:(WebContents*)tab
-               shouldRestoreState:(BOOL)shouldRestore {
-  locationBarView_->Update(tab, shouldRestore ? true : false);
+- (void)updateToolbarWithContents:(WebContents*)tab {
+  locationBarView_->Update(tab);
 
   [locationBar_ updateMouseTracking];
 
@@ -444,11 +451,16 @@ class NotificationBridge
 }
 
 - (void)setStarredState:(BOOL)isStarred {
-  locationBarView_->SetStarred(isStarred ? true : false);
+  locationBarView_->SetStarred(isStarred);
+}
+
+- (void)setTranslateIconLit:(BOOL)on {
+  locationBarView_->SetTranslateIconLit(on);
 }
 
 - (void)zoomChangedForActiveTab:(BOOL)canShowBubble {
-  locationBarView_->ZoomChangedForActiveTab(canShowBubble ? true : false);
+  locationBarView_->ZoomChangedForActiveTab(
+      canShowBubble && ![wrenchMenuController_ isMenuOpen]);
 }
 
 - (void)setIsLoading:(BOOL)isLoading force:(BOOL)force {
@@ -497,6 +509,14 @@ class NotificationBridge
     // aren't sent correctly.
     DCHECK(autocompleteTextFieldEditor_.get());
     [autocompleteTextFieldEditor_.get() setFieldEditor:YES];
+    if (base::mac::IsOSSnowLeopard()) {
+      // Manually transferring the drawsBackground and backgroundColor
+      // properties is necessary to ensure anti-aliased text on 10.6.
+      [autocompleteTextFieldEditor_
+          setDrawsBackground:[locationBar_ drawsBackground]];
+      [autocompleteTextFieldEditor_
+          setBackgroundColor:[locationBar_ backgroundColor]];
+    }
     return autocompleteTextFieldEditor_.get();
   }
   return nil;
@@ -555,17 +575,26 @@ class NotificationBridge
   return wrenchMenuController_;
 }
 
-- (void)badgeWrenchMenuIfNeeded {
+- (void)updateWrenchButtonSeverity {
+  WrenchToolbarButtonCell* cell =
+      base::mac::ObjCCastStrict<WrenchToolbarButtonCell>([wrenchButton_ cell]);
   if (UpgradeDetector::GetInstance()->notify_upgrade()) {
-    [[wrenchButton_ cell]
-        setOverlayImageID:UpgradeDetector::GetInstance()->GetIconResourceID(
-            UpgradeDetector::UPGRADE_ICON_TYPE_BADGE)];
+    UpgradeDetector::UpgradeNotificationAnnoyanceLevel level =
+        UpgradeDetector::GetInstance()->upgrade_notification_stage();
+    [cell setSeverity:WrenchIconPainter::SeverityFromUpgradeLevel(level)
+        shouldAnimate:WrenchIconPainter::ShouldAnimateUpgradeLevel(level)];
     return;
   }
 
-  int error_badge_id = GlobalErrorServiceFactory::GetForProfile(
-      browser_->profile())->GetFirstBadgeResourceID();
-  [[wrenchButton_ cell] setOverlayImageID:error_badge_id];
+  GlobalError* error = GlobalErrorServiceFactory::GetForProfile(
+      browser_->profile())->GetHighestSeverityGlobalErrorWithWrenchMenuItem();
+  if (error) {
+    [cell setSeverity:WrenchIconPainter::GlobalErrorSeverity()
+        shouldAnimate:YES];
+    return;
+  }
+
+  [cell setSeverity:WrenchIconPainter::SEVERITY_NONE shouldAnimate:YES];
 }
 
 - (void)prefChanged:(const std::string&)prefName {
@@ -717,13 +746,27 @@ class NotificationBridge
 }
 
 - (NSPoint)bookmarkBubblePoint {
-  return locationBarView_->GetBookmarkBubblePoint();
+  if (locationBarView_->IsStarEnabled())
+    return locationBarView_->GetBookmarkBubblePoint();
+
+  // Grab bottom middle of hotdogs.
+  NSRect frame = wrenchButton_.frame;
+  NSPoint point = NSMakePoint(NSMidX(frame), NSMinY(frame));
+  // Inset to account for the whitespace around the hotdogs.
+  point.y += wrench_menu_controller::kWrenchBubblePointOffsetY;
+  return [self.view convertPoint:point toView:nil];
+}
+
+- (NSPoint)translateBubblePoint {
+  return locationBarView_->GetTranslateBubblePoint();
 }
 
 - (CGFloat)desiredHeightForCompression:(CGFloat)compressByHeight {
   // With no toolbar, just ignore the compression.
-  return hasToolbar_ ? kBaseToolbarHeight - compressByHeight :
-                       NSHeight([locationBar_ frame]);
+  if (!hasToolbar_)
+    return NSHeight([locationBar_ frame]);
+
+  return kBaseToolbarHeightNormal - compressByHeight;
 }
 
 - (void)setDividerOpacity:(CGFloat)opacity {
@@ -736,6 +779,8 @@ class NotificationBridge
     ToolbarView* toolbarView = (ToolbarView*)view;
     [toolbarView setDividerOpacity:opacity];
   }
+
+  [view setNeedsDisplay:YES];
 }
 
 - (BrowserActionsController*)browserActionsController {
@@ -744,6 +789,15 @@ class NotificationBridge
 
 - (NSView*)wrenchButton {
   return wrenchButton_;
+}
+
+- (void)activatePageAction:(const std::string&)extension_id {
+  locationBarView_->ActivatePageAction(extension_id);
+}
+
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id {
+  [browserActionsController_ activateBrowserAction:extension_id];
 }
 
 // (URLDropTargetController protocol)
@@ -764,13 +818,13 @@ class NotificationBridge
   GURL url(URLFixerUpper::FixupURL(
       base::SysNSStringToUTF8([urls objectAtIndex:0]), std::string()));
 
-  if (url.SchemeIs(chrome::kJavaScriptScheme)) {
-    browser_->window()->GetLocationBar()->GetLocationEntry()->SetUserText(
-          OmniboxView::StripJavascriptSchemas(UTF8ToUTF16(url.spec())));
+  if (url.SchemeIs(content::kJavaScriptScheme)) {
+    browser_->window()->GetLocationBar()->GetOmniboxView()->SetUserText(
+          OmniboxView::StripJavascriptSchemas(base::UTF8ToUTF16(url.spec())));
   }
   OpenURLParams params(
       url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
-  chrome::GetActiveWebContents(browser_)->OpenURL(params);
+  browser_->tab_strip_model()->GetActiveWebContents()->OpenURL(params);
 }
 
 // (URLDropTargetController protocol)
@@ -782,12 +836,13 @@ class NotificationBridge
   // If the input is plain text, classify the input and make the URL.
   AutocompleteMatch match;
   AutocompleteClassifierFactory::GetForProfile(browser_->profile())->Classify(
-      base::SysNSStringToUTF16(text), string16(), false, false, &match, NULL);
+      base::SysNSStringToUTF16(text), false, false, AutocompleteInput::BLANK,
+      &match, NULL);
   GURL url(match.destination_url);
 
   OpenURLParams params(
       url, Referrer(), CURRENT_TAB, content::PAGE_TRANSITION_TYPED, false);
-  chrome::GetActiveWebContents(browser_)->OpenURL(params);
+  browser_->tab_strip_model()->GetActiveWebContents()->OpenURL(params);
 }
 
 // (URLDropTargetController protocol)

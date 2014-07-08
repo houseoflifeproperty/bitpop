@@ -54,6 +54,9 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
 
   bool IsThemingActive() const;
 
+  // Returns true if a high contrast theme is being used.
+  bool IsUsingHighContrastTheme() const;
+
   HRESULT GetThemeColor(ThemeName theme,
                         int part_id,
                         int state_id,
@@ -257,6 +260,16 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
                          const gfx::Rect& rect,
                          const TextFieldExtraParams& extra) const;
 
+  // Paints a theme part, with support for scene scaling in high-DPI mode.
+  // |theme| is the theme handle. |hdc| is the handle for the device context.
+  // |part_id| is the identifier for the part (e.g. thumb gripper). |state_id|
+  // is the identifier for the rendering state of the part (e.g. hover). |rect|
+  // is the bounds for rendering, expressed in logical coordinates.
+  HRESULT PaintScaledTheme(HANDLE theme,
+                           HDC hdc,
+                           int part_id,
+                           int state_id,
+                           const gfx::Rect& rect) const;
 
   // Get the windows theme name/part/state.  These three helper functions are
   // used only by GetPartSize(), as each of the corresponding PaintXXX()
@@ -345,6 +358,12 @@ class NATIVE_THEME_EXPORT NativeThemeWin : public NativeTheme,
   // The system color change listener and the updated cache of system colors.
   gfx::ScopedSysColorChangeListener color_change_listener_;
   mutable std::map<int, SkColor> system_colors_;
+
+  // Is a high contrast theme active?
+  mutable bool is_using_high_contrast_;
+
+  // Is |is_using_high_contrast_| valid?
+  mutable bool is_using_high_contrast_valid_;
 
   DISALLOW_COPY_AND_ASSIGN(NativeThemeWin);
 };

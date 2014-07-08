@@ -7,17 +7,24 @@
 from master import master_config
 from master.factory import chromium_factory
 
+import master_site_config
+
+ActiveMaster = master_site_config.ChromiumWebkit
+
 defaults = {}
 
 helper = master_config.Helper(defaults)
 B = helper.Builder
-D = helper.Dependent
+T = helper.Triggerable
 F = helper.Factory
-S = helper.Scheduler
 
-def mac(): return chromium_factory.ChromiumFactory('src/build', 'darwin')
+def mac():
+  return chromium_factory.ChromiumFactory('src/xcodebuild', 'darwin')
 
-defaults['category'] = '2webkit mac deps'
+def mac_out():
+  return chromium_factory.ChromiumFactory('src/out', 'darwin')
+
+defaults['category'] = 'deps'
 
 ################################################################################
 ## Release
@@ -30,53 +37,42 @@ rel_archive = master_config.GetArchiveUrl('ChromiumWebkit',
     rel_builddir, 'mac')
 
 #
-# Main release scheduler for chromium
+# Triggerable scheduler for the dbg builder
 #
-rel_scheduler = 's2_chromium_rel'
-S(rel_scheduler, branch='src', treeStableTimer=60)
-
-#
-# Dependent scheduler for the dbg builder
-#
-rel_dep_scheduler = 's2_chromium_rel_dep'
-D(rel_dep_scheduler, rel_scheduler)
+T('s2_chromium_rel_trigger')
 
 #
 # Mac Rel Builder
 #
 B('WebKit Mac Builder (deps)', 'f_webkit_mac_rel', auto_reboot=False,
-  scheduler=rel_scheduler, builddir=rel_builddir)
-F('f_webkit_mac_rel', mac().ChromiumFactory(
+  scheduler='global_scheduler', builddir=rel_builddir)
+F('f_webkit_mac_rel', mac_out().ChromiumFactory(
     slave_type='Builder',
-    options=[
-        '--compiler=clang','--', '-project', '../webkit/webkit.xcodeproj'],
+    options=['--build-tool=ninja', '--compiler=goma-clang', '--',
+        'blink_tests'],
     factory_properties={
+        'trigger': 's2_chromium_rel_trigger',
         'gclient_env': {
-            'GYP_DEFINES':'use_skia=1'
+            'GYP_DEFINES': 'fastbuild=1',
+            'GYP_GENERATORS':'ninja',
         },
-        'layout_test_platform': 'chromium-mac',
     }))
 
 #
 # Mac Rel WebKit testers
 #
-B('WebKit Mac10.6 (deps)', 'f_webkit_rel_tests', scheduler=rel_dep_scheduler)
+B('WebKit Mac10.6 (deps)', 'f_webkit_rel_tests',
+  scheduler='s2_chromium_rel_trigger')
 F('f_webkit_rel_tests', mac().ChromiumFactory(
     slave_type='Tester',
     build_url=rel_archive,
-    tests=[
-      'test_shell',
-      'webkit',
-      'webkit_lint',
-      'webkit_unit',
-    ],
+    tests=chromium_factory.blink_tests,
     factory_properties={
-      'additional_expectations_files': [
+      'additional_expectations': [
         ['webkit', 'tools', 'layout_tests', 'test_expectations.txt' ],
       ],
-      'archive_webkit_results': True,
+      'archive_webkit_results': ActiveMaster.is_production_host,
       'generate_gtest_json': True,
-      'layout_test_platform': 'chromium-mac',
       'test_results_server': 'test-results.appspot.com',
     }))
 
@@ -84,5 +80,5 @@ F('f_webkit_rel_tests', mac().ChromiumFactory(
 ##
 ################################################################################
 
-def Update(config, active_master, c):
+def Update(_config, _active_master, c):
   return helper.Update(c)

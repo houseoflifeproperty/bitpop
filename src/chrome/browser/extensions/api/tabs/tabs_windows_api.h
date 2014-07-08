@@ -6,33 +6,48 @@
 #define CHROME_BROWSER_EXTENSIONS_API_TABS_TABS_WINDOWS_API_H_
 
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
 
 namespace extensions {
+class TabsEventRouter;
 class WindowsEventRouter;
 
-class TabsWindowsAPI : public ProfileKeyedService,
-                       public extensions::EventRouter::Observer {
+class TabsWindowsAPI : public BrowserContextKeyedAPI,
+                       public EventRouter::Observer {
  public:
-  explicit TabsWindowsAPI(Profile* profile);
+  explicit TabsWindowsAPI(content::BrowserContext* context);
   virtual ~TabsWindowsAPI();
 
   // Convenience method to get the TabsWindowsAPI for a profile.
-  static TabsWindowsAPI* Get(Profile* profile);
+  static TabsWindowsAPI* Get(content::BrowserContext* context);
 
+  TabsEventRouter* tabs_event_router();
   WindowsEventRouter* windows_event_router();
 
-  // ProfileKeyedService implementation.
+  // KeyedService implementation.
   virtual void Shutdown() OVERRIDE;
+
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<TabsWindowsAPI>* GetFactoryInstance();
 
   // EventRouter::Observer implementation.
   virtual void OnListenerAdded(const extensions::EventListenerInfo& details)
       OVERRIDE;
 
  private:
-  Profile* profile_;
+  friend class BrowserContextKeyedAPIFactory<TabsWindowsAPI>;
 
+  content::BrowserContext* browser_context_;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "TabsWindowsAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
+  scoped_ptr<TabsEventRouter> tabs_event_router_;
   scoped_ptr<WindowsEventRouter> windows_event_router_;
 };
 

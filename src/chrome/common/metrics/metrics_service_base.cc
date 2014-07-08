@@ -6,51 +6,53 @@
 
 #include <cstdlib>
 
-#include "chrome/common/metrics/metrics_log_base.h"
+#include "components/metrics/metrics_log_base.h"
 
 using base::Histogram;
 
 MetricsServiceBase::MetricsServiceBase()
-    : ALLOW_THIS_IN_INITIALIZER_LIST(histogram_snapshot_manager_(this)) {
+    : histogram_snapshot_manager_(this) {
 }
 
 MetricsServiceBase::~MetricsServiceBase() {
 }
 
 // static
-const char MetricsServiceBase::kServerUrlXml[] =
-    "https://clients4.google.com/firefox/metrics/collect";
-const char MetricsServiceBase::kServerUrlProto[] =
+const char MetricsServiceBase::kServerUrl[] =
     "https://clients4.google.com/uma/v2";
 
 // static
-const char MetricsServiceBase::kMimeTypeXml[] =
-    "application/vnd.mozilla.metrics.bz2";
-// static
-const char MetricsServiceBase::kMimeTypeProto[] =
-    "application/vnd.chrome.uma";
+const char MetricsServiceBase::kMimeType[] = "application/vnd.chrome.uma";
 
 void MetricsServiceBase::RecordCurrentHistograms() {
   DCHECK(log_manager_.current_log());
-  histogram_snapshot_manager_.PrepareDeltas(base::Histogram::kNoFlags, true);
+  histogram_snapshot_manager_.PrepareDeltas(
+      base::Histogram::kNoFlags, base::Histogram::kUmaTargetedHistogramFlag);
+}
+
+void MetricsServiceBase::RecordCurrentStabilityHistograms() {
+  DCHECK(log_manager_.current_log());
+  histogram_snapshot_manager_.PrepareDeltas(
+      base::Histogram::kNoFlags, base::Histogram::kUmaStabilityHistogramFlag);
 }
 
 void MetricsServiceBase::RecordDelta(
-    const base::Histogram& histogram,
+    const base::HistogramBase& histogram,
     const base::HistogramSamples& snapshot) {
-  log_manager_.current_log()->RecordHistogramDelta(histogram, snapshot);
+  log_manager_.current_log()->RecordHistogramDelta(histogram.histogram_name(),
+                                                   snapshot);
 }
 
 void MetricsServiceBase::InconsistencyDetected(
-    Histogram::Inconsistencies problem) {
+    base::HistogramBase::Inconsistency problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesBrowser",
-                            problem, Histogram::NEVER_EXCEEDED_VALUE);
+                            problem, base::HistogramBase::NEVER_EXCEEDED_VALUE);
 }
 
 void MetricsServiceBase::UniqueInconsistencyDetected(
-    Histogram::Inconsistencies problem) {
+    base::HistogramBase::Inconsistency problem) {
   UMA_HISTOGRAM_ENUMERATION("Histogram.InconsistenciesBrowserUnique",
-                            problem, Histogram::NEVER_EXCEEDED_VALUE);
+                            problem, base::HistogramBase::NEVER_EXCEEDED_VALUE);
 }
 
 void MetricsServiceBase::InconsistencyDetectedInLoggedCount(int amount) {

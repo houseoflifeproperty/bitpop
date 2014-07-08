@@ -13,7 +13,9 @@
 #include "chrome/browser/history/url_database.h"  // For DBCloseScoper.
 #include "sql/meta_table.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace sql {
 class Connection;
@@ -28,14 +30,7 @@ class TopSitesDatabase {
 
   // Must be called after creation but before any other methods are called.
   // Returns true on success. If false, no other functions should be called.
-  bool Init(const FilePath& db_name);
-
-  // Returns true if migration of top sites from history may be needed. A value
-  // of true means either migration is definitely needed (the top sites file is
-  // old) or doesn't exist (as would happen for a new user).
-  bool may_need_history_migration() const {
-    return may_need_history_migration_;
-  }
+  bool Init(const base::FilePath& db_name);
 
   // Thumbnails ----------------------------------------------------------------
 
@@ -63,15 +58,24 @@ class TopSitesDatabase {
   bool RemoveURL(const MostVisitedURL& url);
 
  private:
-  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, UpgradeToVersion2);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Version1);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Version2);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Version3);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Recovery1);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Recovery2);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, Recovery3);
+  FRIEND_TEST_ALL_PREFIXES(TopSitesDatabaseTest, AddRemoveEditThumbnails);
 
-  // Creates the thumbnail table, returning true if the table already exists
-  // or was successfully created.
-  bool InitThumbnailTable();
+  // Rank of all URLs that are forced and therefore cannot be automatically
+  // evicted.
+  static const int kRankOfForcedURL;
 
-  // Upgrades the thumbnail table to version 2, returning true if the
+  // Rank used to indicate that a URL is not stored in the database.
+  static const int kRankOfNonExistingURL;
+
+  // Upgrades the thumbnail table to version 3, returning true if the
   // upgrade was successful.
-  bool UpgradeToVersion2();
+  bool UpgradeToVersion3();
 
   // Adds a new URL to the database.
   void AddPageThumbnail(const MostVisitedURL& url,
@@ -86,25 +90,18 @@ class TopSitesDatabase {
   bool UpdatePageThumbnail(const MostVisitedURL& url,
                            const Images& thumbnail);
 
-  // Returns the URL's current rank or -1 if it is not present.
+  // Returns |url|'s current rank or kRankOfNonExistingURL if not present.
   int GetURLRank(const MostVisitedURL& url);
 
-  // Returns the number of URLs (rows) in the database.
-  int GetRowCount();
+  // Helper function to implement internals of Init().  This allows
+  // Init() to retry in case of failure, since some failures will
+  // invoke recovery code.
+  bool InitImpl(const base::FilePath& db_name);
 
-  sql::Connection* CreateDB(const FilePath& db_name);
-
-  // Encodes redirects into a string.
-  static std::string GetRedirects(const MostVisitedURL& url);
-
-  // Decodes redirects from a string and sets them for the url.
-  static void SetRedirects(const std::string& redirects, MostVisitedURL* url);
+  sql::Connection* CreateDB(const base::FilePath& db_name);
 
   scoped_ptr<sql::Connection> db_;
   sql::MetaTable meta_table_;
-
-  // See description above class.
-  bool may_need_history_migration_;
 
   DISALLOW_COPY_AND_ASSIGN(TopSitesDatabase);
 };

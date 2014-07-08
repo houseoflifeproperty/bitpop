@@ -8,12 +8,12 @@
   ],
   'variables': {
     'common_sources': [
-      'futex.c',
       'nc_thread.c',
       'nc_mutex.c',
       'nc_condvar.c',
       'nc_semaphore.c',
       'nc_init_irt.c',
+      'stack_end.c',
       '../valgrind/dynamic_annotations.c',
     ],
   },

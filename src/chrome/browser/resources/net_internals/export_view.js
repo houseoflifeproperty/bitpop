@@ -38,8 +38,9 @@ var ExportView = (function() {
     this.loadedLogDump_ = null;
   }
 
-  // ID for special HTML element in category_tabs.html
-  ExportView.TAB_HANDLE_ID = 'tab-handle-export';
+  ExportView.TAB_ID = 'tab-handle-export';
+  ExportView.TAB_NAME = 'Export';
+  ExportView.TAB_HASH = '#export';
 
   // IDs for special HTML elements in export_view.html
   ExportView.MAIN_BOX_ID = 'export-view-tab-content';
@@ -112,7 +113,7 @@ var ExportView = (function() {
 
       // Clean up previous blob, if any, to reduce resource usage.
       if (this.lastBlobURL_) {
-        window.webkitURL.revokeObjectURL(this.lastBlobURL_);
+        window.URL.revokeObjectURL(this.lastBlobURL_);
         this.lastBlobURL_ = null;
       }
       this.createLogDump_(this.onLogDumpCreated_.bind(this));
@@ -172,6 +173,7 @@ var ExportView = (function() {
         this.userCommentsTextArea_.className =
             'export-view-explanation-warning';
         alert('Please fill in the text field!');
+        this.userCommentsTextArea_.focus();
         return undefined;
       }
 
@@ -183,7 +185,7 @@ var ExportView = (function() {
      */
     onLogDumpCreated_: function(dumpText) {
       var textBlob = new Blob([dumpText], {type: 'octet/stream'});
-      this.lastBlobURL_ = window.webkitURL.createObjectURL(textBlob);
+      this.lastBlobURL_ = window.URL.createObjectURL(textBlob);
 
       // Update the anchor tag and simulate a click on it to start the
       // download.

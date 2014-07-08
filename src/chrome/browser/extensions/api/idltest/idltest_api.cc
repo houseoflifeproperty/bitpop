@@ -10,32 +10,32 @@ using base::BinaryValue;
 
 namespace {
 
-ListValue* CopyBinaryValueToIntegerList(const BinaryValue* input) {
-  ListValue* output = new ListValue();
+base::ListValue* CopyBinaryValueToIntegerList(const BinaryValue* input) {
+  base::ListValue* output = new base::ListValue();
   const char* input_buffer = input->GetBuffer();
   for (size_t i = 0; i < input->GetSize(); i++) {
-    output->Append(Value::CreateIntegerValue(input_buffer[i]));
+    output->Append(new base::FundamentalValue(input_buffer[i]));
   }
   return output;
 }
 
-}
+}  // namespace
 
-bool IdltestSendArrayBufferFunction::RunImpl() {
+bool IdltestSendArrayBufferFunction::RunSync() {
   BinaryValue* input = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_ != NULL && args_->GetBinary(0, &input));
   SetResult(CopyBinaryValueToIntegerList(input));
   return true;
 }
 
-bool IdltestSendArrayBufferViewFunction::RunImpl() {
+bool IdltestSendArrayBufferViewFunction::RunSync() {
   BinaryValue* input = NULL;
   EXTENSION_FUNCTION_VALIDATE(args_ != NULL && args_->GetBinary(0, &input));
   SetResult(CopyBinaryValueToIntegerList(input));
   return true;
 }
 
-bool IdltestGetArrayBufferFunction::RunImpl() {
+bool IdltestGetArrayBufferFunction::RunSync() {
   std::string hello = "hello world";
   BinaryValue* output =
       BinaryValue::CreateWithCopiedBuffer(hello.c_str(), hello.size());

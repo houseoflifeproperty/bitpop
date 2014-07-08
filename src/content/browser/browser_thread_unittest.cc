@@ -5,8 +5,8 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/sequenced_task_runner_helpers.h"
 #include "content/browser/browser_thread_impl.h"
 #include "content/public/test/test_browser_thread.h"
@@ -19,7 +19,7 @@ class BrowserThreadTest : public testing::Test {
  public:
   void Release() const {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-    loop_.PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    loop_.PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
  protected:
@@ -35,17 +35,17 @@ class BrowserThreadTest : public testing::Test {
     file_thread_->Stop();
   }
 
-  static void BasicFunction(MessageLoop* message_loop) {
+  static void BasicFunction(base::MessageLoop* message_loop) {
     CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-    message_loop->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+    message_loop->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
   }
 
   class DeletedOnFile
       : public base::RefCountedThreadSafe<
             DeletedOnFile, BrowserThread::DeleteOnFileThread> {
    public:
-    explicit DeletedOnFile(MessageLoop* message_loop)
-        : message_loop_(message_loop) { }
+    explicit DeletedOnFile(base::MessageLoop* message_loop)
+        : message_loop_(message_loop) {}
 
    private:
     friend struct BrowserThread::DeleteOnThread<BrowserThread::FILE>;
@@ -53,25 +53,10 @@ class BrowserThreadTest : public testing::Test {
 
     ~DeletedOnFile() {
       CHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-      message_loop_->PostTask(FROM_HERE, MessageLoop::QuitClosure());
+      message_loop_->PostTask(FROM_HERE, base::MessageLoop::QuitClosure());
     }
 
-    MessageLoop* message_loop_;
-  };
-
-  class NeverDeleted
-      : public base::RefCountedThreadSafe<
-            NeverDeleted, BrowserThread::DeleteOnWebKitThread> {
-   public:
-
-   private:
-    friend struct BrowserThread::DeleteOnThread<
-        BrowserThread::WEBKIT_DEPRECATED>;
-    friend class base::DeleteHelper<NeverDeleted>;
-
-    ~NeverDeleted() {
-      CHECK(false);
-    }
+    base::MessageLoop* message_loop_;
   };
 
  private:
@@ -79,46 +64,43 @@ class BrowserThreadTest : public testing::Test {
   scoped_ptr<BrowserThreadImpl> file_thread_;
   // It's kind of ugly to make this mutable - solely so we can post the Quit
   // Task from Release(). This should be fixed.
-  mutable MessageLoop loop_;
+  mutable base::MessageLoop loop_;
 };
 
 TEST_F(BrowserThreadTest, PostTask) {
   BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(&BasicFunction, MessageLoop::current()));
-  MessageLoop::current()->Run();
+      BrowserThread::FILE,
+      FROM_HERE,
+      base::Bind(&BasicFunction, base::MessageLoop::current()));
+  base::MessageLoop::current()->Run();
 }
 
 TEST_F(BrowserThreadTest, Release) {
   BrowserThread::ReleaseSoon(BrowserThread::UI, FROM_HERE, this);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 }
 
 TEST_F(BrowserThreadTest, ReleasedOnCorrectThread) {
   {
     scoped_refptr<DeletedOnFile> test(
-        new DeletedOnFile(MessageLoop::current()));
+        new DeletedOnFile(base::MessageLoop::current()));
   }
-  MessageLoop::current()->Run();
-}
-
-TEST_F(BrowserThreadTest, NotReleasedIfTargetThreadNonExistent) {
-  scoped_refptr<NeverDeleted> test(new NeverDeleted());
+  base::MessageLoop::current()->Run();
 }
 
 TEST_F(BrowserThreadTest, PostTaskViaMessageLoopProxy) {
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy =
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::FILE);
   message_loop_proxy->PostTask(
-      FROM_HERE, base::Bind(&BasicFunction, MessageLoop::current()));
-  MessageLoop::current()->Run();
+      FROM_HERE, base::Bind(&BasicFunction, base::MessageLoop::current()));
+  base::MessageLoop::current()->Run();
 }
 
 TEST_F(BrowserThreadTest, ReleaseViaMessageLoopProxy) {
   scoped_refptr<base::MessageLoopProxy> message_loop_proxy =
       BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI);
   message_loop_proxy->ReleaseSoon(FROM_HERE, this);
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 }
 
 TEST_F(BrowserThreadTest, PostTaskAndReply) {
@@ -128,9 +110,9 @@ TEST_F(BrowserThreadTest, PostTaskAndReply) {
       BrowserThread::FILE,
       FROM_HERE,
       base::Bind(&base::DoNothing),
-      base::Bind(&MessageLoop::Quit,
-                 base::Unretained(MessageLoop::current()->current()))));
-  MessageLoop::current()->Run();
+      base::Bind(&base::MessageLoop::Quit,
+                 base::Unretained(base::MessageLoop::current()->current()))));
+  base::MessageLoop::current()->Run();
 }
 
-}
+}  // namespace content

@@ -34,18 +34,28 @@ var QueryResultType = {
  * A Task that waits for the results of an HSTS query.  Once the results are
  * received, checks them before completing.  Does not initiate the query.
  * @param {string} domain The domain expected in the returned results.
- * @param {bool} subdomains Whether or not the subdomains flag is expected to be
- *     set in the returned results.  Ignored on error and not found results.
+ * @param {bool} stsSubdomains Whether or not the stsSubdomains flag is expected
+ *     to be set in the returned results.  Ignored on error and not found
+ *     results.
+ * @param {bool} pkpSubdomains Whether or not the pkpSubdomains flag is expected
+ *     to be set in the returned results.  Ignored on error and not found
+ *     results.
+ * @param {number} stsObserved The time the STS policy was observed.
+ * @param {number} pkpObserved The time the PKP policy was observed.
  * @param {string} publicKeyHashes Expected public key hashes.  Ignored on error
  *     error and not found results.
  * @param {QueryResultType} queryResultType The expected result type of the
  *     results of the query.
  * @extends {NetInternalsTest.Task}
  */
-function CheckQueryResultTask(domain, subdomains, publicKeyHashes,
+function CheckQueryResultTask(domain, stsSubdomains, pkpSubdomains,
+                              stsObserved, pkpObserved, publicKeyHashes,
                               queryResultType) {
   this.domain_ = domain;
-  this.subdomains_ = subdomains;
+  this.stsSubdomains_ = stsSubdomains;
+  this.pkpSubdomains_ = pkpSubdomains;
+  this.stsObserved_ = stsObserved;
+  this.pkpObserved_ = pkpObserved;
   this.publicKeyHashes_ = publicKeyHashes;
   this.queryResultType_ = queryResultType;
   NetInternalsTest.Task.call(this);
@@ -112,7 +122,10 @@ CheckQueryResultTask.prototype = {
    */
   checkSuccess_: function(result) {
     expectEquals(QueryResultType.SUCCESS, this.queryResultType_);
-    expectEquals(this.subdomains_, result.subdomains);
+    expectEquals(this.stsSubdomains_, result.dynamic_sts_include_subdomains);
+    expectEquals(this.pkpSubdomains_, result.dynamic_pkp_include_subdomains);
+    expectLE(this.stsObserved_, result.dynamic_sts_observed);
+    expectLE(this.pkpObserved_, result.dynamic_pkp_observed);
 
     // |public_key_hashes| is an old synonym for what is now
     // |preloaded_spki_hashes|, which in turn is a legacy synonym for
@@ -150,19 +163,27 @@ CheckQueryResultTask.prototype = {
  * until the results from the automatically sent query have been received, and
  * then checks them against the expected values.
  * @param {string} domain The domain to send and expected to be returned.
- * @param {bool} subdomains Whether the subdomain checkbox should be selected.
- *     Also the corresponding expected return value, in the success case.
+ * @param {bool} stsSubdomains Whether the HSTS subdomain checkbox should be
+ *     selected. Also the corresponding expected return value, in the success
+ *     case.
+ * @param {bool} pkpSubdomains Whether the pinning subdomain checkbox should be
+ *     selected. Also the corresponding expected return value, in the success
+ *     case.
+ * @param {number} stsObserved The time the STS policy was observed.
+ * @param {number} pkpObserved The time the PKP policy was observed.
  * @param {string} publicKeyHashes Public key hash to send.  Also the
  *     corresponding expected return value, on success.  When this is the string
  *     INVALID_HASH, an empty string is expected to be received instead.
  * @param {QueryResultType} queryResultType Expected result type.
  * @extends {CheckQueryResultTask}
  */
-function AddTask(domain, subdomains, publicKeyHashes, queryResultType) {
+function AddTask(domain, stsSubdomains, pkpSubdomains, publicKeyHashes,
+                 stsObserved, pkpObserved, queryResultType) {
   this.requestedPublicKeyHashes_ = publicKeyHashes;
   if (publicKeyHashes == INVALID_HASH)
     publicKeyHashes = '';
-  CheckQueryResultTask.call(this, domain, subdomains, publicKeyHashes,
+  CheckQueryResultTask.call(this, domain, stsSubdomains, pkpSubdomains,
+                            stsObserved, pkpObserved, publicKeyHashes,
                             queryResultType);
 }
 
@@ -175,7 +196,8 @@ AddTask.prototype = {
    */
   start: function() {
     $(HSTSView.ADD_INPUT_ID).value = this.domain_;
-    $(HSTSView.ADD_CHECK_ID).checked = this.subdomains_;
+    $(HSTSView.ADD_STS_CHECK_ID).checked = this.stsSubdomains_;
+    $(HSTSView.ADD_PKP_CHECK_ID).checked = this.pkpSubdomains_;
     $(HSTSView.ADD_PINS_ID).value = this.requestedPublicKeyHashes_;
     $(HSTSView.ADD_SUBMIT_ID).click();
     CheckQueryResultTask.prototype.start.call(this);
@@ -188,8 +210,10 @@ AddTask.prototype = {
  * query.
  * @extends {CheckQueryResultTask}
  */
-function QueryTask(domain, subdomains, publicKeyHashes, queryResultType) {
-  CheckQueryResultTask.call(this, domain, subdomains, publicKeyHashes,
+function QueryTask(domain, stsSubdomains, pkpSubdomains, stsObserved,
+                   pkpObserved, publicKeyHashes, queryResultType) {
+  CheckQueryResultTask.call(this, domain, stsSubdomains, pkpSubdomains,
+                            stsObserved, pkpObserved, publicKeyHashes,
                             queryResultType);
 }
 
@@ -218,7 +242,7 @@ QueryTask.prototype = {
 function DeleteTask(domain, queryResultType) {
   expectNotEquals(queryResultType, QueryResultType.SUCCESS);
   this.domain_ = domain;
-  QueryTask.call(this, domain, false, '', queryResultType);
+  QueryTask.call(this, domain, false, false, '', 0, 0, queryResultType);
 }
 
 DeleteTask.prototype = {
@@ -241,7 +265,8 @@ DeleteTask.prototype = {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewQueryNotFound', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new QueryTask('somewhere.com', false, '',
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new QueryTask('somewhere.com', false, false, now, now, '',
                                   QueryResultType.NOT_FOUND));
   taskQueue.run();
 });
@@ -252,7 +277,9 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewQueryNotFound', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewQueryError', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new QueryTask('\u3024', false, '', QueryResultType.ERROR));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new QueryTask('\u3024', false, false, now, now, '',
+                                  QueryResultType.ERROR));
   taskQueue.run();
 });
 
@@ -282,8 +309,9 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewDeleteError', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddDelete', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('somewhere.com', false, VALID_HASH,
-                                QueryResultType.SUCCESS));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('somewhere.com', false, false, VALID_HASH,
+                                now, now, QueryResultType.SUCCESS));
   taskQueue.addTask(new DeleteTask('somewhere.com', QueryResultType.NOT_FOUND));
   taskQueue.run();
 });
@@ -294,7 +322,11 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddDelete', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddFail', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('~', false, '', QueryResultType.NOT_FOUND));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('0123456789012345678901234567890' +
+                                '012345678901234567890123456789012345',
+                                false, false, '', now, now,
+                                QueryResultType.NOT_FOUND));
   taskQueue.run();
 });
 
@@ -305,7 +337,9 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddFail', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddError', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('\u3024', false, '', QueryResultType.ERROR));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('\u3024', false, false, '', now, now,
+                                QueryResultType.ERROR));
   taskQueue.run();
 });
 
@@ -315,8 +349,9 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddError', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddInvalidHash', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('somewhere.com', true, INVALID_HASH,
-                                QueryResultType.SUCCESS));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('somewhere.com', true, true, INVALID_HASH,
+                                now, now, QueryResultType.SUCCESS));
   taskQueue.addTask(new DeleteTask('somewhere.com', QueryResultType.NOT_FOUND));
   taskQueue.run();
 });
@@ -327,10 +362,11 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddInvalidHash', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddOverwrite', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('somewhere.com', true, VALID_HASH,
-                                QueryResultType.SUCCESS));
-  taskQueue.addTask(new AddTask('somewhere.com', false, '',
-                                QueryResultType.SUCCESS));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('somewhere.com', true, true, VALID_HASH,
+                                now, now, QueryResultType.SUCCESS));
+  taskQueue.addTask(new AddTask('somewhere.com', false, false, '',
+                                now, now, QueryResultType.SUCCESS));
   taskQueue.addTask(new DeleteTask('somewhere.com', QueryResultType.NOT_FOUND));
   taskQueue.run();
 });
@@ -341,16 +377,17 @@ TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddOverwrite', function() {
 TEST_F('NetInternalsTest', 'netInternalsHSTSViewAddTwice', function() {
   NetInternalsTest.switchToView('hsts');
   taskQueue = new NetInternalsTest.TaskQueue(true);
-  taskQueue.addTask(new AddTask('somewhere.com', false, VALID_HASH,
-                                QueryResultType.SUCCESS));
-  taskQueue.addTask(new QueryTask('somewhereelse.com', false, '',
-                                  QueryResultType.NOT_FOUND));
-  taskQueue.addTask(new AddTask('somewhereelse.com', true, '',
-                                QueryResultType.SUCCESS));
-  taskQueue.addTask(new QueryTask('somewhere.com', false, VALID_HASH,
-                                  QueryResultType.SUCCESS));
+  var now = new Date().getTime() / 1000.0;
+  taskQueue.addTask(new AddTask('somewhere.com', false, false, VALID_HASH,
+                                now, now, QueryResultType.SUCCESS));
+  taskQueue.addTask(new QueryTask('somewhereelse.com', false, false, now, now,
+                                  '', QueryResultType.NOT_FOUND));
+  taskQueue.addTask(new AddTask('somewhereelse.com', true, true, '',
+                                now, now, QueryResultType.SUCCESS));
+  taskQueue.addTask(new QueryTask('somewhere.com', false, false, now, now,
+                                  VALID_HASH, QueryResultType.SUCCESS));
   taskQueue.addTask(new DeleteTask('somewhere.com', QueryResultType.NOT_FOUND));
-  taskQueue.addTask(new QueryTask('somewhereelse.com', true, '',
+  taskQueue.addTask(new QueryTask('somewhereelse.com', true, true, now, now, '',
                                   QueryResultType.SUCCESS));
   taskQueue.addTask(new DeleteTask('somewhereelse.com',
                                    QueryResultType.NOT_FOUND));

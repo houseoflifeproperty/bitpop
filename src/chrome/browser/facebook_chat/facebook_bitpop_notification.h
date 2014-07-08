@@ -20,9 +20,9 @@
 #pragma once
 
 #include <string>
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "components/keyed_service/core/keyed_service.h"
 
-class FacebookBitpopNotification : public ProfileKeyedService {
+class FacebookBitpopNotification : public KeyedService {
 public:
   virtual ~FacebookBitpopNotification();
 

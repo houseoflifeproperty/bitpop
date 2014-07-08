@@ -9,6 +9,22 @@
 You should also read <a href="hosting.html">Hosting</a> and
 <a href="packaging.html">Packaging</a>.</p>
 
+<p class="warning"><b>Warning:</b>
+As of M33,
+Windows stable/beta channel users can only download extensions hosted
+in the Chrome Web Store (see
+<a href="http://blog.chromium.org/2013/11/protecting-windows-users-from-malicious.html">Protecting Windows users from malicious extensions</a>).
+</p>
+ 
+<p>
+Previously when off-store extensions were supported,
+it was possible to have the native binaries and the extension be updated in lock step.
+However, extensions hosted on the Chrome Web Store are updated
+via the Chrome update mechanism which developers do not control.
+Extension developers should be careful about updating extensions
+that have a dependency on the native binary
+(for example, legacy extensions using <a href="npapi.html">NPAPI</a>).
+</p>
 
 <h2 id="overview">Overview</h2>
 <ul><li>A manifest may contain an "update_url" field, pointing to a location for doing update checks.</li>
@@ -21,7 +37,8 @@ You should also read <a href="hosting.html">Hosting</a> and
 <p>If you're hosting your own extension or app, you need to add the "update_url" field to your <a href="manifest.html"><code>manifest.json</code></a> file,
 like this:</p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"update_url": "http://myhost.com/mytestextension/updates.xml"</b>,
@@ -32,7 +49,7 @@ like this:</p>
 <h2 id="update_manifest">Update manifest</h2>
 <p>The update manifest returned by the server should be an XML document that looks like this (highlights indicate parts you should modify):</p>
 
-<pre>
+<pre data-filename="updates.xml">
 &lt;?xml version='1.0' encoding='UTF-8'?&gt;
 &lt;gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'&gt;
   &lt;app appid='<b>aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa</b>'&gt;
@@ -50,7 +67,7 @@ and <strong>&lt;updatecheck></strong> elements of the update manifest:
 <p><b>appid</b><br>
 The extension or app ID, generated based on a hash of the public key,
 as described in <a href="packaging.html">Packaging</a>. You can find the
-ID of an extension or packaged app by going to the Extensions page (<b>chrome://extensions</b>).
+ID of an extension or Chrome App by going to the Extensions page (<b>chrome://extensions</b>).
 </p>
 {{?is_apps}}
 <p>
@@ -144,7 +161,8 @@ with the request parameters in the POST body.
 <h2 id="minimum_browser_version">Advanced usage: minimum browser version</h2>
 <p>As we add more APIs to the extensions system, it's possible you will want to release an updated version of an extension or app that will work only with newer versions of the browser. While Google Chrome itself is autoupdated, it can take a few days before the majority of the user base has updated to any given new release. To ensure that a given update will apply only to Google Chrome versions at or higher than a specific version, you add the "prodversionmin" attribute to the &lt;app&gt; element in your update manifest. For example:</p>
 
-<pre>&lt;?xml version='1.0' encoding='UTF-8'?&gt;
+<pre data-filename="updates.xml">
+&lt;?xml version='1.0' encoding='UTF-8'?&gt;
 &lt;gupdate xmlns='http://www.google.com/update2/response' protocol='2.0'&gt;
 &nbsp;&nbsp;&lt;app appid='aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'&gt;
 &nbsp;&nbsp; &nbsp;&lt;updatecheck&nbsp;codebase='http://myhost.com/mytestextension/mte_v2.crx'&nbsp;version='2.0' <b>prodversionmin='3.0.193.0'</b>/&gt;

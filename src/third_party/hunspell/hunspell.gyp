@@ -6,7 +6,7 @@
   'targets': [
     {
       'target_name': 'hunspell',
-      'type': '<(library)',
+      'type': 'static_library',
       'msvs_guid': 'D5E8DCB2-9C61-446F-8BEE-B18CA0E0936E',
       'dependencies': [
         '../../base/base.gyp:base',
@@ -63,12 +63,21 @@
           'USE_HUNSPELL',
         ],
       },
+      # TODO(jschuh): http://crbug.com/167187 size_t -> int
+      'msvs_disabled_warnings': [ 4267 ],
       'conditions': [
         ['os_posix == 1 and OS != "mac"', {
           'cflags': [
             '-Wno-unused-value',
             '-Wno-unused-variable',
             '-Wno-write-strings',
+          ],
+        }],
+        ['gcc_version >= 48', {
+          'cflags': [
+            # affentry.hxx has NULL as default parameter for a FLAG in two
+            # places.
+            '-Wno-conversion-null',
           ],
         }],
         ['clang == 1', {

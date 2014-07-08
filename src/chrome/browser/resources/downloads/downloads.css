@@ -23,7 +23,7 @@ html[dir='rtl'] .form {
 .header .form {
   -webkit-margin-start: 12px;
   float: left;
-  margin-top: 22px;
+  margin-top: 4px;
 }
 
 #downloads-summary {
@@ -46,12 +46,22 @@ html[dir=rtl] #downloads-actions {
   float: left;
 }
 
-#downloads-actions > a {
+.disabled-link {
+  color: #999;
+  text-decoration: none;
+}
+
+#downloads-actions > a,
+#downloads-actions > .disabled-link {
   -webkit-margin-start: 10px;
 }
 
 #downloads-actions > a:first-child {
   -webkit-margin-start: 0;
+}
+
+#open-downloads-folder {
+  -webkit-margin-end: 16px;
 }
 
 #downloads-display {
@@ -101,7 +111,7 @@ html[dir=rtl] .icon {
 .download.otr > .safe,
 .download.otr > .show-dangerous {
   -webkit-transition: opacity 150ms;
-  background: url('../shared/images/otr_icon_standalone.png')
+  background: url('../../../../ui/webui/resources/images/otr_icon_standalone.png')
               no-repeat right bottom;
   opacity: .66;
 }
@@ -114,6 +124,10 @@ html[dir=rtl] .download.otr > .show-dangerous {
 .download.otr > .safe:hover,
 .download.otr > .show-dangerous:hover {
   opacity: 1;
+}
+
+.malware-description {
+  color: rgb(196, 42, 23);
 }
 
 .progress {

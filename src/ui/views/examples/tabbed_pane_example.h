@@ -7,9 +7,8 @@
 
 #include <string>
 
-#include "base/basictypes.h"
-#include "base/compiler_specific.h"
-#include "ui/views/controls/button/text_button.h"
+#include "base/macros.h"
+#include "ui/views/controls/button/button.h"
 #include "ui/views/controls/tabbed_pane/tabbed_pane_listener.h"
 #include "ui/views/examples/example_base.h"
 
@@ -18,10 +17,10 @@ class TabbedPane;
 
 namespace examples {
 
-// A TabbedPane example tests adding/removing/selecting tabs.
-class TabbedPaneExample : public ExampleBase,
-                          public ButtonListener,
-                          public TabbedPaneListener {
+// A TabbedPane example tests adding and selecting tabs.
+class VIEWS_EXAMPLES_EXPORT TabbedPaneExample : public ExampleBase,
+                                                public ButtonListener,
+                                                public TabbedPaneListener {
  public:
   TabbedPaneExample();
   virtual ~TabbedPaneExample();
@@ -44,10 +43,9 @@ class TabbedPaneExample : public ExampleBase,
   // The tabbed pane to be tested.
   TabbedPane* tabbed_pane_;
 
-  // Control buttons to add, remove or select tabs.
+  // Control buttons to add and select tabs.
   Button* add_;
   Button* add_at_;
-  Button* remove_at_;
   Button* select_at_;
 
   DISALLOW_COPY_AND_ASSIGN(TabbedPaneExample);

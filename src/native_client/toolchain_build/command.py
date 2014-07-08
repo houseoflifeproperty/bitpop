@@ -5,158 +5,391 @@
 
 """Class capturing a command invocation as data."""
 
-
-# Done first to setup python module path.
-import toolchain_env
-
-import multiprocessing
+import inspect
+import glob
+import hashlib
+import logging
 import os
+import shutil
 import sys
 
-import file_tools
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.file_tools
+import pynacl.log_tools
+import pynacl.repo_tools
+
+import substituter
+
+
+# MSYS tools do not always work with combinations of Windows and MSYS
+# path conventions, e.g. '../foo\\bar' doesn't find '../foo/bar'.
+# Since we convert all the directory names to MSYS conventions, we
+# should not be using Windows separators with those directory names.
+# As this is really an implementation detail of this module, we export
+# 'command.path' to use in place of 'os.path', rather than having
+# users of the module know which flavor to use.
+import posixpath
+path = posixpath
 
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 NACL_DIR = os.path.dirname(SCRIPT_DIR)
 
+COMMAND_CODE_FILES = [os.path.join(SCRIPT_DIR, f)
+                      for f in ('command.py', 'once.py', 'substituter.py',
+                                'pnacl_commands.py', 'toolchain_main.py',)]
+COMMAND_CODE_FILES += [os.path.join(NACL_DIR, 'pynacl', f)
+                       for f in ('platform.py','directory_storage.py',
+                                 'file_tools.py', 'gsd_storage.py',
+                                 'hashing_tools.py', 'local_storage_cache.py',
+                                 'log_tools.py', 'repo_tools.py',)]
 
-def FixPath(path):
-  """Convert to msys paths on windows."""
-  if sys.platform != 'win32':
-    return path
-  drive, path = os.path.splitdrive(path)
-  # Replace X:\... with /x/....
-  # Msys does not like x:\ style paths (especially with mixed slashes).
-  if drive:
-    drive = '/' + drive.lower()[0]
-  path = drive + path
-  path = path.replace('\\', '/')
-  return path
+def HashBuildSystemSources():
+  """Read the build source files to use in hashes for Callbacks."""
+  global FILE_CONTENTS_HASH
+  h = hashlib.sha1()
+  for filename in COMMAND_CODE_FILES:
+    with open(filename) as f:
+      h.update(f.read())
+  FILE_CONTENTS_HASH = h.hexdigest()
 
-
-def PrepareCommandValues(cwd, inputs, output):
-  values = {}
-  values['cwd'] = FixPath(os.path.abspath(cwd))
-  for key, value in inputs.iteritems():
-    if key.startswith('abs_'):
-      raise Exception('Invalid key starts with "abs_": %s' % key)
-    values['abs_' + key] = FixPath(os.path.abspath(value))
-    values[key] = FixPath(os.path.relpath(value, cwd))
-  values['abs_output'] = FixPath(os.path.abspath(output))
-  values['output'] = FixPath(os.path.relpath(output, cwd))
-  return values
+HashBuildSystemSources()
 
 
-class Command(object):
+def PlatformEnvironment(extra_paths):
+  """Select the environment variables to run commands with.
+
+  Args:
+    extra_paths: Extra paths to add to the PATH variable.
+  Returns:
+    A dict to be passed as env to subprocess.
+  """
+  env = os.environ.copy()
+  paths = []
+  if sys.platform == 'win32':
+    # TODO(bradnelson): switch to something hermetic.
+    mingw = os.environ.get('MINGW', r'c:\mingw')
+    msys = os.path.join(mingw, 'msys', '1.0')
+    if not os.path.exists(msys):
+      msys = os.path.join(mingw, 'msys')
+    # We need both msys (posix like build environment) and MinGW (windows
+    # build of tools like gcc). We add <MINGW>/msys/[1.0/]bin to the path to
+    # get sh.exe. We add <MINGW>/bin to allow direct invocation on MinGW
+    # tools. We also add an msys style path (/mingw/bin) to get things like
+    # gcc from inside msys.
+    paths = [
+        '/mingw/bin',
+        os.path.join(mingw, 'bin'),
+        os.path.join(msys, 'bin'),
+    ]
+  env['PATH'] = os.pathsep.join(
+      paths + extra_paths + env.get('PATH', '').split(os.pathsep))
+  return env
+
+
+class Runnable(object):
   """An object representing a single command."""
+  def __init__(self, func, *args, **kwargs):
+    """Construct a runnable which will call 'func' with 'args' and 'kwargs'.
 
-  def __init__(self, command, **kwargs):
-    self._command = command
-    self._kwargs = kwargs
+    Args:
+      func: Function which will be called by Invoke
+      args: Positional arguments to be passed to func
+      kwargs: Keyword arguments to be passed to func
+
+      RUNNABLES SHOULD ONLY BE IMPLEMENTED IN THIS FILE, because their
+      string representation (which is used to calculate whether targets should
+      be rebuilt) is based on this file's hash and does not attempt to capture
+      the code or bound variables of the function itself (the one exception is
+      once_test.py which injects its own callbacks to verify its expectations).
+
+      When 'func' is called, its first argument will be a substitution object
+      which it can use to substitute %-templates in its arguments.
+    """
+    self._func = func
+    self._args = args or []
+    self._kwargs = kwargs or {}
 
   def __str__(self):
     values = []
-    # TODO(bradnelson): Do something more reasoned here.
-    values += [repr(self._command)]
-    for k, v in self._kwargs.iteritems():
-      values += [repr(k), repr(v)]
+
+    sourcefile = inspect.getsourcefile(self._func)
+    # Check that the code for the runnable is implemented in one of the known
+    # source files of the build system (which are included in its hash). This
+    # isn't a perfect test because it could still import code from an outside
+    # module, so we should be sure to add any new build system files to the list
+    found_match = (os.path.basename(sourcefile) in
+                   [os.path.basename(f) for f in
+                    COMMAND_CODE_FILES + ['once_test.py']])
+    if not found_match:
+      print 'Function', self._func.func_name, 'in', sourcefile
+      raise Exception('Python Runnable objects must be implemented in one of' +
+                      'the following files: ' + str(COMMAND_CODE_FILES))
+
+    # Like repr(datum), but do something stable for dictionaries.
+    # This only properly handles dictionaries that use simple types
+    # as keys.
+    def ReprForHash(datum):
+      if isinstance(datum, dict):
+        # The order of a dictionary's items is unpredictable.
+        # Manually make a string in dict syntax, but sorted on keys.
+        return ('{' +
+                ', '.join(repr(key) + ': ' + ReprForHash(value)
+                          for key, value in sorted(datum.iteritems(),
+                                                   key=lambda t: t[0])) +
+                '}')
+      elif isinstance(datum, list):
+        # A list is already ordered, but its items might be dictionaries.
+        return ('[' +
+                ', '.join(ReprForHash(value) for value in datum) +
+                ']')
+      else:
+        return repr(datum)
+
+    for v in self._args:
+      values += [ReprForHash(v)]
+    # The order of a dictionary's items is unpredictable.
+    # Sort by key for hashing purposes.
+    for k, v in sorted(self._kwargs.iteritems(), key=lambda t: t[0]):
+      values += [repr(k), ReprForHash(v)]
+    values += [FILE_CONTENTS_HASH]
+
     return '\n'.join(values)
 
-  def Invoke(self, check_call, package, inputs, output, cwd,
-             build_signature=None):
-    # TODO(bradnelson): Instead of allowing full subprocess functionality,
-    #     move execution here and use polymorphism to implement things like
-    #     mkdir, copy directly in python.
-    kwargs = self._kwargs.copy()
-    kwargs['cwd'] = os.path.join(os.path.abspath(cwd), kwargs.get('cwd', '.'))
-    values = PrepareCommandValues(kwargs['cwd'], inputs, output)
-    try:
-      values['cores'] = multiprocessing.cpu_count()
-    except NotImplementedError:
-      values['cores'] = 4  # Assume 4 if we can't measure.
-    values['package'] = package
-    if build_signature is not None:
-      values['build_signature'] = build_signature
-    values['top_srcdir'] = FixPath(os.path.relpath(NACL_DIR, kwargs['cwd']))
-    values['abs_top_srcdir'] = FixPath(os.path.abspath(NACL_DIR))
+  def Invoke(self, subst):
+    return self._func(subst, *self._args, **self._kwargs)
 
-    # Use mingw on windows.
-    if sys.platform == 'win32':
-      mingw = os.environ.get('MINGW', r'c:\mingw')
-      # We need both msys (posix like build environment) and MinGW (windows
-      # build of tools like gcc). We add <MINGW>/msys/1.0/bin to the path to
-      # get sh.exe. We also add an msys style path (/mingw/bin) to get things
-      # like gcc from inside msys.
-      kwargs['path_dirs'] = (
-          ['/mingw/bin', os.path.join(mingw, 'msys', '1.0', 'bin')] +
-          kwargs.get('path_dirs', []))
 
-    if 'path_dirs' in kwargs:
-      path_dirs = [dirname % values for dirname in kwargs['path_dirs']]
-      del kwargs['path_dirs']
-      env = os.environ.copy()
-      env['PATH'] = os.pathsep.join(path_dirs + env['PATH'].split(os.pathsep))
-      kwargs['env'] = env
+def Command(command, stdout=None, **kwargs):
+  """Return a Runnable which invokes 'command' with check_call.
 
-    if isinstance(self._command, str):
-      command = self._command % values
+  Args:
+    command: List or string with a command suitable for check_call
+    stdout (optional): File name to redirect command's stdout to
+    kwargs: Keyword arguments suitable for check_call (or 'cwd' or 'path_dirs')
+
+  The command will be %-substituted and paths will be assumed to be relative to
+  the cwd given by Invoke. If kwargs contains 'cwd' it will be appended to the
+  cwd given by Invoke and used as the cwd for the call. If kwargs contains
+  'path_dirs', the directories therein will be added to the paths searched for
+  the command. Any other kwargs will be passed to check_call.
+  """
+  def runcmd(subst, command, stdout, **kwargs):
+    check_call_kwargs = kwargs.copy()
+    command = command[:]
+
+    cwd = subst.SubstituteAbsPaths(check_call_kwargs.get('cwd', '.'))
+    subst.SetCwd(cwd)
+    check_call_kwargs['cwd'] = cwd
+
+    # Extract paths from kwargs and add to the command environment.
+    path_dirs = []
+    if 'path_dirs' in check_call_kwargs:
+      path_dirs = [subst.Substitute(dirname) for dirname
+                   in check_call_kwargs['path_dirs']]
+      del check_call_kwargs['path_dirs']
+    check_call_kwargs['env'] = PlatformEnvironment(path_dirs)
+
+    if isinstance(command, str):
+      command = subst.Substitute(command)
     else:
-      command = [arg % values for arg in self._command]
-      paths = kwargs.get('env', os.environ).get('PATH', '').split(os.pathsep)
-      command[0] = file_tools.Which(command[0], paths=paths)
-    check_call(command, **kwargs)
+      command = [subst.Substitute(arg) for arg in command]
+      paths = check_call_kwargs['env']['PATH'].split(os.pathsep)
+      command[0] = pynacl.file_tools.Which(command[0], paths=paths)
 
+    if stdout is not None:
+      stdout = subst.SubstituteAbsPaths(stdout)
 
-def Mkdir(path, parents=False, **kwargs):
+    pynacl.log_tools.CheckCall(command, stdout=stdout, **check_call_kwargs)
+
+  return Runnable(runcmd, command, stdout, **kwargs)
+
+def SkipForIncrementalCommand(command, **kwargs):
+  """Return a command which has the skip_for_incremental property set on it.
+
+  This will cause the command to be skipped for incremental builds, if the
+  working directory is not empty.
+  """
+  cmd = Command(command, **kwargs)
+  cmd.skip_for_incremental = True
+  return cmd
+
+def Mkdir(path, parents=False):
   """Convenience method for generating mkdir commands."""
-  # TODO(bradnelson): Replace with something less hacky.
-  func = 'os.mkdir'
-  if parents:
-    func = 'os.makedirs'
-  return Command([
-      sys.executable, '-c',
-      'import sys,os; ' + func + '(sys.argv[1])', path],
-      **kwargs)
+  def mkdir(subst, path):
+    path = subst.SubstituteAbsPaths(path)
+    if parents:
+      os.makedirs(path)
+    else:
+      os.mkdir(path)
+  return Runnable(mkdir, path)
 
 
-def Copy(src, dst, **kwargs):
+def Copy(src, dst):
   """Convenience method for generating cp commands."""
-  # TODO(bradnelson): Replace with something less hacky.
-  return Command([
-      sys.executable, '-c',
-      'import sys,shutil; shutil.copyfile(sys.argv[1], sys.argv[2])', src, dst],
-      **kwargs)
+  def copy(subst, src, dst):
+    shutil.copyfile(subst.SubstituteAbsPaths(src),
+                    subst.SubstituteAbsPaths(dst))
+  return Runnable(copy, src, dst)
+
+
+def CopyTree(src, dst, exclude=[]):
+  """Copy a directory tree, excluding a list of top-level entries."""
+  def copyTree(subst, src, dst, exclude):
+    src = subst.SubstituteAbsPaths(src)
+    dst = subst.SubstituteAbsPaths(dst)
+    def ignoreExcludes(dir, files):
+      if dir == src:
+        return exclude
+      else:
+        return []
+    pynacl.file_tools.RemoveDirectoryIfPresent(dst)
+    shutil.copytree(src, dst, symlinks=True, ignore=ignoreExcludes)
+  return Runnable(copyTree, src, dst, exclude)
 
 
 def RemoveDirectory(path):
   """Convenience method for generating a command to remove a directory tree."""
-  # TODO(mcgrathr): Windows
-  return Command(['rm', '-rf', path])
+  def remove(subst, path):
+    pynacl.file_tools.RemoveDirectoryIfPresent(subst.SubstituteAbsPaths(path))
+  return Runnable(remove, path)
 
 
-def Remove(path):
-  """Convenience method for generating a command to remove a file."""
-  # TODO(mcgrathr): Replace with something less hacky.
-  return Command([
-      sys.executable, '-c',
-      'import sys, os\n'
-      'if os.path.exists(sys.argv[1]): os.remove(sys.argv[1])', path
-      ])
+def Remove(*args):
+  """Convenience method for generating a command to remove files."""
+  def remove(subst, *args):
+    for arg in args:
+      path = subst.SubstituteAbsPaths(arg)
+      expanded = glob.glob(path)
+      if len(expanded) == 0:
+        logging.debug('command.Remove: argument %s (substituted from %s) '
+                      'does not match any file' %
+                      (path, arg))
+      for f in expanded:
+        os.remove(f)
+  return Runnable(remove, *args)
 
 
 def Rename(src, dst):
   """Convenience method for generating a command to rename a file."""
-  # TODO(mcgrathr): Replace with something less hacky.
-  return Command([
-      sys.executable, '-c',
-      'import sys, os; os.rename(sys.argv[1], sys.argv[2])', src, dst
-      ])
+  def rename(subst, src, dst):
+    os.rename(subst.SubstituteAbsPaths(src), subst.SubstituteAbsPaths(dst))
+  return Runnable(rename, src, dst)
 
 
 def WriteData(data, dst):
   """Convenience method to write a file with fixed contents."""
-  # TODO(mcgrathr): Replace with something less hacky.
-  return Command([
-      sys.executable, '-c',
-      'import sys; open(sys.argv[1], "wb").write(%r)' % data, dst
-      ])
+  def writedata(subst, dst, data):
+    with open(subst.SubstituteAbsPaths(dst), 'wb') as f:
+      f.write(data)
+  return Runnable(writedata, dst, data)
+
+
+def SyncGitRepo(url, destination, revision, reclone=False, clean=False,
+                pathspec=None):
+  def sync(subst, url, dest, rev, reclone, clean, pathspec):
+    pynacl.repo_tools.SyncGitRepo(url, subst.SubstituteAbsPaths(dest), revision,
+                                  reclone, clean, pathspec)
+  return Runnable(sync, url, destination, revision, reclone, clean, pathspec)
+
+
+def CleanGitWorkingDir(directory, path):
+  """Clean a path in a git checkout, if the checkout directory exists."""
+  def clean(subst, directory, path):
+    directory = subst.SubstituteAbsPaths(directory)
+    if os.path.exists(directory) and len(os.listdir(directory)) > 0:
+      pynacl.repo_tools.CleanGitWorkingDir(directory, path)
+  return Runnable(clean, directory, path)
+
+
+def GenerateGitPatches(git_dir, info):
+  """Generate patches from a Git repository.
+
+  Args:
+    git_dir: bare git repository directory to examine (.../.git)
+    info: dictionary containing:
+      'rev': commit that we build
+      'upstream-name': basename of the upstream baseline release
+        (i.e. what the release tarball would be called before ".tar")
+      'upstream-base': commit corresponding to upstream-name
+      'upstream-branch': tracking branch used for upstream merges
+
+  This will produce between zero and two patch files (in %(output)s/):
+    <upstream-name>-g<commit-abbrev>.patch: From 'upstream-base' to the common
+      ancestor (merge base) of 'rev' and 'upstream-branch'.  Omitted if none.
+    <upstream-name>[-g<commit-abbrev>]-nacl.patch: From the result of that
+      (or from 'upstream-base' if none above) to 'rev'.
+  """
+  def generatePatches(subst, git_dir, info):
+    git_dir_flag = '--git-dir=' + subst.SubstituteAbsPaths(git_dir)
+    basename = info['upstream-name']
+
+    patch_files = []
+
+    def generatePatch(description, src_rev, dst_rev, suffix):
+      src_prefix = '--src-prefix=' + basename + '/'
+      dst_prefix = '--dst-prefix=' + basename + suffix + '/'
+      patch_name = basename + suffix + '.patch'
+      patch_file = subst.SubstituteAbsPaths(path.join('%(output)s', patch_name))
+      git_args = [git_dir_flag, 'diff',
+                  '--patch-with-stat', '--ignore-space-at-eol', '--full-index',
+                  '--no-ext-diff', '--no-color', '--no-renames',
+                  '--no-textconv', '--text', src_prefix, dst_prefix,
+                  src_rev, dst_rev]
+      pynacl.log_tools.CheckCall(
+          pynacl.repo_tools.GitCmd() + git_args,
+          stdout=patch_file
+      )
+      patch_files.append((description, patch_name))
+
+    def revParse(args):
+      output = pynacl.repo_tools.CheckGitOutput([git_dir_flag] + args)
+      lines = output.splitlines()
+      if len(lines) != 1:
+        raise Exception('"git %s" did not yield a single commit' %
+                        ' '.join(args))
+      return lines[0]
+
+    rev = revParse(['rev-parse', info['rev']])
+    upstream_base = revParse(['rev-parse', info['upstream-base']])
+    upstream_branch = revParse(['rev-parse',
+                                'refs/remotes/origin/' +
+                                info['upstream-branch']])
+    upstream_snapshot = revParse(['merge-base', rev, upstream_branch])
+
+    if rev == upstream_base:
+      # We're building a stock upstream release.  Nothing to do!
+      return
+
+    if upstream_snapshot == upstream_base:
+      # We've forked directly from the upstream baseline release.
+      suffix = ''
+    else:
+      # We're using an upstream baseline snapshot past the baseline
+      # release, so generate a snapshot patch.  The leading seven
+      # hex digits of the commit ID is what Git usually produces
+      # for --abbrev-commit behavior, 'git describe', etc.
+      suffix = '-g' + upstream_snapshot[:7]
+      generatePatch('Patch the release up to the upstream snapshot version.',
+                    upstream_base, upstream_snapshot, suffix)
+
+    if rev != upstream_snapshot:
+      # We're using local changes, so generate a patch of those.
+      generatePatch('Apply NaCl-specific changes.',
+                    upstream_snapshot, rev, suffix + '-nacl')
+
+    with open(subst.SubstituteAbsPaths(path.join('%(output)s',
+                                                 info['name'] + '.series')),
+              'w') as f:
+      f.write("""\
+# This is a "series file" in the style used by the "quilt" tool.
+# It describes how to unpack and apply patches to produce the source
+# tree of the %(name)s component of a toolchain targetting Native Client.
+
+# Source: %(upstream-name)s.tar
+"""
+              % info)
+      for patch in patch_files:
+        f.write('\n# %s\n%s\n' % patch)
+
+  return Runnable(generatePatches, git_dir, info)

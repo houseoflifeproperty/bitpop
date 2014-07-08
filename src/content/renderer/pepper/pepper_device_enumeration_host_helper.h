@@ -8,28 +8,24 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback_forward.h"
 #include "base/memory/scoped_ptr.h"
 #include "content/common/content_export.h"
 #include "ppapi/c/dev/ppb_device_ref_dev.h"
+#include "ppapi/host/host_message_context.h"
+#include "url/gurl.h"
 
 namespace ppapi {
 struct DeviceRefData;
 
 namespace host {
-struct HostMessageContext;
-struct ReplyMessageContext;
 class ResourceHost;
 }
-}
+
+}  // namespace ppapi
 
 namespace IPC {
 class Message;
-}
-
-namespace webkit {
-namespace ppapi {
-class PluginDelegate;
-}
 }
 
 namespace content {
@@ -45,15 +41,26 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
    public:
     virtual ~Delegate() {}
 
-    // TODO(yzshen): Move the relevant functionality out of PluginDelegate and
-    // get rid of this method.
-    virtual webkit::ppapi::PluginDelegate* GetPluginDelegate() = 0;
+    typedef base::Callback<
+        void(int /* request_id */,
+             const std::vector<ppapi::DeviceRefData>& /* devices */)>
+        EnumerateDevicesCallback;
+
+    // Enumerates devices of the specified type. The request ID passed into the
+    // callback will be the same as the return value.
+    virtual int EnumerateDevices(PP_DeviceType_Dev type,
+                                 const GURL& document_url,
+                                 const EnumerateDevicesCallback& callback) = 0;
+    // Stop enumerating devices of the specified |request_id|. The |request_id|
+    // is the return value of EnumerateDevicesCallback.
+    virtual void StopEnumerateDevices(int request_id) = 0;
   };
 
   // |resource_host| and |delegate| must outlive this object.
   PepperDeviceEnumerationHostHelper(ppapi::host::ResourceHost* resource_host,
                                     Delegate* delegate,
-                                    PP_DeviceType_Dev device_type);
+                                    PP_DeviceType_Dev device_type,
+                                    const GURL& document_url);
   ~PepperDeviceEnumerationHostHelper();
 
   // Returns true if the message has been handled.
@@ -71,32 +78,30 @@ class CONTENT_EXPORT PepperDeviceEnumerationHostHelper {
       ppapi::host::HostMessageContext* context,
       bool* handled);
 
-  int32_t OnMsgEnumerateDevices(ppapi::host::HostMessageContext* context);
-  int32_t OnMsgMonitorDeviceChange(ppapi::host::HostMessageContext* context,
-                                   uint32_t callback_id);
-  int32_t OnMsgStopMonitoringDeviceChange(
+  int32_t OnEnumerateDevices(ppapi::host::HostMessageContext* context);
+  int32_t OnMonitorDeviceChange(ppapi::host::HostMessageContext* context,
+                                uint32_t callback_id);
+  int32_t OnStopMonitoringDeviceChange(
       ppapi::host::HostMessageContext* context);
 
   void OnEnumerateDevicesComplete(
       int request_id,
-      bool succeeded,
       const std::vector<ppapi::DeviceRefData>& devices);
-  void OnNotifyDeviceChange(
-      uint32_t callback_id,
-      int request_id,
-      bool succeeded,
-      const std::vector<ppapi::DeviceRefData>& devices);
+  void OnNotifyDeviceChange(uint32_t callback_id,
+                            int request_id,
+                            const std::vector<ppapi::DeviceRefData>& devices);
 
   // Non-owning pointers.
   ppapi::host::ResourceHost* resource_host_;
   Delegate* delegate_;
 
   PP_DeviceType_Dev device_type_;
+  GURL document_url_;
 
   scoped_ptr<ScopedRequest> enumerate_;
   scoped_ptr<ScopedRequest> monitor_;
 
-  scoped_ptr<ppapi::host::ReplyMessageContext> enumerate_devices_context_;
+  ppapi::host::ReplyMessageContext enumerate_devices_context_;
 
   DISALLOW_COPY_AND_ASSIGN(PepperDeviceEnumerationHostHelper);
 };

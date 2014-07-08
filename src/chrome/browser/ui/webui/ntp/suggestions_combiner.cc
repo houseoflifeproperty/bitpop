@@ -7,15 +7,12 @@
 #include <algorithm>
 
 #include "base/values.h"
-#include "chrome/browser/extensions/api/discovery/suggested_links_registry.h"
-#include "chrome/browser/extensions/api/discovery/suggested_links_registry_factory.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
-#include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/browser_iterator.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_page_handler.h"
 #include "chrome/browser/ui/webui/ntp/suggestions_source.h"
-#include "chrome/browser/ui/webui/ntp/suggestions_source_discovery.h"
 #include "content/public/browser/web_contents.h"
 
 namespace {
@@ -75,21 +72,6 @@ void SuggestionsCombiner::SetSuggestionsCount(size_t suggestions_count) {
   suggestions_count_ = suggestions_count;
 }
 
-// static
-SuggestionsCombiner* SuggestionsCombiner::Create(
-    SuggestionsCombiner::Delegate* delegate, Profile* profile) {
-  SuggestionsCombiner* combiner = new SuggestionsCombiner(delegate, profile);
-  extensions::SuggestedLinksRegistry* registry =
-      extensions::SuggestedLinksRegistryFactory::GetForProfile(profile);
-  scoped_ptr<std::vector<std::string> > list = registry->GetExtensionIds();
-  for (std::vector<std::string>::iterator it = list->begin();
-      it != list->end(); ++it) {
-    combiner->AddSource(new SuggestionsSourceDiscovery(*it));
-  }
-
-  return combiner;
-}
-
 void SuggestionsCombiner::FillPageValues() {
   int total_weight = 0;
   for (size_t i = 0; i < sources_.size(); ++i)
@@ -117,7 +99,7 @@ void SuggestionsCombiner::FillPageValues() {
   }
 
   // Fill in extra items, prioritizing the first source.
-  DictionaryValue* item;
+  base::DictionaryValue* item;
   // Rather than updating |next_item_index_for_source| we keep track of the
   // number of extra items that were added and offset indices by that much.
   size_t extra_items_added = 0;
@@ -152,15 +134,15 @@ void SuggestionsCombiner::AddExtendedInformation(
 }
 
 bool SuggestionsCombiner::IsUrlAlreadyOpen(const GURL &url) {
-  for (BrowserList::const_iterator it = BrowserList::begin();
-       it != BrowserList::end(); ++it) {
+  for (chrome::BrowserIterator it; !it.done(); it.Next()) {
     const Browser* browser = *it;
     if (browser->profile()->IsOffTheRecord() ||
         !browser->profile()->IsSameProfile(profile_))
       continue;
 
-    for (int i = 0; i < browser->tab_count(); i++) {
-      const content::WebContents* tab = chrome::GetWebContentsAt(browser, i);
+    for (int i = 0; i < browser->tab_strip_model()->count(); i++) {
+      const content::WebContents* tab =
+          browser->tab_strip_model()->GetWebContentsAt(i);
       if (tab->GetURL() == url)
         return true;
     }

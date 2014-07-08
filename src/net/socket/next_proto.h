@@ -13,12 +13,19 @@ namespace net {
 // protocols that we recognise.
 enum NextProto {
   kProtoUnknown = 0,
-  kProtoHTTP11 = 1,
-  kProtoSPDY1 = 2,
-  kProtoSPDY2 = 3,
-  kProtoSPDY21 = 4,
-  kProtoSPDY3 = 5,
-  kProtoMaximumVersion = 6,
+  kProtoHTTP11,
+  kProtoMinimumVersion = kProtoHTTP11,
+
+  kProtoDeprecatedSPDY2,
+  kProtoSPDYMinimumVersion = kProtoDeprecatedSPDY2,
+  kProtoSPDY3,
+  kProtoSPDY31,
+  kProtoSPDY4,  // SPDY4 is HTTP/2.
+  kProtoSPDYMaximumVersion = kProtoSPDY4,
+
+  kProtoQUIC1SPDY3,
+
+  kProtoMaximumVersion = kProtoQUIC1SPDY3,
 };
 
 }  // namespace net

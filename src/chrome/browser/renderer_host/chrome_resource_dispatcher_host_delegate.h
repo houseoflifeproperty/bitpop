@@ -9,6 +9,7 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
+#include "chrome/browser/external_protocol/external_protocol_handler.h"
 #include "content/public/browser/resource_dispatcher_host_delegate.h"
 
 class DelayedResourceQueue;
@@ -42,8 +43,7 @@ class ChromeResourceDispatcherHostDelegate
       const std::string& method,
       const GURL& url,
       ResourceType::Type resource_type,
-      content::ResourceContext* resource_context,
-      const content::Referrer& referrer) OVERRIDE;
+      content::ResourceContext* resource_context) OVERRIDE;
   virtual void RequestBeginning(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
@@ -51,7 +51,6 @@ class ChromeResourceDispatcherHostDelegate
       ResourceType::Type resource_type,
       int child_id,
       int route_id,
-      bool is_continuation_of_transferred_request,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
   virtual void DownloadStarting(
       net::URLRequest* request,
@@ -60,19 +59,29 @@ class ChromeResourceDispatcherHostDelegate
       int route_id,
       int request_id,
       bool is_content_initiated,
+      bool must_download,
       ScopedVector<content::ResourceThrottle>* throttles) OVERRIDE;
-  virtual bool AcceptSSLClientCertificateRequest(
-        net::URLRequest* request,
-        net::SSLCertRequestInfo* cert_request_info) OVERRIDE;
-  virtual bool AcceptAuthRequest(net::URLRequest* request,
-                                 net::AuthChallengeInfo* auth_info) OVERRIDE;
   virtual content::ResourceDispatcherHostLoginDelegate* CreateLoginDelegate(
       net::AuthChallengeInfo* auth_info, net::URLRequest* request) OVERRIDE;
   virtual bool HandleExternalProtocol(const GURL& url,
                                       int child_id,
-                                      int route_id) OVERRIDE;
+                                      int route_id,
+                                      bool initiated_by_user_gesture) OVERRIDE;
   virtual bool ShouldForceDownloadResource(
       const GURL& url, const std::string& mime_type) OVERRIDE;
+  virtual bool ShouldInterceptResourceAsStream(
+      content::ResourceContext* resource_context,
+      const GURL& url,
+      const std::string& mime_type,
+      GURL* origin,
+      std::string* target_id) OVERRIDE;
+  virtual void OnStreamCreated(
+      content::ResourceContext* resource_context,
+      int render_process_id,
+      int render_view_id,
+      const std::string& target_id,
+      scoped_ptr<content::StreamHandle> stream,
+      int64 expected_content_size) OVERRIDE;
   virtual void OnResponseStarted(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
@@ -83,23 +92,19 @@ class ChromeResourceDispatcherHostDelegate
       net::URLRequest* request,
       content::ResourceContext* resource_context,
       content::ResourceResponse* response) OVERRIDE;
+  virtual void RequestComplete(net::URLRequest* url_request) OVERRIDE;
+
+  // Called on the UI thread. Allows switching out the
+  // ExternalProtocolHandler::Delegate for testing code.
+  static void SetExternalProtocolHandlerDelegateForTesting(
+      ExternalProtocolHandler::Delegate* delegate);
 
  private:
   void AppendStandardResourceThrottles(
       net::URLRequest* request,
       content::ResourceContext* resource_context,
-      int child_id,
-      int route_id,
       ResourceType::Type resource_type,
       ScopedVector<content::ResourceThrottle>* throttles);
-
-  // Adds Chrome experiment and metrics state as custom headers to |request|.
-  // This is a best-effort attempt, and does not interrupt the request if the
-  // headers can not be appended.
-  void AppendChromeMetricsHeaders(
-      net::URLRequest* request,
-      content::ResourceContext* resource_context,
-      ResourceType::Type resource_type);
 
 #if defined(ENABLE_ONE_CLICK_SIGNIN)
   // Append headers required to tell Gaia whether the sync interstitial

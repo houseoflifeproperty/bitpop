@@ -16,6 +16,7 @@
 #include "sync/engine/syncer_types.h"
 #include "sync/syncable/entry_kernel.h"
 #include "sync/syncable/metahandle_set.h"
+#include "sync/syncable/mutable_entry.h"
 #include "sync/syncable/syncable_id.h"
 
 namespace sync_pb {
@@ -26,6 +27,7 @@ namespace syncer {
 
 namespace syncable {
 class BaseTransaction;
+class ModelNeutralWriteTransaction;
 }  // namespace syncable
 
 class Cryptographer;
@@ -48,19 +50,30 @@ UpdateAttemptResponse AttemptToUpdateEntry(
     syncable::MutableEntry* const entry,
     Cryptographer* cryptographer);
 
+// Returns the most accurate position information available in this update.  It
+// prefers to use the unique_position() field, but will fall back to using the
+// int64-based position_in_parent if necessary.
+//
+// The suffix parameter is the unique bookmark tag for the item being updated.
+//
+// Will return an invalid position if no valid position can be constructed, or
+// if this type does not support positioning.
+UniquePosition GetUpdatePosition(const sync_pb::SyncEntity& update,
+                                 const std::string& suffix);
+
+// Fetch the cache_guid and item_id-based unique bookmark tag from an update.
+// Will return an empty string if someting unexpected happens.
+std::string GetUniqueBookmarkTagFromUpdate(const sync_pb::SyncEntity& update);
+
 // Pass in name to avoid redundant UTF8 conversion.
 void UpdateServerFieldsFromUpdate(
-    syncable::MutableEntry* local_entry,
+    syncable::ModelNeutralMutableEntry* local_entry,
     const sync_pb::SyncEntity& server_entry,
     const std::string& name);
 
 // Creates a new Entry iff no Entry exists with the given id.
-void CreateNewEntry(syncable::WriteTransaction *trans,
+void CreateNewEntry(syncable::ModelNeutralWriteTransaction *trans,
                     const syncable::Id& id);
-
-void SplitServerInformationIntoNewEntry(
-    syncable::WriteTransaction* trans,
-    syncable::MutableEntry* entry);
 
 // This function is called on an entry when we can update the user-facing data
 // from the server data.
@@ -75,47 +88,23 @@ VerifyResult VerifyNewEntry(const sync_pb::SyncEntity& update,
 
 // Assumes we have an existing entry; check here for updates that break
 // consistency rules.
-VerifyResult VerifyUpdateConsistency(syncable::WriteTransaction* trans,
-                                     const sync_pb::SyncEntity& update,
-                                     syncable::MutableEntry* target,
-                                     const bool deleted,
-                                     const bool is_directory,
-                                     ModelType model_type);
+VerifyResult VerifyUpdateConsistency(
+    syncable::ModelNeutralWriteTransaction* trans,
+    const sync_pb::SyncEntity& update,
+    const bool deleted,
+    const bool is_directory,
+    ModelType model_type,
+    syncable::ModelNeutralMutableEntry* target);
 
 // Assumes we have an existing entry; verify an update that seems to be
 // expressing an 'undelete'
-VerifyResult VerifyUndelete(syncable::WriteTransaction* trans,
+VerifyResult VerifyUndelete(syncable::ModelNeutralWriteTransaction* trans,
                             const sync_pb::SyncEntity& update,
-                            syncable::MutableEntry* target);
-
-// Append |item|, followed by a chain of its predecessors selected by
-// |inclusion_filter|, to the |commit_ids| vector and tag them as included by
-// storing in the set |inserted_items|.  |inclusion_filter| (typically one of
-// IS_UNAPPLIED_UPDATE or IS_UNSYNCED) selects which type of predecessors to
-// include.  Returns true if |item| was added, and false if it was already in
-// the list.
-//
-// Use AddPredecessorsThenItem instead of this method if you want the
-// item to be the last, rather than first, item appended.
-bool AddItemThenPredecessors(
-    syncable::BaseTransaction* trans,
-    syncable::Entry* item,
-    syncable::IndexedBitField inclusion_filter,
-    syncable::MetahandleSet* inserted_items,
-    std::vector<syncable::Id>* commit_ids);
-
-// Exactly like AddItemThenPredecessors, except items are appended in the
-// reverse (and generally more useful) order: a chain of predecessors from
-// far to near, and finally the item.
-void AddPredecessorsThenItem(
-    syncable::BaseTransaction* trans,
-    syncable::Entry* item,
-    syncable::IndexedBitField inclusion_filter,
-    syncable::MetahandleSet* inserted_items,
-    std::vector<syncable::Id>* commit_ids);
+                            syncable::ModelNeutralMutableEntry* target);
 
 void MarkDeletedChildrenSynced(
     syncable::Directory* dir,
+    syncable::BaseWriteTransaction* trans,
     std::set<syncable::Id>* deleted_folders);
 
 }  // namespace syncer

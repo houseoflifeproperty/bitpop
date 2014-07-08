@@ -65,6 +65,7 @@ class SrtpSession;
 class SrtpStat;
 
 void EnableSrtpDebugging();
+void ShutdownSrtp();
 
 // Class to transform SRTP to/from RTP.
 // Initialize by calling SetSend with the local security params, then call
@@ -121,11 +122,17 @@ class SrtpFilter {
   // Encrypts/signs an individual RTP/RTCP packet, in-place.
   // If an HMAC is used, this will increase the packet size.
   bool ProtectRtp(void* data, int in_len, int max_len, int* out_len);
+  // Overloaded version, outputs packet index.
+  bool ProtectRtp(void* data, int in_len, int max_len, int* out_len,
+                  int64* index);
   bool ProtectRtcp(void* data, int in_len, int max_len, int* out_len);
   // Decrypts/verifies an invidiual RTP/RTCP packet.
   // If an HMAC is used, this will decrease the packet size.
   bool UnprotectRtp(void* data, int in_len, int* out_len);
   bool UnprotectRtcp(void* data, int in_len, int* out_len);
+
+  // Returns rtp auth params from srtp context.
+  bool GetRtpAuthParams(uint8** key, int* key_len, int* tag_len);
 
   // Update the silent threshold (in ms) for signaling errors.
   void set_signal_silent_time(uint32 signal_silent_time_in_ms);
@@ -179,6 +186,8 @@ class SrtpFilter {
   talk_base::scoped_ptr<SrtpSession> recv_session_;
   talk_base::scoped_ptr<SrtpSession> send_rtcp_session_;
   talk_base::scoped_ptr<SrtpSession> recv_rtcp_session_;
+  CryptoParams applied_send_params_;
+  CryptoParams applied_recv_params_;
 };
 
 // Class that wraps a libSRTP session.
@@ -197,23 +206,36 @@ class SrtpSession {
   // Encrypts/signs an individual RTP/RTCP packet, in-place.
   // If an HMAC is used, this will increase the packet size.
   bool ProtectRtp(void* data, int in_len, int max_len, int* out_len);
+  // Overloaded version, outputs packet index.
+  bool ProtectRtp(void* data, int in_len, int max_len, int* out_len,
+                  int64* index);
   bool ProtectRtcp(void* data, int in_len, int max_len, int* out_len);
   // Decrypts/verifies an invidiual RTP/RTCP packet.
   // If an HMAC is used, this will decrease the packet size.
   bool UnprotectRtp(void* data, int in_len, int* out_len);
   bool UnprotectRtcp(void* data, int in_len, int* out_len);
 
+  // Helper method to get authentication params.
+  bool GetRtpAuthParams(uint8** key, int* key_len, int* tag_len);
+
   // Update the silent threshold (in ms) for signaling errors.
   void set_signal_silent_time(uint32 signal_silent_time_in_ms);
+
+  // Calls srtp_shutdown if it's initialized.
+  static void Terminate();
 
   sigslot::repeater3<uint32, SrtpFilter::Mode, SrtpFilter::Error>
       SignalSrtpError;
 
  private:
   bool SetKey(int type, const std::string& cs, const uint8* key, int len);
+    // Returns send stream current packet index from srtp db.
+  bool GetSendStreamPacketIndex(void* data, int in_len, int64* index);
+
   static bool Init();
   void HandleEvent(const srtp_event_data_t* ev);
   static void HandleEventThunk(srtp_event_data_t* ev);
+
   static std::list<SrtpSession*>* sessions();
 
   srtp_t session_;
@@ -265,7 +287,10 @@ class SrtpStat {
           error(in_error) {
     }
     bool operator <(const FailureKey& key) const {
-      return ssrc < key.ssrc || mode < key.mode || error < key.error;
+      return
+          (ssrc < key.ssrc) ||
+          (ssrc == key.ssrc && mode < key.mode) ||
+          (ssrc == key.ssrc && mode == key.mode && error < key.error);
     }
     uint32 ssrc;
     SrtpFilter::Mode mode;

@@ -5,10 +5,11 @@
 #ifndef ASH_SYSTEM_TRAY_TRAY_ITEM_VIEW_H_
 #define ASH_SYSTEM_TRAY_TRAY_ITEM_VIEW_H_
 
-#include "ui/base/animation/animation_delegate.h"
+#include "ash/ash_export.h"
+#include "ui/gfx/animation/animation_delegate.h"
 #include "ui/views/view.h"
 
-namespace ui {
+namespace gfx {
 class SlideAnimation;
 }
 
@@ -18,19 +19,18 @@ class Label;
 }
 
 namespace ash {
-
 class SystemTrayItem;
-
-namespace internal {
 
 // Base-class for items in the tray. It makes sure the widget is updated
 // correctly when the visibility/size of the tray item changes. It also adds
 // animation when showing/hiding the item in the tray.
-class TrayItemView : public views::View,
-                     public ui::AnimationDelegate {
+class ASH_EXPORT TrayItemView : public views::View,
+                                public gfx::AnimationDelegate {
  public:
   explicit TrayItemView(SystemTrayItem* owner);
   virtual ~TrayItemView();
+
+  static void DisableAnimationsForTest();
 
   // Convenience function for creating a child Label or ImageView.
   void CreateLabel();
@@ -43,6 +43,7 @@ class TrayItemView : public views::View,
   // Overridden from views::View.
   virtual void SetVisible(bool visible) OVERRIDE;
   virtual gfx::Size GetPreferredSize() OVERRIDE;
+  virtual int GetHeightForWidth(int width) OVERRIDE;
 
  protected:
   // Makes sure the widget relayouts after the size/visibility of the view
@@ -62,20 +63,19 @@ class TrayItemView : public views::View,
   // Overridden from views::View.
   virtual void ChildPreferredSizeChanged(View* child) OVERRIDE;
 
-  // Overridden from ui::AnimationDelegate.
-  virtual void AnimationProgressed(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationEnded(const ui::Animation* animation) OVERRIDE;
-  virtual void AnimationCanceled(const ui::Animation* animation) OVERRIDE;
+  // Overridden from gfx::AnimationDelegate.
+  virtual void AnimationProgressed(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationEnded(const gfx::Animation* animation) OVERRIDE;
+  virtual void AnimationCanceled(const gfx::Animation* animation) OVERRIDE;
 
   SystemTrayItem* owner_;
-  scoped_ptr<ui::SlideAnimation> animation_;
+  scoped_ptr<gfx::SlideAnimation> animation_;
   views::Label* label_;
   views::ImageView* image_view_;
 
   DISALLOW_COPY_AND_ASSIGN(TrayItemView);
 };
 
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_TRAY_TRAY_ITEM_VIEW_H_

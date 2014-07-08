@@ -53,10 +53,14 @@ bool Session::Connected() {
   return connected_;
 }
 
+void Session::Disconnect() {
+  io_->Disconnect();
+  connected_ = false;
+}
+
 bool Session::GetChar(char *ch) {
   if (!io_->Read(ch, 1)) {
-    io_->Disconnect();
-    connected_ = false;
+    Disconnect();
     return false;
   }
 
@@ -92,6 +96,7 @@ bool Session::SendPacketOnly(Packet *pkt) {
   int32_t seq;
 
   ptr = pkt->GetPayload();
+  size_t size = pkt->GetPayloadSize();
 
   if (!pkt->GetSequence(&seq) && (GetFlags() & USE_SEQ)) {
     pkt->SetSequence(seq_++);
@@ -116,14 +121,14 @@ bool Session::SendPacketOnly(Packet *pkt) {
   }
 
   // Send the main payload
-  int offs = 0;
-  while ((ch = ptr[offs++]) != 0) {
+  for (size_t offs = 0; offs < size; ++offs) {
+    ch = ptr[offs];
     outstr << ch;
     run_xsum += ch;
   }
 
   if (GetFlags() & DEBUG_SEND) {
-    NaClLog(LOG_INFO, "TX %s\n", outstr.str().c_str());
+    NaClLog(1, "TX %s\n", outstr.str().c_str());
   }
 
   // Send XSUM as two nible 8bit value preceeded by '#'
@@ -187,7 +192,7 @@ bool Session::GetPacket(Packet *pkt) {
   NibbleToInt(ch, &val);
   fin_xsum |= val;
 
-  if (GetFlags() & DEBUG_RECV) NaClLog(LOG_INFO, "RX %s\n", in.c_str());
+  if (GetFlags() & DEBUG_RECV) NaClLog(1, "RX %s\n", in.c_str());
 
   pkt->ParseSequence();
 

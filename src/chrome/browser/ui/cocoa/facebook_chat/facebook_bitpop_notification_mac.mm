@@ -20,17 +20,17 @@
 #include "base/memory/scoped_ptr.h"
 #include "chrome/browser/profiles/profile.h"
 #import  "chrome/browser/ui/cocoa/dock_icon.h"
-#include "net/url_request/url_fetcher_impl.h"
+#include "content/child/image_decoder.h"
 #include "content/public/browser/browser_thread.h"
+#include "net/url_request/url_fetcher_impl.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_fetcher_delegate.h"
 #include "net/url_request/url_fetcher_factory.h"
-#include "googleurl/src/gurl.h"
 #include "net/http/http_response_headers.h"
 #include "net/url_request/url_request_status.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
-#include "webkit/glue/image_decoder.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 using net::URLFetcher;
@@ -44,7 +44,7 @@ public:
   FacebookProfileImageFetcherDelegate(Profile* profile,
       const std::string &uid, int num_unread_to_set_on_callback);
 
-  virtual void OnURLFetchComplete(const URLFetcher* source);
+  virtual void OnURLFetchComplete(const URLFetcher* source) OVERRIDE;
 
 private:
   scoped_ptr<URLFetcher> url_fetcher_;
@@ -77,7 +77,7 @@ void FacebookProfileImageFetcherDelegate::OnURLFetchComplete(const URLFetcher* s
         (mime_type == "image/gif" || mime_type == "image/png" ||
          mime_type == "image/jpeg")) {
 
-      webkit_glue::ImageDecoder decoder;
+      content::ImageDecoder decoder;
 
       std::string data;
       if (source->GetResponseAsString(&data)) {

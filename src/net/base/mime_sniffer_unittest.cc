@@ -3,9 +3,9 @@
 // found in the LICENSE file.
 
 #include "base/basictypes.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/mime_sniffer.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -304,13 +304,14 @@ TEST(MimeSnifferTest, FlashTest) {
 TEST(MimeSnifferTest, XMLTest) {
   // An easy feed to identify.
   EXPECT_EQ("application/atom+xml",
-            SniffMimeType("<?xml?><feed", "", "text/xml"));
+            SniffMimeType("<?xml?><feed", std::string(), "text/xml"));
   // Don't sniff out of plain text.
   EXPECT_EQ("text/plain",
-            SniffMimeType("<?xml?><feed", "", "text/plain"));
+            SniffMimeType("<?xml?><feed", std::string(), "text/plain"));
   // Simple RSS.
   EXPECT_EQ("application/rss+xml",
-            SniffMimeType("<?xml version='1.0'?>\r\n<rss", "", "text/xml"));
+            SniffMimeType(
+                "<?xml version='1.0'?>\r\n<rss", std::string(), "text/xml"));
 
   // The top of CNN's RSS feed, which we'd like to recognize as RSS.
   static const char kCNNRSS[] =
@@ -323,40 +324,43 @@ TEST(MimeSnifferTest, XMLTest) {
       "version=\"2.0\">";
   // CNN's RSS
   EXPECT_EQ("application/rss+xml",
-            SniffMimeType(kCNNRSS, "", "text/xml"));
-  EXPECT_EQ("text/plain",
-            SniffMimeType(kCNNRSS, "", "text/plain"));
+            SniffMimeType(kCNNRSS, std::string(), "text/xml"));
+  EXPECT_EQ("text/plain", SniffMimeType(kCNNRSS, std::string(), "text/plain"));
 
   // Don't sniff random XML as something different.
   EXPECT_EQ("text/xml",
-            SniffMimeType("<?xml?><notafeed", "", "text/xml"));
+            SniffMimeType("<?xml?><notafeed", std::string(), "text/xml"));
   // Don't sniff random plain-text as something different.
   EXPECT_EQ("text/plain",
-            SniffMimeType("<?xml?><notafeed", "", "text/plain"));
+            SniffMimeType("<?xml?><notafeed", std::string(), "text/plain"));
 
   // Positive test for the two instances we upgrade to XHTML.
   EXPECT_EQ("application/xhtml+xml",
             SniffMimeType("<html xmlns=\"http://www.w3.org/1999/xhtml\">",
-                          "", "text/xml"));
+                          std::string(),
+                          "text/xml"));
   EXPECT_EQ("application/xhtml+xml",
             SniffMimeType("<html xmlns=\"http://www.w3.org/1999/xhtml\">",
-                          "", "application/xml"));
+                          std::string(),
+                          "application/xml"));
 
   // Following our behavior with HTML, don't call other mime types XHTML.
   EXPECT_EQ("text/plain",
             SniffMimeType("<html xmlns=\"http://www.w3.org/1999/xhtml\">",
-                          "", "text/plain"));
+                          std::string(),
+                          "text/plain"));
   EXPECT_EQ("application/rss+xml",
             SniffMimeType("<html xmlns=\"http://www.w3.org/1999/xhtml\">",
-                          "", "application/rss+xml"));
+                          std::string(),
+                          "application/rss+xml"));
 
   // Don't sniff other HTML-looking bits as HTML.
   EXPECT_EQ("text/xml",
-            SniffMimeType("<html><head>", "", "text/xml"));
+            SniffMimeType("<html><head>", std::string(), "text/xml"));
   EXPECT_EQ("text/xml",
             SniffMimeType("<foo><html xmlns=\"http://www.w3.org/1999/xhtml\">",
-                          "", "text/xml"));
-
+                          std::string(),
+                          "text/xml"));
 }
 
 // Test content which is >= 1024 bytes, and includes no open angle bracket.
@@ -388,6 +392,96 @@ TEST(MimeSnifferTest, LooksBinary) {
   EXPECT_TRUE(SniffMimeType(content.data(), content.size(), GURL(),
                             "text/plain", &mime_type));
   EXPECT_EQ("application/octet-stream", mime_type);
+}
+
+TEST(MimeSnifferTest, OfficeTest) {
+  SnifferTest tests[] = {
+    // Check for URLs incorrectly reported as Microsoft Office files.
+    { "Hi there",
+      sizeof("Hi there")-1,
+      "http://www.example.com/foo.doc",
+      "application/msword", "application/octet-stream" },
+    { "Hi there",
+      sizeof("Hi there")-1,
+      "http://www.example.com/foo.xls",
+      "application/vnd.ms-excel", "application/octet-stream" },
+    { "Hi there",
+      sizeof("Hi there")-1,
+      "http://www.example.com/foo.ppt",
+      "application/vnd.ms-powerpoint", "application/octet-stream" },
+    // Check for Microsoft Office files incorrectly reported as text.
+    { "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there",
+      sizeof("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there")-1,
+      "http://www.example.com/foo.doc",
+      "text/plain", "application/msword" },
+    { "PK\x03\x04" "Hi there",
+      sizeof("PK\x03\x04" "Hi there")-1,
+      "http://www.example.com/foo.doc",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument."
+      "wordprocessingml.document" },
+    { "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there",
+      sizeof("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there")-1,
+      "http://www.example.com/foo.xls",
+      "text/plain", "application/vnd.ms-excel" },
+    { "PK\x03\x04" "Hi there",
+      sizeof("PK\x03\x04" "Hi there")-1,
+      "http://www.example.com/foo.xls",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument."
+      "spreadsheetml.sheet" },
+    { "\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there",
+      sizeof("\xD0\xCF\x11\xE0\xA1\xB1\x1A\xE1" "Hi there")-1,
+      "http://www.example.com/foo.ppt",
+      "text/plain", "application/vnd.ms-powerpoint" },
+    { "PK\x03\x04" "Hi there",
+      sizeof("PK\x03\x04" "Hi there")-1,
+      "http://www.example.com/foo.ppt",
+      "text/plain",
+      "application/vnd.openxmlformats-officedocument."
+      "presentationml.presentation" },
+  };
+
+  TestArray(tests, arraysize(tests));
+}
+
+// TODO(thestig) Add more tests for other AV formats. Add another test case for
+// RAW images.
+TEST(MimeSnifferTest, AudioVideoTest) {
+  std::string mime_type;
+  const char kFlacTestData[] =
+      "fLaC\x00\x00\x00\x22\x12\x00\x12\x00\x00\x00\x00\x00";
+  EXPECT_TRUE(SniffMimeTypeFromLocalData(kFlacTestData,
+                                         sizeof(kFlacTestData),
+                                         &mime_type));
+  EXPECT_EQ("audio/x-flac", mime_type);
+  mime_type.clear();
+
+  const char kWMATestData[] =
+      "\x30\x26\xb2\x75\x8e\x66\xcf\x11\xa6\xd9\x00\xaa\x00\x62\xce\x6c";
+  EXPECT_TRUE(SniffMimeTypeFromLocalData(kWMATestData,
+                                         sizeof(kWMATestData),
+                                         &mime_type));
+  EXPECT_EQ("video/x-ms-asf", mime_type);
+  mime_type.clear();
+
+  // mp4a, m4b, m4p, and alac extension files which share the same container
+  // format.
+  const char kMP4TestData[] =
+      "\x00\x00\x00\x20\x66\x74\x79\x70\x4d\x34\x41\x20\x00\x00\x00\x00";
+  EXPECT_TRUE(SniffMimeTypeFromLocalData(kMP4TestData,
+                                         sizeof(kMP4TestData),
+                                         &mime_type));
+  EXPECT_EQ("video/mp4", mime_type);
+  mime_type.clear();
+
+  const char kAACTestData[] =
+      "\xff\xf1\x50\x80\x02\x20\xb0\x23\x0a\x83\x20\x7d\x61\x90\x3e\xb1";
+  EXPECT_TRUE(SniffMimeTypeFromLocalData(kAACTestData,
+                                         sizeof(kAACTestData),
+                                         &mime_type));
+  EXPECT_EQ("audio/mpeg", mime_type);
+  mime_type.clear();
 }
 
 }  // namespace net

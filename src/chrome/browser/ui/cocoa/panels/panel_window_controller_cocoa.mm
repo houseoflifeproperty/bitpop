@@ -11,36 +11,31 @@
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"  // IDC_*
 #include "chrome/browser/chrome_browser_application_mac.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/themes/theme_service.h"
-#include "chrome/browser/themes/theme_service_factory.h"
 #import "chrome/browser/ui/cocoa/browser_command_executor.h"
 #import "chrome/browser/ui/cocoa/browser_window_utils.h"
-#import "chrome/browser/ui/cocoa/event_utils.h"
-#import "chrome/browser/ui/cocoa/menu_controller.h"
 #import "chrome/browser/ui/cocoa/panels/mouse_drag_controller.h"
 #import "chrome/browser/ui/cocoa/panels/panel_cocoa.h"
 #import "chrome/browser/ui/cocoa/panels/panel_titlebar_view_cocoa.h"
 #import "chrome/browser/ui/cocoa/panels/panel_utils_cocoa.h"
 #import "chrome/browser/ui/cocoa/tab_contents/favicon_util_mac.h"
 #import "chrome/browser/ui/cocoa/tab_contents/tab_contents_controller.h"
-#import "chrome/browser/ui/cocoa/tabs/throbber_view.h"
+#import "chrome/browser/ui/cocoa/sprite_view.h"
 #include "chrome/browser/ui/panels/panel_bounds_animation.h"
 #include "chrome/browser/ui/panels/panel_collection.h"
 #include "chrome/browser/ui/panels/panel_constants.h"
 #include "chrome/browser/ui/panels/panel_manager.h"
+#include "chrome/browser/ui/panels/stacked_panel_collection.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/browser/ui/toolbar/encoding_menu_controller.h"
 #include "content/public/browser/render_widget_host_view.h"
 #include "content/public/browser/web_contents.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebCursorInfo.h"
 #include "grit/ui_resources.h"
 #include "ui/base/resource/resource_bundle.h"
 #include "ui/gfx/image/image.h"
-#include "webkit/glue/webcursor.h"
 
 using content::WebContents;
 
@@ -48,8 +43,8 @@ const int kMinimumWindowSize = 1;
 const double kBoundsAnimationSpeedPixelsPerSecond = 1000;
 const double kBoundsAnimationMaxDurationSeconds = 0.18;
 
-// Resize edge thickness, in screen pixels.
-const double kWidthOfMouseResizeArea = 4.0;
+// Edge thickness to trigger user resizing via system, in screen pixels.
+const double kWidthOfMouseResizeArea = 15.0;
 
 @interface PanelWindowControllerCocoa (PanelsCanBecomeKey)
 // Internal helper method for extracting the total number of panel windows
@@ -97,6 +92,10 @@ const double kWidthOfMouseResizeArea = 4.0;
       [[app windows] count] == static_cast<NSUInteger>([controller numPanels]);
 }
 
+- (void)performMiniaturize:(id)sender {
+  [[self windowController] minimizeButtonClicked:0];
+}
+
 // Ignore key events if window cannot become key window to fix problem
 // where keyboard input is still going into a minimized panel even though
 // the app has been deactivated in -[PanelWindowControllerCocoa deactivate:].
@@ -107,225 +106,49 @@ const double kWidthOfMouseResizeArea = 4.0;
     return;
   [super sendEvent:anEvent];
 }
-@end
 
-// Transparent view covering the whole panel in order to intercept mouse
-// messages for custom user resizing. We need custom resizing because panels
-// use their own constrained layout.
-@interface PanelResizeByMouseOverlay : NSView <MouseDragControllerClient> {
- @private
-   Panel* panel_;
-   scoped_nsobject<MouseDragController> dragController_;
-   scoped_nsobject<NSCursor> dragCursor_;
-   scoped_nsobject<NSCursor> eastWestCursor_;
-   scoped_nsobject<NSCursor> northSouthCursor_;
-   scoped_nsobject<NSCursor> northEastSouthWestCursor_;
-   scoped_nsobject<NSCursor> northWestSouthEastCursor_;
-   NSRect leftCursorRect_;
-   NSRect rightCursorRect_;
-   NSRect topCursorRect_;
-   NSRect bottomCursorRect_;
-   NSRect topLeftCursorRect_;
-   NSRect topRightCursorRect_;
-   NSRect bottomLeftCursorRect_;
-   NSRect bottomRightCursorRect_;
-}
-@end
+- (void)mouseMoved:(NSEvent*)event {
+  // Cocoa does not support letting the application determine the edges that
+  // can trigger the user resizing. To work around this, we track the mouse
+  // location. When it is close to the edge/corner where the user resizing
+  // is not desired, we force the min and max size of the window to be same
+  // as current window size. For all other cases, we restore the min and max
+  // size.
+  PanelWindowControllerCocoa* controller =
+      base::mac::ObjCCast<PanelWindowControllerCocoa>([self windowController]);
+  NSRect frame = [self frame];
+  if ([controller canResizeByMouseAtCurrentLocation]) {
+    // Mac window server limits window sizes to 10000.
+    NSSize maxSize = NSMakeSize(10000, 10000);
 
-namespace {
-NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
-    return WebCursor(WebKit::WebCursorInfo(type)).GetNativeCursor();
-}
-}
+    // If the user is resizing a stacked panel by its bottom edge, make sure its
+    // height cannot grow more than what the panel below it could offer. This is
+    // because growing a stacked panel by y amount will shrink the panel below
+    // it by same amount and we do not want the panel below it being shrunk to
+    // be smaller than the titlebar.
+    Panel* panel = [controller panel];
+    NSPoint point = [NSEvent mouseLocation];
+    if (point.y < NSMinY(frame) + kWidthOfMouseResizeArea && panel->stack()) {
+      Panel* belowPanel = panel->stack()->GetPanelBelow(panel);
+      if (belowPanel && !belowPanel->IsMinimized()) {
+        maxSize.height = panel->GetBounds().height() +
+            belowPanel->GetBounds().height() - panel::kTitlebarHeight;
+      }
+    }
 
-@implementation PanelResizeByMouseOverlay
-- (PanelResizeByMouseOverlay*)initWithFrame:(NSRect)frame panel:(Panel*)panel {
-  if ((self = [super initWithFrame:frame])) {
-    panel_ = panel;
-    dragController_.reset([[MouseDragController alloc] initWithClient:self]);
-
-    eastWestCursor_.reset(
-        [LoadWebKitCursor(WebKit::WebCursorInfo::TypeEastWestResize) retain]);
-    northSouthCursor_.reset(
-        [LoadWebKitCursor(WebKit::WebCursorInfo::TypeNorthSouthResize) retain]);
-    northEastSouthWestCursor_.reset(
-        [LoadWebKitCursor(WebKit::WebCursorInfo::TypeNorthEastSouthWestResize)
-        retain]);
-    northWestSouthEastCursor_.reset(
-        [LoadWebKitCursor(WebKit::WebCursorInfo::TypeNorthWestSouthEastResize)
-        retain]);
-  }
-  return self;
-}
-
-- (BOOL)acceptsFirstMouse:(NSEvent*)event {
-  return YES;
-}
-
-// |pointInWindow| is in window coordinates.
-- (panel::ResizingSides)edgeHitTest:(NSPoint)pointInWindow {
-  panel::Resizability resizability = panel_->CanResizeByMouse();
-  DCHECK_NE(panel::NOT_RESIZABLE, resizability);
-
-  NSPoint point = [self convertPoint:pointInWindow fromView:nil];
-  BOOL flipped = [self isFlipped];
-  if (NSMouseInRect(point, leftCursorRect_, flipped))
-    return panel::RESIZE_LEFT;
-  if (NSMouseInRect(point, rightCursorRect_, flipped))
-    return panel::RESIZE_RIGHT;
-  if (NSMouseInRect(point, topCursorRect_, flipped))
-    return panel::RESIZE_TOP;
-  if (NSMouseInRect(point, topLeftCursorRect_, flipped))
-    return panel::RESIZE_TOP_LEFT;
-  if (NSMouseInRect(point, topRightCursorRect_, flipped))
-    return panel::RESIZE_TOP_RIGHT;
-
-  // Bottom edge is not always resizable.
-  if (panel::RESIZABLE_ALL_SIDES == resizability) {
-    if (NSMouseInRect(point, bottomCursorRect_, flipped))
-      return panel::RESIZE_BOTTOM;
-    if (NSMouseInRect(point, bottomLeftCursorRect_, flipped))
-      return panel::RESIZE_BOTTOM_LEFT;
-    if (NSMouseInRect(point, bottomRightCursorRect_, flipped))
-      return panel::RESIZE_BOTTOM_RIGHT;
+    // Enable the user-resizing by setting both min and max size to the right
+    // values.
+    [self setMinSize:NSMakeSize(panel::kPanelMinWidth,
+                                panel::kPanelMinHeight)];
+    [self setMaxSize:maxSize];
+  } else {
+    // Disable the user-resizing by setting both min and max size to be same as
+    // current window size.
+    [self setMinSize:frame.size];
+    [self setMaxSize:frame.size];
   }
 
-  return panel::RESIZE_NONE;
-}
-
-// NSWindow uses this method to figure out if this view is under the mouse
-// and hence the one to handle the incoming mouse event.
-// Since this view covers the whole panel, it is asked first.
-// See if this is the mouse event we are interested in (in the resize areas)
-// and return 'nil' to let NSWindow find another candidate otherwise.
-// |point| is in coordinate system of the parent view.
-- (NSView*)hitTest:(NSPoint)point {
-  // If panel is not resizable, let the mouse events fall through.
-  if (panel::NOT_RESIZABLE == panel_->CanResizeByMouse())
-    return nil;
-
-  NSPoint pointInWindow = [[self superview] convertPoint:point toView:nil];
-  return [self edgeHitTest:pointInWindow] == panel::RESIZE_NONE ? nil : self;
-}
-
-// Delegate these to MouseDragController, it will call back on
-// MouseDragControllerClient protocol.
-- (void)mouseDown:(NSEvent*)event {
-  [dragController_ mouseDown:event];
-}
-
-- (void)mouseDragged:(NSEvent*)event {
-  [dragController_ mouseDragged:event];
-}
-
-- (void)mouseUp:(NSEvent*)event {
-  [dragController_ mouseUp:event];
-}
-
-// MouseDragControllerClient protocol.
-
-- (void)prepareForDrag {
-  // If the panel is not resizable, hitTest should have failed and no mouse
-  // events should have come here.
-  DCHECK_NE(panel::NOT_RESIZABLE, panel_->CanResizeByMouse());
-
-  // Make sure the cursor stays the same during whole resize operation.
-  // The cursor rects normally do not guarantee the same cursor, since the
-  // mouse may temporarily leave the cursor rect area (or even the window) so
-  // the cursor will flicker. Disable cursor rects and grab the current cursor
-  // so we can set it on mouseDragged: events to avoid flicker.
-  [[self window] disableCursorRects];
-  dragCursor_.reset([NSCursor currentCursor], base::scoped_policy::RETAIN);
-}
-
-- (void)cleanupAfterDrag {
-  [[self window] enableCursorRects];
-  dragCursor_.reset();
-}
-
-- (void)dragStarted:(NSPoint)initialMouseLocation {
-  NSPoint initialMouseLocationScreen =
-      [[self window] convertBaseToScreen:initialMouseLocation];
-
-  panel_->manager()->StartResizingByMouse(
-      panel_,
-      cocoa_utils::ConvertPointFromCocoaCoordinates(initialMouseLocationScreen),
-      [self edgeHitTest:initialMouseLocation]);
-}
-
-- (void)dragProgress:(NSPoint)mouseLocation {
-  NSPoint mouseLocationScreen =
-      [[self window] convertBaseToScreen:mouseLocation];
-  panel_->manager()->ResizeByMouse(
-      cocoa_utils::ConvertPointFromCocoaCoordinates(mouseLocationScreen));
-
-  // Set the resize cursor on every mouse drag event in case the mouse
-  // wandered outside the window and was switched to another one.
-  // This does not produce flicker, seems the real cursor is updated after
-  // mouseDrag is processed.
-  [dragCursor_ set];
-}
-
-- (void)dragEnded:(BOOL)cancelled {
-  panel_->manager()->EndResizingByMouse(cancelled);
-}
-
-- (void)resetCursorRects {
-  panel::Resizability resizability = panel_->CanResizeByMouse();
-  if (panel::NOT_RESIZABLE == resizability)
-    return;
-
-  NSRect bounds = [self bounds];
-
-  // Left vertical edge.
-  leftCursorRect_ = NSMakeRect(NSMinX(bounds),
-                               NSMinY(bounds) + kWidthOfMouseResizeArea,
-                               kWidthOfMouseResizeArea,
-                               NSHeight(bounds) - 2 * kWidthOfMouseResizeArea);
-  [self addCursorRect:leftCursorRect_ cursor:eastWestCursor_];
-
-  // Right vertical edge.
-  rightCursorRect_ = leftCursorRect_;
-  rightCursorRect_.origin.x = NSMaxX(bounds) - kWidthOfMouseResizeArea;
-  [self addCursorRect:rightCursorRect_ cursor:eastWestCursor_];
-
-  // Top horizontal edge.
-  topCursorRect_ = NSMakeRect(NSMinX(bounds) + kWidthOfMouseResizeArea,
-                              NSMaxY(bounds) - kWidthOfMouseResizeArea,
-                              NSWidth(bounds) - 2 * kWidthOfMouseResizeArea,
-                              kWidthOfMouseResizeArea);
-  [self addCursorRect:topCursorRect_ cursor:northSouthCursor_];
-
-  // Top left corner.
-  topLeftCursorRect_ = NSMakeRect(NSMinX(bounds),
-                                  NSMaxY(bounds) - kWidthOfMouseResizeArea,
-                                  kWidthOfMouseResizeArea,
-                                  NSMaxY(bounds));
-  [self addCursorRect:topLeftCursorRect_ cursor:northWestSouthEastCursor_];
-
-  // Top right corner.
-  topRightCursorRect_ = topLeftCursorRect_;
-  topRightCursorRect_.origin.x = NSMaxX(bounds) - kWidthOfMouseResizeArea;
-  [self addCursorRect:topRightCursorRect_ cursor:northEastSouthWestCursor_];
-
-  // Bottom edge is not always resizable.
-  if (panel::RESIZABLE_ALL_SIDES_EXCEPT_BOTTOM == resizability)
-    return;
-
-  // Bottom horizontal edge.
-  bottomCursorRect_ = topCursorRect_;
-  bottomCursorRect_.origin.y = NSMinY(bounds);
-  [self addCursorRect:bottomCursorRect_ cursor:northSouthCursor_];
-
-  // Bottom right corner.
-  bottomRightCursorRect_ = topRightCursorRect_;
-  bottomRightCursorRect_.origin.y = NSMinY(bounds);
-  [self addCursorRect:bottomRightCursorRect_ cursor:northWestSouthEastCursor_];
-
-  // Bottom left corner.
-  bottomLeftCursorRect_ = bottomRightCursorRect_;
-  bottomLeftCursorRect_.origin.x = NSMinX(bounds);
-  [self addCursorRect:bottomLeftCursorRect_ cursor:northEastSouthWestCursor_];
+  [super mouseMoved:event];
 }
 @end
 
@@ -356,27 +179,12 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
     animateOnBoundsChange_ = YES;
     canBecomeKeyWindow_ = YES;
     activationRequestedByPanel_ = NO;
-    contentsController_.reset(
-        [[TabContentsController alloc] initWithContents:nil]);
   }
   return self;
 }
 
-- (ui::ThemeProvider*)themeProvider {
-  return ThemeServiceFactory::GetForProfile(
-      windowShim_->panel()->profile());
-}
-
-- (ThemedWindowStyle)themedWindowStyle {
-  ThemedWindowStyle style = THEMED_POPUP;
-  if (windowShim_->panel()->profile()->IsOffTheRecord())
-    style |= THEMED_INCOGNITO;
-  return style;
-}
-
-- (NSPoint)themePatternPhase {
-  NSView* windowView = [[[self window] contentView] superview];
-  return [BrowserWindowUtils themePatternPhaseFor:windowView withTabStrip:nil];
+- (Panel*)panel {
+  return windowShim_->panel();
 }
 
 - (void)awakeFromNib {
@@ -388,7 +196,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 
   [self updateWindowLevel];
 
-  [window setCollectionBehavior:NSWindowCollectionBehaviorParticipatesInCycle];
+  [self updateWindowCollectionBehavior];
 
   [titlebar_view_ attach];
 
@@ -401,43 +209,39 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   frame.size.height = panelBounds.height();
   [window setFrame:frame display:NO];
 
-  [[window contentView] addSubview:[contentsController_ view]];
-  [self enableTabContentsViewAutosizing];
+  // MacOS will turn the user-resizing to the user-dragging if the direction of
+  // the dragging is orthogonal to the direction of the arrow cursor. We do not
+  // want this since it will bypass our dragging logic. The panel window is
+  // still draggable because we track and handle the dragging in our custom way.
+  [[self window] setMovable:NO];
 
-  // Add a transparent overlay on top of the whole window to process mouse
-  // events - for example, user-resizing.
-  NSView* superview = [[window contentView] superview];
-  NSRect bounds = [superview bounds];
-  overlayView_.reset(
-      [[PanelResizeByMouseOverlay alloc] initWithFrame:bounds
-                                                 panel:windowShim_->panel()]);
-  // Set autoresizing behavior: glued to edges.
-  [overlayView_ setAutoresizingMask:(NSViewHeightSizable | NSViewWidthSizable)];
-  [superview addSubview:overlayView_ positioned:NSWindowAbove relativeTo:nil];
+  [self updateTrackingArea];
 }
 
-- (void)disableTabContentsViewAutosizing {
-  [[[self window] contentView] setAutoresizesSubviews:NO];
-}
+- (void)updateWebContentsViewFrame {
+  content::WebContents* webContents = windowShim_->panel()->GetWebContents();
+  if (!webContents)
+    return;
 
-- (void)enableTabContentsViewAutosizing {
-  NSView* contentView = [[self window] contentView];
-  NSView* controllerView = [contentsController_ view];
-
-  DCHECK([controllerView superview] == contentView);
-  DCHECK([controllerView autoresizingMask] & NSViewHeightSizable);
-  DCHECK([controllerView autoresizingMask] & NSViewWidthSizable);
-
-  // Compute the size of the controller view. Don't assume it's similar to the
+  // Compute the size of the web contents view. Don't assume it's similar to the
   // size of the contentView, because the contentView is managed by the Cocoa
   // to be (window - standard titlebar), while we have taller custom titlebar
   // instead. In coordinate system of window's contentView.
   NSRect contentFrame = [self contentRectForFrameRect:[[self window] frame]];
   contentFrame.origin = NSZeroPoint;
 
-  [controllerView setFrame:contentFrame];
-  [contentView setAutoresizesSubviews:YES];
-  [contentsController_ ensureContentsVisible];
+  NSView* contentView = webContents->GetNativeView();
+  if (!NSEqualRects([contentView frame], contentFrame))
+    [contentView setFrame:contentFrame];
+}
+
+- (void)disableWebContentsViewAutosizing {
+  [[[self window] contentView] setAutoresizesSubviews:NO];
+}
+
+- (void)enableWebContentsViewAutosizing {
+  [self updateWebContentsViewFrame];
+  [[[self window] contentView] setAutoresizesSubviews:YES];
 }
 
 - (void)revealAnimatedWithFrame:(const NSRect&)frame {
@@ -445,7 +249,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 
   // Disable subview resizing while resizing the window to avoid renderer
   // resizes during intermediate stages of animation.
-  [self disableTabContentsViewAutosizing];
+  [self disableWebContentsViewAutosizing];
 
   // We grow the window from the bottom up to produce a 'reveal' animation.
   NSRect startFrame = NSMakeRect(NSMinX(frame), NSMinY(frame),
@@ -460,7 +264,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   // we always deactivate the controls here. If we're created as an active
   // panel, we'll get a NSWindowDidBecomeKeyNotification and reactivate the web
   // view properly. See crbug.com/97831 for more details.
-  WebContents* web_contents = [contentsController_ webContents];
+  WebContents* web_contents = windowShim_->panel()->GetWebContents();
   // RWHV may be NULL in unit tests.
   if (web_contents && web_contents->GetRenderWidgetHostView())
     web_contents->GetRenderWidgetHostView()->SetActive(false);
@@ -481,31 +285,30 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 }
 
 - (void)updateIcon {
-  NSView* icon = nil;
-  NSRect iconFrame = [[titlebar_view_ icon] frame];
+  base::scoped_nsobject<NSView> iconView;
   if (throbberShouldSpin_) {
     // If the throbber is spinning now, no need to replace it.
-    if ([[titlebar_view_ icon] isKindOfClass:[ThrobberView class]])
+    if ([[titlebar_view_ icon] isKindOfClass:[SpriteView class]])
       return;
 
     NSImage* iconImage =
         ResourceBundle::GetSharedInstance().GetNativeImageNamed(
             IDR_THROBBER).ToNSImage();
-    icon = [ThrobberView filmstripThrobberViewWithFrame:iconFrame
-                                                  image:iconImage];
+    SpriteView* spriteView = [[SpriteView alloc] init];
+    [spriteView setImage:iconImage];
+    iconView.reset(spriteView);
   } else {
     const gfx::Image& page_icon = windowShim_->panel()->GetCurrentPageIcon();
     ResourceBundle& rb = ResourceBundle::GetSharedInstance();
+    NSRect iconFrame = [[titlebar_view_ icon] frame];
     NSImage* iconImage = page_icon.IsEmpty() ?
         rb.GetNativeImageNamed(IDR_DEFAULT_FAVICON).ToNSImage() :
         page_icon.ToNSImage();
-    NSImageView* iconView =
-        [[[NSImageView alloc] initWithFrame:iconFrame] autorelease];
-    [iconView setImage:iconImage];
-    icon = iconView;
+    NSImageView* imageView = [[NSImageView alloc] initWithFrame:iconFrame];
+    [imageView setImage:iconImage];
+    iconView.reset(imageView);
   }
-
-  [titlebar_view_ setIcon:icon];
+  [titlebar_view_ setIcon:iconView];
 }
 
 - (void)updateThrobber:(BOOL)shouldSpin {
@@ -522,19 +325,20 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 
 - (void)updateTitleBarMinimizeRestoreButtonVisibility {
   Panel* panel = windowShim_->panel();
-  [titlebar_view_ setMinimizeButtonVisibility:panel->CanMinimize()];
-  [titlebar_view_ setRestoreButtonVisibility:panel->CanRestore()];
+  [titlebar_view_ setMinimizeButtonVisibility:panel->CanShowMinimizeButton()];
+  [titlebar_view_ setRestoreButtonVisibility:panel->CanShowRestoreButton()];
 }
 
 - (void)webContentsInserted:(WebContents*)contents {
-  [contentsController_ changeWebContents:contents];
-  DCHECK(![[contentsController_ view] isHidden]);
+  NSView* view = contents->GetNativeView();
+  [[[self window] contentView] addSubview:view];
+  [view setAutoresizingMask:NSViewWidthSizable | NSViewHeightSizable];
+
+  [self enableWebContentsViewAutosizing];
 }
 
 - (void)webContentsDetached:(WebContents*)contents {
-  DCHECK(contents == [contentsController_ webContents]);
-  [contentsController_ changeWebContents:nil];
-  [[contentsController_ view] setHidden:YES];
+  [contents->GetNativeView() removeFromSuperview];
 }
 
 - (PanelTitlebarViewCocoa*)titlebarView {
@@ -596,7 +400,6 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 // processing required to get us to the closing state and (by watching for
 // the web content going away) will again call to close the window when it's
 // finally ready.
-// This callback is only called if the standard Close button is enabled in XIB.
 - (BOOL)windowShouldClose:(id)sender {
   Panel* panel = windowShim_->panel();
   // Give beforeunload handlers the chance to cancel the close before we hide
@@ -679,7 +482,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   }
 
   // Will be enabled back in animationDidEnd callback.
-  [self disableTabContentsViewAutosizing];
+  [self disableWebContentsViewAutosizing];
 
   // Terminate previous animation, if it is still playing.
   [self terminateBoundsAnimation];
@@ -693,10 +496,10 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   // is too large, we clip the duration (effectively increasing speed) to
   // limit total duration of animation. This makes 'small' transitions fast.
   // 'distance' is the max travel between 4 potentially traveling corners.
-  double distanceX = std::max(abs(NSMinX(currentFrame) - NSMinX(frame)),
-                              abs(NSMaxX(currentFrame) - NSMaxX(frame)));
-  double distanceY = std::max(abs(NSMinY(currentFrame) - NSMinY(frame)),
-                              abs(NSMaxY(currentFrame) - NSMaxY(frame)));
+  double distanceX = std::max(std::abs(NSMinX(currentFrame) - NSMinX(frame)),
+                              std::abs(NSMaxX(currentFrame) - NSMaxX(frame)));
+  double distanceY = std::max(std::abs(NSMinY(currentFrame) - NSMinY(frame)),
+                              std::abs(NSMaxY(currentFrame) - NSMaxY(frame)));
   double distance = std::max(distanceX, distanceY);
   double duration = std::min(distance / kBoundsAnimationSpeedPixelsPerSecond,
                              kBoundsAnimationMaxDurationSeconds);
@@ -728,7 +531,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 - (void)cleanupAfterAnimation {
   playingMinimizeAnimation_ = NO;
   if (!windowShim_->panel()->IsMinimized())
-    [self enableTabContentsViewAutosizing];
+    [self enableWebContentsViewAutosizing];
 }
 
 - (void)animationDidEnd:(NSAnimation*)animation {
@@ -765,15 +568,18 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
                            panel::APPLY_TO_ALL : panel::NO_MODIFIER);
 }
 
+- (void)onTitlebarDoubleClicked:(int)modifierFlags {
+  // Double-clicking is only allowed to minimize docked panels.
+  Panel* panel = windowShim_->panel();
+  if (panel->collection()->type() != PanelCollection::DOCKED ||
+      panel->IsMinimized())
+    return;
+  [self minimizeButtonClicked:modifierFlags];
+}
+
 - (int)titlebarHeightInScreenCoordinates {
   NSView* titlebar = [self titlebarView];
   return NSHeight([titlebar convertRect:[titlebar bounds] toView:nil]);
-}
-
-- (void)ensureFullyVisible {
-  // Shows the window without making it key, on top of its layer, even if
-  // Chromium is not an active app.
-  [[self window] orderFrontRegardless];
 }
 
 // TODO(dcheng): These two selectors are almost copy-and-paste from
@@ -783,13 +589,17 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 - (void)windowDidBecomeKey:(NSNotification*)notification {
   // We need to activate the controls (in the "WebView"). To do this, get the
   // selected WebContents's RenderWidgetHostView and tell it to activate.
-  if (WebContents* contents = [contentsController_ webContents]) {
+  if (WebContents* contents = windowShim_->panel()->GetWebContents()) {
     if (content::RenderWidgetHostView* rwhv =
         contents->GetRenderWidgetHostView())
       rwhv->SetActive(true);
   }
 
   windowShim_->panel()->OnActiveStateChanged(true);
+
+  // Make the window user-resizable when it gains the focus.
+  [[self window] setStyleMask:
+      [[self window] styleMask] | NSResizableWindowMask];
 }
 
 - (void)windowDidResignKey:(NSNotification*)notification {
@@ -801,6 +611,105 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
     return;
 
   [self onWindowDidResignKey];
+
+  // Make the window not user-resizable when it loses the focus. This is to
+  // solve the problem that the bottom edge of the active panel does not
+  // trigger the user-resizing if this panel stacks with another inactive
+  // panel at the bottom.
+  [[self window] setStyleMask:
+      [[self window] styleMask] & ~NSResizableWindowMask];
+}
+
+- (void)windowWillStartLiveResize:(NSNotification*)notification {
+  // Check if the user-resizing is allowed for the triggering edge/corner.
+  // This is an extra safe guard because we are not able to track the mouse
+  // movement outside the window and Cocoa could trigger the user-resizing
+  // when the mouse moves a bit outside the edge/corner.
+  if (![self canResizeByMouseAtCurrentLocation])
+    return;
+  userResizing_ = YES;
+  windowShim_->panel()->OnPanelStartUserResizing();
+}
+
+- (void)windowDidEndLiveResize:(NSNotification*)notification {
+  if (!userResizing_)
+    return;
+  userResizing_ = NO;
+
+  Panel* panel = windowShim_->panel();
+  panel->OnPanelEndUserResizing();
+
+  gfx::Rect newBounds =
+      cocoa_utils::ConvertRectFromCocoaCoordinates([[self window] frame]);
+  if (windowShim_->panel()->GetBounds() == newBounds)
+    return;
+  windowShim_->set_cached_bounds_directly(newBounds);
+
+  panel->IncreaseMaxSize(newBounds.size());
+  panel->set_full_size(newBounds.size());
+
+  panel->collection()->RefreshLayout();
+}
+
+- (NSSize)windowWillResize:(NSWindow*)sender toSize:(NSSize)newSize {
+  // As an extra safe guard, we avoid the user resizing if it is deemed not to
+  // be allowed (see comment in windowWillStartLiveResize).
+  if ([[self window] inLiveResize] && !userResizing_)
+    return [[self window] frame].size;
+  return newSize;
+}
+
+- (void)windowDidResize:(NSNotification*)notification {
+  Panel* panel = windowShim_->panel();
+  if (userResizing_) {
+    panel->collection()->OnPanelResizedByMouse(
+        panel,
+        cocoa_utils::ConvertRectFromCocoaCoordinates([[self window] frame]));
+  }
+
+  [self updateTrackingArea];
+
+  if (![self isAnimatingBounds] ||
+      panel->collection()->type() != PanelCollection::DOCKED)
+    return;
+
+  // Remove the web contents view from the view hierarchy when the panel is not
+  // taller than the titlebar. Put it back when the panel grows taller than
+  // the titlebar. Note that RenderWidgetHostViewMac works for the case that
+  // the web contents view does not exist in the view hierarchy (i.e. the tab
+  // is not the main one), but it does not work well, like causing occasional
+  // crashes (http://crbug.com/265932), if the web contents view is made hidden.
+  //
+  // This is needed when the docked panels are being animated. When the
+  // animation starts, the contents view autosizing is disabled. After the
+  // animation ends, the contents view autosizing is reenabled and the frame
+  // of contents view is updated. Thus it is likely that the contents view will
+  // overlap with the titlebar view when the panel shrinks to be very small.
+  // The implementation of the web contents view assumes that it will never
+  // overlap with another view in order to paint the web contents view directly.
+  content::WebContents* webContents = panel->GetWebContents();
+  if (!webContents)
+    return;
+  NSView* contentView = webContents->GetNativeView();
+  if (NSHeight([self contentRectForFrameRect:[[self window] frame]]) <= 0) {
+    // No need to retain the view before it is removed from its superview
+    // because WebContentsView keeps a reference to this view.
+    if ([contentView superview])
+      [contentView removeFromSuperview];
+  } else {
+    if (![contentView superview]) {
+      [[[self window] contentView] addSubview:contentView];
+
+      // When the web contents view is put back, we need to tell its render
+      // widget host view to accept focus.
+      content::RenderWidgetHostView* rwhv =
+          webContents->GetRenderWidgetHostView();
+      if (rwhv) {
+        [[self window] makeFirstResponder:rwhv->GetNativeView()];
+        rwhv->SetActive([[self window] isMainWindow]);
+      }
+    }
+  }
 }
 
 - (void)activate {
@@ -824,7 +733,7 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 - (void)onWindowDidResignKey {
   // We need to deactivate the controls (in the "WebView"). To do this, get the
   // selected WebContents's RenderWidgetHostView and tell it to deactivate.
-  if (WebContents* contents = [contentsController_ webContents]) {
+  if (WebContents* contents = windowShim_->panel()->GetWebContents()) {
     if (content::RenderWidgetHostView* rwhv =
         contents->GetRenderWidgetHostView())
       rwhv->SetActive(false);
@@ -840,11 +749,16 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 - (void)fullScreenModeChanged:(bool)isFullScreen {
   [self updateWindowLevel];
 
-  // The full-screen window is in normal level and changing the panel window to
-  // same normal level will not move it below the full-screen window. Thus we
-  // need to reorder the panel window.
+  // If the panel is not always on top, its z-order should not be affected if
+  // some other window enters fullscreen mode.
+  if (!windowShim_->panel()->IsAlwaysOnTop())
+    return;
+
+  // The full-screen window is in normal level and changing the panel window
+  // to same normal level will not move it below the full-screen window. Thus
+  // we need to reorder the panel window.
   if (isFullScreen)
-    [[self window] orderBack:nil];
+    [[self window] orderOut:nil];
   else
     [[self window] orderFrontRegardless];
 }
@@ -873,10 +787,8 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
 - (void)updateWindowLevel:(BOOL)panelIsMinimized {
   if (![self isWindowLoaded])
     return;
-  // Make sure we don't draw on top of a window in full screen mode.
   Panel* panel = windowShim_->panel();
-  if (panel->manager()->display_settings_provider()->is_full_screen() ||
-      !panel->IsAlwaysOnTop()) {
+  if (!panel->IsAlwaysOnTop()) {
     [[self window] setLevel:NSNormalWindowLevel];
     return;
   }
@@ -902,10 +814,84 @@ NSCursor* LoadWebKitCursor(WebKit::WebCursorInfo::Type type) {
   [[self window] setLevel:NSDockWindowLevel];
 }
 
-- (void)enableResizeByMouse:(BOOL)enable {
+- (void)updateWindowCollectionBehavior {
   if (![self isWindowLoaded])
     return;
-  [[self window] invalidateCursorRectsForView:overlayView_];
+  NSWindowCollectionBehavior collectionBehavior =
+      NSWindowCollectionBehaviorParticipatesInCycle;
+  if (windowShim_->panel()->IsAlwaysOnTop())
+    collectionBehavior |= NSWindowCollectionBehaviorCanJoinAllSpaces;
+  [[self window] setCollectionBehavior:collectionBehavior];
+}
+
+- (void)updateTrackingArea {
+  NSView* superview = [[[self window] contentView] superview];
+
+  if (trackingArea_.get())
+    [superview removeTrackingArea:trackingArea_.get()];
+
+  trackingArea_.reset(
+          [[CrTrackingArea alloc] initWithRect:[superview bounds]
+                                       options:NSTrackingInVisibleRect |
+                                               NSTrackingMouseMoved |
+                                               NSTrackingActiveInKeyWindow
+                                         owner:superview
+                                      userInfo:nil]);
+  [superview addTrackingArea:trackingArea_.get()];
+}
+
+- (void)showShadow:(BOOL)show {
+  if (![self isWindowLoaded])
+    return;
+  [[self window] setHasShadow:show];
+}
+
+- (void)miniaturize {
+  [[self window] miniaturize:nil];
+}
+
+- (BOOL)isMiniaturized {
+  return [[self window] isMiniaturized];
+}
+
+- (BOOL)canResizeByMouseAtCurrentLocation {
+  panel::Resizability resizability = windowShim_->panel()->CanResizeByMouse();
+  NSRect frame = [[self window] frame];
+  NSPoint point = [NSEvent mouseLocation];
+
+  if (point.y < NSMinY(frame) + kWidthOfMouseResizeArea) {
+    if (point.x < NSMinX(frame) + kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_BOTTOM_LEFT) == 0) {
+      return NO;
+    }
+    if (point.x > NSMaxX(frame) - kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_BOTTOM_RIGHT) == 0) {
+      return NO;
+    }
+    if ((resizability & panel::RESIZABLE_BOTTOM) == 0)
+      return NO;
+  } else if (point.y > NSMaxY(frame) - kWidthOfMouseResizeArea) {
+    if (point.x < NSMinX(frame) + kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_TOP_LEFT) == 0) {
+      return NO;
+    }
+    if (point.x > NSMaxX(frame) - kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_TOP_RIGHT) == 0) {
+      return NO;
+    }
+    if ((resizability & panel::RESIZABLE_TOP) == 0)
+      return NO;
+  } else {
+    if (point.x < NSMinX(frame) + kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_LEFT) == 0) {
+      return NO;
+    }
+    if (point.x > NSMaxX(frame) - kWidthOfMouseResizeArea &&
+        (resizability & panel::RESIZABLE_RIGHT) == 0) {
+      return NO;
+    }
+  }
+  return YES;
 }
 
 // We have custom implementation of these because our titlebar height is custom

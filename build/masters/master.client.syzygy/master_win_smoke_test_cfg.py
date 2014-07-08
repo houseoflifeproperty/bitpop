@@ -1,10 +1,9 @@
-# Copyright (c) 2012 The Chromium Authors. All rights reserved.
+# Copyright 2012 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from buildbot.scheduler import Scheduler
-# This is due to buildbot 0.7.12 being used for the presubmit check.
-from buildbot.changes.filter import ChangeFilter  # pylint: disable=E0611,F0401
+from buildbot.changes.filter import ChangeFilter
+from buildbot.schedulers.basic import SingleBranchScheduler
 
 from master.factory import syzygy_factory
 
@@ -30,11 +29,11 @@ def _BinariesFilter(change):
 
 
 # Binaries scheduler for Syzygy.
-binaries_scheduler = Scheduler('syzygy_binaries',
-                               treeStableTimer=0,
-                               change_filter=ChangeFilter(
-                                   filter_fn=_BinariesFilter),
-                               builderNames=['Syzygy Smoke Test'])
+binaries_scheduler = SingleBranchScheduler('syzygy_binaries',
+                                           treeStableTimer=0,
+                                           change_filter=ChangeFilter(
+                                               filter_fn=_BinariesFilter),
+                                           builderNames=['Syzygy Smoke Test'])
 
 
 # Windows binaries smoke-test builder for Syzygy.

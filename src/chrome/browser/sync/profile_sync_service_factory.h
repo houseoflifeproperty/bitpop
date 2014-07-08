@@ -7,12 +7,12 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/singleton.h"
-#include "chrome/browser/profiles/profile_keyed_service_factory.h"
+#include "components/keyed_service/content/browser_context_keyed_service_factory.h"
 
 class Profile;
 class ProfileSyncService;
 
-class ProfileSyncServiceFactory : public ProfileKeyedServiceFactory {
+class ProfileSyncServiceFactory : public BrowserContextKeyedServiceFactory {
  public:
   static ProfileSyncService* GetForProfile(Profile* profile);
   static bool HasProfileSyncService(Profile* profile);
@@ -25,9 +25,9 @@ class ProfileSyncServiceFactory : public ProfileKeyedServiceFactory {
   ProfileSyncServiceFactory();
   virtual ~ProfileSyncServiceFactory();
 
-  // ProfileKeyedServiceFactory:
-  virtual ProfileKeyedService* BuildServiceInstanceFor(
-      Profile* profile) const OVERRIDE;
+  // BrowserContextKeyedServiceFactory:
+  virtual KeyedService* BuildServiceInstanceFor(
+      content::BrowserContext* context) const OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_SYNC_PROFILE_SYNC_SERVICE_FACTORY_H_

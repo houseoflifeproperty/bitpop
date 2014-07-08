@@ -9,10 +9,43 @@
 # list of dependent libraries that must be included after that library, in
 # the list of libraries.
 LIBRARY_DEPENDENCIES_DEFAULT = {
+    'arm_validator_core': [
+        'cpu_features',
+        ],
+    'validation_cache': [
+        'platform',
+        ],
+    'debug_stub': [
+        'sel',
+        ],
+    'desc_cacheability': [
+        'nrd_xfer',
+        ],
+    'imc': [
+        'platform',
+        ],
+    'nonnacl_util': [
+        'serialization',
+        ],
     'platform': [
         'gio',
         ],
+    'nacl_base': [
+        'platform',
+        ],
+    'nrd_xfer': [
+        'nacl_base',
+        'imc',
+        'platform',
+        ],
+    'platform_qual_lib': [
+        'cpu_features',
+        ],
+    'reverse_service': [
+        'validation_cache',
+        ],
     'sel': [
+        'desc_cacheability',
         'nacl_error_code',
         'env_cleanser',
         'manifest_proxy',
@@ -29,10 +62,8 @@ LIBRARY_DEPENDENCIES_DEFAULT = {
         'platform',
         'platform_qual_lib',
         'gio',
+        'validation_cache',
         'validators',
-        ],
-    'debug_stub': [
-        'sel',
         ],
     'sel_main_chrome': [
         'sel',
@@ -42,8 +73,22 @@ LIBRARY_DEPENDENCIES_DEFAULT = {
         'sel',
         'debug_stub',
         ],
+    'serialization': [
+        'platform',
+        ],
     'testrunner_browser': [
         'ppapi',
+        ],
+    'validation_cache': [
+        # For CHECK(...)
+        'platform',
+        ],
+    'untrusted_crash_dump': [
+        'nacl_exception',
+        ],
+    'irt_support_private': [
+        'srpc',
+        'platform',
         ],
     }
 
@@ -79,12 +124,15 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             ],
         'ncvalidate_x86_32': [
             'ncval_seg_sfi_x86_32',
+            'cpu_features',
             ],
         'ncval_base_verbose_x86_32': [
             'ncval_base_x86_32',
             ],
         'ncval_base_x86_32': [
             'platform',
+            'cpu_features',
+            'validation_cache',
             ],
         'nc_opcode_modeling_verbose_x86_32': [
             'nc_opcode_modeling_x86_32',
@@ -111,9 +159,9 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             #'nc_opcode_modeling_verbose_x86_32',
             ],
         'dfa_validate_caller_x86_32': [
-            'ncval_base_x86_32',
+            'cpu_features',
+            'validation_cache',
             'nccopy_x86_32',
-            'dfa_validate_x86_32',
             ],
         },
     'x86-64': {
@@ -138,12 +186,15 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             ],
         'ncvalidate_x86_64': [
             'ncval_reg_sfi_x86_64',
+            'cpu_features',
             ],
         'ncval_base_verbose_x86_64': [
             'ncval_base_x86_64',
             ],
         'ncval_base_x86_64': [
             'platform',
+            'cpu_features',
+            'validation_cache',
             ],
         'nc_opcode_modeling_verbose_x86_64': [
             'nc_opcode_modeling_x86_64',
@@ -160,6 +211,7 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             'nccopy_x86_64',
             'ncval_base_x86_64',
             'nc_decoder_x86_64',
+            'cpu_features',
             ],
         'ncval_seg_sfi_x86_64': [
             'nccopy_x86_64',
@@ -167,27 +219,24 @@ PLATFORM_LIBRARY_DEPENDENCIES = {
             'ncval_base_x86_64',
             ],
         'dfa_validate_caller_x86_64': [
-            'ncval_base_x86_64',
+            'cpu_features',
+            'validation_cache',
             'nccopy_x86_64',
-            'dfa_validate_x86_64',
             ],
         },
     'arm': {
         'ncvalidate_arm_v2': [
             'arm_validator_core',
+            'validation_cache',
             ],
         'validators': [
             'ncvalidate_arm_v2',
             ],
         },
-    'arm-thumb2': {
-        'ncvalidate_arm_v2': [
-            'arm_validator_core',
-            ],
-        },
     'mips32': {
         'ncvalidate_mips': [
             'mips_validator_core',
+            'cpu_features',
             ],
         'validators': [
             'ncvalidate_mips',

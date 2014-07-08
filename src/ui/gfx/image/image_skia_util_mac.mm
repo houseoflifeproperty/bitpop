@@ -10,7 +10,7 @@
 #import <AppKit/AppKit.h>
 
 #include "base/mac/mac_util.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 #include "skia/ext/skia_utils_mac.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -57,40 +57,33 @@ gfx::ImageSkia ImageSkiaFromResizedNSImage(NSImage* image,
   if (IsNSImageEmpty(image))
     return gfx::ImageSkia();
 
-  std::vector<ui::ScaleFactor> supported_scale_factors =
-      ui::GetSupportedScaleFactors();
+  std::vector<float> supported_scales = ImageSkia::GetSupportedScales();
 
   gfx::ImageSkia image_skia;
-  for (size_t i = 0; i < supported_scale_factors.size(); ++i) {
-    float scale = ui::GetScaleFactorScale(supported_scale_factors[i]);
+  for (size_t i = 0; i < supported_scales.size(); ++i) {
+    float scale = supported_scales[i];
     NSSize desired_size_for_scale = NSMakeSize(desired_size.width * scale,
                                                desired_size.height * scale);
     NSImageRep* ns_image_rep = GetNSImageRepWithPixelSize(image,
         desired_size_for_scale);
 
-    SkBitmap bitmap(gfx::NSImageRepToSkBitmap(ns_image_rep,
-        desired_size_for_scale, false));
+    // TODO(dcheng): Should this function take a color space argument?
+    SkBitmap bitmap(gfx::NSImageRepToSkBitmapWithColorSpace(ns_image_rep,
+        desired_size_for_scale, false, base::mac::GetGenericRGBColorSpace()));
     if (bitmap.isNull())
       continue;
 
-    image_skia.AddRepresentation(gfx::ImageSkiaRep(bitmap,
-        supported_scale_factors[i]));
+    image_skia.AddRepresentation(gfx::ImageSkiaRep(bitmap, scale));
   }
   return image_skia;
-}
-
-gfx::ImageSkia ApplicationIconAtSize(int desired_size) {
-  NSImage* image = [NSImage imageNamed:@"NSApplicationIcon"];
-  return ImageSkiaFromResizedNSImage(image,
-                                     NSMakeSize(desired_size, desired_size));
 }
 
 NSImage* NSImageFromImageSkia(const gfx::ImageSkia& image_skia) {
   if (image_skia.isNull())
     return nil;
 
-  scoped_nsobject<NSImage> image([[NSImage alloc] init]);
-  image_skia.EnsureRepsForSupportedScaleFactors();
+  base::scoped_nsobject<NSImage> image([[NSImage alloc] init]);
+  image_skia.EnsureRepsForSupportedScales();
   std::vector<gfx::ImageSkiaRep> image_reps = image_skia.image_reps();
   for (std::vector<gfx::ImageSkiaRep>::const_iterator it = image_reps.begin();
        it != image_reps.end(); ++it) {
@@ -107,8 +100,8 @@ NSImage* NSImageFromImageSkiaWithColorSpace(const gfx::ImageSkia& image_skia,
   if (image_skia.isNull())
     return nil;
 
-  scoped_nsobject<NSImage> image([[NSImage alloc] init]);
-  image_skia.EnsureRepsForSupportedScaleFactors();
+  base::scoped_nsobject<NSImage> image([[NSImage alloc] init]);
+  image_skia.EnsureRepsForSupportedScales();
   std::vector<gfx::ImageSkiaRep> image_reps = image_skia.image_reps();
   for (std::vector<gfx::ImageSkiaRep>::const_iterator it = image_reps.begin();
        it != image_reps.end(); ++it) {

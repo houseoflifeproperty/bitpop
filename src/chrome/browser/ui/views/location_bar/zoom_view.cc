@@ -10,19 +10,16 @@
 #include "chrome/browser/ui/zoom/zoom_controller.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
-#include "ui/base/accessibility/accessible_view_state.h"
-#include "ui/base/events/event.h"
+#include "ui/accessibility/ax_view_state.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/resource/resource_bundle.h"
+#include "ui/events/event.h"
 #include "ui/gfx/size.h"
 
-ZoomView::ZoomView(ToolbarModel* toolbar_model,
-                   LocationBarView::Delegate* location_bar_delegate)
-    : toolbar_model_(toolbar_model),
-      location_bar_delegate_(location_bar_delegate) {
-  set_accessibility_focusable(true);
+ZoomView::ZoomView(LocationBarView::Delegate* location_bar_delegate)
+    : location_bar_delegate_(location_bar_delegate) {
+  SetAccessibilityFocusable(true);
   Update(NULL);
-  TouchableLocationBarView::Init(this);
 }
 
 ZoomView::~ZoomView() {
@@ -30,7 +27,7 @@ ZoomView::~ZoomView() {
 
 void ZoomView::Update(ZoomController* zoom_controller) {
   if (!zoom_controller || zoom_controller->IsAtDefaultZoom() ||
-      toolbar_model_->GetInputInProgress()) {
+      location_bar_delegate_->GetToolbarModel()->input_in_progress()) {
     SetVisible(false);
     ZoomBubbleView::CloseBubble();
     return;
@@ -43,12 +40,13 @@ void ZoomView::Update(ZoomController* zoom_controller) {
   SetVisible(true);
 }
 
-void ZoomView::GetAccessibleState(ui::AccessibleViewState* state) {
+void ZoomView::GetAccessibleState(ui::AXViewState* state) {
   state->name = l10n_util::GetStringUTF16(IDS_ACCNAME_ZOOM);
-  state->role = ui::AccessibilityTypes::ROLE_PUSHBUTTON;
+  state->role = ui::AX_ROLE_BUTTON;
 }
 
-bool ZoomView::GetTooltipText(const gfx::Point& p, string16* tooltip) const {
+bool ZoomView::GetTooltipText(const gfx::Point& p,
+                              base::string16* tooltip) const {
   // Don't show tooltip if the zoom bubble is displayed.
   return !ZoomBubbleView::IsShowing() && ImageView::GetTooltipText(p, tooltip);
 }
@@ -80,11 +78,6 @@ void ZoomView::OnGestureEvent(ui::GestureEvent* event) {
   }
 }
 
-int ZoomView::GetBuiltInHorizontalPadding() const {
-  return GetBuiltInHorizontalPaddingImpl();
-}
-
 void ZoomView::ActivateBubble() {
-  ZoomBubbleView::ShowBubble(
-      this, location_bar_delegate_->GetWebContents(), false);
+  ZoomBubbleView::ShowBubble(location_bar_delegate_->GetWebContents(), false);
 }

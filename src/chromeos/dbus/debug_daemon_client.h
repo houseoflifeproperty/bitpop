@@ -6,21 +6,21 @@
 #define CHROMEOS_DBUS_DEBUG_DAEMON_CLIENT_H_
 
 #include "base/callback.h"
-#include "base/platform_file.h"
 #include "base/memory/ref_counted_memory.h"
+#include "base/platform_file.h"
 #include "chromeos/chromeos_export.h"
-#include "chromeos/dbus/dbus_client_implementation_type.h"
+#include "chromeos/dbus/dbus_client.h"
 
 #include <map>
 
-namespace dbus {
-class Bus;
-}  // namespace dbus
+namespace metrics {
+class PerfDataProto;
+}
 
 namespace chromeos {
 
 // DebugDaemonClient is used to communicate with the debug daemon.
-class CHROMEOS_EXPORT DebugDaemonClient {
+class CHROMEOS_EXPORT DebugDaemonClient : public DBusClient {
  public:
   virtual ~DebugDaemonClient();
 
@@ -64,6 +64,13 @@ class CHROMEOS_EXPORT DebugDaemonClient {
   // Gets information about modem status as json.
   virtual void GetModemStatus(const GetModemStatusCallback& callback) = 0;
 
+  // Called once GetWiMaxStatus() is complete.
+  typedef base::Callback<void(bool succeeded, const std::string& status)>
+      GetWiMaxStatusCallback;
+
+  // Gets information about WiMAX status as json.
+  virtual void GetWiMaxStatus(const GetWiMaxStatusCallback& callback) = 0;
+
   // Called once GetNetworkInterfaces() is complete. Takes two parameters:
   // - succeeded: information was obtained successfully.
   // - status: network interfaces information in json. For details, please refer
@@ -75,10 +82,22 @@ class CHROMEOS_EXPORT DebugDaemonClient {
   virtual void GetNetworkInterfaces(
       const GetNetworkInterfacesCallback& callback) = 0;
 
-  // Callback type for GetAllLogs() or GetUserLogFiles().
+  // Called once GetPerfData() is complete only if the the data is successfully
+  // obtained from debugd.
+  typedef base::Callback<void(const std::vector<uint8>& data)>
+      GetPerfDataCallback;
+
+  // Runs perf for |duration| seconds and returns data collected.
+  virtual void GetPerfData(uint32_t duration,
+                           const GetPerfDataCallback& callback) = 0;
+
+  // Callback type for GetScrubbedLogs(), GetAllLogs() or GetUserLogFiles().
   typedef base::Callback<void(bool succeeded,
                               const std::map<std::string, std::string>& logs)>
       GetLogsCallback;
+
+  // Gets scrubbed logs from debugd.
+  virtual void GetScrubbedLogs(const GetLogsCallback& callback) = 0;
 
   // Gets all logs collected by debugd.
   virtual void GetAllLogs(const GetLogsCallback& callback) = 0;
@@ -114,10 +133,20 @@ class CHROMEOS_EXPORT DebugDaemonClient {
   virtual void TestICMP(const std::string& ip_address,
                         const TestICMPCallback& callback) = 0;
 
+  // Tests ICMP connectivity to a specified host. The |ip_address| contains the
+  // IPv4 or IPv6 address of the host, for example "8.8.8.8".
+  virtual void TestICMPWithOptions(
+      const std::string& ip_address,
+      const std::map<std::string, std::string>& options,
+      const TestICMPCallback& callback) = 0;
+
+  // Trigger uploading of crashes.
+  virtual void UploadCrashes() = 0;
+
   // Factory function, creates a new instance and returns ownership.
   // For normal usage, access the singleton via DBusThreadManager::Get().
-  static DebugDaemonClient* Create(DBusClientImplementationType type,
-                                   dbus::Bus* bus);
+  static DebugDaemonClient* Create();
+
  protected:
   // Create() should be used instead.
   DebugDaemonClient();

@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From pp_completion_callback.idl modified Wed Nov  7 11:20:18 2012. */
+/* From pp_completion_callback.idl modified Thu May  9 14:59:57 2013. */
 
 #ifndef PPAPI_C_PP_COMPLETION_CALLBACK_H_
 #define PPAPI_C_PP_COMPLETION_CALLBACK_H_
@@ -92,11 +92,11 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CompletionCallback_Flag, 4);
  * ways:
  *   - Required: The callback will always be invoked asynchronously on the
  *               thread where the associated PPB method was invoked. The method
- *               will always return <code>PP_OK_COMPLETIONPENDING when a
- *               required callback, and the callback will be invoked later
- *               (barring system or thread shutdown; see PPB_MessageLoop for
- *               details). Required callbacks are the default.
- *
+ *               will always return PP_OK_COMPLETIONPENDING when a required
+ *               callback, and the callback will be invoked later (barring
+ *               system or thread shutdown; see PPB_MessageLoop for details).
+ *               Required callbacks are the default.
+ *               <br /><br />
  *               NOTE: If you use a required callback on a background thread,
  *               you must have created and attached a PPB_MessageLoop.
  *               Otherwise, the system can not run your callback on that thread,
@@ -113,7 +113,7 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CompletionCallback_Flag, 4);
  *               callbacks, but can provide better performance for some APIs
  *               (especially APIs with buffered reads, such as PPB_URLLoader or
  *               PPB_FileIO).
- *
+ *               <br /><br />
  *               NOTE: If you use an optional callback on a background thread,
  *               and you have not created and attached a PPB_MessageLoop, then
  *               the method you invoke will fail without running and return
@@ -124,10 +124,10 @@ PP_COMPILE_ASSERT_SIZE_IN_BYTES(PP_CompletionCallback_Flag, 4);
  *               run to completion and return an appropriate code when finished
  *               (see below for more information). Blocking completion
  *               callbacks are only supported on background threads.
- *
+ *               <br /><br />
  *               <code>PP_BlockUntilComplete()</code> provides a convenient way
  *               to specify blocking behavior. Refer to
- *                <code>PP_BlockUntilComplete</code> for more information.
+ *               <code>PP_BlockUntilComplete</code> for more information.
  *
  * When the callback is run asynchronously, the result parameter passed to
  * <code>func</code> is an int32_t that, if negative indicates an error code
@@ -168,16 +168,16 @@ struct PP_CompletionCallback {
  *
  * <strong>Example, creating a Required callback:</strong>
  *
- * <code>
+ * @code
  * struct PP_CompletionCallback cc = PP_MakeCompletionCallback(Foo, NULL);
- * </code>
+ * @endcode
  *
  * <strong>Example, creating an Optional callback:</strong>
  *
- * <code>
+ * @code
  * struct PP_CompletionCallback cc = PP_MakeCompletionCallback(Foo, NULL);
  * cc.flags = cc.flags | PP_COMPLETIONCALLBACK_FLAG_OPTIONAL;
- * </code>
+ * @endcode
  *
  * @param[in] func A <code>PP_CompletionCallback_Func</code> that will be
  * called.
@@ -257,7 +257,7 @@ PP_INLINE void PP_RunCompletionCallback(struct PP_CompletionCallback* cc,
  *
  * @return A <code>PP_CompletionCallback</code> structure.
  */
-PP_INLINE struct PP_CompletionCallback PP_BlockUntilComplete() {
+PP_INLINE struct PP_CompletionCallback PP_BlockUntilComplete(void) {
   return PP_MakeCompletionCallback(NULL, NULL);
 }
 

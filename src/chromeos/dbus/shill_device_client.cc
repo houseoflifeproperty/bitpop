@@ -5,7 +5,7 @@
 #include "chromeos/dbus/shill_device_client.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "chromeos/dbus/shill_property_changed_observer.h"
@@ -23,11 +23,11 @@ namespace {
 // The ShillDeviceClient implementation.
 class ShillDeviceClientImpl : public ShillDeviceClient {
  public:
-  explicit ShillDeviceClientImpl(dbus::Bus* bus)
-      : bus_(bus) {
+  explicit ShillDeviceClientImpl()
+      : bus_(NULL) {
   }
 
-  ~ShillDeviceClientImpl() {
+  virtual ~ShillDeviceClientImpl() {
     for (HelperMap::iterator iter = helpers_.begin();
          iter != helpers_.end(); ++iter) {
       // This *should* never happen, yet we're getting crash reports that
@@ -56,23 +56,15 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
 
   virtual void GetProperties(const dbus::ObjectPath& device_path,
                              const DictionaryValueCallback& callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kGetPropertiesFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kGetPropertiesFunction);
     GetHelper(device_path)->CallDictionaryValueMethod(&method_call, callback);
-  }
-
-  virtual base::DictionaryValue* CallGetPropertiesAndBlock(
-      const dbus::ObjectPath& device_path) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kGetPropertiesFunction);
-    return GetHelper(device_path)->CallDictionaryValueMethodAndBlock(
-        &method_call);
   }
 
   virtual void ProposeScan(const dbus::ObjectPath& device_path,
                            const VoidDBusMethodCallback& callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kProposeScanFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kProposeScanFunction);
     GetHelper(device_path)->CallVoidMethod(&method_call, callback);
   }
 
@@ -81,8 +73,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                            const base::Value& value,
                            const base::Closure& callback,
                            const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kSetPropertyFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kSetPropertyFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(name);
     ShillClientHelper::AppendValueDataAsVariant(&writer, value);
@@ -94,8 +86,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
   virtual void ClearProperty(const dbus::ObjectPath& device_path,
                              const std::string& name,
                              const VoidDBusMethodCallback& callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kClearPropertyFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kClearPropertyFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(name);
     GetHelper(device_path)->CallVoidMethod(&method_call, callback);
@@ -105,8 +97,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
       const dbus::ObjectPath& device_path,
       const std::string& method,
       const ObjectPathDBusMethodCallback& callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kAddIPConfigFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kAddIPConfigFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(method);
     GetHelper(device_path)->CallObjectPathMethod(&method_call, callback);
@@ -117,8 +109,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                           bool require,
                           const base::Closure& callback,
                           const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kRequirePinFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kRequirePinFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(pin);
     writer.AppendBool(require);
@@ -130,8 +122,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                         const std::string& pin,
                         const base::Closure& callback,
                         const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kEnterPinFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kEnterPinFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(pin);
     GetHelper(device_path)->CallVoidMethodWithErrorCallback(
@@ -143,8 +135,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                           const std::string& pin,
                           const base::Closure& callback,
                           const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kUnblockPinFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kUnblockPinFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(puk);
     writer.AppendString(pin);
@@ -157,8 +149,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                          const std::string& new_pin,
                          const base::Closure& callback,
                          const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kChangePinFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kChangePinFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(old_pin);
     writer.AppendString(new_pin);
@@ -170,8 +162,8 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                         const std::string& network_id,
                         const base::Closure& callback,
                         const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 flimflam::kRegisterFunction);
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kRegisterFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(network_id);
     GetHelper(device_path)->CallVoidMethodWithErrorCallback(
@@ -182,7 +174,7 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
                           const std::string& carrier,
                           const base::Closure& callback,
                           const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
                                  shill::kSetCarrierFunction);
     dbus::MessageWriter writer(&method_call);
     writer.AppendString(carrier);
@@ -193,14 +185,34 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
   virtual void Reset(const dbus::ObjectPath& device_path,
                      const base::Closure& callback,
                      const ErrorCallback& error_callback) OVERRIDE {
-    dbus::MethodCall method_call(flimflam::kFlimflamDeviceInterface,
-                                 "Reset");
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kResetFunction);
     GetHelper(device_path)->CallVoidMethodWithErrorCallback(
+        &method_call, callback, error_callback);
+  }
+
+  virtual void PerformTDLSOperation(
+      const dbus::ObjectPath& device_path,
+      const std::string& operation,
+      const std::string& peer,
+      const StringCallback& callback,
+      const ErrorCallback& error_callback) OVERRIDE {
+    dbus::MethodCall method_call(shill::kFlimflamDeviceInterface,
+                                 shill::kPerformTDLSOperationFunction);
+    dbus::MessageWriter writer(&method_call);
+    writer.AppendString(operation);
+    writer.AppendString(peer);
+    GetHelper(device_path)->CallStringMethodWithErrorCallback(
         &method_call, callback, error_callback);
   }
 
   virtual TestInterface* GetTestInterface() OVERRIDE {
     return NULL;
+  }
+
+ protected:
+  virtual void Init(dbus::Bus* bus) OVERRIDE {
+    bus_ = bus;
   }
 
  private:
@@ -216,10 +228,10 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
 
     // There is no helper for the profile, create it.
     dbus::ObjectProxy* object_proxy =
-        bus_->GetObjectProxy(flimflam::kFlimflamServiceName, device_path);
-    ShillClientHelper* helper = new ShillClientHelper(bus_, object_proxy);
+        bus_->GetObjectProxy(shill::kFlimflamServiceName, device_path);
+    ShillClientHelper* helper = new ShillClientHelper(object_proxy);
     CHECK(helper) << "Unable to create Shill client helper.";
-    helper->MonitorPropertyChanged(flimflam::kFlimflamDeviceInterface);
+    helper->MonitorPropertyChanged(shill::kFlimflamDeviceInterface);
     helpers_.insert(HelperMap::value_type(device_path.value(), helper));
     return helper;
   }
@@ -230,290 +242,6 @@ class ShillDeviceClientImpl : public ShillDeviceClient {
   DISALLOW_COPY_AND_ASSIGN(ShillDeviceClientImpl);
 };
 
-// A stub implementation of ShillDeviceClient.
-// Implemented: Stub cellular device for SMS testing.
-class ShillDeviceClientStubImpl : public ShillDeviceClient,
-                                  public ShillDeviceClient::TestInterface {
- public:
-  ShillDeviceClientStubImpl() : weak_ptr_factory_(this) {
-    SetDefaultProperties();
-  }
-
-  virtual ~ShillDeviceClientStubImpl() {
-    STLDeleteContainerPairSecondPointers(
-        observer_list_.begin(), observer_list_.end());
-  }
-
-  // ShillDeviceClient overrides.
-
-  virtual void AddPropertyChangedObserver(
-      const dbus::ObjectPath& device_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {
-    GetObserverList(device_path).AddObserver(observer);
-  }
-
-  virtual void RemovePropertyChangedObserver(
-      const dbus::ObjectPath& device_path,
-      ShillPropertyChangedObserver* observer) OVERRIDE {
-    GetObserverList(device_path).RemoveObserver(observer);
-  }
-
-  virtual void GetProperties(const dbus::ObjectPath& device_path,
-                             const DictionaryValueCallback& callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ShillDeviceClientStubImpl::PassStubDeviceProperties,
-                   weak_ptr_factory_.GetWeakPtr(),
-                   device_path, callback));
-  }
-
-  virtual base::DictionaryValue* CallGetPropertiesAndBlock(
-      const dbus::ObjectPath& device_path) OVERRIDE {
-    base::DictionaryValue* device_properties = NULL;
-    stub_devices_.GetDictionaryWithoutPathExpansion(
-        device_path.value(), &device_properties);
-    return device_properties;
-  }
-
-  virtual void ProposeScan(const dbus::ObjectPath& device_path,
-                           const VoidDBusMethodCallback& callback) OVERRIDE {
-    PostVoidCallback(callback, DBUS_METHOD_CALL_SUCCESS);
-  }
-
-  virtual void SetProperty(const dbus::ObjectPath& device_path,
-                           const std::string& name,
-                           const base::Value& value,
-                           const base::Closure& callback,
-                           const ErrorCallback& error_callback) OVERRIDE {
-    base::DictionaryValue* device_properties = NULL;
-    if (!stub_devices_.GetDictionary(device_path.value(), &device_properties)) {
-      std::string error_name("org.chromium.flimflam.Error.Failure");
-      std::string error_message("Failed");
-      if (!error_callback.is_null()) {
-        MessageLoop::current()->PostTask(FROM_HERE,
-                                         base::Bind(error_callback,
-                                                    error_name,
-                                                    error_message));
-      }
-      return;
-    }
-    device_properties->Set(name, value.DeepCopy());
-    MessageLoop::current()->PostTask(
-        FROM_HERE,
-        base::Bind(&ShillDeviceClientStubImpl::NotifyObserversPropertyChanged,
-                   weak_ptr_factory_.GetWeakPtr(), device_path, name));
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void ClearProperty(const dbus::ObjectPath& device_path,
-                             const std::string& name,
-                             const VoidDBusMethodCallback& callback) OVERRIDE {
-    base::DictionaryValue* device_properties = NULL;
-    if (!stub_devices_.GetDictionary(device_path.value(), &device_properties)) {
-      PostVoidCallback(callback, DBUS_METHOD_CALL_FAILURE);
-      return;
-    }
-    device_properties->Remove(name, NULL);
-    PostVoidCallback(callback, DBUS_METHOD_CALL_SUCCESS);
-  }
-
-  virtual void AddIPConfig(
-      const dbus::ObjectPath& device_path,
-      const std::string& method,
-      const ObjectPathDBusMethodCallback& callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(callback,
-                                                DBUS_METHOD_CALL_SUCCESS,
-                                                dbus::ObjectPath()));
-  }
-
-  virtual void RequirePin(const dbus::ObjectPath& device_path,
-                          const std::string& pin,
-                          bool require,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void EnterPin(const dbus::ObjectPath& device_path,
-                        const std::string& pin,
-                        const base::Closure& callback,
-                        const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void UnblockPin(const dbus::ObjectPath& device_path,
-                          const std::string& puk,
-                          const std::string& pin,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void ChangePin(const dbus::ObjectPath& device_path,
-                         const std::string& old_pin,
-                         const std::string& new_pin,
-                         const base::Closure& callback,
-                         const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void Register(const dbus::ObjectPath& device_path,
-                        const std::string& network_id,
-                        const base::Closure& callback,
-                        const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void SetCarrier(const dbus::ObjectPath& device_path,
-                          const std::string& carrier,
-                          const base::Closure& callback,
-                          const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual void Reset(const dbus::ObjectPath& device_path,
-                     const base::Closure& callback,
-                     const ErrorCallback& error_callback) OVERRIDE {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE, callback);
-  }
-
-  virtual ShillDeviceClient::TestInterface* GetTestInterface() OVERRIDE {
-    return this;
-  }
-
-  // ShillDeviceClient::TestInterface overrides.
-
-  virtual void AddDevice(const std::string& device_path,
-                         const std::string& type,
-                         const std::string& object_path,
-                         const std::string& connection_path) OVERRIDE {
-    base::DictionaryValue* properties = GetDeviceProperties(device_path);
-    properties->SetWithoutPathExpansion(
-        flimflam::kTypeProperty,
-        base::Value::CreateStringValue(type));
-    properties->SetWithoutPathExpansion(
-        flimflam::kDBusObjectProperty,
-        base::Value::CreateStringValue(object_path));
-    properties->SetWithoutPathExpansion(
-        flimflam::kDBusConnectionProperty,
-        base::Value::CreateStringValue(connection_path));
-  }
-
-  virtual void RemoveDevice(const std::string& device_path) OVERRIDE {
-    stub_devices_.RemoveWithoutPathExpansion(device_path, NULL);
-  }
-
-  virtual void ClearDevices() OVERRIDE {
-    stub_devices_.Clear();
-  }
-
- private:
-  typedef ObserverList<ShillPropertyChangedObserver> PropertyObserverList;
-
-  void SetDefaultProperties() {
-    // Add a wifi device. Note: path matches Manager entry.
-    AddDevice("stub_wifi_device1", flimflam::kTypeWifi,
-              "/device/wifi1", "/stub");
-
-    // Add a cellular device. Used in SMS stub. Note: path matches
-    // Manager entry.
-    AddDevice("stub_cellular_device1", flimflam::kTypeCellular,
-              "/device/cellular1", "/stub");
-  }
-
-  void PassStubDeviceProperties(const dbus::ObjectPath& device_path,
-                                const DictionaryValueCallback& callback) const {
-    const base::DictionaryValue* device_properties = NULL;
-    if (!stub_devices_.GetDictionaryWithoutPathExpansion(
-            device_path.value(), &device_properties)) {
-      base::DictionaryValue empty_dictionary;
-      callback.Run(DBUS_METHOD_CALL_FAILURE, empty_dictionary);
-      return;
-    }
-    callback.Run(DBUS_METHOD_CALL_SUCCESS, *device_properties);
-  }
-
-  // Posts a task to run a void callback with status code |status|.
-  void PostVoidCallback(const VoidDBusMethodCallback& callback,
-                        DBusMethodCallStatus status) {
-    if (callback.is_null())
-      return;
-    MessageLoop::current()->PostTask(FROM_HERE,
-                                     base::Bind(callback, status));
-  }
-
-  void NotifyObserversPropertyChanged(const dbus::ObjectPath& device_path,
-                                      const std::string& property) {
-    base::DictionaryValue* dict = NULL;
-    std::string path = device_path.value();
-    if (!stub_devices_.GetDictionaryWithoutPathExpansion(path, &dict)) {
-      LOG(ERROR) << "Notify for unknown service: " << path;
-      return;
-    }
-    base::Value* value = NULL;
-    if (!dict->GetWithoutPathExpansion(property, &value)) {
-      LOG(ERROR) << "Notify for unknown property: "
-                 << path << " : " << property;
-      return;
-    }
-    FOR_EACH_OBSERVER(ShillPropertyChangedObserver,
-                      GetObserverList(device_path),
-                      OnPropertyChanged(property, *value));
-  }
-
-  base::DictionaryValue* GetDeviceProperties(const std::string& device_path) {
-    base::DictionaryValue* properties = NULL;
-    if (!stub_devices_.GetDictionaryWithoutPathExpansion(
-            device_path, &properties)) {
-      properties = new base::DictionaryValue;
-      stub_devices_.Set(device_path, properties);
-    }
-    return properties;
-  }
-
-  PropertyObserverList& GetObserverList(const dbus::ObjectPath& device_path) {
-    std::map<dbus::ObjectPath, PropertyObserverList*>::iterator iter =
-        observer_list_.find(device_path);
-    if (iter != observer_list_.end())
-      return *(iter->second);
-    PropertyObserverList* observer_list = new PropertyObserverList();
-    observer_list_[device_path] = observer_list;
-    return *observer_list;
-  }
-
-  // Dictionary of <device_name, Dictionary>.
-  base::DictionaryValue stub_devices_;
-  // Observer list for each device.
-  std::map<dbus::ObjectPath, PropertyObserverList*> observer_list_;
-
-  // Note: This should remain the last member so it'll be destroyed and
-  // invalidate its weak pointers before any other members are destroyed.
-  base::WeakPtrFactory<ShillDeviceClientStubImpl> weak_ptr_factory_;
-
-  DISALLOW_COPY_AND_ASSIGN(ShillDeviceClientStubImpl);
-};
-
 }  // namespace
 
 ShillDeviceClient::ShillDeviceClient() {}
@@ -521,13 +249,8 @@ ShillDeviceClient::ShillDeviceClient() {}
 ShillDeviceClient::~ShillDeviceClient() {}
 
 // static
-ShillDeviceClient* ShillDeviceClient::Create(
-    DBusClientImplementationType type,
-    dbus::Bus* bus) {
-  if (type == REAL_DBUS_CLIENT_IMPLEMENTATION)
-    return new ShillDeviceClientImpl(bus);
-  DCHECK_EQ(STUB_DBUS_CLIENT_IMPLEMENTATION, type);
-  return new ShillDeviceClientStubImpl();
+ShillDeviceClient* ShillDeviceClient::Create() {
+  return new ShillDeviceClientImpl();
 }
 
 }  // namespace chromeos

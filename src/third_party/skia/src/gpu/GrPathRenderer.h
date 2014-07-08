@@ -6,7 +6,6 @@
  * found in the LICENSE file.
  */
 
-
 #ifndef GrPathRenderer_DEFINED
 #define GrPathRenderer_DEFINED
 
@@ -14,7 +13,8 @@
 #include "GrPathRendererChain.h"
 #include "GrStencil.h"
 
-#include "SkStroke.h"
+#include "SkDrawProcs.h"
+#include "SkStrokeRec.h"
 #include "SkTArray.h"
 
 class SkPath;
@@ -28,7 +28,7 @@ struct GrPoint;
  *  stages before GrPaint::kTotalStages are reserved for setting up the draw (i.e., textures and
  *  filter masks).
  */
-class GR_API GrPathRenderer : public GrRefCnt {
+class SK_API GrPathRenderer : public SkRefCnt {
 public:
     SK_DECLARE_INST_COUNT(GrPathRenderer)
 
@@ -82,9 +82,9 @@ public:
      * @param stroke    the stroke information (width, join, cap).
      */
     StencilSupport getStencilSupport(const SkPath& path,
-                                     const SkStroke& stroke,
+                                     const SkStrokeRec& stroke,
                                      const GrDrawTarget* target) const {
-        GrAssert(!path.isInverseFillType());
+        SkASSERT(!path.isInverseFillType());
         return this->onGetStencilSupport(path, stroke, target);
     }
 
@@ -101,7 +101,7 @@ public:
      * @return  true if the path can be drawn by this object, false otherwise.
      */
     virtual bool canDrawPath(const SkPath& path,
-                             const SkStroke& stroke,
+                             const SkStrokeRec& rec,
                              const GrDrawTarget* target,
                              bool antiAlias) const = 0;
     /**
@@ -114,11 +114,12 @@ public:
      * @param antiAlias             true if anti-aliasing is required.
      */
     bool drawPath(const SkPath& path,
-                  const SkStroke& stroke,
+                  const SkStrokeRec& stroke,
                   GrDrawTarget* target,
                   bool antiAlias) {
-        GrAssert(this->canDrawPath(path, stroke, target, antiAlias));
-        GrAssert(target->drawState()->getStencil().isDisabled() ||
+        SkASSERT(!path.isEmpty());
+        SkASSERT(this->canDrawPath(path, stroke, target, antiAlias));
+        SkASSERT(target->drawState()->getStencil().isDisabled() ||
                  kNoRestriction_StencilSupport == this->getStencilSupport(path, stroke, target));
         return this->onDrawPath(path, stroke, target, antiAlias);
     }
@@ -131,9 +132,24 @@ public:
      * @param stroke                the stroke information (width, join, cap)
      * @param target                target that the path will be rendered to
      */
-    void stencilPath(const SkPath& path, const SkStroke& stroke, GrDrawTarget* target) {
-        GrAssert(kNoSupport_StencilSupport != this->getStencilSupport(path, stroke, target));
+    void stencilPath(const SkPath& path, const SkStrokeRec& stroke, GrDrawTarget* target) {
+        SkASSERT(!path.isEmpty());
+        SkASSERT(kNoSupport_StencilSupport != this->getStencilSupport(path, stroke, target));
         this->onStencilPath(path, stroke, target);
+    }
+
+    // Helper for determining if we can treat a thin stroke as a hairline w/ coverage.
+    // If we can, we draw lots faster (raster device does this same test).
+    static bool IsStrokeHairlineOrEquivalent(const SkStrokeRec& stroke, const SkMatrix& matrix,
+                                             SkScalar* outCoverage) {
+        if (stroke.isHairlineStyle()) {
+            if (NULL != outCoverage) {
+                *outCoverage = SK_Scalar1;
+            }
+            return true;
+        }
+        return stroke.getStyle() == SkStrokeRec::kStroke_Style &&
+            SkDrawTreatAAStrokeAsHairline(stroke.getWidth(), matrix, outCoverage);
     }
 
 protected:
@@ -141,7 +157,7 @@ protected:
      * Subclass overrides if it has any limitations of stenciling support.
      */
     virtual StencilSupport onGetStencilSupport(const SkPath&,
-                                               const SkStroke&,
+                                               const SkStrokeRec&,
                                                const GrDrawTarget*) const {
         return kNoRestriction_StencilSupport;
     }
@@ -150,7 +166,7 @@ protected:
      * Subclass implementation of drawPath()
      */
     virtual bool onDrawPath(const SkPath& path,
-                            const SkStroke& stroke,
+                            const SkStrokeRec& stroke,
                             GrDrawTarget* target,
                             bool antiAlias) = 0;
 
@@ -158,7 +174,7 @@ protected:
      * Subclass implementation of stencilPath(). Subclass must override iff it ever returns
      * kStencilOnly in onGetStencilSupport().
      */
-    virtual void onStencilPath(const SkPath& path,  const SkStroke& stroke, GrDrawTarget* target) {
+    virtual void onStencilPath(const SkPath& path,  const SkStrokeRec& stroke, GrDrawTarget* target) {
         GrDrawTarget::AutoStateRestore asr(target, GrDrawTarget::kPreserve_ASRInit);
         GrDrawState* drawState = target->drawState();
         GR_STATIC_CONST_SAME_STENCIL(kIncrementStencil,
@@ -173,10 +189,25 @@ protected:
         this->drawPath(path, stroke, target, false);
     }
 
+    // Helper for getting the device bounds of a path. Inverse filled paths will have bounds set
+    // by devSize. Non-inverse path bounds will not necessarily be clipped to devSize.
+    static void GetPathDevBounds(const SkPath& path,
+                                 int devW,
+                                 int devH,
+                                 const SkMatrix& matrix,
+                                 SkRect* bounds);
+
+    // Helper version that gets the dev width and height from a GrSurface.
+    static void GetPathDevBounds(const SkPath& path,
+                                 const GrSurface* device,
+                                 const SkMatrix& matrix,
+                                 SkRect* bounds) {
+        GetPathDevBounds(path, device->width(), device->height(), matrix, bounds);
+    }
+
 private:
 
-    typedef GrRefCnt INHERITED;
+    typedef SkRefCnt INHERITED;
 };
 
 #endif
-

@@ -9,7 +9,7 @@
 
 #include "base/memory/weak_ptr.h"
 #include "content/browser/ssl/ssl_error_handler.h"
-#include "net/base/ssl_info.h"
+#include "net/ssl/ssl_info.h"
 
 namespace content {
 
@@ -24,7 +24,7 @@ class SSLCertErrorHandler : public SSLErrorHandler {
                       ResourceType::Type resource_type,
                       const GURL& url,
                       int render_process_id,
-                      int render_view_id,
+                      int render_frame_id,
                       const net::SSLInfo& ssl_info,
                       bool fatal);
 

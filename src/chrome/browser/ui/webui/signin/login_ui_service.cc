@@ -5,12 +5,19 @@
 #include "chrome/browser/ui/webui/signin/login_ui_service.h"
 
 #include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/chrome_pages.h"
+#include "chrome/browser/ui/host_desktop.h"
+#include "chrome/browser/ui/scoped_tabbed_browser_displayer.h"
+#include "chrome/browser/ui/sync/inline_login_dialog.h"
 #include "chrome/browser/ui/webui/signin/login_ui_service_factory.h"
-#include "chrome/browser/ui/webui/sync_promo/sync_promo_ui.h"
 #include "chrome/common/url_constants.h"
+
+#if defined(OS_CHROMEOS)
+#include "chrome/browser/app_mode/app_mode_utils.h"
+#endif
 
 LoginUIService::LoginUIService(Profile* profile)
     : ui_(NULL), profile_(profile) {
@@ -41,22 +48,12 @@ void LoginUIService::LoginUIClosed(LoginUI* ui) {
 }
 
 void LoginUIService::ShowLoginPopup() {
-  if (current_login_ui()) {
-    current_login_ui()->FocusUI();
-    return;
-  }
-
-  Browser* browser =
-      new Browser(Browser::CreateParams(Browser::TYPE_POPUP, profile_));
-  // TODO(munjal): Change the source from SOURCE_NTP_LINK to something else
-  // once we have added a new source for extension API.
-  GURL signin_url(SyncPromoUI::GetSyncPromoURL(GURL(),
-                                               SyncPromoUI::SOURCE_NTP_LINK,
-                                               true));
-  chrome::NavigateParams params(browser,
-                                signin_url,
-                                content::PAGE_TRANSITION_AUTO_TOPLEVEL);
-  params.disposition = CURRENT_TAB;
-  params.window_action = chrome::NavigateParams::SHOW_WINDOW;
-  chrome::Navigate(&params);
+#if defined(OS_CHROMEOS)
+  if (chrome::IsRunningInForcedAppMode())
+    InlineLoginDialog::Show(profile_);
+#else
+  chrome::ScopedTabbedBrowserDisplayer displayer(
+      profile_, chrome::GetActiveDesktop());
+  chrome::ShowBrowserSignin(displayer.browser(), signin::SOURCE_APP_LAUNCHER);
+#endif
 }

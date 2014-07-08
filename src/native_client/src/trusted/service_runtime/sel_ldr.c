@@ -14,6 +14,10 @@
 #include "native_client/src/include/portability_string.h"
 #include "native_client/src/include/nacl_macros.h"
 
+#include "native_client/src/public/desc_metadata_types.h"
+#include "native_client/src/public/nacl_app.h"
+#include "native_client/src/public/secure_service.h"
+
 #include "native_client/src/shared/gio/gio.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/shared/platform/nacl_exit.h"
@@ -28,6 +32,7 @@
 #include "native_client/src/trusted/desc/nacl_desc_imc.h"
 #include "native_client/src/trusted/desc/nacl_desc_io.h"
 #include "native_client/src/trusted/desc/nrd_xfer.h"
+#include "native_client/src/trusted/desc_cacheability/desc_cacheability.h"
 #include "native_client/src/trusted/fault_injection/fault_injection.h"
 #include "native_client/src/trusted/fault_injection/test_injection.h"
 #include "native_client/src/trusted/gio/gio_nacl_desc.h"
@@ -56,9 +61,14 @@
 #include "native_client/src/trusted/simple_service/nacl_simple_rservice.h"
 #include "native_client/src/trusted/simple_service/nacl_simple_service.h"
 #include "native_client/src/trusted/threading/nacl_thread_interface.h"
+#include "native_client/src/trusted/validator/validation_cache.h"
 
 static int IsEnvironmentVariableSet(char const *env_name) {
   return NULL != getenv(env_name);
+}
+
+static int ShouldEnableDyncodeSyscalls(void) {
+  return !IsEnvironmentVariableSet("NACL_DISABLE_DYNCODE_SYSCALLS");
 }
 
 static int ShouldEnableDynamicLoading(void) {
@@ -68,6 +78,9 @@ static int ShouldEnableDynamicLoading(void) {
 int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
                                 struct NaClSyscallTableEntry *table) {
   struct NaClDescEffectorLdr  *effp;
+
+  /* Zero-initialize in case we miss any fields below. */
+  memset(nap, 0, sizeof(*nap));
 
   /* The validation cache will be injected later, if it exists. */
   nap->validation_cache = NULL;
@@ -87,20 +100,20 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
   nap->addr_bits = NACL_MAX_ADDR_BITS;
 
   nap->stack_size = NACL_DEFAULT_STACK_MAX;
-
-  nap->aux_info = NULL;
+  nap->initial_nexe_max_code_bytes = 0;
 
   nap->mem_start = 0;
 
 #if (NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 \
      && NACL_BUILD_SUBARCH == 32)
   nap->pcrel_thunk = 0;
+  nap->pcrel_thunk_end = 0;
 #endif
 #if (NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 \
      && NACL_BUILD_SUBARCH == 64)
-  nap->dispatch_thunk = 0;
-  nap->get_tls_fast_path1 = 0;
-  nap->get_tls_fast_path2 = 0;
+  nap->nacl_syscall_addr = 0;
+  nap->get_tls_fast_path1_addr = 0;
+  nap->get_tls_fast_path2_addr = 0;
 #endif
 
   nap->static_text_end = 0;
@@ -145,6 +158,7 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
   }
   nap->effp = (struct NaClDescEffector *) effp;
 
+  nap->enable_dyncode_syscalls = ShouldEnableDyncodeSyscalls();
   nap->use_shm_for_dynamic_text = ShouldEnableDynamicLoading();
   nap->text_shm = NULL;
   if (!NaClMutexCtor(&nap->dynamic_load_mutex)) {
@@ -167,16 +181,14 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
   nap->secure_service_address = NULL;
   nap->bootstrap_channel = NULL;
   nap->secure_service = NULL;
+  nap->irt_loaded = 0;
+  nap->main_exe_prevalidated = 0;
 
-  nap->manifest_proxy = NULL;
   nap->kernel_service = NULL;
   nap->resource_phase = NACL_RESOURCE_PHASE_START;
   if (!NaClResourceNaClAppInit(&nap->resources, nap)) {
     goto cleanup_dynamic_load_mutex;
   }
-  nap->reverse_client = NULL;
-  nap->reverse_channel_initialization_state =
-      NACL_REVERSE_CHANNEL_UNINITIALIZED;
 
   if (!NaClMutexCtor(&nap->mu)) {
     goto cleanup_dynamic_load_mutex;
@@ -192,8 +204,11 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
 
   nap->syscall_table = table;
 
+  nap->runtime_host_interface = NULL;
+  nap->desc_quota_interface = NULL;
+
+  nap->module_initialization_state = NACL_MODULE_UNINITIALIZED;
   nap->module_load_status = LOAD_STATUS_UNKNOWN;
-  nap->module_may_start = 0;  /* only when secure_service != NULL */
 
   nap->name_service = (struct NaClNameService *) malloc(
       sizeof *nap->name_service);
@@ -221,6 +236,17 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
     NaClLog(LOG_INFO, "DANGER: ENABLED FILE ACCESS\n");
   }
 
+  nap->enable_list_mappings = 0;
+  if (IsEnvironmentVariableSet("NACL_DANGEROUS_ENABLE_LIST_MAPPINGS")) {
+    /*
+     * This syscall is not actually know to be dangerous, but is not yet
+     * exposed by our public API.
+     */
+    NaClLog(LOG_INFO, "DANGER: ENABLED LIST_MAPPINGS\n");
+    nap->enable_list_mappings = 1;
+  }
+  nap->pnacl_mode = 0;
+
   if (!NaClMutexCtor(&nap->threads_mu)) {
     goto cleanup_name_service;
   }
@@ -238,6 +264,12 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
 #endif
 
   nap->debug_stub_callbacks = NULL;
+#if NACL_WINDOWS
+  nap->debug_stub_port = 0;
+#endif
+  nap->main_nexe_desc = NULL;
+  nap->irt_nexe_desc = NULL;
+
   nap->exception_handler = 0;
   if (!NaClMutexCtor(&nap->exception_mu)) {
     goto cleanup_desc_mu;
@@ -249,9 +281,35 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
 #endif
   nap->enable_faulted_thread_queue = 0;
   nap->faulted_thread_count = 0;
+#if NACL_WINDOWS
+  nap->faulted_thread_event = INVALID_HANDLE_VALUE;
+#else
+  nap->faulted_thread_fd_read = -1;
+  nap->faulted_thread_fd_write = -1;
+#endif
+
+
+#if NACL_LINUX || NACL_OSX
+  /*
+   * Try to pre-cache information that we can't obtain with the outer
+   * sandbox on.  If the outer sandbox has already been enabled, this
+   * will just set sc_nprocessors_onln to -1, and it is the
+   * responsibility of the caller to replace this with a sane value
+   * after the Ctor returns.
+   */
+  nap->sc_nprocessors_onln = sysconf(_SC_NPROCESSORS_ONLN);
+#endif
+
+  if (!NaClMutexCtor(&nap->futex_wait_list_mu)) {
+    goto cleanup_exception_mu;
+  }
+  nap->futex_wait_list_head.next = &nap->futex_wait_list_head;
+  nap->futex_wait_list_head.prev = &nap->futex_wait_list_head;
 
   return 1;
 
+ cleanup_exception_mu:
+  NaClMutexDtor(&nap->exception_mu);
  cleanup_desc_mu:
   NaClFastMutexDtor(&nap->desc_mu);
  cleanup_threads_mu:
@@ -284,6 +342,15 @@ int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
 
 int NaClAppCtor(struct NaClApp *nap) {
   return NaClAppWithSyscallTableCtor(nap, nacl_syscall);
+}
+
+struct NaClApp *NaClAppCreate(void) {
+  struct NaClApp *nap = malloc(sizeof(struct NaClApp));
+  if (nap == NULL)
+    NaClLog(LOG_FATAL, "Failed to allocate NaClApp\n");
+  if (!NaClAppCtor(nap))
+    NaClLog(LOG_FATAL, "NaClAppCtor() failed\n");
+  return nap;
 }
 
 /*
@@ -416,19 +483,21 @@ void  NaClApplyPatchToMemory(struct NaClPatchInfo  *patch) {
  * correspond to unimplemented system calls and will just abort the
  * program.
  */
-void  NaClLoadTrampoline(struct NaClApp *nap) {
+void  NaClLoadTrampoline(struct NaClApp *nap, enum NaClAslrMode aslr_mode) {
   int         num_syscalls;
   int         i;
   uintptr_t   addr;
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
-  if (!NaClMakePcrelThunk(nap)) {
+  if (!NaClMakePcrelThunk(nap, aslr_mode)) {
     NaClLog(LOG_FATAL, "NaClMakePcrelThunk failed!\n");
   }
+#else
+  UNREFERENCED_PARAMETER(aslr_mode);
 #endif
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
-  if (!NaClMakeDispatchThunk(nap)) {
-    NaClLog(LOG_FATAL, "NaClMakeDispatchThunk failed!\n");
+  if (!NaClMakeDispatchAddrs(nap)) {
+    NaClLog(LOG_FATAL, "NaClMakeDispatchAddrs failed!\n");
   }
 #endif
   NaClFillTrampolineRegion(nap);
@@ -446,31 +515,16 @@ void  NaClLoadTrampoline(struct NaClApp *nap) {
 
   NaClLog(2, "num_syscalls = %d (0x%x)\n", num_syscalls, num_syscalls);
 
-#if defined(NACL_TARGET_ARM_THUMB2_MODE)
-  CHECK(0 != ((nap->user_entry_pt | nap->initial_entry_pt) & 0x1));
-  /*
-   * Thumb trampolines start 2 bytes before the aligned syscall address used
-   * by ordinary ARM.  We initialize this by adding 0xe to the start address
-   * of each trampoline.  Because the last start address would actually start
-   * into user code above, this allows one fewer trampolines than in ARM.
-   */
-  for (i = 0, addr = nap->mem_start + NACL_SYSCALL_START_ADDR + 0xe;
-       i < num_syscalls - 1;
-       ++i, addr += NACL_SYSCALL_BLOCK_SIZE) {
-    NaClPatchOneTrampoline(nap, addr);
-  }
-#else
   for (i = 0, addr = nap->mem_start + NACL_SYSCALL_START_ADDR;
        i < num_syscalls;
        ++i, addr += NACL_SYSCALL_BLOCK_SIZE) {
     NaClPatchOneTrampoline(nap, addr);
   }
-#endif
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
-  NaClPatchOneTrampolineCall(nap->get_tls_fast_path1,
+  NaClPatchOneTrampolineCall(nap->get_tls_fast_path1_addr,
                              nap->mem_start + NACL_SYSCALL_START_ADDR
                              + NACL_SYSCALL_BLOCK_SIZE * NACL_sys_tls_get);
-  NaClPatchOneTrampolineCall(nap->get_tls_fast_path2,
+  NaClPatchOneTrampolineCall(nap->get_tls_fast_path2_addr,
                              nap->mem_start + NACL_SYSCALL_START_ADDR
                              + (NACL_SYSCALL_BLOCK_SIZE *
                                 NACL_sys_second_tls_get));
@@ -493,7 +547,7 @@ void  NaClMemRegionPrinter(void                   *state,
           (entry->page_num + entry->npages) << NACL_PAGESHIFT);
   gprintf(gp,   "prot   0x%08x\n", entry->prot);
   gprintf(gp,   "%sshared/backed by a file\n",
-          (NACL_VMMAP_ENTRY_MAPPED == entry->vmmap_type) ? "not " : "");
+          (NULL == entry->desc) ? "not " : "");
 }
 
 void  NaClAppPrintDetails(struct NaClApp  *nap,
@@ -526,8 +580,8 @@ void  NaClAppPrintDetails(struct NaClApp  *nap,
   NaClXMutexUnlock(&nap->mu);
 }
 
-struct NaClDesc *NaClGetDescMu(struct NaClApp *nap,
-                               int            d) {
+struct NaClDesc *NaClAppGetDescMu(struct NaClApp *nap,
+                                  int            d) {
   struct NaClDesc *result;
 
   result = (struct NaClDesc *) DynArrayGet(&nap->desc_tbl, d);
@@ -538,9 +592,9 @@ struct NaClDesc *NaClGetDescMu(struct NaClApp *nap,
   return result;
 }
 
-void NaClSetDescMu(struct NaClApp   *nap,
-                   int              d,
-                   struct NaClDesc  *ndp) {
+void NaClAppSetDescMu(struct NaClApp   *nap,
+                      int              d,
+                      struct NaClDesc  *ndp) {
   struct NaClDesc *result;
 
   result = (struct NaClDesc *) DynArrayGet(&nap->desc_tbl, d);
@@ -548,54 +602,54 @@ void NaClSetDescMu(struct NaClApp   *nap,
 
   if (!DynArraySet(&nap->desc_tbl, d, ndp)) {
     NaClLog(LOG_FATAL,
-            "NaClSetDesc: could not set descriptor %d to 0x%08"
+            "NaClAppSetDesc: could not set descriptor %d to 0x%08"
             NACL_PRIxPTR"\n",
             d,
             (uintptr_t) ndp);
   }
 }
 
-int32_t NaClSetAvailMu(struct NaClApp  *nap,
-                       struct NaClDesc *ndp) {
+int32_t NaClAppSetDescAvailMu(struct NaClApp  *nap,
+                              struct NaClDesc *ndp) {
   size_t pos;
 
   pos = DynArrayFirstAvail(&nap->desc_tbl);
 
   if (pos > INT32_MAX) {
     NaClLog(LOG_FATAL,
-            ("NaClSetAvailMu: DynArrayFirstAvail returned a value"
+            ("NaClAppSetDescAvailMu: DynArrayFirstAvail returned a value"
              " that is greather than 2**31-1.\n"));
   }
 
-  NaClSetDescMu(nap, (int) pos, ndp);
+  NaClAppSetDescMu(nap, (int) pos, ndp);
 
   return (int32_t) pos;
 }
 
-struct NaClDesc *NaClGetDesc(struct NaClApp *nap,
-                             int            d) {
+struct NaClDesc *NaClAppGetDesc(struct NaClApp *nap,
+                                int            d) {
   struct NaClDesc *res;
 
   NaClFastMutexLock(&nap->desc_mu);
-  res = NaClGetDescMu(nap, d);
+  res = NaClAppGetDescMu(nap, d);
   NaClFastMutexUnlock(&nap->desc_mu);
   return res;
 }
 
-void NaClSetDesc(struct NaClApp   *nap,
-                 int              d,
-                 struct NaClDesc  *ndp) {
+void NaClAppSetDesc(struct NaClApp   *nap,
+                    int              d,
+                    struct NaClDesc  *ndp) {
   NaClFastMutexLock(&nap->desc_mu);
-  NaClSetDescMu(nap, d, ndp);
+  NaClAppSetDescMu(nap, d, ndp);
   NaClFastMutexUnlock(&nap->desc_mu);
 }
 
-int32_t NaClSetAvail(struct NaClApp  *nap,
-                     struct NaClDesc *ndp) {
+int32_t NaClAppSetDescAvail(struct NaClApp  *nap,
+                            struct NaClDesc *ndp) {
   int32_t pos;
 
   NaClFastMutexLock(&nap->desc_mu);
-  pos = NaClSetAvailMu(nap, ndp);
+  pos = NaClAppSetDescAvailMu(nap, ndp);
   NaClFastMutexUnlock(&nap->desc_mu);
 
   return pos;
@@ -672,7 +726,7 @@ void NaClAddHostDescriptor(struct NaClApp *nap,
   if (NULL == dp) {
     NaClLog(LOG_FATAL, "NaClAddHostDescriptor: NaClDescIoDescMake failed\n");
   }
-  NaClSetDesc(nap, nacl_desc, (struct NaClDesc *) dp);
+  NaClAppSetDesc(nap, nacl_desc, (struct NaClDesc *) dp);
 }
 
 void NaClAddImcHandle(struct NaClApp  *nap,
@@ -694,7 +748,7 @@ void NaClAddImcHandle(struct NaClApp  *nap,
     NaClLog(LOG_FATAL, ("NaClAddImcHandle: cannot construct"
                         " IMC descriptor object\n"));
   }
-  NaClSetDesc(nap, nacl_desc, (struct NaClDesc *) dp);
+  NaClAppSetDesc(nap, nacl_desc, (struct NaClDesc *) dp);
 }
 
 
@@ -747,7 +801,7 @@ static void NaClProcessRedirControl(struct NaClApp *nap) {
 
     if (NULL != ndp) {
       NaClLog(4, "Setting descriptor %d\n", (int) ix);
-      NaClSetDesc(nap, (int) ix, ndp);
+      NaClAppSetDesc(nap, (int) ix, ndp);
     } else if (NACL_RESOURCE_PHASE_START == nap->resource_phase) {
       /*
        * Environment not set or redirect failed -- handle default inheritance.
@@ -810,8 +864,8 @@ void NaClCreateServiceSocket(struct NaClApp *nap) {
           "addr at 0x%08"NACL_PRIxPTR"\n",
           (uintptr_t) pair[0],
           (uintptr_t) pair[1]);
-  NaClSetDesc(nap, NACL_SERVICE_PORT_DESCRIPTOR, pair[0]);
-  NaClSetDesc(nap, NACL_SERVICE_ADDRESS_DESCRIPTOR, pair[1]);
+  NaClAppSetDesc(nap, NACL_SERVICE_PORT_DESCRIPTOR, pair[0]);
+  NaClAppSetDesc(nap, NACL_SERVICE_ADDRESS_DESCRIPTOR, pair[1]);
 
   NaClDescSafeUnref(nap->service_port);
 
@@ -898,371 +952,33 @@ void NaClSetUpBootstrapChannel(struct NaClApp  *nap,
   }
 }
 
-static void NaClSecureChannelShutdownRpc(
-    struct NaClSrpcRpc      *rpc,
-    struct NaClSrpcArg      **in_args,
-    struct NaClSrpcArg      **out_args,
-    struct NaClSrpcClosure  *done) {
-  UNREFERENCED_PARAMETER(rpc);
-  UNREFERENCED_PARAMETER(in_args);
-  UNREFERENCED_PARAMETER(out_args);
-  UNREFERENCED_PARAMETER(done);
+NaClErrorCode NaClWaitForLoadModuleCommand(struct NaClApp *nap) {
+  NaClErrorCode status;
 
-  NaClLog(4, "NaClSecureChannelShutdownRpc (hard_shutdown), exiting\n");
-  NaClExit(0);
-  /* Return is never reached, so no need to invoke (*done->Run)(done). */
-}
-
-static int NaClLoadDesc(struct NaClDesc *desc, struct Gio **out_src) {
-  struct NaClGioShm       *gio_shm;
-  struct NaClGioNaClDesc  *gio_desc;
-  struct nacl_abi_stat    stbuf;
-  size_t                  rounded_size;
-
-  switch (NACL_VTBL(NaClDesc, desc)->typeTag) {
-    case NACL_DESC_SHM:
-      /*
-       * We don't know the actual size of the binary, but it should not
-       * matter.  The shared memory object's size is rounded up to at
-       * least 4K, and we can map it in with uninitialized data (should be
-       * zero filled) at the end.
-       */
-      NaClLog(4, "NaClLoadDesc: finding shm size\n");
-
-      if (0 != (*NACL_VTBL(NaClDesc, desc)->Fstat)(desc, &stbuf)) {
-        return 0;
-      }
-
-      rounded_size = (size_t) stbuf.nacl_abi_st_size;
-
-      NaClLog(4, "NaClLoadDesc: shm size 0x%"NACL_PRIxS"\n", rounded_size);
-
-      gio_shm = malloc(sizeof *gio_shm);
-      if (NULL == gio_shm){
-        NaClLog(LOG_ERROR, "NaClLoadDesc: malloc failed\n");
-        return 0;
-      }
-      if (!NaClGioShmCtor(gio_shm, desc, rounded_size)) {
-        NaClLog(LOG_ERROR, "NaClLoadDesc: NaClGioShmCtor failed\n");
-        free(gio_shm);
-        return 0;
-      }
-      *out_src = (struct Gio *) gio_shm;
-      break;
-
-    case NACL_DESC_HOST_IO:
-      NaClLog(4, "NaClLoadDesc: creating Gio from NaClDescHostDesc\n");
-
-      gio_desc = malloc(sizeof *gio_desc);
-      if (NULL == gio_desc){
-        NaClLog(LOG_ERROR, "NaClLoadDesc: malloc failed\n");
-        return 0;
-      }
-      if (!NaClGioNaClDescCtor(gio_desc, desc)) {
-        NaClLog(LOG_ERROR, "NaClLoadDesc: NaClGioNaClDescCtor failed\n");
-        free(gio_desc);
-        return 0;
-      }
-      *out_src = (struct Gio *) gio_desc;
-      break;
-
-    case NACL_DESC_INVALID:
-    case NACL_DESC_DIR:
-    case NACL_DESC_CONN_CAP:
-    case NACL_DESC_CONN_CAP_FD:
-    case NACL_DESC_BOUND_SOCKET:
-    case NACL_DESC_CONNECTED_SOCKET:
-    case NACL_DESC_SYSV_SHM:
-    case NACL_DESC_MUTEX:
-    case NACL_DESC_CONDVAR:
-    case NACL_DESC_SEMAPHORE:
-    case NACL_DESC_SYNC_SOCKET:
-    case NACL_DESC_TRANSFERABLE_DATA_SOCKET:
-    case NACL_DESC_IMC_SOCKET:
-    case NACL_DESC_QUOTA:
-    case NACL_DESC_DEVICE_RNG:
-    case NACL_DESC_DEVICE_POSTMESSAGE:
-    case NACL_DESC_CUSTOM:
-    case NACL_DESC_NULL:
-      NaClLog(LOG_ERROR,
-              "NaClLoadDesc: cannot load from desc of type=%d\n",
-              NACL_VTBL(NaClDesc, desc)->typeTag);
-      return 0;
-  }
-
-  /*
-   * Do not use default case label, to make sure that the compiler
-   * will generate a warning with -Wswitch-enum for new entries in
-   * NaClDescTypeTag introduced in nacl_desc_base.h for which there is no
-   * corresponding entry here. Instead, we pretend that fall-through
-   * from the switch is possible.
-   */
-  if (NACL_FI_ERROR_COND("NaClLoadDesc__typeTag", NULL == *out_src)) {
-    NaClLog(LOG_FATAL, "desc's typeTag has unsupported value: %d\n",
-            NACL_VTBL(NaClDesc, desc)->typeTag);
-  }
-
-  return 1;
-}
-
-/*
- * This RPC is invoked by the plugin when the nexe is downloaded as a
- * stream and not as a file. The only arguments are a handle to a
- * shared memory object that contains the nexe.
- */
-static void NaClLoadModuleRpc(struct NaClSrpcRpc      *rpc,
-                              struct NaClSrpcArg      **in_args,
-                              struct NaClSrpcArg      **out_args,
-                              struct NaClSrpcClosure  *done) {
-  struct NaClApp          *nap =
-      (struct NaClApp *) rpc->channel->server_instance_data;
-  struct NaClDesc         *nexe_binary = in_args[0]->u.hval;
-  struct Gio              *load_src = NULL;
-  char                    *aux;
-  NaClErrorCode           suberr = LOAD_INTERNAL;
-
-  UNREFERENCED_PARAMETER(out_args);
-
-  NaClLog(4, "NaClLoadModuleRpc: entered\n");
-
-  rpc->result = NACL_SRPC_RESULT_INTERNAL;
-
-  aux = strdup(in_args[1]->arrays.str);
-  if (NULL == aux) {
-    rpc->result = NACL_SRPC_RESULT_NO_MEMORY;
-    goto cleanup;
-  }
-  NaClLog(4, "Received aux_info: %s\n", aux);
-
-  if (!NaClLoadDesc(nexe_binary, &load_src)) {
-    NaClLog(4, "NaClLoadModuleRpc: failed to load descriptor\n");
-    rpc->result = NACL_SRPC_RESULT_APP_ERROR;
-    goto cleanup;
-  }
-
-  /*
-   * TODO(bsy): consider doing the processing below after sending the
-   * RPC reply to increase parallelism.
-   */
-
+  NaClLog(4, "NaClWaitForLoadModuleCommand started\n");
   NaClXMutexLock(&nap->mu);
-
-  if (LOAD_STATUS_UNKNOWN != nap->module_load_status) {
-    NaClLog(LOG_ERROR, "Repeated LoadModule RPC, or platform qual error?!?\n");
-    if (LOAD_OK == nap->module_load_status) {
-      NaClLog(LOG_ERROR, "LoadModule when module_load_status is LOAD_OK?!?\n");
-      suberr = LOAD_DUP_LOAD_MODULE;
-      nap->module_load_status = suberr;
-    } else {
-      suberr = nap->module_load_status;
-    }
-    rpc->result = NACL_SRPC_RESULT_OK;
-    NaClXCondVarBroadcast(&nap->cv);
-    goto cleanup_status_mu;
+  while (nap->module_initialization_state < NACL_MODULE_LOADED) {
+    NaClXCondVarWait(&nap->cv, &nap->mu);
   }
-
-  free(nap->aux_info);
-  nap->aux_info = aux;
-
-  suberr = NACL_FI_VAL("load_module", NaClErrorCode,
-                       NaClAppLoadFile(load_src, nap));
-  (*NACL_VTBL(Gio, load_src)->Close)(load_src);
-
-  if (LOAD_OK != suberr) {
-    nap->module_load_status = suberr;
-    rpc->result = NACL_SRPC_RESULT_OK;
-    NaClXCondVarBroadcast(&nap->cv);
-  }
-
- cleanup_status_mu:
-  NaClXMutexUnlock(&nap->mu);  /* NaClAppPrepareToLaunch takes mu */
-  if (LOAD_OK != suberr) {
-    goto cleanup;
-  }
-
-  /***************************************************************************
-   * TODO(bsy): Remove/merge the code invoking NaClAppPrepareToLaunch
-   * and NaClGdbHook below with sel_main's main function.  See comment
-   * there.
-   ***************************************************************************/
-
-  /*
-   * Finish setting up the NaCl App.
-   */
-  suberr = NaClAppPrepareToLaunch(nap);
-
-  NaClXMutexLock(&nap->mu);
-
-  nap->module_load_status = suberr;
-  rpc->result = NACL_SRPC_RESULT_OK;
-
-  NaClXCondVarBroadcast(&nap->cv);
+  status = nap->module_load_status;
   NaClXMutexUnlock(&nap->mu);
+  NaClLog(4, "NaClWaitForLoadModuleCommand finished\n");
 
-  /* Give debuggers a well known point at which xlate_base is known.  */
-  NaClGdbHook(nap);
-
- cleanup:
-  (*NACL_VTBL(Gio, load_src)->Dtor)(load_src);
-  free(load_src);
-  load_src = NULL;
-  NaClDescUnref(nexe_binary);
-  nexe_binary = NULL;
-  (*done->Run)(done);
-}
-
-/*
- * This RPC can be used to load to the integrated runtime library.
- * The only argument is a handle to a shared memory object that
- * contains the IRT.
- */
-static void NaClLoadIrtRpc(struct NaClSrpcRpc      *rpc,
-                           struct NaClSrpcArg      **in_args,
-                           struct NaClSrpcArg      **out_args,
-                           struct NaClSrpcClosure  *done) {
-  struct NaClApp          *nap =
-      (struct NaClApp *) rpc->channel->server_instance_data;
-  struct NaClDesc         *irt_binary = in_args[0]->u.hval;
-  struct Gio              *load_src = NULL;
-  NaClErrorCode           suberr = LOAD_INTERNAL;
-
-  UNREFERENCED_PARAMETER(out_args);
-
-  NaClLog(4, "NaClLoadIrtRpc: entered\n");
-
-  rpc->result = NACL_SRPC_RESULT_INTERNAL;
-
-  suberr = NaClWaitForLoadModuleStatus(nap);
-  if (LOAD_OK != suberr) {
-    NaClLog(LOG_ERROR, "NaClLoadIrtRpc: Failed to load module.\n");
-    rpc->result = NACL_SRPC_RESULT_APP_ERROR;
-    goto cleanup;
-  }
-
-  if (!NaClLoadDesc(irt_binary, &load_src)) {
-    NaClLog(4, "NaClLoadIrtRpc: failed to load descriptor\n");
-    rpc->result = NACL_SRPC_RESULT_APP_ERROR;
-    goto cleanup;
-  }
-
-  /*
-   * We cannot take the nap->mu lock, since NaClAppLoadFileDynamically
-   * invokes NaClElfImageLoadDynamically which in turn invokes
-   * NaClCommonSysMmapIntern resulting in a deadlock. This is not really
-   * a problem since there is only one secure command channel, unless
-   * embedders invokes load_irt repeatedly, which is against the protocol.
-   * TODO(phosek): record load_module/load_irt state and return error
-   * on repeated invocations (issue 3038).
-   */
-
-  suberr = NACL_FI_VAL("load_irt", NaClErrorCode,
-                       NaClAppLoadFileDynamically(nap, load_src));
-  (*NACL_VTBL(Gio, load_src)->Close)(load_src);
-
-  if (LOAD_OK != suberr) {
-    NaClLog(LOG_FATAL,
-            "NaClLoadIrt: Failed to load the integrated runtime (IRT). "
-            "The user executable was probably not built to use the IRT.\n");
-  }
-  rpc->result = NACL_SRPC_RESULT_OK;
-
- cleanup:
-  (*NACL_VTBL(Gio, load_src)->Dtor)(load_src);
-  free(load_src);
-  load_src = NULL;
-  NaClDescUnref(irt_binary);
-  irt_binary = NULL;
-  NaClLog(4, "NaClLoadIrtRpc: leaving\n");
-  (*done->Run)(done);
+  return status;
 }
 
 NaClErrorCode NaClWaitForLoadModuleStatus(struct NaClApp *nap) {
   NaClErrorCode status;
 
+  NaClLog(4, "NaClWaitForLoadModuleStatus started\n");
   NaClXMutexLock(&nap->mu);
   while (LOAD_STATUS_UNKNOWN == (status = nap->module_load_status)) {
     NaClXCondVarWait(&nap->cv, &nap->mu);
   }
   NaClXMutexUnlock(&nap->mu);
+  NaClLog(4, "NaClWaitForLoadModuleStatus finished\n");
+
   return status;
-}
-
-static void NaClSecureChannelStartModuleRpc(struct NaClSrpcRpc     *rpc,
-                                            struct NaClSrpcArg     **in_args,
-                                            struct NaClSrpcArg     **out_args,
-                                            struct NaClSrpcClosure *done) {
-  /*
-   * let module start if module is okay; otherwise report error (e.g.,
-   * ABI version mismatch).
-   */
-  struct NaClApp  *nap = (struct NaClApp *) rpc->channel->server_instance_data;
-  NaClErrorCode   status;
-
-  UNREFERENCED_PARAMETER(in_args);
-
-  NaClLog(4,
-          "NaClSecureChannelStartModuleRpc started, nap 0x%"NACL_PRIxPTR"\n",
-          (uintptr_t) nap);
-
-  status = NaClWaitForLoadModuleStatus(nap);
-
-  NaClLog(4, "NaClSecureChannelStartModuleRpc: load status %d\n", status);
-
-  out_args[0]->u.ival = status;
-  rpc->result = NACL_SRPC_RESULT_OK;
-
-  /*
-   * When reverse setup is being used, we have to block and wait for reverse
-   * channel to become initialized before we can proceed with start module.
-   */
-  NaClXMutexLock(&nap->mu);
-  if (NACL_REVERSE_CHANNEL_UNINITIALIZED !=
-      nap->reverse_channel_initialization_state) {
-    while (NACL_REVERSE_CHANNEL_INITIALIZED !=
-           nap->reverse_channel_initialization_state) {
-      NaClXCondVarWait(&nap->cv, &nap->mu);
-    }
-  }
-  NaClXMutexUnlock(&nap->mu);
-
-  NaClLog(4, "NaClSecureChannelStartModuleRpc running closure\n");
-  (*done->Run)(done);
-  /*
-   * The RPC reply is now sent.  This has to occur before we signal
-   * the main thread to possibly start, since in the case of a failure
-   * the main thread may quickly exit.  If the main thread does this
-   * before we sent the RPC reply, then the plugin will be left
-   * without an answer.
-   */
-
-  NaClXMutexLock(&nap->mu);
-  if (nap->module_may_start) {
-    NaClLog(LOG_ERROR, "Duplicate StartModule RPC?!?\n");
-    status = LOAD_DUP_START_MODULE;
-  } else {
-    nap->module_may_start = 1;
-  }
-  NaClLog(4, "NaClSecureChannelStartModuleRpc: broadcasting\n");
-  NaClXCondVarBroadcast(&nap->cv);
-  NaClXMutexUnlock(&nap->mu);
-
-  NaClLog(4, "NaClSecureChannelStartModuleRpc exiting\n");
-}
-
-static void NaClSecureChannelLog(struct NaClSrpcRpc      *rpc,
-                                 struct NaClSrpcArg      **in_args,
-                                 struct NaClSrpcArg      **out_args,
-                                 struct NaClSrpcClosure  *done) {
-  int severity = in_args[0]->u.ival;
-  char *msg = in_args[1]->arrays.str;
-
-  UNREFERENCED_PARAMETER(out_args);
-
-  NaClLog(5, "NaClSecureChannelLog started\n");
-  NaClLog(severity, "%s\n", msg);
-  NaClLog(5, "NaClSecureChannelLog finished\n");
-  rpc->result = NACL_SRPC_RESULT_OK;
-  (*done->Run)(done);
 }
 
 NaClErrorCode NaClWaitForStartModuleCommand(struct NaClApp *nap) {
@@ -1270,11 +986,8 @@ NaClErrorCode NaClWaitForStartModuleCommand(struct NaClApp *nap) {
 
   NaClLog(4, "NaClWaitForStartModuleCommand started\n");
   NaClXMutexLock(&nap->mu);
-  while (!nap->module_may_start) {
+  while (nap->module_initialization_state < NACL_MODULE_STARTED) {
     NaClXCondVarWait(&nap->cv, &nap->mu);
-    NaClLog(4,
-            "NaClWaitForStartModuleCommand: awaken, module_may_start %d\n",
-            nap->module_may_start);
   }
   status = nap->module_load_status;
   NaClXMutexUnlock(&nap->mu);
@@ -1294,135 +1007,6 @@ void NaClBlockIfCommandChannelExists(struct NaClApp *nap) {
   }
 }
 
-/*
- * The first connection is performed by this callback handler.  This
- * spawns a client thread that will bootstrap the other connections by
- * stashing the connection represented by |conn| to make reverse RPCs
- * to ask the peer to connect to us.  No thread is spawned; we just
- * wrap access to the connection with a lock.
- *
- * Subsequent connection callbacks will pass the connection to the
- * actual thread that made the connection request using |conn|
- * received in the first connection.
- */
-static void NaClSecureReverseClientCallback(
-    void                        *state,
-    struct NaClThreadInterface  *tif,
-    struct NaClDesc             *new_conn) {
-  struct NaClSecureReverseClient *self =
-      (struct NaClSecureReverseClient *) state;
-  struct NaClApp *nap = self->nap;
-
-  UNREFERENCED_PARAMETER(tif);
-
-  NaClLog(4, "Entered NaClSecureReverseClientCallback\n");
-
-  NaClLog(4, " self=0x%"NACL_PRIxPTR"\n", (uintptr_t) self);
-  NaClLog(4, " nap=0x%"NACL_PRIxPTR"\n", (uintptr_t) nap);
-  NaClXMutexLock(&nap->mu);
-
-  if (NACL_REVERSE_CHANNEL_INITIALIZATION_STARTED !=
-      nap->reverse_channel_initialization_state) {
-    /*
-     * The reverse channel connection capability is used to make the
-     * RPC that invokes this callback (this callback is invoked on a
-     * reverse channel connect), so the plugin wants to initialize the
-     * reverse channel and in particular the state must be either be
-     * in-progress or finished.
-     */
-    NaClLog(LOG_FATAL, "Reverse channel already initialized\n");
-  }
-  if (!NaClSrpcClientCtor(&nap->reverse_channel, new_conn)) {
-    NaClLog(LOG_FATAL, "Reverse channel SRPC Client Ctor failed\n");
-  }
-  nap->reverse_quota_interface = (struct NaClReverseQuotaInterface *)
-      malloc(sizeof *nap->reverse_quota_interface);
-  if (NULL == nap->reverse_quota_interface ||
-      NACL_FI_ERROR_COND(
-          ("NaClSecureReverseClientCallback"
-           "__NaClReverseQuotaInterfaceCtor"),
-          !NaClReverseQuotaInterfaceCtor(nap->reverse_quota_interface,
-                                         nap))) {
-    NaClLog(LOG_FATAL, "Reverse quota interface Ctor failed\n");
-  }
-  nap->reverse_channel_initialization_state = NACL_REVERSE_CHANNEL_INITIALIZED;
-
-  NaClXCondVarBroadcast(&nap->cv);
-  NaClXMutexUnlock(&nap->mu);
-
-  NaClLog(4, "Leaving NaClSecureReverseClientCallback\n");
-}
-
-static void NaClSecureReverseClientSetup(struct NaClSrpcRpc     *rpc,
-                                         struct NaClSrpcArg     **in_args,
-                                         struct NaClSrpcArg     **out_args,
-                                         struct NaClSrpcClosure *done) {
-  struct NaClApp                  *nap =
-      (struct NaClApp *) rpc->channel->server_instance_data;
-  struct NaClSecureReverseClient  *rev;
-
-  UNREFERENCED_PARAMETER(in_args);
-  NaClLog(4, "Entered NaClSecureReverseClientSetup\n");
-
-  NaClXMutexLock(&nap->mu);
-  if (NULL != nap->reverse_client) {
-    NaClLog(LOG_FATAL, "Double reverse setup RPC\n");
-  }
-  if (NACL_REVERSE_CHANNEL_UNINITIALIZED !=
-      nap->reverse_channel_initialization_state) {
-    NaClLog(LOG_FATAL,
-            "Reverse channel initialization state not uninitialized\n");
-  }
-  nap->reverse_channel_initialization_state =
-      NACL_REVERSE_CHANNEL_INITIALIZATION_STARTED;
-  /* the reverse connection is still coming */
-  rev = (struct NaClSecureReverseClient *) malloc(sizeof *rev);
-  if (NULL == rev) {
-    rpc->result = NACL_SRPC_RESULT_APP_ERROR;
-    goto done;
-  }
-  NaClLog(4,
-          "NaClSecureReverseClientSetup: invoking"
-          " NaClSecureReverseClientCtor\n");
-  if (!NaClSecureReverseClientCtor(rev,
-                                   NaClSecureReverseClientCallback,
-                                   (void *) rev,
-                                   nap)) {
-    free(rev);
-    rpc->result = NACL_SRPC_RESULT_APP_ERROR;
-    goto done;
-  }
-  nap->reverse_client = (struct NaClSecureReverseClient *) NaClRefCountRef(
-      (struct NaClRefCount *) rev);
-  out_args[0]->u.hval = NaClDescRef(rev->base.bound_and_cap[1]);
-  rpc->result = NACL_SRPC_RESULT_OK;
-
-  /*
-   * Hook up reverse-channel enabled resources, e.g.,
-   * DEBUG_ONLY:dev://postmessage.  NB: Resources specified by
-   * file:path should have been taken care of earlier, in
-   * NaClAppInitialDescriptorHookup.
-   */
-  nap->resource_phase = NACL_RESOURCE_PHASE_REV_CHAN;
-  NaClLog(4, "Processing dev I/O redirection/inheritance from environment\n");
-  NaClProcessRedirControl(nap);
-  NaClLog(4, "... done.\n");
-
-  /*
-   * Service thread takes the reference rev.
-   */
-  if (!NaClSimpleRevClientStartServiceThread(&rev->base)) {
-    NaClLog(LOG_FATAL, "Could not start reverse service thread\n");
-  }
-
-done:
-  NaClXMutexUnlock(&nap->mu);
-  (*done->Run)(done);
-  NaClLog(4, "Leaving NaClSecureReverseClientSetup\n");
-}
-
-struct NaClSrpcHandlerDesc const secure_handlers[]; /* fwd */
-
 void NaClSecureCommandChannel(struct NaClApp *nap) {
   struct NaClSecureService *secure_command_server;
 
@@ -1436,7 +1020,6 @@ void NaClSecureCommandChannel(struct NaClApp *nap) {
   }
   if (NACL_FI_ERROR_COND("NaClSecureCommandChannel__NaClSecureServiceCtor",
                          !NaClSecureServiceCtor(secure_command_server,
-                                                secure_handlers,
                                                 nap,
                                                 nap->secure_service_port,
                                                 nap->secure_service_address))) {
@@ -1456,16 +1039,238 @@ void NaClSecureCommandChannel(struct NaClApp *nap) {
   NaClLog(4, "Leaving NaClSecureCommandChannel\n");
 }
 
-struct NaClSrpcHandlerDesc const secure_handlers[] = {
-  { "hard_shutdown::", NaClSecureChannelShutdownRpc, },
-  { "start_module::i", NaClSecureChannelStartModuleRpc, },
-  { "log:is:", NaClSecureChannelLog, },
-  { "load_module:hs:", NaClLoadModuleRpc, },
-  { "load_irt:h:", NaClLoadIrtRpc, },
-  { "reverse_setup::h", NaClSecureReverseClientSetup, },
-  /* add additional calls here.  upcall set up?  start module signal? */
-  { (char const *) NULL, (NaClSrpcMethod) NULL, },
-};
+
+void NaClAppLoadModule(struct NaClApp   *nap,
+                       struct NaClDesc  *nexe,
+                       void             (*load_cb)(void *instance_data,
+                                                   NaClErrorCode status),
+                       void             *instance_data) {
+  NaClErrorCode status = LOAD_OK;
+
+  NaClLog(4,
+          ("Entered NaClAppLoadModule: nap 0x%"NACL_PRIxPTR","
+           " nexe 0x%"NACL_PRIxPTR"\n"),
+          (uintptr_t) nap, (uintptr_t) nexe);
+  /*
+   * Ref was passed by value into |nexe| parameter, so up the refcount.
+   * Be sure to unref when the parameter's copy goes out of scope
+   * (when returning).
+   */
+  NaClDescRef(nexe);
+
+  /*
+   * TODO(bsy): consider doing the processing below after sending the
+   * RPC reply to increase parallelism.
+   */
+  NaClXMutexLock(&nap->mu);
+  if (nap->module_initialization_state != NACL_MODULE_UNINITIALIZED) {
+    NaClLog(LOG_ERROR, "NaClAppLoadModule: repeated invocation\n");
+    status = LOAD_DUP_LOAD_MODULE;
+    NaClXMutexUnlock(&nap->mu);
+    if (NULL != load_cb) {
+      (*load_cb)(instance_data, status);
+    }
+    NaClDescUnref(nexe);
+    return;
+  }
+  nap->module_initialization_state = NACL_MODULE_LOADING;
+  NaClXCondVarBroadcast(&nap->cv);
+  NaClXMutexUnlock(&nap->mu);
+
+  if (NULL != load_cb) {
+    (*load_cb)(instance_data, status);
+  }
+
+  NaClXMutexLock(&nap->mu);
+
+  /*
+   * Check and possibly mark the nexe binary as OK to attempt memory
+   * mapping.  We first clear the safe-for-mmap flag -- if we do not
+   * trust the renderer to really send us a safe-to-mmap descriptor
+   * and have to query the validation cache, then we also do not want
+   * to trust the metadata flag value that originated from the
+   * renderer.
+   */
+  NaClDescMarkUnsafeForMmap(nexe);
+  NaClReplaceDescIfValidationCacheAssertsMappable(&nexe,
+                                                  nap->validation_cache);
+  /* Transfer ownership from nexe to nap->main_nexe_desc. */
+  CHECK(nap->main_nexe_desc == NULL);
+  nap->main_nexe_desc = nexe;
+  nexe = NULL;
+
+  status = NACL_FI_VAL("load_module", NaClErrorCode,
+                       NaClAppLoadFile(nap->main_nexe_desc, nap));
+
+  if (LOAD_OK != status) {
+    nap->module_load_status = status;
+    nap->module_initialization_state = NACL_MODULE_ERROR;
+    NaClXCondVarBroadcast(&nap->cv);
+  }
+  NaClXMutexUnlock(&nap->mu);  /* NaClAppPrepareToLaunch takes mu */
+  if (LOAD_OK != status) {
+    NaClDescUnref(nap->main_nexe_desc);
+    nap->main_nexe_desc = NULL;
+    return;
+  }
+
+  /***************************************************************************
+   * TODO(bsy): Remove/merge the code invoking NaClAppPrepareToLaunch
+   * and NaClGdbHook below with sel_main's main function.  See comment
+   * there.
+   ***************************************************************************/
+
+  /*
+   * Finish setting up the NaCl App.
+   */
+  status = NaClAppPrepareToLaunch(nap);
+
+  NaClXMutexLock(&nap->mu);
+  nap->module_load_status = status;
+  nap->module_initialization_state = NACL_MODULE_LOADED;
+  NaClXCondVarBroadcast(&nap->cv);
+  NaClXMutexUnlock(&nap->mu);
+
+  /* Give debuggers a well known point at which xlate_base is known.  */
+  NaClGdbHook(nap);
+}
+
+int NaClAppRuntimeHostSetup(struct NaClApp                  *nap,
+                            struct NaClRuntimeHostInterface *host_itf) {
+  NaClErrorCode status = LOAD_OK;
+
+  NaClLog(4,
+          ("Entered NaClAppRuntimeHostSetup, nap 0x%"NACL_PRIxPTR","
+           " host_itf 0x%"NACL_PRIxPTR"\n"),
+          (uintptr_t) nap, (uintptr_t) host_itf);
+
+  NaClXMutexLock(&nap->mu);
+  if (nap->module_initialization_state > NACL_MODULE_STARTING) {
+    NaClLog(LOG_ERROR, "NaClAppRuntimeHostSetup: too late\n");
+    status = LOAD_INTERNAL;
+    goto cleanup_status_mu;
+  }
+
+  nap->runtime_host_interface = (struct NaClRuntimeHostInterface *)
+      NaClRefCountRef((struct NaClRefCount *) host_itf);
+
+  /*
+   * Hook up runtime host enabled resources, e.g.,
+   * DEBUG_ONLY:dev://postmessage.  NB: Resources specified by
+   * file:path should have been taken care of earlier, in
+   * NaClAppInitialDescriptorHookup.
+   */
+  nap->resource_phase = NACL_RESOURCE_PHASE_RUNTIME_HOST;
+  NaClLog(4, "Processing dev I/O redirection/inheritance from environment\n");
+  NaClProcessRedirControl(nap);
+  NaClLog(4, "... done.\n");
+
+ cleanup_status_mu:
+  NaClXMutexUnlock(&nap->mu);
+  return (int) status;
+}
+
+int NaClAppDescQuotaSetup(struct NaClApp                 *nap,
+                          struct NaClDescQuotaInterface  *quota_itf) {
+  NaClErrorCode status = LOAD_OK;
+
+  NaClLog(4,
+          ("Entered NaClAppDescQuotaSetup, nap 0x%"NACL_PRIxPTR","
+           " quota_itf 0x%"NACL_PRIxPTR"\n"),
+          (uintptr_t) nap, (uintptr_t) quota_itf);
+
+  NaClXMutexLock(&nap->mu);
+  if (nap->module_initialization_state > NACL_MODULE_STARTING) {
+    NaClLog(LOG_ERROR, "NaClAppDescQuotaSetup: too late\n");
+    status = LOAD_INTERNAL;
+    goto cleanup_status_mu;
+  }
+
+  nap->desc_quota_interface = (struct NaClDescQuotaInterface *)
+    NaClRefCountRef((struct NaClRefCount *) quota_itf);
+
+ cleanup_status_mu:
+  NaClXMutexUnlock(&nap->mu);
+  return (int) status;
+}
+
+void NaClAppStartModule(struct NaClApp  *nap,
+                        void            (*start_cb)(void *instance_data,
+                                                    NaClErrorCode status),
+                        void            *instance_data) {
+  NaClErrorCode status;
+
+  NaClLog(4,
+          ("Entered NaClAppStartModule, nap 0x%"NACL_PRIxPTR","
+           " start_cb 0x%"NACL_PRIxPTR", instance_data 0x%"NACL_PRIxPTR"\n"),
+          (uintptr_t) nap, (uintptr_t) start_cb, (uintptr_t) instance_data);
+
+  /*
+   * When module is loading, we have to block and wait till it is
+   * fully loaded before we can proceed with start module.
+   */
+  NaClXMutexLock(&nap->mu);
+  if (NACL_MODULE_LOADING == nap->module_initialization_state) {
+    while (NACL_MODULE_LOADED != nap->module_initialization_state) {
+      NaClXCondVarWait(&nap->cv, &nap->mu);
+    }
+  }
+  if (nap->module_initialization_state != NACL_MODULE_LOADED) {
+    if (NACL_MODULE_ERROR == nap->module_initialization_state) {
+      NaClLog(LOG_ERROR, "NaClAppStartModule: error loading module\n");
+      status = nap->module_load_status;
+    } else if (nap->module_initialization_state > NACL_MODULE_LOADED) {
+      NaClLog(LOG_ERROR, "NaClAppStartModule: repeated invocation\n");
+      status = LOAD_DUP_START_MODULE;
+    } else if (nap->module_initialization_state < NACL_MODULE_LOADED) {
+      NaClLog(LOG_ERROR, "NaClAppStartModule: module not loaded\n");
+      status = LOAD_INTERNAL;
+    }
+    NaClXMutexUnlock(&nap->mu);
+    if (NULL != start_cb) {
+      (*start_cb)(instance_data, status);
+    }
+    return;
+  }
+  status = nap->module_load_status;
+  nap->module_initialization_state = NACL_MODULE_STARTING;
+  NaClXCondVarBroadcast(&nap->cv);
+  NaClXMutexUnlock(&nap->mu);
+
+  NaClLog(4, "NaClSecureChannelStartModule: load status %d\n", status);
+
+  /*
+   * We need to invoke the callback now, before we signal the main thread
+   * to possibly start by setting the state to NACL_MODULE_STARTED, since
+   * in the case of failure the main thread may quickly exit; if the main
+   * thread does this before we sent the reply, than the plugin (or any
+   * other runtime host interface) will be left without an aswer. The
+   * NACL_MODULE_STARTING state is used as an intermediate state to prevent
+   * double invocations violating the protocol.
+   */
+  if (NULL != start_cb) {
+    (*start_cb)(instance_data, status);
+  }
+
+  NaClXMutexLock(&nap->mu);
+  nap->module_initialization_state = NACL_MODULE_STARTED;
+  NaClXCondVarBroadcast(&nap->cv);
+  NaClXMutexUnlock(&nap->mu);
+}
+
+void NaClAppShutdown(struct NaClApp     *nap,
+                     int                exit_status) {
+  NaClLog(4, "NaClAppShutdown: nap 0x%"NACL_PRIxPTR
+          ", exit_status %d\n", (uintptr_t) nap, exit_status);
+
+  NaClXMutexLock(&nap->mu);
+  nap->exit_status = exit_status;
+  NaClXMutexUnlock(&nap->mu);
+  if (NULL != nap->debug_stub_callbacks) {
+    nap->debug_stub_callbacks->process_exit_hook();
+  }
+  NaClExit(0);
+}
 
 /*
  * It is fine to have multiple I/O operations read from memory in Write

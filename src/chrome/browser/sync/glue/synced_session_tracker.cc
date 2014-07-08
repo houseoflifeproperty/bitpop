@@ -4,7 +4,7 @@
 
 #include "base/logging.h"
 #include "base/stl_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/sync/glue/synced_session_tracker.h"
 
 namespace browser_sync {
@@ -85,6 +85,34 @@ bool SyncedSessionTracker::LookupSessionTab(
   }
   *tab = tab_iter->second.tab_ptr;
   return true;
+}
+
+bool SyncedSessionTracker::LookupTabNodeIds(
+    const std::string& session_tag, std::set<int>* tab_node_ids) {
+  tab_node_ids->clear();
+  SyncedTabMap::const_iterator tab_map_iter =
+      synced_tab_map_.find(session_tag);
+  if (tab_map_iter == synced_tab_map_.end())
+    return false;
+
+  IDToSessionTabMap::const_iterator tab_iter = tab_map_iter->second.begin();
+  while (tab_iter != tab_map_iter->second.end()) {
+    if (tab_iter->second.tab_node_id != TabNodePool::kInvalidTabNodeID)
+      tab_node_ids->insert(tab_iter->second.tab_node_id);
+    ++tab_iter;
+  }
+  return true;
+}
+
+bool SyncedSessionTracker::LookupLocalSession(const SyncedSession** output)
+    const {
+  SyncedSessionMap::const_iterator it =
+      synced_session_map_.find(local_session_tag_);
+  if (it != synced_session_map_.end()) {
+    *output = it->second;
+    return true;
+  }
+  return false;
 }
 
 SyncedSession* SyncedSessionTracker::GetSession(
@@ -169,7 +197,7 @@ bool SyncedSessionTracker::DeleteOldSessionTabIfNecessary(
       SessionTab* tab_ptr = tab_wrapper.tab_ptr;
       std::string title;
       if (tab_ptr->navigations.size() > 0) {
-        title = " (" + UTF16ToUTF8(
+        title = " (" + base::UTF16ToUTF8(
             tab_ptr->navigations[tab_ptr->navigations.size()-1].title()) + ")";
       }
       DVLOG(1) << "Deleting closed tab " << tab_ptr->tab_id.id() << title
@@ -225,7 +253,7 @@ void SyncedSessionTracker::PutWindowInSession(const std::string& session_tag,
     window_ptr = new SessionWindow();
     window_ptr->window_id.set_id(window_id);
     synced_window_map_[session_tag][window_id] =
-        SessionWindowWrapper(window_ptr, true);
+        SessionWindowWrapper(window_ptr, IS_OWNED);
     DVLOG(1) << "Putting new window " << window_id  << " at " << window_ptr
              << "in " << (session_tag == local_session_tag_ ?
                           "local session" : session_tag);
@@ -241,7 +269,23 @@ void SyncedSessionTracker::PutTabInWindow(const std::string& session_tag,
                                           SessionID::id_type window_id,
                                           SessionID::id_type tab_id,
                                           size_t tab_index) {
-  SessionTab* tab_ptr = GetTab(session_tag, tab_id);
+  // We're called here for two reasons. 1) We've received an update to the
+  // SessionWindow information of a SessionHeader node for a foreign session,
+  // and 2) The SessionHeader node for our local session changed. In both cases
+  // we need to update our tracking state to reflect the change.
+  //
+  // Because the SessionHeader nodes are separate from the individual tab nodes
+  // and we don't store tab_node_ids in the header / SessionWindow specifics,
+  // the tab_node_ids are not always available when processing headers.
+  // We know that we will eventually process (via GetTab) every single tab node
+  // in the system, so we permit ourselves to use kInvalidTabNodeID here and
+  // rely on the later update to build the mapping (or a restart).
+  // TODO(tim): Bug 98892. Update comment when Sync API conversion finishes to
+  // mention that in the meantime, the only ill effect is that we may not be
+  // able to fully clean up a stale foreign session, but it will get garbage
+  // collected eventually.
+  SessionTab* tab_ptr = GetTabImpl(
+      session_tag, tab_id, TabNodePool::kInvalidTabNodeID);
   unmapped_tabs_.erase(tab_ptr);
   synced_tab_map_[session_tag][tab_id].owned = true;
   tab_ptr->window_id.set_id(window_id);
@@ -259,16 +303,50 @@ void SyncedSessionTracker::PutTabInWindow(const std::string& session_tag,
 
 SessionTab* SyncedSessionTracker::GetTab(
     const std::string& session_tag,
-    SessionID::id_type tab_id) {
+    SessionID::id_type tab_id,
+    int tab_node_id) {
+  DCHECK_NE(TabNodePool::kInvalidTabNodeID, tab_node_id);
+  return GetTabImpl(session_tag, tab_id, tab_node_id);
+}
+
+SessionTab* SyncedSessionTracker::GetTabImpl(
+    const std::string& session_tag,
+    SessionID::id_type tab_id,
+    int tab_node_id) {
   SessionTab* tab_ptr = NULL;
   IDToSessionTabMap::iterator iter =
       synced_tab_map_[session_tag].find(tab_id);
   if (iter != synced_tab_map_[session_tag].end()) {
     tab_ptr = iter->second.tab_ptr;
+    if (tab_node_id != TabNodePool::kInvalidTabNodeID &&
+        tab_id != TabNodePool::kInvalidTabID) {
+      // TabIDs are not stable across restarts of a client. Consider this
+      // example with two tabs:
+      //
+      // http://a.com  TabID1 --> NodeIDA
+      // http://b.com  TabID2 --> NodeIDB
+      //
+      // After restart, tab ids are reallocated. e.g, one possibility:
+      // http://a.com TabID2 --> NodeIDA
+      // http://b.com TabID1 --> NodeIDB
+      //
+      // If that happend on a remote client, here we will see an update to
+      // TabID1 with tab_node_id changing from NodeIDA to NodeIDB, and TabID2
+      // with tab_node_id changing from NodeIDB to NodeIDA.
+      //
+      // We can also wind up here if we created this tab as an out-of-order
+      // update to the header node for this session before actually associating
+      // the tab itself, so the tab node id wasn't available at the time and
+      // is currenlty kInvalidTabNodeID.
+      //
+      // In both cases, we update the tab_node_id.
+      iter->second.tab_node_id = tab_node_id;
+    }
+
     if (VLOG_IS_ON(1)) {
       std::string title;
       if (tab_ptr->navigations.size() > 0) {
-        title = " (" + UTF16ToUTF8(
+        title = " (" + base::UTF16ToUTF8(
             tab_ptr->navigations[tab_ptr->navigations.size()-1].title()) + ")";
       }
       DVLOG(1) << "Getting "
@@ -279,7 +357,9 @@ SessionTab* SyncedSessionTracker::GetTab(
   } else {
     tab_ptr = new SessionTab();
     tab_ptr->tab_id.set_id(tab_id);
-    synced_tab_map_[session_tag][tab_id] = SessionTabWrapper(tab_ptr, false);
+    synced_tab_map_[session_tag][tab_id] = SessionTabWrapper(tab_ptr,
+                                                             NOT_OWNED,
+                                                             tab_node_id);
     unmapped_tabs_.insert(tab_ptr);
     DVLOG(1) << "Getting "
              << (session_tag == local_session_tag_ ?

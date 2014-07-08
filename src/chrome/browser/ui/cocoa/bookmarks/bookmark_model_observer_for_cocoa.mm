@@ -5,15 +5,11 @@
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_model_observer_for_cocoa.h"
 
 BookmarkModelObserverForCocoa::BookmarkModelObserverForCocoa(
-    const BookmarkNode* node,
     BookmarkModel* model,
-    NSObject* object,
-    SEL selector) {
+    ChangeCallback callback) {
   DCHECK(model);
-  node_ = node;
+  callback_.reset(Block_copy(callback));
   model_ = model;
-  object_ = object;
-  selector_ = selector;
   model_->AddObserver(this);
 }
 
@@ -21,9 +17,19 @@ BookmarkModelObserverForCocoa::~BookmarkModelObserverForCocoa() {
   model_->RemoveObserver(this);
 }
 
+void BookmarkModelObserverForCocoa::StartObservingNode(
+    const BookmarkNode* node) {
+  nodes_.insert(node);
+}
+
+void BookmarkModelObserverForCocoa::StopObservingNode(
+    const BookmarkNode* node) {
+  nodes_.erase(node);
+}
+
 void BookmarkModelObserverForCocoa::BookmarkModelBeingDeleted(
     BookmarkModel* model) {
-  Notify();
+  Notify(YES);
 }
 
 void BookmarkModelObserverForCocoa::BookmarkNodeMoved(
@@ -34,31 +40,32 @@ void BookmarkModelObserverForCocoa::BookmarkNodeMoved(
     int new_index) {
   // Editors often have a tree of parents, so movement of folders
   // must cause a cancel.
-  Notify();
+  Notify(NO);
 }
 
 void BookmarkModelObserverForCocoa::BookmarkNodeRemoved(
     BookmarkModel* model,
     const BookmarkNode* parent,
     int old_index,
-    const BookmarkNode* node) {
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
   // See comment in BookmarkNodeMoved.
-  Notify();
+  Notify(YES);
+}
+
+void BookmarkModelObserverForCocoa::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
+  Notify(YES);
 }
 
 void BookmarkModelObserverForCocoa::BookmarkNodeChanged(
     BookmarkModel* model,
     const BookmarkNode* node) {
-  if ((node_ == node) || (!node_))
-    Notify();
+  if (!nodes_.size() || nodes_.find(node) != nodes_.end())
+    Notify(NO);
 }
 
-void BookmarkModelObserverForCocoa::ExtensiveBookmarkChangesBeginning(
-    BookmarkModel* model) {
-  // Be conservative.
-  Notify();
-}
-
-void BookmarkModelObserverForCocoa::Notify() {
-  [object_ performSelector:selector_ withObject:nil];
+void BookmarkModelObserverForCocoa::Notify(BOOL deleted) {
+  callback_.get()(deleted);
 }

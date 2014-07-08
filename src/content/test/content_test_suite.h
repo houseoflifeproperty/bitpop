@@ -12,14 +12,6 @@
 #include "base/win/scoped_com_initializer.h"
 #endif
 
-#if defined(USE_AURA)
-namespace aura {
-namespace test {
-class TestAuraInitializer;
-}  // namespace test
-}  // namespace aura
-#endif
-
 namespace content {
 
 class ContentTestSuite : public ContentTestSuiteBase {
@@ -30,15 +22,9 @@ class ContentTestSuite : public ContentTestSuiteBase {
  protected:
   virtual void Initialize() OVERRIDE;
 
-  virtual ContentClient* CreateClientForInitialization() OVERRIDE;
-
  private:
 #if defined(OS_WIN)
   base::win::ScopedCOMInitializer com_initializer_;
-#endif
-
-#if defined(USE_AURA)
-  scoped_ptr<aura::test::TestAuraInitializer> aura_initializer_;
 #endif
 
   DISALLOW_COPY_AND_ASSIGN(ContentTestSuite);

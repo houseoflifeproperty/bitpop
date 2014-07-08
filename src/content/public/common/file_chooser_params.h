@@ -7,8 +7,8 @@
 
 #include <vector>
 
-#include "base/file_path.h"
-#include "base/string16.h"
+#include "base/files/file_path.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 
 namespace content {
@@ -25,8 +25,8 @@ struct CONTENT_EXPORT FileChooserParams {
     // Like Open, but allows picking multiple files to open.
     OpenMultiple,
 
-    // Like Open, but selects a folder.
-    OpenFolder,
+    // Like Open, but selects a folder for upload.
+    UploadFolder,
 
     // Allows picking a nonexistent file, and prompts to overwrite if the file
     // already exists.
@@ -37,20 +37,19 @@ struct CONTENT_EXPORT FileChooserParams {
 
   // Title to be used for the dialog. This may be empty for the default title,
   // which will be either "Open" or "Save" depending on the mode.
-  string16 title;
+  base::string16 title;
 
   // Default file name to select in the dialog.
-  FilePath default_file_name;
+  base::FilePath default_file_name;
 
   // A list of valid lower-cased MIME types or file extensions specified in an
   // input element. It is used to restrict selectable files to such types.
-  std::vector<string16> accept_types;
+  std::vector<base::string16> accept_types;
 
 #if defined(OS_ANDROID)
-  // Used to select items other than files, i.e. camera/mic. See
-  // SelectFileDialog.java for more details.
-  // TODO(jrg): upstream SelectFileDialog.java!  Currently lives in chrome/.
-  string16 capture;
+  // See http://www.w3.org/TR/html-media-capture for more information.
+  // If true, the data should be obtained using the device's camera/mic/etc.
+  bool capture;
 #endif
 };
 

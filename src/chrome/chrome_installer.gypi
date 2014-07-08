@@ -5,6 +5,7 @@
 {
   'variables': {
     'lastchange_path': '../build/util/LASTCHANGE',
+    'libpeer_target_type%': 'static_library',
     # 'branding_dir' is set in the 'conditions' section at the bottom.
   },
   'conditions': [
@@ -44,6 +45,8 @@
             'installer/gcapi/gcapi_reactivation.cc',
             'installer/gcapi/gcapi_reactivation.h',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'gcapi_test',
@@ -62,7 +65,10 @@
           ],
           'sources': [
             'installer/gcapi/gcapi_last_run_test.cc',
+            'installer/gcapi/gcapi_omaha_experiment_test.cc',
             'installer/gcapi/gcapi_reactivation_test.cc',
+            'installer/gcapi/gcapi_test_registry_overrider.cc',
+            'installer/gcapi/gcapi_test_registry_overrider.h',
             'installer/gcapi/gcapi_test.cc',
             'installer/gcapi/gcapi_test.rc',
             'installer/gcapi/resource.h',
@@ -78,7 +84,6 @@
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../chrome/chrome.gyp:chrome_version_resources',
             '../content/content.gyp:content_common',
             '../testing/gmock.gyp:gmock',
@@ -90,6 +95,7 @@
           'sources': [
             'installer/setup/compat_checks_unittest.cc',
             'installer/setup/setup_constants.cc',
+            'installer/util/advanced_firewall_manager_win_unittest.cc',
             'installer/util/callback_work_item_unittest.cc',
             'installer/util/channel_info_unittest.cc',
             'installer/util/copy_reg_key_work_item_unittest.cc',
@@ -103,7 +109,6 @@
             'installer/util/duplicate_tree_detector_unittest.cc',
             'installer/util/fake_installation_state.h',
             'installer/util/fake_product_state.h',
-            'installer/util/google_chrome_distribution_unittest.cc',
             'installer/util/google_update_settings_unittest.cc',
             'installer/util/install_util_unittest.cc',
             'installer/util/installation_validation_helper.cc',
@@ -115,6 +120,7 @@
             'installer/util/installer_util_unittests.rc',
             'installer/util/installer_util_unittests_resource.h',
             'installer/util/language_selector_unittest.cc',
+            'installer/util/legacy_firewall_manager_win_unittest.cc',
             'installer/util/logging_installer_unittest.cc',
             'installer/util/lzma_util_unittest.cc',
             'installer/util/master_preferences_unittest.cc',
@@ -129,48 +135,56 @@
             'installer/util/self_cleaning_temp_dir_unittest.cc',
             'installer/util/set_reg_value_work_item_unittest.cc',
             'installer/util/shell_util_unittest.cc',
+            'installer/util/uninstall_metrics_unittest.cc',
             'installer/util/wmi_unittest.cc',
             'installer/util/work_item_list_unittest.cc',
             '<(SHARED_INTERMEDIATE_DIR)/chrome_version/other_version.rc',
           ],
           'msvs_settings': {
             'VCManifestTool': {
-              'AdditionalManifestFiles': '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
+              'AdditionalManifestFiles': [
+                '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
+              ],
             },
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
         {
           'target_name': 'installer_util_strings',
           'type': 'none',
-          'rules': [
+          'actions': [
             {
-              'rule_name': 'installer_util_strings',
-              'extension': 'grd',
+              'action_name': 'installer_util_strings',
               'variables': {
-                'create_string_rc_py' : 'installer/util/prebuild/create_string_rc.py',
+                'create_string_rc_py': 'installer/util/prebuild/create_string_rc.py',
               },
+              'conditions': [
+                ['branding=="Chrome"', {
+                  'variables': {
+                    'brand_strings': 'google_chrome_strings',
+                  },
+                }, {
+                  'variables': {
+                    'brand_strings': 'chromium_strings',
+                  },
+                }],
+              ],
               'inputs': [
                 '<(create_string_rc_py)',
-                '<(RULE_INPUT_PATH)',
+                'app/<(brand_strings).grd',
               ],
               'outputs': [
-                # Don't use <(RULE_INPUT_ROOT) to create the output file
-                # name, because the base name of the input
-                # (generated_resources.grd) doesn't match the generated file
-                # (installer_util_strings.h).
                 '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings/installer_util_strings.h',
                 '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings/installer_util_strings.rc',
               ],
               'action': ['python',
                          '<(create_string_rc_py)',
-                         '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings',
-                         '<(branding)',],
-              'message': 'Generating resources from <(RULE_INPUT_PATH)',
-              'msvs_cygwin_shell': 1,
+                         '-i', 'app/<(brand_strings).grd:resources',
+                         '-n', 'installer_util_strings',
+                         '-o', '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings',],
+              'message': 'Generating installer_util_strings',
             },
-          ],
-          'sources': [
-            'app/chromium_strings.grd',
           ],
           'direct_dependent_settings': {
             'include_dirs': [
@@ -192,33 +206,6 @@
           'dependencies': [
             '<(DEPTH)/base/base.gyp:base',
           ],
-          'sources': [
-            'installer/launcher_support/chrome_launcher_support.cc',
-            'installer/launcher_support/chrome_launcher_support.h',
-          ],
-        },
-        {
-          'target_name': 'launcher_support64',
-          'type': 'static_library',
-          'include_dirs': [
-            '..',
-          ],
-          'direct_dependent_settings': {
-            'include_dirs': [
-              '..',
-            ],
-          },
-          'defines': [
-              '<@(nacl_win64_defines)',
-          ],
-              'dependencies': [
-              '<(DEPTH)/base/base.gyp:base_nacl_win64',
-          ],
-          'configurations': {
-            'Common_Base': {
-              'msvs_target_platform': 'x64',
-            },
-          },
           'sources': [
             'installer/launcher_support/chrome_launcher_support.cc',
             'installer/launcher_support/chrome_launcher_support.h',
@@ -256,7 +243,9 @@
           ],
           'msvs_settings': {
             'VCManifestTool': {
-              'AdditionalManifestFiles': '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
+              'AdditionalManifestFiles': [
+                '$(ProjectDir)\\installer\\mini_installer\\mini_installer.exe.manifest',
+              ],
             },
           },
         },
@@ -266,12 +255,10 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            'launcher_support',
             '../base/base.gyp:base',
             '../breakpad/breakpad.gyp:breakpad_handler',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
             '../chrome/common_constants.gyp:common_constants',
-            '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
-            '../chrome_frame/chrome_frame.gyp:npchrome_frame',
             '../rlz/rlz.gyp:rlz_lib',
             '../third_party/zlib/zlib.gyp:zlib',
           ],
@@ -286,16 +273,16 @@
             ],
           },
           'sources': [
+            '<(SHARED_INTERMEDIATE_DIR)/installer_util_strings/installer_util_strings.rc',
             'installer/mini_installer/chrome.release',
-            'installer/setup/chrome_frame_quick_enable.cc',
-            'installer/setup/chrome_frame_quick_enable.h',
-            'installer/setup/chrome_frame_ready_mode.cc',
-            'installer/setup/chrome_frame_ready_mode.h',
+            'installer/setup/archive_patch_helper.cc',
+            'installer/setup/archive_patch_helper.h',
             'installer/setup/install.cc',
             'installer/setup/install.h',
             'installer/setup/install_worker.cc',
             'installer/setup/install_worker.h',
             'installer/setup/setup_main.cc',
+            'installer/setup/setup_main.h',
             'installer/setup/setup.ico',
             'installer/setup/setup.rc',
             'installer/setup/setup_constants.cc',
@@ -308,19 +295,26 @@
             'installer/setup/uninstall.h',
           ],
           'msvs_settings': {
+            'VCCLCompilerTool': {
+              'EnableEnhancedInstructionSet': '4',  # NoExtensions
+            },
             'VCLinkerTool': {
               'SubSystem': '2',     # Set /SUBSYSTEM:WINDOWS
             },
             'VCManifestTool': {
-              'AdditionalManifestFiles': '$(ProjectDir)\\installer\\setup\\setup.exe.manifest',
+              'AdditionalManifestFiles': [
+                '$(ProjectDir)\\installer\\setup\\setup.exe.manifest',
+              ],
             },
           },
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
           'rules': [
             {
               'rule_name': 'setup_version',
               'extension': 'version',
               'variables': {
-                'version_py_path': '../chrome/tools/build/version.py',
+                'version_py_path': '<(DEPTH)/build/util/version.py',
                 'template_input_path': 'installer/setup/setup_exe_version.rc.version',
               },
               'inputs': [
@@ -343,41 +337,8 @@
               'process_outputs_as_sources': 1,
               'message': 'Generating version information'
             },
-            {
-              'rule_name': 'server_dlls',
-              'extension': 'release',
-              'variables': {
-                'scan_server_dlls_py' : 'tools/build/win/scan_server_dlls.py',
-                'template_file': 'installer/mini_installer/chrome.release',
-              },
-              'inputs': [
-                '<(scan_server_dlls_py)',
-                '<(template_file)'
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/registered_dlls.h',
-              ],
-              'action': [
-                'python',
-                '<(scan_server_dlls_py)',
-                '--output_dir=<(PRODUCT_DIR)',
-                '--input_file=<(RULE_INPUT_PATH)',
-                '--header_output_dir=<(INTERMEDIATE_DIR)',
-                # TODO(sgk):  may just use environment variables
-                #'--distribution=$(CHROMIUM_BUILD)',
-                '--distribution=_google_chrome',
-              ],
-              'msvs_cygwin_shell': 1,
-            },
           ],
           'conditions': [
-            ['component == "shared_library"', {
-              'msvs_settings': {
-                'VCManifestTool': {
-                  'EmbedManifest': 'false',
-                },
-              },
-            }],
             # TODO(mark):  <(branding_dir) should be defined by the
             # global condition block at the bottom of the file, but
             # this doesn't work due to the following issue:
@@ -396,15 +357,6 @@
                  'branding_dir_100': 'app/theme/default_100_percent/chromium',
               },
             }],
-            ['use_aura==1', {
-              'dependencies!': [
-                '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
-                '../chrome_frame/chrome_frame.gyp:npchrome_frame',
-              ],
-              'defines': [
-                'OMIT_CHROME_FRAME',
-              ],
-            }],
           ],
         },
         {
@@ -413,11 +365,10 @@
           'dependencies': [
             'installer_util',
             'installer_util_strings',
+            'launcher_support',
             '../base/base.gyp:base',
             '../base/base.gyp:base_i18n',
             '../base/base.gyp:test_support_base',
-            '../build/temp_gyp/googleurl.gyp:googleurl',
-            '../chrome_frame/chrome_frame.gyp:chrome_tab_idl',
             '../testing/gmock.gyp:gmock',
             '../testing/gtest.gyp:gtest',
           ],
@@ -441,6 +392,9 @@
             'installer/mini_installer/mini_string.cc',
             'installer/mini_installer/mini_string.h',
             'installer/mini_installer/mini_string_test.cc',
+            'installer/setup/archive_patch_helper.cc',  # Move to lib
+            'installer/setup/archive_patch_helper.h',   # Move to lib
+            'installer/setup/archive_patch_helper_unittest.cc',
             'installer/setup/install.cc',               # Move to lib
             'installer/setup/install.h',                # Move to lib
             'installer/setup/install_unittest.cc',
@@ -454,34 +408,40 @@
             'installer/setup/setup_unittests_resource.h',
             'installer/setup/setup_util.cc',
             'installer/setup/setup_util_unittest.cc',
+            'installer/setup/setup_util_unittest.h',
           ],
-          'rules': [
-            {
-              'rule_name': 'server_dlls',               # Move to lib
-              'extension': 'release',
-              'variables': {
-                'scan_server_dlls_py' : 'tools/build/win/scan_server_dlls.py',
-                'template_file': 'installer/mini_installer/chrome.release',
-              },
-              'inputs': [
-                '<(scan_server_dlls_py)',
-                '<(template_file)'
-              ],
-              'outputs': [
-                '<(INTERMEDIATE_DIR)/registered_dlls.h',
-              ],
-              'action': [
-                'python',
-                '<(scan_server_dlls_py)',
-                '--output_dir=<(PRODUCT_DIR)',
-                '--input_file=<(RULE_INPUT_PATH)',
-                '--header_output_dir=<(INTERMEDIATE_DIR)',
-                # TODO(sgk):  may just use environment variables
-                #'--distribution=$(CHROMIUM_BUILD)',
-                '--distribution=_google_chrome',
-              ],
-              'msvs_cygwin_shell': 1,
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
+        },
+      ],
+    }],
+    ['OS=="win" and target_arch=="ia32"', {
+      'targets': [
+        {
+          'target_name': 'launcher_support64',
+          'type': 'static_library',
+          'include_dirs': [
+            '..',
+          ],
+          'direct_dependent_settings': {
+            'include_dirs': [
+              '..',
+            ],
+          },
+          'defines': [
+              '<@(nacl_win64_defines)',
+          ],
+              'dependencies': [
+              '<(DEPTH)/base/base.gyp:base_win64',
+          ],
+          'configurations': {
+            'Common_Base': {
+              'msvs_target_platform': 'x64',
             },
+          },
+          'sources': [
+            'installer/launcher_support/chrome_launcher_support.cc',
+            'installer/launcher_support/chrome_launcher_support.h',
           ],
         },
       ],
@@ -494,40 +454,41 @@
         'version' : '<!(python <(version_py_path) -f ../chrome/VERSION -t "@MAJOR@.@MINOR@.@BUILD@.@PATCH@")',
         'revision' : '<!(python ../build/util/lastchange.py --revision-only)',
         'packaging_files_common': [
-          'installer/linux/internal/common/apt.include',
-          'installer/linux/internal/common/default-app.template',
-          'installer/linux/internal/common/default-app-block.template',
-          'installer/linux/internal/common/desktop.template',
-          'installer/linux/internal/common/google-chrome/google-chrome.info',
-          'installer/linux/internal/common/installer.include',
-          'installer/linux/internal/common/postinst.include',
-          'installer/linux/internal/common/prerm.include',
-          'installer/linux/internal/common/repo.cron',
-          'installer/linux/internal/common/rpm.include',
-          'installer/linux/internal/common/rpmrepo.cron',
-          'installer/linux/internal/common/updater',
-          'installer/linux/internal/common/variables.include',
-          'installer/linux/internal/common/wrapper',
+          'installer/linux/common/apt.include',
+          'installer/linux/common/default-app.template',
+          'installer/linux/common/default-app-block.template',
+          'installer/linux/common/desktop.template',
+          'installer/linux/common/google-chrome/google-chrome.info',
+          'installer/linux/common/installer.include',
+          'installer/linux/common/postinst.include',
+          'installer/linux/common/prerm.include',
+          'installer/linux/common/repo.cron',
+          'installer/linux/common/rpm.include',
+          'installer/linux/common/rpmrepo.cron',
+          'installer/linux/common/symlinks.include',
+          'installer/linux/common/variables.include',
+          'installer/linux/common/wrapper',
         ],
         'packaging_files_deb': [
-          'installer/linux/internal/debian/build.sh',
-          'installer/linux/internal/debian/changelog.template',
-          'installer/linux/internal/debian/control.template',
-          'installer/linux/internal/debian/debian.menu',
-          'installer/linux/internal/debian/expected_deps',
-          'installer/linux/internal/debian/postinst',
-          'installer/linux/internal/debian/postrm',
-          'installer/linux/internal/debian/prerm',
+          'installer/linux/debian/build.sh',
+          'installer/linux/debian/changelog.template',
+          'installer/linux/debian/control.template',
+          'installer/linux/debian/debian.menu',
+          'installer/linux/debian/expected_deps',
+          'installer/linux/debian/postinst',
+          'installer/linux/debian/postrm',
+          'installer/linux/debian/prerm',
         ],
         'packaging_files_rpm': [
-          'installer/linux/internal/rpm/build.sh',
-          'installer/linux/internal/rpm/chrome.spec.template',
+          'installer/linux/rpm/build.sh',
+          'installer/linux/rpm/chrome.spec.template',
+          'installer/linux/rpm/expected_deps_i386',
+          'installer/linux/rpm/expected_deps_x86_64',
         ],
         'packaging_files_binaries': [
           # TODO(mmoss) Any convenient way to get all the relevant build
           # files? (e.g. all locales, resources, etc.)
           '<(PRODUCT_DIR)/chrome',
-          '<(PRODUCT_DIR)/chrome.pak',
           '<(PRODUCT_DIR)/chrome_sandbox',
           '<(PRODUCT_DIR)/libffmpegsumo.so',
           '<(PRODUCT_DIR)/libppGoogleNaClPluginChrome.so',
@@ -553,6 +514,11 @@
             'rpm_arch': 'i386',
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/nacl_irt_x86_32.nexe',
+              '<(PRODUCT_DIR)/libwidevinecdmadapter.so',
+              '<(PRODUCT_DIR)/libwidevinecdm.so',
+            ],
+            'packaging_files_common': [
+              '<(DEPTH)/build/linux/bin/eu-strip',
             ],
           }],
           ['target_arch=="x64"', {
@@ -560,6 +526,11 @@
             'rpm_arch': 'x86_64',
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/nacl_irt_x86_64.nexe',
+              '<(PRODUCT_DIR)/libwidevinecdmadapter.so',
+              '<(PRODUCT_DIR)/libwidevinecdm.so',
+            ],
+            'packaging_files_common': [
+              '<!(which eu-strip)',
             ],
           }],
           ['target_arch=="arm"', {
@@ -569,6 +540,11 @@
           ['internal_pdf', {
             'packaging_files_binaries': [
               '<(PRODUCT_DIR)/libpdf.so',
+            ],
+          }],
+          ['libpeer_target_type!="static_library"', {
+            'packaging_files_binaries': [
+              '<(PRODUCT_DIR)/lib/libpeerconnection.so',
             ],
           }],
         ],
@@ -756,7 +732,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -784,7 +760,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -812,7 +788,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -840,7 +816,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -868,7 +844,7 @@
                 '<@(packaging_files_deb)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-r<(revision)_<(deb_arch).deb',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)_<(version)-1_<(deb_arch).deb',
               ],
               'action': [ '<@(deb_cmd)', '-c', '<(channel)', ],
             },
@@ -897,7 +873,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -926,7 +902,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -955,7 +931,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -984,7 +960,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -1013,7 +989,7 @@
                 '<@(packaging_files_rpm)',
               ],
               'outputs': [
-                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-<(revision).<(rpm_arch).rpm',
+                '<(PRODUCT_DIR)/google-chrome-<(channel)-<(version)-1.<(rpm_arch).rpm',
               ],
               'action': [ '<@(rpm_cmd)', '-c', '<(channel)', ],
             },
@@ -1070,40 +1046,6 @@
                 },
               ],  # actions
             }],  # buildtype=="Official"
-            ['branding=="Chrome" and buildtype=="Official"', {
-              'actions': [
-                {
-                  # copy_keychain_reauthorize.sh explains why this isn't in a
-                  # 'copies' block, but briefly: this is a prebuilt signed
-                  # binary component that relies on a correct signature to
-                  # function properly, and a normal 'copies' block sadly makes
-                  # a trivial modification to the file such that its signature
-                  # is no longer valid.
-                  'action_name': 'Copy keychain_reauthorize',
-                  'variables': {
-                    'keychain_reauthorize_path': 'tools/build/mac/copy_keychain_reauthorize.sh',
-                    'keychain_reauthorize_normal_path': 'installer/mac/internal/keychain_reauthorize/com.google.Chrome',
-                    'keychain_reauthorize_canary_path': 'installer/mac/internal/keychain_reauthorize/com.google.Chrome.canary',
-                    'keychain_reauthorize_output_dir': '<(mac_packaging_dir)/.keychain_reauthorize',
-                  },
-                  'inputs': [
-                    '<(keychain_reauthorize_path)',
-                    '<(keychain_reauthorize_normal_path)',
-                    '<(keychain_reauthorize_canary_path)',
-                  ],
-                  'outputs': [
-                    '<(keychain_reauthorize_output_dir)/com.google.Chrome',
-                    '<(keychain_reauthorize_output_dir)/com.google.Chrome.canary',
-                  ],
-                  'action': [
-                    '<(keychain_reauthorize_path)',
-                    '<(keychain_reauthorize_output_dir)',
-                    '<(keychain_reauthorize_normal_path)',
-                    '<(keychain_reauthorize_canary_path)',
-                  ],
-                },
-              ],  # actions
-            }],  # branding=="Chrome" and buildtype=="Official"
           ],  # conditions
           'copies': [
             {
@@ -1130,8 +1072,8 @@
                 }],  # mac_keystone
                 ['branding=="Chrome" and buildtype=="Official"', {
                   'files': [
-                    'app/theme/google_chrome/app_canary.icns',
-                    'app/theme/google_chrome/document_canary.icns',
+                    'app/theme/google_chrome/mac/app_canary.icns',
+                    'app/theme/google_chrome/mac/document_canary.icns',
                     'installer/mac/internal/chrome_canary_dmg_dsstore',
                     'installer/mac/internal/chrome_canary_dmg_icon.icns',
                     'installer/mac/internal/chrome_dmg_background.png',

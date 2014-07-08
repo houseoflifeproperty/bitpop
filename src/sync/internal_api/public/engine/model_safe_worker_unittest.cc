@@ -19,11 +19,11 @@ TEST_F(ModelSafeWorkerTest, ModelSafeRoutingInfoToValue) {
   routing_info[BOOKMARKS] = GROUP_PASSIVE;
   routing_info[NIGORI] = GROUP_UI;
   routing_info[PREFERENCES] = GROUP_DB;
-  DictionaryValue expected_value;
+  base::DictionaryValue expected_value;
   expected_value.SetString("Bookmarks", "GROUP_PASSIVE");
   expected_value.SetString("Encryption keys", "GROUP_UI");
   expected_value.SetString("Preferences", "GROUP_DB");
-  scoped_ptr<DictionaryValue> value(
+  scoped_ptr<base::DictionaryValue> value(
       ModelSafeRoutingInfoToValue(routing_info));
   EXPECT_TRUE(value->Equals(&expected_value));
 }
@@ -46,22 +46,6 @@ TEST_F(ModelSafeWorkerTest, GetRoutingInfoTypes) {
   routing_info[PREFERENCES] = GROUP_DB;
   const ModelTypeSet expected_types(BOOKMARKS, NIGORI, PREFERENCES);
   EXPECT_TRUE(GetRoutingInfoTypes(routing_info).Equals(expected_types));
-}
-
-TEST_F(ModelSafeWorkerTest, ModelSafeRoutingInfoToInvalidationMap) {
-  std::string payload = "test";
-  ModelSafeRoutingInfo routing_info;
-  routing_info[BOOKMARKS] = GROUP_PASSIVE;
-  routing_info[NIGORI] = GROUP_UI;
-  routing_info[PREFERENCES] = GROUP_DB;
-  ModelTypeInvalidationMap invalidation_map =
-      ModelSafeRoutingInfoToInvalidationMap(routing_info, payload);
-  ASSERT_EQ(routing_info.size(), invalidation_map.size());
-  for (ModelSafeRoutingInfo::iterator iter = routing_info.begin();
-       iter != routing_info.end();
-       ++iter) {
-    EXPECT_EQ(payload, invalidation_map[iter->first].payload);
-  }
 }
 
 }  // namespace

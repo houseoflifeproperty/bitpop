@@ -8,24 +8,28 @@
 #include <string>
 #include <vector>
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/gtest_prod_util.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/startup/startup_tab.h"
 #include "chrome/browser/ui/startup/startup_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class Browser;
-class CommandLine;
-class FilePath;
 class Profile;
 class StartupBrowserCreator;
+
+namespace base {
+class CommandLine;
+class FilePath;
+}
 
 namespace content {
 class WebContents;
 }
 
-namespace gfx {
-class Rect;
+namespace internals {
+GURL GetWelcomePageURL();
 }
 
 // Assists launching the application and appending the initial tabs for a
@@ -36,11 +40,11 @@ class StartupBrowserCreatorImpl {
   // and thus no access to distribution-specific first-run behaviors. The
   // second one is always called when the browser starts even if it is not
   // the first run.  |is_first_run| indicates that this is a new profile.
-  StartupBrowserCreatorImpl(const FilePath& cur_dir,
-                            const CommandLine& command_line,
+  StartupBrowserCreatorImpl(const base::FilePath& cur_dir,
+                            const base::CommandLine& command_line,
                             chrome::startup::IsFirstRun is_first_run);
-  StartupBrowserCreatorImpl(const FilePath& cur_dir,
-                            const CommandLine& command_line,
+  StartupBrowserCreatorImpl(const base::FilePath& cur_dir,
+                            const base::CommandLine& command_line,
                             StartupBrowserCreator* browser_creator,
                             chrome::startup::IsFirstRun is_first_run);
   ~StartupBrowserCreatorImpl();
@@ -51,13 +55,15 @@ class StartupBrowserCreatorImpl {
   // already running and the user wants to launch another instance.
   bool Launch(Profile* profile,
               const std::vector<GURL>& urls_to_open,
-              bool process_startup);
+              bool process_startup,
+              chrome::HostDesktopType desktop_type);
 
   // Convenience for OpenTabsInBrowser that converts |urls| into a set of
   // Tabs.
   Browser* OpenURLsInBrowser(Browser* browser,
                              bool process_startup,
-                             const std::vector<GURL>& urls);
+                             const std::vector<GURL>& urls,
+                             chrome::HostDesktopType desktop_type);
 
   // Creates a tab for each of the Tabs in |tabs|. If browser is non-null
   // and a tabbed browser, the tabs are added to it. Otherwise a new tabbed
@@ -66,19 +72,17 @@ class StartupBrowserCreatorImpl {
   // browser.
   Browser* OpenTabsInBrowser(Browser* browser,
                              bool process_startup,
-                             const StartupTabs& tabs);
+                             const StartupTabs& tabs,
+                             chrome::HostDesktopType desktop_type);
 
  private:
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, RestorePinnedTabs);
   FRIEND_TEST_ALL_PREFIXES(BrowserTest, AppIdSwitch);
 
-  // Extracts optional application window size passed in command line.
-  void ExtractOptionalAppWindowSize(gfx::Rect* bounds);
-
   // If the process was launched with the web application command line flags,
   // e.g. --app=http://www.google.com/ or --app_id=... return true.
   // In this case |app_url| or |app_id| are populated if they're non-null.
-  bool IsAppLaunch(Profile* profile, std::string* app_url, std::string* app_id);
+  bool IsAppLaunch(std::string* app_url, std::string* app_id);
 
   // If IsAppLaunch is true, tries to open an application window.
   // If the app is specified to start in a tab, or IsAppLaunch is false,
@@ -98,7 +102,8 @@ class StartupBrowserCreatorImpl {
   //   or invoke ProcessSpecifiedURLs.
   // . Open the urls directly.
   void ProcessLaunchURLs(bool process_startup,
-                         const std::vector<GURL>& urls_to_open);
+                         const std::vector<GURL>& urls_to_open,
+                         chrome::HostDesktopType desktop_type);
 
   // Does the following:
   // . If the user's startup pref is to restore the last session (or the
@@ -107,7 +112,8 @@ class StartupBrowserCreatorImpl {
   // . Otherwise invoke ProcessSpecifiedURLs
   // If a browser was created, true is returned.  Otherwise returns false and
   // the caller must create a new browser.
-  bool ProcessStartupURLs(const std::vector<GURL>& urls_to_open);
+  bool ProcessStartupURLs(const std::vector<GURL>& urls_to_open,
+                          chrome::HostDesktopType desktop_type);
 
   // Invoked from either ProcessLaunchURLs or ProcessStartupURLs to handle
   // processing of URLs where the behavior is common between process startup
@@ -120,7 +126,8 @@ class StartupBrowserCreatorImpl {
   //
   // If any tabs were opened, the Browser which was created is returned.
   // Otherwise null is returned and the caller must create a new browser.
-  Browser* ProcessSpecifiedURLs(const std::vector<GURL>& urls_to_open);
+  Browser* ProcessSpecifiedURLs(const std::vector<GURL>& urls_to_open,
+                                chrome::HostDesktopType desktop_type);
 
   // Adds a Tab to |tabs| for each url in |urls| that doesn't already exist
   // in |tabs|.
@@ -138,22 +145,12 @@ class StartupBrowserCreatorImpl {
   // that case.
   void CheckPreferencesBackup(Profile* profile);
 
-  // Function to open startup urls in an existing Browser instance for the
-  // profile passed in. Returns true on success.
-  static bool OpenStartupURLsInExistingBrowser(
-      Profile* profile,
-      const std::vector<GURL>& startup_urls);
-
-  const FilePath cur_dir_;
-  const CommandLine& command_line_;
+  const base::FilePath cur_dir_;
+  const base::CommandLine& command_line_;
   Profile* profile_;
   StartupBrowserCreator* browser_creator_;
   bool is_first_run_;
   DISALLOW_COPY_AND_ASSIGN(StartupBrowserCreatorImpl);
 };
-
-// Returns true if |profile| has exited uncleanly and has not been launched
-// after the unclean exit.
-bool HasPendingUncleanExit(Profile* profile);
 
 #endif  // CHROME_BROWSER_UI_STARTUP_STARTUP_BROWSER_CREATOR_IMPL_H_

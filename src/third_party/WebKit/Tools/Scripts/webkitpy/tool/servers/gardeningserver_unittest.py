@@ -28,7 +28,7 @@
 
 import json
 import sys
-import unittest
+import webkitpy.thirdparty.unittest2 as unittest
 
 from webkitpy.common.system.outputcapture import OutputCapture
 from webkitpy.layout_tests.models.test_configuration import *
@@ -48,19 +48,19 @@ class TestPortFactory(object):
         return host.port_factory.get("test-win-xp")
 
     @classmethod
-    def path_to_test_expectations_file(cls):
-        return cls.create().path_to_test_expectations_file()
+    def path_to_generic_test_expectations_file(cls):
+        return cls.create().path_to_generic_test_expectations_file()
 
 
 class MockServer(object):
     def __init__(self):
         self.tool = MockTool()
         self.tool.executive = MockExecutive(should_log=True)
-        self.tool.filesystem.files[TestPortFactory.path_to_test_expectations_file()] = ""
+        self.tool.filesystem.files[TestPortFactory.path_to_generic_test_expectations_file()] = ""
 
 
 # The real GardeningHTTPRequestHandler has a constructor that's too hard to
-# call in a unit test, so we create a subclass that's easier to constrcut.
+# call in a unit test, so we create a subclass that's easier to construct.
 class TestGardeningHTTPRequestHandler(GardeningHTTPRequestHandler):
     def __init__(self, server):
         self.server = server
@@ -82,6 +82,10 @@ class TestGardeningHTTPRequestHandler(GardeningHTTPRequestHandler):
         print json.dumps(json_object)
         print "== End JSON Response =="
 
+    def _serve_xml(self, xml):
+        print "== Begin XML Response =="
+        print xml
+        print "== End XML Response =="
 
 class GardeningServerTest(unittest.TestCase):
     def _post_to_path(self, path, body=None, expected_stderr=None, expected_stdout=None, server=None):
@@ -90,6 +94,26 @@ class GardeningServerTest(unittest.TestCase):
         handler.body = body
         OutputCapture().assert_outputs(self, handler.do_POST, expected_stderr=expected_stderr, expected_stdout=expected_stdout)
 
+    def test_svnlog(self):
+        expected_stderr = ''
+        expected_stdout = '== Begin XML Response ==\nMOCK output of child process\n== End XML Response ==\n'
+        self._post_to_path('/svnlog', expected_stderr=expected_stderr, expected_stdout=expected_stdout)
+
+    def test_lastroll(self):
+        expected_stderr = 'MOCK run_command: [\'svn\', \'cat\', \'http://src.chromium.org/chrome/trunk/src/DEPS\'], cwd=None, input=None\n'
+        expected_stdout = '== Begin Response ==\n1\n== End Response ==\n'
+        server = MockServer()
+
+        self.output = ['  "webkit_revision": "3",', 'lol']
+
+        def run_command(args, cwd=None, input=None, **kwargs):
+            print >> sys.stderr, "MOCK run_command: %s, cwd=%s, input=%s" % (args, cwd, input)
+            return self.output.pop(0)
+
+        server.tool.executive.run_command = run_command
+        self._post_to_path('/lastroll', expected_stderr=expected_stderr, expected_stdout='== Begin Response ==\n3\n== End Response ==\n', server=server)
+        self._post_to_path('/lastroll', expected_stderr=expected_stderr, expected_stdout='== Begin Response ==\n0\n== End Response ==\n', server=server)
+
     def disabled_test_rollout(self):
         expected_stderr = "MOCK run_command: ['echo', 'rollout', '--force-clean', '--non-interactive', '2314', 'MOCK rollout reason'], cwd=/mock-checkout\n"
         expected_stdout = "== Begin Response ==\nsuccess\n== End Response ==\n"
@@ -97,7 +121,7 @@ class GardeningServerTest(unittest.TestCase):
 
     def disabled_test_rebaselineall(self):
         expected_stderr = "MOCK run_command: ['echo', 'rebaseline-json'], cwd=/mock-checkout, input={\"user-scripts/another-test.html\":{\"%s\": [%s]}}\n"
-        expected_stdout = "== Begin Response ==\nsuccess\n== End Response ==\n"
+        expected_stdout = "== Begin Response ==\n{result_code: 0}\n== End Response ==\n"
         server = MockServer()
 
         self.output = ['{"add": [], "delete": []}', '']

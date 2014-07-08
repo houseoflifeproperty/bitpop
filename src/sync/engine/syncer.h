@@ -9,63 +9,87 @@
 #include <vector>
 
 #include "base/basictypes.h"
+#include "base/callback.h"
 #include "base/gtest_prod_util.h"
 #include "base/synchronization/lock.h"
+#include "sync/base/sync_export.h"
 #include "sync/engine/conflict_resolver.h"
 #include "sync/engine/syncer_types.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/sessions/sync_session.h"
-#include "sync/util/extensions_activity_monitor.h"
+#include "sync/util/extensions_activity.h"
 
 namespace syncer {
 
-namespace syncable {
-class Entry;
-class MutableEntry;
-}  // namespace syncable
+class CancelationSignal;
+class CommitProcessor;
+class GetUpdatesProcessor;
 
-enum SyncerStep {
-  SYNCER_BEGIN,
-  DOWNLOAD_UPDATES,
-  PROCESS_UPDATES,
-  STORE_TIMESTAMPS,
-  APPLY_UPDATES,
-  COMMIT,
-  SYNCER_END
-};
-
-// A Syncer provides a control interface for driving the individual steps
-// of the sync cycle.  Each cycle (hopefully) moves the client into closer
-// synchronization with the server.  The individual steps are modeled
-// as SyncerCommands, and the ordering of the steps is expressed using
-// the SyncerStep enum.
+// A Syncer provides a control interface for driving the sync cycle.  These
+// cycles consist of downloading updates, parsing the response (aka. process
+// updates), applying updates while resolving conflicts, and committing local
+// changes.  Some of these steps may be skipped if they're deemed to be
+// unnecessary.
 //
-// A Syncer instance expects to run on a dedicated thread.  Calls
-// to SyncShare() may take an unbounded amount of time, as SyncerCommands
-// may block on network i/o, on lock contention, or on tasks posted to
-// other threads.
-class Syncer {
+// A Syncer instance expects to run on a dedicated thread.  Calls to SyncShare()
+// may take an unbounded amount of time because it may block on network I/O, on
+// lock contention, or on tasks posted to other threads.
+class SYNC_EXPORT_PRIVATE Syncer {
  public:
   typedef std::vector<int64> UnsyncedMetaHandles;
 
-  Syncer();
+  Syncer(CancelationSignal* cancelation_signal);
   virtual ~Syncer();
 
-  // Called by other threads to tell the syncer to stop what it's doing
-  // and return early from SyncShare, if possible.
   bool ExitRequested();
-  void RequestEarlyExit();
 
-  // Runs a sync cycle from |first_step| to |last_step|.
-  // Returns true if the cycle completed with |last_step|, and false
-  // if it terminated early due to error / exit requested.
-  virtual bool SyncShare(sessions::SyncSession* session,
-                         SyncerStep first_step,
-                         SyncerStep last_step);
+  // Fetches and applies updates, resolves conflicts and commits local changes
+  // for |request_types| as necessary until client and server states are in
+  // sync.  The |nudge_tracker| contains state that describes why the client is
+  // out of sync and what must be done to bring it back into sync.
+  virtual bool NormalSyncShare(ModelTypeSet request_types,
+                               const sessions::NudgeTracker& nudge_tracker,
+                               sessions::SyncSession* session);
+
+  // Performs an initial download for the |request_types|.  It is assumed that
+  // the specified types have no local state, and that their associated change
+  // processors are in "passive" mode, so none of the downloaded updates will be
+  // applied to the model.  The |source| is sent up to the server for debug
+  // purposes.  It describes the reson for performing this initial download.
+  virtual bool ConfigureSyncShare(
+      ModelTypeSet request_types,
+      sync_pb::GetUpdatesCallerInfo::GetUpdatesSource source,
+      sessions::SyncSession* session);
+
+  // Requests to download updates for the |request_types|.  For a well-behaved
+  // client with a working connection to the invalidations server, this should
+  // be unnecessary.  It may be invoked periodically to try to keep the client
+  // in sync despite bugs or transient failures.
+  virtual bool PollSyncShare(ModelTypeSet request_types,
+                             sessions::SyncSession* session);
 
  private:
-  bool early_exit_requested_;
-  base::Lock early_exit_requested_lock_;
+  bool DownloadAndApplyUpdates(
+      ModelTypeSet request_types,
+      sessions::SyncSession* session,
+      GetUpdatesProcessor* get_updates_processor,
+      bool create_mobile_bookmarks_folder);
+
+  // This function will commit batches of unsynced items to the server until the
+  // number of unsynced and ready to commit items reaches zero or an error is
+  // encountered.  A request to exit early will be treated as an error and will
+  // abort any blocking operations.
+  SyncerError BuildAndPostCommits(
+      ModelTypeSet request_types,
+      sessions::SyncSession* session,
+      CommitProcessor* commit_processor);
+
+  void HandleCycleBegin(sessions::SyncSession* session);
+  bool HandleCycleEnd(
+      sessions::SyncSession* session,
+      sync_pb::GetUpdatesCallerInfo::GetUpdatesSource source);
+
+  syncer::CancelationSignal* const cancelation_signal_;
 
   friend class SyncerTest;
   FRIEND_TEST_ALL_PREFIXES(SyncerTest, NameClashWithResolver);
@@ -91,11 +115,6 @@ class Syncer {
 
   DISALLOW_COPY_AND_ASSIGN(Syncer);
 };
-
-// Utility function declarations.
-void CopyServerFields(syncable::Entry* src, syncable::MutableEntry* dest);
-void ClearServerData(syncable::MutableEntry* entry);
-const char* SyncerStepToString(const SyncerStep);
 
 }  // namespace syncer
 

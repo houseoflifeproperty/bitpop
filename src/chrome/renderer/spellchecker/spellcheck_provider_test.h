@@ -7,31 +7,31 @@
 
 #include <vector>
 
-#include "base/string16.h"
+#include "base/memory/scoped_vector.h"
+#include "base/strings/string16.h"
 #include "chrome/renderer/spellchecker/spellcheck_provider.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingCompletion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebTextCheckingResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebTextCheckingCompletion.h"
+#include "third_party/WebKit/public/web/WebTextCheckingResult.h"
 
 namespace IPC {
   class Message;
 }
 
 // A fake completion object for verification.
-class FakeTextCheckingCompletion : public WebKit::WebTextCheckingCompletion {
+class FakeTextCheckingCompletion : public blink::WebTextCheckingCompletion {
  public:
   FakeTextCheckingCompletion();
   ~FakeTextCheckingCompletion();
 
   virtual void didFinishCheckingText(
-      const WebKit::WebVector<WebKit::WebTextCheckingResult>& results) OVERRIDE;
+      const blink::WebVector<blink::WebTextCheckingResult>& results) OVERRIDE;
   virtual void didCancelCheckingText() OVERRIDE;
 
 
   size_t completion_count_;
   size_t cancellation_count_;
-  WebKit::WebVector<WebKit::WebTextCheckingResult> last_results_;
 };
 
 // Faked test target, which stores sent message for verification.
@@ -43,13 +43,13 @@ class TestingSpellCheckProvider : public SpellCheckProvider {
   virtual bool Send(IPC::Message* message) OVERRIDE;
   void OnCallSpellingService(int route_id,
                              int identifier,
-                             int offset,
-                             const string16& text);
+                             const base::string16& text,
+                             const std::vector<SpellCheckMarker>& markers);
   void ResetResult();
 
-  int offset_;
-  string16 text_;
-  std::vector<IPC::Message*> messages_;
+  base::string16 text_;
+  ScopedVector<IPC::Message> messages_;
+  size_t spelling_service_call_count_;
 };
 
 // SpellCheckProvider test fixture.

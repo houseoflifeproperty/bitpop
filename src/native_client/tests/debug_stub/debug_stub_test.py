@@ -2,6 +2,7 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
+import os
 import re
 import struct
 import subprocess
@@ -12,8 +13,18 @@ import xml.etree.ElementTree
 import gdb_rsp
 
 
+if sys.platform == 'win32':
+  RETURNCODE_KILL = -9
+else:
+  RETURNCODE_KILL = -9 & 0xff
+
+
+NACL_SIGILL = 4
 NACL_SIGTRAP = 5
 NACL_SIGSEGV = 11
+
+# GDB specific errno constants.
+GDB_EBADF = 9
 
 
 # These are set up by Main().
@@ -35,6 +46,33 @@ def DecodeHex(data):
 
 def EncodeHex(data):
   return ''.join('%02x' % ord(byte) for byte in data)
+
+
+def DecodeEscaping(data):
+  ret = ''
+  last = None
+  repeat = False
+  escape = False
+  for byte in data:
+    if escape:
+      ret += chr(ord(byte) ^ 0x20)
+      escape = False
+      last = byte
+    elif repeat:
+      count = ord(byte) - 29
+      assert count >= 3 and count <= 97
+      assert byte != '$' and byte != '#'
+      ret += last * count
+      repeat = False
+    elif byte == '}':
+      escape = True
+    elif byte == '*':
+      assert last is not None
+      repeat = True
+    else:
+      ret += byte
+      last = byte
+  return ret
 
 
 X86_32_REG_DEFS = [
@@ -89,10 +127,48 @@ ARM_REG_DEFS = ([('r%d' % regno, 'I') for regno in xrange(16)]
                 + [('cpsr', 'I')])
 
 
+MIPS_REG_DEFS = [
+     ('zero', 'I'),
+     ('at', 'I'),
+     ('v0', 'I'),
+     ('v1', 'I'),
+     ('a0', 'I'),
+     ('a1', 'I'),
+     ('a2', 'I'),
+     ('a3', 'I'),
+     ('t0', 'I'),
+     ('t1', 'I'),
+     ('t2', 'I'),
+     ('t3', 'I'),
+     ('t4', 'I'),
+     ('t5', 'I'),
+     ('t6', 'I'),
+     ('t7', 'I'),
+     ('s0', 'I'),
+     ('s1', 'I'),
+     ('s2', 'I'),
+     ('s3', 'I'),
+     ('s4', 'I'),
+     ('s5', 'I'),
+     ('s6', 'I'),
+     ('s7', 'I'),
+     ('t8', 'I'),
+     ('t9', 'I'),
+     ('k0', 'I'),
+     ('k1', 'I'),
+     ('global_ptr', 'I'),
+     ('stack_ptr', 'I'),
+     ('frame_ptr', 'I'),
+     ('return_addr', 'I'),
+     ('prog_ctr', 'I'),
+]
+
+
 REG_DEFS = {
     'x86-32': X86_32_REG_DEFS,
     'x86-64': X86_64_REG_DEFS,
     'arm': ARM_REG_DEFS,
+    'mips32': MIPS_REG_DEFS,
     }
 
 
@@ -100,6 +176,7 @@ SP_REG = {
     'x86-32': 'esp',
     'x86-64': 'rsp',
     'arm': 'r13',
+    'mips32': 'stack_ptr',
     }
 
 
@@ -107,6 +184,7 @@ IP_REG = {
     'x86-32': 'eip',
     'x86-64': 'rip',
     'arm': 'r15',
+    'mips32': 'prog_ctr',
     }
 
 
@@ -128,6 +206,27 @@ ARM_USER_CPSR_FLAGS_MASK = (
     (1<<28) | # V
     (1<<27) | # Q
     (1<<19) | (1<<18) | (1<<17) | (1<<16)) # GE bits
+
+
+def UsingQemu():
+  return os.path.basename(SEL_LDR_COMMAND[0]).startswith('run_under_qemu_')
+
+
+def MainNexe():
+  # Assume that the last parameter ending in .nexe is the main nexe.
+  for arg in reversed(SEL_LDR_COMMAND):
+    if arg.endswith('.nexe'):
+      return arg
+  assert False
+
+
+def IrtNexe():
+  # Assume that the irt starts with 'irt' and ends with '.nexe'.
+  for arg in reversed(SEL_LDR_COMMAND):
+    basename = os.path.basename(arg)
+    if basename.startswith('irt_') and basename.endswith('.nexe'):
+      return arg
+  return None
 
 
 def DecodeRegs(reply):
@@ -154,6 +253,9 @@ def PopenDebugStub(test):
 
 
 def KillProcess(process):
+  if process.returncode is not None:
+    # kill() won't work if we've already wait()'ed on the process.
+    return
   try:
     process.kill()
   except OSError:
@@ -219,6 +321,13 @@ def ReadMemory(connection, address, size):
 
 def ReadUint32(connection, address):
   return struct.unpack('I', ReadMemory(connection, address, 4))[0]
+
+
+def SingleSteppingWorks():
+  # Single-stepping is not yet supported on ARM and MIPS.
+  # TODO(eaeltsin):
+  #   http://code.google.com/p/nativeclient/issues/detail?id=2911
+  return ARCH in ('x86-32', 'x86-64')
 
 
 class DebugStubTest(unittest.TestCase):
@@ -288,6 +397,38 @@ class DebugStubTest(unittest.TestCase):
       self.assertEquals(registers['r14'], 0xe000000f)
       self.assertEquals(registers['cpsr'] & ARM_USER_CPSR_FLAGS_MASK,
                         (1 << 29) | (1 << 27))
+    elif ARCH == 'mips32':
+      # We skip zero register because it cannot be set.
+      self.assertEquals(registers['at'], 0x11000220)
+      self.assertEquals(registers['v0'], 0x22000330)
+      self.assertEquals(registers['v1'], 0x33000440)
+      self.assertEquals(registers['a0'], 0x44000550)
+      self.assertEquals(registers['a1'], 0x55000660)
+      self.assertEquals(registers['a2'], 0x66000770)
+      self.assertEquals(registers['a3'], 0x77000880)
+      self.assertEquals(registers['t0'], 0x88000990)
+      self.assertEquals(registers['t1'], 0x99000aa0)
+      self.assertEquals(registers['t2'], 0xaa000bb0)
+      self.assertEquals(registers['t3'], 0xbb000cc0)
+      self.assertEquals(registers['t4'], 0xcc000dd0)
+      self.assertEquals(registers['t5'], 0xdd000ee0)
+      self.assertEquals(registers['t6'], 0x0ffffff0)
+      self.assertEquals(registers['t7'], 0x3fffffff)
+      # Skip t8 because it cannot be set by untrusted code.
+      self.assertEquals(registers['s0'], 0x11100222)
+      self.assertEquals(registers['s1'], 0x22200333)
+      self.assertEquals(registers['s2'], 0x33300444)
+      self.assertEquals(registers['s3'], 0x44400555)
+      self.assertEquals(registers['s4'], 0x55500666)
+      self.assertEquals(registers['s5'], 0x66600777)
+      self.assertEquals(registers['s6'], 0x77700888)
+      self.assertEquals(registers['s7'], 0x88800999)
+      self.assertEquals(registers['t9'], 0xaaa00bbb)
+      # Skip k0 and k1 registers, since they can be changed by kernel.
+      self.assertEquals(registers['global_ptr'],  0xddd00eee)
+      self.assertEquals(registers['stack_ptr'],   0x2ee00fff)
+      self.assertEquals(registers['frame_ptr'],   0xfff00000)
+      self.assertEquals(registers['return_addr'], 0x0a0a0a0a)
     else:
       raise AssertionError('Unknown architecture')
 
@@ -304,6 +445,8 @@ class DebugStubTest(unittest.TestCase):
       reg_name = 'rdx'
     elif ARCH == 'arm':
       reg_name = 'r0'
+    elif ARCH == 'mips32':
+      reg_name = 'a0'
     else:
       raise AssertionError('Unknown architecture')
 
@@ -332,6 +475,8 @@ class DebugStubTest(unittest.TestCase):
       sample_read_only_regs = ['r15', 'cs', 'ds']
     elif ARCH == 'arm':
       sample_read_only_regs = []
+    elif ARCH == 'mips32':
+      sample_read_only_regs = ['zero']
     else:
       raise AssertionError('Unknown architecture')
 
@@ -356,6 +501,11 @@ class DebugStubTest(unittest.TestCase):
     result = connection.RspRequest('m%x,%x' % (mem_addr, 8))
     self.assertEquals(result, 'E03')
 
+    # Check non-zero address in the first page.
+    mem_addr = 0xffff
+    resut = connection.RspRequest('m%x,%x' % (mem_addr, 1))
+    self.assertEquals(result, 'E03')
+
   # Run tests on debugger_test.c binary.
   def test_debugger_test(self):
     with LaunchDebugStub('test_getting_registers') as connection:
@@ -363,6 +513,8 @@ class DebugStubTest(unittest.TestCase):
       # breakpoint set at its start address.
       reply = connection.RspRequest('c')
       if ARCH == 'arm':
+        AssertReplySignal(reply, NACL_SIGILL)
+      elif ARCH == 'mips32':
         # The process should have stopped on a BKPT instruction.
         AssertReplySignal(reply, NACL_SIGTRAP)
       else:
@@ -375,6 +527,9 @@ class DebugStubTest(unittest.TestCase):
       self.CheckReadOnlyRegisters(connection)
 
   def test_jump_to_address_zero(self):
+    if UsingQemu():
+      # This test hangs under qemu-arm or qemu-mips.
+      return
     with LaunchDebugStub('test_jump_to_address_zero') as connection:
       # Continue from initial breakpoint.
       reply = connection.RspRequest('c')
@@ -446,10 +601,7 @@ class DebugStubTest(unittest.TestCase):
       self.assertEqual(regs['eflags'] & X86_TRAP_FLAG, 0)
 
   def test_single_step(self):
-    if ARCH == 'arm':
-      # Skip this test because single-stepping is not supported on ARM.
-      # TODO(eaeltsin):
-      #   http://code.google.com/p/nativeclient/issues/detail?id=2911
+    if not SingleSteppingWorks():
       return
     with LaunchDebugStub('test_single_step') as connection:
       # We expect test_single_step() to stop at a HLT instruction.
@@ -468,10 +620,7 @@ class DebugStubTest(unittest.TestCase):
 
   def test_vCont(self):
     # Basically repeat test_single_step, but using vCont commands.
-    if ARCH == 'arm':
-      # Skip this test because single-stepping is not supported on ARM.
-      # TODO(eaeltsin):
-      #   http://code.google.com/p/nativeclient/issues/detail?id=2911
+    if not SingleSteppingWorks():
       return
     with LaunchDebugStub('test_single_step') as connection:
       # Test if vCont is supported.
@@ -510,12 +659,19 @@ class DebugStubTest(unittest.TestCase):
       self.assertTrue(reply.startswith('E'))
 
   def test_interrupt(self):
-    if ARCH == 'arm':
-      # Skip this test because single-stepping is not supported on ARM.
-      # TODO(eaeltsin):
-      #   http://code.google.com/p/nativeclient/issues/detail?id=2911
+    if not SingleSteppingWorks():
       return
+    func_addr = GetSymbols()['test_interrupt']
     with LaunchDebugStub('test_interrupt') as connection:
+      # Single stepping inside syscalls doesn't work. So we need to reach
+      # a point where interrupt will not catch the program inside syscall.
+      reply = connection.RspRequest('Z0,%x,0' % func_addr)
+      self.assertEquals(reply, 'OK')
+      reply = connection.RspRequest('c')
+      AssertReplySignal(reply, NACL_SIGTRAP)
+      reply = connection.RspRequest('z0,%x,0' % func_addr)
+      self.assertEquals(reply, 'OK')
+
       # Continue (program will spin forever), then interrupt.
       connection.RspSendOnly('c')
       reply = connection.RspInterrupt()
@@ -534,6 +690,108 @@ class DebugStubTest(unittest.TestCase):
       write_command = 'M%x,%x:%s' % (func_addr, len(data), EncodeHex(data))
       reply = connection.RspRequest(write_command)
       self.assertEquals(reply, 'E03')
+
+  def test_kill(self):
+    sel_ldr = PopenDebugStub('test_exit_code')
+    try:
+      connection = gdb_rsp.GdbRspConnection()
+      # Request killing the target.
+      reply = connection.RspRequest('k')
+      self.assertEquals(reply, 'OK')
+      self.assertEquals(sel_ldr.wait(), RETURNCODE_KILL)
+    finally:
+      KillProcess(sel_ldr)
+
+  def test_detach(self):
+    sel_ldr = PopenDebugStub('test_exit_code')
+    try:
+      connection = gdb_rsp.GdbRspConnection()
+      # Request detaching from the target.
+      # This resumes execution, so we get the nexe's normal exit() status.
+      reply = connection.RspRequest('D')
+      self.assertEquals(reply, 'OK')
+      self.assertEquals(sel_ldr.wait(), 2)
+    finally:
+      KillProcess(sel_ldr)
+
+  def test_disconnect(self):
+    sel_ldr = PopenDebugStub('test_exit_code')
+    try:
+      # Connect and record the instruction pointer.
+      connection = gdb_rsp.GdbRspConnection()
+      # Check something basic responds with sane results.
+      reply = connection.RspRequest('vCont?')
+      self.assertEqual(reply, 'vCont;s;S;c;C')
+      # Store the instruction pointer.
+      registers = DecodeRegs(connection.RspRequest('g'))
+      initial_ip = registers[IP_REG[ARCH]]
+      connection.Close()
+      # Reconnect 5 times.
+      for _ in range(5):
+        connection = gdb_rsp.GdbRspConnection()
+        # Confirm the instruction pointer stays where it was, indicating that
+        # the thread stayed suspended.
+        registers = DecodeRegs(connection.RspRequest('g'))
+        self.assertEquals(registers[IP_REG[ARCH]], initial_ip)
+        connection.Close()
+    finally:
+      KillProcess(sel_ldr)
+
+  def RemoteGet(self, connection, download_filename, expected_filename):
+    """Use the vFile interface to remote get a file, checking the result.
+
+    Args:
+      connection: Rsp connection to debug stub to use.
+      download_filename: Remote filename to download.
+      expected_filename: Local filename to check downloaded result against.
+    """
+    # Open the nexe.
+    reply = connection.RspRequest(
+        'vFile:open:%s,0,0' % EncodeHex(download_filename))
+    self.assertEqual(reply[0], 'F')
+    fd = int(reply[1:], 16)
+    self.assertGreaterEqual(fd, 0)
+    # Read in the full contents of the file.
+    data = ''
+    offset = 0
+    while True:
+      # Read up to 4096 bytes at a time.
+      reply = connection.RspRequest(
+        'vFile:pread:%x,%x,%x' % (fd, 4096, offset))
+      self.assertEqual(reply[0], 'F')
+      retcode, chunk = reply[1:].split(';', 1)
+      retcode = int(retcode, 16)
+      self.assertGreaterEqual(retcode, 0)
+      chunk = DecodeEscaping(chunk)
+      self.assertEqual(len(chunk), retcode)
+      if retcode == 0:
+        break
+      data += chunk
+      offset += retcode
+    expected_data = open(expected_filename, 'rb').read()
+    # Check that the length matches first, so that large data mismatch spew
+    # is only emitted in the case of more subtle mismatches.
+    self.assertEqual(len(data), len(expected_data))
+    self.assertEqual(data, expected_data)
+    # Close the file handle.
+    reply = connection.RspRequest('vFile:close:%x' % fd)
+    self.assertEqual(reply, 'F0')
+
+  def test_remote_get_main_nexe(self):
+    with LaunchDebugStub('test_interrupt') as connection:
+      self.RemoteGet(connection, 'nexe', MainNexe())
+
+  def test_remote_get_irt(self):
+    if IrtNexe() is None:
+      self.skipTest('Does not work in non-irt mode.')
+    with LaunchDebugStub('test_interrupt') as connection:
+      self.RemoteGet(connection, 'irt', IrtNexe())
+
+  def test_remote_get_bad_fd(self):
+    with LaunchDebugStub('test_interrupt') as connection:
+      # Test closing a not-yet-opened nexe.
+      reply = connection.RspRequest('vFile:close:%x' % 13)
+      self.assertEqual(reply, 'F-1,%x' % GDB_EBADF)
 
 
 class DebugStubBreakpointTest(unittest.TestCase):
@@ -628,10 +886,15 @@ class DebugStubThreadSuspensionTest(unittest.TestCase):
       # Skip past the single-byte HLT instruction.
       regs[IP_REG[ARCH]] += 1
     elif ARCH == 'arm':
-      AssertReplySignal(stop_reply, NACL_SIGTRAP)
+      AssertReplySignal(stop_reply, NACL_SIGILL)
       bundle_size = 16
       assert regs['r15'] % bundle_size == 0, regs['r15']
       regs['r15'] += bundle_size
+    elif ARCH == 'mips32':
+      AssertReplySignal(stop_reply, NACL_SIGTRAP)
+      bundle_size = 16
+      assert regs['prog_ctr'] % bundle_size == 0, regs['prog_ctr']
+      regs['prog_ctr'] += bundle_size
     else:
       raise AssertionError('Unknown architecture')
     AssertEquals(connection.RspRequest('G' + EncodeRegs(regs)), 'OK')
@@ -650,6 +913,10 @@ class DebugStubThreadSuspensionTest(unittest.TestCase):
     return child_thread_id
 
   def test_continuing_thread_with_others_suspended(self):
+    if UsingQemu():
+      # Suspending a running thread doesn't work under qemu-arm or qemu-mips,
+      # so disable this test there.
+      return
     with LaunchDebugStub('test_suspending_threads') as connection:
       symbols = GetSymbols()
       child_thread_id = self.WaitForTestThreadsToStart(connection, symbols)
@@ -675,6 +942,10 @@ class DebugStubThreadSuspensionTest(unittest.TestCase):
             child_thread_val)
 
   def test_single_stepping_thread_with_others_suspended(self):
+    if UsingQemu():
+      # Suspending a running thread doesn't work under qemu-arm or qemu-mips,
+      # so disable this test there.
+      return
     with LaunchDebugStub('test_suspending_threads') as connection:
       symbols = GetSymbols()
       child_thread_id = self.WaitForTestThreadsToStart(connection, symbols)

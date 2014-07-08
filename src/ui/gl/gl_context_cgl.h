@@ -7,7 +7,6 @@
 
 #include <OpenGL/CGLTypes.h>
 
-#include "base/memory/scoped_generic_obj.h"
 #include "ui/gl/gl_context.h"
 
 namespace gfx {
@@ -15,7 +14,7 @@ namespace gfx {
 class GLSurface;
 
 // Encapsulates a CGL OpenGL context.
-class GLContextCGL : public GLContext {
+class GLContextCGL : public GLContextReal {
  public:
   explicit GLContextCGL(GLShareGroup* share_group);
 
@@ -29,6 +28,7 @@ class GLContextCGL : public GLContext {
   virtual void* GetHandle() OVERRIDE;
   virtual void SetSwapInterval(int interval) OVERRIDE;
   virtual bool GetTotalGpuMemory(size_t* bytes) OVERRIDE;
+  virtual void SetSafeToForceGpuSwitch() OVERRIDE;
 
  protected:
   virtual ~GLContextCGL();
@@ -41,16 +41,12 @@ class GLContextCGL : public GLContext {
 
   CGLPixelFormatObj discrete_pixelformat_;
 
+  int screen_;
+  int renderer_id_;
+  bool safe_to_force_gpu_switch_;
+
   DISALLOW_COPY_AND_ASSIGN(GLContextCGL);
 };
-
-class ScopedCGLDestroyRendererInfo {
- public:
-  void operator()(CGLRendererInfoObj x) const;
-};
-
-typedef ScopedGenericObj<CGLRendererInfoObj, ScopedCGLDestroyRendererInfo>
-    ScopedCGLRendererInfoObj;
 
 }  // namespace gfx
 

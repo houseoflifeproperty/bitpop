@@ -9,81 +9,87 @@
 #include "native_client/src/include/nacl_platform.h"
 #include "native_client/src/shared/platform/nacl_check.h"
 #include "native_client/src/trusted/service_runtime/nacl_globals.h"
-#include "native_client/src/trusted/service_runtime/nacl_syscall_asm_symbols.h"
 #include "native_client/src/trusted/service_runtime/sel_ldr.h"
 #include "native_client/src/trusted/service_runtime/sel_memory.h"
 #include "native_client/src/trusted/service_runtime/springboard.h"
 #include "native_client/src/trusted/service_runtime/arch/x86/sel_ldr_x86.h"
+#include "native_client/src/trusted/service_runtime/arch/x86_32/sel_rt_32.h"
 #include "native_client/src/trusted/service_runtime/arch/x86_32/tramp_32.h"
-
-struct NaClPcrelThunkGlobals {
-  struct NaClThreadContext **user;
-};
-
-static struct NaClPcrelThunkGlobals nacl_pcrel_globals;
+#include "native_client/src/trusted/cpu_features/arch/x86/cpu_x86.h"
 
 /*
  * Create thunk for use by syscall trampoline code.
  */
-int NaClMakePcrelThunk(struct NaClApp *nap) {
+int NaClMakePcrelThunk(struct NaClApp *nap, enum NaClAslrMode aslr_mode) {
   int                   retval = 0;  /* fail */
   int                   error;
   void                  *thunk_addr = NULL;
   struct NaClPatchInfo  patch_info;
-  uintptr_t             patch_rel32[1];  /* NaClSyscallSeg */
-  struct NaClPatch      patch_abs32[2];  /* ds, nacl_user */
+  struct NaClPatch      patch_abs32[3];  /* ds, nacl_user, NaClSyscallSeg */
+  /* TODO(mcgrathr): Use a safe cast here. */
+  NaClCPUFeaturesX86    *features = (NaClCPUFeaturesX86 *) nap->cpu_features;
+  uintptr_t             naclsyscallseg;
+  size_t                thunk_size = ((uintptr_t) &NaClPcrelThunk_end
+                                      - (uintptr_t) &NaClPcrelThunk);
+  int (*allocator)(void **, size_t) = ((NACL_ENABLE_ASLR == aslr_mode) ?
+                                       NaClPageAllocRandomized :
+                                       NaClPageAlloc);
 
-  /* idempotent */
-  nacl_pcrel_globals.user = nacl_user;
-
-  if (0 != (error = NaCl_page_alloc_randomized(&thunk_addr,
-                                               NACL_MAP_PAGESIZE))) {
+  /*
+   * Using the randomized allocator can cause sufficient fragmentation to
+   * prevent two 512MB sandboxes from being allocated even when 1GB of address
+   * space is available. Use a stable allocator in the non-ALSR case for
+   * testing.
+   */
+  if (0 != (error = allocator(&thunk_addr, NACL_MAP_PAGESIZE))) {
     NaClLog(LOG_INFO,
-            "NaClMakePcrelThunk::NaCl_page_alloc failed, errno %d\n",
-            -error);
+            "NaClMakePcrelThunk::NaClPageAlloc[Randomized] failed, "
+            "errno %d, randomized %d\n",
+            -error, NACL_ENABLE_ASLR == aslr_mode);
     retval = 0;
     goto cleanup;
   }
   NaClLog(2, "NaClMakePcrelThunk: got addr 0x%"NACL_PRIxPTR"\n",
           (uintptr_t) thunk_addr);
 
-  if (0 != (error = NaCl_mprotect(thunk_addr,
-                                  NACL_MAP_PAGESIZE,
-                                  PROT_READ | PROT_WRITE))) {
+  if (0 != (error = NaClMprotect(thunk_addr,
+                                 NACL_MAP_PAGESIZE,
+                                 PROT_READ | PROT_WRITE))) {
     NaClLog(LOG_INFO,
-            "NaClMakePcrelThunk::NaCl_mprotect failed, errno %d\n",
+            "NaClMakePcrelThunk::NaClMprotect failed, errno %d\n",
             -error);
     retval = 0;
     goto cleanup;
   }
 
-  patch_rel32[0] = ((uintptr_t) &NaClPcrelThunk_end) - 4;
+  if (NaClGetCPUFeatureX86(features, NaClCPUFeatureX86_SSE))
+    naclsyscallseg = (uintptr_t) &NaClSyscallSegSSE;
+  else
+    naclsyscallseg = (uintptr_t) &NaClSyscallSegNoSSE;
 
   patch_abs32[0].target = ((uintptr_t) &NaClPcrelThunk_dseg_patch) - 4;
   patch_abs32[0].value = NaClGetGlobalDs();
   patch_abs32[1].target = ((uintptr_t) &NaClPcrelThunk_globals_patch) - 4;
-  patch_abs32[1].value = (uintptr_t) &nacl_pcrel_globals;
+  patch_abs32[1].value = (uintptr_t) &nacl_user;
+  patch_abs32[2].target = ((uintptr_t) &NaClPcrelThunk_end) - 4;
+  patch_abs32[2].value = naclsyscallseg - ((uintptr_t) thunk_addr + thunk_size);
 
   NaClPatchInfoCtor(&patch_info);
-
-  patch_info.rel32 = patch_rel32;
-  patch_info.num_rel32 = NACL_ARRAY_SIZE(patch_rel32);
 
   patch_info.abs32 = patch_abs32;
   patch_info.num_abs32 = NACL_ARRAY_SIZE(patch_abs32);
 
   patch_info.dst = (uintptr_t) thunk_addr;
   patch_info.src = (uintptr_t) &NaClPcrelThunk;
-  patch_info.nbytes = ((uintptr_t) &NaClPcrelThunk_end
-                       - (uintptr_t) &NaClPcrelThunk);
+  patch_info.nbytes = thunk_size;
 
   NaClApplyPatchToMemory(&patch_info);
 
-  if (0 != (error = NaCl_mprotect(thunk_addr,
-                                  NACL_MAP_PAGESIZE,
-                                  PROT_EXEC|PROT_READ))) {
+  if (0 != (error = NaClMprotect(thunk_addr,
+                                 NACL_MAP_PAGESIZE,
+                                 PROT_EXEC|PROT_READ))) {
     NaClLog(LOG_INFO,
-            "NaClMakePcrelThunk::NaCl_mprotect failed, errno %d\n",
+            "NaClMakePcrelThunk::NaClMprotect failed, errno %d\n",
             -error);
     retval = 0;
     goto cleanup;
@@ -92,11 +98,12 @@ int NaClMakePcrelThunk(struct NaClApp *nap) {
 cleanup:
   if (0 == retval) {
     if (NULL != thunk_addr) {
-      NaCl_page_free(thunk_addr, NACL_MAP_PAGESIZE);
+      NaClPageFree(thunk_addr, NACL_MAP_PAGESIZE);
       thunk_addr = NULL;
     }
   } else {
     nap->pcrel_thunk = (uintptr_t) thunk_addr;
+    nap->pcrel_thunk_end = (uintptr_t) thunk_addr + thunk_size;
   }
   return retval;
 }
@@ -147,9 +154,10 @@ void NaClFillTrampolineRegion(struct NaClApp *nap) {
  * Patch springboard.S code into untrusted address space in place of
  * one of the last syscalls in the trampoline region.
  */
-static uintptr_t LoadSpringboard(struct NaClApp *nap,
-                                 char *template_start, char *template_end,
-                                 int bundle_number) {
+static void LoadSpringboard(struct NaClApp *nap,
+                            struct NaClSpringboardInfo *info,
+                            char *template_start, char *template_end,
+                            int bundle_number) {
   struct NaClPatchInfo patch_info;
   uintptr_t springboard_addr = (NACL_TRAMPOLINE_END
                                 - nap->bundle_size * bundle_number);
@@ -163,14 +171,15 @@ static uintptr_t LoadSpringboard(struct NaClApp *nap,
 
   NaClApplyPatchToMemory(&patch_info);
 
-  return springboard_addr + NACL_HALT_LEN; /* skip the hlt */
+  info->start_addr = springboard_addr + NACL_HALT_LEN; /* Skip the HLT */
+  info->end_addr = springboard_addr + (template_end - template_start);
 }
 
 void NaClLoadSpringboard(struct NaClApp  *nap) {
-  nap->springboard_addr =
-      LoadSpringboard(nap, &NaCl_springboard, &NaCl_springboard_end, 1);
+  LoadSpringboard(nap, &nap->syscall_return_springboard,
+                  &NaCl_springboard, &NaCl_springboard_end, 1);
 
-  nap->springboard_all_regs_addr =
-      LoadSpringboard(nap, &NaCl_springboard_all_regs,
-                      &NaCl_springboard_all_regs_end, 2);
+  LoadSpringboard(nap, &nap->all_regs_springboard,
+                  &NaCl_springboard_all_regs,
+                  &NaCl_springboard_all_regs_end, 2);
 }

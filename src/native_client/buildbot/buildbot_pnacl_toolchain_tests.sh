@@ -20,20 +20,17 @@ set -o errexit
 # The motivation is to ensure that newer translators can still handle
 # older pexes.
 
-# This hopefully needs to be updated rarely, it contains pexe from
-# the sandboxed llc/gold builds
-ARCHIVED_PEXE_TRANSLATOR_REV=9944
-
 # The frontend from this rev will generate pexes for the archived frontend
 # test. The toolchain downloader expects this information in a specially
 # formatted file. We generate that file in this script from this information,
 # to keep all our versions in one place
-ARCHIVED_TOOLCHAIN_REV=9908
+ARCHIVED_TOOLCHAIN_REV=12922
 
 readonly PNACL_BUILD="pnacl/build.sh"
+readonly TOOLCHAIN_BUILD="toolchain_build/toolchain_build_pnacl.py"
 readonly UP_DOWN_LOAD="buildbot/file_up_down_load.sh"
-readonly TORTURE_TEST="tools/toolchain_tester/torture_test.sh"
-readonly LLVM_TESTSUITE="pnacl/scripts/llvm-test.sh"
+readonly TORTURE_TEST="tools/toolchain_tester/torture_test.py"
+readonly LLVM_TEST="pnacl/scripts/llvm-test.py"
 
 # build.sh, llvm test suite and torture tests all use this value
 export PNACL_CONCURRENCY=${PNACL_CONCURRENCY:-4}
@@ -55,10 +52,12 @@ export PNACL_VERBOSE=true
 # export HOST_ARCH="x86_32"
 # TODO(pnacl-team): Figure out what to do about this.
 # Export this so that the test scripts know where to find the toolchain.
+export TOOLCHAIN_BASE_DIR=linux_x86
+export PNACL_TOOLCHAIN_DIR=${TOOLCHAIN_BASE_DIR}/pnacl_newlib
 export PNACL_TOOLCHAIN_LABEL=pnacl_linux_x86
 # This picks the TC which we just built, even if scons doesn't know
 # how to find a 64-bit host toolchain.
-readonly SCONS_PICK_TC="pnaclsdk_mode=custom:toolchain/${PNACL_TOOLCHAIN_LABEL}"
+readonly SCONS_PICK_TC="pnacl_newlib_dir=toolchain/${PNACL_TOOLCHAIN_DIR}"
 
 # download-old-tc -
 # Download the archived frontend toolchain, if we haven't already
@@ -84,9 +83,11 @@ download-old-tc() {
 clobber() {
   echo @@@BUILD_STEP clobber@@@
   rm -rf scons-out
-  # Don't clobber toolchain/pnacl_translator; these bots currently don't build
+  # Don't clobber pnacl_translator; these bots currently don't build
   # it, but they use the DEPSed-in version.
-  rm -rf toolchain/pnacl_linux* toolchain/pnacl_mac* toolchain/pnacl_win*
+  rm -rf toolchain/linux_x86/pnacl_newlib* \
+      toolchain/mac_x86/pnacl_newlib* \
+      toolchain/win_x86/pnacl_newlib*
 }
 
 handle-error() {
@@ -103,30 +104,15 @@ ignore-error() {
 readonly SCONS_COMMON="./scons --verbose bitcode=1 -j${PNACL_CONCURRENCY}"
 readonly SCONS_COMMON_SLOW="./scons --verbose bitcode=1 -j2"
 
-build-sbtc-prerequisites() {
+build-run-prerequisites() {
   local platform=$1
   ${SCONS_COMMON} ${SCONS_PICK_TC} platform=${platform} \
     sel_ldr sel_universal irt_core
 }
 
 
-scons-tests-pic() {
-  local platform=$1
-
-  echo "@@@BUILD_STEP scons-tests-pic [${platform}]@@@"
-  local extra="--mode=opt-host,nacl -k \
-               nacl_pic=1  pnacl_generate_pexe=0"
-  ${SCONS_COMMON} ${SCONS_PICK_TC} ${extra} \
-    platform=${platform} smoke_tests || handle-error
-}
-
-
 scons-tests-translator() {
   local platform=$1
-
-  echo "@@@BUILD_STEP scons-sb-trans [${platform}] [prereq]@@@"
-  build-sbtc-prerequisites ${platform}
-
   local flags="--mode=opt-host,nacl use_sandboxed_translator=1 \
                platform=${platform} -k"
   local targets="small_tests medium_tests large_tests"
@@ -224,140 +210,66 @@ archived-frontend-test() {
         rev ${ARCHIVED_TOOLCHAIN_REV} BUILD@@@"
   local targets="small_tests medium_tests large_tests"
   local flags="--mode=opt-host,nacl platform=${arch} \
-               translate_in_build_step=0 skip_trusted_tests=1"
+               translate_in_build_step=0 skip_trusted_tests=1 \
+               skip_nonstable_bitcode=1"
 
   rm -rf scons-out/nacl-${arch}*
 
   # Get the archived frontend.
   # If the correct cached frontend is in place, the hash will match and the
   # download will be a no-op. Otherwise the downloader will fix it.
-  download-old-tc toolchain/archived_tc
+  download-old-tc toolchain/${TOOLCHAIN_BASE_DIR}/archived_tc
 
   # Save the current toolchain.
-  mkdir -p toolchain/current_tc
-  rm -rf toolchain/current_tc/*
-  mv toolchain/${PNACL_TOOLCHAIN_LABEL} \
-    toolchain/current_tc/${PNACL_TOOLCHAIN_LABEL}
+  mkdir -p toolchain/${TOOLCHAIN_BASE_DIR}/current_tc
+  rm -rf toolchain/${TOOLCHAIN_BASE_DIR}/current_tc/*
+  mv toolchain/${PNACL_TOOLCHAIN_DIR} \
+    toolchain/${TOOLCHAIN_BASE_DIR}/current_tc/${PNACL_TOOLCHAIN_LABEL}
 
-  # Link the old frontend into place. If we just use pnaclsdk_mode to select a
-  # different toolchain, SCons will attempt to rebuild the IRT.
-  ln -s archived_tc/${PNACL_TOOLCHAIN_LABEL} toolchain/${PNACL_TOOLCHAIN_LABEL}
+  # Link the old frontend into place. If we select a different toolchain,
+  # SCons will attempt to rebuild the IRT.
+  ln -s archived_tc/${PNACL_TOOLCHAIN_LABEL} toolchain/${PNACL_TOOLCHAIN_DIR}
 
-  # Build the pexes with the old frontend
+  # Build the pexes with the old frontend.
   ${SCONS_COMMON} ${SCONS_PICK_TC} \
     do_not_run_tests=1 ${flags} ${targets} || handle-error
-  # The pexes for fast translation tests are identical but scons uses a
-  # different directory.
-  cp -a scons-out/nacl-${arch}-pnacl-pexe-clang \
-    scons-out/nacl-${arch}-pnacl-fast-pexe-clang
 
   # Put the current toolchain back in place.
-  rm toolchain/${PNACL_TOOLCHAIN_LABEL}
-  mv toolchain/current_tc/${PNACL_TOOLCHAIN_LABEL} \
-    toolchain/${PNACL_TOOLCHAIN_LABEL}
+  rm toolchain/${PNACL_TOOLCHAIN_DIR}
+  mv toolchain/${TOOLCHAIN_BASE_DIR}/current_tc/${PNACL_TOOLCHAIN_LABEL} \
+    toolchain/${PNACL_TOOLCHAIN_DIR}
 
-  # Translate them with the new translator, and run the tests
+  # Translate them with the new translator, and run the tests.
+  # Use the sandboxed translator, which runs the newer ABI verifier
+  # (building w/ the old frontend only runs the old ABI verifier).
+  flags="${flags} use_sandboxed_translator=1"
+  # The pexes for sandboxed and fast translation tests are identical but scons
+  # uses a different directory.
+  local pexe_dir="scons-out/nacl-${arch}-pnacl-pexe-clang"
+  cp -a ${pexe_dir} "scons-out/nacl-${arch}-pnacl-sbtc-pexe-clang"
+  cp -a ${pexe_dir} "scons-out/nacl-${arch}-pnacl-fast-sbtc-pexe-clang"
+
   echo "@@@BUILD_STEP archived_frontend [${arch}]\
         rev ${ARCHIVED_TOOLCHAIN_REV} RUN@@@"
-  ${SCONS_COMMON} ${SCONS_PICK_TC} \
-    ${flags} ${targets} built_elsewhere=1 || handle-error
-  # Also test the fast-translation option
-  echo "@@@BUILD_STEP archived_frontend [${arch} translate-fast]\
-        rev ${ARCHIVED_TOOLCHAIN_REV} RUN@@@"
-  ${SCONS_COMMON} ${SCONS_PICK_TC} ${flags} translate_fast=1 built_elsewhere=1 \
-    ${targets} || handle-error
-}
-
-archived-pexe-translator-test() {
-  local arch=$1
-  echo "@@@BUILD_STEP archived_pexe_translator \
-        $arch rev ${ARCHIVED_PEXE_TRANSLATOR_REV} @@@"
-  local dir="$(pwd)/pexe_archive"
-  local tarball="${dir}/pexes.tar.bz2"
-  local measure_cmd="/usr/bin/time -v"
-  local sb_translator="${measure_cmd} \
-                       toolchain/pnacl_translator/bin/pnacl-translate"
-  rm -rf ${dir}
-  mkdir -p ${dir}
-
-  ${UP_DOWN_LOAD} DownloadArchivedPexesTranslator \
-      ${ARCHIVED_PEXE_TRANSLATOR_REV} ${tarball}
-  tar jxf ${tarball} --directory ${dir}
-
-  # Note, the archive provides both stripped (ext="") and unstripped
-  #       (ext=".strip-all") versions of the pexes ("ld-new", "llc").
-  #       We do not want to strip them here as the "translator"
-  #       package and the toolchain package maybe out of sync and
-  #       strip does more than just stripping, it also upgrades
-  #       bitcode versions if there was a format change.
-  #       We only run with ext="" to save time, but if any bugs show up
-  #       we can switch to ext=".strip-all" and diagnose the bugs.
-  local ext=""
-
-  # Note, that the arch flag has two functions:
-  # 1) it selects the target arch for the translator
-  # 2) combined with --pnacl-sb it selects the host arch for the
-  #    sandboxed translators
-  local flags="-arch ${arch} --pnacl-sb --pnacl-driver-verbose"
+  local archived_flags="${flags} built_elsewhere=1 toolchain_feature_version=0"
+  # For QEMU limit parallelism to avoid flake.
   if [[ ${arch} = arm ]] ; then
-      # We need to enable qemu magic for arm
-      flags="${flags} --pnacl-use-emulator"
-  fi
-  local fast_trans_flags="${flags} -translate-fast"
-
-  # Driver flags for overriding *just* the LLC and LD from
-  # the translator, to test that the LLC and LD generated
-  # from archived pexes may work.  Note that this does not override the
-  # libaries or the driver that are part of the translator,
-  # so it is not a full override and will not work if the interface
-  # has changed.
-  local override_flags="\
-    --pnacl-driver-set-LLC_SB=${dir}/llc-${arch}.nexe \
-    --pnacl-driver-set-LD_SB=${dir}/ld-new-${arch}.nexe"
-  local fast_override_flags="\
-    --pnacl-driver-set-LLC_SB=${dir}/llc-${arch}.fast_trans.nexe \
-    --pnacl-driver-set-LD_SB=${dir}/ld-new-${arch}.fast_trans.nexe"
-
-  echo "=== Translating the archived translator."
-  echo "=== Compiling Old Gold (normal mode) ==="
-  ${sb_translator} ${flags} ${dir}/ld-new${ext} \
-      -o ${dir}/ld-new-${arch}.nexe
-  echo "=== Compiling Old Gold (fast mode) ==="
-  ${sb_translator} ${fast_trans_flags} ${dir}/ld-new${ext} \
-      -o ${dir}/ld-new-${arch}.fast_trans.nexe
-
-  if [[ ${arch} = arm || ${arch} = x86-32 ]]; then
-    # With an unstripped pexe (around rev 9444), arm and x86-32
-    # run out of memory:
-    # "terminate called after throwing an instance of 'std::bad_alloc'"
-    echo "Skipping translator archived llc for arch ${arch} (out of mem)"
-    override_flags="--pnacl-driver-set-LD_SB=${dir}/ld-new-${arch}.nexe"
-    fast_override_flags="\
-      --pnacl-driver-set-LD_SB=${dir}/ld-new-${arch}.fast_trans.nexe"
+    ${SCONS_COMMON_SLOW} ${SCONS_PICK_TC} \
+      ${archived_flags} ${targets} || handle-error
+    # Also test the fast-translation option
+    echo "@@@BUILD_STEP archived_frontend [${arch} translate-fast]\
+        rev ${ARCHIVED_TOOLCHAIN_REV} RUN@@@"
+    ${SCONS_COMMON_SLOW} ${SCONS_PICK_TC} ${archived_flags} translate_fast=1 \
+      ${targets} || handle-error
   else
-    # This takes about 17min on arm with qemu
-    echo "=== Compiling Old LLC (normal mode) ==="
-    ${sb_translator} ${flags} ${dir}/llc${ext} \
-        -o ${dir}/llc-${arch}.nexe
-    echo "=== Compiling Old LLC (fast mode) ==="
-    ${sb_translator} ${fast_trans_flags} ${dir}/llc${ext} \
-        -o ${dir}/llc-${arch}.fast_trans.nexe
+    ${SCONS_COMMON} ${SCONS_PICK_TC} \
+      ${archived_flags} ${targets} || handle-error
+    # Also test the fast-translation option
+    echo "@@@BUILD_STEP archived_frontend [${arch} translate-fast]\
+        rev ${ARCHIVED_TOOLCHAIN_REV} RUN@@@"
+    ${SCONS_COMMON} ${SCONS_PICK_TC} ${archived_flags} translate_fast=1 \
+      ${targets} || handle-error
   fi
-
-  ls -l ${dir}
-  file ${dir}/*
-
-  echo "=== Running the translated archived translator to test."
-  ${sb_translator} ${flags} ${override_flags} ${dir}/ld-new${ext} \
-      -o ${dir}/ld-new-${arch}.2.nexe
-  ${sb_translator} ${flags} ${fast_override_flags} ${dir}/ld-new${ext} \
-      -o ${dir}/ld-new-${arch}.3.nexe
-
-  # TODO(robertm): Ideally we would compare the result of translation like so
-  # ${dir}/ld-new-${arch}.2.nexe == ${dir}/ld-new-${arch}.3.nexe
-  # but this requires the translator to be deterministic which is not
-  # quite true at the moment - probably due to due hashing inside of
-  # llc based on pointer values.
 }
 
 
@@ -373,37 +285,62 @@ tc-test-bot() {
     archset=
   fi
 
-  echo "@@@BUILD_STEP show-config@@@"
-  ${PNACL_BUILD} show-config
+  # Build the un-sandboxed toolchain. The build script outputs its own buildbot
+  # annotations.
+  # Build and use the 64-bit llvm build, to get 64-bit versions of the build
+  # tools such as fpcmp (used for llvm test suite). For some reason it matters
+  # that they match the build machine. TODO(dschuff): Is this still necessary?
+  ${TOOLCHAIN_BUILD} --verbose --sync --clobber --build-64bit-host \
+    --testsuite-sync \
+    --install toolchain/linux_x86/pnacl_newlib
 
-  # Build the un-sandboxed toolchain
-  echo "@@@BUILD_STEP compile_toolchain@@@"
-  ${PNACL_BUILD} clean
-  HOST_ARCH=x86_32 ${PNACL_BUILD} all
-  # Make 64-bit versions of the build tools such as fpcmp (used for llvm
-  # test suite and for some reason it matters that they match the build machine)
-  ${PNACL_BUILD} llvm-configure
-  PNACL_MAKE_OPTS=BUILD_DIRS_ONLY=1 ${PNACL_BUILD} llvm-make
-
-  # run the torture tests. the "trybot" phases take care of prerequisites
-  # for both test sets
+  # Linking the tests require additional sdk libraries like libnacl.
+  # Do this once and for all early instead of attempting to do it within
+  # each test step and having some late test steps rely on early test
+  # steps building the prerequisites -- sometimes the early test steps
+  # get skipped.
+  echo "@@@BUILD_STEP install sdk libraries @@@"
+  ${PNACL_BUILD} sdk
   for arch in ${archset}; do
+    # Similarly, build the run prerequisites (sel_ldr and the irt) early.
+    echo "@@@BUILD_STEP build run prerequisites [${arch}]@@@"
+    build-run-prerequisites ${arch}
+  done
+
+  # Run the torture tests.
+  for arch in ${archset}; do
+    if [[ "${arch}" == "x86-32" ]]; then
+      # Torture tests on x86-32 are covered by tc-tests-all in
+      # buildbot_pnacl.sh.
+      continue
+    fi
     echo "@@@BUILD_STEP torture_tests $arch @@@"
-    ${TORTURE_TEST} trybot-pnacl-${arch}-torture \
+    ${TORTURE_TEST} pnacl ${arch} --verbose \
       --concurrency=${PNACL_CONCURRENCY} || handle-error
   done
 
+
+  local optset
+  optset[1]="--opt O3f --opt O2b"
   for arch in ${archset}; do
-    echo "@@@BUILD_STEP llvm-test-suite $arch @@@"
-    ${LLVM_TESTSUITE} testsuite-prereq ${arch}
-    ${LLVM_TESTSUITE} testsuite-clean
+    # Run all appropriate frontend/backend optimization combinations.
+    # For now, this means running 2 combinations for x86 since each
+    # takes about 20 minutes on the bots, and making a single run
+    # elsewhere since e.g. arm takes about 75 minutes.  In a perfect
+    # world, all 4 combinations would be run.
+    if [[ ${archset} =~ x86 ]]; then
+      optset[2]="--opt O3f --opt O0b"
+    fi
+    for opt in "${optset[@]}"; do
+      echo "@@@BUILD_STEP llvm-test-suite ${arch} ${opt} @@@"
+      python ${LLVM_TEST} --testsuite-clean
+      python ${LLVM_TEST} \
+        --testsuite-configure --testsuite-run --testsuite-report \
+        --arch ${arch} ${opt} -v -c || handle-error
+    done
 
-    { ${LLVM_TESTSUITE} testsuite-configure ${arch} &&
-        ${LLVM_TESTSUITE} testsuite-run ${arch} &&
-        ${LLVM_TESTSUITE} testsuite-report ${arch} -v -c
-    } || handle-error
-
-    scons-tests-pic ${arch}
+    echo "@@@BUILD_STEP libcxx-test ${arch} @@@"
+    python ${LLVM_TEST} --libcxx-test --arch ${arch} -c || handle-error
 
     archived-frontend-test ${arch}
 
@@ -418,8 +355,6 @@ tc-test-bot() {
     # because they can sometimes hang on arm, causing buildbot to kill the
     # script without running any more tests.
     scons-tests-translator ${arch}
-
-    archived-pexe-translator-test ${arch}
 
     if [[ ${arch} = x86-64 ]] ; then
       scons-tests-x86-64-zero-based-sandbox

@@ -29,7 +29,6 @@
 
 
 #include "common/linux/google_crashdump_uploader.h"
-#include "common/linux/libcurl_wrapper.h"
 
 #include <sys/types.h>
 #include <sys/stat.h>
@@ -112,7 +111,7 @@ void GoogleCrashdumpUploader::Init(const string& product,
   ctime_ = ctime;
   email_ = email;
   comments_ = comments;
-  http_layer_ = http_layer;
+  http_layer_.reset(http_layer);
 
   crash_server_ = crash_server;
   proxy_host_ = proxy_host;

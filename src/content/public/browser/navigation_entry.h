@@ -8,8 +8,8 @@
 #include <string>
 
 #include "base/memory/ref_counted_memory.h"
-#include "base/string16.h"
-#include "base/time.h"
+#include "base/strings/string16.h"
+#include "base/time/time.h"
 #include "content/common/content_export.h"
 #include "content/public/common/page_transition_types.h"
 #include "content/public/common/page_type.h"
@@ -19,12 +19,13 @@ class GURL;
 
 namespace content {
 
+class PageState;
 struct FaviconStatus;
 struct SSLStatus;
 
 // A NavigationEntry is a data structure that captures all the information
 // required to recreate a browsing state. This includes some opaque binary
-// state as provided by the WebContentsImpl as well as some clear text title and
+// state as provided by the WebContents as well as some clear text title and
 // URL which is used for our user interface.
 class NavigationEntry {
  public:
@@ -72,19 +73,19 @@ class NavigationEntry {
   // The caller is responsible for detecting when there is no title and
   // displaying the appropriate "Untitled" label if this is being displayed to
   // the user.
-  virtual void SetTitle(const string16& title) = 0;
-  virtual const string16& GetTitle() const = 0;
+  virtual void SetTitle(const base::string16& title) = 0;
+  virtual const base::string16& GetTitle() const = 0;
 
-  // Content state is an opaque blob created by WebKit that represents the
-  // state of the page. This includes form entries and scroll position for each
-  // frame. We store it so that we can supply it back to WebKit to restore form
-  // state properly when the user goes back and forward.
+  // Page state is an opaque blob created by Blink that represents the state of
+  // the page. This includes form entries and scroll position for each frame.
+  // We store it so that we can supply it back to Blink to restore form state
+  // properly when the user goes back and forward.
   //
-  // WARNING: This state is saved to the file and used to restore previous
-  // states. If the format is modified in the future, we should still be able to
-  // deal with older versions.
-  virtual void SetContentState(const std::string& state) = 0;
-  virtual const std::string& GetContentState() const = 0;
+  // NOTE: This state is saved to disk and used to restore previous states.  If
+  // the format is modified in the future, we should still be able to deal with
+  // older versions.
+  virtual void SetPageState(const PageState& state) = 0;
+  virtual const PageState& GetPageState() const = 0;
 
   // Describes the current page that the tab represents. This is the ID that the
   // renderer generated for the page and is how we can tell new versus
@@ -98,7 +99,7 @@ class NavigationEntry {
   // the page if it is available or the URL. |languages| is the list of
   // accpeted languages (e.g., prefs::kAcceptLanguages) or empty if proper
   // URL formatting isn't needed (e.g., unit tests).
-  virtual const string16& GetTitleForDisplay(
+  virtual const base::string16& GetTitleForDisplay(
       const std::string& languages) const = 0;
 
   // Returns true if the current tab is in view source mode. This will be false
@@ -182,6 +183,40 @@ class NavigationEntry {
   // resources.
   virtual void SetCanLoadLocalResources(bool allow) = 0;
   virtual bool GetCanLoadLocalResources() const = 0;
+
+  // Used to specify which frame to navigate. If empty, the main frame is
+  // navigated. This is currently not persisted in session restore, because it
+  // is currently only used in tests.
+  virtual void SetFrameToNavigate(const std::string& frame_name) = 0;
+  virtual const std::string& GetFrameToNavigate() const = 0;
+
+  // Set extra data on this NavigationEntry according to the specified |key|.
+  // This data is not persisted by default.
+  virtual void SetExtraData(const std::string& key,
+                            const base::string16& data) = 0;
+  // If present, fills the |data| present at the specified |key|.
+  virtual bool GetExtraData(const std::string& key,
+                            base::string16* data) const = 0;
+  // Removes the data at the specified |key|.
+  virtual void ClearExtraData(const std::string& key) = 0;
+
+  // The status code of the last known successful navigation.  If
+  // GetHttpStatusCode() returns 0 that means that either:
+  //
+  //   - this navigation hasn't completed yet;
+  //   - a response wasn't received;
+  //   - or this navigation was restored and for some reason the
+  //     status code wasn't available.
+  virtual void SetHttpStatusCode(int http_status_code) = 0;
+  virtual int GetHttpStatusCode() const = 0;
+
+  // The redirect chain traversed during this navigation, from the initial
+  // redirecting URL to the final non-redirecting current URL.
+  virtual void SetRedirectChain(const std::vector<GURL>& redirects) = 0;
+  virtual const std::vector<GURL>& GetRedirectChain() const = 0;
+
+  // True if this entry is restored and hasn't been loaded.
+  virtual bool IsRestored() const = 0;
 };
 
 }  // namespace content

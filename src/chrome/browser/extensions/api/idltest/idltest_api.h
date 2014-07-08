@@ -5,33 +5,34 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_IDLTEST_IDLTEST_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_IDLTEST_IDLTEST_API_H_
 
-#include "chrome/browser/extensions/extension_function.h"
+#include "extensions/browser/extension_function.h"
 
 class IdltestSendArrayBufferFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.idltest.sendArrayBuffer")
+  DECLARE_EXTENSION_FUNCTION("idltest.sendArrayBuffer", IDLTEST_SENDARRAYBUFFER)
 
  protected:
   virtual ~IdltestSendArrayBufferFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class IdltestSendArrayBufferViewFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.idltest.sendArrayBufferView")
+  DECLARE_EXTENSION_FUNCTION("idltest.sendArrayBufferView",
+                             IDLTEST_SENDARRAYBUFFERVIEW)
 
  protected:
   virtual ~IdltestSendArrayBufferViewFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 class IdltestGetArrayBufferFunction : public SyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("experimental.idltest.getArrayBuffer")
+  DECLARE_EXTENSION_FUNCTION("idltest.getArrayBuffer", IDLTEST_GETARRAYBUFFER)
 
  protected:
   virtual ~IdltestGetArrayBufferFunction() {}
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_IDLTEST_IDLTEST_API_H_

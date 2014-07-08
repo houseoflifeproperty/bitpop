@@ -2,7 +2,8 @@
   "id": "hpiknbiabeeppbpihjehijgoemciehgk",
   "version": "2",
   "name": "My extension 2",
-  "userModifiable": true,
+  "managedInstall": false,
+  "suspiciousInstall": false,
   "enabled": true,
   "terminated": false,
   "description": "",
@@ -14,12 +15,14 @@
   "allowFileAccess": false,
   "views": [
     {
+      "generatedBackgroundPage": false,
       "path": "bar.html",
       "renderProcessId": 42,
       "renderViewId": 88,
       "incognito": false
     },
     {
+      "generatedBackgroundPage": false,
       "path": "bar.html",
       "renderProcessId": 0,
       "renderViewId": 0,

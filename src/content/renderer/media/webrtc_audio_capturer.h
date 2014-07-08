@@ -9,13 +9,17 @@
 #include <string>
 
 #include "base/callback.h"
+#include "base/files/file.h"
 #include "base/memory/ref_counted.h"
 #include "base/synchronization/lock.h"
-#include "content/renderer/media/webrtc_audio_device_impl.h"
-#include "content/renderer/media/webrtc_local_audio_renderer.h"
+#include "base/threading/thread_checker.h"
+#include "base/time/time.h"
+#include "content/common/media/media_stream_options.h"
+#include "content/renderer/media/tagged_list.h"
 #include "media/audio/audio_input_device.h"
+#include "media/audio/audio_power_monitor.h"
 #include "media/base/audio_capturer_source.h"
-#include "media/base/audio_fifo.h"
+#include "third_party/WebKit/public/platform/WebMediaConstraints.h"
 
 namespace media {
 class AudioBus;
@@ -23,154 +27,204 @@ class AudioBus;
 
 namespace content {
 
-class WebRtcAudioCapturerSink;
+class MediaStreamAudioProcessor;
+class MediaStreamAudioSource;
+class WebRtcAudioDeviceImpl;
 class WebRtcLocalAudioRenderer;
+class WebRtcLocalAudioTrack;
 
 // This class manages the capture data flow by getting data from its
-// |source_|, and passing it to its |sink_|.
-// It allows clients to inject their own capture data source by calling
-// SetCapturerSource(). It is also possible to enable a local sink and
-// register a callback which the sink can call when it wants to read captured
-// data cached in a FIFO for local loopback rendering.
-// The threading model for this class is rather messy since it will be
-// created on a Libjingle thread, captured data is provided on a dedicated
+// |source_|, and passing it to its |tracks_|.
+// The threading model for this class is rather complex since it will be
+// created on the main render thread, captured data is provided on a dedicated
 // AudioInputDevice thread, and methods can be called either on the Libjingle
 // thread or on the main render thread but also other client threads
-// if an alternative AudioCapturerSource has been set. In addition, the
-// AudioCapturerSource::CaptureEventHandler methods are called on the IO thread
-// and requests for data to render is done on the AudioOutputDevice thread.
-class WebRtcAudioCapturer
+// if an alternative AudioCapturerSource has been set.
+class CONTENT_EXPORT WebRtcAudioCapturer
     : public base::RefCountedThreadSafe<WebRtcAudioCapturer>,
-      public media::AudioCapturerSource::CaptureCallback,
-      public media::AudioCapturerSource::CaptureEventHandler,
-      public content::WebRtcLocalAudioRenderer::LocalRenderCallback {
+      NON_EXPORTED_BASE(public media::AudioCapturerSource::CaptureCallback) {
  public:
-  // Use to construct the audio capturer.
-  static scoped_refptr<WebRtcAudioCapturer> CreateCapturer();
-
-  // Called by the client on the sink side to add a sink.
-  void AddCapturerSink(WebRtcAudioCapturerSink* sink);
-
-  // Called by the client on the sink side to remove a sink.
-  void RemoveCapturerSink(WebRtcAudioCapturerSink* sink);
-
-  // SetCapturerSource() is called if the client on the source side desires to
-  // provide their own captured audio data. Client is responsible for calling
-  // Start() on its own source to have the ball rolling.
-  void SetCapturerSource(
-      const scoped_refptr<media::AudioCapturerSource>& source);
-
-  // The |on_device_stopped_cb| callback will be called in OnDeviceStopped().
-  void SetStopCallback(const base::Closure& on_device_stopped_cb);
-
-  // Informs this class that a local sink shall be used in addition to the
-  // registered WebRtcAudioCapturerSink sink(s). The capturer will enter a
-  // buffering mode and store all incoming audio frames in a local FIFO.
-  // The renderer will read data from this buffer using the ProvideInput()
-  // method. Called on the main render thread.
-  void PrepareLoopback();
-
-  // Cancels loopback mode and stops buffering local copies of captured
-  // data in the FIFO.
+  // Used to construct the audio capturer. |render_view_id| specifies the
+  // render view consuming audio for capture, |render_view_id| as -1 is used
+  // by the unittests to skip creating a source via
+  // AudioDeviceFactory::NewInputDevice(), and allow injecting their own source
+  // via SetCapturerSourceForTesting() at a later state.  |device_info|
+  // contains all the device information that the capturer is created for.
+  // |constraints| contains the settings for audio processing.
+  // TODO(xians): Implement the interface for the audio source and move the
+  // |constraints| to ApplyConstraints().
   // Called on the main render thread.
-  void CancelLoopback();
+  static scoped_refptr<WebRtcAudioCapturer> CreateCapturer(
+      int render_view_id,
+      const StreamDeviceInfo& device_info,
+      const blink::WebMediaConstraints& constraints,
+      WebRtcAudioDeviceImpl* audio_device,
+      MediaStreamAudioSource* audio_source);
 
-  // Pauses buffering of captured data. Does only have an effect if a local
-  // sink is used.
-  // Called on the main render thread.
-  void PauseBuffering();
 
-  // Resumes buffering of captured data. Does only have an effect if a local
-  // sink is used.
-  // Called on the main render thread.
-  void ResumeBuffering();
+  // Add a audio track to the sinks of the capturer.
+  // WebRtcAudioDeviceImpl calls this method on the main render thread but
+  // other clients may call it from other threads. The current implementation
+  // does not support multi-thread calling.
+  // The first AddTrack will implicitly trigger the Start() of this object.
+  void AddTrack(WebRtcLocalAudioTrack* track);
 
-  // Starts recording audio.
-  void Start();
+  // Remove a audio track from the sinks of the capturer.
+  // If the track has been added to the capturer, it  must call RemoveTrack()
+  // before it goes away.
+  // Called on the main render thread or libjingle working thread.
+  void RemoveTrack(WebRtcLocalAudioTrack* track);
 
-  // Stops recording audio.
+  // Called when a stream is connecting to a peer connection. This will set
+  // up the native buffer size for the stream in order to optimize the
+  // performance for peer connection.
+  void EnablePeerConnectionMode();
+
+  // Volume APIs used by WebRtcAudioDeviceImpl.
+  // Called on the AudioInputDevice audio thread.
+  void SetVolume(int volume);
+  int Volume() const;
+  int MaxVolume() const;
+
+  // Audio parameters utilized by the source of the audio capturer.
+  // TODO(phoglund): Think over the implications of this accessor and if we can
+  // remove it.
+  media::AudioParameters source_audio_parameters() const;
+
+  // Gets information about the paired output device. Returns true if such a
+  // device exists.
+  bool GetPairedOutputParameters(int* session_id,
+                                 int* output_sample_rate,
+                                 int* output_frames_per_buffer) const;
+
+  const std::string& device_id() const { return device_info_.device.id; }
+  int session_id() const { return device_info_.session_id; }
+
+  // Stops recording audio. This method will empty its track lists since
+  // stopping the capturer will implicitly invalidate all its tracks.
+  // This method is exposed to the public because the MediaStreamAudioSource can
+  // call Stop()
   void Stop();
 
-  // Sets the microphone volume.
-  void SetVolume(double volume);
+  // Called by the WebAudioCapturerSource to get the audio processing params.
+  // This function is triggered by provideInput() on the WebAudio audio thread,
+  // TODO(xians): Remove after moving APM from WebRtc to Chrome.
+  void GetAudioProcessingParams(base::TimeDelta* delay, int* volume,
+                                bool* key_pressed);
 
-  // Specifies the |session_id| to query which device to use.
-  void SetDevice(int session_id);
+  // Used by the unittests to inject their own source to the capturer.
+  void SetCapturerSourceForTesting(
+      const scoped_refptr<media::AudioCapturerSource>& source,
+      media::AudioParameters params);
 
-  // Enables or disables the WebRtc AGC control.
-  void SetAutomaticGainControl(bool enable);
-
-  bool is_recording() const { return running_; }
-
-  // Returns true if a local renderer has called PrepareLoopback() and it can
-  // be utilized to prevent more than one local renderer.
-  bool IsInLoopbackMode();
-
-  // Audio parameters utilized by the audio capturer. Can be utilized by
-  // a local renderer to set up a renderer using identical parameters as the
-  // capturer.
-  const media::AudioParameters& audio_parameter() const { return params_; }
-
-  // AudioCapturerSource::CaptureCallback implementation.
-  // Called on the AudioInputDevice audio thread.
-  virtual void Capture(media::AudioBus* audio_source,
-                       int audio_delay_milliseconds,
-                       double volume) OVERRIDE;
-  virtual void OnCaptureError() OVERRIDE;
-
-  // AudioCapturerSource::CaptureEventHandler implementation.
-  // Called on the IO thread.
-  virtual void OnDeviceStarted(const std::string& device_id) OVERRIDE;
-  virtual void OnDeviceStopped() OVERRIDE;
-
-  // WebRtcLocalAudioRenderer::LocalRenderCallback implementation.
-  // Reads stored captured data from a local FIFO. This method is used in
-  // combination with a local sink to render captured audio in loopback.
-  // This method is called on the AudioOutputDevice worker thread.
-  virtual void ProvideInput(media::AudioBus* dest) OVERRIDE;
+  void StartAecDump(base::File aec_dump_file);
+  void StopAecDump();
 
  protected:
   friend class base::RefCountedThreadSafe<WebRtcAudioCapturer>;
   virtual ~WebRtcAudioCapturer();
 
  private:
-  typedef std::list<WebRtcAudioCapturerSink*> SinkList;
+  class TrackOwner;
+  typedef TaggedList<TrackOwner> TrackList;
 
-  WebRtcAudioCapturer();
+  WebRtcAudioCapturer(int render_view_id,
+                      const StreamDeviceInfo& device_info,
+                      const blink::WebMediaConstraints& constraints,
+                      WebRtcAudioDeviceImpl* audio_device,
+                      MediaStreamAudioSource* audio_source);
 
-  // Initializes the capturer, called right after the object is created.
-  // Returns false if the initialization fails.
+  // AudioCapturerSource::CaptureCallback implementation.
+  // Called on the AudioInputDevice audio thread.
+  virtual void Capture(media::AudioBus* audio_source,
+                       int audio_delay_milliseconds,
+                       double volume,
+                       bool key_pressed) OVERRIDE;
+  virtual void OnCaptureError() OVERRIDE;
+
+  // Initializes the default audio capturing source using the provided render
+  // view id and device information. Return true if success, otherwise false.
   bool Initialize();
 
-  // Protects |source_|, |sinks_|, |running_|, |on_device_stopped_cb_|,
-  // |loopback_fifo_| and |buffering_|.
-  base::Lock lock_;
+  // SetCapturerSource() is called if the client on the source side desires to
+  // provide their own captured audio data. Client is responsible for calling
+  // Start() on its own source to have the ball rolling.
+  // Called on the main render thread.
+  void SetCapturerSource(
+      const scoped_refptr<media::AudioCapturerSource>& source,
+      media::ChannelLayout channel_layout,
+      float sample_rate);
 
-  // A list of sinks that the audio data is fed to.
-  SinkList sinks_;
+  // Starts recording audio.
+  // Triggered by AddSink() on the main render thread or a Libjingle working
+  // thread. It should NOT be called under |lock_|.
+  void Start();
+
+  // Helper function to get the buffer size based on |peer_connection_mode_|
+  // and sample rate;
+  int GetBufferSize(int sample_rate) const;
+
+  // Used to DCHECK that we are called on the correct thread.
+  base::ThreadChecker thread_checker_;
+
+  // Protects |source_|, |audio_tracks_|, |running_|, |loopback_fifo_|,
+  // |params_| and |buffering_|.
+  mutable base::Lock lock_;
+
+  // A tagged list of audio tracks that the audio data is fed
+  // to. Tagged items need to be notified that the audio format has
+  // changed.
+  TrackList tracks_;
 
   // The audio data source from the browser process.
   scoped_refptr<media::AudioCapturerSource> source_;
 
-  // Cached values of utilized audio parameters. Platform dependent.
-  media::AudioParameters params_;
+  // Cached audio constraints for the capturer.
+  blink::WebMediaConstraints constraints_;
 
-  // Buffers used for temporary storage during capture callbacks.
-  // Allocated during initialization.
-  scoped_array<int16> buffer_;
-  std::string device_id_;
+  // Audio processor doing processing like FIFO, AGC, AEC and NS. Its output
+  // data is in a unit of 10 ms data chunk.
+  scoped_refptr<MediaStreamAudioProcessor> audio_processor_;
+
   bool running_;
 
-  // Callback object which is called during OnDeviceStopped().
-  // Informs a local sink that it should stop asking for data.
-  base::Closure on_device_stopped_cb_;
+  int render_view_id_;
 
-  // Contains copies of captured audio frames. Only utilized in loopback
-  // mode when a local sink has been set.
-  scoped_ptr<media::AudioFifo> loopback_fifo_;
+  // Cached information of the device used by the capturer.
+  const StreamDeviceInfo device_info_;
 
-  // True when FIFO is utilized, false otherwise.
-  bool buffering_;
+  // Stores latest microphone volume received in a CaptureData() callback.
+  // Range is [0, 255].
+  int volume_;
+
+  // Flag which affects the buffer size used by the capturer.
+  bool peer_connection_mode_;
+
+  // Cache value for the audio processing params.
+  base::TimeDelta audio_delay_;
+  bool key_pressed_;
+
+  // Flag to help deciding if the data needs audio processing.
+  bool need_audio_processing_;
+
+  // Raw pointer to the WebRtcAudioDeviceImpl, which is valid for the lifetime
+  // of RenderThread.
+  WebRtcAudioDeviceImpl* audio_device_;
+
+  // Raw pointer to the MediaStreamAudioSource object that holds a reference
+  // to this WebRtcAudioCapturer.
+  // Since |audio_source_| is owned by a blink::WebMediaStreamSource object and
+  // blink guarantees that the blink::WebMediaStreamSource outlives any
+  // blink::WebMediaStreamTrack connected to the source, |audio_source_| is
+  // guaranteed to exist as long as a WebRtcLocalAudioTrack is connected to this
+  // WebRtcAudioCapturer.
+  MediaStreamAudioSource* const audio_source_;
+
+    // Audio power monitor for logging audio power level.
+  media::AudioPowerMonitor audio_power_monitor_;
+
+  // Records when the last time audio power level is logged.
+  base::TimeTicks last_audio_level_log_time_;
 
   DISALLOW_COPY_AND_ASSIGN(WebRtcAudioCapturer);
 };

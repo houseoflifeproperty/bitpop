@@ -11,19 +11,18 @@ from master import master_utils
 # Note: don't include 'update scripts' since we can't do much about it when
 # it's failing and the tree is still technically fine.
 categories_steps = {
-  '': ['update'],
+  '': ['update', 'runhooks'],
   'testers': [
     'ash_unittests',
     'base_unittests',
     'browser_tests',
     'cacheinvalidation_unittests',
-    'chrome_frame_net_tests',
     'content_browsertests',
     'content_unittests',
     'courgette_unittests',
     'crypto_unittests',
     'device_unittests',
-    'googleurl_unittests',
+    'gcm_unit_tests'
     'installer_util_unittests',
     'interactive_ui_tests',
     'ipc_tests',
@@ -42,18 +41,18 @@ categories_steps = {
     'sizes',
     'sql_unittests',
     'start_crash_handler',
-    'sync_unit_tests',
     'sync_integration_tests',
-    'test_shell_tests',
+    'sync_unit_tests',
     'unit_tests',
+    'url_unittests',
     #'webkit_tests',
    ],
   'windows': ['svnkill', 'taskkill'],
   'compile': ['check_deps2git', 'check_deps', 'compile', 'archive_build'],
-  # Annotator scripts are triggered as a 'build' step.
+  # Annotator scripts are triggered as a 'slave_steps' step.
   # The gatekeeper currently does not recognize failure in a
   # @@@BUILD_STEP@@@, so we must match on the buildbot-defined step.
-  'android': ['build'],
+  'android': ['slave_steps'],
 }
 
 exclusions = {
@@ -66,7 +65,7 @@ exclusions = {
 }
 
 forgiving_steps = ['update_scripts', 'update', 'svnkill', 'taskkill',
-                   'archive_build', 'start_crash_handler']
+                   'archive_build', 'start_crash_handler', 'gclient_revert']
 
 def Update(config, active_master, c):
   c['status'].append(gatekeeper.GateKeeper(

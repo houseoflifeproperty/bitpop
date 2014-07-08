@@ -5,14 +5,14 @@
 #include "chrome/browser/ui/tabs/pinned_tab_service_factory.h"
 
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
 #include "chrome/browser/ui/tabs/pinned_tab_service.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
 
 // static
 PinnedTabService* PinnedTabServiceFactory::GetForProfile(
     Profile* profile) {
   return static_cast<PinnedTabService*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 PinnedTabServiceFactory* PinnedTabServiceFactory::GetInstance() {
@@ -20,19 +20,20 @@ PinnedTabServiceFactory* PinnedTabServiceFactory::GetInstance() {
 }
 
 PinnedTabServiceFactory::PinnedTabServiceFactory()
-    : ProfileKeyedServiceFactory("PinnedTabService",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "PinnedTabService",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 PinnedTabServiceFactory::~PinnedTabServiceFactory() {
 }
 
-ProfileKeyedService* PinnedTabServiceFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
-  return new PinnedTabService(profile);
+KeyedService* PinnedTabServiceFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
+  return new PinnedTabService(static_cast<Profile*>(profile));
 }
 
-bool PinnedTabServiceFactory::ServiceIsCreatedWithProfile() const {
+bool PinnedTabServiceFactory::ServiceIsCreatedWithBrowserContext() const {
   return true;
 }
 

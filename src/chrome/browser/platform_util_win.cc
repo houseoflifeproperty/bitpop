@@ -11,28 +11,30 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/file_path.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_co_mem.h"
 #include "base/win/scoped_comptr.h"
+#include "base/win/windows_version.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
 #include "ui/base/win/shell.h"
 #include "ui/gfx/native_widget_types.h"
+#include "url/gurl.h"
 
 using content::BrowserThread;
 
 namespace {
 
-void ShowItemInFolderOnFileThread(const FilePath& full_path) {
+void ShowItemInFolderOnFileThread(const base::FilePath& full_path) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::FILE));
-  FilePath dir = full_path.DirName();
+  base::FilePath dir = full_path.DirName().AsEndingWithSeparator();
   // ParseDisplayName will fail if the directory is "C:", it must be "C:\\".
-  if (dir.value() == L"" || !file_util::EnsureEndsWithSeparator(&dir))
+  if (dir.empty())
     return;
 
   typedef HRESULT (WINAPI *SHOpenFolderAndSelectItemsFuncPtr)(
@@ -84,9 +86,7 @@ void ShowItemInFolderOnFileThread(const FilePath& full_path) {
   if (FAILED(hr))
     return;
 
-  const ITEMIDLIST* highlight[] = {
-    {file_item},
-  };
+  const ITEMIDLIST* highlight[] = { file_item };
 
   hr = (*open_folder_and_select_itemsPtr)(dir_item, arraysize(highlight),
                                           highlight, NULL);
@@ -98,39 +98,31 @@ void ShowItemInFolderOnFileThread(const FilePath& full_path) {
     if (hr == ERROR_FILE_NOT_FOUND) {
       ShellExecute(NULL, L"open", dir.value().c_str(), NULL, NULL, SW_SHOW);
     } else {
-      LPTSTR message = NULL;
-      DWORD message_length = FormatMessage(
-          FORMAT_MESSAGE_ALLOCATE_BUFFER | FORMAT_MESSAGE_FROM_SYSTEM,
-          0, hr, 0, reinterpret_cast<LPTSTR>(&message), 0, NULL);
       LOG(WARNING) << " " << __FUNCTION__
                    << "(): Can't open full_path = \""
                    << full_path.value() << "\""
-                   << " hr = " << hr
-                   << " " << reinterpret_cast<LPTSTR>(&message);
-      if (message)
-        LocalFree(message);
+                  << " hr = " << logging::SystemErrorCodeToString(hr);
     }
   }
 }
 
-}  // namespace
-
-namespace platform_util {
-
-void ShowItemInFolder(const FilePath& full_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
-      base::Bind(&ShowItemInFolderOnFileThread, full_path));
+// Old ShellExecute crashes the process when the command for a given scheme
+// is empty. This function tells if it is.
+bool ValidateShellCommandForScheme(const std::string& scheme) {
+  base::win::RegKey key;
+  std::wstring registry_path = base::ASCIIToWide(scheme) +
+                               L"\\shell\\open\\command";
+  key.Open(HKEY_CLASSES_ROOT, registry_path.c_str(), KEY_READ);
+  if (!key.Valid())
+    return false;
+  DWORD size = 0;
+  key.ReadValue(NULL, NULL, &size, NULL);
+  if (size <= 2)
+    return false;
+  return true;
 }
 
-void OpenItem(const FilePath& full_path) {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  BrowserThread::PostTask(
-      BrowserThread::FILE, FROM_HERE,
-      base::Bind(base::IgnoreResult(&ui::win::OpenItemViaShell), full_path));
-}
-
-void OpenExternal(const GURL& url) {
+void OpenExternalOnFileThread(const GURL& url) {
   // Quote the input scheme to be sure that the command does not have
   // parameters unexpected by the external program. This url should already
   // have been escaped.
@@ -148,20 +140,9 @@ void OpenExternal(const GURL& url) {
     return;
   }
 
-  base::win::RegKey key;
-  std::wstring registry_path = ASCIIToWide(url.scheme()) +
-                               L"\\shell\\open\\command";
-  key.Open(HKEY_CLASSES_ROOT, registry_path.c_str(), KEY_READ);
-  if (key.Valid()) {
-    DWORD size = 0;
-    key.ReadValue(NULL, NULL, &size, NULL);
-    if (size <= 2) {
-      // ShellExecute crashes the process when the command is empty.
-      // We check for "2" because it always returns the trailing NULL.
-      // TODO(nsylvain): we should also add a dialog to warn on errors. See
-      // bug 1136923.
+  if (base::win::GetVersion() < base::win::VERSION_WIN7) {
+    if (!ValidateShellCommandForScheme(url.scheme()))
       return;
-    }
   }
 
   if (reinterpret_cast<ULONG_PTR>(ShellExecuteA(NULL, "open",
@@ -172,6 +153,42 @@ void OpenExternal(const GURL& url) {
     // bug 1136923.
     return;
   }
+}
+
+}  // namespace
+
+namespace platform_util {
+
+void ShowItemInFolder(Profile* profile, const base::FilePath& full_path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
+    chrome::ActivateDesktopHelper(chrome::ASH_KEEP_RUNNING);
+
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+      base::Bind(&ShowItemInFolderOnFileThread, full_path));
+}
+
+void OpenItem(Profile* profile, const base::FilePath& full_path) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH)
+    chrome::ActivateDesktopHelper(chrome::ASH_KEEP_RUNNING);
+
+  BrowserThread::PostTask(
+      BrowserThread::FILE, FROM_HERE,
+      base::Bind(base::IgnoreResult(&ui::win::OpenItemViaShell), full_path));
+}
+
+void OpenExternal(Profile* profile, const GURL& url) {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+
+  if (chrome::GetActiveDesktop() == chrome::HOST_DESKTOP_TYPE_ASH &&
+      !url.SchemeIsHTTPOrHTTPS())
+    chrome::ActivateDesktopHelper(chrome::ASH_KEEP_RUNNING);
+
+  BrowserThread::PostTask(BrowserThread::FILE, FROM_HERE,
+                          base::Bind(&OpenExternalOnFileThread, url));
 }
 
 #if !defined(USE_AURA)

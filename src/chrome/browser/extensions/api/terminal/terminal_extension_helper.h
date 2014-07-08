@@ -7,9 +7,11 @@
 
 #include <string>
 
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 class Profile;
+
+namespace extensions {
 
 class TerminalExtensionHelper {
  public:
@@ -17,5 +19,7 @@ class TerminalExtensionHelper {
   // installed, returns empty url.
   static GURL GetCroshExtensionURL(Profile* profile);
 };
+
+}  // namespace extensions
 
 #endif  // CHROME_BROWSER_EXTENSIONS_API_TERMINAL_TERMINAL_EXTENSION_HELPER_H_

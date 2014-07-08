@@ -9,27 +9,51 @@ Caches computations described in terms of command lines and inputs directories
 or files, which yield a set of output file.
 """
 
-# Done first to setup python module path.
-import toolchain_env
-
 import hashlib
 import logging
 import os
+import platform
+import shutil
+import subprocess
 import sys
 
-import directory_storage
-import file_tools
-import gsd_storage
-import hashing_tools
-import log_tools
-import working_directory
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.directory_storage
+import pynacl.file_tools
+import pynacl.gsd_storage
+import pynacl.hashing_tools
+import pynacl.working_directory
+
+import command
+import substituter
+
+
+class HumanReadableSignature(object):
+  """Accumator of signature information in human readable form.
+
+  A replacement for hashlib that collects the inputs for later display.
+  """
+  def __init__(self):
+    self._items = []
+
+  def update(self, data):
+    """Add an item to the signature."""
+    # Drop paranoid nulls for human readable output.
+    data = data.replace('\0', '')
+    self._items.append(data)
+
+  def hexdigest(self):
+    """Fake version of hexdigest that returns the inputs."""
+    return ('*' * 30 + ' PACKAGE SIGNATURE ' + '*' * 30 + '\n' +
+            '\n'.join(self._items) + '\n' +
+            '=' * 70 + '\n')
 
 
 class Once(object):
   """Class to memoize slow operations."""
 
   def __init__(self, storage, use_cached_results=True, cache_results=True,
-               print_url=None, check_call=None):
+               print_url=None, system_summary=None):
     """Constructor.
 
     Args:
@@ -40,17 +64,17 @@ class Once(object):
                      written to the cache.
       print_url: Function that accepts an URL for printing the build result,
                  or None.
-      check_call: A testing hook for allowing build commands to be intercepted.
-                  Same interface as subprocess.check_call.
     """
-    if check_call is None:
-      check_call = log_tools.CheckCall
     self._storage = storage
-    self._directory_storage = directory_storage.DirectoryStorageAdapter(storage)
+    self._directory_storage = pynacl.directory_storage.DirectoryStorageAdapter(
+        storage
+    )
     self._use_cached_results = use_cached_results
     self._cache_results = cache_results
+    self._cached_dir_items = {}
     self._print_url = print_url
-    self._check_call = check_call
+    self._system_summary = system_summary
+    self._path_hash_cache = {}
 
   def KeyForOutput(self, package, output_hash):
     """Compute the key to store a give output in the data-store.
@@ -85,24 +109,29 @@ class Once(object):
       URL from which output was obtained if successful, or None if not.
     """
     key = self.KeyForOutput(package, out_hash)
-    url = self._directory_storage.GetDirectory(key, output)
-    if not url:
+    dir_item = self._directory_storage.GetDirectory(key, output)
+    if not dir_item:
       logging.debug('Failed to retrieve %s' % key)
       return None
-    if hashing_tools.StableHashPath(output) != out_hash:
+    if pynacl.hashing_tools.StableHashPath(output) != out_hash:
       logging.warning('Object does not match expected hash, '
                       'has hashing method changed?')
       return None
-    return url
+    return dir_item
 
-  def PrintDownloadURL(self, url):
-    """Print download URL if function was provided in the constructor.
+  def _ProcessCachedDir(self, package, dir_item):
+    """Processes cached directory storage items.
 
     Args:
-      urls: A list of urls to print.
+      package: Package name for the cached directory item.
+      dir_item: DirectoryStorageItem returned from directory_storage.
     """
+    # Store the cached URL as a tuple for book keeping.
+    self._cached_dir_items[package] = dir_item
+
+    # If a print URL function has been specified, print the URL now.
     if self._print_url is not None:
-      self._print_url(url)
+      self._print_url(dir_item.url)
 
   def WriteResultToCache(self, package, build_signature, output):
     """Cache a computed result by key.
@@ -113,20 +142,35 @@ class Once(object):
       build_signature: The input hash of the computation.
       output: A path containing the output of the computation.
     """
-    if self._cache_results:
-      out_hash = hashing_tools.StableHashPath(output)
-      try:
-        # Upload the build output.
-        url = self._directory_storage.PutDirectory(
-            output, self.KeyForOutput(package, out_hash))
-        # Upload an entry mapping from computation input to output hash.
-        self._storage.PutData(
-            out_hash, self.KeyForBuildSignature(build_signature))
-        logging.info('Computed fresh result and cached.')
-        self.PrintDownloadURL(url)
-      except gsd_storage.GSDStorageError:
-        logging.info('Failed to cache result.')
-        raise
+    if not self._cache_results:
+      return
+    out_hash = pynacl.hashing_tools.StableHashPath(output)
+    try:
+      output_key = self.KeyForOutput(package, out_hash)
+      # Try to get an existing copy in a temporary directory.
+      wd = pynacl.working_directory.TemporaryWorkingDirectory()
+      with wd as work_dir:
+        temp_output = os.path.join(work_dir, 'out')
+        dir_item = self._directory_storage.GetDirectory(output_key, temp_output)
+        if dir_item is None:
+          # Isn't present. Cache the computed result instead.
+          dir_item = self._directory_storage.PutDirectory(output, output_key)
+          logging.info('Computed fresh result and cached it.')
+        else:
+          # Cached version is present. Replace the current output with that.
+          if self._use_cached_results:
+            pynacl.file_tools.RemoveDirectoryIfPresent(output)
+            shutil.move(temp_output, output)
+            logging.info(
+                'Recomputed result matches cached value, '
+                'using cached value instead.')
+      # Upload an entry mapping from computation input to output hash.
+      self._storage.PutData(
+          out_hash, self.KeyForBuildSignature(build_signature))
+      self._ProcessCachedDir(package, dir_item)
+    except pynacl.gsd_storage.GSDStorageError:
+      logging.info('Failed to cache result.')
+      raise
 
   def ReadMemoizedResultFromCache(self, package, build_signature, output):
     """Read a cached result (if it exists) from the cache.
@@ -144,15 +188,23 @@ class Once(object):
       out_hash = self._storage.GetData(
           self.KeyForBuildSignature(build_signature))
       if out_hash is not None:
-        url = self.WriteOutputFromHash(package, out_hash, output)
-        if url is not None:
+        dir_item = self.WriteOutputFromHash(package, out_hash, output)
+        if dir_item is not None:
           logging.info('Retrieved cached result.')
-          self.PrintDownloadURL(url)
+          self._ProcessCachedDir(package, dir_item)
           return True
     return False
 
-  def Run(self, package, inputs, output, commands, unpack_commands=None,
-          hashed_inputs=None, working_dir=None):
+  def GetCachedDirItems(self):
+    """Returns the complete list of all cached directory items for this run."""
+    return self._cached_dir_items.values()
+
+  def GetCachedDirItemForPackage(self, package):
+    """Returns cached directory item for package or None if not processed."""
+    return self._cached_dir_items.get(package, None)
+
+  def Run(self, package, inputs, output, commands,
+          working_dir=None, memoize=True, signature_file=None, subdir=None):
     """Run an operation once, possibly hitting cache.
 
     Args:
@@ -160,45 +212,49 @@ class Once(object):
       inputs: A dict of names mapped to files that are inputs.
       output: An output directory.
       commands: A list of command.Command objects to run.
-      unpack_commands: A list of command.Command object to run before computing
-                       the build hash. Or None.
-      hashed_inputs: An alternate dict of inputs to use for hashing and after
-                     the packing stage (or None).
       working_dir: Working directory to use, or None for a temp dir.
+      memoize: Boolean indicating the the result should be memoized.
+      signature_file: File to write human readable build signatures to or None.
+      subdir: If not None, use this directory instead of the output dir as the
+              substituter's output path. Must be a subdirectory of output.
     """
     if working_dir is None:
-      wdm = working_directory.TemporaryWorkingDirectory()
+      wdm = pynacl.working_directory.TemporaryWorkingDirectory()
     else:
-      wdm = working_directory.FixedWorkingDirectory(working_dir)
+      wdm = pynacl.working_directory.FixedWorkingDirectory(working_dir)
 
-    # Cleanup destination.
-    file_tools.RemoveDirectoryIfPresent(output)
-    os.mkdir(output)
+    pynacl.file_tools.MakeDirectoryIfAbsent(output)
+
+    nonpath_subst = { 'package': package }
 
     with wdm as work_dir:
-      # Optionally unpack before hashing.
-      if unpack_commands is not None:
-        for command in unpack_commands:
-          command.Invoke(check_call=self._check_call, package=package,
-                         cwd=work_dir, inputs=inputs, output=output)
-
-      # Use an alternate input set from here on.
-      if hashed_inputs is not None:
-        inputs = hashed_inputs
-
       # Compute the build signature with modified inputs.
       build_signature = self.BuildSignature(
           package, inputs=inputs, commands=commands)
+      # Optionally write human readable version of signature.
+      if signature_file:
+        signature_file.write(self.BuildSignature(
+            package, inputs=inputs, commands=commands,
+            hasher=HumanReadableSignature()))
+        signature_file.flush()
 
       # We're done if it's in the cache.
-      if self.ReadMemoizedResultFromCache(package, build_signature, output):
+      if (memoize and
+          self.ReadMemoizedResultFromCache(package, build_signature, output)):
         return
-      for command in commands:
-        command.Invoke(check_call=self._check_call, package=package,
-                       cwd=work_dir, inputs=inputs, output=output,
-                       build_signature=build_signature)
 
-    self.WriteResultToCache(package, build_signature, output)
+      if subdir:
+        assert subdir.startswith(output)
+
+      for command in commands:
+        paths = inputs.copy()
+        paths['output'] = subdir if subdir else output
+        nonpath_subst['build_signature'] = build_signature
+        subst = substituter.Substituter(work_dir, paths, nonpath_subst)
+        command.Invoke(subst)
+
+    if memoize:
+      self.WriteResultToCache(package, build_signature, output)
 
   def SystemSummary(self):
     """Gather a string describing intrinsic properties of the current machine.
@@ -206,9 +262,29 @@ class Once(object):
     Ideally this would capture anything relevant about the current machine that
     would cause build output to vary (other than build recipe + inputs).
     """
-    return sys.platform
+    if self._system_summary is None:
+      # Note there is no attempt to canonicalize these values.  If two
+      # machines that would in fact produce identical builds differ in
+      # these values, it just means that a superfluous build will be
+      # done once to get the mapping from new input hash to preexisting
+      # output hash into the cache.
+      assert len(sys.platform) != 0, len(platform.machine()) != 0
+      # Use environment from command so we can access MinGW on windows.
+      env = command.PlatformEnvironment([])
+      gcc = pynacl.file_tools.Which('gcc', paths=env['PATH'].split(os.pathsep))
+      p = subprocess.Popen(
+          [gcc, '-v'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, env=env)
+      _, gcc_version = p.communicate()
+      assert p.returncode == 0
+      items = [
+          ('platform', sys.platform),
+          ('machine', platform.machine()),
+          ('gcc-v', gcc_version),
+          ]
+      self._system_summary = str(items)
+    return self._system_summary
 
-  def BuildSignature(self, package, inputs, commands):
+  def BuildSignature(self, package, inputs, commands, hasher=None):
     """Compute a total checksum for a computation.
 
     The computed hash includes system properties, inputs, and the commands run.
@@ -218,10 +294,16 @@ class Once(object):
               inputs set.
       commands: A list of command.Command objects describing the commands run
                 for this computation.
+      hasher: Optional hasher to use.
     Returns:
-      A hex formatted sha1 to use as a computation key.
+      A hex formatted sha1 to use as a computation key or a human readable
+      signature.
     """
-    h = hashlib.sha1()
+    if hasher is None:
+      h = hashlib.sha1()
+    else:
+      h = hasher
+
     h.update('package:' + package)
     h.update('summary:' + self.SystemSummary())
     for command in commands:
@@ -229,5 +311,10 @@ class Once(object):
       h.update(str(command))
     for key in sorted(inputs.keys()):
       h.update('item_name:' + key + '\x00')
-      h.update('item:' + hashing_tools.StableHashPath(inputs[key]))
+      if inputs[key] in self._path_hash_cache:
+        path_hash = self._path_hash_cache[inputs[key]]
+      else:
+        path_hash = 'item:' + pynacl.hashing_tools.StableHashPath(inputs[key])
+        self._path_hash_cache[inputs[key]] = path_hash
+      h.update(path_hash)
     return h.hexdigest()

@@ -4,7 +4,7 @@
 
 #include "base/bind.h"
 #include "base/compiler_specific.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/thread.h"
 #include "jingle/glue/thread_wrapper.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -86,7 +86,7 @@ class ThreadWrapperTest : public testing::Test {
   }
 
   // ThreadWrapper destroyes itself when |message_loop_| is destroyed.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   talk_base::Thread* thread_;
   MockMessageHandler handler1_;
   MockMessageHandler handler2_;
@@ -148,7 +148,8 @@ TEST_F(ThreadWrapperTest, PostDelayed) {
       .WillOnce(DeleteMessageData());
 
   message_loop_.PostDelayedTask(
-      FROM_HERE, MessageLoop::QuitClosure(),
+      FROM_HERE,
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(kMaxTestDelay));
   message_loop_.Run();
 }
@@ -199,7 +200,8 @@ TEST_F(ThreadWrapperTest, ClearDelayed) {
       .WillOnce(DeleteMessageData());
 
   message_loop_.PostDelayedTask(
-      FROM_HERE, MessageLoop::QuitClosure(),
+      FROM_HERE,
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(kMaxTestDelay));
   message_loop_.Run();
 }

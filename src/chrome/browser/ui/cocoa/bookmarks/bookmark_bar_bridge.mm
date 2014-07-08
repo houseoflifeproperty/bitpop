@@ -4,10 +4,16 @@
 
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_bridge.h"
 
-#include "chrome/browser/bookmarks/bookmark_model.h"
+#include "base/bind.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/cocoa/bookmarks/bookmark_bar_controller.h"
+#include "chrome/common/pref_names.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
 
-BookmarkBarBridge::BookmarkBarBridge(BookmarkBarController* controller,
+
+BookmarkBarBridge::BookmarkBarBridge(Profile* profile,
+                                     BookmarkBarController* controller,
                                      BookmarkModel* model)
     : controller_(controller),
       model_(model),
@@ -16,15 +22,24 @@ BookmarkBarBridge::BookmarkBarBridge(BookmarkBarController* controller,
 
   // Bookmark loading is async; it may may not have happened yet.
   // We will be notified when that happens with the AddObserver() call.
-  if (model->IsLoaded())
-    Loaded(model, false);
+  if (model->loaded())
+    BookmarkModelLoaded(model, false);
+
+  profile_pref_registrar_.Init(profile->GetPrefs());
+  profile_pref_registrar_.Add(
+      prefs::kShowAppsShortcutInBookmarkBar,
+      base::Bind(&BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged,
+                 base::Unretained(this)));
+
+  [controller_ updateAppsPageShortcutButtonVisibility];
 }
 
 BookmarkBarBridge::~BookmarkBarBridge() {
   model_->RemoveObserver(this);
 }
 
-void BookmarkBarBridge::Loaded(BookmarkModel* model, bool ids_reassigned) {
+void BookmarkBarBridge::BookmarkModelLoaded(BookmarkModel* model,
+                                            bool ids_reassigned) {
   [controller_ loaded:model];
 }
 
@@ -37,39 +52,52 @@ void BookmarkBarBridge::BookmarkNodeMoved(BookmarkModel* model,
                                           int old_index,
                                           const BookmarkNode* new_parent,
                                           int new_index) {
-  [controller_ nodeMoved:model
-               oldParent:old_parent oldIndex:old_index
-               newParent:new_parent newIndex:new_index];
+  if (!batch_mode_) {
+    [controller_ nodeMoved:model
+                 oldParent:old_parent oldIndex:old_index
+                 newParent:new_parent newIndex:new_index];
+  }
 }
 
 void BookmarkBarBridge::BookmarkNodeAdded(BookmarkModel* model,
                                           const BookmarkNode* parent,
                                           int index) {
-  if (!batch_mode_) {
+  if (!batch_mode_)
     [controller_ nodeAdded:model parent:parent index:index];
-  }
 }
 
-void BookmarkBarBridge::BookmarkNodeRemoved(BookmarkModel* model,
-                                            const BookmarkNode* parent,
-                                            int old_index,
-                                            const BookmarkNode* node) {
-  [controller_ nodeRemoved:model parent:parent index:old_index];
+void BookmarkBarBridge::BookmarkNodeRemoved(
+    BookmarkModel* model,
+    const BookmarkNode* parent,
+    int old_index,
+    const BookmarkNode* node,
+    const std::set<GURL>& removed_urls) {
+  if (!batch_mode_)
+    [controller_ nodeRemoved:model parent:parent index:old_index];
+}
+
+void BookmarkBarBridge::BookmarkAllNodesRemoved(
+    BookmarkModel* model,
+    const std::set<GURL>& removed_urls) {
+  [controller_ loaded:model];
 }
 
 void BookmarkBarBridge::BookmarkNodeChanged(BookmarkModel* model,
                                             const BookmarkNode* node) {
-  [controller_ nodeChanged:model node:node];
+  if (!batch_mode_)
+    [controller_ nodeChanged:model node:node];
 }
 
 void BookmarkBarBridge::BookmarkNodeFaviconChanged(BookmarkModel* model,
                                                    const BookmarkNode* node) {
-  [controller_ nodeFaviconLoaded:model node:node];
+  if (!batch_mode_)
+    [controller_ nodeFaviconLoaded:model node:node];
 }
 
 void BookmarkBarBridge::BookmarkNodeChildrenReordered(
     BookmarkModel* model, const BookmarkNode* node) {
-  [controller_ nodeChildrenReordered:model node:node];
+  if (!batch_mode_)
+    [controller_ nodeChildrenReordered:model node:node];
 }
 
 void BookmarkBarBridge::ExtensiveBookmarkChangesBeginning(
@@ -80,4 +108,8 @@ void BookmarkBarBridge::ExtensiveBookmarkChangesBeginning(
 void BookmarkBarBridge::ExtensiveBookmarkChangesEnded(BookmarkModel* model) {
   batch_mode_ = false;
   [controller_ loaded:model];
+}
+
+void BookmarkBarBridge::OnAppsPageShortcutVisibilityPrefChanged() {
+  [controller_ updateAppsPageShortcutButtonVisibility];
 }

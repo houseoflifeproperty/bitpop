@@ -2,16 +2,19 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/file_path.h"
+#include <list>
+#include <utility>
+
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/i18n/file_util_icu.h"
-#include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/path_service.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/stringprintf.h"
 #include "net/base/directory_lister.h"
 #include "net/base/net_errors.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "testing/platform_test.h"
 
 namespace net {
 
@@ -24,16 +27,17 @@ class ListerDelegate : public DirectoryLister::DirectoryListerDelegate {
         quit_loop_after_each_file_(quit_loop_after_each_file) {
   }
 
-  void OnListFile(const DirectoryLister::DirectoryListerData& data) {
+  virtual void OnListFile(
+      const DirectoryLister::DirectoryListerData& data) OVERRIDE {
     file_list_.push_back(data.info);
     paths_.push_back(data.path);
     if (quit_loop_after_each_file_)
-      MessageLoop::current()->Quit();
+      base::MessageLoop::current()->Quit();
   }
 
-  void OnListDone(int error) {
+  virtual void OnListDone(int error) OVERRIDE {
     error_ = error;
-    MessageLoop::current()->Quit();
+    base::MessageLoop::current()->Quit();
     if (recursive_)
       CheckRecursiveSort();
     else
@@ -59,17 +63,17 @@ class ListerDelegate : public DirectoryLister::DirectoryListerDelegate {
            current < file_list_.size();
            previous++, current++) {
         // Directories should come before files.
-        if (file_util::FileEnumerator::IsDirectory(file_list_[previous]) &&
-            !file_util::FileEnumerator::IsDirectory(file_list_[current])) {
+        if (file_list_[previous].IsDirectory() &&
+            !file_list_[current].IsDirectory()) {
           continue;
         }
-        EXPECT_FALSE(file_util::IsDotDot(
-            file_util::FileEnumerator::GetFilename(file_list_[current])));
-        EXPECT_EQ(file_util::FileEnumerator::IsDirectory(file_list_[previous]),
-                  file_util::FileEnumerator::IsDirectory(file_list_[current]));
+        EXPECT_NE(FILE_PATH_LITERAL(".."),
+                  file_list_[current].GetName().BaseName().value());
+        EXPECT_EQ(file_list_[previous].IsDirectory(),
+                  file_list_[current].IsDirectory());
         EXPECT_TRUE(file_util::LocaleAwareCompareFilenames(
-            file_util::FileEnumerator::GetFilename(file_list_[previous]),
-            file_util::FileEnumerator::GetFilename(file_list_[current])));
+            file_list_[previous].GetName(),
+            file_list_[current].GetName()));
       }
     }
   }
@@ -82,56 +86,91 @@ class ListerDelegate : public DirectoryLister::DirectoryListerDelegate {
   int error_;
   bool recursive_;
   bool quit_loop_after_each_file_;
-  std::vector<file_util::FileEnumerator::FindInfo> file_list_;
-  std::vector<FilePath> paths_;
+  std::vector<base::FileEnumerator::FileInfo> file_list_;
+  std::vector<base::FilePath> paths_;
 };
 
-TEST(DirectoryListerTest, BigDirTest) {
-  FilePath path;
-  ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &path));
+class DirectoryListerTest : public PlatformTest {
+ public:
 
+  virtual void SetUp() OVERRIDE {
+    const int kMaxDepth = 3;
+    const int kBranchingFactor = 4;
+    const int kFilesPerDirectory = 5;
+
+    // Randomly create a directory structure of depth 3 in a temporary root
+    // directory.
+    std::list<std::pair<base::FilePath, int> > directories;
+    ASSERT_TRUE(temp_root_dir_.CreateUniqueTempDir());
+    directories.push_back(std::make_pair(temp_root_dir_.path(), 0));
+    while (!directories.empty()) {
+      std::pair<base::FilePath, int> dir_data = directories.front();
+      directories.pop_front();
+      for (int i = 0; i < kFilesPerDirectory; i++) {
+        std::string file_name = base::StringPrintf("file_id_%d", i);
+        base::FilePath file_path = dir_data.first.AppendASCII(file_name);
+        base::File file(file_path,
+                        base::File::FLAG_CREATE | base::File::FLAG_WRITE);
+        ASSERT_TRUE(file.IsValid());
+      }
+      if (dir_data.second < kMaxDepth - 1) {
+        for (int i = 0; i < kBranchingFactor; i++) {
+          std::string dir_name = base::StringPrintf("child_dir_%d", i);
+          base::FilePath dir_path = dir_data.first.AppendASCII(dir_name);
+          ASSERT_TRUE(base::CreateDirectory(dir_path));
+          directories.push_back(std::make_pair(dir_path, dir_data.second + 1));
+        }
+      }
+    }
+    PlatformTest::SetUp();
+  }
+
+  const base::FilePath& root_path() const {
+    return temp_root_dir_.path();
+  }
+
+ private:
+  base::ScopedTempDir temp_root_dir_;
+};
+
+TEST_F(DirectoryListerTest, BigDirTest) {
   ListerDelegate delegate(false, false);
-  DirectoryLister lister(path, &delegate);
+  DirectoryLister lister(root_path(), &delegate);
   lister.Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   EXPECT_EQ(OK, delegate.error());
 }
 
-TEST(DirectoryListerTest, BigDirRecursiveTest) {
-  FilePath path;
-  ASSERT_TRUE(PathService::Get(base::DIR_EXE, &path));
-
+TEST_F(DirectoryListerTest, BigDirRecursiveTest) {
   ListerDelegate delegate(true, false);
-  DirectoryLister lister(path, true, DirectoryLister::FULL_PATH, &delegate);
+  DirectoryLister lister(root_path(), true, DirectoryLister::FULL_PATH,
+                         &delegate);
   lister.Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   EXPECT_EQ(OK, delegate.error());
 }
 
-TEST(DirectoryListerTest, CancelTest) {
-  FilePath path;
-  ASSERT_TRUE(PathService::Get(base::DIR_SOURCE_ROOT, &path));
-
+TEST_F(DirectoryListerTest, CancelTest) {
   ListerDelegate delegate(false, true);
-  DirectoryLister lister(path, &delegate);
+  DirectoryLister lister(root_path(), &delegate);
   lister.Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   int num_files = delegate.num_files();
 
   lister.Cancel();
 
-  MessageLoop::current()->RunUntilIdle();
+  base::MessageLoop::current()->RunUntilIdle();
 
   EXPECT_EQ(num_files, delegate.num_files());
 }
 
-TEST(DirectoryListerTest, EmptyDirTest) {
+TEST_F(DirectoryListerTest, EmptyDirTest) {
   base::ScopedTempDir tempDir;
   EXPECT_TRUE(tempDir.CreateUniqueTempDir());
 
@@ -141,7 +180,7 @@ TEST(DirectoryListerTest, EmptyDirTest) {
   DirectoryLister lister(tempDir.path(), &delegate);
   lister.Start();
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   // Contains only the parent directory ("..")
   EXPECT_EQ(1, delegate.num_files());

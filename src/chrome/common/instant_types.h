@@ -6,45 +6,31 @@
 #define CHROME_COMMON_INSTANT_TYPES_H_
 
 #include <string>
+#include <utility>
 
-#include "base/string16.h"
+#include "base/basictypes.h"
+#include "base/strings/string16.h"
+#include "chrome/common/autocomplete_match_type.h"
 #include "content/public/common/page_transition_types.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
-// Ways that the Instant suggested text is autocompleted into the omnibox.
-enum InstantCompleteBehavior {
-  // Autocomplete the suggestion immediately.
-  INSTANT_COMPLETE_NOW,
+// ID used by Instant code to refer to objects (e.g. Autocomplete results, Most
+// Visited items) that the Instant page needs access to.
+typedef int InstantRestrictedID;
 
-  // Do not autocomplete the suggestion. The suggestion may still be displayed
-  // in the omnibox, but not made a part of the omnibox text by default (e.g.,
-  // by displaying the suggestion as non-highlighted, non-selected gray text).
-  INSTANT_COMPLETE_NEVER,
-
-  // Treat the suggested text as the entire omnibox text, effectively replacing
-  // whatever the user has typed.
-  INSTANT_COMPLETE_REPLACE,
-};
-
-// The type of suggestion provided by Instant. For example, if Instant suggests
-// "yahoo.com", should that be considered a search string or a URL?
-enum InstantSuggestionType {
-  INSTANT_SUGGESTION_SEARCH,
-  INSTANT_SUGGESTION_URL,
-};
-
-// A wrapper to hold Instant suggested text and its metadata such as the type
-// of the suggestion and what completion behavior should be applied to it.
+// A wrapper to hold Instant suggested text and its metadata. Used to tell the
+// server what suggestion to prefetch.
 struct InstantSuggestion {
   InstantSuggestion();
-  InstantSuggestion(const string16& text,
-                    InstantCompleteBehavior behavior,
-                    InstantSuggestionType type);
+  InstantSuggestion(const base::string16& in_text,
+                    const std::string& in_metadata);
   ~InstantSuggestion();
 
-  string16 text;
-  InstantCompleteBehavior behavior;
-  InstantSuggestionType type;
+  // Full suggested text.
+  base::string16 text;
+
+  // JSON metadata from the server response which produced this suggestion.
+  std::string metadata;
 };
 
 // Omnibox dropdown matches provided by the native autocomplete providers.
@@ -53,16 +39,20 @@ struct InstantAutocompleteResult {
   ~InstantAutocompleteResult();
 
   // The provider name, as returned by AutocompleteProvider::GetName().
-  string16 provider;
+  base::string16 provider;
 
-  // The type of the result, as returned by AutocompleteMatch::TypeToString().
-  string16 type;
+  // The type of the result.
+  AutocompleteMatchType::Type type;
 
   // The description (title), same as AutocompleteMatch::description.
-  string16 description;
+  base::string16 description;
 
   // The URL of the match, same as AutocompleteMatch::destination_url.
-  string16 destination_url;
+  base::string16 destination_url;
+
+  // The search query for this match. Only set for matches coming from
+  // SearchProvider. Populated using AutocompleteMatch::contents.
+  base::string16 search_query;
 
   // The transition type to use when the user opens this match. Same as
   // AutocompleteMatch::transition.
@@ -70,38 +60,17 @@ struct InstantAutocompleteResult {
 
   // The relevance score of this match, same as AutocompleteMatch::relevance.
   int relevance;
+
+  // The index of the match in AutocompleteResult. Used to get the instant
+  // suggestion metadata details. Set to kNoMatchIndex if the
+  // suggestion is displayed on the Instant NTP and set to a positive value if
+  // the suggestion is displayed on the Local NTP.
+  size_t autocomplete_match_index;
 };
 
-// How to interpret the size (height or width) of the Instant overlay (preview).
-enum InstantSizeUnits {
-  // As an absolute number of pixels.
-  INSTANT_SIZE_PIXELS,
-
-  // As a percentage of the height or width of the containing (parent) view.
-  INSTANT_SIZE_PERCENT,
-};
-
-// What the Instant page contains when it requests to be shown.
-enum InstantShownReason {
-  // Contents are not specified; the page wants to be shown unconditionally.
-  // This is a stopgap to display in unexpected situations, and should not
-  // normally be used.
-  INSTANT_SHOWN_NOT_SPECIFIED,
-
-  // Custom content on the NTP, e.g. a custom logo.
-  INSTANT_SHOWN_CUSTOM_NTP_CONTENT,
-
-  // Query suggestions and search results relevant when the user is typing in
-  // the omnibox.
-  INSTANT_SHOWN_QUERY_SUGGESTIONS,
-
-  // ZeroSuggest suggestions relevant when the user has focused in the omnibox,
-  // but not yet typed anything.
-  INSTANT_SHOWN_ZERO_SUGGESTIONS,
-
-  // Search results in response to the user clicking a query suggestion.
-  INSTANT_SHOWN_CLICKED_QUERY_SUGGESTION,
-};
+// An InstantAutocompleteResult along with its assigned restricted ID.
+typedef std::pair<InstantRestrictedID, InstantAutocompleteResult>
+    InstantAutocompleteResultIDPair;
 
 // The alignment of the theme background image.
 enum ThemeBackgroundImageAlignment {
@@ -120,16 +89,48 @@ enum ThemeBackgroundImageTiling {
   THEME_BKGRND_IMAGE_REPEAT,
 };
 
+// The RGBA color components for the text and links of the theme.
+struct RGBAColor {
+  RGBAColor();
+  ~RGBAColor();
+
+  bool operator==(const RGBAColor& rhs) const;
+
+  // The color in RGBA format where the R, G, B and A values
+  // are between 0 and 255 inclusive and always valid.
+  uint8 r;
+  uint8 g;
+  uint8 b;
+  uint8 a;
+};
+
+// Theme background settings for the NTP.
 struct ThemeBackgroundInfo {
   ThemeBackgroundInfo();
   ~ThemeBackgroundInfo();
 
-  // The theme background color in RGBA format where the R, G, B and A values
-  // are between 0 and 255 inclusive and always valid.
-  int color_r;
-  int color_g;
-  int color_b;
-  int color_a;
+  bool operator==(const ThemeBackgroundInfo& rhs) const;
+
+  // True if the default theme is selected.
+  bool using_default_theme;
+
+  // The theme background color in RGBA format always valid.
+  RGBAColor background_color;
+
+  // The theme text color in RGBA format.
+  RGBAColor text_color;
+
+  // The theme link color in RGBA format.
+  RGBAColor link_color;
+
+  // The theme text color light in RGBA format.
+  RGBAColor text_color_light;
+
+  // The theme color for the header in RGBA format.
+  RGBAColor header_color;
+
+  // The theme color for the section border in RGBA format.
+  RGBAColor section_border_color;
 
   // The theme id for the theme background image.
   // Value is only valid if there's a custom theme background image.
@@ -149,6 +150,26 @@ struct ThemeBackgroundInfo {
   // The theme background image height.
   // Value is only valid if |theme_id| is valid.
   uint16 image_height;
+
+  // True if theme has attribution logo.
+  // Value is only valid if |theme_id| is valid.
+  bool has_attribution;
+
+  // True if theme has an alternate logo.
+  bool logo_alternate;
 };
+
+struct InstantMostVisitedItem {
+  // The URL of the Most Visited item.
+  GURL url;
+
+  // The title of the Most Visited page.  May be empty, in which case the |url|
+  // is used as the title.
+  base::string16 title;
+};
+
+// An InstantMostVisitedItem along with its assigned restricted ID.
+typedef std::pair<InstantRestrictedID, InstantMostVisitedItem>
+    InstantMostVisitedItemIDPair;
 
 #endif  // CHROME_COMMON_INSTANT_TYPES_H_

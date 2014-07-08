@@ -22,6 +22,8 @@ class SingleThreadTaskRunner;
 
 namespace IPC {
 
+class MessageFilter;
+class MessageFilterRouter;
 class SendCallbackHelper;
 
 //-----------------------------------------------------------------------------
@@ -54,70 +56,6 @@ class SendCallbackHelper;
 //
 class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
  public:
-  struct MessageFilterTraits;
-
-  // A class that receives messages on the thread where the IPC channel is
-  // running.  It can choose to prevent the default action for an IPC message.
-  class IPC_EXPORT MessageFilter
-      : public base::RefCountedThreadSafe<MessageFilter, MessageFilterTraits> {
-   public:
-    MessageFilter();
-
-    // Called on the background thread to provide the filter with access to the
-    // channel.  Called when the IPC channel is initialized or when AddFilter
-    // is called if the channel is already initialized.
-    virtual void OnFilterAdded(Channel* channel);
-
-    // Called on the background thread when the filter has been removed from
-    // the ChannelProxy and when the Channel is closing.  After a filter is
-    // removed, it will not be called again.
-    virtual void OnFilterRemoved();
-
-    // Called to inform the filter that the IPC channel is connected and we
-    // have received the internal Hello message from the peer.
-    virtual void OnChannelConnected(int32 peer_pid);
-
-    // Called when there is an error on the channel, typically that the channel
-    // has been closed.
-    virtual void OnChannelError();
-
-    // Called to inform the filter that the IPC channel will be destroyed.
-    // OnFilterRemoved is called immediately after this.
-    virtual void OnChannelClosing();
-
-    // Return true to indicate that the message was handled, or false to let
-    // the message be handled in the default way.
-    virtual bool OnMessageReceived(const Message& message);
-
-    // Called when the message filter is about to be deleted.  This gives
-    // derived classes the option of controlling which thread they're deleted
-    // on etc.
-    virtual void OnDestruct() const;
-
-   protected:
-    virtual ~MessageFilter();
-
-   private:
-    friend class base::RefCountedThreadSafe<MessageFilter,
-                                            MessageFilterTraits>;
-  };
-
-  struct MessageFilterTraits {
-    static void Destruct(const MessageFilter* filter) {
-      filter->OnDestruct();
-    }
-  };
-
-
-  // Interface for a filter to be imposed on outgoing messages which can
-  // re-write the message.  Used mainly for testing.
-  class OutgoingMessageFilter {
-   public:
-    // Returns a re-written message, freeing the original, or simply the
-    // original unchanged if no rewrite indicated.
-    virtual Message *Rewrite(Message *message) = 0;
-  };
-
   // Initializes a channel proxy.  The channel_handle and mode parameters are
   // passed directly to the underlying IPC::Channel.  The listener is called on
   // the thread that creates the ChannelProxy.  The filter's OnMessageReceived
@@ -144,7 +82,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // background thread processes the command to close the channel.  It is ok to
   // call this method multiple times.  Redundant calls are ignored.
   //
-  // WARNING: The MessageFilter object held by the ChannelProxy is also
+  // WARNING: MessageFilter objects held by the ChannelProxy is also
   // released asynchronously, and it may in fact have its final reference
   // released on the background thread.  The caller should be careful to deal
   // with / allow for this possibility.
@@ -166,10 +104,6 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   void AddFilter(MessageFilter* filter);
   void RemoveFilter(MessageFilter* filter);
 
-  void set_outgoing_message_filter(OutgoingMessageFilter* filter) {
-    outgoing_message_filter_ = filter;
-  }
-
   // Called to clear the pointer to the IPC task runner when it's going away.
   void ClearIPCTaskRunner();
 
@@ -181,7 +115,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // Calls through to the underlying channel's methods.
   int GetClientFileDescriptor();
   int TakeClientFileDescriptor();
-  bool GetClientEuid(uid_t* client_euid) const;
+  bool GetPeerEuid(uid_t* peer_euid) const;
 #endif  // defined(OS_POSIX)
 
  protected:
@@ -197,7 +131,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     Context(Listener* listener, base::SingleThreadTaskRunner* ipc_thread);
     void ClearIPCTaskRunner();
     base::SingleThreadTaskRunner* ipc_task_runner() const {
-      return ipc_task_runner_;
+      return ipc_task_runner_.get();
     }
     const std::string& channel_id() const { return channel_id_; }
 
@@ -253,9 +187,17 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     // List of filters.  This is only accessed on the IPC thread.
     std::vector<scoped_refptr<MessageFilter> > filters_;
     scoped_refptr<base::SingleThreadTaskRunner> ipc_task_runner_;
+
+    // Note, channel_ may be set on the Listener thread or the IPC thread.
+    // But once it has been set, it must only be read or cleared on the IPC
+    // thread.
     scoped_ptr<Channel> channel_;
     std::string channel_id_;
     bool channel_connected_called_;
+
+    // Routes a given message to a proper subset of |filters_|, depending
+    // on which message classes a filter might support.
+    scoped_ptr<MessageFilterRouter> message_filter_router_;
 
     // Holds filters between the AddFilter call on the listerner thread and the
     // IPC thread when they're added to filters_.
@@ -268,11 +210,7 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
     base::ProcessId peer_pid_;
   };
 
-  Context* context() { return context_; }
-
-  OutgoingMessageFilter* outgoing_message_filter() {
-    return outgoing_message_filter_;
-  }
+  Context* context() { return context_.get(); }
 
  private:
   friend class SendCallbackHelper;
@@ -281,8 +219,6 @@ class IPC_EXPORT ChannelProxy : public Sender, public base::NonThreadSafe {
   // can safely be destroyed while the background thread continues to do stuff
   // that involves this data.
   scoped_refptr<Context> context_;
-
-  OutgoingMessageFilter* outgoing_message_filter_;
 
   // Whether the channel has been initialized.
   bool did_init_;

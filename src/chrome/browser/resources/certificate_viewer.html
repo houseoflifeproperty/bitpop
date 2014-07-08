@@ -7,6 +7,7 @@
     <link rel="stylesheet" href="chrome://resources/css/tabs.css">
     <link rel="stylesheet" href="chrome://resources/css/tree.css">
     <link rel="stylesheet" href="certificate_viewer.css">
+    <script src="chrome://resources/js/load_time_data.js"></script>
     <script src="strings.js"></script>
     <script src="chrome://resources/css/tree.css.js"></script>
     <script src="chrome://resources/js/cr.js"></script>
@@ -14,17 +15,16 @@
     <script src="chrome://resources/js/cr/ui/focus_outline_manager.js"></script>
     <script src="chrome://resources/js/cr/ui/tabs.js"></script>
     <script src="chrome://resources/js/cr/ui/tree.js"></script>
-    <script src="chrome://resources/js/i18n_template.js"></script>
     <script src="chrome://resources/js/util.js"></script>
     <script src="certificate_viewer.js"></script>
   </head>
   <body i18n-values=".style.fontFamily:fontfamily;.style.fontSize:fontsize">
     <tabbox id="tabbox">
-      <tabs id="tabs">
+      <tabs id="tabs" class="new-style-tabs">
         <tab i18n-content="general"></tab>
         <tab i18n-content="details"></tab>
       </tabs>
-      <tabpanels id="tabpanels">
+      <tabpanels id="tabpanels" class="new-style-tabs">
         <!-- General -->
         <tabpanel id="general">
           <!-- Usages -->
@@ -113,10 +113,13 @@
           <div id="cert-field-value-section" class="vertical-box">
             <h3 i18n-content="certFieldVal"></h3>
             <div id="cert-field-value" class="section-contents"></div>
-            <button id="export" i18n-content="export"></button>
+            <div>
+              <button id="export" i18n-content="export"></button>
+            </div>
           </div>
         </tabpanel>
       </tabpanels>
     </tabbox>
   </body>
+  <script src="chrome://resources/js/i18n_template2.js"></script>
 </html>

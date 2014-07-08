@@ -4,6 +4,7 @@
 
 #include "net/dns/dns_config_service_win.h"
 
+#include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/win/windows_version.h"
 #include "net/dns/dns_protocol.h"
@@ -52,12 +53,12 @@ TEST(DnsConfigServiceWinTest, ParseSearchList) {
 struct AdapterInfo {
   IFTYPE if_type;
   IF_OPER_STATUS oper_status;
-  PWCHAR dns_suffix;
+  const WCHAR* dns_suffix;
   std::string dns_server_addresses[4];  // Empty string indicates end.
   int ports[4];
 };
 
-scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> CreateAdapterAddresses(
+scoped_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> CreateAdapterAddresses(
     const AdapterInfo* infos) {
   size_t num_adapters = 0;
   size_t num_addresses = 0;
@@ -71,8 +72,8 @@ scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> CreateAdapterAddresses(
   size_t heap_size = num_adapters * sizeof(IP_ADAPTER_ADDRESSES) +
                      num_addresses * (sizeof(IP_ADAPTER_DNS_SERVER_ADDRESS) +
                                       sizeof(struct sockaddr_storage));
-  scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> heap(
-      reinterpret_cast<IP_ADAPTER_ADDRESSES*>(malloc(heap_size)));
+  scoped_ptr<IP_ADAPTER_ADDRESSES, base::FreeDeleter> heap(
+      static_cast<IP_ADAPTER_ADDRESSES*>(malloc(heap_size)));
   CHECK(heap.get());
   memset(heap.get(), 0, heap_size);
 
@@ -89,7 +90,7 @@ scoped_ptr_malloc<IP_ADAPTER_ADDRESSES> CreateAdapterAddresses(
       adapter->Next = adapter + 1;
     adapter->IfType = info.if_type;
     adapter->OperStatus = info.oper_status;
-    adapter->DnsSuffix = info.dns_suffix;
+    adapter->DnsSuffix = const_cast<PWCHAR>(info.dns_suffix);
     IP_ADAPTER_DNS_SERVER_ADDRESS* address = NULL;
     for (size_t j = 0; !info.dns_server_addresses[j].empty(); ++j) {
       --num_addresses;
@@ -144,20 +145,21 @@ TEST(DnsConfigServiceWinTest, ConvertAdapterAddresses) {
       "chromium.org",
       { 1024, 24 },
     },
-    {  // Use the preferred adapter (first in binding order).
+    {  // Use the preferred adapter (first in binding order) and filter
+       // stateless DNS discovery addresses.
       {
         { IF_TYPE_SOFTWARE_LOOPBACK, IfOperStatusUp, L"funnyloop",
           { "2.0.0.2" } },
         { IF_TYPE_FASTETHER, IfOperStatusUp, L"example.com",
-          { "1.0.0.1" } },
+          { "1.0.0.1", "fec0:0:0:ffff::2", "8.8.8.8" } },
         { IF_TYPE_USB, IfOperStatusUp, L"chromium.org",
           { "10.0.0.10", "2001:FFFF::1111" } },
         { 0 },
       },
-      { "1.0.0.1" },
+      { "1.0.0.1", "8.8.8.8" },
       "example.com",
     },
-    {  // No usable nameservers.
+    {  // No usable adapters.
       {
         { IF_TYPE_SOFTWARE_LOOPBACK, IfOperStatusUp, L"localhost",
           { "2.0.0.2" } },
@@ -419,9 +421,45 @@ TEST(DnsConfigServiceWinTest, AppendToMultiLabelName) {
     DnsConfig config;
     EXPECT_EQ(internal::CONFIG_PARSE_WIN_OK,
               internal::ConvertSettingsToDnsConfig(settings, &config));
-    EXPECT_EQ(config.append_to_multi_label_name, t.expected_output);
+    EXPECT_EQ(t.expected_output, config.append_to_multi_label_name);
   }
 }
+
+// Setting have_name_resolution_policy_table should set unhandled_options.
+TEST(DnsConfigServiceWinTest, HaveNRPT) {
+  AdapterInfo infos[2] = {
+    { IF_TYPE_USB, IfOperStatusUp, L"connection.suffix", { "1.0.0.1" } },
+    { 0 },
+  };
+
+  const struct TestCase {
+    bool have_nrpt;
+    bool unhandled_options;
+    internal::ConfigParseWinResult result;
+  } cases[] = {
+    { false, false, internal::CONFIG_PARSE_WIN_OK },
+    { true, true, internal::CONFIG_PARSE_WIN_UNHANDLED_OPTIONS },
+  };
+
+  for (size_t i = 0; i < arraysize(cases); ++i) {
+    const TestCase& t = cases[i];
+    internal::DnsSystemSettings settings = {
+      CreateAdapterAddresses(infos),
+      { false }, { false }, { false }, { false },
+      { { false }, { false } },
+      { { false }, { false } },
+      { { false }, { false } },
+      { false },
+      t.have_nrpt,
+    };
+    DnsConfig config;
+    EXPECT_EQ(t.result,
+              internal::ConvertSettingsToDnsConfig(settings, &config));
+    EXPECT_EQ(t.unhandled_options, config.unhandled_options);
+    EXPECT_EQ(t.have_nrpt, config.use_local_ipv6);
+  }
+}
+
 
 }  // namespace
 

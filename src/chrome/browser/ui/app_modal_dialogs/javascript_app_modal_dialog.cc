@@ -7,10 +7,14 @@
 #include "chrome/browser/browser_shutdown.h"
 #include "chrome/browser/ui/app_modal_dialogs/native_app_modal_dialog.h"
 #include "content/public/browser/web_contents.h"
-#include "content/public/browser/web_contents_view.h"
-#include "ui/base/text/text_elider.h"
+#include "ui/gfx/text_elider.h"
 
-using content::JavaScriptDialogCreator;
+#if defined(USE_AURA)
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#endif
+
+using content::JavaScriptDialogManager;
 using content::WebContents;
 
 namespace {
@@ -24,12 +28,14 @@ const int kMessageTextMaxRows = 32;
 const int kMessageTextMaxCols = 132;
 const int kDefaultPromptMaxRows = 24;
 const int kDefaultPromptMaxCols = 132;
-void EnforceMaxTextSize(const string16& in_string, string16* out_string) {
-  ui::ElideRectangleString(in_string, kMessageTextMaxRows,
+void EnforceMaxTextSize(const base::string16& in_string,
+                        base::string16* out_string) {
+  gfx::ElideRectangleString(in_string, kMessageTextMaxRows,
                            kMessageTextMaxCols, false, out_string);
 }
-void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
-  ui::ElideRectangleString(in_string, kDefaultPromptMaxRows,
+void EnforceMaxPromptSize(const base::string16& in_string,
+                          base::string16* out_string) {
+  gfx::ElideRectangleString(in_string, kDefaultPromptMaxRows,
                            kDefaultPromptMaxCols, false, out_string);
 }
 #else
@@ -37,11 +43,13 @@ void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
 // appropriately, but limit its overall length to something reasonable.
 const int kMessageTextMaxSize = 3000;
 const int kDefaultPromptMaxSize = 2000;
-void EnforceMaxTextSize(const string16& in_string, string16* out_string) {
-  ui::ElideString(in_string, kMessageTextMaxSize, out_string);
+void EnforceMaxTextSize(const base::string16& in_string,
+                        base::string16* out_string) {
+  gfx::ElideString(in_string, kMessageTextMaxSize, out_string);
 }
-void EnforceMaxPromptSize(const string16& in_string, string16* out_string) {
-  ui::ElideString(in_string, kDefaultPromptMaxSize, out_string);
+void EnforceMaxPromptSize(const base::string16& in_string,
+                          base::string16* out_string) {
+  gfx::ElideString(in_string, kDefaultPromptMaxSize, out_string);
 }
 #endif
 
@@ -53,17 +61,17 @@ ChromeJavaScriptDialogExtraData::ChromeJavaScriptDialogExtraData()
 
 JavaScriptAppModalDialog::JavaScriptAppModalDialog(
     WebContents* web_contents,
-    ChromeJavaScriptDialogExtraData* extra_data,
-    const string16& title,
+    ExtraDataMap* extra_data_map,
+    const base::string16& title,
     content::JavaScriptMessageType javascript_message_type,
-    const string16& message_text,
-    const string16& default_prompt_text,
+    const base::string16& message_text,
+    const base::string16& default_prompt_text,
     bool display_suppress_checkbox,
     bool is_before_unload_dialog,
     bool is_reload,
-    const JavaScriptDialogCreator::DialogClosedCallback& callback)
+    const JavaScriptDialogManager::DialogClosedCallback& callback)
     : AppModalDialog(web_contents, title),
-      extra_data_(extra_data),
+      extra_data_map_(extra_data_map),
       javascript_message_type_(javascript_message_type),
       display_suppress_checkbox_(display_suppress_checkbox),
       is_before_unload_dialog_(is_before_unload_dialog),
@@ -78,8 +86,16 @@ JavaScriptAppModalDialog::~JavaScriptAppModalDialog() {
 }
 
 NativeAppModalDialog* JavaScriptAppModalDialog::CreateNativeDialog() {
-  gfx::NativeWindow parent_window =
-      web_contents()->GetView()->GetTopLevelNativeWindow();
+  gfx::NativeWindow parent_window = web_contents()->GetTopLevelNativeWindow();
+
+#if defined(USE_AURA)
+  if (!parent_window->GetRootWindow()) {
+    // When we are part of a WebContents that isn't actually being displayed on
+    // the screen, we can't actually attach to it.
+    parent_window = NULL;
+  }
+#endif  // defined(USE_AURA)
+
   return NativeAppModalDialog::CreateNativeJavaScriptPrompt(this,
                                                             parent_window);
 }
@@ -89,21 +105,19 @@ bool JavaScriptAppModalDialog::IsJavaScriptModalDialog() {
 }
 
 void JavaScriptAppModalDialog::Invalidate() {
-  if (!valid_)
+  if (!IsValid())
     return;
 
-  valid_ = false;
-  callback_.Reset();
-  if (native_dialog_)
+  AppModalDialog::Invalidate();
+  if (!callback_.is_null()) {
+    callback_.Run(false, base::string16());
+    callback_.Reset();
+  }
+  if (native_dialog())
     CloseModalDialog();
 }
 
 void JavaScriptAppModalDialog::OnCancel(bool suppress_js_messages) {
-  // If we are shutting down and this is an onbeforeunload dialog, cancel the
-  // shutdown.
-  if (is_before_unload_dialog_)
-    browser_shutdown::SetTryingToQuit(false);
-
   // We need to do this before WM_DESTROY (WindowClosing()) as any parent frame
   // will receive its activation messages before this dialog receives
   // WM_DESTROY. The parent frame would then try to activate any modal dialogs
@@ -112,12 +126,12 @@ void JavaScriptAppModalDialog::OnCancel(bool suppress_js_messages) {
   // is a temporary workaround.
   CompleteDialog();
 
-  NotifyDelegate(false, string16(), suppress_js_messages);
+  NotifyDelegate(false, base::string16(), suppress_js_messages);
 }
 
-void JavaScriptAppModalDialog::OnAccept(const string16& prompt_text,
+void JavaScriptAppModalDialog::OnAccept(const base::string16& prompt_text,
                                         bool suppress_js_messages) {
-  string16 prompt_text_to_use = prompt_text;
+  base::string16 prompt_text_to_use = prompt_text;
   // This is only for testing.
   if (use_override_prompt_text_)
     prompt_text_to_use = override_prompt_text_;
@@ -127,27 +141,37 @@ void JavaScriptAppModalDialog::OnAccept(const string16& prompt_text,
 }
 
 void JavaScriptAppModalDialog::OnClose() {
-  NotifyDelegate(false, string16(), false);
+  NotifyDelegate(false, base::string16(), false);
 }
 
 void JavaScriptAppModalDialog::SetOverridePromptText(
-    const string16& override_prompt_text) {
+    const base::string16& override_prompt_text) {
   override_prompt_text_ = override_prompt_text;
   use_override_prompt_text_ = true;
 }
 
 void JavaScriptAppModalDialog::NotifyDelegate(bool success,
-                                              const string16& user_input,
+                                              const base::string16& user_input,
                                               bool suppress_js_messages) {
-  if (!valid_)
+  if (!IsValid())
     return;
 
-  callback_.Run(success, user_input);
+  if (!callback_.is_null()) {
+    callback_.Run(success, user_input);
+    callback_.Reset();
+  }
 
-  extra_data_->last_javascript_message_dismissal_ = base::TimeTicks::Now();
-  extra_data_->suppress_javascript_messages_ = suppress_js_messages;
+  // The callback_ above may delete web_contents_, thus removing the extra
+  // data from the map owned by ChromeJavaScriptDialogManager. Make sure
+  // to only use the data if still present. http://crbug.com/236476
+  ExtraDataMap::iterator extra_data = extra_data_map_->find(web_contents());
+  if (extra_data != extra_data_map_->end()) {
+    extra_data->second.last_javascript_message_dismissal_ =
+        base::TimeTicks::Now();
+    extra_data->second.suppress_javascript_messages_ = suppress_js_messages;
+  }
 
   // On Views, we can end up coming through this code path twice :(.
   // See crbug.com/63732.
-  valid_ = false;
+  AppModalDialog::Invalidate();
 }

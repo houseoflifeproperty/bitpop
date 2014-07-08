@@ -16,6 +16,7 @@
  */
 
 #include "native_client/src/include/nacl_base.h"
+#include "native_client/src/include/nacl/nacl_exception.h"
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86
   #if NACL_BUILD_SUBARCH == 32
@@ -38,18 +39,14 @@ EXTERN_C_BEGIN
 
 struct NaClApp;
 struct NaClAppThread;
-
-enum NaClSignalResult {
-  NACL_SIGNAL_SEARCH,   /* Try our handler or OS */
-  NACL_SIGNAL_SKIP,     /* Skip our handlers and try OS */
-  NACL_SIGNAL_RETURN    /* Skip all other handlers and return */
-};
+struct NaClExceptionFrame;
 
 /*
  * TODO(halyavin): These signal numbers are part of an external ABI
  * exposed through NaCl's GDB debug stub.  We need to find a directory
  * to place such headers.
  */
+#define NACL_ABI_SIGILL 4
 #define NACL_ABI_SIGTRAP 5
 #define NACL_ABI_SIGKILL 9
 #define NACL_ABI_SIGSEGV 11
@@ -84,8 +81,18 @@ enum PosixSignals {
  * Prototype for a signal handler.  The handler will receive the POSIX
  * signal number and an opaque platform dependent signal object.
  */
-typedef enum NaClSignalResult (*NaClSignalHandler)(int sig_num, void *ctx);
+typedef void (*NaClSignalHandler)(int sig_num,
+                                  const struct NaClSignalContext *regs,
+                                  int is_untrusted);
 
+
+/*
+ * This allows setting a larger signal stack size than the default.
+ * This is for use by tests which may want to call functions such as
+ * fprintf() to print debugging info in the event of a failure,
+ * because fprintf() requires a larger stack.
+ */
+void NaClSignalStackSetSize(uint32_t size);
 
 /*
  * Allocates a stack suitable for passing to
@@ -124,29 +131,15 @@ void NaClSignalHandlerInit(void);
 void NaClSignalHandlerFini(void);
 
 /*
- * Assert that no signal handlers are registered.
- */
-void NaClSignalAssertNoHandlers(void);
-
-/*
  * Provides a signal safe method to write to stderr.
  */
 ssize_t NaClSignalErrorMessage(const char *str);
 
 /*
- * Add a signal handler to the front of the list.
- * Returns an id for the handler or returns 0 on failure.
- * This function is not thread-safe and should only be
- * called at startup.
+ * Replace the signal handler that is run after NaCl restores %gs on
+ * x86-32.  This is only used by test code.
  */
-int NaClSignalHandlerAdd(NaClSignalHandler func);
-
-/*
- * Remove a signal handler based on the ID provided, and
- * return 1 on success or zero on failure.  This function
- * is not thread-safe and should only be called at startup.
- */
-int NaClSignalHandlerRemove(int id);
+void NaClSignalHandlerSet(NaClSignalHandler func);
 
 /*
  * Fill a signal context structure from the raw platform dependent
@@ -163,42 +156,25 @@ void NaClSignalContextToHandler(void *raw_ctx,
                                 const struct NaClSignalContext *sig_ctx);
 
 
-/*
- * Return non-zero if the signal context is currently executing in an
- * untrusted environment.
- */
-int NaClSignalContextIsUntrusted(const struct NaClSignalContext *sig_ctx);
+int NaClSignalContextIsUntrusted(struct NaClAppThread *natp,
+                                 const struct NaClSignalContext *sig_ctx);
 
-void NaClSignalContextGetCurrentThread(const struct NaClSignalContext *sig_ctx,
-                                       int *is_untrusted,
-                                       struct NaClAppThread **result_thread);
-
-/*
- * A basic handler which will do nothing, passing the
- * error to the OS.
- */
-enum NaClSignalResult NaClSignalHandleNone(int signal_number, void *ctx);
+int NaClSignalCheckSandboxInvariants(const struct NaClSignalContext *regs,
+                                     struct NaClAppThread *natp);
 
 /*
  * A basic handler which will exit with -signal_number when
  * a signal is encountered in the untrusted code, otherwise
  * the signal is passed to the next handler.
  */
-enum NaClSignalResult NaClSignalHandleUntrusted(int signal_number, void *ctx);
+void NaClSignalHandleUntrusted(int signal_number,
+                               const struct NaClSignalContext *regs,
+                               int is_untrusted);
 
 
-/*
- * Traverse handler list, until a handler returns
- * NACL_SIGNAL_RETURN, or the list is exhausted, in which case
- * the signal is passed to the OS.
- */
-enum NaClSignalResult NaClSignalHandlerFind(int signal_number, void *ctx);
-
-/*
- * Platform specific code. Do not call directly.
- */
-void NaClSignalHandlerInitPlatform(void);
-void NaClSignalHandlerFiniPlatform(void);
+void NaClSignalSetUpExceptionFrame(volatile struct NaClExceptionFrame *frame,
+                                   const struct NaClSignalContext *regs,
+                                   uint32_t context_user_addr);
 
 #if NACL_OSX
 

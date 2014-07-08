@@ -9,7 +9,7 @@
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/threading/platform_thread.h"
@@ -51,7 +51,7 @@ bool ForceServiceProcessShutdown(const std::string& version,
 // Gets the name of the service process IPC channel.
 // Returns an absolute path as required.
 IPC::ChannelHandle GetServiceProcessChannel() {
-  FilePath temp_dir;
+  base::FilePath temp_dir;
   PathService::Get(base::DIR_TEMP, &temp_dir);
   std::string pipe_name = GetServiceProcessScopedVersionedName("_service_ipc");
   std::string pipe_path = temp_dir.Append(pipe_name).value();

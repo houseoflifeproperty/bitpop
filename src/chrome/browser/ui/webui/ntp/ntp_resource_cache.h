@@ -8,9 +8,9 @@
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "base/string16.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/strings/string16.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 
@@ -20,21 +20,47 @@ namespace base {
 class RefCountedMemory;
 }
 
+namespace content {
+class RenderProcessHost;
+}
+
 // This class keeps a cache of NTP resources (HTML and CSS) so we don't have to
 // regenerate them all the time.
 class NTPResourceCache : public content::NotificationObserver,
-                         public ProfileKeyedService {
+                         public KeyedService {
  public:
+  enum WindowType {
+    NORMAL,
+    INCOGNITO,
+    GUEST,
+  };
+
   explicit NTPResourceCache(Profile* profile);
   virtual ~NTPResourceCache();
 
-  base::RefCountedMemory* GetNewTabHTML(bool is_incognito);
-  base::RefCountedMemory* GetNewTabCSS(bool is_incognito);
+  base::RefCountedMemory* GetNewTabHTML(WindowType win_type);
+  base::RefCountedMemory* GetNewTabCSS(WindowType win_type);
 
+  void set_should_show_apps_page(bool should_show_apps_page) {
+    should_show_apps_page_ = should_show_apps_page;
+  }
+  void set_should_show_most_visited_page(bool should_show_most_visited_page) {
+    should_show_most_visited_page_ = should_show_most_visited_page;
+  }
+  void set_should_show_other_devices_menu(bool should_show_other_devices_menu) {
+    should_show_other_devices_menu_ = should_show_other_devices_menu;
+  }
+  void set_should_show_recently_closed_menu(
+      bool should_show_recently_closed_menu) {
+    should_show_recently_closed_menu_ = should_show_recently_closed_menu;
+  }
   // content::NotificationObserver interface.
   virtual void Observe(int type,
                        const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
+
+  static WindowType GetWindowType(
+      Profile* profile, content::RenderProcessHost* render_host);
 
  private:
   void OnPreferenceChanged();
@@ -50,25 +76,36 @@ class NTPResourceCache : public content::NotificationObserver,
 
   scoped_refptr<base::RefCountedMemory> new_tab_html_;
 
-#if !defined(OS_ANDROID)
   // Returns a message describing any newly-added sync types, or an empty
   // string if all types have already been acknowledged.
-  string16 GetSyncTypeMessage();
+  base::string16 GetSyncTypeMessage();
 
   void CreateNewTabIncognitoHTML();
-
   void CreateNewTabIncognitoCSS();
+
+  void CreateNewTabGuestHTML();
+  void CreateNewTabGuestCSS();
 
   void CreateNewTabCSS();
 
+  scoped_refptr<base::RefCountedMemory> new_tab_guest_html_;
+  scoped_refptr<base::RefCountedMemory> new_tab_guest_css_;
   scoped_refptr<base::RefCountedMemory> new_tab_incognito_html_;
   scoped_refptr<base::RefCountedMemory> new_tab_incognito_css_;
   scoped_refptr<base::RefCountedMemory> new_tab_css_;
   content::NotificationRegistrar registrar_;
-  PrefChangeRegistrar pref_change_registrar_;
-#endif
+  PrefChangeRegistrar profile_pref_change_registrar_;
+  PrefChangeRegistrar local_state_pref_change_registrar_;
 
+  // Set based on platform_util::IsSwipeTrackingFromScrollEventsEnabled.
   bool is_swipe_tracking_from_scroll_events_enabled_;
+  // Set based on NewTabUI::ShouldShowApps.
+  bool should_show_apps_page_;
+  // The next three all default to true and can be manually set, e.g., by the
+  // chrome://apps page.
+  bool should_show_most_visited_page_;
+  bool should_show_other_devices_menu_;
+  bool should_show_recently_closed_menu_;
 
   DISALLOW_COPY_AND_ASSIGN(NTPResourceCache);
 };

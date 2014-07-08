@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -6,87 +6,32 @@
 
 #include "base/at_exit.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/process_util.h"
-#include "base/string_number_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/test/test_timeouts.h"
-#include "base/utf_string_conversions.h"
-#include "net/test/local_sync_test_server.h"
-#include "net/test/python_utils.h"
-#include "net/test/test_server.h"
+#include "net/test/spawned_test_server/spawned_test_server.h"
 
 static void PrintUsage() {
   printf("run_testserver --doc-root=relpath\n"
-         "               [--http|--https|--ws|--wss|--ftp|--sync]\n"
-         "               [--ssl-cert=ok|mismatched-name|expired]\n"
-         "               [--port=<port>] [--xmpp-port=<xmpp_port>]\n");
+         "               [--http|--https|--ws|--wss|--ftp]\n"
+         "               [--ssl-cert=ok|mismatched-name|expired]\n");
   printf("(NOTE: relpath should be relative to the 'src' directory.\n");
-  printf("       --port and --xmpp-port only work with the --sync flag.)\n");
-}
-
-// Launches the chromiumsync_test script, testing the --sync functionality.
-static bool RunSyncTest() {
- if (!net::TestServer::SetPythonPathStatic()) {
-    LOG(ERROR) << "Error trying to set python path. Exiting.";
-    return false;
-  }
-
-  FilePath sync_test_path;
-  if (!net::TestServer::GetTestServerDirectory(&sync_test_path)) {
-    LOG(ERROR) << "Error trying to get python test server path.";
-    return false;
-  }
-
-  sync_test_path =
-      sync_test_path.Append(FILE_PATH_LITERAL("chromiumsync_test.py"));
-
-  CommandLine python_command(CommandLine::NO_PROGRAM);
-  if (!GetPythonCommand(&python_command)) {
-    LOG(ERROR) << "Could not get python runtime command.";
-    return false;
-  }
-
-  python_command.AppendArgPath(sync_test_path);
-  if (!base::LaunchProcess(python_command, base::LaunchOptions(), NULL)) {
-    LOG(ERROR) << "Failed to launch test script.";
-    return false;
-  }
-  return true;
-}
-
-// Gets a port value from the switch with name |switch_name| and writes it to
-// |port|. Returns true if successful and false otherwise.
-static bool GetPortFromSwitch(const std::string& switch_name, uint16* port) {
-  DCHECK(port != NULL) << "|port| is NULL";
-  CommandLine* command_line = CommandLine::ForCurrentProcess();
-  int port_int = 0;
-  if (command_line->HasSwitch(switch_name)) {
-    std::string port_str = command_line->GetSwitchValueASCII(switch_name);
-    if (!base::StringToInt(port_str, &port_int)) {
-      LOG(WARNING) << "Could not extract port from switch " << switch_name;
-      return false;
-    }
-  }
-  *port = static_cast<uint16>(port_int);
-  return true;
 }
 
 int main(int argc, const char* argv[]) {
   base::AtExitManager at_exit_manager;
-  MessageLoopForIO message_loop;
+  base::MessageLoopForIO message_loop;
 
   // Process command line
   CommandLine::Init(argc, argv);
   CommandLine* command_line = CommandLine::ForCurrentProcess();
 
-  if (!logging::InitLogging(
-          FILE_PATH_LITERAL("testserver.log"),
-          logging::LOG_TO_BOTH_FILE_AND_SYSTEM_DEBUG_LOG,
-          logging::LOCK_LOG_FILE,
-          logging::APPEND_TO_OLD_LOG_FILE,
-          logging::DISABLE_DCHECK_FOR_NON_OFFICIAL_RELEASE_BUILDS)) {
+  logging::LoggingSettings settings;
+  settings.logging_dest = logging::LOG_TO_ALL;
+  settings.log_file = FILE_PATH_LITERAL("testserver.log");
+  if (!logging::InitLogging(settings)) {
     printf("Error: could not initialize logging. Exiting.\n");
     return -1;
   }
@@ -94,54 +39,48 @@ int main(int argc, const char* argv[]) {
   TestTimeouts::Initialize();
 
   if (command_line->GetSwitches().empty() ||
-      command_line->HasSwitch("help") ||
-      ((command_line->HasSwitch("port") ||
-        command_line->HasSwitch("xmpp-port")) &&
-       !command_line->HasSwitch("sync"))) {
+      command_line->HasSwitch("help")) {
     PrintUsage();
     return -1;
   }
 
-  net::TestServer::Type server_type;
+  net::SpawnedTestServer::Type server_type;
   if (command_line->HasSwitch("http")) {
-    server_type = net::TestServer::TYPE_HTTP;
+    server_type = net::SpawnedTestServer::TYPE_HTTP;
   } else if (command_line->HasSwitch("https")) {
-    server_type = net::TestServer::TYPE_HTTPS;
+    server_type = net::SpawnedTestServer::TYPE_HTTPS;
   } else if (command_line->HasSwitch("ws")) {
-    server_type = net::TestServer::TYPE_WS;
+    server_type = net::SpawnedTestServer::TYPE_WS;
   } else if (command_line->HasSwitch("wss")) {
-    server_type = net::TestServer::TYPE_WSS;
+    server_type = net::SpawnedTestServer::TYPE_WSS;
   } else if (command_line->HasSwitch("ftp")) {
-    server_type = net::TestServer::TYPE_FTP;
-  } else if (command_line->HasSwitch("sync")) {
-    server_type = net::TestServer::TYPE_SYNC;
-  } else if (command_line->HasSwitch("sync-test")) {
-    return RunSyncTest() ? 0 : -1;
+    server_type = net::SpawnedTestServer::TYPE_FTP;
   } else {
     // If no scheme switch is specified, select http or https scheme.
     // TODO(toyoshim): Remove this estimation.
     if (command_line->HasSwitch("ssl-cert"))
-      server_type = net::TestServer::TYPE_HTTPS;
+      server_type = net::SpawnedTestServer::TYPE_HTTPS;
     else
-      server_type = net::TestServer::TYPE_HTTP;
+      server_type = net::SpawnedTestServer::TYPE_HTTP;
   }
 
-  net::TestServer::SSLOptions ssl_options;
+  net::SpawnedTestServer::SSLOptions ssl_options;
   if (command_line->HasSwitch("ssl-cert")) {
-    if (!net::TestServer::UsingSSL(server_type)) {
+    if (!net::SpawnedTestServer::UsingSSL(server_type)) {
       printf("Error: --ssl-cert is specified on non-secure scheme\n");
       PrintUsage();
       return -1;
     }
     std::string cert_option = command_line->GetSwitchValueASCII("ssl-cert");
     if (cert_option == "ok") {
-      ssl_options.server_certificate = net::TestServer::SSLOptions::CERT_OK;
+      ssl_options.server_certificate =
+          net::SpawnedTestServer::SSLOptions::CERT_OK;
     } else if (cert_option == "mismatched-name") {
       ssl_options.server_certificate =
-          net::TestServer::SSLOptions::CERT_MISMATCHED_NAME;
+          net::SpawnedTestServer::SSLOptions::CERT_MISMATCHED_NAME;
     } else if (cert_option == "expired") {
       ssl_options.server_certificate =
-          net::TestServer::SSLOptions::CERT_EXPIRED;
+          net::SpawnedTestServer::SSLOptions::CERT_EXPIRED;
     } else {
       printf("Error: --ssl-cert has invalid value %s\n", cert_option.c_str());
       PrintUsage();
@@ -149,29 +88,22 @@ int main(int argc, const char* argv[]) {
     }
   }
 
-  FilePath doc_root = command_line->GetSwitchValuePath("doc-root");
-  if ((server_type != net::TestServer::TYPE_SYNC) && doc_root.empty()) {
+  base::FilePath doc_root = command_line->GetSwitchValuePath("doc-root");
+  if (doc_root.empty()) {
     printf("Error: --doc-root must be specified\n");
     PrintUsage();
     return -1;
   }
 
-  scoped_ptr<net::TestServer> test_server;
-  if (net::TestServer::UsingSSL(server_type)) {
-    test_server.reset(new net::TestServer(server_type, ssl_options, doc_root));
-  } else if (server_type == net::TestServer::TYPE_SYNC) {
-    uint16 port = 0;
-    uint16 xmpp_port = 0;
-    if (!GetPortFromSwitch("port", &port) ||
-        !GetPortFromSwitch("xmpp-port", &xmpp_port)) {
-      printf("Error: Could not extract --port and/or --xmpp-port.\n");
-      return -1;
-    }
-    test_server.reset(new net::LocalSyncTestServer(port, xmpp_port));
+  scoped_ptr<net::SpawnedTestServer> test_server;
+  if (net::SpawnedTestServer::UsingSSL(server_type)) {
+    test_server.reset(
+        new net::SpawnedTestServer(server_type, ssl_options, doc_root));
   } else {
-    test_server.reset(new net::TestServer(server_type,
-                                          net::TestServer::kLocalhost,
-                                          doc_root));
+    test_server.reset(new net::SpawnedTestServer(
+                          server_type,
+                          net::SpawnedTestServer::kLocalhost,
+                          doc_root));
   }
 
   if (!test_server->Start()) {
@@ -179,9 +111,10 @@ int main(int argc, const char* argv[]) {
     return -1;
   }
 
-  if (!file_util::DirectoryExists(test_server->document_root())) {
+  if (!base::DirectoryExists(test_server->document_root())) {
     printf("Error: invalid doc root: \"%s\" does not exist!\n",
-        UTF16ToUTF8(test_server->document_root().LossyDisplayName()).c_str());
+        base::UTF16ToUTF8(
+            test_server->document_root().LossyDisplayName()).c_str());
     return -1;
   }
 

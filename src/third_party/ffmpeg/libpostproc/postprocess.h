@@ -23,8 +23,13 @@
 
 /**
  * @file
- * @brief
- *     external postprocessing API
+ * @ingroup lpp
+ * external API header
+ */
+
+/**
+ * @defgroup lpp Libpostproc
+ * @{
  */
 
 #include "libpostproc/version.h"
@@ -84,6 +89,7 @@ void pp_free_context(pp_context *ppContext);
 #define PP_CPU_CAPS_MMX2  0x20000000
 #define PP_CPU_CAPS_3DNOW 0x40000000
 #define PP_CPU_CAPS_ALTIVEC 0x10000000
+#define PP_CPU_CAPS_AUTO  0x00080000
 
 #define PP_FORMAT         0x00000008
 #define PP_FORMAT_420    (0x00000011|PP_FORMAT)
@@ -92,5 +98,9 @@ void pp_free_context(pp_context *ppContext);
 #define PP_FORMAT_444    (0x00000000|PP_FORMAT)
 
 #define PP_PICT_TYPE_QP2  0x00000010 ///< MPEG2 style QScale
+
+/**
+ * @}
+ */
 
 #endif /* POSTPROC_POSTPROCESS_H */

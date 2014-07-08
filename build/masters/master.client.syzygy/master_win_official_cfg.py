@@ -1,10 +1,9 @@
-# Copyright (c) 2011 The Chromium Authors. All rights reserved.
+# Copyright 2011 The Chromium Authors. All rights reserved.
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-from buildbot.scheduler import Scheduler
-# This is due to buildbot 0.7.12 being used for the presubmit check.
-from buildbot.changes.filter import ChangeFilter  # pylint: disable=E0611,F0401
+from buildbot.changes.filter import ChangeFilter
+from buildbot.schedulers.basic import SingleBranchScheduler
 
 from master.factory import syzygy_factory
 
@@ -26,11 +25,11 @@ def _VersionFileFilter(change):
 #
 # Official build scheduler for Syzygy
 #
-official_scheduler = Scheduler('syzygy_version',
-                               treeStableTimer=0,
-                               change_filter=ChangeFilter(
-                                  filter_fn=_VersionFileFilter),
-                               builderNames=['Syzygy Official'])
+official_scheduler = SingleBranchScheduler('syzygy_version',
+                                           treeStableTimer=0,
+                                           change_filter=ChangeFilter(
+                                               filter_fn=_VersionFileFilter),
+                                           builderNames=['Syzygy Official'])
 
 #
 # Windows official Release builder

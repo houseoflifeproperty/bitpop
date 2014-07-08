@@ -411,7 +411,7 @@ static struct XYZNumber read_tag_XYZType(struct mem_source *src, struct tag_inde
 // present that are not part of the tag_index.
 static struct curveType *read_curveType(struct mem_source *src, uint32_t offset, uint32_t *len)
 {
-	static const size_t COUNT_TO_LENGTH[5] = {1, 3, 4, 5, 7};
+	static const uint32_t COUNT_TO_LENGTH[5] = {1, 3, 4, 5, 7};
 	struct curveType *curve = NULL;
 	uint32_t type = read_u32(src, offset);
 	uint32_t count;
@@ -666,7 +666,7 @@ static struct lutType *read_tag_lutType(struct mem_source *src, struct tag_index
 	uint16_t num_input_table_entries;
 	uint16_t num_output_table_entries;
 	uint8_t in_chan, grid_points, out_chan;
-	uint32_t clut_offset, output_offset;
+	size_t clut_offset, output_offset;
 	uint32_t clut_size;
 	size_t entry_size;
 	struct lutType *lut;
@@ -1005,6 +1005,9 @@ qcms_profile* qcms_profile_from_memory(const void *mem, size_t size)
 	source.buf = mem;
 	source.size = size;
 	source.valid = true;
+
+	if (size < 4)
+		return INVALID_PROFILE;
 
 	length = read_u32(src, 0);
 	if (length <= size) {

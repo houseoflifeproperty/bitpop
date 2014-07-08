@@ -33,6 +33,7 @@
 #include "sandbox/win/src/window.h"
 
 namespace {
+
 // The standard windows size for one memory page.
 const size_t kOneMemPage = 4096;
 // The IPC and Policy shared memory sizes.
@@ -42,13 +43,26 @@ const size_t kPolMemSize = kOneMemPage * 14;
 // Helper function to allocate space (on the heap) for policy.
 sandbox::PolicyGlobal* MakeBrokerPolicyMemory() {
   const size_t kTotalPolicySz = kPolMemSize;
-  char* mem = new char[kTotalPolicySz];
-  DCHECK(mem);
-  memset(mem, 0, kTotalPolicySz);
-  sandbox::PolicyGlobal* policy = reinterpret_cast<sandbox::PolicyGlobal*>(mem);
+  sandbox::PolicyGlobal* policy = static_cast<sandbox::PolicyGlobal*>
+      (::operator new(kTotalPolicySz));
+  DCHECK(policy);
+  memset(policy, 0, kTotalPolicySz);
   policy->data_size = kTotalPolicySz - sizeof(sandbox::PolicyGlobal);
   return policy;
 }
+
+bool IsInheritableHandle(HANDLE handle) {
+  if (!handle)
+    return false;
+  if (handle == INVALID_HANDLE_VALUE)
+    return false;
+  // File handles (FILE_TYPE_DISK) and pipe handles are known to be
+  // inheritable.  Console handles (FILE_TYPE_CHAR) are not
+  // inheritable via PROC_THREAD_ATTRIBUTE_HANDLE_LIST.
+  DWORD handle_type = GetFileType(handle);
+  return handle_type == FILE_TYPE_DISK || handle_type == FILE_TYPE_PIPE;
+}
+
 }
 
 namespace sandbox {
@@ -70,6 +84,8 @@ PolicyBase::PolicyBase()
       use_alternate_winstation_(false),
       file_system_init_(false),
       relaxed_interceptions_(true),
+      stdout_handle_(INVALID_HANDLE_VALUE),
+      stderr_handle_(INVALID_HANDLE_VALUE),
       integrity_level_(INTEGRITY_LEVEL_LAST),
       delayed_integrity_level_(INTEGRITY_LEVEL_LAST),
       mitigations_(0),
@@ -157,21 +173,21 @@ ResultCode PolicyBase::SetAlternateDesktop(bool alternate_winstation) {
   return CreateAlternateDesktop(alternate_winstation);
 }
 
-string16 PolicyBase::GetAlternateDesktop() const {
+base::string16 PolicyBase::GetAlternateDesktop() const {
   // No alternate desktop or winstation. Return an empty string.
   if (!use_alternate_desktop_ && !use_alternate_winstation_) {
-    return string16();
+    return base::string16();
   }
 
   // The desktop and winstation should have been created by now.
   // If we hit this scenario, it means that the user ignored the failure
   // during SetAlternateDesktop, so we ignore it here too.
   if (use_alternate_desktop_ && !alternate_desktop_handle_) {
-    return string16();
+    return base::string16();
   }
   if (use_alternate_winstation_ && (!alternate_desktop_handle_ ||
                                     !alternate_winstation_handle_)) {
-    return string16();
+    return base::string16();
   }
 
   return GetFullDesktopName(alternate_winstation_handle_,
@@ -308,6 +324,20 @@ void PolicyBase::SetStrictInterceptions() {
   relaxed_interceptions_ = false;
 }
 
+ResultCode PolicyBase::SetStdoutHandle(HANDLE handle) {
+  if (!IsInheritableHandle(handle))
+    return SBOX_ERROR_BAD_PARAMS;
+  stdout_handle_ = handle;
+  return SBOX_ALL_OK;
+}
+
+ResultCode PolicyBase::SetStderrHandle(HANDLE handle) {
+  if (!IsInheritableHandle(handle))
+    return SBOX_ERROR_BAD_PARAMS;
+  stderr_handle_ = handle;
+  return SBOX_ALL_OK;
+}
+
 ResultCode PolicyBase::AddRule(SubSystem subsystem, Semantics semantics,
                                const wchar_t* pattern) {
   if (NULL == policy_) {
@@ -384,8 +414,8 @@ ResultCode PolicyBase::AddDllToUnload(const wchar_t* dll_name) {
   return SBOX_ALL_OK;
 }
 
-ResultCode PolicyBase::AddKernelObjectToClose(const char16* handle_type,
-                                              const char16* handle_name) {
+ResultCode PolicyBase::AddKernelObjectToClose(const base::char16* handle_type,
+                                              const base::char16* handle_name) {
   return handle_closer_.AddHandle(handle_type, handle_name);
 }
 
@@ -567,6 +597,14 @@ EvalResult PolicyBase::EvalPolicy(int service,
   return DENY_ACCESS;
 }
 
+HANDLE PolicyBase::GetStdoutHandle() {
+  return stdout_handle_;
+}
+
+HANDLE PolicyBase::GetStderrHandle() {
+  return stderr_handle_;
+}
+
 // We service IPC_PING_TAG message which is a way to test a round trip of the
 // IPC subsystem. We receive a integer cookie and we are expected to return the
 // cookie times two (or three) and the current tick count.
@@ -611,7 +649,7 @@ bool PolicyBase::SetupAllInterceptions(TargetProcess* target) {
   }
 
   if (!blacklisted_dlls_.empty()) {
-    std::vector<string16>::iterator it = blacklisted_dlls_.begin();
+    std::vector<base::string16>::iterator it = blacklisted_dlls_.begin();
     for (; it != blacklisted_dlls_.end(); ++it) {
       manager.AddToUnloadModules(it->c_str());
     }

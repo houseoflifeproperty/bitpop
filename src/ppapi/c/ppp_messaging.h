@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppp_messaging.idl modified Wed Jan 25 11:41:09 2012. */
+/* From ppp_messaging.idl modified Wed Jun  5 10:32:43 2013. */
 
 #ifndef PPAPI_C_PPP_MESSAGING_H_
 #define PPAPI_C_PPP_MESSAGING_H_
@@ -45,9 +45,16 @@ struct PPP_Messaging_1_0 {
    *
    * @param[in] instance A <code>PP_Instance</code> identifying one instance
    * of a module.
-   * @param[in] message A <code>PP_Var</code> containing the data to be sent
-   * to JavaScript. Message can have an int32_t, double, bool, or string value
-   * (objects are not supported).
+   * @param[in] message A <code>PP_Var</code> which has been converted from a
+   * JavaScript value. JavaScript array/object types are supported from Chrome
+   * M29 onward. All JavaScript values are copied when passing them to the
+   * plugin.
+   *
+   * When converting JavaScript arrays, any object properties whose name
+   * is not an array index are ignored. When passing arrays and objects, the
+   * entire reference graph will be converted and transferred. If the reference
+   * graph has cycles, the message will not be sent and an error will be logged
+   * to the console.
    *
    * The following JavaScript code invokes <code>HandleMessage</code>, passing
    * the module instance on which it was invoked, with <code>message</code>

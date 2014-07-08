@@ -6,6 +6,7 @@
 
 #import <Cocoa/Cocoa.h>
 
+#include "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/cocoa/styled_text_field_cell.h"
 
 @class AutocompleteTextField;
@@ -26,7 +27,18 @@ class LocationBarDecoration;
   // If YES then the text field will not draw a focus ring or show the insertion
   // pointer.
   BOOL hideFocusState_;
+
+  // YES if this field is shown in a popup window.
+  BOOL isPopupMode_;
+
+  // Retains the NSEvent that caused the controlView to become firstResponder.
+  base::scoped_nsobject<NSEvent> focusEvent_;
 }
+
+@property(assign, nonatomic) BOOL isPopupMode;
+
+// Line height used for text in this cell.
+- (CGFloat)lineHeight;
 
 // Clear |leftDecorations_| and |rightDecorations_|.
 - (void)clearDecorations;
@@ -95,4 +107,10 @@ class LocationBarDecoration;
 - (void)setHideFocusState:(BOOL)hideFocusState
                    ofView:(AutocompleteTextField*)controlView;
 
+// Handles the |event| that caused |controlView| to become firstResponder.
+// If it is a mouse click on a ButtonDecoration, focus notifications are
+// postponed until the ButtonDecoration's OnMousePressed() was invoked.
+// Otherwise, they are called immediately.
+- (void)handleFocusEvent:(NSEvent*)event
+                  ofView:(AutocompleteTextField*)controlView;
 @end

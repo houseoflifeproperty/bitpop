@@ -4,8 +4,7 @@
 
 #include "ui/views/button_drag_utils.h"
 
-#include "base/utf_string_conversions.h"
-#include "googleurl/src/gurl.h"
+#include "base/strings/utf_string_conversions.h"
 #include "grit/ui_resources.h"
 #include "ui/base/dragdrop/drag_utils.h"
 #include "ui/base/dragdrop/os_exchange_data.h"
@@ -14,6 +13,7 @@
 #include "ui/gfx/image/image.h"
 #include "ui/views/controls/button/text_button.h"
 #include "ui/views/drag_utils.h"
+#include "url/gurl.h"
 
 namespace button_drag_utils {
 
@@ -21,7 +21,7 @@ namespace button_drag_utils {
 static const int kLinkDragImageMaxWidth = 200;
 
 void SetURLAndDragImage(const GURL& url,
-                        const string16& title,
+                        const base::string16& title,
                         const gfx::ImageSkia& icon,
                         ui::OSExchangeData* data,
                         views::Widget* widget) {
@@ -31,7 +31,8 @@ void SetURLAndDragImage(const GURL& url,
 
   // Create a button to render the drag image for us.
   views::TextButton button(NULL,
-                           title.empty() ? UTF8ToUTF16(url.spec()) : title);
+                           title.empty() ? base::UTF8ToUTF16(url.spec())
+                                         : title);
   button.set_max_width(kLinkDragImageMaxWidth);
   if (icon.isNull()) {
     button.SetIcon(*ui::ResourceBundle::GetSharedInstance().GetImageNamed(

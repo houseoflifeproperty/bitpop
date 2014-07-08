@@ -16,13 +16,7 @@
 # limitations under the License.
 
 
-import os
-import re
-import tempfile
-import time
-import shutil
 import unittest
-from selenium.common.exceptions import NoSuchElementException
 from selenium.common.exceptions import ElementNotVisibleException
 from selenium.webdriver.common.by import By
 
@@ -107,6 +101,30 @@ class VisibilityTests(unittest.TestCase):
             pass
 
         self.assertTrue(element.get_attribute("value") is not "You don't see me")
+
+    def testShouldSayElementsWithNegativeTransformAreNotDisplayed(self):
+        self._loadPage('cssTransform')
+        elementX = self.driver.find_element(By.ID, value='parentX')
+        self.assertFalse(elementX.is_displayed())
+        elementY = self.driver.find_element(By.ID, value='parentY')
+        self.assertFalse(elementY.is_displayed())
+
+    def testShouldSayElementsWithParentWithNegativeTransformAreNotDisplayed(self):
+        self._loadPage('cssTransform')
+        elementX = self.driver.find_element(By.ID, value='childX')
+        self.assertFalse(elementX.is_displayed())
+        elementY = self.driver.find_element(By.ID, value='childY')
+        self.assertFalse(elementY.is_displayed())
+
+    def testShouldSayElementWithZeroTransformIsVisible(self):
+        self._loadPage('cssTransform')
+        zero_tranform = self.driver.find_element(By.ID, 'zero-tranform')
+        self.assertTrue(zero_tranform.is_displayed())
+    
+    def testShouldSayElementIsVisibleWhenItHasNegativeTransformButElementisntInANegativeSpace(self):
+        self._loadPage('cssTransform2')
+        zero_tranform = self.driver.find_element(By.ID, 'negative-percentage-transformY')
+        self.assertTrue(zero_tranform.is_displayed())
 
     def _pageURL(self, name):
         return "http://localhost:%d/%s.html" % (self.webserver.port, name)

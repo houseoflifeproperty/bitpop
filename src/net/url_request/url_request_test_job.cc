@@ -10,8 +10,8 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/lazy_instance.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
 #include "net/base/io_buffer.h"
 #include "net/base/net_errors.h"
 #include "net/http/http_response_headers.h"
@@ -23,6 +23,15 @@ namespace {
 typedef std::list<URLRequestTestJob*> URLRequestJobList;
 base::LazyInstance<URLRequestJobList>::Leaky
     g_pending_jobs = LAZY_INSTANCE_INITIALIZER;
+
+class TestJobProtocolHandler : public URLRequestJobFactory::ProtocolHandler {
+ public:
+  // URLRequestJobFactory::ProtocolHandler implementation:
+  virtual URLRequestJob* MaybeCreateJob(
+      URLRequest* request, NetworkDelegate* network_delegate) const OVERRIDE {
+    return new URLRequestTestJob(request, network_delegate);
+  }
+};
 
 }  // namespace
 
@@ -36,8 +45,14 @@ GURL URLRequestTestJob::test_url_2() {
 GURL URLRequestTestJob::test_url_3() {
   return GURL("test:url3");
 }
+GURL URLRequestTestJob::test_url_4() {
+  return GURL("test:url4");
+}
 GURL URLRequestTestJob::test_url_error() {
   return GURL("test:error");
+}
+GURL URLRequestTestJob::test_url_redirect_to_url_2() {
+  return GURL("test:redirect_to_2");
 }
 
 // static getters for known URL responses
@@ -49,6 +64,9 @@ std::string URLRequestTestJob::test_data_2() {
 }
 std::string URLRequestTestJob::test_data_3() {
   return std::string("<html><title>Test Three Three Three</title></html>");
+}
+std::string URLRequestTestJob::test_data_4() {
+  return std::string("<html><title>Test Four Four Four Four</title></html>");
 }
 
 // static getter for simple response headers
@@ -69,6 +87,17 @@ std::string URLRequestTestJob::test_redirect_headers() {
   return std::string(kHeaders, arraysize(kHeaders));
 }
 
+// static getter for redirect response headers
+std::string URLRequestTestJob::test_redirect_to_url_2_headers() {
+  std::string headers = "HTTP/1.1 302 MOVED";
+  headers.push_back('\0');
+  headers += "Location: ";
+  headers += test_url_2().spec();
+  headers.push_back('\0');
+  headers.push_back('\0');
+  return headers;
+}
+
 // static getter for error response headers
 std::string URLRequestTestJob::test_error_headers() {
   static const char kHeaders[] =
@@ -78,10 +107,9 @@ std::string URLRequestTestJob::test_error_headers() {
 }
 
 // static
-URLRequestJob* URLRequestTestJob::Factory(URLRequest* request,
-                                          NetworkDelegate* network_delegate,
-                                          const std::string& scheme) {
-  return new URLRequestTestJob(request, network_delegate);
+URLRequestJobFactory::ProtocolHandler*
+URLRequestTestJob::CreateProtocolHandler() {
+  return new TestJobProtocolHandler();
 }
 
 URLRequestTestJob::URLRequestTestJob(URLRequest* request,
@@ -89,10 +117,11 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
     : URLRequestJob(request, network_delegate),
       auto_advance_(false),
       stage_(WAITING),
+      priority_(DEFAULT_PRIORITY),
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::URLRequestTestJob(URLRequest* request,
@@ -101,10 +130,11 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
     : URLRequestJob(request, network_delegate),
       auto_advance_(auto_advance),
       stage_(WAITING),
+      priority_(DEFAULT_PRIORITY),
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::URLRequestTestJob(URLRequest* request,
@@ -115,12 +145,13 @@ URLRequestTestJob::URLRequestTestJob(URLRequest* request,
     : URLRequestJob(request, network_delegate),
       auto_advance_(auto_advance),
       stage_(WAITING),
+      priority_(DEFAULT_PRIORITY),
       response_headers_(new HttpResponseHeaders(response_headers)),
       response_data_(response_data),
       offset_(0),
       async_buf_(NULL),
       async_buf_size_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)) {
+      weak_factory_(this) {
 }
 
 URLRequestTestJob::~URLRequestTestJob() {
@@ -132,21 +163,25 @@ URLRequestTestJob::~URLRequestTestJob() {
 
 bool URLRequestTestJob::GetMimeType(std::string* mime_type) const {
   DCHECK(mime_type);
-  if (!response_headers_)
+  if (!response_headers_.get())
     return false;
   return response_headers_->GetMimeType(mime_type);
+}
+
+void URLRequestTestJob::SetPriority(RequestPriority priority) {
+  priority_ = priority;
 }
 
 void URLRequestTestJob::Start() {
   // Start reading asynchronously so that all error reporting and data
   // callbacks happen as they would for network requests.
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE, base::Bind(&URLRequestTestJob::StartAsync,
                             weak_factory_.GetWeakPtr()));
 }
 
 void URLRequestTestJob::StartAsync() {
-  if (!response_headers_) {
+  if (!response_headers_.get()) {
     response_headers_ = new HttpResponseHeaders(test_headers());
     if (request_->url().spec() == test_url_1().spec()) {
       response_data_ = test_data_1();
@@ -155,6 +190,11 @@ void URLRequestTestJob::StartAsync() {
       response_data_ = test_data_2();
     } else if (request_->url().spec() == test_url_3().spec()) {
       response_data_ = test_data_3();
+    } else if (request_->url().spec() == test_url_4().spec()) {
+      response_data_ = test_data_4();
+    } else if (request_->url().spec() == test_url_redirect_to_url_2().spec()) {
+      response_headers_ =
+          new HttpResponseHeaders(test_redirect_to_url_2_headers());
     } else {
       AdvanceJob();
 
@@ -202,19 +242,30 @@ bool URLRequestTestJob::ReadRawData(IOBuffer* buf, int buf_size,
 }
 
 void URLRequestTestJob::GetResponseInfo(HttpResponseInfo* info) {
-  if (response_headers_)
+  if (response_headers_.get())
     info->headers = response_headers_;
 }
 
+void URLRequestTestJob::GetLoadTimingInfo(
+    LoadTimingInfo* load_timing_info) const {
+  // Preserve the times the URLRequest is responsible for, but overwrite all
+  // the others.
+  base::TimeTicks request_start = load_timing_info->request_start;
+  base::Time request_start_time = load_timing_info->request_start_time;
+  *load_timing_info = load_timing_info_;
+  load_timing_info->request_start = request_start;
+  load_timing_info->request_start_time = request_start_time;
+}
+
 int URLRequestTestJob::GetResponseCode() const {
-  if (response_headers_)
+  if (response_headers_.get())
     return response_headers_->response_code();
   return -1;
 }
 
 bool URLRequestTestJob::IsRedirectResponse(GURL* location,
                                            int* http_status_code) {
-  if (!response_headers_)
+  if (!response_headers_.get())
     return false;
 
   std::string value;
@@ -225,7 +276,6 @@ bool URLRequestTestJob::IsRedirectResponse(GURL* location,
   *http_status_code = response_headers_->response_code();
   return true;
 }
-
 
 void URLRequestTestJob::Kill() {
   stage_ = DONE;
@@ -279,7 +329,7 @@ bool URLRequestTestJob::NextReadAsync() {
 
 void URLRequestTestJob::AdvanceJob() {
   if (auto_advance_) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE, base::Bind(&URLRequestTestJob::ProcessNextOperation,
                               weak_factory_.GetWeakPtr()));
     return;

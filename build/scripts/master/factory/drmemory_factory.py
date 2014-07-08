@@ -34,18 +34,18 @@ WIN_BUILD_ENV_PATH = r'E:\b\build\scripts\slave\drmemory\build_env.bat'
 # These tests are ordered roughly from shortest to longest so failure is
 # reported earlier.
 LINUX_CHROME_TESTS = [
-  'DumpRenderTree',
-  'googleurl_unittests',
-  'printing_unittests',
-  'sql_unittests',
-  'crypto_unittests',
-  'remoting_unittests',
-  'ipc_tests',
-  'media_unittests',
+  'content_shell',
   'base_unittests',
   'browser_tests',
+  'crypto_unittests',
+  'ipc_tests',
+  'media_unittests',
   'net_unittests',
+  'printing_unittests',
+  'remoting_unittests',
+  'sql_unittests',
   'unit_tests',
+  'url_unittests',
 ]
 
 
@@ -156,6 +156,22 @@ class DrCommands(object):
                    name='unpack tools',
                    description='unpack tools')
 
+  def AddFindFileIntoPropertyStep(self, pattern, property_name):
+    """Finds a file on the slave and stores the name in property_name.
+
+    TODO(rnk): This won't work if pattern matches more than one file.
+    """
+    if self.IsWindows():
+      ls_cmd = 'dir /B'  # /B means "bare", like ls with no -l.
+    else:
+      ls_cmd = 'ls'
+    self.AddStep(SetProperty,
+                 name='find package file',
+                 description='find package file',
+                 # Use a string command here to let the shell expand *.
+                 command=WithProperties(ls_cmd + ' ' + pattern),
+                 property=property_name)
+
   def AddDRSuite(self, step_name, suite_args):
     """Run DR's test suite with arguments."""
     timeout = 20 * 60  # 20min w/o output.  10 is too short for Windows.
@@ -237,15 +253,15 @@ class DrCommands(object):
                      name='Package DynamoRIO')
     # For DR, we use plain cpack archives since we don't have existing scripts
     # that expect sfx exes.
-    # TODO(rnk): Find a way to wildcard the DR version.
     if self.IsWindows():
-      src_file = 'DynamoRIO-Windows-3.2.%(got_revision)s-42.zip'
+      src_file = 'DynamoRIO-Windows-*.%(got_revision)s-42.zip'
       dst_file = 'dynamorio-windows-r%(got_revision)s.zip'
     else:
-      src_file = 'DynamoRIO-Linux-3.2.%(got_revision)s-42.tar.gz'
+      src_file = 'DynamoRIO-Linux-*.%(got_revision)s-42.tar.gz'
       dst_file = 'dynamorio-linux-r%(got_revision)s.tar.gz'
+    self.AddFindFileIntoPropertyStep(src_file, 'package_name')
     self.AddStep(FileUpload,
-                 slavesrc=WithProperties(src_file),
+                 slavesrc=WithProperties('%(package_name)s'),
                  masterdest=WithProperties('public_html/builds/' + dst_file),
                  name='Upload DR package')
     return self.factory
@@ -392,7 +408,11 @@ class DrCommands(object):
     testlog_dirs = ['build_drmemory-dbg-32/logs',
                     'build_drmemory-dbg-32/Testing/Temporary',
                     'build_drmemory-rel-32/logs',
-                    'build_drmemory-rel-32/Testing/Temporary']
+                    'build_drmemory-rel-32/Testing/Temporary',
+                    'build_drmemory-dbg-64/logs',
+                    'build_drmemory-dbg-64/Testing/Temporary',
+                    'build_drmemory-rel-64/logs',
+                    'build_drmemory-rel-64/Testing/Temporary']
     if self.IsWindows():
       testlog_dirs += ['xmlresults']
     else:
@@ -580,7 +600,7 @@ class V8DrFactory(v8_factory.V8Factory):
     assert 'shell_flags' not in kwargs
     bits = ArchToBits(target_arch)
     drrun = '../../dynamorio/build/bin%d/drrun' % bits
-    kwargs['shell_flags'] = '%s -reset_every_nth_pending 0 -- @' % drrun
+    kwargs['command_prefix'] = '%s -reset_every_nth_pending 0 --' % drrun
     return super(V8DrFactory, self).V8Factory(*args, target_arch=target_arch,
                                               **kwargs)
 
@@ -632,7 +652,7 @@ def CreateDrMPackageFactory(windows):
   return DrCommands(WindowsToOs(windows)).DrMemoryPackage()
 
 
-def CreateWinChromeFactory():
+def CreateWinChromeFactory(builder):
   """Run chrome tests with the latest drmemory.
 
   Do *not* build TOT chrome or sync it.  Building chrome takes a lot of
@@ -689,12 +709,12 @@ def CreateWinChromeFactory():
             description='run vp8 tests'))
 
   # Chromium tests
-  for test in ['googleurl', 'printing', 'media', 'sql', 'crypto', 'remoting',
-               'ipc', 'base', 'net', 'unit']:
+  for test in ['url', 'printing', 'media', 'sql', 'crypto_unittests',
+               'remoting', 'ipc_tests', 'base_unittests', 'net', 'unit']:
     ret.addStep(
         Test(command=[
                  # Use the build dir of the chrome builder on this slave.
-                 ('..\\..\\win7-cr-builder\\build\\' +
+                 ('..\\..\\' + builder + '\\build\\' +
                   'src\\tools\\valgrind\\chrome_tests.bat'),
                  '-t', test, '--tool', 'drmemory_light', '--keep_logs',
              ],
@@ -757,17 +777,19 @@ def CreateLinuxChromeFactory():
       cmd += ['--gtest_filter='
               '-VideoFrameCapturerTest.Capture:'
               'DesktopProcessTest.DeathTest']
-    elif test == 'DumpRenderTree':
-      # We use shell redirection, so we make the command a string.
-      # TODO(rnk): We should run some selection of layout tests instead of
-      # directly running DRT.
-      cmd = ' '.join(cmd + [
-          'file:///home/chrome-bot/bb.html',
-          '>drt_out',
-          '&&',
-          'md5sum', '-c', '/home/chrome-bot/bb.html.md5'
-      ])
+    elif test == 'base_unittests':
+      # crbug.com/308273: this test is flaky
+      cmd += ['--gtest_filter=-TraceEventTestFixture.TraceContinuousSampling']
+    elif test == 'content_shell':
+      cmd += ['-dump-render-tree',
+              'file:///home/chrome-bot/bb.html']
+    # We used to md5 the output, but that's too brittle.  Just dump it to stdout
+    # so humans can verify it.  The return code will tell us if we crash.
+    # TODO(rnk): We should run some selection of layout tests if we want to
+    # verify output.
     ret.addStep(Test(command=cmd,
+                     env={'CHROME_DEVEL_SANDBOX':
+                          '/opt/chromium/chrome_sandbox'},
                      name=test,
                      descriptionDone=test,
                      description=test))

@@ -4,6 +4,7 @@
 
 #include "ui/views/examples/single_split_view_example.h"
 
+#include "ui/views/background.h"
 #include "ui/views/controls/single_split_view.h"
 #include "ui/views/layout/grid_layout.h"
 
@@ -20,7 +21,7 @@ class SplittedView : public View {
   void SetColor(SkColor from, SkColor to);
 
  private:
-  // Overridden from View:
+  // View:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
   virtual gfx::Size GetMinimumSize() OVERRIDE;
   virtual void Layout() OVERRIDE;

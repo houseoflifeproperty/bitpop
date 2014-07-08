@@ -10,8 +10,8 @@
 
 #include "base/bind.h"
 #include "base/memory/linked_ptr.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/browsing_data/browsing_data_cookie_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_flash_lso_helper.h"
 #include "chrome/browser/browsing_data/browsing_data_server_bound_cert_helper.h"
@@ -19,6 +19,7 @@
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/extensions/extension_special_storage_policy.h"
 #include "content/public/common/url_constants.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "grit/ui_resources.h"
@@ -71,13 +72,15 @@ std::string CanonicalizeHost(const GURL& url) {
   // "google.com".
 
   if (url.SchemeIsFile()) {
-    return std::string(chrome::kFileScheme) +
+    return std::string(content::kFileScheme) +
            content::kStandardSchemeSeparator;
   }
 
   std::string host = url.host();
-  std::string retval = net::RegistryControlledDomainService::
-      GetDomainAndRegistry(host);
+  std::string retval =
+      net::registry_controlled_domains::GetDomainAndRegistry(
+          host,
+          net::registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES);
   if (!retval.length())  // Is an IP address or other special origin.
     return host;
 
@@ -187,7 +190,7 @@ CookieTreeNode::DetailedInfo& CookieTreeNode::DetailedInfo::InitDatabase(
     const BrowsingDataDatabaseHelper::DatabaseInfo* database_info) {
   Init(TYPE_DATABASE);
   this->database_info = database_info;
-  origin = GURL(database_info->origin);
+  origin = database_info->identifier.ToOrigin();
   return *this;
 }
 
@@ -219,10 +222,10 @@ CookieTreeNode::DetailedInfo& CookieTreeNode::DetailedInfo::InitAppCache(
 }
 
 CookieTreeNode::DetailedInfo& CookieTreeNode::DetailedInfo::InitIndexedDB(
-    const BrowsingDataIndexedDBHelper::IndexedDBInfo* indexed_db_info) {
+    const content::IndexedDBInfo* indexed_db_info) {
   Init(TYPE_INDEXED_DB);
   this->indexed_db_info = indexed_db_info;
-  this->origin = indexed_db_info->origin;
+  this->origin = indexed_db_info->origin_;
   return *this;
 }
 
@@ -276,7 +279,7 @@ CookiesTreeModel* CookieTreeNode::GetModel() const {
 
 CookieTreeCookieNode::CookieTreeCookieNode(
     std::list<net::CanonicalCookie>::iterator cookie)
-    : CookieTreeNode(UTF8ToUTF16(cookie->Name())),
+    : CookieTreeNode(base::UTF8ToUTF16(cookie->Name())),
       cookie_(cookie) {
 }
 
@@ -299,7 +302,7 @@ CookieTreeNode::DetailedInfo CookieTreeCookieNode::GetDetailedInfo() const {
 CookieTreeAppCacheNode::CookieTreeAppCacheNode(
     const GURL& origin_url,
     std::list<appcache::AppCacheInfo>::iterator appcache_info)
-    : CookieTreeNode(UTF8ToUTF16(appcache_info->manifest_url.spec())),
+    : CookieTreeNode(base::UTF8ToUTF16(appcache_info->manifest_url.spec())),
       origin_url_(origin_url),
       appcache_info_(appcache_info) {
 }
@@ -311,9 +314,9 @@ void CookieTreeAppCacheNode::DeleteStoredObjects() {
   LocalDataContainer* container = GetLocalDataContainerForNode(this);
 
   if (container) {
-    DCHECK(container->appcache_helper_);
-    container->appcache_helper_->DeleteAppCacheGroup(
-        appcache_info_->manifest_url);
+    DCHECK(container->appcache_helper_.get());
+    container->appcache_helper_
+        ->DeleteAppCacheGroup(appcache_info_->manifest_url);
     container->appcache_info_[origin_url_].erase(appcache_info_);
   }
 }
@@ -329,7 +332,7 @@ CookieTreeDatabaseNode::CookieTreeDatabaseNode(
     std::list<BrowsingDataDatabaseHelper::DatabaseInfo>::iterator database_info)
     : CookieTreeNode(database_info->database_name.empty() ?
           l10n_util::GetStringUTF16(IDS_COOKIES_WEB_DATABASE_UNNAMED_NAME) :
-          UTF8ToUTF16(database_info->database_name)),
+          base::UTF8ToUTF16(database_info->database_name)),
       database_info_(database_info) {
 }
 
@@ -340,7 +343,7 @@ void CookieTreeDatabaseNode::DeleteStoredObjects() {
 
   if (container) {
     container->database_helper_->DeleteDatabase(
-        database_info_->origin_identifier, database_info_->database_name);
+        database_info_->identifier.ToString(), database_info_->database_name);
     container->database_info_list_.erase(database_info_);
   }
 }
@@ -355,7 +358,7 @@ CookieTreeNode::DetailedInfo CookieTreeDatabaseNode::GetDetailedInfo() const {
 CookieTreeLocalStorageNode::CookieTreeLocalStorageNode(
     std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
         local_storage_info)
-    : CookieTreeNode(UTF8ToUTF16(local_storage_info->origin_url.spec())),
+    : CookieTreeNode(base::UTF8ToUTF16(local_storage_info->origin_url.spec())),
       local_storage_info_(local_storage_info) {
 }
 
@@ -383,7 +386,8 @@ CookieTreeLocalStorageNode::GetDetailedInfo() const {
 CookieTreeSessionStorageNode::CookieTreeSessionStorageNode(
     std::list<BrowsingDataLocalStorageHelper::LocalStorageInfo>::iterator
         session_storage_info)
-    : CookieTreeNode(UTF8ToUTF16(session_storage_info->origin_url.spec())),
+    : CookieTreeNode(
+          base::UTF8ToUTF16(session_storage_info->origin_url.spec())),
       session_storage_info_(session_storage_info) {
 }
 
@@ -393,6 +397,10 @@ void CookieTreeSessionStorageNode::DeleteStoredObjects() {
   LocalDataContainer* container = GetLocalDataContainerForNode(this);
 
   if (container) {
+    // TODO(rsesek): There's no easy way to get the namespace_id for a session
+    // storage, nor is there an easy way to clear session storage just by
+    // origin. This is probably okay since session storage is not persistent.
+    // http://crbug.com/168996
     container->session_storage_info_list_.erase(session_storage_info_);
   }
 }
@@ -406,10 +414,10 @@ CookieTreeSessionStorageNode::GetDetailedInfo() const {
 // CookieTreeIndexedDBNode, public:
 
 CookieTreeIndexedDBNode::CookieTreeIndexedDBNode(
-    std::list<BrowsingDataIndexedDBHelper::IndexedDBInfo>::iterator
+    std::list<content::IndexedDBInfo>::iterator
         indexed_db_info)
-    : CookieTreeNode(UTF8ToUTF16(
-          indexed_db_info->origin.spec())),
+    : CookieTreeNode(base::UTF8ToUTF16(
+          indexed_db_info->origin_.spec())),
       indexed_db_info_(indexed_db_info) {
 }
 
@@ -420,7 +428,7 @@ void CookieTreeIndexedDBNode::DeleteStoredObjects() {
 
   if (container) {
     container->indexed_db_helper_->DeleteIndexedDB(
-        indexed_db_info_->origin);
+        indexed_db_info_->origin_);
     container->indexed_db_info_list_.erase(indexed_db_info_);
   }
 }
@@ -435,7 +443,7 @@ CookieTreeNode::DetailedInfo CookieTreeIndexedDBNode::GetDetailedInfo() const {
 CookieTreeFileSystemNode::CookieTreeFileSystemNode(
     std::list<BrowsingDataFileSystemHelper::FileSystemInfo>::iterator
         file_system_info)
-    : CookieTreeNode(UTF8ToUTF16(
+    : CookieTreeNode(base::UTF8ToUTF16(
           file_system_info->origin.spec())),
       file_system_info_(file_system_info) {
 }
@@ -461,7 +469,7 @@ CookieTreeNode::DetailedInfo CookieTreeFileSystemNode::GetDetailedInfo() const {
 
 CookieTreeQuotaNode::CookieTreeQuotaNode(
     std::list<BrowsingDataQuotaHelper::QuotaInfo>::iterator quota_info)
-    : CookieTreeNode(UTF8ToUTF16(quota_info->host)),
+    : CookieTreeNode(base::UTF8ToUTF16(quota_info->host)),
       quota_info_(quota_info) {
 }
 
@@ -487,7 +495,7 @@ CookieTreeNode::DetailedInfo CookieTreeQuotaNode::GetDetailedInfo() const {
 
 CookieTreeServerBoundCertNode::CookieTreeServerBoundCertNode(
       net::ServerBoundCertStore::ServerBoundCertList::iterator cert)
-    : CookieTreeNode(ASCIIToUTF16(cert->server_identifier())),
+    : CookieTreeNode(base::ASCIIToUTF16(cert->server_identifier())),
       server_bound_cert_(cert) {
 }
 
@@ -549,11 +557,11 @@ CookieTreeNode::DetailedInfo CookieTreeRootNode::GetDetailedInfo() const {
 // CookieTreeHostNode, public:
 
 // static
-string16 CookieTreeHostNode::TitleForUrl(
-    const GURL& url) {
+base::string16 CookieTreeHostNode::TitleForUrl(const GURL& url) {
   const std::string file_origin_node_name(
-      std::string(chrome::kFileScheme) + content::kStandardSchemeSeparator);
-  return UTF8ToUTF16(url.SchemeIsFile() ? file_origin_node_name : url.host());
+      std::string(content::kFileScheme) + content::kStandardSchemeSeparator);
+  return base::UTF8ToUTF16(url.SchemeIsFile() ? file_origin_node_name
+                                              : url.host());
 }
 
 CookieTreeHostNode::CookieTreeHostNode(const GURL& url)
@@ -575,7 +583,7 @@ CookieTreeHostNode::~CookieTreeHostNode() {}
 
 const std::string CookieTreeHostNode::GetHost() const {
   const std::string file_origin_node_name(
-      std::string(chrome::kFileScheme) + content::kStandardSchemeSeparator);
+      std::string(content::kFileScheme) + content::kStandardSchemeSeparator);
   return url_.SchemeIsFile() ? file_origin_node_name : url_.host();
 }
 
@@ -857,8 +865,7 @@ CookiesTreeModel::CookiesTreeModel(
     LocalDataContainer* data_container,
     ExtensionSpecialStoragePolicy* special_storage_policy,
     bool group_by_cookie_source)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(ui::TreeNodeModel<CookieTreeNode>(
-          new CookieTreeRootNode(this))),
+    : ui::TreeNodeModel<CookieTreeNode>(new CookieTreeRootNode(this)),
       data_container_(data_container),
       special_storage_policy_(special_storage_policy),
       group_by_cookie_source_(group_by_cookie_source),
@@ -937,7 +944,7 @@ void CookiesTreeModel::DeleteCookieNode(CookieTreeNode* cookie_node) {
     DeleteCookieNode(parent_node);
 }
 
-void CookiesTreeModel::UpdateSearchResults(const string16& filter) {
+void CookiesTreeModel::UpdateSearchResults(const base::string16& filter) {
   CookieTreeNode* root = GetRoot();
   ScopedBatchUpdateNotifier notifier(this, root);
   int num_children = root->child_count();
@@ -956,9 +963,9 @@ void CookiesTreeModel::UpdateSearchResults(const string16& filter) {
   PopulateServerBoundCertInfoWithFilter(data_container(), &notifier, filter);
 }
 
-const ExtensionSet* CookiesTreeModel::ExtensionsProtectingNode(
+const extensions::ExtensionSet* CookiesTreeModel::ExtensionsProtectingNode(
     const CookieTreeNode& cookie_node) {
-  if (!special_storage_policy_)
+  if (!special_storage_policy_.get())
     return NULL;
 
   CookieTreeNode::DetailedInfo info = cookie_node.GetDetailedInfo();
@@ -984,61 +991,61 @@ void CookiesTreeModel::RemoveCookiesTreeObserver(Observer* observer) {
 
 void CookiesTreeModel::PopulateAppCacheInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateAppCacheInfoWithFilter(container, &notifier, string16());
+  PopulateAppCacheInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateCookieInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateCookieInfoWithFilter(container, &notifier, string16());
+  PopulateCookieInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateDatabaseInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateDatabaseInfoWithFilter(container, &notifier, string16());
+  PopulateDatabaseInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateLocalStorageInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateLocalStorageInfoWithFilter(container, &notifier, string16());
+  PopulateLocalStorageInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateSessionStorageInfo(
       LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateSessionStorageInfoWithFilter(container, &notifier, string16());
+  PopulateSessionStorageInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateIndexedDBInfo(LocalDataContainer* container){
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateIndexedDBInfoWithFilter(container, &notifier, string16());
+  PopulateIndexedDBInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateFileSystemInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateFileSystemInfoWithFilter(container, &notifier, string16());
+  PopulateFileSystemInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateQuotaInfo(LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateQuotaInfoWithFilter(container, &notifier, string16());
+  PopulateQuotaInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateServerBoundCertInfo(
       LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateServerBoundCertInfoWithFilter(container, &notifier, string16());
+  PopulateServerBoundCertInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateFlashLSOInfo(
       LocalDataContainer* container) {
   ScopedBatchUpdateNotifier notifier(this, GetRoot());
-  PopulateFlashLSOInfoWithFilter(container, &notifier, string16());
+  PopulateFlashLSOInfoWithFilter(container, &notifier, base::string16());
 }
 
 void CookiesTreeModel::PopulateAppCacheInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   using appcache::AppCacheInfo;
   typedef std::map<GURL, std::list<AppCacheInfo> > InfoByOrigin;
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
@@ -1049,9 +1056,9 @@ void CookiesTreeModel::PopulateAppCacheInfoWithFilter(
   notifier->StartBatchUpdate();
   for (InfoByOrigin::iterator origin = container->appcache_info_.begin();
        origin != container->appcache_info_.end(); ++origin) {
-    string16 host_node_name = UTF8ToUTF16(origin->first.host());
+    base::string16 host_node_name = base::UTF8ToUTF16(origin->first.host());
     if (filter.empty() ||
-        (host_node_name.find(filter) != string16::npos)) {
+        (host_node_name.find(filter) != base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin->first);
       CookieTreeAppCachesNode* appcaches_node =
           host_node->GetOrCreateAppCachesNode();
@@ -1068,7 +1075,7 @@ void CookiesTreeModel::PopulateAppCacheInfoWithFilter(
 void CookiesTreeModel::PopulateCookieInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   notifier->StartBatchUpdate();
@@ -1081,14 +1088,14 @@ void CookiesTreeModel::PopulateCookieInfoWithFilter(
         domain = domain.substr(1);
 
       // We treat secure cookies just the same as normal ones.
-      source_string = std::string(chrome::kHttpScheme) +
+      source_string = std::string(url::kHttpScheme) +
           content::kStandardSchemeSeparator + domain + "/";
     }
 
     GURL source(source_string);
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(source).find(filter) !=
-        string16::npos)) {
+        base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(source);
       CookieTreeCookiesNode* cookies_node =
           host_node->GetOrCreateCookiesNode();
@@ -1101,7 +1108,7 @@ void CookiesTreeModel::PopulateCookieInfoWithFilter(
 void CookiesTreeModel::PopulateDatabaseInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->database_info_list_.empty())
@@ -1112,11 +1119,11 @@ void CookiesTreeModel::PopulateDatabaseInfoWithFilter(
            container->database_info_list_.begin();
        database_info != container->database_info_list_.end();
        ++database_info) {
-    GURL origin(database_info->origin);
+    GURL origin(database_info->identifier.ToOrigin());
 
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(origin).find(filter) !=
-        string16::npos)) {
+        base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin);
       CookieTreeDatabasesNode* databases_node =
           host_node->GetOrCreateDatabasesNode();
@@ -1129,7 +1136,7 @@ void CookiesTreeModel::PopulateDatabaseInfoWithFilter(
 void CookiesTreeModel::PopulateLocalStorageInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->local_storage_info_list_.empty())
@@ -1157,7 +1164,7 @@ void CookiesTreeModel::PopulateLocalStorageInfoWithFilter(
 void CookiesTreeModel::PopulateSessionStorageInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->session_storage_info_list_.empty())
@@ -1172,7 +1179,7 @@ void CookiesTreeModel::PopulateSessionStorageInfoWithFilter(
 
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(origin).find(filter) !=
-        string16::npos)) {
+        base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin);
       CookieTreeSessionStoragesNode* session_storages_node =
           host_node->GetOrCreateSessionStoragesNode();
@@ -1185,7 +1192,7 @@ void CookiesTreeModel::PopulateSessionStorageInfoWithFilter(
 void CookiesTreeModel::PopulateIndexedDBInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->indexed_db_info_list_.empty())
@@ -1196,11 +1203,11 @@ void CookiesTreeModel::PopulateIndexedDBInfoWithFilter(
            container->indexed_db_info_list_.begin();
        indexed_db_info != container->indexed_db_info_list_.end();
        ++indexed_db_info) {
-    const GURL& origin = indexed_db_info->origin;
+    const GURL& origin = indexed_db_info->origin_;
 
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(origin).find(filter) !=
-        string16::npos)) {
+        base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin);
       CookieTreeIndexedDBsNode* indexed_dbs_node =
           host_node->GetOrCreateIndexedDBsNode();
@@ -1213,7 +1220,7 @@ void CookiesTreeModel::PopulateIndexedDBInfoWithFilter(
 void CookiesTreeModel::PopulateServerBoundCertInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->server_bound_cert_list_.empty())
@@ -1228,12 +1235,12 @@ void CookiesTreeModel::PopulateServerBoundCertInfoWithFilter(
     if (!origin.is_valid()) {
       // Domain Bound Cert.  Make a valid URL to satisfy the
       // CookieTreeRootNode::GetOrCreateHostNode interface.
-      origin = GURL(std::string(chrome::kHttpsScheme) +
+      origin = GURL(std::string(url::kHttpsScheme) +
           content::kStandardSchemeSeparator +
           cert_info->server_identifier() + "/");
     }
-    string16 title = CookieTreeHostNode::TitleForUrl(origin);
-    if (!filter.size() || title.find(filter) != string16::npos) {
+    base::string16 title = CookieTreeHostNode::TitleForUrl(origin);
+    if (!filter.size() || title.find(filter) != base::string16::npos) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin);
       CookieTreeServerBoundCertsNode* server_bound_certs_node =
           host_node->GetOrCreateServerBoundCertsNode();
@@ -1246,7 +1253,7 @@ void CookiesTreeModel::PopulateServerBoundCertInfoWithFilter(
 void CookiesTreeModel::PopulateFileSystemInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->file_system_info_list_.empty())
@@ -1261,7 +1268,7 @@ void CookiesTreeModel::PopulateFileSystemInfoWithFilter(
 
     if (!filter.size() ||
         (CookieTreeHostNode::TitleForUrl(origin).find(filter) !=
-        string16::npos)) {
+        base::string16::npos)) {
       CookieTreeHostNode* host_node = root->GetOrCreateHostNode(origin);
       CookieTreeFileSystemsNode* file_systems_node =
           host_node->GetOrCreateFileSystemsNode();
@@ -1274,7 +1281,7 @@ void CookiesTreeModel::PopulateFileSystemInfoWithFilter(
 void CookiesTreeModel::PopulateQuotaInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->quota_info_list_.empty())
@@ -1285,7 +1292,8 @@ void CookiesTreeModel::PopulateQuotaInfoWithFilter(
        quota_info != container->quota_info_list_.end();
        ++quota_info) {
     if (!filter.size() ||
-        (UTF8ToUTF16(quota_info->host).find(filter) != string16::npos)) {
+        (base::UTF8ToUTF16(quota_info->host).find(filter) !=
+            base::string16::npos)) {
       CookieTreeHostNode* host_node =
           root->GetOrCreateHostNode(GURL("http://" + quota_info->host));
       host_node->UpdateOrCreateQuotaNode(quota_info);
@@ -1296,13 +1304,13 @@ void CookiesTreeModel::PopulateQuotaInfoWithFilter(
 void CookiesTreeModel::PopulateFlashLSOInfoWithFilter(
     LocalDataContainer* container,
     ScopedBatchUpdateNotifier* notifier,
-    const string16& filter) {
+    const base::string16& filter) {
   CookieTreeRootNode* root = static_cast<CookieTreeRootNode*>(GetRoot());
 
   if (container->flash_lso_domain_list_.empty())
     return;
 
-  std::string filter_utf8 = UTF16ToUTF8(filter);
+  std::string filter_utf8 = base::UTF16ToUTF8(filter);
   notifier->StartBatchUpdate();
   for (std::vector<std::string>::iterator it =
            container->flash_lso_domain_list_.begin();

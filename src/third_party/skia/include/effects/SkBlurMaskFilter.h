@@ -11,17 +11,26 @@
 // we include this since our callers will need to at least be able to ref/unref
 #include "SkMaskFilter.h"
 #include "SkScalar.h"
+#include "SkBlurTypes.h"
 
 class SK_API SkBlurMaskFilter {
 public:
+#ifdef SK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE
     enum BlurStyle {
-        kNormal_BlurStyle,  //!< fuzzy inside and outside
-        kSolid_BlurStyle,   //!< solid inside, fuzzy outside
-        kOuter_BlurStyle,   //!< nothing inside, fuzzy outside
-        kInner_BlurStyle,   //!< fuzzy inside, nothing outside
+        kNormal_BlurStyle = kNormal_SkBlurStyle,  //!< fuzzy inside and outside
+        kSolid_BlurStyle = kSolid_SkBlurStyle,   //!< solid inside, fuzzy outside
+        kOuter_BlurStyle = kOuter_SkBlurStyle,   //!< nothing inside, fuzzy outside
+        kInner_BlurStyle = kInner_SkBlurStyle,   //!< fuzzy inside, nothing outside
 
         kBlurStyleCount
     };
+#endif
+
+    /**
+     *  If radius > 0, return the corresponding sigma, else return 0. Use this to convert from the
+     *  (legacy) idea of specify the blur "radius" to the standard notion of specifying its sigma.
+     */
+    static SkScalar ConvertRadiusToSigma(SkScalar radius);
 
     enum BlurFlags {
         kNone_BlurFlag = 0x00,
@@ -33,27 +42,47 @@ public:
         kAll_BlurFlag = 0x03
     };
 
-    /** Create a blur maskfilter.
-        @param radius   The radius to extend the blur from the original mask. Must be > 0.
-        @param style    The BlurStyle to use
-        @param flags    Flags to use - defaults to none
-        @return The new blur maskfilter
-    */
+#ifdef SK_SUPPORT_LEGACY_BLURMASKFILTER_STYLE
+    SK_ATTR_DEPRECATED("use sigma version")
     static SkMaskFilter* Create(SkScalar radius, BlurStyle style,
                                 uint32_t flags = kNone_BlurFlag);
 
+    /** Create a blur maskfilter.
+        @param style    The BlurStyle to use
+        @param sigma    Standard deviation of the Gaussian blur to apply. Must be > 0.
+        @param flags    Flags to use - defaults to none
+        @return The new blur maskfilter
+    */
+    static SkMaskFilter* Create(BlurStyle style, SkScalar sigma,
+                                uint32_t flags = kNone_BlurFlag);
+#endif
+
+    /** Create a blur maskfilter.
+     *  @param style    The SkBlurStyle to use
+     *  @param sigma    Standard deviation of the Gaussian blur to apply. Must be > 0.
+     *  @param flags    Flags to use - defaults to none
+     *  @return The new blur maskfilter
+     */
+    static SkMaskFilter* Create(SkBlurStyle style, SkScalar sigma, uint32_t flags = kNone_BlurFlag);
+
     /** Create an emboss maskfilter
+        @param blurSigma    standard deviation of the Gaussian blur to apply
+                            before applying lighting (e.g. 3)
         @param direction    array of 3 scalars [x, y, z] specifying the direction of the light source
         @param ambient      0...1 amount of ambient light
         @param specular     coefficient for specular highlights (e.g. 8)
-        @param blurRadius   amount to blur before applying lighting (e.g. 3)
         @return the emboss maskfilter
     */
-    static SkMaskFilter* CreateEmboss(  const SkScalar direction[3],
-                                        SkScalar ambient, SkScalar specular,
-                                        SkScalar blurRadius);
+    static SkMaskFilter* CreateEmboss(SkScalar blurSigma, const SkScalar direction[3],
+                                      SkScalar ambient, SkScalar specular);
+
+    SK_ATTR_DEPRECATED("use sigma version")
+    static SkMaskFilter* CreateEmboss(const SkScalar direction[3],
+                                      SkScalar ambient, SkScalar specular,
+                                      SkScalar blurRadius);
 
     SK_DECLARE_FLATTENABLE_REGISTRAR_GROUP()
+
 private:
     SkBlurMaskFilter(); // can't be instantiated
 };

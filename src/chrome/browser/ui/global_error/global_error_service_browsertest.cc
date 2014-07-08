@@ -15,45 +15,35 @@
 namespace {
 
 // An error that has a bubble view.
-class BubbleViewError : public GlobalError {
+class BubbleViewError : public GlobalErrorWithStandardBubble {
  public:
   BubbleViewError() : bubble_view_close_count_(0) { }
 
   int bubble_view_close_count() { return bubble_view_close_count_; }
-
-  bool HasBadge() OVERRIDE { return false; }
-  virtual int GetBadgeResourceID() OVERRIDE {
-    ADD_FAILURE();
-    return 0;
-  }
 
   virtual bool HasMenuItem() OVERRIDE { return false; }
   virtual int MenuItemCommandID() OVERRIDE {
     ADD_FAILURE();
     return 0;
   }
-  virtual string16 MenuItemLabel() OVERRIDE {
+  virtual base::string16 MenuItemLabel() OVERRIDE {
     ADD_FAILURE();
-    return string16();
-  }
-  virtual int MenuItemIconResourceID() OVERRIDE {
-    ADD_FAILURE();
-    return 0;
+    return base::string16();
   }
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE { ADD_FAILURE(); }
 
   virtual bool HasBubbleView() OVERRIDE { return true; }
-  virtual string16 GetBubbleViewTitle() OVERRIDE {
-    return string16();
+  virtual base::string16 GetBubbleViewTitle() OVERRIDE {
+    return base::string16();
   }
-  virtual string16 GetBubbleViewMessage() OVERRIDE {
-    return string16();
+  virtual std::vector<base::string16> GetBubbleViewMessages() OVERRIDE {
+    return std::vector<base::string16>();
   }
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE {
-    return string16();
+  virtual base::string16 GetBubbleViewAcceptButtonLabel() OVERRIDE {
+    return base::string16();
   }
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE {
-    return string16();
+  virtual base::string16 GetBubbleViewCancelButtonLabel() OVERRIDE {
+    return base::string16();
   }
   virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE {
     EXPECT_TRUE(browser);

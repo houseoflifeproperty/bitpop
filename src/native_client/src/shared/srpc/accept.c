@@ -4,9 +4,9 @@
  * found in the LICENSE file.
  */
 
-#include <sys/nacl_syscalls.h>
 #include <unistd.h>
 
+#include "native_client/src/public/imc_syscalls.h"
 #include "native_client/src/shared/srpc/nacl_srpc.h"
 #include "native_client/src/shared/srpc/nacl_srpc_internal.h"
 #include "native_client/src/shared/srpc/nacl_srpc_ppapi_plugin_internal.h"

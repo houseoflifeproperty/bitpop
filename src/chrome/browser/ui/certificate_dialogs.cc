@@ -16,23 +16,24 @@
 #include "chrome/common/net/x509_certificate_model.h"
 #include "content/public/browser/browser_thread.h"
 #include "grit/generated_resources.h"
-#include "ui/base/dialogs/select_file_dialog.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/shell_dialogs/select_file_dialog.h"
 
 using content::BrowserThread;
 using content::WebContents;
 
 namespace {
 
-void WriterCallback(const FilePath& path, const std::string& data) {
-  int bytes_written = file_util::WriteFile(path, data.data(), data.size());
+void WriterCallback(const base::FilePath& path, const std::string& data) {
+  int bytes_written = base::WriteFile(path, data.data(), data.size());
   if (bytes_written != static_cast<ssize_t>(data.size())) {
     LOG(ERROR) << "Writing " << path.value() << " ("
                << data.size() << "B) returned " << bytes_written;
   }
 }
 
-void WriteFileOnFileThread(const FilePath& path, const std::string& data) {
+void WriteFileOnFileThread(const base::FilePath& path,
+                           const std::string& data) {
   BrowserThread::PostTask(
       BrowserThread::FILE, FROM_HERE, base::Bind(&WriterCallback, path, data));
 }
@@ -48,11 +49,7 @@ std::string WrapAt64(const std::string &str) {
 
 std::string GetBase64String(net::X509Certificate::OSCertHandle cert) {
   std::string base64;
-  if (!base::Base64Encode(
-      x509_certificate_model::GetDerString(cert), &base64)) {
-    LOG(ERROR) << "base64 encoding error";
-    return "";
-  }
+  base::Base64Encode(x509_certificate_model::GetDerString(cert), &base64);
   return "-----BEGIN CERTIFICATE-----\r\n" +
       WrapAt64(base64) +
       "-----END CERTIFICATE-----\r\n";
@@ -65,12 +62,12 @@ class Exporter : public ui::SelectFileDialog::Listener {
  public:
   Exporter(WebContents* web_contents, gfx::NativeWindow parent,
            net::X509Certificate::OSCertHandle cert);
-  ~Exporter();
+  virtual ~Exporter();
 
   // SelectFileDialog::Listener implemenation.
-  virtual void FileSelected(const FilePath& path,
-                            int index, void* params);
-  virtual void FileSelectionCanceled(void* params);
+  virtual void FileSelected(const base::FilePath& path,
+                            int index, void* params) OVERRIDE;
+  virtual void FileSelectionCanceled(void* params) OVERRIDE;
  private:
   scoped_refptr<ui::SelectFileDialog> select_file_dialog_;
 
@@ -87,10 +84,10 @@ Exporter::Exporter(WebContents* web_contents,
 
   // TODO(mattm): should this default to some directory?
   // Maybe SavePackage::GetSaveDirPreference? (Except that it's private.)
-  FilePath suggested_path("certificate");
+  base::FilePath suggested_path("certificate");
   std::string cert_title = x509_certificate_model::GetTitle(cert);
   if (!cert_title.empty())
-    suggested_path = FilePath(cert_title);
+    suggested_path = base::FilePath(cert_title);
 
   ShowCertSelectFileDialog(select_file_dialog_.get(),
                            ui::SelectFileDialog::SELECT_SAVEAS_FILE,
@@ -108,7 +105,8 @@ Exporter::~Exporter() {
   x509_certificate_model::DestroyCertChain(&cert_chain_list_);
 }
 
-void Exporter::FileSelected(const FilePath& path, int index, void* params) {
+void Exporter::FileSelected(const base::FilePath& path, int index,
+                            void* params) {
   std::string data;
   switch (index) {
     case 2:
@@ -145,7 +143,7 @@ void Exporter::FileSelectionCanceled(void* params) {
 
 void ShowCertSelectFileDialog(ui::SelectFileDialog* select_file_dialog,
                               ui::SelectFileDialog::Type type,
-                              const FilePath& suggested_path,
+                              const base::FilePath& suggested_path,
                               gfx::NativeWindow parent,
                               void* params) {
   ui::SelectFileDialog::FileTypeInfo file_type_info;
@@ -168,13 +166,10 @@ void ShowCertSelectFileDialog(ui::SelectFileDialog* select_file_dialog,
   file_type_info.extension_description_overrides.push_back(
       l10n_util::GetStringUTF16(IDS_CERT_EXPORT_TYPE_PKCS7_CHAIN));
   file_type_info.include_all_files = true;
-  // TODO(kinaba): http://crbug.com/140425. Turn file_type_info.support_gdata
-  // on for saving once Google Drive client on ChromeOS supports it.
-  if (type == ui::SelectFileDialog::SELECT_OPEN_FILE)
-    file_type_info.support_gdata = true;
   select_file_dialog->SelectFile(
-      type, string16(),
-      suggested_path, &file_type_info, 1,
+      type, base::string16(),
+      suggested_path, &file_type_info,
+      1,  // 1-based index for |file_type_info.extensions| to specify default.
       FILE_PATH_LITERAL("crt"),
       parent, params);
 }

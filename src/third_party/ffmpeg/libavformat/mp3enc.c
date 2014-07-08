@@ -30,10 +30,6 @@
 #include "libavcodec/mpegaudiodecheader.h"
 #include "libavutil/intreadwrite.h"
 #include "libavutil/opt.h"
-#include "libavcodec/mpegaudio.h"
-#include "libavcodec/mpegaudiodata.h"
-#include "libavcodec/mpegaudiodecheader.h"
-#include "libavformat/avio_internal.h"
 #include "libavutil/dict.h"
 #include "libavutil/avassert.h"
 
@@ -157,7 +153,7 @@ static int mp3_write_xing(AVFormatContext *s)
     }
 
     /* dummy MPEG audio header */
-    header  =  0xff                                  << 24; // sync
+    header  =  0xffU                                 << 24; // sync
     header |= (0x7 << 5 | ver << 3 | 0x1 << 1 | 0x1) << 16; // sync/audio-version/layer 3/no crc*/
     header |= (srate_idx << 2) <<  8;
     header |= channels << 6;
@@ -259,11 +255,17 @@ static int mp3_write_audio_packet(AVFormatContext *s, AVPacket *pkt)
 {
     MP3Context  *mp3 = s->priv_data;
 
-    if (pkt && pkt->data && pkt->size >= 4) {
+    if (pkt->data && pkt->size >= 4) {
         MPADecodeHeader c;
         int av_unused base;
+        uint32_t head = AV_RB32(pkt->data);
 
-        avpriv_mpegaudio_decode_header(&c, AV_RB32(pkt->data));
+        if (ff_mpa_check_header(head) < 0) {
+            av_log(s, AV_LOG_WARNING, "Audio packet of size %d (starting with %08X...) "
+                   "is invalid, writing it anyway.\n", pkt->size, head);
+            return ff_raw_write_packet(s, pkt);
+        }
+        avpriv_mpegaudio_decode_header(&c, head);
 
         if (!mp3->initial_bitrate)
             mp3->initial_bitrate = c.bit_rate;
@@ -379,7 +381,7 @@ AVOutputFormat ff_mp2_muxer = {
     .name              = "mp2",
     .long_name         = NULL_IF_CONFIG_SMALL("MP2 (MPEG audio layer 2)"),
     .mime_type         = "audio/x-mpeg",
-    .extensions        = "mp2,m2a",
+    .extensions        = "mp2,m2a,mpa",
     .audio_codec       = AV_CODEC_ID_MP2,
     .video_codec       = AV_CODEC_ID_NONE,
     .write_packet      = ff_raw_write_packet,
@@ -416,7 +418,11 @@ static int mp3_write_packet(AVFormatContext *s, AVPacket *pkt)
                 return AVERROR(ENOMEM);
 
             pktl->pkt     = *pkt;
-            pkt->destruct = NULL;
+            pktl->pkt.buf = av_buffer_ref(pkt->buf);
+            if (!pktl->pkt.buf) {
+                av_freep(&pktl);
+                return AVERROR(ENOMEM);
+            }
 
             if (mp3->queue_end)
                 mp3->queue_end->next = pktl;

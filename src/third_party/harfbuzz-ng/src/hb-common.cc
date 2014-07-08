@@ -28,36 +28,72 @@
 
 #include "hb-private.hh"
 
-#include "hb-version.h"
-
 #include "hb-mutex-private.hh"
 #include "hb-object-private.hh"
 
 #include <locale.h>
 
 
+/* hb_options_t */
+
+hb_options_union_t _hb_options;
+
+void
+_hb_options_init (void)
+{
+  hb_options_union_t u;
+  u.i = 0;
+  u.opts.initialized = 1;
+
+  char *c = getenv ("HB_OPTIONS");
+  u.opts.uniscribe_bug_compatible = c && strstr (c, "uniscribe-bug-compatible");
+
+  /* This is idempotent and threadsafe. */
+  _hb_options = u;
+}
+
 
 /* hb_tag_t */
 
+/**
+ * hb_tag_from_string:
+ * @str: (array length=len): 
+ * @len: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_tag_t
-hb_tag_from_string (const char *s, int len)
+hb_tag_from_string (const char *str, int len)
 {
   char tag[4];
   unsigned int i;
 
-  if (!s || !len || !*s)
+  if (!str || !len || !*str)
     return HB_TAG_NONE;
 
   if (len < 0 || len > 4)
     len = 4;
-  for (i = 0; i < (unsigned) len && s[i]; i++)
-    tag[i] = s[i];
+  for (i = 0; i < (unsigned) len && str[i]; i++)
+    tag[i] = str[i];
   for (; i < 4; i++)
     tag[i] = ' ';
 
   return HB_TAG_CHAR4 (tag);
 }
 
+/**
+ * hb_tag_to_string:
+ * @tag: 
+ * @buf: (array fixed-size=4): 
+ *
+ * 
+ *
+ * Since: 1.0
+ **/
 void
 hb_tag_to_string (hb_tag_t tag, char *buf)
 {
@@ -77,6 +113,17 @@ const char direction_strings[][4] = {
   "btt"
 };
 
+/**
+ * hb_direction_from_string:
+ * @str: (array length=len): 
+ * @len: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_direction_t
 hb_direction_from_string (const char *str, int len)
 {
@@ -94,6 +141,16 @@ hb_direction_from_string (const char *str, int len)
   return HB_DIRECTION_INVALID;
 }
 
+/**
+ * hb_direction_to_string:
+ * @direction: 
+ *
+ * 
+ *
+ * Return value: (transfer none): 
+ *
+ * Since: 1.0
+ **/
 const char *
 hb_direction_to_string (hb_direction_t direction)
 {
@@ -169,7 +226,7 @@ struct hb_language_item_t {
     return *this;
   }
 
-  void finish (void) { free (lang); }
+  void finish (void) { free ((void *) lang); }
 };
 
 
@@ -177,7 +234,8 @@ struct hb_language_item_t {
 
 static hb_language_item_t *langs;
 
-static
+#ifdef HAVE_ATEXIT
+static inline
 void free_langs (void)
 {
   while (langs) {
@@ -187,6 +245,7 @@ void free_langs (void)
     langs = next;
   }
 }
+#endif
 
 static hb_language_item_t *
 lang_find_or_insert (const char *key)
@@ -219,14 +278,27 @@ retry:
 }
 
 
+/**
+ * hb_language_from_string:
+ * @str: (array length=len): 
+ * @len: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_language_t
 hb_language_from_string (const char *str, int len)
 {
+  char strbuf[64];
+
   if (!str || !len || !*str)
     return HB_LANGUAGE_INVALID;
 
-  char strbuf[32];
-  if (len >= 0) {
+  if (len >= 0)
+  {
     len = MIN (len, (int) sizeof (strbuf) - 1);
     str = (char *) memcpy (strbuf, str, len);
     strbuf[len] = '\0';
@@ -237,6 +309,16 @@ hb_language_from_string (const char *str, int len)
   return likely (item) ? item->lang : HB_LANGUAGE_INVALID;
 }
 
+/**
+ * hb_language_to_string:
+ * @language: 
+ *
+ * 
+ *
+ * Return value: (transfer none): 
+ *
+ * Since: 1.0
+ **/
 const char *
 hb_language_to_string (hb_language_t language)
 {
@@ -244,6 +326,15 @@ hb_language_to_string (hb_language_t language)
   return language->s;
 }
 
+/**
+ * hb_language_get_default:
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_language_t
 hb_language_get_default (void)
 {
@@ -261,6 +352,16 @@ hb_language_get_default (void)
 
 /* hb_script_t */
 
+/**
+ * hb_script_from_iso15924_tag:
+ * @tag: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_script_t
 hb_script_from_iso15924_tag (hb_tag_t tag)
 {
@@ -295,18 +396,49 @@ hb_script_from_iso15924_tag (hb_tag_t tag)
   return HB_SCRIPT_UNKNOWN;
 }
 
+/**
+ * hb_script_from_string:
+ * @s: (array length=len): 
+ * @len: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_script_t
 hb_script_from_string (const char *s, int len)
 {
   return hb_script_from_iso15924_tag (hb_tag_from_string (s, len));
 }
 
+/**
+ * hb_script_to_iso15924_tag:
+ * @script: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_tag_t
 hb_script_to_iso15924_tag (hb_script_t script)
 {
   return (hb_tag_t) script;
 }
 
+/**
+ * hb_script_get_horizontal_direction:
+ * @script: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_direction_t
 hb_script_get_horizontal_direction (hb_script_t script)
 {
@@ -363,8 +495,7 @@ bool
 hb_user_data_array_t::set (hb_user_data_key_t *key,
 			   void *              data,
 			   hb_destroy_func_t   destroy,
-			   hb_bool_t           replace,
-			   hb_mutex_t         &lock)
+			   hb_bool_t           replace)
 {
   if (!key)
     return false;
@@ -382,23 +513,26 @@ hb_user_data_array_t::set (hb_user_data_key_t *key,
 }
 
 void *
-hb_user_data_array_t::get (hb_user_data_key_t *key,
-			   hb_mutex_t         &lock)
+hb_user_data_array_t::get (hb_user_data_key_t *key)
 {
   hb_user_data_item_t item = {NULL };
 
   return items.find (key, &item, lock) ? item.data : NULL;
 }
 
-void
-hb_user_data_array_t::finish (hb_mutex_t &lock)
-{
-  items.finish (lock);
-}
-
 
 /* hb_version */
 
+/**
+ * hb_version:
+ * @major: (out): Library major version component.
+ * @minor: (out): Library minor version component.
+ * @micro: (out): Library micro version component.
+ *
+ * Returns library version as three integer components.
+ *
+ * Since: 1.0
+ **/
 void
 hb_version (unsigned int *major,
 	    unsigned int *minor,
@@ -409,12 +543,33 @@ hb_version (unsigned int *major,
   *micro = HB_VERSION_MICRO;
 }
 
+/**
+ * hb_version_string:
+ *
+ * Returns library version as a string with three components.
+ *
+ * Return value: library version string.
+ *
+ * Since: 1.0
+ **/
 const char *
 hb_version_string (void)
 {
   return HB_VERSION_STRING;
 }
 
+/**
+ * hb_version_check:
+ * @major: 
+ * @minor: 
+ * @micro: 
+ *
+ * 
+ *
+ * Return value: 
+ *
+ * Since: 1.0
+ **/
 hb_bool_t
 hb_version_check (unsigned int major,
 		  unsigned int minor,
@@ -422,5 +577,3 @@ hb_version_check (unsigned int major,
 {
   return HB_VERSION_CHECK (major, minor, micro);
 }
-
-

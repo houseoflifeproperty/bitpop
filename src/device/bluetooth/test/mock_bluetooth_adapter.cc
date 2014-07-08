@@ -9,12 +9,17 @@ namespace device {
 MockBluetoothAdapter::Observer::Observer() {}
 MockBluetoothAdapter::Observer::~Observer() {}
 
-MockBluetoothAdapter::MockBluetoothAdapter(const std::string& address,
-                                           const std::string& name) {
-  address_ = address;
-  name_ = name;
+MockBluetoothAdapter::MockBluetoothAdapter() {
 }
 
 MockBluetoothAdapter::~MockBluetoothAdapter() {}
+
+void MockBluetoothAdapter::AddDiscoverySession(
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {}
+
+void MockBluetoothAdapter::RemoveDiscoverySession(
+    const base::Closure& callback,
+    const ErrorCallback& error_callback) {}
 
 }  // namespace device

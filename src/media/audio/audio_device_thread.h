@@ -8,14 +8,15 @@
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/shared_memory.h"
+#include "base/memory/shared_memory.h"
 #include "base/sync_socket.h"
 #include "base/synchronization/lock.h"
-#include "media/base/media_export.h"
 #include "media/audio/audio_parameters.h"
-#include "media/audio/shared_memory_util.h"
+#include "media/base/media_export.h"
 
+namespace base {
 class MessageLoop;
+}
 
 namespace media {
 class AudioBus;
@@ -37,9 +38,9 @@ class MEDIA_EXPORT AudioDeviceThread {
   class Callback {
    public:
     Callback(const AudioParameters& audio_parameters,
-             int input_channels,
              base::SharedMemoryHandle memory,
-             int memory_length);
+             int memory_length,
+             int total_segments);
     virtual ~Callback();
 
     // One time initialization for the callback object on the audio thread.
@@ -57,12 +58,13 @@ class MEDIA_EXPORT AudioDeviceThread {
     // The variables are 'const' since values are calculated/set in the
     // constructor and must never change.
     const AudioParameters audio_parameters_;
-    const int input_channels_;
     const int samples_per_ms_;
     const int bytes_per_ms_;
 
     base::SharedMemory shared_memory_;
     const int memory_length_;
+    const int total_segments_;
+    int segment_length_;
 
    private:
     DISALLOW_COPY_AND_ASSIGN(Callback);
@@ -71,10 +73,13 @@ class MEDIA_EXPORT AudioDeviceThread {
   AudioDeviceThread();
   ~AudioDeviceThread();
 
-  // Starts the audio thread. The thread must not already be running.
+  // Starts the audio thread. The thread must not already be running.  If
+  // |sychronized_buffers| is set, the browser expects to be notified via the
+  // |socket| every time AudioDeviceThread::Process() completes.
   void Start(AudioDeviceThread::Callback* callback,
              base::SyncSocket::Handle socket,
-             const char* thread_name);
+             const char* thread_name,
+             bool synchronized_buffers);
 
   // This tells the audio thread to stop and clean up the data.
   // The method can stop the thread synchronously or asynchronously.
@@ -85,7 +90,7 @@ class MEDIA_EXPORT AudioDeviceThread {
   // in order to join the worker thread and close the thread handle later via a
   // posted task.
   // If set to NULL, function will wait for the thread to exit before returning.
-  void Stop(MessageLoop* loop_for_join);
+  void Stop(base::MessageLoop* loop_for_join);
 
   // Returns true if the thread is stopped or stopping.
   bool IsStopped();

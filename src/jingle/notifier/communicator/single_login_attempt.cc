@@ -8,8 +8,8 @@
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
 #include "jingle/notifier/base/const_communicator.h"
 #include "jingle/notifier/base/gaia_token_pre_xmpp_auth.h"
 #include "jingle/notifier/listener/xml_element_util.h"
@@ -85,9 +85,9 @@ net::HostPortPair ParseRedirectText(const std::string& redirect_text) {
 void SingleLoginAttempt::OnError(buzz::XmppEngine::Error error, int subcode,
                                  const buzz::XmlElement* stream_error) {
   DVLOG(1) << "Error: " << error << ", subcode: " << subcode
-           << (stream_error ?
-               (", stream error: " + XmlElementToString(*stream_error)) :
-               "");
+           << (stream_error
+                   ? (", stream error: " + XmlElementToString(*stream_error))
+                   : std::string());
 
   DCHECK_EQ(error == buzz::XmppEngine::ERROR_STREAM, stream_error != NULL);
 

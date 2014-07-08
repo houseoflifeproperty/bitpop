@@ -34,11 +34,17 @@ class ContextMenuMatcher {
   // This is a helper function to append items for one particular extension.
   // The |index| parameter is used for assigning id's, and is incremented for
   // each item actually added.
-  void AppendExtensionItems(const std::string& extension_id,
-                            const string16& selection_text,
+  void AppendExtensionItems(const MenuItem::ExtensionKey& extension_key,
+                            const base::string16& selection_text,
                             int* index);
 
   void Clear();
+
+  // This function returns the top level context menu title of an extension
+  // based on a printable selection text.
+  base::string16 GetTopLevelContextMenuTitle(
+      const MenuItem::ExtensionKey& extension_key,
+      const base::string16& selection_text);
 
   bool IsCommandIdChecked(int command_id) const;
   bool IsCommandIdEnabled(int command_id) const;
@@ -49,6 +55,12 @@ class ContextMenuMatcher {
  private:
   friend class ::ExtensionContextMenuBrowserTest;
 
+  bool GetRelevantExtensionTopLevelItems(
+      const MenuItem::ExtensionKey& extension_key,
+      const Extension** extension,
+      bool* can_cross_incognito,
+      MenuItem::List& items);
+
   MenuItem::List GetRelevantExtensionItems(
       const MenuItem::List& items,
       bool can_cross_incognito);
@@ -56,7 +68,7 @@ class ContextMenuMatcher {
   // Used for recursively adding submenus of extension items.
   void RecursivelyAppendExtensionItems(const MenuItem::List& items,
                                        bool can_cross_incognito,
-                                       const string16& selection_text,
+                                       const base::string16& selection_text,
                                        ui::SimpleMenuModel* menu_model,
                                        int* index);
 

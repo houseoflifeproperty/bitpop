@@ -7,21 +7,20 @@
 
 #import <Cocoa/Cocoa.h>
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #include "base/memory/scoped_ptr.h"
 
 class Browser;
 @class BrowserActionButton;
 @class BrowserActionsContainerView;
 @class ExtensionPopupController;
-class ExtensionToolbarModel;
 class ExtensionServiceObserverBridge;
 @class MenuButton;
-class PrefService;
 class Profile;
 
 namespace extensions {
 class Extension;
+class ExtensionToolbarModel;
 }
 
 // Sent when the visibility of the Browser Actions changes.
@@ -41,7 +40,7 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
   Profile* profile_;
 
   // The model that tracks the order of the toolbar icons. Weak.
-  ExtensionToolbarModel* toolbarModel_;
+  extensions::ExtensionToolbarModel* toolbarModel_;
 
   // The observer for the ExtensionService we're getting events from.
   scoped_ptr<ExtensionServiceObserverBridge> observer_;
@@ -49,19 +48,19 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
   // A dictionary of Extension ID -> BrowserActionButton pairs representing the
   // buttons present in the container view. The ID is a string unique to each
   // extension.
-  scoped_nsobject<NSMutableDictionary> buttons_;
+  base::scoped_nsobject<NSMutableDictionary> buttons_;
 
   // Array of hidden buttons in the correct order in which the user specified.
-  scoped_nsobject<NSMutableArray> hiddenButtons_;
+  base::scoped_nsobject<NSMutableArray> hiddenButtons_;
 
   // The currently running chevron animation (fade in/out).
-  scoped_nsobject<NSViewAnimation> chevronAnimation_;
+  base::scoped_nsobject<NSViewAnimation> chevronAnimation_;
 
   // The chevron button used when Browser Actions are hidden.
-  scoped_nsobject<MenuButton> chevronMenuButton_;
+  base::scoped_nsobject<MenuButton> chevronMenuButton_;
 
   // The Browser Actions overflow menu.
-  scoped_nsobject<NSMenu> overflowMenu_;
+  base::scoped_nsobject<NSMenu> overflowMenu_;
 }
 
 @property(readonly, nonatomic) BrowserActionsContainerView* containerView;
@@ -108,8 +107,8 @@ extern NSString* const kBrowserActionVisibilityChangedNotification;
 - (void)showFacebookExtensions;
 - (void)hideFacebookExtensions;
 
-// Registers the user preferences used by this class.
-+ (void)registerUserPrefs:(PrefService*)prefs;
+// Activates the browser action for the extension that has the given id.
+- (void)activateBrowserAction:(const std::string&)extension_id;
 
 @end  // @interface BrowserActionsController
 

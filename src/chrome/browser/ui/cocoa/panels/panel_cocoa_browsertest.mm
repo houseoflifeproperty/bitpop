@@ -5,11 +5,11 @@
 #import <Cocoa/Cocoa.h>
 
 #include "chrome/app/chrome_command_ids.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/panels/base_panel_browser_test.h"
 #include "chrome/browser/ui/panels/panel.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "content/public/test/test_utils.h"
 
 typedef BasePanelBrowserTest PanelCocoaBrowserTest;
@@ -25,7 +25,7 @@ IN_PROC_BROWSER_TEST_F(PanelCocoaBrowserTest, MenuItems) {
   signal.Wait();
 
   // There should be no browser windows.
-  EXPECT_EQ(0u, BrowserList::size());
+  EXPECT_EQ(0u, chrome::GetTotalBrowserCount());
 
   // There should be one panel.
   EXPECT_EQ(1, PanelManager::GetInstance()->num_panels());

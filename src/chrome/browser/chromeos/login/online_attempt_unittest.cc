@@ -6,8 +6,7 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
+#include "base/run_loop.h"
 #include "chrome/browser/chromeos/login/auth_attempt_state.h"
 #include "chrome/browser/chromeos/login/mock_auth_attempt_state_resolver.h"
 #include "chrome/browser/chromeos/login/mock_url_fetchers.h"
@@ -15,12 +14,13 @@
 #include "chrome/browser/chromeos/login/test_attempt_state.h"
 #include "chrome/browser/chromeos/login/user.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/browser/browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "google_apis/gaia/gaia_auth_consumer.h"
 #include "google_apis/gaia/mock_url_fetcher_factory.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
+#include "url/gurl.h"
 
 using ::testing::AnyNumber;
 using ::testing::Invoke;
@@ -33,23 +33,12 @@ namespace chromeos {
 class OnlineAttemptTest : public testing::Test {
  public:
   OnlineAttemptTest()
-      : message_loop_(MessageLoop::TYPE_UI),
-        ui_thread_(BrowserThread::UI, &message_loop_),
-        state_("", "", "", "", "", User::USER_TYPE_REGULAR, false),
-        resolver_(new MockAuthAttemptStateResolver) {
-  }
-
-  virtual ~OnlineAttemptTest() {}
-
-  virtual void SetUp() {
-    attempt_.reset(new OnlineAttempt(false, &state_, resolver_.get()));
-  }
-
-  virtual void TearDown() {
+      : state_(UserContext(), "", "", User::USER_TYPE_REGULAR, false),
+        attempt_(new OnlineAttempt(&state_, &resolver_)) {
   }
 
   void RunFailureTest(const GoogleServiceAuthError& error) {
-    EXPECT_CALL(*(resolver_.get()), Resolve())
+    EXPECT_CALL(resolver_, Resolve())
         .Times(1)
         .RetiresOnSaturation();
 
@@ -59,7 +48,7 @@ class OnlineAttemptTest : public testing::Test {
                    attempt_->weak_factory_.GetWeakPtr(),
                    error));
     // Force UI thread to finish tasks so I can verify |state_|.
-    message_loop_.RunUntilIdle();
+    base::RunLoop().RunUntilIdle();
     EXPECT_TRUE(error == state_.online_outcome().error());
   }
 
@@ -70,27 +59,14 @@ class OnlineAttemptTest : public testing::Test {
                    auth->weak_factory_.GetWeakPtr()));
   }
 
-  static void Quit() {
-    BrowserThread::PostTask(
-        BrowserThread::UI, FROM_HERE, MessageLoop::QuitClosure());
-  }
-
-  static void RunThreadTest() {
-    MessageLoop::current()->RunUntilIdle();
-  }
-
-  MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
+  content::TestBrowserThreadBundle thread_bundle_;
   TestAttemptState state_;
-  scoped_ptr<MockAuthAttemptStateResolver> resolver_;
+  MockAuthAttemptStateResolver resolver_;
   scoped_ptr<OnlineAttempt> attempt_;
-
-  // Initializes / shuts down a stub CrosLibrary.
-  chromeos::ScopedStubCrosEnabler stub_cros_enabler_;
 };
 
 TEST_F(OnlineAttemptTest, LoginSuccess) {
-  EXPECT_CALL(*(resolver_.get()), Resolve())
+  EXPECT_CALL(resolver_, Resolve())
       .Times(1)
       .RetiresOnSaturation();
 
@@ -100,15 +76,16 @@ TEST_F(OnlineAttemptTest, LoginSuccess) {
                  attempt_->weak_factory_.GetWeakPtr(),
                  GaiaAuthConsumer::ClientLoginResult()));
   // Force UI thread to finish tasks so I can verify |state_|.
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(OnlineAttemptTest, LoginCancelRetry) {
   GoogleServiceAuthError error(GoogleServiceAuthError::REQUEST_CANCELED);
   TestingProfile profile;
 
-  EXPECT_CALL(*(resolver_.get()), Resolve())
-      .WillOnce(Invoke(OnlineAttemptTest::Quit))
+  base::RunLoop run_loop;
+  EXPECT_CALL(resolver_, Resolve())
+      .WillOnce(Invoke(&run_loop, &base::RunLoop::Quit))
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
@@ -117,11 +94,8 @@ TEST_F(OnlineAttemptTest, LoginCancelRetry) {
   MockURLFetcherFactory<GotCanceledFetcher> factory;
 
   attempt_->Initiate(&profile);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&OnlineAttemptTest::RunThreadTest));
 
-  MessageLoop::current()->Run();
+  run_loop.Run();
 
   EXPECT_TRUE(error == state_.online_outcome().error());
   EXPECT_EQ(LoginFailure::NETWORK_AUTH_FAILED,
@@ -132,8 +106,9 @@ TEST_F(OnlineAttemptTest, LoginTimeout) {
   LoginFailure error(LoginFailure::LOGIN_TIMED_OUT);
   TestingProfile profile;
 
-  EXPECT_CALL(*(resolver_.get()), Resolve())
-      .WillOnce(Invoke(OnlineAttemptTest::Quit))
+  base::RunLoop run_loop;
+  EXPECT_CALL(resolver_, Resolve())
+      .WillOnce(Invoke(&run_loop, &base::RunLoop::Quit))
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
@@ -142,14 +117,11 @@ TEST_F(OnlineAttemptTest, LoginTimeout) {
   MockURLFetcherFactory<ExpectCanceledFetcher> factory;
 
   attempt_->Initiate(&profile);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&OnlineAttemptTest::RunThreadTest));
 
   // Post a task to cancel the login attempt.
   CancelLogin(attempt_.get());
 
-  MessageLoop::current()->Run();
+  run_loop.Run();
 
   EXPECT_EQ(LoginFailure::LOGIN_TIMED_OUT, state_.online_outcome().reason());
 }
@@ -161,22 +133,20 @@ TEST_F(OnlineAttemptTest, HostedLoginRejected) {
               GoogleServiceAuthError::HOSTED_NOT_ALLOWED)));
   TestingProfile profile;
 
-  EXPECT_CALL(*(resolver_.get()), Resolve())
-      .WillOnce(Invoke(OnlineAttemptTest::Quit))
+  base::RunLoop run_loop;
+  EXPECT_CALL(resolver_, Resolve())
+      .WillOnce(Invoke(&run_loop, &base::RunLoop::Quit))
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
   MockURLFetcherFactory<HostedFetcher> factory;
 
-  TestAttemptState local_state("", "", "", "", "",
+  TestAttemptState local_state(UserContext(), "", "",
                                User::USER_TYPE_REGULAR, true);
-  attempt_.reset(new OnlineAttempt(false, &local_state, resolver_.get()));
+  attempt_.reset(new OnlineAttempt(&local_state, &resolver_));
   attempt_->Initiate(&profile);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&OnlineAttemptTest::RunThreadTest));
 
-  MessageLoop::current()->Run();
+  run_loop.Run();
 
   EXPECT_EQ(error, local_state.online_outcome());
   EXPECT_EQ(LoginFailure::NETWORK_AUTH_FAILED,
@@ -186,24 +156,22 @@ TEST_F(OnlineAttemptTest, HostedLoginRejected) {
 TEST_F(OnlineAttemptTest, FullLogin) {
   TestingProfile profile;
 
-  EXPECT_CALL(*(resolver_.get()), Resolve())
-      .WillOnce(Invoke(OnlineAttemptTest::Quit))
+  base::RunLoop run_loop;
+  EXPECT_CALL(resolver_, Resolve())
+      .WillOnce(Invoke(&run_loop, &base::RunLoop::Quit))
       .RetiresOnSaturation();
 
   // This is how we inject fake URLFetcher objects, with a factory.
   MockURLFetcherFactory<SuccessFetcher> factory;
 
-  TestAttemptState local_state("", "", "", "", "",
+  TestAttemptState local_state(UserContext(), "", "",
                                User::USER_TYPE_REGULAR, true);
-  attempt_.reset(new OnlineAttempt(false, &local_state, resolver_.get()));
+  attempt_.reset(new OnlineAttempt(&local_state, &resolver_));
   attempt_->Initiate(&profile);
-  BrowserThread::PostTask(
-      BrowserThread::UI, FROM_HERE,
-      base::Bind(&OnlineAttemptTest::RunThreadTest));
 
-  MessageLoop::current()->Run();
+  run_loop.Run();
 
-  EXPECT_EQ(LoginFailure::None(), local_state.online_outcome());
+  EXPECT_EQ(LoginFailure::LoginFailureNone(), local_state.online_outcome());
 }
 
 TEST_F(OnlineAttemptTest, LoginNetFailure) {
@@ -241,7 +209,7 @@ TEST_F(OnlineAttemptTest, CaptchaErrorOutputted) {
 }
 
 TEST_F(OnlineAttemptTest, TwoFactorSuccess) {
-  EXPECT_CALL(*(resolver_.get()), Resolve())
+  EXPECT_CALL(resolver_, Resolve())
       .Times(1)
       .RetiresOnSaturation();
   GoogleServiceAuthError error(GoogleServiceAuthError::TWO_FACTOR);
@@ -252,8 +220,8 @@ TEST_F(OnlineAttemptTest, TwoFactorSuccess) {
                  error));
 
   // Force UI thread to finish tasks so I can verify |state_|.
-  message_loop_.RunUntilIdle();
-  EXPECT_TRUE(GoogleServiceAuthError::None() ==
+  base::RunLoop().RunUntilIdle();
+  EXPECT_TRUE(GoogleServiceAuthError::AuthErrorNone() ==
               state_.online_outcome().error());
 }
 

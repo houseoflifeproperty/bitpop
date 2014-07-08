@@ -8,18 +8,7 @@
 #define CHROME_BROWSER_CHROME_BROWSER_MAIN_LINUX_H_
 
 #include "base/compiler_specific.h"
-#include "base/memory/ref_counted.h"
 #include "chrome/browser/chrome_browser_main_posix.h"
-
-#if !defined(OS_CHROMEOS)
-namespace chrome {
-class RemovableDeviceNotificationsLinux;
-}
-#endif
-
-namespace chrome {
-class MediaTransferProtocolDeviceObserverLinux;
-}
 
 class ChromeBrowserMainPartsLinux : public ChromeBrowserMainPartsPosix {
  public:
@@ -30,17 +19,8 @@ class ChromeBrowserMainPartsLinux : public ChromeBrowserMainPartsPosix {
   // ChromeBrowserMainParts overrides.
   virtual void PreProfileInit() OVERRIDE;
   virtual void PostProfileInit() OVERRIDE;
-  virtual void PostMainMessageLoopRun() OVERRIDE;
 
  private:
-#if !defined(OS_CHROMEOS)
-  scoped_refptr<chrome::RemovableDeviceNotificationsLinux>
-      removable_device_notifications_linux_;
-#endif
-  scoped_ptr<chrome::MediaTransferProtocolDeviceObserverLinux>
-      media_transfer_protocol_device_observer_;
-  bool did_pre_profile_init_;
-
   DISALLOW_COPY_AND_ASSIGN(ChromeBrowserMainPartsLinux);
 };
 

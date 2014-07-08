@@ -1,0 +1,97 @@
+{% extends "layout.html" %}
+
+{% block header -%}
+{{ super() }}
+<hr/>
+
+<script language="javascript">
+  /**
+   * A simple HTML iframe string.
+   * @param {String} attributes A set of HTML attributes for the table.
+   * @param {String} url The source of the iframe.
+   * @returns {!String} the iframe or an empty string if noframe is specified.
+   */
+  function iFrame(attributes, url) {
+    if (window.location.href.search('noframe') == -1) {
+      return '<iframe ' + attributes + ' src="' + url + '"></iframe>';
+    }
+    return ''
+  };
+
+  /**
+   * Callback to replace the LKGR link with one that identifies the current
+   * revision for the LKGR.
+   */
+  function DisplayLKGR() {
+    var xmlHttp = new XMLHttpRequest();
+    xmlHttp.onreadystatechange = function() { 
+      if (xmlHttp.readyState == 4 && xmlHttp.status == 200) {
+        json = JSON.parse(xmlHttp.responseText);
+        lkgr = 0
+        for (var i in json) {
+          if(json[i]["status"] && json[i]["revision"] > lkgr)
+            lkgr = json[i]["revision"];
+        }
+        if(lkgr != 0)
+          document.getElementById('lkgr_link').innerHTML = lkgr;
+      }
+    };
+
+    var lkgrPath = "https://v8-status.appspot.com/revisions?format=json";
+    xmlHttp.open('GET', lkgrPath, true);
+    xmlHttp.send(null);
+  }
+
+  branches_url = "https://build.chromium.org/p/client.v8.branches/horizontal_one_box_per_builder"
+</script>
+
+<div class="Announcement">
+
+<iframe width="100%" height="44" frameborder="0" scrolling="no" src="https://v8-status.appspot.com/current" ></iframe>
+
+<center style="padding: 0 7px">
+  <table width="100%" valign="top" bgcolor="#efefef" style="border-bottom-left-radius: 24px; border-bottom-right-radius: 24px; box-shadow: 2px 2px 6px rgba(0,0,0,0.6);">
+    <tr>
+      <td width="50%" style="text-align: right;">
+        <b>Sheriff: </b>
+        <script src='https://chromium-build.appspot.com/p/chromium/sheriff_v8.js'></script>
+        &nbsp;&nbsp;
+        <b>Masters: </b>
+        <a id="master_v8" href="../client.v8">client.v8</a> |
+        <a id="master_v8_branches" href="../client.v8.branches">client.v8.branches</a>
+        &nbsp;&nbsp;
+        <b>Controls: </b>
+        <a id="tree_status_link" href="https://v8-status.appspot.com">tree status</a>
+        &nbsp;&nbsp;
+        <b>LKGR: </b>
+        <a id="lkgr_link" href="https://v8-status.appspot.com/lkgr">lkgr</a>
+        <script language="javascript">
+          setTimeout('DisplayLKGR()', 100);
+        </script>
+        &nbsp;&nbsp;
+        <b>Branch builders: </b>
+      </td>
+      <td width="49%" style="text-align: left;">
+        <script language="javascript">
+          iframe_properties = [
+            'width="100%"',
+            'height="20"',
+            'frameborder="0"',
+            'scrolling="no"',
+          ].join(' ');
+          document.write(iFrame(iframe_properties, branches_url))
+        </script>
+      </td>
+      <td width="1%" />
+    </tr>
+  </table>
+</center>
+
+</div>
+{% endblock header %}
+
+{% block footer %}
+
+{{ super() }}
+{# <p>Debug info: {{ debuginfo }}</p> #}
+{% endblock %}

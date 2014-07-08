@@ -14,13 +14,12 @@
 #include "base/debug/leak_annotations.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "crypto/nss_util.h"
 #include "crypto/nss_util_internal.h"
 #include "crypto/scoped_nss_types.h"
 
-// TODO(rafaelw): Consider refactoring common functions and definitions from
-// rsa_private_key_win.cc or using NSS's ASN.1 encoder.
+// TODO(rafaelw): Consider using NSS's ASN.1 encoder.
 namespace {
 
 static bool ReadAttribute(SECKEYPrivateKey* key,
@@ -52,32 +51,62 @@ RSAPrivateKey::~RSAPrivateKey() {
 
 // static
 RSAPrivateKey* RSAPrivateKey::Create(uint16 num_bits) {
-  return CreateWithParams(num_bits,
-                          PR_FALSE /* not permanent */,
-                          PR_FALSE /* not sensitive */);
-}
+  EnsureNSSInit();
 
-// static
-RSAPrivateKey* RSAPrivateKey::CreateSensitive(uint16 num_bits) {
-  return CreateWithParams(num_bits,
-                          PR_TRUE /* permanent */,
-                          PR_TRUE /* sensitive */);
+  ScopedPK11Slot slot(PK11_GetInternalSlot());
+  return CreateWithParams(slot.get(),
+                          num_bits,
+                          false /* not permanent */,
+                          false /* not sensitive */);
 }
 
 // static
 RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfo(
     const std::vector<uint8>& input) {
-  return CreateFromPrivateKeyInfoWithParams(input,
-                                            PR_FALSE /* not permanent */,
-                                            PR_FALSE /* not sensitive */);
+  EnsureNSSInit();
+
+  ScopedPK11Slot slot(PK11_GetInternalSlot());
+  return CreateFromPrivateKeyInfoWithParams(
+      slot.get(),
+      input,
+      false /* not permanent */,
+      false /* not sensitive */);
+}
+
+#if defined(USE_NSS)
+// static
+RSAPrivateKey* RSAPrivateKey::CreateSensitive(PK11SlotInfo* slot,
+                                              uint16 num_bits) {
+  return CreateWithParams(slot,
+                          num_bits,
+                          true /* permanent */,
+                          true /* sensitive */);
 }
 
 // static
 RSAPrivateKey* RSAPrivateKey::CreateSensitiveFromPrivateKeyInfo(
+    PK11SlotInfo* slot,
     const std::vector<uint8>& input) {
-  return CreateFromPrivateKeyInfoWithParams(input,
-                                            PR_TRUE /* permanent */,
-                                            PR_TRUE /* sensitive */);
+  return CreateFromPrivateKeyInfoWithParams(slot,
+                                            input,
+                                            true /* permanent */,
+                                            true /* sensitive */);
+}
+
+// static
+RSAPrivateKey* RSAPrivateKey::CreateFromKey(SECKEYPrivateKey* key) {
+  DCHECK(key);
+  if (SECKEY_GetPrivateKeyType(key) != rsaKey)
+    return NULL;
+  RSAPrivateKey* copy = new RSAPrivateKey();
+  copy->key_ = SECKEY_CopyPrivateKey(key);
+  copy->public_key_ = SECKEY_ConvertToPublicKey(key);
+  if (!copy->key_ || !copy->public_key_) {
+    NOTREACHED();
+    delete copy;
+    return NULL;
+  }
+  return copy;
 }
 
 // static
@@ -137,6 +166,7 @@ RSAPrivateKey* RSAPrivateKey::FindFromPublicKeyInfo(
   // We didn't find the key.
   return NULL;
 }
+#endif
 
 RSAPrivateKey* RSAPrivateKey::Copy() const {
   RSAPrivateKey* copy = new RSAPrivateKey();
@@ -183,21 +213,19 @@ RSAPrivateKey::RSAPrivateKey() : key_(NULL), public_key_(NULL) {
 }
 
 // static
-RSAPrivateKey* RSAPrivateKey::CreateWithParams(uint16 num_bits,
+RSAPrivateKey* RSAPrivateKey::CreateWithParams(PK11SlotInfo* slot,
+                                               uint16 num_bits,
                                                bool permanent,
                                                bool sensitive) {
-  EnsureNSSInit();
+  if (!slot)
+    return NULL;
 
   scoped_ptr<RSAPrivateKey> result(new RSAPrivateKey);
-
-  ScopedPK11Slot slot(GetPrivateNSSKeySlot());
-  if (!slot.get())
-    return NULL;
 
   PK11RSAGenParams param;
   param.keySizeInBits = num_bits;
   param.pe = 65537L;
-  result->key_ = PK11_GenerateKeyPair(slot.get(),
+  result->key_ = PK11_GenerateKeyPair(slot,
                                       CKM_RSA_PKCS_KEY_PAIR_GEN,
                                       &param,
                                       &result->public_key_,
@@ -212,17 +240,14 @@ RSAPrivateKey* RSAPrivateKey::CreateWithParams(uint16 num_bits,
 
 // static
 RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfoWithParams(
-    const std::vector<uint8>& input, bool permanent, bool sensitive) {
-  // This method currently leaks some memory.
-  // See http://crbug.com/34742.
-  ANNOTATE_SCOPED_MEMORY_LEAK;
-  EnsureNSSInit();
+    PK11SlotInfo* slot,
+    const std::vector<uint8>& input,
+    bool permanent,
+    bool sensitive) {
+  if (!slot)
+    return NULL;
 
   scoped_ptr<RSAPrivateKey> result(new RSAPrivateKey);
-
-  ScopedPK11Slot slot(GetPrivateNSSKeySlot());
-  if (!slot.get())
-    return NULL;
 
   SECItem der_private_key_info;
   der_private_key_info.data = const_cast<unsigned char*>(&input.front());
@@ -232,7 +257,7 @@ RSAPrivateKey* RSAPrivateKey::CreateFromPrivateKeyInfoWithParams(
   const unsigned int key_usage = KU_KEY_ENCIPHERMENT | KU_DATA_ENCIPHERMENT |
                                  KU_DIGITAL_SIGNATURE;
   SECStatus rv =  PK11_ImportDERPrivateKeyInfoAndReturnKey(
-      slot.get(), &der_private_key_info, NULL, NULL, permanent, sensitive,
+      slot, &der_private_key_info, NULL, NULL, permanent, sensitive,
       key_usage, &result->key_, NULL);
   if (rv != SECSuccess) {
     NOTREACHED();

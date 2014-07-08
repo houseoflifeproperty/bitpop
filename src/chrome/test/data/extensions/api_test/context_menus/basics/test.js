@@ -11,7 +11,7 @@ var tests = [
 
   function no_properties() {
     chrome.contextMenus.create({}, function(id) {
-      chrome.test.assertTrue(chrome.extension.lastError != null);
+      chrome.test.assertTrue(chrome.runtime.lastError != null);
       chrome.test.succeed();
     });
   },
@@ -29,6 +29,16 @@ var tests = [
     id = chrome.contextMenus.create({"title":"update test"}, function() {
       assertNoLastError();
       chrome.contextMenus.update(id, {"title": "test2"},
+                                chrome.test.callbackPass());
+    });
+
+    chrome.contextMenus.create({"id": "test3", "type": "checkbox",
+                                "title": "test3"}, function() {
+      assertNoLastError();
+      // Calling update without specifying "type" should not change the menu
+      // item's type to "normal" and therefore setting "checked" should not
+      // fail.
+      chrome.contextMenus.update("test3", {"checked": true},
                                 chrome.test.callbackPass());
     });
   },

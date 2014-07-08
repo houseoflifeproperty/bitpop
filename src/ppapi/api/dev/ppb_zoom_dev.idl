@@ -7,6 +7,8 @@
  * Implementation of the Zoom interface.
  */
 
+[generate_thunk]
+
 label Chrome {
   M14 = 0.2
 };
@@ -25,10 +27,10 @@ interface PPB_Zoom_Dev {
   void ZoomChanged([in] PP_Instance instance,
                    [in] double_t factor);
   /**
-   * Sets the mininum and maximium zoom factors.
+   * Sets the minimum and maximum zoom factors.
    */
   void ZoomLimitsChanged([in] PP_Instance instance,
                          [in] double_t minimum_factor,
-                         [in] double_t maximium_factor);
+                         [in] double_t maximum_factor);
 };
 

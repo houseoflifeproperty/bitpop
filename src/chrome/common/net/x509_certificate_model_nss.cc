@@ -14,13 +14,13 @@
 #include <sechash.h>
 
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "crypto/nss_util.h"
-#include "crypto/scoped_nss_types.h"
-#include "net/base/x509_certificate.h"
+#include "base/strings/string_number_conversions.h"
 #include "chrome/third_party/mozilla_security_manager/nsNSSCertHelper.h"
 #include "chrome/third_party/mozilla_security_manager/nsNSSCertificate.h"
 #include "chrome/third_party/mozilla_security_manager/nsUsageArrayHelper.h"
+#include "crypto/nss_util.h"
+#include "crypto/scoped_nss_types.h"
+#include "net/cert/x509_certificate.h"
 
 namespace psm = mozilla_security_manager;
 
@@ -74,22 +74,19 @@ std::string ProcessExtension(
 ////////////////////////////////////////////////////////////////////////////////
 // NSS certificate export functions.
 
-class FreeNSSCMSMessage {
- public:
+struct NSSCMSMessageDeleter {
   inline void operator()(NSSCMSMessage* x) const {
     NSS_CMSMessage_Destroy(x);
   }
 };
-typedef scoped_ptr_malloc<NSSCMSMessage, FreeNSSCMSMessage>
-    ScopedNSSCMSMessage;
+typedef scoped_ptr<NSSCMSMessage, NSSCMSMessageDeleter> ScopedNSSCMSMessage;
 
-class FreeNSSCMSSignedData {
- public:
+struct FreeNSSCMSSignedData {
   inline void operator()(NSSCMSSignedData* x) const {
     NSS_CMSSignedData_Destroy(x);
   }
 };
-typedef scoped_ptr_malloc<NSSCMSSignedData, FreeNSSCMSSignedData>
+typedef scoped_ptr<NSSCMSSignedData, FreeNSSCMSSignedData>
     ScopedNSSCMSSignedData;
 
 }  // namespace
@@ -100,8 +97,8 @@ using net::X509Certificate;
 using std::string;
 
 string GetCertNameOrNickname(X509Certificate::OSCertHandle cert_handle) {
-  string name = ProcessIDN(Stringize(CERT_GetCommonName(&cert_handle->subject),
-                                     ""));
+  string name = ProcessIDN(
+      Stringize(CERT_GetCommonName(&cert_handle->subject), std::string()));
   if (!name.empty())
     return name;
   return GetNickname(cert_handle);
@@ -132,7 +129,7 @@ string GetVersion(X509Certificate::OSCertHandle cert_handle) {
       SEC_ASN1DecodeInteger(&cert_handle->version, &version) == SECSuccess) {
     return base::UintToString(version + 1);
   }
-  return "";
+  return std::string();
 }
 
 net::CertType GetType(X509Certificate::OSCertHandle cert_handle) {
@@ -142,7 +139,7 @@ net::CertType GetType(X509Certificate::OSCertHandle cert_handle) {
 string GetEmailAddress(X509Certificate::OSCertHandle cert_handle) {
   if (cert_handle->emailAddr)
     return cert_handle->emailAddr;
-  return "";
+  return std::string();
 }
 
 void GetUsageStrings(X509Certificate::OSCertHandle cert_handle,
@@ -261,29 +258,6 @@ void GetNicknameStringsFromCertList(
   CERT_DestroyCertList(cert_list);
 }
 
-// For background see this discussion on dev-tech-crypto.lists.mozilla.org:
-// http://web.archiveorange.com/archive/v/6JJW7E40sypfZGtbkzxX
-//
-// NOTE: This function relies on the convention that the same PKCS#11 ID
-// is shared between a certificate and its associated private and public
-// keys.  I tried to implement this with PK11_GetLowLevelKeyIDForCert(),
-// but that always returns NULL on Chrome OS for me.
-std::string GetPkcs11Id(net::X509Certificate::OSCertHandle cert_handle) {
-  std::string pkcs11_id;
-  SECKEYPrivateKey *priv_key = PK11_FindKeyByAnyCert(cert_handle,
-                                                     NULL /* wincx */);
-  if (priv_key) {
-    // Get the CKA_ID attribute for a key.
-    SECItem* sec_item = PK11_GetLowLevelKeyIDForPrivateKey(priv_key);
-    if (sec_item) {
-      pkcs11_id = base::HexEncode(sec_item->data, sec_item->len);
-      SECITEM_FreeItem(sec_item, PR_TRUE);
-    }
-    SECKEY_DestroyPrivateKey(priv_key);
-  }
-  return pkcs11_id;
-}
-
 void GetExtensions(
     const string& critical_label,
     const string& non_critical_label,
@@ -346,14 +320,14 @@ string GetCMSString(const X509Certificate::OSCertHandles& cert_chain,
       message.get(), cert_chain[start], PR_FALSE));
   if (!signed_data.get()) {
     DLOG(ERROR) << "NSS_CMSSignedData_Create failed";
-    return "";
+    return std::string();
   }
   // Add the rest of the chain (if any).
   for (size_t i = start + 1; i < end; ++i) {
     if (NSS_CMSSignedData_AddCertificate(signed_data.get(), cert_chain[i]) !=
         SECSuccess) {
       DLOG(ERROR) << "NSS_CMSSignedData_AddCertificate failed on " << i;
-      return "";
+      return std::string();
     }
   }
 
@@ -363,7 +337,7 @@ string GetCMSString(const X509Certificate::OSCertHandles& cert_chain,
     ignore_result(signed_data.release());
   } else {
     DLOG(ERROR) << "NSS_CMSMessage_GetContentInfo failed";
-    return "";
+    return std::string();
   }
 
   SECItem cert_p7 = { siBuffer, NULL, 0 };
@@ -373,12 +347,12 @@ string GetCMSString(const X509Certificate::OSCertHandles& cert_chain,
                                                    NULL);
   if (!ecx) {
     DLOG(ERROR) << "NSS_CMSEncoder_Start failed";
-    return "";
+    return std::string();
   }
 
   if (NSS_CMSEncoder_Finish(ecx) != SECSuccess) {
     DLOG(ERROR) << "NSS_CMSEncoder_Finish failed";
-    return "";
+    return std::string();
   }
 
   return string(reinterpret_cast<const char*>(cert_p7.data), cert_p7.len);

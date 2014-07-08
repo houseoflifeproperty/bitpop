@@ -34,10 +34,8 @@ import urllib2
 
 import webkitpy.common.config.urls as config_urls
 from webkitpy.common.memoized import memoized
-from webkitpy.common.net.failuremap import FailureMap
 from webkitpy.common.net.layouttestresults import LayoutTestResults
 from webkitpy.common.net.networktransaction import NetworkTransaction
-from webkitpy.common.net.regressionwindow import RegressionWindow
 from webkitpy.common.system.logutils import get_logger
 from webkitpy.thirdparty.BeautifulSoup import BeautifulSoup
 
@@ -51,9 +49,6 @@ class Builder(object):
         self._buildbot = buildbot
         self._builds_cache = {}
         self._revision_to_build_number = None
-        from webkitpy.thirdparty.autoinstalled.mechanize import Browser
-        self._browser = Browser()
-        self._browser.set_handle_robots(False) # The builder pages are excluded by robots.txt
 
     def name(self):
         return self._name
@@ -84,11 +79,7 @@ class Builder(object):
 
     def fetch_layout_test_results(self, results_url):
         # FIXME: This should cache that the result was a 404 and stop hitting the network.
-        results_file = NetworkTransaction(convert_404_to_None=True).run(lambda: self._fetch_file_from_results(results_url, "full_results.json"))
-        if not results_file:
-            results_file = NetworkTransaction(convert_404_to_None=True).run(lambda: self._fetch_file_from_results(results_url, "results.html"))
-
-        # results_from_string accepts either ORWT html or NRWT json.
+        results_file = NetworkTransaction(convert_404_to_None=True).run(lambda: self._fetch_file_from_results(results_url, "failing_results.json"))
         return LayoutTestResults.results_from_string(results_file)
 
     def url_encoded_name(self):
@@ -128,20 +119,6 @@ class Builder(object):
         revision_build_pairs.sort(key=lambda i: i[1])
         latest_build_number = revision_build_pairs[-1][1]
         return self.build(latest_build_number)
-
-    def force_build(self, username="webkit-patch", comments=None):
-        def predicate(form):
-            try:
-                return form.find_control("username")
-            except Exception, e:
-                return False
-        # ignore false positives for missing Browser methods - pylint: disable-msg=E1102
-        self._browser.open(self.url())
-        self._browser.select_form(predicate=predicate)
-        self._browser["username"] = username
-        if comments:
-            self._browser["comments"] = comments
-        return self._browser.submit()
 
     file_name_regexp = re.compile(r"r(?P<revision>\d+) \((?P<build_number>\d+)\)")
     def _revision_and_build_for_filename(self, filename):
@@ -201,54 +178,6 @@ class Builder(object):
             )
         return build
 
-    def find_regression_window(self, red_build, look_back_limit=30):
-        if not red_build or red_build.is_green():
-            return RegressionWindow(None, None)
-        common_failures = None
-        current_build = red_build
-        build_after_current_build = None
-        look_back_count = 0
-        while current_build:
-            if current_build.is_green():
-                # current_build can't possibly have any failures in common
-                # with red_build because it's green.
-                break
-            results = current_build.layout_test_results()
-            # We treat a lack of results as if all the test failed.
-            # This occurs, for example, when we can't compile at all.
-            if results:
-                failures = set(results.failing_tests())
-                if common_failures == None:
-                    common_failures = failures
-                else:
-                    common_failures = common_failures.intersection(failures)
-                    if not common_failures:
-                        # current_build doesn't have any failures in common with
-                        # the red build we're worried about.  We assume that any
-                        # failures in current_build were due to flakiness.
-                        break
-            look_back_count += 1
-            if look_back_count > look_back_limit:
-                return RegressionWindow(None, current_build, failing_tests=common_failures)
-            build_after_current_build = current_build
-            current_build = current_build.previous_build()
-        # We must iterate at least once because red_build is red.
-        assert(build_after_current_build)
-        # Current build must either be green or have no failures in common
-        # with red build, so we've found our failure transition.
-        return RegressionWindow(current_build, build_after_current_build, failing_tests=common_failures)
-
-    def find_blameworthy_regression_window(self, red_build_number, look_back_limit=30, avoid_flakey_tests=True):
-        red_build = self.build(red_build_number)
-        regression_window = self.find_regression_window(red_build, look_back_limit)
-        if not regression_window.build_before_failure():
-            return None  # We ran off the limit of our search
-        # If avoid_flakey_tests, require at least 2 bad builds before we
-        # suspect a real failure transition.
-        if avoid_flakey_tests and regression_window.failing_build() == red_build:
-            return None
-        return regression_window
-
 
 class Build(object):
     def __init__(self, builder, build_number, revision, is_green):
@@ -270,10 +199,6 @@ class Build(object):
 
     def results_zip_url(self):
         return "%s.zip" % self.results_url()
-
-    @memoized
-    def layout_test_results(self):
-        return self._builder.fetch_layout_test_results(self.results_url())
 
     def builder(self):
         return self._builder
@@ -418,18 +343,6 @@ class BuildBot(object):
             builder = self._builder_factory(name, self)
             self._builder_by_name[name] = builder
         return builder
-
-    def failure_map(self):
-        failure_map = FailureMap()
-        revision_to_failing_bots = {}
-        for builder_status in self.builder_statuses():
-            if builder_status["is_green"]:
-                continue
-            builder = self.builder_with_name(builder_status["name"])
-            regression_window = builder.find_blameworthy_regression_window(builder_status["build_number"])
-            if regression_window:
-                failure_map.add_regression_window(builder, regression_window)
-        return failure_map
 
     # This makes fewer requests than calling Builder.latest_build would.  It grabs all builder
     # statuses in one request using self.builder_statuses (fetching /one_box_per_builder instead of builder pages).

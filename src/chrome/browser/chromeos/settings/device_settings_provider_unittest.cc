@@ -12,14 +12,14 @@
 #include "base/path_service.h"
 #include "base/test/scoped_path_override.h"
 #include "base/values.h"
-#include "chrome/browser/chromeos/cros/cros_library.h"
-#include "chrome/browser/chromeos/settings/cros_settings_names.h"
+#include "chrome/browser/chromeos/policy/device_local_account.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_test_helper.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
-#include "chrome/browser/policy/proto/device_management_backend.pb.h"
 #include "chrome/common/chrome_paths.h"
+#include "chrome/test/base/scoped_testing_local_state.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "chrome/test/base/testing_pref_service.h"
+#include "chromeos/settings/cros_settings_names.h"
+#include "policy/proto/device_management_backend.pb.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -38,7 +38,7 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
 
  protected:
   DeviceSettingsProviderTest()
-      : local_state_(static_cast<TestingBrowserProcess*>(g_browser_process)),
+      : local_state_(TestingBrowserProcess::GetGlobal()),
         user_data_dir_override_(chrome::DIR_USER_DATA) {}
 
   virtual void SetUp() OVERRIDE {
@@ -56,8 +56,6 @@ class DeviceSettingsProviderTest : public DeviceSettingsTestBase {
   virtual void TearDown() OVERRIDE {
     DeviceSettingsTestBase::TearDown();
   }
-
-  ScopedStubCrosEnabler stub_cros_enabler_;
 
   ScopedTestingLocalState local_state_;
 
@@ -140,7 +138,7 @@ TEST_F(DeviceSettingsProviderTest, SetPrefFailed) {
 }
 
 TEST_F(DeviceSettingsProviderTest, SetPrefSucceed) {
-  owner_key_util_->SetPrivateKey(device_policy_.signing_key());
+  owner_key_util_->SetPrivateKey(device_policy_.GetSigningKey());
   device_settings_service_.SetUsername(device_policy_.policy_data().username());
   FlushDeviceSettings();
 
@@ -168,7 +166,7 @@ TEST_F(DeviceSettingsProviderTest, SetPrefSucceed) {
 }
 
 TEST_F(DeviceSettingsProviderTest, SetPrefTwice) {
-  owner_key_util_->SetPrivateKey(device_policy_.signing_key());
+  owner_key_util_->SetPrivateKey(device_policy_.GetSigningKey());
   device_settings_service_.SetUsername(device_policy_.policy_data().username());
   FlushDeviceSettings();
 
@@ -191,7 +189,7 @@ TEST_F(DeviceSettingsProviderTest, SetPrefTwice) {
 }
 
 TEST_F(DeviceSettingsProviderTest, PolicyRetrievalFailedBadSignature) {
-  owner_key_util_->SetPublicKeyFromPrivateKey(device_policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*device_policy_.GetSigningKey());
   device_policy_.policy().set_policy_data_signature("bad signature");
   device_settings_test_helper_.set_policy_blob(device_policy_.GetBlob());
   ReloadDeviceSettings();
@@ -204,7 +202,7 @@ TEST_F(DeviceSettingsProviderTest, PolicyRetrievalFailedBadSignature) {
 }
 
 TEST_F(DeviceSettingsProviderTest, PolicyRetrievalNoPolicy) {
-  owner_key_util_->SetPublicKeyFromPrivateKey(device_policy_.signing_key());
+  owner_key_util_->SetPublicKeyFromPrivateKey(*device_policy_.GetSigningKey());
   device_settings_test_helper_.set_policy_blob(std::string());
   ReloadDeviceSettings();
 
@@ -245,10 +243,10 @@ TEST_F(DeviceSettingsProviderTest, PolicyLoadNotification) {
 
 TEST_F(DeviceSettingsProviderTest, StatsReportingMigration) {
   // Create the legacy consent file.
-  FilePath consent_file;
+  base::FilePath consent_file;
   ASSERT_TRUE(PathService::Get(chrome::DIR_USER_DATA, &consent_file));
   consent_file = consent_file.AppendASCII("Consent To Send Stats");
-  ASSERT_EQ(1, file_util::WriteFile(consent_file, "0", 1));
+  ASSERT_EQ(1, base::WriteFile(consent_file, "0", 1));
 
   // This should trigger migration because the metrics policy isn't in the blob.
   device_settings_test_helper_.set_policy_blob(std::string());
@@ -261,6 +259,30 @@ TEST_F(DeviceSettingsProviderTest, StatsReportingMigration) {
   bool bool_value;
   EXPECT_TRUE(saved_value->GetAsBoolean(&bool_value));
   EXPECT_FALSE(bool_value);
+}
+
+TEST_F(DeviceSettingsProviderTest, LegacyDeviceLocalAccounts) {
+  EXPECT_CALL(*this, SettingChanged(_)).Times(AnyNumber());
+  em::DeviceLocalAccountInfoProto* account =
+      device_policy_.payload().mutable_device_local_accounts()->add_account();
+  account->set_deprecated_public_session_id(
+      policy::PolicyBuilder::kFakeUsername);
+  device_policy_.Build();
+  device_settings_test_helper_.set_policy_blob(device_policy_.GetBlob());
+  ReloadDeviceSettings();
+  Mock::VerifyAndClearExpectations(this);
+
+  // On load, the deprecated spec should have been converted to the new format.
+  base::ListValue expected_accounts;
+  scoped_ptr<base::DictionaryValue> entry_dict(new base::DictionaryValue());
+  entry_dict->SetString(kAccountsPrefDeviceLocalAccountsKeyId,
+                        policy::PolicyBuilder::kFakeUsername);
+  entry_dict->SetInteger(kAccountsPrefDeviceLocalAccountsKeyType,
+                         policy::DeviceLocalAccount::TYPE_PUBLIC_SESSION);
+  expected_accounts.Append(entry_dict.release());
+  const base::Value* actual_accounts =
+      provider_->Get(kAccountsPrefDeviceLocalAccounts);
+  EXPECT_TRUE(base::Value::Equals(&expected_accounts, actual_accounts));
 }
 
 } // namespace chromeos

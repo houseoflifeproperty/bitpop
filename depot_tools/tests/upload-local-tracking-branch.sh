@@ -19,10 +19,10 @@ setup_gitgit
   echo "some work done on a branch that tracks a local branch" >> test
   git add test; git commit -q -m "local tracking branch work"
 
-  git config rietveld.server localhost:8080
+  git config rietveld.server localhost:10000
 
   # Prevent the editor from coming up when you upload.
-  export EDITOR=$(which true)
+  export GIT_EDITOR=$(which true)
   test_expect_success "upload succeeds (needs a server running on localhost)" \
     "$GIT_CL upload -m test | grep -q 'Issue created'"
 )

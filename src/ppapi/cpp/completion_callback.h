@@ -11,14 +11,9 @@
 #include "ppapi/cpp/module.h"
 #include "ppapi/cpp/output_traits.h"
 
-struct PP_ArrayOutput;
-
 /// @file
 /// This file defines the API to create and run a callback.
 namespace pp {
-
-template<typename T> class AsyncArrayOutputAdapter;
-template<typename T> class AsyncResourceArrayOutputAdapter;
 
 /// This API enables you to implement and receive callbacks when
 /// Pepper operations complete asynchronously.
@@ -87,6 +82,19 @@ class CompletionCallback {
   void Run(int32_t result) {
     PP_DCHECK(cc_.func);
     PP_RunCompletionCallback(&cc_, result);
+  }
+
+  /// RunAndClear() is used to run the <code>CompletionCallback</code> and
+  /// clear out the callback so that it cannot be run a second time.
+  ///
+  /// @param[in] result The result of the operation to be passed to the
+  /// callback function. Non-positive values correspond to the error codes
+  /// from <code>pp_errors.h</code> (excluding
+  /// <code>PP_OK_COMPLETIONPENDING</code>). Positive values indicate
+  /// additional information such as bytes read.
+  void RunAndClear(int32_t result) {
+    PP_DCHECK(cc_.func);
+    PP_RunAndClearCompletionCallback(&cc_, result);
   }
 
   /// IsOptional() is used to determine the setting of the

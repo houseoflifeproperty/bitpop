@@ -4,8 +4,6 @@
 
 #include "ash/system/tray/system_tray_delegate.h"
 
-#include "ash/system/tray/test_system_tray_delegate.h"
-
 namespace ash {
 
 NetworkIconInfo::NetworkIconInfo()
@@ -19,14 +17,19 @@ NetworkIconInfo::~NetworkIconInfo() {
 }
 
 BluetoothDeviceInfo::BluetoothDeviceInfo()
-    : connected(false) {
+    : connected(false),
+      connecting(false),
+      paired(false) {
 }
 
 BluetoothDeviceInfo::~BluetoothDeviceInfo() {
 }
 
 DriveOperationStatus::DriveOperationStatus()
-    : progress(0.0), type(OPERATION_OTHER), state(OPERATION_NOT_STARTED) {
+    : id(-1),
+      progress(0.0),
+      type(OPERATION_DOWNLOAD),
+      state(OPERATION_NOT_STARTED) {
 }
 
 DriveOperationStatus::~DriveOperationStatus() {
@@ -45,13 +48,6 @@ IMEPropertyInfo::IMEPropertyInfo()
 }
 
 IMEPropertyInfo::~IMEPropertyInfo() {
-}
-
-// TODO(stevenjb/oshima): Remove this once Shell::delegate_ is guaranteed
-// to not be NULL and move TestSystemTrayDelegate -> ash/test. crbug.com/159693
-// static
-SystemTrayDelegate* SystemTrayDelegate::CreateDummyDelegate() {
-  return new test::TestSystemTrayDelegate;
 }
 
 }  // namespace ash

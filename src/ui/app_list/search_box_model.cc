@@ -4,9 +4,24 @@
 
 #include "ui/app_list/search_box_model.h"
 
+#include "base/metrics/histogram.h"
 #include "ui/app_list/search_box_model_observer.h"
 
 namespace app_list {
+
+SearchBoxModel::SpeechButtonProperty::SpeechButtonProperty(
+    const gfx::ImageSkia& on_icon,
+    const base::string16& on_tooltip,
+    const gfx::ImageSkia& off_icon,
+    const base::string16& off_tooltip)
+    : on_icon(on_icon),
+      on_tooltip(on_tooltip),
+      off_icon(off_icon),
+      off_tooltip(off_tooltip) {
+}
+
+SearchBoxModel::SpeechButtonProperty::~SpeechButtonProperty() {
+}
 
 SearchBoxModel::SearchBoxModel() {
 }
@@ -19,7 +34,15 @@ void SearchBoxModel::SetIcon(const gfx::ImageSkia& icon) {
   FOR_EACH_OBSERVER(SearchBoxModelObserver, observers_, IconChanged());
 }
 
-void SearchBoxModel::SetHintText(const string16& hint_text) {
+void SearchBoxModel::SetSpeechRecognitionButton(
+    scoped_ptr<SearchBoxModel::SpeechButtonProperty> speech_button) {
+  speech_button_ = speech_button.Pass();
+  FOR_EACH_OBSERVER(SearchBoxModelObserver,
+                    observers_,
+                    SpeechRecognitionButtonPropChanged());
+}
+
+void SearchBoxModel::SetHintText(const base::string16& hint_text) {
   if (hint_text_ == hint_text)
     return;
 
@@ -37,10 +60,15 @@ void SearchBoxModel::SetSelectionModel(const gfx::SelectionModel& sel) {
                     SelectionModelChanged());
 }
 
-void SearchBoxModel::SetText(const string16& text) {
+void SearchBoxModel::SetText(const base::string16& text) {
   if (text_ == text)
     return;
 
+  // Log that a new search has been commenced whenever the text box text
+  // transitions from empty to non-empty.
+  if (text_.empty() && !text.empty()) {
+    UMA_HISTOGRAM_ENUMERATION("Apps.AppListSearchCommenced", 1, 2);
+  }
   text_ = text;
   FOR_EACH_OBSERVER(SearchBoxModelObserver, observers_, TextChanged());
 }

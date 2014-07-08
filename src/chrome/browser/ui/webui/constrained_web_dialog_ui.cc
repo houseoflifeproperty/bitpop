@@ -67,15 +67,15 @@ void ConstrainedWebDialogUI::RenderViewCreated(
     web_ui()->AddMessageHandler(*it);
   }
 
-  // Add a "DialogClose" callback which matches WebDialogUI behavior.
-  web_ui()->RegisterMessageCallback("DialogClose",
+  // Add a "dialogClose" callback which matches WebDialogUI behavior.
+  web_ui()->RegisterMessageCallback("dialogClose",
       base::Bind(&ConstrainedWebDialogUI::OnDialogCloseMessage,
                  base::Unretained(this)));
 
   dialog_delegate->OnDialogShown(web_ui(), render_view_host);
 }
 
-void ConstrainedWebDialogUI::OnDialogCloseMessage(const ListValue* args) {
+void ConstrainedWebDialogUI::OnDialogCloseMessage(const base::ListValue* args) {
   ConstrainedWebDialogDelegate* delegate = GetConstrainedDelegate();
   if (!delegate)
     return;

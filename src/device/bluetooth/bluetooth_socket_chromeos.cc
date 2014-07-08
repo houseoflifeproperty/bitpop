@@ -1,71 +1,102 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2013 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #include "device/bluetooth/bluetooth_socket_chromeos.h"
 
-#include <vector>
-
-#include <bluetooth/bluetooth.h>
-#include <bluetooth/rfcomm.h>
-#include <errno.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <string.h>
-#include <unistd.h>
+#include <string>
 
 #include "base/logging.h"
-#include "device/bluetooth/bluetooth_service_record.h"
-#include "device/bluetooth/bluetooth_utils.h"
+#include "base/memory/ref_counted.h"
+#include "base/sequenced_task_runner.h"
+#include "base/threading/thread_restrictions.h"
+#include "dbus/file_descriptor.h"
+#include "device/bluetooth/bluetooth_socket.h"
+#include "device/bluetooth/bluetooth_socket_net.h"
+#include "device/bluetooth/bluetooth_socket_thread.h"
+#include "net/base/ip_endpoint.h"
+#include "net/base/net_errors.h"
 
-using device::BluetoothServiceRecord;
-using device::BluetoothSocket;
+namespace {
+
+const char kSocketAlreadyConnected[] = "Socket is already connected.";
+
+}  // namespace
 
 namespace chromeos {
 
-BluetoothSocketChromeOs::BluetoothSocketChromeOs(
-    const std::string& address, int fd)
-  : address_(address),
-    fd_(fd) {
-}
-
-BluetoothSocketChromeOs::~BluetoothSocketChromeOs() {
-  close(fd_);
-}
-
 // static
-scoped_refptr<BluetoothSocket> BluetoothSocketChromeOs::CreateBluetoothSocket(
-    const BluetoothServiceRecord& service_record) {
-  BluetoothSocketChromeOs* bluetooth_socket = NULL;
-  if (service_record.SupportsRfcomm()) {
-    int socket_fd = socket(
-        AF_BLUETOOTH, SOCK_STREAM | SOCK_NONBLOCK, BTPROTO_RFCOMM);
-    struct sockaddr_rc socket_address = { 0 };
-    socket_address.rc_family = AF_BLUETOOTH;
-    socket_address.rc_channel = service_record.rfcomm_channel();
-    device::bluetooth_utils::str2ba(service_record.address(),
-        &socket_address.rc_bdaddr);
+scoped_refptr<BluetoothSocketChromeOS>
+BluetoothSocketChromeOS::CreateBluetoothSocket(
+    scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+    scoped_refptr<device::BluetoothSocketThread> socket_thread,
+    net::NetLog* net_log,
+    const net::NetLog::Source& source) {
+  DCHECK(ui_task_runner->RunsTasksOnCurrentThread());
 
-    int status = connect(socket_fd, (struct sockaddr *)&socket_address,
-        sizeof(socket_address));
-    int errsv = errno;
-    if (status == 0 || errno == EINPROGRESS) {
-      bluetooth_socket = new BluetoothSocketChromeOs(service_record.address(),
-          socket_fd);
-    } else {
-      LOG(ERROR) << "Failed to connect bluetooth socket "
-          << "(" << service_record.address() << "): "
-          << "(" << errsv << ") " << strerror(errsv);
-      close(socket_fd);
-    }
-  }
-  // TODO(bryeung): add support for L2CAP sockets as well.
-
-  return scoped_refptr<BluetoothSocketChromeOs>(bluetooth_socket);
+  return make_scoped_refptr(
+      new BluetoothSocketChromeOS(
+          ui_task_runner, socket_thread, net_log, source));
 }
 
-int BluetoothSocketChromeOs::fd() const {
-  return fd_;
+BluetoothSocketChromeOS::BluetoothSocketChromeOS(
+    scoped_refptr<base::SequencedTaskRunner> ui_task_runner,
+    scoped_refptr<device::BluetoothSocketThread> socket_thread,
+    net::NetLog* net_log,
+    const net::NetLog::Source& source)
+    : BluetoothSocketNet(ui_task_runner, socket_thread, net_log, source) {
+}
+
+BluetoothSocketChromeOS::~BluetoothSocketChromeOS() {
+}
+
+void BluetoothSocketChromeOS::Connect(
+    scoped_ptr<dbus::FileDescriptor> fd,
+    const base::Closure& success_callback,
+    const ErrorCompletionCallback& error_callback) {
+  DCHECK(ui_task_runner()->RunsTasksOnCurrentThread());
+
+  socket_thread()->task_runner()->PostTask(
+      FROM_HERE,
+      base::Bind(
+          &BluetoothSocketChromeOS::DoConnect,
+          this,
+          base::Passed(&fd),
+          base::Bind(&BluetoothSocketChromeOS::PostSuccess,
+                     this,
+                     success_callback),
+          base::Bind(&BluetoothSocketChromeOS::PostErrorCompletion,
+                     this,
+                     error_callback)));
+}
+
+void BluetoothSocketChromeOS::DoConnect(
+    scoped_ptr<dbus::FileDescriptor> fd,
+    const base::Closure& success_callback,
+    const ErrorCompletionCallback& error_callback) {
+  DCHECK(socket_thread()->task_runner()->RunsTasksOnCurrentThread());
+  base::ThreadRestrictions::AssertIOAllowed();
+  DCHECK(fd->is_valid());
+
+  if (tcp_socket()) {
+    error_callback.Run(kSocketAlreadyConnected);
+    return;
+  }
+
+  ResetTCPSocket();
+
+  // Note: We don't have a meaningful |IPEndPoint|, but that is ok since the
+  // TCPSocket implementation does not actually require one.
+  int net_result = tcp_socket()->AdoptConnectedSocket(fd->value(),
+                                                      net::IPEndPoint());
+  if (net_result != net::OK) {
+    error_callback.Run("Error connecting to socket: " +
+                       std::string(net::ErrorToString(net_result)));
+    return;
+  }
+
+  fd->TakeValue();
+  success_callback.Run();
 }
 
 }  // namespace chromeos

@@ -3,35 +3,16 @@
 # found in the LICENSE file.
 
 {
-  'variables': {
-    'use_system_khronos%': 0,
-  },
-  'conditions': [
-    ['use_system_khronos==0', {
-      'targets': [
-        {
-          'target_name': 'khronos_headers',
-          'type': 'none',
-          'all_dependent_settings': {
-            'include_dirs': [
-              '.',
-              '../../gpu',  # Contains GLES2/gl2chromium.h
-            ],
-          },
-        },
-      ],
-    }, { # use_system_khronos==1
-      'targets': [
-        {
-          'target_name': 'khronos_headers',
-          'type': 'none',
-          'all_dependent_settings': {
-            'include_dirs': [
-              '../../gpu',  # Contains GLES2/gl2chromium.h
-            ],
-          },
-        },
-      ],
-    }],
+  'targets': [
+    {
+      'target_name': 'khronos_headers',
+      'type': 'none',
+      'all_dependent_settings': {
+        'include_dirs': [
+          '.',
+          '../../gpu',  # Contains GLES2/gl2chromium.h
+        ],
+      },
+    },
   ],
 }

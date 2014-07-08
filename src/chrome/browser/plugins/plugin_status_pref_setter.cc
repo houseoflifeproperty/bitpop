@@ -5,24 +5,24 @@
 #include "chrome/browser/plugins/plugin_status_pref_setter.h"
 
 #include "base/bind.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/pepper_flash_settings_manager.h"
 #include "chrome/browser/plugins/plugin_data_remover_helper.h"
 #include "chrome/browser/plugins/plugin_prefs.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
 #include "content/public/browser/notification_source.h"
 #include "content/public/browser/plugin_service.h"
-#include "webkit/plugins/webplugininfo.h"
+#include "content/public/common/webplugininfo.h"
 
 using content::BrowserThread;
 using content::PluginService;
 
 PluginStatusPrefSetter::PluginStatusPrefSetter()
     : profile_(NULL),
-      ALLOW_THIS_IN_INITIALIZER_LIST(factory_(this)) {}
+      factory_(this) {}
 
 PluginStatusPrefSetter::~PluginStatusPrefSetter() {
 }
@@ -59,14 +59,14 @@ void PluginStatusPrefSetter::StartUpdate() {
 
 void PluginStatusPrefSetter::GotPlugins(
     scoped_refptr<PluginPrefs> plugin_prefs,
-    const std::vector<webkit::WebPluginInfo>& /* plugins */) {
+    const std::vector<content::WebPluginInfo>& plugins) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // Set the values on the PrefService instead of through the PrefMembers to
   // notify observers if they changed.
   profile_->GetPrefs()->SetBoolean(
       clear_plugin_lso_data_enabled_.GetPrefName().c_str(),
-      PluginDataRemoverHelper::IsSupported(plugin_prefs));
+      PluginDataRemoverHelper::IsSupported(plugin_prefs.get()));
   profile_->GetPrefs()->SetBoolean(
       pepper_flash_settings_enabled_.GetPrefName().c_str(),
-      PepperFlashSettingsManager::IsPepperFlashInUse(plugin_prefs, NULL));
+      PepperFlashSettingsManager::IsPepperFlashInUse(plugin_prefs.get(), NULL));
 }

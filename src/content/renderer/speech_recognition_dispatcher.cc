@@ -5,23 +5,23 @@
 #include "content/renderer/speech_recognition_dispatcher.h"
 
 #include "base/basictypes.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "content/common/speech_recognition_messages.h"
 #include "content/renderer/render_view_impl.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebString.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/platform/WebVector.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechGrammar.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognitionResult.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebSpeechRecognizerClient.h"
+#include "third_party/WebKit/public/platform/WebString.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebSpeechGrammar.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognitionParams.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognitionResult.h"
+#include "third_party/WebKit/public/web/WebSpeechRecognizerClient.h"
 
-using WebKit::WebVector;
-using WebKit::WebString;
-using WebKit::WebSpeechGrammar;
-using WebKit::WebSpeechRecognitionHandle;
-using WebKit::WebSpeechRecognitionResult;
-using WebKit::WebSpeechRecognitionParams;
-using WebKit::WebSpeechRecognizerClient;
+using blink::WebVector;
+using blink::WebString;
+using blink::WebSpeechGrammar;
+using blink::WebSpeechRecognitionHandle;
+using blink::WebSpeechRecognitionResult;
+using blink::WebSpeechRecognitionParams;
+using blink::WebSpeechRecognizerClient;
 
 namespace content {
 
@@ -66,7 +66,7 @@ void SpeechRecognitionDispatcher::start(
     msg_params.grammars.push_back(
         SpeechRecognitionGrammar(grammar.src().spec(), grammar.weight()));
   }
-  msg_params.language = UTF16ToUTF8(params.language());
+  msg_params.language = base::UTF16ToUTF8(params.language());
   msg_params.max_hypotheses = static_cast<uint32>(params.maxAlternatives());
   msg_params.continuous = params.continuous();
   msg_params.interim_results = params.interimResults();
@@ -149,9 +149,10 @@ void SpeechRecognitionDispatcher::OnErrorOccurred(
     recognizer_client_->didReceiveNoMatch(GetHandleFromID(request_id),
                                           WebSpeechRecognitionResult());
   } else {
-    recognizer_client_->didReceiveError(GetHandleFromID(request_id),
-                                        WebString(), // TODO(primiano): message?
-                                        WebKitErrorCode(error.code));
+    recognizer_client_->didReceiveError(
+        GetHandleFromID(request_id),
+        WebString(),  // TODO(primiano): message?
+        WebKitErrorCode(error.code));
   }
 }
 

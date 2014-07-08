@@ -6,12 +6,13 @@
 
 #include "base/bind.h"
 #include "base/file_util.h"
+#include "base/files/file_enumerator.h"
 #include "base/location.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/task_runner_util.h"
 #include "base/threading/sequenced_worker_pool.h"
-#include "chrome/browser/system_monitor/udev_util_linux.h"
+#include "components/storage_monitor/udev_util_linux.h"
 #include "content/public/browser/browser_thread.h"
 
 namespace chromeos {
@@ -47,7 +48,7 @@ void CameraDetector::StartPresenceCheck(const base::Closure& callback) {
   presence_check_in_progress_ = true;
   base::PostTaskAndReplyWithResult(
       BrowserThread::GetBlockingPool()->GetTaskRunnerWithShutdownBehavior(
-          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN),
+          base::SequencedWorkerPool::SKIP_ON_SHUTDOWN).get(),
       FROM_HERE,
       base::Bind(&CameraDetector::CheckPresence),
       base::Bind(&CameraDetector::OnPresenceCheckDone, callback));
@@ -66,14 +67,13 @@ void CameraDetector::OnPresenceCheckDone(const base::Closure& callback,
 bool CameraDetector::CheckPresence() {
   // We do a quick check using udev database because opening each /dev/videoX
   // device may trigger costly device initialization.
-  using file_util::FileEnumerator;
-  FileEnumerator file_enum(
-      FilePath(kV4LSubsystemDir), false /* not recursive */,
-      FileEnumerator::FILES | FileEnumerator::SHOW_SYM_LINKS);
-  for (FilePath path = file_enum.Next(); !path.empty();
+  base::FileEnumerator file_enum(
+      base::FilePath(kV4LSubsystemDir), false /* not recursive */,
+      base::FileEnumerator::FILES | base::FileEnumerator::SHOW_SYM_LINKS);
+  for (base::FilePath path = file_enum.Next(); !path.empty();
        path = file_enum.Next()) {
     std::string v4l_capabilities;
-    if (chrome::GetUdevDevicePropertyValueByPath(
+    if (storage_monitor::GetUdevDevicePropertyValueByPath(
             path, kV4LCapabilities, &v4l_capabilities)) {
       std::vector<std::string> caps;
       base::SplitString(v4l_capabilities, kV4LCapabilitiesDelim, &caps);

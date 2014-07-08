@@ -8,13 +8,14 @@
   },
   'targets': [
     {
-      'target_name': 'metro_viewer',
+      'target_name': 'metro_viewer_messages',
       'type': 'static_library',
       'dependencies': [
         '../../base/base.gyp:base',
-        '../../skia/skia.gyp:skia',
       ],
       'sources': [
+        'ime_types.cc',
+        'ime_types.h',
         'metro_viewer_message_generator.cc',
         'metro_viewer_message_generator.h',
         'metro_viewer_messages.h',
@@ -25,4 +26,3 @@
     },
   ],
 }
-

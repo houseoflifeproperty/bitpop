@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/component_updater/component_updater_service.h"
+#include "chrome/browser/component_updater/component_updater_configurator.h"
 
 #include <algorithm>
 #include <string>
@@ -10,89 +10,80 @@
 
 #include "base/command_line.h"
 #include "base/compiler_specific.h"
-#include "base/metrics/histogram.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/win/windows_version.h"
 #include "build/build_config.h"
+#include "chrome/browser/component_updater/component_patcher.h"
 #include "chrome/common/chrome_switches.h"
-#include "chrome/common/chrome_version_info.h"
 #include "net/url_request/url_request_context_getter.h"
 
+namespace component_updater {
+
 namespace {
+
 // Default time constants.
 const int kDelayOneMinute = 60;
 const int kDelayOneHour = kDelayOneMinute * 60;
 
-// Debug values you can pass to --component-updater-debug=value1,value2.
+// Debug values you can pass to --component-updater=value1,value2.
 // Speed up component checking.
-const char kDebugFastUpdate[] = "fast-update";
-// Force out-of-process-xml parsing.
-const char kDebugOutOfProcess[] = "out-of-process";
-// Add "testrequest=1" parameter to the update check query.
-const char kDebugRequestParam[] = "test-request";
+const char kSwitchFastUpdate[] = "fast-update";
 
-bool HasDebugValue(const std::vector<std::string>& vec, const char* test) {
+// Add "testrequest=1" attribute to the update check request.
+const char kSwitchRequestParam[] = "test-request";
+
+// Disables pings. Pings are the requests sent to the update server that report
+// the success or the failure of component install or update attempts.
+extern const char kSwitchDisablePings[] = "disable-pings";
+
+// Sets the URL for updates.
+const char kSwitchUrlSource[] = "url-source";
+
+#define COMPONENT_UPDATER_SERVICE_ENDPOINT \
+  "//clients2.google.com/service/update2"
+
+// The default url for the v3 protocol service endpoint. Can be
+// overridden with --component-updater=url-source=someurl.
+const char kDefaultUrlSource[] = "https:" COMPONENT_UPDATER_SERVICE_ENDPOINT;
+
+// The url to send the pings to.
+const char kPingUrl[] = "https:" COMPONENT_UPDATER_SERVICE_ENDPOINT;
+
+// Disables differential updates.
+const char kSwitchDisableDeltaUpdates[] = "disable-delta-updates";
+
+#if defined(OS_WIN)
+// Disables background downloads.
+const char kSwitchDisableBackgroundDownloads[] = "disable-background-downloads";
+#endif  // defined(OS_WIN)
+
+// Returns true if and only if |test| is contained in |vec|.
+bool HasSwitchValue(const std::vector<std::string>& vec, const char* test) {
   if (vec.empty())
     return 0;
   return (std::find(vec.begin(), vec.end(), test) != vec.end());
 }
 
-// The request extra information is the OS and architecture, this helps
-// the server select the right package to be delivered.
-const char kExtraInfo[] =
-#if defined(OS_MACOSX)
-  #if defined(__amd64__)
-    "os=mac&arch=x64&prod=chrome&prodversion=";
-  #elif defined(__i386__)
-     "os=mac&arch=x86&prod=chrome&prodversion=";
-  #else
-     #error "unknown mac architecture"
-  #endif
-#elif defined(OS_WIN)
-  #if defined(_WIN64)
-    "os=win&arch=x64&prod=chrome&prodversion=";
-  #elif defined(_WIN32)
-    "os=win&arch=x86&prod=chrome&prodversion=";
-  #else
-    #error "unknown windows architecture"
-  #endif
-#elif defined(OS_ANDROID)
-  #if defined(__i386__)
-    "os=android&arch=x86&prod=chrome&prodversion=";
-  #elif defined(__arm__)
-    "os=android&arch=arm&prod=chrome&prodversion=";
-  #else
-    "os=android&arch=unknown&prod=chrome&prodversion=";
-  #endif
-#elif defined(OS_CHROMEOS)
-  #if defined(__i386__)
-    "os=cros&arch=x86&prod=chrome&prodversion=";
-  #elif defined(__arm__)
-    "os=cros&arch=arm&prod=chrome&prodversion=";
-  #else
-    "os=cros&arch=unknown&prod=chrome&prodversion=";
-  #endif
-#elif defined(OS_LINUX)
-  #if defined(__amd64__)
-    "os=linux&arch=x64&prod=chrome&prodversion=";
-  #elif defined(__i386__)
-    "os=linux&arch=x86&prod=chrome&prodversion=";
-  #elif defined(__arm__)
-    "os=linux&arch=arm&prod=chrome&prodversion=";
-  #else
-    "os=linux&arch=unknown&prod=chrome&prodversion=";
-  #endif
-#elif defined(OS_OPENBSD)
-  #if defined(__amd64__)
-    "os=openbsd&arch=x64";
-  #elif defined(__i386__)
-    "os=openbsd&arch=x86";
-  #else
-    "os=openbsd&arch=unknown";
-  #endif
-#else
-    #error "unknown os or architecture"
-#endif
+// If there is an element of |vec| of the form |test|=.*, returns the right-
+// hand side of that assignment. Otherwise, returns an empty string.
+// The right-hand side may contain additional '=' characters, allowing for
+// further nesting of switch arguments.
+std::string GetSwitchArgument(const std::vector<std::string>& vec,
+                              const char* test) {
+  if (vec.empty())
+    return std::string();
+  for (std::vector<std::string>::const_iterator it = vec.begin();
+       it != vec.end();
+       ++it) {
+    const std::size_t found = it->find("=");
+    if (found != std::string::npos) {
+      if (it->substr(0, found) == test) {
+        return it->substr(found + 1);
+      }
+    }
+  }
+  return std::string();
+}
 
 }  // namespace
 
@@ -106,75 +97,95 @@ class ChromeConfigurator : public ComponentUpdateService::Configurator {
   virtual int InitialDelay() OVERRIDE;
   virtual int NextCheckDelay() OVERRIDE;
   virtual int StepDelay() OVERRIDE;
+  virtual int StepDelayMedium() OVERRIDE;
   virtual int MinimumReCheckWait() OVERRIDE;
+  virtual int OnDemandDelay() OVERRIDE;
   virtual GURL UpdateUrl() OVERRIDE;
-  virtual const char* ExtraRequestParams() OVERRIDE;
+  virtual GURL PingUrl() OVERRIDE;
+  virtual std::string ExtraRequestParams() OVERRIDE;
   virtual size_t UrlSizeLimit() OVERRIDE;
   virtual net::URLRequestContextGetter* RequestContext() OVERRIDE;
   virtual bool InProcess() OVERRIDE;
-  virtual void OnEvent(Events event, int val) OVERRIDE;
+  virtual bool DeltasEnabled() const OVERRIDE;
+  virtual bool UseBackgroundDownloader() const OVERRIDE;
 
  private:
   net::URLRequestContextGetter* url_request_getter_;
   std::string extra_info_;
+  std::string url_source_;
   bool fast_update_;
-  bool out_of_process_;
-  GURL app_update_url_;
+  bool pings_enabled_;
+  bool deltas_enabled_;
+  bool background_downloads_enabled_;
 };
 
-ChromeConfigurator::ChromeConfigurator(const CommandLine* cmdline,
+ChromeConfigurator::ChromeConfigurator(
+    const CommandLine* cmdline,
     net::URLRequestContextGetter* url_request_getter)
-      : url_request_getter_(url_request_getter),
-        extra_info_(kExtraInfo) {
+    : url_request_getter_(url_request_getter),
+      fast_update_(false),
+      pings_enabled_(false),
+      deltas_enabled_(false),
+      background_downloads_enabled_(false) {
   // Parse comma-delimited debug flags.
-  std::vector<std::string> debug_values;
-  Tokenize(cmdline->GetSwitchValueASCII(switches::kComponentUpdaterDebug),
-      ",", &debug_values);
-  fast_update_ = HasDebugValue(debug_values, kDebugFastUpdate);
-  out_of_process_ = HasDebugValue(debug_values, kDebugOutOfProcess);
+  std::vector<std::string> switch_values;
+  Tokenize(cmdline->GetSwitchValueASCII(switches::kComponentUpdater),
+           ",",
+           &switch_values);
+  fast_update_ = HasSwitchValue(switch_values, kSwitchFastUpdate);
+  pings_enabled_ = !HasSwitchValue(switch_values, kSwitchDisablePings);
+  deltas_enabled_ = !HasSwitchValue(switch_values, kSwitchDisableDeltaUpdates);
 
-  // Allow switch to override update URL (piggyback on AppsGalleryUpdateURL).
-  if (cmdline->HasSwitch(switches::kAppsGalleryUpdateURL)) {
-    app_update_url_ =
-        GURL(cmdline->GetSwitchValueASCII(switches::kAppsGalleryUpdateURL));
-  } else {
-    app_update_url_ = GURL("http://clients2.google.com/service/update2/crx");
+#if defined(OS_WIN)
+  background_downloads_enabled_ =
+      !HasSwitchValue(switch_values, kSwitchDisableBackgroundDownloads);
+#else
+  background_downloads_enabled_ = false;
+#endif
+
+  url_source_ = GetSwitchArgument(switch_values, kSwitchUrlSource);
+  if (url_source_.empty()) {
+    url_source_ = kDefaultUrlSource;
   }
 
-  // Make the extra request params, they are necessary so omaha does
-  // not deliver components that are going to be rejected at install time.
-  extra_info_ += chrome::VersionInfo().Version();
-#if defined(OS_WIN)
-  if (base::win::OSInfo::GetInstance()->wow64_status() ==
-      base::win::OSInfo::WOW64_ENABLED)
-    extra_info_ += "&wow64=1";
-#endif
-  if (HasDebugValue(debug_values, kDebugRequestParam))
-    extra_info_ += "&testrequest=1";
+  if (HasSwitchValue(switch_values, kSwitchRequestParam))
+    extra_info_ += "testrequest=\"1\"";
 }
 
 int ChromeConfigurator::InitialDelay() {
-  return  fast_update_ ? 1 : (6 * kDelayOneMinute);
+  return fast_update_ ? 1 : (6 * kDelayOneMinute);
 }
 
 int ChromeConfigurator::NextCheckDelay() {
-  return fast_update_ ? 3 : (2 * kDelayOneHour);
+  return fast_update_ ? 3 : (6 * kDelayOneHour);
+}
+
+int ChromeConfigurator::StepDelayMedium() {
+  return fast_update_ ? 3 : (15 * kDelayOneMinute);
 }
 
 int ChromeConfigurator::StepDelay() {
-  return fast_update_ ? 1 : 4;
+  return fast_update_ ? 1 : 1;
 }
 
 int ChromeConfigurator::MinimumReCheckWait() {
   return fast_update_ ? 30 : (6 * kDelayOneHour);
 }
 
-GURL ChromeConfigurator::UpdateUrl() {
-  return app_update_url_;
+int ChromeConfigurator::OnDemandDelay() {
+  return fast_update_ ? 2 : (30 * kDelayOneMinute);
 }
 
-const char* ChromeConfigurator::ExtraRequestParams() {
-  return extra_info_.c_str();
+GURL ChromeConfigurator::UpdateUrl() {
+  return GURL(url_source_);
+}
+
+GURL ChromeConfigurator::PingUrl() {
+  return pings_enabled_ ? GURL(kPingUrl) : GURL();
+}
+
+std::string ChromeConfigurator::ExtraRequestParams() {
+  return extra_info_;
 }
 
 size_t ChromeConfigurator::UrlSizeLimit() {
@@ -186,36 +197,21 @@ net::URLRequestContextGetter* ChromeConfigurator::RequestContext() {
 }
 
 bool ChromeConfigurator::InProcess() {
-  return !out_of_process_;
+  return false;
 }
 
-void ChromeConfigurator::OnEvent(Events event, int val) {
-  switch (event) {
-    case kManifestCheck:
-      UMA_HISTOGRAM_ENUMERATION("ComponentUpdater.ManifestCheck", val, 100);
-      break;
-    case kComponentUpdated:
-      UMA_HISTOGRAM_ENUMERATION("ComponentUpdater.ComponentUpdated", val, 100);
-      break;
-    case kManifestError:
-      UMA_HISTOGRAM_COUNTS_100("ComponentUpdater.ManifestError", val);
-      break;
-    case kNetworkError:
-      UMA_HISTOGRAM_ENUMERATION("ComponentUpdater.NetworkError", val, 100);
-      break;
-    case kUnpackError:
-      UMA_HISTOGRAM_ENUMERATION("ComponentUpdater.UnpackError", val, 100);
-      break;
-    case kInstallerError:
-      UMA_HISTOGRAM_ENUMERATION("ComponentUpdater.InstallError", val, 100);
-      break;
-    default:
-      NOTREACHED();
-      break;
-  }
+bool ChromeConfigurator::DeltasEnabled() const {
+  return deltas_enabled_;
+}
+
+bool ChromeConfigurator::UseBackgroundDownloader() const {
+  return background_downloads_enabled_;
 }
 
 ComponentUpdateService::Configurator* MakeChromeComponentUpdaterConfigurator(
-    const CommandLine* cmdline, net::URLRequestContextGetter* context_getter) {
+    const CommandLine* cmdline,
+    net::URLRequestContextGetter* context_getter) {
   return new ChromeConfigurator(cmdline, context_getter);
 }
+
+}  // namespace component_updater

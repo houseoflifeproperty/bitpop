@@ -8,14 +8,41 @@
 
 #include "SkBBoxRecord.h"
 
+void SkBBoxRecord::drawOval(const SkRect& rect, const SkPaint& paint) {
+    if (this->transformBounds(rect, &paint)) {
+        INHERITED::drawOval(rect, paint);
+    }
+}
+
+void SkBBoxRecord::drawRRect(const SkRRect& rrect, const SkPaint& paint) {
+    if (this->transformBounds(rrect.rect(), &paint)) {
+        INHERITED::drawRRect(rrect, paint);
+    }
+}
+
 void SkBBoxRecord::drawRect(const SkRect& rect, const SkPaint& paint) {
     if (this->transformBounds(rect, &paint)) {
         INHERITED::drawRect(rect, paint);
     }
 }
 
+void SkBBoxRecord::onDrawDRRect(const SkRRect& outer, const SkRRect& inner,
+                                const SkPaint& paint) {
+    if (this->transformBounds(outer.rect(), &paint)) {
+        this->INHERITED::onDrawDRRect(outer, inner, paint);
+    }
+}
+
 void SkBBoxRecord::drawPath(const SkPath& path, const SkPaint& paint) {
-    if (this->transformBounds(path.getBounds(), &paint)) {
+    if (path.isInverseFillType()) {
+        // If path is inverse filled, use the current clip bounds as the
+        // path's device-space bounding box.
+        SkIRect clipBounds;
+        if (this->getClipDeviceBounds(&clipBounds)) {
+            this->handleBBox(SkRect::Make(clipBounds));
+            INHERITED::drawPath(path, paint);
+        }
+    } else if (this->transformBounds(path.getBounds(), &paint)) {
         INHERITED::drawPath(path, paint);
     }
 }
@@ -23,7 +50,19 @@ void SkBBoxRecord::drawPath(const SkPath& path, const SkPaint& paint) {
 void SkBBoxRecord::drawPoints(PointMode mode, size_t count, const SkPoint pts[],
                               const SkPaint& paint) {
     SkRect bbox;
-    bbox.set(pts, count);
+    bbox.set(pts, SkToInt(count));
+    // Small min width value, just to ensure hairline point bounding boxes aren't empty.
+    // Even though we know hairline primitives are drawn one pixel wide, we do not use a
+    // minimum of 1 because the playback scale factor is unknown at record time. Later
+    // outsets will take care of adding additional padding for antialiasing and rounding out
+    // to integer device coordinates, guaranteeing that the rasterized pixels will be included
+    // in the computed bounds.
+    // Note: The device coordinate outset in SkBBoxHierarchyRecord::handleBBox is currently
+    // done in the recording coordinate space, which is wrong.
+    // http://code.google.com/p/skia/issues/detail?id=1021
+    static const SkScalar kMinWidth = 0.01f;
+    SkScalar halfStrokeWidth = SkMaxScalar(paint.getStrokeWidth(), kMinWidth) / 2;
+    bbox.outset(halfStrokeWidth, halfStrokeWidth);
     if (this->transformBounds(bbox, &paint)) {
         INHERITED::drawPoints(mode, count, pts, paint);
     }
@@ -45,8 +84,8 @@ void SkBBoxRecord::clear(SkColor color) {
     INHERITED::clear(color);
 }
 
-void SkBBoxRecord::drawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
-                            const SkPaint& paint) {
+void SkBBoxRecord::onDrawText(const void* text, size_t byteLength, SkScalar x, SkScalar y,
+                              const SkPaint& paint) {
     SkRect bbox;
     paint.measureText(text, byteLength, &bbox);
     SkPaint::FontMetrics metrics;
@@ -89,7 +128,7 @@ void SkBBoxRecord::drawText(const void* text, size_t byteLength, SkScalar x, SkS
     bbox.fTop += y;
     bbox.fBottom += y;
     if (this->transformBounds(bbox, &paint)) {
-        INHERITED::drawText(text, byteLength, x, y, paint);
+        INHERITED::onDrawText(text, byteLength, x, y, paint);
     }
 }
 
@@ -102,9 +141,10 @@ void SkBBoxRecord::drawBitmap(const SkBitmap& bitmap, SkScalar left, SkScalar to
 }
 
 void SkBBoxRecord::drawBitmapRectToRect(const SkBitmap& bitmap, const SkRect* src,
-                                  const SkRect& dst, const SkPaint* paint) {
+                                        const SkRect& dst, const SkPaint* paint,
+                                        DrawBitmapRectFlags flags) {
     if (this->transformBounds(dst, paint)) {
-        INHERITED::drawBitmapRectToRect(bitmap, src, dst, paint);
+        INHERITED::drawBitmapRectToRect(bitmap, src, dst, paint, flags);
     }
 }
 
@@ -125,8 +165,8 @@ void SkBBoxRecord::drawBitmapNine(const SkBitmap& bitmap, const SkIRect& center,
     }
 }
 
-void SkBBoxRecord::drawPosText(const void* text, size_t byteLength,
-                               const SkPoint pos[], const SkPaint& paint) {
+void SkBBoxRecord::onDrawPosText(const void* text, size_t byteLength, const SkPoint pos[],
+                                 const SkPaint& paint) {
     SkRect bbox;
     bbox.set(pos, paint.countText(text, byteLength));
     SkPaint::FontMetrics metrics;
@@ -140,53 +180,63 @@ void SkBBoxRecord::drawPosText(const void* text, size_t byteLength,
     bbox.fRight -= pad;
 
     if (this->transformBounds(bbox, &paint)) {
-        INHERITED::drawPosText(text, byteLength, pos, paint);
+        INHERITED::onDrawPosText(text, byteLength, pos, paint);
     }
 }
 
-void SkBBoxRecord::drawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
-                                SkScalar constY, const SkPaint& paint) {
-    SkRect bbox;
+void SkBBoxRecord::onDrawPosTextH(const void* text, size_t byteLength, const SkScalar xpos[],
+                                  SkScalar constY, const SkPaint& paint) {
     size_t numChars = paint.countText(text, byteLength);
-    if (numChars > 0) {
-        bbox.fLeft  = xpos[0];
-        bbox.fRight = xpos[numChars - 1];
-        // if we had a guarantee that these will be monotonically increasing, this could be sped up
-        for (size_t i = 1; i < numChars; ++i) {
-            if (xpos[i] < bbox.fLeft) {
-                bbox.fLeft = xpos[i];
-            }
-            if (xpos[i] > bbox.fRight) {
-                bbox.fRight = xpos[i];
-            }
+    if (numChars == 0) {
+        return;
+    }
+
+    const SkFlatData* flatPaintData = this->getFlatPaintData(paint);
+    WriteTopBot(paint, *flatPaintData);
+
+    SkScalar top = flatPaintData->topBot()[0];
+    SkScalar bottom = flatPaintData->topBot()[1];
+    SkScalar pad = top - bottom;
+
+    SkRect bbox;
+    bbox.fLeft = SK_ScalarMax;
+    bbox.fRight = SK_ScalarMin;
+
+    for (size_t i = 0; i < numChars; ++i) {
+        if (xpos[i] < bbox.fLeft) {
+            bbox.fLeft = xpos[i];
         }
-        SkPaint::FontMetrics metrics;
-        paint.getFontMetrics(&metrics);
-
-        // pad horizontally by max glyph height
-        SkScalar pad = (metrics.fTop - metrics.fBottom);
-        bbox.fLeft  += pad;
-        bbox.fRight -= pad;
-
-        bbox.fTop    = metrics.fTop + constY;
-        bbox.fBottom = metrics.fBottom + constY;
-        if (!this->transformBounds(bbox, &paint)) {
-            return;
+        if (xpos[i] > bbox.fRight) {
+            bbox.fRight = xpos[i];
         }
     }
-    INHERITED::drawPosTextH(text, byteLength, xpos, constY, paint);
+
+    // pad horizontally by max glyph height
+    bbox.fLeft  += pad;
+    bbox.fRight -= pad;
+
+    bbox.fTop    = top + constY;
+    bbox.fBottom = bottom + constY;
+
+    if (!this->transformBounds(bbox, &paint)) {
+        return;
+    }
+    // This is the equivalent of calling:
+    //  INHERITED::drawPosTextH(text, byteLength, xpos, constY, paint);
+    // but we filled our flat paint beforehand so that we could get font metrics.
+    drawPosTextHImpl(text, byteLength, xpos, constY, paint, flatPaintData);
 }
 
 void SkBBoxRecord::drawSprite(const SkBitmap& bitmap, int left, int top,
                               const SkPaint* paint) {
-    SkRect bbox = {SkIntToScalar(left), SkIntToScalar(top), SkIntToScalar(left + bitmap.width()), SkIntToScalar(top + bitmap.height())};
+    SkRect bbox;
+    bbox.set(SkIRect::MakeXYWH(left, top, bitmap.width(), bitmap.height()));
     this->handleBBox(bbox); // directly call handleBBox, matrix is ignored
-    INHERITED::drawBitmap(bitmap, left, top, paint);
+    INHERITED::drawSprite(bitmap, left, top, paint);
 }
 
-void SkBBoxRecord::drawTextOnPath(const void* text, size_t byteLength,
-                                  const SkPath& path, const SkMatrix* matrix,
-                                  const SkPaint& paint) {
+void SkBBoxRecord::onDrawTextOnPath(const void* text, size_t byteLength, const SkPath& path,
+                                    const SkMatrix* matrix, const SkPaint& paint) {
     SkRect bbox = path.getBounds();
     SkPaint::FontMetrics metrics;
     paint.getFontMetrics(&metrics);
@@ -199,7 +249,7 @@ void SkBBoxRecord::drawTextOnPath(const void* text, size_t byteLength,
     bbox.fBottom -= pad;
 
     if (this->transformBounds(bbox, &paint)) {
-        INHERITED::drawTextOnPath(text, byteLength, path, matrix, paint);
+        INHERITED::onDrawTextOnPath(text, byteLength, path, matrix, paint);
     }
 }
 
@@ -225,12 +275,13 @@ void SkBBoxRecord::drawPicture(SkPicture& picture) {
 
 bool SkBBoxRecord::transformBounds(const SkRect& bounds, const SkPaint* paint) {
     SkRect outBounds = bounds;
+    outBounds.sort();
 
     if (paint) {
         // account for stroking, path effects, shadows, etc
         if (paint->canComputeFastBounds()) {
             SkRect temp;
-            outBounds = paint->computeFastBounds(bounds, &temp);
+            outBounds = paint->computeFastBounds(outBounds, &temp);
         } else {
             // set bounds to current clip
             if (!this->getClipBounds(&outBounds)) {
@@ -240,9 +291,7 @@ bool SkBBoxRecord::transformBounds(const SkRect& bounds, const SkPaint* paint) {
         }
     }
 
-    SkRect clip;
-
-    if (this->getClipBounds(&clip) && outBounds.intersect(clip)) {
+    if (!outBounds.isEmpty() && !this->quickReject(outBounds)) {
         this->getTotalMatrix().mapRect(&outBounds);
         this->handleBBox(outBounds);
         return true;
@@ -250,4 +299,3 @@ bool SkBBoxRecord::transformBounds(const SkRect& bounds, const SkPaint* paint) {
 
     return false;
 }
-

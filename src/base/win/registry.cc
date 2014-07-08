@@ -8,7 +8,7 @@
 #include <algorithm>
 
 #include "base/logging.h"
-#include "base/string_util.h"
+#include "base/strings/string_util.h"
 #include "base/threading/thread_restrictions.h"
 
 #pragma comment(lib, "shlwapi.lib")  // for SHDeleteKey
@@ -36,6 +36,11 @@ inline DWORD to_wchar_size(DWORD byte_size) {
 
 RegKey::RegKey()
     : key_(NULL),
+      watch_event_(0) {
+}
+
+RegKey::RegKey(HKEY key)
+    : key_(key),
       watch_event_(0) {
 }
 
@@ -110,6 +115,20 @@ void RegKey::Close() {
     ::RegCloseKey(key_);
     key_ = NULL;
   }
+}
+
+void RegKey::Set(HKEY key) {
+  if (key_ != key) {
+    Close();
+    key_ = key;
+  }
+}
+
+HKEY RegKey::Take() {
+  StopWatching();
+  HKEY key = key_;
+  key_ = NULL;
+  return key;
 }
 
 bool RegKey::HasValue(const wchar_t* name) const {

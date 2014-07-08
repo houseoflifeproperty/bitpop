@@ -25,37 +25,36 @@ const int kBottomInset = 7;
 const int kRightInset = 2;
 }  // namespace
 
-namespace first_run {
-void ShowFirstRunDialog(Profile* profile) {}
-}  // namespace first_run
-
 // static
 FirstRunBubble* FirstRunBubble::ShowBubble(Browser* browser,
                                            views::View* anchor_view) {
   first_run::LogFirstRunMetric(first_run::FIRST_RUN_BUBBLE_SHOWN);
 
   FirstRunBubble* delegate = new FirstRunBubble(browser, anchor_view);
-  views::BubbleDelegateView::CreateBubble(delegate);
-  delegate->StartFade(true);
+  views::BubbleDelegateView::CreateBubble(delegate)->Show();
   return delegate;
 }
 
 void FirstRunBubble::Init() {
   ui::ResourceBundle& rb = ui::ResourceBundle::GetSharedInstance();
-  const gfx::Font& original_font = rb.GetFont(ui::ResourceBundle::MediumFont);
+  const gfx::FontList& original_font_list =
+      rb.GetFontList(ui::ResourceBundle::MediumFont);
 
-  views::Label* title = new views::Label(l10n_util::GetStringFUTF16(
-      IDS_FR_BUBBLE_TITLE, browser_ ?
-          GetDefaultSearchEngineName(browser_->profile()) : string16()));
-  title->SetFont(original_font.DeriveFont(2, gfx::Font::BOLD));
+  views::Label* title = new views::Label(
+      l10n_util::GetStringFUTF16(
+          IDS_FR_BUBBLE_TITLE,
+          browser_ ? GetDefaultSearchEngineName(browser_->profile())
+              : base::string16()),
+      original_font_list.Derive(2, gfx::Font::BOLD));
 
   views::Link* change =
       new views::Link(l10n_util::GetStringUTF16(IDS_FR_BUBBLE_CHANGE));
-  change->SetFont(original_font);
+  change->SetFontList(original_font_list);
   change->set_listener(this);
 
   views::Label* subtext =
-      new views::Label(l10n_util::GetStringUTF16(IDS_FR_BUBBLE_SUBTEXT));
+      new views::Label(l10n_util::GetStringUTF16(IDS_FR_BUBBLE_SUBTEXT),
+                       original_font_list);
   subtext->SetFont(original_font);
   subtext->SetMultiLine(true);
   subtext->SetHorizontalAlignment(gfx::ALIGN_LEFT);
@@ -86,7 +85,7 @@ FirstRunBubble::FirstRunBubble(Browser* browser, views::View* anchor_view)
     : views::BubbleDelegateView(anchor_view, views::BubbleBorder::TOP_LEFT),
       browser_(browser) {
   // Compensate for built-in vertical padding in the anchor view's image.
-  set_anchor_insets(
+  set_anchor_view_insets(
       gfx::Insets(kAnchorVerticalInset, 0, kAnchorVerticalInset, 0));
 }
 

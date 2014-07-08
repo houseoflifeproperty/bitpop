@@ -6,7 +6,7 @@
 #define NET_SPDY_SPDY_FRAME_READER_H_
 
 #include "base/basictypes.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 #include "net/base/net_export.h"
 
 namespace net {
@@ -33,22 +33,44 @@ class NET_EXPORT_PRIVATE SpdyFrameReader {
   // Empty destructor.
   ~SpdyFrameReader() {}
 
+  // Reads an 8-bit unsigned integer into the given output parameter.
+  // Forwards the internal iterator on success.
+  // Returns true on success, false otherwise.
+  bool ReadUInt8(uint8* result);
+
   // Reads a 16-bit unsigned integer into the given output parameter.
-  // Forwards the internal iterater on success.
+  // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadUInt16(uint16* result);
 
   // Reads a 32-bit unsigned integer into the given output parameter.
-  // Forwards the internal iterater on success.
+  // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadUInt32(uint32* result);
+
+  // Reads a 64-bit unsigned integer into the given output parameter.
+  // Forwards the internal iterator on success.
+  // Returns true on success, false otherwise.
+  bool ReadUInt64(uint64* result);
+
+  // Reads a 31-bit unsigned integer into the given output parameter. This is
+  // equivalent to ReadUInt32() above except that the highest-order bit is
+  // discarded.
+  // Forwards the internal iterator (by 4B) on success.
+  // Returns true on success, false otherwise.
+  bool ReadUInt31(uint32* result);
+
+  // Reads a 24-bit unsigned integer into the given output parameter.
+  // Forwards the internal iterator (by 3B) on success.
+  // Returns true on success, false otherwise.
+  bool ReadUInt24(uint32* result);
 
   // Reads a string prefixed with 16-bit length into the given output parameter.
   //
   // NOTE: Does not copy but rather references strings in the underlying buffer.
   // This should be kept in mind when handling memory management!
   //
-  // Forwards the internal iterater on success.
+  // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadStringPiece16(base::StringPiece* result);
 
@@ -57,19 +79,31 @@ class NET_EXPORT_PRIVATE SpdyFrameReader {
   // NOTE: Does not copy but rather references strings in the underlying buffer.
   // This should be kept in mind when handling memory management!
   //
-  // Forwards the internal iterater on success.
+  // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadStringPiece32(base::StringPiece* result);
 
   // Reads a given number of bytes into the given buffer. The buffer
   // must be of adequate size.
-  // Forwards the internal iterater on success.
+  // Forwards the internal iterator on success.
   // Returns true on success, false otherwise.
   bool ReadBytes(void* result, size_t size);
+
+  // Seeks a given number of bytes into the buffer from the current offset.
+  // Equivelant to an empty read.
+  // Forwards the internal iterator.
+  // Returns true on success, false otherwise.
+  bool Seek(size_t size);
+
+  // Rewinds this reader to the beginning of the frame.
+  void Rewind() { ofs_ = 0; }
 
   // Returns true if the entirety of the underlying buffer has been read via
   // Read*() calls.
   bool IsDoneReading() const;
+
+  // Returns the number of bytes that have been consumed by the reader so far.
+  size_t GetBytesConsumed() const { return ofs_; }
 
  private:
   // Returns true if the underlying buffer has enough room to read the given

@@ -6,20 +6,21 @@
 
 #import <QuartzCore/QuartzCore.h>
 
-#include "base/memory/ref_counted.h"
-#include "base/message_pump_mac.h"
+#include "base/memory/scoped_ptr.h"
+#include "base/message_loop/message_pump_mac.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #import "third_party/ocmock/gtest_support.h"
 #import "third_party/ocmock/OCMock/OCMock.h"
 
 class HistoryOverlayControllerTest : public CocoaTest {
  public:
-  void SetUp() {
+  virtual void SetUp() {
     CocoaTest::SetUp();
 
-    // The overlay controller shows the panel in the superview of a given
-    // view, so create the given view.
+    // The overlay controller shows the panel as a subview of the given view.
     test_view_.reset([[NSView alloc] initWithFrame:NSMakeRect(10, 10, 10, 10)]);
+
+    // We add it to the test_window for authenticity.
     [[test_window() contentView] addSubview:test_view_];
   }
 
@@ -28,32 +29,21 @@ class HistoryOverlayControllerTest : public CocoaTest {
   }
 
  private:
-  scoped_nsobject<NSView> test_view_;
+  base::scoped_nsobject<NSView> test_view_;
 };
 
-// Tests that the controller's view gets removed from the hierarchy when the
-// controller is deallocated.
-TEST_F(HistoryOverlayControllerTest, RemovedViewWhenDeallocated) {
-  NSView* content_view = [test_window() contentView];
-  EXPECT_EQ(1u, [[content_view subviews] count]);
-
-  scoped_nsobject<HistoryOverlayController> controller(
-      [[HistoryOverlayController alloc] initForMode:kHistoryOverlayModeBack]);
-  [controller showPanelForView:test_view()];
-  EXPECT_EQ(2u, [[content_view subviews] count]);
-
-  controller.reset();
-  EXPECT_EQ(1u, [[content_view subviews] count]);
-}
-
 // Tests that when the controller is |-dismiss|ed, the animation runs and then
-// is removed when the animation completes.
-TEST_F(HistoryOverlayControllerTest, DismissClearsAnimations) {
-  scoped_nsobject<HistoryOverlayController> controller(
+// is removed when the animation completes. The view should be added and
+// removed at the appropriate times.
+TEST_F(HistoryOverlayControllerTest, DismissClearsAnimationsAndRemovesView) {
+  EXPECT_EQ(0u, [[test_view() subviews] count]);
+
+  base::scoped_nsobject<HistoryOverlayController> controller(
       [[HistoryOverlayController alloc] initForMode:kHistoryOverlayModeBack]);
   [controller showPanelForView:test_view()];
+  EXPECT_EQ(1u, [[test_view() subviews] count]);
 
-  scoped_refptr<base::MessagePumpNSRunLoop> message_pump(
+  scoped_ptr<base::MessagePumpNSRunLoop> message_pump(
       new base::MessagePumpNSRunLoop);
 
   id mock = [OCMockObject partialMockForObject:controller];
@@ -61,8 +51,9 @@ TEST_F(HistoryOverlayControllerTest, DismissClearsAnimations) {
   [[[mock expect] andForwardToRealObject] dismiss];
 
   // Called after |-animationDidStop:finished:|.
+  base::MessagePumpNSRunLoop* weak_message_pump = message_pump.get();
   void (^quit_loop)(NSInvocation* invocation) = ^(NSInvocation* invocation) {
-      message_pump->Quit();
+      weak_message_pump->Quit();
   };
   // Set up the mock to first forward to the real implementation and then call
   // the above block to quit the run loop.
@@ -86,4 +77,6 @@ TEST_F(HistoryOverlayControllerTest, DismissClearsAnimations) {
 
   // After the animation runs, there should be no more animations.
   EXPECT_FALSE([[controller view] animations]);
+
+  EXPECT_EQ(0u, [[test_view() subviews] count]);
 }

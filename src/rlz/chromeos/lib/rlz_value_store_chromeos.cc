@@ -10,7 +10,7 @@
 #include "base/json/json_string_value_serializer.h"
 #include "base/logging.h"
 #include "base/sequenced_task_runner.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/values.h"
 #include "rlz/lib/lib_values.h"
 #include "rlz/lib/recursive_cross_process_lock_posix.h"
@@ -19,10 +19,6 @@
 namespace rlz_lib {
 
 namespace {
-
-// Product names.
-const char kProductChrome[] = "chrome";
-const char kProductOther[] = "other";
 
 // Key names.
 const char kPingTimeKey[] = "ping_time";
@@ -34,26 +30,27 @@ const char kStatefulEventKey[] = "stateful_events";
 const char kNoSupplementaryBrand[] = "_";
 
 // RLZ store filename.
-const FilePath::CharType kRLZDataFileName[] = FILE_PATH_LITERAL("RLZ Data");
+const base::FilePath::CharType kRLZDataFileName[] =
+    FILE_PATH_LITERAL("RLZ Data");
 
 // RLZ store lock filename
-const FilePath::CharType kRLZLockFileName[] =
+const base::FilePath::CharType kRLZLockFileName[] =
     FILE_PATH_LITERAL("RLZ Data.lock");
 
 // RLZ store path for testing.
-FilePath g_testing_rlz_store_path_;
+base::FilePath g_testing_rlz_store_path_;
 
 // Returns file path of the RLZ storage.
-FilePath GetRlzStorePath() {
+base::FilePath GetRlzStorePath() {
   return g_testing_rlz_store_path_.empty() ?
-      file_util::GetHomeDir().Append(kRLZDataFileName) :
+      base::GetHomeDir().Append(kRLZDataFileName) :
       g_testing_rlz_store_path_.Append(kRLZDataFileName);
 }
 
 // Returns file path of the RLZ storage lock file.
-FilePath GetRlzStoreLockPath() {
+base::FilePath GetRlzStoreLockPath() {
   return g_testing_rlz_store_path_.empty() ?
-      file_util::GetHomeDir().Append(kRLZLockFileName) :
+      base::GetHomeDir().Append(kRLZLockFileName) :
       g_testing_rlz_store_path_.Append(kRLZLockFileName);
 }
 
@@ -75,7 +72,7 @@ std::string GetKeyName(std::string key, Product product) {
 
 }  // namespace
 
-RlzValueStoreChromeOS::RlzValueStoreChromeOS(const FilePath& store_path)
+RlzValueStoreChromeOS::RlzValueStoreChromeOS(const base::FilePath& store_path)
     : rlz_store_(new base::DictionaryValue),
       store_path_(store_path),
       read_only_(true) {
@@ -144,7 +141,7 @@ bool RlzValueStoreChromeOS::AddProductEvent(Product product,
                                             const char* event_rlz) {
   DCHECK(CalledOnValidThread());
   return AddValueToList(GetKeyName(kProductEventKey, product),
-                        base::Value::CreateStringValue(event_rlz));
+                        new base::StringValue(event_rlz));
 }
 
 bool RlzValueStoreChromeOS::ReadProductEvents(
@@ -181,7 +178,7 @@ bool RlzValueStoreChromeOS::AddStatefulEvent(Product product,
                                              const char* event_rlz) {
   DCHECK(CalledOnValidThread());
   return AddValueToList(GetKeyName(kStatefulEventKey, product),
-                        base::Value::CreateStringValue(event_rlz));
+                        new base::StringValue(event_rlz));
 }
 
 bool RlzValueStoreChromeOS::IsStatefulEvent(Product product,
@@ -228,7 +225,8 @@ void RlzValueStoreChromeOS::WriteStore() {
   std::string json_data;
   JSONStringValueSerializer serializer(&json_data);
   serializer.set_pretty_print(true);
-  scoped_ptr<DictionaryValue> copy(rlz_store_->DeepCopyWithoutEmptyChildren());
+  scoped_ptr<base::DictionaryValue> copy(
+      rlz_store_->DeepCopyWithoutEmptyChildren());
   if (!serializer.Serialize(*copy.get())) {
     LOG(ERROR) << "Failed to serialize RLZ data";
     NOTREACHED();
@@ -325,7 +323,7 @@ RlzValueStore* ScopedRlzValueStoreLock::GetStore() {
 
 namespace testing {
 
-void SetRlzStoreDirectory(const FilePath& directory) {
+void SetRlzStoreDirectory(const base::FilePath& directory) {
   g_testing_rlz_store_path_ = directory;
 }
 

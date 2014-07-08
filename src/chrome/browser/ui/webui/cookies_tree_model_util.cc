@@ -8,15 +8,20 @@
 
 #include "base/i18n/time_formatting.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
+#include "base/stl_util.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
 #include "base/values.h"
 #include "chrome/browser/browsing_data/cookies_tree_model.h"
+#include "content/public/browser/indexed_db_context.h"
+#include "extensions/common/extension_set.h"
 #include "grit/generated_resources.h"
 #include "net/cookies/canonical_cookie.h"
+#include "net/ssl/ssl_client_cert_type.h"
 #include "ui/base/l10n/l10n_util.h"
 #include "ui/base/text/bytes_formatting.h"
+#include "webkit/common/fileapi/file_system_types.h"
 
 namespace {
 
@@ -50,7 +55,6 @@ const char kKeyTemporary[] = "temporary";
 const char kKeyTotalUsage[] = "totalUsage";
 const char kKeyTemporaryUsage[] = "temporaryUsage";
 const char kKeyPersistentUsage[] = "persistentUsage";
-const char kKeyPersistentQuota[] = "persistentQuota";
 
 const char kKeyCertType[] = "certType";
 
@@ -60,6 +64,8 @@ std::string ClientCertTypeToString(net::SSLClientCertType type) {
   switch (type) {
     case net::CLIENT_CERT_RSA_SIGN:
       return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_RSA_SIGN);
+    case net::CLIENT_CERT_DSS_SIGN:
+      return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_DSS_SIGN);
     case net::CLIENT_CERT_ECDSA_SIGN:
       return l10n_util::GetStringUTF8(IDS_CLIENT_CERT_ECDSA_SIGN);
     default:
@@ -118,9 +124,9 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
           l10n_util::GetStringUTF8(IDS_COOKIES_COOKIE_ACCESSIBLE_TO_SCRIPT_NO) :
           l10n_util::GetStringUTF8(IDS_COOKIES_COOKIE_ACCESSIBLE_TO_SCRIPT_YES);
       dict->SetString(kKeyAccessibleToScript, accessible);
-      dict->SetString(kKeyCreated, UTF16ToUTF8(
+      dict->SetString(kKeyCreated, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(cookie.CreationDate())));
-      dict->SetString(kKeyExpires, cookie.IsPersistent() ? UTF16ToUTF8(
+      dict->SetString(kKeyExpires, cookie.IsPersistent() ? base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(cookie.ExpiryDate())) :
           l10n_util::GetStringUTF8(IDS_COOKIES_COOKIE_EXPIRES_SESSION));
 
@@ -138,7 +144,7 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
           database_info.database_name);
       dict->SetString(kKeyDesc, database_info.description);
       dict->SetString(kKeySize, ui::FormatBytes(database_info.size));
-      dict->SetString(kKeyModified, UTF16ToUTF8(
+      dict->SetString(kKeyModified, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(database_info.last_modified)));
 
       break;
@@ -152,7 +158,7 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
 
       dict->SetString(kKeyOrigin, local_storage_info.origin_url.spec());
       dict->SetString(kKeySize, ui::FormatBytes(local_storage_info.size));
-      dict->SetString(kKeyModified, UTF16ToUTF8(
+      dict->SetString(kKeyModified, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(
               local_storage_info.last_modified)));
 
@@ -167,9 +173,9 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
 
       dict->SetString(kKeyManifest, appcache_info.manifest_url.spec());
       dict->SetString(kKeySize, ui::FormatBytes(appcache_info.size));
-      dict->SetString(kKeyCreated, UTF16ToUTF8(
+      dict->SetString(kKeyCreated, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(appcache_info.creation_time)));
-      dict->SetString(kKeyAccessed, UTF16ToUTF8(
+      dict->SetString(kKeyAccessed, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(appcache_info.last_access_time)));
 
       break;
@@ -178,13 +184,13 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
       dict->SetString(kKeyType, "indexed_db");
       dict->SetString(kKeyIcon, "chrome://theme/IDR_COOKIE_STORAGE_ICON");
 
-      const BrowsingDataIndexedDBHelper::IndexedDBInfo& indexed_db_info =
+      const content::IndexedDBInfo& indexed_db_info =
           *node.GetDetailedInfo().indexed_db_info;
 
-      dict->SetString(kKeyOrigin, indexed_db_info.origin.spec());
-      dict->SetString(kKeySize, ui::FormatBytes(indexed_db_info.size));
-      dict->SetString(kKeyModified, UTF16ToUTF8(
-          base::TimeFormatFriendlyDateAndTime(indexed_db_info.last_modified)));
+      dict->SetString(kKeyOrigin, indexed_db_info.origin_.spec());
+      dict->SetString(kKeySize, ui::FormatBytes(indexed_db_info.size_));
+      dict->SetString(kKeyModified, base::UTF16ToUTF8(
+          base::TimeFormatFriendlyDateAndTime(indexed_db_info.last_modified_)));
 
       break;
     }
@@ -194,18 +200,20 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
 
       const BrowsingDataFileSystemHelper::FileSystemInfo& file_system_info =
           *node.GetDetailedInfo().file_system_info;
+      const fileapi::FileSystemType kPerm = fileapi::kFileSystemTypePersistent;
+      const fileapi::FileSystemType kTemp = fileapi::kFileSystemTypeTemporary;
 
       dict->SetString(kKeyOrigin, file_system_info.origin.spec());
       dict->SetString(kKeyPersistent,
-                      file_system_info.has_persistent ?
-                          UTF16ToUTF8(ui::FormatBytes(
-                              file_system_info.usage_persistent)) :
+                      ContainsKey(file_system_info.usage_map, kPerm) ?
+                          base::UTF16ToUTF8(ui::FormatBytes(
+                              file_system_info.usage_map.find(kPerm)->second)) :
                           l10n_util::GetStringUTF8(
                               IDS_COOKIES_FILE_SYSTEM_USAGE_NONE));
       dict->SetString(kKeyTemporary,
-                      file_system_info.has_temporary ?
-                          UTF16ToUTF8(ui::FormatBytes(
-                              file_system_info.usage_temporary)) :
+                      ContainsKey(file_system_info.usage_map, kTemp) ?
+                          base::UTF16ToUTF8(ui::FormatBytes(
+                              file_system_info.usage_map.find(kTemp)->second)) :
                           l10n_util::GetStringUTF8(
                               IDS_COOKIES_FILE_SYSTEM_USAGE_NONE));
       break;
@@ -222,14 +230,14 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
 
       dict->SetString(kKeyOrigin, quota_info.host);
       dict->SetString(kKeyTotalUsage,
-                      UTF16ToUTF8(ui::FormatBytes(
+                      base::UTF16ToUTF8(ui::FormatBytes(
                           quota_info.temporary_usage +
                           quota_info.persistent_usage)));
       dict->SetString(kKeyTemporaryUsage,
-                      UTF16ToUTF8(ui::FormatBytes(
+                      base::UTF16ToUTF8(ui::FormatBytes(
                           quota_info.temporary_usage)));
       dict->SetString(kKeyPersistentUsage,
-                      UTF16ToUTF8(ui::FormatBytes(
+                      base::UTF16ToUTF8(ui::FormatBytes(
                           quota_info.persistent_usage)));
       break;
     }
@@ -242,13 +250,10 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
 
       dict->SetString(kKeyServerId, server_bound_cert.server_identifier());
       dict->SetString(kKeyCertType,
-                      ClientCertTypeToString(server_bound_cert.type()));
-      dict->SetString(kKeyCreated, UTF16ToUTF8(
+                      ClientCertTypeToString(net::CLIENT_CERT_ECDSA_SIGN));
+      dict->SetString(kKeyCreated, base::UTF16ToUTF8(
           base::TimeFormatFriendlyDateAndTime(
               server_bound_cert.creation_time())));
-      dict->SetString(kKeyExpires, UTF16ToUTF8(
-          base::TimeFormatFriendlyDateAndTime(
-              server_bound_cert.expiration_time())));
       break;
     }
     case CookieTreeNode::DetailedInfo::TYPE_FLASH_LSO: {
@@ -264,11 +269,11 @@ bool CookiesTreeModelUtil::GetCookieTreeNodeDictionary(
       break;
   }
 
-  const ExtensionSet* protecting_apps =
+  const extensions::ExtensionSet* protecting_apps =
       node.GetModel()->ExtensionsProtectingNode(node);
   if (protecting_apps && !protecting_apps->is_empty()) {
     base::ListValue* app_infos = new base::ListValue;
-    for (ExtensionSet::const_iterator it = protecting_apps->begin();
+    for (extensions::ExtensionSet::const_iterator it = protecting_apps->begin();
          it != protecting_apps->end(); ++it) {
       base::DictionaryValue* app_info = new base::DictionaryValue();
       app_info->SetString(kKeyId, (*it)->id());
@@ -286,7 +291,7 @@ void CookiesTreeModelUtil::GetChildNodeList(const CookieTreeNode* parent,
                                             int count,
                                             base::ListValue* nodes) {
   for (int i = 0; i < count; ++i) {
-    scoped_ptr<base::DictionaryValue> dict(new DictionaryValue);
+    scoped_ptr<base::DictionaryValue> dict(new base::DictionaryValue);
     const CookieTreeNode* child = parent->GetChild(start + i);
     if (GetCookieTreeNodeDictionary(*child, dict.get()))
       nodes->Append(dict.release());

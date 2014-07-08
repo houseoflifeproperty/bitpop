@@ -7,6 +7,8 @@
 #ifndef NATIVE_CLIENT_SRC_TRUSTED_VALIDATOR_ARM_INST_CLASSES_H_
 #define NATIVE_CLIENT_SRC_TRUSTED_VALIDATOR_ARM_INST_CLASSES_H_
 
+#include <climits>
+
 #include "native_client/src/include/nacl_macros.h"
 #include "native_client/src/include/portability.h"
 #include "native_client/src/trusted/validator_arm/model.h"
@@ -14,6 +16,14 @@
 /*
  * Models the "instruction classes" that the decoder produces.
  */
+namespace nacl_arm_val {
+class AddressSet;
+class SfiValidator;
+class DecodedInstruction;
+class ProblemSink;
+class InstructionPairMatchData;
+}
+
 namespace nacl_arm_dec {
 
 // Used to describe whether an instruction is safe, and if not, what the issue
@@ -22,8 +32,13 @@ namespace nacl_arm_dec {
 //
 // Note: The enumerated values are used in dgen_core.py (see class
 // SafetyAction).  Be sure to update values in that class if this list
-// changes, so that the two stay in sync. Also be sure to update Int2SafetyLevel
-// in inst_classes.cc.
+// changes, so that the two stay in sync.
+//
+// Note: All safety levels except MAY_BE_SAFE, also act as a violation
+// (see enum Violation below). If you change this enum, also change
+// Violation below.  Further, be sure to keep MAY_BE_SAFE as the last
+// entry in this enum, since code (elsewhere) assumes that MAY_BE_SAFE
+// appears last in the list.
 enum SafetyLevel {
   // The initial value of uninitialized SafetyLevels -- treat as unsafe.
   UNINITIALIZED = 0,
@@ -56,645 +71,154 @@ enum SafetyLevel {
   MAY_BE_SAFE
 };
 
-// Returns the safety level associated with i (or UNINITIALIZED if no such
-// safety level exists).
-SafetyLevel Int2SafetyLevel(uint32_t i);
-
-// ------------------------------------------------------------------
-// The following list of Interface classes are "mixed" into the class
-// decoders as static constant fields. The point of these interfaces
-// is to control access to data fields within the scope of the
-// instruction class decoder, using higher level symbolic names.
-//
-// For example, register Rn may be located in different bit sequences
-// in different instructions. However, they all refer to the concept
-// of register Rn (some use bits 0..3 while others use bits
-// 16..19). The interfaces for each possible Rn is integrated as a
-// static const field named n. Hence virtuals can now use n.reg() to get
-// the corresponding register within its virtual functions.
-//
-// Note: These fields are static const, and the corresponding methods are
-// static so that the reference to the static field is only used to
-// control scope look ups, and will be optimized out of compiled code.
-// ------------------------------------------------------------------
-
-// Interface class to pull out shift type from bits 5 through 6
-class ShiftTypeBits5To6Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(6, 5);
-  }
-  // Converts the given immediate value using the shift type specified
-  // by this interface. Defined in A8.4.3, page A8-11.
-  static uint32_t DecodeImmShift(Instruction insn, uint32_t imm5_value) {
-    return ComputeDecodeImmShift(value(insn), imm5_value);
-  }
- private:
-  static uint32_t ComputeDecodeImmShift(uint32_t shift_type,
-                                        uint32_t imm5_value);
-  NACL_DISALLOW_COPY_AND_ASSIGN(ShiftTypeBits5To6Interface);
+// Defines the set of validation violations that are found by the
+// NaCl validator. Used to speed up generation of diagnostics, by only
+// checking for corresponding found violations.
+enum Violation {
+  // Note: Each (unsafe) safety level also corresponds to a violation. The
+  // following violations capture these unsafe violations.
+  // Note: Be sure to include an initialization value of the corresponding
+  // SafetyLevel entry, so that code can assume the corresponding safety
+  // violation has the same value as the safety level.
+  UNINITIALIZED_VIOLATION = UNINITIALIZED,
+  UNKNOWN_VIOLATION = UNKNOWN,
+  UNDEFINED_VIOLATION = UNDEFINED,
+  NOT_IMPLEMENTED_VIOLATION = NOT_IMPLEMENTED,
+  UNPREDICTABLE_VIOLATION = UNPREDICTABLE,
+  DEPRECATED_VIOLATION = DEPRECATED,
+  FORBIDDEN_VIOLATION = FORBIDDEN,
+  FORBIDDEN_OPERANDS_VIOLATION = FORBIDDEN_OPERANDS,
+  DECODER_ERROR_VIOLATION = DECODER_ERROR,
+  // Note: The next enumerated value is intentionally set to
+  // MAY_BE_SAFE, to guarantee that all remaining violations do not
+  // overlap safety violations.
+  //
+  // Reports that the load/store uses an unsafe base address.  A base address is
+  // safe if it
+  //     1. Has specific bits masked off by its immediate predecessor, or
+  //     2. Is predicated on those bits being clear, as tested by its immediate
+  //        predecessor, or
+  //     3. Is in a register defined as always containing a safe address.
+  // Note: Predication checks (in 2) may be disabled on some architectures.
+  LOADSTORE_VIOLATION = MAY_BE_SAFE,
+  // Reports that the load/store uses a safe base address, but violates the
+  // condition that the instruction pair can't cross a bundle boundary.
+  LOADSTORE_CROSSES_BUNDLE_VIOLATION,
+  // Reports that the indirect branch uses an unsafe destination address.  A
+  // destination address is safe if it has specific bits masked off by its
+  // immediate predecessor.
+  BRANCH_MASK_VIOLATION,
+  // Reports that the indirect branch uses a safe destination address, but
+  // violates the condition that the instruction pair can't cross a bundle
+  // boundary.
+  BRANCH_MASK_CROSSES_BUNDLE_VIOLATION,
+  // Reports that the instruction updates a data-address register, but isn't
+  // immediately followed by a mask.
+  DATA_REGISTER_UPDATE_VIOLATION,
+  // Reports that the instruction safely updates a data-address register, but
+  // violates the condition that the instruction pair can't cross a bundle
+  // boundary.
+  //
+  // This isn't strictly needed for security. The second instruction (i.e. the
+  // mask), can be run without running the first instruction. Further, if
+  // the first instruction is run, we can still guarantee that the second will
+  // also. However, for simplicity, the current validator assumes that all
+  // instruction pairs must be atomic.
+  DATA_REGISTER_UPDATE_CROSSES_BUNDLE_VIOLATION,
+  // Reports that the call instruction isn't the last instruction in
+  // the bundle.
+  //
+  // This is not a security check per se. Rather, it is a check to prevent
+  // imbalancing the CPU's return stack, thereby decreasing performance.
+  CALL_POSITION_VIOLATION,
+  // Reports that the instruction sets a read-only register.
+  READ_ONLY_VIOLATION,
+  // Reports if the instruction reads the thread local pointer.
+  READ_THREAD_LOCAL_POINTER_VIOLATION,
+  // Reports if the program counter was updated without using one of the
+  // approved branch instruction.
+  PC_WRITES_VIOLATION,
+  // A branch that branches into the middle of a multiple instruction
+  // pseudo-operation.
+  BRANCH_SPLITS_PATTERN_VIOLATION,
+  // A branch to instruction outside the code segment.
+  BRANCH_OUT_OF_RANGE_VIOLATION,
+  // Any other type of violation. Must appear last in the enumeration.
+  // Value is used in testing to guarantee that the corresponding
+  // bitset ViolationSet can hold all validation violations.
+  OTHER_VIOLATION
 };
 
-// Interface class to pull out the condition in bits 28 through 31
-class ConditionBits28To31Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(31, 28);
-  }
-  static bool defined(const Instruction& i) {
-    return value(i) != 0xF;
-  }
-  static bool undefined(const Instruction& i)  {
-    return !defined(i);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(ConditionBits28To31Interface);
-};
-
-// Interface class to pull out a Register from bits 0 through 3.
-class RegBits0To3Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(3, 0);
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-  static bool IsEven(const Instruction& i) {
-    return (number(i) & 0x1) == 0;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits0To3Interface);
-};
-
-// Interface class to pull out a register from bits 8 through 11.
-class RegBits8To11Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(11, 8);
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-  static bool IsEven(const Instruction& i) {
-    return (number(i) & 0x1) == 0;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits8To11Interface);
-};
-
-// Interface class to pull out a register from bits 12 through 15.
-class RegBits12To15Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(15, 12);
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-  static bool IsEven(const Instruction& i) {
-    return (number(i) & 0x1) == 0;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits12To15Interface);
-};
-
-// Interface class to pull out a register from bits 16 through 19.
-class RegBits16To19Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(19, 16);
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-  static bool IsEven(const Instruction& i) {
-    return (number(i) & 0x1) == 0;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits16To19Interface);
-};
-
-// Interface to pull out a register bits 0 through 3, and add 1 to it.
-class RegBits0To3Plus1Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(3, 0) + 1;
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits0To3Plus1Interface);
-};
-
-// Interface to pull out a register from bits 12 through 15, and add 1 to it.
-class RegBits12To15Plus1Interface {
- public:
-  static uint32_t number(const Instruction& i) {
-    return i.Bits(15, 12) + 1;
-  }
-  static Register reg(const Instruction& i) {
-    return Register(number(i));
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegBits12To15Plus1Interface);
-};
-
-// Interface to pull out value in bits 20 and 21.
-class Imm2Bits20To21Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(21, 20);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits20To21Interface);
-};
-
-// Interface class to pull out a binary immediate value from bit 22.
-class Imm1Bit22Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(22, 22);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm1Bit22Interface);
-};
-
-// Interface class to pull out an immediate value from bit 24;
-class Imm1Bit24Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(24, 24);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm1Bit24Interface);
-};
-
-// Interface class to pull out an immediate value in bits 0 through 3.
-class Imm4Bits0To3Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(3, 0);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm4Bits0To3Interface);
-};
-
-// Interface class to pull out an immediate value in bits 4 through 7.
-class Imm4Bits4To7Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(7, 4);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm4Bits4To7Interface);
-};
-
-// Interface class to pull out an immediate value in bits 0 through 7.
-class Imm8Bits0To7Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(7, 0);
-  }
-  // Returns if the value is even.
-  static bool IsEven(const Instruction& i) {
-    return (value(i) & 0x1) == 0;
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm8Bits0To7Interface);
-};
-
-// Interface class to pull out an immediate value in bits 0 through 11.
-class Imm12Bits0To11Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(11, 0);
-  }
-  static void set_value(Instruction* i, uint32_t value) {
-    i->SetBits(11, 0, value);
-  }
-  static uint32_t get_modified_immediate(Instruction i);
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm12Bits0To11Interface);
-};
-
-// Interface class to pull out an immediate 24 address in bits 0 through 23
-class Imm24AddressBits0To23Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(23, 0);
-  }
-  static int32_t relative_address(const Instruction& i) {
-    // Sign extend and shift left 2:
-    int32_t offset = (int32_t)(value(i) << 8) >> 6;
-    return offset + 8;  // because r15 reads as 8 bytes ahead
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm24AddressBits0To23Interface);
-};
-
-// Interface class to pull out value in bits 4 and 5.
-class Imm2Bits4To5Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(5, 4);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits4To5Interface);
-};
-
-// Interface class to pull out value i in bits 6 and 7.
-class Imm2Bits6To7Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(7, 6);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits6To7Interface);
-};
-
-// Interface class to pull out value i bits 7 and 8.
-class Imm2Bits7To8Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(8, 7);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits7To8Interface);
-};
-
-// Interface class to pull out value in bits 8 and 9.
-class Imm2Bits8To9Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(9, 8);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits8To9Interface);
-};
-
-// Interface class to pull out value in bits 10 and 11.
-class Imm2Bits10To11Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(11, 10);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits10To11Interface);
-};
-
-// Interface class to pull out a Register List in bits 0 through 15
-class RegisterListBits0To15Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(15, 0);
-  }
-  static RegisterList registers(const Instruction& i) {
-    return RegisterList(value(i));
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(RegisterListBits0To15Interface);
-};
-
-// Interface class to pull out value in bit 5
-class Imm1Bit5Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(5, 5);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm1Bit5Interface);
-};
-
-// Interface class to pull out value in bit 7
-class Imm1Bit7Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(7, 7);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm1Bit7Interface);
-};
-
-// Interface class to pull out an immediate value in bits 7 through 11.
-class Imm5Bits7To11Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(11, 7);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm5Bits7To11Interface);
-};
-
-// Interface class to pull out an immediate value in bits 8 through 11.
-class Imm4Bits8To11Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(11, 8);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm4Bits8To11Interface);
-};
-
-// Interface class to pull out an immediate value in bits 8 through 19
-class Imm12Bits8To19Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(19, 8);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm12Bits8To19Interface);
-};
-
-// Interface class to pull out an immediate value in bits 16 through 18.
-class Imm3Bits16To18Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(18, 16);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm3Bits16To18Interface);
-};
-
-// Interface class to pull out an immediate value in bits 16 through 21.
-class Imm6Bits16To21Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(21, 16);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm6Bits16To21Interface);
-};
-
-// Interface class to pull out value in bit 4
-class FlagBit4Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(4);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit4Interface);
-};
-
-// Interface class to pull out value in bit 5
-class FlagBit5Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(5);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit5Interface);
-};
-
-// Interface class to pull out value in bit 8
-class FlagBit8Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(8);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit8Interface);
-};
-
-// Interface class to pull out value in bit 9
-class FlagBit9Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(9);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit9Interface);
-};
-
-// Interface class to pull out an immediate value in bits 16 through 20.
-class Imm5Bits16To20Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(20, 16);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm5Bits16To20Interface);
-};
-
-// Interface class to pull out an immediate value in bits 16 through 19.
-class Imm4Bits16To19Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(19, 16);
-  }
-  static void set_value(Instruction* i, uint32_t value) {
-    i->SetBits(19, 16, value);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm4Bits16To19Interface);
-};
-
-// Interface class to pull out an immediate value in bits 18 through 19.
-class Imm2Bits18To19Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(19, 18);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm2Bits18To19Interface);
-};
-
-// Interface class to pull out an immediate value in bits 21 through 23.
-class Imm3Bits21To23Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(23, 21);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm3Bits21To23Interface);
-};
-
-// Interface class to pull out an immediate value in bit 22.
-class Imm1Bit21Interface {
- public:
-  static uint32_t value(const Instruction& i) {
-    return i.Bits(22, 22);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Imm1Bit21Interface);
-};
-
-// Interface class to pull out bit 5 on branch instructions,
-// to indicate whether the link register is also updated.
-class UpdatesLinkRegisterBit5Interface {
- public:
-  static bool IsUpdated(const Instruction i) {
-    return i.Bit(5);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(UpdatesLinkRegisterBit5Interface);
-};
-
-// Interface class to pull out bit 6 as a flag.
-class FlagBit6Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(6);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit6Interface);
-};
-
-// Interface class to pull out bit 10 as a flag
-class FlagBit10Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(10);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit10Interface);
-};
-
-// Interface class to pull out S (update) bit 20, which
-// defines if the condition bits in APSR are updated by the instruction.
-class UpdatesConditionsBit20Interface {
- public:
-  // Returns true if bit is set that states that the condition bits
-  // APSR is updated.
-  static bool is_updated(const Instruction i) {
-    return i.Bit(20);
-  }
-  // Returns the conditions register if it is used.
-  static Register conds_if_updated(const Instruction i) {
-    return is_updated(i) ? Register::Conditions() : Register::None();
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(UpdatesConditionsBit20Interface);
-};
-
-// Interface class to pull out to arm register bit 20, which
-// when true, updates the corresponging core register.
-class UpdatesArmRegisterBit20Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(20);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(UpdatesArmRegisterBit20Interface);
-};
-
-// Interface class to pull out W (writes) bit 21, which
-// defines if the istruction writes a value into the base address
-// register (Rn).
-class WritesBit21Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(21);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(WritesBit21Interface);
-};
-
-// Interface class to pull out bit 21.
-class FlagBit21Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bits(21, 21);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit21Interface);
-};
-
-// Interface class to pull out bit 22.
-class FlagBit22Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(22);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit22Interface);
-};
-
-// Interface to pull out U (direction) bit 23, which defines if
-// we should add (rather than subtract) the offset to the base address.
-class AddOffsetBit23Interface {
- public:
-  static bool IsAdd(const Instruction& i) {
-    return i.Bit(23);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(AddOffsetBit23Interface);
-};
-
-class FlagBit24Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(24);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(FlagBit24Interface);
-};
-
-// Interace to pull out P (pre/post) increment bit 24 flag, used
-// for indexing.
-class PrePostIndexingBit24Interface {
- public:
-  static bool IsDefined(const Instruction& i) {
-    return i.Bit(24);
-  }
-  static bool IsPreIndexing(const Instruction& i) {
-    return i.Bit(24);
-  }
-  static bool IsPostIndexing(const Instruction& i) {
-    return !i.Bit(24);
-  }
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(PrePostIndexingBit24Interface);
-};
+// Defines the bitset of found validation violations.
+typedef uint32_t ViolationSet;
+
+// Defines the notion of a empty violation set.
+static const ViolationSet kNoViolations = 0x0;
+
+// Returns true if a safety violation.
+inline bool IsSafetyViolation(Violation v) {
+  return (static_cast<int>(v) >= 0) && (static_cast<int>(v) < MAY_BE_SAFE);
+}
+
+// Converts a safety level to the corresponding bit in the violation set.
+inline ViolationSet SafetyViolationBit(SafetyLevel level) {
+  return static_cast<ViolationSet>(0x1) << level;
+}
+
+// Converts a validation violation to a ViolationSet containing
+// the corresponding validation violation.
+inline ViolationSet ViolationBit(
+    Violation violation) {
+  NACL_COMPILE_TIME_ASSERT(static_cast<size_t>(OTHER_VIOLATION) <
+                           sizeof(ViolationSet) * CHAR_BIT);
+  return static_cast<ViolationSet>(0x1) << violation;
+}
+
+// Defines the set of all safety violations.
+// Note: Assumes that CROSSES_BUNDLE_VIOLATION defines the range
+// of safety violations
+static const ViolationSet kSafetyViolations =
+  SafetyViolationBit(MAY_BE_SAFE) - 1;
+
+// Defines the set of violations that cross bundle boundaries.
+static const ViolationSet kCrossesBundleViolations =
+  ViolationBit(LOADSTORE_CROSSES_BUNDLE_VIOLATION) |
+  ViolationBit(BRANCH_MASK_CROSSES_BUNDLE_VIOLATION) |
+  ViolationBit(DATA_REGISTER_UPDATE_CROSSES_BUNDLE_VIOLATION);
+
+// Returns the union of the two validation violation sets.
+inline ViolationSet ViolationUnion(ViolationSet vset1, ViolationSet vset2) {
+  return vset1 | vset2;
+}
+
+// Returns the intersection of two validation violation sets.
+inline ViolationSet ViolationIntersect(ViolationSet vset1,
+                                       ViolationSet vset2) {
+  return vset1 & vset2;
+}
+
+// Returns true if the given validation violation set contains the
+// given violation.
+inline bool ContainsViolation(ViolationSet vset, Violation violation) {
+  return ViolationIntersect(vset, ViolationBit(violation)) != kNoViolations;
+}
+
+// Returns true if the violation set contains a safety violation.
+inline bool ContainsSafetyViolations(ViolationSet vset) {
+  return ViolationIntersect(vset, kSafetyViolations) != kNoViolations;
+}
+
+// Returns true if the violation set contains a violation that crosses
+// bundle boundaries.
+inline bool ContainsCrossesBundleViolation(ViolationSet vset) {
+  return ViolationIntersect(vset, kCrossesBundleViolations) != kNoViolations;
+}
+
+// Returns true if the violation is a violation that crosses
+// bundle boundaries.
+inline bool IsCrossesBundleViolation(Violation violation) {
+  return ContainsCrossesBundleViolation(ViolationBit(violation));
+}
 
 // A class decoder is designed to decode a set of instructions that
 // have the same semantics, in terms of what the validator needs. This
@@ -742,7 +266,7 @@ class ClassDecoder {
   //  - explicit destination (general purpose) register(s),
   //  - changes to condition APSR flags NZCV.
   //  - indexed-addressing writeback,
-  //  - changes to r15 by branches,
+  //  - changes to the program counter by branches,
   //  - implicit register results, like branch-with-link.
   //
   // Note: This virtual only tracks effects to ARM general purpose flags, and
@@ -861,118 +385,60 @@ class ClassDecoder {
   //     sets_Z_if_bits_clear
   virtual Instruction dynamic_code_replacement_sentinel(Instruction i) const;
 
+  // Checks the given pair of instructions, and returns found validation
+  // violations. Called with the class decoder associated with the second
+  // instruction. For violations that only look at a single instruction,
+  // they are assumed to apply to the second instruction in the pair.
+  //
+  // As a side effect, if the instructions are found not to include any
+  // violations, but affect state of the validation, the corresponding
+  // updates of the validation state is done.
+  //
+  //   first: The first instruction in the instruction pair to be validated.
+  //   second: The second instruction in the instruction pair to be validated.
+  //   sfi: The validator being used.
+  //   branches: gets filled in with the address of every direct branch.
+  //   critical: gets filled in with every address that isn't safe to jump to,
+  //       because it would split an otherwise-safe pseudo-op, or jumps into
+  //       the middle of a constant pool.
+  //   next_inst_addr: The address of the next instruction to be validated.
+  //       Set by the caller to the address of the instruction immediately
+  //       following the second instruction. If additional instruction should
+  //       be skipped (as with contant pool heads), this value should be updated
+  //       to point to the next instruction to be processed.
+  //
+  // Returns the validation violations found.
+  virtual ViolationSet get_violations(
+      const nacl_arm_val::DecodedInstruction& first,
+      const nacl_arm_val::DecodedInstruction& second,
+      const nacl_arm_val::SfiValidator& sfi,
+      nacl_arm_val::AddressSet* branches,
+      nacl_arm_val::AddressSet* critical,
+      uint32_t* next_inst_addr) const;
+
+  // Generates diagnostic messages for validation violations found
+  // for the instruction pair. Called with the class decoder associated
+  // with the second instruction. Assumes it is only called if virtual
+  // get_violations returned a non-empty set.
+  //
+  //   violations: The set of validation violations detected by get_violations.
+  //   first: The first instruction in the instruction pair to be validated.
+  //   second: The second instruction in the instruction pair to be validated.
+  //   sfi: The validator being used.
+  //   out: The problem reporter to use to report diagnostics.
+  virtual void generate_diagnostics(
+      ViolationSet violations,
+      const nacl_arm_val::DecodedInstruction& first,
+      const nacl_arm_val::DecodedInstruction& second,
+      const nacl_arm_val::SfiValidator& sfi,
+      nacl_arm_val::ProblemSink* out) const;
+
  protected:
   ClassDecoder() {}
   virtual ~ClassDecoder() {}
 
-  // A common idiom in derived classes: def() is often implemented in terms
-  // of this function: the base register must be added to the def set when
-  // there's small immediate writeback.
-  //
-  // Note that there are other types of writeback into base than small
-  // immediate writeback.
-  Register base_small_writeback_register(Instruction i) const {
-    return base_address_register_writeback_small_immediate(i)
-        ? base_address_register(i) : Register::None();
-  }
-
  private:
   NACL_DISALLOW_COPY_AND_ASSIGN(ClassDecoder);
-};
-
-//----------------------------------------------------------------
-// The following class decoders define common cases, defining a
-// concept that simply associates a non MAY_BE_SAFE with the
-// instructions it processes. As such, they provide default
-// implementation that returns the corresponding safety value, and
-// assumes nothing else interesting happens.
-//----------------------------------------------------------------
-
-class UnsafeClassDecoder : public ClassDecoder {
- public:
-  // Return the safety associated with this class.
-  virtual SafetyLevel safety(Instruction i) const;
-
-  // Switch off the def warnings -- it's already forbidden!
-  virtual RegisterList defs(Instruction i) const;
-
- protected:
-  explicit UnsafeClassDecoder(SafetyLevel safety)
-      : safety_(safety) {}
-
- private:
-  SafetyLevel safety_;
-  NACL_DISALLOW_DEFAULT_COPY_AND_ASSIGN(UnsafeClassDecoder);
-};
-
-class Forbidden : public UnsafeClassDecoder {
- public:
-  Forbidden() : UnsafeClassDecoder(FORBIDDEN) {}
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Forbidden);
-};
-
-// Represents the undefined space in the instruction encoding.
-class Undefined : public UnsafeClassDecoder {
- public:
-  Undefined() : UnsafeClassDecoder(UNDEFINED) {}
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Undefined);
-};
-
-// Represents that the instruction is not implemented.
-class NotImplemented : public UnsafeClassDecoder {
- public:
-  NotImplemented() : UnsafeClassDecoder(NOT_IMPLEMENTED) {}
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(NotImplemented);
-};
-
-// Represents instructions that have been deprecated in ARMv7.
-class Deprecated : public UnsafeClassDecoder {
- public:
-  Deprecated() : UnsafeClassDecoder(DEPRECATED) {}
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Deprecated);
-};
-
-// Represents an unpredictable encoding.  Note that many instructions may
-// *become* unpredictable based on their operands -- this is used only for
-// the case where a large space of the instruction set is unpredictable.
-class Unpredictable : public UnsafeClassDecoder {
- public:
-  Unpredictable() : UnsafeClassDecoder(UNPREDICTABLE) {}
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(Unpredictable);
-};
-
-// Defines the base class for all coprocessor instructions. We only
-// only allow coprocessors 101x, which defined VFP operations.
-// +----------------------------------------+--------+----------------+
-// |3130292827262524232221201918171615141312|1110 9 8| 7 6 5 4 3 2 1 0|
-// +----------------------------------------+--------+----------------+
-// |                                        | coproc |                |
-// +----------------------------------------+--------+----------------+
-// Also doesn't permit updates to PC.
-
-class CoprocessorOp : public ClassDecoder {
- public:
-  // Accessor to non-vector register fields.
-  static const Imm4Bits8To11Interface coproc;
-
-  CoprocessorOp() {}
-
-  virtual SafetyLevel safety(Instruction i) const;
-  // Default assumes defs={}
-  virtual RegisterList defs(Instruction i) const;
-
- private:
-  NACL_DISALLOW_COPY_AND_ASSIGN(CoprocessorOp);
 };
 
 }  // namespace nacl_arm_dec

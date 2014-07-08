@@ -11,27 +11,57 @@ using std::string;
 
 namespace net {
 
-const size_t kHashSize = 16;  // size of uint128 serialized
+const size_t kHashSizeShort = 12;  // size of uint128 serialized short
 
-QuicData* NullEncrypter::Encrypt(StringPiece associated_data,
-                                 StringPiece plaintext) {
-  // TODO(rch): avoid buffer copy here
+NullEncrypter::NullEncrypter() {}
+
+bool NullEncrypter::SetKey(StringPiece key) { return key.empty(); }
+
+bool NullEncrypter::SetNoncePrefix(StringPiece nonce_prefix) {
+  return nonce_prefix.empty();
+}
+
+bool NullEncrypter::Encrypt(
+    StringPiece /*nonce*/,
+    StringPiece associated_data,
+    StringPiece plaintext,
+    unsigned char* output) {
   string buffer = associated_data.as_string();
   plaintext.AppendToString(&buffer);
   uint128 hash = QuicUtils::FNV1a_128_Hash(buffer.data(), buffer.length());
-  QuicDataWriter writer(plaintext.length() + kHashSize);
-  writer.WriteUInt128(hash);
-  writer.WriteBytes(plaintext.data(), plaintext.length());
-  size_t len = writer.length();
-  return new QuicData(writer.take(), len, true);
+  QuicUtils::SerializeUint128Short(hash, output);
+  memcpy(output + GetHashLength(), plaintext.data(), plaintext.size());
+  return true;
 }
 
-size_t NullEncrypter::GetMaxPlaintextSize(size_t ciphertext_size) {
-  return ciphertext_size - kHashSize;
+QuicData* NullEncrypter::EncryptPacket(
+    QuicPacketSequenceNumber /*sequence_number*/,
+    StringPiece associated_data,
+    StringPiece plaintext) {
+  const size_t len = plaintext.size() + GetHashLength();
+  uint8* buffer = new uint8[len];
+  Encrypt(StringPiece(), associated_data, plaintext, buffer);
+  return new QuicData(reinterpret_cast<char*>(buffer), len, true);
 }
 
-size_t NullEncrypter::GetCiphertextSize(size_t plaintext_size) {
-  return plaintext_size + kHashSize;
+size_t NullEncrypter::GetKeySize() const { return 0; }
+
+size_t NullEncrypter::GetNoncePrefixSize() const { return 0; }
+
+size_t NullEncrypter::GetMaxPlaintextSize(size_t ciphertext_size) const {
+  return ciphertext_size - GetHashLength();
+}
+
+size_t NullEncrypter::GetCiphertextSize(size_t plaintext_size) const {
+  return plaintext_size + GetHashLength();
+}
+
+StringPiece NullEncrypter::GetKey() const { return StringPiece(); }
+
+StringPiece NullEncrypter::GetNoncePrefix() const { return StringPiece(); }
+
+size_t NullEncrypter::GetHashLength() const {
+  return kHashSizeShort;
 }
 
 }  // namespace net

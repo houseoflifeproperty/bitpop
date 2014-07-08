@@ -2,15 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/string_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/status_icons/status_icon_menu_model.h"
 #import "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/browser/ui/cocoa/status_icons/status_icon_mac.h"
 #include "grit/chrome_unscaled_resources.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "ui/base/models/simple_menu_model.h"
 #include "ui/base/resource/resource_bundle.h"
 
 class SkBitmap;
@@ -26,14 +26,14 @@ TEST_F(StatusIconMacTest, Create) {
   icon->SetImage(*image);
   gfx::ImageSkia* pressed = rb.GetImageSkiaNamed(IDR_STATUS_TRAY_ICON_PRESSED);
   icon->SetPressedImage(*pressed);
-  icon->SetToolTip(ASCIIToUTF16("tool tip"));
+  icon->SetToolTip(base::ASCIIToUTF16("tool tip"));
 }
 
 TEST_F(StatusIconMacTest, CreateMenu) {
   // Create a menu and verify by getting the title of the first menu item.
   const char* menu_title = "Menu Title";
-  scoped_ptr<ui::SimpleMenuModel> model(new ui::SimpleMenuModel(NULL));
-  model->AddItem(0, ASCIIToUTF16(menu_title));
+  scoped_ptr<StatusIconMenuModel> model(new StatusIconMenuModel(NULL));
+  model->AddItem(0, base::ASCIIToUTF16(menu_title));
 
   scoped_ptr<StatusIconMac> icon(new StatusIconMac());
   icon->UpdatePlatformContextMenu(model.get());
@@ -48,12 +48,12 @@ TEST_F(StatusIconMacTest, MenuToolTip) {
   // first menu item.
   const char* menu_title = "Menu Title";
   const char* tool_tip = "Tool tip";
-  scoped_ptr<ui::SimpleMenuModel> model(new ui::SimpleMenuModel(NULL));
-  model->AddItem(0, ASCIIToUTF16(menu_title));
+  scoped_ptr<StatusIconMenuModel> model(new StatusIconMenuModel(NULL));
+  model->AddItem(0, base::ASCIIToUTF16(menu_title));
 
   scoped_ptr<StatusIconMac> icon(new StatusIconMac());
   icon->UpdatePlatformContextMenu(model.get());
-  icon->SetToolTip(ASCIIToUTF16(tool_tip));
+  icon->SetToolTip(base::ASCIIToUTF16(tool_tip));
   EXPECT_EQ(2, [[icon->item() menu] numberOfItems]);
 
   NSMenuItem* toolTipItem = [[icon->item() menu] itemAtIndex:0];

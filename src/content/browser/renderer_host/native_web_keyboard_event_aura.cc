@@ -6,7 +6,7 @@
 
 #include "base/logging.h"
 #include "content/browser/renderer_host/web_input_event_aura.h"
-#include "ui/base/events/event.h"
+#include "ui/events/event.h"
 
 namespace {
 
@@ -15,40 +15,43 @@ namespace {
 // RenderViewHostDelegate::HandledKeybardEvent after the original aura
 // event is destroyed.
 ui::Event* CopyEvent(ui::Event* event) {
-  return event ? static_cast<ui::KeyEvent*>(event)->Copy() : NULL;
+  return event ? new ui::KeyEvent(*static_cast<ui::KeyEvent*>(event)) : NULL;
 }
 
 int EventFlagsToWebInputEventModifiers(int flags) {
   return
-      (flags & ui::EF_SHIFT_DOWN ? WebKit::WebInputEvent::ShiftKey : 0) |
-      (flags & ui::EF_CONTROL_DOWN ? WebKit::WebInputEvent::ControlKey : 0) |
-      (flags & ui::EF_CAPS_LOCK_DOWN ? WebKit::WebInputEvent::CapsLockOn : 0) |
-      (flags & ui::EF_ALT_DOWN ? WebKit::WebInputEvent::AltKey : 0);
+      (flags & ui::EF_SHIFT_DOWN ? blink::WebInputEvent::ShiftKey : 0) |
+      (flags & ui::EF_CONTROL_DOWN ? blink::WebInputEvent::ControlKey : 0) |
+      (flags & ui::EF_CAPS_LOCK_DOWN ? blink::WebInputEvent::CapsLockOn : 0) |
+      (flags & ui::EF_ALT_DOWN ? blink::WebInputEvent::AltKey : 0);
 }
 
 }  // namespace
 
-using WebKit::WebKeyboardEvent;
+using blink::WebKeyboardEvent;
 
 namespace content {
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent()
     : os_event(NULL),
-      skip_in_browser(false) {
+      skip_in_browser(false),
+      match_edit_command(false) {
 }
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent(gfx::NativeEvent native_event)
     : WebKeyboardEvent(MakeWebKeyboardEvent(
           static_cast<ui::KeyEvent*>(native_event))),
       os_event(CopyEvent(native_event)),
-      skip_in_browser(false) {
+      skip_in_browser(false),
+      match_edit_command(false) {
 }
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent(
     const NativeWebKeyboardEvent& other)
     : WebKeyboardEvent(other),
       os_event(CopyEvent(other.os_event)),
-      skip_in_browser(other.skip_in_browser) {
+      skip_in_browser(other.skip_in_browser),
+      match_edit_command(false) {
 }
 
 NativeWebKeyboardEvent::NativeWebKeyboardEvent(
@@ -58,14 +61,15 @@ NativeWebKeyboardEvent::NativeWebKeyboardEvent(
     int state,
     double time_stamp_seconds)
     : os_event(NULL),
-      skip_in_browser(true /* already handled by the input method */) {
+      skip_in_browser(false),
+      match_edit_command(false) {
   switch (key_event_type) {
     case ui::ET_KEY_PRESSED:
-      type = is_char ? WebKit::WebInputEvent::Char :
-          WebKit::WebInputEvent::RawKeyDown;
+      type = is_char ? blink::WebInputEvent::Char :
+          blink::WebInputEvent::RawKeyDown;
       break;
     case ui::ET_KEY_RELEASED:
-      type = WebKit::WebInputEvent::KeyUp;
+      type = blink::WebInputEvent::KeyUp;
       break;
     default:
       NOTREACHED();
@@ -77,7 +81,8 @@ NativeWebKeyboardEvent::NativeWebKeyboardEvent(
   nativeKeyCode = character;
   text[0] = character;
   unmodifiedText[0] = character;
-  isSystemKey = (state & ui::EF_ALT_DOWN) != 0;
+  isSystemKey =
+      (state & ui::EF_ALT_DOWN) != 0 && (state & ui::EF_ALTGR_DOWN) == 0;
   setKeyIdentifierFromWindowsKeyCode();
 }
 
@@ -87,7 +92,7 @@ NativeWebKeyboardEvent& NativeWebKeyboardEvent::operator=(
   delete os_event;
   os_event = CopyEvent(other.os_event);
   skip_in_browser = other.skip_in_browser;
-
+  match_edit_command = other.match_edit_command;
   return *this;
 }
 

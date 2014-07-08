@@ -4,128 +4,50 @@
 
 #import "chrome/browser/ui/cocoa/applescript/tab_applescript.h"
 
-#import <Carbon/Carbon.h>
-#import <Foundation/NSAppleEventDescriptor.h>
-
-#include "base/file_path.h"
+#include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#import "base/memory/scoped_nsobject.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#import "base/mac/scoped_nsobject.h"
+#include "base/strings/sys_string_conversions.h"
 #include "chrome/browser/printing/print_view_manager.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/sessions/session_tab_helper.h"
+#include "chrome/browser/ui/cocoa/applescript/apple_event_util.h"
 #include "chrome/browser/ui/cocoa/applescript/error_applescript.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/navigation_controller.h"
 #include "content/public/browser/navigation_entry.h"
+#include "content/public/browser/render_frame_host.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/save_page_type.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_delegate.h"
-#include "googleurl/src/gurl.h"
+#include "url/gurl.h"
 
 using content::NavigationController;
 using content::NavigationEntry;
 using content::OpenURLParams;
+using content::RenderFrameHost;
 using content::RenderViewHost;
 using content::Referrer;
 using content::WebContents;
 
-@interface AnyResultValue : NSObject {
- @private
-  scoped_nsobject<NSAppleEventDescriptor> descriptor;
-}
-- (id)initWithDescriptor:(NSAppleEventDescriptor*)desc;
-- (NSAppleEventDescriptor *)scriptingAnyDescriptor;
-@end
+namespace {
 
-@implementation AnyResultValue
+void ResumeAppleEventAndSendReply(NSAppleEventManagerSuspensionID suspension_id,
+                                  const base::Value* result_value) {
+  NSAppleEventDescriptor* result_descriptor =
+      chrome::mac::ValueToAppleEventDescriptor(result_value);
 
-- (id)initWithDescriptor:(NSAppleEventDescriptor*)desc {
-  if (self = [super init]) {
-    descriptor.reset([desc retain]);
-  }
-  return self;
+  NSAppleEventManager* manager = [NSAppleEventManager sharedAppleEventManager];
+  NSAppleEventDescriptor* reply_event =
+      [manager replyAppleEventForSuspensionID:suspension_id];
+  [reply_event setParamDescriptor:result_descriptor
+                       forKeyword:keyDirectObject];
+  [manager resumeWithSuspensionID:suspension_id];
 }
 
-- (NSAppleEventDescriptor *)scriptingAnyDescriptor {
-  return descriptor.get();
-}
-
-@end
-
-static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
-  NSAppleEventDescriptor* descriptor = nil;
-  switch (value->GetType()) {
-    case Value::TYPE_NULL:
-      descriptor = [NSAppleEventDescriptor
-          descriptorWithTypeCode:cMissingValue];
-      break;
-    case Value::TYPE_BOOLEAN: {
-      bool bool_value;
-      value->GetAsBoolean(&bool_value);
-      descriptor = [NSAppleEventDescriptor descriptorWithBoolean:bool_value];
-      break;
-    }
-    case Value::TYPE_INTEGER: {
-      int int_value;
-      value->GetAsInteger(&int_value);
-      descriptor = [NSAppleEventDescriptor descriptorWithInt32:int_value];
-      break;
-    }
-    case Value::TYPE_DOUBLE: {
-      double double_value;
-      value->GetAsDouble(&double_value);
-      descriptor = [NSAppleEventDescriptor
-          descriptorWithDescriptorType:typeIEEE64BitFloatingPoint
-                                 bytes:&double_value
-                                length:sizeof(double_value)];
-      break;
-    }
-    case Value::TYPE_STRING: {
-      std::string string_value;
-      value->GetAsString(&string_value);
-      descriptor = [NSAppleEventDescriptor descriptorWithString:
-          base::SysUTF8ToNSString(string_value)];
-      break;
-    }
-    case Value::TYPE_BINARY:
-      NOTREACHED();
-      break;
-    case Value::TYPE_DICTIONARY: {
-      DictionaryValue* dictionary_value = static_cast<DictionaryValue*>(value);
-      descriptor = [NSAppleEventDescriptor recordDescriptor];
-      NSAppleEventDescriptor* userRecord = [NSAppleEventDescriptor
-          listDescriptor];
-      for (DictionaryValue::key_iterator iter(dictionary_value->begin_keys());
-           iter != dictionary_value->end_keys(); ++iter) {
-        Value* item;
-        if (dictionary_value->Get(*iter, &item)) {
-          [userRecord insertDescriptor:[NSAppleEventDescriptor
-              descriptorWithString:base::SysUTF8ToNSString(*iter)] atIndex:0];
-          [userRecord insertDescriptor:valueToDescriptor(item) atIndex:0];
-        }
-      }
-      // Description of what keyASUserRecordFields does.
-      // http://www.mail-archive.com/cocoa-dev%40lists.apple.com/msg40149.html
-      [descriptor setDescriptor:userRecord forKeyword:keyASUserRecordFields];
-      break;
-    }
-    case Value::TYPE_LIST: {
-      ListValue* list_value;
-      value->GetAsList(&list_value);
-      descriptor = [NSAppleEventDescriptor listDescriptor];
-      for (unsigned i = 0; i < list_value->GetSize(); ++i) {
-        Value* item;
-        list_value->Get(i, &item);
-        [descriptor insertDescriptor:valueToDescriptor(item) atIndex:0];
-      }
-      break;
-    }
-  }
-  return descriptor;
-}
+}  // namespace
 
 @interface TabAppleScript()
 @property (nonatomic, copy) NSString* tempURL;
@@ -140,9 +62,8 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
     SessionID session;
     SessionID::id_type futureSessionIDOfTab = session.id() + 1;
     // Holds the SessionID that the new tab is going to get.
-    scoped_nsobject<NSNumber> numID(
-        [[NSNumber alloc]
-            initWithInt:futureSessionIDOfTab]);
+    base::scoped_nsobject<NSNumber> numID(
+        [[NSNumber alloc] initWithInt:futureSessionIDOfTab]);
     [self setUniqueID:numID];
   }
   return self;
@@ -160,13 +81,13 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
   }
 
   if ((self = [super init])) {
-    // It is safe to be weak, if a tab goes away (eg user closing a tab)
-    // the applescript runtime calls tabs in AppleScriptWindow and this
+    // It is safe to be weak; if a tab goes away (e.g. the user closes a tab)
+    // the AppleScript runtime calls tabs in AppleScriptWindow and this
     // particular tab is never returned.
     webContents_ = webContents;
     SessionTabHelper* session_tab_helper =
         SessionTabHelper::FromWebContents(webContents);
-    scoped_nsobject<NSNumber> numID(
+    base::scoped_nsobject<NSNumber> numID(
         [[NSNumber alloc] initWithInt:session_tab_helper->session_id().id()]);
     [self setUniqueID:numID];
   }
@@ -175,13 +96,13 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
 
 - (void)setWebContents:(content::WebContents*)webContents {
   DCHECK(webContents);
-  // It is safe to be weak, if a tab goes away (eg user closing a tab)
-  // the applescript runtime calls tabs in AppleScriptWindow and this
+  // It is safe to be weak; if a tab goes away (e.g. the user closes a tab)
+  // the AppleScript runtime calls tabs in AppleScriptWindow and this
   // particular tab is never returned.
   webContents_ = webContents;
   SessionTabHelper* session_tab_helper =
       SessionTabHelper::FromWebContents(webContents);
-  scoped_nsobject<NSNumber> numID(
+  base::scoped_nsobject<NSNumber> numID(
       [[NSNumber alloc] initWithInt:session_tab_helper->session_id().id()]);
   [self setUniqueID:numID];
 
@@ -224,7 +145,7 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
   const GURL& previousURL = entry->GetVirtualURL();
   webContents_->OpenURL(OpenURLParams(
       url,
-      content::Referrer(previousURL, WebKit::WebReferrerPolicyDefault),
+      content::Referrer(previousURL, blink::WebReferrerPolicyDefault),
       CURRENT_TAB,
       content::PAGE_TRANSITION_TYPED,
       false));
@@ -235,7 +156,7 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
   if (!entry)
     return nil;
 
-  string16 title = entry ? entry->GetTitle() : string16();
+  base::string16 title = entry ? entry->GetTitle() : base::string16();
   return base::SysUTF16ToNSString(title);
 }
 
@@ -245,63 +166,27 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
 }
 
 - (void)handlesUndoScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Undo();
+  webContents_->Undo();
 }
 
 - (void)handlesRedoScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Redo();
+  webContents_->Redo();
 }
 
 - (void)handlesCutScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Cut();
+  webContents_->Cut();
 }
 
 - (void)handlesCopyScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Copy();
+  webContents_->Copy();
 }
 
 - (void)handlesPasteScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->Paste();
+  webContents_->Paste();
 }
 
 - (void)handlesSelectAllScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
-    NOTREACHED();
-    return;
-  }
-
-  view->SelectAll();
+  webContents_->SelectAll();
 }
 
 - (void)handlesGoBackScriptCommand:(NSScriptCommand*)command {
@@ -353,11 +238,11 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
     return;
   }
 
-  FilePath mainFile(base::SysNSStringToUTF8([fileURL path]));
+  base::FilePath mainFile(base::SysNSStringToUTF8([fileURL path]));
   // We create a directory path at the folder within which the file exists.
   // Eg.    if main_file = '/Users/Foo/Documents/Google.html'
   // then directory_path = '/Users/Foo/Documents/Google_files/'.
-  FilePath directoryPath = mainFile.RemoveExtension();
+  base::FilePath directoryPath = mainFile.RemoveExtension();
   directoryPath = directoryPath.InsertBeforeExtension(std::string("_files/"));
 
   NSString* saveType = [dictionary objectForKey:@"FileType"];
@@ -385,28 +270,34 @@ static NSAppleEventDescriptor* valueToDescriptor(Value* value) {
   NavigationEntry* entry =
       webContents_->GetController().GetLastCommittedEntry();
   if (entry) {
-    webContents_->OpenURL(OpenURLParams(
-        GURL(chrome::kViewSourceScheme + std::string(":") +
-             entry->GetURL().spec()),
-        Referrer(),
-        NEW_FOREGROUND_TAB,
-        content::PAGE_TRANSITION_LINK,
-        false));
+    webContents_->OpenURL(
+        OpenURLParams(GURL(content::kViewSourceScheme + std::string(":") +
+                           entry->GetURL().spec()),
+                      Referrer(),
+                      NEW_FOREGROUND_TAB,
+                      content::PAGE_TRANSITION_LINK,
+                      false));
   }
 }
 
 - (id)handlesExecuteJavascriptScriptCommand:(NSScriptCommand*)command {
-  RenderViewHost* view = webContents_->GetRenderViewHost();
-  if (!view) {
+  content::RenderFrameHost* frame = webContents_->GetMainFrame();
+  if (!frame) {
     NOTREACHED();
     return nil;
   }
 
-  string16 script = base::SysNSStringToUTF16(
+  NSAppleEventManager* manager = [NSAppleEventManager sharedAppleEventManager];
+  NSAppleEventManagerSuspensionID suspensionID =
+      [manager suspendCurrentAppleEvent];
+  content::RenderFrameHost::JavaScriptResultCallback callback =
+      base::Bind(&ResumeAppleEventAndSendReply, suspensionID);
+
+  base::string16 script = base::SysNSStringToUTF16(
       [[command evaluatedArguments] objectForKey:@"javascript"]);
-  Value* value = view->ExecuteJavascriptAndGetValue(string16(), script);
-  NSAppleEventDescriptor* descriptor = valueToDescriptor(value);
-  return [[[AnyResultValue alloc] initWithDescriptor:descriptor] autorelease];
+  frame->ExecuteJavaScript(script, callback);
+
+  return nil;
 }
 
 @end

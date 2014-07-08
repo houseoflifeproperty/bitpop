@@ -5,7 +5,6 @@
 #include "chrome/browser/sync/sync_global_error.h"
 
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/api/sync/profile_sync_service_observer.h"
 #include "chrome/browser/sync/profile_sync_service.h"
 #include "chrome/browser/sync/sync_ui_util.h"
 #include "chrome/browser/ui/browser.h"
@@ -21,52 +20,41 @@
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-typedef GoogleServiceAuthError AuthError;
-
-SyncGlobalError::SyncGlobalError(ProfileSyncService* service,
-                                 SigninManager* signin)
-    : service_(service),
-      signin_(signin) {
+SyncGlobalError::SyncGlobalError(SyncErrorController* error_controller,
+                                 ProfileSyncService* profile_sync_service)
+    : error_controller_(error_controller),
+      service_(profile_sync_service) {
   DCHECK(service_);
-  DCHECK(signin_);
-  OnStateChanged();
+  error_controller_->AddObserver(this);
+  GlobalErrorServiceFactory::GetForProfile(service_->profile())->
+      AddGlobalError(this);
 }
 
 SyncGlobalError::~SyncGlobalError() {
+  DCHECK(!error_controller_)
+      << "SigninGlobalError::Shutdown() was not called";
 }
 
-bool SyncGlobalError::HasBadge() {
-  return !menu_label_.empty();
+void SyncGlobalError::Shutdown() {
+  GlobalErrorServiceFactory::GetForProfile(service_->profile())->
+      RemoveGlobalError(this);
+  error_controller_->RemoveObserver(this);
+  error_controller_ = NULL;
 }
 
 bool SyncGlobalError::HasMenuItem() {
-  // When we're on Chrome OS we need to add a separate menu item to the wrench
-  // menu to the show the error. On other platforms we can just reuse the
-  // "Sign in to Chrome..." menu item to show the error.
-#if defined(OS_CHROMEOS)
   return !menu_label_.empty();
-#else
-  return false;
-#endif
 }
 
 int SyncGlobalError::MenuItemCommandID() {
   return IDC_SHOW_SYNC_ERROR;
 }
 
-string16 SyncGlobalError::MenuItemLabel() {
+base::string16 SyncGlobalError::MenuItemLabel() {
   return menu_label_;
 }
 
 void SyncGlobalError::ExecuteMenuItem(Browser* browser) {
-#if defined(OS_CHROMEOS)
-  if (service_->GetAuthError().state() != AuthError::NONE) {
-    DLOG(INFO) << "Signing out the user to fix a sync error.";
-    // TODO(beng): seems like this could just call browser::AttemptUserExit().
-    chrome::ExecuteCommand(browser, IDC_EXIT);
-    return;
-  }
-#endif
   LoginUIService* login_ui = LoginUIServiceFactory::GetForProfile(
       service_->profile());
   if (login_ui->current_login_ui()) {
@@ -81,20 +69,20 @@ bool SyncGlobalError::HasBubbleView() {
   return !bubble_message_.empty() && !bubble_accept_label_.empty();
 }
 
-string16 SyncGlobalError::GetBubbleViewTitle() {
+base::string16 SyncGlobalError::GetBubbleViewTitle() {
   return l10n_util::GetStringUTF16(IDS_SYNC_ERROR_BUBBLE_VIEW_TITLE);
 }
 
-string16 SyncGlobalError::GetBubbleViewMessage() {
-  return bubble_message_;
+std::vector<base::string16> SyncGlobalError::GetBubbleViewMessages() {
+  return std::vector<base::string16>(1, bubble_message_);
 }
 
-string16 SyncGlobalError::GetBubbleViewAcceptButtonLabel() {
+base::string16 SyncGlobalError::GetBubbleViewAcceptButtonLabel() {
   return bubble_accept_label_;
 }
 
-string16 SyncGlobalError::GetBubbleViewCancelButtonLabel() {
-  return string16();
+base::string16 SyncGlobalError::GetBubbleViewCancelButtonLabel() {
+  return base::string16();
 }
 
 void SyncGlobalError::OnBubbleViewDidClose(Browser* browser) {
@@ -108,12 +96,12 @@ void SyncGlobalError::BubbleViewCancelButtonPressed(Browser* browser) {
   NOTREACHED();
 }
 
-void SyncGlobalError::OnStateChanged() {
-  string16 menu_label;
-  string16 bubble_message;
-  string16 bubble_accept_label;
+void SyncGlobalError::OnErrorChanged() {
+  base::string16 menu_label;
+  base::string16 bubble_message;
+  base::string16 bubble_accept_label;
   sync_ui_util::GetStatusLabelsForSyncGlobalError(
-      service_, *signin_, &menu_label, &bubble_message, &bubble_accept_label);
+      service_, &menu_label, &bubble_message, &bubble_accept_label);
 
   // All the labels should be empty or all of them non-empty.
   DCHECK((menu_label.empty() && bubble_message.empty() &&
@@ -134,8 +122,4 @@ void SyncGlobalError::OnStateChanged() {
           profile)->NotifyErrorsChanged(this);
     }
   }
-}
-
-bool SyncGlobalError::HasCustomizedSyncMenuItem() {
-  return !menu_label_.empty();
 }

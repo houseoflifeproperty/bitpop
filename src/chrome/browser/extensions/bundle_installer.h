@@ -10,20 +10,20 @@
 
 #include "base/memory/linked_ptr.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/extensions/extension_install_prompt.h"
-#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/extensions/webstore_install_helper.h"
+#include "chrome/browser/extensions/webstore_installer.h"
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/extensions/extension.h"
+#include "extensions/common/extension.h"
 
 namespace base {
 class DictionaryValue;
 }  // namespace base
 
 namespace content {
-class NavigationController;
+class WebContents;
 }  // namespace content
 
 class Browser;
@@ -69,7 +69,7 @@ class BundleInstaller : public WebstoreInstallHelper::Delegate,
     Item();
 
     // Gets the localized name, formatted for display in the prompt or bubble.
-    string16 GetNameForDisplay();
+    base::string16 GetNameForDisplay();
 
     std::string id;
     std::string manifest;
@@ -96,11 +96,10 @@ class BundleInstaller : public WebstoreInstallHelper::Delegate,
   // If the bundle has been approved, this downloads and installs the member
   // extensions. OnBundleInstallComplete will be called when the process is
   // complete and |delegate| is not NULL. The download process uses the
-  // specified |controller|. When complete, we show a confirmation bubble in
-  // the specified |browser|.
+  // NavigationController of the specified |web_contents|. When complete, we
+  // show a confirmation bubble in the specified |browser|.
   // Note: the |delegate| must stay alive until receiving the callback.
-  void CompleteInstall(content::NavigationController* controller,
-                       Delegate* delegate);
+  void CompleteInstall(content::WebContents* web_contents, Delegate* delegate);
 
   // We change the headings in the install prompt and installed bubble depending
   // on whether the bundle contains apps, extensions or both. This method gets
@@ -109,7 +108,7 @@ class BundleInstaller : public WebstoreInstallHelper::Delegate,
   //   STATE_PENDING   - install prompt
   //   STATE_INSTALLED - installed bubble successful installs list
   //   STATE_FAILED    - installed bubble failed installs list
-  string16 GetHeadingTextFor(Item::State state) const;
+  base::string16 GetHeadingTextFor(Item::State state) const;
 
  private:
   friend class base::RefCountedThreadSafe<BundleInstaller>;

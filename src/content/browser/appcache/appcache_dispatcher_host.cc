@@ -15,13 +15,13 @@ namespace content {
 AppCacheDispatcherHost::AppCacheDispatcherHost(
     ChromeAppCacheService* appcache_service,
     int process_id)
-    : appcache_service_(appcache_service),
-      ALLOW_THIS_IN_INITIALIZER_LIST(frontend_proxy_(this)),
+    : BrowserMessageFilter(AppCacheMsgStart),
+      appcache_service_(appcache_service),
+      frontend_proxy_(this),
       process_id_(process_id) {
 }
 
 void AppCacheDispatcherHost::OnChannelConnected(int32 peer_pid) {
-  BrowserMessageFilter::OnChannelConnected(peer_pid);
   if (appcache_service_.get()) {
     backend_impl_.Initialize(
         appcache_service_.get(), &frontend_proxy_, process_id_);
@@ -64,7 +64,7 @@ bool AppCacheDispatcherHost::OnMessageReceived(const IPC::Message& message,
 AppCacheDispatcherHost::~AppCacheDispatcherHost() {}
 
 void AppCacheDispatcherHost::BadMessageReceived() {
-  RecordAction(UserMetricsAction("BadMessageTerminate_ACDH"));
+  RecordAction(base::UserMetricsAction("BadMessageTerminate_ACDH"));
   BrowserMessageFilter::BadMessageReceived();
 }
 
@@ -97,7 +97,8 @@ void AppCacheDispatcherHost::OnSelectCache(
     int64 cache_document_was_loaded_from,
     const GURL& opt_manifest_url) {
   if (appcache_service_.get()) {
-    if (!backend_impl_.SelectCache(host_id, document_url,
+    if (!backend_impl_.SelectCache(host_id,
+                                   document_url,
                                    cache_document_was_loaded_from,
                                    opt_manifest_url)) {
       BadMessageReceived();
@@ -133,8 +134,8 @@ void AppCacheDispatcherHost::OnMarkAsForeignEntry(
     int host_id, const GURL& document_url,
     int64 cache_document_was_loaded_from) {
   if (appcache_service_.get()) {
-    if (!backend_impl_.MarkAsForeignEntry(host_id, document_url,
-                                          cache_document_was_loaded_from)) {
+    if (!backend_impl_.MarkAsForeignEntry(
+            host_id, document_url, cache_document_was_loaded_from)) {
       BadMessageReceived();
     }
   }
@@ -147,7 +148,7 @@ void AppCacheDispatcherHost::OnGetResourceList(
 }
 
 void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
-  if (pending_reply_msg_.get()) {
+  if (pending_reply_msg_) {
     BadMessageReceived();
     delete reply_msg;
     return;
@@ -155,8 +156,8 @@ void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.GetStatusWithCallback(host_id, get_status_callback_,
-                                             reply_msg)) {
+    if (!backend_impl_.GetStatusWithCallback(
+            host_id, get_status_callback_, reply_msg)) {
       BadMessageReceived();
     }
     return;
@@ -167,7 +168,7 @@ void AppCacheDispatcherHost::OnGetStatus(int host_id, IPC::Message* reply_msg) {
 
 void AppCacheDispatcherHost::OnStartUpdate(int host_id,
                                            IPC::Message* reply_msg) {
-  if (pending_reply_msg_.get()) {
+  if (pending_reply_msg_) {
     BadMessageReceived();
     delete reply_msg;
     return;
@@ -175,8 +176,8 @@ void AppCacheDispatcherHost::OnStartUpdate(int host_id,
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.StartUpdateWithCallback(host_id, start_update_callback_,
-                                               reply_msg)) {
+    if (!backend_impl_.StartUpdateWithCallback(
+            host_id, start_update_callback_, reply_msg)) {
       BadMessageReceived();
     }
     return;
@@ -186,7 +187,7 @@ void AppCacheDispatcherHost::OnStartUpdate(int host_id,
 }
 
 void AppCacheDispatcherHost::OnSwapCache(int host_id, IPC::Message* reply_msg) {
-  if (pending_reply_msg_.get()) {
+  if (pending_reply_msg_) {
     BadMessageReceived();
     delete reply_msg;
     return;
@@ -194,8 +195,8 @@ void AppCacheDispatcherHost::OnSwapCache(int host_id, IPC::Message* reply_msg) {
 
   pending_reply_msg_.reset(reply_msg);
   if (appcache_service_.get()) {
-    if (!backend_impl_.SwapCacheWithCallback(host_id, swap_cache_callback_,
-                                             reply_msg)) {
+    if (!backend_impl_.SwapCacheWithCallback(
+            host_id, swap_cache_callback_, reply_msg)) {
       BadMessageReceived();
     }
     return;

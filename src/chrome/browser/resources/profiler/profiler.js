@@ -110,7 +110,7 @@ var MainView = (function() {
   var SNAPSHOT_FILE_LOADER_ID = 'snapshot-file-loader';
   var LOAD_ERROR_ID = 'file-load-error';
 
-  var DOWNLOAD_IFRAME_ID = 'download-iframe';
+  var DOWNLOAD_ANCHOR_ID = 'download-anchor';
 
   // --------------------------------------------------------------------------
   // Row keys
@@ -1799,9 +1799,11 @@ var MainView = (function() {
       };
 
       var dumpText = JSON.stringify(dump, null, ' ');
-      var blobBuilder = new Blob([dumpText, 'native'], {type: 'octet/stream'});
-      var blobUrl = window.webkitURL.createObjectURL(textBlob);
-      $(DOWNLOAD_IFRAME_ID).src = blobUrl;
+      var textBlob = new Blob([dumpText],
+                              { type: 'octet/stream', endings: 'native' });
+      var blobUrl = window.URL.createObjectURL(textBlob);
+      $(DOWNLOAD_ANCHOR_ID).href = blobUrl;
+      $(DOWNLOAD_ANCHOR_ID).click();
     },
 
     loadFileChanged_: function() {
@@ -2086,25 +2088,25 @@ var MainView = (function() {
 
       // Scan through our sort order and see if we are already sorted on this
       // key. If so, reverse that sort ordering.
-      var found_i = -1;
+      var foundIndex = -1;
       for (var i = 0; i < this.currentSortKeys_.length; ++i) {
         var curKey = this.currentSortKeys_[i];
         if (sortKeysMatch(curKey, key)) {
           this.currentSortKeys_[i] = reverseSortKey(curKey);
-          found_i = i;
+          foundIndex = i;
           break;
         }
       }
 
       if (event.altKey) {
-        if (found_i == -1) {
+        if (foundIndex == -1) {
           // If we weren't already sorted on the column that was alt-clicked,
           // then add it to our sort.
           this.currentSortKeys_.push(key);
         }
       } else {
-        if (found_i != 0 ||
-            !sortKeysMatch(this.currentSortKeys_[found_i], key)) {
+        if (foundIndex != 0 ||
+            !sortKeysMatch(this.currentSortKeys_[foundIndex], key)) {
           // If the column we left-clicked wasn't already our primary column,
           // make it so.
           this.currentSortKeys_ = [key];

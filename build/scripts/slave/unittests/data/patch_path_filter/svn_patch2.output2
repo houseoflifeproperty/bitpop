@@ -1,0 +1,6 @@
+Property changes on: tools/PRESUBMIT.py
+___________________________________________________________________
+Added: svn:executable
+   + *
+
+

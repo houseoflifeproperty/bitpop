@@ -9,19 +9,23 @@
 #ifndef CHROME_INSTALLER_UTIL_INSTALL_UTIL_H_
 #define CHROME_INSTALLER_UTIL_INSTALL_UTIL_H_
 
-#include <tchar.h>
 #include <windows.h>
+#include <tchar.h>
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
-#include "base/string16.h"
+#include "base/files/file.h"
+#include "base/files/file_path.h"
+#include "base/strings/string16.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/util_constants.h"
 
-class Version;
 class WorkItemList;
+
+namespace base {
+class Version;
+}
 
 // This is a utility class that provides common installation related
 // utility methods that can be used by installer and also unit tested
@@ -30,19 +34,19 @@ class InstallUtil {
  public:
   // Get the path to this distribution's Active Setup registry entries.
   // e.g. Software\Microsoft\Active Setup\Installed Components\<dist_guid>
-  static string16 GetActiveSetupPath(BrowserDistribution* dist);
+  static base::string16 GetActiveSetupPath(BrowserDistribution* dist);
 
   // Attempts to trigger the command that would be run by Active Setup for a
   // system-level Chrome. For use only when system-level Chrome is installed.
   static void TriggerActiveSetupCommand();
 
   // Launches given exe as admin on Vista.
-  static bool ExecuteExeAsAdmin(const CommandLine& cmd, DWORD* exit_code);
+  static bool ExecuteExeAsAdmin(const base::CommandLine& cmd, DWORD* exit_code);
 
   // Reads the uninstall command for Chromium from registry and returns it.
   // If system_install is true the command is read from HKLM, otherwise
   // from HKCU.
-  static CommandLine GetChromeUninstallCmd(
+  static base::CommandLine GetChromeUninstallCmd(
       bool system_install,
       BrowserDistribution::Type distribution_type);
 
@@ -53,7 +57,7 @@ class InstallUtil {
   //                 otherwise looks under the HKCU.
   static void GetChromeVersion(BrowserDistribution* dist,
                                bool system_install,
-                               Version* version);
+                               base::Version* version);
 
   // Find the last critical update (version) of Chrome. Fills |version| with the
   // version or a default-constructed Version if no version is found. A critical
@@ -63,7 +67,7 @@ class InstallUtil {
   //                 otherwise looks under the HKCU.
   static void GetCriticalUpdateVersion(BrowserDistribution* dist,
                                        bool system_install,
-                                       Version* version);
+                                       base::Version* version);
 
   // This function checks if the current OS is supported for Chromium.
   static bool IsOSSupported();
@@ -74,17 +78,17 @@ class InstallUtil {
   // app's ClientState key.  See InstallerState::WriteInstallerResult for more
   // details.
   static void AddInstallerResultItems(bool system_install,
-                                      const string16& state_key,
+                                      const base::string16& state_key,
                                       installer::InstallStatus status,
                                       int string_resource_id,
-                                      const string16* const launch_cmd,
+                                      const base::string16* const launch_cmd,
                                       WorkItemList* install_list);
 
   // Update the installer stage reported by Google Update.  |state_key_path|
   // should be obtained via the state_key method of an InstallerState instance
   // created before the machine state is modified by the installer.
   static void UpdateInstallerStage(bool system_install,
-                                   const string16& state_key_path,
+                                   const base::string16& state_key_path,
                                    installer::InstallerStage stage);
 
   // Returns true if this installation path is per user, otherwise returns
@@ -102,27 +106,26 @@ class InstallUtil {
   // by either --chrome-sxs or the executable path).
   static bool IsChromeSxSProcess();
 
-  // Populates |path| with the path to |file| in the sentinel directory. This is
-  // the application directory for user-level installs, and the default user
-  // data dir for system-level installs. Returns false on error.
-  static bool GetSentinelFilePath(const FilePath::CharType* file,
-                                  BrowserDistribution* dist,
-                                  FilePath* path);
+  // Returns true if the sentinel file exists (or the path cannot be obtained).
+  static bool IsFirstRunSentinelPresent();
+
+  // Populates |path| with EULA sentinel file path. Returns false on error.
+  static bool GetEULASentinelFilePath(base::FilePath* path);
 
   // Deletes the registry key at path key_path under the key given by root_key.
-  static bool DeleteRegistryKey(HKEY root_key, const string16& key_path);
+  static bool DeleteRegistryKey(HKEY root_key, const base::string16& key_path);
 
   // Deletes the registry value named value_name at path key_path under the key
   // given by reg_root.
-  static bool DeleteRegistryValue(HKEY reg_root, const string16& key_path,
-                                  const string16& value_name);
+  static bool DeleteRegistryValue(HKEY reg_root, const base::string16& key_path,
+                                  const base::string16& value_name);
 
   // An interface to a predicate function for use by DeleteRegistryKeyIf and
   // DeleteRegistryValueIf.
   class RegistryValuePredicate {
    public:
     virtual ~RegistryValuePredicate() { }
-    virtual bool Evaluate(const string16& value) const = 0;
+    virtual bool Evaluate(const base::string16& value) const = 0;
   };
 
   // The result of a conditional delete operation (i.e., DeleteFOOIf).
@@ -138,8 +141,8 @@ class InstallUtil {
   // the key's default value.
   static ConditionalDeleteResult DeleteRegistryKeyIf(
       HKEY root_key,
-      const string16& key_to_delete_path,
-      const string16& key_to_test_path,
+      const base::string16& key_to_delete_path,
+      const base::string16& key_to_test_path,
       const wchar_t* value_name,
       const RegistryValuePredicate& predicate);
 
@@ -155,11 +158,11 @@ class InstallUtil {
   // A predicate that performs a case-sensitive string comparison.
   class ValueEquals : public RegistryValuePredicate {
    public:
-    explicit ValueEquals(const string16& value_to_match)
+    explicit ValueEquals(const base::string16& value_to_match)
         : value_to_match_(value_to_match) { }
-    virtual bool Evaluate(const string16& value) const OVERRIDE;
+    virtual bool Evaluate(const base::string16& value) const OVERRIDE;
    protected:
-    string16 value_to_match_;
+    base::string16 value_to_match_;
    private:
     DISALLOW_COPY_AND_ASSIGN(ValueEquals);
   };
@@ -168,12 +171,12 @@ class InstallUtil {
   static int GetInstallReturnCode(installer::InstallStatus install_status);
 
   // Composes |program| and |arguments| into |command_line|.
-  static void MakeUninstallCommand(const string16& program,
-                                   const string16& arguments,
-                                   CommandLine* command_line);
+  static void MakeUninstallCommand(const base::string16& program,
+                                   const base::string16& arguments,
+                                   base::CommandLine* command_line);
 
   // Returns a string in the form YYYYMMDD of the current date.
-  static string16 GetCurrentDate();
+  static base::string16 GetCurrentDate();
 
   // A predicate that compares the program portion of a command line with a
   // given file path.  First, the file paths are compared directly.  If they do
@@ -181,18 +184,18 @@ class InstallUtil {
   // the same file.
   class ProgramCompare : public RegistryValuePredicate {
    public:
-    explicit ProgramCompare(const FilePath& path_to_match);
+    explicit ProgramCompare(const base::FilePath& path_to_match);
     virtual ~ProgramCompare();
-    virtual bool Evaluate(const string16& value) const OVERRIDE;
+    virtual bool Evaluate(const base::string16& value) const OVERRIDE;
+    bool EvaluatePath(const base::FilePath& path) const;
 
    protected:
-    static bool OpenForInfo(const FilePath& path,
-                            base::win::ScopedHandle* handle);
-    static bool GetInfo(const base::win::ScopedHandle& handle,
+    static bool OpenForInfo(const base::FilePath& path, base::File* file);
+    static bool GetInfo(const base::File& file,
                         BY_HANDLE_FILE_INFORMATION* info);
 
-    FilePath path_to_match_;
-    base::win::ScopedHandle file_handle_;
+    base::FilePath path_to_match_;
+    base::File file_;
     BY_HANDLE_FILE_INFORMATION file_info_;
 
    private:

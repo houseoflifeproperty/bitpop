@@ -15,9 +15,11 @@
 #include <evntrace.h>
 
 #include "base/logging.h"
-#include "base/string_piece.h"
+#include "base/strings/string_piece.h"
 
+namespace base {
 class FilePath;
+}
 
 namespace logging_win {
 
@@ -69,7 +71,7 @@ class LogFileDelegate {
 // parsed.  Although it is safe to call this from multiple threads, only one
 // file may be read at a time; other threads trying to read other log files will
 // be blocked waiting.
-void ReadLogFile(const FilePath& log_file, LogFileDelegate* delegate);
+void ReadLogFile(const base::FilePath& log_file, LogFileDelegate* delegate);
 
 }  // namespace logging_win
 

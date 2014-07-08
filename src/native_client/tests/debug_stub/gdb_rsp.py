@@ -46,6 +46,10 @@ class GdbRspConnection(object):
     for i in xrange(int(timeout_in_seconds / poll_time_in_seconds)):
       # On Mac OS X, we have to create a new socket FD for each retry.
       sock = socket.socket()
+      # Do not delay sending small packets.  This significantly speeds up
+      # debug stub test.  Since we send all replies as a whole, this doesn't
+      # create an excessive amount of small packets.
+      sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, True)
       try:
         sock.connect(addr)
       except socket.error:
@@ -58,13 +62,14 @@ class GdbRspConnection(object):
 
   def _GetReply(self):
     reply = ''
+    message_finished = re.compile('#[0-9a-fA-F]{2}')
     while True:
       data = self._socket.recv(1024)
       if len(data) == 0:
         raise AssertionError('EOF on socket reached with '
                              'incomplete reply message: %r' % reply)
       reply += data
-      if '#' in data:
+      if message_finished.match(reply[-3:]):
         break
     match = re.match('\+\$([^#]*)#([0-9a-fA-F]{2})$', reply)
     if match is None:
@@ -91,3 +96,6 @@ class GdbRspConnection(object):
   def RspInterrupt(self):
     self._socket.send('\x03')
     return self._GetReply()
+
+  def Close(self):
+    self._socket.close()

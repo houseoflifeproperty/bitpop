@@ -12,7 +12,8 @@ SyncMergeResult::SyncMergeResult(ModelType type)
     num_items_after_association_(0),
     num_items_added_(0),
     num_items_deleted_(0),
-    num_items_modified_(0) {
+    num_items_modified_(0),
+    pre_association_version_(0) {
 }
 
 SyncMergeResult::~SyncMergeResult() {
@@ -20,7 +21,7 @@ SyncMergeResult::~SyncMergeResult() {
 
 // Setters.
 void SyncMergeResult::set_error(SyncError error) {
-  DCHECK(!error.IsSet() || model_type_ == error.type());
+  DCHECK(!error.IsSet() || model_type_ == error.model_type());
   error_ = error;
 }
 
@@ -44,6 +45,10 @@ void SyncMergeResult::set_num_items_deleted(int num_items_deleted) {
 
 void SyncMergeResult::set_num_items_modified(int num_items_modified) {
   num_items_modified_ = num_items_modified;
+}
+
+void SyncMergeResult::set_pre_association_version(int64 version) {
+  pre_association_version_ = version;
 }
 
 ModelType SyncMergeResult::model_type() const {
@@ -72,6 +77,10 @@ int SyncMergeResult::num_items_deleted() const {
 
 int SyncMergeResult::num_items_modified() const {
   return num_items_modified_;
+}
+
+int64 SyncMergeResult::pre_association_version() const {
+  return pre_association_version_;
 }
 
 }  // namespace syncer

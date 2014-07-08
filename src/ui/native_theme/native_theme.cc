@@ -4,8 +4,7 @@
 
 #include "ui/native_theme/native_theme.h"
 
-#include "base/command_line.h"
-#include "ui/base/ui_base_switches.h"
+#include "ui/native_theme/native_theme_observer.h"
 
 namespace ui {
 
@@ -20,12 +19,17 @@ void NativeTheme::SetScrollbarColors(unsigned inactive_color,
 // NativeTheme::instance() is implemented in the platform specific source files,
 // such as native_theme_win.cc or native_theme_linux.cc
 
-// static
-bool NativeTheme::IsNewMenuStyleEnabled() {
-  static bool enable_new_menu_style =
-      CommandLine::ForCurrentProcess()->HasSwitch(
-          switches::kEnableNewMenuStyle);
-  return enable_new_menu_style;
+void NativeTheme::AddObserver(NativeThemeObserver* observer) {
+  native_theme_observers_.AddObserver(observer);
+}
+
+void NativeTheme::RemoveObserver(NativeThemeObserver* observer) {
+  native_theme_observers_.RemoveObserver(observer);
+}
+
+void NativeTheme::NotifyObservers() {
+  FOR_EACH_OBSERVER(NativeThemeObserver, native_theme_observers_,
+                    OnNativeThemeUpdated(this));
 }
 
 NativeTheme::NativeTheme()

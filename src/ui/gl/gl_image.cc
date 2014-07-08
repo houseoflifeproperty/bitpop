@@ -10,13 +10,8 @@ namespace gfx {
 
 GLImage::GLImage() {}
 
-bool GLImage::BindTexImage() {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-void GLImage::ReleaseTexImage() {
-  NOTIMPLEMENTED();
+void GLImage::SetReleaseAfterUse() {
+  // Default no-op implementation for workaround.
 }
 
 GLImage::~GLImage() {}

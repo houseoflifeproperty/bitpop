@@ -12,6 +12,8 @@ namespace views {
 
 SlideOutView::SlideOutView()
     : gesture_scroll_amount_(0.f) {
+  // If accelerated compositing is not available, this widget tracks the
+  // OnSlideOut event but does not render any visible changes.
   SetPaintToLayer(true);
   SetFillsBoundsOpaquely(false);
 }
@@ -48,6 +50,7 @@ void SlideOutView::OnGestureEvent(ui::GestureEvent* event) {
     layer()->SetTransform(transform);
     layer()->SetOpacity(
         1.f - std::min(fabsf(gesture_scroll_amount_) / width(), 1.f));
+
   } else if (event->type() == ui::ET_GESTURE_SCROLL_END) {
     const float kScrollRatioForClosingNotification = 0.5f;
     float scrolled_ratio = fabsf(gesture_scroll_amount_) / width();

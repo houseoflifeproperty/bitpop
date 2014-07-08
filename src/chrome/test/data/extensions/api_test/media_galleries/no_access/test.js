@@ -6,6 +6,7 @@ var mediaGalleries = chrome.mediaGalleries;
 
 var galleries;
 var testResults = [];
+var expectedFileSystems;
 
 function checkFinished() {
   if (testResults.length != galleries.length)
@@ -33,27 +34,44 @@ var mediaFileSystemsDirectoryErrorCallback = function(err) {
   checkFinished();
 };
 
-function testGalleries(expectedFileSystems) {
-  chrome.test.assertEq(expectedFileSystems, galleries.length);
-  if (expectedFileSystems == 0) {
-    chrome.test.succeed();
-    return;
-  }
-
-  for (var i = 0; i < galleries.length; i++) {
-    var dirReader = galleries[i].root.createReader();
-    dirReader.readEntries(mediaFileSystemsDirectoryEntryCallback,
-                          mediaFileSystemsDirectoryErrorCallback);
-  }
-}
-
 var mediaFileSystemsListCallback = function(results) {
   galleries = results;
 };
 
-chrome.test.runTests([
-  function mediaGalleriesNoAccess() {
-    mediaGalleries.getMediaFileSystems(
-        chrome.test.callbackPass(mediaFileSystemsListCallback));
-  },
-]);
+CreateDummyWindowToPreventSleep();
+
+chrome.test.getConfig(function(config) {
+  customArg = JSON.parse(config.customArg);
+  expectedFileSystems = customArg[0];
+
+  chrome.test.runTests([
+    function getMediaFileSystems() {
+      mediaGalleries.getMediaFileSystems(
+          chrome.test.callbackPass(mediaFileSystemsListCallback));
+    },
+    function testGalleries() {
+      chrome.test.assertEq(expectedFileSystems, galleries.length);
+      for (var i = 0; i < galleries.length; i++) {
+        var dirReader = galleries[i].root.createReader();
+        dirReader.readEntries(mediaFileSystemsDirectoryEntryCallback,
+                              mediaFileSystemsDirectoryErrorCallback);
+      }
+    },
+    function validFileCopyToShouldFail() {
+      runCopyToTest(validWEBPImageCase, false /* expect failure */);
+    },
+    function invalidFileCopyToShouldFail() {
+      runCopyToTest(invalidWEBPImageCase, false /* expect failure */);
+    },
+    function MediaScanWithoutPermission() {
+      var startListener = function(details) {
+        chrome.test.assertEq('error', details.type);
+        mediaGalleries.onScanProgress.removeListener(startListener);
+        chrome.test.succeed();
+      }
+      mediaGalleries.onScanProgress.addListener(startListener);
+
+      mediaGalleries.startMediaScan();
+    }
+  ]);
+})

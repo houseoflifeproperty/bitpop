@@ -9,15 +9,14 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
 #include "chrome/installer/util/app_commands.h"
 #include "chrome/installer/util/browser_distribution.h"
 #include "chrome/installer/util/channel_info.h"
 
-class Version;
-
 namespace base {
+class Version;
 namespace win {
 class RegKey;
 }
@@ -45,16 +44,16 @@ class ProductState {
   const ChannelInfo& channel() const { return channel_; }
 
   // Returns the path to the product's "setup.exe"; may be empty.
-  FilePath GetSetupPath() const;
+  base::FilePath GetSetupPath() const;
 
   // Returns the product's version.  This method may only be called on an
   // instance that has been initialized for an installed product.
-  const Version& version() const;
+  const base::Version& version() const;
 
   // Returns the current version of the product if a new version is awaiting
   // update; may be NULL.  Ownership of a returned value is not passed to the
   // caller.
-  const Version* old_version() const { return old_version_.get(); }
+  const base::Version* old_version() const { return old_version_.get(); }
 
   // Returns the brand code the product is currently installed with.
   const std::wstring& brand() const { return brand_; }
@@ -84,7 +83,9 @@ class ProductState {
   bool is_msi() const { return msi_; }
 
   // The command to uninstall the product; may be empty.
-  const CommandLine& uninstall_command() const { return uninstall_command_; }
+  const base::CommandLine& uninstall_command() const {
+    return uninstall_command_;
+  }
 
   // True if |uninstall_command| contains --multi-install.
   bool is_multi_install() const { return multi_install_; }
@@ -108,7 +109,7 @@ class ProductState {
   std::wstring brand_;
   std::wstring rename_cmd_;
   std::wstring oem_install_;
-  CommandLine uninstall_command_;
+  base::CommandLine uninstall_command_;
   AppCommands commands_;
   DWORD eula_accepted_;
   DWORD usagestats_;

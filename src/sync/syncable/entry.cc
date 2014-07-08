@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -7,9 +7,10 @@
 #include <iomanip>
 
 #include "base/json/string_escape.h"
-#include "sync/syncable/base_transaction.h"
+#include "base/strings/string_util.h"
 #include "sync/syncable/blob.h"
 #include "sync/syncable/directory.h"
+#include "sync/syncable/syncable_base_transaction.h"
 #include "sync/syncable/syncable_columns.h"
 
 using std::string;
@@ -41,12 +42,8 @@ Directory* Entry::dir() const {
   return basetrans_->directory();
 }
 
-Id Entry::ComputePrevIdFromServerPosition(const Id& parent_id) const {
-  return dir()->ComputePrevIdFromServerPosition(kernel_, parent_id);
-}
-
-DictionaryValue* Entry::ToValue(Cryptographer* cryptographer) const {
-  DictionaryValue* entry_info = new DictionaryValue();
+base::DictionaryValue* Entry::ToValue(Cryptographer* cryptographer) const {
+  base::DictionaryValue* entry_info = new base::DictionaryValue();
   entry_info->SetBoolean("good", good());
   if (good()) {
     entry_info->Set("kernel", kernel_->ToValue(cryptographer));
@@ -59,11 +56,6 @@ DictionaryValue* Entry::ToValue(Cryptographer* cryptographer) const {
   return entry_info;
 }
 
-const string& Entry::Get(StringField field) const {
-  DCHECK(kernel_);
-  return kernel_->ref(field);
-}
-
 ModelType Entry::GetServerModelType() const {
   ModelType specifics_type = kernel_->GetServerModelType();
   if (specifics_type != UNSPECIFIED)
@@ -73,26 +65,54 @@ ModelType Entry::GetServerModelType() const {
   // if the item is an uncommitted locally created item.
   // It's possible we'll need to relax these checks in the future; they're
   // just here for now as a safety measure.
-  DCHECK(Get(IS_UNSYNCED));
-  DCHECK_EQ(Get(SERVER_VERSION), 0);
-  DCHECK(Get(SERVER_IS_DEL));
-  // Note: can't enforce !Get(ID).ServerKnows() here because that could
+  DCHECK(GetIsUnsynced());
+  DCHECK_EQ(GetServerVersion(), 0);
+  DCHECK(GetServerIsDel());
+  // Note: can't enforce !GetId().ServerKnows() here because that could
   // actually happen if we hit AttemptReuniteLostCommitResponses.
   return UNSPECIFIED;
 }
 
 ModelType Entry::GetModelType() const {
-  ModelType specifics_type = GetModelTypeFromSpecifics(Get(SPECIFICS));
+  ModelType specifics_type = GetModelTypeFromSpecifics(GetSpecifics());
   if (specifics_type != UNSPECIFIED)
     return specifics_type;
   if (IsRoot())
     return TOP_LEVEL_FOLDER;
   // Loose check for server-created top-level folders that aren't
   // bound to a particular model type.
-  if (!Get(UNIQUE_SERVER_TAG).empty() && Get(IS_DIR))
+  if (!GetUniqueServerTag().empty() && GetIsDir())
     return TOP_LEVEL_FOLDER;
 
   return UNSPECIFIED;
+}
+
+Id Entry::GetPredecessorId() const {
+  return dir()->GetPredecessorId(kernel_);
+}
+
+Id Entry::GetSuccessorId() const {
+  return dir()->GetSuccessorId(kernel_);
+}
+
+Id Entry::GetFirstChildId() const {
+  return dir()->GetFirstChildId(basetrans_, kernel_);
+}
+
+void Entry::GetChildHandles(std::vector<int64>* result) const {
+  dir()->GetChildHandlesById(basetrans_, GetId(), result);
+}
+
+int Entry::GetTotalNodeCount() const {
+  return dir()->GetTotalNodeCount(basetrans_, kernel_);
+}
+
+int Entry::GetPositionIndex() const {
+  return dir()->GetPositionIndex(basetrans_, kernel_);
+}
+
+bool Entry::ShouldMaintainPosition() const {
+  return kernel_->ShouldMaintainPosition();
 }
 
 std::ostream& operator<<(std::ostream& s, const Blob& blob) {
@@ -127,17 +147,22 @@ std::ostream& operator<<(std::ostream& os, const Entry& entry) {
     os << g_metas_columns[i].name << ": " << field << ", ";
   }
   for ( ; i < PROTO_FIELDS_END; ++i) {
-    std::string escaped_str;
-    base::JsonDoubleQuote(
+    std::string escaped_str = base::EscapeBytesAsInvalidJSONString(
         kernel->ref(static_cast<ProtoField>(i)).SerializeAsString(),
-        false,
-        &escaped_str);
+        false);
     os << g_metas_columns[i].name << ": " << escaped_str << ", ";
   }
-  for ( ; i < ORDINAL_FIELDS_END; ++i) {
+  for ( ; i < UNIQUE_POSITION_FIELDS_END; ++i) {
     os << g_metas_columns[i].name << ": "
-       << kernel->ref(static_cast<OrdinalField>(i)).ToDebugString()
+       << kernel->ref(static_cast<UniquePositionField>(i)).ToDebugString()
        << ", ";
+  }
+  for ( ; i < ATTACHMENT_METADATA_FIELDS_END; ++i) {
+    std::string escaped_str = base::EscapeBytesAsInvalidJSONString(
+        kernel->ref(static_cast<AttachmentMetadataField>(i))
+            .SerializeAsString(),
+        false);
+    os << g_metas_columns[i].name << ": " << escaped_str << ", ";
   }
   os << "TempFlags: ";
   for ( ; i < BIT_TEMPS_END; ++i) {

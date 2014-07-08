@@ -21,19 +21,6 @@ from common import chromium_utils
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
-class FilterCapture(chromium_utils.RunCommandFilter):
-  """Captures the text and places it into an array."""
-  def __init__(self):
-    chromium_utils.RunCommandFilter.__init__(self)
-    self.text = []
-
-  def FilterLine(self, line):
-    self.text.append(line.rstrip())
-
-  def FilterDone(self, text):
-    self.text.append(text)
-
-
 def runScript(*args, **kwargs):
   env = os.environ.copy()
   env['PYTHONPATH'] = os.pathsep.join(sys.path)
@@ -47,9 +34,11 @@ class BuildrunnerTest(unittest.TestCase):
 
     self.runbuild = os.path.join(SCRIPT_DIR,
                                  '..', 'runbuild.py')
-    self.capture = FilterCapture()
-    self.master_dir = os.path.join(SCRIPT_DIR,
-                                   'data', 'runbuild_master')
+    self.capture = chromium_utils.FilterCapture()
+    self.master_dir = os.path.join(SCRIPT_DIR, 'data', 'runbuild_master')
+
+    self.failing_master_dir = os.path.join(SCRIPT_DIR, 'data',
+                                           'failing_master')
 
   def testSampleMaster(self):
     sample = '--master-dir=%s' % self.master_dir
@@ -84,6 +73,13 @@ class BuildrunnerTest(unittest.TestCase):
     self.assertEqual(ret, 0)
     self.assertTrue('buildrunner should run this' in self.capture.text)
     self.assertTrue('buildrunner should not run this' not in self.capture.text)
+
+  def testCatchDupSteps(self):
+    sample = '--master-dir=%s' % self.failing_master_dir
+    cmd = [sys.executable, self.runbuild, sample, 'runtests', '--list-steps']
+    ret = runScript(cmd, filter_obj=self.capture, print_cmd=False)
+
+    self.assertEqual(ret, 1)
 
 
 if __name__ == '__main__':

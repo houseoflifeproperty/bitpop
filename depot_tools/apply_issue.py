@@ -7,6 +7,7 @@
 """
 
 import getpass
+import json
 import logging
 import optparse
 import os
@@ -16,6 +17,7 @@ import urllib2
 
 import breakpad  # pylint: disable=W0611
 
+import annotated_gclient
 import checkout
 import fix_encoding
 import gclient_utils
@@ -39,6 +41,7 @@ class Unbuffered(object):
 
 
 def main():
+  # TODO(pgervais): This function is way too long. Split.
   sys.stdout = Unbuffered(sys.stdout)
   parser = optparse.OptionParser(description=sys.modules[__name__].__doc__)
   parser.add_option(
@@ -49,8 +52,17 @@ def main():
       help='Email address to access rietveld.  If not specified, anonymous '
            'access will be used.')
   parser.add_option(
-      '-w', '--password', default=None,
-      help='Password for email addressed.  Use - to read password from stdin.')
+      '-E', '--email-file',
+      help='File containing the email address to access rietveld. '
+           'If not specified, anonymous access will be used.')
+  parser.add_option(
+      '-w', '--password',
+      help='Password for email addressed. Use - to read password from stdin. '
+           'if -k is provided, this is the private key file password.')
+  parser.add_option(
+      '-k', '--private-key-file',
+      help='Path to file containing a private key in p12 format for OAuth2 '
+           'authentication. Use -w to provide the decrypting password, if any.')
   parser.add_option(
       '-i', '--issue', type='int', help='Rietveld issue number')
   parser.add_option(
@@ -65,7 +77,36 @@ def main():
       '--server',
       default='http://codereview.chromium.org',
       help='Rietveld server')
+  parser.add_option('--no-auth', action='store_true',
+                    help='Do not attempt authenticated requests.')
+  parser.add_option('--revision-mapping', default='{}',
+                    help='When running gclient, annotate the got_revisions '
+                         'using the revision-mapping.')
+  parser.add_option('-f', '--force', action='store_true',
+                    help='Really run apply_issue, even if .update.flag '
+                         'is detected.')
+  parser.add_option('-b', '--base_ref', help='DEPRECATED do not use.')
+  parser.add_option('--whitelist', action='append', default=[],
+                    help='Patch only specified file(s).')
+  parser.add_option('--blacklist', action='append', default=[],
+                    help='Don\'t patch specified file(s).')
+  parser.add_option('-d', '--ignore_deps', action='store_true',
+                    help='Don\'t run gclient sync on DEPS changes.')
   options, args = parser.parse_args()
+
+  if options.whitelist and options.blacklist:
+    parser.error('Cannot specify both --whitelist and --blacklist')
+
+  if options.password and options.private_key_file:
+    parser.error('-k and -w options are incompatible')
+  if options.email and options.email_file:
+    parser.error('-e and -E options are incompatible')
+
+  if (os.path.isfile(os.path.join(os.getcwd(), 'update.flag'))
+      and not options.force):
+    print 'update.flag file found: bot_update has run and checkout is already '
+    print 'in a consistent state. No actions will be performed in this step.'
+    return 0
   logging.basicConfig(
       format='%(levelname)5s %(module)11s(%(lineno)4d): %(message)s',
       level=[logging.WARNING, logging.INFO, logging.DEBUG][
@@ -78,46 +119,63 @@ def main():
   if not options.server:
     parser.error('Require a valid server')
 
+  options.revision_mapping = json.loads(options.revision_mapping)
+
   if options.password == '-':
     print('Reading password')
     options.password = sys.stdin.readline().strip()
 
+  # read email if needed
+  if options.email_file:
+    if not os.path.exists(options.email_file):
+      parser.error('file does not exist: %s' % options.email_file)
+    with open(options.email_file, 'rb') as f:
+      options.email = f.read().strip()
+
   print('Connecting to %s' % options.server)
-  # Always try un-authenticated first.
-  # TODO(maruel): Use OAuth2 properly so we don't hit rate-limiting on login
-  # attempts.
-  # Bad except clauses order (HTTPError is an ancestor class of
-  # ClientLoginError)
-  # pylint: disable=E0701
-  obj = rietveld.Rietveld(options.server, '', None)
-  properties = None
-  try:
+  # Always try un-authenticated first, except for OAuth2
+  if options.private_key_file:
+    # OAuth2 authentication
+    obj = rietveld.JwtOAuth2Rietveld(options.server,
+                                     options.email,
+                                     options.private_key_file,
+                                     private_key_password=options.password)
     properties = obj.get_issue_properties(options.issue, False)
-  except urllib2.HTTPError, e:
-    if e.getcode() != 302:
-      raise
-    # TODO(maruel): A few 'Invalid username or password.' are printed first, we
-    # should get rid of those.
-  except rietveld.upload.ClientLoginError, e:
-    # Fine, we'll do proper authentication.
-    pass
-  if properties is None:
-    if options.email is not None:
-      obj = rietveld.Rietveld(options.server, options.email, options.password)
-      try:
-        properties = obj.get_issue_properties(options.issue, False)
-      except rietveld.upload.ClientLoginError, e:
-        if sys.stdout.closed:
+  else:
+    obj = rietveld.Rietveld(options.server, '', None)
+    properties = None
+    # Bad except clauses order (HTTPError is an ancestor class of
+    # ClientLoginError)
+    # pylint: disable=E0701
+    try:
+      properties = obj.get_issue_properties(options.issue, False)
+    except urllib2.HTTPError as e:
+      if e.getcode() != 302:
+        raise
+      if options.no_auth:
+        exit('FAIL: Login detected -- is issue private?')
+      # TODO(maruel): A few 'Invalid username or password.' are printed first,
+      # we should get rid of those.
+    except rietveld.upload.ClientLoginError, e:
+      # Fine, we'll do proper authentication.
+      pass
+    if properties is None:
+      if options.email is not None:
+        obj = rietveld.Rietveld(options.server, options.email, options.password)
+        try:
+          properties = obj.get_issue_properties(options.issue, False)
+        except rietveld.upload.ClientLoginError, e:
+          if sys.stdout.closed:
+            print('Accessing the issue requires proper credentials.')
+            return 1
+      else:
+        print('Accessing the issue requires login.')
+        obj = rietveld.Rietveld(options.server, None, None)
+        try:
+          properties = obj.get_issue_properties(options.issue, False)
+        except rietveld.upload.ClientLoginError, e:
           print('Accessing the issue requires proper credentials.')
           return 1
-    else:
-      print('Accessing the issue requires login.')
-      obj = rietveld.Rietveld(options.server, None, None)
-      try:
-        properties = obj.get_issue_properties(options.issue, False)
-      except rietveld.upload.ClientLoginError, e:
-        print('Accessing the issue requires proper credentials.')
-        return 1
 
   if not options.patchset:
     options.patchset = properties['patchsets'][-1]
@@ -133,6 +191,12 @@ def main():
             options.issue, options.patchset,
             options.server, options.issue)
     return 1
+  if options.whitelist:
+    patchset.patches = [patch for patch in patchset.patches
+                        if patch.filename in options.whitelist]
+  if options.blacklist:
+    patchset.patches = [patch for patch in patchset.patches
+                        if patch.filename not in options.blacklist]
   for patch in patchset.patches:
     print(patch)
   full_dir = os.path.abspath(options.root_dir)
@@ -140,7 +204,7 @@ def main():
   if scm_type == 'svn':
     scm_obj = checkout.SvnCheckout(full_dir, None, None, None, None)
   elif scm_type == 'git':
-    scm_obj = checkout.GitCheckoutBase(full_dir, None, None)
+    scm_obj = checkout.GitCheckout(full_dir, None, None, None, None)
   elif scm_type == None:
     scm_obj = checkout.RawCheckout(full_dir, None, None)
   else:
@@ -164,7 +228,8 @@ def main():
     print('Checkout path=%s' % scm_obj.project_path)
     return 1
 
-  if 'DEPS' in map(os.path.basename, patchset.filenames):
+  if ('DEPS' in map(os.path.basename, patchset.filenames)
+      and not options.ignore_deps):
     gclient_root = gclient_utils.FindGclientRoot(full_dir)
     if gclient_root and scm_type:
       print(
@@ -174,9 +239,24 @@ def main():
       gclient_path = os.path.join(BASE_DIR, 'gclient')
       if sys.platform == 'win32':
         gclient_path += '.bat'
-      return subprocess.call(
-          [gclient_path, 'sync', '--revision', base_rev, '--nohooks'],
-          cwd=gclient_root)
+      with annotated_gclient.temp_filename(suffix='gclient') as f:
+        cmd = [
+            gclient_path, 'sync',
+            '--revision', base_rev,
+            '--nohooks',
+            '--delete_unversioned_trees',
+            ]
+        if options.revision_mapping:
+          cmd.extend(['--output-json', f])
+
+        retcode = subprocess.call(cmd, cwd=gclient_root)
+
+        if retcode == 0 and options.revision_mapping:
+          revisions = annotated_gclient.parse_got_revision(
+              f, options.revision_mapping)
+          annotated_gclient.emit_buildprops(revisions)
+
+        return retcode
   return 0
 
 

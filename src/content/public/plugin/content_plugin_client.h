@@ -5,7 +5,7 @@
 #ifndef CONTENT_PUBLIC_PLUGIN_CONTENT_PLUGIN_CLIENT_H_
 #define CONTENT_PUBLIC_PLUGIN_CONTENT_PLUGIN_CLIENT_H_
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "content/public/common/content_client.h"
 
 namespace content {
@@ -20,7 +20,7 @@ class CONTENT_EXPORT ContentPluginClient {
   virtual void PreSandboxInitialization() {}
 
   // Notifies that a plugin process has started.
-  virtual void PluginProcessStarted(const string16& plugin_name) {}
+  virtual void PluginProcessStarted(const base::string16& plugin_name) {}
 };
 
 }  // namespace content

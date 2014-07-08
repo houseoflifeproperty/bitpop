@@ -10,69 +10,96 @@
 #ifndef SkWriter32_DEFINED
 #define SkWriter32_DEFINED
 
-#include "SkTypes.h"
-
-#include "SkScalar.h"
+#include "SkData.h"
+#include "SkMatrix.h"
 #include "SkPath.h"
 #include "SkPoint.h"
-#include "SkRect.h"
 #include "SkRRect.h"
-#include "SkMatrix.h"
+#include "SkRect.h"
 #include "SkRegion.h"
-
-class SkStream;
-class SkWStream;
+#include "SkScalar.h"
+#include "SkStream.h"
+#include "SkTemplates.h"
+#include "SkTypes.h"
 
 class SkWriter32 : SkNoncopyable {
 public:
     /**
      *  The caller can specify an initial block of storage, which the caller manages.
-     *  SkWriter32 will not attempt to free this in its destructor. It is up to the
-     *  implementation to decide if, and how much, of the storage to utilize, and it
-     *  is possible that it may be ignored entirely.
+     *
+     *  SkWriter32 will try to back reserve and write calls with this external storage until the
+     *  first time an allocation doesn't fit.  From then it will use dynamically allocated storage.
+     *  This used to be optional behavior, but pipe now relies on it.
      */
-    SkWriter32(size_t minSize, void* initialStorage, size_t storageSize);
-
-    SkWriter32(size_t minSize)
-        : fMinSize(minSize),
-          fSize(0),
-          fSingleBlock(NULL),
-          fSingleBlockSize(0),
-          fWrittenBeforeLastBlock(0),
-          fHead(NULL),
-          fTail(NULL),
-          fHeadIsExternalStorage(false) {}
-
-    ~SkWriter32();
-
-    /**
-     *  Returns the single block backing the writer, or NULL if the memory is
-     *  to be dynamically allocated.
-     */
-    void* getSingleBlock() const { return fSingleBlock; }
+    SkWriter32(void* external = NULL, size_t externalBytes = 0) {
+        this->reset(external, externalBytes);
+    }
 
     // return the current offset (will always be a multiple of 4)
-    uint32_t bytesWritten() const { return fSize; }
-    // DEPRECATED: use byetsWritten instead
-    uint32_t  size() const { return this->bytesWritten(); }
+    size_t bytesWritten() const { return fUsed; }
 
-    void      reset();
-    uint32_t* reserve(size_t size); // size MUST be multiple of 4
+    SK_ATTR_DEPRECATED("use bytesWritten")
+    size_t size() const { return this->bytesWritten(); }
+
+    void reset(void* external = NULL, size_t externalBytes = 0) {
+        SkASSERT(SkIsAlign4((uintptr_t)external));
+        SkASSERT(SkIsAlign4(externalBytes));
+
+        fSnapshot.reset(NULL);
+        fData = (uint8_t*)external;
+        fCapacity = externalBytes;
+        fUsed = 0;
+        fExternal = external;
+    }
+
+    // Returns the current buffer.
+    // The pointer may be invalidated by any future write calls.
+    const uint32_t* contiguousArray() const {
+        return (uint32_t*)fData;
+    }
+
+    // size MUST be multiple of 4
+    uint32_t* reserve(size_t size) {
+        SkASSERT(SkAlign4(size) == size);
+        size_t offset = fUsed;
+        size_t totalRequired = fUsed + size;
+        if (totalRequired > fCapacity) {
+            this->growToAtLeast(totalRequired);
+        }
+        fUsed = totalRequired;
+        return (uint32_t*)(fData + offset);
+    }
 
     /**
-     *  Specify the single block to back the writer, rathern than dynamically
-     *  allocating the memory. If block == NULL, then the writer reverts to
-     *  dynamic allocation (and resets).
+     *  Read a T record at offset, which must be a multiple of 4. Only legal if the record
+     *  was written atomically using the write methods below.
      */
-    void reset(void* block, size_t size);
+    template<typename T>
+    const T& readTAt(size_t offset) const {
+        SkASSERT(SkAlign4(offset) == offset);
+        SkASSERT(offset < fUsed);
+        return *(T*)(fData + offset);
+    }
+
+    /**
+     *  Overwrite a T record at offset, which must be a multiple of 4. Only legal if the record
+     *  was written atomically using the write methods below.
+     */
+    template<typename T>
+    void overwriteTAt(size_t offset, const T& value) {
+        SkASSERT(SkAlign4(offset) == offset);
+        SkASSERT(offset < fUsed);
+        SkASSERT(fSnapshot.get() == NULL);
+        *(T*)(fData + offset) = value;
+    }
 
     bool writeBool(bool value) {
-        this->writeInt(value);
+        this->write32(value);
         return value;
     }
 
     void writeInt(int32_t value) {
-        *(int32_t*)this->reserve(sizeof(value)) = value;
+        this->write32(value);
     }
 
     void write8(int32_t value) {
@@ -87,15 +114,8 @@ public:
         *(int32_t*)this->reserve(sizeof(value)) = value;
     }
 
-    void writePtr(void* ptr) {
-        // Since we "know" that we're always 4-byte aligned, we can tell the
-        // compiler that here, by assigning to an int32 ptr.
-        int32_t* addr = (int32_t*)this->reserve(sizeof(void*));
-        if (4 == sizeof(void*)) {
-            *(void**)addr = ptr;
-        } else {
-            memcpy(addr, &ptr, sizeof(void*));
-        }
+    void writePtr(void* value) {
+        *(void**)this->reserve(sizeof(value)) = value;
     }
 
     void writeScalar(SkScalar value) {
@@ -108,6 +128,10 @@ public:
 
     void writeRect(const SkRect& rect) {
         *(SkRect*)this->reserve(sizeof(rect)) = rect;
+    }
+
+    void writeIRect(const SkIRect& rect) {
+        *(SkIRect*)this->reserve(sizeof(rect)) = rect;
     }
 
     void writeRRect(const SkRRect& rrect) {
@@ -143,9 +167,6 @@ public:
      */
     void write(const void* values, size_t size) {
         SkASSERT(SkAlign4(size) == size);
-        // if we could query how much is avail in the current block, we might
-        // copy that much, and then alloc the rest. That would reduce the waste
-        // in the current block
         memcpy(this->reserve(size), values, size);
     }
 
@@ -153,18 +174,30 @@ public:
      *  Reserve size bytes. Does not need to be 4 byte aligned. The remaining space (if any) will be
      *  filled in with zeroes.
      */
-    uint32_t* reservePad(size_t size);
+    uint32_t* reservePad(size_t size) {
+        size_t alignedSize = SkAlign4(size);
+        uint32_t* p = this->reserve(alignedSize);
+        if (alignedSize != size) {
+            SkASSERT(alignedSize >= 4);
+            p[alignedSize / 4 - 1] = 0;
+        }
+        return p;
+    }
 
     /**
      *  Write size bytes from src, and pad to 4 byte alignment with zeroes.
      */
-    void writePad(const void* src, size_t size);
+    void writePad(const void* src, size_t size) {
+        memcpy(this->reservePad(size), src, size);
+    }
 
     /**
      *  Writes a string to the writer, which can be retrieved with
      *  SkReader32::readString().
      *  The length can be specified, or if -1 is passed, it will be computed by
-     *  calling strlen(). The length must be < 0xFFFF
+     *  calling strlen(). The length must be < max size_t.
+     *
+     *  If you write NULL, it will be read as "".
      */
     void writeString(const char* str, size_t len = (size_t)-1);
 
@@ -175,46 +208,52 @@ public:
      */
     static size_t WriteStringSize(const char* str, size_t len = (size_t)-1);
 
-    // return the address of the 4byte int at the specified offset (which must
-    // be a multiple of 4. This does not allocate any new space, so the returned
-    // address is only valid for 1 int.
-    uint32_t* peek32(size_t offset);
-
     /**
      *  Move the cursor back to offset bytes from the beginning.
-     *  This has the same restrictions as peek32: offset must be <= size() and
-     *  offset must be a multiple of 4.
+     *  offset must be a multiple of 4 no greater than size().
      */
-    void rewindToOffset(size_t offset);
+    void rewindToOffset(size_t offset) {
+        SkASSERT(SkAlign4(offset) == offset);
+        SkASSERT(offset <= bytesWritten());
+        fUsed = offset;
+    }
 
     // copy into a single buffer (allocated by caller). Must be at least size()
-    void flatten(void* dst) const;
+    void flatten(void* dst) const {
+        memcpy(dst, fData, fUsed);
+    }
+
+    bool writeToStream(SkWStream* stream) const {
+        return stream->write(fData, fUsed);
+    }
 
     // read from the stream, and write up to length bytes. Return the actual
     // number of bytes written.
-    size_t readFromStream(SkStream*, size_t length);
+    size_t readFromStream(SkStream* stream, size_t length) {
+        return stream->read(this->reservePad(length), length);
+    }
 
-    bool writeToStream(SkWStream*);
-
+    /**
+     *  Captures a snapshot of the data as it is right now, and return it.
+     *  Multiple calls without intervening writes may return the same SkData,
+     *  but this is not guaranteed.
+     *  Future appends will not affect the returned buffer.
+     *  It is illegal to call overwriteTAt after this without an intervening
+     *  append. It may cause the snapshot buffer to be corrupted.
+     *  Callers must unref the returned SkData.
+     *  This is not thread safe, it should only be called on the writing thread,
+     *  the result however can be shared across threads.
+     */
+    SkData* snapshotAsData() const;
 private:
-    size_t      fMinSize;
-    uint32_t    fSize;
+    void growToAtLeast(size_t size);
 
-    char*       fSingleBlock;
-    uint32_t    fSingleBlockSize;
-
-    // sum of bytes written in all blocks *before* fTail
-    uint32_t    fWrittenBeforeLastBlock;
-
-    struct Block;
-    Block*  fHead;
-    Block*  fTail;
-
-    bool fHeadIsExternalStorage;
-
-    Block* newBlock(size_t bytes);
-
-    SkDEBUGCODE(void validate() const;)
+    uint8_t* fData;                    // Points to either fInternal or fExternal.
+    size_t fCapacity;                  // Number of bytes we can write to fData.
+    size_t fUsed;                      // Number of bytes written.
+    void* fExternal;                   // Unmanaged memory block.
+    SkAutoTMalloc<uint8_t> fInternal;  // Managed memory block.
+    SkAutoTUnref<SkData> fSnapshot;    // Holds the result of last asData.
 };
 
 /**
@@ -225,7 +264,9 @@ private:
  */
 template <size_t SIZE> class SkSWriter32 : public SkWriter32 {
 public:
-    SkSWriter32(size_t minSize) : SkWriter32(minSize, fData.fStorage, SIZE) {}
+    SkSWriter32() { this->reset(); }
+
+    void reset() {this->INHERITED::reset(fData.fStorage, SIZE); }
 
 private:
     union {
@@ -233,6 +274,8 @@ private:
         double  fDoubleAlignment;
         char    fStorage[SIZE];
     } fData;
+
+    typedef SkWriter32 INHERITED;
 };
 
 #endif

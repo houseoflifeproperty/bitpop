@@ -11,6 +11,8 @@
 #include "chrome/browser/chromeos/login/login_web_dialog.h"
 #include "ui/gfx/native_widget_types.h"
 
+class Profile;
+
 namespace chromeos {
 
 // Provides help content during OOBE / login.
@@ -34,6 +36,8 @@ class HelpAppLauncher : public base::RefCountedThreadSafe<HelpAppLauncher> {
     HELP_HOSTED_ACCOUNT = 1054228,
     // Showed as "Learn more" about enterprise enrolled devices.
     HELP_ENTERPRISE = 2535613,
+    // Shown at reset screen as "Learn more" about powerwash/rollback options.
+    HELP_POWERWASH = 183084,
   };
 
   // Parent window is used to show dialog.
@@ -49,7 +53,7 @@ class HelpAppLauncher : public base::RefCountedThreadSafe<HelpAppLauncher> {
   friend class base::RefCountedThreadSafe<HelpAppLauncher>;
 
   // Shows help topic dialog for specified GURL.
-  void ShowHelpTopicDialog(const GURL& topic_url);
+  void ShowHelpTopicDialog(Profile* profile, const GURL& topic_url);
 
   // Parent window which is passed to help dialog.
   gfx::NativeWindow parent_window_;

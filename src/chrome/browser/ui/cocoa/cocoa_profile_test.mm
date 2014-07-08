@@ -4,51 +4,41 @@
 
 #include "chrome/browser/ui/cocoa/cocoa_profile_test.h"
 
+#include "base/run_loop.h"
 #include "chrome/browser/autocomplete/autocomplete_classifier_factory.h"
+#include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/search_engines/template_url_service_factory.h"
+#include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
+#include "chrome/browser/ui/host_desktop.h"
 #include "chrome/browser/ui/tabs/tab_strip_model.h"
 #include "chrome/test/base/testing_browser_process.h"
-#include "content/public/test/test_browser_thread.h"
-
-using content::BrowserThread;
+#include "chrome/test/base/testing_profile.h"
+#include "components/bookmarks/core/test/bookmark_test_helpers.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 
 CocoaProfileTest::CocoaProfileTest()
-    : ui_thread_(BrowserThread::UI, &message_loop_),
-      profile_manager_(static_cast<TestingBrowserProcess*>(g_browser_process)),
+    : profile_manager_(TestingBrowserProcess::GetGlobal()),
       profile_(NULL),
-      file_user_blocking_thread_(new content::TestBrowserThread(
-          BrowserThread::FILE_USER_BLOCKING, &message_loop_)),
-      file_thread_(new content::TestBrowserThread(BrowserThread::FILE,
-                                                  &message_loop_)),
-      io_thread_(new content::TestBrowserThread(BrowserThread::IO,
-                                                &message_loop_)) {
-}
+      thread_bundle_(new content::TestBrowserThreadBundle) {}
 
 CocoaProfileTest::~CocoaProfileTest() {
   // Delete the testing profile on the UI thread. But first release the
   // browser, since it may trigger accesses to the profile upon destruction.
   browser_.reset();
 
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
+
   // Some services created on the TestingProfile require deletion on the UI
   // thread. If the scoper in TestingBrowserProcess, owned by ChromeTestSuite,
   // were to delete the ProfileManager, the UI thread would at that point no
   // longer exist.
-  static_cast<TestingBrowserProcess*>(g_browser_process)->SetProfileManager(
-      NULL);
+  TestingBrowserProcess::GetGlobal()->SetProfileManager(NULL);
 
   // Make sure any pending tasks run before we destroy other threads.
-  message_loop_.RunUntilIdle();
-
-  // Drop any new tasks for the IO and FILE threads.
-  io_thread_.reset();
-  file_user_blocking_thread_.reset();
-  file_thread_.reset();
-
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 void CocoaProfileTest::SetUp() {
@@ -59,9 +49,6 @@ void CocoaProfileTest::SetUp() {
   profile_ = profile_manager_.CreateTestingProfile("default");
   ASSERT_TRUE(profile_);
 
-  profile_->CreateBookmarkModel(true);
-  profile_->BlockUntilBookmarkModelLoaded();
-
   // TODO(shess): These are needed in case someone creates a browser
   // window off of browser_.  pkasting indicates that other
   // platforms use a stub |BrowserWindow| and thus don't need to do
@@ -71,6 +58,10 @@ void CocoaProfileTest::SetUp() {
       profile_, &TemplateURLServiceFactory::BuildInstanceFor);
   AutocompleteClassifierFactory::GetInstance()->SetTestingFactoryAndUse(
       profile_, &AutocompleteClassifierFactory::BuildInstanceFor);
+
+  profile_->CreateBookmarkModel(true);
+  test::WaitForBookmarkModelToLoad(
+      BookmarkModelFactory::GetForProfile(profile_));
 
   browser_.reset(CreateBrowser());
   ASSERT_TRUE(browser_.get());
@@ -93,5 +84,6 @@ void CocoaProfileTest::CloseBrowserWindow() {
 }
 
 Browser* CocoaProfileTest::CreateBrowser() {
-  return new Browser(Browser::CreateParams(profile()));
+  return new Browser(Browser::CreateParams(profile(),
+                                           chrome::GetActiveDesktop()));
 }

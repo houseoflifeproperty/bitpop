@@ -5,21 +5,16 @@
 #include "chrome/browser/extensions/image_loader_factory.h"
 
 #include "chrome/browser/extensions/image_loader.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
 // static
-ImageLoader* ImageLoaderFactory::GetForProfile(Profile* profile) {
+ImageLoader* ImageLoaderFactory::GetForBrowserContext(
+    content::BrowserContext* context) {
   return static_cast<ImageLoader*>(
-      GetInstance()->GetServiceForProfile(profile, true));
-}
-
-// static
-void ImageLoaderFactory::ResetForProfile(Profile* profile) {
-  ImageLoaderFactory* factory = GetInstance();
-  factory->ProfileShutdown(profile);
-  factory->ProfileDestroyed(profile);
+      GetInstance()->GetServiceForBrowserContext(context, true));
 }
 
 ImageLoaderFactory* ImageLoaderFactory::GetInstance() {
@@ -27,24 +22,26 @@ ImageLoaderFactory* ImageLoaderFactory::GetInstance() {
 }
 
 ImageLoaderFactory::ImageLoaderFactory()
-    : ProfileKeyedServiceFactory("ImageLoader",
-                                 ProfileDependencyManager::GetInstance()) {
+    : BrowserContextKeyedServiceFactory(
+        "ImageLoader",
+        BrowserContextDependencyManager::GetInstance()) {
 }
 
 ImageLoaderFactory::~ImageLoaderFactory() {
 }
 
-ProfileKeyedService* ImageLoaderFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* ImageLoaderFactory::BuildServiceInstanceFor(
+    content::BrowserContext* context) const {
   return new ImageLoader;
 }
 
-bool ImageLoaderFactory::ServiceIsCreatedWithProfile() const {
+bool ImageLoaderFactory::ServiceIsCreatedWithBrowserContext() const {
   return false;
 }
 
-bool ImageLoaderFactory::ServiceRedirectedInIncognito() const {
-  return true;
+content::BrowserContext* ImageLoaderFactory::GetBrowserContextToUse(
+    content::BrowserContext* context) const {
+  return ExtensionsBrowserClient::Get()->GetOriginalContext(context);
 }
 
 }  // namespace extensions

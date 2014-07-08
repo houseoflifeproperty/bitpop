@@ -7,12 +7,13 @@
 #include "base/json/json_reader.h"
 #include "base/json/json_writer.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/escape.h"
 #include "net/base/io_buffer.h"
 #include "net/base/load_flags.h"
+#include "net/base/request_priority.h"
 #include "net/base/upload_bytes_element_reader.h"
 #include "net/base/upload_data_stream.h"
 #include "net/url_request/url_request.h"
@@ -25,7 +26,6 @@ const char kCloudPrintJsonName[] = "cloud_print";
 const char kEnabledOptionName[] = "enabled";
 
 const char kEmailOptionName[] = "email";
-const char kPasswordOptionName[] = "password";
 const char kProxyIdOptionName[] = "proxy_id";
 const char kRobotEmailOptionName[] = "robot_email";
 const char kRobotTokenOptionName[] = "robot_refresh_token";
@@ -38,20 +38,21 @@ const int64 kRequestTimeoutMs = 10 * 1000;
 
 class ServiceStateURLRequestDelegate : public net::URLRequest::Delegate {
  public:
-  virtual void OnResponseStarted(net::URLRequest* request) {
+  virtual void OnResponseStarted(net::URLRequest* request) OVERRIDE {
     if (request->GetResponseCode() == 200) {
       Read(request);
       if (request->status().is_io_pending())
         return;
     }
     request->Cancel();
-  };
+  }
 
-  virtual void OnReadCompleted(net::URLRequest* request, int bytes_read) {
+  virtual void OnReadCompleted(net::URLRequest* request,
+                               int bytes_read) OVERRIDE {
     Read(request);
     if (!request->status().is_io_pending())
-      MessageLoop::current()->Quit();
-  };
+      base::MessageLoop::current()->Quit();
+  }
 
   const std::string& data() const {
     return data_;
@@ -63,7 +64,7 @@ class ServiceStateURLRequestDelegate : public net::URLRequest::Delegate {
     const int kBufSize = 100000;
     scoped_refptr<net::IOBuffer> buf(new net::IOBuffer(kBufSize));
     int num_bytes = 0;
-    while (request->Read(buf, kBufSize, &num_bytes)) {
+    while (request->Read(buf.get(), kBufSize, &num_bytes)) {
       data_.append(buf->data(), buf->data() + num_bytes);
     }
   }
@@ -134,9 +135,9 @@ bool ServiceState::IsValid() const {
 }
 
 std::string ServiceState::ToString() {
-  scoped_ptr<base::DictionaryValue> services(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> services(new base::DictionaryValue());
 
-  scoped_ptr<base::DictionaryValue> cloud_print(new DictionaryValue());
+  scoped_ptr<base::DictionaryValue> cloud_print(new base::DictionaryValue());
   cloud_print->SetBoolean(kEnabledOptionName, true);
 
   SetNotEmptyJsonString(cloud_print.get(), kEmailOptionName, email_);
@@ -159,7 +160,7 @@ std::string ServiceState::ToString() {
 std::string ServiceState::LoginToGoogle(const std::string& service,
                                         const std::string& email,
                                         const std::string& password) {
-  MessageLoop loop(MessageLoop::TYPE_IO);
+  base::MessageLoopForIO loop;
 
   net::URLRequestContextBuilder builder;
   scoped_ptr<net::URLRequestContext> context(builder.Build());
@@ -174,11 +175,12 @@ std::string ServiceState::LoginToGoogle(const std::string& service,
   post_body += "&source=" + net::EscapeUrlEncodedData("CP-Service", true);
   post_body += "&service=" + net::EscapeUrlEncodedData(service, true);
 
-  net::URLRequest request(url, &fetcher_delegate, context.get());
+  net::URLRequest request(
+      url, net::DEFAULT_PRIORITY, &fetcher_delegate, context.get());
   int load_flags = request.load_flags();
   load_flags = load_flags | net::LOAD_DO_NOT_SEND_COOKIES;
   load_flags = load_flags | net::LOAD_DO_NOT_SAVE_COOKIES;
-  request.set_load_flags(load_flags);
+  request.SetLoadFlags(load_flags);
 
   scoped_ptr<net::UploadElementReader> reader(
       net::UploadOwnedBytesElementReader::CreateWithString(post_body));
@@ -189,17 +191,17 @@ std::string ServiceState::LoginToGoogle(const std::string& service,
   request.set_method("POST");
   request.Start();
 
-  MessageLoop::current()->PostDelayedTask(FROM_HERE,
-      MessageLoop::QuitClosure(),
+  base::MessageLoop::current()->PostDelayedTask(
+      FROM_HERE,
+      base::MessageLoop::QuitClosure(),
       base::TimeDelta::FromMilliseconds(kRequestTimeoutMs));
 
-  MessageLoop::current()->Run();
+  base::MessageLoop::current()->Run();
 
   const char kAuthStart[] = "Auth=";
   std::vector<std::string> lines;
   Tokenize(fetcher_delegate.data(), "\r\n", &lines);
   for (size_t i = 0; i < lines.size(); ++i) {
-    std::vector<std::string> tokens;
     if (StartsWithASCII(lines[i], kAuthStart, false))
       return lines[i].substr(arraysize(kAuthStart) - 1);
   }

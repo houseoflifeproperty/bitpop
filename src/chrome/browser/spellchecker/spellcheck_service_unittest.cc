@@ -5,45 +5,33 @@
 #include <vector>
 
 #include "base/files/scoped_temp_dir.h"
+#include "base/message_loop/message_loop.h"
 #include "chrome/browser/spellchecker/spellcheck_custom_dictionary.h"
 #include "chrome/browser/spellchecker/spellcheck_factory.h"
 #include "chrome/browser/spellchecker/spellcheck_service.h"
 #include "chrome/common/spellcheck_common.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/test/test_browser_thread.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
-using content::BrowserThread;
 using chrome::spellcheck_common::WordList;
 
-static ProfileKeyedService* BuildSpellcheckService(Profile* profile) {
-  return new SpellcheckService(profile);
+static KeyedService* BuildSpellcheckService(content::BrowserContext* profile) {
+  return new SpellcheckService(static_cast<Profile*>(profile));
 }
 
 class SpellcheckServiceTest : public testing::Test {
  protected:
-  SpellcheckServiceTest()
-      : ui_thread_(BrowserThread::UI, &message_loop_),
-        file_thread_(BrowserThread::FILE, &message_loop_),
-        profile_(new TestingProfile()) {
-  }
-
-  void SetUp() OVERRIDE {
+  virtual void SetUp() OVERRIDE {
     // Use SetTestingFactoryAndUse to force creation and initialization.
     SpellcheckServiceFactory::GetInstance()->SetTestingFactoryAndUse(
-        profile_.get(), &BuildSpellcheckService);
+        &profile_, &BuildSpellcheckService);
   }
 
-  void TearDown() OVERRIDE {
-    MessageLoop::current()->RunUntilIdle();
-  }
-
-  MessageLoop message_loop_;
-  content::TestBrowserThread ui_thread_;
-  content::TestBrowserThread file_thread_;
-
-  scoped_ptr<TestingProfile> profile_;
+ private:
+  content::TestBrowserThreadBundle thread_bundle_;
+  TestingProfile profile_;
 };
 
 TEST_F(SpellcheckServiceTest, GetSpellCheckLanguages1) {

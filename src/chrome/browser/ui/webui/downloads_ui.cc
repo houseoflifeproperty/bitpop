@@ -6,22 +6,25 @@
 
 #include "base/memory/ref_counted_memory.h"
 #include "base/memory/singleton.h"
-#include "base/string_piece.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_piece.h"
 #include "base/threading/thread.h"
 #include "base/values.h"
 #include "chrome/browser/defaults.h"
 #include "chrome/browser/download/download_service.h"
 #include "chrome/browser/download/download_service_factory.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
 #include "chrome/browser/ui/webui/downloads_dom_handler.h"
 #include "chrome/browser/ui/webui/theme_source.h"
+#include "chrome/common/pref_names.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/download_manager.h"
+#include "content/public/browser/url_data_source.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "grit/browser_resources.h"
+#include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #include "grit/theme_resources.h"
 #include "ui/base/resource/resource_bundle.h"
@@ -32,9 +35,9 @@ using content::WebContents;
 
 namespace {
 
-ChromeWebUIDataSource* CreateDownloadsUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIDownloadsHost);
+content::WebUIDataSource* CreateDownloadsUIHTMLSource(Profile* profile) {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIDownloadsHost);
 
   source->AddLocalizedString("title", IDS_DOWNLOAD_TITLE);
   source->AddLocalizedString("searchbutton", IDS_DOWNLOAD_SEARCH_BUTTON);
@@ -57,7 +60,10 @@ ChromeWebUIDataSource* CreateDownloadsUIHTMLSource() {
                              IDS_PROMPT_MALICIOUS_DOWNLOAD_CONTENT);
   source->AddLocalizedString("danger_uncommon_desc",
                              IDS_PROMPT_UNCOMMON_DOWNLOAD_CONTENT);
+  source->AddLocalizedString("danger_settings_desc",
+                             IDS_PROMPT_DOWNLOAD_CHANGES_SETTINGS);
   source->AddLocalizedString("danger_save", IDS_CONFIRM_DOWNLOAD);
+  source->AddLocalizedString("danger_restore", IDS_CONFIRM_DOWNLOAD_RESTORE);
   source->AddLocalizedString("danger_discard", IDS_DISCARD_DOWNLOAD);
 
   // Controls.
@@ -70,11 +76,19 @@ ChromeWebUIDataSource* CreateDownloadsUIHTMLSource() {
   source->AddLocalizedString("control_resume", IDS_DOWNLOAD_LINK_RESUME);
   source->AddLocalizedString("control_removefromlist",
                              IDS_DOWNLOAD_LINK_REMOVE);
+  source->AddLocalizedString("control_by_extension",
+                             IDS_DOWNLOAD_BY_EXTENSION);
 
-  source->set_json_path("strings.js");
-  source->add_resource_path("downloads.css", IDR_DOWNLOADS_CSS);
-  source->add_resource_path("downloads.js", IDR_DOWNLOADS_JS);
-  source->set_default_resource(IDR_DOWNLOADS_HTML);
+  PrefService* prefs = profile->GetPrefs();
+  source->AddBoolean("allow_deleting_history",
+                     prefs->GetBoolean(prefs::kAllowDeletingBrowserHistory));
+  source->AddBoolean("show_delete_history", !profile->IsManaged());
+
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("downloads.css", IDR_DOWNLOADS_CSS);
+  source->AddResourcePath("downloads.js", IDR_DOWNLOADS_JS);
+  source->SetDefaultResource(IDR_DOWNLOADS_HTML);
+  source->SetUseJsonJSFormatV2();
 
   return source;
 }
@@ -95,12 +109,11 @@ DownloadsUI::DownloadsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
   web_ui->AddMessageHandler(handler);
 
   // Set up the chrome://downloads/ source.
-  ChromeWebUIDataSource* source = CreateDownloadsUIHTMLSource();
-  source->set_use_json_js_format_v2();
-  ChromeURLDataManager::AddDataSource(profile, source);
+  content::WebUIDataSource* source = CreateDownloadsUIHTMLSource(profile);
+  content::WebUIDataSource::Add(profile, source);
 #if defined(ENABLE_THEMES)
   ThemeSource* theme = new ThemeSource(profile);
-  ChromeURLDataManager::AddDataSource(profile, theme);
+  content::URLDataSource::Add(profile, theme);
 #endif
 }
 

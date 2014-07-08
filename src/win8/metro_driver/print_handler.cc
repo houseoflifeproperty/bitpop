@@ -9,6 +9,7 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "base/numerics/safe_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "win8/metro_driver/chrome_app_view.h"
 #include "win8/metro_driver/winrt_utils.h"
@@ -364,7 +365,7 @@ HRESULT PrintHandler::LogicalDpiChanged(IInspectable *sender) {
 }
 
 void PrintHandler::OnLogicalDpiChanged(float dpi) {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   // No need to protect the access to the static variable,
   // since it's set/released in this same thread.
   if (current_document_source_.Get() != NULL)
@@ -373,7 +374,7 @@ void PrintHandler::OnLogicalDpiChanged(float dpi) {
 
 void PrintHandler::SetPrintDocumentSource(
     const mswr::ComPtr<PrintDocumentSource>& print_document_source) {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   DCHECK(current_document_source_.Get() == NULL);
   {
     // Protect against the other thread which might try to access it.
@@ -390,7 +391,7 @@ void PrintHandler::SetPrintDocumentSource(
 }
 
 void PrintHandler::ReleasePrintDocumentSource() {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   mswr::ComPtr<PrintDocumentSource> print_document_source;
   {
     // Must wait for other thread to be done with the pointer first.
@@ -403,7 +404,7 @@ void PrintHandler::ReleasePrintDocumentSource() {
 }
 
 void PrintHandler::OnEnablePrinting(bool printing_enabled) {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   base::AutoLock lock(*lock_);
   printing_enabled_ = printing_enabled;
   // Don't abort if we are being disabled since we may be finishing a previous
@@ -414,7 +415,7 @@ void PrintHandler::OnEnablePrinting(bool printing_enabled) {
 }
 
 void PrintHandler::OnSetPageCount(size_t page_count) {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   // No need to protect the access to the static variable,
   // since it's set/released in this same thread.
   if (current_document_source_.Get() != NULL)
@@ -423,7 +424,7 @@ void PrintHandler::OnSetPageCount(size_t page_count) {
 
 void PrintHandler::OnAddPage(size_t page_number,
                              mswr::ComPtr<IStream> metafile_stream) {
-  DCHECK(MessageLoop::current() == thread_->message_loop());
+  DCHECK(base::MessageLoop::current() == thread_->message_loop());
   // No need to protect the access to the static variable,
   // since it's set/released in this same thread.
   if (current_document_source_.Get() != NULL)
@@ -472,7 +473,9 @@ void MetroSetPrintPageContent(size_t page_number,
       NULL, TRUE, metafile_stream.GetAddressOf());
   if (metafile_stream.Get() != NULL) {
     ULONG bytes_written = 0;
-    hr = metafile_stream->Write(data, data_size, &bytes_written);
+    hr = metafile_stream->Write(data,
+                                base::checked_cast<ULONG>(data_size),
+                                &bytes_written);
     LOG_IF(ERROR, FAILED(hr)) << "Failed to Write to Stream " << std::hex << hr;
     DCHECK(bytes_written == data_size);
 

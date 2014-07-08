@@ -42,9 +42,9 @@
 #include "client/linux/crash_generation/crash_generation_client.h"
 #include "client/linux/handler/minidump_descriptor.h"
 #include "client/linux/minidump_writer/minidump_writer.h"
+#include "common/scoped_ptr.h"
 #include "common/using_std_string.h"
 #include "google_breakpad/common/minidump_format.h"
-#include "processor/scoped_ptr.h"
 
 namespace google_breakpad {
 
@@ -146,6 +146,10 @@ class ExceptionHandler {
     crash_handler_ = callback;
   }
 
+  void set_crash_generation_client(CrashGenerationClient* client) {
+    crash_generation_client_.reset(client);
+  }
+
   // Writes a minidump immediately.  This can be used to capture the execution
   // state independently of a crash.
   // Returns true on success.
@@ -190,22 +194,24 @@ class ExceptionHandler {
     siginfo_t siginfo;
     pid_t tid;  // the crashing thread.
     struct ucontext context;
-#if !defined(__ARM_EABI__)
+#if !defined(__ARM_EABI__) && !defined(__mips__)
     // #ifdef this out because FP state is not part of user ABI for Linux ARM.
-    struct _libc_fpstate float_state;
+    // In case of MIPS Linux FP state is already part of struct
+    // ucontext so 'float_state' is not required.
+    fpstate_t float_state;
 #endif
   };
 
   // Returns whether out-of-process dump generation is used or not.
   bool IsOutOfProcess() const {
-      return crash_generation_client_.get() != NULL;
+    return crash_generation_client_.get() != NULL;
   }
 
   // Add information about a memory mapping. This can be used if
   // a custom library loader is used that maps things in a way
   // that the linux dumper can't handle by reading the maps file.
   void AddMappingInfo(const string& name,
-                      const u_int8_t identifier[sizeof(MDGUID)],
+                      const uint8_t identifier[sizeof(MDGUID)],
                       uintptr_t start_address,
                       size_t mapping_size,
                       size_t file_offset);
@@ -219,6 +225,9 @@ class ExceptionHandler {
 
   // Force signal handling for the specified signal.
   bool SimulateSignalDelivery(int sig);
+
+  // Report a crash signal from an SA_SIGINFO signal handler.
+  bool HandleSignal(int sig, siginfo_t* info, void* uc);
  private:
   // Save the old signal handlers and install new ones.
   static bool InstallHandlersLocked();
@@ -231,7 +240,6 @@ class ExceptionHandler {
   void WaitForContinueSignal();
 
   static void SignalHandler(int sig, siginfo_t* info, void* uc);
-  bool HandleSignal(int sig, siginfo_t* info, void* uc);
   static int ThreadEntry(void* arg);
   bool DoDump(pid_t crashing_process, const void* context,
               size_t context_size);
@@ -255,7 +263,7 @@ class ExceptionHandler {
   // We need to explicitly enable ptrace of parent processes on some
   // kernels, but we need to know the PID of the cloned process before we
   // can do this. We create a pipe which we can use to block the
-  // cloned process after creating it, until we have explicitly enabled 
+  // cloned process after creating it, until we have explicitly enabled
   // ptrace. This is used to store the file descriptors for the pipe
   int fdes[2];
 

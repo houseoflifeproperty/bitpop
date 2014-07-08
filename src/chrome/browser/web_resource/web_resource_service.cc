@@ -5,19 +5,19 @@
 #include "chrome/browser/web_resource/web_resource_service.h"
 
 #include "base/bind.h"
-#include "base/message_loop.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_util.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/load_flags.h"
 #include "net/url_request/url_fetcher.h"
 #include "net/url_request/url_request_status.h"
+#include "url/gurl.h"
 
 WebResourceService::WebResourceService(
     PrefService* prefs,
@@ -34,7 +34,7 @@ WebResourceService::WebResourceService(
       last_update_time_pref_name_(last_update_time_pref_name),
       start_fetch_delay_ms_(start_fetch_delay_ms),
       cache_update_delay_ms_(cache_update_delay_ms),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_ptr_factory_(this)) {
+      weak_ptr_factory_(this) {
   resource_request_allowed_notifier_.Init(this);
   DCHECK(prefs);
 }
@@ -44,7 +44,8 @@ WebResourceService::~WebResourceService() {
     EndFetch();
 }
 
-void WebResourceService::OnUnpackFinished(const DictionaryValue& parsed_json) {
+void WebResourceService::OnUnpackFinished(
+    const base::DictionaryValue& parsed_json) {
   Unpack(parsed_json);
   EndFetch();
 }
@@ -93,7 +94,7 @@ void WebResourceService::OnResourceRequestsAllowed() {
 // Delay initial load of resource data into cache so as not to interfere
 // with startup time.
 void WebResourceService::ScheduleFetch(int64 delay_ms) {
-  MessageLoop::current()->PostDelayedTask(
+  base::MessageLoop::current()->PostDelayedTask(
       FROM_HERE,
       base::Bind(&WebResourceService::StartFetch,
                  weak_ptr_factory_.GetWeakPtr()),

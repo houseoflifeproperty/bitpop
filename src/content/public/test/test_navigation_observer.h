@@ -5,61 +5,56 @@
 #ifndef CONTENT_PUBLIC_TEST_TEST_NAVIGATION_OBSERVER_H_
 #define CONTENT_PUBLIC_TEST_TEST_NAVIGATION_OBSERVER_H_
 
+#include <set>
+
 #include "base/callback.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/notification_observer.h"
-#include "content/public/browser/notification_registrar.h"
+#include "content/public/test/test_utils.h"
 
 namespace content {
-
-class JsInjectionReadyObserver;
+class WebContents;
+struct LoadCommittedDetails;
 
 // For browser_tests, which run on the UI thread, run a second
-// MessageLoop and quit when the navigation completes loading. For
-// WebUI tests that need to inject javascript, construct with a
-// JsInjectionReadyObserver and this class will call its
-// OnJsInjectionReady() at the appropriate time.
-class TestNavigationObserver : public NotificationObserver {
+// MessageLoop and quit when the navigation completes loading.
+class TestNavigationObserver {
  public:
-  class RVHOSendJS;
-
   // Create and register a new TestNavigationObserver against the
-  // |controller|. When |js_injection_ready_observer| is non-null, notify with
-  // OnEntryCommitted() after |number_of_navigations| navigations.
-  // Note: |js_injection_ready_observer| is owned by the caller and should be
-  // valid until this class is destroyed.
-  TestNavigationObserver(const NotificationSource& source,
-                         JsInjectionReadyObserver* js_injection_ready_observer,
+  // |web_contents|.
+  TestNavigationObserver(WebContents* web_contents,
                          int number_of_navigations);
   // Like above but waits for one navigation.
-  explicit TestNavigationObserver(const NotificationSource& source);
+  explicit TestNavigationObserver(WebContents* web_contents);
 
   virtual ~TestNavigationObserver();
 
-  // Run |wait_loop_callback| until complete, then run |done_callback|.
-  void WaitForObservation(const base::Closure& wait_loop_callback,
-                          const base::Closure& done_callback);
-  // Convenient version of the above that runs a nested message loop and waits.
+  // Runs a nested message loop and blocks until the expected number of
+  // navigations are complete.
   void Wait();
 
- protected:
-  // Note: |js_injection_ready_observer| is owned by the caller and should be
-  // valid until this class is destroyed. Subclasses using this constructor MUST
-  // call RegisterAsObserver when a NavigationController becomes available.
-  explicit TestNavigationObserver(
-      JsInjectionReadyObserver* js_injection_ready_observer,
-      int number_of_navigations);
+  // Start/stop watching newly created WebContents.
+  void StartWatchingNewWebContents();
+  void StopWatchingNewWebContents();
 
-  // Register this TestNavigationObserver as an observer of the |source|.
-  void RegisterAsObserver(const NotificationSource& source);
+ protected:
+  // Register this TestNavigationObserver as an observer of the |web_contents|.
+  void RegisterAsObserver(WebContents* web_contents);
 
  private:
-  // NotificationObserver:
-  virtual void Observe(int type, const NotificationSource& source,
-                       const NotificationDetails& details) OVERRIDE;
+  class TestWebContentsObserver;
 
-  NotificationRegistrar registrar_;
+  // Callbacks for WebContents-related events.
+  void OnWebContentsCreated(WebContents* web_contents);
+  void OnWebContentsDestroyed(TestWebContentsObserver* observer,
+                              WebContents* web_contents);
+  void OnNavigationEntryCommitted(
+      TestWebContentsObserver* observer,
+      WebContents* web_contents,
+      const LoadCommittedDetails& load_details);
+  void OnDidAttachInterstitialPage(WebContents* web_contents);
+  void OnDidStartLoading(WebContents* web_contents);
+  void OnDidStopLoading(WebContents* web_contents);
 
   // If true the navigation has started.
   bool navigation_started_;
@@ -70,23 +65,14 @@ class TestNavigationObserver : public NotificationObserver {
   // The number of navigations to wait for.
   int number_of_navigations_;
 
-  // Observer to take some action when the page is ready for JavaScript
-  // injection.
-  JsInjectionReadyObserver* js_injection_ready_observer_;
+  // The MessageLoopRunner used to spin the message loop.
+  scoped_refptr<MessageLoopRunner> message_loop_runner_;
 
-  // |done_| will get set when this object observes a TabStripModel event.
-  bool done_;
+  // Callback invoked on WebContents creation.
+  base::Callback<void(WebContents*)> web_contents_created_callback_;
 
-  // |done_callback_| will be set while |running_| is true and will be called
-  // when navigation completes.
-  base::Closure done_callback_;
-
-  // |running_| will be true during WaitForObservation until |done_| is true.
-  bool running_;
-
-  // |rvho_send_js_| will hold a RenderViewHostObserver subclass to allow
-  // JavaScript injection at the appropriate time.
-  scoped_ptr<RVHOSendJS> rvho_send_js_;
+  // Living TestWebContentsObservers created by this observer.
+  std::set<TestWebContentsObserver*> web_contents_observers_;
 
   DISALLOW_COPY_AND_ASSIGN(TestNavigationObserver);
 };

@@ -6,12 +6,15 @@
 
 #include "gpu/command_buffer/client/gles2_implementation.h"
 
+#include <limits>
+
 #include <GLES2/gl2ext.h>
+#include <GLES2/gl2extchromium.h>
+#include "base/compiler_specific.h"
 #include "gpu/command_buffer/client/client_test_helper.h"
 #include "gpu/command_buffer/client/program_info_manager.h"
 #include "gpu/command_buffer/client/transfer_buffer.h"
 #include "gpu/command_buffer/common/command_buffer.h"
-#include "gpu/command_buffer/common/compiler_specific.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "testing/gmock/include/gmock/gmock.h"
 
@@ -104,16 +107,16 @@ class MockTransferBuffer : public TransferBufferInterface {
     // we need to know their address before GLES2Implementation::Initialize
     // is called.
     for (int ii = 0; ii < kNumBuffers; ++ii) {
-      buffer_ids_[ii] = command_buffer_->CreateTransferBuffer(
-          size_ + ii * alignment_, -1);
+      buffers_[ii] = command_buffer_->CreateTransferBuffer(
+          size_ + ii * alignment_,
+          &buffer_ids_[ii]);
       EXPECT_NE(-1, buffer_ids_[ii]);
-      buffers_[ii] = command_buffer_->GetTransferBuffer(buffer_ids_[ii]);
     }
   }
 
   virtual ~MockTransferBuffer() { }
 
-  bool Initialize(
+  virtual bool Initialize(
       unsigned int starting_buffer_size,
       unsigned int result_size,
       unsigned int /* min_buffer_size */,
@@ -140,7 +143,8 @@ class MockTransferBuffer : public TransferBufferInterface {
   }
 
   bool InSync() {
-    return expected_buffer_index_ == actual_buffer_index_;
+    return expected_buffer_index_ == actual_buffer_index_ &&
+           expected_offset_ == actual_offset_;
   }
 
   ExpectedMemoryInfo GetExpectedMemory(size_t size) {
@@ -165,11 +169,11 @@ class MockTransferBuffer : public TransferBufferInterface {
   static const int kNumBuffers = 2;
 
   uint8* actual_buffer() const {
-    return static_cast<uint8*>(buffers_[actual_buffer_index_].ptr);
+    return static_cast<uint8*>(buffers_[actual_buffer_index_]->memory());
   }
 
   uint8* expected_buffer() const {
-    return static_cast<uint8*>(buffers_[expected_buffer_index_].ptr);
+    return static_cast<uint8*>(buffers_[expected_buffer_index_]->memory());
   }
 
   uint32 AllocateExpectedTransferBuffer(size_t size) {
@@ -212,7 +216,7 @@ class MockTransferBuffer : public TransferBufferInterface {
   size_t result_size_;
   uint32 alignment_;
   int buffer_ids_[kNumBuffers];
-  gpu::Buffer buffers_[kNumBuffers];
+  scoped_refptr<Buffer> buffers_[kNumBuffers];
   int actual_buffer_index_;
   int expected_buffer_index_;
   void* last_alloc_;
@@ -248,7 +252,7 @@ int MockTransferBuffer::GetResultOffset() {
 }
 
 void MockTransferBuffer::Free() {
-  GPU_NOTREACHED();
+  NOTREACHED();
 }
 
 bool MockTransferBuffer::HaveBuffer() const {
@@ -295,13 +299,70 @@ void MockTransferBuffer::FreePendingToken(void* p, unsigned int /* token */) {
   last_alloc_ = NULL;
 }
 
+// API wrapper for Buffers.
+class GenBuffersAPI {
+ public:
+  static void Gen(GLES2Implementation* gl_impl, GLsizei n, GLuint* ids) {
+    gl_impl->GenBuffers(n, ids);
+  }
+
+  static void Delete(GLES2Implementation* gl_impl,
+                     GLsizei n,
+                     const GLuint* ids) {
+    gl_impl->DeleteBuffers(n, ids);
+  }
+};
+
+// API wrapper for Framebuffers.
+class GenFramebuffersAPI {
+ public:
+  static void Gen(GLES2Implementation* gl_impl, GLsizei n, GLuint* ids) {
+    gl_impl->GenFramebuffers(n, ids);
+  }
+
+  static void Delete(GLES2Implementation* gl_impl,
+                     GLsizei n,
+                     const GLuint* ids) {
+    gl_impl->DeleteFramebuffers(n, ids);
+  }
+};
+
+// API wrapper for Renderbuffers.
+class GenRenderbuffersAPI {
+ public:
+  static void Gen(GLES2Implementation* gl_impl, GLsizei n, GLuint* ids) {
+    gl_impl->GenRenderbuffers(n, ids);
+  }
+
+  static void Delete(GLES2Implementation* gl_impl,
+                     GLsizei n,
+                     const GLuint* ids) {
+    gl_impl->DeleteRenderbuffers(n, ids);
+  }
+};
+
+// API wrapper for Textures.
+class GenTexturesAPI {
+ public:
+  static void Gen(GLES2Implementation* gl_impl, GLsizei n, GLuint* ids) {
+    gl_impl->GenTextures(n, ids);
+  }
+
+  static void Delete(GLES2Implementation* gl_impl,
+                     GLsizei n,
+                     const GLuint* ids) {
+    gl_impl->DeleteTextures(n, ids);
+  }
+};
+
 class GLES2ImplementationTest : public testing::Test {
  protected:
+  static const int kNumTestContexts = 2;
   static const uint8 kInitialValue = 0xBD;
   static const int32 kNumCommandEntries = 500;
   static const int32 kCommandBufferSizeBytes =
       kNumCommandEntries * sizeof(CommandBufferEntry);
-  static const size_t kTransferBufferSize = 256;
+  static const size_t kTransferBufferSize = 512;
 
   static const GLint kMaxCombinedTextureImageUnits = 8;
   static const GLint kMaxCubeMapTextureSize = 64;
@@ -317,7 +378,7 @@ class GLES2ImplementationTest : public testing::Test {
   static const GLint kNumShaderBinaryFormats = 0;
   static const GLuint kStartId = 1024;
   static const GLuint kBuffersStartId =
-      GLES2Implementation::kClientSideArrayId + 2;
+      GLES2Implementation::kClientSideArrayId + 2 * kNumTestContexts;
   static const GLuint kFramebuffersStartId = 1;
   static const GLuint kProgramsAndShadersStartId = 1;
   static const GLuint kRenderbuffersStartId = 1;
@@ -327,18 +388,130 @@ class GLES2ImplementationTest : public testing::Test {
 
   typedef MockTransferBuffer::ExpectedMemoryInfo ExpectedMemoryInfo;
 
-  GLES2ImplementationTest()
-      : commands_(NULL),
-        token_(0) {
-  }
+  class TestContext {
+   public:
+    TestContext() : commands_(NULL), token_(0) {}
+
+    bool Initialize(ShareGroup* share_group,
+                    bool bind_generates_resource,
+                    bool lose_context_when_out_of_memory) {
+      command_buffer_.reset(new StrictMock<MockClientCommandBuffer>());
+      if (!command_buffer_->Initialize())
+        return false;
+
+      transfer_buffer_.reset(
+          new MockTransferBuffer(command_buffer_.get(),
+                                 kTransferBufferSize,
+                                 GLES2Implementation::kStartingOffset,
+                                 GLES2Implementation::kAlignment));
+
+      helper_.reset(new GLES2CmdHelper(command_buffer()));
+      helper_->Initialize(kCommandBufferSizeBytes);
+
+      gpu_control_.reset(new StrictMock<MockClientGpuControl>());
+      EXPECT_CALL(*gpu_control_, GetCapabilities())
+          .WillOnce(testing::Return(Capabilities()));
+
+      GLES2Implementation::GLStaticState state;
+      GLES2Implementation::GLStaticState::IntState& int_state = state.int_state;
+      int_state.max_combined_texture_image_units =
+          kMaxCombinedTextureImageUnits;
+      int_state.max_cube_map_texture_size = kMaxCubeMapTextureSize;
+      int_state.max_fragment_uniform_vectors = kMaxFragmentUniformVectors;
+      int_state.max_renderbuffer_size = kMaxRenderbufferSize;
+      int_state.max_texture_image_units = kMaxTextureImageUnits;
+      int_state.max_texture_size = kMaxTextureSize;
+      int_state.max_varying_vectors = kMaxVaryingVectors;
+      int_state.max_vertex_attribs = kMaxVertexAttribs;
+      int_state.max_vertex_texture_image_units = kMaxVertexTextureImageUnits;
+      int_state.max_vertex_uniform_vectors = kMaxVertexUniformVectors;
+      int_state.num_compressed_texture_formats = kNumCompressedTextureFormats;
+      int_state.num_shader_binary_formats = kNumShaderBinaryFormats;
+      int_state.bind_generates_resource_chromium =
+          bind_generates_resource ? 1 : 0;
+
+      // This just happens to work for now because IntState has 1 GLint per
+      // state.
+      // If IntState gets more complicated this code will need to get more
+      // complicated.
+      ExpectedMemoryInfo mem1 = transfer_buffer_->GetExpectedMemory(
+          sizeof(GLES2Implementation::GLStaticState::IntState) * 2 +
+          sizeof(cmds::GetShaderPrecisionFormat::Result) * 12);
+
+      {
+        InSequence sequence;
+
+        EXPECT_CALL(*command_buffer_, OnFlush())
+            .WillOnce(SetMemory(mem1.ptr + sizeof(int_state), int_state))
+            .RetiresOnSaturation();
+        GetNextToken();  // eat the token that starting up will use.
+
+        gl_.reset(new GLES2Implementation(helper_.get(),
+                                          share_group,
+                                          transfer_buffer_.get(),
+                                          bind_generates_resource,
+                                          lose_context_when_out_of_memory,
+                                          gpu_control_.get()));
+
+        if (!gl_->Initialize(kTransferBufferSize,
+                             kTransferBufferSize,
+                             kTransferBufferSize,
+                             GLES2Implementation::kNoLimit))
+          return false;
+      }
+
+      EXPECT_CALL(*command_buffer_, OnFlush()).Times(1).RetiresOnSaturation();
+      helper_->CommandBufferHelper::Finish();
+      ::testing::Mock::VerifyAndClearExpectations(gl_.get());
+
+      scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
+      commands_ = static_cast<CommandBufferEntry*>(ring_buffer->memory()) +
+                  command_buffer()->GetLastState().put_offset;
+      ClearCommands();
+      EXPECT_TRUE(transfer_buffer_->InSync());
+
+      ::testing::Mock::VerifyAndClearExpectations(command_buffer());
+      return true;
+    }
+
+    void TearDown() {
+      Mock::VerifyAndClear(gl_.get());
+      EXPECT_CALL(*command_buffer(), OnFlush()).Times(AnyNumber());
+      // For command buffer.
+      EXPECT_CALL(*command_buffer(), DestroyTransferBuffer(_))
+          .Times(AtLeast(1));
+      gl_.reset();
+    }
+
+    MockClientCommandBuffer* command_buffer() const {
+      return command_buffer_.get();
+    }
+
+    int GetNextToken() { return ++token_; }
+
+    void ClearCommands() {
+      scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
+      memset(ring_buffer->memory(), kInitialValue, ring_buffer->size());
+    }
+
+    scoped_ptr<MockClientCommandBuffer> command_buffer_;
+    scoped_ptr<MockClientGpuControl> gpu_control_;
+    scoped_ptr<GLES2CmdHelper> helper_;
+    scoped_ptr<MockTransferBuffer> transfer_buffer_;
+    scoped_ptr<GLES2Implementation> gl_;
+    CommandBufferEntry* commands_;
+    int token_;
+  };
+
+  GLES2ImplementationTest() : commands_(NULL) {}
 
   virtual void SetUp() OVERRIDE;
   virtual void TearDown() OVERRIDE;
 
   bool NoCommandsWritten() {
-    Buffer ring_buffer = helper_->get_ring_buffer();
-    const uint8* cmds = reinterpret_cast<const uint8*>(ring_buffer.ptr);
-    const uint8* end = cmds + ring_buffer.size;
+    scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
+    const uint8* cmds = reinterpret_cast<const uint8*>(ring_buffer->memory());
+    const uint8* end = cmds + ring_buffer->size();
     for (; cmds < end; ++cmds) {
       if (*cmds != kInitialValue) {
         return false;
@@ -351,89 +524,51 @@ class GLES2ImplementationTest : public testing::Test {
     return gl_->query_tracker_->GetQuery(id);
   }
 
-  void Initialize(bool shared_resources, bool bind_generates_resource) {
-    command_buffer_.reset(new StrictMock<MockClientCommandBuffer>());
-    ASSERT_TRUE(command_buffer_->Initialize());
+  struct ContextInitOptions {
+    ContextInitOptions()
+        : bind_generates_resource_client(true),
+          bind_generates_resource_service(true),
+          lose_context_when_out_of_memory(false) {}
 
-    transfer_buffer_.reset(new MockTransferBuffer(
-        command_buffer(),
-        kTransferBufferSize,
-        GLES2Implementation::kStartingOffset,
-        GLES2Implementation::kAlignment));
+    bool bind_generates_resource_client;
+    bool bind_generates_resource_service;
+    bool lose_context_when_out_of_memory;
+  };
 
-    helper_.reset(new GLES2CmdHelper(command_buffer()));
-    helper_->Initialize(kCommandBufferSizeBytes);
+  bool Initialize(const ContextInitOptions& init_options) {
+    bool success = true;
+    share_group_ = new ShareGroup(init_options.bind_generates_resource_service);
 
-    GLES2Implementation::GLStaticState state;
-    GLES2Implementation::GLStaticState::IntState& int_state = state.int_state;
-    int_state.max_combined_texture_image_units = kMaxCombinedTextureImageUnits;
-    int_state.max_cube_map_texture_size = kMaxCubeMapTextureSize;
-    int_state.max_fragment_uniform_vectors = kMaxFragmentUniformVectors;
-    int_state.max_renderbuffer_size = kMaxRenderbufferSize;
-    int_state.max_texture_image_units = kMaxTextureImageUnits;
-    int_state.max_texture_size = kMaxTextureSize;
-    int_state.max_varying_vectors = kMaxVaryingVectors;
-    int_state.max_vertex_attribs = kMaxVertexAttribs;
-    int_state.max_vertex_texture_image_units = kMaxVertexTextureImageUnits;
-    int_state.max_vertex_uniform_vectors = kMaxVertexUniformVectors;
-    int_state.num_compressed_texture_formats = kNumCompressedTextureFormats;
-    int_state.num_shader_binary_formats = kNumShaderBinaryFormats;
-
-    // This just happens to work for now because IntState has 1 GLint per state.
-    // If IntState gets more complicated this code will need to get more
-    // complicated.
-    ExpectedMemoryInfo mem1 = GetExpectedMemory(sizeof(int_state) * 2);
-
-    {
-      InSequence sequence;
-
-      EXPECT_CALL(*command_buffer(), OnFlush())
-          .WillOnce(SetMemory(mem1.ptr + sizeof(int_state), int_state))
-          .RetiresOnSaturation();
-      GetNextToken();  // eat the token that starting up will use.
-
-      gl_.reset(new GLES2Implementation(
-          helper_.get(),
-          NULL,
-          transfer_buffer_.get(),
-          shared_resources,
-          bind_generates_resource));
-      ASSERT_TRUE(gl_->Initialize(
-          kTransferBufferSize,
-          kTransferBufferSize,
-          kTransferBufferSize));
+    for (int i = 0; i < kNumTestContexts; i++) {
+      if (!test_contexts_[i].Initialize(
+              share_group_.get(),
+              init_options.bind_generates_resource_client,
+              init_options.lose_context_when_out_of_memory))
+        success = false;
     }
 
-    EXPECT_CALL(*command_buffer(), OnFlush())
-        .Times(1)
-        .RetiresOnSaturation();
-    helper_->CommandBufferHelper::Finish();
-    ::testing::Mock::VerifyAndClearExpectations(gl_.get());
-
-    Buffer ring_buffer = helper_->get_ring_buffer();
-    commands_ = static_cast<CommandBufferEntry*>(ring_buffer.ptr) +
-                command_buffer()->GetState().put_offset;
-    ClearCommands();
-    EXPECT_TRUE(transfer_buffer_->InSync());
-
-    ::testing::Mock::VerifyAndClearExpectations(command_buffer());
+    // Default to test context 0.
+    gpu_control_ = test_contexts_[0].gpu_control_.get();
+    helper_ = test_contexts_[0].helper_.get();
+    transfer_buffer_ = test_contexts_[0].transfer_buffer_.get();
+    gl_ = test_contexts_[0].gl_.get();
+    commands_ = test_contexts_[0].commands_;
+    return success;
   }
 
   MockClientCommandBuffer* command_buffer() const {
-    return command_buffer_.get();
+    return test_contexts_[0].command_buffer_.get();
   }
 
-  int GetNextToken() {
-    return ++token_;
-  }
+  int GetNextToken() { return test_contexts_[0].GetNextToken(); }
 
   const void* GetPut() {
     return helper_->GetSpace(0);
   }
 
   void ClearCommands() {
-    Buffer ring_buffer = helper_->get_ring_buffer();
-    memset(ring_buffer.ptr, kInitialValue, ring_buffer.size);
+    scoped_refptr<Buffer> ring_buffer = helper_->get_ring_buffer();
+    memset(ring_buffer->memory(), kInitialValue, ring_buffer->size());
   }
 
   size_t MaxTransferBufferSize() {
@@ -456,46 +591,140 @@ class GLES2ImplementationTest : public testing::Test {
 
   int CheckError() {
     ExpectedMemoryInfo result =
-        GetExpectedResultMemory(sizeof(GetError::Result));
+        GetExpectedResultMemory(sizeof(cmds::GetError::Result));
     EXPECT_CALL(*command_buffer(), OnFlush())
         .WillOnce(SetMemory(result.ptr, GLuint(GL_NO_ERROR)))
         .RetiresOnSaturation();
     return gl_->GetError();
   }
 
+  const std::string& GetLastError() {
+    return gl_->GetLastError();
+  }
+
   bool GetBucketContents(uint32 bucket_id, std::vector<int8>* data) {
     return gl_->GetBucketContents(bucket_id, data);
   }
 
-  Sequence sequence_;
-  scoped_ptr<MockClientCommandBuffer> command_buffer_;
-  scoped_ptr<GLES2CmdHelper> helper_;
-  scoped_ptr<MockTransferBuffer> transfer_buffer_;
-  scoped_ptr<GLES2Implementation> gl_;
+  TestContext test_contexts_[kNumTestContexts];
+
+  scoped_refptr<ShareGroup> share_group_;
+  MockClientGpuControl* gpu_control_;
+  GLES2CmdHelper* helper_;
+  MockTransferBuffer* transfer_buffer_;
+  GLES2Implementation* gl_;
   CommandBufferEntry* commands_;
-  int token_;
 };
 
 void GLES2ImplementationTest::SetUp() {
-  Initialize(false, true);
+  ContextInitOptions init_options;
+  ASSERT_TRUE(Initialize(init_options));
 }
 
 void GLES2ImplementationTest::TearDown() {
-  Mock::VerifyAndClear(gl_.get());
-  EXPECT_CALL(*command_buffer(), OnFlush()).Times(AnyNumber());
-  // For command buffer.
-  EXPECT_CALL(*command_buffer(), DestroyTransferBuffer(_))
-      .Times(AtLeast(1));
-  gl_.reset();
+  for (int i = 0; i < kNumTestContexts; i++)
+    test_contexts_[i].TearDown();
 }
+
+class GLES2ImplementationManualInitTest : public GLES2ImplementationTest {
+ protected:
+  virtual void SetUp() OVERRIDE {}
+};
 
 class GLES2ImplementationStrictSharedTest : public GLES2ImplementationTest {
  protected:
   virtual void SetUp() OVERRIDE;
+
+  template <class ResApi>
+  void FlushGenerationTest() {
+    GLuint id1, id2, id3;
+
+    // Generate valid id.
+    ResApi::Gen(gl_, 1, &id1);
+    EXPECT_NE(id1, 0u);
+
+    // Delete id1 and generate id2.  id1 should not be reused.
+    ResApi::Delete(gl_, 1, &id1);
+    ResApi::Gen(gl_, 1, &id2);
+    EXPECT_NE(id2, 0u);
+    EXPECT_NE(id2, id1);
+
+    // Expect id1 reuse after Flush.
+    gl_->Flush();
+    ResApi::Gen(gl_, 1, &id3);
+    EXPECT_EQ(id3, id1);
+  }
+
+  // Ids should not be reused unless the |Deleting| context does a Flush()
+  // AND triggers a lazy release after that.
+  template <class ResApi>
+  void CrossContextGenerationTest() {
+    GLES2Implementation* gl1 = test_contexts_[0].gl_.get();
+    GLES2Implementation* gl2 = test_contexts_[1].gl_.get();
+    GLuint id1, id2, id3;
+
+    // Delete, no flush on context 1.  No reuse.
+    ResApi::Gen(gl1, 1, &id1);
+    ResApi::Delete(gl1, 1, &id1);
+    ResApi::Gen(gl1, 1, &id2);
+    EXPECT_NE(id1, id2);
+
+    // Flush context 2.  Still no reuse.
+    gl2->Flush();
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_NE(id1, id3);
+    EXPECT_NE(id2, id3);
+
+    // Flush on context 1, but no lazy release.  Still no reuse.
+    gl1->Flush();
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_NE(id1, id3);
+
+    // Lazy release triggered by another Delete.  Should reuse id1.
+    ResApi::Delete(gl1, 1, &id2);
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_EQ(id1, id3);
+  }
+
+  // Same as CrossContextGenerationTest(), but triggers an Auto Flush on
+  // the Delete().  Tests an edge case regression.
+  template <class ResApi>
+  void CrossContextGenerationAutoFlushTest() {
+    GLES2Implementation* gl1 = test_contexts_[0].gl_.get();
+    GLES2Implementation* gl2 = test_contexts_[1].gl_.get();
+    GLuint id1, id2, id3;
+
+    // Delete, no flush on context 1.  No reuse.
+    // By half filling the buffer, an internal flush is forced on the Delete().
+    ResApi::Gen(gl1, 1, &id1);
+    gl1->helper()->Noop(kNumCommandEntries / 2);
+    ResApi::Delete(gl1, 1, &id1);
+    ResApi::Gen(gl1, 1, &id2);
+    EXPECT_NE(id1, id2);
+
+    // Flush context 2.  Still no reuse.
+    gl2->Flush();
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_NE(id1, id3);
+    EXPECT_NE(id2, id3);
+
+    // Flush on context 1, but no lazy release.  Still no reuse.
+    gl1->Flush();
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_NE(id1, id3);
+
+    // Lazy release triggered by another Delete.  Should reuse id1.
+    ResApi::Delete(gl1, 1, &id2);
+    ResApi::Gen(gl2, 1, &id3);
+    EXPECT_EQ(id1, id3);
+  }
 };
 
 void GLES2ImplementationStrictSharedTest::SetUp() {
-  Initialize(true, false);
+  ContextInitOptions init_options;
+  init_options.bind_generates_resource_client = false;
+  init_options.bind_generates_resource_service = false;
+  ASSERT_TRUE(Initialize(init_options));
 }
 
 // GCC requires these declarations, but MSVC requires they not be present
@@ -534,7 +763,7 @@ TEST_F(GLES2ImplementationTest, GetBucketContents) {
   const uint32 kBucketId = GLES2Implementation::kResultBucketId;
   const uint32 kTestSize = MaxTransferBufferSize() + 32;
 
-  scoped_array<uint8> buf(new uint8 [kTestSize]);
+  scoped_ptr<uint8[]> buf(new uint8 [kTestSize]);
   uint8* expected_data = buf.get();
   for (uint32 ii = 0; ii < kTestSize; ++ii) {
     expected_data[ii] = ii * 3;
@@ -581,6 +810,67 @@ TEST_F(GLES2ImplementationTest, GetBucketContents) {
   EXPECT_EQ(0, memcmp(expected_data, &data[0], data.size()));
 }
 
+TEST_F(GLES2ImplementationTest, GetShaderPrecisionFormat) {
+  struct Cmds {
+    cmds::GetShaderPrecisionFormat cmd;
+  };
+  typedef cmds::GetShaderPrecisionFormat::Result Result;
+
+  // The first call for mediump should trigger a command buffer request.
+  GLint range1[2] = {0, 0};
+  GLint precision1 = 0;
+  Cmds expected1;
+  ExpectedMemoryInfo client_result1 = GetExpectedResultMemory(4);
+  expected1.cmd.Init(GL_FRAGMENT_SHADER, GL_MEDIUM_FLOAT,
+                     client_result1.id, client_result1.offset);
+  Result server_result1 = {true, 14, 14, 10};
+  EXPECT_CALL(*command_buffer(), OnFlush())
+      .WillOnce(SetMemory(client_result1.ptr, server_result1))
+      .RetiresOnSaturation();
+  gl_->GetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_MEDIUM_FLOAT,
+                                range1, &precision1);
+  const void* commands2 = GetPut();
+  EXPECT_NE(commands_, commands2);
+  EXPECT_EQ(0, memcmp(&expected1, commands_, sizeof(expected1)));
+  EXPECT_EQ(range1[0], 14);
+  EXPECT_EQ(range1[1], 14);
+  EXPECT_EQ(precision1, 10);
+
+  // The second call for mediump should use the cached value and avoid
+  // triggering a command buffer request, so we do not expect a call to
+  // OnFlush() here. We do expect the results to be correct though.
+  GLint range2[2] = {0, 0};
+  GLint precision2 = 0;
+  gl_->GetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_MEDIUM_FLOAT,
+                                range2, &precision2);
+  const void* commands3 = GetPut();
+  EXPECT_EQ(commands2, commands3);
+  EXPECT_EQ(range2[0], 14);
+  EXPECT_EQ(range2[1], 14);
+  EXPECT_EQ(precision2, 10);
+
+  // If we then make a request for highp, we should get another command
+  // buffer request since it hasn't been cached yet.
+  GLint range3[2] = {0, 0};
+  GLint precision3 = 0;
+  Cmds expected3;
+  ExpectedMemoryInfo result3 = GetExpectedResultMemory(4);
+  expected3.cmd.Init(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT,
+                     result3.id, result3.offset);
+  Result result3_source = {true, 62, 62, 16};
+  EXPECT_CALL(*command_buffer(), OnFlush())
+      .WillOnce(SetMemory(result3.ptr, result3_source))
+      .RetiresOnSaturation();
+  gl_->GetShaderPrecisionFormat(GL_FRAGMENT_SHADER, GL_HIGH_FLOAT,
+                                range3, &precision3);
+  const void* commands4 = GetPut();
+  EXPECT_NE(commands3, commands4);
+  EXPECT_EQ(0, memcmp(&expected3, commands3, sizeof(expected3)));
+  EXPECT_EQ(range3[0], 62);
+  EXPECT_EQ(range3[1], 62);
+  EXPECT_EQ(precision3, 16);
+}
+
 TEST_F(GLES2ImplementationTest, ShaderSource) {
   const uint32 kBucketId = GLES2Implementation::kResultBucketId;
   const GLuint kShaderId = 456;
@@ -604,7 +894,7 @@ TEST_F(GLES2ImplementationTest, ShaderSource) {
     cmd::SetToken set_token2;
     cmd::SetBucketData set_bucket_data3;
     cmd::SetToken set_token3;
-    ShaderSourceBucket shader_source_bucket;
+    cmds::ShaderSourceBucket shader_source_bucket;
     cmd::SetBucketSize clear_bucket_size;
   };
 
@@ -641,7 +931,7 @@ TEST_F(GLES2ImplementationTest, GetShaderSource) {
   const char kBad = 0x12;
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;
-    GetShaderSource get_shader_source;
+    cmds::GetShaderSource get_shader_source;
     cmd::GetBucketStart get_bucket_start;
     cmd::SetToken set_token1;
     cmd::SetBucketSize set_bucket_size2;
@@ -683,18 +973,18 @@ TEST_F(GLES2ImplementationTest, DrawArraysClientSideBuffers) {
     { 13.0f, 24.0f, 35.0f, 46.0f, },
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawArrays draw;
-    BindBuffer restore;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawArrays draw;
+    cmds::BindBuffer restore;
   };
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
   const GLuint kAttribIndex1 = 1;
@@ -749,19 +1039,19 @@ TEST_F(GLES2ImplementationTest, DrawArraysInstancedANGLEClientSideBuffers) {
     { 13.0f, 24.0f, 35.0f, 46.0f, },
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    VertexAttribDivisorANGLE divisor;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::VertexAttribDivisorANGLE divisor;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawArraysInstancedANGLE draw;
-    BindBuffer restore;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawArraysInstancedANGLE draw;
+    cmds::BindBuffer restore;
   };
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
   const GLuint kAttribIndex1 = 1;
@@ -822,23 +1112,23 @@ TEST_F(GLES2ImplementationTest, DrawElementsClientSideBuffers) {
     1, 2,
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    BindBuffer bind_to_index_emu;
-    BufferData set_index_size;
-    BufferSubData copy_data0;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::BindBuffer bind_to_index_emu;
+    cmds::BufferData set_index_size;
+    cmds::BufferSubData copy_data0;
     cmd::SetToken set_token0;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawElements draw;
-    BindBuffer restore;
-    BindBuffer restore_element;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawElements draw;
+    cmds::BindBuffer restore;
+    cmds::BindBuffer restore_element;
   };
   const GLsizei kIndexSize = sizeof(indices);
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
@@ -906,23 +1196,23 @@ TEST_F(GLES2ImplementationTest, DrawElementsClientSideBuffersIndexUint) {
     1, 2,
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    BindBuffer bind_to_index_emu;
-    BufferData set_index_size;
-    BufferSubData copy_data0;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::BindBuffer bind_to_index_emu;
+    cmds::BufferData set_index_size;
+    cmds::BufferSubData copy_data0;
     cmd::SetToken set_token0;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawElements draw;
-    BindBuffer restore;
-    BindBuffer restore_element;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawElements draw;
+    cmds::BindBuffer restore;
+    cmds::BindBuffer restore_element;
   };
   const GLsizei kIndexSize = sizeof(indices);
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
@@ -1020,20 +1310,20 @@ TEST_F(GLES2ImplementationTest,
     { 13.0f, 24.0f, 35.0f, 46.0f, },
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    BindBuffer bind_to_index;
-    GetMaxValueInBufferCHROMIUM get_max;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::BindBuffer bind_to_index;
+    cmds::GetMaxValueInBufferCHROMIUM get_max;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawElements draw;
-    BindBuffer restore;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawElements draw;
+    cmds::BindBuffer restore;
   };
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
   const GLuint kClientIndexBufferId = 0x789;
@@ -1105,24 +1395,24 @@ TEST_F(GLES2ImplementationTest, DrawElementsInstancedANGLEClientSideBuffers) {
     1, 2,
   };
   struct Cmds {
-    EnableVertexAttribArray enable1;
-    EnableVertexAttribArray enable2;
-    VertexAttribDivisorANGLE divisor;
-    BindBuffer bind_to_index_emu;
-    BufferData set_index_size;
-    BufferSubData copy_data0;
+    cmds::EnableVertexAttribArray enable1;
+    cmds::EnableVertexAttribArray enable2;
+    cmds::VertexAttribDivisorANGLE divisor;
+    cmds::BindBuffer bind_to_index_emu;
+    cmds::BufferData set_index_size;
+    cmds::BufferSubData copy_data0;
     cmd::SetToken set_token0;
-    BindBuffer bind_to_emu;
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::BindBuffer bind_to_emu;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    VertexAttribPointer set_pointer1;
-    BufferSubData copy_data2;
+    cmds::VertexAttribPointer set_pointer1;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
-    VertexAttribPointer set_pointer2;
-    DrawElementsInstancedANGLE draw;
-    BindBuffer restore;
-    BindBuffer restore_element;
+    cmds::VertexAttribPointer set_pointer2;
+    cmds::DrawElementsInstancedANGLE draw;
+    cmds::BindBuffer restore;
+    cmds::BindBuffer restore_element;
   };
   const GLsizei kIndexSize = sizeof(indices);
   const GLuint kEmuBufferId = GLES2Implementation::kClientSideArrayId;
@@ -1197,8 +1487,8 @@ TEST_F(GLES2ImplementationTest, GetVertexBufferPointerv) {
 
   // It's all cached on the client side so no get commands are issued.
   struct Cmds {
-    BindBuffer bind;
-    VertexAttribPointer set_pointer;
+    cmds::BindBuffer bind;
+    cmds::VertexAttribPointer set_pointer;
   };
 
   Cmds expected;
@@ -1242,10 +1532,10 @@ TEST_F(GLES2ImplementationTest, GetVertexAttrib) {
   // Only one set and one get because the client side buffer's info is stored
   // on the client side.
   struct Cmds {
-    EnableVertexAttribArray enable;
-    BindBuffer bind;
-    VertexAttribPointer set_pointer;
-    GetVertexAttribfv get2;  // for getting the value from attrib1
+    cmds::EnableVertexAttribArray enable;
+    cmds::BindBuffer bind;
+    cmds::VertexAttribPointer set_pointer;
+    cmds::GetVertexAttribfv get2;  // for getting the value from attrib1
   };
 
   ExpectedMemoryInfo mem2 = GetExpectedResultMemory(16);
@@ -1318,11 +1608,12 @@ TEST_F(GLES2ImplementationTest, GetVertexAttrib) {
 TEST_F(GLES2ImplementationTest, ReservedIds) {
   // Only the get error command should be issued.
   struct Cmds {
-    GetError get;
+    cmds::GetError get;
   };
   Cmds expected;
 
-  ExpectedMemoryInfo mem1 = GetExpectedResultMemory(sizeof(GetError::Result));
+  ExpectedMemoryInfo mem1 = GetExpectedResultMemory(
+      sizeof(cmds::GetError::Result));
 
   expected.get.Init(mem1.id, mem1.offset);
 
@@ -1346,9 +1637,9 @@ TEST_F(GLES2ImplementationTest, ReservedIds) {
 
 TEST_F(GLES2ImplementationTest, ReadPixels2Reads) {
   struct Cmds {
-    ReadPixels read1;
+    cmds::ReadPixels read1;
     cmd::SetToken set_token1;
-    ReadPixels read2;
+    cmds::ReadPixels read2;
     cmd::SetToken set_token2;
   };
   const GLint kBytesPerPixel = 4;
@@ -1362,22 +1653,23 @@ TEST_F(GLES2ImplementationTest, ReadPixels2Reads) {
   ExpectedMemoryInfo mem1 =
       GetExpectedMemory(kWidth * kHeight / 2 * kBytesPerPixel);
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(ReadPixels::Result));
+      GetExpectedResultMemory(sizeof(cmds::ReadPixels::Result));
   ExpectedMemoryInfo mem2 =
       GetExpectedMemory(kWidth * kHeight / 2 * kBytesPerPixel);
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(ReadPixels::Result));
+      GetExpectedResultMemory(sizeof(cmds::ReadPixels::Result));
 
   Cmds expected;
   expected.read1.Init(
       0, 0, kWidth, kHeight / 2, kFormat, kType,
-      mem1.id, mem1.offset, result1.id, result1.offset);
+      mem1.id, mem1.offset, result1.id, result1.offset,
+      false);
   expected.set_token1.Init(GetNextToken());
   expected.read2.Init(
       0, kHeight / 2, kWidth, kHeight / 2, kFormat, kType,
-      mem2.id, mem2.offset, result2.id, result2.offset);
+      mem2.id, mem2.offset, result2.id, result2.offset, false);
   expected.set_token2.Init(GetNextToken());
-  scoped_array<int8> buffer(new int8[kWidth * kHeight * kBytesPerPixel]);
+  scoped_ptr<int8[]> buffer(new int8[kWidth * kHeight * kBytesPerPixel]);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, static_cast<uint32>(1)))
@@ -1390,7 +1682,7 @@ TEST_F(GLES2ImplementationTest, ReadPixels2Reads) {
 
 TEST_F(GLES2ImplementationTest, ReadPixelsBadFormatType) {
   struct Cmds {
-    ReadPixels read;
+    cmds::ReadPixels read;
     cmd::SetToken set_token;
   };
   const GLint kBytesPerPixel = 4;
@@ -1402,14 +1694,14 @@ TEST_F(GLES2ImplementationTest, ReadPixelsBadFormatType) {
   ExpectedMemoryInfo mem1 =
       GetExpectedMemory(kWidth * kHeight * kBytesPerPixel);
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(ReadPixels::Result));
+      GetExpectedResultMemory(sizeof(cmds::ReadPixels::Result));
 
   Cmds expected;
   expected.read.Init(
       0, 0, kWidth, kHeight, kFormat, kType,
-      mem1.id, mem1.offset, result1.id, result1.offset);
+      mem1.id, mem1.offset, result1.id, result1.offset, false);
   expected.set_token.Init(GetNextToken());
-  scoped_array<int8> buffer(new int8[kWidth * kHeight * kBytesPerPixel]);
+  scoped_ptr<int8[]> buffer(new int8[kWidth * kHeight * kBytesPerPixel]);
 
   EXPECT_CALL(*command_buffer(), OnFlush())
       .Times(1)
@@ -1420,7 +1712,7 @@ TEST_F(GLES2ImplementationTest, ReadPixelsBadFormatType) {
 
 TEST_F(GLES2ImplementationTest, FreeUnusedSharedMemory) {
   struct Cmds {
-    BufferSubData buf;
+    cmds::BufferSubData buf;
     cmd::SetToken set_token;
   };
   const GLenum kTarget = GL_ELEMENT_ARRAY_BUFFER;
@@ -1446,7 +1738,7 @@ TEST_F(GLES2ImplementationTest, FreeUnusedSharedMemory) {
 
 TEST_F(GLES2ImplementationTest, MapUnmapBufferSubDataCHROMIUM) {
   struct Cmds {
-    BufferSubData buf;
+    cmds::BufferSubData buf;
     cmd::SetToken set_token;
   };
   const GLenum kTarget = GL_ELEMENT_ARRAY_BUFFER;
@@ -1473,13 +1765,13 @@ TEST_F(GLES2ImplementationTest, MapUnmapBufferSubDataCHROMIUMBadArgs) {
   const GLsizeiptr kSize = 16;
 
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result3 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result4 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   // Calls to flush to wait for GetError
   EXPECT_CALL(*command_buffer(), OnFlush())
@@ -1506,7 +1798,7 @@ TEST_F(GLES2ImplementationTest, MapUnmapBufferSubDataCHROMIUMBadArgs) {
 
 TEST_F(GLES2ImplementationTest, MapUnmapTexSubImage2DCHROMIUM) {
   struct Cmds {
-    TexSubImage2D tex;
+    cmds::TexSubImage2D tex;
     cmd::SetToken set_token;
   };
   const GLint kLevel = 1;
@@ -1550,19 +1842,19 @@ TEST_F(GLES2ImplementationTest, MapUnmapTexSubImage2DCHROMIUMBadArgs) {
   const GLenum kType = GL_UNSIGNED_BYTE;
 
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result3 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result4 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result5 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result6 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result7 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   // Calls to flush to wait for GetError
   EXPECT_CALL(*command_buffer(), OnFlush())
@@ -1662,7 +1954,7 @@ TEST_F(GLES2ImplementationTest, GetMultipleIntegervCHROMIUMValidArgs) {
   const GLint num_results = 6;
   GLint results[num_results + 1];
   struct Cmds {
-    GetMultipleIntegervCHROMIUM get_multiple;
+    cmds::GetMultipleIntegervCHROMIUM get_multiple;
     cmd::SetToken set_token;
   };
   const GLsizei kNumPnames = arraysize(pnames);
@@ -1671,7 +1963,7 @@ TEST_F(GLES2ImplementationTest, GetMultipleIntegervCHROMIUMValidArgs) {
 
   ExpectedMemoryInfo mem1 = GetExpectedMemory(kPNamesSize + kResultsSize);
   ExpectedMemoryInfo result1 = GetExpectedResultMemory(
-      sizeof(GetError::Result));
+      sizeof(cmds::GetError::Result));
 
   const uint32 kPnamesOffset = mem1.offset;
   const uint32 kResultsOffset = mem1.offset + kPNamesSize;
@@ -1714,13 +2006,13 @@ TEST_F(GLES2ImplementationTest, GetMultipleIntegervCHROMIUMBadArgs) {
   const GLsizeiptr kResultsSize = num_results * sizeof(results[0]);
 
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result3 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result4 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   // Calls to flush to wait for GetError
   EXPECT_CALL(*command_buffer(), OnFlush())
@@ -1782,7 +2074,7 @@ TEST_F(GLES2ImplementationTest, GetProgramInfoCHROMIUMGoodArgs) {
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmd::GetBucketStart::Result));
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   memset(buf, kBad, sizeof(buf));
   EXPECT_CALL(*command_buffer(), OnFlush())
@@ -1793,7 +2085,7 @@ TEST_F(GLES2ImplementationTest, GetProgramInfoCHROMIUMGoodArgs) {
 
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;
-    GetProgramInfoCHROMIUM get_program_info;
+    cmds::GetProgramInfoCHROMIUM get_program_info;
     cmd::GetBucketStart get_bucket_start;
     cmd::SetToken set_token1;
     cmd::SetBucketSize set_bucket_size2;
@@ -1825,11 +2117,11 @@ TEST_F(GLES2ImplementationTest, GetProgramInfoCHROMIUMBadArgs) {
   ExpectedMemoryInfo result1 =
       GetExpectedResultMemory(sizeof(cmd::GetBucketStart::Result));
   ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result3 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
   ExpectedMemoryInfo result4 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(DoAll(SetMemory(result1.ptr, uint32(sizeof(kString))),
@@ -1842,7 +2134,7 @@ TEST_F(GLES2ImplementationTest, GetProgramInfoCHROMIUMBadArgs) {
   // try bufsize not big enough.
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;
-    GetProgramInfoCHROMIUM get_program_info;
+    cmds::GetProgramInfoCHROMIUM get_program_info;
     cmd::GetBucketStart get_bucket_start;
     cmd::SetToken set_token1;
     cmd::SetBucketSize set_bucket_size2;
@@ -1878,26 +2170,26 @@ TEST_F(GLES2ImplementationTest, GetIntegerCacheRead) {
     GLint expected;
   };
   const PNameValue pairs[] = {
-    { GL_ACTIVE_TEXTURE, GL_TEXTURE0, },
-    { GL_TEXTURE_BINDING_2D, 0, },
-    { GL_TEXTURE_BINDING_CUBE_MAP, 0, },
-    { GL_FRAMEBUFFER_BINDING, 0, },
-    { GL_RENDERBUFFER_BINDING, 0, },
-    { GL_ARRAY_BUFFER_BINDING, 0, },
-    { GL_ELEMENT_ARRAY_BUFFER_BINDING, 0, },
-    { GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, kMaxCombinedTextureImageUnits, },
-    { GL_MAX_CUBE_MAP_TEXTURE_SIZE, kMaxCubeMapTextureSize, },
-    { GL_MAX_FRAGMENT_UNIFORM_VECTORS, kMaxFragmentUniformVectors, },
-    { GL_MAX_RENDERBUFFER_SIZE, kMaxRenderbufferSize, },
-    { GL_MAX_TEXTURE_IMAGE_UNITS, kMaxTextureImageUnits, },
-    { GL_MAX_TEXTURE_SIZE, kMaxTextureSize, },
-    { GL_MAX_VARYING_VECTORS, kMaxVaryingVectors, },
-    { GL_MAX_VERTEX_ATTRIBS, kMaxVertexAttribs, },
-    { GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, kMaxVertexTextureImageUnits, },
-    { GL_MAX_VERTEX_UNIFORM_VECTORS, kMaxVertexUniformVectors, },
-    { GL_NUM_COMPRESSED_TEXTURE_FORMATS, kNumCompressedTextureFormats, },
-    { GL_NUM_SHADER_BINARY_FORMATS, kNumShaderBinaryFormats, },
-  };
+      {GL_ACTIVE_TEXTURE, GL_TEXTURE0, },
+      {GL_TEXTURE_BINDING_2D, 0, },
+      {GL_TEXTURE_BINDING_CUBE_MAP, 0, },
+      {GL_TEXTURE_BINDING_EXTERNAL_OES, 0, },
+      {GL_FRAMEBUFFER_BINDING, 0, },
+      {GL_RENDERBUFFER_BINDING, 0, },
+      {GL_ARRAY_BUFFER_BINDING, 0, },
+      {GL_ELEMENT_ARRAY_BUFFER_BINDING, 0, },
+      {GL_MAX_COMBINED_TEXTURE_IMAGE_UNITS, kMaxCombinedTextureImageUnits, },
+      {GL_MAX_CUBE_MAP_TEXTURE_SIZE, kMaxCubeMapTextureSize, },
+      {GL_MAX_FRAGMENT_UNIFORM_VECTORS, kMaxFragmentUniformVectors, },
+      {GL_MAX_RENDERBUFFER_SIZE, kMaxRenderbufferSize, },
+      {GL_MAX_TEXTURE_IMAGE_UNITS, kMaxTextureImageUnits, },
+      {GL_MAX_TEXTURE_SIZE, kMaxTextureSize, },
+      {GL_MAX_VARYING_VECTORS, kMaxVaryingVectors, },
+      {GL_MAX_VERTEX_ATTRIBS, kMaxVertexAttribs, },
+      {GL_MAX_VERTEX_TEXTURE_IMAGE_UNITS, kMaxVertexTextureImageUnits, },
+      {GL_MAX_VERTEX_UNIFORM_VECTORS, kMaxVertexUniformVectors, },
+      {GL_NUM_COMPRESSED_TEXTURE_FORMATS, kNumCompressedTextureFormats, },
+      {GL_NUM_SHADER_BINARY_FORMATS, kNumShaderBinaryFormats, }, };
   size_t num_pairs = sizeof(pairs) / sizeof(pairs[0]);
   for (size_t ii = 0; ii < num_pairs; ++ii) {
     const PNameValue& pv = pairs[ii];
@@ -1908,7 +2200,7 @@ TEST_F(GLES2ImplementationTest, GetIntegerCacheRead) {
   }
 
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, GLuint(GL_NO_ERROR)))
@@ -1928,16 +2220,16 @@ TEST_F(GLES2ImplementationTest, GetIntegerCacheWrite) {
   gl_->BindRenderbuffer(GL_RENDERBUFFER, 5);
   gl_->BindTexture(GL_TEXTURE_2D, 6);
   gl_->BindTexture(GL_TEXTURE_CUBE_MAP, 7);
+  gl_->BindTexture(GL_TEXTURE_EXTERNAL_OES, 8);
 
-  const PNameValue pairs[] = {
-    { GL_ACTIVE_TEXTURE, GL_TEXTURE4, },
-    { GL_ARRAY_BUFFER_BINDING, 2, },
-    { GL_ELEMENT_ARRAY_BUFFER_BINDING, 3, },
-    { GL_FRAMEBUFFER_BINDING, 4, },
-    { GL_RENDERBUFFER_BINDING, 5, },
-    { GL_TEXTURE_BINDING_2D, 6, },
-    { GL_TEXTURE_BINDING_CUBE_MAP, 7, },
-  };
+  const PNameValue pairs[] = {{GL_ACTIVE_TEXTURE, GL_TEXTURE4, },
+                              {GL_ARRAY_BUFFER_BINDING, 2, },
+                              {GL_ELEMENT_ARRAY_BUFFER_BINDING, 3, },
+                              {GL_FRAMEBUFFER_BINDING, 4, },
+                              {GL_RENDERBUFFER_BINDING, 5, },
+                              {GL_TEXTURE_BINDING_2D, 6, },
+                              {GL_TEXTURE_BINDING_CUBE_MAP, 7, },
+                              {GL_TEXTURE_BINDING_EXTERNAL_OES, 8, }, };
   size_t num_pairs = sizeof(pairs) / sizeof(pairs[0]);
   for (size_t ii = 0; ii < num_pairs; ++ii) {
     const PNameValue& pv = pairs[ii];
@@ -1947,7 +2239,7 @@ TEST_F(GLES2ImplementationTest, GetIntegerCacheWrite) {
   }
 
   ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
+      GetExpectedResultMemory(sizeof(cmds::GetError::Result));
 
   EXPECT_CALL(*command_buffer(), OnFlush())
       .WillOnce(SetMemory(result1.ptr, GLuint(GL_NO_ERROR)))
@@ -1991,11 +2283,11 @@ ACTION_P8(CheckRectAction, width, height, format, type, alignment, flip_y,
 // Test TexImage2D with and without flip_y
 TEST_F(GLES2ImplementationTest, TexImage2D) {
   struct Cmds {
-    TexImage2D tex_image_2d;
+    cmds::TexImage2D tex_image_2d;
     cmd::SetToken set_token;
   };
   struct Cmds2 {
-    TexImage2D tex_image_2d;
+    cmds::TexImage2D tex_image_2d;
     cmd::SetToken set_token;
   };
   const GLenum kTarget = GL_TEXTURE_2D;
@@ -2050,10 +2342,10 @@ TEST_F(GLES2ImplementationTest, TexImage2D) {
 // Test TexImage2D with 2 writes
 TEST_F(GLES2ImplementationTest, TexImage2D2Writes) {
   struct Cmds {
-    TexImage2D tex_image_2d;
-    TexSubImage2D tex_sub_image_2d1;
+    cmds::TexImage2D tex_image_2d;
+    cmds::TexSubImage2D tex_sub_image_2d1;
     cmd::SetToken set_token1;
-    TexSubImage2D tex_sub_image_2d2;
+    cmds::TexSubImage2D tex_sub_image_2d2;
     cmd::SetToken set_token2;
   };
   const GLenum kTarget = GL_TEXTURE_2D;
@@ -2079,7 +2371,7 @@ TEST_F(GLES2ImplementationTest, TexImage2D2Writes) {
       kWidth, kHeight / 2, kFormat, kType, kPixelStoreUnpackAlignment,
       &half_size, NULL, NULL));
 
-  scoped_array<uint8> pixels(new uint8[size]);
+  scoped_ptr<uint8[]> pixels(new uint8[size]);
   for (uint32 ii = 0; ii < size; ++ii) {
     pixels[ii] = static_cast<uint8>(ii);
   }
@@ -2166,12 +2458,12 @@ TEST_F(GLES2ImplementationTest, TexSubImage2DFlipY) {
   const GLint kPixelStoreUnpackAlignment = 4;
 
   struct Cmds {
-    PixelStorei pixel_store_i1;
-    TexImage2D tex_image_2d;
-    PixelStorei pixel_store_i2;
-    TexSubImage2D tex_sub_image_2d1;
+    cmds::PixelStorei pixel_store_i1;
+    cmds::TexImage2D tex_image_2d;
+    cmds::PixelStorei pixel_store_i2;
+    cmds::TexSubImage2D tex_sub_image_2d1;
     cmd::SetToken set_token1;
-    TexSubImage2D tex_sub_image_2d2;
+    cmds::TexSubImage2D tex_sub_image_2d2;
     cmd::SetToken set_token2;
   };
 
@@ -2203,7 +2495,7 @@ TEST_F(GLES2ImplementationTest, TexSubImage2DFlipY) {
       kTarget, kLevel, kFormat, kTextureWidth, kTextureHeight, kBorder, kFormat,
       kType, NULL);
   gl_->PixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, GL_TRUE);
-  scoped_array<uint32> pixels(new uint32[kSubImageWidth * kSubImageHeight]);
+  scoped_ptr<uint32[]> pixels(new uint32[kSubImageWidth * kSubImageHeight]);
   for (int y = 0; y < kSubImageHeight; ++y) {
     for (int x = 0; x < kSubImageWidth; ++x) {
       pixels.get()[kSubImageWidth * y + x] = x | (y << 16);
@@ -2245,22 +2537,22 @@ TEST_F(GLES2ImplementationTest, SubImageUnpack) {
   static const GLint kTexSubYOffset = 103;
 
   struct {
-    PixelStorei pixel_store_i;
-    PixelStorei pixel_store_i2;
-    TexImage2D tex_image_2d;
+    cmds::PixelStorei pixel_store_i;
+    cmds::PixelStorei pixel_store_i2;
+    cmds::TexImage2D tex_image_2d;
   } texImageExpected;
 
   struct  {
-    PixelStorei pixel_store_i;
-    PixelStorei pixel_store_i2;
-    TexImage2D tex_image_2d;
-    TexSubImage2D tex_sub_image_2d;
+    cmds::PixelStorei pixel_store_i;
+    cmds::PixelStorei pixel_store_i2;
+    cmds::TexImage2D tex_image_2d;
+    cmds::TexSubImage2D tex_sub_image_2d;
   } texSubImageExpected;
 
   uint32 src_size;
   ASSERT_TRUE(GLES2Util::ComputeImageDataSizes(
       kSrcWidth, kSrcSubImageY1, kFormat, kType, 8, &src_size, NULL, NULL));
-  scoped_array<uint8> src_pixels;
+  scoped_ptr<uint8[]> src_pixels;
   src_pixels.reset(new uint8[src_size]);
   for (size_t i = 0; i < src_size; ++i) {
     src_pixels[i] = static_cast<int8>(i);
@@ -2281,9 +2573,9 @@ TEST_F(GLES2ImplementationTest, SubImageUnpack) {
 
         const void* commands = GetPut();
         gl_->PixelStorei(GL_UNPACK_ALIGNMENT, alignment);
-        gl_->PixelStorei(GL_UNPACK_ROW_LENGTH, kSrcWidth);
-        gl_->PixelStorei(GL_UNPACK_SKIP_PIXELS, kSrcSubImageX0);
-        gl_->PixelStorei(GL_UNPACK_SKIP_ROWS, kSrcSubImageY0);
+        gl_->PixelStorei(GL_UNPACK_ROW_LENGTH_EXT, kSrcWidth);
+        gl_->PixelStorei(GL_UNPACK_SKIP_PIXELS_EXT, kSrcSubImageX0);
+        gl_->PixelStorei(GL_UNPACK_SKIP_ROWS_EXT, kSrcSubImageY0);
         gl_->PixelStorei(GL_UNPACK_FLIP_Y_CHROMIUM, flip_y);
         if (sub) {
           gl_->TexImage2D(
@@ -2348,20 +2640,19 @@ TEST_F(GLES2ImplementationStrictSharedTest, BindsNotCached) {
     GLenum pname;
     GLint expected;
   };
-  const PNameValue pairs[] = {
-    { GL_TEXTURE_BINDING_2D, 1, },
-    { GL_TEXTURE_BINDING_CUBE_MAP, 2, },
-    { GL_FRAMEBUFFER_BINDING, 3, },
-    { GL_RENDERBUFFER_BINDING, 4, },
-    { GL_ARRAY_BUFFER_BINDING, 5, },
-    { GL_ELEMENT_ARRAY_BUFFER_BINDING, 6, },
-  };
+  const PNameValue pairs[] = {{GL_TEXTURE_BINDING_2D, 1, },
+                              {GL_TEXTURE_BINDING_CUBE_MAP, 2, },
+                              {GL_TEXTURE_BINDING_EXTERNAL_OES, 3, },
+                              {GL_FRAMEBUFFER_BINDING, 4, },
+                              {GL_RENDERBUFFER_BINDING, 5, },
+                              {GL_ARRAY_BUFFER_BINDING, 6, },
+                              {GL_ELEMENT_ARRAY_BUFFER_BINDING, 7, }, };
   size_t num_pairs = sizeof(pairs) / sizeof(pairs[0]);
   for (size_t ii = 0; ii < num_pairs; ++ii) {
     const PNameValue& pv = pairs[ii];
     GLint v = -1;
     ExpectedMemoryInfo result1 =
-        GetExpectedResultMemory(sizeof(GetIntegerv::Result));
+        GetExpectedResultMemory(sizeof(cmds::GetIntegerv::Result));
     EXPECT_CALL(*command_buffer(), OnFlush())
         .WillOnce(SetMemory(result1.ptr,
                             SizedResultHelper<GLuint>(pv.expected)))
@@ -2371,31 +2662,56 @@ TEST_F(GLES2ImplementationStrictSharedTest, BindsNotCached) {
   }
 }
 
-TEST_F(GLES2ImplementationTest, CreateStreamTextureCHROMIUM) {
-  const GLuint kTextureId = 123;
-  const GLuint kResult = 456;
+// glGen* Ids must not be reused until glDelete* commands have been
+// flushed by glFlush.
+TEST_F(GLES2ImplementationStrictSharedTest, FlushGenerationTestBuffers) {
+  FlushGenerationTest<GenBuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest, FlushGenerationTestFramebuffers) {
+  FlushGenerationTest<GenFramebuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest, FlushGenerationTestRenderbuffers) {
+  FlushGenerationTest<GenRenderbuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest, FlushGenerationTestTextures) {
+  FlushGenerationTest<GenTexturesAPI>();
+}
 
-  struct Cmds {
-    CreateStreamTextureCHROMIUM create_stream;
-  };
+// glGen* Ids must not be reused cross-context until glDelete* commands are
+// flushed by glFlush, and the Ids are lazily freed after.
+TEST_F(GLES2ImplementationStrictSharedTest, CrossContextGenerationTestBuffers) {
+  CrossContextGenerationTest<GenBuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationTestFramebuffers) {
+  CrossContextGenerationTest<GenFramebuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationTestRenderbuffers) {
+  CrossContextGenerationTest<GenRenderbuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationTestTextures) {
+  CrossContextGenerationTest<GenTexturesAPI>();
+}
 
-  ExpectedMemoryInfo result1 =
-      GetExpectedResultMemory(sizeof(CreateStreamTextureCHROMIUM::Result));
-  ExpectedMemoryInfo result2 =
-      GetExpectedResultMemory(sizeof(GetError::Result));
-
-  Cmds expected;
-  expected.create_stream.Init(kTextureId, result1.id, result1.offset);
-
-  EXPECT_CALL(*command_buffer(), OnFlush())
-      .WillOnce(SetMemory(result1.ptr, kResult))
-      .WillOnce(SetMemory(result2.ptr, GLuint(GL_NO_ERROR)))
-      .RetiresOnSaturation();
-
-  GLuint handle = gl_->CreateStreamTextureCHROMIUM(kTextureId);
-  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
-  EXPECT_EQ(handle, kResult);
-  EXPECT_EQ(static_cast<GLenum>(GL_NO_ERROR), gl_->GetError());
+// Test Delete which causes auto flush.  Tests a regression case that occurred
+// in testing.
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationAutoFlushTestBuffers) {
+  CrossContextGenerationAutoFlushTest<GenBuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationAutoFlushTestFramebuffers) {
+  CrossContextGenerationAutoFlushTest<GenFramebuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationAutoFlushTestRenderbuffers) {
+  CrossContextGenerationAutoFlushTest<GenRenderbuffersAPI>();
+}
+TEST_F(GLES2ImplementationStrictSharedTest,
+       CrossContextGenerationAutoFlushTestTextures) {
+  CrossContextGenerationAutoFlushTest<GenTexturesAPI>();
 }
 
 TEST_F(GLES2ImplementationTest, GetString) {
@@ -2406,13 +2722,12 @@ TEST_F(GLES2ImplementationTest, GetString) {
   const char* expected_str =
       "foobar "
       "GL_CHROMIUM_flipy "
-      "GL_CHROMIUM_map_sub "
-      "GL_CHROMIUM_shallow_flush "
-      "GL_EXT_unpack_subimage";
+      "GL_EXT_unpack_subimage "
+      "GL_CHROMIUM_map_sub";
   const char kBad = 0x12;
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;
-    GetString get_string;
+    cmds::GetString get_string;
     cmd::GetBucketStart get_bucket_start;
     cmd::SetToken set_token1;
     cmd::SetBucketSize set_bucket_size2;
@@ -2446,11 +2761,11 @@ TEST_F(GLES2ImplementationTest, PixelStoreiGLPackReverseRowOrderANGLE) {
   const Str7 kString = {"foobar"};
   struct Cmds {
     cmd::SetBucketSize set_bucket_size1;
-    GetString get_string;
+    cmds::GetString get_string;
     cmd::GetBucketStart get_bucket_start;
     cmd::SetToken set_token1;
     cmd::SetBucketSize set_bucket_size2;
-    PixelStorei pixel_store;
+    cmds::PixelStorei pixel_store;
   };
 
   ExpectedMemoryInfo mem1 = GetExpectedMemory(MaxTransferBufferSize());
@@ -2478,7 +2793,7 @@ TEST_F(GLES2ImplementationTest, PixelStoreiGLPackReverseRowOrderANGLE) {
 
 TEST_F(GLES2ImplementationTest, CreateProgram) {
   struct Cmds {
-    CreateProgram cmd;
+    cmds::CreateProgram cmd;
   };
 
   Cmds expected;
@@ -2490,10 +2805,10 @@ TEST_F(GLES2ImplementationTest, CreateProgram) {
 
 TEST_F(GLES2ImplementationTest, BufferDataLargerThanTransferBuffer) {
   struct Cmds {
-    BufferData set_size;
-    BufferSubData copy_data1;
+    cmds::BufferData set_size;
+    cmds::BufferSubData copy_data1;
     cmd::SetToken set_token1;
-    BufferSubData copy_data2;
+    cmds::BufferSubData copy_data2;
     cmd::SetToken set_token2;
   };
   const unsigned kUsableSize =
@@ -2529,7 +2844,7 @@ TEST_F(GLES2ImplementationTest, CapabilitiesAreCached) {
     GL_STENCIL_TEST,
   };
   struct Cmds {
-    Enable enable_cmd;
+    cmds::Enable enable_cmd;
   };
   Cmds expected;
 
@@ -2557,7 +2872,7 @@ TEST_F(GLES2ImplementationTest, BindVertexArrayOES) {
   ClearCommands();
 
   struct Cmds {
-    BindVertexArrayOES cmd;
+    cmds::BindVertexArrayOES cmd;
   };
   Cmds expected;
   expected.cmd.Init(id);
@@ -2578,7 +2893,7 @@ TEST_F(GLES2ImplementationTest, BeginEndQueryEXT) {
 
   GLuint expected_ids[2] = { 1, 2 }; // These must match what's actually genned.
   struct GenCmds {
-    GenQueriesEXTImmediate gen;
+    cmds::GenQueriesEXTImmediate gen;
     GLuint data[2];
   };
   GenCmds expected_gen_cmds;
@@ -2596,12 +2911,9 @@ TEST_F(GLES2ImplementationTest, BeginEndQueryEXT) {
   EXPECT_TRUE(NoCommandsWritten());
   EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
 
-  // Test BeginQueryEXT fails if id not GENed.
-  // TODO(gman):
-
   // Test BeginQueryEXT inserts command.
   struct BeginCmds {
-    BeginQueryEXT begin_query;
+    cmds::BeginQueryEXT begin_query;
   };
   BeginCmds expected_begin_cmds;
   const void* commands = GetPut();
@@ -2635,7 +2947,7 @@ TEST_F(GLES2ImplementationTest, BeginEndQueryEXT) {
 
   // Test EndQueryEXT sends command
   struct EndCmds {
-    EndQueryEXT end_query;
+    cmds::EndQueryEXT end_query;
   };
   EndCmds expected_end_cmds;
   expected_end_cmds.end_query.Init(
@@ -2652,7 +2964,7 @@ TEST_F(GLES2ImplementationTest, BeginEndQueryEXT) {
   EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
 
   // Test 2nd Begin/End increments count.
-  uint32 old_submit_count = query->submit_count();
+  base::subtle::Atomic32 old_submit_count = query->submit_count();
   gl_->BeginQueryEXT(GL_ANY_SAMPLES_PASSED_EXT, id1);
   EXPECT_NE(old_submit_count, query->submit_count());
   expected_end_cmds.end_query.Init(
@@ -2686,7 +2998,6 @@ TEST_F(GLES2ImplementationTest, BeginEndQueryEXT) {
   // Test GetQueryObjectuivEXT CheckResultsAvailable
   ClearCommands();
   gl_->GetQueryObjectuivEXT(id1, GL_QUERY_RESULT_AVAILABLE_EXT, &available);
-  EXPECT_TRUE(NoCommandsWritten());
   EXPECT_EQ(0u, available);
 }
 
@@ -2703,8 +3014,8 @@ TEST_F(GLES2ImplementationTest, ErrorQuery) {
 
   // Test EndQueryEXT sends both begin and end command
   struct EndCmds {
-    BeginQueryEXT begin_query;
-    EndQueryEXT end_query;
+    cmds::BeginQueryEXT begin_query;
+    cmds::EndQueryEXT end_query;
   };
   EndCmds expected_end_cmds;
   expected_end_cmds.begin_query.Init(
@@ -2773,7 +3084,7 @@ TEST_F(GLES2ImplementationTest, VertexArrays) {
 
 TEST_F(GLES2ImplementationTest, Disable) {
   struct Cmds {
-    Disable cmd;
+    cmds::Disable cmd;
   };
   Cmds expected;
   expected.cmd.Init(GL_DITHER);  // Note: DITHER defaults to enabled.
@@ -2788,7 +3099,7 @@ TEST_F(GLES2ImplementationTest, Disable) {
 
 TEST_F(GLES2ImplementationTest, Enable) {
   struct Cmds {
-    Enable cmd;
+    cmds::Enable cmd;
   };
   Cmds expected;
   expected.cmd.Init(GL_BLEND);  // Note: BLEND defaults to disabled.
@@ -2801,9 +3112,184 @@ TEST_F(GLES2ImplementationTest, Enable) {
   EXPECT_TRUE(NoCommandsWritten());
 }
 
+TEST_F(GLES2ImplementationTest, ConsumeTextureCHROMIUM) {
+  struct Cmds {
+    cmds::ConsumeTextureCHROMIUMImmediate cmd;
+    GLbyte data[64];
+  };
+
+  Mailbox mailbox = Mailbox::Generate();
+  Cmds expected;
+  expected.cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  gl_->ConsumeTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, ProduceTextureCHROMIUM) {
+  struct Cmds {
+    cmds::ProduceTextureCHROMIUMImmediate cmd;
+    GLbyte data[64];
+  };
+
+  Mailbox mailbox = Mailbox::Generate();
+  Cmds expected;
+  expected.cmd.Init(GL_TEXTURE_2D, mailbox.name);
+  gl_->ProduceTextureCHROMIUM(GL_TEXTURE_2D, mailbox.name);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationTest, LimitSizeAndOffsetTo32Bit) {
+  GLsizeiptr size;
+  GLintptr offset;
+  if (sizeof(size) <= 4 || sizeof(offset) <= 4)
+    return;
+  // The below two casts should be no-op, as we return early if
+  // it's 32-bit system.
+  int64 value64 = 0x100000000;
+  size = static_cast<GLsizeiptr>(value64);
+  offset = static_cast<GLintptr>(value64);
+
+  const char kSizeOverflowMessage[] = "size more than 32-bit";
+  const char kOffsetOverflowMessage[] = "offset more than 32-bit";
+
+  const GLfloat buf[] = { 1.0, 1.0, 1.0, 1.0 };
+  const GLubyte indices[] = { 0 };
+
+  const GLuint kClientArrayBufferId = 0x789;
+  const GLuint kClientElementArrayBufferId = 0x790;
+  gl_->BindBuffer(GL_ARRAY_BUFFER, kClientArrayBufferId);
+  gl_->BindBuffer(GL_ELEMENT_ARRAY_BUFFER, kClientElementArrayBufferId);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // Call BufferData() should succeed with legal paramaters.
+  gl_->BufferData(GL_ARRAY_BUFFER, sizeof(buf), buf, GL_DYNAMIC_DRAW);
+  gl_->BufferData(
+      GL_ELEMENT_ARRAY_BUFFER, sizeof(indices), indices, GL_DYNAMIC_DRAW);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // BufferData: size
+  gl_->BufferData(GL_ARRAY_BUFFER, size, buf, GL_DYNAMIC_DRAW);
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kSizeOverflowMessage, GetLastError().c_str());
+
+  // Call BufferSubData() should succeed with legal paramaters.
+  gl_->BufferSubData(GL_ARRAY_BUFFER, 0, sizeof(buf[0]), buf);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // BufferSubData: offset
+  gl_->BufferSubData(GL_ARRAY_BUFFER, offset, 1, buf);
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+
+  // BufferSubData: size
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+  gl_->BufferSubData(GL_ARRAY_BUFFER, 0, size, buf);
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kSizeOverflowMessage, GetLastError().c_str());
+
+  // Call MapBufferSubDataCHROMIUM() should succeed with legal paramaters.
+  EXPECT_TRUE(NULL != gl_->MapBufferSubDataCHROMIUM(
+      GL_ARRAY_BUFFER, 0, 1, GL_WRITE_ONLY));
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // MapBufferSubDataCHROMIUM: offset
+  EXPECT_TRUE(NULL == gl_->MapBufferSubDataCHROMIUM(
+      GL_ARRAY_BUFFER, offset, 1, GL_WRITE_ONLY));
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+
+  // MapBufferSubDataCHROMIUM: size
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+  EXPECT_TRUE(NULL == gl_->MapBufferSubDataCHROMIUM(
+      GL_ARRAY_BUFFER, 0, size, GL_WRITE_ONLY));
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kSizeOverflowMessage, GetLastError().c_str());
+
+  // Call DrawElements() should succeed with legal paramaters.
+  gl_->DrawElements(GL_POINTS, 1, GL_UNSIGNED_BYTE, NULL);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // DrawElements: offset
+  gl_->DrawElements(
+      GL_POINTS, 1, GL_UNSIGNED_BYTE, reinterpret_cast<void*>(offset));
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+
+  // Call DrawElementsInstancedANGLE() should succeed with legal paramaters.
+  gl_->DrawElementsInstancedANGLE(GL_POINTS, 1, GL_UNSIGNED_BYTE, NULL, 1);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // DrawElementsInstancedANGLE: offset
+  gl_->DrawElementsInstancedANGLE(
+      GL_POINTS, 1, GL_UNSIGNED_BYTE, reinterpret_cast<void*>(offset), 1);
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+
+  // Call VertexAttribPointer() should succeed with legal paramaters.
+  const GLuint kAttribIndex = 1;
+  const GLsizei kStride = 4;
+  gl_->VertexAttribPointer(
+      kAttribIndex, 1, GL_FLOAT, GL_FALSE, kStride, NULL);
+  EXPECT_EQ(GL_NO_ERROR, CheckError());
+
+  // VertexAttribPointer: offset
+  gl_->VertexAttribPointer(
+      kAttribIndex, 1, GL_FLOAT, GL_FALSE, kStride,
+      reinterpret_cast<void*>(offset));
+  EXPECT_EQ(GL_INVALID_OPERATION, CheckError());
+  EXPECT_STREQ(kOffsetOverflowMessage, GetLastError().c_str());
+}
+
+TEST_F(GLES2ImplementationManualInitTest, LoseContextOnOOM) {
+  ContextInitOptions init_options;
+  init_options.lose_context_when_out_of_memory = true;
+  ASSERT_TRUE(Initialize(init_options));
+
+  struct Cmds {
+    cmds::LoseContextCHROMIUM cmd;
+  };
+
+  GLsizei max = std::numeric_limits<GLsizei>::max();
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
+      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
+  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  // The context should be lost.
+  Cmds expected;
+  expected.cmd.Init(GL_GUILTY_CONTEXT_RESET_ARB, GL_UNKNOWN_CONTEXT_RESET_ARB);
+  EXPECT_EQ(0, memcmp(&expected, commands_, sizeof(expected)));
+}
+
+TEST_F(GLES2ImplementationManualInitTest, NoLoseContextOnOOM) {
+  ContextInitOptions init_options;
+  ASSERT_TRUE(Initialize(init_options));
+
+  struct Cmds {
+    cmds::LoseContextCHROMIUM cmd;
+  };
+
+  GLsizei max = std::numeric_limits<GLsizei>::max();
+  EXPECT_CALL(*gpu_control_, CreateGpuMemoryBuffer(max, max, _, _, _))
+      .WillOnce(Return(static_cast<gfx::GpuMemoryBuffer*>(NULL)));
+  gl_->CreateImageCHROMIUM(max, max, 0, GL_IMAGE_MAP_CHROMIUM);
+  // The context should not be lost.
+  EXPECT_TRUE(NoCommandsWritten());
+}
+
+TEST_F(GLES2ImplementationManualInitTest, FailInitOnBGRMismatch1) {
+  ContextInitOptions init_options;
+  init_options.bind_generates_resource_client = false;
+  init_options.bind_generates_resource_service = true;
+  EXPECT_FALSE(Initialize(init_options));
+}
+
+TEST_F(GLES2ImplementationManualInitTest, FailInitOnBGRMismatch2) {
+  ContextInitOptions init_options;
+  init_options.bind_generates_resource_client = true;
+  init_options.bind_generates_resource_service = false;
+  EXPECT_FALSE(Initialize(init_options));
+}
 
 #include "gpu/command_buffer/client/gles2_implementation_unittest_autogen.h"
 
 }  // namespace gles2
 }  // namespace gpu
-

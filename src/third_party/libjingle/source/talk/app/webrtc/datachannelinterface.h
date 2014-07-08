@@ -41,19 +41,46 @@
 namespace webrtc {
 
 struct DataChannelInit {
-  bool reliable;
+  DataChannelInit()
+      : reliable(false),
+        ordered(true),
+        maxRetransmitTime(-1),
+        maxRetransmits(-1),
+        negotiated(false),
+        id(-1) {
+  }
+
+  bool reliable;           // Deprecated.
+  bool ordered;            // True if ordered delivery is required.
+  int maxRetransmitTime;   // The max period of time in milliseconds in which
+                           // retransmissions will be sent.  After this time, no
+                           // more retransmissions will be sent. -1 if unset.
+  int maxRetransmits;      // The max number of retransmissions. -1 if unset.
+  std::string protocol;    // This is set by the application and opaque to the
+                           // WebRTC implementation.
+  bool negotiated;         // True if the channel has been externally negotiated
+                           // and we do not send an in-band signalling in the
+                           // form of an "open" message.
+  int id;                  // The stream id, or SID, for SCTP data channels. -1
+                           // if unset.
 };
 
 struct DataBuffer {
-  DataBuffer() : binary(false) {
+  DataBuffer(const talk_base::Buffer& data, bool binary)
+      : data(data),
+        binary(binary) {
   }
-  explicit DataBuffer(const std::string& string_to_send)
-      : data(string_to_send.c_str(), string_to_send.length()),
+  // For convenience for unit tests.
+  explicit DataBuffer(const std::string& text)
+      : data(text.data(), text.length()),
         binary(false) {
   }
+  size_t size() const { return data.length(); }
+
   talk_base::Buffer data;
-  // Indicates if the receivied data contains UTF-8 or binary data.
+  // Indicates if the received data contains UTF-8 or binary data.
   // Note that the upper layers are left to verify the UTF-8 encoding.
+  // TODO(jiayl): prefer to use an enum instead of a bool.
   bool binary;
 };
 
@@ -70,6 +97,8 @@ class DataChannelObserver {
 
 class DataChannelInterface : public talk_base::RefCountInterface {
  public:
+  // Keep in sync with DataChannel.java:State and
+  // RTCDataChannel.h:RTCDataChannelState.
   enum DataState {
     kConnecting,
     kOpen,  // The DataChannel is ready to send data.
@@ -81,8 +110,19 @@ class DataChannelInterface : public talk_base::RefCountInterface {
   virtual void UnregisterObserver() = 0;
   // The label attribute represents a label that can be used to distinguish this
   // DataChannel object from other DataChannel objects.
-  virtual const std::string& label() const = 0;
+  virtual std::string label() const = 0;
   virtual bool reliable() const = 0;
+
+  // TODO(tommyw): Remove these dummy implementations when all classes have
+  // implemented these APIs. They should all just return the values the
+  // DataChannel was created with.
+  virtual bool ordered() const { return false; }
+  virtual uint16 maxRetransmitTime() const { return 0; }
+  virtual uint16 maxRetransmits() const { return 0; }
+  virtual std::string protocol() const { return std::string(); }
+  virtual bool negotiated() const { return false; }
+
+  virtual int id() const = 0;
   virtual DataState state() const = 0;
   // The buffered_amount returns the number of bytes of application data
   // (UTF-8 text and binary data) that have been queued using SendBuffer but

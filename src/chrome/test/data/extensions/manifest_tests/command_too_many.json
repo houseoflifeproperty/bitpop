@@ -1,5 +1,5 @@
 {
-  "name": "Command test - too many commands",
+  "name": "Command test - too many commands with shortcuts",
   "manifest_version": 2,
   "version": "2",
   "commands": {
@@ -24,4 +24,4 @@
       "description": "feature5"
     }
   }
- }
+}

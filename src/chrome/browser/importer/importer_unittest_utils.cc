@@ -4,42 +4,18 @@
 
 #include "chrome/browser/importer/importer_unittest_utils.h"
 
-#include "base/utf_string_conversions.h"
-#include "chrome/test/base/testing_profile.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/common/importer/imported_bookmark_entry.h"
+#include "testing/gtest/include/gtest/gtest.h"
 
-bool EqualBookmarkEntry(const ProfileWriter::BookmarkEntry& entry,
-                        const BookmarkInfo& expected) {
-  if (expected.in_toolbar != entry.in_toolbar ||
-      expected.path_size != entry.path.size() ||
-      expected.url != entry.url.spec() ||
-      WideToUTF16Hack(expected.title) != entry.title)
-    return false;
+void TestEqualBookmarkEntry(const ImportedBookmarkEntry& entry,
+                            const BookmarkInfo& expected) {
+  ASSERT_EQ(base::WideToUTF16(expected.title), entry.title);
+  ASSERT_EQ(expected.in_toolbar, entry.in_toolbar) << entry.title;
+  ASSERT_EQ(expected.path_size, entry.path.size()) << entry.title;
+  ASSERT_EQ(expected.url, entry.url.spec()) << entry.title;
   for (size_t i = 0; i < expected.path_size; ++i) {
-    if (WideToUTF16Hack(expected.path[i]) != entry.path[i])
-      return false;
+    ASSERT_EQ(base::ASCIIToUTF16(expected.path[i]),
+              entry.path[i]) << entry.title;
   }
-  return true;
-}
-
-bool FindBookmarkEntry(const ProfileWriter::BookmarkEntry& entry,
-                       const BookmarkInfo* list, int list_size) {
-  for (int i = 0; i < list_size; ++i) {
-    if (EqualBookmarkEntry(entry, list[i]))
-      return true;
-  }
-  return false;
-}
-
-ImporterTest::ImporterTest()
-    : profile_(new TestingProfile()),
-      ui_thread_(content::BrowserThread::UI, &message_loop_),
-      file_thread_(content::BrowserThread::FILE, &message_loop_) {
-}
-
-ImporterTest::~ImporterTest() {
-  profile_.reset(NULL);
-}
-
-void ImporterTest::SetUp() {
-  ASSERT_TRUE(temp_dir_.CreateUniqueTempDir());
 }

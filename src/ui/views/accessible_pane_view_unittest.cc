@@ -5,7 +5,7 @@
 #include "ui/views/accessible_pane_view.h"
 
 #include "ui/base/accelerators/accelerator.h"
-#include "ui/views/controls/button/text_button.h"
+#include "ui/views/controls/button/label_button.h"
 #include "ui/views/layout/fill_layout.h"
 #include "ui/views/test/views_test_base.h"
 #include "ui/views/widget/widget.h"
@@ -25,43 +25,46 @@ class TestBarView : public AccessiblePaneView,
 
   virtual void ButtonPressed(Button* sender,
                              const ui::Event& event) OVERRIDE;
-  TextButton* child_button() const { return child_button_.get(); }
-  TextButton* second_child_button() const { return second_child_button_.get(); }
-  TextButton* third_child_button() const { return third_child_button_.get(); }
-  TextButton* not_child_button() const { return not_child_button_.get(); }
+  LabelButton* child_button() const { return child_button_.get(); }
+  LabelButton* second_child_button() const {
+    return second_child_button_.get();
+  }
+  LabelButton* third_child_button() const { return third_child_button_.get(); }
+  LabelButton* not_child_button() const { return not_child_button_.get(); }
 
   virtual View* GetDefaultFocusableChild() OVERRIDE;
 
  private:
   void Init();
 
-  scoped_ptr<TextButton> child_button_;
-  scoped_ptr<TextButton> second_child_button_;
-  scoped_ptr<TextButton> third_child_button_;
-  scoped_ptr<TextButton> not_child_button_;
+  scoped_ptr<LabelButton> child_button_;
+  scoped_ptr<LabelButton> second_child_button_;
+  scoped_ptr<LabelButton> third_child_button_;
+  scoped_ptr<LabelButton> not_child_button_;
 
   DISALLOW_COPY_AND_ASSIGN(TestBarView);
 };
 
 TestBarView::TestBarView() {
   Init();
+  set_allow_deactivate_on_esc(true);
 }
 
 TestBarView::~TestBarView() {}
 
-void TestBarView::ButtonPressed(views::Button* sender, const ui::Event& event) {
+void TestBarView::ButtonPressed(Button* sender, const ui::Event& event) {
 }
 
 void TestBarView::Init() {
-  SetLayoutManager(new views::FillLayout());
-  string16 label;
-  child_button_.reset(new TextButton(this, label));
+  SetLayoutManager(new FillLayout());
+  base::string16 label;
+  child_button_.reset(new LabelButton(this, label));
   AddChildView(child_button_.get());
-  second_child_button_.reset(new TextButton(this, label));
+  second_child_button_.reset(new LabelButton(this, label));
   AddChildView(second_child_button_.get());
-  third_child_button_.reset(new TextButton(this, label));
+  third_child_button_.reset(new LabelButton(this, label));
   AddChildView(third_child_button_.get());
-  not_child_button_.reset(new TextButton(this, label));
+  not_child_button_.reset(new LabelButton(this, label));
 }
 
 View* TestBarView::GetDefaultFocusableChild() {
@@ -72,7 +75,7 @@ TEST_F(AccessiblePaneViewTest, SimpleSetPaneFocus) {
   TestBarView* test_view = new TestBarView();
   scoped_ptr<Widget> widget(new Widget());
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
   View* root = widget->GetRootView();
@@ -96,12 +99,58 @@ TEST_F(AccessiblePaneViewTest, SimpleSetPaneFocus) {
   widget.reset();
 }
 
+// This test will not work properly in Windows because it uses ::GetNextWindow
+// on deactivate which is rather unpredictable where the focus will land.
+TEST_F(AccessiblePaneViewTest, SetPaneFocusAndRestore) {
+  View* test_view_main = new View();
+  scoped_ptr<Widget> widget_main(new Widget());
+  Widget::InitParams params_main = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params_main.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params_main.bounds = gfx::Rect(0, 0, 20, 20);
+  widget_main->Init(params_main);
+  View* root_main = widget_main->GetRootView();
+  root_main->AddChildView(test_view_main);
+  widget_main->Activate();
+  test_view_main->GetFocusManager()->SetFocusedView(test_view_main);
+  EXPECT_TRUE(widget_main->IsActive());
+  EXPECT_TRUE(test_view_main->HasFocus());
+
+  TestBarView* test_view_bar = new TestBarView();
+  scoped_ptr<Widget> widget_bar(new Widget());
+  Widget::InitParams params_bar = CreateParams(Widget::InitParams::TYPE_POPUP);
+  params_bar.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params_bar.bounds = gfx::Rect(50, 50, 650, 650);
+  widget_bar->Init(params_bar);
+  View* root_bar = widget_bar->GetRootView();
+  root_bar->AddChildView(test_view_bar);
+  widget_bar->Show();
+  widget_bar->Activate();
+
+  // Set pane focus succeeds, focus on child.
+  EXPECT_TRUE(test_view_bar->SetPaneFocusAndFocusDefault());
+  EXPECT_FALSE(test_view_main->HasFocus());
+  EXPECT_FALSE(widget_main->IsActive());
+  EXPECT_EQ(test_view_bar, test_view_bar->GetPaneFocusTraversable());
+  EXPECT_EQ(test_view_bar->child_button(),
+            test_view_bar->GetWidget()->GetFocusManager()->GetFocusedView());
+
+  test_view_bar->AcceleratorPressed(test_view_bar->escape_key());
+  EXPECT_TRUE(widget_main->IsActive());
+  EXPECT_FALSE(widget_bar->IsActive());
+
+  widget_bar->CloseNow();
+  widget_bar.reset();
+
+  widget_main->CloseNow();
+  widget_main.reset();
+}
+
 TEST_F(AccessiblePaneViewTest, TwoSetPaneFocus) {
   TestBarView* test_view = new TestBarView();
   TestBarView* test_view_2 = new TestBarView();
   scoped_ptr<Widget> widget(new Widget());
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
   View* root = widget->GetRootView();
@@ -131,7 +180,7 @@ TEST_F(AccessiblePaneViewTest, PaneFocusTraversal) {
   TestBarView* original_test_view = new TestBarView();
   scoped_ptr<Widget> widget(new Widget());
   Widget::InitParams params = CreateParams(Widget::InitParams::TYPE_POPUP);
-  params.ownership = views::Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
+  params.ownership = Widget::InitParams::WIDGET_OWNS_NATIVE_WIDGET;
   params.bounds = gfx::Rect(50, 50, 650, 650);
   widget->Init(params);
   View* root = widget->GetRootView();

@@ -16,10 +16,12 @@
 
 package com.google.ipc.invalidation.ticl;
 
+import com.google.ipc.invalidation.common.CommonProtoStrings2;
 import com.google.ipc.invalidation.common.DigestFunction;
 import com.google.ipc.invalidation.common.ObjectIdDigestUtils;
 import com.google.ipc.invalidation.util.Bytes;
 import com.google.ipc.invalidation.util.InternalBase;
+import com.google.ipc.invalidation.util.TextBuilder;
 import com.google.protos.ipc.invalidation.ClientProtocol.ObjectIdP;
 
 import java.util.ArrayList;
@@ -128,5 +130,13 @@ class SimpleRegistrationStore extends InternalBase implements DigestStore<Object
   /** Recomputes the digests over all objects and sets {@code this.digest}. */
   private void recomputeDigest() {
     this.digest = ObjectIdDigestUtils.getDigest(registrations.keySet(), digestFunction);
+  }
+
+  @Override
+  public void toCompactString(TextBuilder builder) {
+    builder.append("<SimpleRegistrationStore: registrations=");
+    CommonProtoStrings2.toCompactStringForObjectIds(builder, registrations.values());
+    builder.append(", digest=").append(digest)
+        .append(">");
   }
 }

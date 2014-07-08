@@ -83,7 +83,11 @@ cr.define('bmm', function() {
       return new BookmarkListItem(bookmarkNode);
     },
 
+    /** @private {string} */
     parentId_: '',
+
+    /** @private {number} */
+    loadCount_: 0,
 
     /**
      * Reloads the list from the bookmarks backend.
@@ -92,17 +96,15 @@ cr.define('bmm', function() {
       var parentId = this.parentId;
 
       var callback = this.handleBookmarkCallback_.bind(this);
-      this.loading_ = true;
 
-      if (!parentId) {
+      this.loadCount_++;
+
+      if (!parentId)
         callback([]);
-      } else if (/^q=/.test(parentId)) {
+      else if (/^q=/.test(parentId))
         chrome.bookmarks.search(parentId.slice(2), callback);
-      } else if (parentId == 'recent') {
-        chrome.bookmarks.getRecent(50, callback);
-      } else {
+      else
         chrome.bookmarks.getChildren(parentId, callback);
-      }
     },
 
     /**
@@ -111,28 +113,30 @@ cr.define('bmm', function() {
      * @private
      */
     handleBookmarkCallback_: function(items) {
+      this.loadCount_--;
+      if (this.loadCount_)
+        return;
+
       if (!items) {
         // Failed to load bookmarks. Most likely due to the bookmark being
         // removed.
         cr.dispatchSimpleEvent(this, 'invalidId');
-        this.loading_ = false;
         return;
       }
 
       this.dataModel = new BookmarksArrayDataModel(items);
 
-      this.loading_ = false;
       this.fixWidth_();
       cr.dispatchSimpleEvent(this, 'load');
     },
 
     /**
      * The bookmark node that the list is currently displaying. If we are
-     * currently displaying recent or search this returns null.
+     * currently displaying search this returns null.
      * @type {BookmarkTreeNode}
      */
     get bookmarkNode() {
-      if (this.isSearch() || this.isRecent())
+      if (this.isSearch())
         return null;
       var treeItem = bmm.treeLookup[this.parentId];
       return treeItem && treeItem.bookmarkNode;
@@ -146,10 +150,15 @@ cr.define('bmm', function() {
     },
 
     /**
-     * @return {boolean} Whether we are currently showing recent bookmakrs.
+     * @return {boolean} Whether we are editing an ephemeral item.
      */
-    isRecent: function() {
-      return this.parentId_ == 'recent';
+    hasEphemeral: function() {
+      var dataModel = this.dataModel;
+      for (var i = 0; i < dataModel.array_.length; i++) {
+        if (dataModel.array_[i].id == 'new')
+          return true;
+      }
+      return false;
     },
 
     /**
@@ -165,6 +174,7 @@ cr.define('bmm', function() {
       }
 
       if (el && el.parentNode == this &&
+          !el.editing &&
           !(el.lastChild instanceof ContextMenuButton)) {
         el.appendChild(new ContextMenuButton);
       }
@@ -178,7 +188,7 @@ cr.define('bmm', function() {
      * @param {!Event} originalEvent The original click event object.
      */
     dispatchUrlClickedEvent_: function(url, originalEvent) {
-      var event = new cr.Event('urlClicked', true, false);
+      var event = new Event('urlClicked', {bubbles: true});
       event.url = url;
       event.originalEvent = originalEvent;
       this.dispatchEvent(event);
@@ -251,6 +261,7 @@ cr.define('bmm', function() {
         var newArray = [];
         for (var i = 0; i < reorderInfo.childIds.length; i++) {
           newArray[i] = items[reorderInfo.childIds[i]];
+          newArray[i].index = i;
         }
 
         this.dataModel = new BookmarksArrayDataModel(newArray);
@@ -258,9 +269,8 @@ cr.define('bmm', function() {
     },
 
     handleCreated: function(id, bookmarkNode) {
-      if (this.parentId == bookmarkNode.parentId) {
+      if (this.parentId == bookmarkNode.parentId)
         this.dataModel.splice(bookmarkNode.index, 0, bookmarkNode);
-      }
     },
 
     handleMoved: function(id, moveInfo) {
@@ -313,7 +323,7 @@ cr.define('bmm', function() {
      */
     fixWidth_: function() {
       var list = bmm.list;
-      if (this.loading_ || !list)
+      if (this.loadCount_ || !list)
         return;
 
       // The width of the list is wrong after its content has changed.
@@ -389,7 +399,7 @@ cr.define('bmm', function() {
       if (bmm.isFolder(bookmarkNode)) {
         this.className = 'folder';
       } else {
-        labelEl.style.backgroundImage = url(getFaviconURL(bookmarkNode.url));
+        labelEl.style.backgroundImage = getFaviconImageSet(bookmarkNode.url);
         labelEl.style.backgroundSize = '16px';
         urlEl.textContent = bookmarkNode.url;
       }
@@ -446,7 +456,36 @@ cr.define('bmm', function() {
           case 'Enter':
             if (listItem.parentNode)
               listItem.parentNode.focus();
+            break;
+          case 'U+0009':  // Tab
+            // urlInput is the last focusable element in the page.  If we
+            // allowed Tab focus navigation and the page loses focus, we
+            // couldn't give focus on urlInput programatically. So, we prevent
+            // Tab focus navigation.
+            if (document.activeElement == urlInput && !e.ctrlKey &&
+                !e.metaKey && !e.shiftKey && !getValidURL(urlInput)) {
+              e.preventDefault();
+              urlInput.blur();
+            }
+            break;
         }
+      }
+
+      function getValidURL(input) {
+        var originalValue = input.value;
+        if (!originalValue)
+          return null;
+        if (input.validity.valid)
+          return originalValue;
+        // Blink does not do URL fix up so we manually test if prepending
+        // 'http://' would make the URL valid.
+        // https://bugs.webkit.org/show_bug.cgi?id=29235
+        input.value = 'http://' + originalValue;
+        if (input.validity.valid)
+          return input.value;
+        // still invalid
+        input.value = originalValue;
+        return null;
       }
 
       function handleBlur(e) {
@@ -455,7 +494,7 @@ cr.define('bmm', function() {
         // before deciding if we should exit edit mode.
         var doc = e.target.ownerDocument;
         window.setTimeout(function() {
-          var activeElement = doc.activeElement;
+          var activeElement = doc.hasFocus() && doc.activeElement;
           if (activeElement != urlInput && activeElement != labelInput) {
             listItem.editing = false;
           }
@@ -521,31 +560,22 @@ cr.define('bmm', function() {
             return;
           }
 
-          if (!urlInput.validity.valid) {
-            // WebKit does not do URL fix up so we manually test if prepending
-            // 'http://' would make the URL valid.
-            // https://bugs.webkit.org/show_bug.cgi?id=29235
-            urlInput.value = 'http://' + newUrl;
-            if (!urlInput.validity.valid) {
-              // still invalid
-              urlInput.value = newUrl;
+          newUrl = getValidURL(urlInput);
+          if (!newUrl) {
+            // In case the item was removed before getting here we should
+            // not alert.
+            if (listItem.parentNode) {
+              // Select the item again.
+              var dataModel = this.parentNode.dataModel;
+              var index = dataModel.indexOf(this.bookmarkNode);
+              var sm = this.parentNode.selectionModel;
+              sm.selectedIndex = sm.leadIndex = sm.anchorIndex = index;
 
-              // In case the item was removed before getting here we should
-              // not alert.
-              if (listItem.parentNode) {
-                // Select the item again.
-                var dataModel = this.parentNode.dataModel;
-                var index = dataModel.indexOf(this.bookmarkNode);
-                var sm = this.parentNode.selectionModel;
-                sm.selectedIndex = sm.leadIndex = sm.anchorIndex = index;
-
-                alert(loadTimeData.getString('invalid_url'));
-              }
-              urlInput.focus();
-              urlInput.select();
-              return;
+              alert(loadTimeData.getString('invalid_url'));
             }
-            newUrl = 'http://' + newUrl;
+            urlInput.focus();
+            urlInput.select();
+            return;
           }
           urlEl.textContent = this.bookmarkNode.url = newUrl;
         }

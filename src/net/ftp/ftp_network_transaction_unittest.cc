@@ -8,13 +8,14 @@
 
 #include "base/compiler_specific.h"
 #include "base/memory/ref_counted.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/memory/scoped_vector.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "net/base/host_port_pair.h"
 #include "net/base/io_buffer.h"
-#include "net/base/mock_host_resolver.h"
 #include "net/base/net_util.h"
 #include "net/base/test_completion_callback.h"
+#include "net/dns/mock_host_resolver.h"
 #include "net/ftp/ftp_network_session.h"
 #include "net/ftp/ftp_request_info.h"
 #include "net/socket/socket_test_util.h"
@@ -820,15 +821,15 @@ class FtpNetworkTransactionTest
       MockRead(mock_data.c_str()),
     };
 
-    scoped_array<StaticSocketDataProvider*> data_sockets(
-        new StaticSocketDataProvider*[data_socket + 1]);
+    ScopedVector<StaticSocketDataProvider> data_sockets;
+    data_sockets.reserve(data_socket);
     for (int i = 0; i < data_socket + 1; i++) {
       // We only read from one data socket, other ones are dummy.
       if (i == data_socket) {
-        data_sockets[i] = new StaticSocketDataProvider(
-            data_reads, arraysize(data_reads), NULL, 0);
+        data_sockets.push_back(new StaticSocketDataProvider(
+                                   data_reads, arraysize(data_reads), NULL, 0));
       } else {
-        data_sockets[i] = new StaticSocketDataProvider;
+        data_sockets.push_back(new StaticSocketDataProvider);
       }
       mock_socket_factory_.AddSocketDataProvider(data_sockets[i]);
     }
@@ -1310,8 +1311,8 @@ TEST_P(FtpNetworkTransactionTest, EvilRestartUser) {
   ASSERT_EQ(ERR_IO_PENDING,
             transaction_.RestartWithAuth(
                 AuthCredentials(
-                    ASCIIToUTF16("foo\nownz0red"),
-                    ASCIIToUTF16("innocent")),
+                    base::ASCIIToUTF16("foo\nownz0red"),
+                    base::ASCIIToUTF16("innocent")),
                 callback_.callback()));
   EXPECT_EQ(ERR_MALFORMED_IDENTITY, callback_.WaitForResult());
 }
@@ -1345,8 +1346,8 @@ TEST_P(FtpNetworkTransactionTest, EvilRestartPassword) {
   mock_socket_factory_.AddSocketDataProvider(&ctrl_socket2);
   ASSERT_EQ(ERR_IO_PENDING,
             transaction_.RestartWithAuth(
-                AuthCredentials(ASCIIToUTF16("innocent"),
-                                ASCIIToUTF16("foo\nownz0red")),
+                AuthCredentials(base::ASCIIToUTF16("innocent"),
+                                base::ASCIIToUTF16("foo\nownz0red")),
                 callback_.callback()));
   EXPECT_EQ(ERR_MALFORMED_IDENTITY, callback_.WaitForResult());
 }

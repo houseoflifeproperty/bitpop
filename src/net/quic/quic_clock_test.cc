@@ -13,11 +13,25 @@ TEST(QuicClockTest, Now) {
   QuicClock clock;
 
   QuicTime start(base::TimeTicks::Now());
-  QuicTime now = clock.Now();
+  QuicTime now = clock.ApproximateNow();
   QuicTime end(base::TimeTicks::Now());
 
   EXPECT_LE(start, now);
   EXPECT_LE(now, end);
+}
+
+TEST(QuicClockTest, WallNow) {
+  QuicClock clock;
+
+  base::Time start = base::Time::Now();
+  QuicWallTime now = clock.WallNow();
+  base::Time end = base::Time::Now();
+
+  // If end > start, then we can check now is between start and end.
+  if (end > start) {
+    EXPECT_LE(static_cast<uint64>(start.ToTimeT()), now.ToUNIXSeconds());
+    EXPECT_LE(now.ToUNIXSeconds(), static_cast<uint64>(end.ToTimeT()));
+  }
 }
 
 }  // namespace test

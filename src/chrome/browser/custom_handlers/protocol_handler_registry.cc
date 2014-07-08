@@ -9,23 +9,18 @@
 #include "base/bind.h"
 #include "base/command_line.h"
 #include "base/logging.h"
-#include "base/memory/ref_counted.h"
-#include "base/memory/scoped_ptr.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/custom_handlers/register_protocol_handler_infobar_delegate.h"
 #include "chrome/browser/net/chrome_url_request_context.h"
-#include "chrome/browser/prefs/pref_service.h"
 #include "chrome/browser/profiles/profile_io_data.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/common/custom_handlers/protocol_handler.h"
 #include "chrome/common/pref_names.h"
-#include "content/public/browser/browser_thread.h"
+#include "components/user_prefs/pref_registry_syncable.h"
 #include "content/public/browser/child_process_security_policy.h"
-#include "content/public/browser/notification_service.h"
 #include "grit/generated_resources.h"
 #include "net/base/network_delegate.h"
-#include "net/url_request/url_request.h"
-#include "net/url_request/url_request_job.h"
 #include "net/url_request/url_request_redirect_job.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -63,18 +58,19 @@ bool ShouldRemoveHandlersNotInOS() {
 
 }  // namespace
 
-// Core ------------------------------------------------------------------------
+// IOThreadDelegate ------------------------------------------------------------
 
-// Core is an IO thread specific object. Access to the class should all
-// be done via the IO thread. The registry living on the UI thread makes
+// IOThreadDelegate is an IO thread specific object. Access to the class should
+// all be done via the IO thread. The registry living on the UI thread makes
 // a best effort to update the IO object after local updates are completed.
-class ProtocolHandlerRegistry::Core
-    : public base::RefCountedThreadSafe<ProtocolHandlerRegistry::Core> {
+class ProtocolHandlerRegistry::IOThreadDelegate
+    : public base::RefCountedThreadSafe<
+          ProtocolHandlerRegistry::IOThreadDelegate> {
  public:
 
   // Creates a new instance. If |enabled| is true the registry is considered
   // enabled on the IO thread.
-  explicit Core(bool enabled);
+  explicit IOThreadDelegate(bool enabled);
 
   // Returns true if the protocol has a default protocol handler.
   // Should be called only from the IO thread.
@@ -102,8 +98,8 @@ class ProtocolHandlerRegistry::Core
   void Disable() { enabled_ = false; }
 
  private:
-  friend class base::RefCountedThreadSafe<Core>;
-  virtual ~Core();
+  friend class base::RefCountedThreadSafe<IOThreadDelegate>;
+  virtual ~IOThreadDelegate();
 
   // Copy of protocol handlers use only on the IO thread.
   ProtocolHandlerRegistry::ProtocolHandlerMap default_handlers_;
@@ -111,24 +107,27 @@ class ProtocolHandlerRegistry::Core
   // Is the registry enabled on the IO thread.
   bool enabled_;
 
-  DISALLOW_COPY_AND_ASSIGN(Core);
+  DISALLOW_COPY_AND_ASSIGN(IOThreadDelegate);
 };
 
-ProtocolHandlerRegistry::Core::Core(bool) : enabled_(true) {}
-ProtocolHandlerRegistry::Core::~Core() {}
+ProtocolHandlerRegistry::IOThreadDelegate::IOThreadDelegate(bool)
+    : enabled_(true) {}
+ProtocolHandlerRegistry::IOThreadDelegate::~IOThreadDelegate() {}
 
-bool ProtocolHandlerRegistry::Core::IsHandledProtocol(
+bool ProtocolHandlerRegistry::IOThreadDelegate::IsHandledProtocol(
     const std::string& scheme) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   return enabled_ && !LookupHandler(default_handlers_, scheme).IsEmpty();
 }
 
-void ProtocolHandlerRegistry::Core::ClearDefault(const std::string& scheme) {
+void ProtocolHandlerRegistry::IOThreadDelegate::ClearDefault(
+    const std::string& scheme) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   default_handlers_.erase(scheme);
 }
 
-void ProtocolHandlerRegistry::Core::SetDefault(const ProtocolHandler& handler) {
+void ProtocolHandlerRegistry::IOThreadDelegate::SetDefault(
+    const ProtocolHandler& handler) {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
   ClearDefault(handler.protocol());
   default_handlers_.insert(std::make_pair(handler.protocol(), handler));
@@ -137,7 +136,7 @@ void ProtocolHandlerRegistry::Core::SetDefault(const ProtocolHandler& handler) {
 // Create a new job for the supplied |URLRequest| if a default handler
 // is registered and the associated handler is able to interpret
 // the url from |request|.
-net::URLRequestJob* ProtocolHandlerRegistry::Core::MaybeCreateJob(
+net::URLRequestJob* ProtocolHandlerRegistry::IOThreadDelegate::MaybeCreateJob(
     net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
 
@@ -152,65 +151,65 @@ net::URLRequestJob* ProtocolHandlerRegistry::Core::MaybeCreateJob(
 
   return new net::URLRequestRedirectJob(
       request, network_delegate, translated_url,
-      net::URLRequestRedirectJob::REDIRECT_302_FOUND);
+      net::URLRequestRedirectJob::REDIRECT_307_TEMPORARY_REDIRECT,
+      "Protocol Handler Registry");
 }
 
-// URLInterceptor ------------------------------------------------------------
+// JobInterceptorFactory -------------------------------------------------------
 
-// Instances of this class are produced for ownership by the IO
+// Instances of JobInterceptorFactory are produced for ownership by the IO
 // thread where it handler URL requests. We should never hold
 // any pointers on this class, only produce them in response to
-// requests via |ProtocolHandlerRegistry::CreateURLInterceptor|.
-class ProtocolHandlerRegistry::URLInterceptor
-    : public net::URLRequestJobFactory::Interceptor {
- public:
-  explicit URLInterceptor(Core* core);
-  virtual ~URLInterceptor();
-
-  virtual net::URLRequestJob* MaybeIntercept(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE;
-
-  virtual bool WillHandleProtocol(const std::string& protocol) const OVERRIDE;
-
-  virtual net::URLRequestJob* MaybeInterceptRedirect(
-      const GURL& url,
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
-
-  virtual net::URLRequestJob* MaybeInterceptResponse(
-      net::URLRequest* request,
-      net::NetworkDelegate* network_delegate) const OVERRIDE {
-    return NULL;
-  }
-
- private:
-  scoped_refptr<Core> core_;
-  DISALLOW_COPY_AND_ASSIGN(URLInterceptor);
-};
-
-ProtocolHandlerRegistry::URLInterceptor::URLInterceptor(Core* core)
-    : core_(core) {
-  DCHECK(core_);
+// requests via |ProtocolHandlerRegistry::CreateJobInterceptorFactory|.
+ProtocolHandlerRegistry::JobInterceptorFactory::JobInterceptorFactory(
+    IOThreadDelegate* io_thread_delegate)
+    : io_thread_delegate_(io_thread_delegate) {
+  DCHECK(io_thread_delegate_.get());
+  DetachFromThread();
 }
 
-ProtocolHandlerRegistry::URLInterceptor::~URLInterceptor() {
+ProtocolHandlerRegistry::JobInterceptorFactory::~JobInterceptorFactory() {
 }
 
-net::URLRequestJob* ProtocolHandlerRegistry::URLInterceptor::MaybeIntercept(
-    net::URLRequest* request, net::NetworkDelegate* network_delegate) const {
+void ProtocolHandlerRegistry::JobInterceptorFactory::Chain(
+    scoped_ptr<net::URLRequestJobFactory> job_factory) {
+  job_factory_ = job_factory.Pass();
+}
+
+net::URLRequestJob*
+ProtocolHandlerRegistry::JobInterceptorFactory::
+MaybeCreateJobWithProtocolHandler(
+    const std::string& scheme,
+    net::URLRequest* request,
+    net::NetworkDelegate* network_delegate) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
-
-  return core_->MaybeCreateJob(request, network_delegate);
+  net::URLRequestJob* job = io_thread_delegate_->MaybeCreateJob(
+      request, network_delegate);
+  if (job)
+    return job;
+  return job_factory_->MaybeCreateJobWithProtocolHandler(
+      scheme, request, network_delegate);
 }
 
-bool ProtocolHandlerRegistry::URLInterceptor::WillHandleProtocol(
-    const std::string& protocol) const {
+bool ProtocolHandlerRegistry::JobInterceptorFactory::IsHandledProtocol(
+    const std::string& scheme) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return io_thread_delegate_->IsHandledProtocol(scheme) ||
+      job_factory_->IsHandledProtocol(scheme);
+}
 
-  return core_->IsHandledProtocol(protocol);
+bool ProtocolHandlerRegistry::JobInterceptorFactory::IsHandledURL(
+    const GURL& url) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return (url.is_valid() &&
+      io_thread_delegate_->IsHandledProtocol(url.scheme())) ||
+      job_factory_->IsHandledURL(url);
+}
+
+bool ProtocolHandlerRegistry::JobInterceptorFactory::IsSafeRedirectTarget(
+    const GURL& location) const {
+  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::IO));
+  return job_factory_->IsSafeRedirectTarget(location);
 }
 
 // DefaultClientObserver ------------------------------------------------------
@@ -303,7 +302,7 @@ void ProtocolHandlerRegistry::Delegate::RegisterWithOSAsDefaultClient(
   // and it will be automatically freed once all its tasks have finished.
   scoped_refptr<ShellIntegration::DefaultProtocolClientWorker> worker;
   worker = CreateShellWorker(observer, protocol);
-  observer->SetWorker(worker);
+  observer->SetWorker(worker.get());
   registry->default_client_observers_.push_back(observer);
   worker->StartSetAsDefault();
 }
@@ -317,7 +316,7 @@ ProtocolHandlerRegistry::ProtocolHandlerRegistry(Profile* profile,
       enabled_(true),
       is_loading_(false),
       is_loaded_(false),
-      core_(new Core(enabled_)){
+      io_thread_delegate_(new IOThreadDelegate(enabled_)){
 }
 
 bool ProtocolHandlerRegistry::SilentlyHandleRegisterHandlerRequest(
@@ -402,7 +401,7 @@ void ProtocolHandlerRegistry::ClearDefault(const std::string& scheme) {
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(&Core::ClearDefault, core_, scheme));
+      base::Bind(&IOThreadDelegate::ClearDefault, io_thread_delegate_, scheme));
   Save();
   NotifyChanged();
 }
@@ -446,9 +445,9 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
       Disable();
     }
   }
-  std::vector<const DictionaryValue*> registered_handlers =
+  std::vector<const base::DictionaryValue*> registered_handlers =
       GetHandlersFromPref(prefs::kRegisteredProtocolHandlers);
-  for (std::vector<const DictionaryValue*>::const_iterator p =
+  for (std::vector<const base::DictionaryValue*>::const_iterator p =
        registered_handlers.begin();
        p != registered_handlers.end(); ++p) {
     ProtocolHandler handler = ProtocolHandler::CreateProtocolHandler(*p);
@@ -458,9 +457,9 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
       SetDefault(handler);
     }
   }
-  std::vector<const DictionaryValue*> ignored_handlers =
+  std::vector<const base::DictionaryValue*> ignored_handlers =
     GetHandlersFromPref(prefs::kIgnoredProtocolHandlers);
-  for (std::vector<const DictionaryValue*>::const_iterator p =
+  for (std::vector<const base::DictionaryValue*>::const_iterator p =
        ignored_handlers.begin();
        p != ignored_handlers.end(); ++p) {
     IgnoreProtocolHandler(ProtocolHandler::CreateProtocolHandler(*p));
@@ -476,7 +475,7 @@ void ProtocolHandlerRegistry::InitProtocolSettings() {
       DefaultClientObserver* observer = delegate_->CreateShellObserver(this);
       scoped_refptr<ShellIntegration::DefaultProtocolClientWorker> worker;
       worker = delegate_->CreateShellWorker(observer, handler.protocol());
-      observer->SetWorker(worker);
+      observer->SetWorker(worker.get());
       default_client_observers_.push_back(observer);
       worker->StartCheckIsDefault();
     }
@@ -630,7 +629,8 @@ void ProtocolHandlerRegistry::RemoveHandler(
     } else {
       BrowserThread::PostTask(
           BrowserThread::IO, FROM_HERE,
-          base::Bind(&Core::ClearDefault, core_, q->second.protocol()));
+          base::Bind(&IOThreadDelegate::ClearDefault, io_thread_delegate_,
+                     q->second.protocol()));
 
       default_handlers_.erase(q);
     }
@@ -665,7 +665,7 @@ void ProtocolHandlerRegistry::Enable() {
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(&Core::Enable, core_));
+      base::Bind(&IOThreadDelegate::Enable, io_thread_delegate_));
 
   ProtocolHandlerMap::const_iterator p;
   for (p = default_handlers_.begin(); p != default_handlers_.end(); ++p) {
@@ -684,7 +684,7 @@ void ProtocolHandlerRegistry::Disable() {
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(&Core::Disable, core_));
+      base::Bind(&IOThreadDelegate::Disable, io_thread_delegate_));
 
   ProtocolHandlerMap::const_iterator p;
   for (p = default_handlers_.begin(); p != default_handlers_.end(); ++p) {
@@ -708,13 +708,16 @@ void ProtocolHandlerRegistry::Shutdown() {
 }
 
 // static
-void ProtocolHandlerRegistry::RegisterPrefs(PrefService* pref_service) {
-  pref_service->RegisterListPref(prefs::kRegisteredProtocolHandlers,
-                                 PrefService::UNSYNCABLE_PREF);
-  pref_service->RegisterListPref(prefs::kIgnoredProtocolHandlers,
-                                 PrefService::UNSYNCABLE_PREF);
-  pref_service->RegisterBooleanPref(prefs::kCustomHandlersEnabled, true,
-                                    PrefService::UNSYNCABLE_PREF);
+void ProtocolHandlerRegistry::RegisterProfilePrefs(
+    user_prefs::PrefRegistrySyncable* registry) {
+  registry->RegisterListPref(prefs::kRegisteredProtocolHandlers,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterListPref(prefs::kIgnoredProtocolHandlers,
+                             user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
+  registry->RegisterBooleanPref(
+      prefs::kCustomHandlersEnabled,
+      true,
+      user_prefs::PrefRegistrySyncable::UNSYNCABLE_PREF);
 }
 
 ProtocolHandlerRegistry::~ProtocolHandlerRegistry() {
@@ -737,9 +740,10 @@ void ProtocolHandlerRegistry::Save() {
   if (is_loading_) {
     return;
   }
-  scoped_ptr<Value> registered_protocol_handlers(EncodeRegisteredHandlers());
-  scoped_ptr<Value> ignored_protocol_handlers(EncodeIgnoredHandlers());
-  scoped_ptr<Value> enabled(Value::CreateBooleanValue(enabled_));
+  scoped_ptr<base::Value> registered_protocol_handlers(
+      EncodeRegisteredHandlers());
+  scoped_ptr<base::Value> ignored_protocol_handlers(EncodeIgnoredHandlers());
+  scoped_ptr<base::Value> enabled(base::Value::CreateBooleanValue(enabled_));
   profile_->GetPrefs()->Set(prefs::kRegisteredProtocolHandlers,
       *registered_protocol_handlers);
   profile_->GetPrefs()->Set(prefs::kIgnoredProtocolHandlers,
@@ -772,7 +776,7 @@ void ProtocolHandlerRegistry::SetDefault(const ProtocolHandler& handler) {
   BrowserThread::PostTask(
       BrowserThread::IO,
       FROM_HERE,
-      base::Bind(&Core::SetDefault, core_, handler));
+      base::Bind(&IOThreadDelegate::SetDefault, io_thread_delegate_, handler));
 }
 
 void ProtocolHandlerRegistry::InsertHandler(const ProtocolHandler& handler) {
@@ -790,16 +794,16 @@ void ProtocolHandlerRegistry::InsertHandler(const ProtocolHandler& handler) {
   protocol_handlers_[handler.protocol()] = new_list;
 }
 
-Value* ProtocolHandlerRegistry::EncodeRegisteredHandlers() {
+base::Value* ProtocolHandlerRegistry::EncodeRegisteredHandlers() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ListValue* protocol_handlers = new ListValue();
+  base::ListValue* protocol_handlers = new base::ListValue();
   for (ProtocolHandlerMultiMap::iterator i = protocol_handlers_.begin();
        i != protocol_handlers_.end(); ++i) {
     for (ProtocolHandlerList::iterator j = i->second.begin();
          j != i->second.end(); ++j) {
-      DictionaryValue* encoded = j->Encode();
+      base::DictionaryValue* encoded = j->Encode();
       if (IsDefault(*j)) {
-        encoded->Set("default", Value::CreateBooleanValue(true));
+        encoded->Set("default", base::Value::CreateBooleanValue(true));
       }
       protocol_handlers->Append(encoded);
     }
@@ -807,9 +811,9 @@ Value* ProtocolHandlerRegistry::EncodeRegisteredHandlers() {
   return protocol_handlers;
 }
 
-Value* ProtocolHandlerRegistry::EncodeIgnoredHandlers() {
+base::Value* ProtocolHandlerRegistry::EncodeIgnoredHandlers() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  ListValue* handlers = new ListValue();
+  base::ListValue* handlers = new base::ListValue();
   for (ProtocolHandlerList::iterator i = ignored_protocol_handlers_.begin();
        i != ignored_protocol_handlers_.end(); ++i) {
     handlers->Append(i->Encode());
@@ -838,19 +842,19 @@ void ProtocolHandlerRegistry::RegisterProtocolHandler(
   InsertHandler(handler);
 }
 
-std::vector<const DictionaryValue*>
+std::vector<const base::DictionaryValue*>
 ProtocolHandlerRegistry::GetHandlersFromPref(const char* pref_name) const {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
-  std::vector<const DictionaryValue*> result;
+  std::vector<const base::DictionaryValue*> result;
   PrefService* prefs = profile_->GetPrefs();
   if (!prefs->HasPrefPath(pref_name)) {
     return result;
   }
 
-  const ListValue* handlers = prefs->GetList(pref_name);
+  const base::ListValue* handlers = prefs->GetList(pref_name);
   if (handlers) {
     for (size_t i = 0; i < handlers->GetSize(); ++i) {
-      const DictionaryValue* dict;
+      const base::DictionaryValue* dict;
       if (!handlers->GetDictionary(i, &dict))
         continue;
       if (ProtocolHandler::IsValidDict(dict)) {
@@ -874,11 +878,12 @@ void ProtocolHandlerRegistry::AddPredefinedHandler(
   SetDefault(handler);
 }
 
-net::URLRequestJobFactory::Interceptor*
-    ProtocolHandlerRegistry::CreateURLInterceptor() {
+scoped_ptr<ProtocolHandlerRegistry::JobInterceptorFactory>
+ProtocolHandlerRegistry::CreateJobInterceptorFactory() {
   DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
   // this is always created on the UI thread (in profile_io's
   // InitializeOnUIThread. Any method calls must be done
   // on the IO thread (this is checked).
-  return new URLInterceptor(core_);
+  return scoped_ptr<JobInterceptorFactory>(
+      new JobInterceptorFactory(io_thread_delegate_.get()));
 }

@@ -3,7 +3,7 @@
 // found in the LICENSE file.
 
 #include "base/compiler_specific.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/browser_tabstrip.h"
@@ -20,7 +20,7 @@
 #include "base/mac/mac_util.h"
 #endif
 
-using chrome::kAboutBlankURL;
+using content::kAboutBlankURL;
 using content::WebContents;
 using content::PAGE_TRANSITION_TYPED;
 
@@ -56,7 +56,7 @@ IN_PROC_BROWSER_TEST_F(FullscreenControllerTest,
   ASSERT_TRUE(IsFullscreenBubbleDisplayed());
 
   // Close first tab while second active. Mouse lock bubble remains.
-  chrome::CloseWebContents(browser(), tab1);
+  chrome::CloseWebContents(browser(), tab1, false);
   ASSERT_TRUE(IsFullscreenBubbleDisplayed());
 }
 

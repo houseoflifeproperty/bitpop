@@ -3,7 +3,7 @@
  * found in the LICENSE file.
  */
 
-/* From ppb_input_event.idl modified Mon Nov 26 19:51:21 2012. */
+/* From ppb_input_event.idl modified Thu Apr  3 14:52:10 2014. */
 
 #ifndef PPAPI_C_PPB_INPUT_EVENT_H_
 #define PPAPI_C_PPB_INPUT_EVENT_H_
@@ -29,11 +29,15 @@
 #define PPB_WHEEL_INPUT_EVENT_INTERFACE PPB_WHEEL_INPUT_EVENT_INTERFACE_1_0
 
 #define PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_0 "PPB_KeyboardInputEvent;1.0"
+#define PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_2 "PPB_KeyboardInputEvent;1.2"
 #define PPB_KEYBOARD_INPUT_EVENT_INTERFACE \
-    PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_0
+    PPB_KEYBOARD_INPUT_EVENT_INTERFACE_1_2
 
 #define PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0 "PPB_TouchInputEvent;1.0"
 #define PPB_TOUCH_INPUT_EVENT_INTERFACE PPB_TOUCH_INPUT_EVENT_INTERFACE_1_0
+
+#define PPB_IME_INPUT_EVENT_INTERFACE_1_0 "PPB_IMEInputEvent;1.0"
+#define PPB_IME_INPUT_EVENT_INTERFACE PPB_IME_INPUT_EVENT_INTERFACE_1_0
 
 /**
  * @file
@@ -327,19 +331,17 @@ struct PPB_InputEvent_1_0 {
    * the page.
    *
    * Note that synthetic mouse events will be generated from touch events if
-   * (and only if) the you do not request touch events.
+   * (and only if) you do not request touch events.
    *
    * When requesting input events through this function, the events will be
-   * delivered and <i>not</i> bubbled to the page. This means that even if you
-   * aren't interested in the message, no other parts of the page will get
-   * a crack at the message.
+   * delivered and <i>not</i> bubbled to the default handlers.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @param instance The <code>PP_Instance</code> of the instance requesting
    * the given events.
@@ -365,8 +367,8 @@ struct PPB_InputEvent_1_0 {
    * By default, no input events are delivered. In most cases you would
    * register to receive events by calling RequestInputEvents(). In some cases,
    * however, you may wish to filter events such that they can be bubbled up
-   * to the DOM. In this case, register for those classes of events using
-   * this function instead of RequestInputEvents().
+   * to the default handlers. In this case, register for those classes of
+   * events using this function instead of RequestInputEvents().
    *
    * Filtering input events requires significantly more overhead than just
    * delivering them to the instance. As such, you should only request
@@ -376,11 +378,11 @@ struct PPB_InputEvent_1_0 {
    * can have significant overhead.
    *
    * <strong>Example:</strong>
-   * <code>
+   * @code
    *   RequestInputEvents(instance, PP_INPUTEVENT_CLASS_MOUSE);
    *   RequestFilteringInputEvents(instance,
    *       PP_INPUTEVENT_CLASS_WHEEL | PP_INPUTEVENT_CLASS_KEYBOARD);
-   * </code>
+   * @endcode
    *
    * @return <code>PP_OK</code> if the operation succeeded,
    * <code>PP_ERROR_BADARGUMENT</code> if instance is invalid, or
@@ -692,7 +694,7 @@ typedef struct PPB_WheelInputEvent_1_0 PPB_WheelInputEvent;
  * The <code>PPB_KeyboardInputEvent</code> interface contains pointers to
  * several functions related to keyboard input events.
  */
-struct PPB_KeyboardInputEvent_1_0 {
+struct PPB_KeyboardInputEvent_1_2 {
   /**
    * Creates a keyboard input event with the given parameters. Normally you
    * will get a keyboard event passed through the HandleInputEvent and will not
@@ -707,15 +709,18 @@ struct PPB_KeyboardInputEvent_1_0 {
    * @param[in] time_stamp A <code>PP_TimeTicks</code> indicating the time
    * when the event occurred.
    *
-   * @param[in]  modifiers A bit field combination of the
+   * @param[in] modifiers A bit field combination of the
    * <code>PP_InputEvent_Modifier</code> flags.
    *
    * @param[in] key_code This value reflects the DOM KeyboardEvent
-   * <code>keyCode</code> field. Chrome populates this with the Windows-style
-   * Virtual Key code of the key.
+   * <code>keyCode</code> field, which is the Windows-style Virtual Key
+   * code of the key.
    *
    * @param[in] character_text This value represents the typed character as a
    * UTF-8 string.
+   *
+   * @param[in] code This value represents the DOM3 |code| string that
+   * corresponds to the physical key being pressed.
    *
    * @return A <code>PP_Resource</code> containing the new keyboard input
    * event.
@@ -725,7 +730,8 @@ struct PPB_KeyboardInputEvent_1_0 {
                         PP_TimeTicks time_stamp,
                         uint32_t modifiers,
                         uint32_t key_code,
-                        struct PP_Var character_text);
+                        struct PP_Var character_text,
+                        struct PP_Var code);
   /**
    * IsKeyboardInputEvent() determines if a resource is a keyboard event.
    *
@@ -756,9 +762,31 @@ struct PPB_KeyboardInputEvent_1_0 {
    * undefined var.
    */
   struct PP_Var (*GetCharacterText)(PP_Resource character_event);
+  /**
+   * GetCode() returns the DOM |code| field for this keyboard event, as
+   * defined in the DOM3 Events spec:
+   * http://www.w3.org/TR/DOM-Level-3-Events/
+   *
+   * @param[in] key_event The key event for which to return the key code.
+   *
+   * @return The string that contains the DOM |code| for the keyboard event.
+   */
+  struct PP_Var (*GetCode)(PP_Resource key_event);
 };
 
-typedef struct PPB_KeyboardInputEvent_1_0 PPB_KeyboardInputEvent;
+typedef struct PPB_KeyboardInputEvent_1_2 PPB_KeyboardInputEvent;
+
+struct PPB_KeyboardInputEvent_1_0 {
+  PP_Resource (*Create)(PP_Instance instance,
+                        PP_InputEvent_Type type,
+                        PP_TimeTicks time_stamp,
+                        uint32_t modifiers,
+                        uint32_t key_code,
+                        struct PP_Var character_text);
+  PP_Bool (*IsKeyboardInputEvent)(PP_Resource resource);
+  uint32_t (*GetKeyCode)(PP_Resource key_event);
+  struct PP_Var (*GetCharacterText)(PP_Resource character_event);
+};
 /**
  * @}
  */
@@ -872,7 +900,7 @@ struct PPB_TouchInputEvent_1_0 {
                                           PP_TouchListType list,
                                           uint32_t index);
   /**
-   * Returns the touch-point with the spcified touch-id in the specified list.
+   * Returns the touch-point with the specified touch-id in the specified list.
    *
    * @param[in] resource A <code>PP_Resource</code> corresponding to a touch
    * event.
@@ -889,6 +917,127 @@ struct PPB_TouchInputEvent_1_0 {
 };
 
 typedef struct PPB_TouchInputEvent_1_0 PPB_TouchInputEvent;
+
+struct PPB_IMEInputEvent_1_0 {
+  /**
+   * Create() creates an IME input event with the given parameters. Normally
+   * you will get an IME event passed through the <code>HandleInputEvent</code>
+   * and will not need to create them, but some applications may want to create
+   * their own for internal use.
+   *
+   * @param[in] instance The instance for which this event occurred.
+   *
+   * @param[in] type A <code>PP_InputEvent_Type</code> identifying the type of
+   * input event. The type must be one of the IME event types.
+   *
+   * @param[in] time_stamp A <code>PP_TimeTicks</code> indicating the time
+   * when the event occurred.
+   *
+   * @param[in] text The string returned by <code>GetText</code>.
+   *
+   * @param[in] segment_number The number returned by
+   * <code>GetSegmentNumber</code>.
+   *
+   * @param[in] segment_offsets The array of numbers returned by
+   * <code>GetSegmentOffset</code>. If <code>segment_number</code> is zero,
+   * the number of elements of the array should be zero. If
+   * <code>segment_number</code> is non-zero, the length of the array must be
+   * <code>segment_number</code> + 1.
+   *
+   * @param[in] target_segment The number returned by
+   * <code>GetTargetSegment</code>.
+   *
+   * @param[in] selection_start The start index returned by
+   * <code>GetSelection</code>.
+   *
+   * @param[in] selection_end The end index returned by
+   * <code>GetSelection</code>.
+   *
+   * @return A <code>PP_Resource</code> containing the new IME input event.
+   */
+  PP_Resource (*Create)(PP_Instance instance,
+                        PP_InputEvent_Type type,
+                        PP_TimeTicks time_stamp,
+                        struct PP_Var text,
+                        uint32_t segment_number,
+                        const uint32_t segment_offsets[],
+                        int32_t target_segment,
+                        uint32_t selection_start,
+                        uint32_t selection_end);
+  /**
+   * IsIMEInputEvent() determines if a resource is an IME event.
+   *
+   * @param[in] resource A <code>PP_Resource</code> corresponding to an event.
+   *
+   * @return <code>PP_TRUE</code> if the given resource is a valid input event.
+   */
+  PP_Bool (*IsIMEInputEvent)(PP_Resource resource);
+  /**
+   * GetText() returns the composition text as a UTF-8 string for the given IME
+   * event.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return A string var representing the composition text. For non-IME input
+   * events the return value will be an undefined var.
+   */
+  struct PP_Var (*GetText)(PP_Resource ime_event);
+  /**
+   * GetSegmentNumber() returns the number of segments in the composition text.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return The number of segments. For events other than COMPOSITION_UPDATE,
+   * returns 0.
+   */
+  uint32_t (*GetSegmentNumber)(PP_Resource ime_event);
+  /**
+   * GetSegmentOffset() returns the position of the index-th segmentation point
+   * in the composition text. The position is given by a byte-offset (not a
+   * character-offset) of the string returned by GetText(). It always satisfies
+   * 0=GetSegmentOffset(0) < ... < GetSegmentOffset(i) < GetSegmentOffset(i+1)
+   * < ... < GetSegmentOffset(GetSegmentNumber())=(byte-length of GetText()).
+   * Note that [GetSegmentOffset(i), GetSegmentOffset(i+1)) represents the range
+   * of the i-th segment, and hence GetSegmentNumber() can be a valid argument
+   * to this function instead of an off-by-1 error.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @param[in] index An integer indicating a segment.
+   *
+   * @return The byte-offset of the segmentation point. If the event is not
+   * COMPOSITION_UPDATE or index is out of range, returns 0.
+   */
+  uint32_t (*GetSegmentOffset)(PP_Resource ime_event, uint32_t index);
+  /**
+   * GetTargetSegment() returns the index of the current target segment of
+   * composition.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @return An integer indicating the index of the target segment. When there
+   * is no active target segment, or the event is not COMPOSITION_UPDATE,
+   * returns -1.
+   */
+  int32_t (*GetTargetSegment)(PP_Resource ime_event);
+  /**
+   * GetSelection() returns the range selected by caret in the composition text.
+   *
+   * @param[in] ime_event A <code>PP_Resource</code> corresponding to an IME
+   * event.
+   *
+   * @param[out] start The start position of the current selection.
+   *
+   * @param[out] end The end position of the current selection.
+   */
+  void (*GetSelection)(PP_Resource ime_event, uint32_t* start, uint32_t* end);
+};
+
+typedef struct PPB_IMEInputEvent_1_0 PPB_IMEInputEvent;
 /**
  * @}
  */

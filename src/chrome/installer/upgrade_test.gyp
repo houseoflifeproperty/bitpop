@@ -4,7 +4,7 @@
 
 {
   'variables': {
-    'version_py': '../../chrome/tools/build/version.py',
+    'version_py': '<(DEPTH)/build/util/version.py',
     'version_path': '../../chrome/VERSION',
     'lastchange_path': '<(DEPTH)/build/util/LASTCHANGE',
     # 'branding_dir' is set in the 'conditions' section at the bottom.
@@ -38,6 +38,8 @@
             'test/resource_updater.cc',
             'test/resource_updater.h',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [4267, ],
         },
         {
           'target_name': 'upgrade_test',
@@ -80,6 +82,8 @@
           'sources': [
             'test/alternate_version_generator_main.cc',
           ],
+          # TODO(jschuh): crbug.com/167187 fix size_t to int truncations.
+          'msvs_disabled_warnings': [ 4267, ],
         },
       ],
     }],

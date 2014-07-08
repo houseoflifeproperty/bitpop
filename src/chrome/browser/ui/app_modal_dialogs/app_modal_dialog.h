@@ -8,7 +8,7 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "build/build_config.h"
 
 class NativeAppModalDialog;
@@ -22,7 +22,8 @@ class AppModalDialog {
  public:
   // A union of data necessary to determine the type of message box to
   // show.
-  AppModalDialog(content::WebContents* web_contents, const string16& title);
+  AppModalDialog(content::WebContents* web_contents,
+                 const base::string16& title);
   virtual ~AppModalDialog();
 
   // Called by the AppModalDialogQueue to show this dialog.
@@ -38,7 +39,7 @@ class AppModalDialog {
   // TODO(beng): Get rid of this method.
   void CompleteDialog();
 
-  string16 title() const { return title_; }
+  base::string16 title() const { return title_; }
   NativeAppModalDialog* native_dialog() const { return native_dialog_; }
   content::WebContents* web_contents() const { return web_contents_; }
 
@@ -69,6 +70,13 @@ class AppModalDialog {
   // Overridden by subclasses to create the feature-specific native dialog box.
   virtual NativeAppModalDialog* CreateNativeDialog() = 0;
 
+ private:
+  // Information about the message box is held in the following variables.
+  base::string16 title_;
+
+  // True if CompleteDialog was called.
+  bool completed_;
+
   // False if the dialog should no longer be shown, e.g. because the underlying
   // tab navigated away while the dialog was queued.
   bool valid_;
@@ -76,14 +84,7 @@ class AppModalDialog {
   // The toolkit-specific implementation of the app modal dialog box.
   NativeAppModalDialog* native_dialog_;
 
- private:
-  // Information about the message box is held in the following variables.
-  string16 title_;
-
   content::WebContents* web_contents_;
-
-  // True if CompleteDialog was called.
-  bool completed_;
 
   DISALLOW_COPY_AND_ASSIGN(AppModalDialog);
 };

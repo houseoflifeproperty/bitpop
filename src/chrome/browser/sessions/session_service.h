@@ -11,15 +11,15 @@
 #include "base/basictypes.h"
 #include "base/callback.h"
 #include "base/memory/scoped_vector.h"
-#include "base/time.h"
+#include "base/task/cancelable_task_tracker.h"
+#include "base/time/time.h"
 #include "chrome/browser/defaults.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
 #include "chrome/browser/sessions/base_session_service.h"
 #include "chrome/browser/sessions/session_id.h"
 #include "chrome/browser/ui/browser.h"
-#include "chrome/browser/ui/browser_list.h"
+#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/browser_list_observer.h"
-#include "chrome/common/cancelable_task_tracker.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
 #include "ui/base/ui_base_types.h"
@@ -49,13 +49,13 @@ class WebContents;
 // with incognito windows.
 //
 // SessionService itself maintains a set of SessionCommands that allow
-// SessionService to rebuild the open state of the browser (as
-// SessionWindow, SessionTab and TabNavigation). The commands are periodically
+// SessionService to rebuild the open state of the browser (as SessionWindow,
+// SessionTab and SerializedNavigationEntry). The commands are periodically
 // flushed to SessionBackend and written to a file. Every so often
-// SessionService rebuilds the contents of the file from the open state
-// of the browser.
+// SessionService rebuilds the contents of the file from the open state of the
+// browser.
 class SessionService : public BaseSessionService,
-                       public ProfileKeyedService,
+                       public KeyedService,
                        public content::NotificationObserver,
                        public chrome::BrowserListObserver {
   friend class SessionServiceTestHelper;
@@ -69,7 +69,7 @@ class SessionService : public BaseSessionService,
   // Creates a SessionService for the specified profile.
   explicit SessionService(Profile* profile);
   // For testing.
-  explicit SessionService(const FilePath& save_path);
+  explicit SessionService(const base::FilePath& save_path);
 
   virtual ~SessionService();
 
@@ -123,6 +123,9 @@ class SessionService : public BaseSessionService,
                  const SessionID& tab_id,
                  bool closed_by_user_gesture);
 
+  // Notification a window has opened.
+  void WindowOpened(Browser* browser);
+
   // Notification the window is about to close.
   void WindowClosing(const SessionID& window_id);
 
@@ -159,9 +162,10 @@ class SessionService : public BaseSessionService,
                                         int count);
 
   // Updates the navigation entry for the specified tab.
-  void UpdateTabNavigation(const SessionID& window_id,
-                           const SessionID& tab_id,
-                           const TabNavigation& navigation);
+  void UpdateTabNavigation(
+      const SessionID& window_id,
+      const SessionID& tab_id,
+      const sessions::SerializedNavigationEntry& navigation);
 
   // Notification that a tab has restored its entries or a closed tab is being
   // reused.
@@ -189,8 +193,9 @@ class SessionService : public BaseSessionService,
   // Fetches the contents of the last session, notifying the callback when
   // done. If the callback is supplied an empty vector of SessionWindows
   // it means the session could not be restored.
-  CancelableTaskTracker::TaskId GetLastSession(const SessionCallback& callback,
-                                               CancelableTaskTracker* tracker);
+  base::CancelableTaskTracker::TaskId GetLastSession(
+      const SessionCallback& callback,
+      base::CancelableTaskTracker* tracker);
 
   // Overridden from BaseSessionService because we want some UMA reporting on
   // session update activities.
@@ -308,8 +313,9 @@ class SessionService : public BaseSessionService,
   // navigation with an index > |index| is returned.
   //
   // This assumes the navigations are ordered by index in ascending order.
-  std::vector<TabNavigation>::iterator FindClosestNavigationWithIndex(
-      std::vector<TabNavigation>* navigations,
+  std::vector<sessions::SerializedNavigationEntry>::iterator
+  FindClosestNavigationWithIndex(
+      std::vector<sessions::SerializedNavigationEntry>* navigations,
       int index);
 
   // Does the following:
@@ -408,19 +414,6 @@ class SessionService : public BaseSessionService,
       Browser::Type type,
       AppType app_type);
 
-  // Returns true if we should record a window close as pending.
-  // |has_open_trackable_browsers_| must be up-to-date before calling this.
-  bool should_record_close_as_pending() const {
-    // When this is called, the browser window being closed is still open, hence
-    // still in the browser list. If there is a browser window other than the
-    // one being closed but no trackable windows, then the others must be App
-    // windows or similar. In this case, we record the close as pending.
-    return !has_open_trackable_browsers_ &&
-        (!browser_defaults::kBrowserAliveWithNoWindows ||
-         force_browser_not_alive_with_no_windows_ ||
-         BrowserList::size() > 1);
-  }
-
   // Call when certain session relevant notifications
   // (tab_closed, nav_list_pruned) occur.  In addition, this is
   // currently called when Save() is called to compare how often the
@@ -436,6 +429,9 @@ class SessionService : public BaseSessionService,
   void RecordUpdatedSaveTime(base::TimeDelta delta, bool use_long_period);
   void RecordUpdatedSessionNavigationOrTab(base::TimeDelta delta,
                                            bool use_long_period);
+
+  // Deletes session data if no windows are open for the current profile.
+  void MaybeDeleteSessionOnlyData();
 
   // Convert back/forward between the Browser and SessionService DB window
   // types.

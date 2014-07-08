@@ -10,9 +10,9 @@
 #import <Foundation/Foundation.h>
 
 #include "base/mac/scoped_nsautorelease_pool.h"
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 #include "base/metrics/histogram.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 
 // Define a subset of the CoreWLAN interfaces we require. We can't depend on
 // CoreWLAN.h existing as we need to build on 10.5 SDKs. We can't just send
@@ -55,11 +55,11 @@ class CoreWlanApi : public WifiDataProviderCommon::WlanApiInterface {
   bool Init();
 
   // WlanApiInterface
-  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data);
+  virtual bool GetAccessPointData(WifiData::AccessPointDataSet* data) OVERRIDE;
 
  private:
-  scoped_nsobject<NSBundle> bundle_;
-  scoped_nsobject<NSString> merge_key_;
+  base::scoped_nsobject<NSBundle> bundle_;
+  base::scoped_nsobject<NSString> merge_key_;
 
   DISALLOW_COPY_AND_ASSIGN(CoreWlanApi);
 };
@@ -89,7 +89,7 @@ bool CoreWlanApi::Init() {
   }
   // "Leak" dl_handle rather than dlclose it, to ensure |merge_key_|
   // remains valid.
-  if (!merge_key_.get()) {
+  if (!merge_key_) {
     // Fall back to a known-working value should the lookup fail (if
     // this value is itself wrong it's not the end of the world, we might just
     // get very slightly lower quality location fixes due to SSID merges).

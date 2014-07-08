@@ -58,6 +58,7 @@
 #include "base/logging.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
+#include "sync/base/sync_export.h"
 
 namespace base {
 class MessageLoopProxy;
@@ -99,7 +100,7 @@ struct ParamTraits<T[]> {
 
 // Base class for WeakHandleCore<T> to avoid template bloat.  Handles
 // the interaction with the owner thread and its message loop.
-class WeakHandleCoreBase {
+class SYNC_EXPORT WeakHandleCoreBase {
  public:
   // Assumes the current thread is the owner thread.
   WeakHandleCoreBase();
@@ -125,7 +126,7 @@ class WeakHandleCoreBase {
 // WeakHandleCore<T> contains all the logic for WeakHandle<T>.
 template <typename T>
 class WeakHandleCore
-    : public NON_EXPORTED_BASE(WeakHandleCoreBase),
+    : public WeakHandleCoreBase,
       public base::RefCountedThreadSafe<WeakHandleCore<T> > {
  public:
   // Must be called on |ptr|'s owner thread, which is assumed to be
@@ -210,7 +211,7 @@ class WeakHandleCore
     if (!Get()) {
       return;
     }
-    (Get()->*fn)();
+    (Get().get()->*fn)();
   }
 
   template <typename U, typename A1>
@@ -220,7 +221,7 @@ class WeakHandleCore
     if (!Get()) {
       return;
     }
-    (Get()->*fn)(a1);
+    (Get().get()->*fn)(a1);
   }
 
   template <typename U, typename A1, typename A2>
@@ -231,7 +232,7 @@ class WeakHandleCore
     if (!Get()) {
       return;
     }
-    (Get()->*fn)(a1, a2);
+    (Get().get()->*fn)(a1, a2);
   }
 
   template <typename U, typename A1, typename A2, typename A3>
@@ -243,7 +244,7 @@ class WeakHandleCore
     if (!Get()) {
       return;
     }
-    (Get()->*fn)(a1, a2, a3);
+    (Get().get()->*fn)(a1, a2, a3);
   }
 
   template <typename U, typename A1, typename A2, typename A3, typename A4>
@@ -256,7 +257,7 @@ class WeakHandleCore
     if (!Get()) {
       return;
     }
-    (Get()->*fn)(a1, a2, a3, a4);
+    (Get().get()->*fn)(a1, a2, a3, a4);
   }
 
   // Must be dereferenced only on the owner thread.  May be destroyed

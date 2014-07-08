@@ -43,12 +43,5 @@ NORETURN void NaClStartThreadInApp(struct NaClAppThread *natp,
   /*
    * context stored in $a0
    */
-  NaClSwitch(context);
-}
-
-/*
- * syscall return
- */
-NORETURN void NaClSwitchToApp(struct NaClAppThread *natp) {
-  NaClSwitch(&natp->user);
+  NaClStartSwitch(context);
 }

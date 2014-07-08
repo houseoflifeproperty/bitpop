@@ -7,19 +7,31 @@
 
 #include <string>
 #include "base/compiler_specific.h"
+#include "ui/accessibility/ax_enums.h"
 
-class AccessibilityEventInfo;
+class AccessibilityControlInfo;
+class AccessibilityMenuInfo;
+class AccessibilityWindowInfo;
 class Profile;
 
 namespace base {
 class DictionaryValue;
 }
 
-// Use the NotificationService to post the given accessibility
-// notification type with AccessibilityEventInfo details to any
-// listeners.  Will not send if the profile's pause level is nonzero
-// (using profile->PauseAccessibilityEvents).
-void SendAccessibilityNotification(int type, AccessibilityEventInfo* info);
+// Notify the ExtensionAccessibilityEventRouter of the given accessibility
+// event and AccessibilityEventInfo details. Will not send if the profile's
+// pause level is nonzero (using profile->PauseAccessibilityEvents).
+void SendControlAccessibilityNotification(
+    ui::AXEvent event,
+    AccessibilityControlInfo* info);
+
+void SendMenuAccessibilityNotification(
+    ui::AXEvent event,
+    AccessibilityMenuInfo* info);
+
+void SendWindowAccessibilityNotification(
+    ui::AXEvent event,
+    AccessibilityWindowInfo* info);
 
 // Abstract parent class for accessibility event information passed to event
 // listeners.
@@ -213,6 +225,7 @@ class AccessibilityComboBoxInfo : public AccessibilityControlInfo {
   int item_count_;
 };
 
+
 // Accessibility information about a text box, passed to onControlFocused,
 // onControlAction, and onTextChanged event listeners.
 class AccessibilityTextBoxInfo : public AccessibilityControlInfo {
@@ -313,6 +326,52 @@ class AccessibilityMenuItemInfo : public AccessibilityControlInfo {
   int item_count_;
 };
 
+// Accessibility information about a tree; this class is used by
+// onControlFocused event listeners.
+class AccessibilityTreeInfo : public AccessibilityControlInfo {
+ public:
+  AccessibilityTreeInfo(Profile* profile, const std::string& menu_name);
+
+  virtual const char* type() const OVERRIDE;
+};
+
+// Accessibility information about a tree item; this class is used by
+// onControlFocused event listeners.
+class AccessibilityTreeItemInfo : public AccessibilityControlInfo {
+ public:
+  AccessibilityTreeItemInfo(Profile* profile,
+                            const std::string& name,
+                            const std::string& context,
+                            int item_depth,
+                            int item_index,
+                            int item_count,
+                            int children_count,
+                            bool is_expanded);
+
+  virtual const char* type() const OVERRIDE;
+
+  virtual void SerializeToDict(base::DictionaryValue* dict) const OVERRIDE;
+
+  int item_depth() const { return item_depth_; }
+  int item_index() const { return item_index_; }
+  int item_count() const { return item_count_; }
+  int children_count() const { return children_count_; }
+  bool is_expanded() const { return is_expanded_; }
+
+ private:
+  // 0-based item depth.
+  int item_depth_;
+  // The 0-based index of the current item and the number of total items at the
+  // current depth.
+  int item_index_;
+  // Count of items at the current depth.
+  int item_count_;
+  // Count of children of the current item.
+  int children_count_;
+  // True if the node is expanded.
+  bool is_expanded_;
+};
+
 // Accessibility information about a slider passed to onControlFocused
 // and onControlAction event listeners.
 class AccessibilitySliderInfo : public AccessibilityControlInfo {
@@ -330,6 +389,14 @@ class AccessibilitySliderInfo : public AccessibilityControlInfo {
 
  private:
   std::string value_;
+};
+
+// Accessibility information about an alert passed to onControlAction event.
+class AccessibilityAlertInfo : public AccessibilityControlInfo {
+ public:
+  AccessibilityAlertInfo(Profile* profile, const std::string& name);
+
+  virtual const char* type() const OVERRIDE;
 };
 
 #endif  // CHROME_BROWSER_ACCESSIBILITY_ACCESSIBILITY_EVENTS_H_

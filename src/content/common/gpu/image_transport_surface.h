@@ -5,8 +5,6 @@
 #ifndef CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_H_
 #define CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_H_
 
-#if defined(ENABLE_GPU)
-
 #include <vector>
 
 #include "base/callback.h"
@@ -14,19 +12,18 @@
 #include "base/memory/ref_counted.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
+#include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_message.h"
+#include "ui/events/latency_info.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/size.h"
 #include "ui/gl/gl_surface.h"
-#include "ui/surface/transport_dib.h"
 
 struct AcceleratedSurfaceMsg_BufferPresented_Params;
-struct GpuHostMsg_AcceleratedSurfaceNew_Params;
 struct GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params;
 struct GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params;
-struct GpuHostMsg_AcceleratedSurfaceRelease_Params;
 
 namespace gfx {
 class GLSurface;
@@ -63,28 +60,39 @@ class ImageTransportSurface {
 
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) = 0;
-  virtual void OnResizeViewACK() = 0;
-  virtual void OnResize(gfx::Size size) = 0;
+  virtual void OnResize(gfx::Size size, float scale_factor) = 0;
+  virtual void SetLatencyInfo(
+      const std::vector<ui::LatencyInfo>& latency_info) = 0;
+  virtual void WakeUpGpu() = 0;
 
-  // Creates the appropriate surface depending on the GL implementation.
-  static scoped_refptr<gfx::GLSurface>
-      CreateSurface(GpuChannelManager* manager,
-                    GpuCommandBufferStub* stub,
-                    const gfx::GLSurfaceHandle& handle);
+  // Creates a surface with the given attributes.
+  static scoped_refptr<gfx::GLSurface> CreateSurface(
+      GpuChannelManager* manager,
+      GpuCommandBufferStub* stub,
+      const gfx::GLSurfaceHandle& handle);
+
+#if defined(OS_MACOSX)
+  CONTENT_EXPORT static void SetAllowOSMesaForTesting(bool allow);
+#endif
 
   virtual gfx::Size GetSize() = 0;
-
- protected:
-  // Used by certain implements of PostSubBuffer to determine
-  // how much needs to be copied between frames.
-  void GetRegionsToCopy(const gfx::Rect& previous_damage_rect,
-                        const gfx::Rect& new_damage_rect,
-                        std::vector<gfx::Rect>* regions);
 
  protected:
   virtual ~ImageTransportSurface();
 
  private:
+  // Creates the appropriate native surface depending on the GL implementation.
+  // This will be implemented separately by each platform.
+  //
+  // This will not be called for texture transport surfaces which are
+  // cross-platform. The platform implementation should only create the
+  // surface and should not initialize it. On failure, a null scoped_refptr
+  // should be returned.
+  static scoped_refptr<gfx::GLSurface> CreateNativeSurface(
+      GpuChannelManager* manager,
+      GpuCommandBufferStub* stub,
+      const gfx::GLSurfaceHandle& handle);
+
   DISALLOW_COPY_AND_ASSIGN(ImageTransportSurface);
 };
 
@@ -107,17 +115,15 @@ class ImageTransportHelper
 
   // Helper send functions. Caller fills in the surface specific params
   // like size and surface id. The helper fills in the rest.
-  void SendAcceleratedSurfaceNew(
-      GpuHostMsg_AcceleratedSurfaceNew_Params params);
   void SendAcceleratedSurfaceBuffersSwapped(
       GpuHostMsg_AcceleratedSurfaceBuffersSwapped_Params params);
   void SendAcceleratedSurfacePostSubBuffer(
       GpuHostMsg_AcceleratedSurfacePostSubBuffer_Params params);
-  void SendAcceleratedSurfaceRelease(
-      GpuHostMsg_AcceleratedSurfaceRelease_Params params);
-  void SendResizeView(const gfx::Size& size);
+  void SendAcceleratedSurfaceRelease();
   void SendUpdateVSyncParameters(
       base::TimeTicks timebase, base::TimeDelta interval);
+
+  void SendLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
 
   // Whether or not we should execute more commands.
   void SetScheduled(bool is_scheduled);
@@ -145,10 +151,12 @@ class ImageTransportHelper
   // IPC::Message handlers.
   void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params);
-  void OnResizeViewACK();
+  void OnWakeUpGpu();
 
   // Backbuffer resize callback.
-  void Resize(gfx::Size size);
+  void Resize(gfx::Size size, float scale_factor);
+
+  void SetLatencyInfo(const std::vector<ui::LatencyInfo>& latency_info);
 
   // Weak pointers that point to objects that outlive this helper.
   ImageTransportSurface* surface_;
@@ -169,8 +177,7 @@ class PassThroughImageTransportSurface
  public:
   PassThroughImageTransportSurface(GpuChannelManager* manager,
                                    GpuCommandBufferStub* stub,
-                                   gfx::GLSurface* surface,
-                                   bool transport);
+                                   gfx::GLSurface* surface);
 
   // GLSurface implementation.
   virtual bool Initialize() OVERRIDE;
@@ -182,9 +189,11 @@ class PassThroughImageTransportSurface
   // ImageTransportSurface implementation.
   virtual void OnBufferPresented(
       const AcceleratedSurfaceMsg_BufferPresented_Params& params) OVERRIDE;
-  virtual void OnResizeViewACK() OVERRIDE;
-  virtual void OnResize(gfx::Size size) OVERRIDE;
+  virtual void OnResize(gfx::Size size, float scale_factor) OVERRIDE;
   virtual gfx::Size GetSize() OVERRIDE;
+  virtual void SetLatencyInfo(
+      const std::vector<ui::LatencyInfo>& latency_info) OVERRIDE;
+  virtual void WakeUpGpu() OVERRIDE;
 
  protected:
   virtual ~PassThroughImageTransportSurface();
@@ -193,17 +202,16 @@ class PassThroughImageTransportSurface
   // the browser.
   virtual void SendVSyncUpdateIfAvailable();
 
+  ImageTransportHelper* GetHelper() { return helper_.get(); }
+
  private:
   scoped_ptr<ImageTransportHelper> helper_;
-  gfx::Size new_size_;
-  bool transport_;
   bool did_set_swap_interval_;
+  std::vector<ui::LatencyInfo> latency_info_;
 
   DISALLOW_COPY_AND_ASSIGN(PassThroughImageTransportSurface);
 };
 
 }  // namespace content
-
-#endif  // defined(ENABLE_GPU)
 
 #endif  // CONTENT_COMMON_GPU_IMAGE_TRANSPORT_SURFACE_H_

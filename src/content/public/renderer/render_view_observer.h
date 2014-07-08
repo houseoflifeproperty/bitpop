@@ -10,7 +10,10 @@
 #include "content/common/content_export.h"
 #include "ipc/ipc_listener.h"
 #include "ipc/ipc_sender.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebIconURL.h"
+#include "third_party/WebKit/public/platform/WebVector.h"
+#include "third_party/WebKit/public/web/WebIconURL.h"
+
+class GURL;
 
 namespace ppapi {
 namespace host {
@@ -18,17 +21,16 @@ class PpapiHost;
 }
 }
 
-namespace WebKit {
+namespace blink {
 class WebDataSource;
 class WebFrame;
 class WebFormElement;
 class WebGestureEvent;
-class WebMediaPlayerClient;
+class WebLocalFrame;
 class WebMouseEvent;
 class WebNode;
 class WebTouchEvent;
 class WebURL;
-struct WebContextMenuData;
 struct WebURLError;
 }
 
@@ -50,64 +52,75 @@ class CONTENT_EXPORT RenderViewObserver : public IPC::Listener,
   // These match the WebKit API notifications
   virtual void DidStartLoading() {}
   virtual void DidStopLoading() {}
-  virtual void DidFinishDocumentLoad(WebKit::WebFrame* frame) {}
-  virtual void DidFailLoad(WebKit::WebFrame* frame,
-                           const WebKit::WebURLError& error) {}
-  virtual void DidFinishLoad(WebKit::WebFrame* frame) {}
-  virtual void DidStartProvisionalLoad(WebKit::WebFrame* frame) {}
-  virtual void DidFailProvisionalLoad(WebKit::WebFrame* frame,
-                                      const WebKit::WebURLError& error) {}
-  virtual void DidCommitProvisionalLoad(WebKit::WebFrame* frame,
+  virtual void DidFinishDocumentLoad(blink::WebLocalFrame* frame) {}
+  virtual void DidFailLoad(blink::WebLocalFrame* frame,
+                           const blink::WebURLError& error) {}
+  virtual void DidFinishLoad(blink::WebLocalFrame* frame) {}
+  virtual void DidStartProvisionalLoad(blink::WebLocalFrame* frame) {}
+  virtual void DidFailProvisionalLoad(blink::WebLocalFrame* frame,
+                                      const blink::WebURLError& error) {}
+  virtual void DidCommitProvisionalLoad(blink::WebLocalFrame* frame,
                                         bool is_new_navigation) {}
-  virtual void DidClearWindowObject(WebKit::WebFrame* frame) {}
-  virtual void WillPerformClientRedirect(
-      WebKit::WebFrame* frame, const WebKit::WebURL& from,
-      const WebKit::WebURL& to, double interval, double fire_time) {}
-  virtual void DidCancelClientRedirect(WebKit::WebFrame* frame) {}
-  virtual void DidCompleteClientRedirect(WebKit::WebFrame* frame,
-                                         const WebKit::WebURL& from) {}
-  virtual void DidCreateDocumentElement(WebKit::WebFrame* frame) {}
-  virtual void FrameCreated(WebKit::WebFrame* parent,
-                            WebKit::WebFrame* frame) {}
-  virtual void FrameDetached(WebKit::WebFrame* frame) {}
-  virtual void FrameWillClose(WebKit::WebFrame* frame) {}
-  virtual void WillSubmitForm(WebKit::WebFrame* frame,
-                              const WebKit::WebFormElement& form) {}
-  virtual void DidCreateDataSource(WebKit::WebFrame* frame,
-                                   WebKit::WebDataSource* ds) {}
-  virtual void PrintPage(WebKit::WebFrame* frame, bool user_initiated) {}
-  virtual void FocusedNodeChanged(const WebKit::WebNode& node) {}
-  virtual void WillCreateMediaPlayer(WebKit::WebFrame* frame,
-                                     WebKit::WebMediaPlayerClient* client) {}
+  virtual void DidClearWindowObject(blink::WebLocalFrame* frame, int world_id) {
+  }
+  virtual void DidCreateDocumentElement(blink::WebLocalFrame* frame) {}
+  virtual void FrameCreated(blink::WebLocalFrame* parent,
+                            blink::WebFrame* frame) {}
+  virtual void FrameDetached(blink::WebFrame* frame) {}
+  virtual void FrameWillClose(blink::WebFrame* frame) {}
+  virtual void DidMatchCSS(
+      blink::WebLocalFrame* frame,
+      const blink::WebVector<blink::WebString>& newly_matching_selectors,
+      const blink::WebVector<blink::WebString>& stopped_matching_selectors) {}
+  virtual void WillSendSubmitEvent(blink::WebLocalFrame* frame,
+                                   const blink::WebFormElement& form) {}
+  virtual void WillSubmitForm(blink::WebLocalFrame* frame,
+                              const blink::WebFormElement& form) {}
+  virtual void DidCreateDataSource(blink::WebLocalFrame* frame,
+                                   blink::WebDataSource* ds) {}
+  virtual void PrintPage(blink::WebLocalFrame* frame, bool user_initiated) {}
+  virtual void FocusedNodeChanged(const blink::WebNode& node) {}
   virtual void ZoomLevelChanged() {};
-  virtual void DidChangeScrollOffset(WebKit::WebFrame* frame) {}
-  virtual void DraggableRegionsChanged(WebKit::WebFrame* frame) {}
-  virtual void DidRequestShowContextMenu(
-      WebKit::WebFrame* frame,
-      const WebKit::WebContextMenuData& data) {}
+  virtual void DidChangeScrollOffset(blink::WebLocalFrame* frame) {}
+  virtual void DraggableRegionsChanged(blink::WebFrame* frame) {}
+  virtual void DidCommitCompositorFrame() {}
+  virtual void DidUpdateLayout() {}
 
   // These match the RenderView methods.
-  virtual void DidHandleMouseEvent(const WebKit::WebMouseEvent& event) {}
-  virtual void DidHandleTouchEvent(const WebKit::WebTouchEvent& event) {}
-  virtual void DidHandleGestureEvent(const WebKit::WebGestureEvent& event) {}
-  virtual void DidCreatePepperPlugin(RendererPpapiHost* host) {}
+  virtual void DidHandleMouseEvent(const blink::WebMouseEvent& event) {}
+  virtual void DidHandleTouchEvent(const blink::WebTouchEvent& event) {}
+
+  // Called when we receive a console message from WebKit for which we requested
+  // extra details (like the stack trace). |message| is the error message,
+  // |source| is the WebKit-reported source of the error (either external or
+  // internal), and |stack_trace| is the stack trace of the error in a
+  // human-readable format (each frame is formatted as
+  // "\n    at function_name (source:line_number:column_number)").
+  virtual void DetailedConsoleMessageAdded(const base::string16& message,
+                                           const base::string16& source,
+                                           const base::string16& stack_trace,
+                                           int32 line_number,
+                                           int32 severity_level) {}
 
   // These match incoming IPCs.
   virtual void Navigate(const GURL& url) {}
   virtual void ClosePage() {}
+  virtual void OrientationChangeEvent() {}
+
+  virtual void OnStop() {}
 
   // IPC::Listener implementation.
   virtual bool OnMessageReceived(const IPC::Message& message) OVERRIDE;
-
- protected:
-  explicit RenderViewObserver(RenderView* render_view);
-  virtual ~RenderViewObserver();
 
   // IPC::Sender implementation.
   virtual bool Send(IPC::Message* message) OVERRIDE;
 
   RenderView* render_view() const;
-  int routing_id() { return routing_id_; }
+  int routing_id() const { return routing_id_; }
+
+ protected:
+  explicit RenderViewObserver(RenderView* render_view);
+  virtual ~RenderViewObserver();
 
  private:
   friend class RenderViewImpl;

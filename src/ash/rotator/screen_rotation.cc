@@ -4,9 +4,8 @@
 
 #include "ash/rotator/screen_rotation.h"
 
-#include "base/debug/trace_event.h"
-#include "base/time.h"
-#include "ui/compositor/layer_animation_delegate.h"
+#include "base/time/time.h"
+#include "ui/compositor/layer.h"
 #include "ui/gfx/interpolated_transform.h"
 #include "ui/gfx/rect.h"
 #include "ui/gfx/transform.h"
@@ -31,18 +30,17 @@ base::TimeDelta GetTransitionDuration(int degrees) {
 
 }  // namespace
 
-ScreenRotation::ScreenRotation(int degrees,
-                               ui::LayerAnimationDelegate* delegate)
-    : ui::LayerAnimationElement(GetProperties(),
+ScreenRotation::ScreenRotation(int degrees, ui::Layer* layer)
+    : ui::LayerAnimationElement(LayerAnimationElement::TRANSFORM,
                                 GetTransitionDuration(degrees)),
       degrees_(degrees) {
-  InitTransform(delegate);
+  InitTransform(layer);
 }
 
 ScreenRotation::~ScreenRotation() {
 }
 
-void ScreenRotation::InitTransform(ui::LayerAnimationDelegate* delegate) {
+void ScreenRotation::InitTransform(ui::Layer* layer) {
   // No rotation required, use the identity transform.
   if (degrees_ == 0) {
     interpolated_transform_.reset(
@@ -50,9 +48,9 @@ void ScreenRotation::InitTransform(ui::LayerAnimationDelegate* delegate) {
     return;
   }
 
-  const gfx::Transform& current_transform =
-      delegate->GetTransformForAnimation();
-  const gfx::Rect& bounds = delegate->GetBoundsForAnimation();
+  // Use the target transform/bounds in case the layer is already animating.
+  const gfx::Transform& current_transform = layer->GetTargetTransform();
+  const gfx::Rect& bounds = layer->GetTargetBounds();
 
   gfx::Point old_pivot;
   gfx::Point new_pivot;
@@ -75,9 +73,9 @@ void ScreenRotation::InitTransform(ui::LayerAnimationDelegate* delegate) {
   }
 
   // Convert points to world space.
-  current_transform.TransformPoint(old_pivot);
-  current_transform.TransformPoint(new_pivot);
-  current_transform.TransformPoint(new_origin_);
+  current_transform.TransformPoint(&old_pivot);
+  current_transform.TransformPoint(&new_pivot);
+  current_transform.TransformPoint(&new_origin_);
 
   scoped_ptr<ui::InterpolatedTransform> rotation(
       new ui::InterpolatedTransformAboutPivot(
@@ -119,16 +117,7 @@ void ScreenRotation::OnGetTarget(TargetValue* target) const {
   target->transform = interpolated_transform_->Interpolate(1.0);
 }
 
-void ScreenRotation::OnAbort() {
-}
-
-// static
-const ui::LayerAnimationElement::AnimatableProperties&
-ScreenRotation::GetProperties() {
-  static ui::LayerAnimationElement::AnimatableProperties properties;
-  if (properties.empty())
-    properties.insert(ui::LayerAnimationElement::TRANSFORM);
-  return properties;
+void ScreenRotation::OnAbort(ui::LayerAnimationDelegate* delegate) {
 }
 
 }  // namespace ash

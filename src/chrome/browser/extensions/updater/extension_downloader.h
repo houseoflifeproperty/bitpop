@@ -9,8 +9,8 @@
 #include <map>
 #include <set>
 #include <string>
-#include <vector>
 #include <utility>
+#include <vector>
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
@@ -21,12 +21,10 @@
 #include "chrome/browser/extensions/updater/extension_downloader_delegate.h"
 #include "chrome/browser/extensions/updater/manifest_fetch_data.h"
 #include "chrome/browser/extensions/updater/request_queue.h"
-#include "chrome/common/extensions/extension.h"
 #include "chrome/common/extensions/update_manifest.h"
-#include "googleurl/src/gurl.h"
+#include "extensions/common/extension.h"
 #include "net/url_request/url_fetcher_delegate.h"
-
-class Version;
+#include "url/gurl.h"
 
 namespace net {
 class URLFetcher;
@@ -37,13 +35,14 @@ class URLRequestStatus;
 namespace extensions {
 
 struct UpdateDetails {
-  UpdateDetails(const std::string& id, const Version& version);
+  UpdateDetails(const std::string& id, const base::Version& version);
   ~UpdateDetails();
 
   std::string id;
-  Version version;
+  base::Version version;
 };
 
+class ExtensionCache;
 class ExtensionUpdaterTest;
 
 // A class that checks for updates of a given list of extensions, and downloads
@@ -78,7 +77,7 @@ class ExtensionDownloader : public net::URLFetcherDelegate {
 
   // Schedules a fetch of the manifest of all the extensions added with
   // AddExtension() and AddPendingExtension().
-  void StartAllPending();
+  void StartAllPending(ExtensionCache* cache);
 
   // Schedules an update check of the blacklist.
   void StartBlacklistUpdate(const std::string& version,
@@ -130,12 +129,15 @@ class ExtensionDownloader : public net::URLFetcherDelegate {
     std::string package_hash;
     std::string version;
     std::set<int> request_ids;
+
+    // Indicates whether or not the fetch is known to require credentials.
+    bool is_protected;
   };
 
   // Helper for AddExtension() and AddPendingExtension().
   bool AddExtensionData(const std::string& id,
-                        const Version& version,
-                        Extension::Type extension_type,
+                        const base::Version& version,
+                        Manifest::Type extension_type,
                         const GURL& extension_update_url,
                         const std::string& update_url_data,
                         int request_id);
@@ -193,12 +195,21 @@ class ExtensionDownloader : public net::URLFetcherDelegate {
   // attempt to download.
   void NotifyUpdateFound(const std::string& id, const std::string& version);
 
+  // Do real work of StartAllPending. If .crx cache is used, this function
+  // is called when cache is ready.
+  void DoStartAllPending();
+
+  // Notify delegate and remove ping results.
+  void NotifyDelegateDownloadFinished(scoped_ptr<ExtensionFetch> fetch_data,
+                                      const base::FilePath& crx_path,
+                                      bool file_ownership_passed);
+
   // The delegate that receives the crx files downloaded by the
   // ExtensionDownloader, and that fills in optional ping and update url data.
   ExtensionDownloaderDelegate* delegate_;
 
   // The request context to use for the URLFetchers.
-  net::URLRequestContextGetter* request_context_;
+  scoped_refptr<net::URLRequestContextGetter> request_context_;
 
   // Used to create WeakPtrs to |this|.
   base::WeakPtrFactory<ExtensionDownloader> weak_ptr_factory_;
@@ -225,6 +236,9 @@ class ExtensionDownloader : public net::URLFetcherDelegate {
 
   // Maps an extension-id to its PingResult data.
   std::map<std::string, ExtensionDownloaderDelegate::PingResult> ping_results_;
+
+  // Cache for .crx files.
+  ExtensionCache* extension_cache_;
 
   DISALLOW_COPY_AND_ASSIGN(ExtensionDownloader);
 };

@@ -4,37 +4,29 @@
 
 #include "chrome/browser/notifications/notification.h"
 
+#include "base/strings/string_util.h"
 #include "chrome/browser/notifications/desktop_notification_service.h"
-
-Notification::Notification(const GURL& origin_url,
-                           const GURL& content_url,
-                           const string16& display_source,
-                           const string16& replace_id,
-                           NotificationDelegate* delegate)
- : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
-    origin_url_(origin_url),
-    is_html_(true),
-    content_url_(content_url),
-    display_source_(display_source),
-    replace_id_(replace_id),
-    delegate_(delegate) {
-}
+#include "ui/base/webui/web_ui_util.h"
 
 Notification::Notification(const GURL& origin_url,
                            const GURL& icon_url,
-                           const string16& title,
-                           const string16& body,
-                           WebKit::WebTextDirection dir,
-                           const string16& display_source,
-                           const string16& replace_id,
+                           const base::string16& title,
+                           const base::string16& body,
+                           blink::WebTextDirection dir,
+                           const base::string16& display_source,
+                           const base::string16& replace_id,
                            NotificationDelegate* delegate)
-    : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
+    : message_center::Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
+                                   delegate->id(),
+                                   title,
+                                   body,
+                                   gfx::Image(),
+                                   display_source,
+                                   message_center::NotifierId(origin_url),
+                                   message_center::RichNotificationData(),
+                                   delegate),
       origin_url_(origin_url),
       icon_url_(icon_url),
-      is_html_(false),
-      title_(title),
-      body_(body),
-      display_source_(display_source),
       replace_id_(replace_id),
       delegate_(delegate) {
   // "Upconvert" the string parameters to a data: URL.
@@ -42,81 +34,77 @@ Notification::Notification(const GURL& origin_url,
       icon_url, title, body, dir));
 }
 
-Notification::Notification(ui::notifications::NotificationType type,
-                           const GURL& icon_url,
-                           const string16& title,
-                           const string16& body,
-                           WebKit::WebTextDirection dir,
-                           const string16& display_source,
-                           const string16& replace_id,
-                           const DictionaryValue* optional_fields,
-                           NotificationDelegate* delegate)
-    : type_(type),
-      origin_url_(GURL()),
-      icon_url_(icon_url),
-      is_html_(false),
-      title_(title),
-      body_(body),
-      display_source_(display_source),
+Notification::Notification(
+    message_center::NotificationType type,
+    const GURL& origin_url,
+    const base::string16& title,
+    const base::string16& body,
+    const gfx::Image& icon,
+    blink::WebTextDirection dir,
+    const message_center::NotifierId& notifier_id,
+    const base::string16& display_source,
+    const base::string16& replace_id,
+    const message_center::RichNotificationData& rich_notification_data,
+    NotificationDelegate* delegate)
+    : message_center::Notification(type,
+                                   delegate->id(),
+                                   title,
+                                   body,
+                                   icon,
+                                   display_source,
+                                   notifier_id,
+                                   rich_notification_data,
+                                   delegate),
+      origin_url_(origin_url),
       replace_id_(replace_id),
-      optional_fields_(NULL),
       delegate_(delegate) {
-  if (optional_fields)
-    optional_fields_.reset(optional_fields->DeepCopy());
+  // It's important to leave |icon_url_| empty with rich notifications enabled,
+  // to prevent "Downloading" the data url and overwriting the existing |icon|.
 }
 
 Notification::Notification(const GURL& origin_url,
-                           const gfx::ImageSkia& icon,
-                           const string16& title,
-                           const string16& body,
-                           WebKit::WebTextDirection dir,
-                           const string16& display_source,
-                           const string16& replace_id,
+                           const gfx::Image& icon,
+                           const base::string16& title,
+                           const base::string16& body,
+                           blink::WebTextDirection dir,
+                           const base::string16& display_source,
+                           const base::string16& replace_id,
                            NotificationDelegate* delegate)
-    : type_(ui::notifications::NOTIFICATION_TYPE_SIMPLE),
+    : message_center::Notification(message_center::NOTIFICATION_TYPE_SIMPLE,
+                                   delegate->id(),
+                                   title,
+                                   body,
+                                   icon,
+                                   display_source,
+                                   message_center::NotifierId(origin_url),
+                                   message_center::RichNotificationData(),
+                                   delegate),
       origin_url_(origin_url),
-      icon_(icon),
-      is_html_(false),
-      title_(title),
-      body_(body),
-      display_source_(display_source),
       replace_id_(replace_id),
-      delegate_(delegate) {
-}
+      delegate_(delegate) {}
 
 Notification::Notification(const Notification& notification)
-    : type_(notification.type()),
+    : message_center::Notification(notification),
       origin_url_(notification.origin_url()),
-      icon_(notification.icon()),
       icon_url_(notification.icon_url()),
-      is_html_(notification.is_html()),
       content_url_(notification.content_url()),
-      title_(notification.title()),
-      body_(notification.body()),
-      display_source_(notification.display_source()),
+      button_one_icon_url_(notification.button_one_icon_url()),
+      button_two_icon_url_(notification.button_two_icon_url()),
+      image_url_(notification.image_url()),
       replace_id_(notification.replace_id()),
-      delegate_(notification.delegate()) {
-  if (notification.optional_fields())
-    optional_fields_.reset(notification.optional_fields()->DeepCopy());
-}
+      delegate_(notification.delegate()) {}
 
 Notification::~Notification() {}
 
 Notification& Notification::operator=(const Notification& notification) {
-  type_ = notification.type();
+  message_center::Notification::operator=(notification);
   origin_url_ = notification.origin_url();
-  icon_ = notification.icon_;
   icon_url_ = notification.icon_url();
-  is_html_ = notification.is_html();
   content_url_ = notification.content_url();
-  title_ = notification.title();
-  body_ = notification.body();
-  display_source_ = notification.display_source();
+  button_one_icon_url_ = notification.button_one_icon_url();
+  button_two_icon_url_ = notification.button_two_icon_url();
+  image_url_ = notification.image_url();
   replace_id_ = notification.replace_id();
-  if (notification.optional_fields())
-    optional_fields_.reset(notification.optional_fields()->DeepCopy());
-  else
-    optional_fields_.reset();
   delegate_ = notification.delegate();
   return *this;
 }

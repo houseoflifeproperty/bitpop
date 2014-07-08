@@ -5,12 +5,12 @@
 # found in the LICENSE file.
 
 # Use this to copy all config files into the tree.
-for os in linux mac win; do
+for os in linux linux-noasm mac win win-vs2013; do
   for target in Chromium ChromiumOS Chrome ChromeOS; do
     # Copy config files for various architectures:
     #   - ia32/x64 have config.asm, config.h
     #   - arm/arm-neon have config.h
-    for arch in arm arm-neon ia32 x64; do
+    for arch in arm arm-neon ia32 x64 mipsel; do
       # Don't waste time on non-existent configs, if no config.h then skip.
       [ ! -e "build.$arch.$os/$target/config.h" ] && continue
       for f in config.h config.asm libavutil/avconfig.h; do

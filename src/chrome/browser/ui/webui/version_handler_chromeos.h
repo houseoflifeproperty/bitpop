@@ -18,7 +18,7 @@ class VersionHandlerChromeOS : public VersionHandler {
   virtual ~VersionHandlerChromeOS();
 
   // VersionHandler overrides:
-  virtual void HandleRequestVersionInfo(const ListValue* args) OVERRIDE;
+  virtual void HandleRequestVersionInfo(const base::ListValue* args) OVERRIDE;
 
   // Callback from chromeos::VersionLoader giving the version.
   void OnVersion(const std::string& version);
@@ -28,7 +28,7 @@ class VersionHandlerChromeOS : public VersionHandler {
   chromeos::VersionLoader loader_;
 
   // Used to request the version.
-  CancelableTaskTracker tracker_;
+  base::CancelableTaskTracker tracker_;
 
   DISALLOW_COPY_AND_ASSIGN(VersionHandlerChromeOS);
 };

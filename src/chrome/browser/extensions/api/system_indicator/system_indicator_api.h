@@ -5,14 +5,16 @@
 #ifndef CHROME_BROWSER_EXTENSIONS_API_SYSTEM_INDICATOR_SYSTEM_INDICATOR_API_H_
 #define CHROME_BROWSER_EXTENSIONS_API_SYSTEM_INDICATOR_SYSTEM_INDICATOR_API_H_
 
-#include "chrome/browser/extensions/api/extension_action/extension_actions_api.h"
-#include "chrome/browser/extensions/extension_function.h"
+#include "chrome/browser/extensions/api/extension_action/extension_action_api.h"
+#include "extensions/browser/extension_function.h"
+
+class Profile;
 
 namespace extensions {
 
 class SystemIndicatorSetIconFunction : public ExtensionActionSetIconFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("systemIndicator.setIcon")
+  DECLARE_EXTENSION_FUNCTION("systemIndicator.setIcon", SYSTEMINDICATOR_SETICON)
 
  protected:
   virtual ~SystemIndicatorSetIconFunction() {}
@@ -20,7 +22,7 @@ class SystemIndicatorSetIconFunction : public ExtensionActionSetIconFunction {
 
 class SystemIndicatorEnableFunction : public ExtensionActionShowFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("systemIndicator.enable")
+  DECLARE_EXTENSION_FUNCTION("systemIndicator.enable", SYSTEMINDICATOR_ENABLE)
 
  protected:
   virtual ~SystemIndicatorEnableFunction() {}
@@ -28,7 +30,7 @@ class SystemIndicatorEnableFunction : public ExtensionActionShowFunction {
 
 class SystemIndicatorDisableFunction : public ExtensionActionHideFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("systemIndicator.disable");
+  DECLARE_EXTENSION_FUNCTION("systemIndicator.disable", SYSTEMINDICATOR_DISABLE)
 
  protected:
   virtual ~SystemIndicatorDisableFunction() {}

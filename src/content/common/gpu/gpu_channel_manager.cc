@@ -6,15 +6,16 @@
 
 #include "base/bind.h"
 #include "base/command_line.h"
-#include "content/common/child_thread.h"
 #include "content/common/gpu/gpu_channel.h"
 #include "content/common/gpu/gpu_memory_manager.h"
 #include "content/common/gpu/gpu_messages.h"
 #include "content/common/gpu/sync_point_manager.h"
+#include "content/common/message_router.h"
 #include "gpu/command_buffer/service/feature_info.h"
 #include "gpu/command_buffer/service/gpu_switches.h"
 #include "gpu/command_buffer/service/mailbox_manager.h"
 #include "gpu/command_buffer/service/memory_program_cache.h"
+#include "gpu/command_buffer/service/shader_translator_cache.h"
 #include "ui/gl/gl_bindings.h"
 #include "ui/gl/gl_share_group.h"
 
@@ -29,21 +30,20 @@ GpuChannelManager::ImageOperation::ImageOperation(
 GpuChannelManager::ImageOperation::~ImageOperation() {
 }
 
-GpuChannelManager::GpuChannelManager(ChildThread* gpu_child_thread,
+GpuChannelManager::GpuChannelManager(MessageRouter* router,
                                      GpuWatchdog* watchdog,
                                      base::MessageLoopProxy* io_message_loop,
                                      base::WaitableEvent* shutdown_event)
-    : ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+    : weak_factory_(this),
       io_message_loop_(io_message_loop),
       shutdown_event_(shutdown_event),
-      gpu_child_thread_(gpu_child_thread),
-      ALLOW_THIS_IN_INITIALIZER_LIST(gpu_memory_manager_(
+      router_(router),
+      gpu_memory_manager_(
           this,
-          GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit)),
+          GpuMemoryManager::kDefaultMaxSurfacesWithFrontbufferSoftLimit),
       watchdog_(watchdog),
-      sync_point_manager_(new SyncPointManager),
-      program_cache_(NULL) {
-  DCHECK(gpu_child_thread);
+      sync_point_manager_(new SyncPointManager) {
+  DCHECK(router_);
   DCHECK(io_message_loop);
   DCHECK(shutdown_event);
 }
@@ -59,8 +59,8 @@ GpuChannelManager::~GpuChannelManager() {
 
 gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
   if (!program_cache_.get() &&
-      (gfx::g_driver_gl.ext.b_ARB_get_program_binary ||
-       gfx::g_driver_gl.ext.b_OES_get_program_binary) &&
+      (gfx::g_driver_gl.ext.b_GL_ARB_get_program_binary ||
+       gfx::g_driver_gl.ext.b_GL_OES_get_program_binary) &&
       !CommandLine::ForCurrentProcess()->HasSwitch(
           switches::kDisableGpuProgramCache)) {
     program_cache_.reset(new gpu::gles2::MemoryProgramCache());
@@ -68,7 +68,15 @@ gpu::gles2::ProgramCache* GpuChannelManager::program_cache() {
   return program_cache_.get();
 }
 
+gpu::gles2::ShaderTranslatorCache*
+GpuChannelManager::shader_translator_cache() {
+  if (!shader_translator_cache_.get())
+    shader_translator_cache_ = new gpu::gles2::ShaderTranslatorCache;
+  return shader_translator_cache_.get();
+}
+
 void GpuChannelManager::RemoveChannel(int client_id) {
+  Send(new GpuHostMsg_DestroyChannel(client_id));
   gpu_channels_.erase(client_id);
 }
 
@@ -78,11 +86,11 @@ int GpuChannelManager::GenerateRouteID() {
 }
 
 void GpuChannelManager::AddRoute(int32 routing_id, IPC::Listener* listener) {
-  gpu_child_thread_->AddRoute(routing_id, listener);
+  router_->AddRoute(routing_id, listener);
 }
 
 void GpuChannelManager::RemoveRoute(int32 routing_id) {
-  gpu_child_thread_->RemoveRoute(routing_id);
+  router_->RemoveRoute(routing_id);
 }
 
 GpuChannel* GpuChannelManager::LookupChannel(int32 client_id) {
@@ -90,7 +98,7 @@ GpuChannel* GpuChannelManager::LookupChannel(int32 client_id) {
   if (iter == gpu_channels_.end())
     return NULL;
   else
-    return iter->second;
+    return iter->second.get();
 }
 
 bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
@@ -103,14 +111,13 @@ bool GpuChannelManager::OnMessageReceived(const IPC::Message& msg) {
                         OnCreateViewCommandBuffer)
     IPC_MESSAGE_HANDLER(GpuMsg_CreateImage, OnCreateImage)
     IPC_MESSAGE_HANDLER(GpuMsg_DeleteImage, OnDeleteImage)
+    IPC_MESSAGE_HANDLER(GpuMsg_LoadedShader, OnLoadedShader)
     IPC_MESSAGE_UNHANDLED(handled = false)
   IPC_END_MESSAGE_MAP_EX()
   return handled;
 }
 
-bool GpuChannelManager::Send(IPC::Message* msg) {
-  return gpu_child_thread_->Send(msg);
-}
+bool GpuChannelManager::Send(IPC::Message* msg) { return router_->Send(msg); }
 
 void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
   IPC::ChannelHandle channel_handle;
@@ -118,13 +125,13 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
   gfx::GLShareGroup* share_group = NULL;
   gpu::gles2::MailboxManager* mailbox_manager = NULL;
   if (share_context) {
-    if (!share_group_) {
+    if (!share_group_.get()) {
       share_group_ = new gfx::GLShareGroup;
-      DCHECK(!mailbox_manager_);
+      DCHECK(!mailbox_manager_.get());
       mailbox_manager_ = new gpu::gles2::MailboxManager;
     }
-    share_group = share_group_;
-    mailbox_manager = mailbox_manager_;
+    share_group = share_group_.get();
+    mailbox_manager = mailbox_manager_.get();
   }
 
   scoped_refptr<GpuChannel> channel = new GpuChannel(this,
@@ -133,18 +140,17 @@ void GpuChannelManager::OnEstablishChannel(int client_id, bool share_context) {
                                                      mailbox_manager,
                                                      client_id,
                                                      false);
-  if (channel->Init(io_message_loop_, shutdown_event_)) {
-    gpu_channels_[client_id] = channel;
-    channel_handle.name = channel->GetChannelName();
+  channel->Init(io_message_loop_.get(), shutdown_event_);
+  gpu_channels_[client_id] = channel;
+  channel_handle.name = channel->GetChannelName();
 
 #if defined(OS_POSIX)
-    // On POSIX, pass the renderer-side FD. Also mark it as auto-close so
-    // that it gets closed after it has been sent.
-    int renderer_fd = channel->TakeRendererFileDescriptor();
-    DCHECK_NE(-1, renderer_fd);
-    channel_handle.socket = base::FileDescriptor(renderer_fd, true);
+  // On POSIX, pass the renderer-side FD. Also mark it as auto-close so
+  // that it gets closed after it has been sent.
+  int renderer_fd = channel->TakeRendererFileDescriptor();
+  DCHECK_NE(-1, renderer_fd);
+  channel_handle.socket = base::FileDescriptor(renderer_fd, true);
 #endif
-  }
 
   Send(new GpuHostMsg_ChannelEstablished(channel_handle));
 }
@@ -164,17 +170,18 @@ void GpuChannelManager::OnCreateViewCommandBuffer(
     const gfx::GLSurfaceHandle& window,
     int32 surface_id,
     int32 client_id,
-    const GPUCreateCommandBufferConfig& init_params) {
+    const GPUCreateCommandBufferConfig& init_params,
+    int32 route_id) {
   DCHECK(surface_id);
-  int32 route_id = MSG_ROUTING_NONE;
+  bool succeeded = false;
 
   GpuChannelMap::const_iterator iter = gpu_channels_.find(client_id);
   if (iter != gpu_channels_.end()) {
-    iter->second->CreateViewCommandBuffer(
-        window, surface_id, init_params, &route_id);
+    succeeded = iter->second->CreateViewCommandBuffer(
+        window, surface_id, init_params, route_id);
   }
 
-  Send(new GpuHostMsg_CommandBufferCreated(route_id));
+  Send(new GpuHostMsg_CommandBufferCreated(succeeded));
 }
 
 void GpuChannelManager::CreateImage(
@@ -252,8 +259,36 @@ void GpuChannelManager::OnDeleteImageSyncPointRetired(
   }
 }
 
+void GpuChannelManager::OnLoadedShader(std::string program_proto) {
+  if (program_cache())
+    program_cache()->LoadProgram(program_proto);
+}
+
+bool GpuChannelManager::HandleMessagesScheduled() {
+  for (GpuChannelMap::iterator iter = gpu_channels_.begin();
+       iter != gpu_channels_.end(); ++iter) {
+    if (iter->second->handle_messages_scheduled())
+      return true;
+  }
+  return false;
+}
+
+uint64 GpuChannelManager::MessagesProcessed() {
+  uint64 messages_processed = 0;
+
+  for (GpuChannelMap::iterator iter = gpu_channels_.begin();
+       iter != gpu_channels_.end(); ++iter) {
+    messages_processed += iter->second->messages_processed();
+  }
+  return messages_processed;
+}
+
 void GpuChannelManager::LoseAllContexts() {
-  MessageLoop::current()->PostTask(
+  for (GpuChannelMap::iterator iter = gpu_channels_.begin();
+       iter != gpu_channels_.end(); ++iter) {
+    iter->second->MarkAllContextsLost();
+  }
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&GpuChannelManager::OnLoseAllContexts,
                  weak_factory_.GetWeakPtr()));
@@ -265,8 +300,8 @@ void GpuChannelManager::OnLoseAllContexts() {
 
 gfx::GLSurface* GpuChannelManager::GetDefaultOffscreenSurface() {
   if (!default_offscreen_surface_.get()) {
-    default_offscreen_surface_ = gfx::GLSurface::CreateOffscreenGLSurface(
-        false, gfx::Size(1, 1));
+    default_offscreen_surface_ =
+        gfx::GLSurface::CreateOffscreenGLSurface(gfx::Size(1, 1));
   }
   return default_offscreen_surface_.get();
 }

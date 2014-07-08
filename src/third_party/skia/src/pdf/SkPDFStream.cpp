@@ -15,25 +15,21 @@
 
 static bool skip_compression(SkPDFCatalog* catalog) {
     return SkToBool(catalog->getDocumentFlags() &
-                    SkPDFDocument::kNoCompression_Flags);
+                    SkPDFDocument::kFavorSpeedOverSize_Flags);
 }
 
-SkPDFStream::SkPDFStream(SkStream* stream)
-    : fState(kUnused_State),
-      fData(stream) {
+SkPDFStream::SkPDFStream(SkStream* stream) : fState(kUnused_State) {
+    setData(stream);
 }
 
 SkPDFStream::SkPDFStream(SkData* data) : fState(kUnused_State) {
-    SkMemoryStream* stream = new SkMemoryStream;
-    stream->setData(data);
-    fData = stream;
-    fData->unref();  // SkRefPtr and new both took a reference.
+    setData(data);
 }
 
 SkPDFStream::SkPDFStream(const SkPDFStream& pdfStream)
         : SkPDFDict(),
-          fState(kUnused_State),
-          fData(pdfStream.fData) {
+          fState(kUnused_State) {
+    setData(pdfStream.fData.get());
     bool removeLength = true;
     // Don't uncompress an already compressed stream, but we could.
     if (pdfStream.fState == kCompressed_State) {
@@ -65,7 +61,8 @@ void SkPDFStream::emitObject(SkWStream* stream, SkPDFCatalog* catalog,
 
     this->INHERITED::emitObject(stream, catalog, false);
     stream->writeText(" stream\n");
-    stream->write(fData->getMemoryBase(), fData->getLength());
+    stream->writeStream(fData.get(), fData->getLength());
+    fData->rewind();
     stream->writeText("\nendstream");
 }
 
@@ -83,8 +80,20 @@ size_t SkPDFStream::getOutputSize(SkPDFCatalog* catalog, bool indirect) {
 
 SkPDFStream::SkPDFStream() : fState(kUnused_State) {}
 
+void SkPDFStream::setData(SkData* data) {
+    SkMemoryStream* stream = new SkMemoryStream;
+    stream->setData(data);
+    fData.reset(stream);  // Transfer ownership.
+}
+
 void SkPDFStream::setData(SkStream* stream) {
-    fData = stream;
+    // Code assumes that the stream starts at the beginning and is rewindable.
+    if (stream) {
+        SkASSERT(stream->getPosition() == 0);
+        SkASSERT(stream->rewind());
+    }
+    fData.reset(stream);
+    SkSafeRef(stream);
 }
 
 bool SkPDFStream::populate(SkPDFCatalog* catalog) {
@@ -96,8 +105,7 @@ bool SkPDFStream::populate(SkPDFCatalog* catalog) {
             if (compressedData.getOffset() < fData->getLength()) {
                 SkMemoryStream* stream = new SkMemoryStream;
                 stream->setData(compressedData.copyToData())->unref();
-                fData = stream;
-                fData->unref();  // SkRefPtr and new both took a reference.
+                fData.reset(stream);  // Transfer ownership.
                 insertName("Filter", "FlateDecode");
             }
             fState = kCompressed_State;
@@ -108,8 +116,7 @@ bool SkPDFStream::populate(SkPDFCatalog* catalog) {
     } else if (fState == kNoCompression_State && !skip_compression(catalog) &&
                SkFlate::HaveFlate()) {
         if (!fSubstitute.get()) {
-            fSubstitute = new SkPDFStream(*this);
-            fSubstitute->unref();  // SkRefPtr and new both took a reference.
+            fSubstitute.reset(new SkPDFStream(*this));
             catalog->setSubstitute(this, fSubstitute.get());
         }
         return false;

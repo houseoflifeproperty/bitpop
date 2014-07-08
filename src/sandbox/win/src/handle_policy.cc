@@ -52,7 +52,6 @@ bool HandlePolicy::GenerateRules(const wchar_t* type_name,
 }
 
 DWORD HandlePolicy::DuplicateHandleProxyAction(EvalResult eval_result,
-                                               const ClientInfo& client_info,
                                                HANDLE source_handle,
                                                DWORD target_process_id,
                                                HANDLE* target_handle,
@@ -79,9 +78,9 @@ DWORD HandlePolicy::DuplicateHandleProxyAction(EvalResult eval_result,
   // If the policy didn't block us and we have no valid target, then the broker
   // (this process) is the valid target.
   HANDLE target_process = remote_target_process.IsValid() ?
-                          remote_target_process : ::GetCurrentProcess();
+                          remote_target_process.Get() : ::GetCurrentProcess();
   DWORD result = ERROR_SUCCESS;
-  if (!::DuplicateHandle(client_info.process, source_handle, target_process,
+  if (!::DuplicateHandle(::GetCurrentProcess(), source_handle, target_process,
                          target_handle, desired_access, FALSE,
                          options)) {
     return ::GetLastError();

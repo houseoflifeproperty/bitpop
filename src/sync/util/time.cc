@@ -5,7 +5,7 @@
 #include "sync/util/time.h"
 
 #include "base/i18n/time_formatting.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace syncer {
 
@@ -18,7 +18,7 @@ base::Time ProtoTimeToTime(int64 proto_t) {
 }
 
 std::string GetTimeDebugString(const base::Time& t) {
-  return UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(t));
+  return base::UTF16ToUTF8(base::TimeFormatFriendlyDateAndTime(t));
 }
 
 }  // namespace syncer

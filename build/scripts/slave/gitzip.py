@@ -33,15 +33,20 @@ The .sha1 files are the result of running sha1sum on the zip files.
 If a gs_bucket is provided to the constructor, these four files will be
 uploaded to Google Storage.
 
-To bootstrap a source checkout from the uploaded zip file:
+To bootstrap a chromium checkout:
 
-  $ wget http://commondatastorage.googleapis.com/<bucket>/<repobase>-full.zip
-  $ unzip <repobase>-full.zip
-  $ cd <repobase>
+  $ mkdir workdir
+  $ cd workdir
+  $ curl -O http://commondatastorage.googleapis.com/chromium-git-bundles/src-full.zip
+  $ unzip src-full.zip
 
-  # One of the following:
-  $ ./.git/hooks/first-checkout.sh   # posix
-  > .\.git\hooks\first-checkout.bat  # windows
+Then, if you want to use the submodule flow:
+
+  $ git crsync
+
+... or, if you want to use the gclient flow, create your .gclient file and:
+
+  $ gclient sync
 """
 
 import optparse
@@ -50,64 +55,10 @@ try:
   from queue import Queue  # pylint: disable=F0401
 except ImportError:
   from Queue import Queue
-import stat
 import subprocess
 import sys
 import tempfile
 import threading
-
-from slave.slave_utils import GSUtilSetup
-
-FIRST_CHECKOUT_SH = """#!/bin/bash
-
-if test -z "$1"; then
-  case `uname -s` in
-    "Linux")
-      os=unix
-      ;;
-    "Darwin")
-      os=mac
-      ;;
-    *)
-      echo "You didn't specify an OS (mac, win, unix, or android), \
-and I can't figure it out from 'uname -s'" 1>&2
-      exit 1
-      ;;
-  esac
-else
-  os=$1
-fi
-
-git config target.os $os
-git checkout --force HEAD
-git config -f .gitmodules --get-regexp '.os$' "(all|$os)" |
-sed 's/^submodule\\.\\(.*\\)\\.os .*$/\\1/' |
-while read submodule; do
-  git config submodule.$submodule.update checkout
-  (cd $submodule && git checkout --force HEAD)
-done
-git submodule update
-"""
-
-FIRST_CHECKOUT_BAT = """@echo off
-setlocal
-
-if "%1" == "" (
-  SET os=win
-) ELSE (
-  SET os=%1
-)
-
-call git config target.os %os%
-call git checkout --force HEAD
-
-FOR /F "delims=. tokens=2" %%x in ('git config -f .gitmodules --get-regexp .os$ "(all|%os%)"') DO (
-  call git config submodule.%%x.update checkout
-  CMD /C "cd %%x & git checkout --force HEAD"
-)
-
-call git submodule update
-"""
 
 
 class TerminateMessageThread:  # pylint: disable=W0232
@@ -124,7 +75,7 @@ class GitZip(object):
   # pylint: disable=W0621
   def __init__(self, workdir, base=None, url=None, gs_bucket=None,
                gs_acl='public-read', timeout=900, stayalive=None,
-               verbose=False):
+               template=None, verbose=False):
     self.workdir = workdir
     if url and not base:
       base = os.path.basename(url)
@@ -137,6 +88,7 @@ class GitZip(object):
     self.timeout = timeout
     self.stayalive = stayalive
     self.stayalive_timer = None
+    self.template = template
     self.verbose = verbose
     self.messages = Queue()
 
@@ -276,13 +228,6 @@ class GitZip(object):
     for thr in threads:
       if thr.err:
         raise thr.err
-    self._run_cmd(['git', 'config', 'diff.ignoreSubmodules', 'all'], clonedir)
-    self._run_cmd(['git', 'submodule', 'foreach', 'git', 'config', '-f',
-                   '$toplevel/.git/config', 'submodule.$name.ignore', 'all'],
-                   clonedir)
-    self._run_cmd(['git', 'submodule', 'foreach', 'git', 'config', '-f',
-                   '$toplevel/.git/config', 'submodule.$name.update', 'none'],
-                  clonedir)
 
   def UpdateSubmodules(self, clonedir):
     """Update submodule config info and submodule checkouts."""
@@ -318,7 +263,10 @@ class GitZip(object):
         cmd = ['git', 'fetch', 'origin']
         workdir = clonedir
       elif url is not None:
-        cmd = ['git', 'clone', '-n', url, clonedir]
+        cmd = ['git', 'clone', '-n']
+        if self.template:
+          cmd.append('--template=%s' % self.template)
+        cmd.extend((url, clonedir))
         workdir = self.workdir
       else:
         raise RuntimeError('No existing checkout, and no url provided')
@@ -331,23 +279,6 @@ class GitZip(object):
       raise
     else:
       threading.current_thread().err = None
-
-  @staticmethod
-  def CreateFirstCheckoutHook(clonedir):
-    """Create first-checkout scripts to be included in the zip archive."""
-    permissions = (stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR |
-                   stat.S_IRGRP | stat.S_IXGRP|
-                   stat.S_IROTH | stat.S_IXOTH)
-    hook_path = os.path.join(clonedir, '.git', 'hooks', 'first-checkout.sh')
-    fh = open(hook_path, 'w')
-    fh.write(FIRST_CHECKOUT_SH)
-    fh.close()
-    os.chmod(hook_path, permissions)
-    hook_path = os.path.join(clonedir, '.git', 'hooks', 'first-checkout.bat')
-    fh = open(hook_path, 'w')
-    fh.write('\r\n'.join(FIRST_CHECKOUT_BAT.splitlines()))
-    fh.close()
-    os.chmod(hook_path, permissions)
 
   def CreateZipFile(self, zippath, zipfile, sha1_file):
     """Create a zip archive of a git checkout, and calculate a sha1 sum."""
@@ -366,11 +297,10 @@ class GitZip(object):
       threading.current_thread().err = None
       if not self.gs_bucket:
         return
-      gsutil_exe = GSUtilSetup()
       gs_url = self.gs_bucket
       if not gs_url.startswith('gs://'):
         gs_url = 'gs://%s' % gs_url
-      cmd = ([gsutil_exe] + kwargs.get('gsutil_args', []) +
+      cmd = (['gsutil'] + kwargs.get('gsutil_args', []) +
              ['cp', '-a', self.gs_acl] + list(f) + [gs_url])
       self._run_cmd(cmd)
     except Exception, e:
@@ -433,7 +363,6 @@ class GitZip(object):
     message_thread.start()
     try:
       self.DoFetch(self.base, self.url)
-      self.CreateFirstCheckoutHook(self.base)
       self.ZipAndUpload()
     finally:
       self.messages.put(TerminateMessageThread)
@@ -461,6 +390,8 @@ if __name__ == '__main__':
                     dest='stayalive', help='Make sure this script produces '
                     'terminal output at least every STAYALIVE seconds, to '
                     'prevent its parent process from timing out.', default=200)
+  parser.add_option('--template', action='store', dest='template',
+                    metavar='DIR', help='Passed through to git-clone.')
   parser.add_option('-v', '--verbose', action='store_true', dest='verbose')
   options, args = parser.parse_args()
 
@@ -482,7 +413,7 @@ if __name__ == '__main__':
 
   kwargs = {}
   for kw in ['workdir', 'base', 'url', 'gs_bucket', 'gs_acl', 'timeout',
-             'stayalive', 'verbose']:
+             'stayalive', 'template', 'verbose']:
     kwargs[kw] = getattr(options, kw)
   gitzip = GitZip(**kwargs)
   gitzip.Run()

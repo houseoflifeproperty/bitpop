@@ -9,11 +9,9 @@
 #include "content/public/browser/browser_message_filter.h"
 
 namespace gfx {
-class Rect;
-}
-
-namespace ui {
+class Point;
 class Range;
+class Rect;
 }
 
 namespace content {
@@ -35,6 +33,9 @@ class CONTENT_EXPORT TextInputClientMessageFilter
 
  private:
   // IPC Message handlers:
+  void OnGotStringAtPoint(
+      const mac::AttributedStringCoder::EncodedString& encoded_string,
+      const gfx::Point& point);
   void OnGotCharacterIndexForPoint(size_t index);
   void OnGotFirstRectForRange(const gfx::Rect& rect);
   void OnGotStringFromRange(

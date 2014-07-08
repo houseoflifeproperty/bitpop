@@ -7,7 +7,7 @@
 
 #include <string>
 
-#include "base/time.h"
+#include "base/time/time.h"
 #include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
@@ -49,8 +49,6 @@ struct SYNC_EXPORT SyncStatus {
 
   bool syncing;
 
-  // Total updates available.  If zero, nothing left to download.
-  int64 updates_available;
   // Total updates received by the syncer since browser start.
   int updates_received;
   // Total updates received that are echoes of our own changes.
@@ -64,18 +62,6 @@ struct SYNC_EXPORT SyncStatus {
   // Total number of overwrites due to conflict resolver since browser start.
   int num_local_overwrites_total;
   int num_server_overwrites_total;
-
-  // Count of empty and non empty getupdates;
-  int nonempty_get_updates;
-  int empty_get_updates;
-
-  // Count of sync cycles that successfully committed items;
-  int sync_cycles_with_commits;
-  int sync_cycles_without_commits;
-
-  // Count of useless and useful syncs we perform.
-  int useless_sync_cycles;
-  int useful_sync_cycles;
 
   // Nudge counts for each possible source
   int nudge_source_notification;
@@ -93,12 +79,18 @@ struct SYNC_EXPORT SyncStatus {
   // Per-datatype throttled status.
   ModelTypeSet throttled_types;
 
-  // The unique identifer for this client.
-  std::string unique_id;
+  // The unique identifer for the sync store.
+  std::string sync_id;
+
+  // The unique identifier for the invalidation client.
+  std::string invalidator_client_id;
 
   // Counters grouped by model type
   std::vector<int> num_entries_by_type;
   std::vector<int> num_to_delete_entries_by_type;
+
+  // Time of next retry if sync scheduler is throttled or in backoff.
+  base::Time retry_time;
 };
 
 }  // namespace syncer

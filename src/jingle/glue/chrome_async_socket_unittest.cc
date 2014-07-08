@@ -10,15 +10,16 @@
 #include "base/basictypes.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "jingle/glue/resolving_client_socket_factory.h"
 #include "net/base/address_list.h"
-#include "net/base/mock_cert_verifier.h"
 #include "net/base/net_errors.h"
 #include "net/base/net_util.h"
-#include "net/base/ssl_config_service.h"
+#include "net/cert/mock_cert_verifier.h"
+#include "net/http/transport_security_state.h"
 #include "net/socket/socket_test_util.h"
 #include "net/socket/ssl_client_socket.h"
+#include "net/ssl/ssl_config_service.h"
 #include "net/url_request/url_request_context_getter.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/libjingle/source/talk/base/ipaddress.h"
@@ -41,7 +42,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // If there's no read, sets the "has pending read" flag.  Otherwise,
   // pops the next read.
-  virtual net::MockRead GetNextRead() {
+  virtual net::MockRead GetNextRead() OVERRIDE {
     if (reads_.empty()) {
       DCHECK(!has_pending_read_);
       has_pending_read_ = true;
@@ -55,7 +56,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // Simply pops the next write and, if applicable, compares it to
   // |data|.
-  virtual net::MockWriteResult OnWrite(const std::string& data) {
+  virtual net::MockWriteResult OnWrite(const std::string& data) OVERRIDE {
     DCHECK(!writes_.empty());
     net::MockWrite mock_write = writes_.front();
     writes_.pop_front();
@@ -72,7 +73,7 @@ class AsyncSocketDataProvider : public net::SocketDataProvider {
 
   // We ignore resets so we can pre-load the socket data provider with
   // read/write events.
-  virtual void Reset() {}
+  virtual void Reset() OVERRIDE {}
 
   // If there is a pending read, completes it with the given read.
   // Otherwise, queues up the given read.
@@ -107,23 +108,25 @@ class MockXmppClientSocketFactory : public ResolvingClientSocketFactory {
       const net::AddressList& address_list)
           : mock_client_socket_factory_(mock_client_socket_factory),
             address_list_(address_list),
-            cert_verifier_(new net::MockCertVerifier) {
+            cert_verifier_(new net::MockCertVerifier),
+            transport_security_state_(new net::TransportSecurityState) {
   }
 
   // ResolvingClientSocketFactory implementation.
-  virtual net::StreamSocket* CreateTransportClientSocket(
-      const net::HostPortPair& host_and_port) {
+  virtual scoped_ptr<net::StreamSocket> CreateTransportClientSocket(
+      const net::HostPortPair& host_and_port) OVERRIDE {
     return mock_client_socket_factory_->CreateTransportClientSocket(
         address_list_, NULL, net::NetLog::Source());
   }
 
-  virtual net::SSLClientSocket* CreateSSLClientSocket(
-      net::ClientSocketHandle* transport_socket,
-      const net::HostPortPair& host_and_port) {
+  virtual scoped_ptr<net::SSLClientSocket> CreateSSLClientSocket(
+      scoped_ptr<net::ClientSocketHandle> transport_socket,
+      const net::HostPortPair& host_and_port) OVERRIDE {
     net::SSLClientSocketContext context;
     context.cert_verifier = cert_verifier_.get();
+    context.transport_security_state = transport_security_state_.get();
     return mock_client_socket_factory_->CreateSSLClientSocket(
-        transport_socket, host_and_port, ssl_config_, context);
+        transport_socket.Pass(), host_and_port, ssl_config_, context);
   }
 
  private:
@@ -131,6 +134,7 @@ class MockXmppClientSocketFactory : public ResolvingClientSocketFactory {
   net::AddressList address_list_;
   net::SSLConfig ssl_config_;
   scoped_ptr<net::CertVerifier> cert_verifier_;
+  scoped_ptr<net::TransportSecurityState> transport_security_state_;
 };
 
 class ChromeAsyncSocketTest
@@ -393,7 +397,7 @@ class ChromeAsyncSocketTest
 
   std::string DrainRead(size_t buf_size) {
     std::string read;
-    scoped_array<char> buf(new char[buf_size]);
+    scoped_ptr<char[]> buf(new char[buf_size]);
     size_t len_read;
     while (true) {
       bool success =
@@ -411,7 +415,7 @@ class ChromeAsyncSocketTest
   }
 
   // ChromeAsyncSocket expects a message loop.
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
 
   AsyncSocketDataProvider async_socket_data_provider_;
   net::SSLSocketDataProvider ssl_socket_data_provider_;

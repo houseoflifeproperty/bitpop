@@ -18,7 +18,7 @@ SettingsFormatWebUITest.Filters = {
    * Exemption for checkboxes that do not require an id or pref property.
    * Input methods use inputMethodId instead of id for unique identification.
    */
-  'pref': ['language-options-input-method-proto',
+  'pref': ['language-options-input-method-template',
            'language-options-input-method-list']
 };
 
@@ -151,7 +151,7 @@ TEST_F('SettingsFormatWebUITest', 'RadioButtonNameValueCheck', function() {
     if (!element.name)
       this.fail('MISSING_RADIO_BUTTON_NAME', element);
 
-    if (!element.getAttribute("value"))
+    if (!element.getAttribute('value'))
       this.fail('MISSING_RADIO_BUTTON_VALUE', element);
   }
 });

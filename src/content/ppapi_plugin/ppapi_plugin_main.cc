@@ -5,21 +5,29 @@
 #include "base/command_line.h"
 #include "base/debug/debugger.h"
 #include "base/i18n/rtl.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/threading/platform_thread.h"
 #include "build/build_config.h"
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
+#include "content/common/content_constants_internal.h"
+#include "content/common/sandbox_linux/sandbox_linux.h"
 #include "content/ppapi_plugin/ppapi_thread.h"
 #include "content/public/common/content_client.h"
 #include "content/public/common/content_switches.h"
 #include "content/public/common/main_function_params.h"
 #include "content/public/plugin/content_plugin_client.h"
 #include "crypto/nss_util.h"
+#include "ppapi/proxy/plugin_globals.h"
 #include "ppapi/proxy/proxy_module.h"
 #include "ui/base/ui_base_switches.h"
 
 #if defined(OS_WIN)
 #include "sandbox/win/src/sandbox.h"
+#include "third_party/skia/include/ports/SkTypeface_win.h"
+#endif
+
+#if defined(OS_CHROMEOS)
+#include "base/file_util.h"
 #endif
 
 #if defined(OS_LINUX)
@@ -37,6 +45,18 @@ void* g_target_services = 0;
 #endif
 
 namespace content {
+
+namespace {
+
+#if defined(OS_WIN)
+// Windows-only skia sandbox support
+void SkiaPreCacheFont(const LOGFONT& logfont) {
+  ppapi::proxy::PluginGlobals::Get()->PreCacheFontForFlash(
+      reinterpret_cast<const void*>(&logfont));
+}
+#endif
+
+}  // namespace
 
 // Main function for starting the PPAPI plugin process.
 int PpapiPluginMain(const MainFunctionParams& parameters) {
@@ -78,8 +98,17 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
 #endif
   }
 
-  MessageLoop main_message_loop;
+#if defined(OS_CHROMEOS)
+  // Specifies $HOME explicitly because some plugins rely on $HOME but
+  // no other part of Chrome OS uses that.  See crbug.com/335290.
+  setenv("HOME", base::GetHomeDir().value().c_str(), 1);
+#endif
+
+  base::MessageLoop main_message_loop;
   base::PlatformThread::SetName("CrPPAPIMain");
+  base::debug::TraceLog::GetInstance()->SetProcessName("PPAPI Process");
+  base::debug::TraceLog::GetInstance()->SetProcessSortIndex(
+      kTraceEventPpapiProcessSortIndex);
 
 #if defined(OS_LINUX) && defined(USE_NSS)
   // Some out-of-process PPAPI plugins use NSS.
@@ -93,12 +122,16 @@ int PpapiPluginMain(const MainFunctionParams& parameters) {
     GetContentClient()->plugin()->PreSandboxInitialization();
 
 #if defined(OS_LINUX)
-  InitializeSandbox();
+  LinuxSandbox::InitializeSandbox();
 #endif
 
   ChildProcess ppapi_process;
   ppapi_process.set_main_thread(
       new PpapiThread(parameters.command_line, false));  // Not a broker.
+
+#if defined(OS_WIN)
+  SkTypeface_SetEnsureLOGFONTAccessibleProc(SkiaPreCacheFont);
+#endif
 
   main_message_loop.Run();
   return 0;

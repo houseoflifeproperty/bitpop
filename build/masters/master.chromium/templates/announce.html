@@ -1,4 +1,5 @@
 {% extends "layout.html" %}
+{% from "tree_status.html" import treestatus %}
 
 {% block header -%}
 {{ super() }}
@@ -136,7 +137,7 @@
 
 <div class="Announcement">
 
-<iframe width="100%" height="44" frameborder="0" scrolling="no" src="http://chromium-status.appspot.com/current"></iframe>
+{{ treestatus() }}
 
 <center style="padding: 0 7px">
   <table width="100%" valign="top" bgcolor="#efefef" style="-webkit-border-bottom-left-radius: 24px; -webkit-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px; -moz-border-bottom-right-radius: 24px;   box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -moz-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6); -webkit-box-shadow: 2px 2px 6px rgba(0, 0, 0, 0.6);">
@@ -148,9 +149,10 @@
               <b>Builds:</b>
             </td>
             <td>
-              <a href="http://commondatastorage.googleapis.com/chromium-browser-continuous/index.html">continuous</a> |
-              <a href="http://build.chromium.org/f/chromium/symsrv/index.html">symbols</a> |
-              <a href="http://chromium-status.appspot.com">status</a>
+              <a href="https://commondatastorage.googleapis.com/chromium-browser-continuous/index.html">continuous</a> |
+              <a href="https://build.chromium.org/f/chromium/symsrv/index.html">symbols</a> |
+              <a href="https://chromium-status.appspot.com">status</a> |
+              <a href="https://blink-status.appspot.com">blink status</a>
             </td>
           </tr>
           <tr>
@@ -158,12 +160,12 @@
               <b>Dashboards:</b>
             </td>
             <td>
-              <a href="http://build.chromium.org/f/chromium/perf/dashboard/overview.html">perf</a> |
-              <a href="http://build.chromium.org/f/chromium/perf/dashboard/memory.html">memory</a> |
-              <a href="http://build.chromium.org/f/chromium/perf/dashboard/sizes.html">sizes</a> |
+              <a href="https://chromeperf.appspot.com/">perf</a> |
+              <a href="https://chromeperf.appspot.com/report?tests=sizes">sizes</a> |
+              <a href="https://chromeperf.appspot.com/report?tests=endure">endure</a> |
               <a href="http://build.chromium.org/f/chromium/coverage/">coverage</a> |
               <a href="http://build.chromium.org/f/chromium/flakiness/">flakiness</a> |
-              <a href="http://build.chromium.org/p/chromium/stats">stats</a>
+              <a href="https://build.chromium.org/p/chromium/stats">stats</a>
             </td>
           </tr>
           <tr>
@@ -171,11 +173,11 @@
               <b>Chromium:</b>
             </td>
             <td>
-              <a href="http://src.chromium.org/viewvc/chrome">sources</a> |
-              <a href="http://codereview.chromium.org/">reviews</a> |
-              <a href="http://code.google.com/p/chromium/issues/list?can=2&q=&sort=pri+mstone&colspec=ID%20Stars%20Pri%20Area%20Type%20Status%20Summary%20Modified%20Owner%20Mstone">bugs</a> |
+              <a href="https://src.chromium.org/viewvc/chrome">sources</a> |
+              <a href="https://codereview.chromium.org/">reviews</a> |
+              <a href="https://code.google.com/p/chromium/issues/list?can=2&q=&sort=pri+mstone&colspec=ID%20Stars%20Pri%20Area%20Type%20Status%20Summary%20Modified%20Owner%20Mstone">bugs</a> |
               <a href="http://dev.chromium.org/Home">dev</a> |
-              <a href="http://www.google.com/support/chrome/">support</a>
+              <a href="https://www.google.com/support/chrome/">support</a>
             </td>
           </tr>
           <tr>
@@ -183,16 +185,17 @@
                <b>Sheriffs:</b>
             </td>
             <td>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff.js'></script>,<br>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_memory.js'></script>(Memory),
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_nacl.js'></script>(NaCl),<br>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_perf.js'></script>(Perf),
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cros_mtv.js'></script>,
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cros_nonmtv.js'></script>(CrOS),<br>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_android.js'></script>(Android),
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_ios_europe.js'></script>,
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_ios_us.js'></script>(iOS),<br>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_gpu.js'></script>(GPU),<br>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff.js'></script>,<br>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_memory.js'></script>(Memory),
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_nacl.js'></script>(NaCl),<br>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_perf.js'></script>(Perf),
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_cros_mtv.js'></script>,
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_cros_nonmtv.js'></script>(CrOS),<br>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_android.js'></script>(Android),
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_ios_europe.js'></script>,
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_ios_us.js'></script>(iOS),<br>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_gpu.js'></script>(GPU),
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_v8.js'></script>(V8),<br>
               <a href="https://www.google.com/calendar/render?cid=google.com_iqfka4i9asiva67vlqqf1es094%40group.calendar.google.com">trooper schedule</a>
             </td>
           </tr>
@@ -201,8 +204,8 @@
               <b>Gardeners:</b>
             </td>
             <td>
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_webkit.js'></script>(WebKit),
-              <script src='http://chromium-build.appspot.com/p/chromium/sheriff_cr_cros_gardeners.js'></script>
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_webkit.js'></script>(WebKit),
+              <script src='https://chromium-build.appspot.com/p/chromium/sheriff_cr_cros_gardeners.js'></script>
               (<a href="http://dev.chromium.org/developers/tree-sheriffs/chrome-in-chromeos-gardening">ChromeOS</a>)
             </td>
           </tr>
@@ -214,6 +217,8 @@
               <script>
               document.write([
                 a("../tryserver.chromium/waterfall", "tryserver.chromium", ""),
+                a("../tryserver.chromium.gpu/waterfall", "tryserver.chromium.gpu", ""),
+                a("../tryserver.blink/waterfall", "tryserver.blink", ""),
                 aView("../chromium.fyi", "", "chromium.fyi"),
                 aView("../chromium.memory", "", "chromium.memory"),
                 aView("../chromium.memory.fyi", "", "chromium.memory.fyi"),
@@ -281,7 +286,7 @@
              * @returns {String} The URL.
              */
             function BarUrl(x) {
-              return 'http://chromium-build.appspot.com/p/' + x +
+              return 'https://chromium-build.appspot.com/p/' + x +
                      '/horizontal_one_box_per_builder';
             }
             c.bar = BarUrl('chromium')
@@ -404,7 +409,7 @@
                 div(
                   'class="closerbox" width="100%"',
                   div('class="title" width="100%" height="10px"',
-                      a('http://chromium-status.appspot.com', 'Tree closers')) +
+                      a('https://chromium-status.appspot.com', 'Tree closers')) +
                   table(
                     'width="100%"',
                     tr(

@@ -5,6 +5,7 @@
 #include "chrome/renderer/spellchecker/spellcheck_provider_test.h"
 
 #include "base/stl_util.h"
+#include "chrome/common/spellcheck_marker.h"
 #include "chrome/common/spellcheck_messages.h"
 #include "chrome/renderer/spellchecker/spellcheck.h"
 #include "ipc/ipc_message_macros.h"
@@ -20,9 +21,8 @@ FakeTextCheckingCompletion::FakeTextCheckingCompletion()
 FakeTextCheckingCompletion::~FakeTextCheckingCompletion() {}
 
 void FakeTextCheckingCompletion::didFinishCheckingText(
-    const WebKit::WebVector<WebKit::WebTextCheckingResult>& results) {
+    const blink::WebVector<blink::WebTextCheckingResult>& results) {
   ++completion_count_;
-  last_results_ = results;
 }
 
 void FakeTextCheckingCompletion::didCancelCheckingText() {
@@ -32,11 +32,10 @@ void FakeTextCheckingCompletion::didCancelCheckingText() {
 
 TestingSpellCheckProvider::TestingSpellCheckProvider()
       : SpellCheckProvider(NULL, new MockSpellcheck),
-        offset_(-1) {
+        spelling_service_call_count_(0) {
 }
 
 TestingSpellCheckProvider::~TestingSpellCheckProvider() {
-  STLDeleteContainerPointers(messages_.begin(), messages_.end());
   delete spellcheck_;
 }
 
@@ -62,28 +61,31 @@ bool TestingSpellCheckProvider::Send(IPC::Message* message)  {
 
 void TestingSpellCheckProvider::OnCallSpellingService(int route_id,
                            int identifier,
-                           int offset,
-                           const string16& text) {
+                           const base::string16& text,
+                           const std::vector<SpellCheckMarker>& markers) {
 #if defined (OS_MACOSX)
   NOTREACHED();
 #else
-  WebKit::WebTextCheckingCompletion* completion =
+  ++spelling_service_call_count_;
+  blink::WebTextCheckingCompletion* completion =
       text_check_completions_.Lookup(identifier);
   if (!completion) {
     ResetResult();
     return;
   }
-  offset_ = offset;
   text_.assign(text);
   text_check_completions_.Remove(identifier);
-  completion->didFinishCheckingText(
-      std::vector<WebKit::WebTextCheckingResult>());
+  std::vector<blink::WebTextCheckingResult> results;
+  results.push_back(blink::WebTextCheckingResult(
+      blink::WebTextDecorationTypeSpelling,
+      0, 5, blink::WebString("hello")));
+  completion->didFinishCheckingText(results);
   last_request_ = text;
+  last_results_ = results;
 #endif
 }
 
 void TestingSpellCheckProvider::ResetResult() {
-  offset_ = -1;
   text_.clear();
 }
 

@@ -29,10 +29,6 @@
 #include "rle.h"
 #include "targa.h"
 
-typedef struct TargaContext {
-    AVFrame picture;
-} TargaContext;
-
 /**
  * RLE compress the image, with maximum size of out_size
  * @param outbuf Output buffer
@@ -97,37 +93,48 @@ static int targa_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
     AV_WL16(pkt->data+12, avctx->width);
     AV_WL16(pkt->data+14, avctx->height);
     /* image descriptor byte: origin is always top-left, bits 0-3 specify alpha */
-    pkt->data[17] = 0x20 | (avctx->pix_fmt == PIX_FMT_BGRA ? 8 : 0);
+    pkt->data[17] = 0x20 | (avctx->pix_fmt == AV_PIX_FMT_BGRA ? 8 : 0);
 
     out = pkt->data + 18;  /* skip past the header we write */
 
-    avctx->bits_per_coded_sample = av_get_bits_per_pixel(&av_pix_fmt_descriptors[avctx->pix_fmt]);
+    avctx->bits_per_coded_sample = av_get_bits_per_pixel(av_pix_fmt_desc_get(avctx->pix_fmt));
     switch(avctx->pix_fmt) {
-    case PIX_FMT_PAL8:
+    case AV_PIX_FMT_PAL8: {
+        int pal_bpp = 24; /* Only write 32bit palette if there is transparency information */
+        for (i = 0; i < 256; i++)
+            if (AV_RN32(p->data[1] + 4 * i) >> 24 != 0xFF) {
+                pal_bpp = 32;
+                break;
+            }
         pkt->data[1]  = 1;          /* palette present */
         pkt->data[2]  = TGA_PAL;    /* uncompressed palettised image */
         pkt->data[6]  = 1;          /* palette contains 256 entries */
-        pkt->data[7]  = 24;         /* palette contains 24 bit entries */
+        pkt->data[7]  = pal_bpp;    /* palette contains pal_bpp bit entries */
         pkt->data[16] = 8;          /* bpp */
         for (i = 0; i < 256; i++)
+            if (pal_bpp == 32) {
+                AV_WL32(pkt->data + 18 + 4 * i, *(uint32_t *)(p->data[1] + i * 4));
+            } else {
             AV_WL24(pkt->data + 18 + 3 * i, *(uint32_t *)(p->data[1] + i * 4));
-        out += 256 * 3;             /* skip past the palette we just output */
+            }
+        out += 32 * pal_bpp;        /* skip past the palette we just output */
         break;
-    case PIX_FMT_GRAY8:
+        }
+    case AV_PIX_FMT_GRAY8:
         pkt->data[2]  = TGA_BW;     /* uncompressed grayscale image */
         avctx->bits_per_coded_sample = 0x28;
         pkt->data[16] = 8;          /* bpp */
         break;
-    case PIX_FMT_RGB555LE:
+    case AV_PIX_FMT_RGB555LE:
         pkt->data[2]  = TGA_RGB;    /* uncompressed true-color image */
         avctx->bits_per_coded_sample =
         pkt->data[16] = 16;         /* bpp */
         break;
-    case PIX_FMT_BGR24:
+    case AV_PIX_FMT_BGR24:
         pkt->data[2]  = TGA_RGB;    /* uncompressed true-color image */
         pkt->data[16] = 24;         /* bpp */
         break;
-    case PIX_FMT_BGRA:
+    case AV_PIX_FMT_BGRA:
         pkt->data[2]  = TGA_RGB;    /* uncompressed true-color image */
         pkt->data[16] = 32;         /* bpp */
         break;
@@ -165,26 +172,32 @@ static int targa_encode_frame(AVCodecContext *avctx, AVPacket *pkt,
 
 static av_cold int targa_encode_init(AVCodecContext *avctx)
 {
-    TargaContext *s = avctx->priv_data;
+    avctx->coded_frame = av_frame_alloc();
+    if (!avctx->coded_frame)
+        return AVERROR(ENOMEM);
 
-    avcodec_get_frame_defaults(&s->picture);
-    s->picture.key_frame= 1;
-    s->picture.pict_type = AV_PICTURE_TYPE_I;
-    avctx->coded_frame= &s->picture;
+    avctx->coded_frame->key_frame = 1;
+    avctx->coded_frame->pict_type = AV_PICTURE_TYPE_I;
 
+    return 0;
+}
+
+static av_cold int targa_encode_close(AVCodecContext *avctx)
+{
+    av_frame_free(&avctx->coded_frame);
     return 0;
 }
 
 AVCodec ff_targa_encoder = {
     .name           = "targa",
+    .long_name      = NULL_IF_CONFIG_SMALL("Truevision Targa image"),
     .type           = AVMEDIA_TYPE_VIDEO,
     .id             = AV_CODEC_ID_TARGA,
-    .priv_data_size = sizeof(TargaContext),
     .init           = targa_encode_init,
+    .close          = targa_encode_close,
     .encode2        = targa_encode_frame,
-    .pix_fmts       = (const enum PixelFormat[]){
-        PIX_FMT_BGR24, PIX_FMT_BGRA, PIX_FMT_RGB555LE, PIX_FMT_GRAY8, PIX_FMT_PAL8,
-        PIX_FMT_NONE
+    .pix_fmts       = (const enum AVPixelFormat[]){
+        AV_PIX_FMT_BGR24, AV_PIX_FMT_BGRA, AV_PIX_FMT_RGB555LE, AV_PIX_FMT_GRAY8, AV_PIX_FMT_PAL8,
+        AV_PIX_FMT_NONE
     },
-    .long_name= NULL_IF_CONFIG_SMALL("Truevision Targa image"),
 };

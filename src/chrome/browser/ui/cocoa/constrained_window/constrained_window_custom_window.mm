@@ -4,11 +4,11 @@
 
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_custom_window.h"
 
-#import "base/memory/scoped_nsobject.h"
+#import "base/mac/scoped_nsobject.h"
 #import "chrome/browser/ui/chrome_style.h"
 #import "chrome/browser/ui/cocoa/constrained_window/constrained_window_sheet_controller.h"
-#import "chrome/browser/ui/constrained_window.h"
 #include "skia/ext/skia_utils_mac.h"
+#include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation ConstrainedWindowCustomWindow
 
@@ -17,7 +17,7 @@
                               styleMask:NSBorderlessWindowMask
                                 backing:NSBackingStoreBuffered
                                   defer:NO])) {
-    scoped_nsobject<NSView> contentView(
+    base::scoped_nsobject<NSView> contentView(
         [[ConstrainedWindowCustomWindowContentView alloc]
             initWithFrame:NSZeroRect]);
     [self setContentView:contentView];
@@ -34,7 +34,8 @@
                                  backing:bufferingType
                                    defer:NO])) {
     [self setHasShadow:YES];
-    [self setBackgroundColor:[NSColor clearColor]];
+    [self setBackgroundColor:gfx::SkColorToCalibratedNSColor(
+        chrome_style::GetBackgroundColor())];
     [self setOpaque:NO];
     [self setReleasedWhenClosed:NO];
   }
@@ -67,12 +68,19 @@
 @implementation ConstrainedWindowCustomWindowContentView
 
 - (void)drawRect:(NSRect)rect {
-  NSBezierPath* path = [NSBezierPath
+  gfx::ScopedNSGraphicsContextSaveGState state;
+
+  // Draw symmetric difference between rect path and oval path as "clear".
+  NSBezierPath* ovalPath = [NSBezierPath
       bezierPathWithRoundedRect:[self bounds]
                         xRadius:chrome_style::kBorderRadius
                         yRadius:chrome_style::kBorderRadius];
-  [gfx::SkColorToCalibratedNSColor(
-      chrome_style::GetBackgroundColor()) set];
+  NSBezierPath* path = [NSBezierPath bezierPathWithRect:[self bounds]];
+  [path appendBezierPath:ovalPath];
+  [path setWindingRule:NSEvenOddWindingRule];
+  [[NSGraphicsContext currentContext] setCompositingOperation:
+      NSCompositeCopy];
+  [[NSColor clearColor] set];
   [path fill];
 
   [[self window] invalidateShadow];

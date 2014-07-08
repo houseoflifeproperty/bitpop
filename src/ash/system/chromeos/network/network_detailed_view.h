@@ -9,16 +9,12 @@
 #include "chromeos/network/network_state_handler.h"
 
 namespace ash {
-namespace internal {
-
 namespace tray {
 
 // Abstract base class for all NetworkDetailedView derived subclasses,
-// which includes NetworkWifiDetailedView and NetworkListDetailedViewBase.
+// which includes NetworkWifiDetailedView and NetworkStateListDetailedView.
 class NetworkDetailedView : public TrayDetailsView {
  public:
-  typedef chromeos::NetworkStateHandler::NetworkStateList NetworkStateList;
-
   enum DetailedViewType {
     LIST_VIEW,
     STATE_LIST_VIEW,
@@ -39,7 +35,7 @@ class NetworkDetailedView : public TrayDetailsView {
 
   // Called when the contents of the network list have changed.
   // (Called only from TrayNetworkStateObserver).
-  virtual void NetworkListChanged(const NetworkStateList& networks) = 0;
+  virtual void NetworkListChanged() = 0;
 
   // Called when a network service property has changed.
   // (Called only from TrayNetworkStateObserver).
@@ -50,8 +46,6 @@ class NetworkDetailedView : public TrayDetailsView {
 };
 
 }  // namespace tray
-
-}  // namespace internal
 }  // namespace ash
 
 #endif  // ASH_SYSTEM_CHROMEOS_NETWORK_NETWORK_DETAILED_VIEW_H

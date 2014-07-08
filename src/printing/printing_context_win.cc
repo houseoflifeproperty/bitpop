@@ -10,40 +10,47 @@
 
 #include "base/i18n/file_util_icu.h"
 #include "base/i18n/time_formatting.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
-#include "base/win/metro.h"
 #include "printing/backend/print_backend.h"
 #include "printing/backend/printing_info_win.h"
 #include "printing/backend/win_helper.h"
 #include "printing/print_job_constants.h"
 #include "printing/print_settings_initializer_win.h"
 #include "printing/printed_document.h"
+#include "printing/printing_utils.h"
 #include "printing/units.h"
 #include "skia/ext/platform_device.h"
-#include "win8/util/win8_util.h"
+
+#if defined(USE_AURA)
+#include "ui/aura/remote_window_tree_host_win.h"
+#include "ui/aura/window.h"
+#include "ui/aura/window_event_dispatcher.h"
+#endif
 
 using base::Time;
 
 namespace {
 
-// Constants for setting default PDF settings.
-const int kPDFDpi = 300;  // 300 dpi
-// LETTER: 8.5 x 11 inches
-const int kPDFLetterWidth = 8.5 * kPDFDpi;
-const int kPDFLetterHeight = 11 * kPDFDpi;
-// LEGAL: 8.5 x 14 inches
-const int kPDFLegalWidth = 8.5 * kPDFDpi;
-const int kPDFLegalHeight = 14 * kPDFDpi;
-// A4: 8.27 x 11.69 inches
-const int kPDFA4Width = 8.27 * kPDFDpi;
-const int kPDFA4Height = 11.69 * kPDFDpi;
-// A3: 11.69 x 16.54 inches
-const int kPDFA3Width = 11.69 * kPDFDpi;
-const int kPDFA3Height = 16.54 * kPDFDpi;
+HWND GetRootWindow(gfx::NativeView view) {
+  HWND window = NULL;
+#if defined(USE_AURA)
+  if (view)
+    window = view->GetHost()->GetAcceleratedWidget();
+#else
+  if (view && IsWindow(view)) {
+    window = GetAncestor(view, GA_ROOTOWNER);
+  }
+#endif
+  if (!window) {
+    // TODO(maruel):  bug 1214347 Get the right browser window instead.
+    return GetDesktopWindow();
+  }
+  return window;
+}
 
 }  // anonymous namespace
 
@@ -156,11 +163,7 @@ PrintingContext* PrintingContext::Create(const std::string& app_locale) {
 }
 
 PrintingContextWin::PrintingContextWin(const std::string& app_locale)
-    : PrintingContext(app_locale),
-      context_(NULL),
-      dialog_box_(NULL),
-      print_dialog_func_(&PrintDlgEx) {
-}
+    : PrintingContext(app_locale), context_(NULL), dialog_box_(NULL) {}
 
 PrintingContextWin::~PrintingContextWin() {
   ReleaseContext();
@@ -169,36 +172,10 @@ PrintingContextWin::~PrintingContextWin() {
 void PrintingContextWin::AskUserForSettings(
     gfx::NativeView view, int max_pages, bool has_selection,
     const PrintSettingsCallback& callback) {
-#if !defined(USE_AURA)
   DCHECK(!in_print_job_);
-
-  if (win8::IsSingleWindowMetroMode()) {
-    // The system dialog can not be opened while running in Metro.
-    // But we can programatically launch the Metro print device charm though.
-    HMODULE metro_module = base::win::GetMetroModule();
-    if (metro_module != NULL) {
-      typedef void (*MetroShowPrintUI)();
-      MetroShowPrintUI metro_show_print_ui =
-          reinterpret_cast<MetroShowPrintUI>(
-              ::GetProcAddress(metro_module, "MetroShowPrintUI"));
-      if (metro_show_print_ui) {
-        // TODO(mad): Remove this once we can send user metrics from the metro
-        // driver. crbug.com/142330
-        UMA_HISTOGRAM_ENUMERATION("Metro.Print", 1, 2);
-        metro_show_print_ui();
-      }
-    }
-    return callback.Run(CANCEL);
-  }
   dialog_box_dismissed_ = false;
 
-  HWND window;
-  if (!view || !IsWindow(view)) {
-    // TODO(maruel):  bug 1214347 Get the right browser window instead.
-    window = GetDesktopWindow();
-  } else {
-    window = GetAncestor(view, GA_ROOTOWNER);
-  }
+  HWND window = GetRootWindow(view);
   DCHECK(window);
 
   // Show the OS-dependent dialog box.
@@ -236,14 +213,13 @@ void PrintingContextWin::AskUserForSettings(
     dialog_options.Flags |= PD_NOPAGENUMS;
   }
 
-  if ((*print_dialog_func_)(&dialog_options) != S_OK) {
+  if (ShowPrintDialog(&dialog_options) != S_OK) {
     ResetSettings();
     callback.Run(FAILED);
   }
 
   // TODO(maruel):  Support PD_PRINTTOFILE.
   callback.Run(ParseDialogResultEx(dialog_options));
-#endif
 }
 
 PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
@@ -260,25 +236,30 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
   (void)::EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,
                        NULL, 2, NULL, 0, &bytes_needed, &count_returned);
   if (bytes_needed) {
-    DCHECK(bytes_needed >= count_returned * sizeof(PRINTER_INFO_2));
-    scoped_array<BYTE> printer_info_buffer(new BYTE[bytes_needed]);
+    DCHECK_GE(bytes_needed, count_returned * sizeof(PRINTER_INFO_2));
+    scoped_ptr<BYTE[]> printer_info_buffer(new BYTE[bytes_needed]);
     BOOL ret = ::EnumPrinters(PRINTER_ENUM_LOCAL|PRINTER_ENUM_CONNECTIONS,
                               NULL, 2, printer_info_buffer.get(),
                               bytes_needed, &bytes_needed,
                               &count_returned);
     if (ret && count_returned) {  // have printers
       // Open the first successfully found printer.
-      for (DWORD count = 0; count < count_returned; ++count) {
-        PRINTER_INFO_2* info_2 = reinterpret_cast<PRINTER_INFO_2*>(
-            printer_info_buffer.get() + count * sizeof(PRINTER_INFO_2));
-        std::wstring printer_name = info_2->pPrinterName;
-        if (info_2->pDevMode == NULL || printer_name.length() == 0)
+      const PRINTER_INFO_2* info_2 =
+          reinterpret_cast<PRINTER_INFO_2*>(printer_info_buffer.get());
+      const PRINTER_INFO_2* info_2_end = info_2 + count_returned;
+      for (; info_2 < info_2_end; ++info_2) {
+        ScopedPrinterHandle printer;
+        if (!printer.OpenPrinter(info_2->pPrinterName))
           continue;
-        if (!AllocateContext(printer_name, info_2->pDevMode, &context_))
-          break;
-        if (InitializeSettings(*info_2->pDevMode, printer_name,
-                               NULL, 0, false)) {
-          break;
+        scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
+            CreateDevMode(printer, NULL);
+        if (!dev_mode || !AllocateContext(info_2->pPrinterName, dev_mode.get(),
+                                          &context_)) {
+          continue;
+        }
+        if (InitializeSettings(*dev_mode.get(), info_2->pPrinterName, NULL, 0,
+                               false)) {
+          return OK;
         }
         ReleaseContext();
       }
@@ -291,129 +272,97 @@ PrintingContext::Result PrintingContextWin::UseDefaultSettings() {
   return FAILED;
 }
 
-PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
-    const DictionaryValue& job_settings,
-    const PageRanges& ranges) {
-  DCHECK(!in_print_job_);
+gfx::Size PrintingContextWin::GetPdfPaperSizeDeviceUnits() {
+  // Default fallback to Letter size.
+  gfx::SizeF paper_size(kLetterWidthInch, kLetterHeightInch);
 
-  bool collate;
-  int color;
-  bool landscape;
-  bool print_to_pdf;
-  bool is_cloud_dialog;
-  int copies;
-  int duplex_mode;
-  string16 device_name;
-
-  if (!job_settings.GetBoolean(kSettingLandscape, &landscape) ||
-      !job_settings.GetBoolean(kSettingCollate, &collate) ||
-      !job_settings.GetInteger(kSettingColor, &color) ||
-      !job_settings.GetBoolean(kSettingPrintToPDF, &print_to_pdf) ||
-      !job_settings.GetInteger(kSettingDuplexMode, &duplex_mode) ||
-      !job_settings.GetInteger(kSettingCopies, &copies) ||
-      !job_settings.GetString(kSettingDeviceName, &device_name) ||
-      !job_settings.GetBoolean(kSettingCloudPrintDialog, &is_cloud_dialog)) {
-    return OnError();
-  }
-
-  bool print_to_cloud = job_settings.HasKey(kSettingCloudPrintId);
-
-  if (print_to_pdf || print_to_cloud || is_cloud_dialog) {
-    // Default fallback to Letter size.
-    gfx::Size paper_size;
-    gfx::Rect paper_rect;
-    paper_size.SetSize(kPDFLetterWidth, kPDFLetterHeight);
-
-    // Get settings from locale. Paper type buffer length is at most 4.
-    const int paper_type_buffer_len = 4;
-    wchar_t paper_type_buffer[paper_type_buffer_len] = {0};
-    GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IPAPERSIZE, paper_type_buffer,
-                  paper_type_buffer_len);
-    if (wcslen(paper_type_buffer)) {  // The call succeeded.
-      int paper_code = _wtoi(paper_type_buffer);
-      switch (paper_code) {
-        case DMPAPER_LEGAL:
-          paper_size.SetSize(kPDFLegalWidth, kPDFLegalHeight);
-          break;
-        case DMPAPER_A4:
-          paper_size.SetSize(kPDFA4Width, kPDFA4Height);
-          break;
-        case DMPAPER_A3:
-          paper_size.SetSize(kPDFA3Width, kPDFA3Height);
-          break;
-        default:  // DMPAPER_LETTER is used for default fallback.
-          break;
-      }
+  // Get settings from locale. Paper type buffer length is at most 4.
+  const int paper_type_buffer_len = 4;
+  wchar_t paper_type_buffer[paper_type_buffer_len] = {0};
+  GetLocaleInfo(LOCALE_USER_DEFAULT, LOCALE_IPAPERSIZE, paper_type_buffer,
+                paper_type_buffer_len);
+  if (wcslen(paper_type_buffer)) {  // The call succeeded.
+    int paper_code = _wtoi(paper_type_buffer);
+    switch (paper_code) {
+      case DMPAPER_LEGAL:
+        paper_size.SetSize(kLegalWidthInch, kLegalHeightInch);
+        break;
+      case DMPAPER_A4:
+        paper_size.SetSize(kA4WidthInch, kA4HeightInch);
+        break;
+      case DMPAPER_A3:
+        paper_size.SetSize(kA3WidthInch, kA3HeightInch);
+        break;
+      default:  // DMPAPER_LETTER is used for default fallback.
+        break;
     }
-    paper_rect.SetRect(0, 0, paper_size.width(), paper_size.height());
-    settings_.SetPrinterPrintableArea(paper_size, paper_rect, kPDFDpi);
-    settings_.set_dpi(kPDFDpi);
-    settings_.SetOrientation(landscape);
-    settings_.ranges = ranges;
-    return OK;
   }
+  return gfx::Size(
+      paper_size.width() * settings_.device_units_per_inch(),
+      paper_size.height() * settings_.device_units_per_inch());
+}
+
+PrintingContext::Result PrintingContextWin::UpdatePrinterSettings(
+    bool external_preview) {
+  DCHECK(!in_print_job_);
+  DCHECK(!external_preview) << "Not implemented";
 
   ScopedPrinterHandle printer;
-  LPWSTR device_name_wide = const_cast<wchar_t*>(device_name.c_str());
-  if (!OpenPrinter(device_name_wide, printer.Receive(), NULL))
+  if (!printer.OpenPrinter(settings_.device_name().c_str()))
     return OnError();
 
   // Make printer changes local to Chrome.
   // See MSDN documentation regarding DocumentProperties.
-  scoped_array<uint8> buffer;
-  DEVMODE* dev_mode = NULL;
-  LONG buffer_size = DocumentProperties(NULL, printer, device_name_wide,
-                                        NULL, NULL, 0);
-  if (buffer_size > 0) {
-    buffer.reset(new uint8[buffer_size]);
-    memset(buffer.get(), 0, buffer_size);
-    if (DocumentProperties(NULL, printer, device_name_wide,
-                           reinterpret_cast<PDEVMODE>(buffer.get()), NULL,
-                           DM_OUT_BUFFER) == IDOK) {
-      dev_mode = reinterpret_cast<PDEVMODE>(buffer.get());
-    }
-  }
-  if (dev_mode == NULL) {
-    buffer.reset();
+  scoped_ptr<DEVMODE, base::FreeDeleter> scoped_dev_mode =
+      CreateDevModeWithColor(printer, settings_.device_name(),
+                             settings_.color() != GRAY);
+  if (!scoped_dev_mode)
     return OnError();
-  }
 
-  if (color == GRAY)
-    dev_mode->dmColor = DMCOLOR_MONOCHROME;
-  else
-    dev_mode->dmColor = DMCOLOR_COLOR;
+  {
+    DEVMODE* dev_mode = scoped_dev_mode.get();
+    dev_mode->dmCopies = std::max(settings_.copies(), 1);
+    if (dev_mode->dmCopies > 1) { // do not change unless multiple copies
+      dev_mode->dmFields |= DM_COPIES;
+      dev_mode->dmCollate = settings_.collate() ? DMCOLLATE_TRUE :
+                                                  DMCOLLATE_FALSE;
+    }
 
-  dev_mode->dmCopies = std::max(copies, 1);
-  if (dev_mode->dmCopies > 1)  // do not change collate unless multiple copies
-    dev_mode->dmCollate = collate ? DMCOLLATE_TRUE : DMCOLLATE_FALSE;
-  switch (duplex_mode) {
-    case LONG_EDGE:
-      dev_mode->dmDuplex = DMDUP_VERTICAL;
-      break;
-    case SHORT_EDGE:
-      dev_mode->dmDuplex = DMDUP_HORIZONTAL;
-      break;
-    case SIMPLEX:
-      dev_mode->dmDuplex = DMDUP_SIMPLEX;
-      break;
-    default:  // UNKNOWN_DUPLEX_MODE
-      break;
+    switch (settings_.duplex_mode()) {
+      case LONG_EDGE:
+        dev_mode->dmFields |= DM_DUPLEX;
+        dev_mode->dmDuplex = DMDUP_VERTICAL;
+        break;
+      case SHORT_EDGE:
+        dev_mode->dmFields |= DM_DUPLEX;
+        dev_mode->dmDuplex = DMDUP_HORIZONTAL;
+        break;
+      case SIMPLEX:
+        dev_mode->dmFields |= DM_DUPLEX;
+        dev_mode->dmDuplex = DMDUP_SIMPLEX;
+        break;
+      default:  // UNKNOWN_DUPLEX_MODE
+        break;
+    }
+
+    dev_mode->dmFields |= DM_ORIENTATION;
+    dev_mode->dmOrientation = settings_.landscape() ? DMORIENT_LANDSCAPE :
+                                                      DMORIENT_PORTRAIT;
   }
-  dev_mode->dmOrientation = landscape ? DMORIENT_LANDSCAPE : DMORIENT_PORTRAIT;
 
   // Update data using DocumentProperties.
-  if (DocumentProperties(NULL, printer, device_name_wide, dev_mode, dev_mode,
-                         DM_IN_BUFFER | DM_OUT_BUFFER) != IDOK) {
+  scoped_dev_mode = CreateDevMode(printer, scoped_dev_mode.get());
+  if (!scoped_dev_mode)
     return OnError();
-  }
 
   // Set printer then refresh printer settings.
-  if (!AllocateContext(device_name, dev_mode, &context_)) {
+  if (!AllocateContext(settings_.device_name(), scoped_dev_mode.get(),
+                       &context_)) {
     return OnError();
   }
-  PrintSettingsInitializerWin::InitPrintSettings(context_, *dev_mode,
-                                                 ranges, device_name,
-                                                 false, &settings_);
+  PrintSettingsInitializerWin::InitPrintSettings(context_,
+                                                 *scoped_dev_mode.get(),
+                                                 &settings_);
   return OK;
 }
 
@@ -425,9 +374,9 @@ PrintingContext::Result PrintingContextWin::InitWithSettings(
 
   // TODO(maruel): settings_.ToDEVMODE()
   ScopedPrinterHandle printer;
-  if (!OpenPrinter(const_cast<wchar_t*>(settings_.device_name().c_str()),
-                   printer.Receive(), NULL))
+  if (!printer.OpenPrinter(settings_.device_name().c_str())) {
     return FAILED;
+  }
 
   Result status = OK;
 
@@ -440,7 +389,7 @@ PrintingContext::Result PrintingContextWin::InitWithSettings(
 }
 
 PrintingContext::Result PrintingContextWin::NewDocument(
-    const string16& document_name) {
+    const base::string16& document_name) {
   DCHECK(!in_print_job_);
   if (!context_)
     return OnError();
@@ -454,13 +403,13 @@ PrintingContext::Result PrintingContextWin::NewDocument(
   if (SP_ERROR == SetAbortProc(context_, &AbortProc))
     return OnError();
 
-  DCHECK(PrintBackend::SimplifyDocumentTitle(document_name) == document_name);
+  DCHECK(SimplifyDocumentTitle(document_name) == document_name);
   DOCINFO di = { sizeof(DOCINFO) };
-  const std::wstring& document_name_wide = UTF16ToWide(document_name);
+  const std::wstring& document_name_wide = base::UTF16ToWide(document_name);
   di.lpszDocName = document_name_wide.c_str();
 
   // Is there a debug dump directory specified? If so, force to print to a file.
-  FilePath debug_dump_path = PrintedDocument::debug_dump_path();
+  base::FilePath debug_dump_path = PrintedDocument::debug_dump_path();
   if (!debug_dump_path.empty()) {
     // Create a filename.
     std::wstring filename;
@@ -469,17 +418,17 @@ PrintingContext::Result PrintingContextWin::NewDocument(
     filename += L"_";
     filename += base::TimeFormatTimeOfDay(now);
     filename += L"_";
-    filename += UTF16ToWide(document_name);
+    filename += base::UTF16ToWide(document_name);
     filename += L"_";
     filename += L"buffer.prn";
     file_util::ReplaceIllegalCharactersInPath(&filename, '_');
-    debug_dump_path.Append(filename);
+    debug_dump_path = debug_dump_path.Append(filename);
     di.lpszOutput = debug_dump_path.value().c_str();
   }
 
   // No message loop running in unit tests.
-  DCHECK(!MessageLoop::current() ? true :
-      !MessageLoop::current()->NestableTasksAllowed());
+  DCHECK(!base::MessageLoop::current() ||
+         !base::MessageLoop::current()->NestableTasksAllowed());
 
   // Begin a print job by calling the StartDoc function.
   // NOTE: StartDoc() starts a message loop. That causes a lot of problems with
@@ -596,11 +545,10 @@ bool PrintingContextWin::InitializeSettings(const DEVMODE& dev_mode,
     }
   }
 
-  PrintSettingsInitializerWin::InitPrintSettings(context_,
-                                                 dev_mode,
-                                                 ranges_vector,
-                                                 new_device_name,
-                                                 selection_only,
+  settings_.set_ranges(ranges_vector);
+  settings_.set_device_name(new_device_name);
+  settings_.set_selection_only(selection_only);
+  PrintSettingsInitializerWin::InitPrintSettings(context_, dev_mode,
                                                  &settings_);
 
   return true;
@@ -610,15 +558,15 @@ bool PrintingContextWin::GetPrinterSettings(HANDLE printer,
                                             const std::wstring& device_name) {
   DCHECK(!in_print_job_);
 
-  UserDefaultDevMode user_settings;
+  scoped_ptr<DEVMODE, base::FreeDeleter> dev_mode =
+      CreateDevMode(printer, NULL);
 
-  if (!user_settings.Init(printer) ||
-      !AllocateContext(device_name, user_settings.get(), &context_)) {
+  if (!dev_mode || !AllocateContext(device_name, dev_mode.get(), &context_)) {
     ResetSettings();
     return false;
   }
 
-  return InitializeSettings(*user_settings.get(), device_name, NULL, 0, false);
+  return InitializeSettings(*dev_mode.get(), device_name, NULL, 0, false);
 }
 
 // static
@@ -650,10 +598,8 @@ PrintingContext::Result PrintingContextWin::ParseDialogResultEx(
           reinterpret_cast<DEVNAMES*>(GlobalLock(dialog_options.hDevNames));
       DCHECK(dev_names);
       if (dev_names) {
-        device_name =
-            reinterpret_cast<const wchar_t*>(
-                reinterpret_cast<const wchar_t*>(dev_names) +
-                    dev_names->wDeviceOffset);
+        device_name = reinterpret_cast<const wchar_t*>(dev_names) +
+                      dev_names->wDeviceOffset;
         GlobalUnlock(dialog_options.hDevNames);
       }
     }
@@ -707,6 +653,19 @@ PrintingContext::Result PrintingContextWin::ParseDialogResultEx(
     default:
       return FAILED;
   }
+}
+
+HRESULT PrintingContextWin::ShowPrintDialog(PRINTDLGEX* options) {
+  // Note that this cannot use ui::BaseShellDialog as the print dialog is
+  // system modal: opening it from a background thread can cause Windows to
+  // get the wrong Z-order which will make the print dialog appear behind the
+  // browser frame (but still being modal) so neither the browser frame nor
+  // the print dialog will get any input. See http://crbug.com/342697
+  // http://crbug.com/180997 for details.
+  base::MessageLoop::ScopedNestableTaskAllower allow(
+      base::MessageLoop::current());
+
+  return PrintDlgEx(options);
 }
 
 PrintingContext::Result PrintingContextWin::ParseDialogResult(

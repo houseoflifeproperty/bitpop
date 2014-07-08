@@ -5,8 +5,10 @@
 #include <queue>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
-#include "base/utf_string_conversions.h"
+#include "base/message_loop/message_loop.h"
+#include "base/numerics/safe_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/sys_byteorder.h"
 #include "content/browser/speech/audio_buffer.h"
 #include "content/browser/speech/google_streaming_remote_engine.h"
 #include "content/browser/speech/proto/google_streaming_api.pb.h"
@@ -17,6 +19,8 @@
 #include "net/url_request/url_request_status.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
+using base::HostToNet32;
+using base::checked_cast;
 using net::URLRequestStatus;
 using net::TestURLFetcher;
 using net::TestURLFetcherFactory;
@@ -62,7 +66,6 @@ class GoogleStreamingRemoteEngineTest : public SpeechRecognitionEngineDelegate,
                               const SpeechRecognitionResults& b);
   static std::string SerializeProtobufResponse(
       const proto::SpeechRecognitionEvent& msg);
-  static std::string ToBigEndian32(uint32 value);
 
   TestURLFetcher* GetUpstreamFetcher();
   TestURLFetcher* GetDownstreamFetcher();
@@ -79,7 +82,7 @@ class GoogleStreamingRemoteEngineTest : public SpeechRecognitionEngineDelegate,
   scoped_ptr<GoogleStreamingRemoteEngine> engine_under_test_;
   TestURLFetcherFactory url_fetcher_factory_;
   size_t last_number_of_upstream_chunks_seen_;
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   std::string response_buffer_;
   SpeechRecognitionErrorCode error_;
   std::queue<SpeechRecognitionResults> results_;
@@ -109,9 +112,9 @@ TEST_F(GoogleStreamingRemoteEngineTest, SingleDefinitiveResult) {
   SpeechRecognitionResult& result = results.back();
   result.is_provisional = false;
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("hypothesis 1"), 0.1F));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("hypothesis 1"), 0.1F));
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("hypothesis 2"), 0.2F));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("hypothesis 2"), 0.2F));
 
   ProvideMockResultDownstream(result);
   ExpectResultsReceived(results);
@@ -139,8 +142,8 @@ TEST_F(GoogleStreamingRemoteEngineTest, SeveralStreamingResults) {
     SpeechRecognitionResult& result = results.back();
     result.is_provisional = (i % 2 == 0);  // Alternate result types.
     float confidence = result.is_provisional ? 0.0F : (i * 0.1F);
-    result.hypotheses.push_back(
-        SpeechRecognitionHypothesis(UTF8ToUTF16("hypothesis"), confidence));
+    result.hypotheses.push_back(SpeechRecognitionHypothesis(
+        base::UTF8ToUTF16("hypothesis"), confidence));
 
     ProvideMockResultDownstream(result);
     ExpectResultsReceived(results);
@@ -158,7 +161,7 @@ TEST_F(GoogleStreamingRemoteEngineTest, SeveralStreamingResults) {
   SpeechRecognitionResult& result = results.back();
   result.is_provisional = false;
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("The final result"), 1.0F));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("The final result"), 1.0F));
   ProvideMockResultDownstream(result);
   ExpectResultsReceived(results);
   ASSERT_TRUE(engine_under_test_->IsRecognitionPending());
@@ -185,7 +188,7 @@ TEST_F(GoogleStreamingRemoteEngineTest, NoFinalResultAfterAudioChunksEnded) {
   results.push_back(SpeechRecognitionResult());
   SpeechRecognitionResult& result = results.back();
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("hypothesis"), 1.0F));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("hypothesis"), 1.0F));
   ProvideMockResultDownstream(result);
   ExpectResultsReceived(results);
   ASSERT_TRUE(engine_under_test_->IsRecognitionPending());
@@ -225,7 +228,7 @@ TEST_F(GoogleStreamingRemoteEngineTest, NoMatchError) {
   SpeechRecognitionResult& result = results.back();
   result.is_provisional = true;
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("The final result"), 0.0F));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("The final result"), 0.0F));
   ProvideMockResultDownstream(result);
   ExpectResultsReceived(results);
   ASSERT_TRUE(engine_under_test_->IsRecognitionPending());
@@ -302,7 +305,7 @@ TEST_F(GoogleStreamingRemoteEngineTest, Stability) {
   SpeechRecognitionResult& result = results.back();
   result.is_provisional = true;
   result.hypotheses.push_back(
-      SpeechRecognitionHypothesis(UTF8ToUTF16("foo"), 0.5));
+      SpeechRecognitionHypothesis(base::UTF8ToUTF16("foo"), 0.5));
 
   // Check that the protobuf generated the expected result.
   ExpectResultsReceived(results);
@@ -334,12 +337,12 @@ void GoogleStreamingRemoteEngineTest::TearDown() {
 
 TestURLFetcher* GoogleStreamingRemoteEngineTest::GetUpstreamFetcher() {
   return url_fetcher_factory_.GetFetcherByID(
-        GoogleStreamingRemoteEngine::kUpstreamUrlFetcherIdForTests);
+        GoogleStreamingRemoteEngine::kUpstreamUrlFetcherIdForTesting);
 }
 
 TestURLFetcher* GoogleStreamingRemoteEngineTest::GetDownstreamFetcher() {
   return url_fetcher_factory_.GetFetcherByID(
-        GoogleStreamingRemoteEngine::kDownstreamUrlFetcherIdForTests);
+        GoogleStreamingRemoteEngine::kDownstreamUrlFetcherIdForTesting);
 }
 
 // Starts recognition on the engine, ensuring that both stream fetchers are
@@ -380,7 +383,7 @@ void GoogleStreamingRemoteEngineTest::InjectDummyAudioChunk() {
                      sizeof(dummy_audio_buffer_data),
                      2 /* bytes per sample */));
   DCHECK(engine_under_test_.get());
-  engine_under_test_->TakeAudioChunk(*dummy_audio_chunk);
+  engine_under_test_->TakeAudioChunk(*dummy_audio_chunk.get());
 }
 
 size_t GoogleStreamingRemoteEngineTest::UpstreamChunksUploadedFromLastCall() {
@@ -422,7 +425,7 @@ void GoogleStreamingRemoteEngineTest::ProvideMockResultDownstream(
         proto_result->add_alternative();
     const SpeechRecognitionHypothesis& hypothesis = result.hypotheses[i];
     proto_alternative->set_confidence(hypothesis.confidence);
-    proto_alternative->set_transcript(UTF16ToUTF8(hypothesis.utterance));
+    proto_alternative->set_transcript(base::UTF16ToUTF8(hypothesis.utterance));
   }
   ProvideMockProtoResultDownstream(proto_event);
 }
@@ -487,17 +490,10 @@ std::string GoogleStreamingRemoteEngineTest::SerializeProtobufResponse(
 
   // Prepend 4 byte prefix length indication to the protobuf message as
   // envisaged by the google streaming recognition webservice protocol.
-  msg_string.insert(0, ToBigEndian32(msg_string.size()));
-  return msg_string;
-}
+  uint32 prefix = HostToNet32(checked_cast<uint32>(msg_string.size()));
+  msg_string.insert(0, reinterpret_cast<char*>(&prefix), sizeof(prefix));
 
-std::string GoogleStreamingRemoteEngineTest::ToBigEndian32(uint32 value) {
-  char raw_data[4];
-  raw_data[0] = static_cast<uint8>((value >> 24) & 0xFF);
-  raw_data[1] = static_cast<uint8>((value >> 16) & 0xFF);
-  raw_data[2] = static_cast<uint8>((value >> 8) & 0xFF);
-  raw_data[3] = static_cast<uint8>(value & 0xFF);
-  return std::string(raw_data, sizeof(raw_data));
+  return msg_string;
 }
 
 }  // namespace content

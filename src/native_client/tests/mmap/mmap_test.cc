@@ -8,13 +8,14 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <setjmp.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/mman.h>
 #include <unistd.h>
 
-#include "native_client/src/untrusted/nacl/syscall_bindings_trampoline.h"
+#include "native_client/src/include/nacl/nacl_exception.h"
 
 
 #define PRINT_HEADER 0
@@ -47,7 +48,7 @@ static jmp_buf g_jmp_buf;
 
 static void exception_handler(struct NaClExceptionContext *context) {
   /* We got an exception as expected.  Return from the handler. */
-  int rc = NACL_SYSCALL(exception_clear_flag)();
+  int rc = nacl_exception_clear_flag();
   assert(rc == 0);
   longjmp(g_jmp_buf, 1);
 }
@@ -62,7 +63,7 @@ static void assert_addr_is_unreadable(volatile char *addr) {
     return;
   }
 
-  int rc = NACL_SYSCALL(exception_handler)(exception_handler, NULL);
+  int rc = nacl_exception_set_handler(exception_handler);
   assert(rc == 0);
   if (!setjmp(g_jmp_buf)) {
     char value = *addr;
@@ -75,7 +76,7 @@ static void assert_addr_is_unreadable(volatile char *addr) {
    * Clean up: Unregister the exception handler so that we do not
    * accidentally return through g_jmp_buf if an exception occurs.
    */
-  rc = NACL_SYSCALL(exception_handler)(NULL, NULL);
+  rc = nacl_exception_set_handler(NULL);
   assert(rc == 0);
 }
 
@@ -93,7 +94,7 @@ static void assert_addr_is_unwritable(volatile char *addr, char value) {
     return;
   }
 
-  int rc = NACL_SYSCALL(exception_handler)(exception_handler, NULL);
+  int rc = nacl_exception_set_handler(exception_handler);
   assert(rc == 0);
   if (!setjmp(g_jmp_buf)) {
     *addr = value;
@@ -106,10 +107,25 @@ static void assert_addr_is_unwritable(volatile char *addr, char value) {
    * Clean up: Unregister the exception handler so that we do not
    * accidentally return through g_jmp_buf if an exception occurs.
    */
-  rc = NACL_SYSCALL(exception_handler)(NULL, NULL);
+  rc = nacl_exception_set_handler(NULL);
   assert(rc == 0);
 }
 
+static void assert_page_is_allocated(void *addr) {
+  static const int page_size = 0x10000;
+  assert(((uintptr_t) addr & (page_size - 1)) == 0);
+  /*
+   * Try mapping at addr without MAP_FIXED.  If something is already
+   * mapped there, the system will pick another address.  Otherwise,
+   * we will get the address we asked for.
+   */
+  void *result = mmap(addr, page_size, PROT_READ | PROT_WRITE,
+                      MAP_ANONYMOUS | MAP_PRIVATE, -1, 0);
+  assert(result != MAP_FAILED);
+  assert(result != addr);
+  int rc = munmap(result, page_size);
+  assert(rc == 0);
+}
 
 /*
  * function test*()
@@ -269,27 +285,59 @@ bool test_mprotect() {
                              MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
   assert(addr != MAP_FAILED);
   printf("mmap done\n");
-  /*
-   * Change the protection to make the page unreadable. TODO(phosek): use
-   * the mprotect() wrapper function once mprotect() is added to the IRT.
-   */
-  int rc = NACL_SYSCALL(mprotect)(addr, map_size, PROT_NONE);
+  /* Change the protection to make the page unreadable. */
+  int rc = mprotect(addr, map_size, PROT_NONE);
   assert(rc == 0);
   assert_addr_is_unreadable(addr);
   assert_addr_is_unreadable(addr + 0x1000);
   assert_addr_is_unreadable(addr + 0x10000);
   /* Change the protection to make the page accessible again. */
-  rc = NACL_SYSCALL(mprotect)(addr, map_size, PROT_READ | PROT_WRITE);
+  rc = mprotect(addr, map_size, PROT_READ | PROT_WRITE);
   assert(rc == 0);
   addr[0] = '5';
   /* Change the protection to make the page read-only. */
-  rc = NACL_SYSCALL(mprotect)(addr, map_size, PROT_READ);
+  rc = mprotect(addr, map_size, PROT_READ);
   assert(rc == 0);
   assert_addr_is_unwritable(addr, '9');
   assert('5' == addr[0]);
   printf("mprotect good\n");
   /* We can still munmap() the memory. */
   rc = munmap(addr, map_size);
+  assert(rc == 0);
+  return true;
+}
+
+bool test_mprotect_offset() {
+  printf("test_mprotect_offset\n");
+  /*
+   * Note that, on Windows, NaCl's mprotect() has different code paths
+   * for anonymous and file-backed mappings.  This test case only
+   * covers the anonymous case.
+   */
+  size_t map_size = 0x40000;
+  volatile char *addr = (char *) mmap(NULL, map_size, PROT_READ | PROT_WRITE,
+                                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  assert(addr != MAP_FAILED);
+  printf("mmap done\n");
+  /* Change the protection to make the pages unreadable. */
+  int rc = mprotect((char *) addr + 0x20000, 0x20000, PROT_NONE);
+  assert(rc == 0);
+  addr[0] = '5';
+  assert('5' == addr[0]);
+  assert_addr_is_unreadable(addr + 0x20000);
+  assert_addr_is_unreadable(addr + 0x30000);
+  /* Change the protection to make the pages read-only. */
+  rc = mprotect((char *) addr, 0x20000, PROT_READ);
+  assert(rc == 0);
+  assert_addr_is_unwritable(addr, '9');
+  assert('5' == addr[0]);
+  /* Change the protection to make the pages accessible again. */
+  rc = mprotect((char *) addr + 0x10000, 0x20000, PROT_READ | PROT_WRITE);
+  assert(rc == 0);
+  *(addr + 0x20000) = '7';
+  printf("mprotect good\n");
+  /* We can still munmap() the memory. */
+  rc = munmap((char *) addr, map_size);
   assert(rc == 0);
   return true;
 }
@@ -315,12 +363,9 @@ bool test_mprotect_unmapped_memory() {
   int rc = munmap(addr, map_size);
   assert(rc == 0);
   printf("munmap done\n");
-  /*
-   * Change the protection to make the page unreadable. TODO(phosek): use
-   * the mprotect() wrapper function once mprotect() is added to the IRT.
-   */
-  rc = NACL_SYSCALL(mprotect)(addr, map_size, PROT_NONE);
-  if (-EACCES == rc) {
+  /* Change the protection to make the page unreadable. */
+  rc = mprotect(addr, map_size, PROT_NONE);
+  if (-1 == rc && EACCES == errno) {
     printf("mprotect good (failed as expected)\n");
     return true;
   }
@@ -383,6 +428,8 @@ bool test_mmap_end_of_file() {
   assert_addr_is_unreadable(alloc + 0x2000);
   assert_addr_is_unreadable(alloc + 0x10000);
   assert_addr_is_unreadable(alloc + 0x11000);
+  assert_page_is_allocated(alloc);
+  assert_page_is_allocated(alloc + 0x10000);
   rc = munmap(alloc, map_size);
   if (rc != 0) {
     printf("munmap() failed\n");
@@ -415,6 +462,7 @@ bool testSuite() {
 
   ret &= test_munmap();
   ret &= test_mprotect();
+  ret &= test_mprotect_offset();
   ret &= test_mprotect_unmapped_memory();
   ret &= test_mmap_end_of_file();
 

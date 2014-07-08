@@ -5,12 +5,12 @@
 #include "chrome/browser/history/android/bookmark_model_sql_handler.h"
 
 #include "base/logging.h"
-#include "chrome/browser/api/bookmarks/bookmark_service.h"
-#include "chrome/browser/bookmarks/bookmark_model.h"
 #include "chrome/browser/bookmarks/bookmark_model_factory.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/history/url_database.h"
 #include "chrome/browser/profiles/profile_manager.h"
+#include "components/bookmarks/core/browser/bookmark_model.h"
+#include "components/bookmarks/core/browser/bookmark_utils.h"
 #include "content/public/browser/browser_thread.h"
 
 using base::Time;
@@ -31,7 +31,7 @@ BookmarkModelSQLHandler::Task::Task() {
 
 void BookmarkModelSQLHandler::Task::AddBookmarkToMobileFolder(
     const GURL& url,
-    const string16& title) {
+    const base::string16& title) {
   BookmarkModel* bookmark_model = GetBookmarkModel();
   if (!bookmark_model)
     return;
@@ -41,12 +41,12 @@ void BookmarkModelSQLHandler::Task::AddBookmarkToMobileFolder(
 }
 
 void BookmarkModelSQLHandler::Task::AddBookmark(const GURL& url,
-                                                const string16& title,
+                                                const base::string16& title,
                                                 int64 parent_id) {
   BookmarkModel* bookmark_model = GetBookmarkModel();
   if (!bookmark_model)
     return;
-  const BookmarkNode* parent = bookmark_model->GetNodeByID(parent_id);
+  const BookmarkNode* parent = GetBookmarkNodeByID(bookmark_model, parent_id);
   if (parent)
     bookmark_model->AddURL(parent, 0, title, url);
 }
@@ -64,8 +64,9 @@ void BookmarkModelSQLHandler::Task::RemoveBookmark(const GURL& url) {
   }
 }
 
-void BookmarkModelSQLHandler::Task::UpdateBookmarkTitle(const GURL& url,
-                                                        const string16&title) {
+void BookmarkModelSQLHandler::Task::UpdateBookmarkTitle(
+    const GURL& url,
+    const base::string16& title) {
   BookmarkModel* bookmark_model = GetBookmarkModel();
   if (!bookmark_model)
     return;
@@ -170,4 +171,4 @@ bool BookmarkModelSQLHandler::Insert(HistoryAndBookmarkRow* row) {
   return true;
 }
 
-}  // namespace history.
+}  // namespace history

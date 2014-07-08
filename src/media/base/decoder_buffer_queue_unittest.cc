@@ -2,6 +2,7 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+#include "media/base/buffers.h"
 #include "media/base/decoder_buffer.h"
 #include "media/base/decoder_buffer_queue.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -19,8 +20,15 @@ static base::TimeDelta ToTimeDelta(int seconds) {
 // Negative numbers will be converted to kNoTimestamp();
 static scoped_refptr<DecoderBuffer> CreateBuffer(int timestamp) {
   scoped_refptr<DecoderBuffer> buffer = new DecoderBuffer(0);
-  buffer->SetTimestamp(ToTimeDelta(timestamp));
-  buffer->SetDuration(ToTimeDelta(0));
+  buffer->set_timestamp(ToTimeDelta(timestamp));
+  buffer->set_duration(ToTimeDelta(0));
+  return buffer;
+}
+
+static scoped_refptr<DecoderBuffer> CreateBuffer(int timestamp, int size) {
+  scoped_refptr<DecoderBuffer> buffer = new DecoderBuffer(size);
+  buffer->set_timestamp(ToTimeDelta(timestamp));
+  buffer->set_duration(ToTimeDelta(0));
   return buffer;
 }
 
@@ -132,6 +140,30 @@ TEST(DecoderBufferQueueTest, Duration_NoTimestamp) {
 
   queue.Pop();
   EXPECT_EQ(0, queue.Duration().InSeconds());
+}
+
+TEST(DecoderBufferQueueTest, DataSize) {
+  DecoderBufferQueue queue;
+  EXPECT_EQ(queue.data_size(), 0u);
+
+  queue.Push(CreateBuffer(0, 1200u));
+  EXPECT_EQ(queue.data_size(), 1200u);
+
+  queue.Push(CreateBuffer(1, 1000u));
+  EXPECT_EQ(queue.data_size(), 2200u);
+
+  queue.Pop();
+  EXPECT_EQ(queue.data_size(), 1000u);
+
+  queue.Push(CreateBuffer(2, 999u));
+  queue.Push(CreateBuffer(3, 999u));
+  EXPECT_EQ(queue.data_size(), 2998u);
+
+  queue.Clear();
+  EXPECT_EQ(queue.data_size(), 0u);
+
+  queue.Push(CreateBuffer(4, 1400u));
+  EXPECT_EQ(queue.data_size(), 1400u);
 }
 
 }  // namespace media

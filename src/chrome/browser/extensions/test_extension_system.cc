@@ -5,25 +5,31 @@
 #include "chrome/browser/extensions/test_extension_system.h"
 
 #include "base/command_line.h"
-#include "chrome/browser/extensions/api/alarms/alarm_manager.h"
-#include "chrome/browser/extensions/api/messaging/message_service.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/extensions/blacklist.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_info_map.h"
-#include "chrome/browser/extensions/extension_pref_value_map.h"
-#include "chrome/browser/extensions/extension_pref_value_map_factory.h"
-#include "chrome/browser/extensions/extension_process_manager.h"
+#include "chrome/browser/extensions/error_console/error_console.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
-#include "chrome/browser/extensions/management_policy.h"
-#include "chrome/browser/extensions/shell_window_geometry_cache.h"
+#include "chrome/browser/extensions/install_verifier.h"
 #include "chrome/browser/extensions/standard_management_policy_provider.h"
 #include "chrome/browser/extensions/state_store.h"
 #include "chrome/browser/extensions/user_script_master.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/value_store/testing_value_store.h"
 #include "chrome/common/chrome_switches.h"
 #include "content/public/browser/browser_thread.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_pref_value_map.h"
+#include "extensions/browser/extension_pref_value_map_factory.h"
+#include "extensions/browser/extension_prefs.h"
+#include "extensions/browser/extension_prefs_factory.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/browser/extensions_browser_client.h"
+#include "extensions/browser/info_map.h"
+#include "extensions/browser/management_policy.h"
+#include "extensions/browser/process_manager.h"
+#include "extensions/browser/quota_service.h"
+#include "extensions/browser/runtime_data.h"
+#include "extensions/browser/value_store/testing_value_store.h"
 
 using content::BrowserThread;
 
@@ -31,75 +37,89 @@ namespace extensions {
 
 TestExtensionSystem::TestExtensionSystem(Profile* profile)
     : profile_(profile),
-      info_map_(new ExtensionInfoMap()) {
-}
+      value_store_(NULL),
+      info_map_(new InfoMap()),
+      error_console_(new ErrorConsole(profile)),
+      quota_service_(new QuotaService()) {}
 
 TestExtensionSystem::~TestExtensionSystem() {
 }
 
 void TestExtensionSystem::Shutdown() {
-  extension_process_manager_.reset();
+  process_manager_.reset();
 }
 
-void TestExtensionSystem::CreateExtensionProcessManager() {
-  extension_process_manager_.reset(ExtensionProcessManager::Create(profile_));
+void TestExtensionSystem::CreateProcessManager() {
+  process_manager_.reset(ProcessManager::Create(profile_));
 }
 
-void TestExtensionSystem::CreateAlarmManager(
-    AlarmManager::TimeProvider now) {
-  alarm_manager_.reset(new AlarmManager(profile_, now));
+void TestExtensionSystem::SetProcessManager(ProcessManager* manager) {
+  process_manager_.reset(manager);
 }
 
-void TestExtensionSystem::CreateSocketManager() {
-  // Note that we're intentionally creating the socket manager on the wrong
-  // thread (not the IO thread). This is because we don't want to presume or
-  // require that there be an IO thread in a lightweight test context. If we do
-  // need thread-specific behavior someday, we'll probably need something like
-  // CreateSocketManagerOnThreadForTesting(thread_id). But not today.
-  BrowserThread::ID id;
-  CHECK(BrowserThread::GetCurrentThreadIdentifier(&id));
-  socket_manager_.reset(new ApiResourceManager<Socket>(id));
-}
-
-ExtensionService* TestExtensionSystem::CreateExtensionService(
+ExtensionPrefs* TestExtensionSystem::CreateExtensionPrefs(
     const CommandLine* command_line,
-    const FilePath& install_directory,
-    bool autoupdate_enabled) {
+    const base::FilePath& install_directory) {
   bool extensions_disabled =
       command_line && command_line->HasSwitch(switches::kDisableExtensions);
 
   // Note that the GetPrefs() creates a TestingPrefService, therefore
-  // the extension controlled pref values set in extension_prefs_
+  // the extension controlled pref values set in ExtensionPrefs
   // are not reflected in the pref service. One would need to
   // inject a new ExtensionPrefStore(extension_pref_value_map, false).
 
-  extension_prefs_ = ExtensionPrefs::Create(
+  ExtensionPrefs* extension_prefs = ExtensionPrefs::Create(
       profile_->GetPrefs(),
       install_directory,
-      ExtensionPrefValueMapFactory::GetForProfile(profile_),
-      extensions_disabled);
-  state_store_.reset(new StateStore(profile_, new TestingValueStore()));
-  shell_window_geometry_cache_.reset(
-      new ShellWindowGeometryCache(profile_, extension_prefs_.get()));
-  blacklist_.reset(new Blacklist(extension_prefs_.get()));
+      ExtensionPrefValueMapFactory::GetForBrowserContext(profile_),
+      ExtensionsBrowserClient::Get()->CreateAppSorting().Pass(),
+      extensions_disabled,
+      std::vector<ExtensionPrefsObserver*>());
+    ExtensionPrefsFactory::GetInstance()->SetInstanceForTesting(
+        profile_,
+        extension_prefs);
+    return extension_prefs;
+}
+
+ExtensionService* TestExtensionSystem::CreateExtensionService(
+    const CommandLine* command_line,
+    const base::FilePath& install_directory,
+    bool autoupdate_enabled) {
+  if (!ExtensionPrefs::Get(profile_))
+    CreateExtensionPrefs(command_line, install_directory);
+  install_verifier_.reset(
+      new InstallVerifier(ExtensionPrefs::Get(profile_), profile_));
+  // The ownership of |value_store_| is immediately transferred to state_store_,
+  // but we keep a naked pointer to the TestingValueStore.
+  scoped_ptr<TestingValueStore> value_store(new TestingValueStore());
+  value_store_ = value_store.get();
+  state_store_.reset(
+      new StateStore(profile_, value_store.PassAs<ValueStore>()));
+  blacklist_.reset(new Blacklist(ExtensionPrefs::Get(profile_)));
   standard_management_policy_provider_.reset(
-      new StandardManagementPolicyProvider(extension_prefs_.get()));
+      new StandardManagementPolicyProvider(ExtensionPrefs::Get(profile_)));
   management_policy_.reset(new ManagementPolicy());
   management_policy_->RegisterProvider(
       standard_management_policy_provider_.get());
+  runtime_data_.reset(new RuntimeData(ExtensionRegistry::Get(profile_)));
   extension_service_.reset(new ExtensionService(profile_,
                                                 command_line,
                                                 install_directory,
-                                                extension_prefs_.get(),
+                                                ExtensionPrefs::Get(profile_),
                                                 blacklist_.get(),
                                                 autoupdate_enabled,
-                                                true));
+                                                true,
+                                                &ready_));
   extension_service_->ClearProvidersForTesting();
   return extension_service_.get();
 }
 
 ExtensionService* TestExtensionSystem::extension_service() {
   return extension_service_.get();
+}
+
+RuntimeData* TestExtensionSystem::runtime_data() {
+  return runtime_data_.get();
 }
 
 ManagementPolicy* TestExtensionSystem::management_policy() {
@@ -114,56 +134,30 @@ UserScriptMaster* TestExtensionSystem::user_script_master() {
   return NULL;
 }
 
-ExtensionProcessManager* TestExtensionSystem::process_manager() {
-  return extension_process_manager_.get();
-}
-
-AlarmManager* TestExtensionSystem::alarm_manager() {
-  return alarm_manager_.get();
+ProcessManager* TestExtensionSystem::process_manager() {
+  return process_manager_.get();
 }
 
 StateStore* TestExtensionSystem::state_store() {
   return state_store_.get();
 }
 
-ShellWindowGeometryCache* TestExtensionSystem::shell_window_geometry_cache() {
-  return shell_window_geometry_cache_.get();
+StateStore* TestExtensionSystem::rules_store() {
+  return state_store_.get();
 }
 
-ExtensionInfoMap* TestExtensionSystem::info_map() {
-  return info_map_.get();
-}
+InfoMap* TestExtensionSystem::info_map() { return info_map_.get(); }
 
 LazyBackgroundTaskQueue*
 TestExtensionSystem::lazy_background_task_queue() {
   return NULL;
 }
 
-MessageService* TestExtensionSystem::message_service() {
-  return NULL;
+void TestExtensionSystem::SetEventRouter(scoped_ptr<EventRouter> event_router) {
+  event_router_.reset(event_router.release());
 }
 
-EventRouter* TestExtensionSystem::event_router() {
-  return NULL;
-}
-
-RulesRegistryService* TestExtensionSystem::rules_registry_service() {
-  return NULL;
-}
-
-ApiResourceManager<SerialConnection>*
-TestExtensionSystem::serial_connection_manager() {
-  return NULL;
-}
-
-ApiResourceManager<Socket>*TestExtensionSystem::socket_manager() {
-  return socket_manager_.get();
-}
-
-ApiResourceManager<UsbDeviceResource>*
-TestExtensionSystem::usb_device_resource_manager() {
-  return NULL;
-}
+EventRouter* TestExtensionSystem::event_router() { return event_router_.get(); }
 
 ExtensionWarningService* TestExtensionSystem::warning_service() {
   return NULL;
@@ -173,9 +167,29 @@ Blacklist* TestExtensionSystem::blacklist() {
   return blacklist_.get();
 }
 
+ErrorConsole* TestExtensionSystem::error_console() {
+  return error_console_.get();
+}
+
+InstallVerifier* TestExtensionSystem::install_verifier() {
+  return install_verifier_.get();
+}
+
+QuotaService* TestExtensionSystem::quota_service() {
+  return quota_service_.get();
+}
+
+const OneShotEvent& TestExtensionSystem::ready() const {
+  return ready_;
+}
+
+ContentVerifier* TestExtensionSystem::content_verifier() {
+  return NULL;
+}
+
 // static
-ProfileKeyedService* TestExtensionSystem::Build(Profile* profile) {
-  return new TestExtensionSystem(profile);
+KeyedService* TestExtensionSystem::Build(content::BrowserContext* profile) {
+  return new TestExtensionSystem(static_cast<Profile*>(profile));
 }
 
 }  // namespace extensions

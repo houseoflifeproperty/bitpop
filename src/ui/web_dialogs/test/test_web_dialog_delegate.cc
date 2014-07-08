@@ -4,7 +4,7 @@
 
 #include "ui/web_dialogs/test/test_web_dialog_delegate.h"
 
-#include "base/utf_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 using content::WebContents;
 using content::WebUIMessageHandler;
@@ -24,8 +24,8 @@ ModalType TestWebDialogDelegate::GetDialogModalType() const {
   return MODAL_TYPE_WINDOW;
 }
 
-string16 TestWebDialogDelegate::GetDialogTitle() const {
-  return UTF8ToUTF16("Test");
+base::string16 TestWebDialogDelegate::GetDialogTitle() const {
+  return base::UTF8ToUTF16("Test");
 }
 
 GURL TestWebDialogDelegate::GetDialogContentURL() const {

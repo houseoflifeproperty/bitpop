@@ -83,27 +83,23 @@ cr.define('options', function() {
 
     /**
      * Shows the 'Add address' overlay, specifically by loading the
-     * 'Edit address' overlay, emptying the input fields and modifying the
-     * overlay title.
+     * 'Edit address' overlay and modifying the overlay title.
      * @private
      */
     showAddAddressOverlay_: function() {
       var title = loadTimeData.getString('addAddressTitle');
       AutofillEditAddressOverlay.setTitle(title);
-      AutofillEditAddressOverlay.clearInputFields();
       OptionsPage.navigateToPage('autofillEditAddress');
     },
 
     /**
      * Shows the 'Add credit card' overlay, specifically by loading the
-     * 'Edit credit card' overlay, emptying the input fields and modifying the
-     * overlay title.
+     * 'Edit credit card' overlay and modifying the overlay title.
      * @private
      */
     showAddCreditCardOverlay_: function() {
       var title = loadTimeData.getString('addCreditCardTitle');
       AutofillEditCreditCardOverlay.setTitle(title);
-      AutofillEditCreditCardOverlay.clearInputFields();
       OptionsPage.navigateToPage('autofillEditCreditCard');
     },
 
@@ -127,7 +123,7 @@ cr.define('options', function() {
 
     /**
      * Removes the Autofill address or credit card represented by |guid|.
-     * @param {String} guid The GUID of the address to remove.
+     * @param {string} guid The GUID of the address to remove.
      * @private
      */
     removeData_: function(guid) {
@@ -138,7 +134,7 @@ cr.define('options', function() {
      * Requests profile data for the address represented by |guid| from the
      * PersonalDataManager. Once the data is loaded, the AutofillOptionsHandler
      * calls showEditAddressOverlay().
-     * @param {String} guid The GUID of the address to edit.
+     * @param {string} guid The GUID of the address to edit.
      * @private
      */
     loadAddressEditor_: function(guid) {
@@ -149,7 +145,7 @@ cr.define('options', function() {
      * Requests profile data for the credit card represented by |guid| from the
      * PersonalDataManager. Once the data is loaded, the AutofillOptionsHandler
      * calls showEditCreditCardOverlay().
-     * @param {String} guid The GUID of the credit card to edit.
+     * @param {string} guid The GUID of the credit card to edit.
      * @private
      */
     loadCreditCardEditor_: function(guid) {

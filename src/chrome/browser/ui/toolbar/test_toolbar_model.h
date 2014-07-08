@@ -6,7 +6,7 @@
 #define CHROME_BROWSER_UI_TOOLBAR_TEST_TOOLBAR_MODEL_H_
 
 #include "base/compiler_specific.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "chrome/browser/ui/toolbar/toolbar_model.h"
 
 // A ToolbarModel that is backed by instance variables, which are initialized
@@ -16,27 +16,32 @@ class TestToolbarModel : public ToolbarModel {
  public:
   TestToolbarModel();
   virtual ~TestToolbarModel();
-  virtual string16 GetText(
-      bool display_search_urls_as_search_terms) const OVERRIDE;
+  virtual base::string16 GetText() const OVERRIDE;
+  virtual base::string16 GetFormattedURL() const OVERRIDE;
+  virtual base::string16 GetCorpusNameForMobile() const OVERRIDE;
   virtual GURL GetURL() const OVERRIDE;
-  virtual bool WouldReplaceSearchURLWithSearchTerms() const OVERRIDE;
-  virtual SecurityLevel GetSecurityLevel() const OVERRIDE;
+  virtual bool WouldPerformSearchTermReplacement(
+      bool ignore_editing) const OVERRIDE;
+  virtual SecurityLevel GetSecurityLevel(bool ignore_editing) const OVERRIDE;
   virtual int GetIcon() const OVERRIDE;
-  virtual string16 GetEVCertName() const OVERRIDE;
+  virtual int GetIconForSecurityLevel(SecurityLevel level) const OVERRIDE;
+  virtual base::string16 GetEVCertName() const OVERRIDE;
   virtual bool ShouldDisplayURL() const OVERRIDE;
-  virtual void SetInputInProgress(bool value) OVERRIDE;
-  virtual bool GetInputInProgress() const OVERRIDE;
 
-  void set_text(const string16& text) { text_ = text; }
+  void set_text(const base::string16& text) { text_ = text; }
   void set_url(const GURL& url) { url_ = url;}
-  void set_replace_search_url_with_search_terms(bool should_replace_url) {
-    should_replace_url_ = should_replace_url;
+  void set_omit_url_due_to_origin_chip(bool omit_url_due_to_origin_chip) {
+    omit_url_due_to_origin_chip_ = omit_url_due_to_origin_chip;
+  }
+  void set_perform_search_term_replacement(
+      bool perform_search_term_replacement) {
+    perform_search_term_replacement_ = perform_search_term_replacement;
   }
   void set_security_level(SecurityLevel security_level) {
     security_level_ = security_level;
   }
   void set_icon(int icon) { icon_ = icon; }
-  void set_ev_cert_name(const string16& ev_cert_name) {
+  void set_ev_cert_name(const base::string16& ev_cert_name) {
     ev_cert_name_ = ev_cert_name;
   }
   void set_should_display_url(bool should_display_url) {
@@ -44,14 +49,16 @@ class TestToolbarModel : public ToolbarModel {
   }
 
  private:
-  string16 text_;
+  virtual bool WouldOmitURLDueToOriginChip() const OVERRIDE;
+
+  base::string16 text_;
   GURL url_;
-  bool should_replace_url_;
+  bool omit_url_due_to_origin_chip_;
+  bool perform_search_term_replacement_;
   SecurityLevel security_level_;
   int icon_;
-  string16 ev_cert_name_;
+  base::string16 ev_cert_name_;
   bool should_display_url_;
-  bool input_in_progress_;
 
   DISALLOW_COPY_AND_ASSIGN(TestToolbarModel);
 };

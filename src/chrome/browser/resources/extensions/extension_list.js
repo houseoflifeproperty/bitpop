@@ -2,20 +2,10 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
+<include src="extension_error.js"></include>
+
 cr.define('options', function() {
   'use strict';
-
-  /**
-   * A lookup helper function to find the first node that has an id (starting
-   * at |node| and going up the parent chain).
-   * @param {Element} node The node to start looking at.
-   */
-  function findIdNode(node) {
-    while (node && !node.id) {
-      node = node.parentNode;
-    }
-    return node;
-  }
 
   /**
    * Creates a new list of extensions.
@@ -31,6 +21,14 @@ cr.define('options', function() {
    *     between calls to decorate.
    */
   var butterBarVisibility = {};
+
+  /**
+   * @type {Object.<string, string>} A map from extension id to last reloaded
+   *     timestamp. The timestamp is recorded when the user click the 'Reload'
+   *     link. It is used to refresh the icon of an unpacked extension.
+   *     This persists between calls to decorate.
+   */
+  var extensionReloadedTimestamp = {};
 
   ExtensionsList.prototype = {
     __proto__: HTMLDivElement.prototype,
@@ -54,18 +52,16 @@ cr.define('options', function() {
       // Iterate over the extension data and add each item to the list.
       this.data_.extensions.forEach(this.createNode_, this);
 
-      var id_to_highlight = this.getIdQueryParam_();
-      if (id_to_highlight) {
+      var idToHighlight = this.getIdQueryParam_();
+      if (idToHighlight && $(idToHighlight)) {
         // Scroll offset should be calculated slightly higher than the actual
         // offset of the element being scrolled to, so that it ends up not all
         // the way at the top. That way it is clear that there are more elements
         // above the element being scrolled to.
-        var scroll_fudge = 1.2;
-        var offset = $(id_to_highlight).offsetTop -
-                     (scroll_fudge * $(id_to_highlight).clientHeight);
-        var wrapper = this.parentNode;
-        var list = wrapper.parentNode;
-        list.scrollTop = offset;
+        var scrollFudge = 1.2;
+        var scrollTop = $(idToHighlight).offsetTop - scrollFudge *
+            $(idToHighlight).clientHeight;
+        setScrollTopForDocument(document, scrollTop);
       }
 
       if (this.data_.extensions.length == 0)
@@ -89,15 +85,28 @@ cr.define('options', function() {
       if (!extension.enabled || extension.terminated)
         node.classList.add('inactive-extension');
 
-      if (!extension.userModifiable)
-        node.classList.add('may-not-disable');
+      if (extension.managedInstall) {
+        node.classList.add('may-not-modify');
+        node.classList.add('may-not-remove');
+      } else if (extension.suspiciousInstall || extension.corruptInstall) {
+        node.classList.add('may-not-modify');
+      }
 
-      var id_to_highlight = this.getIdQueryParam_();
-      if (node.id == id_to_highlight)
+      var idToHighlight = this.getIdQueryParam_();
+      if (node.id == idToHighlight)
         node.classList.add('extension-highlight');
 
       var item = node.querySelector('.extension-list-item');
-      item.style.backgroundImage = 'url(' + extension.icon + ')';
+      // Prevent the image cache of extension icon by using the reloaded
+      // timestamp as a query string. The timestamp is recorded when the user
+      // clicks the 'Reload' link. http://crbug.com/159302.
+      if (extensionReloadedTimestamp[extension.id]) {
+        item.style.backgroundImage =
+            'url(' + extension.icon + '?' +
+            extensionReloadedTimestamp[extension.id] + ')';
+      } else {
+        item.style.backgroundImage = 'url(' + extension.icon + ')';
+      }
 
       var title = node.querySelector('.extension-title');
       title.textContent = extension.name;
@@ -105,11 +114,11 @@ cr.define('options', function() {
       var version = node.querySelector('.extension-version');
       version.textContent = extension.version;
 
-      var disableReason = node.querySelector('.extension-disable-reason');
-      disableReason.textContent = extension.disableReason;
-
       var locationText = node.querySelector('.location-text');
       locationText.textContent = extension.locationText;
+
+      var blacklistText = node.querySelector('.blacklist-text');
+      blacklistText.textContent = extension.blacklistText;
 
       var description = node.querySelector('.extension-description span');
       description.textContent = extension.description;
@@ -139,6 +148,20 @@ cr.define('options', function() {
       var butterBar = node.querySelector('.butter-bar');
       butterBar.hidden = !butterBarVisibility[extension.id];
 
+      // The 'collect errors' checkbox. This should only be visible if the
+      // error console is enabled - we can detect this by the existence of the
+      // |errorCollectionEnabled| property.
+      if (extension.wantsErrorCollection) {
+        node.querySelector('.error-collection-control').hidden = false;
+        var errorCollection =
+            node.querySelector('.error-collection-control input');
+        errorCollection.checked = extension.errorCollectionEnabled;
+        errorCollection.addEventListener('change', function(e) {
+          chrome.send('extensionSettingsEnableErrorCollection',
+                      [extension.id, String(e.target.checked)]);
+        });
+      }
+
       // The 'allow file:// access' checkbox.
       if (extension.wantsFileAccess) {
         var fileAccess = node.querySelector('.file-access-control');
@@ -150,7 +173,7 @@ cr.define('options', function() {
         fileAccess.hidden = false;
       }
 
-      // The 'Options' checkbox.
+      // The 'Options' link.
       if (extension.enabled && extension.optionsUrl) {
         var options = node.querySelector('.options-link');
         options.addEventListener('click', function(e) {
@@ -160,22 +183,12 @@ cr.define('options', function() {
         options.hidden = false;
       }
 
-      if (extension.allow_activity) {
-        var activity = node.querySelector('.activity-link');
-        activity.addEventListener('click', function(e) {
-          chrome.send('navigateToUrl', [
-            'chrome://extension-activity?extensionId=' + extension.id,
-            '_blank',
-            e.button,
-            e.altKey,
-            e.ctrlKey,
-            e.metaKey,
-            e.shiftKey
-          ]);
-          e.preventDefault();
-        });
-        activity.hidden = false;
-      }
+      // The 'Permissions' link.
+      var permissions = node.querySelector('.permissions-link');
+      permissions.addEventListener('click', function(e) {
+        chrome.send('extensionSettingsPermissions', [extension.id]);
+        e.preventDefault();
+      });
 
       // The 'View in Web Store/View Web Site' link.
       if (extension.homepageUrl) {
@@ -192,6 +205,7 @@ cr.define('options', function() {
         var reload = node.querySelector('.reload-link');
         reload.addEventListener('click', function(e) {
           chrome.send('extensionSettingsReload', [extension.id]);
+          extensionReloadedTimestamp[extension.id] = Date.now();
         });
         reload.hidden = false;
 
@@ -202,13 +216,6 @@ cr.define('options', function() {
             chrome.send('extensionSettingsLaunch', [extension.id]);
           });
           launch.hidden = false;
-
-          // The 'Restart' link.
-          var restart = node.querySelector('.restart-link');
-          restart.addEventListener('click', function(e) {
-            chrome.send('extensionSettingsRestart', [extension.id]);
-          });
-          restart.hidden = false;
         }
       }
 
@@ -216,12 +223,21 @@ cr.define('options', function() {
         // The 'Enabled' checkbox.
         var enable = node.querySelector('.enable-checkbox');
         enable.hidden = false;
-        enable.querySelector('input').disabled = !extension.userModifiable;
+        var managedOrHosedExtension = extension.managedInstall ||
+                                      extension.suspiciousInstall ||
+                                      extension.corruptInstall;
+        enable.querySelector('input').disabled = managedOrHosedExtension;
 
-        if (extension.userModifiable) {
+        if (!managedOrHosedExtension) {
           enable.addEventListener('click', function(e) {
+            // When e.target is the label instead of the checkbox, it doesn't
+            // have the checked property and the state of the checkbox is
+            // left unchanged.
+            var checked = e.target.checked;
+            if (checked == undefined)
+              checked = !e.currentTarget.querySelector('input').checked;
             chrome.send('extensionSettingsEnable',
-                        [extension.id, e.target.checked ? 'true' : 'false']);
+                        [extension.id, checked ? 'true' : 'false']);
 
             // This may seem counter-intuitive (to not set/clear the checkmark)
             // but this page will be updated asynchronously if the extension
@@ -234,9 +250,9 @@ cr.define('options', function() {
 
         enable.querySelector('input').checked = extension.enabled;
       } else {
-        var terminated_reload = node.querySelector('.terminated-reload-link');
-        terminated_reload.hidden = false;
-        terminated_reload.addEventListener('click', function(e) {
+        var terminatedReload = node.querySelector('.terminated-reload-link');
+        terminatedReload.hidden = false;
+        terminatedReload.addEventListener('click', function(e) {
           chrome.send('extensionSettingsReload', [extension.id]);
         });
       }
@@ -246,6 +262,7 @@ cr.define('options', function() {
       var trash = trashTemplate.cloneNode(true);
       trash.title = loadTimeData.getString('extensionUninstall');
       trash.addEventListener('click', function(e) {
+        butterBarVisibility[extension.id] = false;
         chrome.send('extensionSettingsUninstall', [extension.id]);
       });
       node.querySelector('.enable-controls').appendChild(trash);
@@ -265,8 +282,18 @@ cr.define('options', function() {
       }
 
       // Then the 'managed, cannot uninstall/disable' message.
-      if (!extension.userModifiable)
+      if (extension.managedInstall) {
         node.querySelector('.managed-message').hidden = false;
+      } else {
+        if (extension.suspiciousInstall) {
+          // Then the 'This isn't from the webstore, looks suspicious' message.
+          node.querySelector('.suspicious-install-message').hidden = false;
+        }
+        if (extension.corruptInstall) {
+          // Then the 'This is a corrupt extension' message.
+          node.querySelector('.corrupt-install-message').hidden = false;
+        }
+      }
 
       // Then active views.
       if (extension.views.length > 0) {
@@ -275,7 +302,9 @@ cr.define('options', function() {
         var link = activeViews.querySelector('a');
 
         extension.views.forEach(function(view, i) {
-          var label = view.path +
+          var displayName = view.generatedBackgroundPage ?
+              loadTimeData.getString('backgroundPage') : view.path;
+          var label = displayName +
               (view.incognito ?
                   ' ' + loadTimeData.getString('viewIncognito') : '') +
               (view.renderProcessId == -1 ?
@@ -308,20 +337,43 @@ cr.define('options', function() {
         });
       }
 
-      // The install warnings.
+      // If the ErrorConsole is enabled, we should have manifest and/or runtime
+      // errors. Otherwise, we may have install warnings. We should not have
+      // both ErrorConsole errors and install warnings.
+      if (extension.manifestErrors) {
+        var panel = node.querySelector('.manifest-errors');
+        panel.hidden = false;
+        panel.appendChild(new extensions.ExtensionErrorList(
+            extension.manifestErrors));
+      }
+      if (extension.runtimeErrors) {
+        var panel = node.querySelector('.runtime-errors');
+        panel.hidden = false;
+        panel.appendChild(new extensions.ExtensionErrorList(
+            extension.runtimeErrors));
+      }
       if (extension.installWarnings) {
         var panel = node.querySelector('.install-warnings');
         panel.hidden = false;
         var list = panel.querySelector('ul');
         extension.installWarnings.forEach(function(warning) {
           var li = document.createElement('li');
-          li[warning.isHTML ? 'innerHTML' : 'innerText'] = warning.message;
+          li.innerText = warning.message;
           list.appendChild(li);
         });
       }
 
       this.appendChild(node);
-    }
+      if (location.hash.substr(1) == extension.id) {
+        // Scroll beneath the fixed header so that the extension is not
+        // obscured.
+        var topScroll = node.offsetTop - $('page-header').offsetHeight;
+        var pad = parseInt(getComputedStyle(node, null).marginTop, 10);
+        if (!isNaN(pad))
+          topScroll -= pad / 2;
+        setScrollTopForDocument(document, topScroll);
+      }
+    },
   };
 
   return {

@@ -28,7 +28,7 @@ class Triggerable(base.BaseScheduler):
         self._bsc_subscription = None
         self.reason = "Triggerable(%s)" % name
 
-    def trigger(self, ssid, set_props=None):
+    def trigger(self, ssid, set_props=None, reason=None):
         """Trigger this scheduler with the given sourcestamp ID. Returns a
         deferred that will fire when the buildset is finished."""
         # properties for this buildset are composed of our own properties,
@@ -42,10 +42,10 @@ class Triggerable(base.BaseScheduler):
         # the duration of interest to the caller is bounded by the lifetime of
         # this process.
         if ssid:
-            d = self.addBuildsetForSourceStamp(reason=self.reason, ssid=ssid,
+            d = self.addBuildsetForSourceStamp(reason=reason or self.reason, ssid=ssid,
                     properties=props)
         else:
-            d = self.addBuildsetForLatest(reason=self.reason, properties=props)
+            d = self.addBuildsetForLatest(reason=reason or self.reason, properties=props)
         def setup_waiter((bsid,brids)):
             self._waiters[bsid] = d = defer.Deferred()
             self._updateWaiters()

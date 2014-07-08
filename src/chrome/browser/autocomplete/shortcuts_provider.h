@@ -11,9 +11,11 @@
 
 #include "base/gtest_prod_util.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
-#include "chrome/browser/history/shortcuts_backend.h"
+#include "chrome/browser/autocomplete/shortcuts_backend.h"
+#include "chrome/browser/autocomplete/url_prefix.h"
 
 class Profile;
+class ShortcutsProviderTest;
 
 // Provider of recently autocompleted links. Provides autocomplete suggestions
 // from previously selected suggestions. The more often a user selects a
@@ -21,7 +23,7 @@ class Profile;
 // ranking for future uses of that search term.
 class ShortcutsProvider
     : public AutocompleteProvider,
-      public history::ShortcutsBackend::ShortcutsBackendObserver {
+      public ShortcutsBackend::ShortcutsBackendObserver {
  public:
   ShortcutsProvider(AutocompleteProviderListener* listener, Profile* profile);
 
@@ -36,31 +38,34 @@ class ShortcutsProvider
   friend class ClassifyTest;
   friend class ShortcutsProviderTest;
   FRIEND_TEST_ALL_PREFIXES(ShortcutsProviderTest, CalculateScore);
-  FRIEND_TEST_ALL_PREFIXES(ShortcutsProviderTest, DeleteMatch);
 
-  typedef std::multimap<char16, string16> WordMap;
+  typedef std::multimap<base::char16, base::string16> WordMap;
 
   virtual ~ShortcutsProvider();
 
   // ShortcutsBackendObserver:
   virtual void OnShortcutsLoaded() OVERRIDE;
 
-  void DeleteMatchesWithURLs(const std::set<GURL>& urls);
-  void DeleteShortcutsWithURLs(const std::set<GURL>& urls);
-
   // Performs the autocomplete matching and scoring.
   void GetMatches(const AutocompleteInput& input);
 
+  // Returns an AutocompleteMatch corresponding to |shortcut|. Assigns it
+  // |relevance| score in the process, and highlights the description and
+  // contents against |input|, which should be the lower-cased version
+  // of the user's input. |input|, |fixed_up_input|, and
+  // |input_as_gurl| are used to decide what can be inlined.
   AutocompleteMatch ShortcutToACMatch(
+      const history::ShortcutsDatabase::Shortcut& shortcut,
       int relevance,
-      const string16& terms,
-      const history::ShortcutsBackend::Shortcut& shortcut);
+      const AutocompleteInput& input,
+      const AutocompleteInput& fixed_up_input,
+      const GURL& input_as_gurl);
 
   // Returns a map mapping characters to groups of words from |text| that start
   // with those characters, ordered lexicographically descending so that longer
   // words appear before their prefixes (if any) within a particular
   // equal_range().
-  static WordMap CreateWordMapForString(const string16& text);
+  static WordMap CreateWordMapForString(const base::string16& text);
 
   // Given |text| and a corresponding base set of classifications
   // |original_class|, adds ACMatchClassification::MATCH markers for all
@@ -83,20 +88,23 @@ class ShortcutsProvider
   // |find_text| (and thus |find_words|) are expected to be lowercase.  |text|
   // will be lowercased in this function.
   static ACMatchClassifications ClassifyAllMatchesInString(
-      const string16& find_text,
+      const base::string16& find_text,
       const WordMap& find_words,
-      const string16& text,
+      const base::string16& text,
       const ACMatchClassifications& original_class);
 
   // Returns iterator to first item in |shortcuts_map_| matching |keyword|.
   // Returns shortcuts_map_.end() if there are no matches.
-  history::ShortcutsBackend::ShortcutMap::const_iterator FindFirstMatch(
-      const string16& keyword,
-      history::ShortcutsBackend* backend);
+  ShortcutsBackend::ShortcutMap::const_iterator FindFirstMatch(
+      const base::string16& keyword,
+      ShortcutsBackend* backend);
 
-  static int CalculateScore(
-      const string16& terms,
-      const history::ShortcutsBackend::Shortcut& shortcut);
+  int CalculateScore(const base::string16& terms,
+                     const history::ShortcutsDatabase::Shortcut& shortcut,
+                     int max_relevance);
+
+  // The default max relevance unless overridden by a field trial.
+  static const int kShortcutsProviderDefaultMaxRelevance;
 
   std::string languages_;
   bool initialized_;

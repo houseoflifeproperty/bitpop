@@ -11,14 +11,12 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/string_number_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/values.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/enumerate_modules_model_win.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "chrome/browser/ui/webui/chrome_web_ui_data_source.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
@@ -26,6 +24,7 @@
 #include "content/public/browser/user_metrics.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_ui.h"
+#include "content/public/browser/web_ui_data_source.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "grit/browser_resources.h"
 #include "grit/chromium_strings.h"
@@ -35,16 +34,17 @@
 #include "ui/base/layout.h"
 #include "ui/base/resource/resource_bundle.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using content::WebContents;
 using content::WebUIMessageHandler;
 
 namespace {
 
-ChromeWebUIDataSource* CreateConflictsUIHTMLSource() {
-  ChromeWebUIDataSource* source =
-      new ChromeWebUIDataSource(chrome::kChromeUIConflictsHost);
+content::WebUIDataSource* CreateConflictsUIHTMLSource() {
+  content::WebUIDataSource* source =
+      content::WebUIDataSource::Create(chrome::kChromeUIConflictsHost);
 
+  source->SetUseJsonJSFormatV2();
   source->AddLocalizedString("loadingMessage", IDS_CONFLICTS_LOADING_MESSAGE);
   source->AddLocalizedString("modulesLongTitle",
                              IDS_CONFLICTS_CHECK_PAGE_TITLE_LONG);
@@ -63,9 +63,9 @@ ChromeWebUIDataSource* CreateConflictsUIHTMLSource() {
   source->AddLocalizedString("headerLocation", IDS_CONFLICTS_HEADER_LOCATION);
   source->AddLocalizedString("headerVersion", IDS_CONFLICTS_HEADER_VERSION);
   source->AddLocalizedString("headerHelpTip", IDS_CONFLICTS_HEADER_HELP_TIP);
-  source->set_json_path("strings.js");
-  source->add_resource_path("conflicts.js", IDR_ABOUT_CONFLICTS_JS);
-  source->set_default_resource(IDR_ABOUT_CONFLICTS_HTML);
+  source->SetJsonPath("strings.js");
+  source->AddResourcePath("conflicts.js", IDR_ABOUT_CONFLICTS_JS);
+  source->SetDefaultResource(IDR_ABOUT_CONFLICTS_HTML);
   return source;
 }
 
@@ -86,7 +86,7 @@ class ConflictsDOMHandler : public WebUIMessageHandler,
   virtual void RegisterMessages();
 
   // Callback for the "requestModuleList" message.
-  void HandleRequestModuleList(const ListValue* args);
+  void HandleRequestModuleList(const base::ListValue* args);
 
  private:
   void SendModuleList();
@@ -106,7 +106,7 @@ void ConflictsDOMHandler::RegisterMessages() {
                  base::Unretained(this)));
 }
 
-void ConflictsDOMHandler::HandleRequestModuleList(const ListValue* args) {
+void ConflictsDOMHandler::HandleRequestModuleList(const base::ListValue* args) {
   // This request is handled asynchronously. See Observe for when we reply back.
   registrar_.Add(this, chrome::NOTIFICATION_MODULE_LIST_ENUMERATED,
                  content::NotificationService::AllSources());
@@ -115,14 +115,14 @@ void ConflictsDOMHandler::HandleRequestModuleList(const ListValue* args) {
 
 void ConflictsDOMHandler::SendModuleList() {
   EnumerateModulesModel* loaded_modules = EnumerateModulesModel::GetInstance();
-  ListValue* list = loaded_modules->GetModuleList();
-  DictionaryValue results;
+  base::ListValue* list = loaded_modules->GetModuleList();
+  base::DictionaryValue results;
   results.Set("moduleList", list);
 
   // Add the section title and the total count for bad modules found.
   int confirmed_bad = loaded_modules->confirmed_bad_modules_detected();
   int suspected_bad = loaded_modules->suspected_bad_modules_detected();
-  string16 table_title;
+  base::string16 table_title;
   if (!confirmed_bad && !suspected_bad) {
     table_title += l10n_util::GetStringFUTF16(
         IDS_CONFLICTS_CHECK_PAGE_TABLE_TITLE_SUFFIX_ONE,
@@ -167,7 +167,7 @@ ConflictsUI::ConflictsUI(content::WebUI* web_ui) : WebUIController(web_ui) {
 
   // Set up the about:conflicts source.
   Profile* profile = Profile::FromWebUI(web_ui);
-  ChromeURLDataManager::AddDataSource(profile, CreateConflictsUIHTMLSource());
+  content::WebUIDataSource::Add(profile, CreateConflictsUIHTMLSource());
 }
 
 // static

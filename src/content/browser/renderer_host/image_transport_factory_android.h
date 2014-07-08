@@ -12,12 +12,21 @@ namespace gfx {
 class GLShareGroup;
 }
 
-namespace WebKit {
-class WebGraphicsContext3D;
+namespace gpu {
+namespace gles2 {
+class GLES2Interface;
+}
 }
 
 namespace content {
 class GLHelper;
+class GLContextLostListener;
+
+class ImageTransportFactoryAndroidObserver {
+ public:
+  virtual ~ImageTransportFactoryAndroidObserver() {}
+  virtual void OnLostResources() = 0;
+};
 
 class ImageTransportFactoryAndroid {
  public:
@@ -25,19 +34,16 @@ class ImageTransportFactoryAndroid {
 
   static ImageTransportFactoryAndroid* GetInstance();
 
-  virtual uint32_t InsertSyncPoint() = 0;
-  virtual uint32_t CreateTexture() = 0;
-  virtual void DeleteTexture(uint32_t id) = 0;
-  virtual void AcquireTexture(
-      uint32 texture_id, const signed char* mailbox_name) = 0;
-  virtual void ReleaseTexture(
-      uint32 texture_id, const signed char* mailbox_name) = 0;
-
-  virtual WebKit::WebGraphicsContext3D* GetContext3D() = 0;
   virtual GLHelper* GetGLHelper() = 0;
+  virtual uint32 GetChannelID() = 0;
+
+  static void AddObserver(ImageTransportFactoryAndroidObserver* observer);
+  static void RemoveObserver(ImageTransportFactoryAndroidObserver* observer);
 
 protected:
   ImageTransportFactoryAndroid();
+
+  scoped_ptr<GLContextLostListener> context_lost_listener_;
 };
 
 }  // namespace content

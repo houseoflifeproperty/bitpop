@@ -6,8 +6,8 @@
 
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
-#include "chrome/browser/download/download_util.h"
+#include "base/strings/sys_string_conversions.h"
+#include "chrome/browser/download/download_stats.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/themes/theme_service.h"
 #include "chrome/browser/themes/theme_service_factory.h"
@@ -19,11 +19,11 @@
 #include "chrome/browser/ui/cocoa/download/download_item_controller.h"
 #include "chrome/browser/ui/cocoa/download/download_shelf_mac.h"
 #import "chrome/browser/ui/cocoa/download/download_shelf_view.h"
-#import "chrome/browser/ui/cocoa/hover_button.h"
 #import "chrome/browser/ui/cocoa/presentation_mode_controller.h"
 #include "content/public/browser/download_item.h"
 #include "content/public/browser/download_manager.h"
-#import "third_party/GTM/AppKit/GTMNSAnimation+Duration.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMNSAnimation+Duration.h"
+#import "ui/base/cocoa/hover_button.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::DownloadItem;
@@ -31,7 +31,7 @@ using content::DownloadItem;
 // Download shelf autoclose behavior:
 //
 // The download shelf autocloses if all of this is true:
-// 1) An item on the shelf has just been opened.
+// 1) An item on the shelf has just been opened or removed.
 // 2) All remaining items on the shelf have been opened in the past.
 // 3) The mouse leaves the shelf and remains off the shelf for 5 seconds.
 //
@@ -71,16 +71,17 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
 }  // namespace
 
 @interface DownloadShelfController(Private)
-- (void)showDownloadShelf:(BOOL)enable;
+- (void)removeDownload:(DownloadItemController*)download
+        isShelfClosing:(BOOL)isShelfClosing;
 - (void)layoutItems:(BOOL)skipFirst;
 - (void)closed;
-- (BOOL)canAutoClose;
-
+- (void)maybeAutoCloseAfterDelay;
+- (void)scheduleAutoClose;
+- (void)cancelAutoClose;
+- (void)autoClose;
 - (void)viewFrameDidChange:(NSNotification*)notification;
-
 - (void)installTrackingArea;
-- (void)cancelAutoCloseAndRemoveTrackingArea;
-
+- (void)removeTrackingArea;
 - (void)willEnterFullscreen;
 - (void)willLeaveFullscreen;
 - (void)updateCloseButton;
@@ -139,11 +140,13 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
                     selector:@selector(willLeaveFullscreen)
                         name:kWillLeaveFullscreenNotification
                       object:nil];
+  [self installTrackingArea];
 }
 
 - (void)dealloc {
   [[NSNotificationCenter defaultCenter] removeObserver:self];
-  [self cancelAutoCloseAndRemoveTrackingArea];
+  [self cancelAutoClose];
+  [self removeTrackingArea];
 
   // The controllers will unregister themselves as observers when they are
   // deallocated. No need to do that here.
@@ -171,11 +174,21 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
   return static_cast<AnimatableView*>([self view]);
 }
 
-- (void)showDownloadsTab:(id)sender {
+- (IBAction)showDownloadsTab:(id)sender {
   chrome::ShowDownloads(bridge_->browser());
 }
 
+- (IBAction)handleClose:(id)sender {
+  bridge_->Close(DownloadShelf::USER_ACTION);
+}
+
 - (void)remove:(DownloadItemController*)download {
+  [self removeDownload:download
+        isShelfClosing:NO];
+}
+
+- (void)removeDownload:(DownloadItemController*)download
+        isShelfClosing:(BOOL)isShelfClosing {
   // Look for the download in our controller array and remove it. This will
   // explicity release it so that it removes itself as an Observer of the
   // DownloadItem. We don't want to wait for autorelease since the DownloadItem
@@ -187,34 +200,52 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
 
   [downloadItemControllers_ removeObject:download];
 
-  [self layoutItems];
+  if (!isShelfClosing) {
+    [self layoutItems];
 
-  // Check to see if we have any downloads remaining and if not, hide the shelf.
-  if (![downloadItemControllers_ count])
-    [self showDownloadShelf:NO];
+    // If there are no more downloads or if all the remaining downloads have
+    // been opened, we can close the shelf.
+    [self maybeAutoCloseAfterDelay];
+  }
 }
 
 - (void)downloadWasOpened:(DownloadItemController*)item_controller {
   // This should only be called on the main thead.
   DCHECK([NSThread isMainThread]);
-
-  if ([self canAutoClose])
-    [self installTrackingArea];
+  [self maybeAutoCloseAfterDelay];
 }
 
 // We need to explicitly release our download controllers here since they need
 // to remove themselves as observers before the remaining shutdown happens.
 - (void)exiting {
   [[self animatableView] stopAnimation];
-  [self cancelAutoCloseAndRemoveTrackingArea];
+  [self removeTrackingArea];
+  [self cancelAutoClose];
+  while ([downloadItemControllers_ count] > 0) {
+    [self removeDownload:[downloadItemControllers_ lastObject]
+          isShelfClosing:YES];
+  }
   downloadItemControllers_.reset();
 }
 
-// Show or hide the bar based on the value of |enable|. Handles animating the
-// resize of the content view.
-- (void)showDownloadShelf:(BOOL)enable {
-  if ([self isVisible] == enable)
+- (void)showDownloadShelf:(BOOL)show
+             isUserAction:(BOOL)isUserAction {
+  [self cancelAutoClose];
+  shouldCloseOnMouseExit_ = NO;
+
+  if ([self isVisible] == show)
     return;
+
+  if (!show) {
+    int numInProgress = 0;
+    for (NSUInteger i = 0; i < [downloadItemControllers_ count]; ++i) {
+      DownloadItem* item = [[downloadItemControllers_ objectAtIndex:i]download];
+      if (item->GetState() == DownloadItem::IN_PROGRESS)
+        ++numInProgress;
+    }
+    RecordDownloadShelfClose(
+        [downloadItemControllers_ count], numInProgress, !isUserAction);
+  }
 
   // Animate the shelf out, but not in.
   // TODO(rohitrao): We do not animate on the way in because Cocoa is already
@@ -222,12 +253,12 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
   // do no animation over janky animation.  Find a way to make animating in
   // smoother.
   AnimatableView* view = [self animatableView];
-  if (enable)
+  if (show)
     [view setHeight:maxShelfHeight_];
   else
     [view animateToNewHeight:0 duration:kDownloadShelfCloseDuration];
 
-  barIsVisible_ = enable;
+  barIsVisible_ = show;
   [self updateCloseButton];
 }
 
@@ -237,31 +268,6 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
 
 - (BOOL)isVisible {
   return barIsVisible_;
-}
-
-- (void)show:(id)sender {
-  [self showDownloadShelf:YES];
-}
-
-- (void)hide:(id)sender {
-  [self cancelAutoCloseAndRemoveTrackingArea];
-
-  // If |sender| isn't nil, then we're being closed from the UI by the user and
-  // we need to tell our shelf implementation to close. Otherwise, we're being
-  // closed programmatically by our shelf implementation.
-  bool auto_closed = (sender == nil);
-
-  int numInProgress = 0;
-  for (NSUInteger i = 0; i < [downloadItemControllers_ count]; ++i) {
-    if ([[downloadItemControllers_ objectAtIndex:i]download]->IsInProgress())
-      ++numInProgress;
-  }
-  download_util::RecordShelfClose(
-      [downloadItemControllers_ count], numInProgress, auto_closed);
-  if (auto_closed)
-    [self showDownloadShelf:NO];
-  else
-    bridge_->Close();
 }
 
 - (void)animationDidEnd:(NSAnimation*)animation {
@@ -292,18 +298,23 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
   [self layoutItems:NO];
 }
 
-- (void)addDownloadItem:(DownloadItemModel*)model {
+- (void)addDownloadItem:(DownloadItem*)downloadItem {
   DCHECK([NSThread isMainThread]);
-  [self cancelAutoCloseAndRemoveTrackingArea];
+  base::scoped_nsobject<DownloadItemController> controller(
+      [[DownloadItemController alloc] initWithDownload:downloadItem
+                                                 shelf:self
+                                             navigator:navigator_]);
+  [self add:controller.get()];
+}
+
+- (void)add:(DownloadItemController*)controller {
+  DCHECK([NSThread isMainThread]);
+  [self cancelAutoClose];
+  shouldCloseOnMouseExit_ = NO;
 
   // Insert new item at the left.
-  scoped_nsobject<DownloadItemController> controller(
-      [[DownloadItemController alloc] initWithModel:model
-                                              shelf:self
-                                          navigator:navigator_]);
-
   // Adding at index 0 in NSMutableArrays is O(1).
-  [downloadItemControllers_ insertObject:controller.get() atIndex:0];
+  [downloadItemControllers_ insertObject:controller atIndex:0];
 
   [itemContainerView_ addSubview:[controller view]];
 
@@ -341,7 +352,8 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
     // Since no user will ever see the item being removed (needs a horizontal
     // screen resolution greater than 3200 at 16 items at 200 pixels each),
     // there's no point in animating the removal.
-    [self remove:[downloadItemControllers_ lastObject]];
+    [self removeDownload:[downloadItemControllers_ lastObject]
+          isShelfClosing:NO];
   }
 
   // Finally, move the remaining items to the right. Skip the first item when
@@ -360,12 +372,13 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
     DownloadItemController* itemController =
         [downloadItemControllers_ objectAtIndex:i];
     DownloadItem* download = [itemController download];
-    bool isTransferDone = download->IsComplete() ||
-                          download->IsCancelled() ||
-                          download->IsInterrupted();
-    if (isTransferDone &&
-        download->GetSafetyState() != DownloadItem::DANGEROUS) {
-      [self remove:itemController];
+    DownloadItem::DownloadState state = download->GetState();
+    bool isTransferDone = state == DownloadItem::COMPLETE ||
+                          state == DownloadItem::CANCELLED ||
+                          state == DownloadItem::INTERRUPTED;
+    if (isTransferDone && !download->IsDangerous()) {
+      [self removeDownload:itemController
+            isShelfClosing:YES];
     } else {
       // Treat the item as opened when we close. This way if we get shown again
       // the user need not open this item for the shelf to auto-close.
@@ -376,56 +389,85 @@ const NSSize kHoverCloseButtonDefaultSize = { 18, 18 };
 }
 
 - (void)mouseEntered:(NSEvent*)event {
+  isMouseInsideView_ = YES;
   // If the mouse re-enters the download shelf, cancel the auto-close.  Further
-  // mouse exits should not trigger autoclose, so also remove the tracking area.
-  [self cancelAutoCloseAndRemoveTrackingArea];
+  // mouse exits should not trigger autoclose.
+  if (shouldCloseOnMouseExit_) {
+    [self cancelAutoClose];
+    shouldCloseOnMouseExit_ = NO;
+  }
 }
 
 - (void)mouseExited:(NSEvent*)event {
+  isMouseInsideView_ = NO;
+  if (shouldCloseOnMouseExit_)
+    [self scheduleAutoClose];
+}
+
+- (void)scheduleAutoClose {
   // Cancel any previous hide requests, just to be safe.
-  [NSObject cancelPreviousPerformRequestsWithTarget:self
-                                           selector:@selector(hide:)
-                                             object:self];
+  [self cancelAutoClose];
 
   // Schedule an autoclose after a delay.  If the mouse is moved back into the
   // view, or if an item is added to the shelf, the timer will be canceled.
-  [self performSelector:@selector(hide:)
-             withObject:self
+  [self performSelector:@selector(autoClose)
+             withObject:nil
              afterDelay:kAutoCloseDelaySeconds];
 }
 
-- (BOOL)canAutoClose {
+- (void)cancelAutoClose {
+  [NSObject cancelPreviousPerformRequestsWithTarget:self
+                                           selector:@selector(autoClose)
+                                             object:nil];
+}
+
+- (void)maybeAutoCloseAfterDelay {
+  // We can close the shelf automatically if all the downloads on the shelf have
+  // been opened.
   for (NSUInteger i = 0; i < [downloadItemControllers_ count]; ++i) {
     DownloadItemController* itemController =
         [downloadItemControllers_ objectAtIndex:i];
     if (![itemController download]->GetOpened())
-      return NO;
+      return;
   }
-  return YES;
+
+  if ([self isVisible] && [downloadItemControllers_ count] > 0 &&
+      isMouseInsideView_) {
+    // If there are download items on the shelf and the user is potentially stil
+    // interacting with them, schedule an auto close after the user moves the
+    // mouse off the shelf.
+    shouldCloseOnMouseExit_ = YES;
+  } else {
+    // We notify the DownloadShelf of our intention to close even if the shelf
+    // is currently hidden. If the shelf was temporarily hidden (e.g. because
+    // the browser window entered fullscreen mode), then this prevents the shelf
+    // from being shown again when the browser exits fullscreen mode.
+    [self autoClose];
+  }
+}
+
+- (void)autoClose {
+  bridge_->Close(DownloadShelf::AUTOMATIC);
 }
 
 - (void)installTrackingArea {
-  // Install the tracking area to listen for mouseExited messages and trigger
-  // the shelf autoclose.
-  if (trackingArea_.get())
-    return;
+  // Install the tracking area to listen for mouseEntered and mouseExited
+  // messages.
+  DCHECK(!trackingArea_.get());
 
-  trackingArea_.reset([[NSTrackingArea alloc]
+  trackingArea_.reset([[CrTrackingArea alloc]
                         initWithRect:[[self view] bounds]
                              options:NSTrackingMouseEnteredAndExited |
-                                     NSTrackingActiveAlways
+                                     NSTrackingActiveAlways |
+                                     NSTrackingInVisibleRect
                                owner:self
                             userInfo:nil]);
-  [[self view] addTrackingArea:trackingArea_];
+  [[self view] addTrackingArea:trackingArea_.get()];
 }
 
-- (void)cancelAutoCloseAndRemoveTrackingArea {
-  [NSObject cancelPreviousPerformRequestsWithTarget:self
-                                           selector:@selector(hide:)
-                                             object:self];
-
+- (void)removeTrackingArea {
   if (trackingArea_.get()) {
-    [[self view] removeTrackingArea:trackingArea_];
+    [[self view] removeTrackingArea:trackingArea_.get()];
     trackingArea_.reset(nil);
   }
 }

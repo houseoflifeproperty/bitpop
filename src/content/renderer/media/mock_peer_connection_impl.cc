@@ -9,9 +9,12 @@
 
 #include "base/logging.h"
 
+using testing::_;
+using webrtc::AudioTrackInterface;
 using webrtc::CreateSessionDescriptionObserver;
+using webrtc::DtmfSenderInterface;
+using webrtc::DtmfSenderObserverInterface;
 using webrtc::IceCandidateInterface;
-using webrtc::LocalMediaStreamInterface;
 using webrtc::MediaConstraintsInterface;
 using webrtc::MediaStreamInterface;
 using webrtc::PeerConnectionInterface;
@@ -32,6 +35,26 @@ class MockStreamCollection : public webrtc::StreamCollectionInterface {
     for (size_t i = 0; i < streams_.size(); ++i) {
       if (streams_[i]->label() == label)
         return streams_[i];
+    }
+    return NULL;
+  }
+  virtual webrtc::MediaStreamTrackInterface* FindAudioTrack(
+      const std::string& id) OVERRIDE {
+    for (size_t i = 0; i < streams_.size(); ++i) {
+      webrtc::MediaStreamTrackInterface* track =
+          streams_.at(i)->FindAudioTrack(id);
+      if (track)
+        return track;
+    }
+    return NULL;
+  }
+  virtual webrtc::MediaStreamTrackInterface* FindVideoTrack(
+      const std::string& id) OVERRIDE {
+    for (size_t i = 0; i < streams_.size(); ++i) {
+      webrtc::MediaStreamTrackInterface* track =
+          streams_.at(i)->FindVideoTrack(id);
+      if (track)
+        return track;
     }
     return NULL;
   }
@@ -63,7 +86,8 @@ class MockDataChannel : public webrtc::DataChannelInterface {
                   const webrtc::DataChannelInit* config)
       : label_(label),
         reliable_(config->reliable),
-        state_(webrtc::DataChannelInterface::kConnecting) {
+        state_(webrtc::DataChannelInterface::kConnecting),
+        config_(*config) {
   }
 
   virtual void RegisterObserver(
@@ -73,12 +97,37 @@ class MockDataChannel : public webrtc::DataChannelInterface {
   virtual void UnregisterObserver() OVERRIDE {
   }
 
-  virtual const std::string& label() const OVERRIDE {
+  virtual std::string label() const OVERRIDE {
     return label_;
   }
 
   virtual bool reliable() const OVERRIDE {
     return reliable_;
+  }
+
+  virtual bool ordered() const OVERRIDE {
+    return config_.ordered;
+  }
+
+  virtual unsigned short maxRetransmitTime() const OVERRIDE {
+    return config_.maxRetransmitTime;
+  }
+
+  virtual unsigned short maxRetransmits() const OVERRIDE {
+    return config_.maxRetransmits;
+  }
+
+  virtual std::string protocol() const OVERRIDE {
+    return config_.protocol;
+  }
+
+  virtual bool negotiated() const OVERRIDE {
+    return config_.negotiated;
+  }
+
+  virtual int id() const OVERRIDE {
+    NOTIMPLEMENTED();
+    return 0;
   }
 
   virtual DataState state() const OVERRIDE {
@@ -99,12 +148,57 @@ class MockDataChannel : public webrtc::DataChannelInterface {
   }
 
  protected:
-  ~MockDataChannel() {}
+  virtual ~MockDataChannel() {}
 
  private:
   std::string label_;
   bool reliable_;
   webrtc::DataChannelInterface::DataState state_;
+  webrtc::DataChannelInit config_;
+};
+
+class MockDtmfSender : public DtmfSenderInterface {
+ public:
+  explicit MockDtmfSender(AudioTrackInterface* track)
+      : track_(track),
+        observer_(NULL),
+        duration_(0),
+        inter_tone_gap_(0) {}
+  virtual void RegisterObserver(
+      DtmfSenderObserverInterface* observer) OVERRIDE {
+    observer_ = observer;
+  }
+  virtual void UnregisterObserver() OVERRIDE {
+    observer_ = NULL;
+  }
+  virtual bool CanInsertDtmf() OVERRIDE {
+    return true;
+  }
+  virtual bool InsertDtmf(const std::string& tones, int duration,
+                          int inter_tone_gap) OVERRIDE {
+    tones_ = tones;
+    duration_ = duration;
+    inter_tone_gap_ = inter_tone_gap;
+    return true;
+  }
+  virtual const AudioTrackInterface* track() const OVERRIDE {
+    return track_.get();
+  }
+  virtual std::string tones() const OVERRIDE {
+    return tones_;
+  }
+  virtual int duration() const OVERRIDE { return duration_; }
+  virtual int inter_tone_gap() const OVERRIDE { return inter_tone_gap_; }
+
+ protected:
+  virtual ~MockDtmfSender() {}
+
+ private:
+  talk_base::scoped_refptr<AudioTrackInterface> track_;
+  DtmfSenderObserverInterface* observer_;
+  std::string tones_;
+  int duration_;
+  int inter_tone_gap_;
 };
 
 const char MockPeerConnectionImpl::kDummyOffer[] = "dummy offer";
@@ -117,11 +211,12 @@ MockPeerConnectionImpl::MockPeerConnectionImpl(
       remote_streams_(new talk_base::RefCountedObject<MockStreamCollection>),
       hint_audio_(false),
       hint_video_(false),
-      action_(kAnswer),
-      ice_options_(kOnlyRelay),
-      sdp_mline_index_(-1),
-      ready_state_(kNew),
-      ice_state_(kIceNew) {
+      getstats_result_(true),
+      sdp_mline_index_(-1) {
+  ON_CALL(*this, SetLocalDescription(_, _)).WillByDefault(testing::Invoke(
+      this, &MockPeerConnectionImpl::SetLocalDescriptionWorker));
+  ON_CALL(*this, SetRemoteDescription(_, _)).WillByDefault(testing::Invoke(
+      this, &MockPeerConnectionImpl::SetRemoteDescriptionWorker));
 }
 
 MockPeerConnectionImpl::~MockPeerConnectionImpl() {}
@@ -152,19 +247,12 @@ void MockPeerConnectionImpl::RemoveStream(
   local_streams_->RemoveStream(local_stream);
 }
 
-
-bool MockPeerConnectionImpl::CanSendDtmf(
-    const webrtc::AudioTrackInterface* track) {
-  NOTIMPLEMENTED();
-  return false;
-}
-
-bool MockPeerConnectionImpl::SendDtmf(
-    const webrtc::AudioTrackInterface* send_track,
-    const std::string& tones, int duration,
-    const webrtc::AudioTrackInterface* play_track) {
-  NOTIMPLEMENTED();
-  return false;
+talk_base::scoped_refptr<DtmfSenderInterface>
+MockPeerConnectionImpl::CreateDtmfSender(AudioTrackInterface* track) {
+  if (!track) {
+    return NULL;
+  }
+  return new talk_base::RefCountedObject<MockDtmfSender>(track);
 }
 
 talk_base::scoped_refptr<webrtc::DataChannelInterface>
@@ -175,78 +263,37 @@ MockPeerConnectionImpl::CreateDataChannel(const std::string& label,
 
 bool MockPeerConnectionImpl::GetStats(
     webrtc::StatsObserver* observer,
-    webrtc::MediaStreamTrackInterface* track) {
-  std::vector<webrtc::StatsReport> reports;
-  webrtc::StatsReport report;
+    webrtc::MediaStreamTrackInterface* track,
+    StatsOutputLevel level) {
+  if (!getstats_result_)
+    return false;
+
+  DCHECK_EQ(kStatsOutputLevelStandard, level);
+  std::vector<webrtc::StatsReport> reports(track ? 1 : 2);
+  webrtc::StatsReport& report = reports[0];
   report.id = "1234";
   report.type = "ssrc";
-  report.local.timestamp = 42;
-  webrtc::StatsElement::Value value;
+  report.timestamp = 42;
+  webrtc::StatsReport::Value value;
   value.name = "trackname";
   value.value = "trackvalue";
-  report.local.values.push_back(value);
-  reports.push_back(report);
+  report.values.push_back(value);
   // If selector is given, we pass back one report.
   // If selector is not given, we pass back two.
   if (!track) {
-    report.id = "nontrack";
-    report.type = "generic";
-    report.local.timestamp = 44;
+    webrtc::StatsReport& report2 = reports[1];
+    report2.id = "nontrack";
+    report2.type = "generic";
+    report2.timestamp = 44;
+    report2.values.push_back(value);
     value.name = "somename";
     value.value = "somevalue";
-    report.local.values.push_back(value);
-    reports.push_back(report);
+    report2.values.push_back(value);
   }
   // Note that the callback is synchronous, not asynchronous; it will
   // happen before the request call completes.
   observer->OnComplete(reports);
   return true;
-}
-
-MockPeerConnectionImpl::ReadyState MockPeerConnectionImpl::ready_state() {
-  return ready_state_;
-}
-
-bool MockPeerConnectionImpl::StartIce(IceOptions options) {
-  ice_options_ = options;
-  return true;
-}
-
-webrtc::SessionDescriptionInterface* MockPeerConnectionImpl::CreateOffer(
-    const webrtc::MediaHints& hints) {
-  hint_audio_ = hints.has_audio();
-  hint_video_ = hints.has_video();
-  return dependency_factory_->CreateSessionDescription(kDummyOffer);
-}
-
-webrtc::SessionDescriptionInterface* MockPeerConnectionImpl::CreateAnswer(
-    const webrtc::MediaHints& hints,
-    const webrtc::SessionDescriptionInterface* offer) {
-  hint_audio_ = hints.has_audio();
-  hint_video_ = hints.has_video();
-  offer->ToString(&description_sdp_);
-  return dependency_factory_->CreateSessionDescription(description_sdp_);
-}
-
-bool MockPeerConnectionImpl::SetLocalDescription(
-    Action action,
-    webrtc::SessionDescriptionInterface* desc) {
-  action_ = action;
-  local_desc_.reset(desc);
-  return desc->ToString(&description_sdp_);
-}
-
-bool MockPeerConnectionImpl::SetRemoteDescription(
-    Action action,
-    webrtc::SessionDescriptionInterface* desc) {
-  action_ = action;
-  remote_desc_.reset(desc);
-  return desc->ToString(&description_sdp_);
-}
-
-bool MockPeerConnectionImpl::ProcessIceMessage(
-    const webrtc::IceCandidateInterface* ice_candidate) {
-  return AddIceCandidate(ice_candidate);
 }
 
 const webrtc::SessionDescriptionInterface*
@@ -268,7 +315,8 @@ void MockPeerConnectionImpl::CreateOffer(
     const MediaConstraintsInterface* constraints) {
   DCHECK(observer);
   created_sessiondescription_.reset(
-      dependency_factory_->CreateSessionDescription(kDummyOffer));
+      dependency_factory_->CreateSessionDescription("unknown", kDummyOffer,
+                                                    NULL));
 }
 
 void MockPeerConnectionImpl::CreateAnswer(
@@ -276,17 +324,18 @@ void MockPeerConnectionImpl::CreateAnswer(
     const MediaConstraintsInterface* constraints) {
   DCHECK(observer);
   created_sessiondescription_.reset(
-      dependency_factory_->CreateSessionDescription(kDummyAnswer));
+      dependency_factory_->CreateSessionDescription("unknown", kDummyAnswer,
+                                                    NULL));
 }
 
-void MockPeerConnectionImpl::SetLocalDescription(
+void MockPeerConnectionImpl::SetLocalDescriptionWorker(
     SetSessionDescriptionObserver* observer,
     SessionDescriptionInterface* desc) {
   desc->ToString(&description_sdp_);
   local_desc_.reset(desc);
 }
 
-void MockPeerConnectionImpl::SetRemoteDescription(
+void MockPeerConnectionImpl::SetRemoteDescriptionWorker(
     SetSessionDescriptionObserver* observer,
     SessionDescriptionInterface* desc) {
   desc->ToString(&description_sdp_);
@@ -306,8 +355,9 @@ bool MockPeerConnectionImpl::AddIceCandidate(
   return candidate->ToString(&ice_sdp_);
 }
 
-PeerConnectionInterface::IceState MockPeerConnectionImpl::ice_state() {
-  return ice_state_;
+void MockPeerConnectionImpl::RegisterUMAObserver(
+    webrtc::UMAObserver* observer) {
+  NOTIMPLEMENTED();
 }
 
 }  // namespace content

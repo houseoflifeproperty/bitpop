@@ -4,13 +4,13 @@
 
 #import "chrome/browser/mac/keystone_glue.h"
 
-#include <sys/param.h>
 #include <sys/mount.h>
+#include <sys/param.h>
+#include <sys/stat.h>
 
 #include <vector>
 
 #include "base/bind.h"
-#include "base/file_util.h"
 #include "base/location.h"
 #include "base/logging.h"
 #include "base/mac/authorization_util.h"
@@ -20,9 +20,11 @@
 #include "base/mac/scoped_nsautorelease_pool.h"
 #include "base/mac/scoped_nsexception_enabler.h"
 #include "base/memory/ref_counted.h"
-#include "base/sys_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
 #include "base/threading/worker_pool.h"
+#include "build/build_config.h"
 #import "chrome/browser/mac/keystone_registration.h"
+#include "chrome/browser/mac/obsolete_system.h"
 #include "chrome/common/chrome_constants.h"
 #include "chrome/common/chrome_version_info.h"
 #include "grit/chromium_strings.h"
@@ -97,9 +99,9 @@ class PerformBridge : public base::RefCountedThreadSafe<PerformBridge> {
     [target_ performSelector:sel_ withObject:arg_];
   }
 
-  scoped_nsobject<id> target_;
+  base::scoped_nsobject<id> target_;
   SEL sel_;
-  scoped_nsobject<id> arg_;
+  base::scoped_nsobject<id> arg_;
 };
 
 }  // namespace
@@ -187,6 +189,19 @@ class PerformBridge : public base::RefCountedThreadSafe<PerformBridge> {
 
 // Returns the brand file path to use for Keystone.
 - (NSString*)brandFilePath;
+
+// YES if no update installation has succeeded since a binary diff patch
+// installation failed. This signals the need to attempt a full installer
+// which does not depend on applying a patch to existing files.
+- (BOOL)wantsFullInstaller;
+
+// Returns an NSString* suitable for appending to a Chrome Keystone tag value
+// or tag key. If the system has a 32-bit-only CPU, the tag suffix will
+// contain the string "-32bit". If a full installer (as opposed to a binary
+// diff/delta patch) is required, the tag suffix will contain the string
+// "-full". If no special treatment is required, the tag suffix will be an
+// empty string.
+- (NSString*)tagSuffix;
 
 @end  // @interface KeystoneGlue (Private)
 
@@ -453,6 +468,13 @@ NSString* const kVersionKey = @"KSVersion";
     brandKey = @"";
   }
 
+  // Note that channel_ is permitted to be an empty string, but it must not be
+  // nil.
+  DCHECK(channel_);
+  NSString* tagSuffix = [self tagSuffix];
+  NSString* tagValue = [channel_ stringByAppendingString:tagSuffix];
+  NSString* tagKey = [kChannelKey stringByAppendingString:tagSuffix];
+
   return [NSDictionary dictionaryWithObjectsAndKeys:
              version_, ksr::KSRegistrationVersionKey,
              appInfoPlistPath, ksr::KSRegistrationVersionPathKey,
@@ -461,9 +483,9 @@ NSString* const kVersionKey = @"KSVersion";
              appPath_, ksr::KSRegistrationExistenceCheckerStringKey,
              url_, ksr::KSRegistrationServerURLStringKey,
              preserveTTToken, ksr::KSRegistrationPreserveTrustedTesterTokenKey,
-             channel_, ksr::KSRegistrationTagKey,
+             tagValue, ksr::KSRegistrationTagKey,
              appInfoPlistPath, ksr::KSRegistrationTagPathKey,
-             kChannelKey, ksr::KSRegistrationTagKeyKey,
+             tagKey, ksr::KSRegistrationTagKeyKey,
              brandPath, ksr::KSRegistrationBrandPathKey,
              brandKey, ksr::KSRegistrationBrandKeyKey,
              nil];
@@ -983,6 +1005,46 @@ NSString* const kVersionKey = @"KSVersion";
   }
 }
 
+- (BOOL)wantsFullInstaller {
+  // It's difficult to check the tag prior to Keystone registration, and
+  // performing registration replaces the tag. keystone_install.sh
+  // communicates a need for a full installer with Chrome in this file,
+  // .want_full_installer.
+  NSString* wantFullInstallerPath =
+      [appPath_ stringByAppendingPathComponent:@".want_full_installer"];
+  NSString* wantFullInstallerContents =
+      [NSString stringWithContentsOfFile:wantFullInstallerPath
+                                encoding:NSUTF8StringEncoding
+                                   error:NULL];
+  if (!wantFullInstallerContents) {
+    return NO;
+  }
+
+  NSString* wantFullInstallerVersion =
+      [wantFullInstallerContents stringByTrimmingCharactersInSet:
+          [NSCharacterSet newlineCharacterSet]];
+  return [wantFullInstallerVersion isEqualToString:version_];
+}
+
+- (NSString*)tagSuffix {
+  // Tag suffix components are not entirely arbitrary: all possible tag keys
+  // must be present in the application's Info.plist, there must be
+  // server-side agreement on the processing and meaning of tag suffix
+  // components, and other code that manipulates tag values (such as the
+  // Keystone update installation script) must be tag suffix-aware. To reduce
+  // the number of tag suffix combinations that need to be listed in
+  // Info.plist, tag suffix components should only be appended to the tag
+  // suffix in ASCII sort order.
+  NSString* tagSuffix = @"";
+  if (ObsoleteSystemMac::Has32BitOnlyCPU()) {
+    tagSuffix = [tagSuffix stringByAppendingString:@"-32bit"];
+  }
+  if ([self wantsFullInstaller]) {
+    tagSuffix = [tagSuffix stringByAppendingString:@"-full"];
+  }
+  return tagSuffix;
+}
+
 @end  // @implementation KeystoneGlue
 
 namespace {
@@ -1018,7 +1080,7 @@ bool KeystoneEnabled() {
   return [KeystoneGlue defaultKeystoneGlue] != nil;
 }
 
-string16 CurrentlyInstalledVersion() {
+base::string16 CurrentlyInstalledVersion() {
   KeystoneGlue* keystoneGlue = [KeystoneGlue defaultKeystoneGlue];
   NSString* version = [keystoneGlue currentlyInstalledVersion];
   return base::SysNSStringToUTF16(version);

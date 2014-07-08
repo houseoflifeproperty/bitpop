@@ -9,9 +9,11 @@
 #include <utility>
 
 #include "base/bind.h"
+#include "base/files/file_path.h"
 #include "base/lazy_instance.h"
 #include "base/memory/ref_counted_memory.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
+#include "base/strings/string_util.h"
 #include "chrome/browser/icon_loader.h"
 #include "grit/theme_resources.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -22,7 +24,6 @@
 #include "ui/gfx/image/image.h"
 #include "ui/gfx/image/image_skia.h"
 #include "ui/gfx/image/image_skia_operations.h"
-#include "webkit/glue/image_decoder.h"
 
 namespace {
 
@@ -53,35 +54,37 @@ class IconMapper {
 };
 
 const IdrBySize kAudioIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_AUDIO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_AUDIO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_AUDIO
+  IDR_FILETYPE_AUDIO,
+  IDR_FILETYPE_LARGE_AUDIO,
+  IDR_FILETYPE_LARGE_AUDIO
 };
 const IdrBySize kGenericIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_GENERIC,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_GENERIC,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_GENERIC
+  IDR_FILETYPE_GENERIC,
+  IDR_FILETYPE_LARGE_GENERIC,
+  IDR_FILETYPE_LARGE_GENERIC
 };
 const IdrBySize kImageIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE,
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE,
-  IDR_FILE_MANAGER_IMG_FILETYPE_IMAGE
+  IDR_FILETYPE_IMAGE,
+  IDR_FILETYPE_IMAGE,
+  IDR_FILETYPE_IMAGE
 };
+#if defined(USE_PROPRIETARY_CODECS)
 const IdrBySize kPdfIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF,
-  IDR_FILE_MANAGER_IMG_FILETYPE_PDF
+  IDR_FILETYPE_PDF,
+  IDR_FILETYPE_PDF,
+  IDR_FILETYPE_PDF
 };
+#endif
 const IdrBySize kVideoIdrs = {
-  IDR_FILE_MANAGER_IMG_FILETYPE_VIDEO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO,
-  IDR_FILE_MANAGER_IMG_FILETYPE_LARGE_VIDEO
+  IDR_FILETYPE_VIDEO,
+  IDR_FILETYPE_LARGE_VIDEO,
+  IDR_FILETYPE_LARGE_VIDEO
 };
 
 IconMapper::IconMapper() {
   // The code below should match translation in
-  // chrome/browser/resources/file_manager/js/file_manager.js
-  // chrome/browser/resources/file_manager/css/file_manager.css
+  // ui/file_manager/file_manager/js/file_manager.js
+  // ui/file_manager/file_manager/css/file_manager.css
   // 'audio': /\.(mp3|m4a|oga|ogg|wav)$/i,
   // 'html': /\.(html?)$/i,
   // 'image': /\.(bmp|gif|jpe?g|ico|png|webp)$/i,
@@ -90,7 +93,7 @@ IconMapper::IconMapper() {
   // 'video': /\.(mov|mp4|m4v|mpe?g4?|ogm|ogv|ogx|webm)$/i
 
   const ExtensionIconMap::value_type kExtensionIdrBySizeData[] = {
-#if defined(GOOGLE_CHROME_BUILD) || defined(USE_PROPRIETARY_CODECS)
+#if defined(USE_PROPRIETARY_CODECS)
     std::make_pair(".m4a", kAudioIdrs),
     std::make_pair(".mp3", kAudioIdrs),
     std::make_pair(".pdf", kPdfIdrs),
@@ -176,6 +179,22 @@ int IconSizeToDIPSize(IconLoader::IconSize size) {
 }
 
 }  // namespace
+
+// static
+IconGroupID IconLoader::ReadGroupIDFromFilepath(
+    const base::FilePath& filepath) {
+  return StringToLowerASCII(filepath.Extension());
+}
+
+// static
+bool IconLoader::IsIconMutableFromFilepath(const base::FilePath&) {
+  return false;
+}
+
+// static
+content::BrowserThread::ID IconLoader::ReadIconThreadID() {
+  return content::BrowserThread::FILE;
+}
 
 void IconLoader::ReadIcon() {
   static base::LazyInstance<IconMapper>::Leaky icon_mapper =

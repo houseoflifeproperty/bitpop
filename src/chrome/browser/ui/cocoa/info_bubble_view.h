@@ -7,7 +7,7 @@
 
 #import <Cocoa/Cocoa.h>
 
-#include "base/memory/scoped_nsobject.h"
+#include "base/mac/scoped_nsobject.h"
 
 namespace info_bubble {
 
@@ -26,6 +26,7 @@ enum CornerFlags {
 
 enum BubbleArrowLocation {
   kTopLeft,
+  kTopCenter,
   kTopRight,
   kBottomCenter,
   kNoArrow,
@@ -51,7 +52,7 @@ enum BubbleAlignment {
   info_bubble::BubbleArrowLocation arrowLocation_;
   info_bubble::BubbleAlignment alignment_;
   info_bubble::CornerFlags cornerFlags_;
-  scoped_nsobject<NSColor> backgroundColor_;
+  base::scoped_nsobject<NSColor> backgroundColor_;
 }
 
 @property(assign, nonatomic) info_bubble::BubbleArrowLocation arrowLocation;

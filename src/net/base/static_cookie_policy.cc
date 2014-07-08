@@ -5,9 +5,9 @@
 #include "net/base/static_cookie_policy.h"
 
 #include "base/logging.h"
-#include "googleurl/src/gurl.h"
 #include "net/base/net_errors.h"
 #include "net/base/registry_controlled_domains/registry_controlled_domain.h"
+#include "url/gurl.h"
 
 namespace net {
 
@@ -16,13 +16,15 @@ int StaticCookiePolicy::CanGetCookies(
     const GURL& first_party_for_cookies) const {
   switch (type_) {
     case StaticCookiePolicy::ALLOW_ALL_COOKIES:
-    case StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES:
       return OK;
     case StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES:
       if (first_party_for_cookies.is_empty())
         return OK;  // Empty first-party URL indicates a first-party request.
-      return RegistryControlledDomainService::SameDomainOrHost(
-          url, first_party_for_cookies) ? OK : ERR_ACCESS_DENIED;
+      return registry_controlled_domains::SameDomainOrHost(
+          url,
+          first_party_for_cookies,
+          registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ?
+              OK : ERR_ACCESS_DENIED;
     case StaticCookiePolicy::BLOCK_ALL_COOKIES:
       return ERR_ACCESS_DENIED;
     default:
@@ -37,12 +39,14 @@ int StaticCookiePolicy::CanSetCookie(
   switch (type_) {
     case StaticCookiePolicy::ALLOW_ALL_COOKIES:
       return OK;
-    case StaticCookiePolicy::BLOCK_SETTING_THIRD_PARTY_COOKIES:
     case StaticCookiePolicy::BLOCK_ALL_THIRD_PARTY_COOKIES:
       if (first_party_for_cookies.is_empty())
         return OK;  // Empty first-party URL indicates a first-party request.
-      return RegistryControlledDomainService::SameDomainOrHost(
-          url, first_party_for_cookies) ? OK : ERR_ACCESS_DENIED;
+      return registry_controlled_domains::SameDomainOrHost(
+          url,
+          first_party_for_cookies,
+          registry_controlled_domains::INCLUDE_PRIVATE_REGISTRIES) ?
+              OK : ERR_ACCESS_DENIED;
     case StaticCookiePolicy::BLOCK_ALL_COOKIES:
       return ERR_ACCESS_DENIED;
     default:

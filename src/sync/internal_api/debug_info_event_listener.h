@@ -1,14 +1,16 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_INTERNAL_API_DEBUG_INFO_EVENT_LISTENER_H_
 #define SYNC_INTERNAL_API_DEBUG_INFO_EVENT_LISTENER_H_
 
-#include <queue>
+#include <deque>
 #include <string>
 
 #include "base/compiler_specific.h"
+#include "sync/base/sync_export.h"
+#include "sync/internal_api/public/base/model_type.h"
 #include "sync/internal_api/public/data_type_debug_info_listener.h"
 #include "sync/internal_api/public/sessions/sync_session_snapshot.h"
 #include "sync/internal_api/public/sync_encryption_handler.h"
@@ -21,16 +23,18 @@
 namespace syncer {
 
 // In order to track datatype association results, we need at least as many
-// entries as datatypes.
-const unsigned int kMaxEntries = 25;
+// entries as datatypes. Reserve additional space for other kinds of events that
+// are likely to happen during first sync or startup.
+const unsigned int kMaxEntries = MODEL_TYPE_COUNT + 10;
 
 // Listens to events and records them in a queue. And passes the events to
 // syncer when requested.
 // This class is not thread safe and should only be accessed on the sync thread.
-class DebugInfoEventListener : public SyncManager::Observer,
-                               public SyncEncryptionHandler::Observer,
-                               public sessions::DebugInfoGetter,
-                               public DataTypeDebugInfoListener {
+class SYNC_EXPORT_PRIVATE DebugInfoEventListener
+    : public SyncManager::Observer,
+      public SyncEncryptionHandler::Observer,
+      public sessions::DebugInfoGetter,
+      public DataTypeDebugInfoListener {
  public:
   DebugInfoEventListener();
   virtual ~DebugInfoEventListener();
@@ -44,10 +48,10 @@ class DebugInfoEventListener : public SyncManager::Observer,
       bool success, ModelTypeSet restored_types) OVERRIDE;
   virtual void OnConnectionStatusChange(
       ConnectionStatus connection_status) OVERRIDE;
-  virtual void OnStopSyncingPermanently() OVERRIDE;
-  virtual void OnUpdatedToken(const std::string& token) OVERRIDE;
   virtual void OnActionableError(
       const SyncProtocolError& sync_error) OVERRIDE;
+  virtual void OnMigrationRequested(ModelTypeSet types) OVERRIDE;
+  virtual void OnProtocolEvent(const ProtocolEvent& event) OVERRIDE;
 
   // SyncEncryptionHandler::Observer implementation.
   virtual void OnPassphraseRequired(
@@ -69,16 +73,18 @@ class DebugInfoEventListener : public SyncManager::Observer,
 
   // Sync manager events.
   void OnNudgeFromDatatype(ModelType datatype);
-  void OnIncomingNotification(
-      const ModelTypeInvalidationMap& invalidation_map);
+  void OnIncomingNotification(const ObjectIdInvalidationMap& invalidations);
 
   // DebugInfoGetter implementation.
-  virtual void GetAndClearDebugInfo(sync_pb::DebugInfo* debug_info) OVERRIDE;
+  virtual void GetDebugInfo(sync_pb::DebugInfo* debug_info) OVERRIDE;
+
+  // DebugInfoGetter implementation.
+  virtual void ClearDebugInfo() OVERRIDE;
 
   // DataTypeDebugInfoListener implementation.
-  virtual void OnDataTypeAssociationComplete(
-      const DataTypeAssociationStats& association_stats) OVERRIDE;
-  virtual void OnConfigureComplete() OVERRIDE;
+  virtual void OnDataTypeConfigureComplete(
+      const std::vector<DataTypeConfigurationStats>& configuration_stats)
+      OVERRIDE;
 
   // Returns a weak pointer to this object.
   base::WeakPtr<DataTypeDebugInfoListener> GetWeakPtr();
@@ -86,11 +92,14 @@ class DebugInfoEventListener : public SyncManager::Observer,
  private:
   FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyEventsAdded);
   FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyQueueSize);
-  FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyGetAndClearEvents);
+  FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyGetEvents);
+  FRIEND_TEST_ALL_PREFIXES(DebugInfoEventListenerTest, VerifyClearEvents);
 
   void AddEventToQueue(const sync_pb::DebugEventInfo& event_info);
-  void CreateAndAddEvent(sync_pb::DebugEventInfo::SingletonEventType type);
-  std::queue<sync_pb::DebugEventInfo> events_;
+  void CreateAndAddEvent(sync_pb::SyncEnums::SingletonDebugEventType type);
+
+  typedef std::deque<sync_pb::DebugEventInfo> DebugEventInfoQueue;
+  DebugEventInfoQueue events_;
 
   // True indicates we had to drop one or more events to keep our limit of
   // |kMaxEntries|.
@@ -102,9 +111,9 @@ class DebugInfoEventListener : public SyncManager::Observer,
   // Cryptographer is initialized and does not have pending keys.
   bool cryptographer_ready_;
 
-  base::WeakPtrFactory<DebugInfoEventListener> weak_ptr_factory_;
-
   base::ThreadChecker thread_checker_;
+
+  base::WeakPtrFactory<DebugInfoEventListener> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(DebugInfoEventListener);
 };

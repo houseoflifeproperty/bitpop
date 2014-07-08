@@ -427,6 +427,9 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
   /** Statistics objects to track number of sent messages, etc. */
   private final Statistics statistics;
 
+  /** Client type for inclusion in headers. */
+  private final int clientType;
+
   /**
    * Creates an instance.
    *
@@ -438,8 +441,9 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
    * @param listener callback for protocol events
    */
   ProtocolHandler(ProtocolHandlerConfigP config, final SystemResources resources,
-      Smearer smearer, Statistics statistics, String applicationName, ProtocolListener listener,
-      TiclMessageValidator2 msgValidator, ProtocolHandlerState marshalledState) {
+      Smearer smearer, Statistics statistics, int clientType, String applicationName,
+      ProtocolListener listener, TiclMessageValidator2 msgValidator,
+      ProtocolHandlerState marshalledState) {
     this.logger = resources.getLogger();
     this.statistics = statistics;
     this.internalScheduler = resources.getInternalScheduler();
@@ -448,6 +452,7 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
     this.msgValidator = msgValidator;
     this.clientVersion = CommonProtos2.newClientVersion(resources.getPlatform(), "Java",
         applicationName);
+    this.clientType = clientType;
     if (marshalledState == null) {
       // If there is no marshalled state, construct a clean batcher.
       this.batcher = new Batcher(resources, statistics);
@@ -550,11 +555,16 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
   void sendInitializeMessage(ApplicationClientIdP applicationClientId, ByteString nonce,
       BatchingTask batchingTask, String debugString) {
     Preconditions.checkState(internalScheduler.isRunningOnThread(), "Not on internal thread");
+    if (applicationClientId.getClientType() != clientType) {
+      // This condition is not fatal, but it probably represents a bug somewhere if it occurs.
+      logger.warning(
+          "Client type in application id does not match constructor-provided type: %s vs %s",
+          applicationClientId, clientType);
+    }
 
     // Simply store the message in pendingInitializeMessage and send it when the batching task runs.
-    InitializeMessage initializeMsg = CommonProtos2.newInitializeMessage(
-        applicationClientId.getClientType(), applicationClientId, nonce,
-        DigestSerializationType.BYTE_BASED);
+    InitializeMessage initializeMsg = CommonProtos2.newInitializeMessage(clientType,
+        applicationClientId, nonce, DigestSerializationType.BYTE_BASED);
     batcher.setInitializeMessage(initializeMsg);
     logger.info("Batching initialize message for client: %s, %s", debugString, initializeMsg);
     batchingTask.ensureScheduled(debugString);
@@ -644,7 +654,8 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
     ClientToServerMessage.Builder msgBuilder =
         batcher.toBuilder(listener.getClientToken() != null);
     if (msgBuilder == null) {
-      // Happens when we don't have a token and are not sending an initialize message.
+      // Happens when we don't have a token and are not sending an initialize message. Logged
+      // in batcher.toBuilder().
       return;
     }
     msgBuilder.setHeader(createClientHeader());
@@ -659,6 +670,8 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
     }
 
     statistics.recordSentMessage(SentMessageType.TOTAL);
+    logger.fine("Sending message to server: %s",
+        CommonProtoStrings2.toLazyCompactString(message, true));
     network.sendMessage(message.toByteArray());
 
     // Record that the message was sent. We're invoking the listener directly, rather than
@@ -676,7 +689,8 @@ class ProtocolHandler implements Marshallable<ProtocolHandlerState> {
         .setClientTimeMs(internalScheduler.getCurrentTimeMs())
         .setMessageId(Integer.toString(messageId))
         .setMaxKnownServerTimeMs(lastKnownServerTimeMs)
-        .setRegistrationSummary(listener.getRegistrationSummary());
+        .setRegistrationSummary(listener.getRegistrationSummary())
+        .setClientType(clientType);
     ByteString clientToken = listener.getClientToken();
     if (clientToken != null) {
       logger.fine("Sending token on client->server message: %s",

@@ -4,21 +4,17 @@
 # found in the LICENSE file.
 
 """Wrapper around
-   third_party/WebKit/Tools/Scripts/new-run-webkit-tests"""
+   third_party/WebKit/Tools/Scripts/run-webkit-tests"""
 import os
 import subprocess
 import sys
 
 def main():
-    cmd = [sys.executable]
     src_dir = os.path.abspath(os.path.join(sys.path[0], '..', '..', '..'))
     script_dir=os.path.join(src_dir, "third_party", "WebKit", "Tools",
                             "Scripts")
-    script = os.path.join(script_dir, 'new-run-webkit-tests')
-    cmd.append(script)
-    if '--chromium' not in sys.argv:
-        cmd.append('--chromium')
-    cmd.extend(sys.argv[1:])
+    script = os.path.join(script_dir, 'run-webkit-tests')
+    cmd = [sys.executable, script] + sys.argv[1:]
     return subprocess.call(cmd)
 
 if __name__ == '__main__':

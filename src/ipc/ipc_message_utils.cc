@@ -4,13 +4,13 @@
 
 #include "ipc/ipc_message_utils.h"
 
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/json/json_writer.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/nullable_string16.h"
-#include "base/string_number_conversions.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/nullable_string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "base/values.h"
 #include "ipc/ipc_channel_handle.h"
 
@@ -39,20 +39,21 @@ void LogBytes(const std::vector<CharType>& data, std::string* out) {
     if (isprint(data[i]))
       out->push_back(data[i]);
     else
-      out->append(StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
+      out->append(
+          base::StringPrintf("[%02X]", static_cast<unsigned char>(data[i])));
   }
   if (data.size() > kMaxBytesToLog) {
-    out->append(
-        StringPrintf(" and %u more bytes",
-                     static_cast<unsigned>(data.size() - kMaxBytesToLog)));
+    out->append(base::StringPrintf(
+        " and %u more bytes",
+        static_cast<unsigned>(data.size() - kMaxBytesToLog)));
   }
 #endif
 }
 
-bool ReadValue(const Message* m, PickleIterator* iter, Value** value,
+bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
                int recursion);
 
-void WriteValue(Message* m, const Value* value, int recursion) {
+void WriteValue(Message* m, const base::Value* value, int recursion) {
   bool result;
   if (recursion > kMaxRecursionDepth) {
     LOG(WARNING) << "Max recursion depth hit in WriteValue.";
@@ -62,69 +63,61 @@ void WriteValue(Message* m, const Value* value, int recursion) {
   m->WriteInt(value->GetType());
 
   switch (value->GetType()) {
-    case Value::TYPE_NULL:
+    case base::Value::TYPE_NULL:
     break;
-    case Value::TYPE_BOOLEAN: {
+    case base::Value::TYPE_BOOLEAN: {
       bool val;
       result = value->GetAsBoolean(&val);
       DCHECK(result);
       WriteParam(m, val);
       break;
     }
-    case Value::TYPE_INTEGER: {
+    case base::Value::TYPE_INTEGER: {
       int val;
       result = value->GetAsInteger(&val);
       DCHECK(result);
       WriteParam(m, val);
       break;
     }
-    case Value::TYPE_DOUBLE: {
+    case base::Value::TYPE_DOUBLE: {
       double val;
       result = value->GetAsDouble(&val);
       DCHECK(result);
       WriteParam(m, val);
       break;
     }
-    case Value::TYPE_STRING: {
+    case base::Value::TYPE_STRING: {
       std::string val;
       result = value->GetAsString(&val);
       DCHECK(result);
       WriteParam(m, val);
       break;
     }
-    case Value::TYPE_BINARY: {
+    case base::Value::TYPE_BINARY: {
       const base::BinaryValue* binary =
           static_cast<const base::BinaryValue*>(value);
       m->WriteData(binary->GetBuffer(), static_cast<int>(binary->GetSize()));
       break;
     }
-    case Value::TYPE_DICTIONARY: {
-      const DictionaryValue* dict = static_cast<const DictionaryValue*>(value);
+    case base::Value::TYPE_DICTIONARY: {
+      const base::DictionaryValue* dict =
+          static_cast<const base::DictionaryValue*>(value);
 
       WriteParam(m, static_cast<int>(dict->size()));
 
-      for (DictionaryValue::key_iterator it = dict->begin_keys();
-           it != dict->end_keys(); ++it) {
-        const Value* subval;
-        if (dict->GetWithoutPathExpansion(*it, &subval)) {
-          WriteParam(m, *it);
-          WriteValue(m, subval, recursion + 1);
-        } else {
-          NOTREACHED() << "DictionaryValue iterators are filthy liars.";
-        }
+      for (base::DictionaryValue::Iterator it(*dict); !it.IsAtEnd();
+           it.Advance()) {
+        WriteParam(m, it.key());
+        WriteValue(m, &it.value(), recursion + 1);
       }
       break;
     }
-    case Value::TYPE_LIST: {
-      const ListValue* list = static_cast<const ListValue*>(value);
+    case base::Value::TYPE_LIST: {
+      const base::ListValue* list = static_cast<const base::ListValue*>(value);
       WriteParam(m, static_cast<int>(list->GetSize()));
-      for (size_t i = 0; i < list->GetSize(); ++i) {
-        const Value* subval;
-        if (list->Get(i, &subval)) {
-          WriteValue(m, subval, recursion + 1);
-        } else {
-          NOTREACHED() << "ListValue::GetSize is a filthy liar.";
-        }
+      for (base::ListValue::const_iterator it = list->begin();
+           it != list->end(); ++it) {
+        WriteValue(m, *it, recursion + 1);
       }
       break;
     }
@@ -134,14 +127,14 @@ void WriteValue(Message* m, const Value* value, int recursion) {
 // Helper for ReadValue that reads a DictionaryValue into a pre-allocated
 // object.
 bool ReadDictionaryValue(const Message* m, PickleIterator* iter,
-                         DictionaryValue* value, int recursion) {
+                         base::DictionaryValue* value, int recursion) {
   int size;
   if (!ReadParam(m, iter, &size))
     return false;
 
   for (int i = 0; i < size; ++i) {
     std::string key;
-    Value* subval;
+    base::Value* subval;
     if (!ReadParam(m, iter, &key) ||
         !ReadValue(m, iter, &subval, recursion + 1))
       return false;
@@ -154,13 +147,13 @@ bool ReadDictionaryValue(const Message* m, PickleIterator* iter,
 // Helper for ReadValue that reads a ReadListValue into a pre-allocated
 // object.
 bool ReadListValue(const Message* m, PickleIterator* iter,
-                   ListValue* value, int recursion) {
+                   base::ListValue* value, int recursion) {
   int size;
   if (!ReadParam(m, iter, &size))
     return false;
 
   for (int i = 0; i < size; ++i) {
-    Value* subval;
+    base::Value* subval;
     if (!ReadValue(m, iter, &subval, recursion + 1))
       return false;
     value->Set(i, subval);
@@ -169,7 +162,7 @@ bool ReadListValue(const Message* m, PickleIterator* iter,
   return true;
 }
 
-bool ReadValue(const Message* m, PickleIterator* iter, Value** value,
+bool ReadValue(const Message* m, PickleIterator* iter, base::Value** value,
                int recursion) {
   if (recursion > kMaxRecursionDepth) {
     LOG(WARNING) << "Max recursion depth hit in ReadValue.";
@@ -181,38 +174,38 @@ bool ReadValue(const Message* m, PickleIterator* iter, Value** value,
     return false;
 
   switch (type) {
-    case Value::TYPE_NULL:
-    *value = Value::CreateNullValue();
+    case base::Value::TYPE_NULL:
+    *value = base::Value::CreateNullValue();
     break;
-    case Value::TYPE_BOOLEAN: {
+    case base::Value::TYPE_BOOLEAN: {
       bool val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateBooleanValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
-    case Value::TYPE_INTEGER: {
+    case base::Value::TYPE_INTEGER: {
       int val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateIntegerValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
-    case Value::TYPE_DOUBLE: {
+    case base::Value::TYPE_DOUBLE: {
       double val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateDoubleValue(val);
+      *value = new base::FundamentalValue(val);
       break;
     }
-    case Value::TYPE_STRING: {
+    case base::Value::TYPE_STRING: {
       std::string val;
       if (!ReadParam(m, iter, &val))
         return false;
-      *value = Value::CreateStringValue(val);
+      *value = new base::StringValue(val);
       break;
     }
-    case Value::TYPE_BINARY: {
+    case base::Value::TYPE_BINARY: {
       const char* data;
       int length;
       if (!m->ReadData(iter, &data, &length))
@@ -220,15 +213,15 @@ bool ReadValue(const Message* m, PickleIterator* iter, Value** value,
       *value = base::BinaryValue::CreateWithCopiedBuffer(data, length);
       break;
     }
-    case Value::TYPE_DICTIONARY: {
-      scoped_ptr<DictionaryValue> val(new DictionaryValue());
+    case base::Value::TYPE_DICTIONARY: {
+      scoped_ptr<base::DictionaryValue> val(new base::DictionaryValue());
       if (!ReadDictionaryValue(m, iter, val.get(), recursion))
         return false;
       *value = val.release();
       break;
     }
-    case Value::TYPE_LIST: {
-      scoped_ptr<ListValue> val(new ListValue());
+    case base::Value::TYPE_LIST: {
+      scoped_ptr<base::ListValue> val(new base::ListValue());
       if (!ReadListValue(m, iter, val.get(), recursion))
         return false;
       *value = val.release();
@@ -260,6 +253,40 @@ void ParamTraits<bool>::Log(const param_type& p, std::string* l) {
   l->append(p ? "true" : "false");
 }
 
+void ParamTraits<unsigned char>::Write(Message* m, const param_type& p) {
+  m->WriteBytes(&p, sizeof(param_type));
+}
+
+bool ParamTraits<unsigned char>::Read(const Message* m, PickleIterator* iter,
+                                       param_type* r) {
+  const char* data;
+  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+    return false;
+  memcpy(r, data, sizeof(param_type));
+  return true;
+}
+
+void ParamTraits<unsigned char>::Log(const param_type& p, std::string* l) {
+  l->append(base::UintToString(p));
+}
+
+void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
+  m->WriteBytes(&p, sizeof(param_type));
+}
+
+bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
+                                       param_type* r) {
+  const char* data;
+  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
+    return false;
+  memcpy(r, data, sizeof(param_type));
+  return true;
+}
+
+void ParamTraits<unsigned short>::Log(const param_type& p, std::string* l) {
+  l->append(base::UintToString(p));
+}
+
 void ParamTraits<int>::Log(const param_type& p, std::string* l) {
   l->append(base::IntToString(p));
 }
@@ -284,54 +311,18 @@ void ParamTraits<unsigned long long>::Log(const param_type& p, std::string* l) {
   l->append(base::Uint64ToString(p));
 }
 
-void ParamTraits<unsigned short>::Write(Message* m, const param_type& p) {
-  m->WriteBytes(&p, sizeof(param_type));
-}
-
-bool ParamTraits<unsigned short>::Read(const Message* m, PickleIterator* iter,
-                                       param_type* r) {
-  const char* data;
-  if (!m->ReadBytes(iter, &data, sizeof(param_type)))
-    return false;
-  memcpy(r, data, sizeof(param_type));
-  return true;
-}
-
-void ParamTraits<unsigned short>::Log(const param_type& p, std::string* l) {
-  l->append(base::UintToString(p));
-}
-
-void ParamTraits<float>::Write(Message* m, const param_type& p) {
-  m->WriteData(reinterpret_cast<const char*>(&p), sizeof(param_type));
-}
-
-bool ParamTraits<float>::Read(const Message* m, PickleIterator* iter,
-                              param_type* r) {
-  const char *data;
-  int data_size;
-  if (!m->ReadData(iter, &data, &data_size) ||
-      data_size != sizeof(param_type)) {
-    NOTREACHED();
-    return false;
-  }
-  memcpy(r, data, sizeof(param_type));
-  return true;
-}
-
 void ParamTraits<float>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 void ParamTraits<double>::Write(Message* m, const param_type& p) {
-  m->WriteData(reinterpret_cast<const char*>(&p), sizeof(param_type));
+  m->WriteBytes(reinterpret_cast<const char*>(&p), sizeof(param_type));
 }
 
 bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
   const char *data;
-  int data_size;
-  if (!m->ReadData(iter, &data, &data_size) ||
-      data_size != sizeof(param_type)) {
+  if (!m->ReadBytes(iter, &data, sizeof(*r))) {
     NOTREACHED();
     return false;
   }
@@ -340,7 +331,7 @@ bool ParamTraits<double>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<double>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("%e", p));
+  l->append(base::StringPrintf("%e", p));
 }
 
 
@@ -349,12 +340,12 @@ void ParamTraits<std::string>::Log(const param_type& p, std::string* l) {
 }
 
 void ParamTraits<std::wstring>::Log(const param_type& p, std::string* l) {
-  l->append(WideToUTF8(p));
+  l->append(base::WideToUTF8(p));
 }
 
 #if !defined(WCHAR_T_IS_UTF16)
-void ParamTraits<string16>::Log(const param_type& p, std::string* l) {
-  l->append(UTF16ToUTF8(p));
+void ParamTraits<base::string16>::Log(const param_type& p, std::string* l) {
+  l->append(base::UTF16ToUTF8(p));
 }
 #endif
 
@@ -413,8 +404,11 @@ void ParamTraits<std::vector<unsigned char> >::Log(const param_type& p,
 
 void ParamTraits<std::vector<bool> >::Write(Message* m, const param_type& p) {
   WriteParam(m, static_cast<int>(p.size()));
+  // Cast to bool below is required because libc++'s
+  // vector<bool>::const_reference is different from bool, and we want to avoid
+  // writing an extra specialization of ParamTraits for it.
   for (size_t i = 0; i < p.size(); i++)
-    WriteParam(m, p[i]);
+    WriteParam(m, static_cast<bool>(p[i]));
 }
 
 bool ParamTraits<std::vector<bool> >::Read(const Message* m,
@@ -438,24 +432,26 @@ void ParamTraits<std::vector<bool> >::Log(const param_type& p, std::string* l) {
   for (size_t i = 0; i < p.size(); ++i) {
     if (i != 0)
       l->push_back(' ');
-    LogParam((p[i]), l);
+    LogParam(static_cast<bool>(p[i]), l);
   }
 }
 
-void ParamTraits<DictionaryValue>::Write(Message* m, const param_type& p) {
+void ParamTraits<base::DictionaryValue>::Write(Message* m,
+                                               const param_type& p) {
   WriteValue(m, &p, 0);
 }
 
-bool ParamTraits<DictionaryValue>::Read(
+bool ParamTraits<base::DictionaryValue>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
   int type;
-  if (!ReadParam(m, iter, &type) || type != Value::TYPE_DICTIONARY)
+  if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_DICTIONARY)
     return false;
 
   return ReadDictionaryValue(m, iter, r, 0);
 }
 
-void ParamTraits<DictionaryValue>::Log(const param_type& p, std::string* l) {
+void ParamTraits<base::DictionaryValue>::Log(const param_type& p,
+                                             std::string* l) {
   std::string json;
   base::JSONWriter::Write(&p, &json);
   l->append(json);
@@ -491,64 +487,67 @@ bool ParamTraits<base::FileDescriptor>::Read(const Message* m,
 void ParamTraits<base::FileDescriptor>::Log(const param_type& p,
                                             std::string* l) {
   if (p.auto_close) {
-    l->append(StringPrintf("FD(%d auto-close)", p.fd));
+    l->append(base::StringPrintf("FD(%d auto-close)", p.fd));
   } else {
-    l->append(StringPrintf("FD(%d)", p.fd));
+    l->append(base::StringPrintf("FD(%d)", p.fd));
   }
 }
 #endif  // defined(OS_POSIX)
 
-void ParamTraits<FilePath>::Write(Message* m, const param_type& p) {
+void ParamTraits<base::FilePath>::Write(Message* m, const param_type& p) {
   p.WriteToPickle(m);
 }
 
-bool ParamTraits<FilePath>::Read(const Message* m,
-                                 PickleIterator* iter,
-                                 param_type* r) {
+bool ParamTraits<base::FilePath>::Read(const Message* m,
+                                       PickleIterator* iter,
+                                       param_type* r) {
   return r->ReadFromPickle(iter);
 }
 
-void ParamTraits<FilePath>::Log(const param_type& p, std::string* l) {
-  ParamTraits<FilePath::StringType>::Log(p.value(), l);
+void ParamTraits<base::FilePath>::Log(const param_type& p, std::string* l) {
+  ParamTraits<base::FilePath::StringType>::Log(p.value(), l);
 }
 
-void ParamTraits<ListValue>::Write(Message* m, const param_type& p) {
+void ParamTraits<base::ListValue>::Write(Message* m, const param_type& p) {
   WriteValue(m, &p, 0);
 }
 
-bool ParamTraits<ListValue>::Read(
+bool ParamTraits<base::ListValue>::Read(
     const Message* m, PickleIterator* iter, param_type* r) {
   int type;
-  if (!ReadParam(m, iter, &type) || type != Value::TYPE_LIST)
+  if (!ReadParam(m, iter, &type) || type != base::Value::TYPE_LIST)
     return false;
 
   return ReadListValue(m, iter, r, 0);
 }
 
-void ParamTraits<ListValue>::Log(const param_type& p, std::string* l) {
+void ParamTraits<base::ListValue>::Log(const param_type& p, std::string* l) {
   std::string json;
   base::JSONWriter::Write(&p, &json);
   l->append(json);
 }
 
-void ParamTraits<NullableString16>::Write(Message* m, const param_type& p) {
+void ParamTraits<base::NullableString16>::Write(Message* m,
+                                                const param_type& p) {
   WriteParam(m, p.string());
   WriteParam(m, p.is_null());
 }
 
-bool ParamTraits<NullableString16>::Read(const Message* m, PickleIterator* iter,
-                                         param_type* r) {
-  string16 string;
+bool ParamTraits<base::NullableString16>::Read(const Message* m,
+                                               PickleIterator* iter,
+                                               param_type* r) {
+  base::string16 string;
   if (!ReadParam(m, iter, &string))
     return false;
   bool is_null;
   if (!ReadParam(m, iter, &is_null))
     return false;
-  *r = NullableString16(string, is_null);
+  *r = base::NullableString16(string, is_null);
   return true;
 }
 
-void ParamTraits<NullableString16>::Log(const param_type& p, std::string* l) {
+void ParamTraits<base::NullableString16>::Log(const param_type& p,
+                                              std::string* l) {
   l->append("(");
   LogParam(p.string(), l);
   l->append(", ");
@@ -556,8 +555,8 @@ void ParamTraits<NullableString16>::Log(const param_type& p, std::string* l) {
   l->append(")");
 }
 
-void ParamTraits<base::PlatformFileInfo>::Write(Message* m,
-                                                const param_type& p) {
+void ParamTraits<base::File::Info>::Write(Message* m,
+                                          const param_type& p) {
   WriteParam(m, p.size);
   WriteParam(m, p.is_directory);
   WriteParam(m, p.last_modified.ToDoubleT());
@@ -565,9 +564,9 @@ void ParamTraits<base::PlatformFileInfo>::Write(Message* m,
   WriteParam(m, p.creation_time.ToDoubleT());
 }
 
-bool ParamTraits<base::PlatformFileInfo>::Read(const Message* m,
-                                               PickleIterator* iter,
-                                               param_type* p) {
+bool ParamTraits<base::File::Info>::Read(const Message* m,
+                                         PickleIterator* iter,
+                                         param_type* p) {
   double last_modified;
   double last_accessed;
   double creation_time;
@@ -585,8 +584,8 @@ bool ParamTraits<base::PlatformFileInfo>::Read(const Message* m,
   return result;
 }
 
-void ParamTraits<base::PlatformFileInfo>::Log(const param_type& p,
-                                              std::string* l) {
+void ParamTraits<base::File::Info>::Log(const param_type& p,
+                                        std::string* l) {
   l->append("(");
   LogParam(p.size, l);
   l->append(",");
@@ -678,7 +677,7 @@ bool ParamTraits<IPC::ChannelHandle>::Read(const Message* m,
 
 void ParamTraits<IPC::ChannelHandle>::Log(const param_type& p,
                                           std::string* l) {
-  l->append(StringPrintf("ChannelHandle(%s", p.name.c_str()));
+  l->append(base::StringPrintf("ChannelHandle(%s", p.name.c_str()));
 #if defined(OS_POSIX)
   l->append(", ");
   ParamTraits<base::FileDescriptor>::Log(p.socket, l);
@@ -763,22 +762,22 @@ void ParamTraits<Message>::Log(const Message& p, std::string* l) {
 
 #if defined(OS_WIN)
 // Note that HWNDs/HANDLE/HCURSOR/HACCEL etc are always 32 bits, even on 64
-// bit systems.
+// bit systems. That's why we use the Windows macros to convert to 32 bits.
 void ParamTraits<HANDLE>::Write(Message* m, const param_type& p) {
-  m->WriteUInt32(reinterpret_cast<uint32>(p));
+  m->WriteInt(HandleToLong(p));
 }
 
 bool ParamTraits<HANDLE>::Read(const Message* m, PickleIterator* iter,
                                param_type* r) {
-  uint32 temp;
-  if (!m->ReadUInt32(iter, &temp))
+  int32 temp;
+  if (!m->ReadInt(iter, &temp))
     return false;
-  *r = reinterpret_cast<HANDLE>(temp);
+  *r = LongToHandle(temp);
   return true;
 }
 
 void ParamTraits<HANDLE>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("0x%X", p));
+  l->append(base::StringPrintf("0x%X", p));
 }
 
 void ParamTraits<LOGFONT>::Write(Message* m, const param_type& p) {
@@ -802,7 +801,7 @@ bool ParamTraits<LOGFONT>::Read(const Message* m, PickleIterator* iter,
 }
 
 void ParamTraits<LOGFONT>::Log(const param_type& p, std::string* l) {
-  l->append(StringPrintf("<LOGFONT>"));
+  l->append(base::StringPrintf("<LOGFONT>"));
 }
 
 void ParamTraits<MSG>::Write(Message* m, const param_type& p) {

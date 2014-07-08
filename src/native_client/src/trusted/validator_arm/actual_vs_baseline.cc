@@ -24,6 +24,11 @@ ActualVsBaselineTester::ActualVsBaselineTester(
       actual_decoder_(actual_.named_decoder()),
       baseline_decoder_(baseline_.named_decoder()) {}
 
+bool ActualVsBaselineTester::DoApplySanityChecks() {
+  return baseline_tester_.ApplySanityChecks(
+      inst_, baseline_tester_.GetInstDecoder());
+}
+
 void ActualVsBaselineTester::ProcessMatch() {
   baseline_tester_.InjectInstruction(inst_);
   const NamedClassDecoder& decoder = baseline_tester_.GetInstDecoder();
@@ -36,7 +41,7 @@ void ActualVsBaselineTester::ProcessMatch() {
   if (nacl_arm_dec::MAY_BE_SAFE == decoder.safety(inst_)) {
     // Run sanity baseline checks, to see that the baseline is
     // correct.
-    if (!baseline_tester_.ApplySanityChecks(inst_, decoder)) {
+    if (!DoApplySanityChecks()) {
       // The sanity checks found a serious issue and already reported
       // it.  don't bother to report additional problems.
       return;
@@ -58,6 +63,7 @@ void ActualVsBaselineTester::ProcessMatch() {
   // consistent behaviour between the actual and basline class
   // decoders.
   CheckDefs();
+  CheckUses();
   CheckBaseAddressRegisterWritebackSmallImmediate();
   CheckBaseAddressRegister();
   CheckIsLiteralLoad();
@@ -101,21 +107,13 @@ bool ActualVsBaselineTester::MayBeSafe() {
 void ActualVsBaselineTester::CheckDefs() {
   nacl_arm_dec::RegisterList actual_defs(actual_decoder_.defs(inst_));
   nacl_arm_dec::RegisterList baseline_defs(baseline_decoder_.defs(inst_));
-  if (actual_defs.Contains(nacl_arm_dec::Register::CondsDontCareFlag()) &&
-      !baseline_defs.Contains(nacl_arm_dec::Register::CondsDontCareFlag())) {
-    // Allow simplification on the conditions flag as follows:
-    // If the baseline changes condition flags, so must the actual.
-    // Otherwise, we don't care about the condition flags.
-    if (!baseline_defs.Contains(nacl_arm_dec::Register::Conditions())) {
-      actual_defs.Copy(
-          nacl_arm_dec::RegisterList(actual_defs).
-          Remove(nacl_arm_dec::Register::Conditions()));
-    }
-    actual_defs.Copy(
-        nacl_arm_dec::RegisterList(actual_defs).
-        Remove(nacl_arm_dec::Register::CondsDontCareFlag()));
-  }  // else no simplification allowed, defs must match.
   EXPECT_TRUE(baseline_defs.Equals(actual_defs));
+}
+
+void ActualVsBaselineTester::CheckUses() {
+  nacl_arm_dec::RegisterList actual_uses(actual_decoder_.uses(inst_));
+  nacl_arm_dec::RegisterList baseline_uses(baseline_decoder_.uses(inst_));
+  EXPECT_TRUE(baseline_uses.Equals(actual_uses));
 }
 
 void ActualVsBaselineTester::CheckBaseAddressRegisterWritebackSmallImmediate() {

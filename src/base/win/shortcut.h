@@ -7,9 +7,9 @@
 
 #include <windows.h>
 
+#include "base/files/file_path.h"
 #include "base/logging.h"
-#include "base/file_path.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace base {
 namespace win {
@@ -18,6 +18,8 @@ enum ShortcutOperation {
   // Create a new shortcut (overwriting if necessary).
   SHORTCUT_CREATE_ALWAYS = 0,
   // Overwrite an existing shortcut (fails if the shortcut doesn't exist).
+  // If the arguments are not specified on the new shortcut, keep the old
+  // shortcut's arguments.
   SHORTCUT_REPLACE_EXISTING,
   // Update specified properties only on an existing shortcut.
   SHORTCUT_UPDATE_EXISTING,
@@ -29,13 +31,21 @@ enum ShortcutOperation {
 // setting |options| as desired.
 struct ShortcutProperties {
   enum IndividualProperties {
-    PROPERTIES_TARGET = 1 << 0,
-    PROPERTIES_WORKING_DIR = 1 << 1,
-    PROPERTIES_ARGUMENTS = 1 << 2,
-    PROPERTIES_DESCRIPTION = 1 << 3,
-    PROPERTIES_ICON = 1 << 4,
-    PROPERTIES_APP_ID = 1 << 5,
-    PROPERTIES_DUAL_MODE = 1 << 6,
+    PROPERTIES_TARGET = 1U << 0,
+    PROPERTIES_WORKING_DIR = 1U << 1,
+    PROPERTIES_ARGUMENTS = 1U << 2,
+    PROPERTIES_DESCRIPTION = 1U << 3,
+    PROPERTIES_ICON = 1U << 4,
+    PROPERTIES_APP_ID = 1U << 5,
+    PROPERTIES_DUAL_MODE = 1U << 6,
+    // Be sure to update the values below when adding a new property.
+    PROPERTIES_BASIC = PROPERTIES_TARGET |
+        PROPERTIES_WORKING_DIR |
+        PROPERTIES_ARGUMENTS |
+        PROPERTIES_DESCRIPTION |
+        PROPERTIES_ICON,
+    PROPERTIES_WIN7 = PROPERTIES_APP_ID | PROPERTIES_DUAL_MODE,
+    PROPERTIES_ALL = PROPERTIES_BASIC | PROPERTIES_WIN7
   };
 
   ShortcutProperties() : icon_index(-1), dual_mode(false), options(0U) {}
@@ -115,24 +125,37 @@ BASE_EXPORT bool CreateOrUpdateShortcutLink(
     const ShortcutProperties& properties,
     ShortcutOperation operation);
 
-// Resolve Windows shortcut (.LNK file)
-// This methods tries to resolve a shortcut .LNK file. The path of the shortcut
-// to resolve is in |shortcut_path|. If |target_path| is not NULL, the target
-// will be resolved and placed in |target_path|. If |args| is not NULL, the
-// arguments will be retrieved and placed in |args|. The function returns true
-// if all requested fields are found successfully.
-// Callers can safely use the same variable for both |shortcut_path| and
-// |target_path|.
+// Resolves Windows shortcut (.LNK file)
+// This methods tries to resolve selected properties of a shortcut .LNK file.
+// The path of the shortcut to resolve is in |shortcut_path|. |options| is a bit
+// field composed of ShortcutProperties::IndividualProperties, to specify which
+// properties to read. It should be non-0. The resulting data are read into
+// |properties|, which must not be NULL. The function returns true if all
+// requested properties are successfully read. Otherwise some reads have failed
+// and intermediate values written to |properties| should be ignored.
+BASE_EXPORT bool ResolveShortcutProperties(const FilePath& shortcut_path,
+                                           uint32 options,
+                                           ShortcutProperties* properties);
+
+// Resolves Windows shortcut (.LNK file).
+// This is a wrapper to ResolveShortcutProperties() to handle the common use
+// case of resolving target and arguments. |target_path| and |args| are
+// optional output variables that are ignored if NULL (but at least one must be
+// non-NULL). The function returns true if all requested fields are found
+// successfully. Callers can safely use the same variable for both
+// |shortcut_path| and |target_path|.
 BASE_EXPORT bool ResolveShortcut(const FilePath& shortcut_path,
                                  FilePath* target_path,
                                  string16* args);
 
 // Pins a shortcut to the Windows 7 taskbar. The shortcut file must already
-// exist and be a shortcut that points to an executable.
+// exist and be a shortcut that points to an executable. The app id of the
+// shortcut is used to group windows and must be set correctly.
 BASE_EXPORT bool TaskbarPinShortcutLink(const wchar_t* shortcut);
 
 // Unpins a shortcut from the Windows 7 taskbar. The shortcut must exist and
-// already be pinned to the taskbar.
+// already be pinned to the taskbar. The app id of the shortcut is used as the
+// identifier for the taskbar item to remove and must be set correctly.
 BASE_EXPORT bool TaskbarUnpinShortcutLink(const wchar_t* shortcut);
 
 }  // namespace win

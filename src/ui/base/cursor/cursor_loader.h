@@ -6,25 +6,35 @@
 #define UI_BASE_CURSOR_CURSOR_LOADER_H_
 
 #include "base/logging.h"
-#include "ui/base/ui_export.h"
+#include "base/strings/string16.h"
+#include "ui/base/ui_base_export.h"
+#include "ui/gfx/display.h"
 #include "ui/gfx/native_widget_types.h"
 #include "ui/gfx/point.h"
 
 namespace ui {
 
-class UI_EXPORT CursorLoader {
+class UI_BASE_EXPORT CursorLoader {
  public:
-  CursorLoader() : device_scale_factor_(1.0f) {}
+  CursorLoader() : scale_(1.f), rotation_(gfx::Display::ROTATE_0) {}
   virtual ~CursorLoader() {}
 
-  // Returns the device scale factor used by the loader.
-  float device_scale_factor() const {
-    return device_scale_factor_;
+  gfx::Display::Rotation rotation() const {
+    return rotation_;
   }
 
-  // Sets the device scale factor used by the loader.
-  void set_device_scale_factor(float device_scale_factor) {
-    device_scale_factor_ = device_scale_factor;
+  void set_rotation(gfx::Display::Rotation rotation) {
+    rotation_ = rotation;
+  }
+
+  // Returns the current scale of the mouse cursor icon.
+  float scale() const {
+    return scale_;
+  }
+
+  // Sets the scale of the mouse cursor icon.
+  void set_scale(const float scale) {
+    scale_ = scale;
   }
 
   // Creates a cursor from an image resource and puts it in the cursor map.
@@ -52,8 +62,13 @@ class UI_EXPORT CursorLoader {
   static CursorLoader* Create();
 
  private:
-  // The device scale factor used by the loader.
-  float device_scale_factor_;
+  // The current scale of the mouse cursor icon.
+  float scale_;
+
+  // The current rotation of the mouse cursor icon.
+  gfx::Display::Rotation rotation_;
+
+  DISALLOW_COPY_AND_ASSIGN(CursorLoader);
 };
 
 }  // namespace ui

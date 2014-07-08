@@ -1,0 +1,249 @@
+[
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/bot_update.py",
+      "--master",
+      "chromium.chromiumos",
+      "--builder",
+      "Linux ChromiumOS Full",
+      "--slave",
+      "TestSlavename",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]",
+      "--output_json",
+      "/path/to/tmp/json"
+    ],
+    "name": "bot_update",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"did_run\": false@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "config",
+      "--spec",
+      "cache_dir = None\nsolutions = [{'custom_vars': {'googlecode_url': 'svn://svn-mirror.golo.chromium.org/%s', 'nacl_trunk': 'svn://svn-mirror.golo.chromium.org/native_client/trunk', 'sourceforge_url': 'svn://svn-mirror.golo.chromium.org/%(repo)s', 'webkit_trunk': 'svn://svn-mirror.golo.chromium.org/blink/trunk'}, 'deps_file': 'DEPS', 'managed': True, 'name': 'src', 'url': 'svn://svn-mirror.golo.chromium.org/chrome/trunk/src'}]"
+    ],
+    "name": "gclient setup"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "sync",
+      "--nohooks",
+      "--delete_unversioned_trees",
+      "--force",
+      "--verbose",
+      "--output-json",
+      "/path/to/tmp/json"
+    ],
+    "name": "gclient sync",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{@@@",
+      "@@@STEP_LOG_LINE@json.output@  \"solutions\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 170242@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/native_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 274981@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/third_party/WebKit/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 124383@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/third_party/webrtc/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 120644@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarm_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 200767@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/tools/swarming_client/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 276089@@@",
+      "@@@STEP_LOG_LINE@json.output@    }, @@@",
+      "@@@STEP_LOG_LINE@json.output@    \"src/v8/\": {@@@",
+      "@@@STEP_LOG_LINE@json.output@      \"revision\": 43426@@@",
+      "@@@STEP_LOG_LINE@json.output@    }@@@",
+      "@@@STEP_LOG_LINE@json.output@  }@@@",
+      "@@@STEP_LOG_LINE@json.output@}@@@",
+      "@@@STEP_LOG_END@json.output@@@",
+      "@@@SET_BUILD_PROPERTY@got_nacl_revision@274981@@@",
+      "@@@SET_BUILD_PROPERTY@got_webkit_revision@124383@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarming_client_revision@276089@@@",
+      "@@@SET_BUILD_PROPERTY@got_webrtc_revision@120644@@@",
+      "@@@SET_BUILD_PROPERTY@got_revision@170242@@@",
+      "@@@SET_BUILD_PROPERTY@got_v8_revision@43426@@@",
+      "@@@SET_BUILD_PROPERTY@got_swarm_client_revision@200767@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[DEPOT_TOOLS]/gclient.py",
+      "runhooks"
+    ],
+    "env": {
+      "GYP_DEFINES": "chromeos=1 component=static_library ffmpeg_branding=ChromeOS gomadir='[BUILD]/goma' proprietary_codecs=1 target_arch=x64 use_goma=1"
+    },
+    "name": "gclient runhooks"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "\nimport shutil\nimport sys\nshutil.copy(sys.argv[1], sys.argv[2])\n",
+      "[SLAVE_BUILD]/src/testing/buildbot/chromium.chromiumos.json",
+      "/path/to/tmp/json"
+    ],
+    "name": "read test spec",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@{}@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/cleanup_temp.py"
+    ],
+    "name": "cleanup_temp"
+  },
+  {
+    "abort_on_failure": true,
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/compile.py",
+      "--target",
+      "Release",
+      "--src-dir",
+      "[SLAVE_BUILD]/src",
+      "--build-tool",
+      "ninja",
+      "--compiler",
+      "goma",
+      "--goma-dir",
+      "[BUILD]/goma",
+      "--",
+      "app_list_unittests",
+      "aura_builder",
+      "base_unittests",
+      "browser_tests",
+      "cacheinvalidation_unittests",
+      "chromeos_unittests",
+      "components_unittests",
+      "compositor_unittests",
+      "content_browsertests",
+      "content_unittests",
+      "crypto_unittests",
+      "dbus_unittests",
+      "device_unittests",
+      "gcm_unit_tests",
+      "google_apis_unittests",
+      "gpu_unittests",
+      "interactive_ui_tests",
+      "ipc_tests",
+      "jingle_unittests",
+      "media_unittests",
+      "message_center_unittests",
+      "nacl_loader_unittests",
+      "net_unittests",
+      "ppapi_unittests",
+      "printing_unittests",
+      "remoting_unittests",
+      "sandbox_linux_unittests",
+      "sql_unittests",
+      "sync_unit_tests",
+      "ui_unittests",
+      "unit_tests",
+      "url_unittests",
+      "views_unittests"
+    ],
+    "name": "compile",
+    "seed_steps": [
+      "compile",
+      "checkdeps",
+      "archive build",
+      "deps2git",
+      "deps2submodules",
+      "checkperms"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checkdeps/checkdeps.py",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "checkdeps",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[BUILD]/scripts/slave/chromium/archive_build.py",
+      "--target",
+      "Release",
+      "--factory-properties",
+      "{\"gclient_env\": {\"GYP_DEFINES\": \"chromeos=1 component=static_library ffmpeg_branding=ChromeOS gomadir='[BUILD]/goma' proprietary_codecs=1 target_arch=x64 use_goma=1\"}, \"gs_bucket\": \"gs://chromium-browser-snapshots\"}"
+    ],
+    "name": "archive build"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/deps2git/deps2git.py",
+      "-d",
+      "[SLAVE_BUILD]/src/DEPS",
+      "-o",
+      "[SLAVE_BUILD]/src/.DEPS.git",
+      "--verify",
+      "--json",
+      "/path/to/tmp/json"
+    ],
+    "name": "deps2git",
+    "~followup_annotations": [
+      "@@@STEP_LOG_LINE@json.output@[]@@@",
+      "@@@STEP_LOG_END@json.output@@@"
+    ]
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/deps2git/deps2submodules.py",
+      "--gitless",
+      "[SLAVE_BUILD]/src/.DEPS.git"
+    ],
+    "name": "deps2submodules"
+  },
+  {
+    "cmd": [
+      "python",
+      "-u",
+      "[SLAVE_BUILD]/src/tools/checkperms/checkperms.py",
+      "--root",
+      "[SLAVE_BUILD]/src"
+    ],
+    "name": "checkperms"
+  }
+]

@@ -11,10 +11,11 @@
 #include "base/command_line.h"
 #include "base/file_util.h"
 #include "base/file_version_info.h"
+#include "base/files/file_enumerator.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/win/registry.h"
 #include "base/win/scoped_handle.h"
 #include "chrome/installer/util/delete_tree_work_item.h"
@@ -29,52 +30,44 @@
 
 namespace installer {
 
-bool InstallerState::IsMultiInstallUpdate(const MasterPreferences& prefs,
+bool InstallerState::IsMultiInstallUpdate(
+    const MasterPreferences& prefs,
     const InstallationState& machine_state) {
-  // First, is the package present?
-  const ProductState* package =
+  // First, are the binaries present?
+  const ProductState* binaries =
       machine_state.GetProductState(level_ == SYSTEM_LEVEL,
                                     BrowserDistribution::CHROME_BINARIES);
-  if (package == NULL) {
-    // The multi-install package has not been installed, so it certainly isn't
-    // being updated.
+  if (binaries == NULL) {
+    // The multi-install binaries have not been installed, so they certainly
+    // aren't being updated.
     return false;
   }
 
-  BrowserDistribution::Type types[2];
-  size_t num_types = 0;
-  if (prefs.install_chrome())
-    types[num_types++] = BrowserDistribution::CHROME_BROWSER;
-  if (prefs.install_chrome_frame())
-    types[num_types++] = BrowserDistribution::CHROME_FRAME;
-
-  for (const BrowserDistribution::Type* scan = &types[0],
-           *end = &types[num_types]; scan != end; ++scan) {
+  if (prefs.install_chrome()) {
     const ProductState* product =
-        machine_state.GetProductState(level_ == SYSTEM_LEVEL, *scan);
+        machine_state.GetProductState(level_ == SYSTEM_LEVEL,
+                                      BrowserDistribution::CHROME_BROWSER);
     if (product == NULL) {
-      VLOG(2) << "It seems that distribution type " << *scan
-              << " is being installed for the first time.";
+      VLOG(2) << "It seems that chrome is being installed for the first time.";
       return false;
     }
-    if (!product->channel().Equals(package->channel())) {
-      VLOG(2) << "It seems that distribution type " << *scan
-              << " is being over installed.";
+    if (!product->channel().Equals(binaries->channel())) {
+      VLOG(2) << "It seems that chrome is being over installed.";
       return false;
     }
   }
 
-  VLOG(2) << "It seems that the package is being updated.";
+  VLOG(2) << "It seems that the binaries are being updated.";
 
   return true;
 }
 
 InstallerState::InstallerState()
     : operation_(UNINITIALIZED),
+      state_type_(BrowserDistribution::CHROME_BROWSER),
       multi_package_distribution_(NULL),
       level_(UNKNOWN_LEVEL),
       package_type_(UNKNOWN_PACKAGE_TYPE),
-      state_type_(BrowserDistribution::CHROME_BROWSER),
       root_key_(NULL),
       msi_(false),
       verbose_logging_(false),
@@ -83,10 +76,10 @@ InstallerState::InstallerState()
 
 InstallerState::InstallerState(Level level)
     : operation_(UNINITIALIZED),
+      state_type_(BrowserDistribution::CHROME_BROWSER),
       multi_package_distribution_(NULL),
       level_(UNKNOWN_LEVEL),
       package_type_(UNKNOWN_PACKAGE_TYPE),
-      state_type_(BrowserDistribution::CHROME_BROWSER),
       root_key_(NULL),
       msi_(false),
       verbose_logging_(false),
@@ -98,6 +91,8 @@ InstallerState::InstallerState(Level level)
 void InstallerState::Initialize(const CommandLine& command_line,
                                 const MasterPreferences& prefs,
                                 const InstallationState& machine_state) {
+  Clear();
+
   bool pref_bool;
   if (!prefs.GetBool(master_preferences::kSystemLevel, &pref_bool))
     pref_bool = false;
@@ -122,20 +117,14 @@ void InstallerState::Initialize(const CommandLine& command_line,
     Product* p = AddProductFromPreferences(
         BrowserDistribution::CHROME_BROWSER, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
-  }
-  if (prefs.install_chrome_frame()) {
-    Product* p = AddProductFromPreferences(
-        BrowserDistribution::CHROME_FRAME, prefs, machine_state);
-    VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
+            << " distribution: " << p->distribution()->GetDisplayName();
   }
 
-  if (prefs.install_chrome_app_host() || prefs.install_chrome_app_launcher()) {
+  if (prefs.install_chrome_app_launcher()) {
     Product* p = AddProductFromPreferences(
         BrowserDistribution::CHROME_APP_HOST, prefs, machine_state);
     VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-            << " distribution: " << p->distribution()->GetAppShortCutName();
+            << " distribution: " << p->distribution()->GetDisplayName();
   }
 
   if (!is_uninstall && is_multi_install()) {
@@ -156,11 +145,8 @@ void InstallerState::Initialize(const CommandLine& command_line,
       }
     }
 
-    // Chrome/Chrome Frame multi need Binaries at their own level.
+    // Chrome multi needs Binaries at its own level.
     if (FindProduct(BrowserDistribution::CHROME_BROWSER))
-      need_binaries = true;
-
-    if (FindProduct(BrowserDistribution::CHROME_FRAME))
       need_binaries = true;
 
     if (need_binaries && !FindProduct(BrowserDistribution::CHROME_BINARIES)) {
@@ -168,7 +154,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
       Product* p = AddProductFromPreferences(
           BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << "Install distribution: "
-              << p->distribution()->GetAppShortCutName();
+              << p->distribution()->GetDisplayName();
     }
   }
 
@@ -182,10 +168,6 @@ void InstallerState::Initialize(const CommandLine& command_line,
         const char* switch_name;
         bool switch_expected;
       } conditional_additions[] = {
-        // If Chrome Frame is installed in Ready Mode, remove it with Chrome.
-        { BrowserDistribution::CHROME_FRAME,
-          switches::kChromeFrameReadyMode,
-          true },
         // If the App Host is installed, but not the App Launcher, remove it
         // with Chrome. Note however that for system-level Chrome uninstalls,
         // any installed user-level App Host will remain even if there is no
@@ -207,14 +189,14 @@ void InstallerState::Initialize(const CommandLine& command_line,
           Product* p = AddProductFromPreferences(
               conditional_additions[i].type, prefs, machine_state);
           VLOG(1) << "Uninstall distribution: "
-                  << p->distribution()->GetAppShortCutName();
+                  << p->distribution()->GetDisplayName();
         }
       }
     }
 
     bool keep_binaries = false;
-    // Look for a product that is not the binaries and that is not being
-    // uninstalled. If not found, binaries are uninstalled too.
+    // Look for a multi-install product that is not the binaries and that is not
+    // being uninstalled. If not found, binaries are uninstalled too.
     for (size_t i = 0; i < BrowserDistribution::NUM_TYPES; ++i) {
       BrowserDistribution::Type type =
           static_cast<BrowserDistribution::Type>(i);
@@ -222,8 +204,19 @@ void InstallerState::Initialize(const CommandLine& command_line,
       if (type == BrowserDistribution::CHROME_BINARIES)
         continue;
 
-      if (machine_state.GetProductState(system_install(), type) == NULL) {
+      const ProductState* product_state =
+          machine_state.GetProductState(system_install(), type);
+      if (product_state == NULL) {
         // The product is not installed.
+        continue;
+      }
+
+      if (!product_state->is_multi_install() &&
+          type != BrowserDistribution::CHROME_BROWSER) {
+        // The product is not sharing the binaries. It is ordinarily impossible
+        // for single-install Chrome to be installed along with any
+        // multi-install product. Treat single-install Chrome the same as any
+        // multi-install product just in case the impossible happens.
         continue;
       }
 
@@ -259,7 +252,7 @@ void InstallerState::Initialize(const CommandLine& command_line,
       Product* p = AddProductFromPreferences(
           BrowserDistribution::CHROME_BINARIES, prefs, machine_state);
       VLOG(1) << (is_uninstall ? "Uninstall" : "Install")
-              << " distribution: " << p->distribution()->GetAppShortCutName();
+              << " distribution: " << p->distribution()->GetDisplayName();
     }
   }
 
@@ -280,20 +273,15 @@ void InstallerState::Initialize(const CommandLine& command_line,
     operation_ = MULTI_INSTALL;
   }
 
-  // Initial, over, and un-installs will take place under one of the
-  // product app guids (Chrome, Chrome Frame, App Host, or Binaries, in order of
-  // preference).
+  // Initial, over, and un-installs will take place under one of the product app
+  // guids (Chrome, App Host, or Binaries, in order of preference).
   if (operand == NULL) {
     BrowserDistribution::Type operand_distribution_type =
         BrowserDistribution::CHROME_BINARIES;
-    if (prefs.install_chrome()) {
+    if (prefs.install_chrome())
       operand_distribution_type = BrowserDistribution::CHROME_BROWSER;
-    } else if (prefs.install_chrome_frame()) {
-      operand_distribution_type = BrowserDistribution::CHROME_FRAME;
-    } else if (prefs.install_chrome_app_host() ||
-               prefs.install_chrome_app_launcher()) {
+    else if (prefs.install_chrome_app_launcher())
       operand_distribution_type = BrowserDistribution::CHROME_APP_HOST;
-    }
 
     operand = BrowserDistribution::GetSpecificDistribution(
         operand_distribution_type);
@@ -346,7 +334,7 @@ void InstallerState::set_package_type(PackageType type) {
 
 // Returns the Chrome binaries directory for multi-install or |dist|'s directory
 // otherwise.
-FilePath InstallerState::GetDefaultProductInstallPath(
+base::FilePath InstallerState::GetDefaultProductInstallPath(
     BrowserDistribution* dist) const {
   DCHECK(dist);
   DCHECK(package_type_ != UNKNOWN_PACKAGE_TYPE);
@@ -364,7 +352,7 @@ FilePath InstallerState::GetDefaultProductInstallPath(
 // We never expect these checks to fail, hence they all terminate the process in
 // debug builds.  See the log messages for details.
 bool InstallerState::CanAddProduct(const Product& product,
-                                   const FilePath* product_dir) const {
+                                   const base::FilePath* product_dir) const {
   switch (package_type_) {
     case SINGLE_PACKAGE:
       if (!products_.empty()) {
@@ -383,10 +371,10 @@ bool InstallerState::CanAddProduct(const Product& product,
         return false;
       }
       if (!target_path_.empty()) {
-        FilePath default_dir;
+        base::FilePath default_dir;
         if (product_dir == NULL)
           default_dir = GetDefaultProductInstallPath(product.distribution());
-        if (!FilePath::CompareEqualIgnoreCase(
+        if (!base::FilePath::CompareEqualIgnoreCase(
                 (product_dir == NULL ? default_dir : *product_dir).value(),
                 target_path_.value())) {
           LOG(DFATAL) << "Cannot process products in different directories.";
@@ -405,8 +393,9 @@ bool InstallerState::CanAddProduct(const Product& product,
 // |product_dir| is NULL, the product's default install location is used.
 // Returns NULL if |product| is incompatible with this object.  Otherwise,
 // returns a pointer to the product (ownership is held by this object).
-Product* InstallerState::AddProductInDirectory(const FilePath* product_dir,
-                                               scoped_ptr<Product>* product) {
+Product* InstallerState::AddProductInDirectory(
+    const base::FilePath* product_dir,
+    scoped_ptr<Product>* product) {
   DCHECK(product != NULL);
   DCHECK(product->get() != NULL);
   const Product& the_product = *product->get();
@@ -471,7 +460,8 @@ Product* InstallerState::AddProductFromState(
   product_ptr->InitializeFromUninstallCommand(state.uninstall_command());
 
   // Strip off <version>/Installer/setup.exe; see GetInstallerDirectory().
-  FilePath product_dir = state.GetSetupPath().DirName().DirName().DirName();
+  base::FilePath product_dir =
+      state.GetSetupPath().DirName().DirName().DirName();
 
   Product* product = AddProductInDirectory(&product_dir, &product_ptr);
 
@@ -551,7 +541,7 @@ Version* InstallerState::GetCurrentVersion(
     // Be aware that there might be a pending "new_chrome.exe" already in the
     // installation path.  If so, we use old_version, which holds the version of
     // "chrome.exe" itself.
-    if (file_util::PathExists(target_path().Append(kChromeNewExe)))
+    if (base::PathExists(target_path().Append(kChromeNewExe)))
       version = product_state->old_version();
 
     if (version == NULL)
@@ -579,34 +569,81 @@ Version InstallerState::DetermineCriticalVersion(
 
 bool InstallerState::IsChromeFrameRunning(
     const InstallationState& machine_state) const {
-  // We check only for the current version (e.g. the version we are upgrading
-  // _from_). We don't need to check interstitial versions if any (as would
-  // occur in the case of multiple updates) since if they are in use, we are
-  // guaranteed that the current version is in use too.
-  bool in_use = false;
-  scoped_ptr<Version> current_version(GetCurrentVersion(machine_state));
-  if (current_version != NULL) {
-    FilePath cf_install_path(
-        target_path().AppendASCII(current_version->GetString())
-                     .Append(kChromeFrameDll));
-    in_use = file_util::PathExists(cf_install_path) &&
-        IsFileInUse(cf_install_path);
-  }
-  return in_use;
+  return AnyExistsAndIsInUse(machine_state, CHROME_FRAME_DLL);
 }
 
-FilePath InstallerState::GetInstallerDirectory(const Version& version) const {
-  return target_path().Append(ASCIIToWide(version.GetString()))
+bool InstallerState::AreBinariesInUse(
+    const InstallationState& machine_state) const {
+  return AnyExistsAndIsInUse(
+      machine_state,
+      (CHROME_FRAME_HELPER_EXE | CHROME_FRAME_HELPER_DLL |
+       CHROME_FRAME_DLL | CHROME_DLL));
+}
+
+base::FilePath InstallerState::GetInstallerDirectory(
+    const Version& version) const {
+  return target_path().Append(base::ASCIIToWide(version.GetString()))
       .Append(kInstallerDir);
 }
 
 // static
-bool InstallerState::IsFileInUse(const FilePath& file) {
+bool InstallerState::IsFileInUse(const base::FilePath& file) {
   // Call CreateFile with a share mode of 0 which should cause this to fail
   // with ERROR_SHARING_VIOLATION if the file exists and is in-use.
   return !base::win::ScopedHandle(CreateFile(file.value().c_str(),
                                              GENERIC_WRITE, 0, NULL,
                                              OPEN_EXISTING, 0, 0)).IsValid();
+}
+
+void InstallerState::Clear() {
+  operation_ = UNINITIALIZED;
+  target_path_.clear();
+  state_key_.clear();
+  state_type_ = BrowserDistribution::CHROME_BROWSER;
+  products_.clear();
+  multi_package_distribution_ = NULL;
+  critical_update_version_ = base::Version();
+  level_ = UNKNOWN_LEVEL;
+  package_type_ = UNKNOWN_PACKAGE_TYPE;
+  root_key_ = NULL;
+  msi_ = false;
+  verbose_logging_ = false;
+  ensure_google_update_present_ = false;
+}
+
+bool InstallerState::AnyExistsAndIsInUse(
+    const InstallationState& machine_state,
+    uint32 file_bits) const {
+  static const wchar_t* const kBinaryFileNames[] = {
+    kChromeDll,
+    kChromeFrameDll,
+    kChromeFrameHelperDll,
+    kChromeFrameHelperExe,
+  };
+  DCHECK_NE(file_bits, 0U);
+  DCHECK_LT(file_bits, 1U << NUM_BINARIES);
+  COMPILE_ASSERT(CHROME_DLL == 1, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_DLL == 2, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_HELPER_DLL == 4, no_youre_out_of_order);
+  COMPILE_ASSERT(CHROME_FRAME_HELPER_EXE == 8, no_youre_out_of_order);
+
+  // Check only for the current version (i.e., the version we are upgrading
+  // _from_). Later versions from pending in-use updates need not be checked
+  // since the current version is guaranteed to be in use if any such are.
+  bool in_use = false;
+  scoped_ptr<Version> current_version(GetCurrentVersion(machine_state));
+  if (!current_version)
+    return false;
+  base::FilePath directory(
+      target_path().AppendASCII(current_version->GetString()));
+  for (int i = 0; i < NUM_BINARIES; ++i) {
+    if (!(file_bits & (1U << i)))
+      continue;
+    base::FilePath file(directory.Append(kBinaryFileNames[i]));
+    if (base::PathExists(file) && IsFileInUse(file))
+      return true;
+  }
+  return false;
 }
 
 void InstallerState::GetExistingExeVersions(
@@ -619,13 +656,13 @@ void InstallerState::GetExistingExeVersions(
   };
 
   for (int i = 0; i < arraysize(kChromeFilenames); ++i) {
-    FilePath chrome_exe(target_path().Append(kChromeFilenames[i]));
+    base::FilePath chrome_exe(target_path().Append(kChromeFilenames[i]));
     scoped_ptr<FileVersionInfo> file_version_info(
         FileVersionInfo::CreateFileVersionInfo(chrome_exe));
     if (file_version_info) {
-      string16 version_string = file_version_info->file_version();
-      if (!version_string.empty() && IsStringASCII(version_string))
-        existing_versions->insert(WideToASCII(version_string));
+      base::string16 version_string = file_version_info->file_version();
+      if (!version_string.empty() && base::IsStringASCII(version_string))
+        existing_versions->insert(base::UTF16ToASCII(version_string));
     }
   }
 }
@@ -633,9 +670,8 @@ void InstallerState::GetExistingExeVersions(
 void InstallerState::RemoveOldVersionDirectories(
     const Version& new_version,
     Version* existing_version,
-    const FilePath& temp_path) const {
+    const base::FilePath& temp_path) const {
   Version version;
-  std::vector<FilePath> key_files;
   scoped_ptr<WorkItem> item;
 
   std::set<std::string> existing_version_strings;
@@ -648,12 +684,12 @@ void InstallerState::RemoveOldVersionDirectories(
   GetExistingExeVersions(&existing_version_strings);
 
   // Try to delete all directories that are not in the set we care to keep.
-  file_util::FileEnumerator version_enum(target_path(), false,
-      file_util::FileEnumerator::DIRECTORIES);
-  for (FilePath next_version = version_enum.Next(); !next_version.empty();
+  base::FileEnumerator version_enum(target_path(), false,
+                                    base::FileEnumerator::DIRECTORIES);
+  for (base::FilePath next_version = version_enum.Next(); !next_version.empty();
        next_version = version_enum.Next()) {
-    FilePath dir_name(next_version.BaseName());
-    version = Version(WideToASCII(dir_name.value()));
+    base::FilePath dir_name(next_version.BaseName());
+    version = Version(base::UTF16ToASCII(dir_name.value()));
     // Delete the version folder if it is less than the new version and not
     // equal to the old version (if we have an old version).
     if (version.IsValid() &&
@@ -663,7 +699,7 @@ void InstallerState::RemoveOldVersionDirectories(
       LOG(ERROR) << "Deleting old version directory: " << next_version.value();
 
       // Attempt to recursively delete the old version dir.
-      bool delete_succeeded = file_util::Delete(next_version, true);
+      bool delete_succeeded = base::DeleteFile(next_version, true);
 
       // Note: temporarily log old version deletion at ERROR level to make it
       // more likely we see this in the installer log.
@@ -673,7 +709,8 @@ void InstallerState::RemoveOldVersionDirectories(
   }
 }
 
-void InstallerState::AddComDllList(std::vector<FilePath>* com_dll_list) const {
+void InstallerState::AddComDllList(
+    std::vector<base::FilePath>* com_dll_list) const {
   std::for_each(products_.begin(), products_.end(),
                 std::bind2nd(std::mem_fun(&Product::AddComDllList),
                              com_dll_list));
@@ -766,8 +803,6 @@ void InstallerState::WriteInstallerResult(
     InstallStatus status,
     int string_resource_id,
     const std::wstring* const launch_cmd) const {
-  DWORD installer_result =
-      (InstallUtil::GetInstallReturnCode(status) == 0) ? 0 : 1;
   // Use a no-rollback list since this is a best-effort deal.
   scoped_ptr<WorkItemList> install_list(
       WorkItem::CreateNoRollbackWorkItemList());

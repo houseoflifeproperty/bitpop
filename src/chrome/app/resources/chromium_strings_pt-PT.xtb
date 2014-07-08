@@ -1,51 +1,158 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="pt-PT">
 <translation id="6676384891291319759">Aceder à Internet</translation>
+<translation id="8586442755830160949">Copyright <ph name="YEAR"/> Os autores do Chromium. Todos os direitos reservados.</translation>
 <translation id="8447784615389818621">Tem a certeza de que pretende desinstalar o BitPop?</translation>
+<translation id="1928147301259050372">Pretende que o BitPop guarde estas informações de cartão de crédito para preenchimento de formulários Web?</translation>
 <translation id="100741878661450640">Desinstalar o BitPop</translation>
+<translation id="7015513946685052865">Este computador deixará de receber em breve atualizações do BitPop porque o seu hardware já não é suportado.</translation>
 <translation id="4301276314211054820">O BitPop foi atualizado, mas já não o utiliza há, pelo menos, 30 dias.</translation>
 <translation id="8935261719622405725">Iniciar aplicações do BitPop</translation>
-<translation id="2556535128417126306">O BitPop App Launcher é uma plataforma autónoma para aplicações do BitPop.</translation>
-<translation id="2770231113462710648">Alterar o browser predefinido para:</translation>
+<translation id="2787245396912783582">O Chromium App Launcher é uma plataforma autónoma para aplicações do BitPop.</translation>
+<translation id="2770231113462710648">Alterar o navegador predefinido para:</translation>
 <translation id="6870152852581894991">As alterações serão aplicadas da próxima vez que reiniciar o BitPop.</translation>
+<translation id="7725527658463487664">O BitPop está desatualizado</translation>
+<translation id="302025056100997516">Os detalhes dos seus contactos podem ajudar a preencher formulários mais rapidamente no BitPop.</translation>
 <translation id="3588014340702790340">Está a visualizar uma página do BitPop segura.</translation>
-<translation id="6789998774111513164">BitPop Frame</translation>
+<translation id="2077129598763517140">Utilizar aceleração de hardware sempre que estiver disponível</translation>
 <translation id="1065672644894730302">Não é possível ler as suas preferências. Algumas funcionalidades poderão estar indisponíveis e as alterações efetuadas às preferências não serão guardadas.</translation>
-<translation id="4901429675189043920">Atualização do BitPop Frame.</translation>
-<translation id="1132852132282742543">Renderizador do BitPop</translation>
-<translation id="7155774694068736041">O BitPop Frame já está instalado e disponível para todos os utilizadores deste computador. Se pretender instalar o BitPop Frame ao nível do utilizador, tem de desinstalar primeiro a versão ao nível do sistema instalada por um administrador.</translation>
-<translation id="731644333568559921">Atualizar o SO &amp;Chromium</translation>
+<translation id="4795239855223923830">Personalizar e controlar o BitPop</translation>
+<translation id="98449668525928921">Está a iniciar sessão com uma conta gerida e a permitir que o administrador controle o seu perfil do BitPop. Os seus dados do BitPop, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados definitivamente a <ph name="USER_NAME"/>. Poderá eliminar estes dados através do Painel de Controlo das Contas Google, mas não poderá associá-los a outra conta. Opcionalmente, pode criar um perfil novo para manter os seus dados atuais do BitPop em separado. <ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">Obrigado por experimentar o novo BitPop. É necessário reiniciar o BitPop para ter a certeza de que guardou todos os trabalhos abertos antes de continuar.</translation>
+<translation id="731644333568559921">Atualizar o SO &amp;BitPop</translation>
 <translation id="5284421695473942517">O BitPop necessita do Windows XP ou posterior. Algumas funcionalidades podem não funcionar.</translation>
-<translation id="3549345495227188780">Introdução ao SO Chromium</translation>
-<translation id="8363397932717822970">Foi encontrada uma instalação em conflito do BitPop ou BitPop Frame no sistema. Desinstale e tente novamente.</translation>
+<translation id="4534284284800306880">Tem de atualizar o BitPop para poder utilizar o Google Wallet [<ph name="ERROR_CODE"/>].</translation>
+<translation id="1258942147733482141">Licenças de código aberto do BitPop</translation>
+<translation id="2001441118695834744">Se preferir manter os dados do BitPop existentes em separado, pode criar um novo utilizador do BitPop para <ph name="USER_NAME"/>.</translation>
+<translation id="3207916442629104800">Definir o BitPop como o seu navegador predefinido</translation>
+<translation id="2346981135360001626">A atualizar o dispositivo para o canal <ph name="CHANNEL_NAME"/>...</translation>
+<translation id="3549345495227188780">Introdução ao SO BitPop</translation>
+<translation id="7593639489233822734">Depois de remover a sua conta do BitPop, poderá ter de recarregar os separadores abertos para que as alterações tenham efeito.</translation>
 <translation id="8235603028098851915">Barra de Ferramentas do BitPop</translation>
-<translation id="5953515305183787825">O BitPop já não faz atualizações, porque o seu sistema operativo está obsoleto.</translation>
-<translation id="7230682351542979557">Detetor do Captive Portal para BitPop</translation>
 <translation id="325440606879482824">A instalação falhou devido a um erro não especificado. Se o BitPop estiver em execução, feche-o e tente de novo.</translation>
-<translation id="7224939653007212692">Definições de Preenchimento Automático do BitPop</translation>
-<translation id="3078552028547324322">Utilize o BitPop Apps Launcher para iniciar as suas aplicações.</translation>
-<translation id="3555616473548901994">Desinstalação concluída.</translation>
-<translation id="5814137742095860156">Anfitrião da Aplicação BitPop</translation>
+<translation id="2681187513058372590">O BitPop está a tentar mostrar palavras-passe.</translation>
 <translation id="9205983754412543288">Opcional: ajude a melhorar o BitPop enviando automaticamente estatísticas de utilização e relatórios de falhas para a Google.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="6259082392093297310">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o certificado apresentado pelo servidor contém erros. O BitPop não pode utilizar um certificado com erros e não pode validar a identidade do Web site ao qual tentou estabelecer ligação.</translation>
+<translation id="3898160962923474892">Aceda ao
+          menu BitPop &gt;
+          <ph name="SETTINGS_TITLE"/>
+          &gt;
+          <ph name="ADVANCED_TITLE"/>
+          &gt;
+          <ph name="PROXIES_TITLE"/>
+          e certifique-se de que a sua configuração está definida como "sem proxy" ou "direta".</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="3334080844010912902">O BitPop não conseguiu sincronizar os dados porque a Sincronização não está disponível para o seu domínio.</translation>
+<translation id="2030214613468936763">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o certificado apresentado pelo servidor contém erros. O BitPop não pode utilizar um certificado com erros e não pode validar a identidade do Web site ao qual tentou estabelecer ligação.</translation>
 <translation id="3801183610358973379">Houve uma falha no programa de instalação ao descompactar o arquivo. Transfira novamente o BitPop.</translation>
+<translation id="4138697454314244697">Não foi encontrada qualquer instalação do BitPop para atualização.</translation>
 <translation id="4450789702440326676">Permitir que o BitPop Seja Executado em Segundo Plano</translation>
+<translation id="8743840534367614002">Aplicações do BitPop</translation>
 <translation id="2963590958538393837">Sim, sair do BitPop</translation>
-<translation id="8031724302809093115">A página Novo Separador do BitPop foi remodelada. Alterne entre secções clicando nestas etiquetas. O Chromium lembrar-se-á da sua preferência da próxima vez.</translation>
 <translation id="1480489203462860648">Experimente, já está instalado</translation>
 <translation id="7098153548331126805">A adicionar ao BitPop...</translation>
-<translation id="5928487969163300899">Desinstalar BitPop App Launcher</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>Aviso:<ph name="END_BOLD"/> o BitPop não consegue impedir que as extensões gravem o seu histórico de navegação. Para desativar esta extensão no modo de navegação anónima, desmarque esta opção.</translation>
+<translation id="4831257561365056138">Desinstalar Chromium App Launcher</translation>
+<translation id="7680117738450774222">Tem agora sessão iniciada no BitPop! A sincronização foi desativada pelo seu administrador.</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>Aviso:<ph name="END_BOLD"/> o BitPop não consegue impedir que as extensões gravem o seu histórico de navegação. Para desativar esta extensão no modo de navegação anónima, desmarque esta opção.</translation>
+<translation id="9123740998411173947">Agora que tem sessão iniciada, pode aceder aos seus separadores, marcadores e a outros itens do BitPop no computador portátil, no telemóvel e no tablet. Também receberá sugestões mais relevantes e funcionalidades sobre os serviços Google.</translation>
+<translation id="985602178874221306">Os Autores do Chromium</translation>
 <translation id="3941397373453695568">O BitPop não inclui o visualizador de PDF que é necessário para que a Pré-visualização da Impressão funcione.</translation>
 <translation id="8155571637339134666">O BitPop pode utilizar serviços Web para melhorar a sua experiência de navegação.</translation>
-<translation id="5383732173730790693">Tem agora sessão iniciada no BitPop! Os seus marcadores, o histórico e outras definições serão sincronizados com a sua Conta do Google.</translation>
-<translation id="6866316083935040427">Sair do BitPop</translation>
+<translation id="6157791660174418859">Experimente a nova forma de utilizar o BitPop com a sua Conta Google e em computadores partilhados.</translation>
 <translation id="4759775690587852534">Infelizmente, as suas definições do Mozilla Firefox não estão disponíveis enquanto esse navegador estiver em execução. Para importar essas definições para o BitPop, guarde o seu trabalho e feche todas as janelas do Firefox. Em seguida, clique em Continuar.</translation>
-<translation id="2411757162791070146">Neste caso, o endereço listado no certificado não corresponde ao endereço do Web site ao qual o seu navegador tentou aceder. Um dos motivos possíveis é o facto de as suas comunicações estarem a ser intercetadas por um utilizador mal intencionado que está apresentar um certificado para um Web site diferente, o que poderia provocar uma incompatibilidade. Outro motivo possível é o facto de o servidor estar configurado para devolver o mesmo certificado a vários Web sites, incluindo aquele que está a tentar visitar, mesmo que esse certificado não seja válido para todos esses Web sites. O BitPop pode afirmar garantidamente que acedeu a &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mas não pode confirmar que esse é o mesmo Web site que &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ao qual pretendia aceder. Se continuar, o BitPop não irá verificar se existem outras incompatibilidades de nome.</translation>
-<translation id="2423180989259159758">Aceda ao
-          <ph name="BEGIN_BOLD"/>
+<translation id="5769857394054687534">Neste caso, o endereço listado no certificado não corresponde ao endereço do Web site ao qual o seu navegador tentou aceder. Um dos motivos possíveis é o facto de as suas comunicações estarem a ser intercetadas por um utilizador mal intencionado que está apresentar um certificado para um Web site diferente, o que poderia provocar uma incompatibilidade. Outro motivo possível é o facto de o servidor estar configurado para devolver o mesmo certificado a vários Web sites, incluindo aquele que está a tentar visitar, mesmo que esse certificado não seja válido para todos esses Web sites. O BitPop pode afirmar garantidamente que acedeu a &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;, mas não pode confirmar que esse é o mesmo Web site que &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt; ao qual pretendia aceder. Se continuar, o BitPop não irá verificar se existem outras incompatibilidades de nome.</translation>
+<translation id="2224367722165014156">Não foi possível atualizar automaticamente o BitPop para a versão mais recente, pelo que está a perder novas funcionalidades e correções de segurança fantásticas. Tem de reinstalar manualmente o BitPop.</translation>
+<translation id="8897323336392112261">Também controla a página apresentada quando inicia o Chromium ou clica no botão Página Inicial.</translation>
+<translation id="2886079192271351730">Este módulo é conhecido por entrar em conflito com o BitPop.</translation>
+<translation id="8324687802311409372">Ups! O BitPop falhou. Reiniciar agora?</translation>
+<translation id="5689811886832352959">Ajudar a melhorar o BitPop ao enviar relatórios de falhas e <ph name="UMA_LINK"/> à Google</translation>
+<translation id="5101127815285864538">A sua Web, os seus marcadores e os seus outros itens do BitPop estão aqui.</translation>
+<translation id="3197823471738295152">O dispositivo está atualizado.</translation>
+<translation id="8551886023433311834">Quase atualizado! Reinicie o dispositivo para concluir a atualização.</translation>
+<translation id="9090519209458031409">Pretende que o BitPop guarde a sua palavra-passe para este Website?</translation>
+<translation id="7339898014177206373">Nova janela</translation>
+<translation id="6188910816550019957">Aceda ao
+        menu BitPop &gt;
+        <ph name="SETTINGS_TITLE"/>
+        &gt;
+        <ph name="ADVANCED_TITLE"/>
+        e desmarque "<ph name="NO_PREFETCH_DESCRIPTION"/>".
+        Se isso não resolver o problema, recomendamos que selecione esta opção
+        novamente para um desempenho melhorado.</translation>
+<translation id="2397909649953118924">BitPop – Notificações (<ph name="QUANTITY"/> não lidas)</translation>
+<translation id="225614027745146050">Bem-vindo</translation>
+<translation id="1823899440832622134">Não foi possível atualizar automaticamente o BitPop para a versão mais recente, pelo que está a perder novas funcionalidades e correções de segurança fantásticas. Tem de atualizar o BitPop.</translation>
+<translation id="3421246989510066651">Um administrador instalou o BitPop neste sistema e está disponível para todos os utilizadores. O BitPop ao nível do sistema substituirá agora a instalação ao nível do utilizador.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">Feche todas as janelas do BitPop e tente novamente.</translation>
+<translation id="6948146312619379712">Feche todas as janelas do BitPop e reinicie o BitPop para que esta alteração seja aplicada.</translation>
+<translation id="6475912303565314141">Também controla a página apresentada quando inicia o Chromium.</translation>
+<translation id="158578066452246627">Este ficheiro é malicioso e o BitPop bloqueou-o.</translation>
+<translation id="5845248948746043578">Módulos carregados no BitPop</translation>
+<translation id="3494861236236958082">No Mac, as palavras-passe são guardadas no Keychain e podem ser sincronizadas ou acedidas por outros utilizadores do BitPop que partilhem esta conta OS X.</translation>
+<translation id="6497704981133944775">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado emitido por uma entidade na qual o sistema operativo do seu computador não confia. Isso pode significar que o servidor gerou as suas próprias credenciais de segurança, nas quais o BitPop não pode confiar para informações de identidade, ou um utilizador mal intencionado pode estar a tentar intercetar as suas comunicações.</translation>
+<translation id="963040405972220509">É obrigatório ter sessão iniciada no BitPop para utilizar aplicações. Deste modo, o BitPop pode sincronizar as aplicações, os marcadores, o histórico, as palavras-passe e outras definições entre dispositivos.</translation>
+<translation id="2585492770508769131">Continuar a executar aplicações em segundo plano quando o BitPop está fechado</translation>
+<translation id="473775607612524610">Actualizar</translation>
+<translation id="1053737967432347853">Este site está a utilizar o plug-in BitPop Frame, que em breve deixará de ser suportado. Desinstale-o e atualize para um navegador moderno.</translation>
+<translation id="8237944200818342704">Iniciar automaticamente o BitPop quando o computador arranca</translation>
+<translation id="5904788103100750653">Se partilhar um computador, os amigos e os familiares podem navegar separadamente e configurar o BitPop da forma que quiserem.</translation>
+<translation id="1141543168124987471">Está disponível uma nova versão do BitPop, mais rápida do que nunca.</translation>
+<translation id="3089560314597734657">O BitPop não conseguiu sincronizar os dados porque os detalhes de início de sessão da sua conta estão desatualizados.</translation>
+<translation id="5107343520309227066">O perfil parece estar a ser utilizado por outro processo do BitPop (<ph name="PROCESS_ID"/>) noutro computador (<ph name="HOST_NAME"/>). O BitPop bloqueou o perfil para que não seja danificado. Se tiver a certeza de que não existem outros processos a utilizar este perfil, pode desbloqueá-lo e reiniciar o BitPop.</translation>
+<translation id="5971960158340115871">Remover do BitPop</translation>
+<translation id="4817923018536741011">Adicionar-se ao BitPop</translation>
+<translation id="7066436765290594559">O SO BitPop não conseguiu sincronizar os dados. Atualize a frase de acesso de sincronização.</translation>
+<translation id="7747138024166251722">O programa de instalação não conseguiu criar um directório temporário. Verifique se há espaço livre no disco e permissão para a instalação do software.</translation>
+<translation id="1657309500244281883">O BitPop não consegue ler e escrever no respetivo diretório de dados:
+
+<ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">A atualizar o dispositivo...</translation>
+<translation id="2485422356828889247">Desinstalar</translation>
+<translation id="8450502629618876351">Obter ajuda para utilizar o BitPop</translation>
+<translation id="7974150821733212325">Está a iniciar sessão com uma conta gerida e a permitir que o administrador controle o seu perfil do BitPop. Os seus dados do BitPop, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados definitivamente a <ph name="USER_NAME"/>. Poderá eliminar estes dados através do Painel de Controlo das Contas Google, mas não poderá associá-los a outra conta. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">Iniciador de Aplicações do BitPop</translation>
+<translation id="8643500805082769156">O BitPop Está Desatualizado</translation>
+<translation id="911206726377975832">Eliminar também os seus dados de navegação?</translation>
+<translation id="7531302439507262213"><ph name="DOMAIN"/> obriga-o a ler e aceitar os seguintes Termos de Utilização antes de utilizar este dispositivo. Estes termos não ampliam, modificam nem limitam os Termos do SO BitPop.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">Feche todas as janelas do BitPop (incluindo as que estiverem no modo Windows 8) e tente novamente.</translation>
+<translation id="2318017154298876822">Atualizar o &amp;BitPop</translation>
+<translation id="8862326446509486874">Não tem os direitos adequados para uma instalação ao nível do sistema. Tente executar o programa de instalação novamente como Administrador.</translation>
+<translation id="2535480412977113886">O SO BitPop não conseguiu sincronizar os dados porque os detalhes de início de sessão da sua conta estão desatualizados.</translation>
+<translation id="8697124171261953979">Também controla a página apresentada quando inicia o Chromium ou pesquisa a partir da Caixa geral.</translation>
+<translation id="8106224471637848707">O software em execução no seu computador é incompatível com o BitPop.</translation>
+<translation id="8308846639737830860">Permitir que o BitPop seja executado em segundo plano</translation>
+<translation id="8251642411216619957">Iniciar sessão no BitPop</translation>
+<translation id="4365115785552740256">O lançamento do Chromium foi possível devido ao projeto de código aberto do <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> e outro <ph name="BEGIN_LINK_OSS"/>software de código aberto<ph name="END_LINK_OSS"/>.</translation>
+<translation id="1990056108053403520">BitPop (mDNS-In)</translation>
+<translation id="5819325063060806784">Os convidados podem utilizar o BitPop sem perder qualquer funcionalidade.</translation>
+<translation id="1526986572493888898">Este site está a utilizar o plug-in BitPop Frame, que em breve deixará de ser suportado. Desinstale-o e transfira um navegador compatível.</translation>
+<translation id="7131892997749364444">Uma extensão alterou a página apresentada quando inicia o BitPop.</translation>
+<translation id="5877064549588274448">Canal alterado. Reinicie o dispositivo para aplicar as alterações.</translation>
+<translation id="6321973207566602686">Definir o BitPop como navegador predefinido</translation>
+<translation id="6899689707951760367">O BitPop está a utilizar a câmara.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">SO BitPop</translation>
+<translation id="6757767188268205357">Não incomodar</translation>
+<translation id="690823546498424823">O BitPop armazenará as suas informações em segurança para que não necessite de as introduzir novamente, mas continuará a ser necessário confirmar o código de segurança do seu cartão para futuros pagamentos.</translation>
+<translation id="6220055452245182274">O relatório de falha não está disponível no BitPop.</translation>
+<translation id="924450301557116466">Não utilizado no BitPop. Marcador de posição para manter mapas de recursos em sincronização. Prevê um argumento: $1.</translation>
+<translation id="843167022919259875">O BitPop está em execução em segundo plano.</translation>
+<translation id="2171549355847332070">Iniciou sessão no BitPop com a conta <ph name="USER_EMAIL_ADDRESS"/>. Utilize a mesma conta para iniciar sessão novamente.</translation>
+<translation id="6165323383832829057">O BitPop já não se atualiza nem suporta mais esta versão do seu sistema operativo.</translation>
+<translation id="2645729404591158594">Pré-visualizar o novo BitPop</translation>
+<translation id="1984238998837921833">A atualizar o BitPop...</translation>
+<translation id="9102885271730191378">Gestor de Tarefas - BitPop</translation>
+<translation id="1608739712349494181">Para tornar o BitPop mais seguro, desativámos algumas extensões que não estão listadas na <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/> e é possível que tenham sido adicionadas sem o seu conhecimento.</translation>
+<translation id="5243897687251941678">Encontre os seus marcadores no menu BitPop ou na barra de marcadores.</translation>
+<translation id="5925519479755588070">Está quase atualizado! Reinicie o BitPop para concluir a atualização.</translation>
+<translation id="5866485601389562653">Pode adicionar outras Contas Google e bloquear o BitPop abaixo.</translation>
+<translation id="8072646586465991214">Foi encontrada uma instalação do BitPop em conflito no sistema. Desinstale-a e tente novamente.</translation>
+<translation id="4352003675682958984">Está disponível uma nova versão do BitPop.</translation>
+<translation id="8972540218839637401">Ocorreu um erro no sistema operativo durante a instalação. Transfira novamente o BitPop.</translation>
+<translation id="2581134012974124523"><ph name="EXTENSION_NAME"/> foi adicionada ao BitPop.</translation>
+<translation id="6452045500174243632">Aceda ao
           menu BitPop &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
@@ -54,163 +161,87 @@
           <ph name="PROXIES_TITLE"/>
           &gt;
           Definições de LAN
-          <ph name="END_BOLD"/>
           e desmarque a caixa de verificação "Utilizar um servidor proxy para a rede local".</translation>
-<translation id="2886079192271351730">Este módulo é conhecido por entrar em conflito com o BitPop.</translation>
-<translation id="8324687802311409372">Ups! O BitPop falhou. Reiniciar agora?</translation>
-<translation id="606385048658239900">Não foi encontrada nenhuma instalação do BitPop ou BitPop Frame para atualização.</translation>
-<translation id="3197823471738295152">O dispositivo está atualizado.</translation>
-<translation id="8551886023433311834">Quase atualizado! Reinicie o dispositivo para concluir a atualização.</translation>
-<translation id="9090519209458031409">Pretende que o BitPop guarde a sua palavra-passe para este Website?</translation>
-<translation id="7339898014177206373">Nova janela</translation>
-<translation id="3026202950002788510">Aceda a
-          <ph name="BEGIN_BOLD"/>
-          Aplicações &gt; Preferências do sistema &gt; Rede &gt; Avançadas &gt; Proxies
-          <ph name="END_BOLD"/>
-          e desmarque todos os proxies seleccionados.</translation>
-<translation id="85540521058185027">O diretório para instalação do BitPop parece estar a ser utilizado. Reinicie o computador e tente de novo.</translation>
-<translation id="5710380450759072582">O BitPop está agora a importar Favoritos/Marcadores.</translation>
-<translation id="225614027745146050">Bem-vindo</translation>
-<translation id="3421246989510066651">Um administrador instalou o BitPop neste sistema e está disponível para todos os utilizadores. O BitPop ao nível do sistema substituirá agora a instalação ao nível do utilizador.</translation>
-<translation id="1563133725769368154">Feche todas as janelas do BitPop e tente novamente.</translation>
-<translation id="6948146312619379712">Feche todas as janelas do BitPop e reinicie o BitPop para que esta alteração seja aplicada.</translation>
-<translation id="5845248948746043578">Módulos carregados no BitPop</translation>
-<translation id="4718546117684412327">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado emitido por uma entidade na qual o sistema operativo do seu computador não confia. Isso pode significar que o servidor gerou as suas próprias credenciais de segurança, nas quais o BitPop não pode confiar para informações de identidade, ou um utilizador mal intencionado pode estar a tentar intercetar as suas comunicações.</translation>
-<translation id="2585492770508769131">Continuar a executar aplicações em segundo plano quando o BitPop está fechado</translation>
-<translation id="473775607612524610">Actualizar</translation>
-<translation id="1141543168124987471">Está disponível uma nova versão do BitPop, mais rápida do que nunca.</translation>
-<translation id="6560811749587757293">Acerca do BitPop Frame...</translation>
-<translation id="5971960158340115871">Remover do BitPop</translation>
-<translation id="7747138024166251722">O programa de instalação não conseguiu criar um directório temporário. Verifique se há espaço livre no disco e permissão para a instalação do software.</translation>
-<translation id="6494656531179085521">O BitPop não consegue ler e escrever no respetivo diretório de dados:
-
-<ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">O BitPop não suporta <ph name="OS_NAME"/>.</translation>
-<translation id="8738921060445980047">Versão desconhecida.</translation>
-<translation id="6970811910055250180">A atualizar o dispositivo...</translation>
-<translation id="2485422356828889247">Desinstalar</translation>
-<translation id="8450502629618876351">Obter ajuda para utilizar o BitPop</translation>
-<translation id="4742066939161073105">Iniciar o BitPop</translation>
-<translation id="736882515641604854">O BitPop não pode criar um atalho da aplicação, porque não consegue determinar o ambiente de trabalho atual.</translation>
-<translation id="7209647769822542891">Este computador já tem uma versão mais recente do BitPop Frame. Se o software não estiver a funcionar, desinstale o BitPop Frame e tente novamente.</translation>
-<translation id="911206726377975832">Eliminar também os seus dados de navegação?</translation>
-<translation id="4501582071990606935">Feche todas as janelas do BitPop (incluindo as que estiverem no modo Windows 8) e tente novamente.</translation>
-<translation id="2318017154298876822">Atualizar o &amp;BitPop</translation>
-<translation id="8862326446509486874">Não tem os direitos adequados para uma instalação ao nível do sistema. Tente executar o programa de instalação novamente como Administrador.</translation>
-<translation id="8308846639737830860">Permitir que o BitPop seja executado em segundo plano</translation>
-<translation id="8251642411216619957">Iniciar sessão no BitPop</translation>
-<translation id="4365115785552740256">O lançamento do Chromium foi possível devido ao projeto de código aberto do <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> e outro <ph name="BEGIN_LINK_OSS"/>software de código aberto<ph name="END_LINK_OSS"/>.</translation>
-<translation id="6321973207566602686">Definir o BitPop como navegador predefinido</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">Trabalhador do BitPop</translation>
-<translation id="5820394555380036790">SO Chromium</translation>
-<translation id="6757767188268205357">Não incomodar</translation>
-<translation id="6312770669638222416">Tente desativar a previsão de rede seguindo estes passos:
-        Aceda ao
-        <ph name="BEGIN_BOLD"/>
-        menu BitPop &gt;
-        <ph name="SETTINGS_TITLE"/>
-        &gt;
-        <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>
-        e desmarque "<ph name="NO_PREFETCH_DESCRIPTION"/>".
-        Se isso não resolver o problema, recomendamos que selecione esta opção
-        novamente para um desempenho melhorado.</translation>
-<translation id="6220055452245182274">O relatório de falha não está disponível no BitPop.</translation>
-<translation id="924450301557116466">Não utilizado no BitPop. Marcador de posição para manter mapas de recursos em sincronização. Prevê um argumento: $1.</translation>
-<translation id="1984238998837921833">A atualizar o BitPop...</translation>
-<translation id="9102885271730191378">Gestor de Tarefas - BitPop</translation>
-<translation id="3916917357864849352">O BitPop está agora a importar os seguintes itens do <ph name="BROWSER_COMPONENT"/>:</translation>
-<translation id="5243897687251941678">Encontre os seus marcadores no menu BitPop ou na barra de marcadores.</translation>
-<translation id="5925519479755588070">Está quase atualizado! Reinicie o BitPop para concluir a atualização.</translation>
-<translation id="4352003675682958984">Está disponível uma nova versão do BitPop.</translation>
-<translation id="8972540218839637401">Ocorreu um erro no sistema operativo durante a instalação. Transfira novamente o BitPop.</translation>
-<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/> foi adicionada ao BitPop.</translation>
-<translation id="8871841738132225233">Utilize esta Conta Google para sincronizar todos os seus itens do BitPop?</translation>
 <translation id="8988481325911971852">A instalação falhou devido a um erro não especificado. Transfira novamente o BitPop .</translation>
 <translation id="660036136456272595">O seu perfil não pode ser utilizado porque pertence a uma versão mais recente do BitPop.
 
 Algumas funcionalidades podem não estar disponíveis. Especifique um diretório de perfil diferente ou utilize uma versão mais recente do BitPop.</translation>
-<translation id="2712549016134575851">Foi detectado um conflito com outra aplicação instalada.</translation>
-<translation id="1095023322915848441">Iniciou sessão com outra conta anteriormente; iniciar sessão irá unir os seus dados. Considere criar um novo utilizador BitPop através da <ph name="BEGIN_LINK"/>página de definições<ph name="END_LINK"/> para os seus itens do BitPop.</translation>
+<translation id="3787192530015965250">O BitPop está a tentar mostrar palavras-passe. Escreva a sua palavra-passe do Windows para permitir esta ação.</translation>
 <translation id="7862155441175671173">Adicionar ao BitPop</translation>
+<translation id="1211470790061593728">Agora é mais fácil utilizar o BitPop com a sua Conta Google e em computadores partilhados.</translation>
 <translation id="5594704848342987755">Este computador já tem uma versão mais recente do BitPop. Se o software não estiver a funcionar, desinstale o BitPop e tente novamente.</translation>
-<translation id="3422131153907641068">Utilitário do BitPop</translation>
-<translation id="1298199220304005244">Obter ajuda para utilizar o SO Chromium</translation>
-<translation id="8854394556488040390">O BitPop Frame foi atualizado. Reinicie o seu navegador. Versão do BitPop: <ph name="TODO_0001"/>, versão do Chromium Frame: <ph name="TODO_0002"/></translation>
+<translation id="3528119622127530876">O BitPop não conseguiu sincronizar os dados. Atualize a frase de acesso da Sincronização.</translation>
+<translation id="1298199220304005244">Obter ajuda para utilizar o SO BitPop</translation>
+<translation id="331951419404882060">O BitPop não conseguiu sincronizar os dados devido a um erro no início de sessão.</translation>
+<translation id="8187289872471304532">Aceda a Aplicações &gt; Preferências do Sistema &gt; Rede &gt; Avançadas &gt; Proxies e desmarque todos os proxies selecionados.</translation>
+<translation id="4634257184917711644">O ficheiro <ph name="FILE_NAME"/> é malicioso e o BitPop bloqueou-o.</translation>
+<translation id="454930334682314382">Os seus detalhes de faturação foram guardados no BitPop.</translation>
 <translation id="130631256467250065">As alterações terão efeito da próxima vez que reiniciar o dispositivo.</translation>
+<translation id="8810991521775422988">Centro de Notificações do BitPop</translation>
 <translation id="2901348058800597589">O BitPop não foi encerrado corretamente. Para reabrir as páginas que tinha abertas, clique em Restaurar.</translation>
+<translation id="838316505303362561">Sugerida pelo BitPop</translation>
 <translation id="5653921603290474550">O BitPop não responde. Reiniciar agora?</translation>
-<translation id="6089587093203430357">Instantâneo</translation>
-<translation id="2410206016513008786">O BitPop precisa de iniciar uma aplicação externa para processar links de <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
-<translation id="8046283042877435986">Este Web site recomenda o Chromium Frame (já instalado).</translation>
-<translation id="5523374683005655880">Não é possível instalar a mesma versão do BitPop Frame que está atualmente em execução. Feche o BitPop Frame e tente novamente.</translation>
+<translation id="3306752603341080445">Tem sessão iniciada no BitPop!</translation>
+<translation id="2158734852934720349">Licenças de código aberto do SO BitPop</translation>
+<translation id="2239725456669400190">O BitPop precisa de iniciar uma aplicação externa para processar links de <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
 <translation id="5574763173398621221">Pretende que o BitPop guarde a sua palavra-passe?</translation>
-<translation id="7730150800475367955">Aceda ao
-          <ph name="BEGIN_BOLD"/>
-          menu BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          "<ph name="OPTIONS_BUTTON"/>"
-          <ph name="END_BOLD"/>
-          (para a Rede atual). Se o botão
-          <ph name="BEGIN_BOLD"/>
-          "<ph name="PROXY_BUTTON"/>"
-          <ph name="END_BOLD"/> (no separador
-          <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/>
-          ) estiver presente, clique sobre o mesmo e certifique-se de que a sua configuração
-          está definida como "Direta".</translation>
 <translation id="5387335700352644169">Mostrar o menu BitPop</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
+<translation id="1981756165552484777">Está a utilizar <ph name="PROFILE_EMAIL"/> para sincronizar os seus conteúdos do BitPop. Para atualizar a preferência de sincronização ou utilizar o BitPop sem uma Conta Google, aceda a <ph name="SETTINGS_LINK"/>.</translation>
+<translation id="1681324505975197559">(é necessário <ph name="BEGIN_BUTTON"/>reiniciar<ph name="END_BUTTON"/> o BitPop)</translation>
+<translation id="6863452815496188645">Configure a Sincronização para guardar as suas funcionalidades personalizadas do navegador para a Web e aceder às mesmas a partir do BitPop em qualquer computador.</translation>
 <translation id="8865765905101981392">Browser da Internet</translation>
-<translation id="6424492062988593837">O Chromium ficou ainda melhor! Está disponível uma nova versão.</translation>
+<translation id="3099708656176429608">Permita que o BitPop aceda à rede nas definições da sua firewall ou antivírus.</translation>
+<translation id="8098179324031720100">O BitPop ficou ainda melhor! Está disponível uma nova versão.</translation>
+<translation id="4320683788245444425">Este computador não receberá mais atualizações do BitPop porque o seu hardware já não é suportado.</translation>
 <translation id="6385431739515246076">Acerca do &amp;BitPop</translation>
 <translation id="7521125380721653484">O arquivo do programa de instalação está corrompido ou não é válido. Transfira novamente o BitPop.</translation>
-<translation id="6836892784612884953">Aceda ao
-          <ph name="BEGIN_BOLD"/>
-          menu BitPop &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="ADVANCED_TITLE"/>
-          &gt;
-          <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>
-          e certifique-se de que a sua configuração está definida como "sem proxy" ou "direta".</translation>
-<translation id="457806999714267838">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado expirado. Não existem informações disponíveis que indiquem que o certificado foi comprometido desde a sua expiração. Isto significa que o BitPop não pode garantir que está a comunicar com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; e não com um utilizador mal intencionado. O relógio do computador está atualmente definido para <ph name="CURRENT_TIME"/>. Parece-lhe que está correto? Se não estiver, deve corrigir o erro e atualizar esta página.</translation>
+<translation id="8457938350903919620">Clique no seu nome para abrir o BitPop e começar a navegar.</translation>
+<translation id="8410648211590980711">O BitPop está a utilizar o microfone.</translation>
+<translation id="3298525902784604502">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado expirado. Não existem informações disponíveis que indiquem que o certificado foi comprometido desde a sua expiração. Isto significa que o BitPop não pode garantir que está a comunicar com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; e não com um utilizador mal intencionado. O relógio do computador está atualmente definido para <ph name="CURRENT_TIME"/>. Parece-lhe que está correto? Se não estiver, deve corrigir o erro e atualizar esta página.</translation>
 <translation id="7196020411877309443">Por que motivo estou a ver esta caixa de diálogo?</translation>
+<translation id="6809805128084420516">Informações importantes acerca dos seus dados do BitPop</translation>
+<translation id="5312973105258198185">Tem sessão iniciada como <ph name="USER_EMAIL_ADDRESS"/>. Agora, pode aceder aos seus marcadores, ao histórico e a outras definições em todos os dispositivos com sessão iniciada.</translation>
 <translation id="473359818469623008">Não é possível instalar a mesma versão do BitPop que está atualmente em execução. Feche o BitPop e tente novamente.</translation>
 <translation id="2595850371931815386">O BitPop não é seu navegador predefinido.</translation>
-<translation id="1857156280997837230">BitPop Apps Launcher</translation>
 <translation id="4458285410772214805">Termine sessão e volte a iniciar sessão para que esta alteração tenha efeito.</translation>
-<translation id="6523007289492675308">Mostrar um atalho para o BitPop Apps Launcher na Barra de Tarefas do Windows.</translation>
-<translation id="2119636228670142020">Acerca do SO &amp;Chromium</translation>
+<translation id="6627720938086825017">O BitPop está a utilizar a câmara e o microfone.</translation>
+<translation id="6382607600997384001">Pode ver aqui todas as suas notificações de aplicações, extensões e Websites do BitPop.</translation>
+<translation id="2119636228670142020">Acerca do SO &amp;BitPop</translation>
 <translation id="4196382931981526364">Está disponível uma versão nova e mais segura do BitPop.</translation>
-<translation id="1077424736315176936">Mostrar BitPop Apps Launcher.</translation>
-<translation id="5330935702921516708">Conheça <ph name="BEGIN_LINK"/>mais benefícios<ph name="END_LINK"/> de iniciar sessão no BitPop.</translation>
 <translation id="862266784641000464">O BitPop permite-lhe clicar num número de telefone na Web e fazer a chamada com o Skype!</translation>
 <translation id="8072591166076742072">A transferência está atualmente em curso. Pretende sair do BitPop e cancelar a transferência?</translation>
-<translation id="932207424499184915">Binários do BitPop</translation>
-<translation id="3223104112377435850">Anfitrião do Plug-In do BitPop </translation>
+<translation id="8650443074479376435">O BitPop não conseguiu sincronizar os dados devido a um erro de início de sessão.</translation>
+<translation id="7561209000218748370">Regra de importação para o BitPop permitir o tráfego mDNS.</translation>
+<translation id="151962892725702025">O SO BitPop não conseguiu sincronizar os dados porque a sincronização não está disponível para o seu domínio.</translation>
+<translation id="3360567213983886831">Binários do BitPop</translation>
+<translation id="108010966668726733">Anteriormente, alguém iniciou sessão no BitPop neste computador com a conta <ph name="ACCOUNT_EMAIL_LAST"/>. Se esta conta não for sua, crie um novo utilizador do BitPop para manter as informações em separado.
+
+Se continuar com este início de sessão, as informações do BitPop, como marcadores, histórico e outras definições, fundir-se-ão com <ph name="ACCOUNT_EMAIL_NEW"/>.</translation>
 <translation id="7826309952950470209">As transferências estão atualmente em curso. Pretende sair do BitPop e cancelar as transferências?</translation>
 <translation id="380873736468525691">O BitPop requer o Windows Vista ou Windows XP com SP2 ou superior.</translation>
 <translation id="2762974284703971745">É conhecido um módulo com o mesmo nome que entra em conflito com o BitPop.</translation>
+<translation id="5213128101330439346">Este é o seu BitPop</translation>
 <translation id="5443433498537176573">O BitPop está atualizado.</translation>
 <translation id="5637727561937246825">Este computador já tem uma versão mais recente dos componentes de BitPop. Utilize um instalador mais recente.</translation>
-<translation id="5082591353921977637">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado que ainda não é válido. Não existem informações disponíveis que indiquem que o certificado é de confiança. O BitPop não pode garantir que está a comunicar com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; e não com um utilizador mal intencionado. O relógio do computador está atualmente definido para <ph name="CURRENT_TIME"/>. Parece-lhe que está correto? Se não estiver, deve corrigir o relógio do sistema e atualizar esta página.</translation>
-<translation id="1138135211676039883">O BitPop utiliza o motor de pesquisa predefinido, que está atualmente definido como <ph name="PAGE_TITLE"/>. Pretende manter o motor de pesquisa predefinido?</translation>
+<translation id="4547797007790555015">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado que ainda não é válido. Não existem informações disponíveis que indiquem que o certificado é de confiança. O BitPop não pode garantir que está a comunicar com &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt; e não com um utilizador mal intencionado. O relógio do computador está atualmente definido para <ph name="CURRENT_TIME"/>. Parece-lhe que está correto? Se não estiver, deve corrigir o relógio do sistema e atualizar esta página.</translation>
 <translation id="185658551912723674">Bem-vindo ao BitPop</translation>
-<translation id="6808688532552992663">Este computador já tem uma versão mais recente do BitPop e BitPop Frame. Se o software não estiver a funcionar, desinstale o BitPop e o BitPop Frame e tente novamente.</translation>
 <translation id="1909867102505992367">O ficheiro de preferências está danificado ou não é válido.
 
 O BitPop não consegue recuperar as suas definições.</translation>
+<translation id="6239286721842301381">Está a pré-visualizar o novo BitPop.</translation>
+<translation id="7591092481995851856">Desligar <ph name="USERNAME"/> limpará o seu histórico, os marcadores, as definições e outros dados do BitPop armazenados neste dispositivo. Os dados armazenados na Conta Google não serão limpos e podem ser geridos no <ph name="GOOGLE_DASHBOARD_LINK"/>Painel de controlo Google<ph name="END_GOOGLE_DASHBOARD_LINK"/>.</translation>
 <translation id="4933902704814222889">O BitPop é um navegador de internet que executa páginas Web e aplicações à velocidade da luz. É rápido, estável e fácil de utilizar. Navegue na Web com mais segurança, com proteção contra programas maliciosos e phishing integrada no BitPop.</translation>
-<translation id="7673336527696184948">Argumentos inválidos. O BitPop Frame não pode ser instalado no modo pronto sem instalar também o BitPop.</translation>
+<translation id="5806792281256987775">Tentou aceder a &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;, mas o servidor apresentou um certificado emitido por uma entidade na qual o BitPop não confia. Isso pode significar que o servidor gerou as suas próprias credenciais de segurança, nas quais o BitPop não pode confiar para informações de identidade, ou um utilizador mal intencionado pode estar a tentar intercetar as suas comunicações.</translation>
+<translation id="26317130586606191">Associar os seus dados do BitPop a esta conta?</translation>
 <translation id="5583217122091744450">Ajuda do BitPop</translation>
+<translation id="3089741509794563091">O BitPop está ainda melhor</translation>
 <translation id="6404599307042403560">O BitPop é configurado para iniciar automaticamente quando inicia o computador.</translation>
-<translation id="8974095189086268230">O lançamento do SO Chromium foi possível devido a <ph name="BEGIN_LINK_CROS_OSS"/>software de código aberto<ph name="END_LINK_CROS_OSS"/> adicional.</translation>
-<translation id="1221340462641866827">O SO Chromium não suporta a abertura de uma aplicação externa para processar links de <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
+<translation id="554833011526807667">O lançamento do SO BitPop foi possível devido a <ph name="BEGIN_LINK_CROS_OSS"/>software de código aberto<ph name="END_LINK_CROS_OSS"/> adicional.</translation>
+<translation id="8166042339699941380">Está a iniciar sessão com uma conta gerida e a permitir que o administrador controle o seu perfil do BitPop. Os seus dados do BitPop, como aplicações, marcadores, histórico, palavras-passe e outras definições, ficarão associados permanentemente a <ph name="USER_NAME"/>. Poderá eliminar estes dados através do Painel de Controlo das Contas Google mas não poderá associar estes dados a outra conta.</translation>
+<translation id="2032763513380168750">Associar os meus dados do BitPop a esta conta</translation>
+<translation id="2477235356415090659">Reinstalar BitPop</translation>
+<translation id="807350504213044844">O SO BitPop não suporta a abertura de uma aplicação externa para processar links de <ph name="SCHEME"/>. O link solicitado é <ph name="PROTOLINK"/>.</translation>
+<translation id="3484768020161794310">As chaves da API do Google estão em falta. Algumas funcionalidades do BitPop serão desativadas.</translation>
+<translation id="531363935678210182">BitPop – Notificações</translation>
+<translation id="3151848949510984428">Guardar os detalhes no BitPop</translation>
 </translationbundle>

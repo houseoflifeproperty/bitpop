@@ -5,30 +5,30 @@
 #ifndef CHROME_BROWSER_UI_VIEWS_INFOBARS_INFOBAR_CONTAINER_VIEW_H_
 #define CHROME_BROWSER_UI_VIEWS_INFOBARS_INFOBAR_CONTAINER_VIEW_H_
 
-#include "chrome/browser/infobars/infobar_container.h"
+#include "components/infobars/core/infobar_container.h"
 #include "ui/views/accessible_pane_view.h"
 
 // The views-specific implementation of InfoBarContainer.
 class InfoBarContainerView : public views::AccessiblePaneView,
-                             public InfoBarContainer {
+                             public infobars::InfoBarContainer {
  public:
   static const char kViewClassName[];
 
-  explicit InfoBarContainerView(Delegate* delegate,
-                                chrome::search::SearchModel* search_model);
+  explicit InfoBarContainerView(Delegate* delegate);
   virtual ~InfoBarContainerView();
 
  private:
   // AccessiblePaneView:
   virtual gfx::Size GetPreferredSize() OVERRIDE;
-  virtual std::string GetClassName() const OVERRIDE;
+  virtual const char* GetClassName() const OVERRIDE;
   virtual void Layout() OVERRIDE;
-  virtual void GetAccessibleState(ui::AccessibleViewState* state) OVERRIDE;
+  virtual void GetAccessibleState(ui::AXViewState* state) OVERRIDE;
 
   // InfobarContainer:
-  virtual void PlatformSpecificAddInfoBar(InfoBar* infobar,
+  virtual void PlatformSpecificAddInfoBar(infobars::InfoBar* infobar,
                                           size_t position) OVERRIDE;
-  virtual void PlatformSpecificRemoveInfoBar(InfoBar* infobar) OVERRIDE;
+  virtual void PlatformSpecificRemoveInfoBar(
+      infobars::InfoBar* infobar) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(InfoBarContainerView);
 };

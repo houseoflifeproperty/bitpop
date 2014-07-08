@@ -23,12 +23,6 @@
 #include "chrome/browser/profiles/profile.h"
 #include "base/stl_util.h"
 
-namespace {
-  const char kOfflineStatus[] = "offline";
-  const char kAvailableStatus[] = "available";
-
-}
-
 FacebookChatManager::FacebookChatManager() :
     profile_(NULL),
     shutdown_needed_(false) {

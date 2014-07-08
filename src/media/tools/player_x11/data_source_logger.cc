@@ -19,15 +19,10 @@ static void LogAndRunReadCB(
 }
 
 DataSourceLogger::DataSourceLogger(
-    const scoped_refptr<media::DataSource>& data_source,
+    scoped_ptr<media::DataSource> data_source,
     bool streaming)
-    : data_source_(data_source),
+    : data_source_(data_source.Pass()),
       streaming_(streaming) {
-}
-
-void DataSourceLogger::set_host(media::DataSourceHost* host) {
-  VLOG(1) << "set_host(" << host << ")";
-  data_source_->set_host(host);
 }
 
 void DataSourceLogger::Stop(const base::Closure& closure) {

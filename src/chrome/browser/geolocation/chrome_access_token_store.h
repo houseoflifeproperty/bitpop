@@ -8,12 +8,12 @@
 #include "base/memory/ref_counted.h"
 #include "content/public/browser/access_token_store.h"
 
-class PrefService;
+class PrefRegistrySimple;
 
 // Creates a new access token store backed by the global chome prefs.
 class ChromeAccessTokenStore : public content::AccessTokenStore {
  public:
-  static void RegisterPrefs(PrefService* prefs);
+  static void RegisterPrefs(PrefRegistrySimple* registry);
 
   ChromeAccessTokenStore();
 
@@ -25,7 +25,7 @@ class ChromeAccessTokenStore : public content::AccessTokenStore {
 
   // AccessTokenStore
   virtual void SaveAccessToken(
-      const GURL& server_url, const string16& access_token) OVERRIDE;
+      const GURL& server_url, const base::string16& access_token) OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(ChromeAccessTokenStore);
 };

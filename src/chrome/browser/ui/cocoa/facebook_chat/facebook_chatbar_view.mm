@@ -16,13 +16,14 @@
 
 #import "chrome/browser/ui/cocoa/facebook_chat/facebook_chatbar_view.h"
 
-#include "base/memory/scoped_nsobject.h"
+#include "chrome/browser/themes/theme_properties.h"
 #include "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/tabs/tab_strip_controller.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #import "chrome/browser/ui/cocoa/view_id_util.h"
 #include "grit/theme_resources.h"
+#import "ui/base/cocoa/nsgraphics_context_additions.h"
 #include "ui/gfx/scoped_ns_graphics_context_save_gstate_mac.h"
 
 @implementation FacebookChatbarView
@@ -47,8 +48,8 @@
   BOOL isActive = [[self window] isMainWindow];
   ui::ThemeProvider* themeProvider = [[self window] themeProvider];
   return themeProvider ? themeProvider->GetNSColor(
-      isActive ? ThemeService::COLOR_TOOLBAR_STROKE :
-                 ThemeService::COLOR_TOOLBAR_STROKE_INACTIVE, true) :
+      isActive ? ThemeProperties::COLOR_TOOLBAR_STROKE :
+                 ThemeProperties::COLOR_TOOLBAR_STROKE_INACTIVE) :
       [NSColor blackColor];
 }
 
@@ -76,8 +77,8 @@
       static_cast<ThemeService*>([[self window] themeProvider]);
   if (themeProvider) {
     int resourceName = themeProvider->UsingDefaultTheme() ?
-        ThemeService::COLOR_TOOLBAR_BEZEL : ThemeService::COLOR_TOOLBAR;
-    NSColor* highlightColor = themeProvider->GetNSColor(resourceName, true);
+        ThemeProperties::COLOR_TOOLBAR_BEZEL : ThemeProperties::COLOR_TOOLBAR;
+    NSColor* highlightColor = themeProvider->GetNSColor(resourceName);
     if (highlightColor) {
       [highlightColor set];
       borderRect.origin.y -= [self cr_lineWidth];

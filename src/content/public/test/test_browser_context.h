@@ -6,7 +6,7 @@
 #define CONTENT_PUBLIC_TEST_TEST_BROWSER_CONTEXT_H_
 
 #include "base/compiler_specific.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/files/scoped_temp_dir.h"
 #include "base/gtest_prod_util.h"
 #include "base/memory/ref_counted.h"
@@ -23,31 +23,49 @@ class TestBrowserContext : public BrowserContext {
 
   // Takes ownership of the temporary directory so that it's not deleted when
   // this object is destructed.
-  FilePath TakePath();
+  base::FilePath TakePath();
 
   void SetSpecialStoragePolicy(quota::SpecialStoragePolicy* policy);
 
-  virtual FilePath GetPath() OVERRIDE;
+  virtual base::FilePath GetPath() const OVERRIDE;
   virtual bool IsOffTheRecord() const OVERRIDE;
   virtual DownloadManagerDelegate* GetDownloadManagerDelegate() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* GetRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
-  virtual net::URLRequestContextGetter* GetRequestContextForStoragePartition(
-      const FilePath& partition_path,
-      bool in_memory) OVERRIDE;
   virtual net::URLRequestContextGetter* GetMediaRequestContext() OVERRIDE;
   virtual net::URLRequestContextGetter* GetMediaRequestContextForRenderProcess(
       int renderer_child_id) OVERRIDE;
   virtual net::URLRequestContextGetter*
       GetMediaRequestContextForStoragePartition(
-          const FilePath& partition_path,
+          const base::FilePath& partition_path,
           bool in_memory) OVERRIDE;
+  virtual void RequestMidiSysExPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      const GURL& requesting_frame,
+      bool user_gesture,
+      const MidiSysExPermissionCallback& callback) OVERRIDE;
+  virtual void CancelMidiSysExPermissionRequest(
+        int render_process_id,
+        int render_view_id,
+        int bridge_id,
+        const GURL& requesting_frame) OVERRIDE;
+  virtual void RequestProtectedMediaIdentifierPermission(
+      int render_process_id,
+      int render_view_id,
+      int bridge_id,
+      int group_id,
+      const GURL& requesting_frame,
+      const ProtectedMediaIdentifierPermissionCallback& callback) OVERRIDE;
+  virtual void CancelProtectedMediaIdentifierPermissionRequests(
+      int group_id) OVERRIDE;
   virtual ResourceContext* GetResourceContext() OVERRIDE;
   virtual GeolocationPermissionContext*
       GetGeolocationPermissionContext() OVERRIDE;
-  virtual SpeechRecognitionPreferences*
-      GetSpeechRecognitionPreferences() OVERRIDE;
+  virtual content::BrowserPluginGuestManagerDelegate*
+      GetGuestManagerDelegate() OVERRIDE;
   virtual quota::SpecialStoragePolicy* GetSpecialStoragePolicy() OVERRIDE;
 
  private:

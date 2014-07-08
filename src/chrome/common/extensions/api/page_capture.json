@@ -5,6 +5,7 @@
 [
   {
     "namespace": "pageCapture",
+    "description": "Use the <code>chrome.pageCapture</code> API to save a tab as MHTML.",
     "functions": [
       {
         "name": "saveAsMHTML",
@@ -30,7 +31,7 @@
               {
                 "name": "mhtmlData",
                 "type": "binary",
-                "optional": "true",
+                "optional": true,
                 "description": "The MHTML data as a Blob."
               }
             ]

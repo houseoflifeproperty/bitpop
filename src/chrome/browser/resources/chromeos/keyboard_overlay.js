@@ -38,6 +38,7 @@ var LABEL_TO_IDENTIFIER = {
   'ctrl': '1D',
   'alt': '38',
   'caps lock': '3A',
+  'esc': '01',
   'disabled': 'DISABLED'
 };
 
@@ -76,7 +77,7 @@ var KEYCODE_TO_LABEL = {
   112: 'back',
   113: 'forward',
   114: 'reload',
-  115: 'maximize',
+  115: 'full screen',
   116: 'switch window',
   117: 'bright down',
   118: 'bright up',
@@ -96,19 +97,16 @@ var KEYCODE_TO_LABEL = {
   222: '\'',
 };
 
-// The labels that close the keyboard overlay when pressed
-var CLOSE_LABELS = [
-  'delete',
-  'end',
-  'esc',
-  'home',
-  'pagedown',
-  'pageup',
-  'switch window',
-];
+var IME_ID_PREFIX = '_comp_ime_';
+var EXTENSION_ID_LEN = 32;
 
 var keyboardOverlayId = 'en_US';
 var identifierMap = {};
+
+/**
+ * True after at least one keydown event has been received.
+ */
+var gotKeyDown = false;
 
 /**
  * Returns the layout name.
@@ -139,51 +137,15 @@ function getShortcutData() {
 
   shortcutDataCache = keyboardOverlayData['shortcut'];
 
-  // TODO(mazda): Clean this up and move these out to the data js.
-  var searchModifierAddShortcuts = {
-    '1<>SEARCH': 'keyboardOverlayF1',
-    '2<>SEARCH': 'keyboardOverlayF2',
-    '3<>SEARCH': 'keyboardOverlayF3',
-    '4<>SEARCH': 'keyboardOverlayF4',
-    '5<>SEARCH': 'keyboardOverlayF5',
-    '6<>SEARCH': 'keyboardOverlayF6',
-    '7<>SEARCH': 'keyboardOverlayF7',
-    '8<>SEARCH': 'keyboardOverlayF8',
-    '9<>SEARCH': 'keyboardOverlayF9',
-    '0<>SEARCH': 'keyboardOverlayF10',
-    '-<>SEARCH': 'keyboardOverlayF11',
-    '=<>SEARCH': 'keyboardOverlayF12',
-    'F1<>SEARCH': 'keyboardOverlayF1',
-    'F2<>SEARCH': 'keyboardOverlayF2',
-    'F3<>SEARCH': 'keyboardOverlayF3',
-    'F4<>SEARCH': 'keyboardOverlayF4',
-    'F5<>SEARCH': 'keyboardOverlayF5',
-    'F6<>SEARCH': 'keyboardOverlayF6',
-    'F7<>SEARCH': 'keyboardOverlayF7',
-    'F8<>SEARCH': 'keyboardOverlayF8',
-    'F9<>SEARCH': 'keyboardOverlayF9',
-    'F10<>SEARCH': 'keyboardOverlayF10',
-    'F11<>SEARCH': 'keyboardOverlayF11',
-    'F12<>SEARCH': 'keyboardOverlayF12',
-    'back<>SEARCH': 'keyboardOverlayF1',
-    'forward<>SEARCH': 'keyboardOverlayF2',
-    'reload<>SEARCH': 'keyboardOverlayF3',
-    'maximize<>SEARCH': 'keyboardOverlayF4',
-    'switch window<>SEARCH': 'keyboardOverlayF5',
-    'bright down<>SEARCH': 'keyboardOverlayF6',
-    'bright up<>SEARCH': 'keyboardOverlayF7',
-    'mute<>SEARCH': 'keyboardOverlayF8',
-    'vol. down<>SEARCH': 'keyboardOverlayF9',
-    'vol. up<>SEARCH': 'keyboardOverlayF10',
-    'backspace<>SEARCH': 'keyboardOverlayDelete',
-    'down<>SEARCH': 'keyboardOverlayPageDown',
-    'right<>SEARCH': 'keyboardOverlayEnd',
-    'up<>SEARCH': 'keyboardOverlayPageUp',
-    'left<>SEARCH': 'keyboardOverlayHome',
-    '.<>SEARCH': 'keyboardOverlayInsert'
-  };
-  for (var key in searchModifierAddShortcuts)
-    shortcutDataCache[key] = searchModifierAddShortcuts[key];
+  if (!isDisplayUIScalingEnabled()) {
+    // Zoom screen in
+    delete shortcutDataCache['+<>CTRL<>SHIFT'];
+    // Zoom screen out
+    delete shortcutDataCache['-<>CTRL<>SHIFT'];
+    // Reset screen zoom
+    delete shortcutDataCache['0<>CTRL<>SHIFT'];
+  }
+
   return shortcutDataCache;
 }
 
@@ -485,8 +447,8 @@ function update(modifiers) {
       shortcutText.style.visibility = 'hidden';
     }
 
-    if (keyData.format) {
-      var format = keyData.format;
+    var format = keyboardGlyphData.keys[layout[i][0]].format;
+    if (format) {
       if (format == 'left' || format == 'right') {
         shortcutText.style.textAlign = format;
         keyText.style.textAlign = format;
@@ -503,6 +465,18 @@ function handleKeyEvent(e) {
   if (!getKeyboardOverlayId()) {
     return;
   }
+
+  // To avoid flickering as the user releases the modifier keys that were held
+  // to trigger the overlay, avoid updating in response to keyup events until at
+  // least one keydown event has been received.
+  if (!gotKeyDown) {
+    if (e.type == 'keyup') {
+      return;
+    } else if (e.type == 'keydown') {
+      gotKeyDown = true;
+    }
+  }
+
   var modifiers = getModifiers(e);
   update(modifiers);
   KeyboardOverlayAccessibilityHelper.maybeSpeakAllShortcuts(modifiers);
@@ -614,8 +588,15 @@ function initLayout() {
  * @return {boolean} Returns true if the device has a diamond key.
  */
 function hasDiamondKey() {
-  return (loadTimeData.getString('keyboardOverlayHasChromeOSDiamondKey') ==
-          'true');
+  return loadTimeData.getBoolean('keyboardOverlayHasChromeOSDiamondKey');
+}
+
+/**
+ * Returns true if display scaling feature is enabled.
+ * @return {boolean} True if display scaling feature is enabled.
+ */
+function isDisplayUIScalingEnabled() {
+  return loadTimeData.getBoolean('keyboardOverlayIsDisplayUIScalingEnabled');
 }
 
 /**
@@ -702,6 +683,13 @@ function initKeyboardOverlayId(inputMethodId) {
   var inputMethodIdToOverlayId =
       keyboardOverlayData['inputMethodIdToOverlayId'];
   if (inputMethodId) {
+    if (inputMethodId.indexOf(IME_ID_PREFIX) == 0) {
+      // If the input method is a component extension IME, remove the prefix:
+      //   _comp_ime_<ext_id>
+      // The extension id is a hash value with 32 characters.
+      inputMethodId = inputMethodId.slice(
+          IME_ID_PREFIX.length + EXTENSION_ID_LEN);
+    }
     keyboardOverlayId = inputMethodIdToOverlayId[inputMethodId];
   }
   if (!keyboardOverlayId) {
@@ -728,7 +716,7 @@ function initKeyboardOverlayId(inputMethodId) {
  */
 function learnMoreClicked(e) {
   chrome.send('openLearnMorePage');
-  chrome.send('DialogClose');
+  chrome.send('dialogClose');
   e.preventDefault();
 }
 

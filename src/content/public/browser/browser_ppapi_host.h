@@ -6,21 +6,16 @@
 #define CONTENT_PUBLIC_BROWSER_BROWSER_PPAPI_HOST_H_
 
 #include "base/callback_forward.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "content/common/content_export.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/render_view_host.h"
-#include "googleurl/src/gurl.h"
 #include "ppapi/c/pp_instance.h"
+#include "url/gurl.h"
 
 namespace IPC {
 class ChannelProxy;
 struct ChannelHandle;
 class Sender;
-}
-
-namespace net {
-class HostResolver;
 }
 
 namespace ppapi {
@@ -39,6 +34,17 @@ namespace content {
 // lives entirely on the I/O thread.
 class CONTENT_EXPORT BrowserPpapiHost {
  public:
+  struct OnKeepaliveInstanceStruct {
+    int render_process_id;
+    int render_frame_id;
+    GURL document_url;
+  };
+  typedef std::vector<OnKeepaliveInstanceStruct> OnKeepaliveInstanceData;
+  typedef base::Callback<
+      void (const OnKeepaliveInstanceData& instance_data,
+            const base::FilePath& profile_data_directory)>
+      OnKeepaliveCallback;
+
   // Creates a browser host and sets up an out-of-process proxy for an external
   // pepper plugin process.
   static BrowserPpapiHost* CreateExternalPluginProcess(
@@ -46,9 +52,9 @@ class CONTENT_EXPORT BrowserPpapiHost {
       ppapi::PpapiPermissions permissions,
       base::ProcessHandle plugin_child_process,
       IPC::ChannelProxy* channel,
-      net::HostResolver* host_resolver,
       int render_process_id,
-      int render_view_id);
+      int render_view_id,
+      const base::FilePath& profile_directory);
 
   virtual ~BrowserPpapiHost() {}
 
@@ -61,7 +67,7 @@ class CONTENT_EXPORT BrowserPpapiHost {
   // Returns true if the given PP_Instance is valid.
   virtual bool IsValidInstance(PP_Instance instance) const = 0;
 
-  // Retrieves the process/view Ids associated with the RenderView containing
+  // Retrieves the process/frame Ids associated with the RenderFrame containing
   // the given instance and returns true on success. If the instance is
   // invalid, the ids will be 0 and false will be returned.
   //
@@ -69,20 +75,27 @@ class CONTENT_EXPORT BrowserPpapiHost {
   // validated, and the resource hosts will be deleted when the resource is
   // destroyed. So it should not generally be necessary to check for errors
   // from this function except as a last-minute sanity check if you convert the
-  // IDs to a RenderView/ProcessHost on the UI thread.
-  virtual bool GetRenderViewIDsForInstance(PP_Instance instance,
-                                           int* render_process_id,
-                                           int* render_view_id) const = 0;
+  // IDs to a RenderFrame/ProcessHost on the UI thread.
+  virtual bool GetRenderFrameIDsForInstance(PP_Instance instance,
+                                            int* render_process_id,
+                                            int* render_frame_id) const = 0;
 
   // Returns the name of the plugin.
   virtual const std::string& GetPluginName() = 0;
 
+  // Returns the path of the plugin.
+  virtual const base::FilePath& GetPluginPath() = 0;
+
   // Returns the user's profile data directory.
-  virtual const FilePath& GetProfileDataDirectory() = 0;
+  virtual const base::FilePath& GetProfileDataDirectory() = 0;
 
   // Get the Document/Plugin URLs for the given PP_Instance.
   virtual GURL GetDocumentURLForInstance(PP_Instance instance) = 0;
   virtual GURL GetPluginURLForInstance(PP_Instance instance) = 0;
+
+  // Sets a callback the BrowserPpapiHost will run when the plugin messages
+  // that it is active.
+  virtual void SetOnKeepaliveCallback(const OnKeepaliveCallback& callback) = 0;
 };
 
 }  // namespace content

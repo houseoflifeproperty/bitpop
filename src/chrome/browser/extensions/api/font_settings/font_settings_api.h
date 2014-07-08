@@ -5,19 +5,23 @@
 // Defines the classes to realize the Font Settings Extension API as specified
 // in the extension API JSON.
 
-#ifndef CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
-#define CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
+#ifndef CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_
+#define CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_
 
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/prefs/public/pref_change_registrar.h"
-#include "chrome/browser/extensions/event_router.h"
-#include "chrome/browser/extensions/extension_function.h"
-#include "chrome/browser/prefs/pref_service.h"
-#include "chrome/browser/profiles/profile_keyed_service.h"
+#include "base/prefs/pref_change_registrar.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/extensions/chrome_extension_function.h"
+#include "extensions/browser/browser_context_keyed_api_factory.h"
+#include "extensions/browser/event_router.h"
 
 class Profile;
+
+namespace content {
+class BrowserContext;
+}
 
 namespace extensions {
 
@@ -70,63 +74,75 @@ class FontSettingsEventRouter {
 // The profile-keyed service that manages the font_settings extension API.
 // This is not an EventRouter::Observer (and does not lazily initialize) because
 // doing so caused a regression in perf tests. See crbug.com/163466.
-class FontSettingsAPI : public ProfileKeyedService {
+class FontSettingsAPI : public BrowserContextKeyedAPI {
  public:
-  explicit FontSettingsAPI(Profile* profile);
+  explicit FontSettingsAPI(content::BrowserContext* context);
   virtual ~FontSettingsAPI();
 
+  // BrowserContextKeyedAPI implementation.
+  static BrowserContextKeyedAPIFactory<FontSettingsAPI>* GetFactoryInstance();
+
  private:
+  friend class BrowserContextKeyedAPIFactory<FontSettingsAPI>;
+
+  // BrowserContextKeyedAPI implementation.
+  static const char* service_name() {
+    return "FontSettingsAPI";
+  }
+  static const bool kServiceIsNULLWhileTesting = true;
+
   scoped_ptr<FontSettingsEventRouter> font_settings_event_router_;
 };
 
 // fontSettings.clearFont API function.
-class ClearFontFunction : public SyncExtensionFunction {
+class FontSettingsClearFontFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearFont")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearFont", FONTSETTINGS_CLEARFONT)
 
  protected:
   // RefCounted types have non-public destructors, as with all extension
   // functions in this file.
-  virtual ~ClearFontFunction() {}
+  virtual ~FontSettingsClearFontFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // fontSettings.getFont API function.
-class GetFontFunction : public SyncExtensionFunction {
+class FontSettingsGetFontFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getFont")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getFont", FONTSETTINGS_GETFONT)
 
  protected:
-  virtual ~GetFontFunction() {}
+  virtual ~FontSettingsGetFontFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // fontSettings.setFont API function.
-class SetFontFunction : public SyncExtensionFunction {
+class FontSettingsSetFontFunction : public ChromeSyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setFont")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setFont", FONTSETTINGS_SETFONT)
 
  protected:
-  virtual ~SetFontFunction() {}
+  virtual ~FontSettingsSetFontFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 };
 
 // fontSettings.getFontList API function.
-class GetFontListFunction : public AsyncExtensionFunction {
+class FontSettingsGetFontListFunction : public ChromeAsyncExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getFontList")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getFontList",
+                             FONTSETTINGS_GETFONTLIST)
 
  protected:
-  virtual ~GetFontListFunction() {}
+  virtual ~FontSettingsGetFontListFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunAsync() OVERRIDE;
 
  private:
   void FontListHasLoaded(scoped_ptr<base::ListValue> list);
@@ -134,12 +150,12 @@ class GetFontListFunction : public AsyncExtensionFunction {
 };
 
 // Base class for extension API functions that clear a browser font pref.
-class ClearFontPrefExtensionFunction : public SyncExtensionFunction {
+class ClearFontPrefExtensionFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~ClearFontPrefExtensionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
   // Implementations should return the name of the preference to clear, like
   // "webkit.webprefs.default_font_size".
@@ -147,12 +163,12 @@ class ClearFontPrefExtensionFunction : public SyncExtensionFunction {
 };
 
 // Base class for extension API functions that get a browser font pref.
-class GetFontPrefExtensionFunction : public SyncExtensionFunction {
+class GetFontPrefExtensionFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~GetFontPrefExtensionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
   // Implementations should return the name of the preference to get, like
   // "webkit.webprefs.default_font_size".
@@ -164,12 +180,12 @@ class GetFontPrefExtensionFunction : public SyncExtensionFunction {
 };
 
 // Base class for extension API functions that set a browser font pref.
-class SetFontPrefExtensionFunction : public SyncExtensionFunction {
+class SetFontPrefExtensionFunction : public ChromeSyncExtensionFunction {
  protected:
   virtual ~SetFontPrefExtensionFunction() {}
 
   // ExtensionFunction:
-  virtual bool RunImpl() OVERRIDE;
+  virtual bool RunSync() OVERRIDE;
 
   // Implementations should return the name of the preference to set, like
   // "webkit.webprefs.default_font_size".
@@ -183,106 +199,123 @@ class SetFontPrefExtensionFunction : public SyncExtensionFunction {
 // The following are get/set/clear API functions that act on a browser font
 // pref.
 
-class ClearDefaultFontSizeFunction : public ClearFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearDefaultFontSize")
-
- protected:
-  virtual ~ClearDefaultFontSizeFunction() {}
-
-  // ClearFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-};
-
-class GetDefaultFontSizeFunction : public GetFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getDefaultFontSize")
-
- protected:
-  virtual ~GetDefaultFontSizeFunction() {}
-
-  // GetFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-  virtual const char* GetKey() OVERRIDE;
-};
-
-class SetDefaultFontSizeFunction : public SetFontPrefExtensionFunction {
- public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setDefaultFontSize")
-
- protected:
-  virtual ~SetDefaultFontSizeFunction() {}
-
-  // SetFontPrefExtensionFunction:
-  virtual const char* GetPrefName() OVERRIDE;
-  virtual const char* GetKey() OVERRIDE;
-};
-
-class ClearDefaultFixedFontSizeFunction
+class FontSettingsClearDefaultFontSizeFunction
     : public ClearFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearDefaultFontSize",
+                             FONTSETTINGS_CLEARDEFAULTFONTSIZE)
 
  protected:
-  virtual ~ClearDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsClearDefaultFontSizeFunction() {}
 
   // ClearFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
 };
 
-class GetDefaultFixedFontSizeFunction : public GetFontPrefExtensionFunction {
+class FontSettingsGetDefaultFontSizeFunction
+    : public GetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getDefaultFontSize",
+                             FONTSETTINGS_GETDEFAULTFONTSIZE)
 
  protected:
-  virtual ~GetDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsGetDefaultFontSizeFunction() {}
 
   // GetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class SetDefaultFixedFontSizeFunction : public SetFontPrefExtensionFunction {
+class FontSettingsSetDefaultFontSizeFunction
+    : public SetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setDefaultFixedFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setDefaultFontSize",
+                             FONTSETTINGS_SETDEFAULTFONTSIZE)
 
  protected:
-  virtual ~SetDefaultFixedFontSizeFunction() {}
+  virtual ~FontSettingsSetDefaultFontSizeFunction() {}
 
   // SetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class ClearMinimumFontSizeFunction : public ClearFontPrefExtensionFunction {
+class FontSettingsClearDefaultFixedFontSizeFunction
+    : public ClearFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.clearMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearDefaultFixedFontSize",
+                             FONTSETTINGS_CLEARDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~ClearMinimumFontSizeFunction() {}
+  virtual ~FontSettingsClearDefaultFixedFontSizeFunction() {}
 
   // ClearFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
 };
 
-class GetMinimumFontSizeFunction : public GetFontPrefExtensionFunction {
+class FontSettingsGetDefaultFixedFontSizeFunction
+    : public GetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.getMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getDefaultFixedFontSize",
+                             FONTSETTINGS_GETDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~GetMinimumFontSizeFunction() {}
+  virtual ~FontSettingsGetDefaultFixedFontSizeFunction() {}
 
   // GetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
   virtual const char* GetKey() OVERRIDE;
 };
 
-class SetMinimumFontSizeFunction : public SetFontPrefExtensionFunction {
+class FontSettingsSetDefaultFixedFontSizeFunction
+    : public SetFontPrefExtensionFunction {
  public:
-  DECLARE_EXTENSION_FUNCTION_NAME("fontSettings.setMinimumFontSize")
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setDefaultFixedFontSize",
+                             FONTSETTINGS_SETDEFAULTFIXEDFONTSIZE)
 
  protected:
-  virtual ~SetMinimumFontSizeFunction() {}
+  virtual ~FontSettingsSetDefaultFixedFontSizeFunction() {}
+
+  // SetFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+  virtual const char* GetKey() OVERRIDE;
+};
+
+class FontSettingsClearMinimumFontSizeFunction
+    : public ClearFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.clearMinimumFontSize",
+                             FONTSETTINGS_CLEARMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsClearMinimumFontSizeFunction() {}
+
+  // ClearFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+};
+
+class FontSettingsGetMinimumFontSizeFunction
+    : public GetFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.getMinimumFontSize",
+                             FONTSETTINGS_GETMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsGetMinimumFontSizeFunction() {}
+
+  // GetFontPrefExtensionFunction:
+  virtual const char* GetPrefName() OVERRIDE;
+  virtual const char* GetKey() OVERRIDE;
+};
+
+class FontSettingsSetMinimumFontSizeFunction
+    : public SetFontPrefExtensionFunction {
+ public:
+  DECLARE_EXTENSION_FUNCTION("fontSettings.setMinimumFontSize",
+                             FONTSETTINGS_SETMINIMUMFONTSIZE)
+
+ protected:
+  virtual ~FontSettingsSetMinimumFontSizeFunction() {}
 
   // SetFontPrefExtensionFunction:
   virtual const char* GetPrefName() OVERRIDE;
@@ -291,4 +324,4 @@ class SetMinimumFontSizeFunction : public SetFontPrefExtensionFunction {
 
 }  // namespace extensions
 
-#endif  // CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H__
+#endif  // CHROME_BROWSER_EXTENSIONS_API_FONT_SETTINGS_FONT_SETTINGS_API_H_

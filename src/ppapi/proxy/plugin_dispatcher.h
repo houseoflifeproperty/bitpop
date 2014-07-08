@@ -9,19 +9,24 @@
 #include <string>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/process.h"
+#include "base/process/process.h"
 #include "build/build_config.h"
-#include "ppapi/c/pp_rect.h"
+#include "ipc/ipc_sync_channel.h"
 #include "ppapi/c/pp_instance.h"
+#include "ppapi/c/pp_rect.h"
 #include "ppapi/c/ppb_console.h"
 #include "ppapi/proxy/dispatcher.h"
 #include "ppapi/shared_impl/ppapi_preferences.h"
 #include "ppapi/shared_impl/ppb_view_shared.h"
 #include "ppapi/shared_impl/singleton_resource_id.h"
 #include "ppapi/shared_impl/tracked_callback.h"
+
+namespace IPC {
+class SyncMessageFilter;
+}
 
 namespace ppapi {
 
@@ -34,8 +39,6 @@ class ResourceCreationAPI;
 }
 
 namespace proxy {
-
-class ResourceMessageReplyParams;
 
 // Used to keep track of per-instance data.
 struct InstanceData {
@@ -158,13 +161,6 @@ class PPAPI_PROXY_EXPORT PluginDispatcher
   uint32 plugin_dispatcher_id() const { return plugin_dispatcher_id_; }
   bool incognito() const { return incognito_; }
 
-  // Dispatches the given resource message to the appropriate resource in the
-  // plugin process. This should be wired to the various channels that messages
-  // come in from various other processes.
-  static void DispatchResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
-
  private:
   friend class PluginDispatcherTest;
 
@@ -173,16 +169,10 @@ class PPAPI_PROXY_EXPORT PluginDispatcher
   void ForceFreeAllInstances();
 
   // IPC message handlers.
-  void OnMsgResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
   void OnMsgSupportsInterface(const std::string& interface_name, bool* result);
   void OnMsgSetPreferences(const Preferences& prefs);
 
-  // Internal backed for DispatchResourceReply.
-  static void LockedDispatchResourceReply(
-      const ppapi::proxy::ResourceMessageReplyParams& reply_params,
-      const IPC::Message& nested_msg);
+  virtual bool SendMessage(IPC::Message* msg);
 
   PluginDelegate* plugin_delegate_;
 
@@ -206,6 +196,9 @@ class PPAPI_PROXY_EXPORT PluginDispatcher
   // Set to true when the instances associated with this dispatcher are
   // incognito mode.
   bool incognito_;
+
+  // A filter for sending messages from threads other than the main thread.
+  scoped_refptr<IPC::SyncMessageFilter> sync_filter_;
 
   DISALLOW_COPY_AND_ASSIGN(PluginDispatcher);
 };

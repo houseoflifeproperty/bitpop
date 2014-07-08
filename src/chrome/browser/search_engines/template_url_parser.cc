@@ -10,16 +10,17 @@
 
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/search_engines/search_terms_data.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
 #include "chrome/common/url_constants.h"
-#include "googleurl/src/gurl.h"
 #include "libxml/parser.h"
 #include "libxml/xmlwriter.h"
 #include "ui/gfx/favicon_size.h"
+#include "url/gurl.h"
 
 namespace {
 
@@ -51,12 +52,6 @@ const char kHTMLType[] = "text/html";
 
 // Mime type for as you type suggestions.
 const char kSuggestionType[] = "application/x-suggestions+json";
-
-// Namespace identifier.
-const char kOSDNS[] = "xmlns";
-
-// The namespace for documents we understand.
-const char kNameSpace[] = "http://a9.com/-/spec/opensearch/1.1/";
 
 std::string XMLCharToString(const xmlChar* value) {
   return std::string(reinterpret_cast<const char*>(value));
@@ -99,8 +94,8 @@ bool IsHTTPRef(const std::string& url) {
   if (url.empty())
     return true;
   GURL gurl(url);
-  return gurl.is_valid() && (gurl.SchemeIs(chrome::kHttpScheme) ||
-                             gurl.SchemeIs(chrome::kHttpsScheme));
+  return gurl.is_valid() && (gurl.SchemeIs(url::kHttpScheme) ||
+                             gurl.SchemeIs(url::kHttpsScheme));
 }
 
 }  // namespace
@@ -171,7 +166,7 @@ class TemplateURLParsingContext {
   bool image_is_valid_for_favicon_;
 
   // Character content for the current element.
-  string16 string_;
+  base::string16 string_;
 
   TemplateURLParser::ParameterFilter* parameter_filter_;
 
@@ -250,22 +245,22 @@ void TemplateURLParsingContext::EndElementImpl(void* ctx, const xmlChar* name) {
       context->data_.short_name = context->string_;
       break;
     case TemplateURLParsingContext::IMAGE: {
-      GURL image_url(UTF16ToUTF8(context->string_));
-      if (image_url.SchemeIs(chrome::kDataScheme)) {
+      GURL image_url(base::UTF16ToUTF8(context->string_));
+      if (image_url.SchemeIs(content::kDataScheme)) {
         // TODO (jcampan): bug 1169256: when dealing with data URL, we need to
         // decode the data URL in the renderer. For now, we'll just point to the
         // favicon from the URL.
         context->derive_image_from_url_ = true;
       } else if (context->image_is_valid_for_favicon_ && image_url.is_valid() &&
-                 (image_url.SchemeIs(chrome::kHttpScheme) ||
-                  image_url.SchemeIs(chrome::kHttpsScheme))) {
+                 (image_url.SchemeIs(url::kHttpScheme) ||
+                  image_url.SchemeIs(url::kHttpsScheme))) {
         context->data_.favicon_url = image_url;
       }
       context->image_is_valid_for_favicon_ = false;
       break;
     }
     case TemplateURLParsingContext::INPUT_ENCODING: {
-      std::string input_encoding = UTF16ToASCII(context->string_);
+      std::string input_encoding = base::UTF16ToASCII(context->string_);
       if (IsValidEncodingString(input_encoding))
         context->data_.input_encodings.push_back(input_encoding);
       break;
@@ -285,7 +280,7 @@ void TemplateURLParsingContext::CharactersImpl(void* ctx,
                                                const xmlChar* ch,
                                                int len) {
   reinterpret_cast<TemplateURLParsingContext*>(ctx)->string_ +=
-      UTF8ToUTF16(std::string(reinterpret_cast<const char*>(ch), len));
+      base::UTF8ToUTF16(std::string(reinterpret_cast<const char*>(ch), len));
 }
 
 TemplateURL* TemplateURLParsingContext::GetTemplateURL(
@@ -309,10 +304,15 @@ TemplateURL* TemplateURLParsingContext::GetTemplateURL(
 
   // Bail if the search URL is empty or if either TemplateURLRef is invalid.
   scoped_ptr<TemplateURL> template_url(new TemplateURL(profile, data_));
-  if (template_url->url().empty() || !template_url->url_ref().IsValid() ||
+  scoped_ptr<SearchTermsData> search_terms_data(profile ?
+      new UIThreadSearchTermsData(profile) : new SearchTermsData());
+  if (template_url->url().empty() ||
+      !template_url->url_ref().IsValidUsingTermsData(*search_terms_data) ||
       (!template_url->suggestions_url().empty() &&
-       !template_url->suggestions_url_ref().IsValid()))
+       !template_url->suggestions_url_ref().
+           IsValidUsingTermsData(*search_terms_data))) {
     return NULL;
+  }
 
   return template_url.release();
 }
@@ -423,10 +423,10 @@ void TemplateURLParsingContext::ProcessURLParams() {
   std::string new_query;
   bool modified = false;
   if (parameter_filter_) {
-    url_parse::Component query = url.parsed_for_possibly_invalid_spec().query;
-    url_parse::Component key, value;
+    url::Component query = url.parsed_for_possibly_invalid_spec().query;
+    url::Component key, value;
     const char* url_spec = url.spec().c_str();
-    while (url_parse::ExtractQueryKeyValue(url_spec, &query, &key, &value)) {
+    while (url::ExtractQueryKeyValue(url_spec, &query, &key, &value)) {
       std::string key_str(url_spec, key.begin, key.len);
       std::string value_str(url_spec, value.begin, value.len);
       if (parameter_filter_->KeepParameter(key_str, value_str)) {

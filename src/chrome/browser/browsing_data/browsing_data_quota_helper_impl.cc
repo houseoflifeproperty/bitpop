@@ -9,12 +9,13 @@
 
 #include "base/bind.h"
 #include "base/logging.h"
+#include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/common/url_constants.h"
-#include "chrome/browser/browsing_data/browsing_data_helper.h"
 #include "content/public/browser/browser_context.h"
+#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/storage_partition.h"
-#include "webkit/quota/quota_manager.h"
+#include "webkit/browser/quota/quota_manager.h"
 
 using content::BrowserThread;
 using content::BrowserContext;
@@ -22,8 +23,8 @@ using content::BrowserContext;
 // static
 BrowsingDataQuotaHelper* BrowsingDataQuotaHelper::Create(Profile* profile) {
   return new BrowsingDataQuotaHelperImpl(
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI),
-      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::UI).get(),
+      BrowserThread::GetMessageLoopProxyForThread(BrowserThread::IO).get(),
       BrowserContext::GetDefaultStoragePartition(profile)->GetQuotaManager());
 }
 
@@ -62,7 +63,7 @@ BrowsingDataQuotaHelperImpl::BrowsingDataQuotaHelperImpl(
       is_fetching_(false),
       ui_thread_(ui_thread),
       io_thread_(io_thread),
-      weak_factory_(ALLOW_THIS_IN_INITIALIZER_LIST(this)) {
+      weak_factory_(this) {
   DCHECK(quota_manager);
 }
 
@@ -92,16 +93,24 @@ void BrowsingDataQuotaHelperImpl::GotOrigins(
       pending_hosts_.insert(std::make_pair(itr->host(), type));
 
   DCHECK(type == quota::kStorageTypeTemporary ||
-         type == quota::kStorageTypePersistent);
+         type == quota::kStorageTypePersistent ||
+         type == quota::kStorageTypeSyncable);
 
+  // Calling GetOriginsModifiedSince() for all types by chaining callbacks.
   if (type == quota::kStorageTypeTemporary) {
     quota_manager_->GetOriginsModifiedSince(
         quota::kStorageTypePersistent,
         base::Time(),
         base::Bind(&BrowsingDataQuotaHelperImpl::GotOrigins,
                    weak_factory_.GetWeakPtr()));
+  } else if (type == quota::kStorageTypePersistent) {
+    quota_manager_->GetOriginsModifiedSince(
+        quota::kStorageTypeSyncable,
+        base::Time(),
+        base::Bind(&BrowsingDataQuotaHelperImpl::GotOrigins,
+                   weak_factory_.GetWeakPtr()));
   } else {
-    // type == quota::kStorageTypePersistent
+    DCHECK(type == quota::kStorageTypeSyncable);
     ProcessPendingHosts();
   }
 }
@@ -138,6 +147,9 @@ void BrowsingDataQuotaHelperImpl::GotHostUsage(const std::string& host,
     case quota::kStorageTypePersistent:
       quota_info_[host].persistent_usage = usage;
       break;
+    case quota::kStorageTypeSyncable:
+      quota_info_[host].syncable_usage = usage;
+      break;
     default:
       NOTREACHED();
   }
@@ -162,7 +174,8 @@ void BrowsingDataQuotaHelperImpl::OnComplete() {
     QuotaInfo* info = &itr->second;
     // Skip unused entries
     if (info->temporary_usage <= 0 &&
-        info->persistent_usage <= 0)
+        info->persistent_usage <= 0 &&
+        info->syncable_usage <= 0)
       continue;
 
     info->host = itr->first;

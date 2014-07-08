@@ -6,7 +6,7 @@
 
 #include "base/bind.h"
 #include "base/bind_helpers.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/stl_util.h"
 #include "base/values.h"
 #include "net/base/io_buffer.h"
@@ -18,34 +18,31 @@
 #include "net/http/http_version.h"
 #include "net/socket/client_socket_handle.h"
 
-using base::DictionaryValue;
-using base::Value;
-
 namespace net {
 
 namespace {
 
-Value* NetLogReceivedHeadersCallback(const NetLog::Source& source,
-                                     const std::string* feedback,
-                                     NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue;
+base::Value* NetLogReceivedHeadersCallback(const NetLog::Source& source,
+                                           const std::string* feedback,
+                                           NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue;
   source.AddToEventParameters(dict);
   dict->SetString("feedback", *feedback);
   return dict;
 }
 
-Value* NetLogStreamClosedCallback(const NetLog::Source& source,
-                                  bool not_reusable,
-                                  NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue;
+base::Value* NetLogStreamClosedCallback(const NetLog::Source& source,
+                                        bool not_reusable,
+                                        NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue;
   source.AddToEventParameters(dict);
   dict->SetBoolean("not_reusable", not_reusable);
   return dict;
 }
 
-Value* NetLogHostPortPairCallback(const HostPortPair* host_port_pair,
-                                  NetLog::LogLevel /* log_level */) {
-  DictionaryValue* dict = new DictionaryValue;
+base::Value* NetLogHostPortPairCallback(const HostPortPair* host_port_pair,
+                                        NetLog::LogLevel /* log_level */) {
+  base::DictionaryValue* dict = new base::DictionaryValue;
   dict->SetString("host_and_port", host_port_pair->ToString());
   return dict;
 }
@@ -90,7 +87,7 @@ HttpPipelinedConnectionImpl::HttpPipelinedConnectionImpl(
       active_(false),
       usable_(true),
       completed_one_request_(false),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       send_next_state_(SEND_STATE_NONE),
       send_still_on_call_stack_(false),
       read_next_state_(READ_STATE_NONE),
@@ -140,7 +137,7 @@ void HttpPipelinedConnectionImpl::InitializeParser(
   // In case our first stream doesn't SendRequest() immediately, we should still
   // allow others to use this pipeline.
   if (pipeline_id == 1) {
-    MessageLoop::current()->PostTask(
+    base::MessageLoop::current()->PostTask(
         FROM_HERE,
         base::Bind(&HttpPipelinedConnectionImpl::ActivatePipeline,
                    weak_factory_.GetWeakPtr()));
@@ -517,7 +514,7 @@ int HttpPipelinedConnectionImpl::DoReadStreamClosed() {
     return OK;
   }
   completed_one_request_ = true;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       FROM_HERE,
       base::Bind(&HttpPipelinedConnectionImpl::StartNextDeferredRead,
                  weak_factory_.GetWeakPtr()));
@@ -641,11 +638,6 @@ bool HttpPipelinedConnectionImpl::CanFindEndOfResponse(int pipeline_id) const {
       CanFindEndOfResponse();
 }
 
-bool HttpPipelinedConnectionImpl::IsMoreDataBuffered(int pipeline_id) const {
-  CHECK(ContainsKey(stream_info_map_, pipeline_id));
-  return read_buf_->offset() != 0;
-}
-
 bool HttpPipelinedConnectionImpl::IsConnectionReused(int pipeline_id) const {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
   if (pipeline_id > 1) {
@@ -658,7 +650,21 @@ bool HttpPipelinedConnectionImpl::IsConnectionReused(int pipeline_id) const {
 
 void HttpPipelinedConnectionImpl::SetConnectionReused(int pipeline_id) {
   CHECK(ContainsKey(stream_info_map_, pipeline_id));
-  connection_->set_is_reused(true);
+  connection_->set_reuse_type(ClientSocketHandle::REUSED_IDLE);
+}
+
+int64 HttpPipelinedConnectionImpl::GetTotalReceivedBytes(
+    int pipeline_id) const {
+  CHECK(ContainsKey(stream_info_map_, pipeline_id));
+  if (stream_info_map_.find(pipeline_id)->second.parser.get())
+    return stream_info_map_.find(pipeline_id)->second.parser->received_bytes();
+  return 0;
+}
+
+bool HttpPipelinedConnectionImpl::GetLoadTimingInfo(
+    int pipeline_id, LoadTimingInfo* load_timing_info) const {
+  return connection_->GetLoadTimingInfo(IsConnectionReused(pipeline_id),
+                                        load_timing_info);
 }
 
 void HttpPipelinedConnectionImpl::GetSSLInfo(int pipeline_id,
@@ -679,7 +685,7 @@ void HttpPipelinedConnectionImpl::GetSSLCertRequestInfo(
 
 void HttpPipelinedConnectionImpl::Drain(HttpPipelinedStream* stream,
                                         HttpNetworkSession* session) {
-  HttpResponseHeaders* headers = stream->GetResponseInfo()->headers;
+  HttpResponseHeaders* headers = stream->GetResponseInfo()->headers.get();
   if (!stream->CanFindEndOfResponse() || headers->IsChunkEncoded() ||
       !usable_) {
     // TODO(simonjam): Drain chunk-encoded responses if they're relatively
@@ -772,7 +778,7 @@ void HttpPipelinedConnectionImpl::QueueUserCallback(
     const tracked_objects::Location& from_here) {
   CHECK(stream_info_map_[pipeline_id].pending_user_callback.is_null());
   stream_info_map_[pipeline_id].pending_user_callback = callback;
-  MessageLoop::current()->PostTask(
+  base::MessageLoop::current()->PostTask(
       from_here,
       base::Bind(&HttpPipelinedConnectionImpl::FireUserCallback,
                  weak_factory_.GetWeakPtr(), pipeline_id, rv));

@@ -12,11 +12,12 @@
   'targets': [
     {
       'target_name': 'ots',
-      'type': '<(library)',
+      'type': 'static_library',
       'sources': [
         '<@(ots_sources)',
       ],
       'include_dirs': [
+        '../..',
         '<@(ots_include_dirs)',
       ],
       'direct_dependent_settings': {
@@ -25,8 +26,14 @@
         ],
       },
       'dependencies': [
+        '../brotli/brotli.gyp:brotli',
         '../zlib/zlib.gyp:zlib',
       ],
+      # TODO(jschuh): http://crbug.com/167187
+      'msvs_disabled_warnings': [
+        4267,
+        4334,
+      ],      
     },
   ],
 }

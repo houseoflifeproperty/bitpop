@@ -4,9 +4,10 @@
 
 #include "content/renderer/java/java_bridge_channel.h"
 
-#include "content/common/child_process.h"
+#include "content/child/child_process.h"
+#include "content/child/plugin_messages.h"
 #include "content/common/java_bridge_messages.h"
-#include "content/common/plugin_messages.h"
+#include "third_party/WebKit/public/web/WebBindings.h"
 
 namespace content {
 
@@ -22,10 +23,16 @@ JavaBridgeChannel* JavaBridgeChannel::GetJavaBridgeChannel(
       ChildProcess::current()->GetShutDownEvent()));
 }
 
-JavaBridgeChannel::JavaBridgeChannel() {
+JavaBridgeChannel::JavaBridgeChannel()
+    : peer_owner_id_(new struct _NPP) {
+  // Register the dummy owner Id for our peer (the Browser process) as an object
+  // owner, and have all objects received from the peer owned by it.
+  blink::WebBindings::registerObjectOwner(peer_owner_id_.get());
+  SetDefaultNPObjectOwner(peer_owner_id_.get());
 }
 
 JavaBridgeChannel::~JavaBridgeChannel() {
+  blink::WebBindings::unregisterObjectOwner(peer_owner_id_.get());
 }
 
 int JavaBridgeChannel::GenerateRouteID() {

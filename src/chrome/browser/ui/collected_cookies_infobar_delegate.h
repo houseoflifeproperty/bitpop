@@ -5,9 +5,9 @@
 #ifndef CHROME_BROWSER_UI_COLLECTED_COOKIES_INFOBAR_DELEGATE_H_
 #define CHROME_BROWSER_UI_COLLECTED_COOKIES_INFOBAR_DELEGATE_H_
 
-#include "chrome/browser/api/infobars/confirm_infobar_delegate.h"
+#include "chrome/browser/infobars/confirm_infobar_delegate.h"
 
-class InfoBarTabHelper;
+class InfoBarService;
 
 // This class configures an infobar shown when the collected cookies dialog
 // is closed and the settings for one or more cookies have been changed.  The
@@ -16,15 +16,20 @@ class InfoBarTabHelper;
 // the reload right from the infobar.
 class CollectedCookiesInfoBarDelegate : public ConfirmInfoBarDelegate {
  public:
-  explicit CollectedCookiesInfoBarDelegate(InfoBarTabHelper* infobar_helper);
+  // Creates a collected cookies infobar and delegate and adds the infobar to
+  // |infobar_service|.
+  static void Create(InfoBarService* infobar_service);
 
  private:
-  // ConfirmInfoBarDelegate overrides.
-  virtual gfx::Image* GetIcon() const OVERRIDE;
+  CollectedCookiesInfoBarDelegate();
+  virtual ~CollectedCookiesInfoBarDelegate();
+
+  // ConfirmInfoBarDelegate:
+  virtual int GetIconID() const OVERRIDE;
   virtual Type GetInfoBarType() const OVERRIDE;
-  virtual string16 GetMessageText() const OVERRIDE;
+  virtual base::string16 GetMessageText() const OVERRIDE;
   virtual int GetButtons() const OVERRIDE;
-  virtual string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
+  virtual base::string16 GetButtonLabel(InfoBarButton button) const OVERRIDE;
   virtual bool Accept() OVERRIDE;
 
   DISALLOW_COPY_AND_ASSIGN(CollectedCookiesInfoBarDelegate);

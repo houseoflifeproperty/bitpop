@@ -8,8 +8,9 @@
 #include <set>
 
 #include "base/basictypes.h"
-#include "base/hash_tables.h"
+#include "base/containers/hash_tables.h"
 #include "base/memory/linked_ptr.h"
+#include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
 #include "base/threading/thread_checker.h"
 #include "base/threading/thread_checker_impl.h"
@@ -23,14 +24,26 @@ class Resource;
 
 class PPAPI_SHARED_EXPORT ResourceTracker {
  public:
-  ResourceTracker();
+  // A SINGLE_THREADED ResourceTracker will use a thread-checker to make sure
+  // it's always invoked on the same thread on which it was constructed. A
+  // THREAD_SAFE ResourceTracker will check that the ProxyLock is held. See
+  // CheckThreadingPreconditions() for more details.
+  enum ThreadMode { SINGLE_THREADED, THREAD_SAFE };
+  explicit ResourceTracker(ThreadMode thread_mode);
   virtual ~ResourceTracker();
 
   // The returned pointer will be NULL if there is no resource. The reference
   // count of the resource is unaffected.
   Resource* GetResource(PP_Resource res) const;
 
+  // Takes a reference on the given resource.
+  // Do not call this method on on the host side for resources backed by a
+  // ResourceHost.
   void AddRefResource(PP_Resource res);
+
+  // Releases a reference on the given resource.
+  // Do not call this method on on the host side for resources backed by a
+  // ResourceHost.
   void ReleaseResource(PP_Resource res);
 
   // Releases a reference on the given resource once the message loop returns.
@@ -53,6 +66,18 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
   // This calls AddResource and RemoveResource.
   friend class Resource;
 
+  // On the host-side, make sure we are called on the right thread. On the
+  // plugin side, make sure we have the proxy lock.
+  void CheckThreadingPreconditions() const;
+
+  // This method is called by PluginResourceTracker's constructor so that in
+  // debug mode PP_Resources from the plugin process always have odd values
+  // (ignoring the type bits), while PP_Resources from the renderer process have
+  // even values.
+  // This allows us to check that resource refs aren't added or released on the
+  // wrong side.
+  void UseOddResourceValueInDebugMode();
+
   // Adds the given resource to the tracker, associating it with the instance
   // stored in the resource object. The new resource ID is returned, and the
   // resource will have 0 plugin refcount. This is called by the resource
@@ -69,6 +94,11 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
   // Calls NotifyLastPluginRefWasDeleted on the given resource object and
   // cancels pending callbacks for the resource.
   void LastPluginRefWasDeleted(Resource* object);
+
+  int32 GetNextResourceValue();
+
+  // In debug mode, checks whether |res| comes from the same resource tracker.
+  bool CanOperateOnResource(PP_Resource res);
 
   typedef std::set<PP_Resource> ResourceSet;
 
@@ -96,21 +126,13 @@ class PPAPI_SHARED_EXPORT ResourceTracker {
 
   int32 last_resource_value_;
 
-  base::WeakPtrFactory<ResourceTracker> weak_ptr_factory_;
+  // On the host side, we want to check that we are only called on the main
+  // thread. This is to protect us from accidentally using the tracker from
+  // other threads (especially the IO thread). On the plugin side, the tracker
+  // is protected by the proxy lock and is thread-safe, so this will be NULL.
+  scoped_ptr<base::ThreadChecker> thread_checker_;
 
-  // TODO(raymes): We won't need to do thread checks once pepper calls are
-  // allowed off of the main thread.
-  // See http://code.google.com/p/chromium/issues/detail?id=92909.
-#ifdef ENABLE_PEPPER_THREADING
-  base::ThreadCheckerDoNothing thread_checker_;
-#else
-  // TODO(raymes): We've seen plugins (Flash) creating resources from random
-  // threads. Let's always crash for now in this case. Once we have a handle
-  // over how common this is, we can change ThreadCheckerImpl->ThreadChecker
-  // so that we only crash in debug mode. See
-  // https://code.google.com/p/chromium/issues/detail?id=146415.
-  base::ThreadCheckerImpl thread_checker_;
-#endif
+  base::WeakPtrFactory<ResourceTracker> weak_ptr_factory_;
 
   DISALLOW_COPY_AND_ASSIGN(ResourceTracker);
 };

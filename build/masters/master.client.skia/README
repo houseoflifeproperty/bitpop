@@ -1,0 +1,7 @@
+This directory contains the configuration for the buildbot master.
+
+Files:
+  Makefile        commands for controlling buildbot
+  master.cfg      contains the build configuration
+  buildbot.tac    generated file that initializes buildbot
+  twistd          shell script used to run buildbot

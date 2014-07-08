@@ -1,13 +1,3 @@
-<p>Use browser actions to put icons
-  in the main Google Chrome toolbar,
-  to the right of the address bar.
-  In addition to its <a href="#icon">icon</a>,
-  a browser action can also have
-  a <a href="#tooltip">tooltip</a>,
-  a <a href="#badge">badge</a>,
-  and a <a href="#popups">popup</a>.
-  </p>
-
 <p>
 In the following figure,
 the multicolored square
@@ -33,7 +23,8 @@ Register your browser action in the
 like this:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"browser_action": {
@@ -45,7 +36,8 @@ like this:
     "default_popup": "popup.html"        <em>// optional</em>
   }</b>,
   ...
-}</pre>
+}
+</pre>
 
 <p>
 If you only provide one of the 19px or 38px icon size, the extension system will
@@ -54,7 +46,8 @@ can lose detail or make it look fuzzy. The old syntax for registering the
 default icon is still supported:
 </p>
 
-<pre>{
+<pre data-filename="manifest.json">
+{
   "name": "My extension",
   ...
   <b>"browser_action": {
@@ -63,7 +56,8 @@ default icon is still supported:
     <em>// equivalent to "default_icon": { "19": "images/icon19.png" }</em>
   }</b>,
   ...
-}</pre>
+}
+</pre>
 
 <h2 id="ui">Parts of the UI</h2>
 
@@ -91,12 +85,13 @@ and a <a href="#popups">popup</a>.
 
 <p>Static images can be in any format WebKit can display,
   including BMP, GIF, ICO, JPEG, or PNG.
+  For unpacked extensions, images must be in the PNG format.
   </p>
 
 <p>To set the icon,
   use the <b>default_icon</b> field of <b>browser_action</b>
   in the <a href="#manifest">manifest</a>,
-  or call the $ref:browserAction.setIcon method.
+  or call the $(ref:browserAction.setIcon) method.
   </p>
 
 <p>To properly display icon when screen pixel density (ratio
@@ -113,7 +108,7 @@ and a <a href="#popups">popup</a>.
 To set the tooltip,
 use the <b>default_title</b> field of <b>browser_action</b>
 in the <a href="#manifest">manifest</a>,
-or call the $ref:browserAction.setTitle method.
+or call the $(ref:browserAction.setTitle) method.
 You can specify locale-specific strings for the <b>default_title</b> field;
 see <a href="i18n.html">Internationalization</a> for details.
 </p>
@@ -132,8 +127,8 @@ see <a href="i18n.html">Internationalization</a> for details.
 
 <p>
 Set the text and color of the badge using
-$ref:browserAction.setBadgeText and
-$ref:browserAction.setBadgeBackgroundColor,
+$(ref:browserAction.setBadgeText) and
+$(ref:browserAction.setBadgeBackgroundColor),
 respectively.
 
 </p>
@@ -152,7 +147,7 @@ To add a popup to your browser action,
 create an HTML file with the popup's contents.
 Specify the HTML file in the <b>default_popup</b> field of <b>browser_action</b>
 in the <a href="#manifest">manifest</a>, or call the
-$ref:browserAction.setPopup method.
+$(ref:browserAction.setPopup) method.
 </p>
 
 <h2 id="tips">Tips</h2>
@@ -171,7 +166,7 @@ $ref:browserAction.setPopup method.
     Browser action icons should seem a little bigger
     and heavier than page action icons.
   <li><b>Don't</b> attempt to mimic
-    Google Chrome's monochrome "wrench" icon.
+    Google Chrome's monochrome menu icon.
     That doesn't work well with themes, and anyway,
     extensions should stand out a little.
   <li><b>Do</b> use alpha transparency

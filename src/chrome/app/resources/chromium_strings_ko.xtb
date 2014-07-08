@@ -1,213 +1,248 @@
-<?xml version='1.0' encoding='utf-8'?>
+<?xml version='1.0' encoding='UTF-8'?>
 <!DOCTYPE translationbundle>
 <translationbundle lang="ko">
 <translation id="6676384891291319759">인터넷 연결</translation>
+<translation id="8586442755830160949">Copyright <ph name="YEAR"/> The Chromium Authors. All rights reserved.</translation>
 <translation id="8447784615389818621">BitPop을 제거하시겠습니까?</translation>
+<translation id="1928147301259050372">웹 양식을 작성하기 위해 BitPop에서 신용카드 정보를 저장해도 되겠습니까?</translation>
 <translation id="100741878661450640">BitPop 설치 제거</translation>
+<translation id="7015513946685052865">이 컴퓨터의 하드웨어가 더 이상 지원되지 않으므로 BitPop 업데이트가 곧 중단됩니다.</translation>
 <translation id="4301276314211054820">BitPop이 업데이트되었지만, 최소 30일 동안 사용하지 않았습니다.</translation>
 <translation id="8935261719622405725">BitPop 앱 실행</translation>
-<translation id="2556535128417126306">BitPop 앱 실행기는 BitPop 앱을 위한 독립형 플랫폼입니다.</translation>
+<translation id="2787245396912783582">BitPop 앱 실행기는 BitPop 앱을 위한 독립형 플랫폼입니다.</translation>
 <translation id="2770231113462710648">다음으로 기본 브라우저 변경:</translation>
 <translation id="6870152852581894991">변경사항은 다음에 BitPop을 다시 시작할 때 적용됩니다.</translation>
+<translation id="7725527658463487664">BitPop이 이전 버전임</translation>
+<translation id="302025056100997516">연락처 세부정보를 사용하면 BitPop에서 양식을 더욱 신속하게 작성할 수 있습니다.</translation>
 <translation id="3588014340702790340">지금 안전한 BitPop 페이지를 보고 계십니다.</translation>
-<translation id="6789998774111513164">BitPop 프레임</translation>
+<translation id="2077129598763517140">가능한 경우 하드웨어 가속 사용</translation>
 <translation id="1065672644894730302">환경설정을 읽을 수 없습니다.
 
 일부 기능을 사용할 수 없으며 환경설정의 변경사항이 저장되지 않습니다.</translation>
-<translation id="4901429675189043920">BitPop 프레임 업데이트</translation>
-<translation id="1132852132282742543">BitPop 렌더러</translation>
-<translation id="7155774694068736041">BitPop 프레임이 이미 설치되어 컴퓨터의 모든 사용자가 사용할 수 있습니다. 사용자 수준에서 BitPop 프레임을 설치하려면, 먼저 관리자가 설치한 시스템 수준의 버전을 제거합니다.</translation>
+<translation id="4795239855223923830">BitPop 맞춤설정 및 제어</translation>
+<translation id="98449668525928921">관리 계정으로 로그인하고 BitPop 프로필에 대한 관리자 제어권을 부여하려고 합니다. 앱, 북마크, 방문 기록, 비밀번호 및 기타 설정 등 BitPop 데이터가 <ph name="USER_NAME"/> 계정에 영구적으로 연결됩니다. 이후 이 데이터를 Google 계정 대시보드에서 삭제할 수는 있지만 다른 계정에 연결할 수는 없습니다. 기존 BitPop 데이터를 유지하려면 새 프로필을 만드는 방법이 있습니다. <ph name="LEARN_MORE"/></translation>
+<translation id="7711905272664478875">새로운 BitPop을 이용해 주셔서 감사합니다. 계속하기 전에 열려 있는 작업이 모두 저장되도록 하려면 BitPop을 다시 시작해야 합니다.</translation>
 <translation id="731644333568559921">Chrome OS 업데이트</translation>
 <translation id="5284421695473942517">BitPop에는 Windows XP 이상이 필요합니다. 일부 기능이 작동하지 않을 수 있습니다.</translation>
+<translation id="4534284284800306880">Google 월렛을 사용하려면 BitPop을 업그레이드해야 합니다. [<ph name="ERROR_CODE"/>]</translation>
+<translation id="1258942147733482141">BitPop 오픈소스 라이선스</translation>
+<translation id="2001441118695834744">기존 BitPop 데이터를 별도로 보관하려는 경우 <ph name="USER_NAME"/>의 새로운 BitPop 사용자를 만들 수 있습니다.</translation>
+<translation id="3207916442629104800">BitPop을 기본 브라우저로 설정</translation>
+<translation id="2346981135360001626">기기를 <ph name="CHANNEL_NAME"/> 채널로 업데이트하는 중...</translation>
 <translation id="3549345495227188780">Chromium OS 시작하기</translation>
-<translation id="8363397932717822970">BitPop 또는 BitPop 프레임을 시스템에 설치하던 중 이전 설치와 충돌이 발생했습니다. 제거한 다음 다시 시도해 보세요</translation>
+<translation id="7593639489233822734">BitPop에서 계정을 삭제한 후 열려 있는 탭을 새로고침해야 적용됩니다.</translation>
 <translation id="8235603028098851915">BitPop 툴바</translation>
-<translation id="5953515305183787825">지원되지 않는 운영체제이므로 BitPop이  더 이상 업데이트되지 않습니다.</translation>
-<translation id="7230682351542979557">BitPop 웹포털 인증 감지기</translation>
 <translation id="325440606879482824">확인되지 않은 오류로 설치에 실패했습니다. BitPop이 실행 중인 경우 종료한 후 다시 실행하세요.</translation>
-<translation id="7224939653007212692">BitPop 자동완성 설정</translation>
-<translation id="3078552028547324322">BitPop 앱 실행기를 사용하여 앱을 실행합니다.</translation>
-<translation id="3555616473548901994">제거를 완료했습니다.</translation>
-<translation id="5814137742095860156">BitPop 앱 호스트</translation>
+<translation id="2681187513058372590">BitPop이 비밀번호를 표시하려고 합니다.</translation>
 <translation id="9205983754412543288">선택사항: 사용 통계 및 오류 보고서가 Google로 자동 전송되도록 선택하시면 BitPop을 개선하는 데 도움이 됩니다.</translation>
-<translation id="4835820959576252806"><ph name="PAGE_TITLE"/> - BitPop</translation>
-<translation id="6259082392093297310">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려 했으나 서버가 전달한 인증서에 오류가 포함되어 있습니다. BitPop은 오류가 있는 인증서를 사용할 수 없으며 사용자가 연결하려던 사이트 주소의 유효성을 입증할 수 없습니다.</translation>
-<translation id="3801183610358973379">설치 프로그램이 보관 파일 압축 풀기에 실패했습니다. BitPop을 다시 다운로드하세요.</translation>
-<translation id="4450789702440326676">백그라운드에서 BitPop을 실행</translation>
-<translation id="2963590958538393837">예, BitPop 종료</translation>
-<translation id="8031724302809093115">BitPop의 새 탭 페이지가 리모델링되었습니다. 이 라벨을 클릭하여 섹션 사이를 전환할 수 있습니다. Chrome에서 다음 번에 사용자의 환경설정을 기억합니다.</translation>
-<translation id="1480489203462860648">사용해 보세요. 이미 설치되었습니다.</translation>
-<translation id="7098153548331126805">BitPop에 추가하는 중...</translation>
-<translation id="5928487969163300899">BitPop 앱 실행기 제거</translation>
-<translation id="8976294699696846969"><ph name="BEGIN_BOLD"/>경고:<ph name="END_BOLD"/> BitPop은 확장 프로그램이 인터넷 사용기록을 저장하지 못하도록 할 수 없습니다. 시크릿 모드에서 이 확장 프로그램을 사용 중지하려면 옵션을 선택 취소하세요.</translation>
-<translation id="3941397373453695568">BitPop은 인쇄 미리보기에 필요한 PDF 뷰어가 포함되어 있지 않습니다.</translation>
-<translation id="8155571637339134666">BitPop은 사용자의 탐색 환경을 개선하기 위해 웹 서비스를 사용할 수 있습니다.</translation>
-<translation id="5383732173730790693">BitPop에 로그인되었습니다. 사용자의 북마크, 인터넷 사용기록, 기타 설정이 Google 계정에 동기화됩니다.</translation>
-<translation id="6866316083935040427">BitPop 종료</translation>
-<translation id="4759775690587852534">Mozilla Firefox 브라우저가 실행 중일 때는 설정 기능을 사용할 수 없습니다. 이 설정을 BitPop으로 가져오려면 현재 작업을 저장하고 Firefox 창을 모두 닫습니다. 그런 다음 '계속'을 클릭합니다.</translation>
-<translation id="2411757162791070146">이러한 경우 인증서에 표시된 주소는 브라우저가 이동하려고 하는 웹사이트 주소와 일치하지 않습니다. 이것은 누군가가 다른 웹사이트의 인증서로 사용자의 서버 통신을 가로채고 있기 때문일 수 있습니다. 또는 인증서가 모든 웹사이트에 유효하지 않음에도 서버가 여러 웹사이트에 동일한 인증서를 사용하도록 설정되어 있기 때문일 수도 있습니다. BitPop을 사용하면 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;에 접속할 수 있지만 이것이 사용자가 의도한 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;와(과) 동일한 사이트인지는 확인할 수 없습니다. 이후에도 BitPop은 이름 불일치를 확인하지 않습니다.</translation>
-<translation id="2423180989259159758"><ph name="BEGIN_BOLD"/>
-          BitPop 메뉴 &gt;
+<translation id="3898160962923474892">BitPop 메뉴 &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          &gt;
-          LAN 설정
-          <ph name="END_BOLD"/>(으)로 이동하여
-          '사용자 LAN에 프록시 서버 사용'을 선택 취소합니다.</translation>
+          (으)로 이동하여 '프록시 없음' 또는 '직접 연결'로 설정되어 있는지 확인합니다.</translation>
+<translation id="7541322662422142299"><ph name="PAGE_TITLE"/> - BitPop</translation>
+<translation id="3334080844010912902">도메인에서 동기화를 사용할 수 없어 BitPop에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="2030214613468936763">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려 했으나 서버가 전달한 인증서에 오류가 포함되어 있습니다. BitPop은 오류가 있는 인증서를 사용할 수 없으며 사용자가 연결하려던 사이트 주소의 유효성을 입증할 수 없습니다.</translation>
+<translation id="3801183610358973379">설치 프로그램이 보관 파일 압축 풀기에 실패했습니다. BitPop을 다시 다운로드하세요.</translation>
+<translation id="4138697454314244697">업데이트할 BitPop 설치가 없습니다.</translation>
+<translation id="4450789702440326676">백그라운드에서 BitPop을 실행</translation>
+<translation id="8743840534367614002">BitPop 앱</translation>
+<translation id="2963590958538393837">예, BitPop 종료</translation>
+<translation id="1480489203462860648">사용해 보세요. 이미 설치되었습니다.</translation>
+<translation id="7098153548331126805">BitPop에 추가하는 중...</translation>
+<translation id="4831257561365056138">BitPop 앱 실행기 제거</translation>
+<translation id="7680117738450774222">BitPop에 로그인했습니다! 관리자가 동기화를 사용 중지했습니다.</translation>
+<translation id="5995722392285490130"><ph name="BEGIN_BOLD"/>경고:<ph name="END_BOLD"/> BitPop은 확장 프로그램이 인터넷 사용기록을 저장하지 못하도록 할 수 없습니다. 시크릿 모드에서 이 확장 프로그램을 사용 중지하려면 옵션을 선택 취소하세요.</translation>
+<translation id="9123740998411173947">이제 로그인했으므로 노트북, 휴대전화 및 태블릿에서 탭과 북마크, 기타 BitPop 콘텐츠를 사용할 수 있습니다. 또한 Google 서비스에서 더 관련성 높은 추천검색어와 기능이 제공됩니다.</translation>
+<translation id="985602178874221306">The Chromium Authors</translation>
+<translation id="3941397373453695568">BitPop은 인쇄 미리보기에 필요한 PDF 뷰어가 포함되어 있지 않습니다.</translation>
+<translation id="8155571637339134666">BitPop은 사용자의 탐색 환경을 개선하기 위해 웹 서비스를 사용할 수 있습니다.</translation>
+<translation id="6157791660174418859">Google 계정과 공유 컴퓨터를 통해 새로운 방법으로 BitPop을 사용해 보세요.</translation>
+<translation id="4759775690587852534">Mozilla Firefox 브라우저가 실행 중일 때는 설정 기능을 사용할 수 없습니다. 이 설정을 BitPop으로 가져오려면 현재 작업을 저장하고 Firefox 창을 모두 닫습니다. 그런 다음 '계속'을 클릭합니다.</translation>
+<translation id="5769857394054687534">이러한 경우 인증서에 표시된 주소는 브라우저가 이동하려고 하는 웹사이트 주소와 일치하지 않습니다. 이것은 누군가가 다른 웹사이트의 인증서로 사용자의 서버 통신을 가로채고 있기 때문일 수 있습니다. 또는 인증서가 모든 웹사이트에 유효하지 않음에도 서버가 여러 웹사이트에 동일한 인증서를 사용하도록 설정되어 있기 때문일 수도 있습니다. BitPop을 사용하면 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;에 접속할 수 있지만 이것이 사용자가 의도한 &lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;와(과) 동일한 사이트인지는 확인할 수 없습니다. 이후에도 BitPop은 이름 불일치를 확인하지 않습니다.</translation>
+<translation id="2224367722165014156">BitPop을 최신 버전으로 자동 업데이트할 수 없기 때문에 새로운 기능과 보안 수정사항 업데이트가 누락될 수 있습니다. BitPop을 직접 다시 설치해야 합니다.</translation>
+<translation id="8897323336392112261">또한 Chromium을 시작하거나 홈 버튼을 클릭할 때 표시되는 페이지를 설정합니다.</translation>
 <translation id="2886079192271351730">이 모듈은 BitPop과 충돌하는 것으로 알려져 있습니다.</translation>
 <translation id="8324687802311409372">BitPop이 다운되었습니다. 다시 시작하시겠습니까?</translation>
-<translation id="606385048658239900">업데이트할 BitPop 또는 BitPop 프레임이 없습니다.</translation>
+<translation id="5689811886832352959">오류 보고서와 <ph name="UMA_LINK"/>을(를) Google로 전송하여 BitPop 개선에 참여합니다.</translation>
+<translation id="5101127815285864538">웹, 북마크 및 기타 BitPop 콘텐츠가 여기에 저장됩니다.</translation>
 <translation id="3197823471738295152">기기가 최신 버전입니다.</translation>
 <translation id="8551886023433311834">업데이트가 거의 완료되었습니다. 업데이트를 완료하려면 기기를 다시 시작하세요.</translation>
 <translation id="9090519209458031409">BitPop이 이 사이트에서 비밀번호를 저장하도록 하시겠습니까?</translation>
 <translation id="7339898014177206373">새 창</translation>
-<translation id="3026202950002788510">
-          <ph name="BEGIN_BOLD"/>
-          애플리케이션 &gt; 시스템 환경설정 &gt; 네트워크 &gt; 고급 &gt; 프록시
-          <ph name="END_BOLD"/>로 이동한 다음
-          선택된 프록시를 선택 취소합니다.</translation>
-<translation id="85540521058185027">BitPop 설치 디렉토리가 사용중입니다. 컴퓨터를 재부팅한 다음 다시 시도하세요.</translation>
-<translation id="5710380450759072582">BitPop에서 즐겨찾기/북마크를 가져오고 있습니다.</translation>
-<translation id="225614027745146050">환영합니다.</translation>
-<translation id="3421246989510066651">관리자가 BitPop을 시스템에 설치하여 모든 사용자가 사용할 수 있습니다. 시스템 수준의 BitPop은 사용자 수준의 설치를 대체합니다.</translation>
-<translation id="1563133725769368154">BitPop 창을 모두 닫고 다시 시도해 보세요.</translation>
-<translation id="6948146312619379712">모든 BitPop 창을 닫은 뒤 다시 BitPop을 실행하면 변경 사항이 반영됩니다.</translation>
-<translation id="5845248948746043578">BitPop에 로드된 모듈</translation>
-<translation id="4718546117684412327">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 컴퓨터의 운영체제에서 신뢰하지 않는 단체에서 발급한 인증서를 제공했습니다. 다시 말해 서버가 자체 보안 인증 정보를 신뢰하지 않기 때문에 BitPop이 식별 정보를 수락하지 않거나 침입자가 통신을 가로챌 수 있습니다.</translation>
-<translation id="2585492770508769131">BitPop 종료 후에도 백그라운드 앱을 계속 실행</translation>
-<translation id="473775607612524610">업데이트</translation>
-<translation id="1141543168124987471">이전보다 더 빨라진 BitPop 새 버전을 사용할 수 있습니다.</translation>
-<translation id="6560811749587757293">BitPop 프레임 정보</translation>
-<translation id="5971960158340115871">BitPop에서 제거</translation>
-<translation id="7747138024166251722">설치 프로그램이 임시 디렉토리를 만들지 못했습니다. 디스크 공간 및 설치 권한을 확인해 보세요.</translation>
-<translation id="6494656531179085521">BitPop에서 데이터 디렉토리를 읽고 쓸 수 없습니다.
-
-<ph name="USER_DATA_DIRECTORY"/></translation>
-<translation id="7911731442009818211">BitPop에서는 <ph name="OS_NAME"/>을(를) 지원하지 않습니다.</translation>
-<translation id="8738921060445980047">알 수 없는 버전입니다.</translation>
-<translation id="6970811910055250180">기기를 업데이트하는 중...</translation>
-<translation id="2485422356828889247">제거</translation>
-<translation id="8450502629618876351">BitPop 사용에 대한 도움말</translation>
-<translation id="4742066939161073105">BitPop 시작</translation>
-<translation id="736882515641604854">BitPop에서 현재 데스크톱 환경을 확인할 수 없으므로 애플리케이션 바로가기를 만들 수 없습니다.</translation>
-<translation id="7209647769822542891">컴퓨터에 이미 최신 버전의 BitPop 프레임이 있습니다. 소프트웨어가 작동하지 않으면 BitPop 프레임의 설치를 제거한 뒤 다시 시도하세요.</translation>
-<translation id="911206726377975832">인터넷 사용 기록도 삭제하시겠습니까?</translation>
-<translation id="4501582071990606935">BitPop 창(Windows 8 모드의 창 포함)을 모두 닫고 다시 시도해 보세요.</translation>
-<translation id="2318017154298876822">BitPop 업데이트</translation>
-<translation id="8862326446509486874">시스템 수준의 설치 권한이 없습니다. 관리자 권한으로 설치 프로그램을 다시 실행해 보세요.</translation>
-<translation id="8308846639737830860">백그라운드에서 BitPop을 실행</translation>
-<translation id="8251642411216619957">BitPop에 로그인</translation>
-<translation id="4365115785552740256">Chromium은 <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> 오픈소스 프로젝트를 비롯한 여러 <ph name="BEGIN_LINK_OSS"/>오픈소스 소프트웨어<ph name="END_LINK_OSS"/>에 기초해 만들어진 브라우저입니다.</translation>
-<translation id="6321973207566602686">BitPop을 기본 브라우저로 설정</translation>
-<translation id="4645868211198791394">BitPop</translation>
-<translation id="6572431599095627851">BitPop 작업자</translation>
-<translation id="5820394555380036790">Chromium OS</translation>
-<translation id="6757767188268205357">더 이상 묻지 않음</translation>
-<translation id="6312770669638222416">다음 단계에 따라 네트워크 예측을 사용 중지해 보세요.
-        <ph name="BEGIN_BOLD"/>
-        BitPop 메뉴 &gt;
+<translation id="6188910816550019957">BitPop 메뉴 &gt;
         <ph name="SETTINGS_TITLE"/>
         &gt;
         <ph name="ADVANCED_TITLE"/>
-        <ph name="END_BOLD"/>(으)로 이동하고
-        '<ph name="NO_PREFETCH_DESCRIPTION"/>'을(를) 선택 취소합니다.
+        (으)로 이동하고 '<ph name="NO_PREFETCH_DESCRIPTION"/>'을(를) 선택 취소합니다.
         그래도 문제가 해결되지 않으면 이 옵션을 다시 선택하여
         성능을 개선해 보시기 바랍니다.</translation>
+<translation id="2397909649953118924">BitPop - 알림(읽지 않은 알림 <ph name="QUANTITY"/>개)</translation>
+<translation id="225614027745146050">환영합니다.</translation>
+<translation id="1823899440832622134">BitPop을 최신 버전으로 자동 업데이트할 수 없기 때문에 새로운 기능과 보안 수정사항 업데이트가 누락될 수 있습니다. BitPop을 업데이트해야 합니다.</translation>
+<translation id="3421246989510066651">관리자가 BitPop을 시스템에 설치하여 모든 사용자가 사용할 수 있습니다. 시스템 수준의 BitPop은 사용자 수준의 설치를 대체합니다.</translation>
+<translation id="4298853828775962437">http://support.google.com/chrome/?p=ib_chromeframe</translation>
+<translation id="1563133725769368154">BitPop 창을 모두 닫고 다시 시도해 보세요.</translation>
+<translation id="6948146312619379712">모든 BitPop 창을 닫은 뒤 다시 BitPop을 실행하면 변경 사항이 반영됩니다.</translation>
+<translation id="6475912303565314141">또한 Chromium을 시작할 때 표시되는 페이지를 설정합니다.</translation>
+<translation id="158578066452246627">이 파일은 악성 파일이므로 BitPop에서 차단했습니다.</translation>
+<translation id="5845248948746043578">BitPop에 로드된 모듈</translation>
+<translation id="3494861236236958082">Mac에서는 비밀번호가 키체인에 저장되며 이 OS X 계정을 공유하는 다른 BitPop 사용자가 액세스하거나 동기화할 수 있습니다.</translation>
+<translation id="6497704981133944775">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 컴퓨터의 운영체제에서 신뢰하지 않는 단체에서 발급한 인증서를 제공했습니다. 다시 말해 서버가 자체 보안 인증 정보를 신뢰하지 않기 때문에 BitPop이 식별 정보를 수락하지 않거나 침입자가 통신을 가로챌 수 있습니다.</translation>
+<translation id="963040405972220509">앱을 사용하려면 BitPop에 로그인해야 합니다. 로그인하면 BitPop이 기기 간에 앱, 북마크, 방문 기록, 비밀번호 및 기타 설정을 동기화할 수 있습니다.</translation>
+<translation id="2585492770508769131">BitPop 종료 후에도 백그라운드 앱을 계속 실행</translation>
+<translation id="473775607612524610">업데이트</translation>
+<translation id="1053737967432347853">이 사이트는 곧 지원이 중단되는 BitPop 프레임 플러그인을 사용 중입니다. 이 플러그인을 제거하고 최신 브라우저로 업그레이드하세요.</translation>
+<translation id="8237944200818342704">컴퓨터를 시작하면 BitPop 자동 실행</translation>
+<translation id="5904788103100750653">컴퓨터를 공유하는 경우 친구와 가족이 개별적으로 탐색하고 원하는 대로 BitPop을 설정할 수 있습니다.</translation>
+<translation id="1141543168124987471">이전보다 더 빨라진 BitPop 새 버전을 사용할 수 있습니다.</translation>
+<translation id="3089560314597734657">계정의 로그인 세부정보가 오래되어 BitPop에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="5107343520309227066">다른 컴퓨터(<ph name="HOST_NAME"/>)의 다른 BitPop 프로세스(<ph name="PROCESS_ID"/>)에서 프로필을 사용 중인 것 같습니다. 프로필이 손상되지 않도록 BitPop에서 잠금 설정했습니다. 다른 프로세스에서 프로필을 사용 중이지 않은 것이 확실한 경우 프로필을 잠금 해제하고 BitPop을 다시 시작하세요.</translation>
+<translation id="5971960158340115871">BitPop에서 제거</translation>
+<translation id="4817923018536741011">BitPop에 본인 추가</translation>
+<translation id="7066436765290594559">Chromium OS에서 데이터를 동기화하지 못했습니다. 동기화 암호를 업데이트하세요.</translation>
+<translation id="7747138024166251722">설치 프로그램이 임시 디렉토리를 만들지 못했습니다. 디스크 공간 및 설치 권한을 확인해 보세요.</translation>
+<translation id="1657309500244281883">BitPop에서 데이터 디렉토리를 읽고 쓸 수 없습니다.
+
+<ph name="USER_DATA_DIRECTORY"/></translation>
+<translation id="6970811910055250180">기기를 업데이트하는 중...</translation>
+<translation id="2485422356828889247">제거</translation>
+<translation id="8450502629618876351">BitPop 사용에 대한 도움말</translation>
+<translation id="7974150821733212325">관리 계정으로 로그인하고 BitPop 프로필에 대한 관리자 제어권을 부여하려고 합니다. 앱, 북마크, 방문 기록, 비밀번호 및 기타 설정 등 BitPop 데이터가 <ph name="USER_NAME"/> 계정에 영구적으로 연결됩니다. 이후 이 데이터를 Google 계정 대시보드에서 삭제할 수는 있지만 다른 계정에 연결할 수는 없습니다. <ph name="LEARN_MORE"/></translation>
+<translation id="9036189287518468038">BitPop 앱 실행기</translation>
+<translation id="8643500805082769156">BitPop이 이전 버전임</translation>
+<translation id="911206726377975832">인터넷 사용정보도 삭제하시겠습니까?</translation>
+<translation id="7531302439507262213">이 기기를 사용하기 전에 <ph name="DOMAIN"/>에서 다음 서비스 약관을 읽고 동의해야 합니다. 이 약관은 Chromium OS 약관을 확장, 수정 또는 제한하지 않습니다.</translation>
+<translation id="5603085937604338780">chromium</translation>
+<translation id="4501582071990606935">BitPop 창(Windows 8 모드의 창 포함)을 모두 닫고 다시 시도해 보세요.</translation>
+<translation id="2318017154298876822">BitPop 업데이트</translation>
+<translation id="8862326446509486874">시스템 수준의 설치 권한이 없습니다. 관리자 권한으로 설치 프로그램을 다시 실행해 보세요.</translation>
+<translation id="2535480412977113886">계정의 로그인 세부정보가 오래되어 Chromium OS에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="8697124171261953979">또한 Chromium을 시작하거나 검색주소창에서 검색할 때 표시되는 페이지를 설정합니다.</translation>
+<translation id="8106224471637848707">컴퓨터에서 실행 중인 소프트웨어가 BitPop과 호환되지 않습니다.</translation>
+<translation id="8308846639737830860">백그라운드에서 BitPop을 실행</translation>
+<translation id="8251642411216619957">BitPop에 로그인</translation>
+<translation id="4365115785552740256">Chromium은 <ph name="BEGIN_LINK_CHROMIUM"/>Chromium<ph name="END_LINK_CHROMIUM"/> 오픈소스 프로젝트를 비롯한 여러 <ph name="BEGIN_LINK_OSS"/>오픈소스 소프트웨어<ph name="END_LINK_OSS"/>에 기초해 만들어진 브라우저입니다.</translation>
+<translation id="1990056108053403520">BitPop(mDNS-In)</translation>
+<translation id="5819325063060806784">손님으로 사용 기록을 남기지 않고 BitPop을 사용할 수 있습니다.</translation>
+<translation id="1526986572493888898">이 사이트는 곧 지원이 중단되는 BitPop 프레임 플러그인을 사용 중입니다. 이 플러그인을 제거하고 호환되는 브라우저를 다운로드하세요.</translation>
+<translation id="7131892997749364444">BitPop을 시작하면 표시되는 페이지가 확장 프로그램으로 인해 변경되었습니다.</translation>
+<translation id="5877064549588274448">채널이 변경되었습니다. 변경사항을 적용하려면 기기를 다시 시작하세요.</translation>
+<translation id="6321973207566602686">BitPop을 기본 브라우저로 설정</translation>
+<translation id="6899689707951760367">BitPop이 카메라를 사용 중입니다.</translation>
+<translation id="4645868211198791394">BitPop</translation>
+<translation id="5820394555380036790">Chromium OS</translation>
+<translation id="6757767188268205357">더 이상 묻지 않음</translation>
+<translation id="690823546498424823">BitPop은 사용자의 정보를 안전하게 저장하므로 정보를 다시 입력할 필요가 없지만 향후 결제 시 카드의 보안 코드는 확인해야 합니다.</translation>
 <translation id="6220055452245182274">오류 보고서는 BitPop에서 사용할 수 없습니다.</translation>
 <translation id="924450301557116466">BitPop에서 사용되지 않았습니다. 자리표시자는 리소스 맵을 동기화 상태로 유지합니다. 하나의 인수($1)가 발생할 수 있습니다.</translation>
+<translation id="843167022919259875">BitPop이 백그라운드에서 실행 중입니다.</translation>
+<translation id="2171549355847332070"><ph name="USER_EMAIL_ADDRESS"/>(으)로 BitPop에 로그인되어 있습니다. 같은 계정으로 다시 로그인해 주세요.</translation>
+<translation id="6165323383832829057">BitPop에서 업데이트를 중단했으며 이 버전의 운영체제를 더 이상 지원하지 않습니다.</translation>
+<translation id="2645729404591158594">새 BitPop 미리보기</translation>
 <translation id="1984238998837921833">BitPop 업데이트 중...</translation>
 <translation id="9102885271730191378">작업 관리자 - BitPop</translation>
-<translation id="3916917357864849352">BitPop이 <ph name="BROWSER_COMPONENT"/>에서 다음 항목을 가져오는 중입니다.</translation>
+<translation id="1608739712349494181">Google에서는 BitPop의 보안을 강화하기 위해 <ph name="IDS_EXTENSION_WEB_STORE_TITLE"/>에 표시되지 않고 사용자 모르게 추가되었을 수 있는 일부 확장 프로그램의 사용을 중지했습니다.</translation>
 <translation id="5243897687251941678">BitPop 메뉴 또는 북마크바에서 북마크를 검색합니다.</translation>
 <translation id="5925519479755588070">업데이트가 거의 완료되었습니다. 업데이트를 완료하려면 BitPop을 다시 시작하세요.</translation>
+<translation id="5866485601389562653">아래에서 다른 Google 계정을 추가하고 BitPop을 잠글 수 있습니다.</translation>
+<translation id="8072646586465991214">BitPop을 시스템에 설치하는 중에 이전 설치와 충돌이 발생했습니다. 제거한 다음 다시 시도해 주세요.</translation>
 <translation id="4352003675682958984">BitPop의 새 버전이 출시되었습니다.</translation>
 <translation id="8972540218839637401">설치 중 운영체제 오류가 발생했습니다. BitPop을 다시 다운로드하세요.</translation>
-<translation id="8935838934328341225"><ph name="EXTENSION_NAME"/>이(가) BitPop에 추가되었습니다.</translation>
-<translation id="8871841738132225233">이 Google 계정을 사용하여 BitPop 전체를 동기화하시겠습니까?</translation>
-<translation id="8988481325911971852">알 수 없는 오류로 인해 설치에 실패했습니다. BitPop을 다시 다운로드하세요.</translation>
-<translation id="660036136456272595">BitPop의 최신 버전을 사용하기 때문에 프로필을 사용할 수 없습니다.
-
-일부 기능을 사용할 수 없습니다. 다른 프로필 디렉토리를 지정하거나 BitPop의 새로운 버전을 사용하시기 바랍니다.</translation>
-<translation id="2712549016134575851">설치된 다른 애플리케이션과의 충돌이 감지되었습니다.</translation>
-<translation id="1095023322915848441">이전에 다른 계정으로 로그인했습니다. 로그인하면 데이터가 통합됩니다. <ph name="BEGIN_LINK"/>설정 페이지<ph name="END_LINK"/>에서 새 BitPop 사용자를 생성하시기 바랍니다.</translation>
-<translation id="7862155441175671173">BitPop에 추가</translation>
-<translation id="5594704848342987755">컴퓨터에 이미 최신 버전의 BitPop이 있습니다. 소프트웨어가 작동하지 않으면 BitPop의 설치를 제거한 뒤 다시 시도하세요.</translation>
-<translation id="3422131153907641068">BitPop 유틸리티</translation>
-<translation id="1298199220304005244">Chromium OS 사용에 대한 도움말</translation>
-<translation id="8854394556488040390">BitPop 프레임이 업데이트되었습니다. 브라우저를 다시 실행하세요. BitPop 버전: <ph name="TODO_0001"/>, Chromium 프레임 버전: <ph name="TODO_0002"/></translation>
-<translation id="130631256467250065">기기를 다시 시작할 때 변경사항이 적용됩니다.</translation>
-<translation id="2901348058800597589">BitPop이 제대로 종료되지 않았습니다. 사용 중이던 페이지를 다시 열려면 '복구'를 클릭하세요.</translation>
-<translation id="5653921603290474550">BitPop이 응답하지 않습니다. 다시 시작하시겠습니까?</translation>
-<translation id="6089587093203430357">순간 검색</translation>
-<translation id="2410206016513008786"><ph name="SCHEME"/> 링크 처리를 위해 Chrome에서 외부 응용 프로그램을 실행해야 합니다. 요청 링크는 <ph name="PROTOLINK"/>입니다.</translation>
-<translation id="8046283042877435986">이 사이트는 Chromium 프레임을 권장합니다(이미 설치됨).</translation>
-<translation id="5523374683005655880">이미 실행 중인 BitPop 프레임과 동일한 버전을 설치할 수 없습니다. BitPop 프레임을 종료한 뒤 다시 시도하세요.</translation>
-<translation id="5574763173398621221">BitPop을 통해 비밀번호를 저장하시겠습니까?</translation>
-<translation id="7730150800475367955">현재 네트워크에서
-          <ph name="BEGIN_BOLD"/>
-          BitPop 메뉴 &gt;
-          <ph name="SETTINGS_TITLE"/>
-          &gt;
-          <ph name="INTERNET_TITLE"/>
-          &gt;
-          '<ph name="OPTIONS_BUTTON"/>'
-          <ph name="END_BOLD"/>(으)로 이동하고
-          만약  <ph name="BEGIN_BOLD"/>
-          <ph name="NETWORK_TAB"/>
-          <ph name="END_BOLD"/> 탭에
-          <ph name="BEGIN_BOLD"/>
-          '<ph name="PROXY_BUTTON"/>'
-          <ph name="END_BOLD"/> 버튼이 있다면 클릭하여 '직접 연결'로 설정되어 있는지
-          확인합니다.</translation>
-<translation id="5387335700352644169">BitPop 메뉴 표시</translation>
-<translation id="9171640504251796339">http://www.google.com/support/chrome/bin/answer.py?hl=<ph name="GRITLANGCODE_1"/>&amp;answer=161796</translation>
-<translation id="8865765905101981392">인터넷 브라우저</translation>
-<translation id="6424492062988593837">한층 개선된 Chromium의 최신 버전이 출시되었습니다.</translation>
-<translation id="6385431739515246076">BitPop 정보</translation>
-<translation id="7521125380721653484">설치 프로그램 아카이브가 손상되었거나 잘못되었습니다. BitPop을 다시 다운로드하세요.</translation>
-<translation id="6836892784612884953"><ph name="BEGIN_BOLD"/>
-          BitPop 메뉴 &gt;
+<translation id="2581134012974124523"><ph name="EXTENSION_NAME"/>이(가) BitPop에 추가되었습니다.</translation>
+<translation id="6452045500174243632">BitPop 메뉴 &gt;
           <ph name="SETTINGS_TITLE"/>
           &gt;
           <ph name="ADVANCED_TITLE"/>
           &gt;
           <ph name="PROXIES_TITLE"/>
-          <ph name="END_BOLD"/>(으)로 이동하여
-          '프록시 없음' 또는 '직접 연결'로 설정되어 있는지 확인합니다.</translation>
-<translation id="457806999714267838">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 서버가 만료된 인증서를 제공했습니다. 만료 이후 인증서가 유출되었는지 여부를 확인할 수 있는 정보가 없습니다. 다시 말해 BitPop은 사용자가 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;와(과) 통신하고 있으며 침입자가 아니라는 것을 확인할 수 없습니다. 컴퓨터 시계가 현재 <ph name="CURRENT_TIME"/>(으)로 설정되어 있습니다. 시간이 정확하지 않으면 오류를 수정한 뒤 이 페이지를 새로고침하세요.</translation>
+          &gt;
+          LAN 설정으로 이동하여
+          '사용자 LAN에 프록시 서버 사용'을 선택 취소합니다.</translation>
+<translation id="8988481325911971852">알 수 없는 오류로 인해 설치에 실패했습니다. BitPop을 다시 다운로드하세요.</translation>
+<translation id="660036136456272595">BitPop의 최신 버전을 사용하기 때문에 프로필을 사용할 수 없습니다.
+
+일부 기능을 사용할 수 없습니다. 다른 프로필 디렉토리를 지정하거나 BitPop의 새로운 버전을 사용하시기 바랍니다.</translation>
+<translation id="3787192530015965250">BitPop에서 비밀번호를 표시하려고 합니다. 허용하려면 Windows 비밀번호를 입력하세요.</translation>
+<translation id="7862155441175671173">BitPop에 추가</translation>
+<translation id="1211470790061593728">이제 Google 계정으로 공유 컴퓨터에서 BitPop을 손쉽게 사용할 수 있습니다.</translation>
+<translation id="5594704848342987755">컴퓨터에 이미 최신 버전의 BitPop이 있습니다. 소프트웨어가 작동하지 않으면 BitPop의 설치를 제거한 뒤 다시 시도하세요.</translation>
+<translation id="3528119622127530876">BitPop에서 데이터를 동기화하지 못했습니다. 동기화 암호를 업데이트하시기 바랍니다.</translation>
+<translation id="1298199220304005244">Chromium OS 사용에 대한 도움말</translation>
+<translation id="331951419404882060">로그인 중 오류가 발생하여 Chromium OS에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="8187289872471304532">애플리케이션 &gt; 시스템 환경설정 &gt; 네트워크 &gt; 고급 &gt; 프록시로 이동한 다음
+          선택된 프록시를 선택 취소합니다.</translation>
+<translation id="4634257184917711644"><ph name="FILE_NAME"/>은(는) 악성 파일이므로 BitPop에서 차단했습니다.</translation>
+<translation id="454930334682314382">결제 세부정보가 BitPop에 저장되었습니다.</translation>
+<translation id="130631256467250065">기기를 다시 시작할 때 변경사항이 적용됩니다.</translation>
+<translation id="8810991521775422988">BitPop 알림 센터</translation>
+<translation id="2901348058800597589">BitPop이 제대로 종료되지 않았습니다. 사용 중이던 페이지를 다시 열려면 '복구'를 클릭하세요.</translation>
+<translation id="838316505303362561">BitPop 추천</translation>
+<translation id="5653921603290474550">BitPop이 응답하지 않습니다. 다시 시작하시겠습니까?</translation>
+<translation id="3306752603341080445">BitPop에 로그인했습니다.</translation>
+<translation id="2158734852934720349">Chromium OS 오픈소스 라이선스</translation>
+<translation id="2239725456669400190"><ph name="SCHEME"/> 링크 처리를 위해 Chrome에서 외부 응용 프로그램을 실행해야 합니다. 요청 링크는 <ph name="PROTOLINK"/>입니다.</translation>
+<translation id="5574763173398621221">BitPop을 통해 비밀번호를 저장하시겠습니까?</translation>
+<translation id="5387335700352644169">BitPop 메뉴 표시</translation>
+<translation id="1981756165552484777">BitPop 콘텐츠를 동기화하기 위해 <ph name="PROFILE_EMAIL"/>을(를) 사용 중입니다. 동기화 환경설정을 업데이트하거나 Google 계정 없이 BitPop을 사용하려면 <ph name="SETTINGS_LINK"/>(으)로 이동하세요.</translation>
+<translation id="1681324505975197559">(BitPop을 <ph name="BEGIN_BUTTON"/>다시 시작<ph name="END_BUTTON"/>해야 함)</translation>
+<translation id="6863452815496188645">맞춤설정한 브라우저 기능을 웹에 저장하고 모든 컴퓨터의 BitPop에서 액세스할 수 있도록 동기화를 설정합니다.</translation>
+<translation id="8865765905101981392">인터넷 브라우저</translation>
+<translation id="3099708656176429608">BitPop이 방화벽이나 바이러스 백신이 설정된
+        네트워크에 액세스할 수 있도록 허용합니다.</translation>
+<translation id="8098179324031720100">한층 개선된 BitPop의 최신 버전이 출시되었습니다.</translation>
+<translation id="4320683788245444425">이 컴퓨터의 하드웨어가 더 이상 지원되지 않으므로 BitPop 업데이트를 더 이상 사용할 수 없습니다.</translation>
+<translation id="6385431739515246076">BitPop 정보</translation>
+<translation id="7521125380721653484">설치 프로그램 아카이브가 손상되었거나 잘못되었습니다. BitPop을 다시 다운로드하세요.</translation>
+<translation id="8457938350903919620">BitPop을 열고 탐색을 시작하려면 내 이름을 클릭하세요.</translation>
+<translation id="8410648211590980711">BitPop이 마이크를 사용 중입니다.</translation>
+<translation id="3298525902784604502">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 서버가 만료된 인증서를 제공했습니다. 만료 이후 인증서가 유출되었는지 여부를 확인할 수 있는 정보가 없습니다. 다시 말해 BitPop은 사용자가 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;와(과) 통신하고 있으며 침입자가 아니라는 것을 확인할 수 없습니다. 컴퓨터 시계가 현재 <ph name="CURRENT_TIME"/>(으)로 설정되어 있습니다. 시간이 정확하지 않으면 오류를 수정한 뒤 이 페이지를 새로고침하세요.</translation>
 <translation id="7196020411877309443">이 메시지가 표시되는 이유</translation>
+<translation id="6809805128084420516">BitPop 데이터 관련 중요 정보</translation>
+<translation id="5312973105258198185"><ph name="USER_EMAIL_ADDRESS"/>(으)로 로그인되어 있습니다. 이제 로그인한 모든 기기에서 북마크, 방문 기록 및 기타 설정에 액세스할 수 있습니다.</translation>
 <translation id="473359818469623008">이미 실행 중인 BitPop과 동일한 버전을 설치할 수 없습니다. BitPop을 종료한 뒤 다시 시도하세요.</translation>
 <translation id="2595850371931815386">BitPop이 기본 브라우저로 설정되어 있지 않습니다.</translation>
-<translation id="1857156280997837230">BitPop 앱 실행기</translation>
 <translation id="4458285410772214805">변경사항을 적용하려면 로그아웃했다가 다시 로그인하세요.</translation>
-<translation id="6523007289492675308">Windows 작업표시줄에 BitPop 앱 실행기 바로가기를 표시합니다.</translation>
+<translation id="6627720938086825017">BitPop이 카메라와 마이크를 사용 중입니다.</translation>
+<translation id="6382607600997384001">BitPop 앱, 확장 프로그램 및 웹사이트의 모든 알림을 여기에서 볼 수 있습니다.</translation>
 <translation id="2119636228670142020">Chromium OS 정보</translation>
 <translation id="4196382931981526364">새롭고 안전한 BitPop의 새 버전을 사용할 수 있습니다.</translation>
-<translation id="1077424736315176936">BitPop 앱 설치기 표시</translation>
-<translation id="5330935702921516708">BitPop에 로그인하여 누릴 수 있는 <ph name="BEGIN_LINK"/>더 많은 혜택<ph name="END_LINK"/>을 확인하세요.</translation>
 <translation id="862266784641000464">BitPop을 사용하면 웹에서 전화번호를 클릭하여 Skype로 통화할 수 있습니다.</translation>
 <translation id="8072591166076742072">현재 한 개의 다운로드가 진행 중입니다. BitPop을 종료하고 다운로드를 취소하시겠습니까?</translation>
-<translation id="932207424499184915">BitPop 바이너리</translation>
-<translation id="3223104112377435850">BitPop 플러그인 호스트</translation>
+<translation id="8650443074479376435">로그인 중 오류가 발생하여 BitPop에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="7561209000218748370">BitPop이 mDNS 트래픽을 허용하는 인바운드 규칙입니다.</translation>
+<translation id="151962892725702025">내 도메인에서 동기화를 사용할 수 없으므로 Chromium OS에서 데이터를 동기화하지 못했습니다.</translation>
+<translation id="3360567213983886831">BitPop 바이너리</translation>
+<translation id="108010966668726733">다른 사용자가 이전에 이 컴퓨터에서 <ph name="ACCOUNT_EMAIL_LAST"/>(으)로 BitPop에 로그인했습니다. 본인의 계정이 아닌 경우 새로운 BitPop 사용자를 만들어 정보를 분리하세요.
+
+로그인하면 북마크, 방문 기록 및 기타 설정과 같은 BitPop 정보가 <ph name="ACCOUNT_EMAIL_NEW"/>에 병합됩니다.</translation>
 <translation id="7826309952950470209">현재 여러 개의 다운로드가 진행 중입니다. BitPop을 종료하고 다운로드를 취소하시겠습니까?</translation>
 <translation id="380873736468525691">BitPop은 Windows Vista 또는 Windows XP 서비스 팩 2 이상이 설치된 컴퓨터에서 사용하실 수 있습니다.</translation>
 <translation id="2762974284703971745">같은 이름의 모듈이 BitPop과 충돌하는 것으로 알려져 있습니다.</translation>
+<translation id="5213128101330439346">나만의 BitPop</translation>
 <translation id="5443433498537176573">BitPop이 최신 버전입니다.</translation>
 <translation id="5637727561937246825">컴퓨터에 이미 최신 버전의 BitPop 구성 요소가 있습니다. 좀더 최신 버전의 설치 프로그램을 사용하세요.</translation>
-<translation id="5082591353921977637">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 서버가 유효하지 않은 인증서를 제공했습니다. 인증서가 신뢰할 수 있는지 여부를 알 수 있는 정보가 없습니다. BitPop은 사용자가 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;와(과) 통신하고 있으며 침입자가 아니라는 것을 확인할 수 없습니다. 컴퓨터 시계가 현재 <ph name="CURRENT_TIME"/>(으)로 설정되어 있습니다. 시간이 정확하지 않으면 시스템 시계를 수정한 뒤 이 페이지를 새로고침하세요.</translation>
-<translation id="1138135211676039883">BitPop은 현재 기본 검색엔진으로 설정된 <ph name="PAGE_TITLE"/> 검색엔진을 사용하고 있습니다. 기본 검색엔진을 계속 사용하시겠습니까?</translation>
+<translation id="4547797007790555015">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려고 했지만 서버가 유효하지 않은 인증서를 제공했습니다. 인증서가 신뢰할 수 있는지 여부를 알 수 있는 정보가 없습니다. BitPop은 사용자가 &lt;strong&gt;<ph name="DOMAIN2"/>&lt;/strong&gt;와(과) 통신하고 있으며 침입자가 아니라는 것을 확인할 수 없습니다. 컴퓨터 시계가 현재 <ph name="CURRENT_TIME"/>(으)로 설정되어 있습니다. 시간이 정확하지 않으면 시스템 시계를 수정한 뒤 이 페이지를 새로고침하세요.</translation>
 <translation id="185658551912723674">BitPop에 오신 것을 환영합니다.</translation>
-<translation id="6808688532552992663">컴퓨터에 이미 최신 버전의 BitPop과 BitPop 프레임이 있습니다. 소프트웨어가 작동하지 않으면 BitPop과 BitPop 프레임의 설치를 제거한 뒤 다시 시도하세요.</translation>
 <translation id="1909867102505992367">환경설정 파일이 손상되었거나 잘못되었습니다.
 
 BitPop에서 설정을 복구할 수 없습니다.</translation>
+<translation id="6239286721842301381">새로운 BitPop의 미리보기를 실행하는 중입니다.</translation>
+<translation id="7591092481995851856"><ph name="USERNAME"/>의 연결을 해제하면 이 기기에 저장된 방문 기록, 북마크, 설정 및 BitPop 데이터가 삭제됩니다. Google 계정에 저장된 데이터는 삭제되지 않으며 <ph name="GOOGLE_DASHBOARD_LINK"/>Google 대시보드<ph name="END_GOOGLE_DASHBOARD_LINK"/>에서 관리될 수 있습니다.</translation>
 <translation id="4933902704814222889">BitPop은 빠른 속도로 웹페이지와 애플리케이션을 실행하는 웹 브라우저입니다. 빠르고 안정적이며 사용하기에 편리합니다. BitPop에 내장된 멀웨어 및 악성 코드 방지 기능을 사용하여 더욱 안전하게 웹을 검색하세요.</translation>
-<translation id="7673336527696184948">인수가 잘못되었습니다. BitPop을 함께 설치하지 않으면 BitPop 프레임을 준비 모드에서 설치할 수 없습니다.</translation>
+<translation id="5806792281256987775">&lt;strong&gt;<ph name="DOMAIN"/>&lt;/strong&gt;에 접속하려 했으나 서버가 BitPop에서 신뢰하지 않는 기관에서 발행한 인증서를 제공했습니다. 즉, 서버가 자체 보안 자격증명을 생성하여 BitPop에서 그 정보를 신뢰할 수 없거나, 공격자가 통신을 가로채려고 한 것일 수 있습니다.</translation>
+<translation id="26317130586606191">BitPop 데이터를 이 계정에 연결하시겠습니까?</translation>
 <translation id="5583217122091744450">BitPop 도우미</translation>
+<translation id="3089741509794563091">더욱 업그레이드된 BitPop</translation>
 <translation id="6404599307042403560">컴퓨터를 시작하면 BitPop을 자동으로 실행하도록 설정됩니다.</translation>
-<translation id="8974095189086268230">Chrome OS는 추가 <ph name="BEGIN_LINK_CROS_OSS"/>오픈소스 소프트웨어<ph name="END_LINK_CROS_OSS"/>를 사용했습니다.</translation>
-<translation id="1221340462641866827">Chromium OS는 외부 애플리케이션 실행을 통한 <ph name="SCHEME"/> 링크 처리를 지원하지 않습니다. 요청된 링크는 <ph name="PROTOLINK"/>입니다.</translation>
+<translation id="554833011526807667">Chrome OS는 추가 <ph name="BEGIN_LINK_CROS_OSS"/>오픈소스 소프트웨어<ph name="END_LINK_CROS_OSS"/>를 사용했습니다.</translation>
+<translation id="8166042339699941380">관리 계정으로 로그인하고 BitPop 프로필에 대한 관리자 제어권을 부여하려고 합니다. 이렇게 하면 앱, 북마크, 방문 기록, 비밀번호 및 기타 설정 등 BitPop 데이터가 <ph name="USER_NAME"/>에 영구적으로 연결됩니다. Google 계정 대시보드를 통해 이 데이터를 삭제할 수 있지만 다른 계정에 연결할 수는 없습니다.</translation>
+<translation id="2032763513380168750">내 BitPop 데이터를 이 계정에 연결</translation>
+<translation id="2477235356415090659">BitPop 재설치</translation>
+<translation id="807350504213044844">Chromium OS는 외부 애플리케이션 실행을 통한 <ph name="SCHEME"/> 링크 처리를 지원하지 않습니다. 요청된 링크는 <ph name="PROTOLINK"/>입니다.</translation>
+<translation id="3484768020161794310">Google API 키가 누락되었습니다. BitPop의 일부 기능이 사용 중지됩니다.</translation>
+<translation id="531363935678210182">BitPop - 알림</translation>
+<translation id="3151848949510984428">BitPop에 세부정보 저장</translation>
 </translationbundle>

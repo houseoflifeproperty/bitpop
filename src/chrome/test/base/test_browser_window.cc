@@ -9,143 +9,8 @@
 #include "chrome/browser/ui/browser_list_observer.h"
 #include "ui/gfx/rect.h"
 
-using content::NativeWebKeyboardEvent;
 
-TestBrowserWindow::TestBrowserWindow() {}
-
-TestBrowserWindow::~TestBrowserWindow() {}
-
-bool TestBrowserWindow::IsActive() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsAlwaysOnTop() const {
-  return false;
-}
-
-gfx::NativeWindow TestBrowserWindow::GetNativeWindow() {
-  return NULL;
-}
-
-BrowserWindowTesting* TestBrowserWindow::GetBrowserWindowTesting() {
-  return NULL;
-}
-
-StatusBubble* TestBrowserWindow::GetStatusBubble() {
-  return NULL;
-}
-
-gfx::Rect TestBrowserWindow::GetRestoredBounds() const {
-  return gfx::Rect();
-}
-
-gfx::Rect TestBrowserWindow::GetBounds() const {
-  return gfx::Rect();
-}
-
-bool TestBrowserWindow::IsMaximized() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsMinimized() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsFullscreen() const {
-  return false;
-}
-
-#if defined(OS_WIN)
-bool TestBrowserWindow::IsInMetroSnapMode() const {
-  return false;
-}
-#endif
-
-bool TestBrowserWindow::IsFullscreenBubbleVisible() const {
-  return false;
-}
-
-LocationBar* TestBrowserWindow::GetLocationBar() const {
-  return const_cast<TestLocationBar*>(&location_bar_);
-}
-
-bool TestBrowserWindow::PreHandleKeyboardEvent(
-    const NativeWebKeyboardEvent& event,
-    bool* is_keyboard_shortcut) {
-  return false;
-}
-
-bool TestBrowserWindow::IsBookmarkBarVisible() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsBookmarkBarAnimating() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsTabStripEditable() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsToolbarVisible() const {
-  return false;
-}
-
-gfx::Rect TestBrowserWindow::GetRootWindowResizerRect() const {
-  return gfx::Rect();
-}
-
-bool TestBrowserWindow::IsPanel() const {
-  return false;
-}
-
-bool TestBrowserWindow::IsDownloadShelfVisible() const {
-  return false;
-}
-
-DownloadShelf* TestBrowserWindow::GetDownloadShelf() {
-  return &download_shelf_;
-}
-
-int TestBrowserWindow::GetExtraRenderViewHeight() const {
-  return 0;
-}
-
-#if defined(OS_MACOSX)
-bool TestBrowserWindow::InPresentationMode() {
-  return false;
-}
-#endif
-
-gfx::Rect TestBrowserWindow::GetInstantBounds() {
-  return gfx::Rect();
-}
-
-WindowOpenDisposition TestBrowserWindow::GetDispositionForPopupBounds(
-    const gfx::Rect& bounds) {
-  return NEW_POPUP;
-}
-
-bool TestBrowserWindow::IsInstantTabShowing() {
-  return false;
-}
-
-FindBar* TestBrowserWindow::CreateFindBar() {
-  return NULL;
-}
-
-bool TestBrowserWindow::GetConstrainedWindowTopY(int* top_y) {
-  return false;
-}
-
-// Whether or not the facebook friends sidebar is visible
-bool TestBrowserWindow::IsFriendsSidebarVisible() const {
-  return false;
-}
-
-void TestBrowserWindow::SetFriendsSidebarVisible(bool visible) {
-  NOTIMPLEMENTED();
-}
+// Helpers --------------------------------------------------------------------
 
 namespace chrome {
 
@@ -176,11 +41,6 @@ class TestBrowserWindowOwner : public chrome::BrowserListObserver {
 
 }  // namespace
 
-Browser* CreateBrowserWithTestWindowForProfile(Profile* profile) {
-  Browser::CreateParams params(profile);
-  return CreateBrowserWithTestWindowForParams(&params);
-}
-
 Browser* CreateBrowserWithTestWindowForParams(Browser::CreateParams* params) {
   TestBrowserWindow* window = new TestBrowserWindow;
   new TestBrowserWindowOwner(window);
@@ -189,3 +49,188 @@ Browser* CreateBrowserWithTestWindowForParams(Browser::CreateParams* params) {
 }
 
 }  // namespace chrome
+
+
+// TestBrowserWindow::TestLocationBar -----------------------------------------
+
+GURL TestBrowserWindow::TestLocationBar::GetDestinationURL() const {
+  return GURL();
+}
+
+WindowOpenDisposition
+    TestBrowserWindow::TestLocationBar::GetWindowOpenDisposition() const {
+  return CURRENT_TAB;
+}
+
+content::PageTransition
+    TestBrowserWindow::TestLocationBar::GetPageTransition() const {
+  return content::PAGE_TRANSITION_LINK;
+}
+
+const OmniboxView* TestBrowserWindow::TestLocationBar::GetOmniboxView() const {
+  return NULL;
+}
+
+OmniboxView* TestBrowserWindow::TestLocationBar::GetOmniboxView() {
+  return NULL;
+}
+
+LocationBarTesting*
+    TestBrowserWindow::TestLocationBar::GetLocationBarForTesting() {
+  return NULL;
+}
+
+
+// TestBrowserWindow ----------------------------------------------------------
+
+TestBrowserWindow::TestBrowserWindow() {}
+
+TestBrowserWindow::~TestBrowserWindow() {}
+
+bool TestBrowserWindow::IsActive() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsAlwaysOnTop() const {
+  return false;
+}
+
+gfx::NativeWindow TestBrowserWindow::GetNativeWindow() {
+  return NULL;
+}
+
+BrowserWindowTesting* TestBrowserWindow::GetBrowserWindowTesting() {
+  return NULL;
+}
+
+StatusBubble* TestBrowserWindow::GetStatusBubble() {
+  return NULL;
+}
+
+gfx::Rect TestBrowserWindow::GetRestoredBounds() const {
+  return gfx::Rect();
+}
+
+ui::WindowShowState TestBrowserWindow::GetRestoredState() const {
+  return ui::SHOW_STATE_DEFAULT;
+}
+
+gfx::Rect TestBrowserWindow::GetBounds() const {
+  return gfx::Rect();
+}
+
+bool TestBrowserWindow::IsMaximized() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsMinimized() const {
+  return false;
+}
+
+bool TestBrowserWindow::ShouldHideUIForFullscreen() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsFullscreen() const {
+  return false;
+}
+
+#if defined(OS_WIN)
+bool TestBrowserWindow::IsInMetroSnapMode() const {
+  return false;
+}
+#endif
+
+bool TestBrowserWindow::IsFullscreenBubbleVisible() const {
+  return false;
+}
+
+LocationBar* TestBrowserWindow::GetLocationBar() const {
+  return const_cast<TestLocationBar*>(&location_bar_);
+}
+
+bool TestBrowserWindow::PreHandleKeyboardEvent(
+    const content::NativeWebKeyboardEvent& event,
+    bool* is_keyboard_shortcut) {
+  return false;
+}
+
+bool TestBrowserWindow::IsBookmarkBarVisible() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsBookmarkBarAnimating() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsTabStripEditable() const {
+  return false;
+}
+
+bool TestBrowserWindow::IsToolbarVisible() const {
+  return false;
+}
+
+gfx::Rect TestBrowserWindow::GetRootWindowResizerRect() const {
+  return gfx::Rect();
+}
+
+bool TestBrowserWindow::IsDownloadShelfVisible() const {
+  return false;
+}
+
+DownloadShelf* TestBrowserWindow::GetDownloadShelf() {
+  return &download_shelf_;
+}
+
+int TestBrowserWindow::GetExtraRenderViewHeight() const {
+  return 0;
+}
+
+#if defined(OS_MACOSX)
+bool TestBrowserWindow::IsFullscreenWithChrome() {
+  return false;
+}
+
+bool TestBrowserWindow::IsFullscreenWithoutChrome() {
+  return false;
+}
+#endif
+
+WindowOpenDisposition TestBrowserWindow::GetDispositionForPopupBounds(
+    const gfx::Rect& bounds) {
+  return NEW_POPUP;
+}
+
+FindBar* TestBrowserWindow::CreateFindBar() {
+  return NULL;
+}
+
+web_modal::WebContentsModalDialogHost*
+    TestBrowserWindow::GetWebContentsModalDialogHost() {
+  return NULL;
+}
+
+// Whether or not the facebook friends sidebar is visible
+bool TestBrowserWindow::IsFriendsSidebarVisible() const {
+  return false;
+}
+
+void TestBrowserWindow::SetFriendsSidebarVisible(bool visible) {
+  NOTIMPLEMENTED();
+}
+
+int
+TestBrowserWindow::GetRenderViewHeightInsetWithDetachedBookmarkBar() {
+  return 0;
+}
+
+void TestBrowserWindow::ExecuteExtensionCommand(
+    const extensions::Extension* extension,
+    const extensions::Command& command) {}
+
+void TestBrowserWindow::ShowPageActionPopup(
+    const extensions::Extension* extension) {}
+
+void TestBrowserWindow::ShowBrowserActionPopup(
+    const extensions::Extension* extension) {}

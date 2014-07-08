@@ -4,11 +4,13 @@
 
 #include <string.h>
 #include <time.h>
+#include <algorithm>
+#include <numeric>
 #include <vector>
 
 #include "base/basictypes.h"
 #include "base/logging.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "skia/ext/convolver.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "third_party/skia/include/core/SkBitmap.h"
@@ -210,14 +212,114 @@ TEST(Convolver, AddFilter) {
   ASSERT_EQ(0, filter_length);
 }
 
-TEST(Convolver, SIMDVerification) {
-#if defined(SIMD_SSE2)
-  base::CPU cpu;
-  if (!cpu.has_sse2()) return;
-
-  int source_sizes[][2] = { {1920, 1080}, {720, 480}, {1377, 523}, {325, 241} };
-  int dest_sizes[][2] = { {1280, 1024}, {480, 270}, {177, 123} };
+void VerifySIMD(unsigned int source_width,
+                unsigned int source_height,
+                unsigned int dest_width,
+                unsigned int dest_height) {
   float filter[] = { 0.05f, -0.15f, 0.6f, 0.6f, -0.15f, 0.05f };
+  // Preparing convolve coefficients.
+  ConvolutionFilter1D x_filter, y_filter;
+  for (unsigned int p = 0; p < dest_width; ++p) {
+    unsigned int offset = source_width * p / dest_width;
+    EXPECT_LT(offset, source_width);
+    x_filter.AddFilter(offset, filter,
+                       std::min<int>(arraysize(filter),
+                                     source_width - offset));
+  }
+  x_filter.PaddingForSIMD();
+  for (unsigned int p = 0; p < dest_height; ++p) {
+    unsigned int offset = source_height * p / dest_height;
+    y_filter.AddFilter(offset, filter,
+                       std::min<int>(arraysize(filter),
+                                     source_height - offset));
+  }
+  y_filter.PaddingForSIMD();
+
+  // Allocate input and output skia bitmap.
+  SkBitmap source, result_c, result_sse;
+  source.setConfig(SkBitmap::kARGB_8888_Config,
+                   source_width, source_height);
+  source.allocPixels();
+  result_c.setConfig(SkBitmap::kARGB_8888_Config,
+                     dest_width, dest_height);
+  result_c.allocPixels();
+  result_sse.setConfig(SkBitmap::kARGB_8888_Config,
+                       dest_width, dest_height);
+  result_sse.allocPixels();
+
+  // Randomize source bitmap for testing.
+  unsigned char* src_ptr = static_cast<unsigned char*>(source.getPixels());
+  for (int y = 0; y < source.height(); y++) {
+    for (unsigned int x = 0; x < source.rowBytes(); x++)
+      src_ptr[x] = rand() % 255;
+    src_ptr += source.rowBytes();
+  }
+
+  // Test both cases with different has_alpha.
+  for (int alpha = 0; alpha < 2; alpha++) {
+    // Convolve using C code.
+    base::TimeTicks resize_start;
+    base::TimeDelta delta_c, delta_sse;
+    unsigned char* r1 = static_cast<unsigned char*>(result_c.getPixels());
+    unsigned char* r2 = static_cast<unsigned char*>(result_sse.getPixels());
+
+    resize_start = base::TimeTicks::Now();
+    BGRAConvolve2D(static_cast<const uint8*>(source.getPixels()),
+                   static_cast<int>(source.rowBytes()),
+                   (alpha != 0), x_filter, y_filter,
+                   static_cast<int>(result_c.rowBytes()), r1, false);
+    delta_c = base::TimeTicks::Now() - resize_start;
+
+    resize_start = base::TimeTicks::Now();
+    // Convolve using SSE2 code
+    BGRAConvolve2D(static_cast<const uint8*>(source.getPixels()),
+                   static_cast<int>(source.rowBytes()),
+                   (alpha != 0), x_filter, y_filter,
+                   static_cast<int>(result_sse.rowBytes()), r2, true);
+    delta_sse = base::TimeTicks::Now() - resize_start;
+
+    // Unfortunately I could not enable the performance check now.
+    // Most bots use debug version, and there are great difference between
+    // the code generation for intrinsic, etc. In release version speed
+    // difference was 150%-200% depend on alpha channel presence;
+    // while in debug version speed difference was 96%-120%.
+    // TODO(jiesun): optimize further until we could enable this for
+    // debug version too.
+    // EXPECT_LE(delta_sse, delta_c);
+
+    int64 c_us = delta_c.InMicroseconds();
+    int64 sse_us = delta_sse.InMicroseconds();
+    VLOG(1) << "from:" << source_width << "x" << source_height
+            << " to:" << dest_width << "x" << dest_height
+            << (alpha ? " with alpha" : " w/o alpha");
+    VLOG(1) << "c:" << c_us << " sse:" << sse_us;
+    VLOG(1) << "ratio:" << static_cast<float>(c_us) / sse_us;
+
+    // Comparing result.
+    for (unsigned int i = 0; i < dest_height; i++) {
+      EXPECT_FALSE(memcmp(r1, r2, dest_width * 4)); // RGBA always
+      r1 += result_c.rowBytes();
+      r2 += result_sse.rowBytes();
+    }
+  }
+}
+
+TEST(Convolver, VerifySIMDEdgeCases) {
+  srand(static_cast<unsigned int>(time(0)));
+  // Loop over all possible (small) image sizes
+  for (unsigned int width = 1; width < 20; width++) {
+    for (unsigned int height = 1; height < 20; height++) {
+      VerifySIMD(width, height, 8, 8);
+      VerifySIMD(8, 8, width, height);
+    }
+  }
+}
+
+// Verify that lage upscales/downscales produce the same result
+// with and without SIMD.
+TEST(Convolver, VerifySIMDPrecision) {
+  int source_sizes[][2] = { {1920, 1080}, {1377, 523}, {325, 241} };
+  int dest_sizes[][2] = { {1280, 1024}, {177, 123} };
 
   srand(static_cast<unsigned int>(time(0)));
 
@@ -226,96 +328,211 @@ TEST(Convolver, SIMDVerification) {
     unsigned int source_width = source_sizes[i][0];
     unsigned int source_height = source_sizes[i][1];
     for (unsigned int j = 0; j < arraysize(dest_sizes); ++j) {
-      unsigned int dest_width = source_sizes[j][0];
-      unsigned int dest_height = source_sizes[j][1];
-
-      // Preparing convolve coefficients.
-      ConvolutionFilter1D x_filter, y_filter;
-      for (unsigned int p = 0; p < dest_width; ++p) {
-        unsigned int offset = source_width * p / dest_width;
-        if (offset > source_width - arraysize(filter))
-          offset = source_width - arraysize(filter);
-        x_filter.AddFilter(offset, filter, arraysize(filter));
-      }
-      for (unsigned int p = 0; p < dest_height; ++p) {
-        unsigned int offset = source_height * p / dest_height;
-        if (offset > source_height - arraysize(filter))
-          offset = source_height - arraysize(filter);
-        y_filter.AddFilter(offset, filter, arraysize(filter));
-      }
-
-      // Allocate input and output skia bitmap.
-      SkBitmap source, result_c, result_sse;
-      source.setConfig(SkBitmap::kARGB_8888_Config,
-                       source_width, source_height);
-      source.allocPixels();
-      result_c.setConfig(SkBitmap::kARGB_8888_Config,
-                         dest_width, dest_height);
-      result_c.allocPixels();
-      result_sse.setConfig(SkBitmap::kARGB_8888_Config,
-                           dest_width, dest_height);
-      result_sse.allocPixels();
-
-      // Randomize source bitmap for testing.
-      unsigned char* src_ptr = static_cast<unsigned char*>(source.getPixels());
-      for (int y = 0; y < source.height(); y++) {
-        for (int x = 0; x < source.rowBytes(); x++)
-          src_ptr[x] = rand() % 255;
-        src_ptr += source.rowBytes();
-      }
-
-      // Test both cases with different has_alpha.
-      for (int alpha = 0; alpha < 2; alpha++) {
-        // Convolve using C code.
-        base::TimeTicks resize_start;
-        base::TimeDelta delta_c, delta_sse;
-        unsigned char* r1 = static_cast<unsigned char*>(result_c.getPixels());
-        unsigned char* r2 = static_cast<unsigned char*>(result_sse.getPixels());
-
-        resize_start = base::TimeTicks::Now();
-        BGRAConvolve2D(static_cast<const uint8*>(source.getPixels()),
-                       static_cast<int>(source.rowBytes()),
-                       (alpha != 0), x_filter, y_filter,
-                       static_cast<int>(result_c.rowBytes()), r1, false);
-        delta_c = base::TimeTicks::Now() - resize_start;
-
-        resize_start = base::TimeTicks::Now();
-        // Convolve using SSE2 code
-        BGRAConvolve2D(static_cast<const uint8*>(source.getPixels()),
-                       static_cast<int>(source.rowBytes()),
-                       (alpha != 0), x_filter, y_filter,
-                       static_cast<int>(result_sse.rowBytes()), r2, true);
-        delta_sse = base::TimeTicks::Now() - resize_start;
-
-        // Unfortunately I could not enable the performance check now.
-        // Most bots use debug version, and there are great difference between
-        // the code generation for intrinsic, etc. In release version speed
-        // difference was 150%-200% depend on alpha channel presence;
-        // while in debug version speed difference was 96%-120%.
-        // TODO(jiesun): optimize further until we could enable this for
-        // debug version too.
-        // EXPECT_LE(delta_sse, delta_c);
-
-        int64 c_us = delta_c.InMicroseconds();
-        int64 sse_us = delta_sse.InMicroseconds();
-        VLOG(1) << "from:" << source_width << "x" << source_height
-                << " to:" << dest_width << "x" << dest_height
-                << (alpha ? " with alpha" : " w/o alpha");
-        VLOG(1) << "c:" << c_us << " sse:" << sse_us;
-        VLOG(1) << "ratio:" << static_cast<float>(c_us) / sse_us;
-
-        // Comparing result.
-        for (unsigned int i = 0; i < dest_height; i++) {
-          for (unsigned int x = 0; x < dest_width * 4; x++) {  // RGBA always.
-            EXPECT_EQ(r1[x], r2[x]);
-          }
-          r1 += result_c.rowBytes();
-          r2 += result_sse.rowBytes();
-        }
-      }
+      unsigned int dest_width = dest_sizes[j][0];
+      unsigned int dest_height = dest_sizes[j][1];
+      VerifySIMD(source_width, source_height, dest_width, dest_height);
     }
   }
-#endif
+}
+
+TEST(Convolver, SeparableSingleConvolution) {
+  static const int kImgWidth = 1024;
+  static const int kImgHeight = 1024;
+  static const int kChannelCount = 3;
+  static const int kStrideSlack = 22;
+  ConvolutionFilter1D filter;
+  const float box[5] = { 0.2f, 0.2f, 0.2f, 0.2f, 0.2f };
+  filter.AddFilter(0, box, 5);
+
+  // Allocate a source image and set to 0.
+  const int src_row_stride = kImgWidth * kChannelCount + kStrideSlack;
+  int src_byte_count = src_row_stride * kImgHeight;
+  std::vector<unsigned char> input;
+  const int signal_x = kImgWidth / 2;
+  const int signal_y = kImgHeight / 2;
+  input.resize(src_byte_count, 0);
+  // The image has a single impulse pixel in channel 1, smack in the middle.
+  const int non_zero_pixel_index =
+      signal_y * src_row_stride + signal_x * kChannelCount + 1;
+  input[non_zero_pixel_index] = 255;
+
+  // Destination will be a single channel image with stide matching width.
+  const int dest_row_stride = kImgWidth;
+  const int dest_byte_count = dest_row_stride * kImgHeight;
+  std::vector<unsigned char> output;
+  output.resize(dest_byte_count);
+
+  // Apply convolution in X.
+  SingleChannelConvolveX1D(&input[0], src_row_stride, 1, kChannelCount,
+                           filter, SkISize::Make(kImgWidth, kImgHeight),
+                           &output[0], dest_row_stride, 0, 1, false);
+  for (int x = signal_x - 2; x <= signal_x + 2; ++x)
+    EXPECT_GT(output[signal_y * dest_row_stride + x], 0);
+
+  EXPECT_EQ(output[signal_y * dest_row_stride + signal_x - 3], 0);
+  EXPECT_EQ(output[signal_y * dest_row_stride + signal_x + 3], 0);
+
+  // Apply convolution in Y.
+  SingleChannelConvolveY1D(&input[0], src_row_stride, 1, kChannelCount,
+                           filter, SkISize::Make(kImgWidth, kImgHeight),
+                           &output[0], dest_row_stride, 0, 1, false);
+  for (int y = signal_y - 2; y <= signal_y + 2; ++y)
+    EXPECT_GT(output[y * dest_row_stride + signal_x], 0);
+
+  EXPECT_EQ(output[(signal_y - 3) * dest_row_stride + signal_x], 0);
+  EXPECT_EQ(output[(signal_y + 3) * dest_row_stride + signal_x], 0);
+
+  EXPECT_EQ(output[signal_y * dest_row_stride + signal_x - 1], 0);
+  EXPECT_EQ(output[signal_y * dest_row_stride + signal_x + 1], 0);
+
+  // The main point of calling this is to invoke the routine on input without
+  // padding.
+  std::vector<unsigned char> output2;
+  output2.resize(dest_byte_count);
+  SingleChannelConvolveX1D(&output[0], dest_row_stride, 0, 1,
+                           filter, SkISize::Make(kImgWidth, kImgHeight),
+                           &output2[0], dest_row_stride, 0, 1, false);
+  // This should be a result of 2D convolution.
+  for (int x = signal_x - 2; x <= signal_x + 2; ++x) {
+    for (int y = signal_y - 2; y <= signal_y + 2; ++y)
+      EXPECT_GT(output2[y * dest_row_stride + x], 0);
+  }
+  EXPECT_EQ(output2[0], 0);
+  EXPECT_EQ(output2[dest_row_stride - 1], 0);
+  EXPECT_EQ(output2[dest_byte_count - 1], 0);
+}
+
+TEST(Convolver, SeparableSingleConvolutionEdges) {
+  // The purpose of this test is to check if the implementation treats correctly
+  // edges of the image.
+  static const int kImgWidth = 600;
+  static const int kImgHeight = 800;
+  static const int kChannelCount = 3;
+  static const int kStrideSlack = 22;
+  static const int kChannel = 1;
+  ConvolutionFilter1D filter;
+  const float box[5] = { 0.2f, 0.2f, 0.2f, 0.2f, 0.2f };
+  filter.AddFilter(0, box, 5);
+
+  // Allocate a source image and set to 0.
+  int src_row_stride = kImgWidth * kChannelCount + kStrideSlack;
+  int src_byte_count = src_row_stride * kImgHeight;
+  std::vector<unsigned char> input(src_byte_count);
+
+  // Draw a frame around the image.
+  for (int i = 0; i < src_byte_count; ++i) {
+    int row = i / src_row_stride;
+    int col = i % src_row_stride / kChannelCount;
+    int channel = i % src_row_stride % kChannelCount;
+    if (channel != kChannel || col > kImgWidth) {
+      input[i] = 255;
+    } else if (row == 0 || col == 0 ||
+               col == kImgWidth - 1 || row == kImgHeight - 1) {
+      input[i] = 100;
+    } else if (row == 1 || col == 1 ||
+               col == kImgWidth - 2 || row == kImgHeight - 2) {
+      input[i] = 200;
+    } else {
+      input[i] = 0;
+    }
+  }
+
+  // Destination will be a single channel image with stide matching width.
+  int dest_row_stride = kImgWidth;
+  int dest_byte_count = dest_row_stride * kImgHeight;
+  std::vector<unsigned char> output;
+  output.resize(dest_byte_count);
+
+  // Apply convolution in X.
+  SingleChannelConvolveX1D(&input[0], src_row_stride, 1, kChannelCount,
+                           filter, SkISize::Make(kImgWidth, kImgHeight),
+                           &output[0], dest_row_stride, 0, 1, false);
+
+  // Sadly, comparison is not as simple as retaining all values.
+  int invalid_values = 0;
+  const unsigned char first_value = output[0];
+  EXPECT_NEAR(first_value, 100, 1);
+  for (int i = 0; i < dest_row_stride; ++i) {
+    if (output[i] != first_value)
+      ++invalid_values;
+  }
+  EXPECT_EQ(0, invalid_values);
+
+  int test_row = 22;
+  EXPECT_NEAR(output[test_row * dest_row_stride], 100, 1);
+  EXPECT_NEAR(output[test_row * dest_row_stride + 1], 80, 1);
+  EXPECT_NEAR(output[test_row * dest_row_stride + 2], 60, 1);
+  EXPECT_NEAR(output[test_row * dest_row_stride + 3], 40, 1);
+  EXPECT_NEAR(output[(test_row + 1) * dest_row_stride - 1], 100, 1);
+  EXPECT_NEAR(output[(test_row + 1) * dest_row_stride - 2], 80, 1);
+  EXPECT_NEAR(output[(test_row + 1) * dest_row_stride - 3], 60, 1);
+  EXPECT_NEAR(output[(test_row + 1) * dest_row_stride - 4], 40, 1);
+
+  SingleChannelConvolveY1D(&input[0], src_row_stride, 1, kChannelCount,
+                           filter, SkISize::Make(kImgWidth, kImgHeight),
+                           &output[0], dest_row_stride, 0, 1, false);
+
+  int test_column = 42;
+  EXPECT_NEAR(output[test_column], 100, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride], 80, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride * 2], 60, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride * 3], 40, 1);
+
+  EXPECT_NEAR(output[test_column + dest_row_stride * (kImgHeight - 1)], 100, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride * (kImgHeight - 2)], 80, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride * (kImgHeight - 3)], 60, 1);
+  EXPECT_NEAR(output[test_column + dest_row_stride * (kImgHeight - 4)], 40, 1);
+}
+
+TEST(Convolver, SetUpGaussianConvolutionFilter) {
+  ConvolutionFilter1D smoothing_filter;
+  ConvolutionFilter1D gradient_filter;
+  SetUpGaussianConvolutionKernel(&smoothing_filter, 4.5f, false);
+  SetUpGaussianConvolutionKernel(&gradient_filter, 3.0f, true);
+
+  int specified_filter_length;
+  int filter_offset;
+  int filter_length;
+
+  const ConvolutionFilter1D::Fixed* smoothing_kernel =
+      smoothing_filter.GetSingleFilter(
+          &specified_filter_length, &filter_offset, &filter_length);
+  EXPECT_TRUE(smoothing_kernel);
+  std::vector<float> fp_smoothing_kernel(filter_length);
+  std::transform(smoothing_kernel,
+                 smoothing_kernel + filter_length,
+                 fp_smoothing_kernel.begin(),
+                 ConvolutionFilter1D::FixedToFloat);
+  // Should sum-up to 1 (nearly), and all values whould be in ]0, 1[.
+  EXPECT_NEAR(std::accumulate(
+      fp_smoothing_kernel.begin(), fp_smoothing_kernel.end(), 0.0f),
+              1.0f, 0.01f);
+  EXPECT_GT(*std::min_element(fp_smoothing_kernel.begin(),
+                              fp_smoothing_kernel.end()), 0.0f);
+  EXPECT_LT(*std::max_element(fp_smoothing_kernel.begin(),
+                              fp_smoothing_kernel.end()), 1.0f);
+
+  const ConvolutionFilter1D::Fixed* gradient_kernel =
+      gradient_filter.GetSingleFilter(
+          &specified_filter_length, &filter_offset, &filter_length);
+  EXPECT_TRUE(gradient_kernel);
+  std::vector<float> fp_gradient_kernel(filter_length);
+  std::transform(gradient_kernel,
+                 gradient_kernel + filter_length,
+                 fp_gradient_kernel.begin(),
+                 ConvolutionFilter1D::FixedToFloat);
+  // Should sum-up to 0, and all values whould be in ]-1.5, 1.5[.
+  EXPECT_NEAR(std::accumulate(
+      fp_gradient_kernel.begin(), fp_gradient_kernel.end(), 0.0f),
+              0.0f, 0.01f);
+  EXPECT_GT(*std::min_element(fp_gradient_kernel.begin(),
+                              fp_gradient_kernel.end()), -1.5f);
+  EXPECT_LT(*std::min_element(fp_gradient_kernel.begin(),
+                              fp_gradient_kernel.end()), 0.0f);
+  EXPECT_LT(*std::max_element(fp_gradient_kernel.begin(),
+                              fp_gradient_kernel.end()), 1.5f);
+  EXPECT_GT(*std::max_element(fp_gradient_kernel.begin(),
+                              fp_gradient_kernel.end()), 0.0f);
 }
 
 }  // namespace skia

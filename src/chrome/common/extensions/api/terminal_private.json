@@ -5,9 +5,11 @@
 [
   {
     "namespace": "terminalPrivate",
-    "nodoc": true,
+    "compiler_options": {
+      "implemented_in": "chrome/browser/extensions/api/terminal/terminal_private_api.h"
+    },
     "platforms": ["chromeos"],
-    "types": [],
+    "description": "none",
     "functions": [
       {
         "name": "openTerminalProcess",

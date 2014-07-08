@@ -9,16 +9,21 @@
 
 #include "base/basictypes.h"
 #include "base/compiler_specific.h"
+#include "base/observer_list.h"
 #include "ui/base/ime/input_method.h"
-#include "ui/base/ui_export.h"
+#include "ui/base/ime/input_method_observer.h"
+#include "ui/base/ui_base_export.h"
 
 namespace ui {
 
 class KeyEvent;
 class TextInputClient;
 
-// A mock ui::InputMethod implementation for minimum input support.
-class UI_EXPORT MockInputMethod : NON_EXPORTED_BASE(public InputMethod) {
+// A mock ui::InputMethod implementation for testing. You can get the instance
+// of this class as the global input method with calling
+// SetUpInputMethodFactoryForTesting() which is declared in
+// ui/base/ime/input_method_factory.h
+class UI_BASE_EXPORT MockInputMethod : NON_EXPORTED_BASE(public InputMethod) {
  public:
   explicit MockInputMethod(internal::InputMethodDelegate* delegate);
   virtual ~MockInputMethod();
@@ -28,23 +33,29 @@ class UI_EXPORT MockInputMethod : NON_EXPORTED_BASE(public InputMethod) {
   virtual void Init(bool focused) OVERRIDE;
   virtual void OnFocus() OVERRIDE;
   virtual void OnBlur() OVERRIDE;
+  virtual bool OnUntranslatedIMEMessage(const base::NativeEvent& event,
+                                        NativeEventResult* result) OVERRIDE;
   virtual void SetFocusedTextInputClient(TextInputClient* client) OVERRIDE;
+  virtual void DetachTextInputClient(TextInputClient* client) OVERRIDE;
   virtual TextInputClient* GetTextInputClient() const OVERRIDE;
-  virtual void DispatchKeyEvent(const base::NativeEvent& native_event) OVERRIDE;
-  virtual void DispatchFabricatedKeyEvent(const ui::KeyEvent& event) OVERRIDE {
-  }
+  virtual bool DispatchKeyEvent(const ui::KeyEvent& event) OVERRIDE;
   virtual void OnTextInputTypeChanged(const TextInputClient* client) OVERRIDE;
   virtual void OnCaretBoundsChanged(const TextInputClient* client) OVERRIDE;
   virtual void CancelComposition(const TextInputClient* client) OVERRIDE;
+  virtual void OnInputLocaleChanged() OVERRIDE;
   virtual std::string GetInputLocale() OVERRIDE;
-  virtual base::i18n::TextDirection GetInputTextDirection() OVERRIDE;
   virtual bool IsActive() OVERRIDE;
-  virtual ui::TextInputType GetTextInputType() const OVERRIDE;
+  virtual TextInputType GetTextInputType() const OVERRIDE;
+  virtual TextInputMode GetTextInputMode() const OVERRIDE;
   virtual bool CanComposeInline() const OVERRIDE;
+  virtual bool IsCandidatePopupOpen() const OVERRIDE;
+  virtual void ShowImeIfNeeded() OVERRIDE;
+  virtual void AddObserver(InputMethodObserver* observer) OVERRIDE;
+  virtual void RemoveObserver(InputMethodObserver* observer) OVERRIDE;
 
  private:
-  internal::InputMethodDelegate* delegate_;
   TextInputClient* text_input_client_;
+  ObserverList<InputMethodObserver> observer_list_;
 
   DISALLOW_COPY_AND_ASSIGN(MockInputMethod);
 };

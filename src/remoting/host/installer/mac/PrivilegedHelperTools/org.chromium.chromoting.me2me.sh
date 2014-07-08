@@ -4,15 +4,15 @@
 # Use of this source code is governed by a BSD-style license that can be
 # found in the LICENSE file.
 
-# Version = @@VERSION@@
-
 NAME=org.chromium.chromoting
+HOST_BUNDLE_NAME=@@HOST_BUNDLE_NAME@@
+PREFPANE_BUNDLE_NAME=@@PREFPANE_BUNDLE_NAME@@
 CONFIG_DIR=/Library/PrivilegedHelperTools
-HOST_EXE=$CONFIG_DIR/$NAME.me2me_host.app/Contents/MacOS/remoting_me2me_host
-PLIST_FILE=$CONFIG_DIR/$NAME.me2me_host.app/Contents/Info.plist
 ENABLED_FILE=$CONFIG_DIR/$NAME.me2me_enabled
 CONFIG_FILE=$CONFIG_DIR/$NAME.json
-PREF_PANE_BUNDLE=/Library/PreferencePanes/$NAME.prefPane
+HOST_EXE=$CONFIG_DIR/$HOST_BUNDLE_NAME/Contents/MacOS/remoting_me2me_host
+PLIST_FILE=$CONFIG_DIR/$HOST_BUNDLE_NAME/Contents/Info.plist
+PREF_PANE_BUNDLE=/Library/PreferencePanes/$PREFPANE_BUNDLE_NAME
 
 # The exit code returned by 'wait' when a process is terminated by SIGTERM.
 SIGTERM_EXIT_CODE=143
@@ -101,7 +101,7 @@ run_host() {
               "$EXIT_CODE" -eq "$PERMISSION_DENIED_PARENTAL_CONTROL" ||
               ("$EXIT_CODE" -ge "$MIN_PERMANENT_ERROR_EXIT_CODE" && \
               "$EXIT_CODE" -le "$MAX_PERMANENT_ERROR_EXIT_CODE") ]]; then
-        echo "Host returned permanent exit code $EXIT_CODE"
+        echo "Host returned permanent exit code $EXIT_CODE at ""$(date)"""
         if [[ "$EXIT_CODE" -eq 101 ]]; then
           # Exit code 101 is "hostID deleted", which indicates that the host
           # was taken off-line remotely. To prevent the host being restarted
@@ -118,7 +118,7 @@ run_host() {
         # signals temporarily in case the script has to sleep to throttle host
         # relaunches. While throttling, there is no host process to which to
         # forward the signal, so the default behaviour should be restored.
-        echo "Host returned non-permanent exit code $EXIT_CODE"
+        echo "Host returned non-permanent exit code $EXIT_CODE at ""$(date)"""
         trap - $SIGNAL_LIST
         HOST_PID=0
         break
@@ -153,6 +153,7 @@ elif [[ "$1" = "--relaunch-prefpane" ]]; then
   cat 2>/dev/null || true
   open "$PREF_PANE_BUNDLE"
 elif [[ "$1" = "--run-from-launchd" ]]; then
+  echo Host started for user $USER at $"$(date)"
   run_host
 else
   echo $$

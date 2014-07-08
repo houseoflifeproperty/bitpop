@@ -33,13 +33,16 @@
 
 #include "base/basictypes.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file.h"
+#include "base/files/file_enumerator.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
-#include "base/platform_file.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/process/launch.h"
+#include "base/process/process_handle.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "base/version.h"
 #include "base/win/pe_image.h"
 #include "base/win/scoped_handle.h"
@@ -74,7 +77,7 @@ class ScopedTempDirectory {
  public:
   ScopedTempDirectory() { }
   ~ScopedTempDirectory() {
-    if (!directory_.empty() && !file_util::Delete(directory_, true)) {
+    if (!directory_.empty() && !base::DeleteFile(directory_, true)) {
       LOG(DFATAL) << "Failed deleting temporary directory \""
                   << directory_.value() << "\"";
     }
@@ -82,19 +85,19 @@ class ScopedTempDirectory {
   // Creates a temporary directory.
   bool Initialize() {
     DCHECK(directory_.empty());
-    if (!file_util::CreateNewTempDirectory(&kTempDirPrefix[0], &directory_)) {
+    if (!base::CreateNewTempDirectory(&kTempDirPrefix[0], &directory_)) {
       LOG(DFATAL) << "Failed creating temporary directory.";
       return false;
     }
     return true;
   }
-  const FilePath& directory() const {
+  const base::FilePath& directory() const {
     DCHECK(!directory_.empty());
     return directory_;
   }
 
  private:
-  FilePath directory_;
+  base::FilePath directory_;
   DISALLOW_COPY_AND_ASSIGN(ScopedTempDirectory);
 };  // class ScopedTempDirectory
 
@@ -149,11 +152,13 @@ class MappedFile {
  public:
   MappedFile() : size_(), mapping_(), view_() { }
   ~MappedFile();
-  bool Initialize(base::PlatformFile file);
+  bool Initialize(base::File file);
   void* data() const { return view_; }
   size_t size() const { return size_; }
+
  private:
   size_t size_;
+  base::File file_;
   HANDLE mapping_;
   void* view_;
   DISALLOW_COPY_AND_ASSIGN(MappedFile);
@@ -172,16 +177,16 @@ MappedFile::~MappedFile() {
   }
 }
 
-bool MappedFile::Initialize(base::PlatformFile file) {
+bool MappedFile::Initialize(base::File file) {
   DCHECK(mapping_ == NULL);
   bool result = false;
-  base::PlatformFileInfo file_info;
+  base::File::Info file_info;
 
-  if (base::GetPlatformFileInfo(file, &file_info)) {
+  if (file.GetInfo(&file_info)) {
     if (file_info.size <=
-        static_cast<int64>(std::numeric_limits<size_t>::max())) {
-      mapping_ = CreateFileMapping(file, NULL, PAGE_READWRITE, 0,
-                                   static_cast<DWORD>(file_info.size), NULL);
+        static_cast<int64>(std::numeric_limits<DWORD>::max())) {
+      mapping_ = CreateFileMapping(file.GetPlatformFile(), NULL, PAGE_READWRITE,
+                                   0, static_cast<DWORD>(file_info.size), NULL);
       if (mapping_ != NULL) {
         view_ = MapViewOfFile(mapping_, FILE_MAP_WRITE, 0, 0,
                               static_cast<size_t>(file_info.size));
@@ -194,12 +199,13 @@ bool MappedFile::Initialize(base::PlatformFile file) {
         PLOG(DFATAL) << "CreateFileMapping failed";
       }
     } else {
-      LOG(DFATAL) << "Files larger than " << std::numeric_limits<size_t>::max()
+      LOG(DFATAL) << "Files larger than " << std::numeric_limits<DWORD>::max()
                   << " are not supported.";
     }
   } else {
     PLOG(DFATAL) << "GetPlatformFileInfo failed";
   }
+  file_ = file.Pass();
   return result;
 }
 
@@ -208,13 +214,13 @@ bool MappedFile::Initialize(base::PlatformFile file) {
 bool RunProcessAndWait(const wchar_t* exe_path, const std::wstring& cmdline,
                        int* exit_code) {
   bool result = true;
-  base::ProcessHandle process;
+  base::win::ScopedHandle process;
   base::LaunchOptions options;
   options.wait = true;
   options.start_hidden = true;
   if (base::LaunchProcess(cmdline, options, &process)) {
     if (exit_code) {
-      if (!GetExitCodeProcess(process,
+      if (!GetExitCodeProcess(process.Get(),
                               reinterpret_cast<DWORD*>(exit_code))) {
         PLOG(DFATAL) << "Failed getting the exit code for \""
                      << cmdline << "\".";
@@ -227,13 +233,12 @@ bool RunProcessAndWait(const wchar_t* exe_path, const std::wstring& cmdline,
     result = false;
   }
 
-  CloseHandle(process);
   return result;
 }
 
 // Retrieves the version number of |pe_file| from its version
 // resource, placing the value in |version|.  Returns true on success.
-bool GetFileVersion(const FilePath& pe_file, ChromeVersion* version) {
+bool GetFileVersion(const base::FilePath& pe_file, ChromeVersion* version) {
   DCHECK(version);
   bool result = false;
   upgrade_test::ResourceLoader pe_file_loader;
@@ -262,7 +267,8 @@ bool GetFileVersion(const FilePath& pe_file, ChromeVersion* version) {
 
 // Retrieves the version number of setup.exe in |work_dir| from its version
 // resource, placing the value in |version|.  Returns true on success.
-bool GetSetupExeVersion(const FilePath& work_dir, ChromeVersion* version) {
+bool GetSetupExeVersion(const base::FilePath& work_dir,
+                        ChromeVersion* version) {
   return GetFileVersion(work_dir.Append(&kSetupExe[0]), version);
 }
 
@@ -342,7 +348,7 @@ void VisitResource(const upgrade_test::EntryPath& path,
 }
 
 // Updates the version strings and numbers in all of |image_file|'s resources.
-bool UpdateVersionIfMatch(const FilePath& image_file,
+bool UpdateVersionIfMatch(const base::FilePath& image_file,
                           VisitResourceContext* context) {
   if (!context ||
       context->current_version_str.size() < context->new_version_str.size()) {
@@ -350,29 +356,24 @@ bool UpdateVersionIfMatch(const FilePath& image_file,
   }
 
   bool result = false;
-  base::win::ScopedHandle image_handle(base::CreatePlatformFile(
-      image_file,
-      (base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
-       base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_READ |
-       base::PLATFORM_FILE_EXCLUSIVE_WRITE), NULL, NULL));
+  uint32 flags = base::File::FLAG_OPEN | base::File::FLAG_READ |
+                 base::File::FLAG_WRITE | base::File::FLAG_EXCLUSIVE_READ |
+                 base::File::FLAG_EXCLUSIVE_WRITE;
+  base::File file(image_file, flags);
   // It turns out that the underlying CreateFile can fail due to unhelpful
   // security software locking the newly created DLL. So add a few brief
   // retries to help tests that use this pass on machines thusly encumbered.
   int retries = 3;
-  while (!image_handle.IsValid() && retries-- > 0) {
+  while (!file.IsValid() && retries-- > 0) {
     LOG(WARNING) << "Failed to open \"" << image_file.value() << "\"."
                  << " Retrying " << retries << " more times.";
     Sleep(1000);
-    image_handle.Set(base::CreatePlatformFile(
-      image_file,
-      (base::PLATFORM_FILE_OPEN | base::PLATFORM_FILE_READ |
-       base::PLATFORM_FILE_WRITE | base::PLATFORM_FILE_EXCLUSIVE_READ |
-       base::PLATFORM_FILE_EXCLUSIVE_WRITE), NULL, NULL));
+    file.Initialize(image_file, flags);
   }
 
-  if (image_handle.IsValid()) {
+  if (file.IsValid()) {
     MappedFile image_mapping;
-    if (image_mapping.Initialize(image_handle)) {
+    if (image_mapping.Initialize(file.Pass())) {
       base::win::PEImageAsData image(
           reinterpret_cast<HMODULE>(image_mapping.data()));
       // PEImage class does not support other-architecture images.
@@ -415,7 +416,7 @@ bool IncrementNewVersion(upgrade_test::Direction direction,
 // as the |work-dir|\Chrome-bin\w.x.y.z directory.  |original_version| and
 // |new_version|, when non-NULL, are given the original and new version numbers
 // on success.
-bool ApplyAlternateVersion(const FilePath& work_dir,
+bool ApplyAlternateVersion(const base::FilePath& work_dir,
                            upgrade_test::Direction direction,
                            std::wstring* original_version,
                            std::wstring* new_version) {
@@ -431,10 +432,9 @@ bool ApplyAlternateVersion(const FilePath& work_dir,
 
   // Modify all .dll and .exe files with the current version.
   bool doing_great = true;
-  file_util::FileEnumerator all_files(work_dir, true,
-                                      file_util::FileEnumerator::FILES);
+  base::FileEnumerator all_files(work_dir, true, base::FileEnumerator::FILES);
   do {
-    FilePath file = all_files.Next();
+    base::FilePath file = all_files.Next();
     if (file.empty()) {
       break;
     }
@@ -445,9 +445,9 @@ bool ApplyAlternateVersion(const FilePath& work_dir,
   } while (doing_great);
 
   // Change the versioned directory.
-  FilePath chrome_bin = work_dir.Append(&kChromeBin[0]);
-  doing_great = file_util::Move(chrome_bin.Append(ctx.current_version_str),
-                                chrome_bin.Append(ctx.new_version_str));
+  base::FilePath chrome_bin = work_dir.Append(&kChromeBin[0]);
+  doing_great = base::Move(chrome_bin.Append(ctx.current_version_str),
+                           chrome_bin.Append(ctx.new_version_str));
 
   if (doing_great) {
     // Report the version numbers if requested.
@@ -465,11 +465,12 @@ bool ApplyAlternateVersion(const FilePath& work_dir,
 // relative path "..\..\third_party\lzma_sdk\Executable" is applied to the host
 // executable's directory.  This can be overridden with the --7za_path
 // command-line switch.
-FilePath Get7zaPath() {
-  FilePath l7za_path = CommandLine::ForCurrentProcess()->GetSwitchValuePath(
-      &kSwitch7zaPath[0]);
+base::FilePath Get7zaPath() {
+  base::FilePath l7za_path =
+      CommandLine::ForCurrentProcess()->GetSwitchValuePath(
+          &kSwitch7zaPath[0]);
   if (l7za_path.empty()) {
-    FilePath dir_exe;
+    base::FilePath dir_exe;
     if (!PathService::Get(base::DIR_EXE, &dir_exe))
       LOG(DFATAL) << "Failed getting directory of host executable";
     l7za_path = dir_exe.Append(&k7zaPathRelative[0]);
@@ -477,7 +478,8 @@ FilePath Get7zaPath() {
   return l7za_path;
 }
 
-bool CreateArchive(const FilePath& output_file, const FilePath& input_path,
+bool CreateArchive(const base::FilePath& output_file,
+                   const base::FilePath& input_path,
                    int compression_level) {
   DCHECK(compression_level == 0 ||
          compression_level >= 1 && compression_level <= 9 &&
@@ -508,8 +510,8 @@ bool CreateArchive(const FilePath& output_file, const FilePath& input_path,
 
 namespace upgrade_test {
 
-bool GenerateAlternateVersion(const FilePath& original_installer_path,
-                              const FilePath& target_path,
+bool GenerateAlternateVersion(const base::FilePath& original_installer_path,
+                              const base::FilePath& target_path,
                               Direction direction,
                               std::wstring* original_version,
                               std::wstring* new_version) {
@@ -519,16 +521,17 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
     return false;
 
   // Copy the original mini_installer.
-  FilePath mini_installer =
+  base::FilePath mini_installer =
       work_dir.directory().Append(original_installer_path.BaseName());
-  if (!file_util::CopyFile(original_installer_path, mini_installer)) {
+  if (!base::CopyFile(original_installer_path, mini_installer)) {
     LOG(DFATAL) << "Failed copying \"" << original_installer_path.value()
                 << "\" to \"" << mini_installer.value() << "\"";
     return false;
   }
 
-  FilePath setup_ex_ = work_dir.directory().Append(&kSetupEx_[0]);
-  FilePath chrome_packed_7z = work_dir.directory().Append(&kChromePacked7z[0]);
+  base::FilePath setup_ex_ = work_dir.directory().Append(&kSetupEx_[0]);
+  base::FilePath chrome_packed_7z =
+      work_dir.directory().Append(&kChromePacked7z[0]);
   // Load the original file and extract setup.ex_ and chrome.packed.7z
   {
     ResourceLoader resource_loader;
@@ -541,9 +544,9 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
     if (!resource_loader.Load(&kSetupEx_[0], &kBl[0], &resource_data))
       return false;
     int written =
-        file_util::WriteFile(setup_ex_,
-                             reinterpret_cast<const char*>(resource_data.first),
-                             static_cast<int>(resource_data.second));
+        base::WriteFile(setup_ex_,
+                        reinterpret_cast<const char*>(resource_data.first),
+                        static_cast<int>(resource_data.second));
     if (written != resource_data.second) {
       LOG(DFATAL) << "Failed writing \"" << setup_ex_.value() << "\"";
       return false;
@@ -553,9 +556,9 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
     if (!resource_loader.Load(&kChromePacked7z[0], &kB7[0], &resource_data))
       return false;
     written =
-        file_util::WriteFile(chrome_packed_7z,
-                             reinterpret_cast<const char*>(resource_data.first),
-                             static_cast<int>(resource_data.second));
+        base::WriteFile(chrome_packed_7z,
+                        reinterpret_cast<const char*>(resource_data.first),
+                        static_cast<int>(resource_data.second));
     if (written != resource_data.second) {
       LOG(DFATAL) << "Failed writing \"" << chrome_packed_7z.value() << "\"";
       return false;
@@ -563,7 +566,7 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
   }
 
   // Expand setup.ex_
-  FilePath setup_exe = setup_ex_.ReplaceExtension(&kExe[0]);
+  base::FilePath setup_exe = setup_ex_.ReplaceExtension(&kExe[0]);
   std::wstring command_line;
   command_line.append(1, L'"')
     .append(&kExpandExe[0])
@@ -597,10 +600,10 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
   }
 
   // Get rid of intermediate files
-  FilePath chrome_7z(chrome_7z_name);
-  if (!file_util::Delete(chrome_7z, false) ||
-      !file_util::Delete(chrome_packed_7z, false) ||
-      !file_util::Delete(setup_ex_, false)) {
+  base::FilePath chrome_7z(chrome_7z_name);
+  if (!base::DeleteFile(chrome_7z, false) ||
+      !base::DeleteFile(chrome_packed_7z, false) ||
+      !base::DeleteFile(setup_ex_, false)) {
     LOG(DFATAL) << "Failed deleting intermediate files";
     return false;
   }
@@ -645,11 +648,11 @@ bool GenerateAlternateVersion(const FilePath& original_installer_path,
   }
 
   // Finally, move the updated mini_installer into place.
-  return file_util::Move(mini_installer, target_path);
+  return base::Move(mini_installer, target_path);
 }
 
-bool GenerateAlternatePEFileVersion(const FilePath& original_file,
-                                    const FilePath& target_file,
+bool GenerateAlternatePEFileVersion(const base::FilePath& original_file,
+                                    const base::FilePath& target_file,
                                     Direction direction) {
   VisitResourceContext ctx;
   if (!GetFileVersion(original_file, &ctx.current_version)) {
@@ -665,17 +668,17 @@ bool GenerateAlternatePEFileVersion(const FilePath& original_file,
     return false;
   }
 
-  Version new_version(WideToASCII(ctx.new_version_str));
+  Version new_version(base::UTF16ToASCII(ctx.new_version_str));
   GenerateSpecificPEFileVersion(original_file, target_file, new_version);
 
   return true;
 }
 
-bool GenerateSpecificPEFileVersion(const FilePath& original_file,
-                                   const FilePath& target_file,
+bool GenerateSpecificPEFileVersion(const base::FilePath& original_file,
+                                   const base::FilePath& target_file,
                                    const Version& version) {
   // First copy original_file to target_file.
-  if (!file_util::CopyFile(original_file, target_file)) {
+  if (!base::CopyFile(original_file, target_file)) {
     LOG(DFATAL) << "Failed copying \"" << original_file.value()
                 << "\" to \"" << target_file.value() << "\"";
     return false;

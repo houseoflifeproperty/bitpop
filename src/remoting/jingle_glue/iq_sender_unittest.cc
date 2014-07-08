@@ -4,8 +4,9 @@
 
 #include "base/bind.h"
 #include "base/memory/ref_counted.h"
-#include "base/message_loop.h"
-#include "base/stringprintf.h"
+#include "base/message_loop/message_loop.h"
+#include "base/run_loop.h"
+#include "base/strings/stringprintf.h"
 #include "remoting/jingle_glue/iq_sender.h"
 #include "remoting/jingle_glue/mock_objects.h"
 #include "testing/gmock/include/gmock/gmock.h"
@@ -78,7 +79,7 @@ class IqSenderTest : public testing::Test {
     delete sent_stanza;
   }
 
-  MessageLoop message_loop_;
+  base::MessageLoop message_loop_;
   MockSignalStrategy signal_strategy_;
   scoped_ptr<IqSender> sender_;
   MockCallback callback_;
@@ -91,9 +92,9 @@ TEST_F(IqSenderTest, SendIq) {
   });
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), kStanzaId);
-  response->AddAttr(QName("", "from"), kTo);
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), kStanzaId);
+  response->AddAttr(QName(std::string(), "from"), kTo);
 
   XmlElement* result = new XmlElement(
       QName("test:namespace", "response-body"));
@@ -102,7 +103,7 @@ TEST_F(IqSenderTest, SendIq) {
   EXPECT_TRUE(sender_->OnSignalStrategyIncomingStanza(response.get()));
 
   EXPECT_CALL(callback_, OnReply(request_.get(), XmlEq(response.get())));
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 TEST_F(IqSenderTest, Timeout) {
@@ -113,7 +114,7 @@ TEST_F(IqSenderTest, Timeout) {
   request_->SetTimeout(base::TimeDelta::FromMilliseconds(2));
 
   EXPECT_CALL(callback_, OnReply(request_.get(), NULL))
-      .WillOnce(InvokeWithoutArgs(&message_loop_, &MessageLoop::Quit));
+      .WillOnce(InvokeWithoutArgs(&message_loop_, &base::MessageLoop::Quit));
   message_loop_.Run();
 }
 
@@ -123,9 +124,9 @@ TEST_F(IqSenderTest, InvalidFrom) {
   });
 
   scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), kStanzaId);
-  response->AddAttr(QName("", "from"), "different_user@domain.com");
+  response->AddAttr(QName(std::string(), "type"), "result");
+  response->AddAttr(QName(std::string(), "id"), kStanzaId);
+  response->AddAttr(QName(std::string(), "from"), "different_user@domain.com");
 
   XmlElement* result = new XmlElement(
       QName("test:namespace", "response-body"));
@@ -134,27 +135,7 @@ TEST_F(IqSenderTest, InvalidFrom) {
   EXPECT_CALL(callback_, OnReply(_, _))
       .Times(0);
   EXPECT_FALSE(sender_->OnSignalStrategyIncomingStanza(response.get()));
-  message_loop_.RunUntilIdle();
-}
-
-TEST_F(IqSenderTest, IdMatchingHack) {
-  ASSERT_NO_FATAL_FAILURE({
-    SendTestMessage();
-  });
-
-  scoped_ptr<XmlElement> response(new XmlElement(buzz::QN_IQ));
-  response->AddAttr(QName("", "type"), "result");
-  response->AddAttr(QName("", "id"), "DIFFERENT_ID");
-  response->AddAttr(QName("", "from"), kTo);
-
-  XmlElement* result = new XmlElement(
-      QName("test:namespace", "response-body"));
-  response->AddElement(result);
-
-  EXPECT_TRUE(sender_->OnSignalStrategyIncomingStanza(response.get()));
-
-  EXPECT_CALL(callback_, OnReply(request_.get(), XmlEq(response.get())));
-  message_loop_.RunUntilIdle();
+  base::RunLoop().RunUntilIdle();
 }
 
 }  // namespace remoting

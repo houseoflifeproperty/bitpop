@@ -24,34 +24,14 @@ class GclientUtilBase(SuperMoxTestBase):
     self.mox.StubOutWithMock(subprocess2, 'communicate')
 
 
-class GclientUtilsUnittest(GclientUtilBase):
-  """General gclient_utils.py tests."""
-  def testMembersChanged(self):
-    members = [
-        'Annotated', 'AutoFlush', 'CheckCallAndFilter',
-        'CheckCallAndFilterAndHeader', 'Error', 'ExecutionQueue', 'FileRead',
-        'FileWrite', 'FindFileUpwards', 'FindGclientRoot',
-        'GetGClientRootAndEntries', 'GetEditor', 'IsDateRevision',
-        'MakeDateRevision', 'MakeFileAutoFlush', 'MakeFileAnnotated',
-        'PathDifference', 'ParseCodereviewSettingsContent', 'NumLocalCpus',
-        'PrintableObject', 'RemoveDirectory', 'RunEditor',
-        'SplitUrlRevision', 'SyntaxErrorToError',
-        'UpgradeToHttps', 'Wrapper', 'WorkItem',
-        'codecs', 'errno', 'lockedmethod', 'logging', 'os', 'Queue', 're',
-        'rmtree', 'safe_makedirs', 'stat', 'subprocess2', 'sys', 'tempfile',
-        'threading', 'time', 'urlparse',
-    ]
-    # If this test fails, you should add the relevant test.
-    self.compareMembers(gclient_utils, members)
-
-
-
 class CheckCallAndFilterTestCase(GclientUtilBase):
   class ProcessIdMock(object):
     def __init__(self, test_string):
       self.stdout = StringIO.StringIO(test_string)
+      self.pid = 9284
+    # pylint: disable=R0201
     def wait(self):
-      pass
+      return 0
 
   def _inner(self, args, test_string):
     cwd = 'bleh'
@@ -67,6 +47,7 @@ class CheckCallAndFilterTestCase(GclientUtilBase):
         stderr=subprocess2.STDOUT,
         bufsize=0).AndReturn(self.ProcessIdMock(test_string))
 
+    os.getcwd()
     self.mox.ReplayAll()
     compiled_pattern = gclient_utils.re.compile(r'a(.*)b')
     line_list = []
@@ -143,6 +124,13 @@ class SplitUrlRevisionTestCase(GclientUtilBase):
     out_url, out_rev = gclient_utils.SplitUrlRevision("%s@%s" % (url, rev))
     self.assertEquals(out_rev, rev)
     self.assertEquals(out_url, url)
+    url = "git@github.com:dart-lang/spark.git"
+    out_url, out_rev = gclient_utils.SplitUrlRevision(url)
+    self.assertEquals(out_rev, None)
+    self.assertEquals(out_url, url)
+    out_url, out_rev = gclient_utils.SplitUrlRevision("%s@%s" % (url, rev))
+    self.assertEquals(out_rev, rev)
+    self.assertEquals(out_url, url)
 
   def testSVNUrl(self):
     url = "svn://example.com/test"
@@ -183,9 +171,9 @@ class GClientUtilsTest(trial_dir.TestCase):
         ['ssh-svn://foo/bar/', 'ssh-svn://foo/bar/'],
         ['codereview.chromium.org', 'https://codereview.chromium.org'],
         ['codereview.chromium.org/', 'https://codereview.chromium.org/'],
-        ['http://foo:8080', 'http://foo:8080'],
-        ['http://foo:8080/bar', 'http://foo:8080/bar'],
-        ['foo:8080', 'http://foo:8080'],
+        ['http://foo:10000', 'http://foo:10000'],
+        ['http://foo:10000/bar', 'http://foo:10000/bar'],
+        ['foo:10000', 'http://foo:10000'],
         ['foo:', 'https://foo:'],
     ]
     for content, expected in values:

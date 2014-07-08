@@ -9,7 +9,8 @@ import os
 import sys
 
 import buildbot_common
-import build_utils
+import build_version
+from build_paths import SCRIPT_DIR
 
 GS_MANIFEST_PATH = 'gs://nativeclient-mirror/nacl/nacl_sdk/'
 SDK_MANIFEST = 'naclsdk_manifest2.json'
@@ -28,6 +29,9 @@ def build_and_upload_mono(sdk_revision, pepper_revision, sdk_url,
                       revision_opt + url_opt + args)
   buildbot_common.Run([sys.executable, 'nacl-mono-builder.py',
                       '--arch', 'x86-64', '--install-dir', install_dir] +
+                      revision_opt + url_opt + args)
+  buildbot_common.Run([sys.executable, 'nacl-mono-builder.py',
+                      '--arch', 'arm', '--install-dir', install_dir] +
                       revision_opt + url_opt + args)
   buildbot_common.Run([sys.executable, 'nacl-mono-archive.py',
                       '--upload-path', upload_path,
@@ -127,7 +131,7 @@ def update_mono_sdk_json(infos):
     f.close()
     archive['checksum'] = { 'sha1': sha1_hash.hexdigest() }
     archive['host_os'] = 'all'
-    archive['url'] = ('https://commondatastorage.googleapis.com/'
+    archive['url'] = ('https://storage.googleapis.com/'
                       'nativeclient-mirror/nacl/nacl_sdk/%s/%s/%s.bz2'
                       % (info['naclmono_name'], info['naclmono_rev'],
                         info['naclmono_name']))
@@ -157,15 +161,21 @@ def update_mono_sdk_json(infos):
 def main(args):
   args = args[1:]
 
+  # Delete global configs that would override the mono builders' configuration.
+  if 'AWS_CREDENTIAL_FILE' in os.environ:
+    del os.environ['AWS_CREDENTIAL_FILE']
+  if 'BOTO_CONFIG' in os.environ:
+    del os.environ['BOTO_CONFIG']
+
   buildbot_revision = os.environ.get('BUILDBOT_REVISION', '')
   buildername = os.environ.get('BUILDBOT_BUILDERNAME', '')
 
-  os.chdir(buildbot_common.SCRIPT_DIR)
+  os.chdir(SCRIPT_DIR)
 
   if buildername == 'linux-sdk-mono32':
     assert buildbot_revision
     sdk_revision = buildbot_revision.split(':')[0]
-    pepper_revision = build_utils.ChromeMajorVersion()
+    pepper_revision = build_version.ChromeMajorVersion()
     build_and_upload_mono(sdk_revision, pepper_revision, None,
                           'trunk.' + sdk_revision, args)
   elif buildername == 'linux-sdk-mono64':

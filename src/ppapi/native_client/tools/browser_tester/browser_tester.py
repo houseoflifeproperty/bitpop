@@ -14,8 +14,9 @@ import urllib
 
 # Allow the import of third party modules
 script_dir = os.path.dirname(os.path.abspath(__file__))
-sys.path.append(os.path.join(script_dir, '../../../../third_party/'))
-sys.path.append(os.path.join(script_dir, '../../../../tools/valgrind/'))
+sys.path.insert(0, os.path.join(script_dir, '../../../../third_party/'))
+sys.path.insert(0, os.path.join(script_dir, '../../../../tools/valgrind/'))
+sys.path.insert(0, os.path.join(script_dir, '../../../../testing/'))
 
 import browsertester.browserlauncher
 import browsertester.rpclistener
@@ -23,6 +24,8 @@ import browsertester.server
 
 import memcheck_analyze
 import tsan_analyze
+
+import test_env
 
 def BuildArgParser():
   usage = 'usage: %prog [options]'
@@ -44,6 +47,12 @@ def BuildArgParser():
                     metavar='DIRNAME',
                     help='Add directory DIRNAME to be served from the HTTP '
                     'server to be made visible under the root.')
+  parser.add_option('--output_dir', dest='output_dir', action='store',
+                    type='string', default=None,
+                    metavar='DIRNAME',
+                    help='Set directory DIRNAME to be the output directory '
+                    'when POSTing data to the server. NOTE: if this flag is '
+                    'not set, POSTs will fail.')
   parser.add_option('--test_arg', dest='test_args', action='append',
                     type='string', nargs=2, default=[],
                     metavar='KEY VALUE',
@@ -53,10 +62,6 @@ def BuildArgParser():
                     metavar='DEST SRC',
                     help='Add a redirect to the HTTP server, '
                     'requests for SRC will result in a redirect (302) to DEST.')
-  parser.add_option('--prefer_portable_in_manifest',
-                    dest='prefer_portable_in_manifest',
-                    action='store_true', default=False,
-                    help='Use portable programs in manifest if available.')
   parser.add_option('-f', '--file', dest='files', action='append',
                     type='string', default=[],
                     metavar='FILENAME',
@@ -74,6 +79,10 @@ def BuildArgParser():
   parser.add_option('--ppapi_plugin', dest='ppapi_plugin', action='store',
                     type='string', default=None,
                     help='Use the browser plugin located here.')
+  parser.add_option('--ppapi_plugin_mimetype', dest='ppapi_plugin_mimetype',
+                    action='store', type='string', default='application/x-nacl',
+                    help='Associate this mimetype with the browser plugin. '
+                    'Unused if --ppapi_plugin is not specified.')
   parser.add_option('--sel_ldr', dest='sel_ldr', action='store',
                     type='string', default=None,
                     help='Use the sel_ldr located here.')
@@ -131,6 +140,18 @@ def BuildArgParser():
   parser.add_option('--nacl_exe_stderr', dest='nacl_exe_stderr',
                     type='string', default=None,
                     help='Redirect standard error of NaCl executable.')
+  parser.add_option('--expect_browser_process_crash',
+                    dest='expect_browser_process_crash',
+                    action='store_true',
+                    help='Do not signal a failure if the browser process '
+                    'crashes')
+  parser.add_option('--enable_crash_reporter', dest='enable_crash_reporter',
+                    action='store_true', default=False,
+                    help='Force crash reporting on.')
+  parser.add_option('--enable_sockets', dest='enable_sockets',
+                    action='store_true', default=False,
+                    help='Pass --allow-nacl-socket-api=<host> to Chrome, where '
+                    '<host> is the name of the browser tester\'s web server.')
 
   return parser
 
@@ -140,7 +161,7 @@ def ProcessToolLogs(options, logs_dir):
     analyzer = memcheck_analyze.MemcheckAnalyzer('', use_gdb=True)
     logs_wildcard = 'xml.*'
   elif options.tool == 'tsan':
-    analyzer = tsan_analyze.TsanAnalyzer('', use_gdb=True)
+    analyzer = tsan_analyze.TsanAnalyzer(use_gdb=True)
     logs_wildcard = 'log.*'
   files = glob.glob(os.path.join(logs_dir, logs_wildcard))
   retcode = analyzer.Report(files, options.url)
@@ -189,6 +210,9 @@ def RunTestsOnce(url, options):
 
   options.files.append(os.path.join(script_dir, 'browserdata', 'nacltest.js'))
 
+  # Setup the environment with the setuid sandbox path.
+  test_env.enable_sandbox_if_required(os.environ)
+
   # Create server
   host = GetHostName()
   try:
@@ -225,14 +249,15 @@ def RunTestsOnce(url, options):
                    options.allow_404,
                    options.bandwidth,
                    listener,
-                   options.serving_dirs)
+                   options.serving_dirs,
+                   options.output_dir)
 
   browser = browsertester.browserlauncher.ChromeLauncher(options)
 
   full_url = 'http://%s:%d/%s' % (host, port, url)
   if len(options.test_args) > 0:
     full_url += '?' + urllib.urlencode(options.test_args)
-  browser.Run(full_url, port)
+  browser.Run(full_url, host, port)
   server.TestingBegun(0.125)
 
   # In Python 2.5, server.handle_request may block indefinitely.  Serving pages
@@ -251,6 +276,8 @@ def RunTestsOnce(url, options):
   try:
     while server.test_in_progress or options.interactive:
       if not browser.IsRunning():
+        if options.expect_browser_process_crash:
+          break
         listener.ServerError('Browser process ended during test '
                              '(return code %r)' % browser.GetReturnCode())
         # If Chrome exits prematurely without making a single request to the
@@ -271,6 +298,8 @@ def RunTestsOnce(url, options):
         else:
           err += '\nThe test probably did not get a callback that it expected.'
         listener.ServerError(err)
+        if not server.received_request:
+          raise RetryTest('Chrome hung before running the test.')
         break
       elif not options.interactive and HardTimeout(options.hard_timeout):
         listener.ServerError('The test took over %.1f seconds.  This is '
@@ -296,8 +325,21 @@ def RunTestsOnce(url, options):
           DumpNetLog(browser.NetLogName())
     except Exception:
       listener.ever_failed = 1
+    # Try to let the browser clean itself up normally before killing it.
+    sys.stdout.write('##################### Terminating the browser\n')
+    browser.WaitForProcessDeath()
+    if browser.IsRunning():
+      sys.stdout.write('##################### TERM failed, KILLING\n')
+    # Always call Cleanup; it kills the process, but also removes the
+    # user-data-dir.
     browser.Cleanup()
-    server.server_close()
+    # We avoid calling server.server_close() here because it causes
+    # the HTTP server thread to exit uncleanly with an EBADF error,
+    # which adds noise to the logs (though it does not cause the test
+    # to fail).  server_close() does not attempt to tell the server
+    # loop to shut down before closing the socket FD it is
+    # select()ing.  Since we are about to exit, we don't really need
+    # to close the socket FD.
 
   if tool_failed:
     return 2
@@ -316,6 +358,17 @@ def Run(url, options):
   while True:
     try:
       result = RunTestsOnce(url, options)
+      if result:
+        # Currently (2013/11/15) nacl_integration is fairly flaky and there is
+        # not enough time to look into it.  Retry if the test fails for any
+        # reason.  Note that in general this test runner tries to only retry
+        # when a known flake is encountered.  (See the other raise
+        # RetryTest(..)s in this file.)  This blanket retry means that those
+        # other cases could be removed without changing the behavior of the test
+        # runner, but it is hoped that this blanket retry will eventually be
+        # unnecessary and subsequently removed.  The more precise retries have
+        # been left in place to preserve the knowledge.
+        raise RetryTest('HACK retrying failed test.')
       break
     except RetryTest:
       # Only retry once.

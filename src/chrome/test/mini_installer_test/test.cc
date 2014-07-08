@@ -3,18 +3,18 @@
 // found in the LICENSE file.
 
 #include "base/command_line.h"
-#include "base/file_path.h"
+#include "base/files/file_path.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/process_util.h"
-#include "base/string_util.h"
+#include "base/process/kill.h"
+#include "base/strings/string_util.h"
 #include "chrome/common/chrome_result_codes.h"
 #include "chrome/common/chrome_switches.h"
 #include "chrome/installer/util/install_util.h"
 #include "chrome/installer/util/installation_validator.h"
 #include "chrome/installer/util/util_constants.h"
 #include "chrome/test/mini_installer_test/installer_path_provider.h"
-#include "chrome/test/mini_installer_test/mini_installer_test_constants.h"
 #include "chrome/test/mini_installer_test/installer_test_util.h"
+#include "chrome/test/mini_installer_test/mini_installer_test_constants.h"
 #include "chrome/test/mini_installer_test/switch_builder.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
@@ -61,19 +61,19 @@ class MiniInstallTest : public testing::Test {
   }
 
   static InstallerPathProvider* provider_;
-  static FilePath full_installer_;
-  static FilePath previous_installer_;
-  static FilePath diff_installer_;
-  static FilePath standalone_installer_;
-  static FilePath mini_installer_;
+  static base::FilePath full_installer_;
+  static base::FilePath previous_installer_;
+  static base::FilePath diff_installer_;
+  static base::FilePath standalone_installer_;
+  static base::FilePath mini_installer_;
 };
 
 InstallerPathProvider* MiniInstallTest::provider_;
-FilePath MiniInstallTest::full_installer_;
-FilePath MiniInstallTest::previous_installer_;
-FilePath MiniInstallTest::diff_installer_;
-FilePath MiniInstallTest::standalone_installer_;
-FilePath MiniInstallTest::mini_installer_;
+base::FilePath MiniInstallTest::full_installer_;
+base::FilePath MiniInstallTest::previous_installer_;
+base::FilePath MiniInstallTest::diff_installer_;
+base::FilePath MiniInstallTest::standalone_installer_;
+base::FilePath MiniInstallTest::mini_installer_;
 
 }  // namespace
 
@@ -327,28 +327,6 @@ TEST_F(MiniInstallTest, InstallChromeAndChromeFrameMultiInstallSys) {
   ASSERT_TRUE(installer_test::ValidateInstall(
       true,
       InstallationValidator::CHROME_FRAME_MULTI_CHROME_MULTI,
-      provider_->GetCurrentBuild()));
-}
-
-TEST_F(MiniInstallTest,
-    InstallChromeAndChromeFrameReadyModeUser) {
-  ASSERT_TRUE(
-      installer_test::Install(full_installer_,SwitchBuilder().AddChrome()
-      .AddChromeFrame().AddMultiInstall().AddReadyMode()));
-  ASSERT_TRUE(installer_test::ValidateInstall(
-      false,
-      InstallationValidator::CHROME_FRAME_READY_MODE_CHROME_MULTI,
-      provider_->GetCurrentBuild()));
-}
-
-TEST_F(MiniInstallTest,
-    InstallChromeAndChromeFrameReadyModeSys) {
-  ASSERT_TRUE(installer_test::Install(full_installer_,
-      SwitchBuilder().AddChrome().AddChromeFrame().AddMultiInstall()
-      .AddReadyMode().AddSystemInstall()));
-  ASSERT_TRUE(installer_test::ValidateInstall(
-      true,
-      InstallationValidator::CHROME_FRAME_READY_MODE_CHROME_MULTI,
       provider_->GetCurrentBuild()));
 }
 

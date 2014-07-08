@@ -10,50 +10,126 @@
 #include "chrome/common/chrome_switches.h"
 #include "chrome/test/base/testing_profile.h"
 #include "testing/gtest/include/gtest/gtest.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebKit.h"
+#include "ui/gfx/display.h"
+#include "ui/gfx/screen.h"
 
-TestMonitorInfoProvider::TestMonitorInfoProvider() {};
+#if defined(USE_AURA)
+#include "ui/aura/window.h"
+#endif
 
-TestMonitorInfoProvider::~TestMonitorInfoProvider() {};
+namespace {
 
-void TestMonitorInfoProvider::AddMonitor(const gfx::Rect& bounds,
-                                         const gfx::Rect& work_area) {
-  DCHECK(bounds.Contains(work_area));
-  monitor_bounds_.push_back(bounds);
-  work_areas_.push_back(work_area);
-}
+class TestScreen : public gfx::Screen {
+ public:
+  TestScreen() {}
+  virtual ~TestScreen() {}
 
-// Overridden from WindowSizer::MonitorInfoProvider:
-gfx::Rect TestMonitorInfoProvider::GetPrimaryDisplayWorkArea() const {
-  return work_areas_[0];
-}
-
-gfx::Rect TestMonitorInfoProvider::GetPrimaryDisplayBounds() const {
-  return monitor_bounds_[0];
-}
-
-gfx::Rect TestMonitorInfoProvider::GetMonitorWorkAreaMatching(
-    const gfx::Rect& match_rect) const {
-  return work_areas_[GetMonitorIndexMatchingBounds(match_rect)];
-}
-
-size_t TestMonitorInfoProvider::GetMonitorIndexMatchingBounds(
-    const gfx::Rect& match_rect) const {
-  int max_area = 0;
-  size_t max_area_index = 0;
-  // Loop through all the monitors, finding the one that intersects the
-  // largest area of the supplied match rect.
-  for (size_t i = 0; i < work_areas_.size(); ++i) {
-    gfx::Rect overlap = work_areas_[i];
-    overlap.Intersect(match_rect);
-    int area = overlap.width() * overlap.height();
-    if (area > max_area) {
-      max_area = area;
-      max_area_index = i;
-    }
+  // Overridden from gfx::Screen:
+  virtual bool IsDIPEnabled() OVERRIDE {
+    NOTREACHED();
+    return false;
   }
-  return max_area_index;
-}
+
+  virtual gfx::Point GetCursorScreenPoint() OVERRIDE {
+    NOTREACHED();
+    return gfx::Point();
+  }
+
+  virtual gfx::NativeWindow GetWindowUnderCursor() OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  }
+
+  virtual gfx::NativeWindow GetWindowAtScreenPoint(const gfx::Point& point)
+      OVERRIDE {
+    NOTREACHED();
+    return NULL;
+  }
+
+  virtual int GetNumDisplays() const OVERRIDE {
+    return displays_.size();
+  }
+
+  virtual std::vector<gfx::Display> GetAllDisplays() const OVERRIDE {
+    return displays_;
+  }
+
+  virtual gfx::Display GetDisplayNearestWindow(
+      gfx::NativeView view) const OVERRIDE {
+#if defined(USE_AURA)
+    return GetDisplayMatching(view->GetBoundsInScreen());
+#else
+    NOTREACHED();
+    return gfx::Display();
+#endif
+  }
+
+  virtual gfx::Display GetDisplayNearestPoint(
+      const gfx::Point& point) const OVERRIDE {
+    NOTREACHED();
+    return gfx::Display();
+  }
+
+  virtual gfx::Display GetDisplayMatching(
+      const gfx::Rect& match_rect) const OVERRIDE {
+    int max_area = 0;
+    size_t max_area_index = 0;
+
+    for (size_t i = 0; i < displays_.size(); ++i) {
+      gfx::Rect overlap = displays_[i].bounds();
+      overlap.Intersect(match_rect);
+      int area = overlap.width() * overlap.height();
+      if (area > max_area) {
+        max_area = area;
+        max_area_index = i;
+      }
+    }
+    return displays_[max_area_index];
+  }
+
+  virtual gfx::Display GetPrimaryDisplay() const OVERRIDE {
+    return displays_[0];
+  }
+
+  virtual void AddObserver(gfx::DisplayObserver* observer) OVERRIDE {
+    NOTREACHED();
+  }
+
+  virtual void RemoveObserver(gfx::DisplayObserver* observer) OVERRIDE {
+    NOTREACHED();
+  }
+
+  void AddDisplay(const gfx::Rect& bounds,
+                  const gfx::Rect& work_area) {
+    gfx::Display display(displays_.size(), bounds);
+    display.set_work_area(work_area);
+    displays_.push_back(display);
+  }
+
+ private:
+  std::vector<gfx::Display> displays_;
+
+  DISALLOW_COPY_AND_ASSIGN(TestScreen);
+};
+
+class TestTargetDisplayProvider : public WindowSizer::TargetDisplayProvider {
+public:
+  TestTargetDisplayProvider() {}
+  virtual ~TestTargetDisplayProvider() {}
+
+  virtual gfx::Display GetTargetDisplay(
+      const gfx::Screen* screen,
+      const gfx::Rect& bounds) const OVERRIDE {
+    // On ash, the bounds is used as a indicator to specify
+    // the target display.
+    return screen->GetDisplayMatching(bounds);
+  }
+
+ private:
+  DISALLOW_COPY_AND_ASSIGN(TestTargetDisplayProvider);
+};
+
+}  // namespace
 
 TestStateProvider::TestStateProvider():
     has_persistent_data_(false),
@@ -119,17 +195,20 @@ void GetWindowBoundsAndShowState(
     gfx::Rect* out_bounds,
     ui::WindowShowState* out_show_state) {
   DCHECK(out_show_state);
-  TestMonitorInfoProvider* mip = new TestMonitorInfoProvider;
-  mip->AddMonitor(monitor1_bounds, monitor1_work_area);
+  TestScreen test_screen;
+  test_screen.AddDisplay(monitor1_bounds, monitor1_work_area);
   if (!monitor2_bounds.IsEmpty())
-    mip->AddMonitor(monitor2_bounds, monitor2_bounds);
-  TestStateProvider* sp = new TestStateProvider;
+    test_screen.AddDisplay(monitor2_bounds, monitor2_bounds);
+  scoped_ptr<TestStateProvider> sp(new TestStateProvider);
   if (source == PERSISTED || source == BOTH)
     sp->SetPersistentState(bounds, work_area, show_state_persisted, true);
   if (source == LAST_ACTIVE || source == BOTH)
     sp->SetLastActiveState(bounds, show_state_last, true);
+  scoped_ptr<WindowSizer::TargetDisplayProvider> tdp(
+      new TestTargetDisplayProvider);
 
-  WindowSizer sizer(sp, mip, browser);
+  WindowSizer sizer(sp.PassAs<WindowSizer::StateProvider>(),
+                    tdp.Pass(), &test_screen, browser);
   sizer.DetermineWindowBoundsAndShowState(passed_in,
                                           out_bounds,
                                           out_show_state);
@@ -155,18 +234,22 @@ ui::WindowShowState GetWindowShowState(
     ui::WindowShowState show_state_persisted,
     ui::WindowShowState show_state_last,
     Source source,
-    const Browser* browser) {
-  gfx::Rect bounds = tentwentyfour;
-  gfx::Rect work_area = tentwentyfour;
-  TestMonitorInfoProvider* mip = new TestMonitorInfoProvider;
-  mip->AddMonitor(tentwentyfour, tentwentyfour);
-  TestStateProvider* sp = new TestStateProvider;
+    const Browser* browser,
+    const gfx::Rect& display_config) {
+  gfx::Rect bounds = display_config;
+  gfx::Rect work_area = display_config;
+  TestScreen test_screen;
+  test_screen.AddDisplay(display_config, display_config);
+  scoped_ptr<TestStateProvider> sp(new TestStateProvider);
   if (source == PERSISTED || source == BOTH)
     sp->SetPersistentState(bounds, work_area, show_state_persisted, true);
   if (source == LAST_ACTIVE || source == BOTH)
     sp->SetLastActiveState(bounds, show_state_last, true);
+  scoped_ptr<WindowSizer::TargetDisplayProvider> tdp(
+      new TestTargetDisplayProvider);
 
-  WindowSizer sizer(sp, mip, browser);
+  WindowSizer sizer(sp.PassAs<WindowSizer::StateProvider>(),
+                    tdp.Pass(), &test_screen, browser);
 
   ui::WindowShowState out_show_state = ui::SHOW_STATE_DEFAULT;
   gfx::Rect out_bounds;
@@ -178,13 +261,14 @@ ui::WindowShowState GetWindowShowState(
 }
 
 #if !defined(OS_MACOSX)
-TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioning) {
+TEST(WindowSizerTestCommon,
+     PersistedWindowOffscreenWithNonAggressiveRepositioning) {
   { // off the left but the minimum visibility condition is barely satisfied
     // without relocaiton.
     gfx::Rect initial_bounds(-470, 50, 500, 400);
 
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     initial_bounds, gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(initial_bounds.ToString(), window_bounds.ToString());
@@ -193,7 +277,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the left and the minimum visibility condition is satisfied by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(-471, 50, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(-470 /* not -471 */, 50, 500, 400).ToString(),
@@ -204,7 +288,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
     gfx::Rect initial_bounds(50, -370, 500, 400);
 
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(50, -370, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("50,0 500x400", window_bounds.ToString());
@@ -215,7 +299,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
     gfx::Rect initial_bounds(994, 50, 500, 400);
 
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     initial_bounds, gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(initial_bounds.ToString(), window_bounds.ToString());
@@ -224,7 +308,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the right and the minimum visibility condition is satisified by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(995, 50, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(994 /* not 995 */, 50, 500, 400).ToString(),
@@ -236,7 +320,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
     gfx::Rect initial_bounds(50, 738, 500, 400);
 
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     initial_bounds, gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(initial_bounds.ToString(), window_bounds.ToString());
@@ -245,7 +329,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the bottom and the minimum visibility condition is satisified by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(50, 739, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(50, 738 /* not 739 */, 500, 400).ToString(),
@@ -254,7 +338,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // off the topleft
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(-471, -371, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(-470 /* not -471 */, 0, 500, 400).ToString(),
@@ -264,7 +348,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the topright and the minimum visibility condition is satisified by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(995, -371, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(994 /* not 995 */, 0, 500, 400).ToString(),
@@ -274,7 +358,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the bottomleft and the minimum visibility condition is satisified by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(-471, 739, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(-470 /* not -471 */,
@@ -287,7 +371,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
   { // off the bottomright and the minimum visibility condition is satisified by
     // relocation.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(995, 739, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(994 /* not 995 */,
@@ -299,7 +383,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // entirely off left
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(-700, 50, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(-470 /* not -700 */, 50, 500, 400).ToString(),
@@ -308,15 +392,15 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // entirely off left (monitor was detached since last run)
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
-                    gfx::Rect(-700, 50, 500, 400), left_nonprimary, PERSISTED,
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
+                    gfx::Rect(-700, 50, 500, 400), left_s1024x768, PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("0,50 500x400", window_bounds.ToString());
   }
 
   { // entirely off top
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(50, -500, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("50,0 500x400", window_bounds.ToString());
@@ -324,15 +408,15 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // entirely off top (monitor was detached since last run)
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
-                    gfx::Rect(50, -500, 500, 400), top_nonprimary,
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
+                    gfx::Rect(50, -500, 500, 400), top_s1024x768,
                     PERSISTED, NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("50,0 500x400", window_bounds.ToString());
   }
 
   { // entirely off right
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(1200, 50, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(994 /* not 1200 */, 50, 500, 400).ToString(),
@@ -341,15 +425,15 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // entirely off right (monitor was detached since last run)
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
-                    gfx::Rect(1200, 50, 500, 400), right_nonprimary,
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
+                    gfx::Rect(1200, 50, 500, 400), right_s1024x768,
                     PERSISTED, NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("524,50 500x400", window_bounds.ToString());
   }
 
   { // entirely off bottom
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
                     gfx::Rect(50, 800, 500, 400), gfx::Rect(), PERSISTED,
                     NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ(gfx::Rect(50, 738 /* not 800 */, 500, 400).ToString(),
@@ -358,8 +442,8 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 
   { // entirely off bottom (monitor was detached since last run)
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(),
-                    gfx::Rect(50, 800, 500, 400), bottom_nonprimary,
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(),
+                    gfx::Rect(50, 800, 500, 400), bottom_s1024x768,
                     PERSISTED, NULL, gfx::Rect(), &window_bounds);
     EXPECT_EQ("50,368 500x400", window_bounds.ToString());
   }
@@ -370,7 +454,7 @@ TEST(WindowSizerTestCommon, PersistedWindowOffscreenWithNonAggressiveRepositioni
 TEST(WindowSizerTestCommon, AdjustFitSize) {
   { // Check that the window gets resized to the screen.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(), gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(), gfx::Rect(),
                     gfx::Rect(), DEFAULT, NULL,
                     gfx::Rect(-10, -10, 1024 + 20, 768 + 20), &window_bounds);
     EXPECT_EQ("0,0 1024x768", window_bounds.ToString());
@@ -378,7 +462,7 @@ TEST(WindowSizerTestCommon, AdjustFitSize) {
 
   { // Check that a window which hangs out of the screen get moved back in.
     gfx::Rect window_bounds;
-    GetWindowBounds(tentwentyfour, tentwentyfour, gfx::Rect(), gfx::Rect(),
+    GetWindowBounds(p1024x768, p1024x768, gfx::Rect(), gfx::Rect(),
                     gfx::Rect(), DEFAULT, NULL,
                     gfx::Rect(1020, 700, 100, 100), &window_bounds);
     EXPECT_EQ("924,668 100x100", window_bounds.ToString());

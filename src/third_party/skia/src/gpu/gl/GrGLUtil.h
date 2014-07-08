@@ -11,23 +11,39 @@
 #include "gl/GrGLInterface.h"
 #include "GrGLDefines.h"
 
+class SkMatrix;
+
 ////////////////////////////////////////////////////////////////////////////////
 
 typedef uint32_t GrGLVersion;
 typedef uint32_t GrGLSLVersion;
 
-/**
- * This list is lazily updated as required.
- */
-enum GrGLVendor {
-    kIntel_GrGLVendor,
-    kOther_GrGLVendor,
-};
-
 #define GR_GL_VER(major, minor) ((static_cast<int>(major) << 16) | \
                                  static_cast<int>(minor))
 #define GR_GLSL_VER(major, minor) ((static_cast<int>(major) << 16) | \
                                    static_cast<int>(minor))
+
+#define GR_GL_INVALID_VER GR_GL_VER(0, 0)
+#define GR_GLSL_INVALID_VER GR_GL_VER(0, 0)
+
+/**
+ * The Vendor and Renderer enum values are lazily updated as required.
+ */
+enum GrGLVendor {
+    kARM_GrGLVendor,
+    kImagination_GrGLVendor,
+    kIntel_GrGLVendor,
+    kQualcomm_GrGLVendor,
+
+    kOther_GrGLVendor
+};
+
+enum GrGLRenderer {
+    kTegra2_GrGLRenderer,
+    kTegra3_GrGLRenderer,
+
+    kOther_GrGLRenderer
+};
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -66,17 +82,19 @@ enum GrGLVendor {
 
 // these variants assume caller already has a string from glGetString()
 GrGLVersion GrGLGetVersionFromString(const char* versionString);
-GrGLBinding GrGLGetBindingInUseFromString(const char* versionString);
+GrGLStandard GrGLGetStandardInUseFromString(const char* versionString);
 GrGLSLVersion GrGLGetGLSLVersionFromString(const char* versionString);
-bool GrGLHasExtensionFromString(const char* ext, const char* extensionString);
+bool GrGLIsMesaFromVersionString(const char* versionString);
 GrGLVendor GrGLGetVendorFromString(const char* vendorString);
+GrGLRenderer GrGLGetRendererFromString(const char* rendererString);
+bool GrGLIsChromiumFromRendererString(const char* rendererString);
 
 // these variants call glGetString()
-bool GrGLHasExtension(const GrGLInterface*, const char* ext);
-GrGLBinding GrGLGetBindingInUse(const GrGLInterface*);
 GrGLVersion GrGLGetVersion(const GrGLInterface*);
 GrGLSLVersion GrGLGetGLSLVersion(const GrGLInterface*);
 GrGLVendor GrGLGetVendor(const GrGLInterface*);
+GrGLRenderer GrGLGetRenderer(const GrGLInterface*);
+
 
 /**
  * Helpers for glGetError()
@@ -87,6 +105,11 @@ void GrGLCheckErr(const GrGLInterface* gl,
                   const char* call);
 
 void GrGLClearErr(const GrGLInterface* gl);
+
+/**
+ * Helper for converting SkMatrix to a column-major GL float array
+ */
+template<int MatrixSize> void GrGLGetMatrix(GrGLfloat* dest, const SkMatrix& src);
 
 ////////////////////////////////////////////////////////////////////////////////
 
@@ -135,7 +158,7 @@ void GrGLClearErr(const GrGLInterface* gl);
 #define GR_GL_CALL_NOERRCHECK(IFACE, X)                         \
     do {                                                        \
         GR_GL_CALLBACK_IMPL(IFACE);                             \
-        (IFACE)->f##X;                                          \
+        (IFACE)->fFunctions.f##X;                               \
         GR_GL_LOG_CALLS_IMPL(X);                                \
     } while (false)
 
@@ -150,11 +173,11 @@ void GrGLClearErr(const GrGLInterface* gl);
 #define GR_GL_CALL_RET_NOERRCHECK(IFACE, RET, X)                \
     do {                                                        \
         GR_GL_CALLBACK_IMPL(IFACE);                             \
-        (RET) = (IFACE)->f##X;                                  \
+        (RET) = (IFACE)->fFunctions.f##X;                       \
         GR_GL_LOG_CALLS_IMPL(X);                                \
     } while (false)
 
 // call glGetError without doing a redundant error check or logging.
-#define GR_GL_GET_ERROR(IFACE) (IFACE)->fGetError()
+#define GR_GL_GET_ERROR(IFACE) (IFACE)->fFunctions.fGetError()
 
 #endif

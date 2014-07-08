@@ -111,7 +111,7 @@ public:
      */
     SkBitmapHeap(ExternalStorage* externalStorage, int32_t heapSize = UNLIMITED_SIZE);
 
-    ~SkBitmapHeap();
+    virtual ~SkBitmapHeap();
 
     /**
      * Makes a shallow copy of all bitmaps currently in the heap and returns them as an array. The
@@ -220,14 +220,14 @@ private:
     struct LookupEntry {
         LookupEntry(const SkBitmap& bm)
         : fGenerationId(bm.getGenerationID())
-        , fPixelOffset(bm.pixelRefOffset())
+        , fPixelOrigin(bm.pixelRefOrigin())
         , fWidth(bm.width())
         , fHeight(bm.height())
         , fMoreRecentlyUsed(NULL)
         , fLessRecentlyUsed(NULL){}
 
         const uint32_t fGenerationId; // SkPixelRef GenerationID.
-        const size_t   fPixelOffset;
+        const SkIPoint fPixelOrigin;
         const uint32_t fWidth;
         const uint32_t fHeight;
 
@@ -238,9 +238,9 @@ private:
         uint32_t fStorageSlot; // slot of corresponding bitmap in fStorage.
 
         /**
-         * Compare two LookupEntry pointers, returning -1, 0, 1 for sorting.
+         * Compare two LookupEntry pointers for sorting and searching.
          */
-        static int Compare(const LookupEntry* a, const LookupEntry* b);
+        static bool Less(const LookupEntry& a, const LookupEntry& b);
     };
 
     /**

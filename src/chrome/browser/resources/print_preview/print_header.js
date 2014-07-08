@@ -38,6 +38,13 @@ cr.define('print_preview', function() {
      * @private
      */
     this.isEnabled_ = true;
+
+    /**
+     * Whether the print button is enabled.
+     * @type {boolean}
+     * @private
+     */
+    this.isPrintButtonEnabled_ = true;
   };
 
   /**
@@ -47,17 +54,6 @@ cr.define('print_preview', function() {
   PrintHeader.EventType = {
     PRINT_BUTTON_CLICK: 'print_preview.PrintHeader.PRINT_BUTTON_CLICK',
     CANCEL_BUTTON_CLICK: 'print_preview.PrintHeader.CANCEL_BUTTON_CLICK'
-  },
-
-  /**
-   * CSS classes used by the print header.
-   * @enum {string}
-   * @private
-   */
-  PrintHeader.Classes_ = {
-    CANCEL_BUTTON: 'print-header-cancel-button',
-    PRINT_BUTTON: 'print-header-print-button',
-    SUMMARY: 'print-header-summary'
   };
 
   PrintHeader.prototype = {
@@ -65,14 +61,22 @@ cr.define('print_preview', function() {
 
     set isEnabled(isEnabled) {
       this.isEnabled_ = isEnabled;
-      this.printButton_.disabled = !isEnabled;
-      this.cancelButton_.disabled = !isEnabled;
+      this.updatePrintButtonEnabledState_();
+      this.isCancelButtonEnabled = isEnabled;
+    },
+
+    set isPrintButtonEnabled(isEnabled) {
+      this.isPrintButtonEnabled_ = isEnabled;
+      this.updatePrintButtonEnabledState_();
+    },
+
+    set isCancelButtonEnabled(isEnabled) {
+      this.getChildElement('button.cancel').disabled = !isEnabled;
     },
 
     /** @param {string} message Error message to display in the print header. */
     setErrorMessage: function(message) {
-      var summaryEl = this.getElement().getElementsByClassName(
-          PrintHeader.Classes_.SUMMARY)[0];
+      var summaryEl = this.getChildElement('.summary');
       summaryEl.innerHTML = '';
       summaryEl.textContent = message;
     },
@@ -83,9 +87,13 @@ cr.define('print_preview', function() {
 
       // User events
       this.tracker.add(
-          this.cancelButton_, 'click', this.onCancelButtonClick_.bind(this));
+          this.getChildElement('button.cancel'),
+          'click',
+          this.onCancelButtonClick_.bind(this));
       this.tracker.add(
-          this.printButton_, 'click', this.onPrintButtonClick_.bind(this));
+          this.getChildElement('button.print'),
+          'click',
+          this.onPrintButtonClick_.bind(this));
 
       // Data events.
       this.tracker.add(
@@ -104,24 +112,30 @@ cr.define('print_preview', function() {
           this.destinationStore_,
           print_preview.DestinationStore.EventType.DESTINATION_SELECT,
           this.onDestinationSelect_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.copies,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.duplex,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
+      this.tracker.add(
+          this.printTicketStore_.pageRange,
+          print_preview.ticket_items.TicketItem.EventType.CHANGE,
+          this.onTicketChange_.bind(this));
     },
 
     /**
-     * @return {Element} Print button element.
+     * Updates Print Button state.
      * @private
      */
-    get printButton_() {
-      return this.getElement().getElementsByClassName(
-          PrintHeader.Classes_.PRINT_BUTTON)[0];
-    },
-
-    /**
-     * @return {Element} Cancel button element.
-     * @private
-     */
-    get cancelButton_() {
-      return this.getElement().getElementsByClassName(
-          PrintHeader.Classes_.CANCEL_BUTTON)[0];
+    updatePrintButtonEnabledState_: function() {
+      this.getChildElement('button.print').disabled =
+          this.destinationStore_.selectedDestination == null ||
+          !this.isEnabled_ ||
+          !this.isPrintButtonEnabled_ ||
+          !this.printTicketStore_.isTicketValid();
     },
 
     /**
@@ -129,10 +143,8 @@ cr.define('print_preview', function() {
      * @private
      */
     updateSummary_: function() {
-      var summaryEl = this.getElement().getElementsByClassName(
-          PrintHeader.Classes_.SUMMARY)[0];
       if (!this.printTicketStore_.isTicketValid()) {
-        summaryEl.innerHTML = '';
+        this.getChildElement('.summary').innerHTML = '';
         return;
       }
 
@@ -147,13 +159,13 @@ cr.define('print_preview', function() {
         summaryLabel = localStrings.getString('printPreviewPageLabelSingular');
       }
 
-      var numPages = this.printTicketStore_.getPageNumberSet().size;
+      var numPages = this.printTicketStore_.pageRange.getPageNumberSet().size;
       var numSheets = numPages;
-      if (!saveToPdf && this.printTicketStore_.isDuplexEnabled()) {
+      if (!saveToPdf && this.printTicketStore_.duplex.getValue()) {
         numSheets = Math.ceil(numPages / 2);
       }
 
-      var copies = this.printTicketStore_.getCopies();
+      var copies = this.printTicketStore_.copies.getValueAsNumber();
       numSheets *= copies;
       numPages *= copies;
 
@@ -177,7 +189,7 @@ cr.define('print_preview', function() {
 
       // Removing extra spaces from within the string.
       html = html.replace(/\s{2,}/g, ' ');
-      summaryEl.innerHTML = html;
+      this.getChildElement('.summary').innerHTML = html;
     },
 
     /**
@@ -188,11 +200,10 @@ cr.define('print_preview', function() {
     onPrintButtonClick_: function() {
       if (this.destinationStore_.selectedDestination.id !=
           print_preview.Destination.GooglePromotedId.SAVE_AS_PDF) {
-        this.printButton_.classList.add('loading');
-        this.cancelButton_.classList.add('loading');
-        var summaryEl = this.getElement().getElementsByClassName(
-            PrintHeader.Classes_.SUMMARY)[0];
-        summaryEl.innerHTML = localStrings.getString('printing');
+        this.getChildElement('button.print').classList.add('loading');
+        this.getChildElement('button.cancel').classList.add('loading');
+        this.getChildElement('.summary').innerHTML =
+            localStrings.getString('printing');
       }
       cr.dispatchSimpleEvent(this, PrintHeader.EventType.PRINT_BUTTON_CLICK);
     },
@@ -212,15 +223,16 @@ cr.define('print_preview', function() {
      * @private
      */
     onDestinationSelect_: function() {
-      if (this.destinationStore_.selectedDestination.id ==
-              print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ||
-          this.destinationStore_.selectedDestination.id ==
-              print_preview.Destination.GooglePromotedId.DOCS) {
-        this.printButton_.textContent = localStrings.getString('saveButton');
-      } else {
-        this.printButton_.textContent = localStrings.getString('printButton');
+      var isSaveLabel = this.destinationStore_.selectedDestination &&
+          (this.destinationStore_.selectedDestination.id ==
+               print_preview.Destination.GooglePromotedId.SAVE_AS_PDF ||
+           this.destinationStore_.selectedDestination.id ==
+               print_preview.Destination.GooglePromotedId.DOCS);
+      this.getChildElement('button.print').textContent =
+          localStrings.getString(isSaveLabel ? 'saveButton' : 'printButton');
+      if (this.destinationStore_.selectedDestination) {
+        this.getChildElement('button.print').focus();
       }
-      this.printButton_.focus();
     },
 
     /**
@@ -229,13 +241,11 @@ cr.define('print_preview', function() {
      * @private
      */
     onTicketChange_: function() {
-      this.printButton_.disabled =
-          !this.printTicketStore_.isTicketValid() ||
-          !this.isEnabled_;
+      this.updatePrintButtonEnabledState_();
       this.updateSummary_();
       if (document.activeElement == null ||
           document.activeElement == document.body) {
-        this.printButton_.focus();
+        this.getChildElement('button.print').focus();
       }
     }
   };

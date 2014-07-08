@@ -1,15 +1,19 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 #ifndef SYNC_SYNCABLE_ENTRY_KERNEL_H_
 #define SYNC_SYNCABLE_ENTRY_KERNEL_H_
 
-#include "base/time.h"
+#include <set>
+
+#include "base/time/time.h"
 #include "base/values.h"
+#include "sync/base/sync_export.h"
 #include "sync/internal_api/public/base/model_type.h"
-#include "sync/internal_api/public/base/node_ordinal.h"
+#include "sync/internal_api/public/base/unique_position.h"
 #include "sync/internal_api/public/util/immutable.h"
+#include "sync/protocol/attachments.pb.h"
 #include "sync/protocol/sync.pb.h"
 #include "sync/syncable/metahandle_set.h"
 #include "sync/syncable/syncable_id.h"
@@ -28,6 +32,8 @@ namespace syncable {
 //  - EntryKernel::EntryKernel(), EntryKernel::ToValue() in entry_kernel.cc
 //  - operator<< in Entry.cc
 //  - BindFields() and UnpackEntry() in directory_backing_store.cc
+//  - kCurrentDBVersion, DirectoryBackingStore::InitializeTables in
+//    directory_backing_store.cc
 //  - TestSimpleFieldsPreservedDuringSaveChanges in syncable_unittest.cc
 
 static const int64 kInvalidMetaHandle = 0;
@@ -80,9 +86,6 @@ enum IdField {
   ID = ID_FIELDS_BEGIN,
   PARENT_ID,
   SERVER_PARENT_ID,
-
-  PREV_ID,
-  NEXT_ID,
   ID_FIELDS_END
 };
 
@@ -124,6 +127,7 @@ enum StringField {
   // identifies a singleton instance.
   UNIQUE_SERVER_TAG,  // Tagged by the server
   UNIQUE_CLIENT_TAG,  // Tagged by the client
+  UNIQUE_BOOKMARK_TAG,  // Client tags for bookmark items
   STRING_FIELDS_END,
 };
 
@@ -143,21 +147,32 @@ enum ProtoField {
 
 enum {
   PROTO_FIELDS_COUNT = PROTO_FIELDS_END - PROTO_FIELDS_BEGIN,
-  ORDINAL_FIELDS_BEGIN = PROTO_FIELDS_END
+  UNIQUE_POSITION_FIELDS_BEGIN = PROTO_FIELDS_END
 };
 
-enum OrdinalField {
-  // An Ordinal that identifies the relative ordering of this object
-  // among its siblings.
-  SERVER_ORDINAL_IN_PARENT = ORDINAL_FIELDS_BEGIN,
-  ORDINAL_FIELDS_END
+enum UniquePositionField {
+  SERVER_UNIQUE_POSITION = UNIQUE_POSITION_FIELDS_BEGIN,
+  UNIQUE_POSITION,
+  UNIQUE_POSITION_FIELDS_END
 };
 
 enum {
-  ORDINAL_FIELDS_COUNT = ORDINAL_FIELDS_END - ORDINAL_FIELDS_BEGIN,
-  FIELD_COUNT = ORDINAL_FIELDS_END - BEGIN_FIELDS,
+  UNIQUE_POSITION_FIELDS_COUNT =
+      UNIQUE_POSITION_FIELDS_END - UNIQUE_POSITION_FIELDS_BEGIN,
+  ATTACHMENT_METADATA_FIELDS_BEGIN = UNIQUE_POSITION_FIELDS_END
+};
+
+enum AttachmentMetadataField {
+  ATTACHMENT_METADATA = ATTACHMENT_METADATA_FIELDS_BEGIN,
+  ATTACHMENT_METADATA_FIELDS_END
+};
+
+enum {
+  ATTACHMENT_METADATA_FIELDS_COUNT =
+      ATTACHMENT_METADATA_FIELDS_END - ATTACHMENT_METADATA_FIELDS_BEGIN,
+  FIELD_COUNT = ATTACHMENT_METADATA_FIELDS_END - BEGIN_FIELDS,
   // Past this point we have temporaries, stored in memory only.
-  BEGIN_TEMPS = ORDINAL_FIELDS_END,
+  BEGIN_TEMPS = ATTACHMENT_METADATA_FIELDS_END,
   BIT_TEMPS_BEGIN = BEGIN_TEMPS,
 };
 
@@ -174,14 +189,16 @@ enum {
 
 
 
-struct EntryKernel {
+struct SYNC_EXPORT_PRIVATE EntryKernel {
  private:
   std::string string_fields[STRING_FIELDS_COUNT];
   sync_pb::EntitySpecifics specifics_fields[PROTO_FIELDS_COUNT];
   int64 int64_fields[INT64_FIELDS_COUNT];
   base::Time time_fields[TIME_FIELDS_COUNT];
   Id id_fields[ID_FIELDS_COUNT];
-  NodeOrdinal ordinal_fields[ORDINAL_FIELDS_COUNT];
+  UniquePosition unique_position_fields[UNIQUE_POSITION_FIELDS_COUNT];
+  sync_pb::AttachmentMetadata
+      attachment_metadata_fields[ATTACHMENT_METADATA_FIELDS_COUNT];
   std::bitset<BIT_FIELDS_COUNT> bit_fields;
   std::bitset<BIT_TEMPS_COUNT> bit_temps;
 
@@ -249,8 +266,13 @@ struct EntryKernel {
   inline void put(ProtoField field, const sync_pb::EntitySpecifics& value) {
     specifics_fields[field - PROTO_FIELDS_BEGIN].CopyFrom(value);
   }
-  inline void put(OrdinalField field, const NodeOrdinal& value) {
-    ordinal_fields[field - ORDINAL_FIELDS_BEGIN] = value;
+  inline void put(UniquePositionField field, const UniquePosition& value) {
+    unique_position_fields[field - UNIQUE_POSITION_FIELDS_BEGIN] = value;
+  }
+  inline void put(AttachmentMetadataField field,
+                  const sync_pb::AttachmentMetadata& value) {
+    attachment_metadata_fields[field - ATTACHMENT_METADATA_FIELDS_BEGIN] =
+        value;
   }
   inline void put(BitTemp field, bool value) {
     bit_temps[field - BIT_TEMPS_BEGIN] = value;
@@ -287,8 +309,12 @@ struct EntryKernel {
   inline const sync_pb::EntitySpecifics& ref(ProtoField field) const {
     return specifics_fields[field - PROTO_FIELDS_BEGIN];
   }
-  inline const NodeOrdinal& ref(OrdinalField field) const {
-    return ordinal_fields[field - ORDINAL_FIELDS_BEGIN];
+  inline const UniquePosition& ref(UniquePositionField field) const {
+    return unique_position_fields[field - UNIQUE_POSITION_FIELDS_BEGIN];
+  }
+  inline const sync_pb::AttachmentMetadata& ref(
+      AttachmentMetadataField field) const {
+    return attachment_metadata_fields[field - ATTACHMENT_METADATA_FIELDS_BEGIN];
   }
   inline bool ref(BitTemp field) const {
     return bit_temps[field - BIT_TEMPS_BEGIN];
@@ -304,11 +330,17 @@ struct EntryKernel {
   inline Id& mutable_ref(IdField field) {
     return id_fields[field - ID_FIELDS_BEGIN];
   }
-  inline NodeOrdinal& mutable_ref(OrdinalField field) {
-    return ordinal_fields[field - ORDINAL_FIELDS_BEGIN];
+  inline UniquePosition& mutable_ref(UniquePositionField field) {
+    return unique_position_fields[field - UNIQUE_POSITION_FIELDS_BEGIN];
+  }
+  inline sync_pb::AttachmentMetadata& mutable_ref(
+      AttachmentMetadataField field) {
+    return attachment_metadata_fields[field - ATTACHMENT_METADATA_FIELDS_BEGIN];
   }
 
+  ModelType GetModelType() const;
   ModelType GetServerModelType() const;
+  bool ShouldMaintainPosition() const;
 
   // Dumps all kernel info into a DictionaryValue and returns it.
   // Transfers ownership of the DictionaryValue to the caller.
@@ -321,6 +353,17 @@ struct EntryKernel {
   // Tracks whether this entry needs to be saved to the database.
   bool dirty_;
 };
+
+class EntryKernelLessByMetaHandle {
+ public:
+  inline bool operator()(const EntryKernel* a,
+                         const EntryKernel* b) const {
+    return a->ref(META_HANDLE) < b->ref(META_HANDLE);
+  }
+};
+
+typedef std::set<const EntryKernel*, EntryKernelLessByMetaHandle>
+    EntryKernelSet;
 
 struct EntryKernelMutation {
   EntryKernel original, mutated;

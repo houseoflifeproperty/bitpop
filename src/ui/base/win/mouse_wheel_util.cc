@@ -8,7 +8,7 @@
 
 #include "base/auto_reset.h"
 #include "ui/base/view_prop.h"
-#include "ui/base/win/hwnd_util.h"
+#include "ui/gfx/win/hwnd_util.h"
 
 namespace ui {
 
@@ -22,8 +22,7 @@ static bool WindowSupportsRerouteMouseWheel(HWND window) {
     if (!IsWindow(window))
       break;
 
-    if (reinterpret_cast<bool>(
-            ViewProp::GetValue(window, kHWNDSupportMouseWheelRerouting))) {
+    if (ViewProp::GetValue(window, kHWNDSupportMouseWheelRerouting) != NULL) {
       return true;
     }
     window = GetParent(window);
@@ -32,7 +31,7 @@ static bool WindowSupportsRerouteMouseWheel(HWND window) {
 }
 
 static bool IsCompatibleWithMouseWheelRedirection(HWND window) {
-  std::wstring class_name = GetClassName(window);
+  std::wstring class_name = gfx::GetClassName(window);
   // Mousewheel redirection to comboboxes is a surprising and
   // undesireable user behavior.
   return !(class_name == L"ComboBox" ||
@@ -40,7 +39,7 @@ static bool IsCompatibleWithMouseWheelRedirection(HWND window) {
 }
 
 static bool CanRedirectMouseWheelFrom(HWND window) {
-  std::wstring class_name = GetClassName(window);
+  std::wstring class_name = gfx::GetClassName(window);
 
   // Older Thinkpad mouse wheel drivers create a window under mouse wheel
   // pointer. Detect if we are dealing with this window. In this case we

@@ -10,18 +10,21 @@
 
 // This file contains unit tests for ACM's NetEQ wrapper (class ACMNetEQ).
 
+#include "webrtc/modules/audio_coding/main/source/acm_neteq.h"
+
 #include <stdlib.h>
 
 #include "gtest/gtest.h"
-#include "modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
-#include "modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
-#include "modules/audio_coding/main/source/acm_codec_database.h"
-#include "modules/audio_coding/main/source/acm_neteq.h"
-#include "modules/audio_coding/neteq/interface/webrtc_neteq_help_macros.h"
-#include "modules/interface/module_common_types.h"
-#include "typedefs.h"  // NOLINT(build/include)
+#include "webrtc/modules/audio_coding/codecs/pcm16b/include/pcm16b.h"
+#include "webrtc/modules/audio_coding/main/interface/audio_coding_module_typedefs.h"
+#include "webrtc/modules/audio_coding/main/source/acm_codec_database.h"
+#include "webrtc/modules/audio_coding/neteq/interface/webrtc_neteq_help_macros.h"
+#include "webrtc/modules/interface/module_common_types.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
+
+namespace acm1 {
 
 class AcmNetEqTest : public ::testing::Test {
  protected:
@@ -67,8 +70,9 @@ void AcmNetEqTest::InsertZeroPacket(uint16_t sequence_number,
   rtp_header.header.payloadType = payload_type;
   rtp_header.header.markerBit = marker_bit;
   rtp_header.type.Audio.channel = 1;
-  ASSERT_EQ(0, neteq_.RecIn(reinterpret_cast<WebRtc_UWord8*>(payload),
-                            len_payload_bytes, rtp_header));
+  // Receive timestamp can be set to send timestamp in this test.
+  ASSERT_EQ(0, neteq_.RecIn(reinterpret_cast<uint8_t*>(payload),
+                            len_payload_bytes, rtp_header, timestamp));
 }
 
 void AcmNetEqTest::PullData(int expected_num_samples) {
@@ -144,4 +148,6 @@ TEST_F(AcmNetEqTest, TestZeroLengthWaitingTimesVector) {
   EXPECT_EQ(-1, stats.medianWaitingTimeMs);
 }
 
-}  // namespace
+}  // namespace acm1
+
+}  // namespace webrtc

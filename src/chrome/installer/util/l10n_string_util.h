@@ -15,14 +15,14 @@
 
 #include <string>
 
-#include "base/string16.h"
+#include "base/strings/string16.h"
 
 namespace installer {
 
 class TranslationDelegate {
  public:
   virtual ~TranslationDelegate();
-  virtual string16 GetLocalizedString(int installer_string_id) = 0;
+  virtual base::string16 GetLocalizedString(int installer_string_id) = 0;
 };
 
 // If we're in Chrome, the installer strings aren't in the binary, but are in
@@ -35,6 +35,11 @@ void SetTranslationDelegate(TranslationDelegate* delegate);
 // desktop.  The string is retrieved from the TranslationDelegate if one has
 // been set.  Otherwise, the string is read from the binary's string table.
 std::wstring GetLocalizedString(int base_message_id);
+
+// Returns the localized version of a string (obtained from GetLocalizedString)
+// with $1 replaced with |a|. Additionally, $$ is replaced by $.
+base::string16 GetLocalizedStringF(int base_message_id,
+                                   const base::string16& a);
 
 // Given the system language, return a url that points to the localized eula.
 // The empty string is returned on failure.

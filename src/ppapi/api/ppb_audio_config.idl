@@ -45,7 +45,7 @@ enum PP_AudioSampleRate {
  * This interface only supports 16-bit stereo output.
  *
  * Refer to the
- * <a href="/native-client/{{pepperversion}}/devguide/coding/audio">Audio
+ * <a href="/native-client/devguide/coding/audio.html">Audio
  * </a> chapter in the Developer's Guide for information on using this
  * interface.
  */
@@ -200,7 +200,7 @@ interface PPB_AudioConfig {
    * RecommendSampleRate() returns the native sample rate that the browser
    * is using in the backend.  Applications that use the recommended sample
    * rate will have potentially better latency and fidelity.  The return value
-   * is indended for audio output devices.  If the output sample rate cannot be
+   * is intended for audio output devices.  If the output sample rate cannot be
    * determined, this function can return PP_AUDIOSAMPLERATE_NONE.
    *
    * @param[in] instance

@@ -8,31 +8,35 @@
 #ifndef SkColorFilterImageFilter_DEFINED
 #define SkColorFilterImageFilter_DEFINED
 
-#include "SkSingleInputImageFilter.h"
+#include "SkImageFilter.h"
 
 class SkColorFilter;
 
-class SK_API SkColorFilterImageFilter : public SkSingleInputImageFilter {
+class SK_API SkColorFilterImageFilter : public SkImageFilter {
 public:
-    static SkColorFilterImageFilter* Create(SkColorFilter* cf, SkImageFilter* input = NULL);
+    static SkColorFilterImageFilter* Create(SkColorFilter* cf,
+                                            SkImageFilter* input = NULL,
+                                            const CropRect* cropRect = NULL);
     virtual ~SkColorFilterImageFilter();
 
     SK_DECLARE_PUBLIC_FLATTENABLE_DESERIALIZATION_PROCS(SkColorFilterImageFilter)
 
 protected:
-    SkColorFilterImageFilter(SkFlattenableReadBuffer& buffer);
-    virtual void flatten(SkFlattenableWriteBuffer&) const SK_OVERRIDE;
+    SkColorFilterImageFilter(SkReadBuffer& buffer);
+    virtual void flatten(SkWriteBuffer&) const SK_OVERRIDE;
 
-    virtual bool onFilterImage(Proxy*, const SkBitmap& src, const SkMatrix&,
-                               SkBitmap* result, SkIPoint* loc) SK_OVERRIDE;
+    virtual bool onFilterImage(Proxy*, const SkBitmap& src, const Context&,
+                               SkBitmap* result, SkIPoint* loc) const SK_OVERRIDE;
 
-    virtual SkColorFilter* asColorFilter() const SK_OVERRIDE;
+    virtual bool asColorFilter(SkColorFilter**) const SK_OVERRIDE;
 
 private:
-    SkColorFilterImageFilter(SkColorFilter* cf, SkImageFilter* input);
+    SkColorFilterImageFilter(SkColorFilter* cf,
+                             SkImageFilter* input,
+                             const CropRect* cropRect = NULL);
     SkColorFilter*  fColorFilter;
 
-    typedef SkSingleInputImageFilter INHERITED;
+    typedef SkImageFilter INHERITED;
 };
 
 #endif

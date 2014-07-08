@@ -7,7 +7,8 @@
  *  in the file PATENTS.  All contributing project authors may
  *  be found in the AUTHORS file in the root of the source tree.
  */
-
+#ifndef VPX_VPX_ENCODER_H_
+#define VPX_VPX_ENCODER_H_
 
 /*!\defgroup encoder Encoder Algorithm Interface
  * \ingroup codec
@@ -28,9 +29,7 @@
 extern "C" {
 #endif
 
-#ifndef VPX_ENCODER_H
-#define VPX_ENCODER_H
-#include "vpx_codec.h"
+#include "./vpx_codec.h"
 
   /*! Temporal Scalability: Maximum length of the sequence defining frame
    * layer membership
@@ -45,6 +44,12 @@ extern "C" {
 
   /*!\deprecated Use #VPX_TS_MAX_LAYERS instead. */
 #define MAX_LAYERS      VPX_TS_MAX_LAYERS
+
+/*! Spatial Scalability: Maximum number of coding layers */
+#define VPX_SS_MAX_LAYERS       5
+
+/*! Spatial Scalability: Default number of coding layers */
+#define VPX_SS_DEFAULT_LAYERS       1
 
   /*!\brief Current ABI version number
    *
@@ -217,9 +222,10 @@ extern "C" {
 
   /*!\brief Rate control mode */
   enum vpx_rc_mode {
-    VPX_VBR, /**< Variable Bit Rate (VBR) mode */
+    VPX_VBR,  /**< Variable Bit Rate (VBR) mode */
     VPX_CBR,  /**< Constant Bit Rate (CBR) mode */
-    VPX_CQ   /**< Constant Quality  (CQ)  mode */
+    VPX_CQ,   /**< Constrained Quality (CQ)  mode */
+    VPX_Q,    /**< Constant Quality (Q) mode */
   };
 
 
@@ -390,6 +396,19 @@ extern "C" {
      */
     unsigned int           rc_resize_allowed;
 
+    /*!\brief Internal coded frame width.
+     *
+     * If spatial resampling is enabled this specifies the width of the
+     * encoded frame.
+     */
+    unsigned int           rc_scaled_width;
+
+    /*!\brief Internal coded frame height.
+     *
+     * If spatial resampling is enabled this specifies the height of the
+     * encoded frame.
+     */
+    unsigned int           rc_scaled_height;
 
     /*!\brief Spatial resampling up watermark.
      *
@@ -595,44 +614,58 @@ extern "C" {
     unsigned int           kf_max_dist;
 
     /*
-     * Temporal scalability settings (ts)
+     * Spatial scalability settings (ss)
      */
 
-    /*!\brief Number of coding layers
+    /*!\brief Number of spatial coding layers.
      *
-     * This value specifies the number of coding layers to be used.
+     * This value specifies the number of spatial coding layers to be used.
+     */
+    unsigned int           ss_number_layers;
+
+    /*!\brief Target bitrate for each spatial layer.
+     *
+     * These values specify the target coding bitrate to be used for each
+     * spatial layer.
+     */
+    unsigned int           ss_target_bitrate[VPX_SS_MAX_LAYERS];
+
+    /*!\brief Number of temporal coding layers.
+     *
+     * This value specifies the number of temporal layers to be used.
      */
     unsigned int           ts_number_layers;
 
-    /*!\brief Target bitrate for each layer
+    /*!\brief Target bitrate for each temporal layer.
      *
-     * These values specify the target coding bitrate for each coding layer.
+     * These values specify the target coding bitrate to be used for each
+     * temporal layer.
      */
     unsigned int           ts_target_bitrate[VPX_TS_MAX_LAYERS];
 
-    /*!\brief Frame rate decimation factor for each layer
+    /*!\brief Frame rate decimation factor for each temporal layer.
      *
      * These values specify the frame rate decimation factors to apply
-     * to each layer.
+     * to each temporal layer.
      */
     unsigned int           ts_rate_decimator[VPX_TS_MAX_LAYERS];
 
-    /*!\brief Length of the sequence defining frame layer membership
+    /*!\brief Length of the sequence defining frame temporal layer membership.
      *
      * This value specifies the length of the sequence that defines the
-     * membership of frames to layers. For example, if ts_periodicity=8 then
-     * frames are assigned to coding layers with a repeated sequence of
-     * length 8.
-     */
+     * membership of frames to temporal layers. For example, if the
+     * ts_periodicity = 8, then the frames are assigned to coding layers with a
+     * repeated sequence of length 8.
+    */
     unsigned int           ts_periodicity;
 
-    /*!\brief Template defining the membership of frames to coding layers
+    /*!\brief Template defining the membership of frames to temporal layers.
      *
-     * This array defines the membership of frames to coding layers. For a
-     * 2-layer encoding that assigns even numbered frames to one layer (0)
-     * and odd numbered frames to a second layer (1) with ts_periodicity=8,
-     * then ts_layer_id = (0,1,0,1,0,1,0,1).
-     */
+     * This array defines the membership of frames to temporal coding layers.
+     * For a 2-layer encoding that assigns even numbered frames to one temporal
+     * layer (0) and odd numbered frames to a second temporal layer (1) with
+     * ts_periodicity=8, then ts_layer_id = (0,1,0,1,0,1,0,1).
+    */
     unsigned int           ts_layer_id[VPX_TS_MAX_PERIODICITY];
   } vpx_codec_enc_cfg_t; /**< alias for struct vpx_codec_enc_cfg */
 
@@ -917,8 +950,8 @@ extern "C" {
 
 
   /*!@} - end defgroup encoder*/
-
-#endif
 #ifdef __cplusplus
 }
 #endif
+#endif  // VPX_VPX_ENCODER_H_
+

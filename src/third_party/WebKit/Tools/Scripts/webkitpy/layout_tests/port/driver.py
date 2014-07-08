@@ -42,43 +42,25 @@ from webkitpy.common.system.profiler import ProfilerFactory
 _log = logging.getLogger(__name__)
 
 
+DRIVER_START_TIMEOUT_SECS = 30
+
+
 class DriverInput(object):
-    def __init__(self, test_name, timeout, image_hash, should_run_pixel_test, args=None):
+    def __init__(self, test_name, timeout, image_hash, should_run_pixel_test, args):
         self.test_name = test_name
         self.timeout = timeout  # in ms
         self.image_hash = image_hash
         self.should_run_pixel_test = should_run_pixel_test
-        self.args = args or []
+        self.args = args
 
 
 class DriverOutput(object):
     """Groups information about a output from driver for easy passing
     and post-processing of data."""
 
-    strip_patterns = []
-    strip_patterns.append((re.compile('at \(-?[0-9]+,-?[0-9]+\) *'), ''))
-    strip_patterns.append((re.compile('size -?[0-9]+x-?[0-9]+ *'), ''))
-    strip_patterns.append((re.compile('text run width -?[0-9]+: '), ''))
-    strip_patterns.append((re.compile('text run width -?[0-9]+ [a-zA-Z ]+: '), ''))
-    strip_patterns.append((re.compile('RenderButton {BUTTON} .*'), 'RenderButton {BUTTON}'))
-    strip_patterns.append((re.compile('RenderImage {INPUT} .*'), 'RenderImage {INPUT}'))
-    strip_patterns.append((re.compile('RenderBlock {INPUT} .*'), 'RenderBlock {INPUT}'))
-    strip_patterns.append((re.compile('RenderTextControl {INPUT} .*'), 'RenderTextControl {INPUT}'))
-    strip_patterns.append((re.compile('\([0-9]+px'), 'px'))
-    strip_patterns.append((re.compile(' *" *\n +" *'), ' '))
-    strip_patterns.append((re.compile('" +$'), '"'))
-    strip_patterns.append((re.compile('- '), '-'))
-    strip_patterns.append((re.compile('\n( *)"\s+'), '\n\g<1>"'))
-    strip_patterns.append((re.compile('\s+"\n'), '"\n'))
-    strip_patterns.append((re.compile('scrollWidth [0-9]+'), 'scrollWidth'))
-    strip_patterns.append((re.compile('scrollHeight [0-9]+'), 'scrollHeight'))
-    strip_patterns.append((re.compile('scrollX [0-9]+'), 'scrollX'))
-    strip_patterns.append((re.compile('scrollY [0-9]+'), 'scrollY'))
-    strip_patterns.append((re.compile('scrolled to [0-9]+,[0-9]+'), 'scrolled'))
-
     def __init__(self, text, image, image_hash, audio, crash=False,
             test_time=0, measurements=None, timeout=False, error='', crashed_process_name='??',
-            crashed_pid=None, crash_log=None, pid=None):
+            crashed_pid=None, crash_log=None, leak=False, leak_log=None, pid=None):
         # FIXME: Args could be renamed to better clarify what they do.
         self.text = text
         self.image = image  # May be empty-string if the test crashes.
@@ -89,6 +71,8 @@ class DriverOutput(object):
         self.crashed_process_name = crashed_process_name
         self.crashed_pid = crashed_pid
         self.crash_log = crash_log
+        self.leak = leak
+        self.leak_log = leak_log
         self.test_time = test_time
         self.measurements = measurements
         self.timeout = timeout
@@ -98,20 +82,18 @@ class DriverOutput(object):
     def has_stderr(self):
         return bool(self.error)
 
-    def strip_metrics(self):
-        if not self.text:
-            return
-        for pattern in self.strip_patterns:
-            self.text = re.sub(pattern[0], pattern[1], self.text)
+
+class DeviceFailure(Exception):
+    pass
 
 
 class Driver(object):
-    """object for running test(s) using DumpRenderTree/WebKitTestRunner."""
+    """object for running test(s) using content_shell or other driver."""
 
     def __init__(self, port, worker_number, pixel_tests, no_timeout=False):
         """Initialize a Driver to subsequently run tests.
 
-        Typically this routine will spawn DumpRenderTree in a config
+        Typically this routine will spawn content_shell in a config
         ready for subsequent input.
 
         port - reference back to the port object.
@@ -122,16 +104,21 @@ class Driver(object):
         self._no_timeout = no_timeout
 
         self._driver_tempdir = None
-        # WebKitTestRunner can report back subprocess crashes by printing
+        # content_shell can report back subprocess crashes by printing
         # "#CRASHED - PROCESSNAME".  Since those can happen at any time
         # and ServerProcess won't be aware of them (since the actual tool
         # didn't crash, just a subprocess) we record the crashed subprocess name here.
         self._crashed_process_name = None
         self._crashed_pid = None
 
-        # WebKitTestRunner can report back subprocesses that became unresponsive
+        # content_shell can report back subprocesses that became unresponsive
         # This could mean they crashed.
         self._subprocess_was_unresponsive = False
+
+        # content_shell can report back subprocess DOM-object leaks by printing
+        # "#LEAK". This leak detection is enabled only when the flag
+        # --enable-leak-detection is passed to content_shell.
+        self._leaked = False
 
         # stderr reading is scoped on a per-test (not per-block) basis, so we store the accumulated
         # stderr output, as well as if we've seen #EOF on this driver instance.
@@ -140,6 +127,7 @@ class Driver(object):
         self.error_from_test = str()
         self.err_seen_eof = False
         self._server_process = None
+        self._current_cmd_line = None
 
         self._measurements = {}
         if self._port.get_option("profile"):
@@ -159,7 +147,7 @@ class Driver(object):
         the driver in an indeterminate state. The upper layers of the program
         are responsible for cleaning up and ensuring things are okay.
 
-        Returns a DriverOuput object.
+        Returns a DriverOutput object.
         """
         start_time = time.time()
         self.start(driver_input.should_run_pixel_test, driver_input.args)
@@ -177,8 +165,9 @@ class Driver(object):
         crashed = self.has_crashed()
         timed_out = self._server_process.timed_out
         pid = self._server_process.pid()
+        leaked = self._leaked
 
-        if stop_when_done or crashed or timed_out:
+        if stop_when_done or crashed or timed_out or leaked:
             # We call stop() even if we crashed or timed out in order to get any remaining stdout/stderr output.
             # In the timeout case, we kill the hung process as well.
             out, err = self._server_process.stop(self._port.driver_stop_timeout() if stop_when_done else 0.0)
@@ -208,7 +197,9 @@ class Driver(object):
             crash=crashed, test_time=time.time() - test_begin_time, measurements=self._measurements,
             timeout=timed_out, error=self.error_from_test,
             crashed_process_name=self._crashed_process_name,
-            crashed_pid=self._crashed_pid, crash_log=crash_log, pid=pid)
+            crashed_pid=self._crashed_pid, crash_log=crash_log,
+            leak=leaked, leak_log=self._leak_log,
+            pid=pid)
 
     def _get_crash_log(self, stdout, stderr, newer_than):
         return self._port._get_crash_log(self._crashed_process_name, self._crashed_pid, stdout, stderr, newer_than)
@@ -269,30 +260,17 @@ class Driver(object):
         return False
 
     def start(self, pixel_tests, per_test_args):
-        # FIXME: Callers shouldn't normally call this, since this routine
-        # may not be specifying the correct combination of pixel test and
-        # per_test args.
-        #
-        # The only reason we have this routine at all is so the perftestrunner
-        # can pause before running a test; it might be better to push that
-        # into run_test() directly.
-        if not self._server_process:
+        new_cmd_line = self.cmd_line(pixel_tests, per_test_args)
+        if not self._server_process or new_cmd_line != self._current_cmd_line:
             self._start(pixel_tests, per_test_args)
             self._run_post_start_tasks()
 
     def _setup_environ_for_driver(self, environment):
-        environment['DYLD_LIBRARY_PATH'] = self._port._build_path()
-        environment['DYLD_FRAMEWORK_PATH'] = self._port._build_path()
-        # FIXME: We're assuming that WebKitTestRunner checks this DumpRenderTree-named environment variable.
-        environment['DUMPRENDERTREE_TEMP'] = str(self._driver_tempdir)
-        environment['LOCAL_RESOURCE_ROOT'] = self._port.layout_tests_dir()
-        if 'WEBKITOUTPUTDIR' in os.environ:
-            environment['WEBKITOUTPUTDIR'] = os.environ['WEBKITOUTPUTDIR']
         if self._profiler:
             environment = self._profiler.adjusted_environment(environment)
         return environment
 
-    def _start(self, pixel_tests, per_test_args):
+    def _start(self, pixel_tests, per_test_args, wait_for_ready=True):
         self.stop()
         self._driver_tempdir = self._port._filesystem.mkdtemp(prefix='%s-' % self._port.driver_name())
         server_name = self._port.driver_name()
@@ -300,8 +278,30 @@ class Driver(object):
         environment = self._setup_environ_for_driver(environment)
         self._crashed_process_name = None
         self._crashed_pid = None
-        self._server_process = self._port._server_process_constructor(self._port, server_name, self.cmd_line(pixel_tests, per_test_args), environment)
+        self._leaked = False
+        self._leak_log = None
+        cmd_line = self.cmd_line(pixel_tests, per_test_args)
+        self._server_process = self._port._server_process_constructor(self._port, server_name, cmd_line, environment, logging=self._port.get_option("driver_logging"))
         self._server_process.start()
+        self._current_cmd_line = cmd_line
+
+        if wait_for_ready:
+            deadline = time.time() + DRIVER_START_TIMEOUT_SECS
+            if not self._wait_for_server_process_output(self._server_process, deadline, '#READY'):
+                _log.error("content_shell took too long to startup.")
+
+    def _wait_for_server_process_output(self, server_process, deadline, text):
+        output = ''
+        line = server_process.read_stdout_line(deadline)
+        while not server_process.timed_out and not server_process.has_crashed() and not text in line.rstrip():
+            output += line
+            line = server_process.read_stdout_line(deadline)
+
+        if server_process.timed_out or server_process.has_crashed():
+            _log.error('Failed to start the %s process: \n%s' % (server_process.name(), output))
+            return False
+
+        return True
 
     def _run_post_start_tasks(self):
         # Remote drivers may override this to delay post-start tasks until the server has ack'd.
@@ -314,7 +314,7 @@ class Driver(object):
 
     def stop(self):
         if self._server_process:
-            self._server_process.stop(self._port.driver_stop_timeout())
+            self._server_process.stop()
             self._server_process = None
             if self._profiler:
                 self._profiler.profile_after_exit()
@@ -323,24 +323,18 @@ class Driver(object):
             self._port._filesystem.rmtree(str(self._driver_tempdir))
             self._driver_tempdir = None
 
+        self._current_cmd_line = None
+
     def cmd_line(self, pixel_tests, per_test_args):
         cmd = self._command_wrapper(self._port.get_option('wrapper'))
         cmd.append(self._port._path_to_driver())
-        if self._port.get_option('gc_between_tests'):
-            cmd.append('--gc-between-tests')
-        if self._port.get_option('complex_text'):
-            cmd.append('--complex-text')
-        if self._port.get_option('threaded'):
-            cmd.append('--threaded')
         if self._no_timeout:
             cmd.append('--no-timeout')
-        # FIXME: We need to pass --timeout=SECONDS to WebKitTestRunner for WebKit2.
-
         cmd.extend(self._port.get_option('additional_drt_flag', []))
         cmd.extend(self._port.additional_drt_flag())
-
+        if self._port.get_option('enable_leak_detection'):
+            cmd.append('--enable-leak-detection')
         cmd.extend(per_test_args)
-
         cmd.append('-')
         return cmd
 
@@ -362,10 +356,18 @@ class Driver(object):
             _log.debug('%s crash, pid = %s, error_line = %s' % (self._crashed_process_name, str(pid), error_line))
             if error_line.startswith("#PROCESS UNRESPONSIVE - "):
                 self._subprocess_was_unresponsive = True
+                self._port.sample_process(self._crashed_process_name, self._crashed_pid)
                 # We want to show this since it's not a regular crash and probably we don't have a crash log.
                 self.error_from_test += error_line
             return True
         return self.has_crashed()
+
+    def _check_for_leak(self, error_line):
+        if error_line.startswith("#LEAK - "):
+            self._leaked = True
+            match = re.match('#LEAK - (\S+) pid (\d+) (.+)\n', error_line)
+            self._leak_log = match.group(3)
+        return self._leaked
 
     def _command_from_driver_input(self, driver_input):
         # FIXME: performance tests pass in full URLs instead of test names.
@@ -381,6 +383,8 @@ class Driver(object):
         assert not driver_input.image_hash or driver_input.should_run_pixel_test
 
         # ' is the separator between arguments.
+        if self._port.supports_per_test_timeout():
+            command += "'--timeout'%s" % driver_input.timeout
         if driver_input.should_run_pixel_test:
             command += "'--pixel-test"
         if driver_input.image_hash:
@@ -429,6 +433,9 @@ class Driver(object):
     def _strip_eof(self, line):
         if line and line.endswith("#EOF\n"):
             return line[:-5], True
+        if line and line.endswith("#EOF\r\n"):
+            _log.error("Got a CRLF-terminated #EOF - this is a driver bug.")
+            return line[:-6], True
         return line, False
 
     def _read_block(self, deadline, wait_for_stderr_eof=False):
@@ -466,10 +473,16 @@ class Driver(object):
                 # FIXME: Unlike HTTP, DRT dumps the content right after printing a Content-Length header.
                 # Don't wait until we're done with headers, just read the binary blob right now.
                 if content_length_before_header_check != block._content_length:
-                    block.content = self._server_process.read_stdout(deadline, block._content_length)
+                    if block._content_length > 0:
+                        block.content = self._server_process.read_stdout(deadline, block._content_length)
+                    else:
+                        _log.error("Received content of type %s with Content-Length of 0!  This indicates a bug in %s.",
+                                   block.content_type, self._server_process.name())
 
             if err_line:
                 if self._check_for_driver_crash(err_line):
+                    break
+                if self._check_for_leak(err_line):
                     break
                 self.error_from_test += err_line
 
@@ -494,73 +507,3 @@ class ContentBlock(object):
             self.decoded_content = base64.b64decode(self.content)
         else:
             self.decoded_content = self.content
-
-class DriverProxy(object):
-    """A wrapper for managing two Driver instances, one with pixel tests and
-    one without. This allows us to handle plain text tests and ref tests with a
-    single driver."""
-
-    def __init__(self, port, worker_number, driver_instance_constructor, pixel_tests, no_timeout):
-        self._port = port
-        self._worker_number = worker_number
-        self._driver_instance_constructor = driver_instance_constructor
-        self._no_timeout = no_timeout
-
-        # FIXME: We shouldn't need to create a driver until we actually run a test.
-        self._driver = self._make_driver(pixel_tests)
-        self._running_drivers = {}
-        self._running_drivers[self._cmd_line_as_key(pixel_tests, [])] = self._driver
-
-    def _make_driver(self, pixel_tests):
-        return self._driver_instance_constructor(self._port, self._worker_number, pixel_tests, self._no_timeout)
-
-    # FIXME: this should be a @classmethod (or implemented on Port instead).
-    def is_http_test(self, test_name):
-        return self._driver.is_http_test(test_name)
-
-    # FIXME: this should be a @classmethod (or implemented on Port instead).
-    def test_to_uri(self, test_name):
-        return self._driver.test_to_uri(test_name)
-
-    # FIXME: this should be a @classmethod (or implemented on Port instead).
-    def uri_to_test(self, uri):
-        return self._driver.uri_to_test(uri)
-
-    def run_test(self, driver_input, stop_when_done):
-        base = self._port.lookup_virtual_test_base(driver_input.test_name)
-        if base:
-            virtual_driver_input = copy.copy(driver_input)
-            virtual_driver_input.test_name = base
-            virtual_driver_input.args = self._port.lookup_virtual_test_args(driver_input.test_name)
-            return self.run_test(virtual_driver_input, stop_when_done)
-
-        pixel_tests_needed = driver_input.should_run_pixel_test
-        cmd_line_key = self._cmd_line_as_key(pixel_tests_needed, driver_input.args)
-        if not cmd_line_key in self._running_drivers:
-            self._running_drivers[cmd_line_key] = self._make_driver(pixel_tests_needed)
-
-        return self._running_drivers[cmd_line_key].run_test(driver_input, stop_when_done)
-
-    def start(self):
-        # FIXME: Callers shouldn't normally call this, since this routine
-        # may not be specifying the correct combination of pixel test and
-        # per_test args.
-        #
-        # The only reason we have this routine at all is so the perftestrunner
-        # can pause before running a test; it might be better to push that
-        # into run_test() directly.
-        self._driver.start(self._port.get_option('pixel_tests'), [])
-
-    def has_crashed(self):
-        return any(driver.has_crashed() for driver in self._running_drivers.values())
-
-    def stop(self):
-        for driver in self._running_drivers.values():
-            driver.stop()
-
-    # FIXME: this should be a @classmethod (or implemented on Port instead).
-    def cmd_line(self, pixel_tests=None, per_test_args=None):
-        return self._driver.cmd_line(pixel_tests, per_test_args or [])
-
-    def _cmd_line_as_key(self, pixel_tests, per_test_args):
-        return ' '.join(self.cmd_line(pixel_tests, per_test_args))

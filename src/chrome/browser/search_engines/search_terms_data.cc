@@ -4,17 +4,23 @@
 
 #include "chrome/browser/search_engines/search_terms_data.h"
 
+#include "base/command_line.h"
 #include "base/logging.h"
 #include "base/metrics/field_trial.h"
-#include "base/string_number_conversions.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/browser_process.h"
 #include "chrome/browser/google/google_url_tracker.h"
 #include "chrome/browser/google/google_util.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/browser/ui/browser_instant_controller.h"
-#include "chrome/browser/ui/search/search.h"
+#include "chrome/browser/search/search.h"
+#include "chrome/browser/sync/glue/device_info.h"
+#include "chrome/browser/themes/theme_service.h"
+#include "chrome/browser/themes/theme_service_factory.h"
+#include "chrome/common/chrome_switches.h"
+#include "chrome/common/pref_names.h"
 #include "content/public/browser/browser_thread.h"
-#include "googleurl/src/gurl.h"
+#include "sync/protocol/sync.pb.h"
+#include "url/gurl.h"
 
 #if defined(ENABLE_RLZ)
 #include "chrome/browser/rlz/rlz.h"
@@ -56,19 +62,23 @@ std::string SearchTermsData::GetApplicationLocale() const {
   return "en";
 }
 
-string16 SearchTermsData::GetRlzParameterValue() const {
-  return string16();
+base::string16 SearchTermsData::GetRlzParameterValue(bool from_app_list) const {
+  return base::string16();
 }
 
 std::string SearchTermsData::GetSearchClient() const {
   return std::string();
 }
 
-std::string SearchTermsData::InstantEnabledParam() const {
+std::string SearchTermsData::GetSuggestClient() const {
   return std::string();
 }
 
-std::string SearchTermsData::InstantExtendedEnabledParam() const {
+std::string SearchTermsData::GetSuggestRequestIdentifier() const {
+  return std::string();
+}
+
+std::string SearchTermsData::NTPIsThemedParam() const {
   return std::string();
 }
 
@@ -77,31 +87,35 @@ std::string* UIThreadSearchTermsData::google_base_url_ = NULL;
 
 UIThreadSearchTermsData::UIThreadSearchTermsData(Profile* profile)
     : profile_(profile) {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
 }
 
 std::string UIThreadSearchTermsData::GoogleBaseURLValue() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
   if (google_base_url_)
     return *google_base_url_;
+  GURL base_url(google_util::CommandLineGoogleBaseURL());
+  if (base_url.is_valid())
+    return base_url.spec();
   return profile_ ? GoogleURLTracker::GoogleURL(profile_).spec() :
       SearchTermsData::GoogleBaseURLValue();
 }
 
 std::string UIThreadSearchTermsData::GetApplicationLocale() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
   return g_browser_process->GetApplicationLocale();
 }
 
 // Android implementations are located in search_terms_data_android.cc.
 #if !defined(OS_ANDROID)
-string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+base::string16 UIThreadSearchTermsData::GetRlzParameterValue(
+    bool from_app_list) const {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
-  string16 rlz_string;
+  base::string16 rlz_string;
 #if defined(ENABLE_RLZ)
   // For organic brandcodes do not use rlz at all. Empty brandcode usually
   // means a chromium install. This is ok.
@@ -111,7 +125,12 @@ string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
     // This call will return false the first time(s) it is called until the
     // value has been cached. This normally would mean that at most one omnibox
     // search might not send the RLZ data but this is not really a problem.
-    RLZTracker::GetAccessPointRlz(RLZTracker::CHROME_OMNIBOX, &rlz_string);
+    rlz_lib::AccessPoint access_point = RLZTracker::CHROME_OMNIBOX;
+#if !defined(OS_IOS)
+    if (from_app_list)
+      access_point = RLZTracker::CHROME_APP_LIST;
+#endif
+    RLZTracker::GetAccessPointRlz(access_point, &rlz_string);
   }
 #endif
   return rlz_string;
@@ -121,36 +140,61 @@ string16 UIThreadSearchTermsData::GetRlzParameterValue() const {
 // search client string.  There is already a unit test in place for Android
 // called TemplateURLTest::SearchClient.
 std::string UIThreadSearchTermsData::GetSearchClient() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
       BrowserThread::CurrentlyOn(BrowserThread::UI));
   return std::string();
 }
 #endif
 
-std::string UIThreadSearchTermsData::InstantEnabledParam() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (profile_) {
-    uint32 instant_extended_api_version =
-        chrome::search::EmbeddedSearchPageVersion(profile_);
-    if (instant_extended_api_version == 0 &&
-        chrome::BrowserInstantController::IsInstantEnabled(profile_))
-      return "ion=1&";
-  }
-  return std::string();
+std::string UIThreadSearchTermsData::GetSuggestClient() const {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  return device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE ?
+    "chrome" : "chrome-omni";
+#else
+  return chrome::IsInstantExtendedAPIEnabled() ? "chrome-omni" : "chrome";
+#endif
 }
 
-std::string UIThreadSearchTermsData::InstantExtendedEnabledParam() const {
-  DCHECK(!BrowserThread::IsWellKnownThread(BrowserThread::UI) ||
-         BrowserThread::CurrentlyOn(BrowserThread::UI));
-  if (profile_) {
-    uint32 instant_extended_api_version =
-        chrome::search::EmbeddedSearchPageVersion(profile_);
-    if (instant_extended_api_version != 0) {
-      return std::string(google_util::kInstantExtendedAPIParam) + "=" +
-          base::Uint64ToString(instant_extended_api_version) + "&";
+std::string UIThreadSearchTermsData::GetSuggestRequestIdentifier() const {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
+      BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(OS_ANDROID)
+  sync_pb::SyncEnums::DeviceType device_type =
+      browser_sync::DeviceInfo::GetLocalDeviceType();
+  if (device_type == sync_pb::SyncEnums_DeviceType_TYPE_PHONE) {
+    if (base::CommandLine::ForCurrentProcess()->HasSwitch(
+            switches::kEnableAnswersInSuggest)) {
+      return "chrome-mobile-ext-ansg";
+    } else {
+      return "chrome-mobile-ext";
     }
   }
+  return "chrome-ext";
+#else
+  return "chrome-ext";
+#endif
+}
+
+std::string UIThreadSearchTermsData::NTPIsThemedParam() const {
+  DCHECK(!BrowserThread::IsThreadInitialized(BrowserThread::UI) ||
+         BrowserThread::CurrentlyOn(BrowserThread::UI));
+#if defined(ENABLE_THEMES)
+  if (!chrome::IsInstantExtendedAPIEnabled())
+    return std::string();
+
+  // TODO(dhollowa): Determine fraction of custom themes that don't affect the
+  // NTP background and/or color.
+  ThemeService* theme_service = ThemeServiceFactory::GetForProfile(profile_);
+  // NTP is considered themed if the theme is not default and not native (GTK+).
+  if (theme_service && !theme_service->UsingDefaultTheme() &&
+      !theme_service->UsingNativeTheme())
+    return "es_th=1&";
+#endif  // defined(ENABLE_THEMES)
+
   return std::string();
 }
 

@@ -7,10 +7,10 @@
 #include "base/callback.h"
 #include "base/logging.h"
 #include "base/pickle.h"
-#include "chrome/common/extensions/extension_messages.h"
 #include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "content/public/browser/web_contents_observer.h"
+#include "extensions/common/extension_messages.h"
 #include "ipc/ipc_message.h"
 #include "ipc/ipc_message_macros.h"
 
@@ -64,9 +64,9 @@ class Handler : public content::WebContentsObserver {
     return true;
   }
 
-  virtual void WebContentsDestroyed(content::WebContents* tab) OVERRIDE {
+  virtual void WebContentsDestroyed() OVERRIDE {
     base::ListValue val;
-    callback_.Run(kRendererDestroyed, -1, GURL(""), val);
+    callback_.Run(kRendererDestroyed, -1, GURL(std::string()), val);
     delete this;
   }
 
@@ -76,7 +76,7 @@ class Handler : public content::WebContentsObserver {
                              int32 on_page_id,
                              const GURL& on_url,
                              const base::ListValue& script_result) {
-    if (script_observers_ && error.empty()) {
+    if (script_observers_.get() && error.empty()) {
       TabHelper::ScriptExecutionObserver::ExecutingScriptsMap id_map;
       id_map[extension_id_] = std::set<std::string>();
       FOR_EACH_OBSERVER(TabHelper::ScriptExecutionObserver, *script_observers_,
@@ -108,14 +108,18 @@ ScriptExecutor::ScriptExecutor(
 
 ScriptExecutor::~ScriptExecutor() {}
 
-void ScriptExecutor::ExecuteScript(
-    const std::string& extension_id,
-    ScriptExecutor::ScriptType script_type,
-    const std::string& code,
-    ScriptExecutor::FrameScope frame_scope,
-    UserScript::RunLocation run_at,
-    ScriptExecutor::WorldType world_type,
-    const ExecuteScriptCallback& callback) {
+void ScriptExecutor::ExecuteScript(const std::string& extension_id,
+                                   ScriptExecutor::ScriptType script_type,
+                                   const std::string& code,
+                                   ScriptExecutor::FrameScope frame_scope,
+                                   UserScript::RunLocation run_at,
+                                   ScriptExecutor::WorldType world_type,
+                                   ScriptExecutor::ProcessType process_type,
+                                   const GURL& webview_src,
+                                   const GURL& file_url,
+                                   bool user_gesture,
+                                   ScriptExecutor::ResultType result_type,
+                                   const ExecuteScriptCallback& callback) {
   ExtensionMsg_ExecuteCode_Params params;
   params.request_id = next_request_id_++;
   params.extension_id = extension_id;
@@ -124,6 +128,11 @@ void ScriptExecutor::ExecuteScript(
   params.all_frames = (frame_scope == ALL_FRAMES);
   params.run_at = static_cast<int>(run_at);
   params.in_main_world = (world_type == MAIN_WORLD);
+  params.is_web_view = (process_type == WEB_VIEW_PROCESS);
+  params.webview_src = webview_src;
+  params.file_url = file_url;
+  params.wants_result = (result_type == JSON_SERIALIZED_RESULT);
+  params.user_gesture = user_gesture;
 
   // Handler handles IPCs and deletes itself on completion.
   new Handler(script_observers_, web_contents_, params, callback);

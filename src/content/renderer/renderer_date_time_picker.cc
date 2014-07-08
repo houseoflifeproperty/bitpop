@@ -4,21 +4,49 @@
 
 #include "content/renderer/renderer_date_time_picker.h"
 
+#include "base/strings/string_util.h"
 #include "content/common/view_messages.h"
+#include "content/renderer/date_time_suggestion_builder.h"
 #include "content/renderer/render_view_impl.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserCompletion.h"
+#include "third_party/WebKit/public/web/WebDateTimeChooserParams.h"
+#include "third_party/WebKit/public/web/WebDateTimeInputType.h"
+#include "ui/base/ime/text_input_type.h"
 
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserCompletion.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeChooserParams.h"
-#include "third_party/WebKit/Source/WebKit/chromium/public/WebDateTimeInputType.h"
+using blink::WebString;
 
 namespace content {
 
-using WebKit::WebString;
+static ui::TextInputType ToTextInputType(int type) {
+  switch (type) {
+    case blink::WebDateTimeInputTypeDate:
+      return ui::TEXT_INPUT_TYPE_DATE;
+      break;
+    case blink::WebDateTimeInputTypeDateTime:
+      return ui::TEXT_INPUT_TYPE_DATE_TIME;
+      break;
+    case blink::WebDateTimeInputTypeDateTimeLocal:
+      return ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL;
+      break;
+    case blink::WebDateTimeInputTypeMonth:
+      return ui::TEXT_INPUT_TYPE_MONTH;
+      break;
+    case blink::WebDateTimeInputTypeTime:
+      return ui::TEXT_INPUT_TYPE_TIME;
+      break;
+    case blink::WebDateTimeInputTypeWeek:
+      return ui::TEXT_INPUT_TYPE_WEEK;
+      break;
+    case blink::WebDateTimeInputTypeNone:
+    default:
+      return ui::TEXT_INPUT_TYPE_NONE;
+  }
+}
 
 RendererDateTimePicker::RendererDateTimePicker(
     RenderViewImpl* sender,
-    const WebKit::WebDateTimeChooserParams& params,
-    WebKit::WebDateTimeChooserCompletion* completion)
+    const blink::WebDateTimeChooserParams& params,
+    blink::WebDateTimeChooserCompletion* completion)
     : RenderViewObserver(sender),
       chooser_params_(params),
       chooser_completion_(completion) {
@@ -27,30 +55,18 @@ RendererDateTimePicker::RendererDateTimePicker(
 RendererDateTimePicker::~RendererDateTimePicker() {
 }
 
-static ui::TextInputType ExtractType(
-    const WebKit::WebDateTimeChooserParams& source) {
-
-  if (source.type == WebKit::WebDateTimeInputTypeDate)
-    return ui::TEXT_INPUT_TYPE_DATE;
-  if (source.type == WebKit::WebDateTimeInputTypeDateTime)
-    return ui::TEXT_INPUT_TYPE_DATE_TIME;
-  if (source.type == WebKit::WebDateTimeInputTypeDateTimeLocal)
-    return ui::TEXT_INPUT_TYPE_DATE_TIME_LOCAL;
-  if (source.type == WebKit::WebDateTimeInputTypeMonth)
-    return ui::TEXT_INPUT_TYPE_MONTH;
-  if (source.type == WebKit::WebDateTimeInputTypeTime)
-    return ui::TEXT_INPUT_TYPE_TIME;
-  if (source.type == WebKit::WebDateTimeInputTypeWeek)
-    return ui::TEXT_INPUT_TYPE_WEEK;
-  return ui::TEXT_INPUT_TYPE_NONE;
-}
-
 bool RendererDateTimePicker::Open() {
-  ViewHostMsg_TextInputState_Params p;
-  p.type = ExtractType(chooser_params_);
-  p.value = chooser_params_.currentValue.utf8();
-  p.show_ime_if_needed = true;
-  Send(new ViewHostMsg_TextInputStateChanged(routing_id(), p));
+  ViewHostMsg_DateTimeDialogValue_Params message;
+  message.dialog_type = ToTextInputType(chooser_params_.type);
+  message.dialog_value = chooser_params_.doubleValue;
+  message.minimum = chooser_params_.minimum;
+  message.maximum = chooser_params_.maximum;
+  message.step = chooser_params_.step;
+  for (size_t i = 0; i < chooser_params_.suggestions.size(); i++) {
+    message.suggestions.push_back(
+        DateTimeSuggestionBuilder::Build(chooser_params_.suggestions[i]));
+  }
+  Send(new ViewHostMsg_OpenDateTimeDialog(routing_id(), message));
   return true;
 }
 
@@ -65,14 +81,20 @@ bool RendererDateTimePicker::OnMessageReceived(
   return handled;
 }
 
-void RendererDateTimePicker::OnReplaceDateTime(const string16& new_date) {
+void RendererDateTimePicker::OnReplaceDateTime(double value) {
   if (chooser_completion_)
-    chooser_completion_->didChooseValue(new_date);
+    chooser_completion_->didChooseValue(value);
+#if defined(OS_ANDROID)
+  static_cast<RenderViewImpl*>(render_view())->DismissDateTimeDialog();
+#endif
 }
 
 void RendererDateTimePicker::OnCancel() {
   if (chooser_completion_)
     chooser_completion_->didCancelChooser();
+#if defined(OS_ANDROID)
+  static_cast<RenderViewImpl*>(render_view())->DismissDateTimeDialog();
+#endif
 }
 
 }  // namespace content

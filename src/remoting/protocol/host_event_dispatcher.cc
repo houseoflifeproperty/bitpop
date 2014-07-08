@@ -4,7 +4,7 @@
 
 #include "remoting/protocol/host_event_dispatcher.h"
 
-#include "base/bind_helpers.h"
+#include "base/callback_helpers.h"
 #include "net/socket/stream_socket.h"
 #include "remoting/base/constants.h"
 #include "remoting/proto/event.pb.h"
@@ -42,6 +42,13 @@ void HostEventDispatcher::OnMessageReceived(
       input_stub_->InjectKeyEvent(event);
     } else {
       LOG(WARNING) << "Received invalid key event.";
+    }
+  } else if (message->has_text_event()) {
+    const TextEvent& event = message->text_event();
+    if (event.has_text()) {
+      input_stub_->InjectTextEvent(event);
+    } else {
+      LOG(WARNING) << "Received invalid text event.";
     }
   } else if (message->has_mouse_event()) {
     input_stub_->InjectMouseEvent(message->mouse_event());

@@ -6,59 +6,46 @@
 
 namespace cc {
 
-bool FakeProxy::compositeAndReadback(void *pixels, const gfx::Rect&)
-{
-    return true;
+void FakeProxy::SetLayerTreeHost(LayerTreeHost* host) {
+  layer_tree_host_ = host;
 }
 
-bool FakeProxy::isStarted() const
-{
-    return true;
+bool FakeProxy::CompositeAndReadback(void* pixels, const gfx::Rect& rect) {
+  return true;
 }
 
-bool FakeProxy::initializeOutputSurface()
-{
-    return true;
+bool FakeProxy::IsStarted() const { return true; }
+
+void FakeProxy::CreateAndInitializeOutputSurface() {
+  DCHECK(layer_tree_host_);
+  layer_tree_host_->OnCreateAndInitializeOutputSurfaceAttempted(true);
 }
 
-bool FakeProxy::initializeRenderer()
-{
-    return true;
+const RendererCapabilities& FakeProxy::GetRendererCapabilities() const {
+  return capabilities_;
 }
 
-bool FakeProxy::recreateOutputSurface()
-{
-    return true;
+RendererCapabilities& FakeProxy::GetRendererCapabilities() {
+  return capabilities_;
 }
 
-const RendererCapabilities& FakeProxy::rendererCapabilities() const
-{
-    return m_capabilities;
+bool FakeProxy::BeginMainFrameRequested() const { return false; }
+
+bool FakeProxy::CommitRequested() const { return false; }
+
+size_t FakeProxy::MaxPartialTextureUpdates() const {
+  return max_partial_texture_updates_;
 }
 
-RendererCapabilities& FakeProxy::rendererCapabilities()
-{
-    return m_capabilities;
+void FakeProxy::SetMaxPartialTextureUpdates(size_t max) {
+  max_partial_texture_updates_ = max;
 }
 
-bool FakeProxy::commitRequested() const
-{
-    return false;
-}
+bool FakeProxy::CommitPendingForTesting() { return false; }
 
-size_t FakeProxy::maxPartialTextureUpdates() const
-{
-    return m_maxPartialTextureUpdates;
-}
-
-void FakeProxy::setMaxPartialTextureUpdates(size_t max)
-{
-    m_maxPartialTextureUpdates = max;
-}
-
-bool FakeProxy::commitPendingForTesting()
-{
-    return false;
+scoped_ptr<base::Value> FakeProxy::AsValue() const {
+  scoped_ptr<base::DictionaryValue> state(new base::DictionaryValue());
+  return state.PassAs<base::Value>();
 }
 
 }  // namespace cc

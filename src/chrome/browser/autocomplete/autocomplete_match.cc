@@ -6,12 +6,11 @@
 
 #include "base/i18n/time_formatting.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
-#include "base/string_util.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/time.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/string_number_conversions.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
+#include "base/time/time.h"
 #include "chrome/browser/autocomplete/autocomplete_provider.h"
 #include "chrome/browser/search_engines/template_url.h"
 #include "chrome/browser/search_engines/template_url_service.h"
@@ -32,7 +31,7 @@ bool IsTrivialClassification(const ACMatchClassifications& classifications) {
 // AutocompleteMatch ----------------------------------------------------------
 
 // static
-const char16 AutocompleteMatch::kInvalidChars[] = {
+const base::char16 AutocompleteMatch::kInvalidChars[] = {
   '\n', '\r', '\t',
   0x2028,  // Line separator
   0x2029,  // Paragraph separator
@@ -44,10 +43,10 @@ AutocompleteMatch::AutocompleteMatch()
       relevance(0),
       typed_count(-1),
       deletable(false),
-      inline_autocomplete_offset(string16::npos),
+      allowed_to_be_default_match(false),
       transition(content::PAGE_TRANSITION_GENERATED),
       is_history_what_you_typed_match(false),
-      type(SEARCH_WHAT_YOU_TYPED),
+      type(AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED),
       starred(false),
       from_previous(false) {
 }
@@ -60,7 +59,7 @@ AutocompleteMatch::AutocompleteMatch(AutocompleteProvider* provider,
       relevance(relevance),
       typed_count(-1),
       deletable(deletable),
-      inline_autocomplete_offset(string16::npos),
+      allowed_to_be_default_match(false),
       transition(content::PAGE_TRANSITION_TYPED),
       is_history_what_you_typed_match(false),
       type(type),
@@ -74,7 +73,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       typed_count(match.typed_count),
       deletable(match.deletable),
       fill_into_edit(match.fill_into_edit),
-      inline_autocomplete_offset(match.inline_autocomplete_offset),
+      inline_autocompletion(match.inline_autocompletion),
+      allowed_to_be_default_match(match.allowed_to_be_default_match),
       destination_url(match.destination_url),
       stripped_destination_url(match.stripped_destination_url),
       contents(match.contents),
@@ -92,7 +92,8 @@ AutocompleteMatch::AutocompleteMatch(const AutocompleteMatch& match)
       search_terms_args(match.search_terms_args.get() ?
           new TemplateURLRef::SearchTermsArgs(*match.search_terms_args) :
           NULL),
-      additional_info(match.additional_info) {
+      additional_info(match.additional_info),
+      duplicate_matches(match.duplicate_matches) {
 }
 
 AutocompleteMatch::~AutocompleteMatch() {
@@ -108,7 +109,8 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   typed_count = match.typed_count;
   deletable = match.deletable;
   fill_into_edit = match.fill_into_edit;
-  inline_autocomplete_offset = match.inline_autocomplete_offset;
+  inline_autocompletion = match.inline_autocompletion;
+  allowed_to_be_default_match = match.allowed_to_be_default_match;
   destination_url = match.destination_url;
   stripped_destination_url = match.stripped_destination_url;
   contents = match.contents;
@@ -126,29 +128,8 @@ AutocompleteMatch& AutocompleteMatch::operator=(
   search_terms_args.reset(match.search_terms_args.get() ?
       new TemplateURLRef::SearchTermsArgs(*match.search_terms_args) : NULL);
   additional_info = match.additional_info;
+  duplicate_matches = match.duplicate_matches;
   return *this;
-}
-
-// static
-std::string AutocompleteMatch::TypeToString(Type type) {
-  const char* strings[] = {
-    "url-what-you-typed",
-    "history-url",
-    "history-title",
-    "history-body",
-    "history-keyword",
-    "navsuggest",
-    "search-what-you-typed",
-    "search-history",
-    "search-suggest",
-    "search-other-engine",
-    "extension-app",
-    "contact",
-    "bookmark-title",
-  };
-  COMPILE_ASSERT(arraysize(strings) == NUM_TYPES,
-                 strings_array_must_match_type_enum);
-  return strings[type];
 }
 
 // static
@@ -164,13 +145,16 @@ int AutocompleteMatch::TypeToIcon(Type type) {
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
+    IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_EXTENSION_APP,
-    // ContactProvider isn't used by the omnibox, so this icon is never
-    // displayed.
     IDR_OMNIBOX_SEARCH,
     IDR_OMNIBOX_HTTP,
+    IDR_OMNIBOX_HTTP,
   };
-  COMPILE_ASSERT(arraysize(icons) == NUM_TYPES,
+  COMPILE_ASSERT(arraysize(icons) == AutocompleteMatchType::NUM_TYPES,
                  icons_array_must_match_type_enum);
   return icons[type];
 }
@@ -194,19 +178,6 @@ bool AutocompleteMatch::MoreRelevant(const AutocompleteMatch& elem1,
 }
 
 // static
-bool AutocompleteMatch::DestinationSortFunc(const AutocompleteMatch& elem1,
-                                            const AutocompleteMatch& elem2) {
-  // Sort identical destination_urls together.  Place the most relevant matches
-  // first, so that when we call std::unique(), these are the ones that get
-  // preserved.
-  if (DestinationsEqual(elem1, elem2) ||
-      (elem1.stripped_destination_url.is_empty() &&
-       elem2.stripped_destination_url.is_empty()))
-    return MoreRelevant(elem1, elem2);
-  return elem1.stripped_destination_url < elem2.stripped_destination_url;
-}
-
-// static
 bool AutocompleteMatch::DestinationsEqual(const AutocompleteMatch& elem1,
                                           const AutocompleteMatch& elem2) {
   if (elem1.stripped_destination_url.is_empty() &&
@@ -217,8 +188,8 @@ bool AutocompleteMatch::DestinationsEqual(const AutocompleteMatch& elem1,
 
 // static
 void AutocompleteMatch::ClassifyMatchInString(
-    const string16& find_text,
-    const string16& text,
+    const base::string16& find_text,
+    const base::string16& text,
     int style,
     ACMatchClassifications* classification) {
   ClassifyLocationInString(text.find(find_text), find_text.length(),
@@ -245,7 +216,7 @@ void AutocompleteMatch::ClassifyLocationInString(
   }
 
   // Mark matching portion of string.
-  if (match_location == string16::npos) {
+  if (match_location == base::string16::npos) {
     // No match, above classification will suffice for whole string.
     return;
   }
@@ -341,21 +312,30 @@ void AutocompleteMatch::AddLastClassificationIfNecessary(
 }
 
 // static
-string16 AutocompleteMatch::SanitizeString(const string16& text) {
+base::string16 AutocompleteMatch::SanitizeString(const base::string16& text) {
   // NOTE: This logic is mirrored by |sanitizeString()| in
-  // schema_generated_bindings.js.
-  string16 result;
-  TrimWhitespace(text, TRIM_LEADING, &result);
-  RemoveChars(result, kInvalidChars, &result);
+  // omnibox_custom_bindings.js.
+  base::string16 result;
+  base::TrimWhitespace(text, base::TRIM_LEADING, &result);
+  base::RemoveChars(result, kInvalidChars, &result);
   return result;
 }
 
 // static
 bool AutocompleteMatch::IsSearchType(Type type) {
-  return type == SEARCH_WHAT_YOU_TYPED ||
-         type == SEARCH_HISTORY ||
-         type == SEARCH_SUGGEST ||
-         type == SEARCH_OTHER_ENGINE;
+  return type == AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED ||
+         type == AutocompleteMatchType::SEARCH_HISTORY ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST ||
+         type == AutocompleteMatchType::SEARCH_OTHER_ENGINE ||
+         IsSpecializedSearchType(type);
+}
+
+// static
+bool AutocompleteMatch::IsSpecializedSearchType(Type type) {
+  return type == AutocompleteMatchType::SEARCH_SUGGEST_ENTITY ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_INFINITE ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PERSONALIZED ||
+         type == AutocompleteMatchType::SEARCH_SUGGEST_PROFILE;
 }
 
 void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
@@ -370,7 +350,7 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   // provider matches.
   TemplateURL* template_url = GetTemplateURL(profile, true);
   if (template_url != NULL && template_url->SupportsReplacement()) {
-    string16 search_terms;
+    base::string16 search_terms;
     if (template_url->ExtractSearchTermsFromURL(stripped_destination_url,
                                                 &search_terms)) {
       stripped_destination_url =
@@ -397,10 +377,9 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
   }
 
   // Replace https protocol with http protocol.
-  if (stripped_destination_url.SchemeIs(chrome::kHttpsScheme)) {
-    replacements.SetScheme(
-        chrome::kHttpScheme,
-        url_parse::Component(0, strlen(chrome::kHttpScheme)));
+  if (stripped_destination_url.SchemeIs(url::kHttpsScheme)) {
+    replacements.SetScheme(url::kHttpScheme,
+                           url::Component(0, strlen(url::kHttpScheme)));
     needs_replacement = true;
   }
 
@@ -410,19 +389,19 @@ void AutocompleteMatch::ComputeStrippedDestinationURL(Profile* profile) {
 }
 
 void AutocompleteMatch::GetKeywordUIState(Profile* profile,
-                                          string16* keyword,
+                                          base::string16* keyword,
                                           bool* is_keyword_hint) const {
   *is_keyword_hint = associated_keyword.get() != NULL;
   keyword->assign(*is_keyword_hint ? associated_keyword->keyword :
       GetSubstitutingExplicitlyInvokedKeyword(profile));
 }
 
-string16 AutocompleteMatch::GetSubstitutingExplicitlyInvokedKeyword(
+base::string16 AutocompleteMatch::GetSubstitutingExplicitlyInvokedKeyword(
     Profile* profile) const {
   if (transition != content::PAGE_TRANSITION_KEYWORD)
-    return string16();
+    return base::string16();
   const TemplateURL* t_url = GetTemplateURL(profile, false);
-  return (t_url && t_url->SupportsReplacement()) ? keyword : string16();
+  return (t_url && t_url->SupportsReplacement()) ? keyword : base::string16();
 }
 
 TemplateURL* AutocompleteMatch::GetTemplateURL(
@@ -443,20 +422,49 @@ TemplateURL* AutocompleteMatch::GetTemplateURL(
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              const std::string& value) {
-  DCHECK(property.size());
-  DCHECK(value.size());
+  DCHECK(!property.empty());
+  DCHECK(!value.empty());
   additional_info[property] = value;
 }
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              int value) {
-  RecordAdditionalInfo(property, StringPrintf("%d", value));
+  RecordAdditionalInfo(property, base::IntToString(value));
 }
 
 void AutocompleteMatch::RecordAdditionalInfo(const std::string& property,
                                              const base::Time& value) {
   RecordAdditionalInfo(property,
-                       UTF16ToUTF8(base::TimeFormatShortDateAndTime(value)));
+                       base::UTF16ToUTF8(
+                           base::TimeFormatShortDateAndTime(value)));
+}
+
+std::string AutocompleteMatch::GetAdditionalInfo(
+    const std::string& property) const {
+  AdditionalInfo::const_iterator i(additional_info.find(property));
+  return (i == additional_info.end()) ? std::string() : i->second;
+}
+
+bool AutocompleteMatch::IsVerbatimType() const {
+  const bool is_keyword_verbatim_match =
+      (type == AutocompleteMatchType::SEARCH_OTHER_ENGINE &&
+       provider != NULL &&
+       provider->type() == AutocompleteProvider::TYPE_SEARCH);
+  return type == AutocompleteMatchType::SEARCH_WHAT_YOU_TYPED ||
+      type == AutocompleteMatchType::URL_WHAT_YOU_TYPED ||
+      is_keyword_verbatim_match;
+}
+
+bool AutocompleteMatch::SupportsDeletion() const {
+  if (deletable)
+    return true;
+
+  for (ACMatches::const_iterator it(duplicate_matches.begin());
+       it != duplicate_matches.end(); ++it) {
+    if (it->deletable)
+      return true;
+  }
+  return false;
 }
 
 #ifndef NDEBUG
@@ -466,7 +474,7 @@ void AutocompleteMatch::Validate() const {
 }
 
 void AutocompleteMatch::ValidateClassifications(
-    const string16& text,
+    const base::string16& text,
     const ACMatchClassifications& classifications) const {
   if (text.empty()) {
     DCHECK(classifications.empty());

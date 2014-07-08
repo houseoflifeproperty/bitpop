@@ -5,13 +5,14 @@
 #include "chrome/browser/file_select_helper.h"
 
 #include <string>
+#include <utility>
 
 #include "base/bind.h"
 #include "base/file_util.h"
-#include "base/platform_file.h"
-#include "base/string_split.h"
-#include "base/string_util.h"
-#include "base/utf_string_conversions.h"
+#include "base/files/file_enumerator.h"
+#include "base/strings/string_split.h"
+#include "base/strings/string_util.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/platform_util.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
@@ -27,8 +28,8 @@
 #include "content/public/common/file_chooser_params.h"
 #include "grit/generated_resources.h"
 #include "net/base/mime_util.h"
-#include "ui/base/dialogs/selected_file_info.h"
 #include "ui/base/l10n/l10n_util.h"
+#include "ui/shell_dialogs/selected_file_info.h"
 
 using content::BrowserThread;
 using content::FileChooserParams;
@@ -45,32 +46,13 @@ const int kFileSelectEnumerationId = -1;
 
 void NotifyRenderViewHost(RenderViewHost* render_view_host,
                           const std::vector<ui::SelectedFileInfo>& files,
-                          ui::SelectFileDialog::Type dialog_type) {
-  const int kReadFilePermissions =
-      base::PLATFORM_FILE_OPEN |
-      base::PLATFORM_FILE_READ |
-      base::PLATFORM_FILE_EXCLUSIVE_READ |
-      base::PLATFORM_FILE_ASYNC;
-
-  const int kWriteFilePermissions =
-      base::PLATFORM_FILE_CREATE |
-      base::PLATFORM_FILE_CREATE_ALWAYS |
-      base::PLATFORM_FILE_OPEN |
-      base::PLATFORM_FILE_OPEN_ALWAYS |
-      base::PLATFORM_FILE_OPEN_TRUNCATED |
-      base::PLATFORM_FILE_WRITE |
-      base::PLATFORM_FILE_WRITE_ATTRIBUTES |
-      base::PLATFORM_FILE_ASYNC;
-
-  int permissions = kReadFilePermissions;
-  if (dialog_type == ui::SelectFileDialog::SELECT_SAVEAS_FILE)
-    permissions = kWriteFilePermissions;
-  render_view_host->FilesSelectedInChooser(files, permissions);
+                          FileChooserParams::Mode dialog_mode) {
+  render_view_host->FilesSelectedInChooser(files, dialog_mode);
 }
 
 // Converts a list of FilePaths to a list of ui::SelectedFileInfo.
 std::vector<ui::SelectedFileInfo> FilePathListToSelectedFileInfoList(
-    const std::vector<FilePath>& paths) {
+    const std::vector<base::FilePath>& paths) {
   std::vector<ui::SelectedFileInfo> selected_files;
   for (size_t i = 0; i < paths.size(); ++i) {
     selected_files.push_back(
@@ -87,7 +69,7 @@ struct FileSelectHelper::ActiveDirectoryEnumeration {
   scoped_ptr<DirectoryListerDispatchDelegate> delegate_;
   scoped_ptr<net::DirectoryLister> lister_;
   RenderViewHost* rvh_;
-  std::vector<FilePath> results_;
+  std::vector<base::FilePath> results_;
 };
 
 FileSelectHelper::FileSelectHelper(Profile* profile)
@@ -96,7 +78,8 @@ FileSelectHelper::FileSelectHelper(Profile* profile)
       web_contents_(NULL),
       select_file_dialog_(),
       select_file_types_(),
-      dialog_type_(ui::SelectFileDialog::SELECT_OPEN_FILE) {
+      dialog_type_(ui::SelectFileDialog::SELECT_OPEN_FILE),
+      dialog_mode_(FileChooserParams::Open) {
 }
 
 FileSelectHelper::~FileSelectHelper() {
@@ -125,7 +108,7 @@ void FileSelectHelper::DirectoryListerDispatchDelegate::OnListDone(int error) {
   parent_->OnListDone(id_, error);
 }
 
-void FileSelectHelper::FileSelected(const FilePath& path,
+void FileSelectHelper::FileSelected(const base::FilePath& path,
                                     int index, void* params) {
   FileSelectedWithExtraInfo(ui::SelectedFileInfo(path, path), index, params);
 }
@@ -139,22 +122,23 @@ void FileSelectHelper::FileSelectedWithExtraInfo(
 
   profile_->set_last_selected_directory(file.file_path.DirName());
 
-  const FilePath& path = file.local_path;
-  if (dialog_type_ == ui::SelectFileDialog::SELECT_FOLDER) {
+  const base::FilePath& path = file.local_path;
+  if (dialog_type_ == ui::SelectFileDialog::SELECT_UPLOAD_FOLDER) {
     StartNewEnumeration(path, kFileSelectEnumerationId, render_view_host_);
     return;
   }
 
   std::vector<ui::SelectedFileInfo> files;
   files.push_back(file);
-  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+  NotifyRenderViewHost(render_view_host_, files, dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
 }
 
-void FileSelectHelper::MultiFilesSelected(const std::vector<FilePath>& files,
-                                          void* params) {
+void FileSelectHelper::MultiFilesSelected(
+    const std::vector<base::FilePath>& files,
+    void* params) {
   std::vector<ui::SelectedFileInfo> selected_files =
       FilePathListToSelectedFileInfoList(files);
 
@@ -169,7 +153,7 @@ void FileSelectHelper::MultiFilesSelectedWithExtraInfo(
   if (!render_view_host_)
     return;
 
-  NotifyRenderViewHost(render_view_host_, files, dialog_type_);
+  NotifyRenderViewHost(render_view_host_, files, dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
@@ -183,13 +167,13 @@ void FileSelectHelper::FileSelectionCanceled(void* params) {
   // empty vector.
   NotifyRenderViewHost(
       render_view_host_, std::vector<ui::SelectedFileInfo>(),
-      dialog_type_);
+      dialog_mode_);
 
   // No members should be accessed from here on.
   RunFileChooserEnd();
 }
 
-void FileSelectHelper::StartNewEnumeration(const FilePath& path,
+void FileSelectHelper::StartNewEnumeration(const base::FilePath& path,
                                            int request_id,
                                            RenderViewHost* render_view_host) {
   scoped_ptr<ActiveDirectoryEnumeration> entry(new ActiveDirectoryEnumeration);
@@ -215,13 +199,11 @@ void FileSelectHelper::OnListFile(
     const net::DirectoryLister::DirectoryListerData& data) {
   ActiveDirectoryEnumeration* entry = directory_enumerations_[id];
 
-  // Directory upload returns directories via a "." file, so that
-  // empty directories are included.  This util call just checks
-  // the flags in the structure; there's no file I/O going on.
-  if (file_util::FileEnumerator::IsDirectory(data.info))
-    entry->results_.push_back(data.path.Append(FILE_PATH_LITERAL(".")));
-  else
-    entry->results_.push_back(data.path);
+  // Directory upload only cares about files.
+  if (data.info.IsDirectory())
+    return;
+
+  entry->results_.push_back(data.path);
 }
 
 void FileSelectHelper::OnListDone(int id, int error) {
@@ -239,7 +221,7 @@ void FileSelectHelper::OnListDone(int id, int error) {
       FilePathListToSelectedFileInfoList(entry->results_);
 
   if (id == kFileSelectEnumerationId)
-    NotifyRenderViewHost(entry->rvh_, selected_files, dialog_type_);
+    NotifyRenderViewHost(entry->rvh_, selected_files, dialog_mode_);
   else
     entry->rvh_->DirectoryEnumerationFinished(id, entry->results_);
 
@@ -248,10 +230,9 @@ void FileSelectHelper::OnListDone(int id, int error) {
 
 scoped_ptr<ui::SelectFileDialog::FileTypeInfo>
 FileSelectHelper::GetFileTypesFromAcceptType(
-    const std::vector<string16>& accept_types) {
+    const std::vector<base::string16>& accept_types) {
   scoped_ptr<ui::SelectFileDialog::FileTypeInfo> base_file_type(
       new ui::SelectFileDialog::FileTypeInfo());
-  base_file_type->support_gdata = true;
   if (accept_types.empty())
     return base_file_type.Pass();
 
@@ -260,13 +241,14 @@ FileSelectHelper::GetFileTypesFromAcceptType(
       new ui::SelectFileDialog::FileTypeInfo(*base_file_type));
   file_type->include_all_files = true;
   file_type->extensions.resize(1);
-  std::vector<FilePath::StringType>* extensions = &file_type->extensions.back();
+  std::vector<base::FilePath::StringType>* extensions =
+      &file_type->extensions.back();
 
   // Find the corresponding extensions.
   int valid_type_count = 0;
   int description_id = 0;
   for (size_t i = 0; i < accept_types.size(); ++i) {
-    std::string ascii_type = UTF16ToASCII(accept_types[i]);
+    std::string ascii_type = base::UTF16ToASCII(accept_types[i]);
     if (!IsAcceptTypeValid(ascii_type))
       continue;
 
@@ -274,7 +256,7 @@ FileSelectHelper::GetFileTypesFromAcceptType(
     if (ascii_type[0] == '.') {
       // If the type starts with a period it is assumed to be a file extension
       // so we just have to add it to the list.
-      FilePath::StringType ext(ascii_type.begin(), ascii_type.end());
+      base::FilePath::StringType ext(ascii_type.begin(), ascii_type.end());
       extensions->push_back(ext.substr(1));
     } else {
       if (ascii_type == "image/*")
@@ -327,7 +309,7 @@ void FileSelectHelper::RunFileChooser(content::WebContents* tab,
 // static
 void FileSelectHelper::EnumerateDirectory(content::WebContents* tab,
                                           int request_id,
-                                          const FilePath& path) {
+                                          const base::FilePath& path) {
   Profile* profile = Profile::FromBrowserContext(tab->GetBrowserContext());
   // FileSelectHelper will keep itself alive until it sends the result message.
   scoped_refptr<FileSelectHelper> file_select_helper(
@@ -383,7 +365,10 @@ void FileSelectHelper::RunFileChooserOnUIThread(
 
   select_file_dialog_ = ui::SelectFileDialog::Create(
       this, new ChromeSelectFilePolicy(web_contents_));
+  if (!select_file_dialog_)
+    return;
 
+  dialog_mode_ = params.mode;
   switch (params.mode) {
     case FileChooserParams::Open:
       dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_FILE;
@@ -391,8 +376,8 @@ void FileSelectHelper::RunFileChooserOnUIThread(
     case FileChooserParams::OpenMultiple:
       dialog_type_ = ui::SelectFileDialog::SELECT_OPEN_MULTI_FILE;
       break;
-    case FileChooserParams::OpenFolder:
-      dialog_type_ = ui::SelectFileDialog::SELECT_FOLDER;
+    case FileChooserParams::UploadFolder:
+      dialog_type_ = ui::SelectFileDialog::SELECT_UPLOAD_FOLDER;
       break;
     case FileChooserParams::Save:
       dialog_type_ = ui::SelectFileDialog::SELECT_SAVEAS_FILE;
@@ -403,7 +388,7 @@ void FileSelectHelper::RunFileChooserOnUIThread(
       NOTREACHED();
   }
 
-  FilePath default_file_name = params.default_file_name.IsAbsolute() ?
+  base::FilePath default_file_name = params.default_file_name.IsAbsolute() ?
       params.default_file_name :
       profile_->last_selected_directory().Append(params.default_file_name);
 
@@ -412,8 +397,8 @@ void FileSelectHelper::RunFileChooserOnUIThread(
 
 #if defined(OS_ANDROID)
   // Android needs the original MIME types and an additional capture value.
-  std::vector<string16> accept_types(params.accept_types);
-  accept_types.push_back(params.capture);
+  std::pair<std::vector<base::string16>, bool> accept_types =
+      std::make_pair(params.accept_types, params.capture);
 #endif
 
   select_file_dialog_->SelectFile(
@@ -421,9 +406,10 @@ void FileSelectHelper::RunFileChooserOnUIThread(
       params.title,
       default_file_name,
       select_file_types_.get(),
-      select_file_types_.get() && !select_file_types_->extensions.empty() ?
-          1 : 0,  // 1-based index of default extension to show.
-      FILE_PATH_LITERAL(""),
+      select_file_types_.get() && !select_file_types_->extensions.empty()
+          ? 1
+          : 0,  // 1-based index of default extension to show.
+      base::FilePath::StringType(),
       owning_window,
 #if defined(OS_ANDROID)
       &accept_types);
@@ -445,7 +431,7 @@ void FileSelectHelper::RunFileChooserEnd() {
 
 void FileSelectHelper::EnumerateDirectory(int request_id,
                                           RenderViewHost* render_view_host,
-                                          const FilePath& path) {
+                                          const base::FilePath& path) {
 
   // Because this class returns notifications to the RenderViewHost, it is
   // difficult for callers to know how long to keep a reference to this
@@ -493,7 +479,8 @@ bool FileSelectHelper::IsAcceptTypeValid(const std::string& accept_type) {
   std::string unused;
   if (accept_type.length() <= 1 ||
       StringToLowerASCII(accept_type) != accept_type ||
-      TrimWhitespaceASCII(accept_type, TRIM_ALL, &unused) != TRIM_NONE) {
+      base::TrimWhitespaceASCII(accept_type, base::TRIM_ALL, &unused) !=
+          base::TRIM_NONE) {
     return false;
   }
   return true;

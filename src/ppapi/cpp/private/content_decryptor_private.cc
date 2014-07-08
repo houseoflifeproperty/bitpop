@@ -23,10 +23,8 @@ namespace {
 static const char kPPPContentDecryptorInterface[] =
     PPP_CONTENTDECRYPTOR_PRIVATE_INTERFACE;
 
-void GenerateKeyRequest(PP_Instance instance,
-                        PP_Var key_system_arg,
-                        PP_Var type_arg,
-                        PP_Var init_data_arg) {
+void Initialize(PP_Instance instance,
+                PP_Var key_system_arg) {
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
@@ -34,6 +32,19 @@ void GenerateKeyRequest(PP_Instance instance,
 
   pp::Var key_system_var(pp::PASS_REF, key_system_arg);
   if (!key_system_var.is_string())
+    return;
+
+  static_cast<ContentDecryptor_Private*>(object)->Initialize(
+      key_system_var.AsString());
+}
+
+void CreateSession(PP_Instance instance,
+                   uint32_t session_id,
+                   PP_Var type_arg,
+                   PP_Var init_data_arg) {
+  void* object =
+      Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
+  if (!object)
     return;
 
   pp::Var type_var(pp::PASS_REF, type_arg);
@@ -45,54 +56,50 @@ void GenerateKeyRequest(PP_Instance instance,
     return;
   pp::VarArrayBuffer init_data_array_buffer(init_data_var);
 
-  static_cast<ContentDecryptor_Private*>(object)->GenerateKeyRequest(
-      key_system_var.AsString(),
-      type_var.AsString(),
-      init_data_array_buffer);
+  static_cast<ContentDecryptor_Private*>(object)
+      ->CreateSession(session_id, type_var.AsString(), init_data_array_buffer);
 }
 
-void AddKey(PP_Instance instance,
-            PP_Var session_id_arg,
-            PP_Var key_arg,
-            PP_Var init_data_arg) {
+void LoadSession(PP_Instance instance,
+                 uint32_t session_id,
+                 PP_Var web_session_id_arg) {
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
 
-  pp::Var session_id_var(pp::PASS_REF, session_id_arg);
-  if (!session_id_var.is_string())
+  pp::Var web_session_id_var(pp::PASS_REF, web_session_id_arg);
+  if (!web_session_id_var.is_string())
     return;
 
-  pp::Var key_var(pp::PASS_REF, key_arg);
-  if (!key_var.is_array_buffer())
-    return;
-  pp::VarArrayBuffer key(key_var);
-
-  pp::Var init_data_var(pp::PASS_REF, init_data_arg);
-  if (!init_data_var.is_array_buffer())
-    return;
-  pp::VarArrayBuffer init_data(init_data_var);
-
-
-  static_cast<ContentDecryptor_Private*>(object)->AddKey(
-      session_id_var.AsString(),
-      key,
-      init_data);
+  static_cast<ContentDecryptor_Private*>(object)
+      ->LoadSession(session_id, web_session_id_var.AsString());
 }
 
-void CancelKeyRequest(PP_Instance instance, PP_Var session_id_arg) {
+void UpdateSession(PP_Instance instance,
+                   uint32_t session_id,
+                   PP_Var response_arg) {
   void* object =
       Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
   if (!object)
     return;
 
-  pp::Var session_id_var(pp::PASS_REF, session_id_arg);
-  if (!session_id_var.is_string())
+  pp::Var response_var(pp::PASS_REF, response_arg);
+  if (!response_var.is_array_buffer())
+    return;
+  pp::VarArrayBuffer response(response_var);
+
+  static_cast<ContentDecryptor_Private*>(object)
+      ->UpdateSession(session_id, response);
+}
+
+void ReleaseSession(PP_Instance instance, uint32_t session_id) {
+  void* object =
+      Instance::GetPerInstanceObject(instance, kPPPContentDecryptorInterface);
+  if (!object)
     return;
 
-  static_cast<ContentDecryptor_Private*>(object)->CancelKeyRequest(
-      session_id_var.AsString());
+  static_cast<ContentDecryptor_Private*>(object)->ReleaseSession(session_id);
 }
 
 
@@ -184,9 +191,11 @@ void DecryptAndDecode(PP_Instance instance,
 }
 
 const PPP_ContentDecryptor_Private ppp_content_decryptor = {
-  &GenerateKeyRequest,
-  &AddKey,
-  &CancelKeyRequest,
+  &Initialize,
+  &CreateSession,
+  &LoadSession,
+  &UpdateSession,
+  &ReleaseSession,
   &Decrypt,
   &InitializeAudioDecoder,
   &InitializeVideoDecoder,
@@ -214,62 +223,52 @@ ContentDecryptor_Private::~ContentDecryptor_Private() {
                                     this);
 }
 
-void ContentDecryptor_Private::NeedKey(const std::string& key_system,
-                                       const std::string& session_id,
-                                       pp::VarArrayBuffer init_data) {
-  // session_id can be empty here.
+void ContentDecryptor_Private::SessionCreated(
+    uint32_t session_id,
+    const std::string& web_session_id) {
   if (has_interface<PPB_ContentDecryptor_Private>()) {
-    pp::Var key_system_var(key_system);
-    pp::Var session_id_var(session_id);
-
-    get_interface<PPB_ContentDecryptor_Private>()->NeedKey(
+    pp::Var web_session_id_var(web_session_id);
+    get_interface<PPB_ContentDecryptor_Private>()->SessionCreated(
         associated_instance_.pp_instance(),
-        key_system_var.pp_var(),
-        session_id_var.pp_var(),
-        init_data.pp_var());
+        session_id,
+        web_session_id_var.pp_var());
   }
 }
 
-void ContentDecryptor_Private::KeyAdded(const std::string& key_system,
-                                        const std::string& session_id) {
+void ContentDecryptor_Private::SessionMessage(uint32_t session_id,
+                                              pp::VarArrayBuffer message,
+                                              const std::string& default_url) {
   if (has_interface<PPB_ContentDecryptor_Private>()) {
-    pp::Var key_system_var(key_system);
-    pp::Var session_id_var(session_id);
-    get_interface<PPB_ContentDecryptor_Private>()->KeyAdded(
-        associated_instance_.pp_instance(),
-        key_system_var.pp_var(),
-        session_id_var.pp_var());
-  }
-}
-
-void ContentDecryptor_Private::KeyMessage(const std::string& key_system,
-                                          const std::string& session_id,
-                                          pp::VarArrayBuffer message,
-                                          const std::string& default_url) {
-  if (has_interface<PPB_ContentDecryptor_Private>()) {
-    pp::Var key_system_var(key_system);
-    pp::Var session_id_var(session_id);
     pp::Var default_url_var(default_url);
-    get_interface<PPB_ContentDecryptor_Private>()->KeyMessage(
+    get_interface<PPB_ContentDecryptor_Private>()->SessionMessage(
         associated_instance_.pp_instance(),
-        key_system_var.pp_var(),
-        session_id_var.pp_var(),
+        session_id,
         message.pp_var(),
         default_url_var.pp_var());
   }
 }
 
-void ContentDecryptor_Private::KeyError(const std::string& key_system,
-                                        const std::string& session_id,
-                                        int32_t media_error,
-                                        int32_t system_code) {
+void ContentDecryptor_Private::SessionReady(uint32_t session_id) {
   if (has_interface<PPB_ContentDecryptor_Private>()) {
-    pp::Var key_system_var(key_system);
-    pp::Var session_id_var(session_id);
-    get_interface<PPB_ContentDecryptor_Private>()->KeyError(
+    get_interface<PPB_ContentDecryptor_Private>()->SessionReady(
+        associated_instance_.pp_instance(), session_id);
+  }
+}
+
+void ContentDecryptor_Private::SessionClosed(uint32_t session_id) {
+  if (has_interface<PPB_ContentDecryptor_Private>()) {
+    get_interface<PPB_ContentDecryptor_Private>()->SessionClosed(
+        associated_instance_.pp_instance(), session_id);
+  }
+}
+
+void ContentDecryptor_Private::SessionError(uint32_t session_id,
+                                            int32_t media_error,
+                                            uint32_t system_code) {
+  if (has_interface<PPB_ContentDecryptor_Private>()) {
+    get_interface<PPB_ContentDecryptor_Private>()->SessionError(
         associated_instance_.pp_instance(),
-        key_system_var.pp_var(),
-        session_id_var.pp_var(),
+        session_id,
         media_error,
         system_code);
   }
@@ -334,12 +333,12 @@ void ContentDecryptor_Private::DeliverFrame(
 
 void ContentDecryptor_Private::DeliverSamples(
     pp::Buffer_Dev audio_frames,
-    const PP_DecryptedBlockInfo& decrypted_block_info) {
+    const PP_DecryptedSampleInfo& decrypted_sample_info) {
   if (has_interface<PPB_ContentDecryptor_Private>()) {
     get_interface<PPB_ContentDecryptor_Private>()->DeliverSamples(
         associated_instance_.pp_instance(),
         audio_frames.pp_resource(),
-        &decrypted_block_info);
+        &decrypted_sample_info);
   }
 }
 

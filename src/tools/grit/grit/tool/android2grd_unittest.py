@@ -103,7 +103,7 @@ class Android2GrdUnittest(unittest.TestCase):
 
     self.assertEqual(len(translations), 1)
     self.assertEqual(len(files), 3)
-    self.assertEqual(len(messages), 4)
+    self.assertEqual(len(messages), 5)
 
     # Check that a message node is constructed correctly.
     msg = filter(lambda x: x.GetTextualIds()[0] == "IDS_PLACEHOLDERS", messages)
@@ -120,6 +120,13 @@ class Android2GrdUnittest(unittest.TestCase):
                    "IDS_SIMPLE_product_nosdcard",
                  messages)
     self.assertTrue(msg)
+
+  def testTranslatableAttribute(self):
+    grd = self.__ParseAndroidXml([])
+    messages = grd.GetChildrenOfType(message.MessageNode)
+    msgs = filter(lambda x: x.GetTextualIds()[0] == "IDS_CONSTANT", messages)
+    self.assertTrue(msgs)
+    self.assertFalse(msgs[0].IsTranslateable())
 
   def testTranslations(self):
     grd = self.__ParseAndroidXml(['--languages', 'en-US,en-GB,ru,id'])
@@ -155,26 +162,26 @@ class Android2GrdUnittest(unittest.TestCase):
 
     # The header node should have an "<emit>" child and the proper filename.
     self.assertTrue(header_outputs[0].GetChildrenOfType(io.EmitNode))
-    self.assertEqual(header_outputs[0].GetFilename(),
-                     'header/dir/chrome_android_strings.h')
+    self.assertEqual(util.normpath(header_outputs[0].GetFilename()),
+                     util.normpath('header/dir/chrome_android_strings.h'))
 
     id_rc = filter(lambda x: x.GetLanguage() == 'id', rc_outputs)
     id_xml = filter(lambda x: x.GetLanguage() == 'id', xml_outputs)
     self.assertTrue(id_rc)
     self.assertTrue(id_xml)
-    self.assertEqual(id_rc[0].GetFilename(),
-                     'rc/dir/chrome_android_strings_id.rc')
-    self.assertEqual(id_xml[0].GetFilename(),
-                     'xml/dir/values-in/strings.xml')
+    self.assertEqual(util.normpath(id_rc[0].GetFilename()),
+                     util.normpath('rc/dir/chrome_android_strings_id.rc'))
+    self.assertEqual(util.normpath(id_xml[0].GetFilename()),
+                     util.normpath('xml/dir/values-in/strings.xml'))
 
     us_rc = filter(lambda x: x.GetLanguage() == 'en-US', rc_outputs)
     us_xml = filter(lambda x: x.GetLanguage() == 'en-US', xml_outputs)
     self.assertTrue(us_rc)
     self.assertTrue(us_xml)
-    self.assertEqual(us_rc[0].GetFilename(),
-                     'rc/dir/chrome_android_strings_en-US.rc')
-    self.assertEqual(us_xml[0].GetFilename(),
-                     'xml/dir/values-en-rUS/strings.xml')
+    self.assertEqual(util.normpath(us_rc[0].GetFilename()),
+                     util.normpath('rc/dir/chrome_android_strings_en-US.rc'))
+    self.assertEqual(util.normpath(us_xml[0].GetFilename()),
+                     util.normpath('xml/dir/values-en-rUS/strings.xml'))
 
 
 if __name__ == '__main__':

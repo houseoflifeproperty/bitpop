@@ -7,35 +7,44 @@
 #include "base/i18n/rtl.h"
 #include "base/mac/bundle_locations.h"
 #include "base/mac/mac_util.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/bundle_installer.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_action_manager.h"
+#include "chrome/browser/extensions/extension_install_ui.h"
+#include "chrome/browser/signin/signin_promo.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_navigator.h"
 #include "chrome/browser/ui/browser_window.h"
+#include "chrome/browser/ui/chrome_style.h"
 #include "chrome/browser/ui/cocoa/browser_window_cocoa.h"
 #include "chrome/browser/ui/cocoa/browser_window_controller.h"
 #include "chrome/browser/ui/cocoa/extensions/browser_actions_controller.h"
 #include "chrome/browser/ui/cocoa/hover_close_button.h"
+#import "chrome/browser/ui/cocoa/hyperlink_text_view.h"
 #include "chrome/browser/ui/cocoa/info_bubble_view.h"
 #include "chrome/browser/ui/cocoa/location_bar/location_bar_view_mac.h"
+#include "chrome/browser/ui/cocoa/new_tab_button.h"
+#include "chrome/browser/ui/cocoa/tabs/tab_strip_view.h"
 #include "chrome/browser/ui/cocoa/toolbar/toolbar_controller.h"
 #include "chrome/browser/ui/singleton_tabs.h"
-#include "chrome/common/chrome_notification_types.h"
+#include "chrome/browser/ui/sync/sync_promo_ui.h"
+#include "chrome/common/extensions/api/commands/commands_handler.h"
+#include "chrome/common/extensions/api/extension_action/action_info.h"
 #include "chrome/common/extensions/api/omnibox/omnibox_handler.h"
-#include "chrome/common/extensions/extension.h"
+#include "chrome/common/extensions/sync_helper.h"
 #include "chrome/common/url_constants.h"
 #include "content/public/browser/notification_details.h"
 #include "content/public/browser/notification_registrar.h"
 #include "content/public/browser/notification_source.h"
+#include "extensions/common/extension.h"
 #include "grit/chromium_strings.h"
 #include "grit/generated_resources.h"
 #import "skia/ext/skia_utils_mac.h"
-#import "third_party/GTM/AppKit/GTMUILocalizerAndLayoutTweaker.h"
+#import "third_party/google_toolbox_for_mac/src/AppKit/GTMUILocalizerAndLayoutTweaker.h"
 #include "ui/base/l10n/l10n_util.h"
 
 using content::BrowserThread;
@@ -51,19 +60,21 @@ class ExtensionLoadedNotificationObserver
   ExtensionLoadedNotificationObserver(
       ExtensionInstalledBubbleController* controller, Profile* profile)
           : controller_(controller) {
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_LOADED,
-        content::Source<Profile>(profile));
-    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
+    registrar_.Add(this,
+                   chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED,
+                   content::Source<Profile>(profile));
+    registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED,
         content::Source<Profile>(profile));
   }
 
  private:
   // NotificationObserver implementation. Tells the controller to start showing
   // its window on the main thread when the extension has finished loading.
-  void Observe(int type,
-               const content::NotificationSource& source,
-               const content::NotificationDetails& details) {
-    if (type == chrome::NOTIFICATION_EXTENSION_LOADED) {
+  virtual void Observe(
+      int type,
+      const content::NotificationSource& source,
+      const content::NotificationDetails& details) OVERRIDE {
+    if (type == chrome::NOTIFICATION_EXTENSION_LOADED_DEPRECATED) {
       const Extension* extension =
           content::Details<const Extension>(details).ptr();
       if (extension == [controller_ extension]) {
@@ -71,7 +82,7 @@ class ExtensionLoadedNotificationObserver
                                       withObject:controller_
                                    waitUntilDone:NO];
       }
-    } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED) {
+    } else if (type == chrome::NOTIFICATION_EXTENSION_UNLOADED_DEPRECATED) {
       const Extension* extension =
           content::Details<const UnloadedExtensionInfo>(details)->extension;
       if (extension == [controller_ extension]) {
@@ -112,17 +123,16 @@ class ExtensionLoadedNotificationObserver
     icon_.reset([gfx::SkBitmapToNSImage(icon) retain]);
     pageActionPreviewShowing_ = NO;
 
-    extensions::ExtensionActionManager* extension_action_manager =
-        extensions::ExtensionActionManager::Get(browser_->profile());
-
     if (bundle_) {
       type_ = extension_installed_bubble::kBundle;
+    } else if (extension->is_app()) {
+      type_ = extension_installed_bubble::kApp;
     } else if (!extensions::OmniboxInfo::GetKeyword(extension).empty()) {
       type_ = extension_installed_bubble::kOmniboxKeyword;
-    } else if (extension_action_manager->GetBrowserAction(*extension)) {
+    } else if (extensions::ActionInfo::GetBrowserActionInfo(extension)) {
       type_ = extension_installed_bubble::kBrowserAction;
-    } else if (extension_action_manager->GetPageAction(*extension) &&
-               extensions::OmniboxInfo::IsVerboseInstallMessage(extension)) {
+    } else if (extensions::ActionInfo::GetPageActionInfo(extension) &&
+               extensions::ActionInfo::IsVerboseInstallMessage(extension)) {
       type_ = extension_installed_bubble::kPageAction;
     } else {
       type_ = extension_installed_bubble::kGeneric;
@@ -137,6 +147,27 @@ class ExtensionLoadedNotificationObserver
     }
   }
   return self;
+}
+
+// Sets |promo_| based on |promoPlaceholder_|, sets |promoPlaceholder_| to nil.
+- (void)initializeLabel {
+ // Replace the promo placeholder NSTextField with the real label NSTextView.
+ // The former doesn't show links in a nice way, but the latter can't be added
+ // in IB without a containing scroll view, so create the NSTextView
+ // programmatically.
+ promo_.reset([[HyperlinkTextView alloc]
+     initWithFrame:[promoPlaceholder_ frame]]);
+ [promo_.get() setAutoresizingMask:[promoPlaceholder_ autoresizingMask]];
+ [[promoPlaceholder_ superview]
+     replaceSubview:promoPlaceholder_ with:promo_.get()];
+ promoPlaceholder_ = nil;  // Now released.
+ [promo_.get() setDelegate:self];
+}
+
+// Returns YES if the sync promo should be shown in the bubble.
+- (BOOL)showSyncPromo {
+  return extensions::sync_helper::IsSyncableExtension(extension_) &&
+         SyncPromoUI::ShouldShowSyncPromo(browser_->profile());
 }
 
 - (void)windowWillClose:(NSNotification*)notification {
@@ -162,6 +193,18 @@ class ExtensionLoadedNotificationObserver
 - (IBAction)closeWindow:(id)sender {
   DCHECK([[self window] isVisible]);
   [self close];
+}
+
+- (BOOL)textView:(NSTextView*)aTextView
+   clickedOnLink:(id)link
+         atIndex:(NSUInteger)charIndex {
+  DCHECK_EQ(promo_.get(), aTextView);
+  GURL promo_url =
+      signin::GetPromoURL(signin::SOURCE_EXTENSION_INSTALL_BUBBLE, false);
+  chrome::NavigateParams params(
+      chrome::GetSingletonTabNavigateParams(browser_, promo_url));
+  chrome::Navigate(&params);
+  return YES;
 }
 
 // Extracted to a function here so that it can be overridden for unit testing.
@@ -195,6 +238,16 @@ class ExtensionLoadedNotificationObserver
   NSPoint arrowPoint = NSZeroPoint;
 
   switch(type_) {
+    case extension_installed_bubble::kApp: {
+      TabStripView* view = [window->cocoa_controller() tabStripView];
+      NewTabButton* button = [view getNewTabButton];
+      NSRect bounds = [button bounds];
+      NSPoint anchor = NSMakePoint(
+          NSMidX(bounds),
+          NSMaxY(bounds) - extension_installed_bubble::kAppsBubbleArrowOffset);
+      arrowPoint = [button convertPoint:anchor toView:nil];
+      break;
+    }
     case extension_installed_bubble::kOmniboxKeyword: {
       LocationBarViewMac* locationBarView =
           [window->cocoa_controller() locationBarBridge];
@@ -247,7 +300,7 @@ class ExtensionLoadedNotificationObserver
 // Override -[BaseBubbleController showWindow:] to tweak bubble location and
 // set up UI elements.
 - (void)showWindow:(id)sender {
-  DCHECK(BrowserThread::CurrentlyOn(BrowserThread::UI));
+  DCHECK_CURRENTLY_ON(BrowserThread::UI);
 
   // Load nib and calculate height based on messages to be shown.
   NSWindow* window = [self initializeWindow];
@@ -296,9 +349,9 @@ class ExtensionLoadedNotificationObserver
 
 - (bool)hasActivePageAction:(extensions::Command*)command {
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(browser_->profile());
+      extensions::CommandService::Get(browser_->profile());
   if (type_ == extension_installed_bubble::kPageAction) {
-    if (extension_->page_action_command() &&
+    if (extensions::CommandsInfo::GetPageActionCommand(extension_) &&
         command_service->GetPageActionCommand(
             extension_->id(),
             extensions::CommandService::ACTIVE_ONLY,
@@ -313,9 +366,9 @@ class ExtensionLoadedNotificationObserver
 
 - (bool)hasActiveBrowserAction:(extensions::Command*)command {
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(browser_->profile());
+      extensions::CommandService::Get(browser_->profile());
   if (type_ == extension_installed_bubble::kBrowserAction) {
-    if (extension_->browser_action_command() &&
+    if (extensions::CommandsInfo::GetBrowserActionCommand(extension_) &&
         command_service->GetBrowserActionCommand(
             extension_->id(),
             extensions::CommandService::ACTIVE_ONLY,
@@ -361,46 +414,6 @@ class ExtensionLoadedNotificationObserver
   // and vertical padding.
   int newWindowHeight = 2 * extension_installed_bubble::kOuterVerticalMargin;
 
-  // First part of extension installed message.
-  if (type_ != extension_installed_bubble::kBundle) {
-    string16 extension_name = UTF8ToUTF16(extension_->name().c_str());
-    base::i18n::AdjustStringForLocaleDirection(&extension_name);
-    [extensionInstalledMsg_ setStringValue:l10n_util::GetNSStringF(
-        IDS_EXTENSION_INSTALLED_HEADING, extension_name)];
-    [GTMUILocalizerAndLayoutTweaker
-      sizeToFitFixedWidthTextField:extensionInstalledMsg_];
-    newWindowHeight += [extensionInstalledMsg_ frame].size.height +
-        extension_installed_bubble::kInnerVerticalMargin;
-  }
-
-  // If type is page action, include a special message about page actions.
-  if (type_ == extension_installed_bubble::kBrowserAction ||
-      type_ == extension_installed_bubble::kPageAction) {
-    [extraInfoMsg_ setStringValue:[self
-        installMessageForCurrentExtensionAction]];
-    [extraInfoMsg_ setHidden:NO];
-    [[extraInfoMsg_ cell]
-        setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
-    [GTMUILocalizerAndLayoutTweaker
-        sizeToFitFixedWidthTextField:extraInfoMsg_];
-    newWindowHeight += [extraInfoMsg_ frame].size.height +
-        extension_installed_bubble::kInnerVerticalMargin;
-  }
-
-  // If type is omnibox keyword, include a special message about the keyword.
-  if (type_ == extension_installed_bubble::kOmniboxKeyword) {
-    [extraInfoMsg_ setStringValue:l10n_util::GetNSStringF(
-        IDS_EXTENSION_INSTALLED_OMNIBOX_KEYWORD_INFO,
-        UTF8ToUTF16(extensions::OmniboxInfo::GetKeyword(extension_)))];
-    [extraInfoMsg_ setHidden:NO];
-    [[extraInfoMsg_ cell]
-        setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
-    [GTMUILocalizerAndLayoutTweaker
-        sizeToFitFixedWidthTextField:extraInfoMsg_];
-    newWindowHeight += [extraInfoMsg_ frame].size.height +
-        extension_installed_bubble::kInnerVerticalMargin;
-  }
-
   // If type is bundle, list the extensions that were installed and those that
   // failed.
   if (type_ == extension_installed_bubble::kBundle) {
@@ -419,13 +432,100 @@ class ExtensionLoadedNotificationObserver
     // Put some space between the lists if both are present.
     if (installedListHeight > 0 && failedListHeight > 0)
       newWindowHeight += extension_installed_bubble::kInnerVerticalMargin;
-  } else {
-    // Second part of extension installed message.
-    [[extensionInstalledInfoMsg_ cell]
+
+    return newWindowHeight;
+  }
+
+  int sync_promo_height = 0;
+  if ([self showSyncPromo]) {
+    // First calculate the height of the sign-in promo.
+    NSFont* font = [NSFont systemFontOfSize:[NSFont smallSystemFontSize]];
+
+    NSString* link(l10n_util::GetNSStringWithFixup(
+        IDS_EXTENSION_INSTALLED_SIGNIN_PROMO_LINK));
+    NSString* message(l10n_util::GetNSStringWithFixup(
+        IDS_EXTENSION_INSTALLED_SIGNIN_PROMO));
+
+    HyperlinkTextView* view = promo_.get();
+    [view setMessageAndLink:message
+                   withLink:link
+                   atOffset:0
+                       font:font
+               messageColor:[NSColor blackColor]
+                  linkColor:gfx::SkColorToCalibratedNSColor(
+                                chrome_style::GetLinkColor())];
+
+    // HACK! The TextView does not report correct height even after you stuff
+    // it with text (it tells you it is single-line even if it is multiline), so
+    // here the hidden howToUse_ TextField is temporarily repurposed to
+    // calculate the correct height for the TextView.
+    [[howToUse_ cell] setAttributedStringValue:[promo_ attributedString]];
+    [GTMUILocalizerAndLayoutTweaker
+          sizeToFitFixedWidthTextField:howToUse_];
+    sync_promo_height = NSHeight([howToUse_ frame]);
+  }
+
+  // First part of extension installed message, the heading.
+  base::string16 extension_name = base::UTF8ToUTF16(extension_->name().c_str());
+  base::i18n::AdjustStringForLocaleDirection(&extension_name);
+  [heading_ setStringValue:l10n_util::GetNSStringF(
+      IDS_EXTENSION_INSTALLED_HEADING, extension_name)];
+  [GTMUILocalizerAndLayoutTweaker
+      sizeToFitFixedWidthTextField:heading_];
+  newWindowHeight += NSHeight([heading_ frame]) +
+      extension_installed_bubble::kInnerVerticalMargin;
+
+  // If type is browser/page action, include a special message about them.
+  if (type_ == extension_installed_bubble::kBrowserAction ||
+      type_ == extension_installed_bubble::kPageAction) {
+    [howToUse_ setStringValue:[self
+        installMessageForCurrentExtensionAction]];
+    [howToUse_ setHidden:NO];
+    [[howToUse_ cell]
         setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
     [GTMUILocalizerAndLayoutTweaker
-        sizeToFitFixedWidthTextField:extensionInstalledInfoMsg_];
-    newWindowHeight += [extensionInstalledInfoMsg_ frame].size.height;
+        sizeToFitFixedWidthTextField:howToUse_];
+    newWindowHeight += NSHeight([howToUse_ frame]) +
+        extension_installed_bubble::kInnerVerticalMargin;
+  }
+
+  // If type is omnibox keyword, include a special message about the keyword.
+  if (type_ == extension_installed_bubble::kOmniboxKeyword) {
+    [howToUse_ setStringValue:l10n_util::GetNSStringF(
+        IDS_EXTENSION_INSTALLED_OMNIBOX_KEYWORD_INFO,
+        base::UTF8ToUTF16(extensions::OmniboxInfo::GetKeyword(extension_)))];
+    [howToUse_ setHidden:NO];
+    [[howToUse_ cell]
+        setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [GTMUILocalizerAndLayoutTweaker
+        sizeToFitFixedWidthTextField:howToUse_];
+    newWindowHeight += NSHeight([howToUse_ frame]) +
+        extension_installed_bubble::kInnerVerticalMargin;
+  }
+
+  // If type is app, hide howToManage_, and include a "show me" link in the
+  // bubble.
+  if (type_ == extension_installed_bubble::kApp) {
+    [howToManage_ setHidden:YES];
+    [appShortcutLink_ setHidden:NO];
+    newWindowHeight += 2 * extension_installed_bubble::kInnerVerticalMargin;
+    newWindowHeight += NSHeight([appShortcutLink_ frame]);
+  } else {
+    // Second part of extension installed message.
+    [[howToManage_ cell]
+        setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
+    [GTMUILocalizerAndLayoutTweaker
+        sizeToFitFixedWidthTextField:howToManage_];
+    newWindowHeight += NSHeight([howToManage_ frame]);
+  }
+
+  // Sync sign-in promo, if any.
+  if (sync_promo_height > 0) {
+    NSRect promo_frame = [promo_.get() frame];
+    promo_frame.size.height = sync_promo_height;
+    [promo_.get() setFrame:promo_frame];
+    newWindowHeight += extension_installed_bubble::kInnerVerticalMargin;
+    newWindowHeight += sync_promo_height;
   }
 
   extensions::Command command;
@@ -434,10 +534,12 @@ class ExtensionLoadedNotificationObserver
     [manageShortcutLink_ setHidden:NO];
     [[manageShortcutLink_ cell]
         setFont:[NSFont systemFontOfSize:[NSFont smallSystemFontSize]]];
-    newWindowHeight += 2 * extension_installed_bubble::kInnerVerticalMargin;
-    newWindowHeight += [GTMUILocalizerAndLayoutTweaker
-                            sizeToFitView:manageShortcutLink_].height;
+    [[manageShortcutLink_ cell]
+        setTextColor:gfx::SkColorToCalibratedNSColor(
+            chrome_style::GetLinkColor())];
+    [GTMUILocalizerAndLayoutTweaker sizeToFitView:manageShortcutLink_];
     newWindowHeight += extension_installed_bubble::kInnerVerticalMargin;
+    newWindowHeight += NSHeight([manageShortcutLink_ frame]);
   }
 
   return newWindowHeight;
@@ -446,7 +548,7 @@ class ExtensionLoadedNotificationObserver
 - (NSInteger)addExtensionList:(NSTextField*)headingMsg
                      itemsMsg:(NSTextField*)itemsMsg
                         state:(BundleInstaller::Item::State)state {
-  string16 heading = bundle_->GetHeadingTextFor(state);
+  base::string16 heading = bundle_->GetHeadingTextFor(state);
   bool hidden = heading.empty();
   [headingMsg setHidden:hidden];
   [itemsMsg setHidden:hidden];
@@ -468,9 +570,9 @@ class ExtensionLoadedNotificationObserver
   [itemsMsg setStringValue:joinedItems];
   [GTMUILocalizerAndLayoutTweaker sizeToFitFixedWidthTextField:itemsMsg];
 
-  return [headingMsg frame].size.height +
+  return NSHeight([headingMsg frame]) +
       extension_installed_bubble::kInnerVerticalMargin +
-      [itemsMsg frame].size.height;
+      NSHeight([itemsMsg frame]);
 }
 
 // Adjust y-position of messages to sit properly in new window height.
@@ -492,7 +594,7 @@ class ExtensionLoadedNotificationObserver
 
       frame.origin.y = offsetFromBottom + margin;
       [msgs[i] setFrame:frame];
-      offsetFromBottom += frame.size.height + margin;
+      offsetFromBottom += NSHeight(frame) + margin;
 
       isFirstVisible = NO;
     }
@@ -500,61 +602,81 @@ class ExtensionLoadedNotificationObserver
     // Move the close button a bit to vertically align it with the heading.
     NSInteger closeButtonFudge = 1;
     NSRect frame = [closeButton_ frame];
-    frame.origin.y = newWindowHeight - (frame.size.height + closeButtonFudge +
+    frame.origin.y = newWindowHeight - (NSHeight(frame) + closeButtonFudge +
          extension_installed_bubble::kOuterVerticalMargin);
     [closeButton_ setFrame:frame];
 
     return;
   }
 
-  NSRect extensionMessageFrame1 = [extensionInstalledMsg_ frame];
-  NSRect extensionMessageFrame2 = [extensionInstalledInfoMsg_ frame];
-
-  extensionMessageFrame1.origin.y = newWindowHeight - (
-      extensionMessageFrame1.size.height +
+  NSRect headingFrame = [heading_ frame];
+  headingFrame.origin.y = newWindowHeight - (
+      NSHeight(headingFrame) +
       extension_installed_bubble::kOuterVerticalMargin);
-  [extensionInstalledMsg_ setFrame:extensionMessageFrame1];
-  if (extensions::OmniboxInfo::IsVerboseInstallMessage(extension_)) {
-    // The extra message is only shown when appropriate.
-    NSRect extraMessageFrame = [extraInfoMsg_ frame];
-    extraMessageFrame.origin.y = extensionMessageFrame1.origin.y - (
-        extraMessageFrame.size.height +
+  [heading_ setFrame:headingFrame];
+
+  NSRect howToManageFrame = [howToManage_ frame];
+  if (!extensions::OmniboxInfo::GetKeyword(extension_).empty() ||
+      extensions::ActionInfo::GetBrowserActionInfo(extension_) ||
+      extensions::ActionInfo::IsVerboseInstallMessage(extension_)) {
+    // For browser actions, page actions and omnibox keyword show the
+    // 'how to use' message before the 'how to manage' message.
+    NSRect howToUseFrame = [howToUse_ frame];
+    howToUseFrame.origin.y = headingFrame.origin.y - (
+        NSHeight(howToUseFrame) +
         extension_installed_bubble::kInnerVerticalMargin);
-    [extraInfoMsg_ setFrame:extraMessageFrame];
-    extensionMessageFrame2.origin.y = extraMessageFrame.origin.y - (
-        extensionMessageFrame2.size.height +
+    [howToUse_ setFrame:howToUseFrame];
+
+    howToManageFrame.origin.y = howToUseFrame.origin.y - (
+        NSHeight(howToManageFrame) +
         extension_installed_bubble::kInnerVerticalMargin);
   } else {
-    extensionMessageFrame2.origin.y = extensionMessageFrame1.origin.y - (
-        extensionMessageFrame2.size.height +
+    howToManageFrame.origin.y = NSMinY(headingFrame) - (
+        NSHeight(howToManageFrame) +
         extension_installed_bubble::kInnerVerticalMargin);
   }
-  [extensionInstalledInfoMsg_ setFrame:extensionMessageFrame2];
+  [howToManage_ setFrame:howToManageFrame];
+
+  NSRect frame = howToManageFrame;
+  if ([self showSyncPromo]) {
+    frame = [promo_.get() frame];
+    frame.origin.y = NSMinY(howToManageFrame) -
+        (NSHeight(frame) + extension_installed_bubble::kInnerVerticalMargin);
+    [promo_.get() setFrame:frame];
+  }
 
   extensions::Command command;
   if (![manageShortcutLink_ isHidden]) {
     NSRect manageShortcutFrame = [manageShortcutLink_ frame];
-    manageShortcutFrame.origin.y = NSMinY(extensionMessageFrame2) - (
+    manageShortcutFrame.origin.y = NSMinY(frame) - (
         NSHeight(manageShortcutFrame) +
         extension_installed_bubble::kInnerVerticalMargin);
     // Right-align the link.
-    manageShortcutFrame.origin.x = NSMaxX(extensionMessageFrame2) -
+    manageShortcutFrame.origin.x = NSMaxX(frame) -
                                    NSWidth(manageShortcutFrame);
     [manageShortcutLink_ setFrame:manageShortcutFrame];
   }
 }
 
 // Exposed for unit testing.
-- (NSRect)getExtensionInstalledMsgFrame {
-  return [extensionInstalledMsg_ frame];
+- (NSRect)headingFrame {
+  return [heading_ frame];
 }
 
-- (NSRect)getExtraInfoMsgFrame {
-  return [extraInfoMsg_ frame];
+- (NSRect)frameOfHowToUse {
+  return [howToUse_ frame];
 }
 
-- (NSRect)getExtensionInstalledInfoMsgFrame {
-  return [extensionInstalledInfoMsg_ frame];
+- (NSRect)frameOfHowToManage {
+  return [howToManage_ frame];
+}
+
+- (NSRect)frameOfSigninPromo {
+  return [promo_ frame];
+}
+
+- (NSButton*)appInstalledShortcutLink {
+  return appShortcutLink_;
 }
 
 - (void)extensionUnloaded:(id)sender {
@@ -568,6 +690,16 @@ class ExtensionLoadedNotificationObserver
   chrome::NavigateParams params(chrome::GetSingletonTabNavigateParams(
       browser_, GURL(configure_url)));
   chrome::Navigate(&params);
+}
+
+- (IBAction)onAppShortcutClicked:(id)sender {
+  ExtensionInstallUI::OpenAppInstalledUI(browser_->profile(), extension_->id());
+}
+
+- (void)awakeFromNib {
+  if (bundle_)
+    return;
+  [self initializeLabel];
 }
 
 @end

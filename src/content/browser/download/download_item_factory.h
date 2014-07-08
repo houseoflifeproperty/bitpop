@@ -10,13 +10,16 @@
 #define CONTENT_BROWSER_DOWNLOAD_DOWNLOAD_ITEM_FACTORY_H_
 
 #include <string>
+#include <vector>
 
 #include "base/memory/scoped_ptr.h"
-#include "content/public/browser/download_id.h"
 #include "content/public/browser/download_item.h"
 
-class FilePath;
 class GURL;
+
+namespace base {
+class FilePath;
+}
 
 namespace net {
 class BoundNetLog;
@@ -36,30 +39,36 @@ public:
 
   virtual DownloadItemImpl* CreatePersistedItem(
       DownloadItemImplDelegate* delegate,
-      DownloadId download_id,
-      const FilePath& path,
-      const GURL& url,
+      uint32 download_id,
+      const base::FilePath& current_path,
+      const base::FilePath& target_path,
+      const std::vector<GURL>& url_chain,
       const GURL& referrer_url,
       const base::Time& start_time,
       const base::Time& end_time,
+      const std::string& etag,
+      const std::string& last_modified,
       int64 received_bytes,
       int64 total_bytes,
-      content::DownloadItem::DownloadState state,
+      DownloadItem::DownloadState state,
+      DownloadDangerType danger_type,
+      DownloadInterruptReason interrupt_reason,
       bool opened,
       const net::BoundNetLog& bound_net_log) = 0;
 
   virtual DownloadItemImpl* CreateActiveItem(
       DownloadItemImplDelegate* delegate,
+      uint32 download_id,
       const DownloadCreateInfo& info,
-      scoped_ptr<DownloadRequestHandleInterface> request_handle,
       const net::BoundNetLog& bound_net_log) = 0;
 
   virtual DownloadItemImpl* CreateSavePageItem(
       DownloadItemImplDelegate* delegate,
-      const FilePath& path,
+      uint32 download_id,
+      const base::FilePath& path,
       const GURL& url,
-      DownloadId download_id,
       const std::string& mime_type,
+      scoped_ptr<DownloadRequestHandleInterface> request_handle,
       const net::BoundNetLog& bound_net_log) = 0;
 };
 

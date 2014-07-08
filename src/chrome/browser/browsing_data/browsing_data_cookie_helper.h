@@ -46,7 +46,7 @@ class BrowsingDataCookieHelper
   virtual ~BrowsingDataCookieHelper();
 
   net::URLRequestContextGetter* request_context_getter() {
-    return request_context_getter_;
+    return request_context_getter_.get();
   }
 
  private:
@@ -132,6 +132,7 @@ class CannedBrowsingDataCookieHelper : public BrowsingDataCookieHelper {
   // BrowsingDataCookieHelper methods.
   virtual void StartFetching(
       const net::CookieMonster::GetCookieListCallback& callback) OVERRIDE;
+  virtual void DeleteCookie(const net::CanonicalCookie& cookie) OVERRIDE;
 
   // Returns the number of stored cookies.
   size_t GetCookieCount() const;

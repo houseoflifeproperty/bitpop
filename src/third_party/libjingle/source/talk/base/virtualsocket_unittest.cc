@@ -25,11 +25,11 @@
  * ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
  */
 
+#include <math.h>
 #include <time.h>
 #ifdef POSIX
 #include <netinet/in.h>
 #endif
-#include <cmath>
 
 #include "talk/base/logging.h"
 #include "talk/base/gunit.h"
@@ -46,7 +46,7 @@ struct Sender : public MessageHandler {
   Sender(Thread* th, AsyncSocket* s, uint32 rt)
       : thread(th), socket(new AsyncUDPSocket(s)),
         done(false), rate(rt), count(0) {
-    last_send = Time();
+    last_send = talk_base::Time();
     thread->PostDelayed(NextDelay(), this, 1);
   }
 
@@ -61,7 +61,7 @@ struct Sender : public MessageHandler {
     if (done)
       return;
 
-    uint32 cur_time = Time();
+    uint32 cur_time = talk_base::Time();
     uint32 delay = cur_time - last_send;
     uint32 size = rate * delay / 1000;
     size = std::min<uint32>(size, 4096);
@@ -69,7 +69,7 @@ struct Sender : public MessageHandler {
 
     count += size;
     memcpy(dummy, &cur_time, sizeof(cur_time));
-    socket->Send(dummy, size);
+    socket->Send(dummy, size, options);
 
     last_send = cur_time;
     thread->PostDelayed(NextDelay(), this, 1);
@@ -77,6 +77,7 @@ struct Sender : public MessageHandler {
 
   Thread* thread;
   scoped_ptr<AsyncUDPSocket> socket;
+  talk_base::PacketOptions options;
   bool done;
   uint32 rate;  // bytes per second
   uint32 count;
@@ -97,7 +98,8 @@ struct Receiver : public MessageHandler, public sigslot::has_slots<> {
   }
 
   void OnReadPacket(AsyncPacketSocket* s, const char* data, size_t size,
-                    const SocketAddress& remote_addr) {
+                    const SocketAddress& remote_addr,
+                    const PacketTime& packet_time) {
     ASSERT_EQ(socket.get(), s);
     ASSERT_GE(size, 4U);
 
@@ -105,7 +107,7 @@ struct Receiver : public MessageHandler, public sigslot::has_slots<> {
     sec_count += size;
 
     uint32 send_time = *reinterpret_cast<const uint32*>(data);
-    uint32 recv_time = Time();
+    uint32 recv_time = talk_base::Time();
     uint32 delay = recv_time - send_time;
     sum += delay;
     sum_sq += delay * delay;
@@ -315,12 +317,12 @@ class VirtualSocketServerTest : public testing::Test {
         EmptySocketAddressWithFamily(initial_addr.family());
 
     // Create client and server
-    AsyncSocket* client = ss_->CreateAsyncSocket(initial_addr.family(),
-                                                 SOCK_STREAM);
-    sink.Monitor(client);
-    AsyncSocket* server = ss_->CreateAsyncSocket(initial_addr.family(),
-                                                 SOCK_STREAM);
-    sink.Monitor(server);
+    scoped_ptr<AsyncSocket> client(ss_->CreateAsyncSocket(initial_addr.family(),
+                                                          SOCK_STREAM));
+    sink.Monitor(client.get());
+    scoped_ptr<AsyncSocket> server(ss_->CreateAsyncSocket(initial_addr.family(),
+                                                          SOCK_STREAM));
+    sink.Monitor(server.get());
 
     // Initiate connect
     EXPECT_EQ(0, server->Bind(initial_addr));
@@ -330,19 +332,17 @@ class VirtualSocketServerTest : public testing::Test {
     EXPECT_EQ(0, client->Connect(server->GetLocalAddress()));
 
     // Server close before socket enters accept queue
-    EXPECT_FALSE(sink.Check(server, testing::SSE_READ));
+    EXPECT_FALSE(sink.Check(server.get(), testing::SSE_READ));
     server->Close();
 
     ss_->ProcessMessagesUntilIdle();
 
     // Result: connection failed
     EXPECT_EQ(client->GetState(), AsyncSocket::CS_CLOSED);
-    EXPECT_TRUE(sink.Check(client, testing::SSE_ERROR));
+    EXPECT_TRUE(sink.Check(client.get(), testing::SSE_ERROR));
 
-    // New server
-    delete server;
-    server = ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM);
-    sink.Monitor(server);
+    server.reset(ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM));
+    sink.Monitor(server.get());
 
     // Initiate connect
     EXPECT_EQ(0, server->Bind(initial_addr));
@@ -354,19 +354,18 @@ class VirtualSocketServerTest : public testing::Test {
     ss_->ProcessMessagesUntilIdle();
 
     // Server close while socket is in accept queue
-    EXPECT_TRUE(sink.Check(server, testing::SSE_READ));
+    EXPECT_TRUE(sink.Check(server.get(), testing::SSE_READ));
     server->Close();
 
     ss_->ProcessMessagesUntilIdle();
 
     // Result: connection failed
     EXPECT_EQ(client->GetState(), AsyncSocket::CS_CLOSED);
-    EXPECT_TRUE(sink.Check(client, testing::SSE_ERROR));
+    EXPECT_TRUE(sink.Check(client.get(), testing::SSE_ERROR));
 
     // New server
-    delete server;
-    server = ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM);
-    sink.Monitor(server);
+    server.reset(ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM));
+    sink.Monitor(server.get());
 
     // Initiate connect
     EXPECT_EQ(0, server->Bind(initial_addr));
@@ -378,10 +377,10 @@ class VirtualSocketServerTest : public testing::Test {
     ss_->ProcessMessagesUntilIdle();
 
     // Server accepts connection
-    EXPECT_TRUE(sink.Check(server, testing::SSE_READ));
-    AsyncSocket* accepted = server->Accept(&accept_addr);
-    ASSERT_TRUE(NULL != accepted);
-    sink.Monitor(accepted);
+    EXPECT_TRUE(sink.Check(server.get(), testing::SSE_READ));
+    scoped_ptr<AsyncSocket> accepted(server->Accept(&accept_addr));
+    ASSERT_TRUE(NULL != accepted.get());
+    sink.Monitor(accepted.get());
 
     // Client closes before connection complets
     EXPECT_EQ(accepted->GetState(), AsyncSocket::CS_CONNECTED);
@@ -394,8 +393,8 @@ class VirtualSocketServerTest : public testing::Test {
 
     // Result: accepted socket closes
     EXPECT_EQ(accepted->GetState(), AsyncSocket::CS_CLOSED);
-    EXPECT_TRUE(sink.Check(accepted, testing::SSE_CLOSE));
-    EXPECT_FALSE(sink.Check(client, testing::SSE_CLOSE));
+    EXPECT_TRUE(sink.Check(accepted.get(), testing::SSE_CLOSE));
+    EXPECT_FALSE(sink.Check(client.get(), testing::SSE_CLOSE));
   }
 
   void CloseTest(const SocketAddress& initial_addr) {
@@ -409,8 +408,9 @@ class VirtualSocketServerTest : public testing::Test {
     EXPECT_EQ(a->GetLocalAddress().family(), initial_addr.family());
 
 
-    AsyncSocket* b = ss_->CreateAsyncSocket(initial_addr.family(), SOCK_STREAM);
-    sink.Monitor(b);
+    scoped_ptr<AsyncSocket> b(ss_->CreateAsyncSocket(initial_addr.family(),
+                                                     SOCK_STREAM));
+    sink.Monitor(b.get());
     b->Bind(initial_addr);
     EXPECT_EQ(b->GetLocalAddress().family(), initial_addr.family());
 
@@ -423,7 +423,7 @@ class VirtualSocketServerTest : public testing::Test {
     EXPECT_EQ(a->GetState(), AsyncSocket::CS_CONNECTED);
     EXPECT_EQ(a->GetRemoteAddress(), b->GetLocalAddress());
 
-    EXPECT_TRUE(sink.Check(b, testing::SSE_OPEN));
+    EXPECT_TRUE(sink.Check(b.get(), testing::SSE_OPEN));
     EXPECT_EQ(b->GetState(), AsyncSocket::CS_CONNECTED);
     EXPECT_EQ(b->GetRemoteAddress(), a->GetLocalAddress());
 
@@ -434,14 +434,15 @@ class VirtualSocketServerTest : public testing::Test {
     ss_->ProcessMessagesUntilIdle();
 
     char buffer[10];
-    EXPECT_FALSE(sink.Check(b, testing::SSE_READ));
+    EXPECT_FALSE(sink.Check(b.get(), testing::SSE_READ));
     EXPECT_EQ(-1, b->Recv(buffer, 10));
 
     EXPECT_TRUE(sink.Check(a, testing::SSE_CLOSE));
     EXPECT_EQ(a->GetState(), AsyncSocket::CS_CLOSED);
     EXPECT_EQ(a->GetRemoteAddress(), kEmptyAddr);
 
-    EXPECT_FALSE(sink.Check(b, testing::SSE_CLOSE));  // No signal for Closer
+    // No signal for Closer
+    EXPECT_FALSE(sink.Check(b.get(), testing::SSE_CLOSE));
     EXPECT_EQ(b->GetState(), AsyncSocket::CS_CLOSED);
     EXPECT_EQ(b->GetRemoteAddress(), kEmptyAddr);
   }
@@ -685,7 +686,7 @@ class VirtualSocketServerTest : public testing::Test {
     double num =
         receiver.samples * receiver.sum_sq - receiver.sum * receiver.sum;
     double den = receiver.samples * (receiver.samples - 1);
-    const double sample_stddev = std::sqrt(num / den);
+    const double sample_stddev = sqrt(num / den);
     LOG(LS_VERBOSE) << "mean=" << sample_mean << " stddev=" << sample_stddev;
 
     EXPECT_LE(500u, receiver.samples);
@@ -864,7 +865,8 @@ TEST_F(VirtualSocketServerTest, delay_v4) {
   DelayTest(ipv4_test_addr);
 }
 
-TEST_F(VirtualSocketServerTest, delay_v6) {
+// See: https://code.google.com/p/webrtc/issues/detail?id=2409
+TEST_F(VirtualSocketServerTest, DISABLED_delay_v6) {
   SocketAddress ipv6_test_addr(IPAddress(in6addr_any), 1000);
   DelayTest(ipv6_test_addr);
 }
@@ -1000,7 +1002,7 @@ TEST_F(VirtualSocketServerTest, CreatesStandardDistribution) {
           double dev = (*f)[i].second - mean;
           sum_sq_dev += dev * dev;
         }
-        const double stddev = std::sqrt(sum_sq_dev / f->size());
+        const double stddev = sqrt(sum_sq_dev / f->size());
         EXPECT_NEAR(kTestMean[midx], mean, 0.1 * kTestMean[midx])
           << "M=" << kTestMean[midx]
           << " SD=" << kStdDev

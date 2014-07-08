@@ -9,21 +9,12 @@
   'targets': [
     {
       'target_name': 'libvietest',
-      'type': '<(library)',
+      'type': 'static_library',
       'dependencies': [
         '<(webrtc_root)/system_wrappers/source/system_wrappers.gyp:system_wrappers',
         '<(DEPTH)/testing/gtest.gyp:gtest',
         '<(webrtc_root)/test/test.gyp:test_support',
         'video_engine_core',
-      ],
-      'direct_dependent_settings': {
-        'include_dirs': [
-          'include/',
-        ]
-      },
-      'include_dirs': [
-        'include/',
-        'helpers/',
       ],
       'sources': [
         # Helper classes
@@ -48,6 +39,10 @@
         'testbed/tb_I420_codec.cc',
         'testbed/tb_interfaces.cc',
         'testbed/tb_video_channel.cc',
+      ],
+      # Disable warnings to enable Win64 build, issue 1323.
+      'msvs_disabled_warnings': [
+        4267,  # size_t to int truncation.
       ],
     },
   ],

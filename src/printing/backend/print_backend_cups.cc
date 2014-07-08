@@ -10,25 +10,20 @@
 #include <errno.h>
 #include <pthread.h>
 
-#if defined(OS_MACOSX)
-#include <AvailabilityMacros.h>
-#else
+#if !defined(OS_MACOSX)
 #include <gcrypt.h>
 #endif
 
+#include "base/debug/leak_annotations.h"
 #include "base/file_util.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
-#include "base/string_number_conversions.h"
+#include "base/strings/string_number_conversions.h"
 #include "base/synchronization/lock.h"
 #include "base/values.h"
-#include "googleurl/src/gurl.h"
 #include "printing/backend/cups_helper.h"
 #include "printing/backend/print_backend_consts.h"
-
-#if (CUPS_VERSION_MAJOR == 1 && CUPS_VERSION_MINOR < 4)
-const int CUPS_PRINTER_SCANNER = 0x2000000;  // Scanner-only device
-#endif
+#include "url/gurl.h"
 
 #if !defined(OS_MACOSX)
 GCRY_THREAD_OPTION_PTHREAD_IMPL;
@@ -80,8 +75,14 @@ class GcryptInitializer {
                 << " in " << kGnuTlsFiles[i];
         continue;
       }
-      if ((*pgnutls_global_init)() != 0)
-        LOG(ERROR) << "gnutls_global_init() failed";
+      {
+        // GnuTLS has a genuine small memory leak that is easier to annotate
+        // than suppress. See http://crbug.com/176888#c7
+        // TODO(earthdok): remove this once the leak is fixed.
+        ANNOTATE_SCOPED_MEMORY_LEAK;
+        if ((*pgnutls_global_init)() != 0)
+          LOG(ERROR) << "gnutls_global_init() failed";
+      }
       return;
     }
     LOG(ERROR) << "Cannot find libgnutls";
@@ -128,7 +129,7 @@ class PrintBackendCUPS : public PrintBackend {
   // version in another case. There is an issue specifing CUPS_HTTP_DEFAULT
   // in the <functions>2(), it does not work in CUPS prior to 1.4.
   int GetDests(cups_dest_t** dests);
-  FilePath GetPPD(const char* name);
+  base::FilePath GetPPD(const char* name);
 
   GURL print_server_url_;
   http_encryption_t cups_encryption_;
@@ -156,7 +157,7 @@ bool PrintBackendCUPS::EnumeratePrinters(PrinterList* printer_list) {
     return false;
   }
 
-  for (int printer_index = 0; printer_index < num_dests; printer_index++) {
+  for (int printer_index = 0; printer_index < num_dests; ++printer_index) {
     const cups_dest_t& printer = destinations[printer_index];
 
     // CUPS can have 'printers' that are actually scanners. (not MFC)
@@ -190,7 +191,7 @@ bool PrintBackendCUPS::EnumeratePrinters(PrinterList* printer_list) {
       printer_info.options[kDriverInfoTagName] = *drv_info;
 
     // Store printer options.
-    for (int opt_index = 0; opt_index < printer.num_options; opt_index++) {
+    for (int opt_index = 0; opt_index < printer.num_options; ++opt_index) {
       printer_info.options[printer.options[opt_index].name] =
           printer.options[opt_index].value;
     }
@@ -223,7 +224,7 @@ bool PrintBackendCUPS::GetPrinterSemanticCapsAndDefaults(
   if (!GetPrinterCapsAndDefaults(printer_name, &info) )
     return false;
 
-  return parsePpdCapabilities(
+  return ParsePpdCapabilities(
       printer_name, info.printer_capabilities, printer_info);
 }
 
@@ -235,7 +236,7 @@ bool PrintBackendCUPS::GetPrinterCapsAndDefaults(
   VLOG(1) << "CUPS: Getting caps and defaults"
           << ", printer name: " << printer_name;
 
-  FilePath ppd_path(GetPPD(printer_name.c_str()));
+  base::FilePath ppd_path(GetPPD(printer_name.c_str()));
   // In some cases CUPS failed to get ppd file.
   if (ppd_path.empty()) {
     LOG(ERROR) << "CUPS: Failed to get PPD"
@@ -244,9 +245,9 @@ bool PrintBackendCUPS::GetPrinterCapsAndDefaults(
   }
 
   std::string content;
-  bool res = file_util::ReadFileToString(ppd_path, &content);
+  bool res = base::ReadFileToString(ppd_path, &content);
 
-  file_util::Delete(ppd_path, false);
+  base::DeleteFile(ppd_path, false);
 
   if (res) {
     printer_info->printer_capabilities.swap(content);
@@ -264,7 +265,7 @@ std::string PrintBackendCUPS::GetPrinterDriverInfo(
   cups_dest_t* destinations = NULL;
   int num_dests = GetDests(&destinations);
   std::string result;
-  for (int printer_index = 0; printer_index < num_dests; printer_index++) {
+  for (int printer_index = 0; printer_index < num_dests; ++printer_index) {
     const cups_dest_t& printer = destinations[printer_index];
     if (printer_name == printer.name) {
       const char* info = cupsGetOption(kCUPSPrinterMakeModelOpt,
@@ -294,7 +295,7 @@ bool PrintBackendCUPS::IsValidPrinter(const std::string& printer_name) {
 }
 
 scoped_refptr<PrintBackend> PrintBackend::CreateInstance(
-    const DictionaryValue* print_backend_settings) {
+    const base::DictionaryValue* print_backend_settings) {
 #if !defined(OS_MACOSX)
   // Initialize gcrypt library.
   g_gcrypt_initializer.Get();
@@ -327,17 +328,17 @@ int PrintBackendCUPS::GetDests(cups_dest_t** dests) {
   }
 }
 
-FilePath PrintBackendCUPS::GetPPD(const char* name) {
+base::FilePath PrintBackendCUPS::GetPPD(const char* name) {
   // cupsGetPPD returns a filename stored in a static buffer in CUPS.
   // Protect this code with lock.
   CR_DEFINE_STATIC_LOCAL(base::Lock, ppd_lock, ());
   base::AutoLock ppd_autolock(ppd_lock);
-  FilePath ppd_path;
+  base::FilePath ppd_path;
   const char* ppd_file_path = NULL;
   if (print_server_url_.is_empty()) {  // Use default (local) print server.
     ppd_file_path = cupsGetPPD(name);
     if (ppd_file_path)
-      ppd_path = FilePath(ppd_file_path);
+      ppd_path = base::FilePath(ppd_file_path);
   } else {
     // cupsGetPPD2 gets stuck sometimes in an infinite time due to network
     // configuration/issues. To prevent that, use non-blocking http connection
@@ -360,7 +361,7 @@ FilePath PrintBackendCUPS::GetPPD(const char* name) {
       // Comparing file size against that content length might be unreliable
       // since some http reponses are encoded and content_length > file size.
       // Let's just check for the obvious CUPS and http errors here.
-      ppd_path = FilePath(ppd_file_path);
+      ppd_path = base::FilePath(ppd_file_path);
       ipp_status_t error_code = cupsLastError();
       int http_error = httpError(http.http());
       if (error_code > IPP_OK_EVENTS_COMPLETE || http_error != 0) {
@@ -368,7 +369,7 @@ FilePath PrintBackendCUPS::GetPPD(const char* name) {
                    << ", name: " << name
                    << ", CUPS error: " << static_cast<int>(error_code)
                    << ", HTTP error: " << http_error;
-        file_util::Delete(ppd_path, false);
+        base::DeleteFile(ppd_path, false);
         ppd_path.clear();
       }
     }

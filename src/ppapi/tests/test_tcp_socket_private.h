@@ -27,6 +27,8 @@ class TestTCPSocketPrivate : public TestCase {
   std::string TestReadWrite();
   std::string TestReadWriteSSL();
   std::string TestConnectAddress();
+  std::string TestSetOption();
+  std::string TestLargeRead();
 
   int32_t ReadFirstLineFromSocket(pp::TCPSocketPrivate* socket, std::string* s);
   int32_t WriteStringToSocket(pp::TCPSocketPrivate* socket,

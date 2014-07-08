@@ -8,22 +8,23 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
-#include "gtest/gtest.h"
-
 #include <math.h>
 
-#include "modules/video_coding/codecs/interface/video_codec_interface.h"
-#include "modules/video_coding/codecs/test/packet_manipulator.h"
-#include "modules/video_coding/codecs/test/videoprocessor.h"
-#include "modules/video_coding/codecs/vp8/include/vp8.h"
-#include "modules/video_coding/codecs/vp8/include/vp8_common_types.h"
-#include "modules/video_coding/main/interface/video_coding.h"
-#include "testsupport/fileutils.h"
-#include "testsupport/frame_reader.h"
-#include "testsupport/frame_writer.h"
-#include "testsupport/metrics/video_metrics.h"
-#include "testsupport/packet_reader.h"
-#include "typedefs.h"
+#include "testing/gtest/include/gtest/gtest.h"
+
+#include "webrtc/modules/video_coding/codecs/interface/video_codec_interface.h"
+#include "webrtc/modules/video_coding/codecs/test/packet_manipulator.h"
+#include "webrtc/modules/video_coding/codecs/test/videoprocessor.h"
+#include "webrtc/modules/video_coding/codecs/vp8/include/vp8.h"
+#include "webrtc/modules/video_coding/codecs/vp8/include/vp8_common_types.h"
+#include "webrtc/modules/video_coding/main/interface/video_coding.h"
+#include "webrtc/test/testsupport/fileutils.h"
+#include "webrtc/test/testsupport/frame_reader.h"
+#include "webrtc/test/testsupport/frame_writer.h"
+#include "webrtc/test/testsupport/gtest_disable.h"
+#include "webrtc/test/testsupport/metrics/video_metrics.h"
+#include "webrtc/test/testsupport/packet_reader.h"
+#include "webrtc/typedefs.h"
 
 namespace webrtc {
 
@@ -32,6 +33,7 @@ namespace webrtc {
 const int kMaxNumRateUpdates = 3;
 
 const int kPercTargetvsActualMismatch = 20;
+const int kBaseKeyFrameInterval = 3000;
 
 // Codec and network settings.
 struct CodecConfigPars {
@@ -154,8 +156,10 @@ class VideoProcessorIntegrationTest: public testing::Test {
     // Setup the TestConfig struct for processing of a clip in CIF resolution.
     config_.input_filename =
         webrtc::test::ResourcePath("foreman_cif", "yuv");
-    config_.output_filename = webrtc::test::OutputPath() +
-          "foreman_cif_short_video_codecs_test_framework_integrationtests.yuv";
+
+    // Generate an output filename in a safe way.
+    config_.output_filename = webrtc::test::TempFilename(
+        webrtc::test::OutputPath(), "videoprocessor_integrationtest");
     config_.frame_length_in_bytes = CalcBufferSize(kI420,
                                                    kCIFWidth, kCIFHeight);
     config_.verbose = false;
@@ -182,6 +186,8 @@ class VideoProcessorIntegrationTest: public testing::Test {
         frame_dropper_on_;
     config_.codec_settings->codecSpecific.VP8.automaticResizeOn =
         spatial_resize_on_;
+    config_.codec_settings->codecSpecific.VP8.keyFrameInterval =
+        kBaseKeyFrameInterval;
 
     frame_reader_ =
         new webrtc::test::FrameReaderImpl(config_.input_filename,
@@ -491,6 +497,9 @@ class VideoProcessorIntegrationTest: public testing::Test {
     EXPECT_GT(psnr_result.min, quality_metrics.minimum_min_psnr);
     EXPECT_GT(ssim_result.average, quality_metrics.minimum_avg_ssim);
     EXPECT_GT(ssim_result.min, quality_metrics.minimum_min_ssim);
+    if (!remove(config_.output_filename.c_str())) {
+      fprintf(stderr, "Failed to remove temporary file!");
+    }
   }
 };
 
@@ -554,7 +563,8 @@ void SetRateControlMetrics(RateControlMetrics* rc_metrics,
 // Run with no packet loss and fixed bitrate. Quality should be very high.
 // One key frame (first frame only) in sequence. Setting |key_frame_interval|
 // to -1 below means no periodic key frames in test.
-TEST_F(VideoProcessorIntegrationTest, ProcessZeroPacketLoss) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(ProcessZeroPacketLoss)) {
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
   SetRateProfilePars(&rate_profile, 0, 500, 30, 0);
@@ -562,7 +572,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessZeroPacketLoss) {
   rate_profile.num_frames = kNbrFramesShort;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.0f, -1, 1, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.0f, -1, 1, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 36.95, 33.0, 0.90, 0.90);
@@ -577,7 +587,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessZeroPacketLoss) {
 
 // Run with 5% packet loss and fixed bitrate. Quality should be a bit lower.
 // One key frame (first frame only) in sequence.
-TEST_F(VideoProcessorIntegrationTest, Process5PercentPacketLoss) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(Process5PercentPacketLoss)) {
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
   SetRateProfilePars(&rate_profile, 0, 500, 30, 0);
@@ -585,7 +596,7 @@ TEST_F(VideoProcessorIntegrationTest, Process5PercentPacketLoss) {
   rate_profile.num_frames = kNbrFramesShort;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.05f, -1, 1, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.05f, -1, 1, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 20.0, 16.0, 0.60, 0.40);
@@ -600,7 +611,8 @@ TEST_F(VideoProcessorIntegrationTest, Process5PercentPacketLoss) {
 
 // Run with 10% packet loss and fixed bitrate. Quality should be even lower.
 // One key frame (first frame only) in sequence.
-TEST_F(VideoProcessorIntegrationTest, Process10PercentPacketLoss) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(Process10PercentPacketLoss)) {
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
   SetRateProfilePars(&rate_profile, 0, 500, 30, 0);
@@ -608,7 +620,7 @@ TEST_F(VideoProcessorIntegrationTest, Process10PercentPacketLoss) {
   rate_profile.num_frames = kNbrFramesShort;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.1f, -1, 1, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.1f, -1, 1, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 19.0, 16.0, 0.50, 0.35);
@@ -625,7 +637,8 @@ TEST_F(VideoProcessorIntegrationTest, Process10PercentPacketLoss) {
 // low to high to medium. Check that quality and encoder response to the new
 // target rate/per-frame bandwidth (for each rate update) is within limits.
 // One key frame (first frame only) in sequence.
-TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRate) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(ProcessNoLossChangeBitRate)) {
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
   SetRateProfilePars(&rate_profile, 0, 200, 30, 0);
@@ -635,7 +648,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRate) {
   rate_profile.num_frames = kNbrFramesLong;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.0f, -1, 1, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.0f, -1, 1, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 34.0, 32.0, 0.85, 0.80);
@@ -657,7 +670,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeBitRate) {
 // for the rate control metrics can be lower. One key frame (first frame only).
 // Note: quality after update should be higher but we currently compute quality
 // metrics avergaed over whole sequence run.
-TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeFrameRateFrameDrop) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(ProcessNoLossChangeFrameRateFrameDrop)) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
@@ -668,7 +682,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeFrameRateFrameDrop) {
   rate_profile.num_frames = kNbrFramesLong;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.0f, -1, 1, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.0f, -1, 1, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 31.0, 22.0, 0.80, 0.65);
@@ -689,7 +703,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossChangeFrameRateFrameDrop) {
 // spatial resize down at first key frame, and back up at second key frame.
 // Error_concealment is off in this test since there is a memory leak with
 // resizing and error concealment.
-TEST_F(VideoProcessorIntegrationTest, ProcessNoLossSpatialResizeFrameDrop) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(ProcessNoLossSpatialResizeFrameDrop)) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
@@ -721,7 +736,8 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossSpatialResizeFrameDrop) {
 // encoding rate mismatch are applied to each layer.
 // No dropped frames in this test, and internal spatial resizer is off.
 // One key frame (first frame only) in sequence, so no spatial resizing.
-TEST_F(VideoProcessorIntegrationTest, ProcessNoLossTemporalLayers) {
+TEST_F(VideoProcessorIntegrationTest,
+       DISABLED_ON_ANDROID(ProcessNoLossTemporalLayers)) {
   config_.networking_config.packet_loss_probability = 0;
   // Bitrate and frame rate profile.
   RateProfile rate_profile;
@@ -731,7 +747,7 @@ TEST_F(VideoProcessorIntegrationTest, ProcessNoLossTemporalLayers) {
   rate_profile.num_frames = kNbrFramesLong;
   // Codec/network settings.
   CodecConfigPars process_settings;
-  SetCodecParameters(&process_settings, 0.0f, -1, 3, true, true, true, false);
+  SetCodecParameters(&process_settings, 0.0f, -1, 3, false, true, true, false);
   // Metrics for expected quality.
   QualityMetrics quality_metrics;
   SetQualityMetrics(&quality_metrics, 32.5, 30.0, 0.85, 0.80);

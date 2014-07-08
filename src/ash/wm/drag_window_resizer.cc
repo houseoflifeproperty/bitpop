@@ -5,24 +5,24 @@
 #include "ash/wm/drag_window_resizer.h"
 
 #include "ash/display/mouse_cursor_event_filter.h"
-#include "ash/screen_ash.h"
+#include "ash/screen_util.h"
 #include "ash/shell.h"
 #include "ash/wm/coordinate_conversion.h"
-#include "ash/wm/cursor_manager.h"
 #include "ash/wm/drag_window_controller.h"
-#include "ash/wm/property_util.h"
+#include "ash/wm/window_state.h"
+#include "ash/wm/window_util.h"
+#include "base/memory/weak_ptr.h"
 #include "ui/aura/client/aura_constants.h"
 #include "ui/aura/env.h"
-#include "ui/aura/root_window.h"
 #include "ui/aura/window.h"
 #include "ui/aura/window_delegate.h"
+#include "ui/aura/window_event_dispatcher.h"
 #include "ui/base/hit_test.h"
 #include "ui/base/ui_base_types.h"
 #include "ui/gfx/screen.h"
+#include "ui/wm/core/window_util.h"
 
 namespace ash {
-namespace internal {
-
 namespace {
 
 // The maximum opacity of the drag phantom window.
@@ -35,8 +35,8 @@ bool HasSecondaryRootWindow() {
 
 // When there are two root windows, returns one of the root windows which is not
 // |root_window|. Returns NULL if only one root window exists.
-aura::RootWindow* GetAnotherRootWindow(aura::RootWindow* root_window) {
-  Shell::RootWindowList root_windows = Shell::GetAllRootWindows();
+aura::Window* GetAnotherRootWindow(aura::Window* root_window) {
+  aura::Window::Windows root_windows = Shell::GetAllRootWindows();
   if (root_windows.size() < 2)
     return NULL;
   DCHECK_EQ(2U, root_windows.size());
@@ -45,37 +45,37 @@ aura::RootWindow* GetAnotherRootWindow(aura::RootWindow* root_window) {
   return root_windows[0];
 }
 
-}
+}  // namespace
+
+// static
+DragWindowResizer* DragWindowResizer::instance_ = NULL;
 
 DragWindowResizer::~DragWindowResizer() {
+  if (window_state_)
+    window_state_->DeleteDragDetails();
   Shell* shell = Shell::GetInstance();
   shell->mouse_cursor_filter()->set_mouse_warp_mode(
       MouseCursorEventFilter::WARP_ALWAYS);
   shell->mouse_cursor_filter()->HideSharedEdgeIndicator();
-
-  if (destroyed_)
-    *destroyed_ = true;
+  if (instance_ == this)
+    instance_ = NULL;
 }
 
 // static
-DragWindowResizer* DragWindowResizer::Create(WindowResizer* window_resizer,
-                                             aura::Window* window,
-                                             const gfx::Point& location,
-                                             int window_component) {
-  Details details(window, location, window_component);
-  return details.is_resizable ?
-      new DragWindowResizer(window_resizer, details) : NULL;
+DragWindowResizer* DragWindowResizer::Create(
+    WindowResizer* next_window_resizer,
+    wm::WindowState* window_state) {
+  return new DragWindowResizer(next_window_resizer, window_state);
 }
 
 void DragWindowResizer::Drag(const gfx::Point& location, int event_flags) {
-  bool destroyed = false;
-  destroyed_ = &destroyed;
-  window_resizer_->Drag(location, event_flags);
-  if (destroyed)
-    return;
-  destroyed_ = NULL;
-  last_mouse_location_ = location;
+  base::WeakPtr<DragWindowResizer> resizer(weak_ptr_factory_.GetWeakPtr());
+  next_window_resizer_->Drag(location, event_flags);
 
+  if (!resizer)
+    return;
+
+  last_mouse_location_ = location;
   // Show a phantom window for dragging in another root window.
   if (HasSecondaryRootWindow()) {
     gfx::Point location_in_screen = location;
@@ -88,10 +88,10 @@ void DragWindowResizer::Drag(const gfx::Point& location, int event_flags) {
   }
 }
 
-void DragWindowResizer::CompleteDrag(int event_flags) {
-  window_resizer_->CompleteDrag(event_flags);
+void DragWindowResizer::CompleteDrag() {
+  next_window_resizer_->CompleteDrag();
 
-  GetTarget()->layer()->SetOpacity(details_.initial_opacity);
+  GetTarget()->layer()->SetOpacity(details().initial_opacity);
   drag_window_controller_.reset();
 
   // Check if the destination is another display.
@@ -104,29 +104,48 @@ void DragWindowResizer::CompleteDrag(int event_flags) {
 
   if (dst_display.id() !=
       screen->GetDisplayNearestWindow(GetTarget()->GetRootWindow()).id()) {
-    const gfx::Rect dst_bounds =
-        ScreenAsh::ConvertRectToScreen(GetTarget()->parent(),
-                                       GetTarget()->bounds());
+    // Adjust the size and position so that it doesn't exceed the size of
+    // work area.
+    const gfx::Size& size = dst_display.work_area().size();
+    gfx::Rect bounds = GetTarget()->bounds();
+    if (bounds.width() > size.width()) {
+      int diff = bounds.width() - size.width();
+      bounds.set_x(bounds.x() + diff / 2);
+      bounds.set_width(size.width());
+    }
+    if (bounds.height() > size.height())
+      bounds.set_height(size.height());
+
+    gfx::Rect dst_bounds =
+        ScreenUtil::ConvertRectToScreen(GetTarget()->parent(), bounds);
+
+    // Adjust the position so that the cursor is on the window.
+    if (!dst_bounds.Contains(last_mouse_location_in_screen)) {
+      if (last_mouse_location_in_screen.x() < dst_bounds.x())
+        dst_bounds.set_x(last_mouse_location_in_screen.x());
+      else if (last_mouse_location_in_screen.x() > dst_bounds.right())
+        dst_bounds.set_x(
+            last_mouse_location_in_screen.x() - dst_bounds.width());
+    }
+    ash::wm::AdjustBoundsToEnsureMinimumWindowVisibility(
+        dst_display.bounds(), &dst_bounds);
+
     GetTarget()->SetBoundsInScreen(dst_bounds, dst_display);
   }
 }
 
 void DragWindowResizer::RevertDrag() {
-  window_resizer_->RevertDrag();
+  next_window_resizer_->RevertDrag();
 
   drag_window_controller_.reset();
-  GetTarget()->layer()->SetOpacity(details_.initial_opacity);
+  GetTarget()->layer()->SetOpacity(details().initial_opacity);
 }
 
-aura::Window* DragWindowResizer::GetTarget() {
-  return window_resizer_->GetTarget();
-}
-
-DragWindowResizer::DragWindowResizer(WindowResizer* window_resizer,
-                                     const Details& details)
-    : window_resizer_(window_resizer),
-      details_(details),
-      destroyed_(NULL) {
+DragWindowResizer::DragWindowResizer(WindowResizer* next_window_resizer,
+                                     wm::WindowState* window_state)
+    : WindowResizer(window_state),
+      next_window_resizer_(next_window_resizer),
+      weak_ptr_factory_(this) {
   // The pointer should be confined in one display during resizing a window
   // because the window cannot span two displays at the same time anyway. The
   // exception is window/tab dragging operation. During that operation,
@@ -137,23 +156,22 @@ DragWindowResizer::DragWindowResizer(WindowResizer* window_resizer,
   mouse_cursor_filter->set_mouse_warp_mode(
       ShouldAllowMouseWarp() ?
       MouseCursorEventFilter::WARP_DRAG : MouseCursorEventFilter::WARP_NONE);
-  if (ShouldAllowMouseWarp()) {
-    mouse_cursor_filter->ShowSharedEdgeIndicator(
-        details.window->GetRootWindow());
-  }
+  if (ShouldAllowMouseWarp())
+    mouse_cursor_filter->ShowSharedEdgeIndicator(GetTarget()->GetRootWindow());
+  instance_ = this;
 }
 
 void DragWindowResizer::UpdateDragWindow(const gfx::Rect& bounds,
                                          bool in_original_root) {
-  if (details_.window_component != HTCAPTION || !ShouldAllowMouseWarp())
+  if (details().window_component != HTCAPTION || !ShouldAllowMouseWarp())
     return;
 
   // It's available. Show a phantom window on the display if needed.
-  aura::RootWindow* another_root =
+  aura::Window* another_root =
       GetAnotherRootWindow(GetTarget()->GetRootWindow());
   const gfx::Rect root_bounds_in_screen(another_root->GetBoundsInScreen());
   const gfx::Rect bounds_in_screen =
-      ScreenAsh::ConvertRectToScreen(GetTarget()->parent(), bounds);
+      ScreenUtil::ConvertRectToScreen(GetTarget()->parent(), bounds);
   gfx::Rect bounds_in_another_root =
       gfx::IntersectRects(root_bounds_in_screen, bounds_in_screen);
   const float fraction_in_another_window =
@@ -161,13 +179,12 @@ void DragWindowResizer::UpdateDragWindow(const gfx::Rect& bounds,
       static_cast<float>(bounds.width() * bounds.height());
 
   if (fraction_in_another_window > 0) {
-    if (!drag_window_controller_.get()) {
+    if (!drag_window_controller_) {
       drag_window_controller_.reset(
           new DragWindowController(GetTarget()));
       // Always show the drag phantom on the |another_root| window.
       drag_window_controller_->SetDestinationDisplay(
-          Shell::GetScreen()->GetDisplayMatching(
-              another_root->GetBoundsInScreen()));
+          Shell::GetScreen()->GetDisplayNearestWindow(another_root));
       drag_window_controller_->Show();
     } else {
       // No animation.
@@ -186,10 +203,10 @@ void DragWindowResizer::UpdateDragWindow(const gfx::Rect& bounds,
 }
 
 bool DragWindowResizer::ShouldAllowMouseWarp() {
-  return (details_.window_component == HTCAPTION) &&
-      !GetTarget()->transient_parent() &&
-      (GetTarget()->type() == aura::client::WINDOW_TYPE_NORMAL);
+  return (details().window_component == HTCAPTION) &&
+      !::wm::GetTransientParent(GetTarget()) &&
+      (GetTarget()->type() == ui::wm::WINDOW_TYPE_NORMAL ||
+       GetTarget()->type() == ui::wm::WINDOW_TYPE_PANEL);
 }
 
-}  // namespace internal
 }  // namespace ash

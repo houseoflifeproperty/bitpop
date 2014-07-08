@@ -1,13 +1,12 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test;
 
-import android.test.suitebuilder.annotation.SmallTest;
-
 import org.chromium.android_webview.AwContents;
-import org.chromium.base.test.util.Feature;
+import org.chromium.base.test.util.DisabledTest;
+import org.chromium.base.test.util.UrlUtils;
 import org.chromium.content.browser.ContentViewCore;
 import org.chromium.content.browser.test.util.HistoryUtils;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPageFinishedHelper;
@@ -15,17 +14,23 @@ import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnPage
 /**
  * Tests for a wanted clearHistory method.
  */
-public class ClearHistoryTest extends AndroidWebViewTestBase {
+public class ClearHistoryTest extends AwTestBase {
 
     private static final String[] URLS = new String[3];
     {
         for (int i = 0; i < URLS.length; i++) {
-            URLS[i] = "data:text/html;utf-8,<html><head></head><body>" + i + "</body></html>";
+            URLS[i] = UrlUtils.encodeHtmlDataUri(
+                    "<html><head></head><body>" + i + "</body></html>");
         }
     }
 
+    /*
     @SmallTest
     @Feature({"History", "Main"})
+    This test is only failing on JellyBean bots.
+    See crbug.com/178762.
+    */
+    @DisabledTest
     public void testClearHistory() throws Throwable {
         final TestAwContentsClient contentsClient = new TestAwContentsClient();
         final AwTestContainerView testContainerView =

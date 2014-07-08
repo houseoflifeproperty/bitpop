@@ -20,12 +20,11 @@
 #include <string>
 #include <vector>
 
+#include "base/callback_list.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "chrome/browser/ui/webui/chrome_url_data_manager.h"
-#include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
-#include "content/public/browser/notification_types.h"
+#include "content/public/browser/web_contents_observer.h"
 #include "content/public/browser/web_ui_controller.h"
 #include "content/public/browser/web_ui_message_handler.h"
 #include "ui/base/layout.h"
@@ -35,13 +34,21 @@ class AutocompleteResult;
 namespace base {
 class DictionaryValue;
 class ListValue;
+class RefCountedMemory;
 }
+
+#if defined(OS_CHROMEOS)
+namespace chromeos {
+namespace system {
+class PointerDeviceObserver;
+}  // namespace system
+}  // namespace chromeos
+#endif
 
 namespace options {
 
 // The base class handler of Javascript messages of options pages.
-class BitpopOptionsPageUIHandler : public content::WebUIMessageHandler,
-                                   public content::NotificationObserver {
+class BitpopOptionsPageUIHandler : public content::WebUIMessageHandler {
  public:
   // Key for identifying the Settings App localized_strings in loadTimeData.
   static const char kSettingsAppKey[];
@@ -72,11 +79,6 @@ class BitpopOptionsPageUIHandler : public content::WebUIMessageHandler,
 
   // WebUIMessageHandler implementation.
   virtual void RegisterMessages() OVERRIDE {}
-
-  // content::NotificationObserver implementation.
-  virtual void Observe(int type,
-                       const content::NotificationSource& source,
-                       const content::NotificationDetails& details) OVERRIDE {}
 
  protected:
   struct OptionsStringResource {
@@ -111,38 +113,64 @@ class BitpopOptionsPageUIHandler : public content::WebUIMessageHandler,
 class BitpopOptionsPageUIHandlerHost {
  public:
   virtual void InitializeHandlers() = 0;
+  virtual void OnFinishedLoading() {}
 
  protected:
   virtual ~BitpopOptionsPageUIHandlerHost() {}
 };
 
-// The WebUI for chrome:bitpop-settings-frame.
+// The WebUI for chrome:settings-frame.
 class BitpopOptionsUI : public content::WebUIController,
-               			public BitpopOptionsPageUIHandlerHost {
+                  public content::WebContentsObserver,
+                  public BitpopOptionsPageUIHandlerHost {
  public:
+  typedef base::CallbackList<void()> OnFinishedLoadingCallbackList;
+
   explicit BitpopOptionsUI(content::WebUI* web_ui);
   virtual ~BitpopOptionsUI();
+
+  // Registers a callback to be called once the settings frame has finished
+  // loading on the HTML/JS side.
+  scoped_ptr<OnFinishedLoadingCallbackList::Subscription>
+      RegisterOnFinishedLoadingCallback(const base::Closure& callback);
+
+  // Takes the suggestions from |result| and adds them to |suggestions| so that
+  // they can be passed to a JavaScript function.
+  static void ProcessAutocompleteSuggestions(
+      const AutocompleteResult& result,
+      base::ListValue* const suggestions);
 
   static base::RefCountedMemory* GetFaviconResourceBytes(
       ui::ScaleFactor scale_factor);
 
-  // Overridden from OptionsPageUIHandlerHost:
-  virtual void InitializeHandlers() OVERRIDE;
+  // Overridden from content::WebContentsObserver:
+  virtual void DidStartProvisionalLoadForFrame(
+      int64 frame_id,
+      int64 parent_frame_id,
+      bool is_main_frame,
+      const GURL& validated_url,
+      bool is_error_page,
+      bool is_iframe_srcdoc,
+      content::RenderViewHost* render_view_host) OVERRIDE;
 
-  // Overridden from content::WebUIController:
-  virtual void RenderViewCreated(content::RenderViewHost* render_view_host)
-      OVERRIDE;
-  virtual void RenderViewReused(content::RenderViewHost* render_view_host)
-      OVERRIDE;
+  // Overridden from BitpopOptionsPageUIHandlerHost:
+  virtual void InitializeHandlers() OVERRIDE;
+  virtual void OnFinishedLoading() OVERRIDE;
 
  private:
-  // Adds OptionsPageUiHandler to the handlers list if handler is enabled.
+  // Adds BitpopOptionsPageUIHandler to the handlers list if handler is enabled.
   void AddOptionsPageUIHandler(base::DictionaryValue* localized_strings,
                                BitpopOptionsPageUIHandler* handler);
 
   bool initialized_handlers_;
 
   std::vector<BitpopOptionsPageUIHandler*> handlers_;
+  OnFinishedLoadingCallbackList on_finished_loading_callbacks_;
+
+#if defined(OS_CHROMEOS)
+  scoped_ptr<chromeos::system::PointerDeviceObserver>
+      pointer_device_observer_;
+#endif
 
   DISALLOW_COPY_AND_ASSIGN(BitpopOptionsUI);
 };

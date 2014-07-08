@@ -11,7 +11,7 @@ set -o errexit
 #@ Note: this script is not meant to be run as
 #@     tools/trusted_cross_toolchains/qemu_tool_arm.sh
 #@ but rather as:
-#@     toolchain/linux_arm-trusted/qemu_tool_arm.sh
+#@     toolchain/linux_x86/arm_trusted/qemu_tool_arm.sh
 
 # From a qemu build based on qemu-0.10.1.tar.gz
 readonly SDK_ROOT=$(dirname $0)
@@ -29,7 +29,7 @@ readonly QEMU_PREFIX_HOOK=${QEMU_PREFIX_HOOK:-}
 #                  -strace
 #                  -d out_asm,in_asm,op,int,exec,cpu
 #       c.f.  cpu_log_items in qemu-XXX/exec.c
-readonly QEMU_ARGS="-cpu cortex-a8"
+readonly QEMU_ARGS="-cpu cortex-a9"
 readonly QEMU_ARGS_DEBUG="-d in_asm,int,exec,cpu"
 readonly QEMU_ARGS_DEBUG_SR="-d in_asm,int,exec,cpu,service_runtime"
 

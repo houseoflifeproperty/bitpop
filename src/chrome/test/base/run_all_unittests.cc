@@ -2,11 +2,15 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/test/main_hook.h"
-#include "chrome/test/base/chrome_test_suite.h"
+#include "base/bind.h"
+#include "base/test/launcher/unit_test_launcher.h"
+#include "chrome/test/base/chrome_unit_test_suite.h"
 #include "content/public/test/unittest_test_suite.h"
 
 int main(int argc, char **argv) {
-  MainHook hook(main, argc, argv);
-  return content::UnitTestTestSuite(new ChromeTestSuite(argc, argv)).Run();
+  content::UnitTestTestSuite test_suite(new ChromeUnitTestSuite(argc, argv));
+
+  return base::LaunchUnitTests(
+      argc, argv, base::Bind(&content::UnitTestTestSuite::Run,
+                             base::Unretained(&test_suite)));
 }

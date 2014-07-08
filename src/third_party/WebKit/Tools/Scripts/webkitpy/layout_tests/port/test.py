@@ -27,12 +27,14 @@
 # OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import base64
+import copy
 import sys
 import time
 
-from webkitpy.layout_tests.port import Port, Driver, DriverOutput
+from webkitpy.layout_tests.port import DeviceFailure, Driver, DriverOutput, Port
 from webkitpy.layout_tests.port.base import VirtualTestSuite
 from webkitpy.layout_tests.models.test_configuration import TestConfiguration
+from webkitpy.layout_tests.models import test_run_results
 from webkitpy.common.system.filesystem_mock import MockFileSystem
 from webkitpy.common.system.crashlogs import CrashLogs
 
@@ -46,11 +48,12 @@ class TestInstance(object):
         self.crash = False
         self.web_process_crash = False
         self.exception = False
-        self.hang = False
         self.keyboard = False
         self.error = ''
         self.timeout = False
         self.is_reftest = False
+        self.device_failure = False
+        self.leak = False
 
         # The values of each field are treated as raw byte strings. They
         # will be converted to unicode strings where appropriate using
@@ -81,8 +84,8 @@ class TestList(object):
             test.__dict__[key] = value
         self.tests[name] = test
 
-    def add_reftest(self, name, reference_name, same_image):
-        self.add(name, actual_checksum='xxx', actual_image='XXX', is_reftest=True)
+    def add_reftest(self, name, reference_name, same_image, crash=False):
+        self.add(name, actual_checksum='xxx', actual_image='XXX', is_reftest=True, crash=crash)
         if same_image:
             self.add(reference_name, actual_checksum='xxx', actual_image='XXX', is_reftest=True)
         else:
@@ -98,22 +101,24 @@ class TestList(object):
         return self.tests[item]
 
 #
-# These numbers may need to be updated whenever we add or delete tests.
+# These numbers may need to be updated whenever we add or delete tests. This includes virtual tests.
 #
-TOTAL_TESTS = 104
-TOTAL_SKIPS = 28
-TOTAL_RETRIES = 14
+TOTAL_TESTS = 117
+TOTAL_SKIPS = 30
 
-UNEXPECTED_PASSES = 6
-UNEXPECTED_FAILURES = 17
+UNEXPECTED_PASSES = 1
+UNEXPECTED_FAILURES = 26
 
 def unit_test_list():
     tests = TestList()
     tests.add('failures/expected/crash.html', crash=True)
     tests.add('failures/expected/exception.html', exception=True)
+    tests.add('failures/expected/device_failure.html', device_failure=True)
     tests.add('failures/expected/timeout.html', timeout=True)
-    tests.add('failures/expected/hang.html', hang=True)
+    tests.add('failures/expected/leak.html', leak=True)
     tests.add('failures/expected/missing_text.html', expected_text=None)
+    tests.add('failures/expected/needsrebaseline.html', actual_text='needsrebaseline text')
+    tests.add('failures/expected/needsmanualrebaseline.html', actual_text='needsmanualrebaseline text')
     tests.add('failures/expected/image.html',
               actual_image='image_fail-pngtEXtchecksum\x00checksum_fail',
               expected_image='image-pngtEXtchecksum\x00checksum-png')
@@ -140,7 +145,16 @@ def unit_test_list():
               expected_text="foo\n\n", actual_text="foo\n")
     tests.add('failures/expected/newlines_with_excess_CR.html',
               expected_text="foo\r\r\r\n", actual_text="foo\n")
+    tests.add('failures/expected/testharness.html',
+            actual_text='This is a testharness.js-based test.\nFAIL: assert fired\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
+    tests.add('failures/expected/testharness.html',
+            actual_text='CONSOLE LOG: error.\nThis is a testharness.js-based test.\nPASS: things are fine.\n.Harness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
     tests.add('failures/expected/text.html', actual_text='text_fail-png')
+    tests.add('failures/expected/crash_then_text.html')
     tests.add('failures/expected/skip_text.html', actual_text='text diff')
     tests.add('failures/flaky/text.html')
     tests.add('failures/unexpected/missing_text.html', expected_text=None)
@@ -171,7 +185,9 @@ layer at (0,0) size 800x34
               actual_checksum='text-image-checksum_fail-checksum')
     tests.add('failures/unexpected/skip_pass.html')
     tests.add('failures/unexpected/text.html', actual_text='text_fail-txt')
+    tests.add('failures/unexpected/text_then_crash.html')
     tests.add('failures/unexpected/timeout.html', timeout=True)
+    tests.add('failures/unexpected/leak.html', leak=True)
     tests.add('http/tests/passes/text.html')
     tests.add('http/tests/passes/image.html')
     tests.add('http/tests/ssl/text.html')
@@ -187,6 +203,10 @@ layer at (0,0) size 800x34
     tests.add('passes/checksum_in_image.html',
               expected_image='tEXtchecksum\x00checksum_in_image-checksum')
     tests.add('passes/skipped/skip.html')
+    tests.add('passes/testharness.html',
+            actual_text='This is a testharness.js-based test.\nPASS: assert is fine\nHarness: the test ran to completion.\n\n', expected_text=None,
+              actual_image=None, expected_image=None,
+              actual_checksum=None)
 
     # Note that here the checksums don't match but the images do, so this test passes "unexpectedly".
     # See https://bugs.webkit.org/show_bug.cgi?id=69444 .
@@ -199,17 +219,21 @@ layer at (0,0) size 800x34
 
     # For reftests.
     tests.add_reftest('passes/reftest.html', 'passes/reftest-expected.html', same_image=True)
+
+    # This adds a different virtual reference to ensure that that also works.
+    tests.add('virtual/passes/reftest-expected.html', actual_checksum='xxx', actual_image='XXX', is_reftest=True)
+
     tests.add_reftest('passes/mismatch.html', 'passes/mismatch-expected-mismatch.html', same_image=False)
     tests.add_reftest('passes/svgreftest.svg', 'passes/svgreftest-expected.svg', same_image=True)
     tests.add_reftest('passes/xhtreftest.xht', 'passes/xhtreftest-expected.html', same_image=True)
     tests.add_reftest('passes/phpreftest.php', 'passes/phpreftest-expected-mismatch.svg', same_image=False)
     tests.add_reftest('failures/expected/reftest.html', 'failures/expected/reftest-expected.html', same_image=False)
     tests.add_reftest('failures/expected/mismatch.html', 'failures/expected/mismatch-expected-mismatch.html', same_image=True)
+    tests.add_reftest('failures/unexpected/crash-reftest.html', 'failures/unexpected/crash-reftest-expected.html', same_image=True, crash=True)
     tests.add_reftest('failures/unexpected/reftest.html', 'failures/unexpected/reftest-expected.html', same_image=False)
     tests.add_reftest('failures/unexpected/mismatch.html', 'failures/unexpected/mismatch-expected-mismatch.html', same_image=True)
     tests.add('failures/unexpected/reftest-nopixel.html', actual_checksum=None, actual_image=None, is_reftest=True)
     tests.add('failures/unexpected/reftest-nopixel-expected.html', actual_checksum=None, actual_image=None, is_reftest=True)
-    # FIXME: Add a reftest which crashes.
     tests.add('reftests/foo/test.html')
     tests.add('reftests/foo/test-ref.html')
 
@@ -231,13 +255,9 @@ layer at (0,0) size 800x34
 
     tests.add('websocket/tests/passes/text.html')
 
-    # For testing test are properly included from platform directories.
+    # For testing that we don't run tests under platform/. Note that these don't contribute to TOTAL_TESTS.
     tests.add('platform/test-mac-leopard/http/test.html')
     tests.add('platform/test-win-win7/http/test.html')
-
-    # For --no-http tests, test that platform specific HTTP tests are properly skipped.
-    tests.add('platform/test-snow-leopard/http/test.html')
-    tests.add('platform/test-snow-leopard/websocket/test.html')
 
     # For testing if perf tests are running in a locked shard.
     tests.add('perf/foo/test.html')
@@ -272,11 +292,14 @@ PERF_TEST_DIR = '/test.checkout/PerformanceTests'
 # we don't need a real filesystem to run the tests.
 def add_unit_tests_to_mock_filesystem(filesystem):
     # Add the test_expectations file.
-    filesystem.maybe_make_directory(LAYOUT_TEST_DIR + '/platform/test')
-    if not filesystem.exists(LAYOUT_TEST_DIR + '/platform/test/TestExpectations'):
-        filesystem.write_text_file(LAYOUT_TEST_DIR + '/platform/test/TestExpectations', """
+    filesystem.maybe_make_directory('/mock-checkout/LayoutTests')
+    if not filesystem.exists('/mock-checkout/LayoutTests/TestExpectations'):
+        filesystem.write_text_file('/mock-checkout/LayoutTests/TestExpectations', """
 Bug(test) failures/expected/crash.html [ Crash ]
+Bug(test) failures/expected/crash_then_text.html [ Failure ]
 Bug(test) failures/expected/image.html [ ImageOnlyFailure ]
+Bug(test) failures/expected/needsrebaseline.html [ NeedsRebaseline ]
+Bug(test) failures/expected/needsmanualrebaseline.html [ NeedsManualRebaseline ]
 Bug(test) failures/expected/audio.html [ Failure ]
 Bug(test) failures/expected/image_checksum.html [ ImageOnlyFailure ]
 Bug(test) failures/expected/mismatch.html [ ImageOnlyFailure ]
@@ -289,12 +312,15 @@ Bug(test) failures/expected/newlines_trailing.html [ Failure ]
 Bug(test) failures/expected/newlines_with_excess_CR.html [ Failure ]
 Bug(test) failures/expected/reftest.html [ ImageOnlyFailure ]
 Bug(test) failures/expected/text.html [ Failure ]
+Bug(test) failures/expected/testharness.html [ Failure ]
 Bug(test) failures/expected/timeout.html [ Timeout ]
-Bug(test) failures/expected/hang.html [ WontFix ]
 Bug(test) failures/expected/keyboard.html [ WontFix ]
 Bug(test) failures/expected/exception.html [ WontFix ]
+Bug(test) failures/expected/device_failure.html [ WontFix ]
+Bug(test) failures/expected/leak.html [ Leak ]
 Bug(test) failures/unexpected/pass.html [ Failure ]
 Bug(test) passes/skipped/skip.html [ Skip ]
+Bug(test) passes/text.html [ Pass ]
 """)
 
     filesystem.maybe_make_directory(LAYOUT_TEST_DIR + '/reftests/foo')
@@ -353,8 +379,16 @@ class TestPort(Port):
     ALL_BASELINE_VARIANTS = (
         'test-linux-x86_64',
         'test-mac-snowleopard', 'test-mac-leopard',
-        'test-win-vista', 'test-win-win7', 'test-win-xp',
+        'test-win-win7', 'test-win-xp',
     )
+
+    FALLBACK_PATHS = {
+        'xp':          ['test-win-win7', 'test-win-xp'],
+        'win7':        ['test-win-win7'],
+        'leopard':     ['test-mac-leopard', 'test-mac-snowleopard'],
+        'snowleopard': ['test-mac-snowleopard'],
+        'lucid':       ['test-linux-x86_64', 'test-win-win7'],
+    }
 
     @classmethod
     def determine_full_port_name(cls, host, options, port_name):
@@ -366,7 +400,17 @@ class TestPort(Port):
         Port.__init__(self, host, port_name or TestPort.default_port_name, **kwargs)
         self._tests = unit_test_list()
         self._flakes = set()
-        self._expectations_path = LAYOUT_TEST_DIR + '/platform/test/TestExpectations'
+
+        # FIXME: crbug.com/279494. This needs to be in the "real layout tests
+        # dir" in a mock filesystem, rather than outside of the checkout, so
+        # that tests that want to write to a TestExpectations file can share
+        # this between "test" ports and "real" ports.  This is the result of
+        # rebaseline_unittest.py having tests that refer to "real" port names
+        # and real builders instead of fake builders that point back to the
+        # test ports. rebaseline_unittest.py needs to not mix both "real" ports
+        # and "test" ports
+
+        self._generic_expectations_path = '/mock-checkout/LayoutTests/TestExpectations'
         self._results_directory = None
 
         self._operating_system = 'mac'
@@ -378,12 +422,19 @@ class TestPort(Port):
         version_map = {
             'test-win-xp': 'xp',
             'test-win-win7': 'win7',
-            'test-win-vista': 'vista',
             'test-mac-leopard': 'leopard',
             'test-mac-snowleopard': 'snowleopard',
             'test-linux-x86_64': 'lucid',
         }
         self._version = version_map[self._name]
+
+    def repository_paths(self):
+        """Returns a list of (repository_name, repository_path) tuples of its depending code base."""
+        # FIXME: We override this just to keep the perf tests happy.
+        return [('blink', self.layout_tests_dir())]
+
+    def buildbot_archives_baselines(self):
+        return self._name != 'test-win-xp'
 
     def default_pixel_tests(self):
         return True
@@ -393,43 +444,27 @@ class TestPort(Port):
         # the mock_drt Driver. We return something, but make sure it's useless.
         return 'MOCK _path_to_driver'
 
-    def baseline_search_path(self):
-        search_paths = {
-            'test-mac-snowleopard': ['test-mac-snowleopard'],
-            'test-mac-leopard': ['test-mac-leopard', 'test-mac-snowleopard'],
-            'test-win-win7': ['test-win-win7'],
-            'test-win-vista': ['test-win-vista', 'test-win-win7'],
-            'test-win-xp': ['test-win-xp', 'test-win-vista', 'test-win-win7'],
-            'test-linux-x86_64': ['test-linux', 'test-win-win7'],
-        }
-        return [self._webkit_baseline_path(d) for d in search_paths[self.name()]]
-
     def default_child_processes(self):
         return 1
 
-    def worker_startup_delay_secs(self):
-        return 0
-
-    def check_build(self, needs_http):
-        return True
+    def check_build(self, needs_http, printer):
+        return test_run_results.OK_EXIT_STATUS
 
     def check_sys_deps(self, needs_http):
-        return True
+        return test_run_results.OK_EXIT_STATUS
 
     def default_configuration(self):
         return 'Release'
 
-    def diff_image(self, expected_contents, actual_contents, tolerance=None):
+    def diff_image(self, expected_contents, actual_contents):
         diffed = actual_contents != expected_contents
         if not actual_contents and not expected_contents:
-            return (None, 0, None)
+            return (None, None)
         if not actual_contents or not expected_contents:
-            return (True, 0, None)
-        if 'ref' in expected_contents:
-            assert tolerance == 0
+            return (True, None)
         if diffed:
-            return ("< %s\n---\n> %s\n" % (expected_contents, actual_contents), 1, None)
-        return (None, 0, None)
+            return ("< %s\n---\n> %s\n" % (expected_contents, actual_contents), None)
+        return (None, None)
 
     def layout_tests_dir(self):
         return LAYOUT_TEST_DIR
@@ -463,7 +498,7 @@ class TestPort(Port):
     def _driver_class(self):
         return TestDriver
 
-    def start_http_server(self, additional_dirs=None, number_of_servers=None):
+    def start_http_server(self, additional_dirs, number_of_drivers):
         pass
 
     def start_websocket_server(self):
@@ -481,23 +516,26 @@ class TestPort(Port):
     def release_http_lock(self):
         pass
 
-    def _path_to_lighttpd(self):
+    def path_to_lighttpd(self):
         return "/usr/sbin/lighttpd"
 
-    def _path_to_lighttpd_modules(self):
+    def path_to_lighttpd_modules(self):
         return "/usr/lib/lighttpd"
 
-    def _path_to_lighttpd_php(self):
+    def path_to_lighttpd_php(self):
         return "/usr/bin/php-cgi"
 
-    def _path_to_apache(self):
+    def path_to_apache(self):
         return "/usr/sbin/httpd"
 
-    def _path_to_apache_config_file(self):
+    def path_to_apache_config_file(self):
         return self._filesystem.join(self.layout_tests_dir(), 'http', 'conf', 'httpd.conf')
 
-    def path_to_test_expectations_file(self):
-        return self._expectations_path
+    def path_to_generic_test_expectations_file(self):
+        return self._generic_expectations_path
+
+    def _port_specific_expectations_files(self):
+        return [self._filesystem.join(self._webkit_baseline_path(d), 'TestExpectations') for d in ['test', 'test-win-xp']]
 
     def all_test_configurations(self):
         """Returns a sequence of the TestConfigurations the port supports."""
@@ -516,7 +554,6 @@ class TestPort(Port):
         return (('leopard', 'x86'),
                 ('snowleopard', 'x86'),
                 ('xp', 'x86'),
-                ('vista', 'x86'),
                 ('win7', 'x86'),
                 ('lucid', 'x86'),
                 ('lucid', 'x86_64'))
@@ -526,20 +563,20 @@ class TestPort(Port):
 
     def configuration_specifier_macros(self):
         """To avoid surprises when introducing new macros, these are intentionally fixed in time."""
-        return {'mac': ['leopard', 'snowleopard'], 'win': ['xp', 'vista', 'win7'], 'linux': ['lucid']}
+        return {'mac': ['leopard', 'snowleopard'], 'win': ['xp', 'win7'], 'linux': ['lucid']}
 
     def all_baseline_variants(self):
         return self.ALL_BASELINE_VARIANTS
 
     def virtual_test_suites(self):
         return [
-            VirtualTestSuite('virtual/passes', 'passes', ['--virtual-arg']),
-            VirtualTestSuite('virtual/skipped', 'failures/expected', ['--virtual-arg2']),
+            VirtualTestSuite('passes', 'passes', ['--virtual-arg'], use_legacy_naming=True),
+            VirtualTestSuite('skipped', 'failures/expected', ['--virtual-arg2'], use_legacy_naming=True),
         ]
 
 
 class TestDriver(Driver):
-    """Test/Dummy implementation of the DumpRenderTree interface."""
+    """Test/Dummy implementation of the driver interface."""
     next_pid = 1
 
     def __init__(self, *args, **kwargs):
@@ -551,29 +588,49 @@ class TestDriver(Driver):
         pixel_tests_flag = '-p' if pixel_tests else ''
         return [self._port._path_to_driver()] + [pixel_tests_flag] + self._port.get_option('additional_drt_flag', []) + per_test_args
 
-    def run_test(self, test_input, stop_when_done):
+    def run_test(self, driver_input, stop_when_done):
         if not self.started:
             self.started = True
             self.pid = TestDriver.next_pid
             TestDriver.next_pid += 1
 
         start_time = time.time()
-        test_name = test_input.test_name
-        test_args = test_input.args or []
+        test_name = driver_input.test_name
+        test_args = driver_input.args or []
         test = self._port._tests[test_name]
         if test.keyboard:
             raise KeyboardInterrupt
         if test.exception:
             raise ValueError('exception from ' + test_name)
-        if test.hang:
-            time.sleep((float(test_input.timeout) * 4) / 1000.0 + 1.0)  # The 1.0 comes from thread_padding_sec in layout_test_runnery.
+        if test.device_failure:
+            raise DeviceFailure('device failure in ' + test_name)
 
         audio = None
         actual_text = test.actual_text
+        crash = test.crash
+        web_process_crash = test.web_process_crash
 
-        if 'flaky' in test_name and not test_name in self._port._flakes:
+        if 'flaky/text.html' in test_name and not test_name in self._port._flakes:
             self._port._flakes.add(test_name)
             actual_text = 'flaky text failure'
+
+        if 'crash_then_text.html' in test_name:
+            if test_name in self._port._flakes:
+                actual_text = 'text failure'
+            else:
+                self._port._flakes.add(test_name)
+                crashed_process_name = self._port.driver_name()
+                crashed_pid = 1
+                crash = True
+
+        if 'text_then_crash.html' in test_name:
+            if test_name in self._port._flakes:
+                crashed_process_name = self._port.driver_name()
+                crashed_pid = 1
+                crash = True
+            else:
+                self._port._flakes.add(test_name)
+                actual_text = 'text failure'
 
         if actual_text and test_args and test_name == 'passes/args.html':
             actual_text = actual_text + ' ' + ' '.join(test_args)
@@ -582,10 +639,10 @@ class TestDriver(Driver):
             audio = base64.b64decode(test.actual_audio)
         crashed_process_name = None
         crashed_pid = None
-        if test.crash:
+        if crash:
             crashed_process_name = self._port.driver_name()
             crashed_pid = 1
-        elif test.web_process_crash:
+        elif web_process_crash:
             crashed_process_name = 'WebProcess'
             crashed_pid = 2
 
@@ -597,14 +654,15 @@ class TestDriver(Driver):
         if stop_when_done:
             self.stop()
 
-        if test.actual_checksum == test_input.image_hash:
+        if test.actual_checksum == driver_input.image_hash:
             image = None
         else:
             image = test.actual_image
         return DriverOutput(actual_text, image, test.actual_checksum, audio,
-            crash=test.crash or test.web_process_crash, crashed_process_name=crashed_process_name,
+            crash=(crash or web_process_crash), crashed_process_name=crashed_process_name,
             crashed_pid=crashed_pid, crash_log=crash_log,
-            test_time=time.time() - start_time, timeout=test.timeout, error=test.error, pid=self.pid)
+            test_time=time.time() - start_time, timeout=test.timeout, error=test.error, pid=self.pid,
+            leak=test.leak)
 
     def stop(self):
         self.started = False

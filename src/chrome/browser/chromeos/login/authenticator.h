@@ -16,37 +16,36 @@ class Profile;
 
 namespace chromeos {
 
+struct UserContext;
+
 // An interface for objects that will authenticate a Chromium OS user.
-// When authentication successfully completes, will call
-// consumer_->OnLoginSuccess() on the UI thread.
-// On failure, will call consumer_->OnLoginFailure() on the UI thread.
-// On password change detected, will call
-// consumer_->OnPasswordChangeDetected() on the UI thread.
+// Callbacks will be called on the UI thread:
+// 1. On successful authentication, will call consumer_->OnLoginSuccess().
+// 2. On failure, will call consumer_->OnLoginFailure().
+// 3. On password change, will call consumer_->OnPasswordChangeDetected().
 class Authenticator : public base::RefCountedThreadSafe<Authenticator> {
  public:
   explicit Authenticator(LoginStatusConsumer* consumer);
 
-  // Given externally authenticated |username| and |password|, this method
-  // attempts to complete authentication process.
+  // Given externally authenticated username and password (part of
+  // |user_context|), this method attempts to complete authentication process.
   virtual void CompleteLogin(Profile* profile,
-                             const std::string& username,
-                             const std::string& password) = 0;
+                             const UserContext& user_context) = 0;
 
-  // Given a |username| and |password|, this method attempts to authenticate
-  // to login.
-  // Optionally |login_token| and |login_captcha| could be provided.
+  // Given a user credentials in |user_context|,
+  // this method attempts to authenticate to login.
   // Must be called on the UI thread.
   virtual void AuthenticateToLogin(Profile* profile,
-                                   const std::string& username,
-                                   const std::string& password,
-                                   const std::string& login_token,
-                                   const std::string& login_captcha) = 0;
+                                   const UserContext& user_context) = 0;
 
-  // Given a |username| and |password|, this method attempts to
+  // Given a user credentials in |user_context|, this method attempts to
   // authenticate to unlock the computer.
   // Must be called on the UI thread.
-  virtual void AuthenticateToUnlock(const std::string& username,
-                                    const std::string& password) = 0;
+  virtual void AuthenticateToUnlock(const UserContext& user_context) = 0;
+
+  // Initiates locally managed user login.
+  virtual void LoginAsLocallyManagedUser(
+      const UserContext& user_context) = 0;
 
   // Initiates retail mode login.
   virtual void LoginRetailMode() = 0;
@@ -57,13 +56,18 @@ class Authenticator : public base::RefCountedThreadSafe<Authenticator> {
   // Initiates login into the public account identified by |username|.
   virtual void LoginAsPublicAccount(const std::string& username) = 0;
 
+  // Initiates login into kiosk mode account identified by |app_user_id|.
+  // The |app_user_id| is a generated username for the account.
+  // |use_guest_mount| specifies whether to force the session to use a
+  // guest mount. If this is false, we use mount a public cryptohome.
+  virtual void LoginAsKioskAccount(const std::string& app_user_id,
+                                   bool use_guest_mount) = 0;
+
   // Completes retail mode login.
   virtual void OnRetailModeLoginSuccess() = 0;
 
-  // |request_pending| is true if we still plan to call consumer_ with the
-  // results of more requests.
-  // Must be called on the UI thread.
-  virtual void OnLoginSuccess(bool request_pending) = 0;
+  // Notifies caller that login was successful. Must be called on the UI thread.
+  virtual void OnLoginSuccess() = 0;
 
   // Must be called on the UI thread.
   virtual void OnLoginFailure(const LoginFailure& error) = 0;
@@ -81,13 +85,6 @@ class Authenticator : public base::RefCountedThreadSafe<Authenticator> {
   // Call this method to erase the user's encrypted data
   // and create a new cryptohome.
   virtual void ResyncEncryptedData() = 0;
-
-  // Attempt to authenticate online again.
-  virtual void RetryAuth(Profile* profile,
-                         const std::string& username,
-                         const std::string& password,
-                         const std::string& login_token,
-                         const std::string& login_captcha) = 0;
 
   // Profile (usually off the record ) that was used to perform the last
   // authentication process.

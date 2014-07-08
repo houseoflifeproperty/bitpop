@@ -4,20 +4,27 @@
 
 #include "chrome/browser/extensions/api/system_indicator/system_indicator_manager.h"
 
-#include "chrome/browser/extensions/event_names.h"
-#include "chrome/browser/extensions/event_router.h"
+#include "base/memory/linked_ptr.h"
+#include "base/strings/utf_string_conversions.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/extension_action.h"
 #include "chrome/browser/extensions/extension_service.h"
-#include "chrome/browser/extensions/extension_system.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/status_icons/status_icon.h"
 #include "chrome/browser/status_icons/status_icon_observer.h"
 #include "chrome/browser/status_icons/status_tray.h"
 #include "chrome/common/extensions/api/system_indicator.h"
-#include "chrome/common/extensions/extension.h"
+#include "content/public/browser/notification_details.h"
+#include "content/public/browser/notification_source.h"
+#include "extensions/browser/event_router.h"
+#include "extensions/browser/extension_registry.h"
+#include "extensions/browser/extension_system.h"
+#include "extensions/common/extension.h"
 #include "ui/gfx/image/image.h"
 
 namespace extensions {
+
+namespace system_indicator = api::system_indicator;
 
 // Observes clicks on a given status icon and forwards the event to the
 // appropriate extension.  Handles icon updates, and responsible for creating
@@ -26,11 +33,10 @@ namespace extensions {
 class ExtensionIndicatorIcon : public StatusIconObserver,
                                public ExtensionActionIconFactory::Observer {
  public:
-  ExtensionIndicatorIcon(const Extension* extension,
-                         const ExtensionAction* action,
-                         Profile* profile,
-                         StatusTray* status_tray,
-                         StatusIcon* status_icon);
+  static ExtensionIndicatorIcon* Create(const Extension* extension,
+                                        const ExtensionAction* action,
+                                        Profile* profile,
+                                        StatusTray* status_tray);
   virtual ~ExtensionIndicatorIcon();
 
   // StatusIconObserver implementation.
@@ -40,6 +46,11 @@ class ExtensionIndicatorIcon : public StatusIconObserver,
   virtual void OnIconUpdated() OVERRIDE;
 
  private:
+  ExtensionIndicatorIcon(const Extension* extension,
+                         const ExtensionAction* action,
+                         Profile* profile,
+                         StatusTray* status_tray);
+
   const extensions::Extension* extension_;
   StatusTray* status_tray_;
   StatusIcon* icon_;
@@ -47,33 +58,36 @@ class ExtensionIndicatorIcon : public StatusIconObserver,
   ExtensionActionIconFactory icon_factory_;
 };
 
-ExtensionIndicatorIcon::ExtensionIndicatorIcon(const Extension* extension,
-                                               const ExtensionAction* action,
-                                               Profile* profile,
-                                               StatusTray* status_tray,
-                                               StatusIcon* status_icon)
-    : extension_(extension),
-      status_tray_(status_tray),
-      icon_(status_icon),
-      profile_(profile),
-      ALLOW_THIS_IN_INITIALIZER_LIST(icon_factory_(extension, action, this)) {
-  icon_->AddObserver(this);
-  OnIconUpdated();
+ExtensionIndicatorIcon* ExtensionIndicatorIcon::Create(
+    const Extension* extension,
+    const ExtensionAction* action,
+    Profile* profile,
+    StatusTray* status_tray) {
+  scoped_ptr<ExtensionIndicatorIcon> extension_icon(
+      new ExtensionIndicatorIcon(extension, action, profile, status_tray));
+
+  // Check if a status icon was successfully created.
+  if (extension_icon->icon_)
+    return extension_icon.release();
+
+  // We could not create a status icon.
+  return NULL;
 }
 
 ExtensionIndicatorIcon::~ExtensionIndicatorIcon() {
-  icon_->RemoveObserver(this);
-  status_tray_->RemoveStatusIcon(icon_);
+  if (icon_) {
+    icon_->RemoveObserver(this);
+    status_tray_->RemoveStatusIcon(icon_);
+  }
 }
 
 void ExtensionIndicatorIcon::OnStatusIconClicked() {
   scoped_ptr<base::ListValue> params(
       api::system_indicator::OnClicked::Create());
 
-  EventRouter* event_router =
-      ExtensionSystem::Get(profile_)->event_router();
+  EventRouter* event_router = EventRouter::Get(profile_);
   scoped_ptr<Event> event(new Event(
-      event_names::kOnSystemIndicatorClicked,
+      system_indicator::OnClicked::kEventName,
       params.Pass(),
       profile_));
   event_router->DispatchEventToExtension(
@@ -85,12 +99,34 @@ void ExtensionIndicatorIcon::OnIconUpdated() {
       icon_factory_.GetIcon(ExtensionAction::kDefaultTabId).AsImageSkia());
 }
 
+ExtensionIndicatorIcon::ExtensionIndicatorIcon(const Extension* extension,
+                                               const ExtensionAction* action,
+                                               Profile* profile,
+                                               StatusTray* status_tray)
+    : extension_(extension),
+      status_tray_(status_tray),
+      icon_(NULL),
+      profile_(profile),
+      icon_factory_(profile, extension, action, this) {
+  // Get the icon image and tool tip for the status icon. The extension name is
+  // used as the tool tip.
+  gfx::ImageSkia icon_image =
+      icon_factory_.GetIcon(ExtensionAction::kDefaultTabId).AsImageSkia();
+  base::string16 tool_tip = base::UTF8ToUTF16(extension_->name());
+
+  icon_ = status_tray_->CreateStatusIcon(
+      StatusTray::OTHER_ICON, icon_image, tool_tip);
+  if (icon_)
+    icon_->AddObserver(this);
+}
+
 SystemIndicatorManager::SystemIndicatorManager(Profile* profile,
                                                StatusTray* status_tray)
     : profile_(profile),
-      status_tray_(status_tray) {
-  registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_UNLOADED,
-                 content::Source<Profile>(profile_->GetOriginalProfile()));
+      status_tray_(status_tray),
+      extension_registry_observer_(this) {
+  extension_registry_observer_.Add(ExtensionRegistry::Get(profile_));
+
   registrar_.Add(this, chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED,
                  content::Source<Profile>(profile_->GetOriginalProfile()));
 }
@@ -103,25 +139,21 @@ void SystemIndicatorManager::Shutdown() {
   DCHECK(thread_checker_.CalledOnValidThread());
 }
 
+void SystemIndicatorManager::OnExtensionUnloaded(
+    content::BrowserContext* browser_context,
+    const Extension* extension,
+    UnloadedExtensionInfo::Reason reason) {
+  RemoveIndicator(extension->id());
+}
+
 void SystemIndicatorManager::Observe(
     int type,
     const content::NotificationSource& source,
     const content::NotificationDetails& details) {
   DCHECK(thread_checker_.CalledOnValidThread());
+  DCHECK_EQ(type, chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED);
 
-  switch (type) {
-    case chrome::NOTIFICATION_EXTENSION_UNLOADED:
-      RemoveIndicator(
-          content::Details<UnloadedExtensionInfo>(details)->extension->id());
-      break;
-    case chrome::NOTIFICATION_EXTENSION_SYSTEM_INDICATOR_UPDATED:
-      OnSystemIndicatorChanged(
-          content::Details<ExtensionAction>(details).ptr());
-      break;
-    default:
-      NOTREACHED();
-      break;
-  }
+  OnSystemIndicatorChanged(content::Details<ExtensionAction>(details).ptr());
 }
 
 void SystemIndicatorManager::OnSystemIndicatorChanged(
@@ -163,16 +195,10 @@ void SystemIndicatorManager::CreateOrUpdateIndicator(
     return;
   }
 
-  StatusIcon* indicator_icon = status_tray_->CreateStatusIcon();
-  if (indicator_icon != NULL) {
-    ExtensionIndicatorIcon* status_icon = new ExtensionIndicatorIcon(
-        extension,
-        extension_action,
-        profile_,
-        status_tray_,
-        indicator_icon);
-    system_indicators_.insert(std::make_pair(extension->id(), status_icon));
-  }
+  ExtensionIndicatorIcon* extension_icon = ExtensionIndicatorIcon::Create(
+      extension, extension_action, profile_, status_tray_);
+  if (extension_icon)
+    system_indicators_[extension->id()] = make_linked_ptr(extension_icon);
 }
 
 void SystemIndicatorManager::RemoveIndicator(const std::string& extension_id) {

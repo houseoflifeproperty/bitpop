@@ -5,9 +5,9 @@
 #include "chrome/browser/ui/android/window_android_helper.h"
 
 #include "content/public/browser/web_contents.h"
-#include "ui/gfx/android/window_android.h"
+#include "ui/base/android/window_android.h"
 
-DEFINE_WEB_CONTENTS_USER_DATA_KEY(WindowAndroidHelper)
+DEFINE_WEB_CONTENTS_USER_DATA_KEY(WindowAndroidHelper);
 
 WindowAndroidHelper::WindowAndroidHelper(content::WebContents* web_contents) {
 }

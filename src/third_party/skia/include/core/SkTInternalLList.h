@@ -38,7 +38,7 @@ template <typename T> class SkPtrWrapper {
 /**
  * This class implements a templated internal doubly linked list data structure.
  */
-template <class T> class SkTInternalLList : public SkNoncopyable {
+template <class T> class SkTInternalLList : SkNoncopyable {
 public:
     SkTInternalLList()
         : fHead(NULL)
@@ -227,7 +227,7 @@ public:
     void validate() const {
         SkASSERT(!fHead == !fTail);
         Iter iter;
-        for (T* item = iter.init(*this, Iter::kHead_IterStart); NULL != (item = iter.next()); ) {
+        for (T* item = iter.init(*this, Iter::kHead_IterStart); NULL != item; item = iter.next()) {
             SkASSERT(this->isInList(item));
             if (NULL == item->fPrev) {
                 SkASSERT(fHead == item);

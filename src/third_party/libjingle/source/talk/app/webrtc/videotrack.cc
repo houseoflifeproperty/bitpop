@@ -39,12 +39,12 @@ VideoTrack::VideoTrack(const std::string& label,
     : MediaStreamTrack<VideoTrackInterface>(label),
       video_source_(video_source) {
   if (video_source_)
-    video_source_->AddSink(FrameInput());
+    video_source_->AddSink(&renderers_);
 }
 
 VideoTrack::~VideoTrack() {
   if (video_source_)
-    video_source_->RemoveSink(FrameInput());
+    video_source_->RemoveSink(&renderers_);
 }
 
 std::string VideoTrack::kind() const {
@@ -59,19 +59,15 @@ void VideoTrack::RemoveRenderer(VideoRendererInterface* renderer) {
   renderers_.RemoveRenderer(renderer);
 }
 
-cricket::VideoRenderer* VideoTrack::FrameInput() {
-  return &renderers_;
-}
-
 bool VideoTrack::set_enabled(bool enable) {
   renderers_.SetEnabled(enable);
   return MediaStreamTrack<VideoTrackInterface>::set_enabled(enable);
 }
 
 talk_base::scoped_refptr<VideoTrack> VideoTrack::Create(
-    const std::string& label, VideoSourceInterface* source) {
+    const std::string& id, VideoSourceInterface* source) {
   talk_base::RefCountedObject<VideoTrack>* track =
-      new talk_base::RefCountedObject<VideoTrack>(label, source);
+      new talk_base::RefCountedObject<VideoTrack>(id, source);
   return track;
 }
 

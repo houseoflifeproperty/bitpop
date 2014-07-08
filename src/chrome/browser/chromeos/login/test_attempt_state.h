@@ -17,15 +17,11 @@ namespace chromeos {
 
 class TestAttemptState : public AuthAttemptState {
  public:
-  TestAttemptState(const std::string& username,
-                   const std::string& password,
-                   const std::string& ascii_hash,
+  TestAttemptState(const UserContext& credentials,
                    const std::string& login_token,
                    const std::string& login_captcha,
                    const User::UserType user_type,
                    const bool user_is_new);
-
-  TestAttemptState(const std::string& username, const std::string& ascii_hash);
 
   virtual ~TestAttemptState();
 

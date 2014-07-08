@@ -5,11 +5,14 @@
 #include "chrome/browser/browsing_data/browsing_data_local_storage_helper.h"
 
 #include "chrome/test/base/testing_profile.h"
+#include "content/public/test/test_browser_thread_bundle.h"
 #include "testing/gtest/include/gtest/gtest.h"
 
 namespace {
 
-typedef testing::Test CannedBrowsingDataLocalStorageTest;
+class CannedBrowsingDataLocalStorageTest : public testing::Test {
+  content::TestBrowserThreadBundle thread_bundle_;
+};
 
 TEST_F(CannedBrowsingDataLocalStorageTest, Empty) {
   TestingProfile profile;
@@ -24,6 +27,27 @@ TEST_F(CannedBrowsingDataLocalStorageTest, Empty) {
   ASSERT_FALSE(helper->empty());
   helper->Reset();
   ASSERT_TRUE(helper->empty());
+}
+
+TEST_F(CannedBrowsingDataLocalStorageTest, Delete) {
+  TestingProfile profile;
+
+  const GURL origin1("http://host1:9000");
+  const GURL origin2("http://example.com");
+  const GURL origin3("http://foo.example.com");
+
+  scoped_refptr<CannedBrowsingDataLocalStorageHelper> helper(
+      new CannedBrowsingDataLocalStorageHelper(&profile));
+
+  EXPECT_TRUE(helper->empty());
+  helper->AddLocalStorage(origin1);
+  helper->AddLocalStorage(origin2);
+  helper->AddLocalStorage(origin3);
+  EXPECT_EQ(3u, helper->GetLocalStorageCount());
+  helper->DeleteOrigin(origin2);
+  EXPECT_EQ(2u, helper->GetLocalStorageCount());
+  helper->DeleteOrigin(origin1);
+  EXPECT_EQ(1u, helper->GetLocalStorageCount());
 }
 
 TEST_F(CannedBrowsingDataLocalStorageTest, IgnoreExtensionsAndDevTools) {

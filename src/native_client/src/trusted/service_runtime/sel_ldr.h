@@ -33,6 +33,8 @@
 #include "native_client/src/include/portability.h"
 #include "native_client/src/include/elf.h"
 
+#include "native_client/src/public/nacl_app.h"
+
 #include "native_client/src/shared/platform/nacl_host_desc.h"
 #include "native_client/src/shared/platform/nacl_log.h"
 #include "native_client/src/shared/platform/nacl_threads.h"
@@ -46,15 +48,13 @@
 #include "native_client/src/trusted/service_runtime/nacl_error_code.h"
 #include "native_client/src/trusted/service_runtime/nacl_kernel_service.h"
 #include "native_client/src/trusted/service_runtime/nacl_resource.h"
-
 #include "native_client/src/trusted/service_runtime/nacl_secure_service.h"
-
+#include "native_client/src/trusted/service_runtime/name_service/name_service.h"
 #include "native_client/src/trusted/service_runtime/sel_addrspace.h"
 #include "native_client/src/trusted/service_runtime/sel_mem.h"
-#include "native_client/src/trusted/service_runtime/sel_util.h"
 #include "native_client/src/trusted/service_runtime/sel_rt.h"
-
-#include "native_client/src/trusted/service_runtime/name_service/name_service.h"
+#include "native_client/src/trusted/service_runtime/sel_util.h"
+#include "native_client/src/trusted/service_runtime/sys_futex.h"
 
 #include "native_client/src/trusted/validator/ncvalidate.h"
 
@@ -68,11 +68,12 @@ EXTERN_C_BEGIN
 struct NaClAppThread;
 struct NaClDesc;  /* see native_client/src/trusted/desc/nacl_desc_base.h */
 struct NaClDynamicRegion;
-struct NaClManifestProxy;
-struct NaClReverseQuotaInterface;
+struct NaClRuntimeHostInterface;
+struct NaClDescQuotaInterface;
 struct NaClSignalContext;
 struct NaClThreadInterface;  /* see sel_ldr_thread_interface.h */
 struct NaClValidationCache;
+struct NaClValidationMetadata;
 
 struct NaClDebugCallbacks {
   void (*thread_create_hook)(struct NaClAppThread *natp);
@@ -82,7 +83,7 @@ struct NaClDebugCallbacks {
 
 enum NaClResourcePhase {
   NACL_RESOURCE_PHASE_START,
-  NACL_RESOURCE_PHASE_REV_CHAN
+  NACL_RESOURCE_PHASE_RUNTIME_HOST
 };
 
 #if NACL_WINDOWS
@@ -99,12 +100,19 @@ typedef int (*NaClAttachDebugExceptionHandlerFunc)(const void *info,
                                                    size_t size);
 #endif
 
+struct NaClSpringboardInfo {
+  /* These are addresses in untrusted address space (relative to mem_start). */
+  uint32_t start_addr;
+  uint32_t end_addr;
+};
+
 struct NaClApp {
   /*
    * public, user settable prior to app start.
    */
   uint8_t                   addr_bits;
   uintptr_t                 stack_size;
+  uint32_t                  initial_nexe_max_code_bytes;
   /*
    * stack_size is the maximum size of the (main) stack.  The stack
    * memory is eager allocated (mapped in w/o MAP_NORESERVE) so
@@ -114,14 +122,6 @@ struct NaClApp {
    */
 
   /*
-   * aux_info can contain an arbitrary NUL terminated string.  It is
-   * set via the load_module RPC, and is intended to enable the
-   * browser plugin to provide information that would be useful for
-   * the debugger.
-   */
-  char                      *aux_info;
-
-  /*
    * Determined at load time; OS-determined.
    * Read-only after load, so accesses do not require locking.
    */
@@ -129,11 +129,12 @@ struct NaClApp {
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
   uintptr_t                 pcrel_thunk;
+  uintptr_t                 pcrel_thunk_end;
 #endif
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
-  uintptr_t                 dispatch_thunk;
-  uintptr_t                 get_tls_fast_path1;
-  uintptr_t                 get_tls_fast_path2;
+  uintptr_t                 nacl_syscall_addr;
+  uintptr_t                 get_tls_fast_path1_addr;
+  uintptr_t                 get_tls_fast_path2_addr;
 #endif
 
   /* only used for ET_EXEC:  for CS restriction */
@@ -188,12 +189,9 @@ struct NaClApp {
   /* common to both ELF executables and relocatable load images */
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
-  uintptr_t                 springboard_addr;
-  uintptr_t                 springboard_all_regs_addr;
-  /*
-   * springboard code addr for context switching into app sandbox, relative
-   * to mem_start
-   */
+  /* Addresses of trusted springboard code for switching to untrusted code. */
+  struct NaClSpringboardInfo syscall_return_springboard;
+  struct NaClSpringboardInfo all_regs_springboard;
 #endif
 
   /*
@@ -208,6 +206,27 @@ struct NaClApp {
   struct NaClDesc           *secure_service_address;
 
   struct NaClDesc           *bootstrap_channel;
+
+  /*
+   * The IRT may be supplied by an SRPC call via the command channel,
+   * or by the irt_fd member in struct NaClChromeMainArgs in the case
+   * of sel_main_chrome (the embedded service runtime), or by the -B
+   * command line argument in the case of sel_main (the standalone
+   * service runtime process).  We let the command channel have
+   * priority.
+   */
+  int irt_loaded;  /* bool */
+
+  /*
+   * The main NaCl executable may already be validated during ELF
+   * loading, where after a validation cache hit the code gets mmapped
+   * into memory if the file descriptor is "blessed" as referring to a
+   * file which the embedding environment guarantees to be effectively
+   * immutable.  If it did not validate or the file descriptor is not
+   * blessed, then the code is read into memory, and we will validate
+   * it later in the code path, in NaClAppLoadFileAslr.
+   */
+  int main_exe_prevalidated;  /* bool */
 
   struct NaClMutex          mu;
   struct NaClCondVar        cv;
@@ -243,24 +262,32 @@ struct NaClApp {
   struct NaClDesc           *name_service_conn_cap;
 
   struct NaClSecureService          *secure_service;
-  struct NaClManifestProxy          *manifest_proxy;
+
   struct NaClKernelService          *kernel_service;
 
   struct NaClResourceNaClApp        resources;
   enum NaClResourcePhase            resource_phase;
 
-  struct NaClSecureReverseClient    *reverse_client;
-  enum NaClReverseChannelInitializationState {
-    NACL_REVERSE_CHANNEL_UNINITIALIZED,
-    NACL_REVERSE_CHANNEL_INITIALIZATION_STARTED,
-    NACL_REVERSE_CHANNEL_INITIALIZED
-  }                                 reverse_channel_initialization_state;
-  struct NaClSrpcChannel            reverse_channel;
-  struct NaClReverseQuotaInterface  *reverse_quota_interface;
+  struct NaClRuntimeHostInterface   *runtime_host_interface;
+  struct NaClDescQuotaInterface     *desc_quota_interface;
 
+  /*
+   * The ordering in this enum is important. We use the ordering
+   * to check that the status of module initialization; the state
+   * is really being used as a state machine. Please do not change
+   * the ordering, if you need to add a new state please do so at
+   * the appropriate position dependending on a module loading phase.
+   */
 
-  NaClErrorCode             module_load_status;
-  int                       module_may_start;
+  enum NaClModuleInitializationState {
+    NACL_MODULE_UNINITIALIZED = 0,
+    NACL_MODULE_LOADING,
+    NACL_MODULE_LOADED,
+    NACL_MODULE_STARTING,
+    NACL_MODULE_STARTED,
+    NACL_MODULE_ERROR
+  }                                 module_initialization_state;
+  NaClErrorCode                     module_load_status;
 
   /*
    * runtime info below, thread state, etc; initialized only when app
@@ -283,13 +310,18 @@ struct NaClApp {
    * This is the effector interface object that is used to manipulate
    * NaCl apps by the objects in the NaClDesc class hierarchy.  This
    * is used by this NaClApp when making NaClDesc method calls from
-   * syscall handlers.
+   * syscall handlers.  Currently, this is when NaClDesc objects need
+   * to manipulate the untrusted address space -- the mmap
+   * implementation need to unmap the untrusted pages, and on Windows
+   * this requires different calls depending on how the pages were
+   * created.
    */
   struct NaClDescEffector   *effp;
 
   /*
    * may reject nexes that are incompatible w/ dynamic-text in the near future
    */
+  int                       enable_dyncode_syscalls;
   int                       use_shm_for_dynamic_text;
   struct NaClDesc           *text_shm;
   struct NaClMutex          dynamic_load_mutex;
@@ -302,7 +334,7 @@ struct NaClApp {
 
   /*
    * The array of dynamic_regions is maintained in sorted order
-   * Accesses must be protected by dynamic_load_mutex
+   * Accesses must be protected by dynamic_load_mutex.
    */
   struct NaClDynamicRegion  *dynamic_regions;
   int                       num_dynamic_regions;
@@ -334,6 +366,10 @@ struct NaClApp {
   int                       skip_validator;
   int                       validator_stub_out_mode;
 
+  int                       enable_list_mappings;
+  /* Whether or not the app is a PNaCl app.  Boolean. */
+  int                       pnacl_mode;
+
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
   uint16_t                  code_seg_sel;
   uint16_t                  data_seg_sel;
@@ -355,6 +391,12 @@ struct NaClApp {
   struct DynArray           desc_tbl;  /* NaClDesc pointers */
 
   const struct NaClDebugCallbacks *debug_stub_callbacks;
+#if NACL_WINDOWS
+  uint16_t                        debug_stub_port;
+#endif
+  struct NaClDesc                 *main_nexe_desc;
+  struct NaClDesc                 *irt_nexe_desc;
+
   struct NaClMutex          exception_mu;
   uint32_t                  exception_handler;
   int                       enable_exception_handling;
@@ -374,8 +416,41 @@ struct NaClApp {
    * fault_signal is non-zero.
    */
   Atomic32                  faulted_thread_count;
+#if NACL_WINDOWS
+  /*
+   * An event that is signaled by debug exception handler process when it fills
+   * fault_signal field with non-zero value for some NaClAppThread.
+   */
+  HANDLE                    faulted_thread_event;
+#else
+  /*
+   * A file descriptor of a pipe which becomes available for reading in
+   * the event that fault_signal for some NaClAppThread becomes non-zero.
+   */
+  int                       faulted_thread_fd_read;
+  int                       faulted_thread_fd_write;
+#endif
+
+  /*
+   * Cache of sysconf(_SC_NPROCESSORS_ONLN) (or equivalent) result.
+   */
+  int sc_nprocessors_onln;
 
   const struct NaClValidatorInterface *validator;
+
+  /*
+   * Mutex for protecting futex_wait_list_head.  Lock ordering:
+   * NaClApp::mu may be claimed after futex_wait_list_mu but never
+   * before it.
+   */
+  struct NaClMutex          futex_wait_list_mu;
+  /*
+   * This is the sentinel node for a doubly linked list of
+   * NaClAppThreads.  This lists the threads that are waiting to be
+   * woken up by futex_wake().  This list must only be accessed while
+   * holding the mutex futex_wait_list_mu.
+   */
+  struct NaClListNode       futex_wait_list_head;
 };
 
 
@@ -385,6 +460,10 @@ void  NaClAppIncrVerbosity(void);
 /*
  * Initializes a NaCl application with the default parameters
  * and the specified syscall table.
+ *
+ * If invoked after the outer sandbox is enabled, the caller is
+ * responsible for initializing the sc_nprocessors_onln member to a
+ * sane value.
  *
  * nap is a pointer to the NaCl object that is being filled in.
  *
@@ -396,8 +475,17 @@ void  NaClAppIncrVerbosity(void);
  */
 int NaClAppWithSyscallTableCtor(struct NaClApp               *nap,
                                 struct NaClSyscallTableEntry *table) NACL_WUR;
-
-int   NaClAppCtor(struct NaClApp  *nap) NACL_WUR;
+/*
+ * Standard Ctor for NaClApp objects.  Installs default syscall
+ * handlers.
+ *
+ * If invoked after the outer sandbox is enabled, the caller is
+ * responsible for initializing the sc_nprocessors_onln member to a
+ * sane value.
+ *
+ * nap is a pointer to the NaCl object that is being filled in.
+ */
+int NaClAppCtor(struct NaClApp  *nap) NACL_WUR;
 
 /*
  * Loads a NaCl ELF file into memory in preparation for running it.
@@ -422,19 +510,21 @@ int   NaClAppCtor(struct NaClApp  *nap) NACL_WUR;
  * self-modifying code / data writes and automatically invalidate the
  * cache lines.
  */
-NaClErrorCode NaClAppLoadFile(struct Gio      *gp,
-                              struct NaClApp  *nap) NACL_WUR;
+NaClErrorCode NaClAppLoadFile(struct NaClDesc *ndp,
+                              struct NaClApp *nap) NACL_WUR;
 
 /*
  * Just like NaClAppLoadFile, but allow control over ASLR.
  */
-NaClErrorCode NaClAppLoadFileAslr(struct Gio        *gp,
-                                  struct NaClApp    *nap,
+NaClErrorCode NaClAppLoadFileAslr(struct NaClDesc *ndp,
+                                  struct NaClApp *nap,
                                   enum NaClAslrMode aslr_mode) NACL_WUR;
 
 
-NaClErrorCode NaClAppLoadFileDynamically(struct NaClApp *nap,
-                                         struct Gio     *gio_file) NACL_WUR;
+NaClErrorCode NaClAppLoadFileDynamically(
+    struct NaClApp *nap,
+    struct NaClDesc *ndp,
+    struct NaClValidationMetadata *metadata) NACL_WUR;
 
 void  NaClAppPrintDetails(struct NaClApp  *nap,
                           struct Gio      *gp);
@@ -445,7 +535,8 @@ NaClErrorCode NaClLoadImage(struct Gio            *gp,
 int NaClValidateCode(struct NaClApp *nap,
                      uintptr_t      guest_addr,
                      uint8_t        *data,
-                     size_t         size) NACL_WUR;
+                     size_t         size,
+                     const struct NaClValidationMetadata *metadata) NACL_WUR;
 
 /*
  * Validates that the code found at data_old can safely be replaced with
@@ -515,6 +606,11 @@ int NaClAppLaunchServiceThreads(struct NaClApp *nap);
 int NaClReportExitStatus(struct NaClApp *nap, int exit_status);
 
 /*
+ * Get the top of the initial thread's stack.  Returns a user address.
+ */
+uintptr_t NaClGetInitialStackTop(struct NaClApp *nap);
+
+/*
  * Used to launch the main thread.  NB: calling thread may in the
  * future become the main NaCl app thread, and this function will
  * return only after the NaCl app main thread exits.  In such an
@@ -537,7 +633,7 @@ int32_t NaClCreateAdditionalThread(struct NaClApp *nap,
                                    uint32_t       user_tls1,
                                    uint32_t       user_tls2) NACL_WUR;
 
-void NaClLoadTrampoline(struct NaClApp *nap);
+void NaClLoadTrampoline(struct NaClApp *nap, enum NaClAslrMode aslr_mode);
 
 void NaClLoadSpringboard(struct NaClApp  *nap);
 
@@ -551,32 +647,26 @@ static const uintptr_t kNaClBadAddress = (uintptr_t) -1;
  * The caller is responsible for invoking NaClDescUnref() on it when
  * done.
  */
-struct NaClDesc *NaClGetDesc(struct NaClApp *nap,
-                             int            d);
+struct NaClDesc *NaClAppGetDesc(struct NaClApp *nap,
+                                int            d);
 
-/*
- * Takes ownership of ndp.
- */
-void NaClSetDesc(struct NaClApp   *nap,
-                 int              d,
-                 struct NaClDesc  *ndp);
+/* NaClAppSetDesc() is defined in src/public/chrome_main.h. */
 
-
-int32_t NaClSetAvail(struct NaClApp   *nap,
-                     struct NaClDesc  *ndp);
+int32_t NaClAppSetDescAvail(struct NaClApp   *nap,
+                            struct NaClDesc  *ndp);
 
 /*
  * Versions that are called while already holding the desc_mu lock
  */
-struct NaClDesc *NaClGetDescMu(struct NaClApp *nap,
-                               int            d);
+struct NaClDesc *NaClAppGetDescMu(struct NaClApp *nap,
+                                  int            d);
 
-void NaClSetDescMu(struct NaClApp   *nap,
-                   int              d,
-                   struct NaClDesc  *ndp);
+void NaClAppSetDescMu(struct NaClApp   *nap,
+                      int              d,
+                      struct NaClDesc  *ndp);
 
-int32_t NaClSetAvailMu(struct NaClApp   *nap,
-                       struct NaClDesc  *ndp);
+int32_t NaClAppSetDescAvailMu(struct NaClApp   *nap,
+                              struct NaClDesc  *ndp);
 
 
 int NaClAddThread(struct NaClApp        *nap,
@@ -602,6 +692,37 @@ void NaClSetUpBootstrapChannel(struct NaClApp  *nap,
                                NaClHandle      inherited_desc);
 
 void NaClSecureCommandChannel(struct NaClApp  *nap);
+
+/*
+ * Loads the |nexe| as a NaCl app module.
+ * The |load_cb| callback is invoked before the the |nexe| is loaded to allow
+ * validation being run in parallel.
+ */
+void NaClAppLoadModule(struct NaClApp      *self,
+                       struct NaClDesc     *nexe,
+                       void                (*load_cb)(void *instance_data,
+                                                      NaClErrorCode status),
+                       void                *instance_data);
+
+int NaClAppRuntimeHostSetup(struct NaClApp                  *self,
+                            struct NaClRuntimeHostInterface *host_itf);
+
+int NaClAppDescQuotaSetup(struct NaClApp                *self,
+                          struct NaClDescQuotaInterface *rev_quota);
+
+/*
+ * Starts the NaCl app, the |start_cb| callback is invoked before the
+ * application is actually started.
+ */
+void NaClAppStartModule(struct NaClApp  *self,
+                        void            (*start_cb)(void *instance_data,
+                                                    NaClErrorCode status),
+                        void            *instance_data);
+
+void NaClAppShutdown(struct NaClApp     *self,
+                     int                exit_status);
+
+NaClErrorCode NaClWaitForLoadModuleCommand(struct NaClApp *nap) NACL_WUR;
 
 NaClErrorCode NaClWaitForLoadModuleStatus(struct NaClApp *nap) NACL_WUR;
 
@@ -634,18 +755,13 @@ void NaClFillEndOfTextRegion(struct NaClApp *nap);
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 32
 
-int NaClMakePcrelThunk(struct NaClApp *nap);
+int NaClMakePcrelThunk(struct NaClApp *nap, enum NaClAslrMode aslr_mode);
 
 #endif
 
 #if NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64
 
-int NaClMakeDispatchThunk(struct NaClApp *nap);
-
-#endif
-
-#if ((NACL_ARCH(NACL_BUILD_ARCH) == NACL_x86 && NACL_BUILD_SUBARCH == 64) || \
-     NACL_ARCH(NACL_BUILD_ARCH) == NACL_arm)
+int NaClMakeDispatchAddrs(struct NaClApp *nap);
 
 void NaClPatchOneTrampolineCall(uintptr_t call_target_addr,
                                 uintptr_t target_addr);
@@ -693,13 +809,9 @@ struct NaClPatchInfo *NaClPatchInfoCtor(struct NaClPatchInfo *self);
 
 void NaClApplyPatchToMemory(struct NaClPatchInfo *patch);
 
-int NaClThreadContextCtor(struct NaClThreadContext  *ntcp,
-                          struct NaClApp            *nap,
-                          nacl_reg_t                prog_ctr,
-                          nacl_reg_t                stack_ptr,
-                          uint32_t                  tls_info);
-
-void NaClThreadContextDtor(struct NaClThreadContext *ntcp);
+int NaClAppThreadInitArchSpecific(struct NaClAppThread *natp,
+                                  nacl_reg_t           prog_ctr,
+                                  nacl_reg_t           stack_ptr);
 
 void NaClVmHoleWaitToStartThread(struct NaClApp *nap);
 

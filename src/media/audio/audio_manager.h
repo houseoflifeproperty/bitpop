@@ -9,14 +9,13 @@
 
 #include "base/basictypes.h"
 #include "base/memory/ref_counted.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "media/audio/audio_device_name.h"
+#include "media/audio/audio_logging.h"
 #include "media/audio/audio_parameters.h"
 
-class MessageLoop;
-
 namespace base {
-class MessageLoopProxy;
+class SingleThreadTaskRunner;
 }
 
 namespace media {
@@ -24,16 +23,24 @@ namespace media {
 class AudioInputStream;
 class AudioOutputStream;
 
-// Manages all audio resources. In particular it owns the AudioOutputStream
-// objects. Provides some convenience functions that avoid the need to provide
-// iterators over the existing streams.
+// Manages all audio resources.  Provides some convenience functions that avoid
+// the need to provide iterators over the existing streams.
 class MEDIA_EXPORT AudioManager {
- public:
-  virtual ~AudioManager();
+  public:
+   virtual ~AudioManager();
 
-  // Use to construct the audio manager.
-  // NOTE: There should only be one instance.
-  static AudioManager* Create();
+  // Construct the audio manager; only one instance is allowed.  The manager
+  // will forward CreateAudioLog() calls to the provided AudioLogFactory; as
+  // such |audio_log_factory| must outlive the AudioManager.
+  static AudioManager* Create(AudioLogFactory* audio_log_factory);
+
+  // Similar to Create() except uses a FakeAudioLogFactory for testing.
+  static AudioManager* CreateForTesting();
+
+  // Returns the pointer to the last created instance, or NULL if not yet
+  // created. This is a utility method for the code outside of media directory,
+  // like src/chrome.
+  static AudioManager* Get();
 
   // Returns true if the OS reports existence of audio devices. This does not
   // guarantee that the existing devices support all formats and sample rates.
@@ -46,11 +53,7 @@ class MEDIA_EXPORT AudioManager {
 
   // Returns a human readable string for the model/make of the active audio
   // input device for this computer.
-  virtual string16 GetAudioInputDeviceModel() = 0;
-
-  // Returns true if the platform specific audio input settings UI is known
-  // and can be shown.
-  virtual bool CanShowAudioInputSettings() = 0;
+  virtual base::string16 GetAudioInputDeviceModel() = 0;
 
   // Opens the platform default audio input settings UI.
   // Note: This could invoke an external application/preferences pane, so
@@ -58,10 +61,21 @@ class MEDIA_EXPORT AudioManager {
   // threads to avoid blocking the rest of the application.
   virtual void ShowAudioInputSettings() = 0;
 
-  // Appends a list of available input devices. It is not guaranteed that
-  // all the devices in the list support all formats and sample rates for
+  // Appends a list of available input devices to |device_names|,
+  // which must initially be empty. It is not guaranteed that all the
+  // devices in the list support all formats and sample rates for
   // recording.
+  //
+  // Not threadsafe; in production this should only be called from the
+  // Audio IO thread (see GetTaskRunner()).
   virtual void GetAudioInputDeviceNames(AudioDeviceNames* device_names) = 0;
+
+  // Appends a list of available output devices to |device_names|,
+  // which must initially be empty.
+  //
+  // Not threadsafe; in production this should only be called from the
+  // Audio IO thread (see GetTaskRunner()).
+  virtual void GetAudioOutputDeviceNames(AudioDeviceNames* device_names) = 0;
 
   // Factory for all the supported stream formats. |params| defines parameters
   // of the audio stream to be created.
@@ -70,6 +84,9 @@ class MEDIA_EXPORT AudioManager {
   // audio source thinks it can usually fill without blocking. Internally two
   // or three buffers are created, one will be locked for playback and one will
   // be ready to be filled in the call to AudioSourceCallback::OnMoreData().
+  //
+  // To create a stream for the default output device, pass an empty string
+  // for |device_id|, otherwise the specified audio device will be opened.
   //
   // Returns NULL if the combination of the parameters is not supported, or if
   // we have reached some other platform specific limit.
@@ -82,14 +99,16 @@ class MEDIA_EXPORT AudioManager {
   //
   // Do not free the returned AudioOutputStream. It is owned by AudioManager.
   virtual AudioOutputStream* MakeAudioOutputStream(
-      const AudioParameters& params) = 0;
+      const AudioParameters& params,
+      const std::string& device_id) = 0;
 
   // Creates new audio output proxy. A proxy implements
   // AudioOutputStream interface, but unlike regular output stream
   // created with MakeAudioOutputStream() it opens device only when a
   // sound is actually playing.
   virtual AudioOutputStream* MakeAudioOutputStreamProxy(
-      const AudioParameters& params) = 0;
+      const AudioParameters& params,
+      const std::string& device_id) = 0;
 
   // Factory to create audio recording streams.
   // |channels| can be 1 or 2.
@@ -106,11 +125,13 @@ class MEDIA_EXPORT AudioManager {
   virtual AudioInputStream* MakeAudioInputStream(
       const AudioParameters& params, const std::string& device_id) = 0;
 
-  // Used to determine if something else is currently making use of audio input.
-  virtual bool IsRecordingInProcess() = 0;
+  // Returns the task runner used for audio IO.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetTaskRunner() = 0;
 
-  // Returns message loop used for audio IO.
-  virtual scoped_refptr<base::MessageLoopProxy> GetMessageLoop() = 0;
+  // Heavyweight tasks should use GetWorkerTaskRunner() instead of
+  // GetTaskRunner(). On most platforms they are the same, but some share the
+  // UI loop with the audio IO loop.
+  virtual scoped_refptr<base::SingleThreadTaskRunner> GetWorkerTaskRunner() = 0;
 
   // Allows clients to listen for device state changes; e.g. preferred sample
   // rate or channel layout changes.  The typical response to receiving this
@@ -123,6 +144,37 @@ class MEDIA_EXPORT AudioManager {
   virtual void AddOutputDeviceChangeListener(AudioDeviceListener* listener) = 0;
   virtual void RemoveOutputDeviceChangeListener(
       AudioDeviceListener* listener) = 0;
+
+  // Returns the default output hardware audio parameters for opening output
+  // streams. It is a convenience interface to
+  // AudioManagerBase::GetPreferredOutputStreamParameters and each AudioManager
+  // does not need their own implementation to this interface.
+  // TODO(tommi): Remove this method and use GetOutputStreamParameteres instead.
+  virtual AudioParameters GetDefaultOutputStreamParameters() = 0;
+
+  // Returns the output hardware audio parameters for a specific output device.
+  virtual AudioParameters GetOutputStreamParameters(
+      const std::string& device_id) = 0;
+
+  // Returns the input hardware audio parameters of the specific device
+  // for opening input streams. Each AudioManager needs to implement their own
+  // version of this interface.
+  virtual AudioParameters GetInputStreamParameters(
+      const std::string& device_id) = 0;
+
+  // Returns the device id of an output device that belongs to the same hardware
+  // as the specified input device.
+  // If the hardware has only an input device (e.g. a webcam), the return value
+  // will be empty (which the caller can then interpret to be the default output
+  // device).  Implementations that don't yet support this feature, must return
+  // an empty string.
+  virtual std::string GetAssociatedOutputDeviceID(
+      const std::string& input_device_id) = 0;
+
+  // Create a new AudioLog object for tracking the behavior for one or more
+  // instances of the given component.  See AudioLogFactory for more details.
+  virtual scoped_ptr<AudioLog> CreateAudioLog(
+      AudioLogFactory::AudioComponent component) = 0;
 
  protected:
   AudioManager();

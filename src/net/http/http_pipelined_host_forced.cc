@@ -10,10 +10,6 @@
 #include "net/socket/buffered_write_stream_socket.h"
 #include "net/socket/client_socket_handle.h"
 
-using base::DictionaryValue;
-using base::ListValue;
-using base::Value;
-
 namespace net {
 
 HttpPipelinedHostForced::HttpPipelinedHostForced(
@@ -40,10 +36,9 @@ HttpPipelinedStream* HttpPipelinedHostForced::CreateStreamOnNewPipeline(
     bool was_npn_negotiated,
     NextProto protocol_negotiated) {
   CHECK(!pipeline_.get());
-  StreamSocket* wrapped_socket = connection->release_socket();
-  BufferedWriteStreamSocket* buffered_socket = new BufferedWriteStreamSocket(
-      wrapped_socket);
-  connection->set_socket(buffered_socket);
+  scoped_ptr<BufferedWriteStreamSocket> buffered_socket(
+      new BufferedWriteStreamSocket(connection->PassSocket()));
+  connection->SetSocket(buffered_socket.PassAs<StreamSocket>());
   pipeline_.reset(factory_->CreateNewPipeline(
       connection, this, key_.origin(), used_ssl_config, used_proxy_info,
       net_log, was_npn_negotiated, protocol_negotiated));
@@ -89,10 +84,10 @@ void HttpPipelinedHostForced::OnPipelineFeedback(
   // We don't care. We always pipeline.
 }
 
-Value* HttpPipelinedHostForced::PipelineInfoToValue() const {
-  ListValue* list_value = new ListValue();
+base::Value* HttpPipelinedHostForced::PipelineInfoToValue() const {
+  base::ListValue* list_value = new base::ListValue();
   if (pipeline_.get()) {
-    DictionaryValue* pipeline_dict = new DictionaryValue;
+    base::DictionaryValue* pipeline_dict = new base::DictionaryValue;
     pipeline_dict->SetString("host", key_.origin().ToString());
     pipeline_dict->SetBoolean("forced", true);
     pipeline_dict->SetInteger("depth", pipeline_->depth());

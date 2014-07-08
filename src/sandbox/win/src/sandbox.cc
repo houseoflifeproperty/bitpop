@@ -9,18 +9,10 @@
 #include "sandbox/win/src/broker_services.h"
 #include "sandbox/win/src/target_services.h"
 
-#if defined(_WIN64) && !defined(NACL_WIN64)
-// We allow building this code for Win64 as part of NaCl to enable development
-#error Sandbox code was not tested on 64-bit Windows. See \
- http://crbug.com/27218 for details and progress log.
-#endif
-
-
 namespace sandbox {
 // The section for IPC and policy.
-SANDBOX_INTERCEPT HANDLE  g_shared_section = NULL;
-
-static bool               s_is_broker =  false;
+SANDBOX_INTERCEPT HANDLE  g_shared_section;
+static bool               s_is_broker = false;
 
 // GetBrokerServices: the current implementation relies on a shared section
 // that is created by the broker and opened by the target.
@@ -49,3 +41,8 @@ TargetServices* SandboxFactory::GetTargetServices() {
 }
 
 }  // namespace sandbox
+
+// Allows querying for whether the current process has been sandboxed.
+extern "C" bool __declspec(dllexport) IsSandboxedProcess() {
+  return sandbox::g_shared_section != NULL;
+}

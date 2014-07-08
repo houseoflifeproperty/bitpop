@@ -8,28 +8,26 @@
  *  be found in the AUTHORS file in the root of the source tree.
  */
 
+#include <android/log.h>
 #include <stdio.h>
 #include <string.h>
 #include <unistd.h>
-#include <android/log.h>
 
-#include "org_webrtc_voiceengine_test_AndroidTest.h"
+#include "webrtc/voice_engine/test/android/android_test/jni/org_webrtc_voiceengine_test_AndroidTest.h"
 
-#include "thread_wrapper.h"
+#include "webrtc/system_wrappers/interface/thread_wrapper.h"
 
-#include "voe_base.h"
-#include "voe_codec.h"
-#include "voe_file.h"
-#include "voe_network.h"
-#include "voe_audio_processing.h"
-#include "voe_volume_control.h"
-#include "voe_hardware.h"
-#include "voe_rtp_rtcp.h"
-#include "voe_encryption.h"
+#include "webrtc/voice_engine/include/voe_audio_processing.h"
+#include "webrtc/voice_engine/include/voe_base.h"
+#include "webrtc/voice_engine/include/voe_codec.h"
+#include "webrtc/voice_engine/include/voe_file.h"
+#include "webrtc/voice_engine/include/voe_hardware.h"
+#include "webrtc/voice_engine/include/voe_network.h"
+#include "webrtc/voice_engine/include/voe_rtp_rtcp.h"
+#include "webrtc/voice_engine/include/voe_volume_control.h"
 
-#include "voe_test_interface.h"
+#include "webrtc/voice_engine/test/auto_test/voe_test_interface.h"
 
-//#define USE_SRTP
 //#define INIT_FROM_THREAD
 //#define START_CALL_FROM_THREAD
 
@@ -90,13 +88,6 @@
                             "RTP / RTCP pointer doesn't exist"); \
         return -1; \
     }
-#define VALIDATE_ENCRYPT_POINTER \
-    if (!veData1.encrypt) \
-    { \
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG, \
-                            "Encrypt pointer doesn't exist"); \
-        return -1; \
-    }
 
 // Register functions in JNI_OnLoad()
 // How do we ensure that VoE is deleted? JNI_OnUnload?
@@ -117,32 +108,6 @@ enum TestType
   CPU      = 4
 };
 
-// ExtendedSelection enumerator
-enum ExtendedSelection
-{
-   XSEL_Invalid = -1,
-   XSEL_None = 0,
-   XSEL_All,
-   XSEL_Base,
-   XSEL_CallReport,
-   XSEL_Codec,
-   XSEL_DTMF,
-   XSEL_Encryption,
-   XSEL_ExternalMedia,
-   XSEL_File,
-   XSEL_Hardware,
-   XSEL_NetEqStats,
-   XSEL_Network,
-   XSEL_PTT,
-   XSEL_RTP_RTCP,
-   XSEL_VideoSync,
-   XSEL_VideoSyncExtended,
-   XSEL_VolumeControl,
-   XSEL_VQE,
-   XSEL_APM,
-   XSEL_VQMon
-};
-
 using namespace webrtc;
 
 class my_transportation;
@@ -161,7 +126,6 @@ typedef struct
     VoEVolumeControl* volume;
     VoEHardware* hardware;
     VoERTP_RTCP* rtp_rtcp;
-    VoEEncryption* encrypt;
     // Other
     my_transportation* extTrans;
     JavaVM* jvm;
@@ -448,80 +412,12 @@ JNIEXPORT jint JNICALL Java_org_webrtc_voiceengine_test_AndroidTest_RunAutoTest(
             return -1;
     }
 
-    ExtendedSelection xsel(XSEL_Invalid);
-
-    switch (extendedSel)
-    {
-        case 0:
-            xsel = XSEL_None;
-            break;
-        case 1:
-            xsel = XSEL_All;
-            break;
-        case 2:
-            xsel = XSEL_Base;
-            break;
-        case 3:
-            xsel = XSEL_CallReport;
-            break;
-        case 4:
-            xsel = XSEL_Codec;
-            break;
-        case 5:
-            xsel = XSEL_DTMF;
-            break;
-        case 6:
-            xsel = XSEL_Encryption;
-            break;
-        case 7:
-            xsel = XSEL_ExternalMedia;
-            break;
-        case 8:
-            xsel = XSEL_File;
-            break;
-        case 9:
-            xsel = XSEL_Hardware;
-            break;
-        case 10:
-            xsel = XSEL_NetEqStats;
-            break;
-        case 11:
-            xsel = XSEL_Network;
-            break;
-        case 12:
-            xsel = XSEL_PTT;
-            break;
-        case 13:
-            xsel = XSEL_RTP_RTCP;
-            break;
-        case 14:
-            xsel = XSEL_VideoSync;
-            break;
-        case 15:
-            xsel = XSEL_VideoSyncExtended;
-            break;
-        case 16:
-            xsel = XSEL_VolumeControl;
-            break;
-        case 17:
-            xsel = XSEL_APM;
-            break;
-        case 18:
-            xsel = XSEL_VQMon;
-            break;
-        default:
-            xsel = XSEL_Invalid;
-            __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                                "RunAutoTest - Invalid extendedType");
-            return -1;
-    }
-
     // Set instance independent Java objects
     VoiceEngine::SetAndroidObjects(veData1.jvm, env, context);
 
     // Call voe test interface function
     // TODO(leozwang) add autotest setAndroidObjects(veData1.jvm, context);
-    // jint retVal = runAutoTest(tType, xsel);
+    // jint retVal = runAutoTest(tType);
 
     // Clear instance independent Java objects
     VoiceEngine::SetAndroidObjects(NULL, NULL, NULL);
@@ -767,20 +663,6 @@ JNIEXPORT jint JNICALL Java_org_webrtc_voiceengine_test_AndroidTest_StartListen(
         jobject,
         jint channel)
 {
-#ifdef USE_SRTP
-    VALIDATE_ENCRYPT_POINTER;
-    bool useForRTCP = false;
-    if (veData1.encrypt->EnableSRTPReceive(
-                    channel,CIPHER_AES_128_COUNTER_MODE,30,AUTH_HMAC_SHA1,
-                    16,4, ENCRYPTION_AND_AUTHENTICATION,
-                    (unsigned char*)nikkey, useForRTCP) != 0)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                "Failed to enable SRTP receive");
-        return -1;
-    }
-#endif
-
     VALIDATE_BASE_POINTER;
     int retVal = veData1.base->StartReceive(channel);
 
@@ -834,19 +716,6 @@ JNIEXPORT jint JNICALL Java_org_webrtc_voiceengine_test_AndroidTest_StartSend(
          "Failed to enable FEC");
      return -1;
      } */
-#ifdef USE_SRTP
-    VALIDATE_ENCRYPT_POINTER;
-    bool useForRTCP = false;
-    if (veData1.encrypt->EnableSRTPSend(
-                    channel,CIPHER_AES_128_COUNTER_MODE,30,AUTH_HMAC_SHA1,
-                    16,4, ENCRYPTION_AND_AUTHENTICATION,
-                    (unsigned char*)nikkey, useForRTCP) != 0)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                "Failed to enable SRTP send");
-        return -1;
-    }
-#endif
 
     VALIDATE_BASE_POINTER;
     int retVal = veData1.base->StartSend(channel);
@@ -862,16 +731,6 @@ JNIEXPORT jint JNICALL Java_org_webrtc_voiceengine_test_AndroidTest_StopListen(
         jobject,
         jint channel)
 {
-#ifdef USE_SRTP
-    VALIDATE_ENCRYPT_POINTER;
-    if (veData1.encrypt->DisableSRTPReceive(channel) != 0)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                "Failed to disable SRTP receive");
-        return -1;
-    }
-#endif
-
     VALIDATE_BASE_POINTER;
     return veData1.base->StopReceive(channel);
 }
@@ -902,16 +761,6 @@ JNIEXPORT jint JNICALL Java_org_webrtc_voiceengine_test_AndroidTest_StopSend(
          "Failed to disable FEC");
      return -1;
      } */
-
-#ifdef USE_SRTP
-    VALIDATE_ENCRYPT_POINTER;
-    if (veData1.encrypt->DisableSRTPSend(channel) != 0)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                "Failed to disable SRTP send");
-        return -1;
-    }
-#endif
 
     VALIDATE_BASE_POINTER;
     return veData1.base->StopSend(channel);
@@ -1396,15 +1245,6 @@ bool GetSubApis(VoiceEngineData &veData)
         getOK = false;
     }
 
-    // Encrypt
-    veData.encrypt = VoEEncryption::GetInterface(veData.ve);
-    if (!veData.encrypt)
-    {
-        __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                            "Get encrypt sub-API failed");
-        getOK = false;
-    }
-
     return getOK;
 }
 
@@ -1532,21 +1372,6 @@ bool ReleaseSubApis(VoiceEngineData &veData)
         else
         {
             veData.rtp_rtcp = NULL;
-        }
-    }
-
-    // Encrypt
-    if (veData.encrypt)
-    {
-        if (0 != veData.encrypt->Release())
-        {
-            __android_log_write(ANDROID_LOG_ERROR, WEBRTC_LOG_TAG,
-                                "Release encrypt sub-API failed");
-            releaseOK = false;
-        }
-        else
-        {
-            veData.encrypt = NULL;
         }
     }
 

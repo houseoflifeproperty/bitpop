@@ -2,9 +2,11 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "chrome/browser/sync/glue/change_processor.h"
-#include "chrome/browser/sync/glue/model_associator.h"
 #include "chrome/browser/sync/profile_sync_components_factory_mock.h"
+#include "components/sync_driver/change_processor.h"
+#include "components/sync_driver/model_associator.h"
+#include "content/public/browser/browser_thread.h"
+#include "sync/api/attachments/fake_attachment_store.h"
 
 using browser_sync::AssociatorInterface;
 using browser_sync::ChangeProcessor;
@@ -25,6 +27,16 @@ ProfileSyncComponentsFactoryMock::ProfileSyncComponentsFactoryMock(
 }
 
 ProfileSyncComponentsFactoryMock::~ProfileSyncComponentsFactoryMock() {}
+
+scoped_ptr<syncer::AttachmentStore>
+    ProfileSyncComponentsFactoryMock::CreateCustomAttachmentStoreForType(
+        syncer::ModelType type) {
+  scoped_ptr<syncer::AttachmentStore> store(
+      new syncer::FakeAttachmentStore(
+          content::BrowserThread::GetMessageLoopProxyForThread(
+              content::BrowserThread::IO)));
+  return store.Pass();
+}
 
 ProfileSyncComponentsFactory::SyncComponents
     ProfileSyncComponentsFactoryMock::MakeSyncComponents() {

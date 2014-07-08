@@ -3,12 +3,17 @@
 // found in the LICENSE file.
 
 /**
- * Updates the Drive related Flags section.
- * @param {Array} flags List of dictionaries describing flags.
+ * Converts a number in bytes to a string in megabytes split by comma into
+ * three digit block.
+ * @param {number} bytes The number in bytes.
+ * @return {string} Formatted string in megabytes.
  */
-function updateDriveRelatedFlags(flags) {
-  var ul = $('drive-related-flags');
-  updateKeyValueList(ul, flags);
+function ToMegaByteString(bytes) {
+  var mb = Math.floor(bytes / (1 << 20));
+  return mb.toString().replace(
+      /\d+?(?=(\d{3})+$)/g,  // Digit sequence (\d+) followed (?=) by 3n digits.
+      function(three_digit_block) { return three_digit_block + ','; }
+  );
 }
 
 /**
@@ -21,12 +26,22 @@ function updateDriveRelatedPreferences(preferences) {
 }
 
 /**
- * Updates the Authentication Status section.
- * @param {Object} authStatus Dictionary containing auth status.
+ * Updates the Connection Status section.
+ * @param {Object} connStatus Dictionary containing connection status.
  */
-function updateAuthStatus(authStatus) {
-  $('has-refresh-token').textContent = authStatus['has-refresh-token'];
-  $('has-access-token').textContent = authStatus['has-access-token'];
+function updateConnectionStatus(connStatus) {
+  $('connection-status').textContent = connStatus['status'];
+  $('has-refresh-token').textContent = connStatus['has-refresh-token'];
+  $('has-access-token').textContent = connStatus['has-access-token'];
+}
+
+/**
+ * Updates the Path Configurations section.
+ * @param {Array} paths List of dictionaries describing paths.
+ */
+function updatePathConfigurations(paths) {
+  var ul = $('path-configurations');
+  updateKeyValueList(ul, paths);
 }
 
 /**
@@ -51,10 +66,12 @@ function updateGCacheContents(gcacheContents, gcacheSummary) {
     tr.appendChild(createElementFromText('td', path));
     tr.appendChild(createElementFromText('td', entry.size));
     tr.appendChild(createElementFromText('td', entry.last_modified));
+    tr.appendChild(createElementFromText('td', entry.permission));
     tbody.appendChild(tr);
   }
 
-  $('gcache-summary-total-size').textContent = gcacheSummary['total_size'];
+  $('gcache-summary-total-size').textContent =
+      ToMegaByteString(gcacheSummary['total_size']);
 }
 
 /**
@@ -75,13 +92,11 @@ function updateFileSystemContents(directoryContentsAsText) {
  */
 function updateCacheContents(cacheEntry) {
   var tr = document.createElement('tr');
-  tr.appendChild(createElementFromText('td', cacheEntry.resource_id));
+  tr.appendChild(createElementFromText('td', cacheEntry.local_id));
   tr.appendChild(createElementFromText('td', cacheEntry.md5));
   tr.appendChild(createElementFromText('td', cacheEntry.is_present));
   tr.appendChild(createElementFromText('td', cacheEntry.is_pinned));
   tr.appendChild(createElementFromText('td', cacheEntry.is_dirty));
-  tr.appendChild(createElementFromText('td', cacheEntry.is_mounted));
-  tr.appendChild(createElementFromText('td', cacheEntry.is_persistent));
 
   $('cache-contents').appendChild(tr);
 }
@@ -92,7 +107,7 @@ function updateCacheContents(cacheEntry) {
  * stogage.
  */
 function updateLocalStorageUsage(localStorageSummary) {
-  var freeSpaceInMB = localStorageSummary.free_space / (1 << 20);
+  var freeSpaceInMB = ToMegaByteString(localStorageSummary.free_space);
   $('local-storage-freespace').innerText = freeSpaceInMB;
 }
 
@@ -104,9 +119,10 @@ function updateLocalStorageUsage(localStorageSummary) {
 function updateInFlightOperations(inFlightOperations) {
   var container = $('in-flight-operations-contents');
 
-  // Reset the table.
+  // Reset the table. Remove children in reverse order. Otherwides each
+  // existingNodes[i] changes as a side effect of removeChild.
   var existingNodes = container.childNodes;
-  for (var i = 0; i < existingNodes.length; i++) {
+  for (var i = existingNodes.length - 1; i >= 0; i--) {
     var node = existingNodes[i];
     if (node.className == 'in-flight-operation')
       container.removeChild(node);
@@ -117,15 +133,14 @@ function updateInFlightOperations(inFlightOperations) {
     var operation = inFlightOperations[i];
     var tr = document.createElement('tr');
     tr.className = 'in-flight-operation';
-    tr.appendChild(createElementFromText('td', operation.operation_id));
-    tr.appendChild(createElementFromText('td', operation.operation_type));
+    tr.appendChild(createElementFromText('td', operation.id));
+    tr.appendChild(createElementFromText('td', operation.type));
     tr.appendChild(createElementFromText('td', operation.file_path));
-    tr.appendChild(createElementFromText('td', operation.transfer_state));
-    tr.appendChild(createElementFromText('td', operation.start_time));
+    tr.appendChild(createElementFromText('td', operation.state));
     var progress = operation.progress_current + '/' + operation.progress_total;
     if (operation.progress_total > 0) {
-      progress += ' (' +
-          (operation.progress_current / operation.progress_total * 100) + '%)';
+      var percent = operation.progress_current / operation.progress_total * 100;
+      progress += ' (' + Math.round(percent) + '%)';
     }
     tr.appendChild(createElementFromText('td', progress));
 
@@ -134,29 +149,38 @@ function updateInFlightOperations(inFlightOperations) {
 }
 
 /**
- * Updates the summary about account metadata.
- * @param {Object} accountMetadata Dictionary describing account metadata.
+ * Updates the summary about about resource.
+ * @param {Object} aboutResource Dictionary describing about resource.
  */
-function updateAccountMetadata(accountMetadata) {
-  var quotaTotalInMb = accountMetadata['account-quota-total'] / (1 << 20);
-  var quotaUsedInMb = accountMetadata['account-quota-used'] / (1 << 20);
+function updateAboutResource(aboutResource) {
+  var quotaTotalInMb = ToMegaByteString(aboutResource['account-quota-total']);
+  var quotaUsedInMb = ToMegaByteString(aboutResource['account-quota-used']);
 
   $('account-quota-info').textContent =
       quotaUsedInMb + ' / ' + quotaTotalInMb + ' (MB)';
   $('account-largest-changestamp-remote').textContent =
-      accountMetadata['account-largest-changestamp-remote'];
+      aboutResource['account-largest-changestamp-remote'];
+  $('root-resource-id').textContent = aboutResource['root-resource-id'];
+}
 
-  var installedAppContainer = $('account-installed-apps');
-  for (var i = 0; i < accountMetadata['installed-apps'].length; i++) {
-    var app = accountMetadata['installed-apps'][i];
+/**
+ * Updates the summary about app list.
+ * @param {Object} appList Dictionary describing app list.
+ */
+function updateAppList(appList) {
+  $('app-list-etag').textContent = appList['etag'];
+
+  var itemContainer = $('app-list-items');
+  for (var i = 0; i < appList['items'].length; i++) {
+    var app = appList['items'][i];
     var tr = document.createElement('tr');
     tr.className = 'installed-app';
-    tr.appendChild(createElementFromText('td', app.app_name));
-    tr.appendChild(createElementFromText('td', app.app_id));
+    tr.appendChild(createElementFromText('td', app.name));
+    tr.appendChild(createElementFromText('td', app.application_id));
     tr.appendChild(createElementFromText('td', app.object_type));
     tr.appendChild(createElementFromText('td', app.supports_create));
 
-    installedAppContainer.appendChild(tr);
+    itemContainer.appendChild(tr);
   }
 }
 
@@ -165,10 +189,11 @@ function updateAccountMetadata(accountMetadata) {
  * @param {Object} localMetadata Dictionary describing account metadata.
  */
 function updateLocalMetadata(localMetadata) {
+  var changestamp = localMetadata['account-largest-changestamp-local'];
+
   $('account-largest-changestamp-local').textContent =
-      localMetadata['account-largest-changestamp-local'];
-  $('account-metadata-loaded').textContent =
-      localMetadata['account-metadata-loaded'].toString() +
+      changestamp.toString() +
+      (changestamp > 0 ? ' (loaded)' : ' (not loaded)') +
       (localMetadata['account-metadata-refreshing'] ? ' (refreshing)' : '');
 }
 
@@ -179,8 +204,6 @@ function updateLocalMetadata(localMetadata) {
 function updateDeltaUpdateStatus(deltaUpdateStatus) {
   $('push-notification-enabled').textContent =
         deltaUpdateStatus['push-notification-enabled'];
-  $('polling-interval-sec').textContent =
-        deltaUpdateStatus['polling-interval-sec'];
   $('last-update-check-time').textContent =
         deltaUpdateStatus['last-update-check-time'];
   $('last-update-check-error').textContent =
@@ -211,18 +234,30 @@ function createElementFromText(elementName, text) {
 /**
  * Updates <ul> element with the given key-value list.
  * @param {HTMLElement} ul <ul> element to be modified.
- * @param {Array} list List of dictionaries containing 'key' and 'value'.
+ * @param {Array} list List of dictionaries containing 'key', 'value' (optional)
+ * and 'class' (optional). For each element <li> element with specified class is
+ * created.
  */
 function updateKeyValueList(ul, list) {
   for (var i = 0; i < list.length; i++) {
-    var flag = list[i];
-    var text = flag.key;
-    if (list.value != '')
-      text += ': ' + flag.value;
+    var item = list[i];
+    var text = item.key;
+    if (item.value != '')
+      text += ': ' + item.value;
 
     var li = createElementFromText('li', text);
+    if (item.class)
+      li.classList.add(item.class);
     ul.appendChild(li);
   }
+}
+
+/**
+ * Updates the text next to the 'reset' button to update the status.
+ * @param {boolean} success whether or not resetting has succeeded.
+ */
+function updateResetStatus(success) {
+  $('reset-status-text').textContent = (success ? 'success' : 'failed');
 }
 
 document.addEventListener('DOMContentLoaded', function() {
@@ -240,7 +275,26 @@ document.addEventListener('DOMContentLoaded', function() {
     toc.appendChild(li);
   }
 
+  $('button-clear-access-token').addEventListener('click', function() {
+    chrome.send('clearAccessToken');
+  });
+
+  $('button-clear-refresh-token').addEventListener('click', function() {
+    chrome.send('clearRefreshToken');
+  });
+
+  $('button-reset-drive-filesystem').addEventListener('click', function() {
+    $('reset-status-text').textContent = 'resetting...';
+    chrome.send('resetDriveFileSystem');
+  });
+
+  $('button-show-file-entries').addEventListener('click', function() {
+    var button = $('button-show-file-entries');
+    button.parentNode.removeChild(button);
+    chrome.send('listFileEntries');
+  });
+
   window.setInterval(function() {
-      chrome.send('periodicUpdate');
-    }, 1000);
+    chrome.send('periodicUpdate');
+  }, 1000);
 });

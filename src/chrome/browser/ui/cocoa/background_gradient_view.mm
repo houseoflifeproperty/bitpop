@@ -4,33 +4,47 @@
 
 #include "chrome/browser/ui/cocoa/background_gradient_view.h"
 
+#import "chrome/browser/themes/theme_properties.h"
 #import "chrome/browser/themes/theme_service.h"
 #import "chrome/browser/ui/cocoa/nsview_additions.h"
 #import "chrome/browser/ui/cocoa/themed_window.h"
 #include "grit/theme_resources.h"
 
 @interface BackgroundGradientView (Private)
+- (void)commonInit;
 - (NSColor*)backgroundImageColor;
 @end
 
 @implementation BackgroundGradientView
+
 @synthesize showsDivider = showsDivider_;
 
 - (id)initWithFrame:(NSRect)frameRect {
   if ((self = [super initWithFrame:frameRect])) {
-    showsDivider_ = YES;
+    [self commonInit];
   }
   return self;
 }
 
 - (id)initWithCoder:(NSCoder*)decoder {
   if ((self = [super initWithCoder:decoder])) {
-    showsDivider_ = YES;
+    [self commonInit];
   }
   return self;
 }
 
+- (void)dealloc {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
+  [super dealloc];
+}
+
+- (void)commonInit {
+  showsDivider_ = YES;
+}
+
 - (void)setShowsDivider:(BOOL)show {
+  if (showsDivider_ == show)
+    return;
   showsDivider_ = show;
   [self setNeedsDisplay:YES];
 }
@@ -59,13 +73,23 @@
 }
 
 - (NSColor*)strokeColor {
-  BOOL isActive = [[self window] isMainWindow];
-  ui::ThemeProvider* themeProvider = [[self window] themeProvider];
+  NSWindow* window = [self window];
+
+  // Some views have a child NSWindow between them and the window that is
+  // active (e.g, OmniboxPopupTopSeparatorView). For these, check the status
+  // of parentWindow instead. Note that this is not tracked correctly (but
+  // the views that do this appear to be removed when the window loses focus
+  // anyway).
+  if ([window parentWindow])
+    window = [window parentWindow];
+  BOOL isActive = [window isMainWindow];
+
+  ui::ThemeProvider* themeProvider = [window themeProvider];
   if (!themeProvider)
     return [NSColor blackColor];
   return themeProvider->GetNSColor(
-      isActive ? ThemeService::COLOR_TOOLBAR_STROKE :
-                 ThemeService::COLOR_TOOLBAR_STROKE_INACTIVE, true);
+      isActive ? ThemeProperties::COLOR_TOOLBAR_STROKE :
+                 ThemeProperties::COLOR_TOOLBAR_STROKE_INACTIVE);
 }
 
 - (NSColor*)backgroundImageColor {
@@ -76,14 +100,63 @@
 
   // Themes don't have an inactive image so only look for one if there's no
   // theme.
-  if (![[self window] isMainWindow] && themeProvider->UsingDefaultTheme()) {
+  BOOL isActive = [[self window] isMainWindow];
+  if (!isActive && themeProvider->UsingDefaultTheme()) {
     NSColor* color = themeProvider->GetNSImageColorNamed(
-        IDR_THEME_TOOLBAR_INACTIVE, true);
+        IDR_THEME_TOOLBAR_INACTIVE);
     if (color)
       return color;
   }
 
-  return themeProvider->GetNSImageColorNamed(IDR_THEME_TOOLBAR, true);
+  return themeProvider->GetNSImageColorNamed(IDR_THEME_TOOLBAR);
+}
+
+- (void)windowFocusDidChange:(NSNotification*)notification {
+  // Some child views will indirectly use BackgroundGradientView by calling an
+  // ancestor's draw function (e.g, BookmarkButtonView). Call setNeedsDisplay
+  // on all descendants to ensure that these views re-draw.
+  // TODO(ccameron): Enable these views to listen for focus notifications
+  // directly.
+  [self cr_recursivelySetNeedsDisplay:YES];
+}
+
+- (void)viewWillMoveToWindow:(NSWindow*)window {
+  if ([self window]) {
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self
+                  name:NSWindowDidBecomeKeyNotification
+                object:[self window]];
+    [[NSNotificationCenter defaultCenter]
+        removeObserver:self
+                  name:NSWindowDidBecomeMainNotification
+                object:[self window]];
+  }
+  if (window) {
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(windowFocusDidChange:)
+               name:NSWindowDidBecomeMainNotification
+             object:window];
+    [[NSNotificationCenter defaultCenter]
+        addObserver:self
+           selector:@selector(windowFocusDidChange:)
+               name:NSWindowDidResignMainNotification
+             object:window];
+    // The new window for the view may have a different focus state than the
+    // last window this view was part of. Force a re-draw to ensure that the
+    // view draws the right state.
+    [self windowFocusDidChange:nil];
+  }
+  [super viewWillMoveToWindow:window];
+}
+
+- (void)setFrameOrigin:(NSPoint)origin {
+  // The background color depends on the view's vertical position. This impacts
+  // any child views that draw using this view's functions.
+  if (NSMinY([self frame]) != origin.y)
+    [self cr_recursivelySetNeedsDisplay:YES];
+
+  [super setFrameOrigin:origin];
 }
 
 @end

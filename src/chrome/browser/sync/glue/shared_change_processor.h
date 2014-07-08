@@ -8,29 +8,30 @@
 #include "base/location.h"
 #include "base/memory/ref_counted.h"
 #include "base/memory/weak_ptr.h"
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
 #include "base/synchronization/lock.h"
-#include "chrome/browser/sync/glue/data_type_error_handler.h"
+#include "components/sync_driver/data_type_error_handler.h"
 #include "sync/api/sync_change_processor.h"
+#include "sync/api/sync_data.h"
 #include "sync/api/sync_error.h"
 #include "sync/api/sync_error_factory.h"
 #include "sync/api/sync_merge_result.h"
 #include "sync/internal_api/public/engine/model_safe_worker.h"
 
-class ProfileSyncComponentsFactory;
 class ProfileSyncService;
 
 namespace syncer {
-class SyncData;
 class SyncableService;
-
-typedef std::vector<syncer::SyncData> SyncDataList;
-}  // namespace
+struct UserShare;
+}  // namespace syncer
 
 namespace browser_sync {
 
+class ChangeProcessor;
 class GenericChangeProcessor;
+class GenericChangeProcessorFactory;
 class DataTypeErrorHandler;
+class SyncApiComponentFactory;
 
 // A ref-counted wrapper around a GenericChangeProcessor for use with datatypes
 // that don't live on the UI thread.
@@ -52,7 +53,7 @@ class DataTypeErrorHandler;
 class SharedChangeProcessor
     : public base::RefCountedThreadSafe<SharedChangeProcessor> {
  public:
-  // Create an uninitialized SharedChangeProcessor (to be later connected).
+  // Create an uninitialized SharedChangeProcessor.
   SharedChangeProcessor();
 
   // Connect to the Syncer and prepare to handle changes for |type|. Will
@@ -61,10 +62,11 @@ class SharedChangeProcessor
   // Note: If this SharedChangeProcessor has been disconnected, or the
   // syncer::SyncableService was not alive, will return a null weak pointer.
   virtual base::WeakPtr<syncer::SyncableService> Connect(
-    ProfileSyncComponentsFactory* sync_factory,
-    ProfileSyncService* sync_service,
-    DataTypeErrorHandler* error_handler,
-    syncer::ModelType type,
+      browser_sync::SyncApiComponentFactory* sync_factory,
+      GenericChangeProcessorFactory* processor_factory,
+      syncer::UserShare* user_share,
+      DataTypeErrorHandler* error_handler,
+      syncer::ModelType type,
     const base::WeakPtr<syncer::SyncMergeResult>& merge_result);
 
   // Disconnects from the generic change processor. May be called from any
@@ -79,23 +81,31 @@ class SharedChangeProcessor
 
   // GenericChangeProcessor stubs (with disconnect support).
   // Should only be called on the same thread the datatype resides.
-  virtual syncer::SyncError GetSyncData(
-      syncer::SyncDataList* current_sync_data);
   virtual int GetSyncCount();
   virtual syncer::SyncError ProcessSyncChanges(
       const tracked_objects::Location& from_here,
       const syncer::SyncChangeList& change_list);
+  virtual syncer::SyncDataList GetAllSyncData(syncer::ModelType type) const;
+  virtual syncer::SyncError GetAllSyncDataReturnError(
+      syncer::ModelType type,
+      syncer::SyncDataList* data) const;
+  virtual syncer::SyncError UpdateDataTypeContext(
+      syncer::ModelType type,
+      syncer::SyncChangeProcessor::ContextRefreshStatus refresh_status,
+      const std::string& context);
   virtual bool SyncModelHasUserCreatedNodes(bool* has_nodes);
   virtual bool CryptoReadyIfNecessary();
 
-  // Register |generic_change_processor_| as the change processor for the
-  // current type on |model_safe_group|.
-  // Does nothing if |disconnected_| is true.
-  virtual void ActivateDataType(syncer::ModelSafeGroup model_safe_group);
+  // If a datatype context associated with the current type exists, fills
+  // |context| and returns true. Otheriwse, if there has not been a context
+  // set, returns false.
+  virtual bool GetDataTypeContext(std::string* context) const;
 
   virtual syncer::SyncError CreateAndUploadError(
       const tracked_objects::Location& location,
       const std::string& message);
+
+  ChangeProcessor* generic_change_processor();
 
  protected:
   friend class base::RefCountedThreadSafe<SharedChangeProcessor>;
@@ -113,8 +123,9 @@ class SharedChangeProcessor
   // The sync datatype we were last connected to.
   syncer::ModelType type_;
 
-  // The ProfileSyncService we're currently connected to.
-  ProfileSyncService* sync_service_;
+  // The frontend / UI MessageLoop this object is constructed on. May also be
+  // destructed and/or disconnected on this loop, see ~SharedChangeProcessor.
+  const scoped_refptr<const base::MessageLoopProxy> frontend_loop_;
 
   // The loop that all methods except the constructor, destructor, and
   // Disconnect() should be called on.  Set in Connect().

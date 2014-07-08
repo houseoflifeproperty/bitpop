@@ -6,12 +6,12 @@
 
 #include "base/base_paths.h"
 #include "base/command_line.h"
-#include "base/file_path.h"
 #include "base/file_util.h"
+#include "base/files/file_path.h"
 #include "base/logging.h"
 #include "base/path_service.h"
 #include "base/platform_file.h"
-#include "base/process_util.h"
+#include "base/process/launch.h"
 #include "chrome/browser/first_run/upgrade_util_linux.h"
 
 namespace {
@@ -23,7 +23,10 @@ double saved_last_modified_time_of_exe = 0;
 namespace upgrade_util {
 
 bool RelaunchChromeBrowser(const CommandLine& command_line) {
-  return base::LaunchProcess(command_line, base::LaunchOptions(), NULL);
+  base::LaunchOptions options;
+  // Don't set NO_NEW_PRIVS on the relaunched browser process.
+  options.allow_new_privs = true;
+  return base::LaunchProcess(command_line, options, NULL);
 }
 
 bool IsUpdatePendingRestart() {
@@ -35,13 +38,13 @@ void SaveLastModifiedTimeOfExe() {
 }
 
 double GetLastModifiedTimeOfExe() {
-  FilePath exe_file_path;
+  base::FilePath exe_file_path;
   if (!PathService::Get(base::FILE_EXE, &exe_file_path)) {
-    LOG(WARNING) << "Failed to get FilePath object for FILE_EXE.";
+    LOG(WARNING) << "Failed to get base::FilePath object for FILE_EXE.";
     return saved_last_modified_time_of_exe;
   }
-  base::PlatformFileInfo exe_file_info;
-  if (!file_util::GetFileInfo(exe_file_path, &exe_file_info)) {
+  base::File::Info exe_file_info;
+  if (!base::GetFileInfo(exe_file_path, &exe_file_info)) {
     LOG(WARNING) << "Failed to get FileInfo object for FILE_EXE - "
                  << exe_file_path.value();
     return saved_last_modified_time_of_exe;

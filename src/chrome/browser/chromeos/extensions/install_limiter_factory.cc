@@ -5,15 +5,17 @@
 #include "chrome/browser/chromeos/extensions/install_limiter_factory.h"
 
 #include "chrome/browser/chromeos/extensions/install_limiter.h"
-#include "chrome/browser/extensions/extension_system_factory.h"
-#include "chrome/browser/profiles/profile_dependency_manager.h"
+#include "chrome/browser/profiles/profile.h"
+#include "components/keyed_service/content/browser_context_dependency_manager.h"
+#include "extensions/browser/extension_system_provider.h"
+#include "extensions/browser/extensions_browser_client.h"
 
 namespace extensions {
 
 // static
 InstallLimiter* InstallLimiterFactory::GetForProfile(Profile* profile) {
   return static_cast<InstallLimiter*>(
-      GetInstance()->GetServiceForProfile(profile, true));
+      GetInstance()->GetServiceForBrowserContext(profile, true));
 }
 
 // static
@@ -22,16 +24,17 @@ InstallLimiterFactory* InstallLimiterFactory::GetInstance() {
 }
 
 InstallLimiterFactory::InstallLimiterFactory()
-    : ProfileKeyedServiceFactory("InstallLimiter",
-                                 ProfileDependencyManager::GetInstance()) {
-  DependsOn(ExtensionSystemFactory::GetInstance());
+    : BrowserContextKeyedServiceFactory(
+        "InstallLimiter",
+        BrowserContextDependencyManager::GetInstance()) {
+  DependsOn(ExtensionsBrowserClient::Get()->GetExtensionSystemFactory());
 }
 
 InstallLimiterFactory::~InstallLimiterFactory() {
 }
 
-ProfileKeyedService* InstallLimiterFactory::BuildServiceInstanceFor(
-    Profile* profile) const {
+KeyedService* InstallLimiterFactory::BuildServiceInstanceFor(
+    content::BrowserContext* profile) const {
   return new InstallLimiter();
 }
 

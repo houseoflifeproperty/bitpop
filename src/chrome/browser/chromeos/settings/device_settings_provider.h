@@ -15,9 +15,9 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/weak_ptr.h"
 #include "base/prefs/pref_value_map.h"
-#include "chrome/browser/chromeos/settings/cros_settings_provider.h"
+#include "chrome/browser/chromeos/policy/proto/chrome_device_policy.pb.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/policy/proto/chrome_device_policy.pb.h"
+#include "chromeos/settings/cros_settings_provider.h"
 
 namespace base {
 class Value;
@@ -36,6 +36,9 @@ class DeviceSettingsProvider : public CrosSettingsProvider,
   DeviceSettingsProvider(const NotifyObserversCallback& notify_cb,
                          DeviceSettingsService* device_settings_service);
   virtual ~DeviceSettingsProvider();
+
+  // Returns true if |path| is handled by this provider.
+  static bool IsDeviceSetting(const std::string& name);
 
   // CrosSettingsProvider implementation.
   virtual const base::Value* Get(const std::string& path) const OVERRIDE;
@@ -72,6 +75,9 @@ class DeviceSettingsProvider : public CrosSettingsProvider,
   void DecodeNetworkPolicies(
       const enterprise_management::ChromeDeviceSettingsProto& policy,
       PrefValueMap* new_values_cache) const;
+  void DecodeAutoUpdatePolicies(
+      const enterprise_management::ChromeDeviceSettingsProto& policy,
+      PrefValueMap* new_values_cache) const;
   void DecodeReportingPolicies(
       const enterprise_management::ChromeDeviceSettingsProto& policy,
       PrefValueMap* new_values_cache) const;
@@ -90,6 +96,8 @@ class DeviceSettingsProvider : public CrosSettingsProvider,
 
   // Applies the data roaming policy.
   void ApplyRoamingSetting(bool new_value);
+  void ApplyRoamingSettingFromProto(
+      const enterprise_management::ChromeDeviceSettingsProto& settings);
 
   // Applies any changes of the policies that are not handled by the respective
   // subsystems.

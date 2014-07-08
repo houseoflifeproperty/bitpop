@@ -5,8 +5,8 @@
 #ifndef CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_MANAGER_H_
 #define CONTENT_PUBLIC_BROWSER_SPEECH_RECOGNITION_MANAGER_H_
 
-#include "base/string16.h"
 #include "base/callback.h"
+#include "base/strings/string16.h"
 #include "content/common/content_export.h"
 #include "content/public/common/speech_recognition_result.h"
 
@@ -34,6 +34,10 @@ class SpeechRecognitionManager {
   // Returns the singleton instance.
   static CONTENT_EXPORT SpeechRecognitionManager* GetInstance();
 
+  // Singleton manager setter useful for tests.
+  static void CONTENT_EXPORT SetManagerForTesting(
+      SpeechRecognitionManager* manager);
+
   // Creates a new recognition session.
   virtual int CreateSession(const SpeechRecognitionSessionConfig& config) = 0;
 
@@ -44,9 +48,9 @@ class SpeechRecognitionManager {
   // Aborts recognition for an existing session, without providing any result.
   virtual void AbortSession(int session_id) = 0;
 
-  // Aborts all sessions for a given listener, without providing any result.
-  virtual void AbortAllSessionsForListener(
-      SpeechRecognitionEventListener* listener) = 0;
+  // Aborts all sessions for a given render process,
+  // without providing any result.
+  virtual void AbortAllSessionsForRenderProcess(int render_process_id) = 0;
 
   // Aborts all sessions for a given RenderView, without providing any result.
   virtual void AbortAllSessionsForRenderView(int render_process_id,
@@ -74,19 +78,19 @@ class SpeechRecognitionManager {
   // Returns true if the OS reports existence of audio recording devices.
   virtual bool HasAudioInputDevices() = 0;
 
-  // Used to determine if something else is currently making use of audio input.
-  virtual bool IsCapturingAudio() = 0;
-
   // Returns a human readable string for the model/make of the active audio
   // input device for this computer.
-  virtual string16 GetAudioInputDeviceModel() = 0;
+  virtual base::string16 GetAudioInputDeviceModel() = 0;
 
   // Invokes the platform provided microphone settings UI in a non-blocking way,
   // via the BrowserThread::FILE thread.
   virtual void ShowAudioInputSettings() = 0;
 
  protected:
-   virtual ~SpeechRecognitionManager() {}
+  virtual ~SpeechRecognitionManager() {}
+
+ private:
+  static SpeechRecognitionManager* manager_for_tests_;
 };
 
 }  // namespace content

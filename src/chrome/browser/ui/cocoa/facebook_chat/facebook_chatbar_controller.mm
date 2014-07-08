@@ -25,6 +25,7 @@
 #include "chrome/browser/ui/browser_window.h"
 #import "chrome/browser/ui/cocoa/hover_close_button.h"
 #include "chrome/browser/ui/fullscreen/fullscreen_controller.h"
+#include "chrome/browser/ui/tabs/tab_strip_model.h"
 
 namespace {
 // The size of the x button by default.
@@ -39,7 +40,6 @@ const NSInteger kChatItemsPaddingRight = 25;
 const NSInteger kChatbarHeight = 36;
 
 const NSTimeInterval kAddAnimationDuration = 0.6;
-const NSTimeInterval kRemoveAnimationDuration = 0.6;
 const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 }  // namespace
 
@@ -175,7 +175,8 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
 - (void)addChatItem:(FacebookChatItem*)item {
   DCHECK([NSThread isMainThread]);
 
-  if (browser_ && browser_->fullscreen_controller()->IsFullscreenForTabOrPending()) {
+  if (browser_ && browser_->fullscreen_controller()->IsFullscreenForTabOrPending(
+                    browser_->tab_strip_model()->GetActiveWebContents())) {
     browser_->fullscreen_controller()->SetOpenChatbarOnNextFullscreenEvent();
   } else if (![self isVisible]) {
     [self show:nil];
@@ -212,7 +213,7 @@ const NSTimeInterval kPlaceFirstAnimationDuration = 0.6;
   [addAnimation_ startAnimation];
 
   // Insert new item at the left.
-  scoped_nsobject<FacebookChatItemController> controller(
+  base::scoped_nsobject<FacebookChatItemController> controller(
       [[FacebookChatItemController alloc] initWithModel:item chatbar:self]);
 
   if (![controller chatItem]->needs_activation())

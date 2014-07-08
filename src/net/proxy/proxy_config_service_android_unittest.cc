@@ -8,7 +8,7 @@
 #include "base/bind.h"
 #include "base/compiler_specific.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "net/proxy/proxy_config.h"
 #include "net/proxy/proxy_config_service_android.h"
 #include "net/proxy/proxy_info.h"
@@ -50,15 +50,14 @@ typedef std::map<std::string, std::string> StringMap;
 class ProxyConfigServiceAndroidTestBase : public testing::Test {
  protected:
   // Note that the current thread's message loop is initialized by the test
-  // suite (see net/base/net_test_suite.cc).
+  // suite (see net/test/net_test_suite.cc).
   ProxyConfigServiceAndroidTestBase(const StringMap& initial_configuration)
       : configuration_(initial_configuration),
-        message_loop_(MessageLoop::current()),
-        service_(
-            message_loop_->message_loop_proxy(),
-            message_loop_->message_loop_proxy(),
-            base::Bind(&ProxyConfigServiceAndroidTestBase::GetProperty,
-                       base::Unretained(this))) {}
+        message_loop_(base::MessageLoop::current()),
+        service_(message_loop_->message_loop_proxy(),
+                 message_loop_->message_loop_proxy(),
+                 base::Bind(&ProxyConfigServiceAndroidTestBase::GetProperty,
+                            base::Unretained(this))) {}
 
   virtual ~ProxyConfigServiceAndroidTestBase() {}
 
@@ -104,7 +103,7 @@ class ProxyConfigServiceAndroidTestBase : public testing::Test {
 
   StringMap configuration_;
   TestObserver observer_;
-  MessageLoop* const message_loop_;
+  base::MessageLoop* const message_loop_;
   ProxyConfigServiceAndroid service_;
 };
 

@@ -18,30 +18,44 @@ namespace switches {
 
 // Please keep alphabetized.
 ASH_EXPORT extern const char kAshAnimateFromBootSplashScreen[];
-ASH_EXPORT extern const char kAshBootAnimationFunction2[];
-ASH_EXPORT extern const char kAshBootAnimationFunction3[];
 ASH_EXPORT extern const char kAshConstrainPointerToRoot[];
 ASH_EXPORT extern const char kAshCopyHostBackgroundAtBoot[];
 ASH_EXPORT extern const char kAshDebugShortcuts[];
-ASH_EXPORT extern const char kAshDisableAutoWindowPlacement[];
-ASH_EXPORT extern const char kAshDisableDisplayChangeLimiter[];
-ASH_EXPORT extern const char kAshDisablePanelFitting[];
-ASH_EXPORT extern const char kAshDisableBootAnimation2[];
-ASH_EXPORT extern const char kAshDisableNewLockAnimations[];
-ASH_EXPORT extern const char kAshEnableAdvancedGestures[];
-#if defined(OS_LINUX)
-ASH_EXPORT extern const char kAshEnableMemoryMonitor[];
+ASH_EXPORT extern const char kAshDefaultWallpaperIsOem[];
+ASH_EXPORT extern const char kAshDefaultWallpaperLarge[];
+ASH_EXPORT extern const char kAshDefaultWallpaperSmall[];
+ASH_EXPORT extern const char kAshDisableDockedWindows[];
+ASH_EXPORT extern const char kAshEnableTouchExplorationMode[];
+#if defined(OS_CHROMEOS)
+ASH_EXPORT extern const char kAshEnableMagnifierKeyScroller[];
 #endif
-ASH_EXPORT extern const char kAshEnablePerAppLauncher[];
-ASH_EXPORT extern const char kAshEnableOak[];
+ASH_EXPORT extern const char kAshEnableSoftwareMirroring[];
+ASH_EXPORT extern const char kAshEnableSystemSounds[];
+ASH_EXPORT extern const char kAshEnableTouchViewTesting[];
 ASH_EXPORT extern const char kAshEnableTrayDragging[];
-ASH_EXPORT extern const char kAshEnableWorkspaceScrubbing[];
-ASH_EXPORT extern const char kAshImmersive[];
-ASH_EXPORT extern const char kAshLauncherPerDisplay[];
+ASH_EXPORT extern const char kAshGuestWallpaperLarge[];
+ASH_EXPORT extern const char kAshGuestWallpaperSmall[];
+ASH_EXPORT extern const char kAshHideNotificationsForFactory[];
+ASH_EXPORT extern const char kAshHostWindowBounds[];
 ASH_EXPORT extern const char kAshSecondaryDisplayLayout[];
 ASH_EXPORT extern const char kAshTouchHud[];
+ASH_EXPORT extern const char kAshUseFirstDisplayAsInternal[];
 ASH_EXPORT extern const char kAuraLegacyPowerButton[];
-ASH_EXPORT extern const char kAuraNoShadows[];
+#if defined(OS_WIN)
+ASH_EXPORT extern const char kForceAshToDesktop[];
+#endif
+
+// Returns true if items can be dragged off the shelf to unpin.
+ASH_EXPORT bool UseDragOffShelf();
+
+// Returns true if docked windows feature is enabled.
+ASH_EXPORT bool UseDockedWindows();
+
+#if defined(OS_CHROMEOS)
+// Returns true if a notification should appear when a low-power USB charger
+// is connected.
+ASH_EXPORT bool UseUsbChargerNotification();
+#endif
 
 }  // namespace switches
 }  // namespace ash

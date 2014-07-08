@@ -5,6 +5,7 @@
 [
   {
     "namespace": "input.ime",
+    "description": "Use the <code>chrome.input.ime</code> API to implement a custom IME for Chrome OS. This allows your extension to handle keystrokes, set the composition, and manage the candidate window.",
     "platforms": ["chromeos"],
     "types": [
       {
@@ -14,10 +15,13 @@
         "properties": {
           "type": {"type": "string", "description": "One of keyup or keydown.", "enum": ["keyup", "keydown"]},
           "requestId": {"type": "string", "description": "The ID of the request."},
+          "extensionId": {"type": "string", "optional": true, "description": "The extension ID of the sender of this keyevent."},
           "key": {"type": "string", "description": "Value of the key being pressed"},
+          "code": {"type": "string", "description": "Value of the physical key being pressed. The value is not affected by current keyboard layout or modifier state."},
           "altKey": {"type": "boolean", "optional": true, "description": "Whether or not the ALT key is pressed."},
           "ctrlKey": {"type": "boolean", "optional": true, "description": "Whether or not the CTRL key is pressed."},
-          "shiftKey": {"type": "boolean", "optional": true, "description": "Whether or not the SHIFT key is pressed."}
+          "shiftKey": {"type": "boolean", "optional": true, "description": "Whether or not the SHIFT key is pressed."},
+          "capsLock": {"type": "boolean", "optional": true, "description": "Whether or not the CAPS_LOCK is enabled."}
         }
       },
       {
@@ -26,7 +30,25 @@
         "description": "Describes an input Context",
         "properties": {
           "contextID": {"type": "integer", "description": "This is used to specify targets of text field operations.  This ID becomes invalid as soon as onBlur is called."},
-          "type": {"type": "string", "description": "Type of value this text field edits, (Text, Number, Password, etc)", "enum": ["text", "number", "password"]}
+          "type": {"type": "string", "description": "Type of value this text field edits, (Text, Number, URL, etc)", "enum": ["text", "search", "tel", "url", "email", "number"]}
+        }
+      },
+      {
+        "id": "MenuItem",
+        "type": "object",
+        "description": "A menu item used by an input method to interact with the user from the language menu.",
+        "properties": {
+          "id": {"type": "string", "description": "String that will be passed to callbacks referencing this MenuItem."},
+          "label": {"type": "string", "optional": true, "description": "Text displayed in the menu for this item."},
+          "style": {
+            "type": "string",
+            "optional": true,
+            "description": "Enum representing if this item is: check, radio, or a separator.  Radio buttons between separators are considered grouped.",
+            "enum": ["check", "radio", "separator"]
+          },
+          "visible": {"type": "boolean", "optional": true, "description": "Indicates this item is visible."},
+          "checked": {"type": "boolean", "optional": true, "description": "Indicates this item should be drawn with a check."},
+          "enabled": {"type": "boolean", "optional": true, "description": "Indicates this item is enabled."}
         }
       }
     ],
@@ -91,7 +113,7 @@
             "type": "function",
             "name": "callback",
             "optional": true,
-            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.extension.lastError is set.",
+            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.runtime.lastError is set.",
             "parameters": [
               {
                 "name": "success",
@@ -120,7 +142,7 @@
             "type": "function",
             "name": "callback",
             "optional": true,
-            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.extension.lastError is set.",
+            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.runtime.lastError is set.",
             "parameters": [
               {
                 "name": "success",
@@ -153,7 +175,7 @@
             "type": "function",
             "name": "callback",
             "optional": true,
-            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.extension.lastError is set.",
+            "description": "Called when the operation completes with a boolean indicating if the text was accepted or not. On failure, chrome.runtime.lastError is set.",
             "parameters": [
               {
                 "name": "success",
@@ -164,9 +186,46 @@
         ]
       },
       {
+        "name": "sendKeyEvents",
+        "type": "function",
+        "description": "Sends the key events.  This function is expected to be used by virtual keyboards.  When key(s) on a virtual keyboard is pressed by a user, this function is used to propagate that event to the system.",
+        "parameters": [
+          {
+            "name": "parameters",
+            "type": "object",
+            "properties": {
+              "contextID": {
+                "description": "ID of the context where the key events will be sent, or zero to send key events to non-input field.",
+                "type": "integer"
+              },
+              "keyData": {
+                "type": "array",
+                "description": "Data on the key event.",
+                "items": {
+                  "$ref": "KeyboardEvent"
+                }
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "Called when the operation completes.",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "hideInputView",
+        "type": "function",
+        "description": "Hides the input view window, which is popped up automatically by system. If the input view window is already hidden, this function will do nothing.",
+        "parameters": []
+      },
+      {
         "name": "setCandidateWindowProperties",
         "type": "function",
-        "description": "Sets the properties of the candidate window. This fails if the extension doesn’t own the active IME",
+        "description": "Sets the properties of the candidate window. This fails if the extension doesn't own the active IME",
         "parameters": [
           {
             "name": "parameters",
@@ -208,6 +267,12 @@
                     "type": "boolean",
                     "optional": true,
                     "description": "True to display the auxiliary text, false to hide it."
+                  },
+                  "windowPosition": {
+                    "type": "string",
+                    "description": "Where to display the candidate window. If set to 'cursor', the window follows the cursor. If set to 'composition', the window is locked to the beginning of the composition.",
+                    "enum": ["cursor", "composition"],
+                    "optional": true
                   }
                 }
               }
@@ -230,7 +295,7 @@
       {
         "name": "setCandidates",
         "type": "function",
-        "description": "Sets the current candidate list. This fails if this extension doesn’t own the active IME",
+        "description": "Sets the current candidate list. This fails if this extension doesn't own the active IME",
         "parameters": [
           {
             "name": "parameters",
@@ -329,21 +394,7 @@
                 "description": "MenuItems to add. They will be added in the order they exist in the array.",
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "description": "A menu item used by an input method to interact with the user from the language menu.",
-                  "properties": {
-                    "id": {"type": "string", "description": "String that will be passed to callbacks referencing this MenuItem."},
-                    "label": {"type": "string", "optional": true, "description": "Text displayed in the menu for this item."},
-                    "style": {
-                      "type": "string",
-                      "optional": true,
-                      "description": "Enum representing if this item is: none, check, radio, or a separator.  Radio buttons between separators are considered grouped.",
-                      "enum": ["none", "check", "radio", "separator"]
-                    },
-                    "visible": {"type": "boolean", "optional": true, "description": "Indicates this item is visible."},
-                    "checked": {"type": "boolean", "optional": true, "description": "Indicates this item should be drawn with a check."},
-                    "enabled": {"type": "boolean", "optional": true, "description": "Indicates this item is enabled."}
-                  }
+                  "$ref": "MenuItem"
                 }
               }
             }
@@ -374,21 +425,7 @@
                 "description": "Array of MenuItems to update",
                 "type": "array",
                 "items": {
-                  "type": "object",
-                  "description": "A menu item used by an input method to interact with the user from the language menu.",
-                  "properties": {
-                    "id": {"type": "string", "description": "String that will be passed to callbacks referencing this MenuItem."},
-                    "label": {"type": "string", "optional": true, "description": "Text displayed in the menu for this item."},
-                    "style": {
-                      "type": "string",
-                      "optional": true,
-                      "description": "Enum representing if this item is: none, check, radio, or a separator.  Radio buttons between separators are considered grouped.",
-                      "enum": ["none", "check", "radio", "separator"]
-                    },
-                    "visible": {"type": "boolean", "optional": true, "description": "Indicates this item is visible."},
-                    "checked": {"type": "boolean", "optional": true, "description": "Indicates this item should be drawn with a check."},
-                    "enabled": {"type": "boolean", "optional": true, "description": "Indicates this item is enabled."}
-                  }
+                  "$ref": "MenuItem"
                 }
               }
             }
@@ -398,6 +435,43 @@
             "name": "callback",
             "optional": true,
             "description": "Called when the operation completes",
+            "parameters": []
+          }
+        ]
+      },
+      {
+        "name": "deleteSurroundingText",
+        "type": "function",
+        "description": "Deletes the text around the caret.",
+        "parameters": [
+          {
+            "name": "parameters",
+            "type": "object",
+            "properties": {
+              "engineID": {
+                "type": "string",
+                "description": "ID of the engine receiving the event."
+              },
+              "contextID": {
+                "type": "integer",
+                "description": "ID of the context where the surrounding text will be deleted."
+              },
+              "offset": {
+                "type": "integer",
+                "description": "The offset from the caret position where deletion will start. This value can be negative."
+              },
+              "length": {
+                "type": "integer",
+                "description": "The number of characters to be deleted",
+                "minimum": 0
+              }
+            }
+          },
+          {
+            "type": "function",
+            "name": "callback",
+            "optional": true,
+            "description": "Called when the operation completes.",
             "parameters": []
           }
         ]
@@ -550,6 +624,49 @@
             "type": "string",
             "name": "name",
             "description": "Name of the MenuItem which was activated"
+          }
+        ]
+      },
+      {
+        "name": "onSurroundingTextChanged",
+        "type": "function",
+        "description": "Called when the editable string around caret is changed or when the caret position is moved. The text length is limited to 100 characters for each back and forth direction.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "engineID",
+            "description": "ID of the engine receiving the event"
+          },
+          {
+            "type": "object",
+            "name": "surroundingInfo",
+            "description": "The surrounding information.",
+            "properties": {
+              "text": {
+                "type": "string",
+                "description": "The text around cursor."
+              },
+              "focus": {
+                "type": "integer",
+                "description": "The ending position of the selection. This value indicates caret position if there is no selection."
+              },
+              "anchor": {
+                "type": "integer",
+                "description": "The beginning position of the selection. This value indicates caret position if is no selection."
+              }
+            }
+          }
+        ]
+      },
+      {
+        "name": "onReset",
+        "type": "function",
+        "description": "This event is sent when chrome terminates ongoing text input session.",
+        "parameters": [
+          {
+            "type": "string",
+            "name": "engineID",
+            "description": "ID of the engine receiving the event"
           }
         ]
       }

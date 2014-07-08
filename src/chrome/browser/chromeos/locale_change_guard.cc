@@ -8,18 +8,17 @@
 #include "ash/system/tray/system_tray.h"
 #include "ash/system/tray/system_tray_notifier.h"
 #include "base/bind.h"
-#include "base/utf_string_conversions.h"
+#include "base/prefs/pref_service.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/app/chrome_command_ids.h"
 #include "chrome/browser/browser_process.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/chromeos/settings/device_settings_service.h"
-#include "chrome/browser/notifications/notification_delegate.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "chrome/browser/lifetime/application_lifetime.h"
 #include "chrome/browser/profiles/profile.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_commands.h"
-#include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/host_desktop.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
 #include "content/public/browser/notification_service.h"
 #include "content/public/browser/notification_source.h"
@@ -29,35 +28,16 @@
 #include "grit/theme_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
-using content::UserMetricsAction;
+using base::UserMetricsAction;
 using content::WebContents;
 
 namespace chromeos {
 
-class LocaleChangeGuard::Delegate : public NotificationDelegate {
- public:
-  explicit Delegate(chromeos::LocaleChangeGuard* master) : master_(master) {}
-  virtual void Close(bool by_user) OVERRIDE;
-  virtual void Display() OVERRIDE {}
-  virtual void Error() OVERRIDE {}
-  virtual void Click() OVERRIDE {}
-  virtual std::string id() const OVERRIDE;
-  virtual content::RenderViewHost* GetRenderViewHost() const OVERRIDE {
-    return NULL;
-  }
-
- protected:
-  virtual ~Delegate() {}
-
- private:
-  chromeos::LocaleChangeGuard* master_;
-
-  DISALLOW_COPY_AND_ASSIGN(Delegate);
-};
-
 LocaleChangeGuard::LocaleChangeGuard(Profile* profile)
     : profile_(profile),
-      reverted_(false) {
+      reverted_(false),
+      session_started_(false),
+      main_frame_loaded_(false) {
   DCHECK(profile_);
   registrar_.Add(this, chrome::NOTIFICATION_OWNERSHIP_STATUS_CHANGED,
                  content::NotificationService::AllSources());
@@ -66,6 +46,8 @@ LocaleChangeGuard::LocaleChangeGuard(Profile* profile)
 LocaleChangeGuard::~LocaleChangeGuard() {}
 
 void LocaleChangeGuard::OnLogin() {
+  registrar_.Add(this, chrome::NOTIFICATION_SESSION_STARTED,
+                 content::NotificationService::AllSources());
   registrar_.Add(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
                  content::NotificationService::AllBrowserContextsAndSources());
 }
@@ -83,14 +65,11 @@ void LocaleChangeGuard::RevertLocaleChange() {
   content::RecordAction(UserMetricsAction("LanguageChange_Revert"));
   profile_->ChangeAppLocale(
       from_locale_, Profile::APP_LOCALE_CHANGED_VIA_REVERT);
-
-  Browser* browser = browser::FindTabbedBrowser(profile_, false,
-                                                chrome::HOST_DESKTOP_TYPE_ASH);
-  if (browser)
-    chrome::ExecuteCommand(browser, IDC_EXIT);
+  chrome::AttemptUserExit();
 }
 
-void LocaleChangeGuard::RevertLocaleChangeCallback(const ListValue* list) {
+void LocaleChangeGuard::RevertLocaleChangeCallback(
+    const base::ListValue* list) {
   RevertLocaleChange();
 }
 
@@ -102,13 +81,23 @@ void LocaleChangeGuard::Observe(int type,
     return;
   }
   switch (type) {
+    case chrome::NOTIFICATION_SESSION_STARTED: {
+      session_started_ = true;
+      registrar_.Remove(this, chrome::NOTIFICATION_SESSION_STARTED,
+                        content::NotificationService::AllSources());
+      if (main_frame_loaded_)
+        Check();
+      break;
+    }
     case content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME: {
       if (profile_ ==
           content::Source<WebContents>(source)->GetBrowserContext()) {
+        main_frame_loaded_ = true;
         // We need to perform locale change check only once, so unsubscribe.
         registrar_.Remove(this, content::NOTIFICATION_LOAD_COMPLETED_MAIN_FRAME,
                           content::NotificationService::AllSources());
-        Check();
+        if (session_started_)
+          Check();
       }
       break;
     }
@@ -209,9 +198,9 @@ void LocaleChangeGuard::PrepareChangingLocale(
     to_locale_ = to_locale;
 
   if (!from_locale_.empty() && !to_locale_.empty()) {
-    string16 from = l10n_util::GetDisplayNameForLocale(
+    base::string16 from = l10n_util::GetDisplayNameForLocale(
         from_locale_, cur_locale, true);
-    string16 to = l10n_util::GetDisplayNameForLocale(
+    base::string16 to = l10n_util::GetDisplayNameForLocale(
         to_locale_, cur_locale, true);
 
     title_text_ = l10n_util::GetStringUTF16(
@@ -221,16 +210,6 @@ void LocaleChangeGuard::PrepareChangingLocale(
     revert_link_text_ = l10n_util::GetStringFUTF16(
         IDS_LOCALE_CHANGE_REVERT_MESSAGE, from);
   }
-}
-
-void LocaleChangeGuard::Delegate::Close(bool by_user) {
-  if (by_user)
-    master_->AcceptLocaleChange();
-}
-
-std::string LocaleChangeGuard::Delegate::id() const {
-  // Arbitrary unique Id.
-  return "8c386938-1e3f-11e0-ac7b-18a90520e2e5";
 }
 
 }  // namespace chromeos

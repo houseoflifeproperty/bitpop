@@ -4,6 +4,8 @@
 
 #include "media/filters/in_memory_url_protocol.h"
 
+#include "media/ffmpeg/ffmpeg_common.h"
+
 namespace media {
 
 InMemoryUrlProtocol::InMemoryUrlProtocol(const uint8* data, int64 size,
@@ -17,12 +19,18 @@ InMemoryUrlProtocol::InMemoryUrlProtocol(const uint8* data, int64 size,
 InMemoryUrlProtocol::~InMemoryUrlProtocol() {}
 
 int InMemoryUrlProtocol::Read(int size, uint8* data) {
-  int available_bytes = size_ - position_;
+  if (size < 0)
+    return AVERROR(EIO);
+
+  int64 available_bytes = size_ - position_;
   if (size > available_bytes)
     size = available_bytes;
 
-  memcpy(data, data_ + position_, size);
-  position_ += size;
+  if (size > 0) {
+    memcpy(data, data_ + position_, size);
+    position_ += size;
+  }
+
   return size;
 }
 
@@ -35,7 +43,7 @@ bool InMemoryUrlProtocol::GetPosition(int64* position_out) {
 }
 
 bool InMemoryUrlProtocol::SetPosition(int64 position) {
-  if (position < 0 || position >= size_)
+  if (position < 0 || position > size_)
     return false;
   position_ = position;
   return true;

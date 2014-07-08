@@ -7,7 +7,7 @@
 
 #include <set>
 
-#include "content/common/child_thread.h"
+#include "content/child/child_thread.h"
 
 struct WorkerProcessMsg_CreateWorker_Params;
 
@@ -15,7 +15,6 @@ namespace content {
 class AppCacheDispatcher;
 class DBMessageFilter;
 class IndexedDBMessageFilter;
-class WebDatabaseObserverImpl;
 class WebSharedWorkerStub;
 class WorkerWebKitPlatformSupportImpl;
 
@@ -23,6 +22,7 @@ class WorkerThread : public ChildThread {
  public:
   WorkerThread();
   virtual ~WorkerThread();
+  virtual void Shutdown() OVERRIDE;
 
   // Returns the one worker thread.
   static WorkerThread* current();
@@ -38,12 +38,13 @@ class WorkerThread : public ChildThread {
  private:
   virtual bool OnControlMessageReceived(const IPC::Message& msg) OVERRIDE;
   virtual void OnChannelError() OVERRIDE;
+  virtual bool OnMessageReceived(const IPC::Message& msg) OVERRIDE;
 
   void OnCreateWorker(const WorkerProcessMsg_CreateWorker_Params& params);
+  void OnShutdown();
 
   scoped_ptr<WorkerWebKitPlatformSupportImpl> webkit_platform_support_;
   scoped_ptr<AppCacheDispatcher> appcache_dispatcher_;
-  scoped_ptr<WebDatabaseObserverImpl> web_database_observer_impl_;
   scoped_refptr<DBMessageFilter> db_message_filter_;
   scoped_refptr<IndexedDBMessageFilter> indexed_db_message_filter_;
 

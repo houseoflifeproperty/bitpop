@@ -15,13 +15,15 @@
 #include "base/gtest_prod_util.h"
 #include "base/memory/scoped_ptr.h"
 #include "base/memory/weak_ptr.h"
-#include "base/string16.h"
+#include "base/scoped_observer.h"
+#include "base/strings/string16.h"
 #include "base/values.h"
 #include "chrome/browser/extensions/extension_icon_manager.h"
+#include "components/keyed_service/core/keyed_service.h"
 #include "content/public/browser/notification_observer.h"
 #include "content/public/browser/notification_registrar.h"
+#include "extensions/browser/extension_registry_observer.h"
 #include "extensions/common/url_pattern_set.h"
-
 
 class Profile;
 class SkBitmap;
@@ -33,6 +35,8 @@ struct ContextMenuParams;
 
 namespace extensions {
 class Extension;
+class ExtensionRegistry;
+class StateStore;
 
 // Represents a menu item added by an extension.
 class MenuItem {
@@ -40,13 +44,32 @@ class MenuItem {
   // A list of MenuItems.
   typedef std::vector<MenuItem*> List;
 
+  // Key used to identify which extension a menu item belongs to.
+  // A menu item can also belong to a <webview> inside an extension,
+  // only in that case |webview_instance_id| would be
+  // non-zero (i.e. != guestview::kInstanceIDNone).
+  struct ExtensionKey {
+    std::string extension_id;
+    int webview_instance_id;
+
+    ExtensionKey();
+    ExtensionKey(const std::string& extension_id, int webview_instance_id);
+    explicit ExtensionKey(const std::string& extension_id);
+
+    bool operator==(const ExtensionKey& other) const;
+    bool operator!=(const ExtensionKey& other) const;
+    bool operator<(const ExtensionKey& other) const;
+
+    bool empty() const;
+  };
+
   // An Id uniquely identifies a context menu item registered by an extension.
   struct Id {
     Id();
     // Since the unique ID (uid or string_uid) is parsed from API arguments,
     // the normal usage is to set the uid or string_uid immediately after
     // construction.
-    Id(bool incognito, const std::string& extension_id);
+    Id(bool incognito, const ExtensionKey& extension_key);
     ~Id();
 
     bool operator==(const Id& other) const;
@@ -54,7 +77,7 @@ class MenuItem {
     bool operator<(const Id& other) const;
 
     bool incognito;
-    std::string extension_id;
+    ExtensionKey extension_key;
     // Only one of uid or string_uid will be defined.
     int uid;
     std::string string_uid;
@@ -109,11 +132,12 @@ class MenuItem {
       value_ |= context;
     }
 
-    scoped_ptr<Value> ToValue() const {
-      return scoped_ptr<Value>(Value::CreateIntegerValue(value_));
+    scoped_ptr<base::Value> ToValue() const {
+      return scoped_ptr<base::Value>(
+          new base::FundamentalValue(static_cast<int>(value_)));
     }
 
-    bool Populate(const Value& value) {
+    bool Populate(const base::Value& value) {
       int int_value;
       if (!value.GetAsInteger(&int_value) || int_value < 0)
         return false;
@@ -135,7 +159,9 @@ class MenuItem {
 
   // Simple accessor methods.
   bool incognito() const { return id_.incognito; }
-  const std::string& extension_id() const { return id_.extension_id; }
+  const std::string& extension_id() const {
+    return id_.extension_key.extension_id;
+  }
   const std::string& title() const { return title_; }
   const List& children() { return children_; }
   const Id& id() const { return id_; }
@@ -166,7 +192,7 @@ class MenuItem {
 
   // Returns the title with any instances of %s replaced by |selection|. The
   // result will be no longer than |max_length|.
-  string16 TitleWithReplacement(const string16& selection,
+  base::string16 TitleWithReplacement(const base::string16& selection,
                                 size_t max_length) const;
 
   // Sets the checked state to |checked|. Returns true if successful.
@@ -178,7 +204,7 @@ class MenuItem {
   // Returns a new MenuItem created from |value|, or NULL if there is
   // an error. The caller takes ownership of the MenuItem.
   static MenuItem* Populate(const std::string& extension_id,
-                            const DictionaryValue& value,
+                            const base::DictionaryValue& value,
                             std::string* error);
 
   // Sets any document and target URL patterns from |properties|.
@@ -242,20 +268,28 @@ class MenuItem {
 
 // This class keeps track of menu items added by extensions.
 class MenuManager : public content::NotificationObserver,
-                    public base::SupportsWeakPtr<MenuManager> {
+                    public base::SupportsWeakPtr<MenuManager>,
+                    public KeyedService,
+                    public ExtensionRegistryObserver {
  public:
-  explicit MenuManager(Profile* profile);
+  static const char kOnContextMenus[];
+  static const char kOnWebviewContextMenus[];
+
+  MenuManager(Profile* profile, StateStore* store_);
   virtual ~MenuManager();
 
-  // Returns the ids of extensions which have menu items registered.
-  std::set<std::string> ExtensionIds();
+  // Convenience function to get the MenuManager for a Profile.
+  static MenuManager* Get(Profile* profile);
+
+  // Returns the keys of extensions which have menu items registered.
+  std::set<MenuItem::ExtensionKey> ExtensionIds();
 
   // Returns a list of all the *top-level* menu items (added via AddContextItem)
-  // for the given extension id, *not* including child items (added via
-  // AddChildItem); although those can be reached via the top-level items'
-  // children. A view can then decide how to display these, including whether to
-  // put them into a submenu if there are more than 1.
-  const MenuItem::List* MenuItems(const std::string& extension_id);
+  // for the given extension specified by |extension_key|, *not* including child
+  // items (added via AddChildItem); although those can be reached via the
+  // top-level items' children. A view can then decide how to display these,
+  // including whether to put them into a submenu if there are more than 1.
+  const MenuItem::List* MenuItems(const MenuItem::ExtensionKey& extension_key);
 
   // Adds a top-level menu item for an extension, requiring the |extension|
   // pointer so it can load the icon for the extension. Takes ownership of
@@ -280,8 +314,8 @@ class MenuManager : public content::NotificationObserver,
   // and removed or false otherwise.
   bool RemoveContextMenuItem(const MenuItem::Id& id);
 
-  // Removes all items for the given extension id.
-  void RemoveAllContextItems(const std::string& extension_id);
+  // Removes all items for the given extension specified by |extension_key|.
+  void RemoveAllContextItems(const MenuItem::ExtensionKey& extension_key);
 
   // Returns the item with the given |id| or NULL.
   MenuItem* GetItemById(const MenuItem::Id& id) const;
@@ -303,12 +337,21 @@ class MenuManager : public content::NotificationObserver,
   // default extension icon.
   const SkBitmap& GetIconForExtension(const std::string& extension_id);
 
-  // Implements the content::NotificationObserver interface.
+  // content::NotificationObserver implementation.
   virtual void Observe(int type, const content::NotificationSource& source,
                        const content::NotificationDetails& details) OVERRIDE;
 
+  // ExtensionRegistryObserver implementation.
+  virtual void OnExtensionLoaded(content::BrowserContext* browser_context,
+                                 const Extension* extension) OVERRIDE;
+  virtual void OnExtensionUnloaded(
+      content::BrowserContext* browser_context,
+      const Extension* extension,
+      UnloadedExtensionInfo::Reason reason) OVERRIDE;
+
   // Stores the menu items for the extension in the state storage.
-  void WriteToStorage(const Extension* extension);
+  void WriteToStorage(const Extension* extension,
+                      const MenuItem::ExtensionKey& extension_key);
 
   // Reads menu items for the extension from the state storage. Any invalid
   // items are ignored.
@@ -335,8 +378,8 @@ class MenuManager : public content::NotificationObserver,
   // Returns true if item is a descendant of an item with id |ancestor_id|.
   bool DescendantOf(MenuItem* item, const MenuItem::Id& ancestor_id);
 
-  // We keep items organized by mapping an extension id to a list of items.
-  typedef std::map<std::string, MenuItem::List> MenuItemMap;
+  // We keep items organized by mapping ExtensionKey to a list of items.
+  typedef std::map<MenuItem::ExtensionKey, MenuItem::List> MenuItemMap;
   MenuItemMap context_items_;
 
   // This lets us make lookup by id fast. It maps id to MenuItem* for
@@ -346,9 +389,16 @@ class MenuManager : public content::NotificationObserver,
 
   content::NotificationRegistrar registrar_;
 
+  // Listen to extension load, unloaded notifications.
+  ScopedObserver<ExtensionRegistry, ExtensionRegistryObserver>
+      extension_registry_observer_;
+
   ExtensionIconManager icon_manager_;
 
   Profile* profile_;
+
+  // Owned by ExtensionSystem.
+  StateStore* store_;
 
   DISALLOW_COPY_AND_ASSIGN(MenuManager);
 };

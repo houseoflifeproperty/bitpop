@@ -70,15 +70,15 @@ var CrosView = (function() {
   function setFileContent_(result) {
     fileContent = result;
     // Parse the JSON to get at the top level "Type" property.
-    var json_object;
+    var jsonObject;
     // Ignore any parse errors: they'll get handled in the C++ import code.
     try {
-      json_object = JSON.parse(fileContent);
+      jsonObject = JSON.parse(fileContent);
     } catch (error) {}
     // Check if file is encrypted.
-    if (json_object &&
-        json_object.hasOwnProperty('Type') &&
-        json_object.Type == 'EncryptedConfiguration') {
+    if (jsonObject &&
+        jsonObject.hasOwnProperty('Type') &&
+        jsonObject.Type == 'EncryptedConfiguration') {
       promptForPasscode_();
     } else {
       importONCFile_();
@@ -217,8 +217,9 @@ var CrosView = (function() {
     addEventListeners_();
   }
 
-  // ID for special HTML element in category_tabs.html
-  CrosView.TAB_HANDLE_ID = 'tab-handle-chromeos';
+  CrosView.TAB_ID = 'tab-handle-chromeos';
+  CrosView.TAB_NAME = 'ChromeOS';
+  CrosView.TAB_HASH = '#chromeos';
 
   CrosView.MAIN_BOX_ID = 'chromeos-view-tab-content';
   CrosView.IMPORT_DIV_ID = 'chromeos-view-import-div';

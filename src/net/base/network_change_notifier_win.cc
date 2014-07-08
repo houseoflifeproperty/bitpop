@@ -11,7 +11,7 @@
 #include "base/logging.h"
 #include "base/metrics/histogram.h"
 #include "base/threading/thread.h"
-#include "base/time.h"
+#include "base/time/time.h"
 #include "net/base/winsock_init.h"
 #include "net/dns/dns_config_service.h"
 
@@ -55,13 +55,13 @@ NetworkChangeNotifierWin::NetworkChangeNotifierWin()
     : NetworkChangeNotifier(NetworkChangeCalculatorParamsWin()),
       is_watching_(false),
       sequential_failures_(0),
-      ALLOW_THIS_IN_INITIALIZER_LIST(weak_factory_(this)),
+      weak_factory_(this),
       dns_config_service_thread_(new DnsConfigServiceThread()),
-      last_announced_offline_(IsOffline()) {
+      last_computed_connection_type_(RecomputeCurrentConnectionType()),
+      last_announced_offline_(
+          last_computed_connection_type_ == CONNECTION_NONE) {
   memset(&addr_overlapped_, 0, sizeof addr_overlapped_);
   addr_overlapped_.hEvent = WSACreateEvent();
-  dns_config_service_thread_->StartWithOptions(
-      base::Thread::Options(MessageLoop::TYPE_IO, 0));
 }
 
 NetworkChangeNotifierWin::~NetworkChangeNotifierWin() {
@@ -135,11 +135,8 @@ NetworkChangeNotifierWin::NetworkChangeCalculatorParamsWin() {
 // executing 'ipconfig /release'.
 //
 NetworkChangeNotifier::ConnectionType
-NetworkChangeNotifierWin::GetCurrentConnectionType() const {
-
-  // TODO(eroman): We could cache this value, and only re-calculate it on
-  //               network changes. For now we recompute it each time asked,
-  //               since it is relatively fast (sub 1ms) and not called often.
+NetworkChangeNotifierWin::RecomputeCurrentConnectionType() const {
+  DCHECK(CalledOnValidThread());
 
   EnsureWinsockInit();
 
@@ -208,6 +205,18 @@ NetworkChangeNotifierWin::GetCurrentConnectionType() const {
                             NetworkChangeNotifier::CONNECTION_NONE;
 }
 
+NetworkChangeNotifier::ConnectionType
+NetworkChangeNotifierWin::GetCurrentConnectionType() const {
+  base::AutoLock auto_lock(last_computed_connection_type_lock_);
+  return last_computed_connection_type_;
+}
+
+void NetworkChangeNotifierWin::SetCurrentConnectionType(
+    ConnectionType connection_type) {
+  base::AutoLock auto_lock(last_computed_connection_type_lock_);
+  last_computed_connection_type_ = connection_type;
+}
+
 void NetworkChangeNotifierWin::OnObjectSignaled(HANDLE object) {
   DCHECK(CalledOnValidThread());
   DCHECK(is_watching_);
@@ -221,6 +230,7 @@ void NetworkChangeNotifierWin::OnObjectSignaled(HANDLE object) {
 
 void NetworkChangeNotifierWin::NotifyObservers() {
   DCHECK(CalledOnValidThread());
+  SetCurrentConnectionType(RecomputeCurrentConnectionType());
   NotifyObserversOfIPAddressChange();
 
   // Calling GetConnectionType() at this very moment is likely to give
@@ -253,7 +263,7 @@ void NetworkChangeNotifierWin::WatchForAddressChange() {
                                  sequential_failures_);
     }
 
-    MessageLoop::current()->PostDelayedTask(
+    base::MessageLoop::current()->PostDelayedTask(
         FROM_HERE,
         base::Bind(&NetworkChangeNotifierWin::WatchForAddressChange,
                    weak_factory_.GetWeakPtr()),
@@ -279,6 +289,12 @@ void NetworkChangeNotifierWin::WatchForAddressChange() {
 
 bool NetworkChangeNotifierWin::WatchForAddressChangeInternal() {
   DCHECK(CalledOnValidThread());
+
+  if (!dns_config_service_thread_->IsRunning()) {
+    dns_config_service_thread_->StartWithOptions(
+      base::Thread::Options(base::MessageLoop::TYPE_IO, 0));
+  }
+
   HANDLE handle = NULL;
   DWORD ret = NotifyAddrChange(&handle, &addr_overlapped_);
   if (ret != ERROR_IO_PENDING)
@@ -289,6 +305,7 @@ bool NetworkChangeNotifierWin::WatchForAddressChangeInternal() {
 }
 
 void NetworkChangeNotifierWin::NotifyParentOfConnectionTypeChange() {
+  SetCurrentConnectionType(RecomputeCurrentConnectionType());
   bool current_offline = IsOffline();
   offline_polls_++;
   // If we continue to appear offline, delay sending out the notification in

@@ -18,13 +18,13 @@ void UMAHistogramHelper::Fetch() {
                                       base::Unretained(this));
 
   content::FetchHistogramsAsynchronously(
-      MessageLoop::current(),
+      base::MessageLoop::current(),
       callback,
       // If this call times out, it means that a child process is not
       // responding, which is something we should not ignore.  The timeout is
       // set to be longer than the normal browser test timeout so that it will
       // be prempted by the normal timeout.
-      TestTimeouts::action_max_timeout()*2);
+      TestTimeouts::action_max_timeout() * 2);
   content::RunMessageLoop();
 }
 
@@ -32,8 +32,9 @@ void UMAHistogramHelper::ExpectUniqueSample(
     const std::string& name,
     base::HistogramBase::Sample sample,
     base::HistogramBase::Count expected_count) {
-  base::Histogram* histogram = base::StatisticsRecorder::FindHistogram(name);
-  EXPECT_NE(static_cast<base::Histogram*>(NULL), histogram)
+  base::HistogramBase* histogram =
+      base::StatisticsRecorder::FindHistogram(name);
+  EXPECT_NE(static_cast<base::HistogramBase*>(NULL), histogram)
       << "Histogram \"" << name << "\" does not exist.";
 
   if (histogram) {
@@ -46,18 +47,19 @@ void UMAHistogramHelper::ExpectUniqueSample(
 void UMAHistogramHelper::ExpectTotalCount(
     const std::string& name,
     base::HistogramBase::Count count) {
-  base::Histogram* histogram = base::StatisticsRecorder::FindHistogram(name);
-  EXPECT_NE(static_cast<base::Histogram*>(NULL), histogram)
-      << "Histogram \"" << name << "\" does not exist.";
-
+  base::HistogramBase* histogram =
+      base::StatisticsRecorder::FindHistogram(name);
   if (histogram) {
     scoped_ptr<base::HistogramSamples> samples(histogram->SnapshotSamples());
     CheckTotalCount(name, count, *samples);
+  } else {
+    // No histogram means there were zero samples.
+    EXPECT_EQ(count, 0) << "Histogram \"" << name << "\" does not exist.";
   }
 }
 
 void UMAHistogramHelper::FetchCallback() {
-  MessageLoopForUI::current()->Quit();
+  base::MessageLoopForUI::current()->Quit();
 }
 
 void UMAHistogramHelper::CheckBucketCount(

@@ -7,12 +7,13 @@
 #include "base/bind.h"
 #include "base/bind_helpers.h"
 #include "base/logging.h"
-#include "base/message_loop.h"
+#include "base/message_loop/message_loop.h"
 #include "base/metrics/histogram.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/prefs/pref_service.h"
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/chrome_notification_types.h"
 #include "chrome/common/pref_names.h"
+#include "components/captive_portal/captive_portal_types.h"
 #include "content/public/browser/notification_service.h"
 
 #if defined(OS_MACOSX)
@@ -23,9 +24,25 @@
 #include "base/win/windows_version.h"
 #endif
 
-namespace captive_portal {
+using captive_portal::CaptivePortalResult;
 
 namespace {
+
+// Make sure this enum is in sync with CaptivePortalDetectionResult enum
+// in histograms.xml. This enum is append-only, don't modify existing values.
+enum CaptivePortalDetectionResult {
+  // There's a confirmed connection to the Internet.
+  DETECTION_RESULT_INTERNET_CONNECTED,
+  // Received a network or HTTP error, or a non-HTTP response.
+  DETECTION_RESULT_NO_RESPONSE,
+  // Encountered a captive portal with a non-HTTPS landing URL.
+  DETECTION_RESULT_BEHIND_CAPTIVE_PORTAL,
+  // Received a network or HTTP error with an HTTPS landing URL.
+  DETECTION_RESULT_NO_RESPONSE_HTTPS_LANDING_URL,
+  // Encountered a captive portal with an HTTPS landing URL.
+  DETECTION_RESULT_BEHIND_CAPTIVE_PORTAL_HTTPS_LANDING_URL,
+  DETECTION_RESULT_COUNT
+};
 
 // Records histograms relating to how often captive portal detection attempts
 // ended with |result| in a row, and for how long |result| was the last result
@@ -37,17 +54,16 @@ namespace {
 // |result_duration| is the time between when a captive portal check first
 // returned |result| and when a check returned a different result, or when the
 // CaptivePortalService was shut down.
-void RecordRepeatHistograms(Result result,
+void RecordRepeatHistograms(CaptivePortalResult result,
                             int repeat_count,
                             base::TimeDelta result_duration) {
   // Histogram macros can't be used with variable names, since they cache
   // pointers, so have to use the histogram functions directly.
 
   // Record number of times the last result was received in a row.
-  base::Histogram* result_repeated_histogram =
+  base::HistogramBase* result_repeated_histogram =
       base::Histogram::FactoryGet(
-          "CaptivePortal.ResultRepeated." +
-              CaptivePortalDetector::CaptivePortalResultToString(result),
+          "CaptivePortal.ResultRepeated." + CaptivePortalResultToString(result),
           1,  // min
           100,  // max
           100,  // bucket_count
@@ -58,10 +74,9 @@ void RecordRepeatHistograms(Result result,
     return;
 
   // Time between first request that returned |result| and now.
-  base::Histogram* result_duration_histogram =
+  base::HistogramBase* result_duration_histogram =
       base::Histogram::FactoryTimeGet(
-          "CaptivePortal.ResultDuration." +
-              CaptivePortalDetector::CaptivePortalResultToString(result),
+          "CaptivePortal.ResultDuration." + CaptivePortalResultToString(result),
           base::TimeDelta::FromSeconds(1),  // min
           base::TimeDelta::FromHours(1),  // max
           50,  // bucket_count
@@ -69,12 +84,34 @@ void RecordRepeatHistograms(Result result,
   result_duration_histogram->AddTime(result_duration);
 }
 
-bool HasNativeCaptivePortalDetection() {
-  // Lion and Windows 8 have their own captive portal detection that will open
-  // a browser window as needed.
-#if defined(OS_MACOSX)
-  return base::mac::IsOSLionOrLater();
-#elif defined(OS_WIN)
+int GetHistogramEntryForDetectionResult(
+    const captive_portal::CaptivePortalDetector::Results& results) {
+  bool is_https = results.landing_url.SchemeIs("https");
+  switch (results.result) {
+    case captive_portal::RESULT_INTERNET_CONNECTED:
+      return DETECTION_RESULT_INTERNET_CONNECTED;
+    case captive_portal::RESULT_NO_RESPONSE:
+      return is_https ?
+          DETECTION_RESULT_NO_RESPONSE_HTTPS_LANDING_URL :
+          DETECTION_RESULT_NO_RESPONSE;
+    case captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL:
+      return is_https ?
+          DETECTION_RESULT_BEHIND_CAPTIVE_PORTAL_HTTPS_LANDING_URL :
+          DETECTION_RESULT_BEHIND_CAPTIVE_PORTAL;
+    default:
+      NOTREACHED();
+      return -1;
+  }
+}
+
+bool ShouldDeferToNativeCaptivePortalDetection() {
+  // On Windows 8, defer to the native captive portal detection.  OSX Lion and
+  // later also have captive portal detection, but experimentally, this code
+  // works in cases its does not.
+  //
+  // TODO(mmenke): Investigate how well Windows 8's captive portal detection
+  // works.
+#if defined(OS_WIN)
   return base::win::GetVersion() >= base::win::VERSION_WIN8;
 #else
   return false;
@@ -136,9 +173,9 @@ CaptivePortalService::CaptivePortalService(Profile* profile)
       state_(STATE_IDLE),
       captive_portal_detector_(profile->GetRequestContext()),
       enabled_(false),
-      last_detection_result_(RESULT_INTERNET_CONNECTED),
+      last_detection_result_(captive_portal::RESULT_INTERNET_CONNECTED),
       num_checks_with_same_result_(0),
-      test_url_(CaptivePortalDetector::kDefaultURL) {
+      test_url_(captive_portal::CaptivePortalDetector::kDefaultURL) {
   // The order matters here:
   // |resolve_errors_with_web_service_| must be initialized and |backoff_entry_|
   // created before the call to UpdateEnabledState.
@@ -185,7 +222,7 @@ void CaptivePortalService::DetectCaptivePortalInternal() {
     // Count this as a success, so the backoff entry won't apply exponential
     // backoff, but will apply the standard delay.
     backoff_entry_->InformOfRequest(true);
-    OnResult(RESULT_INTERNET_CONNECTED);
+    OnResult(captive_portal::RESULT_INTERNET_CONNECTED);
     return;
   }
 
@@ -196,20 +233,20 @@ void CaptivePortalService::DetectCaptivePortalInternal() {
 }
 
 void CaptivePortalService::OnPortalDetectionCompleted(
-    const CaptivePortalDetector::Results& results) {
+    const captive_portal::CaptivePortalDetector::Results& results) {
   DCHECK(CalledOnValidThread());
   DCHECK_EQ(STATE_CHECKING_FOR_PORTAL, state_);
   DCHECK(!TimerRunning());
   DCHECK(enabled_);
 
-  Result result = results.result;
+  CaptivePortalResult result = results.result;
   const base::TimeDelta& retry_after_delta = results.retry_after_delta;
   base::TimeTicks now = GetCurrentTimeTicks();
 
   // Record histograms.
   UMA_HISTOGRAM_ENUMERATION("CaptivePortal.DetectResult",
-                            result,
-                            RESULT_COUNT);
+                            GetHistogramEntryForDetectionResult(results),
+                            DETECTION_RESULT_COUNT);
 
   // If this isn't the first captive portal result, record stats.
   if (!last_check_time_.is_null()) {
@@ -264,7 +301,7 @@ void CaptivePortalService::Shutdown() {
   }
 }
 
-void CaptivePortalService::OnResult(Result result) {
+void CaptivePortalService::OnResult(CaptivePortalResult result) {
   DCHECK_EQ(STATE_CHECKING_FOR_PORTAL, state_);
   state_ = STATE_IDLE;
 
@@ -279,8 +316,8 @@ void CaptivePortalService::OnResult(Result result) {
       content::Details<Results>(&results));
 }
 
-void CaptivePortalService::ResetBackoffEntry(Result result) {
-  if (!enabled_ || result == RESULT_BEHIND_CAPTIVE_PORTAL) {
+void CaptivePortalService::ResetBackoffEntry(CaptivePortalResult result) {
+  if (!enabled_ || result == captive_portal::RESULT_BEHIND_CAPTIVE_PORTAL) {
     // Use the shorter time when the captive portal service is not enabled, or
     // behind a captive portal.
     recheck_policy_.backoff_policy.initial_delay_ms =
@@ -300,7 +337,7 @@ void CaptivePortalService::UpdateEnabledState() {
              resolve_errors_with_web_service_.GetValue();
 
   if (testing_state_ != SKIP_OS_CHECK_FOR_TESTING &&
-      HasNativeCaptivePortalDetection()) {
+      ShouldDeferToNativeCaptivePortalDetection()) {
     enabled_ = false;
   }
 
@@ -341,5 +378,3 @@ bool CaptivePortalService::DetectionInProgress() const {
 bool CaptivePortalService::TimerRunning() const {
   return check_captive_portal_timer_.IsRunning();
 }
-
-}  // namespace captive_portal

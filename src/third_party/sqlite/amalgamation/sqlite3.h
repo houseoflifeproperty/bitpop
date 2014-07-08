@@ -4691,21 +4691,6 @@ struct sqlite3_index_info {
   double estimatedCost;      /* Estimated cost of using this index */
 };
 
-/* Begin preload-cache.patch for Chromium */
-/*
-** Preload the databases into the pager cache, up to the maximum size of the
-** pager cache.
-**
-** For a database to be loaded successfully, the pager must be active. That is,
-** there must be an open statement on that database. See sqlite3pager_loadall
-**
-** There might be many databases attached to the given connection. We iterate
-** them all and try to load them. If none are loadable successfully, we return
-** an error. Otherwise, we return OK.
-*/
-SQLITE_API int sqlite3_preload(sqlite3 *db);
-/* End preload-cache.patch for Chromium */
-
 /*
 ** CAPI3REF: Virtual Table Constraint Operator Codes
 **
@@ -6407,6 +6392,17 @@ SQLITE_API int sqlite3_wal_checkpoint_v2(
 #define SQLITE_CHECKPOINT_FULL    1
 #define SQLITE_CHECKPOINT_RESTART 2
 
+
+/* Begin recover.patch for Chromium */
+/*
+** Call to initialize the recover virtual-table modules (see recover.c).
+**
+** This could be loaded by default in main.c, but that would make the
+** virtual table available to Web SQL.  Breaking it out allows only
+** selected users to enable it (currently sql/recovery.cc).
+*/
+int recoverVtableInit(sqlite3 *db);
+/* End recover.patch for Chromium */
 
 /*
 ** Undo the hack that converts floating point types to integer for

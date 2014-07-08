@@ -11,6 +11,7 @@ import os
 import sys
 
 from common import chromium_utils
+from slave import build_directory
 import config
 
 
@@ -80,21 +81,21 @@ def GetStackTrace(debugger_dir, symbol_path, dump_file):
 
 def main():
   parser = optparse.OptionParser()
-  parser.add_option('', '--dump-dir', type='string', default='',
+  parser.add_option('--dump-dir', type='string', default='',
                     help='The directory where dump files are stored.')
-  parser.add_option('', '--debugger-dir', type='string', default='',
+  parser.add_option('--debugger-dir', type='string', default='',
                     help='The directory where the debugger is installed.'
                          'The debugger is used to get stack trace from dumps.')
-  parser.add_option('', '--build-dir', default='chrome',
-                    help='path to main build directory (the parent of '
-                         'the Release or Debug directory)')
-  parser.add_option('', '--target', default='Release',
+  parser.add_option('--build-dir', help='ignored')
+  parser.add_option('--target', default='Release',
                     help='build target (Debug or Release)')
-  parser.add_option('', '--archive-dir', type='string', default='',
+  parser.add_option('--archive-dir', type='string', default='',
                     help='If specified, save dump files to the archive'
                          'directory.')
 
   options, args = parser.parse_args()
+  options.build_dir = build_directory.GetBuildOutputDirectory()
+
   if args:
     parser.error('Unknown args "%s"' % ' '.join(args))
     return 1

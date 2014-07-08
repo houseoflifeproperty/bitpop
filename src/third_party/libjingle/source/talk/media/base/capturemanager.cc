@@ -30,18 +30,52 @@
 #include <algorithm>
 
 #include "talk/base/logging.h"
+#include "talk/media/base/videocapturer.h"
 #include "talk/media/base/videoprocessor.h"
 #include "talk/media/base/videorenderer.h"
 
 namespace cricket {
 
+// CaptureManager helper class.
+class VideoCapturerState {
+ public:
+  static const VideoFormatPod kDefaultCaptureFormat;
+
+  static VideoCapturerState* Create(VideoCapturer* video_capturer);
+  ~VideoCapturerState() {}
+
+  void AddCaptureResolution(const VideoFormat& desired_format);
+  bool RemoveCaptureResolution(const VideoFormat& format);
+  VideoFormat GetHighestFormat(VideoCapturer* video_capturer) const;
+
+  int IncCaptureStartRef();
+  int DecCaptureStartRef();
+  CaptureRenderAdapter* adapter() { return adapter_.get(); }
+  VideoCapturer* GetVideoCapturer() { return adapter()->video_capturer(); }
+
+  int start_count() const { return start_count_; }
+
+ private:
+  struct CaptureResolutionInfo {
+    VideoFormat video_format;
+    int format_ref_count;
+  };
+  typedef std::vector<CaptureResolutionInfo> CaptureFormats;
+
+  explicit VideoCapturerState(CaptureRenderAdapter* adapter);
+
+  talk_base::scoped_ptr<CaptureRenderAdapter> adapter_;
+
+  int start_count_;
+  CaptureFormats capture_formats_;
+};
+
 const VideoFormatPod VideoCapturerState::kDefaultCaptureFormat = {
-    640, 360, FPS_TO_INTERVAL(30), FOURCC_ANY};
+  640, 360, FPS_TO_INTERVAL(30), FOURCC_ANY
+};
 
 VideoCapturerState::VideoCapturerState(CaptureRenderAdapter* adapter)
-    : adapter_(adapter),
-      start_count_(1) {
-}
+    : adapter_(adapter), start_count_(1) {}
 
 VideoCapturerState* VideoCapturerState::Create(VideoCapturer* video_capturer) {
   CaptureRenderAdapter* adapter = CaptureRenderAdapter::Create(video_capturer);
@@ -60,12 +94,11 @@ void VideoCapturerState::AddCaptureResolution(
       return;
     }
   }
-  CaptureResolutionInfo capture_resolution = {desired_format, 1};
+  CaptureResolutionInfo capture_resolution = { desired_format, 1 };
   capture_formats_.push_back(capture_resolution);
 }
 
-bool VideoCapturerState::RemoveCaptureResolution(
-    const VideoFormat& format) {
+bool VideoCapturerState::RemoveCaptureResolution(const VideoFormat& format) {
   for (CaptureFormats::iterator iter = capture_formats_.begin();
        iter != capture_formats_.end(); ++iter) {
     if (format == iter->video_format) {
@@ -101,9 +134,7 @@ VideoFormat VideoCapturerState::GetHighestFormat(
   return highest_format;
 }
 
-int VideoCapturerState::IncCaptureStartRef() {
-  return ++start_count_;
-}
+int VideoCapturerState::IncCaptureStartRef() { return ++start_count_; }
 
 int VideoCapturerState::DecCaptureStartRef() {
   if (start_count_ > 0) {
@@ -114,12 +145,19 @@ int VideoCapturerState::DecCaptureStartRef() {
 }
 
 CaptureManager::~CaptureManager() {
-  while (!capture_states_.empty()) {
-    // There may have been multiple calls to StartVideoCapture which means that
-    // an equal number of calls to StopVideoCapture must be made. Note that
-    // StopVideoCapture will remove the element from |capture_states_| when a
-    // successfull stop has been made.
-    UnregisterVideoCapturer(capture_states_.begin()->second);
+  // Since we don't own any of the capturers, all capturers should have been
+  // cleaned up before we get here. In fact, in the normal shutdown sequence,
+  // all capturers *will* be shut down by now, so trying to stop them here
+  // will crash. If we're still tracking any, it's a dangling pointer.
+  if (!capture_states_.empty()) {
+    ASSERT(false &&
+           "CaptureManager destructing while still tracking capturers!");
+    // Delete remaining VideoCapturerStates, but don't touch the capturers.
+    do {
+      CaptureStates::iterator it = capture_states_.begin();
+      delete it->second;
+      capture_states_.erase(it);
+    } while (!capture_states_.empty());
   }
 }
 
@@ -168,6 +206,61 @@ bool CaptureManager::StopVideoCapture(VideoCapturer* video_capturer,
   if (capture_state->DecCaptureStartRef() == 0) {
     // Unregistering cannot fail as capture_state is not NULL.
     UnregisterVideoCapturer(capture_state);
+  }
+  return true;
+}
+
+bool CaptureManager::RestartVideoCapture(
+    VideoCapturer* video_capturer,
+    const VideoFormat& previous_format,
+    const VideoFormat& desired_format,
+    CaptureManager::RestartOptions options) {
+  if (!IsCapturerRegistered(video_capturer)) {
+    LOG(LS_ERROR) << "RestartVideoCapture: video_capturer is not registered.";
+    return false;
+  }
+  // Start the new format first. This keeps the capturer running.
+  if (!StartVideoCapture(video_capturer, desired_format)) {
+    LOG(LS_ERROR) << "RestartVideoCapture: unable to start video capture with "
+        "desired_format=" << desired_format.ToString();
+    return false;
+  }
+  // Stop the old format.
+  if (!StopVideoCapture(video_capturer, previous_format)) {
+    LOG(LS_ERROR) << "RestartVideoCapture: unable to stop video capture with "
+        "previous_format=" << previous_format.ToString();
+    // Undo the start request we just performed.
+    StopVideoCapture(video_capturer, desired_format);
+    return false;
+  }
+
+  switch (options) {
+    case kForceRestart: {
+      VideoCapturerState* capture_state = GetCaptureState(video_capturer);
+      ASSERT(capture_state && capture_state->start_count() > 0);
+      // Try a restart using the new best resolution.
+      VideoFormat highest_asked_format =
+          capture_state->GetHighestFormat(video_capturer);
+      VideoFormat capture_format;
+      if (video_capturer->GetBestCaptureFormat(highest_asked_format,
+                                               &capture_format)) {
+        if (!video_capturer->Restart(capture_format)) {
+          LOG(LS_ERROR) << "RestartVideoCapture: Restart failed.";
+        }
+      } else {
+        LOG(LS_WARNING)
+            << "RestartVideoCapture: Couldn't find a best capture format for "
+            << highest_asked_format.ToString();
+      }
+      break;
+    }
+    case kRequestRestart:
+      // TODO(ryanpetrie): Support restart requests. Should this
+      // to-be-implemented logic be used for {Start,Stop}VideoCapture as well?
+      break;
+    default:
+      LOG(LS_ERROR) << "Unknown/unimplemented RestartOption";
+      break;
   }
   return true;
 }
@@ -224,8 +317,8 @@ bool CaptureManager::IsCapturerRegistered(VideoCapturer* video_capturer) const {
 }
 
 bool CaptureManager::RegisterVideoCapturer(VideoCapturer* video_capturer) {
-  VideoCapturerState* capture_state = VideoCapturerState::Create(
-      video_capturer);
+  VideoCapturerState* capture_state =
+      VideoCapturerState::Create(video_capturer);
   if (!capture_state) {
     return false;
   }
@@ -257,26 +350,27 @@ void CaptureManager::UnregisterVideoCapturer(
 }
 
 bool CaptureManager::StartWithBestCaptureFormat(
-    VideoCapturerState* capture_state,
-    VideoCapturer* video_capturer) {
+    VideoCapturerState* capture_state, VideoCapturer* video_capturer) {
   VideoFormat highest_asked_format =
       capture_state->GetHighestFormat(video_capturer);
   VideoFormat capture_format;
   if (!video_capturer->GetBestCaptureFormat(highest_asked_format,
                                             &capture_format)) {
-     LOG(LS_WARNING) << "Unsupported format:"
-                     << " width=" << highest_asked_format.width
-                     << " height=" << highest_asked_format.height
-                     << ". Supported formats are:";
-     const std::vector<VideoFormat>* formats =
-         video_capturer->GetSupportedFormats();
-     for (std::vector<VideoFormat>::const_iterator i = formats->begin();
-          i != formats->end(); ++i) {
-       const VideoFormat& format = *i;
-       LOG(LS_WARNING) << "  " << GetFourccName(format.fourcc) << ":"
-                       << format.width << "x" << format.height << "x"
-                       << format.framerate();
-     }
+    LOG(LS_WARNING) << "Unsupported format:"
+                    << " width=" << highest_asked_format.width
+                    << " height=" << highest_asked_format.height
+                    << ". Supported formats are:";
+    const std::vector<VideoFormat>* formats =
+        video_capturer->GetSupportedFormats();
+    ASSERT(formats != NULL);
+    for (std::vector<VideoFormat>::const_iterator i = formats->begin();
+         i != formats->end(); ++i) {
+      const VideoFormat& format = *i;
+      LOG(LS_WARNING) << "  " << GetFourccName(format.fourcc)
+                      << ":" << format.width << "x" << format.height << "x"
+                      << format.framerate();
+    }
+    return false;
   }
   return video_capturer->StartCapturing(capture_format);
 }

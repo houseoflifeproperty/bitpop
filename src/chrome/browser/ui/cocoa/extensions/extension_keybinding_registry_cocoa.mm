@@ -4,17 +4,16 @@
 
 #include "chrome/browser/ui/cocoa/extensions/extension_keybinding_registry_cocoa.h"
 
+#include "chrome/browser/chrome_notification_types.h"
 #include "chrome/browser/extensions/api/commands/command_service.h"
-#include "chrome/browser/extensions/api/commands/command_service_factory.h"
 #include "chrome/browser/extensions/extension_service.h"
 #include "chrome/browser/profiles/profile.h"
-#include "chrome/common/extensions/extension.h"
-#include "chrome/common/chrome_notification_types.h"
-#include "chrome/common/extensions/extension_manifest_constants.h"
 #include "content/public/browser/native_web_keyboard_event.h"
 #include "content/public/browser/notification_service.h"
+#include "extensions/common/extension.h"
+#include "extensions/common/manifest_constants.h"
 
-namespace values = extension_manifest_values;
+namespace values = extensions::manifest_values;
 
 // static
 void extensions::ExtensionKeybindingRegistry::SetShortcutHandlingSuspended(
@@ -46,26 +45,24 @@ bool ExtensionKeybindingRegistryCocoa::ProcessKeyEvent(
   ui::Accelerator accelerator(
       static_cast<ui::KeyboardCode>(event.windowsKeyCode),
       content::GetModifiersFromNativeWebKeyboardEvent(event));
-  EventTargets::iterator it = event_targets_.find(accelerator);
-  if (it == event_targets_.end())
+
+  std::string extension_id;
+  std::string command_name;
+  if (!GetFirstTarget(accelerator, &extension_id, &command_name))
     return false;
 
-  std::string extension_id = it->second.first;
-  std::string command_name = it->second.second;
   int type = 0;
   if (command_name == values::kPageActionCommandEvent) {
     type = chrome::NOTIFICATION_EXTENSION_COMMAND_PAGE_ACTION_MAC;
   } else if (command_name == values::kBrowserActionCommandEvent) {
     type = chrome::NOTIFICATION_EXTENSION_COMMAND_BROWSER_ACTION_MAC;
-  } else if (command_name == values::kScriptBadgeCommandEvent) {
-    type = chrome::NOTIFICATION_EXTENSION_COMMAND_SCRIPT_BADGE_MAC;
   } else {
     // Not handled by using notifications. Route it through the Browser Event
-    // Router.
-    CommandExecuted(extension_id, command_name);
-    return true;
+    // Router using the base class (it will iterate through all targets).
+    return ExtensionKeybindingRegistry::NotifyEventTargets(accelerator);
   }
 
+  // Type != named command, so we need to dispatch this event directly.
   std::pair<const std::string, gfx::NativeWindow> details =
       std::make_pair(extension_id, window_);
   content::NotificationService::current()->Notify(
@@ -80,11 +77,12 @@ void ExtensionKeybindingRegistryCocoa::AddExtensionKeybinding(
     const extensions::Extension* extension,
     const std::string& command_name) {
   extensions::CommandService* command_service =
-      extensions::CommandServiceFactory::GetForProfile(profile_);
+      extensions::CommandService::Get(profile_);
   extensions::CommandMap commands;
   command_service->GetNamedCommands(
           extension->id(),
           extensions::CommandService::ACTIVE_ONLY,
+          extensions::CommandService::REGULAR,
           &commands);
 
   for (extensions::CommandMap::const_iterator iter = commands.begin();
@@ -92,9 +90,9 @@ void ExtensionKeybindingRegistryCocoa::AddExtensionKeybinding(
     if (!command_name.empty() && (iter->second.command_name() != command_name))
       continue;
 
-    ui::Accelerator accelerator(iter->second.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), iter->second.command_name());
+    AddEventTarget(iter->second.accelerator(),
+                   extension->id(),
+                   iter->second.command_name());
   }
 
   // Mac implemenetation behaves like GTK with regards to what is kept in the
@@ -106,9 +104,9 @@ void ExtensionKeybindingRegistryCocoa::AddExtensionKeybinding(
           extensions::CommandService::ACTIVE_ONLY,
           &browser_action,
           NULL)) {
-    ui::Accelerator accelerator(browser_action.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), browser_action.command_name());
+    AddEventTarget(browser_action.accelerator(),
+                   extension->id(),
+                   browser_action.command_name());
   }
 
   // Add the Page Action (if any).
@@ -118,32 +116,13 @@ void ExtensionKeybindingRegistryCocoa::AddExtensionKeybinding(
           extensions::CommandService::ACTIVE_ONLY,
           &page_action,
           NULL)) {
-    ui::Accelerator accelerator(page_action.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), page_action.command_name());
-  }
-
-  // Add the Script Badge (if any).
-  extensions::Command script_badge;
-  if (command_service->GetScriptBadgeCommand(
-          extension->id(),
-          extensions::CommandService::ACTIVE_ONLY,
-          &script_badge,
-          NULL)) {
-    ui::Accelerator accelerator(script_badge.accelerator());
-    event_targets_[accelerator] =
-        std::make_pair(extension->id(), script_badge.command_name());
+    AddEventTarget(page_action.accelerator(),
+                   extension->id(),
+                   page_action.command_name());
   }
 }
 
-void ExtensionKeybindingRegistryCocoa::RemoveExtensionKeybinding(
-    const extensions::Extension* extension,
+void ExtensionKeybindingRegistryCocoa::RemoveExtensionKeybindingImpl(
+    const ui::Accelerator& accelerator,
     const std::string& command_name) {
-  EventTargets::iterator iter = event_targets_.begin();
-  while (iter != event_targets_.end()) {
-    EventTargets::iterator old = iter++;
-    if (old->second.first == extension->id() &&
-        (command_name.empty() || (old->second.second == command_name)))
-      event_targets_.erase(old);
-  }
 }

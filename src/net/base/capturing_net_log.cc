@@ -4,6 +4,7 @@
 
 #include "net/base/capturing_net_log.h"
 
+#include "base/json/json_writer.h"
 #include "base/logging.h"
 #include "base/values.h"
 
@@ -14,7 +15,7 @@ CapturingNetLog::CapturedEntry::CapturedEntry(
     const base::TimeTicks& time,
     Source source,
     EventPhase phase,
-    scoped_ptr<DictionaryValue> params)
+    scoped_ptr<base::DictionaryValue> params)
     : type(type),
       time(time),
       source(source),
@@ -34,14 +35,14 @@ CapturingNetLog::CapturedEntry::operator=(const CapturedEntry& entry) {
   time = entry.time;
   source = entry.source;
   phase = entry.phase;
-  params.reset(entry.params.get() ? entry.params->DeepCopy() : NULL);
+  params.reset(entry.params ? entry.params->DeepCopy() : NULL);
   return *this;
 }
 
 bool CapturingNetLog::CapturedEntry::GetStringValue(
     const std::string& name,
     std::string* value) const {
-  if (!params.get())
+  if (!params)
     return false;
   return params->GetString(name, value);
 }
@@ -49,50 +50,71 @@ bool CapturingNetLog::CapturedEntry::GetStringValue(
 bool CapturingNetLog::CapturedEntry::GetIntegerValue(
     const std::string& name,
     int* value) const {
-  if (!params.get())
+  if (!params)
     return false;
   return params->GetInteger(name, value);
+}
+
+bool CapturingNetLog::CapturedEntry::GetListValue(
+    const std::string& name,
+    base::ListValue** value) const {
+  if (!params)
+    return false;
+  return params->GetList(name, value);
 }
 
 bool CapturingNetLog::CapturedEntry::GetNetErrorCode(int* value) const {
   return GetIntegerValue("net_error", value);
 }
 
-CapturingNetLog::CapturingNetLog()
-    : last_id_(0),
-      log_level_(LOG_ALL_BUT_BYTES) {
+std::string CapturingNetLog::CapturedEntry::GetParamsJson() const {
+  if (!params)
+    return std::string();
+  std::string json;
+  base::JSONWriter::Write(params.get(), &json);
+  return json;
 }
 
-CapturingNetLog::~CapturingNetLog() {}
+CapturingNetLog::Observer::Observer() {}
 
-void CapturingNetLog::GetEntries(CapturedEntryList* entry_list) const {
+CapturingNetLog::Observer::~Observer() {}
+
+void CapturingNetLog::Observer::GetEntries(
+    CapturedEntryList* entry_list) const {
   base::AutoLock lock(lock_);
   *entry_list = captured_entries_;
 }
 
-size_t CapturingNetLog::GetSize() const {
+void CapturingNetLog::Observer::GetEntriesForSource(
+    NetLog::Source source,
+    CapturedEntryList* entry_list) const {
+  base::AutoLock lock(lock_);
+  entry_list->clear();
+  for (CapturedEntryList::const_iterator entry = captured_entries_.begin();
+       entry != captured_entries_.end(); ++entry) {
+    if (entry->source.id == source.id)
+      entry_list->push_back(*entry);
+  }
+}
+
+size_t CapturingNetLog::Observer::GetSize() const {
   base::AutoLock lock(lock_);
   return captured_entries_.size();
 }
 
-void CapturingNetLog::Clear() {
+void CapturingNetLog::Observer::Clear() {
   base::AutoLock lock(lock_);
   captured_entries_.clear();
 }
 
-void CapturingNetLog::SetLogLevel(NetLog::LogLevel log_level) {
-  base::AutoLock lock(lock_);
-  log_level_ = log_level;
-}
-
-void CapturingNetLog::OnAddEntry(const net::NetLog::Entry& entry) {
+void CapturingNetLog::Observer::OnAddEntry(const net::NetLog::Entry& entry) {
   // Only BoundNetLogs without a NetLog should have an invalid source.
   CHECK(entry.source().IsValid());
 
   // Using Dictionaries instead of Values makes checking values a little
   // simpler.
-  DictionaryValue* param_dict = NULL;
-  Value* param_value = entry.ParametersToValue();
+  base::DictionaryValue* param_dict = NULL;
+  base::Value* param_value = entry.ParametersToValue();
   if (param_value && !param_value->GetAsDictionary(&param_dict))
     delete param_value;
 
@@ -103,32 +125,38 @@ void CapturingNetLog::OnAddEntry(const net::NetLog::Entry& entry) {
                     base::TimeTicks::Now(),
                     entry.source(),
                     entry.phase(),
-                    scoped_ptr<DictionaryValue>(param_dict)));
+                    scoped_ptr<base::DictionaryValue>(param_dict)));
 }
 
-uint32 CapturingNetLog::NextID() {
-  return base::subtle::NoBarrier_AtomicIncrement(&last_id_, 1);
+CapturingNetLog::CapturingNetLog() {
+  AddThreadSafeObserver(&capturing_net_log_observer_, LOG_ALL_BUT_BYTES);
 }
 
-NetLog::LogLevel CapturingNetLog::GetLogLevel() const {
-  base::AutoLock lock(lock_);
-  return log_level_;
+CapturingNetLog::~CapturingNetLog() {
+  RemoveThreadSafeObserver(&capturing_net_log_observer_);
 }
 
-void CapturingNetLog::AddThreadSafeObserver(
-    NetLog::ThreadSafeObserver* observer,
-    NetLog::LogLevel log_level) {
-  NOTIMPLEMENTED() << "Not currently used by net unit tests.";
+void CapturingNetLog::SetLogLevel(NetLog::LogLevel log_level) {
+  SetObserverLogLevel(&capturing_net_log_observer_, log_level);
 }
 
-void CapturingNetLog::SetObserverLogLevel(ThreadSafeObserver* observer,
-                                          LogLevel log_level) {
-  NOTIMPLEMENTED() << "Not currently used by net unit tests.";
+void CapturingNetLog::GetEntries(
+    CapturingNetLog::CapturedEntryList* entry_list) const {
+  capturing_net_log_observer_.GetEntries(entry_list);
 }
 
-void CapturingNetLog::RemoveThreadSafeObserver(
-    NetLog::ThreadSafeObserver* observer) {
-  NOTIMPLEMENTED() << "Not currently used by net unit tests.";
+void CapturingNetLog::GetEntriesForSource(
+    NetLog::Source source,
+    CapturedEntryList* entry_list) const {
+  capturing_net_log_observer_.GetEntriesForSource(source, entry_list);
+}
+
+size_t CapturingNetLog::GetSize() const {
+  return capturing_net_log_observer_.GetSize();
+}
+
+void CapturingNetLog::Clear() {
+  capturing_net_log_observer_.Clear();
 }
 
 CapturingBoundNetLog::CapturingBoundNetLog()
@@ -141,6 +169,12 @@ CapturingBoundNetLog::~CapturingBoundNetLog() {}
 void CapturingBoundNetLog::GetEntries(
     CapturingNetLog::CapturedEntryList* entry_list) const {
   capturing_net_log_.GetEntries(entry_list);
+}
+
+void CapturingBoundNetLog::GetEntriesForSource(
+    NetLog::Source source,
+    CapturingNetLog::CapturedEntryList* entry_list) const {
+  capturing_net_log_.GetEntriesForSource(source, entry_list);
 }
 
 size_t CapturingBoundNetLog::GetSize() const {

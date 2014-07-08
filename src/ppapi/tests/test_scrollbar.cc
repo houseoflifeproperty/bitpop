@@ -6,7 +6,6 @@
 
 #include <cstring>
 
-#include "ppapi/c/dev/ppb_testing_dev.h"
 #include "ppapi/c/pp_input_event.h"
 #include "ppapi/cpp/input_event.h"
 #include "ppapi/cpp/instance.h"
@@ -27,7 +26,7 @@ bool TestScrollbar::Init() {
 }
 
 void TestScrollbar::RunTests(const std::string& filter) {
-  instance_->LogTest("HandleEvent", TestHandleEvent());
+  RUN_TEST(HandleEvent, filter);
 }
 
 std::string TestScrollbar::TestHandleEvent() {
@@ -44,7 +43,8 @@ std::string TestScrollbar::TestHandleEvent() {
       core->GetTimeTicks(),
       0,  // Modifier.
       0x28,  // Key code = VKEY_DOWN.
-      pp::Var());
+      pp::Var(),
+      pp::Var("ArrowDown"));
   scrollbar_.HandleEvent(input_event);
 
   return scrollbar_value_changed_ ?

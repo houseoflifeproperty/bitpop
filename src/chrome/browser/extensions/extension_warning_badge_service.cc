@@ -6,11 +6,12 @@
 
 #include "base/stl_util.h"
 #include "chrome/app/chrome_command_ids.h"
-#include "chrome/browser/extensions/extension_system.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/ui/browser_commands.h"
 #include "chrome/browser/ui/global_error/global_error.h"
 #include "chrome/browser/ui/global_error/global_error_service.h"
 #include "chrome/browser/ui/global_error/global_error_service_factory.h"
-#include "chrome/browser/ui/browser_commands.h"
+#include "extensions/browser/extension_system.h"
 #include "grit/generated_resources.h"
 #include "ui/base/l10n/l10n_util.h"
 
@@ -26,21 +27,15 @@ class ErrorBadge : public GlobalError {
   virtual ~ErrorBadge();
 
   // Implementation for GlobalError:
-  virtual bool HasBadge() OVERRIDE;
-
   virtual bool HasMenuItem() OVERRIDE;
   virtual int MenuItemCommandID() OVERRIDE;
-  virtual string16 MenuItemLabel() OVERRIDE;
+  virtual base::string16 MenuItemLabel() OVERRIDE;
   virtual void ExecuteMenuItem(Browser* browser) OVERRIDE;
 
   virtual bool HasBubbleView() OVERRIDE;
-  virtual string16 GetBubbleViewTitle() OVERRIDE;
-  virtual string16 GetBubbleViewMessage() OVERRIDE;
-  virtual string16 GetBubbleViewAcceptButtonLabel() OVERRIDE;
-  virtual string16 GetBubbleViewCancelButtonLabel() OVERRIDE;
-  virtual void OnBubbleViewDidClose(Browser* browser) OVERRIDE;
-  virtual void BubbleViewAcceptButtonPressed(Browser* browser) OVERRIDE;
-  virtual void BubbleViewCancelButtonPressed(Browser* browser) OVERRIDE;
+  virtual bool HasShownBubbleView() OVERRIDE;
+  virtual void ShowBubbleView(Browser* browser) OVERRIDE;
+  virtual GlobalErrorBubbleViewBase* GetBubbleView() OVERRIDE;
 
   static int GetMenuItemCommandID();
 
@@ -55,10 +50,6 @@ ErrorBadge::ErrorBadge(ExtensionWarningBadgeService* badge_service)
 
 ErrorBadge::~ErrorBadge() {}
 
-bool ErrorBadge::HasBadge() {
-  return true;
-}
-
 bool ErrorBadge::HasMenuItem() {
   return true;
 }
@@ -67,7 +58,7 @@ int ErrorBadge::MenuItemCommandID() {
   return GetMenuItemCommandID();
 }
 
-string16 ErrorBadge::MenuItemLabel() {
+base::string16 ErrorBadge::MenuItemLabel() {
   return l10n_util::GetStringUTF16(IDS_EXTENSION_WARNINGS_WRENCH_MENU_ITEM);
 }
 
@@ -79,35 +70,14 @@ void ErrorBadge::ExecuteMenuItem(Browser* browser) {
   chrome::ExecuteCommand(browser, IDC_MANAGE_EXTENSIONS);
 }
 
-bool ErrorBadge::HasBubbleView() {
-  return false;
-}
+bool ErrorBadge::HasBubbleView() { return false; }
 
-string16 ErrorBadge::GetBubbleViewTitle() {
-  return string16();
-}
+bool ErrorBadge::HasShownBubbleView() { return false; }
 
-string16 ErrorBadge::GetBubbleViewMessage() {
-  return string16();
-}
+void ErrorBadge::ShowBubbleView(Browser* browser) { NOTREACHED(); }
 
-string16 ErrorBadge::GetBubbleViewAcceptButtonLabel() {
-  return string16();
-}
-
-string16 ErrorBadge::GetBubbleViewCancelButtonLabel() {
-  return string16();
-}
-
-void ErrorBadge::OnBubbleViewDidClose(Browser* browser) {
-}
-
-void ErrorBadge::BubbleViewAcceptButtonPressed(Browser* browser) {
-  NOTREACHED();
-}
-
-void ErrorBadge::BubbleViewCancelButtonPressed(Browser* browser) {
-  NOTREACHED();
+GlobalErrorBubbleViewBase* ErrorBadge::GetBubbleView() {
+  return NULL;
 }
 
 // static
@@ -174,4 +144,4 @@ void ExtensionWarningBadgeService::ShowBadge(bool show) {
   }
 }
 
-}  // extensions
+}  // namespace extensions

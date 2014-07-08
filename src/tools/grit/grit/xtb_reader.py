@@ -11,13 +11,15 @@ import sys
 import xml.sax
 import xml.sax.handler
 
+import grit.node.base
+
 
 class XtbContentHandler(xml.sax.handler.ContentHandler):
   '''A content handler that calls a given callback function for each
   translation in the XTB file.
   '''
 
-  def __init__(self, callback, defs=None, debug=False):
+  def __init__(self, callback, defs=None, debug=False, target_platform=None):
     self.callback = callback
     self.debug = debug
     # 0 if we are not currently parsing a translation, otherwise the message
@@ -36,6 +38,11 @@ class XtbContentHandler(xml.sax.handler.ContentHandler):
       self.defines = defs
     else:
       self.defines = {}
+    # Target platform for build.
+    if target_platform:
+      self.target_platform = target_platform
+    else:
+      self.target_platform = sys.platform
 
   def startElement(self, name, attrs):
     if name == 'translation':
@@ -47,8 +54,8 @@ class XtbContentHandler(xml.sax.handler.ContentHandler):
       self.current_structure.append((True, attrs.getValue('name')))
     elif name == 'translationbundle':
       self.language = attrs.getValue('lang')
-    elif name == 'if':
-      assert self.if_expr is None, "Can't nest <if> in xtb files"
+    elif name in ('if', 'then', 'else'):
+      assert self.if_expr is None, "Can't nest <if> or use <else> in xtb files"
       self.if_expr = attrs.getValue('expr')
 
   def endElement(self, name):
@@ -65,11 +72,8 @@ class XtbContentHandler(xml.sax.handler.ContentHandler):
       # if the expression is True.
       should_run_callback = True
       if self.if_expr:
-        should_run_callback = eval(self.if_expr, {},
-                                   {'os': sys.platform,
-                                    'defs' : defs,
-                                    'pp_ifdef' : pp_ifdef,
-                                    'pp_if' : pp_if})
+        should_run_callback = grit.node.base.Node.EvaluateExpression(
+            self.if_expr, self.defines, self.target_platform)
       if should_run_callback:
         self.callback(self.current_id, self.current_structure)
 
@@ -101,7 +105,8 @@ class XtbErrorHandler(xml.sax.handler.ErrorHandler):
     pass
 
 
-def Parse(xtb_file, callback_function, defs={}, debug=False):
+def Parse(xtb_file, callback_function, defs=None, debug=False,
+          target_platform=None):
   '''Parse xtb_file, making a call to callback_function for every translation
   in the XTB file.
 
@@ -113,6 +118,10 @@ def Parse(xtb_file, callback_function, defs={}, debug=False):
   Args:
     xtb_file:           open('fr.xtb')
     callback_function:  def Callback(msg_id, parts): pass
+    defs:               None, or a dictionary of preprocessor definitions.
+    debug:              Default False. Set True for verbose debug output.
+    target_platform:    None, or a sys.platform-like identifier of the build
+                        target platform.
 
   Return:
     The language of the XTB, e.g. 'fr'
@@ -125,7 +134,7 @@ def Parse(xtb_file, callback_function, defs={}, debug=False):
   xtb_file.seek(front_of_file.find('<translationbundle'))
 
   handler = XtbContentHandler(callback=callback_function, defs=defs,
-                              debug=debug)
+                              debug=debug, target_platform=target_platform)
   xml.sax.parse(xtb_file, handler)
   assert handler.language != ''
   return handler.language

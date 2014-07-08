@@ -2,8 +2,8 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-#include "base/message_loop.h"
-#include "chrome/browser/prefs/pref_service.h"
+#include "base/message_loop/message_loop.h"
+#include "base/prefs/pref_service.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/browser_finder.h"
 #include "chrome/browser/ui/zoom/zoom_controller.h"
@@ -11,14 +11,9 @@
 #include "chrome/common/pref_names.h"
 #include "chrome/test/base/chrome_render_view_host_test_harness.h"
 #include "chrome/test/base/testing_profile.h"
-#include "content/public/browser/browser_thread.h"
 #include "content/public/browser/host_zoom_map.h"
 #include "content/public/browser/navigation_details.h"
-#include "content/public/browser/notification_details.h"
-#include "content/public/browser/notification_source.h"
-#include "content/public/browser/notification_types.h"
 #include "content/public/common/frame_navigate_params.h"
-#include "content/public/test/test_browser_thread.h"
 #include "content/public/test/test_utils.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
@@ -30,9 +25,6 @@ class TestZoomObserver : public ZoomObserver {
 
 class ZoomControllerTest : public ChromeRenderViewHostTestHarness {
  public:
-  ZoomControllerTest()
-      : ui_thread_(content::BrowserThread::UI, MessageLoop::current()) {}
-
   virtual void SetUp() OVERRIDE {
     ChromeRenderViewHostTestHarness::SetUp();
     zoom_controller_.reset(new ZoomController(web_contents()));
@@ -47,10 +39,6 @@ class ZoomControllerTest : public ChromeRenderViewHostTestHarness {
  protected:
   scoped_ptr<ZoomController> zoom_controller_;
   TestZoomObserver zoom_observer_;
-
- private:
-  content::TestBrowserThread ui_thread_;
-  DISALLOW_COPY_AND_ASSIGN(ZoomControllerTest);
 };
 
 TEST_F(ZoomControllerTest, DidNavigateMainFrame) {
@@ -71,11 +59,5 @@ TEST_F(ZoomControllerTest, Observe) {
       content::HostZoomMap::GetForBrowserContext(
           web_contents()->GetBrowserContext());
 
-  content::WindowedNotificationObserver notification_observer(
-      content::NOTIFICATION_ZOOM_LEVEL_CHANGED,
-      content::NotificationService::AllSources());
-
-  host_zoom_map->SetZoomLevel(std::string(), 110.0f);
-
-  notification_observer.Wait();
+  host_zoom_map->SetZoomLevelForHost(std::string(), 110.0f);
 }

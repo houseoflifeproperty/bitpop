@@ -4,70 +4,68 @@
 
 #include "remoting/host/host_mock_objects.h"
 
-#include "base/message_loop_proxy.h"
+#include "base/message_loop/message_loop_proxy.h"
+#include "base/single_thread_task_runner.h"
 #include "net/base/ip_endpoint.h"
 #include "remoting/base/auto_thread_task_runner.h"
-#include "remoting/base/capture_data.h"
+#include "remoting/codec/audio_encoder.h"
+#include "remoting/codec/video_encoder.h"
+#include "remoting/host/audio_capturer.h"
+#include "remoting/host/input_injector.h"
 #include "remoting/proto/event.pb.h"
 #include "remoting/protocol/transport.h"
+#include "third_party/webrtc/modules/desktop_capture/screen_capturer.h"
 
 namespace remoting {
 
-MockVideoFrameCapturer::MockVideoFrameCapturer() {}
+MockDesktopEnvironment::MockDesktopEnvironment() {}
 
-MockVideoFrameCapturer::~MockVideoFrameCapturer() {}
+MockDesktopEnvironment::~MockDesktopEnvironment() {}
 
-MockVideoFrameCapturerDelegate::MockVideoFrameCapturerDelegate() {
+scoped_ptr<AudioCapturer> MockDesktopEnvironment::CreateAudioCapturer() {
+  return scoped_ptr<AudioCapturer>(CreateAudioCapturerPtr());
 }
 
-MockVideoFrameCapturerDelegate::~MockVideoFrameCapturerDelegate() {
+scoped_ptr<InputInjector> MockDesktopEnvironment::CreateInputInjector() {
+  return scoped_ptr<InputInjector>(CreateInputInjectorPtr());
 }
 
-void MockVideoFrameCapturerDelegate::OnCursorShapeChanged(
-    scoped_ptr<protocol::CursorShapeInfo> cursor_shape) {
-  // Notify the mock method.
-  OnCursorShapeChangedPtr(cursor_shape.get());
+scoped_ptr<ScreenControls> MockDesktopEnvironment::CreateScreenControls() {
+  return scoped_ptr<ScreenControls>(CreateScreenControlsPtr());
 }
 
-MockDesktopEnvironmentFactory::MockDesktopEnvironmentFactory()
-    : DesktopEnvironmentFactory(NULL, NULL) {
+scoped_ptr<webrtc::ScreenCapturer>
+MockDesktopEnvironment::CreateVideoCapturer() {
+  return scoped_ptr<webrtc::ScreenCapturer>(CreateVideoCapturerPtr());
 }
+
+scoped_ptr<GnubbyAuthHandler>
+MockDesktopEnvironment::CreateGnubbyAuthHandler(
+    protocol::ClientStub* client_stub) {
+  return scoped_ptr<GnubbyAuthHandler>(CreateGnubbyAuthHandlerPtr(client_stub));
+}
+
+MockDesktopEnvironmentFactory::MockDesktopEnvironmentFactory() {}
 
 MockDesktopEnvironmentFactory::~MockDesktopEnvironmentFactory() {}
 
 scoped_ptr<DesktopEnvironment> MockDesktopEnvironmentFactory::Create(
-    ClientSession* client) {
-  return scoped_ptr<DesktopEnvironment>(CreatePtr(client));
+    base::WeakPtr<ClientSessionControl> client_session_control) {
+  return scoped_ptr<DesktopEnvironment>(CreatePtr());
 }
 
-MockEventExecutor::MockEventExecutor() {}
+MockInputInjector::MockInputInjector() {}
 
-MockEventExecutor::~MockEventExecutor() {}
+MockInputInjector::~MockInputInjector() {}
 
-void MockEventExecutor::Start(
+void MockInputInjector::Start(
     scoped_ptr<protocol::ClipboardStub> client_clipboard) {
   StartPtr(client_clipboard.get());
 }
 
-MockDisconnectWindow::MockDisconnectWindow() {}
+MockClientSessionControl::MockClientSessionControl() {}
 
-MockDisconnectWindow::~MockDisconnectWindow() {}
-
-scoped_ptr<DisconnectWindow> DisconnectWindow::Create() {
-  return scoped_ptr<DisconnectWindow>(new MockDisconnectWindow());
-}
-
-MockContinueWindow::MockContinueWindow() {}
-
-MockContinueWindow::~MockContinueWindow() {}
-
-scoped_ptr<ContinueWindow> ContinueWindow::Create() {
-  return scoped_ptr<ContinueWindow>(new MockContinueWindow());
-}
-
-MockLocalInputMonitor::MockLocalInputMonitor() {}
-
-MockLocalInputMonitor::~MockLocalInputMonitor() {}
+MockClientSessionControl::~MockClientSessionControl() {}
 
 MockClientSessionEventHandler::MockClientSessionEventHandler() {}
 
@@ -76,5 +74,9 @@ MockClientSessionEventHandler::~MockClientSessionEventHandler() {}
 MockHostStatusObserver::MockHostStatusObserver() {}
 
 MockHostStatusObserver::~MockHostStatusObserver() {}
+
+MockGnubbyAuthHandler::MockGnubbyAuthHandler() {}
+
+MockGnubbyAuthHandler::~MockGnubbyAuthHandler() {}
 
 }  // namespace remoting

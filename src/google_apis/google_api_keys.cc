@@ -4,42 +4,26 @@
 
 #include "google_apis/google_api_keys.h"
 
+// If you add more includes to this list, you also need to add them to
+// google_api_keys_unittest.cc.
 #include "base/command_line.h"
 #include "base/environment.h"
 #include "base/lazy_instance.h"
 #include "base/logging.h"
 #include "base/memory/scoped_ptr.h"
-#include "base/stringize_macros.h"
+#include "base/strings/stringize_macros.h"
+#include "google_apis/gaia/gaia_switches.h"
 
 #if defined(GOOGLE_CHROME_BUILD) || defined(USE_OFFICIAL_GOOGLE_API_KEYS)
 #include "google_apis/internal/google_chrome_api_keys.h"
 #endif
-
-// TODO(joi): Can we enable this warning without having it treated as
-// an error? We don't want to fail builds, just warn, but all warnings
-// from the preprocessor are currently treated as errors, at least in
-// Linux builds.
-#if 0
-#if !defined(GOOGLE_API_KEY) && (                      \
-  (!defined(GOOGLE_DEFAULT_CLIENT_ID) &&               \
-   !defined(GOOGLE_DEFAULT_CLIENT_SECRET))             \
-  ||                                                   \
-  (!defined(GOOGLE_CLIENT_ID_MAIN) &&                  \
-   !defined(GOOGLE_CLIENT_SECRET_MAIN)))
-#warning You have not specified API keys; some features may not work.
-#warning See www.chromium.org/developers/how-tos/api-keys for details.
-#endif  // (API keys unset)
-#endif  // 0
 
 // Used to indicate an unset key/id/secret.  This works better with
 // various unit tests than leaving the token empty.
 #define DUMMY_API_TOKEN "dummytoken"
 
 #if !defined(GOOGLE_API_KEY)
-// TODO(joi): This is temporary; switch to DUMMY_API_TOKEN once people
-// have had some time to install API keys per
-// http://chromium.org/developers/how-tos/api-keys
-#define GOOGLE_API_KEY "AIzaSyBOti4mM-6x9WDnZIjIeyEU21OpBXqWBgw"
+#define GOOGLE_API_KEY DUMMY_API_TOKEN
 #endif
 
 #if !defined(GOOGLE_CLIENT_ID_MAIN)
@@ -66,31 +50,25 @@
 #define GOOGLE_CLIENT_SECRET_REMOTING DUMMY_API_TOKEN
 #endif
 
+#if !defined(GOOGLE_CLIENT_ID_REMOTING_HOST)
+#define GOOGLE_CLIENT_ID_REMOTING_HOST DUMMY_API_TOKEN
+#endif
+
+#if !defined(GOOGLE_CLIENT_SECRET_REMOTING_HOST)
+#define GOOGLE_CLIENT_SECRET_REMOTING_HOST DUMMY_API_TOKEN
+#endif
+
 // These are used as shortcuts for developers and users providing
 // OAuth credentials via preprocessor defines or environment
 // variables.  If set, they will be used to replace any of the client
 // IDs and secrets above that have not been set (and only those; they
 // will not override already-set values).
-//
-// TODO(joi): This is temporary; make both blank once people have had
-// some time to install API keys per
-// http://chromium.org/developers/how-tos/api-keys
 #if !defined(GOOGLE_DEFAULT_CLIENT_ID)
-#define GOOGLE_DEFAULT_CLIENT_ID "609716072145.apps.googleusercontent.com"
+#define GOOGLE_DEFAULT_CLIENT_ID ""
 #endif
 #if !defined(GOOGLE_DEFAULT_CLIENT_SECRET)
-#define GOOGLE_DEFAULT_CLIENT_SECRET "WF4uG3gJzEH0KLpS7OuFBDux"
+#define GOOGLE_DEFAULT_CLIENT_SECRET ""
 #endif
-
-namespace switches {
-
-// Specifies custom OAuth2 client id for testing purposes.
-const char kOAuth2ClientID[] = "oauth2-client-id";
-
-// Specifies custom OAuth2 client secret for testing purposes.
-const char kOAuth2ClientSecret[] = "oauth2-client-secret";
-
-}  // namespace switches
 
 namespace google_apis {
 
@@ -103,22 +81,25 @@ class APIKeyCache {
 
     api_key_ = CalculateKeyValue(GOOGLE_API_KEY,
                                  STRINGIZE_NO_EXPANSION(GOOGLE_API_KEY),
-                                 NULL, "",
+                                 NULL,
+                                 std::string(),
                                  environment.get(),
                                  command_line);
 
-    std::string default_client_id = CalculateKeyValue(
-        GOOGLE_DEFAULT_CLIENT_ID,
-        STRINGIZE_NO_EXPANSION(GOOGLE_DEFAULT_CLIENT_ID),
-        NULL, "",
-        environment.get(),
-        command_line);
-    std::string default_client_secret = CalculateKeyValue(
-        GOOGLE_DEFAULT_CLIENT_SECRET,
-        STRINGIZE_NO_EXPANSION(GOOGLE_DEFAULT_CLIENT_SECRET),
-        NULL, "",
-        environment.get(),
-        command_line);
+    std::string default_client_id =
+        CalculateKeyValue(GOOGLE_DEFAULT_CLIENT_ID,
+                          STRINGIZE_NO_EXPANSION(GOOGLE_DEFAULT_CLIENT_ID),
+                          NULL,
+                          std::string(),
+                          environment.get(),
+                          command_line);
+    std::string default_client_secret =
+        CalculateKeyValue(GOOGLE_DEFAULT_CLIENT_SECRET,
+                          STRINGIZE_NO_EXPANSION(GOOGLE_DEFAULT_CLIENT_SECRET),
+                          NULL,
+                          std::string(),
+                          environment.get(),
+                          command_line);
 
     // We currently only allow overriding the baked-in values for the
     // default OAuth2 client ID and secret using a command-line
@@ -170,6 +151,21 @@ class APIKeyCache {
         default_client_secret,
         environment.get(),
         command_line);
+
+    client_ids_[CLIENT_REMOTING_HOST] = CalculateKeyValue(
+        GOOGLE_CLIENT_ID_REMOTING_HOST,
+        STRINGIZE_NO_EXPANSION(GOOGLE_CLIENT_ID_REMOTING_HOST),
+        NULL,
+        default_client_id,
+        environment.get(),
+        command_line);
+    client_secrets_[CLIENT_REMOTING_HOST] = CalculateKeyValue(
+        GOOGLE_CLIENT_SECRET_REMOTING_HOST,
+        STRINGIZE_NO_EXPANSION(GOOGLE_CLIENT_SECRET_REMOTING_HOST),
+        NULL,
+        default_client_secret,
+        environment.get(),
+        command_line);
   }
 
   std::string api_key() const { return api_key_; }
@@ -199,14 +195,14 @@ class APIKeyCache {
     std::string temp;
     if (environment->GetVar(environment_variable_name, &temp)) {
       key_value = temp;
-      LOG(INFO) << "Overriding API key " << environment_variable_name
-                << " with value " << key_value << " from environment variable.";
+      VLOG(1) << "Overriding API key " << environment_variable_name
+              << " with value " << key_value << " from environment variable.";
     }
 
     if (command_line_switch && command_line->HasSwitch(command_line_switch)) {
       key_value = command_line->GetSwitchValueASCII(command_line_switch);
-      LOG(INFO) << "Overriding API key " << environment_variable_name
-                << " with value " << key_value << " from command-line switch.";
+      VLOG(1) << "Overriding API key " << environment_variable_name
+              << " with value " << key_value << " from command-line switch.";
     }
 
     if (key_value == DUMMY_API_TOKEN) {
@@ -217,8 +213,8 @@ class APIKeyCache {
       CHECK(false);
 #endif
       if (default_if_unset.size() > 0) {
-        LOG(INFO) << "Using default value \"" << default_if_unset
-                  << "\" for API key " << environment_variable_name;
+        VLOG(1) << "Using default value \"" << default_if_unset
+                << "\" for API key " << environment_variable_name;
         key_value = default_if_unset;
       }
     }
@@ -237,6 +233,21 @@ class APIKeyCache {
 static base::LazyInstance<APIKeyCache> g_api_key_cache =
     LAZY_INSTANCE_INITIALIZER;
 
+bool HasKeysConfigured() {
+  if (GetAPIKey() == DUMMY_API_TOKEN)
+    return false;
+
+  for (size_t client_id = 0; client_id < CLIENT_NUM_ITEMS; ++client_id) {
+    OAuth2Client client = static_cast<OAuth2Client>(client_id);
+    if (GetOAuth2ClientID(client) == DUMMY_API_TOKEN ||
+        GetOAuth2ClientSecret(client) == DUMMY_API_TOKEN) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 std::string GetAPIKey() {
   return g_api_key_cache.Get().api_key();
 }
@@ -247,6 +258,14 @@ std::string GetOAuth2ClientID(OAuth2Client client) {
 
 std::string GetOAuth2ClientSecret(OAuth2Client client) {
   return g_api_key_cache.Get().GetClientSecret(client);
+}
+
+bool IsGoogleChromeAPIKeyUsed() {
+#if defined(GOOGLE_CHROME_BUILD) || defined(USE_OFFICIAL_GOOGLE_API_KEYS)
+  return true;
+#else
+  return false;
+#endif
 }
 
 }  // namespace google_apis

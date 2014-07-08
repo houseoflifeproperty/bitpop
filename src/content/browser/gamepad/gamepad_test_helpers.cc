@@ -4,13 +4,12 @@
 
 #include "content/browser/gamepad/gamepad_test_helpers.h"
 
-#include "base/system_monitor/system_monitor.h"
 #include "content/browser/gamepad/gamepad_service.h"
 
 namespace content {
 
 MockGamepadDataFetcher::MockGamepadDataFetcher(
-    const WebKit::WebGamepads& test_data)
+    const blink::WebGamepads& test_data)
     : test_data_(test_data),
       read_data_(false, false) {
 }
@@ -18,7 +17,7 @@ MockGamepadDataFetcher::MockGamepadDataFetcher(
 MockGamepadDataFetcher::~MockGamepadDataFetcher() {
 }
 
-void MockGamepadDataFetcher::GetGamepadData(WebKit::WebGamepads* pads,
+void MockGamepadDataFetcher::GetGamepadData(blink::WebGamepads* pads,
                                             bool devices_changed_hint) {
   {
     base::AutoLock lock(lock_);
@@ -31,23 +30,19 @@ void MockGamepadDataFetcher::WaitForDataRead() {
   return read_data_.Wait();
 }
 
-void MockGamepadDataFetcher::SetTestData(const WebKit::WebGamepads& new_data) {
+void MockGamepadDataFetcher::SetTestData(const blink::WebGamepads& new_data) {
   base::AutoLock lock(lock_);
   test_data_ = new_data;
 }
 
 GamepadTestHelper::GamepadTestHelper() {
-#if defined(OS_MACOSX)
-  base::SystemMonitor::AllocateSystemIOPorts();
-#endif
-  system_monitor_.reset(new base::SystemMonitor);
 }
 
 GamepadTestHelper::~GamepadTestHelper() {
 }
 
 GamepadServiceTestConstructor::GamepadServiceTestConstructor(
-    const WebKit::WebGamepads& test_data) {
+    const blink::WebGamepads& test_data) {
   data_fetcher_ = new MockGamepadDataFetcher(test_data);
   gamepad_service_ =
       new GamepadService(scoped_ptr<GamepadDataFetcher>(data_fetcher_));

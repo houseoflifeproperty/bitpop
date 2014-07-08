@@ -7,7 +7,7 @@
 #include <string>
 
 #include "base/memory/scoped_ptr.h"
-#include "base/string16.h"
+#include "base/strings/string16.h"
 #include "rlz/lib/assert.h"
 
 namespace rlz_lib {
@@ -41,7 +41,7 @@ bool GetSystemVolumeSerialNumber(int* number) {
 bool GetComputerSid(const wchar_t* account_name, SID* sid, DWORD sid_size) {
   static const DWORD kStartDomainLength = 128;  // reasonable to start with
 
-  scoped_array<wchar_t> domain_buffer(new wchar_t[kStartDomainLength]);
+  scoped_ptr<wchar_t[]> domain_buffer(new wchar_t[kStartDomainLength]);
   DWORD domain_size = kStartDomainLength;
   DWORD sid_dword_size = sid_size;
   SID_NAME_USE sid_name_use;
@@ -103,7 +103,7 @@ std::wstring ConvertSidToString(SID* sid) {
 
 }  // namespace
 
-bool GetRawMachineId(string16* sid_string, int* volume_id) {
+bool GetRawMachineId(base::string16* sid_string, int* volume_id) {
   // Calculate the Windows SID.
 
   wchar_t computer_name[MAX_COMPUTERNAME_LENGTH + 1] = {0};

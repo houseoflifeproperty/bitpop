@@ -6,8 +6,10 @@
 
 #include <string>
 
-#include "chrome/browser/ui/constrained_window.h"
+#include "chrome/browser/profiles/profile.h"
+#include "chrome/browser/renderer_preferences_util.h"
 #include "chrome/browser/ui/webui/chrome_web_contents_handler.h"
+#include "content/public/browser/render_view_host.h"
 #include "content/public/browser/web_contents.h"
 #include "ipc/ipc_message.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
@@ -25,7 +27,6 @@ ConstrainedWebDialogDelegateBase::ConstrainedWebDialogDelegateBase(
     : WebDialogWebContentsDelegate(browser_context,
                                    new ChromeWebContentsHandler),
       web_dialog_delegate_(delegate),
-      window_(NULL),
       closed_via_webui_(false),
       release_contents_on_close_(false) {
   CHECK(delegate);
@@ -37,6 +38,11 @@ ConstrainedWebDialogDelegateBase::ConstrainedWebDialogDelegateBase(
   } else {
     web_contents_->SetDelegate(this);
   }
+  renderer_preferences_util::UpdateFromSystemSettings(
+      web_contents_->GetMutableRendererPrefs(),
+      Profile::FromBrowserContext(browser_context));
+  web_contents_->GetRenderViewHost()->SyncRendererPrefs();
+
   // Set |this| as a delegate so the ConstrainedWebDialogUI can retrieve it.
   ConstrainedWebDialogUI::SetConstrainedDelegate(web_contents_.get(), this);
 
@@ -63,16 +69,7 @@ WebDialogDelegate*
 
 void ConstrainedWebDialogDelegateBase::OnDialogCloseFromWebUI() {
   closed_via_webui_ = true;
-  window_->CloseConstrainedWindow();
-}
-
-void ConstrainedWebDialogDelegateBase::set_window(ConstrainedWindow* window) {
-  window_ = window;
-}
-
-void ConstrainedWebDialogDelegateBase::set_override_tab_delegate(
-    WebDialogWebContentsDelegate* override_tab_delegate) {
-  override_tab_delegate_.reset(override_tab_delegate);
+  CloseContents(web_contents_.get());
 }
 
 bool ConstrainedWebDialogDelegateBase::closed_via_webui() const {
@@ -83,8 +80,10 @@ void ConstrainedWebDialogDelegateBase::ReleaseWebContentsOnDialogClose() {
   release_contents_on_close_ = true;
 }
 
-ConstrainedWindow* ConstrainedWebDialogDelegateBase::GetWindow() {
-  return window_;
+web_modal::NativeWebContentsModalDialog
+    ConstrainedWebDialogDelegateBase::GetNativeDialog() {
+  NOTREACHED();
+  return NULL;
 }
 
 WebContents* ConstrainedWebDialogDelegateBase::GetWebContents() {

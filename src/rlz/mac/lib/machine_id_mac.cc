@@ -4,18 +4,18 @@
 
 #include <CoreFoundation/CoreFoundation.h>
 #include <IOKit/IOKitLib.h>
+#include <IOKit/network/IOEthernetController.h>
 #include <IOKit/network/IOEthernetInterface.h>
 #include <IOKit/network/IONetworkInterface.h>
-#include <IOKit/network/IOEthernetController.h>
 
 #include "base/logging.h"
 #include "base/mac/foundation_util.h"
 #include "base/mac/scoped_cftyperef.h"
 #include "base/mac/scoped_ioobject.h"
-#include "base/string16.h"
-#include "base/stringprintf.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/string16.h"
+#include "base/strings/stringprintf.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 
 namespace rlz_lib {
 
@@ -25,13 +25,14 @@ namespace {
 
 // The caller is responsible for freeing |matching_services|.
 bool FindEthernetInterfaces(io_iterator_t* matching_services) {
-  base::mac::ScopedCFTypeRef<CFMutableDictionaryRef> matching_dict(
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> matching_dict(
       IOServiceMatching(kIOEthernetInterfaceClass));
   if (!matching_dict)
     return false;
 
-  base::mac::ScopedCFTypeRef<CFMutableDictionaryRef> primary_interface(
-      CFDictionaryCreateMutable(kCFAllocatorDefault, 0,
+  base::ScopedCFTypeRef<CFMutableDictionaryRef> primary_interface(
+      CFDictionaryCreateMutable(kCFAllocatorDefault,
+                                0,
                                 &kCFTypeDictionaryKeyCallBacks,
                                 &kCFTypeDictionaryValueCallBacks));
   if (!primary_interface)
@@ -69,7 +70,7 @@ bool GetMACAddressFromIterator(io_iterator_t primary_interface_iterator,
     if (!success)
       continue;
 
-    base::mac::ScopedCFTypeRef<CFTypeRef> mac_data(
+    base::ScopedCFTypeRef<CFTypeRef> mac_data(
         IORegistryEntryCreateCFProperty(primary_interface_parent,
                                         CFSTR(kIOMACAddress),
                                         kCFAllocatorDefault,
@@ -101,7 +102,7 @@ CFStringRef CopySerialNumber() {
   if (!expert_device)
     return NULL;
 
-  base::mac::ScopedCFTypeRef<CFTypeRef> serial_number(
+  base::ScopedCFTypeRef<CFTypeRef> serial_number(
       IORegistryEntryCreateCFProperty(expert_device,
                                       CFSTR(kIOPlatformSerialNumberKey),
                                       kCFAllocatorDefault,
@@ -117,14 +118,15 @@ CFStringRef CopySerialNumber() {
 
 }  // namespace
 
-bool GetRawMachineId(string16* data, int* more_data) {
+bool GetRawMachineId(base::string16* data, int* more_data) {
   uint8_t mac_address[kIOEthernetAddressSize];
 
   data->clear();
   if (GetMacAddress(mac_address, sizeof(mac_address))) {
-    *data += ASCIIToUTF16(base::StringPrintf("mac:%02x%02x%02x%02x%02x%02x",
-        mac_address[0], mac_address[1], mac_address[2],
-        mac_address[3], mac_address[4], mac_address[5]));
+    *data += base::ASCIIToUTF16(
+        base::StringPrintf("mac:%02x%02x%02x%02x%02x%02x",
+                           mac_address[0], mac_address[1], mac_address[2],
+                           mac_address[3], mac_address[4], mac_address[5]));
   }
 
   // A MAC address is enough to uniquely identify a machine, but it's only 6
@@ -133,8 +135,8 @@ bool GetRawMachineId(string16* data, int* more_data) {
   CFStringRef serial = CopySerialNumber();
   if (serial) {
     if (!data->empty())
-      *data += UTF8ToUTF16(" ");
-    *data += UTF8ToUTF16("serial:") + base::SysCFStringRefToUTF16(serial);
+      *data += base::UTF8ToUTF16(" ");
+    *data += base::UTF8ToUTF16("serial:") + base::SysCFStringRefToUTF16(serial);
     CFRelease(serial);
   }
 

@@ -35,22 +35,31 @@ const char kHeaderNameKey[] = "name";
 const char kHeaderValueKey[] = "value";
 const char kHeaderBinaryValueKey[] = "binaryValue";
 const char kIsProxyKey[] = "isProxy";
+const char kMessageKey[] = "message";
 const char kSchemeKey[] = "scheme";
+const char kStageKey[] = "stage";
 const char kRealmKey[] = "realm";
 const char kAuthCredentialsKey[] = "authCredentials";
 const char kUsernameKey[] = "username";
 const char kPasswordKey[] = "password";
 
-const char kOnBeforeRedirect[] = "webRequest.onBeforeRedirect";
-const char kOnBeforeRequest[] = "webRequest.onBeforeRequest";
-const char kOnBeforeSendHeaders[] = "webRequest.onBeforeSendHeaders";
-const char kOnCompleted[] = "webRequest.onCompleted";
-const char kOnErrorOccurred[] = "webRequest.onErrorOccurred";
-const char kOnHeadersReceived[] = "webRequest.onHeadersReceived";
-const char kOnResponseStarted[] = "webRequest.onResponseStarted";
-const char kOnSendHeaders[] = "webRequest.onSendHeaders";
-const char kOnAuthRequired[] = "webRequest.onAuthRequired";
+const char kOnBeforeRedirectEvent[] = "webRequest.onBeforeRedirect";
+const char kOnBeforeSendHeadersEvent[] = "webRequest.onBeforeSendHeaders";
+const char kOnCompletedEvent[] = "webRequest.onCompleted";
+const char kOnHeadersReceivedEvent[] = "webRequest.onHeadersReceived";
+const char kOnResponseStartedEvent[] = "webRequest.onResponseStarted";
+const char kOnSendHeadersEvent[] = "webRequest.onSendHeaders";
+const char kOnAuthRequiredEvent[] = "webRequest.onAuthRequired";
 
+const char kOnBeforeRedirect[] = "onBeforeRedirect";
+const char kOnBeforeRequest[] = "onBeforeRequest";
+const char kOnBeforeSendHeaders[] = "onBeforeSendHeaders";
+const char kOnCompleted[] = "onCompleted";
+const char kOnErrorOccurred[] = "onErrorOccurred";
+const char kOnHeadersReceived[] = "onHeadersReceived";
+const char kOnResponseStarted[] = "onResponseStarted";
+const char kOnSendHeaders[] = "onSendHeaders";
+const char kOnAuthRequired[] = "onAuthRequired";
 
 const char kInvalidRedirectUrl[] = "redirectUrl '*' is not a valid URL.";
 const char kInvalidBlockingResponse[] =
@@ -63,5 +72,10 @@ const char kBlockingPermissionRequired[] =
 const char kHostPermissionsRequired[] =
     "You need to request host permissions in the manifest file in order to "
     "be notified about requests from the webRequest API.";
+const char kInvalidHeaderKeyCombination[] =
+    "requestHeaders and responseHeaders cannot both be present.";
+const char kInvalidHeader[] = "Invalid header specification '*'.";
+const char kInvalidHeaderName[] = "Invalid header name.";
+const char kInvalidHeaderValue[] = "Header '*' has an invalid value.";
 
 }  // namespace extension_web_request_api_constants

@@ -1,32 +1,32 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
 package org.chromium.android_webview.test.util;
 
 import android.test.InstrumentationTestCase;
-import android.util.Log;
 
 import junit.framework.Assert;
 
+import static org.chromium.base.test.util.ScalableTimeout.scaleTimeout;
+
 import org.chromium.android_webview.AwContents;
-import org.chromium.content.browser.test.util.CallbackHelper;
 import org.chromium.content.browser.test.util.Criteria;
 import org.chromium.content.browser.test.util.CriteriaHelper;
 import org.chromium.content.browser.test.util.TestCallbackHelperContainer.OnEvaluateJavaScriptResultHelper;
 
-import java.util.concurrent.atomic.AtomicInteger;
-
-// Collection of functions for JavaScript-based interactions with a page.
+/**
+ * Collection of functions for JavaScript-based interactions with a page.
+ */
 public class JSUtils {
-    private static final int WAIT_TIMEOUT_SECONDS = 2;
+    private static final long WAIT_TIMEOUT_MS = scaleTimeout(2000);
     private static final int CHECK_INTERVAL = 100;
 
     public static void clickOnLinkUsingJs(
             final InstrumentationTestCase testCase,
             final AwContents awContents,
             final OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper,
-            final String linkId) throws Throwable {
+            final String linkId) throws Exception {
 
         Assert.assertTrue(CriteriaHelper.pollForCriteria(new Criteria() {
             @Override
@@ -42,7 +42,7 @@ public class JSUtils {
                     return false;
                 }
             }
-        }, WAIT_TIMEOUT_SECONDS * 1000, CHECK_INTERVAL));
+        }, WAIT_TIMEOUT_MS, CHECK_INTERVAL));
 
         testCase.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
@@ -51,7 +51,8 @@ public class JSUtils {
                     "var evObj = document.createEvent('Events'); " +
                     "evObj.initEvent('click', true, false); " +
                     "document.getElementById('" + linkId + "').dispatchEvent(evObj);" +
-                    "console.log('element with id [" + linkId + "] clicked');");
+                    "console.log('element with id [" + linkId + "] clicked');",
+                    null);
             }
         });
     }
@@ -60,7 +61,7 @@ public class JSUtils {
             InstrumentationTestCase testCase,
             final AwContents awContents,
             final OnEvaluateJavaScriptResultHelper onEvaluateJavaScriptResultHelper,
-            final String code) throws Throwable {
+            final String code) throws Exception {
         testCase.getInstrumentation().runOnMainSync(new Runnable() {
             @Override
             public void run() {

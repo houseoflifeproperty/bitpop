@@ -110,12 +110,13 @@ TargetProcess::~TargetProcess() {
 // object.
 DWORD TargetProcess::Create(const wchar_t* exe_path,
                             const wchar_t* command_line,
+                            bool inherit_handles,
                             const base::win::StartupInformation& startup_info,
                             base::win::ScopedProcessInformation* target_info) {
   exe_name_.reset(_wcsdup(exe_path));
 
   // the command line needs to be writable by CreateProcess().
-  scoped_ptr_malloc<wchar_t> cmd_line(_wcsdup(command_line));
+  scoped_ptr<wchar_t, base::FreeDeleter> cmd_line(_wcsdup(command_line));
 
   // Start the target process suspended.
   DWORD flags =
@@ -130,21 +131,21 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
     flags |= CREATE_BREAKAWAY_FROM_JOB;
   }
 
-  base::win::ScopedProcessInformation process_info;
-
+  PROCESS_INFORMATION temp_process_info = {};
   if (!::CreateProcessAsUserW(lockdown_token_,
                               exe_path,
                               cmd_line.get(),
                               NULL,   // No security attribute.
                               NULL,   // No thread attribute.
-                              FALSE,  // Do not inherit handles.
+                              inherit_handles,
                               flags,
                               NULL,   // Use the environment of the caller.
                               NULL,   // Use current directory of the caller.
                               startup_info.startup_info(),
-                              process_info.Receive())) {
+                              &temp_process_info)) {
     return ::GetLastError();
   }
+  base::win::ScopedProcessInformation process_info(temp_process_info);
   lockdown_token_.Close();
 
   DWORD win_result = ERROR_SUCCESS;
@@ -198,7 +199,7 @@ DWORD TargetProcess::Create(const wchar_t* exe_path,
   }
 
   base_address_ = GetBaseAddress(exe_path, entry_point);
-  sandbox_process_info_.Swap(&process_info);
+  sandbox_process_info_.Set(process_info.Take());
   return win_result;
 }
 
@@ -324,10 +325,11 @@ void TargetProcess::Terminate() {
   ::TerminateProcess(sandbox_process_info_.process_handle(), 0);
 }
 
-
 TargetProcess* MakeTestTargetProcess(HANDLE process, HMODULE base_address) {
   TargetProcess* target = new TargetProcess(NULL, NULL, NULL, NULL);
-  target->sandbox_process_info_.Receive()->hProcess = process;
+  PROCESS_INFORMATION process_info = {};
+  process_info.hProcess = process;
+  target->sandbox_process_info_.Set(process_info);
   target->base_address_ = base_address;
   return target;
 }

@@ -16,12 +16,13 @@
 
 #include "base/compiler_specific.h"
 #include "base/observer_list.h"
-#include "base/timer.h"
 #include "base/threading/non_thread_safe.h"
+#include "base/timer/timer.h"
 #include "third_party/libjingle/source/talk/base/sigslot.h"
 #include "third_party/libjingle/source/talk/xmpp/xmppclient.h"
 
 namespace net {
+class ClientSocketFactory;
 class URLRequestContextGetter;
 }  // namespace net
 
@@ -38,11 +39,24 @@ class XmppSignalStrategy : public base::NonThreadSafe,
                            public buzz::XmppStanzaHandler,
                            public sigslot::has_slots<> {
  public:
+  // XMPP Server configuration for XmppSignalStrategy.
+  struct XmppServerConfig {
+    XmppServerConfig();
+    ~XmppServerConfig();
+
+    std::string host;
+    int port;
+    bool use_tls;
+
+    std::string username;
+    std::string auth_token;
+    std::string auth_service;
+  };
+
   XmppSignalStrategy(
+      net::ClientSocketFactory* socket_factory,
       scoped_refptr<net::URLRequestContextGetter> request_context_getter,
-      const std::string& username,
-      const std::string& auth_token,
-      const std::string& auth_token_service);
+      const XmppServerConfig& xmpp_server_config);
   virtual ~XmppSignalStrategy();
 
   // SignalStrategy interface.
@@ -64,7 +78,7 @@ class XmppSignalStrategy : public base::NonThreadSafe,
   // CONNECTED state. It will be used on the next Connect() call.
   void SetAuthInfo(const std::string& username,
                    const std::string& auth_token,
-                   const std::string& auth_token_service);
+                   const std::string& auth_service);
 
   // Use this method to override the default resource name used (optional).
   // This will be used on the next Connect() call.
@@ -79,13 +93,12 @@ class XmppSignalStrategy : public base::NonThreadSafe,
 
   void SendKeepAlive();
 
+  net::ClientSocketFactory* socket_factory_;
   scoped_refptr<net::URLRequestContextGetter> request_context_getter_;
-  std::string username_;
-  std::string auth_token_;
-  std::string auth_token_service_;
   std::string resource_name_;
   scoped_ptr<talk_base::TaskRunner> task_runner_;
   buzz::XmppClient* xmpp_client_;
+  XmppServerConfig xmpp_server_config_;
 
   State state_;
   Error error_;

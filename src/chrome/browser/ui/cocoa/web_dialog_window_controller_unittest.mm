@@ -10,19 +10,19 @@
 #import <Cocoa/Cocoa.h>
 
 #import "base/mac/scoped_nsautorelease_pool.h"
-#include "base/sys_string_conversions.h"
-#include "base/utf_string_conversions.h"
+#include "base/strings/sys_string_conversions.h"
+#include "base/strings/utf_string_conversions.h"
 #include "chrome/browser/ui/browser.h"
 #include "chrome/browser/ui/cocoa/cocoa_test_helper.h"
 #include "chrome/test/base/browser_with_test_window_test.h"
 #include "chrome/test/base/testing_profile.h"
 #include "content/public/browser/web_ui.h"
 #include "content/public/browser/web_ui_message_handler.h"
-#include "googleurl/src/gurl.h"
 #include "testing/gmock/include/gmock/gmock.h"
 #include "testing/gtest/include/gtest/gtest.h"
 #include "ui/gfx/size.h"
 #include "ui/web_dialogs/web_dialog_delegate.h"
+#include "url/gurl.h"
 
 using content::WebContents;
 using content::WebUIMessageHandler;
@@ -33,7 +33,7 @@ namespace {
 class MockDelegate : public WebDialogDelegate {
 public:
   MOCK_CONST_METHOD0(GetDialogModalType, ui::ModalType());
-  MOCK_CONST_METHOD0(GetDialogTitle, string16());
+  MOCK_CONST_METHOD0(GetDialogTitle, base::string16());
   MOCK_CONST_METHOD0(GetDialogContentURL, GURL());
   MOCK_CONST_METHOD1(GetWebUIMessageHandlers,
                      void(std::vector<WebUIMessageHandler*>*));
@@ -50,13 +50,13 @@ class WebDialogWindowControllerTest : public BrowserWithTestWindowTest {
   virtual void SetUp() {
     BrowserWithTestWindowTest::SetUp();
     CocoaTest::BootstrapCocoa();
-    title_ = ASCIIToUTF16("Mock Title");
+    title_ = base::ASCIIToUTF16("Mock Title");
     size_ = gfx::Size(50, 100);
     gurl_ = GURL("");
   }
 
  protected:
-  string16 title_;
+  base::string16 title_;
   gfx::Size size_;
   GURL gurl_;
 

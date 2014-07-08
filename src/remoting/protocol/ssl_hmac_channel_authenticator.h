@@ -13,18 +13,17 @@
 #include "base/threading/non_thread_safe.h"
 #include "remoting/protocol/channel_authenticator.h"
 
-namespace crypto {
-class RSAPrivateKey;
-}  // namespace crypto
-
 namespace net {
-class CertVerifier;
 class DrainableIOBuffer;
 class GrowableIOBuffer;
 class SSLSocket;
+class TransportSecurityState;
 }  // namespace net
 
 namespace remoting {
+
+class RsaKeyPair;
+
 namespace protocol {
 
 // SslHmacChannelAuthenticator implements ChannelAuthenticator that
@@ -51,7 +50,7 @@ class SslHmacChannelAuthenticator : public ChannelAuthenticator,
 
   static scoped_ptr<SslHmacChannelAuthenticator> CreateForHost(
       const std::string& local_cert,
-      crypto::RSAPrivateKey* local_private_key,
+      scoped_refptr<RsaKeyPair> key_pair,
       const std::string& auth_key);
 
   virtual ~SslHmacChannelAuthenticator();
@@ -85,11 +84,11 @@ class SslHmacChannelAuthenticator : public ChannelAuthenticator,
 
   // Used in the SERVER mode only.
   std::string local_cert_;
-  crypto::RSAPrivateKey* local_private_key_;
+  scoped_refptr<RsaKeyPair> local_key_pair_;
 
   // Used in the CLIENT mode only.
   std::string remote_cert_;
-  scoped_ptr<net::CertVerifier> cert_verifier_;
+  scoped_ptr<net::TransportSecurityState> transport_security_state_;
 
   scoped_ptr<net::SSLSocket> socket_;
   DoneCallback done_callback_;

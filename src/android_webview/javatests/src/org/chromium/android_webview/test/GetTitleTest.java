@@ -1,4 +1,4 @@
-// Copyright (c) 2012 The Chromium Authors. All rights reserved.
+// Copyright 2012 The Chromium Authors. All rights reserved.
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
@@ -9,13 +9,12 @@ import android.test.suitebuilder.annotation.Smoke;
 
 import org.chromium.android_webview.AwContents;
 import org.chromium.base.test.util.Feature;
-import org.chromium.base.test.util.DisabledTest;
 import org.chromium.net.test.util.TestWebServer;
 
 /**
  * A test suite for ContentView.getTitle().
  */
-public class GetTitleTest extends AndroidWebViewTestBase {
+public class GetTitleTest extends AwTestBase {
     private static final String TITLE = "TITLE";
 
     private static final String GET_TITLE_TEST_PATH = "/get_title_test.html";
@@ -33,7 +32,7 @@ public class GetTitleTest extends AndroidWebViewTestBase {
             mTitle = title;
             mUrl = url;
         }
-    };
+    }
 
     @Override
     public void setUp() throws Exception {
@@ -149,21 +148,16 @@ public class GetTitleTest extends AndroidWebViewTestBase {
         assertEquals("Incorrect title :: " , info.mUrl, info.mTitle);
     }
 
-    /**
-     * A subtle bug started to appear after the merge to r157579. If document.writeln is
-     * used in the page's script then the page's title is reported incorrectly.
-     * Bug: crbug.com/151012
-     * @SmallTest
-     * @Feature({"AndroidWebView"})
-     */
-    @DisabledTest
-    public void testGetTitleWithWriteln() throws Throwable {
+    @SmallTest
+    @Feature({"AndroidWebView"})
+    public void testGetTitleSetFromJS() throws Throwable {
         final String expectedTitle = "Expected";
         final String page =
-                // Note: document.title="...";document.writeln(document.title); also fails.
-                "<html>" +
-                "<body onload='document.writeln(document.title=\"" + expectedTitle + "\")'>" +
+                "<html><head>" +
+                "<script>document.title=\"" + expectedTitle + "\"</script>" +
+                "</head><body>" +
                 "</body></html>";
+        getAwSettingsOnUiThread(mAwContents).setJavaScriptEnabled(true);
         final String title = loadFromDataAndGetTitle(page);
         assertEquals("Incorrect title :: ", expectedTitle, title);
     }

@@ -28,10 +28,10 @@ HANDLE CreateNamedPipeHelper(HANDLE target_process, LPCWSTR pipe_name,
     return pipe;
 
   HANDLE new_pipe;
-  if (!::DuplicateHandle(::GetCurrentProcess(), pipe, target_process, &new_pipe,
-                         0, FALSE, DUPLICATE_CLOSE_SOURCE |
-                             DUPLICATE_SAME_ACCESS)) {
-    ::CloseHandle(pipe);
+  if (!::DuplicateHandle(::GetCurrentProcess(), pipe,
+                         target_process, &new_pipe,
+                         0, FALSE,
+                         DUPLICATE_CLOSE_SOURCE | DUPLICATE_SAME_ACCESS)) {
     return INVALID_HANDLE_VALUE;
   }
 
@@ -60,7 +60,7 @@ bool NamedPipePolicy::GenerateRules(const wchar_t* name,
 
 DWORD NamedPipePolicy::CreateNamedPipeAction(EvalResult eval_result,
                                              const ClientInfo& client_info,
-                                             const std::wstring &name,
+                                             const base::string16 &name,
                                              DWORD open_mode, DWORD pipe_mode,
                                              DWORD max_instances,
                                              DWORD out_buffer_size,

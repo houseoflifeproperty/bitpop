@@ -9,12 +9,17 @@ This module downloads multiple tgz's and expands them.
 """
 
 import cygtar
-import download_utils
 import optparse
 import os
 import re
 import sys
 import tempfile
+
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+import pynacl.download_utils
+import pynacl.file_tools
+import pynacl.platform
+
 import toolchainbinaries
 
 
@@ -64,13 +69,18 @@ def VersionSelect(versions, flavor):
   if isinstance(flavor, tuple):
     ids = [versions[i] for i in flavor[1:]]
     return ','.join(ids)
-  if 'pnacl' in flavor:
+  if toolchainbinaries.IsBionicFlavor(flavor):
+    return versions['BIONIC_VERSION']
+  if toolchainbinaries.IsPnaclFlavor(flavor):
     return versions['PNACL_VERSION']
-  if 'glibc' in flavor:
-    return versions['GLIBC_VERSION']
-  if 'arm-trusted' in flavor:
+  if toolchainbinaries.IsX86Flavor(flavor):
+    if toolchainbinaries.IsNotNaClNewlibFlavor(flavor):
+      return versions['GLIBC_VERSION']
+    else:
+      return versions['NEWLIB_VERSION']
+  if toolchainbinaries.IsArmTrustedFlavor(flavor):
     return versions['ARM_TRUSTED_VERSION']
-  return versions['NEWLIB_VERSION']
+  raise Exception('Unknown flavor "%s"' % flavor)
 
 
 def HashKey(flavor):
@@ -109,9 +119,13 @@ def IsFlavorNeeded(options, flavor):
 def FlavorOutDir(options, flavor):
   """Given a flavor, decide where it should be extracted."""
   if isinstance(flavor, tuple):
-    return os.path.join(options.toolchain_dir, flavor[0])
+    return toolchainbinaries.GetStandardToolchainFlavorDir(
+        options.toolchain_dir,
+        flavor[0])
   else:
-    return os.path.join(options.toolchain_dir, flavor)
+    return toolchainbinaries.GetStandardToolchainFlavorDir(
+        options.toolchain_dir,
+        flavor)
 
 
 def FlavorName(flavor):
@@ -155,10 +169,9 @@ def GetUpdatedDEPS(options, versions):
     options: options from the command line.
   """
   flavors = set()
-  for platform in toolchainbinaries.PLATFORM_MAPPING:
-    pm = toolchainbinaries.PLATFORM_MAPPING[platform]
-    for arch in pm:
-      for flavor in pm[arch]:
+  for pm in toolchainbinaries.PLATFORM_MAPPING.itervalues():
+    for flavorlist in pm.itervalues():
+      for flavor in flavorlist:
         if IsFlavorNeeded(options, flavor):
           flavors.add(flavor)
   new_deps = {}
@@ -166,7 +179,7 @@ def GetUpdatedDEPS(options, versions):
     names = FlavorComponentNames(flavor)
     urls = FlavorUrls(options, versions, flavor)
     for name, url in zip(names, urls):
-      new_deps[name] = download_utils.HashUrl(url)
+      new_deps[name] = pynacl.download_utils.HashUrl(url)
   return new_deps
 
 
@@ -192,6 +205,10 @@ def SyncFlavor(flavor, urls, dst, hashes, min_time, keep=False, force=False,
     dst: destination directory for the toolchain.
     hashes: expected hashes of the toolchain.
   """
+  if isinstance(flavor, tuple):
+    flavor_name = flavor[0]
+  else:
+    flavor_name = flavor
 
   toolchain_dir = os.path.join(PARENT_DIR, 'toolchain')
   if not os.path.exists(toolchain_dir):
@@ -207,7 +224,7 @@ def SyncFlavor(flavor, urls, dst, hashes, min_time, keep=False, force=False,
       full_path = os.path.join(toolchain_dir, path)
       try:
         print 'Cleaning up %s...' % full_path
-        download_utils.RemoveDir(full_path)
+        pynacl.file_tools.RemoveDir(full_path)
       except Exception, e:
         print 'Failed cleanup with: ' + str(e)
 
@@ -232,10 +249,10 @@ def SyncFlavor(flavor, urls, dst, hashes, min_time, keep=False, force=False,
     filepath = os.path.join(download_dir, '.'.join([filepath, ext]))
     filepaths.append(filepath)
     # If we did not need to synchronize, then we are done
-    if download_utils.SyncURL(url, filepath, stamp_dir=stamp_dir,
-                              min_time=min_time, hash_val=hash_val,
-                              stamp_index=index,
-                              keep=keep, verbose=verbose):
+    if pynacl.download_utils.SyncURL(url, filepath, stamp_dir=stamp_dir,
+                                     min_time=min_time, hash_val=hash_val,
+                                     stamp_index=index,
+                                     keep=keep, verbose=verbose):
       need_sync = True
     index += 1
 
@@ -245,11 +262,16 @@ def SyncFlavor(flavor, urls, dst, hashes, min_time, keep=False, force=False,
   # Compute the new hashes for each file.
   new_hashes = []
   for filepath in filepaths:
-    new_hashes.append(download_utils.HashFile(filepath))
+    new_hashes.append(pynacl.download_utils.HashFile(filepath))
 
   untar_dir = tempfile.mkdtemp(
       suffix=suffix, prefix=prefix, dir=toolchain_dir)
   try:
+    if verbose:
+      tar_file = os.path.basename(filepath)
+      rel_dest = os.path.relpath(dst, toolchain_dir)
+      print '%s: Extracting "%s" -> "%s"...' % (flavor_name, tar_file, rel_dest)
+
     for filepath in filepaths:
       tar = cygtar.CygTar(filepath, 'r:*', verbose=verbose)
       curdir = os.getcwd()
@@ -264,21 +286,23 @@ def SyncFlavor(flavor, urls, dst, hashes, min_time, keep=False, force=False,
         os.remove(filepath)
 
     # TODO(bradnelson_): get rid of this when toolchain tarballs flattened.
-    if isinstance(flavor, tuple) or 'arm' in flavor or 'pnacl' in flavor:
+    if 'bionic' in flavor:
+      src = os.path.join(untar_dir, flavor)
+    elif isinstance(flavor, tuple) or 'arm' in flavor or 'pnacl' in flavor:
       src = os.path.join(untar_dir)
     elif 'newlib' in flavor:
       src = os.path.join(untar_dir, 'sdk', 'nacl-sdk')
     else:
       src = os.path.join(untar_dir, 'toolchain', flavor)
-    download_utils.MoveDirCleanly(src, dst)
+    pynacl.file_tools.MoveDirCleanly(src, dst)
   finally:
     try:
-      download_utils.RemoveDir(untar_dir)
+      pynacl.file_tools.RemoveDir(untar_dir)
     except Exception, e:
       print 'Failed cleanup with: ' + str(e)
       print 'Continuing on original exception...'
-  download_utils.WriteSourceStamp(dst, '\n'.join(urls))
-  download_utils.WriteHashStamp(dst, '\n'.join(new_hashes))
+  pynacl.download_utils.WriteSourceStamp(dst, '\n'.join(urls))
+  pynacl.download_utils.WriteHashStamp(dst, '\n'.join(new_hashes))
   return True
 
 
@@ -316,6 +340,10 @@ def ParseArgs(args):
       action='append_const', const=toolchainbinaries.IsNotNaClNewlibFlavor,
       help='download only the non-pnacl newlib toolchain')
   parser.add_option(
+      '--allow-bionic', dest='allow_bionic', action='store_true',
+      default=False,
+      help='Allow download of bionic toolchain.')
+  parser.add_option(
       '--no-pnacl', dest='filter_out_predicates', action='append_const',
       const=toolchainbinaries.IsPnaclFlavor,
       help='Filter out PNaCl toolchains.')
@@ -342,6 +370,11 @@ def ParseArgs(args):
       options.filter_out_predicates = []
     options.filter_out_predicates.append(toolchainbinaries.IsArmUntrustedFlavor)
 
+  if not options.allow_bionic:
+    if options.filter_out_predicates is None:
+      options.filter_out_predicates = []
+    options.filter_out_predicates.append(toolchainbinaries.IsBionicFlavor)
+
   if len(args) > 1:
     parser.error('Expecting only one version file.')
   return options, args
@@ -349,8 +382,9 @@ def ParseArgs(args):
 
 def ScriptDependencyTimestamp():
   """Determine the timestamp for the most recently changed script."""
-  src_list = ['download_toolchains.py', 'download_utils.py',
-              'cygtar.py', 'http_download.py']
+  src_list = ['download_toolchains.py', '../pynacl/download_utils.py',
+              '../pynacl/file_tools.py', '../pynacl/platform.py',
+              'cygtar.py', '../pynacl/http_download.py']
   srcs = [os.path.join(SCRIPT_DIR, src) for src in src_list]
   src_times = []
 
@@ -376,10 +410,11 @@ def main(args):
     print '-' * 70
     return 0
 
-  platform = download_utils.PlatformName()
-  arch = download_utils.ArchName()
+  host_os = pynacl.platform.GetOS()
+  arch = pynacl.platform.GetArch()
+  platform_mapping = toolchainbinaries.PLATFORM_MAPPING
   flavors = [flavor
-             for flavor in toolchainbinaries.PLATFORM_MAPPING[platform][arch]
+             for flavor in platform_mapping[host_os][arch]
              if IsFlavorNeeded(options, flavor)]
 
   for flavor in flavors:
@@ -401,7 +436,7 @@ def main(args):
         print flavor_name + ': updated to version ' + version + '.'
       else:
         print flavor_name + ': already up to date.'
-    except download_utils.HashError, e:
+    except pynacl.download_utils.HashError, e:
       print str(e)
       print '-' * 70
       print 'You probably want to update the %s hashes to:' % version_files[0]
